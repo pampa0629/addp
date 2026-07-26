@@ -127,9 +127,12 @@ func (p *MongoDBPlugin) describeCollectionFacts(ctx context.Context, connInfo pl
 		}
 	} else {
 		// 如果聚合失败，使用估算值
-		count, _ := coll.EstimatedDocumentCount(ctx)
+		count, countErr := coll.EstimatedDocumentCount(ctx)
+		if countErr != nil {
+			return nil, fmt.Errorf("failed to estimate collection documents: %w", countErr)
+		}
 		return &plugin.DynamicCollectionFacts{
-			DocumentCount: int64(count),
+			DocumentCount: &count,
 			SizeBytes:     0,
 			IndexCount:    0,
 			AvgRecordSize: 0,
@@ -144,8 +147,9 @@ func (p *MongoDBPlugin) describeCollectionFacts(ctx context.Context, connInfo pl
 		indexes = []plugin.IndexFacts{}
 	}
 
+	estimatedDocumentCount := statsDoc.StorageStats.Count
 	return &plugin.DynamicCollectionFacts{
-		DocumentCount: statsDoc.StorageStats.Count,
+		DocumentCount: &estimatedDocumentCount,
 		SizeBytes:     statsDoc.StorageStats.Size,
 		IndexCount:    statsDoc.StorageStats.NIndexes,
 		AvgRecordSize: statsDoc.StorageStats.AvgObjSize,
@@ -221,28 +225,40 @@ func (p *MongoDBPlugin) SampleDynamicSchema(ctx context.Context, connInfo plugin
 
 	stats, err := p.describeCollectionFacts(ctx, connInfo, database, collection)
 	if err != nil {
-		count, _ := coll.EstimatedDocumentCount(ctx)
-		stats = &plugin.DynamicCollectionFacts{DocumentCount: count}
+		count, countErr := coll.EstimatedDocumentCount(ctx)
+		if countErr != nil {
+			return nil, fmt.Errorf("failed to estimate collection documents: %w", countErr)
+		}
+		stats = &plugin.DynamicCollectionFacts{DocumentCount: &count}
+	}
+
+	tableInfo := &datatype.TableInfo{
+		Name:              collection,
+		Kind:              plugin.CatalogKindCollection,
+		Fields:            fields,
+		EstimatedRowCount: stats.DocumentCount,
+		SizeBytes:         &stats.SizeBytes,
+		Native: map[string]interface{}{
+			"database":        database,
+			"collection":      collection,
+			"sample_size":     len(documents),
+			"schema_type":     "dynamic",
+			"index_count":     stats.IndexCount,
+			"avg_record_size": stats.AvgRecordSize,
+		},
+	}
+	if opts.IncludeStatistics {
+		count, err := coll.CountDocuments(ctx, bson.M{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to count collection documents: %w", err)
+		}
+		tableInfo.RowCount = &count
 	}
 
 	return &plugin.CatalogFacts{
-		Path: path,
-		Kind: plugin.CatalogKindCollection,
-		Table: &datatype.TableInfo{
-			Name:      collection,
-			Kind:      plugin.CatalogKindCollection,
-			Fields:    fields,
-			RowCount:  &stats.DocumentCount,
-			SizeBytes: &stats.SizeBytes,
-			Native: map[string]interface{}{
-				"database":        database,
-				"collection":      collection,
-				"sample_size":     len(documents),
-				"schema_type":     "dynamic",
-				"index_count":     stats.IndexCount,
-				"avg_record_size": stats.AvgRecordSize,
-			},
-		},
+		Path:    path,
+		Kind:    plugin.CatalogKindCollection,
+		Table:   tableInfo,
 		Indexes: append([]plugin.IndexFacts{}, stats.Indexes...),
 	}, nil
 }

@@ -51,7 +51,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "post": {
                 "security": [
@@ -94,7 +98,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.create"
+                ]
             }
         },
         "/cad-preview-tasks/{id}": {
@@ -127,7 +135,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.CADPreviewTaskResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "put": {
                 "security": [
@@ -170,7 +182,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.CADPreviewTaskResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -195,7 +211,11 @@ const docTemplate = `{
                     "204": {
                         "description": "No Content"
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.delete"
+                ]
             }
         },
         "/cad-previews": {
@@ -252,7 +272,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/cad-previews/{id}": {
@@ -285,7 +309,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_manager_internal_models.CADPreview"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "delete": {
                 "security": [
@@ -310,7 +338,11 @@ const docTemplate = `{
                     "204": {
                         "description": "No Content"
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.delete"
+                ]
             }
         },
         "/cad-previews/{id}/manifest": {
@@ -344,7 +376,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "resource_ticket",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/cad-previews/{id}/tiles/{z}/{x}/{y}": {
@@ -395,7 +431,11 @@ const docTemplate = `{
                     "200": {
                         "description": "WebP tile"
                     }
-                }
+                },
+                "x-addp-auth-mode": "resource_ticket",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/config/map": {
@@ -421,7 +461,8 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "authenticated"
             }
         },
         "/downloads/file": {
@@ -473,7 +514,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "resource_ticket",
+                "x-addp-required-permissions": [
+                    "manager.content.read"
+                ]
             }
         },
         "/embedding_executions": {
@@ -526,7 +571,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.create"
+                ]
             }
         },
         "/embedding_tasks": {
@@ -573,7 +622,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "post": {
                 "security": [
@@ -617,7 +670,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.create"
+                ]
             }
         },
         "/embedding_tasks/{id}": {
@@ -665,7 +722,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "put": {
                 "security": [
@@ -723,7 +784,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -763,7 +828,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.delete"
+                ]
             }
         },
         "/embeddings": {
@@ -840,7 +909,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/embeddings/{id}": {
@@ -891,7 +964,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.delete"
+                ]
             }
         },
         "/engines": {
@@ -924,7 +1001,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.data_item.read"
+                ]
             }
         },
         "/engines/{id}/items/refresh": {
@@ -989,7 +1070,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.data_item.update"
+                ]
             }
         },
         "/engines/{id}/spatial/features/{feature_id}/centroid": {
@@ -1071,7 +1156,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.content.read"
+                ]
             }
         },
         "/engines/{id}/spatial/features/{feature_id}/geometry": {
@@ -1153,7 +1242,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.content.read"
+                ]
             }
         },
         "/executions/{execution_id}": {
@@ -1194,7 +1287,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/exports": {
@@ -1254,7 +1351,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.create"
+                ]
             }
         },
         "/exports/{id}": {
@@ -1302,7 +1403,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/exports/{id}/file": {
@@ -1354,7 +1459,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "resource_ticket",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/gaussian_splat_ksplat": {
@@ -1423,7 +1532,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/gaussian_splat_ksplat/{id}": {
@@ -1456,7 +1569,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_manager_internal_models.GaussianSplatKSplat"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "delete": {
                 "security": [
@@ -1488,7 +1605,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.delete"
+                ]
             }
         },
         "/gaussian_splat_ksplat/{id}/content": {
@@ -1550,7 +1671,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "resource_ticket",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/gaussian_splat_ksplat/{id}/inspect": {
@@ -1605,7 +1730,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/gaussian_splat_ksplat_tasks": {
@@ -1652,7 +1781,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "post": {
                 "security": [
@@ -1696,7 +1829,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.create"
+                ]
             }
         },
         "/gaussian_splat_ksplat_tasks/{id}": {
@@ -1743,7 +1880,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "put": {
                 "security": [
@@ -1800,7 +1941,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -1839,7 +1984,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.delete"
+                ]
             }
         },
         "/imports": {
@@ -1902,7 +2051,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.data_item.create"
+                ]
             }
         },
         "/items/{item_id}/embedding": {
@@ -1951,7 +2104,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/model3d_tiles": {
@@ -2034,7 +2191,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/model3d_tiles/{id}": {
@@ -2090,7 +2251,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.delete"
+                ]
             }
         },
         "/model3d_tiles/{id}/assets/{asset_path}": {
@@ -2131,7 +2296,11 @@ const docTemplate = `{
                             "type": "file"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "resource_ticket",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/model3d_tiles_tasks": {
@@ -2178,7 +2347,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "post": {
                 "security": [
@@ -2222,7 +2395,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.create"
+                ]
             }
         },
         "/model3d_tiles_tasks/{id}": {
@@ -2269,7 +2446,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "put": {
                 "security": [
@@ -2326,7 +2507,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -2365,7 +2550,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.delete"
+                ]
             }
         },
         "/model_3d_glb": {
@@ -2434,7 +2623,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/model_3d_glb/{id}": {
@@ -2467,7 +2660,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_manager_internal_models.Model3DGLB"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "delete": {
                 "security": [
@@ -2499,7 +2696,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.delete"
+                ]
             }
         },
         "/model_3d_glb/{id}/content": {
@@ -2561,7 +2762,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "resource_ticket",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/model_3d_glb_tasks": {
@@ -2608,7 +2813,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "post": {
                 "security": [
@@ -2652,7 +2861,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.create"
+                ]
             }
         },
         "/model_3d_glb_tasks/{id}": {
@@ -2699,7 +2912,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "put": {
                 "security": [
@@ -2756,7 +2973,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -2795,7 +3016,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.delete"
+                ]
             }
         },
         "/point_cloud_copc": {
@@ -2864,7 +3089,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/point_cloud_copc/{id}": {
@@ -2897,7 +3126,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_manager_internal_models.PointCloudCOPC"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "delete": {
                 "security": [
@@ -2929,7 +3162,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.delete"
+                ]
             }
         },
         "/point_cloud_copc/{id}/content": {
@@ -2991,7 +3228,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "resource_ticket",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/point_cloud_copc_tasks": {
@@ -3038,7 +3279,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "post": {
                 "security": [
@@ -3082,7 +3327,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.create"
+                ]
             }
         },
         "/point_cloud_copc_tasks/{id}": {
@@ -3129,7 +3378,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "put": {
                 "security": [
@@ -3186,7 +3439,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -3225,7 +3482,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.delete"
+                ]
             }
         },
         "/preview": {
@@ -3341,7 +3602,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.content.read"
+                ]
             }
         },
         "/preview-state/preferred-mode": {
@@ -3395,7 +3660,8 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "self"
             }
         },
         "/preview-state/view-state": {
@@ -3449,7 +3715,8 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "self"
             }
         },
         "/quick-view/actions": {
@@ -3523,7 +3790,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.create"
+                ]
             }
         },
         "/quick-view/capability": {
@@ -3585,7 +3856,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.data_item.read"
+                ]
             }
         },
         "/quick-view/flatgeobuf": {
@@ -3656,7 +3931,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "resource_ticket",
+                "x-addp-required-permissions": [
+                    "manager.content.read"
+                ]
             }
         },
         "/quick-view/geojson": {
@@ -3737,7 +4016,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "resource_ticket",
+                "x-addp-required-permissions": [
+                    "manager.content.read"
+                ]
             }
         },
         "/quick-view/tiles/{z}/{x}/{y}.mvt": {
@@ -3860,7 +4143,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "resource_ticket",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/raster_cog": {
@@ -3929,7 +4216,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/raster_cog/{id}": {
@@ -3962,7 +4253,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_manager_internal_models.RasterCOG"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "delete": {
                 "security": [
@@ -3994,7 +4289,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.delete"
+                ]
             }
         },
         "/raster_cog/{id}/content": {
@@ -4056,7 +4355,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "resource_ticket",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/raster_cog_tasks": {
@@ -4096,7 +4399,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "post": {
                 "security": [
@@ -4132,7 +4439,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.RasterCOGTaskResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.create"
+                ]
             }
         },
         "/raster_cog_tasks/{id}": {
@@ -4165,7 +4476,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.RasterCOGTaskResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "put": {
                 "security": [
@@ -4208,7 +4523,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.RasterCOGTaskResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -4240,7 +4559,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.delete"
+                ]
             }
         },
         "/raster_mosaic/tiles/{z}/{x}/{y}": {
@@ -4345,7 +4668,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "resource_ticket",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/raster_mosaic_tasks": {
@@ -4385,7 +4712,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "post": {
                 "security": [
@@ -4429,7 +4760,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.create"
+                ]
             }
         },
         "/raster_mosaic_tasks/{id}": {
@@ -4476,7 +4811,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "put": {
                 "security": [
@@ -4533,7 +4872,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -4572,7 +4915,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.delete"
+                ]
             }
         },
         "/resource-actions": {
@@ -4627,7 +4974,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.data_item.read"
+                ]
             }
         },
         "/search": {
@@ -4664,12 +5015,6 @@ const docTemplate = `{
                         "description": "每页数量，默认10 | Page size, default 10",
                         "name": "page_size",
                         "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "超级管理员指定检索租户；普通用户忽略该参数 | Tenant filter for super admin; ignored for tenant users",
-                        "name": "tenant_id",
-                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -4693,7 +5038,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.search.execute"
+                ]
             }
         },
         "/search/history": {
@@ -4741,7 +5090,8 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "self"
             },
             "delete": {
                 "security": [
@@ -4775,7 +5125,8 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "self"
             }
         },
         "/search/history/{id}": {
@@ -4820,7 +5171,8 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "self"
             }
         },
         "/storage-assets/{engine_id}/{storage_ref}": {
@@ -4882,7 +5234,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "resource_ticket",
+                "x-addp-required-permissions": [
+                    "manager.content.read"
+                ]
             }
         },
         "/storage-stream": {
@@ -4944,7 +5300,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "resource_ticket",
+                "x-addp-required-permissions": [
+                    "manager.content.read"
+                ]
             }
         },
         "/tasks": {
@@ -5003,7 +5363,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/tasks/{task_type}/{id}": {
@@ -5058,7 +5422,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/tasks/{task_type}/{id}/execute": {
@@ -5131,7 +5499,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.create"
+                ]
             }
         },
         "/uploads": {
@@ -5196,7 +5568,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.data_item.create"
+                ]
             }
         },
         "/vector_materialized_view": {
@@ -5265,7 +5641,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/vector_materialized_view/{id}": {
@@ -5298,7 +5678,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_manager_internal_models.VectorMaterializedView"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "delete": {
                 "security": [
@@ -5330,7 +5714,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.delete"
+                ]
             }
         },
         "/vector_materialized_view_tasks": {
@@ -5370,7 +5758,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "post": {
                 "security": [
@@ -5406,7 +5798,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.VectorMaterializedViewTaskResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.create"
+                ]
             }
         },
         "/vector_materialized_view_tasks/{id}": {
@@ -5439,7 +5835,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.VectorMaterializedViewTaskResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "put": {
                 "security": [
@@ -5482,7 +5882,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.VectorMaterializedViewTaskResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -5514,7 +5918,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.delete"
+                ]
             }
         },
         "/vector_tile_cache": {
@@ -5584,7 +5992,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             }
         },
         "/vector_tile_cache/{id}": {
@@ -5617,7 +6029,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_manager_internal_models.TileCache"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "delete": {
                 "security": [
@@ -5649,7 +6065,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.delete"
+                ]
             }
         },
         "/vector_tile_cache_tasks": {
@@ -5696,7 +6116,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "post": {
                 "security": [
@@ -5741,7 +6165,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.create"
+                ]
             }
         },
         "/vector_tile_cache_tasks/{id}": {
@@ -5789,7 +6217,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "put": {
                 "security": [
@@ -5848,7 +6280,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -5888,7 +6324,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.delete"
+                ]
             }
         },
         "/vector_tile_set_tasks": {
@@ -5912,7 +6352,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.TaskListResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "post": {
                 "security": [
@@ -5948,7 +6392,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_manager_internal_models.VectorTileSetTask"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.create"
+                ]
             }
         },
         "/vector_tile_set_tasks/{id}": {
@@ -5981,7 +6429,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_manager_internal_models.VectorTileSetTask"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
             },
             "put": {
                 "security": [
@@ -6024,7 +6476,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_manager_internal_models.VectorTileSetTask"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -6049,7 +6505,11 @@ const docTemplate = `{
                     "204": {
                         "description": "删除成功 | Deleted"
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.delete"
+                ]
             }
         }
     },

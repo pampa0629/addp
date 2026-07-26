@@ -26,6 +26,8 @@ func NewEntityRelationHandler(svc *service.EntityRelationService) *EntityRelatio
 // @Produce json
 // @Param body body models.CreateEntityRelationRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{} "已创建的关系 | Created relation"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.entity_relation.create"]
 // @Router /entity-relations [post]
 // @Security BearerAuth
 func (h *EntityRelationHandler) CreateRelation(c *gin.Context) {
@@ -51,6 +53,8 @@ func (h *EntityRelationHandler) CreateRelation(c *gin.Context) {
 // @Produce json
 // @Param entity_id query int false "实体ID过滤 | Filter by entity ID"
 // @Success 200 {object} map[string]interface{} "关系列表 | Relation list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.entity_relation.read"]
 // @Router /entity-relations [get]
 // @Security BearerAuth
 func (h *EntityRelationHandler) ListRelations(c *gin.Context) {
@@ -85,6 +89,8 @@ func (h *EntityRelationHandler) ListRelations(c *gin.Context) {
 // @Produce json
 // @Param id path int true "关系ID | Relation ID"
 // @Success 200 {object} map[string]interface{} "关系详情 | Relation details"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.entity_relation.read"]
 // @Router /entity-relations/{id} [get]
 // @Security BearerAuth
 func (h *EntityRelationHandler) GetRelation(c *gin.Context) {
@@ -112,6 +118,8 @@ func (h *EntityRelationHandler) GetRelation(c *gin.Context) {
 // @Param id path int true "关系ID | Relation ID"
 // @Param body body models.UpdateEntityRelationRequest true "更新请求 | Update request"
 // @Success 200 {object} map[string]interface{} "已更新的关系 | Updated relation"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.entity_relation.update"]
 // @Router /entity-relations/{id} [put]
 // @Security BearerAuth
 func (h *EntityRelationHandler) UpdateRelation(c *gin.Context) {
@@ -143,6 +151,8 @@ func (h *EntityRelationHandler) UpdateRelation(c *gin.Context) {
 // @Produce json
 // @Param id path int true "关系ID | Relation ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.entity_relation.delete"]
 // @Router /entity-relations/{id} [delete]
 // @Security BearerAuth
 func (h *EntityRelationHandler) DeleteRelation(c *gin.Context) {

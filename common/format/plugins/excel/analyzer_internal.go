@@ -48,15 +48,15 @@ type WorkbookAnalysis struct {
 
 // SheetSummary 单个工作表的样本和结构摘要
 type SheetSummary struct {
-	Name          string                   `json:"name"`
-	Index         int                      `json:"index"`
-	RowCount      int                      `json:"row_count"`
-	ColumnCount   int                      `json:"column_count"`
-	HasHeader     bool                     `json:"has_header"`
-	Headers       []string                 `json:"headers"`
-	ColumnTypes   []string                 `json:"column_types"`
-	SampleRows    []map[string]interface{} `json:"sample_rows"`
-	RowsTruncated bool                     `json:"rows_truncated"`
+	Name              string                   `json:"name"`
+	Index             int                      `json:"index"`
+	EstimatedRowCount int                      `json:"estimated_row_count"`
+	ColumnCount       int                      `json:"column_count"`
+	HasHeader         bool                     `json:"has_header"`
+	Headers           []string                 `json:"headers"`
+	ColumnTypes       []string                 `json:"column_types"`
+	SampleRows        []map[string]interface{} `json:"sample_rows"`
+	RowsTruncated     bool                     `json:"rows_truncated"`
 }
 
 // Analyze 对 workbook 进行分析并返回样本和结构摘要
@@ -158,15 +158,15 @@ func analyzeSheet(workbook *excelize.File, sheetName string, index int, opts Opt
 	if err != nil {
 		headers := buildHeaders(nil, choosePositive(dimCols, opts.ColumnLimit), false)
 		return SheetSummary{
-			Name:          sheetName,
-			Index:         index,
-			RowCount:      estimateRowCount(dimRows, 0, false),
-			ColumnCount:   len(headers),
-			HasHeader:     false,
-			Headers:       headers,
-			ColumnTypes:   make([]string, len(headers)),
-			SampleRows:    []map[string]interface{}{},
-			RowsTruncated: false,
+			Name:              sheetName,
+			Index:             index,
+			EstimatedRowCount: estimateRowCount(dimRows, 0, false),
+			ColumnCount:       len(headers),
+			HasHeader:         false,
+			Headers:           headers,
+			ColumnTypes:       make([]string, len(headers)),
+			SampleRows:        []map[string]interface{}{},
+			RowsTruncated:     false,
 		}, false, nil
 	}
 	defer rowsIter.Close()
@@ -229,15 +229,15 @@ func analyzeSheet(workbook *excelize.File, sheetName string, index int, opts Opt
 	rowsTruncated := estimatedRows > len(sampleRows)
 
 	return SheetSummary{
-		Name:          sheetName,
-		Index:         index,
-		RowCount:      estimatedRows,
-		ColumnCount:   maxColumns,
-		HasHeader:     hasHeader,
-		Headers:       headers,
-		ColumnTypes:   columnTypes,
-		SampleRows:    sampleRows,
-		RowsTruncated: rowsTruncated,
+		Name:              sheetName,
+		Index:             index,
+		EstimatedRowCount: estimatedRows,
+		ColumnCount:       maxColumns,
+		HasHeader:         hasHeader,
+		Headers:           headers,
+		ColumnTypes:       columnTypes,
+		SampleRows:        sampleRows,
+		RowsTruncated:     rowsTruncated,
 	}, rowsTruncated, nil
 }
 
@@ -422,9 +422,6 @@ func estimateRowCount(dimensionRows, loadedRows int, hasHeader bool) int {
 			return maxInt(dimensionRows-1, loadedRows)
 		}
 		return dimensionRows
-	}
-	if hasHeader {
-		return maxInt(loadedRows-1, 0)
 	}
 	return loadedRows
 }

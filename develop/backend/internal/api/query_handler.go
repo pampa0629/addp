@@ -57,6 +57,8 @@ type ExecuteQueryResponse struct {
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read"]
 // @Router /engines/{id}/sample-query [get]
 // @Security BearerAuth
 func (h *QueryHandler) GetSampleQuery(c *gin.Context) {
@@ -86,6 +88,8 @@ func (h *QueryHandler) GetSampleQuery(c *gin.Context) {
 // @Produce json
 // @Param id path int true "资源ID | Resource ID"
 // @Success 200 {object} map[string]string "连接测试成功 | Connection test successful"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read"]
 // @Router /test/{id} [get]
 func (h *QueryHandler) TestConnection(c *gin.Context) {
 	idStr := c.Param("id")
@@ -116,6 +120,8 @@ func (h *QueryHandler) TestConnection(c *gin.Context) {
 // @Produce json
 // @Param body body ExecuteQueryRequest true "查询请求 | Query request"
 // @Success 200 {object} ExecuteQueryResponse "查询结果 | Query result"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.execute"]
 // @Router /execute [post]
 func (h *QueryHandler) ExecuteQuery(c *gin.Context) {
 	var req ExecuteQueryRequest
@@ -150,7 +156,7 @@ func (h *QueryHandler) ExecuteQuery(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "DuckDB 联邦查询服务未初始化"})
 			return
 		}
-		result, err := h.duckdbService.ExecuteQuery(c.Request.Context(), c.GetUint("tenant_id"), sql, timeout)
+		result, err := h.duckdbService.ExecuteQuery(c.Request.Context(), tenantIDValue(c), sql, timeout)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return

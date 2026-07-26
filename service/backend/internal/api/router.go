@@ -1,16 +1,15 @@
 package api
 
 import (
-	"strconv"
 	"strings"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/audit"
 	authMiddleware "github.com/addp/common/middleware/auth"
-	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	_ "github.com/addp/service/docs"
 	_ "github.com/addp/service/i18n"
+	serviceauthorization "github.com/addp/service/internal/authorization"
 	"github.com/addp/service/internal/config"
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
@@ -82,120 +81,103 @@ func SetupRouter(
 	router.GET("/ogc/tiles/:serviceName/tiles", optionalAuth, ogcTilesHandler.GetTilesets)
 	router.GET("/ogc/tiles/:serviceName/tiles/:layer/:tileMatrixSetId/:tileMatrix/:tileRow/:tileCol", optionalAuth, ogcTilesHandler.GetTile)
 
-	// API 路由组（需要认证）
-	api := router.Group("/api/v1/service")
 	assetDiscHandler := newAssetDiscoverableHandler(db)
+	internal := router.Group("/api/v1/service/internal")
+	internal.Use(internalAPIKeyMiddleware(cfg.InternalAPIKey))
 	{
-		// 内部服务调用支持（X-Internal-API-Key 跳过用户 Bearer 认证）
-		api.Use(func(c *gin.Context) {
-			if apiKey := c.GetHeader("X-Internal-API-Key"); apiKey != "" {
-				tenantID := uint(0)
-				if tenantIDStr := c.GetHeader("X-Tenant-ID"); tenantIDStr != "" {
-					if tid, err := strconv.ParseUint(tenantIDStr, 10, 32); err == nil {
-						tenantID = uint(tid)
-					}
-				}
-				c.Set(commonAuth.ContextUserIDKey, uint(1))
-				c.Set(commonAuth.ContextUsernameKey, "internal-api-call")
-				c.Set(commonAuth.ContextTenantIDKey, tenantID)
-				c.Next()
-				return
-			}
-			c.Next()
-		})
-		// 用户 Bearer 认证（内部 API Key 已通过时跳过）
-		api.Use(func(c *gin.Context) {
-			if c.GetHeader("X-Internal-API-Key") != "" {
-				c.Next()
-				return
-			}
-			authMiddleware.SystemAuthMiddleware(cfg.SystemServiceURL)(c)
-		})
+		internal.GET("/assets/discoverable", assetDiscHandler.listDiscoverableAssets)
+		internal.GET("/endpoints", serviceEndpointHandler.GetEndpoints)
+	}
+
+	// 管理 API 只接受 canonical Bearer Tenant AuthContext。
+	api := router.Group("/api/v1/service")
+	api.Use(
+		authMiddleware.MustNewMiddleware(authMiddleware.MiddlewareConfig{SystemURL: cfg.SystemServiceURL}),
+		authMiddleware.MustNewContextGuard("tenant"),
+	)
+	permission := func(keys ...string) gin.HandlerFunc {
+		return authMiddleware.MustNewPermissionGuard(keys...)
+	}
+	{
 		// 审计日志中间件（记录到 System 模块）
 		if systemClient != nil {
 			api.Use(audit.AuditMiddleware("service", systemClient))
 		}
 
-		// 资产发现接口（供 Asset 模块调用）
-		api.GET("/assets/discoverable", assetDiscHandler.listDiscoverableAssets)
-
-		// 服务端点查询接口（供 Portal 等模块按 source_reference 查询 endpoint）
-		api.GET("/endpoints", serviceEndpointHandler.GetEndpoints)
-
 		// 查询服务管理 API
 		queryAPI := api.Group("/query")
 		{
-			queryAPI.POST("", queryServiceHandler.CreateService)
-			queryAPI.GET("", queryServiceHandler.ListServices)
-			queryAPI.GET("/:id", queryServiceHandler.GetService)
-			queryAPI.PUT("/:id", queryServiceHandler.UpdateService)
-			queryAPI.DELETE("/:id", queryServiceHandler.DeleteService)
-			queryAPI.GET("/:id/source-snapshot-diff", queryServiceHandler.CheckSourceSnapshot)
-			queryAPI.POST("/:id/refresh-source-snapshot", queryServiceHandler.RefreshSourceSnapshot)
+			queryAPI.POST("", permission(serviceauthorization.PermissionServiceDefinitionCreate), queryServiceHandler.CreateService)
+			queryAPI.GET("", permission(serviceauthorization.PermissionServiceDefinitionRead), queryServiceHandler.ListServices)
+			queryAPI.GET("/:id", permission(serviceauthorization.PermissionServiceDefinitionRead), queryServiceHandler.GetService)
+			queryAPI.PUT("/:id", permission(serviceauthorization.PermissionServiceDefinitionUpdate), queryServiceHandler.UpdateService)
+			queryAPI.DELETE("/:id", permission(serviceauthorization.PermissionServiceDefinitionDelete), queryServiceHandler.DeleteService)
+			queryAPI.GET("/:id/source-snapshot-diff", permission(serviceauthorization.PermissionServiceDefinitionRead), queryServiceHandler.CheckSourceSnapshot)
+			queryAPI.POST("/:id/refresh-source-snapshot", permission(serviceauthorization.PermissionServiceDefinitionUpdate), queryServiceHandler.RefreshSourceSnapshot)
 		}
 
 		// 图查询服务管理 API
 		graphAPI := api.Group("/graph")
 		{
-			graphAPI.POST("", graphQueryHandler.CreateService)
-			graphAPI.GET("", graphQueryHandler.ListServices)
-			graphAPI.GET("/:id", graphQueryHandler.GetService)
-			graphAPI.PUT("/:id", graphQueryHandler.UpdateService)
-			graphAPI.DELETE("/:id", graphQueryHandler.DeleteService)
+			graphAPI.POST("", permission(serviceauthorization.PermissionServiceDefinitionCreate), graphQueryHandler.CreateService)
+			graphAPI.GET("", permission(serviceauthorization.PermissionServiceDefinitionRead), graphQueryHandler.ListServices)
+			graphAPI.GET("/:id", permission(serviceauthorization.PermissionServiceDefinitionRead), graphQueryHandler.GetService)
+			graphAPI.PUT("/:id", permission(serviceauthorization.PermissionServiceDefinitionUpdate), graphQueryHandler.UpdateService)
+			graphAPI.DELETE("/:id", permission(serviceauthorization.PermissionServiceDefinitionDelete), graphQueryHandler.DeleteService)
 		}
 
 		// 注册服务管理 API
 		registeredAPI := api.Group("/registered")
 		{
-			registeredAPI.POST("", registeredServiceHandler.CreateService)
-			registeredAPI.GET("", registeredServiceHandler.ListServices)
-			registeredAPI.GET("/:id", registeredServiceHandler.GetService)
-			registeredAPI.PUT("/:id", registeredServiceHandler.UpdateService)
-			registeredAPI.DELETE("/:id", registeredServiceHandler.DeleteService)
-			registeredAPI.POST("/:id/refresh", registeredServiceHandler.RefreshMetadata)
-			registeredAPI.POST("/:id/health", registeredServiceHandler.HealthCheck)
+			registeredAPI.POST("", permission(serviceauthorization.PermissionServiceExternalRegistrationCreate), registeredServiceHandler.CreateService)
+			registeredAPI.GET("", permission(serviceauthorization.PermissionServiceExternalRegistrationRead), registeredServiceHandler.ListServices)
+			registeredAPI.GET("/:id", permission(serviceauthorization.PermissionServiceExternalRegistrationRead), registeredServiceHandler.GetService)
+			registeredAPI.PUT("/:id", permission(serviceauthorization.PermissionServiceExternalRegistrationUpdate), registeredServiceHandler.UpdateService)
+			registeredAPI.DELETE("/:id", permission(serviceauthorization.PermissionServiceExternalRegistrationDelete), registeredServiceHandler.DeleteService)
+			registeredAPI.POST("/:id/refresh", permission(serviceauthorization.PermissionServiceExternalRegistrationUpdate), registeredServiceHandler.RefreshMetadata)
+			registeredAPI.POST("/:id/health", permission(serviceauthorization.PermissionServiceExternalRegistrationRead), registeredServiceHandler.HealthCheck)
 		}
 
 		// 瓦片服务管理 API
 		tileAPI := api.Group("/tile")
 		{
-			tileAPI.POST("", tileServiceHandler.CreateTileService)
-			tileAPI.GET("", tileServiceHandler.ListTileServices)
-			tileAPI.GET("/search", tileServiceHandler.SearchTileServices)
-			tileAPI.GET("/by-name/:serviceName", tileServiceHandler.GetTileServiceByName)
-			tileAPI.GET("/:id", tileServiceHandler.GetTileService)
-			tileAPI.PUT("/:id", tileServiceHandler.UpdateTileService)
-			tileAPI.DELETE("/:id", tileServiceHandler.DeleteTileService)
+			tileAPI.POST("", permission(serviceauthorization.PermissionServiceDefinitionCreate), tileServiceHandler.CreateTileService)
+			tileAPI.GET("", permission(serviceauthorization.PermissionServiceDefinitionRead), tileServiceHandler.ListTileServices)
+			tileAPI.GET("/search", permission(serviceauthorization.PermissionServiceDefinitionRead), tileServiceHandler.SearchTileServices)
+			tileAPI.GET("/by-name/:serviceName", permission(serviceauthorization.PermissionServiceDefinitionRead), tileServiceHandler.GetTileServiceByName)
+			tileAPI.GET("/:id", permission(serviceauthorization.PermissionServiceDefinitionRead), tileServiceHandler.GetTileService)
+			tileAPI.PUT("/:id", permission(serviceauthorization.PermissionServiceDefinitionUpdate), tileServiceHandler.UpdateTileService)
+			tileAPI.DELETE("/:id", permission(serviceauthorization.PermissionServiceDefinitionDelete), tileServiceHandler.DeleteTileService)
 		}
 
 		// 瓦片服务图层管理 API (单独的路由组避免冲突)
 		tileLayerAPI := api.Group("/tile-layers")
 		{
-			tileLayerAPI.POST("/:serviceId", tileServiceHandler.AddLayer)
-			tileLayerAPI.GET("/:serviceId", tileServiceHandler.ListLayers)
-			tileLayerAPI.GET("/:serviceId/:layerId", tileServiceHandler.GetLayer)
-			tileLayerAPI.PUT("/:serviceId/:layerId", tileServiceHandler.UpdateLayer)
-			tileLayerAPI.DELETE("/:serviceId/:layerId", tileServiceHandler.DeleteLayer)
+			tileLayerAPI.POST("/:serviceId", permission(serviceauthorization.PermissionServiceDefinitionUpdate), tileServiceHandler.AddLayer)
+			tileLayerAPI.GET("/:serviceId", permission(serviceauthorization.PermissionServiceDefinitionRead), tileServiceHandler.ListLayers)
+			tileLayerAPI.GET("/:serviceId/:layerId", permission(serviceauthorization.PermissionServiceDefinitionRead), tileServiceHandler.GetLayer)
+			tileLayerAPI.PUT("/:serviceId/:layerId", permission(serviceauthorization.PermissionServiceDefinitionUpdate), tileServiceHandler.UpdateLayer)
+			tileLayerAPI.DELETE("/:serviceId/:layerId", permission(serviceauthorization.PermissionServiceDefinitionUpdate), tileServiceHandler.DeleteLayer)
 		}
 
 		// 数据查询服务 API
 		data := api.Group("/data")
 		{
-			data.POST("/query", dataServiceHandler.Query)
-			data.POST("/aggregate", dataServiceHandler.Aggregate)
-			data.GET("/structure", dataServiceHandler.GetTableStructure)
+			data.POST("/query", permission(serviceauthorization.PermissionServiceDefinitionRead), dataServiceHandler.Query)
+			data.POST("/aggregate", permission(serviceauthorization.PermissionServiceDefinitionRead), dataServiceHandler.Aggregate)
+			data.GET("/structure", permission(serviceauthorization.PermissionServiceDefinitionRead), dataServiceHandler.GetTableStructure)
 		}
 
 		// 资源能力辅助 API。资源选择统一走 Meta resource-tree，Service 仅保留业务能力接口。
-		api.GET("/graphs/node-shapes", resourceCapabilityHandler.GetGraphNodeShapes)
-		api.POST("/sql/output-contract", resourceCapabilityHandler.GetSQLOutputContract)
+		api.GET("/graphs/node-shapes", permission(serviceauthorization.PermissionServiceDefinitionRead), resourceCapabilityHandler.GetGraphNodeShapes)
+		api.POST("/sql/output-contract", permission(serviceauthorization.PermissionServiceDefinitionRead), resourceCapabilityHandler.GetSQLOutputContract)
 	}
 
 	return router
 }
 
 func optionalSystemAuth(systemURL string) gin.HandlerFunc {
-	systemAuth := authMiddleware.SystemAuthMiddleware(systemURL)
+	systemAuth := authMiddleware.MustNewMiddleware(authMiddleware.MiddlewareConfig{SystemURL: systemURL})
 	return func(c *gin.Context) {
 		if strings.TrimSpace(c.GetHeader("Authorization")) == "" {
 			c.Next()

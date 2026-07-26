@@ -38,6 +38,7 @@
 - [IAM OAuth/OIDC 协议引擎 ADR](next/addp-IAM%20OAuth-OIDC协议引擎ADR.md)
 - [IAM Fosite Provider 与 Storage Adapter 设计](next/addp-IAM%20Fosite%20Provider与Storage%20Adapter设计.md)
 - [IAM PostgreSQL 迁移与首批 DDL 设计](next/addp-IAM%20PostgreSQL迁移与首批DDL设计.md)
+- [IAM 三员初始化操作指南](guide/addp%20IAM三员初始化操作指南.md)
 - [元数据体系图](concepts/addp元数据体系图.md)
 - [数据项体系图](concepts/addp数据项体系图.md)
 - [数据类型和格式体系图](concepts/addp数据类型和格式体系图.md)

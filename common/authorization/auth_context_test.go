@@ -122,6 +122,23 @@ func TestCloneAuthContextReturnsDetachedCopy(t *testing.T) {
 	}
 }
 
+func TestCloneAuthContextPreservesRequiredEmptyArrays(t *testing.T) {
+	source := validTenantAuthContext()
+	source.Context = AuthSessionContext{Type: "platform"}
+	source.Organization.Departments = []DepartmentMembership{}
+	source.Organization.ProjectGroups = []ProjectGroupMembership{}
+	source.Authorization.RoleAssignments[0].Scope = AssignmentScope{Type: "platform"}
+
+	clone := CloneAuthContext(source)
+	if clone.Client.Scopes == nil || clone.Organization.Departments == nil ||
+		clone.Organization.ProjectGroups == nil {
+		t.Fatalf("CloneAuthContext() converted required empty arrays to nil: %#v", clone)
+	}
+	if err := ValidateAuthContext(clone); err != nil {
+		t.Fatalf("ValidateAuthContext(CloneAuthContext()) error = %v", err)
+	}
+}
+
 func TestValidateAuthContextRejectsCrossConstraintAndOrderingViolations(t *testing.T) {
 	for _, testCase := range []struct {
 		name   string

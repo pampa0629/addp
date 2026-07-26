@@ -4,7 +4,7 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from addp_common.auth import AuthorizationContext
+from addp_common.auth import AuthorizationContext, RoleAssignment
 from api.navigate_api import NavigateRequest
 from api.sql_agent_api import SQLGenerationRequest
 from dependencies import auth
@@ -31,10 +31,9 @@ def test_navigate_request_rejects_client_supplied_identity():
 def test_tenant_user_rejects_tenantless_context(monkeypatch):
     async def tenantless_user(*_args, **_kwargs):
         return AuthorizationContext(
-            user_id=1,
+            principal_id=1,
             tenant_id=None,
-            username="platform-admin",
-            user_type="super_admin",
+            context_type="platform",
         )
 
     monkeypatch.setattr(auth, "require_user", tenantless_user)
@@ -42,6 +41,32 @@ def test_tenant_user_rejects_tenantless_context(monkeypatch):
         asyncio.run(auth.require_tenant_user(None, "en"))
     assert exc_info.value.status_code == 403
     assert exc_info.value.detail == "This endpoint requires a tenant context"
+
+
+def test_tenant_permission_dependency_requires_role_permission(monkeypatch):
+    dependency = auth.require_tenant_permissions("copilot.sql.execute")
+
+    async def allowed(*_args, **_kwargs):
+        return AuthorizationContext(
+            principal_id=1,
+            tenant_id=3,
+            tenant_membership_id=8,
+            role_assignments=(
+                RoleAssignment(1, "tenant.ai_user", "tenant", ("copilot.sql.execute",)),
+            ),
+        )
+
+    monkeypatch.setattr(auth, "require_tenant_user", allowed)
+    assert asyncio.run(dependency(None, "en")).principal_id == 1
+
+    async def denied(*_args, **_kwargs):
+        return AuthorizationContext(principal_id=1, tenant_id=3, tenant_membership_id=8)
+
+    monkeypatch.setattr(auth, "require_tenant_user", denied)
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(dependency(None, "en"))
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "Insufficient permission"
 
 
 def test_internal_api_key_dependency(monkeypatch):

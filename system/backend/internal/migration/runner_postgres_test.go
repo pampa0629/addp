@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/addp/system/internal/testsupport"
 )
 
 func TestRunnerAgainstPostgres(t *testing.T) {
@@ -15,6 +17,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	if dsn == "" {
 		t.Skip("set ADDP_IAM_MIGRATION_TEST_DSN to a disposable PostgreSQL 15+ database")
 	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
 
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
@@ -40,11 +43,17 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
 		t.Fatalf("read migration version: %v", err)
 	}
-	if version != 11 || dirty {
-		t.Fatalf("migration state = (%d, %t), want (11, false)", version, dirty)
+	if version != 17 || dirty {
+		t.Fatalf("migration state = (%d, %t), want (17, false)", version, dirty)
 	}
 
 	assertIAMCatalogSeed(t, db)
+	assertStandardDocumentCatalog(t, db)
+	assertMonitorAuthorizationCatalog(t, db)
+	assertModelAuthorizationCatalog(t, db)
+	assertStandardAuthorizationCatalog(t, db)
+	assertManagerAuthorizationCatalog(t, db)
+	assertAuthorizationCatalogRetirement(t, db)
 	assertIdentityTenantConstraints(t, db)
 	assertFederationOrganizationConstraints(t, db)
 	assertAuthorizationGovernanceConstraints(t, db)
@@ -61,7 +70,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	if err := runner.Run(ctx); err == nil || !strings.Contains(err.Error(), "is dirty") {
 		t.Fatalf("Run() error = %v, want dirty-state rejection", err)
 	}
-	if _, err := db.Exec(`UPDATE system.schema_migrations SET version = 12, dirty = false`); err != nil {
+	if _, err := db.Exec(`UPDATE system.schema_migrations SET version = 18, dirty = false`); err != nil {
 		t.Fatalf("set newer migration version: %v", err)
 	}
 	if err := runner.Run(ctx); err == nil || !strings.Contains(err.Error(), "newer than embedded") {
@@ -73,6 +82,231 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	}
 	if err := runner.Run(ctx); err == nil || !strings.Contains(err.Error(), "legacy system IAM schema") {
 		t.Fatalf("Run() error = %v, want legacy-schema rejection", err)
+	}
+}
+
+func assertManagerAuthorizationCatalog(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var rolePermissionCount int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions role_permission
+		JOIN system.roles role ON role.id = role_permission.role_id
+		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+		WHERE role.tenant_id IS NULL
+		  AND role.role_key = 'tenant.data_steward'
+		  AND permission.permission_key = 'manager.derived_artifact.update'
+		  AND permission.owner_module = 'manager'
+		  AND permission.status = 'active'
+		  AND role_permission.source_type = 'product'
+	`).Scan(&rolePermissionCount); err != nil {
+		t.Fatalf("read Data Steward Manager update permission: %v", err)
+	}
+	if rolePermissionCount != 1 {
+		t.Fatalf("Data Steward Manager update permission count = %d, want 1", rolePermissionCount)
+	}
+}
+
+func assertAuthorizationCatalogRetirement(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var activePermissionCount, disabledPermissionCount int
+	if err := db.QueryRow(`
+		SELECT
+		    count(*) FILTER (WHERE status = 'active'),
+		    count(*) FILTER (WHERE status = 'disabled')
+		FROM system.permissions
+	`).Scan(&activePermissionCount, &disabledPermissionCount); err != nil {
+		t.Fatalf("read retired Permission counts: %v", err)
+	}
+	if activePermissionCount != 217 || disabledPermissionCount != 78 {
+		t.Fatalf("Permission status counts = active:%d disabled:%d, want 217 and 78", activePermissionCount, disabledPermissionCount)
+	}
+
+	var disabledRoles string
+	if err := db.QueryRow(`
+		SELECT string_agg(role_key, ',' ORDER BY role_key)
+		FROM system.roles
+		WHERE tenant_id IS NULL AND status = 'disabled'
+	`).Scan(&disabledRoles); err != nil {
+		t.Fatalf("read disabled builtin Roles: %v", err)
+	}
+	wantDisabledRoles := "platform.statistics_viewer,tenant.department_coordinator,tenant.project_group_coordinator"
+	if disabledRoles != wantDisabledRoles {
+		t.Fatalf("disabled builtin Roles = %q, want %q", disabledRoles, wantDisabledRoles)
+	}
+
+	var invalidRolePermissionCount int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions AS role_permission
+		JOIN system.permissions AS permission ON permission.id = role_permission.permission_id
+		JOIN system.roles AS role ON role.id = role_permission.role_id
+		WHERE permission.status <> 'active' OR role.status <> 'active'
+	`).Scan(&invalidRolePermissionCount); err != nil {
+		t.Fatalf("validate retired Role Permissions: %v", err)
+	}
+	if invalidRolePermissionCount != 0 {
+		t.Fatalf("Role Permissions referencing disabled catalog entries = %d, want 0", invalidRolePermissionCount)
+	}
+}
+
+func assertStandardAuthorizationCatalog(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var permissionCount int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.permissions
+		WHERE owner_module = 'standard'
+		  AND status = 'active'
+	`).Scan(&permissionCount); err != nil {
+		t.Fatalf("read Standard authorization permissions: %v", err)
+	}
+	if permissionCount != 41 {
+		t.Fatalf("Standard authorization permission count = %d, want 41", permissionCount)
+	}
+
+	var rolePermissionCount int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions role_permission
+		JOIN system.roles role ON role.id = role_permission.role_id
+		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+		WHERE role.tenant_id IS NULL
+		  AND role.role_key = 'tenant.governance_manager'
+		  AND permission.owner_module = 'standard'
+		  AND role_permission.source_type = 'product'
+	`).Scan(&rolePermissionCount); err != nil {
+		t.Fatalf("read Governance Manager Standard permissions: %v", err)
+	}
+	if rolePermissionCount != 41 {
+		t.Fatalf("Governance Manager Standard permission count = %d, want 41", rolePermissionCount)
+	}
+}
+
+func assertModelAuthorizationCatalog(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var permissionCount int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.permissions
+		WHERE owner_module = 'model'
+		  AND status = 'active'
+		  AND (
+		      permission_key LIKE 'model.entity.%'
+		      OR permission_key LIKE 'model.entity_relation.%'
+		      OR permission_key LIKE 'model.dw_layer.%'
+		  )
+	`).Scan(&permissionCount); err != nil {
+		t.Fatalf("read Model authorization permissions: %v", err)
+	}
+	if permissionCount != 13 {
+		t.Fatalf("Model authorization permission count = %d, want 13", permissionCount)
+	}
+
+	var rolePermissionCount int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions role_permission
+		JOIN system.roles role ON role.id = role_permission.role_id
+		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+		WHERE role.tenant_id IS NULL
+		  AND role.role_key = 'tenant.governance_manager'
+		  AND permission.permission_key IN (
+		      'model.entity.approve',
+		      'model.entity.create',
+		      'model.entity.delete',
+		      'model.entity.read',
+		      'model.entity.update',
+		      'model.entity_relation.create',
+		      'model.entity_relation.delete',
+		      'model.entity_relation.read',
+		      'model.entity_relation.update'
+		  )
+		  AND role_permission.source_type = 'product'
+	`).Scan(&rolePermissionCount); err != nil {
+		t.Fatalf("read Governance Manager Model permissions: %v", err)
+	}
+	if rolePermissionCount != 9 {
+		t.Fatalf("Governance Manager Model permission count = %d, want 9", rolePermissionCount)
+	}
+}
+
+func assertMonitorAuthorizationCatalog(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var permissionCount int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.permissions
+		WHERE owner_module = 'monitor'
+		  AND status = 'active'
+		  AND (
+		      permission_key LIKE 'monitor.alert_incident.%'
+		      OR permission_key LIKE 'monitor.alert_rule.%'
+		      OR permission_key LIKE 'monitor.notification_delivery.%'
+		      OR permission_key LIKE 'monitor.notification_destination.%'
+		  )
+	`).Scan(&permissionCount); err != nil {
+		t.Fatalf("read Monitor authorization permissions: %v", err)
+	}
+	if permissionCount != 13 {
+		t.Fatalf("Monitor authorization permission count = %d, want 13", permissionCount)
+	}
+
+	var rolePermissionCount int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions role_permission
+		JOIN system.roles role ON role.id = role_permission.role_id
+		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+		WHERE role.tenant_id IS NULL
+		  AND role.role_key = 'tenant.monitoring_operator'
+		  AND role.role_type = 'tenant_builtin'
+		  AND role.allowed_scope_types = ARRAY['tenant']::text[]
+		  AND role_permission.source_type = 'product'
+	`).Scan(&rolePermissionCount); err != nil {
+		t.Fatalf("read Tenant Monitoring Operator permissions: %v", err)
+	}
+	if rolePermissionCount != 16 {
+		t.Fatalf("Tenant Monitoring Operator permission count = %d, want 16", rolePermissionCount)
+	}
+}
+
+func assertStandardDocumentCatalog(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var permissionCount int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.permissions
+		WHERE permission_key IN (
+			'standard.document.create',
+			'standard.document.delete',
+			'standard.document.read',
+			'standard.document.update'
+		)
+		  AND owner_module = 'standard'
+		  AND status = 'active'
+	`).Scan(&permissionCount); err != nil {
+		t.Fatalf("read Standard document permissions: %v", err)
+	}
+	if permissionCount != 4 {
+		t.Fatalf("Standard document permission count = %d, want 4", permissionCount)
+	}
+
+	var rolePermissionCount int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions role_permission
+		JOIN system.roles role ON role.id = role_permission.role_id
+		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+		WHERE role.tenant_id IS NULL
+		  AND role.role_key = 'tenant.governance_manager'
+		  AND permission.permission_key LIKE 'standard.document.%'
+		  AND role_permission.source_type = 'product'
+	`).Scan(&rolePermissionCount); err != nil {
+		t.Fatalf("read Governance Manager document permissions: %v", err)
+	}
+	if rolePermissionCount != 4 {
+		t.Fatalf("Governance Manager document permission count = %d, want 4", rolePermissionCount)
 	}
 }
 
@@ -433,9 +667,9 @@ func assertAuditContextConstraints(t *testing.T, db *sql.DB) {
 func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	t.Helper()
 
-	assertTableCount(t, db, "system.permissions", 243)
-	assertTableCount(t, db, "system.roles", 18)
-	assertTableCount(t, db, "system.role_permissions", 278)
+	assertTableCount(t, db, "system.permissions", 295)
+	assertTableCount(t, db, "system.roles", 19)
+	assertTableCount(t, db, "system.role_permissions", 239)
 	assertTableCount(t, db, "system.role_conflicts", 3)
 	assertTableCount(t, db, "system.oauth_clients", 1)
 	assertTableCount(t, db, "system.principals", 0)
@@ -457,7 +691,6 @@ func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 		WHERE tenant_id IS NOT NULL
 		   OR role_type NOT IN ('platform_builtin', 'tenant_builtin')
 		   OR NOT immutable
-		   OR status <> 'active'
 		   OR created_by_principal_id IS NOT NULL
 	`).Scan(&invalidRoleCount); err != nil {
 		t.Fatalf("validate seeded builtin Roles: %v", err)
@@ -471,9 +704,11 @@ func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 		SELECT count(*)
 		FROM system.role_permissions role_permission
 		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+		JOIN system.roles role ON role.id = role_permission.role_id
 		WHERE role_permission.source_type <> 'product'
 		   OR role_permission.created_by_principal_id IS NOT NULL
 		   OR permission.status <> 'active'
+		   OR role.status <> 'active'
 	`).Scan(&invalidRolePermissionCount); err != nil {
 		t.Fatalf("validate seeded Role Permissions: %v", err)
 	}

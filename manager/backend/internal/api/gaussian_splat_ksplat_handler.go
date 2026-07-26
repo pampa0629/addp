@@ -89,6 +89,8 @@ type GaussianSplatKSplatInspectSummary struct {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "KSplat 不存在或未就绪 | KSplat not found or not ready"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /gaussian_splat_ksplat/{id}/inspect [get]
 // @Security BearerAuth
 func (h *GaussianSplatKSplatHandler) InspectGaussianSplatKSplat(c *gin.Context) {
@@ -141,6 +143,8 @@ func (h *GaussianSplatKSplatHandler) InspectGaussianSplatKSplat(c *gin.Context) 
 // @Failure 404 {object} map[string]interface{} "KSplat 不存在或未就绪 | KSplat not found or not ready"
 // @Failure 416 {object} map[string]interface{} "Range 不可满足 | Range not satisfiable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "resource_ticket"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /gaussian_splat_ksplat/{id}/content [get]
 // @Security BearerAuth
 func (h *GaussianSplatKSplatHandler) GetGaussianSplatKSplatContent(c *gin.Context) {

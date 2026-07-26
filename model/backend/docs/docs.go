@@ -37,7 +37,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.dw_layer.read"
+                ]
             },
             "post": {
                 "security": [
@@ -74,7 +78,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.dw_layer.create"
+                ]
             }
         },
         "/dw-layers/{id}": {
@@ -108,7 +116,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.dw_layer.read"
+                ]
             },
             "put": {
                 "security": [
@@ -152,7 +164,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.dw_layer.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -184,7 +200,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.dw_layer.delete"
+                ]
             }
         },
         "/entities": {
@@ -241,7 +261,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.entity.read"
+                ]
             },
             "post": {
                 "security": [
@@ -278,7 +302,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.entity.create"
+                ]
             }
         },
         "/entities/export-mermaid": {
@@ -303,7 +331,12 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.entity.read",
+                    "model.entity_relation.read"
+                ]
             }
         },
         "/entities/import-mermaid": {
@@ -342,7 +375,12 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.entity.create",
+                    "model.entity_relation.create"
+                ]
             }
         },
         "/entities/{id}": {
@@ -376,7 +414,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.entity.read"
+                ]
             },
             "put": {
                 "security": [
@@ -420,7 +462,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.entity.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -452,7 +498,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.entity.delete"
+                ]
             }
         },
         "/entities/{id}/approve": {
@@ -486,7 +536,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.entity.approve"
+                ]
             }
         },
         "/entities/{id}/attributes": {
@@ -520,7 +574,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.entity.read"
+                ]
             },
             "post": {
                 "security": [
@@ -564,7 +622,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.entity.create"
+                ]
             }
         },
         "/entities/{id}/attributes/{aid}": {
@@ -617,7 +679,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.entity.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -656,7 +722,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.entity.delete"
+                ]
             }
         },
         "/entity-relations": {
@@ -689,7 +759,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.entity_relation.read"
+                ]
             },
             "post": {
                 "security": [
@@ -726,7 +800,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.entity_relation.create"
+                ]
             }
         },
         "/entity-relations/{id}": {
@@ -760,7 +838,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.entity_relation.read"
+                ]
             },
             "put": {
                 "security": [
@@ -804,7 +886,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.entity_relation.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -836,7 +922,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.entity_relation.delete"
+                ]
             }
         },
         "/logical-tables": {
@@ -905,7 +995,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.read"
+                ]
             },
             "post": {
                 "security": [
@@ -942,7 +1036,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.create"
+                ]
             }
         },
         "/logical-tables/{id}": {
@@ -976,7 +1074,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.read"
+                ]
             },
             "put": {
                 "security": [
@@ -1020,7 +1122,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -1052,7 +1158,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.delete"
+                ]
             }
         },
         "/logical-tables/{id}/dimension-relations": {
@@ -1086,7 +1196,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.read"
+                ]
             },
             "post": {
                 "security": [
@@ -1130,7 +1244,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.update"
+                ]
             }
         },
         "/logical-tables/{id}/dimension-relations/{rid}": {
@@ -1171,7 +1289,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.update"
+                ]
             }
         },
         "/logical-tables/{id}/fields": {
@@ -1205,7 +1327,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.read"
+                ]
             },
             "post": {
                 "security": [
@@ -1249,7 +1375,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.create"
+                ]
             }
         },
         "/logical-tables/{id}/fields/{fid}": {
@@ -1302,7 +1432,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -1341,7 +1475,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.delete"
+                ]
             }
         },
         "/logical-tables/{id}/metrics": {
@@ -1375,7 +1513,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.read"
+                ]
             },
             "post": {
                 "security": [
@@ -1419,7 +1561,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.update"
+                ]
             }
         },
         "/logical-tables/{id}/metrics/{mid}": {
@@ -1460,7 +1606,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.update"
+                ]
             }
         },
         "/logical-tables/{id}/preview-ddl": {
@@ -1494,7 +1644,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.read"
+                ]
             }
         }
     },

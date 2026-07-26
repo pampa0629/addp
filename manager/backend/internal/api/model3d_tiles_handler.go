@@ -35,6 +35,8 @@ func NewModel3DTilesHandler(repo *repository.Model3DTilesRepository, client *min
 // @Param id path int true "结果 ID | Result ID"
 // @Param asset_path path string true "结果内相对资源路径 | Relative asset path"
 // @Success 200 {file} binary
+// @x-addp-auth-mode "resource_ticket"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /model3d_tiles/{id}/assets/{asset_path} [get]
 // @Security BearerAuth
 func (h *Model3DTilesHandler) GetAsset(c *gin.Context) {
@@ -43,7 +45,7 @@ func (h *Model3DTilesHandler) GetAsset(c *gin.Context) {
 		commonAPI.BadRequestError(c, "invalid model3d tiles result id")
 		return
 	}
-	result, err := h.repo.GetResult(c.Request.Context(), uint(id64), c.GetUint("tenant_id"))
+	result, err := h.repo.GetResult(c.Request.Context(), uint(id64), tenantIDValue(c))
 	if err != nil {
 		commonAPI.InternalServerError(c, err.Error())
 		return

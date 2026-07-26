@@ -8,6 +8,7 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/logger"
 	"github.com/addp/system/internal/iam"
 	iamoauth "github.com/addp/system/internal/iam/oauth"
 	"github.com/addp/system/internal/middleware"
@@ -169,6 +170,7 @@ func (h *IAMOAuthHandler) Authorize(c *gin.Context) {
 		iamAuditMetadataWithStatus(c, http.StatusOK),
 	)
 	if err != nil {
+		logger.L().Warn("OAuth authorization decision failed", "error", err)
 		setIAMOAuthFailure(c, "oauth.authorization.failed", "", "", request.Decision, "", err)
 		respondIAMOAuthBridgeError(c, err)
 		return

@@ -36,10 +36,11 @@ func mergeDatabaseTableInfo(base, described datatype.TableInfo) datatype.TableIn
 	if described.Comment == "" {
 		described.Comment = base.Comment
 	}
-	if base.RowCount != nil {
+	if described.RowCount == nil {
 		described.RowCount = base.RowCount
-	} else if described.RowCount == nil {
-		described.RowCount = base.RowCount
+	}
+	if described.EstimatedRowCount == nil {
+		described.EstimatedRowCount = base.EstimatedRowCount
 	}
 	if base.SizeBytes != nil {
 		described.SizeBytes = base.SizeBytes

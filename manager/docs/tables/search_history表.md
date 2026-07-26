@@ -200,11 +200,11 @@ curl -X DELETE http://localhost:8081/api/v1/manager/search/history \
 
 **用户隔离**：
 - 每个用户只能查看/删除自己的搜索历史
-- 通过 JWT token 中的 user_id 自动过滤
+- 通过 System AuthContext 中的 `principal.id` 自动过滤
 
 **租户隔离**：
-- `tenant_id` 字段用于跨租户查询（SuperAdmin）
-- 普通用户只能访问自己租户的数据
+- `tenant_id` 来自当前 Tenant Context
+- Platform Context 不得读取 Tenant 搜索历史
 
 ### 6.2 存储限制
 

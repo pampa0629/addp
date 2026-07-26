@@ -124,10 +124,10 @@ func DescribeDynamicSchemaCatalogFacts(ctx context.Context, callbacks DynamicSch
 		Path: path,
 		Kind: CatalogKindCollection,
 		Table: &datatype.TableInfo{
-			Name:      collection,
-			Kind:      CatalogKindCollection,
-			RowCount:  &stats.DocumentCount,
-			SizeBytes: &stats.SizeBytes,
+			Name:              collection,
+			Kind:              CatalogKindCollection,
+			EstimatedRowCount: stats.DocumentCount,
+			SizeBytes:         &stats.SizeBytes,
 			Native: map[string]interface{}{
 				"database":        database,
 				"collection":      collection,
@@ -141,7 +141,6 @@ func DescribeDynamicSchemaCatalogFacts(ctx context.Context, callbacks DynamicSch
 }
 
 func DynamicCollectionCatalogEntry(parent CatalogPath, database, name string, facts DynamicCollectionFacts) CatalogEntry {
-	rowCount := facts.DocumentCount
 	sizeBytes := facts.SizeBytes
 	return CatalogEntry{
 		Name: name,
@@ -150,10 +149,10 @@ func DynamicCollectionCatalogEntry(parent CatalogPath, database, name string, fa
 		Kind: CatalogKindCollection,
 		Role: CatalogRoleLeaf,
 		Table: CatalogEntryTableSummary(&datatype.TableInfo{
-			Name:      name,
-			Kind:      CatalogKindCollection,
-			RowCount:  &rowCount,
-			SizeBytes: &sizeBytes,
+			Name:              name,
+			Kind:              CatalogKindCollection,
+			EstimatedRowCount: facts.DocumentCount,
+			SizeBytes:         &sizeBytes,
 			Native: map[string]interface{}{
 				"database": database,
 			},

@@ -30,6 +30,8 @@ func NewUploadHandler(uploadService *service.UploadService) *UploadHandler {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.data_item.create"]
 // @Router /uploads [post]
 // @Security BearerAuth
 func (h *UploadHandler) UploadFiles(c *gin.Context) {

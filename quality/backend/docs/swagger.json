@@ -33,7 +33,11 @@
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.check_task.read"
+                ]
             },
             "post": {
                 "security": [
@@ -71,7 +75,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.check_task.create"
+                ]
             }
         },
         "/check-tasks/{id}": {
@@ -105,7 +113,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.check_task.read"
+                ]
             },
             "put": {
                 "security": [
@@ -150,7 +162,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.check_task.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -184,7 +200,11 @@
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.check_task.delete"
+                ]
             }
         },
         "/check-tasks/{id}/run": {
@@ -229,7 +249,11 @@
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.check_task.execute"
+                ]
             }
         },
         "/executions": {
@@ -254,7 +278,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.check_task.read"
+                ]
             }
         },
         "/executions/{execution_id}": {
@@ -288,7 +316,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.check_task.read"
+                ]
             }
         },
         "/issues": {
@@ -330,7 +362,11 @@
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.issue.read"
+                ]
             }
         },
         "/issues/{id}": {
@@ -364,7 +400,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.issue.read"
+                ]
             }
         },
         "/issues/{id}/status": {
@@ -415,7 +455,11 @@
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.issue.update"
+                ]
             }
         },
         "/rule-applications": {
@@ -463,7 +507,11 @@
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.rule_application.read"
+                ]
             },
             "post": {
                 "security": [
@@ -501,7 +549,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.rule_application.create"
+                ]
             }
         },
         "/rule-applications/{id}": {
@@ -535,7 +587,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.rule_application.read"
+                ]
             },
             "put": {
                 "security": [
@@ -580,7 +636,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.rule_application.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -614,7 +674,11 @@
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.rule_application.delete"
+                ]
             }
         },
         "/tasks": {
@@ -668,7 +732,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.check_task.read"
+                ]
             }
         },
         "/tasks/{task_type}/{id}": {
@@ -723,7 +791,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.check_task.read"
+                ]
             }
         },
         "/tasks/{task_type}/{id}/execute": {
@@ -789,7 +861,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.check_task.execute"
+                ]
             }
         }
     },

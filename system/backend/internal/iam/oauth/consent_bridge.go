@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -269,8 +270,11 @@ func (b *ConsentBridge) DecideAuthorization(
 	if err != nil || (decision != AuthorizationDecisionApprove && decision != AuthorizationDecisionReject) {
 		return nil, commonapi.ErrBadRequest
 	}
-	if err := commonauth.ValidateAuthContext(authContext); err != nil || authContext.Principal.Type != "user" {
-		return nil, commonapi.ErrUnauthorized
+	if err := commonauth.ValidateAuthContext(authContext); err != nil {
+		return nil, fmt.Errorf("validate authorization decision AuthContext: %v: %w", err, commonapi.ErrUnauthorized)
+	}
+	if authContext.Principal.Type != "user" {
+		return nil, fmt.Errorf("validate authorization decision principal type: %w", commonapi.ErrUnauthorized)
 	}
 	txCtx, err := b.provider.Storage.BeginTX(ctx)
 	if err != nil {
@@ -309,7 +313,7 @@ func (b *ConsentBridge) DecideAuthorization(
 		session, identity, err := b.sessionFromAuthContext(txCtx, authContext, row.RequestedAt)
 		if err != nil {
 			_ = b.provider.Storage.Rollback(txCtx)
-			return nil, err
+			return nil, fmt.Errorf("build authorization decision session: %w", err)
 		}
 		if err := db.Model(&authorizationRequestRow{}).Where("id = ? AND status = 'pending'", row.ID).
 			Updates(map[string]interface{}{
@@ -454,17 +458,19 @@ func (b *ConsentBridge) sessionFromAuthContext(
 ) (*IAMSession, approvedIdentity, error) {
 	principalID, err := strconv.ParseInt(authContext.Principal.ID, 10, 64)
 	if err != nil || principalID <= 0 {
-		return nil, approvedIdentity{}, commonapi.ErrUnauthorized
+		return nil, approvedIdentity{}, fmt.Errorf("parse principal ID: %w", commonapi.ErrUnauthorized)
 	}
 	authorizationVersion, err := strconv.ParseInt(authContext.Authorization.AuthorizationVersion, 10, 64)
 	if err != nil || authorizationVersion <= 0 {
-		return nil, approvedIdentity{}, commonapi.ErrUnauthorized
+		return nil, approvedIdentity{}, fmt.Errorf("parse authorization version: %w", commonapi.ErrUnauthorized)
 	}
 	repository := iam.NewRepository(b.provider.Storage.dbFromContext(ctx))
 	principal, err := repository.LockPrincipal(ctx, principalID)
-	if err != nil || principal.Status != iam.PrincipalStatusActive ||
-		principal.AuthorizationVersion != authorizationVersion {
-		return nil, approvedIdentity{}, commonapi.ErrUnauthorized
+	if err != nil {
+		return nil, approvedIdentity{}, fmt.Errorf("lock authorization principal: %w", err)
+	}
+	if principal.Status != iam.PrincipalStatusActive || principal.AuthorizationVersion != authorizationVersion {
+		return nil, approvedIdentity{}, fmt.Errorf("validate authorization principal state: %w", commonapi.ErrUnauthorized)
 	}
 	identity := approvedIdentity{
 		principalID:          principalID,
@@ -494,11 +500,14 @@ func (b *ConsentBridge) sessionFromAuthContext(
 	case "platform":
 		if authContext.Context.TenantMembershipID != nil ||
 			(authContext.Authentication.AssuranceLevel != "aal2" && authContext.Authentication.AssuranceLevel != "aal3") {
-			return nil, approvedIdentity{}, commonapi.ErrUnauthorized
+			return nil, approvedIdentity{}, fmt.Errorf("validate platform authorization context: %w", commonapi.ErrUnauthorized)
 		}
 		hasRole, err := repository.HasEffectivePlatformRole(ctx, principalID, b.now())
-		if err != nil || !hasRole {
-			return nil, approvedIdentity{}, commonapi.ErrUnauthorized
+		if err != nil {
+			return nil, approvedIdentity{}, fmt.Errorf("query effective platform role: %w", err)
+		}
+		if !hasRole {
+			return nil, approvedIdentity{}, fmt.Errorf("validate effective platform role: %w", commonapi.ErrUnauthorized)
 		}
 	default:
 		return nil, approvedIdentity{}, commonapi.ErrUnauthorized

@@ -74,6 +74,9 @@ func applyDynamicSchemaMetadata(attrs models.JSONMap, input DynamicSchemaAttribu
 	if count := firstPresent(input.Attributes, "total_documents"); count != nil {
 		table["row_count"] = count
 	}
+	if count := firstPresent(input.Attributes, "estimated_documents"); count != nil {
+		table["estimated_row_count"] = count
+	}
 	if v, ok := input.Attributes["index_count"]; ok {
 		statistics["index_count"] = v
 	}
@@ -85,11 +88,18 @@ func applyDynamicSchemaMetadata(attrs models.JSONMap, input DynamicSchemaAttribu
 	UpsertNested(attrs, "capabilities", "statistics", statistics)
 }
 
-func ApplyDynamicSchemaStatistics(attrs models.JSONMap, documentCount, sizeBytes int64) {
+func ApplyDynamicSchemaStatistics(attrs models.JSONMap, rowCount, estimatedRowCount *int64, sizeBytes int64) {
 	if attrs == nil {
 		return
 	}
-	UpsertNested(attrs, "type_info", "table", map[string]interface{}{"row_count": documentCount})
+	table := map[string]interface{}{}
+	if rowCount != nil {
+		table["row_count"] = *rowCount
+	}
+	if estimatedRowCount != nil {
+		table["estimated_row_count"] = *estimatedRowCount
+	}
+	UpsertNested(attrs, "type_info", "table", table)
 	SetStorage(attrs, "total_size", sizeBytes)
 }
 
@@ -103,11 +113,6 @@ func ApplyTableItemAttributes(attrs models.JSONMap, tableInfo *datatype.TableInf
 		return
 	}
 	UpsertNested(attrs, "type_info", "table", datatype.TableInfoPayload(tableInfo))
-	if tableInfo.RowCount != nil {
-		rowCount := *tableInfo.RowCount
-		UpsertNested(attrs, "type_info", "table", map[string]interface{}{"row_count": rowCount})
-		UpsertNested(attrs, "capabilities", "statistics", map[string]interface{}{"row_count": rowCount})
-	}
 }
 
 func ApplyGraphItemAttributes(attrs models.JSONMap, graphInfo *datatype.GraphInfo) {

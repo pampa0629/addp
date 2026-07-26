@@ -21,6 +21,7 @@ func NewConfigHandler(cfg *config.Config) *ConfigHandler {
 // @Tags Manager
 // @Produce json
 // @Success 200 {object} map[string]interface{} "地图配置信息 | Map configuration"
+// @x-addp-auth-mode "authenticated"
 // @Router /config/map [get]
 // @Security BearerAuth
 func (h *ConfigHandler) GetMapConfig(c *gin.Context) {

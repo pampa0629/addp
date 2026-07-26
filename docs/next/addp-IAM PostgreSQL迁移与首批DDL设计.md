@@ -1,8 +1,8 @@
 # ADDP IAM PostgreSQL 迁移与首批 DDL 设计
 
-更新日期：2026-07-24
+更新日期：2026-07-27
 
-状态：技术设计已确认，十一版 IAM DDL、PostgreSQL 15 约束测试、System `main` migration runner、runner 之后的非 IAM AutoMigrate 边界、TOTP Runtime 与离线 CLI 已实现。当前开发 `addp` 数据库已完成破坏性重建并运行于 migration `11/clean`；离线三员 Bootstrap 和真实登录 E2E 尚待执行。
+状态：技术设计已确认，十七版 IAM DDL、PostgreSQL 15 约束测试、System `main` migration runner、runner 之后的非 IAM AutoMigrate 边界、TOTP Runtime、离线 CLI、三员 Bootstrap、真实登录与 OAuth E2E 已实现。`000012` 至 `000015` 已前向发布 Standard、Monitor 和 Model 的补充目录，`000016` 前向发布 Manager Derived Artifact Update Permission，`000017` 将没有 OpenAPI Operation 或 Tool 消费入口的 78 个 Permission 置为 `disabled` 并收缩内置 Role；开发 `addp` 数据库暂为 `11/clean`，待当前 System Backend 正确重启到 `17/clean` 后执行浏览器验收。
 
 ## 一、目标与边界
 
@@ -56,6 +56,16 @@ system/backend/internal/migration/
     000005_iam_oauth_fosite_storage.up.sql
     000006_iam_catalog_seed.up.sql
     000007_iam_audit_context.up.sql
+    000008_iam_context_selection_step_up.up.sql
+    000009_iam_catalog_restore_actions.up.sql
+    000010_iam_tenant_invitation_enrollment.up.sql
+    000011_iam_mfa_bootstrap.up.sql
+    000012_iam_standard_document_catalog.up.sql
+    000013_monitor_authorization_catalog.up.sql
+    000014_model_authorization_catalog.up.sql
+    000015_standard_authorization_catalog.up.sql
+    000016_manager_authorization_catalog.up.sql
+    000017_iam_disable_unconsumed_authorization_catalog.up.sql
 ```
 
 `internal/migration` 是 System 启动基础设施，不是运行时 Repository：
@@ -161,6 +171,11 @@ COMMIT;
 | `000009_iam_catalog_restore_actions` | 向前发布 restore/reactivate Permission，并固化 Principal 生命周期和平台身份审批约束 | 不重写历史 Catalog Seed |
 | `000010_iam_tenant_invitation_enrollment` | 创建 Tenant Invitation、Enrollment Ticket、状态机和不可删除门禁；Membership 来源增加 `invitation` | 不发送邮件、不创建第三种 AuthContext、不允许邀请恢复 ended Membership |
 | `000011_iam_mfa_bootstrap` | 创建 TOTP Credential、一次性 MFA Challenge、唯一 Bootstrap 状态和不可逆状态约束 | 不实现 WebAuthn、账号恢复或网络 Bootstrap API |
+| `000012_iam_standard_document_catalog` | 向前发布 `standard.document.read/create/update/delete`，并将其加入内置 Tenant Governance Manager | 不重写 `000006` 已发布 Catalog Seed，不动态扫描 owner Manifest |
+| `000013_monitor_authorization_catalog` | 向前发布 Monitor Alert Incident、Alert Rule、Notification Destination、Notification Delivery Permission 和内置 Tenant Monitoring Operator | 不借用 Execution / Statistics Permission 表达告警与通知写操作 |
+| `000014_model_authorization_catalog` | 向前发布 Model Entity、Entity Relation、DW Layer Permission，并将 Entity / Entity Relation 加入 Tenant Governance Manager | DW Layer 只允许 Tenant Scope，不注入可分配到 Department / Project Group 的内置角色；Logical Field、Table Relation、Fact Metric Mapping 继续作为 Logical Model 聚合内子资源 |
+| `000015_standard_authorization_catalog` | 向前发布 Standard Glossary、Unit、Classification、Dimension Hierarchy、Element Approve、Metric Approve/Offline Permission，并加入 Tenant Governance Manager | `/deprecate` 业务动作使用稳定 `offline` Permission；Measurement Category、Grading Level、Dimension Hierarchy Level 保持聚合内子资源；文档关联采用 all-of |
+| `000016_manager_authorization_catalog` | 前向发布 `manager.derived_artifact.update` 并加入 Tenant Data Steward | 受管 artifact 任务配置更新不借用 create 或 data_item.update；搜索历史和 preview state 继续由 owner 以 self 语义约束 |
 
 每版必须显式列出：创建对象、外键、检查约束、唯一/部分唯一索引、触发器、所依赖的前一版本和对应测试。禁止通过 `CREATE TABLE IF NOT EXISTS`、`ALTER TABLE ... ADD COLUMN IF NOT EXISTS` 或基于 `information_schema` 的分支使同一版本在不同旧 schema 上产生不同结果。
 
@@ -206,7 +221,7 @@ COMMIT;
 
 | 类别 | 最小验证 |
 | --- | --- |
-| 嵌入与版本 | 空数据库执行到 `000007`；再次启动返回 no change；版本表在 `system.schema_migrations`；数据库版本高于二进制、dirty 或缺失版本均失败 |
+| 嵌入与版本 | 空数据库执行到当前嵌入的最新版本；再次启动返回 no change；版本表在 `system.schema_migrations`；数据库版本高于二进制、dirty 或缺失版本均失败 |
 | 原子性 | 每个普通 migration 人为触发约束失败后，DDL/种子整体回滚、目标版本保持 dirty，System 不监听端口 |
 | 并发 | 两个 runner 同时启动时只有一个执行 SQL，另一个等待并随后确认 no change；持锁进程终止后锁可被新连接获取 |
 | 约束 | Principal 子类型、同 Tenant 组合外键、组织防环、Role Scope、三员互斥、角色审批、`NULLS NOT DISTINCT` 和有效记录部分唯一约束 |
@@ -221,12 +236,12 @@ COMMIT;
 1. 确认本文迁移库、启动连接、锁等待、向前 migration 和旧 schema 重建决策；
 2. 创建 `internal/migration`、嵌入 runner 和 PostgreSQL 15 migration 测试基座；
 3. 先实现并验证 runner 的空库、重复启动、dirty、并发锁和版本门禁；
-4. 根据六个版本实现 DDL、触发器和由 owner Manifest 聚合生成的固定种子；
+4. 根据版本化边界实现 DDL、触发器和由 owner Manifest 聚合生成的固定种子；
 5. 重写 System IAM 领域模型、Repository 和 Service，删除旧初始化/AutoMigrate 路径，并在切换前把路由/Swagger/Tool 授权覆盖报告收敛为 `complete=true`；
 6. 实现 Token Family、Fosite Adapter 与认证/同意桥接；
 7. 一次性切换所有 AuthContext 消费方，生成 Swagger，完成真实 Web、CLI loopback 与 Device E2E；
 8. 实现 TOTP Runtime 与离线三员 Bootstrap，不把 Bootstrap 当作 migration seed；
-9. Bootstrap 与真实登录 E2E 通过后再实现管理控制台。
+9. Bootstrap 与真实登录 E2E 通过后实现统一 `/system/iam` 管理工作台，并删除旧 Users、Tenants 和 Logs 页面。
 
 ## 十一、待确认的技术决策
 
@@ -239,6 +254,6 @@ System 目标 Router、migration runner、旧 IAM AutoMigrate/默认 SuperAdmin 
 3. `system.schema_migrations` 是唯一版本记录表，runner 是唯一执行入口；
 4. runner 使用启动期专用单连接池，完成后关闭；GORM 运行时连接在 runner 成功后才打开；
 5. migration 只向前、显式事务、dirty fail-closed，不使用 `Down`、`Force` 或自动修复；
-6. IAM 首批 schema 分为六个版本，全部成功才允许 System 进入新主路径；
+6. IAM schema 按不可变向前版本持续演进，当前嵌入版本为十二，全部成功才允许 System 进入新主路径；
 7. 首次切换以开发数据库 IAM 重建完成，不支持旧表/字段/Token 的运行时迁移或兼容；
 8. IAM 表从 `AutoMigrate` 和默认账号/OAuth Client 初始化中完全移除；非 IAM `AutoMigrate` 的后续迁移另行设计。

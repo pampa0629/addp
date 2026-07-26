@@ -87,7 +87,8 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "public"
             }
         },
         "/api/query/{serviceName}": {
@@ -188,35 +189,8 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
-            }
-        },
-        "/assets/discoverable": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Service"
-                ],
-                "summary": "列出可发现资产 | List discoverable assets",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "additionalProperties": true
-                            }
-                        }
-                    }
-                }
+                },
+                "x-addp-auth-mode": "public"
             }
         },
         "/data/aggregate": {
@@ -249,7 +223,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_service_internal_models.AggregationResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.read"
+                ]
             }
         },
         "/data/query": {
@@ -282,7 +260,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_service_internal_models.DataQueryResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.read"
+                ]
             }
         },
         "/data/structure": {
@@ -316,58 +298,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
-            }
-        },
-        "/endpoints": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Service"
-                ],
-                "summary": "获取服务端点 | Get service endpoints",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "服务引用 | Service reference",
-                        "name": "ref",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.serviceEndpointResp"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.read"
+                ]
             }
         },
         "/graph": {
@@ -423,7 +358,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.read"
+                ]
             },
             "post": {
                 "security": [
@@ -469,7 +408,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.create"
+                ]
             }
         },
         "/graph/{id}": {
@@ -512,7 +455,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.read"
+                ]
             },
             "put": {
                 "security": [
@@ -574,7 +521,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -617,7 +568,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.delete"
+                ]
             }
         },
         "/graphs/node-shapes": {
@@ -677,7 +632,82 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.read"
+                ]
+            }
+        },
+        "/internal/assets/discoverable": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Service"
+                ],
+                "summary": "列出可发现资产 | List discoverable assets",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "internal"
+            }
+        },
+        "/internal/endpoints": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Service"
+                ],
+                "summary": "获取服务端点 | Get service endpoints",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务引用 | Service reference",
+                        "name": "ref",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.serviceEndpointResp"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "internal"
             }
         },
         "/ogc/features/{serviceName}": {
@@ -733,7 +763,8 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "public"
             }
         },
         "/ogc/features/{serviceName}/collections": {
@@ -789,7 +820,8 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "public"
             }
         },
         "/ogc/features/{serviceName}/collections/{collectionId}/items": {
@@ -881,7 +913,8 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "public"
             }
         },
         "/ogc/features/{serviceName}/collections/{collectionId}/items/{featureId}": {
@@ -960,7 +993,8 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "public"
             }
         },
         "/ogc/features/{serviceName}/conformance": {
@@ -1016,7 +1050,8 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "public"
             }
         },
         "/ogc/tiles/{serviceName}": {
@@ -1063,7 +1098,8 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "public"
             }
         },
         "/ogc/tiles/{serviceName}/conformance": {
@@ -1110,7 +1146,8 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "public"
             }
         },
         "/ogc/tiles/{serviceName}/tileMatrixSets": {
@@ -1157,7 +1194,8 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "public"
             }
         },
         "/ogc/tiles/{serviceName}/tileMatrixSets/{tileMatrixSetId}": {
@@ -1211,7 +1249,8 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "public"
             }
         },
         "/ogc/tiles/{serviceName}/tiles": {
@@ -1258,7 +1297,8 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "public"
             }
         },
         "/ogc/tiles/{serviceName}/tiles/{layer}/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}": {
@@ -1339,7 +1379,8 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "public"
             }
         },
         "/query": {
@@ -1395,7 +1436,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.read"
+                ]
             },
             "post": {
                 "security": [
@@ -1441,7 +1486,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.create"
+                ]
             }
         },
         "/query/{id}": {
@@ -1484,7 +1533,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.read"
+                ]
             },
             "put": {
                 "security": [
@@ -1546,7 +1599,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -1598,7 +1655,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.delete"
+                ]
             }
         },
         "/query/{id}/refresh-source-snapshot": {
@@ -1659,7 +1720,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.update"
+                ]
             }
         },
         "/query/{id}/source-snapshot-diff": {
@@ -1720,7 +1785,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.read"
+                ]
             }
         },
         "/registered": {
@@ -1785,7 +1854,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.external_registration.read"
+                ]
             },
             "post": {
                 "security": [
@@ -1839,7 +1912,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.external_registration.create"
+                ]
             }
         },
         "/registered/{id}": {
@@ -1890,7 +1967,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.external_registration.read"
+                ]
             },
             "put": {
                 "security": [
@@ -1951,7 +2032,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.external_registration.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -2012,7 +2097,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.external_registration.delete"
+                ]
             }
         },
         "/registered/{id}/health": {
@@ -2072,7 +2161,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.external_registration.read"
+                ]
             }
         },
         "/registered/{id}/refresh": {
@@ -2146,7 +2239,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.external_registration.update"
+                ]
             }
         },
         "/sql/output-contract": {
@@ -2202,7 +2299,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.read"
+                ]
             }
         },
         "/tile": {
@@ -2238,7 +2339,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.read"
+                ]
             },
             "post": {
                 "consumes": [
@@ -2269,7 +2374,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceDTO"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.create"
+                ]
             }
         },
         "/tile-layers/{serviceId}": {
@@ -2300,7 +2409,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.read"
+                ]
             },
             "post": {
                 "consumes": [
@@ -2338,7 +2451,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.update"
+                ]
             }
         },
         "/tile-layers/{serviceId}/{layerId}": {
@@ -2373,7 +2490,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.read"
+                ]
             },
             "put": {
                 "consumes": [
@@ -2418,7 +2539,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.update"
+                ]
             },
             "delete": {
                 "produces": [
@@ -2448,7 +2573,11 @@ const docTemplate = `{
                     "204": {
                         "description": "删除成功 | Deleted successfully"
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.update"
+                ]
             }
         },
         "/tile/by-name/{serviceName}": {
@@ -2476,7 +2605,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceDTO"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.read"
+                ]
             }
         },
         "/tile/search": {
@@ -2519,7 +2652,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.read"
+                ]
             }
         },
         "/tile/{id}": {
@@ -2547,7 +2684,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceDTO"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.read"
+                ]
             },
             "put": {
                 "consumes": [
@@ -2585,7 +2726,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceDTO"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.update"
+                ]
             },
             "delete": {
                 "produces": [
@@ -2608,7 +2753,11 @@ const docTemplate = `{
                     "204": {
                         "description": "删除成功 | Deleted successfully"
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.delete"
+                ]
             }
         },
         "/tiles/{serviceName}/{layerName}/{z}/{x}/{y}.{format}": {
@@ -2691,7 +2840,8 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "public"
             }
         },
         "/wmts/{serviceName}": {
@@ -2737,7 +2887,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ExceptionReport"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "public"
             }
         }
     },
@@ -3002,6 +3153,9 @@ const docTemplate = `{
                 },
                 "created_at": {
                     "type": "string"
+                },
+                "estimated_row_count": {
+                    "type": "integer"
                 },
                 "fields": {
                     "type": "array",

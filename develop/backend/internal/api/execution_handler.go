@@ -38,6 +38,8 @@ func NewExecutionHandler(devExecutor *service.DevExecutor, approvalService *serv
 // @Param id path int true "开发任务 ID | Development task ID"
 // @Param body body map[string]interface{} false "执行参数（可选）| Execution parameters (optional)"
 // @Success 200 {object} map[string]string "执行已启动 | Execution started"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.execute"]
 // @Router /task-definitions/{id}/execute [post]
 func (h *ExecutionHandler) ExecuteDevTask(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -46,8 +48,8 @@ func (h *ExecutionHandler) ExecuteDevTask(c *gin.Context) {
 		return
 	}
 
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := tenantIDValue(c)
+	userID := userIDValue(c)
 
 	// 尝试解析参数（可选）
 	var params map[string]interface{}
@@ -92,6 +94,8 @@ func (h *ExecutionHandler) ExecuteDevTask(c *gin.Context) {
 // @Failure 403 {object} models.ToolApprovalErrorResponse "审批身份无效 | Invalid approval identity"
 // @Failure 409 {object} models.ToolApprovalErrorResponse "审批状态冲突 | Approval state conflict"
 // @Failure 410 {object} models.ToolApprovalErrorResponse "审批已过期 | Approval expired"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.execute"]
 // @Router /executions [post]
 func (h *ExecutionHandler) ExecuteContent(c *gin.Context) {
 	var req models.CreateExecutionRequest
@@ -100,12 +104,12 @@ func (h *ExecutionHandler) ExecuteContent(c *gin.Context) {
 		return
 	}
 
-	authContext, ok := commonAuth.GetAuthorizationContext(c)
+	authContext, ok := commonAuth.AuthContextFromGin(c)
 	if !ok {
 		writeToolApprovalError(c, serviceError("approval_forbidden", "缺少认证上下文"))
 		return
 	}
-	if authContext.AuthType == commonAuth.AuthTypeDelegatedAccessToken {
+	if authContext.Token.Type == "delegated_access_token" {
 		if h.approvalService == nil {
 			writeToolApprovalError(c, serviceError("approval_unavailable", "审批服务不可用"))
 			return
@@ -155,8 +159,8 @@ func (h *ExecutionHandler) ExecuteContent(c *gin.Context) {
 		return
 	}
 
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := tenantIDValue(c)
+	userID := userIDValue(c)
 
 	executionID, err := h.devExecutor.ExecuteContent(
 		c.Request.Context(),
@@ -219,10 +223,27 @@ func writeToolApprovalError(c *gin.Context, err error) {
 // @Produce json
 // @Param execution_id path string true "执行ID（UUID）| Execution ID (UUID)"
 // @Success 200 {object} models.ExecutionWithDevTaskSwagger "执行详情 | Execution details"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read"]
 // @Router /executions/{execution_id} [get]
 func (h *ExecutionHandler) GetExecution(c *gin.Context) {
+	h.getExecution(c, tenantIDValue(c))
+}
+
+// ProviderGetExecution 返回 TaskProvider 内部调用的执行状态。
+// @Summary 获取 TaskProvider 执行状态 | Get TaskProvider execution status
+// @Tags Execution
+// @Produce json
+// @Param execution_id path string true "执行ID（UUID）| Execution ID (UUID)"
+// @Success 200 {object} models.ExecutionWithDevTaskSwagger "执行详情 | Execution details"
+// @x-addp-auth-mode "internal"
+// @Router /internal/executions/{execution_id} [get]
+func (h *ExecutionHandler) ProviderGetExecution(c *gin.Context) {
+	h.getExecution(c, internalTenantIDValue(c))
+}
+
+func (h *ExecutionHandler) getExecution(c *gin.Context, tenantID uint) {
 	executionID := c.Param("execution_id")
-	tenantID := c.GetUint("tenant_id")
 
 	execution, err := h.devExecutor.GetExecution(executionID, tenantID)
 	if err != nil {
@@ -246,6 +267,8 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 // @Param start_date query string false "开始日期 YYYY-MM-DD | Start date YYYY-MM-DD"
 // @Param end_date query string false "结束日期 YYYY-MM-DD | End date YYYY-MM-DD"
 // @Success 200 {object} models.ListExecutionsSwaggerResponse "执行列表 | Execution list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read"]
 // @Router /executions [get]
 func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 	var req models.ListExecutionsRequest
@@ -254,7 +277,7 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 		return
 	}
 
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 
 	executions, total, err := h.devExecutor.ListExecutions(&req, tenantID)
 	if err != nil {
@@ -283,11 +306,13 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 // @Tags Execution
 // @Param execution_id path string true "执行ID（UUID）| Execution ID (UUID)"
 // @Success 200 {object} map[string]string "重试已启动 | Retry started"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.execute"]
 // @Router /executions/{execution_id}/retry [post]
 func (h *ExecutionHandler) RetryExecution(c *gin.Context) {
 	executionID := c.Param("execution_id")
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := tenantIDValue(c)
+	userID := userIDValue(c)
 
 	newExecutionID, err := h.devExecutor.RetryExecution(executionID, tenantID, userID)
 	if err != nil {
@@ -309,9 +334,11 @@ func (h *ExecutionHandler) RetryExecution(c *gin.Context) {
 // @Param start_date query string false "开始日期 YYYY-MM-DD | Start date YYYY-MM-DD"
 // @Param end_date query string false "结束日期 YYYY-MM-DD | End date YYYY-MM-DD"
 // @Success 200 {object} models.ExecutionStatistics "执行统计 | Execution statistics"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read"]
 // @Router /executions/statistics [get]
 func (h *ExecutionHandler) GetExecutionStatistics(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 
 	sourceTaskID := c.Query("source_task_id")
 	startDate := c.Query("start_date")
@@ -332,6 +359,8 @@ func (h *ExecutionHandler) GetExecutionStatistics(c *gin.Context) {
 // @Produce json
 // @Param execution_id path string true "执行ID（UUID）| Execution ID (UUID)"
 // @Success 200 {object} map[string]interface{} "执行日志 | Execution logs"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read"]
 // @Router /executions/{execution_id}/logs [get]
 func (h *ExecutionHandler) GetExecutionLogs(c *gin.Context) {
 	executionID := c.Param("execution_id")
@@ -367,7 +396,8 @@ type providerExecuteDevResponse struct {
 // @Success 202 {object} providerExecuteDevResponse "执行已启动 | Execution started"
 // @Failure 400 {object} map[string]interface{} "参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器错误 | Server error"
-// @Router /tasks/{task_type}/{id}/execute [post]
+// @x-addp-auth-mode "internal"
+// @Router /internal/tasks/{task_type}/{id}/execute [post]
 func (h *ExecutionHandler) ProviderExecuteDevTask(c *gin.Context) {
 	taskType := c.Param("task_type")
 	if !isDevelopTaskType(taskType) {
@@ -399,15 +429,14 @@ func (h *ExecutionHandler) ProviderExecuteDevTask(c *gin.Context) {
 		parentExecutionID = &req.ParentExecutionID
 	}
 
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := internalTenantIDValue(c)
 
 	executionID, err := h.devExecutor.ExecuteWithParamsWithContext(
 		c.Request.Context(),
 		uint(id),
 		req.Parameters,
 		tenantID,
-		userID,
+		0,
 		triggerType,
 		source,
 		parentExecutionID,

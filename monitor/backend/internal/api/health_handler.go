@@ -28,6 +28,8 @@ func NewHealthHandler(healthService *service.HealthCheckService) *HealthHandler 
 // @Tags Monitor
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.health.read"]
 // @Router /modules [get]
 // @Security BearerAuth
 func (h *HealthHandler) GetModules(c *gin.Context) {
@@ -45,6 +47,8 @@ func (h *HealthHandler) GetModules(c *gin.Context) {
 // @Tags Monitor
 // @Produce json
 // @Success 200 {array} models.TaskProvider
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.health.read"]
 // @Router /task-providers [get]
 // @Security BearerAuth
 func (h *HealthHandler) GetTaskProviders(c *gin.Context) {
@@ -64,6 +68,8 @@ func (h *HealthHandler) GetTaskProviders(c *gin.Context) {
 // @Produce json
 // @Success 200 {array} service.ProviderHealthStatus
 // @Failure 500 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.health.read"]
 // @Router /providers/health [get]
 // @Security BearerAuth
 func (h *HealthHandler) CheckAllProvidersHealth(c *gin.Context) {
@@ -85,6 +91,8 @@ func (h *HealthHandler) CheckAllProvidersHealth(c *gin.Context) {
 // @Success 200 {object} service.ProviderHealthStatus
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.health.read"]
 // @Router /providers/{module}/health [get]
 // @Security BearerAuth
 func (h *HealthHandler) CheckProviderHealth(c *gin.Context) {
@@ -107,6 +115,8 @@ func (h *HealthHandler) CheckProviderHealth(c *gin.Context) {
 // @Produce json
 // @Param module path string true "模块名 | Module"
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.health.read"]
 // @Router /modules/{module}/health [get]
 // @Security BearerAuth
 func (h *HealthHandler) CheckModuleHealth(c *gin.Context) {
@@ -148,6 +158,8 @@ func (h *HealthHandler) CheckModuleHealth(c *gin.Context) {
 // @Tags Monitor
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.health.read"]
 // @Router /modules/health/all [get]
 // @Security BearerAuth
 func (h *HealthHandler) CheckAllModules(c *gin.Context) {
@@ -161,18 +173,5 @@ func (h *HealthHandler) CheckAllModules(c *gin.Context) {
 }
 
 func currentTenantID(c *gin.Context) uint {
-	tenantID, _ := c.Get(commonAuth.ContextTenantIDKey)
-	switch typed := tenantID.(type) {
-	case uint:
-		return typed
-	case int:
-		if typed > 0 {
-			return uint(typed)
-		}
-	case int64:
-		if typed > 0 {
-			return uint(typed)
-		}
-	}
-	return 0
+	return commonAuth.GetTenantID(c)
 }

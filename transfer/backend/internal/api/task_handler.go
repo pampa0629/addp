@@ -41,6 +41,8 @@ func NewTaskHandler(taskService *service.TaskService) *TaskHandler {
 // @Failure 400 {object} map[string]string "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]string "未授权 | Unauthorized"
 // @Failure 500 {object} map[string]string "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.create"]
 // @Router /task-definitions [post]
 // @Security BearerAuth
 func (h *TaskHandler) CreateTask(c *gin.Context) {
@@ -73,6 +75,8 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 // @Failure 400 {object} map[string]string "参数错误 | Bad request"
 // @Failure 404 {object} map[string]string "任务不存在 | Task not found"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.read"]
 // @Router /task-definitions/{id} [get]
 // @Security BearerAuth
 func (h *TaskHandler) GetTask(c *gin.Context) {
@@ -106,6 +110,8 @@ func (h *TaskHandler) GetTask(c *gin.Context) {
 // @Success 200 {object} models.ListProviderTasksResponse "获取成功 | Retrieved successfully"
 // @Failure 400 {object} map[string]string "不支持的任务类型 | Unsupported task type"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.read"]
 // @Router /tasks [get]
 // @Security BearerAuth
 func (h *TaskHandler) ListTasks(c *gin.Context) {
@@ -162,6 +168,8 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 // @Success 200 {object} models.TransferTask "更新成功 | Updated successfully"
 // @Failure 400 {object} map[string]string "参数错误 | Bad request"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.update"]
 // @Router /task-definitions/{id} [put]
 // @Security BearerAuth
 func (h *TaskHandler) UpdateTask(c *gin.Context) {
@@ -199,6 +207,8 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 // @Failure 409 {object} map[string]string "任务仍在运行 | Task is still running"
 // @Failure 503 {object} map[string]string "任务资源清理不可用或失败 | Task resource cleanup unavailable or failed"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.delete"]
 // @Router /task-definitions/{id} [delete]
 // @Security BearerAuth
 func (h *TaskHandler) DeleteTask(c *gin.Context) {
@@ -228,6 +238,8 @@ func (h *TaskHandler) DeleteTask(c *gin.Context) {
 // @Failure 400 {object} map[string]string "参数错误或任务已在运行 | Bad request or task already running"
 // @Failure 409 {object} map[string]string "CDC 已永久停止或被结构变化阻塞 | CDC permanently stopped or blocked by schema change"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.execute"]
 // @Router /task-definitions/{id}/start [post]
 // @Security BearerAuth
 func (h *TaskHandler) StartTask(c *gin.Context) {
@@ -262,6 +274,8 @@ func (h *TaskHandler) StartTask(c *gin.Context) {
 // @Failure 409 {object} map[string]string "范围超出保留边界或目标已存在 | Range is outside retention or target already exists"
 // @Failure 503 {object} map[string]string "回放运行时不可用 | Replay runtime unavailable"
 // @Failure 500 {object} map[string]string "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.execute"]
 // @Router /task-definitions/{id}/replay [post]
 // @Security BearerAuth
 func (h *TaskHandler) ReplayTask(c *gin.Context) {
@@ -291,6 +305,8 @@ func (h *TaskHandler) ReplayTask(c *gin.Context) {
 // @Success 200 {object} models.SchemaChangeRequestView
 // @Failure 404 {object} map[string]string "任务或结构变更请求不存在 | Task or schema change request not found"
 // @Failure 500 {object} map[string]string "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.read"]
 // @Router /task-definitions/{id}/schema-change [get]
 // @Security BearerAuth
 func (h *TaskHandler) GetSchemaChange(c *gin.Context) {
@@ -320,6 +336,8 @@ func (h *TaskHandler) GetSchemaChange(c *gin.Context) {
 // @Failure 409 {object} map[string]string "变化不可 additive 或审批与当前事实冲突 | Change is not additive or approval conflicts with current facts"
 // @Failure 503 {object} map[string]string "结构变更控制面不可用 | Schema change control unavailable"
 // @Failure 500 {object} map[string]string "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.update"]
 // @Router /task-definitions/{id}/schema-change/approve [post]
 // @Security BearerAuth
 func (h *TaskHandler) ApproveSchemaChange(c *gin.Context) {
@@ -356,6 +374,8 @@ func (h *TaskHandler) ApproveSchemaChange(c *gin.Context) {
 // @Failure 400 {object} map[string]string "查询参数无效 | Invalid query parameters"
 // @Failure 404 {object} map[string]string "任务不存在 | Task not found"
 // @Failure 500 {object} map[string]string "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.read"]
 // @Router /task-definitions/{id}/dead-letters [get]
 // @Security BearerAuth
 func (h *TaskHandler) ListDeadLetters(c *gin.Context) {
@@ -401,6 +421,8 @@ func (h *TaskHandler) ListDeadLetters(c *gin.Context) {
 // @Failure 400 {object} map[string]string "标识无效 | Invalid identity"
 // @Failure 404 {object} map[string]string "任务或死信记录不存在 | Task or dead-letter record not found"
 // @Failure 500 {object} map[string]string "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.read"]
 // @Router /task-definitions/{id}/dead-letters/{identity} [get]
 // @Security BearerAuth
 func (h *TaskHandler) GetDeadLetter(c *gin.Context) {
@@ -444,6 +466,8 @@ type ProviderExecuteResponse struct {
 // @Success 200 {object} models.TransferTask "任务详情 | Task detail"
 // @Failure 400 {object} map[string]string "参数错误 | Bad request"
 // @Failure 404 {object} map[string]string "任务不存在 | Task not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.read"]
 // @Router /tasks/{task_type}/{id} [get]
 // @Security BearerAuth
 func (h *TaskHandler) ProviderGetTask(c *gin.Context) {
@@ -467,6 +491,8 @@ func (h *TaskHandler) ProviderGetTask(c *gin.Context) {
 // @Success 202 {object} ProviderExecuteResponse "执行记录 | Execution"
 // @Failure 400 {object} map[string]string "参数错误 | Bad request"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.execute"]
 // @Router /tasks/{task_type}/{id}/execute [post]
 // @Security BearerAuth
 func (h *TaskHandler) ProviderExecuteTask(c *gin.Context) {
@@ -544,6 +570,8 @@ func (h *TaskHandler) ProviderExecuteTask(c *gin.Context) {
 // @Failure 409 {object} map[string]string "CDC 已永久停止或被结构变化阻塞 | CDC permanently stopped or blocked by schema change"
 // @Failure 503 {object} map[string]string "捕获控制面不可用 | Capture control unavailable"
 // @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.update"]
 // @Router /task-definitions/{id}/pause [post]
 // @Security BearerAuth
 func (h *TaskHandler) PauseTask(c *gin.Context) {
@@ -572,6 +600,8 @@ func (h *TaskHandler) PauseTask(c *gin.Context) {
 // @Failure 409 {object} map[string]string "CDC 已永久停止或被结构变化阻塞 | CDC permanently stopped or blocked by schema change"
 // @Failure 503 {object} map[string]string "捕获控制面不可用 | Capture control unavailable"
 // @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.update"]
 // @Router /task-definitions/{id}/resume [post]
 // @Security BearerAuth
 func (h *TaskHandler) ResumeTask(c *gin.Context) {
@@ -608,6 +638,8 @@ func (h *TaskHandler) ResumeTask(c *gin.Context) {
 // @Failure 409 {object} map[string]string "CDC 已永久停止 | CDC permanently stopped"
 // @Failure 503 {object} map[string]string "捕获控制面不可用 | Capture control unavailable"
 // @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.update"]
 // @Router /task-definitions/{id}/stop [post]
 // @Security BearerAuth
 func (h *TaskHandler) StopTask(c *gin.Context) {
@@ -635,6 +667,8 @@ func (h *TaskHandler) StopTask(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} models.TaskStatistics "统计信息 | Statistics"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.read"]
 // @Router /task-definitions/statistics [get]
 // @Security BearerAuth
 func (h *TaskHandler) GetTaskStatistics(c *gin.Context) {

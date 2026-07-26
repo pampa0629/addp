@@ -3,7 +3,7 @@
     <!-- 欢迎区 -->
     <div class="home-header">
       <div class="welcome-text">
-        <h2>{{ t('console.welcome.greeting', { name: user?.username || t('console.welcome.defaultName') }) }}</h2>
+        <h2>{{ t('console.welcome.greeting', { name: userDisplayName }) }}</h2>
         <p>{{ t('console.welcome.subtitle') }}</p>
       </div>
     </div>
@@ -125,6 +125,11 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['card-click', 'portal-click', 'navigate'])
+const userDisplayName = computed(() =>
+  props.user?.display_name ||
+  props.user?.local_account?.username ||
+  t('console.welcome.defaultName')
+)
 
 // ─── 状态快照 ────────────────────────────────────────────────────────────────
 

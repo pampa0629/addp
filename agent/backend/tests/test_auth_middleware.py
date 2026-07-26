@@ -2,11 +2,12 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 import httpx
+from fastapi import HTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from addp_common.auth import AuthorizationContext
-from middleware.auth import auth_middleware
+from addp_common.auth import AuthorizationContext, RoleAssignment
+from middleware.auth import auth_middleware, require_permissions
 
 
 def _request(token: str | None = "user-token") -> Request:
@@ -34,10 +35,17 @@ async def _next(_request):
 class AgentAuthMiddlewareTests(unittest.IsolatedAsyncioTestCase):
     async def test_uses_system_authorization_context(self):
         context = AuthorizationContext(
-            user_id=12,
+            principal_id=12,
             tenant_id=3,
-            username="alice",
-            user_type="tenant_admin",
+            tenant_membership_id=8,
+            role_assignments=(
+                RoleAssignment(
+                    assignment_id=1,
+                    role_key="tenant.ai_user",
+                    scope_type="tenant",
+                    permissions=("agent.session.read",),
+                ),
+            ),
         )
         resolver = AsyncMock(return_value=context)
         request = _request()
@@ -46,10 +54,15 @@ class AgentAuthMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             response = await auth_middleware(request, _next)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(request.state.user_id, 12)
+        self.assertEqual(request.state.principal_id, 12)
         self.assertEqual(request.state.tenant_id, 3)
         self.assertEqual(request.state.authorization_context, context)
         resolver.assert_awaited_once()
+
+        await require_permissions("agent.session.read")(request)
+        with self.assertRaisesRegex(HTTPException, "权限不足") as denied:
+            await require_permissions("agent.session.delete")(request)
+        self.assertEqual(denied.exception.status_code, 403)
 
     async def test_returns_unauthorized_for_rejected_token(self):
         error = httpx.HTTPStatusError(

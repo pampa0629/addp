@@ -24,11 +24,11 @@ func NewJupyterInstanceHandler(instanceService *service.JupyterInstanceService) 
 // @Tags Jupyter Instance
 // @Produce json
 // @Success 200 {object} service.JupyterInstance "实例信息 | Instance information"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.notebook.execute"]
 // @Router /jupyter/instance/start [post]
 func (h *JupyterInstanceHandler) StartInstance(c *gin.Context) {
-	tenantID, _ := c.Get("tenant_id")
-
-	instance, err := h.instanceService.StartInstance(c.Request.Context(), tenantID.(uint))
+	instance, err := h.instanceService.StartInstance(c.Request.Context(), tenantIDValue(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "启动 Jupyter 实例失败",
@@ -45,11 +45,11 @@ func (h *JupyterInstanceHandler) StartInstance(c *gin.Context) {
 // @Tags Jupyter Instance
 // @Produce json
 // @Success 200 {object} map[string]string "停止成功 | Stopped successfully"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.notebook.execute"]
 // @Router /jupyter/instance/stop [post]
 func (h *JupyterInstanceHandler) StopInstance(c *gin.Context) {
-	tenantID, _ := c.Get("tenant_id")
-
-	if err := h.instanceService.StopInstance(c.Request.Context(), tenantID.(uint)); err != nil {
+	if err := h.instanceService.StopInstance(c.Request.Context(), tenantIDValue(c)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "停止 Jupyter 实例失败",
 			"details": err.Error(),
@@ -67,11 +67,11 @@ func (h *JupyterInstanceHandler) StopInstance(c *gin.Context) {
 // @Tags Jupyter Instance
 // @Produce json
 // @Success 200 {object} service.JupyterInstance "实例状态 | Instance status"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.notebook.read"]
 // @Router /jupyter/instance/status [get]
 func (h *JupyterInstanceHandler) GetInstanceStatus(c *gin.Context) {
-	tenantID, _ := c.Get("tenant_id")
-
-	instance, err := h.instanceService.GetInstance(c.Request.Context(), tenantID.(uint))
+	instance, err := h.instanceService.GetInstance(c.Request.Context(), tenantIDValue(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "查询 Jupyter 实例失败",
@@ -89,26 +89,4 @@ func (h *JupyterInstanceHandler) GetInstanceStatus(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, instance)
-}
-
-// ListInstances 列出所有 Jupyter 实例（管理员）
-// @Summary 列出所有 Jupyter 实例 | List all Jupyter instances
-// @Tags Jupyter Instance
-// @Produce json
-// @Success 200 {array} service.JupyterInstance "实例列表 | Instance list"
-// @Router /jupyter/instances [get]
-func (h *JupyterInstanceHandler) ListInstances(c *gin.Context) {
-	instances, err := h.instanceService.ListInstances(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "查询 Jupyter 实例列表失败",
-			"details": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"instances": instances,
-		"total":     len(instances),
-	})
 }

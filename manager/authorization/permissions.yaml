@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: manager
-manifest_version: 2
+manifest_version: 4
 permissions:
   - key: manager.content.read
     allowed_scope_types: [tenant, department, project_group]
@@ -23,7 +23,7 @@ permissions:
     risk_level: high
     tenant_customizable: true
     delegable: false
-    status: active
+    status: disabled
     name_i18n_key: permissions.manager.data_item.delete.name
     description_i18n_key: permissions.manager.data_item.delete.description
   - key: manager.data_item.read
@@ -66,12 +66,20 @@ permissions:
     status: active
     name_i18n_key: permissions.manager.derived_artifact.read.name
     description_i18n_key: permissions.manager.derived_artifact.read.description
+  - key: manager.derived_artifact.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.manager.derived_artifact.update.name
+    description_i18n_key: permissions.manager.derived_artifact.update.description
   - key: manager.resource_grant.create
     allowed_scope_types: [tenant]
     risk_level: high
     tenant_customizable: false
     delegable: false
-    status: active
+    status: disabled
     name_i18n_key: permissions.manager.resource_grant.create.name
     description_i18n_key: permissions.manager.resource_grant.create.description
   - key: manager.resource_grant.read
@@ -79,7 +87,7 @@ permissions:
     risk_level: low
     tenant_customizable: false
     delegable: false
-    status: active
+    status: disabled
     name_i18n_key: permissions.manager.resource_grant.read.name
     description_i18n_key: permissions.manager.resource_grant.read.description
   - key: manager.resource_grant.revoke
@@ -87,7 +95,7 @@ permissions:
     risk_level: high
     tenant_customizable: false
     delegable: false
-    status: active
+    status: disabled
     name_i18n_key: permissions.manager.resource_grant.revoke.name
     description_i18n_key: permissions.manager.resource_grant.revoke.description
   - key: manager.search.execute

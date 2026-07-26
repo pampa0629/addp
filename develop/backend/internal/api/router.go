@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"strconv"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/audit"
@@ -11,6 +10,7 @@ import (
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	_ "github.com/addp/develop/backend/docs"
 	_ "github.com/addp/develop/backend/i18n"
+	developauthorization "github.com/addp/develop/backend/internal/authorization"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
@@ -18,45 +18,6 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"gorm.io/gorm"
 )
-
-// internalAPIKeyMiddleware 处理内部 API 认证（X-Internal-API-Key）
-// 如果请求包含有效的内部 API Key，则设置上下文并标记为已认证
-func internalAPIKeyMiddleware(expectedKey string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// 检查是否有内部 API Key
-		apiKey := c.GetHeader("X-Internal-API-Key")
-		if apiKey != "" && apiKey == expectedKey {
-			// 内部 API 调用，从 X-Tenant-ID header 读取租户 ID
-			tenantID := uint(0)
-			if tenantIDStr := c.GetHeader("X-Tenant-ID"); tenantIDStr != "" {
-				if tid, err := strconv.ParseUint(tenantIDStr, 10, 32); err == nil {
-					tenantID = uint(tid)
-				}
-			}
-			c.Set(commonAuth.ContextUserIDKey, uint(1))
-			c.Set(commonAuth.ContextUsernameKey, "internal-api-call")
-			c.Set(commonAuth.ContextTenantIDKey, tenantID)
-			c.Set("internal_api_authenticated", true) // 标记为已通过内部认证
-		}
-		c.Next()
-	}
-}
-
-// systemAuthMiddlewareWrapper 包装 SystemAuthMiddleware，支持跳过已通过内部认证的请求
-func systemAuthMiddlewareWrapper(systemURL string) gin.HandlerFunc {
-	authMiddleware := commonAuth.SystemAuthMiddleware(systemURL)
-
-	return func(c *gin.Context) {
-		// 如果已经通过内部 API 认证，跳过 JWT 认证
-		if authenticated, exists := c.Get("internal_api_authenticated"); exists && authenticated.(bool) {
-			c.Next()
-			return
-		}
-
-		// 否则，执行正常的 JWT 认证
-		authMiddleware(c)
-	}
-}
 
 // SetupRouter 设置路由（Phase 3 完整版本）
 func SetupRouter(
@@ -94,104 +55,116 @@ func SetupRouter(
 		})
 	})
 
-	// API 路由组（需要认证）
+	assetDiscHandler := newAssetDiscoverableHandler(db)
+	taskListHandler := NewTaskListHandler(devTaskService.(*service.DevTaskService))
+	internal := router.Group("/api/v1/develop/internal")
+	internal.Use(internalAPIKeyMiddleware(cfg.InternalAPIKey))
+	{
+		internal.GET("/assets/discoverable", assetDiscHandler.listDiscoverableAssets)
+		internal.GET("/tasks", taskListHandler.ListTasks)
+		internal.GET("/tasks/:task_type/:id", devTaskHandler.ProviderGetDevTask)
+		internal.POST("/tasks/:task_type/:id/execute", executionHandler.ProviderExecuteDevTask)
+		internal.GET("/executions/:execution_id", executionHandler.ProviderGetExecution)
+	}
+
+	// 用户 API 只接受 canonical Bearer AuthContext。
 	api := router.Group("/api/v1/develop")
-	// 添加内部 API 认证中间件（支持 X-Internal-API-Key）
-	api.Use(internalAPIKeyMiddleware(cfg.InternalAPIKey))
-	// 使用包装后的认证中间件（支持跳过已通过内部认证的请求）
-	api.Use(systemAuthMiddlewareWrapper(cfg.SystemServiceURL))
-	api.Use(commonAuth.DelegatedAccessPolicy("develop", commonAuth.DelegatedRoutePolicy{
-		"GET /api/v1/develop/workflow-engines/:id/operators": {"workflow.operators.list"},
-		"POST /api/v1/develop/workflow-validations":          {"workflow.validate"},
-		"POST /api/v1/develop/executions":                    {"workflow.run"},
-		"GET /api/v1/develop/executions/:execution_id":       {"execution.get"},
-	}))
+	api.Use(
+		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: cfg.SystemServiceURL}),
+		commonAuth.MustNewContextGuard("tenant"),
+		commonAuth.MustNewDelegatedPolicyGuard("develop", map[string]commonAuth.DelegatedRoutePolicyEntry{
+			"GET /api/v1/develop/workflow-engines/:id/operators": {
+				RequiredScopes: []string{"workflow.operators.list"}, RequiredPermissions: []string{developauthorization.PermissionDevelopTaskRead},
+			},
+			"POST /api/v1/develop/workflow-validations": {
+				RequiredScopes: []string{"workflow.validate"}, RequiredPermissions: []string{developauthorization.PermissionDevelopTaskRead},
+			},
+			"POST /api/v1/develop/executions": {
+				RequiredScopes: []string{"workflow.run"}, RequiredPermissions: []string{developauthorization.PermissionDevelopTaskExecute},
+			},
+			"GET /api/v1/develop/executions/:execution_id": {
+				RequiredScopes: []string{"execution.get"}, RequiredPermissions: []string{developauthorization.PermissionDevelopTaskRead},
+			},
+		}),
+	)
+	permission := func(keys ...string) gin.HandlerFunc {
+		return commonAuth.MustNewPermissionGuard(keys...)
+	}
 	// 审计日志中间件（记录到 System 模块）
 	if systemClient != nil {
 		api.Use(audit.AuditMiddleware("develop", systemClient))
 	}
-	assetDiscHandler := newAssetDiscoverableHandler(db)
 	{
-		// ========== 资产发现接口（供 Asset 模块调用）==========
-		api.GET("/assets/discoverable", assetDiscHandler.listDiscoverableAssets)
-
-		// ========== TaskProvider 任务列表 API ==========
-		taskListHandler := NewTaskListHandler(devTaskService.(*service.DevTaskService))
-		api.GET("/tasks", taskListHandler.ListTasks)
-		api.GET("/tasks/:task_type/:id", devTaskHandler.ProviderGetDevTask)                // TaskProvider 标准任务详情
-		api.POST("/tasks/:task_type/:id/execute", executionHandler.ProviderExecuteDevTask) // TaskProvider 标准任务执行
-
 		// ========== 开发任务定义管理 ==========
 		taskDefinitions := api.Group("/task-definitions")
 		{
-			taskDefinitions.POST("", devTaskHandler.CreateDevTask)                  // 创建开发任务
-			taskDefinitions.GET("", devTaskHandler.ListDevTasks)                    // 查询开发任务列表
-			taskDefinitions.GET("/statistics", devTaskHandler.GetDevTaskStatistics) // 获取统计信息
-			taskDefinitions.GET("/:id", devTaskHandler.GetDevTask)                  // 获取开发任务详情
-			taskDefinitions.PUT("/:id", devTaskHandler.UpdateDevTask)               // 更新开发任务
-			taskDefinitions.DELETE("/:id", devTaskHandler.DeleteDevTask)            // 删除开发任务
-			taskDefinitions.POST("/:id/execute", executionHandler.ExecuteDevTask)   // 执行开发任务
+			taskDefinitions.POST("", permission(developauthorization.PermissionDevelopTaskCreate), devTaskHandler.CreateDevTask)
+			taskDefinitions.GET("", permission(developauthorization.PermissionDevelopTaskRead), devTaskHandler.ListDevTasks)
+			taskDefinitions.GET("/statistics", permission(developauthorization.PermissionDevelopTaskRead), devTaskHandler.GetDevTaskStatistics)
+			taskDefinitions.GET("/:id", permission(developauthorization.PermissionDevelopTaskRead), devTaskHandler.GetDevTask)
+			taskDefinitions.PUT("/:id", permission(developauthorization.PermissionDevelopTaskUpdate), devTaskHandler.UpdateDevTask)
+			taskDefinitions.DELETE("/:id", permission(developauthorization.PermissionDevelopTaskDelete), devTaskHandler.DeleteDevTask)
+			taskDefinitions.POST("/:id/execute", permission(developauthorization.PermissionDevelopTaskExecute), executionHandler.ExecuteDevTask)
 		}
 
 		// ========== 执行管理 ==========
 		executions := api.Group("/executions")
 		{
-			executions.POST("", executionHandler.ExecuteContent)                     // 执行临时内容
-			executions.GET("", executionHandler.ListExecutions)                      // 查询执行列表
-			executions.GET("/statistics", executionHandler.GetExecutionStatistics)   // 获取执行统计
-			executions.GET("/:execution_id", executionHandler.GetExecution)          // 获取执行详情
-			executions.GET("/:execution_id/logs", executionHandler.GetExecutionLogs) // 获取执行日志
-			executions.POST("/:execution_id/retry", executionHandler.RetryExecution) // 重试执行
+			executions.POST("", permission(developauthorization.PermissionDevelopTaskExecute), executionHandler.ExecuteContent)
+			executions.GET("", permission(developauthorization.PermissionDevelopTaskRead), executionHandler.ListExecutions)
+			executions.GET("/statistics", permission(developauthorization.PermissionDevelopTaskRead), executionHandler.GetExecutionStatistics)
+			executions.GET("/:execution_id", permission(developauthorization.PermissionDevelopTaskRead), executionHandler.GetExecution)
+			executions.GET("/:execution_id/logs", permission(developauthorization.PermissionDevelopTaskRead), executionHandler.GetExecutionLogs)
+			executions.POST("/:execution_id/retry", permission(developauthorization.PermissionDevelopTaskExecute), executionHandler.RetryExecution)
 		}
 
 		// ========== 委托 Tool 审批 ==========
 		approvals := api.Group("/approvals")
 		{
-			approvals.GET("/:id", toolApprovalHandler.GetApproval)
-			approvals.POST("/:id/decision", toolApprovalHandler.DecideApproval)
+			approvals.GET("/:id", permission(developauthorization.PermissionDevelopTaskRead), toolApprovalHandler.GetApproval)
+			approvals.POST("/:id/decision", permission(developauthorization.PermissionDevelopTaskExecute), toolApprovalHandler.DecideApproval)
 		}
 
 		// ========== 引擎管理 ==========
 		engines := api.Group("/engines")
 		{
-			engines.GET("", engineHandler.ListEngines) // 获取引擎列表
+			engines.GET("", permission(developauthorization.PermissionDevelopTaskRead), engineHandler.ListEngines)
 		}
-		api.GET("/query-modes", engineHandler.ListQueryModes) // 获取 Develop 内置查询模式列表
+		api.GET("/query-modes", permission(developauthorization.PermissionDevelopTaskRead), engineHandler.ListQueryModes)
 
 		// ========== 工作流引擎管理 ==========
-		api.GET("/workflow-engines", engineHandler.ListWorkflowEngines)                           // 获取工作流引擎列表
-		api.GET("/workflow-engines/:id/operators", operatorHandler.ListOperatorsByWorkflowEngine) // 按工作流引擎实例获取算子
-		api.POST("/workflow-validations", operatorHandler.ValidateWorkflow)                       // 校验候选工作流，不创建 execution
-		api.GET("/spark-runtimes", engineHandler.ListSparkRuntimes)                               // 获取 Spark 通用引擎资源列表
+		api.GET("/workflow-engines", permission(developauthorization.PermissionDevelopTaskRead), engineHandler.ListWorkflowEngines)
+		api.GET("/workflow-engines/:id/operators", permission(developauthorization.PermissionDevelopTaskRead), operatorHandler.ListOperatorsByWorkflowEngine)
+		api.POST("/workflow-validations", permission(developauthorization.PermissionDevelopTaskRead), operatorHandler.ValidateWorkflow)
+		api.GET("/spark-runtimes", permission(developauthorization.PermissionDevelopTaskRead), engineHandler.ListSparkRuntimes)
 
 		// ========== 查询开发 ==========
-		api.GET("/test/:id", queryHandler.TestConnection)                 // 测试数据源连接
-		api.GET("/engines/:id/sample-query", queryHandler.GetSampleQuery) // 获取样例查询
-		api.POST("/execute", queryHandler.ExecuteQuery)                   // 执行查询
+		api.GET("/test/:id", permission(developauthorization.PermissionDevelopTaskRead), queryHandler.TestConnection)
+		api.GET("/engines/:id/sample-query", permission(developauthorization.PermissionDevelopTaskRead), queryHandler.GetSampleQuery)
+		api.POST("/execute", permission(developauthorization.PermissionDevelopTaskExecute), queryHandler.ExecuteQuery)
 
 		// ========== Notebook 开发 ==========
 		notebooks := api.Group("/notebooks")
 		{
-			notebooks.POST("/jupyter-url", notebookHandler.GetJupyterURL) // 获取 Jupyter Lab URL
-			notebooks.POST("/execute", notebookHandler.ExecuteNotebook)   // 执行 Notebook（临时）
-			notebooks.GET("/kernels", notebookHandler.ListKernels)        // 列出可用 Kernel
-			notebooks.GET("/health", notebookHandler.HealthCheck)         // 健康检查
+			notebooks.POST("/jupyter-url", permission(developauthorization.PermissionDevelopNotebookExecute), notebookHandler.GetJupyterURL)
+			notebooks.POST("/execute", permission(developauthorization.PermissionDevelopNotebookExecute), notebookHandler.ExecuteNotebook)
+			notebooks.GET("/kernels", permission(developauthorization.PermissionDevelopNotebookRead), notebookHandler.ListKernels)
+			notebooks.GET("/health", permission(developauthorization.PermissionDevelopNotebookRead), notebookHandler.HealthCheck)
 
 			// 新增：Notebook 管理 API
-			notebooks.POST("/upload", notebookHandler.UploadNotebook)        // 上传 Notebook
-			notebooks.GET("", notebookHandler.ListNotebooks)                 // 列出 Notebooks
-			notebooks.GET("/:id/download", notebookHandler.DownloadNotebook) // 下载 Notebook
-			notebooks.DELETE("/:id", notebookHandler.DeleteNotebook)         // 删除 Notebook
+			notebooks.POST("/upload", permission(developauthorization.PermissionDevelopNotebookCreate), notebookHandler.UploadNotebook)
+			notebooks.GET("", permission(developauthorization.PermissionDevelopNotebookRead), notebookHandler.ListNotebooks)
+			notebooks.GET("/:id/download", permission(developauthorization.PermissionDevelopNotebookRead), notebookHandler.DownloadNotebook)
+			notebooks.DELETE("/:id", permission(developauthorization.PermissionDevelopNotebookDelete), notebookHandler.DeleteNotebook)
 		}
 
 		// ========== Jupyter 实例管理 (Docker 方案,已废弃) ==========
 		if jupyterInstanceHandler != nil {
 			jupyter := api.Group("/jupyter")
 			{
-				jupyter.POST("/instance/start", jupyterInstanceHandler.StartInstance)     // 启动 Jupyter 实例
-				jupyter.POST("/instance/stop", jupyterInstanceHandler.StopInstance)       // 停止 Jupyter 实例
-				jupyter.GET("/instance/status", jupyterInstanceHandler.GetInstanceStatus) // 获取实例状态
-				jupyter.GET("/instances", jupyterInstanceHandler.ListInstances)           // 列出所有实例（管理员）
+				jupyter.POST("/instance/start", permission(developauthorization.PermissionDevelopNotebookExecute), jupyterInstanceHandler.StartInstance)
+				jupyter.POST("/instance/stop", permission(developauthorization.PermissionDevelopNotebookExecute), jupyterInstanceHandler.StopInstance)
+				jupyter.GET("/instance/status", permission(developauthorization.PermissionDevelopNotebookRead), jupyterInstanceHandler.GetInstanceStatus)
 			}
 		}
 
@@ -200,16 +173,12 @@ func SetupRouter(
 			jupyter := api.Group("/jupyter")
 			{
 				// 租户虚拟环境管理
-				jupyter.GET("/venv/status", jupyterVenvHandler.GetVenvStatus) // 获取租户虚拟环境状态
-				jupyter.POST("/venv/init", jupyterVenvHandler.InitVenv)       // 初始化租户虚拟环境
-				jupyter.DELETE("/venv", jupyterVenvHandler.DeleteVenv)        // 删除租户虚拟环境
-
-				// 管理员接口
-				jupyter.GET("/venvs", jupyterVenvHandler.ListVenvs)                    // 列出所有租户虚拟环境
-				jupyter.POST("/venv/:tenant_id/init", jupyterVenvHandler.InitVenvByID) // 为指定租户初始化虚拟环境
+				jupyter.GET("/venv/status", permission(developauthorization.PermissionDevelopNotebookRead), jupyterVenvHandler.GetVenvStatus)
+				jupyter.POST("/venv/init", permission(developauthorization.PermissionDevelopNotebookCreate), jupyterVenvHandler.InitVenv)
+				jupyter.DELETE("/venv", permission(developauthorization.PermissionDevelopNotebookDelete), jupyterVenvHandler.DeleteVenv)
 
 				// Jupyter Server 状态
-				jupyter.GET("/server/status", jupyterVenvHandler.GetJupyterServerStatus) // 获取 Jupyter Server 状态
+				jupyter.GET("/server/status", permission(developauthorization.PermissionDevelopNotebookRead), jupyterVenvHandler.GetJupyterServerStatus)
 			}
 		}
 
@@ -217,9 +186,9 @@ func SetupRouter(
 		if duckdbHandler != nil {
 			duckdb := api.Group("/duckdb")
 			{
-				duckdb.GET("/sources", duckdbHandler.GetFederatedSources) // 获取可查询数据源
-				duckdb.GET("/test", duckdbHandler.TestConnection)         // 测试 DuckDB 引擎可用性
-				duckdb.GET("/sample-query", duckdbHandler.GetSampleQuery) // 获取样例查询
+				duckdb.GET("/sources", permission(developauthorization.PermissionDevelopTaskRead), duckdbHandler.GetFederatedSources)
+				duckdb.GET("/test", permission(developauthorization.PermissionDevelopTaskRead), duckdbHandler.TestConnection)
+				duckdb.GET("/sample-query", permission(developauthorization.PermissionDevelopTaskRead), duckdbHandler.GetSampleQuery)
 			}
 		}
 	}

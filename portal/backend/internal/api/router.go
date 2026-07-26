@@ -1,16 +1,14 @@
 package api
 
 import (
-	"time"
-
 	commonClient "github.com/addp/common/client"
 	commonAuth "github.com/addp/common/middleware/auth"
+	_ "github.com/addp/portal/docs"
 	"github.com/addp/portal/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	_ "github.com/addp/portal/docs"
 )
 
 func SetupRouter(cfg *config.Config, redisClient *redis.Client) *gin.Engine {
@@ -43,11 +41,10 @@ func SetupRouter(cfg *config.Config, redisClient *redis.Client) *gin.Engine {
 
 	// Portal BFF 路由（需要认证）
 	api := router.Group("/api/v1/portal")
-	if redisClient != nil {
-		api.Use(commonAuth.CachedSystemAuthMiddleware(cfg.SystemURL, redisClient, 5*time.Minute))
-	} else {
-		api.Use(commonAuth.SystemAuthMiddleware(cfg.SystemURL))
-	}
+	api.Use(
+		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: cfg.SystemURL}),
+		commonAuth.MustNewContextGuard("tenant"),
+	)
 
 	// ============================================================
 	// 门户首页（Phase 3）
@@ -66,15 +63,15 @@ func SetupRouter(cfg *config.Config, redisClient *redis.Client) *gin.Engine {
 	// ============================================================
 	// 资产申请（Phase 4）
 	// ============================================================
-	api.POST("/assets/:id/apply",       handleApply(assetClient))
+	api.POST("/assets/:id/apply", handleApply(assetClient))
 	api.GET("/assets/:id/apply-status", handleApplyStatus(assetClient))
-	api.GET("/my/applications",         handleMyApplications(assetClient))
-	api.GET("/assets/:id/endpoints",    handleAssetEndpoints(assetClient, serviceClient))
+	api.GET("/my/applications", handleMyApplications(assetClient))
+	api.GET("/assets/:id/endpoints", handleAssetEndpoints(assetClient, serviceClient))
 
 	// ============================================================
 	// 资产评价（Phase 6）
 	// ============================================================
-	api.GET("/assets/:id/ratings",  handleGetRatings(assetClient))
+	api.GET("/assets/:id/ratings", handleGetRatings(assetClient))
 	api.POST("/assets/:id/ratings", handleSubmitRating(assetClient))
 
 	return router

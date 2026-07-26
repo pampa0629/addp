@@ -88,6 +88,8 @@ services:
       - |
         grep -q '^enable_fqdn_mode = true$' /opt/apache-doris/fe/conf/fe.conf ||
           echo 'enable_fqdn_mode = true' >> /opt/apache-doris/fe/conf/fe.conf
+        grep -q '^force_olap_table_replication_num = 1$' /opt/apache-doris/fe/conf/fe.conf ||
+          echo 'force_olap_table_replication_num = 1' >> /opt/apache-doris/fe/conf/fe.conf
         exec bash /usr/local/bin/entry_point.sh
     ports:
       - "${DORIS_FE_PORT:-9030}:9030"       # MySQL 协议

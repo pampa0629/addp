@@ -7,6 +7,8 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	commonModels "github.com/addp/common/models"
+	commonUtils "github.com/addp/common/utils"
 	"github.com/addp/meta/internal/models"
 	"gorm.io/gorm"
 )
@@ -15,6 +17,27 @@ type DatabaseCleaner struct {
 	db           *gorm.DB
 	systemClient *commonClient.SystemClient
 	log          *slog.Logger
+}
+
+type metaEngineEligibility struct {
+	name          string
+	invalidReason string
+}
+
+func metaEngineEligibilityByID(engines []commonModels.Engine) map[uint]metaEngineEligibility {
+	eligibilityByID := make(map[uint]metaEngineEligibility, len(engines))
+	for index := range engines {
+		engine := &engines[index]
+		eligibility := metaEngineEligibility{name: engine.Name}
+		switch {
+		case !engine.IsActive:
+			eligibility.invalidReason = "引擎已禁用"
+		case !commonUtils.HasStorageCapability(engine):
+			eligibility.invalidReason = "引擎不具备存储能力"
+		}
+		eligibilityByID[engine.ID] = eligibility
+	}
+	return eligibilityByID
 }
 
 func NewDatabaseCleaner(db *gorm.DB, systemClient *commonClient.SystemClient, log *slog.Logger) *DatabaseCleaner {
@@ -39,12 +62,7 @@ func (c *DatabaseCleaner) ScanInvalidEnginesWithScope(ctx context.Context, tenan
 		return nil, fmt.Errorf("获取引擎列表失败: %w", err)
 	}
 
-	validEngineIDs := make(map[uint]string)
-	for _, engine := range allEngines {
-		if engine.IsActive {
-			validEngineIDs[engine.ID] = engine.Name
-		}
-	}
+	eligibilityByID := metaEngineEligibilityByID(allEngines)
 
 	type engineStats struct {
 		EngineID      uint
@@ -55,8 +73,10 @@ func (c *DatabaseCleaner) ScanInvalidEnginesWithScope(ctx context.Context, tenan
 	var stats []engineStats
 	query := c.db.Table("meta.meta_node mn").
 		Select("mn.engine_id, COUNT(DISTINCT mn.id) as affected_nodes, COUNT(DISTINCT mi.id) as affected_items").
-		Joins("LEFT JOIN meta.meta_item mi ON mn.id = mi.node_id").
-		Group("mn.engine_id")
+		Joins("LEFT JOIN meta.meta_item mi ON mn.id = mi.node_id AND mi.deleted_at IS NULL").
+		Where("mn.deleted_at IS NULL").
+		Group("mn.engine_id").
+		Order("mn.engine_id")
 	if tenantID > 0 {
 		query = query.Where("mn.tenant_id = ?", tenantID)
 	}
@@ -69,28 +89,25 @@ func (c *DatabaseCleaner) ScanInvalidEnginesWithScope(ctx context.Context, tenan
 	}
 
 	for _, stat := range stats {
-		engineName, exists := validEngineIDs[stat.EngineID]
+		eligibility, exists := eligibilityByID[stat.EngineID]
 		if !exists {
 			details = append(details, models.InvalidEngineDetail{
 				EngineID:      stat.EngineID,
 				EngineName:    fmt.Sprintf("Engine#%d", stat.EngineID),
 				AffectedNodes: int(stat.AffectedNodes),
 				AffectedItems: int(stat.AffectedItems),
-				Reason:        "引擎已删除或禁用",
+				Reason:        "引擎已删除",
 			})
 			continue
 		}
-		for _, engine := range allEngines {
-			if engine.ID == stat.EngineID && !engine.IsActive {
-				details = append(details, models.InvalidEngineDetail{
-					EngineID:      stat.EngineID,
-					EngineName:    engineName,
-					AffectedNodes: int(stat.AffectedNodes),
-					AffectedItems: int(stat.AffectedItems),
-					Reason:        "引擎已禁用",
-				})
-				break
-			}
+		if eligibility.invalidReason != "" {
+			details = append(details, models.InvalidEngineDetail{
+				EngineID:      stat.EngineID,
+				EngineName:    eligibility.name,
+				AffectedNodes: int(stat.AffectedNodes),
+				AffectedItems: int(stat.AffectedItems),
+				Reason:        eligibility.invalidReason,
+			})
 		}
 	}
 	return details, nil
@@ -289,9 +306,6 @@ func (c *DatabaseCleaner) InvalidEngineIDs(ctx context.Context, tenantID uint) [
 
 func (c *DatabaseCleaner) InvalidEngineIDsWithScope(ctx context.Context, tenantID uint, scope CleanupScope) []uint {
 	var ids []uint
-	if scope.EngineID > 0 {
-		return []uint{scope.EngineID}
-	}
 	if c.systemClient == nil {
 		if c.log != nil {
 			c.log.Warn("SystemClient 未配置，无法获取无效引擎列表")
@@ -307,19 +321,18 @@ func (c *DatabaseCleaner) InvalidEngineIDsWithScope(ctx context.Context, tenantI
 		return ids
 	}
 
-	validEngineIDs := make(map[uint]bool)
-	for _, engine := range allEngines {
-		if engine.IsActive {
-			validEngineIDs[engine.ID] = true
-		}
-	}
+	eligibilityByID := metaEngineEligibilityByID(allEngines)
 
 	var allEngineIDsInDB []uint
 	query := c.db.Table("meta.meta_node").
 		Select("DISTINCT engine_id").
-		Where("deleted_at IS NULL")
+		Where("deleted_at IS NULL").
+		Order("engine_id")
 	if tenantID > 0 {
 		query = query.Where("tenant_id = ?", tenantID)
+	}
+	if scope.EngineID > 0 {
+		query = query.Where("engine_id = ?", scope.EngineID)
 	}
 	if err := query.Scan(&allEngineIDsInDB).Error; err != nil {
 		if c.log != nil {
@@ -329,7 +342,8 @@ func (c *DatabaseCleaner) InvalidEngineIDsWithScope(ctx context.Context, tenantI
 	}
 
 	for _, engineID := range allEngineIDsInDB {
-		if !validEngineIDs[engineID] {
+		eligibility, exists := eligibilityByID[engineID]
+		if !exists || eligibility.invalidReason != "" {
 			ids = append(ids, engineID)
 		}
 	}

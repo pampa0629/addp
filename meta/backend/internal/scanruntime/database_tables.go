@@ -54,10 +54,13 @@ func (s *DatabaseRuntime) scanTables(
 		s.log.Info(fmt.Sprintf("处理第 %d/%d 张表", i+1, len(pluginTables)),
 			"table_name", tableInfo.Name,
 			"row_count", tableInfo.RowCount,
+			"estimated_row_count", tableInfo.EstimatedRowCount,
 		)
 
 		scannedTables[tableInfo.Name] = true
-		tableInfo.RowCount = s.resolveTableRowCount(ctx, resource, scanCatalog, schemaName, tableInfo)
+		if isDeepScan {
+			tableInfo.RowCount = s.resolveTableRowCount(ctx, resource, scanCatalog, schemaName, tableInfo)
+		}
 
 		existingItem := existingTableMap[tableInfo.Name]
 		needsUpdate := force || scanchange.ShouldUpdateTable(existingItem, tableInfo) || existingItem == nil
@@ -85,10 +88,13 @@ func (s *DatabaseRuntime) scanTables(
 		}
 
 		fullName := metapath.ComposeNodeFullName(tableInfo.Name, schemaNode, ".")
-		rowCount := derefInt64Ptr(tableInfo.RowCount)
+		rowCount := tableInfo.RowCount
+		if rowCount == nil && !isDeepScan && existingItem != nil {
+			rowCount = existingItem.RowCount
+		}
 		sizeBytes := derefInt64Ptr(tableInfo.SizeBytes)
 
-		item, err := s.repo.UpsertItemWithDepth(tenantID, engineID, schemaNode, scanCatalog.itemTerm, tableInfo.Name, fullName, attrs, &rowCount, &sizeBytes, tableInfo.UpdatedAt, scanDepth)
+		item, err := s.repo.UpsertItemWithDepth(tenantID, engineID, schemaNode, scanCatalog.itemTerm, tableInfo.Name, fullName, attrs, rowCount, &sizeBytes, tableInfo.UpdatedAt, scanDepth)
 		if err != nil {
 			s.log.Error("表元数据持久化失败",
 				"schema", schemaName,
@@ -151,7 +157,7 @@ func (s *DatabaseRuntime) listTables(
 }
 
 func (s *DatabaseRuntime) resolveTableRowCount(ctx context.Context, resource *commonModels.Engine, scanCatalog databaseScanCatalog, schemaName string, tableInfo datatype.TableInfo) *int64 {
-	if tableInfo.RowCount != nil && *tableInfo.RowCount > 0 {
+	if tableInfo.RowCount != nil && *tableInfo.RowCount >= 0 {
 		return tableInfo.RowCount
 	}
 	path := plugin.TabularItemPath(resource.ID, scanCatalog.namespaceTerm, schemaName, tableInfo.Name)

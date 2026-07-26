@@ -35,6 +35,8 @@ func NewRasterCOGHandler(repo *repository.RasterCOGRepository, spatialPreviewSvc
 // @Failure 404 {object} map[string]interface{} "COG 不存在或未就绪 | COG not found or not ready"
 // @Failure 416 {object} map[string]interface{} "Range 不可满足 | Range not satisfiable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "resource_ticket"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /raster_cog/{id}/content [get]
 // @Security BearerAuth
 func (h *RasterCOGHandler) GetRasterCOGContent(c *gin.Context) {

@@ -8,13 +8,15 @@ import (
 
 func TestMergeDatabaseTableInfoPreservesListFactsAndNormalizesFields(t *testing.T) {
 	rowCount := int64(12)
+	estimatedRowCount := int64(15)
 	sizeBytes := int64(2048)
 	base := datatype.TableInfo{
-		Name:      "orders",
-		Kind:      "view",
-		Comment:   "from list",
-		RowCount:  &rowCount,
-		SizeBytes: &sizeBytes,
+		Name:              "orders",
+		Kind:              "view",
+		Comment:           "from list",
+		RowCount:          &rowCount,
+		EstimatedRowCount: &estimatedRowCount,
+		SizeBytes:         &sizeBytes,
 		Native: map[string]interface{}{
 			"engine": "MergeTree",
 		},
@@ -34,6 +36,9 @@ func TestMergeDatabaseTableInfoPreservesListFactsAndNormalizesFields(t *testing.
 	if merged.RowCount == nil || *merged.RowCount != rowCount {
 		t.Fatalf("RowCount = %#v, want %d", merged.RowCount, rowCount)
 	}
+	if merged.EstimatedRowCount == nil || *merged.EstimatedRowCount != estimatedRowCount {
+		t.Fatalf("EstimatedRowCount = %#v, want %d", merged.EstimatedRowCount, estimatedRowCount)
+	}
 	if merged.SizeBytes == nil || *merged.SizeBytes != sizeBytes {
 		t.Fatalf("SizeBytes = %#v, want %d", merged.SizeBytes, sizeBytes)
 	}
@@ -51,18 +56,18 @@ func TestMergeDatabaseTableInfoPreservesListFactsAndNormalizesFields(t *testing.
 	}
 }
 
-func TestMergeDatabaseTableInfoKeepsResolvedRowCountOverDescribedEstimate(t *testing.T) {
+func TestMergeDatabaseTableInfoKeepsExactAndEstimatedCountsSeparate(t *testing.T) {
 	resolvedRowCount := int64(50)
-	describedEstimate := int64(0)
+	describedEstimate := int64(48)
 	base := datatype.TableInfo{
 		Name:     "sm_buffer_demo",
 		Kind:     "table",
 		RowCount: &resolvedRowCount,
 	}
 	described := datatype.TableInfo{
-		Name:     "sm_buffer_demo",
-		Kind:     "table",
-		RowCount: &describedEstimate,
+		Name:              "sm_buffer_demo",
+		Kind:              "table",
+		EstimatedRowCount: &describedEstimate,
 		Fields: []datatype.FieldInfo{
 			{Name: "smgeometry", NativeType: "geometry"},
 		},
@@ -72,5 +77,8 @@ func TestMergeDatabaseTableInfoKeepsResolvedRowCountOverDescribedEstimate(t *tes
 
 	if merged.RowCount == nil || *merged.RowCount != resolvedRowCount {
 		t.Fatalf("RowCount = %#v, want resolved %d", merged.RowCount, resolvedRowCount)
+	}
+	if merged.EstimatedRowCount == nil || *merged.EstimatedRowCount != describedEstimate {
+		t.Fatalf("EstimatedRowCount = %#v, want estimate %d", merged.EstimatedRowCount, describedEstimate)
 	}
 }

@@ -24,6 +24,8 @@ func NewCodeSetHandler(codeSetService *service.CodeSetService) *CodeSetHandler {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.code_set.read"]
 // @Router /code-sets [get]
 // @Security BearerAuth
 func (h *CodeSetHandler) ListCodeSets(c *gin.Context) {
@@ -58,6 +60,8 @@ func (h *CodeSetHandler) ListCodeSets(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.code_set.create"]
 // @Router /code-sets [post]
 // @Security BearerAuth
 func (h *CodeSetHandler) CreateCodeSet(c *gin.Context) {
@@ -83,6 +87,8 @@ func (h *CodeSetHandler) CreateCodeSet(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.code_set.read"]
 // @Router /code-sets/{id} [get]
 // @Security BearerAuth
 func (h *CodeSetHandler) GetCodeSet(c *gin.Context) {
@@ -103,6 +109,8 @@ func (h *CodeSetHandler) GetCodeSet(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.code_set.update"]
 // @Router /code-sets/{id} [put]
 // @Security BearerAuth
 func (h *CodeSetHandler) UpdateCodeSet(c *gin.Context) {
@@ -129,6 +137,8 @@ func (h *CodeSetHandler) UpdateCodeSet(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.code_set.delete"]
 // @Router /code-sets/{id} [delete]
 // @Security BearerAuth
 func (h *CodeSetHandler) DeleteCodeSet(c *gin.Context) {
@@ -148,6 +158,8 @@ func (h *CodeSetHandler) DeleteCodeSet(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.code_set.read"]
 // @Router /code-sets/{id}/items [get]
 // @Security BearerAuth
 func (h *CodeSetHandler) GetCodeItems(c *gin.Context) {
@@ -168,6 +180,8 @@ func (h *CodeSetHandler) GetCodeItems(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.code_set.update"]
 // @Router /code-sets/{id}/items [post]
 // @Security BearerAuth
 func (h *CodeSetHandler) CreateCodeItem(c *gin.Context) {
@@ -194,6 +208,8 @@ func (h *CodeSetHandler) CreateCodeItem(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.code_set.update"]
 // @Router /code-sets/{id}/items/{iid} [put]
 // @Security BearerAuth
 func (h *CodeSetHandler) UpdateCodeItem(c *gin.Context) {
@@ -221,6 +237,8 @@ func (h *CodeSetHandler) UpdateCodeItem(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.code_set.update"]
 // @Router /code-sets/{id}/items/{iid} [delete]
 // @Security BearerAuth
 func (h *CodeSetHandler) DeleteCodeItem(c *gin.Context) {

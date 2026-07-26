@@ -206,7 +206,7 @@ async function handleReject(itemId) {
 
 async function handleBatchApprove() {
   try {
-    await buildAPI.batchReview(graphId, selectedIds.value, 'approve')
+    await buildAPI.batchApprove(graphId, selectedIds.value)
     ElMessage.success(t('graph.review.batchApproved', { count: selectedIds.value.length }))
     selectedIds.value = []
     await loadItems()
@@ -217,7 +217,7 @@ async function handleBatchApprove() {
 
 async function handleBatchReject() {
   try {
-    await buildAPI.batchReview(graphId, selectedIds.value, 'reject')
+    await buildAPI.batchReject(graphId, selectedIds.value)
     ElMessage.success(t('graph.review.batchRejected', { count: selectedIds.value.length }))
     selectedIds.value = []
     await loadItems()

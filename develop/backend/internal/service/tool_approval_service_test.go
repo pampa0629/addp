@@ -3,11 +3,12 @@ package service
 import (
 	"context"
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
+	commonAuth "github.com/addp/common/authorization"
 	commonExecution "github.com/addp/common/execution"
-	commonAuth "github.com/addp/common/middleware/auth"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/google/uuid"
@@ -224,23 +225,25 @@ func assertApprovalErrorCode(t *testing.T, err error, want string) {
 	}
 }
 
-func delegatedApprovalContext(userID, tenantID uint, runID, callID string) commonAuth.AuthorizationContext {
-	return commonAuth.AuthorizationContext{
-		SubjectType: "user",
-		UserID:      userID,
-		TenantID:    &tenantID,
-		AuthType:    commonAuth.AuthTypeDelegatedAccessToken,
-		AgentRunID:  &runID,
-		ToolCallID:  &callID,
+func delegatedApprovalContext(userID, tenantID uint, runID, callID string) commonAuth.AuthContext {
+	tenantIDText := strconv.FormatUint(uint64(tenantID), 10)
+	return commonAuth.AuthContext{
+		Principal: commonAuth.AuthPrincipal{Type: "user", ID: strconv.FormatUint(uint64(userID), 10)},
+		Context:   commonAuth.AuthSessionContext{Type: "tenant", TenantID: &tenantIDText},
+		Token:     commonAuth.TokenFacts{Type: "delegated_access_token"},
+		Delegation: &commonAuth.DelegationFacts{
+			AgentRunID: runID,
+			ToolCallID: callID,
+		},
 	}
 }
 
-func userApprovalContext(userID, tenantID uint) commonAuth.AuthorizationContext {
-	return commonAuth.AuthorizationContext{
-		SubjectType: "user",
-		UserID:      userID,
-		TenantID:    &tenantID,
-		AuthType:    "first_party_access_token",
+func userApprovalContext(userID, tenantID uint) commonAuth.AuthContext {
+	tenantIDText := strconv.FormatUint(uint64(tenantID), 10)
+	return commonAuth.AuthContext{
+		Principal: commonAuth.AuthPrincipal{Type: "user", ID: strconv.FormatUint(uint64(userID), 10)},
+		Context:   commonAuth.AuthSessionContext{Type: "tenant", TenantID: &tenantIDText},
+		Token:     commonAuth.TokenFacts{Type: "first_party_access_token"},
 	}
 }
 

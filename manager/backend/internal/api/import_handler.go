@@ -63,6 +63,8 @@ func NewImportHandler(importService *service.ImportService) *ImportHandler {
 // @Param encoding formData string false "DBF编码，默认UTF-8 | DBF encoding, default UTF-8"
 // @Success 202 {object} service.ImportResult "导入请求已提交 | Import request submitted"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.data_item.create"]
 // @Router /imports [post]
 // @Security BearerAuth
 func (h *ImportHandler) ImportData(c *gin.Context) {

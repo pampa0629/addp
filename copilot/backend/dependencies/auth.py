@@ -4,7 +4,7 @@ import httpx
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from addp_common.auth import AuthorizationContext, allows_delegated_tool, resolve_authorization_context
+from addp_common.auth import AuthorizationContext, allows_delegated_tool, allows_permissions, resolve_authorization_context
 from config import settings
 
 
@@ -51,7 +51,7 @@ async def require_user(
     accept_language: str | None = Header(default=None, alias="Accept-Language"),
 ) -> AuthorizationContext:
     context = await _resolve_user(credentials, accept_language)
-    if context.auth_type == "delegated_access_token":
+    if context.token_type == "delegated_access_token":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=_message(accept_language, "委托令牌不能访问该接口", "Delegated token cannot access this endpoint"),
@@ -76,13 +76,36 @@ async def require_tenant_user(
     return context
 
 
-def require_tool_user(audience: str, scope: str):
+def require_tenant_permissions(*required_permissions: str):
+    async def dependency(
+        credentials: HTTPAuthorizationCredentials = Depends(_bearer_auth),
+        accept_language: str | None = Header(default=None, alias="Accept-Language"),
+    ) -> AuthorizationContext:
+        context = await require_tenant_user(credentials, accept_language)
+        if not allows_permissions(context, tuple(required_permissions)):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=_message(accept_language, "权限不足", "Insufficient permission"),
+            )
+        return context
+
+    return dependency
+
+
+def require_tool_user(audience: str, scope: str, *required_permissions: str):
     async def dependency(
         credentials: HTTPAuthorizationCredentials = Depends(_bearer_auth),
         accept_language: str | None = Header(default=None, alias="Accept-Language"),
     ) -> AuthorizationContext:
         context = await _resolve_user(credentials, accept_language)
-        if not allows_delegated_tool(context, audience, (scope,)):
+        if context.tenant_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=_message(accept_language, "此接口需要租户上下文", "This endpoint requires a tenant context"),
+            )
+        if not allows_delegated_tool(context, audience, (scope,)) or not allows_permissions(
+            context, tuple(required_permissions)
+        ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=_message(accept_language, "委托令牌权限不足", "Delegated token has insufficient permission"),

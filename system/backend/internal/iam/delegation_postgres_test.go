@@ -11,6 +11,7 @@ import (
 	commonapi "github.com/addp/common/api"
 	systemauthorization "github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/migration"
+	"github.com/addp/system/internal/testsupport"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -22,6 +23,7 @@ func TestDelegationServiceAgainstPostgres(t *testing.T) {
 	if dsn == "" {
 		t.Skip("set ADDP_IAM_RUNTIME_TEST_DSN to a disposable PostgreSQL 15+ database")
 	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {

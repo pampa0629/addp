@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/addp/common/logger"
-	auth "github.com/addp/common/middleware/auth"
 	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -33,10 +32,11 @@ func NewSearchHandler(searchService *service.HybridSearchService, historyService
 // @Param q query string true "搜索关键词 | Search query"
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认10 | Page size, default 10"
-// @Param tenant_id query int false "超级管理员指定检索租户；普通用户忽略该参数 | Tenant filter for super admin; ignored for tenant users"
 // @Success 200 {object} service.SearchResult "搜索结果，results[].locator 为跨引擎资源定位符 | Search results; results[].locator is the cross-engine resource locator"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 503 {object} map[string]interface{} "搜索服务不可用 | Search service unavailable"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.search.execute"]
 // @Router /search [get]
 // @Security BearerAuth
 func (h *SearchHandler) Search(c *gin.Context) {
@@ -94,6 +94,7 @@ func (h *SearchHandler) Search(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "搜索历史列表 | Search history list"
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
 // @Failure 503 {object} map[string]interface{} "服务不可用 | Service unavailable"
+// @x-addp-auth-mode "self"
 // @Router /search/history [get]
 // @Security BearerAuth
 func (h *SearchHandler) ListHistory(c *gin.Context) {
@@ -145,6 +146,7 @@ func (h *SearchHandler) ListHistory(c *gin.Context) {
 // @Success 204 "删除成功 | Deleted successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
+// @x-addp-auth-mode "self"
 // @Router /search/history/{id} [delete]
 // @Security BearerAuth
 func (h *SearchHandler) DeleteHistoryItem(c *gin.Context) {
@@ -182,6 +184,7 @@ func (h *SearchHandler) DeleteHistoryItem(c *gin.Context) {
 // @Success 204 "清空成功 | Cleared successfully"
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
 // @Failure 503 {object} map[string]interface{} "服务不可用 | Service unavailable"
+// @x-addp-auth-mode "self"
 // @Router /search/history [delete]
 // @Security BearerAuth
 func (h *SearchHandler) ClearHistory(c *gin.Context) {
@@ -206,23 +209,6 @@ func (h *SearchHandler) ClearHistory(c *gin.Context) {
 }
 
 func userIDFromContext(c *gin.Context) (uint, bool) {
-	value, exists := c.Get(auth.ContextUserIDKey)
-	if !exists {
-		return 0, false
-	}
-
-	switch v := value.(type) {
-	case uint:
-		if v == 0 {
-			return 0, false
-		}
-		return v, true
-	case int:
-		if v <= 0 {
-			return 0, false
-		}
-		return uint(v), true
-	default:
-		return 0, false
-	}
+	userID := userIDValue(c)
+	return userID, userID > 0
 }

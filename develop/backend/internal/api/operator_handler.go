@@ -39,6 +39,8 @@ func NewOperatorHandler(operatorDiscovery *service.OperatorDiscoveryService) *Op
 // @Security BearerAuth
 // @Param id path int true "工作流引擎实例ID | Workflow engine instance ID"
 // @Success 200 {object} OperatorListResponse "算子列表 | Operator list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read"]
 // @Router /workflow-engines/{id}/operators [get]
 func (h *OperatorHandler) ListOperatorsByWorkflowEngine(c *gin.Context) {
 	workflowEngineID64, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -50,7 +52,7 @@ func (h *OperatorHandler) ListOperatorsByWorkflowEngine(c *gin.Context) {
 	operators, err := h.operatorDiscovery.GetOperatorsByWorkflowEngineIDForTenant(
 		c.Request.Context(),
 		uint(workflowEngineID64),
-		c.GetUint("tenant_id"),
+		tenantIDValue(c),
 	)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -76,6 +78,8 @@ func (h *OperatorHandler) ListOperatorsByWorkflowEngine(c *gin.Context) {
 // @Success 200 {object} service.WorkflowValidationResult "校验结果 | Validation result"
 // @Failure 400 {object} map[string]interface{} "请求或工作流引擎错误 | Invalid request or workflow engine"
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read"]
 // @Router /workflow-validations [post]
 func (h *OperatorHandler) ValidateWorkflow(c *gin.Context) {
 	var request WorkflowValidationRequest
@@ -92,7 +96,7 @@ func (h *OperatorHandler) ValidateWorkflow(c *gin.Context) {
 		c.Request.Context(),
 		request.WorkflowEngineID,
 		request.WorkflowDefinition,
-		c.GetUint("tenant_id"),
+		tenantIDValue(c),
 	)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

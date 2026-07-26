@@ -218,6 +218,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PreviewPanel from '@/components/explorer/PreviewPanel.vue'
+import { optionalCount, pickNestedCount } from '@/utils/metadataRowCount'
 
 const { t } = useI18n()
 
@@ -286,6 +287,7 @@ const fieldOrder = [
   'bucket',
   'path',
   'row_count',
+  'estimated_row_count',
   'column_count',
   'fields',
   'native',
@@ -388,6 +390,7 @@ const fieldLabelKeys = {
   bucket: 'manager.explorer.attributes.fields.bucket',
   path: 'manager.explorer.attributes.fields.path',
   row_count: 'manager.explorer.attributes.fields.rowCount',
+  estimated_row_count: 'manager.explorer.attributes.fields.estimatedRowCount',
   column_count: 'manager.explorer.attributes.fields.columnCount',
   fields: 'manager.explorer.attributes.fields.fields',
   geometry_columns: 'manager.explorer.attributes.fields.geometryColumns',
@@ -480,6 +483,7 @@ const tableColumnLabelKeys = {
   required: 'manager.explorer.attributes.tableColumns.required',
   primary: 'manager.explorer.attributes.tableColumns.primary',
   row_count: 'manager.explorer.attributes.tableColumns.rowCount',
+  estimated_row_count: 'manager.explorer.attributes.tableColumns.estimatedRowCount',
   column_count: 'manager.explorer.attributes.tableColumns.columnCount',
   count: 'manager.explorer.attributes.tableColumns.count',
   labels: 'manager.explorer.attributes.tableColumns.labels',
@@ -565,6 +569,14 @@ const overviewItems = computed(() => {
       value: formatScalar(itemRowCount.value)
     })
   }
+  if (itemEstimatedRowCount.value !== null) {
+    const exactRowCountIndex = items.findIndex(item => item.key === 'row_count')
+    items.splice(exactRowCountIndex >= 0 ? exactRowCountIndex + 1 : 2, 0, {
+      key: 'estimated_row_count',
+      label: t('manager.explorer.attributes.fields.estimatedRowCount'),
+      value: formatScalar(itemEstimatedRowCount.value)
+    })
+  }
   return items
 })
 
@@ -584,14 +596,18 @@ const showDynamicSchemaNotice = computed(() => {
 })
 
 const itemRowCount = computed(() => {
-  const directRowCount = Number(itemMeta.value?.row_count)
-  if (Number.isFinite(directRowCount)) return directRowCount
-  const previewRowCount = Number(props.previewData?.total)
-  if (Number.isFinite(previewRowCount) && previewRowCount > 0) return previewRowCount
-  return pickNestedNumber(itemAttributesMap.value, [
+  const directRowCount = optionalCount(itemMeta.value?.row_count)
+  if (directRowCount !== null) return directRowCount
+  const attributeRowCount = pickNestedCount(itemAttributesMap.value, [
     ['type_info', 'table', 'row_count']
   ])
+  if (attributeRowCount !== null) return attributeRowCount
+  return optionalCount(props.previewData?.total)
 })
+
+const itemEstimatedRowCount = computed(() => pickNestedCount(itemAttributesMap.value, [
+  ['type_info', 'table', 'estimated_row_count']
+]))
 
 const rawAttributesJson = computed(() => {
   const attrs = itemAttributesMap.value
@@ -823,7 +839,7 @@ const preferredColumnsForObjectTable = (pathParts) => {
     case 'indexes':
       return ['name', 'fields', 'is_unique', 'index_type']
     case 'children':
-      return ['name', 'child_kind', 'data_type', 'row_count', 'column_count', 'table', 'format', 'path']
+      return ['name', 'child_kind', 'data_type', 'row_count', 'estimated_row_count', 'column_count', 'table', 'format', 'path']
     default:
       return ['name', 'type', 'path', 'role', 'format', 'data_type']
   }
@@ -1104,18 +1120,6 @@ const compareKeys = (a, b, order) => {
   return String(a).localeCompare(String(b))
 }
 
-const pickNestedNumber = (source, paths) => {
-  for (const path of paths) {
-    let current = source
-    for (const segment of path) {
-      current = current?.[segment]
-    }
-    if (current === null || current === undefined || current === '') continue
-    const value = Number(current)
-    if (Number.isFinite(value)) return value
-  }
-  return null
-}
 </script>
 
 <style scoped>

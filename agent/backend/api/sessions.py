@@ -12,6 +12,7 @@ from authorization_permissions_generated import (
     AGENT_SESSION_READ,
 )
 from database import get_db
+from middleware.auth import require_permissions
 from models.session import Session
 
 router = APIRouter(prefix="/sessions", tags=["会话管理 | Sessions"])
@@ -33,6 +34,7 @@ class SessionResponse(BaseModel):
 @router.get(
     "",
     summary="获取会话列表 | List Sessions",
+    dependencies=[Depends(require_permissions(AGENT_SESSION_READ))],
     openapi_extra={
         "x-addp-auth-mode": "permission",
         "x-addp-required-permissions": [AGENT_SESSION_READ],
@@ -40,7 +42,7 @@ class SessionResponse(BaseModel):
 )
 async def list_sessions(request: Request, db: AsyncSession = Depends(get_db)):
     """获取当前用户的会话列表"""
-    user_id = request.state.user_id
+    user_id = request.state.principal_id
     result = await db.execute(
         select(Session)
         .where(Session.user_id == user_id)
@@ -62,6 +64,7 @@ async def list_sessions(request: Request, db: AsyncSession = Depends(get_db)):
     "",
     status_code=201,
     summary="创建会话 | Create Session",
+    dependencies=[Depends(require_permissions(AGENT_SESSION_CREATE))],
     openapi_extra={
         "x-addp-auth-mode": "permission",
         "x-addp-required-permissions": [AGENT_SESSION_CREATE],
@@ -70,7 +73,7 @@ async def list_sessions(request: Request, db: AsyncSession = Depends(get_db)):
 async def create_session(request: Request, body: SessionCreate, db: AsyncSession = Depends(get_db)):
     """创建新会话"""
     session = Session(
-        user_id=request.state.user_id,
+        user_id=request.state.principal_id,
         tenant_id=request.state.tenant_id,
         title=body.title,
     )
@@ -87,6 +90,7 @@ async def create_session(request: Request, body: SessionCreate, db: AsyncSession
 @router.get(
     "/{session_id}",
     summary="获取会话详情 | Get Session",
+    dependencies=[Depends(require_permissions(AGENT_SESSION_READ))],
     openapi_extra={
         "x-addp-auth-mode": "permission",
         "x-addp-required-permissions": [AGENT_SESSION_READ],
@@ -97,7 +101,7 @@ async def get_session(session_id: int, request: Request, db: AsyncSession = Depe
     result = await db.execute(
         select(Session).where(
             Session.id == session_id,
-            Session.user_id == request.state.user_id,
+            Session.user_id == request.state.principal_id,
         )
     )
     session = result.scalar_one_or_none()
@@ -114,6 +118,7 @@ async def get_session(session_id: int, request: Request, db: AsyncSession = Depe
 @router.delete(
     "/{session_id}",
     summary="删除会话 | Delete Session",
+    dependencies=[Depends(require_permissions(AGENT_SESSION_DELETE))],
     openapi_extra={
         "x-addp-auth-mode": "permission",
         "x-addp-required-permissions": [AGENT_SESSION_DELETE],
@@ -124,7 +129,7 @@ async def delete_session(session_id: int, request: Request, db: AsyncSession = D
     result = await db.execute(
         select(Session).where(
             Session.id == session_id,
-            Session.user_id == request.state.user_id,
+            Session.user_id == request.state.principal_id,
         )
     )
     session = result.scalar_one_or_none()

@@ -25,7 +25,7 @@ func TestRunCheckWritesCanonicalCatalogReport(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
 		t.Fatalf("decode report: %v", err)
 	}
-	if len(report.Permissions) != 243 || len(report.Roles) != 18 {
+	if len(report.Permissions) != 295 || len(report.Roles) != 16 {
 		t.Fatalf("report counts = permissions:%d roles:%d", len(report.Permissions), len(report.Roles))
 	}
 	if stderr.Len() != 0 {
@@ -66,7 +66,7 @@ func TestRunCheckToolCatalogWritesSummary(t *testing.T) {
 	}
 }
 
-func TestRunCoverageReportWritesCurrentGaps(t *testing.T) {
+func TestRunCoverageReportIsComplete(t *testing.T) {
 	var stdout bytes.Buffer
 	if err := run(
 		[]string{"--coverage-report", "--repository-root", testRepositoryRoot(t)},
@@ -82,8 +82,8 @@ func TestRunCoverageReportWritesCurrentGaps(t *testing.T) {
 	if report.SchemaVersion != authorization.AuthorizationCoverageReportSchemaVersion {
 		t.Fatalf("coverage schema version = %q", report.SchemaVersion)
 	}
-	if report.Complete {
-		t.Fatal("repository coverage unexpectedly complete before route annotations are migrated")
+	if !report.Complete || len(report.Issues) != 0 {
+		t.Fatalf("repository coverage = %#v, want complete", report)
 	}
 }
 

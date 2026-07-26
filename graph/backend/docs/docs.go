@@ -53,7 +53,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.build_task.read"
+                ]
             }
         },
         "/graphs": {
@@ -87,7 +91,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.graph.read"
+                ]
             },
             "post": {
                 "security": [
@@ -136,7 +144,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.graph.create"
+                ]
             }
         },
         "/graphs/{id}": {
@@ -176,7 +188,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.graph.read"
+                ]
             },
             "put": {
                 "security": [
@@ -232,7 +248,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.graph.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -270,7 +290,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.graph.delete"
+                ]
             }
         },
         "/graphs/{id}/analysis/capabilities": {
@@ -310,7 +334,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.analysis.read"
+                ]
             }
         },
         "/graphs/{id}/analysis/run": {
@@ -368,7 +396,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.analysis.execute"
+                ]
             }
         },
         "/graphs/{id}/analysis/sync-spatial": {
@@ -409,7 +441,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.analysis.execute"
+                ]
             }
         },
         "/graphs/{id}/build/tasks": {
@@ -452,7 +488,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.build_task.read"
+                ]
             },
             "post": {
                 "security": [
@@ -499,7 +539,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.build_task.create"
+                ]
             }
         },
         "/graphs/{id}/build/tasks/{tid}": {
@@ -545,7 +589,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.build_task.read"
+                ]
             },
             "delete": {
                 "security": [
@@ -589,7 +637,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.build_task.delete"
+                ]
             }
         },
         "/graphs/{id}/build/tasks/{tid}/cancel": {
@@ -641,7 +693,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.build_task.cancel"
+                ]
             }
         },
         "/graphs/{id}/build/tasks/{tid}/materials": {
@@ -690,7 +746,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.build_task.read"
+                ]
             },
             "post": {
                 "security": [
@@ -753,7 +813,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.build_task.update"
+                ]
             }
         },
         "/graphs/{id}/build/tasks/{tid}/materials/{mid}": {
@@ -806,7 +870,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.build_task.update"
+                ]
             }
         },
         "/graphs/{id}/build/tasks/{tid}/rerun": {
@@ -858,7 +926,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.build_task.execute"
+                ]
             }
         },
         "/graphs/{id}/build/tasks/{tid}/run": {
@@ -911,7 +983,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.build_task.execute"
+                ]
             }
         },
         "/graphs/{id}/constraints": {
@@ -951,7 +1027,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.graph.read"
+                ]
             }
         },
         "/graphs/{id}/expand": {
@@ -1009,7 +1089,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.graph.read"
+                ]
             }
         },
         "/graphs/{id}/infer-schema": {
@@ -1055,7 +1139,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.graph.read"
+                ]
             }
         },
         "/graphs/{id}/infer-schema/apply": {
@@ -1113,7 +1201,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.graph.update"
+                ]
             }
         },
         "/graphs/{id}/overview": {
@@ -1153,7 +1245,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.graph.read"
+                ]
             }
         },
         "/graphs/{id}/path": {
@@ -1211,7 +1307,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.graph.read"
+                ]
             }
         },
         "/graphs/{id}/review": {
@@ -1283,10 +1383,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.review.read"
+                ]
             }
         },
-        "/graphs/{id}/review/batch": {
+        "/graphs/{id}/review/batch/approve": {
             "post": {
                 "security": [
                     {
@@ -1302,7 +1406,7 @@ const docTemplate = `{
                 "tags": [
                     "图谱构建 | Graph Build"
                 ],
-                "summary": "批量审核 | Batch review",
+                "summary": "批量通过审核项 | Batch approve review items",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1312,13 +1416,18 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "批量审核请求 | Batch review request",
+                        "description": "审核项 ID | Review item IDs",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
                             "type": "object",
-                            "additionalProperties": true
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "type": "integer"
+                                }
+                            }
                         }
                     }
                 ],
@@ -1341,7 +1450,78 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.review.approve"
+                ]
+            }
+        },
+        "/graphs/{id}/review/batch/reject": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "图谱构建 | Graph Build"
+                ],
+                "summary": "批量拒绝审核项 | Batch reject review items",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "知识图谱 ID | Knowledge graph ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "审核项 ID | Review item IDs",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.review.reject"
+                ]
             }
         },
         "/graphs/{id}/review/pending-count": {
@@ -1383,7 +1563,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.review.read"
+                ]
             }
         },
         "/graphs/{id}/review/{iid}": {
@@ -1448,7 +1632,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.review.update"
+                ]
             }
         },
         "/graphs/{id}/review/{iid}/approve": {
@@ -1494,7 +1682,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.review.approve"
+                ]
             }
         },
         "/graphs/{id}/review/{iid}/reject": {
@@ -1540,7 +1732,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.review.reject"
+                ]
             }
         },
         "/graphs/{id}/schema": {
@@ -1580,7 +1776,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.graph.read"
+                ]
             }
         },
         "/graphs/{id}/search": {
@@ -1638,7 +1838,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.graph.read"
+                ]
             }
         },
         "/graphs/{id}/stats": {
@@ -1678,7 +1882,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.graph.read"
+                ]
             }
         },
         "/kg/{graphId}/entities/{type}": {
@@ -1715,7 +1923,8 @@ const docTemplate = `{
                         "in": "query"
                     }
                 ],
-                "responses": {}
+                "responses": {},
+                "x-addp-auth-mode": "public"
             }
         },
         "/kg/{graphId}/entities/{type}/{nodeId}": {
@@ -1724,7 +1933,8 @@ const docTemplate = `{
                     "知识服务 | Knowledge Service"
                 ],
                 "summary": "获取实体详情 | Get entity detail",
-                "responses": {}
+                "responses": {},
+                "x-addp-auth-mode": "public"
             }
         },
         "/kg/{graphId}/nodes/{nodeId}/neighbors": {
@@ -1733,7 +1943,8 @@ const docTemplate = `{
                     "知识服务 | Knowledge Service"
                 ],
                 "summary": "获取节点邻居 | Get node neighbors",
-                "responses": {}
+                "responses": {},
+                "x-addp-auth-mode": "public"
             }
         },
         "/kg/{graphId}/ontology": {
@@ -1742,7 +1953,8 @@ const docTemplate = `{
                     "知识服务 | Knowledge Service"
                 ],
                 "summary": "获取图谱本体描述 | Get graph ontology description",
-                "responses": {}
+                "responses": {},
+                "x-addp-auth-mode": "public"
             }
         },
         "/kg/{graphId}/paths": {
@@ -1751,7 +1963,8 @@ const docTemplate = `{
                     "知识服务 | Knowledge Service"
                 ],
                 "summary": "路径查找 | Find paths",
-                "responses": {}
+                "responses": {},
+                "x-addp-auth-mode": "public"
             }
         },
         "/kg/{graphId}/search": {
@@ -1760,7 +1973,8 @@ const docTemplate = `{
                     "知识服务 | Knowledge Service"
                 ],
                 "summary": "全文搜索实体 | Full-text search entities",
-                "responses": {}
+                "responses": {},
+                "x-addp-auth-mode": "public"
             }
         },
         "/kg/{graphId}/stats": {
@@ -1769,7 +1983,8 @@ const docTemplate = `{
                     "知识服务 | Knowledge Service"
                 ],
                 "summary": "图谱统计信息 | Graph statistics",
-                "responses": {}
+                "responses": {},
+                "x-addp-auth-mode": "public"
             }
         },
         "/kg/{graphId}/subgraph": {
@@ -1778,7 +1993,8 @@ const docTemplate = `{
                     "知识服务 | Knowledge Service"
                 ],
                 "summary": "获取实体中心子图 | Get entity-centric subgraph",
-                "responses": {}
+                "responses": {},
+                "x-addp-auth-mode": "public"
             }
         },
         "/ontologies": {
@@ -1812,7 +2028,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.ontology.read"
+                ]
             },
             "post": {
                 "security": [
@@ -1861,7 +2081,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.ontology.create"
+                ]
             }
         },
         "/ontologies/import-preview/from-model": {
@@ -1898,7 +2122,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.ontology.read"
+                ]
             }
         },
         "/ontologies/infer-schema/from-engine": {
@@ -1956,7 +2184,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.ontology.read"
+                ]
             }
         },
         "/ontologies/neo4j-engines": {
@@ -1996,7 +2228,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.ontology.read"
+                ]
             }
         },
         "/ontologies/{id}": {
@@ -2036,7 +2272,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.ontology.read"
+                ]
             },
             "put": {
                 "security": [
@@ -2092,7 +2332,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.ontology.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -2130,7 +2374,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.ontology.delete"
+                ]
             }
         },
         "/ontologies/{id}/entity-types": {
@@ -2173,7 +2421,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.ontology.read"
+                ]
             },
             "post": {
                 "security": [
@@ -2229,7 +2481,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.ontology.create"
+                ]
             }
         },
         "/ontologies/{id}/entity-types/{eid}": {
@@ -2293,7 +2549,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.ontology.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -2340,7 +2600,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.ontology.delete"
+                ]
             }
         },
         "/ontologies/{id}/entity-types/{eid}/sync-constraints": {
@@ -2411,7 +2675,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.ontology.update"
+                ]
             }
         },
         "/ontologies/{id}/entity-types/{eid}/sync-spatial-layer": {
@@ -2483,7 +2751,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.ontology.update"
+                ]
             }
         },
         "/ontologies/{id}/import-from-model": {
@@ -2547,7 +2819,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.ontology.update"
+                ]
             }
         },
         "/ontologies/{id}/infer-schema/from-engine/apply": {
@@ -2611,7 +2887,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.ontology.update"
+                ]
             }
         },
         "/ontologies/{id}/relation-types": {
@@ -2654,7 +2934,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.ontology.read"
+                ]
             },
             "post": {
                 "security": [
@@ -2710,7 +2994,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.ontology.create"
+                ]
             }
         },
         "/ontologies/{id}/relation-types/{rid}": {
@@ -2774,7 +3062,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.ontology.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -2821,7 +3113,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.ontology.delete"
+                ]
             }
         },
         "/ontologies/{id}/versions": {
@@ -2864,7 +3160,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.ontology.read"
+                ]
             },
             "post": {
                 "security": [
@@ -2920,7 +3220,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.ontology.create"
+                ]
             }
         },
         "/tasks": {
@@ -2966,7 +3270,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.build_task.read"
+                ]
             }
         },
         "/tasks/{task_type}/{id}": {
@@ -3019,7 +3327,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.build_task.read"
+                ]
             }
         },
         "/tasks/{task_type}/{id}/execute": {
@@ -3089,7 +3401,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.build_task.execute"
+                ]
             }
         }
     },

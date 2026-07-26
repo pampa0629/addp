@@ -29,6 +29,8 @@ func NewMetadataHandler(metadataService *service.MetadataService) *MetadataHandl
 // @Summary 刷新数据项元数据 | Refresh item metadata
 // @Description 强制触发一次 item 对应的元数据重扫，并等待扫描完成 | Force a deep metadata rescan for an item and wait until completion
 // @Tags Manager
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.data_item.update"]
 // @Router /engines/{id}/items/refresh [post]
 // @Accept json
 // @Produce json

@@ -18,7 +18,1105 @@ info:
   title: ADDP Standard API
   version: "1.0"
 paths:
-  /assets/discoverable:
+  /classifications:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取数据分类列表 | List data classifications
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.classification.read
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建数据分类 | Create data classification
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.classification.create
+  /classifications/{id}:
+    delete:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除数据分类 | Delete data classification
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.classification.delete
+    put:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新数据分类 | Update data classification
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.classification.update
+  /code-sets:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取码值集列表 | List code sets
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.code_set.read
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建码值集 | Create code set
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.code_set.create
+  /code-sets/{id}:
+    delete:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除码值集 | Delete code set
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.code_set.delete
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取码值集详情 | Get code set detail
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.code_set.read
+    put:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新码值集 | Update code set
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.code_set.update
+  /code-sets/{id}/items:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取码值项列表 | List code items
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.code_set.read
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建码值项 | Create code item
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.code_set.update
+  /code-sets/{id}/items/{iid}:
+    delete:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除码值项 | Delete code item
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.code_set.update
+    put:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新码值项 | Update code item
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.code_set.update
+  /dimension-hierarchies:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取维度层级列表 | List dimension hierarchies
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.dimension_hierarchy.read
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建维度层级 | Create dimension hierarchy
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.dimension_hierarchy.create
+  /dimension-hierarchies/{id}:
+    delete:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除维度层级 | Delete dimension hierarchy
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.dimension_hierarchy.delete
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取维度层级详情 | Get dimension hierarchy detail
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.dimension_hierarchy.read
+    put:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新维度层级 | Update dimension hierarchy
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.dimension_hierarchy.update
+  /dimension-hierarchies/{id}/levels:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取维度层级的层次列表 | List hierarchy levels
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.dimension_hierarchy.read
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建层次 | Create hierarchy level
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.dimension_hierarchy.update
+  /dimension-hierarchies/{id}/levels/{lid}:
+    delete:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除层次 | Delete hierarchy level
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.dimension_hierarchy.update
+    put:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新层次 | Update hierarchy level
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.dimension_hierarchy.update
+  /documents:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取标准文档列表 | List standard documents
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.document.read
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建标准文档 | Create standard document
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.document.create
+  /documents/{id}:
+    delete:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除标准文档 | Delete standard document
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.document.delete
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取标准文档详情 | Get standard document detail
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.document.read
+    put:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新标准文档 | Update standard document
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.document.update
+  /documents/{id}/download:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 下载文档文件 | Download document file
+      tags:
+      - Standard
+      x-addp-auth-mode: resource_ticket
+      x-addp-required-permissions:
+      - standard.document.read
+  /documents/{id}/mappings:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取文档关联映射 | Get document mappings
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.document.read
+    put:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 设置文档关联映射 | Set document mappings
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.document.update
+  /documents/{id}/upload:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 上传文档文件 | Upload document file
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.document.update
+  /domains:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取业务域列表 | List business domains
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.domain.read
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建业务域 | Create business domain
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.domain.create
+  /domains/{id}:
+    delete:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除业务域 | Delete business domain
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.domain.delete
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取业务域详情 | Get business domain detail
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.domain.read
+    put:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新业务域 | Update business domain
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.domain.update
+  /elements:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取数据元列表 | List data elements
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.element.read
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建数据元 | Create data element
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.element.create
+  /elements/{id}:
+    delete:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除数据元 | Delete data element
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.element.delete
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取数据元详情 | Get data element detail
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.element.read
+    put:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新数据元 | Update data element
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.element.update
+  /elements/{id}/approve:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 审批数据元 | Approve data element
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.element.approve
+  /elements/{id}/documents:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询数据元关联的文档 | List documents by element
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.element.read
+      - standard.document.read
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建文档并关联到数据元 | Create and link document to element
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.element.update
+      - standard.document.create
+  /elements/{id}/documents/{doc_id}:
+    delete:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 解除文档与数据元的关联 | Unlink document from element
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.element.update
+      - standard.document.update
+  /elements/{id}/documents/link:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 关联已有文档到数据元 | Link document to element
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.element.update
+      - standard.document.update
+  /elements/{id}/quality-rules:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取数据元质量规则 | Get data element quality rules
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.element.read
+  /glossaries:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取业务术语列表 | List glossaries
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.glossary.read
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建业务术语 | Create glossary
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.glossary.create
+  /glossaries/{id}:
+    delete:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除业务术语 | Delete glossary
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.glossary.delete
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取业务术语详情 | Get glossary detail
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.glossary.read
+    put:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新业务术语 | Update glossary
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.glossary.update
+  /glossaries/{id}/approve:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 审批业务术语 | Approve glossary
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.glossary.approve
+  /glossaries/{id}/deprecate:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 废弃业务术语 | Deprecate glossary
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.glossary.offline
+  /glossaries/{id}/documents:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询术语关联的文档 | List documents by glossary
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.glossary.read
+      - standard.document.read
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建文档并关联到术语 | Create and link document to glossary
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.glossary.update
+      - standard.document.create
+  /glossaries/{id}/documents/{doc_id}:
+    delete:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 解除文档与术语的关联 | Unlink document from glossary
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.glossary.update
+      - standard.document.update
+  /glossaries/{id}/documents/link:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 关联已有文档到术语 | Link document to glossary
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.glossary.update
+      - standard.document.update
+  /glossaries/{id}/elements:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取术语关联的数据元 | Get element mappings of glossary
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.glossary.read
+      - standard.element.read
+    put:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 设置术语关联的数据元 | Set element mappings of glossary
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.glossary.update
+      - standard.element.read
+  /grading-levels:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取数据分级列表 | List data grading levels
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.classification.read
+  /grading-levels/{id}:
+    put:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新数据分级 | Update data grading level
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.classification.update
+  /internal/assets/discoverable:
     get:
       produces:
       - application/json
@@ -35,913 +1133,10 @@ paths:
             additionalProperties:
               type: string
             type: object
-      security:
-      - BearerAuth: []
       summary: 可发现资产列表 | List discoverable assets
       tags:
       - AssetDiscoverable
-  /classifications:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取数据分类列表 | List data classifications
-      tags:
-      - Standard
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 创建数据分类 | Create data classification
-      tags:
-      - Standard
-  /classifications/{id}:
-    delete:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 删除数据分类 | Delete data classification
-      tags:
-      - Standard
-    put:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 更新数据分类 | Update data classification
-      tags:
-      - Standard
-  /code-sets:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取码值集列表 | List code sets
-      tags:
-      - Standard
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 创建码值集 | Create code set
-      tags:
-      - Standard
-  /code-sets/{id}:
-    delete:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 删除码值集 | Delete code set
-      tags:
-      - Standard
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取码值集详情 | Get code set detail
-      tags:
-      - Standard
-    put:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 更新码值集 | Update code set
-      tags:
-      - Standard
-  /code-sets/{id}/items:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取码值项列表 | List code items
-      tags:
-      - Standard
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 创建码值项 | Create code item
-      tags:
-      - Standard
-  /code-sets/{id}/items/{iid}:
-    delete:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 删除码值项 | Delete code item
-      tags:
-      - Standard
-    put:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 更新码值项 | Update code item
-      tags:
-      - Standard
-  /dimension-hierarchies:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取维度层级列表 | List dimension hierarchies
-      tags:
-      - Standard
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 创建维度层级 | Create dimension hierarchy
-      tags:
-      - Standard
-  /dimension-hierarchies/{id}:
-    delete:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 删除维度层级 | Delete dimension hierarchy
-      tags:
-      - Standard
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取维度层级详情 | Get dimension hierarchy detail
-      tags:
-      - Standard
-    put:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 更新维度层级 | Update dimension hierarchy
-      tags:
-      - Standard
-  /dimension-hierarchies/{id}/levels:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取维度层级的层次列表 | List hierarchy levels
-      tags:
-      - Standard
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 创建层次 | Create hierarchy level
-      tags:
-      - Standard
-  /dimension-hierarchies/{id}/levels/{lid}:
-    delete:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 删除层次 | Delete hierarchy level
-      tags:
-      - Standard
-    put:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 更新层次 | Update hierarchy level
-      tags:
-      - Standard
-  /documents:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取标准文档列表 | List standard documents
-      tags:
-      - Standard
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 创建标准文档 | Create standard document
-      tags:
-      - Standard
-  /documents/{id}:
-    delete:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 删除标准文档 | Delete standard document
-      tags:
-      - Standard
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取标准文档详情 | Get standard document detail
-      tags:
-      - Standard
-    put:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 更新标准文档 | Update standard document
-      tags:
-      - Standard
-  /documents/{id}/download:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 下载文档文件 | Download document file
-      tags:
-      - Standard
-  /documents/{id}/mappings:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取文档关联映射 | Get document mappings
-      tags:
-      - Standard
-    put:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 设置文档关联映射 | Set document mappings
-      tags:
-      - Standard
-  /documents/{id}/upload:
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 上传文档文件 | Upload document file
-      tags:
-      - Standard
-  /domains:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取业务域列表 | List business domains
-      tags:
-      - Standard
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 创建业务域 | Create business domain
-      tags:
-      - Standard
-  /domains/{id}:
-    delete:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 删除业务域 | Delete business domain
-      tags:
-      - Standard
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取业务域详情 | Get business domain detail
-      tags:
-      - Standard
-    put:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 更新业务域 | Update business domain
-      tags:
-      - Standard
-  /elements:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取数据元列表 | List data elements
-      tags:
-      - Standard
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 创建数据元 | Create data element
-      tags:
-      - Standard
-  /elements/{id}:
-    delete:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 删除数据元 | Delete data element
-      tags:
-      - Standard
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取数据元详情 | Get data element detail
-      tags:
-      - Standard
-    put:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 更新数据元 | Update data element
-      tags:
-      - Standard
-  /elements/{id}/approve:
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 审批数据元 | Approve data element
-      tags:
-      - Standard
-  /elements/{id}/documents:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 查询数据元关联的文档 | List documents by element
-      tags:
-      - Standard
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 创建文档并关联到数据元 | Create and link document to element
-      tags:
-      - Standard
-  /elements/{id}/documents/{doc_id}:
-    delete:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 解除文档与数据元的关联 | Unlink document from element
-      tags:
-      - Standard
-  /elements/{id}/documents/link:
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 关联已有文档到数据元 | Link document to element
-      tags:
-      - Standard
-  /elements/{id}/quality-rules:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取数据元质量规则 | Get data element quality rules
-      tags:
-      - Standard
-  /glossaries:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取业务术语列表 | List glossaries
-      tags:
-      - Standard
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 创建业务术语 | Create glossary
-      tags:
-      - Standard
-  /glossaries/{id}:
-    delete:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 删除业务术语 | Delete glossary
-      tags:
-      - Standard
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取业务术语详情 | Get glossary detail
-      tags:
-      - Standard
-    put:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 更新业务术语 | Update glossary
-      tags:
-      - Standard
-  /glossaries/{id}/approve:
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 审批业务术语 | Approve glossary
-      tags:
-      - Standard
-  /glossaries/{id}/deprecate:
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 废弃业务术语 | Deprecate glossary
-      tags:
-      - Standard
-  /glossaries/{id}/documents:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 查询术语关联的文档 | List documents by glossary
-      tags:
-      - Standard
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 创建文档并关联到术语 | Create and link document to glossary
-      tags:
-      - Standard
-  /glossaries/{id}/documents/{doc_id}:
-    delete:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 解除文档与术语的关联 | Unlink document from glossary
-      tags:
-      - Standard
-  /glossaries/{id}/documents/link:
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 关联已有文档到术语 | Link document to glossary
-      tags:
-      - Standard
-  /glossaries/{id}/elements:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取术语关联的数据元 | Get element mappings of glossary
-      tags:
-      - Standard
-    put:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 设置术语关联的数据元 | Set element mappings of glossary
-      tags:
-      - Standard
-  /grading-levels:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取数据分级列表 | List data grading levels
-      tags:
-      - Standard
-  /grading-levels/{id}:
-    put:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 更新数据分级 | Update data grading level
-      tags:
-      - Standard
+      x-addp-auth-mode: internal
   /measurement-categories:
     get:
       produces:
@@ -957,6 +1152,9 @@ paths:
       summary: 获取度量类别列表 | List measurement categories
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.unit.read
     post:
       produces:
       - application/json
@@ -971,6 +1169,9 @@ paths:
       summary: 创建度量类别 | Create measurement category
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.unit.create
   /measurement-categories/{id}:
     delete:
       produces:
@@ -986,6 +1187,9 @@ paths:
       summary: 删除度量类别 | Delete measurement category
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.unit.delete
     put:
       produces:
       - application/json
@@ -1000,6 +1204,9 @@ paths:
       summary: 更新度量类别 | Update measurement category
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.unit.update
   /metric-categories:
     get:
       produces:
@@ -1015,6 +1222,9 @@ paths:
       summary: 获取指标分类列表 | List metric categories
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.metric.read
     post:
       produces:
       - application/json
@@ -1029,6 +1239,9 @@ paths:
       summary: 创建指标分类 | Create metric category
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.metric.create
   /metric-categories/{id}:
     delete:
       produces:
@@ -1044,6 +1257,9 @@ paths:
       summary: 删除指标分类 | Delete metric category
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.metric.delete
     put:
       produces:
       - application/json
@@ -1058,6 +1274,9 @@ paths:
       summary: 更新指标分类 | Update metric category
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.metric.update
   /metrics:
     get:
       produces:
@@ -1073,6 +1292,9 @@ paths:
       summary: 获取指标列表 | List metrics
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.metric.read
     post:
       produces:
       - application/json
@@ -1087,6 +1309,9 @@ paths:
       summary: 创建指标 | Create metric
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.metric.create
   /metrics/{id}:
     delete:
       produces:
@@ -1102,6 +1327,9 @@ paths:
       summary: 删除指标 | Delete metric
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.metric.delete
     get:
       produces:
       - application/json
@@ -1116,6 +1344,9 @@ paths:
       summary: 获取指标详情 | Get metric detail
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.metric.read
     put:
       produces:
       - application/json
@@ -1130,6 +1361,9 @@ paths:
       summary: 更新指标 | Update metric
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.metric.update
   /metrics/{id}/approve:
     post:
       produces:
@@ -1145,6 +1379,9 @@ paths:
       summary: 审批指标 | Approve metric
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.metric.approve
   /metrics/{id}/deprecate:
     post:
       produces:
@@ -1160,6 +1397,9 @@ paths:
       summary: 废弃指标 | Deprecate metric
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.metric.offline
   /metrics/{id}/documents:
     get:
       produces:
@@ -1175,6 +1415,10 @@ paths:
       summary: 查询指标关联的文档 | List documents by metric
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.metric.read
+      - standard.document.read
     post:
       produces:
       - application/json
@@ -1189,6 +1433,10 @@ paths:
       summary: 创建文档并关联到指标 | Create and link document to metric
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.metric.update
+      - standard.document.create
   /metrics/{id}/documents/{doc_id}:
     delete:
       produces:
@@ -1204,6 +1452,10 @@ paths:
       summary: 解除文档与指标的关联 | Unlink document from metric
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.metric.update
+      - standard.document.update
   /metrics/{id}/documents/link:
     post:
       produces:
@@ -1219,6 +1471,10 @@ paths:
       summary: 关联已有文档到指标 | Link document to metric
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.metric.update
+      - standard.document.update
   /units:
     get:
       produces:
@@ -1234,6 +1490,9 @@ paths:
       summary: 获取计量单位列表 | List units
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.unit.read
     post:
       produces:
       - application/json
@@ -1248,6 +1507,9 @@ paths:
       summary: 创建计量单位 | Create unit
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.unit.create
   /units/{id}:
     delete:
       produces:
@@ -1263,6 +1525,9 @@ paths:
       summary: 删除计量单位 | Delete unit
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.unit.delete
     get:
       produces:
       - application/json
@@ -1277,6 +1542,9 @@ paths:
       summary: 获取计量单位详情 | Get unit detail
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.unit.read
     put:
       produces:
       - application/json
@@ -1291,6 +1559,9 @@ paths:
       summary: 更新计量单位 | Update unit
       tags:
       - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.unit.update
 securityDefinitions:
   BearerAuth:
     in: header

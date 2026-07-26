@@ -7,7 +7,7 @@ from typing import Optional, List, Dict
 
 from addp_common.auth import AuthorizationContext
 from authorization_permissions_generated import COPILOT_SQL_EXECUTE
-from dependencies.auth import require_tenant_user
+from dependencies.auth import require_tenant_permissions
 from services.sql_service import sql_service
 # TODO: Copilot 暂时不需要保存对话历史，注释掉以避免数据库依赖
 # from services.memory_service import memory_service
@@ -55,7 +55,7 @@ class SQLGenerationResponse(BaseModel):
 )
 async def generate_sql(
     request: SQLGenerationRequest,
-    user: AuthorizationContext = Depends(require_tenant_user),
+    user: AuthorizationContext = Depends(require_tenant_permissions(COPILOT_SQL_EXECUTE)),
 ):
     """
     生成 SQL 语句

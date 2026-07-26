@@ -298,29 +298,28 @@ func ValidateToolScope(scope string) error {
 // CloneAuthContext returns a deep copy of the shared AuthContext contract.
 func CloneAuthContext(source AuthContext) AuthContext {
 	clone := source
-	clone.Authentication.Methods = append([]string(nil), source.Authentication.Methods...)
+	clone.Authentication.Methods = cloneSlice(source.Authentication.Methods)
 	clone.Authentication.StepUpExpiresAt = cloneTime(source.Authentication.StepUpExpiresAt)
 	clone.Client.ClientID = cloneString(source.Client.ClientID)
-	clone.Client.Audiences = append([]string(nil), source.Client.Audiences...)
-	clone.Client.Scopes = append([]string(nil), source.Client.Scopes...)
+	clone.Client.Audiences = cloneSlice(source.Client.Audiences)
+	clone.Client.Scopes = cloneSlice(source.Client.Scopes)
 	clone.Context.TenantID = cloneString(source.Context.TenantID)
 	clone.Context.TenantMembershipID = cloneString(source.Context.TenantMembershipID)
-	clone.Organization.Departments = append([]DepartmentMembership(nil), source.Organization.Departments...)
+	clone.Organization.Departments = cloneSlice(source.Organization.Departments)
 	for index := range clone.Organization.Departments {
-		clone.Organization.Departments[index].AncestorIDs = append(
-			[]string(nil),
-			source.Organization.Departments[index].AncestorIDs...,
+		clone.Organization.Departments[index].AncestorIDs = cloneSlice(
+			source.Organization.Departments[index].AncestorIDs,
 		)
 	}
-	clone.Organization.ProjectGroups = append([]ProjectGroupMembership(nil), source.Organization.ProjectGroups...)
-	clone.Authorization.RoleAssignments = append([]RoleAssignment(nil), source.Authorization.RoleAssignments...)
+	clone.Organization.ProjectGroups = cloneSlice(source.Organization.ProjectGroups)
+	clone.Authorization.RoleAssignments = cloneSlice(source.Authorization.RoleAssignments)
 	for index := range clone.Authorization.RoleAssignments {
 		sourceAssignment := source.Authorization.RoleAssignments[index]
 		assignment := &clone.Authorization.RoleAssignments[index]
 		assignment.Scope.TenantID = cloneString(sourceAssignment.Scope.TenantID)
 		assignment.Scope.DepartmentID = cloneString(sourceAssignment.Scope.DepartmentID)
 		assignment.Scope.ProjectGroupID = cloneString(sourceAssignment.Scope.ProjectGroupID)
-		assignment.Permissions = append([]string(nil), sourceAssignment.Permissions...)
+		assignment.Permissions = cloneSlice(sourceAssignment.Permissions)
 		assignment.ValidUntil = cloneTime(sourceAssignment.ValidUntil)
 	}
 	if source.Delegation != nil {
@@ -328,6 +327,13 @@ func CloneAuthContext(source AuthContext) AuthContext {
 		clone.Delegation = &delegation
 	}
 	return clone
+}
+
+func cloneSlice[T any](source []T) []T {
+	if source == nil {
+		return nil
+	}
+	return append(make([]T, 0, len(source)), source...)
 }
 
 func cloneString(value *string) *string {

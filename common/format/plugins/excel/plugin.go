@@ -292,14 +292,14 @@ func (p *Plugin) convertToTableDescribeResult(analysis *WorkbookAnalysis, opts *
 		SheetCount: analysis.SheetCount,
 	}
 
-	rowCount := int64(sheet.RowCount)
+	estimatedRowCount := int64(sheet.EstimatedRowCount)
 	return &format.TableDescribeResult{
 		Table: &datatype.TableInfo{
-			Name:       sheet.Name, // 使用工作表名称作为表名
-			RowCount:   &rowCount,
-			Fields:     fields,
-			PrimaryKey: []string{},
-			Native:     excelTableNative(sheet.Name, sheet.Index),
+			Name:              sheet.Name, // 使用工作表名称作为表名
+			EstimatedRowCount: &estimatedRowCount,
+			Fields:            fields,
+			PrimaryKey:        []string{},
+			Native:            excelTableNative(sheet.Name, sheet.Index),
 		},
 		FormatInfo: excelInfo.FormatAttributes(),
 	}, nil
@@ -322,16 +322,16 @@ func (p *Plugin) convertToContainerInfo(analysis *WorkbookAnalysis) *datatype.Co
 
 	children := make([]datatype.ContainerChildInfo, 0, len(analysis.Sheets))
 	for _, sheet := range analysis.Sheets {
-		rowCount := int64(sheet.RowCount)
+		estimatedRowCount := int64(sheet.EstimatedRowCount)
 		columnCount := sheet.ColumnCount
 		hasHeader := sheet.HasHeader
 		children = append(children, datatype.ContainerChildInfo{
-			Name:        sheet.Name,
-			ChildKind:   "sheet",
-			DataType:    datatype.Table,
-			RowCount:    &rowCount,
-			ColumnCount: &columnCount,
-			HasHeader:   &hasHeader,
+			Name:              sheet.Name,
+			ChildKind:         "sheet",
+			DataType:          datatype.Table,
+			EstimatedRowCount: &estimatedRowCount,
+			ColumnCount:       &columnCount,
+			HasHeader:         &hasHeader,
 		})
 	}
 

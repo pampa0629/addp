@@ -70,7 +70,7 @@
       <el-dropdown>
         <span class="user-dropdown">
           <el-icon><User /></el-icon>
-          {{ user?.username || 'User' }}
+          {{ userDisplayName }}
           <el-icon class="el-icon--right"><ArrowDown /></el-icon>
         </span>
         <template #dropdown>
@@ -100,13 +100,19 @@ import { searchIndex } from '../../config/searchIndex'
 
 const { t } = useI18n()
 
-defineProps({
+const props = defineProps({
   groups: { type: Array, required: true },
   activeGroup: { type: String, default: null },
   user: { type: Object, default: null },
+  permissions: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(['group-click', 'logo-click', 'logout', 'navigate'])
+const userDisplayName = computed(() =>
+  props.user?.display_name ||
+  props.user?.local_account?.username ||
+  t('console.welcome.defaultName')
+)
 
 // ─── 搜索 ────────────────────────────────────────────────────────────────────
 
@@ -128,7 +134,7 @@ function moduleIcon(module) {
 
 const searchResults = computed(() => {
   if (!searchQuery.value.trim()) return []
-  return searchIndex(searchQuery.value, t)
+  return searchIndex(searchQuery.value, t, props.permissions)
 })
 
 function handleSearchBlur() {

@@ -13,16 +13,16 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 243 {
-		t.Fatalf("descriptor count = %d, want 243", len(descriptors))
+	if len(descriptors) != 295 {
+		t.Fatalf("descriptor count = %d, want 295", len(descriptors))
 	}
 	if descriptors[0].Key != "agent.run.cancel" || descriptors[len(descriptors)-1].Key != "transfer.task.update" {
 		t.Fatalf("descriptor boundary keys = %q, %q", descriptors[0].Key, descriptors[len(descriptors)-1].Key)
 	}
 
 	roles := report.Roles
-	if len(roles) != 18 {
-		t.Fatalf("role count = %d, want 18", len(roles))
+	if len(roles) != 16 {
+		t.Fatalf("role count = %d, want 16", len(roles))
 	}
 	if roles[0].Key != "platform.audit_administrator" || roles[len(roles)-1].Key != "tenant.service_publisher" {
 		t.Fatalf("role boundary keys = %q, %q", roles[0].Key, roles[len(roles)-1].Key)
@@ -47,12 +47,12 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "tenant.data_steward", []string{
 		"manager.content.read",
 		"manager.data_item.create",
-		"manager.data_item.delete",
 		"manager.data_item.read",
 		"manager.data_item.update",
 		"manager.derived_artifact.create",
 		"manager.derived_artifact.delete",
 		"manager.derived_artifact.read",
+		"manager.derived_artifact.update",
 		"manager.search.execute",
 		"meta.catalog.read",
 		"meta.inspect.execute",
@@ -67,8 +67,6 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"develop.notebook.delete",
 		"develop.notebook.execute",
 		"develop.notebook.read",
-		"develop.notebook.update",
-		"develop.task.cancel",
 		"develop.task.create",
 		"develop.task.delete",
 		"develop.task.execute",
@@ -78,13 +76,11 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"manager.data_item.read",
 		"manager.search.execute",
 		"monitor.execution.read",
-		"orchestrator.workflow.cancel",
 		"orchestrator.workflow.create",
 		"orchestrator.workflow.delete",
 		"orchestrator.workflow.execute",
 		"orchestrator.workflow.read",
 		"orchestrator.workflow.update",
-		"transfer.task.cancel",
 		"transfer.task.create",
 		"transfer.task.delete",
 		"transfer.task.execute",
@@ -98,8 +94,6 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"meta.catalog.read",
 		"service.definition.create",
 		"service.definition.delete",
-		"service.definition.offline",
-		"service.definition.publish",
 		"service.definition.read",
 		"service.definition.update",
 		"service.external_registration.create",
@@ -116,7 +110,6 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"asset.rating.create",
 		"asset.rating.read",
 		"asset.rating.update",
-		"service.endpoint.read",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.asset_manager", []string{
 		"asset.application.approve",
@@ -140,6 +133,15 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"asset.rating.update",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.governance_manager", []string{
+		"model.entity.approve",
+		"model.entity.create",
+		"model.entity.delete",
+		"model.entity.read",
+		"model.entity.update",
+		"model.entity_relation.create",
+		"model.entity_relation.delete",
+		"model.entity_relation.read",
+		"model.entity_relation.update",
 		"model.logical_model.create",
 		"model.logical_model.delete",
 		"model.logical_model.read",
@@ -156,22 +158,65 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"quality.rule_application.delete",
 		"quality.rule_application.read",
 		"quality.rule_application.update",
+		"standard.classification.create",
+		"standard.classification.delete",
+		"standard.classification.read",
+		"standard.classification.update",
 		"standard.code_set.create",
 		"standard.code_set.delete",
 		"standard.code_set.read",
 		"standard.code_set.update",
+		"standard.dimension_hierarchy.create",
+		"standard.dimension_hierarchy.delete",
+		"standard.dimension_hierarchy.read",
+		"standard.dimension_hierarchy.update",
+		"standard.document.create",
+		"standard.document.delete",
+		"standard.document.read",
+		"standard.document.update",
 		"standard.domain.create",
 		"standard.domain.delete",
 		"standard.domain.read",
 		"standard.domain.update",
+		"standard.element.approve",
 		"standard.element.create",
 		"standard.element.delete",
 		"standard.element.read",
 		"standard.element.update",
+		"standard.glossary.approve",
+		"standard.glossary.create",
+		"standard.glossary.delete",
+		"standard.glossary.offline",
+		"standard.glossary.read",
+		"standard.glossary.update",
+		"standard.metric.approve",
 		"standard.metric.create",
 		"standard.metric.delete",
+		"standard.metric.offline",
 		"standard.metric.read",
 		"standard.metric.update",
+		"standard.unit.create",
+		"standard.unit.delete",
+		"standard.unit.read",
+		"standard.unit.update",
+	})
+	assertRepositoryRolePermissions(t, roles, "tenant.monitoring_operator", []string{
+		"monitor.alert_incident.read",
+		"monitor.alert_incident.update",
+		"monitor.alert_rule.create",
+		"monitor.alert_rule.delete",
+		"monitor.alert_rule.read",
+		"monitor.alert_rule.update",
+		"monitor.execution.read",
+		"monitor.health.read",
+		"monitor.notification_delivery.read",
+		"monitor.notification_delivery.retry",
+		"monitor.notification_destination.create",
+		"monitor.notification_destination.delete",
+		"monitor.notification_destination.execute",
+		"monitor.notification_destination.read",
+		"monitor.notification_destination.update",
+		"monitor.statistics.read",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.graph_engineer", []string{
 		"graph.analysis.execute",

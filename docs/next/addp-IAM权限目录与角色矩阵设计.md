@@ -145,6 +145,7 @@ System 不允许知道：
 - Tenant 自定义 Role 只能引用可定制 Permission；
 - 所有内置 Role 引用的 Permission 存在且启用；
 - 模块删除或禁用 Permission 时生成显式向前 migration，不静默删除已发布 Key；
+- 每个 `active` Permission 必须至少被一个公开 OpenAPI Operation 或 Tool Manifest 显式引用；尚无唯一运行入口的目标能力只能保留为 `disabled`，不得提前进入内置 Role；
 - 受保护公开路由声明授权模式；
 - `permission` 模式路由引用的 Permission 存在且 owner 匹配；
 - Tool Manifest 的 owner、required Scope 和可委托 Permission 与目录一致；
@@ -297,7 +298,7 @@ Tenant 管理员不能修改全局 User 状态或其他 Tenant Membership。邀�
 | --- | --- | --- | --- | --- |
 | `manager.data_item` | `read, create, update, delete` | Tenant, Department, Project Group | true | Manager |
 | `manager.content` | `read` | Tenant, Department, Project Group | true | Manager |
-| `manager.derived_artifact` | `read, create, delete` | Tenant, Department, Project Group | true | Manager |
+| `manager.derived_artifact` | `read, create, update, delete` | Tenant, Department, Project Group | true | Manager |
 | `manager.search` | `execute` | Tenant, Department, Project Group | true | Manager |
 | `meta.catalog` | `read` | Tenant, Department, Project Group | true | Meta |
 | `meta.inspect` | `execute` | Tenant, Department, Project Group | true | Meta |
@@ -314,6 +315,10 @@ Tenant 管理员不能修改全局 User 状态或其他 Tenant Membership。邀�
 | `monitor.execution` | `read, cancel, retry` | Tenant, Department, Project Group | true | Monitor |
 | `monitor.health` | `read` | Tenant | false | Monitor |
 | `monitor.statistics` | `read, export` | Tenant, Department, Project Group | true | Monitor |
+| `monitor.alert_incident` | `read, update` | Tenant | true | Monitor |
+| `monitor.alert_rule` | `read, create, update, delete` | Tenant | true | Monitor |
+| `monitor.notification_destination` | `read, create, update, delete, execute` | Tenant | true | Monitor |
+| `monitor.notification_delivery` | `read, retry` | Tenant | true | Monitor |
 
 TaskProvider 不定义第二套 Permission。通过 TaskProvider 执行 Meta、Transfer、Develop、Manager、Quality 或 Graph 任务时，仍校验该 owner 任务类型对应的精确 `execute` Permission。
 
@@ -341,15 +346,23 @@ Portal 是 Asset 的用户入口，不创建 `portal.asset.*` 平行 Permission�
 | Base Key | Actions | Scope | Customizable | Owner |
 | --- | --- | --- | --- | --- |
 | `standard.domain` | `read, create, update, delete` | Tenant, Department, Project Group | true | Standard |
-| `standard.element` | `read, create, update, delete` | Tenant, Department, Project Group | true | Standard |
-| `standard.metric` | `read, create, update, delete` | Tenant, Department, Project Group | true | Standard |
+| `standard.element` | `read, create, update, delete, approve` | Tenant, Department, Project Group | true | Standard |
+| `standard.metric` | `read, create, update, delete, approve, offline` | Tenant, Department, Project Group | true | Standard |
 | `standard.code_set` | `read, create, update, delete` | Tenant, Department, Project Group | true | Standard |
+| `standard.document` | `read, create, update, delete` | Tenant, Department, Project Group | true | Standard |
+| `standard.glossary` | `read, create, update, delete, approve, offline` | Tenant, Department, Project Group | true | Standard |
+| `standard.unit` | `read, create, update, delete` | Tenant, Department, Project Group | true | Standard |
+| `standard.classification` | `read, create, update, delete` | Tenant, Department, Project Group | true | Standard |
+| `standard.dimension_hierarchy` | `read, create, update, delete` | Tenant, Department, Project Group | true | Standard |
 | `model.logical_model` | `read, create, update, delete` | Tenant, Department, Project Group | true | Model |
+| `model.entity` | `read, create, update, delete, approve` | Tenant, Department, Project Group | true | Model |
+| `model.entity_relation` | `read, create, update, delete` | Tenant, Department, Project Group | true | Model |
+| `model.dw_layer` | `read, create, update, delete` | Tenant | true | Model |
 | `quality.rule_application` | `read, create, update, delete` | Tenant, Department, Project Group | true | Quality |
 | `quality.check_task` | `read, create, update, delete, execute` | Tenant, Department, Project Group | true | Quality |
 | `quality.issue` | `read, update` | Tenant, Department, Project Group | true | Quality |
 
-当前目录只覆盖首批治理主链路。Standard 的 Glossary、Unit、Classification、Document、Dimension Hierarchy 等真实资源，以及 Model 的 Entity、关系、DW Layer 等细分资源尚未进入 Permission 目录；由于 ADDP 不允许隐式 Permission 继承，它们不能被 `standard.domain.*` 或 `model.logical_model.*` 自动覆盖。首次 SQL seed 前的路由覆盖阶段必须为这些路由补充明确 Permission 或确认不进入本阶段授权面。
+Standard 的 Measurement Category 是 Unit 聚合内子资源，Grading Level 是 Classification 聚合内子资源，Dimension Hierarchy Level 是 Dimension Hierarchy 聚合内子资源；这些子资源不建立平行 Permission。Document 与 Element、Glossary、Metric 的关联操作按涉及资源 Permission 做 all-of 校验。
 
 ### 8.5 知识图谱与 AI
 
@@ -505,14 +518,15 @@ ADDP 不提供包含所有 Tenant Permission 的 `tenant.super_admin`。同一 U
 | Role Key | 主要 Permission 集合 | Allowed Scope |
 | --- | --- | --- |
 | `tenant.data_viewer` | Manager Data Item / Content read、Manager Search execute、Meta Catalog read | Tenant, Department, Project Group |
-| `tenant.data_steward` | Data Viewer + Manager Data Item create/update/delete、Derived Artifact read/create/delete、Meta Inspect、Meta Scan Task 全生命周期 | Tenant, Department, Project Group |
+| `tenant.data_steward` | Data Viewer + Manager Data Item create/update/delete、Derived Artifact read/create/update/delete、Meta Inspect、Meta Scan Task 全生命周期 | Tenant, Department, Project Group |
 | `tenant.data_engineer` | Data Viewer + Transfer Task、Develop Task、Develop Notebook、Orchestrator Workflow 全生命周期及 Monitor Execution read | Tenant, Department, Project Group |
 | `tenant.service_publisher` | Data Viewer + Service Definition / External Registration 全生命周期 | Tenant, Department, Project Group |
-| `tenant.governance_manager` | Standard Domain/Element/Metric/Code Set、Model Logical Model、Quality Rule Application/Check Task 的全部显式 actions，Quality Issue read/update，Monitor Execution read | Tenant, Department, Project Group |
+| `tenant.governance_manager` | Standard Domain/Element/Metric/Code Set/Document、Model Logical Model、Quality Rule Application/Check Task 的全部显式 actions，Quality Issue read/update，Monitor Execution read | Tenant, Department, Project Group |
 | `tenant.asset_consumer` | Asset Catalog / Entry read、Application read/create、Authorization read、Rating read/create/update、Service Endpoint read | Tenant, Department, Project Group |
 | `tenant.asset_manager` | Asset Catalog、Entry、Application、Authorization、Rating 的全部显式 actions | Tenant, Department, Project Group |
 | `tenant.graph_engineer` | Graph Ontology、Graph、Build Task、Analysis、Review | Tenant, Department, Project Group |
 | `tenant.ai_user` | Agent Session / Run、Copilot 生成能力 | Tenant, Department, Project Group |
+| `tenant.monitoring_operator` | Monitor Execution / Statistics / Health read、Alert Incident read/update、Alert Rule 全生命周期、Notification Destination 全生命周期和测试、Notification Delivery read/retry | Tenant |
 
 “全生命周期”只代表该表格对应 Base Key 中明确列出的 actions，不代表通配符。高风险发布、审批、删除 Permission 可由 Tenant 基于内置 Role 创建更窄的自定义 Role；内置 Role 本身不可修改。
 
@@ -595,6 +609,7 @@ Owner 责任：
 3. **共享边界**：`common/authorization` 只提供 Manifest Schema、校验器和共享授权类型，不保存全平台业务 Permission 内容。
 4. **Key 规则**：采用 `{domain}.{resource}.{action}`，无通配符、无隐式权限继承。
 5. **路由声明**：每个公开路由显式声明授权模式；Permission 模式在 Swagger 输出稳定权限元数据。
+   发布期覆盖校验同时执行反向检查：公开 Operation 和 Tool 引用必须存在，`active` Permission 也必须存在实际消费者。内部 Resource Grant 只有在 Grant API、专用 Service Principal Role 和 Swagger 授权元数据同时落地后才能启用。
 6. **自服务边界**：当前 User 自身资料和凭据使用 `self` 关系策略，不创建隐藏的“所有用户基础 Role”。
 7. **平台三员矩阵**：安全管理员申请平台 Role 变更，系统管理员独立复核，审计管理员只读监督。
 8. **Tenant 管理拆分**：Tenant Administrator、Infrastructure Administrator、Tenant Auditor 分离，不提供 Tenant SuperAdmin。

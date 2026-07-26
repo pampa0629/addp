@@ -12,6 +12,7 @@ import (
 
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/repository"
+	"github.com/addp/system/internal/testsupport"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -22,6 +23,7 @@ func TestTargetSystemCompositionAgainstPostgres(t *testing.T) {
 	if dsn == "" {
 		t.Skip("set ADDP_IAM_RUNTIME_TEST_DSN to a disposable PostgreSQL 15+ database")
 	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
 	gormDSN := dsn
 	separator := "?"
 	if strings.Contains(gormDSN, "?") {

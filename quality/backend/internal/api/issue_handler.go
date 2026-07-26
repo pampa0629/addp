@@ -22,6 +22,8 @@ func NewIssueHandler(svc *service.IssueService) *IssueHandler {
 // @Param status query string false "状态 | Status"
 // @Param engine_id query int false "引擎ID | Engine ID"
 // @Success 200 {array} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["quality.issue.read"]
 // @Router /issues [get]
 // @Security BearerAuth
 func (h *IssueHandler) List(c *gin.Context) {
@@ -42,6 +44,8 @@ func (h *IssueHandler) List(c *gin.Context) {
 // @Produce json
 // @Param id path int true "工单ID | Issue ID"
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["quality.issue.read"]
 // @Router /issues/{id} [get]
 // @Security BearerAuth
 func (h *IssueHandler) Get(c *gin.Context) {
@@ -66,6 +70,8 @@ func (h *IssueHandler) Get(c *gin.Context) {
 // @Param id path int true "工单ID | Issue ID"
 // @Param body body map[string]string true "状态信息 | Status info"
 // @Success 200 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["quality.issue.update"]
 // @Router /issues/{id}/status [put]
 // @Security BearerAuth
 func (h *IssueHandler) UpdateStatus(c *gin.Context) {

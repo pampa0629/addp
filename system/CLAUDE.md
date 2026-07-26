@@ -2,12 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> IAM 目标模型以 `docs/concepts/addp账号与权限体系图.md` 和 `docs/spec/addp授权上下文规范.md` 为准。下文三级 `user_type`、单一 `users.tenant_id` 和默认 `SuperAdmin` 仅描述当前实现差距，不是可继续扩展的契约；目标实施必须一次性替换，不保留双轨。
+> IAM 以 `docs/concepts/addp账号与权限体系图.md` 和 `docs/spec/addp授权上下文规范.md` 为唯一概念与运行时契约。当前实现已切换为 Principal、Tenant Membership、Role/Permission、Token Family 和 `addp.auth_context/v1`，不得恢复旧账号分级或平行认证路径。
 
 ## 项目概述
 
 **全域数据平台 (All Domain Data Platform)** 是企业级数据平台的核心能力模块，提供基础系统功能：
-- 统一 IAM（全局 User、Tenant Membership、组织、角色、权限和平台三员分立；当前实现尚待迁移）
+- 统一 IAM（全局 User、Tenant Membership、组织、角色、权限和平台三员分立）
 - 日志管理（审计日志存储和查询、统计分析、导出）
 - 引擎管理（通用引擎连接、扩展运行时注册与能力展示，含 Schema/表枚举）
 - 应用管理（外部应用注册、API Key 管理）
@@ -23,23 +23,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 多租户架构
 
-### 当前用户体系实现差距（待一次性删除）
+### 统一身份与上下文
 
-1. **超级管理员 (SuperAdmin)**
-   - 系统唯一，默认账号 `SuperAdmin`，默认密码 `20251001#SuperAdmin`
-   - 权限: 创建和管理租户 ✅
-   - 限制: 不能直接创建、查看和管理普通用户 ❌
-   - 不可删除
-
-2. **租户管理员 (Tenant Admin)**
-   - 由超级管理员创建租户时设置
-   - 权限: 创建和管理本租户内的普通用户 ✅
-   - 限制: 不能查看/修改超级管理员 ❌，不能跨租户访问 ❌
-
-3. **普通用户 (User)**
-   - 由租户管理员创建
-   - 权限: 查看和修改自己的账号信息 ✅
-   - 限制: 不能创建、查看和管理其他任何用户 ❌
+- User 是全局自然人身份，Local Account 和 External Identity 是登录凭据或身份绑定；
+- 一个 User 可拥有多个 Tenant Membership，但一个 Tenant Context 只绑定一个 Membership；
+- Platform Context 与 Tenant Context 互斥，平台角色不自动获得租户业务数据权限；
+- 平台最高管理职责拆分为系统管理员、安全管理员和审计管理员，三者 Permission 集合互斥；
+- 所有管理和业务操作使用 AuthContext 中的 Role Assignment 与 Permission，不根据账号名或身份类别放行。
 
 ### 数据隔离
 
@@ -51,9 +41,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 数据传输任务（Transfer模块）
 
 **隔离实现**:
-- 每个用户关联到特定租户 (`users.tenant_id`)
-- 引擎、日志等数据关联租户ID
-- API查询自动过滤：只返回当前用户所属租户的数据
+- Tenant Context 的 Tenant 和 Membership 由 AuthContext 提供，客户端不得自报；
+- 引擎、日志等业务事实关联 Tenant ID；
+- API 先执行 Context 与 Permission Guard，再由 owner 查询和资源策略完成最终隔离。
 
 ## 常用命令
 
@@ -222,11 +212,12 @@ frontend/src/
 
 ### 数据库设计
 
-**system.users 表**:
-- 用户基本信息、密码 Hash、用户类型、租户ID
-- 字段: `id`, `username`, `email`, `password_hash`, `user_type`, `tenant_id`, `is_active`
-- 密码使用 **bcrypt** 加密存储 (不可逆)
-- 用户类型: `super_admin` / `tenant_admin` / `user`
+**身份与成员关系表**:
+- `system.principals` 保存主体类型、状态和授权版本；
+- `system.users` 保存自然人资料，不保存登录凭据和 Tenant 归属；
+- `system.local_accounts` 保存本地用户名与不可逆密码 Hash；
+- `system.tenant_memberships` 保存主体进入 Tenant 的有效关系；
+- `system.roles`、`system.role_permissions`、`system.role_assignments` 保存 RBAC 事实。
 
 **system.tenants 表**:
 - 租户信息
@@ -323,57 +314,38 @@ frontend/src/
 
 ### 访问控制
 
-**权限矩阵**:
-
-| 操作 | 超级管理员 | 租户管理员 | 普通用户 |
-|------|-----------|-----------|---------|
-| 创建租户 | ✅ | ❌ | ❌ |
-| 查看租户列表 | ✅ | ❌ | ❌ |
-| 创建用户 | ❌ | ✅ (本租户) | ❌ |
-| 查看用户列表 | ❌ | ✅ (本租户) | ❌ |
-| 查看自己信息 | ✅ | ✅ | ✅ |
-| 修改自己密码 | ✅ | ✅ | ✅ |
-| 查看引擎列表 | ✅ (所有) | ✅ (本租户) | ✅ (本租户) |
-| 查看日志 | ✅ (所有) | ✅ (本租户) | ✅ (本租户) |
-| 管理应用/API Key | ✅ | ✅ (本租户) | ❌ |
-| 资源回收 | ❌ | ✅ (本租户) | ❌ |
+访问控制由 AuthContext 的当前 Context、Token Scope、Role Permission 与 owner 资源策略共同决定。平台三员和 Tenant 内置 Role 的精确 Permission 集合以 `system/authorization/builtin_roles.yaml` 为唯一发布源，API 路由必须使用精确 Permission Guard，不允许角色名判断或隐式继承。
 
 ## API 端点
 
 > 所有对外 API 均以 `/api/v1/system` 为前缀。内部服务间 API 以 `/api/v1/internal` 为前缀（需 `X-Internal-API-Key` 认证）。
 
-### 认证（无需认证）
+### 认证
 - `POST /api/v1/system/login` - 用户登录
-- `POST /api/v1/system/register` - 用户注册（仅限初始化）
+- `POST /api/v1/system/auth/mfa-verifications` - TOTP 验证
+- `POST /api/v1/system/auth/context-selections` - 登录时选择上下文
 - `POST /api/v1/system/refresh` - Token 刷新
+- `POST /api/v1/system/logout` - 撤销当前 Browser Token Family
 
 ### 授权上下文（需认证）
 - `GET /api/v1/system/auth/context` - 验证当前访问令牌，回查用户和租户状态，返回权威 AuthContext
 
 `/auth/context` 是 Go/Python 业务模块消费用户身份的唯一接口。`/users/me` 只返回用户资料，不用于 Token 验证。
 
-### 用户管理（需认证）
+### 当前用户（需认证）
 - `GET /api/v1/system/users/me` - 获取当前用户信息
-- `POST /api/v1/system/users` - 创建用户（租户管理员创建本租户用户）
-- `GET /api/v1/system/users` - 获取用户列表（租户管理员仅看本租户）
-- `GET /api/v1/system/users/:id` - 获取指定用户
-- `PUT /api/v1/system/users/:id` - 更新用户
 - `PUT /api/v1/system/users/me/password` - 修改当前用户密码
-- `DELETE /api/v1/system/users/:id` - 删除用户（SuperAdmin 不可删除）
 
-### 租户管理（仅超级管理员）
-- `POST /api/v1/system/tenants` - 创建租户（同时创建租户管理员）
-- `GET /api/v1/system/tenants` - 获取租户列表
-- `GET /api/v1/system/tenants/:id` - 获取指定租户
-- `PUT /api/v1/system/tenants/:id` - 更新租户
-- `DELETE /api/v1/system/tenants/:id` - 删除租户
+### Platform 管理（Platform Context + 精确 Permission）
+- `/api/v1/system/platform/tenants` - Tenant 查询、创建、更新、暂停、恢复和关闭；
+- `/api/v1/system/platform/users` - 全局 User 查询、创建、更新、暂停和重新激活；
+- `/api/v1/system/platform/identity_changes` - 平台身份变更申请、复核和监督；
+- `/api/v1/system/platform/audit/events` - 平台审计查询、汇总、趋势和导出。
 
-### 日志管理（需认证）
-- `GET /api/v1/system/logs` - 获取日志列表（自动过滤本租户，支持 user_id 过滤）
-- `GET /api/v1/system/logs/stats` - 获取日志统计数据
-- `GET /api/v1/system/logs/trends` - 获取日志时间趋势
-- `GET /api/v1/system/logs/export` - 导出日志
-- `GET /api/v1/system/logs/:id` - 获取指定日志
+### Tenant IAM 管理（Tenant Context + 精确 Permission）
+- `/api/v1/system/tenant/memberships` - 当前 Tenant Membership 查询、有效期和生命周期；
+- `/api/v1/system/tenant/invitations` - 当前 Tenant 邀请查询、创建与撤销；
+- `/api/v1/system/tenant/audit/events` - 当前 Tenant 审计查询、汇总、趋势和导出。
 
 ### 引擎管理（需认证）
 - `POST /api/v1/system/engines` - 创建引擎（自动关联当前用户租户）

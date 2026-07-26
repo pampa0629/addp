@@ -10,6 +10,7 @@ import (
 
 func TestContainerInfoAttributesKeepsOnlyCanonicalChildFormat(t *testing.T) {
 	t.Parallel()
+	estimatedRowCount := int64(12)
 
 	attrs := ContainerInfoAttributes(&datatype.ContainerInfo{
 		ChildCount:    4,
@@ -30,9 +31,10 @@ func TestContainerInfoAttributesKeepsOnlyCanonicalChildFormat(t *testing.T) {
 				},
 			},
 			{
-				Name:      "data/table.data",
-				ChildKind: "file",
-				DataType:  datatype.Table,
+				Name:              "data/table.data",
+				ChildKind:         "file",
+				DataType:          datatype.Table,
+				EstimatedRowCount: &estimatedRowCount,
 				Native: map[string]interface{}{
 					"format": "csv",
 				},
@@ -67,6 +69,9 @@ func TestContainerInfoAttributesKeepsOnlyCanonicalChildFormat(t *testing.T) {
 	}
 	if children[1]["format"] != string(format.FormatCSV) {
 		t.Fatalf("native canonical format = %#v, want csv", children[1]["format"])
+	}
+	if children[1]["row_count"] != nil || children[1]["estimated_row_count"] != estimatedRowCount {
+		t.Fatalf("child row counts = %#v, want estimate only", children[1])
 	}
 	if children[2]["format"] != string(format.FormatText) {
 		t.Fatalf("child format = %#v, want text", children[2]["format"])

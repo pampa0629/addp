@@ -12,11 +12,11 @@ func serviceAccessStatus(c *gin.Context, publicAccess bool, serviceTenantID uint
 		return 0
 	}
 
-	authContext, authenticated := authMiddleware.GetAuthorizationContext(c)
-	if !authenticated {
+	if _, authenticated := authMiddleware.AuthContextFromGin(c); !authenticated {
 		return http.StatusUnauthorized
 	}
-	if authContext.TenantID == nil || *authContext.TenantID != serviceTenantID {
+	tenantID, exists := authMiddleware.TenantIDFromGin(c)
+	if !exists || uint(tenantID) != serviceTenantID {
 		return http.StatusForbidden
 	}
 	return 0

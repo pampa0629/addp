@@ -25,8 +25,11 @@ func TableInfoFromPayload(payload map[string]interface{}, fallbackName string) *
 	info.Kind = strings.TrimSpace(info.Kind)
 	info.Comment = strings.TrimSpace(info.Comment)
 	info.Native = cloneInterfaceMap(info.Native)
-	if info.RowCount != nil && *info.RowCount <= 0 {
+	if info.RowCount != nil && *info.RowCount < 0 {
 		info.RowCount = nil
+	}
+	if info.EstimatedRowCount != nil && *info.EstimatedRowCount < 0 {
+		info.EstimatedRowCount = nil
 	}
 	if info.SizeBytes != nil && *info.SizeBytes <= 0 {
 		info.SizeBytes = nil
@@ -76,6 +79,7 @@ func hasTableInfoFacts(info TableInfo) bool {
 		info.Kind != "" ||
 		info.Comment != "" ||
 		info.RowCount != nil ||
+		info.EstimatedRowCount != nil ||
 		info.SizeBytes != nil ||
 		info.CreatedAt != nil ||
 		info.UpdatedAt != nil ||

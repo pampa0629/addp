@@ -20,16 +20,10 @@ const routes = [
         meta: { requiresAuth: true, title: '系统管理-addp' }
       },
       {
-        path: 'users',
-        name: 'Users',
-        component: () => import('../views/Users.vue'),
-        meta: { requiresAuth: true, title: '系统管理-addp' }
-      },
-      {
-        path: 'logs',
-        name: 'Logs',
-        component: () => import('../views/Logs.vue'),
-        meta: { requiresAuth: true, title: '系统管理-addp' }
+        path: 'iam',
+        name: 'IAMWorkbench',
+        component: () => import('../views/IAMWorkbench.vue'),
+        meta: { requiresAuth: true, title: '身份与访问管理-addp' }
       },
       {
         path: 'engines',

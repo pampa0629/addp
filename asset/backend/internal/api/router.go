@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/addp/asset/internal/service"
 	commonAuth "github.com/addp/common/middleware/auth"
@@ -34,11 +33,10 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 
 	handler := newHandler(db, assetSvc)
 	api := router.Group("/api/v1/asset")
-	if redisClient != nil {
-		api.Use(commonAuth.CachedSystemAuthMiddleware(systemURL, redisClient, 5*time.Minute))
-	} else {
-		api.Use(commonAuth.SystemAuthMiddleware(systemURL))
-	}
+	api.Use(
+		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: systemURL}),
+		commonAuth.MustNewContextGuard("tenant"),
+	)
 
 	types := api.Group("/type-definitions")
 	types.GET("", handler.listTypes)

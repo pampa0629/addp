@@ -170,6 +170,9 @@ func previewContainerChildInfoMap(child datatype.ContainerChildInfo) map[string]
 	if child.RowCount != nil {
 		result["row_count"] = *child.RowCount
 	}
+	if child.EstimatedRowCount != nil {
+		result["estimated_row_count"] = *child.EstimatedRowCount
+	}
 	if child.ColumnCount != nil {
 		result["column_count"] = *child.ColumnCount
 	}

@@ -10,14 +10,14 @@ import (
 )
 
 func requireTenantID(c *gin.Context) (uint, bool) {
-	authorizationContext, ok := commonAuth.GetAuthorizationContext(c)
-	if !ok {
+	if _, ok := commonAuth.AuthContextFromGin(c); !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, commoni18n.MsgUnauthorized)})
 		return 0, false
 	}
-	if authorizationContext.TenantID == nil || *authorizationContext.TenantID == 0 {
+	tenantID, ok := commonAuth.TenantIDFromGin(c)
+	if !ok {
 		c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, orchestratori18n.MsgTenantContextRequired)})
 		return 0, false
 	}
-	return *authorizationContext.TenantID, true
+	return uint(tenantID), true
 }

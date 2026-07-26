@@ -183,11 +183,16 @@ func (r *Repository) CreateIAMBootstrapState(ctx context.Context, state *IAMBoot
 
 func (r *Repository) LockIAMBootstrapState(ctx context.Context) (*IAMBootstrapState, error) {
 	var state IAMBootstrapState
-	err := r.db.WithContext(ctx).
+	result := r.db.WithContext(ctx).
 		Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("singleton = true").Take(&state).Error
-	if err != nil {
-		return nil, wrapRepositoryError(err)
+		Where("singleton = true").
+		Limit(1).
+		Find(&state)
+	if result.Error != nil {
+		return nil, wrapRepositoryError(result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return nil, commonapi.ErrNotFound
 	}
 	return &state, nil
 }

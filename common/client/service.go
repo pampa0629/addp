@@ -39,7 +39,7 @@ func (c *ServiceClient) addAuth(req *http.Request) {
 
 // GetEndpointsByRef 根据 source_reference（如 "query:123"）获取服务端点信息
 func (c *ServiceClient) GetEndpointsByRef(tenantID int64, sourceRef string) (*ServiceEndpointInfo, error) {
-	url := fmt.Sprintf("%s/api/v1/service/endpoints?ref=%s", c.baseURL, sourceRef)
+	url := fmt.Sprintf("%s/api/v1/service/internal/endpoints?ref=%s", c.baseURL, sourceRef)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)

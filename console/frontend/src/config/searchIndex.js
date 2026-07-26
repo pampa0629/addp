@@ -66,10 +66,9 @@ export const SEARCH_INDEX = [
   // 智能体
   { labelKey: 'console.menus.agent.label', module: 'agent', route: '/agent', keywords: ['智能体', 'AI', '对话', '助手', 'agent', 'chat', 'assistant'] },
   // 系统管理
-  { labelKey: 'console.menus.system.users',        module: 'system', route: '/system/users',        keywords: ['用户管理', '用户', 'user', 'account'] },
+  { labelKey: 'console.menus.system.iam',          module: 'system', route: '/system/iam',          keywords: ['身份与访问管理', '用户', '租户', '权限', '审计', 'IAM', 'identity', 'access', 'account'], permissions: ['platform.tenant.read', 'iam.user.read', 'iam.platform_identity_change.read', 'audit.event.read', 'iam.tenant_membership.read', 'iam.tenant_invitation.read', 'audit.tenant_event.read'] },
   { labelKey: 'console.menus.system.engines',      module: 'system', route: '/system/engines',      keywords: ['引擎管理', '数据引擎', '引擎配置', 'engine', 'database'] },
   { labelKey: 'console.menus.system.applications', module: 'system', route: '/system/applications', keywords: ['应用管理', 'API密钥', 'application', 'api key'] },
-  { labelKey: 'console.menus.system.logs',         module: 'system', route: '/system/logs',         keywords: ['日志', '审计', 'log', 'audit'] },
 ]
 
 /**
@@ -78,11 +77,13 @@ export const SEARCH_INDEX = [
  * @param {(key: string) => string} translate
  * @returns {Array}
  */
-export function searchIndex(query, translate) {
+export function searchIndex(query, translate, grantedPermissions = []) {
   if (!query || query.trim() === '') return []
   const q = query.trim().toLowerCase()
+  const granted = new Set(grantedPermissions)
   const results = []
   for (const item of SEARCH_INDEX) {
+    if (item.permissions?.length && !item.permissions.some(permission => granted.has(permission))) continue
     const label = translate(item.labelKey).toLowerCase()
     const kwMatch = item.keywords.some(k => k.toLowerCase().includes(q))
     const labelMatch = label.includes(q)

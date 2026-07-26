@@ -8,6 +8,7 @@ import (
 	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	_ "github.com/addp/model/docs"
+	modelauthorization "github.com/addp/model/internal/authorization"
 	"github.com/addp/model/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -67,22 +68,12 @@ func proxyToStandard(standardURL, targetPath string) gin.HandlerFunc {
 
 // getTenantID 从 context 获取租户 ID
 func getTenantID(c *gin.Context) int64 {
-	if tenantID, exists := c.Get("tenant_id"); exists {
-		if id, ok := tenantID.(int64); ok {
-			return id
-		}
-	}
-	return 1 // 默认租户
+	return int64(commonAuth.GetTenantID(c))
 }
 
 // getUserID 从 context 获取用户 ID
 func getUserID(c *gin.Context) int64 {
-	if userID, exists := c.Get("user_id"); exists {
-		if id, ok := userID.(int64); ok {
-			return id
-		}
-	}
-	return 1
+	return int64(commonAuth.GetUserID(c))
 }
 
 // SetupRouter 设置路由（仅 Model 相关）
@@ -130,73 +121,74 @@ func SetupRouter(
 	// API 路由组
 	api := router.Group("/api/v1/model")
 
-	// 使用 Redis 缓存中间件 (TTL: 5分钟)
-	if redisClient != nil {
-		api.Use(commonAuth.CachedSystemAuthMiddleware(systemURL, redisClient, 5*time.Minute))
-	} else {
-		api.Use(commonAuth.SystemAuthMiddleware(systemURL))
+	api.Use(
+		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: systemURL}),
+		commonAuth.MustNewContextGuard("tenant"),
+	)
+	permission := func(keys ...string) gin.HandlerFunc {
+		return commonAuth.MustNewPermissionGuard(keys...)
 	}
 
 	{
 		// 业务实体路由
 		entities := api.Group("/entities")
 		{
-			entities.GET("", entityHandler.ListEntities)
-			entities.POST("", entityHandler.CreateEntity)
-			entities.GET("/:id", entityHandler.GetEntity)
-			entities.PUT("/:id", entityHandler.UpdateEntity)
-			entities.DELETE("/:id", entityHandler.DeleteEntity)
-			entities.POST("/:id/approve", entityHandler.ApproveEntity)
-			entities.GET("/:id/attributes", entityHandler.GetAttributes)
-			entities.POST("/:id/attributes", entityHandler.CreateAttribute)
-			entities.PUT("/:id/attributes/:aid", entityHandler.UpdateAttribute)
-			entities.DELETE("/:id/attributes/:aid", entityHandler.DeleteAttribute)
+			entities.GET("", permission(modelauthorization.PermissionModelEntityRead), entityHandler.ListEntities)
+			entities.POST("", permission(modelauthorization.PermissionModelEntityCreate), entityHandler.CreateEntity)
+			entities.GET("/:id", permission(modelauthorization.PermissionModelEntityRead), entityHandler.GetEntity)
+			entities.PUT("/:id", permission(modelauthorization.PermissionModelEntityUpdate), entityHandler.UpdateEntity)
+			entities.DELETE("/:id", permission(modelauthorization.PermissionModelEntityDelete), entityHandler.DeleteEntity)
+			entities.POST("/:id/approve", permission(modelauthorization.PermissionModelEntityApprove), entityHandler.ApproveEntity)
+			entities.GET("/:id/attributes", permission(modelauthorization.PermissionModelEntityRead), entityHandler.GetAttributes)
+			entities.POST("/:id/attributes", permission(modelauthorization.PermissionModelEntityCreate), entityHandler.CreateAttribute)
+			entities.PUT("/:id/attributes/:aid", permission(modelauthorization.PermissionModelEntityUpdate), entityHandler.UpdateAttribute)
+			entities.DELETE("/:id/attributes/:aid", permission(modelauthorization.PermissionModelEntityDelete), entityHandler.DeleteAttribute)
 			// Mermaid 导入导出
-			entities.POST("/import-mermaid", entityHandler.ImportMermaid)
-			entities.GET("/export-mermaid", entityHandler.ExportMermaid)
+			entities.POST("/import-mermaid", permission(modelauthorization.PermissionModelEntityCreate, modelauthorization.PermissionModelEntityRelationCreate), entityHandler.ImportMermaid)
+			entities.GET("/export-mermaid", permission(modelauthorization.PermissionModelEntityRead, modelauthorization.PermissionModelEntityRelationRead), entityHandler.ExportMermaid)
 		}
 
 		// 实体关系路由
 		entityRelations := api.Group("/entity-relations")
 		{
-			entityRelations.GET("", entityRelationHandler.ListRelations)
-			entityRelations.POST("", entityRelationHandler.CreateRelation)
-			entityRelations.GET("/:id", entityRelationHandler.GetRelation)
-			entityRelations.PUT("/:id", entityRelationHandler.UpdateRelation)
-			entityRelations.DELETE("/:id", entityRelationHandler.DeleteRelation)
+			entityRelations.GET("", permission(modelauthorization.PermissionModelEntityRelationRead), entityRelationHandler.ListRelations)
+			entityRelations.POST("", permission(modelauthorization.PermissionModelEntityRelationCreate), entityRelationHandler.CreateRelation)
+			entityRelations.GET("/:id", permission(modelauthorization.PermissionModelEntityRelationRead), entityRelationHandler.GetRelation)
+			entityRelations.PUT("/:id", permission(modelauthorization.PermissionModelEntityRelationUpdate), entityRelationHandler.UpdateRelation)
+			entityRelations.DELETE("/:id", permission(modelauthorization.PermissionModelEntityRelationDelete), entityRelationHandler.DeleteRelation)
 		}
 
 		// 逻辑表路由
 		logicalTables := api.Group("/logical-tables")
 		{
-			logicalTables.GET("", logicalTableHandler.ListLogicalTables)
-			logicalTables.POST("", logicalTableHandler.CreateLogicalTable)
-			logicalTables.GET("/:id", logicalTableHandler.GetLogicalTable)
-			logicalTables.PUT("/:id", logicalTableHandler.UpdateLogicalTable)
-			logicalTables.DELETE("/:id", logicalTableHandler.DeleteLogicalTable)
-			logicalTables.GET("/:id/fields", logicalTableHandler.GetFields)
-			logicalTables.POST("/:id/fields", logicalTableHandler.CreateField)
-			logicalTables.PUT("/:id/fields/:fid", logicalTableHandler.UpdateField)
-			logicalTables.DELETE("/:id/fields/:fid", logicalTableHandler.DeleteField)
-			logicalTables.POST("/:id/preview-ddl", logicalTableHandler.PreviewDDL)
+			logicalTables.GET("", permission(modelauthorization.PermissionModelLogicalModelRead), logicalTableHandler.ListLogicalTables)
+			logicalTables.POST("", permission(modelauthorization.PermissionModelLogicalModelCreate), logicalTableHandler.CreateLogicalTable)
+			logicalTables.GET("/:id", permission(modelauthorization.PermissionModelLogicalModelRead), logicalTableHandler.GetLogicalTable)
+			logicalTables.PUT("/:id", permission(modelauthorization.PermissionModelLogicalModelUpdate), logicalTableHandler.UpdateLogicalTable)
+			logicalTables.DELETE("/:id", permission(modelauthorization.PermissionModelLogicalModelDelete), logicalTableHandler.DeleteLogicalTable)
+			logicalTables.GET("/:id/fields", permission(modelauthorization.PermissionModelLogicalModelRead), logicalTableHandler.GetFields)
+			logicalTables.POST("/:id/fields", permission(modelauthorization.PermissionModelLogicalModelCreate), logicalTableHandler.CreateField)
+			logicalTables.PUT("/:id/fields/:fid", permission(modelauthorization.PermissionModelLogicalModelUpdate), logicalTableHandler.UpdateField)
+			logicalTables.DELETE("/:id/fields/:fid", permission(modelauthorization.PermissionModelLogicalModelDelete), logicalTableHandler.DeleteField)
+			logicalTables.POST("/:id/preview-ddl", permission(modelauthorization.PermissionModelLogicalModelRead), logicalTableHandler.PreviewDDL)
 			// 事实表关联指标（仅对 table_type='fact' 的表有意义）
-			logicalTables.GET("/:id/metrics", factMetricHandler.ListMetrics)
-			logicalTables.POST("/:id/metrics", factMetricHandler.AddMetric)
-			logicalTables.DELETE("/:id/metrics/:mid", factMetricHandler.RemoveMetric)
+			logicalTables.GET("/:id/metrics", permission(modelauthorization.PermissionModelLogicalModelRead), factMetricHandler.ListMetrics)
+			logicalTables.POST("/:id/metrics", permission(modelauthorization.PermissionModelLogicalModelUpdate), factMetricHandler.AddMetric)
+			logicalTables.DELETE("/:id/metrics/:mid", permission(modelauthorization.PermissionModelLogicalModelUpdate), factMetricHandler.RemoveMetric)
 			// 事实表关联维度表
-			logicalTables.GET("/:id/dimension-relations", tableRelationHandler.ListDimensionRelations)
-			logicalTables.POST("/:id/dimension-relations", tableRelationHandler.AddDimensionRelation)
-			logicalTables.DELETE("/:id/dimension-relations/:rid", tableRelationHandler.RemoveDimensionRelation)
+			logicalTables.GET("/:id/dimension-relations", permission(modelauthorization.PermissionModelLogicalModelRead), tableRelationHandler.ListDimensionRelations)
+			logicalTables.POST("/:id/dimension-relations", permission(modelauthorization.PermissionModelLogicalModelUpdate), tableRelationHandler.AddDimensionRelation)
+			logicalTables.DELETE("/:id/dimension-relations/:rid", permission(modelauthorization.PermissionModelLogicalModelUpdate), tableRelationHandler.RemoveDimensionRelation)
 		}
 
 		// 数仓分层路由
 		dwLayers := api.Group("/dw-layers")
 		{
-			dwLayers.GET("", dwLayerHandler.ListDWLayers)
-			dwLayers.POST("", dwLayerHandler.CreateDWLayer)
-			dwLayers.GET("/:id", dwLayerHandler.GetDWLayer)
-			dwLayers.PUT("/:id", dwLayerHandler.UpdateDWLayer)
-			dwLayers.DELETE("/:id", dwLayerHandler.DeleteDWLayer)
+			dwLayers.GET("", permission(modelauthorization.PermissionModelDwLayerRead), dwLayerHandler.ListDWLayers)
+			dwLayers.POST("", permission(modelauthorization.PermissionModelDwLayerCreate), dwLayerHandler.CreateDWLayer)
+			dwLayers.GET("/:id", permission(modelauthorization.PermissionModelDwLayerRead), dwLayerHandler.GetDWLayer)
+			dwLayers.PUT("/:id", permission(modelauthorization.PermissionModelDwLayerUpdate), dwLayerHandler.UpdateDWLayer)
+			dwLayers.DELETE("/:id", permission(modelauthorization.PermissionModelDwLayerDelete), dwLayerHandler.DeleteDWLayer)
 		}
 
 		// 代理到 Standard 模块的路由

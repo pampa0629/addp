@@ -20,15 +20,16 @@ func (c *ContainerInfo) Clone() *ContainerInfo {
 
 // ContainerChildInfo describes an addressable child inside a container.
 type ContainerChildInfo struct {
-	Name        string                 `json:"name,omitempty"`
-	ChildKind   string                 `json:"child_kind,omitempty"`
-	DataType    DataType               `json:"data_type,omitempty"`
-	Format      string                 `json:"format,omitempty"`
-	RowCount    *int64                 `json:"row_count,omitempty"`
-	ColumnCount *int                   `json:"column_count,omitempty"`
-	HasHeader   *bool                  `json:"has_header,omitempty"`
-	Refs        []ContainerChildRef    `json:"refs,omitempty"`
-	Native      map[string]interface{} `json:"native,omitempty"`
+	Name              string                 `json:"name,omitempty"`
+	ChildKind         string                 `json:"child_kind,omitempty"`
+	DataType          DataType               `json:"data_type,omitempty"`
+	Format            string                 `json:"format,omitempty"`
+	RowCount          *int64                 `json:"row_count,omitempty"`
+	EstimatedRowCount *int64                 `json:"estimated_row_count,omitempty"`
+	ColumnCount       *int                   `json:"column_count,omitempty"`
+	HasHeader         *bool                  `json:"has_header,omitempty"`
+	Refs              []ContainerChildRef    `json:"refs,omitempty"`
+	Native            map[string]interface{} `json:"native,omitempty"`
 }
 
 // ContainerChildRef describes a content reference used by a container child.
@@ -50,6 +51,10 @@ func cloneContainerChildren(input []ContainerChildInfo) []ContainerChildInfo {
 		if child.RowCount != nil {
 			rowCount := *child.RowCount
 			output[i].RowCount = &rowCount
+		}
+		if child.EstimatedRowCount != nil {
+			estimatedRowCount := *child.EstimatedRowCount
+			output[i].EstimatedRowCount = &estimatedRowCount
 		}
 		if child.ColumnCount != nil {
 			columnCount := *child.ColumnCount

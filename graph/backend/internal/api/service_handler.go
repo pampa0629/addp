@@ -29,9 +29,9 @@ func (h *ServiceHandler) checkAccess(c *gin.Context, graphIDStr string) (graphID
 	}
 	graphID = uint(id)
 
-	// 先尝试从 JWT 获取 tenantID（中间件注入的）
-	if tid, exists := c.Get("tenant_id"); exists {
-		tenantID = tid.(uint)
+	// 已认证请求只使用 AuthContext 当前 Tenant。
+	if resolvedTenantID, exists := commonAuth.TenantIDFromGin(c); exists {
+		tenantID = uint(resolvedTenantID)
 		kg, err := h.knowledgeSvc.GetGraph(graphID, tenantID)
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "图谱不存在"})
@@ -60,6 +60,7 @@ func (h *ServiceHandler) checkAccess(c *gin.Context, graphIDStr string) (graphID
 // @Param type path string true "本体实体类型名称 | Ontology entity type name"
 // @Param page query int false "页码（默认 1）| Page number (default 1)"
 // @Param page_size query int false "每页大小（默认 20）| Page size (default 20)"
+// @x-addp-auth-mode "public"
 // @Router /kg/{graphId}/entities/{type} [get]
 func (h *ServiceHandler) ListEntities(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -94,6 +95,7 @@ func (h *ServiceHandler) ListEntities(c *gin.Context) {
 
 // @Summary 获取实体详情 | Get entity detail
 // @Tags         知识服务 | Knowledge Service
+// @x-addp-auth-mode "public"
 // @Router /kg/{graphId}/entities/{type}/{nodeId} [get]
 func (h *ServiceHandler) GetEntity(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -111,6 +113,7 @@ func (h *ServiceHandler) GetEntity(c *gin.Context) {
 
 // @Summary 获取节点邻居 | Get node neighbors
 // @Tags         知识服务 | Knowledge Service
+// @x-addp-auth-mode "public"
 // @Router /kg/{graphId}/nodes/{nodeId}/neighbors [get]
 func (h *ServiceHandler) GetNeighbors(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -130,6 +133,7 @@ func (h *ServiceHandler) GetNeighbors(c *gin.Context) {
 
 // @Summary 路径查找 | Find paths
 // @Tags         知识服务 | Knowledge Service
+// @x-addp-auth-mode "public"
 // @Router /kg/{graphId}/paths [post]
 func (h *ServiceHandler) FindPaths(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -151,6 +155,7 @@ func (h *ServiceHandler) FindPaths(c *gin.Context) {
 
 // @Summary 获取实体中心子图 | Get entity-centric subgraph
 // @Tags         知识服务 | Knowledge Service
+// @x-addp-auth-mode "public"
 // @Router /kg/{graphId}/subgraph [post]
 func (h *ServiceHandler) GetSubgraph(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -172,6 +177,7 @@ func (h *ServiceHandler) GetSubgraph(c *gin.Context) {
 
 // @Summary 全文搜索实体 | Full-text search entities
 // @Tags         知识服务 | Knowledge Service
+// @x-addp-auth-mode "public"
 // @Router /kg/{graphId}/search [get]
 func (h *ServiceHandler) SearchEntities(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -211,6 +217,7 @@ func (h *ServiceHandler) SearchEntities(c *gin.Context) {
 
 // @Summary 获取图谱本体描述 | Get graph ontology description
 // @Tags         知识服务 | Knowledge Service
+// @x-addp-auth-mode "public"
 // @Router /kg/{graphId}/ontology [get]
 func (h *ServiceHandler) GetOntology(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -227,6 +234,7 @@ func (h *ServiceHandler) GetOntology(c *gin.Context) {
 
 // @Summary 图谱统计信息 | Graph statistics
 // @Tags         知识服务 | Knowledge Service
+// @x-addp-auth-mode "public"
 // @Router /kg/{graphId}/stats [get]
 func (h *ServiceHandler) GetStats(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -241,9 +249,9 @@ func (h *ServiceHandler) GetStats(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// optionalAuthMiddleware 尝试解析 JWT 但不强制要求（注入 tenant_id/user_id 如果 token 有效）
+// optionalAuthMiddleware 对携带 Bearer Token 的请求解析 AuthContext，匿名请求保持公开访问语义。
 func optionalAuthMiddleware(systemServiceURL string) gin.HandlerFunc {
-	required := commonAuth.SystemAuthMiddleware(systemServiceURL)
+	required := commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: systemServiceURL})
 	return func(c *gin.Context) {
 		// 若有 Authorization header，走正常鉴权；否则跳过
 		if c.GetHeader("Authorization") != "" {

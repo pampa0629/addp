@@ -6,8 +6,11 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
+	"time"
 
+	commonAuth "github.com/addp/common/authorization"
 	"github.com/addp/service/internal/config"
 	"github.com/addp/service/internal/models"
 	serviceInternal "github.com/addp/service/internal/service"
@@ -136,12 +139,35 @@ func newProtocolAuthSystemServer(t *testing.T) *httptest.Server {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"subject_type": "user",
-			"user_id":      1,
-			"username":     "test-user",
-			"tenant_id":    tenantID,
-			"auth_type":    "user_access_token",
-		})
+		_ = json.NewEncoder(w).Encode(protocolAuthContext(tenantID))
 	}))
+}
+
+func protocolAuthContext(tenantID uint) commonAuth.AuthContext {
+	tenantIDText := strconv.FormatUint(uint64(tenantID), 10)
+	membershipID := "1"
+	clientID := "addp-web"
+	issuedAt := time.Date(2026, 7, 26, 0, 0, 0, 0, time.UTC)
+	return commonAuth.AuthContext{
+		SchemaVersion: commonAuth.AuthContextSchemaVersion,
+		Principal:     commonAuth.AuthPrincipal{Type: "user", ID: "1"},
+		Context: commonAuth.AuthSessionContext{
+			Type: "tenant", TenantID: &tenantIDText, TenantMembershipID: &membershipID,
+		},
+		Authentication: commonAuth.AuthenticationFacts{
+			Methods: []string{"password"}, AssuranceLevel: "aal1", AuthenticatedAt: issuedAt,
+		},
+		Client: commonAuth.ClientConstraints{
+			ClientID: &clientID, Audiences: []string{"addp.api"}, ScopeMode: "unrestricted", Scopes: []string{},
+		},
+		Organization: commonAuth.OrganizationContext{
+			Departments: []commonAuth.DepartmentMembership{}, ProjectGroups: []commonAuth.ProjectGroupMembership{},
+		},
+		Authorization: commonAuth.AuthorizationFacts{
+			AuthorizationVersion: "1", RoleAssignments: []commonAuth.RoleAssignment{},
+		},
+		Token: commonAuth.TokenFacts{
+			Type: "first_party_access_token", IssuedAt: issuedAt, ExpiresAt: issuedAt.Add(time.Hour),
+		},
+	}
 }

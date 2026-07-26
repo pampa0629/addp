@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from authorization_permissions_generated import AGENT_RUN_CANCEL, AGENT_RUN_READ
 from database import AsyncSessionLocal, get_db
+from middleware.auth import require_permissions
 from models.run import AgentRun
 from models.run_step import AgentRunStep
 from services.run_events import append_run_event, encode_replayed_event, iter_run_events
@@ -71,6 +72,7 @@ class AgentRunActionResponse(BaseModel):
     response_model=AgentRunResponse,
     summary="获取智能体运行 | Get agent run",
     description="返回当前用户拥有的 AgentRun、语义检查点和受限步骤审计记录。",
+    dependencies=[Depends(require_permissions(AGENT_RUN_READ))],
     responses={404: {"model": ErrorResponse, "description": "AgentRun 不存在 | Agent run not found"}},
     openapi_extra={
         "x-ai-hint": "agent_run_id 来自 AG-UI STATE_SNAPSHOT.agentRunId；该资源不是 owner 模块 execution。",
@@ -79,7 +81,7 @@ class AgentRunActionResponse(BaseModel):
     },
 )
 async def get_agent_run(agent_run_id: UUID, request: Request, db: AsyncSession = Depends(get_db)):
-    user_id = int(request.state.user_id)
+    user_id = int(request.state.principal_id)
     tenant_id = int(request.state.tenant_id)
     result = await db.execute(
         select(AgentRun).where(
@@ -140,6 +142,7 @@ async def get_agent_run(agent_run_id: UUID, request: Request, db: AsyncSession =
     "/{agent_run_id}/events",
     summary="重放智能体运行事件 | Replay agent run events",
     description="按 AgentRun 内 sequence 回放当前用户可见的安全 AG-UI 事件。",
+    dependencies=[Depends(require_permissions(AGENT_RUN_READ))],
     response_class=StreamingResponse,
     responses={200: {"content": {"text/event-stream": {}}}, 404: {"model": ErrorResponse}},
     openapi_extra={
@@ -154,7 +157,7 @@ async def replay_agent_run_events(
     after: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
-    user_id = int(request.state.user_id)
+    user_id = int(request.state.principal_id)
     tenant_id = int(request.state.tenant_id)
     result = await db.execute(
         select(AgentRun.id).where(
@@ -183,6 +186,7 @@ async def replay_agent_run_events(
     response_model=AgentRunActionResponse,
     summary="取消智能体运行 | Cancel agent run",
     description="取消内置 Agent Runtime 和待处理 Interaction，不取消 owner 模块 execution。",
+    dependencies=[Depends(require_permissions(AGENT_RUN_CANCEL))],
     responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
     openapi_extra={
         "x-ai-hint": "只允许 running 或 waiting 的 AgentRun；cancelled 是终态。",
@@ -195,7 +199,7 @@ async def cancel_owned_agent_run(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    user_id = int(request.state.user_id)
+    user_id = int(request.state.principal_id)
     tenant_id = int(request.state.tenant_id)
     result = await db.execute(
         select(AgentRun).where(

@@ -9,6 +9,7 @@ import (
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	_ "github.com/addp/orchestrator/docs"
+	orchestratorauthorization "github.com/addp/orchestrator/internal/authorization"
 	"github.com/addp/orchestrator/internal/repository"
 	"github.com/addp/orchestrator/internal/service"
 	"github.com/gin-gonic/gin"
@@ -56,12 +57,12 @@ func SetupRouter(
 	// i18n 中间件（解析 Accept-Language 请求头）
 	api.Use(commoni18n.I18nMiddleware())
 
-	// 使用 Redis 缓存中间件 (TTL: 5分钟, 减少 System 调用 90%)
-	if redisClient != nil {
-		api.Use(commonAuth.CachedSystemAuthMiddleware(systemURL, redisClient, 5*time.Minute))
-	} else {
-		// Fallback: 无缓存模式
-		api.Use(commonAuth.SystemAuthMiddleware(systemURL))
+	api.Use(
+		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: systemURL}),
+		commonAuth.MustNewContextGuard("tenant"),
+	)
+	permission := func(keys ...string) gin.HandlerFunc {
+		return commonAuth.MustNewPermissionGuard(keys...)
 	}
 	// 审计日志中间件（记录到 System 模块）
 	if systemClient != nil {
@@ -70,26 +71,26 @@ func SetupRouter(
 
 	{
 		// 编排管理
-		api.POST("/orchestrations", handler.Create)
-		api.GET("/orchestrations", handler.List)
-		api.GET("/orchestrations/:id", handler.Get)
-		api.PUT("/orchestrations/:id", handler.Update)
-		api.DELETE("/orchestrations/:id", handler.Delete)
+		api.POST("/orchestrations", permission(orchestratorauthorization.PermissionOrchestratorWorkflowCreate), handler.Create)
+		api.GET("/orchestrations", permission(orchestratorauthorization.PermissionOrchestratorWorkflowRead), handler.List)
+		api.GET("/orchestrations/:id", permission(orchestratorauthorization.PermissionOrchestratorWorkflowRead), handler.Get)
+		api.PUT("/orchestrations/:id", permission(orchestratorauthorization.PermissionOrchestratorWorkflowUpdate), handler.Update)
+		api.DELETE("/orchestrations/:id", permission(orchestratorauthorization.PermissionOrchestratorWorkflowDelete), handler.Delete)
 
 		// 执行管理
-		api.POST("/orchestrations/:id/execute", handler.Execute)
-		api.GET("/orchestrations/:id/executions", handler.ListExecutions)
-		api.GET("/executions", handler.ListAllExecutions)
-		api.GET("/executions/:execution_id", handler.GetProviderExecution)
-		api.GET("/orch-executions/:id", handler.GetExecution)
+		api.POST("/orchestrations/:id/execute", permission(orchestratorauthorization.PermissionOrchestratorWorkflowExecute), handler.Execute)
+		api.GET("/orchestrations/:id/executions", permission(orchestratorauthorization.PermissionOrchestratorWorkflowRead), handler.ListExecutions)
+		api.GET("/executions", permission(orchestratorauthorization.PermissionOrchestratorWorkflowRead), handler.ListAllExecutions)
+		api.GET("/executions/:execution_id", permission(orchestratorauthorization.PermissionOrchestratorWorkflowRead), handler.GetProviderExecution)
+		api.GET("/orch-executions/:id", permission(orchestratorauthorization.PermissionOrchestratorWorkflowRead), handler.GetExecution)
 
 		// 任务提供者发现（动态从 System 获取）
-		api.GET("/task-providers", handler.ListTaskProviders)
+		api.GET("/task-providers", permission(orchestratorauthorization.PermissionOrchestratorWorkflowRead), handler.ListTaskProviders)
 
 		// 模块任务列表 (用于拖拽复用，动态调用)
-		api.GET("/tasks", handler.ListModuleTasks)
-		api.GET("/tasks/:task_type/:id", handler.GetProviderOrchestrationTask)
-		api.POST("/tasks/:task_type/:id/execute", handler.ExecuteProviderOrchestrationTask)
+		api.GET("/tasks", permission(orchestratorauthorization.PermissionOrchestratorWorkflowRead), handler.ListModuleTasks)
+		api.GET("/tasks/:task_type/:id", permission(orchestratorauthorization.PermissionOrchestratorWorkflowRead), handler.GetProviderOrchestrationTask)
+		api.POST("/tasks/:task_type/:id/execute", permission(orchestratorauthorization.PermissionOrchestratorWorkflowExecute), handler.ExecuteProviderOrchestrationTask)
 	}
 
 	// 健康检查

@@ -1,12 +1,11 @@
 package api
 
 import (
-	"time"
-
 	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	_ "github.com/addp/quality/docs"
+	qualityauthorization "github.com/addp/quality/internal/authorization"
 	"github.com/addp/quality/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -53,55 +52,57 @@ func SetupRouter(
 	issueHandler := NewIssueHandler(issueSvc)
 
 	api := router.Group("/api/v1/quality")
-	if redisClient != nil {
-		api.Use(commonAuth.CachedSystemAuthMiddleware(systemURL, redisClient, 5*time.Minute))
-	} else {
-		api.Use(commonAuth.SystemAuthMiddleware(systemURL))
+	api.Use(
+		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: systemURL}),
+		commonAuth.MustNewContextGuard("tenant"),
+	)
+	permission := func(keys ...string) gin.HandlerFunc {
+		return commonAuth.MustNewPermissionGuard(keys...)
 	}
 
 	{
 		// 规则应用（字段-规则映射）
 		ruleApps := api.Group("/rule-applications")
 		{
-			ruleApps.GET("", ruleAppHandler.List)
-			ruleApps.POST("", ruleAppHandler.Create)
-			ruleApps.GET("/:id", ruleAppHandler.Get)
-			ruleApps.PUT("/:id", ruleAppHandler.Update)
-			ruleApps.DELETE("/:id", ruleAppHandler.Delete)
+			ruleApps.GET("", permission(qualityauthorization.PermissionQualityRuleApplicationRead), ruleAppHandler.List)
+			ruleApps.POST("", permission(qualityauthorization.PermissionQualityRuleApplicationCreate), ruleAppHandler.Create)
+			ruleApps.GET("/:id", permission(qualityauthorization.PermissionQualityRuleApplicationRead), ruleAppHandler.Get)
+			ruleApps.PUT("/:id", permission(qualityauthorization.PermissionQualityRuleApplicationUpdate), ruleAppHandler.Update)
+			ruleApps.DELETE("/:id", permission(qualityauthorization.PermissionQualityRuleApplicationDelete), ruleAppHandler.Delete)
 		}
 
 		// 检查任务
 		checkTasks := api.Group("/check-tasks")
 		{
-			checkTasks.GET("", checkTaskHandler.List)
-			checkTasks.POST("", checkTaskHandler.Create)
-			checkTasks.GET("/:id", checkTaskHandler.Get)
-			checkTasks.PUT("/:id", checkTaskHandler.Update)
-			checkTasks.DELETE("/:id", checkTaskHandler.Delete)
-			checkTasks.POST("/:id/run", checkTaskHandler.Run)
+			checkTasks.GET("", permission(qualityauthorization.PermissionQualityCheckTaskRead), checkTaskHandler.List)
+			checkTasks.POST("", permission(qualityauthorization.PermissionQualityCheckTaskCreate), checkTaskHandler.Create)
+			checkTasks.GET("/:id", permission(qualityauthorization.PermissionQualityCheckTaskRead), checkTaskHandler.Get)
+			checkTasks.PUT("/:id", permission(qualityauthorization.PermissionQualityCheckTaskUpdate), checkTaskHandler.Update)
+			checkTasks.DELETE("/:id", permission(qualityauthorization.PermissionQualityCheckTaskDelete), checkTaskHandler.Delete)
+			checkTasks.POST("/:id/run", permission(qualityauthorization.PermissionQualityCheckTaskExecute), checkTaskHandler.Run)
 		}
 
 		// TaskProvider 标准入口
 		tasks := api.Group("/tasks")
 		{
-			tasks.GET("", taskProviderHandler.ListTasks)
-			tasks.GET("/:task_type/:id", taskProviderHandler.TaskDetail)
-			tasks.POST("/:task_type/:id/execute", taskProviderHandler.TaskExecute)
+			tasks.GET("", permission(qualityauthorization.PermissionQualityCheckTaskRead), taskProviderHandler.ListTasks)
+			tasks.GET("/:task_type/:id", permission(qualityauthorization.PermissionQualityCheckTaskRead), taskProviderHandler.TaskDetail)
+			tasks.POST("/:task_type/:id/execute", permission(qualityauthorization.PermissionQualityCheckTaskExecute), taskProviderHandler.TaskExecute)
 		}
 
 		// 执行记录（读 common.task_executions）
 		executions := api.Group("/executions")
 		{
-			executions.GET("", executionHandler.List)
-			executions.GET("/:execution_id", executionHandler.Get)
+			executions.GET("", permission(qualityauthorization.PermissionQualityCheckTaskRead), executionHandler.List)
+			executions.GET("/:execution_id", permission(qualityauthorization.PermissionQualityCheckTaskRead), executionHandler.Get)
 		}
 
 		// 问题工单
 		issues := api.Group("/issues")
 		{
-			issues.GET("", issueHandler.List)
-			issues.GET("/:id", issueHandler.Get)
-			issues.PUT("/:id/status", issueHandler.UpdateStatus)
+			issues.GET("", permission(qualityauthorization.PermissionQualityIssueRead), issueHandler.List)
+			issues.GET("/:id", permission(qualityauthorization.PermissionQualityIssueRead), issueHandler.Get)
+			issues.PUT("/:id/status", permission(qualityauthorization.PermissionQualityIssueUpdate), issueHandler.UpdateStatus)
 		}
 	}
 

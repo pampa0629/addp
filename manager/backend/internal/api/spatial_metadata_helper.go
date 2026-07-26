@@ -17,7 +17,7 @@ func spatialMetadataFromMeta(
 	if quickViewService == nil {
 		return nil, errors.New("quick view service is not initialized")
 	}
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	if tenantID == 0 {
 		return nil, errors.New("tenant_id is required")
 	}

@@ -21,6 +21,8 @@ import (
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.scan_task.execute"]
 // @Router /scan/tasks/{task_id}/trigger [post]
 // @Security BearerAuth
 func (h *Handler) TriggerScanTask(c *gin.Context) {
@@ -79,6 +81,8 @@ type taskProviderExecuteResponse struct {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.scan_task.execute"]
 // @Router /tasks/{task_type}/{id}/execute [post]
 // @Security BearerAuth
 func (h *Handler) ProviderExecuteScanTask(c *gin.Context) {

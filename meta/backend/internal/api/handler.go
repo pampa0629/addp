@@ -66,6 +66,8 @@ func (h *Handler) handleServiceError(c *gin.Context, err error) {
 // @Produce json
 // @Success 200 {object} map[string]interface{} "统计信息 | Stats"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /stats [get]
 // @Security BearerAuth
 func (h *Handler) GetStats(c *gin.Context) {
@@ -86,6 +88,8 @@ func (h *Handler) GetStats(c *gin.Context) {
 // @Produce json
 // @Success 200 {array} models.ResourceWithStats "引擎列表 | Engine list"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /engines [get]
 // @Security BearerAuth
 func (h *Handler) GetEngines(c *gin.Context) {

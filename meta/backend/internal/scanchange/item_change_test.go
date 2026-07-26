@@ -22,16 +22,50 @@ func TestShouldUpdateTableUsesUpdatedAt(t *testing.T) {
 	}
 }
 
+func TestShouldUpdateTableUsesEstimatedRowCount(t *testing.T) {
+	t.Parallel()
+
+	oldEstimate := int64(5)
+	newEstimate := int64(10)
+	item := &models.MetaItem{Attributes: models.JSONMap{
+		"type_info": map[string]interface{}{
+			"table": map[string]interface{}{"estimated_row_count": oldEstimate},
+		},
+	}}
+	table := datatype.TableInfo{EstimatedRowCount: &newEstimate}
+
+	if !ShouldUpdateTable(item, table) {
+		t.Fatal("table should update when estimated row count changes")
+	}
+}
+
 func TestShouldUpdateDynamicSchemaItemSizeThreshold(t *testing.T) {
 	t.Parallel()
 
 	oldSize := int64(100)
-	item := &models.MetaItem{SizeBytes: &oldSize}
-	if ShouldUpdateDynamicSchemaItem(item, 0, 105) {
+	item := &models.MetaItem{
+		SizeBytes: &oldSize,
+		Attributes: models.JSONMap{
+			"type_info": map[string]interface{}{
+				"table": map[string]interface{}{"estimated_row_count": int64(0)},
+			},
+		},
+	}
+	estimatedCount := int64(0)
+	if ShouldUpdateDynamicSchemaItem(item, &estimatedCount, 105) {
 		t.Fatal("5 percent size change should not update")
 	}
-	if !ShouldUpdateDynamicSchemaItem(item, 0, 120) {
+	if !ShouldUpdateDynamicSchemaItem(item, &estimatedCount, 120) {
 		t.Fatal("20 percent size change should update")
+	}
+}
+
+func TestShouldUpdateDynamicSchemaItemDoesNotInventMissingEstimate(t *testing.T) {
+	t.Parallel()
+
+	item := &models.MetaItem{Attributes: models.JSONMap{}}
+	if ShouldUpdateDynamicSchemaItem(item, nil, 0) {
+		t.Fatal("missing estimate and unchanged size should not force an update")
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 	commonapi "github.com/addp/common/api"
 	commonauth "github.com/addp/common/authorization"
 	"github.com/addp/system/internal/migration"
+	"github.com/addp/system/internal/testsupport"
 	"github.com/lib/pq"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -25,6 +26,7 @@ func TestAuthContextServiceAgainstPostgres(t *testing.T) {
 	if dsn == "" {
 		t.Skip("set ADDP_IAM_RUNTIME_TEST_DSN to a disposable PostgreSQL 15+ database")
 	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
@@ -245,7 +247,7 @@ func TestAuthContextServiceAgainstPostgres(t *testing.T) {
 			t,
 			db,
 			user.PrincipalID,
-			"platform.statistics_viewer",
+			"platform.audit_administrator",
 			"platform",
 			nil,
 			nil,

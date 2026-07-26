@@ -26,6 +26,8 @@ func NewUnitHandler(svc *service.UnitService) *UnitHandler {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.unit.read"]
 // @Router /measurement-categories [get]
 // @Security BearerAuth
 func (h *UnitHandler) ListCategories(c *gin.Context) {
@@ -42,6 +44,8 @@ func (h *UnitHandler) ListCategories(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.unit.create"]
 // @Router /measurement-categories [post]
 // @Security BearerAuth
 func (h *UnitHandler) CreateCategory(c *gin.Context) {
@@ -63,6 +67,8 @@ func (h *UnitHandler) CreateCategory(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.unit.update"]
 // @Router /measurement-categories/{id} [put]
 // @Security BearerAuth
 func (h *UnitHandler) UpdateCategory(c *gin.Context) {
@@ -89,6 +95,8 @@ func (h *UnitHandler) UpdateCategory(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.unit.delete"]
 // @Router /measurement-categories/{id} [delete]
 // @Security BearerAuth
 func (h *UnitHandler) DeleteCategory(c *gin.Context) {
@@ -111,6 +119,8 @@ func (h *UnitHandler) DeleteCategory(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.unit.read"]
 // @Router /units [get]
 // @Security BearerAuth
 func (h *UnitHandler) ListUnits(c *gin.Context) {
@@ -133,6 +143,8 @@ func (h *UnitHandler) ListUnits(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.unit.read"]
 // @Router /units/{id} [get]
 // @Security BearerAuth
 func (h *UnitHandler) GetUnit(c *gin.Context) {
@@ -154,6 +166,8 @@ func (h *UnitHandler) GetUnit(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.unit.create"]
 // @Router /units [post]
 // @Security BearerAuth
 func (h *UnitHandler) CreateUnit(c *gin.Context) {
@@ -175,6 +189,8 @@ func (h *UnitHandler) CreateUnit(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.unit.update"]
 // @Router /units/{id} [put]
 // @Security BearerAuth
 func (h *UnitHandler) UpdateUnit(c *gin.Context) {
@@ -201,6 +217,8 @@ func (h *UnitHandler) UpdateUnit(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.unit.delete"]
 // @Router /units/{id} [delete]
 // @Security BearerAuth
 func (h *UnitHandler) DeleteUnit(c *gin.Context) {

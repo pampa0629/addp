@@ -168,7 +168,7 @@ class LLMConfigResponse(LLMConfigBase):
 
 ### 6.1 POST /copilot/llm-configs - 创建 LLM 配置
 
-**权限**：TenantAdmin
+**权限**：待实现；不得在没有稳定 Permission 和路由 Guard 时开放。
 
 **请求体**：
 
@@ -216,7 +216,7 @@ class LLMConfigResponse(LLMConfigBase):
 
 ### 6.2 GET /copilot/llm-configs - 查询 LLM 配置列表
 
-**权限**：TenantAdmin（查看本租户配置），SuperAdmin（查看所有配置）
+**权限**：当前未纳入首批公开 IAM 管理 API；开放前必须定义稳定 Permission 和 Tenant 资源策略。
 
 **查询参数**：
 - `provider`（可选）：按提供商过滤
@@ -256,7 +256,7 @@ class LLMConfigResponse(LLMConfigBase):
 
 ### 6.3 GET /copilot/llm-configs/:id - 获取指定配置
 
-**权限**：本租户用户 / SuperAdmin
+**权限**：当前未开放公开管理 API。
 
 **响应**（200 OK）：返回 LLMConfig 对象（API Key 脱敏）
 
@@ -264,7 +264,7 @@ class LLMConfigResponse(LLMConfigBase):
 
 ### 6.4 PUT /copilot/llm-configs/:id - 更新配置
 
-**权限**：TenantAdmin / SuperAdmin
+**权限**：当前未开放公开管理 API。
 
 **请求体**：
 
@@ -289,7 +289,7 @@ class LLMConfigResponse(LLMConfigBase):
 
 ### 6.5 DELETE /copilot/llm-configs/:id - 删除配置
 
-**权限**：TenantAdmin / SuperAdmin
+**权限**：当前未开放公开管理 API。
 
 **响应**（200 OK）：
 
@@ -333,19 +333,13 @@ class LLMConfigResponse(LLMConfigBase):
 
 ### 7.1 访问权限
 
-| 操作 | SuperAdmin | TenantAdmin | User |
-|------|-----------|-------------|------|
-| 创建全局配置 | ✅ | ❌ | ❌ |
-| 创建租户配置 | ✅ | ✅（本租户） | ❌ |
-| 查看配置列表 | ✅（所有） | ✅（本租户+全局） | ✅（本租户+全局） |
-| 修改配置 | ✅（所有） | ✅（本租户） | ❌ |
-| 删除配置 | ✅（非全局默认） | ✅（本租户） | ❌ |
+当前没有公开的 LLM Config 管理 Operation，因此不发布对应 active Permission。未来开放时必须在 Copilot Permission Manifest、路由 Guard 和 Swagger 中同时声明，Tenant 配置只能在当前 Tenant Context 内管理。
 
 ### 7.2 租户隔离
 
 **查询规则**：
-- 普通用户：查看本租户配置 + 全局配置（`tenant_id=<当前租户>` OR `tenant_id IS NULL`）
-- SuperAdmin：查看所有配置
+- Tenant 查询只能读取本 Tenant 配置和明确发布的全局只读配置。
+- Platform Context 不得通过普通 Copilot Repository 跨 Tenant 读取配置。
 
 ---
 
@@ -419,26 +413,9 @@ curl -X POST http://localhost:8087/copilot/llm-configs \
 
 ---
 
-### 9.2 创建全局 Claude 配置（SuperAdmin）
+### 9.2 全局配置
 
-```bash
-curl -X POST http://localhost:8087/copilot/llm-configs \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $SUPERADMIN_TOKEN" \
-  -d '{
-    "tenant_id": null,
-    "provider": "claude",
-    "model": "claude-3-5-sonnet",
-    "api_key": "sk-ant-xxxxxxxxxxxxx",
-    "config": {
-      "temperature": 0.7,
-      "max_tokens": 4096
-    },
-    "is_default": true
-  }'
-```
-
----
+当前不提供通过公开 API 创建全局 LLM 配置的路径；部署级默认配置由受控配置流程维护。
 
 ### 9.3 查询默认配置
 

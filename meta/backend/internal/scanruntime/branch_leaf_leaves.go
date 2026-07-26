@@ -48,14 +48,14 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 		if itemType == "" {
 			continue
 		}
-		count := catalogEntryRowCount(node, itemType)
+		estimatedCount := catalogEntryEstimatedRowCount(node, itemType)
 		sizeBytes := catalogEntrySizeBytes(node)
 		itemName := node.Name
 
 		s.log.Info(fmt.Sprintf("处理第 %d/%d 个 catalog branch leaf", i+1, len(nodes)),
 			"item_name", itemName,
 			"item_type", itemType,
-			"count", count,
+			"estimated_count", estimatedCount,
 		)
 
 		if scannedByType[itemType] == nil {
@@ -64,7 +64,7 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 		scannedByType[itemType][itemName] = true
 
 		existingItem := existingItemMap[itemType+"\x00"+itemName]
-		needsUpdate := force || scanchange.ShouldUpdateDynamicSchemaItem(existingItem, count, sizeBytes) || existingItem == nil
+		needsUpdate := force || scanchange.ShouldUpdateDynamicSchemaItem(existingItem, estimatedCount, sizeBytes) || existingItem == nil
 		if strings.EqualFold(scanDepth, "deep") && existingItem != nil && existingItem.ScannedDepth != models.ScannedDepthDeep {
 			needsUpdate = true
 		}
@@ -75,6 +75,8 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 		}
 
 		var attrs models.JSONMap
+		var rowCount *int64
+		estimatedRowCount := estimatedCount
 
 		if itemType == "collection" && strings.EqualFold(scanDepth, "deep") && scanCatalog.samplingProvider != nil {
 			itemPath := plugin.BranchLeafCatalogPath(scanCatalog.model, resource.ID, scanCatalog.branchTerm, branchName, node.Term, node.Kind, itemName)
@@ -90,6 +92,10 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 				attrs = metaattr.BuildDynamicSchemaAttributes(dynamicSchemaAttributesInput(catalogFacts))
 				if tableInfo := plugin.CatalogFactsTableInfo(catalogFacts); tableInfo != nil {
 					totalFields += len(tableInfo.Fields)
+					rowCount = tableInfo.RowCount
+					if tableInfo.EstimatedRowCount != nil {
+						estimatedRowCount = tableInfo.EstimatedRowCount
+					}
 				}
 			}
 		}
@@ -112,7 +118,8 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 				s.log.Warn("图结构扫描未返回 GraphInfo", "branch", branchName, "leaf", itemName)
 				continue
 			}
-			count = derefGraphNodeCount(graphInfo)
+			count := derefGraphNodeCount(graphInfo)
+			rowCount = &count
 			sizeBytes = 0
 		}
 
@@ -120,7 +127,7 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 			attrs = models.JSONMap{}
 		}
 		if itemType == "collection" {
-			metaattr.ApplyDynamicSchemaStatistics(attrs, count, sizeBytes)
+			metaattr.ApplyDynamicSchemaStatistics(attrs, rowCount, estimatedRowCount, sizeBytes)
 		} else if itemType == "graph" {
 			metaattr.ApplyGraphItemAttributes(attrs, graphInfo)
 		} else {
@@ -129,9 +136,11 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 		metaattr.ApplyBranchLeafItemAttributes(attrs, itemType)
 
 		fullName := fmt.Sprintf("%s.%s", branchName, itemName)
-		rowCount := count
+		if rowCount == nil && existingItem != nil {
+			rowCount = existingItem.RowCount
+		}
 
-		_, err = s.repo.UpsertItemWithDepth(tenantID, resource.ID, branchNode, itemType, itemName, fullName, attrs, &rowCount, &sizeBytes, nil, scanDepth)
+		_, err = s.repo.UpsertItemWithDepth(tenantID, resource.ID, branchNode, itemType, itemName, fullName, attrs, rowCount, &sizeBytes, nil, scanDepth)
 		if err != nil {
 			s.log.Warn("保存 branch leaf 元数据失败", "branch", branchName, "item", itemName, "item_type", itemType, "error", err)
 			continue

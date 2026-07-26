@@ -102,10 +102,10 @@ func (s *TaskProviderRegistryService) Register() error {
 
 		// API 端点配置
 		BaseURL:             s.developURL,
-		TaskListEndpoint:    "/api/v1/develop/tasks",
-		TaskDetailEndpoint:  "/api/v1/develop/tasks/{task_type}/{id}",
-		TaskExecuteEndpoint: "/api/v1/develop/tasks/{task_type}/{id}/execute",
-		TaskStatusEndpoint:  "/api/v1/develop/executions/{execution_id}",
+		TaskListEndpoint:    "/api/v1/develop/internal/tasks",
+		TaskDetailEndpoint:  "/api/v1/develop/internal/tasks/{task_type}/{id}",
+		TaskExecuteEndpoint: "/api/v1/develop/internal/tasks/{task_type}/{id}/execute",
+		TaskStatusEndpoint:  "/api/v1/develop/internal/executions/{execution_id}",
 
 		Capabilities: &capabilitiesStr,
 

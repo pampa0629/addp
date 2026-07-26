@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: develop
-manifest_version: 2
+manifest_version: 3
 permissions:
   - key: develop.notebook.create
     allowed_scope_types: [tenant, department, project_group]
@@ -39,7 +39,7 @@ permissions:
     risk_level: medium
     tenant_customizable: true
     delegable: false
-    status: active
+    status: disabled
     name_i18n_key: permissions.develop.notebook.update.name
     description_i18n_key: permissions.develop.notebook.update.description
   - key: develop.task.cancel
@@ -47,7 +47,7 @@ permissions:
     risk_level: medium
     tenant_customizable: true
     delegable: false
-    status: active
+    status: disabled
     name_i18n_key: permissions.develop.task.cancel.name
     description_i18n_key: permissions.develop.task.cancel.description
   - key: develop.task.create

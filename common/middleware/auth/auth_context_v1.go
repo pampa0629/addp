@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,9 +20,10 @@ import (
 )
 
 const (
-	canonicalAuthContextKey       = "addp.auth_context/v1"
-	maxAuthContextResponseBytes   = 1 << 20
-	defaultAuthContextHTTPTimeout = 10 * time.Second
+	canonicalAuthContextKey               = "addp.auth_context/v1"
+	maxAuthContextResponseBytes           = 1 << 20
+	defaultAuthContextHTTPTimeout         = 10 * time.Second
+	BrowserResourceAccessTicketCookieName = "addp_resource_access_ticket"
 )
 
 type MiddlewareConfig struct {
@@ -53,6 +55,10 @@ func NewMiddleware(config MiddlewareConfig) (gin.HandlerFunc, error) {
 	}
 
 	return func(c *gin.Context) {
+		if _, exists := AuthContextFromGin(c); exists {
+			c.Next()
+			return
+		}
 		accessToken := canonicalBearerToken(c.GetHeader("Authorization"))
 		if accessToken == "" {
 			abortAuthenticationRequired(c)
@@ -74,6 +80,16 @@ func NewMiddleware(config MiddlewareConfig) (gin.HandlerFunc, error) {
 		}
 		c.Next()
 	}, nil
+}
+
+// MustNewMiddleware creates the canonical AuthContext middleware for router
+// composition and fails fast when the module configuration is invalid.
+func MustNewMiddleware(config MiddlewareConfig) gin.HandlerFunc {
+	middleware, err := NewMiddleware(config)
+	if err != nil {
+		panic(err)
+	}
+	return middleware
 }
 
 type authContextRequestHeaders struct {
@@ -177,6 +193,120 @@ func AuthSessionContextFromGin(c *gin.Context) (commonauth.AuthSessionContext, b
 		return commonauth.AuthSessionContext{}, false
 	}
 	return authContext.Context, true
+}
+
+func PrincipalIDFromGin(c *gin.Context) (int64, bool) {
+	principal, exists := PrincipalFromGin(c)
+	if !exists {
+		return 0, false
+	}
+	principalID, err := strconv.ParseInt(principal.ID, 10, 64)
+	return principalID, err == nil && principalID > 0
+}
+
+func TenantIDFromGin(c *gin.Context) (int64, bool) {
+	sessionContext, exists := AuthSessionContextFromGin(c)
+	if !exists || sessionContext.Type != "tenant" || sessionContext.TenantID == nil {
+		return 0, false
+	}
+	tenantID, err := strconv.ParseInt(*sessionContext.TenantID, 10, 64)
+	return tenantID, err == nil && tenantID > 0
+}
+
+func GetUserID(c *gin.Context) uint {
+	principal, exists := PrincipalFromGin(c)
+	if !exists || principal.Type != "user" {
+		return 0
+	}
+	principalID, err := strconv.ParseUint(principal.ID, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return uint(principalID)
+}
+
+func GetTenantID(c *gin.Context) uint {
+	tenantID, exists := TenantIDFromGin(c)
+	if !exists {
+		return 0
+	}
+	return uint(tenantID)
+}
+
+func GetClientID(c *gin.Context) string {
+	authContext, exists := AuthContextFromGin(c)
+	if !exists || authContext.Client.ClientID == nil {
+		return ""
+	}
+	return *authContext.Client.ClientID
+}
+
+func GetScopes(c *gin.Context) []string {
+	authContext, exists := AuthContextFromGin(c)
+	if !exists {
+		return nil
+	}
+	return append([]string(nil), authContext.Client.Scopes...)
+}
+
+func GetAudiences(c *gin.Context) []string {
+	authContext, exists := AuthContextFromGin(c)
+	if !exists {
+		return nil
+	}
+	return append([]string(nil), authContext.Client.Audiences...)
+}
+
+func NewContextGuard(contextType string) (gin.HandlerFunc, error) {
+	if contextType != "platform" && contextType != "tenant" {
+		return nil, fmt.Errorf("%w: invalid AuthContext type", commonapi.ErrBadRequest)
+	}
+	return func(c *gin.Context) {
+		authContext, exists := AuthContextFromGin(c)
+		if !exists {
+			abortAuthenticationRequired(c)
+			return
+		}
+		if authContext.Context.Type != contextType {
+			abortPermissionDenied(c)
+			return
+		}
+		c.Next()
+	}, nil
+}
+
+func MustNewContextGuard(contextType string) gin.HandlerFunc {
+	guard, err := NewContextGuard(contextType)
+	if err != nil {
+		panic(err)
+	}
+	return guard
+}
+
+func NewPermissionGuard(requiredPermissions ...string) (gin.HandlerFunc, error) {
+	permissions, err := normalizeRequiredPermissions(requiredPermissions)
+	if err != nil {
+		return nil, err
+	}
+	return func(c *gin.Context) {
+		if _, exists := AuthContextFromGin(c); !exists {
+			abortAuthenticationRequired(c)
+			return
+		}
+		if !HasAllRolePermissions(c, permissions...) {
+			abortPermissionDenied(c)
+			return
+		}
+		c.Next()
+	}, nil
+}
+
+func MustNewPermissionGuard(requiredPermissions ...string) gin.HandlerFunc {
+	guard, err := NewPermissionGuard(requiredPermissions...)
+	if err != nil {
+		panic(err)
+	}
+	return guard
 }
 
 // HasRolePermission reports only the functional Allow candidate projected by

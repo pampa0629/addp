@@ -39,6 +39,7 @@ func NewOGCFeaturesHandler(s *svc.QueryServiceService, executorSvc *svc.QueryExe
 // @Failure 401 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 501 {object} map[string]string
+// @x-addp-auth-mode "public"
 // @Router /ogc/features/{serviceName} [get]
 func (h *OGCFeaturesHandler) GetLandingPage(c *gin.Context) {
 	serviceName := c.Param("serviceName")
@@ -100,6 +101,7 @@ func (h *OGCFeaturesHandler) GetLandingPage(c *gin.Context) {
 // @Failure 401 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 501 {object} map[string]string
+// @x-addp-auth-mode "public"
 // @Router /ogc/features/{serviceName}/conformance [get]
 func (h *OGCFeaturesHandler) GetConformance(c *gin.Context) {
 	serviceName := c.Param("serviceName")
@@ -137,6 +139,7 @@ func (h *OGCFeaturesHandler) GetConformance(c *gin.Context) {
 // @Failure 401 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 501 {object} map[string]string
+// @x-addp-auth-mode "public"
 // @Router /ogc/features/{serviceName}/collections [get]
 func (h *OGCFeaturesHandler) GetCollections(c *gin.Context) {
 	serviceName := c.Param("serviceName")
@@ -209,6 +212,7 @@ func (h *OGCFeaturesHandler) GetCollections(c *gin.Context) {
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Failure 501 {object} map[string]string
+// @x-addp-auth-mode "public"
 // @Router /ogc/features/{serviceName}/collections/{collectionId}/items [get]
 func (h *OGCFeaturesHandler) GetItems(c *gin.Context) {
 	serviceName := c.Param("serviceName")
@@ -336,6 +340,7 @@ func (h *OGCFeaturesHandler) GetItems(c *gin.Context) {
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Failure 501 {object} map[string]string
+// @x-addp-auth-mode "public"
 // @Router /ogc/features/{serviceName}/collections/{collectionId}/items/{featureId} [get]
 func (h *OGCFeaturesHandler) GetItem(c *gin.Context) {
 	serviceName := c.Param("serviceName")

@@ -31,6 +31,8 @@ func NewExportHandler(exportService *service.ExportService) *ExportHandler {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.create"]
 // @Router /exports [post]
 // @Security BearerAuth
 func (h *ExportHandler) CreateExport(c *gin.Context) {
@@ -61,6 +63,8 @@ func (h *ExportHandler) CreateExport(c *gin.Context) {
 // @Success 200 {object} service.ExportSessionResponse "导出会话 | Export session"
 // @Failure 404 {object} map[string]interface{} "会话不存在 | Session not found"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /exports/{id} [get]
 // @Security BearerAuth
 func (h *ExportHandler) GetExport(c *gin.Context) {
@@ -86,6 +90,8 @@ func (h *ExportHandler) GetExport(c *gin.Context) {
 // @Failure 404 {object} map[string]interface{} "会话不存在 | Session not found"
 // @Failure 409 {object} map[string]interface{} "导出尚未完成 | Export not ready"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "resource_ticket"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /exports/{id}/file [get]
 // @Security BearerAuth
 func (h *ExportHandler) DownloadExportFile(c *gin.Context) {

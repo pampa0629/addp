@@ -30,6 +30,8 @@ func NewDownloadHandler(metadataService *service.MetadataService) *DownloadHandl
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "resource_ticket"
+// @x-addp-required-permissions ["manager.content.read"]
 // @Router /downloads/file [get]
 // @Security BearerAuth
 func (h *DownloadHandler) DownloadFile(c *gin.Context) {

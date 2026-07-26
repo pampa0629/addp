@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import ValidationError
 
-from addp_common.auth import AuthorizationContext
+from addp_common.auth import AuthorizationContext, RoleAssignment
 from api.workflow_agent_api import WorkflowGenerationRequest
 from dependencies import auth
 
@@ -24,7 +24,7 @@ def test_workflow_request_rejects_client_supplied_identity():
 
 
 def test_workflow_auth_uses_system_verified_identity(monkeypatch):
-    expected = AuthorizationContext(user_id=7, tenant_id=3, username="tester", user_type="user")
+    expected = AuthorizationContext(principal_id=7, tenant_id=3, tenant_membership_id=9)
     verifier = AsyncMock(return_value=expected)
     monkeypatch.setattr(auth, "resolve_authorization_context", verifier)
 
@@ -58,30 +58,50 @@ def test_workflow_auth_rejects_invalid_token(monkeypatch):
 
 
 def test_workflow_tool_auth_requires_delegated_audience_and_scope(monkeypatch):
-    dependency = auth.require_tool_user("copilot", "workflow.draft.generate")
+    dependency = auth.require_tool_user("copilot", "workflow.draft.generate", "copilot.workflow.execute")
     valid = AuthorizationContext(
-        user_id=7,
+        principal_id=7,
         tenant_id=3,
-        username="tester",
-        user_type="user",
-        auth_type="delegated_access_token",
+        tenant_membership_id=9,
+        token_type="delegated_access_token",
         audiences=("copilot",),
+        scope_mode="restricted",
         scopes=("workflow.draft.generate",),
+        role_assignments=(
+            RoleAssignment(1, "tenant.ai_user", "tenant", ("copilot.workflow.execute",)),
+        ),
     )
     monkeypatch.setattr(auth, "resolve_authorization_context", AsyncMock(return_value=valid))
     result = asyncio.run(dependency(HTTPAuthorizationCredentials(scheme="Bearer", credentials="delegated")))
     assert result == valid
 
     invalid = AuthorizationContext(
-        user_id=7,
+        principal_id=7,
         tenant_id=3,
-        username="tester",
-        user_type="user",
-        auth_type="delegated_access_token",
+        tenant_membership_id=9,
+        token_type="delegated_access_token",
         audiences=("develop",),
+        scope_mode="restricted",
         scopes=("workflow.draft.generate",),
+        role_assignments=(
+            RoleAssignment(1, "tenant.ai_user", "tenant", ("copilot.workflow.execute",)),
+        ),
     )
     monkeypatch.setattr(auth, "resolve_authorization_context", AsyncMock(return_value=invalid))
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(dependency(HTTPAuthorizationCredentials(scheme="Bearer", credentials="delegated")))
+    assert exc_info.value.status_code == 403
+
+    missing_permission = AuthorizationContext(
+        principal_id=7,
+        tenant_id=3,
+        tenant_membership_id=9,
+        token_type="delegated_access_token",
+        audiences=("copilot",),
+        scope_mode="restricted",
+        scopes=("workflow.draft.generate",),
+    )
+    monkeypatch.setattr(auth, "resolve_authorization_context", AsyncMock(return_value=missing_permission))
     with pytest.raises(HTTPException) as exc_info:
         asyncio.run(dependency(HTTPAuthorizationCredentials(scheme="Bearer", credentials="delegated")))
     assert exc_info.value.status_code == 403

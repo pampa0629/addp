@@ -8,6 +8,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/sqldialect"
 	_ "github.com/lib/pq"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -273,7 +274,7 @@ func (p *PostgreSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema s
 				ELSE lower(replace(t.table_type, ' ', '_'))
 			END AS kind,
 			COALESCE(pg_total_relation_size(quote_ident(t.table_schema)||'.'||quote_ident(t.table_name)), 0) as size_bytes,
-			GREATEST(c.reltuples::bigint, 0) as row_count,
+			CASE WHEN c.reltuples >= 0 THEN c.reltuples::bigint END as row_count,
 			GREATEST(
 				s.last_autoanalyze,
 				s.last_autovacuum,
@@ -298,12 +299,12 @@ func (p *PostgreSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema s
 	tables := make([]datatype.TableInfo, 0, len(rows))
 	for _, row := range rows {
 		tables = append(tables, datatype.TableInfo{
-			Name:      row.Name,
-			Kind:      row.Kind,
-			RowCount:  row.RowCount,
-			SizeBytes: row.SizeBytes,
-			UpdatedAt: row.UpdatedAt,
-			Native:    postgresTableNative(row.TableType, row.Relkind),
+			Name:              row.Name,
+			Kind:              row.Kind,
+			EstimatedRowCount: row.RowCount,
+			SizeBytes:         row.SizeBytes,
+			UpdatedAt:         row.UpdatedAt,
+			Native:            postgresTableNative(row.TableType, row.Relkind),
 		})
 	}
 
@@ -380,15 +381,8 @@ func (p *PostgreSQLPlugin) listColumns(ctx context.Context, db *gorm.DB, schema,
 // GetTableRowCount 获取表的行数
 func (p *PostgreSQLPlugin) getTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
 	var count int64
-
-	// 使用统计估算（快速）
-	query := `
-		SELECT GREATEST(reltuples::bigint, 0)
-		FROM pg_class
-		WHERE oid = to_regclass(quote_ident($1)||'.'||quote_ident($2))
-	`
-
-	err := db.WithContext(ctx).Raw(query, schema, table).Scan(&count).Error
+	query := sqldialect.ForEngine(p.Type()).CountTableSQL(schema, table, "")
+	err := db.WithContext(ctx).Raw(query).Scan(&count).Error
 	if err != nil {
 		return 0, fmt.Errorf("failed to get row count: %w", err)
 	}

@@ -27,6 +27,8 @@ func NewDocumentHandler(svc *service.DocumentService) *DocumentHandler {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.document.read"]
 // @Router /documents [get]
 // @Security BearerAuth
 func (h *DocumentHandler) ListDocuments(c *gin.Context) {
@@ -69,6 +71,8 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.document.read"]
 // @Router /documents/{id} [get]
 // @Security BearerAuth
 func (h *DocumentHandler) GetDocument(c *gin.Context) {
@@ -90,6 +94,8 @@ func (h *DocumentHandler) GetDocument(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.document.create"]
 // @Router /documents [post]
 // @Security BearerAuth
 func (h *DocumentHandler) CreateDocument(c *gin.Context) {
@@ -112,6 +118,8 @@ func (h *DocumentHandler) CreateDocument(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.document.update"]
 // @Router /documents/{id} [put]
 // @Security BearerAuth
 func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
@@ -139,6 +147,8 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.document.delete"]
 // @Router /documents/{id} [delete]
 // @Security BearerAuth
 func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
@@ -160,6 +170,8 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.document.update"]
 // @Router /documents/{id}/upload [post]
 // @Security BearerAuth
 func (h *DocumentHandler) UploadFile(c *gin.Context) {
@@ -206,6 +218,8 @@ func (h *DocumentHandler) UploadFile(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "resource_ticket"
+// @x-addp-required-permissions ["standard.document.read"]
 // @Router /documents/{id}/download [get]
 // @Security BearerAuth
 func (h *DocumentHandler) DownloadFile(c *gin.Context) {
@@ -236,6 +250,8 @@ func (h *DocumentHandler) DownloadFile(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.document.read"]
 // @Router /documents/{id}/mappings [get]
 // @Security BearerAuth
 func (h *DocumentHandler) GetMappings(c *gin.Context) {
@@ -256,6 +272,8 @@ func (h *DocumentHandler) GetMappings(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.document.update"]
 // @Router /documents/{id}/mappings [put]
 // @Security BearerAuth
 func (h *DocumentHandler) SetMappings(c *gin.Context) {
@@ -282,6 +300,8 @@ func (h *DocumentHandler) SetMappings(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.element.read","standard.document.read"]
 // @Router /elements/{id}/documents [get]
 // @Security BearerAuth
 func (h *DocumentHandler) ListDocsByElement(c *gin.Context) {
@@ -302,6 +322,8 @@ func (h *DocumentHandler) ListDocsByElement(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.glossary.read","standard.document.read"]
 // @Router /glossaries/{id}/documents [get]
 // @Security BearerAuth
 func (h *DocumentHandler) ListDocsByGlossary(c *gin.Context) {
@@ -322,6 +344,8 @@ func (h *DocumentHandler) ListDocsByGlossary(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.read","standard.document.read"]
 // @Router /metrics/{id}/documents [get]
 // @Security BearerAuth
 func (h *DocumentHandler) ListDocsByMetric(c *gin.Context) {
@@ -344,6 +368,8 @@ func (h *DocumentHandler) ListDocsByMetric(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.element.update","standard.document.create"]
 // @Router /elements/{id}/documents [post]
 // @Security BearerAuth
 func (h *DocumentHandler) CreateAndLinkElement(c *gin.Context) {
@@ -369,6 +395,8 @@ func (h *DocumentHandler) CreateAndLinkElement(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.glossary.update","standard.document.create"]
 // @Router /glossaries/{id}/documents [post]
 // @Security BearerAuth
 func (h *DocumentHandler) CreateAndLinkGlossary(c *gin.Context) {
@@ -394,6 +422,8 @@ func (h *DocumentHandler) CreateAndLinkGlossary(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.update","standard.document.create"]
 // @Router /metrics/{id}/documents [post]
 // @Security BearerAuth
 func (h *DocumentHandler) CreateAndLinkMetric(c *gin.Context) {
@@ -421,6 +451,8 @@ func (h *DocumentHandler) CreateAndLinkMetric(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.element.update","standard.document.update"]
 // @Router /elements/{id}/documents/link [post]
 // @Security BearerAuth
 func (h *DocumentHandler) LinkDocToElement(c *gin.Context) {
@@ -447,6 +479,8 @@ func (h *DocumentHandler) LinkDocToElement(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.glossary.update","standard.document.update"]
 // @Router /glossaries/{id}/documents/link [post]
 // @Security BearerAuth
 func (h *DocumentHandler) LinkDocToGlossary(c *gin.Context) {
@@ -473,6 +507,8 @@ func (h *DocumentHandler) LinkDocToGlossary(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.update","standard.document.update"]
 // @Router /metrics/{id}/documents/link [post]
 // @Security BearerAuth
 func (h *DocumentHandler) LinkDocToMetric(c *gin.Context) {
@@ -501,6 +537,8 @@ func (h *DocumentHandler) LinkDocToMetric(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.element.update","standard.document.update"]
 // @Router /elements/{id}/documents/{doc_id} [delete]
 // @Security BearerAuth
 func (h *DocumentHandler) UnlinkDocFromElement(c *gin.Context) {
@@ -525,6 +563,8 @@ func (h *DocumentHandler) UnlinkDocFromElement(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.glossary.update","standard.document.update"]
 // @Router /glossaries/{id}/documents/{doc_id} [delete]
 // @Security BearerAuth
 func (h *DocumentHandler) UnlinkDocFromGlossary(c *gin.Context) {
@@ -549,6 +589,8 @@ func (h *DocumentHandler) UnlinkDocFromGlossary(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.update","standard.document.update"]
 // @Router /metrics/{id}/documents/{doc_id} [delete]
 // @Security BearerAuth
 func (h *DocumentHandler) UnlinkDocFromMetric(c *gin.Context) {

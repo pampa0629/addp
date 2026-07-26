@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/addp/system/internal/migration"
+	"github.com/addp/system/internal/testsupport"
 	"github.com/pquerna/otp/totp"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -17,6 +18,7 @@ func TestBootstrapServiceAgainstPostgres(t *testing.T) {
 	if dsn == "" {
 		t.Skip("set ADDP_IAM_RUNTIME_TEST_DSN to a disposable PostgreSQL 15+ database")
 	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)

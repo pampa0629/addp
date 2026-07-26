@@ -54,7 +54,7 @@ func (h *TaskProviderHandler) RecordManagerExecutionProgressEvent(c *gin.Context
 		return
 	}
 	executionID := c.Param("execution_id")
-	tenantID := c.GetUint("tenant_id")
+	tenantID := managerInternalTenantID(c)
 	exec, err := h.taskExecRepo.GetByExecutionID(c.Request.Context(), executionID, int(tenantID))
 	if err != nil {
 		if errors.Is(err, commonapi.ErrNotFound) {

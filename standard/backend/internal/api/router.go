@@ -2,39 +2,18 @@ package api
 
 import (
 	"strings"
-	"time"
 
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	_ "github.com/addp/standard/docs"
 	_ "github.com/addp/standard/i18n"
+	standardauthorization "github.com/addp/standard/internal/authorization"
 	"github.com/addp/standard/internal/service"
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"gorm.io/gorm"
 )
-
-// getTenantID 从 context 获取租户 ID
-func getTenantID(c *gin.Context) int64 {
-	if tenantID, exists := c.Get("tenant_id"); exists {
-		if id, ok := tenantID.(int64); ok {
-			return id
-		}
-	}
-	return 1
-}
-
-// getUserID 从 context 获取用户 ID
-func getUserID(c *gin.Context) int64 {
-	if userID, exists := c.Get("user_id"); exists {
-		if id, ok := userID.(int64); ok {
-			return id
-		}
-	}
-	return 1
-}
 
 // SetupRouter 设置路由
 func SetupRouter(
@@ -49,7 +28,7 @@ func SetupRouter(
 	documentSvc *service.DocumentService,
 	dimHierarchySvc *service.DimensionHierarchyService,
 	systemURL string,
-	redisClient *redis.Client,
+	internalAPIKey string,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -79,151 +58,156 @@ func SetupRouter(
 	dimHierarchyHandler := NewDimensionHierarchyHandler(dimHierarchySvc)
 	assetDiscHandler := newAssetDiscoverableHandler(db)
 
+	internal := router.Group("/api/v1/standard/internal")
+	internal.Use(internalAPIKeyMiddleware(internalAPIKey))
+	internal.GET("/assets/discoverable", assetDiscHandler.listDiscoverableAssets)
+
 	api := router.Group("/api/v1/standard")
-	api.Use(commonAuth.BrowserResourceAccessMiddleware(systemURL, redisClient, "standard", isStandardBrowserResourceRequest))
-	if redisClient != nil {
-		api.Use(commonAuth.CachedSystemAuthMiddleware(systemURL, redisClient, 5*time.Minute))
-	} else {
-		api.Use(commonAuth.SystemAuthMiddleware(systemURL))
+	api.Use(
+		commonAuth.MustNewOptionalResourceTicketMiddleware(commonAuth.ResourceTicketMiddlewareConfig{
+			SystemURL: systemURL, Owner: "standard",
+			RequiredPermissions: []string{standardauthorization.PermissionStandardDocumentRead},
+		}, isStandardBrowserResourceRequest),
+		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: systemURL}),
+		commonAuth.MustNewContextGuard("tenant"),
+	)
+	permission := func(keys ...string) gin.HandlerFunc {
+		return commonAuth.MustNewPermissionGuard(keys...)
 	}
-
 	{
-		// 资产发现接口（供 Asset 模块调用）
-		api.GET("/assets/discoverable", assetDiscHandler.listDiscoverableAssets)
-
 		domains := api.Group("/domains")
 		{
-			domains.GET("", domainHandler.ListDomains)
-			domains.POST("", domainHandler.CreateDomain)
-			domains.GET("/:id", domainHandler.GetDomain)
-			domains.PUT("/:id", domainHandler.UpdateDomain)
-			domains.DELETE("/:id", domainHandler.DeleteDomain)
+			domains.GET("", permission(standardauthorization.PermissionStandardDomainRead), domainHandler.ListDomains)
+			domains.POST("", permission(standardauthorization.PermissionStandardDomainCreate), domainHandler.CreateDomain)
+			domains.GET("/:id", permission(standardauthorization.PermissionStandardDomainRead), domainHandler.GetDomain)
+			domains.PUT("/:id", permission(standardauthorization.PermissionStandardDomainUpdate), domainHandler.UpdateDomain)
+			domains.DELETE("/:id", permission(standardauthorization.PermissionStandardDomainDelete), domainHandler.DeleteDomain)
 		}
 
 		glossaries := api.Group("/glossaries")
 		{
-			glossaries.GET("", glossaryHandler.ListGlossaries)
-			glossaries.POST("", glossaryHandler.CreateGlossary)
-			glossaries.GET("/:id", glossaryHandler.GetGlossary)
-			glossaries.PUT("/:id", glossaryHandler.UpdateGlossary)
-			glossaries.DELETE("/:id", glossaryHandler.DeleteGlossary)
-			glossaries.POST("/:id/approve", glossaryHandler.ApproveGlossary)
-			glossaries.POST("/:id/deprecate", glossaryHandler.DeprecateGlossary)
-			glossaries.GET("/:id/elements", glossaryHandler.GetElementMappings)
-			glossaries.PUT("/:id/elements", glossaryHandler.SetElementMappings)
-			glossaries.GET("/:id/documents", documentHandler.ListDocsByGlossary)
-			glossaries.POST("/:id/documents", documentHandler.CreateAndLinkGlossary)
-			glossaries.POST("/:id/documents/link", documentHandler.LinkDocToGlossary)
-			glossaries.DELETE("/:id/documents/:doc_id", documentHandler.UnlinkDocFromGlossary)
+			glossaries.GET("", permission(standardauthorization.PermissionStandardGlossaryRead), glossaryHandler.ListGlossaries)
+			glossaries.POST("", permission(standardauthorization.PermissionStandardGlossaryCreate), glossaryHandler.CreateGlossary)
+			glossaries.GET("/:id", permission(standardauthorization.PermissionStandardGlossaryRead), glossaryHandler.GetGlossary)
+			glossaries.PUT("/:id", permission(standardauthorization.PermissionStandardGlossaryUpdate), glossaryHandler.UpdateGlossary)
+			glossaries.DELETE("/:id", permission(standardauthorization.PermissionStandardGlossaryDelete), glossaryHandler.DeleteGlossary)
+			glossaries.POST("/:id/approve", permission(standardauthorization.PermissionStandardGlossaryApprove), glossaryHandler.ApproveGlossary)
+			glossaries.POST("/:id/deprecate", permission(standardauthorization.PermissionStandardGlossaryOffline), glossaryHandler.DeprecateGlossary)
+			glossaries.GET("/:id/elements", permission(standardauthorization.PermissionStandardGlossaryRead, standardauthorization.PermissionStandardElementRead), glossaryHandler.GetElementMappings)
+			glossaries.PUT("/:id/elements", permission(standardauthorization.PermissionStandardGlossaryUpdate, standardauthorization.PermissionStandardElementRead), glossaryHandler.SetElementMappings)
+			glossaries.GET("/:id/documents", permission(standardauthorization.PermissionStandardGlossaryRead, standardauthorization.PermissionStandardDocumentRead), documentHandler.ListDocsByGlossary)
+			glossaries.POST("/:id/documents", permission(standardauthorization.PermissionStandardGlossaryUpdate, standardauthorization.PermissionStandardDocumentCreate), documentHandler.CreateAndLinkGlossary)
+			glossaries.POST("/:id/documents/link", permission(standardauthorization.PermissionStandardGlossaryUpdate, standardauthorization.PermissionStandardDocumentUpdate), documentHandler.LinkDocToGlossary)
+			glossaries.DELETE("/:id/documents/:doc_id", permission(standardauthorization.PermissionStandardGlossaryUpdate, standardauthorization.PermissionStandardDocumentUpdate), documentHandler.UnlinkDocFromGlossary)
 		}
 
 		elements := api.Group("/elements")
 		{
-			elements.GET("", elementHandler.ListElements)
-			elements.POST("", elementHandler.CreateElement)
-			elements.GET("/:id", elementHandler.GetElement)
-			elements.PUT("/:id", elementHandler.UpdateElement)
-			elements.DELETE("/:id", elementHandler.DeleteElement)
-			elements.POST("/:id/approve", elementHandler.ApproveElement)
-			elements.GET("/:id/quality-rules", elementHandler.GetElementQualityRules)
-			elements.GET("/:id/documents", documentHandler.ListDocsByElement)
-			elements.POST("/:id/documents", documentHandler.CreateAndLinkElement)
-			elements.POST("/:id/documents/link", documentHandler.LinkDocToElement)
-			elements.DELETE("/:id/documents/:doc_id", documentHandler.UnlinkDocFromElement)
+			elements.GET("", permission(standardauthorization.PermissionStandardElementRead), elementHandler.ListElements)
+			elements.POST("", permission(standardauthorization.PermissionStandardElementCreate), elementHandler.CreateElement)
+			elements.GET("/:id", permission(standardauthorization.PermissionStandardElementRead), elementHandler.GetElement)
+			elements.PUT("/:id", permission(standardauthorization.PermissionStandardElementUpdate), elementHandler.UpdateElement)
+			elements.DELETE("/:id", permission(standardauthorization.PermissionStandardElementDelete), elementHandler.DeleteElement)
+			elements.POST("/:id/approve", permission(standardauthorization.PermissionStandardElementApprove), elementHandler.ApproveElement)
+			elements.GET("/:id/quality-rules", permission(standardauthorization.PermissionStandardElementRead), elementHandler.GetElementQualityRules)
+			elements.GET("/:id/documents", permission(standardauthorization.PermissionStandardElementRead, standardauthorization.PermissionStandardDocumentRead), documentHandler.ListDocsByElement)
+			elements.POST("/:id/documents", permission(standardauthorization.PermissionStandardElementUpdate, standardauthorization.PermissionStandardDocumentCreate), documentHandler.CreateAndLinkElement)
+			elements.POST("/:id/documents/link", permission(standardauthorization.PermissionStandardElementUpdate, standardauthorization.PermissionStandardDocumentUpdate), documentHandler.LinkDocToElement)
+			elements.DELETE("/:id/documents/:doc_id", permission(standardauthorization.PermissionStandardElementUpdate, standardauthorization.PermissionStandardDocumentUpdate), documentHandler.UnlinkDocFromElement)
 		}
 
 		codeSets := api.Group("/code-sets")
 		{
-			codeSets.GET("", codeSetHandler.ListCodeSets)
-			codeSets.POST("", codeSetHandler.CreateCodeSet)
-			codeSets.GET("/:id", codeSetHandler.GetCodeSet)
-			codeSets.PUT("/:id", codeSetHandler.UpdateCodeSet)
-			codeSets.DELETE("/:id", codeSetHandler.DeleteCodeSet)
-			codeSets.GET("/:id/items", codeSetHandler.GetCodeItems)
-			codeSets.POST("/:id/items", codeSetHandler.CreateCodeItem)
-			codeSets.PUT("/:id/items/:iid", codeSetHandler.UpdateCodeItem)
-			codeSets.DELETE("/:id/items/:iid", codeSetHandler.DeleteCodeItem)
+			codeSets.GET("", permission(standardauthorization.PermissionStandardCodeSetRead), codeSetHandler.ListCodeSets)
+			codeSets.POST("", permission(standardauthorization.PermissionStandardCodeSetCreate), codeSetHandler.CreateCodeSet)
+			codeSets.GET("/:id", permission(standardauthorization.PermissionStandardCodeSetRead), codeSetHandler.GetCodeSet)
+			codeSets.PUT("/:id", permission(standardauthorization.PermissionStandardCodeSetUpdate), codeSetHandler.UpdateCodeSet)
+			codeSets.DELETE("/:id", permission(standardauthorization.PermissionStandardCodeSetDelete), codeSetHandler.DeleteCodeSet)
+			codeSets.GET("/:id/items", permission(standardauthorization.PermissionStandardCodeSetRead), codeSetHandler.GetCodeItems)
+			codeSets.POST("/:id/items", permission(standardauthorization.PermissionStandardCodeSetUpdate), codeSetHandler.CreateCodeItem)
+			codeSets.PUT("/:id/items/:iid", permission(standardauthorization.PermissionStandardCodeSetUpdate), codeSetHandler.UpdateCodeItem)
+			codeSets.DELETE("/:id/items/:iid", permission(standardauthorization.PermissionStandardCodeSetUpdate), codeSetHandler.DeleteCodeItem)
 		}
 
 		mCats := api.Group("/measurement-categories")
 		{
-			mCats.GET("", unitHandler.ListCategories)
-			mCats.POST("", unitHandler.CreateCategory)
-			mCats.PUT("/:id", unitHandler.UpdateCategory)
-			mCats.DELETE("/:id", unitHandler.DeleteCategory)
+			mCats.GET("", permission(standardauthorization.PermissionStandardUnitRead), unitHandler.ListCategories)
+			mCats.POST("", permission(standardauthorization.PermissionStandardUnitCreate), unitHandler.CreateCategory)
+			mCats.PUT("/:id", permission(standardauthorization.PermissionStandardUnitUpdate), unitHandler.UpdateCategory)
+			mCats.DELETE("/:id", permission(standardauthorization.PermissionStandardUnitDelete), unitHandler.DeleteCategory)
 		}
 
 		units := api.Group("/units")
 		{
-			units.GET("", unitHandler.ListUnits)
-			units.POST("", unitHandler.CreateUnit)
-			units.GET("/:id", unitHandler.GetUnit)
-			units.PUT("/:id", unitHandler.UpdateUnit)
-			units.DELETE("/:id", unitHandler.DeleteUnit)
+			units.GET("", permission(standardauthorization.PermissionStandardUnitRead), unitHandler.ListUnits)
+			units.POST("", permission(standardauthorization.PermissionStandardUnitCreate), unitHandler.CreateUnit)
+			units.GET("/:id", permission(standardauthorization.PermissionStandardUnitRead), unitHandler.GetUnit)
+			units.PUT("/:id", permission(standardauthorization.PermissionStandardUnitUpdate), unitHandler.UpdateUnit)
+			units.DELETE("/:id", permission(standardauthorization.PermissionStandardUnitDelete), unitHandler.DeleteUnit)
 		}
 
 		classifications := api.Group("/classifications")
 		{
-			classifications.GET("", classificationHandler.ListClassifications)
-			classifications.POST("", classificationHandler.CreateClassification)
-			classifications.PUT("/:id", classificationHandler.UpdateClassification)
-			classifications.DELETE("/:id", classificationHandler.DeleteClassification)
+			classifications.GET("", permission(standardauthorization.PermissionStandardClassificationRead), classificationHandler.ListClassifications)
+			classifications.POST("", permission(standardauthorization.PermissionStandardClassificationCreate), classificationHandler.CreateClassification)
+			classifications.PUT("/:id", permission(standardauthorization.PermissionStandardClassificationUpdate), classificationHandler.UpdateClassification)
+			classifications.DELETE("/:id", permission(standardauthorization.PermissionStandardClassificationDelete), classificationHandler.DeleteClassification)
 		}
 
 		gradingLevels := api.Group("/grading-levels")
 		{
-			gradingLevels.GET("", classificationHandler.ListGradingLevels)
-			gradingLevels.PUT("/:id", classificationHandler.UpdateGradingLevel)
+			gradingLevels.GET("", permission(standardauthorization.PermissionStandardClassificationRead), classificationHandler.ListGradingLevels)
+			gradingLevels.PUT("/:id", permission(standardauthorization.PermissionStandardClassificationUpdate), classificationHandler.UpdateGradingLevel)
 		}
 
 		metricCats := api.Group("/metric-categories")
 		{
-			metricCats.GET("", metricHandler.ListCategories)
-			metricCats.POST("", metricHandler.CreateCategory)
-			metricCats.PUT("/:id", metricHandler.UpdateCategory)
-			metricCats.DELETE("/:id", metricHandler.DeleteCategory)
+			metricCats.GET("", permission(standardauthorization.PermissionStandardMetricRead), metricHandler.ListCategories)
+			metricCats.POST("", permission(standardauthorization.PermissionStandardMetricCreate), metricHandler.CreateCategory)
+			metricCats.PUT("/:id", permission(standardauthorization.PermissionStandardMetricUpdate), metricHandler.UpdateCategory)
+			metricCats.DELETE("/:id", permission(standardauthorization.PermissionStandardMetricDelete), metricHandler.DeleteCategory)
 		}
 
 		metrics := api.Group("/metrics")
 		{
-			metrics.GET("", metricHandler.ListMetrics)
-			metrics.POST("", metricHandler.CreateMetric)
-			metrics.GET("/:id", metricHandler.GetMetric)
-			metrics.PUT("/:id", metricHandler.UpdateMetric)
-			metrics.DELETE("/:id", metricHandler.DeleteMetric)
-			metrics.POST("/:id/approve", metricHandler.ApproveMetric)
-			metrics.POST("/:id/deprecate", metricHandler.DeprecateMetric)
-			metrics.GET("/:id/documents", documentHandler.ListDocsByMetric)
-			metrics.POST("/:id/documents", documentHandler.CreateAndLinkMetric)
-			metrics.POST("/:id/documents/link", documentHandler.LinkDocToMetric)
-			metrics.DELETE("/:id/documents/:doc_id", documentHandler.UnlinkDocFromMetric)
+			metrics.GET("", permission(standardauthorization.PermissionStandardMetricRead), metricHandler.ListMetrics)
+			metrics.POST("", permission(standardauthorization.PermissionStandardMetricCreate), metricHandler.CreateMetric)
+			metrics.GET("/:id", permission(standardauthorization.PermissionStandardMetricRead), metricHandler.GetMetric)
+			metrics.PUT("/:id", permission(standardauthorization.PermissionStandardMetricUpdate), metricHandler.UpdateMetric)
+			metrics.DELETE("/:id", permission(standardauthorization.PermissionStandardMetricDelete), metricHandler.DeleteMetric)
+			metrics.POST("/:id/approve", permission(standardauthorization.PermissionStandardMetricApprove), metricHandler.ApproveMetric)
+			metrics.POST("/:id/deprecate", permission(standardauthorization.PermissionStandardMetricOffline), metricHandler.DeprecateMetric)
+			metrics.GET("/:id/documents", permission(standardauthorization.PermissionStandardMetricRead, standardauthorization.PermissionStandardDocumentRead), documentHandler.ListDocsByMetric)
+			metrics.POST("/:id/documents", permission(standardauthorization.PermissionStandardMetricUpdate, standardauthorization.PermissionStandardDocumentCreate), documentHandler.CreateAndLinkMetric)
+			metrics.POST("/:id/documents/link", permission(standardauthorization.PermissionStandardMetricUpdate, standardauthorization.PermissionStandardDocumentUpdate), documentHandler.LinkDocToMetric)
+			metrics.DELETE("/:id/documents/:doc_id", permission(standardauthorization.PermissionStandardMetricUpdate, standardauthorization.PermissionStandardDocumentUpdate), documentHandler.UnlinkDocFromMetric)
 		}
 
 		documents := api.Group("/documents")
 		{
-			documents.GET("", documentHandler.ListDocuments)
-			documents.POST("", documentHandler.CreateDocument)
-			documents.GET("/:id", documentHandler.GetDocument)
-			documents.PUT("/:id", documentHandler.UpdateDocument)
-			documents.DELETE("/:id", documentHandler.DeleteDocument)
-			documents.GET("/:id/mappings", documentHandler.GetMappings)
-			documents.PUT("/:id/mappings", documentHandler.SetMappings)
-			documents.POST("/:id/upload", documentHandler.UploadFile)
-			documents.GET("/:id/download", documentHandler.DownloadFile)
+			documents.GET("", permission(standardauthorization.PermissionStandardDocumentRead), documentHandler.ListDocuments)
+			documents.POST("", permission(standardauthorization.PermissionStandardDocumentCreate), documentHandler.CreateDocument)
+			documents.GET("/:id", permission(standardauthorization.PermissionStandardDocumentRead), documentHandler.GetDocument)
+			documents.PUT("/:id", permission(standardauthorization.PermissionStandardDocumentUpdate), documentHandler.UpdateDocument)
+			documents.DELETE("/:id", permission(standardauthorization.PermissionStandardDocumentDelete), documentHandler.DeleteDocument)
+			documents.GET("/:id/mappings", permission(standardauthorization.PermissionStandardDocumentRead), documentHandler.GetMappings)
+			documents.PUT("/:id/mappings", permission(standardauthorization.PermissionStandardDocumentUpdate), documentHandler.SetMappings)
+			documents.POST("/:id/upload", permission(standardauthorization.PermissionStandardDocumentUpdate), documentHandler.UploadFile)
+			documents.GET("/:id/download", permission(standardauthorization.PermissionStandardDocumentRead), documentHandler.DownloadFile)
 		}
 
 		// 维度层级
 		dimHierarchies := api.Group("/dimension-hierarchies")
 		{
-			dimHierarchies.GET("", dimHierarchyHandler.List)
-			dimHierarchies.POST("", dimHierarchyHandler.Create)
-			dimHierarchies.GET("/:id", dimHierarchyHandler.Get)
-			dimHierarchies.PUT("/:id", dimHierarchyHandler.Update)
-			dimHierarchies.DELETE("/:id", dimHierarchyHandler.Delete)
-			dimHierarchies.GET("/:id/levels", dimHierarchyHandler.ListLevels)
-			dimHierarchies.POST("/:id/levels", dimHierarchyHandler.CreateLevel)
-			dimHierarchies.PUT("/:id/levels/:lid", dimHierarchyHandler.UpdateLevel)
-			dimHierarchies.DELETE("/:id/levels/:lid", dimHierarchyHandler.DeleteLevel)
+			dimHierarchies.GET("", permission(standardauthorization.PermissionStandardDimensionHierarchyRead), dimHierarchyHandler.List)
+			dimHierarchies.POST("", permission(standardauthorization.PermissionStandardDimensionHierarchyCreate), dimHierarchyHandler.Create)
+			dimHierarchies.GET("/:id", permission(standardauthorization.PermissionStandardDimensionHierarchyRead), dimHierarchyHandler.Get)
+			dimHierarchies.PUT("/:id", permission(standardauthorization.PermissionStandardDimensionHierarchyUpdate), dimHierarchyHandler.Update)
+			dimHierarchies.DELETE("/:id", permission(standardauthorization.PermissionStandardDimensionHierarchyDelete), dimHierarchyHandler.Delete)
+			dimHierarchies.GET("/:id/levels", permission(standardauthorization.PermissionStandardDimensionHierarchyRead), dimHierarchyHandler.ListLevels)
+			dimHierarchies.POST("/:id/levels", permission(standardauthorization.PermissionStandardDimensionHierarchyUpdate), dimHierarchyHandler.CreateLevel)
+			dimHierarchies.PUT("/:id/levels/:lid", permission(standardauthorization.PermissionStandardDimensionHierarchyUpdate), dimHierarchyHandler.UpdateLevel)
+			dimHierarchies.DELETE("/:id/levels/:lid", permission(standardauthorization.PermissionStandardDimensionHierarchyUpdate), dimHierarchyHandler.DeleteLevel)
 		}
 	}
 

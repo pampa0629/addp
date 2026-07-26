@@ -45,7 +45,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.alert_rule.read"
+                ]
             }
         },
         "/alert-rules": {
@@ -78,7 +82,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.alert_rule.read"
+                ]
             },
             "post": {
                 "security": [
@@ -126,7 +134,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.alert_rule.create"
+                ]
             }
         },
         "/alert-rules/{id}": {
@@ -171,7 +183,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.alert_rule.delete"
+                ]
             },
             "patch": {
                 "security": [
@@ -232,7 +248,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.alert_rule.update"
+                ]
             }
         },
         "/alerts": {
@@ -290,7 +310,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_monitor_internal_service.ListAlertsResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.alert_incident.read"
+                ]
             }
         },
         "/alerts/{id}/acknowledge": {
@@ -329,7 +353,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.alert_incident.update"
+                ]
             }
         },
         "/alerts/{id}/suppress": {
@@ -386,7 +414,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.alert_incident.update"
+                ]
             }
         },
         "/email-deliveries": {
@@ -457,7 +489,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.notification_delivery.read"
+                ]
             }
         },
         "/email-deliveries/{delivery_id}/retry": {
@@ -515,7 +551,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.notification_delivery.retry"
+                ]
             }
         },
         "/email-destinations": {
@@ -555,7 +595,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.notification_destination.read"
+                ]
             },
             "post": {
                 "security": [
@@ -610,7 +654,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.notification_destination.create"
+                ]
             }
         },
         "/email-destinations/{id}": {
@@ -662,7 +710,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.notification_destination.delete"
+                ]
             },
             "patch": {
                 "security": [
@@ -730,7 +782,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.notification_destination.update"
+                ]
             }
         },
         "/email-destinations/{id}/test": {
@@ -794,7 +850,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.notification_destination.execute"
+                ]
             }
         },
         "/executions": {
@@ -871,7 +931,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.execution.read"
+                ]
             }
         },
         "/executions/by-execution-id/{execution_id}": {
@@ -905,7 +969,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.execution.read"
+                ]
             }
         },
         "/executions/by-execution-id/{execution_id}/tree": {
@@ -938,7 +1006,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_monitor_internal_service.ExecutionTreeNode"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.execution.read"
+                ]
             }
         },
         "/executions/stats": {
@@ -978,7 +1050,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.statistics.read"
+                ]
             }
         },
         "/executions/trend": {
@@ -1018,7 +1094,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.statistics.read"
+                ]
             }
         },
         "/executions/{id}": {
@@ -1052,7 +1132,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.execution.read"
+                ]
             }
         },
         "/executions/{id}/tree": {
@@ -1085,7 +1169,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_monitor_internal_service.ExecutionTreeNode"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.execution.read"
+                ]
             }
         },
         "/modules": {
@@ -1110,7 +1198,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.health.read"
+                ]
             }
         },
         "/modules/health/all": {
@@ -1135,7 +1227,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.health.read"
+                ]
             }
         },
         "/modules/{module}/health": {
@@ -1169,7 +1265,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.health.read"
+                ]
             }
         },
         "/providers/health": {
@@ -1203,7 +1303,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.health.read"
+                ]
             }
         },
         "/providers/{module}/health": {
@@ -1249,7 +1353,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.health.read"
+                ]
             }
         },
         "/task-providers": {
@@ -1276,7 +1384,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.health.read"
+                ]
             }
         },
         "/webhook-deliveries": {
@@ -1347,7 +1459,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.notification_delivery.read"
+                ]
             }
         },
         "/webhook-deliveries/{delivery_id}/retry": {
@@ -1405,7 +1521,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.notification_delivery.retry"
+                ]
             }
         },
         "/webhook-destinations": {
@@ -1445,7 +1565,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.notification_destination.read"
+                ]
             },
             "post": {
                 "security": [
@@ -1500,7 +1624,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.notification_destination.create"
+                ]
             }
         },
         "/webhook-destinations/{id}": {
@@ -1552,7 +1680,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.notification_destination.delete"
+                ]
             },
             "patch": {
                 "security": [
@@ -1620,7 +1752,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.notification_destination.update"
+                ]
             }
         },
         "/webhook-destinations/{id}/test": {
@@ -1678,7 +1814,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.notification_destination.execute"
+                ]
             }
         }
     },

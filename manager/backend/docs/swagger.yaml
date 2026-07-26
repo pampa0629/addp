@@ -2195,6 +2195,9 @@ paths:
       summary: 列出 CAD 预览生成任务 | List CAD preview generation tasks
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
     post:
       consumes:
       - application/json
@@ -2222,6 +2225,9 @@ paths:
       summary: 创建 CAD 预览生成任务 | Create CAD preview generation task
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.create
   /cad-preview-tasks/{id}:
     delete:
       parameters:
@@ -2238,6 +2244,9 @@ paths:
       summary: 删除 CAD 预览生成任务 | Delete CAD preview generation task
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.delete
     get:
       parameters:
       - description: 任务 ID | Task ID
@@ -2257,6 +2266,9 @@ paths:
       summary: 获取 CAD 预览生成任务 | Get CAD preview generation task
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
     put:
       consumes:
       - application/json
@@ -2284,6 +2296,9 @@ paths:
       summary: 更新 CAD 预览生成任务 | Update CAD preview generation task
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.update
   /cad-previews:
     get:
       parameters:
@@ -2320,6 +2335,9 @@ paths:
       summary: 列出 CAD 预览结果 | List CAD preview results
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /cad-previews/{id}:
     delete:
       parameters:
@@ -2336,6 +2354,9 @@ paths:
       summary: 删除 CAD 预览结果 | Delete CAD preview result
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.delete
     get:
       parameters:
       - description: CAD preview ID
@@ -2355,6 +2376,9 @@ paths:
       summary: 获取 CAD 预览结果 | Get CAD preview result
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /cad-previews/{id}/manifest:
     get:
       parameters:
@@ -2376,6 +2400,9 @@ paths:
       summary: 读取 CAD 预览清单 | Read CAD preview manifest
       tags:
       - Manager
+      x-addp-auth-mode: resource_ticket
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /cad-previews/{id}/tiles/{z}/{x}/{y}:
     get:
       parameters:
@@ -2409,6 +2436,9 @@ paths:
       summary: 读取 CAD 预览瓦片 | Read CAD preview tile
       tags:
       - Manager
+      x-addp-auth-mode: resource_ticket
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /config/map:
     get:
       description: 返回地图服务相关的配置信息（高德地图Key、天地图Key等）| Return map service configuration
@@ -2426,6 +2456,7 @@ paths:
       summary: 获取地图服务配置 | Get map service configuration
       tags:
       - Manager
+      x-addp-auth-mode: authenticated
   /downloads/file:
     get:
       description: 按 ResourceLocator 下载存储型 engine 的 item；单文件直接流式下载，多文件组合自动打包 ZIP |
@@ -2462,6 +2493,9 @@ paths:
       summary: 下载存储数据项 | Download storage item
       tags:
       - Manager
+      x-addp-auth-mode: resource_ticket
+      x-addp-required-permissions:
+      - manager.content.read
   /embedding_executions:
     post:
       consumes:
@@ -2498,6 +2532,9 @@ paths:
       summary: 创建一次性向量化执行 | Create ad-hoc embedding execution
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.create
   /embedding_tasks:
     get:
       description: 列出 Manager 模块的向量化任务配置。该私有入口固定返回 task_type=embedding；编排模块应使用标准 /tasks
@@ -2530,6 +2567,9 @@ paths:
       summary: 列出向量化任务配置 | List embedding task configurations
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
     post:
       consumes:
       - application/json
@@ -2559,6 +2599,9 @@ paths:
       summary: 创建向量化任务配置 | Create embedding task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.create
   /embedding_tasks/{id}:
     delete:
       description: 删除指定的向量化任务配置 | Delete a specific embedding task configuration
@@ -2586,6 +2629,9 @@ paths:
       summary: 删除向量化任务配置 | Delete embedding task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.delete
     get:
       description: 获取指定类型和ID的任务详细信息 | Get detailed information of a task by type and
         ID
@@ -2618,6 +2664,9 @@ paths:
       summary: 获取任务详情 | Get task detail
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
     put:
       consumes:
       - application/json
@@ -2656,6 +2705,9 @@ paths:
       summary: 更新向量化任务配置 | Update embedding task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.update
   /embeddings:
     get:
       description: 查询 Manager 向量化结果 artifact state。| List Manager embedding artifact
@@ -2707,6 +2759,9 @@ paths:
       summary: 查询向量化结果 | List embedding results
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /embeddings/{id}:
     delete:
       description: 删除 Manager 向量化结果，不删除源 data item。| Delete an embedding result without
@@ -2741,6 +2796,9 @@ paths:
       summary: 删除向量化结果 | Delete embedding result
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.delete
   /engines:
     get:
       description: 获取当前租户可用的存储引擎列表 | Get available storage engine list for the current
@@ -2763,6 +2821,9 @@ paths:
       summary: 获取引擎列表 | List engines
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.data_item.read
   /engines/{id}/items/refresh:
     post:
       consumes:
@@ -2806,6 +2867,9 @@ paths:
       summary: 刷新数据项元数据 | Refresh item metadata
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.data_item.update
   /engines/{id}/spatial/features/{feature_id}/centroid:
     get:
       description: 获取指定要素的源坐标几何中心点和 CRS 元数据，后端不做 CRS transform | Get the source-CRS
@@ -2864,6 +2928,9 @@ paths:
       summary: 获取要素几何中心点 | Get feature centroid
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.content.read
   /engines/{id}/spatial/features/{feature_id}/geometry:
     get:
       description: 获取指定要素的源坐标完整几何数据和 CRS 元数据，后端不做 CRS transform | Get source-CRS feature
@@ -2922,6 +2989,9 @@ paths:
       summary: 获取要素完整几何 | Get feature geometry
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.content.read
   /executions/{execution_id}:
     get:
       description: 获取任务执行记录的状态信息 | Get status information of a task execution record
@@ -2948,6 +3018,9 @@ paths:
       summary: 获取执行状态 | Get execution status
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /exports:
     post:
       consumes:
@@ -2989,6 +3062,9 @@ paths:
       summary: 导出数据库数据项 | Export database item
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.create
   /exports/{id}:
     get:
       description: 查询导出会话状态；若底层 Transfer 已完成，响应中包含 download_url。| Query export session
@@ -3022,6 +3098,9 @@ paths:
       summary: 获取导出会话 | Get export session
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /exports/{id}/file:
     get:
       description: 下载已完成导出会话的结果文件。| Download the result file of a completed export
@@ -3057,6 +3136,9 @@ paths:
       summary: 下载导出结果 | Download export result
       tags:
       - Manager
+      x-addp-auth-mode: resource_ticket
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /gaussian_splat_ksplat:
     get:
       parameters:
@@ -3101,6 +3183,9 @@ paths:
       summary: 列出 3DGS - KSplat 快显结果 | List 3DGS - KSplat quick view results
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /gaussian_splat_ksplat/{id}:
     delete:
       parameters:
@@ -3122,6 +3207,9 @@ paths:
       summary: 删除 3DGS - KSplat 快显 | Delete 3DGS - KSplat quick view
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.delete
     get:
       parameters:
       - description: 结果ID | Result ID
@@ -3141,6 +3229,9 @@ paths:
       summary: 获取 3DGS - KSplat 快显详情 | Get 3DGS - KSplat quick view detail
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /gaussian_splat_ksplat/{id}/content:
     get:
       description: 按 gaussian splat KSplat id 返回 Manager infra MinIO 中的 KSplat 内容，支持
@@ -3185,6 +3276,9 @@ paths:
       summary: 读取 3DGS - KSplat 快显 | Read 3DGS - KSplat quick view result
       tags:
       - Manager
+      x-addp-auth-mode: resource_ticket
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /gaussian_splat_ksplat/{id}/inspect:
     get:
       description: 只读取 Manager infra MinIO 中 KSplat artifact 的对象元信息和头部，返回轻量健康检查事实，不下载完整内容。|
@@ -3223,6 +3317,9 @@ paths:
       summary: 检查 3DGS - KSplat 快显 | Inspect 3DGS - KSplat quick view result
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /gaussian_splat_ksplat_tasks:
     get:
       description: 列出 Manager 模块的 3DGS - KSplat 快显任务配置。该私有入口固定返回 task_type=gaussian_splat_ksplat_generation；编排模块应使用标准
@@ -3255,6 +3352,9 @@ paths:
         task configurations
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
     post:
       consumes:
       - application/json
@@ -3288,6 +3388,9 @@ paths:
         task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.create
   /gaussian_splat_ksplat_tasks/{id}:
     delete:
       parameters:
@@ -3315,6 +3418,9 @@ paths:
         task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.delete
     get:
       parameters:
       - description: 任务ID | Task ID
@@ -3345,6 +3451,9 @@ paths:
         configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
     put:
       consumes:
       - application/json
@@ -3383,6 +3492,9 @@ paths:
         task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.update
   /imports:
     post:
       consumes:
@@ -3426,6 +3538,9 @@ paths:
       summary: 导入数据文件 | Import data file
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.data_item.create
   /items/{item_id}/embedding:
     get:
       description: 查询单个 data item 的当前向量化结果状态。| Get current embedding state for a data
@@ -3459,6 +3574,9 @@ paths:
       summary: 查询 item 向量化状态 | Get item embedding state
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /model_3d_glb:
     get:
       parameters:
@@ -3503,6 +3621,9 @@ paths:
       summary: 列出三维模型 GLB 快显结果 | List model 3D GLB results
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /model_3d_glb/{id}:
     delete:
       parameters:
@@ -3524,6 +3645,9 @@ paths:
       summary: 删除三维模型 GLB 快显 | Delete model 3D GLB
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.delete
     get:
       parameters:
       - description: 结果ID | Result ID
@@ -3543,6 +3667,9 @@ paths:
       summary: 获取三维模型 GLB 快显详情 | Get model 3D GLB detail
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /model_3d_glb/{id}/content:
     get:
       description: 按 model 3D GLB id 返回 Manager infra MinIO 中的 GLB 内容，支持 HTTP Range。该接口只读取
@@ -3587,6 +3714,9 @@ paths:
       summary: 读取三维模型 GLB 快显 | Read model 3D GLB GLB result
       tags:
       - Manager
+      x-addp-auth-mode: resource_ticket
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /model_3d_glb_tasks:
     get:
       description: 列出 Manager 模块的 OSGB / glTF / FBX / OBJ / STL / IFC 转 GLB 快显任务配置。该私有入口固定返回
@@ -3619,6 +3749,9 @@ paths:
       summary: 列出三维模型 GLB 快显任务配置 | List model 3D GLB generation task configurations
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
     post:
       consumes:
       - application/json
@@ -3650,6 +3783,9 @@ paths:
       summary: 创建三维模型 GLB 快显任务配置 | Create model 3D GLB generation task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.create
   /model_3d_glb_tasks/{id}:
     delete:
       parameters:
@@ -3676,6 +3812,9 @@ paths:
       summary: 删除三维模型 GLB 快显任务配置 | Delete model 3D GLB generation task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.delete
     get:
       parameters:
       - description: 任务ID | Task ID
@@ -3705,6 +3844,9 @@ paths:
       summary: 获取三维模型 GLB 快显任务配置 | Get model 3D GLB generation task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
     put:
       consumes:
       - application/json
@@ -3742,6 +3884,9 @@ paths:
       summary: 更新三维模型 GLB 快显任务配置 | Update model 3D GLB generation task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.update
   /model3d_tiles:
     get:
       description: 列出 Manager infra MinIO 中受管的 3D Tiles 与 S3M 快显结果。| List Manager-owned
@@ -3797,6 +3942,9 @@ paths:
       summary: 列出分块三维模型瓦片快显结果 | List model3d tiles quick view results
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /model3d_tiles/{id}:
     delete:
       description: 删除 Manager infra MinIO 中的受管 3D Tiles 或 S3M 瓦片，并软删除对应结果记录；不删除源 item、任务定义或
@@ -3837,6 +3985,9 @@ paths:
       summary: 删除分块三维模型瓦片快显结果 | Delete model3d tiles quick view result
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.delete
   /model3d_tiles/{id}/assets/{asset_path}:
     get:
       description: 读取 Manager infra MinIO 中 ready 的 3D Tiles 或 S3M 结果资源，保留目录相对路径和
@@ -3865,6 +4016,9 @@ paths:
       summary: 读取分块三维模型瓦片资源 | Read model3d tiles asset
       tags:
       - Manager
+      x-addp-auth-mode: resource_ticket
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /model3d_tiles_tasks:
     get:
       description: 列出 Manager 模块的分块三维模型瓦片任务配置，target_format 区分 3D Tiles 与 S3M。该私有入口固定返回
@@ -3897,6 +4051,9 @@ paths:
       summary: 列出三维模型 3D Tiles 任务配置 | List model 3D Tiles generation task configurations
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
     post:
       consumes:
       - application/json
@@ -3928,6 +4085,9 @@ paths:
       summary: 创建三维模型 3D Tiles 任务配置 | Create model 3D Tiles generation task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.create
   /model3d_tiles_tasks/{id}:
     delete:
       parameters:
@@ -3954,6 +4114,9 @@ paths:
       summary: 删除三维模型 3D Tiles 任务配置 | Delete model 3D Tiles generation task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.delete
     get:
       parameters:
       - description: 任务ID | Task ID
@@ -3983,6 +4146,9 @@ paths:
       summary: 获取三维模型 3D Tiles 任务配置 | Get model 3D Tiles generation task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
     put:
       consumes:
       - application/json
@@ -4020,6 +4186,9 @@ paths:
       summary: 更新三维模型 3D Tiles 任务配置 | Update model 3D Tiles generation task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.update
   /point_cloud_copc:
     get:
       parameters:
@@ -4064,6 +4233,9 @@ paths:
       summary: 列出点云 COPC 快显结果 | List point cloud COPC quick view results
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /point_cloud_copc/{id}:
     delete:
       parameters:
@@ -4085,6 +4257,9 @@ paths:
       summary: 删除点云 COPC 快显 | Delete point cloud COPC quick view
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.delete
     get:
       parameters:
       - description: 结果ID | Result ID
@@ -4104,6 +4279,9 @@ paths:
       summary: 获取点云 COPC 快显详情 | Get point cloud COPC quick view detail
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /point_cloud_copc/{id}/content:
     get:
       description: 按 point cloud COPC id 返回 Manager infra MinIO 中的 COPC 内容，支持 HTTP
@@ -4148,6 +4326,9 @@ paths:
       summary: 读取点云 COPC 快显 | Read point cloud COPC quick view result
       tags:
       - Manager
+      x-addp-auth-mode: resource_ticket
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /point_cloud_copc_tasks:
     get:
       description: 列出 Manager 模块的点云 COPC 快显任务配置。该私有入口固定返回 task_type=point_cloud_copc_generation；编排模块应使用标准
@@ -4180,6 +4361,9 @@ paths:
         configurations
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
     post:
       consumes:
       - application/json
@@ -4213,6 +4397,9 @@ paths:
         configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.create
   /point_cloud_copc_tasks/{id}:
     delete:
       parameters:
@@ -4240,6 +4427,9 @@ paths:
         configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.delete
     get:
       parameters:
       - description: 任务ID | Task ID
@@ -4270,6 +4460,9 @@ paths:
         configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
     put:
       consumes:
       - application/json
@@ -4308,6 +4501,9 @@ paths:
         configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.update
   /preview:
     get:
       description: 根据资源定位符预览数据内容，支持表格、文件等多种格式 | Preview data content by resource locator,
@@ -4388,6 +4584,9 @@ paths:
       summary: 数据预览 | Data preview
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.content.read
   /preview-state/preferred-mode:
     patch:
       consumes:
@@ -4424,6 +4623,7 @@ paths:
       summary: 更新 locator 预览模式偏好 | Update locator preferred preview mode
       tags:
       - Manager
+      x-addp-auth-mode: self
   /preview-state/view-state:
     patch:
       consumes:
@@ -4462,6 +4662,7 @@ paths:
       summary: 更新 locator 预览交互状态 | Update locator preview state
       tags:
       - Manager
+      x-addp-auth-mode: self
   /quick-view/actions:
     post:
       consumes:
@@ -4516,6 +4717,9 @@ paths:
       summary: 执行 locator 快显动作 | Execute locator quick view action
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.create
   /quick-view/capability:
     get:
       description: 以 Resource Locator 为数据项身份返回快显能力状态。快显判断基于 ADDP engine、datatype、format
@@ -4560,6 +4764,9 @@ paths:
       summary: 获取 locator 快显能力 | Get locator quick view capability
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.data_item.read
   /quick-view/flatgeobuf:
     get:
       description: 以 Resource Locator 为身份返回 FlatGeobuf 二进制快显材料。该出口服务 direct_flatgeobuf
@@ -4610,6 +4817,9 @@ paths:
       summary: 获取统一 FlatGeobuf 快显数据 | Get unified quick-view FlatGeobuf
       tags:
       - Manager
+      x-addp-auth-mode: resource_ticket
+      x-addp-required-permissions:
+      - manager.content.read
   /quick-view/geojson:
     get:
       description: 以 Resource Locator 为身份返回标准 GeoJSON FeatureCollection。内部按引擎和格式分派，但响应必须是
@@ -4667,6 +4877,9 @@ paths:
       summary: 获取统一 GeoJSON 快显数据 | Get unified quick-view GeoJSON
       tags:
       - Manager
+      x-addp-auth-mode: resource_ticket
+      x-addp-required-permissions:
+      - manager.content.read
   /quick-view/tiles/{z}/{x}/{y}.mvt:
     get:
       description: 以 Resource Locator 为身份返回 MVT 瓦片。实时 MVT 由 PostGIS 空间 item 提供，其他空间
@@ -4761,6 +4974,9 @@ paths:
       summary: 获取统一 MVT 快显瓦片 | Get unified quick-view MVT tile
       tags:
       - Manager
+      x-addp-auth-mode: resource_ticket
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /raster_cog:
     get:
       parameters:
@@ -4805,6 +5021,9 @@ paths:
       summary: 列出栅格快显 COG | List raster COG results
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /raster_cog/{id}:
     delete:
       parameters:
@@ -4826,6 +5045,9 @@ paths:
       summary: 删除栅格快显 COG | Delete raster COG
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.delete
     get:
       parameters:
       - description: 结果ID | Result ID
@@ -4845,6 +5067,9 @@ paths:
       summary: 获取栅格快显 COG 详情 | Get raster COG detail
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /raster_cog/{id}/content:
     get:
       description: 按 raster COG id 返回 Manager infra MinIO 中的 COG 内容，支持 HTTP Range。该接口只读取
@@ -4889,6 +5114,9 @@ paths:
       summary: 读取栅格快显 COG | Read raster COG quick view result
       tags:
       - Manager
+      x-addp-auth-mode: resource_ticket
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /raster_cog_tasks:
     get:
       description: 列出 Manager 模块的栅格快显 COG 任务配置。该私有入口固定返回 task_type=raster_cog_generation；编排模块应使用标准
@@ -4915,6 +5143,9 @@ paths:
       summary: 列出栅格快显 COG 任务配置 | List raster COG generation task configurations
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
     post:
       consumes:
       - application/json
@@ -4937,6 +5168,9 @@ paths:
       summary: 创建栅格快显 COG 任务配置 | Create raster COG generation task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.create
   /raster_cog_tasks/{id}:
     delete:
       parameters:
@@ -4958,6 +5192,9 @@ paths:
       summary: 删除栅格快显 COG 任务配置 | Delete raster COG generation task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.delete
     get:
       parameters:
       - description: 任务ID | Task ID
@@ -4977,6 +5214,9 @@ paths:
       summary: 获取栅格快显 COG 任务配置 | Get raster COG generation task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
     put:
       consumes:
       - application/json
@@ -5004,6 +5244,9 @@ paths:
       summary: 更新栅格快显 COG 任务配置 | Update raster COG generation task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.update
   /raster_mosaic/tiles/{z}/{x}/{y}:
     get:
       description: 按 raster_mosaic item locator 返回 PNG/WebP 图片瓦片；全局 overview COG 分辨率不足时切换
@@ -5078,6 +5321,9 @@ paths:
       summary: 获取 raster mosaic 图片瓦片 | Get raster mosaic image tile
       tags:
       - Manager
+      x-addp-auth-mode: resource_ticket
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /raster_mosaic_tasks:
     get:
       description: 列出 Manager 模块的栅格 mosaic 任务配置。该私有入口固定返回 task_type=raster_mosaic_generation；编排模块应使用标准
@@ -5104,6 +5350,9 @@ paths:
       summary: 列出栅格 mosaic 任务配置 | List raster mosaic generation task configurations
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
     post:
       consumes:
       - application/json
@@ -5134,6 +5383,9 @@ paths:
       summary: 创建栅格 mosaic 任务配置 | Create raster mosaic generation task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.create
   /raster_mosaic_tasks/{id}:
     delete:
       parameters:
@@ -5160,6 +5412,9 @@ paths:
       summary: 删除栅格 mosaic 任务配置 | Delete raster mosaic generation task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.delete
     get:
       parameters:
       - description: 任务ID | Task ID
@@ -5189,6 +5444,9 @@ paths:
       summary: 获取栅格 mosaic 任务配置 | Get raster mosaic generation task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
     put:
       consumes:
       - application/json
@@ -5226,6 +5484,9 @@ paths:
       summary: 更新栅格 mosaic 任务配置 | Update raster mosaic generation task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.update
   /resource-actions:
     get:
       description: 按 ResourceLocator 返回当前资源可显示的 Manager 用户动作及格式限制 | Return Manager
@@ -5263,6 +5524,9 @@ paths:
       summary: 查询资源动作能力 | Get resource action capabilities
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.data_item.read
   /search:
     get:
       description: 执行全文检索与向量语义检索的混合搜索 | Execute hybrid search combining full-text
@@ -5280,11 +5544,6 @@ paths:
       - description: 每页数量，默认10 | Page size, default 10
         in: query
         name: page_size
-        type: integer
-      - description: 超级管理员指定检索租户；普通用户忽略该参数 | Tenant filter for super admin; ignored
-          for tenant users
-        in: query
-        name: tenant_id
         type: integer
       produces:
       - application/json
@@ -5309,6 +5568,9 @@ paths:
       summary: 执行混合检索 | Execute hybrid search
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.search.execute
   /search/history:
     delete:
       description: 清空当前用户的所有搜索历史记录 | Clear all search history for the current user
@@ -5332,6 +5594,7 @@ paths:
       summary: 清空搜索历史 | Clear search history
       tags:
       - Manager
+      x-addp-auth-mode: self
     get:
       description: 获取当前用户的搜索历史记录 | Get search history for the current user
       parameters:
@@ -5362,6 +5625,7 @@ paths:
       summary: 列出搜索历史 | List search history
       tags:
       - Manager
+      x-addp-auth-mode: self
   /search/history/{id}:
     delete:
       description: 删除指定的搜索历史记录 | Delete a specific search history item
@@ -5391,6 +5655,7 @@ paths:
       summary: 删除搜索历史记录 | Delete search history item
       tags:
       - Manager
+      x-addp-auth-mode: self
   /storage-assets/{engine_id}/{storage_ref}:
     get:
       description: 以路径型 URL 传输 S3M 等多文件预览数据集中的单个资源，支持 manifest 相对路径解析与 Range 请求；资源仍通过存储引擎和租户权限校验。
@@ -5435,6 +5700,9 @@ paths:
       summary: 多文件预览资源传输 | Multi-file preview asset streaming
       tags:
       - Manager
+      x-addp-auth-mode: resource_ticket
+      x-addp-required-permissions:
+      - manager.content.read
   /storage-stream:
     get:
       description: 支持 Range 请求的单存储叶子内容流式传输，用于图片、PDF、视频等在线预览；用户下载请使用 downloads/file。storage_ref
@@ -5480,6 +5748,9 @@ paths:
       summary: 存储内容流式传输 | Storage content streaming
       tags:
       - Manager
+      x-addp-auth-mode: resource_ticket
+      x-addp-required-permissions:
+      - manager.content.read
   /tasks:
     get:
       description: 列出 Manager 模块的任务（矢量瓦片缓存生成、矢量物化视图、栅格快显 COG、栅格 mosaic、CAD 栅格预览、三维模型与点云快显、向量化任务）|
@@ -5520,6 +5791,9 @@ paths:
       summary: 列出任务 | List tasks
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /tasks/{task_type}/{id}:
     get:
       description: 获取指定类型和ID的任务详细信息 | Get detailed information of a task by type and
@@ -5559,6 +5833,9 @@ paths:
       summary: 获取任务详情 | Get task detail
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /tasks/{task_type}/{id}/execute:
     post:
       consumes:
@@ -5609,6 +5886,9 @@ paths:
       summary: 执行任务 | Execute task
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.create
   /uploads:
     post:
       consumes:
@@ -5653,6 +5933,9 @@ paths:
       summary: 上传文件到存储节点 | Upload files to storage node
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.data_item.create
   /vector_materialized_view:
     get:
       parameters:
@@ -5697,6 +5980,9 @@ paths:
       summary: 列出矢量物化视图结果 | List vector materialized view results
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /vector_materialized_view/{id}:
     delete:
       parameters:
@@ -5718,6 +6004,9 @@ paths:
       summary: 删除矢量物化视图结果 | Delete vector materialized view result
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.delete
     get:
       parameters:
       - description: 结果ID | Result ID
@@ -5737,6 +6026,9 @@ paths:
       summary: 获取矢量物化视图结果详情 | Get vector materialized view result detail
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /vector_materialized_view_tasks:
     get:
       description: 列出 Manager 模块的矢量物化视图任务配置。该私有入口固定返回 task_type=vector_materialized_view_generation；编排模块应使用标准
@@ -5765,6 +6057,9 @@ paths:
       summary: 列出矢量物化视图任务配置 | List vector materialized view task configurations
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
     post:
       consumes:
       - application/json
@@ -5787,6 +6082,9 @@ paths:
       summary: 创建矢量物化视图任务配置 | Create vector materialized view task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.create
   /vector_materialized_view_tasks/{id}:
     delete:
       parameters:
@@ -5808,6 +6106,9 @@ paths:
       summary: 删除矢量物化视图任务配置 | Delete vector materialized view task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.delete
     get:
       parameters:
       - description: 任务ID | Task ID
@@ -5827,6 +6128,9 @@ paths:
       summary: 获取矢量物化视图任务配置 | Get vector materialized view task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
     put:
       consumes:
       - application/json
@@ -5854,6 +6158,9 @@ paths:
       summary: 更新矢量物化视图任务配置 | Update vector materialized view task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.update
   /vector_tile_cache:
     get:
       description: 查询瓦片缓存结果状态 | Query tile cache result states
@@ -5899,6 +6206,9 @@ paths:
       summary: 列出瓦片缓存结果 | List tile cache results
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /vector_tile_cache/{id}:
     delete:
       parameters:
@@ -5920,6 +6230,9 @@ paths:
       summary: 删除瓦片缓存结果 | Delete tile cache result
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.delete
     get:
       parameters:
       - description: 结果ID | Result ID
@@ -5939,6 +6252,9 @@ paths:
       summary: 获取瓦片缓存结果详情 | Get tile cache result detail
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
   /vector_tile_cache_tasks:
     get:
       description: 列出 Manager 模块的瓦片缓存生成任务配置。该私有入口固定返回 task_type=vector_tile_cache_generation；编排模块应使用标准
@@ -5972,6 +6288,9 @@ paths:
       summary: 列出瓦片缓存生成任务配置 | List tile cache generation task configurations
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
     post:
       consumes:
       - application/json
@@ -6001,6 +6320,9 @@ paths:
       summary: 创建瓦片缓存生成任务配置 | Create tile cache generation task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.create
   /vector_tile_cache_tasks/{id}:
     delete:
       description: 删除指定的瓦片缓存生成任务配置 | Delete a specific tile cache generation task
@@ -6029,6 +6351,9 @@ paths:
       summary: 删除瓦片缓存生成任务配置 | Delete tile cache generation task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.delete
     get:
       description: 获取指定瓦片缓存生成任务配置 | Get a specific tile cache generation task configuration
       parameters:
@@ -6059,6 +6384,9 @@ paths:
       summary: 获取瓦片缓存生成任务配置 | Get tile cache generation task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
     put:
       consumes:
       - application/json
@@ -6099,6 +6427,9 @@ paths:
       summary: 更新瓦片缓存生成任务配置 | Update tile cache generation task configuration
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.update
   /vector_tile_set_tasks:
     get:
       produces:
@@ -6113,6 +6444,9 @@ paths:
       summary: 获取业务矢量瓦片集任务 | List business vector tile set tasks
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
     post:
       consumes:
       - application/json
@@ -6135,6 +6469,9 @@ paths:
       summary: 创建业务矢量瓦片集任务 | Create business vector tile set task
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.create
   /vector_tile_set_tasks/{id}:
     delete:
       parameters:
@@ -6151,6 +6488,9 @@ paths:
       summary: 删除业务矢量瓦片集任务 | Delete business vector tile set task
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.delete
     get:
       parameters:
       - description: 任务ID | Task ID
@@ -6170,6 +6510,9 @@ paths:
       summary: 获取业务矢量瓦片集任务 | Get business vector tile set task
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
     put:
       consumes:
       - application/json
@@ -6197,6 +6540,9 @@ paths:
       summary: 更新业务矢量瓦片集任务 | Update business vector tile set task
       tags:
       - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.update
 securityDefinitions:
   BearerAuth:
     in: header

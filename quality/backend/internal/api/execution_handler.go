@@ -19,6 +19,8 @@ func NewExecutionHandler(executionRepo *commonExecution.TaskExecutionRepository)
 // @Tags Execution
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["quality.check_task.read"]
 // @Router /executions [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) List(c *gin.Context) {
@@ -55,6 +57,8 @@ func (h *ExecutionHandler) List(c *gin.Context) {
 // @Produce json
 // @Param execution_id path string true "执行ID | Execution ID"
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["quality.check_task.read"]
 // @Router /executions/{execution_id} [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) Get(c *gin.Context) {

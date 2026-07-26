@@ -23,6 +23,8 @@ func NewRuleApplicationHandler(svc *service.RuleEngineService) *RuleApplicationH
 // @Param schema_name query string false "Schema名称 | Schema name"
 // @Param table_name query string false "表名 | Table name"
 // @Success 200 {array} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["quality.rule_application.read"]
 // @Router /rule-applications [get]
 // @Security BearerAuth
 func (h *RuleApplicationHandler) List(c *gin.Context) {
@@ -44,6 +46,8 @@ func (h *RuleApplicationHandler) List(c *gin.Context) {
 // @Produce json
 // @Param id path int true "规则应用ID | Rule application ID"
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["quality.rule_application.read"]
 // @Router /rule-applications/{id} [get]
 // @Security BearerAuth
 func (h *RuleApplicationHandler) Get(c *gin.Context) {
@@ -67,6 +71,8 @@ func (h *RuleApplicationHandler) Get(c *gin.Context) {
 // @Produce json
 // @Param body body map[string]interface{} true "规则应用信息 | Rule application info"
 // @Success 201 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["quality.rule_application.create"]
 // @Router /rule-applications [post]
 // @Security BearerAuth
 func (h *RuleApplicationHandler) Create(c *gin.Context) {
@@ -92,6 +98,8 @@ func (h *RuleApplicationHandler) Create(c *gin.Context) {
 // @Param id path int true "规则应用ID | Rule application ID"
 // @Param body body map[string]interface{} true "更新信息 | Update info"
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["quality.rule_application.update"]
 // @Router /rule-applications/{id} [put]
 // @Security BearerAuth
 func (h *RuleApplicationHandler) Update(c *gin.Context) {
@@ -119,6 +127,8 @@ func (h *RuleApplicationHandler) Update(c *gin.Context) {
 // @Produce json
 // @Param id path int true "规则应用ID | Rule application ID"
 // @Success 200 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["quality.rule_application.delete"]
 // @Router /rule-applications/{id} [delete]
 // @Security BearerAuth
 func (h *RuleApplicationHandler) Delete(c *gin.Context) {

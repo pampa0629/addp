@@ -44,6 +44,35 @@ func TestDorisCatalogFactsDialectDoesNotIncludeEngine(t *testing.T) {
 	}
 }
 
+func TestDorisDSNsInterpolateParametersClientSide(t *testing.T) {
+	connInfo := plugin.ConnectionInfo{
+		"host":     "doris.example",
+		"port":     9030,
+		"user":     "root",
+		"password": "secret",
+		"database": "analytics",
+	}
+
+	for name, build := range map[string]func() (string, error){
+		"database": func() (string, error) {
+			return (&DorisPlugin{}).BuildDSN(connInfo)
+		},
+		"server": func() (string, error) {
+			return (&DorisPlugin{}).serverDSN(connInfo)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dsn, err := build()
+			if err != nil {
+				t.Fatalf("build Doris DSN: %v", err)
+			}
+			if !strings.Contains(dsn, "interpolateParams=true") {
+				t.Fatalf("Doris DSN = %q, want interpolateParams=true", dsn)
+			}
+		})
+	}
+}
+
 func TestDorisSQLTypeForField(t *testing.T) {
 	tests := []struct {
 		name  string

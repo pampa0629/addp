@@ -4,6 +4,7 @@ Meta API 相关的 LangChain Tools
 封装与 Meta 模块的元数据搜索交互
 """
 from typing import List, Dict, Optional
+import httpx
 from langchain.tools import BaseTool
 
 from addp_common.client import ManagerClient, MetaClient
@@ -77,7 +78,12 @@ class MetadataSearchTool(BaseTool):
         if not locator or not engine_id:
             return None
 
-        response = await meta_client.get_resource_tree_ancestors(int(engine_id), str(locator))
+        try:
+            response = await meta_client.get_resource_tree_ancestors(int(engine_id), str(locator))
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                return None
+            raise
         ancestors = response.get("ancestors")
         if not isinstance(ancestors, list) or len(ancestors) < 2:
             return None

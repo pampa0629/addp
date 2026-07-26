@@ -40,7 +40,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.check_task.read"
+                ]
             },
             "post": {
                 "security": [
@@ -78,7 +82,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.check_task.create"
+                ]
             }
         },
         "/check-tasks/{id}": {
@@ -112,7 +120,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.check_task.read"
+                ]
             },
             "put": {
                 "security": [
@@ -157,7 +169,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.check_task.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -191,7 +207,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.check_task.delete"
+                ]
             }
         },
         "/check-tasks/{id}/run": {
@@ -236,7 +256,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.check_task.execute"
+                ]
             }
         },
         "/executions": {
@@ -261,7 +285,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.check_task.read"
+                ]
             }
         },
         "/executions/{execution_id}": {
@@ -295,7 +323,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.check_task.read"
+                ]
             }
         },
         "/issues": {
@@ -337,7 +369,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.issue.read"
+                ]
             }
         },
         "/issues/{id}": {
@@ -371,7 +407,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.issue.read"
+                ]
             }
         },
         "/issues/{id}/status": {
@@ -422,7 +462,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.issue.update"
+                ]
             }
         },
         "/rule-applications": {
@@ -470,7 +514,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.rule_application.read"
+                ]
             },
             "post": {
                 "security": [
@@ -508,7 +556,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.rule_application.create"
+                ]
             }
         },
         "/rule-applications/{id}": {
@@ -542,7 +594,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.rule_application.read"
+                ]
             },
             "put": {
                 "security": [
@@ -587,7 +643,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.rule_application.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -621,7 +681,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.rule_application.delete"
+                ]
             }
         },
         "/tasks": {
@@ -675,7 +739,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.check_task.read"
+                ]
             }
         },
         "/tasks/{task_type}/{id}": {
@@ -730,7 +798,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.check_task.read"
+                ]
             }
         },
         "/tasks/{task_type}/{id}/execute": {
@@ -796,7 +868,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.check_task.execute"
+                ]
             }
         }
     },

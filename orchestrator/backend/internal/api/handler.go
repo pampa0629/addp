@@ -74,6 +74,8 @@ func NewOrchestrationHandler(
 // @Success 201 {object} map[string]interface{}
 // @Failure 400 {object} models.ErrorResponse "编排定义或执行参数无效 | Invalid orchestration definition or execution parameters"
 // @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["orchestrator.workflow.create"]
 // @Router /orchestrations [post]
 // @Security BearerAuth
 func (h *OrchestrationHandler) Create(c *gin.Context) {
@@ -110,6 +112,8 @@ func (h *OrchestrationHandler) Create(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{}
 // @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["orchestrator.workflow.read"]
 // @Router /orchestrations [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) List(c *gin.Context) {
@@ -134,6 +138,8 @@ func (h *OrchestrationHandler) List(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @Failure 404 {object} models.ErrorResponse "编排不存在 | Orchestration not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["orchestrator.workflow.read"]
 // @Router /orchestrations/{id} [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) Get(c *gin.Context) {
@@ -168,6 +174,8 @@ func (h *OrchestrationHandler) Get(c *gin.Context) {
 // @Failure 400 {object} models.ErrorResponse "编排定义或执行参数无效 | Invalid orchestration definition or execution parameters"
 // @Failure 404 {object} models.ErrorResponse "编排不存在 | Orchestration not found"
 // @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["orchestrator.workflow.update"]
 // @Router /orchestrations/{id} [put]
 // @Security BearerAuth
 func (h *OrchestrationHandler) Update(c *gin.Context) {
@@ -212,6 +220,8 @@ func (h *OrchestrationHandler) Update(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @Failure 404 {object} models.ErrorResponse "编排不存在 | Orchestration not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["orchestrator.workflow.delete"]
 // @Router /orchestrations/{id} [delete]
 // @Security BearerAuth
 func (h *OrchestrationHandler) Delete(c *gin.Context) {
@@ -240,6 +250,8 @@ func (h *OrchestrationHandler) Delete(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @Failure 404 {object} models.ErrorResponse "编排不存在 | Orchestration not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["orchestrator.workflow.execute"]
 // @Router /orchestrations/{id}/execute [post]
 // @Security BearerAuth
 func (h *OrchestrationHandler) Execute(c *gin.Context) {
@@ -291,6 +303,8 @@ func (h *OrchestrationHandler) Execute(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @Failure 404 {object} models.ErrorResponse "编排不存在 | Orchestration not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["orchestrator.workflow.read"]
 // @Router /orchestrations/{id}/executions [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) ListExecutions(c *gin.Context) {
@@ -340,6 +354,8 @@ func (h *OrchestrationHandler) ListExecutions(c *gin.Context) {
 // @Param page_size query int false "每页数量 | Page size" default(20)
 // @Success 200 {object} map[string]interface{}
 // @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["orchestrator.workflow.read"]
 // @Router /executions [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) ListAllExecutions(c *gin.Context) {
@@ -378,6 +394,8 @@ func (h *OrchestrationHandler) ListAllExecutions(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @Failure 404 {object} models.ErrorResponse "执行不存在 | Execution not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["orchestrator.workflow.read"]
 // @Router /orch-executions/{id} [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) GetExecution(c *gin.Context) {
@@ -409,6 +427,8 @@ func (h *OrchestrationHandler) GetExecution(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["orchestrator.workflow.read"]
 // @Router /task-providers [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) ListTaskProviders(c *gin.Context) {
@@ -439,6 +459,8 @@ func (h *OrchestrationHandler) ListTaskProviders(c *gin.Context) {
 // @Failure 404 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Failure 502 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["orchestrator.workflow.read"]
 // @Router /tasks [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
@@ -609,6 +631,8 @@ func (h *OrchestrationHandler) ListProviderOrchestrationTasks(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @Failure 404 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["orchestrator.workflow.read"]
 // @Router /tasks/{task_type}/{id} [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) GetProviderOrchestrationTask(c *gin.Context) {
@@ -648,6 +672,8 @@ func (h *OrchestrationHandler) GetProviderOrchestrationTask(c *gin.Context) {
 // @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @Failure 404 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["orchestrator.workflow.execute"]
 // @Router /tasks/{task_type}/{id}/execute [post]
 // @Security BearerAuth
 func (h *OrchestrationHandler) ExecuteProviderOrchestrationTask(c *gin.Context) {
@@ -719,6 +745,8 @@ func (h *OrchestrationHandler) ExecuteProviderOrchestrationTask(c *gin.Context) 
 // @Success 200 {object} commonExecution.TaskExecution
 // @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @Failure 404 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["orchestrator.workflow.read"]
 // @Router /executions/{execution_id} [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) GetProviderExecution(c *gin.Context) {

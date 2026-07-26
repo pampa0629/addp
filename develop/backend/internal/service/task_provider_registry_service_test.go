@@ -39,16 +39,16 @@ func TestTaskProviderRegistryRegistersStandardDevelopContract(t *testing.T) {
 	if payload.BaseURL != "http://develop.internal" {
 		t.Fatalf("BaseURL = %q, want http://develop.internal", payload.BaseURL)
 	}
-	if payload.TaskListEndpoint != "/api/v1/develop/tasks" {
+	if payload.TaskListEndpoint != "/api/v1/develop/internal/tasks" {
 		t.Fatalf("TaskListEndpoint = %q", payload.TaskListEndpoint)
 	}
-	if payload.TaskDetailEndpoint != "/api/v1/develop/tasks/{task_type}/{id}" {
+	if payload.TaskDetailEndpoint != "/api/v1/develop/internal/tasks/{task_type}/{id}" {
 		t.Fatalf("TaskDetailEndpoint = %q", payload.TaskDetailEndpoint)
 	}
-	if payload.TaskExecuteEndpoint != "/api/v1/develop/tasks/{task_type}/{id}/execute" {
+	if payload.TaskExecuteEndpoint != "/api/v1/develop/internal/tasks/{task_type}/{id}/execute" {
 		t.Fatalf("TaskExecuteEndpoint = %q", payload.TaskExecuteEndpoint)
 	}
-	if payload.TaskStatusEndpoint != "/api/v1/develop/executions/{execution_id}" {
+	if payload.TaskStatusEndpoint != "/api/v1/develop/internal/executions/{execution_id}" {
 		t.Fatalf("TaskStatusEndpoint = %q", payload.TaskStatusEndpoint)
 	}
 	if payload.TaskCancelEndpoint != "" {

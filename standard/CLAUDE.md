@@ -344,6 +344,8 @@ GET/POST/PUT/DELETE /api/standard/dimension-hierarchies/:id/levels
 **被依赖**（其他模块调用 Standard 的 API）:
 - **Model 模块**: 验证 domain_id、element_id、hierarchy_id、metric_id；代理标准对象查询
 
+资产发现属于服务间接口，固定使用 `/api/v1/standard/internal/assets/discoverable` 和 `X-Internal-API-Key + X-Tenant-ID`，不建立 User AuthContext。其他 `/api/v1/standard` 路由只接受 canonical Bearer Tenant AuthContext；文档下载还可使用 Standard owner 的 Browser Resource Ticket。
+
 ## IAM Permission 所有权
 
 Standard 是以下第一批 Permission 的唯一 owner：
@@ -352,10 +354,15 @@ Standard 是以下第一批 Permission 的唯一 owner：
 - `standard.element.*`
 - `standard.metric.*`
 - `standard.code_set.*`
+- `standard.document.*`
+- `standard.glossary.*`
+- `standard.unit.*`
+- `standard.classification.*`
+- `standard.dimension_hierarchy.*`
 
 机器可读事实源是 [authorization/permissions.yaml](authorization/permissions.yaml)。该 Manifest 由 `common/authorization` 在构建/发布期统一发现、校验和聚合，Standard 服务启动时不向 System 动态注册 Permission。
 
-当前 Manifest 只是首批目录，不隐式覆盖 Glossary、Unit、Classification/GradingLevel、Document 和 DimensionHierarchy 等其他真实资源。这些资源必须在明确业务边界后增加独立 Permission，不得借用宽泛 Key 或前缀匹配授权。
+Measurement Category 是 Unit 聚合内子资源，Grading Level 是 Classification 聚合内子资源，Dimension Hierarchy Level 是 Dimension Hierarchy 聚合内子资源。Document 与 Element、Glossary、Metric 的关联操作按涉及资源 Permission 做 all-of 校验，不借用宽泛 Key 或前缀匹配授权。
 
 ## 特殊设计
 

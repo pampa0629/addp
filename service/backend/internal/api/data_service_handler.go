@@ -25,6 +25,8 @@ func NewDataServiceHandler(queryService *data.QueryService) *DataServiceHandler 
 // @Produce json
 // @Param request body models.DataQueryRequest true "查询请求 | Query request"
 // @Success 200 {object} models.DataQueryResponse "查询结果 | Query result"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.read"]
 // @Router /data/query [post]
 func (h *DataServiceHandler) Query(c *gin.Context) {
 	var req models.DataQueryRequest
@@ -53,6 +55,8 @@ func (h *DataServiceHandler) Query(c *gin.Context) {
 // @Produce json
 // @Param request body models.AggregationRequest true "聚合请求 | Aggregation request"
 // @Success 200 {object} models.AggregationResponse "聚合结果 | Aggregation result"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.read"]
 // @Router /data/aggregate [post]
 func (h *DataServiceHandler) Aggregate(c *gin.Context) {
 	var req models.AggregationRequest
@@ -81,6 +85,8 @@ func (h *DataServiceHandler) Aggregate(c *gin.Context) {
 // @Produce json
 // @Param locator query string true "ResourceLocator，必须指向 table item | ResourceLocator pointing to table item"
 // @Success 200 {object} []models.ColumnInfo "表结构 | Table structure"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.read"]
 // @Router /data/structure [get]
 func (h *DataServiceHandler) GetTableStructure(c *gin.Context) {
 	locator := c.Query("locator")

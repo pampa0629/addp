@@ -81,6 +81,9 @@ paths:
       summary: 获取检查任务列表 | List check tasks
       tags:
       - CheckTask
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.check_task.read
     post:
       consumes:
       - application/json
@@ -105,6 +108,9 @@ paths:
       summary: 创建检查任务 | Create check task
       tags:
       - CheckTask
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.check_task.create
   /check-tasks/{id}:
     delete:
       parameters:
@@ -127,6 +133,9 @@ paths:
       summary: 删除检查任务 | Delete check task
       tags:
       - CheckTask
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.check_task.delete
     get:
       parameters:
       - description: 任务ID | Task ID
@@ -147,6 +156,9 @@ paths:
       summary: 获取检查任务详情 | Get check task detail
       tags:
       - CheckTask
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.check_task.read
     put:
       consumes:
       - application/json
@@ -176,6 +188,9 @@ paths:
       summary: 更新检查任务 | Update check task
       tags:
       - CheckTask
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.check_task.update
   /check-tasks/{id}/run:
     post:
       parameters:
@@ -204,6 +219,9 @@ paths:
       summary: 执行检查任务 | Run check task
       tags:
       - CheckTask
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.check_task.execute
   /executions:
     get:
       produces:
@@ -219,6 +237,9 @@ paths:
       summary: 获取执行记录列表 | List execution records
       tags:
       - Execution
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.check_task.read
   /executions/{execution_id}:
     get:
       parameters:
@@ -240,6 +261,9 @@ paths:
       summary: 获取执行记录详情 | Get execution record detail
       tags:
       - Execution
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.check_task.read
   /issues:
     get:
       parameters:
@@ -266,6 +290,9 @@ paths:
       summary: 获取问题工单列表 | List quality issues
       tags:
       - Issue
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.issue.read
   /issues/{id}:
     get:
       parameters:
@@ -287,6 +314,9 @@ paths:
       summary: 获取问题工单详情 | Get issue detail
       tags:
       - Issue
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.issue.read
   /issues/{id}/status:
     put:
       consumes:
@@ -319,6 +349,9 @@ paths:
       summary: 更新问题工单状态 | Update issue status
       tags:
       - Issue
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.issue.update
   /rule-applications:
     get:
       parameters:
@@ -349,6 +382,9 @@ paths:
       summary: 获取规则应用列表 | List rule applications
       tags:
       - RuleApplication
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.rule_application.read
     post:
       consumes:
       - application/json
@@ -373,6 +409,9 @@ paths:
       summary: 创建规则应用 | Create rule application
       tags:
       - RuleApplication
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.rule_application.create
   /rule-applications/{id}:
     delete:
       parameters:
@@ -395,6 +434,9 @@ paths:
       summary: 删除规则应用 | Delete rule application
       tags:
       - RuleApplication
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.rule_application.delete
     get:
       parameters:
       - description: 规则应用ID | Rule application ID
@@ -415,6 +457,9 @@ paths:
       summary: 获取规则应用详情 | Get rule application detail
       tags:
       - RuleApplication
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.rule_application.read
     put:
       consumes:
       - application/json
@@ -444,6 +489,9 @@ paths:
       summary: 更新规则应用 | Update rule application
       tags:
       - RuleApplication
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.rule_application.update
   /tasks:
     get:
       description: 按标准 TaskProvider 协议列出 Quality 检查任务；task_type 仅支持 check。| List Quality
@@ -481,6 +529,9 @@ paths:
       summary: 列出 TaskProvider 质量检查任务 | List TaskProvider quality check tasks
       tags:
       - CheckTask
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.check_task.read
   /tasks/{task_type}/{id}:
     get:
       description: 按标准 TaskProvider 协议获取 Quality 检查任务详情；task_type 仅支持 check。| Get
@@ -519,6 +570,9 @@ paths:
       summary: 获取 TaskProvider 质量检查任务详情 | Get TaskProvider quality check task detail
       tags:
       - CheckTask
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.check_task.read
   /tasks/{task_type}/{id}/execute:
     post:
       consumes:
@@ -564,6 +618,9 @@ paths:
       summary: 执行 TaskProvider 质量检查任务 | Execute TaskProvider quality check task
       tags:
       - CheckTask
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.check_task.execute
 securityDefinitions:
   BearerAuth:
     in: header

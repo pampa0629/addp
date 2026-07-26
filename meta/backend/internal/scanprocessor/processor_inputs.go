@@ -249,7 +249,7 @@ func fileModifiedAtPtr(value time.Time) *time.Time {
 
 func itemRowCountFromMetaAttributes(attrs map[string]interface{}) *int64 {
 	tableInfo := datatype.TableInfoFromPayload(commonJSON.Section(attrs, "type_info.table"), "")
-	if tableInfo == nil || tableInfo.RowCount == nil || *tableInfo.RowCount <= 0 {
+	if tableInfo == nil || tableInfo.RowCount == nil || *tableInfo.RowCount < 0 {
 		return nil
 	}
 	rowCount := *tableInfo.RowCount

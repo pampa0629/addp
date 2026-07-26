@@ -8,6 +8,7 @@ import (
 	_ "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/sqldialect"
 	"gorm.io/driver/clickhouse"
 	"gorm.io/gorm"
 )
@@ -222,12 +223,12 @@ func (p *ClickHousePlugin) listTables(ctx context.Context, db *gorm.DB, schema s
 	tables := make([]datatype.TableInfo, 0, len(rows))
 	for _, row := range rows {
 		tables = append(tables, datatype.TableInfo{
-			Name:      row.Name,
-			Kind:      row.Kind,
-			Comment:   row.Comment,
-			RowCount:  row.RowCount,
-			SizeBytes: row.SizeBytes,
-			Native:    clickhouseTableNative(nil, row.Engine),
+			Name:              row.Name,
+			Kind:              row.Kind,
+			Comment:           row.Comment,
+			EstimatedRowCount: row.RowCount,
+			SizeBytes:         row.SizeBytes,
+			Native:            clickhouseTableNative(nil, row.Engine),
 		})
 	}
 
@@ -315,16 +316,8 @@ func clickhouseFieldInfo(row clickhouseColumnRow) datatype.FieldInfo {
 // GetTableRowCount 获取表的行数
 func (p *ClickHousePlugin) getTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
 	var count int64
-
-	// 使用 system.tables 中的统计数据（快速）
-	query := `
-		SELECT total_rows
-		FROM system.tables
-		WHERE database = ?
-		  AND name = ?
-	`
-
-	err := db.WithContext(ctx).Raw(query, schema, table).Scan(&count).Error
+	query := sqldialect.ForEngine(p.Type()).CountTableSQL(schema, table, "")
+	err := db.WithContext(ctx).Raw(query).Scan(&count).Error
 	if err != nil {
 		return 0, fmt.Errorf("failed to get row count: %w", err)
 	}

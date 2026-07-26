@@ -413,8 +413,8 @@ CREATE INDEX idx_geom ON your_table USING GIST (geom);
 
 ### 9.2 权限控制
 
-- 只有租户管理员可创建/修改服务
-- SuperAdmin 可跨租户管理
+- 创建/修改服务需要精确的 `service.definition.*` Permission
+- Platform Context 不得跨 Tenant 管理业务服务
 
 ### 9.3 数据访问控制
 

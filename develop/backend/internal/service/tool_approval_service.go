@@ -7,11 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
+	commonAuth "github.com/addp/common/authorization"
 	commonExecution "github.com/addp/common/execution"
-	commonAuth "github.com/addp/common/middleware/auth"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -67,7 +68,7 @@ func NewToolApprovalService(db *gorm.DB, executor *DevExecutor) *ToolApprovalSer
 
 func (service *ToolApprovalService) CreateWorkflowRunApproval(
 	ctx context.Context,
-	authContext commonAuth.AuthorizationContext,
+	authContext commonAuth.AuthContext,
 	req models.CreateExecutionRequest,
 ) (*models.ToolApproval, error) {
 	if err := validateDelegatedWorkflowRunContext(authContext); err != nil {
@@ -85,7 +86,7 @@ func (service *ToolApprovalService) CreateWorkflowRunApproval(
 		req.Content,
 		req.ExecutionConfig,
 		reqTenantID(authContext),
-		authContext.UserID,
+		authContextUserID(authContext),
 		req.TriggerType,
 		req.Timeout,
 	); err != nil {
@@ -98,10 +99,10 @@ func (service *ToolApprovalService) CreateWorkflowRunApproval(
 	}
 	now := service.now().UTC()
 	approval := &models.ToolApproval{
-		UserID:             authContext.UserID,
+		UserID:             authContextUserID(authContext),
 		TenantID:           reqTenantID(authContext),
-		AgentRunID:         strings.TrimSpace(*authContext.AgentRunID),
-		ToolCallID:         strings.TrimSpace(*authContext.ToolCallID),
+		AgentRunID:         strings.TrimSpace(authContext.Delegation.AgentRunID),
+		ToolCallID:         strings.TrimSpace(authContext.Delegation.ToolCallID),
 		ToolName:           WorkflowRunToolName,
 		RequestFingerprint: fingerprint,
 		RequestPayload:     payload,
@@ -118,7 +119,7 @@ func (service *ToolApprovalService) CreateWorkflowRunApproval(
 
 func (service *ToolApprovalService) GetApproval(
 	ctx context.Context,
-	authContext commonAuth.AuthorizationContext,
+	authContext commonAuth.AuthContext,
 	approvalID string,
 ) (*models.ToolApproval, error) {
 	if err := validateUserApprovalContext(authContext); err != nil {
@@ -130,7 +131,7 @@ func (service *ToolApprovalService) GetApproval(
 	}
 	var approval models.ToolApproval
 	if err := service.db.WithContext(ctx).
-		Where("id = ? AND user_id = ? AND tenant_id = ?", id, authContext.UserID, reqTenantID(authContext)).
+		Where("id = ? AND user_id = ? AND tenant_id = ?", id, authContextUserID(authContext), reqTenantID(authContext)).
 		First(&approval).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, approvalError("approval_not_found", "审批不存在")
@@ -145,7 +146,7 @@ func (service *ToolApprovalService) GetApproval(
 
 func (service *ToolApprovalService) DecideApproval(
 	ctx context.Context,
-	authContext commonAuth.AuthorizationContext,
+	authContext commonAuth.AuthContext,
 	approvalID string,
 	decision string,
 ) (*models.ToolApproval, error) {
@@ -164,7 +165,7 @@ func (service *ToolApprovalService) DecideApproval(
 	var transitionErr error
 	err = service.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND user_id = ? AND tenant_id = ?", id, authContext.UserID, reqTenantID(authContext)).
+			Where("id = ? AND user_id = ? AND tenant_id = ?", id, authContextUserID(authContext), reqTenantID(authContext)).
 			First(&decided).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return approvalError("approval_not_found", "审批不存在")
@@ -185,7 +186,8 @@ func (service *ToolApprovalService) DecideApproval(
 		}
 		decided.Status = decision
 		decided.DecidedAt = &now
-		decided.DecidedByUserID = &authContext.UserID
+		decidedByUserID := authContextUserID(authContext)
+		decided.DecidedByUserID = &decidedByUserID
 		return tx.Save(&decided).Error
 	})
 	if err != nil {
@@ -199,7 +201,7 @@ func (service *ToolApprovalService) DecideApproval(
 
 func (service *ToolApprovalService) ConsumeWorkflowRunApproval(
 	ctx context.Context,
-	authContext commonAuth.AuthorizationContext,
+	authContext commonAuth.AuthContext,
 	approvalID string,
 	requestFingerprint string,
 ) (string, error) {
@@ -217,14 +219,14 @@ func (service *ToolApprovalService) ConsumeWorkflowRunApproval(
 
 	var snapshot models.ToolApproval
 	if err := service.db.WithContext(ctx).
-		Where("id = ? AND user_id = ? AND tenant_id = ?", id, authContext.UserID, reqTenantID(authContext)).
+		Where("id = ? AND user_id = ? AND tenant_id = ?", id, authContextUserID(authContext), reqTenantID(authContext)).
 		First(&snapshot).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", approvalError("approval_not_found", "审批不存在")
 		}
 		return "", fmt.Errorf("get tool approval: %w", err)
 	}
-	if snapshot.AgentRunID != strings.TrimSpace(*authContext.AgentRunID) {
+	if snapshot.AgentRunID != strings.TrimSpace(authContext.Delegation.AgentRunID) {
 		return "", approvalError("approval_forbidden", "审批不属于当前 AgentRun")
 	}
 	if snapshot.RequestFingerprint != requestFingerprint {
@@ -252,7 +254,7 @@ func (service *ToolApprovalService) ConsumeWorkflowRunApproval(
 	err = service.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var approval models.ToolApproval
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND user_id = ? AND tenant_id = ?", id, authContext.UserID, reqTenantID(authContext)).
+			Where("id = ? AND user_id = ? AND tenant_id = ?", id, authContextUserID(authContext), reqTenantID(authContext)).
 			First(&approval).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return approvalError("approval_not_found", "审批不存在")
@@ -271,7 +273,7 @@ func (service *ToolApprovalService) ConsumeWorkflowRunApproval(
 			transitionErr = approvalError("approval_expired", "审批已过期")
 			return nil
 		}
-		if approval.AgentRunID != strings.TrimSpace(*authContext.AgentRunID) {
+		if approval.AgentRunID != strings.TrimSpace(authContext.Delegation.AgentRunID) {
 			return approvalError("approval_forbidden", "审批不属于当前 AgentRun")
 		}
 		if approval.RequestFingerprint != requestFingerprint {
@@ -364,35 +366,50 @@ func workflowRunSummary(req models.CreateExecutionRequest) models.DevTaskContent
 	return summary
 }
 
-func validateDelegatedWorkflowRunContext(authContext commonAuth.AuthorizationContext) error {
-	if authContext.AuthType != commonAuth.AuthTypeDelegatedAccessToken {
+func validateDelegatedWorkflowRunContext(authContext commonAuth.AuthContext) error {
+	if authContext.Token.Type != "delegated_access_token" {
 		return approvalError("approval_forbidden", "workflow.run 审批执行只接受受委托访问令牌")
 	}
-	if authContext.TenantID == nil || *authContext.TenantID == 0 || authContext.UserID == 0 {
+	if authContext.Principal.Type != "user" || reqTenantID(authContext) == 0 || authContextUserID(authContext) == 0 {
 		return approvalError("approval_forbidden", "审批身份缺少用户或租户")
 	}
-	if authContext.AgentRunID == nil || strings.TrimSpace(*authContext.AgentRunID) == "" ||
-		authContext.ToolCallID == nil || strings.TrimSpace(*authContext.ToolCallID) == "" {
+	if authContext.Delegation == nil || strings.TrimSpace(authContext.Delegation.AgentRunID) == "" ||
+		strings.TrimSpace(authContext.Delegation.ToolCallID) == "" {
 		return approvalError("approval_forbidden", "审批身份缺少 AgentRun 或 ToolCall 绑定")
 	}
 	return nil
 }
 
-func validateUserApprovalContext(authContext commonAuth.AuthorizationContext) error {
-	if authContext.AuthType != "first_party_access_token" && authContext.AuthType != "oauth_access_token" {
+func validateUserApprovalContext(authContext commonAuth.AuthContext) error {
+	if authContext.Token.Type != "first_party_access_token" && authContext.Token.Type != "oauth_access_token" {
 		return approvalError("approval_forbidden", "审批只接受用户访问令牌")
 	}
-	if authContext.TenantID == nil || *authContext.TenantID == 0 || authContext.UserID == 0 {
+	if authContext.Principal.Type != "user" || reqTenantID(authContext) == 0 || authContextUserID(authContext) == 0 {
 		return approvalError("approval_forbidden", "审批身份缺少用户或租户")
 	}
 	return nil
 }
 
-func reqTenantID(authContext commonAuth.AuthorizationContext) uint {
-	if authContext.TenantID == nil {
+func reqTenantID(authContext commonAuth.AuthContext) uint {
+	if authContext.Context.Type != "tenant" || authContext.Context.TenantID == nil {
 		return 0
 	}
-	return *authContext.TenantID
+	tenantID, err := strconv.ParseUint(*authContext.Context.TenantID, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return uint(tenantID)
+}
+
+func authContextUserID(authContext commonAuth.AuthContext) uint {
+	if authContext.Principal.Type != "user" {
+		return 0
+	}
+	userID, err := strconv.ParseUint(authContext.Principal.ID, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return uint(userID)
 }
 
 func approvalStateError(status string) error {

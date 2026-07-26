@@ -48,6 +48,8 @@ type GetJupyterURLResponse struct {
 // @Produce json
 // @Param body body GetJupyterURLRequest true "请求 | Request"
 // @Success 200 {object} GetJupyterURLResponse "Jupyter URL | Jupyter URL"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.notebook.execute"]
 // @Router /notebooks/jupyter-url [post]
 func (h *NotebookHandler) GetJupyterURL(c *gin.Context) {
 	var req GetJupyterURLRequest
@@ -91,6 +93,8 @@ type ExecuteNotebookResponse struct {
 // @Produce json
 // @Param body body ExecuteNotebookRequest true "执行请求 | Execution request"
 // @Success 200 {object} ExecuteNotebookResponse "执行结果 | Execution result"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.notebook.execute"]
 // @Router /notebooks/execute [post]
 func (h *NotebookHandler) ExecuteNotebook(c *gin.Context) {
 	var req ExecuteNotebookRequest
@@ -149,6 +153,8 @@ type ListKernelsResponse struct {
 // @Tags Notebook
 // @Produce json
 // @Success 200 {object} ListKernelsResponse "Kernel列表 | Kernel list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.notebook.read"]
 // @Router /notebooks/kernels [get]
 func (h *NotebookHandler) ListKernels(c *gin.Context) {
 	kernels, err := h.jupyterService.ListKernels(c.Request.Context())
@@ -170,6 +176,8 @@ func (h *NotebookHandler) ListKernels(c *gin.Context) {
 // @Tags Notebook
 // @Produce json
 // @Success 200 {object} map[string]string "健康状态 | Health status"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.notebook.read"]
 // @Router /notebooks/health [get]
 func (h *NotebookHandler) HealthCheck(c *gin.Context) {
 	err := h.jupyterService.HealthCheck(c.Request.Context())
@@ -208,11 +216,12 @@ type UploadNotebookRequest struct {
 // @Param data_sources formData string false "数据源 IDs (JSON 数组) | Data source IDs (JSON array)"
 // @Param parameters formData string false "参数 (JSON 对象) | Parameters (JSON object)"
 // @Success 200 {object} models.UploadNotebookSwaggerResponse "已上传的Notebook | Uploaded Notebook"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.notebook.create"]
 // @Router /notebooks/upload [post]
 func (h *NotebookHandler) UploadNotebook(c *gin.Context) {
-	// 获取用户信息
-	tenantID, _ := c.Get("tenant_id")
-	userID, _ := c.Get("user_id")
+	tenantID := tenantIDValue(c)
+	userID := userIDValue(c)
 
 	// 读取表单数据
 	name := c.PostForm("name")
@@ -304,7 +313,7 @@ func (h *NotebookHandler) UploadNotebook(c *gin.Context) {
 		Timeout:     600, // 默认 10 分钟
 	}
 
-	devTask, err := h.devTaskService.CreateDevTask(createReq, tenantID.(uint), userID.(uint))
+	devTask, err := h.devTaskService.CreateDevTask(createReq, tenantID, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建开发任务失败: %v", err)})
 		return
@@ -322,10 +331,11 @@ func (h *NotebookHandler) UploadNotebook(c *gin.Context) {
 // @Produce application/json
 // @Param id path int true "DevTask ID | DevTask ID"
 // @Success 200 {file} binary "Notebook文件 | Notebook file"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.notebook.read"]
 // @Router /notebooks/:id/download [get]
 func (h *NotebookHandler) DownloadNotebook(c *gin.Context) {
-	// 获取用户信息
-	tenantID, _ := c.Get("tenant_id")
+	tenantID := tenantIDValue(c)
 
 	// 获取开发任务 ID
 	var uri struct {
@@ -337,7 +347,7 @@ func (h *NotebookHandler) DownloadNotebook(c *gin.Context) {
 	}
 
 	// 查询开发任务
-	devTask, err := h.devTaskService.GetDevTask(uri.ID, tenantID.(uint))
+	devTask, err := h.devTaskService.GetDevTask(uri.ID, tenantID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Notebook 不存在"})
 		return
@@ -380,10 +390,11 @@ func (h *NotebookHandler) DownloadNotebook(c *gin.Context) {
 // @Param page query int false "页码 | Page number" default(1)
 // @Param page_size query int false "每页数量 | Page size" default(20)
 // @Success 200 {object} models.ListDevTasksSwaggerResponse "Notebook列表 | Notebook list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.notebook.read"]
 // @Router /notebooks [get]
 func (h *NotebookHandler) ListNotebooks(c *gin.Context) {
-	// 获取用户信息
-	tenantID, _ := c.Get("tenant_id")
+	tenantID := tenantIDValue(c)
 
 	// 解析查询参数
 	var req models.ListDevTasksRequest
@@ -401,7 +412,7 @@ func (h *NotebookHandler) ListNotebooks(c *gin.Context) {
 	}
 
 	// Notebook 是 script 类型开发任务的当前承载形态，通过 content.notebook_path 标识。
-	items, total, err := h.devTaskService.ListNotebookScripts(&req, tenantID.(uint))
+	items, total, err := h.devTaskService.ListNotebookScripts(&req, tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("查询失败: %v", err)})
 		return
@@ -420,10 +431,11 @@ func (h *NotebookHandler) ListNotebooks(c *gin.Context) {
 // @Tags Notebook
 // @Param id path int true "DevTask ID | DevTask ID"
 // @Success 200 {object} map[string]string "删除成功 | Deleted successfully"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.notebook.delete"]
 // @Router /notebooks/:id [delete]
 func (h *NotebookHandler) DeleteNotebook(c *gin.Context) {
-	// 获取用户信息
-	tenantID, _ := c.Get("tenant_id")
+	tenantID := tenantIDValue(c)
 
 	// 获取开发任务 ID
 	var uri struct {
@@ -435,7 +447,7 @@ func (h *NotebookHandler) DeleteNotebook(c *gin.Context) {
 	}
 
 	// 查询开发任务
-	devTask, err := h.devTaskService.GetDevTask(uri.ID, tenantID.(uint))
+	devTask, err := h.devTaskService.GetDevTask(uri.ID, tenantID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Notebook 不存在"})
 		return
@@ -447,7 +459,7 @@ func (h *NotebookHandler) DeleteNotebook(c *gin.Context) {
 	}
 
 	// 删除开发任务（软删除）
-	if err := h.devTaskService.DeleteDevTask(uri.ID, tenantID.(uint)); err != nil {
+	if err := h.devTaskService.DeleteDevTask(uri.ID, tenantID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("删除失败: %v", err)})
 		return
 	}

@@ -41,9 +41,10 @@ type serviceEndpointResp struct {
 // @Success 200 {object} serviceEndpointResp
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
-// @Router /endpoints [get]
-// @Security BearerAuth
+// @x-addp-auth-mode "internal"
+// @Router /internal/endpoints [get]
 func (h *ServiceEndpointHandler) GetEndpoints(c *gin.Context) {
+	tenantID := internalTenantIDValue(c)
 	ref := c.Query("ref")
 	if ref == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgMissingRef)})
@@ -67,7 +68,7 @@ func (h *ServiceEndpointHandler) GetEndpoints(c *gin.Context) {
 	switch serviceType {
 	case "query":
 		dto, err := h.querySvc.GetService(id)
-		if err != nil {
+		if err != nil || dto == nil || dto.TenantID != tenantID {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 			return
 		}
@@ -79,7 +80,7 @@ func (h *ServiceEndpointHandler) GetEndpoints(c *gin.Context) {
 
 	case "registered":
 		dto, err := h.registeredSvc.GetService(id)
-		if err != nil {
+		if err != nil || dto == nil || dto.TenantID != tenantID {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 			return
 		}
@@ -91,7 +92,7 @@ func (h *ServiceEndpointHandler) GetEndpoints(c *gin.Context) {
 
 	case "tile":
 		dto, err := h.tileSvc.GetService(id)
-		if err != nil {
+		if err != nil || dto == nil || dto.TenantID != tenantID {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 			return
 		}

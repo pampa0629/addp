@@ -48,82 +48,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
-            }
-        },
-        "/cache/engines/{engine_id}": {
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "清除指定存储引擎缓存，engine_id 为 all 时清除全部缓存 | Clear storage engine cache",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Meta Cache"
-                ],
-                "summary": "清除引擎缓存 | Clear engine cache",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "存储引擎ID或all | Engine ID or all",
-                        "name": "engine_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "清除结果 | Clear result",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "请求参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/cache/refresh": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "清除并重新预加载存储引擎缓存 | Clear and preload storage engine cache",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Meta Cache"
-                ],
-                "summary": "刷新存储引擎缓存 | Refresh storage engine cache",
-                "responses": {
-                    "200": {
-                        "description": "刷新结果 | Refresh result",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "服务器内部错误 | Internal server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/engines": {
@@ -158,7 +87,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/engines/{engine_id}/items": {
@@ -215,7 +148,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/engines/{engine_id}/tree": {
@@ -263,7 +200,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/executions/{execution_id}": {
@@ -326,7 +267,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.read"
+                ]
             }
         },
         "/inspect": {
@@ -379,7 +324,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.inspect.execute"
+                ]
             }
         },
         "/items/by-catalog-path": {
@@ -434,7 +383,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/items/{item_id}": {
@@ -482,7 +435,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/items/{item_id}/ancestors": {
@@ -530,7 +487,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/items/{item_id}/fields": {
@@ -579,7 +540,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/items/{item_id}/refresh": {
@@ -638,7 +603,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.execute"
+                ]
             }
         },
         "/items/{item_id}/spatial": {
@@ -686,7 +655,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/nodes/by-catalog-path": {
@@ -741,7 +714,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/nodes/{node_id}": {
@@ -789,7 +766,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/nodes/{node_id}/ancestors": {
@@ -840,7 +821,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/nodes/{node_id}/children": {
@@ -891,7 +876,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/nodes/{node_id}/items": {
@@ -942,7 +931,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/resource-tree/{engine_id}": {
@@ -1010,7 +1003,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/resource-tree/{engine_id}/ancestors": {
@@ -1079,7 +1076,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/resource-tree/{engine_id}/node": {
@@ -1148,7 +1149,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/resource-tree/{engine_id}/refresh": {
@@ -1232,7 +1237,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.execute"
+                ]
             }
         },
         "/resource-tree/{engine_id}/search": {
@@ -1313,7 +1322,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/scan/run/manual": {
@@ -1381,7 +1394,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.execute"
+                ]
             }
         },
         "/scan/run/unscanned": {
@@ -1428,7 +1445,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.execute"
+                ]
             }
         },
         "/scan/runs": {
@@ -1509,7 +1530,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.read"
+                ]
             }
         },
         "/scan/tasks": {
@@ -1567,7 +1592,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.read"
+                ]
             },
             "post": {
                 "security": [
@@ -1626,7 +1655,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.create"
+                ]
             }
         },
         "/scan/tasks/engines/{engine_id}": {
@@ -1693,7 +1726,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -1747,7 +1784,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.delete"
+                ]
             }
         },
         "/scan/tasks/{task_id}": {
@@ -1815,7 +1856,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -1869,7 +1914,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.delete"
+                ]
             }
         },
         "/scan/tasks/{task_id}/trigger": {
@@ -1925,7 +1974,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.execute"
+                ]
             }
         },
         "/stats": {
@@ -1958,7 +2011,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/tasks": {
@@ -2026,7 +2083,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.read"
+                ]
             }
         },
         "/tasks/{task_type}/{id}": {
@@ -2088,7 +2149,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.read"
+                ]
             }
         },
         "/tasks/{task_type}/{id}/execute": {
@@ -2161,7 +2226,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.execute"
+                ]
             }
         }
     },

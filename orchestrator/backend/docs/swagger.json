@@ -52,7 +52,11 @@
                             "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "orchestrator.workflow.read"
+                ]
             }
         },
         "/executions/{execution_id}": {
@@ -99,7 +103,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "orchestrator.workflow.read"
+                ]
             }
         },
         "/orch-executions/{id}": {
@@ -136,7 +144,11 @@
                             "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "orchestrator.workflow.read"
+                ]
             }
         },
         "/orchestrations": {
@@ -167,7 +179,11 @@
                             "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "orchestrator.workflow.read"
+                ]
             },
             "post": {
                 "security": [
@@ -217,7 +233,11 @@
                             "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "orchestrator.workflow.create"
+                ]
             }
         },
         "/orchestrations/{id}": {
@@ -254,7 +274,11 @@
                             "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "orchestrator.workflow.read"
+                ]
             },
             "put": {
                 "security": [
@@ -317,7 +341,11 @@
                             "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "orchestrator.workflow.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -352,7 +380,11 @@
                             "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "orchestrator.workflow.delete"
+                ]
             }
         },
         "/orchestrations/{id}/execute": {
@@ -389,7 +421,11 @@
                             "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "orchestrator.workflow.execute"
+                ]
             }
         },
         "/orchestrations/{id}/executions": {
@@ -426,7 +462,11 @@
                             "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "orchestrator.workflow.read"
+                ]
             }
         },
         "/task-providers": {
@@ -459,7 +499,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "orchestrator.workflow.read"
+                ]
             }
         },
         "/tasks": {
@@ -547,7 +591,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "orchestrator.workflow.read"
+                ]
             }
         },
         "/tasks/{task_type}/{id}": {
@@ -608,7 +656,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "orchestrator.workflow.read"
+                ]
             }
         },
         "/tasks/{task_type}/{id}/execute": {
@@ -687,7 +739,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "orchestrator.workflow.execute"
+                ]
             }
         }
     },

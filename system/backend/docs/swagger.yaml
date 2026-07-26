@@ -230,6 +230,8 @@ definitions:
         type: string
       created_at:
         type: string
+      estimated_row_count:
+        type: integer
       fields:
         items:
           $ref: '#/definitions/datatype.FieldInfo'
@@ -772,7 +774,7 @@ definitions:
         description: 显示名称（原 display_name）
         type: string
       tenant_id:
-        description: 租户ID，SuperAdmin创建的引擎为null
+        description: 租户ID，平台共享引擎为 null
         type: integer
       updated_at:
         type: string
@@ -864,7 +866,7 @@ definitions:
         description: 显示名称（原 display_name）
         type: string
       tenant_id:
-        description: 租户ID，SuperAdmin创建的引擎为null
+        description: 租户ID，平台共享引擎为 null
         type: integer
       updated_at:
         type: string

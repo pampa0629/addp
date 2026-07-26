@@ -23,6 +23,8 @@ import (
 // @Success 200 {object} models.ScanResponse "刷新结果 | Refresh result"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.scan_task.execute"]
 // @Router /items/{item_id}/refresh [post]
 // @Security BearerAuth
 func (h *Handler) RefreshItem(c *gin.Context) {
@@ -89,6 +91,8 @@ func (h *Handler) RefreshItem(c *gin.Context) {
 // @Success 200 {array} models.MetaItemLite "数据项列表 | Items"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /engines/{engine_id}/items [get]
 // @Security BearerAuth
 func (h *Handler) ListEngineItems(c *gin.Context) {
@@ -128,6 +132,8 @@ func (h *Handler) ListEngineItems(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "字段详情 | Field details"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "数据项不存在 | Item not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /items/{item_id}/fields [get]
 // @Security BearerAuth
 func (h *Handler) GetItemFieldsByID(c *gin.Context) {

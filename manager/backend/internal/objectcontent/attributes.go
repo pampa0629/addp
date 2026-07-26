@@ -44,8 +44,13 @@ func ContainerChildInfoFromMap(child map[string]interface{}) datatype.ContainerC
 
 	rowCountValue := commonJSON.InterfaceInt64(child["row_count"])
 	var rowCount *int64
-	if rowCountValue > 0 {
+	if hasCountValue(child, "row_count") && rowCountValue >= 0 {
 		rowCount = &rowCountValue
+	}
+	estimatedRowCountValue := commonJSON.InterfaceInt64(child["estimated_row_count"])
+	var estimatedRowCount *int64
+	if hasCountValue(child, "estimated_row_count") && estimatedRowCountValue >= 0 {
+		estimatedRowCount = &estimatedRowCountValue
 	}
 	columnCountValue := int(commonJSON.InterfaceInt64(child["column_count"]))
 	var columnCount *int
@@ -59,16 +64,28 @@ func ContainerChildInfoFromMap(child map[string]interface{}) datatype.ContainerC
 	}
 
 	return datatype.ContainerChildInfo{
-		Name:        name,
-		ChildKind:   childKind,
-		DataType:    dataType,
-		Format:      canonicalContainerChildFormat(commonJSON.InterfaceString(child["format"])),
-		Refs:        containerChildRefsFromMap(child),
-		RowCount:    rowCount,
-		ColumnCount: columnCount,
-		HasHeader:   hasHeader,
-		Native:      native,
+		Name:              name,
+		ChildKind:         childKind,
+		DataType:          dataType,
+		Format:            canonicalContainerChildFormat(commonJSON.InterfaceString(child["format"])),
+		Refs:              containerChildRefsFromMap(child),
+		RowCount:          rowCount,
+		EstimatedRowCount: estimatedRowCount,
+		ColumnCount:       columnCount,
+		HasHeader:         hasHeader,
+		Native:            native,
 	}
+}
+
+func hasCountValue(values map[string]interface{}, key string) bool {
+	value, ok := values[key]
+	if !ok || value == nil {
+		return false
+	}
+	if text, ok := value.(string); ok && strings.TrimSpace(text) == "" {
+		return false
+	}
+	return true
 }
 
 func canonicalContainerChildFormat(formatName string) string {

@@ -11,7 +11,8 @@ import (
 func TestTenantFilterIDFromContextUsesAuthenticatedTenant(t *testing.T) {
 	t.Parallel()
 
-	c := newTenantFilterTestContext("/search?tenant_id=2", 1)
+	c := newTenantFilterTestContext("/search?tenant_id=2")
+	setTenantAuthContextForTest(c, 1, 8)
 
 	tenantID := tenantFilterIDFromContext(c)
 	if tenantID == nil || *tenantID != 1 {
@@ -19,31 +20,19 @@ func TestTenantFilterIDFromContextUsesAuthenticatedTenant(t *testing.T) {
 	}
 }
 
-func TestTenantFilterIDFromContextAllowsSuperAdminQueryTenant(t *testing.T) {
+func TestTenantFilterIDFromContextDoesNotAcceptQueryTenantWithoutAuthContext(t *testing.T) {
 	t.Parallel()
 
-	c := newTenantFilterTestContext("/search?tenant_id=2", 0)
-
-	tenantID := tenantFilterIDFromContext(c)
-	if tenantID == nil || *tenantID != 2 {
-		t.Fatalf("tenantID = %v, want 2", tenantID)
-	}
-}
-
-func TestTenantFilterIDFromContextReturnsNilForSuperAdminWithoutQueryTenant(t *testing.T) {
-	t.Parallel()
-
-	c := newTenantFilterTestContext("/search", 0)
+	c := newTenantFilterTestContext("/search?tenant_id=2")
 
 	if tenantID := tenantFilterIDFromContext(c); tenantID != nil {
 		t.Fatalf("tenantID = %v, want nil", tenantID)
 	}
 }
 
-func newTenantFilterTestContext(target string, authTenantID uint) *gin.Context {
+func newTenantFilterTestContext(target string) *gin.Context {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest(http.MethodGet, target, nil)
-	c.Set("tenant_id", authTenantID)
 	return c
 }

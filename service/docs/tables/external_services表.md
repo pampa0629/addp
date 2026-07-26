@@ -357,7 +357,7 @@ func HealthCheckScheduler() {
 
 - 所有查询自动过滤 `tenant_id`
 - 用户只能管理自己租户的服务
-- SuperAdmin 可查看所有租户的服务
+- Platform Context 不得绕过 Tenant 过滤
 
 ### 7.2 创建者追踪
 

@@ -1,7 +1,111 @@
 schema_version: addp.permission_manifest/v1
 owner_module: model
-manifest_version: 1
+manifest_version: 2
 permissions:
+  - key: model.dw_layer.create
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.dw_layer.create.name
+    description_i18n_key: permissions.model.dw_layer.create.description
+  - key: model.dw_layer.delete
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.dw_layer.delete.name
+    description_i18n_key: permissions.model.dw_layer.delete.description
+  - key: model.dw_layer.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.dw_layer.read.name
+    description_i18n_key: permissions.model.dw_layer.read.description
+  - key: model.dw_layer.update
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.dw_layer.update.name
+    description_i18n_key: permissions.model.dw_layer.update.description
+  - key: model.entity.approve
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.entity.approve.name
+    description_i18n_key: permissions.model.entity.approve.description
+  - key: model.entity.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.entity.create.name
+    description_i18n_key: permissions.model.entity.create.description
+  - key: model.entity.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.entity.delete.name
+    description_i18n_key: permissions.model.entity.delete.description
+  - key: model.entity.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.entity.read.name
+    description_i18n_key: permissions.model.entity.read.description
+  - key: model.entity.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.entity.update.name
+    description_i18n_key: permissions.model.entity.update.description
+  - key: model.entity_relation.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.entity_relation.create.name
+    description_i18n_key: permissions.model.entity_relation.create.description
+  - key: model.entity_relation.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.entity_relation.delete.name
+    description_i18n_key: permissions.model.entity_relation.delete.description
+  - key: model.entity_relation.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.entity_relation.read.name
+    description_i18n_key: permissions.model.entity_relation.read.description
+  - key: model.entity_relation.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.entity_relation.update.name
+    description_i18n_key: permissions.model.entity_relation.update.description
   - key: model.logical_model.create
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium

@@ -18,6 +18,65 @@ type DelegatedRouteGuardConfig struct {
 	Now                 func() time.Time
 }
 
+type DelegatedRoutePolicyEntry struct {
+	RequiredScopes      []string
+	RequiredPermissions []string
+}
+
+// NewDelegatedPolicyGuard denies delegated credentials by default and applies
+// an explicit Tool contract to each allowed HTTP method and full route path.
+func NewDelegatedPolicyGuard(
+	audience string,
+	routes map[string]DelegatedRoutePolicyEntry,
+) (gin.HandlerFunc, error) {
+	if len(routes) == 0 {
+		return nil, fmt.Errorf("%w: delegated route policy is required", commonapi.ErrBadRequest)
+	}
+	guards := make(map[string]gin.HandlerFunc, len(routes))
+	for route, entry := range routes {
+		parts := strings.Fields(route)
+		if len(parts) != 2 || !strings.HasPrefix(parts[1], "/") {
+			return nil, fmt.Errorf("%w: invalid delegated route", commonapi.ErrBadRequest)
+		}
+		guard, err := NewDelegatedRouteGuard(DelegatedRouteGuardConfig{
+			Audience: audience, RequiredScopes: entry.RequiredScopes,
+			RequiredPermissions: entry.RequiredPermissions,
+		})
+		if err != nil {
+			return nil, err
+		}
+		guards[parts[0]+" "+parts[1]] = guard
+	}
+	return func(c *gin.Context) {
+		authContext, exists := AuthContextFromGin(c)
+		if !exists {
+			abortAuthenticationRequired(c)
+			return
+		}
+		if authContext.Token.Type != "delegated_access_token" {
+			c.Next()
+			return
+		}
+		guard, allowed := guards[c.Request.Method+" "+c.FullPath()]
+		if !allowed {
+			abortPermissionDenied(c)
+			return
+		}
+		guard(c)
+	}, nil
+}
+
+func MustNewDelegatedPolicyGuard(
+	audience string,
+	routes map[string]DelegatedRoutePolicyEntry,
+) gin.HandlerFunc {
+	guard, err := NewDelegatedPolicyGuard(audience, routes)
+	if err != nil {
+		panic(err)
+	}
+	return guard
+}
+
 // NewDelegatedRouteGuard constrains delegated tokens on one explicitly
 // mounted Tool route. Non-delegated credentials remain on the route's normal
 // permission and owner resource-policy path.

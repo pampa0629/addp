@@ -339,20 +339,20 @@ class ConversationResponse(ConversationBase):
 
 ### 6.1 访问权限
 
-| 操作 | TenantAdmin | User | 说明 |
-|------|------------|------|------|
-| 创建对话 | ✅ | ✅ | 自动关联到当前用户 |
-| 查看对话列表 | ✅(本租户所有) | ✅(仅自己) | 按 tenant_id 和 user_id 过滤 |
-| 查看对话详情 | ✅(本租户所有) | ✅(仅自己) | 验证所有权 |
-| 更新对话状态 | ✅(本租户所有) | ✅(仅自己) | 仅能修改 status 字段 |
-| 删除对话 | ✅(本租户所有) | ✅(仅自己) | 级联删除消息 |
+| 操作 | 资源规则 | 说明 |
+|------|----------|------|
+| 创建对话 | 当前 Principal | 自动关联当前 Principal 和 Tenant Context |
+| 查看对话列表 | 仅所有者 | 同时按 `tenant_id` 和 `user_id` 过滤 |
+| 查看对话详情 | 仅所有者 | 必须验证所有权 |
+| 更新对话状态 | 仅所有者 | 仅能修改允许的状态字段 |
+| 删除对话 | 仅所有者 | 级联删除消息 |
 
 ### 6.2 租户隔离
 
 **自动隔离**:
 - 所有查询自动添加 `WHERE tenant_id = <当前租户>`
-- User 查询额外添加 `WHERE user_id = <当前用户>`
-- SuperAdmin 查询不受租户限制(可跨租户管理)
+- 查询额外添加 `WHERE user_id = <当前 Principal>`
+- Platform Context 不得绕过 Tenant 和所有者条件
 
 ---
 
@@ -442,7 +442,7 @@ curl -X POST http://localhost:8087/api/v1/copilot/workflow/generate \
 
 - 对话严格按租户隔离
 - 用户只能访问自己创建的对话
-- TenantAdmin 可查看本租户所有对话
+- Tenant 管理 Role 不自动获得其他用户对话访问权
 
 ---
 

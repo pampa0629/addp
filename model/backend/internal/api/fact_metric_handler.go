@@ -25,6 +25,8 @@ func NewFactMetricHandler(svc *service.FactMetricService) *FactMetricHandler {
 // @Produce json
 // @Param id path int true "事实表ID | Fact table ID"
 // @Success 200 {object} map[string]interface{} "指标关联列表 | Metric mapping list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.logical_model.read"]
 // @Router /logical-tables/{id}/metrics [get]
 // @Security BearerAuth
 func (h *FactMetricHandler) ListMetrics(c *gin.Context) {
@@ -51,6 +53,8 @@ func (h *FactMetricHandler) ListMetrics(c *gin.Context) {
 // @Param id path int true "事实表ID | Fact table ID"
 // @Param body body models.CreateFactMetricMappingRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{} "已创建的关联 | Created mapping"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.logical_model.update"]
 // @Router /logical-tables/{id}/metrics [post]
 // @Security BearerAuth
 func (h *FactMetricHandler) AddMetric(c *gin.Context) {
@@ -84,6 +88,8 @@ func (h *FactMetricHandler) AddMetric(c *gin.Context) {
 // @Param id path int true "事实表ID | Fact table ID"
 // @Param mid path int true "关联ID | Mapping ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Removed successfully"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.logical_model.update"]
 // @Router /logical-tables/{id}/metrics/{mid} [delete]
 // @Security BearerAuth
 func (h *FactMetricHandler) RemoveMetric(c *gin.Context) {

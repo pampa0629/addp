@@ -69,7 +69,7 @@ func TestTaskProviderListTasksUsesStandardItemsShape(t *testing.T) {
 	)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		c.Set("tenant_id", uint(1))
+		setTenantAuthContextForTest(c, 1, 1)
 		c.Next()
 	})
 	router.GET("/tasks", handler.ListTasks)
@@ -134,7 +134,7 @@ func TestTaskProviderTaskDetailUsesDirectObjectShape(t *testing.T) {
 	)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		c.Set("tenant_id", uint(1))
+		setTenantAuthContextForTest(c, 1, 1)
 		c.Next()
 	})
 	router.GET("/tasks/:task_type/:id", handler.TaskDetail)
@@ -181,7 +181,7 @@ func TestTaskProviderExecutionStatusUsesDirectObjectShape(t *testing.T) {
 	handler := NewTaskProviderHandler(nil, nil, nil, nil, commonExecution.NewTaskExecutionRepository(db))
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		c.Set("tenant_id", uint(1))
+		setTenantAuthContextForTest(c, 1, 1)
 		c.Next()
 	})
 	router.GET("/executions/:execution_id", handler.ExecutionStatus)
@@ -350,7 +350,7 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		c.Set("tenant_id", uint(1))
+		setTenantAuthContextForTest(c, 1, 1)
 		c.Next()
 	})
 	router.GET("/vector_tile_cache_tasks", handler.ListTileCacheTasks)
@@ -383,8 +383,7 @@ func TestCreateEmbeddingTaskRejectsLegacyTopLevelFields(t *testing.T) {
 
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		c.Set("tenant_id", uint(1))
-		c.Set("user_id", uint(9))
+		setTenantAuthContextForTest(c, 1, 9)
 		c.Next()
 	})
 	router.POST("/embedding_tasks", handler.CreateEmbeddingTask)
@@ -423,8 +422,7 @@ func TestCreateEmbeddingTaskUsesDirectObjectShape(t *testing.T) {
 
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		c.Set("tenant_id", uint(1))
-		c.Set("user_id", uint(9))
+		setTenantAuthContextForTest(c, 1, 9)
 		c.Next()
 	})
 	router.POST("/embedding_tasks", handler.CreateEmbeddingTask)
@@ -469,7 +467,7 @@ func TestTaskExecuteRejectsUnknownFields(t *testing.T) {
 
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		c.Set("tenant_id", uint(1))
+		setTenantAuthContextForTest(c, 1, 1)
 		c.Next()
 	})
 	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
@@ -536,7 +534,7 @@ func TestTaskExecuteModel3DTilesRequiresConfirmationForExistingResult(t *testing
 	handler.SetModel3DTilesTaskService(service.NewModel3DTilesTaskService(repo))
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		c.Set("tenant_id", uint(1))
+		setTenantAuthContextForTest(c, 1, 1)
 		c.Next()
 	})
 	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
@@ -666,7 +664,7 @@ func TestTaskExecuteTileCacheReturnsPendingAndRejectsActiveExecution(t *testing.
 	handler := NewTaskProviderHandler(nil, taskSvc, nil, nil, taskExecRepo)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		c.Set("tenant_id", uint(1))
+		setTenantAuthContextForTest(c, 1, 1)
 		c.Next()
 	})
 	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
@@ -733,7 +731,7 @@ func TestTaskExecuteRasterCOGReturnsPendingAndRejectsActiveExecution(t *testing.
 	handler := NewTaskProviderHandler(nil, nil, nil, taskSvc, taskExecRepo)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		c.Set("tenant_id", uint(1))
+		setTenantAuthContextForTest(c, 1, 1)
 		c.Next()
 	})
 	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
@@ -797,7 +795,7 @@ func TestTaskExecuteRasterMosaicReturnsPendingAndRejectsActiveExecution(t *testi
 	handler := NewTaskProviderHandler(nil, nil, nil, nil, taskExecRepo, taskSvc)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		c.Set("tenant_id", uint(1))
+		setTenantAuthContextForTest(c, 1, 1)
 		c.Next()
 	})
 	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
@@ -862,7 +860,7 @@ func TestTaskExecuteModel3DGLBReturnsPendingAndRejectsActiveExecution(t *testing
 	handler.SetModel3DGLBTaskService(taskSvc)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		c.Set("tenant_id", uint(1))
+		setTenantAuthContextForTest(c, 1, 1)
 		c.Next()
 	})
 	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
@@ -927,7 +925,7 @@ func TestTaskExecuteGaussianSplatKSplatReturnsPendingAndRejectsActiveExecution(t
 	handler.SetGaussianSplatKSplatTaskService(taskSvc)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		c.Set("tenant_id", uint(1))
+		setTenantAuthContextForTest(c, 1, 1)
 		c.Next()
 	})
 	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
@@ -988,7 +986,7 @@ func TestTaskExecutePointCloudCOPCReturnsPendingAndRejectsActiveExecution(t *tes
 	handler := NewTaskProviderHandler(nil, nil, nil, nil, taskExecRepo)
 	handler.SetPointCloudCOPCTaskService(taskSvc)
 	router := gin.New()
-	router.Use(func(c *gin.Context) { c.Set("tenant_id", uint(1)); c.Next() })
+	router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 1, 1); c.Next() })
 	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
 	path := "/tasks/" + commonExecution.TaskTypePointCloudCOPCGeneration + "/" + strconv.FormatUint(uint64(task.ID), 10) + "/execute"
 
@@ -1042,7 +1040,7 @@ func TestTaskExecuteCADPreviewReturnsPendingAndRejectsActiveExecution(t *testing
 	handler := NewTaskProviderHandler(nil, nil, nil, nil, taskExecRepo)
 	handler.SetCADPreviewTaskService(taskSvc)
 	router := gin.New()
-	router.Use(func(c *gin.Context) { c.Set("tenant_id", uint(1)); c.Next() })
+	router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 1, 1); c.Next() })
 	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
 	path := "/tasks/" + commonExecution.TaskTypeCADPreviewGeneration + "/" + strconv.FormatUint(uint64(task.ID), 10) + "/execute"
 	first := httptest.NewRecorder()

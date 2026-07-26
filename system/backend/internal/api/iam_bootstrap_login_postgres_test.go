@@ -4,13 +4,16 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	commonauth "github.com/addp/common/authorization"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/addp/system/internal/iam"
+	iamoauth "github.com/addp/system/internal/iam/oauth"
 	"github.com/addp/system/internal/migration"
+	"github.com/addp/system/internal/testsupport"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/pquerna/otp/totp"
@@ -25,6 +28,7 @@ func TestBootstrapBrowserLoginAgainstPostgres(t *testing.T) {
 	if dsn == "" {
 		t.Skip("set ADDP_IAM_RUNTIME_TEST_DSN to a disposable PostgreSQL 15+ database")
 	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		t.Fatal(err)
@@ -91,6 +95,16 @@ func TestBootstrapBrowserLoginAgainstPostgres(t *testing.T) {
 	if err := RegisterIAMRoutes(apiGroup, runtime, redisClient, cfg); err != nil {
 		t.Fatalf("register IAM routes: %v", err)
 	}
+	authorizationRequest, err := runtime.ConsentBridge.CreateAuthorizationRequest(
+		ctx,
+		iamoauth.AuthorizationRequestInput{
+			ClientID: "addp-cli", RedirectURI: "http://127.0.0.1:49152/callback",
+			Scope: "addp.api", CodeChallenge: strings.Repeat("A", 43), CodeChallengeMethod: "S256",
+		},
+	)
+	if err != nil {
+		t.Fatalf("create bootstrap OAuth authorization request: %v", err)
+	}
 	login := performIAMJSONRequest(t, router, http.MethodPost, "/api/v1/system/login", map[string]any{
 		"username": "system-admin", "password": "Bootstrap-password-system-admin!",
 	}, nil)
@@ -132,6 +146,24 @@ func TestBootstrapBrowserLoginAgainstPostgres(t *testing.T) {
 	if contextResponse.Code != http.StatusOK || authContext.Context.Type != "platform" ||
 		authContext.Authentication.AssuranceLevel != "aal2" || len(authContext.Authentication.Methods) != 2 {
 		t.Fatalf("bootstrap auth context status=%d context=%#v", contextResponse.Code, authContext)
+	}
+	decisionResponse := performIAMJSONRequest(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/system/oauth/authorizations",
+		map[string]any{
+			"request_id": authorizationRequest.RequestID,
+			"decision":   string(iamoauth.AuthorizationDecisionApprove),
+		},
+		map[string]string{"Authorization": "Bearer " + verificationResponse.Session.AccessToken},
+	)
+	var decision IAMOAuthAuthorizationDecisionResponse
+	decodeIAMResponse(t, decisionResponse, &decision)
+	if decisionResponse.Code != http.StatusOK ||
+		!strings.HasPrefix(decision.RedirectURL, "http://127.0.0.1:49152/callback?") {
+		t.Fatalf("bootstrap OAuth decision status=%d response=%#v body=%s",
+			decisionResponse.Code, decision, decisionResponse.Body.String())
 	}
 
 	replayLogin := performIAMJSONRequest(t, router, http.MethodPost, "/api/v1/system/login", map[string]any{

@@ -33,6 +33,8 @@ var (
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /resource-tree/{engine_id} [get]
 // @Security BearerAuth
 func (h *Handler) GetResourceTree(c *gin.Context) {
@@ -65,6 +67,8 @@ func (h *Handler) GetResourceTree(c *gin.Context) {
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /resource-tree/{engine_id}/node [get]
 // @Security BearerAuth
 func (h *Handler) GetResourceTreeNode(c *gin.Context) {
@@ -102,6 +106,8 @@ func (h *Handler) GetResourceTreeNode(c *gin.Context) {
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /resource-tree/{engine_id}/ancestors [get]
 // @Security BearerAuth
 func (h *Handler) GetResourceTreeAncestors(c *gin.Context) {
@@ -141,6 +147,8 @@ func (h *Handler) GetResourceTreeAncestors(c *gin.Context) {
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /resource-tree/{engine_id}/search [get]
 // @Security BearerAuth
 func (h *Handler) SearchResourceTree(c *gin.Context) {
@@ -180,6 +188,8 @@ func (h *Handler) SearchResourceTree(c *gin.Context) {
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.scan_task.execute"]
 // @Router /resource-tree/{engine_id}/refresh [post]
 // @Security BearerAuth
 func (h *Handler) RefreshResourceTreeNode(c *gin.Context) {

@@ -207,7 +207,7 @@ func CountCatalogItemRows(ctx context.Context, resource *Engine, path CatalogPat
 	if _, ok := enginePlugin.(CatalogFactsProvider); ok {
 		facts, err := DescribeCatalogFacts(ctx, resource, path, CatalogFactsOptions{IncludeStatistics: true})
 		if err == nil && facts != nil {
-			if tableInfo := CatalogFactsTableInfo(facts); tableInfo != nil && tableInfo.RowCount != nil && *tableInfo.RowCount > 0 {
+			if tableInfo := CatalogFactsTableInfo(facts); tableInfo != nil && tableInfo.RowCount != nil && *tableInfo.RowCount >= 0 {
 				return *tableInfo.RowCount, nil
 			}
 		}

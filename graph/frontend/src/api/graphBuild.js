@@ -54,7 +54,10 @@ export const buildAPI = {
   modifyItem(graphId, itemId, finalContent) {
     return client.put(`/graph/graphs/${graphId}/review/${itemId}`, { final_content: finalContent })
   },
-  batchReview(graphId, ids, action) {
-    return client.post(`/graph/graphs/${graphId}/review/batch`, { ids, action })
+  batchApprove(graphId, ids) {
+    return client.post(`/graph/graphs/${graphId}/review/batch/approve`, { ids })
+  },
+  batchReject(graphId, ids) {
+    return client.post(`/graph/graphs/${graphId}/review/batch/reject`, { ids })
   }
 }

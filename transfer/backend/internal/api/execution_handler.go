@@ -32,6 +32,8 @@ func NewExecutionHandler(executionService *service.ExecutionService) *ExecutionH
 // @Param execution_id path string true "执行ID | Execution ID"
 // @Success 200 {object} map[string]interface{}
 // @Failure 404 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.read"]
 // @Router /executions/{execution_id} [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecution(c *gin.Context) {
@@ -57,6 +59,8 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 // @Param page_size query int false "每页数量 | Page size" default(20)
 // @Success 200 {object} map[string]interface{}
 // @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.read"]
 // @Router /executions [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
@@ -103,6 +107,8 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 // @Param page_size query int false "每页数量 | Page size" default(20)
 // @Success 200 {object} map[string]interface{}
 // @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.read"]
 // @Router /task-definitions/{id}/executions [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetTaskExecutions(c *gin.Context) {
@@ -135,6 +141,8 @@ func (h *ExecutionHandler) GetTaskExecutions(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Failure 409 {object} map[string]string "CDC 被结构变化阻塞 | CDC blocked by schema change"
 // @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.execute"]
 // @Router /executions/{execution_id}/retry [post]
 // @Security BearerAuth
 func (h *ExecutionHandler) RetryExecution(c *gin.Context) {
@@ -165,6 +173,8 @@ func (h *ExecutionHandler) RetryExecution(c *gin.Context) {
 // @Param execution_id path string true "执行ID | Execution ID"
 // @Success 200 {object} map[string]interface{}
 // @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.read"]
 // @Router /executions/{execution_id}/progress [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecutionProgress(c *gin.Context) {
@@ -191,6 +201,8 @@ func (h *ExecutionHandler) GetExecutionProgress(c *gin.Context) {
 // @Param limit query int false "最多返回行数 | Line limit"
 // @Success 200 {array} string
 // @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.read"]
 // @Router /executions/{execution_id}/logs [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecutionLogs(c *gin.Context) {
@@ -248,6 +260,8 @@ func (h *ExecutionHandler) getExecutionByExecutionID(c *gin.Context, tenantID ui
 // @Param end_time query string false "结束时间 | End time"
 // @Success 200 {object} map[string]interface{}
 // @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.read"]
 // @Router /executions/statistics [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecutionStatistics(c *gin.Context) {

@@ -118,6 +118,8 @@ type ExecuteQuickViewActionResponse struct {
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.data_item.read"]
 // @Router /quick-view/capability [get]
 // @Security BearerAuth
 func (h *QuickViewHandler) GetQuickViewCapabilityByLocator(c *gin.Context) {
@@ -147,6 +149,8 @@ func (h *QuickViewHandler) GetQuickViewCapabilityByLocator(c *gin.Context) {
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
 // @Failure 409 {object} map[string]interface{} "任务已有活动执行或缺少已有结果动作 | Active execution or existing result action required"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.create"]
 // @Router /quick-view/actions [post]
 // @Security BearerAuth
 func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
@@ -187,7 +191,7 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 		return
 	}
 
-	userID := c.GetUint("user_id")
+	userID := userIDValue(c)
 	var taskType string
 	var taskID uint
 	var executionID string
@@ -255,6 +259,7 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "更新成功 | Updated successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
+// @x-addp-auth-mode "self"
 // @Router /preview-state/preferred-mode [patch]
 // @Security BearerAuth
 func (h *QuickViewHandler) UpdatePreferredModeByLocator(c *gin.Context) {
@@ -301,6 +306,7 @@ func (h *QuickViewHandler) UpdatePreferredModeByLocator(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "更新成功 | Updated successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
+// @x-addp-auth-mode "self"
 // @Router /preview-state/view-state [patch]
 // @Security BearerAuth
 func (h *QuickViewHandler) UpdateViewStateByLocator(c *gin.Context) {
@@ -349,6 +355,8 @@ func (h *QuickViewHandler) UpdateViewStateByLocator(c *gin.Context) {
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "resource_ticket"
+// @x-addp-required-permissions ["manager.content.read"]
 // @Router /quick-view/geojson [get]
 // @Security BearerAuth
 func (h *QuickViewHandler) GetQuickViewGeoJSONByLocator(c *gin.Context) {
@@ -390,6 +398,8 @@ func (h *QuickViewHandler) GetQuickViewGeoJSONByLocator(c *gin.Context) {
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "resource_ticket"
+// @x-addp-required-permissions ["manager.content.read"]
 // @Router /quick-view/flatgeobuf [get]
 // @Security BearerAuth
 func (h *QuickViewHandler) GetQuickViewFlatGeobufByLocator(c *gin.Context) {
@@ -440,6 +450,8 @@ func (h *QuickViewHandler) GetQuickViewFlatGeobufByLocator(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "resource_ticket"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /quick-view/tiles/{z}/{x}/{y}.mvt [get]
 // @Security BearerAuth
 func (h *QuickViewHandler) GetQuickViewTileByLocator(c *gin.Context) {

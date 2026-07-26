@@ -2,6 +2,7 @@ package scanchange
 
 import (
 	"github.com/addp/common/datatype"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/models"
 )
@@ -16,6 +17,12 @@ func ShouldUpdateTable(existingItem *models.MetaItem, tableInfo datatype.TableIn
 	if tableInfo.RowCount != nil && existingItem.RowCount != nil && *existingItem.RowCount != *tableInfo.RowCount {
 		return true
 	}
+	existingTableInfo := datatype.TableInfoFromPayload(commonJSON.Section(existingItem.Attributes, "type_info.table"), "")
+	if tableInfo.EstimatedRowCount != nil {
+		if existingTableInfo == nil || existingTableInfo.EstimatedRowCount == nil || *existingTableInfo.EstimatedRowCount != *tableInfo.EstimatedRowCount {
+			return true
+		}
+	}
 	if tableInfo.SizeBytes != nil && existingItem.SizeBytes != nil && *existingItem.SizeBytes != *tableInfo.SizeBytes {
 		return true
 	}
@@ -23,12 +30,15 @@ func ShouldUpdateTable(existingItem *models.MetaItem, tableInfo datatype.TableIn
 		(existingItem.SizeBytes == nil && tableInfo.SizeBytes != nil && *tableInfo.SizeBytes != 0)
 }
 
-func ShouldUpdateDynamicSchemaItem(existingItem *models.MetaItem, documentCount, sizeBytes int64) bool {
+func ShouldUpdateDynamicSchemaItem(existingItem *models.MetaItem, estimatedDocumentCount *int64, sizeBytes int64) bool {
 	if existingItem == nil {
 		return true
 	}
-	if existingItem.RowCount != nil && *existingItem.RowCount != documentCount {
-		return true
+	existingTableInfo := datatype.TableInfoFromPayload(commonJSON.Section(existingItem.Attributes, "type_info.table"), "")
+	if estimatedDocumentCount != nil {
+		if existingTableInfo == nil || existingTableInfo.EstimatedRowCount == nil || *existingTableInfo.EstimatedRowCount != *estimatedDocumentCount {
+			return true
+		}
 	}
 	if existingItem.SizeBytes != nil && sizeBytes > 0 {
 		oldSize := *existingItem.SizeBytes

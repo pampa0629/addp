@@ -43,6 +43,7 @@ func NewOGCTilesHandler(
 // @Success 200 {object} map[string]interface{} "Landing Page | Landing Page"
 // @Failure 401 {object} map[string]string "需要认证 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @x-addp-auth-mode "public"
 // @Router /ogc/tiles/{serviceName} [get]
 func (h *OGCTilesHandler) GetLandingPage(c *gin.Context) {
 	serviceName := c.Param("serviceName")
@@ -103,6 +104,7 @@ func (h *OGCTilesHandler) GetLandingPage(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "符合性声明 | Conformance declaration"
 // @Failure 401 {object} map[string]string "需要认证 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @x-addp-auth-mode "public"
 // @Router /ogc/tiles/{serviceName}/conformance [get]
 func (h *OGCTilesHandler) GetConformance(c *gin.Context) {
 	if _, ok := h.getAuthorizedService(c, c.Param("serviceName")); !ok {
@@ -137,6 +139,7 @@ func (h *OGCTilesHandler) GetConformance(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "瓦片矩阵集列表 | Tile Matrix Set list"
 // @Failure 401 {object} map[string]string "需要认证 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @x-addp-auth-mode "public"
 // @Router /ogc/tiles/{serviceName}/tileMatrixSets [get]
 func (h *OGCTilesHandler) GetTileMatrixSets(c *gin.Context) {
 	host := c.Request.Host
@@ -179,6 +182,7 @@ func (h *OGCTilesHandler) GetTileMatrixSets(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "瓦片矩阵集详情 | Tile Matrix Set details"
 // @Failure 401 {object} map[string]string "需要认证 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @x-addp-auth-mode "public"
 // @Router /ogc/tiles/{serviceName}/tileMatrixSets/{tileMatrixSetId} [get]
 func (h *OGCTilesHandler) GetTileMatrixSet(c *gin.Context) {
 	if _, ok := h.getAuthorizedService(c, c.Param("serviceName")); !ok {
@@ -236,6 +240,7 @@ func (h *OGCTilesHandler) GetTileMatrixSet(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "瓦片集列表 | Tileset list"
 // @Failure 401 {object} map[string]string "需要认证 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @x-addp-auth-mode "public"
 // @Router /ogc/tiles/{serviceName}/tiles [get]
 func (h *OGCTilesHandler) GetTilesets(c *gin.Context) {
 	serviceName := c.Param("serviceName")
@@ -299,6 +304,7 @@ func (h *OGCTilesHandler) GetTilesets(c *gin.Context) {
 // @Success 200 {file} application/vnd.mapbox-vector-tile "瓦片数据 | Tile data"
 // @Failure 401 {object} map[string]string "需要认证 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @x-addp-auth-mode "public"
 // @Router /ogc/tiles/{serviceName}/tiles/{layer}/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol} [get]
 func (h *OGCTilesHandler) GetTile(c *gin.Context) {
 	serviceName := c.Param("serviceName")

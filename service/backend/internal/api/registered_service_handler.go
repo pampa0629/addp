@@ -35,6 +35,8 @@ func NewRegisteredServiceHandler(s *svc.RegisteredServiceService) *RegisteredSer
 // @Success 201 {object} models.RegisteredServiceDTO
 // @Failure 400 {object} map[string]string
 // @Failure 401 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.external_registration.create"]
 // @Router /registered [post]
 // @Security BearerAuth
 func (h *RegisteredServiceHandler) CreateService(c *gin.Context) {
@@ -48,8 +50,8 @@ func (h *RegisteredServiceHandler) CreateService(c *gin.Context) {
 	}
 
 	// 从 JWT token 中获取租户 ID 和用户 ID
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := tenantIDValue(c)
+	userID := userIDValue(c)
 
 	if tenantID == 0 || userID == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing tenant_id or user_id in token"})
@@ -80,10 +82,12 @@ func (h *RegisteredServiceHandler) CreateService(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Failure 401 {object} map[string]string
 // @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.external_registration.read"]
 // @Router /registered [get]
 // @Security BearerAuth
 func (h *RegisteredServiceHandler) ListServices(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	if tenantID == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing tenant_id in token"})
 		return
@@ -143,6 +147,8 @@ func (h *RegisteredServiceHandler) ListServices(c *gin.Context) {
 // @Success 200 {object} models.RegisteredServiceDTO
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.external_registration.read"]
 // @Router /registered/{id} [get]
 // @Security BearerAuth
 func (h *RegisteredServiceHandler) GetService(c *gin.Context) {
@@ -176,6 +182,8 @@ func (h *RegisteredServiceHandler) GetService(c *gin.Context) {
 // @Success 200 {object} models.RegisteredServiceDTO
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.external_registration.update"]
 // @Router /registered/{id} [put]
 // @Security BearerAuth
 func (h *RegisteredServiceHandler) UpdateService(c *gin.Context) {
@@ -214,6 +222,8 @@ func (h *RegisteredServiceHandler) UpdateService(c *gin.Context) {
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.external_registration.delete"]
 // @Router /registered/{id} [delete]
 // @Security BearerAuth
 func (h *RegisteredServiceHandler) DeleteService(c *gin.Context) {
@@ -247,6 +257,8 @@ func (h *RegisteredServiceHandler) DeleteService(c *gin.Context) {
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.external_registration.update"]
 // @Router /registered/{id}/refresh [post]
 // @Security BearerAuth
 func (h *RegisteredServiceHandler) RefreshMetadata(c *gin.Context) {
@@ -287,6 +299,8 @@ func (h *RegisteredServiceHandler) RefreshMetadata(c *gin.Context) {
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.external_registration.read"]
 // @Router /registered/{id}/health [post]
 // @Security BearerAuth
 func (h *RegisteredServiceHandler) HealthCheck(c *gin.Context) {
@@ -321,8 +335,8 @@ func (h *RegisteredServiceHandler) ProxyService(c *gin.Context) {
 	}
 
 	// 获取租户 ID 和用户 ID（用于审计，如果没有认证则为 0）
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := tenantIDValue(c)
+	userID := userIDValue(c)
 
 	// 代理请求到外部服务
 	err = h.svc.ProxyServiceRequest(uint(id), tenantID, userID, c)

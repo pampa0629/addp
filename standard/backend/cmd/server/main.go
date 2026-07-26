@@ -139,7 +139,7 @@ func main() {
 		documentSvc,
 		dimHierarchySvc,
 		cfg.SystemURL,
-		redisClient,
+		cfg.InternalAPIKey,
 	)
 
 	addr := ":" + cfg.Port

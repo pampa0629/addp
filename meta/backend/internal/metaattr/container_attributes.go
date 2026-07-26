@@ -35,29 +35,31 @@ type containerAttributes struct {
 }
 
 type containerChildAttributesData struct {
-	Name        string                       `json:"name,omitempty"`
-	ChildKind   string                       `json:"child_kind,omitempty"`
-	DataType    datatype.DataType            `json:"data_type,omitempty"`
-	Format      string                       `json:"format,omitempty"`
-	RowCount    *int64                       `json:"row_count,omitempty"`
-	ColumnCount *int                         `json:"column_count,omitempty"`
-	HasHeader   *bool                        `json:"has_header,omitempty"`
-	Refs        []datatype.ContainerChildRef `json:"refs,omitempty"`
-	Native      map[string]interface{}       `json:"native,omitempty"`
+	Name              string                       `json:"name,omitempty"`
+	ChildKind         string                       `json:"child_kind,omitempty"`
+	DataType          datatype.DataType            `json:"data_type,omitempty"`
+	Format            string                       `json:"format,omitempty"`
+	RowCount          *int64                       `json:"row_count,omitempty"`
+	EstimatedRowCount *int64                       `json:"estimated_row_count,omitempty"`
+	ColumnCount       *int                         `json:"column_count,omitempty"`
+	HasHeader         *bool                        `json:"has_header,omitempty"`
+	Refs              []datatype.ContainerChildRef `json:"refs,omitempty"`
+	Native            map[string]interface{}       `json:"native,omitempty"`
 }
 
 func containerChildAttributes(child datatype.ContainerChildInfo) containerChildAttributesData {
 	childFormat := canonicalContainerChildFormat(child)
 	return containerChildAttributesData{
-		Name:        child.Name,
-		ChildKind:   child.ChildKind,
-		DataType:    child.DataType,
-		Format:      childFormat,
-		RowCount:    child.RowCount,
-		ColumnCount: child.ColumnCount,
-		HasHeader:   child.HasHeader,
-		Refs:        child.Refs,
-		Native:      filteredContainerChildNative(child.Native),
+		Name:              child.Name,
+		ChildKind:         child.ChildKind,
+		DataType:          child.DataType,
+		Format:            childFormat,
+		RowCount:          child.RowCount,
+		EstimatedRowCount: child.EstimatedRowCount,
+		ColumnCount:       child.ColumnCount,
+		HasHeader:         child.HasHeader,
+		Refs:              child.Refs,
+		Native:            filteredContainerChildNative(child.Native),
 	}
 }
 

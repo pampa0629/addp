@@ -57,6 +57,9 @@ func dynamicSchemaAttributes(catalogFacts *plugin.CatalogFacts) map[string]inter
 	if tableInfo.RowCount != nil {
 		attrs["total_documents"] = *tableInfo.RowCount
 	}
+	if tableInfo.EstimatedRowCount != nil {
+		attrs["estimated_documents"] = *tableInfo.EstimatedRowCount
+	}
 	return attrs
 }
 

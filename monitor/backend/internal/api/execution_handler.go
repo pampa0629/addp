@@ -35,6 +35,8 @@ func NewExecutionHandler(queryService *service.ExecutionQueryService) *Execution
 // @Param page query int false "页码 | Page" default(1)
 // @Param page_size query int false "每页数量 | Page size" default(20)
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.execution.read"]
 // @Router /executions [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
@@ -87,6 +89,8 @@ func stringPtrFromQuery(value string) *string {
 // @Produce json
 // @Param id path int true "执行ID | Execution ID"
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.execution.read"]
 // @Router /executions/{id} [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecution(c *gin.Context) {
@@ -123,6 +127,8 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 // @Produce json
 // @Param execution_id path string true "执行 UUID | Execution UUID"
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.execution.read"]
 // @Router /executions/by-execution-id/{execution_id} [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecutionByExecutionID(c *gin.Context) {
@@ -154,6 +160,8 @@ func (h *ExecutionHandler) GetExecutionByExecutionID(c *gin.Context) {
 // @Produce json
 // @Param id path int true "执行ID | Execution ID"
 // @Success 200 {object} service.ExecutionTreeNode
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.execution.read"]
 // @Router /executions/{id}/tree [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecutionTree(c *gin.Context) {
@@ -185,6 +193,8 @@ func (h *ExecutionHandler) GetExecutionTree(c *gin.Context) {
 // @Produce json
 // @Param execution_id path string true "执行 UUID | Execution UUID"
 // @Success 200 {object} service.ExecutionTreeNode
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.execution.read"]
 // @Router /executions/by-execution-id/{execution_id}/tree [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecutionTreeByExecutionID(c *gin.Context) {

@@ -1,8 +1,6 @@
 package api
 
 import (
-	"time"
-
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/audit"
 	commonAuth "github.com/addp/common/middleware/auth"
@@ -12,29 +10,13 @@ import (
 	"github.com/addp/common/middleware/requestid"
 	_ "github.com/addp/transfer/docs"
 	_ "github.com/addp/transfer/i18n"
+	transferauthorization "github.com/addp/transfer/internal/authorization"
 	"github.com/addp/transfer/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
-
-// extractAuthToken 从请求中提取认证 token
-func extractAuthToken(c *gin.Context) string {
-	// 优先从 context 中获取（由认证中间件设置）
-	if token := c.GetString("jwt_token"); token != "" {
-		return token
-	}
-
-	// 从 Authorization header 提取
-	if header := c.GetHeader("Authorization"); header != "" {
-		if len(header) > 7 && header[:7] == "Bearer " {
-			return header[7:]
-		}
-	}
-
-	return ""
-}
 
 // SetupRouter 设置路由
 func SetupRouter(
@@ -75,12 +57,12 @@ func SetupRouter(
 
 	// 受保护接口（需要 JWT 认证）
 	protected := api.Group("")
-	// 使用 Redis 缓存中间件 (TTL: 5分钟, 减少 System 调用 90%)
-	if redisClient != nil {
-		protected.Use(commonAuth.CachedSystemAuthMiddleware(systemURL, redisClient, 5*time.Minute))
-	} else {
-		// Fallback: 无缓存模式
-		protected.Use(commonAuth.SystemAuthMiddleware(systemURL))
+	protected.Use(
+		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: systemURL}),
+		commonAuth.MustNewContextGuard("tenant"),
+	)
+	permission := func(keys ...string) gin.HandlerFunc {
+		return commonAuth.MustNewPermissionGuard(keys...)
 	}
 	// 审计日志中间件（记录到 System 模块）
 	if systemClient != nil {
@@ -93,44 +75,44 @@ func SetupRouter(
 	systemEngineHandler := NewSystemEngineHandler(systemClient)
 	capabilityHandler := NewTransferCapabilityHandler()
 
-	protected.GET("/system-engines", systemEngineHandler.List)
-	protected.GET("/capabilities", capabilityHandler.Get)
+	protected.GET("/system-engines", permission(transferauthorization.PermissionTransferTaskRead), systemEngineHandler.List)
+	protected.GET("/capabilities", permission(transferauthorization.PermissionTransferTaskRead), capabilityHandler.Get)
 	// 任务管理路由
 	tasks := protected.Group("/tasks")
 	{
-		tasks.GET("", taskHandler.ListTasks)                      // TaskProvider 列表和任务列表
-		tasks.GET("/:task_type/:id", taskHandler.ProviderGetTask) // TaskProvider 获取任务详情
-		tasks.POST("/:task_type/:id/execute", taskHandler.ProviderExecuteTask)
+		tasks.GET("", permission(transferauthorization.PermissionTransferTaskRead), taskHandler.ListTasks)                      // TaskProvider 列表和任务列表
+		tasks.GET("/:task_type/:id", permission(transferauthorization.PermissionTransferTaskRead), taskHandler.ProviderGetTask) // TaskProvider 获取任务详情
+		tasks.POST("/:task_type/:id/execute", permission(transferauthorization.PermissionTransferTaskExecute), taskHandler.ProviderExecuteTask)
 	}
 
 	taskDefinitions := protected.Group("/task-definitions")
 	{
-		taskDefinitions.POST("", taskHandler.CreateTask)                                    // 创建任务
-		taskDefinitions.GET("/statistics", taskHandler.GetTaskStatistics)                   // 获取任务统计
-		taskDefinitions.GET("/:id", taskHandler.GetTask)                                    // 获取任务详情
-		taskDefinitions.PUT("/:id", taskHandler.UpdateTask)                                 // 更新任务
-		taskDefinitions.DELETE("/:id", taskHandler.DeleteTask)                              // 删除任务
-		taskDefinitions.POST("/:id/start", taskHandler.StartTask)                           // 启动任务
-		taskDefinitions.POST("/:id/replay", taskHandler.ReplayTask)                         // 创建 bounded replay execution
-		taskDefinitions.GET("/:id/schema-change", taskHandler.GetSchemaChange)              // 查询当前 CDC schema change request
-		taskDefinitions.POST("/:id/schema-change/approve", taskHandler.ApproveSchemaChange) // 审批 additive schema migration
-		taskDefinitions.GET("/:id/dead-letters", taskHandler.ListDeadLetters)               // 查询 DLQ 控制索引
-		taskDefinitions.GET("/:id/dead-letters/:identity", taskHandler.GetDeadLetter)       // 查询单条 DLQ 控制索引
-		taskDefinitions.POST("/:id/pause", taskHandler.PauseTask)                           // 暂停任务
-		taskDefinitions.POST("/:id/resume", taskHandler.ResumeTask)                         // 恢复任务
-		taskDefinitions.POST("/:id/stop", taskHandler.StopTask)                             // 停止 continuous runtime
-		taskDefinitions.GET("/:id/executions", executionHandler.GetTaskExecutions)          // 获取任务的执行记录
+		taskDefinitions.POST("", permission(transferauthorization.PermissionTransferTaskCreate), taskHandler.CreateTask)                                    // 创建任务
+		taskDefinitions.GET("/statistics", permission(transferauthorization.PermissionTransferTaskRead), taskHandler.GetTaskStatistics)                     // 获取任务统计
+		taskDefinitions.GET("/:id", permission(transferauthorization.PermissionTransferTaskRead), taskHandler.GetTask)                                      // 获取任务详情
+		taskDefinitions.PUT("/:id", permission(transferauthorization.PermissionTransferTaskUpdate), taskHandler.UpdateTask)                                 // 更新任务
+		taskDefinitions.DELETE("/:id", permission(transferauthorization.PermissionTransferTaskDelete), taskHandler.DeleteTask)                              // 删除任务
+		taskDefinitions.POST("/:id/start", permission(transferauthorization.PermissionTransferTaskExecute), taskHandler.StartTask)                          // 启动任务
+		taskDefinitions.POST("/:id/replay", permission(transferauthorization.PermissionTransferTaskExecute), taskHandler.ReplayTask)                        // 创建 bounded replay execution
+		taskDefinitions.GET("/:id/schema-change", permission(transferauthorization.PermissionTransferTaskRead), taskHandler.GetSchemaChange)                // 查询当前 CDC schema change request
+		taskDefinitions.POST("/:id/schema-change/approve", permission(transferauthorization.PermissionTransferTaskUpdate), taskHandler.ApproveSchemaChange) // 审批 additive schema migration
+		taskDefinitions.GET("/:id/dead-letters", permission(transferauthorization.PermissionTransferTaskRead), taskHandler.ListDeadLetters)                 // 查询 DLQ 控制索引
+		taskDefinitions.GET("/:id/dead-letters/:identity", permission(transferauthorization.PermissionTransferTaskRead), taskHandler.GetDeadLetter)         // 查询单条 DLQ 控制索引
+		taskDefinitions.POST("/:id/pause", permission(transferauthorization.PermissionTransferTaskUpdate), taskHandler.PauseTask)                           // 暂停任务
+		taskDefinitions.POST("/:id/resume", permission(transferauthorization.PermissionTransferTaskUpdate), taskHandler.ResumeTask)                         // 恢复任务
+		taskDefinitions.POST("/:id/stop", permission(transferauthorization.PermissionTransferTaskUpdate), taskHandler.StopTask)                             // 停止 continuous runtime
+		taskDefinitions.GET("/:id/executions", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.GetTaskExecutions)            // 获取任务的执行记录
 	}
 
 	// 执行记录路由
 	executions := protected.Group("/executions")
 	{
-		executions.GET("", executionHandler.ListExecutions)                              // 获取执行记录列表
-		executions.GET("/statistics", executionHandler.GetExecutionStatistics)           // 获取执行统计
-		executions.GET("/:execution_id", executionHandler.GetExecution)                  // 获取执行详情
-		executions.POST("/:execution_id/retry", executionHandler.RetryExecution)         // 重试执行
-		executions.GET("/:execution_id/progress", executionHandler.GetExecutionProgress) // 获取执行进度
-		executions.GET("/:execution_id/logs", executionHandler.GetExecutionLogs)         // 获取执行日志
+		executions.GET("", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.ListExecutions)                              // 获取执行记录列表
+		executions.GET("/statistics", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.GetExecutionStatistics)           // 获取执行统计
+		executions.GET("/:execution_id", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.GetExecution)                  // 获取执行详情
+		executions.POST("/:execution_id/retry", permission(transferauthorization.PermissionTransferTaskExecute), executionHandler.RetryExecution)      // 重试执行
+		executions.GET("/:execution_id/progress", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.GetExecutionProgress) // 获取执行进度
+		executions.GET("/:execution_id/logs", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.GetExecutionLogs)         // 获取执行日志
 	}
 
 	return router
@@ -141,6 +123,7 @@ func SetupRouter(
 // @Tags Transfer
 // @Produce json
 // @Success 200 {object} map[string]string
+// @x-addp-auth-mode "public"
 // @Router /ping [get]
 func ping(c *gin.Context) {
 	c.JSON(200, gin.H{"message": "pong"})

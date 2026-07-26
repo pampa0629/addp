@@ -34,9 +34,11 @@ func NewEngineHandler(systemClient *commonClient.SystemClient) *EngineHandler {
 // @Tags Engines
 // @Produce json
 // @Success 200 {array} models.Engine "引擎列表 | Engine list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read"]
 // @Router /engines [get]
 func (h *EngineHandler) ListEngines(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 
 	// 从 System 模块获取所有支持 SQL 查询的引擎
 	engines, err := h.systemClient.ListSQLQueryEngines(tenantID)
@@ -56,6 +58,8 @@ func (h *EngineHandler) ListEngines(c *gin.Context) {
 // @Tags Engines
 // @Produce json
 // @Success 200 {array} QueryMode "查询模式列表 | Query mode list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read"]
 // @Router /query-modes [get]
 func (h *EngineHandler) ListQueryModes(c *gin.Context) {
 	c.JSON(http.StatusOK, []QueryMode{
@@ -73,9 +77,11 @@ func (h *EngineHandler) ListQueryModes(c *gin.Context) {
 // @Tags Engines
 // @Produce json
 // @Success 200 {array} models.Engine "工作流引擎列表 | Workflow engine list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read"]
 // @Router /workflow-engines [get]
 func (h *EngineHandler) ListWorkflowEngines(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 
 	// 从 System 模块获取所有工作流引擎
 	engines, err := h.systemClient.ListWorkflowEngines(tenantID)
@@ -95,9 +101,11 @@ func (h *EngineHandler) ListWorkflowEngines(c *gin.Context) {
 // @Tags Engines
 // @Produce json
 // @Success 200 {array} models.Engine "Spark通用引擎资源列表 | Spark general engine resource list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read"]
 // @Router /spark-runtimes [get]
 func (h *EngineHandler) ListSparkRuntimes(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 
 	// 从 System 模块获取所有 Spark 通用引擎资源
 	runtimes, err := h.systemClient.ListSparkRuntimes(tenantID)

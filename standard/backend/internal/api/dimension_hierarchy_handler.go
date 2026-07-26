@@ -25,6 +25,8 @@ func NewDimensionHierarchyHandler(svc *service.DimensionHierarchyService) *Dimen
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.dimension_hierarchy.read"]
 // @Router /dimension-hierarchies [get]
 // @Security BearerAuth
 func (h *DimensionHierarchyHandler) List(c *gin.Context) {
@@ -42,6 +44,8 @@ func (h *DimensionHierarchyHandler) List(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.dimension_hierarchy.read"]
 // @Router /dimension-hierarchies/{id} [get]
 // @Security BearerAuth
 func (h *DimensionHierarchyHandler) Get(c *gin.Context) {
@@ -64,6 +68,8 @@ func (h *DimensionHierarchyHandler) Get(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.dimension_hierarchy.create"]
 // @Router /dimension-hierarchies [post]
 // @Security BearerAuth
 func (h *DimensionHierarchyHandler) Create(c *gin.Context) {
@@ -87,6 +93,8 @@ func (h *DimensionHierarchyHandler) Create(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.dimension_hierarchy.update"]
 // @Router /dimension-hierarchies/{id} [put]
 // @Security BearerAuth
 func (h *DimensionHierarchyHandler) Update(c *gin.Context) {
@@ -115,6 +123,8 @@ func (h *DimensionHierarchyHandler) Update(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.dimension_hierarchy.delete"]
 // @Router /dimension-hierarchies/{id} [delete]
 // @Security BearerAuth
 func (h *DimensionHierarchyHandler) Delete(c *gin.Context) {
@@ -138,6 +148,8 @@ func (h *DimensionHierarchyHandler) Delete(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.dimension_hierarchy.read"]
 // @Router /dimension-hierarchies/{id}/levels [get]
 // @Security BearerAuth
 func (h *DimensionHierarchyHandler) ListLevels(c *gin.Context) {
@@ -159,6 +171,8 @@ func (h *DimensionHierarchyHandler) ListLevels(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.dimension_hierarchy.update"]
 // @Router /dimension-hierarchies/{id}/levels [post]
 // @Security BearerAuth
 func (h *DimensionHierarchyHandler) CreateLevel(c *gin.Context) {
@@ -185,6 +199,8 @@ func (h *DimensionHierarchyHandler) CreateLevel(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.dimension_hierarchy.update"]
 // @Router /dimension-hierarchies/{id}/levels/{lid} [put]
 // @Security BearerAuth
 func (h *DimensionHierarchyHandler) UpdateLevel(c *gin.Context) {
@@ -216,6 +232,8 @@ func (h *DimensionHierarchyHandler) UpdateLevel(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.dimension_hierarchy.update"]
 // @Router /dimension-hierarchies/{id}/levels/{lid} [delete]
 // @Security BearerAuth
 func (h *DimensionHierarchyHandler) DeleteLevel(c *gin.Context) {

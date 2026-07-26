@@ -47,6 +47,8 @@ func NewFeatureHandler(systemClient *commonClient.SystemClient, metadataRepo *re
 // @Success 200 {object} map[string]interface{} "中心点坐标 | Centroid coordinates"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "要素不存在 | Feature not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.content.read"]
 // @Router /engines/{id}/spatial/features/{feature_id}/centroid [get]
 // @Security BearerAuth
 func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
@@ -165,6 +167,8 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "几何数据及边界框 | Geometry data and bounding box"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "要素不存在 | Feature not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.content.read"]
 // @Router /engines/{id}/spatial/features/{feature_id}/geometry [get]
 // @Security BearerAuth
 func (h *FeatureHandler) GetFeatureGeometry(c *gin.Context) {

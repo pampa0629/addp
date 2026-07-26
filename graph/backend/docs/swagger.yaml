@@ -1007,6 +1007,9 @@ paths:
       summary: 获取 Graph 构建执行状态 | Get graph build execution status
       tags:
       - 图谱构建 | Graph Build
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.build_task.read
   /graphs:
     get:
       description: 获取当前租户的所有知识图谱实例 | Get all knowledge graph instances for current
@@ -1029,6 +1032,9 @@ paths:
       summary: 知识图谱列表 | List knowledge graphs
       tags:
       - 知识图谱 | Knowledge Graph
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.graph.read
     post:
       consumes:
       - application/json
@@ -1061,6 +1067,9 @@ paths:
       summary: 创建知识图谱 | Create knowledge graph
       tags:
       - 知识图谱 | Knowledge Graph
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.graph.create
   /graphs/{id}:
     delete:
       description: 删除知识图谱实例 | Delete a knowledge graph instance
@@ -1086,6 +1095,9 @@ paths:
       summary: 删除知识图谱 | Delete knowledge graph
       tags:
       - 知识图谱 | Knowledge Graph
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.graph.delete
     get:
       description: 获取知识图谱实例详情 | Get knowledge graph instance detail
       parameters:
@@ -1110,6 +1122,9 @@ paths:
       summary: 知识图谱详情 | Get knowledge graph detail
       tags:
       - 知识图谱 | Knowledge Graph
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.graph.read
     put:
       consumes:
       - application/json
@@ -1146,6 +1161,9 @@ paths:
       summary: 更新知识图谱 | Update knowledge graph
       tags:
       - 知识图谱 | Knowledge Graph
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.graph.update
   /graphs/{id}/analysis/capabilities:
     get:
       description: 探测知识图谱支持的图算法能力（GDS/Cypher）| Detect supported graph algorithm capabilities
@@ -1172,6 +1190,9 @@ paths:
       summary: 算法能力探测 | Detect algorithm capabilities
       tags:
       - 图算法分析 | Graph Algorithm Analysis
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.analysis.read
   /graphs/{id}/analysis/run:
     post:
       consumes:
@@ -1211,6 +1232,9 @@ paths:
       summary: 执行图算法 | Run graph algorithm
       tags:
       - 图算法分析 | Graph Algorithm Analysis
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.analysis.execute
   /graphs/{id}/analysis/sync-spatial:
     post:
       description: 将本体中所有有效空间类型（含从父类型继承）的图层同步到 Neo4j，并注册已有节点（幂等）| Sync all valid spatial
@@ -1238,6 +1262,9 @@ paths:
       summary: 同步空间图层 | Sync spatial layers
       tags:
       - 图算法分析 | Graph Algorithm Analysis
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.analysis.execute
   /graphs/{id}/build/tasks:
     get:
       description: 获取知识图谱的所有构建任务 | Get all build tasks for a knowledge graph
@@ -1265,6 +1292,9 @@ paths:
       summary: 构建任务列表 | List build tasks
       tags:
       - 图谱构建 | Graph Build
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.build_task.read
     post:
       consumes:
       - application/json
@@ -1295,6 +1325,9 @@ paths:
       summary: 创建构建任务 | Create build task
       tags:
       - 图谱构建 | Graph Build
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.build_task.create
   /graphs/{id}/build/tasks/{tid}:
     delete:
       parameters:
@@ -1324,6 +1357,9 @@ paths:
       summary: 删除构建任务 | Delete build task
       tags:
       - 图谱构建 | Graph Build
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.build_task.delete
     get:
       parameters:
       - description: 知识图谱 ID | Knowledge graph ID
@@ -1352,6 +1388,9 @@ paths:
       summary: 获取构建任务 | Get build task
       tags:
       - 图谱构建 | Graph Build
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.build_task.read
   /graphs/{id}/build/tasks/{tid}/cancel:
     post:
       parameters:
@@ -1386,6 +1425,9 @@ paths:
       summary: 取消构建任务 | Cancel build task
       tags:
       - 图谱构建 | Graph Build
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.build_task.cancel
   /graphs/{id}/build/tasks/{tid}/materials:
     get:
       parameters:
@@ -1417,6 +1459,9 @@ paths:
       summary: 列出构建材料 | List build materials
       tags:
       - 图谱构建 | Graph Build
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.build_task.read
     post:
       consumes:
       - multipart/form-data
@@ -1458,6 +1503,9 @@ paths:
       summary: 上传构建材料 | Upload build material
       tags:
       - 图谱构建 | Graph Build
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.build_task.update
   /graphs/{id}/build/tasks/{tid}/materials/{mid}:
     delete:
       parameters:
@@ -1492,6 +1540,9 @@ paths:
       summary: 删除构建材料 | Delete build material
       tags:
       - 图谱构建 | Graph Build
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.build_task.update
   /graphs/{id}/build/tasks/{tid}/rerun:
     post:
       parameters:
@@ -1525,6 +1576,9 @@ paths:
       summary: 重新运行构建任务 | Rerun build task
       tags:
       - 图谱构建 | Graph Build
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.build_task.execute
   /graphs/{id}/build/tasks/{tid}/run:
     post:
       description: 启动知识图谱构建任务 | Start a knowledge graph build task
@@ -1559,6 +1613,9 @@ paths:
       summary: 执行构建任务 | Run build task
       tags:
       - 图谱构建 | Graph Build
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.build_task.execute
   /graphs/{id}/constraints:
     get:
       parameters:
@@ -1584,6 +1641,9 @@ paths:
       summary: 获取图约束 | Get graph constraints
       tags:
       - 图谱浏览 | Graph Browse
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.graph.read
   /graphs/{id}/expand:
     post:
       consumes:
@@ -1622,6 +1682,9 @@ paths:
       summary: 展开节点邻居 | Expand node neighbors
       tags:
       - 图谱浏览 | Graph Browse
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.graph.read
   /graphs/{id}/infer-schema:
     get:
       parameters:
@@ -1651,6 +1714,9 @@ paths:
       summary: 推断图谱 Schema | Infer graph schema
       tags:
       - 图谱浏览 | Graph Browse
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.graph.read
   /graphs/{id}/infer-schema/apply:
     post:
       consumes:
@@ -1688,6 +1754,9 @@ paths:
       summary: 应用推断 Schema | Apply inferred schema
       tags:
       - 图谱浏览 | Graph Browse
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.graph.update
   /graphs/{id}/overview:
     get:
       description: 获取图谱概览子图（采样约100条关系）| Get graph overview subgraph (sampling ~100
@@ -1714,6 +1783,9 @@ paths:
       summary: 图谱概览 | Get graph overview
       tags:
       - 图谱浏览 | Graph Browse
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.graph.read
   /graphs/{id}/path:
     post:
       consumes:
@@ -1751,6 +1823,9 @@ paths:
       summary: 最短路径查询 | Find shortest path
       tags:
       - 图谱浏览 | Graph Browse
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.graph.read
   /graphs/{id}/review:
     get:
       parameters:
@@ -1798,6 +1873,9 @@ paths:
       summary: 列出审核项 | List review items
       tags:
       - 图谱构建 | Graph Build
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.review.read
   /graphs/{id}/review/{iid}:
     put:
       consumes:
@@ -1840,6 +1918,9 @@ paths:
       summary: 修改审核项 | Modify review item
       tags:
       - 图谱构建 | Graph Build
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.review.update
   /graphs/{id}/review/{iid}/approve:
     post:
       parameters:
@@ -1869,6 +1950,9 @@ paths:
       summary: 通过审核项 | Approve review item
       tags:
       - 图谱构建 | Graph Build
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.review.approve
   /graphs/{id}/review/{iid}/reject:
     post:
       parameters:
@@ -1898,7 +1982,10 @@ paths:
       summary: 拒绝审核项 | Reject review item
       tags:
       - 图谱构建 | Graph Build
-  /graphs/{id}/review/batch:
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.review.reject
+  /graphs/{id}/review/batch/approve:
     post:
       consumes:
       - application/json
@@ -1908,12 +1995,15 @@ paths:
         name: id
         required: true
         type: integer
-      - description: 批量审核请求 | Batch review request
+      - description: 审核项 ID | Review item IDs
         in: body
         name: request
         required: true
         schema:
-          additionalProperties: true
+          additionalProperties:
+            items:
+              type: integer
+            type: array
           type: object
       produces:
       - application/json
@@ -1932,9 +2022,55 @@ paths:
             $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 批量审核 | Batch review
+      summary: 批量通过审核项 | Batch approve review items
       tags:
       - 图谱构建 | Graph Build
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.review.approve
+  /graphs/{id}/review/batch/reject:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 知识图谱 ID | Knowledge graph ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 审核项 ID | Review item IDs
+        in: body
+        name: request
+        required: true
+        schema:
+          additionalProperties:
+            items:
+              type: integer
+            type: array
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 批量拒绝审核项 | Batch reject review items
+      tags:
+      - 图谱构建 | Graph Build
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.review.reject
   /graphs/{id}/review/pending-count:
     get:
       parameters:
@@ -1961,6 +2097,9 @@ paths:
       summary: 待审核数量 | Pending review count
       tags:
       - 图谱构建 | Graph Build
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.review.read
   /graphs/{id}/schema:
     get:
       description: 获取知识图谱的节点形状、关系形状和连接模式 Schema | Get node shape, relationship shape
@@ -1987,6 +2126,9 @@ paths:
       summary: 图谱 Schema | Get graph schema
       tags:
       - 图谱浏览 | Graph Browse
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.graph.read
   /graphs/{id}/search:
     post:
       consumes:
@@ -2024,6 +2166,9 @@ paths:
       summary: 全文搜索节点 | Full-text search nodes
       tags:
       - 图谱浏览 | Graph Browse
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.graph.read
   /graphs/{id}/stats:
     get:
       description: 获取知识图谱的节点数、关系数、按标签分组统计 | Get node count, relation count and label-grouped
@@ -2050,6 +2195,9 @@ paths:
       summary: 图谱统计 | Get graph statistics
       tags:
       - 图谱浏览 | Graph Browse
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.graph.read
   /kg/{graphId}/entities/{type}:
     get:
       parameters:
@@ -2075,48 +2223,56 @@ paths:
       summary: 按类型列出实体（分页）| List entities by type (paginated)
       tags:
       - 知识服务 | Knowledge Service
+      x-addp-auth-mode: public
   /kg/{graphId}/entities/{type}/{nodeId}:
     get:
       responses: {}
       summary: 获取实体详情 | Get entity detail
       tags:
       - 知识服务 | Knowledge Service
+      x-addp-auth-mode: public
   /kg/{graphId}/nodes/{nodeId}/neighbors:
     get:
       responses: {}
       summary: 获取节点邻居 | Get node neighbors
       tags:
       - 知识服务 | Knowledge Service
+      x-addp-auth-mode: public
   /kg/{graphId}/ontology:
     get:
       responses: {}
       summary: 获取图谱本体描述 | Get graph ontology description
       tags:
       - 知识服务 | Knowledge Service
+      x-addp-auth-mode: public
   /kg/{graphId}/paths:
     post:
       responses: {}
       summary: 路径查找 | Find paths
       tags:
       - 知识服务 | Knowledge Service
+      x-addp-auth-mode: public
   /kg/{graphId}/search:
     get:
       responses: {}
       summary: 全文搜索实体 | Full-text search entities
       tags:
       - 知识服务 | Knowledge Service
+      x-addp-auth-mode: public
   /kg/{graphId}/stats:
     get:
       responses: {}
       summary: 图谱统计信息 | Graph statistics
       tags:
       - 知识服务 | Knowledge Service
+      x-addp-auth-mode: public
   /kg/{graphId}/subgraph:
     post:
       responses: {}
       summary: 获取实体中心子图 | Get entity-centric subgraph
       tags:
       - 知识服务 | Knowledge Service
+      x-addp-auth-mode: public
   /ontologies:
     get:
       description: 获取当前租户的所有本体模型 | Get all ontology models for current tenant
@@ -2138,6 +2294,9 @@ paths:
       summary: 本体列表 | List ontologies
       tags:
       - 本体管理 | Ontology Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.ontology.read
     post:
       consumes:
       - application/json
@@ -2169,6 +2328,9 @@ paths:
       summary: 创建本体 | Create ontology
       tags:
       - 本体管理 | Ontology Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.ontology.create
   /ontologies/{id}:
     delete:
       description: 删除本体及其所有实体类型和关系类型 | Delete ontology and all its entity types and
@@ -2195,6 +2357,9 @@ paths:
       summary: 删除本体 | Delete ontology
       tags:
       - 本体管理 | Ontology Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.ontology.delete
     get:
       description: 获取本体详情，含实体类型和关系类型 | Get ontology detail including entity types
         and relation types
@@ -2220,6 +2385,9 @@ paths:
       summary: 本体详情 | Get ontology detail
       tags:
       - 本体管理 | Ontology Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.ontology.read
     put:
       consumes:
       - application/json
@@ -2256,6 +2424,9 @@ paths:
       summary: 更新本体 | Update ontology
       tags:
       - 本体管理 | Ontology Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.ontology.update
   /ontologies/{id}/entity-types:
     get:
       description: 获取本体下的所有实体类型 | Get all entity types under an ontology
@@ -2283,6 +2454,9 @@ paths:
       summary: 实体类型列表 | List entity types
       tags:
       - 本体管理 | Ontology Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.ontology.read
     post:
       consumes:
       - application/json
@@ -2319,6 +2493,9 @@ paths:
       summary: 创建实体类型 | Create entity type
       tags:
       - 本体管理 | Ontology Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.ontology.create
   /ontologies/{id}/entity-types/{eid}:
     delete:
       parameters:
@@ -2350,6 +2527,9 @@ paths:
       summary: 删除实体类型 | Delete entity type
       tags:
       - 本体管理 | Ontology Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.ontology.delete
     put:
       consumes:
       - application/json
@@ -2390,6 +2570,9 @@ paths:
       summary: 更新实体类型 | Update entity type
       tags:
       - 本体管理 | Ontology Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.ontology.update
   /ontologies/{id}/entity-types/{eid}/sync-constraints:
     post:
       consumes:
@@ -2436,6 +2619,9 @@ paths:
       summary: 同步实体约束 | Sync entity constraints
       tags:
       - 本体管理 | Ontology Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.ontology.update
   /ontologies/{id}/entity-types/{eid}/sync-spatial-layer:
     put:
       consumes:
@@ -2485,6 +2671,9 @@ paths:
       summary: 同步空间图层 | Sync spatial layer
       tags:
       - 本体管理 | Ontology Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.ontology.update
   /ontologies/{id}/import-from-model:
     post:
       consumes:
@@ -2526,6 +2715,9 @@ paths:
       summary: 从模型导入 | Import from model
       tags:
       - 本体管理 | Ontology Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.ontology.update
   /ontologies/{id}/infer-schema/from-engine/apply:
     post:
       consumes:
@@ -2567,6 +2759,9 @@ paths:
       summary: 应用引擎推断 Schema | Apply inferred schema from engine
       tags:
       - 本体管理 | Ontology Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.ontology.update
   /ontologies/{id}/relation-types:
     get:
       description: 获取本体下的所有关系类型 | Get all relation types under an ontology
@@ -2594,6 +2789,9 @@ paths:
       summary: 关系类型列表 | List relation types
       tags:
       - 本体管理 | Ontology Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.ontology.read
     post:
       consumes:
       - application/json
@@ -2630,6 +2828,9 @@ paths:
       summary: 创建关系类型 | Create relation type
       tags:
       - 本体管理 | Ontology Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.ontology.create
   /ontologies/{id}/relation-types/{rid}:
     delete:
       parameters:
@@ -2661,6 +2862,9 @@ paths:
       summary: 删除关系类型 | Delete relation type
       tags:
       - 本体管理 | Ontology Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.ontology.delete
     put:
       consumes:
       - application/json
@@ -2701,6 +2905,9 @@ paths:
       summary: 更新关系类型 | Update relation type
       tags:
       - 本体管理 | Ontology Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.ontology.update
   /ontologies/{id}/versions:
     get:
       description: 获取本体的所有版本快照 | Get all version snapshots of an ontology
@@ -2728,6 +2935,9 @@ paths:
       summary: 版本列表 | List ontology versions
       tags:
       - 本体管理 | Ontology Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.ontology.read
     post:
       consumes:
       - application/json
@@ -2764,6 +2974,9 @@ paths:
       summary: 创建版本快照 | Create version snapshot
       tags:
       - 本体管理 | Ontology Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.ontology.create
   /ontologies/import-preview/from-model:
     get:
       produces:
@@ -2787,6 +3000,9 @@ paths:
       summary: 预览模型导入 | Preview model import
       tags:
       - 本体管理 | Ontology Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.ontology.read
   /ontologies/infer-schema/from-engine:
     get:
       parameters:
@@ -2824,6 +3040,9 @@ paths:
       summary: 从引擎推断 Schema | Infer schema from engine
       tags:
       - 本体管理 | Ontology Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.ontology.read
   /ontologies/neo4j-engines:
     get:
       produces:
@@ -2849,6 +3068,9 @@ paths:
       summary: 列出 Neo4j 引擎 | List Neo4j engines
       tags:
       - 本体管理 | Ontology Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.ontology.read
   /tasks:
     get:
       description: 按标准 TaskProvider 协议列出 Graph 构建任务；task_type 仅支持 kg_build。| List
@@ -2880,6 +3102,9 @@ paths:
       summary: 列出 TaskProvider 图谱构建任务 | List TaskProvider graph build tasks
       tags:
       - 图谱构建 | Graph Build
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.build_task.read
   /tasks/{task_type}/{id}:
     get:
       description: 按标准 TaskProvider 协议获取 Graph 构建任务详情；task_type 仅支持 kg_build。| Get
@@ -2916,6 +3141,9 @@ paths:
       summary: 获取 TaskProvider 图谱构建任务详情 | Get TaskProvider graph build task detail
       tags:
       - 图谱构建 | Graph Build
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.build_task.read
   /tasks/{task_type}/{id}/execute:
     post:
       consumes:
@@ -2963,6 +3191,9 @@ paths:
       summary: 执行 TaskProvider 图谱构建任务 | Execute TaskProvider graph build task
       tags:
       - 图谱构建 | Graph Build
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.build_task.execute
 securityDefinitions:
   BearerAuth:
     description: Type "Bearer" followed by a space and JWT token.

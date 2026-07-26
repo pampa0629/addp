@@ -66,6 +66,8 @@
 | scanned depth | 已扫深度 | 当前 `meta_node` / `meta_item` 已达到的元数据完整度。 | 落库字段为 `scanned_depth`，取值为 `none` / `basic` / `deep`。 |
 | scan status | 扫描状态 | 扫描任务或最近扫描过程的运行状态。 | 表达 `pending`、`running`、`completed`、`failed` 等过程状态，不表达扫描深度。 |
 | force scan | 强制扫描 | 不管已有元数据和低成本过时判断，重新扫描并覆盖本次深度对应的元数据。 | 请求字段为 `force`。 |
+| exact row count | 精确行数 | 对 data item 当前内容执行精确计数得到的总行数。 | 公共字段固定为 `row_count`；SQL 表通常需要显式 `COUNT(*)`，只允许在 deep scan 或调用方显式请求统计时获取。0 是有效精确值。 |
+| estimated row count | 估算行数 | 引擎 catalog、system table、格式结构元数据或有限分析低成本提供的近似行数。 | 公共字段固定为 `estimated_row_count`；可用于列表提示和低成本变化判断，不得用于分页边界、完整性校验或冒充 `row_count`。 |
 | scan target | 扫描目标 | 本次扫描作用的对象范围。 | 身份型目标只抽象为 engine、node、item；`catalog_paths`、`ref_groups` 是 selector/scope 输入形态。 |
 | trigger type | 触发方式 | 扫描由手动还是定时触发。 | 概念层只区分 `manual` / `scheduled`。 |
 | scan source | 扫描来源 | 触发扫描的模块标记。 | 例如 `meta`、`manager`、`system`、`transfer`；不进入 `trigger_type` 枚举，也不表达调度器或前后端通道。 |

@@ -26,6 +26,8 @@ var (
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.scan_task.update"]
 // @Router /scan/tasks/engines/{engine_id} [put]
 // @Security BearerAuth
 func (h *Handler) UpsertEngineScanTask(c *gin.Context) {
@@ -72,6 +74,8 @@ func (h *Handler) UpsertEngineScanTask(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.scan_task.delete"]
 // @Router /scan/tasks/engines/{engine_id} [delete]
 // @Security BearerAuth
 func (h *Handler) DeleteEngineScanTask(c *gin.Context) {

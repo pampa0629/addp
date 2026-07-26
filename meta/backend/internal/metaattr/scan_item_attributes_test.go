@@ -140,13 +140,15 @@ func TestTableInfoPayloadWritesStandardTableFacts(t *testing.T) {
 	t.Parallel()
 
 	rowCount := int64(7)
+	estimatedRowCount := int64(9)
 	sizeBytes := int64(128)
 	info := &datatype.TableInfo{
-		Name:      "orders",
-		Kind:      "view",
-		Comment:   "order view",
-		RowCount:  &rowCount,
-		SizeBytes: &sizeBytes,
+		Name:              "orders",
+		Kind:              "view",
+		Comment:           "order view",
+		RowCount:          &rowCount,
+		EstimatedRowCount: &estimatedRowCount,
+		SizeBytes:         &sizeBytes,
 		Fields: []datatype.FieldInfo{{
 			Name:       "id",
 			Type:       datatype.FieldTypeInt,
@@ -164,6 +166,9 @@ func TestTableInfoPayloadWritesStandardTableFacts(t *testing.T) {
 	}
 	if attrs["row_count"] != int64(7) || attrs["size_bytes"] != int64(128) {
 		t.Fatalf("table count attrs = %#v", attrs)
+	}
+	if attrs["estimated_row_count"] != int64(9) {
+		t.Fatalf("table estimated count attrs = %#v", attrs)
 	}
 	native := attrs["native"].(map[string]interface{})
 	if native["relkind"] != "v" {
@@ -190,7 +195,9 @@ func TestApplyDynamicSchemaStatisticsWritesStandardSections(t *testing.T) {
 	t.Parallel()
 
 	attrs := models.JSONMap{}
-	ApplyDynamicSchemaStatistics(attrs, 42, 2048)
+	rowCount := int64(42)
+	estimatedRowCount := int64(40)
+	ApplyDynamicSchemaStatistics(attrs, &rowCount, &estimatedRowCount, 2048)
 
 	typeInfo := attrs["type_info"].(map[string]interface{})
 	table := typeInfo["table"].(map[string]interface{})
@@ -198,11 +205,34 @@ func TestApplyDynamicSchemaStatisticsWritesStandardSections(t *testing.T) {
 	if table["row_count"] != int64(42) {
 		t.Fatalf("dynamic schema counts not standardized: %#v", attrs)
 	}
+	if table["estimated_row_count"] != int64(40) {
+		t.Fatalf("dynamic schema estimated count not standardized: %#v", attrs)
+	}
 	if typeInfo["document"] != nil || typeInfo["collection"] != nil {
 		t.Fatalf("dynamic schema count should not be duplicated outside type_info.table: %#v", typeInfo)
 	}
 	if storage["total_size"] != int64(2048) {
 		t.Fatalf("storage.total_size missing: %#v", storage)
+	}
+}
+
+func TestApplyTableItemAttributesDoesNotDuplicateRowCountIntoCapabilities(t *testing.T) {
+	t.Parallel()
+
+	rowCount := int64(0)
+	estimatedRowCount := int64(5)
+	attrs := models.JSONMap{}
+	ApplyTableItemAttributes(attrs, &datatype.TableInfo{
+		RowCount:          &rowCount,
+		EstimatedRowCount: &estimatedRowCount,
+	})
+
+	table := attrs["type_info"].(map[string]interface{})["table"].(map[string]interface{})
+	if table["row_count"] != int64(0) || table["estimated_row_count"] != int64(5) {
+		t.Fatalf("type_info.table counts = %#v", table)
+	}
+	if capabilities := attrs["capabilities"]; capabilities != nil {
+		t.Fatalf("row counts must not be duplicated into capabilities: %#v", capabilities)
 	}
 }
 

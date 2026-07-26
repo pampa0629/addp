@@ -548,7 +548,6 @@ import { useAuthStore } from '../store/auth'
 const { t } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
-const currentUser = computed(() => authStore.user)
 
 const scanLoading = ref(false)
 const executeLoading = ref(false)
@@ -569,8 +568,7 @@ const latestExecuteTaskId = ref('')
 const confirmationTokenText = 'CONFIRM'
 
 const isTenantScopeRequired = computed(() => {
-  const user = currentUser.value
-  return user?.user_type === 'super_admin' && Number(user?.tenant_id || 0) === 0
+  return authStore.contextType !== 'tenant'
 })
 
 const emptySummary = {

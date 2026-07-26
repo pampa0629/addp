@@ -877,6 +877,9 @@ paths:
       summary: 获取传输能力 | Get transfer capabilities
       tags:
       - 传输能力 | Capabilities
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.read
   /executions:
     get:
       parameters:
@@ -917,6 +920,9 @@ paths:
       summary: 获取执行列表 | List executions
       tags:
       - 执行管理 | Execution Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.read
   /executions/{execution_id}:
     get:
       parameters:
@@ -944,6 +950,9 @@ paths:
       summary: 获取执行详情 | Get execution detail
       tags:
       - 执行管理 | Execution Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.read
   /executions/{execution_id}/logs:
     get:
       parameters:
@@ -976,6 +985,9 @@ paths:
       summary: 获取执行日志 | Get execution logs
       tags:
       - 执行管理 | Execution Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.read
   /executions/{execution_id}/progress:
     get:
       parameters:
@@ -1003,6 +1015,9 @@ paths:
       summary: 获取执行进度 | Get execution progress
       tags:
       - 执行管理 | Execution Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.read
   /executions/{execution_id}/retry:
     post:
       description: 为允许重试的失败 bounded execution 创建 restartable retry；continuous execution
@@ -1040,6 +1055,9 @@ paths:
       summary: 重试执行 | Retry execution
       tags:
       - 执行管理 | Execution Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.execute
   /executions/statistics:
     get:
       parameters:
@@ -1074,6 +1092,9 @@ paths:
       summary: 获取执行统计 | Get execution statistics
       tags:
       - 执行管理 | Execution Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.read
   /ping:
     get:
       produces:
@@ -1088,6 +1109,7 @@ paths:
       summary: Ping
       tags:
       - Transfer
+      x-addp-auth-mode: public
   /system-engines:
     get:
       description: 返回当前租户可见且启用的 System 引擎，用于 Transfer 任务选择 | Returns active System
@@ -1123,6 +1145,9 @@ paths:
       summary: 列出系统引擎 | List system engines
       tags:
       - 系统引擎 | System Engines
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.read
   /task-definitions:
     post:
       consumes:
@@ -1172,6 +1197,9 @@ paths:
       summary: 创建数据传输任务 | Create data transfer task
       tags:
       - 任务管理 | Task Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.create
   /task-definitions/{id}:
     delete:
       consumes:
@@ -1224,6 +1252,9 @@ paths:
       summary: 删除任务 | Delete task
       tags:
       - 任务管理 | Task Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.delete
     get:
       consumes:
       - application/json
@@ -1264,6 +1295,9 @@ paths:
       summary: 获取任务详情 | Get task detail
       tags:
       - 任务管理 | Task Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.read
     put:
       consumes:
       - application/json
@@ -1307,6 +1341,9 @@ paths:
       summary: 更新任务 | Update task
       tags:
       - 任务管理 | Task Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.update
   /task-definitions/{id}/dead-letters:
     get:
       description: 分页查询当前租户 owner task 的安全 DLQ 控制索引。只返回源位置、稳定错误、execution 与观测审计事实，不返回
@@ -1376,6 +1413,9 @@ paths:
       summary: 获取任务死信记录 | List task dead-letter records
       tags:
       - 死信管理 | Dead-letter Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.read
   /task-definitions/{id}/dead-letters/{identity}:
     get:
       description: 按 identity 获取当前租户 owner task 下的安全 DLQ 控制索引详情。DLQ 不是 replay source，本接口不读取原始
@@ -1423,6 +1463,9 @@ paths:
       summary: 获取死信记录详情 | Get dead-letter record detail
       tags:
       - 死信管理 | Dead-letter Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.read
   /task-definitions/{id}/executions:
     get:
       parameters:
@@ -1460,6 +1503,9 @@ paths:
       summary: 获取任务执行列表 | List task executions
       tags:
       - 执行管理 | Execution Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.read
   /task-definitions/{id}/pause:
     post:
       description: bounded 任务关闭自身定时调度；continuous 任务将 desired_state 置为 paused 并通知 runtime
@@ -1506,6 +1552,9 @@ paths:
       summary: 暂停任务 | Pause task
       tags:
       - 任务管理 | Task Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.update
   /task-definitions/{id}/replay:
     post:
       consumes:
@@ -1574,6 +1623,9 @@ paths:
       summary: 创建 Kafka bounded replay | Create Kafka bounded replay
       tags:
       - 任务管理 | Task Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.execute
   /task-definitions/{id}/resume:
     post:
       description: bounded 任务恢复自身定时调度；continuous 任务创建新的 pending execution 并从 committed
@@ -1621,6 +1673,9 @@ paths:
       summary: 恢复任务 | Resume task
       tags:
       - 任务管理 | Task Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.update
   /task-definitions/{id}/schema-change:
     get:
       description: 只读返回当前 task/generation 最新的 schema change request。只有当前阻塞消息实际包含的新增
@@ -1658,6 +1713,9 @@ paths:
       summary: 获取 CDC 结构变更请求 | Get CDC schema change request
       tags:
       - 任务管理 | Task Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.read
   /task-definitions/{id}/schema-change/approve:
     post:
       consumes:
@@ -1724,6 +1782,9 @@ paths:
       summary: 审批 CDC additive 结构变更 | Approve CDC additive schema change
       tags:
       - 任务管理 | Task Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.update
   /task-definitions/{id}/start:
     post:
       consumes:
@@ -1771,6 +1832,9 @@ paths:
       summary: 启动任务 | Start task
       tags:
       - 任务管理 | Task Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.execute
   /task-definitions/{id}/stop:
     post:
       consumes:
@@ -1831,6 +1895,9 @@ paths:
       summary: 停止连续任务 | Stop continuous task
       tags:
       - 任务管理 | Task Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.update
   /task-definitions/statistics:
     get:
       consumes:
@@ -1855,6 +1922,9 @@ paths:
       summary: 获取任务统计信息 | Get task statistics
       tags:
       - 任务管理 | Task Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.read
   /tasks:
     get:
       consumes:
@@ -1909,6 +1979,9 @@ paths:
       summary: 获取任务列表 | List tasks
       tags:
       - 任务管理 | Task Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.read
   /tasks/{task_type}/{id}:
     get:
       description: 按标准 TaskProvider 路径获取 Transfer 任务详情；task_type 仅支持 sync。| Get Transfer
@@ -1949,6 +2022,9 @@ paths:
       summary: 获取 TaskProvider 任务详情 | Get TaskProvider task detail
       tags:
       - 任务管理 | Task Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.read
   /tasks/{task_type}/{id}/execute:
     post:
       consumes:
@@ -1996,6 +2072,9 @@ paths:
       summary: 执行 TaskProvider Transfer 任务 | Execute TaskProvider Transfer task
       tags:
       - 任务管理 | Task Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.execute
 securityDefinitions:
   BearerAuth:
     in: header

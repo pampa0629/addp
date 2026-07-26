@@ -92,15 +92,39 @@ func BuildRepositoryAuthorizationCoverageReport(repositoryRoot string, catalog A
 		OpenAPI:       make([]OpenAPICoverageSource, 0, len(catalog.PermissionManifests)),
 		Issues:        make([]AuthorizationCoverageIssue, 0),
 	}
+	referencedPermissions := make(map[string]struct{})
 	for _, manifest := range catalog.PermissionManifests {
-		source, issues := inspectOwnerOpenAPI(root, manifest.OwnerModule, permissionCatalog)
+		source, referenced, issues := inspectOwnerOpenAPI(root, manifest.OwnerModule, permissionCatalog)
 		report.OpenAPI = append(report.OpenAPI, source)
 		report.Issues = append(report.Issues, issues...)
+		for key := range referenced {
+			referencedPermissions[key] = struct{}{}
+		}
 	}
 
-	toolSource, _, toolIssues := inspectToolManifest(root, ownerCatalog, permissionCatalog)
+	toolSource, tools, toolIssues := inspectToolManifest(root, ownerCatalog, permissionCatalog)
 	report.ToolManifest = toolSource
 	report.Issues = append(report.Issues, toolIssues...)
+	for _, tool := range tools {
+		for _, key := range tool.RequiredPermissions {
+			referencedPermissions[key] = struct{}{}
+		}
+	}
+	for _, permission := range catalog.Permissions {
+		if permission.Status != "active" {
+			continue
+		}
+		if _, referenced := referencedPermissions[permission.Key]; referenced {
+			continue
+		}
+		report.Issues = append(report.Issues, AuthorizationCoverageIssue{
+			Code:        "unreferenced_active_permission",
+			SourceType:  "permission_catalog",
+			OwnerModule: permission.OwnerModule,
+			SourcePath:  filepath.ToSlash(filepath.Join(permission.OwnerModule, "authorization", "permissions.yaml")),
+			Detail:      fmt.Sprintf("active Permission %q must be referenced by an OpenAPI operation or delegated Tool", permission.Key),
+		})
+	}
 	canonicalizeAuthorizationCoverageReport(&report)
 	report.Complete = len(report.Issues) == 0
 	return report, nil
@@ -122,7 +146,7 @@ func MarshalAuthorizationCoverageReport(report AuthorizationCoverageReport) ([]b
 	return append(data, '\n'), nil
 }
 
-func inspectOwnerOpenAPI(root, owner string, permissions map[string]PermissionDescriptor) (OpenAPICoverageSource, []AuthorizationCoverageIssue) {
+func inspectOwnerOpenAPI(root, owner string, permissions map[string]PermissionDescriptor) (OpenAPICoverageSource, map[string]struct{}, []AuthorizationCoverageIssue) {
 	relativePath := filepath.ToSlash(filepath.Join(owner, "backend", "docs", "swagger.json"))
 	if _, python := pythonPermissionOwners[owner]; python {
 		relativePath = filepath.ToSlash(filepath.Join(owner, "backend", "openapi.json"))
@@ -131,7 +155,7 @@ func inspectOwnerOpenAPI(root, owner string, permissions map[string]PermissionDe
 	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relativePath)))
 	if err != nil {
 		source.Status = "missing"
-		return source, []AuthorizationCoverageIssue{{
+		return source, nil, []AuthorizationCoverageIssue{{
 			Code:        "missing_openapi_document",
 			SourceType:  "openapi",
 			OwnerModule: owner,
@@ -143,7 +167,7 @@ func inspectOwnerOpenAPI(root, owner string, permissions map[string]PermissionDe
 	var document map[string]any
 	if err := json.Unmarshal(data, &document); err != nil {
 		source.Status = "invalid"
-		return source, []AuthorizationCoverageIssue{{
+		return source, nil, []AuthorizationCoverageIssue{{
 			Code:        "invalid_openapi_document",
 			SourceType:  "openapi",
 			OwnerModule: owner,
@@ -154,6 +178,7 @@ func inspectOwnerOpenAPI(root, owner string, permissions map[string]PermissionDe
 
 	paths, _ := document["paths"].(map[string]any)
 	issues := make([]AuthorizationCoverageIssue, 0)
+	referencedPermissions := make(map[string]struct{})
 	pathNames := make([]string, 0, len(paths))
 	for path := range paths {
 		pathNames = append(pathNames, path)
@@ -197,6 +222,7 @@ func inspectOwnerOpenAPI(root, owner string, permissions map[string]PermissionDe
 				continue
 			}
 			for _, key := range requiredPermissions {
+				referencedPermissions[key] = struct{}{}
 				permission, exists := permissions[key]
 				if !exists {
 					issues = append(issues, openAPIIssue("unknown_permission", owner, relativePath, method, path, fmt.Sprintf("operation references unknown Permission %q", key)))
@@ -208,7 +234,7 @@ func inspectOwnerOpenAPI(root, owner string, permissions map[string]PermissionDe
 			}
 		}
 	}
-	return source, issues
+	return source, referencedPermissions, issues
 }
 
 func inspectToolManifest(

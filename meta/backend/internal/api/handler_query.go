@@ -26,6 +26,8 @@ var (
 // @Success 200 {object} models.SpatialMetadataResponse "空间元数据 | Spatial metadata"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "空间元数据不存在 | Spatial metadata not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /items/{item_id}/spatial [get]
 // @Security BearerAuth
 func (h *Handler) GetItemSpatialMetadataByID(c *gin.Context) {

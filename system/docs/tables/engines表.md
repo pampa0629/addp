@@ -1,6 +1,6 @@
 # Engines 表结构和 API 说明
 
-> 本文记录当前表和 API 实现。IAM 目标授权边界以 `docs/concepts/addp账号与权限体系图.md` 为准；文中的 SuperAdmin 跨 Tenant 访问语义属于待替换实现差距，平台角色不自动获得 Tenant 引擎访问权。
+> 本文记录当前表和 API 实现。平台角色不自动获得 Tenant 引擎访问权，Engine 管理由精确 Permission 和当前 Tenant Context 决定。
 
 ## 一、表结构概览
 
@@ -15,7 +15,7 @@
 | 字段名 | 类型 | 约束 | 说明 |
 |--------|------|------|------|
 | `id` | SERIAL | PRIMARY KEY | 主键，自增ID |
-| `tenant_id` | INTEGER | NULLABLE, INDEX | 租户ID，NULL表示系统级引擎（仅SuperAdmin可见） |
+| `tenant_id` | INTEGER | NULLABLE, INDEX | 租户 ID；NULL 仅用于明确发布的内置共享引擎 |
 | `name` | VARCHAR(255) | NOT NULL, INDEX | 显示名称（中文或英文） |
 | `engine_type` | VARCHAR(255) | NOT NULL, INDEX | 引擎类型（postgresql/mysql/acme_geo_workflow等） |
 | `engine_origin` | VARCHAR(50) | NOT NULL, DEFAULT 'general' | 引擎来源：general（通用）/extension（扩展） |
@@ -474,7 +474,7 @@ GET /api/v1/internal/engines?engine_type={type}&tenant_id={id}
 **特性**：
 - 自动解密 `connection_info`
 - 无需用户认证
-- 支持跨租户查询（SuperAdmin）
+- 内部调用必须使用服务身份，不携带或提升用户跨 Tenant 权限
 - 响应为引擎数组；公开 `GET /api/v1/system/engines` 使用分页对象 `{data,total,page,page_size,total_pages}`。
 
 #### 内部获取单个（解密）
@@ -530,21 +530,23 @@ GET /api/v1/internal/registry/compute-engines
 
 ### 6.1 权限模型
 
-| 角色 | 查看 | 创建 | 修改 | 删除 |
-|------|------|------|------|------|
-| SuperAdmin | 所有引擎 | 租户级/系统级 | 所有引擎 | 非内置引擎 |
-| TenantAdmin | 本租户 | 租户级 | 本租户 | 本租户非内置 |
-| 普通用户 | 本租户 | ❌ | ❌ | ❌ |
+| 操作 | Permission |
+|------|------------|
+| 查看 | `system.engine.read` |
+| 创建 | `system.engine.create` |
+| 修改 | `system.engine.update` |
+| 删除 | `system.engine.delete` |
+| 测试/执行 | `system.engine.execute` |
 
 ### 6.2 租户隔离
 
 **系统级引擎**（`tenant_id = NULL`）：
-- 仅 SuperAdmin 可见和管理
-- 用于平台级共享资源
+- 仅用于明确发布的内置共享资源
+- Tenant 用户仍需 `system.engine.read`，写操作不得借此跨 Tenant 提权
 
 **租户级引擎**（`tenant_id` 有值）：
-- 本租户所有用户可见
-- 仅 TenantAdmin 可管理
+- 仅当前 Tenant Context 可见
+- 管理操作必须具备对应 `system.engine.*` Permission
 
 ---
 

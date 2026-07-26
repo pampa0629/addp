@@ -78,6 +78,42 @@ func TestBuildRepositoryAuthorizationCoverageReportReportsMissingDeclarations(t 
 	}
 }
 
+func TestBuildRepositoryAuthorizationCoverageReportRejectsUnreferencedActivePermission(t *testing.T) {
+	root := t.TempDir()
+	writeCoverageFixture(t, root, "manager/backend/docs/swagger.json", `{
+  "swagger": "2.0",
+  "paths": {
+    "/items": {
+      "get": {
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": ["manager.data_item.read"]
+      }
+    }
+  }
+}`)
+	writeCoverageFixture(t, root, "common-python/addp_common/tools/manifest.json", `{"tools":[]}`)
+	catalog := coverageTestCatalog(false)
+	catalog.Permissions = append(catalog.Permissions, PermissionDescriptor{
+		Key:         "manager.data_item.delete",
+		OwnerModule: "manager",
+		Status:      "active",
+	})
+
+	report, err := BuildRepositoryAuthorizationCoverageReport(root, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Complete {
+		t.Fatal("coverage report complete = true, want false")
+	}
+	for _, issue := range report.Issues {
+		if issue.Code == "unreferenced_active_permission" && issue.OwnerModule == "manager" {
+			return
+		}
+	}
+	t.Fatalf("unreferenced active Permission issue not found: %#v", report.Issues)
+}
+
 func coverageTestCatalog(delegable bool) AuthorizationCatalogReport {
 	return AuthorizationCatalogReport{
 		SchemaVersion: AuthorizationCatalogReportSchemaVersion,

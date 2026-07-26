@@ -25,6 +25,8 @@ func NewGlossaryHandler(svc *service.GlossaryService) *GlossaryHandler {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.glossary.read"]
 // @Router /glossaries [get]
 // @Security BearerAuth
 func (h *GlossaryHandler) ListGlossaries(c *gin.Context) {
@@ -87,6 +89,8 @@ func (h *GlossaryHandler) ListGlossaries(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.glossary.create"]
 // @Router /glossaries [post]
 // @Security BearerAuth
 func (h *GlossaryHandler) CreateGlossary(c *gin.Context) {
@@ -112,6 +116,8 @@ func (h *GlossaryHandler) CreateGlossary(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.glossary.read"]
 // @Router /glossaries/{id} [get]
 // @Security BearerAuth
 func (h *GlossaryHandler) GetGlossary(c *gin.Context) {
@@ -135,6 +141,8 @@ func (h *GlossaryHandler) GetGlossary(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.glossary.update"]
 // @Router /glossaries/{id} [put]
 // @Security BearerAuth
 func (h *GlossaryHandler) UpdateGlossary(c *gin.Context) {
@@ -166,6 +174,8 @@ func (h *GlossaryHandler) UpdateGlossary(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.glossary.delete"]
 // @Router /glossaries/{id} [delete]
 // @Security BearerAuth
 func (h *GlossaryHandler) DeleteGlossary(c *gin.Context) {
@@ -188,6 +198,8 @@ func (h *GlossaryHandler) DeleteGlossary(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.glossary.approve"]
 // @Router /glossaries/{id}/approve [post]
 // @Security BearerAuth
 func (h *GlossaryHandler) ApproveGlossary(c *gin.Context) {
@@ -212,6 +224,8 @@ func (h *GlossaryHandler) ApproveGlossary(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.glossary.offline"]
 // @Router /glossaries/{id}/deprecate [post]
 // @Security BearerAuth
 func (h *GlossaryHandler) DeprecateGlossary(c *gin.Context) {
@@ -236,6 +250,8 @@ func (h *GlossaryHandler) DeprecateGlossary(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.glossary.read","standard.element.read"]
 // @Router /glossaries/{id}/elements [get]
 // @Security BearerAuth
 func (h *GlossaryHandler) GetElementMappings(c *gin.Context) {
@@ -259,6 +275,8 @@ func (h *GlossaryHandler) GetElementMappings(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.glossary.update","standard.element.read"]
 // @Router /glossaries/{id}/elements [put]
 // @Security BearerAuth
 func (h *GlossaryHandler) SetElementMappings(c *gin.Context) {

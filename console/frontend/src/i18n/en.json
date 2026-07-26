@@ -188,7 +188,7 @@
       },
       "system": {
         "label": "System",
-        "desc": "User management, audit logs, engine configuration"
+        "desc": "Identity and access, engine, and application configuration"
       },
       "agent": {
         "label": "AI Agent",
@@ -303,10 +303,9 @@
       },
       "system": {
         "label": "System",
-        "users": "Users",
+        "iam": "Identity & Access",
         "engines": "Engines",
         "applications": "Applications",
-        "logs": "Audit Logs",
         "cleanup": "Resource Reclaim"
       }
     }

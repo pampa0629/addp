@@ -68,11 +68,13 @@ func cadPreviewTaskResponse(task *models.CADPreviewTask) CADPreviewTaskResponse 
 // @Param page query int false "页码 | Page"
 // @Param page_size query int false "每页数量 | Page size"
 // @Success 200 {object} map[string]interface{} "任务列表 | Task list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /cad-preview-tasks [get]
 // @Security BearerAuth
 func (h *CADPreviewHandler) ListTasks(c *gin.Context) {
 	page, pageSize := pagination(c)
-	tasks, total, err := h.service.List(c.Request.Context(), c.GetUint("tenant_id"), page, pageSize)
+	tasks, total, err := h.service.List(c.Request.Context(), tenantIDValue(c), page, pageSize)
 	if err != nil {
 		commonAPI.InternalServerError(c, err.Error())
 		return
@@ -92,6 +94,8 @@ func (h *CADPreviewHandler) ListTasks(c *gin.Context) {
 // @Param body body CADPreviewTaskRequest true "任务配置 | Task configuration"
 // @Success 201 {object} CADPreviewTaskResponse
 // @Failure 400 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.create"]
 // @Router /cad-preview-tasks [post]
 // @Security BearerAuth
 func (h *CADPreviewHandler) CreateTask(c *gin.Context) {
@@ -104,8 +108,8 @@ func (h *CADPreviewHandler) CreateTask(c *gin.Context) {
 	if req.Enabled != nil {
 		enabled = *req.Enabled
 	}
-	task := &models.CADPreviewTask{TenantID: c.GetUint("tenant_id"), Name: req.Name, Description: req.Description, Enabled: enabled, Config: req.Config}
-	if userID := c.GetUint("user_id"); userID > 0 {
+	task := &models.CADPreviewTask{TenantID: tenantIDValue(c), Name: req.Name, Description: req.Description, Enabled: enabled, Config: req.Config}
+	if userID := userIDValue(c); userID > 0 {
 		task.CreatedBy = &userID
 	}
 	if err := h.service.Create(c.Request.Context(), task); err != nil {
@@ -121,6 +125,8 @@ func (h *CADPreviewHandler) CreateTask(c *gin.Context) {
 // @Produce json
 // @Param id path int true "任务 ID | Task ID"
 // @Success 200 {object} CADPreviewTaskResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /cad-preview-tasks/{id} [get]
 // @Security BearerAuth
 func (h *CADPreviewHandler) GetTask(c *gin.Context) { h.respondTask(c, false) }
@@ -133,6 +139,8 @@ func (h *CADPreviewHandler) GetTask(c *gin.Context) { h.respondTask(c, false) }
 // @Param id path int true "任务 ID | Task ID"
 // @Param body body CADPreviewTaskRequest true "任务配置 | Task configuration"
 // @Success 200 {object} CADPreviewTaskResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.update"]
 // @Router /cad-preview-tasks/{id} [put]
 // @Security BearerAuth
 func (h *CADPreviewHandler) UpdateTask(c *gin.Context) { h.respondTask(c, true) }
@@ -142,7 +150,7 @@ func (h *CADPreviewHandler) respondTask(c *gin.Context, update bool) {
 	if !ok {
 		return
 	}
-	task, err := h.service.GetByID(c.Request.Context(), id, c.GetUint("tenant_id"))
+	task, err := h.service.GetByID(c.Request.Context(), id, tenantIDValue(c))
 	if err != nil {
 		commonAPI.InternalServerError(c, err.Error())
 		return
@@ -174,6 +182,8 @@ func (h *CADPreviewHandler) respondTask(c *gin.Context, update bool) {
 // @Tags Manager
 // @Param id path int true "任务 ID | Task ID"
 // @Success 204
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.delete"]
 // @Router /cad-preview-tasks/{id} [delete]
 // @Security BearerAuth
 func (h *CADPreviewHandler) DeleteTask(c *gin.Context) {
@@ -181,7 +191,7 @@ func (h *CADPreviewHandler) DeleteTask(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.service.Delete(c.Request.Context(), id, c.GetUint("tenant_id")); err != nil {
+	if err := h.service.Delete(c.Request.Context(), id, tenantIDValue(c)); err != nil {
 		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
@@ -198,13 +208,15 @@ func (h *CADPreviewHandler) DeleteTask(c *gin.Context) {
 // @Param page query int false "页码 | Page"
 // @Param page_size query int false "每页数量 | Page size"
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /cad-previews [get]
 // @Security BearerAuth
 func (h *CADPreviewHandler) ListResults(c *gin.Context) {
 	page, pageSize := pagination(c)
 	taskID, _ := strconv.ParseUint(strings.TrimSpace(c.Query("task_id")), 10, 32)
 	items, total, err := h.service.ListResults(c.Request.Context(), repository.CADPreviewFilter{
-		TenantID: c.GetUint("tenant_id"),
+		TenantID: tenantIDValue(c),
 		TaskID:   uint(taskID),
 		Status:   c.Query("status"),
 		Q:        c.Query("q"),
@@ -224,6 +236,8 @@ func (h *CADPreviewHandler) ListResults(c *gin.Context) {
 // @Produce json
 // @Param id path int true "CAD preview ID"
 // @Success 200 {object} models.CADPreview
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /cad-previews/{id} [get]
 // @Security BearerAuth
 func (h *CADPreviewHandler) GetResult(c *gin.Context) {
@@ -231,7 +245,7 @@ func (h *CADPreviewHandler) GetResult(c *gin.Context) {
 	if !ok {
 		return
 	}
-	result, err := h.service.GetResult(c.Request.Context(), id, c.GetUint("tenant_id"))
+	result, err := h.service.GetResult(c.Request.Context(), id, tenantIDValue(c))
 	if err != nil {
 		commonAPI.InternalServerError(c, err.Error())
 		return
@@ -248,6 +262,8 @@ func (h *CADPreviewHandler) GetResult(c *gin.Context) {
 // @Tags Manager
 // @Param id path int true "CAD preview ID"
 // @Success 204
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.delete"]
 // @Router /cad-previews/{id} [delete]
 // @Security BearerAuth
 func (h *CADPreviewHandler) DeleteResult(c *gin.Context) {
@@ -255,7 +271,7 @@ func (h *CADPreviewHandler) DeleteResult(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.service.DeleteResult(c.Request.Context(), id, c.GetUint("tenant_id")); err != nil {
+	if err := h.service.DeleteResult(c.Request.Context(), id, tenantIDValue(c)); err != nil {
 		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
@@ -268,6 +284,8 @@ func (h *CADPreviewHandler) DeleteResult(c *gin.Context) {
 // @Produce json
 // @Param id path int true "CAD preview ID"
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "resource_ticket"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /cad-previews/{id}/manifest [get]
 // @Security BearerAuth
 func (h *CADPreviewHandler) GetManifest(c *gin.Context) {
@@ -301,6 +319,8 @@ func (h *CADPreviewHandler) GetManifest(c *gin.Context) {
 // @Param x path int true "Tile X"
 // @Param y path int true "Tile Y"
 // @Success 200 "WebP tile"
+// @x-addp-auth-mode "resource_ticket"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /cad-previews/{id}/tiles/{z}/{x}/{y} [get]
 // @Security BearerAuth
 func (h *CADPreviewHandler) GetTile(c *gin.Context) {
@@ -342,7 +362,7 @@ func (h *CADPreviewHandler) readyResult(c *gin.Context) (*models.CADPreview, str
 	if !ok {
 		return nil, "", "", false
 	}
-	result, err := h.repo.GetByID(c.Request.Context(), id, c.GetUint("tenant_id"))
+	result, err := h.repo.GetByID(c.Request.Context(), id, tenantIDValue(c))
 	if err != nil {
 		commonAPI.InternalServerError(c, err.Error())
 		return nil, "", "", false

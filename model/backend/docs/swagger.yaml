@@ -291,6 +291,9 @@ paths:
       summary: 查询数仓分层列表 | List DW layers
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.dw_layer.read
     post:
       consumes:
       - application/json
@@ -314,6 +317,9 @@ paths:
       summary: 创建数仓分层 | Create DW layer
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.dw_layer.create
   /dw-layers/{id}:
     delete:
       parameters:
@@ -335,6 +341,9 @@ paths:
       summary: 删除数仓分层 | Delete DW layer
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.dw_layer.delete
     get:
       parameters:
       - description: 分层ID | DW layer ID
@@ -355,6 +364,9 @@ paths:
       summary: 获取数仓分层详情 | Get DW layer details
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.dw_layer.read
     put:
       consumes:
       - application/json
@@ -383,6 +395,9 @@ paths:
       summary: 更新数仓分层 | Update DW layer
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.dw_layer.update
   /entities:
     get:
       parameters:
@@ -419,6 +434,9 @@ paths:
       summary: 查询实体列表 | List entities
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.entity.read
     post:
       consumes:
       - application/json
@@ -442,6 +460,9 @@ paths:
       summary: 创建实体 | Create entity
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.entity.create
   /entities/{id}:
     delete:
       parameters:
@@ -463,6 +484,9 @@ paths:
       summary: 删除实体 | Delete entity
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.entity.delete
     get:
       parameters:
       - description: 实体ID | Entity ID
@@ -483,6 +507,9 @@ paths:
       summary: 获取实体详情 | Get entity details
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.entity.read
     put:
       consumes:
       - application/json
@@ -511,6 +538,9 @@ paths:
       summary: 更新实体 | Update entity
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.entity.update
   /entities/{id}/approve:
     post:
       parameters:
@@ -532,6 +562,9 @@ paths:
       summary: 审批通过实体 | Approve entity
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.entity.approve
   /entities/{id}/attributes:
     get:
       parameters:
@@ -553,6 +586,9 @@ paths:
       summary: 获取实体属性列表 | Get entity attributes
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.entity.read
     post:
       consumes:
       - application/json
@@ -581,6 +617,9 @@ paths:
       summary: 创建实体属性 | Create entity attribute
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.entity.create
   /entities/{id}/attributes/{aid}:
     delete:
       parameters:
@@ -607,6 +646,9 @@ paths:
       summary: 删除实体属性 | Delete entity attribute
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.entity.delete
     put:
       consumes:
       - application/json
@@ -640,6 +682,9 @@ paths:
       summary: 更新实体属性 | Update entity attribute
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.entity.update
   /entities/export-mermaid:
     get:
       produces:
@@ -655,6 +700,10 @@ paths:
       summary: 导出 Mermaid ER 图 | Export Mermaid ER diagram
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.entity.read
+      - model.entity_relation.read
   /entities/import-mermaid:
     post:
       consumes:
@@ -679,6 +728,10 @@ paths:
       summary: 从 Mermaid ER 图导入实体 | Import entities from Mermaid ER diagram
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.entity.create
+      - model.entity_relation.create
   /entity-relations:
     get:
       parameters:
@@ -699,6 +752,9 @@ paths:
       summary: 查询实体关系列表 | List entity relations
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.entity_relation.read
     post:
       consumes:
       - application/json
@@ -722,6 +778,9 @@ paths:
       summary: 创建实体关系 | Create entity relation
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.entity_relation.create
   /entity-relations/{id}:
     delete:
       parameters:
@@ -743,6 +802,9 @@ paths:
       summary: 删除实体关系 | Delete entity relation
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.entity_relation.delete
     get:
       parameters:
       - description: 关系ID | Relation ID
@@ -763,6 +825,9 @@ paths:
       summary: 获取实体关系详情 | Get entity relation details
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.entity_relation.read
     put:
       consumes:
       - application/json
@@ -791,6 +856,9 @@ paths:
       summary: 更新实体关系 | Update entity relation
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.entity_relation.update
   /logical-tables:
     get:
       parameters:
@@ -835,6 +903,9 @@ paths:
       summary: 查询逻辑表列表 | List logical tables
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.logical_model.read
     post:
       consumes:
       - application/json
@@ -858,6 +929,9 @@ paths:
       summary: 创建逻辑表 | Create logical table
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.logical_model.create
   /logical-tables/{id}:
     delete:
       parameters:
@@ -879,6 +953,9 @@ paths:
       summary: 删除逻辑表 | Delete logical table
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.logical_model.delete
     get:
       parameters:
       - description: 逻辑表ID | Logical table ID
@@ -899,6 +976,9 @@ paths:
       summary: 获取逻辑表详情 | Get logical table details
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.logical_model.read
     put:
       consumes:
       - application/json
@@ -927,6 +1007,9 @@ paths:
       summary: 更新逻辑表 | Update logical table
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.logical_model.update
   /logical-tables/{id}/dimension-relations:
     get:
       parameters:
@@ -948,6 +1031,9 @@ paths:
       summary: 查询维度关联列表 | List dimension relations
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.logical_model.read
     post:
       consumes:
       - application/json
@@ -976,6 +1062,9 @@ paths:
       summary: 添加维度关联 | Add dimension relation
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.logical_model.update
   /logical-tables/{id}/dimension-relations/{rid}:
     delete:
       parameters:
@@ -1002,6 +1091,9 @@ paths:
       summary: 删除维度关联 | Remove dimension relation
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.logical_model.update
   /logical-tables/{id}/fields:
     get:
       parameters:
@@ -1023,6 +1115,9 @@ paths:
       summary: 获取逻辑表字段列表 | Get logical table fields
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.logical_model.read
     post:
       consumes:
       - application/json
@@ -1051,6 +1146,9 @@ paths:
       summary: 创建逻辑表字段 | Create logical table field
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.logical_model.create
   /logical-tables/{id}/fields/{fid}:
     delete:
       parameters:
@@ -1077,6 +1175,9 @@ paths:
       summary: 删除逻辑表字段 | Delete logical table field
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.logical_model.delete
     put:
       consumes:
       - application/json
@@ -1110,6 +1211,9 @@ paths:
       summary: 更新逻辑表字段 | Update logical table field
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.logical_model.update
   /logical-tables/{id}/metrics:
     get:
       parameters:
@@ -1131,6 +1235,9 @@ paths:
       summary: 查询事实表关联指标列表 | List fact table metric mappings
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.logical_model.read
     post:
       consumes:
       - application/json
@@ -1159,6 +1266,9 @@ paths:
       summary: 添加事实表指标关联 | Add fact table metric mapping
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.logical_model.update
   /logical-tables/{id}/metrics/{mid}:
     delete:
       parameters:
@@ -1185,6 +1295,9 @@ paths:
       summary: 删除事实表指标关联 | Remove fact table metric mapping
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.logical_model.update
   /logical-tables/{id}/preview-ddl:
     post:
       parameters:
@@ -1206,6 +1319,9 @@ paths:
       summary: 预览 DDL | Preview DDL
       tags:
       - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.logical_model.read
 securityDefinitions:
   BearerAuth:
     in: header

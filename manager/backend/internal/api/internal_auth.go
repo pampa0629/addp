@@ -5,10 +5,11 @@ import (
 	"strconv"
 	"strings"
 
-	commonAuth "github.com/addp/common/middleware/auth"
 	"github.com/addp/manager/internal/config"
 	"github.com/gin-gonic/gin"
 )
+
+const managerInternalTenantIDKey = "manager.internal_tenant_id"
 
 func managerInternalAPIKeyMiddleware(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -35,9 +36,11 @@ func managerInternalAPIKeyMiddleware(cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 		tenantID := uint(tenantIDValue)
-		c.Set(commonAuth.ContextUserIDKey, uint(1))
-		c.Set(commonAuth.ContextUsernameKey, "internal-api-call")
-		c.Set(commonAuth.ContextTenantIDKey, tenantID)
+		c.Set(managerInternalTenantIDKey, tenantID)
 		c.Next()
 	}
+}
+
+func managerInternalTenantID(c *gin.Context) uint {
+	return c.GetUint(managerInternalTenantIDKey)
 }

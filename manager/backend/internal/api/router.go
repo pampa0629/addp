@@ -2,7 +2,6 @@ package api
 
 import (
 	"strings"
-	"time"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/audit"
@@ -10,6 +9,7 @@ import (
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	_ "github.com/addp/manager/docs"
 	_ "github.com/addp/manager/i18n"
+	managerauthorization "github.com/addp/manager/internal/authorization"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/preview"
 	"github.com/addp/manager/internal/repository"
@@ -83,18 +83,31 @@ func SetupRouter(
 
 	// API 路由组
 	api := router.Group("/api/v1/manager")
-	api.Use(auth.BrowserResourceAccessMiddleware(cfg.SystemServiceURL, redisClient, "manager", isManagerBrowserResourceRequest))
-	// 使用 Redis 缓存中间件 (TTL: 5分钟, 减少 System 调用 90%)
-	if redisClient != nil {
-		api.Use(auth.CachedSystemAuthMiddleware(cfg.SystemServiceURL, redisClient, 5*time.Minute))
-	} else {
-		// Fallback: 无缓存模式
-		api.Use(auth.SystemAuthMiddleware(cfg.SystemServiceURL))
+	api.Use(
+		auth.MustNewOptionalResourceTicketMiddleware(auth.ResourceTicketMiddlewareConfig{
+			SystemURL: cfg.SystemServiceURL, Owner: "manager",
+			RequiredPermissions: []string{managerauthorization.PermissionManagerContentRead},
+		}, isManagerContentResourceRequest),
+		auth.MustNewOptionalResourceTicketMiddleware(auth.ResourceTicketMiddlewareConfig{
+			SystemURL: cfg.SystemServiceURL, Owner: "manager",
+			RequiredPermissions: []string{managerauthorization.PermissionManagerDerivedArtifactRead},
+		}, isManagerDerivedResourceRequest),
+		auth.MustNewMiddleware(auth.MiddlewareConfig{SystemURL: cfg.SystemServiceURL}),
+		auth.MustNewContextGuard("tenant"),
+		auth.MustNewDelegatedPolicyGuard("manager", map[string]auth.DelegatedRoutePolicyEntry{
+			"GET /api/v1/manager/search": {
+				RequiredScopes:      []string{"data.search"},
+				RequiredPermissions: []string{managerauthorization.PermissionManagerSearchExecute},
+			},
+			"GET /api/v1/manager/preview": {
+				RequiredScopes:      []string{"data.preview"},
+				RequiredPermissions: []string{managerauthorization.PermissionManagerContentRead},
+			},
+		}),
+	)
+	permission := func(keys ...string) gin.HandlerFunc {
+		return auth.MustNewPermissionGuard(keys...)
 	}
-	api.Use(auth.DelegatedAccessPolicy("manager", auth.DelegatedRoutePolicy{
-		"GET /api/v1/manager/search":  {"data.search"},
-		"GET /api/v1/manager/preview": {"data.preview"},
-	}))
 	// 审计日志中间件（记录到 System 模块）
 	if systemClient != nil {
 		api.Use(audit.AuditMiddleware("manager", systemClient))
@@ -102,184 +115,184 @@ func SetupRouter(
 	{
 		// 向量化 API：结果 artifact state 与一次性 execution
 		embeddingHandler := NewEmbeddingHandler(embeddingService)
-		api.POST("/embedding_executions", embeddingHandler.CreateEmbeddingExecution)
-		api.GET("/embeddings", embeddingHandler.ListEmbeddings)
-		api.DELETE("/embeddings/:id", embeddingHandler.DeleteEmbedding)
-		api.GET("/items/:item_id/embedding", embeddingHandler.GetItemEmbedding)
+		api.POST("/embedding_executions", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), embeddingHandler.CreateEmbeddingExecution)
+		api.GET("/embeddings", permission(managerauthorization.PermissionManagerDerivedArtifactRead), embeddingHandler.ListEmbeddings)
+		api.DELETE("/embeddings/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), embeddingHandler.DeleteEmbedding)
+		api.GET("/items/:item_id/embedding", permission(managerauthorization.PermissionManagerDerivedArtifactRead), embeddingHandler.GetItemEmbedding)
 
 		// ===== 标准 TaskProvider API =====
 		// GET    /api/v1/manager/tasks                       → 任务列表
 		// GET    /api/v1/manager/tasks/:task_type/:id        → 任务详情
 		// POST   /api/v1/manager/tasks/:task_type/:id/execute → 触发执行
 		// GET    /api/v1/manager/executions/:execution_id    → 执行状态
-		api.GET("/tasks", taskProviderHandler.ListTasks)
-		api.GET("/tasks/:task_type/:id", taskProviderHandler.TaskDetail)
-		api.POST("/tasks/:task_type/:id/execute", taskProviderHandler.TaskExecute)
-		api.GET("/executions/:execution_id", taskProviderHandler.ExecutionStatus)
+		api.GET("/tasks", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.ListTasks)
+		api.GET("/tasks/:task_type/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.TaskDetail)
+		api.POST("/tasks/:task_type/:id/execute", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), taskProviderHandler.TaskExecute)
+		api.GET("/executions/:execution_id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.ExecutionStatus)
 
 		// TileCacheTask CRUD
 		tileCacheTasksGroup := api.Group("/vector_tile_cache_tasks")
 		{
-			tileCacheTasksGroup.GET("", taskProviderHandler.ListTileCacheTasks)
-			tileCacheTasksGroup.POST("", taskProviderHandler.CreateTileCacheTask)
-			tileCacheTasksGroup.GET("/:id", taskProviderHandler.GetTileCacheTask)
-			tileCacheTasksGroup.PUT("/:id", taskProviderHandler.UpdateTileCacheTask)
-			tileCacheTasksGroup.DELETE("/:id", taskProviderHandler.DeleteTileCacheTask)
+			tileCacheTasksGroup.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.ListTileCacheTasks)
+			tileCacheTasksGroup.POST("", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), taskProviderHandler.CreateTileCacheTask)
+			tileCacheTasksGroup.GET("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.GetTileCacheTask)
+			tileCacheTasksGroup.PUT("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactUpdate), taskProviderHandler.UpdateTileCacheTask)
+			tileCacheTasksGroup.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), taskProviderHandler.DeleteTileCacheTask)
 		}
 		tileCacheGroup := api.Group("/vector_tile_cache")
 		{
-			tileCacheGroup.GET("", taskProviderHandler.ListTileCaches)
-			tileCacheGroup.GET("/:id", taskProviderHandler.GetTileCache)
-			tileCacheGroup.DELETE("/:id", taskProviderHandler.DeleteTileCache)
+			tileCacheGroup.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.ListTileCaches)
+			tileCacheGroup.GET("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.GetTileCache)
+			tileCacheGroup.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), taskProviderHandler.DeleteTileCache)
 		}
 		vectorTileSetTasksGroup := api.Group("/vector_tile_set_tasks")
 		{
-			vectorTileSetTasksGroup.GET("", taskProviderHandler.ListVectorTileSetTasks)
-			vectorTileSetTasksGroup.POST("", taskProviderHandler.CreateVectorTileSetTask)
-			vectorTileSetTasksGroup.GET("/:id", taskProviderHandler.GetVectorTileSetTask)
-			vectorTileSetTasksGroup.PUT("/:id", taskProviderHandler.UpdateVectorTileSetTask)
-			vectorTileSetTasksGroup.DELETE("/:id", taskProviderHandler.DeleteVectorTileSetTask)
+			vectorTileSetTasksGroup.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.ListVectorTileSetTasks)
+			vectorTileSetTasksGroup.POST("", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), taskProviderHandler.CreateVectorTileSetTask)
+			vectorTileSetTasksGroup.GET("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.GetVectorTileSetTask)
+			vectorTileSetTasksGroup.PUT("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactUpdate), taskProviderHandler.UpdateVectorTileSetTask)
+			vectorTileSetTasksGroup.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), taskProviderHandler.DeleteVectorTileSetTask)
 		}
 		rasterCOGHandler := NewRasterCOGHandler(rasterCOGRepo, spatialPreviewService)
 		rasterCOGTasksGroup := api.Group("/raster_cog_tasks")
 		{
-			rasterCOGTasksGroup.GET("", taskProviderHandler.ListRasterCOGTasks)
-			rasterCOGTasksGroup.POST("", taskProviderHandler.CreateRasterCOGTask)
-			rasterCOGTasksGroup.GET("/:id", taskProviderHandler.GetRasterCOGTask)
-			rasterCOGTasksGroup.PUT("/:id", taskProviderHandler.UpdateRasterCOGTask)
-			rasterCOGTasksGroup.DELETE("/:id", taskProviderHandler.DeleteRasterCOGTask)
+			rasterCOGTasksGroup.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.ListRasterCOGTasks)
+			rasterCOGTasksGroup.POST("", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), taskProviderHandler.CreateRasterCOGTask)
+			rasterCOGTasksGroup.GET("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.GetRasterCOGTask)
+			rasterCOGTasksGroup.PUT("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactUpdate), taskProviderHandler.UpdateRasterCOGTask)
+			rasterCOGTasksGroup.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), taskProviderHandler.DeleteRasterCOGTask)
 		}
 		rasterMosaicTasksGroup := api.Group("/raster_mosaic_tasks")
 		{
-			rasterMosaicTasksGroup.GET("", taskProviderHandler.ListRasterMosaicTasks)
-			rasterMosaicTasksGroup.POST("", taskProviderHandler.CreateRasterMosaicTask)
-			rasterMosaicTasksGroup.GET("/:id", taskProviderHandler.GetRasterMosaicTask)
-			rasterMosaicTasksGroup.PUT("/:id", taskProviderHandler.UpdateRasterMosaicTask)
-			rasterMosaicTasksGroup.DELETE("/:id", taskProviderHandler.DeleteRasterMosaicTask)
+			rasterMosaicTasksGroup.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.ListRasterMosaicTasks)
+			rasterMosaicTasksGroup.POST("", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), taskProviderHandler.CreateRasterMosaicTask)
+			rasterMosaicTasksGroup.GET("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.GetRasterMosaicTask)
+			rasterMosaicTasksGroup.PUT("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactUpdate), taskProviderHandler.UpdateRasterMosaicTask)
+			rasterMosaicTasksGroup.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), taskProviderHandler.DeleteRasterMosaicTask)
 		}
 		model3DTilesTasksGroup := api.Group("/model3d_tiles_tasks")
 		{
-			model3DTilesTasksGroup.GET("", taskProviderHandler.ListModel3DTilesTasks)
-			model3DTilesTasksGroup.POST("", taskProviderHandler.CreateModel3DTilesTask)
-			model3DTilesTasksGroup.GET("/:id", taskProviderHandler.GetModel3DTilesTask)
-			model3DTilesTasksGroup.PUT("/:id", taskProviderHandler.UpdateModel3DTilesTask)
-			model3DTilesTasksGroup.DELETE("/:id", taskProviderHandler.DeleteModel3DTilesTask)
+			model3DTilesTasksGroup.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.ListModel3DTilesTasks)
+			model3DTilesTasksGroup.POST("", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), taskProviderHandler.CreateModel3DTilesTask)
+			model3DTilesTasksGroup.GET("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.GetModel3DTilesTask)
+			model3DTilesTasksGroup.PUT("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactUpdate), taskProviderHandler.UpdateModel3DTilesTask)
+			model3DTilesTasksGroup.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), taskProviderHandler.DeleteModel3DTilesTask)
 		}
 		model3DTilesAssets := api.Group("/model3d_tiles")
 		{
-			model3DTilesAssets.GET("", taskProviderHandler.ListModel3DTilesResults)
-			model3DTilesAssets.DELETE("/:id", taskProviderHandler.DeleteModel3DTilesResult)
-			model3DTilesAssets.GET("/:id/assets/*asset_path", model3DTilesHandler.GetAsset)
+			model3DTilesAssets.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.ListModel3DTilesResults)
+			model3DTilesAssets.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), taskProviderHandler.DeleteModel3DTilesResult)
+			model3DTilesAssets.GET("/:id/assets/*asset_path", permission(managerauthorization.PermissionManagerDerivedArtifactRead), model3DTilesHandler.GetAsset)
 		}
 		model3DGLBTasksGroup := api.Group("/model_3d_glb_tasks")
 		{
-			model3DGLBTasksGroup.GET("", taskProviderHandler.ListModel3DGLBTasks)
-			model3DGLBTasksGroup.POST("", taskProviderHandler.CreateModel3DGLBTask)
-			model3DGLBTasksGroup.GET("/:id", taskProviderHandler.GetModel3DGLBTask)
-			model3DGLBTasksGroup.PUT("/:id", taskProviderHandler.UpdateModel3DGLBTask)
-			model3DGLBTasksGroup.DELETE("/:id", taskProviderHandler.DeleteModel3DGLBTask)
+			model3DGLBTasksGroup.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.ListModel3DGLBTasks)
+			model3DGLBTasksGroup.POST("", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), taskProviderHandler.CreateModel3DGLBTask)
+			model3DGLBTasksGroup.GET("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.GetModel3DGLBTask)
+			model3DGLBTasksGroup.PUT("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactUpdate), taskProviderHandler.UpdateModel3DGLBTask)
+			model3DGLBTasksGroup.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), taskProviderHandler.DeleteModel3DGLBTask)
 		}
 		gaussianSplatKSplatTasksGroup := api.Group("/gaussian_splat_ksplat_tasks")
 		{
-			gaussianSplatKSplatTasksGroup.GET("", taskProviderHandler.ListGaussianSplatKSplatTasks)
-			gaussianSplatKSplatTasksGroup.POST("", taskProviderHandler.CreateGaussianSplatKSplatTask)
-			gaussianSplatKSplatTasksGroup.GET("/:id", taskProviderHandler.GetGaussianSplatKSplatTask)
-			gaussianSplatKSplatTasksGroup.PUT("/:id", taskProviderHandler.UpdateGaussianSplatKSplatTask)
-			gaussianSplatKSplatTasksGroup.DELETE("/:id", taskProviderHandler.DeleteGaussianSplatKSplatTask)
+			gaussianSplatKSplatTasksGroup.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.ListGaussianSplatKSplatTasks)
+			gaussianSplatKSplatTasksGroup.POST("", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), taskProviderHandler.CreateGaussianSplatKSplatTask)
+			gaussianSplatKSplatTasksGroup.GET("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.GetGaussianSplatKSplatTask)
+			gaussianSplatKSplatTasksGroup.PUT("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactUpdate), taskProviderHandler.UpdateGaussianSplatKSplatTask)
+			gaussianSplatKSplatTasksGroup.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), taskProviderHandler.DeleteGaussianSplatKSplatTask)
 		}
 		pointCloudCOPCTasksGroup := api.Group("/point_cloud_copc_tasks")
 		{
-			pointCloudCOPCTasksGroup.GET("", taskProviderHandler.ListPointCloudCOPCTasks)
-			pointCloudCOPCTasksGroup.POST("", taskProviderHandler.CreatePointCloudCOPCTask)
-			pointCloudCOPCTasksGroup.GET("/:id", taskProviderHandler.GetPointCloudCOPCTask)
-			pointCloudCOPCTasksGroup.PUT("/:id", taskProviderHandler.UpdatePointCloudCOPCTask)
-			pointCloudCOPCTasksGroup.DELETE("/:id", taskProviderHandler.DeletePointCloudCOPCTask)
+			pointCloudCOPCTasksGroup.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.ListPointCloudCOPCTasks)
+			pointCloudCOPCTasksGroup.POST("", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), taskProviderHandler.CreatePointCloudCOPCTask)
+			pointCloudCOPCTasksGroup.GET("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.GetPointCloudCOPCTask)
+			pointCloudCOPCTasksGroup.PUT("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactUpdate), taskProviderHandler.UpdatePointCloudCOPCTask)
+			pointCloudCOPCTasksGroup.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), taskProviderHandler.DeletePointCloudCOPCTask)
 		}
 		if rasterMosaicTileHandler != nil {
 			rasterMosaicTilesGroup := api.Group("/raster_mosaic/tiles")
 			{
-				rasterMosaicTilesGroup.GET("/:z/:x/:y", rasterMosaicTileHandler.GetRasterMosaicTile)
+				rasterMosaicTilesGroup.GET("/:z/:x/:y", permission(managerauthorization.PermissionManagerDerivedArtifactRead), rasterMosaicTileHandler.GetRasterMosaicTile)
 			}
 		}
 		rasterCOGsGroup := api.Group("/raster_cog")
 		{
-			rasterCOGsGroup.GET("", taskProviderHandler.ListRasterCOGs)
-			rasterCOGsGroup.GET("/:id", taskProviderHandler.GetRasterCOG)
-			rasterCOGsGroup.DELETE("/:id", taskProviderHandler.DeleteRasterCOG)
-			rasterCOGsGroup.GET("/:id/content", rasterCOGHandler.GetRasterCOGContent)
+			rasterCOGsGroup.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.ListRasterCOGs)
+			rasterCOGsGroup.GET("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.GetRasterCOG)
+			rasterCOGsGroup.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), taskProviderHandler.DeleteRasterCOG)
+			rasterCOGsGroup.GET("/:id/content", permission(managerauthorization.PermissionManagerDerivedArtifactRead), rasterCOGHandler.GetRasterCOGContent)
 		}
 		model3DGLBsGroup := api.Group("/model_3d_glb")
 		{
-			model3DGLBsGroup.GET("", taskProviderHandler.ListModel3DGLBs)
-			model3DGLBsGroup.GET("/:id", taskProviderHandler.GetModel3DGLB)
-			model3DGLBsGroup.DELETE("/:id", taskProviderHandler.DeleteModel3DGLB)
+			model3DGLBsGroup.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.ListModel3DGLBs)
+			model3DGLBsGroup.GET("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.GetModel3DGLB)
+			model3DGLBsGroup.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), taskProviderHandler.DeleteModel3DGLB)
 			if model3DGLBHandler != nil {
-				model3DGLBsGroup.GET("/:id/content", model3DGLBHandler.GetModel3DGLBContent)
+				model3DGLBsGroup.GET("/:id/content", permission(managerauthorization.PermissionManagerDerivedArtifactRead), model3DGLBHandler.GetModel3DGLBContent)
 			}
 		}
 		gaussianSplatKSplatsGroup := api.Group("/gaussian_splat_ksplat")
 		{
-			gaussianSplatKSplatsGroup.GET("", taskProviderHandler.ListGaussianSplatKSplats)
-			gaussianSplatKSplatsGroup.GET("/:id", taskProviderHandler.GetGaussianSplatKSplat)
-			gaussianSplatKSplatsGroup.DELETE("/:id", taskProviderHandler.DeleteGaussianSplatKSplat)
+			gaussianSplatKSplatsGroup.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.ListGaussianSplatKSplats)
+			gaussianSplatKSplatsGroup.GET("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.GetGaussianSplatKSplat)
+			gaussianSplatKSplatsGroup.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), taskProviderHandler.DeleteGaussianSplatKSplat)
 			if gaussianSplatKSplatHandler != nil {
-				gaussianSplatKSplatsGroup.GET("/:id/inspect", gaussianSplatKSplatHandler.InspectGaussianSplatKSplat)
-				gaussianSplatKSplatsGroup.GET("/:id/content", gaussianSplatKSplatHandler.GetGaussianSplatKSplatContent)
+				gaussianSplatKSplatsGroup.GET("/:id/inspect", permission(managerauthorization.PermissionManagerDerivedArtifactRead), gaussianSplatKSplatHandler.InspectGaussianSplatKSplat)
+				gaussianSplatKSplatsGroup.GET("/:id/content", permission(managerauthorization.PermissionManagerDerivedArtifactRead), gaussianSplatKSplatHandler.GetGaussianSplatKSplatContent)
 			}
 		}
 		pointCloudCOPCsGroup := api.Group("/point_cloud_copc")
 		{
-			pointCloudCOPCsGroup.GET("", taskProviderHandler.ListPointCloudCOPCs)
-			pointCloudCOPCsGroup.GET("/:id", taskProviderHandler.GetPointCloudCOPC)
-			pointCloudCOPCsGroup.DELETE("/:id", taskProviderHandler.DeletePointCloudCOPC)
+			pointCloudCOPCsGroup.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.ListPointCloudCOPCs)
+			pointCloudCOPCsGroup.GET("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.GetPointCloudCOPC)
+			pointCloudCOPCsGroup.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), taskProviderHandler.DeletePointCloudCOPC)
 			if pointCloudCOPCHandler != nil {
-				pointCloudCOPCsGroup.GET("/:id/content", pointCloudCOPCHandler.GetPointCloudCOPCContent)
+				pointCloudCOPCsGroup.GET("/:id/content", permission(managerauthorization.PermissionManagerDerivedArtifactRead), pointCloudCOPCHandler.GetPointCloudCOPCContent)
 			}
 		}
 		if cadPreviewHandler != nil {
 			cadPreviewTasks := api.Group("/cad-preview-tasks")
 			{
-				cadPreviewTasks.GET("", cadPreviewHandler.ListTasks)
-				cadPreviewTasks.POST("", cadPreviewHandler.CreateTask)
-				cadPreviewTasks.GET("/:id", cadPreviewHandler.GetTask)
-				cadPreviewTasks.PUT("/:id", cadPreviewHandler.UpdateTask)
-				cadPreviewTasks.DELETE("/:id", cadPreviewHandler.DeleteTask)
+				cadPreviewTasks.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), cadPreviewHandler.ListTasks)
+				cadPreviewTasks.POST("", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), cadPreviewHandler.CreateTask)
+				cadPreviewTasks.GET("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), cadPreviewHandler.GetTask)
+				cadPreviewTasks.PUT("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactUpdate), cadPreviewHandler.UpdateTask)
+				cadPreviewTasks.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), cadPreviewHandler.DeleteTask)
 			}
 			cadPreviews := api.Group("/cad-previews")
 			{
-				cadPreviews.GET("", cadPreviewHandler.ListResults)
-				cadPreviews.GET("/:id", cadPreviewHandler.GetResult)
-				cadPreviews.DELETE("/:id", cadPreviewHandler.DeleteResult)
-				cadPreviews.GET("/:id/manifest", cadPreviewHandler.GetManifest)
-				cadPreviews.GET("/:id/tiles/:z/:x/:y", cadPreviewHandler.GetTile)
+				cadPreviews.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), cadPreviewHandler.ListResults)
+				cadPreviews.GET("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), cadPreviewHandler.GetResult)
+				cadPreviews.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), cadPreviewHandler.DeleteResult)
+				cadPreviews.GET("/:id/manifest", permission(managerauthorization.PermissionManagerDerivedArtifactRead), cadPreviewHandler.GetManifest)
+				cadPreviews.GET("/:id/tiles/:z/:x/:y", permission(managerauthorization.PermissionManagerDerivedArtifactRead), cadPreviewHandler.GetTile)
 			}
 		}
 		vectorMaterializedViewTasksGroup := api.Group("/vector_materialized_view_tasks")
 		{
-			vectorMaterializedViewTasksGroup.GET("", taskProviderHandler.ListVectorMaterializedViewTasks)
-			vectorMaterializedViewTasksGroup.POST("", taskProviderHandler.CreateVectorMaterializedViewTask)
-			vectorMaterializedViewTasksGroup.GET("/:id", taskProviderHandler.GetVectorMaterializedViewTask)
-			vectorMaterializedViewTasksGroup.PUT("/:id", taskProviderHandler.UpdateVectorMaterializedViewTask)
-			vectorMaterializedViewTasksGroup.DELETE("/:id", taskProviderHandler.DeleteVectorMaterializedViewTask)
+			vectorMaterializedViewTasksGroup.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.ListVectorMaterializedViewTasks)
+			vectorMaterializedViewTasksGroup.POST("", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), taskProviderHandler.CreateVectorMaterializedViewTask)
+			vectorMaterializedViewTasksGroup.GET("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.GetVectorMaterializedViewTask)
+			vectorMaterializedViewTasksGroup.PUT("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactUpdate), taskProviderHandler.UpdateVectorMaterializedViewTask)
+			vectorMaterializedViewTasksGroup.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), taskProviderHandler.DeleteVectorMaterializedViewTask)
 		}
 		vectorMaterializedViewGroup := api.Group("/vector_materialized_view")
 		{
-			vectorMaterializedViewGroup.GET("", taskProviderHandler.ListVectorMaterializedViews)
-			vectorMaterializedViewGroup.GET("/:id", taskProviderHandler.GetVectorMaterializedView)
-			vectorMaterializedViewGroup.DELETE("/:id", taskProviderHandler.DeleteVectorMaterializedView)
+			vectorMaterializedViewGroup.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.ListVectorMaterializedViews)
+			vectorMaterializedViewGroup.GET("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.GetVectorMaterializedView)
+			vectorMaterializedViewGroup.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), taskProviderHandler.DeleteVectorMaterializedView)
 		}
 
 		// EmbeddingTask CRUD
 		embeddingTaskDefGroup := api.Group("/embedding_tasks")
 		{
-			embeddingTaskDefGroup.GET("", taskProviderHandler.ListEmbeddingTasks)
-			embeddingTaskDefGroup.POST("", taskProviderHandler.CreateEmbeddingTask)
-			embeddingTaskDefGroup.GET("/:id", func(c *gin.Context) {
+			embeddingTaskDefGroup.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.ListEmbeddingTasks)
+			embeddingTaskDefGroup.POST("", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), taskProviderHandler.CreateEmbeddingTask)
+			embeddingTaskDefGroup.GET("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), func(c *gin.Context) {
 				c.Params = append(c.Params, gin.Param{Key: "task_type", Value: "embedding"})
 				taskProviderHandler.TaskDetail(c)
 			})
-			embeddingTaskDefGroup.PUT("/:id", taskProviderHandler.UpdateEmbeddingTask)
-			embeddingTaskDefGroup.DELETE("/:id", taskProviderHandler.DeleteEmbeddingTask)
+			embeddingTaskDefGroup.PUT("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactUpdate), taskProviderHandler.UpdateEmbeddingTask)
+			embeddingTaskDefGroup.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), taskProviderHandler.DeleteEmbeddingTask)
 		}
 
 		configGroup := api.Group("/config")
@@ -289,12 +302,12 @@ func SetupRouter(
 		}
 
 		// Manager 用户动作 API
-		api.GET("/resource-actions", resourceActionHandler.GetResourceActions)
-		api.POST("/uploads", uploadHandler.UploadFiles)
-		api.POST("/imports", importHandler.ImportData)
-		api.POST("/exports", exportHandler.CreateExport)
-		api.GET("/exports/:id", exportHandler.GetExport)
-		api.GET("/exports/:id/file", exportHandler.DownloadExportFile)
+		api.GET("/resource-actions", permission(managerauthorization.PermissionManagerDataItemRead), resourceActionHandler.GetResourceActions)
+		api.POST("/uploads", permission(managerauthorization.PermissionManagerDataItemCreate), uploadHandler.UploadFiles)
+		api.POST("/imports", permission(managerauthorization.PermissionManagerDataItemCreate), importHandler.ImportData)
+		api.POST("/exports", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), exportHandler.CreateExport)
+		api.GET("/exports/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), exportHandler.GetExport)
+		api.GET("/exports/:id/file", permission(managerauthorization.PermissionManagerDerivedArtifactRead), exportHandler.DownloadExportFile)
 
 		// 数据探查 API（Manager 核心功能，直接挂在 /api/v1/manager 下）
 		previewRegistry := metadataService.PreviewRegistry()
@@ -304,12 +317,12 @@ func SetupRouter(
 		metadataHandler := NewMetadataHandler(metadataService)
 		downloadHandler := NewDownloadHandler(metadataService)
 
-		api.GET("/engines", explorerHandler.ListEngines) // 获取可用引擎列表（只读）
-		api.POST("/engines/:id/items/refresh", metadataHandler.RefreshItem)
-		api.GET("/preview", explorerHandler.Preview)
-		api.GET("/downloads/file", downloadHandler.DownloadFile)
-		api.GET("/storage-stream", explorerHandler.StorageStream)
-		api.GET("/storage-assets/:engine_id/*storage_ref", explorerHandler.StorageAsset)
+		api.GET("/engines", permission(managerauthorization.PermissionManagerDataItemRead), explorerHandler.ListEngines) // 获取可用引擎列表（只读）
+		api.POST("/engines/:id/items/refresh", permission(managerauthorization.PermissionManagerDataItemUpdate), metadataHandler.RefreshItem)
+		api.GET("/preview", permission(managerauthorization.PermissionManagerContentRead), explorerHandler.Preview)
+		api.GET("/downloads/file", permission(managerauthorization.PermissionManagerContentRead), downloadHandler.DownloadFile)
+		api.GET("/storage-stream", permission(managerauthorization.PermissionManagerContentRead), explorerHandler.StorageStream)
+		api.GET("/storage-assets/:engine_id/*storage_ref", permission(managerauthorization.PermissionManagerContentRead), explorerHandler.StorageAsset)
 
 		// ============================================================
 		// 空间数据服务路由组
@@ -320,14 +333,14 @@ func SetupRouter(
 		{
 			// 要素查询（用于表格与地图关联）
 			featureHandler := NewFeatureHandler(systemClient, metadataRepo, quickViewService)
-			engines.GET("/:id/spatial/features/:feature_id/centroid", featureHandler.GetFeatureCentroid)
-			engines.GET("/:id/spatial/features/:feature_id/geometry", featureHandler.GetFeatureGeometry)
+			engines.GET("/:id/spatial/features/:feature_id/centroid", permission(managerauthorization.PermissionManagerContentRead), featureHandler.GetFeatureCentroid)
+			engines.GET("/:id/spatial/features/:feature_id/geometry", permission(managerauthorization.PermissionManagerContentRead), featureHandler.GetFeatureGeometry)
 		}
 
 		searchGroup := api.Group("/search")
 		{
 			handler := NewSearchHandler(searchService, historyService)
-			searchGroup.GET("", handler.Search) // 混合检索（全文 + 向量）
+			searchGroup.GET("", permission(managerauthorization.PermissionManagerSearchExecute), handler.Search) // 混合检索（全文 + 向量）
 			searchGroup.GET("/history", handler.ListHistory)
 			searchGroup.DELETE("/history/:id", handler.DeleteHistoryItem)
 			searchGroup.DELETE("/history", handler.ClearHistory)
@@ -339,11 +352,11 @@ func SetupRouter(
 			quickViewHandler.SetTileCacheTaskService(taskProviderHandler.tileCacheTaskSvc)
 			quickViewHandler.SetArtifactTaskServices(taskProviderHandler.rasterCOGTaskSvc, taskProviderHandler.model3DGLBTaskSvc, taskProviderHandler.gaussianSplatKSplatTaskSvc, taskProviderHandler.pointCloudCOPCTaskSvc, taskProviderHandler.cadPreviewTaskSvc, taskProviderHandler.model3DTilesTaskSvc)
 		}
-		api.GET("/quick-view/capability", quickViewHandler.GetQuickViewCapabilityByLocator)
-		api.POST("/quick-view/actions", quickViewHandler.ExecuteQuickViewAction)
-		api.GET("/quick-view/flatgeobuf", quickViewHandler.GetQuickViewFlatGeobufByLocator)
-		api.GET("/quick-view/geojson", quickViewHandler.GetQuickViewGeoJSONByLocator)
-		api.GET("/quick-view/tiles/:z/:x/:y.mvt", quickViewHandler.GetQuickViewTileByLocator)
+		api.GET("/quick-view/capability", permission(managerauthorization.PermissionManagerDataItemRead), quickViewHandler.GetQuickViewCapabilityByLocator)
+		api.POST("/quick-view/actions", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), quickViewHandler.ExecuteQuickViewAction)
+		api.GET("/quick-view/flatgeobuf", permission(managerauthorization.PermissionManagerContentRead), quickViewHandler.GetQuickViewFlatGeobufByLocator)
+		api.GET("/quick-view/geojson", permission(managerauthorization.PermissionManagerContentRead), quickViewHandler.GetQuickViewGeoJSONByLocator)
+		api.GET("/quick-view/tiles/:z/:x/:y.mvt", permission(managerauthorization.PermissionManagerDerivedArtifactRead), quickViewHandler.GetQuickViewTileByLocator)
 		api.PATCH("/preview-state/preferred-mode", quickViewHandler.UpdatePreferredModeByLocator)
 		api.PATCH("/preview-state/view-state", quickViewHandler.UpdateViewStateByLocator)
 	}
@@ -351,15 +364,17 @@ func SetupRouter(
 	return router
 }
 
-func isManagerBrowserResourceRequest(c *gin.Context) bool {
+func isManagerContentResourceRequest(c *gin.Context) bool {
 	path := strings.TrimPrefix(c.Request.URL.Path, "/api/v1/manager")
 	if path == "/storage-stream" || path == "/downloads/file" ||
 		path == "/quick-view/flatgeobuf" || path == "/quick-view/geojson" {
 		return true
 	}
-	if strings.HasPrefix(path, "/storage-assets/") {
-		return true
-	}
+	return strings.HasPrefix(path, "/storage-assets/")
+}
+
+func isManagerDerivedResourceRequest(c *gin.Context) bool {
+	path := strings.TrimPrefix(c.Request.URL.Path, "/api/v1/manager")
 	segments := strings.Split(strings.Trim(path, "/"), "/")
 	if len(segments) == 3 && segments[0] == "exports" && segments[2] == "file" {
 		return true

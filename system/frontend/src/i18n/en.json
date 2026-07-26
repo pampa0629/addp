@@ -7,99 +7,174 @@
       "title": "System Management",
       "overview": "Overview",
       "systemMgmt": "System",
-      "userMgmt": "Users",
+      "iam": "Identity & Access",
       "engineMgmt": "Engines",
       "appMgmt": "Applications",
-      "auditLogs": "Audit Logs",
       "cleanup": "Resource Reclaim",
       "logout": "Logout",
       "logoutSuccess": "Logged out successfully"
     },
-    "user": {
-      "title": "User Management",
-      "myInfo": "My Info",
-      "add": "Add User",
+    "iam": {
+      "title": "Identity & Access Management",
+      "assurance": "Assurance: {level}",
+      "noPermission": "The current authorization context has no IAM management permission",
+      "context": {
+        "platform": "Platform management context",
+        "tenant": "Tenant context #{id}"
+      },
+      "tabs": {
+        "tenants": "Tenant Lifecycle",
+        "users": "User Lifecycle",
+        "identityChanges": "Identity Change Review",
+        "platformAudit": "Platform Audit",
+        "memberships": "Memberships",
+        "invitations": "Invitations",
+        "tenantAudit": "Tenant Audit"
+      },
+      "common": {
+        "actions": "Actions",
+        "approve": "Approve",
+        "cancel": "Cancel",
+        "close": "Close",
+        "code": "Code",
+        "confirm": "Confirm",
+        "copied": "Copied",
+        "copy": "Copy",
+        "create": "Create",
+        "createFailed": "Create failed",
+        "description": "Description",
+        "done": "Done",
+        "edit": "Edit",
+        "export": "Export",
+        "exportFailed": "Export failed",
+        "loadFailed": "Loading failed",
+        "name": "Name",
+        "reactivate": "Reactivate",
+        "reason": "Reason",
+        "reasonPrompt": "Enter the reason for this status change",
+        "refresh": "Refresh",
+        "refreshed": "Authorization context refreshed",
+        "reject": "Reject",
+        "restore": "Restore",
+        "revoke": "Revoke",
+        "reviewReason": "Review comment",
+        "save": "Save",
+        "saveFailed": "Save failed",
+        "saved": "Saved",
+        "search": "Search by name or identifier",
+        "status": "Status",
+        "submit": "Submit",
+        "submitFailed": "Submission failed",
+        "submitted": "Submitted",
+        "suspend": "Suspend",
+        "updateFailed": "Update failed",
+        "updated": "Updated",
+        "updatedAt": "Updated At"
+      },
+      "tenants": {
+        "create": "Create Tenant",
+        "edit": "Edit Tenant"
+      },
+      "users": {
+        "account": "User / Local Account",
+        "authVersion": "Authorization Version",
+        "changeRequestId": "Approved identity change request ID",
+        "create": "Create User",
+        "displayName": "Display Name",
+        "edit": "Edit User",
+        "email": "Primary Email",
+        "locale": "Locale",
+        "password": "Initial Password",
+        "username": "Username"
+      },
+      "identityChanges": {
+        "changeType": "Change Type",
+        "create": "Create Identity Change Request",
+        "requestedAt": "Requested At",
+        "requester": "Requester Principal ID",
+        "targetId": "Target Principal ID",
+        "types": {
+          "platform_identity_suspend": "Suspend platform identity",
+          "platform_identity_reactivate": "Reactivate platform identity"
+        }
+      },
+      "memberships": {
+        "editExpiry": "Set Membership Expiry",
+        "expiresAt": "Expires At",
+        "joinedAt": "Joined At",
+        "member": "Member",
+        "principalType": "Principal Type",
+        "source": "Source"
+      },
+      "invitations": {
+        "create": "Create Invitation",
+        "created": "Invitation Created",
+        "createdAt": "Created At",
+        "createdBy": "Creator Principal ID",
+        "email": "Invitation Email",
+        "expiresAt": "Expires At",
+        "revokeConfirm": "Revoke the invitation sent to {email}?",
+        "urlOnce": "The invitation URL is shown only once. Deliver it through a secure channel now."
+      },
+      "audit": {
+        "context": "Context / Tenant",
+        "detail": "Audit Event Details",
+        "endTime": "End Time",
+        "eventName": "Event Name",
+        "module": "Module",
+        "principal": "Principal",
+        "request": "HTTP Request",
+        "requestId": "Request ID",
+        "result": "Result",
+        "risk": "Risk",
+        "source": "Source IP",
+        "startTime": "Start Time",
+        "time": "Occurred At",
+        "to": "to",
+        "summary": {
+          "total": "Total Events",
+          "succeeded": "Succeeded",
+          "failed": "Failed",
+          "denied": "Denied",
+          "high_risk": "High Risk"
+        }
+      },
+      "principalType": {
+        "user": "User",
+        "service_principal": "Service Principal"
+      },
+      "source": {
+        "manual": "Manual",
+        "invitation": "Invitation",
+        "idp_jit": "IdP JIT",
+        "directory_sync": "Directory Sync",
+        "bootstrap": "Bootstrap"
+      },
       "status": {
         "active": "Active",
-        "disabled": "Disabled"
+        "suspended": "Suspended",
+        "closed": "Closed",
+        "deactivated": "Deactivated",
+        "pending": "Pending",
+        "approved": "Approved",
+        "rejected": "Rejected",
+        "cancelled": "Cancelled",
+        "applied": "Applied",
+        "ended": "Ended",
+        "accepted": "Accepted",
+        "revoked": "Revoked",
+        "expired": "Expired",
+        "succeeded": "Succeeded",
+        "failed": "Failed",
+        "denied": "Denied",
+        "ignored": "Ignored",
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High",
+        "critical": "Critical"
       },
-      "types": {
-        "superAdmin": "Super Admin",
-        "tenantAdmin": "Tenant Admin",
-        "user": "User",
-        "unknown": "Unknown"
-      },
-      "columns": {
-        "id": "ID",
-        "username": "Username",
-        "email": "Email",
-        "fullName": "Full Name",
-        "userType": "User Type",
-        "status": "Status",
-        "createdAt": "Created At",
-        "actions": "Actions"
-      },
-      "actions": {
-        "edit": "Edit",
-        "delete": "Delete",
-        "changePassword": "Change Password"
-      },
-      "form": {
-        "username": "Username",
-        "usernamePlaceholder": "Enter username",
-        "password": "Password",
-        "passwordPlaceholder": "Enter password",
-        "email": "Email",
-        "emailPlaceholder": "Enter email",
-        "fullName": "Full Name",
-        "fullNamePlaceholder": "Enter full name",
-        "userType": "User Type",
-        "userTypePlaceholder": "Select user type",
-        "normalUser": "Normal User",
-        "activeStatus": "Status",
-        "active": "Active",
-        "inactive": "Inactive"
-      },
-      "dialog": {
-        "add": "Add User",
-        "edit": "Edit User"
-      },
-      "rules": {
-        "usernameRequired": "Please enter username",
-        "usernameLength": "Username must be 3-20 characters",
-        "passwordRequired": "Please enter password",
-        "passwordMin": "Password must be at least 6 characters",
-        "emailFormat": "Please enter a valid email address"
-      },
-      "msg": {
-        "loadFailed": "Failed to load user list",
-        "createSuccess": "User created successfully",
-        "createFailed": "Failed to create user",
-        "updateSuccess": "User updated successfully",
-        "updateFailed": "Failed to update user",
-        "deleteConfirm": "Are you sure you want to delete user \"{username}\"?",
-        "deleteWarning": "Warning",
-        "deleteSuccess": "Deleted successfully",
-        "deleteFailed": "Failed to delete",
-        "adminCannotDelete": "The admin account cannot be deleted",
-        "changePasswordSuccess": "Password changed successfully",
-        "changePasswordFailed": "Failed to change password"
-      }
-    },
-    "password": {
-      "title": "Change Password",
-      "old": "Old Password",
-      "oldPlaceholder": "Enter old password",
-      "new": "New Password",
-      "newPlaceholder": "Enter new password (at least 6 characters)",
-      "confirm": "Confirm Password",
-      "confirmPlaceholder": "Re-enter new password",
-      "rules": {
-        "oldRequired": "Please enter old password",
-        "newRequired": "Please enter new password",
-        "newMin": "Password must be at least 6 characters",
-        "confirmRequired": "Please re-enter new password",
-        "confirmMismatch": "Passwords do not match"
+      "validation": {
+        "required": "This field is required"
       }
     },
     "engine": {
@@ -657,111 +732,6 @@
         "revokeTitle": "Confirm Revoke"
       }
     },
-    "log": {
-      "title": "Audit Logs",
-      "exportCsv": "Export CSV",
-      "exportJson": "Export JSON",
-      "refresh": "Refresh",
-      "quickTime": "Quick Time",
-      "quickAll": "All",
-      "quickToday": "Today",
-      "quickYesterday": "Yesterday",
-      "quickWeek": "Last 7 Days",
-      "quickMonth": "Last 30 Days",
-      "timeRange": "Time Range",
-      "rangeSeparator": "to",
-      "startTime": "Start Time",
-      "endTime": "End Time",
-      "module": "Module",
-      "allModules": "All Modules",
-      "allOption": "All",
-      "statusCode": "Status Code",
-      "allStatus": "All Status",
-      "statusSuccess": "Success (2xx)",
-      "statusClientError": "Client Error (4xx)",
-      "statusServerError": "Server Error (5xx)",
-      "httpMethod": "HTTP Method",
-      "username": "Username",
-      "usernamePlaceholder": "Enter username",
-      "ipAddress": "IP Address",
-      "ipPlaceholder": "Enter IP",
-      "entityType": "Entity Type",
-      "entityTypePlaceholder": "e.g. cleanup (resource reclaim)",
-      "entityId": "Entity ID",
-      "entityIdPlaceholder": "Enter entity ID",
-      "resourcePath": "Action Prefix",
-      "resourcePathPlaceholder": "e.g. cleanup.execute (resource reclaim execution)",
-      "query": "Search",
-      "reset": "Reset",
-      "auditFilter": {
-        "title": "Showing audit logs for a specific resource",
-        "module": "Module: {value}",
-        "entityType": "Entity type: {value}",
-        "entityId": "Entity ID: {value}",
-        "resourcePath": "Action prefix: {value}",
-        "clear": "Clear resource filter"
-      },
-      "columns": {
-        "id": "ID",
-        "action": "Action",
-        "user": "User",
-        "status": "Status",
-        "duration": "Duration",
-        "ip": "IP",
-        "module": "Module",
-        "time": "Time"
-      },
-      "actions": {
-        "cleanup_scan_created": "Resource reclaim assessment created",
-        "cleanup_execute_created": "Resource reclaim task created",
-        "cleanup_execute_confirmed": "Resource reclaim execution confirmed",
-        "cleanup_completed": "Resource reclaim completed",
-        "cleanup_failed": "Resource reclaim failed"
-      },
-      "detail": {
-        "title": "Action Details",
-        "logId": "Log ID",
-        "requestId": "Request ID",
-        "user": "User",
-        "superAdmin": "SuperAdmin",
-        "tenant": "Tenant",
-        "systemOp": "System Operation",
-        "action": "Action",
-        "result": "Result",
-        "resource": "Resource",
-        "source": "Source",
-        "time": "Time",
-        "error": "Error",
-        "noError": "No details",
-        "auditDetail": "Audit Summary",
-        "requestDetail": "Request Details",
-        "noRequest": "No request details",
-        "unauthenticated": "Unauthenticated"
-      },
-      "auditDetail": {
-        "basedOnScan": "Based On Assessment",
-        "cleanupMode": "Handling Mode",
-        "confirmedAt": "Confirmed At",
-        "confirmationToken": "Confirmation Token",
-        "riskLevel": "Risk Level",
-        "scannedItems": "Found Items",
-        "affectedRecords": "Affected Records",
-        "freedBytes": "Released Storage",
-        "expectedModules": "Modules",
-        "executionId": "Monitor Execution ID",
-        "status": "Status",
-        "causeEvent": "Cause Event",
-        "context": "Context",
-        "summary": "Result Summary",
-        "trueValue": "Yes",
-        "falseValue": "No"
-      },
-      "msg": {
-        "loadFailed": "Failed to load log list",
-        "exportSuccess": "Exported {format} successfully",
-        "exportFailed": "Export failed"
-      }
-    },
     "cleanup": {
       "title": "Resource Reclaim",
       "subtitle": "Assess and reclaim inactive resources, derived artifacts, and runtime caches",
@@ -949,65 +919,6 @@
         "confirmRequired": "Complete the confirmation first",
         "detailFailed": "Failed to load task details",
         "tenantScopeRequired": "Manual resource reclaim requires an explicit tenant scope"
-      }
-    },
-    "tenant": {
-      "title": "Tenant Management",
-      "add": "Add Tenant",
-      "columns": {
-        "id": "ID",
-        "name": "Tenant Name",
-        "description": "Description",
-        "status": "Status",
-        "createdAt": "Created At",
-        "actions": "Actions"
-      },
-      "status": {
-        "active": "Active",
-        "disabled": "Disabled"
-      },
-      "actions": {
-        "edit": "Edit",
-        "delete": "Delete"
-      },
-      "form": {
-        "name": "Tenant Name",
-        "namePlaceholder": "Enter tenant name",
-        "description": "Description",
-        "descPlaceholder": "Enter tenant description",
-        "adminSection": "Admin Info",
-        "adminUsername": "Admin Username",
-        "adminUsernamePlaceholder": "Enter admin username",
-        "adminPassword": "Admin Password",
-        "adminPasswordPlaceholder": "Enter admin password",
-        "adminEmail": "Admin Email",
-        "adminEmailPlaceholder": "Enter admin email",
-        "adminFullName": "Admin Full Name",
-        "adminFullNamePlaceholder": "Enter admin full name"
-      },
-      "dialog": {
-        "add": "Add Tenant",
-        "edit": "Edit Tenant",
-        "create": "Create",
-        "update": "Update",
-        "cancel": "Cancel"
-      },
-      "rules": {
-        "nameRequired": "Please enter tenant name",
-        "adminUsernameRequired": "Please enter admin username",
-        "adminPasswordRequired": "Please enter admin password",
-        "adminPasswordMin": "Password must be at least 6 characters"
-      },
-      "msg": {
-        "loadFailed": "Failed to load tenant list",
-        "createSuccess": "Tenant created successfully",
-        "createFailed": "Failed to create tenant",
-        "updateSuccess": "Tenant updated successfully",
-        "updateFailed": "Failed to update tenant",
-        "deleteConfirm": "Are you sure you want to delete tenant \"{name}\"? This will also delete all users in this tenant!",
-        "deleteWarning": "Warning",
-        "deleteSuccess": "Tenant deleted successfully",
-        "deleteFailed": "Failed to delete tenant"
       }
     }
   }

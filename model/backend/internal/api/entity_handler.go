@@ -30,6 +30,8 @@ func NewEntityHandler(svc *service.EntityService) *EntityHandler {
 // @Param page query int false "页码 | Page number"
 // @Param page_size query int false "每页数量 | Page size"
 // @Success 200 {object} map[string]interface{} "实体列表 | Entity list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.entity.read"]
 // @Router /entities [get]
 // @Security BearerAuth
 func (h *EntityHandler) ListEntities(c *gin.Context) {
@@ -83,6 +85,8 @@ func (h *EntityHandler) ListEntities(c *gin.Context) {
 // @Produce json
 // @Param body body models.CreateEntityRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{} "已创建的实体 | Created entity"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.entity.create"]
 // @Router /entities [post]
 // @Security BearerAuth
 func (h *EntityHandler) CreateEntity(c *gin.Context) {
@@ -109,6 +113,8 @@ func (h *EntityHandler) CreateEntity(c *gin.Context) {
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
 // @Success 200 {object} map[string]interface{} "实体详情 | Entity details"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.entity.read"]
 // @Router /entities/{id} [get]
 // @Security BearerAuth
 func (h *EntityHandler) GetEntity(c *gin.Context) {
@@ -135,6 +141,8 @@ func (h *EntityHandler) GetEntity(c *gin.Context) {
 // @Param id path int true "实体ID | Entity ID"
 // @Param body body models.UpdateEntityRequest true "更新请求 | Update request"
 // @Success 200 {object} map[string]interface{} "已更新的实体 | Updated entity"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.entity.update"]
 // @Router /entities/{id} [put]
 // @Security BearerAuth
 func (h *EntityHandler) UpdateEntity(c *gin.Context) {
@@ -167,6 +175,8 @@ func (h *EntityHandler) UpdateEntity(c *gin.Context) {
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.entity.delete"]
 // @Router /entities/{id} [delete]
 // @Security BearerAuth
 func (h *EntityHandler) DeleteEntity(c *gin.Context) {
@@ -190,6 +200,8 @@ func (h *EntityHandler) DeleteEntity(c *gin.Context) {
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
 // @Success 200 {object} map[string]interface{} "审批成功 | Approved successfully"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.entity.approve"]
 // @Router /entities/{id}/approve [post]
 // @Security BearerAuth
 func (h *EntityHandler) ApproveEntity(c *gin.Context) {
@@ -215,6 +227,8 @@ func (h *EntityHandler) ApproveEntity(c *gin.Context) {
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
 // @Success 200 {object} map[string]interface{} "属性列表 | Attribute list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.entity.read"]
 // @Router /entities/{id}/attributes [get]
 // @Security BearerAuth
 func (h *EntityHandler) GetAttributes(c *gin.Context) {
@@ -241,6 +255,8 @@ func (h *EntityHandler) GetAttributes(c *gin.Context) {
 // @Param id path int true "实体ID | Entity ID"
 // @Param body body models.CreateEntityAttributeRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{} "已创建的属性 | Created attribute"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.entity.create"]
 // @Router /entities/{id}/attributes [post]
 // @Security BearerAuth
 func (h *EntityHandler) CreateAttribute(c *gin.Context) {
@@ -274,6 +290,8 @@ func (h *EntityHandler) CreateAttribute(c *gin.Context) {
 // @Param aid path int true "属性ID | Attribute ID"
 // @Param body body models.UpdateEntityAttributeRequest true "更新请求 | Update request"
 // @Success 200 {object} map[string]interface{} "已更新的属性 | Updated attribute"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.entity.update"]
 // @Router /entities/{id}/attributes/{aid} [put]
 // @Security BearerAuth
 func (h *EntityHandler) UpdateAttribute(c *gin.Context) {
@@ -310,6 +328,8 @@ func (h *EntityHandler) UpdateAttribute(c *gin.Context) {
 // @Param id path int true "实体ID | Entity ID"
 // @Param aid path int true "属性ID | Attribute ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.entity.delete"]
 // @Router /entities/{id}/attributes/{aid} [delete]
 // @Security BearerAuth
 func (h *EntityHandler) DeleteAttribute(c *gin.Context) {
@@ -339,6 +359,8 @@ func (h *EntityHandler) DeleteAttribute(c *gin.Context) {
 // @Produce json
 // @Param body body models.MermaidImportRequest true "导入请求 | Import request"
 // @Success 200 {object} map[string]interface{} "导入结果 | Import result"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.entity.create","model.entity_relation.create"]
 // @Router /entities/import-mermaid [post]
 // @Security BearerAuth
 func (h *EntityHandler) ImportMermaid(c *gin.Context) {
@@ -365,6 +387,8 @@ func (h *EntityHandler) ImportMermaid(c *gin.Context) {
 // @Tags Model
 // @Produce json
 // @Success 200 {object} map[string]interface{} "Mermaid ER 图代码 | Mermaid ER diagram code"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.entity.read","model.entity_relation.read"]
 // @Router /entities/export-mermaid [get]
 // @Security BearerAuth
 func (h *EntityHandler) ExportMermaid(c *gin.Context) {

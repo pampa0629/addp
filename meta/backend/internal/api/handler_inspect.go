@@ -18,6 +18,8 @@ import (
 // @Success 200 {object} service.InspectResult "识别结果 | Inspect result"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.inspect.execute"]
 // @Router /inspect [post]
 // @Security BearerAuth
 func (h *Handler) InspectAttributes(c *gin.Context) {

@@ -2,7 +2,6 @@ package api
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -41,6 +40,8 @@ type SuppressAlertRequest struct {
 // @Param page query int false "页码 | Page" default(1)
 // @Param page_size query int false "每页数量 | Page size" default(20)
 // @Success 200 {object} service.ListAlertsResponse "告警列表 | Alert list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.alert_incident.read"]
 // @Router /alerts [get]
 // @Security BearerAuth
 func (h *AlertHandler) ListAlerts(c *gin.Context) {
@@ -67,6 +68,8 @@ func (h *AlertHandler) ListAlerts(c *gin.Context) {
 // @Param id path int true "告警 ID | Alert ID"
 // @Success 200 {object} AlertIncidentResponse "已确认告警 | Acknowledged alert"
 // @Failure 404 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.alert_incident.update"]
 // @Router /alerts/{id}/acknowledge [post]
 // @Security BearerAuth
 func (h *AlertHandler) AcknowledgeAlert(c *gin.Context) {
@@ -74,8 +77,8 @@ func (h *AlertHandler) AcknowledgeAlert(c *gin.Context) {
 	if !ok {
 		return
 	}
-	actor, _ := c.Get(commonAuth.ContextUsernameKey)
-	alert, err := h.service.Acknowledge(c.Request.Context(), id, tenantID, fmt.Sprint(actor), time.Now())
+	principal, _ := commonAuth.PrincipalFromGin(c)
+	alert, err := h.service.Acknowledge(c.Request.Context(), id, tenantID, principal.ID, time.Now())
 	if errors.Is(err, service.ErrAlertNotActive) {
 		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, moni18n.MsgAlertNotActive)})
 		return
@@ -97,6 +100,8 @@ func (h *AlertHandler) AcknowledgeAlert(c *gin.Context) {
 // @Success 200 {object} AlertIncidentResponse "已抑制告警 | Suppressed alert"
 // @Failure 400 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.alert_incident.update"]
 // @Router /alerts/{id}/suppress [post]
 // @Security BearerAuth
 func (h *AlertHandler) SuppressAlert(c *gin.Context) {
@@ -132,13 +137,8 @@ func alertIdentity(c *gin.Context) (uint, int, bool) {
 }
 
 func alertTenantID(c *gin.Context) (int, bool) {
-	value, exists := c.Get(commonAuth.ContextTenantIDKey)
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, moni18n.MsgTenantNotFound)})
-		return 0, false
-	}
-	tenantID, ok := value.(uint)
-	if !ok {
+	tenantID := commonAuth.GetTenantID(c)
+	if tenantID == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, moni18n.MsgTenantNotFound)})
 		return 0, false
 	}

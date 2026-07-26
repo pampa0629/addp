@@ -10,6 +10,7 @@ import (
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	_ "github.com/addp/meta/docs"
 	_ "github.com/addp/meta/i18n"
+	metaauthorization "github.com/addp/meta/internal/authorization"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/service"
 	"github.com/gin-gonic/gin"
@@ -48,73 +49,71 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 
 	// API路由组（需要认证）
 	api := router.Group("/api/v1/meta")
-	// 使用 Redis 缓存中间件 (TTL: 5分钟, 减少 System 调用 90%)
-	if redisClient != nil {
-		api.Use(auth.CachedSystemAuthMiddleware(cfg.SystemServiceURL, redisClient, 5*time.Minute))
-	} else {
-		// Fallback: 无缓存模式
-		api.Use(auth.SystemAuthMiddleware(cfg.SystemServiceURL))
+	api.Use(
+		auth.MustNewMiddleware(auth.MiddlewareConfig{SystemURL: cfg.SystemServiceURL}),
+		auth.MustNewContextGuard("tenant"),
+		auth.MustNewDelegatedPolicyGuard("meta", map[string]auth.DelegatedRoutePolicyEntry{
+			"GET /api/v1/meta/resource-tree/:engine_id/ancestors": {
+				RequiredScopes:      []string{"resource.ancestors.get"},
+				RequiredPermissions: []string{metaauthorization.PermissionMetaCatalogRead},
+			},
+		}),
+	)
+	permission := func(keys ...string) gin.HandlerFunc {
+		return auth.MustNewPermissionGuard(keys...)
 	}
-	api.Use(auth.DelegatedAccessPolicy("meta", auth.DelegatedRoutePolicy{
-		"GET /api/v1/meta/resource-tree/:engine_id/ancestors": {"resource.ancestors.get"},
-	}))
 	// 审计日志中间件（记录到 System 模块）
 	if systemClient != nil {
 		api.Use(audit.AuditMiddleware("meta", systemClient))
 	}
-	api.Use(auth.TenantIsolationMiddleware()) // 租户隔离
 	{
 		// 资产发现接口（供 Asset 模块调用）
-		api.GET("/assets/discoverable", assetDiscHandler.listDiscoverableAssets)
+		api.GET("/assets/discoverable", permission(metaauthorization.PermissionMetaCatalogRead), assetDiscHandler.listDiscoverableAssets)
 
 		// 资源相关
-		api.GET("/engines", handler.GetEngines)
+		api.GET("/engines", permission(metaauthorization.PermissionMetaCatalogRead), handler.GetEngines)
 
 		// 扫描相关
-		api.POST("/scan/run/unscanned", handler.CreateUnscannedScanRuns)
-		api.POST("/scan/run/manual", handler.CreateManualScanRun)
-		api.POST("/inspect", handler.InspectAttributes)
-		api.GET("/scan/runs", handler.ListScanRuns)
-		api.GET("/executions/:execution_id", handler.GetExecution)
-		api.GET("/tasks", handler.ListProviderScanTasks)
-		api.GET("/tasks/:task_type/:id", handler.ProviderGetScanTask)
-		api.POST("/tasks/:task_type/:id/execute", handler.ProviderExecuteScanTask)
-		api.GET("/scan/tasks", handler.ListScanTasks)
-		api.POST("/scan/tasks", handler.CreateScanTask)
-		api.PUT("/scan/tasks/engines/:engine_id", handler.UpsertEngineScanTask)
-		api.DELETE("/scan/tasks/engines/:engine_id", handler.DeleteEngineScanTask)
-		api.PUT("/scan/tasks/:task_id", handler.UpdateScanTask)
-		api.DELETE("/scan/tasks/:task_id", handler.DeleteScanTask)
-		api.POST("/scan/tasks/:task_id/trigger", handler.TriggerScanTask)
+		api.POST("/scan/run/unscanned", permission(metaauthorization.PermissionMetaScanTaskExecute), handler.CreateUnscannedScanRuns)
+		api.POST("/scan/run/manual", permission(metaauthorization.PermissionMetaScanTaskExecute), handler.CreateManualScanRun)
+		api.POST("/inspect", permission(metaauthorization.PermissionMetaInspectExecute), handler.InspectAttributes)
+		api.GET("/scan/runs", permission(metaauthorization.PermissionMetaScanTaskRead), handler.ListScanRuns)
+		api.GET("/executions/:execution_id", permission(metaauthorization.PermissionMetaScanTaskRead), handler.GetExecution)
+		api.GET("/tasks", permission(metaauthorization.PermissionMetaScanTaskRead), handler.ListProviderScanTasks)
+		api.GET("/tasks/:task_type/:id", permission(metaauthorization.PermissionMetaScanTaskRead), handler.ProviderGetScanTask)
+		api.POST("/tasks/:task_type/:id/execute", permission(metaauthorization.PermissionMetaScanTaskExecute), handler.ProviderExecuteScanTask)
+		api.GET("/scan/tasks", permission(metaauthorization.PermissionMetaScanTaskRead), handler.ListScanTasks)
+		api.POST("/scan/tasks", permission(metaauthorization.PermissionMetaScanTaskCreate), handler.CreateScanTask)
+		api.PUT("/scan/tasks/engines/:engine_id", permission(metaauthorization.PermissionMetaScanTaskUpdate), handler.UpsertEngineScanTask)
+		api.DELETE("/scan/tasks/engines/:engine_id", permission(metaauthorization.PermissionMetaScanTaskDelete), handler.DeleteEngineScanTask)
+		api.PUT("/scan/tasks/:task_id", permission(metaauthorization.PermissionMetaScanTaskUpdate), handler.UpdateScanTask)
+		api.DELETE("/scan/tasks/:task_id", permission(metaauthorization.PermissionMetaScanTaskDelete), handler.DeleteScanTask)
+		api.POST("/scan/tasks/:task_id/trigger", permission(metaauthorization.PermissionMetaScanTaskExecute), handler.TriggerScanTask)
 
 		// 元数据相关
-		api.GET("/engines/:engine_id/items", handler.ListEngineItems)
+		api.GET("/engines/:engine_id/items", permission(metaauthorization.PermissionMetaCatalogRead), handler.ListEngineItems)
 
 		// 新增：用于 Manager 模块的元数据查询接口
-		api.GET("/engines/:engine_id/tree", handler.GetMetadataTree)
-		api.GET("/resource-tree/:engine_id", handler.GetResourceTree)
-		api.GET("/resource-tree/:engine_id/node", handler.GetResourceTreeNode)
-		api.GET("/resource-tree/:engine_id/ancestors", handler.GetResourceTreeAncestors)
-		api.GET("/resource-tree/:engine_id/search", handler.SearchResourceTree)
-		api.POST("/resource-tree/:engine_id/refresh", handler.RefreshResourceTreeNode)
-		api.GET("/nodes/:node_id", handler.GetMetaNodeByID)
-		api.GET("/nodes/:node_id/ancestors", handler.GetNodeAncestors)
-		api.GET("/nodes/:node_id/children", handler.GetNodeChildren)
-		api.GET("/nodes/:node_id/items", handler.GetNodeItems)
-		api.GET("/nodes/by-catalog-path", handler.QueryNodeByCatalogPath)
-		api.GET("/items/by-catalog-path", handler.QueryItemByCatalogPath)
-		api.GET("/items/:item_id/fields", handler.GetItemFieldsByID)
-		api.GET("/items/:item_id/spatial", handler.GetItemSpatialMetadataByID)
-		api.GET("/items/:item_id/ancestors", handler.GetItemAncestors)
-		api.POST("/items/:item_id/refresh", handler.RefreshItem)
-		api.GET("/items/:item_id", handler.GetItemByID)
+		api.GET("/engines/:engine_id/tree", permission(metaauthorization.PermissionMetaCatalogRead), handler.GetMetadataTree)
+		api.GET("/resource-tree/:engine_id", permission(metaauthorization.PermissionMetaCatalogRead), handler.GetResourceTree)
+		api.GET("/resource-tree/:engine_id/node", permission(metaauthorization.PermissionMetaCatalogRead), handler.GetResourceTreeNode)
+		api.GET("/resource-tree/:engine_id/ancestors", permission(metaauthorization.PermissionMetaCatalogRead), handler.GetResourceTreeAncestors)
+		api.GET("/resource-tree/:engine_id/search", permission(metaauthorization.PermissionMetaCatalogRead), handler.SearchResourceTree)
+		api.POST("/resource-tree/:engine_id/refresh", permission(metaauthorization.PermissionMetaScanTaskExecute), handler.RefreshResourceTreeNode)
+		api.GET("/nodes/:node_id", permission(metaauthorization.PermissionMetaCatalogRead), handler.GetMetaNodeByID)
+		api.GET("/nodes/:node_id/ancestors", permission(metaauthorization.PermissionMetaCatalogRead), handler.GetNodeAncestors)
+		api.GET("/nodes/:node_id/children", permission(metaauthorization.PermissionMetaCatalogRead), handler.GetNodeChildren)
+		api.GET("/nodes/:node_id/items", permission(metaauthorization.PermissionMetaCatalogRead), handler.GetNodeItems)
+		api.GET("/nodes/by-catalog-path", permission(metaauthorization.PermissionMetaCatalogRead), handler.QueryNodeByCatalogPath)
+		api.GET("/items/by-catalog-path", permission(metaauthorization.PermissionMetaCatalogRead), handler.QueryItemByCatalogPath)
+		api.GET("/items/:item_id/fields", permission(metaauthorization.PermissionMetaCatalogRead), handler.GetItemFieldsByID)
+		api.GET("/items/:item_id/spatial", permission(metaauthorization.PermissionMetaCatalogRead), handler.GetItemSpatialMetadataByID)
+		api.GET("/items/:item_id/ancestors", permission(metaauthorization.PermissionMetaCatalogRead), handler.GetItemAncestors)
+		api.POST("/items/:item_id/refresh", permission(metaauthorization.PermissionMetaScanTaskExecute), handler.RefreshItem)
+		api.GET("/items/:item_id", permission(metaauthorization.PermissionMetaCatalogRead), handler.GetItemByID)
 
 		// 统计接口
-		api.GET("/stats", handler.GetStats)
-
-		// 缓存管理
-		api.DELETE("/cache/engines/:engine_id", handler.ClearResourceCache)
-		api.POST("/cache/refresh", handler.RefreshResourceCache)
+		api.GET("/stats", permission(metaauthorization.PermissionMetaCatalogRead), handler.GetStats)
 	}
 
 	return router

@@ -3,7 +3,6 @@ package api
 import (
 	"net/http"
 
-	commonAuth "github.com/addp/common/middleware/auth"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -24,6 +23,8 @@ func NewDuckDBHandler(svc *service.DuckDBService) *DuckDBHandler {
 // @Tags DuckDB
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read"]
 // @Router /duckdb/test [get]
 func (h *DuckDBHandler) TestConnection(c *gin.Context) {
 	ms, err := h.svc.Ping(c.Request.Context())
@@ -47,12 +48,11 @@ func (h *DuckDBHandler) TestConnection(c *gin.Context) {
 // @Tags DuckDB
 // @Produce json
 // @Success 200 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read"]
 // @Router /duckdb/sample-query [get]
 func (h *DuckDBHandler) GetSampleQuery(c *gin.Context) {
-	tenantID, _ := c.Get(commonAuth.ContextTenantIDKey)
-	tid, _ := tenantID.(uint)
-
-	query := h.svc.GenerateSampleQuery(c.Request.Context(), tid)
+	query := h.svc.GenerateSampleQuery(c.Request.Context(), tenantIDValue(c))
 	c.JSON(http.StatusOK, gin.H{
 		"query":    query,
 		"language": "sql",
@@ -65,12 +65,11 @@ func (h *DuckDBHandler) GetSampleQuery(c *gin.Context) {
 // @Tags DuckDB
 // @Produce json
 // @Success 200 {array} service.DataSource
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read"]
 // @Router /duckdb/sources [get]
 func (h *DuckDBHandler) GetFederatedSources(c *gin.Context) {
-	tenantID, _ := c.Get(commonAuth.ContextTenantIDKey)
-	tid, _ := tenantID.(uint)
-
-	sources, err := h.svc.GetSources(c.Request.Context(), tid)
+	sources, err := h.svc.GetSources(c.Request.Context(), tenantIDValue(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

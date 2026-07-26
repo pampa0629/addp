@@ -11,6 +11,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/system/internal/migration"
+	"github.com/addp/system/internal/testsupport"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -21,6 +22,7 @@ func TestContextSwitchServiceAgainstPostgres(t *testing.T) {
 	if dsn == "" {
 		t.Skip("set ADDP_IAM_RUNTIME_TEST_DSN to a disposable PostgreSQL 15+ database")
 	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
@@ -145,7 +147,7 @@ func TestContextSwitchServiceAgainstPostgres(t *testing.T) {
 			t,
 			db,
 			user.PrincipalID,
-			"platform.statistics_viewer",
+			"platform.audit_administrator",
 			"platform",
 			nil,
 			nil,
@@ -194,7 +196,7 @@ func TestContextSwitchServiceAgainstPostgres(t *testing.T) {
 			t,
 			db,
 			platformUser.PrincipalID,
-			"platform.statistics_viewer",
+			"platform.audit_administrator",
 			"platform",
 			nil,
 			nil,

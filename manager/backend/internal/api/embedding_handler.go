@@ -30,6 +30,8 @@ func NewEmbeddingHandler(embeddingService *service.EmbeddingService) *EmbeddingH
 // @Success 200 {object} service.EmbeddingExecutionResponse "执行已创建 | Execution created"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 503 {object} map[string]interface{} "向量化服务不可用 | Embedding service unavailable"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.create"]
 // @Router /embedding_executions [post]
 // @Security BearerAuth
 func (h *EmbeddingHandler) CreateEmbeddingExecution(c *gin.Context) {
@@ -43,7 +45,7 @@ func (h *EmbeddingHandler) CreateEmbeddingExecution(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	resp, err := h.embeddingService.CreateAdhocExecution(c.Request.Context(), c.GetUint("tenant_id"), c.GetUint("user_id"), req)
+	resp, err := h.embeddingService.CreateAdhocExecution(c.Request.Context(), tenantIDValue(c), userIDValue(c), req)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -78,6 +80,8 @@ func decodeEmbeddingExecutionRequest(c *gin.Context) (service.EmbeddingExecution
 // @Param q query string false "关键词 | Query"
 // @Success 200 {object} map[string]interface{} "向量化结果列表 | Embedding result list"
 // @Failure 503 {object} map[string]interface{} "向量化服务不可用 | Embedding service unavailable"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /embeddings [get]
 // @Security BearerAuth
 func (h *EmbeddingHandler) ListEmbeddings(c *gin.Context) {
@@ -97,7 +101,7 @@ func (h *EmbeddingHandler) ListEmbeddings(c *gin.Context) {
 	nodeID, _ := strconv.ParseUint(c.DefaultQuery("node_id", "0"), 10, 64)
 	itemID, _ := strconv.ParseUint(c.DefaultQuery("item_id", "0"), 10, 64)
 	items, total, err := h.embeddingService.ListEmbeddings(c.Request.Context(), repository.EmbeddingListFilter{
-		TenantID: c.GetUint("tenant_id"),
+		TenantID: tenantIDValue(c),
 		EngineID: uint(engineID),
 		NodeID:   uint(nodeID),
 		ItemID:   uint(itemID),
@@ -132,6 +136,8 @@ func (h *EmbeddingHandler) ListEmbeddings(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "item 向量化状态 | Item embedding state"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 503 {object} map[string]interface{} "向量化服务不可用 | Embedding service unavailable"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /items/{item_id}/embedding [get]
 // @Security BearerAuth
 func (h *EmbeddingHandler) GetItemEmbedding(c *gin.Context) {
@@ -144,7 +150,7 @@ func (h *EmbeddingHandler) GetItemEmbedding(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的数据项ID"})
 		return
 	}
-	state, itemFingerprint, err := h.embeddingService.GetItemEmbeddingState(c.Request.Context(), c.GetUint("tenant_id"), uint(itemID))
+	state, itemFingerprint, err := h.embeddingService.GetItemEmbeddingState(c.Request.Context(), tenantIDValue(c), uint(itemID))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -177,6 +183,8 @@ func (h *EmbeddingHandler) GetItemEmbedding(c *gin.Context) {
 // @Success 200 {object} map[string]string "删除成功 | Deleted"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 503 {object} map[string]interface{} "向量化服务不可用 | Embedding service unavailable"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.delete"]
 // @Router /embeddings/{id} [delete]
 // @Security BearerAuth
 func (h *EmbeddingHandler) DeleteEmbedding(c *gin.Context) {
@@ -189,7 +197,7 @@ func (h *EmbeddingHandler) DeleteEmbedding(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的向量化结果ID"})
 		return
 	}
-	if err := h.embeddingService.DeleteEmbedding(c.Request.Context(), c.GetUint("tenant_id"), uint(id)); err != nil {
+	if err := h.embeddingService.DeleteEmbedding(c.Request.Context(), tenantIDValue(c), uint(id)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

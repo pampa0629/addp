@@ -66,8 +66,14 @@ func TestPluginDescribeContainer(t *testing.T) {
 	if cities.ChildKind != "sheet" || cities.DataType != datatype.Table {
 		t.Fatalf("Cities child = %#v", cities)
 	}
-	if cities.RowCount == nil {
-		t.Fatalf("Cities RowCount is nil")
+	if cities.RowCount != nil {
+		t.Fatalf("Cities RowCount = %#v, want nil for dimension-based estimate", cities.RowCount)
+	}
+	if cities.EstimatedRowCount == nil {
+		t.Fatal("Cities EstimatedRowCount is nil")
+	}
+	if *cities.EstimatedRowCount != 1 {
+		t.Fatalf("Cities EstimatedRowCount = %d, want 1", *cities.EstimatedRowCount)
 	}
 	if cities.ColumnCount == nil || *cities.ColumnCount <= 0 {
 		t.Fatalf("Cities ColumnCount = %#v, want positive column count", cities.ColumnCount)
@@ -114,6 +120,15 @@ func TestPluginDescribeTableWritesSheetFactsToNative(t *testing.T) {
 	}
 	if info.Table == nil {
 		t.Fatalf("Table is nil")
+	}
+	if info.Table.RowCount != nil {
+		t.Fatalf("RowCount = %#v, want nil for dimension-based estimate", info.Table.RowCount)
+	}
+	if info.Table.EstimatedRowCount == nil {
+		t.Fatal("EstimatedRowCount is nil")
+	}
+	if *info.Table.EstimatedRowCount != 1 {
+		t.Fatalf("EstimatedRowCount = %d, want 1", *info.Table.EstimatedRowCount)
 	}
 	if info.Table.Native["sheet_name"] != "Cities" {
 		t.Fatalf("native.sheet_name = %#v, want Cities", info.Table.Native["sheet_name"])

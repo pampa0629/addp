@@ -17,13 +17,12 @@ import (
 	commonconfig "github.com/addp/common/config"
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/iam"
+	"github.com/addp/system/internal/migration"
 	"github.com/pquerna/otp/totp"
 	"golang.org/x/term"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
-
-const requiredMigrationVersion = 11
 
 var requiredRoles = []string{
 	"platform.system_administrator",
@@ -111,13 +110,17 @@ func run(args []string, stdin *os.File, stdout *os.File) error {
 }
 
 func requireMigrationVersion(db *gorm.DB) error {
-	var version int
+	catalog, err := migration.ReadCatalog(migration.EmbeddedSQL, migration.DefaultMigrationsRoot)
+	if err != nil {
+		return fmt.Errorf("读取内嵌 IAM migration 目录: %w", err)
+	}
+	var version uint
 	var dirty bool
 	if err := db.Raw(`SELECT version, dirty FROM system.schema_migrations`).Row().Scan(&version, &dirty); err != nil {
 		return fmt.Errorf("读取 IAM migration 状态: %w", err)
 	}
-	if dirty || version != requiredMigrationVersion {
-		return fmt.Errorf("IAM migration 必须为 (%d, clean)，当前为 (%d, dirty=%t)", requiredMigrationVersion, version, dirty)
+	if dirty || version != catalog.LatestVersion {
+		return fmt.Errorf("IAM migration 必须为 (%d, clean)，当前为 (%d, dirty=%t)", catalog.LatestVersion, version, dirty)
 	}
 	return nil
 }
@@ -186,6 +189,8 @@ func applyBootstrap(
 			return fmt.Errorf("生成 %s 的 TOTP: %w", roleKey, err)
 		}
 		fmt.Fprintf(stdout, "TOTP Secret: %s\nEnrollment URI: %s\n", key.Secret(), key.URL())
+		fmt.Fprintln(stdout, "请先将 TOTP Secret 或 Enrollment URI 添加到认证器 App。")
+		fmt.Fprintln(stdout, "下面只接受认证器当前显示的 6 位数字验证码，不要输入 TOTP Secret。")
 		proofs, err := readConsecutiveTOTPProofs(reader, stdout, key.Secret())
 		if err != nil {
 			return fmt.Errorf("验证 %s 的 TOTP: %w", roleKey, err)
@@ -242,10 +247,14 @@ func readConsecutiveTOTPProofs(
 			return nil, err
 		}
 		code := strings.TrimSpace(line)
+		if !isTOTPCodeFormat(code) {
+			fmt.Fprintln(stdout, "格式错误：请输入认证器生成的 6 位数字验证码，不要输入 TOTP Secret。")
+			continue
+		}
 		verifiedAt := time.Now().UTC()
 		counter, valid := matchTOTP(secret, code, verifiedAt)
 		if !valid {
-			fmt.Fprintln(stdout, "验证码无效，请重试。")
+			fmt.Fprintln(stdout, "验证码无效，请确认设备时间自动同步后重试。")
 			continue
 		}
 		if previousCounter >= 0 && counter != previousCounter+1 {
@@ -258,7 +267,22 @@ func readConsecutiveTOTPProofs(
 	return proofs, nil
 }
 
+func isTOTPCodeFormat(code string) bool {
+	if len(code) != 6 {
+		return false
+	}
+	for _, character := range code {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func matchTOTP(secret, code string, now time.Time) (int64, bool) {
+	if !isTOTPCodeFormat(code) {
+		return 0, false
+	}
 	for _, offset := range []int{-1, 0, 1} {
 		candidateTime := now.Add(time.Duration(offset*30) * time.Second)
 		candidate, err := totp.GenerateCode(secret, candidateTime)

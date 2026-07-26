@@ -1,8 +1,8 @@
 import httpx
-from fastapi import Request, status
+from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
-from addp_common.auth import resolve_authorization_context
+from addp_common.auth import allows_permissions, resolve_authorization_context
 from config import settings
 
 
@@ -43,8 +43,21 @@ async def auth_middleware(request: Request, call_next):
         )
 
     request.state.authorization_context = authorization_context
-    request.state.user_id = authorization_context.user_id
-    request.state.tenant_id = authorization_context.tenant_id or 0
+    request.state.principal_id = authorization_context.principal_id
+    request.state.tenant_id = authorization_context.tenant_id
     request.state.token = token
 
     return await call_next(request)
+
+
+def require_permissions(*required_permissions: str):
+    async def dependency(request: Request) -> None:
+        context = request.state.authorization_context
+        if context.context_type != "tenant" or context.tenant_id is None:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="此接口需要租户上下文")
+        if context.token_type == "delegated_access_token":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="委托令牌不能访问该接口")
+        if not allows_permissions(context, tuple(required_permissions)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="权限不足")
+
+    return dependency

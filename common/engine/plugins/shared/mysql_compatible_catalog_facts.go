@@ -8,6 +8,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/sqldialect"
 	"gorm.io/gorm"
 )
 
@@ -73,7 +74,7 @@ func (d MySQLCompatibleCatalogFactsDialect) ListTables(ctx context.Context, db *
 				ELSE LOWER(REPLACE(table_type, ' ', '_'))
 			END AS kind,
 			` + commentExpr + `,
-			COALESCE(table_rows, 0) as row_count,
+			table_rows as row_count,
 			COALESCE(data_length + index_length, 0) as size_bytes
 		FROM information_schema.tables
 		WHERE table_schema = ?
@@ -87,12 +88,12 @@ func (d MySQLCompatibleCatalogFactsDialect) ListTables(ctx context.Context, db *
 	tables := make([]datatype.TableInfo, 0, len(rows))
 	for _, row := range rows {
 		tables = append(tables, datatype.TableInfo{
-			Name:      row.Name,
-			Kind:      row.Kind,
-			Comment:   row.Comment,
-			RowCount:  row.RowCount,
-			SizeBytes: row.SizeBytes,
-			Native:    d.tableNative(row.Engine),
+			Name:              row.Name,
+			Kind:              row.Kind,
+			Comment:           row.Comment,
+			EstimatedRowCount: row.RowCount,
+			SizeBytes:         row.SizeBytes,
+			Native:            d.tableNative(row.Engine),
 		})
 	}
 	return tables, nil
@@ -143,13 +144,8 @@ func (d MySQLCompatibleCatalogFactsDialect) ListColumns(ctx context.Context, db 
 
 func (d MySQLCompatibleCatalogFactsDialect) RowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
 	var count int64
-	query := `
-		SELECT COALESCE(table_rows, 0)
-		FROM information_schema.tables
-		WHERE table_schema = ?
-		  AND table_name = ?
-	`
-	if err := db.WithContext(ctx).Raw(query, schema, table).Scan(&count).Error; err != nil {
+	query := sqldialect.ForEngine("mysql").CountTableSQL(schema, table, "")
+	if err := db.WithContext(ctx).Raw(query).Scan(&count).Error; err != nil {
 		return 0, fmt.Errorf("failed to get row count: %w", err)
 	}
 	return count, nil

@@ -17,7 +17,7 @@
         <el-dropdown>
           <span class="user-dropdown">
             <el-icon><User /></el-icon>
-            {{ user?.username }}
+            {{ userDisplayName }}
             <el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </span>
           <template #dropdown>
@@ -50,23 +50,19 @@
               <el-icon><Setting /></el-icon>
               <span>{{ t('system.layout.systemMgmt') }}</span>
             </template>
-            <el-menu-item index="/users" @click="handleMenuClick('system', 'users')">
-              <el-icon><User /></el-icon>
-              <span>{{ t('system.layout.userMgmt') }}</span>
+            <el-menu-item v-if="showIAM" index="/iam">
+              <el-icon><Lock /></el-icon>
+              <span>{{ t('system.layout.iam') }}</span>
             </el-menu-item>
-            <el-menu-item index="/engines" @click="handleMenuClick('system', 'engines')">
+            <el-menu-item v-if="authStore.hasPermission('system.engine.read')" index="/engines">
               <el-icon><Connection /></el-icon>
               <span>{{ t('system.layout.engineMgmt') }}</span>
             </el-menu-item>
-            <el-menu-item index="/applications" @click="handleMenuClick('system', 'applications')">
+            <el-menu-item v-if="authStore.hasPermission('system.application.read')" index="/applications">
               <el-icon><Key /></el-icon>
               <span>{{ t('system.layout.appMgmt') }}</span>
             </el-menu-item>
-            <el-menu-item index="/logs" @click="handleMenuClick('system', 'logs')">
-              <el-icon><Document /></el-icon>
-              <span>{{ t('system.layout.auditLogs') }}</span>
-            </el-menu-item>
-            <el-menu-item index="/cleanup" @click="handleMenuClick('system', 'cleanup')">
+            <el-menu-item v-if="authStore.hasPermission('system.cleanup.read')" index="/cleanup">
               <el-icon><Refresh /></el-icon>
               <span>{{ t('system.layout.cleanup') }}</span>
             </el-menu-item>
@@ -91,7 +87,7 @@ import {
   ArrowDown,
   SwitchButton,
   Setting,
-  Document,
+  Lock,
   Connection,
   HomeFilled,
   Key,
@@ -111,17 +107,18 @@ const isInIframe = ref(false)
 // 使用 onMounted 确保在 DOM 挂载后检测
 onMounted(() => {
   isInIframe.value = window.self !== window.top
-  console.log('System Layout - isInIframe (onMounted):', isInIframe.value)
-  console.log('System Layout - window.self:', window.self)
-  console.log('System Layout - window.top:', window.top)
 })
 
 const user = computed(() => authStore.user)
+const userDisplayName = computed(() =>
+  user.value?.display_name || user.value?.local_account?.username || ''
+)
 const activeMenu = computed(() => route.path)
-
-const handleMenuClick = (section, subsection) => {
-  console.log('Menu clicked:', section, subsection)
-}
+const iamPermissions = [
+  'platform.tenant.read', 'iam.user.read', 'iam.platform_identity_change.read', 'audit.event.read',
+  'iam.tenant_membership.read', 'iam.tenant_invitation.read', 'audit.tenant_event.read'
+]
+const showIAM = computed(() => authStore.hasAnyPermission(iamPermissions))
 
 const handleLogout = () => {
   authStore.logout()

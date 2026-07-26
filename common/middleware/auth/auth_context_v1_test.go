@@ -59,10 +59,10 @@ func TestCanonicalAuthContextMiddlewareResolvesAndInjectsDetachedContext(t *test
 			t.Fatalf("canonical helpers context=%#v principal=%#v session=%#v", authContext, principal, sessionContext)
 		}
 		for _, legacyKey := range []string{
-			ContextUserIDKey,
-			ContextUsernameKey,
-			ContextTenantIDKey,
-			ContextAuthorizationContextKey,
+			"user_id",
+			"username",
+			"tenant_id",
+			"authorization_context",
 		} {
 			if _, exists := c.Get(legacyKey); exists {
 				t.Fatalf("legacy Gin Context key %q was injected", legacyKey)

@@ -42,6 +42,7 @@ from authorization_permissions_generated import (
     AGENT_SESSION_READ,
 )
 from database import AsyncSessionLocal, get_db
+from middleware.auth import require_permissions
 from models.interaction import Interaction
 from models.message import Message
 from models.run import AgentRun
@@ -280,6 +281,7 @@ async def _save_assistant_message(
     "/chat",
     summary="运行智能体 | Run Agent",
     description="接收标准 AG-UI RunAgentInput，并以 text/event-stream 返回 AG-UI 事件。",
+    dependencies=[Depends(require_permissions(AGENT_RUN_CREATE, AGENT_RUN_EXECUTE))],
     openapi_extra={
         "x-ai-hint": "使用 threadId 指定已有 ADDP Agent 会话；messages 中最后一条 user 消息是本次新输入。",
         "x-addp-auth-mode": "permission",
@@ -294,7 +296,7 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="threadId 必须是会话 ID") from exc
 
-    user_id = int(request.state.user_id)
+    user_id = int(request.state.principal_id)
     tenant_id = int(request.state.tenant_id)
     session = await _get_owned_session(db, session_id, user_id)
     if session.tenant_id != tenant_id:
@@ -801,6 +803,7 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
     "/runs/{agent_run_id}/retry",
     summary="重试智能体运行 | Retry agent run",
     description="仅重试失败的 AgentRun，并以新的协议调用 ID 返回 AG-UI SSE；不会创建第二个 AgentRun。",
+    dependencies=[Depends(require_permissions(AGENT_RUN_EXECUTE))],
     response_class=StreamingResponse,
     responses={200: {"content": {"text/event-stream": {}}}},
     openapi_extra={
@@ -815,7 +818,7 @@ async def retry_chat(
     body: RetryAgentRunInput,
     db: AsyncSession = Depends(get_db),
 ):
-    user_id = int(request.state.user_id)
+    user_id = int(request.state.principal_id)
     tenant_id = int(request.state.tenant_id)
     result = await db.execute(
         select(AgentRun).where(
@@ -846,13 +849,14 @@ async def retry_chat(
 @router.get(
     "/sessions/{session_id}/messages",
     summary="获取会话消息 | List Session Messages",
+    dependencies=[Depends(require_permissions(AGENT_SESSION_READ))],
     openapi_extra={
         "x-addp-auth-mode": "permission",
         "x-addp-required-permissions": [AGENT_SESSION_READ],
     },
 )
 async def get_messages(session_id: int, request: Request, db: AsyncSession = Depends(get_db)):
-    await _get_owned_session(db, session_id, int(request.state.user_id))
+    await _get_owned_session(db, session_id, int(request.state.principal_id))
 
     msg_result = await db.execute(
         select(Message)
@@ -863,7 +867,7 @@ async def get_messages(session_id: int, request: Request, db: AsyncSession = Dep
     interaction_result = await db.execute(
         select(Interaction).where(
             Interaction.session_id == session_id,
-            Interaction.user_id == int(request.state.user_id),
+            Interaction.user_id == int(request.state.principal_id),
         )
     )
     interaction_status = {

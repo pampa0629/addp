@@ -39,6 +39,8 @@ func NewRasterMosaicTileHandler(service *service.RasterMosaicTileService) *Raste
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Not found"
 // @Failure 503 {object} map[string]interface{} "runtime 不可用 | Runtime unavailable"
+// @x-addp-auth-mode "resource_ticket"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /raster_mosaic/tiles/{z}/{x}/{y} [get]
 // @Security BearerAuth
 func (h *RasterMosaicTileHandler) GetRasterMosaicTile(c *gin.Context) {

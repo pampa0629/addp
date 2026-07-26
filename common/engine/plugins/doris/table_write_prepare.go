@@ -57,8 +57,9 @@ func (p *DorisPlugin) serverDSN(connInfo plugin.ConnectionInfo) (string, error) 
 		return "", err
 	}
 	return plugin.MySQLStyleDSN(parts.User, parts.Password, parts.Host, parts.Port, "", map[string]string{
-		"parseTime": "true",
-		"timeout":   "10s",
+		"interpolateParams": "true",
+		"parseTime":         "true",
+		"timeout":           "10s",
 	}), nil
 }
 

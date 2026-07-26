@@ -230,6 +230,9 @@ paths:
       summary: 获取所有执行列表 | List all executions
       tags:
       - Orchestrator
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - orchestrator.workflow.read
   /executions/{execution_id}:
     get:
       description: 按 execution_id 查询 Orchestrator 编排统一执行记录。| Get an Orchestrator execution
@@ -261,6 +264,9 @@ paths:
       summary: 获取 Orchestrator 编排执行状态 | Get Orchestrator execution status
       tags:
       - Orchestrator
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - orchestrator.workflow.read
   /orch-executions/{id}:
     get:
       produces:
@@ -284,6 +290,9 @@ paths:
       summary: 获取执行详情 | Get execution detail
       tags:
       - Orchestrator
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - orchestrator.workflow.read
   /orchestrations:
     get:
       produces:
@@ -303,6 +312,9 @@ paths:
       summary: 获取编排列表 | List orchestrations
       tags:
       - Orchestrator
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - orchestrator.workflow.read
     post:
       consumes:
       - application/json
@@ -340,6 +352,9 @@ paths:
       summary: 创建编排 | Create orchestration
       tags:
       - Orchestrator
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - orchestrator.workflow.create
   /orchestrations/{id}:
     delete:
       produces:
@@ -363,6 +378,9 @@ paths:
       summary: 删除编排 | Delete orchestration
       tags:
       - Orchestrator
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - orchestrator.workflow.delete
     get:
       produces:
       - application/json
@@ -385,6 +403,9 @@ paths:
       summary: 获取编排详情 | Get orchestration detail
       tags:
       - Orchestrator
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - orchestrator.workflow.read
     put:
       consumes:
       - application/json
@@ -431,6 +452,9 @@ paths:
       summary: 更新编排 | Update orchestration
       tags:
       - Orchestrator
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - orchestrator.workflow.update
   /orchestrations/{id}/execute:
     post:
       produces:
@@ -454,6 +478,9 @@ paths:
       summary: 执行编排 | Execute orchestration
       tags:
       - Orchestrator
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - orchestrator.workflow.execute
   /orchestrations/{id}/executions:
     get:
       produces:
@@ -477,6 +504,9 @@ paths:
       summary: 获取执行列表 | List executions
       tags:
       - Orchestrator
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - orchestrator.workflow.read
   /task-providers:
     get:
       description: 从 System 任务提供者注册表获取可编排任务提供者 | List task providers from System task
@@ -499,6 +529,9 @@ paths:
       summary: 列出任务提供者 | List task providers
       tags:
       - Orchestrator
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - orchestrator.workflow.read
   /tasks:
     get:
       description: 动态调用目标模块任务列表接口并标准化返回格式；module_name=orchestrator 时返回本模块已保存的编排任务。|
@@ -562,6 +595,9 @@ paths:
       summary: 列出模块任务 | List module tasks
       tags:
       - Orchestrator
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - orchestrator.workflow.read
   /tasks/{task_type}/{id}:
     get:
       description: 按标准 TaskProvider 路径获取 Orchestrator 编排任务详情；task_type 仅支持 orchestration。|
@@ -604,6 +640,9 @@ paths:
       summary: 获取 TaskProvider 编排任务详情 | Get TaskProvider orchestration task detail
       tags:
       - Orchestrator
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - orchestrator.workflow.read
   /tasks/{task_type}/{id}/execute:
     post:
       consumes:
@@ -658,6 +697,9 @@ paths:
       summary: 执行 TaskProvider 编排任务 | Execute TaskProvider orchestration task
       tags:
       - Orchestrator
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - orchestrator.workflow.execute
 securityDefinitions:
   BearerAuth:
     in: header

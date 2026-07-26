@@ -155,7 +155,7 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 - 引擎数据项：`GET /engines/:engine_id/items`。
 - 树查询：`GET /engines/:engine_id/tree`、`GET /nodes/:node_id`、`GET /nodes/:node_id/children`、`GET /nodes/:node_id/items`、`GET /nodes/by-catalog-path`、`GET /items/by-catalog-path`。
 - 字段与空间信息：`GET /items/:item_id/fields`、`GET /items/:item_id/spatial`、`GET /items/:item_id`。
-- 统计与缓存：`GET /stats`、`DELETE /cache/engines/:engine_id`、`POST /cache/refresh`。
+- 统计：`GET /stats`。引擎缓存是 Meta 内部实现细节，不提供公开清理或预热 API。
 
 查询 API 边界：
 

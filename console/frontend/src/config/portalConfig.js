@@ -3,7 +3,7 @@ import {
   Upload, Box, DataAnalysis, Grid, CircleCheck, Edit, Link, Operation, DataLine,
   List, Timer, Connection, Search, Document, Share, DataBoard, Odometer,
   TrendCharts, SortDown, FolderOpened, Warning, Monitor, Notebook,
-  Files, Tickets, Key, Refresh, User,
+  Files, Tickets, Key, Refresh, Lock,
   MapLocation,
 } from '@element-plus/icons-vue'
 
@@ -179,7 +179,7 @@ export const PAGE_MAPS = {
 // ─── 模块默认路由（navigateToModule 使用）───────────────────────────────────
 
 export const DEFAULT_ROUTES = {
-  system:       '/system/users',
+  system:       '/system/iam',
   manager:      '/manager/data-explorer',
   meta:         '/meta/scan',
   transfer:     '/transfer/tasks',
@@ -342,11 +342,13 @@ export const SIDEBAR_MENUS = {
   system: {
     label: 'console.menus.system.label', icon: Setting,
     items: [
-      { index: '/system/users',        icon: User,       label: 'console.menus.system.users' },
-      { index: '/system/engines',      icon: Connection, label: 'console.menus.system.engines' },
-      { index: '/system/applications', icon: Key,        label: 'console.menus.system.applications' },
-      { index: '/system/logs',         icon: Document,   label: 'console.menus.system.logs' },
-      { index: '/system/cleanup',      icon: Refresh,    label: 'console.menus.system.cleanup' },
+      {
+        index: '/system/iam', icon: Lock, label: 'console.menus.system.iam',
+        permissions: ['platform.tenant.read', 'iam.user.read', 'iam.platform_identity_change.read', 'audit.event.read', 'iam.tenant_membership.read', 'iam.tenant_invitation.read', 'audit.tenant_event.read'],
+      },
+      { index: '/system/engines',      icon: Connection, label: 'console.menus.system.engines', permissions: ['system.engine.read'] },
+      { index: '/system/applications', icon: Key,        label: 'console.menus.system.applications', permissions: ['system.application.read'] },
+      { index: '/system/cleanup',      icon: Refresh,    label: 'console.menus.system.cleanup', permissions: ['system.cleanup.read'] },
     ],
   },
 }

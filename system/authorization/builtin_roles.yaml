@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 9
+manifest_version: 14
 roles:
   - key: platform.audit_administrator
     role_type: platform_builtin
@@ -10,17 +10,7 @@ roles:
     permissions:
       - audit.event.export
       - audit.event.read
-      - audit.report.create
-      - audit.report.read
-      - audit.report.update
-      - audit.subject.read
-      - iam.permission.read
       - iam.platform_identity_change.read
-      - iam.platform_role_change.read
-      - iam.role.read
-      - platform.restore_request.approve
-      - platform.restore_request.read
-      - platform.restore_request.reject
   - key: platform.security_administrator
     role_type: platform_builtin
     name_i18n_key: roles.platform.security_administrator.name
@@ -28,41 +18,13 @@ roles:
     allowed_scope_types: [platform]
     allowed_principal_types: [user]
     permissions:
-      - iam.external_identity.link
-      - iam.external_identity.read
-      - iam.external_identity.suspend
-      - iam.external_identity.unlink
-      - iam.identity_provider.create
-      - iam.identity_provider.read
-      - iam.identity_provider.suspend
-      - iam.identity_provider.update
-      - iam.permission.read
       - iam.platform_identity_change.create
       - iam.platform_identity_change.read
-      - iam.platform_role_change.create
-      - iam.platform_role_change.read
-      - iam.role.read
-      - iam.security_policy.read
-      - iam.security_policy.update
-      - iam.session.read
-      - iam.session.revoke
       - iam.user.create
       - iam.user.reactivate
       - iam.user.read
       - iam.user.suspend
       - iam.user.update
-      - platform.restore_request.approve
-      - platform.restore_request.read
-      - platform.restore_request.reject
-  - key: platform.statistics_viewer
-    role_type: platform_builtin
-    name_i18n_key: roles.platform.statistics_viewer.name
-    description_i18n_key: roles.platform.statistics_viewer.description
-    allowed_scope_types: [platform]
-    allowed_principal_types: [user]
-    permissions:
-      - statistics.summary.read
-      - statistics.tenant_breakdown.read
   - key: platform.system_administrator
     role_type: platform_builtin
     name_i18n_key: roles.platform.system_administrator.name
@@ -73,18 +35,6 @@ roles:
       - iam.platform_identity_change.approve
       - iam.platform_identity_change.read
       - iam.platform_identity_change.reject
-      - iam.platform_role_change.approve
-      - iam.platform_role_change.read
-      - iam.platform_role_change.reject
-      - platform.backup.execute
-      - platform.configuration.read
-      - platform.configuration.update
-      - platform.module.read
-      - platform.module.update
-      - platform.operation.read
-      - platform.restore_request.create
-      - platform.restore_request.execute
-      - platform.restore_request.read
       - platform.tenant.close
       - platform.tenant.create
       - platform.tenant.read
@@ -98,27 +48,6 @@ roles:
     allowed_scope_types: [tenant]
     allowed_principal_types: [user]
     permissions:
-      - iam.department.create
-      - iam.department.delete
-      - iam.department.read
-      - iam.department.update
-      - iam.department_membership.close
-      - iam.department_membership.create
-      - iam.department_membership.read
-      - iam.department_membership.update
-      - iam.permission.read
-      - iam.project_group.close
-      - iam.project_group.create
-      - iam.project_group.read
-      - iam.project_group.update
-      - iam.project_group_membership.close
-      - iam.project_group_membership.create
-      - iam.project_group_membership.read
-      - iam.project_group_membership.update
-      - iam.tenant_idp_connection.create
-      - iam.tenant_idp_connection.read
-      - iam.tenant_idp_connection.suspend
-      - iam.tenant_idp_connection.update
       - iam.tenant_invitation.create
       - iam.tenant_invitation.read
       - iam.tenant_invitation.revoke
@@ -127,13 +56,6 @@ roles:
       - iam.tenant_membership.restore
       - iam.tenant_membership.suspend
       - iam.tenant_membership.update
-      - iam.tenant_role.create
-      - iam.tenant_role.delete
-      - iam.tenant_role.read
-      - iam.tenant_role.update
-      - iam.tenant_role_assignment.create
-      - iam.tenant_role_assignment.read
-      - iam.tenant_role_assignment.revoke
   - key: tenant.ai_user
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.ai_user.name
@@ -165,7 +87,6 @@ roles:
       - asset.rating.create
       - asset.rating.read
       - asset.rating.update
-      - service.endpoint.read
   - key: tenant.asset_manager
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.asset_manager.name
@@ -201,7 +122,6 @@ roles:
     permissions:
       - audit.tenant_event.export
       - audit.tenant_event.read
-      - audit.tenant_subject.read
       - monitor.execution.read
       - monitor.statistics.read
   - key: tenant.data_engineer
@@ -215,8 +135,6 @@ roles:
       - develop.notebook.delete
       - develop.notebook.execute
       - develop.notebook.read
-      - develop.notebook.update
-      - develop.task.cancel
       - develop.task.create
       - develop.task.delete
       - develop.task.execute
@@ -226,13 +144,11 @@ roles:
       - manager.data_item.read
       - manager.search.execute
       - monitor.execution.read
-      - orchestrator.workflow.cancel
       - orchestrator.workflow.create
       - orchestrator.workflow.delete
       - orchestrator.workflow.execute
       - orchestrator.workflow.read
       - orchestrator.workflow.update
-      - transfer.task.cancel
       - transfer.task.create
       - transfer.task.delete
       - transfer.task.execute
@@ -247,12 +163,12 @@ roles:
     permissions:
       - manager.content.read
       - manager.data_item.create
-      - manager.data_item.delete
       - manager.data_item.read
       - manager.data_item.update
       - manager.derived_artifact.create
       - manager.derived_artifact.delete
       - manager.derived_artifact.read
+      - manager.derived_artifact.update
       - manager.search.execute
       - meta.catalog.read
       - meta.inspect.execute
@@ -272,18 +188,6 @@ roles:
       - manager.data_item.read
       - manager.search.execute
       - meta.catalog.read
-  - key: tenant.department_coordinator
-    role_type: tenant_builtin
-    name_i18n_key: roles.tenant.department_coordinator.name
-    description_i18n_key: roles.tenant.department_coordinator.description
-    allowed_scope_types: [department]
-    allowed_principal_types: [user]
-    permissions:
-      - iam.department.read
-      - iam.department_membership.close
-      - iam.department_membership.create
-      - iam.department_membership.read
-      - iam.department_membership.update
   - key: tenant.governance_manager
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.governance_manager.name
@@ -291,6 +195,15 @@ roles:
     allowed_scope_types: [tenant, department, project_group]
     allowed_principal_types: [user]
     permissions:
+      - model.entity.approve
+      - model.entity.create
+      - model.entity.delete
+      - model.entity.read
+      - model.entity.update
+      - model.entity_relation.create
+      - model.entity_relation.delete
+      - model.entity_relation.read
+      - model.entity_relation.update
       - model.logical_model.create
       - model.logical_model.delete
       - model.logical_model.read
@@ -307,22 +220,47 @@ roles:
       - quality.rule_application.delete
       - quality.rule_application.read
       - quality.rule_application.update
+      - standard.classification.create
+      - standard.classification.delete
+      - standard.classification.read
+      - standard.classification.update
       - standard.code_set.create
       - standard.code_set.delete
       - standard.code_set.read
       - standard.code_set.update
+      - standard.dimension_hierarchy.create
+      - standard.dimension_hierarchy.delete
+      - standard.dimension_hierarchy.read
+      - standard.dimension_hierarchy.update
+      - standard.document.create
+      - standard.document.delete
+      - standard.document.read
+      - standard.document.update
       - standard.domain.create
       - standard.domain.delete
       - standard.domain.read
       - standard.domain.update
+      - standard.element.approve
       - standard.element.create
       - standard.element.delete
       - standard.element.read
       - standard.element.update
+      - standard.glossary.approve
+      - standard.glossary.create
+      - standard.glossary.delete
+      - standard.glossary.offline
+      - standard.glossary.read
+      - standard.glossary.update
+      - standard.metric.approve
       - standard.metric.create
       - standard.metric.delete
+      - standard.metric.offline
       - standard.metric.read
       - standard.metric.update
+      - standard.unit.create
+      - standard.unit.delete
+      - standard.unit.read
+      - standard.unit.update
   - key: tenant.graph_engineer
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.graph_engineer.name
@@ -372,18 +310,29 @@ roles:
       - system.engine.execute
       - system.engine.read
       - system.engine.update
-  - key: tenant.project_group_coordinator
+  - key: tenant.monitoring_operator
     role_type: tenant_builtin
-    name_i18n_key: roles.tenant.project_group_coordinator.name
-    description_i18n_key: roles.tenant.project_group_coordinator.description
-    allowed_scope_types: [project_group]
+    name_i18n_key: roles.tenant.monitoring_operator.name
+    description_i18n_key: roles.tenant.monitoring_operator.description
+    allowed_scope_types: [tenant]
     allowed_principal_types: [user]
     permissions:
-      - iam.project_group.read
-      - iam.project_group_membership.close
-      - iam.project_group_membership.create
-      - iam.project_group_membership.read
-      - iam.project_group_membership.update
+      - monitor.alert_incident.read
+      - monitor.alert_incident.update
+      - monitor.alert_rule.create
+      - monitor.alert_rule.delete
+      - monitor.alert_rule.read
+      - monitor.alert_rule.update
+      - monitor.execution.read
+      - monitor.health.read
+      - monitor.notification_delivery.read
+      - monitor.notification_delivery.retry
+      - monitor.notification_destination.create
+      - monitor.notification_destination.delete
+      - monitor.notification_destination.execute
+      - monitor.notification_destination.read
+      - monitor.notification_destination.update
+      - monitor.statistics.read
   - key: tenant.service_publisher
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.service_publisher.name
@@ -397,8 +346,6 @@ roles:
       - meta.catalog.read
       - service.definition.create
       - service.definition.delete
-      - service.definition.offline
-      - service.definition.publish
       - service.definition.read
       - service.definition.update
       - service.external_registration.create

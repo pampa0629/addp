@@ -5,8 +5,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"testing"
+	"time"
 
+	commonauth "github.com/addp/common/authorization"
 	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commonModels "github.com/addp/common/models"
@@ -182,8 +185,35 @@ func newResourceTreeRefreshHandlerTestRouter(t *testing.T) (*gin.Engine, func())
 
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		c.Set(commonAuth.ContextTenantIDKey, tenantID)
-		c.Set(commonAuth.ContextUserIDKey, uint(3))
+		now := time.Now().UTC()
+		formattedTenantID := strconv.FormatUint(uint64(tenantID), 10)
+		membershipID := "1"
+		clientID := "addp-web"
+		authContext := commonauth.AuthContext{
+			SchemaVersion: commonauth.AuthContextSchemaVersion,
+			Principal:     commonauth.AuthPrincipal{Type: "user", ID: "3"},
+			Context: commonauth.AuthSessionContext{
+				Type: "tenant", TenantID: &formattedTenantID, TenantMembershipID: &membershipID,
+			},
+			Authentication: commonauth.AuthenticationFacts{
+				Methods: []string{"password"}, AssuranceLevel: "aal1", AuthenticatedAt: now,
+			},
+			Client: commonauth.ClientConstraints{
+				ClientID: &clientID, Audiences: []string{"addp.api"}, ScopeMode: "unrestricted", Scopes: []string{},
+			},
+			Organization: commonauth.OrganizationContext{
+				Departments: []commonauth.DepartmentMembership{}, ProjectGroups: []commonauth.ProjectGroupMembership{},
+			},
+			Authorization: commonauth.AuthorizationFacts{
+				AuthorizationVersion: "1", RoleAssignments: []commonauth.RoleAssignment{},
+			},
+			Token: commonauth.TokenFacts{
+				Type: "first_party_access_token", IssuedAt: now, ExpiresAt: now.Add(time.Hour),
+			},
+		}
+		if err := commonAuth.SetAuthContextForGin(c, authContext); err != nil {
+			t.Fatal(err)
+		}
 		c.Next()
 	})
 	router.POST("/resource-tree/:engine_id/refresh", handler.RefreshResourceTreeNode)

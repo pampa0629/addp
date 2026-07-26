@@ -2,6 +2,8 @@ import asyncio
 import importlib.util
 from pathlib import Path
 
+import httpx
+
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
@@ -98,3 +100,23 @@ async def _assert_metadata_search_keeps_verified_fact_locators(monkeypatch):
 
 def test_metadata_search_keeps_verified_fact_locators(monkeypatch):
     asyncio.run(_assert_metadata_search_keeps_verified_fact_locators(monkeypatch))
+
+
+class StaleMetaClient(FakeMetaClient):
+    async def get_resource_tree_ancestors(self, engine_id: int, locator: str):
+        request = httpx.Request("GET", f"http://meta/resource-tree/{engine_id}/ancestors")
+        response = httpx.Response(404, request=request)
+        raise httpx.HTTPStatusError("stale locator", request=request, response=response)
+
+
+async def _assert_metadata_search_skips_stale_locator(monkeypatch):
+    monkeypatch.setattr(meta_tools, "ManagerClient", FakeManagerClient)
+    monkeypatch.setattr(meta_tools, "MetaClient", StaleMetaClient)
+
+    result = await MetadataSearchTool()._arun(query="roads", tenant_id=3, limit=5)
+
+    assert result == []
+
+
+def test_metadata_search_skips_stale_locator(monkeypatch):
+    asyncio.run(_assert_metadata_search_skips_stale_locator(monkeypatch))

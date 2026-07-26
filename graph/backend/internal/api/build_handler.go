@@ -35,6 +35,8 @@ func NewBuildHandler(buildSvc *service.BuildService) *BuildHandler {
 // @Param        id path int true "知识图谱 ID | Knowledge graph ID"
 // @Success      200 {array}  models.BuildTask
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.build_task.read"]
 // @Router       /graphs/{id}/build/tasks [get]
 func (h *BuildHandler) ListTasks(c *gin.Context) {
 	graphID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -59,6 +61,8 @@ func (h *BuildHandler) ListTasks(c *gin.Context) {
 // @Success      201 {object} models.BuildTask
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.build_task.create"]
 // @Router       /graphs/{id}/build/tasks [post]
 func (h *BuildHandler) CreateTask(c *gin.Context) {
 	graphID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -117,6 +121,8 @@ func (h *BuildHandler) CreateTask(c *gin.Context) {
 // @Param        tid path int true "任务 ID | Task ID"
 // @Success      200 {object} models.BuildTask
 // @Failure      404 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.build_task.read"]
 // @Router       /graphs/{id}/build/tasks/{tid} [get]
 func (h *BuildHandler) GetTask(c *gin.Context) {
 	tenantID := commonMiddleware.GetTenantID(c)
@@ -139,6 +145,8 @@ func (h *BuildHandler) GetTask(c *gin.Context) {
 // @Param        tid path int true "任务 ID | Task ID"
 // @Success      200 {object} models.SuccessResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.build_task.delete"]
 // @Router       /graphs/{id}/build/tasks/{tid} [delete]
 func (h *BuildHandler) DeleteTask(c *gin.Context) {
 	tenantID := commonMiddleware.GetTenantID(c)
@@ -162,6 +170,8 @@ func (h *BuildHandler) DeleteTask(c *gin.Context) {
 // @Success      200 {object} models.SuccessResponse
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      409 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.build_task.execute"]
 // @Router       /graphs/{id}/build/tasks/{tid}/run [post]
 func (h *BuildHandler) RunTask(c *gin.Context) {
 	graphID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -186,6 +196,8 @@ func (h *BuildHandler) RunTask(c *gin.Context) {
 // @Success      200 {object} models.SuccessResponse
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      409 {object} models.ErrorResponse "任务冲突或当前进程不持有运行实例 | Task conflict or runtime not owned by current process"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.build_task.cancel"]
 // @Router       /graphs/{id}/build/tasks/{tid}/cancel [post]
 func (h *BuildHandler) CancelTask(c *gin.Context) {
 	graphID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -209,6 +221,8 @@ func (h *BuildHandler) CancelTask(c *gin.Context) {
 // @Success      200 {object} models.SuccessResponse
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      409 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.build_task.execute"]
 // @Router       /graphs/{id}/build/tasks/{tid}/rerun [post]
 func (h *BuildHandler) RerunTask(c *gin.Context) {
 	graphID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -246,6 +260,8 @@ func respondBuildActionError(c *gin.Context, err error) {
 // @Param        tid path int true "任务 ID | Task ID"
 // @Success      200 {array} models.BuildMaterial
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.build_task.read"]
 // @Router       /graphs/{id}/build/tasks/{tid}/materials [get]
 func (h *BuildHandler) ListMaterials(c *gin.Context) {
 	tenantID := commonMiddleware.GetTenantID(c)
@@ -271,6 +287,8 @@ func (h *BuildHandler) ListMaterials(c *gin.Context) {
 // @Success      201 {array} models.BuildMaterial
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.build_task.update"]
 // @Router       /graphs/{id}/build/tasks/{tid}/materials [post]
 func (h *BuildHandler) UploadMaterial(c *gin.Context) {
 	graphID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -320,6 +338,8 @@ func (h *BuildHandler) uploadSingleFile(c *gin.Context, fh *multipart.FileHeader
 // @Param        mid path int true "材料 ID | Material ID"
 // @Success      200 {object} models.SuccessResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.build_task.update"]
 // @Router       /graphs/{id}/build/tasks/{tid}/materials/{mid} [delete]
 func (h *BuildHandler) DeleteMaterial(c *gin.Context) {
 	tenantID := commonMiddleware.GetTenantID(c)
@@ -347,6 +367,8 @@ func (h *BuildHandler) DeleteMaterial(c *gin.Context) {
 // @Param        page_size query int    false "每页数量 | Page size" default(20)
 // @Success      200 {object} map[string]interface{}
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.review.read"]
 // @Router       /graphs/{id}/review [get]
 func (h *BuildHandler) ListReviewItems(c *gin.Context) {
 	graphID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -392,6 +414,8 @@ func (h *BuildHandler) ListReviewItems(c *gin.Context) {
 // @Param        iid path int true "审核项 ID | Review item ID"
 // @Success      200 {object} models.SuccessResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.review.approve"]
 // @Router       /graphs/{id}/review/{iid}/approve [post]
 func (h *BuildHandler) ApproveReviewItem(c *gin.Context) {
 	tenantID := commonMiddleware.GetTenantID(c)
@@ -414,6 +438,8 @@ func (h *BuildHandler) ApproveReviewItem(c *gin.Context) {
 // @Param        iid path int true "审核项 ID | Review item ID"
 // @Success      200 {object} models.SuccessResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.review.reject"]
 // @Router       /graphs/{id}/review/{iid}/reject [post]
 func (h *BuildHandler) RejectReviewItem(c *gin.Context) {
 	tenantID := commonMiddleware.GetTenantID(c)
@@ -439,6 +465,8 @@ func (h *BuildHandler) RejectReviewItem(c *gin.Context) {
 // @Success      200 {object} models.SuccessResponse
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.review.update"]
 // @Router       /graphs/{id}/review/{iid} [put]
 func (h *BuildHandler) ModifyReviewItem(c *gin.Context) {
 	tenantID := commonMiddleware.GetTenantID(c)
@@ -460,37 +488,56 @@ func (h *BuildHandler) ModifyReviewItem(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已修改并写入"})
 }
 
-// BatchReview godoc
-// @Summary      批量审核 | Batch review
+// BatchApproveReviewItems godoc
+// @Summary      批量通过审核项 | Batch approve review items
 // @Tags         图谱构建 | Graph Build
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id      path int true "知识图谱 ID | Knowledge graph ID"
-// @Param        request body map[string]interface{} true "批量审核请求 | Batch review request"
+// @Param        request body map[string][]uint true "审核项 ID | Review item IDs"
 // @Success      200 {object} models.SuccessResponse
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
-// @Router       /graphs/{id}/review/batch [post]
-func (h *BuildHandler) BatchReview(c *gin.Context) {
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.review.approve"]
+// @Router       /graphs/{id}/review/batch/approve [post]
+func (h *BuildHandler) BatchApproveReviewItems(c *gin.Context) {
+	h.batchReview(c, "approve")
+}
+
+// BatchRejectReviewItems godoc
+// @Summary      批量拒绝审核项 | Batch reject review items
+// @Tags         图谱构建 | Graph Build
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id      path int true "知识图谱 ID | Knowledge graph ID"
+// @Param        request body map[string][]uint true "审核项 ID | Review item IDs"
+// @Success      200 {object} models.SuccessResponse
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.review.reject"]
+// @Router       /graphs/{id}/review/batch/reject [post]
+func (h *BuildHandler) BatchRejectReviewItems(c *gin.Context) {
+	h.batchReview(c, "reject")
+}
+
+func (h *BuildHandler) batchReview(c *gin.Context, action string) {
 	graphID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	tenantID := commonMiddleware.GetTenantID(c)
 	userID := commonMiddleware.GetUserID(c)
 
 	var req struct {
-		IDs    []uint `json:"ids" binding:"required"`
-		Action string `json:"action" binding:"required"` // approve/reject
+		IDs []uint `json:"ids" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if req.Action != "approve" && req.Action != "reject" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "action 只能是 approve 或 reject"})
-		return
-	}
 
-	if err := h.buildSvc.BatchReview(c.Request.Context(), uint(graphID), uint(tenantID), uint(userID), req.IDs, req.Action); err != nil {
+	if err := h.buildSvc.BatchReview(c.Request.Context(), uint(graphID), uint(tenantID), uint(userID), req.IDs, action); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -505,6 +552,8 @@ func (h *BuildHandler) BatchReview(c *gin.Context) {
 // @Param        id path int true "知识图谱 ID | Knowledge graph ID"
 // @Success      200 {object} map[string]int
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.review.read"]
 // @Router       /graphs/{id}/review/pending-count [get]
 func (h *BuildHandler) PendingReviewCount(c *gin.Context) {
 	graphID, _ := strconv.ParseUint(c.Param("id"), 10, 64)

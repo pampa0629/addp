@@ -908,6 +908,9 @@ paths:
       summary: 查询可配置告警的任务 | List alert rule targets
       tags:
       - Monitor Alert Rules
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.alert_rule.read
   /alert-rules:
     get:
       produces:
@@ -928,6 +931,9 @@ paths:
       summary: 查询告警规则 | List alert rules
       tags:
       - Monitor Alert Rules
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.alert_rule.read
     post:
       consumes:
       - application/json
@@ -958,6 +964,9 @@ paths:
       summary: 创建告警规则 | Create alert rule
       tags:
       - Monitor Alert Rules
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.alert_rule.create
   /alert-rules/{id}:
     delete:
       parameters:
@@ -986,6 +995,9 @@ paths:
       summary: 删除告警规则 | Delete alert rule
       tags:
       - Monitor Alert Rules
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.alert_rule.delete
     patch:
       consumes:
       - application/json
@@ -1025,6 +1037,9 @@ paths:
       summary: 更新告警规则 | Update alert rule
       tags:
       - Monitor Alert Rules
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.alert_rule.update
   /alerts:
     get:
       parameters:
@@ -1062,6 +1077,9 @@ paths:
       summary: 查询告警事件 | List alert incidents
       tags:
       - Monitor Alerts
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.alert_incident.read
   /alerts/{id}/acknowledge:
     post:
       parameters:
@@ -1086,6 +1104,9 @@ paths:
       summary: 确认告警 | Acknowledge alert
       tags:
       - Monitor Alerts
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.alert_incident.update
   /alerts/{id}/suppress:
     post:
       consumes:
@@ -1122,6 +1143,9 @@ paths:
       summary: 抑制告警通知 | Suppress alert notifications
       tags:
       - Monitor Alerts
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.alert_incident.update
   /email-deliveries:
     get:
       description: 分页查询当前租户的邮件 outbox 和投递审计记录 | List email outbox and delivery audit
@@ -1169,6 +1193,9 @@ paths:
       summary: 查询邮件投递 | List email deliveries
       tags:
       - Monitor Emails
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.notification_delivery.read
   /email-deliveries/{delivery_id}/retry:
     post:
       description: 只允许重投 dead delivery；复用原 delivery_id、主题和正文，并使用目标当前收件人开启新的尝试周期 |
@@ -1208,6 +1235,9 @@ paths:
       summary: 手动重投邮件 delivery | Manually retry email delivery
       tags:
       - Monitor Emails
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.notification_delivery.retry
   /email-destinations:
     get:
       description: 查询当前租户的告警邮件目标；SMTP Relay 配置不属于租户 API | List alert email destinations
@@ -1234,6 +1264,9 @@ paths:
       summary: 查询邮件目标 | List email destinations
       tags:
       - Monitor Emails
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.notification_destination.read
     post:
       consumes:
       - application/json
@@ -1270,6 +1303,9 @@ paths:
       summary: 创建邮件目标 | Create email destination
       tags:
       - Monitor Emails
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.notification_destination.create
   /email-destinations/{id}:
     delete:
       description: 删除当前租户目标并取消尚未领取的邮件投递；历史投递审计保留 | Delete a destination and cancel
@@ -1304,6 +1340,9 @@ paths:
       summary: 删除邮件目标 | Delete email destination
       tags:
       - Monitor Emails
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.notification_destination.delete
     patch:
       consumes:
       - application/json
@@ -1349,6 +1388,9 @@ paths:
       summary: 更新邮件目标 | Update email destination
       tags:
       - Monitor Emails
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.notification_destination.update
   /email-destinations/{id}/test:
     post:
       description: 使用目标当前收件人和平台 SMTP Relay 同步发送独立测试邮件；不创建告警事件或正式投递记录 | Send a standalone
@@ -1392,6 +1434,9 @@ paths:
       summary: 测试邮件目标 | Test email destination
       tags:
       - Monitor Emails
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.notification_destination.execute
   /executions:
     get:
       parameters:
@@ -1442,6 +1487,9 @@ paths:
       summary: 查询执行记录列表 | List execution records
       tags:
       - Monitor
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.execution.read
   /executions/{id}:
     get:
       parameters:
@@ -1463,6 +1511,9 @@ paths:
       summary: 获取执行记录详情 | Get execution record detail
       tags:
       - Monitor
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.execution.read
   /executions/{id}/tree:
     get:
       parameters:
@@ -1483,6 +1534,9 @@ paths:
       summary: 获取执行记录树 | Get execution tree
       tags:
       - Monitor
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.execution.read
   /executions/by-execution-id/{execution_id}:
     get:
       parameters:
@@ -1504,6 +1558,9 @@ paths:
       summary: 按 execution_id 获取执行记录详情 | Get execution record detail by execution_id
       tags:
       - Monitor
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.execution.read
   /executions/by-execution-id/{execution_id}/tree:
     get:
       parameters:
@@ -1524,6 +1581,9 @@ paths:
       summary: 按 execution_id 获取执行记录树 | Get execution tree by execution_id
       tags:
       - Monitor
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.execution.read
   /executions/stats:
     get:
       parameters:
@@ -1549,6 +1609,9 @@ paths:
       summary: 获取统计数据 | Get statistics
       tags:
       - Monitor
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.statistics.read
   /executions/trend:
     get:
       parameters:
@@ -1574,6 +1637,9 @@ paths:
       summary: 获取趋势数据 | Get trend data
       tags:
       - Monitor
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.statistics.read
   /modules:
     get:
       produces:
@@ -1589,6 +1655,9 @@ paths:
       summary: 获取模块列表 | Get module list
       tags:
       - Monitor
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.health.read
   /modules/{module}/health:
     get:
       parameters:
@@ -1610,6 +1679,9 @@ paths:
       summary: 检查模块健康状态 | Check module health
       tags:
       - Monitor
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.health.read
   /modules/health/all:
     get:
       produces:
@@ -1625,6 +1697,9 @@ paths:
       summary: 检查所有模块健康状态 | Check all modules health
       tags:
       - Monitor
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.health.read
   /providers/{module}/health:
     get:
       description: 从 System 读取指定 TaskProvider，并探测模块 /health 与标准 GET /tasks?task_type=
@@ -1656,6 +1731,9 @@ paths:
       summary: 检查单个任务提供者运行态健康状态 | Check task provider health
       tags:
       - Monitor
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.health.read
   /providers/health:
     get:
       description: 从 System 读取启用 TaskProvider，并探测模块 /health 与标准 GET /tasks?task_type=
@@ -1679,6 +1757,9 @@ paths:
       summary: 检查所有任务提供者运行态健康状态 | Check all task provider health
       tags:
       - Monitor
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.health.read
   /task-providers:
     get:
       produces:
@@ -1695,6 +1776,9 @@ paths:
       summary: 获取任务提供者列表 | Get task providers
       tags:
       - Monitor
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.health.read
   /webhook-deliveries:
     get:
       description: 分页查询当前租户的 Webhook outbox 和投递审计记录 | List webhook outbox and delivery
@@ -1742,6 +1826,9 @@ paths:
       summary: 查询 Webhook 投递 | List webhook deliveries
       tags:
       - Monitor Webhooks
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.notification_delivery.read
   /webhook-deliveries/{delivery_id}/retry:
     post:
       description: 只允许重投 dead delivery；复用原 delivery_id 和 payload，并使用目标当前 URL/secret
@@ -1781,6 +1868,9 @@ paths:
       summary: 手动重投 Webhook delivery | Manually retry webhook delivery
       tags:
       - Monitor Webhooks
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.notification_delivery.retry
   /webhook-destinations:
     get:
       description: 查询当前租户的告警 Webhook 目标；secret 只返回是否已配置，不返回明文或密文 | List alert webhook
@@ -1807,6 +1897,9 @@ paths:
       summary: 查询 Webhook 目标 | List webhook destinations
       tags:
       - Monitor Webhooks
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.notification_destination.read
     post:
       consumes:
       - application/json
@@ -1843,6 +1936,9 @@ paths:
       summary: 创建 Webhook 目标 | Create webhook destination
       tags:
       - Monitor Webhooks
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.notification_destination.create
   /webhook-destinations/{id}:
     delete:
       description: 删除当前租户目标并取消尚未领取的投递；历史投递审计保留 | Delete a destination and cancel its
@@ -1877,6 +1973,9 @@ paths:
       summary: 删除 Webhook 目标 | Delete webhook destination
       tags:
       - Monitor Webhooks
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.notification_destination.delete
     patch:
       consumes:
       - application/json
@@ -1922,6 +2021,9 @@ paths:
       summary: 更新 Webhook 目标 | Update webhook destination
       tags:
       - Monitor Webhooks
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.notification_destination.update
   /webhook-destinations/{id}/test:
     post:
       description: 使用目标当前 URL 和 secret 同步发送独立测试 payload；不创建告警事件或正式投递记录 | Send a standalone
@@ -1961,6 +2063,9 @@ paths:
       summary: 测试 Webhook 目标 | Test webhook destination
       tags:
       - Monitor Webhooks
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.notification_destination.execute
 securityDefinitions:
   BearerAuth:
     in: header

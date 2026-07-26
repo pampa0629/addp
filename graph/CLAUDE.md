@@ -143,7 +143,8 @@ DELETE     /api/v1/graph/graphs/:id/build/tasks/:tid/materials/:mid     删除�
 
 GET  /api/v1/graph/graphs/:id/review                  审核项列表
 GET  /api/v1/graph/graphs/:id/review/pending-count    待审数量
-POST /api/v1/graph/graphs/:id/review/batch            批量通过/拒绝
+POST /api/v1/graph/graphs/:id/review/batch/approve    批量通过
+POST /api/v1/graph/graphs/:id/review/batch/reject     批量拒绝
 POST /api/v1/graph/graphs/:id/review/:iid/approve     通过审核项
 POST /api/v1/graph/graphs/:id/review/:iid/reject      拒绝审核项
 PUT  /api/v1/graph/graphs/:id/review/:iid             修改并通过审核项

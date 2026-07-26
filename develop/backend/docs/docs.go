@@ -53,7 +53,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ToolApprovalErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
+                ]
             }
         },
         "/approvals/{id}/decision": {
@@ -124,43 +128,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ToolApprovalErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/assets/discoverable": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "返回当前租户下可被资产模块发现的开发任务 | List active develop tasks for Asset discovery",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Develop"
-                ],
-                "summary": "列出可发现资产 | List discoverable assets",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "additionalProperties": true
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.execute"
+                ]
             }
         },
         "/duckdb/sample-query": {
@@ -182,7 +154,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
+                ]
             }
         },
         "/duckdb/sources": {
@@ -205,7 +181,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
+                ]
             }
         },
         "/duckdb/test": {
@@ -226,7 +206,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
+                ]
             }
         },
         "/engines": {
@@ -248,7 +232,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
+                ]
             }
         },
         "/engines/{id}/sample-query": {
@@ -296,7 +284,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
+                ]
             }
         },
         "/execute": {
@@ -329,7 +321,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ExecuteQueryResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.execute"
+                ]
             }
         },
         "/executions": {
@@ -398,7 +394,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ListExecutionsSwaggerResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
+                ]
             },
             "post": {
                 "description": "第一方或 OAuth 用户提交 dev_type、trigger_type、content 和 execution_config 后直接执行。委托 workflow.run 首次提交相同执行内容并返回审批；批准后恢复请求只提交 approval_id 和 request_fingerprint。| First-party or OAuth users submit dev_type, trigger_type, content, and execution_config for direct execution. A delegated workflow.run first submits the same execution content and receives an approval; after approval, the resume request contains only approval_id and request_fingerprint.",
@@ -460,7 +460,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ToolApprovalErrorResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.execute"
+                ]
             }
         },
         "/executions/statistics": {
@@ -499,7 +503,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ExecutionStatistics"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
+                ]
             }
         },
         "/executions/{execution_id}": {
@@ -527,7 +535,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevTaskSwagger"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
+                ]
             }
         },
         "/executions/{execution_id}/logs": {
@@ -556,7 +568,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
+                ]
             }
         },
         "/executions/{execution_id}/retry": {
@@ -584,7 +600,235 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.execute"
+                ]
+            }
+        },
+        "/internal/assets/discoverable": {
+            "get": {
+                "description": "返回当前租户下可被资产模块发现的开发任务 | List active develop tasks for Asset discovery",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Develop"
+                ],
+                "summary": "列出可发现资产 | List discoverable assets",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "internal"
+            }
+        },
+        "/internal/executions/{execution_id}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Execution"
+                ],
+                "summary": "获取 TaskProvider 执行状态 | Get TaskProvider execution status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "执行ID（UUID）| Execution ID (UUID)",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "执行详情 | Execution details",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevTaskSwagger"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "internal"
+            }
+        },
+        "/internal/tasks": {
+            "get": {
+                "description": "返回可供 TaskProvider 编排复用的开发任务；task_type 是对外任务类型契约，映射到 Develop 内部 dev_type。| List active develop tasks exposed by TaskProvider; task_type is the external task contract mapped to Develop internal dev_type.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Develop"
+                ],
+                "summary": "列出可编排任务 | List orchestratable tasks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "TaskProvider 任务类型：query/workflow/script | TaskProvider task type: query/workflow/script",
+                        "name": "task_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ListProviderDevTasksSwaggerResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "internal"
+            }
+        },
+        "/internal/tasks/{task_type}/{id}": {
+            "get": {
+                "description": "按标准 TaskProvider 路径获取开发任务详情；task_type 是对外任务类型契约，映射到 Develop 内部 dev_type。| Get development task detail through the standard TaskProvider path; task_type is the external task contract mapped to Develop internal dev_type.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DevTask"
+                ],
+                "summary": "获取 TaskProvider 开发任务详情 | Get TaskProvider development task detail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "TaskProvider 任务类型：query/workflow/script | TaskProvider task type: query/workflow/script",
+                        "name": "task_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "开发任务ID | Development task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "开发任务详情 | Development task detail",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ProviderDevTaskSwagger"
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "internal"
+            }
+        },
+        "/internal/tasks/{task_type}/{id}/execute": {
+            "post": {
+                "description": "按标准 TaskProvider 协议执行开发任务；task_type 是对外任务类型契约，映射到 Develop 内部 dev_type，parameters 会传入本次执行。| Execute a development task through the standard TaskProvider protocol; task_type is the external task contract mapped to Develop internal dev_type, and parameters are passed to this execution.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Execution"
+                ],
+                "summary": "执行 TaskProvider 开发任务 | Execute TaskProvider development task",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "TaskProvider 任务类型：query/workflow/script | TaskProvider task type: query/workflow/script",
+                        "name": "task_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "开发任务ID | Development task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "TaskProvider 执行请求 | TaskProvider execution request",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.providerExecuteDevRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "执行已启动 | Execution started",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.providerExecuteDevResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误 | Server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "internal"
             }
         },
         "/jupyter/instance/start": {
@@ -603,7 +847,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.JupyterInstance"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.notebook.execute"
+                ]
             }
         },
         "/jupyter/instance/status": {
@@ -622,7 +870,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.JupyterInstance"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.notebook.read"
+                ]
             }
         },
         "/jupyter/instance/stop": {
@@ -644,29 +896,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
-            }
-        },
-        "/jupyter/instances": {
-            "get": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Jupyter Instance"
-                ],
-                "summary": "列出所有 Jupyter 实例 | List all Jupyter instances",
-                "responses": {
-                    "200": {
-                        "description": "实例列表 | Instance list",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.JupyterInstance"
-                            }
-                        }
-                    }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.notebook.execute"
+                ]
             }
         },
         "/jupyter/server/status": {
@@ -691,7 +925,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.notebook.read"
+                ]
             }
         },
         "/jupyter/venv": {
@@ -737,7 +975,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.notebook.delete"
+                ]
             }
         },
         "/jupyter/venv/init": {
@@ -783,7 +1025,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.notebook.create"
+                ]
             }
         },
         "/jupyter/venv/status": {
@@ -829,101 +1075,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
-            }
-        },
-        "/jupyter/venv/{tenant_id}/init": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Jupyter"
-                ],
-                "summary": "为指定租户初始化 Jupyter 虚拟环境 | Init Jupyter venv by tenant",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "租户ID | Tenant ID",
-                        "name": "tenant_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/jupyter/venvs": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Jupyter"
-                ],
-                "summary": "列出 Jupyter 虚拟环境 | List Jupyter venvs",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.notebook.read"
+                ]
             }
         },
         "/notebooks": {
@@ -958,7 +1114,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksSwaggerResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.notebook.read"
+                ]
             }
         },
         "/notebooks/:id": {
@@ -986,7 +1146,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.notebook.delete"
+                ]
             }
         },
         "/notebooks/:id/download": {
@@ -1014,7 +1178,11 @@ const docTemplate = `{
                             "type": "file"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.notebook.read"
+                ]
             }
         },
         "/notebooks/execute": {
@@ -1047,7 +1215,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ExecuteNotebookResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.notebook.execute"
+                ]
             }
         },
         "/notebooks/health": {
@@ -1069,7 +1241,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.notebook.read"
+                ]
             }
         },
         "/notebooks/jupyter-url": {
@@ -1102,7 +1278,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.GetJupyterURLResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.notebook.execute"
+                ]
             }
         },
         "/notebooks/kernels": {
@@ -1121,7 +1301,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.ListKernelsResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.notebook.read"
+                ]
             }
         },
         "/notebooks/upload": {
@@ -1177,7 +1361,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.UploadNotebookSwaggerResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.notebook.create"
+                ]
             }
         },
         "/query-modes": {
@@ -1199,7 +1387,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
+                ]
             }
         },
         "/spark-runtimes": {
@@ -1221,7 +1413,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
+                ]
             }
         },
         "/task-definitions": {
@@ -1284,7 +1480,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksSwaggerResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
+                ]
             },
             "post": {
                 "consumes": [
@@ -1315,7 +1515,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskSwagger"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.create"
+                ]
             }
         },
         "/task-definitions/statistics": {
@@ -1338,7 +1542,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
+                ]
             }
         },
         "/task-definitions/{id}": {
@@ -1366,7 +1574,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskSwagger"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
+                ]
             },
             "put": {
                 "consumes": [
@@ -1404,7 +1616,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskSwagger"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.update"
+                ]
             },
             "delete": {
                 "tags": [
@@ -1430,7 +1646,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.delete"
+                ]
             }
         },
         "/task-definitions/{id}/execute": {
@@ -1473,172 +1693,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
-            }
-        },
-        "/tasks": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "返回可供 TaskProvider 编排复用的开发任务；task_type 是对外任务类型契约，映射到 Develop 内部 dev_type。| List active develop tasks exposed by TaskProvider; task_type is the external task contract mapped to Develop internal dev_type.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Develop"
-                ],
-                "summary": "列出可编排任务 | List orchestratable tasks",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "TaskProvider 任务类型：query/workflow/script | TaskProvider task type: query/workflow/script",
-                        "name": "task_type",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 1,
-                        "description": "页码 | Page",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 20,
-                        "description": "每页数量 | Page size",
-                        "name": "page_size",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ListProviderDevTasksSwaggerResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/tasks/{task_type}/{id}": {
-            "get": {
-                "description": "按标准 TaskProvider 路径获取开发任务详情；task_type 是对外任务类型契约，映射到 Develop 内部 dev_type。| Get development task detail through the standard TaskProvider path; task_type is the external task contract mapped to Develop internal dev_type.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "DevTask"
-                ],
-                "summary": "获取 TaskProvider 开发任务详情 | Get TaskProvider development task detail",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "TaskProvider 任务类型：query/workflow/script | TaskProvider task type: query/workflow/script",
-                        "name": "task_type",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "开发任务ID | Development task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "开发任务详情 | Development task detail",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ProviderDevTaskSwagger"
-                        }
-                    },
-                    "400": {
-                        "description": "参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "任务不存在 | Task not found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/tasks/{task_type}/{id}/execute": {
-            "post": {
-                "description": "按标准 TaskProvider 协议执行开发任务；task_type 是对外任务类型契约，映射到 Develop 内部 dev_type，parameters 会传入本次执行。| Execute a development task through the standard TaskProvider protocol; task_type is the external task contract mapped to Develop internal dev_type, and parameters are passed to this execution.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Execution"
-                ],
-                "summary": "执行 TaskProvider 开发任务 | Execute TaskProvider development task",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "TaskProvider 任务类型：query/workflow/script | TaskProvider task type: query/workflow/script",
-                        "name": "task_type",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "开发任务ID | Development task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "TaskProvider 执行请求 | TaskProvider execution request",
-                        "name": "request",
-                        "in": "body",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.providerExecuteDevRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "202": {
-                        "description": "执行已启动 | Execution started",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.providerExecuteDevResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "服务器错误 | Server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.execute"
+                ]
             }
         },
         "/test/{id}": {
@@ -1672,7 +1731,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
+                ]
             }
         },
         "/workflow-engines": {
@@ -1694,7 +1757,11 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
+                ]
             }
         },
         "/workflow-engines/{id}/operators": {
@@ -1727,7 +1794,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.OperatorListResponse"
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
+                ]
             }
         },
         "/workflow-validations": {
@@ -1780,7 +1851,11 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
+                ]
             }
         }
     },
@@ -3280,7 +3355,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "tenant_id": {
-                    "description": "租户ID，SuperAdmin创建的引擎为null",
+                    "description": "租户ID，平台共享引擎为 null",
                     "type": "integer"
                 },
                 "updated_at": {

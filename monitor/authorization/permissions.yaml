@@ -1,13 +1,61 @@
 schema_version: addp.permission_manifest/v1
 owner_module: monitor
-manifest_version: 1
+manifest_version: 3
 permissions:
+  - key: monitor.alert_incident.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.alert_incident.read.name
+    description_i18n_key: permissions.monitor.alert_incident.read.description
+  - key: monitor.alert_incident.update
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.alert_incident.update.name
+    description_i18n_key: permissions.monitor.alert_incident.update.description
+  - key: monitor.alert_rule.create
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.alert_rule.create.name
+    description_i18n_key: permissions.monitor.alert_rule.create.description
+  - key: monitor.alert_rule.delete
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.alert_rule.delete.name
+    description_i18n_key: permissions.monitor.alert_rule.delete.description
+  - key: monitor.alert_rule.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.alert_rule.read.name
+    description_i18n_key: permissions.monitor.alert_rule.read.description
+  - key: monitor.alert_rule.update
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.alert_rule.update.name
+    description_i18n_key: permissions.monitor.alert_rule.update.description
   - key: monitor.execution.cancel
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium
     tenant_customizable: true
     delegable: false
-    status: active
+    status: disabled
     name_i18n_key: permissions.monitor.execution.cancel.name
     description_i18n_key: permissions.monitor.execution.cancel.description
   - key: monitor.execution.read
@@ -23,7 +71,7 @@ permissions:
     risk_level: medium
     tenant_customizable: true
     delegable: false
-    status: active
+    status: disabled
     name_i18n_key: permissions.monitor.execution.retry.name
     description_i18n_key: permissions.monitor.execution.retry.description
   - key: monitor.health.read
@@ -34,12 +82,68 @@ permissions:
     status: active
     name_i18n_key: permissions.monitor.health.read.name
     description_i18n_key: permissions.monitor.health.read.description
+  - key: monitor.notification_delivery.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.notification_delivery.read.name
+    description_i18n_key: permissions.monitor.notification_delivery.read.description
+  - key: monitor.notification_delivery.retry
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.notification_delivery.retry.name
+    description_i18n_key: permissions.monitor.notification_delivery.retry.description
+  - key: monitor.notification_destination.create
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.notification_destination.create.name
+    description_i18n_key: permissions.monitor.notification_destination.create.description
+  - key: monitor.notification_destination.delete
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.notification_destination.delete.name
+    description_i18n_key: permissions.monitor.notification_destination.delete.description
+  - key: monitor.notification_destination.execute
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.notification_destination.execute.name
+    description_i18n_key: permissions.monitor.notification_destination.execute.description
+  - key: monitor.notification_destination.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.notification_destination.read.name
+    description_i18n_key: permissions.monitor.notification_destination.read.description
+  - key: monitor.notification_destination.update
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.notification_destination.update.name
+    description_i18n_key: permissions.monitor.notification_destination.update.description
   - key: monitor.statistics.export
     allowed_scope_types: [tenant, department, project_group]
     risk_level: high
     tenant_customizable: true
     delegable: false
-    status: active
+    status: disabled
     name_i18n_key: permissions.monitor.statistics.export.name
     description_i18n_key: permissions.monitor.statistics.export.description
   - key: monitor.statistics.read

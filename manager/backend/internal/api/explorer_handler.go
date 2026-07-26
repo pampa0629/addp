@@ -69,6 +69,8 @@ func bearerToken(c *gin.Context) string {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.content.read"]
 // @Router /preview [get]
 // @Security BearerAuth
 func (h *ExplorerHandler) Preview(c *gin.Context) {
@@ -177,6 +179,8 @@ func queryCSV(c *gin.Context, key string) []string {
 // @Produce json
 // @Success 200 {object} map[string]interface{} "引擎列表 | Engine list"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.data_item.read"]
 // @Router /engines [get]
 // @Security BearerAuth
 func (h *ExplorerHandler) ListEngines(c *gin.Context) {
@@ -212,6 +216,8 @@ func (h *ExplorerHandler) ListEngines(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 416 {object} map[string]interface{} "Range 不可满足 | Range not satisfiable"
+// @x-addp-auth-mode "resource_ticket"
+// @x-addp-required-permissions ["manager.content.read"]
 // @Router /storage-stream [get]
 // @Security BearerAuth
 func (h *ExplorerHandler) StorageStream(c *gin.Context) {
@@ -299,6 +305,8 @@ func (h *ExplorerHandler) StorageStream(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 416 {object} map[string]interface{} "Range 不可满足 | Range not satisfiable"
+// @x-addp-auth-mode "resource_ticket"
+// @x-addp-required-permissions ["manager.content.read"]
 // @Router /storage-assets/{engine_id}/{storage_ref} [get]
 // @Security BearerAuth
 func (h *ExplorerHandler) StorageAsset(c *gin.Context) {

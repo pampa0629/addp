@@ -20,6 +20,8 @@ var _ = models.MetaItemLite{}
 // @Success 200 {array} models.MetaItemLite "数据项列表 | Items"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /nodes/{node_id}/items [get]
 // @Security BearerAuth
 func (h *Handler) GetNodeItems(c *gin.Context) {
@@ -51,6 +53,8 @@ func (h *Handler) GetNodeItems(c *gin.Context) {
 // @Success 200 {object} models.MetaItemLite "数据项详情 | Item detail"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "数据项不存在 | Item not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /items/by-catalog-path [get]
 // @Security BearerAuth
 func (h *Handler) QueryItemByCatalogPath(c *gin.Context) {
@@ -87,6 +91,8 @@ func (h *Handler) QueryItemByCatalogPath(c *gin.Context) {
 // @Success 200 {object} models.MetaItemLite "数据项详情 | Item detail"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "数据项不存在 | Item not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /items/{item_id} [get]
 // @Security BearerAuth
 func (h *Handler) GetItemByID(c *gin.Context) {
@@ -117,6 +123,8 @@ func (h *Handler) GetItemByID(c *gin.Context) {
 // @Success 200 {object} models.MetaItemAncestorsResponse "数据项祖先链 | Item ancestor chain"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "祖先链不存在 | Ancestor chain not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /items/{item_id}/ancestors [get]
 // @Security BearerAuth
 func (h *Handler) GetItemAncestors(c *gin.Context) {

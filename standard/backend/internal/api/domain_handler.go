@@ -24,6 +24,8 @@ func NewDomainHandler(svc *service.DomainService) *DomainHandler {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.domain.read"]
 // @Router /domains [get]
 // @Security BearerAuth
 func (h *DomainHandler) ListDomains(c *gin.Context) {
@@ -41,6 +43,8 @@ func (h *DomainHandler) ListDomains(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.domain.create"]
 // @Router /domains [post]
 // @Security BearerAuth
 func (h *DomainHandler) CreateDomain(c *gin.Context) {
@@ -66,6 +70,8 @@ func (h *DomainHandler) CreateDomain(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.domain.read"]
 // @Router /domains/{id} [get]
 // @Security BearerAuth
 func (h *DomainHandler) GetDomain(c *gin.Context) {
@@ -89,6 +95,8 @@ func (h *DomainHandler) GetDomain(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.domain.update"]
 // @Router /domains/{id} [put]
 // @Security BearerAuth
 func (h *DomainHandler) UpdateDomain(c *gin.Context) {
@@ -120,6 +128,8 @@ func (h *DomainHandler) UpdateDomain(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.domain.delete"]
 // @Router /domains/{id} [delete]
 // @Security BearerAuth
 func (h *DomainHandler) DeleteDomain(c *gin.Context) {

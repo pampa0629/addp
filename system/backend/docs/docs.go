@@ -3969,6 +3969,9 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
+                "estimated_row_count": {
+                    "type": "integer"
+                },
                 "fields": {
                     "type": "array",
                     "items": {
@@ -4745,7 +4748,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "tenant_id": {
-                    "description": "租户ID，SuperAdmin创建的引擎为null",
+                    "description": "租户ID，平台共享引擎为 null",
                     "type": "integer"
                 },
                 "updated_at": {
@@ -4875,7 +4878,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "tenant_id": {
-                    "description": "租户ID，SuperAdmin创建的引擎为null",
+                    "description": "租户ID，平台共享引擎为 null",
                     "type": "integer"
                 },
                 "updated_at": {

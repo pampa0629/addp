@@ -18,7 +18,11 @@ from models.workflow_models import WorkflowResourceFact
 # from services.memory_service import memory_service
 
 router = APIRouter()
-require_workflow_draft_tool = require_tool_user("copilot", "workflow.draft.generate")
+require_workflow_draft_tool = require_tool_user(
+    "copilot",
+    "workflow.draft.generate",
+    COPILOT_WORKFLOW_EXECUTE,
+)
 
 # 全局 Pipeline 实例（延迟初始化）
 _workflow_pipeline: Optional[WorkflowPipeline] = None
@@ -99,7 +103,7 @@ async def generate_workflow(
     print(f"[API] 收到工作流生成请求")
     print(f"[API] 用户查询: {request.query}")
     print(f"[API] 租户 ID: {user.tenant_id}")
-    print(f"[API] 用户 ID: {user.user_id}")
+    print(f"[API] 用户 ID: {user.principal_id}")
     print(f"[API] 对话 ID: {request.conversation_id}")
     print(f"[API] 工作流引擎 ID: {request.workflow_engine_id}")
     print(f"{'='*80}\n")

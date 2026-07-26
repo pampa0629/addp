@@ -57,6 +57,8 @@ func NewAlertRuleHandler(alertRuleService *service.AlertRuleService) *AlertRuleH
 // @Produce json
 // @Success 200 {array} service.AlertRuleTarget "任务列表 | Task list"
 // @Failure 500 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.alert_rule.read"]
 // @Router /alert-rule-targets [get]
 // @Security BearerAuth
 func (h *AlertRuleHandler) ListAlertRuleTargets(c *gin.Context) {
@@ -78,6 +80,8 @@ func (h *AlertRuleHandler) ListAlertRuleTargets(c *gin.Context) {
 // @Produce json
 // @Success 200 {array} AlertRuleResponse "告警规则列表 | Alert rule list"
 // @Failure 500 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.alert_rule.read"]
 // @Router /alert-rules [get]
 // @Security BearerAuth
 func (h *AlertRuleHandler) ListAlertRules(c *gin.Context) {
@@ -102,6 +106,8 @@ func (h *AlertRuleHandler) ListAlertRules(c *gin.Context) {
 // @Success 201 {object} AlertRuleResponse "已创建规则 | Created rule"
 // @Failure 400 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.alert_rule.create"]
 // @Router /alert-rules [post]
 // @Security BearerAuth
 func (h *AlertRuleHandler) CreateAlertRule(c *gin.Context) {
@@ -136,6 +142,8 @@ func (h *AlertRuleHandler) CreateAlertRule(c *gin.Context) {
 // @Failure 400 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.alert_rule.update"]
 // @Router /alert-rules/{id} [patch]
 // @Security BearerAuth
 func (h *AlertRuleHandler) UpdateAlertRule(c *gin.Context) {
@@ -167,6 +175,8 @@ func (h *AlertRuleHandler) UpdateAlertRule(c *gin.Context) {
 // @Success 200 {object} DeleteAlertRuleResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.alert_rule.delete"]
 // @Router /alert-rules/{id} [delete]
 // @Security BearerAuth
 func (h *AlertRuleHandler) DeleteAlertRule(c *gin.Context) {

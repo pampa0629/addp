@@ -680,54 +680,9 @@ paths:
       summary: 列出可发现资产 | List discoverable assets
       tags:
       - Meta
-  /cache/engines/{engine_id}:
-    delete:
-      description: 清除指定存储引擎缓存，engine_id 为 all 时清除全部缓存 | Clear storage engine cache
-      parameters:
-      - description: 存储引擎ID或all | Engine ID or all
-        in: path
-        name: engine_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 清除结果 | Clear result
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 清除引擎缓存 | Clear engine cache
-      tags:
-      - Meta Cache
-  /cache/refresh:
-    post:
-      description: 清除并重新预加载存储引擎缓存 | Clear and preload storage engine cache
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 刷新结果 | Refresh result
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务器内部错误 | Internal server error
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 刷新存储引擎缓存 | Refresh storage engine cache
-      tags:
-      - Meta Cache
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.catalog.read
   /engines:
     get:
       description: 获取当前租户的存储引擎列表及统计信息 | Get storage engine list with statistics for
@@ -751,6 +706,9 @@ paths:
       summary: 获取引擎列表 | Get engine list
       tags:
       - Meta
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.catalog.read
   /engines/{engine_id}/items:
     get:
       description: 获取指定引擎下已扫描的数据项，可按 catalog 第一层业务分支过滤 | List scanned metadata items
@@ -789,6 +747,9 @@ paths:
       summary: 列出引擎数据项 | List engine items
       tags:
       - Meta Query
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.catalog.read
   /engines/{engine_id}/tree:
     get:
       description: 获取指定引擎的完整元数据树 | Get metadata tree for an engine
@@ -820,6 +781,9 @@ paths:
       summary: 获取元数据树 | Get metadata tree
       tags:
       - Meta Query
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.catalog.read
   /executions/{execution_id}:
     get:
       description: 按标准 TaskProvider 路径获取执行详情 | Get execution by standard TaskProvider
@@ -863,6 +827,9 @@ paths:
       summary: 获取执行详情 | Get execution
       tags:
       - Meta Scan
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.scan_task.read
   /inspect:
     post:
       consumes:
@@ -899,6 +866,9 @@ paths:
       summary: 动态识别标准 attributes | Inspect standard attributes without persistence
       tags:
       - Meta
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.inspect.execute
   /items/{item_id}:
     get:
       description: 按数据项 ID 获取元数据项详情 | Get metadata item detail by ID
@@ -930,6 +900,9 @@ paths:
       summary: 获取数据项详情 | Get item detail
       tags:
       - Meta Query
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.catalog.read
   /items/{item_id}/ancestors:
     get:
       description: 按数据项 ID 获取数据项及 root 到其父节点的元数据节点链 | Get item and metadata node chain
@@ -962,6 +935,9 @@ paths:
       summary: 获取数据项祖先链 | Get item ancestor chain
       tags:
       - Meta Query
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.catalog.read
   /items/{item_id}/fields:
     get:
       description: 按数据项 ID 获取字段详情 | Get item field details by item ID
@@ -994,6 +970,9 @@ paths:
       summary: 按 ID 获取数据项字段 | Get item fields by ID
       tags:
       - Meta Query
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.catalog.read
   /items/{item_id}/refresh:
     post:
       consumes:
@@ -1033,6 +1012,9 @@ paths:
       summary: 刷新已知数据项 | Refresh known item
       tags:
       - Meta Scan
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.scan_task.execute
   /items/{item_id}/spatial:
     get:
       description: 按数据项 ID 获取空间元数据 | Get spatial metadata by item ID
@@ -1064,6 +1046,9 @@ paths:
       summary: 按 ID 获取空间元数据 | Get spatial metadata by ID
       tags:
       - Meta Query
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.catalog.read
   /items/by-catalog-path:
     get:
       description: 按引擎和 catalog path 查询数据项 | Query metadata item by engine and catalog
@@ -1101,6 +1086,9 @@ paths:
       summary: 按 catalog path 查询数据项 | Query item by catalog path
       tags:
       - Meta Query
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.catalog.read
   /nodes/{node_id}:
     get:
       description: 按节点 ID 获取元数据节点详情 | Get metadata node detail by ID
@@ -1132,6 +1120,9 @@ paths:
       summary: 获取节点详情 | Get node detail
       tags:
       - Meta Query
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.catalog.read
   /nodes/{node_id}/ancestors:
     get:
       description: 按节点 ID 获取 root 到目标节点的元数据节点链，包含目标节点自身 | Get metadata node chain
@@ -1166,6 +1157,9 @@ paths:
       summary: 获取节点祖先链 | Get node ancestor chain
       tags:
       - Meta Query
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.catalog.read
   /nodes/{node_id}/children:
     get:
       description: 获取指定节点的直接子节点 | Get direct children of a metadata node
@@ -1199,6 +1193,9 @@ paths:
       summary: 获取子节点 | Get node children
       tags:
       - Meta Query
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.catalog.read
   /nodes/{node_id}/items:
     get:
       description: 获取指定节点下的数据项 | Get metadata items under a node
@@ -1232,6 +1229,9 @@ paths:
       summary: 获取节点数据项 | Get node items
       tags:
       - Meta Query
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.catalog.read
   /nodes/by-catalog-path:
     get:
       description: 按引擎和 catalog path 查询元数据节点 | Query metadata node by engine and catalog
@@ -1269,6 +1269,9 @@ paths:
       summary: 按 catalog path 查询节点 | Query node by catalog path
       tags:
       - Meta Query
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.catalog.read
   /resource-tree/{engine_id}:
     get:
       description: 获取指定引擎的标准资源树视图，返回 common/resourcetree.TreeNode | Get standard resource
@@ -1315,6 +1318,9 @@ paths:
       summary: 获取标准资源树 | Get resource tree
       tags:
       - Meta Resource Tree
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.catalog.read
   /resource-tree/{engine_id}/ancestors:
     get:
       description: 按 locator 获取 root 到目标资源的标准资源树祖先链，并重写为当前 Meta 事实 locator | Get resource
@@ -1363,6 +1369,9 @@ paths:
       summary: 获取标准资源树祖先链 | Get resource tree ancestors
       tags:
       - Meta Resource Tree
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.catalog.read
   /resource-tree/{engine_id}/node:
     get:
       description: 按 locator 获取资源树节点及直接子级，返回 common/resourcetree.TreeNode | Get resource
@@ -1410,6 +1419,9 @@ paths:
       summary: 获取标准资源树节点 | Get resource tree node
       tags:
       - Meta Resource Tree
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.catalog.read
   /resource-tree/{engine_id}/refresh:
     post:
       description: 按 locator 提交一次后台深度扫描，刷新 Meta 资源树事实 | Submit a background deep scan
@@ -1468,6 +1480,9 @@ paths:
       summary: 刷新标准资源树节点 | Refresh resource tree node
       tags:
       - Meta Resource Tree
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.scan_task.execute
   /resource-tree/{engine_id}/search:
     get:
       description: 在指定引擎的标准资源树中按关键词搜索节点 | Search nodes in a standard resource tree
@@ -1523,6 +1538,9 @@ paths:
       summary: 搜索标准资源树 | Search resource tree
       tags:
       - Meta Resource Tree
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.catalog.read
   /scan/run/manual:
     post:
       consumes:
@@ -1568,6 +1586,9 @@ paths:
       summary: 创建手动扫描运行 | Create manual scan run
       tags:
       - Meta Scan
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.scan_task.execute
   /scan/run/unscanned:
     post:
       description: 为当前租户下尚未完成元数据扫描的存储引擎创建手动后台扫描运行 | Create manual background scan
@@ -1600,6 +1621,9 @@ paths:
       summary: 提交未扫描存储引擎后台扫描 | Submit background scans for unscanned engines
       tags:
       - Meta Scan
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.scan_task.execute
   /scan/runs:
     get:
       description: 分页查询当前租户的扫描运行记录 | List scan executions for current tenant
@@ -1654,6 +1678,9 @@ paths:
       summary: 列出扫描运行 | List scan runs
       tags:
       - Meta Scan
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.scan_task.read
   /scan/tasks:
     get:
       description: 列出当前租户的扫描任务 | List scan tasks for current tenant
@@ -1692,6 +1719,9 @@ paths:
       summary: 列出扫描任务 | List scan tasks
       tags:
       - Meta Scan
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.scan_task.read
     post:
       consumes:
       - application/json
@@ -1731,6 +1761,9 @@ paths:
       summary: 创建扫描任务 | Create scan task
       tags:
       - Meta Scan
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.scan_task.create
   /scan/tasks/{task_id}:
     delete:
       description: 删除指定扫描任务 | Delete scan task by ID
@@ -1768,6 +1801,9 @@ paths:
       summary: 删除扫描任务 | Delete scan task
       tags:
       - Meta Scan
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.scan_task.delete
     put:
       consumes:
       - application/json
@@ -1812,6 +1848,9 @@ paths:
       summary: 更新扫描任务 | Update scan task
       tags:
       - Meta Scan
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.scan_task.update
   /scan/tasks/{task_id}/trigger:
     post:
       description: 立即触发指定扫描任务 | Trigger scan task immediately
@@ -1849,6 +1888,9 @@ paths:
       summary: 触发扫描任务 | Trigger scan task
       tags:
       - Meta Scan
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.scan_task.execute
   /scan/tasks/engines/{engine_id}:
     delete:
       description: 删除指定 engine 绑定的 Meta 扫描计划 | Delete the Meta scan task bound to
@@ -1887,6 +1929,9 @@ paths:
       summary: 删除 engine 扫描计划 | Delete engine scan task
       tags:
       - Meta Scan
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.scan_task.delete
     put:
       consumes:
       - application/json
@@ -1931,6 +1976,9 @@ paths:
       summary: 维护 engine 扫描计划 | Upsert engine scan task
       tags:
       - Meta Scan
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.scan_task.update
   /stats:
     get:
       description: 获取当前租户的元数据项总数 | Get metadata item count for current tenant
@@ -1952,6 +2000,9 @@ paths:
       summary: 获取元数据统计 | Get metadata stats
       tags:
       - Meta
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.catalog.read
   /tasks:
     get:
       description: 返回可供 Orchestrator 编排复用的 Meta ScanTask，task_type 固定为 scan。| List
@@ -1998,6 +2049,9 @@ paths:
       summary: 列出 TaskProvider 扫描任务 | List TaskProvider scan tasks
       tags:
       - Meta Scan
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.scan_task.read
   /tasks/{task_type}/{id}:
     get:
       description: 按标准 TaskProvider 路径获取 Meta ScanTask 详情；task_type 仅支持 scan。| Get
@@ -2041,6 +2095,9 @@ paths:
       summary: 获取 TaskProvider 扫描任务详情 | Get TaskProvider scan task detail
       tags:
       - Meta Scan
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.scan_task.read
   /tasks/{task_type}/{id}/execute:
     post:
       consumes:
@@ -2091,6 +2148,9 @@ paths:
       summary: 执行 TaskProvider 扫描任务 | Execute TaskProvider scan task
       tags:
       - Meta Scan
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.scan_task.execute
 securityDefinitions:
   BearerAuth:
     in: header

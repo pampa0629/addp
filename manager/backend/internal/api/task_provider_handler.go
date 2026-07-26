@@ -520,6 +520,8 @@ type PointCloudCOPCTaskResponse struct {
 // @Success 200 {object} TaskListResponse "任务列表 | Task list"
 // @Failure 400 {object} map[string]interface{} "不支持的任务类型 | Unsupported task type"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
@@ -527,7 +529,7 @@ func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 }
 
 func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	if page < 1 {
@@ -881,10 +883,12 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "任务列表 | Task list"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /vector_tile_cache_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListTileCacheTasks(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	if page < 1 {
 		page = 1
@@ -920,10 +924,12 @@ func (h *TaskProviderHandler) ListTileCacheTasks(c *gin.Context) {
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "任务列表 | Task list"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /embedding_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListEmbeddingTasks(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	if page < 1 {
 		page = 1
@@ -960,11 +966,15 @@ func (h *TaskProviderHandler) ListEmbeddingTasks(c *gin.Context) {
 // @Success 200 {object} object "任务详情，按 task_type 返回矢量瓦片缓存、矢量物化视图、栅格 COG 生成或向量化任务详情 | Task detail by task_type"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /tasks/{task_type}/{id} [get]
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /embedding_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	taskType := c.Param("task_type")
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
@@ -1109,10 +1119,12 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 // @Success 200 {object} TileCacheTaskResponse "任务配置 | Task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /vector_tile_cache_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetTileCacheTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
@@ -1190,10 +1202,12 @@ func existingResultActionAllowsOverwrite(action string) (bool, error) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
 // @Failure 409 {object} map[string]interface{} "任务已有活动执行或缺少已有结果动作 | Active execution or existing result action required"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.create"]
 // @Router /tasks/{task_type}/{id}/execute [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	taskType := c.Param("task_type")
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
@@ -1327,10 +1341,12 @@ func managerTaskRequiresExistingResultAction(taskType string) bool {
 // @Param execution_id path string true "执行ID | Execution ID"
 // @Success 200 {object} execution.TaskExecution "执行状态 | Execution status"
 // @Failure 404 {object} map[string]interface{} "执行记录不存在 | Execution not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /executions/{execution_id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ExecutionStatus(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	executionID := c.Param("execution_id")
 
 	exec, err := h.taskExecRepo.GetByExecutionID(c.Request.Context(), executionID, int(tenantID))
@@ -1357,11 +1373,13 @@ func (h *TaskProviderHandler) ExecutionStatus(c *gin.Context) {
 // @Param body body EmbeddingTaskRequest true "向量化任务配置 | Embedding task configuration"
 // @Success 201 {object} EmbeddingTaskResponse "创建的任务配置 | Created task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.create"]
 // @Router /embedding_tasks [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreateEmbeddingTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := tenantIDValue(c)
+	userID := userIDValue(c)
 
 	req, err := decodeEmbeddingTaskRequest(c)
 	if err != nil {
@@ -1401,10 +1419,12 @@ func (h *TaskProviderHandler) CreateEmbeddingTask(c *gin.Context) {
 // @Success 200 {object} EmbeddingTaskResponse "更新后的任务配置 | Updated task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.update"]
 // @Router /embedding_tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdateEmbeddingTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
@@ -1452,10 +1472,12 @@ func (h *TaskProviderHandler) UpdateEmbeddingTask(c *gin.Context) {
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.delete"]
 // @Router /embedding_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteEmbeddingTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
@@ -1576,11 +1598,13 @@ func boolFromConfig(value interface{}, defaultValue bool) bool {
 // @Param body body TileCacheTaskRequest true "瓦片缓存任务配置 | Tile cache task configuration"
 // @Success 201 {object} map[string]interface{} "创建的任务配置 | Created task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.create"]
 // @Router /vector_tile_cache_tasks [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreateTileCacheTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := tenantIDValue(c)
+	userID := userIDValue(c)
 
 	req, err := decodeTileCacheTaskRequest(c)
 	if err != nil {
@@ -1618,10 +1642,12 @@ func (h *TaskProviderHandler) CreateTileCacheTask(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "更新后的任务配置 | Updated task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.update"]
 // @Router /vector_tile_cache_tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdateTileCacheTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
@@ -1669,10 +1695,12 @@ func (h *TaskProviderHandler) UpdateTileCacheTask(c *gin.Context) {
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.delete"]
 // @Router /vector_tile_cache_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteTileCacheTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
@@ -1691,10 +1719,12 @@ func (h *TaskProviderHandler) DeleteTileCacheTask(c *gin.Context) {
 // @Tags Manager
 // @Produce json
 // @Success 200 {object} TaskListResponse "任务列表 | Task list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /vector_tile_set_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListVectorTileSetTasks(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	tasks, total, err := h.vectorTileSetTaskSvc.List(c.Request.Context(), tenantID, page, pageSize)
@@ -1712,6 +1742,8 @@ func (h *TaskProviderHandler) ListVectorTileSetTasks(c *gin.Context) {
 // @Produce json
 // @Param body body TileCacheTaskRequest true "任务配置 | Task configuration"
 // @Success 201 {object} models.VectorTileSetTask "任务 | Task"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.create"]
 // @Router /vector_tile_set_tasks [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreateVectorTileSetTask(c *gin.Context) {
@@ -1724,8 +1756,8 @@ func (h *TaskProviderHandler) CreateVectorTileSetTask(c *gin.Context) {
 	if req.Enabled != nil {
 		enabled = *req.Enabled
 	}
-	task := &models.VectorTileSetTask{TenantID: c.GetUint("tenant_id"), Name: req.Name, Description: req.Description, Enabled: enabled, Config: req.Config}
-	if userID := c.GetUint("user_id"); userID > 0 {
+	task := &models.VectorTileSetTask{TenantID: tenantIDValue(c), Name: req.Name, Description: req.Description, Enabled: enabled, Config: req.Config}
+	if userID := userIDValue(c); userID > 0 {
 		task.CreatedBy = &userID
 	}
 	if err := h.vectorTileSetTaskSvc.Create(c.Request.Context(), task); err != nil {
@@ -1741,6 +1773,8 @@ func (h *TaskProviderHandler) CreateVectorTileSetTask(c *gin.Context) {
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} models.VectorTileSetTask "任务 | Task"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /vector_tile_set_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetVectorTileSetTask(c *gin.Context) {
@@ -1749,7 +1783,7 @@ func (h *TaskProviderHandler) GetVectorTileSetTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
 		return
 	}
-	task, err := h.vectorTileSetTaskSvc.GetByID(c.Request.Context(), uint(id), c.GetUint("tenant_id"))
+	task, err := h.vectorTileSetTaskSvc.GetByID(c.Request.Context(), uint(id), tenantIDValue(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1769,6 +1803,8 @@ func (h *TaskProviderHandler) GetVectorTileSetTask(c *gin.Context) {
 // @Param id path int true "任务ID | Task ID"
 // @Param body body TileCacheTaskRequest true "任务配置 | Task configuration"
 // @Success 200 {object} models.VectorTileSetTask "任务 | Task"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.update"]
 // @Router /vector_tile_set_tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdateVectorTileSetTask(c *gin.Context) {
@@ -1777,7 +1813,7 @@ func (h *TaskProviderHandler) UpdateVectorTileSetTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
 		return
 	}
-	task, err := h.vectorTileSetTaskSvc.GetByID(c.Request.Context(), uint(id), c.GetUint("tenant_id"))
+	task, err := h.vectorTileSetTaskSvc.GetByID(c.Request.Context(), uint(id), tenantIDValue(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1807,6 +1843,8 @@ func (h *TaskProviderHandler) UpdateVectorTileSetTask(c *gin.Context) {
 // @Tags Manager
 // @Param id path int true "任务ID | Task ID"
 // @Success 204 "删除成功 | Deleted"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.delete"]
 // @Router /vector_tile_set_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteVectorTileSetTask(c *gin.Context) {
@@ -1815,7 +1853,7 @@ func (h *TaskProviderHandler) DeleteVectorTileSetTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
 		return
 	}
-	if err := h.vectorTileSetTaskSvc.Delete(c.Request.Context(), uint(id), c.GetUint("tenant_id")); err != nil {
+	if err := h.vectorTileSetTaskSvc.Delete(c.Request.Context(), uint(id), tenantIDValue(c)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -1830,10 +1868,12 @@ func (h *TaskProviderHandler) DeleteVectorTileSetTask(c *gin.Context) {
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "任务列表 | Task list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /vector_materialized_view_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListVectorMaterializedViewTasks(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	tasks, total, err := h.vectorMaterializedViewTaskSvc.List(c.Request.Context(), tenantID, page, pageSize)
@@ -1855,11 +1895,13 @@ func (h *TaskProviderHandler) ListVectorMaterializedViewTasks(c *gin.Context) {
 // @Produce json
 // @Param body body VectorMaterializedViewTaskRequest true "矢量物化视图任务配置 | Vector materialized view task configuration"
 // @Success 201 {object} VectorMaterializedViewTaskResponse "创建的任务配置 | Created task configuration"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.create"]
 // @Router /vector_materialized_view_tasks [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreateVectorMaterializedViewTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := tenantIDValue(c)
+	userID := userIDValue(c)
 	req, err := decodeVectorMaterializedViewTaskRequest(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1892,6 +1934,8 @@ func (h *TaskProviderHandler) CreateVectorMaterializedViewTask(c *gin.Context) {
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} VectorMaterializedViewTaskResponse "任务配置 | Task configuration"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /vector_materialized_view_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetVectorMaterializedViewTask(c *gin.Context) {
@@ -1907,10 +1951,12 @@ func (h *TaskProviderHandler) GetVectorMaterializedViewTask(c *gin.Context) {
 // @Param id path int true "任务ID | Task ID"
 // @Param body body VectorMaterializedViewTaskRequest true "矢量物化视图任务配置 | Vector materialized view task configuration"
 // @Success 200 {object} VectorMaterializedViewTaskResponse "更新后的任务配置 | Updated task configuration"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.update"]
 // @Router /vector_materialized_view_tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdateVectorMaterializedViewTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
@@ -1951,10 +1997,12 @@ func (h *TaskProviderHandler) UpdateVectorMaterializedViewTask(c *gin.Context) {
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.delete"]
 // @Router /vector_materialized_view_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteVectorMaterializedViewTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
@@ -1975,10 +2023,12 @@ func (h *TaskProviderHandler) DeleteVectorMaterializedViewTask(c *gin.Context) {
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "任务列表 | Task list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /raster_cog_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListRasterCOGTasks(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	tasks, total, err := h.rasterCOGTaskSvc.List(c.Request.Context(), tenantID, page, pageSize)
@@ -2000,11 +2050,13 @@ func (h *TaskProviderHandler) ListRasterCOGTasks(c *gin.Context) {
 // @Produce json
 // @Param body body RasterCOGTaskRequest true "raster COG generation task configuration"
 // @Success 201 {object} RasterCOGTaskResponse "创建的任务配置 | Created task configuration"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.create"]
 // @Router /raster_cog_tasks [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreateRasterCOGTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := tenantIDValue(c)
+	userID := userIDValue(c)
 	req, err := decodeRasterCOGTaskRequest(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -2037,6 +2089,8 @@ func (h *TaskProviderHandler) CreateRasterCOGTask(c *gin.Context) {
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} RasterCOGTaskResponse "任务配置 | Task configuration"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /raster_cog_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetRasterCOGTask(c *gin.Context) {
@@ -2052,10 +2106,12 @@ func (h *TaskProviderHandler) GetRasterCOGTask(c *gin.Context) {
 // @Param id path int true "任务ID | Task ID"
 // @Param body body RasterCOGTaskRequest true "raster COG generation task configuration"
 // @Success 200 {object} RasterCOGTaskResponse "更新后的任务配置 | Updated task configuration"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.update"]
 // @Router /raster_cog_tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdateRasterCOGTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
@@ -2096,10 +2152,12 @@ func (h *TaskProviderHandler) UpdateRasterCOGTask(c *gin.Context) {
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.delete"]
 // @Router /raster_cog_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteRasterCOGTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
@@ -2120,10 +2178,12 @@ func (h *TaskProviderHandler) DeleteRasterCOGTask(c *gin.Context) {
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "任务列表 | Task list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /raster_mosaic_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListRasterMosaicTasks(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	tasks, total, err := h.rasterMosaicTaskSvc.List(c.Request.Context(), tenantID, page, pageSize)
@@ -2147,11 +2207,13 @@ func (h *TaskProviderHandler) ListRasterMosaicTasks(c *gin.Context) {
 // @Param body body RasterMosaicTaskRequest true "raster mosaic generation task configuration"
 // @Success 201 {object} RasterMosaicTaskResponse "创建的任务配置 | Created task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.create"]
 // @Router /raster_mosaic_tasks [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreateRasterMosaicTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := tenantIDValue(c)
+	userID := userIDValue(c)
 	req, err := decodeRasterMosaicTaskRequest(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -2186,6 +2248,8 @@ func (h *TaskProviderHandler) CreateRasterMosaicTask(c *gin.Context) {
 // @Success 200 {object} RasterMosaicTaskResponse "任务配置 | Task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /raster_mosaic_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetRasterMosaicTask(c *gin.Context) {
@@ -2203,10 +2267,12 @@ func (h *TaskProviderHandler) GetRasterMosaicTask(c *gin.Context) {
 // @Success 200 {object} RasterMosaicTaskResponse "更新后的任务配置 | Updated task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.update"]
 // @Router /raster_mosaic_tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdateRasterMosaicTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
@@ -2248,10 +2314,12 @@ func (h *TaskProviderHandler) UpdateRasterMosaicTask(c *gin.Context) {
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.delete"]
 // @Router /raster_mosaic_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteRasterMosaicTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
@@ -2273,10 +2341,12 @@ func (h *TaskProviderHandler) DeleteRasterMosaicTask(c *gin.Context) {
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "任务列表 | Task list"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /model3d_tiles_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListModel3DTilesTasks(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	tasks, total, err := h.model3DTilesTaskSvc.List(c.Request.Context(), tenantID, page, pageSize)
@@ -2300,11 +2370,13 @@ func (h *TaskProviderHandler) ListModel3DTilesTasks(c *gin.Context) {
 // @Param body body Model3DTilesTaskRequest true "model 3D Tiles generation task configuration"
 // @Success 201 {object} Model3DTilesTaskResponse "创建的任务配置 | Created task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.create"]
 // @Router /model3d_tiles_tasks [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreateModel3DTilesTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := tenantIDValue(c)
+	userID := userIDValue(c)
 	req, err := decodeModel3DTilesTaskRequest(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -2339,6 +2411,8 @@ func (h *TaskProviderHandler) CreateModel3DTilesTask(c *gin.Context) {
 // @Success 200 {object} Model3DTilesTaskResponse "任务配置 | Task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /model3d_tiles_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetModel3DTilesTask(c *gin.Context) {
@@ -2356,10 +2430,12 @@ func (h *TaskProviderHandler) GetModel3DTilesTask(c *gin.Context) {
 // @Success 200 {object} Model3DTilesTaskResponse "更新后的任务配置 | Updated task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.update"]
 // @Router /model3d_tiles_tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdateModel3DTilesTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
@@ -2401,10 +2477,12 @@ func (h *TaskProviderHandler) UpdateModel3DTilesTask(c *gin.Context) {
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.delete"]
 // @Router /model3d_tiles_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteModel3DTilesTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
@@ -2432,10 +2510,12 @@ func (h *TaskProviderHandler) DeleteModel3DTilesTask(c *gin.Context) {
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "结果列表 | Result list"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /model3d_tiles [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListModel3DTilesResults(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	itemID64, _ := strconv.ParseUint(c.Query("item_id"), 10, 32)
@@ -2462,10 +2542,12 @@ func (h *TaskProviderHandler) ListModel3DTilesResults(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "结果不存在 | Result not found"
 // @Failure 500 {object} map[string]interface{} "删除失败 | Delete failed"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.delete"]
 // @Router /model3d_tiles/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteModel3DTilesResult(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil || id == 0 {
 		managerError(c, http.StatusBadRequest, manageri18n.MsgInvalidModel3DTilesResultID)
@@ -2491,10 +2573,12 @@ func (h *TaskProviderHandler) DeleteModel3DTilesResult(c *gin.Context) {
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "任务列表 | Task list"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /model_3d_glb_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListModel3DGLBTasks(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	tasks, total, err := h.model3DGLBTaskSvc.List(c.Request.Context(), tenantID, page, pageSize)
@@ -2518,11 +2602,13 @@ func (h *TaskProviderHandler) ListModel3DGLBTasks(c *gin.Context) {
 // @Param body body Model3DGLBTaskRequest true "model 3D GLB generation task configuration"
 // @Success 201 {object} Model3DGLBTaskResponse "创建的任务配置 | Created task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.create"]
 // @Router /model_3d_glb_tasks [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreateModel3DGLBTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := tenantIDValue(c)
+	userID := userIDValue(c)
 	req, err := decodeModel3DGLBTaskRequest(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -2557,6 +2643,8 @@ func (h *TaskProviderHandler) CreateModel3DGLBTask(c *gin.Context) {
 // @Success 200 {object} Model3DGLBTaskResponse "任务配置 | Task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /model_3d_glb_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetModel3DGLBTask(c *gin.Context) {
@@ -2574,10 +2662,12 @@ func (h *TaskProviderHandler) GetModel3DGLBTask(c *gin.Context) {
 // @Success 200 {object} Model3DGLBTaskResponse "更新后的任务配置 | Updated task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.update"]
 // @Router /model_3d_glb_tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdateModel3DGLBTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
@@ -2619,10 +2709,12 @@ func (h *TaskProviderHandler) UpdateModel3DGLBTask(c *gin.Context) {
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.delete"]
 // @Router /model_3d_glb_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteModel3DGLBTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
@@ -2644,10 +2736,12 @@ func (h *TaskProviderHandler) DeleteModel3DGLBTask(c *gin.Context) {
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "任务列表 | Task list"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /gaussian_splat_ksplat_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListGaussianSplatKSplatTasks(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	tasks, total, err := h.gaussianSplatKSplatTaskSvc.List(c.Request.Context(), tenantID, page, pageSize)
@@ -2671,11 +2765,13 @@ func (h *TaskProviderHandler) ListGaussianSplatKSplatTasks(c *gin.Context) {
 // @Param body body GaussianSplatKSplatTaskRequest true "gaussian splat KSplat generation task configuration"
 // @Success 201 {object} GaussianSplatKSplatTaskResponse "创建的任务配置 | Created task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.create"]
 // @Router /gaussian_splat_ksplat_tasks [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreateGaussianSplatKSplatTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := tenantIDValue(c)
+	userID := userIDValue(c)
 	req, err := decodeGaussianSplatKSplatTaskRequest(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -2710,6 +2806,8 @@ func (h *TaskProviderHandler) CreateGaussianSplatKSplatTask(c *gin.Context) {
 // @Success 200 {object} GaussianSplatKSplatTaskResponse "任务配置 | Task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /gaussian_splat_ksplat_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetGaussianSplatKSplatTask(c *gin.Context) {
@@ -2727,10 +2825,12 @@ func (h *TaskProviderHandler) GetGaussianSplatKSplatTask(c *gin.Context) {
 // @Success 200 {object} GaussianSplatKSplatTaskResponse "更新后的任务配置 | Updated task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.update"]
 // @Router /gaussian_splat_ksplat_tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdateGaussianSplatKSplatTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
@@ -2772,10 +2872,12 @@ func (h *TaskProviderHandler) UpdateGaussianSplatKSplatTask(c *gin.Context) {
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.delete"]
 // @Router /gaussian_splat_ksplat_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteGaussianSplatKSplatTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
@@ -2797,10 +2899,12 @@ func (h *TaskProviderHandler) DeleteGaussianSplatKSplatTask(c *gin.Context) {
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "任务列表 | Task list"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /point_cloud_copc_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListPointCloudCOPCTasks(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	tasks, total, err := h.pointCloudCOPCTaskSvc.List(c.Request.Context(), tenantID, page, pageSize)
@@ -2824,11 +2928,13 @@ func (h *TaskProviderHandler) ListPointCloudCOPCTasks(c *gin.Context) {
 // @Param body body PointCloudCOPCTaskRequest true "point cloud COPC generation task configuration"
 // @Success 201 {object} PointCloudCOPCTaskResponse "创建的任务配置 | Created task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.create"]
 // @Router /point_cloud_copc_tasks [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreatePointCloudCOPCTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := tenantIDValue(c)
+	userID := userIDValue(c)
 	req, err := decodePointCloudCOPCTaskRequest(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -2863,6 +2969,8 @@ func (h *TaskProviderHandler) CreatePointCloudCOPCTask(c *gin.Context) {
 // @Success 200 {object} PointCloudCOPCTaskResponse "任务配置 | Task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /point_cloud_copc_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetPointCloudCOPCTask(c *gin.Context) {
@@ -2880,10 +2988,12 @@ func (h *TaskProviderHandler) GetPointCloudCOPCTask(c *gin.Context) {
 // @Success 200 {object} PointCloudCOPCTaskResponse "更新后的任务配置 | Updated task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.update"]
 // @Router /point_cloud_copc_tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdatePointCloudCOPCTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
@@ -2925,10 +3035,12 @@ func (h *TaskProviderHandler) UpdatePointCloudCOPCTask(c *gin.Context) {
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.delete"]
 // @Router /point_cloud_copc_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeletePointCloudCOPCTask(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
@@ -2953,10 +3065,12 @@ func (h *TaskProviderHandler) DeletePointCloudCOPCTask(c *gin.Context) {
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "结果列表 | Result list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /raster_cog [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListRasterCOGs(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	itemID64, _ := strconv.ParseUint(c.Query("item_id"), 10, 32)
@@ -2984,10 +3098,12 @@ func (h *TaskProviderHandler) ListRasterCOGs(c *gin.Context) {
 // @Produce json
 // @Param id path int true "结果ID | Result ID"
 // @Success 200 {object} models.RasterCOG "结果详情 | Result detail"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /raster_cog/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetRasterCOG(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的结果ID"})
@@ -3011,10 +3127,12 @@ func (h *TaskProviderHandler) GetRasterCOG(c *gin.Context) {
 // @Produce json
 // @Param id path int true "结果ID | Result ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.delete"]
 // @Router /raster_cog/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteRasterCOG(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的结果ID"})
@@ -3039,10 +3157,12 @@ func (h *TaskProviderHandler) DeleteRasterCOG(c *gin.Context) {
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "结果列表 | Result list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /model_3d_glb [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListModel3DGLBs(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	itemID64, _ := strconv.ParseUint(c.Query("item_id"), 10, 32)
@@ -3070,10 +3190,12 @@ func (h *TaskProviderHandler) ListModel3DGLBs(c *gin.Context) {
 // @Produce json
 // @Param id path int true "结果ID | Result ID"
 // @Success 200 {object} models.Model3DGLB "结果详情 | Result detail"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /model_3d_glb/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetModel3DGLB(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的结果ID"})
@@ -3097,10 +3219,12 @@ func (h *TaskProviderHandler) GetModel3DGLB(c *gin.Context) {
 // @Produce json
 // @Param id path int true "结果ID | Result ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.delete"]
 // @Router /model_3d_glb/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteModel3DGLB(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的结果ID"})
@@ -3125,10 +3249,12 @@ func (h *TaskProviderHandler) DeleteModel3DGLB(c *gin.Context) {
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "结果列表 | Result list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /gaussian_splat_ksplat [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListGaussianSplatKSplats(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	itemID64, _ := strconv.ParseUint(c.Query("item_id"), 10, 32)
@@ -3156,10 +3282,12 @@ func (h *TaskProviderHandler) ListGaussianSplatKSplats(c *gin.Context) {
 // @Produce json
 // @Param id path int true "结果ID | Result ID"
 // @Success 200 {object} models.GaussianSplatKSplat "结果详情 | Result detail"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /gaussian_splat_ksplat/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetGaussianSplatKSplat(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的结果ID"})
@@ -3183,10 +3311,12 @@ func (h *TaskProviderHandler) GetGaussianSplatKSplat(c *gin.Context) {
 // @Produce json
 // @Param id path int true "结果ID | Result ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.delete"]
 // @Router /gaussian_splat_ksplat/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteGaussianSplatKSplat(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的结果ID"})
@@ -3211,10 +3341,12 @@ func (h *TaskProviderHandler) DeleteGaussianSplatKSplat(c *gin.Context) {
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "结果列表 | Result list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /point_cloud_copc [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListPointCloudCOPCs(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	itemID64, _ := strconv.ParseUint(c.Query("item_id"), 10, 32)
@@ -3242,10 +3374,12 @@ func (h *TaskProviderHandler) ListPointCloudCOPCs(c *gin.Context) {
 // @Produce json
 // @Param id path int true "结果ID | Result ID"
 // @Success 200 {object} models.PointCloudCOPC "结果详情 | Result detail"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /point_cloud_copc/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetPointCloudCOPC(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的结果ID"})
@@ -3269,10 +3403,12 @@ func (h *TaskProviderHandler) GetPointCloudCOPC(c *gin.Context) {
 // @Produce json
 // @Param id path int true "结果ID | Result ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.delete"]
 // @Router /point_cloud_copc/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeletePointCloudCOPC(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的结果ID"})
@@ -3297,10 +3433,12 @@ func (h *TaskProviderHandler) DeletePointCloudCOPC(c *gin.Context) {
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "结果列表 | Result list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /vector_materialized_view [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListVectorMaterializedViews(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	itemID64, _ := strconv.ParseUint(c.Query("item_id"), 10, 32)
@@ -3328,10 +3466,12 @@ func (h *TaskProviderHandler) ListVectorMaterializedViews(c *gin.Context) {
 // @Produce json
 // @Param id path int true "结果ID | Result ID"
 // @Success 200 {object} models.VectorMaterializedView "结果详情 | Result detail"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /vector_materialized_view/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetVectorMaterializedView(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的结果ID"})
@@ -3355,10 +3495,12 @@ func (h *TaskProviderHandler) GetVectorMaterializedView(c *gin.Context) {
 // @Produce json
 // @Param id path int true "结果ID | Result ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.delete"]
 // @Router /vector_materialized_view/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteVectorMaterializedView(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的结果ID"})
@@ -3388,10 +3530,12 @@ func (h *TaskProviderHandler) DeleteVectorMaterializedView(c *gin.Context) {
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "结果列表 | Result list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /vector_tile_cache [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListTileCaches(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	itemID64, _ := strconv.ParseUint(c.Query("item_id"), 10, 32)
@@ -3424,10 +3568,12 @@ func (h *TaskProviderHandler) ListTileCaches(c *gin.Context) {
 // @Produce json
 // @Param id path int true "结果ID | Result ID"
 // @Success 200 {object} models.TileCache "结果详情 | Result detail"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /vector_tile_cache/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetTileCache(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的结果ID"})
@@ -3451,10 +3597,12 @@ func (h *TaskProviderHandler) GetTileCache(c *gin.Context) {
 // @Produce json
 // @Param id path int true "结果ID | Result ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.delete"]
 // @Router /vector_tile_cache/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteTileCache(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的结果ID"})

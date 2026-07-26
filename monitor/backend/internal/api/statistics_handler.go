@@ -29,6 +29,8 @@ func NewStatisticsHandler(statisticsService *service.StatisticsService) *Statist
 // @Param module query string false "模块名 | Module"
 // @Param duration query string false "统计时长 | Duration" default(24h)
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.statistics.read"]
 // @Router /executions/stats [get]
 // @Security BearerAuth
 func (h *StatisticsHandler) GetStatistics(c *gin.Context) {
@@ -65,6 +67,8 @@ func (h *StatisticsHandler) GetStatistics(c *gin.Context) {
 // @Param module query string false "模块名 | Module"
 // @Param days query int false "天数 | Days" default(7)
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.statistics.read"]
 // @Router /executions/trend [get]
 // @Security BearerAuth
 func (h *StatisticsHandler) GetTrendData(c *gin.Context) {

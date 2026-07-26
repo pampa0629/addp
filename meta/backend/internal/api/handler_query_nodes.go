@@ -23,6 +23,8 @@ var (
 // @Success 200 {object} models.MetadataTreeResponse "元数据树 | Metadata tree"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /engines/{engine_id}/tree [get]
 // @Security BearerAuth
 func (h *Handler) GetMetadataTree(c *gin.Context) {
@@ -56,6 +58,8 @@ func (h *Handler) GetMetadataTree(c *gin.Context) {
 // @Success 200 {object} models.MetaNodeLite "节点详情 | Node detail"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "节点不存在 | Node not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /nodes/{node_id} [get]
 // @Security BearerAuth
 func (h *Handler) GetMetaNodeByID(c *gin.Context) {
@@ -86,6 +90,8 @@ func (h *Handler) GetMetaNodeByID(c *gin.Context) {
 // @Success 200 {array} models.MetaNodeLite "节点祖先链 | Node ancestor chain"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "祖先链不存在 | Ancestor chain not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /nodes/{node_id}/ancestors [get]
 // @Security BearerAuth
 func (h *Handler) GetNodeAncestors(c *gin.Context) {
@@ -116,6 +122,8 @@ func (h *Handler) GetNodeAncestors(c *gin.Context) {
 // @Success 200 {array} models.MetaNodeLite "子节点列表 | Children"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /nodes/{node_id}/children [get]
 // @Security BearerAuth
 func (h *Handler) GetNodeChildren(c *gin.Context) {
@@ -147,6 +155,8 @@ func (h *Handler) GetNodeChildren(c *gin.Context) {
 // @Success 200 {object} models.MetaNodeLite "节点详情 | Node detail"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "节点不存在 | Node not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /nodes/by-catalog-path [get]
 // @Security BearerAuth
 func (h *Handler) QueryNodeByCatalogPath(c *gin.Context) {

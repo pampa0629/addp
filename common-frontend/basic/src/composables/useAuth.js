@@ -17,6 +17,14 @@ function isAuthenticationFailure(error) {
   return error?.response?.status === 401 || error?.status === 401
 }
 
+export function collectAuthContextPermissions(authContext) {
+  const keys = new Set()
+  for (const assignment of authContext?.authorization?.role_assignments || []) {
+    for (const permission of assignment.permissions || []) keys.add(permission)
+  }
+  return [...keys].sort()
+}
+
 export function createAuthGuard(authStoreOrGetter, config = {}) {
   const {
     loginRouteName = 'Login',
@@ -76,6 +84,7 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
       store.tokenExpiresAt = expiresAt
       if (!token) {
         store.user = null
+        store.authContext = null
         store.sessionStatus = 'anonymous'
         if (persistUser) localStorage.removeItem('user')
         if (wasAuthenticated && store.sessionInitialized && !authSession.isEmbedded() && typeof window !== 'undefined') {
@@ -96,7 +105,7 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
         const session = payload.session
         if (!session?.access_token) throw new Error('auth_login_session_missing_access_token')
         authSession.acceptToken(session.access_token, session.expires_in)
-        await store.fetchUser()
+        await store.fetchSessionState()
         store.sessionInitialized = true
         store.sessionStatus = 'authenticated'
         return payload
@@ -130,8 +139,10 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
           return null
         }
       })() : null,
+      authContext: null,
       isLoadingUser: false,
       userLoadPromise: null,
+      authContextLoadPromise: null,
       sessionInitialized: false,
       sessionInitPromise: null,
       sessionStatus: 'idle',
@@ -139,7 +150,15 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
     }),
 
     getters: {
-      isAuthenticated: (state) => Boolean(state.token)
+      isAuthenticated: (state) => Boolean(state.token),
+      contextType: (state) => state.authContext?.context?.type || null,
+      permissions: (state) => collectAuthContextPermissions(state.authContext),
+      hasPermission() {
+        return (permission) => this.permissions.includes(permission)
+      },
+      hasAnyPermission() {
+        return (permissions) => permissions.some((permission) => this.hasPermission(permission))
+      }
     },
 
     actions: {
@@ -158,7 +177,7 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
           try {
             const token = await authSession.initialize()
             if (token) {
-              await this.fetchUser()
+              await this.fetchSessionState()
               this.sessionStatus = 'authenticated'
             } else {
               this.sessionStatus = 'anonymous'
@@ -237,6 +256,30 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
         return this.userLoadPromise
       },
 
+      async fetchAuthContext() {
+        if (this.authContextLoadPromise) return this.authContextLoadPromise
+        const token = getAccessToken() || this.token
+        if (!token) {
+          this.authContext = null
+          return null
+        }
+
+        this.authContextLoadPromise = authAPI.getAuthContext(token)
+          .then((response) => {
+            this.authContext = response.data || response
+            return this.authContext
+          })
+          .finally(() => {
+            this.authContextLoadPromise = null
+          })
+        return this.authContextLoadPromise
+      },
+
+      async fetchSessionState() {
+        const [user] = await Promise.all([this.fetchUser(), this.fetchAuthContext()])
+        return user
+      },
+
       async waitForUserLoad() {
         if (this.userLoadPromise) return this.userLoadPromise
         if (this.user) return { data: this.user }
@@ -247,8 +290,10 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
         bindStore(this)
         authSession.clearToken({ broadcastEvent: false })
         this.user = null
+        this.authContext = null
         this.isLoadingUser = false
         this.userLoadPromise = null
+        this.authContextLoadPromise = null
         this.sessionStatus = 'anonymous'
         if (persistUser) localStorage.removeItem('user')
       },
@@ -364,6 +409,9 @@ export function createAuthAPI(client) {
     logout: () => client.post('/logout', null, { withCredentials: true }),
     getCurrentUser: () => client.get('/users/me'),
     getUser: (token) => client.get('/users/me', {
+      headers: { Authorization: `Bearer ${token}` }
+    }),
+    getAuthContext: (token) => client.get('/auth/context', {
       headers: { Authorization: `Bearer ${token}` }
     })
   }

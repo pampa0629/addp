@@ -5,12 +5,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// tenantIDFromContext 从 Gin Context 中提取 TenantID
-// 返回 *uint 指针，如果 tenantID 为 0（超级管理员）则返回 nil
+// tenantIDFromContext 从 canonical AuthContext 中提取当前租户。
 func tenantIDFromContext(c *gin.Context) *uint {
 	tenantID := auth.GetTenantID(c)
 	if tenantID == 0 {
-		// 超级管理员返回 nil，表示不限制租户
 		return nil
 	}
 	return &tenantID
@@ -20,10 +18,13 @@ func tenantIDValue(c *gin.Context) uint {
 	return auth.GetTenantID(c)
 }
 
-// tenantFilterIDFromContext 从 Gin Context 中提取检索用租户过滤。
-// 普通用户强制使用认证租户；超级管理员可通过 query.tenant_id 显式指定租户。
+func userIDValue(c *gin.Context) uint {
+	return auth.GetUserID(c)
+}
+
+// tenantFilterIDFromContext 只使用认证租户，不接受 query 覆盖。
 func tenantFilterIDFromContext(c *gin.Context) *uint {
-	tenantID := auth.GetTenantFilterWithQuery(c)
+	tenantID := auth.GetTenantID(c)
 	if tenantID == 0 {
 		return nil
 	}

@@ -29,6 +29,8 @@ func NewOntologyHandler(svc *service.OntologyService, neo4jSvc *service.Neo4jSer
 // @Security     BearerAuth
 // @Success      200 {array}  models.Ontology
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.ontology.read"]
 // @Router       /ontologies [get]
 func (h *OntologyHandler) List(c *gin.Context) {
 	tenantID := getTenantID(c)
@@ -49,6 +51,8 @@ func (h *OntologyHandler) List(c *gin.Context) {
 // @Param        id path int true "本体 ID | Ontology ID"
 // @Success      200 {object} models.OntologyDetail
 // @Failure      404 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.ontology.read"]
 // @Router       /ontologies/{id} [get]
 func (h *OntologyHandler) Get(c *gin.Context) {
 	id := parseUintParam(c, "id")
@@ -72,6 +76,8 @@ func (h *OntologyHandler) Get(c *gin.Context) {
 // @Success      201 {object} models.Ontology
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.ontology.create"]
 // @Router       /ontologies [post]
 func (h *OntologyHandler) Create(c *gin.Context) {
 	var req models.CreateOntologyRequest
@@ -100,6 +106,8 @@ func (h *OntologyHandler) Create(c *gin.Context) {
 // @Success      200 {object} models.Ontology
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.ontology.update"]
 // @Router       /ontologies/{id} [put]
 func (h *OntologyHandler) Update(c *gin.Context) {
 	id := parseUintParam(c, "id")
@@ -126,6 +134,8 @@ func (h *OntologyHandler) Update(c *gin.Context) {
 // @Param        id path int true "本体 ID | Ontology ID"
 // @Success      200 {object} models.SuccessResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.ontology.delete"]
 // @Router       /ontologies/{id} [delete]
 func (h *OntologyHandler) Delete(c *gin.Context) {
 	id := parseUintParam(c, "id")
@@ -148,6 +158,8 @@ func (h *OntologyHandler) Delete(c *gin.Context) {
 // @Param        id path int true "本体 ID | Ontology ID"
 // @Success      200 {array}  models.EntityType
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.ontology.read"]
 // @Router       /ontologies/{id}/entity-types [get]
 func (h *OntologyHandler) ListEntityTypes(c *gin.Context) {
 	ontologyID := parseUintParam(c, "id")
@@ -172,6 +184,8 @@ func (h *OntologyHandler) ListEntityTypes(c *gin.Context) {
 // @Success      201 {object} models.EntityType
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.ontology.create"]
 // @Router       /ontologies/{id}/entity-types [post]
 func (h *OntologyHandler) CreateEntityType(c *gin.Context) {
 	ontologyID := parseUintParam(c, "id")
@@ -201,6 +215,8 @@ func (h *OntologyHandler) CreateEntityType(c *gin.Context) {
 // @Success      200 {object} models.EntityType
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.ontology.update"]
 // @Router       /ontologies/{id}/entity-types/{eid} [put]
 func (h *OntologyHandler) UpdateEntityType(c *gin.Context) {
 	ontologyID := parseUintParam(c, "id")
@@ -228,6 +244,8 @@ func (h *OntologyHandler) UpdateEntityType(c *gin.Context) {
 // @Param        eid path int true "实体类型 ID | Entity type ID"
 // @Success      200 {object} map[string]string
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.ontology.delete"]
 // @Router       /ontologies/{id}/entity-types/{eid} [delete]
 func (h *OntologyHandler) DeleteEntityType(c *gin.Context) {
 	ontologyID := parseUintParam(c, "id")
@@ -251,6 +269,8 @@ func (h *OntologyHandler) DeleteEntityType(c *gin.Context) {
 // @Param        id path int true "本体 ID | Ontology ID"
 // @Success      200 {array}  models.RelationType
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.ontology.read"]
 // @Router       /ontologies/{id}/relation-types [get]
 func (h *OntologyHandler) ListRelationTypes(c *gin.Context) {
 	ontologyID := parseUintParam(c, "id")
@@ -275,6 +295,8 @@ func (h *OntologyHandler) ListRelationTypes(c *gin.Context) {
 // @Success      201 {object} models.RelationType
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.ontology.create"]
 // @Router       /ontologies/{id}/relation-types [post]
 func (h *OntologyHandler) CreateRelationType(c *gin.Context) {
 	ontologyID := parseUintParam(c, "id")
@@ -304,6 +326,8 @@ func (h *OntologyHandler) CreateRelationType(c *gin.Context) {
 // @Success      200 {object} models.RelationType
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.ontology.update"]
 // @Router       /ontologies/{id}/relation-types/{rid} [put]
 func (h *OntologyHandler) UpdateRelationType(c *gin.Context) {
 	ontologyID := parseUintParam(c, "id")
@@ -331,6 +355,8 @@ func (h *OntologyHandler) UpdateRelationType(c *gin.Context) {
 // @Param        rid path int true "关系类型 ID | Relation type ID"
 // @Success      200 {object} map[string]string
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.ontology.delete"]
 // @Router       /ontologies/{id}/relation-types/{rid} [delete]
 func (h *OntologyHandler) DeleteRelationType(c *gin.Context) {
 	ontologyID := parseUintParam(c, "id")
@@ -354,6 +380,8 @@ func (h *OntologyHandler) DeleteRelationType(c *gin.Context) {
 // @Param        id path int true "本体 ID | Ontology ID"
 // @Success      200 {array}  models.OntologyVersion
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.ontology.read"]
 // @Router       /ontologies/{id}/versions [get]
 func (h *OntologyHandler) ListVersions(c *gin.Context) {
 	ontologyID := parseUintParam(c, "id")
@@ -378,6 +406,8 @@ func (h *OntologyHandler) ListVersions(c *gin.Context) {
 // @Success      201 {object} models.OntologyVersion
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.ontology.create"]
 // @Router       /ontologies/{id}/versions [post]
 func (h *OntologyHandler) CreateVersion(c *gin.Context) {
 	ontologyID := parseUintParam(c, "id")
@@ -409,6 +439,8 @@ func (h *OntologyHandler) CreateVersion(c *gin.Context) {
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.ontology.update"]
 // @Router       /ontologies/{id}/entity-types/{eid}/sync-constraints [post]
 func (h *OntologyHandler) SyncEntityTypeConstraints(c *gin.Context) {
 	ontologyID := parseUintParam(c, "id")
@@ -455,6 +487,8 @@ func (h *OntologyHandler) SyncEntityTypeConstraints(c *gin.Context) {
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.ontology.update"]
 // @Router       /ontologies/{id}/entity-types/{eid}/sync-spatial-layer [put]
 func (h *OntologyHandler) SyncEntityTypeSpatialLayer(c *gin.Context) {
 	ontologyID := parseUintParam(c, "id")
@@ -503,6 +537,8 @@ func (h *OntologyHandler) SyncEntityTypeSpatialLayer(c *gin.Context) {
 // @Success      200 {object} map[string]interface{}
 // @Failure      500 {object} models.ErrorResponse
 // @Failure      503 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.ontology.read"]
 // @Router       /ontologies/import-preview/from-model [get]
 func (h *OntologyHandler) ImportPreviewFromModel(c *gin.Context) {
 	if h.modelImportSvc == nil {
@@ -530,6 +566,8 @@ func (h *OntologyHandler) ImportPreviewFromModel(c *gin.Context) {
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
 // @Failure      503 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.ontology.update"]
 // @Router       /ontologies/{id}/import-from-model [post]
 func (h *OntologyHandler) ImportFromModel(c *gin.Context) {
 	if h.modelImportSvc == nil {
@@ -566,6 +604,8 @@ func (h *OntologyHandler) ImportFromModel(c *gin.Context) {
 // @Success      200 {array} map[string]interface{}
 // @Failure      500 {object} models.ErrorResponse
 // @Failure      503 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.ontology.read"]
 // @Router       /ontologies/neo4j-engines [get]
 func (h *OntologyHandler) ListNeo4jEngines(c *gin.Context) {
 	if h.schemaInferenceSvc == nil {
@@ -592,6 +632,8 @@ func (h *OntologyHandler) ListNeo4jEngines(c *gin.Context) {
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
 // @Failure      503 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.ontology.read"]
 // @Router       /ontologies/infer-schema/from-engine [get]
 func (h *OntologyHandler) InferSchemaFromEngine(c *gin.Context) {
 	if h.schemaInferenceSvc == nil {
@@ -634,6 +676,8 @@ func (h *OntologyHandler) InferSchemaFromEngine(c *gin.Context) {
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
 // @Failure      503 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.ontology.update"]
 // @Router       /ontologies/{id}/infer-schema/from-engine/apply [post]
 func (h *OntologyHandler) ApplyInferredSchemaFromEngine(c *gin.Context) {
 	if h.schemaInferenceSvc == nil {

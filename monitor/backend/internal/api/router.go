@@ -1,13 +1,12 @@
 package api
 
 import (
-	"time"
-
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/audit"
 	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	_ "github.com/addp/monitor/docs"
+	monitorauthorization "github.com/addp/monitor/internal/authorization"
 	"github.com/addp/monitor/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -62,12 +61,12 @@ func SetupRouter(
 	// API 路由组
 	api := router.Group("/api/v1/monitor")
 
-	// 使用 Redis 缓存中间件 (TTL: 5分钟)
-	if redisClient != nil {
-		api.Use(commonAuth.CachedSystemAuthMiddleware(systemURL, redisClient, 5*time.Minute))
-	} else {
-		// Fallback: 无缓存模式
-		api.Use(commonAuth.SystemAuthMiddleware(systemURL))
+	api.Use(
+		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: systemURL}),
+		commonAuth.MustNewContextGuard("tenant"),
+	)
+	permission := func(keys ...string) gin.HandlerFunc {
+		return commonAuth.MustNewPermissionGuard(keys...)
 	}
 	if systemClient != nil {
 		api.Use(audit.AuditMiddleware("monitor", systemClient))
@@ -75,47 +74,47 @@ func SetupRouter(
 
 	{
 		// 执行记录查询
-		api.GET("/executions", executionHandler.ListExecutions)
+		api.GET("/executions", permission(monitorauthorization.PermissionMonitorExecutionRead), executionHandler.ListExecutions)
 
 		// 统计数据
-		api.GET("/executions/stats", statisticsHandler.GetStatistics)
-		api.GET("/executions/trend", statisticsHandler.GetTrendData)
+		api.GET("/executions/stats", permission(monitorauthorization.PermissionMonitorStatisticsRead), statisticsHandler.GetStatistics)
+		api.GET("/executions/trend", permission(monitorauthorization.PermissionMonitorStatisticsRead), statisticsHandler.GetTrendData)
 
-		api.GET("/executions/by-execution-id/:execution_id/tree", executionHandler.GetExecutionTreeByExecutionID)
-		api.GET("/executions/by-execution-id/:execution_id", executionHandler.GetExecutionByExecutionID)
-		api.GET("/executions/:id/tree", executionHandler.GetExecutionTree)
-		api.GET("/executions/:id", executionHandler.GetExecution)
+		api.GET("/executions/by-execution-id/:execution_id/tree", permission(monitorauthorization.PermissionMonitorExecutionRead), executionHandler.GetExecutionTreeByExecutionID)
+		api.GET("/executions/by-execution-id/:execution_id", permission(monitorauthorization.PermissionMonitorExecutionRead), executionHandler.GetExecutionByExecutionID)
+		api.GET("/executions/:id/tree", permission(monitorauthorization.PermissionMonitorExecutionRead), executionHandler.GetExecutionTree)
+		api.GET("/executions/:id", permission(monitorauthorization.PermissionMonitorExecutionRead), executionHandler.GetExecution)
 
-		api.GET("/alerts", alertHandler.ListAlerts)
-		api.POST("/alerts/:id/acknowledge", alertHandler.AcknowledgeAlert)
-		api.POST("/alerts/:id/suppress", alertHandler.SuppressAlert)
-		api.GET("/alert-rule-targets", alertRuleHandler.ListAlertRuleTargets)
-		api.GET("/alert-rules", alertRuleHandler.ListAlertRules)
-		api.POST("/alert-rules", alertRuleHandler.CreateAlertRule)
-		api.PATCH("/alert-rules/:id", alertRuleHandler.UpdateAlertRule)
-		api.DELETE("/alert-rules/:id", alertRuleHandler.DeleteAlertRule)
-		api.GET("/webhook-destinations", webhookHandler.ListWebhookDestinations)
-		api.POST("/webhook-destinations", webhookHandler.CreateWebhookDestination)
-		api.PATCH("/webhook-destinations/:id", webhookHandler.UpdateWebhookDestination)
-		api.POST("/webhook-destinations/:id/test", webhookHandler.TestWebhookDestination)
-		api.DELETE("/webhook-destinations/:id", webhookHandler.DeleteWebhookDestination)
-		api.GET("/webhook-deliveries", webhookHandler.ListWebhookDeliveries)
-		api.POST("/webhook-deliveries/:delivery_id/retry", webhookHandler.RetryWebhookDelivery)
-		api.GET("/email-destinations", emailHandler.ListEmailDestinations)
-		api.POST("/email-destinations", emailHandler.CreateEmailDestination)
-		api.PATCH("/email-destinations/:id", emailHandler.UpdateEmailDestination)
-		api.POST("/email-destinations/:id/test", emailHandler.TestEmailDestination)
-		api.DELETE("/email-destinations/:id", emailHandler.DeleteEmailDestination)
-		api.GET("/email-deliveries", emailHandler.ListEmailDeliveries)
-		api.POST("/email-deliveries/:delivery_id/retry", emailHandler.RetryEmailDelivery)
+		api.GET("/alerts", permission(monitorauthorization.PermissionMonitorAlertIncidentRead), alertHandler.ListAlerts)
+		api.POST("/alerts/:id/acknowledge", permission(monitorauthorization.PermissionMonitorAlertIncidentUpdate), alertHandler.AcknowledgeAlert)
+		api.POST("/alerts/:id/suppress", permission(monitorauthorization.PermissionMonitorAlertIncidentUpdate), alertHandler.SuppressAlert)
+		api.GET("/alert-rule-targets", permission(monitorauthorization.PermissionMonitorAlertRuleRead), alertRuleHandler.ListAlertRuleTargets)
+		api.GET("/alert-rules", permission(monitorauthorization.PermissionMonitorAlertRuleRead), alertRuleHandler.ListAlertRules)
+		api.POST("/alert-rules", permission(monitorauthorization.PermissionMonitorAlertRuleCreate), alertRuleHandler.CreateAlertRule)
+		api.PATCH("/alert-rules/:id", permission(monitorauthorization.PermissionMonitorAlertRuleUpdate), alertRuleHandler.UpdateAlertRule)
+		api.DELETE("/alert-rules/:id", permission(monitorauthorization.PermissionMonitorAlertRuleDelete), alertRuleHandler.DeleteAlertRule)
+		api.GET("/webhook-destinations", permission(monitorauthorization.PermissionMonitorNotificationDestinationRead), webhookHandler.ListWebhookDestinations)
+		api.POST("/webhook-destinations", permission(monitorauthorization.PermissionMonitorNotificationDestinationCreate), webhookHandler.CreateWebhookDestination)
+		api.PATCH("/webhook-destinations/:id", permission(monitorauthorization.PermissionMonitorNotificationDestinationUpdate), webhookHandler.UpdateWebhookDestination)
+		api.POST("/webhook-destinations/:id/test", permission(monitorauthorization.PermissionMonitorNotificationDestinationExecute), webhookHandler.TestWebhookDestination)
+		api.DELETE("/webhook-destinations/:id", permission(monitorauthorization.PermissionMonitorNotificationDestinationDelete), webhookHandler.DeleteWebhookDestination)
+		api.GET("/webhook-deliveries", permission(monitorauthorization.PermissionMonitorNotificationDeliveryRead), webhookHandler.ListWebhookDeliveries)
+		api.POST("/webhook-deliveries/:delivery_id/retry", permission(monitorauthorization.PermissionMonitorNotificationDeliveryRetry), webhookHandler.RetryWebhookDelivery)
+		api.GET("/email-destinations", permission(monitorauthorization.PermissionMonitorNotificationDestinationRead), emailHandler.ListEmailDestinations)
+		api.POST("/email-destinations", permission(monitorauthorization.PermissionMonitorNotificationDestinationCreate), emailHandler.CreateEmailDestination)
+		api.PATCH("/email-destinations/:id", permission(monitorauthorization.PermissionMonitorNotificationDestinationUpdate), emailHandler.UpdateEmailDestination)
+		api.POST("/email-destinations/:id/test", permission(monitorauthorization.PermissionMonitorNotificationDestinationExecute), emailHandler.TestEmailDestination)
+		api.DELETE("/email-destinations/:id", permission(monitorauthorization.PermissionMonitorNotificationDestinationDelete), emailHandler.DeleteEmailDestination)
+		api.GET("/email-deliveries", permission(monitorauthorization.PermissionMonitorNotificationDeliveryRead), emailHandler.ListEmailDeliveries)
+		api.POST("/email-deliveries/:delivery_id/retry", permission(monitorauthorization.PermissionMonitorNotificationDeliveryRetry), emailHandler.RetryEmailDelivery)
 
 		// 模块健康检查
-		api.GET("/task-providers", healthHandler.GetTaskProviders)
-		api.GET("/providers/health", healthHandler.CheckAllProvidersHealth)
-		api.GET("/providers/:module/health", healthHandler.CheckProviderHealth)
-		api.GET("/modules", healthHandler.GetModules)
-		api.GET("/modules/:module/health", healthHandler.CheckModuleHealth)
-		api.GET("/modules/health/all", healthHandler.CheckAllModules)
+		api.GET("/task-providers", permission(monitorauthorization.PermissionMonitorHealthRead), healthHandler.GetTaskProviders)
+		api.GET("/providers/health", permission(monitorauthorization.PermissionMonitorHealthRead), healthHandler.CheckAllProvidersHealth)
+		api.GET("/providers/:module/health", permission(monitorauthorization.PermissionMonitorHealthRead), healthHandler.CheckProviderHealth)
+		api.GET("/modules", permission(monitorauthorization.PermissionMonitorHealthRead), healthHandler.GetModules)
+		api.GET("/modules/:module/health", permission(monitorauthorization.PermissionMonitorHealthRead), healthHandler.CheckModuleHealth)
+		api.GET("/modules/health/all", permission(monitorauthorization.PermissionMonitorHealthRead), healthHandler.CheckAllModules)
 	}
 
 	// 健康检查（无认证）

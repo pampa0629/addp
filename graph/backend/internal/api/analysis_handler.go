@@ -28,6 +28,8 @@ func NewAnalysisHandler(analysisSvc *service.AnalysisService) *AnalysisHandler {
 // @Param        id path int true "知识图谱 ID | Knowledge graph ID"
 // @Success      200 {object} models.AlgorithmCapabilities
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.analysis.read"]
 // @Router       /graphs/{id}/analysis/capabilities [get]
 func (h *AnalysisHandler) GetCapabilities(c *gin.Context) {
 	graphID := parseUintParam(c, "id")
@@ -53,6 +55,8 @@ func (h *AnalysisHandler) GetCapabilities(c *gin.Context) {
 // @Param        id path int true "知识图谱 ID | Knowledge graph ID"
 // @Success      200 {object} map[string]interface{}
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.analysis.execute"]
 // @Router       /graphs/{id}/analysis/sync-spatial [post]
 func (h *AnalysisHandler) SyncSpatialLayers(c *gin.Context) {
 	graphID := parseUintParam(c, "id")
@@ -72,6 +76,7 @@ func (h *AnalysisHandler) SyncSpatialLayers(c *gin.Context) {
 		"message":       "空间图层同步成功",
 	})
 }
+
 // RunAlgorithm godoc
 // @Summary      执行图算法 | Run graph algorithm
 // @Description  执行指定图算法（度中心性/K跳/最短路径/PageRank/Louvain/WCC/介数中心性）| Run specified graph algorithm (degree centrality/K-hop/shortest path/PageRank/Louvain/WCC/betweenness centrality)
@@ -84,6 +89,8 @@ func (h *AnalysisHandler) SyncSpatialLayers(c *gin.Context) {
 // @Success      200 {object} models.AlgorithmResult
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.analysis.execute"]
 // @Router       /graphs/{id}/analysis/run [post]
 func (h *AnalysisHandler) RunAlgorithm(c *gin.Context) {
 	graphID := parseUintParam(c, "id")

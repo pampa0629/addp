@@ -48,6 +48,8 @@ func NewEmailHandler(emailService *service.EmailService) *EmailHandler {
 // @Success 200 {array} EmailDestinationResponse "邮件目标列表 | Email destination list"
 // @Failure 401 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.notification_destination.read"]
 // @Router /email-destinations [get]
 // @Security BearerAuth
 func (h *EmailHandler) ListEmailDestinations(c *gin.Context) {
@@ -74,6 +76,8 @@ func (h *EmailHandler) ListEmailDestinations(c *gin.Context) {
 // @Failure 400 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.notification_destination.create"]
 // @Router /email-destinations [post]
 // @Security BearerAuth
 func (h *EmailHandler) CreateEmailDestination(c *gin.Context) {
@@ -114,6 +118,8 @@ func (h *EmailHandler) CreateEmailDestination(c *gin.Context) {
 // @Failure 404 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.notification_destination.update"]
 // @Router /email-destinations/{id} [patch]
 // @Security BearerAuth
 func (h *EmailHandler) UpdateEmailDestination(c *gin.Context) {
@@ -149,6 +155,8 @@ func (h *EmailHandler) UpdateEmailDestination(c *gin.Context) {
 // @Failure 502 {object} ErrorResponse "SMTP 投递失败 | SMTP delivery failed"
 // @Failure 503 {object} ErrorResponse "SMTP 未配置 | SMTP is not configured"
 // @Failure 500 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.notification_destination.execute"]
 // @Router /email-destinations/{id}/test [post]
 // @Security BearerAuth
 func (h *EmailHandler) TestEmailDestination(c *gin.Context) {
@@ -174,6 +182,8 @@ func (h *EmailHandler) TestEmailDestination(c *gin.Context) {
 // @Failure 400 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.notification_destination.delete"]
 // @Router /email-destinations/{id} [delete]
 // @Security BearerAuth
 func (h *EmailHandler) DeleteEmailDestination(c *gin.Context) {
@@ -201,6 +211,8 @@ func (h *EmailHandler) DeleteEmailDestination(c *gin.Context) {
 // @Success 200 {object} service.ListEmailDeliveriesResponse "投递记录 | Delivery records"
 // @Failure 401 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.notification_delivery.read"]
 // @Router /email-deliveries [get]
 // @Security BearerAuth
 func (h *EmailHandler) ListEmailDeliveries(c *gin.Context) {
@@ -233,6 +245,8 @@ func (h *EmailHandler) ListEmailDeliveries(c *gin.Context) {
 // @Failure 404 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.notification_delivery.retry"]
 // @Router /email-deliveries/{delivery_id}/retry [post]
 // @Security BearerAuth
 func (h *EmailHandler) RetryEmailDelivery(c *gin.Context) {

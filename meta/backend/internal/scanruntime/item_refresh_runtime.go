@@ -275,7 +275,10 @@ func (r *ItemRefreshRuntime) refreshKnownCatalogFactsItem(
 
 	namespaceTerm := scanflow.NamespaceTermForPlugin(p)
 	path := plugin.TabularItemPath(resource.ID, namespaceTerm, schemaName, item.Name)
-	facts, err := factsProvider.DescribeCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), path, plugin.CatalogFactsOptions{IncludeSpatialFacts: true})
+	facts, err := factsProvider.DescribeCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), path, plugin.CatalogFactsOptions{
+		IncludeSpatialFacts: true,
+		IncludeStatistics:   true,
+	})
 	if err != nil {
 		return scanprocessor.Result{}, true, fmt.Errorf("字段扫描失败: %w", err)
 	}
@@ -310,7 +313,7 @@ func (r *ItemRefreshRuntime) refreshKnownCatalogFactsItem(
 	}
 
 	fullName := metapath.ComposeNodeFullName(tableInfo.Name, &parentNode, ".")
-	rowCount := derefInt64Ptr(tableInfo.RowCount)
+	rowCount := tableInfo.RowCount
 	sizeBytes := derefInt64Ptr(tableInfo.SizeBytes)
 	refreshed, err := r.repo.UpdateItemByIDWithDepth(
 		tenantID,
@@ -321,7 +324,7 @@ func (r *ItemRefreshRuntime) refreshKnownCatalogFactsItem(
 		tableInfo.Name,
 		fullName,
 		attrs,
-		&rowCount,
+		rowCount,
 		&sizeBytes,
 		tableInfo.UpdatedAt,
 		scanflow.ScanDepthDeep,

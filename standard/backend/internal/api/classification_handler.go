@@ -26,6 +26,8 @@ func NewClassificationHandler(svc *service.ClassificationService) *Classificatio
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.classification.read"]
 // @Router /classifications [get]
 // @Security BearerAuth
 func (h *ClassificationHandler) ListClassifications(c *gin.Context) {
@@ -42,6 +44,8 @@ func (h *ClassificationHandler) ListClassifications(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.classification.create"]
 // @Router /classifications [post]
 // @Security BearerAuth
 func (h *ClassificationHandler) CreateClassification(c *gin.Context) {
@@ -64,6 +68,8 @@ func (h *ClassificationHandler) CreateClassification(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.classification.update"]
 // @Router /classifications/{id} [put]
 // @Security BearerAuth
 func (h *ClassificationHandler) UpdateClassification(c *gin.Context) {
@@ -91,6 +97,8 @@ func (h *ClassificationHandler) UpdateClassification(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.classification.delete"]
 // @Router /classifications/{id} [delete]
 // @Security BearerAuth
 func (h *ClassificationHandler) DeleteClassification(c *gin.Context) {
@@ -113,6 +121,8 @@ func (h *ClassificationHandler) DeleteClassification(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.classification.read"]
 // @Router /grading-levels [get]
 // @Security BearerAuth
 func (h *ClassificationHandler) ListGradingLevels(c *gin.Context) {
@@ -129,6 +139,8 @@ func (h *ClassificationHandler) ListGradingLevels(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.classification.update"]
 // @Router /grading-levels/{id} [put]
 // @Security BearerAuth
 func (h *ClassificationHandler) UpdateGradingLevel(c *gin.Context) {

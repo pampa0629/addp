@@ -67,6 +67,7 @@ func NewTileEndpointHandler(
 // @Success 200 {file} binary "瓦片数据 | Tile data"
 // @Failure 401 {object} map[string]string "需要认证 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @x-addp-auth-mode "public"
 // @Router /tiles/{serviceName}/{layerName}/{z}/{x}/{y}.{format} [get]
 func (h *TileEndpointHandler) GetXYZTile(c *gin.Context) {
 	ctx := c.Request.Context()

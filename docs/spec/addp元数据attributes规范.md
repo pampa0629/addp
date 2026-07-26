@@ -108,7 +108,7 @@ Kafka topic 第一版 basic scan 只保存 item identity，`attributes.item.data
 |---|---|---|
 | `storage` | 引擎抽象层、catalog、对象枚举 | physical_path、bucket、path、content_type、etag、last_modified_at、total_size |
 | `item` | Meta 扫描、Meta item normalizer | layout、data_type、format、refs、file_count、scope_exclusive、claim_policy |
-| `type_info` | 数据库 metadata、format info provider、采样器、Meta item normalizer | table fields、primary_key、row_count；media kind/width/height/duration_ms；document title/page_count；container children；graph shapes；cad 图纸结构摘要；model_3d 结构摘要；point_cloud 点云摘要；gaussian_splat 高斯基元摘要 |
+| `type_info` | 数据库 metadata、format info provider、采样器、Meta item normalizer | table fields、primary_key、精确 row_count、estimated_row_count；media kind/width/height/duration_ms；document title/page_count；container children；graph shapes；cad 图纸结构摘要；model_3d 结构摘要；point_cloud 点云摘要；gaussian_splat 高斯基元摘要 |
 | `format_info` | format plugin / provider、Meta item normalizer | CSV 分隔符、Shapefile related refs、JSON 结构类型、SQLite 版本等具体格式信息 |
 | `access_index` | format plugin / reader、Meta item normalizer | 用于按内容窗口读取的访问索引，例如 table 稀疏行号到字节偏移索引 |
 | `capabilities` | format provider、画像任务、Meta item normalizer | spatial、temporal、statistics、extraction、semantic、partitioning、indexing 等横切能力 |
@@ -151,7 +151,7 @@ Kafka topic 第一版 basic scan 只保存 item identity，`attributes.item.data
 12. `locator` 不作为 attributes 标准分区写入。定位事实由 `meta_item.full_name`、`meta_item.item_type` 和搜索/DTO 层派生，不在 attributes 中重复保存。
 13. `access_index` 是读取优化信息，不是 data type info，也不是 format 私有信息。索引必须能通过源对象大小、etag、mtime 或 fingerprint 等事实判断是否仍适用于当前资源；资源变化后应重建，不得继续复用旧索引。对于 multi-ref 格式，`access_index.source` 允许记录 ref 级事实（如 `refs`、`ref_count`、`index_format`），用于重建、失效判断和调试，但不应把格式私有语义写成新的顶层分区。
 14. `SpatialInfo`、`AccessIndex`、`format_info` 不是 `TableInfo` 的组成部分。provider 如果一次解析同时得到这些事实，应作为同级结果交给 Meta normalizer，分别写入 `capabilities.spatial`、`access_index.<data_type>` 和 `format_info.<format>`。
-15. attributes 写入受 `scan_depth` 约束。`basic` 只写不读取 file/object 内容即可获得的身份、存储和轻量 item 事实；来自 `CatalogEntry` 或只读 catalog/system table 的低成本 `row_count`、`size_bytes` 可在 basic 写入。字段、主键、索引、容器 children、`access_index`、需要读取内容的 `format_info`、横切能力以及需要执行 `COUNT(*)`、全量扫描或统计刷新的高成本统计应由 `deep` 写入。
+15. attributes 写入受 `scan_depth` 约束。`basic` 只写不读取 file/object 内容即可获得的身份、存储和轻量 item 事实；来自 `CatalogEntry` 或只读 catalog/system table 的低成本 `estimated_row_count`、`size_bytes` 可在 basic 写入。字段、主键、索引、容器 children、`access_index`、需要读取内容的 `format_info`、横切能力以及需要执行 `COUNT(*)`、全量扫描或统计刷新的高成本统计应由 `deep` 写入。
 
 ## access_index 结构约定
 
@@ -201,7 +201,7 @@ Kafka topic 第一版 basic scan 只保存 item identity，`attributes.item.data
 
 | 数据类型 | 分区 | 典型字段 |
 |---|---|---|
-| `table` | `type_info.table` | fields、primary_key、row_count、size_bytes、native |
+| `table` | `type_info.table` | fields、primary_key、row_count、estimated_row_count、size_bytes、native |
 | `document` | `type_info.document` | title、language、encoding、page_count、word_count、size_bytes |
 | `media` | `type_info.media` | kind、mime_type、width、height、duration_ms、encoding、color_space、size_bytes |
 | `container` | `type_info.container` | children、default_child、child_count、resource_count |
@@ -220,7 +220,7 @@ Kafka topic 第一版 basic scan 只保存 item identity，`attributes.item.data
 
 `type_info.document` 只承载文档结构元信息。正文是否已抽取、抽取器、预览文本、截断状态和外部索引引用属于 `capabilities.extraction`，不得在 `type_info.document.text_extracted` 中重复写入。
 
-`type_info.container` 只承载容器结构事实和 child 轻量摘要，例如 `children`、`default_child`、`child_count`、`resource_count`。父容器级解析统计、采样上限和截断状态不得写入 `type_info.container.native`，应进入 `format_info.<format>`；child 级 `native` 只保留 child 定位或受控原生摘要，例如 SQLite 表原名、ZIP entry 定位事实。
+`type_info.container` 只承载容器结构事实和 child 轻量摘要，例如 `children`、`default_child`、`child_count`、`resource_count`。child 表格摘要中的 `row_count` 与 `estimated_row_count` 遵守和 `type_info.table` 相同的精确/估算语义；例如 Excel worksheet dimension 只能写入 `estimated_row_count`，不得写入 `row_count`。父容器级解析统计、采样上限和截断状态不得写入 `type_info.container.native`，应进入 `format_info.<format>`；child 级 `native` 只保留 child 定位或受控原生摘要，例如 SQLite 表原名、ZIP entry 定位事实。
 
 `type_info.graph` 必须是业务图视图的 JSON payload。引擎插件、扩展、索引或空间能力产生的内部节点和内部关系不得写入 `node_shapes`、`relationship_shapes` 或计数字段；例如 Neo4j Spatial 的 `SpatialLayer` 节点和 `RTREE_*` 关系应在 provider 或 Graph 模块服务层过滤。
 
@@ -265,7 +265,9 @@ S3M 同样使用 `data_type=model_3d`。SCP 的 XML / JSON 编码、S3M 版本�
 | `codec` | ClickHouse `compression_codec` | 引擎原生存储语义 | Manager、Monitor | 存储诊断、压缩策略展示 | 暂放受控 native；无明确消费前不展示为通用字段 |
 | `ttl` | ClickHouse TTL metadata | 引擎原生生命周期语义 | Manager、Monitor、Governance | 生命周期展示、过期策略诊断 | 暂放受控 native；需确认治理模块消费方式 |
 
-MongoDB collection 等动态 schema 记录集合在当前 ADDP 能力中按记录集合消费，`meta_item.item_type=collection`，`attributes.item.data_type=table`。其 `type_info.table.fields` 是采样推断字段画像，不是强 schema；记录数写入 `type_info.table.row_count`，不得写入 `type_info.document` 或新增 `type_info.collection`。
+MongoDB collection 等动态 schema 记录集合在当前 ADDP 能力中按记录集合消费，`meta_item.item_type=collection`，`attributes.item.data_type=table`。其 `type_info.table.fields` 是采样推断字段画像，不是强 schema；精确记录数写入 `type_info.table.row_count`，只有估算来源时写入 `type_info.table.estimated_row_count`，不得写入 `type_info.document` 或新增 `type_info.collection`。
+
+`type_info.table.row_count` 只表示精确行数，0 是有效值；`type_info.table.estimated_row_count` 只表示 catalog / system statistics、格式结构元数据或有限分析提供的近似值。两者可以同时存在，但不得用估算值填充 `row_count`。`meta_item.row_count` 是精确 `type_info.table.row_count` 的列表查询投影，不投影估算值。估算值不得用于分页终点、完整性校验、传输完成判断或其他需要精确基数的决策。
 
 索引、采样过程、动态 schema 推断方式等不是 `common/datatype.TableInfo` 当前通用字段，不得写入 `type_info.table`。动态 schema 记录集合、数据库或格式解析得到的索引摘要进入 `capabilities.indexing`；采样规模、是否采样、动态 schema 类型、平均记录大小、索引数量等画像或统计事实进入 `capabilities.statistics`。
 

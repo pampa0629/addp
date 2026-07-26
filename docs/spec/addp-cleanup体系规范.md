@@ -87,6 +87,7 @@ Meta 资源回收执行方只治理 Meta-owned 资源：
 - `meta.meta_item`。
 - Meta search index。
 - Meta 自己的扫描任务定义、扫描锁或执行残留。
+- System 中不存在、已禁用，或 active 但不再声明 `storage` 能力的 Engine Instance，均不再是合法的 Meta 数据源；其历史 Meta 快照属于无效源事实，由 Meta cleanup 回收。
 
 Meta 不得：
 

@@ -26,6 +26,8 @@ func NewCheckTaskHandler(svc *service.CheckTaskService, executor *service.CheckE
 // @Tags CheckTask
 // @Produce json
 // @Success 200 {array} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["quality.check_task.read"]
 // @Router /check-tasks [get]
 // @Security BearerAuth
 func (h *CheckTaskHandler) List(c *gin.Context) {
@@ -43,6 +45,8 @@ func (h *CheckTaskHandler) List(c *gin.Context) {
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["quality.check_task.read"]
 // @Router /check-tasks/{id} [get]
 // @Security BearerAuth
 func (h *CheckTaskHandler) Get(c *gin.Context) {
@@ -66,6 +70,8 @@ func (h *CheckTaskHandler) Get(c *gin.Context) {
 // @Produce json
 // @Param body body map[string]interface{} true "任务信息 | Task info"
 // @Success 201 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["quality.check_task.create"]
 // @Router /check-tasks [post]
 // @Security BearerAuth
 func (h *CheckTaskHandler) Create(c *gin.Context) {
@@ -91,6 +97,8 @@ func (h *CheckTaskHandler) Create(c *gin.Context) {
 // @Param id path int true "任务ID | Task ID"
 // @Param body body map[string]interface{} true "更新信息 | Update info"
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["quality.check_task.update"]
 // @Router /check-tasks/{id} [put]
 // @Security BearerAuth
 func (h *CheckTaskHandler) Update(c *gin.Context) {
@@ -118,6 +126,8 @@ func (h *CheckTaskHandler) Update(c *gin.Context) {
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["quality.check_task.delete"]
 // @Router /check-tasks/{id} [delete]
 // @Security BearerAuth
 func (h *CheckTaskHandler) Delete(c *gin.Context) {
@@ -140,6 +150,8 @@ func (h *CheckTaskHandler) Delete(c *gin.Context) {
 // @Param id path int true "任务ID | Task ID"
 // @Success 202 {object} map[string]string
 // @Failure 409 {object} map[string]string "任务已有活动 execution | Task already has an active execution"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["quality.check_task.execute"]
 // @Router /check-tasks/{id}/run [post]
 // @Security BearerAuth
 func (h *CheckTaskHandler) Run(c *gin.Context) {

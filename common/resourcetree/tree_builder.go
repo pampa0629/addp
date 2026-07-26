@@ -268,7 +268,7 @@ func withMetaItemFacts(attrs map[string]interface{}, item *models.MetaItem) map[
 	if item.RowCount != nil {
 		next["row_count"] = *item.RowCount
 		tableInfo := tableInfoForTreeMetadata(next, "")
-		if tableInfo == nil || tableInfo.RowCount == nil || *tableInfo.RowCount <= 0 {
+		if tableInfo == nil || tableInfo.RowCount == nil {
 			upsertTreeMetadataSection(next, "type_info", "table", map[string]interface{}{"row_count": *item.RowCount})
 		}
 	}

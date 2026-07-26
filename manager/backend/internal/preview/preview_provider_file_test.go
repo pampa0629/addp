@@ -2514,6 +2514,23 @@ func TestContainerChildInfoFromMapKeepsRefsAndExplicitNative(t *testing.T) {
 	}
 }
 
+func TestContainerChildInfoFromMapKeepsExactZeroAndEstimateSeparate(t *testing.T) {
+	child := objectcontent.ContainerChildInfoFromMap(map[string]interface{}{
+		"name":                "Sheet1",
+		"child_kind":          "sheet",
+		"data_type":           "table",
+		"row_count":           int64(0),
+		"estimated_row_count": int64(12),
+	})
+
+	if child.RowCount == nil || *child.RowCount != 0 {
+		t.Fatalf("RowCount = %#v, want exact zero", child.RowCount)
+	}
+	if child.EstimatedRowCount == nil || *child.EstimatedRowCount != 12 {
+		t.Fatalf("EstimatedRowCount = %#v, want 12", child.EstimatedRowCount)
+	}
+}
+
 func TestContainerChildInfoFromMapNormalizesFormat(t *testing.T) {
 	unknown := objectcontent.ContainerChildInfoFromMap(map[string]interface{}{
 		"name":       "config/docker-compose.yml",

@@ -50,6 +50,8 @@ func NewWebhookHandler(webhookService *service.WebhookService) *WebhookHandler {
 // @Success 200 {array} WebhookDestinationResponse "Webhook 目标列表 | Webhook destination list"
 // @Failure 401 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.notification_destination.read"]
 // @Router /webhook-destinations [get]
 // @Security BearerAuth
 func (h *WebhookHandler) ListWebhookDestinations(c *gin.Context) {
@@ -76,6 +78,8 @@ func (h *WebhookHandler) ListWebhookDestinations(c *gin.Context) {
 // @Failure 400 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.notification_destination.create"]
 // @Router /webhook-destinations [post]
 // @Security BearerAuth
 func (h *WebhookHandler) CreateWebhookDestination(c *gin.Context) {
@@ -116,6 +120,8 @@ func (h *WebhookHandler) CreateWebhookDestination(c *gin.Context) {
 // @Failure 404 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.notification_destination.update"]
 // @Router /webhook-destinations/{id} [patch]
 // @Security BearerAuth
 func (h *WebhookHandler) UpdateWebhookDestination(c *gin.Context) {
@@ -150,6 +156,8 @@ func (h *WebhookHandler) UpdateWebhookDestination(c *gin.Context) {
 // @Failure 404 {object} ErrorResponse "目标不存在 | Destination not found"
 // @Failure 502 {object} ErrorResponse "接收端投递失败 | Receiver delivery failed"
 // @Failure 500 {object} ErrorResponse "内部错误 | Internal error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.notification_destination.execute"]
 // @Router /webhook-destinations/{id}/test [post]
 // @Security BearerAuth
 func (h *WebhookHandler) TestWebhookDestination(c *gin.Context) {
@@ -175,6 +183,8 @@ func (h *WebhookHandler) TestWebhookDestination(c *gin.Context) {
 // @Failure 400 {object} ErrorResponse "目标 ID 无效 | Invalid destination ID"
 // @Failure 404 {object} ErrorResponse "目标不存在 | Destination not found"
 // @Failure 500 {object} ErrorResponse "内部错误 | Internal error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.notification_destination.delete"]
 // @Router /webhook-destinations/{id} [delete]
 // @Security BearerAuth
 func (h *WebhookHandler) DeleteWebhookDestination(c *gin.Context) {
@@ -202,6 +212,8 @@ func (h *WebhookHandler) DeleteWebhookDestination(c *gin.Context) {
 // @Success 200 {object} service.ListWebhookDeliveriesResponse "投递记录 | Delivery records"
 // @Failure 401 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.notification_delivery.read"]
 // @Router /webhook-deliveries [get]
 // @Security BearerAuth
 func (h *WebhookHandler) ListWebhookDeliveries(c *gin.Context) {
@@ -234,6 +246,8 @@ func (h *WebhookHandler) ListWebhookDeliveries(c *gin.Context) {
 // @Failure 404 {object} ErrorResponse "投递不存在 | Delivery not found"
 // @Failure 409 {object} ErrorResponse "投递或目标当前不可重投 | Delivery or destination is not retryable"
 // @Failure 500 {object} ErrorResponse "内部错误 | Internal error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.notification_delivery.retry"]
 // @Router /webhook-deliveries/{delivery_id}/retry [post]
 // @Security BearerAuth
 func (h *WebhookHandler) RetryWebhookDelivery(c *gin.Context) {

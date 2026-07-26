@@ -27,6 +27,8 @@ func NewMetricHandler(svc *service.MetricService) *MetricHandler {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.read"]
 // @Router /metric-categories [get]
 // @Security BearerAuth
 func (h *MetricHandler) ListCategories(c *gin.Context) {
@@ -43,6 +45,8 @@ func (h *MetricHandler) ListCategories(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.create"]
 // @Router /metric-categories [post]
 // @Security BearerAuth
 func (h *MetricHandler) CreateCategory(c *gin.Context) {
@@ -65,6 +69,8 @@ func (h *MetricHandler) CreateCategory(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.update"]
 // @Router /metric-categories/{id} [put]
 // @Security BearerAuth
 func (h *MetricHandler) UpdateCategory(c *gin.Context) {
@@ -92,6 +98,8 @@ func (h *MetricHandler) UpdateCategory(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.delete"]
 // @Router /metric-categories/{id} [delete]
 // @Security BearerAuth
 func (h *MetricHandler) DeleteCategory(c *gin.Context) {
@@ -114,6 +122,8 @@ func (h *MetricHandler) DeleteCategory(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.read"]
 // @Router /metrics [get]
 // @Security BearerAuth
 func (h *MetricHandler) ListMetrics(c *gin.Context) {
@@ -162,6 +172,8 @@ func (h *MetricHandler) ListMetrics(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.read"]
 // @Router /metrics/{id} [get]
 // @Security BearerAuth
 func (h *MetricHandler) GetMetric(c *gin.Context) {
@@ -196,6 +208,8 @@ func (h *MetricHandler) GetMetric(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.create"]
 // @Router /metrics [post]
 // @Security BearerAuth
 func (h *MetricHandler) CreateMetric(c *gin.Context) {
@@ -218,6 +232,8 @@ func (h *MetricHandler) CreateMetric(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.update"]
 // @Router /metrics/{id} [put]
 // @Security BearerAuth
 func (h *MetricHandler) UpdateMetric(c *gin.Context) {
@@ -245,6 +261,8 @@ func (h *MetricHandler) UpdateMetric(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.delete"]
 // @Router /metrics/{id} [delete]
 // @Security BearerAuth
 func (h *MetricHandler) DeleteMetric(c *gin.Context) {
@@ -265,6 +283,8 @@ func (h *MetricHandler) DeleteMetric(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.approve"]
 // @Router /metrics/{id}/approve [post]
 // @Security BearerAuth
 func (h *MetricHandler) ApproveMetric(c *gin.Context) {
@@ -286,6 +306,8 @@ func (h *MetricHandler) ApproveMetric(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.offline"]
 // @Router /metrics/{id}/deprecate [post]
 // @Security BearerAuth
 func (h *MetricHandler) DeprecateMetric(c *gin.Context) {

@@ -125,7 +125,7 @@ async def _assert_workflow_api_returns_non_2xx_with_upstream_reason(monkeypatch)
     with pytest.raises(HTTPException) as exc_info:
         await workflow_api.generate_workflow(
             request,
-            AuthorizationContext(user_id=7, tenant_id=3, username="tester", user_type="user"),
+            AuthorizationContext(principal_id=7, tenant_id=3, tenant_membership_id=9),
         )
 
     assert exc_info.value.status_code == 500

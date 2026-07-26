@@ -31,6 +31,8 @@ func NewDevTaskHandler(devTaskService *service.DevTaskService) *DevTaskHandler {
 // @Produce json
 // @Param body body models.CreateDevTaskSwaggerRequest true "创建请求 | Create request"
 // @Success 200 {object} models.DevTaskSwagger "已创建的开发任务 | Created development task"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.create"]
 // @Router /task-definitions [post]
 func (h *DevTaskHandler) CreateDevTask(c *gin.Context) {
 	var req models.CreateDevTaskRequest
@@ -39,8 +41,8 @@ func (h *DevTaskHandler) CreateDevTask(c *gin.Context) {
 		return
 	}
 
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := tenantIDValue(c)
+	userID := userIDValue(c)
 
 	item, err := h.devTaskService.CreateDevTask(&req, tenantID, userID)
 	if err != nil {
@@ -59,6 +61,8 @@ func (h *DevTaskHandler) CreateDevTask(c *gin.Context) {
 // @Param id path int true "开发任务 ID | Development task ID"
 // @Param body body models.UpdateDevTaskSwaggerRequest true "更新请求 | Update request"
 // @Success 200 {object} models.DevTaskSwagger "已更新的开发任务 | Updated development task"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.update"]
 // @Router /task-definitions/{id} [put]
 func (h *DevTaskHandler) UpdateDevTask(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -73,8 +77,8 @@ func (h *DevTaskHandler) UpdateDevTask(c *gin.Context) {
 		return
 	}
 
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := tenantIDValue(c)
+	userID := userIDValue(c)
 
 	item, err := h.devTaskService.UpdateDevTask(uint(id), &req, tenantID, userID)
 	if err != nil {
@@ -91,6 +95,8 @@ func (h *DevTaskHandler) UpdateDevTask(c *gin.Context) {
 // @Produce json
 // @Param id path int true "开发任务ID | Development task ID"
 // @Success 200 {object} models.DevTaskSwagger "开发任务详情 | Development task details"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read"]
 // @Router /task-definitions/{id} [get]
 func (h *DevTaskHandler) GetDevTask(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -99,7 +105,7 @@ func (h *DevTaskHandler) GetDevTask(c *gin.Context) {
 		return
 	}
 
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 
 	item, err := h.devTaskService.GetDevTask(uint(id), tenantID)
 	if err != nil {
@@ -120,7 +126,8 @@ func (h *DevTaskHandler) GetDevTask(c *gin.Context) {
 // @Success 200 {object} models.ProviderDevTaskSwagger "开发任务详情 | Development task detail"
 // @Failure 400 {object} map[string]interface{} "参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
-// @Router /tasks/{task_type}/{id} [get]
+// @x-addp-auth-mode "internal"
+// @Router /internal/tasks/{task_type}/{id} [get]
 func (h *DevTaskHandler) ProviderGetDevTask(c *gin.Context) {
 	taskType := c.Param("task_type")
 	if !isDevelopTaskType(taskType) {
@@ -133,7 +140,7 @@ func (h *DevTaskHandler) ProviderGetDevTask(c *gin.Context) {
 		return
 	}
 
-	tenantID := c.GetUint("tenant_id")
+	tenantID := internalTenantIDValue(c)
 	item, err := h.devTaskService.GetDevTask(uint(id), tenantID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -168,6 +175,8 @@ func isDevelopTaskType(taskType string) bool {
 // @Param tag query string false "标签过滤 | Filter by tag"
 // @Param keyword query string false "关键词搜索 | Keyword search"
 // @Success 200 {object} models.ListDevTasksSwaggerResponse "开发任务列表 | Development task list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read"]
 // @Router /task-definitions [get]
 func (h *DevTaskHandler) ListDevTasks(c *gin.Context) {
 	var req models.ListDevTasksRequest
@@ -176,7 +185,7 @@ func (h *DevTaskHandler) ListDevTasks(c *gin.Context) {
 		return
 	}
 
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 
 	items, total, err := h.devTaskService.ListDevTasks(&req, tenantID)
 	if err != nil {
@@ -205,6 +214,8 @@ func (h *DevTaskHandler) ListDevTasks(c *gin.Context) {
 // @Tags DevTask
 // @Param id path int true "开发任务ID | Development task ID"
 // @Success 200 {object} map[string]string "删除成功 | Deleted successfully"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.delete"]
 // @Router /task-definitions/{id} [delete]
 func (h *DevTaskHandler) DeleteDevTask(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -213,7 +224,7 @@ func (h *DevTaskHandler) DeleteDevTask(c *gin.Context) {
 		return
 	}
 
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 
 	if err := h.devTaskService.DeleteDevTask(uint(id), tenantID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -231,6 +242,8 @@ func (h *DevTaskHandler) DeleteDevTask(c *gin.Context) {
 // @Param id path int true "开发任务ID | Development task ID"
 // @Param body body map[string]interface{} false "执行参数 | Execution parameters"
 // @Success 200 {object} map[string]string "执行已启动 | Execution started"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.execute"]
 // @Router /task-definitions/{id}/execute [post]
 func (h *DevTaskHandler) ExecuteDevTask(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -252,9 +265,11 @@ func (h *DevTaskHandler) ExecuteDevTask(c *gin.Context) {
 // @Tags DevTask
 // @Produce json
 // @Success 200 {object} map[string]int64 "统计数据 | Statistics"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read"]
 // @Router /task-definitions/statistics [get]
 func (h *DevTaskHandler) GetDevTaskStatistics(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 
 	stats, err := h.devTaskService.CountByType(tenantID)
 	if err != nil {

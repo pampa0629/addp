@@ -4,6 +4,7 @@
       :groups="MODULE_GROUPS"
       :active-group="activeGroup"
       :user="user"
+      :permissions="authStore.permissions"
       @group-click="handleGroupClick"
       @logo-click="handleLogoClick"
       @logout="handleLogout"
@@ -18,7 +19,7 @@
         :active-group-key="activeGroup"
         :active-menu="activeMenu"
         :is-collapsed="isCollapsed"
-        :sidebar-menus="SIDEBAR_MENUS"
+        :sidebar-menus="visibleSidebarMenus"
         @menu-select="handleMenuSelect"
         @toggle-collapse="toggleSidebar"
       />
@@ -176,6 +177,12 @@ const homeCards = computed(() => {
   if (!activeGroup.value) return ALL_HOME_CARDS
   return ALL_HOME_CARDS.filter(c => activeGroupModules.value.includes(c.module))
 })
+
+const visibleSidebarMenus = computed(() => Object.fromEntries(
+  Object.entries(SIDEBAR_MENUS).map(([module, menu]) => [module, menu.items
+    ? { ...menu, items: menu.items.filter(item => !item.permissions?.length || authStore.hasAnyPermission(item.permissions)) }
+    : menu])
+))
 
 onMounted(async () => {
   iframeAuthCoordinator = createIframeAuthCoordinator({

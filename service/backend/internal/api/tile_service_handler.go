@@ -36,6 +36,8 @@ func NewTileServiceHandler(tileServiceService *service.TileServiceService) *Tile
 // @Produce json
 // @Param body body models.CreateTileServiceRequest true "创建瓦片服务请求 | Create tile service request"
 // @Success 201 {object} models.TileServiceDTO "已创建的瓦片服务 | Created tile service"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.create"]
 // @Router /tile [post]
 func (h *TileServiceHandler) CreateTileService(c *gin.Context) {
 	// 1. 解析请求体
@@ -45,24 +47,11 @@ func (h *TileServiceHandler) CreateTileService(c *gin.Context) {
 		return
 	}
 
-	// 2. 获取租户 ID 和用户 ID（从 JWT 中间件）
-	tenantID, exists := c.Get("tenant_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Tenant ID not found"})
-		return
-	}
-
-	userID, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found"})
-		return
-	}
-
-	// 3. 调用服务层创建瓦片服务
+	// 2. 调用服务层创建瓦片服务
 	tileServiceDTO, err := h.tileServiceService.CreateService(
 		&req,
-		tenantID.(uint),
-		userID.(uint),
+		tenantIDValue(c),
+		userIDValue(c),
 	)
 	if err != nil {
 		// 根据错误类型返回不同状态码
@@ -89,6 +78,8 @@ func (h *TileServiceHandler) CreateTileService(c *gin.Context) {
 // @Produce json
 // @Param id path int true "服务 ID | Service ID"
 // @Success 200 {object} models.TileServiceDTO "瓦片服务详情 | Tile service details"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.read"]
 // @Router /tile/{id} [get]
 func (h *TileServiceHandler) GetTileService(c *gin.Context) {
 	// 1. 解析路径参数
@@ -116,20 +107,15 @@ func (h *TileServiceHandler) GetTileService(c *gin.Context) {
 // @Produce json
 // @Param serviceName path string true "服务名称 | Service name"
 // @Success 200 {object} models.TileServiceDTO "瓦片服务详情 | Tile service details"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.read"]
 // @Router /tile/by-name/{serviceName} [get]
 func (h *TileServiceHandler) GetTileServiceByName(c *gin.Context) {
 	// 1. 解析路径参数
 	serviceName := c.Param("serviceName")
 
-	// 2. 获取租户 ID（从 JWT 中间件）
-	tenantID, exists := c.Get("tenant_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Tenant ID not found"})
-		return
-	}
-
-	// 3. 调用服务层获取瓦片服务
-	tileServiceDTO, err := h.tileServiceService.GetServiceByNameAndTenant(serviceName, tenantID.(uint))
+	// 2. 调用服务层获取瓦片服务
+	tileServiceDTO, err := h.tileServiceService.GetServiceByNameAndTenant(serviceName, tenantIDValue(c))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
 		return
@@ -146,6 +132,8 @@ func (h *TileServiceHandler) GetTileServiceByName(c *gin.Context) {
 // @Param offset query int false "偏移量 | Offset" default(0)
 // @Param limit query int false "限制数量 | Limit" default(20)
 // @Success 200 {object} map[string]interface{} "瓦片服务列表 | Tile service list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.read"]
 // @Router /tile [get]
 func (h *TileServiceHandler) ListTileServices(c *gin.Context) {
 	// 1. 解析查询参数
@@ -162,15 +150,8 @@ func (h *TileServiceHandler) ListTileServices(c *gin.Context) {
 		limit = 20
 	}
 
-	// 2. 获取租户 ID（从 JWT 中间件）
-	tenantID, exists := c.Get("tenant_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Tenant ID not found"})
-		return
-	}
-
-	// 3. 调用服务层列出瓦片服务
-	services, total, err := h.tileServiceService.ListServices(tenantID.(uint), offset, limit)
+	// 2. 调用服务层列出瓦片服务
+	services, total, err := h.tileServiceService.ListServices(tenantIDValue(c), offset, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -193,6 +174,8 @@ func (h *TileServiceHandler) ListTileServices(c *gin.Context) {
 // @Param offset query int false "偏移量 | Offset" default(0)
 // @Param limit query int false "限制数量 | Limit" default(20)
 // @Success 200 {object} map[string]interface{} "搜索结果 | Search results"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.read"]
 // @Router /tile/search [get]
 func (h *TileServiceHandler) SearchTileServices(c *gin.Context) {
 	// 1. 解析查询参数
@@ -215,15 +198,8 @@ func (h *TileServiceHandler) SearchTileServices(c *gin.Context) {
 		limit = 20
 	}
 
-	// 2. 获取租户 ID（从 JWT 中间件）
-	tenantID, exists := c.Get("tenant_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Tenant ID not found"})
-		return
-	}
-
-	// 3. 调用服务层搜索瓦片服务
-	services, total, err := h.tileServiceService.SearchServices(tenantID.(uint), keyword, offset, limit)
+	// 2. 调用服务层搜索瓦片服务
+	services, total, err := h.tileServiceService.SearchServices(tenantIDValue(c), keyword, offset, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -247,6 +223,8 @@ func (h *TileServiceHandler) SearchTileServices(c *gin.Context) {
 // @Param id path int true "服务 ID | Service ID"
 // @Param body body models.UpdateTileServiceRequest true "更新瓦片服务请求 | Update tile service request"
 // @Success 200 {object} models.TileServiceDTO "已更新的瓦片服务 | Updated tile service"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.update"]
 // @Router /tile/{id} [put]
 func (h *TileServiceHandler) UpdateTileService(c *gin.Context) {
 	// 1. 解析路径参数
@@ -281,6 +259,8 @@ func (h *TileServiceHandler) UpdateTileService(c *gin.Context) {
 // @Produce json
 // @Param id path int true "服务 ID | Service ID"
 // @Success 204 "删除成功 | Deleted successfully"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.delete"]
 // @Router /tile/{id} [delete]
 func (h *TileServiceHandler) DeleteTileService(c *gin.Context) {
 	// 1. 解析路径参数
@@ -313,6 +293,8 @@ func (h *TileServiceHandler) DeleteTileService(c *gin.Context) {
 // @Param serviceId path int true "服务 ID | Service ID"
 // @Param body body models.CreateTileLayerRequest true "创建图层请求 | Create layer request"
 // @Success 201 {object} models.TileServiceLayerDTO "已创建的图层 | Created layer"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.update"]
 // @Router /tile-layers/{serviceId} [post]
 func (h *TileServiceHandler) AddLayer(c *gin.Context) {
 	// 1. 解析路径参数
@@ -348,6 +330,8 @@ func (h *TileServiceHandler) AddLayer(c *gin.Context) {
 // @Param serviceId path int true "服务 ID | Service ID"
 // @Param layerId path int true "图层 ID | Layer ID"
 // @Success 200 {object} models.TileServiceLayerDTO "图层详情 | Layer details"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.read"]
 // @Router /tile-layers/{serviceId}/{layerId} [get]
 func (h *TileServiceHandler) GetLayer(c *gin.Context) {
 	// 1. 解析路径参数
@@ -375,6 +359,8 @@ func (h *TileServiceHandler) GetLayer(c *gin.Context) {
 // @Produce json
 // @Param serviceId path int true "服务 ID | Service ID"
 // @Success 200 {object} []models.TileServiceLayerDTO "图层列表 | Layer list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.read"]
 // @Router /tile-layers/{serviceId} [get]
 func (h *TileServiceHandler) ListLayers(c *gin.Context) {
 	// 1. 解析路径参数
@@ -405,6 +391,8 @@ func (h *TileServiceHandler) ListLayers(c *gin.Context) {
 // @Param layerId path int true "图层 ID | Layer ID"
 // @Param body body models.UpdateTileLayerRequest true "更新图层请求 | Update layer request"
 // @Success 200 {object} models.TileServiceLayerDTO "已更新的图层 | Updated layer"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.update"]
 // @Router /tile-layers/{serviceId}/{layerId} [put]
 func (h *TileServiceHandler) UpdateLayer(c *gin.Context) {
 	// 1. 解析路径参数
@@ -440,6 +428,8 @@ func (h *TileServiceHandler) UpdateLayer(c *gin.Context) {
 // @Param serviceId path int true "服务 ID | Service ID"
 // @Param layerId path int true "图层 ID | Layer ID"
 // @Success 204 "删除成功 | Deleted successfully"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.update"]
 // @Router /tile-layers/{serviceId}/{layerId} [delete]
 func (h *TileServiceHandler) DeleteLayer(c *gin.Context) {
 	// 1. 解析路径参数

@@ -43,7 +43,7 @@ Service 是 `service.definition.*`、`service.endpoint.read` 和 `service.extern
 
 管理路由前缀：`/api/v1/service`。
 
-- 资产发现与端点：`GET /assets/discoverable`、`GET /endpoints`。
+- 服务间资产发现与端点投影：`GET /internal/assets/discoverable`、`GET /internal/endpoints`，只接受 `X-Internal-API-Key + X-Tenant-ID`，不建立 User AuthContext。
 - 查询服务管理：`POST/GET /query`、`GET/PUT/DELETE /query/:id`；公开执行端点：`GET /api/query/:serviceName`。
 - 图查询服务管理：`POST/GET /graph`、`GET/PUT/DELETE /graph/:id`；公开执行端点：`POST /api/gquery/:serviceName`。
 - 注册服务管理：`POST/GET /registered`、`GET/PUT/DELETE /registered/:id`、`POST /registered/:id/refresh`、`POST /registered/:id/health`；公开代理：`ANY /api/service/registered/proxy/:id/*path`。
@@ -59,6 +59,7 @@ Service 是 `service.definition.*`、`service.endpoint.read` 和 `service.extern
 - 静态二维瓦片发布只接受 Meta 已识别、位于 Business 存储的 `data_type=media + format=pmtiles + layout=single` item。发布配置保存 ResourceLocator 和 PMTiles v3 依赖快照，运行时通过 System engine provider Range Read，不接受裸路径、URL 或 Manager infra `storage_ref`。
 - 三维瓦片不并入二维瓦片服务。3D Tiles / S3M 后续使用独立“三维场景服务”入口和服务类型。
 - 公开访问端点要在 Handler 内检查服务的 public/private 权限，避免绕过认证。
+- `/api/v1/service` 管理 API 只接受 canonical Bearer Tenant AuthContext；内部 API Key 不得跳过认证或伪造用户。匿名公开端点可选解析 Bearer，但 private 服务必须校验当前 AuthContext Tenant 与服务 Tenant 一致。
 - 瓦片缓存使用系统 MinIO，路径和缓存策略应保持租户隔离。
 - 修改 API 后同步 Swagger：`bash scripts/swagger/gen-swagger.sh service` 和 `bash scripts/swagger/check-route-coverage.sh service`。
 

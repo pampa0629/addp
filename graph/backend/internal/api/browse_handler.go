@@ -27,6 +27,8 @@ func NewBrowseHandler(neo4jSvc *service.Neo4jService, schemaInference *service.S
 // @Param        id path int true "知识图谱 ID | Knowledge graph ID"
 // @Success      200 {object} models.BrowseSchema
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.graph.read"]
 // @Router       /graphs/{id}/schema [get]
 func (h *BrowseHandler) GetSchema(c *gin.Context) {
 	id := parseUintParam(c, "id")
@@ -48,6 +50,8 @@ func (h *BrowseHandler) GetSchema(c *gin.Context) {
 // @Param        id path int true "知识图谱 ID | Knowledge graph ID"
 // @Success      200 {object} models.BrowseStats
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.graph.read"]
 // @Router       /graphs/{id}/stats [get]
 func (h *BrowseHandler) GetStats(c *gin.Context) {
 	id := parseUintParam(c, "id")
@@ -69,6 +73,8 @@ func (h *BrowseHandler) GetStats(c *gin.Context) {
 // @Param        id path int true "知识图谱 ID | Knowledge graph ID"
 // @Success      200 {object} models.SubgraphResult
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.graph.read"]
 // @Router       /graphs/{id}/overview [get]
 func (h *BrowseHandler) GetOverview(c *gin.Context) {
 	id := parseUintParam(c, "id")
@@ -93,6 +99,8 @@ func (h *BrowseHandler) GetOverview(c *gin.Context) {
 // @Success      200 {object} models.SubgraphResult
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.graph.read"]
 // @Router       /graphs/{id}/search [post]
 func (h *BrowseHandler) SearchNodes(c *gin.Context) {
 	id := parseUintParam(c, "id")
@@ -122,6 +130,8 @@ func (h *BrowseHandler) SearchNodes(c *gin.Context) {
 // @Success      200 {object} models.SubgraphResult
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.graph.read"]
 // @Router       /graphs/{id}/expand [post]
 func (h *BrowseHandler) ExpandNode(c *gin.Context) {
 	id := parseUintParam(c, "id")
@@ -151,6 +161,8 @@ func (h *BrowseHandler) ExpandNode(c *gin.Context) {
 // @Success      200 {object} models.SubgraphResult
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.graph.read"]
 // @Router       /graphs/{id}/path [post]
 func (h *BrowseHandler) FindPath(c *gin.Context) {
 	id := parseUintParam(c, "id")
@@ -176,6 +188,8 @@ func (h *BrowseHandler) FindPath(c *gin.Context) {
 // @Param        id path int true "知识图谱 ID | Knowledge graph ID"
 // @Success      200 {object} map[string]interface{}
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.graph.read"]
 // @Router       /graphs/{id}/constraints [get]
 func (h *BrowseHandler) GetConstraints(c *gin.Context) {
 	id := parseUintParam(c, "id")
@@ -197,6 +211,8 @@ func (h *BrowseHandler) GetConstraints(c *gin.Context) {
 // @Param        ontology_id query int false "本体 ID | Ontology ID"
 // @Success      200 {object} map[string]interface{}
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.graph.read"]
 // @Router       /graphs/{id}/infer-schema [get]
 func (h *BrowseHandler) InferSchema(c *gin.Context) {
 	graphID := parseUintParam(c, "id")
@@ -232,6 +248,8 @@ func (h *BrowseHandler) InferSchema(c *gin.Context) {
 // @Success      200 {object} map[string]interface{}
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.graph.update"]
 // @Router       /graphs/{id}/infer-schema/apply [post]
 func (h *BrowseHandler) ApplyInferredSchema(c *gin.Context) {
 	graphID := parseUintParam(c, "id")

@@ -24,6 +24,8 @@ var _ = models.ScanTaskUpsertRequest{}
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.scan_task.create"]
 // @Router /scan/tasks [post]
 // @Security BearerAuth
 func (h *Handler) CreateScanTask(c *gin.Context) {
@@ -62,6 +64,8 @@ func (h *Handler) CreateScanTask(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.scan_task.update"]
 // @Router /scan/tasks/{task_id} [put]
 // @Security BearerAuth
 func (h *Handler) UpdateScanTask(c *gin.Context) {
@@ -105,6 +109,8 @@ func (h *Handler) UpdateScanTask(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.scan_task.delete"]
 // @Router /scan/tasks/{task_id} [delete]
 // @Security BearerAuth
 func (h *Handler) DeleteScanTask(c *gin.Context) {
@@ -141,6 +147,8 @@ func (h *Handler) DeleteScanTask(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.scan_task.read"]
 // @Router /tasks/{task_type}/{id} [get]
 // @Security BearerAuth
 func (h *Handler) ProviderGetScanTask(c *gin.Context) {
@@ -181,6 +189,8 @@ func (h *Handler) ProviderGetScanTask(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "不支持的任务类型 | Unsupported task type"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.scan_task.read"]
 // @Router /scan/tasks [get]
 // @Security BearerAuth
 func (h *Handler) ListScanTasks(c *gin.Context) {
@@ -217,6 +227,8 @@ func (h *Handler) ListScanTasks(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "不支持的任务类型 | Unsupported task type"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.scan_task.read"]
 // @Router /tasks [get]
 // @Security BearerAuth
 func (h *Handler) ListProviderScanTasks(c *gin.Context) {

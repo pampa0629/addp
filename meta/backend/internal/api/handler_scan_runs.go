@@ -21,6 +21,8 @@ import (
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.scan_task.execute"]
 // @Router /scan/run/unscanned [post]
 // @Security BearerAuth
 func (h *Handler) CreateUnscannedScanRuns(c *gin.Context) {
@@ -61,6 +63,8 @@ func (h *Handler) CreateUnscannedScanRuns(c *gin.Context) {
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.scan_task.execute"]
 // @Router /scan/run/manual [post]
 // @Security BearerAuth
 func (h *Handler) CreateManualScanRun(c *gin.Context) {
@@ -112,6 +116,8 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 // @Failure 404 {object} map[string]interface{} "执行不存在 | Execution not found"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.scan_task.read"]
 // @Router /executions/{execution_id} [get]
 // @Security BearerAuth
 func (h *Handler) GetExecution(c *gin.Context) {
@@ -154,6 +160,8 @@ func (h *Handler) GetExecution(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.scan_task.read"]
 // @Router /scan/runs [get]
 // @Security BearerAuth
 func (h *Handler) ListScanRuns(c *gin.Context) {

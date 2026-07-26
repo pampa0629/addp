@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: service
-manifest_version: 1
+manifest_version: 2
 permissions:
   - key: service.definition.create
     allowed_scope_types: [tenant, department, project_group]
@@ -23,7 +23,7 @@ permissions:
     risk_level: high
     tenant_customizable: true
     delegable: false
-    status: active
+    status: disabled
     name_i18n_key: permissions.service.definition.offline.name
     description_i18n_key: permissions.service.definition.offline.description
   - key: service.definition.publish
@@ -31,7 +31,7 @@ permissions:
     risk_level: high
     tenant_customizable: true
     delegable: false
-    status: active
+    status: disabled
     name_i18n_key: permissions.service.definition.publish.name
     description_i18n_key: permissions.service.definition.publish.description
   - key: service.definition.read
@@ -55,7 +55,7 @@ permissions:
     risk_level: low
     tenant_customizable: true
     delegable: false
-    status: active
+    status: disabled
     name_i18n_key: permissions.service.endpoint.read.name
     description_i18n_key: permissions.service.endpoint.read.description
   - key: service.external_registration.create

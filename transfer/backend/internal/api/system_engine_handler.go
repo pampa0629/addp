@@ -28,6 +28,8 @@ func NewSystemEngineHandler(systemClient *commonClient.SystemClient) *SystemEngi
 // @Success 200 {array} github_com_addp_transfer_internal_models.SystemEngineDoc
 // @Failure 502 {object} map[string]string
 // @Failure 503 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.read"]
 // @Router /system-engines [get]
 // @Security BearerAuth
 func (h *SystemEngineHandler) List(c *gin.Context) {

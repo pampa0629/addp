@@ -22,6 +22,42 @@ type ResourceTicketMiddlewareConfig struct {
 	Now                 func() time.Time
 }
 
+type ResourceTicketRequestMatcher func(*gin.Context) bool
+
+// NewOptionalResourceTicketMiddleware resolves an owner ticket only for an
+// explicit native-resource route matcher. Other requests continue to the
+// normal Bearer AuthContext middleware.
+func NewOptionalResourceTicketMiddleware(
+	config ResourceTicketMiddlewareConfig,
+	matcher ResourceTicketRequestMatcher,
+) (gin.HandlerFunc, error) {
+	if matcher == nil {
+		return nil, fmt.Errorf("%w: Resource Ticket route matcher is required", commonapi.ErrBadRequest)
+	}
+	resourceTicket, err := NewResourceTicketMiddleware(config)
+	if err != nil {
+		return nil, err
+	}
+	return func(c *gin.Context) {
+		if len(c.Request.Header.Values("Authorization")) != 0 || !matcher(c) {
+			c.Next()
+			return
+		}
+		resourceTicket(c)
+	}, nil
+}
+
+func MustNewOptionalResourceTicketMiddleware(
+	config ResourceTicketMiddlewareConfig,
+	matcher ResourceTicketRequestMatcher,
+) gin.HandlerFunc {
+	middleware, err := NewOptionalResourceTicketMiddleware(config, matcher)
+	if err != nil {
+		panic(err)
+	}
+	return middleware
+}
+
 // NewResourceTicketMiddleware authenticates one explicitly mounted GET/HEAD
 // native resource route with its owner-scoped browser ticket cookie.
 func NewResourceTicketMiddleware(config ResourceTicketMiddlewareConfig) (gin.HandlerFunc, error) {

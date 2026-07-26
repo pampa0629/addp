@@ -9,12 +9,13 @@ func TestTableInfoFromPayloadRestoresCommonFacts(t *testing.T) {
 	t.Parallel()
 
 	payload := map[string]interface{}{
-		"kind":        "view",
-		"comment":     "orders view",
-		"row_count":   int64(12),
-		"size_bytes":  int64(2048),
-		"primary_key": []interface{}{"id"},
-		"native":      map[string]interface{}{"engine": "MergeTree"},
+		"kind":                "view",
+		"comment":             "orders view",
+		"row_count":           int64(12),
+		"estimated_row_count": int64(15),
+		"size_bytes":          int64(2048),
+		"primary_key":         []interface{}{"id"},
+		"native":              map[string]interface{}{"engine": "MergeTree"},
 		"fields": []interface{}{
 			map[string]interface{}{
 				"name":                  "id",
@@ -37,6 +38,9 @@ func TestTableInfoFromPayloadRestoresCommonFacts(t *testing.T) {
 	if info.RowCount == nil || *info.RowCount != 12 || info.SizeBytes == nil || *info.SizeBytes != 2048 {
 		t.Fatalf("table counts = %#v / %#v", info.RowCount, info.SizeBytes)
 	}
+	if info.EstimatedRowCount == nil || *info.EstimatedRowCount != 15 {
+		t.Fatalf("EstimatedRowCount = %#v, want 15", info.EstimatedRowCount)
+	}
 	if len(info.PrimaryKey) != 1 || info.PrimaryKey[0] != "id" || info.Native["engine"] != "MergeTree" {
 		t.Fatalf("table key/native = %#v / %#v", info.PrimaryKey, info.Native)
 	}
@@ -57,8 +61,9 @@ func TestTableInfoFromPayloadRestoresRowCountOnlyFacts(t *testing.T) {
 		t.Fatalf("TableInfoFromPayload() = %#v, want row count", info)
 	}
 
-	if empty := TableInfoFromPayload(map[string]interface{}{"row_count": int64(0)}, ""); empty != nil {
-		t.Fatalf("TableInfoFromPayload() = %#v, want nil for no stable table facts", empty)
+	empty := TableInfoFromPayload(map[string]interface{}{"row_count": int64(0)}, "")
+	if empty == nil || empty.RowCount == nil || *empty.RowCount != 0 {
+		t.Fatalf("TableInfoFromPayload() = %#v, want exact zero row count", empty)
 	}
 }
 

@@ -84,7 +84,7 @@ func TestModel3DTilesHandlerRejectsUnavailableTenantAndTraversal(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/", nil)
-	ctx.Set("tenant_id", uint(7))
+	setTenantAuthContextForTest(ctx, 7, 1)
 	ctx.Params = gin.Params{{Key: "id", Value: strconv.FormatUint(uint64(ready.ID), 10)}, {Key: "asset_path", Value: "../secret"}}
 	handler.GetAsset(ctx)
 	if recorder.Code != http.StatusBadRequest {
@@ -160,7 +160,7 @@ func newModel3DTilesHandlerTestRouter(t *testing.T, db *gorm.DB, serverURL strin
 	handler := NewModel3DTilesHandler(repository.NewModel3DTilesRepository(db), model3DTilesMinIOClient(t, serverURL), "manager")
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		c.Set("tenant_id", tenantID)
+		setTenantAuthContextForTest(c, tenantID, 1)
 		c.Next()
 	})
 	router.GET("/model3d_tiles/:id/assets/*asset_path", handler.GetAsset)

@@ -57,6 +57,8 @@ Develop 模块按具体工作流运行时实例聚合算子定义，用于工作
 
 Develop 作为一个 TaskProvider 注册到 System，声明 `query`、`workflow`、`script` 三种任务类型。算子工作流必须先在 Develop 中保存为 `dev_tasks.dev_type=workflow` 的任务定义，再以 `provider=develop, task_type=workflow, task_id=...` 被 Orchestrator 引用。Notebook 是 `script` 任务的当前实现形态和 UI 入口，不作为独立 `task_type`。当前 Develop 不具备 owner scheduler / `next_run_at` due claim 闭环，因此不声明定时能力，不保存或暴露 `schedule`、`enabled`、`next_run_at`。
 
+TaskProvider、执行状态回查和 Asset 发现属于服务间接口，统一位于 `/api/v1/develop/internal`，只接受 `X-Internal-API-Key + X-Tenant-ID`。内部调用只建立 Develop 私有的内部租户上下文，不生成 User Principal、AuthContext 或 `triggered_by`。`/api/v1/develop` 下的用户 API 只接受 canonical Bearer AuthContext；两类凭据不得在同一路由组混用。
+
 ### IAM Permission
 
 Develop 是 `develop.task.*` 和 `develop.notebook.*` 的 Permission owner；定义只存在于 `authorization/permissions.yaml`，通过 `common/authorization` 发布期聚合，不在服务启动时动态注册。`develop.task.cancel` 是 IAM 目标目录能力，当前真实执行取消入口仍待路由覆盖阶段确认。

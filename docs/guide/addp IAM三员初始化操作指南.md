@@ -1,0 +1,224 @@
+# ADDP IAM 三员初始化操作指南
+
+更新日期：2026-07-26
+
+## 一、适用范围
+
+本指南用于在全新的 ADDP IAM 数据库中，通过离线 CLI 一次性创建：
+
+- 平台系统管理员；
+- 平台安全管理员；
+- 平台审计管理员。
+
+初始化只允许执行一次。成功后 Bootstrap 永久关闭，不能通过默认密码、网络注册接口或开发模式绕过。
+
+## 二、先区分三种内容
+
+| 名称 | 外观 | 用途 | 应该输入到哪里 |
+| --- | --- | --- | --- |
+| Bootstrap Secret | 以 `addp_bs_` 开头 | 授权本次一次性初始化 | CLI 的 `Bootstrap Secret:` 提示 |
+| TOTP Secret | 较长的 Base32 字母数字串 | 在认证器中建立 TOTP 账号 | 认证器 App 的“设置密钥”页面 |
+| TOTP 验证码 | 6 位数字，每 30 秒变化 | 证明当前持有认证器 | CLI 的“TOTP 验证码”提示 |
+
+最容易发生的错误是把 TOTP Secret 粘贴到“TOTP 验证码”提示。这里必须输入认证器当前显示的 **6 位数字**，不能输入 Secret。
+
+Bootstrap Secret、TOTP Secret、密码和验证码都不得：
+
+- 写进 Manifest；
+- 放进命令行参数；
+- 发送到聊天、工单或日志；
+- 截图或录屏；
+- 保存到仓库。
+
+一旦 Bootstrap Secret 或任一 TOTP Secret 被截图、发送或泄露，应立即停止操作并按第八节处理。
+
+## 三、准备三员资料
+
+Manifest 只包含非 Secret 资料。开发环境可以使用仓库文档中的示例账号；生产环境必须替换为三个不同自然人的实名资料。
+
+```json
+{
+  "administrators": [
+    {
+      "role_key": "platform.system_administrator",
+      "username": "system-admin",
+      "display_name": "系统管理员",
+      "primary_email": "system-admin@example.com",
+      "locale": "zh-cn"
+    },
+    {
+      "role_key": "platform.security_administrator",
+      "username": "security-admin",
+      "display_name": "安全管理员",
+      "primary_email": "security-admin@example.com",
+      "locale": "zh-cn"
+    },
+    {
+      "role_key": "platform.audit_administrator",
+      "username": "audit-admin",
+      "display_name": "审计管理员",
+      "primary_email": "audit-admin@example.com",
+      "locale": "zh-cn"
+    }
+  ]
+}
+```
+
+本地开发使用的示例文件路径为：
+
+```text
+/tmp/addp-iam-bootstrap.json
+```
+
+三个账号必须使用不同密码，且每个密码至少 14 个字符。
+
+## 四、准备认证器
+
+手机或桌面端需要安装支持标准 TOTP 的认证器，例如：
+
+- 2FAS；
+- Google Authenticator；
+- Microsoft Authenticator；
+- 1Password；
+- Bitwarden Authenticator。
+
+确保设备时间使用网络自动同步。设备时间偏差会导致正确的 6 位验证码仍被判定无效。
+
+## 五、执行初始化
+
+### 5.1 构建 CLI
+
+在 ADDP 仓库根目录执行：
+
+```bash
+cd /Users/pampa/code/addp
+make build-iam-bootstrap
+```
+
+### 5.2 生成一次性 Bootstrap Secret
+
+```bash
+dist/release-$(go env GOOS)-$(go env GOARCH)/addp-iam-bootstrap prepare
+```
+
+终端会显示一次 Bootstrap Secret，有效期最多一小时。保持该终端打开，不要截图。
+
+### 5.3 进入交互式初始化
+
+```bash
+dist/release-$(go env GOOS)-$(go env GOARCH)/addp-iam-bootstrap apply \
+  --manifest /tmp/addp-iam-bootstrap.json
+```
+
+在 `Bootstrap Secret:` 提示处输入上一步生成的 `addp_bs_...`。输入不会回显，按 Enter 继续。
+
+### 5.4 配置每个管理员
+
+CLI 会依次处理系统管理员、安全管理员和审计管理员。每个管理员执行相同步骤：
+
+1. 输入该账号的独立密码；
+2. 再次输入相同密码；
+3. CLI 显示 TOTP Secret 和 Enrollment URI；
+4. 打开认证器，选择“添加账号”“输入设置密钥”或同类入口；
+5. 账号名称填写 CLI 当前显示的用户名，例如 `system-admin`；
+6. 密钥填写 CLI 显示的 TOTP Secret；
+7. 类型选择“基于时间”或“TOTP”；
+8. 保存后，认证器会显示 6 位数字验证码；
+9. 在 CLI 的“输入当前 TOTP 验证码”处输入该 6 位数字；
+10. 等待认证器数字变化后，立即输入新的 6 位数字。
+
+第二次必须是紧邻的下一个 30 秒窗口。不要跳过多个验证码，也不要重复输入同一个验证码。
+
+完成一个管理员后，CLI 会自动进入下一个管理员。
+
+## 六、成功结果
+
+三个管理员全部完成后，CLI 才会在单个数据库事务中写入身份、MFA、角色和审计事实。成功输出包含：
+
+```text
+IAM Bootstrap 已永久完成于 ...
+platform.audit_administrator -> Principal ...
+platform.security_administrator -> Principal ...
+platform.system_administrator -> Principal ...
+```
+
+验证数据库状态：
+
+```bash
+docker exec addp-postgres psql -U addp -d addp -Atc "
+select status, completed_at, secret_hash is null
+from system.iam_bootstrap_state;
+
+select count(*) from system.users;
+select count(*) from system.mfa_credentials where status = 'active';
+select count(*) from system.role_assignments where status = 'active';
+"
+```
+
+预期结果：
+
+- Bootstrap 状态为 `completed`；
+- `secret_hash is null` 为 `true`；
+- User、有效 MFA Credential、有效 Role Assignment 均为 3。
+
+## 七、初始化后的首次登录
+
+启动 System 和 Console 后：
+
+1. 打开 `http://localhost:5170/login`；
+2. 输入其中一个管理员的用户名和密码；
+3. 输入该账号认证器当前显示的 6 位验证码；
+4. 选择 Platform Context；
+5. 登录后确认 AuthContext 为 `context.type=platform` 且 `authentication.assurance_level=aal2`；
+6. 从 Console 进入“系统管理 -> 身份与访问管理”，对应地址为 `/system/iam`。
+
+三员权限互斥，登录成功不代表三个账号可以执行相同管理操作。
+
+### 7.1 三类管理员的工作台验收
+
+工作台只根据 AuthContext 中的 Permission 显示标签和操作，不根据账号名或 Role Key 硬编码页面。依次退出并使用三个账号登录，预期如下：
+
+| 登录身份 | 应显示 | 不应显示 |
+| --- | --- | --- |
+| 平台系统管理员 | 租户生命周期、身份变更审批；可复核安全管理员发起的身份变更 | 用户生命周期、平台审计 |
+| 平台安全管理员 | 用户生命周期、身份变更审批；可创建身份暂停或恢复申请 | 租户生命周期、平台审计、批准自己发起的申请 |
+| 平台审计管理员 | 平台审计、身份变更审批只读监督；可导出审计事件 | 租户和用户写操作、批准或拒绝身份变更 |
+
+若某账号看到不属于其职责的写操作，不得把它当作前端显示问题跳过，应检查该会话 AuthContext 的 `authorization.role_assignments[].permissions` 和数据库 Role Assignment。若页面标签正确但 API 返回 `403`，应检查前端 AuthContext 是否陈旧、Token Family 是否已因授权变更撤销，以及当前是否确实为 Platform Context。
+
+## 八、Secret 暴露或操作中断
+
+### 8.1 尚未完成 Bootstrap
+
+如果 Bootstrap Secret 或 TOTP Secret 已经截图、发送或泄露：
+
+1. 按 `Ctrl+C` 终止 `apply`；
+2. 不再使用已经显示的 Secret；
+3. 开发环境在确认 IAM 没有需要保留的数据后，重建 `system` schema；
+4. 重新执行 migration、`prepare` 和 `apply`，生成全新 Secret。
+
+不要通过修改数据库 Hash、复用旧 Secret或跳过 TOTP 验证来恢复。
+
+生产环境不得自行执行 `DROP SCHEMA`。应停止上线并按受控的 IAM 初始化恢复流程重新建立空 IAM 数据库。
+
+### 8.2 已完成 Bootstrap
+
+已完成后发现 TOTP Secret 泄露，不得重新运行 Bootstrap。必须走后续的高权限身份变更、MFA 重置和独立复核流程。
+
+## 九、常见问题
+
+### 验证码为什么一直无效？
+
+确认输入的是认证器显示的 6 位数字，不是 TOTP Secret；然后确认设备时间已开启自动同步。
+
+### 为什么需要连续两个验证码？
+
+用于确认认证器已经正确保存 Secret，并验证连续时间窗口而非偶然获得一个验证码。
+
+### 为什么不能只创建一个超级管理员？
+
+ADDP 采用系统管理员、安全管理员和审计管理员三权分立，不保留拥有全部最高权限的 SuperAdmin。
+
+### 为什么三个管理员最后才一起写入？
+
+Bootstrap 使用单事务提交。任意一个账号的密码或 TOTP 验证失败时，不会留下半套管理员和不完整授权事实。

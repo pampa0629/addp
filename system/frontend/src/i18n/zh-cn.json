@@ -7,99 +7,174 @@
       "title": "系统管理模块",
       "overview": "系统概览",
       "systemMgmt": "系统管理",
-      "userMgmt": "用户管理",
+      "iam": "身份与访问管理",
       "engineMgmt": "引擎管理",
       "appMgmt": "应用管理",
-      "auditLogs": "日志审计",
       "cleanup": "资源回收",
       "logout": "退出登录",
       "logoutSuccess": "退出成功"
     },
-    "user": {
-      "title": "用户管理",
-      "myInfo": "我的信息",
-      "add": "新增用户",
-      "status": {
-        "active": "激活",
-        "disabled": "禁用"
+    "iam": {
+      "title": "身份与访问管理",
+      "assurance": "认证强度：{level}",
+      "noPermission": "当前授权上下文没有可用的身份与访问管理权限",
+      "context": {
+        "platform": "平台管理上下文",
+        "tenant": "租户上下文 #{id}"
       },
-      "types": {
-        "superAdmin": "超级管理员",
-        "tenantAdmin": "租户管理员",
-        "user": "普通用户",
-        "unknown": "未知"
+      "tabs": {
+        "tenants": "租户生命周期",
+        "users": "用户生命周期",
+        "identityChanges": "身份变更审批",
+        "platformAudit": "平台审计",
+        "memberships": "成员关系",
+        "invitations": "租户邀请",
+        "tenantAudit": "租户审计"
       },
-      "columns": {
-        "id": "ID",
-        "username": "用户名",
-        "email": "邮箱",
-        "fullName": "姓名",
-        "userType": "用户类型",
-        "status": "状态",
-        "createdAt": "创建时间",
-        "actions": "操作"
-      },
-      "actions": {
+      "common": {
+        "actions": "操作",
+        "approve": "批准",
+        "cancel": "取消",
+        "close": "结束",
+        "code": "编码",
+        "confirm": "确认",
+        "copied": "已复制",
+        "copy": "复制",
+        "create": "创建",
+        "createFailed": "创建失败",
+        "description": "描述",
+        "done": "完成",
         "edit": "编辑",
-        "delete": "删除",
-        "changePassword": "修改密码"
+        "export": "导出",
+        "exportFailed": "导出失败",
+        "loadFailed": "加载失败",
+        "name": "名称",
+        "reactivate": "重新激活",
+        "reason": "原因",
+        "reasonPrompt": "请输入本次状态变更原因",
+        "refresh": "刷新",
+        "refreshed": "授权上下文已刷新",
+        "reject": "拒绝",
+        "restore": "恢复",
+        "revoke": "撤销",
+        "reviewReason": "复核意见",
+        "save": "保存",
+        "saveFailed": "保存失败",
+        "saved": "保存成功",
+        "search": "搜索名称或标识",
+        "status": "状态",
+        "submit": "提交",
+        "submitFailed": "提交失败",
+        "submitted": "提交成功",
+        "suspend": "暂停",
+        "updateFailed": "更新失败",
+        "updated": "更新成功",
+        "updatedAt": "更新时间"
       },
-      "form": {
-        "username": "用户名",
-        "usernamePlaceholder": "请输入用户名",
-        "password": "密码",
-        "passwordPlaceholder": "请输入密码",
-        "email": "邮箱",
-        "emailPlaceholder": "请输入邮箱",
-        "fullName": "姓名",
-        "fullNamePlaceholder": "请输入姓名",
-        "userType": "用户类型",
-        "userTypePlaceholder": "请选择用户类型",
-        "normalUser": "普通用户",
-        "activeStatus": "状态",
-        "active": "激活",
-        "inactive": "禁用"
+      "tenants": {
+        "create": "创建租户",
+        "edit": "编辑租户"
       },
-      "dialog": {
-        "add": "新增用户",
-        "edit": "编辑用户"
+      "users": {
+        "account": "用户 / 本地账号",
+        "authVersion": "授权版本",
+        "changeRequestId": "已批准的身份变更请求 ID",
+        "create": "创建用户",
+        "displayName": "显示名称",
+        "edit": "编辑用户",
+        "email": "主邮箱",
+        "locale": "语言",
+        "password": "初始密码",
+        "username": "用户名"
       },
-      "rules": {
-        "usernameRequired": "请输入用户名",
-        "usernameLength": "用户名长度为 3-20 个字符",
-        "passwordRequired": "请输入密码",
-        "passwordMin": "密码长度不能少于 6 位",
-        "emailFormat": "请输入正确的邮箱地址"
+      "identityChanges": {
+        "changeType": "变更类型",
+        "create": "创建身份变更请求",
+        "requestedAt": "申请时间",
+        "requester": "申请人 Principal ID",
+        "targetId": "目标 Principal ID",
+        "types": {
+          "platform_identity_suspend": "暂停平台身份",
+          "platform_identity_reactivate": "重新激活平台身份"
+        }
       },
-      "msg": {
-        "loadFailed": "加载用户列表失败",
-        "createSuccess": "新增用户成功",
-        "createFailed": "新增用户失败",
-        "updateSuccess": "更新用户成功",
-        "updateFailed": "更新用户失败",
-        "deleteConfirm": "确定要删除用户 \"{username}\" 吗？",
-        "deleteWarning": "警告",
-        "deleteSuccess": "删除成功",
-        "deleteFailed": "删除失败",
-        "adminCannotDelete": "admin账号不能被删除",
-        "changePasswordSuccess": "密码修改成功",
-        "changePasswordFailed": "修改密码失败"
-      }
-    },
-    "password": {
-      "title": "修改密码",
-      "old": "旧密码",
-      "oldPlaceholder": "请输入旧密码",
-      "new": "新密码",
-      "newPlaceholder": "请输入新密码（至少6位）",
-      "confirm": "确认密码",
-      "confirmPlaceholder": "请再次输入新密码",
-      "rules": {
-        "oldRequired": "请输入旧密码",
-        "newRequired": "请输入新密码",
-        "newMin": "密码长度不能少于 6 位",
-        "confirmRequired": "请再次输入新密码",
-        "confirmMismatch": "两次输入的密码不一致"
+      "memberships": {
+        "editExpiry": "设置成员关系有效期",
+        "expiresAt": "到期时间",
+        "joinedAt": "加入时间",
+        "member": "成员",
+        "principalType": "主体类型",
+        "source": "来源"
+      },
+      "invitations": {
+        "create": "创建邀请",
+        "created": "邀请已创建",
+        "createdAt": "创建时间",
+        "createdBy": "创建人 Principal ID",
+        "email": "邀请邮箱",
+        "expiresAt": "到期时间",
+        "revokeConfirm": "确认撤销发给 {email} 的邀请？",
+        "urlOnce": "邀请链接只在创建时显示，请立即通过安全渠道交付"
+      },
+      "audit": {
+        "context": "上下文 / 租户",
+        "detail": "审计事件详情",
+        "endTime": "结束时间",
+        "eventName": "事件名称",
+        "module": "模块",
+        "principal": "主体",
+        "request": "HTTP 请求",
+        "requestId": "请求 ID",
+        "result": "结果",
+        "risk": "风险等级",
+        "source": "来源 IP",
+        "startTime": "开始时间",
+        "time": "发生时间",
+        "to": "至",
+        "summary": {
+          "total": "事件总数",
+          "succeeded": "成功",
+          "failed": "失败",
+          "denied": "拒绝",
+          "high_risk": "高风险"
+        }
+      },
+      "principalType": {
+        "user": "用户",
+        "service_principal": "服务主体"
+      },
+      "source": {
+        "manual": "手工创建",
+        "invitation": "邀请",
+        "idp_jit": "IdP 即时供应",
+        "directory_sync": "目录同步",
+        "bootstrap": "初始引导"
+      },
+      "status": {
+        "active": "有效",
+        "suspended": "已暂停",
+        "closed": "已关闭",
+        "deactivated": "已停用",
+        "pending": "待处理",
+        "approved": "已批准",
+        "rejected": "已拒绝",
+        "cancelled": "已取消",
+        "applied": "已执行",
+        "ended": "已结束",
+        "accepted": "已接受",
+        "revoked": "已撤销",
+        "expired": "已过期",
+        "succeeded": "成功",
+        "failed": "失败",
+        "denied": "拒绝",
+        "ignored": "忽略",
+        "low": "低",
+        "medium": "中",
+        "high": "高",
+        "critical": "严重"
+      },
+      "validation": {
+        "required": "此项必填"
       }
     },
     "engine": {
@@ -657,111 +732,6 @@
         "revokeTitle": "确认撤销"
       }
     },
-    "log": {
-      "title": "审计日志",
-      "exportCsv": "导出 CSV",
-      "exportJson": "导出 JSON",
-      "refresh": "刷新",
-      "quickTime": "快速时间",
-      "quickAll": "全部",
-      "quickToday": "今天",
-      "quickYesterday": "昨天",
-      "quickWeek": "最近7天",
-      "quickMonth": "最近30天",
-      "timeRange": "时间范围",
-      "rangeSeparator": "至",
-      "startTime": "开始时间",
-      "endTime": "结束时间",
-      "module": "模块",
-      "allModules": "全部模块",
-      "allOption": "全部",
-      "statusCode": "状态码",
-      "allStatus": "全部状态",
-      "statusSuccess": "成功 (2xx)",
-      "statusClientError": "客户端错误 (4xx)",
-      "statusServerError": "服务器错误 (5xx)",
-      "httpMethod": "HTTP方法",
-      "username": "用户名",
-      "usernamePlaceholder": "输入用户名",
-      "ipAddress": "IP地址",
-      "ipPlaceholder": "输入IP",
-      "entityType": "资源类型",
-      "entityTypePlaceholder": "如 cleanup（资源回收）",
-      "entityId": "资源ID",
-      "entityIdPlaceholder": "输入资源ID",
-      "resourcePath": "操作前缀",
-      "resourcePathPlaceholder": "如 cleanup.execute（资源回收执行）",
-      "query": "查询",
-      "reset": "重置",
-      "auditFilter": {
-        "title": "当前仅显示指定资源的审计日志",
-        "module": "模块: {value}",
-        "entityType": "资源类型: {value}",
-        "entityId": "资源ID: {value}",
-        "resourcePath": "操作前缀: {value}",
-        "clear": "清除资源筛选"
-      },
-      "columns": {
-        "id": "ID",
-        "action": "操作",
-        "user": "用户",
-        "status": "状态",
-        "duration": "耗时",
-        "ip": "IP",
-        "module": "模块",
-        "time": "时间"
-      },
-      "actions": {
-        "cleanup_scan_created": "资源回收评估已创建",
-        "cleanup_execute_created": "资源回收任务已创建",
-        "cleanup_execute_confirmed": "资源回收执行已确认",
-        "cleanup_completed": "资源回收已完成",
-        "cleanup_failed": "资源回收失败"
-      },
-      "detail": {
-        "title": "操作详情",
-        "logId": "日志ID",
-        "requestId": "请求ID",
-        "user": "操作用户",
-        "superAdmin": "超管",
-        "tenant": "所属租户",
-        "systemOp": "系统级操作",
-        "action": "操作",
-        "result": "结果",
-        "resource": "操作资源",
-        "source": "来源",
-        "time": "时间",
-        "error": "错误信息",
-        "noError": "无详细信息",
-        "auditDetail": "审计摘要",
-        "requestDetail": "请求详情",
-        "noRequest": "无请求详情",
-        "unauthenticated": "未认证"
-      },
-      "auditDetail": {
-        "basedOnScan": "基于评估",
-        "cleanupMode": "处理方式",
-        "confirmedAt": "确认时间",
-        "confirmationToken": "确认文本",
-        "riskLevel": "风险等级",
-        "scannedItems": "发现项",
-        "affectedRecords": "影响记录",
-        "freedBytes": "释放空间",
-        "expectedModules": "影响模块",
-        "executionId": "监控执行ID",
-        "status": "状态",
-        "causeEvent": "触发事件",
-        "context": "上下文",
-        "summary": "结果摘要",
-        "trueValue": "是",
-        "falseValue": "否"
-      },
-      "msg": {
-        "loadFailed": "加载日志列表失败",
-        "exportSuccess": "导出 {format} 成功",
-        "exportFailed": "导出失败"
-      }
-    },
     "cleanup": {
       "title": "资源回收",
       "subtitle": "评估并回收失效资源、派生产物和运行缓存",
@@ -949,65 +919,6 @@
         "confirmRequired": "请先完成确认",
         "detailFailed": "加载任务详情失败",
         "tenantScopeRequired": "手动资源回收必须在明确租户范围内发起"
-      }
-    },
-    "tenant": {
-      "title": "租户管理",
-      "add": "新增租户",
-      "columns": {
-        "id": "ID",
-        "name": "租户名称",
-        "description": "描述",
-        "status": "状态",
-        "createdAt": "创建时间",
-        "actions": "操作"
-      },
-      "status": {
-        "active": "激活",
-        "disabled": "禁用"
-      },
-      "actions": {
-        "edit": "编辑",
-        "delete": "删除"
-      },
-      "form": {
-        "name": "租户名称",
-        "namePlaceholder": "请输入租户名称",
-        "description": "描述",
-        "descPlaceholder": "请输入租户描述",
-        "adminSection": "租户管理员信息",
-        "adminUsername": "管理员用户名",
-        "adminUsernamePlaceholder": "请输入管理员用户名",
-        "adminPassword": "管理员密码",
-        "adminPasswordPlaceholder": "请输入管理员密码",
-        "adminEmail": "管理员邮箱",
-        "adminEmailPlaceholder": "请输入管理员邮箱",
-        "adminFullName": "管理员姓名",
-        "adminFullNamePlaceholder": "请输入管理员姓名"
-      },
-      "dialog": {
-        "add": "新增租户",
-        "edit": "编辑租户",
-        "create": "创建",
-        "update": "更新",
-        "cancel": "取消"
-      },
-      "rules": {
-        "nameRequired": "请输入租户名称",
-        "adminUsernameRequired": "请输入管理员用户名",
-        "adminPasswordRequired": "请输入管理员密码",
-        "adminPasswordMin": "密码长度至少6位"
-      },
-      "msg": {
-        "loadFailed": "获取租户列表失败",
-        "createSuccess": "租户创建成功",
-        "createFailed": "租户创建失败",
-        "updateSuccess": "租户更新成功",
-        "updateFailed": "租户更新失败",
-        "deleteConfirm": "确定要删除租户\"{name}\"吗？删除租户将同时删除该租户下的所有用户！",
-        "deleteWarning": "警告",
-        "deleteSuccess": "租户删除成功",
-        "deleteFailed": "租户删除失败"
       }
     }
   }

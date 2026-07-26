@@ -40,6 +40,8 @@ func NewQueryServiceHandler(s *svc.QueryServiceService, executorSvc *svc.QueryEx
 // @Param request body models.CreateQueryServiceRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.create"]
 // @Router /query [post]
 // @Security BearerAuth
 func (h *QueryServiceHandler) CreateService(c *gin.Context) {
@@ -59,8 +61,8 @@ func (h *QueryServiceHandler) CreateService(c *gin.Context) {
 	}
 
 	// 从 JWT token 中获取租户 ID 和用户 ID
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := tenantIDValue(c)
+	userID := userIDValue(c)
 
 	if tenantID == 0 || userID == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing tenant_id or user_id in token"})
@@ -91,10 +93,12 @@ func (h *QueryServiceHandler) CreateService(c *gin.Context) {
 // @Param search query string false "搜索词 | Search"
 // @Success 200 {object} map[string]interface{}
 // @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.read"]
 // @Router /query [get]
 // @Security BearerAuth
 func (h *QueryServiceHandler) ListServices(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	if tenantID == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing tenant_id in token"})
 		return
@@ -153,6 +157,8 @@ func (h *QueryServiceHandler) ListServices(c *gin.Context) {
 // @Param id path int true "服务ID | Service ID"
 // @Success 200 {object} map[string]interface{}
 // @Failure 404 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.read"]
 // @Router /query/{id} [get]
 // @Security BearerAuth
 func (h *QueryServiceHandler) GetService(c *gin.Context) {
@@ -186,6 +192,8 @@ func (h *QueryServiceHandler) GetService(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.update"]
 // @Router /query/{id} [put]
 // @Security BearerAuth
 func (h *QueryServiceHandler) UpdateService(c *gin.Context) {
@@ -223,6 +231,8 @@ func (h *QueryServiceHandler) UpdateService(c *gin.Context) {
 // @Success 200 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.delete"]
 // @Router /query/{id} [delete]
 // @Security BearerAuth
 func (h *QueryServiceHandler) DeleteService(c *gin.Context) {
@@ -255,6 +265,8 @@ func (h *QueryServiceHandler) DeleteService(c *gin.Context) {
 // @Failure 400 {object} map[string]string "请求错误 | Bad request"
 // @Failure 404 {object} map[string]string "服务不存在 | Service not found"
 // @Failure 500 {object} map[string]string "检查失败 | Check failed"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.read"]
 // @Router /query/{id}/source-snapshot-diff [get]
 // @Security BearerAuth
 func (h *QueryServiceHandler) CheckSourceSnapshot(c *gin.Context) {
@@ -263,7 +275,7 @@ func (h *QueryServiceHandler) CheckSourceSnapshot(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, commoni18n.MsgInvalidID)})
 		return
 	}
-	result, err := h.svc.CheckSourceSnapshot(uint(id), c.GetUint("tenant_id"))
+	result, err := h.svc.CheckSourceSnapshot(uint(id), tenantIDValue(c))
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -285,6 +297,8 @@ func (h *QueryServiceHandler) CheckSourceSnapshot(c *gin.Context) {
 // @Failure 400 {object} map[string]string "请求错误 | Bad request"
 // @Failure 404 {object} map[string]string "服务不存在 | Service not found"
 // @Failure 500 {object} map[string]string "刷新失败 | Refresh failed"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.update"]
 // @Router /query/{id}/refresh-source-snapshot [post]
 // @Security BearerAuth
 func (h *QueryServiceHandler) RefreshSourceSnapshot(c *gin.Context) {
@@ -293,7 +307,7 @@ func (h *QueryServiceHandler) RefreshSourceSnapshot(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, commoni18n.MsgInvalidID)})
 		return
 	}
-	result, err := h.svc.RefreshSourceSnapshot(uint(id), c.GetUint("tenant_id"))
+	result, err := h.svc.RefreshSourceSnapshot(uint(id), tenantIDValue(c))
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -322,12 +336,13 @@ func (h *QueryServiceHandler) RefreshSourceSnapshot(c *gin.Context) {
 // @Failure 403 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "public"
 // @Router /api/query/{serviceName} [get]
 func (h *QueryServiceHandler) QueryData(c *gin.Context) {
 	serviceName := c.Param("serviceName")
 
 	// 从 JWT token 中获取租户 ID（如果是公开服务则可能没有）
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 
 	// 先通过服务名称查找服务(不过滤租户),然后检查权限
 	service, err := h.svc.GetServiceModelByNameOnly(serviceName)

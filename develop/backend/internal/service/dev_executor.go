@@ -107,7 +107,11 @@ func (e *DevExecutor) ExecuteDevTask(
 
 	// 创建统一执行记录
 	now := time.Now()
-	userIDInt := int(userID)
+	var triggeredBy *int
+	if userID > 0 {
+		userIDInt := int(userID)
+		triggeredBy = &userIDInt
+	}
 
 	execution := &commonExecution.TaskExecution{
 		TenantID:        int(tenantID),
@@ -120,7 +124,7 @@ func (e *DevExecutor) ExecuteDevTask(
 		Status:          commonExecution.ExecutionStatusPending,
 		Progress:        0,
 		TriggerType:     normalizedTriggerType,
-		TriggeredBy:     &userIDInt,
+		TriggeredBy:     triggeredBy,
 		ExecutionConfig: devTaskExecutionRecordConfig(devTask, inputs),
 		CreatedAt:       now,
 		UpdatedAt:       now,
@@ -222,7 +226,11 @@ func (e *DevExecutor) prepareContentExecution(
 
 	// 创建统一执行记录
 	now := time.Now()
-	userIDInt := int(userID)
+	var triggeredBy *int
+	if userID > 0 {
+		userIDInt := int(userID)
+		triggeredBy = &userIDInt
+	}
 	recordConfig := commonModels.JSONMap{}
 	for key, value := range executionConfig {
 		recordConfig[key] = value
@@ -240,7 +248,7 @@ func (e *DevExecutor) prepareContentExecution(
 		Status:          commonExecution.ExecutionStatusPending,
 		Progress:        0,
 		TriggerType:     normalizedTriggerType,
-		TriggeredBy:     &userIDInt,
+		TriggeredBy:     triggeredBy,
 		ExecutionConfig: recordConfig,
 		CreatedAt:       now,
 		UpdatedAt:       now,
@@ -1035,7 +1043,11 @@ func (e *DevExecutor) ExecuteWithParamsWithContext(
 		executionInputs["data_sources"] = dataSourceIDs
 	}
 
-	userIDInt := int(userID)
+	var triggeredBy *int
+	if userID > 0 {
+		userIDInt := int(userID)
+		triggeredBy = &userIDInt
+	}
 
 	execution := &commonExecution.TaskExecution{
 		TenantID:          int(tenantID),
@@ -1049,7 +1061,7 @@ func (e *DevExecutor) ExecuteWithParamsWithContext(
 		Status:            commonExecution.ExecutionStatusPending,
 		Progress:          0,
 		TriggerType:       normalizedTriggerType,
-		TriggeredBy:       &userIDInt,
+		TriggeredBy:       triggeredBy,
 		ExecutionConfig:   devTaskExecutionRecordConfig(devTask, executionInputs),
 		CreatedAt:         now,
 		UpdatedAt:         now,

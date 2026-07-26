@@ -65,6 +65,8 @@ func NewResourceCapabilityHandler(systemClient *commonClient.SystemClient, metaB
 // @Success 200 {array} graphNodeShapeOption
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.read"]
 // @Router /graphs/node-shapes [get]
 // @Security BearerAuth
 func (h *ResourceCapabilityHandler) GetGraphNodeShapes(c *gin.Context) {
@@ -125,6 +127,8 @@ func graphInfoFromMetaAttributes(attrs map[string]interface{}) *datatype.GraphIn
 // @Success 200 {object} serviceModels.QueryServiceOutputContract "输出契约 | Output contract"
 // @Failure 400 {object} map[string]string "请求错误 | Bad request"
 // @Failure 500 {object} map[string]string "检测失败 | Detection failed"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.read"]
 // @Router /sql/output-contract [post]
 // @Security BearerAuth
 func (h *ResourceCapabilityHandler) GetSQLOutputContract(c *gin.Context) {

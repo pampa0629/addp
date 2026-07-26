@@ -114,7 +114,7 @@ func DefaultPoolConfig() *PoolConfig {
 
 // DynamicCollectionFacts describes engine-native facts for a schema-flexible collection.
 type DynamicCollectionFacts struct {
-	DocumentCount int64
+	DocumentCount *int64
 	SizeBytes     int64
 	IndexCount    int
 	AvgRecordSize int64

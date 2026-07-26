@@ -26,9 +26,11 @@ func NewToolApprovalHandler(approvalService *service.ToolApprovalService) *ToolA
 // @Success 200 {object} models.ToolApprovalResponse "审批详情 | Approval details"
 // @Failure 403 {object} models.ToolApprovalErrorResponse "无权访问审批 | Approval access denied"
 // @Failure 404 {object} models.ToolApprovalErrorResponse "审批不存在 | Approval not found"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read"]
 // @Router /approvals/{id} [get]
 func (handler *ToolApprovalHandler) GetApproval(c *gin.Context) {
-	authContext, ok := commonAuth.GetAuthorizationContext(c)
+	authContext, ok := commonAuth.AuthContextFromGin(c)
 	if !ok {
 		writeToolApprovalError(c, serviceError("approval_forbidden", "缺少认证上下文"))
 		return
@@ -55,6 +57,8 @@ func (handler *ToolApprovalHandler) GetApproval(c *gin.Context) {
 // @Failure 404 {object} models.ToolApprovalErrorResponse "审批不存在 | Approval not found"
 // @Failure 409 {object} models.ToolApprovalErrorResponse "审批已处理 | Approval already decided"
 // @Failure 410 {object} models.ToolApprovalErrorResponse "审批已过期 | Approval expired"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.execute"]
 // @Router /approvals/{id}/decision [post]
 func (handler *ToolApprovalHandler) DecideApproval(c *gin.Context) {
 	var req models.ToolApprovalDecisionRequest
@@ -62,7 +66,7 @@ func (handler *ToolApprovalHandler) DecideApproval(c *gin.Context) {
 		writeToolApprovalError(c, serviceError("approval_invalid_decision", err.Error()))
 		return
 	}
-	authContext, ok := commonAuth.GetAuthorizationContext(c)
+	authContext, ok := commonAuth.AuthContextFromGin(c)
 	if !ok {
 		writeToolApprovalError(c, serviceError("approval_forbidden", "缺少认证上下文"))
 		return

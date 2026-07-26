@@ -25,6 +25,8 @@ func NewElementHandler(svc *service.ElementService) *ElementHandler {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.element.read"]
 // @Router /elements [get]
 // @Security BearerAuth
 func (h *ElementHandler) ListElements(c *gin.Context) {
@@ -75,6 +77,8 @@ func (h *ElementHandler) ListElements(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.element.create"]
 // @Router /elements [post]
 // @Security BearerAuth
 func (h *ElementHandler) CreateElement(c *gin.Context) {
@@ -100,6 +104,8 @@ func (h *ElementHandler) CreateElement(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.element.read"]
 // @Router /elements/{id} [get]
 // @Security BearerAuth
 func (h *ElementHandler) GetElement(c *gin.Context) {
@@ -123,6 +129,8 @@ func (h *ElementHandler) GetElement(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.element.update"]
 // @Router /elements/{id} [put]
 // @Security BearerAuth
 func (h *ElementHandler) UpdateElement(c *gin.Context) {
@@ -154,6 +162,8 @@ func (h *ElementHandler) UpdateElement(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.element.delete"]
 // @Router /elements/{id} [delete]
 // @Security BearerAuth
 func (h *ElementHandler) DeleteElement(c *gin.Context) {
@@ -176,6 +186,8 @@ func (h *ElementHandler) DeleteElement(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.element.approve"]
 // @Router /elements/{id}/approve [post]
 // @Security BearerAuth
 func (h *ElementHandler) ApproveElement(c *gin.Context) {
@@ -200,6 +212,8 @@ func (h *ElementHandler) ApproveElement(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.element.read"]
 // @Router /elements/{id}/quality-rules [get]
 // @Security BearerAuth
 func (h *ElementHandler) GetElementQualityRules(c *gin.Context) {

@@ -35,6 +35,7 @@ func NewWMTSHandler(tileServiceService tileServiceLookup) *WMTSHandler {
 // @Success 200 {object} Capabilities "WMTS Capabilities XML | WMTS Capabilities XML"
 // @Failure 401 {object} ExceptionReport "需要认证 | Authentication required"
 // @Failure 403 {object} ExceptionReport "无权访问 | Access denied"
+// @x-addp-auth-mode "public"
 // @Router /wmts/{serviceName} [get]
 func (h *WMTSHandler) GetCapabilities(c *gin.Context) {
 	serviceName := c.Param("serviceName")

@@ -35,11 +35,13 @@ func NewGraphQueryHandler(s *svc.GraphQueryServiceService, executor *data.GraphQ
 // @Param request body models.CreateGraphQueryServiceRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.create"]
 // @Router /graph [post]
 // @Security BearerAuth
 func (h *GraphQueryHandler) CreateService(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := tenantIDValue(c)
+	userID := userIDValue(c)
 	if tenantID == 0 || userID == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing tenant_id or user_id in token"})
 		return
@@ -69,10 +71,12 @@ func (h *GraphQueryHandler) CreateService(c *gin.Context) {
 // @Param search query string false "搜索词 | Search"
 // @Success 200 {object} map[string]interface{}
 // @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.read"]
 // @Router /graph [get]
 // @Security BearerAuth
 func (h *GraphQueryHandler) ListServices(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 	if tenantID == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing tenant_id in token"})
 		return
@@ -124,6 +128,8 @@ func (h *GraphQueryHandler) ListServices(c *gin.Context) {
 // @Param id path int true "服务ID | Service ID"
 // @Success 200 {object} map[string]interface{}
 // @Failure 404 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.read"]
 // @Router /graph/{id} [get]
 // @Security BearerAuth
 func (h *GraphQueryHandler) GetService(c *gin.Context) {
@@ -156,6 +162,8 @@ func (h *GraphQueryHandler) GetService(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.update"]
 // @Router /graph/{id} [put]
 // @Security BearerAuth
 func (h *GraphQueryHandler) UpdateService(c *gin.Context) {
@@ -191,6 +199,8 @@ func (h *GraphQueryHandler) UpdateService(c *gin.Context) {
 // @Param id path int true "服务ID | Service ID"
 // @Success 200 {object} map[string]string
 // @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.delete"]
 // @Router /graph/{id} [delete]
 // @Security BearerAuth
 func (h *GraphQueryHandler) DeleteService(c *gin.Context) {
@@ -223,6 +233,7 @@ func (h *GraphQueryHandler) DeleteService(c *gin.Context) {
 // @Failure 401 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "public"
 // @Router /api/gquery/{serviceName} [post]
 func (h *GraphQueryHandler) ExecuteQuery(c *gin.Context) {
 	serviceName := c.Param("serviceName")
@@ -232,7 +243,7 @@ func (h *GraphQueryHandler) ExecuteQuery(c *gin.Context) {
 	}
 
 	// tenantID 可能为 0（公开访问）
-	tenantID := c.GetUint("tenant_id")
+	tenantID := tenantIDValue(c)
 
 	var req models.GraphQueryExecuteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

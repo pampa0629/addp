@@ -43,11 +43,12 @@ func itemTypes(items []*models.MetaItem) map[string]struct{} {
 	return result
 }
 
-func catalogEntryRowCount(node plugin.CatalogEntry, itemType string) int64 {
-	if itemType == "collection" && node.Table != nil && node.Table.RowCount != nil {
-		return *node.Table.RowCount
+func catalogEntryEstimatedRowCount(node plugin.CatalogEntry, itemType string) *int64 {
+	if itemType == "collection" && node.Table != nil && node.Table.EstimatedRowCount != nil {
+		estimatedRowCount := *node.Table.EstimatedRowCount
+		return &estimatedRowCount
 	}
-	return 0
+	return nil
 }
 
 func catalogEntrySizeBytes(node plugin.CatalogEntry) int64 {

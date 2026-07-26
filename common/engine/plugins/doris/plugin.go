@@ -129,8 +129,9 @@ func (p *DorisPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) err
 
 func (p *DorisPlugin) BuildDSN(connInfo plugin.ConnectionInfo) (string, error) {
 	return plugin.BuildMySQLCompatibleDSN(connInfo, p.DefaultPort(), p.DisplayName(), map[string]string{
-		"parseTime": "true",
-		"timeout":   "10s",
+		"interpolateParams": "true",
+		"parseTime":         "true",
+		"timeout":           "10s",
 	})
 }
 

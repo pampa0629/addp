@@ -24,6 +24,8 @@ func NewKnowledgeGraphHandler(svc *service.KnowledgeGraphService) *KnowledgeGrap
 // @Security     BearerAuth
 // @Success      200 {array}  models.KnowledgeGraph
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.graph.read"]
 // @Router       /graphs [get]
 func (h *KnowledgeGraphHandler) List(c *gin.Context) {
 	tenantID := getTenantID(c)
@@ -44,6 +46,8 @@ func (h *KnowledgeGraphHandler) List(c *gin.Context) {
 // @Param        id path int true "知识图谱 ID | Knowledge graph ID"
 // @Success      200 {object} models.KnowledgeGraph
 // @Failure      404 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.graph.read"]
 // @Router       /graphs/{id} [get]
 func (h *KnowledgeGraphHandler) Get(c *gin.Context) {
 	id := parseUintParam(c, "id")
@@ -67,6 +71,8 @@ func (h *KnowledgeGraphHandler) Get(c *gin.Context) {
 // @Success      201 {object} models.KnowledgeGraph
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.graph.create"]
 // @Router       /graphs [post]
 func (h *KnowledgeGraphHandler) Create(c *gin.Context) {
 	tenantID := getTenantID(c)
@@ -95,6 +101,8 @@ func (h *KnowledgeGraphHandler) Create(c *gin.Context) {
 // @Success      200 {object} models.KnowledgeGraph
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.graph.update"]
 // @Router       /graphs/{id} [put]
 func (h *KnowledgeGraphHandler) Update(c *gin.Context) {
 	id := parseUintParam(c, "id")
@@ -121,6 +129,8 @@ func (h *KnowledgeGraphHandler) Update(c *gin.Context) {
 // @Param        id path int true "知识图谱 ID | Knowledge graph ID"
 // @Success      200 {object} models.SuccessResponse
 // @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.graph.delete"]
 // @Router       /graphs/{id} [delete]
 func (h *KnowledgeGraphHandler) Delete(c *gin.Context) {
 	id := parseUintParam(c, "id")

@@ -41,82 +41,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
-            }
-        },
-        "/cache/engines/{engine_id}": {
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "清除指定存储引擎缓存，engine_id 为 all 时清除全部缓存 | Clear storage engine cache",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Meta Cache"
-                ],
-                "summary": "清除引擎缓存 | Clear engine cache",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "存储引擎ID或all | Engine ID or all",
-                        "name": "engine_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "清除结果 | Clear result",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "请求参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/cache/refresh": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "清除并重新预加载存储引擎缓存 | Clear and preload storage engine cache",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Meta Cache"
-                ],
-                "summary": "刷新存储引擎缓存 | Refresh storage engine cache",
-                "responses": {
-                    "200": {
-                        "description": "刷新结果 | Refresh result",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "服务器内部错误 | Internal server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/engines": {
@@ -151,7 +80,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/engines/{engine_id}/items": {
@@ -208,7 +141,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/engines/{engine_id}/tree": {
@@ -256,7 +193,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/executions/{execution_id}": {
@@ -319,7 +260,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.read"
+                ]
             }
         },
         "/inspect": {
@@ -372,7 +317,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.inspect.execute"
+                ]
             }
         },
         "/items/by-catalog-path": {
@@ -427,7 +376,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/items/{item_id}": {
@@ -475,7 +428,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/items/{item_id}/ancestors": {
@@ -523,7 +480,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/items/{item_id}/fields": {
@@ -572,7 +533,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/items/{item_id}/refresh": {
@@ -631,7 +596,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.execute"
+                ]
             }
         },
         "/items/{item_id}/spatial": {
@@ -679,7 +648,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/nodes/by-catalog-path": {
@@ -734,7 +707,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/nodes/{node_id}": {
@@ -782,7 +759,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/nodes/{node_id}/ancestors": {
@@ -833,7 +814,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/nodes/{node_id}/children": {
@@ -884,7 +869,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/nodes/{node_id}/items": {
@@ -935,7 +924,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/resource-tree/{engine_id}": {
@@ -1003,7 +996,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/resource-tree/{engine_id}/ancestors": {
@@ -1072,7 +1069,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/resource-tree/{engine_id}/node": {
@@ -1141,7 +1142,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/resource-tree/{engine_id}/refresh": {
@@ -1225,7 +1230,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.execute"
+                ]
             }
         },
         "/resource-tree/{engine_id}/search": {
@@ -1306,7 +1315,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/scan/run/manual": {
@@ -1374,7 +1387,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.execute"
+                ]
             }
         },
         "/scan/run/unscanned": {
@@ -1421,7 +1438,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.execute"
+                ]
             }
         },
         "/scan/runs": {
@@ -1502,7 +1523,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.read"
+                ]
             }
         },
         "/scan/tasks": {
@@ -1560,7 +1585,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.read"
+                ]
             },
             "post": {
                 "security": [
@@ -1619,7 +1648,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.create"
+                ]
             }
         },
         "/scan/tasks/engines/{engine_id}": {
@@ -1686,7 +1719,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -1740,7 +1777,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.delete"
+                ]
             }
         },
         "/scan/tasks/{task_id}": {
@@ -1808,7 +1849,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.update"
+                ]
             },
             "delete": {
                 "security": [
@@ -1862,7 +1907,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.delete"
+                ]
             }
         },
         "/scan/tasks/{task_id}/trigger": {
@@ -1918,7 +1967,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.execute"
+                ]
             }
         },
         "/stats": {
@@ -1951,7 +2004,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.catalog.read"
+                ]
             }
         },
         "/tasks": {
@@ -2019,7 +2076,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.read"
+                ]
             }
         },
         "/tasks/{task_type}/{id}": {
@@ -2081,7 +2142,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.read"
+                ]
             }
         },
         "/tasks/{task_type}/{id}/execute": {
@@ -2154,7 +2219,11 @@
                             "additionalProperties": true
                         }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.execute"
+                ]
             }
         }
     },

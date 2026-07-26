@@ -41,7 +41,7 @@ func TestListEnginesReturnsOnlySystemQueryEngines(t *testing.T) {
 	router := gin.New()
 	handler := NewEngineHandler(commonClient.NewSystemClientWithInternalKey(systemServer.URL, "test-key"))
 	router.GET("/engines", func(c *gin.Context) {
-		c.Set("tenant_id", uint(7))
+		setTenantAuthContextForTest(c, 7, 1)
 		handler.ListEngines(c)
 	})
 

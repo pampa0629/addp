@@ -1098,6 +1098,9 @@ func containerChildPreviewMap(childInfo datatype.ContainerChildInfo, index int) 
 	if childInfo.RowCount != nil {
 		child["row_count"] = *childInfo.RowCount
 	}
+	if childInfo.EstimatedRowCount != nil {
+		child["estimated_row_count"] = *childInfo.EstimatedRowCount
+	}
 	if childInfo.ColumnCount != nil {
 		child["column_count"] = *childInfo.ColumnCount
 	}

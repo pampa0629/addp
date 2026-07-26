@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	commonauth "github.com/addp/common/authorization"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	commonModels "github.com/addp/common/models"
@@ -199,7 +200,7 @@ func TestRequireTenantIDRejectsTenantlessIdentity(t *testing.T) {
 	router := gin.New()
 	router.Use(commoni18n.I18nMiddleware())
 	router.Use(func(c *gin.Context) {
-		c.Set(commonAuth.ContextAuthorizationContextKey, commonAuth.AuthorizationContext{SubjectType: "user", UserID: 1})
+		setTestAuthorizationContext(c, 0, 1)
 		c.Next()
 	})
 	router.GET("/", func(c *gin.Context) {
@@ -288,14 +289,45 @@ func executeTenantHandlerRequest(t *testing.T, handler gin.HandlerFunc, tenantID
 
 func testTenantAuthorizationContext(tenantID, userID uint) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Set(commonAuth.ContextAuthorizationContextKey, commonAuth.AuthorizationContext{
-			SubjectType: "user",
-			UserID:      userID,
-			TenantID:    &tenantID,
-		})
-		c.Set(commonAuth.ContextTenantIDKey, tenantID)
-		c.Set(commonAuth.ContextUserIDKey, userID)
+		setTestAuthorizationContext(c, tenantID, userID)
 		c.Next()
+	}
+}
+
+func setTestAuthorizationContext(c *gin.Context, tenantID, userID uint) {
+	now := time.Now().UTC()
+	clientID := "addp-web"
+	authContext := commonauth.AuthContext{
+		SchemaVersion: commonauth.AuthContextSchemaVersion,
+		Principal:     commonauth.AuthPrincipal{Type: "user", ID: fmt.Sprint(userID)},
+		Authentication: commonauth.AuthenticationFacts{
+			Methods: []string{"password"}, AssuranceLevel: "aal1", AuthenticatedAt: now,
+		},
+		Client: commonauth.ClientConstraints{
+			ClientID: &clientID, Audiences: []string{"addp.api"}, ScopeMode: "unrestricted", Scopes: []string{},
+		},
+		Organization: commonauth.OrganizationContext{
+			Departments: []commonauth.DepartmentMembership{}, ProjectGroups: []commonauth.ProjectGroupMembership{},
+		},
+		Authorization: commonauth.AuthorizationFacts{AuthorizationVersion: "1", RoleAssignments: []commonauth.RoleAssignment{}},
+		Token: commonauth.TokenFacts{
+			Type: "first_party_access_token", IssuedAt: now, ExpiresAt: now.Add(time.Hour),
+		},
+	}
+	if tenantID == 0 {
+		authContext.Context = commonauth.AuthSessionContext{Type: "platform"}
+		authContext.Authentication = commonauth.AuthenticationFacts{
+			Methods: []string{"password", "totp"}, AssuranceLevel: "aal2", AuthenticatedAt: now,
+		}
+	} else {
+		formattedTenantID := fmt.Sprint(tenantID)
+		membershipID := "1"
+		authContext.Context = commonauth.AuthSessionContext{
+			Type: "tenant", TenantID: &formattedTenantID, TenantMembershipID: &membershipID,
+		}
+	}
+	if err := commonAuth.SetAuthContextForGin(c, authContext); err != nil {
+		panic(err)
 	}
 }
 

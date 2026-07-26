@@ -63,6 +63,8 @@ type graphTaskListResponse struct {
 // @Success 200 {object} graphTaskListResponse "任务列表 | Task list"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.build_task.read"]
 // @Router /tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListProviderTasks(c *gin.Context) {
@@ -108,6 +110,8 @@ func (h *TaskProviderHandler) ListProviderTasks(c *gin.Context) {
 // @Success 200 {object} graphTaskListItem
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 404 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.build_task.read"]
 // @Router /tasks/{task_type}/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetProviderTask(c *gin.Context) {
@@ -143,6 +147,8 @@ func (h *TaskProviderHandler) GetProviderTask(c *gin.Context) {
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 409 {object} models.ErrorResponse
 // @Failure 500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.build_task.execute"]
 // @Router /tasks/{task_type}/{id}/execute [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ExecuteProviderTask(c *gin.Context) {
@@ -208,6 +214,8 @@ func (h *TaskProviderHandler) ExecuteProviderTask(c *gin.Context) {
 // @Param execution_id path string true "执行UUID | Execution UUID"
 // @Success 200 {object} map[string]interface{} "执行记录 | Execution"
 // @Failure 404 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.build_task.read"]
 // @Router /executions/{execution_id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetProviderExecution(c *gin.Context) {
