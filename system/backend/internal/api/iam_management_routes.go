@@ -12,6 +12,7 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime) erro
 		runtime.PlatformTenantHandler == nil || runtime.PlatformUserHandler == nil ||
 		runtime.TenantMembershipHandler == nil || runtime.AuditHandler == nil ||
 		runtime.TenantInvitationHandler == nil ||
+		runtime.TenantRoleHandler == nil ||
 		runtime.PrivilegedIdentityChangeHandler == nil {
 		return errors.New("IAM 管理路由依赖不完整")
 	}
@@ -29,13 +30,14 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime) erro
 
 	platformTenantPermissions, err := permissionGuards(permission, []string{
 		"platform.tenant.close", "platform.tenant.create", "platform.tenant.read",
-		"platform.tenant.restore", "platform.tenant.suspend", "platform.tenant.update",
+		"platform.tenant.initialize", "platform.tenant.restore", "platform.tenant.suspend", "platform.tenant.update",
 	})
 	if err != nil {
 		return err
 	}
 	platformUserPermissions, err := permissionGuards(permission, []string{
-		"iam.user.create", "iam.user.read", "iam.user.reactivate", "iam.user.suspend", "iam.user.update",
+		"iam.local_account.reset", "iam.user.create", "iam.user.read",
+		"iam.user.reactivate", "iam.user.suspend", "iam.user.update",
 	})
 	if err != nil {
 		return err
@@ -59,10 +61,12 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime) erro
 	platform := api.Group("/platform")
 	platform.Use(runtime.Authentication, runtime.FirstPartyCredential, platformContext)
 	{
+		platform.GET("/tenant_administrator_candidates", platformTenantPermissions["platform.tenant.create"], runtime.PlatformTenantHandler.ListAdministratorCandidates)
 		tenants := platform.Group("/tenants")
 		{
 			tenants.GET("", platformTenantPermissions["platform.tenant.read"], runtime.PlatformTenantHandler.List)
 			tenants.POST("", platformTenantPermissions["platform.tenant.create"], runtime.PlatformTenantHandler.Create)
+			tenants.POST("/:id/initialization", platformTenantPermissions["platform.tenant.initialize"], runtime.PlatformTenantHandler.Initialize)
 			tenants.GET("/:id", platformTenantPermissions["platform.tenant.read"], runtime.PlatformTenantHandler.Get)
 			tenants.PUT("/:id", platformTenantPermissions["platform.tenant.update"], runtime.PlatformTenantHandler.Update)
 			tenants.POST("/:id/suspend", platformTenantPermissions["platform.tenant.suspend"], runtime.PlatformTenantHandler.Suspend)
@@ -75,6 +79,7 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime) erro
 			users.POST("", platformUserPermissions["iam.user.create"], runtime.PlatformUserHandler.Create)
 			users.GET("/:id", platformUserPermissions["iam.user.read"], runtime.PlatformUserHandler.Get)
 			users.PUT("/:id", platformUserPermissions["iam.user.update"], runtime.PlatformUserHandler.Update)
+			users.POST("/:id/reset-password", platformUserPermissions["iam.local_account.reset"], runtime.PlatformUserHandler.ResetLocalAccountPassword)
 			users.POST("/:id/suspend", platformUserPermissions["iam.user.suspend"], runtime.PlatformUserHandler.Suspend)
 			users.POST("/:id/reactivate", platformUserPermissions["iam.user.reactivate"], runtime.PlatformUserHandler.Reactivate)
 		}
@@ -109,6 +114,13 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime) erro
 	if err != nil {
 		return err
 	}
+	tenantRolePermissions, err := permissionGuards(permission, []string{
+		"iam.tenant_role.create", "iam.tenant_role.delete", "iam.tenant_role.read", "iam.tenant_role.update",
+		"iam.tenant_role_assignment.create", "iam.tenant_role_assignment.read", "iam.tenant_role_assignment.revoke",
+	})
+	if err != nil {
+		return err
+	}
 	tenantAuditRead, err := permission("audit.tenant_event.read")
 	if err != nil {
 		return err
@@ -120,6 +132,20 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime) erro
 	tenant := api.Group("/tenant")
 	tenant.Use(runtime.Authentication, runtime.FirstPartyCredential, tenantContext)
 	{
+		tenant.GET("/role_permissions", tenantRolePermissions["iam.tenant_role.read"], runtime.TenantRoleHandler.ListAssignablePermissions)
+		roles := tenant.Group("/roles")
+		{
+			roles.GET("", tenantRolePermissions["iam.tenant_role.read"], runtime.TenantRoleHandler.ListRoles)
+			roles.POST("", tenantRolePermissions["iam.tenant_role.create"], runtime.TenantRoleHandler.CreateRole)
+			roles.PUT("/:id", tenantRolePermissions["iam.tenant_role.update"], runtime.TenantRoleHandler.UpdateRole)
+			roles.DELETE("/:id", tenantRolePermissions["iam.tenant_role.delete"], runtime.TenantRoleHandler.DeleteRole)
+		}
+		roleAssignments := tenant.Group("/role_assignments")
+		{
+			roleAssignments.GET("", tenantRolePermissions["iam.tenant_role_assignment.read"], runtime.TenantRoleHandler.ListAssignments)
+			roleAssignments.POST("", tenantRolePermissions["iam.tenant_role_assignment.create"], runtime.TenantRoleHandler.CreateAssignment)
+			roleAssignments.POST("/:id/revoke", tenantRolePermissions["iam.tenant_role_assignment.revoke"], runtime.TenantRoleHandler.RevokeAssignment)
+		}
 		invitations := tenant.Group("/invitations")
 		{
 			invitations.GET("", invitationPermissions["iam.tenant_invitation.read"], runtime.TenantInvitationHandler.List)

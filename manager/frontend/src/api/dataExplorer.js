@@ -68,6 +68,20 @@ export const dataExplorerAPI = {
       timeout: 60000 // 空间数据预览可能需要更长时间（60秒）
     })
   },
+  getDataProfileCurrent(locator, selection = {}) {
+    const params = { locator }
+    if (selection.childName) params.child_name = selection.childName
+    if (selection.refPath) params.ref_path = selection.refPath
+    if (selection.nestedChildPath) params.nested_child_path = selection.nestedChildPath
+    return client.get('/manager/data-profiles/current', { params })
+  },
+  createDataProfileExecution(locator, selection = {}) {
+    const payload = { locator, mode: 'sample' }
+    if (selection.childName) payload.child_name = selection.childName
+    if (selection.refPath) payload.ref_path = selection.refPath
+    if (selection.nestedChildPath) payload.nested_child_path = selection.nestedChildPath
+    return client.post('/manager/data-profile-executions', payload)
+  },
   getResourceActions(locator) {
     return client.get('/manager/resource-actions', {
       params: { locator }

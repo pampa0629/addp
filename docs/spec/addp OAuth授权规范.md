@@ -1,8 +1,10 @@
 # ADDP OAuth 授权规范
 
-更新日期：2026-07-23
+更新日期：2026-07-27
 
-状态：阶段 4.3 正式规范。OAuth 登录、浏览器会话、资源票据和受委托访问令牌均以本文为准；OAuth/OIDC 协议引擎目标路线已确认，运行代码尚待一次性切换。
+状态：阶段 4.3 正式规范。OAuth 登录、浏览器会话、资源票据和受委托访问令牌均以本文为准；OAuth 运行代码已一次性切换到受控 Fosite 唯一主路径，真实 Browser 登录与 OAuth 客户端协议 E2E 已覆盖 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、刷新轮换和撤销。OIDC 尚未启用，当前唯一运行路径不注册 OpenID Handler、不允许 `openid` Scope，也不宣告 Discovery/JWKS；待 issuer、Claim 和密钥生命周期独立设计完成后再实施。
+
+当前验收使用一次性测试驱动实作 OAuth 公共客户端，证明 System 服务端协议路径；仓库内尚未交付可发布的 `addp-cli` 产品可执行程序。正式 CLI 交付时必须复用本文唯一协议路径，并单独通过密钥链、跨进程锁、本地回调页和产品 CLI E2E 验收。
 
 ## 一、统一令牌模型
 

@@ -136,7 +136,7 @@
 | Item Type | 预览方式 | Provider |
 |-----------|---------|---------|
 | `table` / `view` | 分页表格（列名 + 数据行） | DatabasePreviewProvider |
-| `collection` | 分页表格（动态 schema 字段画像 + 记录数据） | DynamicSchemaCollectionPreviewProvider |
+| `collection` | 分页表格（动态 schema 字段结构推断 + 记录数据） | DynamicSchemaCollectionPreviewProvider |
 | `graph` | 图结构视图、节点 / 关系采样、按 node shape / relationship shape 筛选 | GraphPreviewProvider |
 | `file` | 文件内容预览（文本/图片/空间数据等） | FileSystemPreviewProvider |
 | `object` | 对象内容预览（同上） | ObjectStoragePreviewProvider |

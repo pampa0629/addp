@@ -112,6 +112,7 @@ func (s *MFAService) BeginChallenge(
 		challenge := &MFAChallenge{
 			TokenHash:                  hashOpaqueToken(plainToken),
 			PrincipalID:                principal.ID,
+			Purpose:                    "login",
 			IssuedAuthorizationVersion: principal.AuthorizationVersion,
 			AuthenticationMethods:      pq.StringArray{"password"},
 			AuthenticatedAt:            authenticated.AuthenticatedAt.UTC(),
@@ -162,7 +163,8 @@ func (s *MFAService) VerifyChallenge(
 			return hideMFAStorageError(err)
 		}
 		now := s.now().UTC()
-		if challenge.ID != snapshot.ID || challenge.PrincipalID != principal.ID || challenge.ConsumedAt != nil ||
+		if challenge.ID != snapshot.ID || challenge.PrincipalID != principal.ID || challenge.Purpose != "login" ||
+			challenge.SourceFamilyID != nil || challenge.ConsumedAt != nil ||
 			!challenge.ExpiresAt.After(now) || challenge.FailedAttempts >= maxMFAFailedAttempts ||
 			principal.PrincipalType != PrincipalTypeUser || principal.Status != PrincipalStatusActive ||
 			principal.AuthorizationVersion != challenge.IssuedAuthorizationVersion {

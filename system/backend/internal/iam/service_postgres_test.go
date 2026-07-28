@@ -100,15 +100,9 @@ func TestIAMServicesAgainstPostgres(t *testing.T) {
 	assertIAMServiceAuditCount(t, db, "iam.authentication.succeeded", AuditResultSucceeded, 1)
 
 	currentTime = currentTime.Add(time.Second)
-	tenant, err := membershipService.CreateTenant(ctx, CreateTenantInput{
-		Code:        " Research-Lab ",
-		Name:        "Research Lab",
-		Description: "IAM service integration tenant",
-		Audit:       validAudit,
-	})
-	if err != nil {
-		t.Fatalf("create tenant: %v", err)
-	}
+	tenant := createUninitializedTenantFixture(
+		t, ctx, repository, " Research-Lab ", "Research Lab", "IAM service integration tenant",
+	)
 	if tenant.Code != "research-lab" {
 		t.Fatalf("tenant code = %q, want research-lab", tenant.Code)
 	}

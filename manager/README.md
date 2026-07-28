@@ -8,6 +8,7 @@
 - **[CLAUDE.md](./CLAUDE.md)** - 模块定位、核心 API、开发规则和文档导航
 - **[manager/docs/数据预览与资源树实现规范.md](./docs/数据预览与资源树实现规范.md)** - 数据探查、资源树、预览 API、PreviewResolver 和 PreviewProvider 当前实现规范
 - **[manager/docs/数据预览语义协议.md](./docs/数据预览语义协议.md)** - `content.kind`、`preview_material`、`frontend_renderer` 等预览响应语义
+- **[manager/docs/数据剖析规范.md](./docs/数据剖析规范.md)** - 表格数据剖析的产品边界、采样执行、结果存储和前端呈现规范
 - **[manager/docs/三维模型、点云与高斯泼溅预览说明.md](./docs/三维模型、点云与高斯泼溅预览说明.md)** - 三维模型、3D Tiles、点云和 3DGS 预览、快显任务与状态说明
 - **[manager/docs/存储流与原始下载语义.md](./docs/存储流与原始下载语义.md)** - `storage-stream`、`downloads/file` 与 DownloadPlan 语义
 
@@ -15,6 +16,7 @@
 
 - **数据探查**: 浏览 8 种存储引擎中的数据（PostgreSQL、MySQL、Doris、ClickHouse、MongoDB、Apache Spark、MinIO、S3）
 - **数据预览**: 插件化架构，支持多种格式（CSV、JSON、Parquet、Shapefile、图片等）
+- **数据剖析**: 对表格型 data item 按需执行有界采样，展示字段完整性、基数、统计指标、分布和描述性观察
 - **空间数据可视化**: 基础预览 + 快显模式 + 中小规模 FlatGeobuf + 大规模 MVT/瓦片缓存 + TIFF/COG 栅格快显
 - **三维与点云快显**: GLB、3D Tiles、KSplat 和 COPC 受管 artifact 预览，源点云 COPC 直接基础预览
 - **数据检索**: 基于 Meilisearch + 向量数据库的混合检索（全文检索 + 语义检索）
@@ -60,6 +62,8 @@ CSV、JSON、Parquet、Excel、Shapefile、GeoJSON、图片、PDF、文本
 
 ```
 数据预览:     GET  /api/v1/manager/preview
+当前剖析:     GET  /api/v1/manager/data-profiles/current?locator={ResourceLocator}
+执行剖析:     POST /api/v1/manager/data-profile-executions
 存储流预览:   GET  /api/v1/manager/storage-stream
 原始下载:     GET  /api/v1/manager/downloads/file?locator={ResourceLocator}
 上传数据:     POST /api/v1/manager/uploads
@@ -81,7 +85,7 @@ CSV、JSON、Parquet、Excel、Shapefile、GeoJSON、图片、PDF、文本
 数据检索:     GET  /api/v1/manager/search
 ```
 
-完整 API 文档和请求示例请查看 [数据预览与资源树实现规范](./docs/数据预览与资源树实现规范.md) 和 [快显实现规范](./docs/快显实现规范.md)。
+完整 API 文档和请求示例请查看 [数据预览与资源树实现规范](./docs/数据预览与资源树实现规范.md)、[数据剖析规范](./docs/数据剖析规范.md) 和 [快显实现规范](./docs/快显实现规范.md)。
 
 ## 🏗️ 核心架构
 
@@ -154,6 +158,7 @@ tail -f logs/manager-backend.log
 - **[CLAUDE.md](./CLAUDE.md)** - Manager 模块定位、核心 API、开发规则和文档导航
 - **[manager/docs/数据预览与资源树实现规范.md](./docs/数据预览与资源树实现规范.md)** - Manager 数据探查、资源树、预览 API 和插件编排实现规范
 - **[manager/docs/数据预览语义协议.md](./docs/数据预览语义协议.md)** - Manager 预览响应材料和前端渲染语义
+- **[manager/docs/数据剖析规范.md](./docs/数据剖析规范.md)** - Manager 表格数据剖析的产品、owner、执行、结果和当前实现边界
 - **[manager/docs/存储流与原始下载语义.md](./docs/存储流与原始下载语义.md)** - Manager 存储叶子流式预览和逻辑对象原始下载语义
 - **[manager/docs/快显概念说明.md](./docs/快显概念说明.md)** - Manager 快显、矢量物化视图和瓦片缓存的价值、概念、分工和边界
 - **[manager/docs/快显实现规范.md](./docs/快显实现规范.md)** - 快显、矢量物化视图、瓦片缓存结果和生成任务的表结构、API 契约、技术路线与验证记录

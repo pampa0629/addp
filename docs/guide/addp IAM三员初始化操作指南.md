@@ -17,7 +17,7 @@
 | 名称 | 外观 | 用途 | 应该输入到哪里 |
 | --- | --- | --- | --- |
 | Bootstrap Secret | 以 `addp_bs_` 开头 | 授权本次一次性初始化 | CLI 的 `Bootstrap Secret:` 提示 |
-| TOTP Secret | 较长的 Base32 字母数字串 | 在认证器中建立 TOTP 账号 | 认证器 App 的“设置密钥”页面 |
+| TOTP Secret | 较长的 Base32 字母数字串 | 在不支持扫码时手动建立 TOTP 账号 | 认证器 App 明确标注的“手动输入设置密钥/TOTP”页面，不能填入短信/邮件激活入口 |
 | TOTP 验证码 | 6 位数字，每 30 秒变化 | 证明当前持有认证器 | CLI 的“TOTP 验证码”提示 |
 
 最容易发生的错误是把 TOTP Secret 粘贴到“TOTP 验证码”提示。这里必须输入认证器当前显示的 **6 位数字**，不能输入 Secret。
@@ -118,11 +118,11 @@ CLI 会依次处理系统管理员、安全管理员和审计管理员。每个�
 
 1. 输入该账号的独立密码；
 2. 再次输入相同密码；
-3. CLI 显示 TOTP Secret 和 Enrollment URI；
-4. 打开认证器，选择“添加账号”“输入设置密钥”或同类入口；
-5. 账号名称填写 CLI 当前显示的用户名，例如 `system-admin`；
-6. 密钥填写 CLI 显示的 TOTP Secret；
-7. 类型选择“基于时间”或“TOTP”；
+3. CLI 在终端直接显示 TOTP 二维码，并同时显示手动设置密钥备用值；
+4. 打开认证器，选择“添加账号”或“扫描二维码”；
+5. 首选直接扫描终端二维码；
+6. 只有认证器明确提供“手动输入设置密钥/TOTP”时，才填写 CLI 显示的 TOTP Secret，并选择“基于时间”或“TOTP”；
+7. 不要把 TOTP Secret 填入短信/邮件激活入口，该入口需要认证器厂商发送的激活码，不是标准 TOTP 登记；
 8. 保存后，认证器会显示 6 位数字验证码；
 9. 在 CLI 的“输入当前 TOTP 验证码”处输入该 6 位数字；
 10. 等待认证器数字变化后，立即输入新的 6 位数字。
@@ -203,7 +203,26 @@ select count(*) from system.role_assignments where status = 'active';
 
 ### 8.2 已完成 Bootstrap
 
-已完成后发现 TOTP Secret 泄露，不得重新运行 Bootstrap。必须走后续的高权限身份变更、MFA 重置和独立复核流程。
+已完成后忘记密码、丢失 TOTP 或发现 TOTP Secret 泄露，不得重新运行 Bootstrap，也不要修改 `system.iam_bootstrap_state` 或数据库中的 Password Hash。三名管理员仍至少有一人可以登录时，应优先走平台身份治理和独立复核；三员凭据均不可用时，使用离线整体恢复：
+
+```bash
+make build-iam-recovery
+dist/release-$(go env GOOS)-$(go env GOARCH)/addp-iam-recovery prepare
+dist/release-$(go env GOOS)-$(go env GOARCH)/addp-iam-recovery apply
+```
+
+`prepare` 只显示一次以 `addp_ir_` 开头的 Recovery Secret。保持终端打开，不要截图、复制到聊天、写入文件或命令行历史。随后直接执行 `apply`，在隐藏提示中输入该 Secret。
+
+`apply` 会从数据库确认三种平台角色的唯一当前持有人，并依次要求：
+
+1. 输入并确认三个互不相同、至少 14 字符的新密码；
+2. 使用认证器的“扫描二维码”入口扫描 CLI 直接显示的二维码；仅当认证器明确支持“手动输入设置密钥/TOTP”时才输入 TOTP Secret，不使用短信/邮件激活入口；
+3. 输入认证器当前显示的 6 位验证码；
+4. 等验证码变化后输入紧邻的下一个 6 位验证码。
+
+三个账号全部验证成功后才会在一个事务中替换凭据、撤销旧会话并完成恢复。任一步失败都不会留下部分恢复结果。恢复完成后应全量重启 ADDP，再分别验证三员 Browser `platform + AAL2` 登录。正式 `addp-cli` 交付后，还应在它的发布验收中验证 OAuth 登录；当前仓库尚无该产品可执行程序。
+
+若 `prepare` 报告三员角色持有人缺失、重复、已暂停或账号已禁用，不得使用 SQL 临时修补后继续。该状态已经超出凭据恢复边界，需要先按身份与授权治理流程处理。
 
 ## 九、常见问题
 

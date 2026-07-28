@@ -64,13 +64,13 @@
     </div>
 
     <div class="header-right">
-      <ThemeSwitcher style="margin-right: 8px;" />
-      <LangSwitcher style="margin-right: 16px;" />
+      <ThemeSwitcher class="header-theme" />
+      <LangSwitcher class="header-language" />
 
       <el-dropdown>
         <span class="user-dropdown">
           <el-icon><User /></el-icon>
-          {{ userDisplayName }}
+          <span class="user-name">{{ userDisplayName }}</span>
           <el-icon class="el-icon--right"><ArrowDown /></el-icon>
         </span>
         <template #dropdown>
@@ -362,6 +362,9 @@ function handleResultClick(item) {
   align-items: center;
 }
 
+.header-theme { margin-right: 8px; }
+.header-language { margin-right: 16px; }
+
 .user-dropdown {
   display: flex;
   align-items: center;
@@ -374,5 +377,13 @@ function handleResultClick(item) {
 
 .user-dropdown:hover {
   background: var(--addp-bg-secondary);
+}
+
+@media (max-width: 760px) {
+  .header { height: 52px; padding: 0 8px; }
+  .header-left { flex: 0 1 auto; gap: 4px; }
+  .logo-area { padding: 4px; }
+  .logo-area h1, .search-wrap, .group-tabs, .header-theme, .header-language, .user-name { display: none; }
+  .user-dropdown { padding: 8px; }
 }
 </style>

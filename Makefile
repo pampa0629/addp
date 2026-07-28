@@ -1,5 +1,5 @@
 .PHONY: help init dev build up down logs clean test test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release dev-all \
-        build-backend build-frontend build-debug build-release build-iam-bootstrap clean-dist \
+        build-backend build-frontend build-debug build-release build-iam-bootstrap build-iam-recovery clean-dist \
         infra-up infra-down infra-restart infra-status ports-validate
 
 # 默认目标
@@ -100,6 +100,9 @@ dev-system: ## 开发模式运行 System 模块
 
 build-iam-bootstrap: ## 构建一次性离线 IAM Bootstrap CLI
 	$(call build_one_service,system/backend,addp-iam-bootstrap,cmd/iam-bootstrap/main.go)
+
+build-iam-recovery: ## 构建离线 IAM 三员凭据恢复 CLI
+	$(call build_one_service,system/backend,addp-iam-recovery,cmd/iam-recovery/main.go)
 
 dev-manager: ## 开发模式运行 Manager 模块
 	@echo "$(GREEN)启动 Manager 模块开发环境...$(NC)"

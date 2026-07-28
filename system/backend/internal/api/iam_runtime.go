@@ -20,8 +20,10 @@ type IAMRuntime struct {
 	TokenFamilyService              *iam.TokenFamilyService
 	IdentityService                 *iam.IdentityService
 	MFAService                      *iam.MFAService
+	MFASessionService               *iam.MFASessionService
 	TenantMembershipService         *iam.TenantMembershipService
 	TenantInvitationService         *iam.TenantInvitationService
+	TenantRoleService               *iam.TenantRoleService
 	PlatformTenantService           *iam.PlatformTenantService
 	PlatformUserService             *iam.PlatformUserService
 	AuditQueryService               *iam.AuditQueryService
@@ -38,6 +40,7 @@ type IAMRuntime struct {
 	ConsentBridge                   *iamoauth.ConsentBridge
 
 	AuthHandler                     *IAMAuthHandler
+	MFASessionHandler               *IAMMFASessionHandler
 	OAuthHandler                    *IAMOAuthHandler
 	DelegationHandler               *IAMDelegationHandler
 	UserSelfHandler                 *IAMUserSelfHandler
@@ -45,6 +48,7 @@ type IAMRuntime struct {
 	PlatformUserHandler             *IAMPlatformUserHandler
 	TenantMembershipHandler         *IAMTenantMembershipHandler
 	TenantInvitationHandler         *IAMTenantInvitationHandler
+	TenantRoleHandler               *IAMTenantRoleHandler
 	InternalAuditHandler            *IAMInternalAuditHandler
 	AuditHandler                    *IAMAuditHandler
 	PrivilegedIdentityChangeHandler *IAMPrivilegedIdentityChangeHandler
@@ -92,6 +96,12 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config) (*IAMRuntime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("装配 IAM MFA Service: %w", err)
 	}
+	mfaSessionService, err := iam.NewMFASessionService(
+		repository, mfaCipher, tokenFamilyService, iam.MFAServiceConfig{}, nil, nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("装配 IAM MFA Session Service: %w", err)
+	}
 	tenantInvitationService, err := iam.NewTenantInvitationService(
 		repository, identityService, tokenFamilyService, iam.TenantInvitationServiceConfig{
 			InvitationTTL: invitationTTL, EnrollmentTicketTTL: enrollmentTicketTTL,
@@ -101,6 +111,7 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config) (*IAMRuntime, error) {
 		return nil, fmt.Errorf("装配 IAM Tenant Invitation Service: %w", err)
 	}
 	tenantMembershipService := iam.NewTenantMembershipService(repository, nil)
+	tenantRoleService := iam.NewTenantRoleService(repository, nil)
 	platformTenantService := iam.NewPlatformTenantService(repository, nil)
 	platformUserService := iam.NewPlatformUserService(repository, identityService, nil)
 	auditQueryService := iam.NewAuditQueryService(repository)
@@ -186,6 +197,10 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config) (*IAMRuntime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("装配 IAM Auth Handler: %w", err)
 	}
+	mfaSessionHandler, err := NewIAMMFASessionHandler(mfaSessionService, authHandler)
+	if err != nil {
+		return nil, fmt.Errorf("装配 IAM MFA Session Handler: %w", err)
+	}
 	tenantInvitationHandler, err := NewIAMTenantInvitationHandler(
 		tenantInvitationService, authContextService, authHandler, cfg.ConsoleURL,
 	)
@@ -223,6 +238,10 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config) (*IAMRuntime, error) {
 	tenantMembershipHandler, err := NewIAMTenantMembershipHandler(tenantMembershipService)
 	if err != nil {
 		return nil, fmt.Errorf("装配 IAM Tenant Membership Handler: %w", err)
+	}
+	tenantRoleHandler, err := NewIAMTenantRoleHandler(tenantRoleService)
+	if err != nil {
+		return nil, fmt.Errorf("装配 IAM Tenant Role Handler: %w", err)
 	}
 	auditHandler, err := NewIAMAuditHandler(auditQueryService)
 	if err != nil {
@@ -266,8 +285,10 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config) (*IAMRuntime, error) {
 		TokenFamilyService:              tokenFamilyService,
 		IdentityService:                 identityService,
 		MFAService:                      mfaService,
+		MFASessionService:               mfaSessionService,
 		TenantMembershipService:         tenantMembershipService,
 		TenantInvitationService:         tenantInvitationService,
+		TenantRoleService:               tenantRoleService,
 		PlatformTenantService:           platformTenantService,
 		PlatformUserService:             platformUserService,
 		AuditQueryService:               auditQueryService,
@@ -283,6 +304,7 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config) (*IAMRuntime, error) {
 		OAuthProvider:                   oauthProvider,
 		ConsentBridge:                   consentBridge,
 		AuthHandler:                     authHandler,
+		MFASessionHandler:               mfaSessionHandler,
 		OAuthHandler:                    oauthHandler,
 		DelegationHandler:               delegationHandler,
 		UserSelfHandler:                 userSelfHandler,
@@ -290,6 +312,7 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config) (*IAMRuntime, error) {
 		PlatformUserHandler:             platformUserHandler,
 		TenantMembershipHandler:         tenantMembershipHandler,
 		TenantInvitationHandler:         tenantInvitationHandler,
+		TenantRoleHandler:               tenantRoleHandler,
 		InternalAuditHandler:            internalAuditHandler,
 		AuditHandler:                    auditHandler,
 		PrivilegedIdentityChangeHandler: privilegedIdentityChangeHandler,

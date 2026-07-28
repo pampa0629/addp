@@ -70,6 +70,8 @@
       "continue": "Continue",
       "success": "Signed in",
       "failed": "Sign-in failed",
+      "invalidCredentials": "Incorrect username or password",
+      "invalidTotp": "The authenticator code is incorrect or expired",
       "networkError": "Unable to reach the authentication service"
     }
   },

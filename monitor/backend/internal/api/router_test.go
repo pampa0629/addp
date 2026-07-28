@@ -1,9 +1,18 @@
 package api
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
+	commonauth "github.com/addp/common/authorization"
+	commonexecution "github.com/addp/common/execution"
+	"github.com/addp/monitor/internal/service"
 	"github.com/gin-gonic/gin"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestSetupRouterRegistersExecutionTreeRoute(t *testing.T) {
@@ -118,5 +127,100 @@ func TestSetupRouterRegistersAlertRuleRoutes(t *testing.T) {
 		if !routes[route] {
 			t.Fatalf("alert rule route %s is not registered", route)
 		}
+	}
+}
+
+func TestListExecutionsUsesCanonicalTenantAuthContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	systemServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(monitorTenantAuthContext()); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	}))
+	defer systemServer.Close()
+
+	db, err := gorm.Open(sqlite.Open("file:monitor-api-auth-context?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
+		t.Fatalf("attach common schema: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE common.task_executions (
+		id INTEGER PRIMARY KEY,
+		tenant_id INTEGER NOT NULL,
+		execution_id TEXT NOT NULL,
+		module TEXT NOT NULL,
+		task_type TEXT NOT NULL,
+		source TEXT NOT NULL DEFAULT '',
+		source_task_id TEXT,
+		status TEXT NOT NULL,
+		trigger_type TEXT NOT NULL,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create task_executions: %v", err)
+	}
+
+	repository := commonexecution.NewTaskExecutionRepository(db)
+	queryService := service.NewExecutionQueryService(repository)
+	router := SetupRouter(queryService, nil, nil, nil, nil, nil, nil, systemServer.URL, nil, nil)
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/monitor/executions?page_size=1", nil)
+	request.Header.Set("Authorization", "Bearer addp_at_monitor")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", response.Code, response.Body.String())
+	}
+}
+
+func monitorTenantAuthContext() commonauth.AuthContext {
+	tenantID := "7"
+	membershipID := "9"
+	clientID := "addp-web"
+	issuedAt := time.Date(2026, 7, 28, 8, 0, 0, 0, time.UTC)
+	return commonauth.AuthContext{
+		SchemaVersion: commonauth.AuthContextSchemaVersion,
+		Principal:     commonauth.AuthPrincipal{Type: "user", ID: "12"},
+		Context: commonauth.AuthSessionContext{
+			Type:               "tenant",
+			TenantID:           &tenantID,
+			TenantMembershipID: &membershipID,
+		},
+		Authentication: commonauth.AuthenticationFacts{
+			Methods:         []string{"password"},
+			AssuranceLevel:  "aal1",
+			AuthenticatedAt: issuedAt.Add(-time.Minute),
+		},
+		Client: commonauth.ClientConstraints{
+			ClientID:  &clientID,
+			Audiences: []string{"addp.api"},
+			ScopeMode: "unrestricted",
+			Scopes:    []string{},
+		},
+		Organization: commonauth.OrganizationContext{
+			Departments:   []commonauth.DepartmentMembership{},
+			ProjectGroups: []commonauth.ProjectGroupMembership{},
+		},
+		Authorization: commonauth.AuthorizationFacts{
+			AuthorizationVersion: "3",
+			RoleAssignments: []commonauth.RoleAssignment{{
+				AssignmentID: "21",
+				RoleKey:      "tenant.monitoring_operator",
+				Scope:        commonauth.AssignmentScope{Type: "tenant", TenantID: &tenantID},
+				Permissions:  []string{"monitor.execution.read"},
+				SourceType:   "manual",
+				ValidFrom:    issuedAt.Add(-time.Hour),
+			}},
+		},
+		Token: commonauth.TokenFacts{
+			Type:      "first_party_access_token",
+			IssuedAt:  issuedAt,
+			ExpiresAt: issuedAt.Add(15 * time.Minute),
+		},
 	}
 }

@@ -18,17 +18,25 @@
       "title": "身份与访问管理",
       "assurance": "认证强度：{level}",
       "noPermission": "当前授权上下文没有可用的身份与访问管理权限",
+      "setup": {
+        "title": "当前账号仅负责租户组织与权限管理",
+        "description": "引擎、Meta 和其他业务能力需要通过独立租户角色显式授权。",
+        "action": "配置角色"
+      },
       "context": {
         "platform": "平台管理上下文",
         "tenant": "租户上下文 #{id}"
       },
       "tabs": {
+        "security": "安全设置",
         "tenants": "租户生命周期",
         "users": "用户生命周期",
         "identityChanges": "身份变更审批",
         "platformAudit": "平台审计",
         "memberships": "成员关系",
         "invitations": "租户邀请",
+        "roles": "租户角色",
+        "roleAssignments": "角色分配",
         "tenantAudit": "租户审计"
       },
       "common": {
@@ -38,11 +46,13 @@
         "close": "结束",
         "code": "编码",
         "confirm": "确认",
+        "continue": "继续",
         "copied": "已复制",
         "copy": "复制",
         "create": "创建",
         "createFailed": "创建失败",
         "description": "描述",
+        "delete": "删除",
         "done": "完成",
         "edit": "编辑",
         "export": "导出",
@@ -71,9 +81,35 @@
         "updated": "更新成功",
         "updatedAt": "更新时间"
       },
+      "security": {
+        "authenticator": "身份验证器",
+        "totp": "基于时间的一次性验证码（TOTP）",
+        "enabled": "已启用",
+        "notEnabled": "未启用",
+        "enable": "启用",
+        "enableAuthenticator": "启用身份验证器",
+        "currentPassword": "当前密码",
+        "qrCode": "身份验证器二维码",
+        "manualKey": "手动输入密钥",
+        "verificationCode": "6 位验证码",
+        "verifyAndEnable": "验证并启用",
+        "enabledSuccess": "身份验证器已启用，当前会话已提升至 AAL2",
+        "enrollmentFailed": "无法开始身份验证器登记",
+        "invalidCode": "验证码无效或已过期",
+        "stepUpTitle": "确认高风险操作",
+        "continueOperation": "验证并继续",
+        "stepUpFailed": "无法开始增强认证"
+      },
       "tenants": {
         "create": "创建租户",
-        "edit": "编辑租户"
+        "edit": "编辑租户",
+        "initialization": "初始化状态",
+        "initialize": "初始化租户",
+        "initialized": "已初始化",
+        "uninitialized": "未初始化",
+        "initialAdministrator": "首位租户管理员",
+        "initializedSuccess": "租户初始化成功",
+        "tenant": "租户"
       },
       "users": {
         "account": "用户 / 本地账号",
@@ -84,7 +120,13 @@
         "edit": "编辑用户",
         "email": "主邮箱",
         "locale": "语言",
+        "newPassword": "新密码",
         "password": "初始密码",
+        "confirmPassword": "确认新密码",
+        "passwordMismatch": "两次输入的密码不一致",
+        "passwordResetFailed": "密码重置失败",
+        "passwordResetSuccess": "密码已重置，既有登录会话已撤销",
+        "resetPassword": "重置密码",
         "username": "用户名"
       },
       "identityChanges": {
@@ -115,6 +157,42 @@
         "expiresAt": "到期时间",
         "revokeConfirm": "确认撤销发给 {email} 的邀请？",
         "urlOnce": "邀请链接只在创建时显示，请立即通过安全渠道交付"
+      },
+      "roles": {
+        "create": "创建自定义角色",
+        "edit": "编辑自定义角色",
+        "key": "角色标识",
+        "role": "角色",
+        "type": "角色类型",
+        "scopes": "允许范围",
+        "permissions": "权限",
+        "types": {
+          "tenant_builtin": "租户内置角色",
+          "tenant_custom": "租户自定义角色"
+        },
+        "scope": {
+          "tenant": "租户",
+          "department": "部门",
+          "project_group": "项目组"
+        }
+      },
+      "roleAssignments": {
+        "create": "分配角色",
+        "scope": "授权范围",
+        "departmentId": "部门 ID",
+        "projectGroupId": "项目组 ID",
+        "validUntil": "有效期至",
+        "assigned": "已分配",
+        "assignedElsewhere": "已在其他范围分配",
+        "allAssigned": "此授权范围下没有可分配的新角色。",
+        "noAssignableRoles": "没有可分配的角色",
+        "recommendations": {
+          "title": "常用职责",
+          "description": "选择职责后仍需确认成员、范围和授权原因。",
+          "infrastructure": "引擎与应用管理",
+          "metaRead": "元数据浏览（只读）",
+          "metaManage": "元数据扫描管理"
+        }
       },
       "audit": {
         "context": "上下文 / 租户",
@@ -919,6 +997,62 @@
         "confirmRequired": "请先完成确认",
         "detailFailed": "加载任务详情失败",
         "tenantScopeRequired": "手动资源回收必须在明确租户范围内发起"
+      }
+    }
+  },
+  "roles": {
+    "tenant": {
+      "administrator": {
+        "name": "租户组织与权限管理员",
+        "description": "管理租户成员、邀请、角色与角色分配；不包含基础设施和业务权限。"
+      },
+      "ai_user": {
+        "name": "AI 用户",
+        "description": "使用 Agent 会话、运行任务以及 Copilot 执行能力。"
+      },
+      "asset_consumer": {
+        "name": "资产使用者",
+        "description": "查看数据资产、申请授权、使用服务端点并参与评价。"
+      },
+      "asset_manager": {
+        "name": "资产管理员",
+        "description": "管理资产目录、条目、授权申请和评价。"
+      },
+      "auditor": {
+        "name": "租户审计员",
+        "description": "查看和导出租户审计事件，并只读查看执行与统计信息。"
+      },
+      "data_engineer": {
+        "name": "数据工程师",
+        "description": "管理传输任务、开发任务、Notebook 和工作流。"
+      },
+      "data_steward": {
+        "name": "数据管理员",
+        "description": "管理数据条目和衍生物，并执行 Meta 检查与扫描任务。"
+      },
+      "data_viewer": {
+        "name": "数据查看者",
+        "description": "只读查看数据内容、数据条目、搜索结果和 Meta Catalog。"
+      },
+      "governance_manager": {
+        "name": "数据治理管理员",
+        "description": "管理标准、模型、质量规则、检查任务和质量问题。"
+      },
+      "graph_engineer": {
+        "name": "图谱工程师",
+        "description": "管理本体、图谱、构建任务、分析和审核。"
+      },
+      "infrastructure_administrator": {
+        "name": "租户基础设施管理员",
+        "description": "管理引擎、应用、API Key 和资源回收，并查看健康状态。"
+      },
+      "monitoring_operator": {
+        "name": "监控运维员",
+        "description": "管理告警规则、事件和通知目标，并查看执行与健康状态。"
+      },
+      "service_publisher": {
+        "name": "数据服务发布者",
+        "description": "查看数据与 Meta Catalog，并管理服务定义和外部服务注册。"
       }
     }
   }

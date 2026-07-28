@@ -462,7 +462,7 @@ cleanup 不纳入 TaskProvider，也不进入 Orchestrator 编排。
 1. `platform` 模式 Token 调用 `POST /api/v1/system/admin/cleanup/scan` 必须返回 HTTP 403，错误信息说明该入口要求明确 Tenant 上下文；`Accept-Language: zh-cn` 和 `Accept-Language: en` 都必须返回对应语言。
 2. 具有 Cleanup Permission 的 `tenant` 模式 Token 以 `{"scope":["meta"]}` 调用 `POST /api/v1/system/admin/cleanup/scan` 后，`GET /api/v1/system/admin/cleanup/tasks/{task_id}` 必须最终返回 `completed` 或 `completed_with_errors`。
 3. scan 结果必须包含 `task.execution_id`、`task.expected_modules=["meta"]` 和 `results.meta`。
-4. System 审计日志必须能通过 `entity_type=cleanup&entity_id={task_id}` 查到 `cleanup.scan.created`；完成后还应查到 `cleanup.completed` 或 `cleanup.failed`。
+4. System Tenant 审计端点必须能通过 `entity_type=cleanup_task&entity_id={task_id}` 查到 `cleanup.scan.created`；完成后还应查到 `cleanup.completed` 或 `cleanup.failed`。Tenant 只能从当前 AuthContext 派生，查询不接受 `tenant_id`。
 5. Monitor 必须能通过 `GET /api/v1/monitor/executions/by-execution-id/{execution_id}/tree` 查到 `module=system, task_type=cleanup` 的父 execution，以及 `module=meta, task_type=cleanup_executor` 的子 execution。
 
 示例命令骨架：
@@ -485,14 +485,14 @@ TASK_ID=$(curl -sS -X POST "$BASE/system/admin/cleanup/scan" \
   -d '{"scope":["meta"]}' | jq -r .task_id)
 
 curl -sS "$BASE/system/admin/cleanup/tasks/$TASK_ID" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
+  -H "Authorization: Bearer $TENANT_ACCESS_TOKEN" | jq .
 
-curl -sS "$BASE/system/logs?entity_type=cleanup&entity_id=$TASK_ID&page=1&page_size=20" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
+curl -sS "$BASE/system/tenant/audit/events?entity_type=cleanup_task&entity_id=$TASK_ID&page=1&page_size=20" \
+  -H "Authorization: Bearer $TENANT_ACCESS_TOKEN" | jq .
 
 EXECUTION_ID=<task.execution_id>
 curl -sS "$BASE/monitor/executions/by-execution-id/$EXECUTION_ID/tree" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
+  -H "Authorization: Bearer $TENANT_ACCESS_TOKEN" | jq .
 ```
 
 ## 十四、迁移状态

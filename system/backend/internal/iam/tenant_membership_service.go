@@ -10,13 +10,6 @@ import (
 	commonapi "github.com/addp/common/api"
 )
 
-type CreateTenantInput struct {
-	Code        string
-	Name        string
-	Description string
-	Audit       AuditMetadata
-}
-
 type EstablishTenantMembershipInput struct {
 	TenantID             int64
 	PrincipalID          int64
@@ -58,43 +51,6 @@ func NewTenantMembershipService(repository *Repository, now func() time.Time) *T
 		now = time.Now
 	}
 	return &TenantMembershipService{repository: repository, now: now}
-}
-
-func (s *TenantMembershipService) CreateTenant(
-	ctx context.Context,
-	input CreateTenantInput,
-) (*Tenant, error) {
-	if s == nil || s.repository == nil {
-		return nil, fmt.Errorf("%w: IAM repository is required", commonapi.ErrBadRequest)
-	}
-	if strings.TrimSpace(input.Name) == "" {
-		return nil, fmt.Errorf("%w: tenant name is required", commonapi.ErrBadRequest)
-	}
-	tenant := &Tenant{
-		Code:        input.Code,
-		Name:        strings.TrimSpace(input.Name),
-		Description: strings.TrimSpace(input.Description),
-		Status:      TenantStatusActive,
-	}
-	err := s.repository.Transaction(ctx, func(tx *Repository) error {
-		if err := tx.CreateTenant(ctx, tenant); err != nil {
-			return err
-		}
-		return NewAuditWriter(tx).Write(ctx, AuditEvent{
-			Metadata:   input.Audit,
-			EventName:  "iam.tenant.created",
-			Result:     AuditResultSucceeded,
-			RiskLevel:  AuditRiskMedium,
-			ModuleName: "system",
-			EntityType: "tenant",
-			EntityID:   strconv.FormatInt(tenant.ID, 10),
-			Details:    map[string]any{"tenant_code": tenant.Code},
-		})
-	})
-	if err != nil {
-		return nil, err
-	}
-	return tenant, nil
 }
 
 func (s *TenantMembershipService) ListManagedMemberships(

@@ -2,7 +2,9 @@
 
 ## 模块定位
 
-Manager 模块负责数据探查、数据预览、混合检索、空间快显和瓦片缓存能力。它不管理存储引擎配置，存储引擎由 System 管理；Manager 通过 System、Meta 和实际数据源完成只读探查与预览。
+Manager 模块负责数据探查、数据预览、表格数据剖析、混合检索、空间快显和瓦片缓存能力。它不管理存储引擎配置，存储引擎由 System 管理；Manager 通过 System、Meta 和实际数据源完成只读探查与预览。
+
+数据剖析已经按确认边界实现：剖析执行和结果归 Manager，Meta 只提供 data item 身份、结构和源版本事实；首期在用户进入“剖析”标签时按需创建 `task_type=data_profiling` 的 ad-hoc execution，不创建持久任务定义、不注册 TaskProvider capability。完整规则见 `manager/docs/数据剖析规范.md`。
 
 空间快显与瓦片缓存的目标边界：
 
@@ -46,6 +48,7 @@ manager/
 │   ├── 快显实现规范.md
 │   ├── 数据预览与资源树实现规范.md
 │   ├── 数据预览语义协议.md
+│   ├── 数据剖析规范.md
 │   ├── 三维模型、点云与高斯泼溅预览说明.md
 │   ├── 存储流与原始下载语义.md
 │   ├── 向量化概念说明.md
@@ -64,6 +67,7 @@ manager/
 
 - 数据探查：`GET /engines`；资源树事实读取、搜索和刷新统一使用 Meta `/api/v1/meta/resource-tree/:engine_id...`。
 - 预览与下载：`GET /preview`、`GET /storage-stream`、`GET /downloads/file?locator={ResourceLocator}`。
+- 数据剖析：`GET /data-profiles/current` 查询当前成功结果、新鲜度和 execution；`POST /data-profile-executions` 创建或复用 `data_profiling` ad-hoc execution。
 - 搜索：`GET /search`、`GET /search/history`、`DELETE /search/history/:id`、`DELETE /search/history`。
 - 空间要素辅助：`GET /engines/:id/spatial/features/:feature_id/centroid`、`GET /engines/:id/spatial/features/:feature_id/geometry`。
 - Quick View：统一使用 ResourceLocator 入口，`GET /quick-view/capability?locator={ResourceLocator}` 返回快显能力状态，`GET /quick-view/flatgeobuf?locator={ResourceLocator}` 返回中小规模矢量 FlatGeobuf 快显材料，`GET /quick-view/geojson?locator={ResourceLocator}` 保留为 GeoJSON 调试/人类可读出口，`GET /quick-view/tiles/:z/:x/:y.mvt?locator={ResourceLocator}` 从实时源或 infra PMTiles 返回 MVT，`GET /raster_cog/:id/content` 返回 ready raster COG 内容，`PATCH /preview-state/preferred-mode` 更新显示偏好；业务 PMTiles 通过 `vector_tile_set_generation` 生成或由合格缓存固化。
@@ -84,6 +88,8 @@ manager/
 - 向量化用户界面使用“向量化”，英文 API、表名和 TaskProvider `task_type` 统一使用 `embedding`；不得新增 `vectorization` 双轨路径。
 - 向量化对象只能是 data item；资源树 node 只是批量选择范围，不产生 node 向量化结果。
 - 资源树 item / node 向量化是 ad-hoc execution，不写入 `manager.embedding_tasks`；只有独立向量化页面创建的配置才是任务定义。
+- 表格数据剖析只按 `data_type=table` 和当前内容选择上下文开放；不得按 `item_type`、engine type 或文件扩展名硬编码。首期剖析是 `data_profiling` ad-hoc execution，结果写 Manager 私有表，不写 Meta attributes，不创建 `manager.data_profile_tasks`，也不注册 TaskProvider capability。
+- 数据剖析不得使用当前预览页、分页记录或前端数组计算；采样和指标计算必须走统一 Provider 与服务端预算。刷新失败必须保留上一份成功结果。
 - 空间相关逻辑不得默认几何字段名为 `geom`，应从 Meta、预览检测或请求参数获取。
 - 不得把 Quick View 称为任务；瓦片缓存生成任务统一使用 `vector_tile_cache_generation` / `manager.vector_tile_cache_tasks`。
 - “空间任务”是 Manager 中空间业务任务的导航与能力分类，不是统一任务表或单一 `task_type`；当前“矢量瓦片”对应 `vector_tile_set_generation`。
@@ -127,6 +133,7 @@ curl http://localhost:8081/health
 - `manager/docs/向量化能力说明.md`
 - `manager/docs/数据预览与资源树实现规范.md`
 - `manager/docs/数据预览语义协议.md`
+- `manager/docs/数据剖析规范.md`
 - `manager/docs/三维模型、点云与高斯泼溅预览说明.md`
 - `manager/docs/存储流与原始下载语义.md`
 - `manager/docs/tables/preview_state表.md`

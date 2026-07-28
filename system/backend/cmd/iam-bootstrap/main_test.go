@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/system/internal/iamcli"
 	"github.com/pquerna/otp/totp"
 )
 
@@ -15,10 +16,10 @@ func TestMatchTOTPAcceptsGeneratedCodeAndRejectsSecret(t *testing.T) {
 		t.Fatalf("generate TOTP code: %v", err)
 	}
 
-	if _, valid := matchTOTP(secret, code, now); !valid {
+	if _, valid := iamcli.MatchTOTP(secret, code, now); !valid {
 		t.Fatal("generated 6-digit TOTP code should be valid")
 	}
-	if _, valid := matchTOTP(secret, secret, now); valid {
+	if _, valid := iamcli.MatchTOTP(secret, secret, now); valid {
 		t.Fatal("TOTP secret must not be accepted as a verification code")
 	}
 }
@@ -36,7 +37,7 @@ func TestIsTOTPCodeFormat(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := isTOTPCodeFormat(test.code); got != test.want {
+			if got := iamcli.IsTOTPCodeFormat(test.code); got != test.want {
 				t.Fatalf("isTOTPCodeFormat(%q) = %t, want %t", test.code, got, test.want)
 			}
 		})

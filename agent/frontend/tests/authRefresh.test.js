@@ -1,9 +1,18 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { createRefreshInterceptor } from '@common-ui'
+import { buildLoginRedirectURL, createRefreshInterceptor } from '@common-ui'
 
 
 describe('shared ADDP token refresh', () => {
+  it('preserves the current Console path in the login redirect', () => {
+    expect(buildLoginRedirectURL({
+      pathname: '/system/iam',
+      search: '?tab=role-assignments',
+      hash: '#current'
+    })).toBe('/login?redirect=%2Fsystem%2Fiam%3Ftab%3Drole-assignments%23current')
+    expect(buildLoginRedirectURL({ pathname: '/login' })).toBeNull()
+  })
+
   it('retries an Axios request through its owning client after refresh', async () => {
     const authStore = {
       token: 'expired-token',

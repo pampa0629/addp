@@ -18,7 +18,7 @@
         :active-group-modules="sidebarModules"
         :active-group-key="activeGroup"
         :active-menu="activeMenu"
-        :is-collapsed="isCollapsed"
+        :is-collapsed="effectiveSidebarCollapsed"
         :sidebar-menus="visibleSidebarMenus"
         @menu-select="handleMenuSelect"
         @toggle-collapse="toggleSidebar"
@@ -34,6 +34,7 @@
           :active-group="activeGroup"
           :home-cards="homeCards"
           :user="user"
+          :permissions="authStore.permissions"
           @card-click="navigateToModule"
           @portal-click="openPortal"
           @navigate="handleMenuSelect"
@@ -149,6 +150,7 @@ const activeMenu = ref('/')
 const currentModule = ref('home')
 const iframeUrl = ref('')
 const isCollapsed = ref(false)
+const isNarrowViewport = ref(false)
 const activeGroup = ref(null)  // null = 全局首页
 const sidebarRef = ref(null)
 const sidebarModules = ref([])  // 侧边栏实际显示的模块（点卡片时只显示单个）
@@ -157,6 +159,10 @@ const ENGINE_SCAN_POLICY_CHANNEL = 'engine-scan-policy'
 let stopEngineScanPolicyBridge = null
 let stopConsoleNavigationBridge = null
 let iframeAuthCoordinator = null
+let narrowViewportQuery = null
+let syncNarrowViewport = null
+
+const effectiveSidebarCollapsed = computed(() => isCollapsed.value || isNarrowViewport.value)
 
 const currentGroupConfig = computed(() =>
   MODULE_GROUPS.find(g => g.key === activeGroup.value) || null
@@ -185,6 +191,11 @@ const visibleSidebarMenus = computed(() => Object.fromEntries(
 ))
 
 onMounted(async () => {
+  narrowViewportQuery = window.matchMedia('(max-width: 760px)')
+  syncNarrowViewport = () => { isNarrowViewport.value = narrowViewportQuery.matches }
+  syncNarrowViewport()
+  narrowViewportQuery.addEventListener('change', syncNarrowViewport)
+
   iframeAuthCoordinator = createIframeAuthCoordinator({
     allowedOrigins: [...new Set(Object.values(MODULE_URLS).map(url => new URL(url).origin))],
     getToken: getAccessToken,
@@ -205,6 +216,9 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  if (narrowViewportQuery && syncNarrowViewport) narrowViewportQuery.removeEventListener('change', syncNarrowViewport)
+  narrowViewportQuery = null
+  syncNarrowViewport = null
   stopConsoleNavigationBridge?.()
   stopConsoleNavigationBridge = null
   stopEngineScanPolicyBridge?.()

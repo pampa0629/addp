@@ -19,14 +19,27 @@ type IAMTenantResponse struct {
 	Name        string           `json:"name"`
 	Description string           `json:"description"`
 	Status      iam.TenantStatus `json:"status"`
+	Initialized bool             `json:"initialized"`
 	CreatedAt   time.Time        `json:"created_at"`
 	UpdatedAt   time.Time        `json:"updated_at"`
 }
 
 type IAMCreateTenantRequest struct {
-	Code        string `json:"code"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Code                            string `json:"code"`
+	Name                            string `json:"name"`
+	Description                     string `json:"description"`
+	InitialAdministratorPrincipalID string `json:"initial_administrator_principal_id"`
+}
+
+type IAMInitializeTenantRequest struct {
+	InitialAdministratorPrincipalID string `json:"initial_administrator_principal_id"`
+}
+
+type IAMTenantAdministratorCandidateResponse struct {
+	PrincipalID  string  `json:"principal_id"`
+	DisplayName  string  `json:"display_name"`
+	PrimaryEmail *string `json:"primary_email"`
+	Username     *string `json:"username"`
 }
 
 type IAMUpdateTenantRequest struct {
@@ -45,9 +58,10 @@ type IAMTenantStatusResponse struct {
 }
 
 type IAMLocalAccountManagementResponse struct {
-	ID       string                 `json:"id"`
-	Username string                 `json:"username"`
-	Status   iam.LocalAccountStatus `json:"status"`
+	ID                   string                 `json:"id"`
+	Username             string                 `json:"username"`
+	Status               iam.LocalAccountStatus `json:"status"`
+	PasswordResetAllowed bool                   `json:"password_reset_allowed"`
 }
 
 type IAMManagedUserResponse struct {
@@ -83,16 +97,31 @@ type IAMChangeManagedUserStatusRequest struct {
 	ChangeRequestID *string `json:"change_request_id"`
 }
 
+type IAMResetManagedLocalAccountPasswordRequest struct {
+	NewPassword string `json:"new_password"`
+	Reason      string `json:"reason"`
+}
+
+type IAMManagedLocalAccountPasswordResetResponse struct {
+	AuthorizationVersion       string    `json:"authorization_version"`
+	RevokedFamilyCount         int64     `json:"revoked_family_count"`
+	ConsumedMFAChallengeCount  int64     `json:"consumed_mfa_challenge_count"`
+	ConsumedContextTicketCount int64     `json:"consumed_context_ticket_count"`
+	ChangedAt                  time.Time `json:"changed_at"`
+}
+
 type IAMManagedUserStatusResponse struct {
 	User               IAMManagedUserResponse `json:"user"`
 	RevokedFamilyCount int64                  `json:"revoked_family_count"`
 }
 
 type iamPlatformTenantService interface {
-	List(context.Context, int, int, string, *iam.TenantStatus) ([]iam.Tenant, int64, error)
-	Get(context.Context, int64) (*iam.Tenant, error)
-	Create(context.Context, iam.CreateTenantInput) (*iam.Tenant, error)
-	Update(context.Context, iam.UpdateTenantInput) (*iam.Tenant, error)
+	List(context.Context, int, int, string, *iam.TenantStatus) ([]iam.ManagedTenant, int64, error)
+	Get(context.Context, int64) (*iam.ManagedTenant, error)
+	Create(context.Context, iam.CreateTenantInput) (*iam.ManagedTenant, error)
+	Initialize(context.Context, iam.InitializeTenantInput) (*iam.ManagedTenant, error)
+	ListAdministratorCandidates(context.Context, string) ([]iam.TenantAdministratorCandidate, error)
+	Update(context.Context, iam.UpdateTenantInput) (*iam.ManagedTenant, error)
 	Suspend(context.Context, iam.ChangeTenantStatusInput) (*iam.TenantStatusChangeResult, error)
 	Restore(context.Context, iam.ChangeTenantStatusInput) (*iam.TenantStatusChangeResult, error)
 	Close(context.Context, iam.ChangeTenantStatusInput) (*iam.TenantStatusChangeResult, error)
@@ -186,8 +215,19 @@ func (h *IAMPlatformTenantHandler) Create(c *gin.Context) {
 		respondIAMError(c, fmt.Errorf("%w: invalid tenant request", commonapi.ErrBadRequest))
 		return
 	}
+	actorID, err := iamPlatformUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	administratorID, err := parseIAMDecimalID(request.InitialAdministratorPrincipalID)
+	if err != nil {
+		respondIAMError(c, fmt.Errorf("%w: initial administrator is required", commonapi.ErrBadRequest))
+		return
+	}
 	tenant, err := h.service.Create(c.Request.Context(), iam.CreateTenantInput{
 		Code: request.Code, Name: request.Name, Description: request.Description,
+		InitialAdministratorPrincipalID: administratorID, ActorPrincipalID: actorID,
 		Audit: iamAuditMetadataWithStatus(c, http.StatusCreated),
 	})
 	if err != nil {
@@ -195,6 +235,80 @@ func (h *IAMPlatformTenantHandler) Create(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, mapIAMTenant(*tenant))
+}
+
+// Initialize godoc
+// @Summary      初始化既有租户 | Initialize existing tenant
+// @Description  为尚无成员和角色分配的既有租户原子建立首位租户管理员 | Atomically establish the first tenant administrator for an existing tenant without memberships or assignments
+// @Tags         平台租户 | Platform Tenants
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "租户 ID | Tenant ID"
+// @Param        request body IAMInitializeTenantRequest true "首位租户管理员 | Initial tenant administrator"
+// @Success      200 {object} IAMTenantResponse
+// @Failure      400 {object} IAMErrorResponse
+// @Failure      409 {object} IAMErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["platform.tenant.initialize"]
+// @Router       /platform/tenants/{id}/initialization [post]
+func (h *IAMPlatformTenantHandler) Initialize(c *gin.Context) {
+	tenantID, err := parseIAMDecimalID(c.Param("id"))
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	var request IAMInitializeTenantRequest
+	if err := commonapi.BindOptionalJSONStrict(c, &request); err != nil {
+		respondIAMError(c, fmt.Errorf("%w: invalid tenant initialization request", commonapi.ErrBadRequest))
+		return
+	}
+	administratorID, err := parseIAMDecimalID(request.InitialAdministratorPrincipalID)
+	if err != nil {
+		respondIAMError(c, fmt.Errorf("%w: initial administrator is required", commonapi.ErrBadRequest))
+		return
+	}
+	actorID, err := iamPlatformUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	tenant, err := h.service.Initialize(c.Request.Context(), iam.InitializeTenantInput{
+		TenantID: tenantID, InitialAdministratorPrincipalID: administratorID, ActorPrincipalID: actorID,
+		Audit: iamAuditMetadataWithStatus(c, http.StatusOK),
+	})
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, mapIAMTenant(*tenant))
+}
+
+// ListAdministratorCandidates godoc
+// @Summary      查询首位租户管理员候选人 | List initial tenant administrator candidates
+// @Description  仅返回有效且未持有平台角色的普通用户 | Return only active users without an effective platform role
+// @Tags         平台租户 | Platform Tenants
+// @Produce      json
+// @Security     BearerAuth
+// @Param        search query string false "姓名、邮箱或用户名 | Name, email, or username"
+// @Success      200 {array} IAMTenantAdministratorCandidateResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["platform.tenant.create"]
+// @Router       /platform/tenant_administrator_candidates [get]
+func (h *IAMPlatformTenantHandler) ListAdministratorCandidates(c *gin.Context) {
+	candidates, err := h.service.ListAdministratorCandidates(c.Request.Context(), c.Query("search"))
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	responses := make([]IAMTenantAdministratorCandidateResponse, 0, len(candidates))
+	for _, candidate := range candidates {
+		responses = append(responses, IAMTenantAdministratorCandidateResponse{
+			PrincipalID: strconv.FormatInt(candidate.PrincipalID, 10), DisplayName: candidate.DisplayName,
+			PrimaryEmail: candidate.PrimaryEmail, Username: candidate.Username,
+		})
+	}
+	c.JSON(http.StatusOK, responses)
 }
 
 // Update godoc
@@ -306,6 +420,7 @@ type iamPlatformUserService interface {
 	Get(context.Context, int64) (*iam.ManagedUser, error)
 	Create(context.Context, iam.CreateManagedLocalUserInput) (*iam.ManagedUser, error)
 	Update(context.Context, iam.UpdateManagedUserInput) (*iam.ManagedUser, error)
+	ResetLocalAccountPassword(context.Context, iam.ResetManagedLocalAccountPasswordInput) (*iam.ManagedLocalAccountPasswordResetResult, error)
 	Suspend(context.Context, iam.ChangeManagedUserStatusInput) (*iam.ManagedUserStatusChangeResult, error)
 	Reactivate(context.Context, iam.ChangeManagedUserStatusInput) (*iam.ManagedUserStatusChangeResult, error)
 }
@@ -441,6 +556,54 @@ func (h *IAMPlatformUserHandler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, mapIAMManagedUser(*user))
 }
 
+// ResetLocalAccountPassword godoc
+// @Summary      重置普通用户本地密码 | Reset ordinary user local password
+// @Description  仅允许重置不持有有效平台角色的普通用户，并撤销其全部既有认证会话 | Reset only an ordinary user without an effective platform role and revoke all existing authentication sessions
+// @Tags         平台用户 | Platform Users
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "用户 ID | User ID"
+// @Param        request body IAMResetManagedLocalAccountPasswordRequest true "新密码与原因 | New password and reason"
+// @Success      200 {object} IAMManagedLocalAccountPasswordResetResponse
+// @Failure      400 {object} IAMErrorResponse
+// @Failure      403 {object} IAMErrorResponse
+// @Failure      404 {object} IAMErrorResponse
+// @Failure      409 {object} IAMErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["iam.local_account.reset"]
+// @Router       /platform/users/{id}/reset-password [post]
+func (h *IAMPlatformUserHandler) ResetLocalAccountPassword(c *gin.Context) {
+	userID, err := parseIAMDecimalID(c.Param("id"))
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	var request IAMResetManagedLocalAccountPasswordRequest
+	if err := commonapi.BindOptionalJSONStrict(c, &request); err != nil {
+		respondIAMError(c, fmt.Errorf("%w: invalid local account password reset request", commonapi.ErrBadRequest))
+		return
+	}
+	result, err := h.service.ResetLocalAccountPassword(
+		c.Request.Context(),
+		iam.ResetManagedLocalAccountPasswordInput{
+			UserID: userID, NewPassword: request.NewPassword, Reason: request.Reason,
+			Audit: iamAuditMetadataWithStatus(c, http.StatusOK),
+		},
+	)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, IAMManagedLocalAccountPasswordResetResponse{
+		AuthorizationVersion:       strconv.FormatInt(result.AuthorizationVersion, 10),
+		RevokedFamilyCount:         result.RevokedFamilyCount,
+		ConsumedMFAChallengeCount:  result.ConsumedMFAChallengeCount,
+		ConsumedContextTicketCount: result.ConsumedContextTicketCount,
+		ChangedAt:                  result.ChangedAt.UTC(),
+	})
+}
+
 // Suspend godoc
 // @Summary      暂停平台用户 | Suspend platform user
 // @Tags         平台用户 | Platform Users
@@ -509,10 +672,10 @@ func (h *IAMPlatformUserHandler) changeStatus(
 	})
 }
 
-func mapIAMTenant(tenant iam.Tenant) IAMTenantResponse {
+func mapIAMTenant(tenant iam.ManagedTenant) IAMTenantResponse {
 	return IAMTenantResponse{
 		ID: strconv.FormatInt(tenant.ID, 10), Code: tenant.Code, Name: tenant.Name,
-		Description: tenant.Description, Status: tenant.Status,
+		Description: tenant.Description, Status: tenant.Status, Initialized: tenant.Initialized,
 		CreatedAt: tenant.CreatedAt.UTC(), UpdatedAt: tenant.UpdatedAt.UTC(),
 	}
 }
@@ -528,6 +691,10 @@ func mapIAMManagedUser(user iam.ManagedUser) IAMManagedUserResponse {
 		response.LocalAccount = &IAMLocalAccountManagementResponse{
 			ID: strconv.FormatInt(*user.AccountID, 10), Username: *user.Username,
 			Status: *user.LocalAccountStatus,
+			PasswordResetAllowed: user.Status == iam.PrincipalStatusActive &&
+				(*user.LocalAccountStatus == iam.LocalAccountStatusActive ||
+					*user.LocalAccountStatus == iam.LocalAccountStatusLocked) &&
+				!user.HasEffectivePlatformRole,
 		}
 	}
 	return response

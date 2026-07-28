@@ -28,7 +28,9 @@ HttpOnly Refresh Token Cookie
 - `platform`：进入 Platform Realm，不携带当前 Tenant，也不激活 Tenant 权限；
 - `tenant`：绑定一个有效 Tenant Membership 和唯一当前 Tenant，不携带平台角色权限。
 
-切换 Tenant 或切换平台/租户模式时必须原子撤销当前 Browser Token Family 并创建绑定目标 Context 的新 Family，不能原地修改 Family，也不能在一个 AuthContext 中合并多个 Tenant 或混合平台与 Tenant 权限。浏览器切换不改变既有 CLI / OAuth Family；授权事实版本变化仍会使相关 Principal 的旧 Family 失效。
+切换 Tenant 或切换平台/租户模式时必须原子撤销当前 Browser Token Family 并创建绑定目标 Context 的新 Family，不能原地修改 Family，也不能在一个 AuthContext 中合并多个 Tenant 或混合平台与 Tenant 权限。浏览器切换不改变既有 CLI / OAuth Family。
+
+授权事实变化必须递增 Principal `authorization_version`，旧 Access Token、Delegated Access Token 和 Browser Resource Access Ticket 因版本不匹配立即失效；仍有效且未撤销的 Refresh Token Family 可以在下一次 Refresh Token 轮换事务中推进到 Principal 当前授权版本，并按新事实重新签发派生凭据。Principal、凭据、Tenant Membership 或 Tenant 失效，以及 Refresh Token 重用等身份或会话安全事件仍撤销受影响 Family，必须重新登录。不得为自我授权或某个前端建立专用换票接口。
 
 ## 二、浏览器令牌存储
 
@@ -64,6 +66,12 @@ Access Token 只能保存在当前 JavaScript 运行时内存中：
 - 每个 Owner 使用独立 Path，例如 Manager 为 `/api/v1/manager`、Standard 为 `/api/v1/standard`；
 - Owner 只允许明确声明的 GET/HEAD 资源路由消费，普通业务 API 不接受该票据；
 - 不进入 URL、浏览器历史、Referrer、日志或前端持久化存储。
+
+### 2.4 认证凭据日志边界
+
+任何访问日志、应用日志、错误日志和审计详情都不得记录认证请求体、认证 Header、Cookie 或凭据明文。禁止记录的值至少包括密码、TOTP/恢复码、MFA Challenge、Context Selection Ticket、OAuth Authorization Code、PKCE Verifier、Client Secret、API Key、User Access Token、Refresh Token、Resource Access Ticket 和 Delegated Access Token。
+
+Gateway AccessLog 只服务于外部 API Key 请求的性能、缓存和限流统计，不记录 Browser Bearer、Cookie 或公开认证请求。Gateway 不采集任何请求体；Query 参数进入 AccessLog 前必须按敏感字段策略脱敏。System AuditLog 记录认证和授权领域事件，但只允许保存稳定事件事实、实体标识、结果和非敏感原因码，不得保存上述凭据。
 
 ## 三、Browser AuthSession
 
@@ -164,7 +172,11 @@ Context Selection Ticket 只保存 Hash，不能进入 Cookie、URL、浏览器�
 
 - 正常路径在 Access Token 到期前刷新；
 - 401 只作为兜底；
+- 因 401 发起的强制刷新不得复用其他标签页尚未过期的旧 Access Token，必须在全局刷新锁内使用 Refresh Cookie 复核服务端会话；
 - 刷新成功后自动重试原请求；
+- Family 授权版本落后于 Principal 当前版本时，刷新事务必须先复核 Principal、当前 Context、Tenant 和 Membership 仍有效，再把 Family 推进到当前版本并轮换全部派生凭据；
+- 授权版本推进不改变 Family 的 Principal、Context、Client、认证事实和最终 `expires_at`，并写入审计；
+- Principal、凭据、Tenant、Membership 或 Family 已失效时不得推进版本，统一按会话失效处理；
 - 整个过程不打断用户当前操作；
 - Refresh Token Family 默认固定 30 天，达到最终有效期后必须重新登录。
 
@@ -180,6 +192,18 @@ POST /api/v1/system/auth/context-switches
 两个端点都要求当前第一方 Web Access Token；切换还要求同一 Family 的 Refresh Token Cookie。进入 Platform Context 时 User 认证强度至少为 AAL2，否则先返回 `step_up_required`。
 
 `context-options` 返回 Principal 当前全部有效 Platform / Tenant Context，并显式标记当前 Context。具备有效平台角色但当前认证强度不足时，Platform 选项仍返回并标记 `requires_step_up=true`；该标记只用于前端发起增强认证，不能绕过切换 Service 的 AAL2/AAL3 校验。Tenant 选项按 Tenant Code、Tenant ID 稳定排序，Platform 固定在最前。
+
+### 4.4 普通 User 的 TOTP 登记与会话内 step-up
+
+普通 User 通过唯一的当前用户安全设置接口自助登记 TOTP。开始登记必须同时提交当前本地账号密码；System 在一个事务内锁定 Principal、Local Account 和当前 Browser Token Family，重新验证密码，确认不存在激活的 TOTP Credential，然后创建 5 分钟有效的一次性 Enrollment。Enrollment 绑定 Principal、当前授权版本和源 Token Family，Secret 只在开始响应中以 Base32 和 `otpauth://` URI 返回一次，数据库只保存加密值，日志与审计不得记录 Secret、URI、验证码或 Enrollment Token。
+
+完成登记必须提交 Enrollment Token、TOTP 验证码，并同时携带当前 Access Token 与同一 Family 的 Refresh Token Cookie。System 在一个事务内按 Principal -> Family -> Refresh Token -> Access Token -> Enrollment 的顺序加锁，验证 TOTP 防重放 counter，创建唯一激活 Credential，消费 Enrollment，以固定最终期限创建 `password + totp / aal2` 替换 Family，并撤销源 Family。任一步失败必须整体回滚；验证码连续失败 5 次、过期、授权版本变化、Family 变化或并发消费后均不可重放。
+
+已有激活 TOTP Credential 的 User 可在已登录 Browser Session 内发起 step-up。Challenge 固定 5 分钟有效并绑定 `purpose=step_up`、Principal、当前授权版本和源 Token Family；登录前 Challenge 使用 `purpose=login` 且不绑定 Family。完成 step-up 同样要求当前 Access Token、同一 Family 的 Refresh Token Cookie与 TOTP 验证码，并原子创建 AAL2 替换 Family、撤销源 Family。不得原地修改 Token Family 的认证事实，也不得仅凭旧 Access Token 获得 AAL2。
+
+所有已登录 MFA 写接口必须使用现有按用户限流。单个 Challenge/Enrollment 连续失败 5 次即终止；step-up 达到 5 次失败时还必须在同一事务撤销源 Token Family，要求重新登录。验证码无效、过期、已消费或会话绑定变化统一返回 HTTP 401、稳定 `invalid_mfa_verification` 和不泄露内部状态的用户提示。
+
+step-up 成功响应复用唯一 Browser Access Token 响应结构，服务端同时替换 HttpOnly Refresh Cookie。前端必须原地接收新 Access Token、刷新 AuthContext 并继续被中断的操作，不得要求用户退出后重新登录。AAL2 的 `step_up_expires_at` 不得晚于替换 Family 的固定最终期限；过期后需要再次 step-up，但不主动注销仍可用于低风险操作的 Tenant Session。
 
 切换事务必须：锁定当前 Browser Family，复核目标 Context 和授权版本，撤销旧 Family 及派生 Resource Access Ticket，创建新 Family 和新票据，写入旧 / 新 Context 审计，最后返回新内存 Access Token。目标 Context 必须与当前 Context 不同；新 Family 继承原 Family 的认证事实和固定最终 `expires_at`，切换不得重新起算 30 天期限。事务失败时旧 Family 保持有效。切换成功后通过 `addp-auth-session` 广播 `context_changed`；其他标签页和 iframe 必须清空旧 Context 的业务缓存并采用新 Token。
 
@@ -234,6 +258,11 @@ Refresh 缺少 Cookie 或 Runtime 明确返回未授权时清除全部会话 Coo
 - 统一运行时 Token Provider：预览、地图、下载等特殊调用读取当前内存 Token。
 - 原生资源 URL 直接使用无凭据 URL，由浏览器自动携带 Owner Path 限定的 HttpOnly Resource Access Ticket Cookie。
 
+Console 与 iframe 之间的 `addp-auth/v1` 协议必须保留刷新结果语义：
+
+- Refresh 因会话无效返回 401 时，Console 发送带 `error_code=authentication_required` 的 `addp-auth-logout`；iframe 必须将其还原为认证失败，清理本地会话并由顶层 Console 进入带原路径 `redirect` 的登录页；
+- Refresh 因网络、锁竞争或服务故障失败时，Console 发送 `addp-auth-error`，iframe 保留当前会话并进入可重试错误状态；不得发送 `addp-auth-logout` 或伪装成退出。
+
 模块不得：
 
 - 直接读写 `localStorage.token`；
@@ -261,8 +290,13 @@ Refresh 缺少 Cookie 或 Runtime 明确返回未授权时清除全部会话 Coo
 - [ ] 页面刷新、新标签页和浏览器重启可在有效 Family 内静默恢复。
 - [ ] 多标签页同时到期时最多一个刷新成功，其余请求返回可重试冲突，且不会触发 Refresh Token 重用撤销。
 - [ ] 401 只重试一次，不形成刷新循环。
+- [ ] Role Assignment 或 Role Permission 变化后旧 Access Token 立即失效，有效 Family 可通过唯一 Refresh 路径推进授权版本并静默恢复。
+- [ ] Principal、密码/MFA、Tenant Membership、Tenant 或 Refresh Token 重用等安全事件仍撤销 Family，不能通过授权版本推进恢复。
 - [ ] 用户退出会同步到其他标签页和 iframe。
+- [ ] 会话撤销后顶层 Console 进入带原路径 `redirect` 的登录页，iframe 不停留空白页。
+- [ ] iframe Refresh 的非认证故障不清理会话，不发送 `addp-auth-logout`。
 - [ ] Access Token 只绑定 `platform` 或一个当前 Tenant，上下文切换后旧权限不会继续生效。
 - [ ] 多 Context 登录在选择前不签发业务 Token，Selection Ticket 过期、重放和并发消费均失败。
 - [ ] Browser Context Switch 撤销旧 Web Family，但不改变既有 CLI / OAuth Family。
+- [ ] 登录、MFA、Context Selection、OAuth、Token 和 Secret 请求体未进入 Gateway AccessLog、System AuditLog 或应用日志。
 - [ ] Console、一个 iframe 模块和一个独立模块完成自动化或在线验收。

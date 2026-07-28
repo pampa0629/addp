@@ -17,7 +17,7 @@
         <el-dropdown>
           <span class="user-dropdown">
             <el-icon><User /></el-icon>
-            {{ userDisplayName }}
+            <span class="user-name">{{ userDisplayName }}</span>
             <el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </span>
           <template #dropdown>
@@ -33,12 +33,14 @@
     </el-header>
 
     <el-container>
-      <el-aside width="200px" class="sidebar">
+      <el-aside :width="sidebarWidth" :class="['sidebar', { collapsed: isCompactViewport }]">
         <el-menu
           :default-active="activeMenu"
           :default-openeds="['system']"
           router
           class="el-menu-vertical"
+          :collapse="isCompactViewport"
+          :collapse-transition="false"
         >
           <el-menu-item index="/">
             <el-icon><HomeFilled /></el-icon>
@@ -50,7 +52,7 @@
               <el-icon><Setting /></el-icon>
               <span>{{ t('system.layout.systemMgmt') }}</span>
             </template>
-            <el-menu-item v-if="showIAM" index="/iam">
+            <el-menu-item index="/iam">
               <el-icon><Lock /></el-icon>
               <span>{{ t('system.layout.iam') }}</span>
             </el-menu-item>
@@ -78,7 +80,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onBeforeUnmount, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import {
@@ -103,10 +105,23 @@ const authStore = useAuthStore()
 
 // 检测是否在 iframe 中
 const isInIframe = ref(false)
+const isCompactViewport = ref(false)
+let compactViewportQuery = null
+let syncCompactViewport = null
 
 // 使用 onMounted 确保在 DOM 挂载后检测
 onMounted(() => {
   isInIframe.value = window.self !== window.top
+  compactViewportQuery = window.matchMedia('(max-width: 760px)')
+  syncCompactViewport = () => { isCompactViewport.value = compactViewportQuery.matches }
+  syncCompactViewport()
+  compactViewportQuery.addEventListener('change', syncCompactViewport)
+})
+
+onBeforeUnmount(() => {
+  if (compactViewportQuery && syncCompactViewport) compactViewportQuery.removeEventListener('change', syncCompactViewport)
+  compactViewportQuery = null
+  syncCompactViewport = null
 })
 
 const user = computed(() => authStore.user)
@@ -114,12 +129,7 @@ const userDisplayName = computed(() =>
   user.value?.display_name || user.value?.local_account?.username || ''
 )
 const activeMenu = computed(() => route.path)
-const iamPermissions = [
-  'platform.tenant.read', 'iam.user.read', 'iam.platform_identity_change.read', 'audit.event.read',
-  'iam.tenant_membership.read', 'iam.tenant_invitation.read', 'audit.tenant_event.read'
-]
-const showIAM = computed(() => authStore.hasAnyPermission(iamPermissions))
-
+const sidebarWidth = computed(() => isCompactViewport.value ? '64px' : '200px')
 const handleLogout = () => {
   authStore.logout()
   ElMessage.success(t('system.layout.logoutSuccess'))
@@ -176,6 +186,7 @@ const handleLogout = () => {
 .sidebar {
   background: var(--addp-bg-primary) !important;
   border-right: 1px solid var(--addp-border-color);
+  transition: width 0.2s ease;
 }
 
 .el-menu-vertical {
@@ -198,5 +209,14 @@ const handleLogout = () => {
   background: var(--addp-bg-secondary) !important;
   overflow: visible;
   box-sizing: border-box;
+}
+
+@media (max-width: 760px) {
+  .header { height: 52px; padding: 0 10px; }
+  .header-left h1, .user-name { display: none; }
+  .user-dropdown { padding: 8px; }
+  .main-content { padding: 12px; }
+  .content-only { padding: 12px; }
+  .sidebar.collapsed :deep(.el-menu-vertical) { width: 64px; }
 }
 </style>

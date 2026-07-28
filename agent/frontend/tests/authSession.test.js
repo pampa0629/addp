@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   clearRuntimeAccessToken,
@@ -23,6 +23,10 @@ describe('BrowserAuthSession', () => {
     })
     clearRuntimeAccessToken()
     localStorage.clear()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it('restores a session into memory without persisting the access token', async () => {
@@ -72,6 +76,44 @@ describe('BrowserAuthSession', () => {
     expect(refresh).toHaveBeenCalledTimes(1)
     firstSession.dispose()
     secondSession.dispose()
+  })
+
+  it('does not reuse a peer token during a forced refresh', async () => {
+    const channels = []
+    class FakeBroadcastChannel {
+      constructor() {
+        this.listener = null
+        channels.push(this)
+      }
+
+      addEventListener(_type, listener) {
+        this.listener = listener
+      }
+
+      postMessage(message) {
+        if (message.type !== 'token-request') return
+        queueMicrotask(() => this.listener({
+          data: {
+            type: 'token',
+            sender: 'another-tab',
+            token: 'revoked-peer-token',
+            expiresAt: Date.now() + 900_000
+          }
+        }))
+      }
+
+      close() {}
+    }
+    vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel)
+    const refresh = vi.fn(async () => ({
+      data: { access_token: 'server-refreshed-token', expires_in: 900 }
+    }))
+    const session = createBrowserAuthSession({ refresh })
+
+    await expect(session.refreshAccessToken({ force: true })).resolves.toBe('server-refreshed-token')
+    expect(channels).toHaveLength(1)
+    expect(refresh).toHaveBeenCalledTimes(1)
+    session.dispose()
   })
 
   it('clears the in-memory token after a broadcast logout', async () => {
@@ -142,6 +184,102 @@ describe('BrowserAuthSession', () => {
     await Promise.resolve()
     expect(postMessage).toHaveBeenCalledTimes(1)
     expect(refreshToken).not.toHaveBeenCalled()
+    coordinator.dispose()
+    iframe.remove()
+  })
+
+  it('propagates a rejected parent refresh as an authentication failure', async () => {
+    const parent = { postMessage: vi.fn() }
+    const listeners = new Map()
+    const childWindow = {
+      self: null,
+      top: {},
+      parent,
+      addEventListener: vi.fn((type, listener) => listeners.set(type, listener)),
+      removeEventListener: vi.fn()
+    }
+    childWindow.self = childWindow
+    vi.stubGlobal('window', childWindow)
+    vi.stubGlobal('document', { referrer: 'https://console.example/system/iam' })
+    const session = createBrowserAuthSession()
+
+    const refresh = session.refreshAccessToken({ force: true })
+    const request = parent.postMessage.mock.calls[0][0]
+    listeners.get('message')({
+      data: {
+        protocol: 'addp-auth/v1',
+        type: 'addp-auth-logout',
+        requestId: request.requestId,
+        error_code: 'authentication_required'
+      },
+      origin: 'https://console.example',
+      source: parent
+    })
+
+    await expect(refresh).rejects.toMatchObject({
+      status: 401,
+      code: 'authentication_required'
+    })
+    session.dispose()
+  })
+
+  it('reports authentication rejection to the requesting iframe', async () => {
+    const trustedOrigin = 'https://module.example'
+    const iframe = document.createElement('iframe')
+    document.body.appendChild(iframe)
+    const postMessage = vi.spyOn(iframe.contentWindow, 'postMessage').mockImplementation(() => {})
+    const authFailure = Object.assign(new Error('session revoked'), { response: { status: 401 } })
+    const coordinator = createIframeAuthCoordinator({
+      allowedOrigins: [trustedOrigin],
+      getToken: getAccessToken,
+      getExpiresAt: getAccessTokenExpiresAt,
+      refreshToken: vi.fn(async () => { throw authFailure }),
+      logout: vi.fn()
+    })
+
+    window.dispatchEvent(new MessageEvent('message', {
+      data: { protocol: 'addp-auth/v1', type: 'addp-auth-refresh-request', requestId: 'refresh-request' },
+      origin: trustedOrigin,
+      source: iframe.contentWindow
+    }))
+
+    await vi.waitFor(() => expect(postMessage).toHaveBeenCalledWith({
+      protocol: 'addp-auth/v1',
+      type: 'addp-auth-logout',
+      requestId: 'refresh-request',
+      error_code: 'authentication_required'
+    }, trustedOrigin))
+    coordinator.dispose()
+    iframe.remove()
+  })
+
+  it('keeps the iframe session on a temporary parent refresh failure', async () => {
+    const trustedOrigin = 'https://module.example'
+    const iframe = document.createElement('iframe')
+    document.body.appendChild(iframe)
+    const postMessage = vi.spyOn(iframe.contentWindow, 'postMessage').mockImplementation(() => {})
+    const temporaryFailure = Object.assign(new Error('service unavailable'), { response: { status: 503 } })
+    const coordinator = createIframeAuthCoordinator({
+      allowedOrigins: [trustedOrigin],
+      getToken: getAccessToken,
+      getExpiresAt: getAccessTokenExpiresAt,
+      refreshToken: vi.fn(async () => { throw temporaryFailure }),
+      logout: vi.fn()
+    })
+
+    window.dispatchEvent(new MessageEvent('message', {
+      data: { protocol: 'addp-auth/v1', type: 'addp-auth-refresh-request', requestId: 'refresh-request' },
+      origin: trustedOrigin,
+      source: iframe.contentWindow
+    }))
+
+    await vi.waitFor(() => expect(postMessage).toHaveBeenCalledWith({
+      protocol: 'addp-auth/v1',
+      type: 'addp-auth-error',
+      requestId: 'refresh-request',
+      error_code: 'session_refresh_failed',
+      status: 503
+    }, trustedOrigin))
     coordinator.dispose()
     iframe.remove()
   })

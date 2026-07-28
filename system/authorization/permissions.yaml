@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: system
-manifest_version: 5
+manifest_version: 7
 permissions:
   - key: audit.event.export
     allowed_scope_types: [platform]
@@ -202,6 +202,14 @@ permissions:
     status: disabled
     name_i18n_key: permissions.iam.identity_provider.update.name
     description_i18n_key: permissions.iam.identity_provider.update.description
+  - key: iam.local_account.reset
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.local_account.reset.name
+    description_i18n_key: permissions.iam.local_account.reset.description
   - key: iam.permission.read
     allowed_scope_types: [platform, tenant]
     risk_level: low
@@ -479,7 +487,7 @@ permissions:
     risk_level: medium
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.tenant_role.create.name
     description_i18n_key: permissions.iam.tenant_role.create.description
   - key: iam.tenant_role.delete
@@ -487,7 +495,7 @@ permissions:
     risk_level: high
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.tenant_role.delete.name
     description_i18n_key: permissions.iam.tenant_role.delete.description
   - key: iam.tenant_role.read
@@ -495,7 +503,7 @@ permissions:
     risk_level: low
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.tenant_role.read.name
     description_i18n_key: permissions.iam.tenant_role.read.description
   - key: iam.tenant_role.update
@@ -503,7 +511,7 @@ permissions:
     risk_level: medium
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.tenant_role.update.name
     description_i18n_key: permissions.iam.tenant_role.update.description
   - key: iam.tenant_role_assignment.create
@@ -511,7 +519,7 @@ permissions:
     risk_level: medium
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.tenant_role_assignment.create.name
     description_i18n_key: permissions.iam.tenant_role_assignment.create.description
   - key: iam.tenant_role_assignment.read
@@ -519,7 +527,7 @@ permissions:
     risk_level: low
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.tenant_role_assignment.read.name
     description_i18n_key: permissions.iam.tenant_role_assignment.read.description
   - key: iam.tenant_role_assignment.revoke
@@ -527,7 +535,7 @@ permissions:
     risk_level: high
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.tenant_role_assignment.revoke.name
     description_i18n_key: permissions.iam.tenant_role_assignment.revoke.description
   - key: iam.user.create
@@ -674,6 +682,14 @@ permissions:
     status: active
     name_i18n_key: permissions.platform.tenant.create.name
     description_i18n_key: permissions.platform.tenant.create.description
+  - key: platform.tenant.initialize
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.tenant.initialize.name
+    description_i18n_key: permissions.platform.tenant.initialize.description
   - key: platform.tenant.read
     allowed_scope_types: [platform]
     risk_level: low

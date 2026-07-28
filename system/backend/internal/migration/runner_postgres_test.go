@@ -43,8 +43,8 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
 		t.Fatalf("read migration version: %v", err)
 	}
-	if version != 17 || dirty {
-		t.Fatalf("migration state = (%d, %t), want (17, false)", version, dirty)
+	if version != 23 || dirty {
+		t.Fatalf("migration state = (%d, %t), want (23, false)", version, dirty)
 	}
 
 	assertIAMCatalogSeed(t, db)
@@ -58,10 +58,14 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	assertFederationOrganizationConstraints(t, db)
 	assertAuthorizationGovernanceConstraints(t, db)
 	assertSessionTokenFamilyConstraints(t, db)
+	assertAuthorizationVersionRefreshConstraints(t, db)
 	assertOAuthFositeStorageConstraints(t, db)
 	assertAuditContextConstraints(t, db)
 	assertInvitationEnrollmentConstraints(t, db)
 	assertMFABootstrapConstraints(t, db)
+	assertIAMRecoveryConstraints(t, db)
+	assertTenantAdministrationClosure(t, db)
+	assertRoleKeyNamespace(t, db)
 	assertForeignKeyColumnsIndexed(t, db)
 
 	if _, err := db.Exec(`UPDATE system.schema_migrations SET dirty = true`); err != nil {
@@ -70,7 +74,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	if err := runner.Run(ctx); err == nil || !strings.Contains(err.Error(), "is dirty") {
 		t.Fatalf("Run() error = %v, want dirty-state rejection", err)
 	}
-	if _, err := db.Exec(`UPDATE system.schema_migrations SET version = 18, dirty = false`); err != nil {
+	if _, err := db.Exec(`UPDATE system.schema_migrations SET version = 24, dirty = false`); err != nil {
 		t.Fatalf("set newer migration version: %v", err)
 	}
 	if err := runner.Run(ctx); err == nil || !strings.Contains(err.Error(), "newer than embedded") {
@@ -82,6 +86,178 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	}
 	if err := runner.Run(ctx); err == nil || !strings.Contains(err.Error(), "legacy system IAM schema") {
 		t.Fatalf("Run() error = %v, want legacy-schema rejection", err)
+	}
+}
+
+func assertTenantAdministrationClosure(t *testing.T, db *sql.DB) {
+	t.Helper()
+
+	var permissionCount int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.permissions
+		WHERE status = 'active'
+		  AND permission_key IN (
+		      'platform.tenant.initialize',
+		      'iam.tenant_role.create',
+		      'iam.tenant_role.delete',
+		      'iam.tenant_role.read',
+		      'iam.tenant_role.update',
+		      'iam.tenant_role_assignment.create',
+		      'iam.tenant_role_assignment.read',
+		      'iam.tenant_role_assignment.revoke'
+		  )
+	`).Scan(&permissionCount); err != nil {
+		t.Fatalf("read tenant administration permissions: %v", err)
+	}
+	if permissionCount != 8 {
+		t.Fatalf("tenant administration permission count = %d, want 8", permissionCount)
+	}
+
+	var columnCount int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM information_schema.columns
+		WHERE table_schema = 'system'
+		  AND table_name = 'tenants'
+		  AND column_name IN ('initialized_at', 'initialized_by_principal_id')
+	`).Scan(&columnCount); err != nil {
+		t.Fatalf("read tenant initialization columns: %v", err)
+	}
+	if columnCount != 2 {
+		t.Fatalf("tenant initialization column count = %d, want 2", columnCount)
+	}
+}
+
+func assertRoleKeyNamespace(t *testing.T, db *sql.DB) {
+	t.Helper()
+
+	var principalID int64
+	if err := db.QueryRow(`INSERT INTO system.principals (principal_type) VALUES ('user') RETURNING id`).Scan(&principalID); err != nil {
+		t.Fatalf("create role namespace principal: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO system.users (id, display_name) VALUES ($1, 'Role Namespace User')`, principalID); err != nil {
+		t.Fatalf("create role namespace user: %v", err)
+	}
+
+	createTenant := func(code string) int64 {
+		t.Helper()
+		var tenantID int64
+		if err := db.QueryRow(`INSERT INTO system.tenants (code, name) VALUES ($1, $1) RETURNING id`, code).Scan(&tenantID); err != nil {
+			t.Fatalf("create role namespace tenant %s: %v", code, err)
+		}
+		if _, err := db.Exec(`
+			INSERT INTO system.tenant_memberships
+			    (tenant_id, principal_id, source_type, joined_at, created_by_principal_id)
+			VALUES ($1, $2, 'manual', now(), $2)
+		`, tenantID, principalID); err != nil {
+			t.Fatalf("create role namespace membership %s: %v", code, err)
+		}
+		return tenantID
+	}
+	firstTenantID := createTenant("role-namespace-first")
+	secondTenantID := createTenant("role-namespace-second")
+
+	insertCustomRole := func(tenantID int64, roleKey string) error {
+		_, err := db.Exec(`
+			INSERT INTO system.roles (
+			    tenant_id, role_key, name, role_type, allowed_scope_types,
+			    allowed_principal_types, immutable, created_by_principal_id
+			) VALUES ($1, $2, 'Namespace Role', 'tenant_custom', ARRAY['tenant'], ARRAY['user'], false, $3)
+		`, tenantID, roleKey, principalID)
+		return err
+	}
+	if err := insertCustomRole(firstTenantID, "custom.namespace_operator"); err != nil {
+		t.Fatalf("create first tenant custom role: %v", err)
+	}
+	if err := insertCustomRole(secondTenantID, "custom.namespace_operator"); err != nil {
+		t.Fatalf("reuse custom role key in another tenant: %v", err)
+	}
+	if err := insertCustomRole(firstTenantID, "tenant.administrator"); err == nil {
+		t.Fatal("tenant custom role reused a built-in role key")
+	}
+	if _, err := db.Exec(`
+		INSERT INTO system.roles (
+		    role_key, name_i18n_key, description_i18n_key, role_type,
+		    allowed_scope_types, allowed_principal_types, immutable
+		) VALUES (
+		    'custom.namespace_operator', 'roles.custom.namespace_operator.name',
+		    'roles.custom.namespace_operator.description', 'tenant_builtin',
+		    ARRAY['tenant'], ARRAY['user'], true
+		)
+	`); err == nil {
+		t.Fatal("built-in role reused an existing tenant custom role key")
+	}
+}
+
+func assertIAMRecoveryConstraints(t *testing.T, db *sql.DB) {
+	t.Helper()
+
+	var firstAttemptID int64
+	if err := db.QueryRow(`
+		INSERT INTO system.iam_recovery_attempts
+		    (secret_hash, status, prepared_at, expires_at)
+		VALUES ($1, 'prepared', now(), now() + interval '1 hour')
+		RETURNING id
+	`, tokenHash('a')).Scan(&firstAttemptID); err != nil {
+		t.Fatalf("prepare IAM recovery: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO system.iam_recovery_attempts
+		    (secret_hash, status, prepared_at, expires_at)
+		VALUES ($1, 'prepared', now(), now() + interval '1 hour')
+	`, tokenHash('b')); err == nil {
+		t.Fatal("second prepared IAM recovery attempt succeeded")
+	}
+	if _, err := db.Exec(`
+		UPDATE system.iam_recovery_attempts
+		SET status = 'completed', secret_hash = NULL, completed_at = now()
+		WHERE id = $1
+	`, firstAttemptID); err != nil {
+		t.Fatalf("complete IAM recovery: %v", err)
+	}
+	if _, err := db.Exec(`
+		UPDATE system.iam_recovery_attempts
+		SET status = 'prepared', secret_hash = $1, completed_at = NULL
+		WHERE id = $2
+	`, tokenHash('c'), firstAttemptID); err == nil {
+		t.Fatal("completed IAM recovery attempt reopened")
+	}
+	if _, err := db.Exec(`DELETE FROM system.iam_recovery_attempts WHERE id = $1`, firstAttemptID); err == nil {
+		t.Fatal("IAM recovery attempt physical delete succeeded")
+	}
+	if _, err := db.Exec(`TRUNCATE system.iam_recovery_attempts`); err == nil {
+		t.Fatal("IAM recovery attempt truncate succeeded")
+	}
+
+	var principalID, activeCredentialID int64
+	if err := db.QueryRow(`SELECT id FROM system.users WHERE display_name = 'MFA Bootstrap User'`).Scan(&principalID); err != nil {
+		t.Fatalf("find MFA recovery test user: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT id FROM system.mfa_credentials
+		WHERE user_id = $1 AND method = 'totp' AND status = 'active'
+	`, principalID).Scan(&activeCredentialID); err != nil {
+		t.Fatalf("find active MFA credential: %v", err)
+	}
+	if _, err := db.Exec(`
+		UPDATE system.mfa_credentials SET status = 'disabled' WHERE id = $1
+	`, activeCredentialID); err != nil {
+		t.Fatalf("disable old MFA credential: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO system.mfa_credentials
+		    (user_id, method, secret_ciphertext, secret_nonce, key_version)
+		VALUES ($1, 'totp', decode(repeat('12', 32), 'hex'), decode(repeat('34', 12), 'hex'), 1)
+	`, principalID); err != nil {
+		t.Fatalf("create replacement MFA credential: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO system.mfa_credentials
+		    (user_id, method, secret_ciphertext, secret_nonce, key_version)
+		VALUES ($1, 'totp', decode(repeat('56', 32), 'hex'), decode(repeat('78', 12), 'hex'), 1)
+	`, principalID); err == nil {
+		t.Fatal("second active replacement MFA credential succeeded")
 	}
 }
 
@@ -118,8 +294,8 @@ func assertAuthorizationCatalogRetirement(t *testing.T, db *sql.DB) {
 	`).Scan(&activePermissionCount, &disabledPermissionCount); err != nil {
 		t.Fatalf("read retired Permission counts: %v", err)
 	}
-	if activePermissionCount != 217 || disabledPermissionCount != 78 {
-		t.Fatalf("Permission status counts = active:%d disabled:%d, want 217 and 78", activePermissionCount, disabledPermissionCount)
+	if activePermissionCount != 226 || disabledPermissionCount != 71 {
+		t.Fatalf("Permission status counts = active:%d disabled:%d, want 226 and 71", activePermissionCount, disabledPermissionCount)
 	}
 
 	var disabledRoles string
@@ -341,8 +517,8 @@ func assertMFABootstrapConstraints(t *testing.T, db *sql.DB) {
 	if err := db.QueryRow(`
 		INSERT INTO system.mfa_challenges
 		    (token_hash, principal_id, issued_authorization_version,
-		     authentication_methods, authenticated_at, expires_at)
-		VALUES ($1, $2, 1, ARRAY['password'], now(), now() + interval '5 minutes')
+		     authentication_methods, authenticated_at, expires_at, purpose)
+		VALUES ($1, $2, 1, ARRAY['password'], now(), now() + interval '5 minutes', 'login')
 		RETURNING id
 	`, tokenHash('d'), principalID).Scan(&challengeID); err != nil {
 		t.Fatalf("create MFA challenge: %v", err)
@@ -352,6 +528,14 @@ func assertMFABootstrapConstraints(t *testing.T, db *sql.DB) {
 	}
 	if _, err := db.Exec(`UPDATE system.mfa_challenges SET consumed_at = now() WHERE id = $1`, challengeID); err == nil {
 		t.Fatal("MFA challenge was consumed twice")
+	}
+	if _, err := db.Exec(`
+		INSERT INTO system.mfa_challenges
+		    (token_hash, principal_id, issued_authorization_version,
+		     authentication_methods, authenticated_at, expires_at, purpose)
+		VALUES ($1, $2, 1, ARRAY['password'], now(), now() + interval '5 minutes', 'step_up')
+	`, tokenHash('9'), principalID); err == nil {
+		t.Fatal("step-up MFA challenge without source family succeeded")
 	}
 
 	if _, err := db.Exec(`
@@ -667,9 +851,9 @@ func assertAuditContextConstraints(t *testing.T, db *sql.DB) {
 func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	t.Helper()
 
-	assertTableCount(t, db, "system.permissions", 295)
+	assertTableCount(t, db, "system.permissions", 297)
 	assertTableCount(t, db, "system.roles", 19)
-	assertTableCount(t, db, "system.role_permissions", 239)
+	assertTableCount(t, db, "system.role_permissions", 248)
 	assertTableCount(t, db, "system.role_conflicts", 3)
 	assertTableCount(t, db, "system.oauth_clients", 1)
 	assertTableCount(t, db, "system.principals", 0)
@@ -680,8 +864,8 @@ func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	if err := db.QueryRow(`SELECT count(DISTINCT owner_module), count(*) FILTER (WHERE owner_module = 'system') FROM system.permissions`).Scan(&ownerCount, &systemPermissionCount); err != nil {
 		t.Fatalf("read seeded Permission owners: %v", err)
 	}
-	if ownerCount != 15 || systemPermissionCount != 105 {
-		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 15 and 105", ownerCount, systemPermissionCount)
+	if ownerCount != 15 || systemPermissionCount != 107 {
+		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 15 and 107", ownerCount, systemPermissionCount)
 	}
 
 	var invalidRoleCount int
@@ -1001,6 +1185,98 @@ func assertSessionTokenFamilyConstraints(t *testing.T, db *sql.DB) {
 	assertTimestampSet(t, db, `SELECT revoked_at FROM system.access_tokens WHERE id = $1`, replacementAccessTokenID, "family access-token revocation")
 	assertTimestampSet(t, db, `SELECT revoked_at FROM system.refresh_tokens WHERE id = $1`, replacementRefreshTokenID, "family refresh-token revocation")
 	assertTimestampSet(t, db, `SELECT revoked_at FROM system.resource_access_tickets WHERE id = $1`, resourceTicketID, "family resource-ticket revocation")
+}
+
+func assertAuthorizationVersionRefreshConstraints(t *testing.T, db *sql.DB) {
+	t.Helper()
+
+	principalID := createMigrationUser(t, db, "Authorization Refresh User")
+	var tenantID int64
+	if err := db.QueryRow(`SELECT id FROM system.tenants WHERE code = 'migration-test'`).Scan(&tenantID); err != nil {
+		t.Fatalf("find authorization refresh tenant: %v", err)
+	}
+	var membershipID int64
+	if err := db.QueryRow(`
+		INSERT INTO system.tenant_memberships
+		    (tenant_id, principal_id, status, source_type, joined_at, created_by_principal_id)
+		VALUES ($1, $2, 'active', 'manual', now() - interval '1 minute', $2)
+		RETURNING id
+	`, tenantID, principalID).Scan(&membershipID); err != nil {
+		t.Fatalf("create authorization refresh membership: %v", err)
+	}
+	var authorizationVersion int64
+	if err := db.QueryRow(`SELECT authorization_version FROM system.principals WHERE id = $1`, principalID).Scan(&authorizationVersion); err != nil {
+		t.Fatalf("read authorization refresh version: %v", err)
+	}
+	var familyID int64
+	if err := db.QueryRow(`
+		INSERT INTO system.refresh_token_families
+		    (principal_id, context_type, tenant_membership_id, issued_authorization_version,
+		     client_id, auth_type, audiences, scopes, authentication_methods, assurance_level,
+		     authenticated_at, expires_at)
+		VALUES
+		    ($1, 'tenant', $2, $3, 'addp-web', 'first_party', ARRAY['addp.api'], ARRAY[]::text[],
+		     ARRAY['password'], 'aal1', now() - interval '1 minute', now() + interval '1 hour')
+		RETURNING id
+	`, principalID, membershipID, authorizationVersion).Scan(&familyID); err != nil {
+		t.Fatalf("create authorization refresh family: %v", err)
+	}
+
+	authorizationVersion = incrementMigrationPrincipalAuthorizationVersion(t, db, principalID)
+	if _, err := db.Exec(`UPDATE system.refresh_token_families SET issued_authorization_version = $1 WHERE id = $2`, authorizationVersion, familyID); err != nil {
+		t.Fatalf("advance active family to current authorization version: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE system.refresh_token_families SET issued_authorization_version = $1 WHERE id = $2`, authorizationVersion, familyID); err == nil {
+		t.Fatal("active family accepted a non-increasing authorization version")
+	}
+	if _, err := db.Exec(`UPDATE system.refresh_token_families SET issued_authorization_version = $1 WHERE id = $2`, authorizationVersion+1, familyID); err == nil {
+		t.Fatal("active family advanced beyond the current principal authorization version")
+	}
+
+	authorizationVersion = incrementMigrationPrincipalAuthorizationVersion(t, db, principalID)
+	if _, err := db.Exec(`
+		UPDATE system.refresh_token_families
+		SET issued_authorization_version = $1, client_id = 'changed-client'
+		WHERE id = $2
+	`, authorizationVersion, familyID); err == nil {
+		t.Fatal("authorization version advance accepted a simultaneous family identity change")
+	}
+	if _, err := db.Exec(`UPDATE system.refresh_token_families SET issued_authorization_version = $1 WHERE id = $2`, authorizationVersion, familyID); err != nil {
+		t.Fatalf("advance family after rejected identity change: %v", err)
+	}
+
+	authorizationVersion = incrementMigrationPrincipalAuthorizationVersion(t, db, principalID)
+	if _, err := db.Exec(`
+		UPDATE system.refresh_token_families
+		SET issued_authorization_version = $1, revoked_at = now(), revoked_reason = 'combined_change'
+		WHERE id = $2
+	`, authorizationVersion, familyID); err == nil {
+		t.Fatal("family revocation accepted an authorization version change")
+	}
+	if _, err := db.Exec(`UPDATE system.refresh_token_families SET issued_authorization_version = $1 WHERE id = $2`, authorizationVersion, familyID); err != nil {
+		t.Fatalf("advance family before revocation: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE system.refresh_token_families SET revoked_at = now(), revoked_reason = 'test_complete' WHERE id = $1`, familyID); err != nil {
+		t.Fatalf("revoke authorization refresh family: %v", err)
+	}
+	authorizationVersion = incrementMigrationPrincipalAuthorizationVersion(t, db, principalID)
+	if _, err := db.Exec(`UPDATE system.refresh_token_families SET issued_authorization_version = $1 WHERE id = $2`, authorizationVersion, familyID); err == nil {
+		t.Fatal("revoked family accepted an authorization version advance")
+	}
+}
+
+func incrementMigrationPrincipalAuthorizationVersion(t *testing.T, db *sql.DB, principalID int64) int64 {
+	t.Helper()
+	var authorizationVersion int64
+	if err := db.QueryRow(`
+		UPDATE system.principals
+		SET authorization_version = authorization_version + 1
+		WHERE id = $1
+		RETURNING authorization_version
+	`, principalID).Scan(&authorizationVersion); err != nil {
+		t.Fatalf("increment migration principal authorization version: %v", err)
+	}
+	return authorizationVersion
 }
 
 func assertOAuthFositeStorageConstraints(t *testing.T, db *sql.DB) {

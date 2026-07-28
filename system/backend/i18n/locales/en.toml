@@ -37,6 +37,18 @@ other = "The current password is incorrect"
 [system.auth.password_unchanged]
 other = "The new password must differ from the current password"
 
+[system.auth.totp_already_enrolled]
+other = "An authenticator is already enabled for this account"
+
+[system.auth.totp_enrollment_required]
+other = "Enable an authenticator for this account first"
+
+[system.auth.invalid_mfa_verification]
+other = "The verification code is invalid, expired, or the session state has changed"
+
+[system.iam.role_assignment_already_exists]
+other = "This member already has the role in this scope; no duplicate assignment is needed."
+
 [system.log.not_found]
 other = "Log not found"
 

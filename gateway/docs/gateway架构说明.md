@@ -112,7 +112,7 @@ Redis 原子操作（Lua 脚本）
 
 ### 4. 访问日志 📝
 
-异步记录所有 API 访问到 PostgreSQL `gateway.api_access_logs` 表。
+异步记录所有已验证的外部 API Key 访问到 PostgreSQL `gateway.api_access_logs` 表。Browser Bearer、Cookie 和公开请求不进入该表。
 
 **记录内容**：
 - 应用 ID 和 API Key 前缀
@@ -189,15 +189,14 @@ Request
     - 三层缓存验证（本地 → Redis → System API）
     - 存储 app_id、app_name 到 context
   ↓
-[3] Rate Limiter Middleware
+[3] Access Logger Middleware（代码执行时包裹 Rate Limiter）
+    - 只为已验证 API Key 请求记录开始时间和结果
+    - 不读取请求体，脱敏 Query 后异步写入 PostgreSQL
+  ↓
+[4] Rate Limiter Middleware
     - 检查 context 中的 api_key_info
     - Redis 令牌桶检查
-    - 超限返回 429
-  ↓
-[4] Access Logger Middleware
-    - 记录请求开始时间
-    - 执行业务处理
-    - 异步记录访问日志到 PostgreSQL
+    - 超限返回 429，结果由 Access Logger 记录
   ↓
 [5] Route Handler (Proxy)
     - 根据路径规则选择目标服务
@@ -358,15 +357,19 @@ Gateway 使用 **前缀匹配**，支持通配符和查询参数透传：
 
 #### 访问日志（api_access_logs）
 
-**实现状态**：⚠️ **当前未实现**
+**实现状态**：已实现。Gateway 启动时按仓库统一约定对 `AccessLog` 执行 GORM AutoMigrate；迁移失败时不启用数据库访问日志，不允许请求处理中持续重试不存在的表。
 
-Gateway 有访问日志中间件的代码实现（`internal/middleware/access_logger.go`），设计用于记录 API Key 访问审计和性能监控，但由于未执行 GORM AutoMigrate，`gateway.api_access_logs` 表实际上不存在，访问日志功能未启用。
-
-**设计用途**（未来实现）：
+**用途**：
 - 记录 API Key 访问信息（application_id, api_key_prefix）
 - 监控缓存性能（cache_hit 指标）
 - 审计限流事件（rate_limited 指标）
 - 分析响应时间（response_time_ms）
+
+**安全边界**：
+- 只记录通过外部 API Key 认证的请求；Browser Bearer、Cookie 和公开认证请求由目标模块处理，不进入 Gateway AccessLog；
+- 不读取或保存任何请求体；
+- Query 参数只保存脱敏后的副本，密码、Code、Token、Secret、Credential、Challenge、Verifier、Signature、Cookie、Authorization 和 API Key 等敏感字段值统一替换为 `[REDACTED]`；
+- API Key 仅允许保存不可用于认证的短 Prefix，不保存原值、Hash 或 Header。
 
 **与 System AuditLog 的关系**：
 - **System AuditLog**（`system.audit_logs`）：已实现，记录**用户业务操作审计**（谁做了什么操作）
@@ -374,10 +377,10 @@ Gateway 有访问日志中间件的代码实现（`internal/middleware/access_lo
   - 记录内容：用户信息、HTTP 请求、资源类型、错误追踪
   - 记录范围：仅非 GET 请求（创建、更新、删除等修改操作）
   - 用途：合规审计、问题追溯
-- **Gateway AccessLog**（未实现）：设计用于记录 **API Key 访问审计和性能监控**
+- **Gateway AccessLog**：记录 **API Key 访问审计和性能监控**
   - 使用范围：仅 Gateway 模块
   - 记录内容：API Key 信息、服务路由、缓存命中、限流状态
-  - 记录范围：所有请求（包括 GET）
+  - 记录范围：所有已验证 API Key 请求（包括 GET）
   - 用途：性能分析、限流审计、缓存优化
 
 **两者关系**：互补而非替代。System AuditLog 关注"谁做了什么"，Gateway AccessLog 关注"API Key 访问性能和限流"。
@@ -472,13 +475,14 @@ gateway/
    - 三层缓存验证：本地缓存 → Redis 缓存 → System API
    - 将验证结果存入 gin context
 
-4. 限流中间件
+4. 访问日志中间件
+   - 确认存在已验证 API Key 上下文
+   - 记录开始时间，不读取请求体
+
+5. 限流中间件
    - 读取 app_id
    - Redis 令牌桶检查
    - 通过或返回 429
-
-5. 访问日志中间件
-   - 记录请求开始时间
 
 6. 路由匹配 → 代理转发
    - 匹配规则: /api/v1/manager/* → managerProxy
@@ -487,7 +491,7 @@ gateway/
 7. Manager 服务处理并返回
 
 8. Gateway 返回响应
-   - 访问日志异步写入 PostgreSQL
+   - 访问日志对 Query 脱敏后异步写入 PostgreSQL
    - 返回给客户端
 ```
 

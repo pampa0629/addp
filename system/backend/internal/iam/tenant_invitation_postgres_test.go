@@ -66,11 +66,17 @@ func TestTenantInvitationServiceAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create invitation creator: %v", err)
 	}
-	tenantA, err := tenantService.Create(ctx, CreateTenantInput{Code: "invitation-a", Name: "Invitation A", Audit: audit})
+	tenantA, err := tenantService.Create(ctx, CreateTenantInput{
+		Code: "invitation-a", Name: "Invitation A", InitialAdministratorPrincipalID: creator.PrincipalID,
+		ActorPrincipalID: creator.PrincipalID, Audit: audit,
+	})
 	if err != nil {
 		t.Fatalf("create invitation tenant A: %v", err)
 	}
-	tenantB, err := tenantService.Create(ctx, CreateTenantInput{Code: "invitation-b", Name: "Invitation B", Audit: audit})
+	tenantB, err := tenantService.Create(ctx, CreateTenantInput{
+		Code: "invitation-b", Name: "Invitation B", InitialAdministratorPrincipalID: creator.PrincipalID,
+		ActorPrincipalID: creator.PrincipalID, Audit: audit,
+	})
 	if err != nil {
 		t.Fatalf("create invitation tenant B: %v", err)
 	}

@@ -73,9 +73,18 @@ func (m *APIKeyAuthMiddleware) Handler() gin.HandlerFunc {
 		c.Set("api_key_info", info)
 		c.Set("app_id", info.AppID)
 		c.Set("app_name", info.AppName)
+		c.Set("api_key_prefix", apiKeyLogPrefix(apiKey))
 
 		c.Next()
 	}
+}
+
+func apiKeyLogPrefix(apiKey string) string {
+	const maxPrefixLength = 12
+	if len(apiKey) <= maxPrefixLength {
+		return ""
+	}
+	return apiKey[:maxPrefixLength]
 }
 
 // validateWithCache 三层缓存验证

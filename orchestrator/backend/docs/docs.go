@@ -856,7 +856,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "task_type": {
-                    "description": "provider 声明的稳定任务类型",
+                    "description": "稳定执行类型；可来自任务定义或 ad-hoc execution",
                     "type": "string"
                 },
                 "tenant_id": {

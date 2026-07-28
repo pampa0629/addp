@@ -55,7 +55,7 @@ func NewWebhookHandler(webhookService *service.WebhookService) *WebhookHandler {
 // @Router /webhook-destinations [get]
 // @Security BearerAuth
 func (h *WebhookHandler) ListWebhookDestinations(c *gin.Context) {
-	tenantID, ok := alertTenantID(c)
+	tenantID, ok := requireTenantID(c)
 	if !ok {
 		return
 	}
@@ -83,7 +83,7 @@ func (h *WebhookHandler) ListWebhookDestinations(c *gin.Context) {
 // @Router /webhook-destinations [post]
 // @Security BearerAuth
 func (h *WebhookHandler) CreateWebhookDestination(c *gin.Context) {
-	tenantID, ok := alertTenantID(c)
+	tenantID, ok := requireTenantID(c)
 	if !ok {
 		return
 	}
@@ -217,7 +217,7 @@ func (h *WebhookHandler) DeleteWebhookDestination(c *gin.Context) {
 // @Router /webhook-deliveries [get]
 // @Security BearerAuth
 func (h *WebhookHandler) ListWebhookDeliveries(c *gin.Context) {
-	tenantID, ok := alertTenantID(c)
+	tenantID, ok := requireTenantID(c)
 	if !ok {
 		return
 	}
@@ -251,7 +251,7 @@ func (h *WebhookHandler) ListWebhookDeliveries(c *gin.Context) {
 // @Router /webhook-deliveries/{delivery_id}/retry [post]
 // @Security BearerAuth
 func (h *WebhookHandler) RetryWebhookDelivery(c *gin.Context) {
-	tenantID, ok := alertTenantID(c)
+	tenantID, ok := requireTenantID(c)
 	if !ok {
 		return
 	}
@@ -269,7 +269,7 @@ func webhookIdentity(c *gin.Context) (uint, int, bool) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, moni18n.MsgInvalidWebhookDestination)})
 		return 0, 0, false
 	}
-	tenantID, ok := alertTenantID(c)
+	tenantID, ok := requireTenantID(c)
 	return uint(id), tenantID, ok
 }
 

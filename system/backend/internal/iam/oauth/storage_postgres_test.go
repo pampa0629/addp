@@ -168,6 +168,59 @@ func TestStorageAgainstPostgres(t *testing.T) {
 		if inactiveRequest == nil || !errors.Is(err, fosite.ErrInactiveToken) {
 			t.Fatalf("old refresh token = %#v, %v", inactiveRequest, err)
 		}
+
+		repository := iam.NewRepository(db)
+		advancedVersion, err := repository.IncrementPrincipalAuthorizationVersion(ctx, principalID)
+		if err != nil || advancedVersion <= authorizationVersion {
+			t.Fatalf("advance OAuth principal authorization version = %d err=%v", advancedVersion, err)
+		}
+		if _, err := storage.GetAccessTokenSession(ctx, newAccessSignature, NewIAMSession()); !errors.Is(err, fosite.ErrInactiveToken) {
+			t.Fatalf("OAuth access token after authorization change error = %v, want inactive token", err)
+		}
+		currentRefreshRequest, err := storage.GetRefreshTokenSession(ctx, newRefreshSignature, NewIAMSession())
+		if err != nil {
+			t.Fatalf("load current OAuth refresh token after authorization change: %v", err)
+		}
+		currentRefreshRequest.GetRequestForm().Set("grant_type", string(fosite.GrantTypeRefreshToken))
+		currentRefreshRequest.GetSession().SetExpiresAt(fosite.AccessToken, now.Add(15*time.Minute))
+		advancedAccessPlain := "addp_at_storage-postgres-access-3"
+		advancedAccessSignature := opaqueSignature(advancedAccessPlain)
+		advancedRefreshSignature := opaqueSignature("addp_rt_storage-postgres-refresh-3")
+		txCtx, err = storage.BeginTX(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := storage.RotateRefreshToken(txCtx, requestID.String(), newRefreshSignature); err != nil {
+			_ = storage.Rollback(txCtx)
+			t.Fatalf("rotate OAuth refresh token after authorization change: %v", err)
+		}
+		if err := storage.CreateAccessTokenSession(txCtx, advancedAccessSignature, currentRefreshRequest); err != nil {
+			_ = storage.Rollback(txCtx)
+			t.Fatalf("create OAuth access token after authorization change: %v", err)
+		}
+		if err := storage.CreateRefreshTokenSession(txCtx, advancedRefreshSignature, advancedAccessSignature, currentRefreshRequest); err != nil {
+			_ = storage.Rollback(txCtx)
+			t.Fatalf("create OAuth refresh token after authorization change: %v", err)
+		}
+		if err := storage.Commit(txCtx); err != nil {
+			t.Fatalf("commit OAuth authorization-version rotation: %v", err)
+		}
+		var advancedFamily iam.RefreshTokenFamily
+		if err := db.Where("protocol_request_id = ?", requestID).Take(&advancedFamily).Error; err != nil {
+			t.Fatal(err)
+		}
+		if advancedFamily.IssuedAuthorizationVersion != advancedVersion || advancedFamily.RevokedAt != nil {
+			t.Fatalf("OAuth family after authorization-version rotation = %#v", advancedFamily)
+		}
+		authContextService, err := iam.NewAuthContextService(repository)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := authContextService.ResolveUserAccessToken(ctx, advancedAccessPlain); err != nil {
+			t.Fatalf("resolve OAuth access token after authorization-version rotation: %v", err)
+		}
+		authorizationVersion = advancedVersion
+
 		replayAuditContext := WithTransactionAudit(ctx, iam.AuditEvent{
 			EventName:  "oauth.token.issued",
 			Result:     iam.AuditResultSucceeded,

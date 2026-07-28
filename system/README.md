@@ -9,8 +9,10 @@
 
 ## 🎯 核心功能
 
-- **多租户管理**: 三级权限体系（超级管理员、租户管理员、普通用户）
-- **账号认证**: JWT 认证 + bcrypt 密码加密
+- **统一 IAM**: Principal、User、Local Account、Tenant Membership、Role / Permission 和平台三员分立
+- **账号认证**: 密码 + TOTP、opaque Access Token、Refresh Token Family 与 AuthContext
+- **OAuth 2.0**: 受控 Fosite 唯一主路径，支持 Authorization Code + PKCE、RFC 8252 loopback 和 Device Flow
+- **权限治理**: 平台/租户上下文、Role Assignment、Permission Manifest 与 owner 资源策略
 - **引擎管理**: 数据库/存储引擎连接配置（8种引擎，AES-256-GCM 加密）
 - **审计日志**: 自动记录操作日志，支持租户隔离
 
@@ -42,21 +44,28 @@ System 不创建默认全权管理员、默认租户或共享弱密码账号。�
 
 租户内权限由 Tenant Membership、Role Assignment 和 owner 模块资源授权共同决定，不使用旧的三级 `user_type` 分支。
 
+新 Tenant 必须由平台系统管理员指定一个已由平台安全管理员创建的有效普通 User 作为首位 `tenant.administrator`。Tenant、首个 Membership、首个 Role Assignment 和审计在一个事务中完成；Tenant 不保存独立管理员密码。切换前已存在且没有任何 Membership/Assignment 的 Tenant 只能执行一次正式 Initialization，不能通过 SQL 或第二套授权接口补角色。
+
+普通 User 遗失本地密码时，由平台安全管理员通过用户管理中的受控密码重置入口处理。该操作替换 Password Hash、递增授权版本、撤销既有会话并写入高风险审计；有效平台角色持有人不显示该操作，也不能调用对应 API。平台三员继续使用本人改密或离线三员灾难恢复，不与普通 User 重置混用。
+
 ## 📡 主要 API 端点
 
+```text
+认证与上下文: /api/v1/system/login、/refresh、/logout、/auth/*
+OAuth 2.0:       /api/v1/system/oauth/*
+平台 IAM:       /api/v1/system/platform/tenants、/platform/users、/platform/identity_changes
+租户 IAM:       /api/v1/system/tenant/memberships、/tenant/invitations、/tenant/roles、/tenant/role_assignments
+审计:            /api/v1/system/platform/audit/events、/tenant/audit/events
+引擎管理:       /api/v1/system/engines
 ```
-认证:     POST /api/v1/system/login
-租户管理: GET/POST/PUT/DELETE /api/v1/system/tenants
-用户管理: GET/POST/PUT/DELETE /api/v1/system/users
-引擎管理: GET/POST/PUT/DELETE /api/v1/system/engines
-日志管理: GET /api/v1/system/logs
-```
+
+不存在公开 `/register`、旧 `/users` CRUD、物理删除 `/tenants` 或混合语义 `/logs` 路径。
 
 完整 API 文档请查看 [CLAUDE.md#API端点](./CLAUDE.md#api-端点)
 
 ## 🔐 安全特性
 
-- **用户密码**: bcrypt 加密
+- **用户密码**: bcrypt 自适应 Hash
 - **引擎密码**: AES-256-GCM 加密
 - **认证方式**: opaque Access Token + Refresh Token Family
 

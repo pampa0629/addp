@@ -788,6 +788,31 @@ const docTemplate = `{
                 "x-addp-auth-mode": "authenticated"
             }
         },
+        "/auth/mfa": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证 | Authentication"
+                ],
+                "summary": "查询当前用户 MFA 状态 | Get current user MFA status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMMFAStatusResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "self"
+            }
+        },
         "/auth/mfa-verifications": {
             "post": {
                 "consumes": [
@@ -826,6 +851,148 @@ const docTemplate = `{
                     }
                 },
                 "x-addp-auth-mode": "public"
+            }
+        },
+        "/auth/mfa/step-up-challenges": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证 | Authentication"
+                ],
+                "summary": "开始会话增强认证 | Begin session step-up",
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMMFAChallengeResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "self"
+            }
+        },
+        "/auth/mfa/step-up-verifications": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证 | Authentication"
+                ],
+                "summary": "完成会话增强认证 | Complete session step-up",
+                "parameters": [
+                    {
+                        "description": "TOTP 验证 | TOTP verification",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCompleteMFAStepUpRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMAccessTokenResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "self"
+            }
+        },
+        "/auth/mfa/totp-enrollment-verifications": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证 | Authentication"
+                ],
+                "summary": "完成 TOTP 登记 | Complete TOTP enrollment",
+                "parameters": [
+                    {
+                        "description": "TOTP 验证 | TOTP verification",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCompleteMFAEnrollmentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMAccessTokenResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "self"
+            }
+        },
+        "/auth/mfa/totp-enrollments": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证 | Authentication"
+                ],
+                "summary": "开始 TOTP 登记 | Begin TOTP enrollment",
+                "parameters": [
+                    {
+                        "description": "当前密码 | Current password",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMBeginMFAEnrollmentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMMFAEnrollmentResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "self"
             }
         },
         "/engines": {
@@ -1708,6 +1875,20 @@ const docTemplate = `{
                     "平台审计 | Platform Audit"
                 ],
                 "summary": "查询平台审计事件 | List platform audit events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "实体类型 | Entity type",
+                        "name": "entity_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "实体 ID | Entity ID",
+                        "name": "entity_id",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1764,6 +1945,18 @@ const docTemplate = `{
                         "description": "csv 或 json | csv or json",
                         "name": "format",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "实体类型 | Entity type",
+                        "name": "entity_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "实体 ID | Entity ID",
+                        "name": "entity_id",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -1797,6 +1990,20 @@ const docTemplate = `{
                     "平台审计 | Platform Audit"
                 ],
                 "summary": "汇总平台审计事件 | Summarize platform audit events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "实体类型 | Entity type",
+                        "name": "entity_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "实体 ID | Entity ID",
+                        "name": "entity_id",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1825,6 +2032,20 @@ const docTemplate = `{
                     "平台审计 | Platform Audit"
                 ],
                 "summary": "查询平台审计趋势 | Get platform audit trends",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "实体类型 | Entity type",
+                        "name": "entity_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "实体 ID | Entity ID",
+                        "name": "entity_id",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -2101,6 +2322,46 @@ const docTemplate = `{
                 ]
             }
         },
+        "/platform/tenant_administrator_candidates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅返回有效且未持有平台角色的普通用户 | Return only active users without an effective platform role",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台租户 | Platform Tenants"
+                ],
+                "summary": "查询首位租户管理员候选人 | List initial tenant administrator candidates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "姓名、邮箱或用户名 | Name, email, or username",
+                        "name": "search",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api.IAMTenantAdministratorCandidateResponse"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "platform.tenant.create"
+                ]
+            }
+        },
         "/platform/tenants": {
             "get": {
                 "security": [
@@ -2369,6 +2630,68 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "platform.tenant.close"
+                ]
+            }
+        },
+        "/platform/tenants/{id}/initialization": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "为尚无成员和角色分配的既有租户原子建立首位租户管理员 | Atomically establish the first tenant administrator for an existing tenant without memberships or assignments",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台租户 | Platform Tenants"
+                ],
+                "summary": "初始化既有租户 | Initialize existing tenant",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "租户 ID | Tenant ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "首位租户管理员 | Initial tenant administrator",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMInitializeTenantRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMTenantResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "platform.tenant.initialize"
                 ]
             }
         },
@@ -2716,6 +3039,80 @@ const docTemplate = `{
                 ]
             }
         },
+        "/platform/users/{id}/reset-password": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅允许重置不持有有效平台角色的普通用户，并撤销其全部既有认证会话 | Reset only an ordinary user without an effective platform role and revoke all existing authentication sessions",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台用户 | Platform Users"
+                ],
+                "summary": "重置普通用户本地密码 | Reset ordinary user local password",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "用户 ID | User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "新密码与原因 | New password and reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMResetManagedLocalAccountPasswordRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMManagedLocalAccountPasswordResetResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.local_account.reset"
+                ]
+            }
+        },
         "/platform/users/{id}/suspend": {
             "post": {
                 "security": [
@@ -2799,6 +3196,20 @@ const docTemplate = `{
                     "租户审计 | Tenant Audit"
                 ],
                 "summary": "查询当前租户审计事件 | List current tenant audit events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "实体类型 | Entity type",
+                        "name": "entity_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "实体 ID | Entity ID",
+                        "name": "entity_id",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -2855,6 +3266,18 @@ const docTemplate = `{
                         "description": "csv 或 json | csv or json",
                         "name": "format",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "实体类型 | Entity type",
+                        "name": "entity_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "实体 ID | Entity ID",
+                        "name": "entity_id",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -2888,6 +3311,20 @@ const docTemplate = `{
                     "租户审计 | Tenant Audit"
                 ],
                 "summary": "汇总当前租户审计事件 | Summarize current tenant audit events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "实体类型 | Entity type",
+                        "name": "entity_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "实体 ID | Entity ID",
+                        "name": "entity_id",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -2916,6 +3353,20 @@ const docTemplate = `{
                     "租户审计 | Tenant Audit"
                 ],
                 "summary": "查询当前租户审计趋势 | Get current tenant audit trends",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "实体类型 | Entity type",
+                        "name": "entity_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "实体 ID | Entity ID",
+                        "name": "entity_id",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -3564,6 +4015,389 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "iam.tenant_membership.suspend"
+                ]
+            }
+        },
+        "/tenant/role_assignments": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户角色分配 | Tenant Role Assignments"
+                ],
+                "summary": "查询当前租户角色分配 | List role assignments in the current tenant",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "成员关系 ID | Membership ID",
+                        "name": "membership_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态：active 或 revoked | Status: active or revoked",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "授权范围类型 | Assignment scope type",
+                        "name": "scope_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "部门 ID，仅 department 范围 | Department ID for department scope",
+                        "name": "department_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "项目组 ID，仅 project_group 范围 | Project group ID for project_group scope",
+                        "name": "project_group_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/internal_api.IAMTenantRoleAssignmentResponse"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer",
+                                    "format": "int64"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.tenant_role_assignment.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户角色分配 | Tenant Role Assignments"
+                ],
+                "summary": "创建当前租户角色分配 | Create role assignment in the current tenant",
+                "parameters": [
+                    {
+                        "description": "角色分配 | Role assignment",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCreateTenantRoleAssignmentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMTenantRoleAssignmentResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "同一成员、角色和授权范围已存在 | The membership already has the role in the requested scope",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.tenant_role_assignment.create"
+                ]
+            }
+        },
+        "/tenant/role_assignments/{id}/revoke": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户角色分配 | Tenant Role Assignments"
+                ],
+                "summary": "撤销当前租户角色分配 | Revoke role assignment in the current tenant",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "角色分配 ID | Role assignment ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "撤销原因 | Revocation reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMRevokeTenantRoleAssignmentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMTenantRoleAssignmentResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.tenant_role_assignment.revoke"
+                ]
+            }
+        },
+        "/tenant/role_permissions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户角色 | Tenant Roles"
+                ],
+                "summary": "查询租户自定义角色可选权限 | List permissions available to tenant custom roles",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api.IAMTenantAssignablePermissionResponse"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.tenant_role.read"
+                ]
+            }
+        },
+        "/tenant/roles": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户角色 | Tenant Roles"
+                ],
+                "summary": "查询当前租户可分配角色 | List assignable roles in the current tenant",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api.IAMTenantRoleResponse"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.tenant_role.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户角色 | Tenant Roles"
+                ],
+                "summary": "创建租户自定义角色 | Create tenant custom role",
+                "parameters": [
+                    {
+                        "description": "角色定义 | Role definition",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMTenantRoleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMTenantRoleResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.tenant_role.create"
+                ]
+            }
+        },
+        "/tenant/roles/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户角色 | Tenant Roles"
+                ],
+                "summary": "更新租户自定义角色 | Update tenant custom role",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "角色 ID | Role ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "角色定义 | Role definition",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMTenantRoleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMTenantRoleResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.tenant_role.update"
+                ]
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户角色 | Tenant Roles"
+                ],
+                "summary": "停用租户自定义角色 | Disable tenant custom role",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "角色 ID | Role ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "停用原因 | Disable reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMDeleteTenantRoleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.tenant_role.delete"
                 ]
             }
         },
@@ -5158,6 +5992,14 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.IAMBeginMFAEnrollmentRequest": {
+            "type": "object",
+            "properties": {
+                "current_password": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api.IAMBrowserLoginRequest": {
             "type": "object",
             "properties": {
@@ -5204,6 +6046,28 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMCompleteMFAEnrollmentRequest": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "enrollment_token": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMCompleteMFAStepUpRequest": {
+            "type": "object",
+            "properties": {
+                "challenge_token": {
+                    "type": "string"
+                },
+                "code": {
                     "type": "string"
                 }
             }
@@ -5343,7 +6207,36 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "initial_administrator_principal_id": {
+                    "type": "string"
+                },
                 "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMCreateTenantRoleAssignmentRequest": {
+            "type": "object",
+            "properties": {
+                "department_id": {
+                    "type": "string"
+                },
+                "membership_id": {
+                    "type": "string"
+                },
+                "project_group_id": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "role_id": {
+                    "type": "string"
+                },
+                "scope_type": {
+                    "type": "string"
+                },
+                "valid_until": {
                     "type": "string"
                 }
             }
@@ -5442,6 +6335,14 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.IAMDeleteTenantRoleRequest": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api.IAMErrorResponse": {
             "type": "object",
             "properties": {
@@ -5449,6 +6350,14 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "error_code": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMInitializeTenantRequest": {
+            "type": "object",
+            "properties": {
+                "initial_administrator_principal_id": {
                     "type": "string"
                 }
             }
@@ -5537,6 +6446,9 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "password_reset_allowed": {
+                    "type": "boolean"
+                },
                 "status": {
                     "$ref": "#/definitions/github_com_addp_system_internal_iam.LocalAccountStatus"
                 },
@@ -5559,6 +6471,31 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.IAMMFAEnrollmentResponse": {
+            "type": "object",
+            "properties": {
+                "enrollment_token": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "otpauth_uri": {
+                    "type": "string"
+                },
+                "secret": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMMFAStatusResponse": {
+            "type": "object",
+            "properties": {
+                "totp_enrolled": {
+                    "type": "boolean"
+                }
+            }
+        },
         "internal_api.IAMMFAVerificationRequest": {
             "type": "object",
             "properties": {
@@ -5567,6 +6504,26 @@ const docTemplate = `{
                 },
                 "code": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMManagedLocalAccountPasswordResetResponse": {
+            "type": "object",
+            "properties": {
+                "authorization_version": {
+                    "type": "string"
+                },
+                "changed_at": {
+                    "type": "string"
+                },
+                "consumed_context_ticket_count": {
+                    "type": "integer"
+                },
+                "consumed_mfa_challenge_count": {
+                    "type": "integer"
+                },
+                "revoked_family_count": {
+                    "type": "integer"
                 }
             }
         },
@@ -5726,10 +6683,63 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.IAMResetManagedLocalAccountPasswordRequest": {
+            "type": "object",
+            "properties": {
+                "new_password": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api.IAMReviewPrivilegedIdentityChangeRequest": {
             "type": "object",
             "properties": {
                 "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMRevokeTenantRoleAssignmentRequest": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMTenantAdministratorCandidateResponse": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                },
+                "primary_email": {
+                    "type": "string"
+                },
+                "principal_id": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMTenantAssignablePermissionResponse": {
+            "type": "object",
+            "properties": {
+                "allowed_scope_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "permission_key": {
+                    "type": "string"
+                },
+                "risk_level": {
                     "type": "string"
                 }
             }
@@ -5843,6 +6853,9 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "initialized": {
+                    "type": "boolean"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -5850,6 +6863,141 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_addp_system_internal_iam.TenantStatus"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMTenantRoleAssignmentResponse": {
+            "type": "object",
+            "properties": {
+                "created_by_principal_id": {
+                    "type": "string"
+                },
+                "department_id": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "membership_id": {
+                    "type": "string"
+                },
+                "principal_id": {
+                    "type": "string"
+                },
+                "project_group_id": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "revoked_at": {
+                    "type": "string"
+                },
+                "revoked_by_principal_id": {
+                    "type": "string"
+                },
+                "role_id": {
+                    "type": "string"
+                },
+                "role_key": {
+                    "type": "string"
+                },
+                "role_name": {
+                    "type": "string"
+                },
+                "role_name_i18n_key": {
+                    "type": "string"
+                },
+                "scope_type": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                },
+                "valid_from": {
+                    "type": "string"
+                },
+                "valid_until": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMTenantRoleRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "permission_keys": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "role_key": {
+                    "type": "string"
+                },
+                "scope_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_api.IAMTenantRoleResponse": {
+            "type": "object",
+            "properties": {
+                "allowed_principal_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "allowed_scope_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "description": {
+                    "type": "string"
+                },
+                "description_i18n_key": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "immutable": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "name_i18n_key": {
+                    "type": "string"
+                },
+                "permission_keys": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "role_key": {
+                    "type": "string"
+                },
+                "role_type": {
                     "type": "string"
                 }
             }

@@ -322,7 +322,7 @@ Meta 扫描必须先通过 `CatalogProvider.ListChildren()` 获得 `CatalogEntry
 不应写入：
 
 - 表字段、主键、索引。
-- 需要执行 `COUNT(*)`、全量扫描、统计刷新或读取内容才能得到的真实行数和统计画像。
+- 需要执行 `COUNT(*)`、全量扫描、统计刷新或读取内容才能得到的真实行数和数据分布分析。
 - Shapefile / CSV / Parquet 等文件内部 schema。
 - 容器 children，例如 Excel sheet、SQLite table、GeoPackage layer、ZIP entry。
 - `access_index`。

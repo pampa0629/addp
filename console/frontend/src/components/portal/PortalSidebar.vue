@@ -145,4 +145,8 @@ defineExpose({
   padding-left: 0;
   text-align: center;
 }
+
+@media (max-width: 760px) {
+  .collapse-toggle { display: none; }
+}
 </style>

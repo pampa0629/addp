@@ -39,6 +39,10 @@
           v-else
           :selected-node="selectedPreviewNode"
           :preview-data="store.previewData"
+          :profile-preview-data="store.activeChildPreviewData || store.previewData"
+          :selected-child-name="store.selectedChildName"
+          :selected-ref-path="store.selectedRefPath"
+          :selected-nested-child-path="store.selectedNestedChildPath"
           :loading="store.previewLoading || store.childPreviewLoading"
           @page-change="handlePageChange"
           @child-change="handleChildChange"

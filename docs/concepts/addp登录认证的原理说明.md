@@ -105,6 +105,8 @@ Access Token expires_in=900
 
 同一个页面内的并发 API 请求共享一个刷新 Promise；同 origin 的多个页面通过 Web Locks 和 BroadcastChannel 协调。
 
+页面因 API 401 进入强制刷新时，其他标签页内存中“时间上尚未过期”的 Access Token 不能证明 Token Family 仍然有效，因此不得作为恢复结果。强制刷新必须在全局刷新锁内访问 System Refresh API；只有等待锁时由另一刷新者产生的更新 Token 才可以复用。
+
 Refresh Token Family 的最终有效期默认从登录时起固定 30 天。Token 轮换不会延长 Family 最终期限，因此达到 30 天、用户退出、账号停用或 Family 被撤销后需要重新登录。
 
 ## 五、Console iframe 认证
@@ -123,10 +125,18 @@ sequenceDiagram
     I->>I: Token 保存到内存
     I->>I: 加载当前用户和页面
     C-->>I: 后续 addp-auth-token 更新
-    C-->>I: addp-auth-logout
+    alt 会话已撤销或失效
+        C-->>I: addp-auth-logout + authentication_required
+        C->>C: 清理会话并进入登录页
+    else 临时刷新故障
+        C-->>I: addp-auth-error
+        I->>I: 保留会话并显示可重试状态
+    end
 ```
 
 iframe 模式下 Console 是唯一 Refresh Cookie 消费者。iframe 不调用 Refresh API，以免与父页面同时轮换同一 Refresh Token。
+
+`addp-auth-logout` 只表示会话已经无法恢复，必须携带稳定的 `authentication_required` 错误码。网络、锁竞争和服务器故障使用 `addp-auth-error`，不得清理 iframe 或 Console 的内存 Token。
 
 模块独立打开时没有父 Console，因此模块自身成为顶层 Browser AuthSession，并通过 Cookie 静默恢复。这是同一会话抽象在两种宿主模式下的运行方式，不是两套认证协议。
 

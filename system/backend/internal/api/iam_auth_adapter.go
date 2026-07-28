@@ -563,6 +563,11 @@ func respondIAMError(c *gin.Context, err error) {
 	messageID := sysi18n.MsgInternalError
 	var errorCode *string
 	switch {
+	case errors.Is(err, iam.ErrTenantRoleAssignmentAlreadyExists):
+		status = http.StatusConflict
+		messageID = sysi18n.MsgRoleAssignmentAlreadyExists
+		code := "role_assignment_already_exists"
+		errorCode = &code
 	case errors.Is(err, iam.ErrStepUpRequired):
 		status = http.StatusForbidden
 		messageID = sysi18n.MsgStepUpRequired

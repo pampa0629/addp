@@ -58,6 +58,26 @@ func TestIAMAuthHandlerContract(t *testing.T) {
 		assertIAMSessionCookies(t, recorder.Result().Cookies(), true, 30*24*60*60, 600)
 	})
 
+	t.Run("role assignment conflict uses a stable domain error", func(t *testing.T) {
+		router := gin.New()
+		router.Use(i18nmiddleware.I18nMiddleware())
+		router.GET("/conflict", func(c *gin.Context) {
+			respondIAMError(c, iam.ErrTenantRoleAssignmentAlreadyExists)
+		})
+		request := httptest.NewRequest(http.MethodGet, "/conflict", nil)
+		request.Header.Set("Accept-Language", "zh-cn")
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, request)
+
+		var response IAMErrorResponse
+		decodeIAMResponse(t, recorder, &response)
+		if recorder.Code != http.StatusConflict || response.ErrorCode == nil ||
+			*response.ErrorCode != "role_assignment_already_exists" ||
+			response.Error != "该成员已在此授权范围拥有该角色，无需重复分配。" {
+			t.Fatalf("role assignment conflict status=%d response=%#v", recorder.Code, response)
+		}
+	})
+
 	t.Run("multi-context login returns only a selection challenge", func(t *testing.T) {
 		membershipID := int64(22)
 		tenantID := int64(11)

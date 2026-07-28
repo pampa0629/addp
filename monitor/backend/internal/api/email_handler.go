@@ -53,7 +53,7 @@ func NewEmailHandler(emailService *service.EmailService) *EmailHandler {
 // @Router /email-destinations [get]
 // @Security BearerAuth
 func (h *EmailHandler) ListEmailDestinations(c *gin.Context) {
-	tenantID, ok := alertTenantID(c)
+	tenantID, ok := requireTenantID(c)
 	if !ok {
 		return
 	}
@@ -81,7 +81,7 @@ func (h *EmailHandler) ListEmailDestinations(c *gin.Context) {
 // @Router /email-destinations [post]
 // @Security BearerAuth
 func (h *EmailHandler) CreateEmailDestination(c *gin.Context) {
-	tenantID, ok := alertTenantID(c)
+	tenantID, ok := requireTenantID(c)
 	if !ok {
 		return
 	}
@@ -216,7 +216,7 @@ func (h *EmailHandler) DeleteEmailDestination(c *gin.Context) {
 // @Router /email-deliveries [get]
 // @Security BearerAuth
 func (h *EmailHandler) ListEmailDeliveries(c *gin.Context) {
-	tenantID, ok := alertTenantID(c)
+	tenantID, ok := requireTenantID(c)
 	if !ok {
 		return
 	}
@@ -250,7 +250,7 @@ func (h *EmailHandler) ListEmailDeliveries(c *gin.Context) {
 // @Router /email-deliveries/{delivery_id}/retry [post]
 // @Security BearerAuth
 func (h *EmailHandler) RetryEmailDelivery(c *gin.Context) {
-	tenantID, ok := alertTenantID(c)
+	tenantID, ok := requireTenantID(c)
 	if !ok {
 		return
 	}
@@ -268,7 +268,7 @@ func emailIdentity(c *gin.Context) (uint, int, bool) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, moni18n.MsgInvalidEmailDestination)})
 		return 0, 0, false
 	}
-	tenantID, ok := alertTenantID(c)
+	tenantID, ok := requireTenantID(c)
 	return uint(id), tenantID, ok
 }
 

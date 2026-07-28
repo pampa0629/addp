@@ -344,7 +344,6 @@ export const SIDEBAR_MENUS = {
     items: [
       {
         index: '/system/iam', icon: Lock, label: 'console.menus.system.iam',
-        permissions: ['platform.tenant.read', 'iam.user.read', 'iam.platform_identity_change.read', 'audit.event.read', 'iam.tenant_membership.read', 'iam.tenant_invitation.read', 'audit.tenant_event.read'],
       },
       { index: '/system/engines',      icon: Connection, label: 'console.menus.system.engines', permissions: ['system.engine.read'] },
       { index: '/system/applications', icon: Key,        label: 'console.menus.system.applications', permissions: ['system.application.read'] },

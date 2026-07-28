@@ -46,6 +46,7 @@ func SetupRouter(
 	pointCloudCOPCHandler *PointCloudCOPCHandler,
 	cadPreviewHandler *CADPreviewHandler,
 	model3DTilesHandler *Model3DTilesHandler,
+	dataProfileHandler *DataProfileHandler,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -113,6 +114,11 @@ func SetupRouter(
 		api.Use(audit.AuditMiddleware("manager", systemClient))
 	}
 	{
+		if dataProfileHandler != nil {
+			api.GET("/data-profiles/current", permission(managerauthorization.PermissionManagerDataItemRead), dataProfileHandler.GetCurrent)
+			api.POST("/data-profile-executions", permission(managerauthorization.PermissionManagerDataProfileExecute), dataProfileHandler.CreateExecution)
+		}
+
 		// 向量化 API：结果 artifact state 与一次性 execution
 		embeddingHandler := NewEmbeddingHandler(embeddingService)
 		api.POST("/embedding_executions", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), embeddingHandler.CreateEmbeddingExecution)

@@ -66,7 +66,7 @@ export const SEARCH_INDEX = [
   // 智能体
   { labelKey: 'console.menus.agent.label', module: 'agent', route: '/agent', keywords: ['智能体', 'AI', '对话', '助手', 'agent', 'chat', 'assistant'] },
   // 系统管理
-  { labelKey: 'console.menus.system.iam',          module: 'system', route: '/system/iam',          keywords: ['身份与访问管理', '用户', '租户', '权限', '审计', 'IAM', 'identity', 'access', 'account'], permissions: ['platform.tenant.read', 'iam.user.read', 'iam.platform_identity_change.read', 'audit.event.read', 'iam.tenant_membership.read', 'iam.tenant_invitation.read', 'audit.tenant_event.read'] },
+  { labelKey: 'console.menus.system.iam',          module: 'system', route: '/system/iam',          keywords: ['安全设置', '身份验证器', '用户', '租户', '权限', '审计', 'IAM', 'identity', 'access', 'account', 'security', 'authenticator'] },
   { labelKey: 'console.menus.system.engines',      module: 'system', route: '/system/engines',      keywords: ['引擎管理', '数据引擎', '引擎配置', 'engine', 'database'] },
   { labelKey: 'console.menus.system.applications', module: 'system', route: '/system/applications', keywords: ['应用管理', 'API密钥', 'application', 'api key'] },
 ]

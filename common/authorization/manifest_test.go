@@ -42,6 +42,17 @@ func TestDecodePermissionManifest(t *testing.T) {
 	}
 }
 
+func TestValidatePermissionManifestAcceptsResetAction(t *testing.T) {
+	input := strings.ReplaceAll(validManagerManifest, "manager.data_item.read", "manager.data_item.reset")
+	manifest, err := DecodePermissionManifest(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("DecodePermissionManifest() error = %v", err)
+	}
+	if err := ValidatePermissionManifest(manifest); err != nil {
+		t.Fatalf("ValidatePermissionManifest() reset action error = %v", err)
+	}
+}
+
 func TestDecodePermissionManifestRejectsUnknownField(t *testing.T) {
 	input := strings.Replace(validManagerManifest, "manifest_version: 1", "manifest_version: 1\nunknown: true", 1)
 	if _, err := DecodePermissionManifest(strings.NewReader(input)); err == nil {

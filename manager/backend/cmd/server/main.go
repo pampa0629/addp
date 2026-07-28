@@ -87,6 +87,8 @@ func main() {
 	cadPreviewRepo := repository.NewCADPreviewRepository(db)
 	model3DTilesRepo := repository.NewModel3DTilesRepository(db)
 	exportSessionRepo := repository.NewExportSessionRepository(db)
+	dataProfileRepo := repository.NewDataProfileRepository(db)
+	dataProfileExecutionRepo := repository.NewDataProfileExecutionRepository(db)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
 	logger.L().Info("Manager repositories 初始化完成")
 
@@ -151,6 +153,10 @@ func main() {
 	preview.LoadPreviewPlugins(previewRegistry, metadataRepo, metaClient, contentRegistry, cfg.MetaServiceURL, buildPluginDirSpec(pluginDirs))
 	preview.ConfigureCADPreviewRepository(previewRegistry, cadPreviewRepo)
 	logger.L().Info("数据预览: 已激活预览插件", "providers", previewRegistry.Providers())
+	profilePreviewResolver := preview.NewPreviewResolver(previewRegistry, systemClient, metaClient)
+	dataProfileSampler := service.NewPreviewDataProfileSampleProvider(profilePreviewResolver, metaClient)
+	dataProfileService := service.NewDataProfileService(dataProfileRepo, dataProfileExecutionRepo, dataProfileSampler)
+	dataProfileHandler := api.NewDataProfileHandler(dataProfileService)
 
 	// 初始化 services（注意：Manager 不负责引擎管理，引擎信息通过 SystemClient 获取）
 	searchHistoryService := service.NewSearchHistoryService(searchHistoryRepo)
@@ -336,7 +342,7 @@ func main() {
 	model3DTilesHandler := api.NewModel3DTilesHandler(model3DTilesRepo, minioClient, minioBucket)
 	logger.L().Info("数据导入服务已初始化", "transfer_url", cfg.TransferServiceURL)
 
-	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, cadPreviewHandler, model3DTilesHandler)
+	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, cadPreviewHandler, model3DTilesHandler, dataProfileHandler)
 
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("manager")

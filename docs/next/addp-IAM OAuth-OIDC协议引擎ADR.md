@@ -1,8 +1,8 @@
 # ADDP IAM OAuth/OIDC 协议引擎 ADR
 
-更新日期：2026-07-25
+更新日期：2026-07-27
 
-状态：已接受并进入实施。ADDP 受控 Fosite `v0.50.0-addp.2` 已发布，PostgreSQL Storage Adapter、Provider、Consent Bridge 与 System 目标 Router 已实现并通过真实 PostgreSQL Authorization Code + PKCE 流程验证；当前开发 `addp` 数据库尚未破坏性重建和 Bootstrap。
+状态：已接受并完成 OAuth 唯一主路径切换。ADDP 受控 Fosite `v0.50.0-addp.2`、PostgreSQL Storage Adapter、Provider、Consent Bridge 与 System Router 已实现；开发数据库已迁移到 `18/clean` 并完成三员恢复，真实 Browser 登录与 OAuth 客户端协议 E2E 已覆盖 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、刷新轮换和撤销。该 E2E 使用一次性测试驱动，不代表仓库已交付正式 `addp-cli`。OIDC 尚未启用，继续遵守“无 OpenID Handler、无 `openid` Scope、无 Discovery/JWKS 宣告”的单一路径，待 issuer、Claim 和密钥生命周期独立设计完成后再实施。
 
 ## 一、决策摘要
 
@@ -15,7 +15,7 @@ ADDP 采用 **System 内嵌的 ADDP 受控 Fosite 派生版本** 作为唯一 OA
 - 不直接依赖可移动的 `master` 分支或未审查的伪版本；
 - 以已验证的上游提交 `a5f0b09bf31c17297b25637bb3fec2ff7a55b159` 为首个候选基线，建立 ADDP 控制、带来源和补丁清单的不可变版本；
 - 上线基线必须纳入适用的未合并安全与一致性修复，其中 PKCE Session 删除时机、Device `slow_down` 持久化和失效 Device Code 按原 Grant 撤销 Token 是强制门禁；
-- 当前自研 OAuth 状态机是一次性待替换实现。切换时删除旧 OAuth Code、Device、Refresh、Revocation 协议处理逻辑，不按 grant type、客户端或配置保留双处理器。
+- 原自研 OAuth 状态机已在一次性切换中删除，由受控 Fosite 唯一处理 OAuth Code、Device、Refresh 和 Revocation 协议；不按 grant type、客户端或配置保留双处理器。
 
 这个结论选择的是 Fosite 协议核心，不是 Ory Hydra、Keycloak、Casdoor 或第二套 IAM 产品。
 
@@ -267,13 +267,13 @@ Upstream baseline: a5f0b09bf31c17297b25637bb3fec2ff7a55b159
 - ADDP 必须维护受控依赖版本、补丁审查和升级流程；
 - PostgreSQL Storage Adapter 是安全关键代码，不能把 MemoryStore 或简单 GORM CRUD 带入生产；
 - Discovery、JWKS、密钥轮换、登录/同意页面、MFA 和外部 IdP 联合仍需 System 自己实现；
-- 当前 OAuth 表和 `TokenService` 不能原样保留，需要在 IAM 一次性切换中重构和删除。
+- 原 OAuth 表和 `TokenService` 已在 IAM 一次性切换中重构、删除，不保留旧协议状态或运行时兼容路径。
 
-## 十三、下一实施顺序
+## 十三、实施结果与后续边界
 
-1. 设计 Fosite Provider 组合、ADDP Session 类型和 PostgreSQL Storage Adapter 接口/表映射；
-2. 建立受控 Fosite 派生版本并完成补丁、许可、SBOM 和上游测试门禁；
-3. 将 Storage Adapter 所需表并入 IAM 第一批显式 SQL migration；
-4. 实现单一 Provider 并一次性替换当前 OAuth 状态机；
-5. 完成 OIDC issuer、Discovery/JWKS、Claim 和密钥生命周期设计后启用 OIDC；
-6. 执行全量后端测试、协议一致性测试与真实 Web / CLI / Device E2E。
+1. Fosite Provider 组合、ADDP Session 类型和 PostgreSQL Storage Adapter 表映射已实现；
+2. 受控 Fosite 派生版本、强制补丁、许可和上游测试门禁已完成；
+3. Storage Adapter 协议表已进入显式 SQL migration；
+4. Fosite Provider 已一次性替换自研 OAuth 状态机，旧路径已删除；
+5. 真实 Browser 和一次性 OAuth 客户端协议 E2E 已通过；正式 `addp-cli` 仍是独立产品交付项；
+6. OIDC 仍处于设计门外；只有 issuer、Discovery/JWKS、Claim 和密钥生命周期设计完成后才能启用。

@@ -28,8 +28,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - User 是全局自然人身份，Local Account 和 External Identity 是登录凭据或身份绑定；
 - 一个 User 可拥有多个 Tenant Membership，但一个 Tenant Context 只绑定一个 Membership；
 - Platform Context 与 Tenant Context 互斥，平台角色不自动获得租户业务数据权限；
-- 平台最高管理职责拆分为系统管理员、安全管理员和审计管理员，三者 Permission 集合互斥；
+- 平台最高管理职责拆分为系统管理员、安全管理员和审计管理员；三员 Role Assignment 两两互斥，职责与写权限分离，允许共享必要的只读监督 Permission；
 - 所有管理和业务操作使用 AuthContext 中的 Role Assignment 与 Permission，不根据账号名或身份类别放行。
+- 平台安全管理员创建普通 User 和凭据；平台系统管理员创建/初始化 Tenant 时必须指定该 User 为首位 `tenant.administrator`。Tenant、首个 Membership、首个 Assignment 和审计同事务，平台三员不得成为首位 Tenant Administrator。
 
 ### 数据隔离
 
@@ -170,13 +171,14 @@ frontend/src/
 
 | 表名 | Schema | 说明 |
 |------|--------|------|
-| users | system | 用户表，含认证和权限管理 |
+| principals / users / local_accounts | system | 授权主体、自然人资料与本地登录凭据 |
 | tenants | system | 租户表，多租户隔离 |
 | audit_logs | system | 审计日志表 |
 | engines | system | 引擎配置表，含加密连接信息 |
 | applications | system | 外部应用表 |
 | api_keys | system | 应用 API Key 表（存储 SHA256 hash） |
 | oauth_authorization_requests | system | 浏览器授权前的短期已校验请求、取消凭据 Hash 和一次性状态 |
+| iam_recovery_attempts | system | 三员整体凭据恢复尝试，仅保存一次性 Secret Hash 与终态事实 |
 | refresh_token_families | system | 浏览器和 OAuth Refresh Token Family |
 | refresh_tokens | system | 轮换 Refresh Token Hash |
 | access_tokens | system | 短期 User Access Token Hash |

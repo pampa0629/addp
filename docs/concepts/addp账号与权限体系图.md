@@ -209,9 +209,13 @@ Role Assignment 必须包含明确 Scope：Platform、Tenant、Department 或 Pr
 | 层级 | 示例职责 | 默认边界 |
 | --- | --- | --- |
 | Platform Role | 平台配置、Tenant 生命周期、安全审计 | 不自动读取 Tenant 业务数据 |
-| Tenant Administration Role | 用户、角色、IdP、组织管理 | 当前 Tenant |
+| Tenant Administration Role（用户界面：租户组织与权限管理员） | 用户、角色、IdP、组织管理 | 当前 Tenant；不自动包含基础设施或业务权限 |
 | Business Role | 数据开发、资产管理、服务发布、质量管理 | 当前 Tenant 和明确 Scope |
 | Project Role | 项目负责人、项目成员 | 当前 Project Group |
+
+Tenant 没有独立登录账号或租户密码。User 先通过全局账号完成认证，再选择一个由有效 Tenant Membership 提供的 Tenant Context。平台安全管理员负责创建普通 User 和凭据，平台系统管理员负责创建或初始化 Tenant 并指定首位 Tenant Administrator；两项职责不能合并到平台系统管理员。
+
+普通 User 遗失本地密码时，平台安全管理员可以通过受控的 Local Account 密码重置能力替换其凭据。重置必须撤销该 User 的既有会话并写入高风险审计，且不能用于任何有效平台角色持有人；平台三员只能本人修改密码，或在三员凭据整体失效时使用离线灾难恢复流程。
 
 ### 6.4 平台三员分立
 

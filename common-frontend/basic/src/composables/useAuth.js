@@ -17,6 +17,19 @@ function isAuthenticationFailure(error) {
   return error?.response?.status === 401 || error?.status === 401
 }
 
+export function buildLoginRedirectURL(location = globalThis.location) {
+  const pathname = location?.pathname || '/'
+  if (pathname === '/login') return null
+  const redirect = `${pathname}${location?.search || ''}${location?.hash || ''}`
+  return `/login?redirect=${encodeURIComponent(redirect)}`
+}
+
+function redirectToLogin() {
+  if (typeof window === 'undefined' || window.self !== window.top) return
+  const target = buildLoginRedirectURL(window.location)
+  if (target) window.location.assign(target)
+}
+
 export function collectAuthContextPermissions(authContext) {
   const keys = new Set()
   for (const assignment of authContext?.authorization?.role_assignments || []) {
@@ -88,7 +101,7 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
         store.sessionStatus = 'anonymous'
         if (persistUser) localStorage.removeItem('user')
         if (wasAuthenticated && store.sessionInitialized && !authSession.isEmbedded() && typeof window !== 'undefined') {
-          window.location.assign('/login')
+          redirectToLogin()
         }
       }
     })
@@ -231,6 +244,11 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
         const token = await authSession.refreshAccessToken(options)
         if (token) this.sessionStatus = 'authenticated'
         return token
+      },
+
+      async refreshAuthorization() {
+        await this.refreshAccessToken({ force: true })
+        return this.fetchAuthContext()
       },
 
       async fetchUser() {
@@ -434,9 +452,7 @@ export function createAPIClient(getAuthStore, options = {}) {
     timeout = 30_000,
     extractData = true,
     enableRefresh = true,
-    onRefreshFailed = () => {
-      if (typeof window !== 'undefined') window.location.href = '/login'
-    }
+    onRefreshFailed = redirectToLogin
   } = options
   if (!moduleName) throw new Error('moduleName is required for createAPIClient')
 

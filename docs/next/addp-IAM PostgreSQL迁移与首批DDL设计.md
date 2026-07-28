@@ -2,7 +2,7 @@
 
 更新日期：2026-07-27
 
-状态：技术设计已确认，十七版 IAM DDL、PostgreSQL 15 约束测试、System `main` migration runner、runner 之后的非 IAM AutoMigrate 边界、TOTP Runtime、离线 CLI、三员 Bootstrap、真实登录与 OAuth E2E 已实现。`000012` 至 `000015` 已前向发布 Standard、Monitor 和 Model 的补充目录，`000016` 前向发布 Manager Derived Artifact Update Permission，`000017` 将没有 OpenAPI Operation 或 Tool 消费入口的 78 个 Permission 置为 `disabled` 并收缩内置 Role；开发 `addp` 数据库暂为 `11/clean`，待当前 System Backend 正确重启到 `17/clean` 后执行浏览器验收。
+状态：二十一版 IAM DDL、PostgreSQL 15 约束测试、System migration runner、TOTP Runtime、离线三员 Bootstrap、离线三员凭据恢复、普通 User 本地密码重置、Tenant 管理闭环和 Fosite 主路径已实现。开发 `addp` 数据库已迁移到 `21/clean`；Recovery Attempt 1 已完成，既有三员 Browser `platform + AAL2` 登录与一次性 OAuth 客户端协议 E2E 已覆盖 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、刷新轮换和撤销。Tenant 管理 Browser E2E 已覆盖安全管理员创建普通 User、系统管理员初始化 Tenant、首位 Tenant Administrator 进入 Tenant Context、显式授予基础设施管理员、密码受控重置以及引擎、应用和 Cleanup 正常使用；正式 `addp-cli` 尚未交付。
 
 ## 一、目标与边界
 
@@ -18,7 +18,7 @@
 
 - migration runner、`.sql` 文件、模型或 Service 的具体 Go 实现；
 - 各 owner Permission Manifest、聚合器、Permission 常量或内置 Role 精确数据；
-- 账号恢复、WebAuthn 或外部 IdP 配置；
+- 普通账号自助恢复、WebAuthn 或外部 IdP 配置；
 - owner、Asset 或其他模块自身的 schema migration；
 - 现有非 IAM System 表从 GORM `AutoMigrate` 全量迁移的改造。
 
@@ -66,6 +66,10 @@ system/backend/internal/migration/
     000015_standard_authorization_catalog.up.sql
     000016_manager_authorization_catalog.up.sql
     000017_iam_disable_unconsumed_authorization_catalog.up.sql
+    000018_iam_administrator_credential_recovery.up.sql
+    000019_iam_tenant_administration_closure.up.sql
+    000020_iam_role_key_namespace.up.sql
+    000021_iam_local_account_password_reset.up.sql
 ```
 
 `internal/migration` 是 System 启动基础设施，不是运行时 Repository：
@@ -176,6 +180,11 @@ COMMIT;
 | `000014_model_authorization_catalog` | 向前发布 Model Entity、Entity Relation、DW Layer Permission，并将 Entity / Entity Relation 加入 Tenant Governance Manager | DW Layer 只允许 Tenant Scope，不注入可分配到 Department / Project Group 的内置角色；Logical Field、Table Relation、Fact Metric Mapping 继续作为 Logical Model 聚合内子资源 |
 | `000015_standard_authorization_catalog` | 向前发布 Standard Glossary、Unit、Classification、Dimension Hierarchy、Element Approve、Metric Approve/Offline Permission，并加入 Tenant Governance Manager | `/deprecate` 业务动作使用稳定 `offline` Permission；Measurement Category、Grading Level、Dimension Hierarchy Level 保持聚合内子资源；文档关联采用 all-of |
 | `000016_manager_authorization_catalog` | 前向发布 `manager.derived_artifact.update` 并加入 Tenant Data Steward | 受管 artifact 任务配置更新不借用 create 或 data_item.update；搜索历史和 preview state 继续由 owner 以 self 语义约束 |
+| `000017_iam_disable_unconsumed_authorization_catalog` | 将没有 OpenAPI Operation 或 Tool 消费入口的 Permission 置为 `disabled`，同步收缩或停用空内置 Role | 不删除历史目录事实，不在运行时扫描 owner Manifest |
+| `000018_iam_administrator_credential_recovery` | 创建短期 `iam_recovery_attempts`、单一有效 Attempt 约束、不可逆状态转换与物理删除门禁 | 不重开 Bootstrap，不创建网络恢复 API，不保存明文 Recovery Secret、密码或 TOTP Secret |
+| `000019_iam_tenant_administration_closure` | 发布 Tenant 初始化 Permission，恢复 Tenant Role/Assignment 管理权限，增加显式初始化事实和最后管理员延迟约束 | 新建 Tenant 必须原子建立首位管理员；既有空 Tenant 只允许一次正式初始化；不建立第二套授权表 |
+| `000020_iam_role_key_namespace` | 保留所有内置 Role Key，阻止 Tenant 自定义 Role 与内置 Role 同键，并用事务级键锁关闭并发竞态 | 不建立第二个 Role 命名空间；不同 Tenant 仍可各自使用相同的自定义 Role Key |
+| `000021_iam_local_account_password_reset` | 前向发布普通 User 本地密码重置 Permission，并加入平台安全管理员 | 不允许重置平台角色持有人，不替代本人改密或三员离线灾难恢复 |
 
 每版必须显式列出：创建对象、外键、检查约束、唯一/部分唯一索引、触发器、所依赖的前一版本和对应测试。禁止通过 `CREATE TABLE IF NOT EXISTS`、`ALTER TABLE ... ADD COLUMN IF NOT EXISTS` 或基于 `information_schema` 的分支使同一版本在不同旧 schema 上产生不同结果。
 
@@ -231,7 +240,7 @@ COMMIT;
 
 实现阶段应新增独立的 migration runner 测试包，使用临时 PostgreSQL database/schema 而不是测试间共享 `system` schema。测试通过后再执行 System 启动验证和 Fosite Provider/CLI E2E；此时才修改 Swagger 和公开 API 契约。
 
-## 十、实施顺序
+## 十、已完成的实施记录
 
 1. 确认本文迁移库、启动连接、锁等待、向前 migration 和旧 schema 重建决策；
 2. 创建 `internal/migration`、嵌入 runner 和 PostgreSQL 15 migration 测试基座；
@@ -239,11 +248,11 @@ COMMIT;
 4. 根据版本化边界实现 DDL、触发器和由 owner Manifest 聚合生成的固定种子；
 5. 重写 System IAM 领域模型、Repository 和 Service，删除旧初始化/AutoMigrate 路径，并在切换前把路由/Swagger/Tool 授权覆盖报告收敛为 `complete=true`；
 6. 实现 Token Family、Fosite Adapter 与认证/同意桥接；
-7. 一次性切换所有 AuthContext 消费方，生成 Swagger，完成真实 Web、CLI loopback 与 Device E2E；
+7. 一次性切换所有 AuthContext 消费方，生成 Swagger，完成真实 Web 与 OAuth 客户端协议 loopback/Device E2E；
 8. 实现 TOTP Runtime 与离线三员 Bootstrap，不把 Bootstrap 当作 migration seed；
 9. Bootstrap 与真实登录 E2E 通过后实现统一 `/system/iam` 管理工作台，并删除旧 Users、Tenants 和 Logs 页面。
 
-## 十一、待确认的技术决策
+## 十一、已确认的技术决策
 
 System 目标 Router、migration runner、旧 IAM AutoMigrate/默认 SuperAdmin 删除和真实 PostgreSQL 启动组合已经完成。离线三员 Bootstrap 固定采用 `prepare/apply` CLI、256 bit 一次性 Secret Hash、TTY 三人独立密码、TOTP 连续双码验证、单事务三员创建与永久 `completed` 状态。该路线不得用恢复默认 SuperAdmin、开发弱密码或临时网络注册端点替代。
 
@@ -254,6 +263,6 @@ System 目标 Router、migration runner、旧 IAM AutoMigrate/默认 SuperAdmin 
 3. `system.schema_migrations` 是唯一版本记录表，runner 是唯一执行入口；
 4. runner 使用启动期专用单连接池，完成后关闭；GORM 运行时连接在 runner 成功后才打开；
 5. migration 只向前、显式事务、dirty fail-closed，不使用 `Down`、`Force` 或自动修复；
-6. IAM schema 按不可变向前版本持续演进，当前嵌入版本为十二，全部成功才允许 System 进入新主路径；
+6. IAM schema 按不可变向前版本持续演进，当前嵌入版本为十八，全部成功才允许 System 进入新主路径；
 7. 首次切换以开发数据库 IAM 重建完成，不支持旧表/字段/Token 的运行时迁移或兼容；
 8. IAM 表从 `AutoMigrate` 和默认账号/OAuth Client 初始化中完全移除；非 IAM `AutoMigrate` 的后续迁移另行设计。

@@ -37,6 +37,18 @@ other = "当前密码不正确"
 [system.auth.password_unchanged]
 other = "新密码不能与当前密码相同"
 
+[system.auth.totp_already_enrolled]
+other = "当前账号已启用身份验证器"
+
+[system.auth.totp_enrollment_required]
+other = "请先为当前账号启用身份验证器"
+
+[system.auth.invalid_mfa_verification]
+other = "验证码无效、已过期或会话状态已变化"
+
+[system.iam.role_assignment_already_exists]
+other = "该成员已在此授权范围拥有该角色，无需重复分配。"
+
 [system.log.not_found]
 other = "日志不存在"
 

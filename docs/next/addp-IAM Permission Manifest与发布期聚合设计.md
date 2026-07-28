@@ -1,8 +1,8 @@
 # ADDP IAM Permission Manifest 与发布期聚合设计
 
-更新日期：2026-07-25
+更新日期：2026-07-27
 
-状态：技术设计已确认，Manifest、内置 Role、owner-local 常量和首批确定性 SQL Seed 已实现。本文落实 [IAM Permission 目录与 Role 矩阵设计](addp-IAM权限目录与角色矩阵设计.md) 的“模块所有、单路聚合”决策，确定 Manifest Schema、System 最小知识边界、内置 Role 模板、生成产物和目录升级规则。
+状态：技术设计和发布门已实现。Manifest、内置 Role、owner-local 常量、确定性 SQL Seed、Common AuthContext Middleware/Guard 及全仓授权覆盖均已收敛；2026-07-27 实测 15 个 owner 的 678/678 个 OpenAPI Operation 已声明精确认证模式，9/9 个 Tool 已映射 Permission，覆盖报告 `complete=true`。
 
 ## 一、目标与边界
 
@@ -415,7 +415,7 @@ Module Registry 的 `up/down`、心跳和路由健康只描述可用性，不修
 
 核心聚合测试不需要数据库；生成 SQL 的约束、授权版本和撤销行为必须在 PostgreSQL 15 migration 测试中验证。
 
-## 十、实施顺序
+## 十、已完成的实施记录
 
 1. 建立 `permission-manifest-v1.schema.json` 和共享解析/校验类型；
 2. 先为 System、Manager、Meta 三个模块建立最小 Manifest，验证 namespace 和跨模块冲突；
@@ -427,7 +427,7 @@ Module Registry 的 `up/down`、心跳和路由健康只描述可用性，不修
 8. 重写 IAM Runtime、删除或拆分旧路由，并把授权覆盖报告收敛为 `complete=true`；
 9. 删除旧硬编码角色、零散 Permission 字符串和任何运行时 Permission 注册入口。
 
-第 1 至第 4 步应在编写完整 IAM DDL 前完成；否则 `000006` 仍没有稳定输入。
+第 1 至第 4 步已在编写完整 IAM DDL 前完成，`000006` 的输入和摘要门禁已稳定。
 
 ## 十一、已确认的技术决策
 
@@ -458,7 +458,7 @@ Module Registry 的 `up/down`、心跳和路由健康只描述可用性，不修
 - `000006_iam_catalog_seed.up.sql` 固定摘要门禁、`000009_iam_catalog_restore_actions.up.sql` 向前目录变更，以及 243 个 Permission、18 个 Role、278 个 Role Permission、三员冲突和 `addp-cli` 的 PostgreSQL 15 约束测试；
 - 对 Schema、未知字段、多文档、namespace、action、Scope、Principal 类型、i18n Key、排序、Role Permission 引用和真实仓库 Manifest 的测试。
 
-稳定 owner 白名单的首批目录、九个业务内置 Role 和 owner-local 代码常量已全部机器化。Asset、Agent、Copilot 的发布检查 OpenAPI 投影和全部 Tool Permission 映射已收敛；System 目标 Router/Swagger 已完成 81/81 个 Operation 的 IAM 声明。2026-07-25 实测其余 11 个 Go owner 模块仍有 548 个 Operation 缺少 `x-addp-auth-mode`，全仓覆盖报告 `complete=false`。这些 owner 路由的精确 Permission 与 Common AuthContext Middleware 切换必须继续逐项收敛，不阻塞已校验目录事实，但仍是恢复全平台流量的发布门禁。
+稳定 owner 白名单的首批目录、九个业务内置 Role 和 owner-local 代码常量已全部机器化。Asset、Agent、Copilot 的确定性 OpenAPI 投影和全部 Tool Permission 映射已收敛；其余 Go owner 也已完成精确 `x-addp-auth-mode`、Permission 与 Common AuthContext Middleware/Guard 切换。2026-07-27 全仓报告覆盖 15 个 owner 的 678/678 个 OpenAPI Operation 和 9/9 个 Tool，`complete=true`，授权覆盖发布门已关闭。
 
 System 旧 `/users` CRUD、物理删除 `/tenants`、混合语义 `/logs` 和自研 Auth/OAuth 路由已经删除；目标 `/platform`、`/tenant`、`/users/me`、Fosite OAuth 和 Invitation 路由是唯一生产代码路径。System Swagger 路由覆盖校验为 80 个公开方法一致，另有 1 个 `internal` 审计写入 Operation。
 
@@ -481,7 +481,7 @@ System 旧 `/users` CRUD、物理删除 `/tenants`、混合语义 `/logs` 和自
 - `iam.user.reactivate`；
 - `iam.tenant_membership.restore`。
 
-本切换门已于 2026-07-25 确认。新增 Permission 需同步递增 System Permission Manifest 和 Builtin Role Manifest 版本，生成新的向前 SQL migration，不重写已生成的 `000006`。后续一次性实现新 Handler/Service/Repository/Swagger 与前端调用，删除旧 User/Tenant/Log Handler、Service、DTO 和路由。
+本切换门已于 2026-07-25 确认并完成。新增 Permission 需同步递增 System Permission Manifest 和 Builtin Role Manifest 版本，生成新的向前 SQL migration，不重写已生成的 `000006`。新 Handler/Service/Repository/Swagger 与前端调用已一次性切换，旧 User/Tenant/Log Handler、Service、DTO 和路由已删除。
 
 ### 12.2 当前验证基线
 
@@ -498,9 +498,9 @@ git diff --check
 
 ### 12.3 Tenant Invitation 实施门（已确认）
 
-当前 Permission 目录已定义 `iam.tenant_invitation.read/create/revoke`，但目标 DDL 尚未定义 `system.tenant_invitations`，AuthContext 也不允许没有 Platform Role 或 Tenant Membership 的 User 建立普通会话。因此不能用一个租户管理员直接调用的 Membership create API 代替邀请；那会绕过邀请持有者确认，并重新让 Tenant 管理权获得全局 User 创建语义。
+Permission 目录、目标 DDL、Invitation / Enrollment Runtime 与公开 API 已按本节路线实现。AuthContext 不允许没有 Platform Role 或 Tenant Membership 的 User 建立普通会话，也不使用租户管理员直接调用的 Membership create API 代替邀请；否则会绕过邀请持有者确认，并重新让 Tenant 管理权获得全局 User 创建语义。
 
-建议的唯一路线是：
+唯一已实现路线是：
 
 1. `system.tenant_invitations` 只保存邀请 Secret Hash、Tenant、邀请邮箱、过期时间、状态、创建/撤销/接受人和审计引用，明文 Secret 只交付一次；
 2. 新 User 通过邀请 Secret 进入专用注册端点，在同一事务创建 User、Local Account、Tenant Membership、消费邀请和写入审计；
@@ -510,7 +510,4 @@ git diff --check
 
 该决策已于 2026-07-25 确认。实现必须使用单一 Invitation / Enrollment 路线，不开放直接 Membership create，不以内嵌邮件发送器、临时 AuthContext 或旧 User 创建接口形成旁路。
 
-尚未完成：
-
-- 为其余现有 OpenAPI Operation 补齐 `x-addp-auth-mode` 和精确 Permission；
-- IAM Runtime 切换前将授权覆盖报告收敛为 `complete=true`。
+该实施门已完成：全部现有 OpenAPI Operation 均声明 `x-addp-auth-mode` 和精确 Permission，授权覆盖报告为 `complete=true`。

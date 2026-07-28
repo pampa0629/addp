@@ -18,17 +18,25 @@
       "title": "Identity & Access Management",
       "assurance": "Assurance: {level}",
       "noPermission": "The current authorization context has no IAM management permission",
+      "setup": {
+        "title": "This account currently manages tenant organization and access only",
+        "description": "Engines, Meta, and other business capabilities require explicit tenant role assignments.",
+        "action": "Configure Roles"
+      },
       "context": {
         "platform": "Platform management context",
         "tenant": "Tenant context #{id}"
       },
       "tabs": {
+        "security": "Security",
         "tenants": "Tenant Lifecycle",
         "users": "User Lifecycle",
         "identityChanges": "Identity Change Review",
         "platformAudit": "Platform Audit",
         "memberships": "Memberships",
         "invitations": "Invitations",
+        "roles": "Tenant Roles",
+        "roleAssignments": "Role Assignments",
         "tenantAudit": "Tenant Audit"
       },
       "common": {
@@ -38,11 +46,13 @@
         "close": "Close",
         "code": "Code",
         "confirm": "Confirm",
+        "continue": "Continue",
         "copied": "Copied",
         "copy": "Copy",
         "create": "Create",
         "createFailed": "Create failed",
         "description": "Description",
+        "delete": "Delete",
         "done": "Done",
         "edit": "Edit",
         "export": "Export",
@@ -71,9 +81,35 @@
         "updated": "Updated",
         "updatedAt": "Updated At"
       },
+      "security": {
+        "authenticator": "Authenticator",
+        "totp": "Time-based one-time password (TOTP)",
+        "enabled": "Enabled",
+        "notEnabled": "Not enabled",
+        "enable": "Enable",
+        "enableAuthenticator": "Enable Authenticator",
+        "currentPassword": "Current password",
+        "qrCode": "Authenticator QR code",
+        "manualKey": "Manual setup key",
+        "verificationCode": "6-digit verification code",
+        "verifyAndEnable": "Verify and enable",
+        "enabledSuccess": "Authenticator enabled and the current session is now AAL2",
+        "enrollmentFailed": "Could not begin authenticator enrollment",
+        "invalidCode": "The verification code is invalid or expired",
+        "stepUpTitle": "Confirm high-risk operation",
+        "continueOperation": "Verify and continue",
+        "stepUpFailed": "Could not begin step-up authentication"
+      },
       "tenants": {
         "create": "Create Tenant",
-        "edit": "Edit Tenant"
+        "edit": "Edit Tenant",
+        "initialization": "Initialization",
+        "initialize": "Initialize Tenant",
+        "initialized": "Initialized",
+        "uninitialized": "Not Initialized",
+        "initialAdministrator": "Initial Tenant Administrator",
+        "initializedSuccess": "Tenant initialized",
+        "tenant": "Tenant"
       },
       "users": {
         "account": "User / Local Account",
@@ -84,7 +120,13 @@
         "edit": "Edit User",
         "email": "Primary Email",
         "locale": "Locale",
+        "newPassword": "New Password",
         "password": "Initial Password",
+        "confirmPassword": "Confirm New Password",
+        "passwordMismatch": "The passwords do not match",
+        "passwordResetFailed": "Password reset failed",
+        "passwordResetSuccess": "Password reset and existing sessions revoked",
+        "resetPassword": "Reset Password",
         "username": "Username"
       },
       "identityChanges": {
@@ -115,6 +157,42 @@
         "expiresAt": "Expires At",
         "revokeConfirm": "Revoke the invitation sent to {email}?",
         "urlOnce": "The invitation URL is shown only once. Deliver it through a secure channel now."
+      },
+      "roles": {
+        "create": "Create Custom Role",
+        "edit": "Edit Custom Role",
+        "key": "Role Key",
+        "role": "Role",
+        "type": "Role Type",
+        "scopes": "Allowed Scopes",
+        "permissions": "Permissions",
+        "types": {
+          "tenant_builtin": "Tenant Built-in Role",
+          "tenant_custom": "Tenant Custom Role"
+        },
+        "scope": {
+          "tenant": "Tenant",
+          "department": "Department",
+          "project_group": "Project Group"
+        }
+      },
+      "roleAssignments": {
+        "create": "Assign Role",
+        "scope": "Scope",
+        "departmentId": "Department ID",
+        "projectGroupId": "Project Group ID",
+        "validUntil": "Valid Until",
+        "assigned": "Assigned",
+        "assignedElsewhere": "Assigned in another scope",
+        "allAssigned": "No additional roles are available in this scope.",
+        "noAssignableRoles": "No assignable roles",
+        "recommendations": {
+          "title": "Common Responsibilities",
+          "description": "After choosing a responsibility, confirm the member, scope, and assignment reason.",
+          "infrastructure": "Engine & App Management",
+          "metaRead": "Metadata Browsing (Read-only)",
+          "metaManage": "Metadata Scan Management"
+        }
       },
       "audit": {
         "context": "Context / Tenant",
@@ -919,6 +997,62 @@
         "confirmRequired": "Complete the confirmation first",
         "detailFailed": "Failed to load task details",
         "tenantScopeRequired": "Manual resource reclaim requires an explicit tenant scope"
+      }
+    }
+  },
+  "roles": {
+    "tenant": {
+      "administrator": {
+        "name": "Tenant Access Administrator",
+        "description": "Manages tenant members, invitations, roles, and assignments; excludes infrastructure and business permissions."
+      },
+      "ai_user": {
+        "name": "AI User",
+        "description": "Uses Agent sessions and runs, plus Copilot execution capabilities."
+      },
+      "asset_consumer": {
+        "name": "Asset Consumer",
+        "description": "Browses data assets, requests access, uses service endpoints, and submits ratings."
+      },
+      "asset_manager": {
+        "name": "Asset Manager",
+        "description": "Manages asset catalogs, entries, access requests, and ratings."
+      },
+      "auditor": {
+        "name": "Tenant Auditor",
+        "description": "Reads and exports tenant audit events with read-only execution and statistics access."
+      },
+      "data_engineer": {
+        "name": "Data Engineer",
+        "description": "Manages transfer tasks, development tasks, notebooks, and workflows."
+      },
+      "data_steward": {
+        "name": "Data Steward",
+        "description": "Manages data items and derived artifacts, and executes Meta inspection and scan tasks."
+      },
+      "data_viewer": {
+        "name": "Data Viewer",
+        "description": "Reads data content, data items, search results, and the Meta catalog."
+      },
+      "governance_manager": {
+        "name": "Governance Manager",
+        "description": "Manages standards, models, quality rules, check tasks, and quality issues."
+      },
+      "graph_engineer": {
+        "name": "Graph Engineer",
+        "description": "Manages ontologies, graphs, build tasks, analysis, and reviews."
+      },
+      "infrastructure_administrator": {
+        "name": "Tenant Infrastructure Administrator",
+        "description": "Manages engines, applications, API keys, and resource reclaim, and reads health status."
+      },
+      "monitoring_operator": {
+        "name": "Monitoring Operator",
+        "description": "Manages alert rules, incidents, and notification destinations, and reads execution and health status."
+      },
+      "service_publisher": {
+        "name": "Service Publisher",
+        "description": "Reads data and the Meta catalog, and manages service definitions and external registrations."
       }
     }
   }

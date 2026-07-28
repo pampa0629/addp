@@ -19,7 +19,7 @@ func RegisterIAMRoutes(
 ) error {
 	if api == nil || runtime == nil || cfg == nil ||
 		runtime.AuthHandler == nil || runtime.OAuthHandler == nil ||
-		runtime.DelegationHandler == nil || runtime.UserSelfHandler == nil ||
+		runtime.DelegationHandler == nil || runtime.UserSelfHandler == nil || runtime.MFASessionHandler == nil ||
 		runtime.TenantInvitationHandler == nil ||
 		runtime.Authentication == nil || runtime.FirstPartyCredential == nil ||
 		runtime.UserAccessCredential == nil || runtime.OAuthFailureAudit == nil {
@@ -51,6 +51,11 @@ func RegisterIAMRoutes(
 	{
 		auth.GET("/context-options", runtime.FirstPartyCredential, runtime.AuthHandler.ContextOptions)
 		auth.POST("/context-switches", runtime.FirstPartyCredential, runtime.AuthHandler.SwitchContext)
+		auth.GET("/mfa", runtime.FirstPartyCredential, runtime.MFASessionHandler.Status)
+		auth.POST("/mfa/totp-enrollments", runtime.FirstPartyCredential, userRateLimit, runtime.MFASessionHandler.BeginEnrollment)
+		auth.POST("/mfa/totp-enrollment-verifications", runtime.FirstPartyCredential, userRateLimit, runtime.MFASessionHandler.CompleteEnrollment)
+		auth.POST("/mfa/step-up-challenges", runtime.FirstPartyCredential, userRateLimit, runtime.MFASessionHandler.BeginStepUp)
+		auth.POST("/mfa/step-up-verifications", runtime.FirstPartyCredential, userRateLimit, runtime.MFASessionHandler.CompleteStepUp)
 		auth.POST("/delegations", runtime.UserAccessCredential, runtime.DelegationHandler.CreateDelegation)
 	}
 

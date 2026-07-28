@@ -8,6 +8,7 @@ import (
 
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/testsupport"
+	passwordutils "github.com/addp/system/pkg/utils"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -66,6 +67,49 @@ func TestIAMManagementServicesAgainstPostgres(t *testing.T) {
 	}
 
 	currentTime = currentTime.Add(time.Second)
+	passwordReset, err := userService.ResetLocalAccountPassword(ctx, ResetManagedLocalAccountPasswordInput{
+		UserID: createdUser.ID, NewPassword: "managed-password-reset", Reason: "user lost password",
+		Audit: platformAudit,
+	})
+	if err != nil || passwordReset.RevokedFamilyCount != 0 ||
+		passwordReset.AuthorizationVersion <= createdUser.AuthorizationVersion {
+		t.Fatalf("managed local account password reset = %#v err=%v", passwordReset, err)
+	}
+	loginAudit := AuditMetadata{RequestID: stringPointer("managed-user-password-login")}
+	if _, err := identityService.AuthenticateLocalAccount(ctx, "managed-user", "managed-password", loginAudit); err == nil {
+		t.Fatal("old password authenticated after managed reset")
+	}
+	if _, err := identityService.AuthenticateLocalAccount(ctx, "managed-user", "managed-password-reset", loginAudit); err != nil {
+		t.Fatalf("new password did not authenticate after managed reset: %v", err)
+	}
+	assertIAMServiceAuditCount(t, db, "iam.local_account.password_reset", AuditResultSucceeded, 1)
+
+	rollbackUser, err := userService.Create(ctx, CreateManagedLocalUserInput{
+		Username: "password-rollback", Password: "password-before-rollback",
+		DisplayName: "Password Rollback", Audit: platformAudit,
+	})
+	if err != nil {
+		t.Fatalf("create password rollback user: %v", err)
+	}
+	invalidAudit := platformAudit
+	invalidTenantID := int64(999999)
+	invalidAudit.TenantID = &invalidTenantID
+	if _, err := userService.ResetLocalAccountPassword(ctx, ResetManagedLocalAccountPasswordInput{
+		UserID: rollbackUser.ID, NewPassword: "password-after-rollback", Reason: "force audit failure",
+		Audit: invalidAudit,
+	}); err == nil {
+		t.Fatal("password reset with invalid audit metadata unexpectedly succeeded")
+	}
+	rollbackAccount, err := repository.GetLocalAccountByUserID(ctx, rollbackUser.ID)
+	if err != nil {
+		t.Fatalf("read rollback local account: %v", err)
+	}
+	if !passwordutils.CheckPassword("password-before-rollback", rollbackAccount.PasswordHash) ||
+		passwordutils.CheckPassword("password-after-rollback", rollbackAccount.PasswordHash) {
+		t.Fatal("password reset was not rolled back with rejected audit")
+	}
+
+	currentTime = currentTime.Add(time.Second)
 	suspendedUser, err := userService.Suspend(ctx, ChangeManagedUserStatusInput{
 		UserID: createdUser.ID, Reason: "security review", Audit: platformAudit,
 	})
@@ -90,6 +134,26 @@ func TestIAMManagementServicesAgainstPostgres(t *testing.T) {
 	reviewerAudit := platformAudit
 	reviewerAudit.PrincipalID = &reviewer.PrincipalID
 	reviewerAudit.PrincipalType = &requesterType
+	governedTarget, err := userService.Get(ctx, target.PrincipalID)
+	if err != nil || !governedTarget.HasEffectivePlatformRole {
+		t.Fatalf("governed target projection = %#v err=%v", governedTarget, err)
+	}
+	if _, err := userService.ResetLocalAccountPassword(ctx, ResetManagedLocalAccountPasswordInput{
+		UserID: target.PrincipalID, NewPassword: "forbidden-platform-reset", Reason: "must be governed",
+		Audit: requesterAudit,
+	}); err == nil {
+		t.Fatal("platform role holder password reset unexpectedly succeeded")
+	}
+	targetAccount, err := repository.GetLocalAccountByUserID(ctx, target.PrincipalID)
+	if err != nil || !passwordutils.CheckPassword("governed-password", targetAccount.PasswordHash) {
+		t.Fatalf("platform role holder password changed: account=%#v err=%v", targetAccount, err)
+	}
+	membershipUser, err := userService.Create(ctx, CreateManagedLocalUserInput{
+		Username: "membership-user", Password: "membership-password", DisplayName: "Membership User", Audit: platformAudit,
+	})
+	if err != nil {
+		t.Fatalf("create membership lifecycle user: %v", err)
+	}
 
 	currentTime = currentTime.Add(time.Second)
 	suspendRequest, err := privilegedChangeService.Create(ctx, CreatePrivilegedIdentityChangeInput{
@@ -150,7 +214,8 @@ func TestIAMManagementServicesAgainstPostgres(t *testing.T) {
 	}
 
 	tenant, err := tenantService.Create(ctx, CreateTenantInput{
-		Code: "management-test", Name: "Management Test", Description: "IAM management", Audit: platformAudit,
+		Code: "management-test", Name: "Management Test", Description: "IAM management",
+		InitialAdministratorPrincipalID: createdUser.ID, ActorPrincipalID: reviewer.PrincipalID, Audit: platformAudit,
 	})
 	if err != nil {
 		t.Fatalf("create managed tenant: %v", err)
@@ -161,14 +226,14 @@ func TestIAMManagementServicesAgainstPostgres(t *testing.T) {
 		ContextType: &tenantContext, TenantID: &tenant.ID, RequestID: stringPointer("iam-management-tenant"),
 	}
 	membership, err := membershipService.EstablishMembership(ctx, EstablishTenantMembershipInput{
-		TenantID: tenant.ID, PrincipalID: createdUser.ID, SourceType: TenantMembershipSourceManual,
+		TenantID: tenant.ID, PrincipalID: membershipUser.ID, SourceType: TenantMembershipSourceManual,
 		CreatedByPrincipalID: &createdUser.ID, Audit: tenantAudit,
 	})
 	if err != nil {
 		t.Fatalf("establish managed membership: %v", err)
 	}
 	memberships, membershipTotal, err := membershipService.ListManagedMemberships(
-		ctx, tenant.ID, 1, 20, "Managed", nil,
+		ctx, tenant.ID, 1, 20, "Membership", nil,
 	)
 	if err != nil || membershipTotal != 1 || len(memberships) != 1 || memberships[0].ID != membership.Membership.ID {
 		t.Fatalf("managed membership list = %#v total=%d err=%v", memberships, membershipTotal, err)
@@ -181,20 +246,20 @@ func TestIAMManagementServicesAgainstPostgres(t *testing.T) {
 	}
 	currentTime = currentTime.Add(time.Second)
 	if _, err := membershipService.SuspendMembership(ctx, ChangeTenantMembershipInput{
-		TenantID: tenant.ID, PrincipalID: createdUser.ID, Reason: "temporary leave", Audit: tenantAudit,
+		TenantID: tenant.ID, PrincipalID: membershipUser.ID, Reason: "temporary leave", Audit: tenantAudit,
 	}); err != nil {
 		t.Fatalf("suspend managed membership: %v", err)
 	}
 	currentTime = currentTime.Add(time.Second)
 	if _, err := membershipService.RestoreMembership(ctx, ChangeTenantMembershipInput{
-		TenantID: tenant.ID, PrincipalID: createdUser.ID, ExpiresAt: &expiresAt,
+		TenantID: tenant.ID, PrincipalID: membershipUser.ID, ExpiresAt: &expiresAt,
 		Reason: "returned", Audit: tenantAudit,
 	}); err != nil {
 		t.Fatalf("restore managed membership: %v", err)
 	}
 	currentTime = currentTime.Add(time.Second)
 	if _, err := membershipService.EndMembership(ctx, ChangeTenantMembershipInput{
-		TenantID: tenant.ID, PrincipalID: createdUser.ID, Reason: "membership completed", Audit: tenantAudit,
+		TenantID: tenant.ID, PrincipalID: membershipUser.ID, Reason: "membership completed", Audit: tenantAudit,
 	}); err != nil {
 		t.Fatalf("close managed membership: %v", err)
 	}
@@ -230,6 +295,28 @@ func TestIAMManagementServicesAgainstPostgres(t *testing.T) {
 	for _, auditLog := range tenantLogs {
 		if auditLog.TenantID == nil || *auditLog.TenantID != tenant.ID {
 			t.Fatalf("tenant audit escaped scope: %#v", auditLog)
+		}
+	}
+	var entityLog *AuditLog
+	for index := range tenantLogs {
+		if tenantLogs[index].EntityType != nil && tenantLogs[index].EntityID != nil {
+			entityLog = &tenantLogs[index]
+			break
+		}
+	}
+	if entityLog == nil {
+		t.Fatal("tenant audit list has no entity-bound event")
+	}
+	entityLogs, entityTotal, err := auditService.List(ctx, AuditQuery{
+		TenantID: &tenant.ID, EntityType: *entityLog.EntityType, EntityID: *entityLog.EntityID,
+	}, 1, 100)
+	if err != nil || entityTotal == 0 || len(entityLogs) != int(entityTotal) {
+		t.Fatalf("entity audit list total=%d logs=%d err=%v", entityTotal, len(entityLogs), err)
+	}
+	for _, auditLog := range entityLogs {
+		if auditLog.EntityType == nil || *auditLog.EntityType != *entityLog.EntityType ||
+			auditLog.EntityID == nil || *auditLog.EntityID != *entityLog.EntityID {
+			t.Fatalf("entity audit filter escaped scope: %#v", auditLog)
 		}
 	}
 	summary, err := auditService.Summary(ctx, AuditQuery{TenantID: &tenant.ID})

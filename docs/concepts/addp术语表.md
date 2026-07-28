@@ -82,6 +82,16 @@
 | planned run time | 计划触发时间 | scheduled execution 对应的计划触发时间点。 | 字段建议为 `planned_run_at`；用于 `task_id + planned_run_at` 幂等触发。 |
 | ref group | 内容引用组 | 一组共同参与 data item 识别的内容引用边界。 | 用于表达 Shapefile 等 multi content 的本次可见 refs；不绑定 ADDP locator，不是 `catalog_paths`。 |
 
+## 数据探查与剖析
+
+| 英文术语 | 中文术语 | 定义 | 备注 |
+|---|---|---|---|
+| data profiling | 数据剖析 | 通过受控采样或显式全量执行，分析表格型 data item 的完整性、基数、值域和分布特征的过程。 | 归 Manager；不是 Meta scan、BI 聚合分析或 Quality 质量检查。 |
+| data profile | 数据剖析结果 | Manager 对某个稳定 data item、源版本和剖析配置保存的当前成功分析结果。 | 归 Manager 私有结果表；不写入 Meta attributes，不是 data item、任务定义或 execution。 |
+| profiling execution | 剖析执行 | 实际读取源数据并生成或刷新 data profile 的一次有界执行。 | 首期统一为 `task_type=data_profiling` 的 ad-hoc execution，`source_task_id` 为空。 |
+| profile mode | 剖析模式 | 一次剖析执行读取源数据的范围策略。 | 取值预留 `sample` / `full`；首期只开放 `sample`。它不是 task type，也不决定是否存在任务定义。 |
+| profile observation | 剖析观察 | 根据字段级统计派生的描述性数据特征提示。 | 例如高缺失、常量、高基数和分布偏斜；不是质量问题或质量评分。 |
+
 ## 任务与执行
 
 | 英文术语 | 中文术语 | 定义 | 备注 |
@@ -93,7 +103,7 @@
 | artifact variant | 派生变体 | 在同一稳定源上区分不同当前派生目标的规范化配置投影。 | 例如 `target_format=3d_tiles|s3m`、`tile_format=mvt`、几何列加目标 SRID。不能用输出目录名推断。 |
 | owner task schedule | 任务自身调度 | owner 模块任务定义上保存并由 owner scheduler 触发的独立定时计划。 | 只决定该任务作为独立任务何时自动执行。 |
 | orchestration schedule | 编排调度 | Orchestrator 编排定义上保存的定时计划。 | 只决定编排 run 何时启动；不继承、不覆盖其中 Step 引用任务的自身调度。 |
-| task type | 任务类型 | owner 模块内稳定的任务类型标识。 | 例如 `scan`、`vector_tile_cache_generation`、`embedding`；由 TaskProvider capabilities 声明。 |
+| task type | 任务类型 | owner 模块内稳定的业务执行类型标识。 | 例如 `scan`、`vector_tile_cache_generation`、`embedding`；只有存在持久任务定义并允许编排时才由 TaskProvider capabilities 声明，ad-hoc-only execution type 不因此自动成为 TaskProvider 类型。 |
 | TaskProvider | 任务提供者 | 模块对外声明可编排任务能力的角色。 | 按模块注册，不按任务类型注册；一个 provider 在 `task_capabilities[]` 中声明多个任务类型能力。 |
 | source task id | 来源任务 ID | execution 关联的 owner 模块任务定义 ID。 | 在 `common.task_executions.source_task_id` 中保存；查询时必须结合 `module + task_type`。 |
 | parent execution id | 父执行 ID | 当前 execution 的父级 execution UUID。 | 用于 Orchestrator 子步骤追踪父编排。 |

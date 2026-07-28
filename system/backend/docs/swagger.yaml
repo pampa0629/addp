@@ -1053,6 +1053,11 @@ definitions:
       total:
         type: integer
     type: object
+  internal_api.IAMBeginMFAEnrollmentRequest:
+    properties:
+      current_password:
+        type: string
+    type: object
   internal_api.IAMBrowserLoginRequest:
     properties:
       password:
@@ -1083,6 +1088,20 @@ definitions:
       change_request_id:
         type: string
       reason:
+        type: string
+    type: object
+  internal_api.IAMCompleteMFAEnrollmentRequest:
+    properties:
+      code:
+        type: string
+      enrollment_token:
+        type: string
+    type: object
+  internal_api.IAMCompleteMFAStepUpRequest:
+    properties:
+      challenge_token:
+        type: string
+      code:
         type: string
     type: object
   internal_api.IAMContextChoiceRequest:
@@ -1172,7 +1191,26 @@ definitions:
         type: string
       description:
         type: string
+      initial_administrator_principal_id:
+        type: string
       name:
+        type: string
+    type: object
+  internal_api.IAMCreateTenantRoleAssignmentRequest:
+    properties:
+      department_id:
+        type: string
+      membership_id:
+        type: string
+      project_group_id:
+        type: string
+      reason:
+        type: string
+      role_id:
+        type: string
+      scope_type:
+        type: string
+      valid_until:
         type: string
     type: object
   internal_api.IAMCreatedTenantInvitationResponse:
@@ -1236,11 +1274,21 @@ definitions:
       tool_call_id:
         type: string
     type: object
+  internal_api.IAMDeleteTenantRoleRequest:
+    properties:
+      reason:
+        type: string
+    type: object
   internal_api.IAMErrorResponse:
     properties:
       error:
         type: string
       error_code:
+        type: string
+    type: object
+  internal_api.IAMInitializeTenantRequest:
+    properties:
+      initial_administrator_principal_id:
         type: string
     type: object
   internal_api.IAMInvitationAcceptanceRequest:
@@ -1297,6 +1345,8 @@ definitions:
     properties:
       id:
         type: string
+      password_reset_allowed:
+        type: boolean
       status:
         $ref: '#/definitions/github_com_addp_system_internal_iam.LocalAccountStatus'
       username:
@@ -1311,12 +1361,41 @@ definitions:
       method:
         type: string
     type: object
+  internal_api.IAMMFAEnrollmentResponse:
+    properties:
+      enrollment_token:
+        type: string
+      expires_at:
+        type: string
+      otpauth_uri:
+        type: string
+      secret:
+        type: string
+    type: object
+  internal_api.IAMMFAStatusResponse:
+    properties:
+      totp_enrolled:
+        type: boolean
+    type: object
   internal_api.IAMMFAVerificationRequest:
     properties:
       challenge_token:
         type: string
       code:
         type: string
+    type: object
+  internal_api.IAMManagedLocalAccountPasswordResetResponse:
+    properties:
+      authorization_version:
+        type: string
+      changed_at:
+        type: string
+      consumed_context_ticket_count:
+        type: integer
+      consumed_mfa_challenge_count:
+        type: integer
+      revoked_family_count:
+        type: integer
     type: object
   internal_api.IAMManagedUserResponse:
     properties:
@@ -1419,9 +1498,43 @@ definitions:
       updated_at:
         type: string
     type: object
+  internal_api.IAMResetManagedLocalAccountPasswordRequest:
+    properties:
+      new_password:
+        type: string
+      reason:
+        type: string
+    type: object
   internal_api.IAMReviewPrivilegedIdentityChangeRequest:
     properties:
       reason:
+        type: string
+    type: object
+  internal_api.IAMRevokeTenantRoleAssignmentRequest:
+    properties:
+      reason:
+        type: string
+    type: object
+  internal_api.IAMTenantAdministratorCandidateResponse:
+    properties:
+      display_name:
+        type: string
+      primary_email:
+        type: string
+      principal_id:
+        type: string
+      username:
+        type: string
+    type: object
+  internal_api.IAMTenantAssignablePermissionResponse:
+    properties:
+      allowed_scope_types:
+        items:
+          type: string
+        type: array
+      permission_key:
+        type: string
+      risk_level:
         type: string
     type: object
   internal_api.IAMTenantInvitationResponse:
@@ -1496,11 +1609,102 @@ definitions:
         type: string
       id:
         type: string
+      initialized:
+        type: boolean
       name:
         type: string
       status:
         $ref: '#/definitions/github_com_addp_system_internal_iam.TenantStatus'
       updated_at:
+        type: string
+    type: object
+  internal_api.IAMTenantRoleAssignmentResponse:
+    properties:
+      created_by_principal_id:
+        type: string
+      department_id:
+        type: string
+      display_name:
+        type: string
+      id:
+        type: string
+      membership_id:
+        type: string
+      principal_id:
+        type: string
+      project_group_id:
+        type: string
+      reason:
+        type: string
+      revoked_at:
+        type: string
+      revoked_by_principal_id:
+        type: string
+      role_id:
+        type: string
+      role_key:
+        type: string
+      role_name:
+        type: string
+      role_name_i18n_key:
+        type: string
+      scope_type:
+        type: string
+      status:
+        type: string
+      username:
+        type: string
+      valid_from:
+        type: string
+      valid_until:
+        type: string
+    type: object
+  internal_api.IAMTenantRoleRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      permission_keys:
+        items:
+          type: string
+        type: array
+      role_key:
+        type: string
+      scope_types:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_api.IAMTenantRoleResponse:
+    properties:
+      allowed_principal_types:
+        items:
+          type: string
+        type: array
+      allowed_scope_types:
+        items:
+          type: string
+        type: array
+      description:
+        type: string
+      description_i18n_key:
+        type: string
+      id:
+        type: string
+      immutable:
+        type: boolean
+      name:
+        type: string
+      name_i18n_key:
+        type: string
+      permission_keys:
+        items:
+          type: string
+        type: array
+      role_key:
+        type: string
+      role_type:
         type: string
     type: object
   internal_api.IAMTenantStatusResponse:
@@ -2088,6 +2292,21 @@ paths:
       tags:
       - 认证 | Authentication
       x-addp-auth-mode: authenticated
+  /auth/mfa:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMMFAStatusResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询当前用户 MFA 状态 | Get current user MFA status
+      tags:
+      - 认证 | Authentication
+      x-addp-auth-mode: self
   /auth/mfa-verifications:
     post:
       consumes:
@@ -2114,6 +2333,93 @@ paths:
       tags:
       - 认证 | Authentication
       x-addp-auth-mode: public
+  /auth/mfa/step-up-challenges:
+    post:
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.IAMMFAChallengeResponse'
+      security:
+      - BearerAuth: []
+      summary: 开始会话增强认证 | Begin session step-up
+      tags:
+      - 认证 | Authentication
+      x-addp-auth-mode: self
+  /auth/mfa/step-up-verifications:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: TOTP 验证 | TOTP verification
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMCompleteMFAStepUpRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMAccessTokenResponse'
+      security:
+      - BearerAuth: []
+      summary: 完成会话增强认证 | Complete session step-up
+      tags:
+      - 认证 | Authentication
+      x-addp-auth-mode: self
+  /auth/mfa/totp-enrollment-verifications:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: TOTP 验证 | TOTP verification
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMCompleteMFAEnrollmentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMAccessTokenResponse'
+      security:
+      - BearerAuth: []
+      summary: 完成 TOTP 登记 | Complete TOTP enrollment
+      tags:
+      - 认证 | Authentication
+      x-addp-auth-mode: self
+  /auth/mfa/totp-enrollments:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 当前密码 | Current password
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMBeginMFAEnrollmentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.IAMMFAEnrollmentResponse'
+      security:
+      - BearerAuth: []
+      summary: 开始 TOTP 登记 | Begin TOTP enrollment
+      tags:
+      - 认证 | Authentication
+      x-addp-auth-mode: self
   /engines:
     get:
       consumes:
@@ -2680,6 +2986,15 @@ paths:
       x-addp-auth-mode: public
   /platform/audit/events:
     get:
+      parameters:
+      - description: 实体类型 | Entity type
+        in: query
+        name: entity_type
+        type: string
+      - description: 实体 ID | Entity ID
+        in: query
+        name: entity_id
+        type: string
       produces:
       - application/json
       responses:
@@ -2739,6 +3054,14 @@ paths:
         in: query
         name: format
         type: string
+      - description: 实体类型 | Entity type
+        in: query
+        name: entity_type
+        type: string
+      - description: 实体 ID | Entity ID
+        in: query
+        name: entity_id
+        type: string
       produces:
       - application/json
       - text/csv
@@ -2759,6 +3082,15 @@ paths:
       - audit.event.export
   /platform/audit/events/summary:
     get:
+      parameters:
+      - description: 实体类型 | Entity type
+        in: query
+        name: entity_type
+        type: string
+      - description: 实体 ID | Entity ID
+        in: query
+        name: entity_id
+        type: string
       produces:
       - application/json
       responses:
@@ -2776,6 +3108,15 @@ paths:
       - audit.event.read
   /platform/audit/events/trends:
     get:
+      parameters:
+      - description: 实体类型 | Entity type
+        in: query
+        name: entity_type
+        type: string
+      - description: 实体 ID | Entity ID
+        in: query
+        name: entity_id
+        type: string
       produces:
       - application/json
       responses:
@@ -2932,6 +3273,32 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - iam.platform_identity_change.reject
+  /platform/tenant_administrator_candidates:
+    get:
+      description: 仅返回有效且未持有平台角色的普通用户 | Return only active users without an effective
+        platform role
+      parameters:
+      - description: 姓名、邮箱或用户名 | Name, email, or username
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api.IAMTenantAdministratorCandidateResponse'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 查询首位租户管理员候选人 | List initial tenant administrator candidates
+      tags:
+      - 平台租户 | Platform Tenants
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - platform.tenant.create
   /platform/tenants:
     get:
       parameters:
@@ -3104,6 +3471,47 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - platform.tenant.close
+  /platform/tenants/{id}/initialization:
+    post:
+      consumes:
+      - application/json
+      description: 为尚无成员和角色分配的既有租户原子建立首位租户管理员 | Atomically establish the first tenant
+        administrator for an existing tenant without memberships or assignments
+      parameters:
+      - description: 租户 ID | Tenant ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 首位租户管理员 | Initial tenant administrator
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMInitializeTenantRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMTenantResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 初始化既有租户 | Initialize existing tenant
+      tags:
+      - 平台租户 | Platform Tenants
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - platform.tenant.initialize
   /platform/tenants/{id}/restore:
     post:
       consumes:
@@ -3321,6 +3729,56 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - iam.user.reactivate
+  /platform/users/{id}/reset-password:
+    post:
+      consumes:
+      - application/json
+      description: 仅允许重置不持有有效平台角色的普通用户，并撤销其全部既有认证会话 | Reset only an ordinary user
+        without an effective platform role and revoke all existing authentication
+        sessions
+      parameters:
+      - description: 用户 ID | User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 新密码与原因 | New password and reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMResetManagedLocalAccountPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMManagedLocalAccountPasswordResetResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 重置普通用户本地密码 | Reset ordinary user local password
+      tags:
+      - 平台用户 | Platform Users
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.local_account.reset
   /platform/users/{id}/suspend:
     post:
       consumes:
@@ -3367,6 +3825,15 @@ paths:
       x-addp-auth-mode: public
   /tenant/audit/events:
     get:
+      parameters:
+      - description: 实体类型 | Entity type
+        in: query
+        name: entity_type
+        type: string
+      - description: 实体 ID | Entity ID
+        in: query
+        name: entity_id
+        type: string
       produces:
       - application/json
       responses:
@@ -3426,6 +3893,14 @@ paths:
         in: query
         name: format
         type: string
+      - description: 实体类型 | Entity type
+        in: query
+        name: entity_type
+        type: string
+      - description: 实体 ID | Entity ID
+        in: query
+        name: entity_id
+        type: string
       produces:
       - application/json
       - text/csv
@@ -3446,6 +3921,15 @@ paths:
       - audit.tenant_event.export
   /tenant/audit/events/summary:
     get:
+      parameters:
+      - description: 实体类型 | Entity type
+        in: query
+        name: entity_type
+        type: string
+      - description: 实体 ID | Entity ID
+        in: query
+        name: entity_id
+        type: string
       produces:
       - application/json
       responses:
@@ -3463,6 +3947,15 @@ paths:
       - audit.tenant_event.read
   /tenant/audit/events/trends:
     get:
+      parameters:
+      - description: 实体类型 | Entity type
+        in: query
+        name: entity_type
+        type: string
+      - description: 实体 ID | Entity ID
+        in: query
+        name: entity_id
+        type: string
       produces:
       - application/json
       responses:
@@ -3860,6 +4353,250 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - iam.tenant_membership.suspend
+  /tenant/role_assignments:
+    get:
+      parameters:
+      - description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: 成员关系 ID | Membership ID
+        in: query
+        name: membership_id
+        type: string
+      - description: '状态：active 或 revoked | Status: active or revoked'
+        in: query
+        name: status
+        type: string
+      - description: 授权范围类型 | Assignment scope type
+        in: query
+        name: scope_type
+        type: string
+      - description: 部门 ID，仅 department 范围 | Department ID for department scope
+        in: query
+        name: department_id
+        type: string
+      - description: 项目组 ID，仅 project_group 范围 | Project group ID for project_group
+          scope
+        in: query
+        name: project_group_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/internal_api.IAMTenantRoleAssignmentResponse'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                format: int64
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询当前租户角色分配 | List role assignments in the current tenant
+      tags:
+      - 租户角色分配 | Tenant Role Assignments
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.tenant_role_assignment.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 角色分配 | Role assignment
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMCreateTenantRoleAssignmentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.IAMTenantRoleAssignmentResponse'
+        "409":
+          description: 同一成员、角色和授权范围已存在 | The membership already has the role in the
+            requested scope
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 创建当前租户角色分配 | Create role assignment in the current tenant
+      tags:
+      - 租户角色分配 | Tenant Role Assignments
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.tenant_role_assignment.create
+  /tenant/role_assignments/{id}/revoke:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 角色分配 ID | Role assignment ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 撤销原因 | Revocation reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMRevokeTenantRoleAssignmentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMTenantRoleAssignmentResponse'
+      security:
+      - BearerAuth: []
+      summary: 撤销当前租户角色分配 | Revoke role assignment in the current tenant
+      tags:
+      - 租户角色分配 | Tenant Role Assignments
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.tenant_role_assignment.revoke
+  /tenant/role_permissions:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api.IAMTenantAssignablePermissionResponse'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 查询租户自定义角色可选权限 | List permissions available to tenant custom roles
+      tags:
+      - 租户角色 | Tenant Roles
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.tenant_role.read
+  /tenant/roles:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api.IAMTenantRoleResponse'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 查询当前租户可分配角色 | List assignable roles in the current tenant
+      tags:
+      - 租户角色 | Tenant Roles
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.tenant_role.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 角色定义 | Role definition
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMTenantRoleRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.IAMTenantRoleResponse'
+      security:
+      - BearerAuth: []
+      summary: 创建租户自定义角色 | Create tenant custom role
+      tags:
+      - 租户角色 | Tenant Roles
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.tenant_role.create
+  /tenant/roles/{id}:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: 角色 ID | Role ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 停用原因 | Disable reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMDeleteTenantRoleRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+      security:
+      - BearerAuth: []
+      summary: 停用租户自定义角色 | Disable tenant custom role
+      tags:
+      - 租户角色 | Tenant Roles
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.tenant_role.delete
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 角色 ID | Role ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 角色定义 | Role definition
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMTenantRoleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMTenantRoleResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新租户自定义角色 | Update tenant custom role
+      tags:
+      - 租户角色 | Tenant Roles
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.tenant_role.update
   /users/me:
     get:
       produces:

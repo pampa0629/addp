@@ -201,6 +201,13 @@ func (s *TokenFamilyService) RotateBrowserRefreshToken(
 		if err := validateRefreshTokenForRotation(principal, family, token, tokenSnapshot, now); err != nil {
 			return err
 		}
+		contextActive, err := tx.RefreshTokenFamilyContextIsActive(ctx, principal, family, now)
+		if err != nil {
+			return err
+		}
+		if !contextActive {
+			return commonapi.ErrUnauthorized
+		}
 		if token.UsedAt != nil {
 			if token.ReplacedByTokenID != nil {
 				return ErrRefreshTokenRotationConflict
@@ -217,6 +224,13 @@ func (s *TokenFamilyService) RotateBrowserRefreshToken(
 		}
 		if _, err := tx.LockActiveResourceAccessTickets(ctx, family.ID); err != nil {
 			return err
+		}
+		previousAuthorizationVersion := family.IssuedAuthorizationVersion
+		if family.IssuedAuthorizationVersion < principal.AuthorizationVersion {
+			if err := tx.AdvanceRefreshTokenFamilyAuthorizationVersion(ctx, family.ID, principal.AuthorizationVersion); err != nil {
+				return err
+			}
+			family.IssuedAuthorizationVersion = principal.AuthorizationVersion
 		}
 
 		if err := tx.MarkRefreshTokenUsed(ctx, token.ID, now); err != nil {
@@ -274,11 +288,13 @@ func (s *TokenFamilyService) RotateBrowserRefreshToken(
 			EntityType: "token_family",
 			EntityID:   strconv.FormatInt(family.ID, 10),
 			Details: map[string]any{
-				"previous_refresh_token_id":    token.ID,
-				"replacement_refresh_token_id": replacementRefreshToken.ID,
-				"resource_ticket_count":        len(secrets.resourceAccessTicket),
-				"authorization_version":        family.IssuedAuthorizationVersion,
-				"family_expires_at":            family.ExpiresAt,
+				"previous_refresh_token_id":      token.ID,
+				"replacement_refresh_token_id":   replacementRefreshToken.ID,
+				"resource_ticket_count":          len(secrets.resourceAccessTicket),
+				"authorization_version":          family.IssuedAuthorizationVersion,
+				"previous_authorization_version": previousAuthorizationVersion,
+				"authorization_version_advanced": previousAuthorizationVersion != family.IssuedAuthorizationVersion,
+				"family_expires_at":              family.ExpiresAt,
 			},
 		}); err != nil {
 			return err
@@ -428,7 +444,7 @@ func validateRefreshTokenForRotation(
 		return commonapi.ErrUnauthorized
 	}
 	if principal.ID != family.PrincipalID || principal.Status != PrincipalStatusActive ||
-		principal.AuthorizationVersion != family.IssuedAuthorizationVersion ||
+		family.IssuedAuthorizationVersion > principal.AuthorizationVersion ||
 		family.AuthType != "first_party" || family.ClientID != "addp-web" ||
 		family.RevokedAt != nil || !family.ExpiresAt.After(now) ||
 		token.ID != tokenSnapshot.ID || token.FamilyID != family.ID ||

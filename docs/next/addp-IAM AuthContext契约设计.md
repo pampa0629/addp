@@ -1,8 +1,8 @@
 # ADDP IAM AuthContext 契约设计
 
-更新日期：2026-07-25
+更新日期：2026-07-27
 
-状态：技术设计已确认。唯一 JSON Schema、共享 Go 类型、第一方/OAuth/Resource Ticket/Delegated Token 投影、System 目标 Middleware/Router/Swagger、委托签发和 Common 目标 HTTP 消费器已实现；System 旧认证路径已删除，其他 owner 模块的 Common Middleware/Guard 注册与前端切换尚未完成。当前开发 `addp` 数据库尚未破坏性重建和 Bootstrap。
+状态：技术设计和全平台切换已完成。唯一 JSON Schema、共享 Go/Python/前端类型、第一方/OAuth/Resource Ticket/Delegated Token 投影、System 与 owner Common Middleware/Guard、委托签发和 HTTP 消费器已实现，旧认证路径已删除；15 个 owner 的 678/678 个 OpenAPI Operation 与 9/9 个 Tool 授权覆盖 `complete=true`。开发数据库已迁移到 `18/clean` 并完成三员恢复，三员 Browser AuthContext 与一次性 OAuth 客户端协议驱动的 loopback/Device AuthContext E2E 通过；正式 `addp-cli` 尚未交付。
 
 ## 一、目标与边界
 
@@ -818,6 +818,10 @@ POST /api/v1/system/auth/context-switches
 
 若进入 Platform Context 时当前认证强度不足，System 返回 step-up 要求；完成 MFA 后继续同一个受控切换事务，不允许前端伪造新的认证强度。
 
+普通 User 首次 TOTP 登记与已登录会话 step-up 复用唯一 Browser Token Family 体系。开始登记要求当前密码并创建绑定源 Family 的一次性 Enrollment；开始 step-up 创建 `purpose=step_up` 且绑定源 Family 的一次性 Challenge。完成验证必须同时提交当前 Access Token 和同一 Family 的 Refresh Token Cookie，在单个事务内消费 Enrollment/Challenge、记录 TOTP counter、以源 Family 固定最终期限创建 AAL2 替换 Family并撤销源 Family。不得 UPDATE 原 Family 的认证事实，旧 Access Token 不得继续有效。
+
+公开接口固定为 `GET /auth/mfa`、`POST /auth/mfa/totp-enrollments`、`POST /auth/mfa/totp-enrollment-verifications`、`POST /auth/mfa/step-up-challenges` 和 `POST /auth/mfa/step-up-verifications`，全部要求第一方 Browser AuthContext；完成接口复用唯一 Access Token 响应并替换 HttpOnly Cookie。登录前 `POST /auth/mfa-verifications` 只能消费 `purpose=login` Challenge，两种 Challenge 不得互换。
+
 `context-options` 必须从当前有效 Access Token 的 Family 读取 Principal 和认证事实，再查询当前有效 Platform Assignment 与 Tenant Membership。响应返回全部有效 Context，并为每项提供 `current` 和 `requires_step_up`；Platform 固定排在 Tenant 之前，Tenant 按 Code、ID 稳定排序。当前只有 AAL1 但具备平台角色时，Platform 仍作为 `requires_step_up=true` 的选项返回；它不是授权结果，Context Switch 仍必须在事务内复核 AAL2/AAL3。客户端不得提交或推导 Principal ID、Tenant ID、Role 或 Permission。
 
 HTTP Adapter 对内部 `int64` IAM ID 统一投影为十进制字符串。登录使用 `next_action=session_issued|select_context` 判别联合；Context Selection、Refresh 和 Context Switch 复用唯一 Access Token 响应结构。选择请求只接受 `context_type` 与 Tenant 场景下的 `tenant_membership_id`，不得接受 `tenant_id`。`step_up_required` 使用 HTTP 403 和稳定 `error_code`；其他 Runtime 错误按 ADDP API 规范映射且不暴露内部细节。Adapter 在未完成 System 启动、Router、Swagger、前端和旧认证删除的一次性切换前不得注册为并行公开路由。
@@ -858,13 +862,13 @@ Web Locks 的上下文切换锁固定为 `addp-auth-context-switch`。切换与 
 - 其他浏览器、设备或 Profile 的独立 Family；
 - 从其他源 Family 签发的 Delegated Token。
 
-若授权事实本身变化并递增 `authorization_version`，则属于全局授权失效，不受上述 Family 隔离限制。
+若授权事实本身变化并递增 `authorization_version`，旧 Access Token、Delegated Access Token 和 Resource Access Ticket 立即全局失效；仍有效的 Browser / OAuth Family 可以在各自唯一 Refresh Token 轮换路径中推进到当前版本。Context Switch 和显式 Family 撤销仍不受上述 Family 隔离限制。
 
 ## 八、授权版本与失效
 
 ### 8.1 版本来源
 
-`principals.authorization_version` 是每个 Principal 单调递增的 bigint。Token Family 保存唯一的 `issued_authorization_version`，Access Token、Refresh Token、Delegated Access Token 和 Resource Access Ticket 只引用或派生自该 Family，不重复授权版本；AuthContext 返回当前版本的十进制字符串。
+`principals.authorization_version` 是每个 Principal 单调递增的 bigint。Token Family 保存当前已确认的 `issued_authorization_version`，Access Token、Refresh Token、Delegated Access Token 和 Resource Access Ticket 只引用或派生自该 Family，不重复授权版本；AuthContext 返回当前版本的十进制字符串。Family 的授权版本只允许在 Refresh Token 轮换事务中单调推进到 Principal 当前版本，不能回退或由客户端指定。
 
 解析 Token 时必须满足：
 
@@ -890,14 +894,17 @@ token.issued_authorization_version == principal.authorization_version
 
 ### 8.3 事务要求
 
-授权变更事务固定顺序：
+纯授权事实变更事务固定顺序：
 
 1. `SELECT Principal FOR UPDATE`；
 2. 写入或撤销授权事实；
 3. `authorization_version = authorization_version + 1`；
-4. 撤销该 Principal 受影响的 Token Family 和派生票据；
-5. 写入审计事件；
-6. 提交。
+4. 写入审计事件；
+5. 提交。
+
+提交后旧 Access Token、Delegated Access Token 和 Resource Access Ticket 因版本不匹配立即失效。有效 Refresh Token Family 不在授权变更事务中原地更新；其下一次 Refresh Token 轮换按 `Principal -> Family -> Refresh Token -> Access Token -> Resource Ticket` 加锁，复核 Principal、Context、Tenant、Membership、Client、认证事实和 Family 状态，把 `issued_authorization_version` 单调推进到 Principal 当前版本，撤销旧派生凭据，签发新凭据并写审计。推进不改变 Family 的 Context、Client、认证事实或最终期限。
+
+Principal 停用、密码或 MFA 凭据变化、Tenant/Membership 失效、Family 撤销、Refresh Token 重用等身份或会话安全事件仍在同一事务撤销 Family；Refresh 不得把这些事件恢复为有效会话。
 
 第一阶段不跨请求缓存 AuthContext，因此提交后下一次解析立即读取新事实。以后若引入缓存，缓存 Key 必须至少包含 Token Hash 与签发授权版本，并由同一事务后的可靠失效事件驱动；不得引入“缓存命中时不查版本”的第二路径。
 
@@ -1081,6 +1088,8 @@ System 审计必须区分 expired、revoked、version_mismatch、membership_inac
 
 - Membership、Assignment、Role Permission 和组织关系变化在同一事务递增版本；
 - 旧版本 Token 返回统一 401，不返回部分 AuthContext；
+- Role Assignment、Role Permission 和组织授权关系变化后，有效 Browser / OAuth Family 通过唯一 Refresh 路径推进授权版本并签发新派生凭据；
+- Principal、密码/MFA、Tenant/Membership、Family 或 Refresh Token 重用失效时，Refresh 不得推进版本；
 - 临时 Assignment 过期无需后台任务即可从 AuthContext 消失；
 - User 资料修改不误撤销 Family；
 - Explicit Deny、owner Resource Grant 和 OAuth Scope 仍在 owner 决策链生效。
@@ -1106,7 +1115,7 @@ System 审计必须区分 expired、revoked、version_mismatch、membership_inac
 3. `docs/spec/addp OAuth授权规范.md` 已把第一方 `client_id=null` 改为 `addp-web`，并统一 audience 为 `addp.api`；
 4. IAM 目标数据模型已加入 Context Selection Ticket 临时记录及索引约束。
 
-当前已完成 Schema、核心 IAM 数据库、第一方 Browser Session、Access Token / Resource Ticket / Delegated Token AuthContext 投影、Common 目标消费器与路由 Guard、委托签发、System 目标 Adapter/Router/Swagger、旧 System 认证代码删除和真实 PostgreSQL 完整启动组合 E2E。其他 owner 模块仍需注册 Common 目标 Middleware/Guard、删除旧平铺身份消费并同步前端；当前开发 `addp` 数据库在完成离线三员 Bootstrap 设计前不执行破坏性重建。
+当前已完成 Schema、核心 IAM 数据库、第一方 Browser Session、Access Token / Resource Ticket / Delegated Token AuthContext 投影、Common 消费器与路由 Guard、委托签发、System 与 owner Adapter/Router/Swagger、旧平铺身份消费删除、前端统一认证切换、开发数据库 `18/clean` 迁移、三员恢复，以及真实 Browser 和一次性 OAuth 客户端协议驱动的 loopback/Device AuthContext E2E。全仓授权覆盖为 15 个 owner 的 678/678 个 OpenAPI Operation 与 9/9 个 Tool，`complete=true`。
 
 ## 十四、已确认的技术决策
 

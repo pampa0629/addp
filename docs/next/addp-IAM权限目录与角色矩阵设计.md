@@ -1,6 +1,6 @@
 # ADDP IAM Permission 目录与 Role 矩阵设计
 
-更新日期：2026-07-23
+更新日期：2026-07-28
 
 状态：技术设计已确认。本文基于 `docs/concepts/addp账号与权限体系图.md` 和 `docs/next/addp-IAM目标数据模型设计.md`，确定 Permission 命名、事实源、路由声明、内置 Role 和 Scope 规则；不定义 AuthContext JSON Schema 或 owner Resource Grant / Policy 表。
 
@@ -194,9 +194,11 @@ System 不允许知道：
 | `approve` | 批准业务或高权限申请 | high |
 | `reject` | 拒绝申请 | medium |
 | `revoke` | 撤销凭据、授权或会话 | high |
+| `reset` | 以受控新状态替换既有凭据或安全状态 | high |
 | `export` | 导出数据、日志或统计 | high |
 | `link` | 建立身份或资源关系 | high |
 | `unlink` | 解除身份或资源关系 | high |
+| `initialize` | 完成既有对象的一次性初始管理关系建立 | high |
 | `suspend` | 暂停主体、Tenant 或 Membership | high |
 | `close` | 关闭生命周期对象 | critical |
 
@@ -241,13 +243,14 @@ x-addp-required-permissions:
 
 | Base Key | Actions | Allowed Scope | Tenant Customizable | Owner |
 | --- | --- | --- | --- | --- |
-| `platform.tenant` | `read, create, update, suspend, restore, close` | Platform | false | System |
+| `platform.tenant` | `read, create, initialize, update, suspend, restore, close` | Platform | false | System |
 | `platform.module` | `read, update` | Platform | false | System |
 | `platform.configuration` | `read, update` | Platform | false | System |
 | `platform.operation` | `read` | Platform | false | System |
 | `platform.backup` | `execute` | Platform | false | System |
 | `platform.restore_request` | `read, create, approve, reject, execute` | Platform | false | System |
 | `iam.user` | `read, create, update, suspend, reactivate` | Platform | false | System |
+| `iam.local_account` | `reset` | Platform | false | System |
 | `iam.external_identity` | `read, link, unlink, suspend` | Platform | false | System |
 | `iam.identity_provider` | `read, create, update, suspend` | Platform | false | System |
 | `iam.security_policy` | `read, update` | Platform | false | System |
@@ -426,6 +429,7 @@ Role Key：`platform.security_administrator`
 包含：
 
 - `iam.user.read/create/update/suspend/reactivate`；
+- `iam.local_account.reset`；
 - `iam.external_identity.read/link/unlink/suspend`；
 - `iam.identity_provider.read/create/update/suspend`；
 - `iam.security_policy.read/update`；
@@ -473,9 +477,15 @@ Role Key：`platform.statistics_viewer`
 
 Role Key：`tenant.administrator`，只允许 Tenant Scope。
 
+用户界面统一显示为“租户组织与权限管理员（Tenant Access Administrator）”，避免把该 Role 误解为包含全部 Tenant Permission 的超级管理员。协议、数据库和审计继续使用稳定 Role Key `tenant.administrator`，不得再引入平行 Role Key。
+
 包含 Tenant Invitation、Tenant Membership、Tenant Role、Role Assignment、Department、Project Group 和 Tenant IdP Connection 的全部显式 Tenant 管理 Permission，以及 `iam.permission.read`。
 
 不包含 Engine、API Key、Cleanup、审计导出或业务模块 Permission。
+
+首位 Tenant Administrator 由平台系统管理员在 Tenant 创建事务中指定，或通过既有未初始化 Tenant 的一次性 Initialization 状态转换产生。候选人必须是平台安全管理员已创建的有效普通 User，并且不能持有任一平台三员 Role。Tenant Administrator 只管理当前 Tenant 的 Membership、Invitation、Role 和 Role Assignment；不能创建或修改全局 User 凭据。
+
+Tenant Role 和 Role Assignment 只使用 `system.roles`、`system.role_permissions` 与 `system.role_assignments`。管理 API 不建立第二套授权表，不接受角色名通配符，也不保留旧授权接口。撤销最后一个有效 `tenant.administrator` Assignment，或停用其唯一有效 Membership，必须拒绝，除非同一事务中已经建立替代管理员。
 
 ### 10.2 Tenant Infrastructure Administrator
 
@@ -511,6 +521,10 @@ Role Key：`tenant.project_group_coordinator`，只允许 Project Group Scope。
 
 ADDP 不提供包含所有 Tenant Permission 的 `tenant.super_admin`。同一 User 需要多类职责时显式分配多个 Role，并保留每个授权来源。
 
+首位 Tenant Administrator 第一次进入 Tenant Context 时，管理界面必须明确显示其当前职责仅覆盖成员、组织与授权治理，并引导其通过唯一的 Tenant Role Assignment API 分配 Infrastructure Administrator、Data Viewer、Data Steward 等既有 Role。引导只能预选既有 Role 和 Membership，不能自动授权、创建隐式角色包或把业务 Permission 合并进 `tenant.administrator`。Role Assignment 生效后的会话更新继续遵守 AuthContext 和授权版本规则。
+
+Tenant Role 选择器必须先按当前 Assignment Scope 过滤可用 Role；目标 Membership 在同一精确 Scope 已拥有的 Role 仍保留在列表末尾，显示“已分配”并禁用，其他 Scope 已拥有的同一 Role 显示范围提示。后端仍以唯一约束和 HTTP 409 拒绝并发或重复授权，不能依赖前端过滤保证一致性。给当前登录 Membership 授权或撤销后，前端必须使用现有 Refresh Token 轮换推进 `authorization_version` 并重新读取 AuthContext，使菜单和按钮原地更新；只有身份、凭据、Membership、Tenant 或 Token Family 失效时才要求重新登录，不得为角色变更新增专用换票或兼容接口。
+
 ## 十一、首批业务内置 Role
 
 内置业务 Role 是可直接使用的模板，不形成 Role 继承。SQL seed 必须展开为完整 Role Permission 行。
@@ -535,6 +549,8 @@ ADDP 不提供包含所有 Tenant Permission 的 `tenant.super_admin`。同一 U
 Tenant 创建自定义 Role 时必须满足：
 
 - Role 只属于一个 Tenant；
+- 自定义 Role Key 不得与任何平台或 Tenant 内置 Role Key 重名；内置 Role Key 是跨 Tenant 保留的稳定产品词汇，同键不能表达另一组 Permission；
+- 不同 Tenant 可以各自使用相同的自定义 Role Key，但同一 Tenant 内仍必须唯一；
 - Permission 必须 `tenant_customizable=true`；
 - 不得引用 Platform、IAM 三员、Tenant IAM 管理、审计管理、Infrastructure 管理或 Internal Permission；
 - Role 的 allowed Scope 是所选 Permission allowed Scope 的交集，不能为空；
@@ -585,10 +601,11 @@ Owner 责任：
 - 在 Service / Policy 层执行权限，不只在 Handler 或前端隐藏；
 - 对资源不存在和跨 Tenant 访问使用不泄露存在性的稳定错误；
 - 对高风险动作执行 step-up MFA 和业务审批；
+- Tenant Role Assignment 的高风险自我授予必须执行 AAL2 Guard：当 Actor Principal 等于目标 Membership Principal，且目标 Role 至少包含一个 `high` 或 `critical` Permission 时，要求当前 AuthContext 为未过期的 AAL2/AAL3，否则返回稳定 `step_up_required`。给他人授权、仅含 `low/medium` Permission 的自我授予和自我撤销不触发该 Guard；
 - 审计 Permission Key、Assignment 来源、Scope、资源决策和 Deny 原因；
 - 同一业务能力的 Web、CLI、Agent Tool 和模块间委托调用使用同一个 Permission。
 
-## 十五、实施顺序
+## 十五、已完成的实施记录
 
 1. 确认本文 Permission 和 Role 决策；
 2. 建立 Permission Manifest Schema，并把精确目录分别落到各 owner 的 `authorization/permissions.yaml`；
@@ -598,7 +615,7 @@ Owner 责任：
 6. 设计 AuthContext JSON Schema，使其能够表达 Permission Grant 与 Scope；
 7. 设计 owner Resource Grant / Policy 接口；
 8. 进入 Fosite ADR；
-9. ADR 完成后才实施 IAM SQL migration 和代码切换。
+9. ADR 完成后实施 IAM SQL migration 和代码切换；当前已完成并删除旧路径。
 
 ## 十六、已确认的技术决策
 

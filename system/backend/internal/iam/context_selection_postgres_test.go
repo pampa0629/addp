@@ -265,18 +265,10 @@ func createContextSelectionTenant(
 	ctx context.Context,
 	service *TenantMembershipService,
 	code string,
-	audit AuditMetadata,
+	_ AuditMetadata,
 ) *Tenant {
 	t.Helper()
-	tenant, err := service.CreateTenant(ctx, CreateTenantInput{
-		Code:  code,
-		Name:  strings.ToUpper(code),
-		Audit: audit,
-	})
-	if err != nil {
-		t.Fatalf("create tenant %s: %v", code, err)
-	}
-	return tenant
+	return createUninitializedTenantFixture(t, ctx, service.repository, code, strings.ToUpper(code), "")
 }
 
 func establishContextSelectionMembership(

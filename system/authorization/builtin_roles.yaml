@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 14
+manifest_version: 16
 roles:
   - key: platform.audit_administrator
     role_type: platform_builtin
@@ -18,6 +18,7 @@ roles:
     allowed_scope_types: [platform]
     allowed_principal_types: [user]
     permissions:
+      - iam.local_account.reset
       - iam.platform_identity_change.create
       - iam.platform_identity_change.read
       - iam.user.create
@@ -37,6 +38,7 @@ roles:
       - iam.platform_identity_change.reject
       - platform.tenant.close
       - platform.tenant.create
+      - platform.tenant.initialize
       - platform.tenant.read
       - platform.tenant.restore
       - platform.tenant.suspend
@@ -56,6 +58,13 @@ roles:
       - iam.tenant_membership.restore
       - iam.tenant_membership.suspend
       - iam.tenant_membership.update
+      - iam.tenant_role.create
+      - iam.tenant_role.delete
+      - iam.tenant_role.read
+      - iam.tenant_role.update
+      - iam.tenant_role_assignment.create
+      - iam.tenant_role_assignment.read
+      - iam.tenant_role_assignment.revoke
   - key: tenant.ai_user
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.ai_user.name

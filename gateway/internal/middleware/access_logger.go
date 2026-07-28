@@ -1,11 +1,11 @@
 package middleware
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"log"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/addp/gateway/pkg/client"
@@ -20,18 +20,18 @@ type AccessLoggerMiddleware struct {
 
 // AccessLog 访问日志模型
 type AccessLog struct {
-	ID               uint      `gorm:"primaryKey;column:id"`
-	ApplicationID    *uint     `gorm:"column:application_id"`
-	APIKeyPrefix     string    `gorm:"column:api_key_prefix;size:20"`
-	ServiceName      string    `gorm:"column:service_name;size:255"`
-	RequestMethod    string    `gorm:"column:request_method;size:10"`
-	RequestPath      string    `gorm:"column:request_path;type:text"`
-	RequestParams    string    `gorm:"column:request_params;type:jsonb"` // JSONB stored as string
-	ResponseStatus   int       `gorm:"column:response_status"`
-	ResponseTimeMs   int       `gorm:"column:response_time_ms"`
-	CacheHit         bool      `gorm:"column:cache_hit;default:false"`
-	RateLimited      bool      `gorm:"column:rate_limited;default:false"`
-	AccessedAt       time.Time `gorm:"column:accessed_at;default:now()"`
+	ID             uint      `gorm:"primaryKey;column:id"`
+	ApplicationID  *uint     `gorm:"column:application_id"`
+	APIKeyPrefix   string    `gorm:"column:api_key_prefix;size:20"`
+	ServiceName    string    `gorm:"column:service_name;size:255"`
+	RequestMethod  string    `gorm:"column:request_method;size:10"`
+	RequestPath    string    `gorm:"column:request_path;type:text"`
+	RequestParams  string    `gorm:"column:request_params;type:jsonb"` // JSONB stored as string
+	ResponseStatus int       `gorm:"column:response_status"`
+	ResponseTimeMs int       `gorm:"column:response_time_ms"`
+	CacheHit       bool      `gorm:"column:cache_hit;default:false"`
+	RateLimited    bool      `gorm:"column:rate_limited;default:false"`
+	AccessedAt     time.Time `gorm:"column:accessed_at;default:now()"`
 }
 
 // TableName 指定表名
@@ -49,16 +49,7 @@ func NewAccessLoggerMiddleware(db *gorm.DB) *AccessLoggerMiddleware {
 // Handler 中间件处理函数
 func (m *AccessLoggerMiddleware) Handler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 记录开始时间
 		startTime := time.Now()
-
-		// 读取请求体（用于日志）
-		var requestBody []byte
-		if c.Request.Body != nil {
-			requestBody, _ = io.ReadAll(c.Request.Body)
-			// 重置请求体供后续处理器使用
-			c.Request.Body = io.NopCloser(bytes.NewBuffer(requestBody))
-		}
 
 		// 使用 ResponseWriter wrapper 捕获响应状态
 		writer := &responseWriter{
@@ -70,11 +61,11 @@ func (m *AccessLoggerMiddleware) Handler() gin.HandlerFunc {
 		// 执行请求
 		c.Next()
 
-		// 计算响应时间
 		responseTime := time.Since(startTime).Milliseconds()
-
-		// 异步记录日志（避免阻塞请求）
-		go m.logAccess(c, writer.statusCode, int(responseTime), requestBody)
+		accessLog := m.buildAccessLog(c, writer.statusCode, int(responseTime))
+		if accessLog != nil {
+			go m.writeAccess(accessLog)
+		}
 	}
 }
 
@@ -89,86 +80,91 @@ func (w *responseWriter) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
-// logAccess 记录访问日志
-func (m *AccessLoggerMiddleware) logAccess(
+func (m *AccessLoggerMiddleware) buildAccessLog(
 	c *gin.Context,
 	statusCode int,
 	responseTimeMs int,
-	requestBody []byte,
-) {
+) *AccessLog {
 	if m.db == nil {
-		return
+		return nil
 	}
 
-	// 提取 API Key 信息（由 APIKeyAuthMiddleware 设置）
-	var applicationID *uint
-	var apiKeyPrefix string
-	var cacheHit bool
-	var rateLimited bool
-
-	if apiKeyInfoRaw, exists := c.Get("api_key_info"); exists {
-		if apiKeyInfo, ok := apiKeyInfoRaw.(*client.APIKeyValidationResponse); ok && apiKeyInfo != nil {
-			applicationID = &apiKeyInfo.AppID
-		}
+	apiKeyInfoRaw, exists := c.Get("api_key_info")
+	apiKeyInfo, ok := apiKeyInfoRaw.(*client.APIKeyValidationResponse)
+	if !exists || !ok || apiKeyInfo == nil {
+		return nil
 	}
 
+	apiKeyPrefix := ""
 	if prefix, exists := c.Get("api_key_prefix"); exists {
 		if p, ok := prefix.(string); ok {
 			apiKeyPrefix = p
 		}
 	}
 
+	cacheHit := false
 	if hit, exists := c.Get("cache_hit"); exists {
 		if h, ok := hit.(bool); ok {
 			cacheHit = h
 		}
 	}
 
-	// 检查是否被限流（status 429）
-	rateLimited = (statusCode == 429)
-
-	// 提取服务名称（从路由推断）
 	serviceName := extractServiceName(c.Request.URL.Path)
-
-	// 构建请求参数 JSON
-	requestParams := make(map[string]interface{})
-
-	// 添加 query 参数
-	if len(c.Request.URL.Query()) > 0 {
-		requestParams["query"] = c.Request.URL.Query()
-	}
-
-	// 添加 body 参数（如果是 JSON）
-	if len(requestBody) > 0 {
-		var bodyJSON map[string]interface{}
-		if err := json.Unmarshal(requestBody, &bodyJSON); err == nil {
-			requestParams["body"] = bodyJSON
-		}
-	}
-
-	// 序列化请求参数
-	paramsJSON, _ := json.Marshal(requestParams)
-
-	// 创建日志记录
-	accessLog := AccessLog{
-		ApplicationID:  applicationID,
+	return &AccessLog{
+		ApplicationID:  &apiKeyInfo.AppID,
 		APIKeyPrefix:   apiKeyPrefix,
 		ServiceName:    serviceName,
 		RequestMethod:  c.Request.Method,
 		RequestPath:    c.Request.URL.Path,
-		RequestParams:  string(paramsJSON),
+		RequestParams:  safeRequestParams(c.Request.URL.Query()),
 		ResponseStatus: statusCode,
 		ResponseTimeMs: responseTimeMs,
 		CacheHit:       cacheHit,
-		RateLimited:    rateLimited,
+		RateLimited:    statusCode == 429,
 		AccessedAt:     time.Now(),
 	}
+}
 
-	// 写入数据库
+func safeRequestParams(query url.Values) string {
+	requestParams := make(map[string]any)
+	if len(query) > 0 {
+		safeQuery := make(url.Values, len(query))
+		for key, values := range query {
+			if isSensitiveParameterName(key) {
+				safeQuery[key] = []string{"[REDACTED]"}
+				continue
+			}
+			safeQuery[key] = append([]string(nil), values...)
+		}
+		requestParams["query"] = safeQuery
+	}
+	paramsJSON, _ := json.Marshal(requestParams)
+	return string(paramsJSON)
+}
+
+func isSensitiveParameterName(name string) bool {
+	normalized := strings.NewReplacer("-", "_", ".", "_", "[", "_", "]", "_").Replace(strings.ToLower(name))
+	for _, marker := range []string{
+		"password", "passwd", "secret", "token", "credential", "authorization", "cookie",
+		"challenge", "verifier", "signature", "private_key", "api_key", "nonce", "otp",
+	} {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return normalized == "code" || normalized == "state" || normalized == "key" ||
+		strings.HasSuffix(normalized, "_code") || strings.HasSuffix(normalized, "_state") ||
+		strings.HasSuffix(normalized, "_key")
+}
+
+func (m *AccessLoggerMiddleware) writeAccess(accessLog *AccessLog) {
+	if m == nil || m.db == nil || accessLog == nil {
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := m.db.WithContext(ctx).Create(&accessLog).Error; err != nil {
+	if err := m.db.WithContext(ctx).Create(accessLog).Error; err != nil {
 		log.Printf("Failed to write access log: %v", err)
 	}
 }

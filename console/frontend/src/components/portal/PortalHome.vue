@@ -115,6 +115,7 @@ import {
   Connection,
 } from '@element-plus/icons-vue'
 import client from '../../api/client'
+import { fetchPortalStatus } from '../../utils/portalStatus'
 
 const { t } = useI18n()
 
@@ -122,6 +123,7 @@ const props = defineProps({
   activeGroup: { type: String, default: null },
   homeCards: { type: Array, required: true },
   user: { type: Object, default: null },
+  permissions: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(['card-click', 'portal-click', 'navigate'])
@@ -145,21 +147,7 @@ const statusStats = computed(() => [
 
 async function fetchStatus() {
   statusLoading.value = true
-  const get = (url) => client.get(url).then(r => r?.data?.total ?? r?.total ?? 0).catch(() => null)
-
-  const [engines, datasets, services, tasks] = await Promise.allSettled([
-    get('/system/engines?page_size=1'),
-    get('/meta/stats'),
-    get('/service/query?page_size=1'),
-    get('/monitor/executions?status=running&page_size=1'),
-  ])
-
-  statusData.value = {
-    engines:  engines.status  === 'fulfilled' ? engines.value  : null,
-    datasets: datasets.status === 'fulfilled' ? datasets.value : null,
-    services: services.status === 'fulfilled' ? services.value : null,
-    tasks:    tasks.status    === 'fulfilled' ? tasks.value    : null,
-  }
+  statusData.value = await fetchPortalStatus(client, props.permissions)
   statusLoading.value = false
 }
 

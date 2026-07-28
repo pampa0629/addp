@@ -9,6 +9,7 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	passwordutils "github.com/addp/system/pkg/utils"
 )
 
 var ErrPrivilegedChangeRequestRequired = errors.New("privileged change request required")
@@ -40,6 +41,21 @@ type ChangeManagedUserStatusInput struct {
 type ManagedUserStatusChangeResult struct {
 	User               ManagedUser
 	RevokedFamilyCount int64
+}
+
+type ResetManagedLocalAccountPasswordInput struct {
+	UserID      int64
+	NewPassword string
+	Reason      string
+	Audit       AuditMetadata
+}
+
+type ManagedLocalAccountPasswordResetResult struct {
+	AuthorizationVersion       int64
+	RevokedFamilyCount         int64
+	ConsumedMFAChallengeCount  int64
+	ConsumedContextTicketCount int64
+	ChangedAt                  time.Time
 }
 
 type PlatformUserService struct {
@@ -152,6 +168,98 @@ func (s *PlatformUserService) Update(
 		return nil, err
 	}
 	return s.repository.GetManagedUser(ctx, input.UserID)
+}
+
+func (s *PlatformUserService) ResetLocalAccountPassword(
+	ctx context.Context,
+	input ResetManagedLocalAccountPasswordInput,
+) (*ManagedLocalAccountPasswordResetResult, error) {
+	if err := s.validateUserID(input.UserID); err != nil {
+		return nil, err
+	}
+	reason := strings.TrimSpace(input.Reason)
+	if input.NewPassword == "" || reason == "" {
+		return nil, fmt.Errorf("%w: new password and reason are required", commonapi.ErrBadRequest)
+	}
+	passwordHash, err := passwordutils.HashPassword(input.NewPassword)
+	if err != nil {
+		return nil, fmt.Errorf("%w: hash password: %v", commonapi.ErrBadRequest, err)
+	}
+
+	changedAt := s.now().UTC()
+	var reset *ManagedLocalAccountPasswordResetResult
+	err = s.repository.Transaction(ctx, func(tx *Repository) error {
+		principal, err := tx.LockPrincipal(ctx, input.UserID)
+		if err != nil {
+			return err
+		}
+		if principal.PrincipalType != PrincipalTypeUser {
+			return commonapi.ErrNotFound
+		}
+		if principal.Status != PrincipalStatusActive {
+			return fmt.Errorf("%w: user is not active", commonapi.ErrConflict)
+		}
+		governed, err := tx.HasEffectivePlatformRole(ctx, principal.ID, changedAt)
+		if err != nil {
+			return err
+		}
+		if governed {
+			return fmt.Errorf("%w: platform role holder credentials cannot be reset", commonapi.ErrConflict)
+		}
+		account, err := tx.LockLocalAccountByUserID(ctx, principal.ID)
+		if err != nil {
+			return err
+		}
+		if account.Status != LocalAccountStatusActive && account.Status != LocalAccountStatusLocked {
+			return fmt.Errorf("%w: local account cannot be reset", commonapi.ErrConflict)
+		}
+		if passwordutils.CheckPassword(input.NewPassword, account.PasswordHash) {
+			return ErrPasswordUnchanged
+		}
+		if err := tx.ResetLocalAccountPassword(ctx, account.ID, passwordHash, changedAt); err != nil {
+			return err
+		}
+		authorizationVersion, err := tx.IncrementPrincipalAuthorizationVersion(ctx, principal.ID)
+		if err != nil {
+			return err
+		}
+		revokedFamilyCount, err := tx.RevokeActiveTokenFamilies(
+			ctx, principal.ID, changedAt, "local_account_password_reset",
+		)
+		if err != nil {
+			return err
+		}
+		consumedMFAChallengeCount, err := tx.ConsumePendingMFAChallenges(ctx, principal.ID, changedAt)
+		if err != nil {
+			return err
+		}
+		consumedContextTicketCount, err := tx.ConsumeActiveContextSelectionTickets(ctx, principal.ID, changedAt)
+		if err != nil {
+			return err
+		}
+		if err := NewAuditWriter(tx).Write(ctx, AuditEvent{
+			Metadata: input.Audit, EventName: "iam.local_account.password_reset",
+			Result: AuditResultSucceeded, RiskLevel: AuditRiskHigh, ModuleName: "system",
+			EntityType: "local_account", EntityID: strconv.FormatInt(account.ID, 10),
+			Details: map[string]any{
+				"target_principal_id":           principal.ID,
+				"reason":                        reason,
+				"authorization_version":         authorizationVersion,
+				"revoked_family_count":          revokedFamilyCount,
+				"consumed_mfa_challenge_count":  consumedMFAChallengeCount,
+				"consumed_context_ticket_count": consumedContextTicketCount,
+			},
+		}); err != nil {
+			return err
+		}
+		reset = &ManagedLocalAccountPasswordResetResult{
+			AuthorizationVersion: authorizationVersion, RevokedFamilyCount: revokedFamilyCount,
+			ConsumedMFAChallengeCount:  consumedMFAChallengeCount,
+			ConsumedContextTicketCount: consumedContextTicketCount, ChangedAt: changedAt,
+		}
+		return nil
+	})
+	return reset, err
 }
 
 func (s *PlatformUserService) Suspend(

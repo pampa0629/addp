@@ -40,15 +40,10 @@ func NewExecutionHandler(queryService *service.ExecutionQueryService) *Execution
 // @Router /executions [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
-	// 从 context 获取 tenant_id（由认证中间件注入）
-	tenantIDRaw, exists := c.Get("tenant_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, moni18n.MsgTenantNotFound)})
+	tenantID, ok := requireTenantID(c)
+	if !ok {
 		return
 	}
-
-	// 转换类型：中间件设置的是 uint，需要转换为 int
-	tenantID := int(tenantIDRaw.(uint))
 
 	// 解析查询参数
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -94,15 +89,10 @@ func stringPtrFromQuery(value string) *string {
 // @Router /executions/{id} [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecution(c *gin.Context) {
-	// 从 context 获取 tenant_id
-	tenantIDRaw, exists := c.Get("tenant_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, moni18n.MsgTenantNotFound)})
+	tenantID, ok := requireTenantID(c)
+	if !ok {
 		return
 	}
-
-	// 转换类型：中间件设置的是 uint，需要转换为 int
-	tenantID := int(tenantIDRaw.(uint))
 
 	// 解析 ID
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -132,12 +122,10 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 // @Router /executions/by-execution-id/{execution_id} [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecutionByExecutionID(c *gin.Context) {
-	tenantIDRaw, exists := c.Get("tenant_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, moni18n.MsgTenantNotFound)})
+	tenantID, ok := requireTenantID(c)
+	if !ok {
 		return
 	}
-	tenantID := int(tenantIDRaw.(uint))
 
 	executionID := c.Param("execution_id")
 	if executionID == "" {
@@ -165,12 +153,10 @@ func (h *ExecutionHandler) GetExecutionByExecutionID(c *gin.Context) {
 // @Router /executions/{id}/tree [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecutionTree(c *gin.Context) {
-	tenantIDRaw, exists := c.Get("tenant_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, moni18n.MsgTenantNotFound)})
+	tenantID, ok := requireTenantID(c)
+	if !ok {
 		return
 	}
-	tenantID := int(tenantIDRaw.(uint))
 
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -198,12 +184,10 @@ func (h *ExecutionHandler) GetExecutionTree(c *gin.Context) {
 // @Router /executions/by-execution-id/{execution_id}/tree [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecutionTreeByExecutionID(c *gin.Context) {
-	tenantIDRaw, exists := c.Get("tenant_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, moni18n.MsgTenantNotFound)})
+	tenantID, ok := requireTenantID(c)
+	if !ok {
 		return
 	}
-	tenantID := int(tenantIDRaw.(uint))
 
 	executionID := c.Param("execution_id")
 	if executionID == "" {

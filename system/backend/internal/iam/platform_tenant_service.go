@@ -17,6 +17,15 @@ type UpdateTenantInput struct {
 	Audit       AuditMetadata
 }
 
+type CreateTenantInput struct {
+	Code                            string
+	Name                            string
+	Description                     string
+	InitialAdministratorPrincipalID int64
+	ActorPrincipalID                int64
+	Audit                           AuditMetadata
+}
+
 type ChangeTenantStatusInput struct {
 	TenantID int64
 	Reason   string
@@ -24,9 +33,16 @@ type ChangeTenantStatusInput struct {
 }
 
 type TenantStatusChangeResult struct {
-	Tenant             Tenant
+	Tenant             ManagedTenant
 	AffectedPrincipals int
 	RevokedFamilyCount int64
+}
+
+type InitializeTenantInput struct {
+	TenantID                        int64
+	InitialAdministratorPrincipalID int64
+	ActorPrincipalID                int64
+	Audit                           AuditMetadata
 }
 
 type PlatformTenantService struct {
@@ -47,38 +63,199 @@ func (s *PlatformTenantService) List(
 	pageSize int,
 	search string,
 	status *TenantStatus,
-) ([]Tenant, int64, error) {
+) ([]ManagedTenant, int64, error) {
 	if err := s.validate(); err != nil {
 		return nil, 0, err
 	}
 	if err := validateManagementPagination(page, pageSize); err != nil {
 		return nil, 0, err
 	}
-	var tenants []Tenant
+	var tenants []ManagedTenant
 	var total int64
 	err := s.repository.ReadOnlyRepeatableReadTransaction(ctx, func(tx *Repository) error {
 		var err error
-		tenants, total, err = tx.ListManagedTenants(ctx, page, pageSize, search, status)
+		tenants, total, err = tx.ListManagedTenantViews(ctx, page, pageSize, search, status)
 		return err
 	})
 	return tenants, total, err
 }
 
-func (s *PlatformTenantService) Get(ctx context.Context, tenantID int64) (*Tenant, error) {
+func (s *PlatformTenantService) Get(ctx context.Context, tenantID int64) (*ManagedTenant, error) {
 	if err := s.validateTenantID(tenantID); err != nil {
 		return nil, err
 	}
-	return s.repository.GetTenant(ctx, tenantID)
+	return s.repository.GetManagedTenantView(ctx, tenantID)
 }
 
-func (s *PlatformTenantService) Create(ctx context.Context, input CreateTenantInput) (*Tenant, error) {
+func (s *PlatformTenantService) Create(ctx context.Context, input CreateTenantInput) (*ManagedTenant, error) {
 	if err := s.validate(); err != nil {
 		return nil, err
 	}
-	return NewTenantMembershipService(s.repository, s.now).CreateTenant(ctx, input)
+	if strings.TrimSpace(input.Name) == "" || input.InitialAdministratorPrincipalID <= 0 || input.ActorPrincipalID <= 0 {
+		return nil, fmt.Errorf("%w: tenant name, initial administrator and actor are required", commonapi.ErrBadRequest)
+	}
+	tenant := &Tenant{Code: input.Code, Name: strings.TrimSpace(input.Name), Description: strings.TrimSpace(input.Description), Status: TenantStatusActive}
+	var now time.Time
+	err := s.repository.Transaction(ctx, func(tx *Repository) error {
+		var err error
+		now, err = tx.CurrentDatabaseTime(ctx)
+		if err != nil {
+			return err
+		}
+		if err := lockTenantInitializationPrincipals(ctx, tx, input.ActorPrincipalID, input.InitialAdministratorPrincipalID); err != nil {
+			return err
+		}
+		if err := validateInitialTenantAdministrator(ctx, tx, input.InitialAdministratorPrincipalID, now); err != nil {
+			return err
+		}
+		if err := tx.CreateTenant(ctx, tenant); err != nil {
+			return err
+		}
+		if err := s.initializeTenantTx(ctx, tx, tenant, input.InitialAdministratorPrincipalID, input.ActorPrincipalID, now, input.Audit, false); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.repository.GetManagedTenantView(ctx, tenant.ID)
 }
 
-func (s *PlatformTenantService) Update(ctx context.Context, input UpdateTenantInput) (*Tenant, error) {
+func (s *PlatformTenantService) Initialize(ctx context.Context, input InitializeTenantInput) (*ManagedTenant, error) {
+	if err := s.validateTenantID(input.TenantID); err != nil {
+		return nil, err
+	}
+	if input.InitialAdministratorPrincipalID <= 0 || input.ActorPrincipalID <= 0 {
+		return nil, fmt.Errorf("%w: initial administrator and actor are required", commonapi.ErrBadRequest)
+	}
+	var now time.Time
+	err := s.repository.Transaction(ctx, func(tx *Repository) error {
+		var err error
+		now, err = tx.CurrentDatabaseTime(ctx)
+		if err != nil {
+			return err
+		}
+		if err := lockTenantInitializationPrincipals(ctx, tx, input.ActorPrincipalID, input.InitialAdministratorPrincipalID); err != nil {
+			return err
+		}
+		if err := validateInitialTenantAdministrator(ctx, tx, input.InitialAdministratorPrincipalID, now); err != nil {
+			return err
+		}
+		tenant, err := tx.LockTenantForUpdate(ctx, input.TenantID)
+		if err != nil {
+			return err
+		}
+		if tenant.Status == TenantStatusClosed {
+			return fmt.Errorf("%w: closed tenant cannot be initialized", commonapi.ErrConflict)
+		}
+		if tenant.InitializedAt != nil || tenant.InitializedByPrincipalID != nil {
+			return fmt.Errorf("%w: tenant is already initialized", commonapi.ErrConflict)
+		}
+		hasFacts, err := tx.TenantHasMembershipOrAssignment(ctx, tenant.ID)
+		if err != nil {
+			return err
+		}
+		if hasFacts {
+			return fmt.Errorf("%w: tenant has already entered membership or authorization lifecycle", commonapi.ErrConflict)
+		}
+		return s.initializeTenantTx(ctx, tx, tenant, input.InitialAdministratorPrincipalID, input.ActorPrincipalID, now, input.Audit, true)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.repository.GetManagedTenantView(ctx, input.TenantID)
+}
+
+func (s *PlatformTenantService) ListAdministratorCandidates(ctx context.Context, search string) ([]TenantAdministratorCandidate, error) {
+	if err := s.validate(); err != nil {
+		return nil, err
+	}
+	return s.repository.ListTenantAdministratorCandidates(ctx, search, 50)
+}
+
+func (s *PlatformTenantService) initializeTenantTx(ctx context.Context, tx *Repository, tenant *Tenant, administratorID, actorID int64, now time.Time, audit AuditMetadata, existing bool) error {
+	membership := &TenantMembership{
+		TenantID: tenant.ID, PrincipalID: administratorID, Status: TenantMembershipStatusActive,
+		SourceType: TenantMembershipSourceManual, JoinedAt: now, CreatedByPrincipalID: &actorID,
+	}
+	if err := tx.CreateTenantMembership(ctx, membership); err != nil {
+		return err
+	}
+	role, err := tx.GetActiveBuiltinRoleByKey(ctx, tenantAdministratorRoleKey)
+	if err != nil {
+		return err
+	}
+	tenantID := tenant.ID
+	assignment := &RoleAssignment{
+		PrincipalID: administratorID, RoleID: role.ID, ScopeType: "tenant", TenantID: &tenantID,
+		Status: "active", ValidFrom: now, SourceType: "manual", CreatedByPrincipalID: &actorID,
+		Reason: "initial tenant administrator",
+	}
+	if err := tx.CreateTenantRoleAssignment(ctx, assignment); err != nil {
+		return err
+	}
+	if err := tx.MarkTenantInitialized(ctx, tenant.ID, actorID, now); err != nil {
+		return err
+	}
+	tenant.InitializedAt = &now
+	tenant.InitializedByPrincipalID = &actorID
+	principal, err := tx.GetPrincipal(ctx, administratorID)
+	if err != nil {
+		return err
+	}
+	writer := NewAuditWriter(tx)
+	if !existing {
+		if err := writer.Write(ctx, AuditEvent{Metadata: audit, EventName: "iam.tenant.created", Result: AuditResultSucceeded, RiskLevel: AuditRiskMedium, ModuleName: "system", EntityType: "tenant", EntityID: strconv.FormatInt(tenant.ID, 10), Details: map[string]any{"tenant_code": tenant.Code, "initial_administrator_principal_id": administratorID}}); err != nil {
+			return err
+		}
+	}
+	if err := writer.Write(ctx, AuditEvent{Metadata: audit, EventName: "iam.tenant_membership.established", Result: AuditResultSucceeded, RiskLevel: AuditRiskMedium, ModuleName: "system", EntityType: "tenant_membership", EntityID: strconv.FormatInt(membership.ID, 10), Details: map[string]any{"tenant_id": tenant.ID, "principal_id": administratorID, "source_type": TenantMembershipSourceManual}}); err != nil {
+		return err
+	}
+	if err := writer.Write(ctx, AuditEvent{Metadata: audit, EventName: "iam.tenant_role_assignment.created", Result: AuditResultSucceeded, RiskLevel: AuditRiskHigh, ModuleName: "system", EntityType: "role_assignment", EntityID: strconv.FormatInt(assignment.ID, 10), Details: map[string]any{"tenant_id": tenant.ID, "principal_id": administratorID, "role_key": tenantAdministratorRoleKey, "authorization_version": principal.AuthorizationVersion, "authorization_version_changed": true}}); err != nil {
+		return err
+	}
+	if existing {
+		if err := writer.Write(ctx, AuditEvent{Metadata: audit, EventName: "iam.tenant.initialized", Result: AuditResultSucceeded, RiskLevel: AuditRiskHigh, ModuleName: "system", EntityType: "tenant", EntityID: strconv.FormatInt(tenant.ID, 10), Details: map[string]any{"initial_administrator_principal_id": administratorID, "membership_id": membership.ID, "role_assignment_id": assignment.ID}}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func lockTenantInitializationPrincipals(ctx context.Context, repository *Repository, actorID, targetID int64) error {
+	ids := []int64{actorID, targetID}
+	if ids[0] > ids[1] {
+		ids[0], ids[1] = ids[1], ids[0]
+	}
+	for index, id := range ids {
+		if index > 0 && ids[index-1] == id {
+			continue
+		}
+		principal, err := repository.LockPrincipal(ctx, id)
+		if err != nil {
+			return err
+		}
+		if principal.Status != PrincipalStatusActive || principal.PrincipalType != PrincipalTypeUser {
+			return commonapi.ErrForbidden
+		}
+	}
+	return nil
+}
+
+func validateInitialTenantAdministrator(ctx context.Context, repository *Repository, principalID int64, now time.Time) error {
+	hasPlatformRole, err := repository.HasEffectivePlatformRole(ctx, principalID, now)
+	if err != nil {
+		return err
+	}
+	if hasPlatformRole {
+		return fmt.Errorf("%w: platform administrator cannot be tenant initial administrator", commonapi.ErrForbidden)
+	}
+	return nil
+}
+
+func (s *PlatformTenantService) Update(ctx context.Context, input UpdateTenantInput) (*ManagedTenant, error) {
 	if err := s.validateTenantID(input.TenantID); err != nil {
 		return nil, err
 	}
@@ -112,7 +289,7 @@ func (s *PlatformTenantService) Update(ctx context.Context, input UpdateTenantIn
 	if err != nil {
 		return nil, err
 	}
-	return s.repository.GetTenant(ctx, input.TenantID)
+	return s.repository.GetManagedTenantView(ctx, input.TenantID)
 }
 
 func (s *PlatformTenantService) Suspend(
@@ -196,13 +373,21 @@ func (s *PlatformTenantService) changeStatus(
 		}
 		tenant.Status = target
 		changed = &TenantStatusChangeResult{
-			Tenant:             *tenant,
+			Tenant:             ManagedTenant{Tenant: *tenant},
 			AffectedPrincipals: len(principalIDs),
 			RevokedFamilyCount: revoked,
 		}
 		return nil
 	})
-	return changed, err
+	if err != nil {
+		return nil, err
+	}
+	view, err := s.repository.GetManagedTenantView(ctx, input.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	changed.Tenant = *view
+	return changed, nil
 }
 
 func (s *PlatformTenantService) validate() error {

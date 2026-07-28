@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -17,7 +16,7 @@ import (
 	commonconfig "github.com/addp/common/config"
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/iam"
-	"github.com/addp/system/internal/migration"
+	"github.com/addp/system/internal/iamcli"
 	"github.com/pquerna/otp/totp"
 	"golang.org/x/term"
 	"gorm.io/driver/postgres"
@@ -59,7 +58,7 @@ func run(args []string, stdin *os.File, stdout *os.File) error {
 	if err != nil {
 		return fmt.Errorf("连接 PostgreSQL: %w", err)
 	}
-	if err := requireMigrationVersion(db); err != nil {
+	if err := iamcli.RequireCurrentMigration(db); err != nil {
 		return err
 	}
 	repository := iam.NewRepository(db)
@@ -109,22 +108,6 @@ func run(args []string, stdin *os.File, stdout *os.File) error {
 	}
 }
 
-func requireMigrationVersion(db *gorm.DB) error {
-	catalog, err := migration.ReadCatalog(migration.EmbeddedSQL, migration.DefaultMigrationsRoot)
-	if err != nil {
-		return fmt.Errorf("读取内嵌 IAM migration 目录: %w", err)
-	}
-	var version uint
-	var dirty bool
-	if err := db.Raw(`SELECT version, dirty FROM system.schema_migrations`).Row().Scan(&version, &dirty); err != nil {
-		return fmt.Errorf("读取 IAM migration 状态: %w", err)
-	}
-	if dirty || version != catalog.LatestVersion {
-		return fmt.Errorf("IAM migration 必须为 (%d, clean)，当前为 (%d, dirty=%t)", catalog.LatestVersion, version, dirty)
-	}
-	return nil
-}
-
 func readManifest(path string) (*bootstrapManifest, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -155,7 +138,7 @@ func applyBootstrap(
 	stdout *os.File,
 ) error {
 	reader := bufio.NewReader(stdin)
-	bootstrapSecret, err := readHidden(stdin, stdout, "Bootstrap Secret: ")
+	bootstrapSecret, err := iamcli.ReadHidden(stdin, stdout, "Bootstrap Secret: ")
 	if err != nil {
 		return err
 	}
@@ -173,25 +156,24 @@ func applyBootstrap(
 			return fmt.Errorf("Manifest 缺少角色 %q", roleKey)
 		}
 		fmt.Fprintf(stdout, "\n配置 %s（%s）\n", administrator.DisplayName, roleKey)
-		password, err := readHidden(stdin, stdout, "输入独立密码（至少 14 字符）: ")
+		password, err := iamcli.ReadConfirmedPassword(
+			stdin, stdout, "输入独立密码（至少 14 字符）: ", "再次输入密码: ",
+		)
 		if err != nil {
-			return err
-		}
-		confirmation, err := readHidden(stdin, stdout, "再次输入密码: ")
-		if err != nil {
-			return err
-		}
-		if subtle.ConstantTimeCompare([]byte(password), []byte(confirmation)) != 1 {
-			return fmt.Errorf("%s 的两次密码输入不一致", roleKey)
+			return fmt.Errorf("%s: %w", roleKey, err)
 		}
 		key, err := totp.Generate(totp.GenerateOpts{Issuer: "ADDP", AccountName: administrator.Username})
 		if err != nil {
 			return fmt.Errorf("生成 %s 的 TOTP: %w", roleKey, err)
 		}
-		fmt.Fprintf(stdout, "TOTP Secret: %s\nEnrollment URI: %s\n", key.Secret(), key.URL())
-		fmt.Fprintln(stdout, "请先将 TOTP Secret 或 Enrollment URI 添加到认证器 App。")
+		fmt.Fprintln(stdout, "请使用认证器的“扫描二维码”入口扫描下面的 TOTP 二维码：")
+		if err := iamcli.PrintQRCode(stdout, key.URL()); err != nil {
+			return fmt.Errorf("显示 %s 的 TOTP 二维码: %w", roleKey, err)
+		}
+		fmt.Fprintf(stdout, "认证器明确支持“手动输入设置密钥/TOTP”时，可使用备用 TOTP Secret: %s\n", key.Secret())
+		fmt.Fprintln(stdout, "不要把 TOTP Secret 输入短信/邮件激活入口。")
 		fmt.Fprintln(stdout, "下面只接受认证器当前显示的 6 位数字验证码，不要输入 TOTP Secret。")
-		proofs, err := readConsecutiveTOTPProofs(reader, stdout, key.Secret())
+		proofs, err := iamcli.ReadConsecutiveTOTPProofs(reader, stdout, key.Secret())
 		if err != nil {
 			return fmt.Errorf("验证 %s 的 TOTP: %w", roleKey, err)
 		}
@@ -217,78 +199,4 @@ func applyBootstrap(
 		fmt.Fprintf(stdout, "%s -> Principal %d\n", role, result.PrincipalIDs[role])
 	}
 	return nil
-}
-
-func readHidden(stdin *os.File, stdout *os.File, prompt string) (string, error) {
-	fmt.Fprint(stdout, prompt)
-	value, err := term.ReadPassword(int(stdin.Fd()))
-	fmt.Fprintln(stdout)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(value)), nil
-}
-
-func readConsecutiveTOTPProofs(
-	reader *bufio.Reader,
-	stdout io.Writer,
-	secret string,
-) ([]iam.BootstrapTOTPProof, error) {
-	proofs := make([]iam.BootstrapTOTPProof, 0, 2)
-	var previousCounter int64 = -1
-	for len(proofs) < 2 {
-		if len(proofs) == 0 {
-			fmt.Fprint(stdout, "输入当前 TOTP 验证码: ")
-		} else {
-			fmt.Fprint(stdout, "等待验证码变化后输入下一个 TOTP 验证码: ")
-		}
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			return nil, err
-		}
-		code := strings.TrimSpace(line)
-		if !isTOTPCodeFormat(code) {
-			fmt.Fprintln(stdout, "格式错误：请输入认证器生成的 6 位数字验证码，不要输入 TOTP Secret。")
-			continue
-		}
-		verifiedAt := time.Now().UTC()
-		counter, valid := matchTOTP(secret, code, verifiedAt)
-		if !valid {
-			fmt.Fprintln(stdout, "验证码无效，请确认设备时间自动同步后重试。")
-			continue
-		}
-		if previousCounter >= 0 && counter != previousCounter+1 {
-			fmt.Fprintln(stdout, "必须使用紧邻的下一个时间窗口验证码，请重试。")
-			continue
-		}
-		proofs = append(proofs, iam.BootstrapTOTPProof{Code: code, VerifiedAt: verifiedAt})
-		previousCounter = counter
-	}
-	return proofs, nil
-}
-
-func isTOTPCodeFormat(code string) bool {
-	if len(code) != 6 {
-		return false
-	}
-	for _, character := range code {
-		if character < '0' || character > '9' {
-			return false
-		}
-	}
-	return true
-}
-
-func matchTOTP(secret, code string, now time.Time) (int64, bool) {
-	if !isTOTPCodeFormat(code) {
-		return 0, false
-	}
-	for _, offset := range []int{-1, 0, 1} {
-		candidateTime := now.Add(time.Duration(offset*30) * time.Second)
-		candidate, err := totp.GenerateCode(secret, candidateTime)
-		if err == nil && subtle.ConstantTimeCompare([]byte(candidate), []byte(code)) == 1 {
-			return candidateTime.Unix() / 30, true
-		}
-	}
-	return 0, false
 }

@@ -181,5 +181,17 @@ other = "This model3d tiles quick view task already has an active execution"
 [manager.error.existing_result_action_required]
 other = "A current result already exists. This execution must explicitly choose to overwrite it"
 
+[manager.error.data_profile_unsupported]
+other = "Data profiling is not supported for this resource"
+
+[manager.error.data_profile_unavailable]
+other = "Data profiling is currently unavailable"
+
+[manager.error.data_profile_query_failed]
+other = "Failed to query the data profile"
+
+[manager.error.data_profile_create_failed]
+other = "Failed to create the data profiling execution"
+
 [manager.model3d_tiles.result_deleted]
 other = "Model3d tiles quick view result deleted"

@@ -9,7 +9,7 @@ Gateway 是 ADDP 平台的**统一 API 入口**，负责：
 1. **API Key 认证** - 基于三层缓存的验证机制（本地 5分钟 → Redis 1小时 → System API）
 2. **请求路由** - System 使用 `SYSTEM_URL` bootstrap，其他模块按注册表动态发现
 3. **限流控制** - 基于 Redis 令牌桶算法，按应用 ID 独立限流
-4. **访问日志** - 异步记录所有 API 访问到 PostgreSQL
+4. **访问日志** - 异步记录已验证的外部 API Key 访问到 PostgreSQL，不采集请求体
 5. **透明代理** - 按 `/api/v1/:module/*path` 保持模块路径原样转发
 6. **跨域处理** - 统一 CORS 配置
 
@@ -242,6 +242,8 @@ gateway/
 - 不要阻塞请求流程
 - AccessLoggerMiddleware 使用 goroutine 异步写入
 - 如果 PostgreSQL 连接失败，只记录错误，不影响请求
+- 只记录存在有效 `api_key_info` 的外部 API Key 请求；Browser Bearer、Cookie 和公开请求不进入 Gateway AccessLog
+- 不读取或保存请求体；Query 参数必须先执行敏感字段脱敏
 
 ### 3. 限流配置审慎
 - 限额过低会误伤合法用户

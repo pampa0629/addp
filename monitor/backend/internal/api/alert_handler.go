@@ -45,7 +45,7 @@ type SuppressAlertRequest struct {
 // @Router /alerts [get]
 // @Security BearerAuth
 func (h *AlertHandler) ListAlerts(c *gin.Context) {
-	tenantID, ok := alertTenantID(c)
+	tenantID, ok := requireTenantID(c)
 	if !ok {
 		return
 	}
@@ -132,14 +132,14 @@ func alertIdentity(c *gin.Context) (uint, int, bool) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, moni18n.MsgInvalidAlertID)})
 		return 0, 0, false
 	}
-	tenantID, ok := alertTenantID(c)
+	tenantID, ok := requireTenantID(c)
 	return uint(id), tenantID, ok
 }
 
-func alertTenantID(c *gin.Context) (int, bool) {
-	tenantID := commonAuth.GetTenantID(c)
-	if tenantID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, moni18n.MsgTenantNotFound)})
+func requireTenantID(c *gin.Context) (int, bool) {
+	tenantID, ok := commonAuth.TenantIDFromGin(c)
+	if !ok {
+		c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, moni18n.MsgTenantNotFound)})
 		return 0, false
 	}
 	return int(tenantID), true

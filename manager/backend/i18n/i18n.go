@@ -72,6 +72,10 @@ const (
 	MsgTaskExecutionBusy            = "manager.error.task_execution_busy"
 	MsgModel3DTilesExecutionBusy    = "manager.error.model3d_tiles_execution_busy"
 	MsgExistingResultActionRequired = "manager.error.existing_result_action_required"
+	MsgDataProfileUnsupported       = "manager.error.data_profile_unsupported"
+	MsgDataProfileUnavailable       = "manager.error.data_profile_unavailable"
+	MsgDataProfileQueryFailed       = "manager.error.data_profile_query_failed"
+	MsgDataProfileCreateFailed      = "manager.error.data_profile_create_failed"
 	MsgModel3DTilesResultDeleted    = "manager.model3d_tiles.result_deleted"
 )
 

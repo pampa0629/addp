@@ -158,6 +158,56 @@ func TestRefreshTokenRotationServiceAgainstPostgres(t *testing.T) {
 		assertAuditEventCount(t, db, initial.FamilyID, "iam.refresh_token.reuse_detected", AuditRiskHigh, 0)
 	})
 
+	t.Run("authorization changes advance an active family during rotation", func(t *testing.T) {
+		currentTime = time.Now().UTC().Add(-time.Second).Truncate(time.Microsecond)
+		initial := issueRefreshRotationSession(
+			t, ctx, identityService, membershipService, selectionService,
+			"rotation-authorization", "rotation-authorization", authentication,
+		)
+		familyBefore := readRefreshFamily(t, db, initial.FamilyID)
+		principal, err := repository.GetPrincipal(ctx, familyBefore.PrincipalID)
+		if err != nil {
+			t.Fatalf("read authorization rotation principal: %v", err)
+		}
+		advancedVersion, err := repository.IncrementPrincipalAuthorizationVersion(ctx, principal.ID)
+		if err != nil || advancedVersion <= familyBefore.IssuedAuthorizationVersion {
+			t.Fatalf("advance principal authorization version = %d err=%v", advancedVersion, err)
+		}
+		authContextService, err := NewAuthContextService(repository)
+		if err != nil {
+			t.Fatalf("create authorization rotation AuthContext service: %v", err)
+		}
+		if _, err := authContextService.ResolveFirstPartyAccessToken(ctx, initial.AccessToken); err == nil {
+			t.Fatal("old access token remained valid after authorization version changed")
+		} else {
+			var validationError *CredentialValidationError
+			if !errors.As(err, &validationError) || validationError.Reason != CredentialInvalidAuthorizationVersion {
+				t.Fatalf("old access token error = %v, want authorization version mismatch", err)
+			}
+		}
+
+		currentTime = currentTime.Add(time.Second)
+		rotated, err := tokenService.RotateBrowserRefreshToken(ctx, RotateBrowserRefreshTokenInput{
+			RefreshToken: initial.RefreshToken,
+			Audit:        AuditMetadata{RequestID: stringPointer("refresh-authorization-advanced")},
+		})
+		if err != nil {
+			t.Fatalf("rotate after authorization change: %v", err)
+		}
+		familyAfter := readRefreshFamily(t, db, initial.FamilyID)
+		if familyAfter.IssuedAuthorizationVersion != advancedVersion || familyAfter.RevokedAt != nil ||
+			!familyAfter.ExpiresAt.Equal(familyBefore.ExpiresAt) {
+			t.Fatalf("advanced refresh family = %#v, previous=%#v", familyAfter, familyBefore)
+		}
+		if _, err := authContextService.ResolveFirstPartyAccessToken(ctx, rotated.AccessToken); err != nil {
+			var validationError *CredentialValidationError
+			if errors.As(err, &validationError) {
+				t.Fatalf("resolve rotated access token after authorization advance: %v (%s)", err, validationError.Reason)
+			}
+			t.Fatalf("resolve rotated access token after authorization advance: %v", err)
+		}
+	})
+
 	t.Run("rotation and reuse audit failures roll back", func(t *testing.T) {
 		initial := issueRefreshRotationSession(
 			t, ctx, identityService, membershipService, selectionService,

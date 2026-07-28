@@ -181,5 +181,17 @@ other = "该三维瓦片快显任务正在生成，不能重复执行"
 [manager.error.existing_result_action_required]
 other = "已有当前结果，本次执行必须明确选择覆盖已有结果"
 
+[manager.error.data_profile_unsupported]
+other = "当前资源不支持数据剖析"
+
+[manager.error.data_profile_unavailable]
+other = "数据剖析服务暂不可用"
+
+[manager.error.data_profile_query_failed]
+other = "查询数据剖析结果失败"
+
+[manager.error.data_profile_create_failed]
+other = "创建数据剖析执行失败"
+
 [manager.model3d_tiles.result_deleted]
 other = "三维瓦片快显结果已删除"

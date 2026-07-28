@@ -68,6 +68,8 @@ func NewIAMAuditHandler(service iamAuditQueryService) (*IAMAuditHandler, error) 
 // @Tags         平台审计 | Platform Audit
 // @Produce      json
 // @Security     BearerAuth
+// @Param        entity_type query string false "实体类型 | Entity type"
+// @Param        entity_id query string false "实体 ID | Entity ID"
 // @Success      200 {object} object{data=[]IAMAuditEventResponse,total=int64,page=int,page_size=int,total_pages=int}
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["audit.event.read"]
@@ -79,6 +81,8 @@ func (h *IAMAuditHandler) PlatformList(c *gin.Context) { h.list(c, false) }
 // @Tags         租户审计 | Tenant Audit
 // @Produce      json
 // @Security     BearerAuth
+// @Param        entity_type query string false "实体类型 | Entity type"
+// @Param        entity_id query string false "实体 ID | Entity ID"
 // @Success      200 {object} object{data=[]IAMAuditEventResponse,total=int64,page=int,page_size=int,total_pages=int}
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["audit.tenant_event.read"]
@@ -162,6 +166,8 @@ func (h *IAMAuditHandler) get(c *gin.Context, tenantScoped bool) {
 // @Tags         平台审计 | Platform Audit
 // @Produce      json
 // @Security     BearerAuth
+// @Param        entity_type query string false "实体类型 | Entity type"
+// @Param        entity_id query string false "实体 ID | Entity ID"
 // @Success      200 {object} iam.AuditSummary
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["audit.event.read"]
@@ -173,6 +179,8 @@ func (h *IAMAuditHandler) PlatformSummary(c *gin.Context) { h.summary(c, false) 
 // @Tags         租户审计 | Tenant Audit
 // @Produce      json
 // @Security     BearerAuth
+// @Param        entity_type query string false "实体类型 | Entity type"
+// @Param        entity_id query string false "实体 ID | Entity ID"
 // @Success      200 {object} iam.AuditSummary
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["audit.tenant_event.read"]
@@ -198,6 +206,8 @@ func (h *IAMAuditHandler) summary(c *gin.Context, tenantScoped bool) {
 // @Tags         平台审计 | Platform Audit
 // @Produce      json
 // @Security     BearerAuth
+// @Param        entity_type query string false "实体类型 | Entity type"
+// @Param        entity_id query string false "实体 ID | Entity ID"
 // @Success      200 {array} IAMAuditTrendResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["audit.event.read"]
@@ -209,6 +219,8 @@ func (h *IAMAuditHandler) PlatformTrends(c *gin.Context) { h.trends(c, false) }
 // @Tags         租户审计 | Tenant Audit
 // @Produce      json
 // @Security     BearerAuth
+// @Param        entity_type query string false "实体类型 | Entity type"
+// @Param        entity_id query string false "实体 ID | Entity ID"
 // @Success      200 {array} IAMAuditTrendResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["audit.tenant_event.read"]
@@ -242,6 +254,8 @@ func (h *IAMAuditHandler) trends(c *gin.Context, tenantScoped bool) {
 // @Produce      json,text/csv
 // @Security     BearerAuth
 // @Param        format query string false "csv 或 json | csv or json"
+// @Param        entity_type query string false "实体类型 | Entity type"
+// @Param        entity_id query string false "实体 ID | Entity ID"
 // @Success      200 {array} IAMAuditEventResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["audit.event.export"]
@@ -254,6 +268,8 @@ func (h *IAMAuditHandler) PlatformExport(c *gin.Context) { h.export(c, false) }
 // @Produce      json,text/csv
 // @Security     BearerAuth
 // @Param        format query string false "csv 或 json | csv or json"
+// @Param        entity_type query string false "实体类型 | Entity type"
+// @Param        entity_id query string false "实体 ID | Entity ID"
 // @Success      200 {array} IAMAuditEventResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["audit.tenant_event.export"]
@@ -338,6 +354,7 @@ func auditQueryFromRequest(c *gin.Context, tenantScoped bool) (iam.AuditQuery, e
 		EventName: strings.TrimSpace(c.Query("event_name")), Result: strings.TrimSpace(c.Query("result")),
 		RiskLevel: strings.TrimSpace(c.Query("risk_level")), ModuleName: strings.TrimSpace(c.Query("module_name")),
 		PrincipalID: principalID, RequestID: strings.TrimSpace(c.Query("request_id")),
+		EntityType: strings.TrimSpace(c.Query("entity_type")), EntityID: strings.TrimSpace(c.Query("entity_id")),
 	}, nil
 }
 

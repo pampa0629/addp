@@ -23,25 +23,28 @@ const routes = [
         path: 'iam',
         name: 'IAMWorkbench',
         component: () => import('../views/IAMWorkbench.vue'),
-        meta: { requiresAuth: true, title: '身份与访问管理-addp' }
+        meta: {
+          requiresAuth: true,
+          title: '身份与访问管理-addp'
+        }
       },
       {
         path: 'engines',
         name: 'Engines',
         component: () => import('../views/Engines.vue'),
-        meta: { requiresAuth: true, title: '系统管理-addp' }
+        meta: { requiresAuth: true, title: '系统管理-addp', requiredPermissions: ['system.engine.read'] }
       },
       {
         path: 'applications',
         name: 'Applications',
         component: () => import('../views/Applications.vue'),
-        meta: { requiresAuth: true, title: '应用管理-addp' }
+        meta: { requiresAuth: true, title: '应用管理-addp', requiredPermissions: ['system.application.read'] }
       },
       {
         path: 'cleanup',
         name: 'CleanupManager',
         component: () => import('../views/CleanupManager.vue'),
-        meta: { requiresAuth: true, title: '资源回收-addp' }
+        meta: { requiresAuth: true, title: '资源回收-addp', requiredPermissions: ['system.cleanup.read'] }
       }
     ]
   }
@@ -58,6 +61,16 @@ router.beforeEach(createAuthGuard(useAuthStore, {
   moduleName: 'System',
   loginRouteName: 'Login'
 }))
+
+router.beforeEach((to) => {
+  const authStore = useAuthStore()
+  if (!authStore.isAuthenticated) return true
+  const required = to.meta?.requiredPermissions || []
+  const any = to.meta?.anyPermissions || []
+  if (required.some((permission) => !authStore.hasPermission(permission))) return { name: 'Home' }
+  if (any.length && !authStore.hasAnyPermission(any)) return { name: 'Home' }
+  return true
+})
 
 const DEFAULT_TITLE = '系统管理-addp'
 

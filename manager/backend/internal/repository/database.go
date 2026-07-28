@@ -73,6 +73,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err := ensureModel3DTilesSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure model 3d tiles schema: %w", err)
 	}
+	if err := ensureDataProfileSchema(db); err != nil {
+		return nil, fmt.Errorf("failed to ensure data profile schema: %w", err)
+	}
 	if err := normalizePreviewArtifactSchemaNames(db); err != nil {
 		return nil, fmt.Errorf("failed to normalize preview artifact schema names: %w", err)
 	}
@@ -93,6 +96,10 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	db.Exec(fmt.Sprintf("SET search_path TO %s", cfg.DBSchema))
 
 	return db, nil
+}
+
+func ensureDataProfileSchema(db *gorm.DB) error {
+	return db.AutoMigrate(&models.DataProfile{}, &models.DataProfileField{})
 }
 
 func ensureVectorTileSetSchema(db *gorm.DB) error {

@@ -11,17 +11,18 @@ import (
 )
 
 type ManagedUser struct {
-	ID                   int64
-	Status               PrincipalStatus
-	AuthorizationVersion int64
-	DisplayName          string
-	PrimaryEmail         *string
-	Locale               *string
-	AccountID            *int64
-	Username             *string
-	LocalAccountStatus   *LocalAccountStatus
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	ID                       int64
+	Status                   PrincipalStatus
+	AuthorizationVersion     int64
+	DisplayName              string
+	PrimaryEmail             *string
+	Locale                   *string
+	AccountID                *int64
+	Username                 *string
+	LocalAccountStatus       *LocalAccountStatus
+	HasEffectivePlatformRole bool
+	CreatedAt                time.Time
+	UpdatedAt                time.Time
 }
 
 type ManagedTenantMembership struct {
@@ -53,6 +54,8 @@ type AuditQuery struct {
 	ModuleName  string
 	PrincipalID *int64
 	RequestID   string
+	EntityType  string
+	EntityID    string
 }
 
 type AuditSummary struct {
@@ -193,6 +196,17 @@ func (r *Repository) ListManagedUsers(
 		account.id AS account_id,
 		account.username,
 		account.status AS local_account_status,
+		EXISTS (
+			SELECT 1
+			FROM system.role_assignments assignment
+			JOIN system.roles role ON role.id = assignment.role_id
+			WHERE assignment.principal_id = principal.id
+			  AND assignment.scope_type = 'platform'
+			  AND assignment.status = 'active'
+			  AND assignment.valid_from <= now()
+			  AND (assignment.valid_until IS NULL OR assignment.valid_until > now())
+			  AND role.status = 'active'
+		) AS has_effective_platform_role,
 		user_profile.created_at,
 		user_profile.updated_at
 	`).Order("principal.id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Scan(&users).Error
@@ -216,6 +230,17 @@ func (r *Repository) GetManagedUser(ctx context.Context, userID int64) (*Managed
 			account.id AS account_id,
 			account.username,
 			account.status AS local_account_status,
+			EXISTS (
+				SELECT 1
+				FROM system.role_assignments assignment
+				JOIN system.roles role ON role.id = assignment.role_id
+				WHERE assignment.principal_id = principal.id
+				  AND assignment.scope_type = 'platform'
+				  AND assignment.status = 'active'
+				  AND assignment.valid_from <= now()
+				  AND (assignment.valid_until IS NULL OR assignment.valid_until > now())
+				  AND role.status = 'active'
+			) AS has_effective_platform_role,
 			user_profile.created_at,
 			user_profile.updated_at
 		`).
@@ -459,6 +484,12 @@ func applyAuditQuery(query *gorm.DB, filter AuditQuery) *gorm.DB {
 	}
 	if filter.RequestID != "" {
 		query = query.Where("request_id = ?", filter.RequestID)
+	}
+	if filter.EntityType != "" {
+		query = query.Where("entity_type = ?", filter.EntityType)
+	}
+	if filter.EntityID != "" {
+		query = query.Where("entity_id = ?", filter.EntityID)
 	}
 	return query
 }

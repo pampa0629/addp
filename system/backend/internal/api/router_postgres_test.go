@@ -6,13 +6,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/repository"
 	"github.com/addp/system/internal/testsupport"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -24,13 +25,14 @@ func TestTargetSystemCompositionAgainstPostgres(t *testing.T) {
 		t.Skip("set ADDP_IAM_RUNTIME_TEST_DSN to a disposable PostgreSQL 15+ database")
 	}
 	testsupport.RequireDisposablePostgresDSN(t, dsn)
-	gormDSN := dsn
-	separator := "?"
-	if strings.Contains(gormDSN, "?") {
-		separator = "&"
+	pgxConfig, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		t.Fatalf("parse target System PostgreSQL DSN: %v", err)
 	}
-	gormDSN += separator + "search_path=system"
-	db, err := gorm.Open(postgres.Open(gormDSN), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	pgxConfig.RuntimeParams["search_path"] = "system"
+	sqlDB := stdlib.OpenDB(*pgxConfig)
+	defer sqlDB.Close()
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,8 +1,8 @@
 # ADDP IAM Fosite Provider 与 Storage Adapter 设计
 
-更新日期：2026-07-25
+更新日期：2026-07-27
 
-状态：技术设计已确认并进入实施。受控 Fosite `v0.50.0-addp.2` 已发布，目标协议表 migration、ADDP Session、PostgreSQL Storage Adapter、Provider、Consent Bridge 与 System 目标 Router 已落地并通过真实 PostgreSQL Authorization Code + PKCE 和完整启动组合验证；当前开发 `addp` 数据库尚未破坏性重建和 Bootstrap。
+状态：技术设计和 Fosite OAuth 唯一主路径已实现。受控 Fosite `v0.50.0-addp.2`、目标协议表 migration、ADDP Session、PostgreSQL Storage Adapter、Provider、Consent Bridge 与 System Router 已落地；开发数据库已迁移到 `18/clean` 并完成三员恢复，真实 Browser 登录与 OAuth 客户端协议 E2E 已覆盖 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、刷新轮换和撤销。该 E2E 使用一次性测试驱动，正式 `addp-cli` 尚未交付。OIDC 尚未启用，继续遵守“无 OpenID Handler、无 `openid` Scope、无 Discovery/JWKS 宣告”的单一路径，待 issuer、Claim 和密钥生命周期独立设计完成后再实施。
 
 ## 一、目标与边界
 
@@ -523,7 +523,7 @@ Token Family Repository 同时供第一方 Session Service 和 Fosite Adapter �
 
 SQLite 不能作为 Storage Adapter 事务、锁和约束语义的证明；可以保留纯投影单测，但核心测试必须使用 PostgreSQL 15。
 
-## 十五、一次性切换顺序
+## 十五、已完成的一次性切换记录
 
 1. 确认本文技术决策；
 2. 建立受控 Fosite 派生版本并补齐三项强制修复/策略；
@@ -533,7 +533,7 @@ SQLite 不能作为 Storage Adapter 事务、锁和约束语义的证明；可�
 6. 一次性切换 OAuth Handler；
 7. 删除旧 OAuth Service 方法、模型、AutoMigrate 和 SQLite 伪数据库表；
 8. 生成 Swagger 并执行全仓测试和真实 E2E；
-9. 再进入 OIDC issuer/Subject/Claim/Key 设计与启用。
+9. OIDC issuer/Subject/Claim/Key 不在本次 OAuth 收口范围，作为下一阶段独立设计与启用。
 
 ## 十六、已确认的技术决策
 

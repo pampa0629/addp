@@ -647,7 +647,29 @@ func buildRoleAssignments(rows []RoleAssignmentPermissionProjection) ([]commonau
 		}
 		assignment.Permissions = append(assignment.Permissions, row.PermissionKey)
 	}
+	for index := range assignments {
+		sort.Strings(assignments[index].Permissions)
+	}
+	sort.Slice(assignments, func(left, right int) bool {
+		return projectedRoleAssignmentSortKey(assignments[left]) < projectedRoleAssignmentSortKey(assignments[right])
+	})
 	return assignments, nil
+}
+
+func projectedRoleAssignmentSortKey(assignment commonauth.RoleAssignment) string {
+	scopeOrder := map[string]int{"platform": 0, "tenant": 1, "department": 2, "project_group": 3}
+	scopeID := int64(0)
+	for _, candidate := range []*string{
+		assignment.Scope.TenantID,
+		assignment.Scope.DepartmentID,
+		assignment.Scope.ProjectGroupID,
+	} {
+		if candidate != nil {
+			scopeID, _ = strconv.ParseInt(*candidate, 10, 64)
+		}
+	}
+	assignmentID, _ := strconv.ParseInt(assignment.AssignmentID, 10, 64)
+	return fmt.Sprintf("%d:%020d:%s:%020d", scopeOrder[assignment.Scope.Type], scopeID, assignment.RoleKey, assignmentID)
 }
 
 func buildAssignmentScope(row RoleAssignmentPermissionProjection) (commonauth.AssignmentScope, error) {

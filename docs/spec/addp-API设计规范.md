@@ -177,7 +177,7 @@ ADDP 采用**灵活响应策略**，根据场景选择最合适的响应格式�
 **请求参数：**
 
 ```
-GET /api/v1/system/users?page=1&page_size=20
+GET /api/v1/system/platform/users?page=1&page_size=20
 ```
 
 | 参数      | 类型 | 默认值 | 说明                          |
@@ -232,30 +232,30 @@ TaskProvider 是跨模块任务编排契约，不使用本节的通用分页列�
 
 ### 3.1 资源命名规则
 
-1. **使用复数名词**：`/api/v1/system/users`、`/api/v1/system/engines`
-2. **小写字母 + 下划线**：`/api/v1/system/audit_logs`（与数据库字段命名一致）
-3. **避免动词**：❌ `/api/v1/system/getUsers`、✅ `/api/v1/system/users`
-4. **使用名词表示资源**：❌ `/api/v1/system/create_user`、✅ `POST /api/v1/system/users`
+1. **使用复数名词**：`/api/v1/system/platform/users`、`/api/v1/system/engines`
+2. **小写字母 + 下划线**：`/api/v1/system/platform/identity_changes`
+3. **避免动词**：❌ `/api/v1/system/getUsers`、✅ `/api/v1/system/platform/users`
+4. **使用名词表示资源**：❌ `/api/v1/system/create_user`、✅ `POST /api/v1/system/platform/users`
 
 ### 3.2 HTTP 方法语义
 
 | 方法   | 语义         | 示例                         | 幂等性 | 响应码      |
 |--------|--------------|------------------------------|--------|-------------|
-| GET    | 查询资源     | GET /api/v1/system/users            | 是     | 200         |
-| POST   | 创建资源     | POST /api/v1/system/users           | 否     | 201         |
-| PUT    | 完整更新     | PUT /api/v1/system/users/:id        | 是     | 200         |
-| PATCH  | 部分更新     | PATCH /api/v1/system/users/:id      | 是     | 200         |
-| DELETE | 删除资源     | DELETE /api/v1/system/users/:id     | 是     | 200         |
+| GET    | 查询资源     | GET /api/v1/{module}/resources            | 是     | 200         |
+| POST   | 创建资源     | POST /api/v1/{module}/resources           | 否     | 201         |
+| PUT    | 完整更新     | PUT /api/v1/{module}/resources/:id        | 是     | 200         |
+| PATCH  | 部分更新     | PATCH /api/v1/{module}/resources/:id      | 是     | 200         |
+| DELETE | 删除资源     | DELETE /api/v1/{module}/resources/:id     | 是     | 200         |
 
 ### 3.3 标准资源操作
 
 ```
-GET    /api/v1/system/users           # 列表查询（支持过滤、排序、分页）
-POST   /api/v1/system/users           # 创建用户
-GET    /api/v1/system/users/:id       # 查询单个用户
-PUT    /api/v1/system/users/:id       # 更新用户（完整替换）
-PATCH  /api/v1/system/users/:id       # 更新用户（部分字段）
-DELETE /api/v1/system/users/:id       # 删除用户
+GET    /api/v1/{module}/resources           # 列表查询（端点明确声明时支持过滤、排序、分页）
+POST   /api/v1/{module}/resources           # 创建资源
+GET    /api/v1/{module}/resources/:id       # 查询单个资源
+PUT    /api/v1/{module}/resources/:id       # 更新资源（完整替换）
+PATCH  /api/v1/{module}/resources/:id       # 更新资源（部分字段）
+DELETE /api/v1/{module}/resources/:id       # 删除资源
 ```
 
 ### 3.4 子资源设计
@@ -389,9 +389,9 @@ RESTful是指导原则，不是教条。优秀的API设计应该在RESTful原则
 **统一使用 `/api/v1/` 路径前缀：**
 
 ```
-/api/v1/system/users        # 当前使用
+/api/v1/system/platform/users        # 当前使用
 /api/v1/system/engines      # 当前使用
-/api/v2/system/users        # 未来破坏性变更时升级
+/api/v2/system/platform/users        # 未来破坏性变更时升级
 ```
 
 **版本控制的优点：**
@@ -436,9 +436,9 @@ protected.Any("/api/v1/:module/*path", ...)
 通过 Query 参数过滤：
 
 ```
-GET /api/v1/system/users?username=admin&is_active=true
-GET /api/v1/system/logs?start_time=2024-01-01&end_time=2024-12-31&action=create
-GET /api/v1/system/engines?engine_type=postgresql&tenant_id=1
+GET /api/v1/system/platform/users?search=admin&status=active
+GET /api/v1/system/platform/audit/events?start_time=2024-01-01T00:00:00Z&end_time=2025-01-01T00:00:00Z&event_name=iam.user.created
+GET /api/v1/system/engines?engine_type=postgresql
 ```
 
 **规则：**
@@ -449,8 +449,8 @@ GET /api/v1/system/engines?engine_type=postgresql&tenant_id=1
 ### 6.2 排序参数
 
 ```
-GET /api/v1/system/users?sort=created_at&order=desc
-GET /api/v1/system/users?sort=created_at&order=asc
+GET /api/v1/{module}/resources?sort=created_at&order=desc
+GET /api/v1/{module}/resources?sort=name&order=asc
 ```
 
 | 参数  | 值            | 说明           |
@@ -461,11 +461,12 @@ GET /api/v1/system/users?sort=created_at&order=asc
 **默认排序：**
 - 通常按 `created_at desc`（最新的在前）
 - 或按 `id desc`
+- 只有端点 Swagger 明确声明 `sort` / `order` 时才允许客户端提交；服务端必须使用排序字段白名单，不得直接拼接 SQL。
 
 ### 6.3 搜索参数
 
 ```
-GET /api/v1/system/users?search=张三
+GET /api/v1/system/platform/users?search=张三
 GET /api/v1/system/engines?search=postgres
 ```
 
@@ -884,15 +885,15 @@ POST /api/v1/system/login
 Response: 401 {"error": "用户名或密码错误"}
 
 # Token过期
-GET /api/v1/system/users
+GET /api/v1/system/platform/users
 Response: 401 {"error": "token已过期"}
 
 # JSON格式错误
-POST /api/v1/system/users
+POST /api/v1/system/platform/users
 Response: 400 {"error": "JSON格式错误"}
 
 # 已登录但无权限
-GET /api/v1/system/admin/users
+GET /api/v1/system/platform/users
 Response: 403 {"error": "无权访问该资源"}
 ```
 
@@ -935,7 +936,7 @@ Response: 403 {"error": "无权访问该资源"}
 
 **A:** 使用 POST 请求，body 传递批量数据：
 ```
-POST /api/v1/system/users/batch_delete
+POST /api/v1/{module}/resources/batch_delete
 Body: {"user_ids": [1, 2, 3]}
 ```
 
@@ -1026,7 +1027,7 @@ amis 默认发送 `page` 和 `perPage`，ADDP 使用 `page` 和 `page_size`，�
 {
   "type": "crud",
   "api": {
-    "url": "/api/v1/system/users",
+    "url": "/api/v1/system/platform/users",
     "data": {
       "page": "${page}",
       "page_size": "${perPage}"
@@ -1238,11 +1239,11 @@ class DevelopClient(AddpBaseClient):
 
 | 操作     | 方法   | 路径                   | 响应码 |
 |----------|--------|------------------------|--------|
-| 列表查询 | GET    | /api/v1/system/users          | 200    |
-| 创建     | POST   | /api/v1/system/users          | 201    |
-| 查询详情 | GET    | /api/v1/system/users/:id      | 200    |
-| 更新     | PUT    | /api/v1/system/users/:id      | 200    |
-| 删除     | DELETE | /api/v1/system/users/:id      | 200    |
+| 列表查询 | GET    | /api/v1/{module}/resources          | 200    |
+| 创建     | POST   | /api/v1/{module}/resources          | 201    |
+| 查询详情 | GET    | /api/v1/{module}/resources/:id      | 200    |
+| 更新     | PUT    | /api/v1/{module}/resources/:id      | 200    |
+| 删除     | DELETE | /api/v1/{module}/resources/:id      | 200    |
 
 ### B. 响应格式对照
 
@@ -1265,7 +1266,7 @@ class DevelopClient(AddpBaseClient):
 
 | 类型         | 规范          | 示例                     |
 |--------------|---------------|--------------------------|
-| URL 路径     | snake_case    | /api/v1/system/audit_logs |
+| URL 路径     | snake_case    | /api/v1/system/platform/identity_changes |
 | JSON 字段    | snake_case    | user_id, created_at      |
 | 时间格式     | ISO 8601      | 2024-01-01T12:00:00Z     |
 | 布尔值       | true/false    | is_active: true          |

@@ -66,7 +66,7 @@ bucket、schema、database、directory 是 root 下第一层业务 branch。它�
 
 因此，同一个 `sales.csv` 在 MinIO 中是 `item_type=object`，在 NFS 中是 `item_type=file`；它们都可以同时拥有 `attributes.item.data_type=table`、`attributes.item.format=csv`。不得因为对象内容可按表格读取，就把对象存储中的 `item_type` 写成 `table`。
 
-MongoDB collection 由 JSON/BSON document 记录组成，不是关系型数据库表，也不是 DOCX / PDF 这类阅读型 `document`。在当前 ADDP 能力中，collection 作为动态 schema 记录集合消费：`meta_item.item_type=collection` 保留 MongoDB 原生 catalog 术语，`attributes.item.data_type=table` 用于预览、查询、字段画像和传输等平台能力选择。不得为 MongoDB collection 写入 `type_info.document` 或新增 `type_info.collection`。
+MongoDB collection 由 JSON/BSON document 记录组成，不是关系型数据库表，也不是 DOCX / PDF 这类阅读型 `document`。在当前 ADDP 能力中，collection 作为动态 schema 记录集合消费：`meta_item.item_type=collection` 保留 MongoDB 原生 catalog 术语，`attributes.item.data_type=table` 用于预览、查询、数据剖析和传输等平台能力选择。不得为 MongoDB collection 写入 `type_info.document` 或新增 `type_info.collection`。
 
 ### storage_ref
 

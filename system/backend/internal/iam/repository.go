@@ -169,6 +169,63 @@ func (r *Repository) ConsumeMFAChallenge(ctx context.Context, challengeID int64,
 	return nil
 }
 
+func (r *Repository) CreateMFAEnrollment(ctx context.Context, enrollment *MFAEnrollment) error {
+	if enrollment == nil {
+		return fmt.Errorf("%w: MFA enrollment is required", commonapi.ErrBadRequest)
+	}
+	return wrapRepositoryError(r.db.WithContext(ctx).Create(enrollment).Error)
+}
+
+func (r *Repository) GetMFAEnrollmentByHash(ctx context.Context, tokenHash string) (*MFAEnrollment, error) {
+	var enrollment MFAEnrollment
+	if err := r.db.WithContext(ctx).Where("token_hash = ?", tokenHash).Take(&enrollment).Error; err != nil {
+		return nil, wrapRepositoryError(err)
+	}
+	return &enrollment, nil
+}
+
+func (r *Repository) LockMFAEnrollmentByHash(ctx context.Context, tokenHash string) (*MFAEnrollment, error) {
+	var enrollment MFAEnrollment
+	err := r.db.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("token_hash = ?", tokenHash).
+		Take(&enrollment).Error
+	if err != nil {
+		return nil, wrapRepositoryError(err)
+	}
+	return &enrollment, nil
+}
+
+func (r *Repository) RecordMFAEnrollmentFailure(ctx context.Context, enrollmentID int64, consume bool, now time.Time) error {
+	updates := map[string]any{"failed_attempts": gorm.Expr("failed_attempts + 1")}
+	if consume {
+		updates["consumed_at"] = now
+	}
+	result := r.db.WithContext(ctx).Model(&MFAEnrollment{}).
+		Where("id = ? AND consumed_at IS NULL AND failed_attempts < 5", enrollmentID).
+		Updates(updates)
+	if result.Error != nil {
+		return wrapRepositoryError(result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return commonapi.ErrUnauthorized
+	}
+	return nil
+}
+
+func (r *Repository) ConsumeMFAEnrollment(ctx context.Context, enrollmentID int64, now time.Time) error {
+	result := r.db.WithContext(ctx).Model(&MFAEnrollment{}).
+		Where("id = ? AND consumed_at IS NULL", enrollmentID).
+		Update("consumed_at", now)
+	if result.Error != nil {
+		return wrapRepositoryError(result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return commonapi.ErrUnauthorized
+	}
+	return nil
+}
+
 func (r *Repository) LockIAMBootstrapTable(ctx context.Context) error {
 	return wrapRepositoryError(r.db.WithContext(ctx).
 		Exec("LOCK TABLE system.iam_bootstrap_state IN EXCLUSIVE MODE").Error)
@@ -376,6 +433,68 @@ func (r *Repository) LockRefreshTokenFamily(ctx context.Context, familyID int64)
 		return nil, wrapRepositoryError(err)
 	}
 	return &family, nil
+}
+
+func (r *Repository) AdvanceRefreshTokenFamilyAuthorizationVersion(
+	ctx context.Context,
+	familyID int64,
+	currentVersion int64,
+) error {
+	result := r.db.WithContext(ctx).Model(&RefreshTokenFamily{}).
+		Where("id = ? AND revoked_at IS NULL AND issued_authorization_version < ?", familyID, currentVersion).
+		Update("issued_authorization_version", currentVersion)
+	if result.Error != nil {
+		return wrapRepositoryError(result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("%w: token family authorization version was not advanced", commonapi.ErrConflict)
+	}
+	return nil
+}
+
+func (r *Repository) RefreshTokenFamilyContextIsActive(
+	ctx context.Context,
+	principal *Principal,
+	family *RefreshTokenFamily,
+	at time.Time,
+) (bool, error) {
+	if principal == nil || family == nil || principal.ID != family.PrincipalID ||
+		principal.Status != PrincipalStatusActive || !family.ExpiresAt.After(at) || family.RevokedAt != nil {
+		return false, nil
+	}
+	switch family.ContextType {
+	case ContextTypePlatform:
+		if family.TenantMembershipID != nil ||
+			(family.AssuranceLevel != AssuranceLevelAAL2 && family.AssuranceLevel != AssuranceLevelAAL3) {
+			return false, nil
+		}
+		return r.HasEffectivePlatformRole(ctx, principal.ID, at)
+	case ContextTypeTenant:
+		if family.TenantMembershipID == nil {
+			return false, nil
+		}
+		membership, err := r.GetTenantMembershipByID(ctx, *family.TenantMembershipID)
+		if err != nil {
+			if errors.Is(err, commonapi.ErrNotFound) {
+				return false, nil
+			}
+			return false, err
+		}
+		if membership.PrincipalID != principal.ID || membership.Status != TenantMembershipStatusActive ||
+			(membership.ExpiresAt != nil && !membership.ExpiresAt.After(at)) {
+			return false, nil
+		}
+		tenant, err := r.GetTenant(ctx, membership.TenantID)
+		if err != nil {
+			if errors.Is(err, commonapi.ErrNotFound) {
+				return false, nil
+			}
+			return false, err
+		}
+		return tenant.Status == TenantStatusActive, nil
+	default:
+		return false, nil
+	}
 }
 
 func (r *Repository) LockRefreshTokenByHash(ctx context.Context, tokenHash string) (*RefreshToken, error) {

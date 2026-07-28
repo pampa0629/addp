@@ -465,6 +465,163 @@ const docTemplate = `{
                 "x-addp-auth-mode": "authenticated"
             }
         },
+        "/data-profile-executions": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "为指定表格型 data item 创建或复用一次采样剖析 ad-hoc execution；不会创建任务定义。| Create or reuse a sample profiling ad-hoc execution for a tabular data item without creating a task definition.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "创建数据剖析执行 | Create data profiling execution",
+                "parameters": [
+                    {
+                        "description": "剖析执行请求 | Profiling execution request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.DataProfileExecutionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "执行已受理 | Execution accepted",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.DataProfileExecutionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "422": {
+                        "description": "资源不支持剖析 | Resource is not profileable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "创建剖析执行失败 | Failed to create profiling execution",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "剖析服务不可用 | Profiling unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.data_profile.execute"
+                ],
+                "x-ai-hint": "为指定 locator 发起有界采样剖析；mode 首期只允许 sample，重复的活动执行会被复用。"
+            }
+        },
+        "/data-profiles/current": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "查询指定表格型 data item 和内容选择上下文的当前成功剖析结果、活跃执行及新鲜度，不会隐式触发执行。| Query the current successful profile, active execution, and freshness for a tabular data item and content selection without implicitly starting an execution.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "获取当前数据剖析结果 | Get current data profile",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "资源定位符 | Resource locator",
+                        "name": "locator",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "容器内表格 child 名称 | Tabular child name in a container",
+                        "name": "child_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "multi child 内 ref 路径 | Ref path within a multi child",
+                        "name": "ref_path",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "嵌套容器 child 路径 | Nested container child path",
+                        "name": "nested_child_path",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "当前剖析状态 | Current profiling state",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.DataProfileCurrentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "422": {
+                        "description": "资源不支持剖析 | Resource is not profileable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "查询剖析结果失败 | Failed to query profile",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "剖析服务不可用 | Profiling unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.data_item.read"
+                ],
+                "x-ai-hint": "查询指定 locator 已保存的数据剖析结果；该接口不会触发源数据读取。"
+            }
+        },
         "/downloads/file": {
             "get": {
                 "security": [
@@ -6514,6 +6671,246 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "dataprofile.BooleanMetrics": {
+            "type": "object",
+            "properties": {
+                "false_count": {
+                    "type": "integer"
+                },
+                "true_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dataprofile.DistributionBucket": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "max": {},
+                "min": {}
+            }
+        },
+        "dataprofile.FieldProfile": {
+            "type": "object",
+            "properties": {
+                "boolean": {
+                    "$ref": "#/definitions/dataprofile.BooleanMetrics"
+                },
+                "distinct_approximate": {
+                    "type": "boolean"
+                },
+                "distinct_count": {
+                    "type": "integer"
+                },
+                "distribution": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprofile.DistributionBucket"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "native_type": {
+                    "type": "string"
+                },
+                "null_count": {
+                    "type": "integer"
+                },
+                "null_rate": {
+                    "type": "number"
+                },
+                "nullable": {
+                    "type": "boolean"
+                },
+                "numeric": {
+                    "$ref": "#/definitions/dataprofile.NumericMetrics"
+                },
+                "observations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprofile.Observation"
+                    }
+                },
+                "primary_key": {
+                    "type": "boolean"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "temporal": {
+                    "$ref": "#/definitions/dataprofile.TemporalMetrics"
+                },
+                "text": {
+                    "$ref": "#/definitions/dataprofile.TextMetrics"
+                },
+                "top_values": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprofile.ValueCount"
+                    }
+                },
+                "type": {
+                    "$ref": "#/definitions/datatype.FieldType"
+                },
+                "unique_rate": {
+                    "type": "number"
+                },
+                "value_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dataprofile.NumericMetrics": {
+            "type": "object",
+            "properties": {
+                "max": {
+                    "type": "number"
+                },
+                "mean": {
+                    "type": "number"
+                },
+                "median": {
+                    "type": "number"
+                },
+                "min": {
+                    "type": "number"
+                },
+                "negative_count": {
+                    "type": "integer"
+                },
+                "p25": {
+                    "type": "number"
+                },
+                "p75": {
+                    "type": "number"
+                },
+                "p95": {
+                    "type": "number"
+                },
+                "stddev": {
+                    "type": "number"
+                },
+                "zero_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dataprofile.Observation": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "field": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "number"
+                }
+            }
+        },
+        "dataprofile.Profile": {
+            "type": "object",
+            "properties": {
+                "field_count": {
+                    "type": "integer"
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprofile.FieldProfile"
+                    }
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "observations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprofile.Observation"
+                    }
+                },
+                "partial": {
+                    "type": "boolean"
+                },
+                "profiled_at": {
+                    "type": "string"
+                },
+                "row_count": {
+                    "type": "integer"
+                },
+                "row_count_exact": {
+                    "type": "boolean"
+                },
+                "rows_scanned": {
+                    "type": "integer"
+                },
+                "sample_method": {
+                    "type": "string"
+                },
+                "sample_size": {
+                    "type": "integer"
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "truncated": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "dataprofile.TemporalMetrics": {
+            "type": "object",
+            "properties": {
+                "max": {
+                    "type": "string"
+                },
+                "min": {
+                    "type": "string"
+                }
+            }
+        },
+        "dataprofile.TextMetrics": {
+            "type": "object",
+            "properties": {
+                "avg_length": {
+                    "type": "number"
+                },
+                "blank_count": {
+                    "type": "integer"
+                },
+                "empty_count": {
+                    "type": "integer"
+                },
+                "max_length": {
+                    "type": "integer"
+                },
+                "min_length": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dataprofile.ValueCount": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "rate": {
+                    "type": "number"
+                },
+                "value": {}
+            }
+        },
         "datatype.Bounds3D": {
             "type": "object",
             "properties": {
@@ -6553,6 +6950,47 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "datatype.FieldType": {
+            "type": "string",
+            "enum": [
+                "unknown",
+                "string",
+                "bool",
+                "bytes",
+                "mixed",
+                "int",
+                "bigint",
+                "float",
+                "double",
+                "decimal",
+                "date",
+                "time",
+                "timestamp",
+                "json",
+                "array",
+                "uuid",
+                "geometry"
+            ],
+            "x-enum-varnames": [
+                "FieldTypeUnknown",
+                "FieldTypeString",
+                "FieldTypeBool",
+                "FieldTypeBytes",
+                "FieldTypeMixed",
+                "FieldTypeInt",
+                "FieldTypeBigInt",
+                "FieldTypeFloat",
+                "FieldTypeDouble",
+                "FieldTypeDecimal",
+                "FieldTypeDate",
+                "FieldTypeTime",
+                "FieldTypeTimestamp",
+                "FieldTypeJSON",
+                "FieldTypeArray",
+                "FieldTypeUUID",
+                "FieldTypeGeometry"
+            ]
         },
         "execution.TaskExecution": {
             "type": "object",
@@ -6655,7 +7093,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "task_type": {
-                    "description": "provider 声明的稳定任务类型",
+                    "description": "稳定执行类型；可来自任务定义或 ad-hoc execution",
                     "type": "string"
                 },
                 "tenant_id": {
@@ -7317,6 +7755,107 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.DataProfileCurrentResponse": {
+            "type": "object",
+            "properties": {
+                "active_execution": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_service.DataProfileExecutionView"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "latest_execution": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_service.DataProfileExecutionView"
+                },
+                "profile": {
+                    "$ref": "#/definitions/dataprofile.Profile"
+                },
+                "profile_config_hash": {
+                    "type": "string"
+                },
+                "profile_execution": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_service.DataProfileExecutionView"
+                },
+                "result_id": {
+                    "type": "integer"
+                },
+                "source_version": {
+                    "type": "string"
+                },
+                "stale": {
+                    "type": "boolean"
+                },
+                "stale_reason": {
+                    "type": "string"
+                },
+                "stored_source_version": {
+                    "type": "string"
+                },
+                "supported": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.DataProfileExecutionRequest": {
+            "type": "object",
+            "properties": {
+                "child_name": {
+                    "type": "string"
+                },
+                "locator": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "nested_child_path": {
+                    "type": "string"
+                },
+                "ref_path": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.DataProfileExecutionResponse": {
+            "type": "object",
+            "properties": {
+                "execution": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_service.DataProfileExecutionView"
+                },
+                "reused": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.DataProfileExecutionView": {
+            "type": "object",
+            "properties": {
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "error_code": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "progress": {
+                    "type": "integer"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
                     "type": "string"
                 }
             }

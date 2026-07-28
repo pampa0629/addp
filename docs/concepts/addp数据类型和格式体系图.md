@@ -72,7 +72,7 @@ ADDP 只维护一套稳定的数据类型和类型信息语义。各模块不得
 
 CSV 和 JSON 虽然有文本属性，但只要平台把它们作为行列数据处理，就应归为 `table`。文本属性属于文件格式或读取方式，不应把 CSV 放进 `document`。
 
-MongoDB collection 是动态 schema 的 JSON/BSON 记录集合容器。它既不是关系型数据库表，也不是 PDF / DOCX 这类以阅读和正文提取为主的 document；在 ADDP 当前语义中，它按记录集合归入 `table`，同时保留 collection 作为引擎原生 catalog 术语。具体 attributes 落点、采样画像和索引事实归属见规范层文档。
+MongoDB collection 是动态 schema 的 JSON/BSON 记录集合容器。它既不是关系型数据库表，也不是 PDF / DOCX 这类以阅读和正文提取为主的 document；在 ADDP 当前语义中，它按记录集合归入 `table`，同时保留 collection 作为引擎原生 catalog 术语。具体 attributes 落点、采样结构推断和索引事实归属见规范层文档。
 
 JSON 默认按 `document` 兜底；只有内容事实能严格证明它是记录集合时才升级为 `table`。当前 JSON 明确支持顶层对象数组和 JSON Lines 记录集合。GeoJSON `FeatureCollection.features` 是独立 `geojson` 格式，不再作为 `json` 格式的空间结构分支。`{"data":[...]}`、`{"rows":[...]}` 等结构是否作为 table，需要先补规范再实现，不能用字段名或习惯做隐式猜测。
 
@@ -335,7 +335,7 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
 |---|---|
 | `spatial` | 空间字段、CRS、extent、geometry type、空间索引 |
 | `temporal` | 时间字段、时间范围、时间粒度 |
-| `statistics` | 采样统计、空值率、min/max、质量画像 |
+| `statistics` | Meta scan、catalog、system table、格式头或结构推断获得的紧凑统计与采样过程事实；不承载 Manager 数据剖析结果 |
 | `extraction` | OCR、文本提取、摘要、提取状态 |
 | `semantic` | embedding、语义索引、向量表示 |
 | `partitioning` | 分区字段、分区范围、分区样例 |

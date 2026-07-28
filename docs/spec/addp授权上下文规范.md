@@ -78,7 +78,7 @@ System 生成 AuthContext 前必须校验：
 6. Token 的 `issued_authorization_version` 等于 Principal 当前 `authorization_version`，Role Assignment、外部身份状态和组织关系没有失效；
 7. OAuth Client、audience、Scope、认证强度和委托绑定满足令牌类型要求。
 
-任一校验失败均不返回部分 AuthContext。User、Tenant Membership、Role Assignment 或相关身份事实失效时，在同一授权变更事务中递增 Principal 授权版本并撤销受影响 Token Family。
+任一校验失败均不返回部分 AuthContext。Role Assignment、Role Permission 和组织授权关系变化时，在同一授权变更事务中递增 Principal 授权版本，旧派生凭据立即失效；仍有效且未撤销的 Refresh Token Family 只能在唯一 Refresh Token 轮换事务中复核身份、Context、Tenant 和 Membership 后推进到当前版本。User、凭据、Tenant Membership、Tenant 或 Token Family 失效时，在同一安全事务中递增授权版本并撤销受影响 Token Family，不允许通过版本推进恢复。
 
 ## 五、权限计算
 

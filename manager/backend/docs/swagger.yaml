@@ -1,5 +1,163 @@
 basePath: /api/v1/manager
 definitions:
+  dataprofile.BooleanMetrics:
+    properties:
+      false_count:
+        type: integer
+      true_count:
+        type: integer
+    type: object
+  dataprofile.DistributionBucket:
+    properties:
+      count:
+        type: integer
+      label:
+        type: string
+      max: {}
+      min: {}
+    type: object
+  dataprofile.FieldProfile:
+    properties:
+      boolean:
+        $ref: '#/definitions/dataprofile.BooleanMetrics'
+      distinct_approximate:
+        type: boolean
+      distinct_count:
+        type: integer
+      distribution:
+        items:
+          $ref: '#/definitions/dataprofile.DistributionBucket'
+        type: array
+      name:
+        type: string
+      native_type:
+        type: string
+      null_count:
+        type: integer
+      null_rate:
+        type: number
+      nullable:
+        type: boolean
+      numeric:
+        $ref: '#/definitions/dataprofile.NumericMetrics'
+      observations:
+        items:
+          $ref: '#/definitions/dataprofile.Observation'
+        type: array
+      primary_key:
+        type: boolean
+      status:
+        type: string
+      temporal:
+        $ref: '#/definitions/dataprofile.TemporalMetrics'
+      text:
+        $ref: '#/definitions/dataprofile.TextMetrics'
+      top_values:
+        items:
+          $ref: '#/definitions/dataprofile.ValueCount'
+        type: array
+      type:
+        $ref: '#/definitions/datatype.FieldType'
+      unique_rate:
+        type: number
+      value_count:
+        type: integer
+    type: object
+  dataprofile.NumericMetrics:
+    properties:
+      max:
+        type: number
+      mean:
+        type: number
+      median:
+        type: number
+      min:
+        type: number
+      negative_count:
+        type: integer
+      p25:
+        type: number
+      p75:
+        type: number
+      p95:
+        type: number
+      stddev:
+        type: number
+      zero_count:
+        type: integer
+    type: object
+  dataprofile.Observation:
+    properties:
+      code:
+        type: string
+      field:
+        type: string
+      severity:
+        type: string
+      value:
+        type: number
+    type: object
+  dataprofile.Profile:
+    properties:
+      field_count:
+        type: integer
+      fields:
+        items:
+          $ref: '#/definitions/dataprofile.FieldProfile'
+        type: array
+      mode:
+        type: string
+      observations:
+        items:
+          $ref: '#/definitions/dataprofile.Observation'
+        type: array
+      partial:
+        type: boolean
+      profiled_at:
+        type: string
+      row_count:
+        type: integer
+      row_count_exact:
+        type: boolean
+      rows_scanned:
+        type: integer
+      sample_method:
+        type: string
+      sample_size:
+        type: integer
+      schema_version:
+        type: string
+      truncated:
+        type: boolean
+    type: object
+  dataprofile.TemporalMetrics:
+    properties:
+      max:
+        type: string
+      min:
+        type: string
+    type: object
+  dataprofile.TextMetrics:
+    properties:
+      avg_length:
+        type: number
+      blank_count:
+        type: integer
+      empty_count:
+        type: integer
+      max_length:
+        type: integer
+      min_length:
+        type: integer
+    type: object
+  dataprofile.ValueCount:
+    properties:
+      count:
+        type: integer
+      rate:
+        type: number
+      value: {}
+    type: object
   datatype.Bounds3D:
     properties:
       max_x:
@@ -26,6 +184,44 @@ definitions:
       source:
         type: string
     type: object
+  datatype.FieldType:
+    enum:
+    - unknown
+    - string
+    - bool
+    - bytes
+    - mixed
+    - int
+    - bigint
+    - float
+    - double
+    - decimal
+    - date
+    - time
+    - timestamp
+    - json
+    - array
+    - uuid
+    - geometry
+    type: string
+    x-enum-varnames:
+    - FieldTypeUnknown
+    - FieldTypeString
+    - FieldTypeBool
+    - FieldTypeBytes
+    - FieldTypeMixed
+    - FieldTypeInt
+    - FieldTypeBigInt
+    - FieldTypeFloat
+    - FieldTypeDouble
+    - FieldTypeDecimal
+    - FieldTypeDate
+    - FieldTypeTime
+    - FieldTypeTimestamp
+    - FieldTypeJSON
+    - FieldTypeArray
+    - FieldTypeUUID
+    - FieldTypeGeometry
   execution.TaskExecution:
     properties:
       bytes_read:
@@ -95,7 +291,7 @@ definitions:
         description: 执行状态
         type: string
       task_type:
-        description: provider 声明的稳定任务类型
+        description: 稳定执行类型；可来自任务定义或 ad-hoc execution
         type: string
       tenant_id:
         type: integer
@@ -534,6 +730,72 @@ definitions:
       tenant_id:
         type: integer
       updated_at:
+        type: string
+    type: object
+  github_com_addp_manager_internal_service.DataProfileCurrentResponse:
+    properties:
+      active_execution:
+        $ref: '#/definitions/github_com_addp_manager_internal_service.DataProfileExecutionView'
+      item_fingerprint:
+        type: string
+      latest_execution:
+        $ref: '#/definitions/github_com_addp_manager_internal_service.DataProfileExecutionView'
+      profile:
+        $ref: '#/definitions/dataprofile.Profile'
+      profile_config_hash:
+        type: string
+      profile_execution:
+        $ref: '#/definitions/github_com_addp_manager_internal_service.DataProfileExecutionView'
+      result_id:
+        type: integer
+      source_version:
+        type: string
+      stale:
+        type: boolean
+      stale_reason:
+        type: string
+      stored_source_version:
+        type: string
+      supported:
+        type: boolean
+    type: object
+  github_com_addp_manager_internal_service.DataProfileExecutionRequest:
+    properties:
+      child_name:
+        type: string
+      locator:
+        type: string
+      mode:
+        type: string
+      nested_child_path:
+        type: string
+      ref_path:
+        type: string
+    type: object
+  github_com_addp_manager_internal_service.DataProfileExecutionResponse:
+    properties:
+      execution:
+        $ref: '#/definitions/github_com_addp_manager_internal_service.DataProfileExecutionView'
+      reused:
+        type: boolean
+    type: object
+  github_com_addp_manager_internal_service.DataProfileExecutionView:
+    properties:
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      error:
+        type: string
+      error_code:
+        type: string
+      execution_id:
+        type: string
+      progress:
+        type: integer
+      started_at:
+        type: string
+      status:
         type: string
     type: object
   github_com_addp_manager_internal_service.EmbeddingExecutionRequest:
@@ -2457,6 +2719,115 @@ paths:
       tags:
       - Manager
       x-addp-auth-mode: authenticated
+  /data-profile-executions:
+    post:
+      consumes:
+      - application/json
+      description: 为指定表格型 data item 创建或复用一次采样剖析 ad-hoc execution；不会创建任务定义。| Create
+        or reuse a sample profiling ad-hoc execution for a tabular data item without
+        creating a task definition.
+      parameters:
+      - description: 剖析执行请求 | Profiling execution request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_manager_internal_service.DataProfileExecutionRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: 执行已受理 | Execution accepted
+          schema:
+            $ref: '#/definitions/github_com_addp_manager_internal_service.DataProfileExecutionResponse'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "422":
+          description: 资源不支持剖析 | Resource is not profileable
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 创建剖析执行失败 | Failed to create profiling execution
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 剖析服务不可用 | Profiling unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建数据剖析执行 | Create data profiling execution
+      tags:
+      - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.data_profile.execute
+      x-ai-hint: 为指定 locator 发起有界采样剖析；mode 首期只允许 sample，重复的活动执行会被复用。
+  /data-profiles/current:
+    get:
+      description: 查询指定表格型 data item 和内容选择上下文的当前成功剖析结果、活跃执行及新鲜度，不会隐式触发执行。| Query the
+        current successful profile, active execution, and freshness for a tabular
+        data item and content selection without implicitly starting an execution.
+      parameters:
+      - description: 资源定位符 | Resource locator
+        in: query
+        name: locator
+        required: true
+        type: string
+      - description: 容器内表格 child 名称 | Tabular child name in a container
+        in: query
+        name: child_name
+        type: string
+      - description: multi child 内 ref 路径 | Ref path within a multi child
+        in: query
+        name: ref_path
+        type: string
+      - description: 嵌套容器 child 路径 | Nested container child path
+        in: query
+        name: nested_child_path
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 当前剖析状态 | Current profiling state
+          schema:
+            $ref: '#/definitions/github_com_addp_manager_internal_service.DataProfileCurrentResponse'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "422":
+          description: 资源不支持剖析 | Resource is not profileable
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 查询剖析结果失败 | Failed to query profile
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 剖析服务不可用 | Profiling unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取当前数据剖析结果 | Get current data profile
+      tags:
+      - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.data_item.read
+      x-ai-hint: 查询指定 locator 已保存的数据剖析结果；该接口不会触发源数据读取。
   /downloads/file:
     get:
       description: 按 ResourceLocator 下载存储型 engine 的 item；单文件直接流式下载，多文件组合自动打包 ZIP |

@@ -62,7 +62,7 @@ func NewAlertRuleHandler(alertRuleService *service.AlertRuleService) *AlertRuleH
 // @Router /alert-rule-targets [get]
 // @Security BearerAuth
 func (h *AlertRuleHandler) ListAlertRuleTargets(c *gin.Context) {
-	tenantID, ok := alertTenantID(c)
+	tenantID, ok := requireTenantID(c)
 	if !ok {
 		return
 	}
@@ -85,7 +85,7 @@ func (h *AlertRuleHandler) ListAlertRuleTargets(c *gin.Context) {
 // @Router /alert-rules [get]
 // @Security BearerAuth
 func (h *AlertRuleHandler) ListAlertRules(c *gin.Context) {
-	tenantID, ok := alertTenantID(c)
+	tenantID, ok := requireTenantID(c)
 	if !ok {
 		return
 	}
@@ -111,7 +111,7 @@ func (h *AlertRuleHandler) ListAlertRules(c *gin.Context) {
 // @Router /alert-rules [post]
 // @Security BearerAuth
 func (h *AlertRuleHandler) CreateAlertRule(c *gin.Context) {
-	tenantID, ok := alertTenantID(c)
+	tenantID, ok := requireTenantID(c)
 	if !ok {
 		return
 	}
@@ -196,7 +196,7 @@ func alertRuleIdentity(c *gin.Context) (uint, int, bool) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, moni18n.MsgInvalidAlertRuleID)})
 		return 0, 0, false
 	}
-	tenantID, ok := alertTenantID(c)
+	tenantID, ok := requireTenantID(c)
 	return uint(id), tenantID, ok
 }
 

@@ -42,6 +42,14 @@ permissions:
     status: active
     name_i18n_key: permissions.manager.data_item.update.name
     description_i18n_key: permissions.manager.data_item.update.description
+  - key: manager.data_profile.execute
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.manager.data_profile.execute.name
+    description_i18n_key: permissions.manager.data_profile.execute.description
   - key: manager.derived_artifact.create
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium

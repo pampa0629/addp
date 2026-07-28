@@ -111,7 +111,7 @@ Kafka topic 第一版 basic scan 只保存 item identity，`attributes.item.data
 | `type_info` | 数据库 metadata、format info provider、采样器、Meta item normalizer | table fields、primary_key、精确 row_count、estimated_row_count；media kind/width/height/duration_ms；document title/page_count；container children；graph shapes；cad 图纸结构摘要；model_3d 结构摘要；point_cloud 点云摘要；gaussian_splat 高斯基元摘要 |
 | `format_info` | format plugin / provider、Meta item normalizer | CSV 分隔符、Shapefile related refs、JSON 结构类型、SQLite 版本等具体格式信息 |
 | `access_index` | format plugin / reader、Meta item normalizer | 用于按内容窗口读取的访问索引，例如 table 稀疏行号到字节偏移索引 |
-| `capabilities` | format provider、画像任务、Meta item normalizer | spatial、temporal、statistics、extraction、semantic、partitioning、indexing 等横切能力 |
+| `capabilities` | engine / format provider、扫描采样事实提供方、Meta item normalizer | spatial、temporal、statistics、extraction、semantic、partitioning、indexing 等横切能力 |
 
 `common/datatype` 是 type info、field type、空间横切事实和访问索引结构的代码事实源；attributes 是这些事实的落库模型。Meta normalizer 负责将 provider 返回的 `datatype.*` 结构写入对应 attributes 分区。
 
@@ -214,7 +214,7 @@ Kafka topic 第一版 basic scan 只保存 item identity，`attributes.item.data
 
 `type_info.media` 只承载 `datatype.MediaInfo` 中跨图片、音频、视频稳定通用的字段。EXIF、视频 codec、音频 codec、帧率、采样率、码率、轨道数等细粒度事实暂不作为 media 主事实；如需持久化，应进入受控 `format_info.<format>`、`capabilities.extraction` 或后续另行规范的横切能力命名空间。
 
-`type_info.gaussian_splat.bounds_3d` 表示精确三维范围，只应在低成本元数据或小文件解析时写入。`sampled_bounds_3d` 表示采样得到的近似三维范围，必须同时写入 `sampled_bounds_method` 和 `sampled_bounds_sample_count`，可用于前端初始相机定位，但不得用于空间检索、质量治理或精确范围判断。Meta scan 不得为了 `bounds_3d` 全量扫描大规模高斯泼溅 PLY / SPLAT；需要精确范围时应通过后续画像或派生元数据任务生成。
+`type_info.gaussian_splat.bounds_3d` 表示精确三维范围，只应在低成本元数据或小文件解析时写入。`sampled_bounds_3d` 表示采样得到的近似三维范围，必须同时写入 `sampled_bounds_method` 和 `sampled_bounds_sample_count`，可用于前端初始相机定位，但不得用于空间检索、质量治理或精确范围判断。Meta scan 不得为了 `bounds_3d` 全量扫描大规模高斯泼溅 PLY / SPLAT；需要精确范围时应先定义对应领域的专门分析或派生任务，不得借用表格数据剖析概念。
 
 高斯泼溅格式私有诊断不得写入 `type_info.gaussian_splat`。例如 `.splat` 的 scale 分布、各向异性比例、低透明度计数和推荐渲染模式属于 `format_info.splat`，用于解释前端毛刺、过度模糊等格式渲染现象；这些事实不作为跨格式通用类型字段。
 
@@ -244,7 +244,7 @@ label set 必须标准化为去空、去重、排序后的稳定集合；当 nod
 
 S3M 同样使用 `data_type=model_3d`。SCP 的 XML / JSON 编码、S3M 版本、根瓦片数、瓦片扩展名、文件类型和位置进入 `format_info.s3m`；`config/scene.scp` 通过 `item.refs` 以 `role=manifest + primary=true` 表达。S3M 前端 renderer、受控资源 URL、加载队列和浏览器纹理能力不得写入 Meta attributes。
 
-`type_info.point_cloud` 只承载点云跨格式稳定结构摘要。`point_cloud_kind` 表达点云子形态，第一版取值为 `raw_point_cloud`、`tiled_point_cloud`、`scan_collection`、`generic`。LAS / LAZ / COPC、PCD、点云型 PLY、EPT / Potree、E57 等都使用 `data_type=point_cloud`；不得仅因点记录可展开为 x/y/z 等列而归为 `table`。点样本、抽稀结果、前端渲染协议、Potree / EPT / COPC 层级内容、派生瓦片等属于内容读取或 Manager 派生产物，不写入 attributes。CRS、空间定位和空间范围进入 `capabilities.spatial`；分类分布、密度、采样规模等画像事实进入 `capabilities.statistics` 或后续受控画像结构。
+`type_info.point_cloud` 只承载点云跨格式稳定结构摘要。`point_cloud_kind` 表达点云子形态，第一版取值为 `raw_point_cloud`、`tiled_point_cloud`、`scan_collection`、`generic`。LAS / LAZ / COPC、PCD、点云型 PLY、EPT / Potree、E57 等都使用 `data_type=point_cloud`；不得仅因点记录可展开为 x/y/z 等列而归为 `table`。点样本、抽稀结果、前端渲染协议、Potree / EPT / COPC 层级内容、派生瓦片等属于内容读取或 Manager 派生产物，不写入 attributes。CRS、空间定位和空间范围进入 `capabilities.spatial`；分类分布、密度等需要读取点记录的分析结果必须先定义点云领域的独立 owner 和结果结构，不得写入 Meta attributes 或借用表格数据剖析结果。
 
 `type_info.gaussian_splat` 只承载高斯泼溅跨格式稳定结构摘要。`representation` 第一版固定使用 `3d_gaussian_splatting`，`splat_count` 表示高斯基元数量，`has_opacity`、`has_scale`、`has_rotation`、`has_spherical_harmonics` 和 `sh_degree` 表示渲染所需属性能力。3DGS PLY、`.splat`、`.ksplat`、`.spz` 等都使用 `data_type=gaussian_splat`；不得因为 PLY 内部使用 vertex 记录就归为 `point_cloud`，也不得因为它能三维渲染就归为 `model_3d`。原始高斯数据、压缩产物、前端渲染协议、排序结果或派生 splat artifact 不写入 `type_info.gaussian_splat`；格式私有 header、属性列表和 layout 写入 `format_info.<format>`。
 
@@ -265,11 +265,11 @@ S3M 同样使用 `data_type=model_3d`。SCP 的 XML / JSON 编码、S3M 版本�
 | `codec` | ClickHouse `compression_codec` | 引擎原生存储语义 | Manager、Monitor | 存储诊断、压缩策略展示 | 暂放受控 native；无明确消费前不展示为通用字段 |
 | `ttl` | ClickHouse TTL metadata | 引擎原生生命周期语义 | Manager、Monitor、Governance | 生命周期展示、过期策略诊断 | 暂放受控 native；需确认治理模块消费方式 |
 
-MongoDB collection 等动态 schema 记录集合在当前 ADDP 能力中按记录集合消费，`meta_item.item_type=collection`，`attributes.item.data_type=table`。其 `type_info.table.fields` 是采样推断字段画像，不是强 schema；精确记录数写入 `type_info.table.row_count`，只有估算来源时写入 `type_info.table.estimated_row_count`，不得写入 `type_info.document` 或新增 `type_info.collection`。
+MongoDB collection 等动态 schema 记录集合在当前 ADDP 能力中按记录集合消费，`meta_item.item_type=collection`，`attributes.item.data_type=table`。其 `type_info.table.fields` 是采样推断得到的字段结构，不是强 schema，也不是 Manager 数据剖析结果；精确记录数写入 `type_info.table.row_count`，只有估算来源时写入 `type_info.table.estimated_row_count`，不得写入 `type_info.document` 或新增 `type_info.collection`。
 
 `type_info.table.row_count` 只表示精确行数，0 是有效值；`type_info.table.estimated_row_count` 只表示 catalog / system statistics、格式结构元数据或有限分析提供的近似值。两者可以同时存在，但不得用估算值填充 `row_count`。`meta_item.row_count` 是精确 `type_info.table.row_count` 的列表查询投影，不投影估算值。估算值不得用于分页终点、完整性校验、传输完成判断或其他需要精确基数的决策。
 
-索引、采样过程、动态 schema 推断方式等不是 `common/datatype.TableInfo` 当前通用字段，不得写入 `type_info.table`。动态 schema 记录集合、数据库或格式解析得到的索引摘要进入 `capabilities.indexing`；采样规模、是否采样、动态 schema 类型、平均记录大小、索引数量等画像或统计事实进入 `capabilities.statistics`。
+索引、采样过程、动态 schema 推断方式等不是 `common/datatype.TableInfo` 当前通用字段，不得写入 `type_info.table`。动态 schema 记录集合、数据库或格式解析得到的索引摘要进入 `capabilities.indexing`；扫描或结构推断过程的采样规模、是否采样、dynamic schema 类型、平均记录大小、索引数量等紧凑过程事实进入 `capabilities.statistics`。字段空值率、基数、值域、分位数、直方图和高频值等数据剖析结果归 Manager，不进入 Meta attributes。
 
 Meta attributes 不维护旧字段兼容层。字段可空性只写 `nullable`，字段主键标记只写 `primary_key`；不得再写 `is_nullable`、`is_primary_key`。历史 Meta 数据如果不符合本规范，应删除后重新扫描，不在运行期做迁移或兼容读取。
 
@@ -397,13 +397,15 @@ WGS84 bounds、SRID 和 CRS 属于 `capabilities.spatial`，不重复写入 `for
 |---|---|---|
 | `spatial` | 空间能力 | geometry_columns、primary_geometry_column、extent、has_spatial_index |
 | `temporal` | 时间能力 | time_columns、time_range、granularity、timezone |
-| `statistics` | 统计和采样 | sample_size、is_sampled、schema_type、index_count、avg_record_size、null_count、min、max、profiled_at |
+| `statistics` | 扫描统计与采样事实 | sample_size、is_sampled、schema_type、index_count、avg_record_size |
 | `extraction` | 内容提取 | extractor_available、text_extracted、status、reason、extractor、plain_text_preview、text_truncated、summary、index_ref |
 | `semantic` | 语义能力 | embedding_model、vector_index_ref、semantic_tags |
-| `partitioning` | 分区画像能力 | partition_count、partition_sample、partition_range |
+| `partitioning` | 分区事实 | partition_count、partition_sample、partition_range |
 | `indexing` | 索引能力 | indexes、spatial_indexes、fulltext_indexes、vector_indexes |
 
 横切能力不应变成顶层数据类型，也不应被塞进具体格式信息。
+
+`capabilities.statistics` 只保存 Meta scan、catalog、system table、格式头或结构推断过程获得的紧凑统计与采样事实。它不保存 Manager data profile，也不得新增字段级 `fields`、`null_count`、`distinct_count`、`min`、`max`、`quantiles`、`histogram`、`top_values`、`profiled_at` 或 `profile_ref` 来旁路承载剖析结果。Manager 数据剖析的当前结果、字段分布和执行历史分别归 Manager 私有结果表与 `common.task_executions`。
 
 `capabilities.extraction` 只记录提取过程状态、轻量预览和外部结果引用，不保存完整正文、OCR 全文、字幕全文或 embedding。字段语义：
 
@@ -424,7 +426,7 @@ WGS84 bounds、SRID 和 CRS 属于 `capabilities.spatial`，不重复写入 `for
 
 ### capabilities.spatial 最小结构
 
-`capabilities.spatial` 表达跨格式稳定消费的空间能力，不负责完整空间画像。meta 扫描阶段只写能够从字段声明、格式头或轻量元数据中确定的信息，不为了推断实际几何类型而扫描全量数据。
+`capabilities.spatial` 表达跨格式稳定消费的空间能力，不负责完整空间分析。meta 扫描阶段只写能够从字段声明、格式头或轻量元数据中确定的信息，不为了推断实际几何类型而扫描全量数据。
 
 字段型空间对象建议最小结构：
 
@@ -484,7 +486,7 @@ WGS84 bounds、SRID 和 CRS 属于 `capabilities.spatial`，不重复写入 `for
 | `extent` | 空间范围，只记录当前空间对象或 primary geometry column 原生 CRS 下的事实。无法轻量获得时写 `null` 或省略，不得为了 extent 扫描全量数据，也不得为了底图、MVT 或普通预览把 extent 转成其他 CRS 后写入 `capabilities.spatial`。 |
 | `has_spatial_index` | 是否存在空间索引；无法确定时可省略。 |
 
-`feature_count` 不属于 spatial，表格型行数写入 `type_info.table.row_count`。如果后续画像任务采样得到实际几何类型分布，应进入 `capabilities.statistics` 或后续画像结构，不反向覆盖 meta 扫描阶段的 `geometry_type`。
+`feature_count` 不属于 spatial，表格型行数写入 `type_info.table.row_count`。Manager 数据剖析采样得到的实际几何类型分布只进入 Manager-owned profile result，不反向覆盖 Meta scan 阶段的 `geometry_type`，也不写入 `capabilities.statistics`。
 
 ## 冲突处理
 

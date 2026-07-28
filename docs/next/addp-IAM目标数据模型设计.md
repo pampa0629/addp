@@ -1,8 +1,8 @@
 # ADDP IAM 目标数据模型设计
 
-更新日期：2026-07-24
+更新日期：2026-07-28
 
-状态：技术设计、Permission / Role 矩阵、AuthContext、owner Resource Grant / Policy、OAuth/OIDC 协议引擎及离线三员 Bootstrap/TOTP 路线已确认；核心 IAM、Fosite、管理 API、Tenant Invitation/Enrollment、System 目标 Router 与十版 migration 已实现，MFA Runtime、Bootstrap CLI 和第十一版 migration 正在实现。
+状态：核心 IAM、Fosite、管理 API、MFA Runtime、离线三员 Bootstrap、离线三员凭据恢复与二十三版 migration 已实现；开发数据库已迁移到 `23/clean`。Tenant 原子创建/初始化、Tenant Role/Assignment API、IAM Workbench、数据库最后管理员约束、普通 User 本地密码重置、授权版本 Refresh 推进、普通 User TOTP 自助登记、Browser Session 内 step-up、高风险自我授权 AAL2 Guard、Swagger 和前端契约测试已经收口；Recovery Attempt 1 已完成，既有三员 Browser `platform + AAL2` 登录与一次性 OAuth 客户端协议 E2E 已覆盖 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、刷新轮换和撤销。Tenant 管理 Browser E2E 已覆盖安全管理员创建普通 User、系统管理员初始化 Tenant、首位 Tenant Administrator 进入 Tenant Context、显式授予基础设施管理员、密码受控重置以及引擎、应用和 Cleanup 正常使用；MFA 安全设置页面与密码确认入口已完成真实 Browser 验证，登记/step-up/自我授权事务闭环由一次性 PostgreSQL E2E 覆盖。正式 `addp-cli` 尚未交付。
 
 ## 一、目标与边界
 
@@ -22,7 +22,7 @@
 - owner 模块的 Resource Grant / Policy 表；
 - Asset 授权申请表；
 - 具体 AuthContext JSON 字段；
-- WebAuthn、账号恢复和 Service Principal Credential 细节；
+- WebAuthn 和 Service Principal Credential 细节；
 - IdP 协议配置、Claim Mapping 规则和目录同步任务；
 - 管理控制台页面和公开 API 路径。
 
@@ -175,7 +175,7 @@ erDiagram
 
 第一阶段一个 User 最多绑定一个 Local Account。`normalized_username` 使用 `trim + Unicode NFKC + Unicode case folding` 的单一规则生成；数据库保存结果并做唯一约束，不依赖数据库 locale 或 `citext` 隐式行为。停用账号仍占用用户名，避免身份审计混淆和用户名接管。
 
-密码强度、历史、防泄露词典、轮换周期和恢复流程属于后续统一 Authentication Policy，必须在登录 API 切换前单独确认。IAM Runtime 基础 Service 只拒绝空密码、使用 bcrypt 生成 Hash，并保证密码轮换、授权版本递增、Token Family 撤销和审计同事务；旧 DTO 的 `min=6` 不是目标 IAM 契约，不得继续沿用为默认策略。
+密码历史、防泄露词典和轮换周期属于后续统一 Authentication Policy。IAM Runtime 基础 Service 只拒绝空密码、使用 bcrypt 生成 Hash，并保证密码轮换、授权版本递增、Token Family 撤销和审计同事务；三员 Bootstrap 与灾难恢复额外强制三个互不相同且至少 14 字符的密码。旧 DTO 的 `min=6` 不是目标 IAM 契约，不得继续沿用为默认策略。
 
 当前用户资料 API 只投影 `users` 的稳定资料字段和可空 Local Account 展示用户名，不把 Local Account、Principal、Tenant Membership 或 Role Assignment 重新拼成旧 User 聚合。当前用户改密必须用当前第一方 Browser Access Token 定位 Principal，在 Principal 锁内重新校验 Token，再修改密码并撤销全部 Family；当前密码错误是字段校验结果，不使用会触发浏览器 Token 刷新的 401。
 
@@ -200,6 +200,20 @@ TOTP 固定使用 RFC 6238、HMAC-SHA-1、6 位数字、30 秒周期和 `±1` �
 ### 5.5 `system.mfa_challenges`
 
 密码校验成功但尚未达到 AAL2 时，System 创建短期一次性 MFA Challenge，只保存随机 Token Hash、Principal、当时的 `authorization_version`、已验证的第一因素方法与时间、失败次数、到期和消费事实。Challenge 固定 5 分钟有效，连续 5 次失败即终止；密码或授权版本变化、成功、过期或并发消费后都不能重放。浏览器提交 TOTP 后，System 在同一事务中验证 Credential、记录防重放 counter、消费 Challenge，并生成 `password + totp / aal2` 的 Context Selection 或 Browser Session。
+
+Challenge 必须显式区分 `purpose=login | step_up`。`login` Challenge 不绑定 Token Family；`step_up` Challenge 必须绑定一个创建时有效的第一方 Browser Token Family。用途、Family 绑定、Principal、授权版本与第一因素事实创建后不可修改。step-up 消费时必须同时锁定并验证该 Family 当前未撤销、当前 Access Token 与 Refresh Token 均属于该 Family 且 Refresh Token 尚未使用。
+
+### 5.6 `system.mfa_enrollments`
+
+普通 User 首次登记 TOTP 使用独立的一次性 Enrollment，不得把尚未验证的 Secret 写入 `mfa_credentials`。字段固定包括：随机 Token Hash、Principal、源 Browser Token Family、当时的 `authorization_version`、加密 Secret 与 Nonce、Key Version、失败次数、到期、消费时间、创建时间。Enrollment 固定 5 分钟有效、最多失败 5 次，物理删除与 Truncate 被禁止；身份、Family、授权版本、Secret、到期和创建事实不可修改。
+
+开始登记要求当前第一方 Browser Access Token、同一 Family 的 Refresh Token Cookie 和当前本地密码。完成登记按 Principal -> Family -> Refresh Token -> Access Token -> Enrollment 的固定锁序，在单个事务内完成 TOTP 验证、创建激活 Credential（首个 `last_accepted_counter` 即本次 counter）、消费 Enrollment、创建 AAL2 替换 Family、撤销源 Family与完整高风险审计。唯一索引保证每个 User 只有一个激活 TOTP；并发完成只能成功一次。Secret、验证码、Token 和 `otpauth://` URI不得进入审计详情。
+
+### 5.7 Browser step-up 的 Token Family 转换
+
+Token Family 的认证方法、AAL、认证时间、step-up 期限和 Context 均保持不可变。登记完成或 step-up 成功时不得 UPDATE 原 Family；System 必须继承 Principal、Context、Client、Audience、Scope 与原 Family 固定 `expires_at`，创建新的 `password + totp / aal2` Family和新 Access/Refresh/Resource Ticket，再以 `mfa_enrollment_completed` 或 `mfa_step_up_completed` 撤销原 Family。事务失败时原 Family 保持有效，不出现半升级状态。
+
+高风险 Tenant 自我授权 Guard 只作用于“Actor Principal 与目标 Membership Principal 相同，且目标 Role 包含至少一个 `risk_level=high | critical` Permission”的新授予。此时 AuthContext 必须为当前有效 AAL2/AAL3 且 `step_up_expires_at > now()`，否则返回 HTTP 403 和稳定 `step_up_required`。给他人授权、授予全为 low/medium 的 Role、自我撤销均不扩张当前主体权限，不触发该 Guard；它们仍遵守原有精确 Permission Guard、作用域和最后管理员约束。
 
 ### 5.6 `system.service_principals`
 
@@ -298,9 +312,17 @@ Identity Provider 表达外部身份权威本身，而不是某个 Tenant 的连
 | `name` | text | 非空，允许修改 |
 | `description` | text | 非空，默认空字符串 |
 | `status` | text | `active | suspended | closed` |
+| `initialized_at` | timestamptz | 可空；完成首位 Tenant Administrator 原子初始化后写入 |
+| `initialized_by_principal_id` | bigint | 可空，FK -> `principals.id`；与 `initialized_at` 同空或同非空 |
 | `created_at` / `updated_at` | timestamptz | 非空 |
 
-Tenant 不再在创建事务中强制创建一个 TenantAdmin User。创建 Tenant、建立 Membership 和分配 Tenant Administration Role 是三个独立事实。
+Tenant 不创建或持有独立管理员账号和密码。平台安全管理员先创建普通全局 User，平台系统管理员在创建 Tenant 时指定其中一个有效 User 为首位 Tenant Administrator；平台三员角色的持有人不得成为首位 Tenant Administrator。
+
+创建 Tenant、为指定 User 建立首个有效 Membership、授予 `tenant.administrator` Tenant Scope Assignment，以及写入对应审计事件，必须在一个数据库事务中完成，任一步失败整体回滚。运行时不得再创建没有首位管理员的 Tenant。
+
+为承接切换前已经存在且尚无任何 Membership 和 Role Assignment 的 Tenant，平台提供一次性的 Tenant Initialization 状态转换。初始化同样在一个事务内锁定 Tenant 和目标 Principal，建立 Membership、Assignment 和审计，并写入 `initialized_at`、`initialized_by_principal_id` 初始化事实；Tenant 已存在初始化事实、任一 Membership 或 Assignment 时拒绝重复初始化。该入口不创建 User、不接收密码，也不能作为常规创建 Tenant 的旁路。
+
+`initialized_at` 不是由当前 Assignment 反推的展示字段。数据库仅对已经写入初始化事实且状态不是 `closed` 的 Tenant 强制保留至少一个有效、Membership 不到期的 `tenant.administrator`，并在 Tenant、Principal、Role、Membership 和 Assignment 授权事实变化时延迟到事务提交前校验；因此切换前的 `default` Tenant 可以保留业务数据并通过正式入口完成一次初始化，而初始化后的 Tenant 不能退回空壳状态。
 
 ### 7.2 `system.tenant_memberships`
 
@@ -325,7 +347,8 @@ Tenant 不再在创建事务中强制创建一个 TenantAdmin User。创建 Tena
 - `index (principal_id, status)`，用于登录后列出可进入 Tenant；
 - `index (tenant_id, status, created_at)`，用于 Tenant 成员管理；
 - `expires_at > joined_at`；
-- Membership 失效必须在同一事务中递增 Principal `authorization_version` 并撤销相关 Token Family。
+- Membership 失效必须在同一事务中递增 Principal `authorization_version` 并撤销相关 Token Family；普通 Role Assignment 或 Role Permission 变化只递增版本，使旧派生凭据立即失效，有效 Family 在下一次 Refresh Token 轮换中复核 Context 后推进版本。
+- 暂停或结束 Membership、撤销 Assignment 时，不得使 Tenant 失去最后一个有效 `tenant.administrator`；替代管理员必须在同一事务中先建立。
 
 ### 7.3 `system.tenant_invitations`
 
@@ -467,7 +490,7 @@ Permission 由对应 owner 模块的版本化 Manifest 定义，经唯一发布�
 | `created_by_principal_id` | bigint | Tenant 自定义 Role 必填；内置 Role 为空 |
 | `created_at` / `updated_at` | timestamptz | 非空 |
 
-唯一约束使用 `unique nulls not distinct (tenant_id, role_key)`。检查约束保证内置 Role 只使用 i18n Key 且没有伪造的创建 Principal；Tenant 自定义 Role 只使用 Tenant 自己输入的名称/说明并记录真实创建 Principal，不把翻译后的文本固化为内置 Role 数据。Tenant 自定义 Role 只能引用 `tenant_id` 对应 Tenant，并且只能组合允许 Tenant 使用的稳定 Permission。
+唯一约束使用 `unique nulls not distinct (tenant_id, role_key)`。数据库同时保留所有平台与 Tenant 内置 Role Key，任何 Tenant 自定义 Role 都不得与内置 Role Key 重名；不同 Tenant 可以各自使用相同的自定义 Role Key。检查约束保证内置 Role 只使用 i18n Key 且没有伪造的创建 Principal；Tenant 自定义 Role 只使用 Tenant 自己输入的名称/说明并记录真实创建 Principal，不把翻译后的文本固化为内置 Role 数据。Tenant 自定义 Role 只能引用 `tenant_id` 对应 Tenant，并且只能组合允许 Tenant 使用的稳定 Permission。
 
 ### 9.3 `system.role_permissions`
 
@@ -578,7 +601,7 @@ Platform Assignment 除离线 Bootstrap 外只能由已批准 Request 生成；�
 不创建默认 `SuperAdmin`。空系统只允许通过一次性离线 Bootstrap 流程。命令固定为两个阶段：
 
 1. `iam-bootstrap prepare` 在 migration 完成且 IAM 事实为空时创建唯一 `prepared` 状态，生成 256 bit 随机 `addp_bs_...` Secret，只向终端显示一次，数据库只保存 SHA-256 Hash；
-2. `iam-bootstrap apply` 读取不含任何 Secret 的三员实名 Manifest，从 TTY 分别接收三人的独立密码，逐人显示 TOTP enrollment URI，并要求连续两个不同时间窗口的有效验证码。
+2. `iam-bootstrap apply` 读取不含任何 Secret 的三员实名 Manifest，从 TTY 分别接收三人的独立密码，逐人在终端直接渲染 TOTP 二维码并显示手动设置密钥备用值，然后要求连续两个不同时间窗口的有效验证码；二维码只存在于终端输出，不写入图片文件。
 
 `apply` 验证三人的密码和 TOTP 持有事实后，在单个事务中：
 
@@ -630,7 +653,42 @@ dist/release-$(go env GOOS)-$(go env GOARCH)/addp-iam-bootstrap apply --manifest
 
 CLI 只接受已经由 System migration runner 迁移到当前版本的数据库，不自行执行 migration。
 
-### 10.3 审计存储边界
+### 10.3 普通 User 本地密码重置
+
+普通 User 遗失本地密码时，唯一管理入口是平台安全管理员持有的 `iam.local_account.reset` 能力及 `POST /platform/users/{id}/reset-password`。该入口只替换目标 User 已存在的 Local Account 密码，不创建新 User、Membership、Role Assignment 或第二套凭据表。
+
+重置必须在一个事务内完成：锁定目标 Principal 和 Local Account；要求 Principal 有效且不持有任何有效 Platform Role；要求新密码与当前密码不同；替换 Password Hash 并清除临时锁定；递增 `authorization_version`；撤销全部 Token Family；终止未消费的 MFA Challenge 和 Context Selection Ticket；写入 `iam.local_account.password_reset` 高风险审计。审计只记录目标 Principal、Local Account、原因、授权版本和撤销数量，不记录密码或 Hash。
+
+任何有效 Platform Role 持有人都不得通过该入口重置。平台三员知道当前密码时使用本人密码修改接口；三员凭据整体失效时只能使用离线 `iam-recovery prepare/apply`。不得用 User 更新接口、数据库 SQL、删除重建 User 或恢复 Bootstrap 旁路替代。
+
+### 10.4 三员凭据灾难恢复
+
+Bootstrap 永久完成后，如果三员密码或 TOTP 已全部不可用，不回退、删除或重建 `iam_bootstrap_state`，也不通过数据库直接修改 Password Hash。唯一恢复入口是与 System 同版本发布的离线 `iam-recovery prepare/apply` CLI；它不开放 HTTP API，不接受命令行参数、Manifest、环境变量或标准输入重定向中的密码、TOTP Secret、验证码和 Recovery Secret。
+
+恢复是三员整体灾难恢复，不是普通管理员重置密码：
+
+1. `prepare` 只允许在 Bootstrap 为永久 `completed`、三种内置平台角色各恰有一个有效 User Assignment、对应 Principal 和 Local Account 可恢复时执行；
+2. `prepare` 创建短期 `prepared` Recovery Attempt，生成 256 bit 随机 `addp_ir_...` Secret，只向 TTY 显示一次，数据库只保存 SHA-256 Hash；同一时刻最多存在一个未过期 Attempt；
+3. `apply` 用 Recovery Secret 锁定 Attempt，从数据库重新解析三种角色的唯一当前持有人，并从 TTY 为三人分别读取至少 14 字符且互不相同的新密码；
+4. `apply` 逐人在终端直接渲染新 TOTP 二维码，并显示仅供认证器“手动输入设置密钥/TOTP”入口使用的 Secret 备用值；短信/邮件激活入口不接受 TOTP Secret；随后要求连续两个不同时间窗口的有效验证码，证明新认证器已完成登记；
+5. 单个事务内替换三人的密码、停用旧 TOTP Credential、写入新 TOTP Credential、递增各自 `authorization_version`、撤销全部 Token Family、终止未消费的 MFA Challenge 与 Context Selection Ticket，并写入关键审计事件；
+6. 成功后销毁 Recovery Secret Hash，并将 Attempt 永久置为 `completed`；过期 Attempt 只能置为 `expired`，不能重新激活、删除或复用。
+
+恢复不改变 Principal、User、用户名、Role Assignment 或三员互斥事实。Principal 已暂停、停用，Local Account 已禁用，三员 Assignment 缺失/重复或三种角色并非三个不同 User 时，CLI 必须 fail closed；这些问题属于身份与授权治理，不能由凭据恢复旁路修复。Local Account 仅处于临时 `locked` 时，成功恢复可将其恢复为 `active` 并清除 `locked_until`。
+
+稳定审计事件为 `iam.recovery.prepared`、`iam.recovery.expired`、逐人的 `iam.recovery.administrator_credentials_replaced` 和整体 `iam.recovery.completed`，风险等级均为 `critical`。审计详情只包含 Attempt ID、Role Key、Principal ID、Authorization Version 和撤销数量，不记录任何 Secret、密码、Hash、TOTP URI 或验证码。
+
+构建与执行入口固定为：
+
+```bash
+make build-iam-recovery
+dist/release-$(go env GOOS)-$(go env GOARCH)/addp-iam-recovery prepare
+dist/release-$(go env GOOS)-$(go env GOARCH)/addp-iam-recovery apply
+```
+
+CLI 只接受已经由 System migration runner 迁移到当前版本的数据库，不自行执行 migration。
+
+### 10.5 审计存储边界
 
 `system.audit_logs` 是 IAM、OAuth 和通用操作审计的唯一持久化事实表，不建立第二张 IAM 或 OAuth 审计表。目标字段固定为：
 
@@ -676,6 +734,8 @@ principal_id is set     -> principal_type is set and matches principals.principa
 | `iam.authentication.succeeded \| failed` | medium | `last_authenticated_at` 成功更新或失败结果与审计同事务 |
 | `iam.password.rotated` | high | Password Hash、授权版本、全部有效 Token Family 撤销和审计同事务 |
 | `iam.tenant.created` | medium | Tenant 和审计同事务；不隐式创建 User 或管理员 |
+| `iam.tenant.initialized` | high | 既有 Tenant、首个 Membership、首个 `tenant.administrator` Assignment 和审计同事务 |
+| `iam.tenant_administrator.assigned` | high | 首位或后续 Tenant Administrator Assignment、授权版本和审计同事务；有效 Family 在 Refresh 轮换时推进版本 |
 | `iam.tenant_membership.established` | medium | Membership、授权版本、全部有效 Token Family 撤销和审计同事务 |
 | `iam.tenant_membership.suspended` | high | 同上 |
 | `iam.tenant_membership.ended` | critical | 同上 |
@@ -825,7 +885,7 @@ Principal -> Tenant Membership -> Role Assignment / Organization Membership -> T
 2. 校验目标状态、Tenant 一致性、Role 冲突和审批；
 3. 写入或撤销授权事实；
 4. 递增 `authorization_version`；
-5. 撤销受影响 Token Family；
+5. 身份、凭据、Tenant 或 Membership 失效时撤销受影响 Token Family；纯 Role/Assignment/组织授权变化由有效 Family 在下一次 Refresh Token 轮换中推进版本；
 6. 写入 IAM 审计事件；
 7. 提交。
 
@@ -870,11 +930,11 @@ ADDP 当前处于开发阶段，本次采用破坏性、一次性切换：
 
 IAM 模型迁移后必须从 `AutoMigrate` 列表移除相关表。GORM 只作为运行时 ORM，不能重新创建被显式 SQL 迁移删除的旧字段。
 
-## 十五、阶段实施顺序
+## 十五、阶段实施记录与后续边界
 
-以下代码阶段只能在第十七章 Fosite 决策门完成后开始。
+Fosite 决策门已完成。阶段 A 至 C 已落地并删除旧路径；阶段 D 是后续 IAM 建设，不得以兼容分支方式提前接入当前运行路径。
 
-### 阶段 A：数据基础
+### 阶段 A：数据基础（已完成）
 
 - 引入版本化 SQL migration runner；
 - 创建 Principal、User、账号、外部身份、Tenant Membership 和组织表；
@@ -883,7 +943,7 @@ IAM 模型迁移后必须从 `AutoMigrate` 列表移除相关表。GORM 只作�
 - 三员 Role 此时只完成注册，不创建可用 Assignment；
 - 完成数据库约束与并发测试。
 
-### 阶段 B：System IAM Service
+### 阶段 B：System IAM Service（已完成）
 
 - 重写用户、Tenant、组织和角色 Service；
 - 实现上下文选择、授权版本和 Token Family 绑定；
@@ -891,17 +951,18 @@ IAM 模型迁移后必须从 `AutoMigrate` 列表移除相关表。GORM 只作�
 - 删除旧 UserType、AuthService 和 SuperAdmin 判断；
 - 实现已确认的 `addp.auth_context/v1` Schema 和 Context Selection / Switch 契约。
 
-### 阶段 C：共享调用方切换
+### 阶段 C：共享调用方切换（已完成）
 
 - 更新 common 和 common-python AuthContext 类型；
 - 一次性迁移所有 owner 权限入口；
 - 删除旧 helper 和本地 JWT / `user_type` 逻辑；
 - 更新前端登录上下文选择和角色驱动导航。
 
-### 阶段 D：外部 IdP 与高级治理
+### 阶段 D：外部 IdP 与高级治理（后续阶段）
 
 - 实现 IdP Connection、预配和 JIT；
 - 扩展 Passkey、账号恢复和 Service Principal Credential；
+- 以单一安全闭环实现普通 User MFA 自助登记、已登录会话内 step-up 和高风险自我授权 AAL2 Guard；三者不得拆分上线；
 - 实现 Break-glass Grant、全局统计投影和完整三员管理控制台。
 
 ## 十六、已确认的技术决策

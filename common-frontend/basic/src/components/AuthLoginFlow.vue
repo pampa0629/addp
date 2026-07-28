@@ -180,8 +180,15 @@ async function execute(operation) {
   try {
     await operation()
   } catch (error) {
-    console.error('[AuthLoginFlow] Authentication failed:', error)
-    const message = error?.response?.data?.error ||
+    const status = error?.response?.status || error?.status
+    const unauthorizedMessage = status === 401
+      ? (step.value === 'credentials'
+          ? t('auth.login.invalidCredentials')
+          : step.value === 'mfa'
+            ? t('auth.login.invalidTotp')
+            : t('auth.login.failed'))
+      : ''
+    const message = unauthorizedMessage || error?.response?.data?.error ||
       (error?.request ? t('auth.login.networkError') : error?.message) ||
       t('auth.login.failed')
     ElMessage.error(message)

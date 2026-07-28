@@ -123,8 +123,8 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	// ============ 受保护的路由（需要 API Key 鉴权）============
 	api := router.Group("/api/v1")
 	api.Use(apiKeyAuthMiddleware.Handler())   // API Key 验证
+	api.Use(accessLoggerMiddleware.Handler()) // API Key 访问日志，包裹限流器以记录 429
 	api.Use(rateLimiterMiddleware.Handler())  // 限流
-	api.Use(accessLoggerMiddleware.Handler()) // 访问日志
 	{
 		registerModuleRoutes(api, systemProxy, moduleDiscovery)
 	}
@@ -178,6 +178,10 @@ func initDatabase(cfg *config.Config) *gorm.DB {
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		log.Printf("Failed to connect to database: %v (continuing without DB)", err)
+		return nil
+	}
+	if err := db.AutoMigrate(&middleware.AccessLog{}); err != nil {
+		log.Printf("Failed to migrate Gateway access log schema: %v (continuing without access log DB)", err)
 		return nil
 	}
 

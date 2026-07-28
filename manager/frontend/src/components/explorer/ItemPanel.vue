@@ -12,6 +12,17 @@
         {{ t('manager.explorer.previewTab') }}
       </button>
       <button
+        v-if="profileSupported"
+        class="item-tab-button"
+        :class="{ active: activeTab === 'profile' }"
+        type="button"
+        role="tab"
+        :aria-selected="activeTab === 'profile'"
+        @click="openProfileTab"
+      >
+        {{ t('manager.explorer.profileTab') }}
+      </button>
+      <button
         v-if="itemMeta"
         class="item-tab-button"
         :class="{ active: activeTab === 'attributes' }"
@@ -33,6 +44,19 @@
           @page-change="$emit('page-change', $event)"
           @navigate="$emit('navigate', $event)"
           @child-change="$emit('child-change', $event)"
+        />
+      </div>
+
+      <div
+        v-if="profileVisited && profileSupported"
+        v-show="activeTab === 'profile'"
+        class="profile-tab-pane"
+      >
+        <DataProfilePanel
+          :locator="selectedNode?.locator || selectedNode?.id || ''"
+          :child-name="selectedChildName"
+          :ref-path="selectedRefPath"
+          :nested-child-path="selectedNestedChildPath"
         />
       </div>
 
@@ -215,10 +239,12 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PreviewPanel from '@/components/explorer/PreviewPanel.vue'
 import { optionalCount, pickNestedCount } from '@/utils/metadataRowCount'
+
+const DataProfilePanel = defineAsyncComponent(() => import('@/components/explorer/DataProfilePanel.vue'))
 
 const { t } = useI18n()
 
@@ -231,6 +257,22 @@ const props = defineProps({
     type: Object,
     default: null
   },
+  profilePreviewData: {
+    type: Object,
+    default: null
+  },
+  selectedChildName: {
+    type: String,
+    default: ''
+  },
+  selectedRefPath: {
+    type: String,
+    default: ''
+  },
+  selectedNestedChildPath: {
+    type: String,
+    default: ''
+  },
   loading: {
     type: Boolean,
     default: false
@@ -240,14 +282,39 @@ const props = defineProps({
 defineEmits(['page-change', 'navigate', 'child-change'])
 
 const activeTab = ref('preview')
+const profileVisited = ref(false)
 const jsonDialogVisible = ref(false)
 
-watch(() => props.selectedNode?.locator, () => {
+watch(() => [
+  props.selectedNode?.locator,
+  props.selectedChildName,
+  props.selectedRefPath,
+  props.selectedNestedChildPath
+], () => {
   activeTab.value = 'preview'
+  profileVisited.value = false
   jsonDialogVisible.value = false
 })
 
 const itemMeta = computed(() => props.previewData?.item_meta)
+const selectedContentActive = computed(() => Boolean(
+  props.selectedChildName || props.selectedRefPath || props.selectedNestedChildPath
+))
+const profileSupported = computed(() => {
+  const preview = props.profilePreviewData || props.previewData
+  if (!preview || String(preview.mode || '').toLowerCase() !== 'table') return false
+  if (String(preview.preview_kind || '').toLowerCase().startsWith('graph_')) return false
+  if (selectedContentActive.value) return true
+  const itemAttribute = Array.isArray(preview.item_meta?.attributes)
+    ? preview.item_meta.attributes.find(attribute => attribute?.key === 'item')?.value
+    : null
+  return String(itemAttribute?.data_type || '').trim().toLowerCase() === 'table'
+})
+
+const openProfileTab = () => {
+  profileVisited.value = true
+  activeTab.value = 'profile'
+}
 
 const sectionOrder = [
   'item',
@@ -1178,6 +1245,13 @@ const compareKeys = (a, b, order) => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.profile-tab-pane {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .attributes-tab-pane {

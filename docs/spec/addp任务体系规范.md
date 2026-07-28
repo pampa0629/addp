@@ -33,6 +33,7 @@
 7. 产物状态归产物 owner 模块。
 8. Orchestrator 只编排任务能力，不拥有业务任务定义。
 9. Monitor 只聚合观察，不成为任务 owner。
+10. ad-hoc-only execution type 可以写入统一执行记录，但在没有持久任务定义前不得注册为 TaskProvider 能力或进入 Orchestrator 任务选择。
 
 ## 核心对象
 
@@ -130,6 +131,8 @@
 12. 对已有任务定义发起 execution 时，owner 必须在任务定义行锁保护下检查 active execution，并在同一事务创建唯一 pending execution。重跑还必须在该事务中完成运行材料、待处理结果和任务摘要的重置，不能先重置再进入第二次 claim。
 13. 取消操作只有在 owner 能定位并中断真实运行体、等待其停止并由运行体写入 `cancelled` 终态时才能成功；仅修改任务或 execution 状态属于伪取消，必须拒绝。
 
+ad-hoc execution 的 `task_type` 仍必须是 owner 模块内稳定的业务执行类型，但稳定 execution type 不等于 TaskProvider task type。只有 owner 已提供可保存的任务定义、标准任务列表 / 详情 / 执行接口并允许 Orchestrator 引用时，才能把该类型加入 `task_capabilities[]`。
+
 ## 执行状态枚举
 
 只允许以下状态：
@@ -176,7 +179,7 @@
 
 ## 模块任务类型
 
-Common 不维护全量业务 `task_type` 编译期枚举。`task_type` 由 owner 模块通过 TaskProvider capabilities 声明。
+Common 不维护全量业务 `task_type` 编译期枚举。稳定 execution type 由 owner 模块定义；只有具备持久任务定义并允许跨模块发现、引用和执行的任务类型，才由 owner 模块通过 TaskProvider capabilities 声明。
 
 平台内置模块第一阶段至少应能声明以下任务类型：
 
@@ -191,6 +194,8 @@ Common 不维护全量业务 `task_type` 编译期枚举。`task_type` 由 owner
 | Orchestrator | `orchestration` | `orchestrator.orchestrations` |
 
 Manager 的 `cad_preview_generation` 只接受 `data_type=cad + format=dwg|dxf + layout=single` 源 item；结果登记到 `manager.cad_previews`，manifest、thumbnail 和 WebP 瓦片存放于 Manager infra MinIO，不自动升格为业务 data item。
+
+Manager 表格数据剖析首期使用 `task_type=data_profiling` 的 ad-hoc execution，结果归 Manager 私有结果表，`source_task_id` 为空。首期不存在 `manager.data_profile_tasks`，因此 `data_profiling` 不加入上表的 TaskProvider 任务类型，不进入 Orchestrator 任务选择。未来只有在用户可以显式保存可重复剖析配置后，才能先更新数据剖析规范和本规范，再新增持久任务定义并声明 TaskProvider capability。`sample` / `full` 是 execution config 中的剖析模式，不得拆成两个 task type。
 
 System 资源回收（cleanup）不纳入 TaskProvider，也不进入 Orchestrator 编排。cleanup 属于系统级运维资源回收流程，不属于用户数据处理任务；但 cleanup 必须进入 `common.task_executions` 和 System 审计体系。System 创建 `module=system`、`task_type=cleanup` 的父 execution，各模块资源回收执行方创建 `task_type=cleanup_executor` 的子 execution，并通过 `parent_execution_id` 关联。cleanup 不得声明为可编排业务任务，不得出现在 Orchestrator 的任务选择列表中。
 
@@ -506,6 +511,8 @@ Develop 的 `create_url` / `edit_url` 必须指向具体开发方式的专属页
 TaskProvider 是模块的一种角色，不是独立业务 owner。System 保存 provider 注册信息，供 Orchestrator 和 Monitor 发现模块任务能力。
 
 TaskProvider 按模块注册，不按任务类型注册。一个模块只有一个 provider，并通过 `task_capabilities[]` 声明多个任务类型能力。
+
+`task_capabilities[]` 只声明已经存在持久任务定义并能通过标准任务 endpoint 被 Orchestrator 引用的类型。仅提供即时 API、没有任务定义的 ad-hoc execution type 不得为了统一监控而注册空任务列表或伪任务详情；它只需写入 `common.task_executions` 并由 owner 提供自身即时执行入口。
 
 ### Provider 基本字段
 
@@ -841,7 +848,7 @@ cleanup execution 属于系统运维执行记录。Monitor 必须能展示 clean
 
 ## 模块接入检查清单
 
-模块要纳入任务体系，至少满足：
+模块的持久任务定义要纳入 TaskProvider 和 Orchestrator，至少满足：
 
 - 有明确任务定义 owner。
 - 持久任务定义表只保存定义和最近执行摘要。
@@ -853,6 +860,8 @@ cleanup execution 属于系统运维执行记录。Monitor 必须能展示 clean
 - execution 能按 `module + task_type + source_task_id` 回查任务定义。
 - ad-hoc execution 保存完整 `execution_config`。
 - Swagger 和模块文档同步。
+
+ad-hoc-only execution 不要求存在任务定义或声明 TaskProvider capability，但必须有明确 execution owner、稳定 `task_type`、完整 `execution_config`、统一 execution 状态和 owner API 文档。没有 `source_task_id` 时不得伪造任务详情回查能力。
 
 ## 与相关文档的关系
 

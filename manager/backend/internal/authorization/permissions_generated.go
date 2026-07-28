@@ -8,6 +8,7 @@ const (
 	PermissionManagerDataItemCreate        = "manager.data_item.create"
 	PermissionManagerDataItemRead          = "manager.data_item.read"
 	PermissionManagerDataItemUpdate        = "manager.data_item.update"
+	PermissionManagerDataProfileExecute    = "manager.data_profile.execute"
 	PermissionManagerDerivedArtifactCreate = "manager.derived_artifact.create"
 	PermissionManagerDerivedArtifactDelete = "manager.derived_artifact.delete"
 	PermissionManagerDerivedArtifactRead   = "manager.derived_artifact.read"
@@ -20,6 +21,7 @@ var permissionKeys = [...]string{
 	"manager.data_item.create",
 	"manager.data_item.read",
 	"manager.data_item.update",
+	"manager.data_profile.execute",
 	"manager.derived_artifact.create",
 	"manager.derived_artifact.delete",
 	"manager.derived_artifact.read",

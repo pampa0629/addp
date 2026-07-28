@@ -520,7 +520,7 @@ LAS 是单资源原始点云格式，用于承载点云 header 解析、Meta att
 | `type_info.point_cloud` | `point_cloud_kind=raw_point_cloud`、点数、point format、维度数量、维度列表、三维包围盒、scale、offset、是否包含颜色 / intensity / classification 等跨格式点云摘要 |
 | `format_info.las` | LAS 版本、header size、offset to point data、point data record length、VLR / EVLR 数量、system identifier、generating software 等 LAS 私有事实 |
 | `capabilities.spatial` | CRS、空间参考定义、空间范围等可解析空间事实 |
-| `capabilities.statistics` | 分类分布、回波摘要、抽样规模、密度估算等可选画像事实 |
+| `capabilities.statistics` | Meta 扫描是否采样、采样规模等紧凑过程事实；不得写入分类分布、回波摘要或密度分析结果 |
 
 ### 消费要求
 
@@ -791,7 +791,7 @@ CSV / TSV 是单资源表格文件。字段名来自表头；无表头时由 par
 | `item` | `layout`、`data_type`、`format` |
 | `type_info.table` | `fields`、`row_count`、`primary_key`、`native.delimiter`、`native.has_header`、`native.quote_char`、`native.escape_char` |
 | `format_info.csv` / `format_info.tsv` | `encoding`、`line_ending`、文件级解析摘要等格式私有信息 |
-| `capabilities.statistics` | 采样统计、画像摘要、空值率等可选统计能力 |
+| `capabilities.statistics` | 字段结构推断所用的采样规模、是否采样、平均记录大小等 Meta 扫描过程事实；不得写入空值率等数据剖析结果 |
 
 ### 格式约束
 
@@ -852,7 +852,7 @@ Manager 可以基于 `type_info.container.children` 展示 sheet 列表；进入
 | `type_info.container` | 容器型 JSON 的内部对象摘要、默认入口、子对象数量 |
 | `format_info.json` | `structure`、编码、对象层级摘要等格式私有信息 |
 | `capabilities.spatial` | 仅记录值中严格解析出 WKB / EWKB 等几何字段时写入空间能力 |
-| `capabilities.statistics` | 是否采样、采样规模、动态结构推断方式等统计或画像事实 |
+| `capabilities.statistics` | 是否采样、采样规模、动态结构推断方式等 Meta 扫描过程事实 |
 
 ### 格式约束
 
@@ -884,7 +884,7 @@ GeoJSON 是单资源空间矢量表格式。`.geojson`、`application/geo+json`�
 | `type_info.table` | `properties` 字段、平台统一几何字段、`row_count` |
 | `format_info.geojson` | `structure`、原文显式 `bbox` / `crs`、`coordinate_range_out_of_wgs84`、属性摘要等 GeoJSON 格式私有事实 |
 | `capabilities.spatial` | 实际记录中发现 geometry 时写入几何字段、SRID / CRS、extent 等空间能力 |
-| `capabilities.statistics` | 是否采样、采样规模、动态结构推断方式等统计或画像事实 |
+| `capabilities.statistics` | 是否采样、采样规模、动态结构推断方式等 Meta 扫描过程事实 |
 
 ### 格式约束
 
@@ -1043,8 +1043,8 @@ Parquet、ORC、Avro 是表格型数据的文件格式，不应直接称为“�
 | `item` | `layout`、`data_type=table`、`format`、可选 `refs`、whole scope 的 `scope_exclusive` 和 `claim_policy` |
 | `type_info.table` | 字段、原始字段类型、行数或估算行数、`native.partition_columns` |
 | `format_info.<format>` | 文件 footer、编码、压缩、row group、schema 版本、manifest 摘要、scope 文件清单等格式私有信息 |
-| `capabilities.partitioning` | 分区数量、分区样例、分区范围等画像能力 |
-| `capabilities.statistics` | 可轻量获得的列统计、采样统计 |
+| `capabilities.partitioning` | 分区数量、分区样例、分区范围等分区事实 |
+| `capabilities.statistics` | Meta 扫描是否采样、采样规模等紧凑过程事实；格式 footer 的原生列统计保留在 `format_info.<format>`，不得旁路承载数据剖析结果 |
 
 `whole` item 的范围由 `meta_item.full_name` 表达，`item.scope_exclusive=true`、`item.claim_policy=whole_scope` 表达独占语义。`refs` 只包含规范认定的数据文件或 manifest 关键资源，不包含 `_SUCCESS`、`_metadata`、`_common_metadata`、CRC 等辅助文件，除非具体格式规范另有说明。
 

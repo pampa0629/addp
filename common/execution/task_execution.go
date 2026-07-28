@@ -20,7 +20,7 @@ type TaskExecution struct {
 
 	// 模块标识
 	Module   string `gorm:"size:50;not null;index:idx_task_executions_module_type" json:"module"`       // 'transfer'/'develop'/'orchestrator'/'manager'
-	TaskType string `gorm:"size:100;not null;index:idx_task_executions_module_type" json:"task_type"`   // provider 声明的稳定任务类型
+	TaskType string `gorm:"size:100;not null;index:idx_task_executions_module_type" json:"task_type"`   // 稳定执行类型；可来自任务定义或 ad-hoc execution
 	Source   string `gorm:"size:50;not null;default:'';index:idx_task_executions_source" json:"source"` // 触发来源模块
 
 	// 关联原始任务
@@ -158,6 +158,7 @@ const (
 	TaskTypePointCloudCOPCGeneration         = "point_cloud_copc_generation"
 	TaskTypeCADPreviewGeneration             = "cad_preview_generation"
 	TaskTypeEmbedding                        = "embedding"
+	TaskTypeDataProfiling                    = "data_profiling"
 	// Graph 模块
 	TaskTypeKGBuild = "kg_build"
 	// Quality 模块

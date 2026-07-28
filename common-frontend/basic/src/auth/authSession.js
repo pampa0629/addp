@@ -79,6 +79,18 @@ function isAuthFailure(error) {
   return error?.response?.status === 401 || error?.status === 401
 }
 
+function errorStatus(error) {
+  const status = Number(error?.response?.status || error?.status || 0)
+  return Number.isInteger(status) && status > 0 ? status : 0
+}
+
+function createSessionError(message, code, status = 0) {
+  const error = new Error(message)
+  error.code = code
+  if (status) error.status = status
+  return error
+}
+
 function createChannel(onMessage) {
   if (!isBrowser() || typeof BroadcastChannel === 'undefined' || isEmbedded()) return null
   const channel = new BroadcastChannel(CHANNEL_NAME)
@@ -208,11 +220,28 @@ export function createBrowserAuthSession({ refresh, revoke } = {}) {
     }
     if (message.type === 'addp-auth-logout') {
       clearToken({ broadcastEvent: false, source: 'parent' })
+      const error = createSessionError(
+        'parent_session_unavailable',
+        message.error_code || 'authentication_required',
+        401
+      )
       parentRequestResolvers.forEach(({ reject, timer }) => {
         clearTimeout(timer)
-        reject(new Error('parent_session_unavailable'))
+        reject(error)
       })
       parentRequestResolvers.clear()
+      return
+    }
+    if (message.type === 'addp-auth-error') {
+      const pending = parentRequestResolvers.get(message.requestId)
+      if (!pending) return
+      parentRequestResolvers.delete(message.requestId)
+      clearTimeout(pending.timer)
+      pending.reject(createSessionError(
+        'parent_session_refresh_failed',
+        message.error_code || 'session_refresh_failed',
+        Number(message.status || 0)
+      ))
     }
   }
 
@@ -266,8 +295,10 @@ export function createBrowserAuthSession({ refresh, revoke } = {}) {
       if (!force && isUsableToken()) return runtimeToken
       if (runtimeExpiresAt > observedExpiresAt && isUsableToken()) return runtimeToken
 
-      const peerToken = await requestPeerToken(100)
-      if (peerToken && isUsableToken()) return peerToken
+      if (!force) {
+        const peerToken = await requestPeerToken(100)
+        if (peerToken && isUsableToken()) return peerToken
+      }
       if (typeof refresh !== 'function') throw new Error('auth_refresh_not_configured')
 
       try {
@@ -389,8 +420,24 @@ export function createIframeAuthCoordinator({ allowedOrigins, getToken, getExpir
       if (message.type === 'addp-auth-refresh-request' || !getToken()) {
         try {
           await refreshToken({ force: true })
-        } catch {
-          event.source.postMessage({ protocol: PROTOCOL, type: 'addp-auth-logout' }, event.origin)
+        } catch (error) {
+          if (isAuthFailure(error)) {
+            event.source.postMessage({
+              protocol: PROTOCOL,
+              type: 'addp-auth-logout',
+              requestId: message.requestId,
+              error_code: 'authentication_required'
+            }, event.origin)
+          } else {
+            const status = errorStatus(error)
+            event.source.postMessage({
+              protocol: PROTOCOL,
+              type: 'addp-auth-error',
+              requestId: message.requestId,
+              error_code: 'session_refresh_failed',
+              ...(status ? { status } : {})
+            }, event.origin)
+          }
           return
         }
       }
@@ -404,7 +451,11 @@ export function createIframeAuthCoordinator({ allowedOrigins, getToken, getExpir
   const unsubscribe = subscribeAccessToken(({ token }) => {
     clients.forEach((origin, target) => {
       if (token) sendToken(target, origin)
-      else target.postMessage({ protocol: PROTOCOL, type: 'addp-auth-logout' }, origin)
+      else target.postMessage({
+        protocol: PROTOCOL,
+        type: 'addp-auth-logout',
+        error_code: 'authentication_required'
+      }, origin)
     })
   })
 

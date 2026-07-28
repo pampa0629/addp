@@ -229,7 +229,7 @@ func (s *Storage) GetRefreshTokenSession(
 	}
 	if token.RevokedAt != nil || token.ReuseDetectedAt != nil || family.RevokedAt != nil ||
 		!token.ExpiresAt.After(s.now()) || !family.ExpiresAt.After(s.now()) ||
-		!s.familyAuthorizationIsCurrent(ctx, family) {
+		!s.familyAuthorizationCanRotate(ctx, family) {
 		return requester, fosite.ErrNotFound
 	}
 	return requester, nil
@@ -271,7 +271,8 @@ func (s *Storage) RotateRefreshToken(ctx context.Context, requestID string, refr
 	if err != nil || familySnapshot.ProtocolRequestID == nil || *familySnapshot.ProtocolRequestID != parsedRequestID {
 		return fosite.ErrNotFound
 	}
-	if _, err := repository.LockPrincipal(ctx, familySnapshot.PrincipalID); err != nil {
+	principal, err := repository.LockPrincipal(ctx, familySnapshot.PrincipalID)
+	if err != nil {
 		return repositoryErrorToFosite(err)
 	}
 	family, err := repository.LockRefreshTokenFamily(ctx, familySnapshot.ID)
@@ -287,12 +288,34 @@ func (s *Storage) RotateRefreshToken(ctx context.Context, requestID string, refr
 		!token.ExpiresAt.After(s.now()) || !family.ExpiresAt.After(s.now()) {
 		return fosite.ErrSerializationFailure
 	}
+	contextActive, err := repository.RefreshTokenFamilyContextIsActive(ctx, principal, family, s.now())
+	if err != nil {
+		return repositoryErrorToFosite(err)
+	}
+	if !contextActive || family.IssuedAuthorizationVersion > principal.AuthorizationVersion {
+		return fosite.ErrNotFound
+	}
 	accessToken, err := repository.LockAccessToken(ctx, token.IssuedAccessTokenID)
 	if err != nil {
 		return repositoryErrorToFosite(err)
 	}
 	if accessToken.FamilyID != family.ID || accessToken.RevokedAt != nil {
 		return fosite.ErrSerializationFailure
+	}
+	if family.IssuedAuthorizationVersion < principal.AuthorizationVersion {
+		previousVersion := family.IssuedAuthorizationVersion
+		if err := repository.AdvanceRefreshTokenFamilyAuthorizationVersion(ctx, family.ID, principal.AuthorizationVersion); err != nil {
+			return repositoryErrorToFosite(err)
+		}
+		family.IssuedAuthorizationVersion = principal.AuthorizationVersion
+		updateTransactionAudit(ctx, func(event *iam.AuditEvent) {
+			if event.Details == nil {
+				event.Details = make(map[string]any)
+			}
+			event.Details["previous_authorization_version"] = previousVersion
+			event.Details["authorization_version"] = principal.AuthorizationVersion
+			event.Details["authorization_version_advanced"] = true
+		})
 	}
 	now := s.now()
 	if err := repository.MarkRefreshTokenUsed(ctx, token.ID, now); err != nil {
@@ -479,6 +502,19 @@ func (s *Storage) familyAuthorizationIsCurrent(ctx context.Context, family *iam.
 	principal, err := iam.NewRepository(s.dbFromContext(ctx)).GetPrincipal(ctx, family.PrincipalID)
 	return err == nil && principal.Status == iam.PrincipalStatusActive &&
 		principal.AuthorizationVersion == family.IssuedAuthorizationVersion
+}
+
+func (s *Storage) familyAuthorizationCanRotate(ctx context.Context, family *iam.RefreshTokenFamily) bool {
+	if family == nil {
+		return false
+	}
+	repository := iam.NewRepository(s.dbFromContext(ctx))
+	principal, err := repository.GetPrincipal(ctx, family.PrincipalID)
+	if err != nil || family.IssuedAuthorizationVersion > principal.AuthorizationVersion {
+		return false
+	}
+	active, err := repository.RefreshTokenFamilyContextIsActive(ctx, principal, family, s.now())
+	return err == nil && active
 }
 
 func repositoryErrorToFosite(err error) error {

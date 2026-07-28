@@ -23,9 +23,10 @@
       </el-table-column>
       <el-table-column prop="authorization_version" :label="t('system.iam.users.authVersion')" width="130" />
       <el-table-column :label="t('system.iam.common.updatedAt')" width="180"><template #default="{ row }">{{ formatDate(row.updated_at) }}</template></el-table-column>
-      <el-table-column :label="t('system.iam.common.actions')" width="250" fixed="right">
+      <el-table-column :label="t('system.iam.common.actions')" width="360" fixed="right">
         <template #default="{ row }">
           <el-button v-if="can('iam.user.update') && row.status !== 'deactivated'" link type="primary" :icon="Edit" @click="openEdit(row)">{{ t('system.iam.common.edit') }}</el-button>
+          <el-button v-if="canResetPassword(row)" link type="primary" :icon="Key" @click="openPasswordReset(row)">{{ t('system.iam.users.resetPassword') }}</el-button>
           <el-button v-if="can('iam.user.suspend') && row.status === 'active'" link type="warning" :icon="VideoPause" @click="openLifecycle(row, 'suspend')">{{ t('system.iam.common.suspend') }}</el-button>
           <el-button v-if="can('iam.user.reactivate') && row.status === 'suspended'" link type="success" :icon="RefreshLeft" @click="openLifecycle(row, 'reactivate')">{{ t('system.iam.common.reactivate') }}</el-button>
         </template>
@@ -49,6 +50,24 @@
       <template #footer><el-button @click="dialogVisible = false">{{ t('system.iam.common.cancel') }}</el-button><el-button type="primary" :loading="submitting" @click="submit">{{ t('system.iam.common.save') }}</el-button></template>
     </el-dialog>
 
+    <el-dialog v-model="passwordResetVisible" :title="t('system.iam.users.resetPassword')" width="520px">
+      <el-form ref="passwordResetFormRef" :model="passwordReset" :rules="passwordResetRules" label-position="top">
+        <el-form-item :label="t('system.iam.users.newPassword')" prop="new_password">
+          <el-input v-model="passwordReset.new_password" type="password" show-password autocomplete="new-password" />
+        </el-form-item>
+        <el-form-item :label="t('system.iam.users.confirmPassword')" prop="confirm_password">
+          <el-input v-model="passwordReset.confirm_password" type="password" show-password autocomplete="new-password" />
+        </el-form-item>
+        <el-form-item :label="t('system.iam.common.reason')" prop="reason">
+          <el-input v-model="passwordReset.reason" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="passwordResetVisible = false">{{ t('system.iam.common.cancel') }}</el-button>
+        <el-button type="primary" :loading="submitting" @click="submitPasswordReset">{{ t('system.iam.users.resetPassword') }}</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="lifecycleVisible" :title="t(`system.iam.common.${lifecycle.action}`)" width="520px">
       <el-form label-position="top">
         <el-form-item :label="t('system.iam.common.reason')" required><el-input v-model="lifecycle.reason" type="textarea" :rows="3" /></el-form-item>
@@ -62,7 +81,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Edit, Plus, Refresh, RefreshLeft, Search, VideoPause } from '@element-plus/icons-vue'
+import { Edit, Key, Plus, Refresh, RefreshLeft, Search, VideoPause } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
@@ -82,12 +101,28 @@ const dialogVisible = ref(false)
 const editing = ref(null)
 const formRef = ref()
 const form = reactive({ display_name: '', primary_email: '', locale: 'zh-cn', username: '', password: '' })
+const passwordResetVisible = ref(false)
+const passwordResetFormRef = ref()
+const passwordReset = reactive({ row: null, new_password: '', confirm_password: '', reason: '' })
 const lifecycleVisible = ref(false)
 const lifecycle = reactive({ row: null, action: 'suspend', reason: '', change_request_id: '' })
 const rules = computed(() => ({
   display_name: [{ required: true, message: t('system.iam.validation.required'), trigger: 'blur' }],
   username: [{ required: !editing.value, message: t('system.iam.validation.required'), trigger: 'blur' }],
   password: [{ required: !editing.value, message: t('system.iam.validation.required'), trigger: 'blur' }]
+}))
+const passwordResetRules = computed(() => ({
+  new_password: [{ required: true, message: t('system.iam.validation.required'), trigger: 'blur' }],
+  confirm_password: [
+    { required: true, message: t('system.iam.validation.required'), trigger: 'blur' },
+    {
+      validator: (_rule, value, callback) => value === passwordReset.new_password
+        ? callback()
+        : callback(new Error(t('system.iam.users.passwordMismatch'))),
+      trigger: ['blur', 'change']
+    }
+  ],
+  reason: [{ required: true, message: t('system.iam.validation.required'), trigger: 'blur' }]
 }))
 
 function statusLabel(status) { return t(`system.iam.status.${status}`) }
@@ -109,6 +144,30 @@ function openEdit(row) {
   editing.value = row
   Object.assign(form, { display_name: row.display_name, primary_email: row.primary_email || '', locale: row.locale || 'zh-cn', username: '', password: '' })
   dialogVisible.value = true
+}
+function canResetPassword(row) {
+  return can('iam.local_account.reset') && row.local_account?.password_reset_allowed === true
+}
+function openPasswordReset(row) {
+  Object.assign(passwordReset, { row, new_password: '', confirm_password: '', reason: '' })
+  passwordResetVisible.value = true
+}
+async function submitPasswordReset() {
+  await passwordResetFormRef.value?.validate()
+  submitting.value = true
+  try {
+    await iamAPI.platformUsers.resetPassword(passwordReset.row.id, {
+      new_password: passwordReset.new_password,
+      reason: passwordReset.reason.trim()
+    })
+    ElMessage.success(t('system.iam.users.passwordResetSuccess'))
+    passwordResetVisible.value = false
+    await load()
+  } catch (error) {
+    if (error !== false) ElMessage.error(error.response?.data?.error || t('system.iam.users.passwordResetFailed'))
+  } finally {
+    submitting.value = false
+  }
 }
 async function submit() {
   await formRef.value?.validate()

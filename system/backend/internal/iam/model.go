@@ -45,6 +45,14 @@ const (
 	IAMBootstrapStatusCompleted IAMBootstrapStatus = "completed"
 )
 
+type IAMRecoveryStatus string
+
+const (
+	IAMRecoveryStatusPrepared  IAMRecoveryStatus = "prepared"
+	IAMRecoveryStatusCompleted IAMRecoveryStatus = "completed"
+	IAMRecoveryStatusExpired   IAMRecoveryStatus = "expired"
+)
+
 type TenantStatus string
 
 const (
@@ -193,6 +201,8 @@ type MFAChallenge struct {
 	ID                         int64          `gorm:"primaryKey;autoIncrement"`
 	TokenHash                  string         `gorm:"column:token_hash;not null;unique"`
 	PrincipalID                int64          `gorm:"column:principal_id;not null"`
+	Purpose                    string         `gorm:"column:purpose;not null"`
+	SourceFamilyID             *int64         `gorm:"column:source_family_id"`
 	IssuedAuthorizationVersion int64          `gorm:"column:issued_authorization_version;not null"`
 	AuthenticationMethods      pq.StringArray `gorm:"column:authentication_methods;type:text[];not null"`
 	AuthenticatedAt            time.Time      `gorm:"column:authenticated_at;not null"`
@@ -203,6 +213,23 @@ type MFAChallenge struct {
 }
 
 func (MFAChallenge) TableName() string { return "system.mfa_challenges" }
+
+type MFAEnrollment struct {
+	ID                         int64      `gorm:"primaryKey;autoIncrement"`
+	TokenHash                  string     `gorm:"column:token_hash;not null;unique"`
+	PrincipalID                int64      `gorm:"column:principal_id;not null"`
+	SourceFamilyID             int64      `gorm:"column:source_family_id;not null"`
+	IssuedAuthorizationVersion int64      `gorm:"column:issued_authorization_version;not null"`
+	SecretCiphertext           []byte     `gorm:"column:secret_ciphertext;not null"`
+	SecretNonce                []byte     `gorm:"column:secret_nonce;not null"`
+	KeyVersion                 int        `gorm:"column:key_version;not null"`
+	ExpiresAt                  time.Time  `gorm:"column:expires_at;not null"`
+	FailedAttempts             int        `gorm:"column:failed_attempts;not null"`
+	ConsumedAt                 *time.Time `gorm:"column:consumed_at"`
+	CreatedAt                  time.Time  `gorm:"column:created_at;autoCreateTime"`
+}
+
+func (MFAEnrollment) TableName() string { return "system.mfa_enrollments" }
 
 type IAMBootstrapState struct {
 	Singleton   bool               `gorm:"column:singleton;primaryKey"`
@@ -215,17 +242,74 @@ type IAMBootstrapState struct {
 
 func (IAMBootstrapState) TableName() string { return "system.iam_bootstrap_state" }
 
+type IAMRecoveryAttempt struct {
+	ID          int64             `gorm:"primaryKey;autoIncrement"`
+	SecretHash  *string           `gorm:"column:secret_hash"`
+	Status      IAMRecoveryStatus `gorm:"column:status;not null"`
+	PreparedAt  time.Time         `gorm:"column:prepared_at;not null"`
+	ExpiresAt   time.Time         `gorm:"column:expires_at;not null"`
+	CompletedAt *time.Time        `gorm:"column:completed_at"`
+	ExpiredAt   *time.Time        `gorm:"column:expired_at"`
+	CreatedAt   time.Time         `gorm:"column:created_at;autoCreateTime"`
+}
+
+func (IAMRecoveryAttempt) TableName() string { return "system.iam_recovery_attempts" }
+
 type Tenant struct {
-	ID          int64        `gorm:"primaryKey;autoIncrement"`
-	Code        string       `gorm:"column:code;not null;unique"`
-	Name        string       `gorm:"column:name;not null"`
-	Description string       `gorm:"column:description;not null"`
-	Status      TenantStatus `gorm:"column:status;not null;default:active"`
-	CreatedAt   time.Time    `gorm:"column:created_at;autoCreateTime"`
-	UpdatedAt   time.Time    `gorm:"column:updated_at;autoUpdateTime"`
+	ID                       int64        `gorm:"primaryKey;autoIncrement"`
+	Code                     string       `gorm:"column:code;not null;unique"`
+	Name                     string       `gorm:"column:name;not null"`
+	Description              string       `gorm:"column:description;not null"`
+	Status                   TenantStatus `gorm:"column:status;not null;default:active"`
+	InitializedAt            *time.Time   `gorm:"column:initialized_at"`
+	InitializedByPrincipalID *int64       `gorm:"column:initialized_by_principal_id"`
+	CreatedAt                time.Time    `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt                time.Time    `gorm:"column:updated_at;autoUpdateTime"`
 }
 
 func (Tenant) TableName() string { return "system.tenants" }
+
+type Role struct {
+	ID                    int64          `gorm:"primaryKey;autoIncrement"`
+	TenantID              *int64         `gorm:"column:tenant_id"`
+	RoleKey               string         `gorm:"column:role_key;not null"`
+	Name                  *string        `gorm:"column:name"`
+	Description           *string        `gorm:"column:description"`
+	NameI18nKey           *string        `gorm:"column:name_i18n_key"`
+	DescriptionI18nKey    *string        `gorm:"column:description_i18n_key"`
+	RoleType              string         `gorm:"column:role_type;not null"`
+	AllowedScopeTypes     pq.StringArray `gorm:"column:allowed_scope_types;type:text[];not null"`
+	AllowedPrincipalTypes pq.StringArray `gorm:"column:allowed_principal_types;type:text[];not null"`
+	Immutable             bool           `gorm:"column:immutable;not null"`
+	Status                string         `gorm:"column:status;not null"`
+	CreatedByPrincipalID  *int64         `gorm:"column:created_by_principal_id"`
+	CreatedAt             time.Time      `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt             time.Time      `gorm:"column:updated_at;autoUpdateTime"`
+}
+
+func (Role) TableName() string { return "system.roles" }
+
+type RoleAssignment struct {
+	ID                   int64      `gorm:"primaryKey;autoIncrement"`
+	PrincipalID          int64      `gorm:"column:principal_id;not null"`
+	RoleID               int64      `gorm:"column:role_id;not null"`
+	ScopeType            string     `gorm:"column:scope_type;not null"`
+	TenantID             *int64     `gorm:"column:tenant_id"`
+	DepartmentID         *int64     `gorm:"column:department_id"`
+	ProjectGroupID       *int64     `gorm:"column:project_group_id"`
+	Status               string     `gorm:"column:status;not null"`
+	ValidFrom            time.Time  `gorm:"column:valid_from;not null"`
+	ValidUntil           *time.Time `gorm:"column:valid_until"`
+	SourceType           string     `gorm:"column:source_type;not null"`
+	CreatedByPrincipalID *int64     `gorm:"column:created_by_principal_id"`
+	RevokedByPrincipalID *int64     `gorm:"column:revoked_by_principal_id"`
+	RevokedAt            *time.Time `gorm:"column:revoked_at"`
+	Reason               string     `gorm:"column:reason;not null"`
+	CreatedAt            time.Time  `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt            time.Time  `gorm:"column:updated_at;autoUpdateTime"`
+}
+
+func (RoleAssignment) TableName() string { return "system.role_assignments" }
 
 type TenantMembership struct {
 	ID                   int64                  `gorm:"primaryKey;autoIncrement"`

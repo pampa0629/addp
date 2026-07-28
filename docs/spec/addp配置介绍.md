@@ -379,7 +379,7 @@ docker-compose up -d
 
 目标 IAM 不创建默认 `SuperAdmin`、默认租户或弱密码账号，也不接受通过环境变量开启公开注册。平台系统管理员、安全管理员和审计管理员只能通过一次性离线 Bootstrap 建立；Bootstrap 完成后永久关闭，后续平台高权限身份变更统一走双人审批。
 
-Bootstrap 使用离线 `iam-bootstrap prepare/apply` 两阶段命令，Secret 和三员密码只通过 TTY 输入；具体输入、强 MFA 激活和审计要求以 `docs/next/addp-IAM目标数据模型设计.md` 与 `docs/next/addp-IAM PostgreSQL迁移与首批DDL设计.md` 为准。
+Bootstrap 使用离线 `iam-bootstrap prepare/apply` 两阶段命令；已完成 Bootstrap 后三员整体凭据丢失时，使用离线 `iam-recovery prepare/apply` 恢复。Secret 和三员密码只通过 TTY 输入，具体步骤见 `docs/guide/addp IAM三员初始化操作指南.md`。
 
 
 **数据持久化**:
@@ -398,17 +398,12 @@ Bootstrap 使用离线 `iam-bootstrap prepare/apply` 两阶段命令，Secret �
 
 ## API 端点摘要
 
-**公开**:
+**公开认证与邀请入会**:
 
-- `POST /api/v1/system/login` - 登录
-- `POST /api/v1/system/register` - 注册
+- `POST /api/v1/system/login` - 本地账号登录
+- `POST /api/v1/system/auth/mfa-verifications` - MFA 验证
+- `POST /api/v1/system/tenant/invitations/registrations` - 持有有效邀请的新用户注册
 
-**受保护**（需要 User Access Token）:
-
-- `GET /api/v1/system/users/me` - 当前用户
-- `GET /api/v1/system/users` - 列出用户
-- `GET/PUT/DELETE /api/v1/system/users/:id` - 用户 CRUD
-- `GET /api/v1/system/logs` - 审计日志 (支持 `?user_id=X` 过滤)
-- `POST/GET/PUT/DELETE /api/v1/system/engines` - 引擎 CRUD (支持 `?engine_type=X` 过滤)
+System 不提供公开 `/register`。平台 IAM 管理使用 `/platform/*`，Tenant IAM 管理使用 `/tenant/*`，当前用户自服务使用 `/users/me`，OAuth 2.0 使用 `/oauth/*`。完整端点与权限元数据以 System Swagger 为准。
 
 **另请参阅**: 本文即为当前配置中心与环境变量说明入口。
