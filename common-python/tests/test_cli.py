@@ -188,6 +188,28 @@ def test_auth_status_distinguishes_missing_login_from_service_failure(capsys):
     assert json.loads(capsys.readouterr().out)["error"]["code"] == "authentication_unavailable"
 
 
+def test_auth_keyring_failure_does_not_expose_backend_message(capsys):
+    secret = "addp_rt_keyring_error_must_not_reach_terminal"
+
+    async def unavailable_keyring(_base_url):
+        raise cli.keyring.errors.KeyringError(secret)
+
+    with patch.object(cli, "refresh_access_token", unavailable_keyring):
+        code = asyncio.run(cli._run(argparse.Namespace(
+            group="auth",
+            command="status",
+            base_url="http://gateway",
+        )))
+
+    captured = capsys.readouterr()
+    assert code == cli.EXIT_EXECUTION_FAILED
+    assert json.loads(captured.out)["error"] == {
+        "code": "authentication_unavailable",
+        "message": "无法访问操作系统凭据存储",
+    }
+    assert secret not in captured.out + captured.err
+
+
 def test_version_is_one_json_document(capsys):
     with pytest.raises(SystemExit) as exited:
         cli._parser().parse_args(["--version"])

@@ -164,13 +164,19 @@ async def _run(args: argparse.Namespace) -> int:
             context = await _resolve_authentication(args.base_url, result.access_token)
             _write_json(_authentication_summary(args.base_url, context))
             return EXIT_OK
-        except (OAuthLoginError, keyring.errors.KeyringError) as exc:
+        except OAuthLoginError as exc:
             error_code = "authentication_failed"
             if args.command == "status":
                 error_code = "authentication_unavailable"
             elif args.command == "logout":
                 error_code = "logout_failed"
             _write_json({"error": {"code": error_code, "message": str(exc)}})
+            return EXIT_EXECUTION_FAILED
+        except keyring.errors.KeyringError:
+            error_code = "authentication_unavailable" if args.command == "status" else "authentication_failed"
+            if args.command == "logout":
+                error_code = "logout_failed"
+            _write_json({"error": {"code": error_code, "message": "无法访问操作系统凭据存储"}})
             return EXIT_EXECUTION_FAILED
 
     if args.group == "tools" and args.command == "list":

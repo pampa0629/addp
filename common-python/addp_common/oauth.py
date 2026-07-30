@@ -21,6 +21,21 @@ KEYRING_SERVICE = "addp-cli"
 DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
 AUTHORIZATION_TIMEOUT_SECONDS = 300
 CALLBACK_PATH = "/callback"
+OAUTH_ERROR_CODES = frozenset({
+    "access_denied",
+    "authorization_pending",
+    "expired_token",
+    "invalid_client",
+    "invalid_grant",
+    "invalid_request",
+    "invalid_scope",
+    "server_error",
+    "slow_down",
+    "temporarily_unavailable",
+    "unauthorized_client",
+    "unsupported_grant_type",
+    "unsupported_response_type",
+})
 
 
 class OAuthLoginError(RuntimeError):
@@ -75,8 +90,13 @@ def _oauth_error(response: httpx.Response, default: str = "oauth_request_failed"
         payload = _oauth_payload(response)
     except OAuthLoginError:
         return default
-    error = payload.get("error")
-    return error if isinstance(error, str) and error else default
+    return _safe_oauth_error_code(payload.get("error"), default)
+
+
+def _safe_oauth_error_code(value: object, default: str) -> str:
+    if isinstance(value, str) and value in OAUTH_ERROR_CODES:
+        return value
+    return default
 
 
 def _oauth_string(payload: dict, field: str) -> str:
@@ -335,7 +355,7 @@ class _CallbackHandler(http.server.BaseHTTPRequestHandler):
             self.server.code = codes[0]
             success = True
         elif len(errors) == 1 and errors[0] and not codes:
-            self.server.error = errors[0]
+            self.server.error = _safe_oauth_error_code(errors[0], "oauth_request_failed")
         else:
             self.server.error = "invalid_authorization_response"
 

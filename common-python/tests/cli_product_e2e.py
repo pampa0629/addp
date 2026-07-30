@@ -227,6 +227,8 @@ class OAuthHandler(BaseHTTPRequestHandler):
         with self.server.fixture.lock:
             request = self.server.fixture.authorization_codes.pop(form.get("code", ""), None)
             verifier = form.get("code_verifier", "")
+            if verifier:
+                self.server.fixture.sensitive_values.add(verifier)
             challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
             if request is None or form.get("redirect_uri") != request["redirect_uri"] or challenge != request["challenge"]:
                 self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid_grant"})
@@ -349,36 +351,87 @@ def run_browser(url: str) -> int:
     return 0
 
 
-def run_command(command: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
+def assert_command_succeeded(result: subprocess.CompletedProcess[str], operation: str) -> None:
     if result.returncode != 0:
-        raise AssertionError(
-            f"command failed ({result.returncode}): {' '.join(command)}\nstdout={result.stdout}\nstderr={result.stderr}"
-        )
+        raise AssertionError(f"{operation} failed: exit_code={result.returncode}")
+
+
+def capture_command(
+    command: list[str], env: dict[str, str], operation: str
+) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired:
+        raise AssertionError(f"{operation} timed out") from None
+
+
+def run_command(
+    command: list[str], env: dict[str, str], operation: str
+) -> subprocess.CompletedProcess[str]:
+    result = capture_command(command, env, operation)
+    assert_command_succeeded(result, operation)
     return result
+
+
+def collect_process(
+    process: subprocess.Popen[str], operation: str
+) -> subprocess.CompletedProcess[str]:
+    try:
+        stdout, stderr = process.communicate(timeout=30)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.communicate()
+        raise AssertionError(f"{operation} timed out") from None
+    return subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
 
 
 def parse_json_output(result: subprocess.CompletedProcess[str]) -> dict[str, Any]:
     lines = result.stdout.splitlines()
     if len(lines) != 1:
-        raise AssertionError(f"stdout is not one JSON document: {result.stdout!r}")
-    payload = json.loads(lines[0])
+        raise AssertionError(f"stdout is not one JSON document: document_count={len(lines)}")
+    try:
+        payload = json.loads(lines[0])
+    except (TypeError, ValueError):
+        raise AssertionError("stdout is not valid JSON") from None
     if not isinstance(payload, dict):
-        raise AssertionError(f"stdout JSON is not an object: {payload!r}")
+        raise AssertionError(f"stdout JSON is not an object: json_type={type(payload).__name__}")
     return payload
 
 
 def assert_context(payload: dict[str, Any], tenant_id: str, membership_id: str) -> None:
     expected = {"type": "tenant", "tenant_id": tenant_id, "tenant_membership_id": membership_id}
     if payload.get("context") != expected or payload.get("client", {}).get("client_id") != CLIENT_ID:
-        raise AssertionError(f"unexpected authoritative context: {payload!r}")
+        raise AssertionError("authoritative context did not match the approved OAuth context")
+
+
+def assert_manual_token_rejected(result: subprocess.CompletedProcess[str]) -> None:
+    if result.returncode != 2:
+        raise AssertionError(f"manual access token was not rejected: exit_code={result.returncode}")
+    if parse_json_output(result).get("error", {}).get("code") != "invalid_command":
+        raise AssertionError("manual access token rejection returned an unexpected error code")
+
+
+def assert_refresh_process_succeeded(result: subprocess.CompletedProcess[str]) -> None:
+    assert_command_succeeded(result, "cross-process refresh")
+    if parse_json_output(result) != {"refreshed": True}:
+        raise AssertionError("cross-process refresh returned an unexpected result")
+
+
+def assert_refresh_rotation_serialized(refresh_tokens: list[str]) -> None:
+    token_count = len(refresh_tokens)
+    distinct_token_count = len(set(refresh_tokens))
+    if token_count != 2 or distinct_token_count != 2:
+        raise AssertionError(
+            "refresh rotation was not serialized across processes: "
+            f"submission_count={token_count}, distinct_token_count={distinct_token_count}"
+        )
 
 
 def assert_no_secrets(results: list[subprocess.CompletedProcess[str]], fixture: OAuthFixture) -> None:
     terminal = "".join(result.stdout + result.stderr for result in results)
-    leaked = sorted(value for value in fixture.sensitive_values if value and value in terminal)
-    if leaked:
-        raise AssertionError(f"OAuth secrets reached terminal output: {leaked!r}")
+    leaked_count = sum(1 for value in fixture.sensitive_values if value and value in terminal)
+    if leaked_count:
+        raise AssertionError(f"OAuth secrets reached terminal output: leaked_secret_count={leaked_count}")
 
 
 def main(addp: Path) -> int:
@@ -414,26 +467,21 @@ def main(addp: Path) -> int:
             pass
 
         manual_token = fixture.secret("addp_at_manual_e2e_")
-        rejected_manual_token = subprocess.run(
+        rejected_manual_token = capture_command(
             [str(addp), "--token", manual_token, "tools", "list"],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=30,
+            env,
+            "manual access token rejection",
         )
         results.append(rejected_manual_token)
-        if rejected_manual_token.returncode != 2:
-            raise AssertionError(f"manual access token was not rejected: {rejected_manual_token!r}")
-        if parse_json_output(rejected_manual_token).get("error", {}).get("code") != "invalid_command":
-            raise AssertionError(f"manual access token rejection is unstable: {rejected_manual_token!r}")
+        assert_manual_token_rejected(rejected_manual_token)
 
-        browser_login = run_command([str(addp), "auth", "login"], env)
+        browser_login = run_command([str(addp), "auth", "login"], env, "browser login")
         results.append(browser_login)
         assert_context(parse_json_output(browser_login), "101", "1001")
         if not keyring.get_password(KEYRING_SERVICE, fixture.base_url):
             raise AssertionError("browser login did not persist the refresh token in OS Keychain")
 
-        browser_status = run_command([str(addp), "auth", "status"], env)
+        browser_status = run_command([str(addp), "auth", "status"], env, "browser status")
         results.append(browser_status)
         assert_context(parse_json_output(browser_status), "101", "1001")
 
@@ -449,20 +497,17 @@ def main(addp: Path) -> int:
             for _ in range(2)
         ]
         for racer in racers:
-            stdout, stderr = racer.communicate(timeout=30)
-            result = subprocess.CompletedProcess(racer.args, racer.returncode, stdout, stderr)
+            result = collect_process(racer, "cross-process refresh")
             results.append(result)
-            if result.returncode != 0 or json.loads(result.stdout) != {"refreshed": True}:
-                raise AssertionError(f"cross-process refresh failed: {result!r}")
+            assert_refresh_process_succeeded(result)
         race_tokens = fixture.refresh_submissions[before_race:]
-        if len(race_tokens) != 2 or race_tokens[0] == race_tokens[1]:
-            raise AssertionError(f"refresh rotation was not serialized across processes: {race_tokens!r}")
+        assert_refresh_rotation_serialized(race_tokens)
 
-        bound_status = run_command([str(addp), "auth", "status"], env)
+        bound_status = run_command([str(addp), "auth", "status"], env, "context-bound status")
         results.append(bound_status)
         assert_context(parse_json_output(bound_status), "101", "1001")
 
-        browser_logout = run_command([str(addp), "auth", "logout"], env)
+        browser_logout = run_command([str(addp), "auth", "logout"], env, "browser logout")
         results.append(browser_logout)
         if parse_json_output(browser_logout).get("authenticated") is not False:
             raise AssertionError("logout response is invalid")
@@ -471,21 +516,21 @@ def main(addp: Path) -> int:
         if not fixture.revoked_tokens:
             raise AssertionError("logout did not call OAuth revocation")
 
-        logged_out_status = run_command([str(addp), "auth", "status"], env)
+        logged_out_status = run_command([str(addp), "auth", "status"], env, "logged-out status")
         results.append(logged_out_status)
         if parse_json_output(logged_out_status) != {"authenticated": False, "base_url": fixture.base_url}:
             raise AssertionError("status did not confirm the revoked local session")
 
-        device_login = run_command([str(addp), "auth", "login", "--device"], env)
+        device_login = run_command([str(addp), "auth", "login", "--device"], env, "device login")
         results.append(device_login)
         assert_context(parse_json_output(device_login), "202", "2002")
         if "E2E2-CLI2" not in device_login.stderr or fixture.base_url + "/oauth/device" not in device_login.stderr:
             raise AssertionError("device instructions were not written to stderr")
 
-        device_status = run_command([str(addp), "auth", "status"], env)
+        device_status = run_command([str(addp), "auth", "status"], env, "device status")
         results.append(device_status)
         assert_context(parse_json_output(device_status), "202", "2002")
-        results.append(run_command([str(addp), "auth", "logout"], env))
+        results.append(run_command([str(addp), "auth", "logout"], env, "device logout"))
 
         assert_no_secrets(results, fixture)
         print(

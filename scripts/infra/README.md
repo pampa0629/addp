@@ -82,7 +82,7 @@ bash scripts/test/certify-infra-kafka-ha.sh
 | `addp_iam_test` | System IAM、Fosite、API 与 Migration PostgreSQL 发布门禁库 | 必须保留；只允许 `make test-system-iam-postgres` 串行使用，门禁会重建 `system` 和 `common` Schema。 |
 | `postgres` | PostgreSQL 默认维护连接库 | 必须保留；只用于管理操作，不存放 ADDP 业务表。 |
 
-`template0` 和 `template1` 是 PostgreSQL 内置模板库，不属于 ADDP 业务清单，也不得删除。临时测试 database 必须使用带独立 `test` 或 `disposable` 段的名称，并在任务结束后删除；不得长期保留 `addp_iam_test` 之外的 `addp_iam_*` database。CI 使用每个 Job 独占的临时 PostgreSQL 15 实例和 `addp_iam_test`，不连接开发环境 Infra。
+`template0` 和 `template1` 是 PostgreSQL 内置模板库；`template_postgis` 是当前 PostGIS 镜像提供的空间数据库模板。三者都不属于 ADDP 业务清单，也不得删除。临时测试 database 必须使用带独立 `test` 或 `disposable` 段的名称，并在任务结束后删除；不得长期保留 `addp_iam_test` 之外的 `addp_iam_*` database。CI 使用每个 Job 独占的临时 PostgreSQL 15 实例和 `addp_iam_test`，不连接开发环境 Infra。
 
 本地 IAM 发布门禁使用：
 

@@ -47,7 +47,7 @@ make test-common-python-cli-release
 4. 校验 `addp` entry point、安装元数据和 JSON 版本输出一致；
 5. 使用真实 OS Keychain 后端运行 CLI 产品 E2E。
 
-产品 E2E 覆盖 Browser loopback + PKCE、Device Flow、权威 AuthContext、Context 绑定、独立进程刷新竞争、OAuth Revocation、Keychain 删除时机，以及 Access Token、Refresh Token、Authorization Code、Device Code 和 Request Secret 不进入 stdout/stderr。
+产品 E2E 覆盖 Browser loopback + PKCE、Device Flow、权威 AuthContext、Context 绑定、独立进程刷新竞争、OAuth Revocation、Keychain 删除时机，以及 Access Token、Refresh Token、Authorization Code、PKCE Verifier、Device Code 和 Request Secret 不进入 stdout/stderr。
 
 测试 OAuth 协议服务器只用于驱动已安装 CLI 的客户端行为，不进入生产包、不新增生产端点，也不替代 System Fosite 协议验收。System Fosite Provider、PostgreSQL Storage、刷新重用和审计事务仍由 System 测试独立证明；正式发布要求两侧门禁都通过。
 
