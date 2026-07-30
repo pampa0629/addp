@@ -2,12 +2,16 @@ package service
 
 import (
 	"context"
-	commonExecution "github.com/addp/common/execution"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
+	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
@@ -25,20 +29,59 @@ func TestCreateUnscannedRunsSubmitsUnscannedEngines(t *testing.T) {
 	}
 	capJSON := commonModels.JSONString(capabilities)
 	tenantID := uint(1)
-	engineSvc := NewEngineService(db, "", "")
-	engineSvc.cacheEngine(&commonModels.Engine{
-		ID:           9,
-		TenantID:     &tenantID,
-		Name:         "Business MinIO",
-		EngineType:   "s3",
-		IsActive:     true,
-		Capabilities: &capJSON,
-	})
+	engine := commonModels.Engine{
+		ID:             9,
+		TenantID:       &tenantID,
+		Name:           "Business MinIO",
+		EngineType:     "s3",
+		LifecycleState: "active",
+		Capabilities:   &capJSON,
+	}
+	systemServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/system/oauth/token" {
+			if err := r.ParseForm(); err != nil {
+				t.Errorf("parse token form: %v", err)
+			}
+			if r.Form.Get("tenant_id") != "1" {
+				t.Errorf("token tenant_id = %q, want 1", r.Form.Get("tenant_id"))
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"access_token": "addp_at_meta", "token_type": "bearer", "expires_in": 300, "scope": "addp.api",
+			})
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer addp_at_meta" ||
+			r.Header.Get("X-Internal-API-Key") != "" || r.Header.Get("X-Tenant-ID") != "" {
+			t.Errorf("unexpected System authentication headers: %#v", r.Header)
+		}
+		switch r.URL.Path {
+		case "/api/v1/system/engines":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": []commonModels.Engine{engine}, "total": 1, "page": 1, "page_size": 100,
+			})
+		case "/api/v1/system/engines/9":
+			_ = json.NewEncoder(w).Encode(engine)
+		default:
+			t.Errorf("unexpected System path %q", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer systemServer.Close()
+	tokenSource, err := commonClient.NewOAuthServiceTokenSource(
+		systemServer.URL, "addp-meta", "meta-unscanned-test-secret-32-bytes", systemServer.Client(),
+	)
+	if err != nil {
+		t.Fatalf("create Meta service token source: %v", err)
+	}
+	engineSvc := NewEngineService(
+		db,
+		commonClient.NewSystemServiceClient(systemServer.URL, tokenSource, systemServer.Client()),
+	)
 
 	repo := NewScanService(db, engineSvc)
 	execSvc := NewScanExecutionService(db, repo, engineSvc, nil)
 
-	runs, err := execSvc.CreateUnscannedRuns(context.Background(), tenantID, 7, "token")
+	runs, err := execSvc.CreateUnscannedRuns(context.Background(), tenantID, 7)
 	if err != nil {
 		t.Fatalf("CreateUnscannedRuns() error = %v", err)
 	}
@@ -50,6 +93,9 @@ func TestCreateUnscannedRunsSubmitsUnscannedEngines(t *testing.T) {
 	}
 	if got := jsonMapUint(runs[0].ExecutionConfig, "engine_id"); got != 9 {
 		t.Fatalf("execution engine_id = %d, want 9", got)
+	}
+	if _, exists := runs[0].ExecutionConfig["token"]; exists {
+		t.Fatal("execution_config must not persist a user token")
 	}
 }
 
@@ -63,14 +109,14 @@ func TestCreateManualRunResolvesNodeTargetToCatalogPaths(t *testing.T) {
 	}
 	capJSON := commonModels.JSONString(capabilities)
 	tenantID := uint(1)
-	engineSvc := NewEngineService(db, "", "")
-	engineSvc.cacheEngine(&commonModels.Engine{
-		ID:           9,
-		TenantID:     &tenantID,
-		Name:         "Business MinIO",
-		EngineType:   "s3",
-		IsActive:     true,
-		Capabilities: &capJSON,
+	engineSvc := NewEngineService(db, nil)
+	engineSvc.cacheEngine(tenantID, &commonModels.Engine{
+		ID:             9,
+		TenantID:       &tenantID,
+		Name:           "Business MinIO",
+		EngineType:     "s3",
+		LifecycleState: "active",
+		Capabilities:   &capJSON,
 	})
 
 	root := models.MetaNode{
@@ -106,7 +152,7 @@ func TestCreateManualRunResolvesNodeTargetToCatalogPaths(t *testing.T) {
 	repo := NewScanService(db, engineSvc)
 	execSvc := NewScanExecutionService(db, repo, engineSvc, nil)
 
-	run, err := execSvc.CreateManualRun(context.Background(), tenantID, 7, "token", &models.ScanRequest{
+	run, err := execSvc.CreateManualRun(context.Background(), tenantID, 7, &models.ScanRequest{
 		EngineID:    9,
 		NodeID:      bucket.ID,
 		ScanDepth:   "deep",
@@ -135,6 +181,9 @@ func TestCreateManualRunResolvesNodeTargetToCatalogPaths(t *testing.T) {
 	if got := run.ExecutionConfig["source"]; got != "transfer" {
 		t.Fatalf("source = %#v, want transfer", got)
 	}
+	if _, exists := run.ExecutionConfig["token"]; exists {
+		t.Fatal("execution_config must not persist a user token")
+	}
 	refGroups, ok := run.ExecutionConfig["ref_groups"].([]models.ScanRefGroup)
 	if !ok || len(refGroups) != 1 || refGroups[0].Primary != "manager/a5.shp" {
 		t.Fatalf("ref_groups = %#v", run.ExecutionConfig["ref_groups"])
@@ -146,13 +195,13 @@ func TestCreateManualRunPreservesItemID(t *testing.T) {
 	createTaskExecutionTable(t, db)
 
 	tenantID := uint(1)
-	engineSvc := NewEngineService(db, "", "")
-	engineSvc.cacheEngine(&commonModels.Engine{
-		ID:         9,
-		TenantID:   &tenantID,
-		Name:       "Business MinIO",
-		EngineType: "s3",
-		IsActive:   true,
+	engineSvc := NewEngineService(db, nil)
+	engineSvc.cacheEngine(tenantID, &commonModels.Engine{
+		ID:             9,
+		TenantID:       &tenantID,
+		Name:           "Business MinIO",
+		EngineType:     "s3",
+		LifecycleState: "active",
 	})
 	item := models.MetaItem{
 		TenantID:    tenantID,
@@ -174,7 +223,7 @@ func TestCreateManualRunPreservesItemID(t *testing.T) {
 	}
 
 	execSvc := NewScanExecutionService(db, NewScanService(db, engineSvc), engineSvc, nil)
-	run, err := execSvc.CreateManualRun(context.Background(), tenantID, 7, "token", &models.ScanRequest{
+	run, err := execSvc.CreateManualRun(context.Background(), tenantID, 7, &models.ScanRequest{
 		EngineID: 9,
 		ItemID:   item.ID,
 		Source:   commonExecution.ModuleManager,
@@ -198,7 +247,7 @@ func TestCreateManualRunRejectsUnsupportedTriggerType(t *testing.T) {
 	t.Parallel()
 
 	execSvc := NewScanExecutionService(nil, nil, nil, nil)
-	_, err := execSvc.CreateManualRun(context.Background(), 1, 7, "token", &models.ScanRequest{
+	_, err := execSvc.CreateManualRun(context.Background(), 1, 7, &models.ScanRequest{
 		EngineID:    9,
 		TriggerType: "bad",
 	})
@@ -211,7 +260,7 @@ func TestCreateManualRunRejectsScheduledTriggerType(t *testing.T) {
 	t.Parallel()
 
 	execSvc := NewScanExecutionService(nil, nil, nil, nil)
-	_, err := execSvc.CreateManualRun(context.Background(), 1, 7, "token", &models.ScanRequest{
+	_, err := execSvc.CreateManualRun(context.Background(), 1, 7, &models.ScanRequest{
 		EngineID:    9,
 		TriggerType: "scheduled",
 	})
@@ -559,6 +608,12 @@ func createTaskExecutionTable(t *testing.T, db *gorm.DB) {
 			current_step TEXT,
 			trigger_type TEXT NOT NULL,
 			triggered_by INTEGER,
+			actor_principal_id INTEGER,
+			actor_tenant_membership_id INTEGER,
+			issued_authorization_version INTEGER,
+			execution_authorization_id INTEGER,
+			authorization_effects TEXT,
+			authorization_expires_at DATETIME,
 			execution_config JSON,
 			error_details JSON,
 			metadata JSON,
@@ -592,6 +647,12 @@ func createTaskExecutionTable(t *testing.T, db *gorm.DB) {
 			current_step TEXT,
 			trigger_type TEXT NOT NULL,
 			triggered_by INTEGER,
+			actor_principal_id INTEGER,
+			actor_tenant_membership_id INTEGER,
+			issued_authorization_version INTEGER,
+			execution_authorization_id INTEGER,
+			authorization_effects TEXT,
+			authorization_expires_at DATETIME,
 			execution_config JSON,
 			error_details JSON,
 			metadata JSON,

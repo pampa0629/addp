@@ -287,7 +287,7 @@ func TestManagerRasterCOGExecutorPreparesGDALRuntimeAndInvokesPythonWorkflowOper
 				t.Fatalf("unexpected system path: %s", r.URL.Path)
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"id":26,"tenant_id":7,"name":"NFS","engine_type":"nfs","connection_info":{"mount_path":"/mnt/addp-nfs"},"is_active":true}`))
+			_, _ = w.Write([]byte(`{"id":26,"tenant_id":7,"name":"NFS","engine_type":"nfs","connection_info":{"mount_path":"/mnt/addp-nfs"},"lifecycle_state":"active"}`))
 		}),
 	}
 	systemListener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -308,8 +308,8 @@ func TestManagerRasterCOGExecutorPreparesGDALRuntimeAndInvokesPythonWorkflowOper
 				"host":     "127.0.0.1",
 				"port":     workflowPort,
 			},
-			IsActive:     true,
-			Capabilities: testRasterWorkflowCapabilities(t, testRasterWorkflowEngineType),
+			LifecycleState: "active",
+			Capabilities:   testRasterWorkflowCapabilities(t, testRasterWorkflowEngineType),
 		}}},
 		&recordingCOGObjectStore{size: 34},
 		"http://minio:9000",
@@ -427,7 +427,7 @@ func TestManagerRasterCOGExecutorPreservesOperatorErrorDetails(t *testing.T) {
 				t.Fatalf("unexpected system path: %s", r.URL.Path)
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"id":26,"tenant_id":7,"name":"NFS","engine_type":"nfs","connection_info":{"mount_path":"/mnt/addp-nfs"},"is_active":true}`))
+			_, _ = w.Write([]byte(`{"id":26,"tenant_id":7,"name":"NFS","engine_type":"nfs","connection_info":{"mount_path":"/mnt/addp-nfs"},"lifecycle_state":"active"}`))
 		}),
 	}
 	systemListener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -448,8 +448,8 @@ func TestManagerRasterCOGExecutorPreservesOperatorErrorDetails(t *testing.T) {
 				"host":     "127.0.0.1",
 				"port":     workflowPort,
 			},
-			IsActive:     true,
-			Capabilities: testRasterWorkflowCapabilities(t, testRasterWorkflowEngineType),
+			LifecycleState: "active",
+			Capabilities:   testRasterWorkflowCapabilities(t, testRasterWorkflowEngineType),
 		}}},
 		&recordingCOGObjectStore{size: 34},
 		"http://minio:9000",
@@ -513,7 +513,7 @@ func TestManagerRasterCOGExecutorRejectsOperatorWithoutDirectMode(t *testing.T) 
 				t.Fatalf("unexpected system path: %s", r.URL.Path)
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"id":26,"tenant_id":7,"name":"NFS","engine_type":"nfs","connection_info":{"mount_path":"/mnt/addp-nfs"},"is_active":true}`))
+			_, _ = w.Write([]byte(`{"id":26,"tenant_id":7,"name":"NFS","engine_type":"nfs","connection_info":{"mount_path":"/mnt/addp-nfs"},"lifecycle_state":"active"}`))
 		}),
 	}
 	systemListener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -534,8 +534,8 @@ func TestManagerRasterCOGExecutorRejectsOperatorWithoutDirectMode(t *testing.T) 
 				"host":     "127.0.0.1",
 				"port":     workflowPort,
 			},
-			IsActive:     true,
-			Capabilities: testRasterWorkflowCapabilities(t, testRasterWorkflowEngineType),
+			LifecycleState: "active",
+			Capabilities:   testRasterWorkflowCapabilities(t, testRasterWorkflowEngineType),
 		}}},
 		&recordingCOGObjectStore{size: 34},
 		"http://minio:9000",

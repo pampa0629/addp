@@ -599,27 +599,6 @@ definitions:
           $ref: '#/definitions/github_com_addp_develop_backend_internal_service.TableRef'
         type: array
     type: object
-  github_com_addp_develop_backend_internal_service.JupyterInstance:
-    properties:
-      container_id:
-        type: string
-      container_name:
-        type: string
-      created_at:
-        type: string
-      jupyter_port:
-        type: integer
-      jupyter_url:
-        description: Jupyter Lab 访问 URL
-        type: string
-      started_at:
-        type: string
-      status:
-        description: running, stopped, starting
-        type: string
-      tenant_id:
-        type: integer
-    type: object
   github_com_addp_develop_backend_internal_service.KernelInfo:
     properties:
       display_name:
@@ -656,6 +635,11 @@ definitions:
       display_name:
         description: 中文显示名 (如 "深度扫描")
         type: string
+      effects:
+        description: read/write/ddl/external_effect
+        items:
+          type: string
+        type: array
       engine_type:
         description: 所属扩展引擎类型 (如 acme_geo_workflow)
         type: string
@@ -693,6 +677,18 @@ definitions:
         description: 算子类型 (scan/transfer/spatial等)
         type: string
     type: object
+  github_com_addp_develop_backend_internal_service.SQLExecutionEffect:
+    enum:
+    - read
+    - write
+    - ddl
+    - external_effect
+    type: string
+    x-enum-varnames:
+    - SQLExecutionEffectRead
+    - SQLExecutionEffectWrite
+    - SQLExecutionEffectDDL
+    - SQLExecutionEffectExternalEffect
   github_com_addp_develop_backend_internal_service.TableRef:
     properties:
       engine_name:
@@ -739,42 +735,6 @@ definitions:
       workflow_engine_id:
         type: integer
     type: object
-  internal_api.ExecuteNotebookRequest:
-    properties:
-      input_path:
-        type: string
-      output_path:
-        type: string
-      parameters:
-        additionalProperties: true
-        type: object
-      timeout:
-        description: 超时时间（秒）
-        type: integer
-    required:
-    - input_path
-    - output_path
-    type: object
-  internal_api.ExecuteNotebookResponse:
-    properties:
-      error_message:
-        type: string
-      execution_time_seconds:
-        type: number
-      message:
-        type: string
-      output_count:
-        type: integer
-      output_path:
-        type: string
-      outputs:
-        items:
-          additionalProperties: true
-          type: object
-        type: array
-      status:
-        type: string
-    type: object
   internal_api.ExecuteQueryRequest:
     properties:
       content:
@@ -796,12 +756,12 @@ definitions:
         items:
           type: string
         type: array
+      effect:
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_service.SQLExecutionEffect'
+      execution_id:
+        type: string
       execution_time_ms:
         type: integer
-      graph_data:
-        allOf:
-        - $ref: '#/definitions/plugin.GraphData'
-        description: 图数据（仅图数据库引擎）
       rows:
         items:
           additionalProperties: true
@@ -811,18 +771,6 @@ definitions:
         type: integer
       rows_count:
         type: integer
-    type: object
-  internal_api.GetJupyterURLRequest:
-    properties:
-      notebook_path:
-        description: Notebook 文件路径
-        type: string
-    type: object
-  internal_api.GetJupyterURLResponse:
-    properties:
-      jupyter_url:
-        description: Jupyter Lab URL
-        type: string
     type: object
   internal_api.ListKernelsResponse:
     properties:
@@ -885,159 +833,36 @@ definitions:
       status:
         type: string
     type: object
-  models.CapabilitiesView:
-    properties:
-      json_view:
-        items:
-          $ref: '#/definitions/models.CapabilityJSONNode'
-        type: array
-      sections:
-        items:
-          $ref: '#/definitions/models.CapabilityViewSection'
-        type: array
-      summary:
-        items:
-          $ref: '#/definitions/models.CapabilityViewBadge'
-        type: array
-    type: object
-  models.CapabilityJSONNode:
-    properties:
-      children:
-        items:
-          $ref: '#/definitions/models.CapabilityJSONNode'
-        type: array
-      key:
-        type: string
-      value:
-        type: string
-    type: object
-  models.CapabilityPathNode:
-    properties:
-      id:
-        type: string
-      label_key:
-        type: string
-      tags:
-        items:
-          $ref: '#/definitions/models.CapabilityViewTag'
-        type: array
-      value:
-        type: string
-    type: object
-  models.CapabilityViewBadge:
-    properties:
-      id:
-        type: string
-      label_key:
-        type: string
-      status:
-        type: string
-      value:
-        type: string
-      value_key:
-        type: string
-    type: object
-  models.CapabilityViewItem:
-    properties:
-      description_key:
-        type: string
-      id:
-        type: string
-      label_key:
-        type: string
-      reason_key:
-        type: string
-      status:
-        type: string
-      tags:
-        items:
-          $ref: '#/definitions/models.CapabilityViewTag'
-        type: array
-      value:
-        type: string
-      value_key:
-        type: string
-    type: object
-  models.CapabilityViewSection:
-    properties:
-      description_key:
-        type: string
-      id:
-        type: string
-      items:
-        items:
-          $ref: '#/definitions/models.CapabilityViewItem'
-        type: array
-      path:
-        items:
-          $ref: '#/definitions/models.CapabilityPathNode'
-        type: array
-      status:
-        type: string
-      title_key:
-        type: string
-    type: object
-  models.CapabilityViewTag:
-    properties:
-      id:
-        type: string
-      label_key:
-        type: string
-      type:
-        type: string
-      value:
-        type: string
-    type: object
-  models.ConnectionInfo:
-    additionalProperties: true
-    type: object
-  models.Engine:
+  models.EngineRuntimeDescriptor:
     properties:
       capabilities:
-        description: 能力声明（JSONB）
         type: string
-      capabilities_view:
-        allOf:
-        - $ref: '#/definitions/models.CapabilitiesView'
-        description: System 后端生成的能力展示模型
-      check_message:
-        description: 检测结果消息（错误信息等）
-        type: string
-      connection_info:
-        $ref: '#/definitions/models.ConnectionInfo'
       connection_status:
-        description: 连接状态缓存（优化扫描性能）
         type: string
-      created_at:
-        description: 时间戳字段
-        type: string
-      created_by:
-        type: integer
       description:
         type: string
       engine_origin:
-        description: 引擎来源：general 或 extension
         type: string
       engine_type:
-        description: 引擎类型（postgresql, mysql, acme_geo_workflow 等）
         type: string
       id:
         type: integer
-      is_active:
-        type: boolean
       is_builtin:
-        description: 扩展引擎字段
         type: boolean
-      last_check_at:
-        description: 上次检测时间
+      lifecycle_state:
         type: string
       name:
-        description: 显示名称（原 display_name）
         type: string
-      tenant_id:
-        description: 租户ID，平台共享引擎为 null
+      runtime_endpoint:
+        $ref: '#/definitions/models.EngineRuntimeEndpoint'
+    type: object
+  models.EngineRuntimeEndpoint:
+    properties:
+      host:
+        type: string
+      port:
         type: integer
-      updated_at:
+      protocol:
         type: string
     type: object
   models.OutputPortDescriptor:
@@ -1112,43 +937,6 @@ definitions:
         type: object
       ui_type:
         description: UI 组件类型 (resource_tree_picker 等)
-        type: string
-    type: object
-  plugin.GraphData:
-    properties:
-      nodes:
-        items:
-          $ref: '#/definitions/plugin.GraphNode'
-        type: array
-      relationships:
-        items:
-          $ref: '#/definitions/plugin.GraphRelationship'
-        type: array
-    type: object
-  plugin.GraphNode:
-    properties:
-      element_id:
-        type: string
-      labels:
-        items:
-          type: string
-        type: array
-      properties:
-        additionalProperties: true
-        type: object
-    type: object
-  plugin.GraphRelationship:
-    properties:
-      element_id:
-        type: string
-      end_node_id:
-        type: string
-      properties:
-        additionalProperties: true
-        type: object
-      start_node_id:
-        type: string
-      type:
         type: string
     type: object
 host: localhost:8185
@@ -1242,6 +1030,32 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - develop.task.execute
+  /assets/discoverable:
+    get:
+      description: 返回当前租户下可被资产模块发现的开发任务 | List active develop tasks for Asset discovery
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出可发现资产 | List discoverable assets
+      tags:
+      - Develop
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - develop.task.read
   /duckdb/sample-query:
     get:
       produces:
@@ -1300,10 +1114,10 @@ paths:
       - application/json
       responses:
         "200":
-          description: 引擎列表 | Engine list
+          description: 引擎运行时描述列表 | Engine runtime descriptor list
           schema:
             items:
-              $ref: '#/definitions/models.Engine'
+              $ref: '#/definitions/models.EngineRuntimeDescriptor'
             type: array
       summary: 获取可用于 SQL 查询的数据源列表 | List data sources available for SQL queries
       tags:
@@ -1367,6 +1181,11 @@ paths:
       tags:
       - Query
       x-addp-auth-mode: permission
+      x-addp-conditional-permissions:
+      - develop.data_read.execute
+      - develop.data_write.execute
+      - develop.data_ddl.execute
+      - develop.data_external_effect.execute
       x-addp-required-permissions:
       - develop.task.execute
   /executions:
@@ -1465,6 +1284,12 @@ paths:
       tags:
       - Execution
       x-addp-auth-mode: permission
+      x-addp-conditional-permissions:
+      - develop.data_read.execute
+      - develop.data_write.execute
+      - develop.data_ddl.execute
+      - develop.data_external_effect.execute
+      - develop.notebook.execute
       x-addp-required-permissions:
       - develop.task.execute
   /executions/{execution_id}:
@@ -1529,6 +1354,12 @@ paths:
       tags:
       - Execution
       x-addp-auth-mode: permission
+      x-addp-conditional-permissions:
+      - develop.data_read.execute
+      - develop.data_write.execute
+      - develop.data_ddl.execute
+      - develop.data_external_effect.execute
+      - develop.notebook.execute
       x-addp-required-permissions:
       - develop.task.execute
   /executions/statistics:
@@ -1559,97 +1390,27 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - develop.task.read
-  /internal/assets/discoverable:
+  /notebook-engines:
     get:
-      description: 返回当前租户下可被资产模块发现的开发任务 | List active develop tasks for Asset discovery
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Notebook引擎列表 | Notebook engine list
           schema:
             items:
-              additionalProperties: true
-              type: object
+              $ref: '#/definitions/models.EngineRuntimeDescriptor'
             type: array
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties: true
-            type: object
-      summary: 列出可发现资产 | List discoverable assets
+      summary: 列出 Notebook 引擎 | List Notebook engines
       tags:
-      - Develop
-      x-addp-auth-mode: internal
-  /internal/executions/{execution_id}:
+      - Notebook
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - develop.notebook.read
+  /notebook-engines/{id}/kernels:
     get:
       parameters:
-      - description: 执行ID（UUID）| Execution ID (UUID)
-        in: path
-        name: execution_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 执行详情 | Execution details
-          schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevTaskSwagger'
-      summary: 获取 TaskProvider 执行状态 | Get TaskProvider execution status
-      tags:
-      - Execution
-      x-addp-auth-mode: internal
-  /internal/tasks:
-    get:
-      description: 返回可供 TaskProvider 编排复用的开发任务；task_type 是对外任务类型契约，映射到 Develop 内部
-        dev_type。| List active develop tasks exposed by TaskProvider; task_type is
-        the external task contract mapped to Develop internal dev_type.
-      parameters:
-      - description: 'TaskProvider 任务类型：query/workflow/script | TaskProvider task
-          type: query/workflow/script'
-        in: query
-        name: task_type
-        type: string
-      - default: 1
-        description: 页码 | Page
-        in: query
-        name: page
-        type: integer
-      - default: 20
-        description: 每页数量 | Page size
-        in: query
-        name: page_size
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ListProviderDevTasksSwaggerResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties: true
-            type: object
-      summary: 列出可编排任务 | List orchestratable tasks
-      tags:
-      - Develop
-      x-addp-auth-mode: internal
-  /internal/tasks/{task_type}/{id}:
-    get:
-      description: 按标准 TaskProvider 路径获取开发任务详情；task_type 是对外任务类型契约，映射到 Develop 内部
-        dev_type。| Get development task detail through the standard TaskProvider path;
-        task_type is the external task contract mapped to Develop internal dev_type.
-      parameters:
-      - description: 'TaskProvider 任务类型：query/workflow/script | TaskProvider task
-          type: query/workflow/script'
-        in: path
-        name: task_type
-        required: true
-        type: string
-      - description: 开发任务ID | Development task ID
+      - description: Notebook 引擎实例 ID | Notebook engine instance ID
         in: path
         name: id
         required: true
@@ -1658,230 +1419,12 @@ paths:
       - application/json
       responses:
         "200":
-          description: 开发任务详情 | Development task detail
+          description: Kernel列表 | Kernel list
           schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ProviderDevTaskSwagger'
-        "400":
-          description: 参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "404":
-          description: 任务不存在 | Task not found
-          schema:
-            additionalProperties: true
-            type: object
-      summary: 获取 TaskProvider 开发任务详情 | Get TaskProvider development task detail
+            $ref: '#/definitions/internal_api.ListKernelsResponse'
+      summary: 按 Notebook 引擎列出 Kernel | List kernels by Notebook engine
       tags:
-      - DevTask
-      x-addp-auth-mode: internal
-  /internal/tasks/{task_type}/{id}/execute:
-    post:
-      consumes:
-      - application/json
-      description: 按标准 TaskProvider 协议执行开发任务；task_type 是对外任务类型契约，映射到 Develop 内部 dev_type，parameters
-        会传入本次执行。| Execute a development task through the standard TaskProvider protocol;
-        task_type is the external task contract mapped to Develop internal dev_type,
-        and parameters are passed to this execution.
-      parameters:
-      - description: 'TaskProvider 任务类型：query/workflow/script | TaskProvider task
-          type: query/workflow/script'
-        in: path
-        name: task_type
-        required: true
-        type: string
-      - description: 开发任务ID | Development task ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: TaskProvider 执行请求 | TaskProvider execution request
-        in: body
-        name: request
-        schema:
-          $ref: '#/definitions/internal_api.providerExecuteDevRequest'
-      produces:
-      - application/json
-      responses:
-        "202":
-          description: 执行已启动 | Execution started
-          schema:
-            $ref: '#/definitions/internal_api.providerExecuteDevResponse'
-        "400":
-          description: 参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务器错误 | Server error
-          schema:
-            additionalProperties: true
-            type: object
-      summary: 执行 TaskProvider 开发任务 | Execute TaskProvider development task
-      tags:
-      - Execution
-      x-addp-auth-mode: internal
-  /jupyter/instance/start:
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 实例信息 | Instance information
-          schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_service.JupyterInstance'
-      summary: 启动 Jupyter 实例 | Start Jupyter instance
-      tags:
-      - Jupyter Instance
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - develop.notebook.execute
-  /jupyter/instance/status:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 实例状态 | Instance status
-          schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_service.JupyterInstance'
-      summary: 获取 Jupyter 实例状态 | Get Jupyter instance status
-      tags:
-      - Jupyter Instance
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - develop.notebook.read
-  /jupyter/instance/stop:
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 停止成功 | Stopped successfully
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: 停止 Jupyter 实例 | Stop Jupyter instance
-      tags:
-      - Jupyter Instance
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - develop.notebook.execute
-  /jupyter/server/status:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取 Jupyter Server 状态 | Get Jupyter server status
-      tags:
-      - Jupyter
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - develop.notebook.read
-  /jupyter/venv:
-    delete:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: Unauthorized
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 删除 Jupyter 虚拟环境 | Delete Jupyter venv
-      tags:
-      - Jupyter
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - develop.notebook.delete
-  /jupyter/venv/init:
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: Unauthorized
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 初始化 Jupyter 虚拟环境 | Init Jupyter venv
-      tags:
-      - Jupyter
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - develop.notebook.create
-  /jupyter/venv/status:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: Unauthorized
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取 Jupyter 虚拟环境状态 | Get Jupyter venv status
-      tags:
-      - Jupyter
+      - Notebook
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - develop.notebook.read
@@ -1953,86 +1496,6 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - develop.notebook.read
-  /notebooks/execute:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: 执行请求 | Execution request
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/internal_api.ExecuteNotebookRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 执行结果 | Execution result
-          schema:
-            $ref: '#/definitions/internal_api.ExecuteNotebookResponse'
-      summary: 执行 Notebook | Execute Notebook
-      tags:
-      - Notebook
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - develop.notebook.execute
-  /notebooks/health:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 健康状态 | Health status
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: 检查 Jupyter Engine 健康状态 | Check Jupyter Engine health status
-      tags:
-      - Notebook
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - develop.notebook.read
-  /notebooks/jupyter-url:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: 请求 | Request
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/internal_api.GetJupyterURLRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Jupyter URL | Jupyter URL
-          schema:
-            $ref: '#/definitions/internal_api.GetJupyterURLResponse'
-      summary: 获取 Jupyter Lab 访问 URL | Get Jupyter Lab access URL
-      tags:
-      - Notebook
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - develop.notebook.execute
-  /notebooks/kernels:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Kernel列表 | Kernel list
-          schema:
-            $ref: '#/definitions/internal_api.ListKernelsResponse'
-      summary: 列出可用的 Kernel | List available kernels
-      tags:
-      - Notebook
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - develop.notebook.read
   /notebooks/upload:
     post:
       consumes:
@@ -2052,13 +1515,19 @@ paths:
         in: formData
         name: description
         type: string
-      - description: 数据源 IDs (JSON 数组) | Data source IDs (JSON array)
-        in: formData
-        name: data_sources
-        type: string
       - description: 参数 (JSON 对象) | Parameters (JSON object)
         in: formData
         name: parameters
+        type: string
+      - description: Notebook 引擎实例 ID | Notebook engine instance ID
+        in: formData
+        name: engine_id
+        required: true
+        type: integer
+      - description: Kernel 名称 | Kernel name
+        in: formData
+        name: kernel
+        required: true
         type: string
       produces:
       - application/json
@@ -2096,10 +1565,10 @@ paths:
       - application/json
       responses:
         "200":
-          description: Spark通用引擎资源列表 | Spark general engine resource list
+          description: Spark通用引擎描述列表 | Spark general engine descriptor list
           schema:
             items:
-              $ref: '#/definitions/models.Engine'
+              $ref: '#/definitions/models.EngineRuntimeDescriptor'
             type: array
       summary: 获取所有 Apache Spark 通用引擎资源列表 | List all Apache Spark general engine resources
       tags:
@@ -2273,6 +1742,12 @@ paths:
       tags:
       - Execution
       x-addp-auth-mode: permission
+      x-addp-conditional-permissions:
+      - develop.data_read.execute
+      - develop.data_write.execute
+      - develop.data_ddl.execute
+      - develop.data_external_effect.execute
+      - develop.notebook.execute
       x-addp-required-permissions:
       - develop.task.execute
   /task-definitions/statistics:
@@ -2293,6 +1768,162 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - develop.task.read
+  /task-provider/executions/{execution_id}:
+    get:
+      parameters:
+      - description: 执行ID（UUID）| Execution ID (UUID)
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 执行详情 | Execution details
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevTaskSwagger'
+      security:
+      - BearerAuth: []
+      summary: 获取 TaskProvider 执行状态 | Get TaskProvider execution status
+      tags:
+      - Execution
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - develop.task_provider.read
+  /task-provider/tasks:
+    get:
+      description: 返回可供 TaskProvider 编排复用的开发任务；task_type 是对外任务类型契约，映射到 Develop 内部
+        dev_type。| List active develop tasks exposed by TaskProvider; task_type is
+        the external task contract mapped to Develop internal dev_type.
+      parameters:
+      - description: 'TaskProvider 任务类型：query/workflow/script | TaskProvider task
+          type: query/workflow/script'
+        in: query
+        name: task_type
+        type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ListProviderDevTasksSwaggerResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出可编排任务 | List orchestratable tasks
+      tags:
+      - Develop
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - develop.task_provider.read
+  /task-provider/tasks/{task_type}/{id}:
+    get:
+      description: 按标准 TaskProvider 路径获取开发任务详情；task_type 是对外任务类型契约，映射到 Develop 内部
+        dev_type。| Get development task detail through the standard TaskProvider path;
+        task_type is the external task contract mapped to Develop internal dev_type.
+      parameters:
+      - description: 'TaskProvider 任务类型：query/workflow/script | TaskProvider task
+          type: query/workflow/script'
+        in: path
+        name: task_type
+        required: true
+        type: string
+      - description: 开发任务ID | Development task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 开发任务详情 | Development task detail
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ProviderDevTaskSwagger'
+        "400":
+          description: 参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 任务不存在 | Task not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取 TaskProvider 开发任务详情 | Get TaskProvider development task detail
+      tags:
+      - DevTask
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - develop.task_provider.read
+  /task-provider/tasks/{task_type}/{id}/execute:
+    post:
+      consumes:
+      - application/json
+      description: 按标准 TaskProvider 协议执行开发任务；task_type 是对外任务类型契约，映射到 Develop 内部 dev_type，parameters
+        会传入本次执行。| Execute a development task through the standard TaskProvider protocol;
+        task_type is the external task contract mapped to Develop internal dev_type,
+        and parameters are passed to this execution.
+      parameters:
+      - description: 'TaskProvider 任务类型：query/workflow/script | TaskProvider task
+          type: query/workflow/script'
+        in: path
+        name: task_type
+        required: true
+        type: string
+      - description: 开发任务ID | Development task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: TaskProvider 执行请求 | TaskProvider execution request
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_api.providerExecuteDevRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: 执行已启动 | Execution started
+          schema:
+            $ref: '#/definitions/internal_api.providerExecuteDevResponse'
+        "400":
+          description: 参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器错误 | Server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 执行 TaskProvider 开发任务 | Execute TaskProvider development task
+      tags:
+      - Execution
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - develop.task_provider.execute
   /test/{id}:
     get:
       consumes:
@@ -2312,22 +1943,53 @@ paths:
             additionalProperties:
               type: string
             type: object
+        "400":
+          description: 资源ID无效 | Invalid resource ID
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无执行或数据读取权限 | Execution or data-read permission denied
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 授权状态冲突 | Authorization conflict
+          schema:
+            additionalProperties: true
+            type: object
+        "502":
+          description: 数据源连接失败 | Data source connection failed
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 授权服务不可用 | Authorization service unavailable
+          schema:
+            additionalProperties: true
+            type: object
       summary: 测试数据源连接 | Test data source connection
       tags:
       - Query
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - develop.task.read
+      - develop.task.execute
+      - develop.data_read.execute
   /workflow-engines:
     get:
       produces:
       - application/json
       responses:
         "200":
-          description: 工作流引擎列表 | Workflow engine list
+          description: 工作流引擎运行时描述列表 | Workflow engine runtime descriptor list
           schema:
             items:
-              $ref: '#/definitions/models.Engine'
+              $ref: '#/definitions/models.EngineRuntimeDescriptor'
             type: array
       summary: 获取支持 workflow 的计算引擎列表 | List workflow-capable compute engines
       tags:

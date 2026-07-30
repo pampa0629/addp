@@ -14,6 +14,7 @@ import (
 	"github.com/addp/common/utils"
 	"github.com/addp/system/internal/api"
 	"github.com/addp/system/internal/config"
+	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
@@ -73,6 +74,18 @@ func main() {
 		logger.L().Error("非 IAM 数据库迁移失败", "error", err)
 		os.Exit(1)
 	}
+	serviceCredentialProvisioner, err := iam.NewServiceCredentialProvisioner(iam.NewRepository(db), nil)
+	if err != nil {
+		logger.L().Error("初始化 Service Principal Credential Provisioner 失败", "error", err)
+		os.Exit(1)
+	}
+	credentialContext, cancelCredentials := context.WithTimeout(context.Background(), 30*time.Second)
+	if err := serviceCredentialProvisioner.Apply(credentialContext, cfg.ServiceClientSecrets); err != nil {
+		cancelCredentials()
+		logger.L().Error("同步内置 Service Principal Credential 失败", "error", err)
+		os.Exit(1)
+	}
+	cancelCredentials()
 
 	// 迁移 task_providers 表（删除旧 create_task_url/edit_task_url 列）
 	if err := repository.MigrateTaskProviders(db); err != nil {

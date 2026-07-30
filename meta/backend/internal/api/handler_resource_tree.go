@@ -220,13 +220,7 @@ func (h *Handler) RefreshResourceTreeNode(c *gin.Context) {
 		return
 	}
 
-	token, hasBearerToken := extractBearerToken(c)
-	if !hasBearerToken && strings.TrimSpace(c.GetHeader("X-Internal-API-Key")) == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authorization token"})
-		return
-	}
-
-	run, err := h.executionService.CreateManualRun(c.Request.Context(), commonAuth.GetTenantID(c), commonAuth.GetUserID(c), token, refreshResourceTreeScanRequest(loc))
+	run, err := h.executionService.CreateManualRun(c.Request.Context(), commonAuth.GetTenantID(c), commonAuth.GetUserID(c), refreshResourceTreeScanRequest(loc))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

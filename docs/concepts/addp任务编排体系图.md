@@ -115,9 +115,9 @@ graph TB
 |------|---------|---------|---------|
 | **Meta** | 扫描元数据 | `POST /api/v1/meta/tasks/{task_type}/{id}/execute` | `task_type=scan` |
 | **Transfer** | Transfer 任务 | `POST /api/v1/transfer/tasks/{task_type}/{id}/execute` | `task_type=sync` |
-| **Develop** | 执行查询 | `POST /api/v1/develop/internal/tasks/{task_type}/{id}/execute` | `task_type=query` |
-| **Develop** | 执行工作流 | `POST /api/v1/develop/internal/tasks/{task_type}/{id}/execute` | `task_type=workflow` |
-| **Develop** | 执行脚本 | `POST /api/v1/develop/internal/tasks/{task_type}/{id}/execute` | `task_type=script` |
+| **Develop** | 执行查询 | `POST /api/v1/develop/task-provider/tasks/{task_type}/{id}/execute` | `task_type=query` |
+| **Develop** | 执行工作流 | `POST /api/v1/develop/task-provider/tasks/{task_type}/{id}/execute` | `task_type=workflow` |
+| **Develop** | 执行脚本 | `POST /api/v1/develop/task-provider/tasks/{task_type}/{id}/execute` | `task_type=script`，接入父 Execution Authorization 前拒绝编排 |
 | **Manager** | 生成瓦片缓存 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=vector_tile_cache_generation` |
 | **Manager** | 矢量物化视图 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=vector_materialized_view_generation` |
 | **Manager** | 向量化 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=embedding` |

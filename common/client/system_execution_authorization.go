@@ -1,0 +1,206 @@
+package client
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/addp/common/models"
+	"github.com/google/uuid"
+)
+
+type IssueExecutionAuthorizationRequest struct {
+	Audience    string   `json:"audience"`
+	ExecutionID string   `json:"execution_id"`
+	EngineIDs   []string `json:"engine_ids"`
+	Effects     []string `json:"effects"`
+	ExpiresIn   int64    `json:"expires_in"`
+}
+
+type IssueExecutionAuthorizationFromExecutionRequest struct {
+	ParentExecutionID string   `json:"parent_execution_id"`
+	Audience          string   `json:"audience"`
+	ExecutionID       string   `json:"execution_id"`
+	EngineIDs         []string `json:"engine_ids"`
+	Effects           []string `json:"effects"`
+	ExpiresIn         int64    `json:"expires_in"`
+}
+
+type IssuedExecutionAuthorization struct {
+	ID                         string    `json:"id"`
+	ExecutionID                string    `json:"execution_id"`
+	Audience                   string    `json:"audience"`
+	EngineIDs                  []string  `json:"engine_ids"`
+	Effects                    []string  `json:"effects"`
+	ExpiresAt                  time.Time `json:"expires_at"`
+	ActorPrincipalID           string    `json:"actor_principal_id"`
+	TenantID                   string    `json:"tenant_id"`
+	TenantMembershipID         string    `json:"tenant_membership_id"`
+	IssuedAuthorizationVersion string    `json:"issued_authorization_version"`
+}
+
+type ExecutionEngineAccessRequest struct {
+	ExecutionID     string   `json:"execution_id"`
+	EngineID        string   `json:"engine_id"`
+	RequiredEffects []string `json:"required_effects"`
+}
+
+type ExecutionEngineAccess struct {
+	AuthorizationID string         `json:"authorization_id"`
+	ExecutionID     string         `json:"execution_id"`
+	Audience        string         `json:"audience"`
+	EngineID        string         `json:"engine_id"`
+	Effects         []string       `json:"effects"`
+	ExpiresAt       time.Time      `json:"expires_at"`
+	Engine          *models.Engine `json:"engine"`
+}
+
+// SystemExecutionAuthorizationClient derives an execution authorization from
+// the current request's User Access Token. The token is method-scoped and is
+// never retained by the client.
+type SystemExecutionAuthorizationClient struct {
+	system *SystemServiceClient
+}
+
+func NewSystemExecutionAuthorizationClient(baseURL string, httpClient *http.Client) *SystemExecutionAuthorizationClient {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 30 * time.Second}
+	}
+	return &SystemExecutionAuthorizationClient{system: &SystemServiceClient{
+		baseURL:    strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+		httpClient: httpClient,
+	}}
+}
+
+func (c *SystemExecutionAuthorizationClient) Issue(
+	ctx context.Context,
+	userAccessToken string,
+	request IssueExecutionAuthorizationRequest,
+) (*IssuedExecutionAuthorization, error) {
+	if c == nil || c.system == nil || c.system.baseURL == "" ||
+		!strings.HasPrefix(userAccessToken, "addp_at_") || len(userAccessToken) == len("addp_at_") {
+		return nil, errors.New("execution authorization issue requires a System URL and User Access Token")
+	}
+	var response IssuedExecutionAuthorization
+	_, err := c.system.doJSON(
+		ctx, http.MethodPost, "/api/v1/system/auth/execution-authorizations",
+		userAccessToken, request, &response,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateIssuedExecutionAuthorization(&response, request); err != nil {
+		return nil, err
+	}
+	return &response, nil
+}
+
+func (c *SystemServiceClient) GetExecutionEngineAccess(
+	ctx context.Context,
+	authorizationID string,
+	request ExecutionEngineAccessRequest,
+) (*ExecutionEngineAccess, error) {
+	if _, err := parseCanonicalPositiveID(authorizationID); err != nil {
+		return nil, errors.New("execution engine access requires a canonical authorization ID")
+	}
+	var response ExecutionEngineAccess
+	path := fmt.Sprintf("/api/v1/system/execution-authorizations/%s/engine-accesses", authorizationID)
+	if err := c.doTenantJSON(ctx, http.MethodPost, path, request, &response); err != nil {
+		return nil, err
+	}
+	if response.AuthorizationID != authorizationID || response.ExecutionID != request.ExecutionID ||
+		response.EngineID != request.EngineID || response.Engine == nil || response.Engine.ID == 0 ||
+		strconv.FormatUint(uint64(response.Engine.ID), 10) != request.EngineID || !response.ExpiresAt.After(time.Now().UTC()) ||
+		!sameStringSet(response.Effects, request.RequiredEffects) {
+		return nil, errors.New("System execution engine access returned an invalid response")
+	}
+	return &response, nil
+}
+
+func (c *SystemServiceClient) IssueExecutionAuthorizationFromExecution(
+	ctx context.Context,
+	request IssueExecutionAuthorizationFromExecutionRequest,
+) (*IssuedExecutionAuthorization, error) {
+	if c == nil {
+		return nil, errors.New("System service client is required")
+	}
+	var response IssuedExecutionAuthorization
+	if err := c.doTenantJSON(
+		ctx, http.MethodPost, "/api/v1/system/runtime/execution-authorizations",
+		request, &response,
+	); err != nil {
+		return nil, err
+	}
+	if response.ExecutionID != request.ExecutionID || response.Audience != request.Audience ||
+		!sameStringSet(response.EngineIDs, request.EngineIDs) ||
+		!sameStringSet(response.Effects, request.Effects) || !response.ExpiresAt.After(time.Now().UTC()) {
+		return nil, errors.New("System execution authorization returned an invalid response")
+	}
+	for _, value := range []string{
+		response.ID, response.ActorPrincipalID, response.TenantID,
+		response.TenantMembershipID, response.IssuedAuthorizationVersion,
+	} {
+		if _, err := parseCanonicalPositiveID(value); err != nil {
+			return nil, errors.New("System execution authorization returned an invalid IAM ID")
+		}
+	}
+	return &response, nil
+}
+
+func sameStringSet(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	values := make(map[string]struct{}, len(left))
+	for _, value := range left {
+		if value == "" {
+			return false
+		}
+		values[value] = struct{}{}
+	}
+	if len(values) != len(left) {
+		return false
+	}
+	for _, value := range right {
+		if _, exists := values[value]; !exists {
+			return false
+		}
+	}
+	return true
+}
+
+func validateIssuedExecutionAuthorization(
+	response *IssuedExecutionAuthorization,
+	request IssueExecutionAuthorizationRequest,
+) error {
+	if response == nil || response.Audience != request.Audience || response.ExecutionID != request.ExecutionID ||
+		!response.ExpiresAt.After(time.Now().UTC()) ||
+		!sameStringSet(response.EngineIDs, request.EngineIDs) ||
+		!sameStringSet(response.Effects, request.Effects) {
+		return errors.New("System execution authorization returned an invalid response")
+	}
+	for _, value := range []string{
+		response.ID, response.ActorPrincipalID, response.TenantID,
+		response.TenantMembershipID, response.IssuedAuthorizationVersion,
+	} {
+		if _, err := parseCanonicalPositiveID(value); err != nil {
+			return errors.New("System execution authorization returned an invalid IAM ID")
+		}
+	}
+	if _, err := uuid.Parse(response.ExecutionID); err != nil {
+		return errors.New("System execution authorization returned an invalid execution ID")
+	}
+	return nil
+}
+
+func parseCanonicalPositiveID(value string) (int64, error) {
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed <= 0 || strconv.FormatInt(parsed, 10) != value {
+		return 0, errors.New("invalid canonical positive ID")
+	}
+	return parsed, nil
+}

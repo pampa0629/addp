@@ -89,7 +89,7 @@ func BuildObjectTableMap(ctx context.Context, tenantID uint, engines []commonMod
 	if metaClient == nil {
 		return result
 	}
-	metaClient.SetTenantID(&tenantID)
+	metaClient = metaClient.WithTenantID(tenantID)
 	for _, engine := range engines {
 		if !IsObjectTableEngine(engine.EngineType) {
 			continue

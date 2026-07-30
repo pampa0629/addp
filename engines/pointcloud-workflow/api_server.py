@@ -15,7 +15,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 from addp_common.workflow_access import WorkflowAccessError
-from addp_common.workflow_runtime import ExecutionRegistry, ExecutionSnapshot, WorkflowRunner, WorkflowValidationError, validate_workflow_def
+from addp_common.workflow_runtime import ExecutionRegistry, ExecutionSnapshot, WorkflowRunner, WorkflowValidationError, validate_execution_authorization, validate_workflow_def
 from operators import ConverterError, converter_status, invoke_operator, list_operators
 
 
@@ -89,6 +89,15 @@ def execute_workflow():
     operator_ids = {operator["id"] for operator in list_operators() if "workflow" in operator.get("execution_modes", [])}
     try:
         validate_workflow_def(workflow_def, operator_ids=operator_ids)
+        validate_execution_authorization(
+            workflow_def,
+            operator_effects={
+                operator["id"]: operator["effects"]
+                for operator in list_operators()
+                if "workflow" in operator.get("execution_modes", [])
+            },
+            runtime=data.get("runtime"),
+        )
     except WorkflowValidationError as exc:
         response = error_response(ErrorCode.WORKFLOW_INVALID, str(exc))
         response["execution_time_ms"] = (time.time() - started) * 1000

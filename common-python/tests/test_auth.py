@@ -67,6 +67,38 @@ def _context_response(*, delegated: bool = False):
     }
 
 
+def _service_context_response(*, platform: bool = False):
+    response = _context_response()
+    response["principal"] = {"type": "service_principal", "id": "41"}
+    if platform:
+        response["context"] = {"type": "platform"}
+        response["authorization"]["role_assignments"] = [
+            {
+                "assignment_id": "22",
+                "role_key": "platform.service",
+                "scope": {"type": "platform"},
+                "permissions": ["system.engine.read"],
+                "source_type": "manual",
+                "valid_from": "2026-07-16T07:00:00Z",
+                "valid_until": None,
+            }
+        ]
+    response["authentication"] = {
+        "methods": ["client_secret"],
+        "assurance_level": "not_applicable",
+        "authenticated_at": "2026-07-16T08:00:00Z",
+        "step_up_expires_at": None,
+    }
+    response["client"] = {
+        "client_id": "addp-develop",
+        "audiences": ["addp.api"],
+        "scope_mode": "restricted",
+        "scopes": ["addp.api"],
+    }
+    response["token"]["type"] = "service_access_token"
+    return response
+
+
 class AuthorizationContextTests(unittest.IsolatedAsyncioTestCase):
     async def test_resolves_canonical_auth_context_v1(self):
         _SystemClient.response = _context_response()
@@ -101,6 +133,36 @@ class AuthorizationContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.delegated_by_client_id, "addp-cli")
         self.assertEqual(context.agent_run_id, "run-1")
         self.assertEqual(context.tool_call_id, "call-1")
+
+    async def test_resolves_service_access_token_context(self):
+        _SystemClient.response = _service_context_response()
+
+        with patch("addp_common.auth.SystemClient", _SystemClient):
+            context = await resolve_authorization_context("http://system", "addp_at_service")
+
+        self.assertEqual(context.principal_type, "service_principal")
+        self.assertEqual(context.token_type, "service_access_token")
+        self.assertEqual(context.client_id, "addp-develop")
+
+    async def test_resolves_platform_service_access_token_context(self):
+        _SystemClient.response = _service_context_response(platform=True)
+
+        with patch("addp_common.auth.SystemClient", _SystemClient):
+            context = await resolve_authorization_context("http://system", "addp_at_service")
+
+        self.assertEqual(context.principal_type, "service_principal")
+        self.assertEqual(context.context_type, "platform")
+        self.assertIsNone(context.tenant_id)
+        self.assertIsNone(context.tenant_membership_id)
+        self.assertEqual(context.permissions, ("system.engine.read",))
+
+    async def test_rejects_service_token_for_user_principal(self):
+        _SystemClient.response = _context_response()
+        _SystemClient.response["token"]["type"] = "service_access_token"
+
+        with patch("addp_common.auth.SystemClient", _SystemClient):
+            with self.assertRaisesRegex(ValueError, "user principal cannot use"):
+                await resolve_authorization_context("http://system", "addp_at_service")
 
     async def test_rejects_legacy_flat_context(self):
         _SystemClient.response = {"user_id": 12, "tenant_id": 3, "user_type": "user"}

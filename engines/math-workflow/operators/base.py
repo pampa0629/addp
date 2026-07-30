@@ -43,6 +43,7 @@ class OperatorMetadata(BaseModel):
     description: str = Field(..., description="功能描述")
     brief_description: Optional[str] = Field(None, description="简短描述")
     execution_modes: List[str] = Field(..., description="执行模式")
+    effects: List[str] = Field(..., description="执行效果：read/write/ddl/external_effect")
     parameters: List[ParameterMetadata] = Field(..., description="参数定义列表")
     output_ports: List[OutputPortMetadata] = Field(..., description="输出端口定义")
     use_cases: Optional[List[str]] = Field(None, description="使用场景")

@@ -24,6 +24,7 @@ class AgentCheckpointTests(unittest.TestCase):
                         "id": 20,
                         "name": "GeoPython 工作流引擎",
                         "engine_type": "geopython_workflow",
+                        "lifecycle_state": "active",
                         "connection_status": "online",
                         "connection_info": {"password": "must-not-persist"},
                     }
@@ -54,6 +55,7 @@ class AgentCheckpointTests(unittest.TestCase):
         restored = normalize_checkpoint(checkpoint)
         self.assertEqual(restored["schema"], CHECKPOINT_SCHEMA)
         self.assertEqual(restored["observed"]["workflow_engines"]["20"]["id"], 20)
+        self.assertEqual(restored["observed"]["workflow_engines"]["20"]["lifecycle_state"], "active")
         self.assertNotIn("connection_info", restored["observed"]["workflow_engines"]["20"])
         self.assertEqual(restored["observed"]["resources"][locator]["full_name"], "public.railway")
         self.assertNotIn("content", restored["observed"]["resources"][locator])

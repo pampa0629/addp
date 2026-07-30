@@ -232,7 +232,7 @@ frontend/src/
 
 **system.engines 表**:
 - 存储各类引擎连接信息 (数据库、对象存储等)
-- 字段: `id`, `name`, `engine_type`, `connection_info`, `tenant_id`, `created_by`, `is_active`
+- 字段: `id`, `name`, `engine_type`, `connection_info`, `tenant_id`, `created_by`, `lifecycle_state` 及删除工作流状态
 - `connection_info` 为 JSONB 类型，灵活存储不同类型的连接配置
 - 敏感字段 (password, access_key 等) 使用 **AES-256-GCM** 加密存储
 
@@ -320,7 +320,7 @@ frontend/src/
 
 ## API 端点
 
-> 所有对外 API 均以 `/api/v1/system` 为前缀。内部服务间 API 以 `/api/v1/internal` 为前缀（需 `X-Internal-API-Key` 认证）。
+> 所有公开和服务身份 API 均以 `/api/v1/system` 为前缀并使用 Bearer Token。Tenant Runtime 通过 `tenant_id` 换取 Tenant Service Access Token，平台控制面通过 `context_type=platform` 换取 Platform Service Access Token。
 
 ### 认证
 - `POST /api/v1/system/login` - 用户登录
@@ -359,6 +359,20 @@ frontend/src/
 - `POST /api/v1/system/engines/test-connection` - 创建前测试连接
 - `POST /api/v1/system/engines/:id/catalog/children` - 统一列出实时 catalog 子节点，支持数据库、对象存储、文件系统和图数据库等多层目录发现
 
+`GET /engines` 对 User 和 Service Principal 都返回脱敏列表。`GET /engines/:id` 对 User 返回脱敏连接信息；具有 `system.engine.read` 的 Tenant Service Principal 返回同 Tenant 的解密连接信息，跨 Tenant 返回 403。
+
+### Service Runtime（Service Access Token + 精确 Permission）
+- `POST /api/v1/system/runtime/modules` - Platform Service Principal 注册自身模块；
+- `POST /api/v1/system/runtime/modules/heartbeat` - Platform Service Principal 更新自身心跳；
+- `POST /api/v1/system/runtime/task-providers` - Platform Service Principal 发布自身 TaskProvider；
+- `GET /api/v1/system/runtime/engine-descriptors` - Tenant Service Principal 列出当前 Tenant 可见的脱敏 Engine Runtime Descriptor；
+- `GET /api/v1/system/runtime/engine-descriptors/:id` - Tenant Service Principal 读取当前 Tenant 可见的单个脱敏 Engine Runtime Descriptor；
+- `POST /api/v1/system/tenant/audit/events` - Tenant Service Principal 追加当前 Tenant 审计事件。
+
+Module Name 必须与 OAuth Client `addp-<module>` 一致；Principal、Context 和 Tenant 只从 AuthContext 获取。Meta 统一使用上述服务路由，不得调用对应 `/api/v1/internal` 接口。
+
+Engine Runtime Descriptor 不包含 `connection_info`。只有工作流或脚本 Runtime 可投影非密密的 `protocol/host/port`；数据引擎连接信息必须继续通过 Execution Authorization 或已明确授权的详情路由获取。
+
 ### 应用管理（需认证）
 - `POST /api/v1/system/applications` - 创建应用
 - `GET /api/v1/system/applications` - 获取应用列表
@@ -375,7 +389,9 @@ frontend/src/
 - `POST /api/v1/system/admin/cleanup/execute` - 创建资源回收执行任务
 - `GET /api/v1/system/admin/cleanup/history` - 获取资源回收任务历史
 
-### 内部 API（`/api/v1/internal`，X-Internal-API-Key 认证）
+### 待迁移内部 API（受限遗留面）
+
+`/api/v1/internal` 仅保留给尚未迁移的系统级运维调用方，不是新服务间认证主路径，也不能表达 Tenant Context。Meta 不得使用这些接口；新增或迁移调用方必须使用独立 Service Principal、Client Credentials 和 `/api/v1/system` Bearer 路由。
 
 **配置**:
 - `GET /api/v1/internal/config` - 获取共享配置

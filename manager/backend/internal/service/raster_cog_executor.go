@@ -209,7 +209,7 @@ func (e *ManagerRasterCOGExecutor) prepareSourceURI(ctx context.Context, tenantI
 	if err != nil {
 		return "", nil, fmt.Errorf("get source engine: %w", err)
 	}
-	if engine == nil || !engine.IsActive {
+	if !engine.IsUsable() {
 		return "", nil, errors.New("source engine is not active")
 	}
 	if engine.TenantID != nil && *engine.TenantID != tenantID {

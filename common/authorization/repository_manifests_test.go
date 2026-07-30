@@ -13,21 +13,37 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 298 {
-		t.Fatalf("descriptor count = %d, want 298", len(descriptors))
+	if len(descriptors) != 311 {
+		t.Fatalf("descriptor count = %d, want 311", len(descriptors))
 	}
 	if descriptors[0].Key != "agent.run.cancel" || descriptors[len(descriptors)-1].Key != "transfer.task.update" {
 		t.Fatalf("descriptor boundary keys = %q, %q", descriptors[0].Key, descriptors[len(descriptors)-1].Key)
 	}
 
 	roles := report.Roles
-	if len(roles) != 16 {
-		t.Fatalf("role count = %d, want 16", len(roles))
+	if len(roles) != 30 {
+		t.Fatalf("role count = %d, want 30", len(roles))
 	}
-	if roles[0].Key != "platform.audit_administrator" || roles[len(roles)-1].Key != "tenant.service_publisher" {
+	if roles[0].Key != "platform.asset_runtime" || roles[len(roles)-1].Key != "tenant.transfer_runtime" {
 		t.Fatalf("role boundary keys = %q, %q", roles[0].Key, roles[len(roles)-1].Key)
 	}
+	assertRepositoryRolePrincipalTypes(t, roles, "tenant.manager_runtime", []string{"service_principal"})
+	assertRepositoryRolePrincipalTypes(t, roles, "tenant.asset_runtime", []string{"service_principal"})
+	assertRepositoryRolePermissions(t, roles, "tenant.asset_runtime", []string{
+		"develop.task.read",
+		"meta.catalog.read",
+		"service.definition.read",
+		"standard.metric.read",
+	})
+	assertRepositoryRolePrincipalTypes(t, roles, "tenant.portal_runtime", []string{"service_principal"})
+	assertRepositoryRolePermissions(t, roles, "tenant.portal_runtime", []string{
+		"service.endpoint.read",
+	})
+	assertRepositoryRolePermissions(t, roles, "platform.develop_runtime", []string{
+		"system.runtime_registry.update",
+	})
 	assertRepositoryRolePermissions(t, roles, "tenant.data_viewer", []string{
+		"develop.data_read.execute",
 		"manager.content.read",
 		"manager.data_item.read",
 		"manager.search.execute",
@@ -45,6 +61,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"copilot.workflow.execute",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.data_steward", []string{
+		"develop.data_read.execute",
+		"develop.data_write.execute",
 		"manager.content.read",
 		"manager.data_item.create",
 		"manager.data_item.read",
@@ -63,6 +81,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"meta.scan_task.update",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.data_engineer", []string{
+		"develop.data_read.execute",
+		"develop.data_write.execute",
 		"develop.notebook.create",
 		"develop.notebook.delete",
 		"develop.notebook.execute",
@@ -74,6 +94,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"develop.task.update",
 		"manager.content.read",
 		"manager.data_item.read",
+		"manager.data_profile.execute",
 		"manager.search.execute",
 		"monitor.execution.read",
 		"orchestrator.workflow.create",
@@ -86,6 +107,12 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"transfer.task.execute",
 		"transfer.task.read",
 		"transfer.task.update",
+	})
+	assertRepositoryRolePermissions(t, roles, "tenant.develop_runtime", []string{
+		"meta.catalog.read",
+		"meta.scan_task.execute",
+		"system.engine_descriptor.read",
+		"system.execution_authorization.execute",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.service_publisher", []string{
 		"manager.content.read",
@@ -128,6 +155,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"asset.entry.publish",
 		"asset.entry.read",
 		"asset.entry.update",
+		"asset.management.read",
 		"asset.rating.create",
 		"asset.rating.read",
 		"asset.rating.update",
@@ -240,6 +268,19 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"graph.review.reject",
 		"graph.review.update",
 	})
+}
+
+func assertRepositoryRolePrincipalTypes(t *testing.T, roles []BuiltinRoleDescriptor, key string, want []string) {
+	t.Helper()
+	for _, role := range roles {
+		if role.Key == key {
+			if !reflect.DeepEqual(role.AllowedPrincipalTypes, want) {
+				t.Fatalf("role %q principal types = %v, want %v", key, role.AllowedPrincipalTypes, want)
+			}
+			return
+		}
+	}
+	t.Fatalf("role %q not found", key)
 }
 
 func assertRepositoryRolePermissions(t *testing.T, roles []BuiltinRoleDescriptor, key string, want []string) {

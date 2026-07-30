@@ -17,11 +17,13 @@ REQUIRED_OPERATOR_FIELDS = {
     "category_path",
     "description",
     "execution_modes",
+    "effects",
     "parameters",
     "output_ports",
 }
 
 ALLOWED_EXECUTION_MODES = {"workflow", "direct"}
+ALLOWED_EFFECTS = {"read", "write", "ddl", "external_effect"}
 ALLOWED_PARAM_TYPES = {"input", "output", "param"}
 PUBLIC_RESOURCE_PARAMETER_NAMES = {"locator", "target_parent_locator", "target_name"}
 
@@ -111,6 +113,17 @@ def _validate_operator(
             unsupported = sorted(set(execution_modes) - ALLOWED_EXECUTION_MODES)
             if unsupported:
                 errors.append(f"{label}: unsupported execution_modes {unsupported}")
+
+    effects = operator.get("effects")
+    if "effects" in operator:
+        if not isinstance(effects, list) or not effects:
+            errors.append(f"{label}: effects must be a non-empty array")
+        else:
+            unsupported = sorted(set(effects) - ALLOWED_EFFECTS)
+            if unsupported:
+                errors.append(f"{label}: unsupported effects {unsupported}")
+            if len(effects) != len(set(effects)):
+                errors.append(f"{label}: effects must not contain duplicates")
 
     parameters = operator.get("parameters")
     if "parameters" in operator:

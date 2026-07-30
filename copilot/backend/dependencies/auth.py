@@ -51,10 +51,14 @@ async def require_user(
     accept_language: str | None = Header(default=None, alias="Accept-Language"),
 ) -> AuthorizationContext:
     context = await _resolve_user(credentials, accept_language)
-    if context.token_type == "delegated_access_token":
+    if context.principal_type != "user" or context.token_type in {"delegated_access_token", "service_access_token"}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=_message(accept_language, "委托令牌不能访问该接口", "Delegated token cannot access this endpoint"),
+            detail=_message(
+                accept_language,
+                "此接口只接受普通用户令牌",
+                "This endpoint only accepts regular user tokens",
+            ),
         )
     return context
 

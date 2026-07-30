@@ -33,13 +33,7 @@ func (h *Handler) CreateUnscannedScanRuns(c *gin.Context) {
 
 	tenantID := commonAuth.GetTenantID(c)
 	userID := commonAuth.GetUserID(c)
-	token, ok := extractBearerToken(c)
-	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authorization token"})
-		return
-	}
-
-	runs, err := h.executionService.CreateUnscannedRuns(c.Request.Context(), tenantID, userID, token)
+	runs, err := h.executionService.CreateUnscannedRuns(c.Request.Context(), tenantID, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -90,13 +84,7 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 		return
 	}
 
-	token, hasBearerToken := extractBearerToken(c)
-	if !hasBearerToken && strings.TrimSpace(c.GetHeader("X-Internal-API-Key")) == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authorization token"})
-		return
-	}
-
-	run, err := h.executionService.CreateManualRun(c.Request.Context(), tenantID, userID, token, &req)
+	run, err := h.executionService.CreateManualRun(c.Request.Context(), tenantID, userID, &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

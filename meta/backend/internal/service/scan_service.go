@@ -38,7 +38,7 @@ type ScanService struct {
 
 func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 	if engineService == nil {
-		engineService = NewEngineService(db, "", "") // nil Redis client for fallback
+		engineService = NewEngineService(db, nil)
 	}
 
 	repo := metaRepo.NewScanRepository(db)
@@ -106,7 +106,6 @@ func (s *ScanService) SetDedupService(dedupService *ScanDedupService) {
 func (s *ScanService) ScanEngineWithOptions(opts scanflow.Options) (*models.ScanResponse, error) {
 	startTime := time.Now()
 	tenantID := opts.TenantID
-	token := opts.Token
 	reporter := opts.Reporter
 
 	engineID, err := s.ensureScopeResolver().ResolveEngineID(tenantID, opts)
@@ -118,7 +117,7 @@ func (s *ScanService) ScanEngineWithOptions(opts scanflow.Options) (*models.Scan
 	if reporter != nil {
 		reporter.Message("正在加载资源连接信息")
 	}
-	resource, err := s.engineService.GetResourceByID(engineID, tenantID, token)
+	resource, err := s.engineService.GetResourceByID(engineID, tenantID)
 	if err != nil {
 		return nil, err
 	}

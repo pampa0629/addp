@@ -28,6 +28,12 @@ other = "会话状态已变化，请重试"
 [system.auth.delegation_conflict]
 other = "该工具调用已经签发过委托访问令牌"
 
+[system.auth.execution_authorization_conflict]
+other = "该执行已经创建过执行授权，请使用原执行授权"
+
+[system.auth.execution_authorization_unavailable]
+other = "执行授权已失效、越界或目标引擎不可用"
+
 [system.auth.internal_error]
 other = "认证服务暂时不可用"
 
@@ -72,6 +78,24 @@ other = "心跳更新成功"
 
 [system.module.deleted]
 other = "模块注销成功"
+
+[system.engine.identity_immutable]
+other = "引擎物理端点不可原地修改，请创建新的引擎实例"
+
+[system.engine.deleting]
+other = "引擎正在执行删除前资源回收，当前操作不可用"
+
+[system.engine.lifecycle_invalid]
+other = "引擎生命周期状态无效"
+
+[system.engine.artifact_policy_invalid]
+other = "外部产物处理策略无效"
+
+[system.engine.cleanup_unavailable]
+other = "资源回收服务不可用，暂时不能删除引擎"
+
+[system.engine.deletion_started]
+other = "已开始清理并删除引擎"
 
 [system.cleanup.confirm_required]
 other = "执行资源回收前必须确认评估结果和影响范围"

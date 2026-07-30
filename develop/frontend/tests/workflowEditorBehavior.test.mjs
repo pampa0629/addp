@@ -15,6 +15,9 @@ const saveDialogSource = editor.slice(
 )
 
 assert.match(editor, /:model-value="workflowEngineId"/)
+assert.match(editor, /ref="engineSelectRef"/)
+assert.match(editor, /v-if="workflowEngineUnavailable"[\s\S]*engineUnavailableOption/)
+assert.match(editor, /engineSelectRef\.value\?\.blur\(\)/)
 assert.match(editor, /class="editor-content" :inert="editorBusy" :aria-busy="editorBusy"/)
 assert.match(editor, /:loading="executionButtonLoading"/)
 assert.match(executeDialogSource, /:close-on-click-modal="!executing"/)
@@ -56,7 +59,13 @@ assert.match(editor, /ref="paramsPanelRef"/)
 assert.match(editor, /:validation-issues="selectedNodeValidationIssues"/)
 assert.match(editor, /paramsPanelRef\.value\?\.focusParam\(validationIssueParamName\(issue\)\)/)
 assert.match(editor, /const canExecute = computed/)
+const canSaveSource = editor.slice(
+  editor.indexOf('const canSave = computed'),
+  editor.indexOf('const canExecute = computed')
+)
 const canExecuteSource = editor.match(/const canExecute = computed\([\s\S]*?\n\)\)/)?.[0] || ''
+assert.doesNotMatch(canSaveSource, /selectedEngine|workflowEngineUnavailable/)
+assert.match(canExecuteSource, /selectedEngine\.value/)
 assert.doesNotMatch(canExecuteSource, /validationResult/)
 assert.match(canExecuteSource, /validationErrors\.value\.length === 0/)
 assert.doesNotMatch(editor, /class="validation-bar"/)
@@ -94,6 +103,18 @@ assert.match(editor, /async function setTaskRouteQuery\(taskId\)/)
 assert.match(editor, /function cancelSaveDialog\(\) \{\s+if \(saving\.value\) return/)
 assert.match(editor, /async function handleFileChange\(event\) \{[\s\S]*importing\.value = true[\s\S]*importing\.value = false/)
 assert.match(editor, /async function generateWorkflow\(\) \{\s+if \(editorBusy\.value\) return/)
+assert.match(editor, /function guardWorkflowExecutable\(\) \{[\s\S]*workflowEngineUnavailable\.value[\s\S]*engineUnavailableAction/)
+const loadOperatorsSource = editor.slice(
+  editor.indexOf('async function loadOperators(engineId)'),
+  editor.indexOf('async function loadSparkRuntimes()')
+)
+const unavailableOperatorSource = loadOperatorsSource.slice(
+  0,
+  loadOperatorsSource.indexOf('try {')
+)
+assert.ok(loadOperatorsSource.indexOf('workflowEngines.value.some') < loadOperatorsSource.indexOf('listOperatorsByWorkflowEngine'))
+assert.match(unavailableOperatorSource, /operatorLoadError\.value = t\('develop\.workflow\.engineUnavailableHint'\)/)
+assert.doesNotMatch(unavailableOperatorSource, /ElMessage/)
 assert.match(editor, /class="ai-fab"[\s\S]*:aria-label="t\('develop\.workflow\.aiTitle'\)"[\s\S]*:disabled="editorBusy"/)
 assert.doesNotMatch(editor, /createTemporaryWorkflowTask|tempWorkflowPrefix/)
 
@@ -106,5 +127,6 @@ assert.match(paramsPanel, /defineExpose\(\{ focusParam \}\)/)
 assert.doesNotMatch(paramsPanel, /saveParams|develop\.operatorParams\.saveParams/)
 assert.match(operatorPalette, /hasDistinctText\(operator\.description, operator\.displayName, operator\.name\)/)
 assert.doesNotMatch(operatorPalette, /operator-code/)
+assert.match(operatorPalette, /v-if="!loading && !loadError && filteredCategories\.length === 0"/)
 
 console.log('workflowEditorBehavior tests passed')

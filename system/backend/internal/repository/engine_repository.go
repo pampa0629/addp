@@ -34,7 +34,7 @@ func (r *EngineRepository) List(offset, limit int, engineType string) ([]models.
 	var engines []models.Engine
 	var total int64
 
-	query := r.db.Where("is_active = ?", true)
+	query := r.db.Where("lifecycle_state = ?", models.EngineLifecycleActive)
 
 	if engineType != "" {
 		query = query.Where("engine_type = ?", engineType)
@@ -65,8 +65,8 @@ func (r *EngineRepository) ListByTenant(tenantID uint, offset, limit int, engine
 	// 1. 租户自己创建的资源（tenant_id = tenantID）
 	// 2. 内置资源（is_builtin = true AND tenant_id IS NULL）
 	query := r.db.Where(
-		"(tenant_id = ? OR (is_builtin = ? AND tenant_id IS NULL)) AND is_active = ?",
-		tenantID, true, true,
+		"(tenant_id = ? OR (is_builtin = ? AND tenant_id IS NULL)) AND lifecycle_state = ?",
+		tenantID, true, models.EngineLifecycleActive,
 	)
 
 	if engineType != "" {
@@ -83,17 +83,27 @@ func (r *EngineRepository) ListByTenant(tenantID uint, offset, limit int, engine
 	return engines, total, err
 }
 
-// ListVisibleByTenant 返回租户可见的全部激活引擎，由服务层在能力过滤后统一分页。
-func (r *EngineRepository) ListVisibleByTenant(tenantID uint, engineType string) ([]models.Engine, error) {
+// ListVisibleByTenant 返回租户可见引擎，由服务层在能力过滤后统一分页。
+func (r *EngineRepository) ListVisibleByTenant(tenantID uint, engineType string, lifecycleStates []string) ([]models.Engine, error) {
 	var engines []models.Engine
 	query := r.db.Where(
-		"(tenant_id = ? OR (is_builtin = ? AND tenant_id IS NULL)) AND is_active = ?",
-		tenantID, true, true,
+		"(tenant_id = ? OR (is_builtin = ? AND tenant_id IS NULL))",
+		tenantID, true,
 	)
+	if len(lifecycleStates) == 0 {
+		lifecycleStates = []string{models.EngineLifecycleActive}
+	}
+	query = query.Where("lifecycle_state IN ?", lifecycleStates)
 	if engineType != "" {
 		query = query.Where("engine_type = ?", engineType)
 	}
 	err := query.Order("id ASC").Find(&engines).Error
+	return engines, err
+}
+
+func (r *EngineRepository) ListDeleting() ([]models.Engine, error) {
+	var engines []models.Engine
+	err := r.db.Where("lifecycle_state = ?", models.EngineLifecycleDeleting).Order("id ASC").Find(&engines).Error
 	return engines, err
 }
 

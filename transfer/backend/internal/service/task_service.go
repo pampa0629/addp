@@ -105,8 +105,13 @@ func NewTaskService(
 		cfg:              cfg,
 		logger:           logger.With("component", "task_service"),
 	}
-	if cfg != nil && strings.TrimSpace(cfg.MetaServiceURL) != "" && strings.TrimSpace(cfg.InternalAPIKey) != "" {
-		service.metaClient = commonClient.NewMetaClientWithInternalKey(cfg.MetaServiceURL, cfg.InternalAPIKey)
+	if cfg != nil && strings.TrimSpace(cfg.MetaServiceURL) != "" && strings.TrimSpace(cfg.ServiceClientSecret) != "" {
+		tokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-transfer", cfg.ServiceClientSecret, nil)
+		if err == nil {
+			service.metaClient = commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
+		} else {
+			service.logger.Error("Service Token Source 初始化失败", "error", err)
+		}
 	}
 	return service
 }

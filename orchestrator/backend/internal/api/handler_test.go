@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	commonauth "github.com/addp/common/authorization"
+	commonClient "github.com/addp/common/client"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	commonModels "github.com/addp/common/models"
@@ -20,6 +22,16 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+type apiServiceTokens string
+
+func (token apiServiceTokens) Token(context.Context, uint) (string, error) {
+	return string(token), nil
+}
+
+func (token apiServiceTokens) PlatformToken(context.Context) (string, error) {
+	return string(token), nil
+}
 
 func TestCreateLocalizesExecutionSchemaValidationError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -45,7 +57,7 @@ func TestCreateLocalizesExecutionSchemaValidationError(t *testing.T) {
 	defer system.Close()
 
 	handler := &OrchestrationHandler{
-		taskProviderRegistry: service.NewTaskProviderRegistry(system.URL, "", time.Hour),
+		taskProviderRegistry: newTaskProviderRegistryForAPITest(system),
 	}
 	tests := []struct {
 		name     string
@@ -239,9 +251,16 @@ func TestOrchestrationHandlersHideCrossTenantResources(t *testing.T) {
 		last_run_at DATETIME,
 		next_run_at DATETIME,
 		last_execution_id TEXT,
-		last_execution_status TEXT,
-		created_by INTEGER,
-		created_at DATETIME,
+			last_execution_status TEXT,
+			created_by INTEGER,
+			authorization_ref TEXT,
+			authorization_subject_id INTEGER,
+			authorization_definition_hash TEXT,
+			authorization_principal_id INTEGER,
+			authorization_membership_id INTEGER,
+			authorization_version INTEGER,
+			authorized_at DATETIME,
+			created_at DATETIME,
 		updated_at DATETIME,
 		deleted_at DATETIME
 	)`).Error; err != nil {
@@ -529,7 +548,7 @@ func TestListModuleTasksRejectsUndeclaredTaskTypeBeforeOwnerCall(t *testing.T) {
 	defer system.Close()
 
 	handler := &OrchestrationHandler{
-		taskProviderRegistry: service.NewTaskProviderRegistry(system.URL, "", time.Hour),
+		taskProviderRegistry: newTaskProviderRegistryForAPITest(system),
 		httpClient:           owner.Client(),
 	}
 	router := gin.New()
@@ -568,8 +587,9 @@ func TestListModuleTasksReturnsBadGatewayForOwnerError(t *testing.T) {
 	defer system.Close()
 
 	handler := &OrchestrationHandler{
-		taskProviderRegistry: service.NewTaskProviderRegistry(system.URL, "", time.Hour),
+		taskProviderRegistry: newTaskProviderRegistryForAPITest(system),
 		httpClient:           owner.Client(),
+		serviceTokens:        apiServiceTokens("addp_at_orchestrator"),
 	}
 	router := gin.New()
 	router.Use(testTenantAuthorizationContext(7, 9))
@@ -598,8 +618,9 @@ func TestListModuleTasksReturnsBadGatewayForNonStandardOwnerResponse(t *testing.
 	defer system.Close()
 
 	handler := &OrchestrationHandler{
-		taskProviderRegistry: service.NewTaskProviderRegistry(system.URL, "", time.Hour),
+		taskProviderRegistry: newTaskProviderRegistryForAPITest(system),
 		httpClient:           owner.Client(),
+		serviceTokens:        apiServiceTokens("addp_at_orchestrator"),
 	}
 	router := gin.New()
 	router.Use(testTenantAuthorizationContext(7, 9))
@@ -648,9 +669,13 @@ func newTaskProviderSystemServerWithProvider(t *testing.T, provider *commonModel
 	t.Helper()
 
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		expectedPath := fmt.Sprintf("/api/v1/internal/task-providers/%s", provider.ModuleName)
+		expectedPath := fmt.Sprintf("/api/v1/system/runtime/task-providers/%s", provider.ModuleName)
 		if r.URL.Path != expectedPath {
 			t.Fatalf("unexpected system path: %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer addp_at_orchestrator" ||
+			r.Header.Get("X-Internal-API-Key") != "" || r.Header.Get("X-Tenant-ID") != "" {
+			t.Fatalf("invalid System service authentication headers: %#v", r.Header)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprintf(w, `{
@@ -667,6 +692,11 @@ func newTaskProviderSystemServerWithProvider(t *testing.T, provider *commonModel
 			"is_enabled":true
 		}`, provider.ModuleName, provider.BaseURL, provider.TaskListEndpoint, string(*provider.Capabilities))
 	}))
+}
+
+func newTaskProviderRegistryForAPITest(system *httptest.Server) *service.TaskProviderRegistry {
+	systemClient := commonClient.NewSystemServiceClient(system.URL, apiServiceTokens("addp_at_orchestrator"), system.Client())
+	return service.NewTaskProviderRegistry(systemClient, time.Hour)
 }
 
 func taskProviderForAPITest(moduleName, baseURL string) *commonModels.TaskProvider {

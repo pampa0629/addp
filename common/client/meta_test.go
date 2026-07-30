@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,18 +11,24 @@ import (
 	commonExecution "github.com/addp/common/execution"
 )
 
+func newTestMetaClient(baseURL string) *MetaClient {
+	return NewMetaClient(baseURL, ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+		return "test-token", nil
+	}))
+}
+
 func TestMetaClientCreateManualScanRunUsesAsyncPath(t *testing.T) {
 	t.Parallel()
 
 	var gotPath string
 	var gotHeader string
-	var gotTenant string
+	var gotLegacyHeaders bool
 	var gotPayload map[string]interface{}
 	var decodeErr error
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
-		gotHeader = r.Header.Get("X-Internal-API-Key")
-		gotTenant = r.Header.Get("X-Tenant-ID")
+		gotHeader = r.Header.Get("Authorization")
+		gotLegacyHeaders = r.Header.Get("X-Internal-API-Key") != "" || r.Header.Get("X-Tenant-ID") != ""
 		decodeErr = json.NewDecoder(r.Body).Decode(&gotPayload)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
@@ -29,9 +36,9 @@ func TestMetaClientCreateManualScanRunUsesAsyncPath(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewMetaClientWithInternalKey(server.URL, "internal-key")
+	client := newTestMetaClient(server.URL)
 	tenantID := uint(8)
-	client.SetTenantID(&tenantID)
+	client = client.WithTenantID(tenantID)
 
 	result, err := client.CreateManualScanRun(MetaScanOptions{
 		EngineID:    26,
@@ -59,8 +66,8 @@ func TestMetaClientCreateManualScanRunUsesAsyncPath(t *testing.T) {
 	if gotPath != "/api/v1/meta/scan/run/manual" {
 		t.Fatalf("path = %q, want /api/v1/meta/scan/run/manual", gotPath)
 	}
-	if gotHeader != "internal-key" || gotTenant != "8" {
-		t.Fatalf("auth headers = key:%q tenant:%q", gotHeader, gotTenant)
+	if gotHeader != "Bearer test-token" || gotLegacyHeaders {
+		t.Fatalf("auth headers = authorization:%q legacy:%t", gotHeader, gotLegacyHeaders)
 	}
 	if gotPayload["engine_id"] != float64(26) || gotPayload["node_id"] != float64(1831) {
 		t.Fatalf("payload target = %#v", gotPayload)
@@ -93,7 +100,7 @@ func TestMetaClientCreateManualScanRunRejectsScheduledTrigger(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewMetaClientWithInternalKey(server.URL, "internal-key")
+	client := newTestMetaClient(server.URL)
 	_, err := client.CreateManualScanRun(MetaScanOptions{EngineID: 26, TriggerType: commonExecution.TriggerTypeScheduled})
 	if err == nil {
 		t.Fatal("CreateManualScanRun() should reject scheduled trigger_type")
@@ -108,22 +115,22 @@ func TestMetaClientRefreshItemUsesItemRefreshPath(t *testing.T) {
 
 	var gotPath string
 	var gotHeader string
-	var gotTenant string
+	var gotLegacyHeaders bool
 	var gotPayload map[string]interface{}
 	var decodeErr error
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
-		gotHeader = r.Header.Get("X-Internal-API-Key")
-		gotTenant = r.Header.Get("X-Tenant-ID")
+		gotHeader = r.Header.Get("Authorization")
+		gotLegacyHeaders = r.Header.Get("X-Internal-API-Key") != "" || r.Header.Get("X-Tenant-ID") != ""
 		decodeErr = json.NewDecoder(r.Body).Decode(&gotPayload)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"success","message":"ok","items_scanned":1,"fields_scanned":5,"extraction":{"documents":1,"extracted":0,"unsupported":1,"failed":0,"indexed":0,"index_failed":0}}`))
 	}))
 	defer server.Close()
 
-	client := NewMetaClientWithInternalKey(server.URL, "internal-key")
+	client := newTestMetaClient(server.URL)
 	tenantID := uint(8)
-	client.SetTenantID(&tenantID)
+	client = client.WithTenantID(tenantID)
 
 	result, err := client.RefreshItem(1831, MetaScanOptions{EngineID: 26, ScanDepth: "deep", TriggerType: "manual", Source: commonExecution.ModuleManager, Force: true})
 	if err != nil {
@@ -135,8 +142,8 @@ func TestMetaClientRefreshItemUsesItemRefreshPath(t *testing.T) {
 	if gotPath != "/api/v1/meta/items/1831/refresh" {
 		t.Fatalf("path = %q, want /api/v1/meta/items/1831/refresh", gotPath)
 	}
-	if gotHeader != "internal-key" || gotTenant != "8" {
-		t.Fatalf("auth headers = key:%q tenant:%q", gotHeader, gotTenant)
+	if gotHeader != "Bearer test-token" || gotLegacyHeaders {
+		t.Fatalf("auth headers = authorization:%q legacy:%t", gotHeader, gotLegacyHeaders)
 	}
 	if gotPayload["engine_id"] != float64(26) || gotPayload["force"] != true {
 		t.Fatalf("payload = %#v", gotPayload)
@@ -164,7 +171,7 @@ func TestMetaClientRefreshItemRejectsScheduledTrigger(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewMetaClientWithInternalKey(server.URL, "internal-key")
+	client := newTestMetaClient(server.URL)
 	_, err := client.RefreshItem(1831, MetaScanOptions{EngineID: 26, TriggerType: commonExecution.TriggerTypeScheduled})
 	if err == nil {
 		t.Fatal("RefreshItem() should reject scheduled trigger_type")
@@ -187,7 +194,7 @@ func TestMetaClientDecodesItemDataUpdatedAt(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewMetaClientWithInternalKey(server.URL, "internal-key")
+	client := newTestMetaClient(server.URL).WithTenantID(8)
 	item, err := client.GetItemByID(21)
 	if err != nil {
 		t.Fatalf("GetItemByID() error = %v", err)

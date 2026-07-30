@@ -46,18 +46,13 @@ func (h *Handler) RefreshItem(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	token := c.GetHeader("Authorization")
-	if len(token) > 7 && token[:7] == "Bearer " {
-		token = token[7:]
-	}
-
 	req.ItemID = uint(itemID64)
 	req.TriggerType = models.TriggerTypeManual
 	if strings.TrimSpace(req.ScanDepth) == "" {
 		req.ScanDepth = "deep"
 	}
 
-	run, err := h.executionService.CreateManualRun(c.Request.Context(), tenantID, userID, token, &req)
+	run, err := h.executionService.CreateManualRun(c.Request.Context(), tenantID, userID, &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

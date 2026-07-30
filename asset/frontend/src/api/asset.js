@@ -39,7 +39,6 @@ export const assetAPI = {
 export const applicationAPI = {
   list: (params) => client.get('/asset/applications', { params }),
   get: (id) => client.get(`/asset/applications/${id}`),
-  create: (data) => client.post('/asset/applications', data),
   approve: (id, data) => client.post(`/asset/applications/${id}/approve`, data),
   reject: (id, data) => client.post(`/asset/applications/${id}/reject`, data),
   revokeAuth: (id) => client.post(`/asset/applications/${id}/revoke`)
@@ -48,7 +47,6 @@ export const applicationAPI = {
 // 评价管理（Phase 6）
 export const ratingAPI = {
   list: (params) => client.get('/asset/ratings', { params }),
-  create: (data) => client.post('/asset/ratings', data),
   markHandled: (id, isHandled) => client.post(`/asset/ratings/${id}/mark-handled`, { is_handled: isHandled })
 }
 

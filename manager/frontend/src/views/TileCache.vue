@@ -633,7 +633,7 @@ const loadEngines = async (force = false) => {
   }
   try {
     const response = await client.get('/manager/engines')
-    engineOptions.value = (response.data || []).filter((engine) => engine?.is_active !== false)
+    engineOptions.value = (response.data || []).filter((engine) => engine?.lifecycle_state === 'active')
     return engineOptions.value
   } catch (error) {
     console.error('加载引擎列表失败:', error)

@@ -124,6 +124,7 @@ SELECT_METADATA = OperatorMetadata(
     description='选择列',
     brief_description='从 DataFrame 中选择指定的列,类似 SQL SELECT',
     execution_modes=["workflow"],
+    effects=["read"],
     overview='select 算子用于投影操作,从 DataFrame 中选择需要的列,丢弃其他列。支持简单列名和表达式,常用于减少数据传输量和提取关键字段。',
     params=[
         OperatorParam(
@@ -172,6 +173,7 @@ FILTER_METADATA = OperatorMetadata(
     description='条件过滤',
     brief_description='根据条件表达式过滤行,类似 SQL WHERE',
     execution_modes=["workflow"],
+    effects=["read"],
     overview='filter 算子根据条件表达式过滤 DataFrame 的行,保留满足条件的记录。支持复杂的逻辑运算(AND/OR/NOT)和丰富的比较操作(=、>、<、IN、LIKE 等)。',
     params=[
         OperatorParam(
@@ -220,6 +222,7 @@ ADD_COLUMN_METADATA = OperatorMetadata(
     description='添加列',
     brief_description='通过表达式计算添加新列,支持算术运算和函数调用',
     execution_modes=["workflow"],
+    effects=["read"],
     overview='add_column 算子通过 SQL 表达式计算生成新列,支持算术运算、字符串操作、日期函数和空间函数。新列会追加到 DataFrame 末尾,不影响原有列。',
     params=[
         OperatorParam(
@@ -276,6 +279,7 @@ RENAME_COLUMN_METADATA = OperatorMetadata(
     description='重命名列',
     brief_description='修改指定列名,保持列内容和行顺序不变',
     execution_modes=["workflow"],
+    effects=["read"],
     overview='rename_column 算子修改列名,常用于规范化字段命名、避免列名冲突、适配下游系统要求。操作高效,不涉及数据复制。',
     params=[
         OperatorParam(
@@ -332,6 +336,7 @@ DROP_COLUMN_METADATA = OperatorMetadata(
     description='删除列',
     brief_description='删除指定的列,减少数据体积和传输开销',
     execution_modes=["workflow"],
+    effects=["read"],
     overview='drop_column 算子删除一个或多个列,常用于清理冗余字段、减少数据传输量、保护敏感信息。操作高效,不涉及行过滤。',
     params=[
         OperatorParam(

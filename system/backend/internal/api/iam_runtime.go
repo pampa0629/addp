@@ -36,6 +36,8 @@ type IAMRuntime struct {
 	LogoutService                   *iam.LogoutService
 	UserSelfService                 *iam.UserSelfService
 	DelegationService               *iam.DelegationService
+	ExecutionAuthorizationService   *iam.ExecutionAuthorizationService
+	TaskAuthorizationSubjectService *iam.TaskAuthorizationSubjectService
 	OAuthProvider                   *iamoauth.Provider
 	ConsentBridge                   *iamoauth.ConsentBridge
 
@@ -43,6 +45,8 @@ type IAMRuntime struct {
 	MFASessionHandler               *IAMMFASessionHandler
 	OAuthHandler                    *IAMOAuthHandler
 	DelegationHandler               *IAMDelegationHandler
+	ExecutionAuthorizationHandler   *IAMExecutionAuthorizationHandler
+	TaskAuthorizationSubjectHandler *IAMTaskAuthorizationSubjectHandler
 	UserSelfHandler                 *IAMUserSelfHandler
 	PlatformTenantHandler           *IAMPlatformTenantHandler
 	PlatformUserHandler             *IAMPlatformUserHandler
@@ -57,6 +61,7 @@ type IAMRuntime struct {
 	FirstPartyCredential gin.HandlerFunc
 	UserAccessCredential gin.HandlerFunc
 	BusinessCredential   gin.HandlerFunc
+	ServiceCredential    gin.HandlerFunc
 	OAuthFailureAudit    gin.HandlerFunc
 }
 
@@ -151,6 +156,14 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config) (*IAMRuntime, error) {
 	)
 	if err != nil {
 		return nil, fmt.Errorf("装配 IAM Delegation Service: %w", err)
+	}
+	executionAuthorizationService, err := iam.NewExecutionAuthorizationService(repository)
+	if err != nil {
+		return nil, fmt.Errorf("装配 IAM Execution Authorization Service: %w", err)
+	}
+	taskAuthorizationSubjectService, err := iam.NewTaskAuthorizationSubjectService(repository)
+	if err != nil {
+		return nil, fmt.Errorf("装配 IAM Task Authorization Subject Service: %w", err)
 	}
 
 	providerConfig := iamoauth.ProviderConfig{
@@ -267,10 +280,15 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config) (*IAMRuntime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("装配 IAM User Access Credential Guard: %w", err)
 	}
+	serviceCredential, err := middleware.NewIAMCredentialGuard(middleware.IAMTokenTypeServiceAccess)
+	if err != nil {
+		return nil, fmt.Errorf("装配 IAM Service Access Credential Guard: %w", err)
+	}
 	businessCredential, err := middleware.NewIAMCredentialGuard(
 		middleware.IAMTokenTypeFirstPartyAccess,
 		middleware.IAMTokenTypeOAuthAccess,
 		middleware.IAMTokenTypeDelegatedAccess,
+		middleware.IAMTokenTypeServiceAccess,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("装配 IAM Business Credential Guard: %w", err)
@@ -301,6 +319,8 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config) (*IAMRuntime, error) {
 		LogoutService:                   logoutService,
 		UserSelfService:                 userSelfService,
 		DelegationService:               delegationService,
+		ExecutionAuthorizationService:   executionAuthorizationService,
+		TaskAuthorizationSubjectService: taskAuthorizationSubjectService,
 		OAuthProvider:                   oauthProvider,
 		ConsentBridge:                   consentBridge,
 		AuthHandler:                     authHandler,
@@ -320,6 +340,7 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config) (*IAMRuntime, error) {
 		FirstPartyCredential:            firstPartyCredential,
 		UserAccessCredential:            userAccessCredential,
 		BusinessCredential:              businessCredential,
+		ServiceCredential:               serviceCredential,
 		OAuthFailureAudit:               oauthFailureAudit,
 	}, nil
 }

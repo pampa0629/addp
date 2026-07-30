@@ -27,11 +27,8 @@ type fakeUploadMetaClient struct {
 	opts     commonClient.MetaScanOptions
 }
 
-func (c *fakeUploadMetaClient) SetTenantID(tenantID *uint) {
-	c.tenantID = tenantID
-}
-
-func (c *fakeUploadMetaClient) CreateManualScanRun(opts commonClient.MetaScanOptions) (*commonExecution.TaskExecution, error) {
+func (c *fakeUploadMetaClient) CreateManualScanRunForTenant(tenantID uint, opts commonClient.MetaScanOptions) (*commonExecution.TaskExecution, error) {
+	c.tenantID = &tenantID
 	c.opts = opts
 	return &commonExecution.TaskExecution{ExecutionID: "scan-1"}, nil
 }
@@ -48,7 +45,7 @@ func TestUploadFilesWritesMultipleObjectsAndSubmitsScan(t *testing.T) {
 		EngineType:     engineType,
 		ConnectionInfo: map[string]interface{}{},
 		TenantID:       uintPtr(7),
-		IsActive:       true,
+		LifecycleState: "active",
 	}}, metaClient)
 
 	result, err := svc.UploadFiles(context.Background(), &UploadRequest{
@@ -108,7 +105,7 @@ func TestUploadFilesSubmitsSeparateRefGroupsByBaseName(t *testing.T) {
 		ID:             9,
 		EngineType:     engineType,
 		ConnectionInfo: map[string]interface{}{},
-		IsActive:       true,
+		LifecycleState: "active",
 	}}, metaClient)
 
 	_, err := svc.UploadFiles(context.Background(), &UploadRequest{

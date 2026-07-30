@@ -9,11 +9,12 @@ import (
 )
 
 const (
-	VectorMaterializedViewStatusBuilding = "building"
-	VectorMaterializedViewStatusReady    = "ready"
-	VectorMaterializedViewStatusStale    = "stale"
-	VectorMaterializedViewStatusFailed   = "failed"
-	VectorMaterializedViewStatusDeleted  = "deleted"
+	VectorMaterializedViewStatusBuilding          = "building"
+	VectorMaterializedViewStatusReady             = "ready"
+	VectorMaterializedViewStatusStale             = "stale"
+	VectorMaterializedViewStatusFailed            = "failed"
+	VectorMaterializedViewStatusDeleted           = "deleted"
+	VectorMaterializedViewStatusAbandonedExternal = "abandoned_external"
 
 	VectorMaterializedViewTargetKindSourceSchemaMaterializedView = "source_schema_materialized_view"
 	VectorMaterializedViewTargetGeometryColumn                   = "geom_3857"

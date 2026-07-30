@@ -113,7 +113,6 @@ make ports-validate
 | **Agent Frontend**    | **5186** | **8116**    | **Agent 对话界面 UI**      |
 | **Graph Backend**     | **8186** | **8186**    | **知识图谱本体建模、图谱管理** |
 | **Graph Frontend**    | **5187** | **8117**    | **知识图谱 UI**            |
-| Jupyter Lab UI        | 8088     | 8088        | Jupyter 笔记本开发界面     |
 | Math Workflow Engine  | 8089     | 8089        | 数学计算工作流参考实现（自动启动服务、手动注册） |
 | Jupyter API Server    | 8097     | 8097        | Jupyter 执行引擎 API       |
 | Spark Workflow Engine | 8098     | 8098        | Spark 分布式工作流引擎     |
@@ -149,7 +148,6 @@ make ports-validate
   - **8183: Asset（数据资产管理）**
   - **8184: Portal（数据消费者门户）**
 - **引擎服务**：808x-809x 系列
-  - 8088: Jupyter Lab UI
   - 8089: Math Workflow Engine（参考实现，自动启动服务、手动注册）
   - 8097: Jupyter API Server
   - 8098: Spark Workflow Engine

@@ -18,6 +18,7 @@ type Config struct {
 	PreviewPluginDir      string
 	MetaServiceURL        string
 	EnableMetaIntegration bool
+	ServiceClientSecret   string
 
 	// Meilisearch 配置
 	MeilisearchURL        string
@@ -126,6 +127,7 @@ func Load() *Config {
 		PreviewPluginDir:      defaultPluginDir,
 		MetaServiceURL:        metaURL,
 		EnableMetaIntegration: commonConfig.GetEnvBool("ENABLE_META_INTEGRATION", true),
+		ServiceClientSecret:   commonConfig.GetEnv("MANAGER_SERVICE_CLIENT_SECRET", ""),
 	}
 
 	cfg.MeilisearchURL = resolveMeilisearchURL()

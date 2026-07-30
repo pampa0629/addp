@@ -16,6 +16,9 @@ other = "Invalid ref format, expected type:id"
 [service.err.invalid_ref_id]
 other = "Invalid ID in ref"
 
+[service.err.not_found]
+other = "Service not found"
+
 [service.success.deleted]
 other = "Deleted successfully"
 

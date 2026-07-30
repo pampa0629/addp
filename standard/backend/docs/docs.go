@@ -15,6 +15,46 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/assets/discoverable": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AssetDiscoverable"
+                ],
+                "summary": "可发现资产列表 | List discoverable assets",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/client.DiscoverableAsset"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.metric.read"
+                ]
+            }
+        },
         "/classifications": {
             "get": {
                 "security": [
@@ -1765,38 +1805,6 @@ const docTemplate = `{
                 "x-addp-required-permissions": [
                     "standard.classification.update"
                 ]
-            }
-        },
-        "/internal/assets/discoverable": {
-            "get": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "AssetDiscoverable"
-                ],
-                "summary": "可发现资产列表 | List discoverable assets",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/client.DiscoverableAsset"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "internal"
             }
         },
         "/measurement-categories": {

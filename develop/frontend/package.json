@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "vite --port 5178",
     "build": "vite build",
-    "test:workflow": "node tests/workflowDevTaskPayload.test.mjs && node tests/operatorMetadataContract.test.mjs && node tests/workflowInputBindings.test.mjs && node tests/workflowResourceBindings.test.mjs && node tests/workflowValidationIssues.test.mjs && node tests/displayText.test.mjs && node tests/commonDAGDirectEdge.test.mjs && node tests/commonDAGEditing.test.mjs && node tests/workflowCanvasInteraction.test.mjs && node tests/workflowEditorBehavior.test.mjs && node tests/workflowGenerationResult.test.mjs",
+    "test:workflow": "node tests/workflowDevTaskPayload.test.mjs && node tests/operatorMetadataContract.test.mjs && node tests/workflowInputBindings.test.mjs && node tests/workflowResourceBindings.test.mjs && node tests/workflowValidationIssues.test.mjs && node tests/displayText.test.mjs && node tests/notebookI18n.test.mjs && node tests/commonDAGDirectEdge.test.mjs && node tests/commonDAGEditing.test.mjs && node tests/workflowCanvasInteraction.test.mjs && node tests/workflowEditorBehavior.test.mjs && node tests/workflowGenerationResult.test.mjs",
     "test:e2e": "playwright test --config=playwright.config.mjs",
     "preview": "vite preview"
   },

@@ -12,11 +12,11 @@ func TestCatalogRootReconcilerCreatesRootForActiveCatalogEngine(t *testing.T) {
 
 	tenantID := uint(1)
 	resource := &commonModels.Engine{
-		ID:         9,
-		TenantID:   &tenantID,
-		Name:       "Business MinIO",
-		EngineType: "s3",
-		IsActive:   true,
+		ID:             9,
+		TenantID:       &tenantID,
+		Name:           "Business MinIO",
+		EngineType:     "s3",
+		LifecycleState: "active",
 	}
 
 	reconciler := NewCatalogRootReconciler(db)
@@ -39,11 +39,11 @@ func TestCatalogRootReconcilerSkipsInactiveEngine(t *testing.T) {
 
 	tenantID := uint(1)
 	resource := &commonModels.Engine{
-		ID:         9,
-		TenantID:   &tenantID,
-		Name:       "Business MinIO",
-		EngineType: "s3",
-		IsActive:   false,
+		ID:             9,
+		TenantID:       &tenantID,
+		Name:           "Business MinIO",
+		EngineType:     "s3",
+		LifecycleState: "disabled",
 	}
 
 	reconciler := NewCatalogRootReconciler(db)

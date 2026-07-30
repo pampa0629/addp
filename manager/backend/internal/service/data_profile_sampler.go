@@ -286,23 +286,7 @@ func profileFieldsFromPreview(table *models.TablePreview) []datatype.FieldInfo {
 	if table == nil {
 		return nil
 	}
-	metadata := make(map[string]models.ColumnMetadata, len(table.ColumnMetadata))
-	for _, column := range table.ColumnMetadata {
-		metadata[column.ColumnName] = column
-	}
-	fields := make([]datatype.FieldInfo, 0, len(table.Columns))
-	for _, name := range table.Columns {
-		column := metadata[name]
-		fields = append(fields, datatype.FieldInfo{
-			Name:       name,
-			Type:       datatype.ParseFieldType(column.Type),
-			NativeType: column.Type,
-			Nullable:   column.IsNullable,
-			PrimaryKey: column.IsPrimaryKey,
-			Comment:    column.Comment,
-		})
-	}
-	return fields
+	return append([]datatype.FieldInfo(nil), table.Fields...)
 }
 
 func dataTypeFromAttributes(attributes map[string]interface{}) string {

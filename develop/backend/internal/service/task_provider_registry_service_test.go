@@ -1,25 +1,41 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 
+	commonClient "github.com/addp/common/client"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/taskprovider"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
+type staticServiceTokenSource string
+
+func (source staticServiceTokenSource) Token(context.Context, uint) (string, error) {
+	return string(source), nil
+}
+
+func (source staticServiceTokenSource) PlatformToken(context.Context) (string, error) {
+	return string(source), nil
+}
+
 func TestTaskProviderRegistryRegistersStandardDevelopContract(t *testing.T) {
-	var payload TaskProviderRegistration
+	var payload commonModels.TaskProvider
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("method = %s, want POST", r.Method)
 		}
-		if r.URL.Path != "/api/v1/internal/task-providers/register" {
-			t.Fatalf("path = %s, want /api/v1/internal/task-providers/register", r.URL.Path)
+		if r.URL.Path != "/api/v1/system/runtime/task-providers" {
+			t.Fatalf("path = %s, want runtime task provider route", r.URL.Path)
 		}
-		if got := r.Header.Get("X-Internal-API-Key"); got != "internal-key" {
-			t.Fatalf("X-Internal-API-Key = %q, want internal-key", got)
+		if got := r.Header.Get("Authorization"); got != "Bearer addp_at_service" {
+			t.Fatalf("Authorization = %q", got)
+		}
+		if r.Header.Get("X-Internal-API-Key") != "" {
+			t.Fatal("legacy internal key header must not be sent")
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode payload: %v", err)
@@ -28,8 +44,9 @@ func TestTaskProviderRegistryRegistersStandardDevelopContract(t *testing.T) {
 	}))
 	defer server.Close()
 
-	svc := NewTaskProviderRegistryService(server.URL, "internal-key", "http://develop.internal")
-	if err := svc.Register(); err != nil {
+	systemClient := commonClient.NewSystemServiceClient(server.URL, staticServiceTokenSource("addp_at_service"), nil)
+	svc := NewTaskProviderRegistryService(systemClient, "http://develop.internal")
+	if err := svc.Register(context.Background()); err != nil {
 		t.Fatalf("Register() error = %v", err)
 	}
 
@@ -39,16 +56,16 @@ func TestTaskProviderRegistryRegistersStandardDevelopContract(t *testing.T) {
 	if payload.BaseURL != "http://develop.internal" {
 		t.Fatalf("BaseURL = %q, want http://develop.internal", payload.BaseURL)
 	}
-	if payload.TaskListEndpoint != "/api/v1/develop/internal/tasks" {
+	if payload.TaskListEndpoint != "/api/v1/develop/task-provider/tasks" {
 		t.Fatalf("TaskListEndpoint = %q", payload.TaskListEndpoint)
 	}
-	if payload.TaskDetailEndpoint != "/api/v1/develop/internal/tasks/{task_type}/{id}" {
+	if payload.TaskDetailEndpoint != "/api/v1/develop/task-provider/tasks/{task_type}/{id}" {
 		t.Fatalf("TaskDetailEndpoint = %q", payload.TaskDetailEndpoint)
 	}
-	if payload.TaskExecuteEndpoint != "/api/v1/develop/internal/tasks/{task_type}/{id}/execute" {
+	if payload.TaskExecuteEndpoint != "/api/v1/develop/task-provider/tasks/{task_type}/{id}/execute" {
 		t.Fatalf("TaskExecuteEndpoint = %q", payload.TaskExecuteEndpoint)
 	}
-	if payload.TaskStatusEndpoint != "/api/v1/develop/internal/executions/{execution_id}" {
+	if payload.TaskStatusEndpoint != "/api/v1/develop/task-provider/executions/{execution_id}" {
 		t.Fatalf("TaskStatusEndpoint = %q", payload.TaskStatusEndpoint)
 	}
 	if payload.TaskCancelEndpoint != "" {
@@ -58,7 +75,7 @@ func TestTaskProviderRegistryRegistersStandardDevelopContract(t *testing.T) {
 	if payload.Capabilities == nil {
 		t.Fatal("capabilities is nil")
 	}
-	if _, err := taskprovider.ParseCapabilities(*payload.Capabilities); err != nil {
+	if _, err := taskprovider.ParseCapabilities(string(*payload.Capabilities)); err != nil {
 		t.Fatalf("capabilities contract invalid: %v; capabilities=%s", err, *payload.Capabilities)
 	}
 
@@ -110,13 +127,13 @@ func TestTaskProviderRegistryRegistersStandardDevelopContract(t *testing.T) {
 	}
 }
 
-func decodeCapabilitiesForTest(t *testing.T, value *string) map[string]interface{} {
+func decodeCapabilitiesForTest(t *testing.T, value *commonModels.JSONString) map[string]interface{} {
 	t.Helper()
 	if value == nil {
 		t.Fatal("capabilities is nil")
 	}
 	var caps map[string]interface{}
-	if err := json.Unmarshal([]byte(*value), &caps); err != nil {
+	if err := json.Unmarshal([]byte(string(*value)), &caps); err != nil {
 		t.Fatalf("decode capabilities: %v", err)
 	}
 	return caps

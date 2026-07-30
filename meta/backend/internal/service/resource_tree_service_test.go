@@ -388,13 +388,13 @@ func newResourceTreeTestService(t *testing.T, tenantID, engineID uint) *Resource
 
 func newResourceTreeTestServiceWithDB(t *testing.T, db *gorm.DB, tenantID, engineID uint) *ResourceTreeService {
 	t.Helper()
-	engineSvc := NewEngineService(db, "", "")
-	engineSvc.cacheEngine(&commonModels.Engine{
-		ID:         engineID,
-		TenantID:   &tenantID,
-		Name:       "Business MinIO",
-		EngineType: "s3",
-		IsActive:   true,
+	engineSvc := NewEngineService(db, nil)
+	engineSvc.cacheEngine(tenantID, &commonModels.Engine{
+		ID:             engineID,
+		TenantID:       &tenantID,
+		Name:           "Business MinIO",
+		EngineType:     "s3",
+		LifecycleState: "active",
 	})
 	return NewResourceTreeService(engineSvc, NewMetadataQueryService(db))
 }

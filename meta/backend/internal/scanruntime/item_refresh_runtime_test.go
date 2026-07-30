@@ -101,10 +101,10 @@ func TestRefreshKnownTabularItemUsesCatalogFactsWithoutContentReader(t *testing.
 
 	runtime := NewItemRefreshRuntime(repo, nil, nil)
 	result, err := runtime.RefreshKnownItem(context.Background(), &commonModels.Engine{
-		ID:         engineID,
-		TenantID:   &tenantID,
-		EngineType: enginePlugin.Type(),
-		IsActive:   true,
+		ID:             engineID,
+		TenantID:       &tenantID,
+		EngineType:     enginePlugin.Type(),
+		LifecycleState: "active",
 	}, tenantID, item, parentNode)
 	if err != nil {
 		t.Fatalf("RefreshKnownItem() error = %v", err)
@@ -187,10 +187,10 @@ func TestRefreshKnownSingleOSGBItemRedetectsStaleGLBFormat(t *testing.T) {
 
 	runtime := NewItemRefreshRuntime(metaRepo.NewScanRepository(db), nil, nil)
 	_, err := runtime.RefreshKnownItem(context.Background(), &commonModels.Engine{
-		ID:         engineID,
-		TenantID:   &tenantID,
-		EngineType: reader.Type(),
-		IsActive:   true,
+		ID:             engineID,
+		TenantID:       &tenantID,
+		EngineType:     reader.Type(),
+		LifecycleState: "active",
 	}, tenantID, item, parentNode)
 	if err != nil {
 		t.Fatalf("RefreshKnownItem() error = %v", err)
@@ -268,10 +268,10 @@ func TestRefreshKnownWholeOSGBSceneRedetectsStaleOSGBFormat(t *testing.T) {
 
 	runtime := NewItemRefreshRuntime(metaRepo.NewScanRepository(db), nil, nil)
 	_, err := runtime.RefreshKnownItem(context.Background(), &commonModels.Engine{
-		ID:         engineID,
-		TenantID:   &tenantID,
-		EngineType: reader.Type(),
-		IsActive:   true,
+		ID:             engineID,
+		TenantID:       &tenantID,
+		EngineType:     reader.Type(),
+		LifecycleState: "active",
 	}, tenantID, item, parentNode)
 	if err != nil {
 		t.Fatalf("RefreshKnownItem() error = %v", err)

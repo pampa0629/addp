@@ -1,6 +1,12 @@
 package spark_sql
 
-import "testing"
+import (
+	"context"
+	"reflect"
+	"testing"
+
+	"github.com/addp/common/engine/plugin"
+)
 
 func TestQuoteSparkIdentifier(t *testing.T) {
 	tests := []struct {
@@ -29,5 +35,76 @@ func TestSparkSQLTableInfoLeavesUnknownStatisticsEmpty(t *testing.T) {
 	}
 	if info.RowCount != nil || info.SizeBytes != nil {
 		t.Fatalf("Spark SQL list table stats = row:%#v size:%#v, want nil unknown stats", info.RowCount, info.SizeBytes)
+	}
+}
+
+func TestListChildrenUsesSparkThriftQueryForDatabases(t *testing.T) {
+	t.Parallel()
+
+	var queries []string
+	spark := &SparkSQLPlugin{query: func(ctx context.Context, _ plugin.ConnectionInfo, query string) (*plugin.QueryResult, error) {
+		queries = append(queries, query)
+		if _, ok := ctx.Deadline(); !ok {
+			t.Fatal("Spark catalog query context has no deadline")
+		}
+		return &plugin.QueryResult{Rows: []map[string]interface{}{
+			{"namespace": "default"},
+			{"namespace": "analytics"},
+		}}, nil
+	}}
+
+	entries, err := spark.ListChildren(
+		context.Background(),
+		plugin.ConnectionInfo{"host": "spark", "port": 10000},
+		plugin.CatalogRootPath(spark.CatalogModel(), 7),
+		plugin.ListOptions{},
+	)
+	if err != nil {
+		t.Fatalf("ListChildren() error = %v", err)
+	}
+	if !reflect.DeepEqual(queries, []string{"SHOW DATABASES"}) {
+		t.Fatalf("queries = %#v", queries)
+	}
+	if len(entries) != 2 || entries[1].Name != "analytics" || entries[1].Path.StringPath() != "analytics" {
+		t.Fatalf("entries = %#v", entries)
+	}
+}
+
+func TestListChildrenUsesQualifiedSparkShowTables(t *testing.T) {
+	t.Parallel()
+
+	var query string
+	spark := &SparkSQLPlugin{query: func(_ context.Context, _ plugin.ConnectionInfo, sql string) (*plugin.QueryResult, error) {
+		query = sql
+		return &plugin.QueryResult{Rows: []map[string]interface{}{
+			{"namespace": "analytics", "tableName": "orders", "isTemporary": false},
+		}}, nil
+	}}
+
+	entries, err := spark.ListChildren(
+		context.Background(),
+		plugin.ConnectionInfo{"host": "spark", "port": 10000},
+		plugin.TabularNamespacePath(7, plugin.CatalogTermDatabase, "analytics"),
+		plugin.ListOptions{},
+	)
+	if err != nil {
+		t.Fatalf("ListChildren() error = %v", err)
+	}
+	if query != "SHOW TABLES IN `analytics`" {
+		t.Fatalf("query = %q", query)
+	}
+	if len(entries) != 1 || entries[0].Name != "orders" || entries[0].Path.StringPath() != "analytics/orders" {
+		t.Fatalf("entries = %#v", entries)
+	}
+}
+
+func TestCreateConnectionPoolRejectsSparkThriftProtocol(t *testing.T) {
+	t.Parallel()
+
+	if _, err := (&SparkSQLPlugin{}).CreateConnectionPool(
+		plugin.ConnectionInfo{"host": "spark", "port": 10000},
+		nil,
+	); err == nil {
+		t.Fatal("CreateConnectionPool() error = nil, want unsupported protocol error")
 	}
 }

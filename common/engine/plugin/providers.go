@@ -550,6 +550,7 @@ type OperatorDescriptor struct {
 	Inputs              []interface{}          `json:"inputs,omitempty"`
 	OutputPorts         []OutputPortDescriptor `json:"output_ports,omitempty"`
 	ExecutionModes      []string               `json:"execution_modes,omitempty"`
+	Effects             []string               `json:"effects,omitempty"`
 	Attributes          map[string]interface{} `json:"attributes,omitempty"`
 }
 

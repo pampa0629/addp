@@ -28,7 +28,6 @@ type Options struct {
 	TenantID     uint
 	CatalogPaths []string
 	RefGroups    []models.ScanRefGroup
-	Token        string
 	ScanDepth    string
 	Force        bool
 	Source       string

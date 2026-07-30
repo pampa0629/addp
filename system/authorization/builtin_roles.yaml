@@ -1,6 +1,14 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 16
+manifest_version: 25
 roles:
+  - key: platform.asset_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.asset_runtime.name
+    description_i18n_key: roles.platform.asset_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.runtime_registry.update
   - key: platform.audit_administrator
     role_type: platform_builtin
     name_i18n_key: roles.platform.audit_administrator.name
@@ -11,6 +19,31 @@ roles:
       - audit.event.export
       - audit.event.read
       - iam.platform_identity_change.read
+  - key: platform.develop_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.develop_runtime.name
+    description_i18n_key: roles.platform.develop_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.runtime_registry.update
+  - key: platform.meta_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.meta_runtime.name
+    description_i18n_key: roles.platform.meta_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.runtime_registry.update
+  - key: platform.orchestrator_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.orchestrator_runtime.name
+    description_i18n_key: roles.platform.orchestrator_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.runtime_registry.read
+      - system.runtime_registry.update
   - key: platform.security_administrator
     role_type: platform_builtin
     name_i18n_key: roles.platform.security_administrator.name
@@ -119,9 +152,21 @@ roles:
       - asset.entry.publish
       - asset.entry.read
       - asset.entry.update
+      - asset.management.read
       - asset.rating.create
       - asset.rating.read
       - asset.rating.update
+  - key: tenant.asset_runtime
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.asset_runtime.name
+    description_i18n_key: roles.tenant.asset_runtime.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - develop.task.read
+      - meta.catalog.read
+      - service.definition.read
+      - standard.metric.read
   - key: tenant.auditor
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.auditor.name
@@ -140,6 +185,8 @@ roles:
     allowed_scope_types: [tenant, department, project_group]
     allowed_principal_types: [user]
     permissions:
+      - develop.data_read.execute
+      - develop.data_write.execute
       - develop.notebook.create
       - develop.notebook.delete
       - develop.notebook.execute
@@ -151,6 +198,7 @@ roles:
       - develop.task.update
       - manager.content.read
       - manager.data_item.read
+      - manager.data_profile.execute
       - manager.search.execute
       - monitor.execution.read
       - orchestrator.workflow.create
@@ -170,6 +218,8 @@ roles:
     allowed_scope_types: [tenant, department, project_group]
     allowed_principal_types: [user]
     permissions:
+      - develop.data_read.execute
+      - develop.data_write.execute
       - manager.content.read
       - manager.data_item.create
       - manager.data_item.read
@@ -193,10 +243,22 @@ roles:
     allowed_scope_types: [tenant, department, project_group]
     allowed_principal_types: [user]
     permissions:
+      - develop.data_read.execute
       - manager.content.read
       - manager.data_item.read
       - manager.search.execute
       - meta.catalog.read
+  - key: tenant.develop_runtime
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.develop_runtime.name
+    description_i18n_key: roles.tenant.develop_runtime.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - meta.catalog.read
+      - meta.scan_task.execute
+      - system.engine_descriptor.read
+      - system.execution_authorization.execute
   - key: tenant.governance_manager
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.governance_manager.name
@@ -319,6 +381,32 @@ roles:
       - system.engine.execute
       - system.engine.read
       - system.engine.update
+  - key: tenant.manager_runtime
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.manager_runtime.name
+    description_i18n_key: roles.tenant.manager_runtime.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - meta.catalog.read
+      - meta.scan_task.execute
+  - key: tenant.meta_runtime
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.meta_runtime.name
+    description_i18n_key: roles.tenant.meta_runtime.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - audit.tenant_event.create
+      - system.engine.read
+  - key: tenant.monitor_runtime
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.monitor_runtime.name
+    description_i18n_key: roles.tenant.monitor_runtime.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - meta.scan_task.read
   - key: tenant.monitoring_operator
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.monitoring_operator.name
@@ -342,6 +430,32 @@ roles:
       - monitor.notification_destination.read
       - monitor.notification_destination.update
       - monitor.statistics.read
+  - key: tenant.orchestrator_runtime
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.orchestrator_runtime.name
+    description_i18n_key: roles.tenant.orchestrator_runtime.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - develop.task_provider.execute
+      - develop.task_provider.read
+      - system.task_authorization.execute
+  - key: tenant.portal_runtime
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.portal_runtime.name
+    description_i18n_key: roles.tenant.portal_runtime.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - service.endpoint.read
+  - key: tenant.quality_runtime
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.quality_runtime.name
+    description_i18n_key: roles.tenant.quality_runtime.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - meta.catalog.read
   - key: tenant.service_publisher
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.service_publisher.name
@@ -361,3 +475,21 @@ roles:
       - service.external_registration.delete
       - service.external_registration.read
       - service.external_registration.update
+  - key: tenant.service_runtime
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.service_runtime.name
+    description_i18n_key: roles.tenant.service_runtime.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - meta.catalog.read
+  - key: tenant.transfer_runtime
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.transfer_runtime.name
+    description_i18n_key: roles.tenant.transfer_runtime.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - meta.catalog.read
+      - meta.inspect.execute
+      - meta.scan_task.execute

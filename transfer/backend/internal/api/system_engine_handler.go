@@ -52,7 +52,7 @@ func (h *SystemEngineHandler) List(c *gin.Context) {
 		if engine.TenantID != nil && *engine.TenantID != 0 && *engine.TenantID != tenantID {
 			continue
 		}
-		if !engine.IsActive {
+		if !engine.IsUsable() {
 			continue
 		}
 		sanitizeEngineConnectionInfo(&engine)

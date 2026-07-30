@@ -120,7 +120,6 @@ generate_service_urls() {
     [ -n "$POINTCLOUD_WORKFLOW_PORT" ] && export POINTCLOUD_WORKFLOW_URL="http://${SERVICE_HOST}:${POINTCLOUD_WORKFLOW_PORT}"
     [ -n "$SUPERMAP_WORKFLOW_PORT" ] && export SUPERMAP_WORKFLOW_URL="http://${SERVICE_HOST}:${SUPERMAP_WORKFLOW_PORT}"
     [ -n "$SPARK_WORKFLOW_PORT" ] && export SPARK_WORKFLOW_URL="http://${SERVICE_HOST}:${SPARK_WORKFLOW_PORT}"
-    [ -n "$JUPYTER_API_PORT" ] && export JUPYTER_URL="http://${SERVICE_HOST}:${JUPYTER_API_PORT}"
 }
 
 generate_service_urls
@@ -2095,7 +2094,7 @@ if [ ! -d "engines/jupyter/venv" ]; then
     NEED_INSTALL=true
 else
     # 检查关键依赖是否已安装
-    if ! ./engines/jupyter/venv/bin/python -c "import flask" &> /dev/null; then
+    if ! ./engines/jupyter/venv/bin/python -c "import flask, gunicorn, addp_common" &> /dev/null; then
         echo "检测到虚拟环境缺少依赖，重新安装..."
         cd engines/jupyter
         NEED_INSTALL=true
@@ -2123,13 +2122,14 @@ if [ "$NEED_INSTALL" = true ]; then
     # 升级 pip 并安装依赖
     $PIP_CMD --upgrade pip
     $PIP_CMD -r requirements.txt
+    $PIP_CMD -e ../../common-python
 
     # 检查安装是否成功
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}✓ Python 依赖安装完成${NC}"
     else
         echo -e "${RED}✗ Python 依赖安装失败，请检查错误信息${NC}"
-        echo -e "${YELLOW}提示：某些依赖可能需要系统库支持（如 JupyterLab）${NC}"
+        echo -e "${YELLOW}提示：某些科学计算依赖可能需要系统库支持${NC}"
         cd ../..
         exit 1
     fi
@@ -2137,34 +2137,22 @@ if [ "$NEED_INSTALL" = true ]; then
 fi
 
 # 启动 Jupyter Engine
-if check_service_running "jupyter-engine" "$JUPYTER_LAB_PORT"; then
-  echo "启动 Jupyter Engine（双服务模式：Jupyter Lab + API Server）..."
+if check_service_running "jupyter-engine" "$JUPYTER_API_PORT"; then
+  echo "启动 Jupyter Notebook Runtime..."
   cd engines/jupyter
 
   # 设置环境变量
   export API_PORT=$JUPYTER_API_PORT
-  export JUPYTER_PORT=$JUPYTER_LAB_PORT
-  # SYSTEM_URL 已由 generate_service_urls() 自动生成
-  export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
-  export TENANT_ID=${DEFAULT_TENANT_ID:-1}  # Jupyter Notebook 数据源自动注入需要此环境变量
 
   # 启动 API Server（后台）
   ./venv/bin/python api_server.py > ../../logs/jupyter-api-server.log 2> ../../logs/jupyter-api-server-stderr.log &
   API_SERVER_PID=$!
   echo $API_SERVER_PID > ../../.dev-pids/jupyter-api-server.pid
 
-  # 启动 Jupyter Lab（后台，使用配置文件）
-  ./venv/bin/jupyter lab \
-    --config=jupyter_lab_config.py \
-    > ../../logs/jupyter-lab.log 2> ../../logs/jupyter-lab-stderr.log &
-  JUPYTER_LAB_PID=$!
-  echo $JUPYTER_LAB_PID > ../../.dev-pids/jupyter-lab.pid
-
   cd ../..
 
-  echo -e "${GREEN}✓ Jupyter Engine 已启动:${NC}"
+  echo -e "${GREEN}✓ Jupyter Notebook Runtime 已启动:${NC}"
   echo -e "  - API Server (PID: $API_SERVER_PID, Port: $JUPYTER_API_PORT)"
-  echo -e "  - Jupyter Lab (PID: $JUPYTER_LAB_PID, Port: $JUPYTER_LAB_PORT)"
 
   # 等待 API Server 健康检查通过
   echo -n "等待 API Server 就绪..."
@@ -2184,54 +2172,12 @@ if check_service_running "jupyter-engine" "$JUPYTER_LAB_PORT"; then
   done
   echo -e " ${GREEN}✓${NC}"
 
-  # 等待 Jupyter Lab 就绪
-  echo -n "等待 Jupyter Lab 就绪..."
-  WAIT_COUNT=0
-  MAX_WAIT=60
-  until curl -f http://localhost:${JUPYTER_LAB_PORT}/lab > /dev/null 2>&1; do
-    echo -n "."
-    sleep 1
-    WAIT_COUNT=$((WAIT_COUNT + 1))
-    if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-      echo -e " ${YELLOW}⚠${NC}"
-      echo -e "${YELLOW}⚠ Jupyter Lab 启动超时（60秒），但会继续启动${NC}"
-      echo -e "${YELLOW}查看日志: tail -f logs/jupyter-lab.log${NC}"
-      break
-    fi
-  done
-  if [ $WAIT_COUNT -lt $MAX_WAIT ]; then
-    echo -e " ${GREEN}✓${NC}"
-  fi
-
-  echo -e "${GREEN}✓ Jupyter Engine 就绪:${NC}"
+  echo -e "${GREEN}✓ Jupyter Notebook Runtime 就绪:${NC}"
   echo -e "  - API Server: http://localhost:${JUPYTER_API_PORT}"
-  echo -e "  - Jupyter Lab: http://localhost:${JUPYTER_LAB_PORT}/lab"
-
-  # 向 System 模块注册引擎
-  echo -n "注册 Jupyter Engine 到 System 模块..."
-  cd engines/jupyter
-  if [ -f "register.py" ]; then
-    export SYSTEM_API_URL=http://localhost:${SYSTEM_BACKEND_PORT}
-    export JUPYTER_URL=${JUPYTER_URL:-"http://localhost:${JUPYTER_API_PORT}"}
-    export JUPYTER_LAB_URL=http://localhost:${JUPYTER_LAB_PORT}/lab
-    export INTERNAL_API_KEY=${INTERNAL_API_KEY}
-    ./venv/bin/python register.py > /dev/null 2>&1
-    if [ $? -eq 0 ]; then
-      echo -e " ${GREEN}✓${NC}"
-    else
-      echo -e " ${YELLOW}⚠${NC}"
-      echo -e "${YELLOW}⚠ 注册失败，但引擎仍正常运行${NC}"
-    fi
-  else
-    echo -e " ${YELLOW}⚠ register.py 不存在，跳过注册${NC}"
-  fi
-  cd ../..
 else
   API_SERVER_PID=$(cat .dev-pids/jupyter-api-server.pid 2>/dev/null)
-  JUPYTER_LAB_PID=$(cat .dev-pids/jupyter-lab.pid 2>/dev/null)
-  echo -e "${GREEN}✓ Jupyter Engine 已在运行:${NC}"
+  echo -e "${GREEN}✓ Jupyter Notebook Runtime 已在运行:${NC}"
   echo -e "  - API Server (PID: $API_SERVER_PID)"
-  echo -e "  - Jupyter Lab (PID: $JUPYTER_LAB_PID)"
 fi
   echo ""
 else
@@ -2689,7 +2635,7 @@ echo "  Model:    http://localhost:${MODEL_BACKEND_PORT}"
 echo "  Quality:  http://localhost:${QUALITY_BACKEND_PORT}"
   echo "  Asset:    http://localhost:${ASSET_BACKEND_PORT}"
   echo "  Portal:   http://localhost:${PORTAL_BACKEND_PORT}"
-echo "  Jupyter Engine:      http://localhost:${JUPYTER_API_PORT} (API) / http://localhost:${JUPYTER_LAB_PORT} (Lab UI)"
+echo "  Jupyter Runtime:     http://localhost:${JUPYTER_API_PORT}"
 echo "  Spark 工作流引擎: http://localhost:${SPARK_WORKFLOW_PORT}"
 echo "  GeoPython Workflow Engine:    http://localhost:${PYTHON_WORKFLOW_PORT}"
 echo "  Model3D Workflow Engine:   http://localhost:${MODEL3D_WORKFLOW_PORT}"

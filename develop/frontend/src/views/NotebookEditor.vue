@@ -5,10 +5,7 @@
       <div class="sidebar-header">
         <h3>{{ t('develop.notebook.listTitle') }}</h3>
         <div class="actions">
-          <el-button type="primary" size="small" @click="showCreateDialog">
-            <el-icon><Plus /></el-icon> {{ t('develop.notebook.create') }}
-          </el-button>
-          <el-button type="success" size="small" @click="showUploadDialog">
+          <el-button type="primary" size="small" @click="showUploadDialog">
             <el-icon><Upload /></el-icon> {{ t('develop.notebook.upload') }}
           </el-button>
           <el-button size="small" @click="loadNotebooks">
@@ -47,14 +44,20 @@
           </div>
 
           <div class="notebook-actions" @click.stop>
-            <el-tooltip :content="t('develop.notebook.openInJupyter')">
-              <el-button type="primary" size="small" text @click="openInJupyter(notebook)">
+            <el-tooltip :content="t('develop.notebook.viewDetails')">
+              <el-button type="primary" size="small" text @click="selectNotebook(notebook)">
                 <el-icon><Document /></el-icon>
               </el-button>
             </el-tooltip>
 
             <el-tooltip :content="t('develop.notebook.execute')">
-              <el-button type="success" size="small" text @click="showExecuteDialog(notebook)">
+              <el-button
+                type="success"
+                size="small"
+                text
+                :disabled="!isNotebookEngineAvailable(notebook)"
+                @click="showExecuteDialog(notebook)"
+              >
                 <el-icon><VideoPlay /></el-icon>
               </el-button>
             </el-tooltip>
@@ -98,120 +101,57 @@
       </div>
     </el-aside>
 
-    <!-- 右侧 Jupyter Lab -->
-    <el-main class="jupyter-container">
+    <el-main class="notebook-detail-container">
       <div v-if="!currentNotebook" class="empty-state">
         <el-empty :description="t('develop.notebook.selectHint')" />
       </div>
 
-      <div v-else class="jupyter-wrapper">
-        <div class="jupyter-toolbar">
+      <div v-else class="notebook-detail">
+        <div class="detail-toolbar">
           <span class="current-notebook-name">{{ currentNotebook.display_name || currentNotebook.name }}</span>
           <div class="toolbar-actions">
-            <el-button size="small" @click="refreshJupyter">
-              <el-icon><Refresh /></el-icon> {{ t('develop.notebook.refresh') }}
+            <el-button
+              type="primary"
+              size="small"
+              :disabled="!isNotebookEngineAvailable(currentNotebook)"
+              @click="showExecuteDialog(currentNotebook)"
+            >
+              <el-icon><VideoPlay /></el-icon> {{ t('develop.notebook.execute') }}
             </el-button>
-            <el-button size="small" @click="openInNewTab">
-              <el-icon><TopRight /></el-icon> {{ t('develop.notebook.openNewTab') }}
+            <el-button size="small" @click="downloadNotebook(currentNotebook)">
+              <el-icon><Download /></el-icon> {{ t('develop.notebook.download') }}
             </el-button>
-            <el-button size="small" @click="showHelp">
-              <el-icon><QuestionFilled /></el-icon> {{ t('develop.notebook.help') }}
+            <el-button size="small" @click="viewHistory(currentNotebook)">
+              <el-icon><Clock /></el-icon> {{ t('develop.notebook.history') }}
             </el-button>
           </div>
         </div>
+        <div class="detail-content">
+          <el-descriptions :column="1" border>
+            <el-descriptions-item :label="t('develop.notebook.fieldDescription')">
+              {{ currentNotebook.description || '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('develop.notebook.fileName')">
+              {{ currentNotebook.content?.notebook_path || '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('develop.notebook.kernel')">
+              {{ currentNotebook.content?.kernel || 'python3' }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('develop.notebook.engine')">
+              {{ notebookEngineLabel(currentNotebook) }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('develop.notebook.updatedAt')">
+              {{ formatTime(currentNotebook.updated_at) }}
+            </el-descriptions-item>
+          </el-descriptions>
 
-        <!-- 虚拟环境初始化卡片 -->
-        <div v-if="checkingVenv" class="venv-status-card" v-loading="true" :element-loading-text="t('develop.notebook.checkingVenv')">
-          <el-empty :description="t('develop.notebook.checkingVenvStatus')" />
+          <section class="parameter-section">
+            <h4>{{ t('develop.notebook.fieldParams') }}</h4>
+            <pre>{{ formatParameters(currentNotebook.content?.parameters) }}</pre>
+          </section>
         </div>
-
-        <div v-else-if="!venvReady" class="venv-init-card">
-          <el-result icon="warning" :title="t('develop.notebook.venvRequired')">
-            <template #sub-title>
-              <div class="venv-init-tips">
-                <p>{{ t('develop.notebook.venvInitHint') }}</p>
-                <p>{{ t('develop.notebook.venvInitBenefits') }}</p>
-                <ul>
-                  <li>{{ t('develop.notebook.venvBenefit1') }}</li>
-                  <li>{{ t('develop.notebook.venvBenefit2') }}</li>
-                  <li>{{ t('develop.notebook.venvBenefit3') }}</li>
-                  <li>{{ t('develop.notebook.venvBenefit4') }}</li>
-                </ul>
-                <p class="time-note">{{ t('develop.notebook.venvInitTime') }}</p>
-              </div>
-            </template>
-            <template #extra>
-              <el-button
-                type="primary"
-                size="large"
-                @click="initVenvEnvironment"
-                :loading="initLoading"
-              >
-                {{ initLoading ? t('develop.notebook.initializing') : t('develop.notebook.initNow') }}
-              </el-button>
-            </template>
-          </el-result>
-        </div>
-
-        <!-- Jupyter Lab iframe -->
-        <iframe
-          v-else
-          ref="jupyterIframe"
-          :src="jupyterUrl"
-          class="jupyter-iframe"
-          @load="onJupyterLoad"
-        />
       </div>
     </el-main>
-
-    <!-- 新建 Notebook 对话框 -->
-    <el-dialog
-      v-model="createDialogVisible"
-      :title="t('develop.notebook.createDialogTitle')"
-      width="600px"
-    >
-      <el-form :model="createForm" label-width="100px">
-        <el-form-item :label="t('develop.notebook.fieldName')" required>
-          <el-input v-model="createForm.name" :placeholder="t('develop.notebook.namePlaceholder')" />
-        </el-form-item>
-
-        <el-form-item :label="t('develop.notebook.fieldDescription')">
-          <el-input
-            v-model="createForm.description"
-            type="textarea"
-            :rows="3"
-            :placeholder="t('develop.notebook.descriptionPlaceholder')"
-          />
-        </el-form-item>
-
-        <el-form-item label="Kernel">
-          <el-select v-model="createForm.kernel" :placeholder="t('develop.notebook.selectKernel')">
-            <el-option label="Python 3" value="python3" />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item :label="t('develop.notebook.fieldDataSource')">
-          <el-select
-            v-model="createForm.data_sources"
-            multiple
-            :placeholder="t('develop.notebook.selectDataSource')"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="ds in dataSources"
-              :key="ds.id"
-              :label="ds.display_name || ds.name"
-              :value="ds.id"
-            />
-          </el-select>
-        </el-form-item>
-      </el-form>
-
-      <template #footer>
-        <el-button @click="createDialogVisible = false">{{ t('develop.notebook.cancel') }}</el-button>
-        <el-button type="primary" @click="confirmCreate" :loading="creating">{{ t('develop.notebook.confirm') }}</el-button>
-      </template>
-    </el-dialog>
 
     <!-- 上传 Notebook 对话框 -->
     <el-dialog
@@ -220,6 +160,46 @@
       width="600px"
     >
       <el-form :model="uploadForm" label-width="100px">
+        <el-form-item :label="t('develop.notebook.engine')" required>
+          <el-select
+            v-model="uploadForm.engine_id"
+            :placeholder="t('develop.notebook.selectEngine')"
+            :loading="enginesLoading"
+            style="width: 100%"
+            @change="handleUploadEngineChange"
+          >
+            <el-option
+              v-for="engine in notebookEngines"
+              :key="engine.id"
+              :label="engine.name"
+              :value="engine.id"
+            />
+          </el-select>
+          <div v-if="!enginesLoading && notebookEngines.length === 0" class="form-status error">
+            {{ t('develop.notebook.noEngineAvailable') }}
+          </div>
+        </el-form-item>
+
+        <el-form-item :label="t('develop.notebook.kernel')" required>
+          <el-select
+            v-model="uploadForm.kernel"
+            :placeholder="t('develop.notebook.selectKernel')"
+            :loading="kernelsLoading"
+            :disabled="!uploadForm.engine_id"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="kernel in kernels"
+              :key="kernel.name"
+              :label="kernel.display_name || kernel.name"
+              :value="kernel.name"
+            />
+          </el-select>
+          <div v-if="uploadForm.engine_id && !kernelsLoading && kernels.length === 0" class="form-status error">
+            {{ t('develop.notebook.noKernelAvailable') }}
+          </div>
+        </el-form-item>
+
         <el-form-item :label="t('develop.notebook.fieldFile')" required>
           <el-upload
             ref="uploadRef"
@@ -250,26 +230,16 @@
           />
         </el-form-item>
 
-        <el-form-item :label="t('develop.notebook.fieldDataSource')">
-          <el-select
-            v-model="uploadForm.data_sources"
-            multiple
-            :placeholder="t('develop.notebook.selectDataSource')"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="ds in dataSources"
-              :key="ds.id"
-              :label="ds.display_name || ds.name"
-              :value="ds.id"
-            />
-          </el-select>
-        </el-form-item>
       </el-form>
 
       <template #footer>
         <el-button @click="uploadDialogVisible = false">{{ t('develop.notebook.cancel') }}</el-button>
-        <el-button type="primary" @click="confirmUpload" :loading="uploading">{{ t('develop.notebook.confirmUpload') }}</el-button>
+        <el-button
+          type="primary"
+          :disabled="notebookEngines.length === 0"
+          :loading="uploading"
+          @click="confirmUpload"
+        >{{ t('develop.notebook.confirmUpload') }}</el-button>
       </template>
     </el-dialog>
 
@@ -280,8 +250,12 @@
       width="600px"
     >
       <el-form :model="executeForm" label-width="100px">
-        <el-form-item label="Notebook">
+        <el-form-item :label="t('develop.notebook.notebook')">
           <el-input :value="executeNotebook?.display_name || executeNotebook?.name" disabled />
+        </el-form-item>
+
+        <el-form-item :label="t('develop.notebook.engine')">
+          <el-input :value="notebookEngineLabel(executeNotebook)" disabled />
         </el-form-item>
 
         <el-form-item :label="t('develop.notebook.fieldParams')">
@@ -289,26 +263,10 @@
             v-model="executeForm.parameters"
             type="textarea"
             :rows="5"
-            placeholder="输入 JSON 格式的参数，例如：&#10;{&#10;  &quot;city_name&quot;: &quot;北京&quot;,&#10;  &quot;buffer_distance&quot;: 1000&#10;}"
+            :placeholder="t('develop.notebook.parametersPlaceholder')"
           />
         </el-form-item>
 
-        <el-form-item :label="t('develop.notebook.fieldDataSource')">
-          <el-select
-            v-model="executeForm.data_source_ids"
-            multiple
-            :placeholder="t('develop.notebook.selectDataSourceOptional')"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="ds in dataSources"
-              :key="ds.id"
-              :label="ds.display_name || ds.name"
-              :value="ds.id"
-            />
-          </el-select>
-          <div class="form-tip">{{ t('develop.notebook.dataSourceInjectHint') }}</div>
-        </el-form-item>
       </el-form>
 
       <template #footer>
@@ -316,68 +274,16 @@
         <el-button type="primary" @click="confirmExecute" :loading="executing">{{ t('develop.notebook.confirmExecute') }}</el-button>
       </template>
     </el-dialog>
-
-    <!-- 帮助对话框 -->
-    <el-dialog v-model="helpDialogVisible" :title="t('develop.notebook.helpDialogTitle')" width="600px">
-      <div class="help-content">
-        <h3>🚀 {{ t('develop.notebook.helpQuickStart') }}</h3>
-        <p>{{ t('develop.notebook.helpQuickStartDesc') }}</p>
-
-        <h3>📝 {{ t('develop.notebook.helpFeatures') }}</h3>
-        <ul>
-          <li><strong>{{ t('develop.notebook.helpFeatureCode') }}</strong>: {{ t('develop.notebook.helpFeatureCodeDesc') }}</li>
-          <li><strong>{{ t('develop.notebook.helpFeatureData') }}</strong>: {{ t('develop.notebook.helpFeatureDataDesc') }}</li>
-          <li><strong>{{ t('develop.notebook.helpFeatureViz') }}</strong>: {{ t('develop.notebook.helpFeatureVizDesc') }}</li>
-          <li><strong>{{ t('develop.notebook.helpFeatureGeo') }}</strong>: {{ t('develop.notebook.helpFeatureGeoDesc') }}</li>
-        </ul>
-
-        <h3>⌨️ {{ t('develop.notebook.helpShortcuts') }}</h3>
-        <ul>
-          <li><code>Shift + Enter</code>: {{ t('develop.notebook.shortcutShiftEnter') }}</li>
-          <li><code>Ctrl + Enter</code>: {{ t('develop.notebook.shortcutCtrlEnter') }}</li>
-          <li><code>A</code>: {{ t('develop.notebook.shortcutA') }}</li>
-          <li><code>B</code>: {{ t('develop.notebook.shortcutB') }}</li>
-          <li><code>DD</code>: {{ t('develop.notebook.shortcutDD') }}</li>
-          <li><code>M</code>: {{ t('develop.notebook.shortcutM') }}</li>
-          <li><code>Y</code>: {{ t('develop.notebook.shortcutY') }}</li>
-        </ul>
-
-        <h3>📦 {{ t('develop.notebook.helpPreinstalled') }}</h3>
-        <ul>
-          <li>{{ t('develop.notebook.helpPreinstalledData') }}: pandas, numpy, scipy</li>
-          <li>{{ t('develop.notebook.helpPreinstalledViz') }}: matplotlib, seaborn, plotly</li>
-          <li>{{ t('develop.notebook.helpPreinstalledGeo') }}: geopandas, shapely, fiona</li>
-          <li>{{ t('develop.notebook.helpPreinstalledDb') }}: psycopg2, sqlalchemy</li>
-        </ul>
-
-        <h3>💡 {{ t('develop.notebook.helpTips') }}</h3>
-        <ul>
-          <li>{{ t('develop.notebook.helpTip1') }}</li>
-          <li>{{ t('develop.notebook.helpTip2') }}</li>
-          <li>{{ t('develop.notebook.helpTip3') }}</li>
-        </ul>
-      </div>
-      <template #footer>
-        <el-button type="primary" @click="helpDialogVisible = false">
-          {{ t('develop.notebook.gotIt') }}
-        </el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import {
-  Plus, Upload, Refresh, Search, Document, VideoPlay, Clock, More,
-  Download, Delete, TopRight, QuestionFilled
-} from '@element-plus/icons-vue'
+import { Upload, Refresh, Search, Document, VideoPlay, Clock, More, Download, Delete } from '@element-plus/icons-vue'
 import { notebookAPI } from '@/api/notebook'
 import { deleteDevTask, executeDevTask, getDevTask } from '@/api/devTask'
-import { listEngines } from '@/api/engines'
-import { getVenvStatus, initVenv } from '@/api/jupyter'
 import { openMonitorExecution } from '@addp/common-frontend'
 import { useRoute, useRouter } from 'vue-router'
 import dayjs from 'dayjs'
@@ -394,47 +300,10 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
 const searchKeyword = ref('')
-
-// 数据源列表
-const dataSources = ref([])
-
-// Jupyter Lab 相关
-const jupyterIframe = ref(null)
-const jupyterBaseUrl = ref('http://localhost:8088/lab')
-
-// 虚拟环境状态
-const venvInfo = ref(null)
-const venvReady = ref(false)
-const initLoading = ref(false)
-const checkingVenv = ref(true)
-
-const jupyterUrl = computed(() => {
-  if (!currentNotebook.value || !venvInfo.value) return ''
-
-  // 从 content 中获取 minio_path
-  const minioPath = currentNotebook.value.content?.minio_path
-  if (!minioPath) {
-    // 没有 notebook 文件时，返回基础 URL，并指定租户的 kernel
-    const kernelName = venvInfo.value.kernel_name
-    return `${jupyterBaseUrl.value}?kernel=${kernelName}`
-  }
-
-  // 构造 Jupyter Lab URL
-  // 使用 /lab/tree/ 路径打开指定文件，并通过 kernel 参数指定租户的 Kernel
-  // 注意: 由于配置了 TenantKernelSpecManager，Jupyter 只会显示租户的 Kernel
-  const kernelName = venvInfo.value.kernel_name
-  return `${jupyterBaseUrl.value}/lab/tree/${minioPath}?kernel=${kernelName}`
-})
-
-// 新建对话框
-const createDialogVisible = ref(false)
-const creating = ref(false)
-const createForm = ref({
-  name: '',
-  description: '',
-  kernel: 'python3',
-  data_sources: []
-})
+const notebookEngines = ref([])
+const enginesLoading = ref(false)
+const kernels = ref([])
+const kernelsLoading = ref(false)
 
 // 上传对话框
 const uploadDialogVisible = ref(false)
@@ -444,7 +313,8 @@ const uploadForm = ref({
   file: null,
   name: '',
   description: '',
-  data_sources: []
+  engine_id: null,
+  kernel: ''
 })
 
 // 执行对话框
@@ -452,12 +322,43 @@ const executeDialogVisible = ref(false)
 const executing = ref(false)
 const executeNotebook = ref(null)
 const executeForm = ref({
-  parameters: '{}',
-  data_source_ids: []
+  parameters: '{}'
 })
 
-// 帮助对话框
-const helpDialogVisible = ref(false)
+const loadNotebookEngines = async () => {
+  enginesLoading.value = true
+  try {
+    const response = await notebookAPI.listNotebookEngines()
+    notebookEngines.value = Array.isArray(response) ? response : []
+  } catch (error) {
+    console.error('加载 Notebook 引擎失败:', error)
+    notebookEngines.value = []
+    ElMessage.error(error.response?.data?.error || t('develop.notebook.loadEnginesFailed'))
+  } finally {
+    enginesLoading.value = false
+  }
+}
+
+const loadKernels = async (engineId) => {
+  kernels.value = []
+  uploadForm.value.kernel = ''
+  if (!engineId) return
+
+  kernelsLoading.value = true
+  try {
+    const response = await notebookAPI.listKernels(engineId)
+    kernels.value = response.kernels || []
+    const preferred = kernels.value.find(kernel => kernel.name === 'python3') || kernels.value[0]
+    uploadForm.value.kernel = preferred?.name || ''
+  } catch (error) {
+    console.error('加载 Kernel 失败:', error)
+    ElMessage.error(error.response?.data?.error || t('develop.notebook.loadKernelsFailed'))
+  } finally {
+    kernelsLoading.value = false
+  }
+}
+
+const handleUploadEngineChange = (engineId) => loadKernels(engineId)
 
 // 加载 Notebook 列表
 const loadNotebooks = async () => {
@@ -480,17 +381,6 @@ const loadNotebooks = async () => {
     ElMessage.error(t('develop.notebook.loadListFailed'))
   } finally {
     loading.value = false
-  }
-}
-
-// 加载数据源列表（从 System 模块）
-const loadDataSources = async () => {
-  try {
-    const data = await listEngines()
-    dataSources.value = Array.isArray(data) ? data : []
-  } catch (error) {
-    console.error('加载数据源列表失败:', error)
-    ElMessage.error(t('develop.notebook.loadDataSourceFailed'))
   }
 }
 
@@ -524,118 +414,20 @@ const selectNotebookByID = async (id) => {
   }
 }
 
-// 在 Jupyter Lab 中打开
-const openInJupyter = (notebook) => {
-  selectNotebook(notebook)
-}
-
-// 刷新 Jupyter iframe
-const refreshJupyter = () => {
-  if (jupyterIframe.value) {
-    jupyterIframe.value.src = jupyterIframe.value.src
-  }
-}
-
-// 在新窗口打开 Jupyter Lab
-const openInNewTab = () => {
-  if (jupyterUrl.value) {
-    window.open(jupyterUrl.value, '_blank')
-  }
-}
-
-// 显示帮助
-const showHelp = () => {
-  helpDialogVisible.value = true
-}
-
-// Jupyter iframe 加载完成
-const onJupyterLoad = () => {
-  console.log('Jupyter Lab 加载完成')
-}
-
-// 显示新建对话框
-const showCreateDialog = () => {
-  createForm.value = {
-    name: '',
-    description: '',
-    kernel: 'python3',
-    data_sources: []
-  }
-  createDialogVisible.value = true
-}
-
-// 确认新建
-const confirmCreate = async () => {
-  if (!createForm.value.name) {
-    ElMessage.warning(t('develop.notebook.nameRequired'))
-    return
-  }
-
-  creating.value = true
-  try {
-    // 创建空的 Notebook 结构
-    const notebookContent = {
-      cells: [
-        {
-          cell_type: 'markdown',
-          metadata: {},
-          source: [`# ${createForm.value.name}`]
-        },
-        {
-          cell_type: 'code',
-          execution_count: null,
-          metadata: {},
-          outputs: [],
-          source: []
-        }
-      ],
-      metadata: {
-        kernelspec: {
-          display_name: 'Python 3',
-          language: 'python',
-          name: 'python3'
-        },
-        language_info: {
-          name: 'python',
-          version: '3.9.0'
-        }
-      },
-      nbformat: 4,
-      nbformat_minor: 5
-    }
-
-    // 创建 File 对象
-    const blob = new Blob([JSON.stringify(notebookContent, null, 2)], { type: 'application/json' })
-    const file = new File([blob], `${createForm.value.name}.ipynb`, { type: 'application/json' })
-
-    // 上传
-    await notebookAPI.uploadNotebook(file, {
-      name: createForm.value.name,
-      description: createForm.value.description,
-      kernel: createForm.value.kernel,
-      data_sources: createForm.value.data_sources
-    })
-
-    ElMessage.success(t('develop.notebook.createSuccess'))
-    createDialogVisible.value = false
-    await loadNotebooks()
-  } catch (error) {
-    console.error('创建失败:', error)
-    ElMessage.error(error.response?.data?.error || t('develop.notebook.createFailed'))
-  } finally {
-    creating.value = false
-  }
-}
-
 // 显示上传对话框
-const showUploadDialog = () => {
+const showUploadDialog = async () => {
   uploadForm.value = {
     file: null,
     name: '',
     description: '',
-    data_sources: []
+    engine_id: notebookEngines.value[0]?.id || null,
+    kernel: ''
   }
+  kernels.value = []
   uploadDialogVisible.value = true
+  if (uploadForm.value.engine_id) {
+    await loadKernels(uploadForm.value.engine_id)
+  }
 }
 
 // 文件选择改变
@@ -643,6 +435,16 @@ const handleFileChange = (file) => {
   uploadForm.value.file = file.raw
   if (!uploadForm.value.name) {
     uploadForm.value.name = file.name.replace('.ipynb', '')
+  }
+
+  if (!uploadForm.value.engine_id) {
+    ElMessage.warning(t('develop.notebook.engineRequired'))
+    return
+  }
+
+  if (!uploadForm.value.kernel) {
+    ElMessage.warning(t('develop.notebook.kernelRequired'))
+    return
   }
 }
 
@@ -663,7 +465,8 @@ const confirmUpload = async () => {
     await notebookAPI.uploadNotebook(uploadForm.value.file, {
       name: uploadForm.value.name,
       description: uploadForm.value.description,
-      data_sources: uploadForm.value.data_sources
+      engine_id: uploadForm.value.engine_id,
+      kernel: uploadForm.value.kernel
     })
 
     ElMessage.success(t('develop.notebook.uploadSuccess'))
@@ -679,10 +482,13 @@ const confirmUpload = async () => {
 
 // 显示执行对话框
 const showExecuteDialog = (notebook) => {
+  if (!isNotebookEngineAvailable(notebook)) {
+    ElMessage.warning(t('develop.notebook.boundEngineUnavailable'))
+    return
+  }
   executeNotebook.value = notebook
   executeForm.value = {
-    parameters: JSON.stringify(notebook.content?.parameters || {}, null, 2),
-    data_source_ids: notebook.content?.data_sources || []
+    parameters: JSON.stringify(notebook.content?.parameters || {}, null, 2)
   }
   executeDialogVisible.value = true
 }
@@ -702,8 +508,7 @@ const confirmExecute = async () => {
   try {
     // 调用统一开发任务执行接口
     const response = await executeDevTask(executeNotebook.value.id, {
-      parameters,
-      data_source_ids: executeForm.value.data_source_ids
+      parameters
     })
 
     ElMessage.success(t('develop.notebook.executeSubmitted', { id: response.execution_id }))
@@ -796,59 +601,32 @@ const formatTime = (time) => {
   return dayjs(time).format('YYYY-MM-DD HH:mm')
 }
 
-// 初始化
-// 检查虚拟环境状态
-const checkVenvStatus = async () => {
-  try {
-    checkingVenv.value = true
-    const res = await getVenvStatus()
-    venvInfo.value = res.data || res
-    venvReady.value = venvInfo.value.exists
-  } catch (error) {
-    console.error('检查虚拟环境状态失败:', error)
-    ElMessage.error(t('develop.notebook.checkVenvFailed'))
-    venvReady.value = false
-  } finally {
-    checkingVenv.value = false
-  }
+const formatParameters = (parameters) => JSON.stringify(parameters || {}, null, 2)
+
+const notebookEngineID = (notebook) => Number(notebook?.execution_config?.engine_id || 0)
+
+const findNotebookEngine = (notebook) => {
+  const engineId = notebookEngineID(notebook)
+  return notebookEngines.value.find(engine => Number(engine.id) === engineId)
 }
 
-// 初始化虚拟环境
-const initVenvEnvironment = async () => {
-  try {
-    initLoading.value = true
-    ElMessage.info(t('develop.notebook.initializingVenv'))
+const isNotebookEngineAvailable = (notebook) => Boolean(findNotebookEngine(notebook))
 
-    const res = await initVenv()
-    venvInfo.value = res.data?.data || res.data
-    venvReady.value = true
-
-    ElMessage.success(t('develop.notebook.venvInitSuccess'))
-  } catch (error) {
-    console.error('初始化虚拟环境失败:', error)
-    ElMessage.error(error.response?.data?.error || t('develop.notebook.venvInitFailed'))
-    venvReady.value = false
-  } finally {
-    initLoading.value = false
-  }
+const notebookEngineLabel = (notebook) => {
+  const engine = findNotebookEngine(notebook)
+  if (engine) return engine.name
+  const engineId = notebookEngineID(notebook)
+  return engineId ? t('develop.notebook.unavailableEngine', { id: engineId }) : t('develop.notebook.engineNotBound')
 }
 
 onMounted(async () => {
-  await checkVenvStatus()
-
-  // 自动初始化虚拟环境（如果不存在）
-  if (!venvReady.value) {
-    await initVenvEnvironment()
-  }
-
-  await loadNotebooks()
-  await loadDataSources()
+  await Promise.all([loadNotebookEngines(), loadNotebooks()])
 
   const taskId = firstQueryValue(route.query.id || route.query.taskId)
   if (taskId) {
     await selectNotebookByID(taskId)
   } else if (firstQueryValue(route.query.action) === 'create') {
-    showCreateDialog()
+    showUploadDialog()
   }
 })
 
@@ -953,7 +731,7 @@ function firstQueryValue(value) {
   justify-content: center;
 }
 
-.jupyter-container {
+.notebook-detail-container {
   display: flex;
   flex-direction: column;
   padding: 0;
@@ -969,7 +747,7 @@ function firstQueryValue(value) {
   height: 100%;
 }
 
-.jupyter-wrapper {
+.notebook-detail {
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -977,7 +755,7 @@ function firstQueryValue(value) {
   overflow: hidden;
 }
 
-.jupyter-toolbar {
+.detail-toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -997,104 +775,70 @@ function firstQueryValue(value) {
   gap: 8px;
 }
 
-.jupyter-iframe {
+.detail-content {
   flex: 1;
-  width: 100%;
   min-height: 0;
-  border: none;
-  background: var(--addp-bg-primary);
+  overflow-y: auto;
+  padding: 20px;
 }
 
-/* 虚拟环境状态卡片 */
-.venv-status-card {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--addp-bg-primary);
-  padding: 40px;
+.parameter-section {
+  margin-top: 20px;
 }
 
-.venv-init-card {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--addp-bg-primary);
-  padding: 40px;
-}
-
-.venv-init-tips {
-  text-align: left;
-  max-width: 600px;
-  margin: 0 auto;
-  line-height: 1.8;
-}
-
-.venv-init-tips p {
-  margin: 12px 0;
-  color: var(--addp-text-secondary);
-}
-
-.venv-init-tips ul {
-  margin: 16px 0;
-  padding-left: 20px;
-  color: var(--addp-text-secondary);
-}
-
-.venv-init-tips ul li {
-  margin: 8px 0;
-}
-
-.venv-init-tips .time-note {
-  margin-top: 16px;
-  font-size: 13px;
-  color: var(--addp-text-tertiary);
-}
-
-.form-tip {
-  font-size: 12px;
-  color: var(--addp-text-tertiary);
+.form-status {
+  width: 100%;
   margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
-/* 帮助对话框样式 */
-.help-content {
-  line-height: 1.8;
+.form-status.error {
+  color: var(--el-color-danger);
 }
 
-.help-content h3 {
-  margin-top: 16px;
-  margin-bottom: 8px;
-  color: var(--addp-text-primary);
+.parameter-section h4 {
+  margin: 0 0 8px;
   font-size: 16px;
+  font-weight: 600;
 }
 
-.help-content h3:first-child {
-  margin-top: 0;
-}
-
-.help-content p {
-  margin: 8px 0;
-  color: var(--addp-text-secondary);
-}
-
-.help-content ul {
-  margin: 8px 0;
-  padding-left: 24px;
-  color: var(--addp-text-secondary);
-}
-
-.help-content li {
-  margin: 4px 0;
-}
-
-.help-content code {
+.parameter-section pre {
+  margin: 0;
+  padding: 12px;
   background: var(--addp-bg-secondary);
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-family: 'Monaco', 'Courier New', monospace;
+  border: 1px solid var(--addp-border-color);
+  border-radius: 4px;
+  color: var(--addp-text-primary);
+  font-family: monospace;
   font-size: 13px;
-  color: #e83e8c;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .notebook-editor {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .notebook-sidebar {
+    width: 100% !important;
+    max-height: 45vh;
+    border-right: 0;
+    border-bottom: 1px solid var(--addp-border-color);
+  }
+
+  .detail-toolbar {
+    align-items: flex-start;
+    gap: 12px;
+    flex-direction: column;
+  }
+
+  .toolbar-actions {
+    flex-wrap: wrap;
+  }
 }
 </style>

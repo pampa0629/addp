@@ -42,6 +42,10 @@ func (p *Model3DWorkflowPlugin) SensitiveFields() []string {
 	return []string{}
 }
 
+func (p *Model3DWorkflowPlugin) ConnectionIdentityFields() []string {
+	return []string{"protocol", "host", "port"}
+}
+
 func (p *Model3DWorkflowPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewWorkflowCapabilities(p.Type(), "addp.workflow/v1")
 }

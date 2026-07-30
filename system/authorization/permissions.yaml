@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: system
-manifest_version: 7
+manifest_version: 11
 permissions:
   - key: audit.event.export
     allowed_scope_types: [platform]
@@ -50,6 +50,14 @@ permissions:
     status: disabled
     name_i18n_key: permissions.audit.subject.read.name
     description_i18n_key: permissions.audit.subject.read.description
+  - key: audit.tenant_event.create
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.audit.tenant_event.create.name
+    description_i18n_key: permissions.audit.tenant_event.create.description
   - key: audit.tenant_event.export
     allowed_scope_types: [tenant]
     risk_level: high
@@ -858,3 +866,43 @@ permissions:
     status: active
     name_i18n_key: permissions.system.engine.update.name
     description_i18n_key: permissions.system.engine.update.description
+  - key: system.engine_descriptor.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.engine_descriptor.read.name
+    description_i18n_key: permissions.system.engine_descriptor.read.description
+  - key: system.execution_authorization.execute
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.execution_authorization.execute.name
+    description_i18n_key: permissions.system.execution_authorization.execute.description
+  - key: system.runtime_registry.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.runtime_registry.read.name
+    description_i18n_key: permissions.system.runtime_registry.read.description
+  - key: system.runtime_registry.update
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.runtime_registry.update.name
+    description_i18n_key: permissions.system.runtime_registry.update.description
+  - key: system.task_authorization.execute
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.task_authorization.execute.name
+    description_i18n_key: permissions.system.task_authorization.execute.description

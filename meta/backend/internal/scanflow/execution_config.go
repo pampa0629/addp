@@ -16,11 +16,10 @@ type ExecutionConfig struct {
 	ScanDepth    string
 	Force        bool
 	Source       string
-	Token        string
 	PlannedRunAt string
 }
 
-func ManualExecutionConfig(engineID uint, itemID uint, storageType string, catalogPaths []string, refGroups []models.ScanRefGroup, scanDepth string, force bool, source string, token string) commonModels.JSONMap {
+func ManualExecutionConfig(engineID uint, itemID uint, storageType string, catalogPaths []string, refGroups []models.ScanRefGroup, scanDepth string, force bool, source string) commonModels.JSONMap {
 	config := commonModels.JSONMap{
 		"engine_id":     engineID,
 		"storage_type":  storageType,
@@ -29,7 +28,6 @@ func ManualExecutionConfig(engineID uint, itemID uint, storageType string, catal
 		"scan_depth":    scanDepth,
 		"force":         force,
 		"source":        source,
-		"token":         token,
 	}
 	if itemID > 0 {
 		config["item_id"] = itemID
@@ -80,7 +78,6 @@ func ParseExecutionConfig(config commonModels.JSONMap) ExecutionConfig {
 	parsed.ScanDepth, _ = config["scan_depth"].(string)
 	parsed.Force = boolFromInterface(config["force"])
 	parsed.Source, _ = config["source"].(string)
-	parsed.Token, _ = config["token"].(string)
 	parsed.PlannedRunAt, _ = config["planned_run_at"].(string)
 	parsed.CatalogPaths = StringSliceFromInterface(config["catalog_paths"])
 	parsed.RefGroups = RefGroupsFromMap(models.JSONMap(config))

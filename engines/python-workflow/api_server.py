@@ -20,6 +20,7 @@ from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())
 
 from workflow_engine import execute_workflow, execute_single_operator
+from addp_common.workflow_runtime import validate_execution_authorization
 from geometry_batches import (
     GEOMETRY_BATCH_METADATA_PREFIX,
     decode_geometry_batch_arrow,
@@ -205,6 +206,17 @@ def execute_workflow_endpoint():
             )
             response["execution_time_ms"] = (time.time() - start) * 1000
             return jsonify(response), 400
+
+        operators = {
+            op["id"]: op["effects"]
+            for op in list_operators()
+            if "workflow" in op.get("execution_modes", [])
+        }
+        validate_execution_authorization(
+            workflow_def,
+            operator_effects=operators,
+            runtime=data.get("runtime"),
+        )
 
         # 执行工作流
         execution_id = str(uuid.uuid4())

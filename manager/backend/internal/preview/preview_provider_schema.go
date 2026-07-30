@@ -30,12 +30,12 @@ func (p *schemaPreviewProvider) Name() string {
 func (p *schemaPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
 	_ = ctx
 
-	// 设置租户 ID（用于服务间调用时的租户隔离）
-	if p.metaClient != nil {
-		p.metaClient.SetTenantID(req.TenantID)
+	metaClient := p.metaClient
+	if metaClient != nil && req.TenantID != nil {
+		metaClient = metaClient.WithTenantID(*req.TenantID)
 	}
 
-	node, err := p.metadataRepo.GetNodeByName(req.Engine.ID, req.Schema, p.metaClient)
+	node, err := p.metadataRepo.GetNodeByName(req.Engine.ID, req.Schema, metaClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get node info: %w", err)
 	}
@@ -54,7 +54,7 @@ func (p *schemaPreviewProvider) Preview(ctx context.Context, req *PreviewRequest
 
 	children := make([]models.ObjectPreviewChild, 0)
 
-	if childNodes, err := p.metadataRepo.GetChildNodes(node.ID, p.metaClient); err == nil {
+	if childNodes, err := p.metadataRepo.GetChildNodes(node.ID, metaClient); err == nil {
 		for _, child := range childNodes {
 			children = append(children, models.ObjectPreviewChild{
 				Name:      child.Name,
@@ -65,7 +65,7 @@ func (p *schemaPreviewProvider) Preview(ctx context.Context, req *PreviewRequest
 		}
 	}
 
-	if items, err := p.metadataRepo.GetNodeItems(node.ID, p.metaClient); err == nil {
+	if items, err := p.metadataRepo.GetNodeItems(node.ID, metaClient); err == nil {
 		for _, item := range items {
 			child := models.ObjectPreviewChild{
 				Name: item.Name,

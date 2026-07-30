@@ -44,7 +44,6 @@ func main() {
 	log.Printf("🚀 Starting Develop Service on %s", cfg.ServerAddr)
 	log.Printf("📦 Environment: %s", cfg.Env)
 	log.Printf("🔗 System Service: %s", cfg.SystemServiceURL)
-	log.Printf("🔗 Jupyter Engine: %s", cfg.JupyterEngineURL)
 
 	// 初始化数据库
 	db, err := repository.InitDatabase(cfg)
@@ -65,65 +64,51 @@ func main() {
 	})
 	defer redisClient.Close()
 
-	// ========== 创建 System Client ==========
-	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-	log.Printf("✅ System Client 创建成功")
+	// ========== 创建 System Service Client ==========
+	serviceTokenSource, err := commonClient.NewOAuthServiceTokenSource(
+		cfg.SystemServiceURL, "addp-develop", cfg.ServiceClientSecret, nil,
+	)
+	if err != nil {
+		log.Fatalf("Service Token Source 初始化失败: %v", err)
+	}
+	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, serviceTokenSource, nil)
+	executionAuthorizationClient := commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemServiceURL, nil)
 
 	// ========== Service 层 ==========
 	// 1. 工作流引擎服务（从 System 动态获取引擎配置）
-	workflowEngine := service.NewWorkflowEngineService(systemClient)
+	workflowEngine := service.NewWorkflowEngineService(systemServiceClient)
 	log.Printf("✅ WorkflowEngineService 初始化完成")
 
 	// 2. SQL引擎服务
-	sqlEngine := service.NewSQLEngineService(cfg, systemClient)
+	sqlEngine := service.NewSQLEngineService(cfg, systemServiceClient, executionAuthorizationClient)
 	log.Printf("✅ SQLEngineService 初始化完成")
 
 	// 3. Jupyter引擎服务
-	jupyterService := service.NewJupyterService(cfg)
+	jupyterService := service.NewJupyterService(systemServiceClient, serviceTokenSource)
 	log.Printf("✅ JupyterService 初始化完成")
 
-	// 3.5 Jupyter实例管理服务（租户隔离的 Jupyter 容器管理 - Docker 方案,已废弃）
-	jupyterInstanceService, err := service.NewJupyterInstanceService(cfg)
-	if err != nil {
-		log.Printf("⚠️  JupyterInstanceService 初始化失败: %v", err)
-		jupyterInstanceService = nil
-	} else {
-		log.Printf("✅ JupyterInstanceService 初始化完成")
-	}
-
-	// 3.7 Jupyter虚拟环境管理服务（租户隔离的虚拟环境管理 - 开发环境新方案）
-	jupyterVenvService, err := service.NewJupyterVenvService(cfg)
-	if err != nil {
-		log.Printf("⚠️  JupyterVenvService 初始化失败: %v", err)
-		jupyterVenvService = nil
-	} else {
-		log.Printf("✅ JupyterVenvService 初始化完成")
-	}
-
 	// 3.6 NotebookExecutionService（Notebook 完整执行服务）
-	notebookExecutionService, err := service.NewNotebookExecutionService(cfg, systemClient, jupyterService)
+	notebookExecutionService, err := service.NewNotebookExecutionService(jupyterService)
 	if err != nil {
-		log.Printf("⚠️  NotebookExecutionService 初始化失败: %v（将使用简化模式）", err)
-		notebookExecutionService = nil // 允许降级到简化模式
-	} else {
-		log.Printf("✅ NotebookExecutionService 初始化完成")
+		log.Fatalf("NotebookExecutionService 初始化失败: %v", err)
 	}
+	log.Printf("✅ NotebookExecutionService 初始化完成")
 
 	// 4. DevTask业务逻辑服务
 	devTaskService := service.NewDevTaskService(devTaskRepo)
 	log.Printf("✅ DevTaskService 初始化完成")
 
 	// 6. DuckDB 联邦查询服务
-	metaClient := commonClient.NewMetaClientWithInternalKey(cfg.MetaServiceURL, cfg.InternalAPIKey)
-	duckdbService := service.NewDuckDBService(cfg, systemClient, metaClient)
+	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, serviceTokenSource)
+	duckdbService := service.NewDuckDBService(cfg, systemServiceClient, metaClient)
 	log.Printf("✅ DuckDBService 初始化完成")
 
 	// 7. 算子发现与工作流校验服务（动态发现工作流引擎）
-	operatorDiscovery := service.NewOperatorDiscoveryService(systemClient)
+	operatorDiscovery := service.NewOperatorDiscoveryService(systemServiceClient)
 	log.Printf("✅ OperatorDiscoveryService 初始化完成")
 
 	// 8. DevExecutor 统一执行器（执行前复用正式工作流校验）
-	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, operatorDiscovery, metaClient, sqlEngine, duckdbService, jupyterService, notebookExecutionService)
+	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, operatorDiscovery, metaClient, sqlEngine, duckdbService, notebookExecutionService)
 	log.Printf("✅ DevExecutor 初始化完成（使用统一执行表）")
 	toolApprovalService := service.NewToolApprovalService(db, devExecutor)
 
@@ -138,29 +123,15 @@ func main() {
 	executionHandler := api.NewExecutionHandler(devExecutor, toolApprovalService)
 	toolApprovalHandler := api.NewToolApprovalHandler(toolApprovalService)
 	operatorHandler := api.NewOperatorHandler(operatorDiscovery)
-	engineHandler := api.NewEngineHandler(systemClient)
-	queryHandler := api.NewQueryHandler(sqlEngine, duckdbService)
+	engineHandler := api.NewEngineHandler(systemServiceClient)
+	queryHandler := api.NewQueryHandler(sqlEngine)
 	notebookHandler := api.NewNotebookHandler(jupyterService, notebookExecutionService, devTaskService)
 	duckdbHandler := api.NewDuckDBHandler(duckdbService)
-
-	// Jupyter 实例管理 Handler (Docker 方案,已废弃)
-	var jupyterInstanceHandler *api.JupyterInstanceHandler
-	if jupyterInstanceService != nil {
-		jupyterInstanceHandler = api.NewJupyterInstanceHandler(jupyterInstanceService)
-		log.Printf("✅ JupyterInstanceHandler 初始化完成")
-	}
-
-	// Jupyter 虚拟环境管理 Handler (开发环境新方案)
-	var jupyterVenvHandler *api.JupyterVenvHandler
-	if jupyterVenvService != nil {
-		jupyterVenvHandler = api.NewJupyterVenvHandler(jupyterVenvService)
-		log.Printf("✅ JupyterVenvHandler 初始化完成")
-	}
 
 	log.Printf("✅ Handler 层初始化完成")
 
 	// ========== 设置路由 ==========
-	router := api.SetupRouter(cfg, db, devTaskHandler, executionHandler, toolApprovalHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, jupyterInstanceHandler, jupyterVenvHandler, devTaskService, systemClient, duckdbHandler)
+	router := api.SetupRouter(cfg, db, devTaskHandler, executionHandler, toolApprovalHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, devTaskService, systemServiceClient, duckdbHandler)
 	log.Printf("✅ 路由设置完成")
 
 	serviceHost := utils.GetServiceHost()
@@ -168,9 +139,8 @@ func main() {
 	serviceURL := utils.BuildServiceURL(serviceHost, port)
 
 	// ========== 模块注册（注册到 System service_registry）==========
-	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
-		registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-		registryClient.RegisterAndHeartbeatWithMetadata("develop", serviceURL, "/develop", map[string]interface{}{
+	if cfg.SystemServiceURL != "" {
+		systemServiceClient.RegisterAndHeartbeatWithMetadata(context.Background(), "develop", serviceURL, "/develop", map[string]interface{}{
 			"module": "develop",
 			"capabilities": map[string]interface{}{
 				"cleanup_executor": map[string]interface{}{
@@ -181,10 +151,9 @@ func main() {
 	}
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
-	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
+	if cfg.SystemServiceURL != "" {
 		taskProviderRegistry := service.NewTaskProviderRegistryService(
-			cfg.SystemServiceURL,
-			cfg.InternalAPIKey,
+			systemServiceClient,
 			serviceURL,
 		)
 
@@ -193,7 +162,7 @@ func main() {
 			time.Sleep(2 * time.Second) // 等待服务完全启动
 			maxRetries := 5
 			for attempt := 1; attempt <= maxRetries; attempt++ {
-				if err := taskProviderRegistry.Register(); err != nil {
+				if err := taskProviderRegistry.Register(context.Background()); err != nil {
 					log.Printf("⚠️  Registration attempt %d/%d failed: %v", attempt, maxRetries, err)
 					time.Sleep(time.Duration(attempt*2) * time.Second) // 指数退避
 					continue

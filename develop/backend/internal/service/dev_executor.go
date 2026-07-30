@@ -27,7 +27,6 @@ type DevExecutor struct {
 	metaClient               *commonClient.MetaClient
 	sqlEngine                *SQLEngineService
 	duckdbService            federatedQueryExecutor
-	jupyterService           *JupyterService
 	notebookExecutionService *NotebookExecutionService
 }
 
@@ -36,9 +35,17 @@ type federatedQueryExecutor interface {
 }
 
 type preparedContentExecution struct {
-	execution *commonExecution.TaskExecution
-	devTask   *models.DevTask
-	tenantID  int
+	execution             *commonExecution.TaskExecution
+	devTask               *models.DevTask
+	tenantID              int
+	sqlAuthorization      *IssuedSQLExecutionAuthorization
+	workflowAuthorization *IssuedWorkflowExecutionAuthorization
+}
+
+type preparedParameterizedDevTask struct {
+	template *models.DevTask
+	task     *models.DevTask
+	inputs   commonModels.JSONMap
 }
 
 // NewDevExecutor 创建开发任务执行器
@@ -50,7 +57,6 @@ func NewDevExecutor(
 	metaClient *commonClient.MetaClient,
 	sqlEngine *SQLEngineService,
 	duckdbService federatedQueryExecutor,
-	jupyterService *JupyterService,
 	notebookExecutionService *NotebookExecutionService,
 ) *DevExecutor {
 	return &DevExecutor{
@@ -61,7 +67,6 @@ func NewDevExecutor(
 		metaClient:               metaClient,
 		sqlEngine:                sqlEngine,
 		duckdbService:            duckdbService,
-		jupyterService:           jupyterService,
 		notebookExecutionService: notebookExecutionService,
 	}
 }
@@ -72,6 +77,7 @@ func (e *DevExecutor) ExecuteDevTask(
 	devTaskID uint,
 	tenantID uint,
 	userID uint,
+	userAccessToken string,
 	triggerType string,
 ) (string, error) {
 	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
@@ -96,6 +102,18 @@ func (e *DevExecutor) ExecuteDevTask(
 
 	// 生成执行ID
 	executionID := uuid.New().String()
+	sqlAuthorization, err := e.prepareSQLExecutionAuthorization(
+		ctx, devTask, tenantID, userAccessToken, executionID,
+	)
+	if err != nil {
+		return "", err
+	}
+	workflowAuthorization, err := e.prepareWorkflowExecutionAuthorization(
+		ctx, devTask, tenantID, userAccessToken, executionID,
+	)
+	if err != nil {
+		return "", err
+	}
 
 	// 提取输入参数
 	var inputs commonModels.JSONMap
@@ -129,6 +147,8 @@ func (e *DevExecutor) ExecuteDevTask(
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
+	applySQLExecutionAuthorizationFacts(execution, sqlAuthorization)
+	applyWorkflowExecutionAuthorizationFacts(execution, workflowAuthorization)
 
 	if err := e.taskExecutionRepo.Create(ctx, execution); err != nil {
 		return "", fmt.Errorf("failed to create execution record: %w", err)
@@ -138,7 +158,7 @@ func (e *DevExecutor) ExecuteDevTask(
 		executionID, devTaskID, devTask.DevType, normalizedTriggerType)
 
 	// 异步执行任务
-	go e.executeAsync(execution.ID, executionID, devTask, int(tenantID))
+	go e.executeAsync(execution.ID, executionID, devTask, int(tenantID), sqlAuthorization, workflowAuthorization)
 
 	return executionID, nil
 }
@@ -151,6 +171,7 @@ func (e *DevExecutor) ExecuteContent(
 	executionConfig map[string]interface{},
 	tenantID uint,
 	userID uint,
+	userAccessToken string,
 	triggerType string,
 	timeout int,
 ) (string, error) {
@@ -161,6 +182,7 @@ func (e *DevExecutor) ExecuteContent(
 		executionConfig,
 		tenantID,
 		userID,
+		userAccessToken,
 		triggerType,
 		timeout,
 	)
@@ -181,6 +203,7 @@ func (e *DevExecutor) prepareContentExecution(
 	executionConfig map[string]interface{},
 	tenantID uint,
 	userID uint,
+	userAccessToken string,
 	triggerType string,
 	timeout int,
 ) (*preparedContentExecution, error) {
@@ -261,11 +284,24 @@ func (e *DevExecutor) prepareContentExecution(
 		Timeout:         timeout,
 		ExecutionConfig: models.DevTaskContent(executionConfig),
 	}
+	sqlAuthorization, err := e.prepareSQLExecutionAuthorization(
+		ctx, tempItem, tenantID, userAccessToken, executionID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	workflowAuthorization, err := e.prepareWorkflowExecutionAuthorization(
+		ctx, tempItem, tenantID, userAccessToken, executionID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	applySQLExecutionAuthorizationFacts(execution, sqlAuthorization)
+	applyWorkflowExecutionAuthorizationFacts(execution, workflowAuthorization)
 
 	return &preparedContentExecution{
-		execution: execution,
-		devTask:   tempItem,
-		tenantID:  int(tenantID),
+		execution: execution, devTask: tempItem, tenantID: int(tenantID),
+		sqlAuthorization: sqlAuthorization, workflowAuthorization: workflowAuthorization,
 	}, nil
 }
 
@@ -291,7 +327,74 @@ func (e *DevExecutor) startPreparedContentExecution(prepared *preparedContentExe
 		prepared.execution.ExecutionID,
 		prepared.devTask,
 		prepared.tenantID,
+		prepared.sqlAuthorization,
+		prepared.workflowAuthorization,
 	)
+}
+
+func (e *DevExecutor) prepareSQLExecutionAuthorization(
+	ctx context.Context,
+	devTask *models.DevTask,
+	tenantID uint,
+	userAccessToken string,
+	executionID string,
+) (*IssuedSQLExecutionAuthorization, error) {
+	if devTask == nil || devTask.DevType != commonExecution.TaskTypeQuery {
+		return nil, nil
+	}
+	if devTask.IsDuckDBQuery() {
+		return nil, fmt.Errorf("DuckDB 联邦查询尚未迁移到受控 Execution Authorization，当前拒绝执行")
+	}
+	if strings.TrimSpace(userAccessToken) == "" {
+		return nil, fmt.Errorf("异步 SQL 执行必须由当前 User Access Token 派生 Execution Authorization")
+	}
+	engineID := devTask.GetEngineID()
+	if engineID == nil || *engineID == 0 {
+		return nil, fmt.Errorf("SQL执行需要指定资源")
+	}
+	sqlContent, ok := devTask.Content["query"].(string)
+	if !ok || strings.TrimSpace(sqlContent) == "" {
+		return nil, fmt.Errorf("无效的查询内容")
+	}
+	parsedExecutionID, err := uuid.Parse(executionID)
+	if err != nil {
+		return nil, fmt.Errorf("执行 ID 无效: %w", err)
+	}
+	return e.sqlEngine.IssueSQLExecutionAuthorization(
+		ctx, tenantID, userAccessToken, parsedExecutionID, *engineID, sqlContent, devTask.Timeout,
+	)
+}
+
+func applySQLExecutionAuthorizationFacts(
+	execution *commonExecution.TaskExecution,
+	authorization *IssuedSQLExecutionAuthorization,
+) {
+	if execution == nil || authorization == nil {
+		return
+	}
+	execution.ActorPrincipalID = &authorization.ActorPrincipalID
+	execution.ActorTenantMembershipID = &authorization.ActorTenantMembershipID
+	execution.IssuedAuthorizationVersion = &authorization.IssuedAuthorizationVersion
+	execution.ExecutionAuthorizationID = &authorization.AuthorizationID
+	execution.AuthorizationEffects = []string{string(authorization.Effect)}
+	expiresAt := authorization.ExpiresAt.UTC()
+	execution.AuthorizationExpiresAt = &expiresAt
+}
+
+func applyWorkflowExecutionAuthorizationFacts(
+	execution *commonExecution.TaskExecution,
+	authorization *IssuedWorkflowExecutionAuthorization,
+) {
+	if execution == nil || authorization == nil {
+		return
+	}
+	execution.ActorPrincipalID = &authorization.ActorPrincipalID
+	execution.ActorTenantMembershipID = &authorization.ActorTenantMembershipID
+	execution.IssuedAuthorizationVersion = &authorization.IssuedAuthorizationVersion
+	execution.ExecutionAuthorizationID = &authorization.AuthorizationID
+	execution.AuthorizationEffects = append([]string(nil), authorization.Effects...)
+	expiresAt := authorization.ExpiresAt.UTC()
+	execution.AuthorizationExpiresAt = &expiresAt
 }
 
 func (e *DevExecutor) validateWorkflowBeforeExecution(
@@ -347,7 +450,14 @@ func workflowEngineIDFromExecutionConfig(executionConfig map[string]interface{})
 }
 
 // executeAsync 异步执行任务（核心执行逻辑）
-func (e *DevExecutor) executeAsync(recordID int64, executionID string, devTask *models.DevTask, tenantID int) {
+func (e *DevExecutor) executeAsync(
+	recordID int64,
+	executionID string,
+	devTask *models.DevTask,
+	tenantID int,
+	sqlAuthorization *IssuedSQLExecutionAuthorization,
+	workflowAuthorization *IssuedWorkflowExecutionAuthorization,
+) {
 	log.Printf("🟢 [DevExecutor] executeAsync 开始: execution_id=%s", executionID)
 	ctx := context.Background()
 	startTime := time.Now()
@@ -367,9 +477,9 @@ func (e *DevExecutor) executeAsync(recordID int64, executionID string, devTask *
 	log.Printf("🟢 [DevExecutor] 开始分发到引擎: execution_id=%s type=%s", executionID, devTask.DevType)
 	switch devTask.DevType {
 	case "workflow":
-		result, errorMessage = e.executeWorkflow(ctx, devTask, executionID, tenantID)
+		result, errorMessage = e.executeWorkflow(ctx, devTask, executionID, tenantID, workflowAuthorization)
 	case "query":
-		result, errorMessage, rowsAffected = e.executeQuery(ctx, devTask, executionID, tenantID)
+		result, errorMessage, rowsAffected = e.executeQuery(ctx, devTask, executionID, tenantID, sqlAuthorization)
 	case "script":
 		result, errorMessage = e.executeScript(ctx, devTask, executionID, tenantID)
 	default:
@@ -464,7 +574,13 @@ func (e *DevExecutor) updateExecutionStatus(ctx context.Context, executionID str
 }
 
 // executeWorkflow 执行工作流（支持 JSONB 配置）
-func (e *DevExecutor) executeWorkflow(ctx context.Context, devTask *models.DevTask, executionID string, tenantID int) (commonModels.JSONMap, string) {
+func (e *DevExecutor) executeWorkflow(
+	ctx context.Context,
+	devTask *models.DevTask,
+	executionID string,
+	tenantID int,
+	authorization *IssuedWorkflowExecutionAuthorization,
+) (commonModels.JSONMap, string) {
 	log.Printf("🔵 [DevExecutor] executeWorkflow 开始: execution_id=%s", executionID)
 
 	// 验证执行配置
@@ -479,6 +595,9 @@ func (e *DevExecutor) executeWorkflow(ctx context.Context, devTask *models.DevTa
 	}
 	if err := ValidateWorkflowDefinition(workflowDef); err != nil {
 		return nil, err.Error()
+	}
+	if authorization == nil {
+		return nil, "异步工作流执行缺少 Execution Authorization"
 	}
 
 	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 30, "执行工作流")
@@ -500,7 +619,13 @@ func (e *DevExecutor) executeWorkflow(ctx context.Context, devTask *models.DevTa
 
 	log.Printf("🔵 [DevExecutor] 调用工作流引擎: execution_id=%s config=%s", executionID, configStr)
 	// 调用工作流引擎
-	resp, err := e.workflowEngine.ExecuteWorkflow(execCtx, uint(tenantID), workflowDef, inputData, configStr)
+	parsedExecutionID, err := uuid.Parse(executionID)
+	if err != nil {
+		return nil, "工作流执行 ID 无效"
+	}
+	resp, err := e.workflowEngine.ExecuteWorkflow(
+		execCtx, uint(tenantID), parsedExecutionID, workflowDef, inputData, configStr, authorization,
+	)
 	if err != nil {
 		log.Printf("❌ [DevExecutor] 工作流引擎调用失败: execution_id=%s err=%v", executionID, err)
 		return nil, fmt.Sprintf("工作流执行失败: %v", err)
@@ -586,13 +711,13 @@ func workflowProducedTargetScanOptions(target WorkflowProducedTarget) commonClie
 }
 
 // executeQuery 执行查询（根据query_type路由）
-func (e *DevExecutor) executeQuery(ctx context.Context, devTask *models.DevTask, executionID string, tenantID int) (commonModels.JSONMap, string, *int64) {
+func (e *DevExecutor) executeQuery(ctx context.Context, devTask *models.DevTask, executionID string, tenantID int, authorization *IssuedSQLExecutionAuthorization) (commonModels.JSONMap, string, *int64) {
 	queryType := devTask.GetQueryType()
 
 	// 根据 query_type 路由到不同执行器
 	switch queryType {
 	case "sql":
-		return e.executeSQL(ctx, devTask, executionID, tenantID)
+		return e.executeSQL(ctx, devTask, executionID, tenantID, authorization)
 	case "mql":
 		return nil, "MongoDB 查询功能尚未实现", nil
 	case "dsl":
@@ -603,168 +728,47 @@ func (e *DevExecutor) executeQuery(ctx context.Context, devTask *models.DevTask,
 }
 
 // executeSQL 执行SQL
-func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, executionID string, tenantID int) (commonModels.JSONMap, string, *int64) {
+func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, executionID string, tenantID int, authorization *IssuedSQLExecutionAuthorization) (commonModels.JSONMap, string, *int64) {
 	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 30, "执行SQL")
-
+	if authorization == nil {
+		return nil, "异步 SQL 执行缺少 Execution Authorization", nil
+	}
 	engineID := devTask.GetEngineID()
-	// 解析SQL内容
 	sqlContent, ok := devTask.Content["query"].(string)
-	if !ok {
-		return nil, "无效的查询内容", nil
+	parsedExecutionID, err := uuid.Parse(executionID)
+	if engineID == nil || !ok || err != nil {
+		return nil, "异步 SQL 执行上下文无效", nil
 	}
-
-	// 设置超时
-	timeout := devTask.Timeout
-	if timeout <= 0 {
-		timeout = 30
-	}
-	execCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-	defer cancel()
-
-	if devTask.IsDuckDBQuery() {
-		if e.duckdbService == nil {
-			return nil, "DuckDB 联邦查询服务未初始化", nil
-		}
-		duckResult, err := e.duckdbService.ExecuteQuery(execCtx, uint(tenantID), sqlContent, timeout)
-		if err != nil {
-			return nil, fmt.Sprintf("DuckDB 联邦查询执行失败: %v", err), nil
-		}
-
-		_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 90, "DuckDB 联邦查询执行成功")
-
-		previewRows := duckResult.Rows
-		previewLimit := 10
-		if len(previewRows) > previewLimit {
-			previewRows = previewRows[:previewLimit]
-		}
-
-		rowsAffected := int64(duckResult.RowCount)
-		return commonModels.JSONMap{
-			"columns":           duckResult.Columns,
-			"rows_affected":     rowsAffected,
-			"execution_time_ms": duckResult.ExecutionTimeMs,
-			"summary": map[string]interface{}{
-				"query_mode":   "duckdb",
-				"total_rows":   duckResult.RowCount,
-				"column_count": len(duckResult.Columns),
-				"preview_rows": previewRows,
-			},
-		}, "", &rowsAffected
-	}
-
-	if engineID == nil {
-		return nil, "SQL执行需要指定资源", nil
-	}
-
-	// 调用SQL引擎
-	sqlResult, err := e.sqlEngine.ExecuteSQL(execCtx, *engineID, sqlContent, timeout)
+	result, err := e.sqlEngine.ExecuteIssuedSQLAuthorization(
+		ctx, uint(tenantID), parsedExecutionID, *engineID, sqlContent, devTask.Timeout, authorization,
+	)
 	if err != nil {
 		return nil, fmt.Sprintf("SQL执行失败: %v", err), nil
 	}
-
-	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 90, "SQL执行成功")
-
-	// 构造结果摘要（只保存元数据和少量示例数据）
-	var previewRows []map[string]interface{}
-	previewLimit := 10
-	if len(sqlResult.Rows) > previewLimit {
-		previewRows = sqlResult.Rows[:previewLimit]
-	} else {
-		previewRows = sqlResult.Rows
+	previewRows := result.Rows
+	if len(previewRows) > 10 {
+		previewRows = previewRows[:10]
 	}
-
-	result := commonModels.JSONMap{
-		"columns":       sqlResult.Columns,
-		"rows_affected": sqlResult.RowsAffected,
+	rowsAffected := result.RowsAffected
+	return commonModels.JSONMap{
+		"columns": result.Columns, "rows_affected": rowsAffected, "effect": result.Effect,
 		"summary": map[string]interface{}{
-			"total_rows":   len(sqlResult.Rows),
-			"column_count": len(sqlResult.Columns),
-			"preview_rows": previewRows,
+			"total_rows": len(result.Rows), "column_count": len(result.Columns), "preview_rows": previewRows,
 		},
-	}
-
-	rowsAffected := sqlResult.RowsAffected
-	return result, "", &rowsAffected
+	}, "", &rowsAffected
 }
 
 // executeScript 执行脚本任务。当前脚本开发由 Jupyter Notebook runtime 承载。
 func (e *DevExecutor) executeScript(ctx context.Context, devTask *models.DevTask, executionID string, tenantID int) (commonModels.JSONMap, string) {
 	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 20, "准备执行 Notebook")
 
-	// 如果没有 NotebookExecutionService，降级到简单模式
 	if e.notebookExecutionService == nil {
-		_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 30, "执行 Notebook（简单模式）")
-
-		// 解析 Notebook 路径
-		inputPath, ok := devTask.Content["input_path"].(string)
-		if !ok {
-			return nil, "无效的 Notebook 输入路径"
-		}
-
-		outputPath, ok := devTask.Content["output_path"].(string)
-		if !ok {
-			return nil, "无效的 Notebook 输出路径"
-		}
-
-		// 解析参数（可选）
-		parameters, _ := devTask.Content["parameters"].(map[string]interface{})
-		if parameters == nil {
-			parameters = make(map[string]interface{})
-		}
-
-		// 设置超时
-		timeout := devTask.Timeout
-		if timeout <= 0 {
-			timeout = 300
-		}
-		execCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-		defer cancel()
-
-		// 调用 Jupyter Engine 执行
-		resp, err := e.jupyterService.ExecuteNotebook(execCtx, inputPath, outputPath, parameters, timeout)
-		if err != nil {
-			errorMsg := fmt.Sprintf("Notebook 执行失败: %v", err)
-			if resp != nil && resp.ErrorMessage != "" {
-				errorMsg = resp.ErrorMessage
-			}
-			return nil, errorMsg
-		}
-
-		_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 90, "Notebook 执行成功")
-
-		// 构造结果摘要
-		result := commonModels.JSONMap{
-			"status":                 resp.Status,
-			"execution_time_seconds": resp.ExecutionTimeSeconds,
-			"output_path":            resp.OutputPath,
-			"output_count":           resp.OutputCount,
-			"summary": map[string]interface{}{
-				"has_outputs": resp.Outputs != nil && len(resp.Outputs) > 0,
-			},
-		}
-
-		return result, ""
+		return nil, "Notebook 执行服务不可用"
 	}
-
-	// 使用 NotebookExecutionService（新架构）
-	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 30, "执行 Notebook（完整模式）")
-
-	// 获取执行记录以获取 userID
-	execution, err := e.taskExecutionRepo.GetByExecutionID(ctx, executionID, tenantID)
-	if err != nil {
-		return nil, fmt.Sprintf("无法获取执行记录: %v", err)
-	}
-
-	// 获取 userID
-	var userID uint
-	if execution.TriggeredBy != nil {
-		userID = uint(*execution.TriggeredBy)
-	} else {
-		userID = 1
-	}
+	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 30, "执行 Notebook")
 
 	// 调用 NotebookExecutionService 执行
-	result, errorMsg, err := e.notebookExecutionService.ExecuteNotebook(ctx, devTask, executionID, userID)
+	result, errorMsg, err := e.notebookExecutionService.ExecuteNotebook(ctx, devTask, executionID)
 	if err != nil {
 		return nil, fmt.Sprintf("Notebook 执行失败: %v", err)
 	}
@@ -812,6 +816,28 @@ func (e *DevExecutor) GetExecution(executionID string, tenantID uint) (*models.E
 	}
 
 	return result, nil
+}
+
+func (e *DevExecutor) GetDevTaskType(taskID, tenantID uint) (string, error) {
+	if e == nil || e.devTaskRepo == nil || taskID == 0 || tenantID == 0 {
+		return "", fmt.Errorf("开发任务查询上下文无效")
+	}
+	task, err := e.devTaskRepo.FindByID(taskID, tenantID)
+	if err != nil {
+		return "", fmt.Errorf("开发任务不存在")
+	}
+	return task.DevType, nil
+}
+
+func (e *DevExecutor) GetExecutionTaskType(executionID string, tenantID uint) (string, error) {
+	if e == nil || e.taskExecutionRepo == nil || strings.TrimSpace(executionID) == "" || tenantID == 0 {
+		return "", fmt.Errorf("执行查询上下文无效")
+	}
+	execution, err := e.taskExecutionRepo.GetByExecutionID(context.Background(), executionID, int(tenantID))
+	if err != nil {
+		return "", fmt.Errorf("执行记录不存在")
+	}
+	return execution.TaskType, nil
 }
 
 // ListExecutions 查询执行列表
@@ -878,7 +904,7 @@ func (e *DevExecutor) ListExecutions(req *models.ListExecutionsRequest, tenantID
 }
 
 // RetryExecution 重试执行
-func (e *DevExecutor) RetryExecution(executionID string, tenantID uint, userID uint) (string, error) {
+func (e *DevExecutor) RetryExecution(executionID string, tenantID uint, userID uint, userAccessToken string) (string, error) {
 	// 获取原执行记录
 	execution, err := e.taskExecutionRepo.GetByExecutionID(context.Background(), executionID, int(tenantID))
 	if err != nil {
@@ -891,7 +917,7 @@ func (e *DevExecutor) RetryExecution(executionID string, tenantID uint, userID u
 		if err != nil {
 			return "", err
 		}
-		return e.ExecuteDevTask(context.Background(), taskID, tenantID, userID, "manual")
+		return e.ExecuteDevTask(context.Background(), taskID, tenantID, userID, userAccessToken, "manual")
 	}
 
 	// 否则报错（临时内容不支持重试）
@@ -944,8 +970,9 @@ func (e *DevExecutor) ExecuteWithParams(
 	params map[string]interface{},
 	tenantID uint,
 	userID uint,
+	userAccessToken string,
 ) (string, error) {
-	return e.ExecuteWithParamsWithContext(ctx, itemID, params, tenantID, userID, commonExecution.TriggerTypeManual, commonExecution.ModuleDevelop, nil, "")
+	return e.ExecuteWithParamsWithContext(ctx, itemID, params, tenantID, userID, userAccessToken, commonExecution.TriggerTypeManual, commonExecution.ModuleDevelop, nil, "")
 }
 
 // ExecuteWithParamsWithContext 执行带参数的 DevTask，并记录统一任务体系上下文。
@@ -955,6 +982,7 @@ func (e *DevExecutor) ExecuteWithParamsWithContext(
 	params map[string]interface{},
 	tenantID uint,
 	userID uint,
+	userAccessToken string,
 	triggerType string,
 	source string,
 	parentExecutionID *string,
@@ -968,80 +996,26 @@ func (e *DevExecutor) ExecuteWithParamsWithContext(
 	if normalizedSource == "" {
 		normalizedSource = commonExecution.ModuleDevelop
 	}
-	if params == nil {
-		params = map[string]interface{}{}
-	}
-	// 1. 获取 DevTask 模板
-	devTask, err := e.devTaskRepo.FindByID(itemID, tenantID)
+	preparedTask, err := e.prepareParameterizedDevTask(ctx, itemID, params, tenantID, expectedTaskType)
 	if err != nil {
-		return "", fmt.Errorf("开发任务不存在")
-	}
-
-	if err := validateExpectedDevTaskType(devTask.DevType, expectedTaskType); err != nil {
 		return "", err
 	}
-
-	if devTask.Status != "active" {
-		return "", fmt.Errorf("开发任务状态为 %s，无法执行", devTask.Status)
-	}
-
-	// 2. 解析并合并参数
-	var contentMap map[string]interface{}
-	if devTask.Content != nil {
-		contentMap = devTask.Content
-	} else {
-		contentMap = make(map[string]interface{})
-	}
-
-	var defaultParams map[string]interface{}
-	if dp, ok := contentMap["default_parameters"].(map[string]interface{}); ok {
-		defaultParams = dp
-	} else {
-		defaultParams = make(map[string]interface{})
-	}
-
-	mergedParams := deepMerge(defaultParams, params)
-
-	// 3. 验证参数
-	if schema, ok := contentMap["parameter_schema"].(map[string]interface{}); ok {
-		if err := validateParameters(schema, mergedParams); err != nil {
-			return "", fmt.Errorf("parameter validation failed: %w", err)
-		}
-	}
-
-	// 4. 模板替换
-	resolvedContent := resolveTemplates(contentMap, mergedParams)
-	resolvedContentMap, ok := resolvedContent.(map[string]interface{})
-	if !ok {
-		resolvedContentMap = make(map[string]interface{})
-	}
-
-	resolvedContentMap["parameters"] = mergedParams
-	if dataSourceIDs, ok := params["data_source_ids"]; ok {
-		resolvedContentMap["data_sources"] = dataSourceIDs
-	}
-
-	// 5. 创建临时 DevTask
-	tempItem := &models.DevTask{
-		ID:              devTask.ID,
-		DevType:         devTask.DevType,
-		Content:         resolvedContentMap,
-		Timeout:         devTask.Timeout,
-		TenantID:        tenantID,
-		Status:          devTask.Status,
-		ExecutionConfig: devTask.ExecutionConfig,
-	}
+	devTask := preparedTask.template
+	tempItem := preparedTask.task
 
 	// 6. 直接创建执行记录并执行
 	executionID := uuid.New().String()
+	sqlAuthorization, err := e.prepareSQLExecutionAuthorization(ctx, tempItem, tenantID, userAccessToken, executionID)
+	if err != nil {
+		return "", err
+	}
+	workflowAuthorization, err := e.prepareWorkflowExecutionAuthorization(ctx, tempItem, tenantID, userAccessToken, executionID)
+	if err != nil {
+		return "", err
+	}
 	now := time.Now()
 
-	executionInputs := commonModels.JSONMap{
-		"parameters": mergedParams,
-	}
-	if dataSourceIDs, ok := params["data_source_ids"]; ok {
-		executionInputs["data_sources"] = dataSourceIDs
-	}
+	executionInputs := preparedTask.inputs
 
 	var triggeredBy *int
 	if userID > 0 {
@@ -1066,18 +1040,197 @@ func (e *DevExecutor) ExecuteWithParamsWithContext(
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
+	applySQLExecutionAuthorizationFacts(execution, sqlAuthorization)
+	applyWorkflowExecutionAuthorizationFacts(execution, workflowAuthorization)
 
 	if err := e.taskExecutionRepo.Create(ctx, execution); err != nil {
 		return "", fmt.Errorf("failed to create execution record: %w", err)
 	}
 
 	log.Printf("🚀 [DevExecutor] 参数化执行已创建 execution_id=%s task_id=%d params=%v",
-		executionID, itemID, mergedParams)
+		executionID, itemID, executionInputs["parameters"])
 
 	// 异步执行任务
-	go e.executeAsync(execution.ID, executionID, tempItem, int(tenantID))
+	go e.executeAsync(
+		execution.ID, executionID, tempItem, int(tenantID), sqlAuthorization, workflowAuthorization,
+	)
 
 	return executionID, nil
+}
+
+func (e *DevExecutor) prepareParameterizedDevTask(
+	ctx context.Context,
+	itemID uint,
+	params map[string]interface{},
+	tenantID uint,
+	expectedTaskType string,
+) (*preparedParameterizedDevTask, error) {
+	if params == nil {
+		params = map[string]interface{}{}
+	}
+	devTask, err := e.devTaskRepo.FindByID(itemID, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("开发任务不存在")
+	}
+	if err := validateExpectedDevTaskType(devTask.DevType, expectedTaskType); err != nil {
+		return nil, err
+	}
+	if devTask.Status != "active" {
+		return nil, fmt.Errorf("开发任务状态为 %s，无法执行", devTask.Status)
+	}
+
+	contentMap := map[string]interface{}{}
+	if devTask.Content != nil {
+		contentMap = devTask.Content
+	}
+	defaultParams := map[string]interface{}{}
+	if values, ok := contentMap["default_parameters"].(map[string]interface{}); ok {
+		defaultParams = values
+	}
+	mergedParams := deepMerge(defaultParams, params)
+	if schema, ok := contentMap["parameter_schema"].(map[string]interface{}); ok {
+		if err := validateParameters(schema, mergedParams); err != nil {
+			return nil, fmt.Errorf("parameter validation failed: %w", err)
+		}
+	}
+	resolvedContent, ok := resolveTemplates(contentMap, mergedParams).(map[string]interface{})
+	if !ok {
+		resolvedContent = map[string]interface{}{}
+	}
+	resolvedContent["parameters"] = mergedParams
+	task := &models.DevTask{
+		ID: devTask.ID, DevType: devTask.DevType, Content: resolvedContent,
+		Timeout: devTask.Timeout, TenantID: tenantID, Status: devTask.Status,
+		ExecutionConfig: devTask.ExecutionConfig,
+	}
+	if task.DevType == commonExecution.TaskTypeWorkflow {
+		if err := e.validateWorkflowBeforeExecution(ctx, task.Content, task.ExecutionConfig, tenantID); err != nil {
+			return nil, err
+		}
+	}
+	inputs := commonModels.JSONMap{"parameters": mergedParams}
+	return &preparedParameterizedDevTask{template: devTask, task: task, inputs: inputs}, nil
+}
+
+// ExecuteWithParamsFromParentExecution executes an Orchestrator child through
+// the parent's durable User authorization facts. It never accepts a User token.
+func (e *DevExecutor) ExecuteWithParamsFromParentExecution(
+	ctx context.Context,
+	itemID uint,
+	params map[string]interface{},
+	tenantID uint,
+	triggerType string,
+	source string,
+	parentExecutionID string,
+	expectedTaskType string,
+) (string, error) {
+	if e == nil || e.taskExecutionRepo == nil || tenantID == 0 {
+		return "", fmt.Errorf("父执行授权上下文不可用")
+	}
+	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(source) != commonExecution.ModuleOrchestrator {
+		return "", fmt.Errorf("父执行来源必须为 orchestrator")
+	}
+	parsedParentExecutionID, err := uuid.Parse(strings.TrimSpace(parentExecutionID))
+	if err != nil {
+		return "", fmt.Errorf("父执行 ID 无效: %w", err)
+	}
+	preparedTask, err := e.prepareParameterizedDevTask(ctx, itemID, params, tenantID, expectedTaskType)
+	if err != nil {
+		return "", err
+	}
+	if preparedTask.task.DevType != commonExecution.TaskTypeQuery &&
+		preparedTask.task.DevType != commonExecution.TaskTypeWorkflow {
+		return "", fmt.Errorf("任务类型 %s 尚未接入父执行授权", preparedTask.task.DevType)
+	}
+	parent, err := e.taskExecutionRepo.GetByExecutionID(ctx, parsedParentExecutionID.String(), int(tenantID))
+	if err != nil || parent.Module != commonExecution.ModuleOrchestrator ||
+		parent.Status != commonExecution.ExecutionStatusRunning || parent.ActorPrincipalID == nil ||
+		parent.ActorTenantMembershipID == nil || parent.IssuedAuthorizationVersion == nil ||
+		*parent.ActorPrincipalID <= 0 || *parent.ActorTenantMembershipID <= 0 || *parent.IssuedAuthorizationVersion <= 0 {
+		return "", fmt.Errorf("父执行授权主体不可用")
+	}
+
+	executionUUID := uuid.New()
+	executionID := executionUUID.String()
+	parentID := parsedParentExecutionID.String()
+	principalID := *parent.ActorPrincipalID
+	membershipID := *parent.ActorTenantMembershipID
+	authorizationVersion := *parent.IssuedAuthorizationVersion
+	triggeredBy := int(principalID)
+	now := time.Now()
+	execution := &commonExecution.TaskExecution{
+		TenantID: int(tenantID), ExecutionID: executionID, Module: commonExecution.ModuleDevelop,
+		TaskType: preparedTask.template.DevType, Source: commonExecution.ModuleOrchestrator,
+		SourceTaskID: commonExecution.NewSourceTaskIDFromUint(itemID), SourceTaskName: &preparedTask.template.Name,
+		ParentExecutionID: &parentID, Status: commonExecution.ExecutionStatusPending, Progress: 0,
+		TriggerType: normalizedTriggerType, TriggeredBy: &triggeredBy,
+		ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
+		IssuedAuthorizationVersion: &authorizationVersion,
+		ExecutionConfig:            devTaskExecutionRecordConfig(preparedTask.template, preparedTask.inputs),
+		CreatedAt:                  now, UpdatedAt: now,
+	}
+	if err := e.taskExecutionRepo.Create(ctx, execution); err != nil {
+		return "", fmt.Errorf("failed to create child execution record: %w", err)
+	}
+
+	var sqlAuthorization *IssuedSQLExecutionAuthorization
+	var workflowAuthorization *IssuedWorkflowExecutionAuthorization
+	switch preparedTask.task.DevType {
+	case commonExecution.TaskTypeQuery:
+		engineID := preparedTask.task.GetEngineID()
+		sqlContent, ok := preparedTask.task.Content["query"].(string)
+		if engineID == nil || *engineID == 0 || !ok || strings.TrimSpace(sqlContent) == "" {
+			err = fmt.Errorf("异步 SQL 执行上下文无效")
+		} else {
+			sqlAuthorization, err = e.sqlEngine.IssueSQLExecutionAuthorizationFromExecution(
+				ctx, tenantID, parsedParentExecutionID, executionUUID, *engineID, sqlContent, preparedTask.task.Timeout,
+			)
+		}
+	case commonExecution.TaskTypeWorkflow:
+		workflowAuthorization, err = e.prepareWorkflowExecutionAuthorizationFromExecution(
+			ctx, preparedTask.task, tenantID, parsedParentExecutionID, executionUUID,
+		)
+	}
+	if err != nil {
+		return executionID, e.failPendingAuthorization(ctx, execution, err)
+	}
+	applySQLExecutionAuthorizationFacts(execution, sqlAuthorization)
+	applyWorkflowExecutionAuthorizationFacts(execution, workflowAuthorization)
+	if execution.ActorPrincipalID == nil || *execution.ActorPrincipalID != principalID ||
+		execution.ActorTenantMembershipID == nil || *execution.ActorTenantMembershipID != membershipID ||
+		execution.IssuedAuthorizationVersion == nil || *execution.IssuedAuthorizationVersion != authorizationVersion {
+		return executionID, e.failPendingAuthorization(ctx, execution, fmt.Errorf("子执行授权主体与父执行不一致"))
+	}
+	execution.UpdatedAt = time.Now()
+	if err := e.taskExecutionRepo.Update(ctx, execution); err != nil {
+		return executionID, e.failPendingAuthorization(ctx, execution, fmt.Errorf("保存子执行授权失败: %w", err))
+	}
+	e.startPreparedContentExecution(&preparedContentExecution{
+		execution: execution, devTask: preparedTask.task, tenantID: int(tenantID),
+		sqlAuthorization: sqlAuthorization, workflowAuthorization: workflowAuthorization,
+	})
+	return executionID, nil
+}
+
+func (e *DevExecutor) failPendingAuthorization(
+	ctx context.Context,
+	execution *commonExecution.TaskExecution,
+	cause error,
+) error {
+	completedAt := time.Now()
+	execution.Status = commonExecution.ExecutionStatusFailed
+	execution.Progress = 100
+	execution.CompletedAt = &completedAt
+	execution.ErrorDetails = commonModels.JSONMap{"message": cause.Error()}
+	execution.UpdatedAt = completedAt
+	if err := e.taskExecutionRepo.Update(ctx, execution); err != nil {
+		return fmt.Errorf("%v; 收敛子执行失败状态失败: %w", cause, err)
+	}
+	return cause
 }
 
 func validateExpectedDevTaskType(devType, expectedTaskType string) error {

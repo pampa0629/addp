@@ -29,13 +29,13 @@ func TestRefreshKnownMultiItemUsesStoredRefsWithoutCatalogRediscovery(t *testing
 	db := openObjectCatalogScanTestDB(t)
 	tenantID := uint(1)
 	engineID := uint(77)
-	engineSvc := NewEngineService(db, "", "")
-	engineSvc.engineCache[engineID] = &engineCacheEntry{
+	engineSvc := NewEngineService(db, nil)
+	engineSvc.engineCache[engineCacheKey{tenantID: tenantID, engineID: engineID}] = &engineCacheEntry{
 		resource: &commonModels.Engine{
-			ID:         engineID,
-			TenantID:   &tenantID,
-			EngineType: "known-refresh-test",
-			IsActive:   true,
+			ID:             engineID,
+			TenantID:       &tenantID,
+			EngineType:     "known-refresh-test",
+			LifecycleState: "active",
 		},
 		expiresAt: time.Now().Add(time.Hour),
 	}
@@ -131,13 +131,13 @@ func TestRefreshKnownPDFItemWritesDocumentAndFormatInfo(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	tenantID := uint(1)
 	engineID := uint(78)
-	engineSvc := NewEngineService(db, "", "")
-	engineSvc.engineCache[engineID] = &engineCacheEntry{
+	engineSvc := NewEngineService(db, nil)
+	engineSvc.engineCache[engineCacheKey{tenantID: tenantID, engineID: engineID}] = &engineCacheEntry{
 		resource: &commonModels.Engine{
-			ID:         engineID,
-			TenantID:   &tenantID,
-			EngineType: "known-refresh-pdf-test",
-			IsActive:   true,
+			ID:             engineID,
+			TenantID:       &tenantID,
+			EngineType:     "known-refresh-pdf-test",
+			LifecycleState: "active",
 		},
 		expiresAt: time.Now().Add(time.Hour),
 	}
@@ -217,13 +217,13 @@ func TestRefreshKnownTIFFItemKeepsBaseAttributesWhenMediaDescribeFails(t *testin
 	db := openObjectCatalogScanTestDB(t)
 	tenantID := uint(1)
 	engineID := uint(82)
-	engineSvc := NewEngineService(db, "", "")
-	engineSvc.engineCache[engineID] = &engineCacheEntry{
+	engineSvc := NewEngineService(db, nil)
+	engineSvc.engineCache[engineCacheKey{tenantID: tenantID, engineID: engineID}] = &engineCacheEntry{
 		resource: &commonModels.Engine{
-			ID:         engineID,
-			TenantID:   &tenantID,
-			EngineType: "known-refresh-tiff-test",
-			IsActive:   true,
+			ID:             engineID,
+			TenantID:       &tenantID,
+			EngineType:     "known-refresh-tiff-test",
+			LifecycleState: "active",
 		},
 		expiresAt: time.Now().Add(time.Hour),
 	}
@@ -300,13 +300,13 @@ func TestRefreshKnownDOCXItemExtractsTextFacts(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	tenantID := uint(1)
 	engineID := uint(79)
-	engineSvc := NewEngineService(db, "", "")
-	engineSvc.engineCache[engineID] = &engineCacheEntry{
+	engineSvc := NewEngineService(db, nil)
+	engineSvc.engineCache[engineCacheKey{tenantID: tenantID, engineID: engineID}] = &engineCacheEntry{
 		resource: &commonModels.Engine{
-			ID:         engineID,
-			TenantID:   &tenantID,
-			EngineType: "known-refresh-docx-test",
-			IsActive:   true,
+			ID:             engineID,
+			TenantID:       &tenantID,
+			EngineType:     "known-refresh-docx-test",
+			LifecycleState: "active",
 		},
 		expiresAt: time.Now().Add(time.Hour),
 	}
@@ -393,13 +393,13 @@ func TestRefreshKnownZIPItemWritesContainerInfo(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	tenantID := uint(1)
 	engineID := uint(80)
-	engineSvc := NewEngineService(db, "", "")
-	engineSvc.engineCache[engineID] = &engineCacheEntry{
+	engineSvc := NewEngineService(db, nil)
+	engineSvc.engineCache[engineCacheKey{tenantID: tenantID, engineID: engineID}] = &engineCacheEntry{
 		resource: &commonModels.Engine{
-			ID:         engineID,
-			TenantID:   &tenantID,
-			EngineType: "known-refresh-zip-test",
-			IsActive:   true,
+			ID:             engineID,
+			TenantID:       &tenantID,
+			EngineType:     "known-refresh-zip-test",
+			LifecycleState: "active",
 		},
 		expiresAt: time.Now().Add(time.Hour),
 	}

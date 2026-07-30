@@ -20,6 +20,7 @@ type taskExecutionClaimSpec struct {
 	TaskName                func() string
 	TaskConfig              func() commonModels.JSONMap
 	CurrentResultModel      interface{}
+	ExcludedResultStatuses  []string
 	OverwriteExistingResult bool
 	BeforeCreate            func(*gorm.DB) error
 }
@@ -71,9 +72,12 @@ func (l taskExecutionLifecycle) Claim(
 		}
 		if spec.CurrentResultModel != nil && !spec.OverwriteExistingResult {
 			var currentResultCount int64
-			if err := tx.Model(spec.CurrentResultModel).
-				Where("tenant_id = ? AND task_id = ?", tenantID, taskID).
-				Count(&currentResultCount).Error; err != nil {
+			resultQuery := tx.Model(spec.CurrentResultModel).
+				Where("tenant_id = ? AND task_id = ?", tenantID, taskID)
+			if len(spec.ExcludedResultStatuses) > 0 {
+				resultQuery = resultQuery.Where("status NOT IN ?", spec.ExcludedResultStatuses)
+			}
+			if err := resultQuery.Count(&currentResultCount).Error; err != nil {
 				return err
 			}
 			if currentResultCount > 0 {

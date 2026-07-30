@@ -21,6 +21,7 @@ type Config struct {
 	DBSchema                           string
 	InternalAPIKey                     string // 服务间调用的 API Key
 	MetaServiceURL                     string // Meta 服务地址
+	ServiceClientSecret                string
 	RedisHost                          string
 	RedisPort                          string
 	RedisPassword                      string
@@ -130,6 +131,7 @@ func Load() *Config {
 		DBSchema:                           commonConfig.GetEnv("DB_SCHEMA", "transfer"),
 		InternalAPIKey:                     commonConfig.GetEnv("INTERNAL_API_KEY", ""),
 		MetaServiceURL:                     metaURL,
+		ServiceClientSecret:                commonConfig.GetEnv("TRANSFER_SERVICE_CLIENT_SECRET", ""),
 		RedisHost:                          commonConfig.GetEnv("REDIS_HOST", "localhost"),
 		RedisPort:                          commonConfig.GetEnv("REDIS_PORT", "6379"),
 		RedisPassword:                      commonConfig.GetEnv("REDIS_PASSWORD", ""),

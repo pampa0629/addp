@@ -11,16 +11,14 @@ import (
 )
 
 func TestCheckAllProviderHealthChecksModuleAndTaskDiscovery(t *testing.T) {
-	var gotInternalKey string
-	var gotTenantID string
+	var gotAuthorization string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/health":
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"status":"ok"}`))
 		case "/api/v1/meta/tasks":
-			gotInternalKey = r.Header.Get("X-Internal-API-Key")
-			gotTenantID = r.Header.Get("X-Tenant-ID")
+			gotAuthorization = r.Header.Get("Authorization")
 			if r.URL.Query().Get("task_type") != "scan" {
 				t.Fatalf("task_type query = %q, want scan", r.URL.Query().Get("task_type"))
 			}
@@ -42,7 +40,7 @@ func TestCheckAllProviderHealthChecksModuleAndTaskDiscovery(t *testing.T) {
 		BaseURL:          server.URL,
 		TaskListEndpoint: "/api/v1/meta/tasks",
 		Capabilities:     &caps,
-	}}}, "internal-key")
+	}}}, staticServiceTokenProvider("service-token"))
 
 	statuses, err := service.CheckAllProviderHealth(context.Background(), 7)
 	if err != nil {
@@ -64,11 +62,8 @@ func TestCheckAllProviderHealthChecksModuleAndTaskDiscovery(t *testing.T) {
 	if status.TaskDiscovery[0].TaskType != "scan" || status.TaskDiscovery[0].Status != "up" {
 		t.Fatalf("task discovery = %#v, want scan/up", status.TaskDiscovery[0])
 	}
-	if gotInternalKey != "internal-key" {
-		t.Fatalf("X-Internal-API-Key = %q, want internal-key", gotInternalKey)
-	}
-	if gotTenantID != "7" {
-		t.Fatalf("X-Tenant-ID = %q, want 7", gotTenantID)
+	if gotAuthorization != "Bearer service-token" {
+		t.Fatalf("Authorization = %q, want Bearer service-token", gotAuthorization)
 	}
 }
 
@@ -93,7 +88,7 @@ func TestCheckAllProviderHealthReportsLegacyTaskDiscoveryShape(t *testing.T) {
 		BaseURL:          server.URL,
 		TaskListEndpoint: "/api/v1/meta/tasks",
 		Capabilities:     &caps,
-	}}}, "")
+	}}}, staticServiceTokenProvider("service-token"))
 
 	statuses, err := service.CheckAllProviderHealth(context.Background(), 0)
 	if err != nil {
@@ -134,7 +129,7 @@ func TestCheckAllProviderHealthReportsTaskDiscoveryExtraFields(t *testing.T) {
 		BaseURL:          server.URL,
 		TaskListEndpoint: "/api/v1/meta/tasks",
 		Capabilities:     &caps,
-	}}}, "")
+	}}}, staticServiceTokenProvider("service-token"))
 
 	statuses, err := service.CheckAllProviderHealth(context.Background(), 0)
 	if err != nil {
@@ -167,7 +162,7 @@ func TestCheckAllProviderHealthReportsInvalidCapabilities(t *testing.T) {
 		BaseURL:          server.URL,
 		TaskListEndpoint: "/api/v1/meta/tasks",
 		Capabilities:     &caps,
-	}}}, "")
+	}}}, staticServiceTokenProvider("service-token"))
 
 	statuses, err := service.CheckAllProviderHealth(context.Background(), 0)
 	if err != nil {
@@ -216,7 +211,7 @@ func TestCheckAllProviderHealthReportsUnknownCapabilityFields(t *testing.T) {
 		BaseURL:          server.URL,
 		TaskListEndpoint: "/api/v1/meta/tasks",
 		Capabilities:     &caps,
-	}}}, "")
+	}}}, staticServiceTokenProvider("service-token"))
 
 	statuses, err := service.CheckAllProviderHealth(context.Background(), 0)
 	if err != nil {
@@ -264,7 +259,7 @@ func TestCheckAllProviderHealthReportsNonBooleanDeprecated(t *testing.T) {
 		BaseURL:          server.URL,
 		TaskListEndpoint: "/api/v1/meta/tasks",
 		Capabilities:     &caps,
-	}}}, "")
+	}}}, staticServiceTokenProvider("service-token"))
 
 	statuses, err := service.CheckAllProviderHealth(context.Background(), 0)
 	if err != nil {
@@ -281,6 +276,12 @@ func TestCheckAllProviderHealthReportsNonBooleanDeprecated(t *testing.T) {
 type fakeTaskProviderLister struct {
 	providers []*models.TaskProvider
 	err       error
+}
+
+type staticServiceTokenProvider string
+
+func (provider staticServiceTokenProvider) Token(context.Context, uint) (string, error) {
+	return string(provider), nil
 }
 
 func (f fakeTaskProviderLister) ListTaskProviders() ([]*models.TaskProvider, error) {

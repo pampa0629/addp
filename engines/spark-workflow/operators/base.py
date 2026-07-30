@@ -38,6 +38,7 @@ class OperatorMetadata(BaseModel):
     description: str = Field(description="算子简要描述")
     brief_description: str = Field(description="简短说明（一句话）")
     execution_modes: List[str] = Field(description="执行模式：workflow/direct")
+    effects: List[str] = Field(description="执行效果：read/write/ddl/external_effect")
 
     # 详细元数据
     overview: str = Field(description="功能概述（50-100字）")
@@ -85,6 +86,7 @@ class OperatorMetadata(BaseModel):
             'params': params_dict,
             'category': self.category.value,
             'execution_modes': list(self.execution_modes),
+            'effects': list(self.effects),
             'description': self.description,
             'brief_description': self.brief_description,
             'detailed_description': {

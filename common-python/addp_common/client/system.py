@@ -25,8 +25,8 @@ class SystemClient(BaseClient):
     async def get_authorization_context(self) -> Dict[str, Any]:
         """Resolve the current user access token through System AuthContext."""
         response = await self.get("/api/v1/system/auth/context")
-        if not isinstance(response, dict) or not response.get("user_id"):
-            raise ValueError("system authorization context must contain user_id")
+        if not isinstance(response, dict) or response.get("schema_version") != "addp.auth_context/v1":
+            raise ValueError("system authorization context must use addp.auth_context/v1")
         return response
 
     async def create_delegation(

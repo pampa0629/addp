@@ -24,6 +24,8 @@ func TestRegisterIAMRoutesExposesOnlyTargetIAMSurface(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	runtime.ExecutionAuthorizationHandler = &IAMExecutionAuthorizationHandler{}
+	runtime.TaskAuthorizationSubjectHandler = &IAMTaskAuthorizationSubjectHandler{}
 	router := gin.New()
 	api := router.Group("/api/v1/system")
 	if err := RegisterIAMRoutes(api, runtime, nil, cfg); err != nil {
@@ -45,6 +47,8 @@ func TestRegisterIAMRoutesExposesOnlyTargetIAMSurface(t *testing.T) {
 		http.MethodPost + " /api/v1/system/auth/context-selections",
 		http.MethodPost + " /api/v1/system/auth/context-switches",
 		http.MethodPost + " /api/v1/system/auth/delegations",
+		http.MethodPost + " /api/v1/system/auth/execution-authorizations",
+		http.MethodPost + " /api/v1/system/auth/task-authorization-subjects",
 		http.MethodPost + " /api/v1/system/auth/mfa-verifications",
 		http.MethodPost + " /api/v1/system/auth/mfa/step-up-challenges",
 		http.MethodPost + " /api/v1/system/auth/mfa/step-up-verifications",
@@ -59,6 +63,7 @@ func TestRegisterIAMRoutesExposesOnlyTargetIAMSurface(t *testing.T) {
 		http.MethodPost + " /api/v1/system/oauth/revoke",
 		http.MethodPost + " /api/v1/system/oauth/token",
 		http.MethodPost + " /api/v1/system/refresh",
+		http.MethodPost + " /api/v1/system/execution-authorizations/:id/engine-accesses",
 		http.MethodPost + " /api/v1/system/tenant/invitations/acceptances",
 		http.MethodPost + " /api/v1/system/tenant/invitations/enrollments",
 		http.MethodPost + " /api/v1/system/tenant/invitations/registrations",

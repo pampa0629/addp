@@ -94,7 +94,7 @@ func (s *RuleEngineService) DeleteRuleApplication(id, tenantID int64) error {
 // AutoMap 自动映射：从 Meta 获取表字段，按字段名匹配 Standard 数据元 code，批量创建 rule_applications
 func (s *RuleEngineService) AutoMap(ctx context.Context, tenantID, engineID int64, schemaName, tableName string, userID int64) (int, error) {
 	// 获取表字段列表
-	fields, err := s.metaClient.GetItemFieldsByCatalogPath(uint(engineID), fmt.Sprintf("%s.%s", schemaName, tableName), false)
+	fields, err := s.metaClient.WithTenantID(uint(tenantID)).GetItemFieldsByCatalogPath(uint(engineID), fmt.Sprintf("%s.%s", schemaName, tableName), false)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get table fields: %w", err)
 	}

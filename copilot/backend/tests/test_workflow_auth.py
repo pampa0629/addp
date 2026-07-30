@@ -57,6 +57,33 @@ def test_workflow_auth_rejects_invalid_token(monkeypatch):
     assert exc_info.value.status_code == 401
 
 
+def test_workflow_auth_rejects_service_principal(monkeypatch):
+    service_context = AuthorizationContext(
+        principal_id=41,
+        principal_type="service_principal",
+        tenant_id=3,
+        tenant_membership_id=8,
+        client_id="addp-develop",
+        scope_mode="restricted",
+        scopes=("addp.api",),
+        token_type="service_access_token",
+    )
+    monkeypatch.setattr(
+        auth,
+        "resolve_authorization_context",
+        AsyncMock(return_value=service_context),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(auth.require_user(HTTPAuthorizationCredentials(
+            scheme="Bearer",
+            credentials="service-token",
+        )))
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "此接口只接受普通用户令牌"
+
+
 def test_workflow_tool_auth_requires_delegated_audience_and_scope(monkeypatch):
     dependency = auth.require_tool_user("copilot", "workflow.draft.generate", "copilot.workflow.execute")
     valid = AuthorizationContext(

@@ -5,44 +5,20 @@ import client from './client'
  */
 export const notebookAPI = {
   /**
-   * 获取 Jupyter Lab URL
-   * @param {Object} data - 请求参数
-   * @param {string} data.notebook_path - Notebook 文件路径
+   * 列出可用的 Notebook 引擎
    * @returns {Promise}
    */
-  getJupyterURL(data) {
-    return client.post('/develop/notebooks/jupyter-url', data)
+  listNotebookEngines() {
+    return client.get('/develop/notebook-engines')
   },
 
   /**
-   * 执行 Notebook
-   * @param {Object} data - 执行参数
-   * @param {string} data.input_path - 输入 Notebook 路径
-   * @param {string} data.output_path - 输出 Notebook 路径
-   * @param {Object} data.parameters - 参数字典
-   * @param {number} data.timeout - 超时时间（秒）
+   * 列出指定 Notebook 引擎的 Kernel
+   * @param {number} engineId - Notebook 引擎实例 ID
    * @returns {Promise}
    */
-  executeNotebook(data) {
-    return client.post('/develop/notebooks/execute', data, {
-      timeout: (data.timeout || 300) * 1000 // 转换为毫秒
-    })
-  },
-
-  /**
-   * 列出可用的 Kernel
-   * @returns {Promise}
-   */
-  listKernels() {
-    return client.get('/develop/notebooks/kernels')
-  },
-
-  /**
-   * 检查 Jupyter Engine 健康状态
-   * @returns {Promise}
-   */
-  healthCheck() {
-    return client.get('/develop/notebooks/health')
+  listKernels(engineId) {
+    return client.get(`/develop/notebook-engines/${engineId}/kernels`)
   },
 
   /**
@@ -51,30 +27,24 @@ export const notebookAPI = {
    * @param {Object} options - 上传选项
    * @param {string} options.name - Notebook 名称
    * @param {string} options.description - 描述
-   * @param {Array<number>} options.data_sources - 数据源 IDs
    * @param {Object} options.parameters - 参数
-   * @param {string} options.kernel - Kernel 类型（默认 python3）
+   * @param {number} options.engine_id - Notebook 引擎实例 ID
+   * @param {string} options.kernel - Kernel 名称
    * @returns {Promise}
    */
   uploadNotebook(file, options = {}) {
     const formData = new FormData()
     formData.append('file', file)
     formData.append('name', options.name || file.name.replace('.ipynb', ''))
+    formData.append('engine_id', String(options.engine_id))
+    formData.append('kernel', options.kernel)
 
     if (options.description) {
       formData.append('description', options.description)
     }
 
-    if (options.data_sources && options.data_sources.length > 0) {
-      formData.append('data_sources', JSON.stringify(options.data_sources))
-    }
-
     if (options.parameters && Object.keys(options.parameters).length > 0) {
       formData.append('parameters', JSON.stringify(options.parameters))
-    }
-
-    if (options.kernel) {
-      formData.append('kernel', options.kernel)
     }
 
     return client.post('/develop/notebooks/upload', formData, {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	commonauth "github.com/addp/common/authorization"
+	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commonModels "github.com/addp/common/models"
@@ -127,26 +128,55 @@ func newResourceTreeHandlerTestRouter(t *testing.T) (*gin.Engine, func()) {
 	gin.SetMode(gin.TestMode)
 
 	tenantID := uint(7)
-	engine := commonModels.Engine{
-		ID:         9,
-		TenantID:   &tenantID,
-		Name:       "Business MinIO",
-		EngineType: "s3",
-		IsActive:   true,
+	engine := &commonModels.Engine{
+		ID:             9,
+		TenantID:       &tenantID,
+		Name:           "Business MinIO",
+		EngineType:     "s3",
+		LifecycleState: "active",
 	}
 	systemServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/system/oauth/token" {
+			if err := r.ParseForm(); err != nil {
+				t.Errorf("parse token form: %v", err)
+			}
+			if r.Form.Get("tenant_id") != "7" {
+				t.Errorf("token tenant_id = %q, want 7", r.Form.Get("tenant_id"))
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"access_token": "addp_at_meta", "token_type": "bearer", "expires_in": 300, "scope": "addp.api",
+			})
+			return
+		}
+		if r.URL.Path != "/api/v1/system/engines/9" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer addp_at_meta" ||
+			r.Header.Get("X-Internal-API-Key") != "" || r.Header.Get("X-Tenant-ID") != "" {
+			t.Errorf("unexpected System authentication headers: %#v", r.Header)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(engine); err != nil {
-			t.Fatalf("encode engine: %v", err)
+			t.Errorf("encode engine: %v", err)
 		}
 	}))
-
+	tokenSource, err := commonClient.NewOAuthServiceTokenSource(
+		systemServer.URL, "addp-meta", "meta-resource-tree-test-secret-32-bytes", systemServer.Client(),
+	)
+	if err != nil {
+		t.Fatalf("create Meta service token source: %v", err)
+	}
 	db := metatest.OpenMetadataDB(t)
-	engineSvc := service.NewEngineService(db, systemServer.URL, "secret")
+	engineSvc := service.NewEngineService(
+		db,
+		commonClient.NewSystemServiceClient(systemServer.URL, tokenSource, systemServer.Client()),
+	)
 	metadataSvc := service.NewMetadataQueryService(db)
 	handler := NewHandler(engineSvc, nil, nil, nil, metadataSvc, nil)
 
 	router := gin.New()
+	installResourceTreeTenantContext(t, router, tenantID)
 	router.GET("/resource-tree/:engine_id/node", handler.GetResourceTreeNode)
 	router.GET("/resource-tree/:engine_id/ancestors", handler.GetResourceTreeAncestors)
 	router.GET("/resource-tree/:engine_id/search", handler.SearchResourceTree)
@@ -163,19 +193,42 @@ func newResourceTreeRefreshHandlerTestRouter(t *testing.T) (*gin.Engine, func())
 	db := metatest.OpenMetadataDB(t)
 	createResourceTreeHandlerTaskExecutionTable(t, db)
 	engine := commonModels.Engine{
-		ID:         engineID,
-		TenantID:   &tenantID,
-		Name:       "Business MinIO",
-		EngineType: "s3",
-		IsActive:   true,
+		ID:             engineID,
+		TenantID:       &tenantID,
+		Name:           "Business MinIO",
+		EngineType:     "s3",
+		LifecycleState: "active",
 	}
 	systemServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/system/oauth/token" {
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"access_token": "addp_at_meta", "token_type": "bearer", "expires_in": 300, "scope": "addp.api",
+			})
+			return
+		}
+		if r.URL.Path != "/api/v1/system/engines/9" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer addp_at_meta" ||
+			r.Header.Get("X-Internal-API-Key") != "" || r.Header.Get("X-Tenant-ID") != "" {
+			t.Errorf("unexpected System authentication headers: %#v", r.Header)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(engine); err != nil {
 			t.Fatalf("encode engine: %v", err)
 		}
 	}))
-	engineSvc := service.NewEngineService(db, systemServer.URL, "")
+	tokenSource, err := commonClient.NewOAuthServiceTokenSource(
+		systemServer.URL, "addp-meta", "meta-resource-tree-test-secret-32-bytes", systemServer.Client(),
+	)
+	if err != nil {
+		t.Fatalf("create Meta service token source: %v", err)
+	}
+	engineSvc := service.NewEngineService(
+		db,
+		commonClient.NewSystemServiceClient(systemServer.URL, tokenSource, systemServer.Client()),
+	)
 	root := createResourceTreeHandlerNode(t, db, models.MetaNode{TenantID: tenantID, EngineID: engineID, NodeType: "service", Name: "Business MinIO", FullName: "", Depth: 0})
 	createResourceTreeHandlerNode(t, db, models.MetaNode{TenantID: tenantID, EngineID: engineID, ParentNodeID: &root.ID, NodeType: "bucket", Name: "manager", FullName: "manager", Depth: 1})
 
@@ -184,6 +237,13 @@ func newResourceTreeRefreshHandlerTestRouter(t *testing.T) (*gin.Engine, func())
 	handler := NewHandler(engineSvc, scanSvc, nil, executionSvc, service.NewMetadataQueryService(db), nil)
 
 	router := gin.New()
+	installResourceTreeTenantContext(t, router, tenantID)
+	router.POST("/resource-tree/:engine_id/refresh", handler.RefreshResourceTreeNode)
+	return router, systemServer.Close
+}
+
+func installResourceTreeTenantContext(t *testing.T, router *gin.Engine, tenantID uint) {
+	t.Helper()
 	router.Use(func(c *gin.Context) {
 		now := time.Now().UTC()
 		formattedTenantID := strconv.FormatUint(uint64(tenantID), 10)
@@ -216,8 +276,6 @@ func newResourceTreeRefreshHandlerTestRouter(t *testing.T) (*gin.Engine, func())
 		}
 		c.Next()
 	})
-	router.POST("/resource-tree/:engine_id/refresh", handler.RefreshResourceTreeNode)
-	return router, systemServer.Close
 }
 
 func createResourceTreeHandlerNode(t *testing.T, db *gorm.DB, node models.MetaNode) models.MetaNode {
@@ -249,6 +307,12 @@ func createResourceTreeHandlerTaskExecutionTable(t *testing.T, db *gorm.DB) {
 			current_step TEXT,
 			trigger_type TEXT NOT NULL,
 			triggered_by INTEGER,
+			actor_principal_id INTEGER,
+			actor_tenant_membership_id INTEGER,
+			issued_authorization_version INTEGER,
+			execution_authorization_id INTEGER,
+			authorization_effects TEXT,
+			authorization_expires_at DATETIME,
 			execution_config JSON,
 			error_details JSON,
 			metadata JSON,
@@ -282,6 +346,12 @@ func createResourceTreeHandlerTaskExecutionTable(t *testing.T, db *gorm.DB) {
 			current_step TEXT,
 			trigger_type TEXT NOT NULL,
 			triggered_by INTEGER,
+			actor_principal_id INTEGER,
+			actor_tenant_membership_id INTEGER,
+			issued_authorization_version INTEGER,
+			execution_authorization_id INTEGER,
+			authorization_effects TEXT,
+			authorization_expires_at DATETIME,
 			execution_config JSON,
 			error_details JSON,
 			metadata JSON,

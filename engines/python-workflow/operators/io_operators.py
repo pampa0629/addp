@@ -314,6 +314,7 @@ LOAD_METADATA = OperatorMetadata(
     description="数据加载",
     brief_description="从数据库表或文件资源加载数据",
     execution_modes=["workflow"],
+    effects=["read"],
 
     overview="通用数据加载算子，按 Develop Adapter 派生的 schema/table 或 path 自动选择数据库表或文件读取方式。文件格式从路径扩展名推断。",
 
@@ -392,6 +393,7 @@ SAVE_METADATA = OperatorMetadata(
     description="数据保存",
     brief_description="将数据保存到数据库表或文件,支持普通表和空间表",
     execution_modes=["workflow"],
+    effects=["write"],
 
     overview="通用数据保存算子，按 Develop Adapter 派生的 schema/table 或 path 自动选择数据库表或文件写入方式。文件格式从目标路径扩展名推断。",
 

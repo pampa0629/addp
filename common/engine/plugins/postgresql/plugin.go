@@ -86,6 +86,10 @@ func (p *PostgreSQLPlugin) SensitiveFields() []string {
 	return []string{"password"}
 }
 
+func (p *PostgreSQLPlugin) ConnectionIdentityFields() []string {
+	return []string{"host", "port", "database"}
+}
+
 func (p *PostgreSQLPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), "schema", plugin.TabularCapabilityOptions{
 		Write:                     true,

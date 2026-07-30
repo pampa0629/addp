@@ -42,6 +42,10 @@ func (p *PointCloudWorkflowPlugin) SensitiveFields() []string {
 	return []string{}
 }
 
+func (p *PointCloudWorkflowPlugin) ConnectionIdentityFields() []string {
+	return []string{"protocol", "host", "port"}
+}
+
 func (p *PointCloudWorkflowPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewWorkflowCapabilities(p.Type(), "addp.workflow/v1")
 }

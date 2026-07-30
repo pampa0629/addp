@@ -202,11 +202,8 @@ func (s *VectorTileSetTaskService) run(ctx context.Context, task *models.VectorT
 		if s.metaScanSubmitter == nil {
 			err = errors.New("vector tile set meta scan submitter is not configured")
 		} else {
-			if task.TenantID > 0 {
-				s.metaScanSubmitter.SetTenantID(&task.TenantID)
-			}
 			var scan *commonExecution.TaskExecution
-			scan, err = s.metaScanSubmitter.CreateManualScanRun(vectorTileSetMetaScanOptions(cfg, result.CatalogPath))
+			scan, err = s.metaScanSubmitter.CreateManualScanRunForTenant(task.TenantID, vectorTileSetMetaScanOptions(cfg, result.CatalogPath))
 			if err == nil && scan != nil {
 				metadata["meta_scan_execution_id"] = scan.ExecutionID
 			}

@@ -14,6 +14,9 @@ for parent in Path(__file__).resolve().parents:
 from workflow_operator_contract import assert_operator_metadata_contract
 
 
+WRITE_RUNTIME = {"execution_authorization": {"id": 71, "effects": ["read", "write"]}}
+
+
 @pytest.fixture
 def client():
     from api_server import app, executions
@@ -55,9 +58,12 @@ def test_workflow_endpoint_runs_asynchronously(client, monkeypatch):
     import api_server
 
     monkeypatch.setattr(api_server, "invoke_operator", lambda operator, params, timeout_seconds=None: {"operator": operator})
-    response = client.post("/api/workflow", json={"workflow_def": {"tasks": [
-        {"id": "convert", "operator": "osgb_to_glb", "params": {}, "depends_on": []}
-    ]}})
+    response = client.post("/api/workflow", json={
+        "workflow_def": {"tasks": [
+            {"id": "convert", "operator": "osgb_to_glb", "params": {}, "depends_on": []}
+        ]},
+        "runtime": WRITE_RUNTIME,
+    })
     assert response.status_code == 202
     execution_id = response.get_json()["execution_id"]
     deadline = time.time() + 2
@@ -69,6 +75,18 @@ def test_workflow_endpoint_runs_asynchronously(client, monkeypatch):
     assert status["result"] == {"operator": "osgb_to_glb"}
     assert status["all_results"] == {"convert": {"operator": "osgb_to_glb"}}
     assert status["task_order"] == ["convert"]
+
+
+def test_workflow_endpoint_rejects_insufficient_execution_authorization(client):
+    response = client.post("/api/workflow", json={
+        "workflow_def": {"tasks": [
+            {"id": "convert", "operator": "osgb_to_glb", "params": {}, "depends_on": []}
+        ]},
+        "runtime": {"execution_authorization": {"id": 71, "effects": ["read"]}},
+    })
+
+    assert response.status_code == 400
+    assert response.get_json()["error_code"] == "WORKFLOW_INVALID"
 
 
 def test_invoke_unknown_operator(client):

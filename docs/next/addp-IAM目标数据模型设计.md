@@ -2,7 +2,7 @@
 
 更新日期：2026-07-28
 
-状态：核心 IAM、Fosite、管理 API、MFA Runtime、离线三员 Bootstrap、离线三员凭据恢复与二十三版 migration 已实现；开发数据库已迁移到 `23/clean`。Tenant 原子创建/初始化、Tenant Role/Assignment API、IAM Workbench、数据库最后管理员约束、普通 User 本地密码重置、授权版本 Refresh 推进、普通 User TOTP 自助登记、Browser Session 内 step-up、高风险自我授权 AAL2 Guard、Swagger 和前端契约测试已经收口；Recovery Attempt 1 已完成，既有三员 Browser `platform + AAL2` 登录与一次性 OAuth 客户端协议 E2E 已覆盖 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、刷新轮换和撤销。Tenant 管理 Browser E2E 已覆盖安全管理员创建普通 User、系统管理员初始化 Tenant、首位 Tenant Administrator 进入 Tenant Context、显式授予基础设施管理员、密码受控重置以及引擎、应用和 Cleanup 正常使用；MFA 安全设置页面与密码确认入口已完成真实 Browser 验证，登记/step-up/自我授权事务闭环由一次性 PostgreSQL E2E 覆盖。正式 `addp-cli` 尚未交付。
+状态：核心 IAM、Fosite、管理 API、MFA Runtime、离线三员 Bootstrap、离线三员凭据恢复与二十五版 migration 已实现；开发数据库已迁移到 `25/clean`。Tenant 原子创建/初始化、Tenant Role/Assignment API、IAM Workbench、数据库最后管理员约束、普通 User 本地密码重置、授权版本 Refresh 推进、普通 User TOTP 自助登记、Browser Session 内 step-up、高风险自我授权 AAL2 Guard、Swagger 和前端契约测试已经收口；Recovery Attempt 1 已完成，既有三员 Browser `platform + AAL2` 登录与正式 `addp` CLI 已覆盖 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、Keychain 刷新轮换、受委托 Tool 调用和撤销。Tenant 管理 Browser E2E 已覆盖安全管理员创建普通 User、系统管理员初始化 Tenant、首位 Tenant Administrator 进入 Tenant Context、显式授予基础设施管理员、密码受控重置以及引擎、应用和 Cleanup 正常使用；MFA 安全设置页面与密码确认入口已完成真实 Browser 验证，登记/step-up/自我授权事务闭环由一次性 PostgreSQL E2E 覆盖。
 
 ## 一、目标与边界
 
@@ -227,7 +227,15 @@ Token Family 的认证方法、AAL、认证时间、step-up 期限和 Context �
 | `created_by_principal_id` | bigint | FK -> `principals.id` |
 | `created_at` / `updated_at` | timestamptz | 非空 |
 
-检查约束保证 `owner_scope=platform` 时 `owner_tenant_id` 为空，`owner_scope=tenant` 时非空；Tenant owner 的 Service Principal 必须具有该 Tenant 的有效 Membership。Service Principal Credential 后续单独建表，只保存 Hash 或加密后的密钥材料。Service Principal 不使用 Local Account、用户密码或 OAuth Client 记录，也不得持有平台三员角色。
+检查约束保证 `owner_scope=platform` 时 `owner_tenant_id` 为空，`owner_scope=tenant` 时非空；Tenant owner 的 Service Principal 必须具有该 Tenant 的有效 Membership。内置模块使用平台所有的 Service Principal，并在每个被服务 Tenant 中建立显式 Membership 和仅允许 `service_principal` 的最小内置 Role Assignment。Service Principal 不使用 Local Account、用户密码或平台三员角色。
+
+每个可运行 Service Principal 一对一绑定一个 Confidential OAuth Client。第一阶段唯一
+Credential 为 `client_secret_basic`：Secret 由部署环境独立注入，System 只保存 BCrypt
+Hash；Client Credentials Grant 只签发短期、不可刷新 Service Access Token。Tenant
+Runtime Token 必须绑定有效 Tenant Membership；平台所有内置模块还可以显式选择 Platform
+Context，但必须持有只允许 `service_principal` 的专用 Platform Service Role，不能持有平台
+三员 Role。OAuth Client 是协议凭据载体，不代替 Principal、Membership 或 Role
+Assignment，也不允许一个共享 Client/Secret 代表多个模块。
 
 ### 5.7 跨模块主体引用
 

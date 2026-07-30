@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/spatial"
 )
 
 type valueFrequency struct {
@@ -86,7 +87,9 @@ func buildField(rows []map[string]interface{}, field datatype.FieldInfo, opts Bu
 	if fp.ValueCount > 0 {
 		fp.UniqueRate = float64(fp.DistinctCount) / float64(fp.ValueCount)
 	}
-	fp.TopValues = topValues(frequencies, fp.ValueCount, opts.TopN)
+	if !datatype.IsSpatialFieldType(field.Type) {
+		fp.TopValues = topValues(frequencies, fp.ValueCount, opts.TopN)
+	}
 
 	switch {
 	case datatype.IsNumericFieldType(field.Type):
@@ -97,11 +100,42 @@ func buildField(rows []map[string]interface{}, field datatype.FieldInfo, opts Bu
 		fp.Boolean, fp.Distribution = booleanProfile(values)
 	case field.Type == datatype.FieldTypeString || field.Type == datatype.FieldTypeUUID:
 		fp.Text, fp.Distribution = textProfile(values, opts.HistogramBins)
+	case datatype.IsSpatialFieldType(field.Type):
+		fp.Spatial, fp.Distribution = spatialProfile(values)
 	default:
 		fp.Status = MetricStatusUnsupported
 	}
 	fp.Observations = observationsForField(fp)
 	return fp
+}
+
+func spatialProfile(values []interface{}) (*SpatialMetrics, []DistributionBucket) {
+	metrics := &SpatialMetrics{}
+	typeCounts := make(map[string]int64)
+	for _, value := range values {
+		geometry, err := spatial.ParseGeometryValue(value)
+		if err != nil || geometry == nil {
+			metrics.InvalidGeometryCount++
+			continue
+		}
+		if geometry.Empty() {
+			metrics.EmptyGeometryCount++
+			continue
+		}
+		metrics.ValidGeometryCount++
+		typeCounts[spatial.GeometryTypeName(geometry)]++
+	}
+
+	labels := make([]string, 0, len(typeCounts))
+	for label := range typeCounts {
+		labels = append(labels, label)
+	}
+	sort.Strings(labels)
+	distribution := make([]DistributionBucket, 0, len(labels))
+	for _, label := range labels {
+		distribution = append(distribution, DistributionBucket{Label: label, Count: typeCounts[label]})
+	}
+	return metrics, distribution
 }
 
 func normalizedFields(rows []map[string]interface{}, fields []datatype.FieldInfo) []datatype.FieldInfo {

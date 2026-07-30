@@ -23,10 +23,12 @@ func newAssetDiscoverableHandler(db *gorm.DB) *assetDiscoverableHandler {
 // @Tags Service
 // @Produce json
 // @Success 200 {array} map[string]interface{}
-// @x-addp-auth-mode "internal"
-// @Router /internal/assets/discoverable [get]
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.read"]
+// @Router /assets/discoverable [get]
+// @Security BearerAuth
 func (h *assetDiscoverableHandler) listDiscoverableAssets(c *gin.Context) {
-	tenantID := internalTenantIDValue(c)
+	tenantID := tenantIDValue(c)
 
 	result := make([]commonClient.DiscoverableAsset, 0)
 

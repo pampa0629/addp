@@ -24,6 +24,13 @@ test('DAG editor uses shared direct connection and viewport controls', async () 
   assert.match(source, /watch\(structuredParameters/)
   assert.match(source, /watch\(parametersStr/)
   assert.match(source, /emit\('update:layout', captureLayout\(\)\)/)
+  const viewportHandlers = source.slice(
+    source.indexOf('function handleZoomIn()'),
+    source.indexOf('function handleAutoLayout()')
+  )
+  const autoLayoutHandler = source.match(/function handleAutoLayout\(\) \{[\s\S]*?\n\}/)?.[0] || ''
+  assert.doesNotMatch(viewportHandlers, /emitLayout\(\)/)
+  assert.match(autoLayoutHandler, /emitLayout\(\)/)
   assert.match(source, /canBuildOwnerTaskUrl\(rawUrl, currentNode\.value, currentOwnerGraphId\.value\)/)
   const handleDropSource = source.match(/function handleDrop\(event\) \{[\s\S]*?\n\}/)?.[0] || ''
   assert.doesNotMatch(handleDropSource, /graph\.value\.addItem/)

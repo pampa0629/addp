@@ -7,7 +7,18 @@ import (
 // 直接使用 Common 模块的类型，避免重复定义
 type ConnectionInfo = commonModels.ConnectionInfo
 type Engine = commonModels.Engine
+type EngineRuntimeDescriptor = commonModels.EngineRuntimeDescriptor
+type EngineRuntimeEndpoint = commonModels.EngineRuntimeEndpoint
 type JSONString = commonModels.JSONString
+
+const (
+	EngineLifecycleActive   = commonModels.EngineLifecycleActive
+	EngineLifecycleDisabled = commonModels.EngineLifecycleDisabled
+	EngineLifecycleDeleting = commonModels.EngineLifecycleDeleting
+
+	ExternalArtifactPolicyDelete  = commonModels.ExternalArtifactPolicyDelete
+	ExternalArtifactPolicyAbandon = commonModels.ExternalArtifactPolicyAbandon
+)
 
 type EngineCreateRequest struct {
 	Name           string         `json:"name" binding:"required"` // 显示名称（中文或英文）
@@ -22,6 +33,10 @@ type EngineUpdateRequest struct {
 	Name           *string         `json:"name"` // 显示名称
 	ConnectionInfo *ConnectionInfo `json:"connection_info"`
 	Description    *string         `json:"description"`
-	IsActive       *bool           `json:"is_active"`
+	LifecycleState *string         `json:"lifecycle_state"`
 	Capabilities   *JSONString     `json:"capabilities"` // 能力声明JSON
+}
+
+type EngineDeleteRequest struct {
+	ExternalArtifactPolicy string `json:"external_artifact_policy"`
 }

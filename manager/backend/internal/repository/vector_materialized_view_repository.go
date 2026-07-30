@@ -87,15 +87,31 @@ func (r *VectorMaterializedViewRepository) DisableTaskForCleanup(ctx context.Con
 		}).Error
 }
 
+func (r *VectorMaterializedViewRepository) MarkResultAbandonedExternal(
+	ctx context.Context,
+	id uint,
+	tenantID uint,
+	errorMessage string,
+	metadata commonModels.JSONMap,
+) error {
+	return r.UpdateResultFields(ctx, id, tenantID, map[string]interface{}{
+		"status":        models.VectorMaterializedViewStatusAbandonedExternal,
+		"error_message": strings.TrimSpace(errorMessage),
+		"metadata":      metadata,
+		"updated_at":    time.Now(),
+	})
+}
+
 func (r *VectorMaterializedViewRepository) ClaimExecution(
 	ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, overwriteExistingResult bool,
 ) (*models.VectorMaterializedViewTask, error) {
 	var task models.VectorMaterializedViewTask
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
-		TaskModel: &task,
-		TaskType:  commonExecution.TaskTypeVectorMaterializedViewGeneration,
-		TaskLabel: "vector materialized view",
-		TaskName:  func() string { return task.Name },
+		TaskModel:              &task,
+		TaskType:               commonExecution.TaskTypeVectorMaterializedViewGeneration,
+		TaskLabel:              "vector materialized view",
+		ExcludedResultStatuses: []string{models.VectorMaterializedViewStatusAbandonedExternal},
+		TaskName:               func() string { return task.Name },
 		TaskConfig: func() commonModels.JSONMap {
 			return task.Config
 		},
@@ -211,11 +227,12 @@ func (r *VectorMaterializedViewRepository) GetCurrentResult(ctx context.Context,
 	var result models.VectorMaterializedView
 	err := r.db.WithContext(ctx).
 		Where(
-			"tenant_id = ? AND item_fingerprint = ? AND source_geometry_column = ? AND target_srid = ?",
+			"tenant_id = ? AND item_fingerprint = ? AND source_geometry_column = ? AND target_srid = ? AND status <> ?",
 			tenantID,
 			strings.TrimSpace(itemFingerprint),
 			strings.TrimSpace(geometryColumn),
 			targetSRID,
+			models.VectorMaterializedViewStatusAbandonedExternal,
 		).
 		First(&result).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {

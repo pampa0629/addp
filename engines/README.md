@@ -12,7 +12,7 @@ engines/
 ├── model3d-workflow/   # Model3D Workflow 三维模型转换运行时，默认端口 8101
 ├── pointcloud-workflow/ # PointCloud Workflow 点云处理运行时，默认端口 8102
 ├── supermap-workflow/  # SuperMap Workflow 超图 SPS 工作流运行时，默认端口 8103
-├── jupyter/            # Jupyter Notebook / Lab 运行时，API 默认端口 8097
+├── jupyter/            # 无头 Notebook 执行运行时，API 默认端口 8097
 └── docs/               # 引擎 API 与设计文档
 ```
 
@@ -35,7 +35,7 @@ engines/
 通过 `EnginePlugin + ScriptRuntimeProvider` 纳入统一引擎体系，能力声明为 `compute.script.supported=true`。
 
 **已有引擎**：
-- `jupyter` - Jupyter Notebook / Lab 运行时。
+- `jupyter` - 仅由 Develop 通过租户 Service Access Token 调用的无头 Notebook 运行时，不暴露共享 Lab。
 
 ## 工作流运行时 HTTP 协议
 

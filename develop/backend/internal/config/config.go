@@ -24,10 +24,7 @@ type Config struct {
 	SystemServiceURL         string
 	EnableServiceIntegration bool
 	EncryptionKey            []byte
-	InternalAPIKey           string
-
-	// Jupyter Engine 配置（仍需保留，用于 notebook 功能）
-	JupyterEngineURL string
+	ServiceClientSecret      string
 
 	// 其他模块服务配置（用于算子发现）
 	MetaServiceURL     string
@@ -51,9 +48,6 @@ func Load() *Config {
 	// 加载加密密钥
 	encryptionKey := loadEncryptionKey()
 
-	// 内部 API Key
-	internalAPIKey := getEnv("INTERNAL_API_KEY", "")
-
 	return &Config{
 		Env:        env,
 		ServerAddr: ":" + getEnv("DEVELOP_BACKEND_PORT", "8185"),
@@ -70,10 +64,7 @@ func Load() *Config {
 		SystemServiceURL:         getEnv("SYSTEM_URL", "http://localhost:8180"),
 		EnableServiceIntegration: getEnvAsBool("ENABLE_SERVICE_INTEGRATION", true),
 		EncryptionKey:            encryptionKey,
-		InternalAPIKey:           internalAPIKey,
-
-		// Jupyter Engine 配置（仍需保留，用于 notebook 功能）
-		JupyterEngineURL: getEnv("JUPYTER_URL", "http://localhost:8097"),
+		ServiceClientSecret:      getEnv("DEVELOP_SERVICE_CLIENT_SECRET", ""),
 
 		// 其他模块服务配置
 		MetaServiceURL:     getEnv("META_URL", "http://localhost:8082"),

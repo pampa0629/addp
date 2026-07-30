@@ -81,14 +81,6 @@ func SetupRouter(
 	router.GET("/ogc/tiles/:serviceName/tiles", optionalAuth, ogcTilesHandler.GetTilesets)
 	router.GET("/ogc/tiles/:serviceName/tiles/:layer/:tileMatrixSetId/:tileMatrix/:tileRow/:tileCol", optionalAuth, ogcTilesHandler.GetTile)
 
-	assetDiscHandler := newAssetDiscoverableHandler(db)
-	internal := router.Group("/api/v1/service/internal")
-	internal.Use(internalAPIKeyMiddleware(cfg.InternalAPIKey))
-	{
-		internal.GET("/assets/discoverable", assetDiscHandler.listDiscoverableAssets)
-		internal.GET("/endpoints", serviceEndpointHandler.GetEndpoints)
-	}
-
 	// 管理 API 只接受 canonical Bearer Tenant AuthContext。
 	api := router.Group("/api/v1/service")
 	api.Use(
@@ -99,6 +91,20 @@ func SetupRouter(
 		return authMiddleware.MustNewPermissionGuard(keys...)
 	}
 	{
+		assetDiscHandler := newAssetDiscoverableHandler(db)
+		api.GET(
+			"/assets/discoverable",
+			authMiddleware.MustNewServiceClientGuard("addp-asset"),
+			permission(serviceauthorization.PermissionServiceDefinitionRead),
+			assetDiscHandler.listDiscoverableAssets,
+		)
+		api.GET(
+			"/endpoints",
+			authMiddleware.MustNewServiceClientGuard("addp-portal"),
+			permission(serviceauthorization.PermissionServiceEndpointRead),
+			serviceEndpointHandler.GetEndpoints,
+		)
+
 		// 审计日志中间件（记录到 System 模块）
 		if systemClient != nil {
 			api.Use(audit.AuditMiddleware("service", systemClient))

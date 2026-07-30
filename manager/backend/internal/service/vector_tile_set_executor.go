@@ -57,7 +57,7 @@ func (e *ManagerVectorTileSetExecutor) GenerateVectorTileSet(ctx context.Context
 		return nil, err
 	}
 	targetEngine, err := e.systemClient.GetEngine(req.Config.TargetEngineID)
-	if err != nil || targetEngine == nil || !targetEngine.IsActive {
+	if err != nil || !targetEngine.IsUsable() {
 		return nil, errors.New("target business engine is not active")
 	}
 	if targetEngine.IsBuiltin || targetEngine.TenantID == nil || *targetEngine.TenantID != req.Task.TenantID {

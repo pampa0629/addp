@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 )
@@ -114,8 +113,11 @@ func TestGaussianSplatKSplatTaskEnrichesBoundsFromMetaItem(t *testing.T) {
 		if r.URL.Path != "/api/v1/meta/items/77" {
 			t.Fatalf("path = %q, want /api/v1/meta/items/77", r.URL.Path)
 		}
-		if got := r.Header.Get("X-Tenant-ID"); got != "7" {
-			t.Fatalf("X-Tenant-ID = %q, want 7", got)
+		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Fatalf("Authorization = %q, want Bearer test-token", got)
+		}
+		if r.Header.Get("X-Internal-API-Key") != "" || r.Header.Get("X-Tenant-ID") != "" {
+			t.Fatal("Meta request must not send legacy internal authentication headers")
 		}
 		item := commonModels.MetaItem{
 			ID:       77,
@@ -156,7 +158,7 @@ func TestGaussianSplatKSplatTaskEnrichesBoundsFromMetaItem(t *testing.T) {
 		},
 	}
 	svc := NewGaussianSplatKSplatTaskService(nil)
-	svc.SetMetaClient(commonClient.NewMetaClientWithInternalKey(metaServer.URL, "internal-key"))
+	svc.SetMetaClient(newServiceTestMetaClient(metaServer.URL))
 
 	if err := svc.enrichGaussianSplatKSplatTaskSourceFacts(context.Background(), task); err != nil {
 		t.Fatalf("enrich gaussian splat KSplat source facts: %v", err)

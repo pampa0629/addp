@@ -30,10 +30,8 @@ func SetupRouter(
 	engineHandler *EngineHandler,
 	queryHandler *QueryHandler,
 	notebookHandler *NotebookHandler,
-	jupyterInstanceHandler *JupyterInstanceHandler, // Jupyter 实例管理 (Docker 方案,已废弃)
-	jupyterVenvHandler *JupyterVenvHandler, // Jupyter 虚拟环境管理 (新方案)
 	devTaskService interface{}, // 添加 devTaskService 参数
-	systemClient *commonClient.SystemClient, // 用于审计日志
+	systemClient *commonClient.SystemServiceClient, // 用于审计日志
 	duckdbHandler *DuckDBHandler, // DuckDB 联邦查询
 ) *gin.Engine {
 	router := gin.Default()
@@ -55,17 +53,8 @@ func SetupRouter(
 		})
 	})
 
-	assetDiscHandler := newAssetDiscoverableHandler(db)
 	taskListHandler := NewTaskListHandler(devTaskService.(*service.DevTaskService))
-	internal := router.Group("/api/v1/develop/internal")
-	internal.Use(internalAPIKeyMiddleware(cfg.InternalAPIKey))
-	{
-		internal.GET("/assets/discoverable", assetDiscHandler.listDiscoverableAssets)
-		internal.GET("/tasks", taskListHandler.ListTasks)
-		internal.GET("/tasks/:task_type/:id", devTaskHandler.ProviderGetDevTask)
-		internal.POST("/tasks/:task_type/:id/execute", executionHandler.ProviderExecuteDevTask)
-		internal.GET("/executions/:execution_id", executionHandler.ProviderGetExecution)
-	}
+	assetDiscHandler := newAssetDiscoverableHandler(db)
 
 	// 用户 API 只接受 canonical Bearer AuthContext。
 	api := router.Group("/api/v1/develop")
@@ -92,9 +81,25 @@ func SetupRouter(
 	}
 	// 审计日志中间件（记录到 System 模块）
 	if systemClient != nil {
-		api.Use(audit.AuditMiddleware("develop", systemClient))
+		api.Use(audit.ServiceAuditMiddleware("develop", systemClient))
 	}
 	{
+		taskProvider := api.Group("/task-provider")
+		taskProvider.Use(commonAuth.MustNewServiceClientGuard("addp-orchestrator"))
+		{
+			taskProvider.GET("/tasks", permission(developauthorization.PermissionDevelopTaskProviderRead), taskListHandler.ListTasks)
+			taskProvider.GET("/tasks/:task_type/:id", permission(developauthorization.PermissionDevelopTaskProviderRead), devTaskHandler.ProviderGetDevTask)
+			taskProvider.POST("/tasks/:task_type/:id/execute", permission(developauthorization.PermissionDevelopTaskProviderExecute), executionHandler.ProviderExecuteDevTask)
+			taskProvider.GET("/executions/:execution_id", permission(developauthorization.PermissionDevelopTaskProviderRead), executionHandler.ProviderGetExecution)
+		}
+
+		api.GET(
+			"/assets/discoverable",
+			commonAuth.MustNewServiceClientGuard("addp-asset"),
+			permission(developauthorization.PermissionDevelopTaskRead),
+			assetDiscHandler.listDiscoverableAssets,
+		)
+
 		// ========== 开发任务定义管理 ==========
 		taskDefinitions := api.Group("/task-definitions")
 		{
@@ -139,47 +144,26 @@ func SetupRouter(
 		api.GET("/spark-runtimes", permission(developauthorization.PermissionDevelopTaskRead), engineHandler.ListSparkRuntimes)
 
 		// ========== 查询开发 ==========
-		api.GET("/test/:id", permission(developauthorization.PermissionDevelopTaskRead), queryHandler.TestConnection)
+		api.GET(
+			"/test/:id",
+			permission(
+				developauthorization.PermissionDevelopTaskExecute,
+				developauthorization.PermissionDevelopDataReadExecute,
+			),
+			queryHandler.TestConnection,
+		)
 		api.GET("/engines/:id/sample-query", permission(developauthorization.PermissionDevelopTaskRead), queryHandler.GetSampleQuery)
 		api.POST("/execute", permission(developauthorization.PermissionDevelopTaskExecute), queryHandler.ExecuteQuery)
 
 		// ========== Notebook 开发 ==========
+		api.GET("/notebook-engines", permission(developauthorization.PermissionDevelopNotebookRead), notebookHandler.ListNotebookEngines)
+		api.GET("/notebook-engines/:id/kernels", permission(developauthorization.PermissionDevelopNotebookRead), notebookHandler.ListKernels)
 		notebooks := api.Group("/notebooks")
 		{
-			notebooks.POST("/jupyter-url", permission(developauthorization.PermissionDevelopNotebookExecute), notebookHandler.GetJupyterURL)
-			notebooks.POST("/execute", permission(developauthorization.PermissionDevelopNotebookExecute), notebookHandler.ExecuteNotebook)
-			notebooks.GET("/kernels", permission(developauthorization.PermissionDevelopNotebookRead), notebookHandler.ListKernels)
-			notebooks.GET("/health", permission(developauthorization.PermissionDevelopNotebookRead), notebookHandler.HealthCheck)
-
-			// 新增：Notebook 管理 API
 			notebooks.POST("/upload", permission(developauthorization.PermissionDevelopNotebookCreate), notebookHandler.UploadNotebook)
 			notebooks.GET("", permission(developauthorization.PermissionDevelopNotebookRead), notebookHandler.ListNotebooks)
 			notebooks.GET("/:id/download", permission(developauthorization.PermissionDevelopNotebookRead), notebookHandler.DownloadNotebook)
 			notebooks.DELETE("/:id", permission(developauthorization.PermissionDevelopNotebookDelete), notebookHandler.DeleteNotebook)
-		}
-
-		// ========== Jupyter 实例管理 (Docker 方案,已废弃) ==========
-		if jupyterInstanceHandler != nil {
-			jupyter := api.Group("/jupyter")
-			{
-				jupyter.POST("/instance/start", permission(developauthorization.PermissionDevelopNotebookExecute), jupyterInstanceHandler.StartInstance)
-				jupyter.POST("/instance/stop", permission(developauthorization.PermissionDevelopNotebookExecute), jupyterInstanceHandler.StopInstance)
-				jupyter.GET("/instance/status", permission(developauthorization.PermissionDevelopNotebookRead), jupyterInstanceHandler.GetInstanceStatus)
-			}
-		}
-
-		// ========== Jupyter 虚拟环境管理 (新方案,开发环境) ==========
-		if jupyterVenvHandler != nil {
-			jupyter := api.Group("/jupyter")
-			{
-				// 租户虚拟环境管理
-				jupyter.GET("/venv/status", permission(developauthorization.PermissionDevelopNotebookRead), jupyterVenvHandler.GetVenvStatus)
-				jupyter.POST("/venv/init", permission(developauthorization.PermissionDevelopNotebookCreate), jupyterVenvHandler.InitVenv)
-				jupyter.DELETE("/venv", permission(developauthorization.PermissionDevelopNotebookDelete), jupyterVenvHandler.DeleteVenv)
-
-				// Jupyter Server 状态
-				jupyter.GET("/server/status", permission(developauthorization.PermissionDevelopNotebookRead), jupyterVenvHandler.GetJupyterServerStatus)
-			}
 		}
 
 		// ========== DuckDB 联邦查询 ==========

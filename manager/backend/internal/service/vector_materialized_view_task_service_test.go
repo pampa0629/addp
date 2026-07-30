@@ -6,8 +6,10 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	commonapi "github.com/addp/common/api"
+	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
@@ -184,6 +186,36 @@ func TestVectorMaterializedViewDeleteResultReturnsNotFound(t *testing.T) {
 	err := svc.DeleteResult(context.Background(), 999, 1)
 	if !errors.Is(err, commonapi.ErrNotFound) {
 		t.Fatalf("delete missing result error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestVectorMaterializedViewClaimIgnoresAbandonedExternalResult(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	repo := repository.NewVectorMaterializedViewRepository(db)
+	task := newVectorMaterializedViewTaskDefinition()
+	if err := repo.CreateTask(context.Background(), task); err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	result := newVectorMaterializedViewResult()
+	result.TaskID = &task.ID
+	result.Status = models.VectorMaterializedViewStatusAbandonedExternal
+	if err := repo.CreateResult(context.Background(), result); err != nil {
+		t.Fatalf("create abandoned result: %v", err)
+	}
+	now := time.Now()
+	execution := &commonExecution.TaskExecution{
+		TenantID:    int(task.TenantID),
+		ExecutionID: "vmv-after-abandon",
+		Module:      commonExecution.ModuleManager,
+		TaskType:    commonExecution.TaskTypeVectorMaterializedViewGeneration,
+		Source:      commonExecution.ModuleManager,
+		Status:      commonExecution.ExecutionStatusPending,
+		TriggerType: commonExecution.TriggerTypeManual,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, execution, false); err != nil {
+		t.Fatalf("ClaimExecution() rejected abandoned external result: %v", err)
 	}
 }
 

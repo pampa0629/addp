@@ -403,7 +403,7 @@ cleanup 不等于所有生命周期事件都必须由 System 同步调度。
 
 | 事件 | 发布方 | 处理方式 |
 | --- | --- | --- |
-| engine deleted / disabled | System | 自动触发资源回收 scan；只有 owner 模块明确把某类运行配置定义判定为强绑定 engine 且不可替换时，才可禁用并记录 `missing_engine`；用户创作成果类定义不因 engine 生命周期自动回收，physical cleanup 需管理员确认或策略授权。 |
+| engine deleting / disabled | System | `disabled` 只退出正常消费；用户确认删除时 Engine 先进入 `deleting`，System 在保留连接的前提下发起 scan 和 physical cleanup。只有 owner 模块明确把某类运行配置定义判定为强绑定 engine 且不可替换时，才可禁用并记录 `missing_engine`；用户创作成果类定义不因 engine 生命周期自动回收。 |
 | tenant deleted | System | 必须触发 system-owned cleanup execution，各模块清理本租户 owner 资源并写审计摘要；System 审计日志保留。 |
 | item deleted | Meta 或 item owner | 相关模块标记 artifact state 为 `missing_source`，并按策略清理物理产物。 |
 | source facts changed | Meta | 相关模块优先标记派生产物 `outdated`；查询和执行时做惰性复查。 |
@@ -415,8 +415,30 @@ cleanup 不等于所有生命周期事件都必须由 System 同步调度。
 - 模块内部资源清理由模块自己决定。
 - 需要管理员确认、风险评估或跨模块审计时，使用 cleanup request（资源回收请求）。
 - 不需要用户确认的幂等缓存失效可以由模块内部直接处理，但仍应保留必要日志。
-- 生命周期事件可以自动触发 scan；高风险 execute 不得因为事件发生而默认执行。
+- 一般生命周期事件可以自动触发 scan；高风险 execute 不得因为普通事件发生而默认执行。用户在 Engine 删除确认中明确授权“清理并删除”时，该删除工作流可以基于本次 scan 自动执行 physical cleanup。
 - `tenant deleted` 触发的 cleanup 中，`tenant_id` 是历史审计主体和资源归属范围；即使租户记录已离开活跃租户列表，Monitor、审计和 executor 仍应允许按该历史 `tenant_id` 写入 execution / result，不应把“租户已删除”解释为 cleanup 上下文非法。
+
+### Engine 删除工作流
+
+Engine 删除必须遵循单一顺序：
+
+```text
+active / disabled
+→ deleting（退出正常业务列表，但保留连接和凭据）
+→ cleanup scan
+→ physical cleanup execute
+→ cleanup 全部成功
+→ 物理删除 system.engines 记录并发布 engine.deleted
+```
+
+约束：
+
+1. scan 和 execute 的 `context.engine_id` 指向正在删除的 Engine；各 executor 必须把该 Engine 当作即将失效来源，不能因为 System 记录仍存在而跳过候选。
+2. cleanup 失败时 Engine 保持 `deleting`，保留 scan / execute task ID 和错误摘要，允许管理员重试；不得先删除连接配置。
+3. 外部引擎不可达且存在 owner 已登记外部产物时，管理员可显式选择 `external_artifact_policy=abandon`。Owner 模块必须把记录终止为 `abandoned_external`，保存外部 schema/object、最后错误、放弃时间和操作者审计；该记录不再进入自动 cleanup 候选。
+4. `abandoned_external` 表示平台放弃后续物理删除责任，不表示外部对象已删除。外部对象由 DBA 或外部系统管理员处理。
+5. System 不读取或修改 owner 私有表；放弃语义仍通过 cleanup request 的中性 context 传递，由 owner executor 落库。
+6. 删除后重新注册产生新的 Engine Instance；cleanup 不做旧 ID 到新 ID 的自动映射。
 
 ## 十一、与任务体系的关系
 

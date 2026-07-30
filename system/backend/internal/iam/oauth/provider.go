@@ -44,6 +44,7 @@ func NewProvider(
 		storage,
 		strategy,
 		compose.OAuth2AuthorizeExplicitFactory,
+		compose.OAuth2ClientCredentialsGrantFactory,
 		compose.OAuth2RefreshTokenGrantFactory,
 		compose.OAuth2TokenRevocationFactory,
 		compose.OAuth2PKCEFactory,

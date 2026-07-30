@@ -31,6 +31,7 @@ func TestNewIAMRuntimeComposesTargetServicesAndFosite(t *testing.T) {
 		runtime.InternalAuditHandler == nil ||
 		runtime.Authentication == nil || runtime.FirstPartyCredential == nil ||
 		runtime.UserAccessCredential == nil || runtime.BusinessCredential == nil ||
+		runtime.ServiceCredential == nil ||
 		runtime.OAuthFailureAudit == nil {
 		t.Fatalf("IAM Runtime is incomplete: %#v", runtime)
 	}

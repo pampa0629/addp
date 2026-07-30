@@ -18,10 +18,11 @@ type Config struct {
 	RedisPassword string
 	RedisDB       int
 
-	SystemURL      string
-	StandardURL    string
-	MetaURL        string
-	InternalAPIKey string
+	SystemURL           string
+	StandardURL         string
+	MetaURL             string
+	InternalAPIKey      string
+	ServiceClientSecret string
 }
 
 func LoadConfig() (*Config, error) {
@@ -36,10 +37,11 @@ func LoadConfig() (*Config, error) {
 		RedisPassword: os.Getenv("REDIS_PASSWORD"),
 		RedisDB:       commonConfig.GetEnvInt("REDIS_DB", 0),
 
-		SystemURL:      commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
-		StandardURL:    commonConfig.GetEnv("STANDARD_URL", "http://localhost:8110"),
-		MetaURL:        commonConfig.GetEnv("META_URL", "http://localhost:8082"),
-		InternalAPIKey: os.Getenv("INTERNAL_API_KEY"),
+		SystemURL:           commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
+		StandardURL:         commonConfig.GetEnv("STANDARD_URL", "http://localhost:8110"),
+		MetaURL:             commonConfig.GetEnv("META_URL", "http://localhost:8082"),
+		InternalAPIKey:      os.Getenv("INTERNAL_API_KEY"),
+		ServiceClientSecret: os.Getenv("QUALITY_SERVICE_CLIENT_SECRET"),
 	}
 
 	enableIntegration := commonConfig.GetEnvBool("ENABLE_SERVICE_INTEGRATION", true)

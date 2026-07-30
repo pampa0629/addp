@@ -104,30 +104,10 @@ func (h *Handler) GetEngines(c *gin.Context) {
 	c.JSON(http.StatusOK, engines)
 }
 
-func extractBearerToken(c *gin.Context) (string, bool) {
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		return "", false
-	}
-	if len(token) > 7 && strings.HasPrefix(token, "Bearer ") {
-		token = token[7:]
-	}
-	return token, token != ""
-}
-
-func (h *Handler) effectiveTenantIDForEngine(c *gin.Context, engineID uint) (uint, error) {
+func (h *Handler) effectiveTenantIDForEngine(c *gin.Context, _ uint) (uint, error) {
 	tenantID := commonAuth.GetTenantID(c)
 	if tenantID != 0 {
 		return tenantID, nil
 	}
-
-	token, _ := extractBearerToken(c)
-	engine, err := h.engineService.GetResourceByID(engineID, tenantID, token)
-	if err != nil {
-		return 0, err
-	}
-	if engine.TenantID != nil && *engine.TenantID > 0 {
-		return *engine.TenantID, nil
-	}
-	return tenantID, nil
+	return 0, fmt.Errorf("tenant context is required")
 }

@@ -64,6 +64,12 @@ type EnginePlugin interface {
 	Capabilities() EngineCapabilities
 }
 
+// ConnectionIdentityProvider 声明 Engine Instance 物理端点身份字段。
+// System 管理的内置插件必须实现该接口；自研 HTTP extension 使用标准运行时身份字段。
+type ConnectionIdentityProvider interface {
+	ConnectionIdentityFields() []string
+}
+
 // InstanceCapabilitiesResolver 是插件可选实现，用于把静态 Provider 能力模板
 // 收敛为某个已注册引擎实例当前真实具备的能力。
 type InstanceCapabilitiesResolver interface {

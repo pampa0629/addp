@@ -14,7 +14,7 @@ func TestSystemEngineResolverResolveEngine(t *testing.T) {
 				ID:             7,
 				EngineType:     "postgresql",
 				ConnectionInfo: commonmodels.ConnectionInfo{"host": "localhost", "database": "gis"},
-				IsActive:       true,
+				LifecycleState: "active",
 			},
 		},
 	}
@@ -34,7 +34,7 @@ func TestSystemEngineResolverResolveEngine(t *testing.T) {
 func TestSystemEngineResolverRejectsTypeMismatch(t *testing.T) {
 	client := fakeSystemEngineClient{
 		engines: map[uint]*commonmodels.Engine{
-			7: {ID: 7, EngineType: "postgresql", IsActive: true},
+			7: {ID: 7, EngineType: "postgresql", LifecycleState: "active"},
 		},
 	}
 
@@ -50,7 +50,7 @@ func TestSystemEngineResolverRejectsTypeMismatch(t *testing.T) {
 func TestSystemEngineResolverRejectsInactiveEngine(t *testing.T) {
 	client := fakeSystemEngineClient{
 		engines: map[uint]*commonmodels.Engine{
-			7: {ID: 7, EngineType: "postgresql", IsActive: false},
+			7: {ID: 7, EngineType: "postgresql", LifecycleState: "disabled"},
 		},
 	}
 

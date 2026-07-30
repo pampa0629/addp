@@ -43,7 +43,8 @@ Service 是 `service.definition.*`、`service.endpoint.read` 和 `service.extern
 
 管理路由前缀：`/api/v1/service`。
 
-- 服务间资产发现与端点投影：`GET /internal/assets/discoverable`、`GET /internal/endpoints`，只接受 `X-Internal-API-Key + X-Tenant-ID`，不建立 User AuthContext。
+- 资产发现使用 `GET /api/v1/service/assets/discoverable`，只接受 `addp-asset` Tenant Service Access Token，并校验 `service.definition.read`；Tenant 只来自 canonical AuthContext。
+- 端点投影使用唯一 `GET /api/v1/service/endpoints?ref=`：只接受 `addp-portal` Tenant Service Access Token，并校验 `service.endpoint.read`。它只返回端点元数据，不替代真实服务执行时的用户 Resource Grant；旧 `/internal/endpoints`、内部密钥和 Tenant Header 路径必须删除。
 - 查询服务管理：`POST/GET /query`、`GET/PUT/DELETE /query/:id`；公开执行端点：`GET /api/query/:serviceName`。
 - 图查询服务管理：`POST/GET /graph`、`GET/PUT/DELETE /graph/:id`；公开执行端点：`POST /api/gquery/:serviceName`。
 - 注册服务管理：`POST/GET /registered`、`GET/PUT/DELETE /registered/:id`、`POST /registered/:id/refresh`、`POST /registered/:id/health`；公开代理：`ANY /api/service/registered/proxy/:id/*path`。

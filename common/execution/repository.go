@@ -212,11 +212,15 @@ func (r *TaskExecutionRepository) GetTrendData(ctx context.Context, tenantID int
 	return results, err
 }
 
-// GetRunningExecutions 获取所有正在运行的执行
+// GetRunningExecutions 获取待执行和正在运行的执行；tenantID 为 0 时查询所有租户。
 func (r *TaskExecutionRepository) GetRunningExecutions(ctx context.Context, tenantID int) ([]*TaskExecution, error) {
 	var executions []*TaskExecution
-	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND status IN (?, ?)", tenantID, ExecutionStatusPending, ExecutionStatusRunning).
+	query := r.db.WithContext(ctx).
+		Where("status IN (?, ?)", ExecutionStatusPending, ExecutionStatusRunning)
+	if tenantID > 0 {
+		query = query.Where("tenant_id = ?", tenantID)
+	}
+	err := query.
 		Order("created_at DESC").
 		Find(&executions).Error
 	return executions, err

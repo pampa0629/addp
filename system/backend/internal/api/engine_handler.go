@@ -10,7 +10,9 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	engineplugin "github.com/addp/common/engine/plugin"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	commonutils "github.com/addp/common/utils"
+	sysi18n "github.com/addp/system/i18n"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
@@ -74,7 +76,7 @@ func (h *EngineHandler) Create(c *gin.Context) {
 
 // List godoc
 // @Summary      获取引擎列表 | List engines
-// @Description  先按引擎类型、能力分组、来源和内置状态过滤，再返回分页结果 | Filter by engine type, capability group, origin, and builtin state before pagination
+// @Description  先按当前 Tenant、引擎类型、能力分组、来源和内置状态过滤，再返回脱敏分页结果；User 与 Service Principal 使用同一契约 | Filter by current tenant, engine type, capability group, origin, and builtin state, then return a masked paginated result through the same contract for users and service principals
 // @Tags         引擎管理 | Engine Management
 // @Accept       json
 // @Produce      json
@@ -85,7 +87,9 @@ func (h *EngineHandler) Create(c *gin.Context) {
 // @Param        capability_groups query string false "能力分组，逗号分隔：storage,compute | Comma-separated capability groups: storage,compute"
 // @Param        engine_origins query string false "引擎来源，逗号分隔：general,extension | Comma-separated engine origins: general,extension"
 // @Param        include_builtin query bool false "是否包含内置引擎 | Whether to include builtin engines" default(true)
+// @Param        lifecycle_states query string false "生命周期，逗号分隔：active,disabled,deleting | Comma-separated lifecycle states: active,disabled,deleting" default(active)
 // @Success      200 {object} object{data=[]models.Engine,total=int,page=int,page_size=int}
+// @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.engine.read"]
@@ -97,19 +101,95 @@ func (h *EngineHandler) List(c *gin.Context) {
 		CapabilityGroups: splitCommaSeparatedQuery(c.Query("capability_groups")),
 		EngineOrigins:    splitCommaSeparatedQuery(c.Query("engine_origins")),
 		IncludeBuiltin:   c.DefaultQuery("include_builtin", "true") == "true",
+		LifecycleStates:  splitCommaSeparatedQuery(c.Query("lifecycle_states")),
 	}
 
-	_, tenantID, err := iamTenantUserActor(c)
+	_, tenantID, _, err := iamTenantActor(c)
 	if err != nil {
 		respondIAMError(c, err)
 		return
 	}
 	engines, total, err := h.engineService.List(page, pageSize, filter, tenantID)
 	if err != nil {
+		if errors.Is(err, service.ErrInvalidEngineLifecycle) {
+			commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgEngineLifecycleInvalid))
+			return
+		}
 		commonapi.RespondError(c, 500, err.Error())
 		return
 	}
 	commonapi.RespondPaginated(c, toEngineResponses(engines), total, page, pageSize)
+}
+
+// ListRuntimeDescriptors godoc
+// @Summary      获取引擎运行时描述列表 | List engine runtime descriptors
+// @Description  返回同 Tenant 可见的脱敏控制面投影；仅工作流/脚本运行时包含 protocol/host/port，数据引擎不返回 connection_info | Return same-tenant masked control-plane projections; only workflow/script runtimes include protocol/host/port and data engines never expose connection_info
+// @Tags         运行时控制面 | Runtime Control Plane
+// @Produce      json
+// @Security     BearerAuth
+// @Param        page query int false "页码 | Page number" default(1)
+// @Param        page_size query int false "每页数量 | Page size" default(10)
+// @Param        engine_type query string false "引擎类型 | Engine type"
+// @Param        capability_groups query string false "能力分组，逗号分隔：storage,compute | Comma-separated capability groups: storage,compute"
+// @Param        engine_origins query string false "引擎来源，逗号分隔：general,extension | Comma-separated engine origins: general,extension"
+// @Success      200 {object} object{data=[]models.EngineRuntimeDescriptor,total=int,page=int,page_size=int}
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      403 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.engine_descriptor.read"]
+// @Router       /runtime/engine-descriptors [get]
+func (h *EngineHandler) ListRuntimeDescriptors(c *gin.Context) {
+	page, pageSize := commonapi.ParsePagination(c)
+	filter := service.EngineListFilter{
+		EngineType:       c.Query("engine_type"),
+		CapabilityGroups: splitCommaSeparatedQuery(c.Query("capability_groups")),
+		EngineOrigins:    splitCommaSeparatedQuery(c.Query("engine_origins")),
+		IncludeBuiltin:   c.DefaultQuery("include_builtin", "true") == "true",
+		LifecycleStates:  []string{models.EngineLifecycleActive},
+	}
+	_, tenantID, _, err := iamTenantActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	descriptors, total, err := h.engineService.ListRuntimeDescriptors(page, pageSize, filter, tenantID)
+	if err != nil {
+		commonapi.RespondError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	commonapi.RespondPaginated(c, descriptors, total, page, pageSize)
+}
+
+// GetRuntimeDescriptor godoc
+// @Summary      获取引擎运行时描述 | Get engine runtime descriptor
+// @Description  返回单个同 Tenant Engine Instance 的脱敏控制面投影，不返回数据引擎明文连接 | Return one same-tenant masked Engine Instance control-plane projection without data-engine plaintext connection details
+// @Tags         运行时控制面 | Runtime Control Plane
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "引擎ID | Engine ID"
+// @Success      200 {object} models.EngineRuntimeDescriptor
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      403 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.engine_descriptor.read"]
+// @Router       /runtime/engine-descriptors/{id} [get]
+func (h *EngineHandler) GetRuntimeDescriptor(c *gin.Context) {
+	id, err := commonapi.BindIDParam(c, "id")
+	if err != nil {
+		return
+	}
+	_, tenantID, _, err := iamTenantActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	descriptor, err := h.engineService.GetRuntimeDescriptor(id, tenantID)
+	if err != nil {
+		h.respondWithResourceError(c, err)
+		return
+	}
+	commonapi.RespondSuccess(c, descriptor)
 }
 
 func splitCommaSeparatedQuery(value string) []string {
@@ -128,12 +208,14 @@ func splitCommaSeparatedQuery(value string) []string {
 
 // GetByID godoc
 // @Summary      获取引擎详情 | Get engine detail
+// @Description  User 返回脱敏连接信息；具有 system.engine.read 的 Tenant Service Principal 返回同 Tenant 的解密连接信息 | Return masked connection details to users and decrypted same-tenant details to tenant service principals with system.engine.read
 // @Tags         引擎管理 | Engine Management
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id path int true "引擎ID | Engine ID"
 // @Success      200 {object} models.EngineResponse
 // @Failure      400 {object} models.ErrorResponse
+// @Failure      403 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.engine.read"]
@@ -144,12 +226,17 @@ func (h *EngineHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	_, tenantID, err := iamTenantUserActor(c)
+	_, tenantID, principalType, err := iamTenantActor(c)
 	if err != nil {
 		respondIAMError(c, err)
 		return
 	}
-	engine, err := h.engineService.GetByID(id, tenantID)
+	var engine *models.Engine
+	if principalType == "service_principal" {
+		engine, err = h.engineService.GetForConnection(id, tenantID)
+	} else {
+		engine, err = h.engineService.GetByID(id, tenantID)
+	}
 	if err != nil {
 		h.respondWithResourceError(c, err)
 		return
@@ -248,7 +335,8 @@ func (h *EngineHandler) EnableSpatialWorkspace(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id path int true "引擎ID | Engine ID"
-// @Success      200 {object} models.SuccessResponse
+// @Param        request body models.EngineDeleteRequest false "删除策略 | Deletion policy"
+// @Success      202 {object} object{message=string,engine=models.EngineResponse}
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
@@ -265,12 +353,23 @@ func (h *EngineHandler) Delete(c *gin.Context) {
 		respondIAMError(c, err)
 		return
 	}
-	if err := h.engineService.Delete(id, tenantID, actorID); err != nil {
+	var req models.EngineDeleteRequest
+	if c.Request.Body != nil && c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			commonapi.RespondError(c, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	engine, err := h.engineService.BeginDeletion(id, tenantID, actorID, req.ExternalArtifactPolicy)
+	if err != nil {
 		h.respondWithResourceError(c, err)
 		return
 	}
 
-	commonapi.RespondSuccess(c, gin.H{"message": "删除成功"})
+	c.JSON(http.StatusAccepted, gin.H{
+		"message": commoni18n.T(c, sysi18n.MsgEngineDeletionStarted),
+		"engine":  toEngineResponse(engine),
+	})
 }
 
 func (h *EngineHandler) respondWithResourceError(c *gin.Context, err error) {
@@ -285,6 +384,16 @@ func (h *EngineHandler) respondWithResourceError(c *gin.Context, err error) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, service.ErrSpatialWorkspaceNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	case errors.Is(err, service.ErrEngineIdentityImmutable):
+		commonapi.RespondError(c, http.StatusConflict, commoni18n.T(c, sysi18n.MsgEngineIdentityImmutable))
+	case errors.Is(err, service.ErrEngineDeleting):
+		commonapi.RespondError(c, http.StatusConflict, commoni18n.T(c, sysi18n.MsgEngineDeleting))
+	case errors.Is(err, service.ErrInvalidEngineLifecycle):
+		commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgEngineLifecycleInvalid))
+	case errors.Is(err, service.ErrInvalidArtifactPolicy):
+		commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgEngineArtifactPolicyInvalid))
+	case errors.Is(err, service.ErrEngineCleanupUnavailable):
+		commonapi.RespondError(c, http.StatusServiceUnavailable, commoni18n.T(c, sysi18n.MsgEngineCleanupUnavailable))
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}
@@ -709,16 +818,17 @@ func (h *EngineHandler) RegisterEngineInternal(c *gin.Context) {
 		// 不存在 - 创建新记录
 		fmt.Printf("[RegisterEngine] ➕ 引擎不存在，创建新记录 (is_builtin=%v)\n", req.IsBuiltin)
 		newEngine := models.Engine{
-			Name:             req.Name,
-			EngineType:       req.EngineType,
-			EngineOrigin:     "extension",
-			Description:      req.Description,
-			ConnectionInfo:   req.ConnectionInfo,
-			Capabilities:     req.Capabilities,
-			IsActive:         true,
-			IsBuiltin:        req.IsBuiltin, // 使用请求中的 is_builtin 值
-			TenantID:         nil,           // 平台级引擎
-			ConnectionStatus: "unknown",
+			Name:                   req.Name,
+			EngineType:             req.EngineType,
+			EngineOrigin:           "extension",
+			Description:            req.Description,
+			ConnectionInfo:         req.ConnectionInfo,
+			Capabilities:           req.Capabilities,
+			LifecycleState:         models.EngineLifecycleActive,
+			ExternalArtifactPolicy: models.ExternalArtifactPolicyDelete,
+			IsBuiltin:              req.IsBuiltin, // 使用请求中的 is_builtin 值
+			TenantID:               nil,           // 平台级引擎
+			ConnectionStatus:       "unknown",
 		}
 
 		if err := h.engineService.CreateEngine(&newEngine); err != nil {
@@ -739,7 +849,7 @@ func (h *EngineHandler) RegisterEngineInternal(c *gin.Context) {
 
 		if err := h.engineService.UpdateEngine(existingEngine); err != nil {
 			fmt.Printf("[RegisterEngine] ❌ 更新引擎失败: %v\n", err)
-			commonapi.RespondError(c, http.StatusInternalServerError, fmt.Sprintf("更新引擎失败: %v", err))
+			h.respondWithResourceError(c, err)
 			return
 		}
 		fmt.Printf("[RegisterEngine] ✅ 引擎更新成功\n")

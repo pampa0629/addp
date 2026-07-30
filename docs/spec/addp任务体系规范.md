@@ -65,9 +65,24 @@
 | `last_execution_id` | 最近一次 `common.task_executions.execution_id` |
 | `last_execution_status` | 最近一次执行状态 |
 | `created_by` | 创建人 |
+| `authorization_principal_id` | 任务授权主体 User Principal；只用于定时或延迟执行，不是任务所有者字段 |
+| `authorization_membership_id` | 任务授权主体的 Tenant Membership |
+| `authorization_version` | 任务被当前 User 授权时的 IAM 授权版本 |
+| `authorized_at` | 当前任务定义完成授权的时间 |
 | `created_at` / `updated_at` / `deleted_at` | 审计字段 |
 
 这些字段是语义基线，不要求抽取共享表或共享 Go struct。各模块可以增加模块私有字段，但不得改变以上字段含义。
+
+### 任务授权主体
+
+可被 owner scheduler 或 Orchestrator 定时执行的持久任务必须保存 Task Authorization Subject。该事实固定由 `authorization_principal_id + authorization_membership_id + authorization_version + authorized_at` 构成，并满足：
+
+1. 只能从同 Tenant 的当前 User AuthContext 写入；API 不接收客户端自报的 Principal、Membership 或授权版本。
+2. 创建、修改任务执行语义、步骤、参数或调度配置时，必须用本次请求的 User AuthContext 原子替换任务授权主体；不能保留修改前的高权限主体。
+3. Service Principal、平台三员和缺少 Tenant Membership 的主体不能成为任务授权主体。
+4. 定时 execution 创建前必须重新校验 Principal、Membership、Tenant、Role Permission 和授权版本。任一事实失效时本次触发失败并写入可审计错误，不得改用 Service Principal 数据权限继续执行。
+5. Task Authorization Subject 不是 Access Token、Role Assignment 或第二套 Membership；任务表、execution、日志和审计均不得保存 User Token 或 Service Token。
+6. 手动执行以本次请求的当前 User 为执行授权主体，不借用任务定义中保存的主体；父 execution 固化该主体事实，子 execution 只能沿可验证的 `parent_execution_id` 来源链继承。
 
 ### 任务语义身份与重复执行
 
@@ -734,7 +749,7 @@ Step v1 只允许以下字段：
 11. v1 不支持并行执行、分支或条件、Step 级重试策略、人工确认步骤，也不得通过 `condition`、`retry`、`approval`、`parallel`、`branch` 或其他私有 Step 字段提前打开这些控制流能力。后续如需要，必须作为 Orchestrator 执行模型 v2 专题设计，明确状态机、失败语义、资源隔离、审计、UI 表达和迁移边界。
 12. Monitor 回跳任务定义时应使用 TaskProvider capabilities 中对应 `task_type.edit_url`，不得硬编码 `module + task_type` 映射。
 13. Orchestrator Create/Update 必须使用严格 JSON 解码并拒绝未知字段；Step 结构、DAG、模板依赖、TaskProvider 引用、编排递归引用和调度表达式校验必须返回稳定的结构化领域错误，由同一 Handler 校验路径按 `Accept-Language` 映射为 `{error}` 响应，不得直接暴露 Go、JSON、Cron 或 Repository 的原始英文错误。
-14. 编排定义和执行记录是 Tenant 资源。用户 HTTP 请求必须使用 System AuthContext 的 `tenant` 会话模式和唯一当前 Tenant；内部服务调用必须使用已验证的 Internal API Key 和 `X-Tenant-ID`。`platform` 模式、客户端 query/body `tenant_id` 和缺失 Tenant 上下文均不得解释为默认 Tenant 或全 Tenant 访问。Create/Update 请求只允许用户可编辑字段，Get/Update/Delete/Execute 和执行查询必须在 Repository 或统一执行仓储中同时限定资源 ID 与 Tenant ID；跨 Tenant 访问统一表现为资源不存在。
+14. 编排定义和执行记录是 Tenant 资源。用户 HTTP 请求必须使用 System AuthContext 的 `tenant` 会话模式和唯一当前 Tenant；服务间调用必须使用调用模块自己的 Confidential OAuth Client，通过 Client Credentials 获取 Tenant Service Access Token，并只发送 Bearer。`platform` 模式、客户端 query/body/header `tenant_id` 和缺失 Tenant 上下文均不得解释为默认 Tenant 或全 Tenant 访问。Create/Update 请求只允许用户可编辑字段，Get/Update/Delete/Execute 和执行查询必须在 Repository 或统一执行仓储中同时限定资源 ID 与 Tenant ID；跨 Tenant 访问统一表现为资源不存在。
 
 ### 编排调度与子任务自身调度
 

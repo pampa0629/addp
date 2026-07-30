@@ -146,7 +146,7 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 
 路由前缀：`/api/v1/meta`。
 
-- 资产发现：`GET /assets/discoverable`。
+- 资产发现：`GET /api/v1/meta/assets/discoverable`，只接受 `addp-asset` Tenant Service Access Token，并校验 `meta.catalog.read`；Tenant 只来自 canonical AuthContext。
 - 引擎：`GET /engines`。
 - 扫描：`POST /scan/run/unscanned`、`POST /scan/run/manual`。
 - 扫描运行列表：`GET /scan/runs`。
@@ -157,6 +157,14 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 - 字段与空间信息：`GET /items/:item_id/fields`、`GET /items/:item_id/spatial`、`GET /items/:item_id`。
 - 统计：`GET /stats`。引擎缓存是 Meta 内部实现细节，不提供公开清理或预热 API。
 
+## 服务身份与 System 调用
+
+- Meta Backend 与 Worker 统一使用 `addp-meta` Confidential OAuth Client，不读取 `INTERNAL_API_KEY`，不接收或代传 User Access Token。
+- 扫描、refresh、cleanup 和 CAD runtime 按 execution/request 的 `tenant_id` 即时取得 Tenant Service Access Token，通过公开 `GET /api/v1/system/engines` 与 `GET /api/v1/system/engines/:id` 读取同 Tenant 引擎事实；业务请求只发送 Bearer。
+- Module 注册、心跳和 TaskProvider 发布使用 `context_type=platform` 的 Platform Service Access Token；Tenant 审计使用 Tenant Service Access Token。两种 Context 不得混用。
+- `common.task_executions.execution_config` 只保存可重放的扫描参数，不保存 Token、Client Secret 或其他凭据。Worker 执行时根据记录中的 `tenant_id` 重新换取短期 Service Access Token。
+- 引擎明文连接缓存必须以 `tenant_id + engine_id` 为键。引擎变更事件不包含授权 Tenant，因此事件处理只清除该 engine 的全部 Tenant 缓存，不主动回源；System 失败不得回退到过期缓存或其他 Tenant 缓存。
+
 查询 API 边界：
 
 - 已定位资源优先使用 `node_id` / `item_id` 主资源查询。
@@ -165,7 +173,7 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 
 ## 开发规则
 
-- 扫描必须执行租户隔离校验，不能绕过 System 引擎归属与当前用户租户。
+- 扫描必须执行租户隔离校验，不能绕过 System 引擎归属与 execution/request 的 Tenant Context。
 - 数据库、对象存储、文件系统和 NoSQL 扫描逻辑按 `scanadapter` / `scanruntime` / `scanprocessor` 分层扩展，`service` 只做应用门面和依赖装配，避免在 Handler 或 service 中堆叠扫描细节。
 - `ScanTaskService` 的类型和构造保留在 `scan_task_service.go`；生命周期、execution、任务 CRUD、调度同步分别放在 `scan_task_lifecycle.go`、`scan_task_execution.go`、`scan_task_crud.go`、`scan_task_schedule.go`。
 - `CatalogDispatcher` 的类型和总分发保留在 `catalog_dispatcher.go`；tabular、branch-leaf、通用锁和 root 收尾分别放在 `catalog_dispatcher_tabular.go`、`catalog_dispatcher_branch.go`、`catalog_dispatcher_helpers.go`。

@@ -57,9 +57,11 @@
         <!-- 激活状态 -->
         <el-table-column :label="t('system.engine.columns.status')" width="100">
           <template #default="{ row }">
-            <el-tag :type="row.is_active ? 'success' : 'danger'">
-              {{ row.is_active ? t('system.engine.status.active') : t('system.engine.status.disabled') }}
-            </el-tag>
+            <el-tooltip :disabled="!row.deletion_error" :content="row.deletion_error" placement="top">
+              <el-tag :type="getLifecycleTagType(row.lifecycle_state)">
+                {{ getLifecycleLabel(row.lifecycle_state) }}
+              </el-tag>
+            </el-tooltip>
           </template>
         </el-table-column>
 
@@ -108,9 +110,9 @@
         </el-table-column>
 
         <!-- 操作列 -->
-        <el-table-column :label="t('system.engine.columns.actions')" width="340" fixed="right">
+        <el-table-column :label="t('system.engine.columns.actions')" width="430" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" type="primary" @click="testConnection(row)">{{ t('system.engine.actions.test') }}</el-button>
+            <el-button size="small" type="primary" :disabled="row.lifecycle_state === 'deleting'" @click="testConnection(row)">{{ t('system.engine.actions.test') }}</el-button>
             <el-button size="small" @click="viewEngineDetails(row)">{{ t('system.engine.actions.detail') }}</el-button>
             <el-button
               size="small"
@@ -128,7 +130,16 @@
               :disabled="row.is_builtin"
               @click="deleteEngine(row)"
             >
-              {{ t('system.engine.actions.delete') }}
+              {{ row.lifecycle_state === 'deleting' ? t('system.engine.actions.retryDelete') : t('system.engine.actions.delete') }}
+            </el-button>
+            <el-button
+              v-if="row.lifecycle_state === 'deleting' && row.deletion_error"
+              size="small"
+              type="danger"
+              plain
+              @click="abandonExternalAndDelete(row)"
+            >
+              {{ t('system.engine.actions.abandonExternal') }}
             </el-button>
           </template>
         </el-table-column>
@@ -411,9 +422,12 @@
                 <el-tag v-else type="success">{{ t('system.engine.dialog.basicInfo.userRegistered') }}</el-tag>
               </el-descriptions-item>
               <el-descriptions-item :label="t('system.engine.dialog.basicInfo.status')">
-                <el-tag :type="selectedEngine.is_active ? 'success' : 'danger'">
-                  {{ selectedEngine.is_active ? t('system.engine.status.active') : t('system.engine.status.disabled') }}
+                <el-tag :type="getLifecycleTagType(selectedEngine.lifecycle_state)">
+                  {{ getLifecycleLabel(selectedEngine.lifecycle_state) }}
                 </el-tag>
+              </el-descriptions-item>
+              <el-descriptions-item v-if="selectedEngine.deletion_error" :label="t('system.engine.dialog.basicInfo.deletionError')" :span="2">
+                {{ selectedEngine.deletion_error }}
               </el-descriptions-item>
               <el-descriptions-item :label="t('system.engine.dialog.basicInfo.createdAt')" :span="2">
                 {{ formatDate(selectedEngine.created_at) }}
@@ -566,7 +580,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { enginesAPI } from '../api/engines'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -654,7 +668,7 @@ const form = ref({
   engine_type: '',
   name: '',
   description: '',
-  is_active: true,
+	lifecycle_state: 'active',
   connection_info: {}
 })
 
@@ -957,8 +971,16 @@ const getEngineTypeColor = (type) => {
 }
 
 const canEditEngine = (row) => {
-  return !row.is_builtin && row.engine_origin === 'general'
+	return !row.is_builtin && row.engine_origin === 'general' && row.lifecycle_state !== 'deleting'
 }
+
+const getLifecycleTagType = (state) => ({
+	active: 'success',
+	disabled: 'info',
+	deleting: 'warning'
+}[state] || 'info')
+
+const getLifecycleLabel = (state) => t(`system.engine.status.${state || 'disabled'}`)
 
 const formatDate = (dateString) => {
   return new Date(dateString).toLocaleString()
@@ -1110,6 +1132,7 @@ const loadEngines = async () => {
     const response = await enginesAPI.list(currentPage.value, pageSize.value, {
       capabilityGroups,
       engineOrigins,
+      lifecycleStates: ['active', 'disabled', 'deleting'],
       includeBuiltin: selectedCategories.value.includes('builtin')
     })
     engines.value = response?.data || []
@@ -1126,7 +1149,7 @@ const selectStorageEngineType = (engineType) => {
   if (isEdit.value) return
   if (form.value.engine_type === engineType) return
 
-  form.value = {
+	form.value = {
     ...form.value,
     engine_type: engineType
   }
@@ -1333,7 +1356,7 @@ const editEngine = async (row) => {
     engine_type: row.engine_type,
     name: row.name,
     description: row.description,
-    is_active: row.is_active,
+		lifecycle_state: row.lifecycle_state,
     connection_info: { ...row.connection_info },
     ...(scanConfig ? { scan_config: scanConfig } : {})
   }
@@ -1451,30 +1474,52 @@ const submitForm = async () => {
   }
 }
 
-const deleteEngine = (row) => {
+const deleteEngine = async (row) => {
   if (row.is_builtin) {
     ElMessage.warning(t('system.engine.msg.builtinCannotDelete'))
     return
   }
 
-  ElMessageBox.confirm(
-    t('system.engine.msg.deleteConfirm', { name: row.name }),
-    t('system.engine.msg.deleteTitle'),
-    {
-      confirmButtonText: 'OK',
-      cancelButtonText: 'Cancel',
-      type: 'warning'
-    }
-  ).then(async () => {
-    try {
-      await enginesAPI.delete(row.id)
-      ElMessage.success(t('system.engine.msg.deleteSuccess'))
-      loadEngines()
-    } catch (error) {
-      const errorMsg = error.response?.data?.error || t('system.engine.msg.opFailed')
-      ElMessage.error(errorMsg)
-    }
-  }).catch(() => {})
+	try {
+		await ElMessageBox.confirm(
+			row.lifecycle_state === 'deleting'
+				? t('system.engine.msg.retryDeleteConfirm', { name: row.name })
+				: t('system.engine.msg.deleteConfirm', { name: row.name }),
+		t('system.engine.msg.deleteTitle'),
+		{
+			confirmButtonText: t('system.engine.actions.cleanupAndDelete'),
+			cancelButtonText: t('system.engine.actions.cancel'),
+			type: 'warning'
+		}
+		)
+		await enginesAPI.delete(row.id, 'delete')
+		ElMessage.success(t('system.engine.msg.deleteStarted'))
+		await loadEngines()
+	} catch (error) {
+		if (error === 'cancel' || error === 'close') return
+		const errorMsg = error.response?.data?.error || t('system.engine.msg.opFailed')
+		ElMessage.error(errorMsg)
+	}
+}
+
+const abandonExternalAndDelete = async (row) => {
+	try {
+		await ElMessageBox.confirm(
+			t('system.engine.msg.abandonExternalConfirm', { name: row.name }),
+			t('system.engine.msg.abandonExternalTitle'),
+			{
+				confirmButtonText: t('system.engine.actions.abandonAndDelete'),
+				cancelButtonText: t('system.engine.actions.cancel'),
+				type: 'error'
+			}
+		)
+		await enginesAPI.delete(row.id, 'abandon')
+		ElMessage.success(t('system.engine.msg.deleteStarted'))
+		await loadEngines()
+	} catch (error) {
+		if (error === 'cancel' || error === 'close') return
+		ElMessage.error(error.response?.data?.error || t('system.engine.msg.opFailed'))
+	}
 }
 
 const viewEngineDetails = async (row) => {
@@ -1501,11 +1546,11 @@ const tableRowClassName = ({ row }) => {
 }
 
 const resetForm = () => {
-  form.value = {
+	form.value = {
     engine_type: '',
     name: '',
     description: '',
-    is_active: true,
+		lifecycle_state: 'active',
     connection_info: {}
   }
   editingEngine.value = null
@@ -1539,8 +1584,19 @@ watch(extensionCapabilitiesText, () => {
   resetExtensionRuntimeStatus()
 })
 
+let deletionPollTimer = null
+
 onMounted(() => {
-  loadEngines()
+	loadEngines()
+	deletionPollTimer = window.setInterval(() => {
+		if (engines.value.some(engine => engine.lifecycle_state === 'deleting')) {
+			loadEngines()
+		}
+	}, 3000)
+})
+
+onUnmounted(() => {
+	if (deletionPollTimer) window.clearInterval(deletionPollTimer)
 })
 </script>
 

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
@@ -14,20 +15,23 @@ func TestOperatorDiscoveryReturnsWorkflowCapableOperatorsOnly(t *testing.T) {
 		t.Fatalf("MarshalEngineCapabilities() error = %v", err)
 	}
 	capabilitiesJSON := commonModels.JSONString(capabilities)
-	engine := &commonModels.Engine{
-		ID:           12,
-		Name:         "acme geo workflow",
-		EngineType:   "geopython_workflow",
-		IsActive:     true,
-		Capabilities: &capabilitiesJSON,
+	descriptor := &commonModels.EngineRuntimeDescriptor{
+		ID:             12,
+		Name:           "acme geo workflow",
+		EngineType:     "geopython_workflow",
+		LifecycleState: "active",
+		Capabilities:   &capabilitiesJSON,
+		RuntimeEndpoint: &commonModels.EngineRuntimeEndpoint{
+			Protocol: "http", Host: "workflow", Port: 8099,
+		},
 	}
 
 	service := &OperatorDiscoveryService{
-		getEngineByID: func(id uint) (*commonModels.Engine, error) {
-			if id != engine.ID {
-				t.Fatalf("engine id = %d, want %d", id, engine.ID)
+		getRuntimeDescriptor: func(_ context.Context, _ uint, id uint) (*commonModels.EngineRuntimeDescriptor, error) {
+			if id != descriptor.ID {
+				t.Fatalf("engine id = %d, want %d", id, descriptor.ID)
 			}
-			return engine, nil
+			return descriptor, nil
 		},
 		listWorkflowOperators: func(ctx context.Context, engine *commonModels.Engine) ([]commonModels.OperatorDescriptor, error) {
 			return []commonModels.OperatorDescriptor{
@@ -35,6 +39,7 @@ func TestOperatorDiscoveryReturnsWorkflowCapableOperatorsOnly(t *testing.T) {
 					ID:             "load",
 					Name:           "load",
 					ExecutionModes: []string{"workflow"},
+					Effects:        []string{"read"},
 					Parameters: []commonModels.ParameterDescriptor{
 						{Name: "connection_info", Type: "object"},
 						{Name: "schema", Type: "string"},
@@ -46,6 +51,7 @@ func TestOperatorDiscoveryReturnsWorkflowCapableOperatorsOnly(t *testing.T) {
 					ID:             "tiff_to_cog",
 					Name:           "tiff_to_cog",
 					ExecutionModes: []string{"workflow", "direct"},
+					Effects:        []string{"read"},
 					Parameters: []commonModels.ParameterDescriptor{
 						{Name: "path", Type: "string"},
 					},
@@ -54,12 +60,13 @@ func TestOperatorDiscoveryReturnsWorkflowCapableOperatorsOnly(t *testing.T) {
 					ID:             "direct_only",
 					Name:           "direct_only",
 					ExecutionModes: []string{"direct"},
+					Effects:        []string{"read"},
 				},
 			}, nil
 		},
 	}
 
-	operators, err := service.GetOperatorsByWorkflowEngineID(context.Background(), engine.ID)
+	operators, err := service.GetOperatorsByWorkflowEngineIDForTenant(context.Background(), descriptor.ID, 7)
 	if err != nil {
 		t.Fatalf("GetOperatorsByWorkflowEngineID() error = %v", err)
 	}
@@ -218,7 +225,8 @@ func parameterByName(t *testing.T, parameters []commonModels.ParameterDescriptor
 
 func TestValidateWorkflowOperatorContractsRejectsPublicResourceParamInRuntimeSpec(t *testing.T) {
 	err := validateWorkflowOperatorContracts("geopython_workflow", []commonModels.OperatorDescriptor{{
-		ID: "load",
+		ID:      "load",
+		Effects: []string{"read"},
 		Parameters: []commonModels.ParameterDescriptor{
 			{Name: "locator", Type: "string"},
 		},
@@ -230,7 +238,8 @@ func TestValidateWorkflowOperatorContractsRejectsPublicResourceParamInRuntimeSpe
 
 func TestValidateWorkflowOperatorContractsRequiresAdapterRuntimeParams(t *testing.T) {
 	err := validateWorkflowOperatorContracts("supermap_workflow", []commonModels.OperatorDescriptor{{
-		ID: "datasource.open_postgis",
+		ID:      "datasource.open_postgis",
+		Effects: []string{"read"},
 		Parameters: []commonModels.ParameterDescriptor{
 			{Name: "connection_info", Type: "object"},
 			{Name: "schema", Type: "string"},
@@ -243,7 +252,8 @@ func TestValidateWorkflowOperatorContractsRequiresAdapterRuntimeParams(t *testin
 
 func TestValidateWorkflowOperatorContractsAcceptsSuperMapS3MAccessPlanOnly(t *testing.T) {
 	err := validateWorkflowOperatorContracts("supermap_workflow", []commonModels.OperatorDescriptor{{
-		ID: "osgb_scene_to_s3m",
+		ID:      "osgb_scene_to_s3m",
+		Effects: []string{"read", "write"},
 		Parameters: []commonModels.ParameterDescriptor{
 			{Name: "access_plan", Type: "object"},
 		},
@@ -255,7 +265,8 @@ func TestValidateWorkflowOperatorContractsAcceptsSuperMapS3MAccessPlanOnly(t *te
 
 func TestValidateWorkflowOperatorContractsRejectsDuplicateRuntimeParam(t *testing.T) {
 	err := validateWorkflowOperatorContracts("acme_workflow", []commonModels.OperatorDescriptor{{
-		ID: "duplicate",
+		ID:      "duplicate",
+		Effects: []string{"read"},
 		Parameters: []commonModels.ParameterDescriptor{
 			{Name: "mode", Type: "string"},
 			{Name: "mode", Type: "string"},
@@ -266,9 +277,35 @@ func TestValidateWorkflowOperatorContractsRejectsDuplicateRuntimeParam(t *testin
 	}
 }
 
+func TestValidateWorkflowOperatorContractsRequiresEffects(t *testing.T) {
+	err := validateWorkflowOperatorContracts("acme_workflow", []commonModels.OperatorDescriptor{{
+		ID: "missing_effects",
+	}})
+	if err == nil {
+		t.Fatal("validateWorkflowOperatorContracts() error = nil, want missing effects error")
+	}
+}
+
+func TestValidateWorkflowOperatorContractsRejectsUnsupportedAndDuplicateEffects(t *testing.T) {
+	for name, effects := range map[string][]string{
+		"unsupported": {"network"},
+		"duplicate":   {"read", "read"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := validateWorkflowOperatorContracts("acme_workflow", []commonModels.OperatorDescriptor{{
+				ID:      name,
+				Effects: effects,
+			}})
+			if err == nil {
+				t.Fatalf("validateWorkflowOperatorContracts() error = nil, want effects validation error for %v", effects)
+			}
+		})
+	}
+}
+
 func TestValidateWorkflowAcceptsPublicOperatorParameters(t *testing.T) {
 	service := newWorkflowValidationTestService(t)
-	result, err := service.ValidateWorkflow(context.Background(), 12, map[string]interface{}{
+	result, err := service.ValidateWorkflowForTenant(context.Background(), 12, map[string]interface{}{
 		"tasks": []interface{}{
 			map[string]interface{}{
 				"id":         "buffer_1",
@@ -277,7 +314,7 @@ func TestValidateWorkflowAcceptsPublicOperatorParameters(t *testing.T) {
 				"depends_on": []interface{}{},
 			},
 		},
-	})
+	}, 7)
 	if err != nil {
 		t.Fatalf("ValidateWorkflow() error = %v", err)
 	}
@@ -288,7 +325,7 @@ func TestValidateWorkflowAcceptsPublicOperatorParameters(t *testing.T) {
 
 func TestValidateWorkflowRejectsUnknownOperatorAndPrivateParameter(t *testing.T) {
 	service := newWorkflowValidationTestService(t)
-	result, err := service.ValidateWorkflow(context.Background(), 12, map[string]interface{}{
+	result, err := service.ValidateWorkflowForTenant(context.Background(), 12, map[string]interface{}{
 		"tasks": []interface{}{
 			map[string]interface{}{
 				"id":         "unknown_1",
@@ -303,7 +340,7 @@ func TestValidateWorkflowRejectsUnknownOperatorAndPrivateParameter(t *testing.T)
 				"depends_on": []interface{}{"unknown_1"},
 			},
 		},
-	})
+	}, 7)
 	if err != nil {
 		t.Fatalf("ValidateWorkflow() error = %v", err)
 	}
@@ -347,11 +384,11 @@ func TestDevExecutorRejectsWorkflowBeforeCreatingExecution(t *testing.T) {
 
 func TestOperatorDiscoveryRejectsAnotherTenantEngine(t *testing.T) {
 	service := newWorkflowValidationTestService(t)
-	tenantID := uint(9)
-	service.getEngineByID = func(uint) (*commonModels.Engine, error) {
-		engine, _ := newWorkflowValidationTestService(t).getEngineByID(12)
-		engine.TenantID = &tenantID
-		return engine, nil
+	service.getRuntimeDescriptor = func(_ context.Context, tenantID, _ uint) (*commonModels.EngineRuntimeDescriptor, error) {
+		if tenantID == 3 {
+			return nil, fmt.Errorf("System API returned HTTP 403")
+		}
+		return nil, nil
 	}
 
 	_, err := service.GetOperatorsByWorkflowEngineIDForTenant(context.Background(), 12, 3)
@@ -367,22 +404,26 @@ func newWorkflowValidationTestService(t *testing.T) *OperatorDiscoveryService {
 		t.Fatalf("MarshalEngineCapabilities() error = %v", err)
 	}
 	capabilitiesJSON := commonModels.JSONString(capabilities)
-	engine := &commonModels.Engine{
-		ID:           12,
-		Name:         "acme workflow",
-		EngineType:   "acme_workflow",
-		IsActive:     true,
-		Capabilities: &capabilitiesJSON,
+	descriptor := &commonModels.EngineRuntimeDescriptor{
+		ID:             12,
+		Name:           "acme workflow",
+		EngineType:     "acme_workflow",
+		LifecycleState: "active",
+		Capabilities:   &capabilitiesJSON,
+		RuntimeEndpoint: &commonModels.EngineRuntimeEndpoint{
+			Protocol: "http", Host: "workflow", Port: 8099,
+		},
 	}
 	return &OperatorDiscoveryService{
-		getEngineByID: func(id uint) (*commonModels.Engine, error) {
-			return engine, nil
+		getRuntimeDescriptor: func(_ context.Context, _ uint, _ uint) (*commonModels.EngineRuntimeDescriptor, error) {
+			return descriptor, nil
 		},
 		listWorkflowOperators: func(context.Context, *commonModels.Engine) ([]commonModels.OperatorDescriptor, error) {
 			return []commonModels.OperatorDescriptor{{
 				ID:             "buffer",
 				Name:           "buffer",
 				ExecutionModes: []string{"workflow"},
+				Effects:        []string{"read"},
 				Parameters: []commonModels.ParameterDescriptor{{
 					Name: "distance", Type: "float", Required: true,
 				}},

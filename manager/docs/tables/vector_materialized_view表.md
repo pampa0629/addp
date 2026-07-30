@@ -50,6 +50,7 @@
 | `stale` | 源事实变化或 Manager 自建目标校验失败，结果需要刷新 |
 | `failed` | 最近生成失败，当前结果不可用或不完整 |
 | `deleted` | 结果已清理，仅保留审计或摘要 |
+| `abandoned_external` | Engine 删除时管理员已显式放弃继续清理外部物化视图；仅表示 Manager 不再负责处置，不表示 PG 对象已删除 |
 
 这些状态属于 artifact state，不属于统一 execution status。
 
@@ -77,6 +78,13 @@
 5. Meta 源 facts。
 
 如果物理清理失败，不得把结果伪装为已清理；应保留记录并写入错误摘要。
+
+当失败原因是源 Engine 不可达，且管理员在 Engine 删除工作流中显式选择 `external_artifact_policy=abandon` 时：
+
+1. 不执行 `DROP MATERIALIZED VIEW`，结果记录保留并进入 `abandoned_external`。
+2. `source_engine_id`、`target_schema`、`target_table` 和 `error_message` 必须保留，供 DBA 定位遗留对象。
+3. `metadata` 记录 `abandoned_external_at`、`abandoned_external_by`、`external_artifact_policy` 和最后 cleanup error。
+4. 后续 cleanup scan、Quick View 和任务覆盖判断必须跳过该结果。
 
 ## 六、相关文档
 

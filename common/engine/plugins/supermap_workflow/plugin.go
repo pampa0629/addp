@@ -43,6 +43,10 @@ func (p *SuperMapWorkflowPlugin) SensitiveFields() []string {
 	return []string{}
 }
 
+func (p *SuperMapWorkflowPlugin) ConnectionIdentityFields() []string {
+	return []string{"protocol", "host", "port"}
+}
+
 func (p *SuperMapWorkflowPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewWorkflowCapabilities(p.Type(), plugin.WorkflowRuntimeAPIAddpV1)
 }

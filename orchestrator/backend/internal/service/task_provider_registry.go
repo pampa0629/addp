@@ -15,7 +15,7 @@ import (
 
 // TaskProviderRegistry 任务提供者注册表(从 System 动态加载)
 type TaskProviderRegistry struct {
-	systemClient *commonClient.SystemClient
+	systemClient *commonClient.SystemServiceClient
 	providers    map[string]*commonModels.TaskProvider // key: module_name
 	mu           sync.RWMutex
 	cacheTTL     time.Duration
@@ -23,13 +23,13 @@ type TaskProviderRegistry struct {
 }
 
 // NewTaskProviderRegistry 创建任务提供者注册表
-func NewTaskProviderRegistry(systemURL, internalAPIKey string, cacheTTL time.Duration) *TaskProviderRegistry {
+func NewTaskProviderRegistry(systemClient *commonClient.SystemServiceClient, cacheTTL time.Duration) *TaskProviderRegistry {
 	if cacheTTL == 0 {
 		cacheTTL = 5 * time.Minute // 默认缓存 5 分钟
 	}
 
 	return &TaskProviderRegistry{
-		systemClient: commonClient.NewSystemClientWithInternalKey(systemURL, internalAPIKey),
+		systemClient: systemClient,
 		providers:    make(map[string]*commonModels.TaskProvider),
 		cacheTTL:     cacheTTL,
 	}
@@ -46,7 +46,7 @@ func (r *TaskProviderRegistry) GetProvider(ctx context.Context, moduleName strin
 	r.mu.RUnlock()
 
 	// 缓存未命中或过期,从 System 查询
-	provider, err := r.systemClient.GetTaskProvider(moduleName)
+	provider, err := r.systemClient.GetTaskProvider(ctx, moduleName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get task provider %s: %w", moduleName, err)
 	}
@@ -62,7 +62,7 @@ func (r *TaskProviderRegistry) GetProvider(ctx context.Context, moduleName strin
 // RefreshCache 刷新所有任务提供者缓存
 func (r *TaskProviderRegistry) RefreshCache(ctx context.Context) error {
 	// 从 System 查询所有任务提供者
-	providers, err := r.systemClient.ListTaskProviders()
+	providers, err := r.systemClient.ListTaskProviders(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list task providers: %w", err)
 	}

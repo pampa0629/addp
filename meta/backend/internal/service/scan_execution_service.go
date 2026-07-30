@@ -64,7 +64,7 @@ func (s *ScanExecutionService) lookupStorageType(engineID, tenantID uint) string
 	if s.engineService == nil {
 		return "unknown"
 	}
-	resource, err := s.engineService.GetResourceByID(engineID, tenantID, "")
+	resource, err := s.engineService.GetResourceByID(engineID, tenantID)
 	if err != nil {
 		s.log.Warn("获取资源存储类型失败", "engine_id", engineID, "tenant_id", tenantID, "error", err)
 		return "unknown"

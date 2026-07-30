@@ -195,6 +195,31 @@ func (s *PlatformTenantService) initializeTenantTx(ctx context.Context, tx *Repo
 	if err := tx.CreateTenantRoleAssignment(ctx, assignment); err != nil {
 		return err
 	}
+	serviceBindings, err := tx.ListBuiltinServiceRuntimeBindings(ctx)
+	if err != nil {
+		return err
+	}
+	if len(serviceBindings) != len(builtinServiceClientIDs) {
+		return fmt.Errorf("%w: built-in service runtime bindings are incomplete", commonapi.ErrConflict)
+	}
+	for _, binding := range serviceBindings {
+		serviceMembership := &TenantMembership{
+			TenantID: tenant.ID, PrincipalID: binding.PrincipalID,
+			Status: TenantMembershipStatusActive, SourceType: TenantMembershipSourceBootstrap,
+			JoinedAt: now, CreatedByPrincipalID: &actorID,
+		}
+		if err := tx.CreateTenantMembership(ctx, serviceMembership); err != nil {
+			return err
+		}
+		serviceAssignment := &RoleAssignment{
+			PrincipalID: binding.PrincipalID, RoleID: binding.RoleID,
+			ScopeType: "tenant", TenantID: &tenantID, Status: "active", ValidFrom: now,
+			SourceType: "bootstrap", Reason: "built-in service runtime",
+		}
+		if err := tx.CreateTenantRoleAssignment(ctx, serviceAssignment); err != nil {
+			return err
+		}
+	}
 	if err := tx.MarkTenantInitialized(ctx, tenant.ID, actorID, now); err != nil {
 		return err
 	}
@@ -206,7 +231,7 @@ func (s *PlatformTenantService) initializeTenantTx(ctx context.Context, tx *Repo
 	}
 	writer := NewAuditWriter(tx)
 	if !existing {
-		if err := writer.Write(ctx, AuditEvent{Metadata: audit, EventName: "iam.tenant.created", Result: AuditResultSucceeded, RiskLevel: AuditRiskMedium, ModuleName: "system", EntityType: "tenant", EntityID: strconv.FormatInt(tenant.ID, 10), Details: map[string]any{"tenant_code": tenant.Code, "initial_administrator_principal_id": administratorID}}); err != nil {
+		if err := writer.Write(ctx, AuditEvent{Metadata: audit, EventName: "iam.tenant.created", Result: AuditResultSucceeded, RiskLevel: AuditRiskMedium, ModuleName: "system", EntityType: "tenant", EntityID: strconv.FormatInt(tenant.ID, 10), Details: map[string]any{"tenant_code": tenant.Code, "initial_administrator_principal_id": administratorID, "service_runtime_count": len(serviceBindings)}}); err != nil {
 			return err
 		}
 	}
@@ -217,7 +242,7 @@ func (s *PlatformTenantService) initializeTenantTx(ctx context.Context, tx *Repo
 		return err
 	}
 	if existing {
-		if err := writer.Write(ctx, AuditEvent{Metadata: audit, EventName: "iam.tenant.initialized", Result: AuditResultSucceeded, RiskLevel: AuditRiskHigh, ModuleName: "system", EntityType: "tenant", EntityID: strconv.FormatInt(tenant.ID, 10), Details: map[string]any{"initial_administrator_principal_id": administratorID, "membership_id": membership.ID, "role_assignment_id": assignment.ID}}); err != nil {
+		if err := writer.Write(ctx, AuditEvent{Metadata: audit, EventName: "iam.tenant.initialized", Result: AuditResultSucceeded, RiskLevel: AuditRiskHigh, ModuleName: "system", EntityType: "tenant", EntityID: strconv.FormatInt(tenant.ID, 10), Details: map[string]any{"initial_administrator_principal_id": administratorID, "membership_id": membership.ID, "role_assignment_id": assignment.ID, "service_runtime_count": len(serviceBindings)}}); err != nil {
 			return err
 		}
 	}

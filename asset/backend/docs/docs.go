@@ -40,48 +40,8 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.application.read"
-                ]
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Asset Application"
-                ],
-                "summary": "创建资产申请 | Create asset application",
-                "parameters": [
-                    {
-                        "description": "申请 | Application",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_asset_internal_service.CreateApplicationReq"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "asset.application.create"
                 ]
             }
         },
@@ -119,6 +79,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.application.read"
                 ]
             }
@@ -169,6 +130,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.application.approve"
                 ]
             }
@@ -219,6 +181,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.application.reject"
                 ]
             }
@@ -257,6 +220,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.application.revoke"
                 ]
             }
@@ -286,6 +250,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.entry.read"
                 ]
             }
@@ -329,6 +294,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.entry.update"
                 ]
             }
@@ -372,6 +338,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.entry.offline"
                 ]
             }
@@ -415,6 +382,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.entry.publish"
                 ]
             }
@@ -444,6 +412,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.entry.read"
                 ]
             }
@@ -473,6 +442,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.entry.read"
                 ]
             }
@@ -502,6 +472,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.entry.update"
                 ]
             }
@@ -540,6 +511,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.entry.read"
                 ]
             }
@@ -578,6 +550,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.entry.read"
                 ]
             },
@@ -626,6 +599,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.entry.update"
                 ]
             },
@@ -662,6 +636,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.entry.delete"
                 ]
             }
@@ -700,6 +675,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.entry.offline"
                 ]
             }
@@ -738,6 +714,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.entry.publish"
                 ]
             }
@@ -767,6 +744,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.authorization.read"
                 ]
             }
@@ -805,6 +783,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.authorization.read"
                 ]
             }
@@ -843,6 +822,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.authorization.revoke"
                 ]
             }
@@ -872,6 +852,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.catalog.read"
                 ]
             },
@@ -913,6 +894,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.catalog.create"
                 ]
             }
@@ -942,6 +924,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.catalog.read"
                 ]
             }
@@ -980,6 +963,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.catalog.read"
                 ]
             },
@@ -1028,6 +1012,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.catalog.update"
                 ]
             },
@@ -1064,7 +1049,360 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.catalog.delete"
+                ]
+            }
+        },
+        "/consumer/applications": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Asset Consumer"
+                ],
+                "summary": "获取我的资产申请 | List my asset applications",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.application.read"
+                ]
+            }
+        },
+        "/consumer/assets": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Asset Consumer"
+                ],
+                "summary": "浏览已上架资产 | Browse published assets",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.entry.read"
+                ]
+            }
+        },
+        "/consumer/assets/stats": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Asset Consumer"
+                ],
+                "summary": "获取已上架资产统计 | Get published asset statistics",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.entry.read"
+                ]
+            }
+        },
+        "/consumer/assets/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Asset Consumer"
+                ],
+                "summary": "获取已上架资产详情 | Get published asset detail",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "资产 ID | Asset ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.entry.read"
+                ]
+            }
+        },
+        "/consumer/assets/{id}/application-status": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Asset Consumer"
+                ],
+                "summary": "获取我的资产申请状态 | Get my asset application status",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "资产 ID | Asset ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.application.read",
+                    "asset.authorization.read"
+                ]
+            }
+        },
+        "/consumer/assets/{id}/applications": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Asset Consumer"
+                ],
+                "summary": "申请使用资产 | Apply for asset access",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "资产 ID | Asset ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "申请 | Application",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.consumerApplicationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.application.create"
+                ]
+            }
+        },
+        "/consumer/assets/{id}/ratings": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Asset Consumer"
+                ],
+                "summary": "获取已上架资产评价 | List published asset ratings",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "资产 ID | Asset ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.rating.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Asset Consumer"
+                ],
+                "summary": "提交或更新资产评价 | Submit or update asset rating",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "资产 ID | Asset ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "评价 | Rating",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.consumerRatingRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.rating.create",
+                    "asset.rating.update"
+                ]
+            }
+        },
+        "/consumer/catalogs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Asset Consumer"
+                ],
+                "summary": "浏览已上架资产目录 | Browse published asset catalogs",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_asset_internal_service.CatalogEntry"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.catalog.read"
                 ]
             }
         },
@@ -1093,49 +1431,8 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.rating.read"
-                ]
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Asset Rating"
-                ],
-                "summary": "提交或更新资产评价 | Submit or update asset rating",
-                "parameters": [
-                    {
-                        "description": "评价 | Rating",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.ratingUpsertRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "asset.rating.create",
-                    "asset.rating.update"
                 ]
             }
         },
@@ -1173,6 +1470,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.rating.read"
                 ]
             }
@@ -1223,6 +1521,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.rating.update"
                 ]
             }
@@ -1252,6 +1551,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.entry.read"
                 ]
             }
@@ -1290,6 +1590,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "asset.management.read",
                     "asset.entry.read"
                 ]
             }
@@ -1339,25 +1640,40 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_asset_internal_service.CreateApplicationReq": {
+        "github_com_addp_asset_internal_service.CatalogEntry": {
             "type": "object",
-            "required": [
-                "applicant_id",
-                "asset_id",
-                "reason"
-            ],
             "properties": {
-                "applicant_id": {
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_asset_internal_service.CatalogEntry"
+                    }
+                },
+                "count": {
                     "type": "integer"
                 },
-                "asset_id": {
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
                     "type": "integer"
                 },
-                "duration_day": {
-                    "description": "0 时默认 30 天",
+                "name": {
+                    "type": "string"
+                },
+                "parent_id": {
                     "type": "integer"
                 },
-                "reason": {
+                "sort_order": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
                     "type": "string"
                 }
             }
@@ -1428,25 +1744,26 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.ratingHandledRequest": {
+        "internal_api.consumerApplicationRequest": {
             "type": "object",
+            "required": [
+                "reason"
+            ],
             "properties": {
-                "is_handled": {
-                    "type": "boolean"
+                "duration_day": {
+                    "type": "integer"
+                },
+                "reason": {
+                    "type": "string"
                 }
             }
         },
-        "internal_api.ratingUpsertRequest": {
+        "internal_api.consumerRatingRequest": {
             "type": "object",
             "required": [
-                "asset_id",
-                "score",
-                "user_id"
+                "score"
             ],
             "properties": {
-                "asset_id": {
-                    "type": "integer"
-                },
                 "comment": {
                     "type": "string"
                 },
@@ -1460,9 +1777,14 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
-                },
-                "user_id": {
-                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.ratingHandledRequest": {
+            "type": "object",
+            "properties": {
+                "is_handled": {
+                    "type": "boolean"
                 }
             }
         }

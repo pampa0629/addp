@@ -18,6 +18,13 @@ assert.match(source, /useDAGHistory\(\{/)
 assert.match(source, /useDAGClipboard\(graph/)
 assert.match(source, /useDAGLayout\(graph\)/)
 assert.match(source, /emit\('update:layout', captureLayout\(\)\)/)
+const viewportHandlers = source.slice(
+  source.indexOf('function handleZoomIn()'),
+  source.indexOf('function handleAutoLayout()')
+)
+const autoLayoutHandler = source.match(/function handleAutoLayout\(\) \{[\s\S]*?\n\}/)?.[0] || ''
+assert.doesNotMatch(viewportHandlers, /emitLayout\(\)/)
+assert.match(autoLayoutHandler, /emitLayout\(\)/)
 assert.doesNotMatch(source, /useDAGEdgeMode|isAddEdgeMode|toggleAddEdgeMode/)
 assert.doesNotMatch(nodeSource, /workflow-node-operator/)
 assert.doesNotMatch(nodeSource, /showOperatorName/)

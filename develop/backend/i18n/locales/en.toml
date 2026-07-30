@@ -25,6 +25,69 @@ other = "Failed to list workflow engines"
 [develop.engine.spark_list_failed]
 other = "Failed to list Spark general engine resources"
 
+[develop.auth.authentication_required]
+other = "Your session is no longer valid. Please sign in again."
+
+[develop.query.effect_unclassifiable]
+other = "The SQL effect cannot be classified reliably. Use one supported statement."
+
+[develop.query.controlled_engine_unsupported]
+other = "Controlled SQL execution currently supports PostgreSQL and MySQL only."
+
+[develop.query.controlled_duckdb_unavailable]
+other = "DuckDB federated queries are being migrated to controlled execution authorization and are currently unavailable."
+
+[develop.query.effect_permission_denied]
+other = "Your account is not allowed to perform this type of data operation."
+
+[develop.query.authorization_conflict]
+other = "The execution authorization changed concurrently. Please retry."
+
+[develop.query.authorization_unavailable]
+other = "The execution authorization service is temporarily unavailable. Please retry later."
+
+[develop.query.execution_failed]
+other = "SQL execution failed"
+
+[develop.query.connection_test_success]
+other = "Connection test succeeded"
+
+[develop.query.connection_test_failed]
+other = "Could not connect to the data source. Check the engine status and connection settings."
+
+[develop.notebook.execution_permission_denied]
+other = "Your account is not allowed to execute notebooks."
+
+[develop.notebook.engine_list_failed]
+other = "Failed to list Notebook engines"
+
+[develop.notebook.engine_required]
+other = "Select a Notebook engine"
+
+[develop.notebook.engine_unavailable]
+other = "The selected Notebook engine is unavailable or does not support Notebook mode"
+
+[develop.notebook.kernel_list_failed]
+other = "Failed to list kernels"
+
+[develop.notebook.kernel_required]
+other = "Select a kernel"
+
+[develop.notebook.kernel_unavailable]
+other = "The selected kernel is unavailable on this Notebook engine"
+
+[develop.notebook.invalid_parameters]
+other = "parameters must be a valid JSON object"
+
+[develop.notebook.file_required]
+other = "Select an .ipynb file"
+
+[develop.notebook.store_failed]
+other = "Failed to store the Notebook file"
+
+[develop.notebook.create_failed]
+other = "Failed to create the Notebook task"
+
 [develop.approval.invalid_request]
 other = "Invalid approval request"
 

@@ -52,7 +52,7 @@ func (e *ManagerCADPreviewExecutor) BuildCADPreview(ctx context.Context, req CAD
 	if err != nil {
 		return nil, fmt.Errorf("get CAD source engine: %w", err)
 	}
-	if sourceEngine == nil || !sourceEngine.IsActive {
+	if !sourceEngine.IsUsable() {
 		return nil, errors.New("CAD source engine is not active")
 	}
 	if sourceEngine.TenantID != nil && *sourceEngine.TenantID != req.Task.TenantID {

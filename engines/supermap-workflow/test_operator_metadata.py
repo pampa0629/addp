@@ -16,6 +16,7 @@ SOURCE = "\n".join(SOURCES.values())
 REGISTRY_SOURCE = SOURCES["SuperMapOperatorRegistry.java"]
 S3M_SOURCE = SOURCES["SuperMapS3MConversionService.java"]
 CAD_SOURCE = SOURCES["SuperMapCadService.java"]
+EXECUTION_SOURCE = SOURCES["SuperMapWorkflowExecutionService.java"]
 
 
 def _open_postgis_operator_block() -> str:
@@ -197,6 +198,13 @@ def test_osgb_scene_to_s3m_exposes_access_plan_and_both_execution_modes():
     assert 'publishDirectory(targetRoot, targetAccess)' in S3M_SOURCE
     assert "if (objectStoreTarget)" in S3M_SOURCE
     assert "deleteRecursively(targetRoot);" in S3M_SOURCE
+
+
+def test_workflow_execution_requires_authorization_covering_operator_effects():
+    assert 'request.path("runtime").path("execution_authorization")' in EXECUTION_SOURCE
+    assert 'authorization.path("id").asLong() <= 0' in EXECUTION_SOURCE
+    assert 'descriptor.path("effects")' in EXECUTION_SOURCE
+    assert "authorizedEffects.containsAll(requiredEffects)" in EXECUTION_SOURCE
 
 
 def test_osgb_scene_to_s3m_stages_tiles_and_validates_the_published_dataset():

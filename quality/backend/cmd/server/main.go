@@ -66,7 +66,11 @@ func main() {
 
 	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemURL, cfg.InternalAPIKey)
 	standardClient := commonClient.NewStandardClientWithInternalKey(cfg.StandardURL, cfg.InternalAPIKey)
-	metaClient := commonClient.NewMetaClientWithInternalKey(cfg.MetaURL, cfg.InternalAPIKey)
+	serviceTokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemURL, "addp-quality", cfg.ServiceClientSecret, nil)
+	if err != nil {
+		log.Fatalf("Service Token Source 初始化失败: %v", err)
+	}
+	metaClient := commonClient.NewMetaClient(cfg.MetaURL, serviceTokenSource)
 
 	// Repositories
 	ruleAppRepo := repository.NewRuleApplicationRepository(db)

@@ -54,6 +54,7 @@ type ManagerCleanupStats struct {
 	DeletedPhysicalArtifacts int      `json:"deleted_physical_artifacts,omitempty"`
 	MarkedMissingSource      int      `json:"marked_missing_source,omitempty"`
 	SkippedExternalTargets   int      `json:"skipped_external_targets,omitempty"`
+	AbandonedExternal        int      `json:"abandoned_external,omitempty"`
 	DisabledTaskDefinitions  int      `json:"disabled_task_definitions,omitempty"`
 	Errors                   []string `json:"errors,omitempty"`
 }
@@ -339,7 +340,9 @@ func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis
 		result.Statistics = managerCleanupStatsToMap(stats)
 		result.Summary = managerScanSummary(stats)
 	case events.CleanupActionExecute:
-		stats, err := s.ExecuteCleanup(ctx, event.TenantID, event.CleanupMode, event.Context)
+		executeContext := cloneCleanupContext(event.Context)
+		executeContext["requested_by"] = event.RequestedBy
+		stats, err := s.ExecuteCleanup(ctx, event.TenantID, event.CleanupMode, executeContext)
 		if err != nil {
 			result.Status = events.CleanupResultFailed
 			result.Errors = []string{err.Error()}
@@ -484,6 +487,16 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 				continue
 			}
 			if cleanupMode == events.CleanupModePhysical {
+				if externalArtifactPolicy(cleanupContext) == commonModels.ExternalArtifactPolicyAbandon {
+					if err := s.abandonVectorMaterializedView(ctx, item, cleanupContext); err != nil {
+						stats.Errors = append(stats.Errors, fmt.Sprintf("abandon vector_materialized_view_generation %d: %v", item.ID, err))
+						continue
+					}
+					stats.AbandonedExternal++
+					stats.VectorMaterializedViews++
+					stats.MarkedMissingSource++
+					continue
+				}
 				if err := s.optimizationSvc.DeleteResult(ctx, item.ID, tenantID); err != nil {
 					stats.Errors = append(stats.Errors, fmt.Sprintf("delete vector_materialized_view_generation %d: %v", item.ID, err))
 					continue
@@ -599,7 +612,7 @@ func (s *CleanupService) filterMissingPreviewStates(ctx context.Context, tenantI
 		if !s.matchesCleanupContext(item.Locator, item.ItemFingerprint, 0, cleanupContext) {
 			continue
 		}
-		if s.sourceExists(ctx, tenantID, item.Locator, 0) {
+		if s.sourceExistsForCleanup(ctx, tenantID, item.Locator, 0, cleanupContext) {
 			continue
 		}
 		out = append(out, item)
@@ -617,7 +630,7 @@ func (s *CleanupService) filterMissingTileCaches(ctx context.Context, tenantID u
 		if !s.matchesCleanupContext(item.Locator, item.ItemFingerprint, itemID, cleanupContext) {
 			continue
 		}
-		if s.sourceExists(ctx, tenantID, item.Locator, itemID) {
+		if s.sourceExistsForCleanup(ctx, tenantID, item.Locator, itemID, cleanupContext) {
 			continue
 		}
 		out = append(out, item)
@@ -634,7 +647,7 @@ func (s *CleanupService) filterMissingEmbeddings(ctx context.Context, tenantID u
 		if !s.matchesCleanupContext(item.Locator, item.ItemFingerprint, item.ItemID, cleanupContext) {
 			continue
 		}
-		if s.sourceExists(ctx, tenantID, item.Locator, item.ItemID) {
+		if s.sourceExistsForCleanup(ctx, tenantID, item.Locator, item.ItemID, cleanupContext) {
 			continue
 		}
 		out = append(out, item)
@@ -648,11 +661,14 @@ func (s *CleanupService) filterMissingVectorMaterializedViews(ctx context.Contex
 		if item == nil {
 			continue
 		}
+		if item.Status == models.VectorMaterializedViewStatusAbandonedExternal {
+			continue
+		}
 		itemID := uintPtrValue(item.ItemID)
 		if !s.matchesCleanupContext(item.Locator, item.ItemFingerprint, itemID, cleanupContext) {
 			continue
 		}
-		if s.sourceExists(ctx, tenantID, item.Locator, itemID) {
+		if uintFromCleanupContext(cleanupContext, "engine_id") != item.SourceEngineID && s.sourceExistsForCleanup(ctx, tenantID, item.Locator, itemID, cleanupContext) {
 			continue
 		}
 		out = append(out, item)
@@ -788,6 +804,56 @@ func (s *CleanupService) sourceExists(ctx context.Context, tenantID uint, locato
 	return false
 }
 
+func (s *CleanupService) sourceExistsForCleanup(
+	ctx context.Context,
+	tenantID uint,
+	locator string,
+	itemID uint,
+	cleanupContext map[string]interface{},
+) bool {
+	engineID := uintFromCleanupContext(cleanupContext, "engine_id")
+	if engineID > 0 {
+		if loc, err := resourcetree.ParseURI(strings.TrimSpace(locator)); err == nil && loc.EngineID == engineID {
+			return false
+		}
+	}
+	return s.sourceExists(ctx, tenantID, locator, itemID)
+}
+
+func cloneCleanupContext(source map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{}, len(source)+1)
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
+}
+
+func externalArtifactPolicy(cleanupContext map[string]interface{}) string {
+	return strings.TrimSpace(stringFromCleanupContext(cleanupContext, "external_artifact_policy"))
+}
+
+func (s *CleanupService) abandonVectorMaterializedView(ctx context.Context, item *models.VectorMaterializedView, cleanupContext map[string]interface{}) error {
+	if item == nil || s.optimizationSvc == nil || s.optimizationSvc.repo == nil {
+		return errors.New("vector materialized view result is required")
+	}
+	metadata := item.Metadata.Clone()
+	if metadata == nil {
+		metadata = commonModels.JSONMap{}
+	}
+	now := time.Now().Format(time.RFC3339Nano)
+	metadata["abandoned_external_at"] = now
+	metadata["abandoned_external_by"] = uintFromCleanupContext(cleanupContext, "requested_by")
+	metadata["external_artifact_policy"] = commonModels.ExternalArtifactPolicyAbandon
+	if strings.TrimSpace(item.ErrorMessage) != "" {
+		metadata["last_cleanup_error"] = item.ErrorMessage
+	}
+	message := strings.TrimSpace(item.ErrorMessage)
+	if message == "" {
+		message = "external artifact explicitly abandoned during engine deletion"
+	}
+	return s.optimizationSvc.repo.MarkResultAbandonedExternal(ctx, item.ID, item.TenantID, message, metadata)
+}
+
 func (s *CleanupService) createExecutorExecution(ctx context.Context, event events.CleanupRequestEvent) (*commonExecution.TaskExecution, time.Time, error) {
 	if s.taskExecRepo == nil || event.ParentExecutionID == "" {
 		return nil, time.Time{}, nil
@@ -833,10 +899,7 @@ func (s *CleanupService) finishExecutorExecution(ctx context.Context, executionI
 		return
 	}
 	now := time.Now()
-	status := commonExecution.ExecutionStatusSuccess
-	if result.Status == events.CleanupResultFailed {
-		status = commonExecution.ExecutionStatusFailed
-	}
+	status := commonExecution.StatusFromCleanupResult(result.Status)
 	var errDetails commonModels.JSONMap
 	if len(result.Errors) > 0 {
 		errDetails = commonModels.JSONMap{"errors": result.Errors}

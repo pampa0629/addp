@@ -136,6 +136,7 @@ type MetaItemLite struct {
 type TablePreview struct {
 	Mode                string                   `json:"mode"`
 	Columns             []string                 `json:"columns"`
+	Fields              []datatype.FieldInfo     `json:"-"`                         // Manager 内部使用的标准字段事实；不得从展示类型反推
 	ColumnMetadata      []ColumnMetadata         `json:"column_metadata,omitempty"` // 列元数据（类型、是否可空、主键等）
 	Rows                []map[string]interface{} `json:"rows"`
 	Total               int                      `json:"total"`

@@ -154,6 +154,7 @@ def list_operators():
             "category_path": meta.get('category_path') or [meta['category']],
             "description": meta['description'],
             "execution_modes": meta['execution_modes'],
+            "effects": meta['effects'],
             "parameters": parameters,
             "inputs": ["geodataframe"],
             "output_ports": output_ports

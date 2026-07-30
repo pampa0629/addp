@@ -25,10 +25,12 @@ func newAssetDiscoverableHandler(db *gorm.DB) *assetDiscoverableHandler {
 // @Produce json
 // @Success 200 {array} commonClient.DiscoverableAsset
 // @Failure 500 {object} map[string]string
-// @x-addp-auth-mode "internal"
-// @Router /internal/assets/discoverable [get]
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.read"]
+// @Router /assets/discoverable [get]
+// @Security BearerAuth
 func (h *assetDiscoverableHandler) listDiscoverableAssets(c *gin.Context) {
-	tenantID := getInternalTenantID(c)
+	tenantID := getTenantID(c)
 
 	var metrics []standardModels.Metric
 	if err := h.db.Where("tenant_id = ? AND status = 'approved'", tenantID).

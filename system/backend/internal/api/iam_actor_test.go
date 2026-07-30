@@ -8,12 +8,33 @@ import (
 	"time"
 
 	commonauth "github.com/addp/common/authorization"
+	sharedauth "github.com/addp/common/middleware/auth"
 	"github.com/addp/system/internal/middleware"
 	"github.com/gin-gonic/gin"
 )
 
 type iamActorResolver struct {
 	authContext *commonauth.AuthContext
+}
+
+func TestIAMServiceOwnsModuleUsesServiceClientIdentityInEitherContext(t *testing.T) {
+	t.Parallel()
+
+	for _, contextType := range []string{"platform", "tenant"} {
+		t.Run(contextType, func(t *testing.T) {
+			ginContext, _ := gin.CreateTestContext(httptest.NewRecorder())
+			authContext := testIAMServiceActorContext(contextType, "addp-meta")
+			if err := sharedauth.SetAuthContextForGin(ginContext, authContext); err != nil {
+				t.Fatal(err)
+			}
+			if err := iamServiceOwnsModule(ginContext, "meta"); err != nil {
+				t.Fatalf("iamServiceOwnsModule(meta) error = %v", err)
+			}
+			if err := iamServiceOwnsModule(ginContext, "manager"); err == nil {
+				t.Fatal("iamServiceOwnsModule(manager) accepted addp-meta")
+			}
+		})
+	}
 }
 
 func (resolver iamActorResolver) ResolveAuthContext(context.Context, string) (*commonauth.AuthContext, error) {
@@ -105,4 +126,18 @@ func testIAMActorContext(contextType string) commonauth.AuthContext {
 			ExpiresAt: now.Add(15 * time.Minute),
 		},
 	}
+}
+
+func testIAMServiceActorContext(contextType, clientID string) commonauth.AuthContext {
+	authContext := testIAMActorContext(contextType)
+	authContext.Principal = commonauth.AuthPrincipal{Type: "service_principal", ID: "41"}
+	authContext.Authentication = commonauth.AuthenticationFacts{
+		Methods: []string{"service_secret"}, AssuranceLevel: "not_applicable",
+		AuthenticatedAt: authContext.Authentication.AuthenticatedAt,
+	}
+	authContext.Client.ClientID = &clientID
+	authContext.Client.ScopeMode = "restricted"
+	authContext.Client.Scopes = []string{"addp.api"}
+	authContext.Token.Type = middleware.IAMTokenTypeServiceAccess
+	return authContext
 }

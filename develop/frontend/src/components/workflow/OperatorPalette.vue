@@ -75,7 +75,7 @@
 
       <!-- 空状态 -->
       <el-empty
-        v-if="!loading && filteredCategories.length === 0"
+        v-if="!loading && !loadError && filteredCategories.length === 0"
         :description="t('develop.operatorPalette.notFound')"
         :image-size="80"
       />

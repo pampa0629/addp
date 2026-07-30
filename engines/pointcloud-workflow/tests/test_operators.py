@@ -43,6 +43,7 @@ def test_operator_metadata_contract_and_modes():
     ]
     assert_operator_metadata_contract(ops, expected_engine_type="pointcloud_workflow")
     assert all(operator["execution_modes"] == ["workflow", "direct"] for operator in ops)
+    assert all(operator["effects"] == ["read", "write"] for operator in ops)
 
 
 def test_converter_status_defaults_to_engine_bound_binary():

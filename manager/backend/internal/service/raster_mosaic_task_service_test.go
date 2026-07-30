@@ -590,18 +590,10 @@ type fakeRasterMosaicMetaScanSubmitter struct {
 	err      error
 }
 
-func (f *fakeRasterMosaicMetaScanSubmitter) CreateManualScanRun(opts commonClient.MetaScanOptions) (*commonExecution.TaskExecution, error) {
+func (f *fakeRasterMosaicMetaScanSubmitter) CreateManualScanRunForTenant(tenantID uint, opts commonClient.MetaScanOptions) (*commonExecution.TaskExecution, error) {
+	f.tenantID = &tenantID
 	f.opts = opts
 	return f.run, f.err
-}
-
-func (f *fakeRasterMosaicMetaScanSubmitter) SetTenantID(tenantID *uint) {
-	if tenantID == nil {
-		f.tenantID = nil
-		return
-	}
-	value := *tenantID
-	f.tenantID = &value
 }
 
 func newRasterMosaicTaskServiceTestDB(t *testing.T) *gorm.DB {

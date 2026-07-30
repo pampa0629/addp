@@ -12,6 +12,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
+import httpx
 
 from addp_common import oauth
 
@@ -23,6 +24,8 @@ class FakeResponse:
         return {
             "access_token": "addp_at_new",
             "refresh_token": "addp_rt_new",
+            "token_type": "Bearer",
+            "expires_in": 900,
             "scope": "addp.api",
         }
 
@@ -108,7 +111,11 @@ async def test_device_login_requests_fixed_addp_api_audience(monkeypatch):
         "client_id": "addp-cli",
         "device_code": "addp_dc_device",
     }
-    assert result == oauth.LoginResult(client_id="addp-cli", scope="addp.api")
+    assert result == oauth.LoginResult(
+        client_id="addp-cli",
+        scope="addp.api",
+        access_token="addp_at_new",
+    )
     assert device["user_code"] == "ABCD-EFGH"
     assert stored == [("http://localhost:8000", "addp_rt_new")]
 
@@ -186,7 +193,11 @@ async def test_browser_login_uses_available_dynamic_loopback_port(monkeypatch):
     assert parsed_redirect.path == "/callback"
     assert opened_query == {"request_id": ["authorization-request-1"]}
     assert token_redirect_uri == opened_redirect_uri
-    assert result == oauth.LoginResult(client_id="addp-cli", scope="addp.api")
+    assert result == oauth.LoginResult(
+        client_id="addp-cli",
+        scope="addp.api",
+        access_token="addp_at_new",
+    )
     assert stored == [("http://localhost:8000", "addp_rt_new")]
 
 
@@ -309,6 +320,251 @@ async def test_refresh_access_token_rotates_keyring_value(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_refresh_access_token_deletes_keyring_value_only_for_invalid_grant(monkeypatch):
+    deleted = []
+
+    class InvalidGrantResponse:
+        status_code = 400
+
+        def json(self):
+            return {"error": "invalid_grant"}
+
+    class InvalidGrantAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, _url, data):
+            return InvalidGrantResponse()
+
+    monkeypatch.setattr(oauth, "_refresh_token", lambda _base_url: "addp_rt_old")
+    monkeypatch.setattr(oauth, "delete_refresh_token", lambda base_url: deleted.append(base_url))
+    monkeypatch.setattr(oauth.httpx, "AsyncClient", InvalidGrantAsyncClient)
+
+    with pytest.raises(oauth.OAuthLoginError, match="invalid_grant"):
+        await oauth.refresh_access_token("http://localhost:8000")
+
+    assert deleted == ["http://localhost:8000"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [429, 503])
+async def test_refresh_access_token_preserves_keyring_value_for_temporary_failure(monkeypatch, status_code):
+    deleted = []
+
+    class TemporaryFailureResponse:
+        def __init__(self):
+            self.status_code = status_code
+
+        def json(self):
+            return {"error": "temporarily_unavailable"}
+
+    class TemporaryFailureAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, _url, data):
+            return TemporaryFailureResponse()
+
+    monkeypatch.setattr(oauth, "_refresh_token", lambda _base_url: "addp_rt_old")
+    monkeypatch.setattr(oauth, "delete_refresh_token", lambda base_url: deleted.append(base_url))
+    monkeypatch.setattr(oauth.httpx, "AsyncClient", TemporaryFailureAsyncClient)
+
+    with pytest.raises(oauth.OAuthLoginError, match="temporarily_unavailable"):
+        await oauth.refresh_access_token("http://localhost:8000")
+
+    assert deleted == []
+
+
+@pytest.mark.asyncio
+async def test_refresh_access_token_preserves_keyring_value_for_non_json_failure(monkeypatch):
+    deleted = []
+
+    class NonJSONFailureResponse:
+        status_code = 502
+
+        def json(self):
+            raise ValueError("not JSON")
+
+    class NonJSONFailureAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, _url, data):
+            return NonJSONFailureResponse()
+
+    monkeypatch.setattr(oauth, "_refresh_token", lambda _base_url: "addp_rt_old")
+    monkeypatch.setattr(oauth, "delete_refresh_token", lambda base_url: deleted.append(base_url))
+    monkeypatch.setattr(oauth.httpx, "AsyncClient", NonJSONFailureAsyncClient)
+
+    with pytest.raises(oauth.OAuthLoginError, match="oauth_request_failed"):
+        await oauth.refresh_access_token("http://localhost:8000")
+
+    assert deleted == []
+
+
+@pytest.mark.asyncio
+async def test_refresh_access_token_maps_network_failure(monkeypatch):
+    class NetworkFailureAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, data):
+            raise httpx.ConnectError("connection refused", request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(oauth, "_refresh_token", lambda _base_url: "addp_rt_old")
+    monkeypatch.setattr(oauth.httpx, "AsyncClient", NetworkFailureAsyncClient)
+
+    with pytest.raises(oauth.OAuthLoginError, match="oauth_service_unavailable"):
+        await oauth.refresh_access_token("http://localhost:8000")
+
+
+@pytest.mark.asyncio
+async def test_refresh_access_token_maps_invalid_success_response(monkeypatch):
+    class InvalidSuccessResponse:
+        status_code = 200
+
+        def json(self):
+            raise ValueError("not JSON")
+
+    class InvalidSuccessAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, _url, data):
+            return InvalidSuccessResponse()
+
+    monkeypatch.setattr(oauth, "_refresh_token", lambda _base_url: "addp_rt_old")
+    monkeypatch.setattr(oauth.httpx, "AsyncClient", InvalidSuccessAsyncClient)
+
+    with pytest.raises(oauth.OAuthLoginError, match="invalid_oauth_response"):
+        await oauth.refresh_access_token("http://localhost:8000")
+
+
+def test_base_url_normalization_is_shared_by_keyring_and_refresh_lock(monkeypatch):
+    accounts = []
+    monkeypatch.setattr(oauth.keyring, "set_password", lambda service, account, token: accounts.append(account))
+
+    oauth._store_refresh_token("HTTP://LOCALHOST:80/", "addp_rt_value")
+
+    assert accounts == ["http://localhost"]
+    assert oauth._refresh_lock_path("HTTP://LOCALHOST:80/") == oauth._refresh_lock_path("http://localhost")
+
+
+@pytest.mark.parametrize("base_url", [
+    "localhost:8000",
+    "ftp://localhost",
+    "http://user:password@localhost",
+    "http://localhost?tenant=one",
+    "http://localhost#fragment",
+])
+def test_base_url_normalization_rejects_ambiguous_or_unsafe_values(base_url):
+    with pytest.raises(oauth.OAuthLoginError, match="invalid_base_url"):
+        oauth._normalize_base_url(base_url)
+
+
+@pytest.mark.asyncio
+async def test_browser_login_rejects_unsafe_console_url_before_opening_listener(monkeypatch):
+    monkeypatch.setattr(oauth.webbrowser, "open", lambda _url: pytest.fail("browser must not open"))
+
+    with pytest.raises(oauth.OAuthLoginError, match="invalid_base_url"):
+        await oauth.browser_login("http://localhost:8000", "javascript:alert(1)")
+
+
+@pytest.mark.asyncio
+async def test_logout_deletes_keyring_value_only_after_server_accepts_revocation(monkeypatch):
+    deleted = []
+
+    class RevocationResponse:
+        status_code = 200
+
+    class RevocationClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, data):
+            assert url.endswith("/api/v1/system/oauth/revoke")
+            assert data == {"client_id": "addp-cli", "token": "addp_rt_current"}
+            return RevocationResponse()
+
+    monkeypatch.setattr(oauth, "_refresh_token", lambda _base_url: "addp_rt_current")
+    monkeypatch.setattr(oauth, "delete_refresh_token", lambda base_url: deleted.append(base_url))
+    monkeypatch.setattr(oauth.httpx, "AsyncClient", RevocationClient)
+
+    await oauth.logout("http://localhost:8000/")
+
+    assert deleted == ["http://localhost:8000"]
+
+
+@pytest.mark.asyncio
+async def test_logout_preserves_keyring_value_when_revocation_fails(monkeypatch):
+    deleted = []
+
+    class RevocationFailureResponse:
+        status_code = 503
+
+        def json(self):
+            return {"error": "temporarily_unavailable"}
+
+    class RevocationFailureClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, _url, data):
+            return RevocationFailureResponse()
+
+    monkeypatch.setattr(oauth, "_refresh_token", lambda _base_url: "addp_rt_current")
+    monkeypatch.setattr(oauth, "delete_refresh_token", lambda base_url: deleted.append(base_url))
+    monkeypatch.setattr(oauth.httpx, "AsyncClient", RevocationFailureClient)
+
+    with pytest.raises(oauth.OAuthLoginError, match="temporarily_unavailable"):
+        await oauth.logout("http://localhost:8000")
+
+    assert deleted == []
+
+
+@pytest.mark.asyncio
 async def test_refresh_access_token_serializes_rotation_per_base_url(monkeypatch):
     current_token = "addp_rt_old"
     submitted_tokens = []
@@ -333,6 +589,8 @@ async def test_refresh_access_token_serializes_rotation_per_base_url(monkeypatch
             return {
                 "access_token": f"addp_at_{suffix}",
                 "refresh_token": f"addp_rt_{suffix}",
+                "token_type": "Bearer",
+                "expires_in": 900,
                 "scope": "addp.api",
             }
 
@@ -382,10 +640,20 @@ def test_refresh_access_token_serializes_rotation_across_processes(tmp_path):
             if submitted_token == "addp_rt_old":
                 time.sleep(0.2)
                 status_code = 200
-                payload = {"access_token": "addp_at_one", "refresh_token": "addp_rt_one"}
+                payload = {
+                    "access_token": "addp_at_one",
+                    "refresh_token": "addp_rt_one",
+                    "token_type": "Bearer",
+                    "expires_in": 900,
+                }
             elif submitted_token == "addp_rt_one":
                 status_code = 200
-                payload = {"access_token": "addp_at_two", "refresh_token": "addp_rt_two"}
+                payload = {
+                    "access_token": "addp_at_two",
+                    "refresh_token": "addp_rt_two",
+                    "token_type": "Bearer",
+                    "expires_in": 900,
+                }
             else:
                 status_code = 400
                 payload = {"error": "invalid_grant"}

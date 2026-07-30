@@ -26,7 +26,9 @@ func SetupRouter(
 	taskProviderRegistry *service.TaskProviderRegistry,
 	systemURL string,
 	redisClient *redis.Client,
-	systemClient *commonClient.SystemClient, // 用于审计日志
+	systemClient *commonClient.SystemServiceClient,
+	taskAuthorizationClient *commonClient.SystemExecutionAuthorizationClient,
+	serviceTokens commonClient.ServiceTokenProvider,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -50,7 +52,11 @@ func SetupRouter(
 	// 创建 HTTP 客户端
 	httpClient := &http.Client{Timeout: 30 * time.Second}
 
-	handler := NewOrchestrationHandler(orchRepo, executionService, executor, taskProviderRegistry, httpClient)
+	handler := NewOrchestrationHandler(
+		orchRepo, executionService, executor, taskProviderRegistry, httpClient,
+		taskAuthorizationClient,
+		serviceTokens,
+	)
 
 	api := router.Group("/api/v1/orchestrator")
 
@@ -66,15 +72,21 @@ func SetupRouter(
 	}
 	// 审计日志中间件（记录到 System 模块）
 	if systemClient != nil {
-		api.Use(audit.AuditMiddleware("orchestrator", systemClient))
+		api.Use(audit.ServiceAuditMiddleware("orchestrator", systemClient))
 	}
 
 	{
 		// 编排管理
-		api.POST("/orchestrations", permission(orchestratorauthorization.PermissionOrchestratorWorkflowCreate), handler.Create)
+		api.POST("/orchestrations", permission(
+			orchestratorauthorization.PermissionOrchestratorWorkflowCreate,
+			orchestratorauthorization.PermissionOrchestratorWorkflowExecute,
+		), handler.Create)
 		api.GET("/orchestrations", permission(orchestratorauthorization.PermissionOrchestratorWorkflowRead), handler.List)
 		api.GET("/orchestrations/:id", permission(orchestratorauthorization.PermissionOrchestratorWorkflowRead), handler.Get)
-		api.PUT("/orchestrations/:id", permission(orchestratorauthorization.PermissionOrchestratorWorkflowUpdate), handler.Update)
+		api.PUT("/orchestrations/:id", permission(
+			orchestratorauthorization.PermissionOrchestratorWorkflowUpdate,
+			orchestratorauthorization.PermissionOrchestratorWorkflowExecute,
+		), handler.Update)
 		api.DELETE("/orchestrations/:id", permission(orchestratorauthorization.PermissionOrchestratorWorkflowDelete), handler.Delete)
 
 		// 执行管理

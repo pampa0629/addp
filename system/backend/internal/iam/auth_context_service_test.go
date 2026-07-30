@@ -1,9 +1,53 @@
 package iam
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
+
+func TestValidateSessionCredentialSnapshotPlatformAssuranceByPrincipalType(t *testing.T) {
+	now := time.Date(2026, time.July, 28, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name          string
+		principalType PrincipalType
+		assurance     AssuranceLevel
+		wantValid     bool
+	}{
+		{name: "user aal2", principalType: PrincipalTypeUser, assurance: AssuranceLevelAAL2, wantValid: true},
+		{name: "user aal3", principalType: PrincipalTypeUser, assurance: AssuranceLevelAAL3, wantValid: true},
+		{name: "user not applicable", principalType: PrincipalTypeUser, assurance: AssuranceLevelNotApplicable},
+		{name: "service principal not applicable", principalType: PrincipalTypeServicePrincipal, assurance: AssuranceLevelNotApplicable, wantValid: true},
+		{name: "service principal aal2", principalType: PrincipalTypeServicePrincipal, assurance: AssuranceLevelAAL2},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			snapshot := &SessionCredentialAuthSnapshot{
+				CredentialExpiresAt:           now.Add(time.Minute),
+				CredentialCreatedAt:           now.Add(-time.Minute),
+				FamilyContextType:             ContextTypePlatform,
+				FamilyAuthorizationVersion:    3,
+				FamilyAssuranceLevel:          test.assurance,
+				FamilyAuthenticatedAt:         now.Add(-time.Minute),
+				FamilyExpiresAt:               now.Add(time.Minute),
+				PrincipalType:                 test.principalType,
+				PrincipalStatus:               PrincipalStatusActive,
+				PrincipalAuthorizationVersion: 3,
+				DatabaseTime:                  now,
+			}
+
+			err := validateSessionCredentialSnapshot(snapshot)
+			if test.wantValid && err != nil {
+				t.Fatalf("validate platform snapshot: %v", err)
+			}
+			var validationError *CredentialValidationError
+			if !test.wantValid && (!errors.As(err, &validationError) || validationError.Reason != CredentialInvalidContext) {
+				t.Fatalf("validate platform snapshot error = %v, want %s", err, CredentialInvalidContext)
+			}
+		})
+	}
+}
 
 func TestBuildRoleAssignmentsUsesAuthContextCanonicalOrder(t *testing.T) {
 	validFrom := time.Date(2026, time.July, 27, 12, 0, 0, 0, time.UTC)

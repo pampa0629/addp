@@ -23,6 +23,12 @@ import (
 	"github.com/addp/transfer/internal/planner"
 )
 
+func newExecutionTestMetaClient(baseURL string) *commonClient.MetaClient {
+	return commonClient.NewMetaClient(baseURL, commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+		return "test-token", nil
+	}))
+}
+
 func TestNativeTargetCatalogPathsIgnoresEncodedObjectTarget(t *testing.T) {
 	endpoint := planner.EndpointSpec{
 		Format:  "csv",
@@ -126,11 +132,11 @@ func TestTriggerMetadataScanSubmitsEncodedTargetRefGroups(t *testing.T) {
 		if r.URL.Path != "/api/v1/meta/scan/run/manual" {
 			t.Fatalf("path = %q, want /api/v1/meta/scan/run/manual", r.URL.Path)
 		}
-		if got := r.Header.Get("X-Tenant-ID"); got != "7" {
-			t.Fatalf("X-Tenant-ID = %q, want 7", got)
+		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Fatalf("Authorization = %q, want Bearer test-token", got)
 		}
-		if got := r.Header.Get("X-Internal-API-Key"); got != "internal-key" {
-			t.Fatalf("X-Internal-API-Key = %q, want internal-key", got)
+		if r.Header.Get("X-Internal-API-Key") != "" || r.Header.Get("X-Tenant-ID") != "" {
+			t.Fatal("Meta request must not send legacy internal authentication headers")
 		}
 		if err := json.NewDecoder(r.Body).Decode(&gotPayload); err != nil {
 			t.Fatalf("decode payload: %v", err)
@@ -141,7 +147,7 @@ func TestTriggerMetadataScanSubmitsEncodedTargetRefGroups(t *testing.T) {
 	defer server.Close()
 
 	service := &ExecutionEngineService{
-		metaClient: commonClient.NewMetaClientWithInternalKey(server.URL, "internal-key"),
+		metaClient: newExecutionTestMetaClient(server.URL),
 		logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	service.triggerMetadataScan(
@@ -186,7 +192,7 @@ func TestTriggerMetadataScanSkipsEncodedMultiTargetWithoutActualRefs(t *testing.
 	defer server.Close()
 
 	service := &ExecutionEngineService{
-		metaClient: commonClient.NewMetaClientWithInternalKey(server.URL, "internal-key"),
+		metaClient: newExecutionTestMetaClient(server.URL),
 		logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	service.triggerMetadataScan(
@@ -222,7 +228,7 @@ func TestTriggerRawCopyMetadataScanSubmitsSingleRefGroup(t *testing.T) {
 	defer server.Close()
 
 	service := &ExecutionEngineService{
-		metaClient: commonClient.NewMetaClientWithInternalKey(server.URL, "internal-key"),
+		metaClient: newExecutionTestMetaClient(server.URL),
 		logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	service.triggerRawCopyMetadataScan(
@@ -387,11 +393,11 @@ func TestAttachSourceMetaAttributesLoadsMetaItem(t *testing.T) {
 		if r.URL.Path != "/api/v1/meta/items/12" {
 			t.Fatalf("path = %q, want /api/v1/meta/items/12", r.URL.Path)
 		}
-		if got := r.Header.Get("X-Tenant-ID"); got != "7" {
-			t.Fatalf("X-Tenant-ID = %q, want 7", got)
+		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Fatalf("Authorization = %q, want Bearer test-token", got)
 		}
-		if got := r.Header.Get("X-Internal-API-Key"); got != "internal-key" {
-			t.Fatalf("X-Internal-API-Key = %q, want internal-key", got)
+		if r.Header.Get("X-Internal-API-Key") != "" || r.Header.Get("X-Tenant-ID") != "" {
+			t.Fatal("Meta request must not send legacy internal authentication headers")
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(commonModels.MetaItem{
@@ -407,7 +413,7 @@ func TestAttachSourceMetaAttributesLoadsMetaItem(t *testing.T) {
 	defer server.Close()
 
 	service := &ExecutionEngineService{
-		metaClient: commonClient.NewMetaClientWithInternalKey(server.URL, "internal-key"),
+		metaClient: newExecutionTestMetaClient(server.URL),
 	}
 	spec := &planner.TableExportTaskSpec{
 		Source: planner.EndpointSpec{
@@ -441,7 +447,7 @@ func TestAttachSourceMetaAttributesRejectsEngineMismatch(t *testing.T) {
 	defer server.Close()
 
 	service := &ExecutionEngineService{
-		metaClient: commonClient.NewMetaClientWithInternalKey(server.URL, "internal-key"),
+		metaClient: newExecutionTestMetaClient(server.URL),
 	}
 	spec := &planner.TableExportTaskSpec{
 		Source: planner.EndpointSpec{

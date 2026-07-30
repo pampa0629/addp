@@ -43,6 +43,10 @@ func (p *MinIOPlugin) SensitiveFields() []string {
 	return []string{"access_key", "secret_key"}
 }
 
+func (p *MinIOPlugin) ConnectionIdentityFields() []string {
+	return []string{"endpoint"}
+}
+
 func (p *MinIOPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewObjectCapabilities(p.Type())
 }

@@ -5,6 +5,7 @@ import {
   authorizationRequestId,
   redirectToAuthorizationResult
 } from '../src/oauth/authorization'
+import { contextChoice, contextOptionKey, currentContextOption } from '../src/oauth/context'
 
 describe('OAuth authorization decision', () => {
   const query = { request_id: 'request-1' }
@@ -37,5 +38,17 @@ describe('OAuth authorization decision', () => {
 
   it('rejects a response without a server-validated redirect URL', () => {
     expect(() => redirectToAuthorizationResult({}, vi.fn())).toThrow('oauth_redirect_url_missing')
+  })
+
+  it('maps only Platform or Tenant Membership choices for browser context switch', () => {
+    const platform = { type: 'platform', current: false }
+    const tenant = { type: 'tenant', tenant_membership_id: '17', current: true }
+
+    expect(contextOptionKey(platform)).toBe('platform')
+    expect(contextOptionKey(tenant)).toBe('tenant:17')
+    expect(contextChoice(platform)).toEqual({ type: 'platform' })
+    expect(contextChoice(tenant)).toEqual({ type: 'tenant', tenant_membership_id: '17' })
+    expect(currentContextOption([platform, tenant])).toBe(tenant)
+    expect(() => contextChoice({ type: 'tenant' })).toThrow('oauth_context_option_invalid')
   })
 })

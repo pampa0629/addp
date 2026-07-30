@@ -250,6 +250,7 @@ BUFFER_METADATA = OperatorMetadata(
     description="缓冲区分析",
     brief_description="在几何对象周围创建指定距离的缓冲区,用于影响范围分析",
     execution_modes=["workflow"],
+    effects=["read"],
     overview="buffer 是最常用的空间分析算子,在点、线、面周围创建指定距离的缓冲区。广泛应用于影响范围分析、服务半径计算、安全距离评估等场景。",
     params=[
         OperatorParam(name="input_df", type="dataframe", required=True, description="输入 DataFrame", notes="必须包含有效的几何列"),
@@ -291,6 +292,7 @@ INTERSECTION_METADATA = OperatorMetadata(
     description="几何相交",
     brief_description="计算两个几何对象的相交部分,用于叠加分析",
     execution_modes=["workflow"],
+    effects=["read"],
     overview="intersection 计算输入几何与另一个几何的相交部分,返回交集几何。常用于行政区边界裁剪、土地利用叠加分析等场景。",
     params=[
         OperatorParam(name="input_df", type="dataframe", required=True, description="输入 DataFrame", notes="包含待相交的几何列"),
@@ -332,6 +334,7 @@ UNION_METADATA = OperatorMetadata(
     description="几何合并",
     brief_description="将所有几何对象合并为单个几何,用于生成整体边界",
     execution_modes=["workflow"],
+    effects=["read"],
     overview="union 将 DataFrame 中的所有几何对象合并为一个几何。常用于生成区域的整体边界、合并相邻地块、构建宏观轮廓等场景。",
     params=[
         OperatorParam(name="input_df", type="dataframe", required=True, description="输入 DataFrame", notes="包含待合并的几何列"),
@@ -369,6 +372,7 @@ CENTROID_METADATA = OperatorMetadata(
     description="质心计算",
     brief_description="计算几何对象的几何中心点,用于标注和聚合分析",
     execution_modes=["workflow"],
+    effects=["read"],
     overview="centroid 计算几何对象的几何中心(质心)。对于多边形,质心可能在边界外部(凹多边形);对于 MultiPolygon,返回所有部分的加权中心。",
     params=[
         OperatorParam(name="input_df", type="dataframe", required=True, description="输入 DataFrame", notes="包含几何列"),
@@ -408,6 +412,7 @@ SPATIAL_JOIN_METADATA = OperatorMetadata(
     description="空间连接",
     brief_description="基于空间关系连接两个表,是最核心的空间分析算子",
     execution_modes=["workflow"],
+    effects=["read"],
     overview="spatial_join 是空间分析的核心算子,根据空间关系(相交、包含、被包含、重叠)连接两个 DataFrame。等价于 SQL 的 JOIN,但连接条件是空间谓词而非字段相等。",
     params=[
         OperatorParam(name="left_df", type="dataframe", required=True, description="左表 DataFrame", notes="主表,空间分析的主体"),
@@ -451,6 +456,7 @@ DISTANCE_METADATA = OperatorMetadata(
     description="距离计算",
     brief_description="计算几何对象到目标点/线/面的距离,用于邻近度分析",
     execution_modes=["workflow"],
+    effects=["read"],
     overview="distance 计算每个几何对象到目标几何的最短距离。常用于'最近的地铁站'、'到市中心的距离'等邻近度分析。",
     params=[
         OperatorParam(name="input_df", type="dataframe", required=True, description="输入 DataFrame", notes="包含几何列"),
@@ -492,6 +498,7 @@ TRANSFORM_METADATA = OperatorMetadata(
     description="坐标转换",
     brief_description="在不同坐标系之间转换几何对象,是空间分析的前置步骤",
     execution_modes=["workflow"],
+    effects=["read"],
     overview="transform 在不同坐标参考系统(CRS)之间转换几何坐标。地理坐标系(EPSG:4326 WGS84)适合存储,投影坐标系(EPSG:3857 Web Mercator)适合计算。",
     params=[
         OperatorParam(name="input_df", type="dataframe", required=True, description="输入 DataFrame", notes="包含几何列"),

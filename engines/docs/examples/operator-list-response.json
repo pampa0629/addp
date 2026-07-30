@@ -11,6 +11,7 @@
       "description": "对几何对象创建缓冲区",
       "brief_description": "在几何对象周围创建指定距离的缓冲区",
       "execution_modes": ["workflow"],
+      "effects": ["read"],
       "parameters": [
         {
           "name": "input_gdf",
@@ -66,6 +67,7 @@
       "description": "两数相加",
       "brief_description": "计算两个数的和",
       "execution_modes": ["workflow"],
+      "effects": ["read"],
       "parameters": [
         {
           "name": "a",

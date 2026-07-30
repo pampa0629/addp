@@ -51,7 +51,7 @@ class MetadataValidator:
         operator_id = operator.get("id", "unknown")
 
         # 1. 检查必填字段
-        required_fields = ["id", "name", "display_name", "engine_type", "category", "category_path", "description", "parameters", "output_ports", "execution_modes"]
+        required_fields = ["id", "name", "display_name", "engine_type", "category", "category_path", "description", "parameters", "output_ports", "execution_modes", "effects"]
         for field in required_fields:
             if field not in operator:
                 self.errors.append(f"[{operator_id}] 缺少必填字段: {field}")

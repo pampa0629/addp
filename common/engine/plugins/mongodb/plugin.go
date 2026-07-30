@@ -52,6 +52,10 @@ func (p *MongoDBPlugin) SensitiveFields() []string {
 	return []string{"password"}
 }
 
+func (p *MongoDBPlugin) ConnectionIdentityFields() []string {
+	return []string{"host", "port", "database"}
+}
+
 func (p *MongoDBPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewDynamicSchemaCapabilities(p.Type())
 }

@@ -79,8 +79,29 @@ func (r *Repository) GetAccessTokenAuthSnapshot(
 	ctx context.Context,
 	tokenHash string,
 ) (*SessionCredentialAuthSnapshot, error) {
+	return r.getAccessTokenAuthSnapshot(ctx, "token_hash", tokenHash)
+}
+
+func (r *Repository) GetAccessTokenAuthSnapshotByID(
+	ctx context.Context,
+	tokenID int64,
+) (*SessionCredentialAuthSnapshot, error) {
+	if tokenID <= 0 {
+		return nil, commonapi.ErrNotFound
+	}
+	return r.getAccessTokenAuthSnapshot(ctx, "id", tokenID)
+}
+
+func (r *Repository) getAccessTokenAuthSnapshot(
+	ctx context.Context,
+	lookupColumn string,
+	lookupValue any,
+) (*SessionCredentialAuthSnapshot, error) {
+	if lookupColumn != "token_hash" && lookupColumn != "id" {
+		return nil, commonapi.ErrBadRequest
+	}
 	var snapshot SessionCredentialAuthSnapshot
-	result := r.db.WithContext(ctx).Raw(`
+	query := `
 		SELECT
 			access_token.id AS credential_id,
 			access_token.family_id AS credential_family_id,
@@ -117,8 +138,9 @@ func (r *Repository) GetAccessTokenAuthSnapshot(
 		JOIN system.principals principal ON principal.id = family.principal_id
 		LEFT JOIN system.tenant_memberships membership ON membership.id = family.tenant_membership_id
 		LEFT JOIN system.tenants tenant ON tenant.id = membership.tenant_id
-		WHERE access_token.token_hash = ?
-	`, tokenHash).Scan(&snapshot)
+		WHERE access_token.` + lookupColumn + ` = ?
+	`
+	result := r.db.WithContext(ctx).Raw(query, lookupValue).Scan(&snapshot)
 	if result.Error != nil {
 		return nil, wrapRepositoryError(result.Error)
 	}

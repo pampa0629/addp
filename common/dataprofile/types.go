@@ -54,6 +54,7 @@ type FieldProfile struct {
 	Text                *TextMetrics         `json:"text,omitempty"`
 	Temporal            *TemporalMetrics     `json:"temporal,omitempty"`
 	Boolean             *BooleanMetrics      `json:"boolean,omitempty"`
+	Spatial             *SpatialMetrics      `json:"spatial,omitempty"`
 	Distribution        []DistributionBucket `json:"distribution,omitempty"`
 	TopValues           []ValueCount         `json:"top_values,omitempty"`
 	Observations        []Observation        `json:"observations,omitempty"`
@@ -88,6 +89,12 @@ type TemporalMetrics struct {
 type BooleanMetrics struct {
 	TrueCount  int64 `json:"true_count"`
 	FalseCount int64 `json:"false_count"`
+}
+
+type SpatialMetrics struct {
+	ValidGeometryCount   int64 `json:"valid_geometry_count"`
+	InvalidGeometryCount int64 `json:"invalid_geometry_count"`
+	EmptyGeometryCount   int64 `json:"empty_geometry_count"`
 }
 
 type DistributionBucket struct {

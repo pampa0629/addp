@@ -126,8 +126,10 @@ func (h *DevTaskHandler) GetDevTask(c *gin.Context) {
 // @Success 200 {object} models.ProviderDevTaskSwagger "开发任务详情 | Development task detail"
 // @Failure 400 {object} map[string]interface{} "参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
-// @x-addp-auth-mode "internal"
-// @Router /internal/tasks/{task_type}/{id} [get]
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task_provider.read"]
+// @Router /task-provider/tasks/{task_type}/{id} [get]
 func (h *DevTaskHandler) ProviderGetDevTask(c *gin.Context) {
 	taskType := c.Param("task_type")
 	if !isDevelopTaskType(taskType) {
@@ -140,7 +142,7 @@ func (h *DevTaskHandler) ProviderGetDevTask(c *gin.Context) {
 		return
 	}
 
-	tenantID := internalTenantIDValue(c)
+	tenantID := tenantIDValue(c)
 	item, err := h.devTaskService.GetDevTask(uint(id), tenantID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})

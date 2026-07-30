@@ -131,7 +131,7 @@ def capture_owner_facts(tool_name: str, result: Any, checkpoint: dict[str, Any])
                 continue
             fact = {
                 name: value[name]
-                for name in ("id", "name", "engine_type", "is_active", "connection_status")
+                for name in ("id", "name", "engine_type", "lifecycle_state", "connection_status")
                 if value.get(name) is not None
             }
             observed["workflow_engines"][key] = fact

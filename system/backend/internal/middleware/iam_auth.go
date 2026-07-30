@@ -19,6 +19,7 @@ import (
 const (
 	IAMTokenTypeFirstPartyAccess = "first_party_access_token"
 	IAMTokenTypeOAuthAccess      = "oauth_access_token"
+	IAMTokenTypeServiceAccess    = "service_access_token"
 	IAMTokenTypeDelegatedAccess  = "delegated_access_token"
 	IAMTokenTypeResourceTicket   = "resource_access_ticket"
 )
@@ -138,6 +139,24 @@ func NewIAMContextGuard(contextType string) (gin.HandlerFunc, error) {
 			return
 		}
 		if authContext.Principal.Type != "user" || authContext.Context.Type != contextType {
+			abortIAMPermissionDenied(c)
+			return
+		}
+		c.Next()
+	}, nil
+}
+
+func NewIAMServiceContextGuard(contextType string) (gin.HandlerFunc, error) {
+	if contextType != "platform" && contextType != "tenant" {
+		return nil, fmt.Errorf("%w: unsupported IAM context type", commonapi.ErrBadRequest)
+	}
+	return func(c *gin.Context) {
+		authContext, exists := IAMAuthContextFromGin(c)
+		if !exists {
+			abortIAMAuthenticationRequired(c)
+			return
+		}
+		if authContext.Principal.Type != "service_principal" || authContext.Context.Type != contextType {
 			abortIAMPermissionDenied(c)
 			return
 		}

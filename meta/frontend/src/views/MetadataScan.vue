@@ -171,6 +171,22 @@
           </div>
 
           <div v-else class="catalogEntry-table-wrapper">
+            <el-alert
+              v-if="catalogAvailability.status === 'offline'"
+              class="catalog-availability-alert"
+              type="warning"
+              :closable="false"
+              show-icon
+              :title="t('meta.scan.engineOfflineCatalog', { msg: catalogAvailability.message })"
+            />
+            <el-alert
+              v-else-if="catalogAvailability.status === 'unavailable'"
+              class="catalog-availability-alert"
+              type="warning"
+              :closable="false"
+              show-icon
+              :title="t('meta.scan.liveCatalogUnavailable', { msg: catalogAvailability.message })"
+            />
             <el-table
               class="catalogEntry-table"
               :data="catalogEntries"
@@ -375,6 +391,7 @@ const containerRef = ref(null)
 const catalogEntries = ref([])
 const loadingCatalogEntries = ref(false)
 const selectedCatalogEntries = ref([])
+const catalogAvailability = ref({ status: 'idle', message: '' })
 
 // 扫描状态
 const unscannedScanning = ref(false)
@@ -699,13 +716,20 @@ const loadCatalogEntries = async () => {
   if (!selectedResource.value) return
 
   loadingCatalogEntries.value = true
+  catalogEntries.value = []
+  selectedCatalogEntries.value = []
+  catalogAvailability.value = { status: 'loading', message: '' }
   let availableEntries = []
-  let connectionError = null
+  let catalogError = null
 
   try {
     // 检查引擎连接状态，如果已知离线，直接跳过实际连接
     if (selectedResource.value.connection_status === 'offline') {
-      connectionError = new Error(`引擎离线: ${selectedResource.value.check_message || '连接失败'}`)
+      catalogError = new Error(selectedResource.value.check_message || '')
+      catalogAvailability.value = {
+        status: 'offline',
+        message: selectedResource.value.check_message || t('meta.scan.offline')
+      }
       console.warn('资源已标记为离线，跳过实际连接:', selectedResource.value.name)
     } else {
       // 引擎在线或状态未知，统一通过 System 实时资源 API 获取顶层资源
@@ -714,13 +738,20 @@ const loadCatalogEntries = async () => {
         availableEntries = Array.isArray(availableRes) ? availableRes : []
       } catch (error) {
         // 捕获连接错误，但不阻止后续加载
-        connectionError = error
-        console.warn('获取可用顶层资源失败（可能存储引擎离线）:', error.response?.data?.error || error.message)
+        catalogError = error
+        catalogAvailability.value = {
+          status: 'unavailable',
+          message: error.response?.data?.error || error.message
+        }
+        console.warn('获取实时顶层资源失败:', error.response?.data?.error || error.message)
       }
     }
   } catch (error) {
-    // 不应该到这里，但保险起见
-    connectionError = error
+    catalogError = error
+    catalogAvailability.value = {
+      status: 'unavailable',
+      message: error.response?.data?.error || error.message
+    }
   }
 
   try {
@@ -728,22 +759,20 @@ const loadCatalogEntries = async () => {
     const scannedRes = await metaApi.getScannedCatalogTopNodes(selectedResource.value.id)
     const scannedEntries = Array.isArray(scannedRes) ? scannedRes : []
 
-    if (connectionError && scannedEntries.length === 0) {
-      // 如果连接失败且没有已扫描的节点，显示空列表
-      // 用户已经能从左侧图标看到引擎离线状态，无需重复提示
+    if (catalogError && scannedEntries.length === 0) {
       catalogEntries.value = []
-    } else if (connectionError) {
-      // 连接失败但有历史扫描数据，使用历史数据并标记状态
+    } else if (catalogError) {
+      // 实时目录不可用时保留历史扫描事实，不改写 scan_status。
       catalogEntries.value = scannedEntries.map(scanned => ({
         id: scanned.id,
         name: catalogEntryNameOf(scanned),
-        scan_status: t('meta.scan.connectionFailed', { status: scanned.scan_status }),
+        scan_status: scanned.scan_status,
         item_count: scanned.item_count || 0,
         scanned_at: scanned.scanned_at || '',
         total_size_bytes: scanned.total_size_bytes || 0
       }))
-      // 已通过左侧连接状态图标显示，无需额外提示
     } else {
+      catalogAvailability.value = { status: 'ready', message: '' }
       // 正常情况：合并两个列表
       catalogEntries.value = availableEntries
         .filter(available => available?.role === 'branch')
@@ -1608,5 +1637,9 @@ onBeforeUnmount(() => {
 .catalogEntry-table-wrapper {
   width: 100%;
   overflow-x: auto;
+}
+
+.catalog-availability-alert {
+  margin-bottom: 12px;
 }
 </style>

@@ -91,6 +91,7 @@ def _copc_operator(operator_id: str, display_name: str, description: str, source
         "category_path": ["点云转换", "快显"],
         "description": description,
         "execution_modes": ["workflow", "direct"],
+        "effects": ["read", "write"],
         "parameters": [
             {
                 "name": "access_plan",

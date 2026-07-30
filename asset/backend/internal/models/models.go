@@ -73,7 +73,7 @@ type TypeDefinition struct {
 	SourceModule  string    `gorm:"size:50"                                             json:"source_module"`  // meta/service/standard/develop/manual
 	AuthHandler   string    `gorm:"size:100"                                            json:"auth_handler"`   // soft/token
 	EntryType     string    `gorm:"size:50"                                             json:"entry_type"`     // preview/link/iframe/token
-	DiscoveryPath string    `gorm:"size:255"                                            json:"discovery_path"` // 可发现资产的 API 路径，如 /api/meta/assets/discoverable
+	DiscoveryPath string    `gorm:"size:255"                                            json:"discovery_path"` // 可发现资产的 canonical API 路径
 	IconURL       string    `gorm:"size:500"                                            json:"icon_url"`
 	Description   string    `gorm:"size:500"                                            json:"description"`
 	Enabled       bool      `gorm:"default:true"                                        json:"enabled"`

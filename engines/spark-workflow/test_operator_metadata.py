@@ -119,11 +119,12 @@ class OperatorMetadataTest(unittest.TestCase):
         self.assertIn("table", save_example)
         self.assertNotIn("target_parent_locator", save_example)
 
-    def test_all_operators_declare_execution_modes(self):
-        assert_operator_metadata_contract(
-            get_operator_metadata(),
-            expected_engine_type="spark_workflow",
-        )
+    def test_all_operators_declare_execution_modes_and_effects(self):
+        operators = get_operator_metadata()
+        assert_operator_metadata_contract(operators, expected_engine_type="spark_workflow")
+        by_name = {operator["name"]: operator for operator in operators}
+        self.assertEqual(["read"], by_name["load"]["effects"])
+        self.assertEqual(["write"], by_name["save"]["effects"])
 
     def test_parameter_types_use_standard_contract_names(self):
         operators = {operator["name"]: operator for operator in get_operator_metadata()}

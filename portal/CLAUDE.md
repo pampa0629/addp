@@ -31,6 +31,9 @@ portal/
 - 路由前缀：`/api/v1/portal`。
 - 主要接口：`/home`、`/search`、`/catalogs`、`/catalogs/:id/assets`、`/assets`、`/assets/:id`、`/assets/:id/apply`、`/assets/:id/apply-status`、`/my/applications`、`/assets/:id/endpoints`、`/assets/:id/ratings`。
 - Portal 不直接持久化资产业务数据；新增能力优先在 Asset 或 Service 落业务规则，Portal 只做用户侧聚合和展示。
+- Portal 调用 Asset 消费 API 时只在当前同步请求栈内转发已验证的 User Bearer，不保存 Token，不提交 User/Tenant/Role 字段，也不使用 Portal Service Principal 替代资产使用者。
+- Portal 仅在 Asset 已按当前 User 确认有效授权后，以 `addp-portal` Client Credentials 获取当前 Tenant 的短期 Service Access Token，并读取 Service 端点投影；`tenant.portal_runtime` 不包含任何 `asset.*` Permission。
+- Portal 不读取 `INTERNAL_API_KEY`，也不发送 `X-Internal-API-Key` 或 `X-Tenant-ID`。
 
 ## 开发与验证
 

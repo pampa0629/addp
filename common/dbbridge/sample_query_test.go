@@ -34,7 +34,8 @@ func (p *sampleCatalogProvider) DefaultPort() int { return 0 }
 
 func (p *sampleCatalogProvider) RequiredFields() []string { return nil }
 
-func (p *sampleCatalogProvider) SensitiveFields() []string { return nil }
+func (p *sampleCatalogProvider) SensitiveFields() []string          { return nil }
+func (p *sampleCatalogProvider) ConnectionIdentityFields() []string { return []string{"host"} }
 
 func (p *sampleCatalogProvider) Capabilities() plugin.EngineCapabilities {
 	return plugin.EngineCapabilities{}

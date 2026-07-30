@@ -21,8 +21,14 @@
 | `engine_origin` | VARCHAR(50) | NOT NULL, DEFAULT 'general' | 引擎来源：general（通用）/extension（扩展） |
 | `connection_info` | JSON | NOT NULL | 连接信息（敏感字段加密） |
 | `description` | TEXT | | 描述信息 |
-| `is_active` | BOOLEAN | DEFAULT true | 是否激活 |
+| `lifecycle_state` | VARCHAR(20) | NOT NULL, DEFAULT 'active', INDEX | 生命周期：`active` / `disabled` / `deleting` |
 | `created_by` | INTEGER | | 创建者ID |
+| `deletion_scan_task_id` | VARCHAR(64) | NULLABLE | 删除工作流最近一次 cleanup scan task ID |
+| `deletion_execute_task_id` | VARCHAR(64) | NULLABLE | 删除工作流最近一次 cleanup execute task ID |
+| `deletion_error` | TEXT | | 删除工作流错误摘要；成功后随 Engine 记录删除 |
+| `deletion_requested_at` | TIMESTAMP | NULLABLE | 最近一次删除请求时间 |
+| `deletion_requested_by` | INTEGER | NULLABLE | 最近一次删除请求操作者 |
+| `external_artifact_policy` | VARCHAR(20) | DEFAULT 'delete' | 外部产物策略：`delete` / `abandon` |
 | `created_at` | TIMESTAMP | DEFAULT NOW() | 创建时间 |
 | `updated_at` | TIMESTAMP | DEFAULT NOW() | 更新时间 |
 
@@ -357,6 +363,7 @@ GET /api/v1/system/engines?page=1&page_size=10&capability_groups=storage,compute
 - `capability_groups`（可选）- 按能力分组过滤，支持 `storage`、`compute`，多个值以逗号分隔
 - `engine_origins`（可选）- 按来源过滤，支持 `general`、`extension`，多个值以逗号分隔
 - `include_builtin`（可选，默认 `true`）- 是否包含内置引擎
+- `lifecycle_states`（可选，默认 `active`）- 按生命周期过滤，支持 `active`、`disabled`、`deleting`，多个值以逗号分隔
 
 过滤在分页前执行，响应中的 `data`、`total` 和 `total_pages` 均以过滤后的结果集为准。
 
@@ -377,7 +384,7 @@ GET /api/v1/system/engines?page=1&page_size=10&capability_groups=storage,compute
         "password": "******",
         "database": "production"
       },
-      "is_active": true,
+      "lifecycle_state": "active",
       "connection_status": "online",
       "last_check_at": "2026-01-01T10:00:00Z"
     }
@@ -421,22 +428,31 @@ Content-Type: application/json
 {
   "name": "生产PostgreSQL（更新）",
   "description": "生产环境主数据库",
-  "is_active": true
+  "lifecycle_state": "active"
 }
 ```
 
 **注意**：
 - 敏感字段如果传入 `"******"` 或 `"****"`，系统会保留原始加密值
+- `connection_info` 中由插件声明的物理身份字段不可修改；变化时返回 HTTP 409，必须新建 Engine Instance
 - 内置引擎不允许修改核心配置（`name`、`connection_info`）
 
 #### 删除引擎
 ```
 DELETE /api/v1/system/engines/:id
+Content-Type: application/json
+
+{
+  "external_artifact_policy": "delete"
+}
 ```
 
 **限制**：
 - 内置引擎（`is_builtin=true`）不可删除
 - 只有管理员可以删除
+- 删除先返回 HTTP 202，并把 Engine 置为 `deleting`；System 完成 scan 和 physical cleanup 后才物理删除记录
+- cleanup 失败时记录保留为 `deleting`，再次删除可重试
+- 外部引擎不可达时，管理员可显式提交 `external_artifact_policy=abandon`，由 owner 模块把未删除外部产物标记为 `abandoned_external` 后继续删除
 
 #### 测试连接（创建前）
 ```
@@ -464,23 +480,33 @@ POST /api/v1/system/engines/:id/test
 
 ---
 
-### 5.2 内部 API（服务间调用）
+### 5.2 Tenant Service Runtime API
 
-#### 内部列表查询（解密）
+Meta 等 Tenant Runtime 先以自身 Confidential OAuth Client 执行 Client Credentials Grant，
+提交 `tenant_id` 选择该 Service Principal 的有效 Tenant Membership。后续请求只发送
+`Authorization: Bearer <service_access_token>`，不得发送 `X-Internal-API-Key` 或
+`X-Tenant-ID`。
+
+#### 引擎列表（脱敏）
 ```
-GET /api/v1/internal/engines?engine_type={type}&tenant_id={id}
+GET /api/v1/system/engines?engine_type={type}
 ```
 
 **特性**：
-- 自动解密 `connection_info`
-- 无需用户认证
-- 内部调用必须使用服务身份，不携带或提升用户跨 Tenant 权限
-- 响应为引擎数组；公开 `GET /api/v1/system/engines` 使用分页对象 `{data,total,page,page_size,total_pages}`。
+- Tenant 只取自 Service Access Token 的 AuthContext；
+- User 与 Service Principal 都返回脱敏 `connection_info`；
+- 响应使用分页对象 `{data,total,page,page_size,total_pages}`。
 
-#### 内部获取单个（解密）
+#### 引擎详情
 ```
-GET /api/v1/internal/engines/:id
+GET /api/v1/system/engines/:id
 ```
+
+User 返回脱敏连接信息。Meta 等显式平台自动任务可以按其专用 Runtime Role 获取职责范围内的同 Tenant 解密连接信息；代表用户执行 SQL、Workflow 或 Jupyter 的 Runtime Service Principal 不具有通用明文读取权，只能消费 audience、execution、Tenant、Engine 和效果均匹配的 Execution Authorization。跨 Tenant 返回 403。任何调用方都不能代传用户 Token，也不能把 Token、明文连接或运行时访问计划持久化到 execution_config。
+
+用户登记的 Engine Instance 归 Tenant，不归 `created_by` 对应账号；`created_by` 只用于审计。平台共享的内置 Workflow/Jupyter Runtime 可以使用 `tenant_id=NULL`，但共享计算能力不产生 Tenant 数据权限。
+
+### 5.3 尚未迁移的平台内部能力接口
 
 #### 注册能力
 ```
@@ -516,7 +542,7 @@ Content-Type: application/json
 
 #### 查询能力
 ```
-GET /api/v1/internal/registry/capabilities?engine_type=acme_geo_workflow&is_active=true
+GET /api/v1/internal/registry/capabilities?engine_type=acme_geo_workflow&lifecycle_state=active
 ```
 
 #### 查询计算引擎
@@ -561,7 +587,7 @@ GET /api/v1/internal/registry/compute-engines
 - 更新连接信息时
 
 **解密时机**：
-- 内部服务调用（`GetByIDInternal`, `ListInternal`）
+- 具有 `system.engine.read` 的同 Tenant Service Principal 查询单个引擎详情
 - 测试连接（`GetForConnection`）
 
 **脱敏显示**：
@@ -742,7 +768,7 @@ curl http://localhost:8180/api/v1/internal/registry/compute-engines
 **修改限制**：
 - 不允许修改 `engine_type`
 - 不允许修改 `is_builtin`
-- 只允许修改描述和激活状态
+- 只允许修改描述和生命周期的 `active` / `disabled` 状态
 
 **删除保护**：
 - 内置引擎不可删除

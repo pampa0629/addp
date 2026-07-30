@@ -71,6 +71,18 @@
       "scope": "Scope",
       "failed": "Authorization request failed",
       "invalidRequest": "Invalid authorization request",
+      "context": {
+        "label": "Authorization context",
+        "placeholder": "Select a Platform or Tenant Context",
+        "platform": "Platform Context",
+        "tenant": "Tenant: {name} ({code}){current}{stepUp}",
+        "currentSuffix": " (current)",
+        "stepUpSuffix": " (step-up required)",
+        "switch": "Switch context",
+        "binding": "After approval, the CLI remains bound to this context. Sign out and authorize again to use another context.",
+        "loadFailed": "Unable to load available contexts",
+        "switchFailed": "Context switch failed"
+      },
       "authorize": {
         "title": "Authorize access to ADDP",
         "description": "Client {client} wants to access ADDP on your behalf.",

@@ -2,7 +2,12 @@ import threading
 
 import pytest
 
-from addp_common.workflow_runtime import ExecutionRegistry, WorkflowRunner, WorkflowValidationError
+from addp_common.workflow_runtime import (
+    ExecutionRegistry,
+    WorkflowRunner,
+    WorkflowValidationError,
+    validate_execution_authorization,
+)
 
 
 def test_runner_executes_dag_and_resolves_ports():
@@ -59,3 +64,30 @@ def test_execution_registry_runs_asynchronously():
     assert completed.status == "success"
     assert completed.result == 7
     assert completed.progress == 100
+
+
+def test_execution_authorization_covers_dag_effects():
+    workflow = {
+        "tasks": [
+            {"id": "load", "operator": "load", "params": {}, "depends_on": []},
+            {"id": "save", "operator": "save", "params": {}, "depends_on": ["load"]},
+        ]
+    }
+    effects = validate_execution_authorization(
+        workflow,
+        operator_effects={"load": ["read"], "save": ["write"]},
+        runtime={"execution_authorization": {"id": 71, "effects": ["read", "write"]}},
+    )
+    assert effects == ["read", "write"]
+
+
+def test_execution_authorization_rejects_missing_effect():
+    workflow = {
+        "tasks": [{"id": "save", "operator": "save", "params": {}, "depends_on": []}]
+    }
+    with pytest.raises(WorkflowValidationError, match="write"):
+        validate_execution_authorization(
+            workflow,
+            operator_effects={"save": ["write"]},
+            runtime={"execution_authorization": {"id": 71, "effects": ["read"]}},
+        )

@@ -42,6 +42,9 @@ common/
 - `common/resourcetree` 中 attributes helper 只服务 `TreeNode.Metadata` 展示摘要，不作为通用 attributes 规范 API，也不写入持久 attributes。
 - `common/taskprovider` 只承载 TaskProvider capabilities 的纯解析和规范校验，不访问 System 注册表，不调用 owner 模块，不处理执行调度。
 - `common/client` 只放跨服务 HTTP/API 客户端，不作为 infra PostgreSQL `common` schema 的读写入口。
+- `common/client.MetaClient` 只接受 `ServiceTokenProvider`，按 Tenant 使用 Fosite Client Credentials Grant 获取短期 Service Access Token，并且只发送 `Authorization: Bearer`。不得恢复 User Token 代传、`X-Internal-API-Key`、`X-Tenant-ID` 或可变 Tenant setter。
+- `common/client.SystemServiceClient` 只接受同时支持 Tenant 与 Platform 的 `ServiceTokenSource`。Tenant 调用必须先通过不可变 `WithTenantID` 选择 Context；模块注册、心跳和 TaskProvider 发布使用显式 Platform Token；所有业务请求只发送 Bearer。
+- 每个调用 Meta 的模块必须使用独立 Confidential OAuth Client 和 Service Principal；调用前通过不可变 `WithTenantID` 选择该 Principal 的有效 Tenant Membership。
 - `common` schema 中的共享表应按领域归入 `common/<domain>`，由领域包提供模型、仓储和 `EnsureStore`；执行记录必须复用 `common/execution.TaskExecution`、`common/execution.TaskExecutionRepository` 和 `common/execution.EnsureStore`。
 - API 响应优先复用 `common/api`。
 - 用户 Bearer Token 统一调用 System `/api/v1/system/auth/context`；业务模块不通过 `/users/me` 验证 Token，不自行解析 JWT。

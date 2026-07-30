@@ -44,6 +44,10 @@ func (p *S3Plugin) SensitiveFields() []string {
 	return []string{"access_key", "secret_key"}
 }
 
+func (p *S3Plugin) ConnectionIdentityFields() []string {
+	return []string{"endpoint"}
+}
+
 func (p *S3Plugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewObjectCapabilities(p.Type())
 }

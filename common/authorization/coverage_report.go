@@ -221,6 +221,19 @@ func inspectOwnerOpenAPI(root, owner string, permissions map[string]PermissionDe
 				issues = append(issues, openAPIIssue("unexpected_required_permissions", owner, relativePath, method, path, fmt.Sprintf("auth mode %q must not declare business Permission keys", authMode)))
 				continue
 			}
+			conditionalPermissions, valid := stringListExtension(operation["x-addp-conditional-permissions"])
+			if !valid {
+				issues = append(issues, openAPIIssue("invalid_conditional_permissions", owner, relativePath, method, path, "x-addp-conditional-permissions must be an array of unique Permission keys"))
+				continue
+			}
+			if authMode != "permission" && len(conditionalPermissions) > 0 {
+				issues = append(issues, openAPIIssue("unexpected_conditional_permissions", owner, relativePath, method, path, fmt.Sprintf("auth mode %q must not declare conditional Permission keys", authMode)))
+				continue
+			}
+			staticPermissions := make(map[string]struct{}, len(requiredPermissions))
+			for _, key := range requiredPermissions {
+				staticPermissions[key] = struct{}{}
+			}
 			for _, key := range requiredPermissions {
 				referencedPermissions[key] = struct{}{}
 				permission, exists := permissions[key]
@@ -230,6 +243,21 @@ func inspectOwnerOpenAPI(root, owner string, permissions map[string]PermissionDe
 				}
 				if permission.Status != "active" {
 					issues = append(issues, openAPIIssue("disabled_permission", owner, relativePath, method, path, fmt.Sprintf("operation references non-active Permission %q", key)))
+				}
+			}
+			for _, key := range conditionalPermissions {
+				if _, duplicate := staticPermissions[key]; duplicate {
+					issues = append(issues, openAPIIssue("overlapping_conditional_permission", owner, relativePath, method, path, fmt.Sprintf("conditional Permission %q must not also be a static all-of Permission", key)))
+					continue
+				}
+				referencedPermissions[key] = struct{}{}
+				permission, exists := permissions[key]
+				if !exists {
+					issues = append(issues, openAPIIssue("unknown_conditional_permission", owner, relativePath, method, path, fmt.Sprintf("operation references unknown conditional Permission %q", key)))
+					continue
+				}
+				if permission.Status != "active" {
+					issues = append(issues, openAPIIssue("disabled_conditional_permission", owner, relativePath, method, path, fmt.Sprintf("operation references non-active conditional Permission %q", key)))
 				}
 			}
 		}

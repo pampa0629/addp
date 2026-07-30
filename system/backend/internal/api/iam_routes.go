@@ -19,11 +19,33 @@ func RegisterIAMRoutes(
 ) error {
 	if api == nil || runtime == nil || cfg == nil ||
 		runtime.AuthHandler == nil || runtime.OAuthHandler == nil ||
-		runtime.DelegationHandler == nil || runtime.UserSelfHandler == nil || runtime.MFASessionHandler == nil ||
+		runtime.DelegationHandler == nil || runtime.ExecutionAuthorizationHandler == nil ||
+		runtime.TaskAuthorizationSubjectHandler == nil ||
+		runtime.UserSelfHandler == nil || runtime.MFASessionHandler == nil ||
 		runtime.TenantInvitationHandler == nil ||
 		runtime.Authentication == nil || runtime.FirstPartyCredential == nil ||
-		runtime.UserAccessCredential == nil || runtime.OAuthFailureAudit == nil {
+		runtime.UserAccessCredential == nil || runtime.ServiceCredential == nil || runtime.OAuthFailureAudit == nil {
 		return errors.New("IAM 路由依赖不完整")
+	}
+	tenantContext, err := middleware.NewIAMContextGuard("tenant")
+	if err != nil {
+		return err
+	}
+	tenantServiceContext, err := middleware.NewIAMServiceContextGuard("tenant")
+	if err != nil {
+		return err
+	}
+	developExecute, err := middleware.NewIAMPermissionGuard("develop.task.execute")
+	if err != nil {
+		return err
+	}
+	executionAuthorizationExecute, err := middleware.NewIAMPermissionGuard("system.execution_authorization.execute")
+	if err != nil {
+		return err
+	}
+	orchestratorExecute, err := middleware.NewIAMPermissionGuard("orchestrator.workflow.execute")
+	if err != nil {
+		return err
 	}
 
 	publicRateLimit := middleware.OAuthPublicRateLimitMiddleware(
@@ -57,7 +79,11 @@ func RegisterIAMRoutes(
 		auth.POST("/mfa/step-up-challenges", runtime.FirstPartyCredential, userRateLimit, runtime.MFASessionHandler.BeginStepUp)
 		auth.POST("/mfa/step-up-verifications", runtime.FirstPartyCredential, userRateLimit, runtime.MFASessionHandler.CompleteStepUp)
 		auth.POST("/delegations", runtime.UserAccessCredential, runtime.DelegationHandler.CreateDelegation)
+		auth.POST("/execution-authorizations", runtime.UserAccessCredential, tenantContext, developExecute, runtime.ExecutionAuthorizationHandler.Issue)
+		auth.POST("/task-authorization-subjects", runtime.UserAccessCredential, tenantContext, orchestratorExecute, runtime.TaskAuthorizationSubjectHandler.Authorize)
 	}
+
+	api.POST("/execution-authorizations/:id/engine-accesses", runtime.Authentication, runtime.ServiceCredential, tenantServiceContext, executionAuthorizationExecute, runtime.ExecutionAuthorizationHandler.AuthorizeEngineAccess)
 
 	users := api.Group("/users")
 	users.Use(runtime.Authentication, runtime.FirstPartyCredential)

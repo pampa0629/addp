@@ -16,14 +16,7 @@ Python 共享模块，为 ADDP 平台的 Python 后端提供统一客户端、�
 ## 使用示例
 
 ```python
-from addp_common.client import SystemClient, DevelopClient, ManagerClient
-
-# 服务间调用 (使用 Internal API Key)
-system = SystemClient(
-    base_url="http://localhost:8180",
-    internal_api_key="your-internal-key"
-)
-engines = await system.list_internal_engines()
+from addp_common.client import DevelopClient, ManagerClient
 
 # 用户请求（使用 opaque Access Token）
 develop = DevelopClient(
@@ -60,6 +53,8 @@ export ADDP_BASE_URL=http://localhost:8000
 addp auth login
 # 无浏览器或跨设备环境
 addp auth login --device
+addp auth status
+addp auth logout
 
 addp tools list
 addp tools get workflow.validate
@@ -74,13 +69,24 @@ addp tool call workflow.validate --agent-run-id <run-id> --tool-call-id <call-id
 
 ## 认证方式
 
-支持两种认证方式:
+认证只保留 Bearer Token 主路径：
 
-1. **ADDP 内部服务间调用**: 使用经过服务端校验的 `internal_api_key` 参数；外部 Agent 不得使用
-2. **用户请求**: Web 使用 HttpOnly Refresh Token Cookie，CLI 使用 OS Keychain 保存轮换 Refresh Token
-3. **显式短期 Token**: `--token` / `ADDP_TOKEN` 只用于调用方已经持有短期 Access Token 的自动化环境
+1. **服务间请求**：各模块使用独立 Confidential OAuth Client，通过 Client Credentials Grant 即时获取短期 Service Access Token；业务请求不得发送 `X-Internal-API-Key` 或 `X-Tenant-ID`。
+2. **用户请求**：Web 使用 HttpOnly Refresh Token Cookie，CLI 使用 OS Keychain 保存轮换 Refresh Token。
+3. **显式短期 Token**：`--token` / `ADDP_TOKEN` 只用于调用方已经持有短期 Access Token 的自动化环境。
 
 CLI Browser Login 按 RFC 8252 在 `127.0.0.1` 绑定随机空闲端口，先向 System 创建五分钟有效的 Authorization Request，再以浏览器 URL 中唯一的 `request_id` 完成用户授权；完整 redirect URI 和 PKCE 只在 CLI 与 System 之间传输。CLI 提前退出或超时时使用内存中的 Request Secret 取消请求，并在授权与 Code 兑换阶段使用同一个完整 redirect URI。CLI 每次执行 Tool 前按 ADDP Base URL 获取跨进程锁，再使用 Keychain 中的 Refresh Token 换取短期 User Access Token，并原子保存轮换后的 Refresh Token；User Access Token 不持久化。ToolExecutor 再按调用即时换取不可刷新、默认 2 分钟的 Delegated Access Token，原始 User Access Token 不进入 owner Client。
+
+授权页会在批准前显示当前 Platform 或 Tenant Context，并允许使用 Browser Context Switch 选择目标。OAuth Family 在批准后永久绑定该 Context；CLI 不提供事后切换命令，需要进入其他 Context 时先执行 `addp auth logout`，再重新登录并授权。`addp auth status` 会实际轮换 Refresh Token 并解析 System AuthContext，输出当前 Principal 与 Context 摘要，不以 Keychain 中是否存在值代替服务端会话检查。
+
+本地开发安装与验证：
+
+```bash
+cd common-python
+python -m pip install -e ".[dev]"
+addp --version
+addp auth status
+```
 
 Tool 与 Adapter 变更至少运行 common-python 全量测试和 `make test-agent-eval`；场景与发布门禁规则见 `docs/spec/addp智能体评测规范.md`。
 

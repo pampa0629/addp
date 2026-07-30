@@ -50,6 +50,10 @@ func (p *Neo4jPlugin) SensitiveFields() []string {
 	return []string{"password"}
 }
 
+func (p *Neo4jPlugin) ConnectionIdentityFields() []string {
+	return []string{"host", "port"}
+}
+
 func (p *Neo4jPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewGraphCapabilities(p.Type())
 }

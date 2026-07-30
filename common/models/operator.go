@@ -24,6 +24,7 @@ type OperatorDescriptor struct {
 	Inputs              []string               `json:"inputs"`                         // 输入类型列表
 	OutputPorts         []OutputPortDescriptor `json:"output_ports"`                   // 标准输出端口定义
 	ExecutionModes      []string               `json:"execution_modes"`                // workflow/direct
+	Effects             []string               `json:"effects"`                        // read/write/ddl/external_effect
 	Attributes          map[string]interface{} `json:"attributes,omitempty"`           // 引擎自定义扩展属性
 }
 

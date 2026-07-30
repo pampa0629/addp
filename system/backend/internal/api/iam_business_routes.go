@@ -28,6 +28,14 @@ func RegisterIAMMigratedBusinessRoutes(
 	if err != nil {
 		return err
 	}
+	engineDetailCredential, err := middleware.NewIAMCredentialGuard(
+		middleware.IAMTokenTypeFirstPartyAccess,
+		middleware.IAMTokenTypeOAuthAccess,
+		middleware.IAMTokenTypeServiceAccess,
+	)
+	if err != nil {
+		return err
+	}
 	engineListDelegation, err := sharedauth.NewDelegatedRouteGuard(sharedauth.DelegatedRouteGuardConfig{
 		Audience:            "system",
 		RequiredScopes:      []string{"engine.list"},
@@ -56,7 +64,7 @@ func RegisterIAMMigratedBusinessRoutes(
 	{
 		engines.POST("", runtime.UserAccessCredential, enginePermissions["system.engine.create"], engineHandler.Create)
 		engines.GET("", runtime.BusinessCredential, engineListDelegation, engineListPermission, engineHandler.List)
-		engines.GET("/:id", runtime.UserAccessCredential, enginePermissions["system.engine.read"], engineHandler.GetByID)
+		engines.GET("/:id", engineDetailCredential, enginePermissions["system.engine.read"], engineHandler.GetByID)
 		engines.PUT("/:id", runtime.UserAccessCredential, enginePermissions["system.engine.update"], engineHandler.Update)
 		engines.DELETE("/:id", runtime.UserAccessCredential, enginePermissions["system.engine.delete"], engineHandler.Delete)
 		engines.POST("/:id/test", runtime.UserAccessCredential, enginePermissions["system.engine.execute"], engineHandler.TestConnection)

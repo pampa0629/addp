@@ -18,6 +18,7 @@ const (
 	MsgMissingRef              = "service.err.missing_ref"
 	MsgInvalidRefFormat        = "service.err.invalid_ref_format"
 	MsgInvalidRefID            = "service.err.invalid_ref_id"
+	MsgServiceNotFound         = "service.err.not_found"
 	MsgSnapshotCheckFailed     = "service.err.snapshot_check_failed"
 	MsgSnapshotRefreshFailed   = "service.err.snapshot_refresh_failed"
 	MsgSQLOutputContractFailed = "service.err.sql_output_contract_failed"

@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/meta/internal/config"
@@ -43,6 +44,16 @@ func main() {
 	if err != nil {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
+	tokenSource, err := commonClient.NewOAuthServiceTokenSource(
+		cfg.SystemServiceURL,
+		"addp-meta",
+		cfg.ServiceClientSecret,
+		nil,
+	)
+	if err != nil {
+		log.Fatalf("初始化 addp-meta Service Principal 凭据失败: %v", err)
+	}
+	systemClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, tokenSource, nil)
 
 	// 创建 Redis 客户端用于事件订阅
 	redisAddr := fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort)
@@ -54,7 +65,7 @@ func main() {
 	log.Printf("✅ Redis 客户端已初始化: %s", redisAddr)
 
 	// 初始化 Service 层
-	engineService := service.NewEngineService(db, cfg.SystemServiceURL, cfg.InternalAPIKey)
+	engineService := service.NewEngineService(db, systemClient)
 	scanService := service.NewScanService(db, engineService)
 	executionService := service.NewScanExecutionService(db, scanService, engineService, redisClient)
 

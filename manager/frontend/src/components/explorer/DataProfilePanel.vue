@@ -348,6 +348,13 @@ const selectedMetrics = computed(() => {
       metric('falseCount', field.boolean.false_count, formatInteger)
     )
   }
+  if (field.spatial) {
+    metrics.push(
+      metric('validGeometryCount', field.spatial.valid_geometry_count, formatInteger),
+      metric('invalidGeometryCount', field.spatial.invalid_geometry_count, formatInteger),
+      metric('emptyGeometryCount', field.spatial.empty_geometry_count, formatInteger)
+    )
+  }
   return metrics
 })
 

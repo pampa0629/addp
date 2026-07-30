@@ -171,7 +171,7 @@ class _EngineListTool:
                         "id": 20,
                         "name": "GeoPython 工作流引擎",
                         "engine_type": "geopython_workflow",
-                        "is_active": True,
+                        "lifecycle_state": "active",
                         "connection_status": "online",
                     }
                 ]

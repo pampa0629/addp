@@ -3,6 +3,39 @@ const CONSOLE_BRIDGE_RESPONSE = 'addp:console-bridge:response'
 
 const defaultRequestId = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`
 
+export function toConsoleBridgeValue(value, seen = new WeakMap()) {
+  if (value === null || value === undefined) return value
+
+  const valueType = typeof value
+  if (valueType === 'string' || valueType === 'number' || valueType === 'boolean' || valueType === 'bigint') {
+    return value
+  }
+  if (valueType === 'function' || valueType === 'symbol') {
+    throw new TypeError(`Console bridge payload contains unsupported ${valueType} value`)
+  }
+
+  if (seen.has(value)) return seen.get(value)
+
+  if (Array.isArray(value)) {
+    const result = []
+    seen.set(value, result)
+    value.forEach(item => result.push(toConsoleBridgeValue(item, seen)))
+    return result
+  }
+
+  const prototype = Object.getPrototypeOf(value)
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new TypeError('Console bridge payload must contain only plain objects and arrays')
+  }
+
+  const result = {}
+  seen.set(value, result)
+  Object.keys(value).forEach(key => {
+    result[key] = toConsoleBridgeValue(value[key], seen)
+  })
+  return result
+}
+
 export function requestConsoleBridge(channel, payload, options = {}) {
   const {
     source = 'addp-module',
@@ -51,7 +84,7 @@ export function requestConsoleBridge(channel, payload, options = {}) {
       source,
       channel,
       requestId,
-      payload
+      payload: toConsoleBridgeValue(payload)
     }, targetOrigin)
   })
 }
@@ -86,7 +119,7 @@ export function registerConsoleBridgeHandler(channel, handler, options = {}) {
         source,
         channel,
         requestId: message.requestId,
-        ...payload
+        ...toConsoleBridgeValue(payload)
       }, event.origin || '*')
     }
 

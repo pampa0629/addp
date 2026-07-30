@@ -64,6 +64,34 @@ func (s *CatalogService) GetTree(tenantID uint) ([]CatalogEntry, error) {
 	return buildCatalogTree(cats, nil), nil
 }
 
+// GetPublishedTree 返回至少包含一个已上架资产的目录及其必要祖先。
+func (s *CatalogService) GetPublishedTree(tenantID uint) ([]CatalogEntry, error) {
+	var catalogs []CatalogWithCount
+	if err := s.db.Table("asset.catalogs c").
+		Select("c.*, COUNT(a.id) AS count").
+		Joins("LEFT JOIN asset.assets a ON a.catalog_id = c.id AND a.tenant_id = c.tenant_id AND a.status = 'published'").
+		Where("c.tenant_id = ?", tenantID).
+		Group("c.id").
+		Order("c.sort_order ASC, c.id ASC").
+		Scan(&catalogs).Error; err != nil {
+		return nil, err
+	}
+
+	tree := buildCatalogTree(catalogs, nil)
+	return keepPublishedCatalogBranches(tree), nil
+}
+
+func keepPublishedCatalogBranches(nodes []CatalogEntry) []CatalogEntry {
+	result := make([]CatalogEntry, 0, len(nodes))
+	for _, node := range nodes {
+		node.Children = keepPublishedCatalogBranches(node.Children)
+		if node.Count > 0 || len(node.Children) > 0 {
+			result = append(result, node)
+		}
+	}
+	return result
+}
+
 func buildCatalogTree(cats []CatalogWithCount, parentID *int64) []CatalogEntry {
 	var nodes []CatalogEntry
 	for _, c := range cats {

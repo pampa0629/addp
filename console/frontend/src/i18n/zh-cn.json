@@ -71,6 +71,18 @@
       "scope": "授权范围",
       "failed": "授权请求失败",
       "invalidRequest": "授权请求参数无效",
+      "context": {
+        "label": "授权上下文",
+        "placeholder": "选择 Platform 或 Tenant Context",
+        "platform": "平台上下文",
+        "tenant": "租户：{name}（{code}）{current}{stepUp}",
+        "currentSuffix": "（当前）",
+        "stepUpSuffix": "（需要增强认证）",
+        "switch": "切换上下文",
+        "binding": "批准后，CLI 会固定绑定所选上下文；进入其他上下文需要退出后重新授权。",
+        "loadFailed": "无法读取可用上下文",
+        "switchFailed": "上下文切换失败"
+      },
       "authorize": {
         "title": "授权客户端访问 ADDP",
         "description": "客户端 {client} 请求代表你访问 ADDP。",

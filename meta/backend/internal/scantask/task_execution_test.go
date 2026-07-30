@@ -25,7 +25,6 @@ func TestNewManualExecution(t *testing.T) {
 		"basic",
 		false,
 		"transfer",
-		"token",
 		now,
 	)
 
@@ -43,6 +42,9 @@ func TestNewManualExecution(t *testing.T) {
 	}
 	if exec.ExecutionConfig["source"] != "transfer" {
 		t.Fatalf("execution source = %#v", exec.ExecutionConfig)
+	}
+	if _, exists := exec.ExecutionConfig["token"]; exists {
+		t.Fatal("manual execution persisted a user token")
 	}
 	refGroups, ok := exec.ExecutionConfig["ref_groups"].([]models.ScanRefGroup)
 	if !ok || len(refGroups) != 1 || refGroups[0].Primary != "bucket/path/roads.shp" {

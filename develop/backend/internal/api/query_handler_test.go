@@ -1,72 +1,273 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
-	"strings"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"testing"
+	"time"
+
+	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/models"
+	"github.com/addp/develop/backend/internal/config"
+	"github.com/addp/develop/backend/internal/service"
+	"github.com/gin-gonic/gin"
 )
 
-func TestExecuteQueryRequestUsesExecutionConfigContract(t *testing.T) {
-	req := ExecuteQueryRequest{
-		Content: map[string]interface{}{
-			"query":      "SELECT 1",
-			"query_type": "sql",
-		},
-		ExecutionConfig: map[string]interface{}{
-			"engine_id": 7,
-		},
-		Timeout: 30,
-	}
-
-	payload, err := json.Marshal(req)
+func TestConnectionUsesUserDerivedReadAuthorizationAndServiceTokenConsumption(t *testing.T) {
+	runtimeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet || request.URL.Path != "/health" {
+			t.Fatalf("unexpected runtime request: %s %s", request.Method, request.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer runtimeServer.Close()
+	runtimeURL, err := url.Parse(runtimeServer.URL)
 	if err != nil {
-		t.Fatalf("marshal ExecuteQueryRequest: %v", err)
+		t.Fatal(err)
 	}
-	var decoded map[string]interface{}
-	if err := json.Unmarshal(payload, &decoded); err != nil {
-		t.Fatalf("decode ExecuteQueryRequest: %v", err)
+	host, portText, err := net.SplitHostPort(runtimeURL.Host)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, ok := decoded["engine_id"]; ok {
-		t.Fatalf("ExecuteQueryRequest must not expose top-level engine_id: %s", payload)
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, ok := decoded["query"]; ok {
-		t.Fatalf("ExecuteQueryRequest must not expose top-level query: %s", payload)
-	}
-	if _, ok := decoded["execution_config"]; !ok {
-		t.Fatalf("ExecuteQueryRequest must expose execution_config: %s", payload)
+
+	var issuedExecutionID string
+	systemServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("X-Internal-API-Key") != "" || request.Header.Get("X-Tenant-ID") != "" {
+			t.Fatal("connection test must not send legacy internal headers")
+		}
+		switch request.URL.Path {
+		case "/api/v1/system/auth/execution-authorizations":
+			if request.Method != http.MethodPost || request.Header.Get("Authorization") != "Bearer addp_at_user" {
+				t.Fatalf("unexpected authorization issue request")
+			}
+			var payload commonClient.IssueExecutionAuthorizationRequest
+			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.Audience != "develop" || len(payload.EngineIDs) != 1 || payload.EngineIDs[0] != "12" ||
+				len(payload.Effects) != 1 || payload.Effects[0] != "read" || payload.ExpiresIn <= 0 {
+				t.Fatalf("issue payload = %#v", payload)
+			}
+			issuedExecutionID = payload.ExecutionID
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(commonClient.IssuedExecutionAuthorization{
+				ID: "77", ExecutionID: issuedExecutionID, Audience: "develop",
+				EngineIDs: []string{"12"}, Effects: []string{"read"}, ExpiresAt: time.Now().Add(time.Minute),
+				ActorPrincipalID: "1", TenantID: "7", TenantMembershipID: "9", IssuedAuthorizationVersion: "3",
+			})
+		case "/api/v1/system/execution-authorizations/77/engine-accesses":
+			if request.Method != http.MethodPost || request.Header.Get("Authorization") != "Bearer addp_at_service" {
+				t.Fatalf("unexpected engine access request")
+			}
+			var payload commonClient.ExecutionEngineAccessRequest
+			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.ExecutionID != issuedExecutionID || payload.EngineID != "12" ||
+				len(payload.RequiredEffects) != 1 || payload.RequiredEffects[0] != "read" {
+				t.Fatalf("engine access payload = %#v", payload)
+			}
+			_ = json.NewEncoder(w).Encode(commonClient.ExecutionEngineAccess{
+				AuthorizationID: "77", ExecutionID: issuedExecutionID, Audience: "develop", EngineID: "12",
+				Effects: []string{"read"}, ExpiresAt: time.Now().Add(time.Minute),
+				Engine: &models.Engine{
+					ID: 12, EngineType: "math_workflow",
+					ConnectionInfo: models.ConnectionInfo{"protocol": "http", "host": host, "port": port},
+				},
+			})
+		default:
+			t.Fatalf("unexpected System path: %s", request.URL.Path)
+		}
+	}))
+	defer systemServer.Close()
+
+	response := testConnectionRequestForTest(newAuthorizedQueryHandlerForTest(systemServer.URL), "addp_at_user")
+	if response.Code != http.StatusOK || issuedExecutionID == "" {
+		t.Fatalf("status = %d, execution = %q, body = %s", response.Code, issuedExecutionID, response.Body.String())
 	}
 }
 
-func TestQueryRequestSQLRequiresCanonicalContentQuery(t *testing.T) {
-	_, err := queryRequestSQL(map[string]interface{}{
-		"sql":        "SELECT 1",
-		"query_type": "sql",
+func TestConnectionRejectsMissingUserAccessTokenBeforeSystemCall(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls++ }))
+	defer server.Close()
+
+	response := testConnectionRequestForTest(newAuthorizedQueryHandlerForTest(server.URL), "")
+	if response.Code != http.StatusUnauthorized || calls != 0 ||
+		!bytes.Contains(response.Body.Bytes(), []byte(`"error_code":"authentication_required"`)) {
+		t.Fatalf("status = %d, calls = %d, body = %s", response.Code, calls, response.Body.String())
+	}
+}
+
+func TestConnectionMapsReadEffectPermissionDenialWithoutConsumingEngineAccess(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		calls++
+		if request.URL.Path != "/api/v1/system/auth/execution-authorizations" {
+			t.Fatalf("unexpected System path after denied issue: %s", request.URL.Path)
+		}
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	response := testConnectionRequestForTest(newAuthorizedQueryHandlerForTest(server.URL), "addp_at_user")
+	if response.Code != http.StatusForbidden || calls != 1 ||
+		!bytes.Contains(response.Body.Bytes(), []byte(`"error_code":"execution_effect_permission_denied"`)) {
+		t.Fatalf("status = %d, calls = %d, body = %s", response.Code, calls, response.Body.String())
+	}
+}
+
+func TestExecuteQueryUsesUserDerivedExecutionAuthorizationAndServiceTokenConsumption(t *testing.T) {
+	var issuedExecutionID string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("X-Internal-API-Key") != "" || request.Header.Get("X-Tenant-ID") != "" {
+			t.Fatal("execution authorization path must not send legacy internal headers")
+		}
+		switch request.URL.Path {
+		case "/api/v1/system/auth/execution-authorizations":
+			if got := request.Header.Get("Authorization"); got != "Bearer addp_at_user" {
+				t.Fatalf("issue Authorization = %q", got)
+			}
+			var payload commonClient.IssueExecutionAuthorizationRequest
+			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode issue request: %v", err)
+			}
+			if payload.Audience != "develop" || len(payload.EngineIDs) != 1 || payload.EngineIDs[0] != "12" ||
+				len(payload.Effects) != 1 || payload.Effects[0] != "read" {
+				t.Fatalf("issue payload = %#v", payload)
+			}
+			issuedExecutionID = payload.ExecutionID
+			_ = json.NewEncoder(w).Encode(commonClient.IssuedExecutionAuthorization{
+				ID: "77", ExecutionID: payload.ExecutionID, Audience: "develop",
+				EngineIDs: []string{"12"}, Effects: []string{"read"}, ExpiresAt: time.Now().Add(time.Minute),
+				ActorPrincipalID: "1", TenantID: "7", TenantMembershipID: "9", IssuedAuthorizationVersion: "3",
+			})
+		case "/api/v1/system/execution-authorizations/77/engine-accesses":
+			if got := request.Header.Get("Authorization"); got != "Bearer addp_at_service" {
+				t.Fatalf("consume Authorization = %q", got)
+			}
+			var payload commonClient.ExecutionEngineAccessRequest
+			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode consume request: %v", err)
+			}
+			if payload.ExecutionID != issuedExecutionID || payload.EngineID != "12" ||
+				len(payload.RequiredEffects) != 1 || payload.RequiredEffects[0] != "read" {
+				t.Fatalf("consume payload = %#v, issued execution = %q", payload, issuedExecutionID)
+			}
+			_ = json.NewEncoder(w).Encode(commonClient.ExecutionEngineAccess{
+				AuthorizationID: "77", ExecutionID: issuedExecutionID, Audience: "develop", EngineID: "12",
+				Effects: []string{"read"}, ExpiresAt: time.Now().Add(time.Minute),
+				Engine: &models.Engine{ID: 12, EngineType: "mongodb"},
+			})
+		default:
+			t.Fatalf("unexpected System path: %s", request.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := newAuthorizedQueryHandlerForTest(server.URL)
+	response := executeQueryRequestForTest(t, handler, `SELECT * FROM cities`)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body["error_code"] != "controlled_sql_engine_unsupported" || issuedExecutionID == "" {
+		t.Fatalf("body = %#v, issued execution = %q", body, issuedExecutionID)
+	}
+}
+
+func TestExecuteQueryMapsEffectPermissionDenialWithoutConsumingEngineAccess(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		calls++
+		if request.URL.Path != "/api/v1/system/auth/execution-authorizations" {
+			t.Fatalf("unexpected System path after denied issue: %s", request.URL.Path)
+		}
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	handler := newAuthorizedQueryHandlerForTest(server.URL)
+	response := executeQueryRequestForTest(t, handler, `DELETE FROM cities WHERE id = 1`)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if calls != 1 || !bytes.Contains(response.Body.Bytes(), []byte(`"error_code":"execution_effect_permission_denied"`)) {
+		t.Fatalf("calls = %d, body = %s", calls, response.Body.String())
+	}
+}
+
+func TestExecuteQueryRejectsMultipleStatementsBeforeIssuingAuthorization(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls++ }))
+	defer server.Close()
+
+	handler := newAuthorizedQueryHandlerForTest(server.URL)
+	response := executeQueryRequestForTest(t, handler, `SELECT 1; DELETE FROM cities`)
+	if response.Code != http.StatusBadRequest || calls != 0 ||
+		!bytes.Contains(response.Body.Bytes(), []byte(`"error_code":"sql_effect_unclassifiable"`)) {
+		t.Fatalf("status = %d, calls = %d, body = %s", response.Code, calls, response.Body.String())
+	}
+}
+
+func newAuthorizedQueryHandlerForTest(systemURL string) *QueryHandler {
+	systemService := commonClient.NewSystemServiceClient(
+		systemURL, staticDevelopServiceTokens("addp_at_service"), nil,
+	)
+	return NewQueryHandler(service.NewSQLEngineService(
+		&config.Config{DefaultQueryTimeout: 30, MaxQueryTimeout: 300},
+		systemService,
+		commonClient.NewSystemExecutionAuthorizationClient(systemURL, nil),
+	))
+}
+
+func executeQueryRequestForTest(t *testing.T, handler *QueryHandler, sql string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/execute", func(c *gin.Context) {
+		setTenantAuthContextForTest(c, 7, 1)
+		handler.ExecuteQuery(c)
 	})
-	if err == nil {
-		t.Fatal("expected legacy content.sql to be rejected")
-	}
-	if !strings.Contains(err.Error(), "content.query") {
-		t.Fatalf("expected content.query error, got %v", err)
-	}
-}
-
-func TestQueryRequestEngineIDParsesCanonicalConfig(t *testing.T) {
-	engineID, err := queryRequestEngineID(map[string]interface{}{
-		"engine_id": float64(7),
+	payload, err := json.Marshal(ExecuteQueryRequest{
+		Content:         map[string]interface{}{"query_type": "sql", "query": sql},
+		ExecutionConfig: map[string]interface{}{"engine_id": 12}, Timeout: 30,
 	})
 	if err != nil {
-		t.Fatalf("queryRequestEngineID() error = %v", err)
+		t.Fatal(err)
 	}
-	if engineID != 7 {
-		t.Fatalf("engineID = %d, want 7", engineID)
-	}
+	request := httptest.NewRequest(http.MethodPost, "/execute", bytes.NewReader(payload))
+	request.Header.Set("Authorization", "Bearer addp_at_user")
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	return response
 }
 
-func TestQueryRequestModeNormalizesDuckDB(t *testing.T) {
-	mode := queryRequestMode(map[string]interface{}{
-		"query_mode": " DuckDB ",
+func testConnectionRequestForTest(handler *QueryHandler, token string) *httptest.ResponseRecorder {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/test/:id", func(c *gin.Context) {
+		setTenantAuthContextForTest(c, 7, 1)
+		handler.TestConnection(c)
 	})
-	if mode != "duckdb" {
-		t.Fatalf("mode = %q, want duckdb", mode)
+	request := httptest.NewRequest(http.MethodGet, "/test/12", nil)
+	if token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
 	}
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	return response
 }

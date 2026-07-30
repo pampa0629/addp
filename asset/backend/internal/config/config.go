@@ -18,8 +18,8 @@ type Config struct {
 	RedisPassword string
 	RedisDB       int
 
-	SystemURL      string
-	InternalAPIKey string
+	SystemURL           string
+	ServiceClientSecret string
 
 	// 源模块 URL（用于资产自动发现）
 	MetaURL     string
@@ -45,8 +45,8 @@ func LoadConfig() (*Config, error) {
 		RedisPassword: os.Getenv("REDIS_PASSWORD"),
 		RedisDB:       commonConfig.GetEnvInt("REDIS_DB", 0),
 
-		SystemURL:      commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
-		InternalAPIKey: os.Getenv("INTERNAL_API_KEY"),
+		SystemURL:           commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
+		ServiceClientSecret: commonConfig.GetEnv("ASSET_SERVICE_CLIENT_SECRET", ""),
 
 		MetaURL:     commonConfig.GetEnv("META_URL", "http://localhost:8082"),
 		ServiceURL:  commonConfig.GetEnv("SERVICE_URL", "http://localhost:8086"),
@@ -58,18 +58,20 @@ func LoadConfig() (*Config, error) {
 		MeilisearchAssetIndex: commonConfig.GetEnv("MEILISEARCH_ASSET_CATALOG_INDEX", "asset_catalog"),
 	}
 
-	enableIntegration := commonConfig.GetEnvBool("ENABLE_SERVICE_INTEGRATION", true)
-	if err := commonConfig.LoadServiceConfiguration(commonConfig.ServiceConfigLoader{
-		SystemServiceURL:      cfg.SystemURL,
-		EnableIntegration:     enableIntegration,
-		InternalAPIKey:        cfg.InternalAPIKey,
-		BaseConfigDestination: &cfg.BaseConfig,
-	}); err != nil {
-		return nil, fmt.Errorf("failed to load service configuration: %w", err)
+	cfg.BaseConfig = commonConfig.BaseConfig{
+		DBHost:            commonConfig.GetEnv("POSTGRES_HOST", commonConfig.GetEnv("DB_HOST", "localhost")),
+		DBPort:            commonConfig.GetEnv("POSTGRES_PORT", commonConfig.GetEnv("DB_PORT", "15432")),
+		DBUser:            commonConfig.GetEnv("POSTGRES_USER", commonConfig.GetEnv("DB_USER", "addp")),
+		DBPassword:        commonConfig.GetEnv("POSTGRES_PASSWORD", commonConfig.GetEnv("DB_PASSWORD", "addp_password")),
+		DBName:            commonConfig.GetEnv("POSTGRES_DB", commonConfig.GetEnv("DB_NAME", "addp")),
+		SystemServiceURL:  cfg.SystemURL,
+		EnableIntegration: commonConfig.GetEnvBool("ENABLE_SERVICE_INTEGRATION", true),
+		EncryptionKey:     commonConfig.LoadEncryptionKey(),
+		LogLevel:          commonConfig.GetEnv("LOG_LEVEL", "info"),
+		LogFormat:         commonConfig.GetEnv("LOG_FORMAT", "json"),
+		LogAddSource:      commonConfig.GetEnvBool("LOG_ADD_SOURCE", false),
+		LogFile:           commonConfig.GetEnv("LOG_FILE", ""),
 	}
-
-	cfg.BaseConfig.SystemServiceURL = cfg.SystemURL
-	cfg.BaseConfig.EnableIntegration = enableIntegration
 
 	return cfg, nil
 }

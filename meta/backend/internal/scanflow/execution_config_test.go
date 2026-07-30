@@ -26,12 +26,14 @@ func TestParseExecutionConfig(t *testing.T) {
 		"deep",
 		true,
 		"transfer",
-		"token",
 	)
 
 	parsed := ParseExecutionConfig(config)
-	if parsed.EngineID != 12 || parsed.ItemID != 1831 || parsed.StorageType != "postgresql" || parsed.ScanDepth != "deep" || !parsed.Force || parsed.Source != "transfer" || parsed.Token != "token" {
+	if parsed.EngineID != 12 || parsed.ItemID != 1831 || parsed.StorageType != "postgresql" || parsed.ScanDepth != "deep" || !parsed.Force || parsed.Source != "transfer" {
 		t.Fatalf("parsed scalar config = %#v", parsed)
+	}
+	if _, exists := config["token"]; exists {
+		t.Fatal("execution config persisted a user token")
 	}
 	if !reflect.DeepEqual(parsed.CatalogPaths, []string{"public"}) {
 		t.Fatalf("catalog paths = %#v", parsed.CatalogPaths)

@@ -55,6 +55,10 @@ func (p *DorisPlugin) SensitiveFields() []string {
 	return []string{"password"}
 }
 
+func (p *DorisPlugin) ConnectionIdentityFields() []string {
+	return []string{"host", "port", "database"}
+}
+
 func (p *DorisPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), "database", plugin.TabularCapabilityOptions{
 		Write:             true,

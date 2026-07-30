@@ -33,10 +33,12 @@ func NewTaskListHandler(devTaskService *service.DevTaskService) *TaskListHandler
 // @Param page_size query int false "每页数量 | Page size" default(20)
 // @Success 200 {object} models.ListProviderDevTasksSwaggerResponse
 // @Failure 500 {object} map[string]interface{}
-// @x-addp-auth-mode "internal"
-// @Router /internal/tasks [get]
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task_provider.read"]
+// @Router /task-provider/tasks [get]
 func (h *TaskListHandler) ListTasks(c *gin.Context) {
-	tenantID := internalTenantIDValue(c)
+	tenantID := tenantIDValue(c)
 	taskType := strings.TrimSpace(c.Query("task_type"))
 	if taskType != "" && !isDevelopTaskType(taskType) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported task_type: " + taskType})

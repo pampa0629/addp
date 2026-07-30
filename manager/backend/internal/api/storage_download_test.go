@@ -55,6 +55,10 @@ func TestDownloadFileBundlesObjectShapefileByLocator(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		setTenantAuthContextForTest(c, 1, 1)
+		c.Next()
+	})
 	router.GET("/downloads/file", handler.DownloadFile)
 
 	locator := "addp://engine/9/path/gischain/data/farmland.shp?type=object&item_id=1"
@@ -117,10 +121,11 @@ func apiDownloadTestSystemClient(t *testing.T, engineID uint, engineType string)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"id":              engineID,
+			"tenant_id":       1,
 			"name":            "engine",
 			"engine_type":     engineType,
 			"connection_info": map[string]interface{}{},
-			"is_active":       true,
+			"lifecycle_state": "active",
 		})
 	}))
 	t.Cleanup(server.Close)
@@ -138,7 +143,9 @@ func apiDownloadTestMetaItemClient(t *testing.T, itemJSON string) *client.MetaCl
 		_, _ = w.Write([]byte(itemJSON))
 	}))
 	t.Cleanup(server.Close)
-	return client.NewMetaClientWithInternalKey(server.URL, "internal-key")
+	return client.NewMetaClient(server.URL, client.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+		return "test-token", nil
+	}))
 }
 
 type apiDownloadTestFilePlugin struct {

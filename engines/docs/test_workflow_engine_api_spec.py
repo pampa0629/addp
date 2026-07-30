@@ -42,7 +42,10 @@ def test_operator_metadata_uses_engine_type_and_category_path():
 
     assert "module" not in operator["properties"]
     assert "outputs" not in operator["properties"]
-    assert {"engine_type", "category_path", "execution_modes"}.issubset(operator["required"])
+    assert {"engine_type", "category_path", "execution_modes", "effects"}.issubset(operator["required"])
+    assert set(operator["properties"]["effects"]["items"]["enum"]) == {
+        "read", "write", "ddl", "external_effect"
+    }
 
 
 def test_parameter_metadata_exposes_resource_picker_contract():
@@ -85,6 +88,25 @@ def test_workflow_execute_response_allows_async_acceptance_status():
     status_enum = spec["components"]["schemas"]["WorkflowExecuteResponse"]["properties"]["status"]["enum"]
 
     assert {"success", "failed", "running", "pending"}.issubset(status_enum)
+
+
+def test_workflow_execute_request_requires_execution_authorization():
+    spec = load_spec()
+    request = spec["components"]["schemas"]["WorkflowExecuteRequest"]
+    runtime = spec["components"]["schemas"]["WorkflowRuntimeContext"]
+    authorization = spec["components"]["schemas"]["WorkflowExecutionAuthorization"]
+
+    assert {"workflow_def", "runtime"}.issubset(request["required"])
+    assert runtime["additionalProperties"] is False
+    assert runtime["required"] == ["execution_authorization"]
+    assert authorization["additionalProperties"] is False
+    assert set(authorization["required"]) == {"id", "effects"}
+    assert authorization["properties"]["id"]["minimum"] == 1
+    assert authorization["properties"]["effects"]["minItems"] == 1
+    assert authorization["properties"]["effects"]["uniqueItems"] is True
+    assert set(authorization["properties"]["effects"]["items"]["enum"]) == {
+        "read", "write", "ddl", "external_effect"
+    }
 
 
 def test_operator_list_example_has_no_module_field():

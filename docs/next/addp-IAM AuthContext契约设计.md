@@ -2,7 +2,7 @@
 
 更新日期：2026-07-27
 
-状态：技术设计和全平台切换已完成。唯一 JSON Schema、共享 Go/Python/前端类型、第一方/OAuth/Resource Ticket/Delegated Token 投影、System 与 owner Common Middleware/Guard、委托签发和 HTTP 消费器已实现，旧认证路径已删除；15 个 owner 的 678/678 个 OpenAPI Operation 与 9/9 个 Tool 授权覆盖 `complete=true`。开发数据库已迁移到 `18/clean` 并完成三员恢复，三员 Browser AuthContext 与一次性 OAuth 客户端协议驱动的 loopback/Device AuthContext E2E 通过；正式 `addp-cli` 尚未交付。
+状态：技术设计和全平台切换已完成。唯一 JSON Schema、共享 Go/Python/前端类型、第一方/OAuth/Resource Ticket/Delegated Token 投影、System 与 owner Common Middleware/Guard、委托签发和 HTTP 消费器已实现，旧认证路径已删除；15 个 owner 的 678/678 个 OpenAPI Operation 与 9/9 个 Tool 授权覆盖 `complete=true`。开发数据库已迁移到 `25/clean` 并完成三员恢复，三员 Browser AuthContext 与正式 `addp` CLI 的 loopback/Device AuthContext、Keychain 刷新、受委托 Tool 和撤销 E2E 通过。
 
 ## 一、目标与边界
 
@@ -595,7 +595,13 @@ Service Principal 不伪装成 User，不返回用户认证强度，也不进入
 }
 ```
 
-`service_access_token` 只定义 AuthContext 令牌语义，不预先决定使用 OAuth Client Credentials、私有签名还是其他 Credential 交换协议；该协议进入 Fosite ADR 和 Service Principal Credential 设计。
+`service_access_token` 由 Fosite Client Credentials Grant 签发。Confidential OAuth Client
+一对一绑定 Service Principal，第一阶段使用独立 `client_secret_basic` Credential；Token
+Tenant Runtime 请求的 `tenant_id` 必须解析为该 Principal 的有效 Membership，签发后
+Tenant Context 不可切换。平台控制面请求必须显式提交 `context_type=platform`，只允许
+平台所有 Service Principal 且必须存在专用 Platform Service Role Assignment；它不携带
+Tenant 字段，也不允许持有平台三员 Role。两种 Context 选择互斥。Token 有效期不超过
+5 分钟且不签发 Refresh Token。
 
 ### 5.4 Delegated Tool Token
 

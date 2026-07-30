@@ -25,7 +25,6 @@ func NewApplicationService(db *gorm.DB, authSvc *AuthorizationService) *Applicat
 // CreateApplicationReq 提交申请请求
 type CreateApplicationReq struct {
 	AssetID     int64  `json:"asset_id" binding:"required"`
-	ApplicantID int64  `json:"applicant_id" binding:"required"`
 	Reason      string `json:"reason" binding:"required"`
 	DurationDay int    `json:"duration_day"` // 0 时默认 30 天
 }
@@ -66,7 +65,7 @@ type ApplicationWithAuth struct {
 // ============================================================
 
 // Create 提交资产申请，含重复申请校验
-func (s *ApplicationService) Create(tenantID uint, req *CreateApplicationReq) (*models.Application, error) {
+func (s *ApplicationService) Create(tenantID uint, applicantID int64, req *CreateApplicationReq) (*models.Application, error) {
 	// 校验资产存在且已上架
 	var asset models.Asset
 	if err := s.db.Where("id = ? AND tenant_id = ? AND status = 'published'", req.AssetID, tenantID).
@@ -78,7 +77,7 @@ func (s *ApplicationService) Create(tenantID uint, req *CreateApplicationReq) (*
 	var pendingCount int64
 	s.db.Model(&models.Application{}).
 		Where("tenant_id = ? AND asset_id = ? AND applicant_id = ? AND status = 'pending'",
-			tenantID, req.AssetID, req.ApplicantID).
+			tenantID, req.AssetID, applicantID).
 		Count(&pendingCount)
 	if pendingCount > 0 {
 		return nil, errors.New("已有待审核申请，请勿重复提交")
@@ -87,8 +86,8 @@ func (s *ApplicationService) Create(tenantID uint, req *CreateApplicationReq) (*
 	// 重复申请校验：是否已有有效授权
 	var authCount int64
 	s.db.Model(&models.Authorization{}).
-		Where("tenant_id = ? AND asset_id = ? AND user_id = ? AND is_active = true AND (expires_at IS NULL OR expires_at > NOW())",
-			tenantID, req.AssetID, req.ApplicantID).
+		Where("tenant_id = ? AND asset_id = ? AND user_id = ? AND is_active = true AND (expires_at IS NULL OR expires_at > ?)",
+			tenantID, req.AssetID, applicantID, time.Now()).
 		Count(&authCount)
 	if authCount > 0 {
 		return nil, errors.New("已有有效授权，无需重复申请")
@@ -102,7 +101,7 @@ func (s *ApplicationService) Create(tenantID uint, req *CreateApplicationReq) (*
 	app := &models.Application{
 		TenantID:    int64(tenantID),
 		AssetID:     req.AssetID,
-		ApplicantID: req.ApplicantID,
+		ApplicantID: applicantID,
 		Reason:      req.Reason,
 		DurationDay: durationDay,
 		Status:      "pending",
@@ -111,6 +110,42 @@ func (s *ApplicationService) Create(tenantID uint, req *CreateApplicationReq) (*
 		return nil, err
 	}
 	return app, nil
+}
+
+// ConsumerStatus 返回当前用户对已上架资产的消费授权状态。
+func (s *ApplicationService) ConsumerStatus(tenantID uint, applicantID, assetID int64) (string, error) {
+	var assetCount int64
+	if err := s.db.Model(&models.Asset{}).
+		Where("tenant_id = ? AND id = ? AND status = 'published'", tenantID, assetID).
+		Count(&assetCount).Error; err != nil {
+		return "", err
+	}
+	if assetCount == 0 {
+		return "", gorm.ErrRecordNotFound
+	}
+
+	var authorizationCount int64
+	if err := s.db.Model(&models.Authorization{}).
+		Where("tenant_id = ? AND asset_id = ? AND user_id = ? AND is_active = true AND (expires_at IS NULL OR expires_at > ?)",
+			tenantID, assetID, applicantID, time.Now()).
+		Count(&authorizationCount).Error; err != nil {
+		return "", err
+	}
+	if authorizationCount > 0 {
+		return "approved", nil
+	}
+
+	var pendingCount int64
+	if err := s.db.Model(&models.Application{}).
+		Where("tenant_id = ? AND asset_id = ? AND applicant_id = ? AND status = 'pending'",
+			tenantID, assetID, applicantID).
+		Count(&pendingCount).Error; err != nil {
+		return "", err
+	}
+	if pendingCount > 0 {
+		return "pending", nil
+	}
+	return "none", nil
 }
 
 // List 申请列表（管理员视角，支持多维度过滤，LEFT JOIN 授权信息）

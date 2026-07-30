@@ -100,6 +100,7 @@ func TestHTTPListOperatorsPreservesParameterType(t *testing.T) {
 					"category_path": ["数据集"],
 					"description": "从 Datasource 中选择 DatasetVector。",
 					"execution_modes": ["workflow"],
+					"effects": ["read"],
 					"parameters": [
 						{"name": "datasource", "type": "object", "param_type": "input", "required": true, "description": "上游 Datasource 引用。"},
 						{"name": "dataset_name", "type": "string", "param_type": "param", "required": true, "description": "数据集名称。"}

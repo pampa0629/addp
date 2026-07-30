@@ -184,6 +184,7 @@ LOAD_METADATA = OperatorMetadata(
     description="数据加载",
     brief_description="从多种数据源加载数据,支持数据库表、文件、SQL查询和数据目录",
     execution_modes=["workflow"],
+    effects=["read"],
     overview="load 算子是工作流的起点,支持从数据库(PostgreSQL/MySQL/Doris)、文件系统(S3/HDFS/本地)、SQL查询和数据目录(Iceberg/Delta)加载数据到 Spark DataFrame。支持多种格式:Parquet/GeoParquet/CSV/Shapefile/Delta/Hudi。",
     params=[
         OperatorParam(
@@ -272,6 +273,7 @@ SAVE_METADATA = OperatorMetadata(
     description="数据保存",
     brief_description="将 DataFrame 保存到数据库表或文件系统,支持覆盖和追加模式",
     execution_modes=["workflow"],
+    effects=["write"],
     overview="save 算子是工作流的终点,将处理后的 DataFrame 保存到目标位置。支持保存到数据库表(PostgreSQL/MySQL/Doris)和文件系统(S3/HDFS/本地),提供覆盖(overwrite)和追加(append)两种模式。",
     params=[
         OperatorParam(
@@ -368,6 +370,7 @@ PREVIEW_METADATA = OperatorMetadata(
     description="数据预览",
     brief_description="限制返回行数,用于快速查看数据样本和调试工作流",
     execution_modes=["workflow"],
+    effects=["read"],
     overview="preview 算子用于调试和数据探索,返回 DataFrame 的前 N 行。相比 show(),preview 返回完整 DataFrame 可继续处理,常用于工作流开发阶段验证中间结果。",
     params=[
         OperatorParam(
@@ -418,6 +421,7 @@ CACHE_METADATA = OperatorMetadata(
     description="内存缓存",
     brief_description="将 DataFrame 缓存到内存,后续操作直接读缓存,适合多次复用的中间结果",
     execution_modes=["workflow"],
+    effects=["read"],
     overview="cache 算子将 DataFrame 缓存到 Spark 内存中,后续对该 DataFrame 的操作无需重新计算。适用于需要多次访问的中间结果,如迭代算法、多分支工作流。等价于 persist(MEMORY_ONLY)。",
     params=[
         OperatorParam(
@@ -460,6 +464,7 @@ PERSIST_METADATA = OperatorMetadata(
     description="持久化存储",
     brief_description="灵活的持久化策略,支持内存、磁盘和序列化组合,适合大数据集",
     execution_modes=["workflow"],
+    effects=["read"],
     overview="persist 算子提供比 cache 更灵活的持久化选项,可根据数据大小和访问模式选择存储级别。MEMORY_AND_DISK 在内存不足时自动溢出到磁盘,避免重新计算;MEMORY_AND_DISK_SER 通过序列化减少内存占用。",
     params=[
         OperatorParam(

@@ -69,7 +69,11 @@ func enrichTokenTransactionAudit(
 		return fosite.ErrInvalidRequest
 	}
 	principalID := family.PrincipalID
-	principalType := iam.PrincipalTypeUser
+	principal, err := repository.GetPrincipal(ctx, principalID)
+	if err != nil {
+		return err
+	}
+	principalType := principal.PrincipalType
 	contextType := family.ContextType
 	var tenantID *int64
 	if family.ContextType == iam.ContextTypeTenant {

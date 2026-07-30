@@ -137,6 +137,6 @@ func replaySystemEngineServer(t *testing.T) *httptest.Server {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(commonModels.Engine{ID: engineID, EngineType: engineType, IsActive: true})
+		_ = json.NewEncoder(w).Encode(commonModels.Engine{ID: engineID, EngineType: engineType, LifecycleState: "active"})
 	}))
 }

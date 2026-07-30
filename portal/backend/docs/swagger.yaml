@@ -28,11 +28,20 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "502":
+          description: 资产服务调用失败 | Asset service request failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 获取资产列表 | Get asset list
       tags:
       - Portal
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.entry.read
   /assets/{id}:
     get:
       parameters:
@@ -49,11 +58,20 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "502":
+          description: 资产服务调用失败 | Asset service request failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 获取资产详情 | Get asset detail
       tags:
       - Portal
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.entry.read
   /assets/{id}/apply:
     post:
       consumes:
@@ -79,11 +97,20 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "502":
+          description: 资产服务调用失败 | Asset service request failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 申请使用资产 | Apply for asset access
       tags:
       - Portal
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.application.create
   /assets/{id}/apply-status:
     get:
       parameters:
@@ -100,11 +127,21 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "502":
+          description: 资产服务调用失败 | Asset service request failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 获取资产申请状态 | Get asset apply status
       tags:
       - Portal
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.application.read
+      - asset.authorization.read
   /assets/{id}/endpoints:
     get:
       parameters:
@@ -121,11 +158,22 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "502":
+          description: 下游服务调用失败 | Downstream service request failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 获取资产服务端点 | Get asset service endpoints
       tags:
       - Portal
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.entry.read
+      - asset.application.read
+      - asset.authorization.read
   /assets/{id}/ratings:
     get:
       parameters:
@@ -142,11 +190,20 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "502":
+          description: 资产服务调用失败 | Asset service request failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 获取资产评价列表 | Get asset ratings
       tags:
       - Portal
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.rating.read
     post:
       consumes:
       - application/json
@@ -171,11 +228,21 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "502":
+          description: 资产服务调用失败 | Asset service request failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 提交资产评价 | Submit asset rating
       tags:
       - Portal
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.rating.create
+      - asset.rating.update
   /catalogs:
     get:
       produces:
@@ -188,11 +255,20 @@ paths:
               additionalProperties: true
               type: object
             type: array
+        "502":
+          description: 资产服务调用失败 | Asset service request failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 获取目录树 | Get catalog tree
       tags:
       - Portal
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.catalog.read
   /catalogs/{id}/assets:
     get:
       parameters:
@@ -209,11 +285,21 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "502":
+          description: 资产服务调用失败 | Asset service request failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 获取目录下的资产列表 | Get assets in catalog
       tags:
       - Portal
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.catalog.read
+      - asset.entry.read
   /home:
     get:
       produces:
@@ -224,11 +310,20 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "502":
+          description: 资产服务调用失败 | Asset service request failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 获取门户首页数据 | Get portal home data
       tags:
       - Portal
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.entry.read
   /my/applications:
     get:
       produces:
@@ -241,11 +336,20 @@ paths:
               additionalProperties: true
               type: object
             type: array
+        "502":
+          description: 资产服务调用失败 | Asset service request failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 获取我的申请列表 | Get my applications
       tags:
       - Portal
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.application.read
   /search:
     get:
       parameters:
@@ -261,11 +365,20 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "502":
+          description: 资产服务调用失败 | Asset service request failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 搜索资产 | Search assets
       tags:
       - Portal
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.entry.read
 securityDefinitions:
   BearerAuth:
     in: header

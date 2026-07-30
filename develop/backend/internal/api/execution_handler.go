@@ -7,10 +7,12 @@ import (
 	"strings"
 
 	commonAPI "github.com/addp/common/api"
+	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	developi18n "github.com/addp/develop/backend/i18n"
+	developauthorization "github.com/addp/develop/backend/internal/authorization"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
@@ -40,6 +42,7 @@ func NewExecutionHandler(devExecutor *service.DevExecutor, approvalService *serv
 // @Success 200 {object} map[string]string "执行已启动 | Execution started"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.execute"]
+// @x-addp-conditional-permissions ["develop.data_read.execute","develop.data_write.execute","develop.data_ddl.execute","develop.data_external_effect.execute","develop.notebook.execute"]
 // @Router /task-definitions/{id}/execute [post]
 func (h *ExecutionHandler) ExecuteDevTask(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -50,6 +53,19 @@ func (h *ExecutionHandler) ExecuteDevTask(c *gin.Context) {
 
 	tenantID := tenantIDValue(c)
 	userID := userIDValue(c)
+	taskType, err := h.devExecutor.GetDevTaskType(uint(id), tenantID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	if !requireNotebookExecutionPermission(c, taskType) {
+		return
+	}
+	userAccessToken, err := requestUserAccessToken(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, developi18n.MsgAuthenticationRequired), "error_code": "authentication_required"})
+		return
+	}
 
 	// 尝试解析参数（可选）
 	var params map[string]interface{}
@@ -64,13 +80,17 @@ func (h *ExecutionHandler) ExecuteDevTask(c *gin.Context) {
 			params,
 			tenantID,
 			userID,
+			userAccessToken,
 		)
 	} else {
 		// 常规执行
-		executionID, err = h.devExecutor.ExecuteDevTask(c.Request.Context(), uint(id), tenantID, userID, "manual")
+		executionID, err = h.devExecutor.ExecuteDevTask(c.Request.Context(), uint(id), tenantID, userID, userAccessToken, "manual")
 	}
 
 	if err != nil {
+		if writeExecutionAuthorizationError(c, err) {
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -96,6 +116,7 @@ func (h *ExecutionHandler) ExecuteDevTask(c *gin.Context) {
 // @Failure 410 {object} models.ToolApprovalErrorResponse "审批已过期 | Approval expired"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.execute"]
+// @x-addp-conditional-permissions ["develop.data_read.execute","develop.data_write.execute","develop.data_ddl.execute","develop.data_external_effect.execute","develop.notebook.execute"]
 // @Router /executions [post]
 func (h *ExecutionHandler) ExecuteContent(c *gin.Context) {
 	var req models.CreateExecutionRequest
@@ -158,9 +179,17 @@ func (h *ExecutionHandler) ExecuteContent(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "dev_type、trigger_type 和 execution_config 为必填字段"})
 		return
 	}
+	if !requireNotebookExecutionPermission(c, req.DevType) {
+		return
+	}
 
 	tenantID := tenantIDValue(c)
 	userID := userIDValue(c)
+	userAccessToken, err := requestUserAccessToken(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, developi18n.MsgAuthenticationRequired), "error_code": "authentication_required"})
+		return
+	}
 
 	executionID, err := h.devExecutor.ExecuteContent(
 		c.Request.Context(),
@@ -169,10 +198,14 @@ func (h *ExecutionHandler) ExecuteContent(c *gin.Context) {
 		req.ExecutionConfig,
 		tenantID,
 		userID,
+		userAccessToken,
 		req.TriggerType,
 		req.Timeout,
 	)
 	if err != nil {
+		if writeExecutionAuthorizationError(c, err) {
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -236,10 +269,12 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 // @Produce json
 // @Param execution_id path string true "执行ID（UUID）| Execution ID (UUID)"
 // @Success 200 {object} models.ExecutionWithDevTaskSwagger "执行详情 | Execution details"
-// @x-addp-auth-mode "internal"
-// @Router /internal/executions/{execution_id} [get]
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task_provider.read"]
+// @Router /task-provider/executions/{execution_id} [get]
 func (h *ExecutionHandler) ProviderGetExecution(c *gin.Context) {
-	h.getExecution(c, internalTenantIDValue(c))
+	h.getExecution(c, tenantIDValue(c))
 }
 
 func (h *ExecutionHandler) getExecution(c *gin.Context, tenantID uint) {
@@ -301,6 +336,24 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 	})
 }
 
+func writeExecutionAuthorizationError(c *gin.Context, err error) bool {
+	status, ok := commonClient.SystemAPIStatusCode(err)
+	if !ok {
+		return false
+	}
+	switch status {
+	case http.StatusUnauthorized:
+		c.JSON(status, gin.H{"error": commoni18n.T(c, developi18n.MsgAuthenticationRequired), "error_code": "authentication_required"})
+	case http.StatusForbidden:
+		c.JSON(status, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionEffectForbidden), "error_code": "execution_effect_permission_denied"})
+	case http.StatusConflict:
+		c.JSON(status, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionConflict), "error_code": "execution_authorization_conflict"})
+	default:
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionAuthorizationUnavailable), "error_code": "execution_authorization_unavailable"})
+	}
+	return true
+}
+
 // RetryExecution 重试执行
 // @Summary 重试执行 | Retry execution
 // @Tags Execution
@@ -308,14 +361,31 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 // @Success 200 {object} map[string]string "重试已启动 | Retry started"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.execute"]
+// @x-addp-conditional-permissions ["develop.data_read.execute","develop.data_write.execute","develop.data_ddl.execute","develop.data_external_effect.execute","develop.notebook.execute"]
 // @Router /executions/{execution_id}/retry [post]
 func (h *ExecutionHandler) RetryExecution(c *gin.Context) {
 	executionID := c.Param("execution_id")
 	tenantID := tenantIDValue(c)
 	userID := userIDValue(c)
-
-	newExecutionID, err := h.devExecutor.RetryExecution(executionID, tenantID, userID)
+	taskType, err := h.devExecutor.GetExecutionTaskType(executionID, tenantID)
 	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	if !requireNotebookExecutionPermission(c, taskType) {
+		return
+	}
+	userAccessToken, err := requestUserAccessToken(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, developi18n.MsgAuthenticationRequired), "error_code": "authentication_required"})
+		return
+	}
+
+	newExecutionID, err := h.devExecutor.RetryExecution(executionID, tenantID, userID, userAccessToken)
+	if err != nil {
+		if writeExecutionAuthorizationError(c, err) {
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -324,6 +394,20 @@ func (h *ExecutionHandler) RetryExecution(c *gin.Context) {
 		"message":      commoni18n.T(c, developi18n.MsgRetryStarted),
 		"execution_id": newExecutionID,
 	})
+}
+
+func requireNotebookExecutionPermission(c *gin.Context, taskType string) bool {
+	if taskType != commonExecution.TaskTypeScript {
+		return true
+	}
+	if commonAuth.HasRolePermission(c, developauthorization.PermissionDevelopNotebookExecute) {
+		return true
+	}
+	c.JSON(http.StatusForbidden, gin.H{
+		"error":      commoni18n.T(c, developi18n.MsgNotebookExecutionForbidden),
+		"error_code": "notebook_execution_permission_denied",
+	})
+	return false
 }
 
 // GetExecutionStatistics 获取执行统计
@@ -396,8 +480,10 @@ type providerExecuteDevResponse struct {
 // @Success 202 {object} providerExecuteDevResponse "执行已启动 | Execution started"
 // @Failure 400 {object} map[string]interface{} "参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器错误 | Server error"
-// @x-addp-auth-mode "internal"
-// @Router /internal/tasks/{task_type}/{id}/execute [post]
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task_provider.execute"]
+// @Router /task-provider/tasks/{task_type}/{id}/execute [post]
+// @Security BearerAuth
 func (h *ExecutionHandler) ProviderExecuteDevTask(c *gin.Context) {
 	taskType := c.Param("task_type")
 	if !isDevelopTaskType(taskType) {
@@ -421,25 +507,21 @@ func (h *ExecutionHandler) ProviderExecuteDevTask(c *gin.Context) {
 		return
 	}
 	source := strings.TrimSpace(req.Source)
-	if source == "" {
-		source = commonExecution.ModuleDevelop
-	}
-	var parentExecutionID *string
-	if strings.TrimSpace(req.ParentExecutionID) != "" {
-		parentExecutionID = &req.ParentExecutionID
+	if source != commonExecution.ModuleOrchestrator || strings.TrimSpace(req.ParentExecutionID) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "orchestrator source and parent_execution_id are required"})
+		return
 	}
 
-	tenantID := internalTenantIDValue(c)
+	tenantID := tenantIDValue(c)
 
-	executionID, err := h.devExecutor.ExecuteWithParamsWithContext(
+	executionID, err := h.devExecutor.ExecuteWithParamsFromParentExecution(
 		c.Request.Context(),
 		uint(id),
 		req.Parameters,
 		tenantID,
-		0,
 		triggerType,
 		source,
-		parentExecutionID,
+		req.ParentExecutionID,
 		taskType,
 	)
 	if err != nil {
@@ -448,7 +530,7 @@ func (h *ExecutionHandler) ProviderExecuteDevTask(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusAccepted, providerExecuteDevResponse{
-		Status:      commonExecution.ExecutionStatusRunning,
+		Status:      commonExecution.ExecutionStatusPending,
 		ExecutionID: executionID,
 	})
 }

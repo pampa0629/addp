@@ -40,8 +40,12 @@ func (p *JupyterPlugin) SensitiveFields() []string {
 	return []string{} // Jupyter 引擎通常不需要敏感字段
 }
 
+func (p *JupyterPlugin) ConnectionIdentityFields() []string {
+	return []string{"protocol", "host", "port"}
+}
+
 func (p *JupyterPlugin) Capabilities() plugin.EngineCapabilities {
-	return plugin.NewScriptCapabilities(p.Type(), []string{"notebook", "lab"}, []string{"python"})
+	return plugin.NewScriptCapabilities(p.Type(), []string{"notebook"}, []string{"python"})
 }
 
 func (p *JupyterPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
@@ -71,7 +75,7 @@ func (p *JupyterPlugin) OpenSession(ctx context.Context, connInfo plugin.Connect
 
 	mode := req.Mode
 	if mode == "" {
-		mode = "lab"
+		mode = "notebook"
 	}
 	language := req.Language
 	if language == "" {

@@ -14,8 +14,9 @@ const (
 
 // 资源回收生命周期事件名称。
 const (
-	CleanupCauseEngineDeleted = "engine.deleted"
-	CleanupCauseTenantDeleted = "tenant.deleted"
+	CleanupCauseEngineDeleting = "engine.deleting"
+	CleanupCauseEngineDeleted  = "engine.deleted"
+	CleanupCauseTenantDeleted  = "tenant.deleted"
 )
 
 // 资源回收动作类型

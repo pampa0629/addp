@@ -56,8 +56,21 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.entry.read"
+                ]
             }
         },
         "/assets/{id}": {
@@ -90,8 +103,21 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.entry.read"
+                ]
             }
         },
         "/assets/{id}/apply": {
@@ -137,8 +163,21 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.application.create"
+                ]
             }
         },
         "/assets/{id}/apply-status": {
@@ -171,8 +210,22 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.application.read",
+                    "asset.authorization.read"
+                ]
             }
         },
         "/assets/{id}/endpoints": {
@@ -205,8 +258,23 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "502": {
+                        "description": "下游服务调用失败 | Downstream service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.entry.read",
+                    "asset.application.read",
+                    "asset.authorization.read"
+                ]
             }
         },
         "/assets/{id}/ratings": {
@@ -239,8 +307,21 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.rating.read"
+                ]
             },
             "post": {
                 "security": [
@@ -284,8 +365,22 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.rating.create",
+                    "asset.rating.update"
+                ]
             }
         },
         "/catalogs": {
@@ -312,8 +407,21 @@ const docTemplate = `{
                                 "additionalProperties": true
                             }
                         }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.catalog.read"
+                ]
             }
         },
         "/catalogs/{id}/assets": {
@@ -346,8 +454,22 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.catalog.read",
+                    "asset.entry.read"
+                ]
             }
         },
         "/home": {
@@ -371,8 +493,21 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.entry.read"
+                ]
             }
         },
         "/my/applications": {
@@ -399,8 +534,21 @@ const docTemplate = `{
                                 "additionalProperties": true
                             }
                         }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.application.read"
+                ]
             }
         },
         "/search": {
@@ -432,8 +580,21 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.entry.read"
+                ]
             }
         }
     },

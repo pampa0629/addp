@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/orchestrator/internal/models"
@@ -21,7 +22,7 @@ type Executor struct {
 	executionService     *ExecutionService
 	orchRepo             *repository.OrchestrationRepository
 	taskProviderRegistry *TaskProviderRegistry
-	internalAPIKey       string
+	serviceTokens        commonClient.ServiceTokenProvider
 }
 
 // NewExecutor 创建执行器
@@ -29,13 +30,13 @@ func NewExecutor(
 	executionService *ExecutionService,
 	orchRepo *repository.OrchestrationRepository,
 	taskProviderRegistry *TaskProviderRegistry,
-	internalAPIKey string,
+	serviceTokens commonClient.ServiceTokenProvider,
 ) *Executor {
 	return &Executor{
 		executionService:     executionService,
 		orchRepo:             orchRepo,
 		taskProviderRegistry: taskProviderRegistry,
-		internalAPIKey:       internalAPIKey,
+		serviceTokens:        serviceTokens,
 	}
 }
 
@@ -194,12 +195,15 @@ func (e *Executor) executeWithTaskProvider(ctx context.Context, step *models.Ste
 		return result, fmt.Errorf("%s", result.Error)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if e.internalAPIKey != "" {
-		req.Header.Set("X-Internal-API-Key", e.internalAPIKey)
+	token, err := e.serviceToken(ctx, tenantID)
+	if err != nil {
+		result.Status = "failed"
+		result.Error = fmt.Sprintf("获取服务访问令牌失败: %v", err)
+		result.EndedAt = time.Now()
+		result.Duration = time.Since(start).Milliseconds()
+		return result, fmt.Errorf("%s", result.Error)
 	}
-	if tenantID > 0 {
-		req.Header.Set("X-Tenant-ID", fmt.Sprintf("%d", tenantID))
-	}
+	req.Header.Set("Authorization", "Bearer "+token)
 
 	httpClient := &http.Client{Timeout: 30 * time.Second}
 	resp, err := httpClient.Do(req)
@@ -306,12 +310,11 @@ func (e *Executor) pollTaskProviderExecution(ctx context.Context, provider *comm
 			if err != nil {
 				continue
 			}
-			if e.internalAPIKey != "" {
-				req.Header.Set("X-Internal-API-Key", e.internalAPIKey)
+			token, err := e.serviceToken(ctx, tenantID)
+			if err != nil {
+				return nil, fmt.Errorf("获取服务访问令牌失败: %w", err)
 			}
-			if tenantID > 0 {
-				req.Header.Set("X-Tenant-ID", fmt.Sprintf("%d", tenantID))
-			}
+			req.Header.Set("Authorization", "Bearer "+token)
 
 			resp, err := httpClient.Do(req)
 			if err != nil {
@@ -346,6 +349,13 @@ func (e *Executor) pollTaskProviderExecution(ctx context.Context, provider *comm
 			}
 		}
 	}
+}
+
+func (e *Executor) serviceToken(ctx context.Context, tenantID int) (string, error) {
+	if e == nil || e.serviceTokens == nil || tenantID <= 0 {
+		return "", fmt.Errorf("tenant service token source is required")
+	}
+	return e.serviceTokens.Token(ctx, uint(tenantID))
 }
 
 func providerExecutionErrorMessage(execData map[string]interface{}) string {

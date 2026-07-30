@@ -87,11 +87,20 @@ func main() {
 
 	// 初始化 Meta 客户端
 	var metaClient *commonClient.MetaClient
-	if cfg.EnableIntegration && cfg.InternalAPIKey != "" && cfg.MetaServiceURL != "" {
-		metaClient = commonClient.NewMetaClientWithInternalKey(cfg.MetaServiceURL, cfg.InternalAPIKey)
+	if cfg.EnableIntegration {
+		if cfg.ServiceClientSecret == "" || cfg.MetaServiceURL == "" || cfg.SystemServiceURL == "" {
+			logger.L().Error("服务集成已启用，但 Meta Service Client Credential 或服务 URL 未配置")
+			os.Exit(1)
+		}
+		tokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-service", cfg.ServiceClientSecret, nil)
+		if err != nil {
+			logger.L().Error("Service Token Source 初始化失败", "error", err)
+			os.Exit(1)
+		}
+		metaClient = commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
 		logger.L().Info("MetaClient 已初始化", "meta_url", cfg.MetaServiceURL)
 	} else {
-		logger.L().Warn("Meta 集成未启用或配置不完整，元数据查询功能将不可用")
+		logger.L().Info("服务集成未启用")
 	}
 
 	// 构建服务基础URL用于查询服务
@@ -145,7 +154,7 @@ func main() {
 	wmtsHandler := api.NewWMTSHandler(tileServiceService)
 	ogcTilesHandler := api.NewOGCTilesHandler(tileServiceService, tileEndpointHandler)
 	dataServiceHandler := api.NewDataServiceHandler(queryService)
-	resourceCapabilityHandler := api.NewResourceCapabilityHandler(systemClient, cfg.MetaServiceURL)
+	resourceCapabilityHandler := api.NewResourceCapabilityHandler(systemClient, metaClient)
 	serviceEndpointHandler := api.NewServiceEndpointHandler(queryServiceService, registeredServiceService, tileServiceService)
 	graphQueryHandler := api.NewGraphQueryHandler(graphQueryServiceService, graphQueryExecutor)
 

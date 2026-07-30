@@ -18,8 +18,9 @@ type Config struct {
 	GatewayURL string
 
 	// 模块集成配置
-	ManagerServiceURL string
-	MetaServiceURL    string
+	ManagerServiceURL   string
+	MetaServiceURL      string
+	ServiceClientSecret string
 
 	// Redis 配置（用于资源变更事件同步）
 	RedisHost     string
@@ -44,11 +45,12 @@ func Load() *Config {
 	metaURL := commonConfig.GetEnv("META_URL", "http://localhost:8082")
 
 	cfg := &Config{
-		Port:              commonConfig.GetEnv("SERVICE_BACKEND_PORT", "8086"),
-		DBSchema:          commonConfig.GetEnv("DB_SCHEMA", "service"),
-		GatewayURL:        commonConfig.GetEnv("GATEWAY_URL", "http://localhost:8000"),
-		ManagerServiceURL: managerURL,
-		MetaServiceURL:    metaURL,
+		Port:                commonConfig.GetEnv("SERVICE_BACKEND_PORT", "8086"),
+		DBSchema:            commonConfig.GetEnv("DB_SCHEMA", "service"),
+		GatewayURL:          commonConfig.GetEnv("GATEWAY_URL", "http://localhost:8000"),
+		ManagerServiceURL:   managerURL,
+		MetaServiceURL:      metaURL,
+		ServiceClientSecret: commonConfig.GetEnv("SERVICE_SERVICE_CLIENT_SECRET", ""),
 	}
 
 	// 设置 BaseConfig 字段

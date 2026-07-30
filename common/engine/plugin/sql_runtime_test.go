@@ -20,7 +20,8 @@ func (p *fakeSQLRuntimeProvider) DefaultPort() int { return 0 }
 
 func (p *fakeSQLRuntimeProvider) RequiredFields() []string { return nil }
 
-func (p *fakeSQLRuntimeProvider) SensitiveFields() []string { return nil }
+func (p *fakeSQLRuntimeProvider) SensitiveFields() []string          { return nil }
+func (p *fakeSQLRuntimeProvider) ConnectionIdentityFields() []string { return []string{"host"} }
 
 func (p *fakeSQLRuntimeProvider) Capabilities() EngineCapabilities { return EngineCapabilities{} }
 

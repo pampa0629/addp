@@ -111,6 +111,32 @@ Principal 有效
 
 Browser Resource Access Ticket 同样使用默认拒绝策略。System 的 AuthContext 接口是仅供 Owner 解析票据的基础设施例外；System 的其他身份、Tenant、OAuth、引擎和管理 API 必须拒绝该票据。Owner 只在挂载 Resource Ticket Guard 的 GET/HEAD 原生资源路由读取 `addp_resource_access_ticket` Cookie；Guard 挂载本身就是路由白名单，不再接收运行时 matcher。该路由不得同时接受 `Authorization` Header 和 Ticket Cookie，出现 `Authorization` Header 时统一拒绝，避免歧义凭据优先级。Guard 必须校验 `token.type=resource_access_ticket`、唯一 owner audience、`scope_mode=restricted`、唯一 `resource:read` Scope 以及声明的 Role Permission all-of 候选；最终 Assignment Scope、资源归属、Grant、Policy 和 Explicit Deny 仍由 owner Handler 判断。
 
+### 5.1 同步 BFF 授权
+
+Portal 等同步 BFF 不拥有其所展示业务资源的授权事实。BFF 调用 Asset 等 owner 的消费 API 时，
+只在当前请求调用栈内转发已经过自身 AuthContext 中间件验证的 User Bearer；owner 必须重新解析
+同一 AuthContext，并完成 Permission、资源状态、资源归属、Grant、Policy 和 Explicit Deny 判断。
+BFF 不能提交或让 owner 信任 User、Tenant、Membership、Role、申请人或评价人字段，也不能保存、
+缓存、记录或异步转发 User Access Token。
+
+BFF 以 Service Principal 调用下游只适用于不代表用户作业务决定的最小聚合能力。该 Service
+Principal 必须使用独立 Confidential OAuth Client、当前 Tenant Membership、专用 Runtime Role、
+固定 Client Guard 和精确 Permission。Portal 的机器身份不得持有 `asset.*` 业务 Permission；它在
+Asset 已按当前 User 确认有效授权后，只能读取 Service 端点投影。真实数据访问仍由 owner Resource
+Grant 或 Resource Ticket 独立判断。
+
+### 5.2 计算执行授权
+
+SQL、Workflow、Jupyter 等计算入口必须先在当前 User AuthContext 下完成两层判断：一是入口自身的功能 Permission，二是本次执行涉及资源与 `read | write | ddl | external_effect` 效果的 owner 决策。通过后由 System 创建绑定唯一 execution 的 Execution Authorization。
+
+Execution Authorization 固定包含当前 Principal、Tenant Membership、`authorization_version`、owner audience、execution ID、允许的 Engine Instance、允许效果、签发时间和到期时间。它不是访问令牌，不进入 AuthContext Schema，也不得以源 Access Token 的存活、Refresh Token Family 或 Token ID 作为执行期授权事实；统一执行记录只保存其稳定 ID 和不含密钥的审计摘要。原始 User Access Token、Service Access Token、Engine 明文连接和运行时访问计划不得写入 `execution_config`、任务定义、日志或审计详情。
+
+匹配 audience 的 Runtime Service Principal 使用自身 Service Access Token 消费 Execution Authorization。System 必须同时校验 Service Principal/OAuth Client 与 audience 匹配、Tenant Context 相同、Execution Authorization 未过期或撤销、源 Principal/Membership/授权版本仍有效、Engine 与效果均在授权边界内。Service Principal 的 Runtime Role 只授予消费执行授权所需的内部 Permission，不授予通用 `system.engine.read`、Tenant 数据 Permission 或用户 Role。
+
+交互式执行以当前 User 为授权主体；异步执行把创建 execution 时的 User、Tenant Membership 和授权版本写为不可变执行来源事实。定时执行绑定任务授权主体：该主体只能由同 Tenant 的当前 User AuthContext 在创建、更新或显式重新授权任务时写入，并必须绑定当前任务定义；任务定义或授权版本发生变化后不得继续沿用旧主体。每次执行开始前必须重新校验 Membership、Role、资源规则和授权版本；显式平台自动任务才使用 Service Principal 自身 Runtime Role。任何路径都不得持久化或代传原始 User Access Token。
+
+跨模块异步调用时，owner Runtime Service Principal 只能为与自身 audience 匹配的子 execution 请求 Execution Authorization。System 必须验证父 execution、子 execution、Tenant、User、Membership、授权版本和 `parent_execution_id` 来源链完全一致，并重新计算当前 Role Permission；调用方提交的主体字段不能单独成为授权事实。Orchestrator Service Principal 只负责调用 TaskProvider 和传递父 execution 身份，不获得数据效果 Permission，也不能任意指定或替换任务授权主体。
+
 ## 六、共享中间件
 
 ### 6.1 Go
@@ -139,6 +165,17 @@ Browser Resource Access Ticket 同样使用默认拒绝策略。System 的 AuthC
 
 OAuth 数据模型不复用 `system.applications/api_keys`：API Key 表达应用身份，OAuth Client 表达获得用户授权的客户端软件，两者生命周期和审计语义不同。
 
+内部模块使用 Fosite Client Credentials Grant 获取 Service Access Token。每个模块使用
+独立 Confidential OAuth Client，Client 必须一对一绑定一个 Service Principal；Client
+Secret 只保存 BCrypt Hash。Tenant Runtime 请求中的 `tenant_id` 仅用于从该 Service
+Principal 的有效 Tenant Membership 中选择 Context，不能直接成为授权事实；平台控制面
+请求必须显式提交 `context_type=platform`，且只允许平台所有 Service Principal 使用专用
+Platform Service Role，不允许 Service Principal 持有或借用平台三员 Role。两种请求形态
+互斥，缺失或同时提交 Context 判别均拒绝。签发的 Token 固定为
+`service_access_token`、`authentication.methods=["service_secret"]`、
+`assurance_level=not_applicable`，有效期不超过 5 分钟且不签发 Refresh Token。业务请求只
+发送 Bearer Token，禁止同时发送 `X-Internal-API-Key` 或 `X-Tenant-ID`。
+
 ## 八、禁止事项
 
 - 外部 Agent 使用 `INTERNAL_API_KEY`；
@@ -161,4 +198,6 @@ OAuth 数据模型不复用 `system.applications/api_keys`：API Key 表达应�
 
 不允许旧 AuthContext 与新 AuthContext 按客户端、路由或配置双轨共存。
 
-当前 IAM Runtime 基础阶段已落地唯一 `auth-context-v1.schema.json`、共享 Go 类型，以及第一方 Web Access Token、Browser Resource Access Ticket 和 Delegated Access Token 投影。Resource Ticket 使用所属第一方 Browser Family 的同一身份与授权投影，并用 owner audience 和 `resource:read` 额外收窄；Delegated Token 回溯源 Access Token 与 Family，并用 owner Tool Scope 和审计绑定额外收窄。OAuth Access Token、Service Principal 和委托签发目标 Runtime 在对应阶段完成前统一拒绝，不借用第一方路径、不构造缺失事实。API、共享中间件和旧认证入口仍须在调用方准备完成后一次性切换。
+当前 IAM Runtime 使用唯一 `auth-context-v1.schema.json` 和共享类型投影第一方 Web、OAuth User、Service Principal、Browser Resource Access Ticket 与 Delegated Access Token。Resource Ticket 使用所属第一方 Browser Family 的同一身份与授权投影，并用 owner audience 和 `resource:read` 额外收窄；Delegated Token 回溯源 Access Token 与 Family，并用 owner Tool Scope 和审计绑定额外收窄；Service Access Token 只由 Fosite Client Credentials Grant 签发，并固定为一个 Tenant Membership Context 或一个显式 Platform Service Context。调用方必须一次性迁移，不能保留共享 Internal API Key 与 Bearer 双轨。
+
+Execution Authorization 不新增 AuthContext Token 类型，也不复用 Agent Delegated Access Token。它是由 User AuthContext 派生、由匹配 Runtime Service Principal 消费的执行期授权事实；调用方迁移后必须删除“Service Principal 直接获得通用 Engine 明文读取权限”和“用户 Token 代传到 Worker/Runtime”两条旧路径。

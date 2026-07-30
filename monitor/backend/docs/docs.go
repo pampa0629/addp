@@ -1826,6 +1826,22 @@ const docTemplate = `{
         "execution.TaskExecution": {
             "type": "object",
             "properties": {
+                "actor_principal_id": {
+                    "description": "User-derived execution authorization facts. The raw User/Service tokens\nand engine connection details are never persisted in task executions.",
+                    "type": "integer"
+                },
+                "actor_tenant_membership_id": {
+                    "type": "integer"
+                },
+                "authorization_effects": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "authorization_expires_at": {
+                    "type": "string"
+                },
                 "bytes_read": {
                     "description": "Transfer 读取字节数",
                     "type": "integer"
@@ -1852,6 +1868,9 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "execution_authorization_id": {
+                    "type": "integer"
+                },
                 "execution_config": {
                     "description": "JSONB 字段",
                     "allOf": [
@@ -1869,6 +1888,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "id": {
+                    "type": "integer"
+                },
+                "issued_authorization_version": {
                     "type": "integer"
                 },
                 "metadata": {

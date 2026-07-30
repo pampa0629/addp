@@ -25,7 +25,7 @@ func validateManualScanRequestTriggerType(triggerType string) error {
 }
 
 // CreateManualRun 创建手动扫描执行并入队
-func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, userID uint, token string, req *models.ScanRequest) (*commonExecution.TaskExecution, error) {
+func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, userID uint, req *models.ScanRequest) (*commonExecution.TaskExecution, error) {
 	if req == nil {
 		return nil, errors.New("请求不能为空")
 	}
@@ -47,7 +47,7 @@ func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, us
 		return nil, fmt.Errorf("解析扫描范围失败: %w", err)
 	}
 
-	resource, err := s.engineService.GetResourceByID(scope.EngineID, tenantID, token)
+	resource, err := s.engineService.GetResourceByID(scope.EngineID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("验证资源失败: %w", err)
 	}
@@ -63,7 +63,6 @@ func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, us
 		scope.ScanDepth,
 		scope.Force,
 		scope.Source,
-		token,
 		time.Now(),
 	)
 
@@ -90,7 +89,7 @@ func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, us
 	return execution, nil
 }
 
-func (s *ScanExecutionService) CreateUnscannedRuns(ctx context.Context, tenantID, userID uint, token string) ([]*commonExecution.TaskExecution, error) {
+func (s *ScanExecutionService) CreateUnscannedRuns(ctx context.Context, tenantID, userID uint) ([]*commonExecution.TaskExecution, error) {
 	resources, err := s.engineService.GetEnginesWithStats(tenantID)
 	if err != nil {
 		return nil, err
@@ -104,7 +103,7 @@ func (s *ScanExecutionService) CreateUnscannedRuns(ctx context.Context, tenantID
 		if resource.ScannedAt != "" && resource.UnscannedCatalogNodes <= 0 {
 			continue
 		}
-		run, err := s.CreateManualRun(ctx, tenantID, userID, token, &models.ScanRequest{
+		run, err := s.CreateManualRun(ctx, tenantID, userID, &models.ScanRequest{
 			EngineID:  resource.EngineID,
 			ScanDepth: scanflow.ScanDepthDeep,
 			Force:     false,

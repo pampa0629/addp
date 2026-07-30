@@ -1248,7 +1248,10 @@
           "maxLength": "最长长度",
           "avgLength": "平均长度",
           "trueCount": "True 数",
-          "falseCount": "False 数"
+          "falseCount": "False 数",
+          "validGeometryCount": "有效几何数",
+          "invalidGeometryCount": "无效几何数",
+          "emptyGeometryCount": "空几何数"
         }
       },
       "emptyPreview": {

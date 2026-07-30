@@ -97,15 +97,15 @@ func main() {
 	// 创建 MetaClient（用于元数据扫描）
 	var metaClient *commonClient.MetaClient
 	if cfg.EnableIntegration && cfg.MetaServiceURL != "" {
-		if cfg.InternalAPIKey != "" {
-			metaClient = commonClient.NewMetaClientWithInternalKey(
-				cfg.MetaServiceURL,
-				cfg.InternalAPIKey,
-			)
-			log.Printf("✅ MetaClient initialized: %s", cfg.MetaServiceURL)
-		} else {
-			log.Printf("⚠️  MetaClient not initialized - no internal API key configured")
+		if cfg.ServiceClientSecret == "" {
+			log.Fatal("服务集成已启用，但 TRANSFER_SERVICE_CLIENT_SECRET 未配置")
 		}
+		tokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-transfer", cfg.ServiceClientSecret, nil)
+		if err != nil {
+			log.Fatalf("Service Token Source 初始化失败: %v", err)
+		}
+		metaClient = commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
+		log.Printf("✅ MetaClient initialized: %s", cfg.MetaServiceURL)
 	}
 
 	// 初始化 Service 层

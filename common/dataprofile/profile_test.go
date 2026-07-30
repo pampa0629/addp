@@ -2,6 +2,7 @@ package dataprofile
 
 import (
 	"math"
+	"reflect"
 	"testing"
 	"time"
 
@@ -94,6 +95,46 @@ func TestBuildInfersFieldsAndKeepsUnsupportedBaseMetrics(t *testing.T) {
 	field := profile.Fields[0]
 	if field.Name != "payload" || field.Status != MetricStatusUnsupported || field.ValueCount != 1 || field.NullCount != 1 {
 		t.Fatalf("unexpected inferred field: %#v", field)
+	}
+}
+
+func TestBuildGeometryProfile(t *testing.T) {
+	rows := []map[string]interface{}{
+		{"shape": "POINT (1 2)"},
+		{"shape": "POLYGON ((0 0, 0 1, 1 1, 0 0))"},
+		{"shape": "MULTIPOLYGON (((0 0, 0 1, 1 1, 0 0)))"},
+		{"shape": "POLYGON EMPTY"},
+		{"shape": "not-a-geometry"},
+		{"shape": nil},
+	}
+
+	profile := Build(rows, []datatype.FieldInfo{{
+		Name: "shape", Type: datatype.FieldTypeGeometry, NativeType: "geometry", Nullable: true,
+	}}, BuildOptions{RowsScanned: int64(len(rows))})
+
+	if len(profile.Fields) != 1 {
+		t.Fatalf("fields = %d, want 1", len(profile.Fields))
+	}
+	field := profile.Fields[0]
+	if field.Type != datatype.FieldTypeGeometry || field.Status != MetricStatusComputed {
+		t.Fatalf("unexpected geometry field status: %#v", field)
+	}
+	if field.Spatial == nil {
+		t.Fatal("spatial metrics are missing")
+	}
+	if field.Spatial.ValidGeometryCount != 3 || field.Spatial.InvalidGeometryCount != 1 || field.Spatial.EmptyGeometryCount != 1 {
+		t.Fatalf("unexpected spatial metrics: %#v", field.Spatial)
+	}
+	if len(field.TopValues) != 0 {
+		t.Fatalf("geometry top values must not expose full geometry values: %#v", field.TopValues)
+	}
+	wantDistribution := []DistributionBucket{
+		{Label: "MultiPolygon", Count: 1},
+		{Label: "Point", Count: 1},
+		{Label: "Polygon", Count: 1},
+	}
+	if !reflect.DeepEqual(field.Distribution, wantDistribution) {
+		t.Fatalf("distribution = %#v, want %#v", field.Distribution, wantDistribution)
 	}
 }
 

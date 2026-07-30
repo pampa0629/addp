@@ -17,12 +17,19 @@
           <div class="engine-row">
             <span class="engine-label">{{ t('develop.workflow.workflowEngine') }}</span>
             <el-select
+              ref="engineSelectRef"
               :model-value="workflowEngineId"
               :placeholder="t('develop.workflow.selectEngine')"
               :disabled="switchingEngine || editorBusy"
               class="engine-select"
               @change="requestEngineChange"
             >
+              <el-option
+                v-if="workflowEngineUnavailable"
+                :label="t('develop.workflow.engineUnavailableOption', { id: workflowEngineId })"
+                :value="workflowEngineId"
+                disabled
+              />
               <el-option
                 v-for="engine in workflowEngines"
                 :key="engine.id"
@@ -35,6 +42,15 @@
                 </div>
               </el-option>
             </el-select>
+            <el-tooltip
+              v-if="workflowEngineUnavailable"
+              :content="t('develop.workflow.engineUnavailableHint')"
+              placement="bottom"
+            >
+              <el-tag class="engine-status-tag" size="small" type="danger" effect="plain">
+                {{ t('develop.workflow.engineUnavailable') }}
+              </el-tag>
+            </el-tooltip>
 
             <template v-if="needsSparkRuntime()">
               <span class="engine-label">{{ t('develop.workflow.sparkRuntime') }}</span>
@@ -427,6 +443,7 @@ const operatorLoadError = ref('')
 const canvasRef = ref(null)
 const paramsPanelRef = ref(null)
 const fileInputRef = ref(null)
+const engineSelectRef = ref(null)
 const workflowData = ref({ tasks: [] })
 const editorLayout = ref({})
 const selectedNode = ref(null)
@@ -467,6 +484,9 @@ const aiInputRef = ref(null)
 
 const hasValidWorkflow = computed(() => isStandardWorkflowDefinition(workflowData.value))
 const isDirty = computed(() => editorStateSignature() !== savedStateSignature.value)
+const workflowEngineUnavailable = computed(() => Boolean(
+  workflowEngineId.value && !selectedEngine.value
+))
 const pendingWorkflowEngine = computed(() => (
   workflowEngines.value.find(engine => engine.id === pendingWorkflowEngineId.value) || null
 ))
@@ -511,6 +531,7 @@ const executionButtonLoading = computed(() => preparingExecution.value || execut
 const canSave = computed(() => Boolean(workflowEngineId.value && hasValidWorkflow.value))
 const canExecute = computed(() => Boolean(
   canSave.value &&
+  selectedEngine.value &&
   (!needsSparkRuntime() || sparkRuntimeId.value) &&
   !saving.value &&
   !preparingExecution.value &&
@@ -561,15 +582,22 @@ async function loadOperators(engineId) {
   operatorsLoading.value = true
   operatorLoadError.value = ''
   operators.value = []
+  if (!workflowEngines.value.some(engine => engine.id === engineId)) {
+    operatorsLoading.value = false
+    operatorLoadError.value = t('develop.workflow.engineUnavailableHint')
+    return false
+  }
   try {
     const response = await listOperatorsByWorkflowEngine(engineId)
     if (!Array.isArray(response?.operators)) throw new Error(t('develop.operatorPalette.invalidMetadata'))
     const invalid = findInvalidOperatorMetadata(response.operators)
     if (invalid) throw new Error(t('develop.operatorPalette.invalidOperatorMetadata', { name: invalid.name || '-' }))
     operators.value = response.operators
+    return true
   } catch (error) {
     operatorLoadError.value = t('develop.operatorPalette.loadFailed') + (error.response?.data?.error || error.message)
     ElMessage.error(operatorLoadError.value)
+    return false
   } finally {
     operatorsLoading.value = false
   }
@@ -593,6 +621,7 @@ async function selectDefaultEngine() {
 }
 
 async function requestEngineChange(engineId) {
+  engineSelectRef.value?.blur()
   if (editorBusy.value) return
   if (!engineId || engineId === workflowEngineId.value) return
   if (workflowData.value.tasks.length === 0) {
@@ -827,7 +856,7 @@ function buildTaskData({ name, displayName, description }) {
 
 async function handleExecute() {
   if (preparingExecution.value || saving.value || executing.value) return
-  if (!guardWorkflowReady()) return
+  if (!guardWorkflowExecutable()) return
   preparingExecution.value = true
   try {
     if (!await validateCurrentWorkflow()) {
@@ -888,6 +917,14 @@ function guardWorkflowReady() {
   else if (!hasValidWorkflow.value) ElMessage.warning(t('develop.workflow.emptyWorkflow'))
   else return true
   return false
+}
+
+function guardWorkflowExecutable() {
+  if (workflowEngineUnavailable.value) {
+    ElMessage.warning(t('develop.workflow.engineUnavailableAction'))
+    return false
+  }
+  return guardWorkflowReady()
 }
 
 function guardWorkflowSavable() {
@@ -986,6 +1023,11 @@ function resetValidationState() {
 
 async function validateCurrentWorkflow() {
   if (!hasValidWorkflow.value || !workflowEngineId.value) return false
+  if (workflowEngineUnavailable.value) {
+    resetValidationState()
+    validationRequestError.value = t('develop.workflow.engineUnavailableAction')
+    return false
+  }
   const revision = ++validationRevision
   validating.value = true
   validationRequestError.value = ''
@@ -1023,6 +1065,11 @@ async function validateCurrentWorkflow() {
 }
 
 async function validateAfterSave() {
+  if (workflowEngineUnavailable.value) {
+    resetValidationState()
+    ElMessage.warning(t('develop.workflow.saveSuccessEngineUnavailable'))
+    return false
+  }
   await validateCurrentWorkflow()
   if (validationErrors.value.length) {
     ElMessage.warning(t('develop.workflow.saveSuccessWithIssues', {
@@ -1180,6 +1227,10 @@ async function generateWorkflow() {
     ElMessage.warning(t('develop.workflow.selectEngineFirst'))
     return
   }
+  if (workflowEngineUnavailable.value) {
+    ElMessage.warning(t('develop.workflow.engineUnavailableAction'))
+    return
+  }
 
   generating.value = true
   try {
@@ -1320,6 +1371,10 @@ function firstQueryValue(value) {
 
 .engine-select {
   width: 230px;
+}
+
+.engine-status-tag {
+  flex-shrink: 0;
 }
 
 .engine-option {

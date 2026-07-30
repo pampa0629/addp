@@ -629,11 +629,15 @@ def test_raster_wkt_authority_reads_root_epsg_id():
     assert _authority_code_from_wkt(wkt) == "EPSG:4326"
 
 
-def test_all_operator_metadata_declares_execution_modes():
-    assert_operator_metadata_contract(
-        list_operators(),
-        expected_engine_type="geopython_workflow",
-    )
+def test_all_operator_metadata_declares_execution_modes_and_effects():
+    operators = list_operators()
+    assert_operator_metadata_contract(operators, expected_engine_type="geopython_workflow")
+    by_name = {operator["name"]: operator for operator in operators}
+    assert by_name["load"]["effects"] == ["read"]
+    assert by_name["save"]["effects"] == ["write"]
+    assert by_name["tiff_to_cog"]["effects"] == ["read", "write"]
+    assert by_name["build_raster_mosaic"]["effects"] == ["read", "write"]
+    assert by_name["vector_to_pmtiles"]["effects"] == ["read", "write"]
 
 
 def test_api_execution_status_unknown_id():

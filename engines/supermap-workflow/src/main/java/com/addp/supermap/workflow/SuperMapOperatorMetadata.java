@@ -18,6 +18,7 @@ final class SuperMapOperatorMetadata {
             "打开数据源",
             "打开已有 UDBX 数据源，输出运行时 Datasource 引用。",
             "数据源",
+            List.of("read"),
             List.of(
                 param("path", "string", false, true, "UDBX 文件路径。"),
                 param("alias", "string", false, false, "数据源别名。"),
@@ -30,6 +31,7 @@ final class SuperMapOperatorMetadata {
             "打开 PostGIS 数据源",
             "打开已由 Develop 派生连接信息的已有 PostGIS 空间表所在数据源，不创建 SuperMap 系统表。",
             "数据源",
+            List.of("read"),
             List.of(
                 param("connection_info", "object", false, false, "运行时派生连接信息。"),
                 param("schema", "string", false, false, "运行时派生 schema。"),
@@ -44,6 +46,7 @@ final class SuperMapOperatorMetadata {
             "启用 PostGIS 空间工作区",
             "对已有 PostgreSQL/PostGIS 数据库执行 SuperMap SDX+ 初始化，可能创建 SuperMap 系统表。",
             "数据源",
+            List.of("ddl"),
             List.of(
                 param("connection_info", "object", false, true, "运行时派生连接信息。"),
                 param("alias", "string", false, false, "数据源别名。")),
@@ -56,6 +59,7 @@ final class SuperMapOperatorMetadata {
             "升级 UDBX 数据源",
             "显式检查并原位升级已有 UDBX 的 SuperMap schema；只在旧 schema 时以可写方式打开。",
             "数据源",
+            List.of("ddl"),
             List.of(
                 param("connection_info", "object", false, true, "运行时派生连接信息。"),
                 param("path", "string", false, true, "目标 UDBX 文件路径；NFS 调用使用 export 内相对路径。"),
@@ -69,6 +73,7 @@ final class SuperMapOperatorMetadata {
             "创建数据源",
             "创建 UDBX 输出数据源，供后续空间分析或保存算子写入。",
             "数据源",
+            List.of("ddl"),
             List.of(
                 param("connection_info", "object", false, true, "运行时派生连接信息。"),
                 param("path", "string", false, true, "目标 UDBX 文件路径。"),
@@ -82,6 +87,7 @@ final class SuperMapOperatorMetadata {
             "OSGB Scene 转 S3M",
             "使用 SuperMap iObjects Java 把整套 OSGB 倾斜摄影场景转换为 S3M 数据集。",
             "三维模型",
+            List.of("read", "write"),
             List.of(param("access_plan", "object", false, true, "ADDP 工作流资源访问计划。")),
             List.of(output("s3m", "supermap.s3m_dataset", "S3M 数据集发布摘要。")),
             List.of("workflow", "direct")));
@@ -92,6 +98,7 @@ final class SuperMapOperatorMetadata {
             "检查 CAD 图纸",
             "只读打开 DWG 或 DXF 并返回 Dataset 元数据、记录数和范围；不遍历 Geometry。",
             "CAD",
+            List.of("read"),
             List.of(param("access_plan", "object", false, true, "ADDP 工作流资源访问计划。")),
             List.of(output("inspection", "addp.cad.inspect/v1", "CAD 图纸轻量检查结果。")),
             List.of("direct")));
@@ -102,6 +109,7 @@ final class SuperMapOperatorMetadata {
             "渲染 CAD 预览",
             "使用 SuperMap Map/Layer 直接渲染 DWG 或 DXF Dataset，生成受管 WebP 瓦片。",
             "CAD",
+            List.of("read", "write"),
             List.of(
                 param("access_plan", "object", false, true, "ADDP 工作流源文件与目标 artifact 访问计划。"),
                 param("tile_size", "integer", false, false, "瓦片边长，默认 512。"),
@@ -115,6 +123,7 @@ final class SuperMapOperatorMetadata {
             "选择矢量数据集",
             "从 Datasource 中选择 DatasetVector。",
             "数据集",
+            List.of("read"),
             List.of(
                 param("datasource", "supermap.datasource", true, true, "上游 Datasource 引用。"),
                 param("dataset_name", "string", false, true, "数据集名称。")),
@@ -126,6 +135,7 @@ final class SuperMapOperatorMetadata {
             "数据集信息",
             "读取 DatasetVector 的字段、记录数、范围和坐标系摘要。",
             "数据集",
+            List.of("read"),
             List.of(param("dataset", "supermap.dataset", true, true, "输入 DatasetVector。")),
             List.of(output("info", "supermap.dataset_info", "数据集轻量信息摘要。"))));
     result.put(
@@ -135,6 +145,7 @@ final class SuperMapOperatorMetadata {
             "数据集投影转换",
             "把 DatasetVector 转换到目标 EPSG 坐标系，并写入目标 Datasource。",
             "数据集",
+            List.of("write"),
             List.of(
                 param("dataset", "supermap.dataset", true, true, "输入 DatasetVector。"),
                 param("output_datasource", "supermap.datasource", true, true, "输出 Datasource。"),
@@ -150,6 +161,7 @@ final class SuperMapOperatorMetadata {
             "矢量属性过滤",
             "按 SuperMap 属性过滤表达式生成新的 DatasetVector，供下游分析继续使用。",
             "空间分析",
+            List.of("write"),
             List.of(
                 param("dataset", "supermap.dataset", true, true, "输入 DatasetVector。"),
                 param("output_datasource", "supermap.datasource", true, true, "输出 Datasource。"),
@@ -164,6 +176,7 @@ final class SuperMapOperatorMetadata {
             "矢量空间筛选",
             "按两个 DatasetVector 的空间关系筛选要素，并写入目标 Datasource。",
             "空间分析",
+            List.of("write"),
             List.of(
                 param("input_dataset", "supermap.dataset", true, true, "被筛选 DatasetVector。"),
                 param("filter_dataset", "supermap.dataset", true, true, "空间关系筛选 DatasetVector。"),
@@ -180,6 +193,7 @@ final class SuperMapOperatorMetadata {
             "缓冲区分析",
             "对 DatasetVector 执行缓冲区分析，并写入目标 Datasource。",
             "空间分析",
+            List.of("write"),
             List.of(
                 param("input_dataset", "supermap.dataset", true, true, "输入 DatasetVector。"),
                 param("output_datasource", "supermap.datasource", true, true, "输出 Datasource。"),
@@ -204,6 +218,7 @@ final class SuperMapOperatorMetadata {
             "矢量融合",
             "按字段融合 DatasetVector 要素，并写入目标 Datasource。",
             "空间分析",
+            List.of("write"),
             List.of(
                 param("input_dataset", "supermap.dataset", true, true, "输入 DatasetVector。"),
                 param("output_datasource", "supermap.datasource", true, true, "输出 Datasource。"),
@@ -226,6 +241,7 @@ final class SuperMapOperatorMetadata {
             "矢量合并",
             "复制主 DatasetVector 后追加另一个 DatasetVector 的记录，生成合并结果。",
             "空间分析",
+            List.of("write"),
             List.of(
                 param("primary_dataset", "supermap.dataset", true, true, "主 DatasetVector。"),
                 param("append_dataset", "supermap.dataset", true, true, "追加 DatasetVector。"),
@@ -240,6 +256,7 @@ final class SuperMapOperatorMetadata {
             "要素外接矩形",
             "为 DatasetVector 中每个要素生成外接矩形数据集。",
             "空间分析",
+            List.of("write"),
             List.of(
                 param("input_dataset", "supermap.dataset", true, true, "输入 DatasetVector。"),
                 param("output_datasource", "supermap.datasource", true, true, "输出 Datasource。"),
@@ -253,6 +270,7 @@ final class SuperMapOperatorMetadata {
             "面内点提取",
             "从面 DatasetVector 生成内部点 DatasetVector。",
             "空间分析",
+            List.of("write"),
             List.of(
                 param("input_dataset", "supermap.dataset", true, true, "输入面 DatasetVector。"),
                 param("output_datasource", "supermap.datasource", true, true, "输出 Datasource。"),
@@ -266,6 +284,7 @@ final class SuperMapOperatorMetadata {
             "叠加求交",
             "对两个 DatasetVector 执行 OverlayAnalyst.intersect，并写入目标 Datasource。",
             "空间分析",
+            List.of("write"),
             List.of(
                 param("input_dataset", "supermap.dataset", true, true, "源 DatasetVector。"),
                 param("overlay_dataset", "supermap.dataset", true, true, "叠加 DatasetVector。"),
@@ -281,6 +300,7 @@ final class SuperMapOperatorMetadata {
             "叠加裁剪",
             "对两个 DatasetVector 执行 OverlayAnalyst.clip，并写入目标 Datasource。",
             "空间分析",
+            List.of("write"),
             overlayParameters(),
             List.of(output("result_dataset", "supermap.dataset", "裁剪结果 DatasetVector 引用。"))));
     result.put(
@@ -290,6 +310,7 @@ final class SuperMapOperatorMetadata {
             "叠加擦除",
             "对两个 DatasetVector 执行 OverlayAnalyst.erase，并写入目标 Datasource。",
             "空间分析",
+            List.of("write"),
             overlayParameters(),
             List.of(output("result_dataset", "supermap.dataset", "擦除结果 DatasetVector 引用。"))));
     result.put(
@@ -299,6 +320,7 @@ final class SuperMapOperatorMetadata {
             "叠加合并",
             "对两个 DatasetVector 执行 OverlayAnalyst.union，并写入目标 Datasource。",
             "空间分析",
+            List.of("write"),
             overlayParameters(),
             List.of(output("result_dataset", "supermap.dataset", "合并结果 DatasetVector 引用。"))));
     result.put(
@@ -308,6 +330,7 @@ final class SuperMapOperatorMetadata {
             "矢量属性查询",
             "对 DatasetVector 执行属性过滤并返回轻量查询摘要。",
             "空间分析",
+            List.of("read"),
             List.of(
                 param("dataset", "supermap.dataset", true, true, "输入 DatasetVector。"),
                 param("attribute_filter", "string", false, false, "SuperMap 属性过滤表达式。"),
@@ -320,6 +343,7 @@ final class SuperMapOperatorMetadata {
             "保存数据集",
             "把上游 DatasetVector 复制保存到目标 Datasource。",
             "数据集",
+            List.of("write"),
             List.of(
                 param("dataset", "supermap.dataset", true, true, "输入 DatasetVector。"),
                 param("target_datasource", "supermap.datasource", true, true, "目标 Datasource。"),
@@ -334,10 +358,18 @@ final class SuperMapOperatorMetadata {
       String displayName,
       String description,
       String category,
+      List<String> effects,
       List<ObjectNode> parameters,
       List<ObjectNode> outputPorts) {
     return operator(
-        id, displayName, description, category, parameters, outputPorts, List.of("workflow"));
+        id,
+        displayName,
+        description,
+        category,
+        effects,
+        parameters,
+        outputPorts,
+        List.of("workflow"));
   }
 
   private static ObjectNode operator(
@@ -345,6 +377,7 @@ final class SuperMapOperatorMetadata {
       String displayName,
       String description,
       String category,
+      List<String> effects,
       List<ObjectNode> parameters,
       List<ObjectNode> outputPorts,
       List<String> executionModes) {
@@ -360,6 +393,8 @@ final class SuperMapOperatorMetadata {
     op.put("brief_description", displayName);
     ArrayNode modes = op.putArray("execution_modes");
     executionModes.forEach(modes::add);
+    ArrayNode operatorEffects = op.putArray("effects");
+    effects.forEach(operatorEffects::add);
     ArrayNode params = op.putArray("parameters");
     parameters.forEach(params::add);
     ArrayNode outputs = op.putArray("output_ports");

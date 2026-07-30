@@ -45,6 +45,13 @@ type ManagedTenantRoleAssignment struct {
 	RoleNameI18nKey *string
 }
 
+type BuiltinServiceRuntimeBinding struct {
+	PrincipalID int64  `gorm:"column:principal_id"`
+	ServiceName string `gorm:"column:service_name"`
+	RoleID      int64  `gorm:"column:role_id"`
+	RoleKey     string `gorm:"column:role_key"`
+}
+
 func (r *Repository) CurrentDatabaseTime(ctx context.Context) (time.Time, error) {
 	var current time.Time
 	if err := r.db.WithContext(ctx).Raw("SELECT now()").Scan(&current).Error; err != nil {
@@ -182,6 +189,39 @@ func (r *Repository) GetActiveBuiltinRoleByKey(ctx context.Context, roleKey stri
 	var role Role
 	err := r.db.WithContext(ctx).Where("tenant_id IS NULL AND role_key = ? AND status = 'active'", roleKey).Take(&role).Error
 	return &role, wrapRepositoryError(err)
+}
+
+func (r *Repository) ListBuiltinServiceRuntimeBindings(ctx context.Context) ([]BuiltinServiceRuntimeBinding, error) {
+	var bindings []BuiltinServiceRuntimeBinding
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT service_principal.id AS principal_id,
+		       service_principal.name AS service_name,
+		       role.id AS role_id,
+		       role.role_key
+		FROM system.service_principals service_principal
+		JOIN system.principals principal
+		  ON principal.id = service_principal.id
+		 AND principal.principal_type = 'service_principal'
+		 AND principal.status = 'active'
+		JOIN system.roles role
+		  ON role.tenant_id IS NULL
+		 AND role.role_key = 'tenant.' || replace(service_principal.name, 'addp-', '') || '_runtime'
+		 AND role.role_type = 'tenant_builtin'
+		 AND role.status = 'active'
+		WHERE service_principal.owner_scope = 'platform'
+		  AND service_principal.name IN (
+		      'addp-asset', 'addp-develop', 'addp-manager', 'addp-meta', 'addp-monitor',
+		      'addp-orchestrator', 'addp-portal', 'addp-quality', 'addp-service', 'addp-transfer'
+		  )
+		ORDER BY service_principal.name
+	`).Scan(&bindings).Error
+	if err != nil {
+		return nil, wrapRepositoryError(err)
+	}
+	if len(bindings) != len(builtinServiceClientIDs) {
+		return nil, commonapi.ErrConflict
+	}
+	return bindings, nil
 }
 
 func (r *Repository) CreateTenantRoleAssignment(ctx context.Context, assignment *RoleAssignment) error {

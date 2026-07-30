@@ -38,7 +38,7 @@ func TestProviderComposesOnlyApprovedFactories(t *testing.T) {
 	}
 	ctx := context.Background()
 	if len(provider.Config.GetAuthorizeEndpointHandlers(ctx)) != 2 ||
-		len(provider.Config.GetTokenEndpointHandlers(ctx)) != 4 ||
+		len(provider.Config.GetTokenEndpointHandlers(ctx)) != 5 ||
 		len(provider.Config.GetRevocationHandlers(ctx)) != 1 ||
 		len(provider.Config.GetDeviceEndpointHandlers(ctx)) != 1 ||
 		len(provider.Config.GetTokenIntrospectionHandlers(ctx)) != 0 ||
@@ -62,10 +62,13 @@ func TestProviderComposesOnlyApprovedFactories(t *testing.T) {
 		handlerTypes = append(handlerTypes, fmt.Sprintf("%T", handler))
 	}
 	joinedTypes := strings.Join(handlerTypes, "\n")
-	for _, forbidden := range []string{"Implicit", "ResourceOwner", "ClientCredentials", "RFC7523", "Pushed", "OpenID"} {
+	for _, forbidden := range []string{"Implicit", "ResourceOwner", "RFC7523", "Pushed", "OpenID"} {
 		if strings.Contains(joinedTypes, forbidden) {
 			t.Fatalf("forbidden handler %q was composed:\n%s", forbidden, joinedTypes)
 		}
+	}
+	if strings.Count(joinedTypes, "ClientCredentials") != 1 {
+		t.Fatalf("expected exactly one Client Credentials handler:\n%s", joinedTypes)
 	}
 }
 

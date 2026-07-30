@@ -4,7 +4,7 @@
 
 状态：阶段 4.3 正式规范。OAuth 登录、浏览器会话、资源票据和受委托访问令牌均以本文为准；OAuth 运行代码已一次性切换到受控 Fosite 唯一主路径，真实 Browser 登录与 OAuth 客户端协议 E2E 已覆盖 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、刷新轮换和撤销。OIDC 尚未启用，当前唯一运行路径不注册 OpenID Handler、不允许 `openid` Scope，也不宣告 Discovery/JWKS；待 issuer、Claim 和密钥生命周期独立设计完成后再实施。
 
-当前验收使用一次性测试驱动实作 OAuth 公共客户端，证明 System 服务端协议路径；仓库内尚未交付可发布的 `addp-cli` 产品可执行程序。正式 CLI 交付时必须复用本文唯一协议路径，并单独通过密钥链、跨进程锁、本地回调页和产品 CLI E2E 验收。
+System 协议验收与正式 `addp` CLI 使用同一个 `addp-cli` 公共客户端和同一组 OAuth 端点，不保留测试专用授权实现。CLI 的发布、凭据存储、上下文确认和命令契约见第七节；协议与产品 E2E 必须共同通过后才能发布。
 
 ## 一、统一令牌模型
 
@@ -127,7 +127,30 @@ Fosite RFC 8628 Handler 必须注入 ADDP PostgreSQL `DeviceRateLimitStrategy`�
 
 OAuth 成功响应包含 `access_token`、`token_type=Bearer`、`expires_in`、`refresh_token` 和 `scope`。CLI 只把 Refresh Token 保存到 OS Keychain；每次命令执行前必须按 ADDP Base URL 获取跨进程互斥锁，再完成读取旧 Refresh Token、调用刷新接口和原子更新新 Refresh Token，避免并行命令把正常竞争误判为重用攻击。
 
-### 7.1 OAuth 安全审计
+### 7.1 正式 ADDP CLI 产品契约
+
+正式命令入口固定为 `addp`，由 `common-python` 的 Python package entry point 发布。用户登录命令只有两种标准 OAuth 交互方式：
+
+- `addp auth login`：默认使用 Authorization Code + PKCE 和动态 loopback 回调；
+- `addp auth login --device`：无本地浏览器或跨设备环境使用 Device Authorization Flow。
+
+两种方式使用同一个 `client_id=addp-cli`、同一个 `scope=addp.api` 和同一套 Token Family。它们不是兼容双轨，也不得增加用户名密码直传、Client Secret、API Key 或手工粘贴 Access Token 的登录路径。
+
+OAuth 授权页和设备授权页必须在批准前展示当前 Browser Context，并允许用户通过第一方 Browser Context Switch 选择目标 Platform 或 Tenant Context。批准事务只读取当时 Bearer Token 的权威 AuthContext；签发后的 OAuth Family 永久绑定该 Context。CLI 不提供 Context Switch 命令，需要另一个 Context 时必须 `addp auth logout` 后重新授权。
+
+`addp auth status` 必须在跨进程锁内轮换 Refresh Token，再调用唯一 AuthContext 接口确认服务端会话，并返回 Principal、Context、Client 和 Scope 摘要。Keychain 中存在字符串不代表已认证。网络或服务故障必须返回“状态不可用”，不能伪装成未登录；`invalid_grant` 才删除失效的本地 Refresh Token。
+
+`addp auth logout` 必须在同一个 ADDP Base URL 锁内调用 OAuth Revocation，服务端成功接受撤销后才删除 Keychain 凭据。服务不可用或返回非成功状态时保留凭据并返回失败，便于用户重试和完成服务端撤销。Revocation 对无效 Token 的幂等成功由 System 保证；Keychain 中存在凭据时，CLI 不建立绕过服务端的本地成功旁路。
+
+CLI 还必须满足：
+
+- Access Token、Authorization Request Secret、PKCE verifier、Authorization Code 和 Device Code 只存在于当前进程内存；
+- Base URL 和 Console URL 只接受无用户信息、query 与 fragment 的 `http|https` URL，并在用于 Keychain account、锁和请求前统一归一化；
+- stdout 每次只输出一个紧凑 JSON 文档，稳定错误码和退出码供 Agent 消费；浏览器地址、User Code 等人工操作提示只写 stderr；
+- `addp auth login`、刷新、状态和退出对同一 Base URL 的 Refresh Token 读写必须服从同一个跨进程锁，不能遗留可并发覆盖 Keychain 的旁路；
+- 正式验收至少覆盖可安装 wheel、命令入口、Browser PKCE、Device Flow、权威状态、轮换、撤销、并发刷新、Context 绑定和凭据不进入终端输出。
+
+### 7.2 OAuth 安全审计
 
 System 的 `system.audit_logs` 是 OAuth 安全事件的唯一持久化落点，不另建 OAuth 日志表，也不经跨模块审计 API 回写自身。每个 OAuth 非 GET 请求只生成一条结构化审计记录，`event_name` 与 `entity_id` 使用同一个稳定事件名，`entity_type=oauth_security_event`：
 
@@ -145,7 +168,7 @@ OAuth Request、Code、Device Authorization、Token Family 和撤销状态的成
 
 首次切换目标 IAM 时必须按统一破坏性迁移规则重建开发环境 `system` Schema；runner 拒绝旧 IAM Schema，不在 System 启动路径读取或清理旧审计列。需要保留历史审计的环境必须先走独立审批的离线脱敏、归档和导入设计，运行时不保留旧日志格式兼容分支。
 
-### 7.2 OAuth 端点限流
+### 7.3 OAuth 端点限流
 
 OAuth 限流状态统一存放在 Infra Redis，保证多个 System 实例共享同一计数；Redis 不可用时 OAuth 端点失败关闭，不得回退到进程内计数。固定一分钟窗口的默认上限如下：
 

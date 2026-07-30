@@ -15,15 +15,12 @@ type fakeRasterMosaicMetaClient struct {
 	tenantID *uint
 }
 
-func (f *fakeRasterMosaicMetaClient) GetItemByID(itemID uint) (*commonModels.MetaItem, error) {
+func (f *fakeRasterMosaicMetaClient) GetItemByIDForTenant(tenantID, itemID uint) (*commonModels.MetaItem, error) {
+	f.tenantID = &tenantID
 	if f.item == nil || f.item.ID != itemID {
 		return nil, nil
 	}
 	return f.item, nil
-}
-
-func (f *fakeRasterMosaicMetaClient) SetTenantID(tenantID *uint) {
-	f.tenantID = tenantID
 }
 
 type fakeRasterMosaicSystemClient struct {
@@ -51,10 +48,10 @@ func TestRasterMosaicTileServiceRenderTileBuildsRuntimeRequest(t *testing.T) {
 	runtime := &fakeRasterMosaicRuntime{}
 	svc := NewRasterMosaicTileService(
 		fakeRasterMosaicSystemClient{engine: &commonModels.Engine{
-			ID:         26,
-			TenantID:   &tenantID,
-			EngineType: "nfs",
-			IsActive:   true,
+			ID:             26,
+			TenantID:       &tenantID,
+			EngineType:     "nfs",
+			LifecycleState: "active",
 			ConnectionInfo: commonModels.ConnectionInfo{
 				"mount_path": "/data",
 			},
@@ -135,10 +132,10 @@ func TestRasterMosaicTileServiceUsesDefaultGamma(t *testing.T) {
 	runtime := &fakeRasterMosaicRuntime{}
 	svc := NewRasterMosaicTileService(
 		fakeRasterMosaicSystemClient{engine: &commonModels.Engine{
-			ID:         26,
-			TenantID:   &tenantID,
-			EngineType: "nfs",
-			IsActive:   true,
+			ID:             26,
+			TenantID:       &tenantID,
+			EngineType:     "nfs",
+			LifecycleState: "active",
 			ConnectionInfo: commonModels.ConnectionInfo{
 				"mount_path": "/data",
 			},

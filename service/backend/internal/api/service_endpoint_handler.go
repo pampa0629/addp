@@ -11,8 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ServiceEndpointHandler 处理服务端点查询请求
-// 供其他模块通过内部 API Key 调用，根据 source_reference 返回统一端点信息
+// ServiceEndpointHandler 处理服务端点投影查询请求。
 type ServiceEndpointHandler struct {
 	querySvc      *svc.QueryServiceService
 	registeredSvc *svc.RegisteredServiceService
@@ -41,10 +40,12 @@ type serviceEndpointResp struct {
 // @Success 200 {object} serviceEndpointResp
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
-// @x-addp-auth-mode "internal"
-// @Router /internal/endpoints [get]
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.endpoint.read"]
+// @Router /endpoints [get]
 func (h *ServiceEndpointHandler) GetEndpoints(c *gin.Context) {
-	tenantID := internalTenantIDValue(c)
+	tenantID := tenantIDValue(c)
 	ref := c.Query("ref")
 	if ref == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgMissingRef)})
@@ -69,7 +70,7 @@ func (h *ServiceEndpointHandler) GetEndpoints(c *gin.Context) {
 	case "query":
 		dto, err := h.querySvc.GetService(id)
 		if err != nil || dto == nil || dto.TenantID != tenantID {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, servicei18n.MsgServiceNotFound)})
 			return
 		}
 		c.JSON(http.StatusOK, serviceEndpointResp{
@@ -81,7 +82,7 @@ func (h *ServiceEndpointHandler) GetEndpoints(c *gin.Context) {
 	case "registered":
 		dto, err := h.registeredSvc.GetService(id)
 		if err != nil || dto == nil || dto.TenantID != tenantID {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, servicei18n.MsgServiceNotFound)})
 			return
 		}
 		c.JSON(http.StatusOK, serviceEndpointResp{
@@ -93,7 +94,7 @@ func (h *ServiceEndpointHandler) GetEndpoints(c *gin.Context) {
 	case "tile":
 		dto, err := h.tileSvc.GetService(id)
 		if err != nil || dto == nil || dto.TenantID != tenantID {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, servicei18n.MsgServiceNotFound)})
 			return
 		}
 		c.JSON(http.StatusOK, serviceEndpointResp{

@@ -8,11 +8,21 @@
 
 | 概念 | 含义 |
 | --- | --- |
-| Engine Instance | System 中的一条引擎实例，保存租户、名称、类型、连接配置、能力声明和连接状态。 |
+| Engine Instance | System 中的一条引擎实例，保存租户、名称、类型、连接配置、能力声明、生命周期和连接状态；一条记录只绑定一个确定的物理端点。 |
 | Engine Plugin | `common/engine/plugins/<engine_type>` 下的插件实现，负责连接、校验、测试和能力暴露。 |
 | Capability | 插件返回的结构化能力声明，版本为 `engine.capabilities/v1`。 |
 | Catalog | 引擎中的真实目录层级，如 schema/table、bucket/object、database/graph。 |
 | Item | 可被描述、预览、读取或写入的叶子数据项。 |
+
+### Engine Instance 身份与生命周期
+
+- `engine_id` 是 Engine Instance 的平台身份，不是可重定向到任意物理引擎的连接槽位。
+- 插件通过 `ConnectionIdentityFields()` 声明物理端点身份字段。PostgreSQL 一类数据库通常使用 `host + port + database`，对象存储通常使用 `endpoint`，NFS 使用 `server + export_path`。
+- 名称、描述、凭据和非身份连接参数可以原地更新；任何身份字段变化都必须创建新的 Engine Instance，不得保留原 ID 并改指向另一物理端点。
+- 删除后重新注册始终产生新的自增 ID。平台不根据相似连接信息自动关联新旧 Engine Instance，也不迁移旧 locator、fingerprint 或 owner 状态。
+- 生命周期统一为 `active`、`disabled`、`deleting`。只有 `active` 进入业务消费列表；`deleting` 保留连接配置仅供删除前 cleanup 使用，cleanup 完成后才物理删除 System 记录和凭据。
+- 用户登记的 Engine Instance 归当前 Tenant，不归登记人。`created_by` 只记录审计来源，不能成为后续读取、写入、DDL 或执行授权依据。
+- `tenant_id=NULL` 只允许平台共享的内置计算 Runtime；共享 Runtime 只提供计算能力，不因此获得任意 Tenant 数据权限。
 
 ### 实时 Catalog、元数据快照和数据预览的边界
 
@@ -179,6 +189,16 @@ DuckDB 当前不是用户在 System 中注册的外部 Engine Instance，也不�
 - Develop 查询任务持久化时，普通 SQL 查询使用 `execution_config.engine_id` 指向具备 query 能力的 System 引擎；DuckDB 联邦查询使用 `execution_config.query_mode="duckdb"`，不得写入虚拟 `engine_id=0` 或伪造 System 引擎记录。
 - 若未来要把 DuckDB 抽象为可注册的内置查询运行时，应单独设计 `compute.query` / `federated_query` 能力、租户隔离、扩展安装和数据源挂载规则，不在工作流引擎规范中旁路实现。
 
+### Develop Notebook 引擎绑定边界
+
+Notebook 是 Develop `script` 任务的当前交互形态。任务必须在 `execution_config.engine_id` 中绑定一个 System Engine Instance；该实例必须处于 `active` 状态，并声明 `compute.script.supported=true` 且 `compute.script.modes` 包含 `notebook`。
+
+- Develop 通过 System Runtime Descriptor 发现 Notebook 引擎，只消费非敏感的 `protocol/host/port` 端点投影。
+- Develop 必须通过 `ScriptRuntimeProvider.OpenSession()` 打开运行会话，再使用返回的 endpoint 查询 Kernel 或提交执行；不得配置 `JUPYTER_URL`、按引擎类型拼接固定地址，或绕过 Provider 直接读取 `connection_info`。
+- Notebook 上传时必须选择并保存 `engine_id`。Kernel 属于该引擎实例的运行时能力，只能在选定引擎后查询并保存到任务内容中。
+- Notebook 执行只使用任务已绑定的引擎，不允许在执行请求中临时改绑。绑定实例缺失、失效或不再具备 Notebook 能力时，保存的任务仍保留，但执行必须明确拒绝。
+- 引擎健康状态由 System 连接检查负责，Develop 不提供 Jupyter 专用健康代理 API。
+
 ---
 
 ## 五、当前支持的引擎
@@ -207,6 +227,10 @@ DuckDB 当前不是用户在 System 中注册的外部 Engine Instance，也不�
 - 旧 `ListSchemas/ListTables/ListColumns/ListBuckets/ListCollections` 只能作为插件内部 helper，不作为上层契约。
 - 引擎能力只表达引擎自身 native 能力与 common/engine provider 能力；Transfer、Manager 预览等模块适配状态不进入 `engine.capabilities/v1`。
 - 工作流算子发现和执行通过 `WorkflowRuntimeProvider`；算子列表、参数、端口等动态能力不写入 capabilities。
+- SQL、Workflow 和 Jupyter 的数据访问权限来自本次执行发起者。调用方必须把算子或语句归类为 `read | write | ddl | external_effect`，创建绑定 execution 的短期 Execution Authorization，再由 Runtime Service Principal 消费；Engine Runtime 身份和 Engine 创建人都不是业务授权来源。
+- Runtime Service Principal 只负责机器认证、心跳、控制面注册和消费匹配 audience 的 Execution Authorization。除显式平台自动任务外，不授予通用 Tenant 数据权限或通用明文 Engine 读取权限。
+- Develop 等控制面调用方发现可用 Engine Instance 时只读取 Engine Runtime Descriptor。Descriptor 只暴露实例身份、能力和工作流/脚本运行时的 `protocol/host/port`；数据引擎明文连接只能在消费 Execution Authorization 时按单个 Engine 即时取得。
+- Jupyter 必须由 Develop 创建受控计算会话，不向 Notebook 注入长期明文 Engine 连接，不直接返回共享 Lab 作为数据访问主路径。Notebook 只能获得按 Execution Authorization 收窄的临时访问能力。
 - Kafka topic 通过 `service -> topic` Catalog 暴露；partition 只作为 ChangeStreamReader assignment、position 和 diagnostics，不进入资源树。
 - 业务 Kafka 是 System Engine；Infra Kafka 来自 ADDP 部署配置，不注册 Engine Instance，但复用相同 Kafka client/reader 底层实现。
 - SQL metadata 复用只允许在事实来源和语义一致的引擎家族内发生，例如 MySQL/Doris 共享 `information_schema` helper；PostgreSQL、ClickHouse、Spark SQL 等差异较大的实现保留在各自插件内。

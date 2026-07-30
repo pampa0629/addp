@@ -125,6 +125,7 @@ def list_operators() -> list[dict[str, Any]]:
             "category_path": ["三维模型转换", "快显"],
             "description": "将单个 OSGB 文件转换为前端可快速预览的 GLB artifact。",
             "execution_modes": ["workflow", "direct"],
+            "effects": ["read", "write"],
             "parameters": [
                 {
                     "name": "access_plan",
@@ -157,6 +158,7 @@ def list_operators() -> list[dict[str, Any]]:
             "category_path": ["三维模型转换", "快显"],
             "description": "将 glTF 多资源模型打包为前端可快速预览的 GLB artifact。",
             "execution_modes": ["workflow", "direct"],
+            "effects": ["read", "write"],
             "parameters": [
                 {
                     "name": "access_plan",
@@ -189,6 +191,7 @@ def list_operators() -> list[dict[str, Any]]:
             "category_path": ["三维模型转换", "快显"],
             "description": "将 FBX 单体网格模型转换为前端可快速预览的 GLB artifact。",
             "execution_modes": ["workflow", "direct"],
+            "effects": ["read", "write"],
             "parameters": [
                 {
                     "name": "access_plan",
@@ -221,6 +224,7 @@ def list_operators() -> list[dict[str, Any]]:
             "category_path": ["三维模型转换", "快显"],
             "description": "将 OBJ 单体网格模型转换为前端可快速预览的 GLB artifact。",
             "execution_modes": ["workflow", "direct"],
+            "effects": ["read", "write"],
             "parameters": [
                 {
                     "name": "access_plan",
@@ -253,6 +257,7 @@ def list_operators() -> list[dict[str, Any]]:
             "category_path": ["三维模型转换", "快显"],
             "description": "将 STL 单体网格模型转换为前端可快速预览的 GLB artifact。",
             "execution_modes": ["workflow", "direct"],
+            "effects": ["read", "write"],
             "parameters": [
                 {
                     "name": "access_plan",
@@ -285,6 +290,7 @@ def list_operators() -> list[dict[str, Any]]:
             "category_path": ["三维模型转换", "快显"],
             "description": "将 IFC BIM 模型通过 IfcConvert 转换为前端可快速预览的 GLB artifact。",
             "execution_modes": ["workflow", "direct"],
+            "effects": ["read", "write"],
             "parameters": [
                 {
                     "name": "access_plan",
@@ -317,6 +323,7 @@ def list_operators() -> list[dict[str, Any]]:
             "category_path": ["三维模型转换", "倾斜摄影"],
             "description": "将一套 OSGB 倾斜摄影数据集转换为前端高效预览的 3D Tiles 数据集。",
             "execution_modes": ["workflow", "direct"],
+            "effects": ["read", "write"],
             "parameters": [
                 {
                     "name": "access_plan",
@@ -355,6 +362,7 @@ def list_operators() -> list[dict[str, Any]]:
             "category_path": ["三维模型转换", "高斯泼溅"],
             "description": "将 Gaussian Splat PLY / SPLAT 转换并持久化为 KSplat。",
             "execution_modes": ["workflow", "direct"],
+            "effects": ["read", "write"],
             "parameters": [
                 {
                     "name": "access_plan",

@@ -25,7 +25,7 @@ func NewCatalogRootReconciler(db *gorm.DB) *CatalogRootReconciler {
 }
 
 func (r *CatalogRootReconciler) Reconcile(resource *commonModels.Engine) bool {
-	if r == nil || r.db == nil || resource == nil || !resource.IsActive || resource.TenantID == nil {
+	if r == nil || r.db == nil || !resource.IsUsable() || resource.TenantID == nil {
 		return false
 	}
 	enginePlugin, err := plugin.Get(resource.EngineType)

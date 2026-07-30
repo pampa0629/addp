@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/addp/common/models"
 	"github.com/addp/system/internal/service"
@@ -55,7 +56,7 @@ func (h *RegistryHandler) RegisterCapability(c *gin.Context) {
 }
 
 // ListCapabilities 查询能力列表
-// GET /api/v1/internal/registry/capabilities?engine_type=geopython_workflow&is_builtin=true
+// GET /api/v1/internal/registry/capabilities?engine_type=geopython_workflow&is_builtin=true&lifecycle_state=active
 func (h *RegistryHandler) ListCapabilities(c *gin.Context) {
 	filters := make(map[string]interface{})
 
@@ -66,8 +67,8 @@ func (h *RegistryHandler) ListCapabilities(c *gin.Context) {
 	if engineType := c.Query("engine_type"); engineType != "" {
 		filters["engine_type"] = engineType
 	}
-	if isActive := c.Query("is_active"); isActive != "" {
-		filters["is_active"] = isActive == "true"
+	if lifecycleState := strings.TrimSpace(c.Query("lifecycle_state")); lifecycleState != "" {
+		filters["lifecycle_state"] = lifecycleState
 	}
 
 	engines, err := h.registryService.ListCapabilities(c.Request.Context(), filters)

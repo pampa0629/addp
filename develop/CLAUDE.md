@@ -28,10 +28,12 @@ DevExecutor（统一执行器）
   │  ├─ 调用 GeoPython Workflow 运行时（21 个空间算子）
   │  ├─ 或调用 Spark Workflow 运行时（大数据空间计算，执行时绑定 Spark 通用引擎资源）
   │  └─ 返回执行结果（GeoJSON/DataFrame）
-  └─ Notebook 执行 → JupyterService
-     ├─ 创建/管理 Jupyter Kernel
-     ├─ 执行 Python 代码
-     └─ 返回执行结果（含 matplotlib 图表）
+  └─ Notebook 执行 → NotebookExecutionService
+     ├─ 从 execution_config.engine_id 读取绑定的 System Script Engine
+     ├─ 通过 Runtime Descriptor 和 ScriptRuntimeProvider.OpenSession 解析受控端点
+     ├─ 使用 Develop 租户 Service Access Token 调用无头 Notebook Runtime
+     ├─ 从 MinIO 读取 Notebook，并通过 Papermill 执行 Python Cell
+     └─ 将执行结果写回 MinIO，并返回结果摘要
   ↓
 TaskExecutionRepository（统一执行记录持久化）
   └─ common.task_executions 表（module=develop）
@@ -57,7 +59,16 @@ Develop 模块按具体工作流运行时实例聚合算子定义，用于工作
 
 Develop 作为一个 TaskProvider 注册到 System，声明 `query`、`workflow`、`script` 三种任务类型。算子工作流必须先在 Develop 中保存为 `dev_tasks.dev_type=workflow` 的任务定义，再以 `provider=develop, task_type=workflow, task_id=...` 被 Orchestrator 引用。Notebook 是 `script` 任务的当前实现形态和 UI 入口，不作为独立 `task_type`。当前 Develop 不具备 owner scheduler / `next_run_at` due claim 闭环，因此不声明定时能力，不保存或暴露 `schedule`、`enabled`、`next_run_at`。
 
-TaskProvider、执行状态回查和 Asset 发现属于服务间接口，统一位于 `/api/v1/develop/internal`，只接受 `X-Internal-API-Key + X-Tenant-ID`。内部调用只建立 Develop 私有的内部租户上下文，不生成 User Principal、AuthContext 或 `triggered_by`。`/api/v1/develop` 下的用户 API 只接受 canonical Bearer AuthContext；两类凭据不得在同一路由组混用。
+TaskProvider、执行状态回查和 Asset 发现属于服务间接口，统一只接受 Bearer Service Access Token 和 canonical AuthContext。TaskProvider 固定由 `addp-orchestrator` 调用，Asset 发现固定由 `addp-asset` 调用；两者还要校验各自精确 Permission。代表用户创建或继续执行任务时必须引用由原 User AuthContext 派生、绑定唯一 execution 的 Execution Authorization；内部调用不能凭 Service Principal 自身权限伪造 User、Tenant、`triggered_by` 或数据访问能力。旧 `/api/v1/develop/internal`、`X-Internal-API-Key` 和 `X-Tenant-ID` 已删除，不保留双轨。
+
+### 执行授权与效果
+
+- SQL、Workflow、Notebook 执行效果固定为 `read | write | ddl | external_effect`。
+- `develop.task.execute` / `develop.notebook.execute` 只允许使用执行功能，不自动授予任意数据效果。
+- 当前 User AuthContext、owner Resource Rule/Policy、Engine 归属和执行效果共同决定 Execution Authorization；Engine 创建人和 Runtime Service Principal 都不是授权来源。
+- 异步执行只保存 Execution Authorization ID、发起 Principal、Tenant Membership、签发授权版本和脱敏效果/资源摘要，不保存 User Token、Service Token、明文连接或 Workflow Access Plan。
+- Jupyter 只通过 Develop 受控会话使用数据访问能力，不直接返回共享 Lab 数据访问入口，不注入长期明文 Engine 连接。
+- DuckDB 联邦查询和 Notebook 数据源注入在接入同一 Execution Authorization 消费路径前必须 fail-closed；不得用 `tenant.develop_runtime` 的通用 Engine 明文读取权限替代。
 
 ### IAM Permission
 
@@ -242,13 +253,12 @@ tail -f logs/python-workflow-engine.log
 
 ### 1. SQL 注入防护
 
-Develop 模块允许用户执行任意 SQL（在其权限范围内），存在潜在的安全风险：
+Develop 不再把“数据库连接账号可以做什么”视为用户授权。执行前必须由服务端解析语句并汇总 `read | write | ddl | external_effect`，再校验当前 User 的 Execution Authorization：
 
-- ✅ **用户隔离** - 只能查询自己租户的数据库
-- ✅ **权限继承** - 使用数据库连接的原始权限（不做提权）
-- ❌ **不做 SQL 语法检查** - 允许执行 DROP/TRUNCATE 等危险操作（用户自己负责）
-
-**建议**：在生产环境中配置数据库账号为只读权限，或限制危险操作。
+- `read` 使用数据库只读事务或等价只读访问能力；仅做字符串前缀判断不构成安全边界。
+- `write` 只允许显式具有写效果授权的执行，并保留影响行数和目标摘要。
+- `ddl` 单独授权和审计，不包含在普通数据工程写入权限中。
+- 不支持可靠效果分类的语句或引擎默认拒绝，不回退到“按连接账号权限执行”。
 
 ### 2. 工作流版本管理
 

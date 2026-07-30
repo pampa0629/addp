@@ -91,6 +91,27 @@ class AgentAuthMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 503)
 
+    async def test_rejects_service_principal(self):
+        request = _request("service-token")
+        context = AuthorizationContext(
+            principal_id=41,
+            principal_type="service_principal",
+            tenant_id=3,
+            tenant_membership_id=8,
+            client_id="addp-develop",
+            scope_mode="restricted",
+            scopes=("addp.api",),
+            token_type="service_access_token",
+        )
+
+        with patch(
+            "middleware.auth.resolve_authorization_context",
+            AsyncMock(return_value=context),
+        ):
+            response = await auth_middleware(request, _next)
+
+        self.assertEqual(response.status_code, 403)
+
 
 if __name__ == "__main__":
     unittest.main()

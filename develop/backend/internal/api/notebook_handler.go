@@ -5,7 +5,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	commonModels "github.com/addp/common/models"
+	developi18n "github.com/addp/develop/backend/i18n"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
@@ -31,136 +36,52 @@ func NewNotebookHandler(
 	}
 }
 
-// GetJupyterURLRequest 获取 Jupyter URL 请求
-type GetJupyterURLRequest struct {
-	NotebookPath string `json:"notebook_path"` // Notebook 文件路径
-}
-
-// GetJupyterURLResponse 获取 Jupyter URL 响应
-type GetJupyterURLResponse struct {
-	JupyterURL string `json:"jupyter_url"` // Jupyter Lab URL
-}
-
-// GetJupyterURL 获取 Jupyter Lab 访问 URL
-// @Summary 获取 Jupyter Lab 访问 URL | Get Jupyter Lab access URL
-// @Tags Notebook
-// @Accept json
-// @Produce json
-// @Param body body GetJupyterURLRequest true "请求 | Request"
-// @Success 200 {object} GetJupyterURLResponse "Jupyter URL | Jupyter URL"
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["develop.notebook.execute"]
-// @Router /notebooks/jupyter-url [post]
-func (h *NotebookHandler) GetJupyterURL(c *gin.Context) {
-	var req GetJupyterURLRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// 构造 Jupyter Lab URL
-	// 格式: http://jupyter-engine:8088/lab/tree/<path>
-	jupyterURL := fmt.Sprintf("http://localhost:8088/lab/tree/%s", req.NotebookPath)
-
-	c.JSON(http.StatusOK, GetJupyterURLResponse{
-		JupyterURL: jupyterURL,
-	})
-}
-
-// ExecuteNotebookRequest 执行 Notebook 请求
-type ExecuteNotebookRequest struct {
-	InputPath  string                 `json:"input_path" binding:"required"`
-	OutputPath string                 `json:"output_path" binding:"required"`
-	Parameters map[string]interface{} `json:"parameters"`
-	Timeout    int                    `json:"timeout"` // 超时时间（秒）
-}
-
-// ExecuteNotebookResponse 执行 Notebook 响应
-type ExecuteNotebookResponse struct {
-	Status               string                   `json:"status"`
-	Message              string                   `json:"message"`
-	ExecutionTimeSeconds float64                  `json:"execution_time_seconds"`
-	OutputPath           string                   `json:"output_path"`
-	OutputCount          int                      `json:"output_count"`
-	Outputs              []map[string]interface{} `json:"outputs"`
-	ErrorMessage         string                   `json:"error_message,omitempty"`
-}
-
-// ExecuteNotebook 执行 Notebook
-// @Summary 执行 Notebook | Execute Notebook
-// @Tags Notebook
-// @Accept json
-// @Produce json
-// @Param body body ExecuteNotebookRequest true "执行请求 | Execution request"
-// @Success 200 {object} ExecuteNotebookResponse "执行结果 | Execution result"
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["develop.notebook.execute"]
-// @Router /notebooks/execute [post]
-func (h *NotebookHandler) ExecuteNotebook(c *gin.Context) {
-	var req ExecuteNotebookRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// 调用 JupyterService 执行
-	result, err := h.jupyterService.ExecuteNotebook(
-		c.Request.Context(),
-		req.InputPath,
-		req.OutputPath,
-		req.Parameters,
-		req.Timeout,
-	)
-
-	if err != nil {
-		// 即使执行失败，也可能有部分结果
-		if result != nil {
-			c.JSON(http.StatusOK, ExecuteNotebookResponse{
-				Status:               result.Status,
-				Message:              result.Message,
-				ExecutionTimeSeconds: result.ExecutionTimeSeconds,
-				OutputPath:           result.OutputPath,
-				OutputCount:          result.OutputCount,
-				Outputs:              result.Outputs,
-				ErrorMessage:         result.ErrorMessage,
-			})
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Notebook 执行失败",
-				"details": err.Error(),
-			})
-		}
-		return
-	}
-
-	c.JSON(http.StatusOK, ExecuteNotebookResponse{
-		Status:               result.Status,
-		Message:              result.Message,
-		ExecutionTimeSeconds: result.ExecutionTimeSeconds,
-		OutputPath:           result.OutputPath,
-		OutputCount:          result.OutputCount,
-		Outputs:              result.Outputs,
-	})
-}
-
 // ListKernelsResponse 列出 Kernel 响应
 type ListKernelsResponse struct {
 	Kernels []service.KernelInfo `json:"kernels"`
 }
 
-// ListKernels 列出可用的 Kernel
-// @Summary 列出可用的 Kernel | List available kernels
+type NotebookEngineListResponse []commonModels.EngineRuntimeDescriptor
+
+// ListNotebookEngines 列出可用于 Notebook 的 Script Engine 实例。
+// @Summary 列出 Notebook 引擎 | List Notebook engines
 // @Tags Notebook
 // @Produce json
+// @Success 200 {array} commonModels.EngineRuntimeDescriptor "Notebook引擎列表 | Notebook engine list"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.notebook.read"]
+// @Router /notebook-engines [get]
+func (h *NotebookHandler) ListNotebookEngines(c *gin.Context) {
+	engines, err := h.jupyterService.ListNotebookEngines(c.Request.Context(), tenantIDValue(c))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   commoni18n.TWithDetail(c, developi18n.MsgNotebookEngineListFailed, err.Error()),
+			"details": err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, NotebookEngineListResponse(engines))
+}
+
+// ListKernels 列出指定 Notebook 引擎实例的 Kernel。
+// @Summary 按 Notebook 引擎列出 Kernel | List kernels by Notebook engine
+// @Tags Notebook
+// @Produce json
+// @Param id path int true "Notebook 引擎实例 ID | Notebook engine instance ID"
 // @Success 200 {object} ListKernelsResponse "Kernel列表 | Kernel list"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.notebook.read"]
-// @Router /notebooks/kernels [get]
+// @Router /notebook-engines/{id}/kernels [get]
 func (h *NotebookHandler) ListKernels(c *gin.Context) {
-	kernels, err := h.jupyterService.ListKernels(c.Request.Context())
+	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil || engineID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookEngineRequired)})
+		return
+	}
+	kernels, err := h.jupyterService.ListKernels(c.Request.Context(), tenantIDValue(c), uint(engineID))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "获取 Kernel 列表失败",
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error":   commoni18n.TWithDetail(c, developi18n.MsgNotebookKernelListFailed, err.Error()),
 			"details": err.Error(),
 		})
 		return
@@ -171,38 +92,14 @@ func (h *NotebookHandler) ListKernels(c *gin.Context) {
 	})
 }
 
-// HealthCheck 检查 Jupyter Engine 健康状态
-// @Summary 检查 Jupyter Engine 健康状态 | Check Jupyter Engine health status
-// @Tags Notebook
-// @Produce json
-// @Success 200 {object} map[string]string "健康状态 | Health status"
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["develop.notebook.read"]
-// @Router /notebooks/health [get]
-func (h *NotebookHandler) HealthCheck(c *gin.Context) {
-	err := h.jupyterService.HealthCheck(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"status": "unhealthy",
-			"error":  err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "healthy",
-		"message": "Jupyter Engine 运行正常",
-	})
-}
-
 // UploadNotebookRequest 上传 Notebook 请求
 type UploadNotebookRequest struct {
 	Name        string                 `json:"name" binding:"required"`
 	Description string                 `json:"description"`
-	DataSources []uint                 `json:"data_sources"` // 数据源 engine IDs
 	Parameters  map[string]interface{} `json:"parameters"`
-	Kernel      string                 `json:"kernel"` // 默认 python3
+	Kernel      string                 `json:"kernel" binding:"required"`
 	Tags        []string               `json:"tags"`
+	EngineID    uint                   `json:"engine_id" binding:"required"`
 }
 
 // UploadNotebook 上传 Notebook 文件并创建开发任务
@@ -213,8 +110,9 @@ type UploadNotebookRequest struct {
 // @Param file formData file true "Notebook 文件 (.ipynb) | Notebook file (.ipynb)"
 // @Param name formData string true "Notebook 名称 | Notebook name"
 // @Param description formData string false "描述 | Description"
-// @Param data_sources formData string false "数据源 IDs (JSON 数组) | Data source IDs (JSON array)"
 // @Param parameters formData string false "参数 (JSON 对象) | Parameters (JSON object)"
+// @Param engine_id formData int true "Notebook 引擎实例 ID | Notebook engine instance ID"
+// @Param kernel formData string true "Kernel 名称 | Kernel name"
 // @Success 200 {object} models.UploadNotebookSwaggerResponse "已上传的Notebook | Uploaded Notebook"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.notebook.create"]
@@ -226,27 +124,38 @@ func (h *NotebookHandler) UploadNotebook(c *gin.Context) {
 	// 读取表单数据
 	name := c.PostForm("name")
 	description := c.PostForm("description")
-	dataSourcesStr := c.PostForm("data_sources")
 	parametersStr := c.PostForm("parameters")
-	kernel := c.PostForm("kernel")
+	kernel := strings.TrimSpace(c.PostForm("kernel"))
 	if kernel == "" {
-		kernel = "python3"
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookKernelRequired)})
+		return
 	}
-
-	// 解析数据源 IDs
-	var dataSources []uint
-	if dataSourcesStr != "" {
-		if err := json.Unmarshal([]byte(dataSourcesStr), &dataSources); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 data_sources 格式"})
-			return
-		}
+	engineID64, err := strconv.ParseUint(c.PostForm("engine_id"), 10, 32)
+	if err != nil || engineID64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookEngineRequired)})
+		return
+	}
+	engineID := uint(engineID64)
+	if _, err := h.jupyterService.GetNotebookEngine(c.Request.Context(), tenantID, engineID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   commoni18n.TWithDetail(c, developi18n.MsgNotebookEngineUnavailable, err.Error()),
+			"details": err.Error(),
+		})
+		return
+	}
+	if err := h.jupyterService.ValidateKernel(c.Request.Context(), tenantID, engineID, kernel); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   commoni18n.TWithDetail(c, developi18n.MsgNotebookKernelUnavailable, err.Error()),
+			"details": err.Error(),
+		})
+		return
 	}
 
 	// 解析参数
 	var parameters map[string]interface{}
 	if parametersStr != "" {
 		if err := json.Unmarshal([]byte(parametersStr), &parameters); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 parameters 格式"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookInvalidParameters)})
 			return
 		}
 	}
@@ -257,7 +166,7 @@ func (h *NotebookHandler) UploadNotebook(c *gin.Context) {
 	// 读取上传的文件
 	file, err := c.FormFile("file")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "未上传文件或文件读取失败"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookFileRequired)})
 		return
 	}
 
@@ -284,13 +193,8 @@ func (h *NotebookHandler) UploadNotebook(c *gin.Context) {
 	minioPath := fmt.Sprintf("tenant_%d/notebooks/%s", tenantID, file.Filename)
 
 	// 保存到 MinIO
-	if h.notebookExecutionService != nil {
-		if err := h.notebookExecutionService.SaveNotebookToMinIO(c.Request.Context(), minioPath, notebookContent); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("保存到 MinIO 失败: %v", err)})
-			return
-		}
-	} else {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "NotebookExecutionService 未初始化"})
+	if err := h.notebookExecutionService.SaveNotebookToMinIO(c.Request.Context(), minioPath, notebookContent); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, developi18n.MsgNotebookStoreFailed, err.Error())})
 		return
 	}
 
@@ -300,7 +204,6 @@ func (h *NotebookHandler) UploadNotebook(c *gin.Context) {
 		"minio_path":    minioPath,
 		"kernel":        kernel,
 		"parameters":    parameters,
-		"data_sources":  dataSources,
 		"description":   description,
 	}
 
@@ -309,13 +212,16 @@ func (h *NotebookHandler) UploadNotebook(c *gin.Context) {
 		DisplayName: name,
 		DevType:     "script",
 		Content:     content,
+		ExecutionConfig: models.DevTaskContent{
+			"engine_id": engineID,
+		},
 		Description: description,
 		Timeout:     600, // 默认 10 分钟
 	}
 
 	devTask, err := h.devTaskService.CreateDevTask(createReq, tenantID, userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建开发任务失败: %v", err)})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, developi18n.MsgNotebookCreateFailed, err.Error())})
 		return
 	}
 
@@ -366,11 +272,6 @@ func (h *NotebookHandler) DownloadNotebook(c *gin.Context) {
 	}
 
 	// 从 MinIO 读取文件
-	if h.notebookExecutionService == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "NotebookExecutionService 未初始化"})
-		return
-	}
-
 	notebookContent, err := h.notebookExecutionService.ReadNotebookFromMinIO(c.Request.Context(), minioPath)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("读取 Notebook 失败: %v", err)})

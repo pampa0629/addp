@@ -28,7 +28,6 @@ func SetupRouter(
 	documentSvc *service.DocumentService,
 	dimHierarchySvc *service.DimensionHierarchyService,
 	systemURL string,
-	internalAPIKey string,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -58,10 +57,6 @@ func SetupRouter(
 	dimHierarchyHandler := NewDimensionHierarchyHandler(dimHierarchySvc)
 	assetDiscHandler := newAssetDiscoverableHandler(db)
 
-	internal := router.Group("/api/v1/standard/internal")
-	internal.Use(internalAPIKeyMiddleware(internalAPIKey))
-	internal.GET("/assets/discoverable", assetDiscHandler.listDiscoverableAssets)
-
 	api := router.Group("/api/v1/standard")
 	api.Use(
 		commonAuth.MustNewOptionalResourceTicketMiddleware(commonAuth.ResourceTicketMiddlewareConfig{
@@ -75,6 +70,13 @@ func SetupRouter(
 		return commonAuth.MustNewPermissionGuard(keys...)
 	}
 	{
+		api.GET(
+			"/assets/discoverable",
+			commonAuth.MustNewServiceClientGuard("addp-asset"),
+			permission(standardauthorization.PermissionStandardMetricRead),
+			assetDiscHandler.listDiscoverableAssets,
+		)
+
 		domains := api.Group("/domains")
 		{
 			domains.GET("", permission(standardauthorization.PermissionStandardDomainRead), domainHandler.ListDomains)

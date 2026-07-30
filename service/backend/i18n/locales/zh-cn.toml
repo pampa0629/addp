@@ -16,6 +16,9 @@ other = "ref 格式错误，应为 type:id"
 [service.err.invalid_ref_id]
 other = "ref 中的 ID 无效"
 
+[service.err.not_found]
+other = "服务不存在"
+
 [service.success.deleted]
 other = "删除成功"
 

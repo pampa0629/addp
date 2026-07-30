@@ -103,6 +103,7 @@ GROUP_BY_METADATA = OperatorMetadata(
     description="分组聚合",
     brief_description="按指定列分组并进行聚合计算,支持多种聚合函数组合",
     execution_modes=["workflow"],
+    effects=["read"],
     overview="group_by 算子实现 SQL GROUP BY 功能,按一列或多列分组,对每组数据进行聚合计算。支持 count、sum、avg、min、max 等标准聚合函数,也支持复杂的自定义表达式。",
     params=[
         OperatorParam(
@@ -164,6 +165,7 @@ JOIN_METADATA = OperatorMetadata(
     description="表连接",
     brief_description="关联两张表,支持内连接、左连接、右连接和全外连接",
     execution_modes=["workflow"],
+    effects=["read"],
     overview="join 算子实现 SQL JOIN 功能,根据连接条件关联两个 DataFrame。支持简单列名连接(on=\"id\")和复杂 SQL 表达式连接(on=\"a.id = b.user_id AND a.date = b.date\")。",
     params=[
         OperatorParam(

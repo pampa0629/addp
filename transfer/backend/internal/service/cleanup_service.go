@@ -523,10 +523,7 @@ func (s *TransferCleanupService) finishExecutorExecution(ctx context.Context, ex
 		return
 	}
 	now := time.Now()
-	status := commonExecution.ExecutionStatusSuccess
-	if result.Status == events.CleanupResultFailed {
-		status = commonExecution.ExecutionStatusFailed
-	}
+	status := commonExecution.StatusFromCleanupResult(result.Status)
 	var errDetails commonModels.JSONMap
 	if len(result.Errors) > 0 {
 		errDetails = commonModels.JSONMap{"errors": result.Errors}

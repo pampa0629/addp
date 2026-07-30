@@ -707,6 +707,7 @@ VECTOR_TO_PMTILES_METADATA = OperatorMetadata(
     description="PMTiles v3 矢量瓦片集生成",
     brief_description="从空间数据生成单文件 PMTiles v3 矢量瓦片集",
     execution_modes=["workflow", "direct"],
+    effects=["read", "write"],
     overview="面向 Manager vector_tile_cache_generation 和 vector_tile_set_generation 的文件、对象来源 PMTiles 生成算子。Manager 负责 locator、源访问计划、目标存储和任务状态；GeoPython Workflow 负责 MVT 生成、PMTiles v3 封装和原子发布。PostgreSQL/PostGIS 表由 Manager 原生生成器处理。",
     params=[
         OperatorParam(

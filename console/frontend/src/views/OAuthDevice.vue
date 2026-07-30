@@ -4,6 +4,7 @@
       <el-icon class="oauth-icon"><Monitor /></el-icon>
       <h1>{{ t('console.oauth.device.title') }}</h1>
       <p>{{ t('console.oauth.device.description') }}</p>
+      <OAuthContextSelector />
       <el-input v-model="userCode" size="large" :placeholder="t('console.oauth.device.placeholder')" maxlength="9" />
       <el-alert v-if="message" :title="message" :type="messageType" :closable="false" />
       <div class="actions">
@@ -22,6 +23,7 @@ import { useRoute } from 'vue-router'
 import { Check, Close, Monitor } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { oauthAPI } from '../api/oauth'
+import OAuthContextSelector from '../components/OAuthContextSelector.vue'
 
 const route = useRoute()
 const { t } = useI18n()
@@ -55,10 +57,17 @@ async function submit(approve) {
 
 <style scoped>
 .oauth-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--addp-bg-secondary); box-sizing: border-box; }
-.oauth-panel { width: min(520px, 100%); padding: 28px; border: 1px solid var(--addp-border-color); background: var(--addp-bg-primary); border-radius: 8px; box-sizing: border-box; }
+.oauth-panel { width: min(520px, 100%); min-width: 0; padding: 28px; border: 1px solid var(--addp-border-color); background: var(--addp-bg-primary); border-radius: 8px; box-sizing: border-box; }
 .oauth-icon { font-size: 32px; color: var(--addp-primary-color); }
 h1 { margin: 16px 0 8px; color: var(--addp-text-primary); }
 p { margin: 0 0 20px; color: var(--addp-text-secondary); line-height: 1.6; }
 .el-alert { margin-top: 16px; }
 .actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; }
+
+@media (max-width: 520px) {
+  .oauth-page { padding: 12px; }
+  .oauth-panel { padding: 20px; }
+  .actions { flex-direction: column-reverse; }
+  .actions :deep(.el-button) { width: 100%; margin: 0; }
+}
 </style>

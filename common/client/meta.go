@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,11 +18,10 @@ import (
 
 // MetaClient Meta 服务客户端
 type MetaClient struct {
-	baseURL     string
-	httpClient  *http.Client
-	authToken   string // 用户 Access Token
-	internalKey string // Internal API Key (用于服务间调用)
-	tenantID    *uint  // Tenant ID (用于服务间调用时指定租户)
+	baseURL            string
+	httpClient         *http.Client
+	serviceTokenSource ServiceTokenProvider
+	tenantID           *uint
 }
 
 type MetaScanOptions struct {
@@ -99,65 +99,76 @@ type MetaExtractionScanStats struct {
 	IndexFailed int `json:"index_failed"`
 }
 
-// NewMetaClient 创建 Meta 客户端（用户认证方式）
-func NewMetaClient(baseURL, authToken string) *MetaClient {
+func NewMetaClient(baseURL string, tokenSource ServiceTokenProvider) *MetaClient {
 	return &MetaClient{
 		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: 60 * time.Second, // Meta 查询可能较慢，使用 60 秒超时
 		},
-		authToken: authToken,
+		serviceTokenSource: tokenSource,
 	}
 }
 
-// NewMetaClientWithInternalKey 创建 Meta 客户端（服务间调用方式）
-func NewMetaClientWithInternalKey(baseURL, internalKey string) *MetaClient {
-	return &MetaClient{
-		baseURL: baseURL,
-		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
-		},
-		internalKey: internalKey,
-	}
-}
-
-func (c *MetaClient) WithAuthToken(authToken string) *MetaClient {
-	return &MetaClient{
-		baseURL:    c.baseURL,
-		httpClient: c.httpClient,
-		authToken:  authToken,
-	}
-}
-
-// SetTenantID 设置租户 ID（用于服务间调用）
-func (c *MetaClient) SetTenantID(tenantID *uint) {
-	c.tenantID = tenantID
-}
-
-// WithTenantID 返回一个带有租户 ID 的新 MetaClient（复用 httpClient，线程安全）
 func (c *MetaClient) WithTenantID(tenantID uint) *MetaClient {
 	return &MetaClient{
-		baseURL:     c.baseURL,
-		httpClient:  c.httpClient,
-		authToken:   c.authToken,
-		internalKey: c.internalKey,
-		tenantID:    &tenantID,
+		baseURL: c.baseURL, httpClient: c.httpClient,
+		serviceTokenSource: c.serviceTokenSource, tenantID: &tenantID,
 	}
 }
 
-// addAuth 添加认证头（根据客户端类型选择 JWT 或 Internal Key）
-func (c *MetaClient) addAuth(req *http.Request) {
-	if c.internalKey != "" {
-		// 服务间调用使用 Internal API Key
-		req.Header.Set("X-Internal-API-Key", c.internalKey)
-		// 如果设置了 tenantID，添加到请求头
-		if c.tenantID != nil {
-			req.Header.Set("X-Tenant-ID", fmt.Sprintf("%d", *c.tenantID))
-		}
-	} else if c.authToken != "" {
-		// 用户调用使用 Access Token
-		req.Header.Set("Authorization", "Bearer "+c.authToken)
+func (c *MetaClient) GetItemByIDForTenant(tenantID, itemID uint) (*models.MetaItem, error) {
+	return c.WithTenantID(tenantID).GetItemByID(itemID)
+}
+
+func (c *MetaClient) addAuth(req *http.Request) error {
+	if c == nil || c.serviceTokenSource == nil {
+		return errors.New("Meta request has no service token provider")
 	}
+	if c.tenantID == nil || *c.tenantID == 0 {
+		return errors.New("Meta service request requires a tenant context")
+	}
+	token, err := c.serviceTokenSource.Token(req.Context(), *c.tenantID)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	return nil
+}
+
+func (c *MetaClient) do(req *http.Request) (*http.Response, error) {
+	if c == nil || c.httpClient == nil || req == nil {
+		return nil, errors.New("Meta request is required")
+	}
+	token := strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer ")
+	if token == "" {
+		if err := c.addAuth(req); err != nil {
+			return nil, err
+		}
+		token = strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer ")
+	}
+	response, err := c.httpClient.Do(req)
+	if err != nil || response.StatusCode != http.StatusUnauthorized {
+		return response, err
+	}
+	invalidator, ok := c.serviceTokenSource.(ServiceTokenInvalidator)
+	if !ok || c.tenantID == nil || *c.tenantID == 0 || token == "" || (req.Body != nil && req.GetBody == nil) {
+		return response, nil
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+	_ = response.Body.Close()
+	invalidator.InvalidateToken(*c.tenantID, token)
+	newToken, err := c.serviceTokenSource.Token(req.Context(), *c.tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if req.GetBody != nil {
+		req.Body, err = req.GetBody()
+		if err != nil {
+			return nil, fmt.Errorf("recreate Meta request body: %w", err)
+		}
+	}
+	req.Header.Set("Authorization", "Bearer "+newToken)
+	return c.httpClient.Do(req)
 }
 
 // GetMetadataTree 获取引擎的完整元数据树
@@ -169,10 +180,9 @@ func (c *MetaClient) GetMetadataTree(engineID uint) (*models.MetadataTree, error
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	c.addAuth(req)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -201,10 +211,9 @@ func (c *MetaClient) GetNodeByCatalogPath(engineID uint, catalogPath string) (*m
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	c.addAuth(req)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -233,10 +242,9 @@ func (c *MetaClient) GetItemByCatalogPath(engineID uint, catalogPath string) (*m
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	c.addAuth(req)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -264,10 +272,9 @@ func (c *MetaClient) GetNodeChildren(nodeID uint) ([]models.MetaNode, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	c.addAuth(req)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -295,10 +302,9 @@ func (c *MetaClient) GetNodeItems(nodeID uint) ([]models.MetaItem, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	c.addAuth(req)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -326,10 +332,9 @@ func (c *MetaClient) GetNodeByID(nodeID uint) (*models.MetaNode, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	c.addAuth(req)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -357,10 +362,9 @@ func (c *MetaClient) GetNodeAncestors(nodeID uint) ([]models.MetaNode, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	c.addAuth(req)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -388,10 +392,9 @@ func (c *MetaClient) GetItemByID(itemID uint) (*models.MetaItem, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	c.addAuth(req)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -419,10 +422,9 @@ func (c *MetaClient) GetItemAncestors(itemID uint) (*models.MetaItemAncestors, e
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	c.addAuth(req)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -490,10 +492,9 @@ func (c *MetaClient) CreateManualScanRun(opts MetaScanOptions) (*commonExecution
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	c.addAuth(req)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -518,6 +519,10 @@ func (c *MetaClient) CreateManualScanRun(opts MetaScanOptions) (*commonExecution
 	return &result, nil
 }
 
+func (c *MetaClient) CreateManualScanRunForTenant(tenantID uint, opts MetaScanOptions) (*commonExecution.TaskExecution, error) {
+	return c.WithTenantID(tenantID).CreateManualScanRun(opts)
+}
+
 func (c *MetaClient) InspectAttributes(req MetaInspectRequest) (*MetaInspectResult, error) {
 	urlStr := fmt.Sprintf("%s/api/v1/meta/inspect", c.baseURL)
 	body, err := json.Marshal(req)
@@ -529,8 +534,7 @@ func (c *MetaClient) InspectAttributes(req MetaInspectRequest) (*MetaInspectResu
 		return nil, fmt.Errorf("failed to create inspect request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	c.addAuth(httpReq)
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send inspect request: %w", err)
 	}
@@ -578,10 +582,9 @@ func (c *MetaClient) RefreshItem(itemID uint, opts MetaScanOptions) (*MetaScanRe
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	c.addAuth(req)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -616,10 +619,9 @@ func (c *MetaClient) ListEngineItems(engineID uint, branch string) ([]models.Met
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	c.addAuth(req)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -659,10 +661,9 @@ func (c *MetaClient) GetItemFieldsByID(itemID uint, includeDetails bool) ([]data
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	c.addAuth(req)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -699,10 +700,9 @@ func (c *MetaClient) GetItemSpatialMetadataByID(itemID uint) (*models.SpatialMet
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	c.addAuth(req)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

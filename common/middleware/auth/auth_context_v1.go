@@ -283,6 +283,34 @@ func MustNewContextGuard(contextType string) gin.HandlerFunc {
 	return guard
 }
 
+func NewServiceClientGuard(expectedClientID string) (gin.HandlerFunc, error) {
+	expectedClientID = strings.TrimSpace(expectedClientID)
+	if expectedClientID == "" {
+		return nil, fmt.Errorf("%w: expected service client ID is required", commonapi.ErrBadRequest)
+	}
+	return func(c *gin.Context) {
+		authContext, exists := AuthContextFromGin(c)
+		if !exists {
+			abortAuthenticationRequired(c)
+			return
+		}
+		if authContext.Principal.Type != "service_principal" ||
+			authContext.Client.ClientID == nil || *authContext.Client.ClientID != expectedClientID {
+			abortPermissionDenied(c)
+			return
+		}
+		c.Next()
+	}, nil
+}
+
+func MustNewServiceClientGuard(expectedClientID string) gin.HandlerFunc {
+	guard, err := NewServiceClientGuard(expectedClientID)
+	if err != nil {
+		panic(err)
+	}
+	return guard
+}
+
 func NewPermissionGuard(requiredPermissions ...string) (gin.HandlerFunc, error) {
 	permissions, err := normalizeRequiredPermissions(requiredPermissions)
 	if err != nil {

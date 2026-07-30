@@ -76,7 +76,7 @@ func TestVectorTileSetExecutorUsesPostGISGeneratorWithoutWorkflow(t *testing.T) 
 			t.Fatalf("unexpected system path: %s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":26,"tenant_id":7,"name":"Business NFS","engine_type":"nfs","connection_info":{"mount_path":"` + targetRoot + `"},"is_active":true}`))
+		_, _ = w.Write([]byte(`{"id":26,"tenant_id":7,"name":"Business NFS","engine_type":"nfs","connection_info":{"mount_path":"` + targetRoot + `"},"lifecycle_state":"active"}`))
 	}))
 	defer systemServer.Close()
 

@@ -25,8 +25,7 @@ type RasterMosaicExecutor interface {
 }
 
 type RasterMosaicMetaScanSubmitter interface {
-	CreateManualScanRun(opts commonClient.MetaScanOptions) (*commonExecution.TaskExecution, error)
-	SetTenantID(tenantID *uint)
+	CreateManualScanRunForTenant(tenantID uint, opts commonClient.MetaScanOptions) (*commonExecution.TaskExecution, error)
 }
 
 type RasterMosaicExecutionRequest struct {
@@ -382,10 +381,7 @@ func (s *RasterMosaicTaskService) submitRasterMosaicMetaScan(tenantID uint, cfg 
 	if catalogPath == "" {
 		return nil, errors.New("raster mosaic dataset catalog path is required for meta scan")
 	}
-	if tenantID > 0 {
-		s.metaScanSubmitter.SetTenantID(&tenantID)
-	}
-	return s.metaScanSubmitter.CreateManualScanRun(commonClient.MetaScanOptions{
+	return s.metaScanSubmitter.CreateManualScanRunForTenant(tenantID, commonClient.MetaScanOptions{
 		EngineID:     cfg.Target.TargetEngineID,
 		CatalogPaths: []string{catalogPath},
 		ScanDepth:    commonClient.MetaScanDepthDeep,

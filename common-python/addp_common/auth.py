@@ -131,7 +131,7 @@ def _parse_role_assignments(value: object) -> tuple[RoleAssignment, ...]:
 
 
 async def resolve_authorization_context(system_url: str, token: str) -> AuthorizationContext:
-    """Resolve a user access token through the canonical System AuthContext v1 API."""
+    """Resolve an ADDP access token through the canonical System AuthContext v1 API."""
     async with SystemClient(base_url=system_url, user_token=token) as client:
         data = await client.get_authorization_context()
 
@@ -146,8 +146,9 @@ async def resolve_authorization_context(system_url: str, token: str) -> Authoriz
 
     principal = _require_object(root["principal"], "principal")
     _require_fields(principal, "principal", {"type", "id"})
-    if principal["type"] != "user":
-        raise ValueError("authorization context principal.type must be user")
+    principal_type = principal["type"]
+    if principal_type not in {"user", "service_principal"}:
+        raise ValueError("authorization context principal.type is invalid")
 
     session_context = _require_object(root["context"], "context")
     context_type = session_context.get("type")
@@ -180,8 +181,13 @@ async def resolve_authorization_context(system_url: str, token: str) -> Authoriz
     token_facts = _require_object(root["token"], "token")
     _require_fields(token_facts, "token", {"type", "issued_at", "expires_at"})
     token_type = token_facts["type"]
-    if token_type not in {"first_party_access_token", "oauth_access_token", "delegated_access_token"}:
-        raise ValueError("authorization context token.type is not a user access token")
+    if token_type not in {
+        "first_party_access_token",
+        "oauth_access_token",
+        "service_access_token",
+        "delegated_access_token",
+    }:
+        raise ValueError("authorization context token.type is invalid")
 
     delegation = root["delegation"]
     delegated_by_client_id = agent_run_id = tool_call_id = None
@@ -198,7 +204,7 @@ async def resolve_authorization_context(system_url: str, token: str) -> Authoriz
 
     context = AuthorizationContext(
         principal_id=_parse_id(principal["id"], "principal.id"),
-        principal_type="user",
+        principal_type=principal_type,
         context_type=context_type,
         tenant_id=tenant_id,
         tenant_membership_id=tenant_membership_id,
@@ -225,4 +231,9 @@ async def resolve_authorization_context(system_url: str, token: str) -> Authoriz
         raise ValueError("authorization context restricted client must contain scopes")
     if context.token_type == "delegated_access_token" and (len(context.audiences) != 1 or not context.scopes):
         raise ValueError("delegated authorization context must contain one audience and non-empty scopes")
+    if context.principal_type == "service_principal":
+        if context.token_type != "service_access_token" or not context.client_id:
+            raise ValueError("service principal requires a service access token and client ID")
+    elif context.token_type == "service_access_token":
+        raise ValueError("user principal cannot use a service access token")
     return context

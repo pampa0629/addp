@@ -1,36 +1,37 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"strconv"
 	"time"
 
-	commonClient "github.com/addp/common/client"
-	commonModels "github.com/addp/common/models"
 	"github.com/addp/asset/internal/models"
 	"github.com/addp/asset/internal/search"
+	commonClient "github.com/addp/common/client"
+	commonModels "github.com/addp/common/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type AssetService struct {
-	db             *gorm.DB
-	moduleURLs     map[string]string // sourceModule -> base URL
-	httpClient     *http.Client
-	internalAPIKey string
-	indexer        *search.Indexer
+	db            *gorm.DB
+	moduleURLs    map[string]string // sourceModule -> base URL
+	httpClient    *http.Client
+	serviceTokens commonClient.ServiceTokenProvider
+	indexer       *search.Indexer
 }
 
-func NewAssetService(db *gorm.DB, moduleURLs map[string]string, internalAPIKey string, indexer *search.Indexer) *AssetService {
+func NewAssetService(db *gorm.DB, moduleURLs map[string]string, serviceTokens commonClient.ServiceTokenProvider, indexer *search.Indexer) *AssetService {
 	return &AssetService{
-		db:             db,
-		moduleURLs:     moduleURLs,
-		httpClient:     &http.Client{Timeout: 10 * time.Second},
-		internalAPIKey: internalAPIKey,
-		indexer:        indexer,
+		db:            db,
+		moduleURLs:    moduleURLs,
+		httpClient:    &http.Client{Timeout: 10 * time.Second},
+		serviceTokens: serviceTokens,
+		indexer:       indexer,
 	}
 }
 
@@ -204,6 +205,36 @@ func (s *AssetService) Get(tenantID uint, id int64) (*AssetDetail, error) {
 	return detail, nil
 }
 
+// GetPublished 获取消费面可见的已上架资产详情。
+func (s *AssetService) GetPublished(tenantID uint, id int64) (*AssetDetail, error) {
+	var asset models.Asset
+	if err := s.db.Where("id = ? AND tenant_id = ? AND status = 'published'", id, tenantID).First(&asset).Error; err != nil {
+		return nil, err
+	}
+
+	detail := &AssetDetail{Asset: asset}
+	var extFields []models.AssetExtField
+	if err := s.db.Where("asset_id = ?", id).Find(&extFields).Error; err != nil {
+		return nil, err
+	}
+	detail.ExtFields = extFields
+
+	var typeDef models.TypeDefinition
+	if err := s.db.First(&typeDef, asset.TypeID).Error; err == nil {
+		detail.TypeDef = &typeDef
+		detail.TypeName = typeDef.Name
+		detail.TypeCode = typeDef.Code
+	}
+	if asset.CatalogID != nil {
+		var catalog models.Catalog
+		if err := s.db.First(&catalog, *asset.CatalogID).Error; err == nil {
+			detail.Catalog = &catalog
+			detail.CatalogName = catalog.Name
+		}
+	}
+	return detail, nil
+}
+
 // Update 更新资产基本信息（名称/描述/分类/标签）
 func (s *AssetService) Update(tenantID uint, id int64, userID uint, req *UpdateAssetReq) (*AssetDetail, error) {
 	var asset models.Asset
@@ -368,7 +399,7 @@ func (s *AssetService) BatchCatalog(tenantID uint, ids []int64, catalogID *int64
 
 // Sync 从各源模块发现新资产，自动创建草稿
 // 各模块独立调用，单个模块失败不影响其他模块
-func (s *AssetService) Sync(tenantID uint) (*SyncResult, error) {
+func (s *AssetService) Sync(ctx context.Context, tenantID uint) (*SyncResult, error) {
 	var typeDefs []models.TypeDefinition
 	if err := s.db.Where("(tenant_id = 0 OR tenant_id = ?) AND enabled = true AND discovery_path != ''", tenantID).
 		Find(&typeDefs).Error; err != nil {
@@ -383,7 +414,7 @@ func (s *AssetService) Sync(tenantID uint) (*SyncResult, error) {
 			continue
 		}
 
-		items, err := s.fetchDiscoverableAssets(baseURL, td.DiscoveryPath, tenantID)
+		items, err := s.fetchDiscoverableAssets(ctx, baseURL, td.DiscoveryPath, tenantID)
 		if err != nil {
 			// 模块不可达或出错：记录日志，跳过，不影响其他模块
 			log.Printf("⚠️  资产发现：%s 模块不可用，跳过 (%s%s): %v",
@@ -396,20 +427,6 @@ func (s *AssetService) Sync(tenantID uint) (*SyncResult, error) {
 			fingerprint := commonModels.GenerateAssetFingerprint(
 				int64(tenantID), td.SourceModule, item.SourceReference,
 			)
-
-			var count int64
-			s.db.Model(&models.Asset{}).
-				Where("fingerprint = ? AND tenant_id = ?", fingerprint, tenantID).
-				Count(&count)
-
-			if count > 0 {
-				// 已存在：标记来源仍可用
-				s.db.Model(&models.Asset{}).
-					Where("fingerprint = ? AND tenant_id = ?", fingerprint, tenantID).
-					Update("source_available", true)
-				result.Skipped++
-				continue
-			}
 
 			// 新资产：自动创建草稿
 			asset := &models.Asset{
@@ -425,12 +442,24 @@ func (s *AssetService) Sync(tenantID uint) (*SyncResult, error) {
 				SourceAvailable: true,
 				CreatedBy:       0, // 系统自动创建
 			}
-			if err := s.db.Create(asset).Error; err != nil {
-				log.Printf("⚠️  创建草稿资产失败 (%s/%s): %v", td.SourceModule, item.SourceReference, err)
+			insert := s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(asset)
+			if insert.Error != nil {
+				log.Printf("⚠️  创建草稿资产失败 (%s/%s): %v", td.SourceModule, item.SourceReference, insert.Error)
 				result.Errors++
-			} else {
-				result.Created++
+				continue
 			}
+			if insert.RowsAffected == 0 {
+				if err := s.db.Model(&models.Asset{}).
+					Where("fingerprint = ? AND tenant_id = ?", fingerprint, tenantID).
+					Update("source_available", true).Error; err != nil {
+					log.Printf("⚠️  更新资产来源状态失败 (%s/%s): %v", td.SourceModule, item.SourceReference, err)
+					result.Errors++
+					continue
+				}
+				result.Skipped++
+				continue
+			}
+			result.Created++
 		}
 	}
 
@@ -438,19 +467,18 @@ func (s *AssetService) Sync(tenantID uint) (*SyncResult, error) {
 }
 
 // fetchDiscoverableAssets 调用源模块的 discoverable 接口
-// 响应格式兼容：{"data": [...]} 或直接 [...]
-func (s *AssetService) fetchDiscoverableAssets(baseURL, discoveryPath string, tenantID uint) ([]commonClient.DiscoverableAsset, error) {
+func (s *AssetService) fetchDiscoverableAssets(ctx context.Context, baseURL, discoveryPath string, tenantID uint) ([]commonClient.DiscoverableAsset, error) {
 	url := fmt.Sprintf("%s%s", baseURL, discoveryPath)
 
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	token, err := s.serviceTokens.Token(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("获取 Asset Service Access Token 失败: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("创建请求失败: %w", err)
 	}
-	// 携带内部认证信息（跳过各模块的 JWT 认证）
-	if s.internalAPIKey != "" {
-		req.Header.Set("X-Internal-API-Key", s.internalAPIKey)
-	}
-	req.Header.Set("X-Tenant-ID", strconv.Itoa(int(tenantID)))
+	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
@@ -469,12 +497,6 @@ func (s *AssetService) fetchDiscoverableAssets(baseURL, discoveryPath string, te
 	}
 
 	var items []commonClient.DiscoverableAsset
-	var wrapper struct {
-		Data []commonClient.DiscoverableAsset `json:"data"`
-	}
-	if err := json.Unmarshal(body, &wrapper); err == nil && wrapper.Data != nil {
-		return wrapper.Data, nil
-	}
 	if err := json.Unmarshal(body, &items); err != nil {
 		return nil, fmt.Errorf("解析响应失败: %w", err)
 	}
@@ -542,8 +564,8 @@ type DashboardStats struct {
 	AssetPublished int64 `json:"asset_published"`
 	AssetOffline   int64 `json:"asset_offline"`
 	// 申请汇总
-	ApplicationTotal   int64 `json:"application_total"`
-	ApplicationPending int64 `json:"application_pending"`
+	ApplicationTotal    int64 `json:"application_total"`
+	ApplicationPending  int64 `json:"application_pending"`
 	AuthorizationActive int64 `json:"authorization_active"`
 	// 时间趋势（近 30 天，按天汇总）
 	PublishTrend     []DailyCount `json:"publish_trend"`

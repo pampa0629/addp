@@ -54,6 +54,7 @@ def get_operator_metadata() -> List[Dict[str, Any]]:
             "description": op_meta.get('description', ''),
             "brief_description": op_meta.get('brief_description', ''),
             "execution_modes": op_meta['execution_modes'],
+            "effects": op_meta['effects'],
             "detailed_description": detailed_desc,
             "parameters": parameters,
             "output_ports": [

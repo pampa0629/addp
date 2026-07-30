@@ -2,6 +2,19 @@ basePath: /api/v1/monitor
 definitions:
   execution.TaskExecution:
     properties:
+      actor_principal_id:
+        description: |-
+          User-derived execution authorization facts. The raw User/Service tokens
+          and engine connection details are never persisted in task executions.
+        type: integer
+      actor_tenant_membership_id:
+        type: integer
+      authorization_effects:
+        items:
+          type: string
+        type: array
+      authorization_expires_at:
+        type: string
       bytes_read:
         description: Transfer 读取字节数
         type: integer
@@ -19,6 +32,8 @@ definitions:
         allOf:
         - $ref: '#/definitions/models.JSONMap'
         description: 错误详情（仅失败时有值）
+      execution_authorization_id:
+        type: integer
       execution_config:
         allOf:
         - $ref: '#/definitions/models.JSONMap'
@@ -30,6 +45,8 @@ definitions:
         description: 性能指标
         type: integer
       id:
+        type: integer
+      issued_authorization_version:
         type: integer
       metadata:
         allOf:

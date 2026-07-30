@@ -123,6 +123,18 @@ func updateTransactionAudit(ctx context.Context, update func(*iam.AuditEvent)) {
 	update(&audit.event)
 }
 
+// SetTransactionAuditClientID records the client identity only after Fosite
+// has authenticated and resolved it. This keeps confidential-client audits
+// accurate without trusting the unverified HTTP Basic username.
+func SetTransactionAuditClientID(ctx context.Context, clientID string) {
+	updateTransactionAudit(ctx, func(event *iam.AuditEvent) {
+		if event.Details == nil {
+			event.Details = make(map[string]any, 1)
+		}
+		event.Details["client_id"] = clientID
+	})
+}
+
 // TransactionAuditCommitted reports whether a Fosite-managed transaction
 // committed the attached audit event and returns a detached event copy.
 func TransactionAuditCommitted(ctx context.Context) (iam.AuditEvent, bool) {

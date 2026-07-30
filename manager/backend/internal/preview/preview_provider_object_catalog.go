@@ -21,7 +21,6 @@ import (
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/objectcontent"
 	"github.com/addp/manager/internal/repository"
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
@@ -61,7 +60,6 @@ type objectCatalogPreviewProvider struct {
 	metadataRepo   *repository.MetadataRepository
 	cadPreviewRepo *repository.CADPreviewRepository
 	metaClient     *commonClient.MetaClient
-	metaServiceURL string
 	content        *objectcontent.ObjectContentRegistry
 }
 
@@ -69,12 +67,11 @@ func (p *objectCatalogPreviewProvider) SetCADPreviewRepository(repo *repository.
 	p.cadPreviewRepo = repo
 }
 
-func NewObjectCatalogPreviewProvider(metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, content *objectcontent.ObjectContentRegistry) PreviewProvider {
+func NewObjectCatalogPreviewProvider(metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, content *objectcontent.ObjectContentRegistry) PreviewProvider {
 	return &objectCatalogPreviewProvider{
-		metadataRepo:   metadataRepo,
-		metaClient:     metaClient,
-		metaServiceURL: metaServiceURL,
-		content:        content,
+		metadataRepo: metadataRepo,
+		metaClient:   metaClient,
+		content:      content,
 	}
 }
 
@@ -124,23 +121,9 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 		objectPath = strings.TrimPrefix(objectPath, bucket+"/")
 	}
 
-	// 从 Gin context 的 Authorization header 中提取 JWT token,创建临时的 Meta Client 用于用户认证
 	metaClient := p.metaClient
-	if ginCtx, ok := ctx.(*gin.Context); ok {
-		if authHeader := ginCtx.GetHeader("Authorization"); authHeader != "" {
-			// Authorization header 格式: "Bearer <token>"
-			parts := strings.SplitN(authHeader, " ", 2)
-			if len(parts) == 2 && parts[1] != "" {
-				// 使用用户的 JWT token 创建临时客户端
-				metaClient = commonClient.NewMetaClient(p.metaServiceURL, parts[1])
-			}
-		}
-	}
-
-	// 设置租户 ID（仅当使用服务级别的内部 API client 时）
-	// 使用 JWT token 创建的客户端会从 token 中自动提取 tenant_id
-	if metaClient == p.metaClient && metaClient != nil {
-		metaClient.SetTenantID(req.TenantID)
+	if metaClient != nil && req.TenantID != nil {
+		metaClient = metaClient.WithTenantID(*req.TenantID)
 	}
 
 	var item *models.MetaItemLite

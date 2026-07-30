@@ -70,6 +70,7 @@ VECTOR_REPROJECT_METADATA = OperatorMetadata(
     description="空间坐标参考转换",
     brief_description="将几何批从源 CRS 重投影到目标 CRS",
     execution_modes=["workflow", "direct"],
+    effects=["read"],
     overview="对输入几何批执行 CRS 重投影。该算子只负责 geometry 转换，不接管 Transfer 的 load/save、checkpoint、属性字段或中间落盘。",
     params=[
         OperatorParam(

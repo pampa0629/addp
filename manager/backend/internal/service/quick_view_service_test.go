@@ -3186,7 +3186,7 @@ func workflowEngineForTest(t *testing.T, rawURL string) commonModels.Engine {
 	}
 	capabilities := commonModels.JSONString(`{"schema_version":"engine.capabilities/v1","engine_type":"quick_view_test_workflow","engine_family":"workflow","compute":{"workflow":{"supported":true,"runtime_api":"addp.workflow/v1","dynamic_operators":true}}}`)
 	return commonModels.Engine{
-		ID: 1, Name: "Quick View Test Workflow", EngineType: "quick_view_test_workflow", EngineOrigin: "extension", IsActive: true,
+		ID: 1, Name: "Quick View Test Workflow", EngineType: "quick_view_test_workflow", EngineOrigin: "extension", LifecycleState: "active",
 		ConnectionInfo: commonModels.ConnectionInfo{"host": parsed.Hostname(), "port": parsed.Port(), "protocol": parsed.Scheme},
 		Capabilities:   &capabilities,
 	}

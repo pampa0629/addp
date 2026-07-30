@@ -644,17 +644,14 @@ function handleKeydown(event) {
 
 function handleZoomIn() {
   zoomIn()
-  emitLayout()
 }
 
 function handleZoomOut() {
   zoomOut()
-  emitLayout()
 }
 
 function handleFitView() {
   fitView()
-  emitLayout()
 }
 
 function handleAutoLayout() {

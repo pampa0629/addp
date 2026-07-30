@@ -114,6 +114,62 @@ func TestBuildRepositoryAuthorizationCoverageReportRejectsUnreferencedActivePerm
 	t.Fatalf("unreferenced active Permission issue not found: %#v", report.Issues)
 }
 
+func TestBuildRepositoryAuthorizationCoverageReportAcceptsConditionalPermissions(t *testing.T) {
+	root := t.TempDir()
+	writeCoverageFixture(t, root, "manager/backend/docs/swagger.json", `{
+  "swagger": "2.0",
+  "paths": {
+    "/items": {
+      "post": {
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": ["manager.data_item.read"],
+        "x-addp-conditional-permissions": ["manager.data_item.delete"]
+      }
+    }
+  }
+}`)
+	writeCoverageFixture(t, root, "common-python/addp_common/tools/manifest.json", `{"tools":[]}`)
+	catalog := coverageTestCatalog(false)
+	catalog.Permissions = append(catalog.Permissions, PermissionDescriptor{
+		Key: "manager.data_item.delete", OwnerModule: "manager", Status: "active",
+	})
+
+	report, err := BuildRepositoryAuthorizationCoverageReport(root, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.Complete || len(report.Issues) != 0 {
+		t.Fatalf("coverage report = %#v, want complete", report)
+	}
+}
+
+func TestBuildRepositoryAuthorizationCoverageReportRejectsConditionalPermissionOverlap(t *testing.T) {
+	root := t.TempDir()
+	writeCoverageFixture(t, root, "manager/backend/docs/swagger.json", `{
+  "swagger": "2.0",
+  "paths": {
+    "/items": {
+      "post": {
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": ["manager.data_item.read"],
+        "x-addp-conditional-permissions": ["manager.data_item.read"]
+      }
+    }
+  }
+}`)
+	writeCoverageFixture(t, root, "common-python/addp_common/tools/manifest.json", `{"tools":[]}`)
+	report, err := BuildRepositoryAuthorizationCoverageReport(root, coverageTestCatalog(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, issue := range report.Issues {
+		if issue.Code == "overlapping_conditional_permission" {
+			return
+		}
+	}
+	t.Fatalf("overlapping conditional Permission issue not found: %#v", report.Issues)
+}
+
 func coverageTestCatalog(delegable bool) AuthorizationCatalogReport {
 	return AuthorizationCatalogReport{
 		SchemaVersion: AuthorizationCatalogReportSchemaVersion,

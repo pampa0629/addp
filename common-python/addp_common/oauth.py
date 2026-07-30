@@ -8,7 +8,7 @@ import tempfile
 import threading
 import urllib.parse
 import webbrowser
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import httpx
@@ -31,44 +31,108 @@ class OAuthLoginError(RuntimeError):
 class LoginResult:
     client_id: str
     scope: str
+    access_token: str = field(repr=False)
+
+
+def _normalize_base_url(base_url: str) -> str:
+    if not base_url or base_url.strip() != base_url:
+        raise OAuthLoginError("invalid_base_url")
+    try:
+        parsed = urllib.parse.urlsplit(base_url)
+        port = parsed.port
+    except ValueError as exc:
+        raise OAuthLoginError("invalid_base_url") from exc
+    if (
+        parsed.scheme.lower() not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise OAuthLoginError("invalid_base_url")
+    scheme = parsed.scheme.lower()
+    hostname = parsed.hostname.lower()
+    host = f"[{hostname}]" if ":" in hostname else hostname
+    if port is not None and not ((scheme == "http" and port == 80) or (scheme == "https" and port == 443)):
+        host += f":{port}"
+    path = parsed.path.rstrip("/")
+    return urllib.parse.urlunsplit((scheme, host, path, "", ""))
+
+
+def _oauth_payload(response: httpx.Response) -> dict:
+    try:
+        payload = response.json()
+    except (TypeError, ValueError) as exc:
+        raise OAuthLoginError("invalid_oauth_response") from exc
+    if not isinstance(payload, dict):
+        raise OAuthLoginError("invalid_oauth_response")
+    return payload
+
+
+def _oauth_error(response: httpx.Response, default: str = "oauth_request_failed") -> str:
+    try:
+        payload = _oauth_payload(response)
+    except OAuthLoginError:
+        return default
+    error = payload.get("error")
+    return error if isinstance(error, str) and error else default
+
+
+def _oauth_string(payload: dict, field: str) -> str:
+    value = payload.get(field)
+    if not isinstance(value, str) or not value:
+        raise OAuthLoginError("invalid_oauth_response")
+    return value
+
+
+def _token_payload(response: httpx.Response) -> dict:
+    payload = _oauth_payload(response)
+    _oauth_string(payload, "access_token")
+    _oauth_string(payload, "refresh_token")
+    token_type = _oauth_string(payload, "token_type")
+    if token_type.lower() != "bearer":
+        raise OAuthLoginError("invalid_oauth_response")
+    expires_in = payload.get("expires_in")
+    if not isinstance(expires_in, int) or isinstance(expires_in, bool) or expires_in <= 0:
+        raise OAuthLoginError("invalid_oauth_response")
+    return payload
 
 
 def _token_endpoint(base_url: str) -> str:
-    return base_url.rstrip("/") + "/api/v1/system/oauth/token"
+    return _normalize_base_url(base_url) + "/api/v1/system/oauth/token"
 
 
 def _authorization_requests_endpoint(base_url: str) -> str:
-    return base_url.rstrip("/") + "/api/v1/system/oauth/authorization_requests"
+    return _normalize_base_url(base_url) + "/api/v1/system/oauth/authorization_requests"
 
 
 def _refresh_lock_path(base_url: str) -> Path:
-    normalized_base_url = base_url.rstrip("/")
+    normalized_base_url = _normalize_base_url(base_url)
     digest = hashlib.sha256(normalized_base_url.encode()).hexdigest()
     lock_dir = Path(tempfile.gettempdir()) / "addp-cli"
     lock_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    lock_dir.chmod(0o700)
     return lock_dir / f"oauth-refresh-{digest}.lock"
 
 
 def _refresh_token(base_url: str) -> str | None:
-    return keyring.get_password(KEYRING_SERVICE, base_url.rstrip("/"))
+    return keyring.get_password(KEYRING_SERVICE, _normalize_base_url(base_url))
 
 
 def _store_refresh_token(base_url: str, token: str) -> None:
-    keyring.set_password(KEYRING_SERVICE, base_url.rstrip("/"), token)
+    keyring.set_password(KEYRING_SERVICE, _normalize_base_url(base_url), token)
 
 
 def delete_refresh_token(base_url: str) -> None:
     try:
-        keyring.delete_password(KEYRING_SERVICE, base_url.rstrip("/"))
+        keyring.delete_password(KEYRING_SERVICE, _normalize_base_url(base_url))
     except keyring.errors.PasswordDeleteError:
         pass
 
 
-def has_login(base_url: str) -> bool:
-    return bool(_refresh_token(base_url))
-
-
 async def refresh_access_token(base_url: str) -> str:
+    base_url = _normalize_base_url(base_url)
     try:
         async with AsyncFileLock(_refresh_lock_path(base_url), timeout=30):
             refresh_token = _refresh_token(base_url)
@@ -84,16 +148,22 @@ async def refresh_access_token(base_url: str) -> str:
                     },
                 )
             if response.status_code != 200:
-                delete_refresh_token(base_url)
-                raise OAuthLoginError(response.json().get("error", "invalid_grant"))
-            payload = response.json()
+                error = _oauth_error(response)
+                if error == "invalid_grant":
+                    delete_refresh_token(base_url)
+                raise OAuthLoginError(error)
+            payload = _token_payload(response)
             _store_refresh_token(base_url, payload["refresh_token"])
             return payload["access_token"]
     except Timeout as exc:
         raise OAuthLoginError("refresh_lock_timeout") from exc
+    except httpx.HTTPError as exc:
+        raise OAuthLoginError("oauth_service_unavailable") from exc
 
 
 async def browser_login(base_url: str, console_url: str, scope: str = "addp.api") -> LoginResult:
+    base_url = _normalize_base_url(base_url)
+    console_url = _normalize_base_url(console_url)
     verifier = secrets.token_urlsafe(64)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
     callback = _CallbackServer()
@@ -113,8 +183,8 @@ async def browser_login(base_url: str, console_url: str, scope: str = "addp.api"
                 },
             )
         if response.status_code != 201:
-            raise OAuthLoginError(response.json().get("error", "invalid_request"))
-        authorization_request = response.json()
+            raise OAuthLoginError(_oauth_error(response))
+        authorization_request = _oauth_payload(response)
         request_id = authorization_request["request_id"]
         callback.expected_state = request_id
         query = urllib.parse.urlencode({"request_id": request_id})
@@ -134,11 +204,19 @@ async def browser_login(base_url: str, console_url: str, scope: str = "addp.api"
                 },
             )
         if response.status_code != 200:
-            raise OAuthLoginError(response.json().get("error", "invalid_grant"))
-        payload = response.json()
-        _store_refresh_token(base_url, payload["refresh_token"])
-        return LoginResult(client_id=CLIENT_ID, scope=payload.get("scope", scope))
-    except BaseException:
+            raise OAuthLoginError(_oauth_error(response))
+        payload = _token_payload(response)
+        try:
+            async with AsyncFileLock(_refresh_lock_path(base_url), timeout=30):
+                _store_refresh_token(base_url, payload["refresh_token"])
+        except Timeout as exc:
+            raise OAuthLoginError("refresh_lock_timeout") from exc
+        return LoginResult(
+            client_id=CLIENT_ID,
+            scope=payload.get("scope", scope),
+            access_token=payload["access_token"],
+        )
+    except BaseException as exc:
         await callback.close()
         if authorization_request is not None:
             await _cancel_authorization_request(
@@ -146,6 +224,8 @@ async def browser_login(base_url: str, console_url: str, scope: str = "addp.api"
                 authorization_request["request_id"],
                 authorization_request["request_secret"],
             )
+        if isinstance(exc, httpx.HTTPError):
+            raise OAuthLoginError("oauth_service_unavailable") from exc
         raise
 
 
@@ -161,52 +241,75 @@ async def _cancel_authorization_request(base_url: str, request_id: str, request_
 
 
 async def device_login(base_url: str, scope: str = "addp.api", on_device=None) -> tuple[LoginResult, dict]:
-    root = base_url.rstrip("/") + "/api/v1/system/oauth"
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        response = await client.post(
-            root + "/device/code",
-            data={"client_id": CLIENT_ID, "scope": scope, "audience": "addp.api"},
-        )
-        if response.status_code != 200:
-            raise OAuthLoginError(response.json().get("error", "invalid_request"))
-        device = response.json()
-        if on_device is not None:
-            on_device(device)
-        interval = int(device["interval"])
-        deadline = asyncio.get_running_loop().time() + int(device["expires_in"])
-        while asyncio.get_running_loop().time() < deadline:
-            await asyncio.sleep(interval)
-            token_response = await client.post(
-                root + "/token",
-                data={
-                    "grant_type": DEVICE_GRANT_TYPE,
-                    "client_id": CLIENT_ID,
-                    "device_code": device["device_code"],
-                },
+    base_url = _normalize_base_url(base_url)
+    root = base_url + "/api/v1/system/oauth"
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(
+                root + "/device/code",
+                data={"client_id": CLIENT_ID, "scope": scope, "audience": "addp.api"},
             )
-            payload = token_response.json()
-            if token_response.status_code == 200:
-                _store_refresh_token(base_url, payload["refresh_token"])
-                return LoginResult(client_id=CLIENT_ID, scope=payload.get("scope", scope)), device
-            error = payload.get("error")
-            if error == "authorization_pending":
-                continue
-            if error == "slow_down":
-                interval += 5
-                continue
-            raise OAuthLoginError(error or "invalid_grant")
+            if response.status_code != 200:
+                raise OAuthLoginError(_oauth_error(response))
+            device = _oauth_payload(response)
+            if on_device is not None:
+                on_device(device)
+            interval = int(device["interval"])
+            deadline = asyncio.get_running_loop().time() + int(device["expires_in"])
+            while asyncio.get_running_loop().time() < deadline:
+                await asyncio.sleep(interval)
+                token_response = await client.post(
+                    root + "/token",
+                    data={
+                        "grant_type": DEVICE_GRANT_TYPE,
+                        "client_id": CLIENT_ID,
+                        "device_code": device["device_code"],
+                    },
+                )
+                if token_response.status_code == 200:
+                    payload = _token_payload(token_response)
+                    try:
+                        async with AsyncFileLock(_refresh_lock_path(base_url), timeout=30):
+                            _store_refresh_token(base_url, payload["refresh_token"])
+                    except Timeout as exc:
+                        raise OAuthLoginError("refresh_lock_timeout") from exc
+                    return LoginResult(
+                        client_id=CLIENT_ID,
+                        scope=payload.get("scope", scope),
+                        access_token=payload["access_token"],
+                    ), device
+                error = _oauth_error(token_response)
+                if error == "authorization_pending":
+                    continue
+                if error == "slow_down":
+                    interval += 5
+                    continue
+                raise OAuthLoginError(error)
+    except httpx.HTTPError as exc:
+        raise OAuthLoginError("oauth_service_unavailable") from exc
     raise OAuthLoginError("expired_token")
 
 
 async def logout(base_url: str) -> None:
-    refresh_token = _refresh_token(base_url)
-    if refresh_token:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            await client.post(
-                base_url.rstrip("/") + "/api/v1/system/oauth/revoke",
-                data={"client_id": CLIENT_ID, "token": refresh_token},
-            )
-    delete_refresh_token(base_url)
+    base_url = _normalize_base_url(base_url)
+    try:
+        async with AsyncFileLock(_refresh_lock_path(base_url), timeout=30):
+            refresh_token = _refresh_token(base_url)
+            if not refresh_token:
+                return
+            try:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    response = await client.post(
+                        base_url + "/api/v1/system/oauth/revoke",
+                        data={"client_id": CLIENT_ID, "token": refresh_token},
+                    )
+            except httpx.HTTPError as exc:
+                raise OAuthLoginError("oauth_service_unavailable") from exc
+            if response.status_code < 200 or response.status_code >= 300:
+                raise OAuthLoginError(_oauth_error(response, "oauth_revocation_failed"))
+            delete_refresh_token(base_url)
+    except Timeout as exc:
+        raise OAuthLoginError("refresh_lock_timeout") from exc
 
 
 class _CallbackHandler(http.server.BaseHTTPRequestHandler):

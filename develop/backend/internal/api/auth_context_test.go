@@ -8,11 +8,17 @@ import (
 	"time"
 
 	commonAuthorization "github.com/addp/common/authorization"
+	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
+	developauthorization "github.com/addp/develop/backend/internal/authorization"
 	"github.com/gin-gonic/gin"
 )
 
 func setTenantAuthContextForTest(c *gin.Context, tenantID, userID uint) {
+	setTenantAuthContextWithPermissionsForTest(c, tenantID, userID, nil)
+}
+
+func setTenantAuthContextWithPermissionsForTest(c *gin.Context, tenantID, userID uint, permissions []string) {
 	tenantIDText := strconv.FormatUint(uint64(tenantID), 10)
 	userIDText := strconv.FormatUint(uint64(userID), 10)
 	membershipID := "1"
@@ -33,66 +39,46 @@ func setTenantAuthContextForTest(c *gin.Context, tenantID, userID uint) {
 		Organization: commonAuthorization.OrganizationContext{
 			Departments: []commonAuthorization.DepartmentMembership{}, ProjectGroups: []commonAuthorization.ProjectGroupMembership{},
 		},
-		Authorization: commonAuthorization.AuthorizationFacts{
-			AuthorizationVersion: "1", RoleAssignments: []commonAuthorization.RoleAssignment{},
-		},
+		Authorization: commonAuthorization.AuthorizationFacts{AuthorizationVersion: "1"},
 		Token: commonAuthorization.TokenFacts{
 			Type: "first_party_access_token", IssuedAt: issuedAt, ExpiresAt: issuedAt.Add(time.Hour),
 		},
+	}
+	if len(permissions) > 0 {
+		authContext.Authorization.RoleAssignments = []commonAuthorization.RoleAssignment{{
+			AssignmentID: "1", RoleKey: "tenant.test_role",
+			Scope:       commonAuthorization.AssignmentScope{Type: "tenant", TenantID: &tenantIDText},
+			Permissions: append([]string(nil), permissions...), SourceType: "manual", ValidFrom: issuedAt,
+		}}
+	} else {
+		authContext.Authorization.RoleAssignments = []commonAuthorization.RoleAssignment{}
 	}
 	if err := commonAuth.SetAuthContextForGin(c, authContext); err != nil {
 		panic(err)
 	}
 }
 
-func TestInternalAPIKeyMiddlewareCreatesOnlyInternalTenantContext(t *testing.T) {
+func TestRequireNotebookExecutionPermission(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	router.Use(internalAPIKeyMiddleware("secret"))
-	router.GET("/resource", func(c *gin.Context) {
-		if _, exists := commonAuth.AuthContextFromGin(c); exists {
-			t.Fatal("internal API key must not create AuthContext")
-		}
-		if tenantIDValue(c) != 0 || userIDValue(c) != 0 {
-			t.Fatal("internal API key must not create user identity")
-		}
-		c.JSON(http.StatusOK, gin.H{"tenant_id": internalTenantIDValue(c)})
-	})
-
-	request := httptest.NewRequest(http.MethodGet, "/resource", nil)
-	request.Header.Set("X-Internal-API-Key", "secret")
-	request.Header.Set("X-Tenant-ID", "7")
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, request)
-
-	if response.Code != http.StatusOK || response.Body.String() != "{\"tenant_id\":7}" {
-		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
-	}
-}
-
-func TestInternalAPIKeyMiddlewareFailsClosed(t *testing.T) {
 	tests := []struct {
-		name       string
-		key        string
-		tenantID   string
-		wantStatus int
+		name        string
+		taskType    string
+		permissions []string
+		wantAllowed bool
+		wantStatus  int
 	}{
-		{name: "invalid key", key: "wrong", tenantID: "7", wantStatus: http.StatusUnauthorized},
-		{name: "missing tenant", key: "secret", wantStatus: http.StatusBadRequest},
-		{name: "zero tenant", key: "secret", tenantID: "0", wantStatus: http.StatusBadRequest},
+		{name: "query does not require notebook permission", taskType: commonExecution.TaskTypeQuery, wantAllowed: true, wantStatus: http.StatusOK},
+		{name: "script rejects missing notebook permission", taskType: commonExecution.TaskTypeScript, wantStatus: http.StatusForbidden},
+		{name: "script accepts notebook permission", taskType: commonExecution.TaskTypeScript, permissions: []string{developauthorization.PermissionDevelopNotebookExecute}, wantAllowed: true, wantStatus: http.StatusOK},
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			router := gin.New()
-			router.Use(internalAPIKeyMiddleware("secret"))
-			router.GET("/resource", func(c *gin.Context) { c.Status(http.StatusNoContent) })
-			request := httptest.NewRequest(http.MethodGet, "/resource", nil)
-			request.Header.Set("X-Internal-API-Key", test.key)
-			request.Header.Set("X-Tenant-ID", test.tenantID)
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
 			response := httptest.NewRecorder()
-			router.ServeHTTP(response, request)
-			if response.Code != test.wantStatus {
-				t.Fatalf("status=%d, want=%d", response.Code, test.wantStatus)
+			context, _ := gin.CreateTestContext(response)
+			setTenantAuthContextWithPermissionsForTest(context, 7, 1, testCase.permissions)
+			allowed := requireNotebookExecutionPermission(context, testCase.taskType)
+			if allowed != testCase.wantAllowed || response.Code != testCase.wantStatus {
+				t.Fatalf("allowed = %v, status = %d, body = %s", allowed, response.Code, response.Body.String())
 			}
 		})
 	}

@@ -21,12 +21,7 @@ type Config struct {
 
 	// System 服务配置（用于能力注册中心）
 	SystemServiceURL string
-	InternalAPIKey   string
-
-	// 模块服务 URL（向后兼容）
-	TransferServiceURL string
-	MetaServiceURL     string
-	ManagerServiceURL  string
+	ServiceClientSecret string
 
 	// Redis 配置
 	RedisHost     string
@@ -52,11 +47,7 @@ func LoadConfig() *Config {
 		DBSchema:   "orchestrator",
 
 		SystemServiceURL: getEnv("SYSTEM_URL", "http://localhost:8180"),
-		InternalAPIKey:   getEnv("INTERNAL_API_KEY", ""),
-
-		TransferServiceURL: getEnv("TRANSFER_URL", "http://localhost:8083"),
-		MetaServiceURL:     getEnv("META_URL", "http://localhost:8082"),
-		ManagerServiceURL:  getEnv("MANAGER_URL", "http://localhost:8081"),
+		ServiceClientSecret: getEnv("ORCHESTRATOR_SERVICE_CLIENT_SECRET", ""),
 
 		RedisHost:     getEnv("REDIS_HOST", "localhost"),
 		RedisPort:     getEnv("REDIS_PORT", "6379"),

@@ -28,6 +28,12 @@ other = "Session state changed; retry the request"
 [system.auth.delegation_conflict]
 other = "This tool call already has a delegated access token"
 
+[system.auth.execution_authorization_conflict]
+other = "An execution authorization already exists for this execution; use the existing authorization"
+
+[system.auth.execution_authorization_unavailable]
+other = "The execution authorization is expired, out of bounds, or targets an unavailable engine"
+
 [system.auth.internal_error]
 other = "The authentication service is temporarily unavailable"
 
@@ -72,6 +78,24 @@ other = "Heartbeat updated successfully"
 
 [system.module.deleted]
 other = "Module unregistered successfully"
+
+[system.engine.identity_immutable]
+other = "The physical endpoint of an engine cannot be changed in place; create a new engine instance"
+
+[system.engine.deleting]
+other = "The engine is reclaiming resources before deletion and cannot perform this operation"
+
+[system.engine.lifecycle_invalid]
+other = "Invalid engine lifecycle state"
+
+[system.engine.artifact_policy_invalid]
+other = "Invalid external artifact policy"
+
+[system.engine.cleanup_unavailable]
+other = "Resource reclaim is unavailable, so the engine cannot be deleted now"
+
+[system.engine.deletion_started]
+other = "Engine cleanup and deletion started"
 
 [system.cleanup.confirm_required]
 other = "Confirm the assessment result and impact scope before executing resource reclaim"

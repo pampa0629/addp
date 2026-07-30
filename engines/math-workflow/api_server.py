@@ -20,7 +20,7 @@ import os
 from datetime import datetime
 
 from operators import list_operators, get_operator_function, OPERATORS
-from addp_common.workflow_runtime import ExecutionRegistry, WorkflowRunner, WorkflowValidationError, validate_workflow_def
+from addp_common.workflow_runtime import ExecutionRegistry, WorkflowRunner, WorkflowValidationError, validate_execution_authorization, validate_workflow_def
 
 # ============ 应用初始化 ============
 
@@ -162,6 +162,16 @@ def execute_workflow():
             input_data = {}
         operator_ids = set(OPERATORS)
         validate_workflow_def(workflow_def, operator_ids=operator_ids)
+        operator_effects = {
+            operator["id"]: operator["effects"]
+            for operator in list_operators()
+            if "workflow" in operator.get("execution_modes", [])
+        }
+        validate_execution_authorization(
+            workflow_def,
+            operator_effects=operator_effects,
+            runtime=data.get("runtime"),
+        )
         runner = WorkflowRunner(operator_ids, lambda operator, params: get_operator_function(operator)(**params))
         snapshot = executions.submit(runner, workflow_def, input_data)
         return jsonify({

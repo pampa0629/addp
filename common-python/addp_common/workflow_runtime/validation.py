@@ -7,6 +7,9 @@ from .graph import topological_order
 from .references import collect_references
 
 
+ALLOWED_EXECUTION_EFFECTS = {"read", "write", "ddl", "external_effect"}
+
+
 def validate_workflow_def(
     workflow_def: Any,
     *,
@@ -59,6 +62,56 @@ def validate_workflow_def(
 
     topological_order(normalized)
     return normalized
+
+
+def validate_execution_authorization(
+    workflow_def: Any,
+    *,
+    operator_effects: dict[str, Collection[str]],
+    runtime: Any,
+) -> list[str]:
+    """Validate that runtime authorization covers every operator effect in the DAG."""
+
+    tasks = validate_workflow_def(workflow_def, operator_ids=operator_effects.keys())
+    if not isinstance(runtime, dict):
+        raise WorkflowValidationError("runtime.execution_authorization 必须由调用方提供")
+    authorization = runtime.get("execution_authorization")
+    if not isinstance(authorization, dict):
+        raise WorkflowValidationError("runtime.execution_authorization 必须是对象")
+    authorization_id = authorization.get("id")
+    if not isinstance(authorization_id, int) or isinstance(authorization_id, bool) or authorization_id <= 0:
+        raise WorkflowValidationError("runtime.execution_authorization.id 必须是正整数")
+    authorized_effects = authorization.get("effects")
+    if (
+        not isinstance(authorized_effects, list)
+        or not authorized_effects
+        or any(not isinstance(effect, str) or not effect for effect in authorized_effects)
+        or len(authorized_effects) != len(set(authorized_effects))
+        or not set(authorized_effects).issubset(ALLOWED_EXECUTION_EFFECTS)
+    ):
+        raise WorkflowValidationError("runtime.execution_authorization.effects 无效")
+
+    required_effects: set[str] = set()
+    for task in tasks:
+        effects = operator_effects.get(task["operator"])
+        if (
+            not isinstance(effects, Collection)
+            or isinstance(effects, (str, bytes))
+            or not effects
+            or any(effect not in ALLOWED_EXECUTION_EFFECTS for effect in effects)
+        ):
+            raise WorkflowValidationError(f"算子 {task['operator']} 未声明有效 effects")
+        required_effects.update(effects)
+    missing = required_effects - set(authorized_effects)
+    if missing:
+        raise WorkflowValidationError(
+            "Execution Authorization 不包含工作流所需效果: " + ", ".join(sorted(missing))
+        )
+    return [
+        effect
+        for effect in ("read", "write", "ddl", "external_effect")
+        if effect in required_effects
+    ]
 
 
 def _required_text(task: dict[str, Any], key: str, index: int) -> str:

@@ -66,6 +66,9 @@ func AutoMigrateNonIAM(db *gorm.DB) error {
 	if err := dropDeprecatedEngineColumns(db); err != nil {
 		return err
 	}
+	if err := migrateEngineLifecycle(db); err != nil {
+		return err
+	}
 	if err := removeBuiltinMathWorkflowExample(db); err != nil {
 		return err
 	}
@@ -76,6 +79,43 @@ func AutoMigrateNonIAM(db *gorm.DB) error {
 		&models.TaskProvider{},
 		&models.ModuleRegistry{},
 	)
+}
+
+func migrateEngineLifecycle(db *gorm.DB) error {
+	return db.Exec(`
+		DO $$
+		BEGIN
+			IF to_regclass('system.engines') IS NOT NULL THEN
+				IF NOT EXISTS (
+					SELECT 1 FROM information_schema.columns
+					WHERE table_schema = 'system' AND table_name = 'engines' AND column_name = 'lifecycle_state'
+				) THEN
+					ALTER TABLE system.engines ADD COLUMN lifecycle_state VARCHAR(20);
+					IF EXISTS (
+						SELECT 1 FROM information_schema.columns
+						WHERE table_schema = 'system' AND table_name = 'engines' AND column_name = 'is_active'
+					) THEN
+						UPDATE system.engines
+						SET lifecycle_state = CASE WHEN is_active THEN 'active' ELSE 'disabled' END;
+					ELSE
+						UPDATE system.engines SET lifecycle_state = 'active';
+					END IF;
+				END IF;
+
+				UPDATE system.engines SET lifecycle_state = 'active' WHERE lifecycle_state IS NULL OR lifecycle_state = '';
+				ALTER TABLE system.engines
+					ALTER COLUMN lifecycle_state SET DEFAULT 'active',
+					ALTER COLUMN lifecycle_state SET NOT NULL;
+
+				IF EXISTS (
+					SELECT 1 FROM information_schema.columns
+					WHERE table_schema = 'system' AND table_name = 'engines' AND column_name = 'is_active'
+				) THEN
+					ALTER TABLE system.engines DROP COLUMN is_active;
+				END IF;
+			END IF;
+		END $$;
+	`).Error
 }
 
 func renameGeoPythonWorkflowEngineType(db *gorm.DB) error {

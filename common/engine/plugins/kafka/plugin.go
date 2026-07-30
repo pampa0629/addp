@@ -34,6 +34,10 @@ func (p *KafkaPlugin) SensitiveFields() []string {
 	return []string{"password", "tls_client_key"}
 }
 
+func (p *KafkaPlugin) ConnectionIdentityFields() []string {
+	return []string{"bootstrap_servers"}
+}
+
 func (p *KafkaPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
 	if strings.TrimSpace(plugin.GetString(connInfo, "bootstrap_servers")) == "" {
 		return fmt.Errorf("missing required fields: bootstrap_servers")

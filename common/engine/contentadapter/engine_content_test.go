@@ -176,7 +176,8 @@ func (p *contentProviderStub) DefaultPort() int { return 0 }
 
 func (p *contentProviderStub) RequiredFields() []string { return nil }
 
-func (p *contentProviderStub) SensitiveFields() []string { return nil }
+func (p *contentProviderStub) SensitiveFields() []string          { return nil }
+func (p *contentProviderStub) ConnectionIdentityFields() []string { return []string{"host"} }
 
 func (p *contentProviderStub) Capabilities() engineplugin.EngineCapabilities {
 	return engineplugin.EngineCapabilities{}

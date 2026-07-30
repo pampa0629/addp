@@ -18,6 +18,7 @@ from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())
 
 from workflow_engine import execute_workflow, execute_single_operator
+from addp_common.workflow_runtime import validate_execution_authorization
 from operators import list_operators
 from operators import OPERATORS as OPERATOR_REGISTRY
 
@@ -263,6 +264,18 @@ def execute_workflow_endpoint():
             )
             response["execution_time_ms"] = (time.time() - start) * 1000
             return jsonify(response), 400
+
+        from operator_metadata import get_operator_metadata
+        operators = {
+            op["id"]: op["effects"]
+            for op in get_operator_metadata()
+            if "workflow" in op.get("execution_modes", [])
+        }
+        validate_execution_authorization(
+            workflow_def,
+            operator_effects=operators,
+            runtime=data.get("runtime"),
+        )
 
         # 执行工作流
         execution_id = str(uuid.uuid4())

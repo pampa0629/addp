@@ -49,8 +49,21 @@
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.entry.read"
+                ]
             }
         },
         "/assets/{id}": {
@@ -83,8 +96,21 @@
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.entry.read"
+                ]
             }
         },
         "/assets/{id}/apply": {
@@ -130,8 +156,21 @@
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.application.create"
+                ]
             }
         },
         "/assets/{id}/apply-status": {
@@ -164,8 +203,22 @@
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.application.read",
+                    "asset.authorization.read"
+                ]
             }
         },
         "/assets/{id}/endpoints": {
@@ -198,8 +251,23 @@
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "502": {
+                        "description": "下游服务调用失败 | Downstream service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.entry.read",
+                    "asset.application.read",
+                    "asset.authorization.read"
+                ]
             }
         },
         "/assets/{id}/ratings": {
@@ -232,8 +300,21 @@
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.rating.read"
+                ]
             },
             "post": {
                 "security": [
@@ -277,8 +358,22 @@
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.rating.create",
+                    "asset.rating.update"
+                ]
             }
         },
         "/catalogs": {
@@ -305,8 +400,21 @@
                                 "additionalProperties": true
                             }
                         }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.catalog.read"
+                ]
             }
         },
         "/catalogs/{id}/assets": {
@@ -339,8 +447,22 @@
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.catalog.read",
+                    "asset.entry.read"
+                ]
             }
         },
         "/home": {
@@ -364,8 +486,21 @@
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.entry.read"
+                ]
             }
         },
         "/my/applications": {
@@ -392,8 +527,21 @@
                                 "additionalProperties": true
                             }
                         }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.application.read"
+                ]
             }
         },
         "/search": {
@@ -425,8 +573,21 @@
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
-                }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.entry.read"
+                ]
             }
         }
     },

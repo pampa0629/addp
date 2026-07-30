@@ -579,11 +579,39 @@ type User struct {
 Authorization: Bearer <access_token>
 ```
 
-**（2）内部服务认证（API Key）**
+**（2）内部服务认证（Service Access Token）**
 
 ```http
-X-Internal-API-Key: <secret_key>
+Authorization: Bearer <service_access_token>
 ```
+
+内部服务使用各自独立的 Confidential OAuth Client，通过 System 唯一的
+`POST /api/v1/system/oauth/token` 端点执行 Client Credentials Grant。请求必须指定
+`audience=addp.api`、`scope=addp.api`，并且只允许以下两种互斥 Context 选择：
+
+- Tenant Runtime 请求提交目标 `tenant_id`，System 只允许选择该 OAuth Client 所绑定
+  Service Principal 的有效 Tenant Membership；
+- 平台控制面请求提交 `context_type=platform`，只允许平台所有 Service Principal 且必须
+  存在专用 Platform Service Role Assignment，不允许持有或借用平台三员 Role。
+
+System 把所选 Context 固化到短期、不可刷新的 Service Access Token 中。owner API 不接受
+`X-Internal-API-Key`、`X-Tenant-ID` 或调用方提交的 Principal/Membership 作为 Tenant
+授权事实。
+
+Service Access Token 只证明当前服务主体及其固定 Context。服务代表用户执行 SQL、Workflow、Jupyter 或其他计算时，必须另外消费由当前 User AuthContext 派生、绑定唯一 execution 的 Execution Authorization。Service Principal 本身不得通过 Runtime Role 获得通用 Tenant 数据权限，也不得根据 Engine 创建人或注册时账号决定执行权限。
+
+同步 BFF 是用户请求链的传输边界，不是独立业务授权主体。Portal 等 BFF 调用 owner 的消费 API
+时，必须原样转发当前请求已经验证的 User Bearer，使 owner 继续以同一 Principal、Tenant Context、
+Role Permission 和 Resource Policy 作出决定；BFF 不得把 User ID、Tenant ID、Role 或授权结果放入
+Header、Query 或 Body 让 owner 信任。该 User Access Token 只能存在于当前同步调用栈，禁止写入
+数据库、任务、缓存、日志或异步消息。
+
+BFF 以自身身份执行不代表用户的聚合读取时，才使用自己的 Service Access Token。例如 Portal 在
+Asset 已按当前 User 确认有效资产授权后，可以使用 `addp-portal` Tenant Service Access Token 读取
+Service 的端点投影。此类路由必须同时校验精确 Permission 和固定 OAuth Client；机器身份获得的
+端点元数据不能替代用户对真实数据、下载或服务执行的 Resource Grant。
+
+执行入口的 Swagger 必须把稳定入口能力写入 `x-addp-required-permissions`，把服务端依据已解析执行效果动态追加校验的完整候选集合写入 `x-addp-conditional-permissions`。条件权限只用于描述动态校验契约和覆盖关系，不表示 any-of，也不替代 owner 的资源授权判断。
 
 **（3）应用认证（API Key）**
 
@@ -1120,13 +1148,15 @@ async def chat(request: ChatRequest): ...
 
 ### 13.3 agent 调用其他模块的认证
 
-Agent 代表用户调用 owner 模块时，统一使用 System 签发或验证的 User Access Token；不得使用内部 API Key 模拟用户身份：
+Agent 代表用户调用 owner 模块时，必须先由 System 签发绑定 owner audience、Tool Scope、AgentRun 和 ToolCall 的短期 Delegated Access Token。原始 User Access Token 不得进入 owner Client，也不得使用内部 API Key 模拟用户身份：
 
 ```python
-headers = {"Authorization": f"Bearer {user_access_token}"}
+headers = {"Authorization": f"Bearer {delegated_access_token}"}
 ```
 
-内部 API Key 只用于明确的服务身份调用，不能携带或提升用户、租户和 Scope 权限。
+内部模块以自身服务身份调用 owner API 时，使用独立 Confidential OAuth Client 通过 Client Credentials Grant 获取 Service Access Token。两种调用都只发送 Bearer，不发送 `X-Internal-API-Key` 或 `X-Tenant-ID`。
+
+内部模块继续完成由用户发起的异步计算时，不得把原始 User Access Token 写入任务或转发给 Runtime。owner 先以当前 User AuthContext 创建绑定 execution、Tenant、Engine、效果和授权版本的 Execution Authorization；后续只有 audience 匹配的 Runtime Service Principal 可以使用自身 Service Access Token 消费。统一执行记录只保存授权 ID 和脱敏摘要，不保存任何 Token 或明文连接。
 
 ---
 
@@ -1140,7 +1170,7 @@ headers = {"Authorization": f"Bearer {user_access_token}"}
 
 ```python
 import httpx
-from typing import Any, Optional
+from typing import Any
 
 class AddpBaseClient:
     """ADDP 模块 HTTP Client 基类"""
@@ -1148,15 +1178,13 @@ class AddpBaseClient:
     def __init__(
         self,
         base_url: str,
-        internal_api_key: Optional[str] = None,
-        user_token: Optional[str] = None,
+        access_token: str,
         timeout: float = 30.0,
     ):
-        headers = {"Content-Type": "application/json"}
-        if internal_api_key:
-            headers["X-Internal-API-Key"] = internal_api_key
-        elif user_token:
-            headers["Authorization"] = f"Bearer {user_token}"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {access_token}",
+        }
 
         self._client = httpx.AsyncClient(
             base_url=base_url,
@@ -1202,8 +1230,8 @@ from .base_client import AddpBaseClient
 class DevelopClient(AddpBaseClient):
     """Develop 模块 Client"""
 
-    def __init__(self, base_url: str, internal_api_key: str):
-        super().__init__(base_url, internal_api_key=internal_api_key)
+    def __init__(self, base_url: str, access_token: str):
+        super().__init__(base_url, access_token=access_token)
 
     async def list_tasks(self, task_type: str = None) -> list:
         params = {}
@@ -1218,6 +1246,7 @@ class DevelopClient(AddpBaseClient):
 ### 14.3 规范要求
 
 - 所有 client 必须继承 `AddpBaseClient`
+- `access_token` 必须是当前调用类型对应的 Delegated Access Token 或 Service Access Token，不得传入原始 User Access Token
 - 方法名使用 snake_case，与 API 路径语义对应
 - 不在 client 中处理业务逻辑，只做 HTTP 调用和基本的参数组装
 - 使用 `httpx.HTTPStatusError` 处理 HTTP 错误，不吞掉异常

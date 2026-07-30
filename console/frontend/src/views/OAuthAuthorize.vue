@@ -8,6 +8,7 @@
         <div><dt>{{ t('console.oauth.client') }}</dt><dd>{{ clientId }}</dd></div>
         <div><dt>{{ t('console.oauth.scope') }}</dt><dd>{{ scope }}</dd></div>
       </dl>
+      <OAuthContextSelector v-if="authorizationRequest" />
       <el-alert v-if="error" :title="error" type="error" :closable="false" />
       <div v-if="authorizationRequest" class="actions">
         <el-button :icon="Close" :disabled="loading" @click="submit('rejected')">{{ t('common.cancel') }}</el-button>
@@ -25,6 +26,7 @@ import { useRoute } from 'vue-router'
 import { Check, Close, Connection } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { oauthAPI } from '../api/oauth'
+import OAuthContextSelector from '../components/OAuthContextSelector.vue'
 import {
   authorizationDecisionRequest,
   authorizationRequestId,
@@ -86,7 +88,7 @@ function approve() {
 
 <style scoped>
 .oauth-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--addp-bg-secondary); box-sizing: border-box; }
-.oauth-panel { width: min(520px, 100%); padding: 28px; border: 1px solid var(--addp-border-color); background: var(--addp-bg-primary); border-radius: 8px; box-sizing: border-box; }
+.oauth-panel { width: min(520px, 100%); min-width: 0; padding: 28px; border: 1px solid var(--addp-border-color); background: var(--addp-bg-primary); border-radius: 8px; box-sizing: border-box; }
 .oauth-icon { font-size: 32px; color: var(--addp-primary-color); }
 h1 { margin: 16px 0 8px; color: var(--addp-text-primary); }
 p { margin: 0 0 20px; color: var(--addp-text-secondary); line-height: 1.6; }
@@ -95,4 +97,11 @@ dl div { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 12px; 
 dt { color: var(--addp-text-secondary); }
 dd { margin: 0; color: var(--addp-text-primary); overflow-wrap: anywhere; }
 .actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; }
+
+@media (max-width: 520px) {
+  .oauth-page { padding: 12px; }
+  .oauth-panel { padding: 20px; }
+  .actions { flex-direction: column-reverse; }
+  .actions :deep(.el-button) { width: 100%; margin: 0; }
+}
 </style>

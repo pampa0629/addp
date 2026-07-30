@@ -100,6 +100,28 @@ func TestValidateDevTaskExecutionConfigRejectsDuckDBEngineID(t *testing.T) {
 	}
 }
 
+func TestValidateDevTaskExecutionConfigRequiresScriptEngineID(t *testing.T) {
+	err := validateDevTaskExecutionConfig(
+		commonExecution.TaskTypeScript,
+		map[string]interface{}{"notebook_path": "analysis.ipynb"},
+		map[string]interface{}{},
+	)
+	if err == nil || !strings.Contains(err.Error(), "execution_config.engine_id") {
+		t.Fatalf("expected script engine_id error, got %v", err)
+	}
+}
+
+func TestValidateDevTaskExecutionConfigAcceptsScriptEngineID(t *testing.T) {
+	err := validateDevTaskExecutionConfig(
+		commonExecution.TaskTypeScript,
+		map[string]interface{}{"notebook_path": "analysis.ipynb"},
+		map[string]interface{}{"engine_id": 10},
+	)
+	if err != nil {
+		t.Fatalf("expected script engine_id config to pass, got %v", err)
+	}
+}
+
 func TestValidateDevTaskContentAcceptsCanonicalWorkflow(t *testing.T) {
 	err := validateDevTaskContent(commonExecution.TaskTypeWorkflow, map[string]interface{}{
 		"workflow_definition": map[string]interface{}{

@@ -74,7 +74,7 @@ func registerPreviewRoutingModelPlugin(t *testing.T, model plugin.CatalogModelSp
 func TestLoadPreviewPluginsRegistersBuiltinDefaultsWithoutFiles(t *testing.T) {
 	registry := NewPreviewRegistry()
 	repo := repository.NewMetadataRepository(nil)
-	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), "", "")
+	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), "")
 
 	for _, name := range []string{
 		"builtin:database-table",
@@ -101,10 +101,10 @@ func TestPreviewFromURIWithBasicItemDoesNotSubmitDeepScanRun(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/v1/internal/engines/26":
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":26,"name":"preview","engine_type":"preview-routing-model","connection_info":{},"is_active":true}`))
+			_, _ = w.Write([]byte(`{"id":26,"tenant_id":1,"name":"preview","engine_type":"preview-routing-model","connection_info":{},"lifecycle_state":"active"}`))
 		case "/api/v1/meta/items/1831":
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":1831,"engine_id":26,"node_id":7,"item_type":"table","name":"users","full_name":"public.users","scanned_depth":"basic","attributes":{"item":{"data_type":"table","layout":"single"}}}`))
+			_, _ = w.Write([]byte(`{"id":1831,"tenant_id":1,"engine_id":26,"node_id":7,"item_type":"table","name":"users","full_name":"public.users","scanned_depth":"basic","attributes":{"item":{"data_type":"table","layout":"single"}}}`))
 		case "/api/v1/meta/scan/run/manual":
 			scanRunCalled = true
 			w.WriteHeader(http.StatusInternalServerError)
@@ -119,15 +119,18 @@ func TestPreviewFromURIWithBasicItemDoesNotSubmitDeepScanRun(t *testing.T) {
 	resolver := NewPreviewResolver(
 		registry,
 		client.NewSystemClientWithInternalKey(server.URL, "internal-key"),
-		client.NewMetaClientWithInternalKey(server.URL, "internal-key"),
+		client.NewMetaClient(server.URL, client.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+			return "test-token", nil
+		})),
 	)
+	tenantID := uint(1)
 	result, err := resolver.PreviewFromURI(
 		context.Background(),
 		"addp://engine/26/path/public/users?type=table&item_id=1831",
 		1,
 		20,
 		"",
-		nil,
+		&tenantID,
 	)
 	if err != nil {
 		t.Fatalf("PreviewFromURI() error = %v", err)
@@ -157,7 +160,7 @@ func TestLoadPreviewPluginsCanDisableDefaultProvider(t *testing.T) {
 
 	registry := NewPreviewRegistry()
 	repo := repository.NewMetadataRepository(nil)
-	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), "", dir)
+	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), dir)
 
 	if _, err := registry.GetByName("builtin:file-catalog"); err == nil {
 		t.Fatal("expected builtin:file-catalog to be disabled")
@@ -177,7 +180,7 @@ func TestLoadPreviewPluginsUsesFallbackDefaultsWithPreviewConfig(t *testing.T) {
 
 	registry := NewPreviewRegistry()
 	repo := repository.NewMetadataRepository(nil)
-	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), "", dir)
+	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), dir)
 
 	if _, err := registry.GetByName("builtin:file-table"); err != nil {
 		t.Fatalf("expected fallback builtin:file-table: %v", err)
@@ -197,7 +200,7 @@ func TestLoadPreviewPluginsRejectsLegacyDefaultProvidersField(t *testing.T) {
 
 	registry := NewPreviewRegistry()
 	repo := repository.NewMetadataRepository(nil)
-	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), "", dir)
+	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), dir)
 
 	if _, err := registry.GetByName("builtin:file-table"); err == nil {
 		t.Fatal("legacy default_providers config should not load fallback or requested provider")
@@ -214,7 +217,7 @@ func TestLoadPreviewPluginsRejectsContentPluginField(t *testing.T) {
 
 	registry := NewPreviewRegistry()
 	repo := repository.NewMetadataRepository(nil)
-	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), "", dir)
+	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), dir)
 
 	if _, err := registry.GetByName("builtin:file-table"); err == nil {
 		t.Fatal("preview config with content_plugins should not load fallback providers")

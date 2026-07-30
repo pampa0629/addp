@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,16 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type staticDevelopServiceTokens string
+
+func (t staticDevelopServiceTokens) Token(context.Context, uint) (string, error) {
+	return string(t), nil
+}
+
+func (t staticDevelopServiceTokens) PlatformToken(context.Context) (string, error) {
+	return string(t), nil
+}
+
 func TestListEnginesReturnsOnlySystemQueryEngines(t *testing.T) {
 	capabilitiesJSON, err := dbbridge.GenerateCapabilities("postgresql")
 	if err != nil {
@@ -20,26 +31,30 @@ func TestListEnginesReturnsOnlySystemQueryEngines(t *testing.T) {
 	capabilities := commonModels.JSONString(capabilitiesJSON)
 
 	systemServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/internal/engines" {
+		if r.URL.Path != "/api/v1/system/runtime/engine-descriptors" {
 			t.Fatalf("unexpected system path: %s", r.URL.Path)
 		}
-		if got := r.URL.Query().Get("storage_type"); got != "tabular,dynamic_schema,graph" {
-			t.Fatalf("storage_type = %q, want tabular,dynamic_schema,graph", got)
+		if got := r.Header.Get("Authorization"); got != "Bearer addp_at_service" {
+			t.Fatalf("Authorization = %q", got)
 		}
-		_ = json.NewEncoder(w).Encode([]commonModels.Engine{
-			{
-				ID:           12,
-				Name:         "pg-main",
-				EngineType:   "postgresql",
-				Capabilities: &capabilities,
-			},
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []commonModels.EngineRuntimeDescriptor{{
+				ID:             12,
+				Name:           "pg-main",
+				EngineType:     "postgresql",
+				LifecycleState: commonModels.EngineLifecycleActive,
+				Capabilities:   &capabilities,
+			}},
+			"total": 1, "page": 1, "page_size": 100,
 		})
 	}))
 	defer systemServer.Close()
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	handler := NewEngineHandler(commonClient.NewSystemClientWithInternalKey(systemServer.URL, "test-key"))
+	handler := NewEngineHandler(commonClient.NewSystemServiceClient(
+		systemServer.URL, staticDevelopServiceTokens("addp_at_service"), nil,
+	))
 	router.GET("/engines", func(c *gin.Context) {
 		setTenantAuthContextForTest(c, 7, 1)
 		handler.ListEngines(c)
@@ -52,7 +67,7 @@ func TestListEnginesReturnsOnlySystemQueryEngines(t *testing.T) {
 	if resp.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", resp.Code, resp.Body.String())
 	}
-	var engines []commonModels.Engine
+	var engines []commonModels.EngineRuntimeDescriptor
 	if err := json.Unmarshal(resp.Body.Bytes(), &engines); err != nil {
 		t.Fatalf("decode engines: %v; body=%s", err, resp.Body.String())
 	}
@@ -62,9 +77,16 @@ func TestListEnginesReturnsOnlySystemQueryEngines(t *testing.T) {
 	if engines[0].ID == 0 || engines[0].EngineType == "duckdb" {
 		t.Fatalf("ListEngines must not append DuckDB pseudo engine: %#v", engines[0])
 	}
+	var raw []map[string]json.RawMessage
+	if err := json.Unmarshal(resp.Body.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := raw[0]["connection_info"]; exists {
+		t.Fatalf("Develop engine descriptor leaked connection_info: %s", resp.Body.String())
+	}
 }
 
-func TestListQueryModesExposesDuckDBMode(t *testing.T) {
+func TestListQueryModesDoesNotExposeUncontrolledDuckDBMode(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	handler := NewEngineHandler(nil)
@@ -81,7 +103,7 @@ func TestListQueryModesExposesDuckDBMode(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &modes); err != nil {
 		t.Fatalf("decode query modes: %v; body=%s", err, resp.Body.String())
 	}
-	if len(modes) != 1 || modes[0].Mode != "duckdb" || modes[0].QueryType != "sql" {
-		t.Fatalf("query modes = %#v, want duckdb sql mode", modes)
+	if len(modes) != 0 {
+		t.Fatalf("query modes = %#v, want no modes before controlled DuckDB migration", modes)
 	}
 }

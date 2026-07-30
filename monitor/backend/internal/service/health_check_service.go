@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/models"
 	"github.com/addp/common/taskprovider"
 )
@@ -22,17 +23,16 @@ type taskProviderLister interface {
 
 // HealthCheckService 健康检查服务
 type HealthCheckService struct {
-	systemClient   taskProviderLister
-	httpClient     *http.Client
-	internalAPIKey string
+	systemClient       taskProviderLister
+	httpClient         *http.Client
+	serviceTokenSource commonClient.ServiceTokenProvider
 }
 
 // NewHealthCheckService 创建健康检查服务
-func NewHealthCheckService(systemClient taskProviderLister, internalAPIKey string) *HealthCheckService {
+func NewHealthCheckService(systemClient taskProviderLister, tokenSource commonClient.ServiceTokenProvider) *HealthCheckService {
 	return &HealthCheckService{
-		systemClient:   systemClient,
-		httpClient:     &http.Client{Timeout: 5 * time.Second},
-		internalAPIKey: internalAPIKey,
+		systemClient: systemClient, httpClient: &http.Client{Timeout: 5 * time.Second},
+		serviceTokenSource: tokenSource,
 	}
 }
 
@@ -204,12 +204,16 @@ func (s *HealthCheckService) checkTaskDiscovery(ctx context.Context, provider *m
 		check.Message = err.Error()
 		return check
 	}
-	if s.internalAPIKey != "" {
-		req.Header.Set("X-Internal-API-Key", s.internalAPIKey)
+	if s.serviceTokenSource == nil {
+		check.Message = "service token source is not configured"
+		return check
 	}
-	if tenantID > 0 {
-		req.Header.Set("X-Tenant-ID", fmt.Sprintf("%d", tenantID))
+	token, err := s.serviceTokenSource.Token(ctx, tenantID)
+	if err != nil {
+		check.Message = err.Error()
+		return check
 	}
+	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := s.httpClient.Do(req)
 	check.Latency = time.Since(start).Milliseconds()

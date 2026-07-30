@@ -6,6 +6,9 @@ import api_server
 import pytest
 
 
+WRITE_RUNTIME = {"execution_authorization": {"id": 71, "effects": ["read", "write"]}}
+
+
 @pytest.fixture
 def client():
     api_server.app.config["TESTING"] = True
@@ -16,9 +19,12 @@ def client():
 
 def test_workflow_endpoint_runs_asynchronously(client, monkeypatch):
     monkeypatch.setattr(api_server, "invoke_operator", lambda operator, params, timeout_seconds=None: {"operator": operator})
-    response = client.post("/api/workflow", json={"workflow_def": {"tasks": [
-        {"id": "convert", "operator": "las_to_copc", "params": {}, "depends_on": []}
-    ]}})
+    response = client.post("/api/workflow", json={
+        "workflow_def": {"tasks": [
+            {"id": "convert", "operator": "las_to_copc", "params": {}, "depends_on": []}
+        ]},
+        "runtime": WRITE_RUNTIME,
+    })
     assert response.status_code == 202
     execution_id = response.get_json()["execution_id"]
     deadline = time.time() + 2
@@ -37,9 +43,12 @@ def test_workflow_endpoint_records_failure(client, monkeypatch):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(api_server, "invoke_operator", fail)
-    response = client.post("/api/workflow", json={"workflow_def": {"tasks": [
-        {"id": "convert", "operator": "las_to_copc", "params": {}, "depends_on": []}
-    ]}})
+    response = client.post("/api/workflow", json={
+        "workflow_def": {"tasks": [
+            {"id": "convert", "operator": "las_to_copc", "params": {}, "depends_on": []}
+        ]},
+        "runtime": WRITE_RUNTIME,
+    })
     execution_id = response.get_json()["execution_id"]
     deadline = time.time() + 2
     while time.time() < deadline:
@@ -49,6 +58,18 @@ def test_workflow_endpoint_records_failure(client, monkeypatch):
         time.sleep(0.01)
     assert status["error_code"] == "EXECUTION_FAILED"
     assert "boom" in status["error"]
+
+
+def test_workflow_endpoint_rejects_insufficient_execution_authorization(client):
+    response = client.post("/api/workflow", json={
+        "workflow_def": {"tasks": [
+            {"id": "convert", "operator": "las_to_copc", "params": {}, "depends_on": []}
+        ]},
+        "runtime": {"execution_authorization": {"id": 71, "effects": ["read"]}},
+    })
+
+    assert response.status_code == 400
+    assert response.get_json()["error_code"] == "WORKFLOW_INVALID"
 
 
 def test_register_to_system_with_retry_keeps_retrying_until_success(monkeypatch):

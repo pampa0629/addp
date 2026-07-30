@@ -61,7 +61,7 @@ func (s *AuthContextService) ResolveAuthContext(
 ) (*commonauth.AuthContext, error) {
 	switch {
 	case strings.HasPrefix(credential, "addp_at_"):
-		return s.ResolveUserAccessToken(ctx, credential)
+		return s.ResolveAccessToken(ctx, credential)
 	case strings.HasPrefix(credential, "addp_rat_"):
 		return s.ResolveResourceAccessTicket(ctx, credential)
 	case strings.HasPrefix(credential, "addp_dat_"):
@@ -69,6 +69,36 @@ func (s *AuthContextService) ResolveAuthContext(
 	default:
 		return nil, invalidCredential(CredentialInvalidFormat)
 	}
+}
+
+func (s *AuthContextService) ResolveAccessToken(
+	ctx context.Context,
+	accessToken string,
+) (*commonauth.AuthContext, error) {
+	if s == nil || s.repository == nil {
+		return nil, fmt.Errorf("%w: AuthContext service is required", commonapi.ErrBadRequest)
+	}
+	return s.resolveSessionCredential(ctx, func(tx *Repository) (*SessionCredentialAuthSnapshot, error) {
+		return resolveAccessTokenSnapshot(ctx, tx, accessToken)
+	}, func(snapshot *SessionCredentialAuthSnapshot) credentialProjection {
+		if snapshot.PrincipalType == PrincipalTypeServicePrincipal {
+			return credentialProjection{
+				TokenType: "service_access_token", ClientID: snapshot.FamilyClientID,
+				Audiences: append([]string(nil), snapshot.FamilyAudiences...),
+				ScopeMode: "unrestricted", Scopes: []string{},
+			}
+		}
+		projection := credentialProjection{
+			TokenType: "first_party_access_token", ClientID: snapshot.FamilyClientID,
+			Audiences: append([]string(nil), snapshot.FamilyAudiences...),
+			ScopeMode: "unrestricted", Scopes: append([]string(nil), snapshot.FamilyScopes...),
+		}
+		if snapshot.FamilyAuthType == "oauth" {
+			projection.TokenType = "oauth_access_token"
+			projection.ScopeMode = "restricted"
+		}
+		return projection
+	})
 }
 
 func (s *AuthContextService) ResolveUserAccessToken(
@@ -364,6 +394,36 @@ func resolveUserAccessTokenSnapshot(
 	return snapshot, nil
 }
 
+func resolveAccessTokenSnapshot(
+	ctx context.Context,
+	repository *Repository,
+	accessToken string,
+) (*SessionCredentialAuthSnapshot, error) {
+	if repository == nil {
+		return nil, fmt.Errorf("%w: IAM repository is required", commonapi.ErrBadRequest)
+	}
+	if !strings.HasPrefix(accessToken, "addp_at_") || len(accessToken) == len("addp_at_") {
+		return nil, invalidCredential(CredentialInvalidFormat)
+	}
+	snapshot, err := repository.GetAccessTokenAuthSnapshot(ctx, hashOpaqueToken(accessToken))
+	if err != nil {
+		if errors.Is(err, commonapi.ErrNotFound) {
+			return nil, invalidCredential(CredentialInvalidNotFound)
+		}
+		return nil, err
+	}
+	if snapshot.PrincipalType == PrincipalTypeServicePrincipal {
+		if err := validateServiceAccessTokenSnapshot(snapshot); err != nil {
+			return nil, err
+		}
+		return snapshot, nil
+	}
+	if err := validateDelegationSourceAccessTokenSnapshot(snapshot); err != nil {
+		return nil, err
+	}
+	return snapshot, nil
+}
+
 func resolveDelegationSourceAccessTokenSnapshot(
 	ctx context.Context,
 	repository *Repository,
@@ -467,6 +527,31 @@ func validateDelegationSourceAccessTokenSnapshot(snapshot *SessionCredentialAuth
 		}
 	default:
 		return invalidCredential(CredentialInvalidUnsupportedTokenType)
+	}
+	return nil
+}
+
+func validateServiceAccessTokenSnapshot(snapshot *SessionCredentialAuthSnapshot) error {
+	if err := validateSessionCredentialSnapshot(snapshot); err != nil {
+		return err
+	}
+	if snapshot.PrincipalType != PrincipalTypeServicePrincipal ||
+		(snapshot.FamilyContextType != ContextTypeTenant && snapshot.FamilyContextType != ContextTypePlatform) ||
+		snapshot.FamilyAuthType != "oauth" ||
+		strings.TrimSpace(snapshot.FamilyClientID) == "" || snapshot.FamilyClientID == "addp-web" ||
+		len(snapshot.FamilyAudiences) != 1 || snapshot.FamilyAudiences[0] != "addp.api" ||
+		len(snapshot.FamilyScopes) != 1 || snapshot.FamilyScopes[0] != "addp.api" ||
+		len(snapshot.FamilyAuthenticationMethods) != 1 || snapshot.FamilyAuthenticationMethods[0] != "service_secret" ||
+		snapshot.FamilyAssuranceLevel != AssuranceLevelNotApplicable || snapshot.FamilyStepUpExpiresAt != nil {
+		return invalidCredential(CredentialInvalidUnsupportedTokenType)
+	}
+	if snapshot.FamilyContextType == ContextTypeTenant &&
+		(snapshot.FamilyTenantMembershipID == nil || snapshot.TenantID == nil || snapshot.TenantMembershipID == nil) {
+		return invalidCredential(CredentialInvalidContext)
+	}
+	if snapshot.FamilyContextType == ContextTypePlatform &&
+		(snapshot.FamilyTenantMembershipID != nil || snapshot.TenantID != nil || snapshot.TenantMembershipID != nil) {
+		return invalidCredential(CredentialInvalidContext)
 	}
 	return nil
 }
@@ -588,7 +673,7 @@ func validateSessionCredentialSnapshot(snapshot *SessionCredentialAuthSnapshot) 
 	switch snapshot.FamilyContextType {
 	case ContextTypePlatform:
 		if snapshot.FamilyTenantMembershipID != nil || snapshot.TenantMembershipID != nil ||
-			(snapshot.FamilyAssuranceLevel != AssuranceLevelAAL2 && snapshot.FamilyAssuranceLevel != AssuranceLevelAAL3) {
+			!validPlatformContextAssurance(snapshot.PrincipalType, snapshot.FamilyAssuranceLevel) {
 			return invalidCredential(CredentialInvalidContext)
 		}
 	case ContextTypeTenant:
@@ -608,6 +693,17 @@ func validateSessionCredentialSnapshot(snapshot *SessionCredentialAuthSnapshot) 
 		return invalidCredential(CredentialInvalidContext)
 	}
 	return nil
+}
+
+func validPlatformContextAssurance(principalType PrincipalType, assuranceLevel AssuranceLevel) bool {
+	switch principalType {
+	case PrincipalTypeUser:
+		return assuranceLevel == AssuranceLevelAAL2 || assuranceLevel == AssuranceLevelAAL3
+	case PrincipalTypeServicePrincipal:
+		return assuranceLevel == AssuranceLevelNotApplicable
+	default:
+		return false
+	}
 }
 
 func containsCredentialValue(values []string, expected string) bool {

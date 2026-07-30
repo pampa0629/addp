@@ -76,6 +76,7 @@ class OperatorMetadata(BaseModel):
     # 可选字段
     output_ports: Optional[List[OutputPort]] = Field(None, description="多输出端口定义")
     execution_modes: List[str] = Field(description="执行模式：workflow/direct")
+    effects: List[str] = Field(description="执行效果：read/write/ddl/external_effect")
     attributes: Optional[Dict[str, Any]] = Field(None, description="引擎自定义扩展属性")
 
     # 运行时绑定（不参与序列化）
@@ -120,6 +121,7 @@ class OperatorMetadata(BaseModel):
             'param_schema': param_schema,
             'category': self.category.value,
             'execution_modes': list(self.execution_modes),
+            'effects': list(self.effects),
             'description': self.description,
             'brief_description': self.brief_description,
             'detailed_description': {

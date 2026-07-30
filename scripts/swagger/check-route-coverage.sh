@@ -175,8 +175,14 @@ documented_base_paths = [base_path] + [clean_path(p) for p in extra_base_paths_b
 api_groups = set()
 routes = {}
 
-group_re = re.compile(r'^\s*(\w+)\s*:=\s*(\w+)\.Group\("([^"]*)"\)')
-route_re = re.compile(r'^\s*(\w+)\.(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\("([^"]*)"')
+statement_re = re.compile(
+    r'^\s*(?:'
+    r'(\w+)\s*:=\s*(\w+)\.Group\(\s*"([^"]*)"\s*\)'
+    r'|'
+    r'(\w+)\.(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\(\s*"([^"]*)"'
+    r')',
+    re.MULTILINE,
+)
 
 api_dir = Path(router_file).parent
 route_files = [Path(router_file)] + sorted(
@@ -184,11 +190,14 @@ route_files = [Path(router_file)] + sorted(
 )
 for route_file in route_files:
     group_prefix = {"router": "", "api": base_path}
-    for raw_line in route_file.read_text(encoding="utf-8").splitlines():
-        line = raw_line.split("//", 1)[0]
-        group_match = group_re.search(line)
-        if group_match:
-            var_name, parent, suffix = group_match.groups()
+    source = "\n".join(
+        raw_line.split("//", 1)[0]
+        for raw_line in route_file.read_text(encoding="utf-8").splitlines()
+    )
+    for statement in statement_re.finditer(source):
+        group_var, parent, group_suffix, route_var, method, route_suffix = statement.groups()
+        if group_var is not None:
+            var_name, suffix = group_var, group_suffix
             if parent in group_prefix:
                 full = join_path(group_prefix[parent], suffix)
                 group_prefix[var_name] = full
@@ -196,17 +205,14 @@ for route_file in route_files:
                     api_groups.add(full)
             continue
 
-        route_match = route_re.search(line)
-        if route_match:
-            var_name, method, suffix = route_match.groups()
-            if var_name not in group_prefix:
-                continue
-            full = swaggerize(join_path(group_prefix[var_name], suffix))
-            if should_exclude(full):
-                continue
-            if documented_base_paths and not any(full == p or full.startswith(p + "/") for p in documented_base_paths):
-                continue
-            routes.setdefault(full, set()).add(method.lower())
+        if route_var not in group_prefix:
+            continue
+        full = swaggerize(join_path(group_prefix[route_var], route_suffix))
+        if should_exclude(full):
+            continue
+        if documented_base_paths and not any(full == p or full.startswith(p + "/") for p in documented_base_paths):
+            continue
+        routes.setdefault(full, set()).add(method.lower())
 
 if not base_path:
     print(f"  ❌ [{module}] main.go 缺少 @BasePath")

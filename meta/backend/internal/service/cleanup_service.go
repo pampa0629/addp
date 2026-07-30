@@ -26,13 +26,19 @@ type CleanupService struct {
 	db              *gorm.DB
 	redis           *redis.Client
 	dbCleaner       *metacleanup.DatabaseCleaner
-	searchCleaner   *metacleanup.MeilisearchCleaner
+	searchCleaner   metaSearchCleaner
 	taskExecRepo    *commonExecution.TaskExecutionRepository
 	log             *slog.Logger
 	retentionDays   int
 	cleanupInterval time.Duration
 	enabled         bool
 	stopCh          chan struct{}
+}
+
+type metaSearchCleaner interface {
+	Enabled() bool
+	ScanReclaimCandidates(context.Context, uint, []uint) (*metacleanup.MeilisearchReclaimStats, error)
+	ExecuteCleanup(context.Context, uint, []uint) (int, error)
 }
 
 // CleanupConfig 逻辑删除记录保留期清除配置
@@ -55,7 +61,7 @@ func DefaultCleanupConfig() CleanupConfig {
 func NewCleanupService(
 	db *gorm.DB,
 	redisClient *redis.Client,
-	systemClient *commonClient.SystemClient,
+	systemClient *commonClient.SystemServiceClient,
 	indexer *search.Indexer,
 	config CleanupConfig,
 ) *CleanupService {
@@ -339,6 +345,7 @@ func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis
 func (s *CleanupService) ScanReclaimCandidates(ctx context.Context, tenantID uint, cleanupContext map[string]interface{}) (*models.MetaCleanupStatistics, error) {
 	stats := &models.MetaCleanupStatistics{}
 	scope := metacleanup.ScopeFromContext(cleanupContext)
+	invalidEngineIDs := s.dbCleaner.InvalidEngineIDsWithScope(ctx, tenantID, scope)
 
 	// 1. 扫描无效引擎的数据
 	invalidEngines, err := s.dbCleaner.ScanInvalidEnginesWithScope(ctx, tenantID, scope)
@@ -386,7 +393,7 @@ func (s *CleanupService) ScanReclaimCandidates(ctx context.Context, tenantID uin
 
 	// 6. 扫描 Meilisearch 待回收记录（新增）
 	if s.searchCleaner != nil && s.searchCleaner.Enabled() {
-		meilisearchStats, err := s.searchCleaner.ScanReclaimCandidates(ctx, tenantID, s.dbCleaner.InvalidEngineIDsWithScope(ctx, tenantID, scope))
+		meilisearchStats, err := s.searchCleaner.ScanReclaimCandidates(ctx, tenantID, invalidEngineIDs)
 		if err != nil {
 			s.log.Error("扫描 Meilisearch 待回收记录失败", "error", err)
 			// 不中断整体扫描流程
@@ -402,7 +409,7 @@ func (s *CleanupService) ScanReclaimCandidates(ctx context.Context, tenantID uin
 	}
 
 	// 7. 扫描 Meta-owned 扫描任务定义残留。
-	scanTaskDefinitionCount, err := s.scanInvalidEngineScanTaskDefinitions(ctx, tenantID, scope)
+	scanTaskDefinitionCount, err := s.scanInvalidEngineScanTaskDefinitions(ctx, tenantID, scope, invalidEngineIDs)
 	if err != nil {
 		return nil, fmt.Errorf("扫描扫描任务定义残留失败: %w", err)
 	}
@@ -415,6 +422,7 @@ func (s *CleanupService) ScanReclaimCandidates(ctx context.Context, tenantID uin
 func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, cleanupMode string, cleanupContext map[string]interface{}) (*models.MetaCleanupExecuteResult, error) {
 	result := &models.MetaCleanupExecuteResult{}
 	scope := metacleanup.ScopeFromContext(cleanupContext)
+	invalidEngineIDs := s.dbCleaner.InvalidEngineIDsWithScope(ctx, tenantID, scope)
 
 	// 根据清理模式执行数据库清理
 	var dbResult *models.MetaCleanupExecuteResult
@@ -422,7 +430,7 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 
 	switch cleanupMode {
 	case events.CleanupModeLogical:
-		dbResult, err = s.dbCleaner.ExecuteSoftDelete(ctx, tenantID, s.dbCleaner.InvalidEngineIDsWithScope(ctx, tenantID, scope))
+		dbResult, err = s.dbCleaner.ExecuteSoftDelete(ctx, tenantID, invalidEngineIDs)
 	case events.CleanupModePhysical:
 		dbResult, err = s.dbCleaner.ExecuteHardDeleteWithScope(ctx, tenantID, scope)
 	default:
@@ -441,7 +449,7 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 
 	// 执行 Meilisearch 清理（新增）
 	if s.searchCleaner != nil && s.searchCleaner.Enabled() {
-		deletedCount, err := s.searchCleaner.ExecuteCleanup(ctx, tenantID, s.dbCleaner.InvalidEngineIDsWithScope(ctx, tenantID, scope))
+		deletedCount, err := s.searchCleaner.ExecuteCleanup(ctx, tenantID, invalidEngineIDs)
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("清理 Meilisearch 失败: %v", err))
 			s.log.Error("清理 Meilisearch 失败", "error", err)
@@ -453,13 +461,13 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 
 	switch cleanupMode {
 	case events.CleanupModeLogical:
-		disabled, err := s.disableInvalidEngineScanTaskDefinitions(ctx, tenantID, scope)
+		disabled, err := s.disableInvalidEngineScanTaskDefinitions(ctx, tenantID, scope, invalidEngineIDs)
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("禁用扫描任务定义失败: %v", err))
 		}
 		result.DisabledScanTaskDefinitions = disabled
 	case events.CleanupModePhysical:
-		deleted, err := s.deleteInvalidEngineScanTaskDefinitions(ctx, tenantID, scope)
+		deleted, err := s.deleteInvalidEngineScanTaskDefinitions(ctx, tenantID, scope, invalidEngineIDs)
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("删除扫描任务定义失败: %v", err))
 		}
@@ -469,8 +477,8 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 	return result, nil
 }
 
-func (s *CleanupService) scanInvalidEngineScanTaskDefinitions(ctx context.Context, tenantID uint, scope metacleanup.CleanupScope) (int, error) {
-	query := s.invalidEngineScanTaskDefinitionsQuery(ctx, tenantID, scope)
+func (s *CleanupService) scanInvalidEngineScanTaskDefinitions(ctx context.Context, tenantID uint, scope metacleanup.CleanupScope, invalidEngineIDs []uint) (int, error) {
+	query := s.invalidEngineScanTaskDefinitionsQuery(ctx, tenantID, scope, invalidEngineIDs)
 	var count int64
 	if err := query.Count(&count).Error; err != nil {
 		return 0, err
@@ -478,8 +486,8 @@ func (s *CleanupService) scanInvalidEngineScanTaskDefinitions(ctx context.Contex
 	return int(count), nil
 }
 
-func (s *CleanupService) disableInvalidEngineScanTaskDefinitions(ctx context.Context, tenantID uint, scope metacleanup.CleanupScope) (int, error) {
-	query := s.invalidEngineScanTaskDefinitionsQuery(ctx, tenantID, scope).Where("enabled = ?", true)
+func (s *CleanupService) disableInvalidEngineScanTaskDefinitions(ctx context.Context, tenantID uint, scope metacleanup.CleanupScope, invalidEngineIDs []uint) (int, error) {
+	query := s.invalidEngineScanTaskDefinitionsQuery(ctx, tenantID, scope, invalidEngineIDs).Where("enabled = ?", true)
 	result := query.Updates(map[string]interface{}{
 		"enabled":     false,
 		"next_run_at": nil,
@@ -491,8 +499,8 @@ func (s *CleanupService) disableInvalidEngineScanTaskDefinitions(ctx context.Con
 	return int(result.RowsAffected), nil
 }
 
-func (s *CleanupService) deleteInvalidEngineScanTaskDefinitions(ctx context.Context, tenantID uint, scope metacleanup.CleanupScope) (int, error) {
-	query := s.invalidEngineScanTaskDefinitionsQuery(ctx, tenantID, scope).Unscoped()
+func (s *CleanupService) deleteInvalidEngineScanTaskDefinitions(ctx context.Context, tenantID uint, scope metacleanup.CleanupScope, invalidEngineIDs []uint) (int, error) {
+	query := s.invalidEngineScanTaskDefinitionsQuery(ctx, tenantID, scope, invalidEngineIDs).Unscoped()
 	result := query.Delete(&models.ScanTask{})
 	if result.Error != nil {
 		return 0, result.Error
@@ -500,8 +508,8 @@ func (s *CleanupService) deleteInvalidEngineScanTaskDefinitions(ctx context.Cont
 	return int(result.RowsAffected), nil
 }
 
-func (s *CleanupService) invalidEngineScanTaskDefinitionsQuery(ctx context.Context, tenantID uint, scope metacleanup.CleanupScope) *gorm.DB {
-	query := s.db.Model(&models.ScanTask{}).
+func (s *CleanupService) invalidEngineScanTaskDefinitionsQuery(ctx context.Context, tenantID uint, scope metacleanup.CleanupScope, invalidEngineIDs []uint) *gorm.DB {
+	query := s.db.WithContext(ctx).Model(&models.ScanTask{}).
 		Where("owner_module = ?", "system")
 	if tenantID > 0 {
 		query = query.Where("tenant_id = ?", tenantID)
@@ -510,7 +518,6 @@ func (s *CleanupService) invalidEngineScanTaskDefinitionsQuery(ctx context.Conte
 		return query.Where("engine_id = ? AND owner_ref = ?", scope.EngineID, scantask.AutomaticTaskOwnerRef(scope.EngineID))
 	}
 
-	invalidEngineIDs := s.dbCleaner.InvalidEngineIDsWithScope(ctx, tenantID, scope)
 	if len(invalidEngineIDs) == 0 {
 		return query.Where("1 = 0")
 	}
@@ -586,10 +593,7 @@ func (s *CleanupService) finishExecutorExecution(ctx context.Context, executionI
 		return
 	}
 	now := time.Now()
-	status := commonExecution.ExecutionStatusSuccess
-	if result.Status == events.CleanupResultFailed {
-		status = commonExecution.ExecutionStatusFailed
-	}
+	status := commonExecution.StatusFromCleanupResult(result.Status)
 	var errDetails commonModels.JSONMap
 	if len(result.Errors) > 0 {
 		errDetails = commonModels.JSONMap{"errors": result.Errors}
@@ -611,7 +615,11 @@ func metaScanSummary(stats *models.MetaCleanupStatistics) events.CleanupResultSu
 	if stats == nil {
 		return events.CleanupResultSummary{RiskLevel: "low"}
 	}
-	scannedItems := stats.InvalidEngines.Count +
+	invalidEngineResources := 0
+	for _, detail := range stats.InvalidEngines.Details {
+		invalidEngineResources += detail.AffectedNodes + detail.AffectedItems
+	}
+	scannedItems := invalidEngineResources +
 		stats.OrphanItems.Count +
 		stats.ExpiredData.Count +
 		stats.LogicalCleanupCandidates.Nodes +

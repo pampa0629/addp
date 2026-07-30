@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -38,7 +39,10 @@ func TestNormalizeStaticTileSourceFreezesPMTilesCameraAndSpatialFacts(t *testing
 	}))
 	defer metaServer.Close()
 
-	service := NewTileServiceService(nil, commonClient.NewMetaClientWithInternalKey(metaServer.URL, "test-key"), "")
+	metaClient := commonClient.NewMetaClient(metaServer.URL, commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+		return "test-token", nil
+	}))
+	service := NewTileServiceService(nil, metaClient, "")
 	config := map[string]interface{}{"source": map[string]interface{}{
 		"locator": "addp://engine/9/path/addp/vector-tiles/farmland.pmtiles?type=object&item_id=51561",
 	}}

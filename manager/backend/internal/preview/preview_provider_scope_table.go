@@ -109,6 +109,7 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 	return &models.TablePreview{
 		Mode:           "table",
 		Columns:        columns,
+		Fields:         append([]datatype.FieldInfo(nil), fields...),
 		ColumnMetadata: columnMeta,
 		Rows:           rows,
 		Page:           page,

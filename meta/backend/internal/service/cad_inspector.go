@@ -29,19 +29,17 @@ func (i *SuperMapCADInspector) InspectCAD(ctx context.Context, source *commonMod
 	if i == nil || i.engineService == nil || source == nil {
 		return nil, fmt.Errorf("CAD inspector is not configured")
 	}
-	i.engineService.ensureInternalClient()
-	if i.engineService.internalClient == nil {
-		return nil, fmt.Errorf("CAD deep scan requires the System internal client")
-	}
-	engines, err := i.engineService.internalClient.ListEngines("supermap_workflow", tenantID)
+	engines, err := i.engineService.GetEnginesByTenant(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("list SuperMap workflow engines: %w", err)
 	}
 	var runtime *commonModels.Engine
 	for idx := range engines {
-		if engines[idx].IsActive && strings.EqualFold(engines[idx].EngineType, "supermap_workflow") {
-			candidate := engines[idx]
-			runtime = &candidate
+		if engines[idx].IsUsable() && strings.EqualFold(engines[idx].EngineType, "supermap_workflow") {
+			runtime, err = i.engineService.GetResourceByID(engines[idx].ID, tenantID)
+			if err != nil {
+				return nil, fmt.Errorf("load SuperMap workflow engine connection: %w", err)
+			}
 			break
 		}
 	}

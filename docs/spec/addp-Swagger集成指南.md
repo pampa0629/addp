@@ -87,11 +87,21 @@ public | authenticated | self | permission | delegated_tool | resource_ticket | 
 
 `permission`、`delegated_tool` 和 `resource_ticket` 必须同时输出非空、无重复的 `x-addp-required-permissions` 数组；其他模式不得携带业务 Permission Key。多个 Permission 固定按 all-of 处理。
 
+当路由具有稳定的功能 Permission，但还会根据严格解析后的请求内容选择额外 Permission 时，只能在 `permission` 模式下声明 `x-addp-conditional-permissions`。该数组列出服务端可能动态追加校验的完整 Permission 集合，用于授权覆盖报告确认真实消费者；它不属于静态 all-of Guard，不能与 `x-addp-required-permissions` 重复。服务端必须默认拒绝无法分类的请求，不能把条件权限当作 any-of，也不能由客户端直接指定要绕过的 Permission。
+
 Go swaggo 目标注解：
 
 ```go
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.data_item.read"]
+```
+
+动态效果示例：
+
+```go
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.execute"]
+// @x-addp-conditional-permissions ["develop.data_read.execute","develop.data_write.execute","develop.data_ddl.execute","develop.data_external_effect.execute"]
 ```
 
 FastAPI 目标声明：

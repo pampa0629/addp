@@ -206,7 +206,7 @@ func (e *ManagerPointCloudCOPCExecutor) prepareSourceAccess(ctx context.Context,
 	if err != nil {
 		return workflowaccess.Access{}, nil, fmt.Errorf("get source engine: %w", err)
 	}
-	if engine == nil || !engine.IsActive {
+	if !engine.IsUsable() {
 		return workflowaccess.Access{}, nil, errors.New("source engine is not active")
 	}
 	if engine.TenantID != nil && *engine.TenantID != tenantID {

@@ -2,7 +2,7 @@
 
 更新日期：2026-07-27
 
-状态：二十一版 IAM DDL、PostgreSQL 15 约束测试、System migration runner、TOTP Runtime、离线三员 Bootstrap、离线三员凭据恢复、普通 User 本地密码重置、Tenant 管理闭环和 Fosite 主路径已实现。开发 `addp` 数据库已迁移到 `21/clean`；Recovery Attempt 1 已完成，既有三员 Browser `platform + AAL2` 登录与一次性 OAuth 客户端协议 E2E 已覆盖 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、刷新轮换和撤销。Tenant 管理 Browser E2E 已覆盖安全管理员创建普通 User、系统管理员初始化 Tenant、首位 Tenant Administrator 进入 Tenant Context、显式授予基础设施管理员、密码受控重置以及引擎、应用和 Cleanup 正常使用；正式 `addp-cli` 尚未交付。
+状态：二十五版 IAM DDL、PostgreSQL 15 约束测试、System migration runner、TOTP Runtime、离线三员 Bootstrap、离线三员凭据恢复、普通 User 本地密码重置、Tenant 管理闭环、Service Principal Runtime 和 Fosite 主路径已实现。开发 `addp` 数据库已迁移到 `25/clean`；Recovery Attempt 1 已完成，既有三员 Browser `platform + AAL2` 登录与正式 `addp` CLI E2E 已覆盖 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、Keychain 刷新轮换、受委托 Tool 调用和撤销。Tenant 管理 Browser E2E 已覆盖安全管理员创建普通 User、系统管理员初始化 Tenant、首位 Tenant Administrator 进入 Tenant Context、显式授予基础设施管理员、密码受控重置以及引擎、应用和 Cleanup 正常使用。
 
 ## 一、目标与边界
 

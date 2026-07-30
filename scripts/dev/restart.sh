@@ -561,31 +561,17 @@ restart_spark_workflow_service() {
 
 restart_jupyter_service() {
     local api_port="${JUPYTER_API_PORT:-8097}"
-    local lab_port="${JUPYTER_LAB_PORT:-8088}"
     stop_pidfile_process ".dev-pids/jupyter-api-server.pid" "Jupyter API Server"
-    stop_pidfile_process ".dev-pids/jupyter-lab.pid" "Jupyter Lab"
     stop_matching_port_process "$api_port" "Jupyter API Server" "python.*api_server\\.py|engines/jupyter"
-    stop_matching_port_process "$lab_port" "Jupyter Lab" "jupyter.*lab|engines/jupyter"
     require_service_python "engines/jupyter" "Jupyter Engine" "jupyter"
-    if [ ! -x "engines/jupyter/venv/bin/jupyter" ]; then
-        echo "❌ Jupyter Lab 可执行文件不存在: engines/jupyter/venv/bin/jupyter"
-        echo "   请先运行: bash scripts/dev/start.sh -jupyter"
-        return 1
-    fi
-    echo "  启动 Jupyter Engine..."
+    echo "  启动 Jupyter Notebook Runtime..."
     (
         cd engines/jupyter
         export API_PORT="$api_port"
-        export JUPYTER_PORT="$lab_port"
-        export INTERNAL_API_KEY="${INTERNAL_API_KEY:-}"
-        export TENANT_ID="${DEFAULT_TENANT_ID:-1}"
         start_background_process "." ".dev-pids/jupyter-api-server.pid" "logs/jupyter-api-server.log" "logs/jupyter-api-server-stderr.log" ./venv/bin/python api_server.py
-        start_background_process "." ".dev-pids/jupyter-lab.pid" "logs/jupyter-lab.log" "logs/jupyter-lab-stderr.log" ./venv/bin/jupyter lab --config=jupyter_lab_config.py
     )
     wait_http_ready "Jupyter API Server" "http://localhost:${api_port}/health"
     verify_pidfile_process_alive ".dev-pids/jupyter-api-server.pid" "Jupyter API Server" "logs/jupyter-api-server.log" "logs/jupyter-api-server-stderr.log"
-    wait_http_ready "Jupyter Lab" "http://localhost:${lab_port}/lab" 60 || true
-    verify_pidfile_process_alive ".dev-pids/jupyter-lab.pid" "Jupyter Lab" "logs/jupyter-lab.log" "logs/jupyter-lab-stderr.log"
 }
 
 restart_copilot_service() {

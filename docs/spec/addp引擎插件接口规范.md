@@ -41,6 +41,9 @@ type EnginePlugin interface {
 - `EngineOrigin()` 表达引擎来源，取值为 `general` 或 `extension`；它不是能力判断字段，上层功能判断必须基于 capabilities。
 - `connection_info` 是所有引擎连接信息的统一事实源，保持 key-value map；字段 key 使用稳定英文机器名，不承载 i18n。
 - `RequiredFields()`、`SensitiveFields()`、`ValidateConnectionInfo()` 和 `TestConnection()` 共同构成 System 引擎管理层的统一连接信息能力。
+- System 管理的内置插件必须额外实现 `ConnectionIdentityProvider.ConnectionIdentityFields()`，返回决定 Engine Instance 物理端点身份的非敏感字段。数据库插件通常声明 `host`、`port`、`database`；对象存储声明 `endpoint`；NFS 声明 `server`、`export_path`；HTTP 工作流运行时声明 `protocol`、`host`、`port`。
+- System 创建 Engine Instance 后会冻结身份字段。更新请求改变任一身份字段时返回 HTTP 409，用户必须创建新的 Engine Instance。默认端口和默认数据库应按插件语义归一化后比较，不能把省略默认值和显式默认值误判为不同端点。
+- 自研且未编译进当前进程的 extension engine 使用标准 HTTP 运行时身份字段 `protocol + host + port`，不得通过任意非敏感字段猜测身份。
 - `TestConnection()` 必须执行需要认证的最小只读真实操作，不能只做网络连通检查，也不得创建、更新、删除外部资源。
 - `Capabilities()` 必须返回结构化 `engine.capabilities/v1` 能力模板。该方法不得连接具体实例，不做运行时探测，只表达插件和 Provider 实现的能力上限。
 - 需要按实例探测扩展、版本或函数可用性的插件，应额外实现 `InstanceCapabilitiesResolver`，由 System 在保存或刷新具体引擎记录时调用并生成落库能力声明。
@@ -361,6 +364,18 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 - `WorkflowRuntimeProvider`：工作流端点、算子描述发现、工作流执行。`ListOperators()` 返回 `OperatorDescriptor`，其中参数和输出端口分别使用 `ParameterDescriptor` / `OutputPortDescriptor`；这些结构只描述运行时算子接口，不是 Meta 模块元数据。
 - `ScriptRuntimeProvider`：Notebook/脚本端点和会话。`ScriptSession.Info` 返回会话描述信息，例如 mode、language；它不是 catalog facts，也不是调用方 hints。
 
+`ScriptRuntimeProvider` 的上层消费必须先从 System 获取目标 Engine Instance 的 Runtime Descriptor，再以该 Descriptor 构造的非敏感连接信息调用 `OpenSession()`。Develop Notebook 任务使用 `execution_config.engine_id` 保存实例绑定；上传、Kernel 发现和执行都使用同一个绑定实例，不接受执行时临时覆盖。
+
+```go
+type ScriptRuntimeProvider interface {
+    EnginePlugin
+    RuntimeEndpoint(ctx context.Context, connInfo ConnectionInfo) (string, error)
+    OpenSession(ctx context.Context, connInfo ConnectionInfo, req ScriptSessionRequest) (*ScriptSession, error)
+}
+```
+
+`ScriptSession.Endpoint` 是受控运行 API 的服务端调用地址，不是返回给浏览器的共享交互入口。调用方必须使用自身租户 Service Access Token 调用该端点。引擎健康检查由 System 负责；消费模块不得再维护固定运行时 URL 或专用健康代理。
+
 ---
 
 ## 四、接口组合
@@ -385,7 +400,7 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 - Meta：使用 `CatalogProvider` 扫描目录并落库，使用 `CatalogFactsProvider` / `DynamicSchemaSamplingProvider` 获取 catalog leaf facts；扫描编排必须先读取 `CatalogModelSpec`，再结合 provider 组合选择 catalog scan strategy。`engine_family` 只能作为粗分类或展示字段，不能单独决定 namespace 术语、leaf 术语、扫描层级和内容读取方式。公开 API 应聚焦扫描后元数据快照，不再新增实时浏览公共接口。
 - Meta 扫描 API 和任务参数中的路径型目标统一命名为 `catalog_paths`。它表示引擎 catalog model 下的路径。
 - Manager：使用 Meta 树构建探查树；预览由 Manager 自身 preview provider / composer 组合完成。结构化数据优先消费 `BatchReadableProvider` 或只读 sample query；graph 预览优先消费 `type_info.graph` / `CatalogFactsProvider` 得到 schema 视图，并通过 `GraphSampleProvider` 或 `GraphQueryProvider` 获取轻量子图样本；对象/文件优先消费 `ContentReadableProvider` 并结合格式解析。
-- Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`；图结构展示入口使用 `CatalogFactsProvider` / `GraphQueryProvider`。
+- Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`；Notebook 引擎实例通过 `execution_config.engine_id` 绑定，并以 System Runtime Descriptor + `ScriptRuntimeProvider.OpenSession()` 解析端点；图结构展示入口使用 `CatalogFactsProvider` / `GraphQueryProvider`。
 - Service：发布普通查询服务时使用 query runtime 和 Meta item/spatial 元数据；图查询服务使用 `GraphQueryProvider`。图查询服务的易用向导应消费 graph item 的 `type_info.graph.node_shapes`，不得再从 Meta 树读取 Neo4j label item。
 - Transfer：使用 source / target endpoint 生成执行计划。snapshot native table 读写消费 `TableReadSessionProvider`、`BatchReadableProvider`、`TableWritePreparer`、`TableWriteSessionProvider`、`BatchWritableProvider`；watermark bounded incremental 必须消费 `BoundedWatermarkReadProvider` 和幂等 `TableUpsertProvider`；encoded file/object 读写先通过 engine content provider 和 `common/engine/contentadapter` 构造 `common/contentio` 抽象，再交给 `common/format` provider。高吞吐数据搬运优先消费 batch / table session / content stream 能力，而不是 query runtime。
 - Transfer continuous runtime：业务 Kafka source 必须消费 `ChangeStreamReaderProvider`，由 Transfer adapter 生成 ChangeEvent 并通过 ChangeApplyWriter 组合目标 Provider。第一版目标只允许 PostgreSQL `PartitionedTableChangeApplyProvider`；Infra Kafka 连接来自 ADDP infra 配置，不注册 System Engine，但复用同一 Kafka reader/client 底层实现。

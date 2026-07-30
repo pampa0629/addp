@@ -109,3 +109,69 @@ func TestSwaggerOAuthRoutes(t *testing.T) {
 		}
 	}
 }
+
+func TestSwaggerOAuthClientCredentialsContract(t *testing.T) {
+	raw, err := os.ReadFile("../../docs/swagger.json")
+	if err != nil {
+		t.Fatalf("read swagger.json: %v", err)
+	}
+	type parameter struct {
+		Name     string   `json:"name"`
+		In       string   `json:"in"`
+		Required bool     `json:"required"`
+		Enum     []string `json:"enum"`
+	}
+	type operation struct {
+		Parameters []parameter `json:"parameters"`
+		Responses  map[string]struct {
+			Schema struct {
+				Ref string `json:"$ref"`
+			} `json:"schema"`
+		} `json:"responses"`
+	}
+	var document struct {
+		Paths map[string]struct {
+			Post operation `json:"post"`
+		} `json:"paths"`
+	}
+	if err := json.Unmarshal(raw, &document); err != nil {
+		t.Fatalf("decode swagger.json: %v", err)
+	}
+	token := document.Paths["/oauth/token"].Post
+	wantParameters := map[string]string{
+		"Authorization": "header",
+		"grant_type":    "formData",
+		"scope":         "formData",
+		"audience":      "formData",
+		"tenant_id":     "formData",
+		"context_type":  "formData",
+	}
+	for _, parameter := range token.Parameters {
+		if wantIn, exists := wantParameters[parameter.Name]; exists {
+			if parameter.In != wantIn {
+				t.Errorf("/oauth/token parameter %s in = %q, want %q", parameter.Name, parameter.In, wantIn)
+			}
+			delete(wantParameters, parameter.Name)
+		}
+		if parameter.Name == "grant_type" {
+			if !parameter.Required || !containsString(parameter.Enum, "client_credentials") {
+				t.Errorf("/oauth/token grant_type = %#v", parameter)
+			}
+		}
+	}
+	if len(wantParameters) != 0 {
+		t.Fatalf("/oauth/token missing parameters: %#v", wantParameters)
+	}
+	if got := token.Responses["200"].Schema.Ref; got != "#/definitions/internal_api.IAMOAuthTokenResponse" {
+		t.Fatalf("/oauth/token 200 schema = %q", got)
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}

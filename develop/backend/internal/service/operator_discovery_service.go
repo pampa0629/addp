@@ -13,7 +13,7 @@ import (
 // OperatorDiscoveryService 工作流算子发现服务
 // 负责从所有注册的工作流运行时引擎获取算子列表并合并缓存。
 type OperatorDiscoveryService struct {
-	getEngineByID         func(uint) (*commonModels.Engine, error)
+	getRuntimeDescriptor  func(context.Context, uint, uint) (*commonModels.EngineRuntimeDescriptor, error)
 	listWorkflowOperators func(context.Context, *commonModels.Engine) ([]commonModels.OperatorDescriptor, error)
 }
 
@@ -36,16 +36,13 @@ type WorkflowValidationResult struct {
 }
 
 // NewOperatorDiscoveryService 创建算子发现服务
-func NewOperatorDiscoveryService(systemClient *commonClient.SystemClient) *OperatorDiscoveryService {
+func NewOperatorDiscoveryService(systemClient *commonClient.SystemServiceClient) *OperatorDiscoveryService {
 	return &OperatorDiscoveryService{
-		getEngineByID:         systemClient.GetEngineByID,
+		getRuntimeDescriptor: func(ctx context.Context, tenantID, engineID uint) (*commonModels.EngineRuntimeDescriptor, error) {
+			return systemClient.WithTenantID(tenantID).GetEngineRuntimeDescriptor(ctx, engineID)
+		},
 		listWorkflowOperators: dbbridge.ListWorkflowOperators,
 	}
-}
-
-// GetOperatorsByWorkflowEngineID 根据具体工作流运行时引擎实例获取算子。
-func (s *OperatorDiscoveryService) GetOperatorsByWorkflowEngineID(ctx context.Context, workflowEngineID uint) ([]PublicOperatorDescriptor, error) {
-	return s.getOperatorsByWorkflowEngineID(ctx, workflowEngineID, nil)
 }
 
 func (s *OperatorDiscoveryService) GetOperatorsByWorkflowEngineIDForTenant(
@@ -53,29 +50,27 @@ func (s *OperatorDiscoveryService) GetOperatorsByWorkflowEngineIDForTenant(
 	workflowEngineID uint,
 	tenantID uint,
 ) ([]PublicOperatorDescriptor, error) {
-	return s.getOperatorsByWorkflowEngineID(ctx, workflowEngineID, &tenantID)
+	return s.getOperatorsByWorkflowEngineID(ctx, workflowEngineID, tenantID)
 }
 
 func (s *OperatorDiscoveryService) getOperatorsByWorkflowEngineID(
 	ctx context.Context,
 	workflowEngineID uint,
-	tenantID *uint,
+	tenantID uint,
 ) ([]PublicOperatorDescriptor, error) {
 	if workflowEngineID == 0 {
 		return nil, fmt.Errorf("workflow_engine_id 必须大于 0")
 	}
 
-	engine, err := s.getEngineByID(workflowEngineID)
+	descriptor, err := s.getRuntimeDescriptor(ctx, tenantID, workflowEngineID)
 	if err != nil {
 		return nil, fmt.Errorf("查询工作流引擎失败: %w", err)
 	}
+	engine := descriptor.AsEngine()
 	if engine == nil {
 		return nil, fmt.Errorf("工作流引擎不存在: %d", workflowEngineID)
 	}
-	if tenantID != nil && *tenantID > 0 && engine.TenantID != nil && *engine.TenantID != *tenantID {
-		return nil, fmt.Errorf("无权访问工作流引擎: %d", workflowEngineID)
-	}
-	if !engine.IsActive {
+	if !engine.IsUsable() {
 		return nil, fmt.Errorf("工作流引擎未启用: %d", workflowEngineID)
 	}
 	if !utils.SupportsComputeEntrypoint(engine, "workflow") {
@@ -94,29 +89,20 @@ func (s *OperatorDiscoveryService) getOperatorsByWorkflowEngineID(
 	return publicWorkflowOperators(engine.EngineType, workflowOperators), nil
 }
 
-// ValidateWorkflow 按目标运行时的 Public Operator Spec 校验候选工作流，不创建 execution。
-func (s *OperatorDiscoveryService) ValidateWorkflow(
-	ctx context.Context,
-	workflowEngineID uint,
-	workflowDefinition map[string]interface{},
-) (*WorkflowValidationResult, error) {
-	return s.validateWorkflow(ctx, workflowEngineID, workflowDefinition, nil)
-}
-
 func (s *OperatorDiscoveryService) ValidateWorkflowForTenant(
 	ctx context.Context,
 	workflowEngineID uint,
 	workflowDefinition map[string]interface{},
 	tenantID uint,
 ) (*WorkflowValidationResult, error) {
-	return s.validateWorkflow(ctx, workflowEngineID, workflowDefinition, &tenantID)
+	return s.validateWorkflow(ctx, workflowEngineID, workflowDefinition, tenantID)
 }
 
 func (s *OperatorDiscoveryService) validateWorkflow(
 	ctx context.Context,
 	workflowEngineID uint,
 	workflowDefinition map[string]interface{},
-	tenantID *uint,
+	tenantID uint,
 ) (*WorkflowValidationResult, error) {
 	result := &WorkflowValidationResult{
 		Valid:            false,
@@ -191,6 +177,21 @@ func (s *OperatorDiscoveryService) validateWorkflow(
 
 func validateWorkflowOperatorContracts(engineType string, operators []commonModels.OperatorDescriptor) error {
 	for _, operator := range operators {
+		if len(operator.Effects) == 0 {
+			return fmt.Errorf("workflow engine %s operator %s 的 Runtime Operator Spec 必须声明非空 effects", engineType, operator.ID)
+		}
+		seenEffects := make(map[string]struct{}, len(operator.Effects))
+		for _, effect := range operator.Effects {
+			switch effect {
+			case "read", "write", "ddl", "external_effect":
+			default:
+				return fmt.Errorf("workflow engine %s operator %s 声明了不支持的 effect %s", engineType, operator.ID, effect)
+			}
+			if _, duplicated := seenEffects[effect]; duplicated {
+				return fmt.Errorf("workflow engine %s operator %s 重复声明 effect %s", engineType, operator.ID, effect)
+			}
+			seenEffects[effect] = struct{}{}
+		}
 		parameterNames := make(map[string]struct{}, len(operator.Parameters))
 		for _, parameter := range operator.Parameters {
 			if _, duplicated := parameterNames[parameter.Name]; duplicated {

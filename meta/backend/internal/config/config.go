@@ -4,18 +4,17 @@ import (
 	"time"
 
 	commonConfig "github.com/addp/common/config"
-	"github.com/addp/common/logger"
 )
 
 type Config struct {
 	commonConfig.BaseConfig
 
 	// Meta 模块特有配置
-	ServerPort        string
-	DBSchema          string
-	InternalAPIKey    string // 服务间调用的 API Key
-	DeepScanTimeout   string
-	DeepScanBatchSize int
+	ServerPort          string
+	DBSchema            string
+	ServiceClientSecret string
+	DeepScanTimeout     string
+	DeepScanBatchSize   int
 
 	// Meilisearch 配置
 	MeilisearchURL        string
@@ -48,34 +47,18 @@ func LoadConfig() *Config {
 	systemURL := commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180")
 
 	cfg := &Config{
-		ServerPort:        commonConfig.GetEnv("META_BACKEND_PORT", "8082"),
-		DBSchema:          commonConfig.GetEnv("DB_SCHEMA", "meta"),
-		InternalAPIKey:    commonConfig.GetEnv("INTERNAL_API_KEY", ""),
-		DeepScanTimeout:   commonConfig.GetEnv("DEEP_SCAN_TIMEOUT", "30m"),
-		DeepScanBatchSize: commonConfig.GetEnvInt("DEEP_SCAN_BATCH_SIZE", 10),
+		ServerPort:          commonConfig.GetEnv("META_BACKEND_PORT", "8082"),
+		DBSchema:            commonConfig.GetEnv("DB_SCHEMA", "meta"),
+		ServiceClientSecret: commonConfig.GetEnv("META_SERVICE_CLIENT_SECRET", ""),
+		DeepScanTimeout:     commonConfig.GetEnv("DEEP_SCAN_TIMEOUT", "30m"),
+		DeepScanBatchSize:   commonConfig.GetEnvInt("DEEP_SCAN_BATCH_SIZE", 10),
 	}
 
-	// 设置 BaseConfig 字段
+	// Meta 不再调用使用 Internal API Key 的共享配置接口。部署配置来自
+	// 环境，System 业务事实只通过 Service Access Token 读取。
+	commonConfig.LoadLocalConfig(&cfg.BaseConfig)
 	cfg.SystemServiceURL = systemURL
 	cfg.EnableIntegration = commonConfig.GetEnvBool("ENABLE_SERVICE_INTEGRATION", true)
-
-	// 从 System 获取共享配置
-	if cfg.EnableIntegration {
-		logger.L().Info("尝试从 System 服务拉取共享配置")
-		if err := commonConfig.LoadSharedConfig(systemURL, &cfg.BaseConfig); err != nil {
-			logger.L().Warn("从 System 拉取共享配置失败，回退至本地环境变量", "error", err)
-			commonConfig.LoadLocalConfig(&cfg.BaseConfig)
-		} else {
-			logger.L().Info("成功加载 System 共享配置")
-		}
-	} else {
-		logger.L().Info("已禁用服务集成，使用本地配置")
-		commonConfig.LoadLocalConfig(&cfg.BaseConfig)
-	}
-
-	if cfg.InternalAPIKey == "" {
-		cfg.InternalAPIKey = cfg.BaseConfig.InternalAPIKey
-	}
 
 	cfg.MeilisearchURL = resolveMeilisearchURL()
 	cfg.MeilisearchMasterKey = commonConfig.GetEnv("MEILISEARCH_MASTER_KEY", "")

@@ -1,8 +1,11 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 
+	commonClient "github.com/addp/common/client"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/taskprovider"
 	"net/http"
 	"net/http/httptest"
@@ -24,16 +27,31 @@ type taskProviderTaskCapability struct {
 }
 
 func TestTaskProviderRegistryRegistersStandardMetaContract(t *testing.T) {
-	var captured TaskProviderRegistration
+	var captured commonModels.TaskProvider
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/system/oauth/token" {
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("parse token form: %v", err)
+			}
+			if r.Form.Get("context_type") != "platform" || r.Form.Get("tenant_id") != "" {
+				t.Fatalf("token context form = %#v", r.Form)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"access_token": "addp_at_meta_platform", "token_type": "bearer", "expires_in": 300, "scope": "addp.api",
+			})
+			return
+		}
 		if r.Method != http.MethodPost {
 			t.Fatalf("method = %s, want POST", r.Method)
 		}
-		if r.URL.Path != "/api/v1/internal/task-providers/register" {
-			t.Fatalf("path = %s, want /api/v1/internal/task-providers/register", r.URL.Path)
+		if r.URL.Path != "/api/v1/system/runtime/task-providers" {
+			t.Fatalf("path = %s, want /api/v1/system/runtime/task-providers", r.URL.Path)
 		}
-		if got := r.Header.Get("X-Internal-API-Key"); got != "internal-key" {
-			t.Fatalf("X-Internal-API-Key = %q, want internal-key", got)
+		if got := r.Header.Get("Authorization"); got != "Bearer addp_at_meta_platform" {
+			t.Fatalf("Authorization = %q, want platform service Bearer", got)
+		}
+		if r.Header.Get("X-Internal-API-Key") != "" || r.Header.Get("X-Tenant-ID") != "" {
+			t.Fatal("legacy authentication header was sent")
 		}
 		if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
 			t.Fatalf("decode payload: %v", err)
@@ -42,8 +60,17 @@ func TestTaskProviderRegistryRegistersStandardMetaContract(t *testing.T) {
 	}))
 	defer server.Close()
 
-	registry := NewTaskProviderRegistryService(server.URL, "internal-key", "http://meta.internal")
-	if err := registry.Register(); err != nil {
+	source, err := commonClient.NewOAuthServiceTokenSource(
+		server.URL, "addp-meta", "meta-task-provider-test-secret-32-bytes", server.Client(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := NewTaskProviderRegistryService(
+		commonClient.NewSystemServiceClient(server.URL, source, server.Client()),
+		"http://meta.internal",
+	)
+	if err := registry.Register(context.Background()); err != nil {
 		t.Fatalf("Register() error = %v", err)
 	}
 
@@ -72,10 +99,11 @@ func TestTaskProviderRegistryRegistersStandardMetaContract(t *testing.T) {
 	if captured.Capabilities == nil {
 		t.Fatal("capabilities is nil")
 	}
-	if _, err := taskprovider.ParseCapabilities(*captured.Capabilities); err != nil {
+	capabilitiesText := string(*captured.Capabilities)
+	if _, err := taskprovider.ParseCapabilities(capabilitiesText); err != nil {
 		t.Fatalf("capabilities contract invalid: %v; capabilities=%s", err, *captured.Capabilities)
 	}
-	if err := json.Unmarshal([]byte(*captured.Capabilities), &capabilities); err != nil {
+	if err := json.Unmarshal([]byte(capabilitiesText), &capabilities); err != nil {
 		t.Fatalf("decode capabilities: %v; capabilities=%s", err, *captured.Capabilities)
 	}
 	if capabilities.SchemaVersion != "task.capabilities/v1" {

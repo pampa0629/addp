@@ -19,16 +19,17 @@ func TestExecutionLifecycleUsesRealStartAndTerminalTimes(t *testing.T) {
 		t.Fatalf("insert orchestration: %v", err)
 	}
 	service := NewExecutionService(db, repository.NewOrchestrationRepository(db))
-	if _, err := service.CreateExecution(context.Background(), 11, 8, commonExecution.TriggerTypeManual); !errors.Is(err, gorm.ErrRecordNotFound) {
+	actor := ExecutionActor{PrincipalID: 9, TenantMembershipID: 19, AuthorizationVersion: 3}
+	if _, err := service.CreateExecutionWithContext(context.Background(), 11, 8, commonExecution.TriggerTypeManual, commonExecution.ModuleOrchestrator, nil, actor); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("cross-tenant CreateExecution error = %v, want record not found", err)
 	}
-	if _, err := service.CreateExecution(context.Background(), 11, 0, commonExecution.TriggerTypeManual); err == nil {
+	if _, err := service.CreateExecutionWithContext(context.Background(), 11, 0, commonExecution.TriggerTypeManual, commonExecution.ModuleOrchestrator, nil, actor); err == nil {
 		t.Fatal("tenant-less CreateExecution error is nil")
 	}
 	parentExecutionID := "parent-1"
 	execution, err := service.CreateExecutionWithContext(
 		context.Background(), 11, 7, commonExecution.TriggerTypeManual,
-		commonExecution.ModuleOrchestrator, &parentExecutionID, 9,
+		commonExecution.ModuleOrchestrator, &parentExecutionID, actor,
 	)
 	if err != nil {
 		t.Fatalf("CreateExecutionWithContext: %v", err)
@@ -106,7 +107,10 @@ func newOrchestratorExecutionServiceTestDB(t *testing.T) *gorm.DB {
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, execution_id TEXT NOT NULL,
 			module TEXT NOT NULL, task_type TEXT NOT NULL, source TEXT NOT NULL, source_task_id TEXT,
 			source_task_name TEXT, parent_execution_id TEXT, status TEXT NOT NULL, progress INTEGER,
-			current_step TEXT, trigger_type TEXT NOT NULL, triggered_by INTEGER, execution_config JSON,
+			current_step TEXT, trigger_type TEXT NOT NULL, triggered_by INTEGER,
+			actor_principal_id INTEGER, actor_tenant_membership_id INTEGER, issued_authorization_version INTEGER,
+			execution_authorization_id INTEGER, authorization_effects TEXT, authorization_expires_at DATETIME,
+			execution_config JSON,
 			error_details JSON, metadata JSON, execution_time_ms INTEGER, rows_affected INTEGER,
 			records_read INTEGER, records_written INTEGER, bytes_read INTEGER, bytes_written INTEGER,
 			started_at DATETIME, completed_at DATETIME, created_at DATETIME, updated_at DATETIME

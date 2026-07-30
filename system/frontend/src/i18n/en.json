@@ -280,7 +280,8 @@
       },
       "status": {
         "active": "Active",
-        "disabled": "Disabled"
+        "disabled": "Disabled",
+        "deleting": "Cleaning up"
       },
       "category": {
         "general": "General",
@@ -317,6 +318,10 @@
         "detail": "Detail",
         "edit": "Edit",
         "delete": "Delete",
+        "retryDelete": "Retry cleanup",
+        "cleanupAndDelete": "Clean up and delete",
+        "abandonExternal": "Abandon external artifacts",
+        "abandonAndDelete": "Abandon and delete",
         "testConnection": "Test Connection",
         "save": "Save",
         "cancel": "Cancel"
@@ -341,6 +346,7 @@
           "category": "Origin",
           "registration": "Registration",
           "status": "Status",
+          "deletionError": "Deletion failure",
           "createdAt": "Created At",
           "updatedAt": "Updated At",
           "description": "Description",
@@ -450,9 +456,12 @@
         "updateSuccess": "Updated successfully",
         "opFailed": "Operation failed",
         "scanPolicySyncFailed": "Engine saved, but metadata scan orchestration failed: {error}",
-        "deleteConfirm": "Are you sure you want to delete engine \"{name}\"? This action cannot be undone.",
+        "deleteConfirm": "Delete engine \"{name}\"? Registered related resources will be reclaimed before the engine is removed.",
+        "retryDeleteConfirm": "Retry cleanup and deletion for engine \"{name}\"?",
         "deleteTitle": "Confirm Delete",
-        "deleteSuccess": "Deleted successfully",
+        "deleteStarted": "Cleanup started; the engine will be removed automatically when it completes",
+        "abandonExternalTitle": "Abandon external artifacts and delete",
+        "abandonExternalConfirm": "Cleanup of external artifacts for engine \"{name}\" failed. Continuing keeps object locations and error audit records but stops further deletion attempts; a DBA must handle the external objects. Continue?",
         "builtinCannotDelete": "Built-in engines cannot be deleted",
         "detailFailed": "Failed to get engine details",
         "fillRequired": "Please fill in all required fields",
@@ -1001,6 +1010,24 @@
     }
   },
   "roles": {
+    "platform": {
+      "asset_runtime": {
+        "name": "Asset Platform Runtime",
+        "description": "Registers the Asset module and sends runtime heartbeats without user or tenant business permissions."
+      },
+      "develop_runtime": {
+        "name": "Develop Platform Runtime",
+        "description": "Registers the Develop module and task provider without data access permissions."
+      },
+      "meta_runtime": {
+        "name": "Meta Platform Runtime",
+        "description": "Registers the Meta module and task provider without user business permissions."
+      },
+      "orchestrator_runtime": {
+        "name": "Orchestrator Platform Runtime",
+        "description": "Discovers task providers and registers Orchestrator runtime capabilities."
+      }
+    },
     "tenant": {
       "administrator": {
         "name": "Tenant Access Administrator",
@@ -1012,11 +1039,15 @@
       },
       "asset_consumer": {
         "name": "Asset Consumer",
-        "description": "Browses data assets, requests access, uses service endpoints, and submits ratings."
+        "description": "Browses published assets, requests access, views service endpoints while authorization is active, and submits ratings."
       },
       "asset_manager": {
         "name": "Asset Manager",
         "description": "Manages asset catalogs, entries, access requests, and ratings."
+      },
+      "asset_runtime": {
+        "name": "Asset Discovery Runtime",
+        "description": "Lets Asset read discoverable Meta, Service, Standard, and Develop resources within a tenant."
       },
       "auditor": {
         "name": "Tenant Auditor",
@@ -1034,6 +1065,10 @@
         "name": "Data Viewer",
         "description": "Reads data content, data items, search results, and the Meta catalog."
       },
+      "develop_runtime": {
+        "name": "Develop Execution Runtime",
+        "description": "Consumes user-derived execution authorizations and reads masked runtime descriptors without independent data permissions."
+      },
       "governance_manager": {
         "name": "Governance Manager",
         "description": "Manages standards, models, quality rules, check tasks, and quality issues."
@@ -1049,6 +1084,18 @@
       "monitoring_operator": {
         "name": "Monitoring Operator",
         "description": "Manages alert rules, incidents, and notification destinations, and reads execution and health status."
+      },
+      "meta_runtime": {
+        "name": "Metadata Scan Runtime",
+        "description": "Reads tenant engine connections for metadata scans and writes tenant audit events."
+      },
+      "orchestrator_runtime": {
+        "name": "Task Orchestration Runtime",
+        "description": "Calls task providers and resolves execution authorization subjects without independent data permissions."
+      },
+      "portal_runtime": {
+        "name": "Asset Portal Aggregation Runtime",
+        "description": "Reads tenant service endpoint projections only after user asset authorization is confirmed, without independent asset access."
       },
       "service_publisher": {
         "name": "Service Publisher",

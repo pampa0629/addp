@@ -22,25 +22,31 @@ import (
 	"github.com/addp/manager/internal/models"
 )
 
+func newServiceTestMetaClient(baseURL string) *client.MetaClient {
+	return client.NewMetaClient(baseURL, client.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+		return "test-token", nil
+	}))
+}
+
 func TestMetadataServiceRefreshItemUsesMetaClient(t *testing.T) {
 	t.Parallel()
 
 	var gotPath string
-	var gotHeader string
-	var gotTenant string
+	var gotAuthorization string
+	var gotLegacyHeaders bool
 	var gotPayload map[string]interface{}
 	var decodeErr error
 	metaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
-		gotHeader = r.Header.Get("X-Internal-API-Key")
-		gotTenant = r.Header.Get("X-Tenant-ID")
+		gotAuthorization = r.Header.Get("Authorization")
+		gotLegacyHeaders = r.Header.Get("X-Internal-API-Key") != "" || r.Header.Get("X-Tenant-ID") != ""
 		decodeErr = json.NewDecoder(r.Body).Decode(&gotPayload)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"success","message":"ok","catalog_nodes_scanned":2,"items_scanned":1,"fields_scanned":7,"duration_ms":33,"started_at":"2026-05-20T00:00:00Z","extraction":{"documents":1,"extracted":1,"unsupported":0,"failed":0,"indexed":1,"index_failed":0}}`))
 	}))
 	defer metaServer.Close()
 
-	metaClient := client.NewMetaClientWithInternalKey(metaServer.URL, "internal-key")
+	metaClient := newServiceTestMetaClient(metaServer.URL)
 	service := &MetadataService{metaClient: metaClient}
 	tenantID := uint(11)
 	resp, err := service.RefreshItem(t.Context(), &tenantID, 26, &models.MetaManualScanRequest{ItemID: 1831})
@@ -53,8 +59,8 @@ func TestMetadataServiceRefreshItemUsesMetaClient(t *testing.T) {
 	if gotPath != "/api/v1/meta/items/1831/refresh" {
 		t.Fatalf("path = %q, want /api/v1/meta/items/1831/refresh", gotPath)
 	}
-	if gotHeader != "internal-key" || gotTenant != "11" {
-		t.Fatalf("auth headers = key:%q tenant:%q", gotHeader, gotTenant)
+	if gotAuthorization != "Bearer test-token" || gotLegacyHeaders {
+		t.Fatalf("auth headers = authorization:%q legacy:%t", gotAuthorization, gotLegacyHeaders)
 	}
 	if gotPayload["engine_id"] != float64(26) {
 		t.Fatalf("payload = %#v", gotPayload)
@@ -292,7 +298,8 @@ func TestOpenStorageDownloadPlanBundlesNFSShapefileRefs(t *testing.T) {
 		}`),
 	}
 
-	plan, err := svc.ResolveStorageDownloadPlan(t.Context(), 26, "shp/farmland.shp", nil)
+	tenantID := uint(11)
+	plan, err := svc.ResolveStorageDownloadPlan(t.Context(), 26, "shp/farmland.shp", &tenantID)
 	if err != nil {
 		t.Fatalf("ResolveStorageDownloadPlan() error = %v", err)
 	}
@@ -300,7 +307,7 @@ func TestOpenStorageDownloadPlanBundlesNFSShapefileRefs(t *testing.T) {
 		t.Fatalf("plan = %#v, want NFS shapefile zip bundle", plan)
 	}
 
-	reader, err := svc.OpenStorageDownloadPlan(t.Context(), 26, plan, nil)
+	reader, err := svc.OpenStorageDownloadPlan(t.Context(), 26, plan, &tenantID)
 	if err != nil {
 		t.Fatalf("OpenStorageDownloadPlan() error = %v", err)
 	}
@@ -363,7 +370,8 @@ func TestOpenStorageDownloadPlanBundlesObjectShapefileRefs(t *testing.T) {
 		}`),
 	}
 
-	plan, err := svc.ResolveStorageDownloadPlan(t.Context(), 9, "gischain/data/farmland.shp", nil)
+	tenantID := uint(11)
+	plan, err := svc.ResolveStorageDownloadPlan(t.Context(), 9, "gischain/data/farmland.shp", &tenantID)
 	if err != nil {
 		t.Fatalf("ResolveStorageDownloadPlan() error = %v", err)
 	}
@@ -374,7 +382,7 @@ func TestOpenStorageDownloadPlanBundlesObjectShapefileRefs(t *testing.T) {
 		t.Fatalf("normalized refs = %#v, want bucket-prefixed object refs", plan.Refs)
 	}
 
-	reader, err := svc.OpenStorageDownloadPlan(t.Context(), 9, plan, nil)
+	reader, err := svc.OpenStorageDownloadPlan(t.Context(), 9, plan, &tenantID)
 	if err != nil {
 		t.Fatalf("OpenStorageDownloadPlan() error = %v", err)
 	}
@@ -434,11 +442,12 @@ func TestOpenStorageDownloadPlanFailsBeforeWritingWhenRequiredRefMissing(t *test
 		}`),
 	}
 
-	plan, err := svc.ResolveStorageDownloadPlan(t.Context(), 26, "shp/farmland.shp", nil)
+	tenantID := uint(11)
+	plan, err := svc.ResolveStorageDownloadPlan(t.Context(), 26, "shp/farmland.shp", &tenantID)
 	if err != nil {
 		t.Fatalf("ResolveStorageDownloadPlan() error = %v", err)
 	}
-	if _, err := svc.OpenStorageDownloadPlan(t.Context(), 26, plan, nil); err == nil {
+	if _, err := svc.OpenStorageDownloadPlan(t.Context(), 26, plan, &tenantID); err == nil {
 		t.Fatal("OpenStorageDownloadPlan() succeeded with missing required ref")
 	}
 }
@@ -457,7 +466,8 @@ func TestResolveStorageDownloadPlanRejectsMultiItemWithoutRefs(t *testing.T) {
 			"attributes": {"item": {"layout": "multi", "format": "shapefile"}}
 		}`),
 	}
-	_, err := svc.ResolveStorageDownloadPlan(t.Context(), 9, "bucket/roads/roads.shp", nil)
+	tenantID := uint(11)
+	_, err := svc.ResolveStorageDownloadPlan(t.Context(), 9, "bucket/roads/roads.shp", &tenantID)
 	if !errors.Is(err, ErrDownloadNotSupported) {
 		t.Fatalf("ResolveStorageDownloadPlan() error = %v, want ErrDownloadNotSupported", err)
 	}
@@ -486,7 +496,8 @@ func TestResolveStorageDownloadPlanRejectsMultiRefsWithoutPrimary(t *testing.T) 
 			}
 		}`),
 	}
-	_, err := svc.ResolveStorageDownloadPlan(t.Context(), 9, "bucket/roads/roads.shp", nil)
+	tenantID := uint(11)
+	_, err := svc.ResolveStorageDownloadPlan(t.Context(), 9, "bucket/roads/roads.shp", &tenantID)
 	if !errors.Is(err, ErrDownloadNotSupported) {
 		t.Fatalf("ResolveStorageDownloadPlan() error = %v, want ErrDownloadNotSupported", err)
 	}
@@ -505,7 +516,7 @@ func testSystemClient(t *testing.T, engineID uint, engineType string, connInfo m
 			"engine_type":     engineType,
 			"connection_info": connInfo,
 			"tenant_id":       11,
-			"is_active":       true,
+			"lifecycle_state": "active",
 		}
 		_ = json.NewEncoder(w).Encode(payload)
 	}))
@@ -524,7 +535,7 @@ func testMetaItemClient(t *testing.T, itemJSON string) *client.MetaClient {
 		_, _ = w.Write([]byte(itemJSON))
 	}))
 	t.Cleanup(server.Close)
-	return client.NewMetaClientWithInternalKey(server.URL, "internal-key")
+	return newServiceTestMetaClient(server.URL)
 }
 
 type downloadTestFilePlugin struct {
@@ -619,21 +630,21 @@ func setupExplorerService(t *testing.T) (*ExplorerService, func()) {
 			switch tenantID {
 			case "":
 				fmt.Fprintf(w, `{"data":[
-					{"id":1,"name":"tenant-one-db","engine_type":"postgresql","connection_info":{},"tenant_id":1,"is_active":true,"capabilities":%q},
-					{"id":2,"name":"tenant-two-db","engine_type":"postgresql","connection_info":{},"tenant_id":2,"is_active":true,"capabilities":%q},
-					{"id":3,"name":"global-db","engine_type":"postgresql","connection_info":{},"is_active":true,"capabilities":%q}
+					{"id":1,"name":"tenant-one-db","engine_type":"postgresql","connection_info":{},"tenant_id":1,"lifecycle_state":"active","capabilities":%q},
+					{"id":2,"name":"tenant-two-db","engine_type":"postgresql","connection_info":{},"tenant_id":2,"lifecycle_state":"active","capabilities":%q},
+					{"id":3,"name":"global-db","engine_type":"postgresql","connection_info":{},"lifecycle_state":"active","capabilities":%q}
 				],"total":3,"page":1,"page_size":10,"total_pages":1}`, capabilities, capabilities, capabilities)
 			case "1":
-				fmt.Fprintf(w, `{"data":[{"id":1,"name":"tenant-one-db","engine_type":"postgresql","connection_info":{},"tenant_id":1,"is_active":true,"capabilities":%q}],"total":1,"page":1,"page_size":10,"total_pages":1}`, capabilities)
+				fmt.Fprintf(w, `{"data":[{"id":1,"name":"tenant-one-db","engine_type":"postgresql","connection_info":{},"tenant_id":1,"lifecycle_state":"active","capabilities":%q}],"total":1,"page":1,"page_size":10,"total_pages":1}`, capabilities)
 			case "2":
-				fmt.Fprintf(w, `{"data":[{"id":2,"name":"tenant-two-db","engine_type":"postgresql","connection_info":{},"tenant_id":2,"is_active":true,"capabilities":%q}],"total":1,"page":1,"page_size":10,"total_pages":1}`, capabilities)
+				fmt.Fprintf(w, `{"data":[{"id":2,"name":"tenant-two-db","engine_type":"postgresql","connection_info":{},"tenant_id":2,"lifecycle_state":"active","capabilities":%q}],"total":1,"page":1,"page_size":10,"total_pages":1}`, capabilities)
 			default:
 				fmt.Fprint(w, `{"data":[],"total":0,"page":1,"page_size":10,"total_pages":0}`)
 			}
 		case "/api/v1/system/engines/1":
-			fmt.Fprintf(w, `{"id":1,"name":"tenant-one-db","engine_type":"postgresql","connection_info":{},"tenant_id":1,"is_active":true,"capabilities":%q}`, capabilities)
+			fmt.Fprintf(w, `{"id":1,"name":"tenant-one-db","engine_type":"postgresql","connection_info":{},"tenant_id":1,"lifecycle_state":"active","capabilities":%q}`, capabilities)
 		case "/api/v1/system/engines/2":
-			fmt.Fprintf(w, `{"id":2,"name":"tenant-two-db","engine_type":"postgresql","connection_info":{},"tenant_id":2,"is_active":true,"capabilities":%q}`, capabilities)
+			fmt.Fprintf(w, `{"id":2,"name":"tenant-two-db","engine_type":"postgresql","connection_info":{},"tenant_id":2,"lifecycle_state":"active","capabilities":%q}`, capabilities)
 		default:
 			http.NotFound(w, r)
 		}

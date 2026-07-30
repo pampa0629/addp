@@ -1,6 +1,6 @@
 # Develop 开发工作台
 
-> ADDP 平台的在线开发环境，提供 SQL 查询、GIS 工作流、Jupyter Notebook 和算子管理
+> ADDP 平台的开发工作台，提供 SQL 查询、算子工作流和 Notebook 任务管理
 
 ## 📖 文档说明
 
@@ -11,7 +11,7 @@
 
 - **SQL 工作台**: Monaco Editor + 多数据库支持（PostgreSQL、MySQL 等）
 - **GIS 工作流**: 可视化编辑和执行空间计算工作流（21个 GeoPython Workflow 算子）
-- **Jupyter Notebook**: 在线 Python 数据分析和机器学习环境
+- **Notebook 任务**: 上传、执行、下载 Notebook，并查看统一执行历史
 - **算子管理**: 聚合工作流运行时动态算子，供工作流编辑器使用
 - **执行历史**: 保存所有执行记录，支持历史回溯
 
@@ -33,26 +33,28 @@ bash scripts/dev/start.sh -develop
 ### 方式 2: Docker 部署
 
 ```bash
-cd develop
-docker-compose up -d
+docker compose up -d develop-backend develop-frontend jupyter-engine
 ```
 
 ## 📡 主要 API 端点
 
 ```
-SQL执行:     POST /api/v1/sql/execute
-工作流管理: GET/POST /api/v1/workflows
-工作流执行: POST /api/v1/workflows/:id/execute
+SQL执行:     POST /api/v1/develop/execute
+任务定义:    GET/POST /api/v1/develop/task-definitions
+任务执行:    POST /api/v1/develop/task-definitions/:id/execute
 算子发现:   GET /api/v1/develop/workflow-engines/{workflow_engine_id}/operators
-执行历史:   GET /api/v1/executions
-Notebook:   POST/GET /api/v1/notebooks
+执行历史:   GET /api/v1/develop/executions
+Notebook引擎: GET /api/v1/develop/notebook-engines
+Kernel发现: GET /api/v1/develop/notebook-engines/{engine_id}/kernels
+Notebook:   GET /api/v1/develop/notebooks
+Notebook上传: POST /api/v1/develop/notebooks/upload
 ```
 
 完整 API 文档请查看 [CLAUDE.md#常见开发场景](./CLAUDE.md#常见开发场景)
 
 ## 🔐 认证方式
 
-- JWT 认证（与 System 模块集成）
+- 用户 API 使用 System 签发的短期 User Access Token，并通过 canonical AuthContext 解析
 - 所有 API 请求须携带 `Authorization: Bearer <token>` 头
 - 数据按租户自动隔离
 

@@ -37,6 +37,16 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - ASSET_SERVICE_CLIENT_SECRET=${ASSET_SERVICE_CLIENT_SECRET}
+      - DEVELOP_SERVICE_CLIENT_SECRET=${DEVELOP_SERVICE_CLIENT_SECRET}
+      - MANAGER_SERVICE_CLIENT_SECRET=${MANAGER_SERVICE_CLIENT_SECRET}
+      - META_SERVICE_CLIENT_SECRET=${META_SERVICE_CLIENT_SECRET}
+      - MONITOR_SERVICE_CLIENT_SECRET=${MONITOR_SERVICE_CLIENT_SECRET}
+      - ORCHESTRATOR_SERVICE_CLIENT_SECRET=${ORCHESTRATOR_SERVICE_CLIENT_SECRET}
+      - PORTAL_SERVICE_CLIENT_SECRET=${PORTAL_SERVICE_CLIENT_SECRET}
+      - QUALITY_SERVICE_CLIENT_SECRET=${QUALITY_SERVICE_CLIENT_SECRET}
+      - SERVICE_SERVICE_CLIENT_SECRET=${SERVICE_SERVICE_CLIENT_SECRET}
+      - TRANSFER_SERVICE_CLIENT_SECRET=${TRANSFER_SERVICE_CLIENT_SECRET}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -94,8 +104,8 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-addp}
       - SYSTEM_URL=http://system-backend:8180
       - META_URL=http://meta-backend:8082
+      - MANAGER_SERVICE_CLIENT_SECRET=${MANAGER_SERVICE_CLIENT_SECRET}
       - TRANSFER_URL=http://transfer-backend:8083
-      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ENABLE_SERVICE_INTEGRATION=true
       - ENABLE_META_INTEGRATION=true
       - REDIS_HOST=redis
@@ -159,7 +169,7 @@ services:
       - MEILISEARCH_MASTER_KEY=${MEILISEARCH_MASTER_KEY:-}
       - MEILISEARCH_ASSET_INDEX=${MEILISEARCH_ASSET_INDEX:-assets}
       - SYSTEM_URL=http://system-backend:8180
-      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - META_SERVICE_CLIENT_SECRET=${META_SERVICE_CLIENT_SECRET}
       - ENABLE_SERVICE_INTEGRATION=true
       - GIN_MODE=release
     ports:
@@ -202,7 +212,8 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - SYSTEM_URL=http://system-backend:8180
-      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - META_URL=http://meta-backend:8082
+      - META_SERVICE_CLIENT_SECRET=${META_SERVICE_CLIENT_SECRET}
       - ENABLE_SERVICE_INTEGRATION=true
       - CONCURRENT_TASKS=10
     networks:
@@ -254,7 +265,8 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - SYSTEM_URL=http://system-backend:8180
-      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - META_URL=http://meta-backend:8082
+      - TRANSFER_SERVICE_CLIENT_SECRET=${TRANSFER_SERVICE_CLIENT_SECRET}
       - ENABLE_SERVICE_INTEGRATION=true
       - GIN_MODE=release
     ports:
@@ -297,6 +309,8 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - SYSTEM_URL=http://system-backend:8180
+      - META_URL=http://meta-backend:8082
+      - TRANSFER_SERVICE_CLIENT_SECRET=${TRANSFER_SERVICE_CLIENT_SECRET}
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ENABLE_SERVICE_INTEGRATION=true
       - CONCURRENT_TASKS=15
@@ -349,7 +363,7 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
       - SYSTEM_URL=http://system-backend:8180
-      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - ORCHESTRATOR_SERVICE_CLIENT_SECRET=${ORCHESTRATOR_SERVICE_CLIENT_SECRET}
       - ENABLE_SERVICE_INTEGRATION=true
       - GIN_MODE=release
     ports:
@@ -389,10 +403,10 @@ services:
       - ENV=production
       - SYSTEM_URL=http://system-backend:8180
       - META_URL=http://meta-backend:8082
+      - DEVELOP_SERVICE_CLIENT_SECRET=${DEVELOP_SERVICE_CLIENT_SECRET}
       - TRANSFER_URL=http://transfer-backend:8083
       - MANAGER_URL=http://manager-backend:8081
       - PYTHON_WORKFLOW_URL=http://python-workflow-engine:8099
-      - JUPYTER_URL=http://jupyter-engine:8097
       - ENABLE_SERVICE_INTEGRATION=true
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -442,6 +456,7 @@ services:
       - SYSTEM_URL=http://system-backend:8180
       - MANAGER_URL=http://manager-backend:8081
       - META_URL=http://meta-backend:8082
+      - SERVICE_SERVICE_CLIENT_SECRET=${SERVICE_SERVICE_CLIENT_SECRET}
       - ENABLE_SERVICE_INTEGRATION=true
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -518,6 +533,7 @@ services:
       - MONITOR_EMAIL_FROM_ADDRESS=${MONITOR_EMAIL_FROM_ADDRESS:-}
       - MONITOR_EMAIL_FROM_NAME=${MONITOR_EMAIL_FROM_NAME:-ADDP Monitor}
       - SYSTEM_URL=http://system-backend:8180
+      - MONITOR_SERVICE_CLIENT_SECRET=${MONITOR_SERVICE_CLIENT_SECRET}
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -710,6 +726,7 @@ services:
       - SYSTEM_URL=http://system-backend:8180
       - STANDARD_URL=http://standard-backend:8110
       - META_URL=http://meta-backend:8082
+      - QUALITY_SERVICE_CLIENT_SECRET=${QUALITY_SERVICE_CLIENT_SECRET}
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -768,7 +785,7 @@ services:
       - DEVELOP_URL=http://develop-backend:8185
       - MEILISEARCH_URL=http://meilisearch:7700
       - MEILISEARCH_MASTER_KEY=${MEILISEARCH_MASTER_KEY:-}
-      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - ASSET_SERVICE_CLIENT_SECRET=${ASSET_SERVICE_CLIENT_SECRET}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -817,7 +834,8 @@ services:
       - PORTAL_BACKEND_PORT=8184
       - SYSTEM_URL=http://system-backend:8180
       - ASSET_URL=http://asset-backend:8183
-      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - SERVICE_URL=http://service-backend:8086
+      - PORTAL_SERVICE_CLIENT_SECRET=${PORTAL_SERVICE_CLIENT_SECRET}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
@@ -831,6 +849,8 @@ services:
       system-backend:
         condition: service_started
       asset-backend:
+        condition: service_started
+      service-backend:
         condition: service_started
     restart: unless-stopped
     healthcheck:
@@ -971,26 +991,20 @@ services:
 
   jupyter-engine:
     build:
-      context: ./engines/jupyter
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: engines/jupyter/Dockerfile
     image: ${REGISTRY:-localhost:5001}/addp-jupyter-engine:${IMAGE_TAG:-latest}
     container_name: jupyter-engine
     environment:
-      - JUPYTER_PORT=8088
       - API_PORT=8097
-      - JUPYTER_ENABLE_LAB=yes
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
       - SYSTEM_URL=http://system-backend:8180
-      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-info}
-    ports:
-      - "8088:8088"  # Jupyter Lab UI
-      - "8097:8097"  # Flask API for notebook execution
+    expose:
+      - "8097"
     volumes:
-      # 挂载到 MinIO 的 notebooks 目录（通过共享卷）
-      - jupyter-notebooks:/workspace/notebooks
       - ./logs:/app/logs
     networks:
       - addp-network
@@ -1263,10 +1277,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-
-volumes:
-  jupyter-notebooks:
-    driver: local
 
 networks:
   addp-network:

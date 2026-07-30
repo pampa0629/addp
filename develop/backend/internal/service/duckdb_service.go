@@ -18,7 +18,7 @@ import (
 // 支持对象存储表（Parquet/ORC/Avro on MinIO/S3）和关系型表（PG/MySQL）跨源 JOIN
 type DuckDBService struct {
 	cfg          *config.Config
-	systemClient *commonClient.SystemClient
+	systemClient *commonClient.SystemServiceClient
 	metaClient   *commonClient.MetaClient
 	logger       *slog.Logger
 }
@@ -55,7 +55,7 @@ type TableRef struct {
 // NewDuckDBService 创建 DuckDB 联邦查询服务
 func NewDuckDBService(
 	cfg *config.Config,
-	systemClient *commonClient.SystemClient,
+	systemClient *commonClient.SystemServiceClient,
 	metaClient *commonClient.MetaClient,
 ) *DuckDBService {
 	return &DuckDBService{
@@ -89,37 +89,7 @@ func (s *DuckDBService) Ping(ctx context.Context) (int64, error) {
 
 // ExecuteQuery 执行联邦查询
 func (s *DuckDBService) ExecuteQuery(ctx context.Context, tenantID uint, sqlStr string, timeout int) (*FederatedQueryResult, error) {
-	if timeout <= 0 {
-		timeout = 30
-	}
-
-	start := time.Now()
-
-	session, err := duckdb.PrepareFederatedQuery(ctx, tenantID, sqlStr, s.systemClient, s.metaClient)
-	if err != nil {
-		return nil, err
-	}
-	defer session.Close()
-
-	s.logger.Info("executing federated query",
-		"original_sql", sqlStr,
-		"rewritten_sql", session.RewrittenSQL,
-		"tenant_id", tenantID)
-
-	execCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-	defer cancel()
-
-	result, err := duckdb.ExecuteQuery(execCtx, session.Conn, session.RewrittenSQL)
-	if err != nil {
-		return nil, err
-	}
-
-	return &FederatedQueryResult{
-		Columns:         result.Columns,
-		Rows:            result.Rows,
-		RowCount:        result.RowCount,
-		ExecutionTimeMs: time.Since(start).Milliseconds(),
-	}, nil
+	return nil, fmt.Errorf("DuckDB 联邦查询尚未迁移到受控 Execution Authorization，当前拒绝执行")
 }
 
 // GenerateSampleQuery 生成可直接执行的样例查询
@@ -158,13 +128,14 @@ func (s *DuckDBService) GenerateSampleQuery(ctx context.Context, tenantID uint) 
 
 // GetSources 获取当前租户下所有可查询的数据源
 func (s *DuckDBService) GetSources(ctx context.Context, tenantID uint) ([]DataSource, error) {
-	engines, err := s.systemClient.ListEngines("", tenantID)
+	descriptors, err := s.systemClient.WithTenantID(tenantID).ListEngineRuntimeDescriptors(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("获取引擎列表失败: %w", err)
 	}
 
 	var sources []DataSource
-	for _, engine := range engines {
+	for _, descriptor := range descriptors {
+		engine := *descriptor.AsEngine()
 		source := DataSource{
 			EngineName: engine.Name,
 			EngineID:   engine.ID,

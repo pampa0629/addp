@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/manager/internal/models"
 )
@@ -110,13 +111,15 @@ func (p *dynamicSchemaCollectionPreviewProvider) Preview(ctx context.Context, re
 		}
 	}
 
-	columnMetadata := buildDynamicSchemaColumnMetadata(columns, rows)
+	fields := buildDynamicSchemaFields(columns, rows)
+	columnMetadata := buildDynamicSchemaColumnMetadata(fields)
 
 	// 7. 构建预览结果
 	preview := &models.TablePreview{
 		Mode:           PreviewModeTable,
 		PreviewKind:    "dynamic_schema_record_set",
 		Columns:        columns,
+		Fields:         fields,
 		ColumnMetadata: columnMetadata,
 		Rows:           rows,
 		Total:          int(total),
@@ -153,20 +156,35 @@ func buildDynamicSchemaFindCommand(collection string, skip, limit int) (string, 
 	return string(bytes), nil
 }
 
-func buildDynamicSchemaColumnMetadata(columns []string, rows []map[string]interface{}) []models.ColumnMetadata {
-	metadata := make([]models.ColumnMetadata, 0, len(columns))
-	for _, column := range columns {
+func buildDynamicSchemaColumnMetadata(fields []datatype.FieldInfo) []models.ColumnMetadata {
+	metadata := make([]models.ColumnMetadata, 0, len(fields))
+	for _, field := range fields {
 		metadata = append(metadata, models.ColumnMetadata{
-			ColumnName:   column,
-			Type:         inferDynamicSchemaColumnType(column, rows),
-			IsNullable:   true,
-			IsPrimaryKey: column == "_id",
+			ColumnName:   field.Name,
+			Type:         field.NativeType,
+			IsNullable:   field.Nullable,
+			IsPrimaryKey: field.PrimaryKey,
 		})
 	}
 	return metadata
 }
 
-func inferDynamicSchemaColumnType(column string, rows []map[string]interface{}) string {
+func buildDynamicSchemaFields(columns []string, rows []map[string]interface{}) []datatype.FieldInfo {
+	fields := make([]datatype.FieldInfo, 0, len(columns))
+	for _, column := range columns {
+		fieldType, nativeType := inferDynamicSchemaFieldType(column, rows)
+		fields = append(fields, datatype.FieldInfo{
+			Name:       column,
+			Type:       fieldType,
+			NativeType: nativeType,
+			Nullable:   true,
+			PrimaryKey: column == "_id",
+		})
+	}
+	return fields
+}
+
+func inferDynamicSchemaFieldType(column string, rows []map[string]interface{}) (datatype.FieldType, string) {
 	for _, row := range rows {
 		value, ok := row[column]
 		if !ok || value == nil {
@@ -174,22 +192,22 @@ func inferDynamicSchemaColumnType(column string, rows []map[string]interface{}) 
 		}
 		switch value.(type) {
 		case string:
-			return "string"
+			return datatype.FieldTypeString, "string"
 		case bool:
-			return "bool"
+			return datatype.FieldTypeBool, "bool"
 		case int, int8, int16, int32, int64:
-			return "integer"
+			return datatype.FieldTypeBigInt, "integer"
 		case uint, uint8, uint16, uint32, uint64:
-			return "integer"
+			return datatype.FieldTypeBigInt, "integer"
 		case float32, float64:
-			return "number"
+			return datatype.FieldTypeDouble, "number"
 		case []interface{}:
-			return "array"
+			return datatype.FieldTypeArray, "array"
 		case map[string]interface{}:
-			return "object"
+			return datatype.FieldTypeJSON, "object"
 		default:
-			return fmt.Sprintf("%T", value)
+			return datatype.FieldTypeUnknown, fmt.Sprintf("%T", value)
 		}
 	}
-	return "mixed"
+	return datatype.FieldTypeMixed, "mixed"
 }

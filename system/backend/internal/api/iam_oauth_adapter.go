@@ -49,6 +49,14 @@ type IAMOAuthDeviceDecisionRequest struct {
 	Approve  bool   `json:"approve"`
 }
 
+type IAMOAuthTokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int64  `json:"expires_in"`
+	Scope        string `json:"scope,omitempty"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+}
+
 func NewIAMOAuthHandler(provider *iamoauth.Provider, bridge *iamoauth.ConsentBridge) (*IAMOAuthHandler, error) {
 	if provider == nil || provider.OAuth2 == nil || bridge == nil {
 		return nil, errors.New("IAM OAuth Handler 依赖不能为空")
@@ -281,7 +289,19 @@ func (h *IAMOAuthHandler) DecideDeviceAuthorization(c *gin.Context) {
 // @Tags         OAuth
 // @Accept       application/x-www-form-urlencoded
 // @Produce      json
-// @Success      200 {object} object
+// @Param        Authorization header string false "Confidential Client 使用 HTTP Basic，用户名为 client_id、密码为 Client Secret | Confidential clients use HTTP Basic with client_id as username and Client Secret as password"
+// @Param        grant_type formData string true "授权类型 | Grant type" Enums(authorization_code,refresh_token,client_credentials,urn:ietf:params:oauth:grant-type:device_code)
+// @Param        client_id formData string false "Public Client ID；Confidential Client 必须改用 HTTP Basic | Public client ID; confidential clients must use HTTP Basic"
+// @Param        code formData string false "Authorization Code Grant 的授权码 | Authorization code for Authorization Code Grant"
+// @Param        redirect_uri formData string false "Authorization Code Grant 的回调 URI | Redirect URI for Authorization Code Grant"
+// @Param        code_verifier formData string false "Authorization Code Grant 的 PKCE verifier | PKCE verifier for Authorization Code Grant"
+// @Param        refresh_token formData string false "Refresh Token Grant 的 Refresh Token | Refresh token for Refresh Token Grant"
+// @Param        device_code formData string false "Device Code Grant 的 Device Code | Device code for Device Code Grant"
+// @Param        scope formData string false "Client Credentials 固定为 addp.api | Fixed to addp.api for Client Credentials"
+// @Param        audience formData string false "Client Credentials 固定为 addp.api | Fixed to addp.api for Client Credentials"
+// @Param        tenant_id formData integer false "Tenant Runtime Client Credentials 必填，用于选择有效 Tenant Membership；与 context_type 互斥 | Required for Tenant Runtime Client Credentials to select an effective Tenant Membership; mutually exclusive with context_type"
+// @Param        context_type formData string false "平台控制面 Client Credentials 固定为 platform；与 tenant_id 互斥 | Fixed to platform for control-plane Client Credentials; mutually exclusive with tenant_id" Enums(platform)
+// @Success      200 {object} IAMOAuthTokenResponse
 // @x-addp-auth-mode "public"
 // @Router       /oauth/token [post]
 func (h *IAMOAuthHandler) Token(c *gin.Context) {
@@ -311,8 +331,36 @@ func (h *IAMOAuthHandler) Token(c *gin.Context) {
 		h.provider.OAuth2.WriteAccessError(auditContext, c.Writer, requester, err)
 		return
 	}
-	response, err := h.provider.OAuth2.NewAccessResponse(auditContext, requester)
+	if requester.GetClient() != nil {
+		clientID = requester.GetClient().GetID()
+		iamoauth.SetTransactionAuditClientID(auditContext, clientID)
+	}
+	responseContext := auditContext
+	serviceCredentialTransaction := grantType == string(fosite.GrantTypeClientCredentials)
+	if serviceCredentialTransaction {
+		responseContext, err = h.provider.Storage.BeginTX(auditContext)
+		if err != nil {
+			setIAMOAuthFailure(c, "oauth.token.failed", clientID, grantType, "", scope, err)
+			h.provider.OAuth2.WriteAccessError(auditContext, c.Writer, requester, err)
+			return
+		}
+		if err := h.provider.Storage.PopulateServiceCredentialSession(
+			responseContext,
+			requester,
+			c.Request.FormValue("context_type"),
+			c.Request.FormValue("tenant_id"),
+		); err != nil {
+			_ = h.provider.Storage.Rollback(responseContext)
+			setIAMOAuthFailure(c, "oauth.token.failed", clientID, grantType, "", scope, err)
+			h.provider.OAuth2.WriteAccessError(auditContext, c.Writer, requester, err)
+			return
+		}
+	}
+	response, err := h.provider.OAuth2.NewAccessResponse(responseContext, requester)
 	if err != nil {
+		if serviceCredentialTransaction {
+			_ = h.provider.Storage.Rollback(responseContext)
+		}
 		markCommittedTransactionAudit(c, auditContext)
 		if !middleware.OAuthSecurityAuditWasPersisted(c) {
 			setIAMOAuthFailure(c, "oauth.token.failed", clientID, grantType, "", scope, err)
@@ -320,8 +368,16 @@ func (h *IAMOAuthHandler) Token(c *gin.Context) {
 		h.provider.OAuth2.WriteAccessError(auditContext, c.Writer, requester, err)
 		return
 	}
+	if serviceCredentialTransaction {
+		if err := h.provider.Storage.Commit(responseContext); err != nil {
+			_ = h.provider.Storage.Rollback(responseContext)
+			setIAMOAuthFailure(c, "oauth.token.failed", clientID, grantType, "", scope, err)
+			h.provider.OAuth2.WriteAccessError(auditContext, c.Writer, requester, err)
+			return
+		}
+	}
 	markCommittedTransactionAudit(c, auditContext)
-	h.provider.OAuth2.WriteAccessResponse(auditContext, c.Writer, requester, response)
+	h.provider.OAuth2.WriteAccessResponse(responseContext, c.Writer, requester, response)
 }
 
 // Revoke godoc

@@ -27,6 +27,12 @@ func TestSetupRouterUsesOnlyTargetIAMSurface(t *testing.T) {
 		"GET /api/v1/system/tenant/invitations",
 		"POST /api/v1/system/tenant/invitations/registrations",
 		"GET /api/v1/system/engines",
+		"POST /api/v1/system/runtime/modules",
+		"POST /api/v1/system/runtime/modules/heartbeat",
+		"POST /api/v1/system/runtime/task-providers",
+		"GET /api/v1/system/runtime/engine-descriptors",
+		"GET /api/v1/system/runtime/engine-descriptors/:id",
+		"POST /api/v1/system/tenant/audit/events",
 		"PUT /api/v1/internal/engines/:id",
 		"POST /api/v1/internal/audit-logs",
 	} {

@@ -212,7 +212,7 @@ func (e *ManagerModel3DTilesExecutor) getModel3DTilesEngine(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	if engine == nil || !engine.IsActive {
+	if !engine.IsUsable() {
 		return nil, errors.New("engine is not active")
 	}
 	if engine.TenantID != nil && *engine.TenantID != tenantID {

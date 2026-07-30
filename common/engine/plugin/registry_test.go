@@ -15,12 +15,13 @@ type MockPlugin struct {
 	SensitiveFieldsValue []string
 }
 
-func (m *MockPlugin) Type() string              { return m.TypeValue }
-func (m *MockPlugin) DisplayName() string       { return m.DisplayNameValue }
-func (m *MockPlugin) EngineOrigin() string      { return m.EngineOriginValue }
-func (m *MockPlugin) DefaultPort() int          { return m.DefaultPortValue }
-func (m *MockPlugin) RequiredFields() []string  { return m.RequiredFieldsValue }
-func (m *MockPlugin) SensitiveFields() []string { return m.SensitiveFieldsValue }
+func (m *MockPlugin) Type() string                       { return m.TypeValue }
+func (m *MockPlugin) DisplayName() string                { return m.DisplayNameValue }
+func (m *MockPlugin) EngineOrigin() string               { return m.EngineOriginValue }
+func (m *MockPlugin) DefaultPort() int                   { return m.DefaultPortValue }
+func (m *MockPlugin) RequiredFields() []string           { return m.RequiredFieldsValue }
+func (m *MockPlugin) SensitiveFields() []string          { return m.SensitiveFieldsValue }
+func (m *MockPlugin) ConnectionIdentityFields() []string { return []string{"host"} }
 func (m *MockPlugin) Capabilities() EngineCapabilities {
 	return EngineCapabilities{
 		SchemaVersion: CapabilitiesSchemaVersion,

@@ -139,7 +139,6 @@ func main() {
 		documentSvc,
 		dimHierarchySvc,
 		cfg.SystemURL,
-		cfg.InternalAPIKey,
 	)
 
 	addr := ":" + cfg.Port

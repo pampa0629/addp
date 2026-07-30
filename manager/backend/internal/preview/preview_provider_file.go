@@ -304,6 +304,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	preview := &models.TablePreview{
 		Mode:                PreviewModeTable,
 		Columns:             columns,
+		Fields:              append([]datatype.FieldInfo(nil), tableInfo.Fields...),
 		Rows:                rows,
 		Total:               int(totalCount),
 		Page:                page,
@@ -618,6 +619,7 @@ func (p *FileTablePreviewProvider) previewRefs(
 	return &models.TablePreview{
 		Mode:                PreviewModeTable,
 		Columns:             columns,
+		Fields:              append([]datatype.FieldInfo(nil), tableInfo.Fields...),
 		Rows:                rows,
 		Total:               int(totalCount),
 		Page:                page,

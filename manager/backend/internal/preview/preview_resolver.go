@@ -207,13 +207,15 @@ func (r *PreviewResolver) ResolveRequestFromURIWithSelection(ctx context.Context
 	var metaNode *commonModels.MetaNode
 	var metaItem *commonModels.MetaItem
 	identityResolved := false
-	if r.metaClient != nil {
-		// 设置租户 ID，确保服务间调用时正确过滤
-		r.metaClient.SetTenantID(tenantID)
+	metaClient := r.metaClient
+	if metaClient != nil && tenantID != nil {
+		metaClient = metaClient.WithTenantID(*tenantID)
+	}
+	if metaClient != nil {
 
 		if loc.ItemID != nil && *loc.ItemID > 0 {
 			itemID := *loc.ItemID
-			item, err := r.metaClient.GetItemByID(itemID)
+			item, err := metaClient.GetItemByID(itemID)
 			if err == nil && item != nil {
 				metaItem = item
 				identityResolved = true
@@ -228,7 +230,7 @@ func (r *PreviewResolver) ResolveRequestFromURIWithSelection(ctx context.Context
 			}
 		} else if loc.NodeID != nil && *loc.NodeID > 0 {
 			nodeID := *loc.NodeID
-			node, err := r.metaClient.GetNodeByID(nodeID)
+			node, err := metaClient.GetNodeByID(nodeID)
 			if err == nil && node != nil {
 				metaNode = node
 				identityResolved = true
@@ -245,14 +247,11 @@ func (r *PreviewResolver) ResolveRequestFromURIWithSelection(ctx context.Context
 		}
 	}
 
-	if r.metaClient != nil {
-		// 设置租户 ID，确保服务间调用时正确过滤
-		r.metaClient.SetTenantID(tenantID)
-
+	if metaClient != nil {
 		if !identityResolved && len(loc.Path) > 0 {
 			catalogPath := strings.Join(loc.Path, "/")
 			if isPreviewItemLocator(loc) {
-				item, err := r.metaClient.GetItemByCatalogPath(loc.EngineID, catalogPath)
+				item, err := metaClient.GetItemByCatalogPath(loc.EngineID, catalogPath)
 				if err == nil && item != nil {
 					metaItem = item
 					logger.L().Debug("从 Meta 获取到数据项元数据",
@@ -265,7 +264,7 @@ func (r *PreviewResolver) ResolveRequestFromURIWithSelection(ctx context.Context
 				}
 			} else {
 				// Bucket 或 Prefix 路径
-				node, err := r.metaClient.GetNodeByCatalogPath(loc.EngineID, catalogPath)
+				node, err := metaClient.GetNodeByCatalogPath(loc.EngineID, catalogPath)
 				if err == nil && node != nil {
 					metaNode = node
 					logger.L().Debug("从 Meta 获取到节点元数据",
@@ -499,7 +498,7 @@ func (r *PreviewResolver) buildProviderRequest(req *PreviewResolverRequest) (*Pr
 		EngineType:     req.Engine.EngineType,
 		ConnectionInfo: models.ConnectionInfo(req.Engine.ConnectionInfo),
 		Description:    req.Engine.Description,
-		IsActive:       req.Engine.IsActive,
+		LifecycleState: req.Engine.LifecycleState,
 		TenantID:       req.Engine.TenantID,
 		CreatedBy:      req.Engine.CreatedBy,
 		CreatedAt:      req.Engine.CreatedAt,

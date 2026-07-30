@@ -1,4 +1,8 @@
 import client from './client'
+import {
+  listSystemCatalogChildren,
+  normalizeCatalogPath
+} from './metaCatalog'
 
 export default {
   // 统计
@@ -121,25 +125,6 @@ export default {
         ...payload,
         engine_id: engineId
       })
-  }
-}
-
-async function listSystemCatalogChildren(engineId, path = { segments: [] }, options = {}) {
-  const res = await client.post(`/system/engines/${engineId}/catalog/children`, {
-    path: normalizeCatalogPath(path),
-    options
-  })
-  if (Array.isArray(res?.nodes)) return res.nodes
-  if (Array.isArray(res?.data?.nodes)) return res.data.nodes
-  if (Array.isArray(res)) return res
-  return []
-}
-
-function normalizeCatalogPath(path = { segments: [] }) {
-  return {
-    segments: [],
-    ...path,
-    segments: Array.isArray(path?.segments) ? path.segments : []
   }
 }
 

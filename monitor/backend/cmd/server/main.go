@@ -60,6 +60,10 @@ func main() {
 
 	// 创建 System 客户端（用于健康检查）
 	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemURL, cfg.InternalAPIKey)
+	serviceTokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemURL, "addp-monitor", cfg.ServiceClientSecret, nil)
+	if err != nil {
+		log.Fatalf("Service Token Source 初始化失败: %v", err)
+	}
 
 	// 创建 Repository
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
@@ -67,7 +71,7 @@ func main() {
 	// 创建 Services
 	queryService := service.NewExecutionQueryService(taskExecutionRepo)
 	statisticsService := service.NewStatisticsService(taskExecutionRepo)
-	healthService := service.NewHealthCheckService(systemClient, cfg.InternalAPIKey)
+	healthService := service.NewHealthCheckService(systemClient, serviceTokenSource)
 	webhookSender := service.NewHTTPWebhookSender(cfg.WebhookHTTPTimeout, cfg.WebhookAllowPrivate)
 	webhookService := service.NewWebhookService(db, cfg.EncryptionKey, cfg.WebhookAllowPrivate, cfg.ConsoleBaseURL, webhookSender)
 	var emailSender service.EmailSender

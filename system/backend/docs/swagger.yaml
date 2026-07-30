@@ -360,6 +360,15 @@ definitions:
   github_com_addp_common_models.ConnectionInfo:
     additionalProperties: true
     type: object
+  github_com_addp_common_models.EngineRuntimeEndpoint:
+    properties:
+      host:
+        type: string
+      port:
+        type: integer
+      protocol:
+        type: string
+    type: object
   github_com_addp_system_internal_iam.AuditResult:
     enum:
     - succeeded
@@ -752,6 +761,16 @@ definitions:
         type: string
       created_by:
         type: integer
+      deletion_error:
+        type: string
+      deletion_execute_task_id:
+        type: string
+      deletion_requested_at:
+        type: string
+      deletion_requested_by:
+        type: integer
+      deletion_scan_task_id:
+        type: string
       description:
         type: string
       engine_origin:
@@ -760,15 +779,17 @@ definitions:
       engine_type:
         description: 引擎类型（postgresql, mysql, acme_geo_workflow 等）
         type: string
+      external_artifact_policy:
+        type: string
       id:
         type: integer
-      is_active:
-        type: boolean
       is_builtin:
         description: 扩展引擎字段
         type: boolean
       last_check_at:
         description: 上次检测时间
+        type: string
+      lifecycle_state:
         type: string
       name:
         description: 显示名称（原 display_name）
@@ -824,6 +845,11 @@ definitions:
     - engine_type
     - name
     type: object
+  github_com_addp_system_internal_models.EngineDeleteRequest:
+    properties:
+      external_artifact_policy:
+        type: string
+    type: object
   github_com_addp_system_internal_models.EngineResponse:
     properties:
       capabilities:
@@ -844,6 +870,16 @@ definitions:
         type: string
       created_by:
         type: integer
+      deletion_error:
+        type: string
+      deletion_execute_task_id:
+        type: string
+      deletion_requested_at:
+        type: string
+      deletion_requested_by:
+        type: integer
+      deletion_scan_task_id:
+        type: string
       description:
         type: string
       engine_origin:
@@ -852,15 +888,17 @@ definitions:
       engine_type:
         description: 引擎类型（postgresql, mysql, acme_geo_workflow 等）
         type: string
+      external_artifact_policy:
+        type: string
       id:
         type: integer
-      is_active:
-        type: boolean
       is_builtin:
         description: 扩展引擎字段
         type: boolean
       last_check_at:
         description: 上次检测时间
+        type: string
+      lifecycle_state:
         type: string
       name:
         description: 显示名称（原 display_name）
@@ -871,6 +909,29 @@ definitions:
       updated_at:
         type: string
     type: object
+  github_com_addp_system_internal_models.EngineRuntimeDescriptor:
+    properties:
+      capabilities:
+        type: string
+      connection_status:
+        type: string
+      description:
+        type: string
+      engine_origin:
+        type: string
+      engine_type:
+        type: string
+      id:
+        type: integer
+      is_builtin:
+        type: boolean
+      lifecycle_state:
+        type: string
+      name:
+        type: string
+      runtime_endpoint:
+        $ref: '#/definitions/github_com_addp_common_models.EngineRuntimeEndpoint'
+    type: object
   github_com_addp_system_internal_models.EngineUpdateRequest:
     properties:
       capabilities:
@@ -880,8 +941,8 @@ definitions:
         $ref: '#/definitions/github_com_addp_system_internal_models.ConnectionInfo'
       description:
         type: string
-      is_active:
-        type: boolean
+      lifecycle_state:
+        type: string
       name:
         description: 显示名称
         type: string
@@ -891,6 +952,31 @@ definitions:
       error:
         example: invalid credentials
         type: string
+    type: object
+  github_com_addp_system_internal_models.HeartbeatRequest:
+    properties:
+      module_name:
+        type: string
+    required:
+    - module_name
+    type: object
+  github_com_addp_system_internal_models.ModuleRegistrationRequest:
+    properties:
+      health_check_url:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      module_name:
+        type: string
+      module_url:
+        type: string
+      route_prefix:
+        type: string
+    required:
+    - module_name
+    - module_url
+    - route_prefix
     type: object
   github_com_addp_system_internal_models.SuccessResponse:
     properties:
@@ -911,6 +997,41 @@ definitions:
       total:
         description: 期望模块数
         type: integer
+    type: object
+  github_com_addp_system_internal_models.TaskProvider:
+    properties:
+      base_url:
+        description: API 配置
+        type: string
+      capabilities:
+        description: 能力描述（JSON 格式，含 task.capabilities/v1、task_capabilities 等）
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      display_name:
+        type: string
+      id:
+        type: integer
+      is_enabled:
+        description: 状态
+        type: boolean
+      module_name:
+        description: '''transfer'', ''meta'', ''develop'''
+        type: string
+      task_cancel_endpoint:
+        type: string
+      task_detail_endpoint:
+        type: string
+      task_execute_endpoint:
+        type: string
+      task_list_endpoint:
+        type: string
+      task_status_endpoint:
+        type: string
+      updated_at:
+        type: string
     type: object
   github_com_addp_system_internal_models.UpdateApplicationRequest:
     properties:
@@ -1286,6 +1407,63 @@ definitions:
       error_code:
         type: string
     type: object
+  internal_api.IAMExecutionAuthorizationResponse:
+    properties:
+      actor_principal_id:
+        type: string
+      audience:
+        type: string
+      effects:
+        items:
+          type: string
+        type: array
+      engine_ids:
+        items:
+          type: string
+        type: array
+      execution_id:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      issued_authorization_version:
+        type: string
+      tenant_id:
+        type: string
+      tenant_membership_id:
+        type: string
+    type: object
+  internal_api.IAMExecutionEngineAccessRequest:
+    properties:
+      engine_id:
+        type: string
+      execution_id:
+        type: string
+      required_effects:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_api.IAMExecutionEngineAccessResponse:
+    properties:
+      audience:
+        type: string
+      authorization_id:
+        type: string
+      effects:
+        items:
+          type: string
+        type: array
+      engine:
+        $ref: '#/definitions/github_com_addp_system_internal_models.Engine'
+      engine_id:
+        type: string
+      execution_id:
+        type: string
+      expires_at:
+        type: string
+    type: object
   internal_api.IAMInitializeTenantRequest:
     properties:
       initial_administrator_principal_id:
@@ -1335,6 +1513,42 @@ definitions:
         type: string
       username:
         type: string
+    type: object
+  internal_api.IAMIssueExecutionAuthorizationFromExecutionRequest:
+    properties:
+      audience:
+        type: string
+      effects:
+        items:
+          type: string
+        type: array
+      engine_ids:
+        items:
+          type: string
+        type: array
+      execution_id:
+        type: string
+      expires_in:
+        type: integer
+      parent_execution_id:
+        type: string
+    type: object
+  internal_api.IAMIssueExecutionAuthorizationRequest:
+    properties:
+      audience:
+        type: string
+      effects:
+        items:
+          type: string
+        type: array
+      engine_ids:
+        items:
+          type: string
+        type: array
+      execution_id:
+        type: string
+      expires_in:
+        type: integer
     type: object
   internal_api.IAMLifecycleReasonRequest:
     properties:
@@ -1466,6 +1680,19 @@ definitions:
       user_code:
         type: string
     type: object
+  internal_api.IAMOAuthTokenResponse:
+    properties:
+      access_token:
+        type: string
+      expires_in:
+        type: integer
+      refresh_token:
+        type: string
+      scope:
+        type: string
+      token_type:
+        type: string
+    type: object
   internal_api.IAMPasswordRotationResponse:
     properties:
       changed_at:
@@ -1513,6 +1740,40 @@ definitions:
   internal_api.IAMRevokeTenantRoleAssignmentRequest:
     properties:
       reason:
+        type: string
+    type: object
+  internal_api.IAMTaskAuthorizationSubjectRequest:
+    properties:
+      definition_hash:
+        type: string
+      owner_module:
+        type: string
+      task_ref:
+        type: string
+      task_type:
+        type: string
+    type: object
+  internal_api.IAMTaskAuthorizationSubjectResponse:
+    properties:
+      authorization_version:
+        type: string
+      authorized_at:
+        type: string
+      definition_hash:
+        type: string
+      id:
+        type: string
+      owner_module:
+        type: string
+      principal_id:
+        type: string
+      task_ref:
+        type: string
+      task_type:
+        type: string
+      tenant_id:
+        type: string
+      tenant_membership_id:
         type: string
     type: object
   internal_api.IAMTenantAdministratorCandidateResponse:
@@ -2292,6 +2553,57 @@ paths:
       tags:
       - 认证 | Authentication
       x-addp-auth-mode: authenticated
+  /auth/execution-authorizations:
+    post:
+      consumes:
+      - application/json
+      description: 从当前 Tenant User Access Token 派生绑定唯一执行、引擎和效果的短期授权；效果权限在请求体解析后动态校验
+        | Derive a short-lived authorization bound to one execution, its engines,
+        and effects from the current tenant user access token; effect permissions
+        are checked after parsing the request
+      parameters:
+      - description: 执行授权边界 | Execution authorization boundary
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMIssueExecutionAuthorizationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.IAMExecutionAuthorizationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 签发执行授权 | Issue execution authorization
+      tags:
+      - 认证 | Authentication
+      x-addp-auth-mode: permission
+      x-addp-conditional-permissions:
+      - develop.data_read.execute
+      - develop.data_write.execute
+      - develop.data_ddl.execute
+      - develop.data_external_effect.execute
+      x-addp-required-permissions:
+      - develop.task.execute
   /auth/mfa:
     get:
       produces:
@@ -2420,12 +2732,55 @@ paths:
       tags:
       - 认证 | Authentication
       x-addp-auth-mode: self
+  /auth/task-authorization-subjects:
+    post:
+      consumes:
+      - application/json
+      description: 从当前 Tenant User AuthContext 为一个版本化任务定义创建或替换任务授权主体，不保存 Access Token
+        | Create or replace a task authorization subject for a versioned task definition
+        from the current tenant user context without storing an access token
+      parameters:
+      - description: 任务定义身份 | Task definition identity
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMTaskAuthorizationSubjectRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMTaskAuthorizationSubjectResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 授权持久任务主体 | Authorize a persisted task subject
+      tags:
+      - 认证 | Authentication
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - orchestrator.workflow.execute
   /engines:
     get:
       consumes:
       - application/json
-      description: 先按引擎类型、能力分组、来源和内置状态过滤，再返回分页结果 | Filter by engine type, capability
-        group, origin, and builtin state before pagination
+      description: 先按当前 Tenant、引擎类型、能力分组、来源和内置状态过滤，再返回脱敏分页结果；User 与 Service Principal
+        使用同一契约 | Filter by current tenant, engine type, capability group, origin,
+        and builtin state, then return a masked paginated result through the same
+        contract for users and service principals
       parameters:
       - default: 1
         description: 页码 | Page number
@@ -2456,6 +2811,12 @@ paths:
         in: query
         name: include_builtin
         type: boolean
+      - default: active
+        description: '生命周期，逗号分隔：active,disabled,deleting | Comma-separated lifecycle
+          states: active,disabled,deleting'
+        in: query
+        name: lifecycle_states
+        type: string
       produces:
       - application/json
       responses:
@@ -2474,6 +2835,10 @@ paths:
               total:
                 type: integer
             type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -2526,13 +2891,23 @@ paths:
         name: id
         required: true
         type: integer
+      - description: 删除策略 | Deletion policy
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.EngineDeleteRequest'
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "202":
+          description: Accepted
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.SuccessResponse'
+            properties:
+              engine:
+                $ref: '#/definitions/github_com_addp_system_internal_models.EngineResponse'
+              message:
+                type: string
+            type: object
         "400":
           description: Bad Request
           schema:
@@ -2550,6 +2925,9 @@ paths:
       x-addp-required-permissions:
       - system.engine.delete
     get:
+      description: User 返回脱敏连接信息；具有 system.engine.read 的 Tenant Service Principal
+        返回同 Tenant 的解密连接信息 | Return masked connection details to users and decrypted
+        same-tenant details to tenant service principals with system.engine.read
       parameters:
       - description: 引擎ID | Engine ID
         in: path
@@ -2565,6 +2943,10 @@ paths:
             $ref: '#/definitions/github_com_addp_system_internal_models.EngineResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
         "404":
@@ -2787,6 +3169,57 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.engine.execute
+  /execution-authorizations/{id}/engine-accesses:
+    post:
+      consumes:
+      - application/json
+      description: 仅匹配 audience 的 Tenant Runtime Service Principal 可消费执行授权并取得同 Tenant
+        的明文引擎连接 | Only the tenant runtime service principal matching the audience
+        may consume the authorization and receive same-tenant plaintext engine connection
+        details
+      parameters:
+      - description: 执行授权 ID | Execution authorization ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 执行和效果边界 | Execution and effect boundary
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMExecutionEngineAccessRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMExecutionEngineAccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 消费执行授权并获取引擎访问 | Consume execution authorization for engine access
+      tags:
+      - Runtime 执行授权 | Runtime Execution Authorization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.execution_authorization.execute
   /internal/audit-logs:
     post:
       consumes:
@@ -2973,13 +3406,84 @@ paths:
     post:
       consumes:
       - application/x-www-form-urlencoded
+      parameters:
+      - description: Confidential Client 使用 HTTP Basic，用户名为 client_id、密码为 Client Secret
+          | Confidential clients use HTTP Basic with client_id as username and Client
+          Secret as password
+        in: header
+        name: Authorization
+        type: string
+      - description: 授权类型 | Grant type
+        enum:
+        - authorization_code
+        - refresh_token
+        - client_credentials
+        - urn:ietf:params:oauth:grant-type:device_code
+        in: formData
+        name: grant_type
+        required: true
+        type: string
+      - description: Public Client ID；Confidential Client 必须改用 HTTP Basic | Public
+          client ID; confidential clients must use HTTP Basic
+        in: formData
+        name: client_id
+        type: string
+      - description: Authorization Code Grant 的授权码 | Authorization code for Authorization
+          Code Grant
+        in: formData
+        name: code
+        type: string
+      - description: Authorization Code Grant 的回调 URI | Redirect URI for Authorization
+          Code Grant
+        in: formData
+        name: redirect_uri
+        type: string
+      - description: Authorization Code Grant 的 PKCE verifier | PKCE verifier for
+          Authorization Code Grant
+        in: formData
+        name: code_verifier
+        type: string
+      - description: Refresh Token Grant 的 Refresh Token | Refresh token for Refresh
+          Token Grant
+        in: formData
+        name: refresh_token
+        type: string
+      - description: Device Code Grant 的 Device Code | Device code for Device Code
+          Grant
+        in: formData
+        name: device_code
+        type: string
+      - description: Client Credentials 固定为 addp.api | Fixed to addp.api for Client
+          Credentials
+        in: formData
+        name: scope
+        type: string
+      - description: Client Credentials 固定为 addp.api | Fixed to addp.api for Client
+          Credentials
+        in: formData
+        name: audience
+        type: string
+      - description: Tenant Runtime Client Credentials 必填，用于选择有效 Tenant Membership；与
+          context_type 互斥 | Required for Tenant Runtime Client Credentials to select
+          an effective Tenant Membership; mutually exclusive with context_type
+        in: formData
+        name: tenant_id
+        type: integer
+      - description: 平台控制面 Client Credentials 固定为 platform；与 tenant_id 互斥 | Fixed
+          to platform for control-plane Client Credentials; mutually exclusive with
+          tenant_id
+        enum:
+        - platform
+        in: formData
+        name: context_type
+        type: string
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            type: object
+            $ref: '#/definitions/internal_api.IAMOAuthTokenResponse'
       summary: 兑换 OAuth Token | Exchange OAuth token
       tags:
       - OAuth
@@ -3823,6 +4327,364 @@ paths:
       tags:
       - 认证 | Authentication
       x-addp-auth-mode: public
+  /runtime/engine-descriptors:
+    get:
+      description: 返回同 Tenant 可见的脱敏控制面投影；仅工作流/脚本运行时包含 protocol/host/port，数据引擎不返回 connection_info
+        | Return same-tenant masked control-plane projections; only workflow/script
+        runtimes include protocol/host/port and data engines never expose connection_info
+      parameters:
+      - default: 1
+        description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: 引擎类型 | Engine type
+        in: query
+        name: engine_type
+        type: string
+      - description: '能力分组，逗号分隔：storage,compute | Comma-separated capability groups:
+          storage,compute'
+        in: query
+        name: capability_groups
+        type: string
+      - description: '引擎来源，逗号分隔：general,extension | Comma-separated engine origins:
+          general,extension'
+        in: query
+        name: engine_origins
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/github_com_addp_system_internal_models.EngineRuntimeDescriptor'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                type: integer
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取引擎运行时描述列表 | List engine runtime descriptors
+      tags:
+      - 运行时控制面 | Runtime Control Plane
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_descriptor.read
+  /runtime/engine-descriptors/{id}:
+    get:
+      description: 返回单个同 Tenant Engine Instance 的脱敏控制面投影，不返回数据引擎明文连接 | Return one
+        same-tenant masked Engine Instance control-plane projection without data-engine
+        plaintext connection details
+      parameters:
+      - description: 引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.EngineRuntimeDescriptor'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取引擎运行时描述 | Get engine runtime descriptor
+      tags:
+      - 运行时控制面 | Runtime Control Plane
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_descriptor.read
+  /runtime/execution-authorizations:
+    post:
+      consumes:
+      - application/json
+      description: 仅匹配 audience 的 Tenant Runtime Service Principal 可基于可验证的 Orchestrator
+        父 execution 与 owner 子 execution 来源链签发授权 | Only the tenant runtime service
+        principal matching the audience may issue from a verified Orchestrator parent
+        and owner child execution chain
+      parameters:
+      - description: 父子执行与授权边界 | Parent/child execution and authorization boundary
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMIssueExecutionAuthorizationFromExecutionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.IAMExecutionAuthorizationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 从父子执行来源签发执行授权 | Issue execution authorization from execution provenance
+      tags:
+      - Runtime 执行授权 | Runtime Execution Authorization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.execution_authorization.execute
+  /runtime/modules:
+    post:
+      consumes:
+      - application/json
+      description: 平台 Service Principal 只能注册与自身 OAuth Client 对应的模块 | A platform service
+        principal can only register the module matching its OAuth client
+      parameters:
+      - description: 模块注册信息 | Module registration
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.ModuleRegistrationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              message:
+                type: string
+              module:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 注册当前运行模块 | Register current runtime module
+      tags:
+      - 运行时注册 | Runtime Registry
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.runtime_registry.update
+  /runtime/modules/heartbeat:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 模块心跳 | Module heartbeat
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.HeartbeatRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              message:
+                type: string
+              module:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新当前运行模块心跳 | Update current runtime module heartbeat
+      tags:
+      - 运行时注册 | Runtime Registry
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.runtime_registry.update
+  /runtime/task-authorization-subjects/{id}/resolve:
+    post:
+      consumes:
+      - application/json
+      description: 仅 addp-orchestrator Tenant Service Principal 可解析与当前定义哈希匹配且仍有效的任务授权主体
+        | Only the addp-orchestrator tenant service principal may resolve a still-valid
+        task subject matching the current definition hash
+      parameters:
+      - description: 任务授权主体 ID | Task authorization subject ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 任务定义身份 | Task definition identity
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMTaskAuthorizationSubjectRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMTaskAuthorizationSubjectResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 解析定时任务授权主体 | Resolve a scheduled task authorization subject
+      tags:
+      - Runtime 执行授权 | Runtime Execution Authorization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.task_authorization.execute
+  /runtime/task-providers:
+    get:
+      description: 仅 Platform Runtime Service Principal 可读取已启用 TaskProvider | Only
+        platform runtime service principals may read enabled TaskProviders
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_system_internal_models.TaskProvider'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 读取 TaskProvider 注册表 | Read TaskProvider registry
+      tags:
+      - 运行时注册 | Runtime Registry
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.runtime_registry.read
+    post:
+      consumes:
+      - application/json
+      description: 平台 Service Principal 只能发布与自身 OAuth Client 对应的 TaskProvider | A
+        platform service principal can only publish the TaskProvider matching its
+        OAuth client
+      parameters:
+      - description: TaskProvider 契约 | TaskProvider contract
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.TaskProvider'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.TaskProvider'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 注册当前模块 TaskProvider | Register current module TaskProvider
+      tags:
+      - 运行时注册 | Runtime Registry
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.runtime_registry.update
+  /runtime/task-providers/{module_name}:
+    get:
+      parameters:
+      - description: 模块名 | Module name
+        in: path
+        name: module_name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.TaskProvider'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 读取 TaskProvider 详情 | Read TaskProvider detail
+      tags:
+      - 运行时注册 | Runtime Registry
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.runtime_registry.read
   /tenant/audit/events:
     get:
       parameters:
@@ -3863,6 +4725,45 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - audit.tenant_event.read
+    post:
+      consumes:
+      - application/json
+      description: Principal、Context 与 Tenant 只从 Service Access Token 获取，请求体中的同名字段不会成为授权事实
+        | Principal, context, and tenant are derived only from the Service Access
+        Token; matching request fields are not authorization facts
+      parameters:
+      - description: 审计事件 | Audit event
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.AuditLogCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            properties:
+              message:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 追加 Tenant 服务审计事件 | Append tenant service audit event
+      tags:
+      - Tenant 审计 | Tenant Audit
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - audit.tenant_event.create
   /tenant/audit/events/{id}:
     get:
       parameters:

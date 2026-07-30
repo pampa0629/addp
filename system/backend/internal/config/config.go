@@ -33,6 +33,7 @@ type Config struct {
 	PublicAPIURL                      string
 	ConsoleURL                        string
 	ProjectName                       string
+	ServiceClientSecrets              map[string]string
 
 	// PostgreSQL 配置（用于其他模块）
 	PostgresHost     string
@@ -154,6 +155,18 @@ func Load() *Config {
 		PublicAPIURL:                      strings.TrimSuffix(getEnv("PUBLIC_API_URL", "http://localhost:8000"), "/"),
 		ConsoleURL:                        strings.TrimSuffix(getEnv("CONSOLE_URL", "http://localhost:5170"), "/"),
 		ProjectName:                       getEnv("PROJECT_NAME", "全域数据平台"),
+		ServiceClientSecrets: map[string]string{
+			"addp-asset":        getEnv("ASSET_SERVICE_CLIENT_SECRET", ""),
+			"addp-develop":      getEnv("DEVELOP_SERVICE_CLIENT_SECRET", ""),
+			"addp-manager":      getEnv("MANAGER_SERVICE_CLIENT_SECRET", ""),
+			"addp-meta":         getEnv("META_SERVICE_CLIENT_SECRET", ""),
+			"addp-monitor":      getEnv("MONITOR_SERVICE_CLIENT_SECRET", ""),
+			"addp-orchestrator": getEnv("ORCHESTRATOR_SERVICE_CLIENT_SECRET", ""),
+			"addp-portal":       getEnv("PORTAL_SERVICE_CLIENT_SECRET", ""),
+			"addp-quality":      getEnv("QUALITY_SERVICE_CLIENT_SECRET", ""),
+			"addp-service":      getEnv("SERVICE_SERVICE_CLIENT_SECRET", ""),
+			"addp-transfer":     getEnv("TRANSFER_SERVICE_CLIENT_SECRET", ""),
+		},
 
 		// PostgreSQL 配置
 		PostgresHost:     getEnv("POSTGRES_HOST", "localhost"),

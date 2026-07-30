@@ -239,7 +239,7 @@ func TestSystemClientListWorkflowEnginesFiltersByV1WorkflowCapability(t *testing
 				"id":1,
 				"name":"GeoPython Workflow",
 				"engine_type":"geopython_workflow",
-				"is_active":true,
+				"lifecycle_state":"active",
 				"connection_info":{},
 				"capabilities":{
 					"schema_version":"engine.capabilities/v1",
@@ -252,7 +252,7 @@ func TestSystemClientListWorkflowEnginesFiltersByV1WorkflowCapability(t *testing
 				"id":2,
 				"name":"Inactive Workflow",
 				"engine_type":"math_workflow",
-				"is_active":false,
+				"lifecycle_state":"disabled",
 				"connection_info":{},
 				"capabilities":{
 					"schema_version":"engine.capabilities/v1",
@@ -265,7 +265,7 @@ func TestSystemClientListWorkflowEnginesFiltersByV1WorkflowCapability(t *testing
 				"id":3,
 				"name":"Legacy Workflow",
 				"engine_type":"legacy_workflow",
-				"is_active":true,
+				"lifecycle_state":"active",
 				"connection_info":{},
 				"capabilities":{"schema_version":"legacy","compute":{"workflow":{"supported":true}}}
 			},
@@ -273,7 +273,7 @@ func TestSystemClientListWorkflowEnginesFiltersByV1WorkflowCapability(t *testing
 				"id":4,
 				"name":"Spark General",
 				"engine_type":"spark",
-				"is_active":true,
+				"lifecycle_state":"active",
 				"connection_info":{},
 				"capabilities":{
 					"schema_version":"engine.capabilities/v1",
@@ -321,8 +321,8 @@ func TestSystemClientListSparkRuntimesKeepsSparkGeneralEngineBinding(t *testing.
 		gotQuery = r.URL.RawQuery
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[
-			{"id":11,"name":"Spark Runtime A","engine_type":"spark","is_active":true,"connection_info":{}},
-			{"id":12,"name":"Spark Runtime B","engine_type":"spark","is_active":false,"connection_info":{}}
+			{"id":11,"name":"Spark Runtime A","engine_type":"spark","lifecycle_state":"active","connection_info":{}},
+			{"id":12,"name":"Spark Runtime B","engine_type":"spark","lifecycle_state":"disabled","connection_info":{}}
 		]`))
 	}))
 	defer server.Close()

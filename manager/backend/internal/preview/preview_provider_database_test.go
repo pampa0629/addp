@@ -157,6 +157,9 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 	if preview.GeometryColumn != "SmGeometry" {
 		t.Fatalf("GeometryColumn = %q, want SmGeometry", preview.GeometryColumn)
 	}
+	if len(preview.Fields) != 3 || preview.Fields[1].Name != "SmGeometry" || preview.Fields[1].Type != datatype.FieldTypeGeometry {
+		t.Fatalf("canonical preview fields = %#v, want SmGeometry as geometry", preview.Fields)
+	}
 	if preview.SourceSRID != 2360 || preview.SourceCRS != "EPSG:2360" {
 		t.Fatalf("source CRS = %d/%q, want 2360/EPSG:2360", preview.SourceSRID, preview.SourceCRS)
 	}

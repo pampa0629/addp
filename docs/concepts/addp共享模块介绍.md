@@ -14,12 +14,14 @@
 - `common/format` - 通用文件格式、FormatDescriptor、格式信息、format plugin、info provider、content reader 和 writer/provider
 - `common/dataitem` - 候选内容集合到 data item 组织结果的通用解析能力，供 Meta 扫描和 Manager 容器动态预览复用；当前已落地 `ResolveItems()`、single / multi / whole 规则派生、related refs 还原 helper 和基础忽略策略
 - `common/resourcetree` - Meta 已落库 catalog / item 事实到跨模块资源树视图的投影层，提供 `TreeNode`、`TreeBuilder`、`ResourceLocator` 和 provider `CatalogPath` 纯转换能力；不持有 System / Meta client，不主动读取远程服务，不处理租户权限、token、降级策略、扫描或内容读取
-- [client/meta.go](common/client/meta.go) - MetaClient 用于跨模块调用 Meta API，Manager 等模块不应保留私有 Meta API client
+- [client/meta.go](common/client/meta.go) - MetaClient 是跨模块调用 Meta API 的唯一共享 Client；只接受 `ServiceTokenProvider`，按 Tenant 获取短期 Service Access Token 并只发送 Bearer，Manager 等模块不得保留私有 Meta Client、代传 User Token 或恢复 Internal API Key / Tenant Header
+- [client/service_token.go](common/client/service_token.go) - OAuthServiceTokenSource 按 `tenant_id` 或显式 `context_type=platform` 向 System 换取短期 Service Access Token，并按 Context 独立缓存
+- [client/system_service.go](common/client/system_service.go) - SystemServiceClient 是 Service Principal 调用 System 的 Bearer-only Client；Tenant 请求使用不可变 `WithTenantID`，平台模块注册、心跳和 TaskProvider 发布使用 Platform Context
 - `common/engine/workflowaccess` - 把已解析的文件、对象或目录型存储资源转换为 `addp.workflow.access-plan/v1` 执行计划和脱敏审计计划；不保存任务定义、不决定产物归属，也不触发 Meta scan
 
 `common-python/addp_common/workflow_runtime` 提供 Python Workflow Runtime 的协议执行核心，包括 workflow definition 校验、DAG 拓扑排序、引用解析、异步 execution 状态和标准错误。它是共享库，不是独立工作流引擎；各运行时仍负责自己的算子注册、内存对象类型和专业执行依赖。
 
-`common-python/addp_common/tools` 提供 `addp.tool-manifest/v1`、Manifest 校验和 ToolExecutor。Python SDK 是唯一 HTTP Client 实现；`addp` CLI、ADDP Agent LangChain Tool Provider 和后续 MCP Adapter 只能调用 ToolExecutor，不得各自维护 HTTP 路径、认证或业务判断。ToolExecutor 在每次 Tool 调用边界向 System 换取绑定 owner audience、稳定 Tool Scope、AgentRun 和 ToolCall 的短期 Delegated Access Token，原始 User Access Token 不进入 owner Client。Internal API Key 调用需要租户上下文时，统一通过共享 Client 发送 `X-Tenant-ID`，不得把客户端提交的 tenant 当成已验证身份。
+`common-python/addp_common/tools` 提供 `addp.tool-manifest/v1`、Manifest 校验和 ToolExecutor。Python SDK 是唯一 HTTP Client 实现；`addp` CLI、ADDP Agent LangChain Tool Provider 和后续 MCP Adapter 只能调用 ToolExecutor，不得各自维护 HTTP 路径、认证或业务判断。ToolExecutor 在每次 Tool 调用边界向 System 换取绑定 owner audience、稳定 Tool Scope、AgentRun 和 ToolCall 的短期 Delegated Access Token，原始 User Access Token 不进入 owner Client。服务身份访问 owner API 时使用独立 Service Principal 的短期 Service Access Token；调用方只发送 Bearer，不发送 Internal API Key 或客户端自报的 Tenant Header。
 
 ### 资源树与 locator 共享边界
 
@@ -43,9 +45,13 @@ import (
     commonClient "github.com/addp/common/client"
 )
 
-// 使用 SystemClient 获取引擎
-client := commonClient.NewSystemClient(systemURL, jwtToken)
-engines, err := client.ListEngines("postgresql")
+// 服务按 Tenant Context 获取 System 引擎事实
+tokenSource, err := commonClient.NewOAuthServiceTokenSource(systemURL, clientID, clientSecret, nil)
+if err != nil {
+    return err
+}
+client := commonClient.NewSystemServiceClient(systemURL, tokenSource, nil).WithTenantID(tenantID)
+engines, err := client.ListEngines()
 engine, err := client.GetEngine(engineID)
 
 // 使用 connection_info 作为连接信息事实源

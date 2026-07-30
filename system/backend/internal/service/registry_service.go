@@ -65,12 +65,12 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 		}
 
 		updates := map[string]interface{}{
-			"name":         engineName,
-			"engine_type":  req.EngineType,
-			"description":  req.Description,
-			"is_builtin":   req.IsBuiltin,
-			"capabilities": capabilitiesJSON,
-			"is_active":    true, // 注册时总是激活
+			"name":            engineName,
+			"engine_type":     req.EngineType,
+			"description":     req.Description,
+			"is_builtin":      req.IsBuiltin,
+			"capabilities":    capabilitiesJSON,
+			"lifecycle_state": models.EngineLifecycleActive,
 		}
 
 		if err := s.resourceRepo.UpdateByID(ctx, existing.ID, updates); err != nil {
@@ -95,15 +95,16 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 	}
 
 	resource := &localModels.Engine{
-		Name:           engineName,
-		EngineType:     req.EngineType,
-		EngineOrigin:   engineOrigin,
-		Description:    req.Description,
-		ConnectionInfo: connectionInfo,
-		IsBuiltin:      req.IsBuiltin,
-		Capabilities:   toJSONStringPtrFromString(capabilitiesJSON),
-		IsActive:       true,
-		TenantID:       nil, // 能力注册不属于特定租户
+		Name:                   engineName,
+		EngineType:             req.EngineType,
+		EngineOrigin:           engineOrigin,
+		Description:            req.Description,
+		ConnectionInfo:         connectionInfo,
+		IsBuiltin:              req.IsBuiltin,
+		Capabilities:           toJSONStringPtrFromString(capabilitiesJSON),
+		LifecycleState:         models.EngineLifecycleActive,
+		ExternalArtifactPolicy: models.ExternalArtifactPolicyDelete,
+		TenantID:               nil, // 能力注册不属于特定租户
 	}
 
 	if err := s.resourceRepo.CreateWithContext(ctx, resource); err != nil {
@@ -179,7 +180,7 @@ func (s *RegistryService) ListCapabilities(ctx context.Context, filters map[stri
 // ListComputeEngines 查询所有具有计算能力的引擎
 func (s *RegistryService) ListComputeEngines(ctx context.Context) ([]*localModels.Engine, error) {
 	filters := map[string]interface{}{
-		"is_active": true,
+		"lifecycle_state": models.EngineLifecycleActive,
 	}
 
 	engines, err := s.resourceRepo.FindByFilters(ctx, filters)

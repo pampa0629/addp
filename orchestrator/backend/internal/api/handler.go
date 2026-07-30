@@ -11,6 +11,7 @@ import (
 	"time"
 
 	commonAPI "github.com/addp/common/api"
+	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
@@ -20,15 +21,18 @@ import (
 	"github.com/addp/orchestrator/internal/repository"
 	"github.com/addp/orchestrator/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // OrchestrationHandler 编排 API 处理器
 type OrchestrationHandler struct {
-	orchRepo             *repository.OrchestrationRepository
-	executionService     *service.ExecutionService
-	executor             *service.Executor
-	taskProviderRegistry *service.TaskProviderRegistry
-	httpClient           *http.Client
+	orchRepo                *repository.OrchestrationRepository
+	executionService        *service.ExecutionService
+	executor                *service.Executor
+	taskProviderRegistry    *service.TaskProviderRegistry
+	httpClient              *http.Client
+	taskAuthorizationClient *commonClient.SystemExecutionAuthorizationClient
+	serviceTokens           commonClient.ServiceTokenProvider
 }
 
 type orchestrationTaskProviderExecuteRequest struct {
@@ -50,17 +54,21 @@ func NewOrchestrationHandler(
 	executor *service.Executor,
 	taskProviderRegistry *service.TaskProviderRegistry,
 	httpClient *http.Client,
+	taskAuthorizationClient *commonClient.SystemExecutionAuthorizationClient,
+	serviceTokens commonClient.ServiceTokenProvider,
 ) *OrchestrationHandler {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
 
 	return &OrchestrationHandler{
-		orchRepo:             orchRepo,
-		executionService:     executionService,
-		executor:             executor,
-		taskProviderRegistry: taskProviderRegistry,
-		httpClient:           httpClient,
+		orchRepo:                orchRepo,
+		executionService:        executionService,
+		executor:                executor,
+		taskProviderRegistry:    taskProviderRegistry,
+		httpClient:              httpClient,
+		taskAuthorizationClient: taskAuthorizationClient,
+		serviceTokens:           serviceTokens,
 	}
 }
 
@@ -95,6 +103,9 @@ func (h *OrchestrationHandler) Create(c *gin.Context) {
 	}
 
 	if !h.validateOrchestrationDefinition(c, &orch) {
+		return
+	}
+	if !h.authorizeOrchestrationDefinition(c, &orch, input) {
 		return
 	}
 
@@ -204,6 +215,9 @@ func (h *OrchestrationHandler) Update(c *gin.Context) {
 	if !h.validateOrchestrationDefinition(c, orch) {
 		return
 	}
+	if !h.authorizeOrchestrationDefinition(c, orch, input) {
+		return
+	}
 
 	if err := h.orchRepo.UpdateForTenant(orch); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -211,6 +225,80 @@ func (h *OrchestrationHandler) Update(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, orch)
+}
+
+func (h *OrchestrationHandler) authorizeOrchestrationDefinition(
+	c *gin.Context,
+	orch *models.Orchestration,
+	definition models.OrchestrationDefinitionRequest,
+) bool {
+	if h.taskAuthorizationClient == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task authorization service is unavailable"})
+		return false
+	}
+	definitionHash, err := definition.AuthorizationHash()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return false
+	}
+	if orch.AuthorizationRef == nil || *orch.AuthorizationRef == uuid.Nil {
+		value := uuid.New()
+		orch.AuthorizationRef = &value
+	}
+	token := bearerToken(c.GetHeader("Authorization"))
+	if token == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return false
+	}
+	subject, err := h.taskAuthorizationClient.AuthorizeTaskSubject(
+		c.Request.Context(), token, commonClient.TaskAuthorizationSubjectRequest{
+			OwnerModule: commonExecution.ModuleOrchestrator,
+			TaskType:    commonExecution.TaskTypeOrchestration,
+			TaskRef:     orch.AuthorizationRef.String(), DefinitionHash: definitionHash,
+		},
+	)
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return false
+	}
+	subjectID, err := strconv.ParseInt(subject.ID, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "invalid task authorization subject"})
+		return false
+	}
+	principalID, _ := strconv.ParseInt(subject.PrincipalID, 10, 64)
+	membershipID, _ := strconv.ParseInt(subject.TenantMembershipID, 10, 64)
+	authorizationVersion, _ := strconv.ParseInt(subject.AuthorizationVersion, 10, 64)
+	orch.AuthorizationSubjectID = &subjectID
+	orch.AuthorizationDefinitionHash = &definitionHash
+	orch.AuthorizationPrincipalID = &principalID
+	orch.AuthorizationMembershipID = &membershipID
+	orch.AuthorizationVersion = &authorizationVersion
+	authorizedAt := subject.AuthorizedAt.UTC()
+	orch.AuthorizedAt = &authorizedAt
+	return true
+}
+
+func bearerToken(header string) string {
+	parts := strings.Fields(header)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || !strings.HasPrefix(parts[1], "addp_at_") {
+		return ""
+	}
+	return parts[1]
+}
+
+func executionActorFromGin(c *gin.Context) service.ExecutionActor {
+	authContext, exists := commonAuth.AuthContextFromGin(c)
+	if !exists || authContext.Principal.Type != "user" || authContext.Context.TenantMembershipID == nil {
+		return service.ExecutionActor{}
+	}
+	principalID, _ := strconv.ParseInt(authContext.Principal.ID, 10, 64)
+	membershipID, _ := strconv.ParseInt(*authContext.Context.TenantMembershipID, 10, 64)
+	authorizationVersion, _ := strconv.ParseInt(authContext.Authorization.AuthorizationVersion, 10, 64)
+	return service.ExecutionActor{
+		PrincipalID: principalID, TenantMembershipID: membershipID,
+		AuthorizationVersion: authorizationVersion,
+	}
 }
 
 // Delete 删除编排
@@ -280,7 +368,7 @@ func (h *OrchestrationHandler) Execute(c *gin.Context) {
 		commonExecution.TriggerTypeManual,
 		commonExecution.ModuleOrchestrator,
 		nil,
-		commonAuth.GetUserID(c),
+		executionActorFromGin(c),
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -516,21 +604,23 @@ func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
 		targetURL += "?" + queryParams.Encode()
 	}
 
-	// 4. 发送 HTTP 请求（默认使用 GET 方法）
+	// 4. 使用 Orchestrator 的 Tenant Service Bearer 调用 TaskProvider。
 	req, err := http.NewRequestWithContext(ctx, "GET", targetURL, nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, "orchestrator.error.create_request_failed", err.Error())})
 		return
 	}
 
-	// 传递 Authorization 头（如果存在）
-	if authHeader := c.GetHeader("Authorization"); authHeader != "" {
-		req.Header.Set("Authorization", authHeader)
+	if h.serviceTokens == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, "orchestrator.error.service_auth_unavailable")})
+		return
 	}
-	if internalAPIKey := c.GetHeader("X-Internal-API-Key"); internalAPIKey != "" {
-		req.Header.Set("X-Internal-API-Key", internalAPIKey)
-		req.Header.Set("X-Tenant-ID", strconv.FormatUint(uint64(tenantID), 10))
+	serviceToken, err := h.serviceTokens.Token(ctx, tenantID)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": commoni18n.TWithDetail(c, "orchestrator.error.service_auth_failed", err.Error())})
+		return
 	}
+	req.Header.Set("Authorization", "Bearer "+serviceToken)
 
 	resp, err := h.httpClient.Do(req)
 	if err != nil {
@@ -722,7 +812,7 @@ func (h *OrchestrationHandler) ExecuteProviderOrchestrationTask(c *gin.Context) 
 		req.TriggerType,
 		source,
 		parentExecutionID,
-		commonAuth.GetUserID(c),
+		executionActorFromGin(c),
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

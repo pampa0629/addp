@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { collectAuthContextPermissions } from '../../../common-frontend/basic/src/composables/useAuth'
+import { collectAuthContextPermissions, createAuthAPI } from '../../../common-frontend/basic/src/composables/useAuth'
 
 describe('collectAuthContextPermissions', () => {
   it('collects a stable unique permission set across assignments', () => {
@@ -23,5 +23,40 @@ describe('collectAuthContextPermissions', () => {
   it('defaults to an empty permission set for missing authorization facts', () => {
     expect(collectAuthContextPermissions(null)).toEqual([])
     expect(collectAuthContextPermissions({ authorization: { role_assignments: [] } })).toEqual([])
+  })
+})
+
+describe('browser context API contract', () => {
+  it('uses the current Bearer token and only submits the canonical context choice', async () => {
+    const calls = []
+    const client = {
+      get: async (...args) => {
+        calls.push(['get', ...args])
+        return { data: { contexts: [] } }
+      },
+      post: async (...args) => {
+        calls.push(['post', ...args])
+        return { data: { access_token: 'addp_at_new', expires_in: 900 } }
+      }
+    }
+    const api = createAuthAPI(client)
+
+    await api.getContextOptions('addp_at_current')
+    await api.switchContext('addp_at_current', {
+      type: 'tenant',
+      tenant_membership_id: '18',
+      tenant_id: 'must-not-be-forwarded'
+    })
+
+    expect(calls).toEqual([
+      ['get', '/auth/context-options', { headers: { Authorization: 'Bearer addp_at_current' } }],
+      ['post', '/auth/context-switches', {
+        context_type: 'tenant',
+        tenant_membership_id: '18'
+      }, {
+        headers: { Authorization: 'Bearer addp_at_current' },
+        withCredentials: true
+      }]
+    ])
   })
 })

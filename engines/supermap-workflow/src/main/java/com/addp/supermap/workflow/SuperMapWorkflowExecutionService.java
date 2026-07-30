@@ -15,8 +15,11 @@ import com.supermap.sps.core.workflow.IProcess;
 import com.supermap.sps.core.workflow.IProcessItem;
 import com.supermap.sps.core.workflow.IWorkflow;
 import com.supermap.sps.core.workflow.impls.WorkflowFactory;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 final class SuperMapWorkflowExecutionService {
   static ObjectNode executeWorkflow(
@@ -25,6 +28,7 @@ final class SuperMapWorkflowExecutionService {
     if (!tasks.isArray() || tasks.isEmpty()) {
       throw new IllegalArgumentException("workflow_def.tasks must be a non-empty array");
     }
+    validateExecutionAuthorization(request, tasks);
 
     WorkflowExecutionContext context = new WorkflowExecutionContext();
     IWorkflow workflow =
@@ -101,6 +105,56 @@ final class SuperMapWorkflowExecutionService {
       }
     } finally {
       context.close();
+    }
+  }
+
+  private static void validateExecutionAuthorization(JsonNode request, JsonNode tasks) {
+    JsonNode authorization = request.path("runtime").path("execution_authorization");
+    if (!authorization.isObject()
+        || !authorization.path("id").canConvertToLong()
+        || authorization.path("id").asLong() <= 0) {
+      throw new IllegalArgumentException(
+          "runtime.execution_authorization.id must be a positive integer");
+    }
+    JsonNode authorizedEffectsNode = authorization.path("effects");
+    if (!authorizedEffectsNode.isArray() || authorizedEffectsNode.isEmpty()) {
+      throw new IllegalArgumentException(
+          "runtime.execution_authorization.effects must be a non-empty array");
+    }
+    Set<String> allowedEffects = Set.of("read", "write", "ddl", "external_effect");
+    Set<String> authorizedEffects = new HashSet<>();
+    for (JsonNode effectNode : authorizedEffectsNode) {
+      String effect = effectNode.asText("");
+      if (!allowedEffects.contains(effect) || !authorizedEffects.add(effect)) {
+        throw new IllegalArgumentException(
+            "runtime.execution_authorization.effects is invalid");
+      }
+    }
+    Set<String> requiredEffects = new HashSet<>();
+    for (JsonNode task : tasks) {
+      String operatorID = requireText(task, "operator");
+      ObjectNode descriptor = operators().get(operatorID);
+      if (descriptor == null || !operatorSupportsMode(descriptor, "workflow")) {
+        throw new IllegalArgumentException(
+            "operator does not support workflow execution: " + operatorID);
+      }
+      JsonNode effects = descriptor.path("effects");
+      if (!effects.isArray() || effects.isEmpty()) {
+        throw new IllegalArgumentException("operator effects are required: " + operatorID);
+      }
+      for (JsonNode effectNode : effects) {
+        String effect = effectNode.asText("");
+        if (!allowedEffects.contains(effect)) {
+          throw new IllegalArgumentException("operator effect is invalid: " + operatorID);
+        }
+        requiredEffects.add(effect);
+      }
+    }
+    if (!authorizedEffects.containsAll(requiredEffects)) {
+      Set<String> missing = new HashSet<>(requiredEffects);
+      missing.removeAll(authorizedEffects);
+      throw new IllegalArgumentException(
+          "Execution Authorization is missing effects: " + List.copyOf(missing));
     }
   }
 

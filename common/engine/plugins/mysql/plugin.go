@@ -54,6 +54,10 @@ func (p *MySQLPlugin) SensitiveFields() []string {
 	return []string{"password"}
 }
 
+func (p *MySQLPlugin) ConnectionIdentityFields() []string {
+	return []string{"host", "port", "database"}
+}
+
 func (p *MySQLPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), "database", plugin.TabularCapabilityOptions{
 		Write:             true,

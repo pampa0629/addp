@@ -25,6 +25,69 @@ other = "获取工作流引擎失败"
 [develop.engine.spark_list_failed]
 other = "获取 Spark 通用引擎资源失败"
 
+[develop.auth.authentication_required]
+other = "登录状态已失效，请重新登录"
+
+[develop.query.effect_unclassifiable]
+other = "无法可靠判断该 SQL 的执行效果，请改为单条受支持语句"
+
+[develop.query.controlled_engine_unsupported]
+other = "该引擎暂不支持受控 SQL 执行，目前仅支持 PostgreSQL 和 MySQL"
+
+[develop.query.controlled_duckdb_unavailable]
+other = "DuckDB 联邦查询正在迁移到受控执行授权，当前不可执行"
+
+[develop.query.effect_permission_denied]
+other = "当前账号没有执行该类数据操作的权限"
+
+[develop.query.authorization_conflict]
+other = "执行授权状态发生并发冲突，请重试"
+
+[develop.query.authorization_unavailable]
+other = "执行授权服务暂时不可用，请稍后重试"
+
+[develop.query.execution_failed]
+other = "SQL 执行失败"
+
+[develop.query.connection_test_success]
+other = "连接测试成功"
+
+[develop.query.connection_test_failed]
+other = "无法连接到数据源，请检查引擎状态和连接配置"
+
+[develop.notebook.execution_permission_denied]
+other = "当前账号没有执行 Notebook 的权限"
+
+[develop.notebook.engine_list_failed]
+other = "获取 Notebook 引擎列表失败"
+
+[develop.notebook.engine_required]
+other = "请选择 Notebook 引擎"
+
+[develop.notebook.engine_unavailable]
+other = "所选 Notebook 引擎不可用或不支持 Notebook 模式"
+
+[develop.notebook.kernel_list_failed]
+other = "获取 Kernel 列表失败"
+
+[develop.notebook.kernel_required]
+other = "请选择 Kernel"
+
+[develop.notebook.kernel_unavailable]
+other = "所选 Kernel 在该 Notebook 引擎上不可用"
+
+[develop.notebook.invalid_parameters]
+other = "parameters 必须是有效的 JSON 对象"
+
+[develop.notebook.file_required]
+other = "请选择 .ipynb 文件"
+
+[develop.notebook.store_failed]
+other = "保存 Notebook 文件失败"
+
+[develop.notebook.create_failed]
+other = "创建 Notebook 任务失败"
+
 [develop.approval.invalid_request]
 other = "审批请求无效"
 

@@ -1117,6 +1117,7 @@ TIFF_TO_COG_METADATA = OperatorMetadata(
     description="TIFF 转 COG",
     brief_description="将 TIFF / GeoTIFF 转换为 Cloud Optimized GeoTIFF",
     execution_modes=["workflow", "direct"],
+    effects=["read", "write"],
     overview="面向 Manager 栅格快显派生产物的窄口径转换算子。Manager 负责将 source locator 和 infra artifact 目标预处理为 GDAL URI / 环境变量；本算子只负责执行 TIFF 到 COG 的格式转换。",
     params=[
         OperatorParam(
@@ -1227,6 +1228,7 @@ BUILD_RASTER_MOSAIC_METADATA = OperatorMetadata(
 	description="栅格 mosaic 数据集生成",
 	brief_description="从资源树 node 批量生成业务存储中的 raster_mosaic 数据集",
 	execution_modes=["workflow", "direct"],
+	effects=["read", "write"],
 	overview="面向 Manager raster_mosaic_generation 任务的栅格 mosaic 生成算子。Manager 负责任务定义、源 node 和目标业务存储选择；GeoPython Workflow 负责内容级 COG 校验、必要的 leaf COG 转换、全局 overview COG 和 manifest/index 生成。",
 	params=[
 		OperatorParam(

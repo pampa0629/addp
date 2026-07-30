@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"time"
 
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
@@ -49,6 +50,22 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	appRepo := repository.NewApplicationRepository(db)
 	moduleRegistryRepo := repository.NewModuleRegistryRepository(db)
 	engineService := service.NewEngineService(engineRepo, cfg.EncryptionKey, redisClient)
+	engineHandler := NewEngineHandler(engineService)
+	executionAuthorizationHandler, err := NewIAMExecutionAuthorizationHandler(
+		runtime.ExecutionAuthorizationService,
+		engineService,
+	)
+	if err != nil {
+		panic(fmt.Errorf("装配 IAM Execution Authorization Handler 失败: %w", err))
+	}
+	runtime.ExecutionAuthorizationHandler = executionAuthorizationHandler
+	taskAuthorizationSubjectHandler, err := NewIAMTaskAuthorizationSubjectHandler(
+		runtime.TaskAuthorizationSubjectService,
+	)
+	if err != nil {
+		panic(fmt.Errorf("装配 IAM Task Authorization Subject Handler 失败: %w", err))
+	}
+	runtime.TaskAuthorizationSubjectHandler = taskAuthorizationSubjectHandler
 	registryService := service.NewRegistryService(engineRepo)
 	appService := service.NewApplicationService(appRepo)
 	taskProviderService := service.NewTaskProviderService(db)
@@ -58,6 +75,12 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		redisClient, taskExecutionRepo, auditWriter, moduleRegistryService,
 	)
 	engineService = engineService.WithCleanupOrchestrator(cleanupService)
+	go func() {
+		time.Sleep(5 * time.Second)
+		if err := engineService.ResumeDeletingEngines(); err != nil {
+			logger.L().Error("恢复未完成的引擎删除工作流失败", "error", err)
+		}
+	}()
 
 	router.Use(corsMiddleware(cfg))
 	router.Use(requestidmiddleware.RequestIDMiddleware())
@@ -80,11 +103,20 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	if err := RegisterIAMMigratedBusinessRoutes(
 		api,
 		runtime,
-		NewEngineHandler(engineService),
+		engineHandler,
 		NewApplicationHandler(appService),
 		NewCleanupHandler(cleanupService),
 	); err != nil {
 		panic(fmt.Errorf("注册 IAM 业务路由失败: %w", err))
+	}
+	if err := RegisterIAMServiceRuntimeRoutes(
+		api,
+		runtime,
+		NewModuleRegistryHandler(moduleRegistryService),
+		NewTaskProviderHandler(taskProviderService),
+		engineHandler,
+	); err != nil {
+		panic(fmt.Errorf("注册 IAM Service Runtime 路由失败: %w", err))
 	}
 
 	internal := router.Group("/api/v1/internal")

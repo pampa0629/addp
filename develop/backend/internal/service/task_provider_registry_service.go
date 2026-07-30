@@ -1,48 +1,35 @@
 package service
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
-	"time"
+
+	commonClient "github.com/addp/common/client"
+	commonModels "github.com/addp/common/models"
 )
 
 // TaskProviderRegistryService 任务提供者注册服务
 // 将 Develop 模块注册到 System 的 task_providers 表
 type TaskProviderRegistryService struct {
-	systemURL      string
-	internalAPIKey string
-	developURL     string
+	systemClient *commonClient.SystemServiceClient
+	developURL   string
 }
 
 // NewTaskProviderRegistryService 创建任务提供者注册服务
-func NewTaskProviderRegistryService(systemURL, internalAPIKey, developURL string) *TaskProviderRegistryService {
+func NewTaskProviderRegistryService(systemClient *commonClient.SystemServiceClient, developURL string) *TaskProviderRegistryService {
 	return &TaskProviderRegistryService{
-		systemURL:      systemURL,
-		internalAPIKey: internalAPIKey,
-		developURL:     developURL,
+		systemClient: systemClient,
+		developURL:   developURL,
 	}
 }
 
-// TaskProviderRegistration 任务提供者注册请求
-type TaskProviderRegistration struct {
-	ModuleName          string  `json:"module_name"`
-	DisplayName         string  `json:"display_name"`
-	Description         string  `json:"description"`
-	BaseURL             string  `json:"base_url"`
-	TaskListEndpoint    string  `json:"task_list_endpoint"`
-	TaskDetailEndpoint  string  `json:"task_detail_endpoint"`
-	TaskExecuteEndpoint string  `json:"task_execute_endpoint"`
-	TaskStatusEndpoint  string  `json:"task_status_endpoint"`
-	TaskCancelEndpoint  string  `json:"task_cancel_endpoint,omitempty"`
-	Capabilities        *string `json:"capabilities,omitempty"`
-	IsEnabled           bool    `json:"is_enabled"`
-}
-
 // Register 注册 Develop 模块为任务提供者
-func (s *TaskProviderRegistryService) Register() error {
+func (s *TaskProviderRegistryService) Register(ctx context.Context) error {
+	if s == nil || s.systemClient == nil {
+		return fmt.Errorf("System Service Client is required")
+	}
 	// 能力描述（供 Orchestrator 查询）
 	capabilities := map[string]interface{}{
 		"schema_version": "task.capabilities/v1",
@@ -92,27 +79,31 @@ func (s *TaskProviderRegistryService) Register() error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal capabilities: %w", err)
 	}
-	capabilitiesStr := string(capabilitiesJSON)
+	capabilitiesStr := commonModels.JSONString(capabilitiesJSON)
 
 	// 构造注册请求（注册到 task_providers 表）
-	registration := TaskProviderRegistration{
+	registration := commonModels.TaskProvider{
 		ModuleName:  "develop",
 		DisplayName: "数据开发",
 		Description: "SQL 查询、工作流和脚本开发任务",
 
 		// API 端点配置
 		BaseURL:             s.developURL,
-		TaskListEndpoint:    "/api/v1/develop/internal/tasks",
-		TaskDetailEndpoint:  "/api/v1/develop/internal/tasks/{task_type}/{id}",
-		TaskExecuteEndpoint: "/api/v1/develop/internal/tasks/{task_type}/{id}/execute",
-		TaskStatusEndpoint:  "/api/v1/develop/internal/executions/{execution_id}",
+		TaskListEndpoint:    "/api/v1/develop/task-provider/tasks",
+		TaskDetailEndpoint:  "/api/v1/develop/task-provider/tasks/{task_type}/{id}",
+		TaskExecuteEndpoint: "/api/v1/develop/task-provider/tasks/{task_type}/{id}/execute",
+		TaskStatusEndpoint:  "/api/v1/develop/task-provider/executions/{execution_id}",
 
 		Capabilities: &capabilitiesStr,
 
 		IsEnabled: true,
 	}
 
-	return s.sendRegistration(&registration)
+	if err := s.systemClient.RegisterTaskProvider(ctx, &registration); err != nil {
+		return err
+	}
+	log.Printf("✅ Develop 模块已成功注册到 task_providers (module_name: develop)")
+	return nil
 }
 
 func baseDevelopDefinitionSchema(taskType string, contentProperties map[string]interface{}, contentRequired []interface{}) map[string]interface{} {
@@ -258,38 +249,4 @@ func developExecutionSchema() map[string]interface{} {
 		"description":          "Develop 执行参数由具体任务定义中的 parameter_schema/default_parameters 决定；本 schema 只声明 parameters 是开放对象，执行时会写入 execution_config.inputs。",
 		"additionalProperties": true,
 	}
-}
-
-// sendRegistration 发送注册请求到 System task_providers API
-func (s *TaskProviderRegistryService) sendRegistration(req *TaskProviderRegistration) error {
-	bodyJSON, err := json.Marshal(req)
-	if err != nil {
-		return fmt.Errorf("failed to marshal registration: %w", err)
-	}
-
-	// 注册到 task_providers Internal API（使用 Internal API Key 认证）
-	httpReq, err := http.NewRequest("POST", s.systemURL+"/api/v1/internal/task-providers/register", bytes.NewReader(bodyJSON))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("X-Internal-API-Key", s.internalAPIKey)
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		// 读取响应 body 以获取详细错误信息
-		var errBody map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&errBody)
-		return fmt.Errorf("registration failed with status %d: %v", resp.StatusCode, errBody)
-	}
-
-	log.Printf("✅ Develop 模块已成功注册到 task_providers (module_name: develop)")
-	return nil
 }

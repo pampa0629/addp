@@ -59,6 +59,7 @@ FILTER_BY_ATTRIBUTE_METADATA = OperatorMetadata(
     description="属性条件筛选",
     brief_description="根据属性字段条件筛选要素,常用于数据过滤和条件查询",
     execution_modes=["workflow"],
+    effects=["read"],
 
     overview="根据属性字段的条件表达式筛选 GeoDataFrame 中的要素。"
               "支持常见的比较运算符（>, <, ==等）和集合运算符（in, not in）。不改变几何。",
@@ -149,6 +150,7 @@ SORT_BY_FIELD_METADATA = OperatorMetadata(
     description="按字段排序",
     brief_description="根据指定字段对数据排序,常用于数据展示和排名分析",
     execution_modes=["workflow"],
+    effects=["read"],
 
     overview="根据指定字段对 GeoDataFrame 进行升序或降序排序。"
               "排序后重置索引确保连续。常用于 Top N 分析、数据展示、优先级排序等场景。",
@@ -231,6 +233,7 @@ SELECT_TOP_N_METADATA = OperatorMetadata(
     description="选择 Top N",
     brief_description="选择排名前 N 的记录,常用于排名分析和数据筛选",
     execution_modes=["workflow"],
+    effects=["read"],
 
     overview="根据指定字段排序后选择前 N 条记录。默认选择最大的 N 个（降序）。"
               "常用于 Top 10 分析、重点区域筛选、异常值识别等场景。",
@@ -320,6 +323,7 @@ DROP_DUPLICATES_METADATA = OperatorMetadata(
     description="去重",
     brief_description="删除重复记录,常用于数据清洗和唯一性保证",
     execution_modes=["workflow"],
+    effects=["read"],
 
     overview="根据指定字段删除重复记录。可以基于单个或多个字段去重，"
               "支持保留首次出现、最后出现或删除所有重复。常用于数据清洗、ID 唯一性保证等场景。",
@@ -406,6 +410,7 @@ SAMPLE_METADATA = OperatorMetadata(
     description="随机采样",
     brief_description="随机抽取指定数量或比例的记录,常用于数据探索和测试",
     execution_modes=["workflow"],
+    effects=["read"],
 
     overview="从 GeoDataFrame 中随机抽取指定数量或比例的记录。"
               "支持设置随机种子确保结果可复现。常用于数据探索、快速测试、采样分析等场景。",
@@ -495,6 +500,7 @@ FILTER_BY_GEOMETRY_TYPE_METADATA = OperatorMetadata(
     description="按几何类型过滤",
     brief_description="筛选指定几何类型的要素,常用于数据分类和类型检查",
     execution_modes=["workflow"],
+    effects=["read"],
 
     overview="根据几何类型（点、线、面等）筛选 GeoDataFrame 中的要素。"
               "常用于混合几何类型数据的分离、数据质量检查、类型匹配等场景。",
@@ -566,6 +572,7 @@ DROP_NULL_GEOMETRY_METADATA = OperatorMetadata(
     description="删除空几何",
     brief_description="删除几何为空的记录,常用于数据清洗和质量控制",
     execution_modes=["workflow"],
+    effects=["read"],
 
     overview="删除 GeoDataFrame 中几何列为 None 或 NaN 的记录。"
               "常用于数据清洗、避免空间算子报错、确保数据完整性等场景。",
@@ -639,6 +646,7 @@ RANDOM_SPLIT_METADATA = OperatorMetadata(
     description="随机分割数据集",
     brief_description="将数据集随机分割为训练集和测试集,常用于机器学习数据准备",
     execution_modes=["workflow"],
+    effects=["read"],
 
     overview="将输入 GeoDataFrame 随机分割为训练集和测试集,支持设置分割比例和随机种子。"
               "适用于机器学习模型训练和验证的数据准备。返回两个独立的输出端口。",

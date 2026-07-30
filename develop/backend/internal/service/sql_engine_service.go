@@ -2,166 +2,323 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log"
+	"strconv"
 	"time"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
-	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/common/utils"
 	"github.com/addp/develop/backend/internal/config"
-	"gorm.io/gorm"
+	"github.com/google/uuid"
 )
 
-// SQLEngineService SQL执行引擎服务
-// 使用 dbbridge 统一执行层，不再包含引擎特定逻辑
+var (
+	ErrControlledSQLExecutionUnsupported = errors.New("该引擎暂不支持受控 SQL 执行")
+	ErrSQLExecutionUnclassifiable        = errors.New("SQL 效果无法可靠判定")
+	ErrSQLConnectionTestFailed           = errors.New("数据源连接测试失败")
+)
+
+// SQLEngineService executes SQL only through a User-derived Execution
+// Authorization. It never accepts or retains a User Access Token outside the
+// current method call and never reads engine connection details through the
+// legacy internal-key client.
 type SQLEngineService struct {
-	cfg          *config.Config
-	systemClient *commonClient.SystemClient
+	cfg                     *config.Config
+	systemService           *commonClient.SystemServiceClient
+	executionAuthorizations *commonClient.SystemExecutionAuthorizationClient
 }
 
-// NewSQLEngineService 创建SQL执行引擎服务
 func NewSQLEngineService(
 	cfg *config.Config,
-	systemClient *commonClient.SystemClient,
+	systemService *commonClient.SystemServiceClient,
+	executionAuthorizations *commonClient.SystemExecutionAuthorizationClient,
 ) *SQLEngineService {
 	return &SQLEngineService{
-		cfg:          cfg,
-		systemClient: systemClient,
+		cfg: cfg, systemService: systemService,
+		executionAuthorizations: executionAuthorizations,
 	}
 }
 
-// SQLResult SQL执行结果
 type SQLResult struct {
 	Columns      []string                 `json:"columns"`
 	Rows         []map[string]interface{} `json:"rows"`
 	RowsAffected int64                    `json:"rows_affected"`
-	GraphData    *plugin.GraphData        `json:"graph_data,omitempty"` // 图数据（仅图数据库引擎返回）
+	Effect       SQLExecutionEffect       `json:"effect"`
 }
 
-// GetEngine 获取引擎配置（供 handler 层判断引擎类型）
-func (s *SQLEngineService) GetEngine(engineID uint) (*commonModels.Engine, error) {
-	return s.systemClient.GetEngine(engineID)
+type IssuedSQLExecutionAuthorization struct {
+	AuthorizationID            int64
+	Effect                     SQLExecutionEffect
+	ActorPrincipalID           int64
+	ActorTenantMembershipID    int64
+	IssuedAuthorizationVersion int64
+	ExpiresAt                  time.Time
 }
 
-// ExecuteSQL 执行查询语句（统一路由到 dbbridge.ExecuteQuery）
-func (s *SQLEngineService) ExecuteSQL(
+func (s *SQLEngineService) ExecuteAuthorizedSQL(
 	ctx context.Context,
+	tenantID uint,
+	userAccessToken string,
+	executionID uuid.UUID,
 	engineID uint,
 	sqlContent string,
 	timeout int,
 ) (*SQLResult, error) {
-	if timeout <= 0 {
-		timeout = s.cfg.DefaultQueryTimeout
+	if s == nil || s.cfg == nil || s.systemService == nil || s.executionAuthorizations == nil ||
+		tenantID == 0 || engineID == 0 || executionID == uuid.Nil {
+		return nil, fmt.Errorf("SQL 执行服务未正确初始化")
 	}
-	if timeout > s.cfg.MaxQueryTimeout {
-		timeout = s.cfg.MaxQueryTimeout
-	}
-
-	execCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-	defer cancel()
-
-	resource, err := s.systemClient.GetEngine(engineID)
-	if err != nil {
-		return nil, fmt.Errorf("获取引擎配置失败：%w", err)
-	}
-
-	qr, err := dbbridge.ExecuteGraphQuery(execCtx, resource, sqlContent)
+	authorization, err := s.IssueSQLExecutionAuthorization(
+		ctx, tenantID, userAccessToken, executionID, engineID, sqlContent, timeout,
+	)
 	if err != nil {
 		return nil, err
 	}
-
-	rows := qr.Rows
-	if rows == nil {
-		rows = []map[string]interface{}{}
-	}
-
-	return &SQLResult{
-		Columns:      qr.Columns,
-		Rows:         rows,
-		RowsAffected: int64(len(rows)),
-		GraphData:    qr.GraphData,
-	}, nil
+	return s.ExecuteIssuedSQLAuthorization(
+		ctx, tenantID, executionID, engineID, sqlContent, timeout, authorization,
+	)
 }
 
-// ExecuteDML 执行 DML 语句（INSERT/UPDATE/DELETE），仅适用于 SQL 引擎
-func (s *SQLEngineService) ExecuteDML(
+func (s *SQLEngineService) IssueSQLExecutionAuthorization(
 	ctx context.Context,
+	tenantID uint,
+	userAccessToken string,
+	executionID uuid.UUID,
 	engineID uint,
 	sqlContent string,
 	timeout int,
-) (int64, error) {
+) (*IssuedSQLExecutionAuthorization, error) {
+	if s == nil || s.cfg == nil || s.executionAuthorizations == nil || tenantID == 0 || engineID == 0 || executionID == uuid.Nil {
+		return nil, fmt.Errorf("SQL 执行授权服务未正确初始化")
+	}
+	effect, expiresIn, err := s.sqlExecutionAuthorizationRequest(sqlContent, timeout)
+	if err != nil {
+		return nil, err
+	}
+	engineIDText := strconv.FormatUint(uint64(engineID), 10)
+	issued, err := s.executionAuthorizations.Issue(ctx, userAccessToken, commonClient.IssueExecutionAuthorizationRequest{
+		Audience: "develop", ExecutionID: executionID.String(), EngineIDs: []string{engineIDText},
+		Effects: []string{string(effect)}, ExpiresIn: expiresIn,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("签发执行授权失败: %w", err)
+	}
+	return issuedSQLExecutionAuthorization(issued, tenantID, effect)
+}
+
+func (s *SQLEngineService) TestAuthorizedConnection(
+	ctx context.Context,
+	tenantID uint,
+	userAccessToken string,
+	executionID uuid.UUID,
+	engineID uint,
+) error {
+	if s == nil || s.cfg == nil || s.systemService == nil || s.executionAuthorizations == nil ||
+		tenantID == 0 || engineID == 0 || executionID == uuid.Nil {
+		return fmt.Errorf("SQL 连接测试服务未正确初始化")
+	}
+	timeout := s.normalizedTimeout(0)
+	engineIDText := strconv.FormatUint(uint64(engineID), 10)
+	issued, err := s.executionAuthorizations.Issue(ctx, userAccessToken, commonClient.IssueExecutionAuthorizationRequest{
+		Audience: "develop", ExecutionID: executionID.String(), EngineIDs: []string{engineIDText},
+		Effects: []string{string(SQLExecutionEffectRead)}, ExpiresIn: int64(timeout + 30),
+	})
+	if err != nil {
+		return fmt.Errorf("签发连接测试授权失败: %w", err)
+	}
+	authorization, err := issuedSQLExecutionAuthorization(issued, tenantID, SQLExecutionEffectRead)
+	if err != nil {
+		return err
+	}
+	engine, err := s.executionEngine(ctx, tenantID, executionID, engineID, authorization)
+	if err != nil {
+		return err
+	}
+
+	testCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	defer cancel()
+	if err := dbbridge.TestConnection(testCtx, engine); err != nil {
+		return fmt.Errorf("%w: %v", ErrSQLConnectionTestFailed, err)
+	}
+	return nil
+}
+
+func (s *SQLEngineService) IssueSQLExecutionAuthorizationFromExecution(
+	ctx context.Context,
+	tenantID uint,
+	parentExecutionID uuid.UUID,
+	executionID uuid.UUID,
+	engineID uint,
+	sqlContent string,
+	timeout int,
+) (*IssuedSQLExecutionAuthorization, error) {
+	if s == nil || s.cfg == nil || s.systemService == nil || tenantID == 0 || engineID == 0 ||
+		parentExecutionID == uuid.Nil || executionID == uuid.Nil {
+		return nil, fmt.Errorf("SQL 执行授权服务未正确初始化")
+	}
+	effect, expiresIn, err := s.sqlExecutionAuthorizationRequest(sqlContent, timeout)
+	if err != nil {
+		return nil, err
+	}
+	issued, err := s.systemService.WithTenantID(tenantID).IssueExecutionAuthorizationFromExecution(
+		ctx,
+		commonClient.IssueExecutionAuthorizationFromExecutionRequest{
+			ParentExecutionID: parentExecutionID.String(),
+			Audience:          "develop",
+			ExecutionID:       executionID.String(),
+			EngineIDs:         []string{strconv.FormatUint(uint64(engineID), 10)},
+			Effects:           []string{string(effect)},
+			ExpiresIn:         expiresIn,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("从父执行签发 SQL 执行授权失败: %w", err)
+	}
+	return issuedSQLExecutionAuthorization(issued, tenantID, effect)
+}
+
+func (s *SQLEngineService) sqlExecutionAuthorizationRequest(
+	sqlContent string,
+	timeout int,
+) (SQLExecutionEffect, int64, error) {
+	effect, err := ClassifySQLExecutionEffect(sqlContent)
+	if err != nil {
+		return "", 0, fmt.Errorf("%w: %v", ErrSQLExecutionUnclassifiable, err)
+	}
+	timeout = s.normalizedTimeout(timeout)
+	return effect, int64(timeout + 30), nil
+}
+
+func issuedSQLExecutionAuthorization(
+	issued *commonClient.IssuedExecutionAuthorization,
+	tenantID uint,
+	effect SQLExecutionEffect,
+) (*IssuedSQLExecutionAuthorization, error) {
+	if issued == nil || issued.TenantID != strconv.FormatUint(uint64(tenantID), 10) {
+		return nil, fmt.Errorf("执行授权租户与当前上下文不一致")
+	}
+	authorizationID, err := parseIssuedAuthorizationID(issued.ID)
+	if err != nil {
+		return nil, err
+	}
+	actorPrincipalID, err := parseIssuedAuthorizationID(issued.ActorPrincipalID)
+	if err != nil {
+		return nil, err
+	}
+	membershipID, err := parseIssuedAuthorizationID(issued.TenantMembershipID)
+	if err != nil {
+		return nil, err
+	}
+	authorizationVersion, err := parseIssuedAuthorizationID(issued.IssuedAuthorizationVersion)
+	if err != nil {
+		return nil, err
+	}
+	return &IssuedSQLExecutionAuthorization{
+		AuthorizationID: authorizationID, Effect: effect, ActorPrincipalID: actorPrincipalID,
+		ActorTenantMembershipID: membershipID, IssuedAuthorizationVersion: authorizationVersion,
+		ExpiresAt: issued.ExpiresAt.UTC(),
+	}, nil
+}
+
+func (s *SQLEngineService) ExecuteIssuedSQLAuthorization(
+	ctx context.Context,
+	tenantID uint,
+	executionID uuid.UUID,
+	engineID uint,
+	sqlContent string,
+	timeout int,
+	authorization *IssuedSQLExecutionAuthorization,
+) (*SQLResult, error) {
+	timeout = s.normalizedTimeout(timeout)
+	engine, err := s.executionEngine(ctx, tenantID, executionID, engineID, authorization)
+	if err != nil {
+		return nil, err
+	}
+	if !dbbridge.SupportsReadOnlySQLExecution(engine.EngineType) {
+		return nil, ErrControlledSQLExecutionUnsupported
+	}
+
+	execCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	defer cancel()
+	if authorization.Effect == SQLExecutionEffectRead {
+		queryResult, err := dbbridge.ExecuteReadOnlyQuery(execCtx, engine, sqlContent)
+		if err != nil {
+			return nil, err
+		}
+		rows := queryResult.Rows
+		if rows == nil {
+			rows = []map[string]interface{}{}
+		}
+		return &SQLResult{
+			Columns: queryResult.Columns, Rows: rows, RowsAffected: int64(len(rows)), Effect: authorization.Effect,
+		}, nil
+	}
+
+	rowsAffected, err := dbbridge.ExecuteStatement(execCtx, engine, sqlContent)
+	if err != nil {
+		return nil, err
+	}
+	return &SQLResult{
+		Columns: []string{}, Rows: []map[string]interface{}{}, RowsAffected: rowsAffected, Effect: authorization.Effect,
+	}, nil
+}
+
+func (s *SQLEngineService) executionEngine(
+	ctx context.Context,
+	tenantID uint,
+	executionID uuid.UUID,
+	engineID uint,
+	authorization *IssuedSQLExecutionAuthorization,
+) (*commonModels.Engine, error) {
+	if s == nil || s.systemService == nil || tenantID == 0 || engineID == 0 || executionID == uuid.Nil ||
+		authorization == nil || authorization.AuthorizationID <= 0 || authorization.Effect == "" ||
+		!authorization.ExpiresAt.After(time.Now().UTC()) {
+		return nil, fmt.Errorf("执行授权无效或已过期")
+	}
+	access, err := s.systemService.WithTenantID(tenantID).GetExecutionEngineAccess(
+		ctx,
+		strconv.FormatInt(authorization.AuthorizationID, 10),
+		commonClient.ExecutionEngineAccessRequest{
+			ExecutionID:     executionID.String(),
+			EngineID:        strconv.FormatUint(uint64(engineID), 10),
+			RequiredEffects: []string{string(authorization.Effect)},
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("获取执行期引擎访问失败: %w", err)
+	}
+	return access.Engine, nil
+}
+
+func parseIssuedAuthorizationID(value string) (int64, error) {
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed <= 0 || strconv.FormatInt(parsed, 10) != value {
+		return 0, fmt.Errorf("System 返回了无效的执行授权标识")
+	}
+	return parsed, nil
+}
+
+func (s *SQLEngineService) GenerateSampleQuery(ctx context.Context, tenantID, engineID uint) (string, string, error) {
+	descriptor, err := s.systemService.WithTenantID(tenantID).GetEngineRuntimeDescriptor(ctx, engineID)
+	if err != nil {
+		return "", "", fmt.Errorf("获取引擎描述失败：%w", err)
+	}
+	resource := descriptor.AsEngine()
+	if resource == nil {
+		return "", "", fmt.Errorf("引擎描述为空")
+	}
+	query, language := dbbridge.GenerateSampleQuery(ctx, resource)
+	return query, language, nil
+}
+
+func (s *SQLEngineService) normalizedTimeout(timeout int) int {
 	if timeout <= 0 {
 		timeout = s.cfg.DefaultQueryTimeout
 	}
 	if timeout > s.cfg.MaxQueryTimeout {
 		timeout = s.cfg.MaxQueryTimeout
 	}
-
-	execCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-	defer cancel()
-
-	resource, err := s.systemClient.GetEngine(engineID)
-	if err != nil {
-		return 0, fmt.Errorf("获取引擎配置失败：%w", err)
-	}
-
-	return dbbridge.ExecuteDML(execCtx, resource, sqlContent)
-}
-
-// TestConnection 测试数据库连接
-func (s *SQLEngineService) TestConnection(engineID uint) error {
-	resource, err := s.systemClient.GetEngine(engineID)
-	if err != nil {
-		return fmt.Errorf("获取引擎配置失败：%w", err)
-	}
-
-	log.Printf("🔌 [SQL Engine] 测试连接 engine_id=%d type=%s", engineID, resource.EngineType)
-
-	if err := dbbridge.TestConnection(context.Background(), resource); err != nil {
-		return fmt.Errorf("连接测试失败：%w", err)
-	}
-
-	log.Printf("✅ [SQL Engine] 连接测试成功 engine_id=%d type=%s", engineID, resource.EngineType)
-	return nil
-}
-
-// ListDatabaseResources 获取可用的数据库资源列表（支持 query 计算入口的引擎）
-func (s *SQLEngineService) ListDatabaseResources(ctx context.Context, tenantID uint) ([]commonModels.Engine, error) {
-	allResources, err := s.systemClient.ListEngines("", tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("获取引擎列表失败：%w", err)
-	}
-
-	var dbResources []commonModels.Engine
-	for _, res := range allResources {
-		if utils.SupportsComputeEntrypoint(&res, "query") {
-			dbResources = append(dbResources, res)
-		}
-	}
-
-	log.Printf("✅ [SQL Engine] 获取数据库资源列表成功 (tenant_id=%d, total=%d)", tenantID, len(dbResources))
-	return dbResources, nil
-}
-
-// GenerateSampleQuery 生成该引擎的可执行样例查询（用于查询工作台切换引擎时自动填充）
-func (s *SQLEngineService) GenerateSampleQuery(ctx context.Context, engineID uint) (query string, language string, err error) {
-	resource, err := s.systemClient.GetEngine(engineID)
-	if err != nil {
-		return "", "", fmt.Errorf("获取引擎配置失败：%w", err)
-	}
-	q, lang := dbbridge.GenerateSampleQuery(ctx, resource)
-	return q, lang, nil
-}
-
-// getConnection 保留供遗留代码使用，新代码请直接使用 dbbridge.ExecuteQuery
-// Deprecated: 使用 dbbridge.ExecuteQuery 替代
-func (s *SQLEngineService) getConnection(engineID uint) (*gorm.DB, error) {
-	resource, err := s.systemClient.GetEngine(engineID)
-	if err != nil {
-		return nil, fmt.Errorf("获取引擎配置失败：%w", err)
-	}
-	return dbbridge.GetOrCreatePool(resource, dbbridge.DefaultPoolConfig())
+	return timeout
 }

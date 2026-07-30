@@ -20,7 +20,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineService, scanService *service.ScanService, taskService *service.ScanTaskService, executionService *service.ScanExecutionService, redisClient *redis.Client, systemClient *commonClient.SystemClient) *gin.Engine {
+func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineService, scanService *service.ScanService, taskService *service.ScanTaskService, executionService *service.ScanExecutionService, redisClient *redis.Client, systemClient *commonClient.SystemServiceClient) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(i18nmiddleware.I18nMiddleware())
@@ -64,11 +64,16 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 	}
 	// 审计日志中间件（记录到 System 模块）
 	if systemClient != nil {
-		api.Use(audit.AuditMiddleware("meta", systemClient))
+		api.Use(audit.ServiceAuditMiddleware("meta", systemClient))
 	}
 	{
 		// 资产发现接口（供 Asset 模块调用）
-		api.GET("/assets/discoverable", permission(metaauthorization.PermissionMetaCatalogRead), assetDiscHandler.listDiscoverableAssets)
+		api.GET(
+			"/assets/discoverable",
+			auth.MustNewServiceClientGuard("addp-asset"),
+			permission(metaauthorization.PermissionMetaCatalogRead),
+			assetDiscHandler.listDiscoverableAssets,
+		)
 
 		// 资源相关
 		api.GET("/engines", permission(metaauthorization.PermissionMetaCatalogRead), handler.GetEngines)

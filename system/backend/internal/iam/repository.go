@@ -10,6 +10,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	commonrepo "github.com/addp/common/repository"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -400,6 +401,209 @@ func (r *Repository) CreateDelegatedAccessToken(
 	return wrapRepositoryError(err)
 }
 
+func (r *Repository) CreateExecutionAuthorization(
+	ctx context.Context,
+	authorization *ExecutionAuthorization,
+) error {
+	if authorization == nil {
+		return fmt.Errorf("%w: execution authorization is required", commonapi.ErrBadRequest)
+	}
+	err := r.db.WithContext(ctx).Create(authorization).Error
+	var postgresError *pgconn.PgError
+	if errors.As(err, &postgresError) && postgresError.Code == "23505" &&
+		postgresError.ConstraintName == "execution_authorizations_audience_execution_id_key" {
+		return ErrExecutionAuthorizationConflict
+	}
+	return wrapRepositoryError(err)
+}
+
+func (r *Repository) GetExecutionAuthorization(
+	ctx context.Context,
+	authorizationID int64,
+) (*ExecutionAuthorization, error) {
+	var authorization ExecutionAuthorization
+	if authorizationID <= 0 {
+		return nil, commonapi.ErrNotFound
+	}
+	if err := r.db.WithContext(ctx).First(&authorization, authorizationID).Error; err != nil {
+		return nil, wrapRepositoryError(err)
+	}
+	return &authorization, nil
+}
+
+func (r *Repository) LockExecutionAuthorization(
+	ctx context.Context,
+	authorizationID int64,
+) (*ExecutionAuthorization, error) {
+	var authorization ExecutionAuthorization
+	if authorizationID <= 0 {
+		return nil, commonapi.ErrNotFound
+	}
+	err := r.db.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		First(&authorization, authorizationID).Error
+	if err != nil {
+		return nil, wrapRepositoryError(err)
+	}
+	return &authorization, nil
+}
+
+func (r *Repository) FindExecutionAuthorization(
+	ctx context.Context,
+	audience string,
+	executionID uuid.UUID,
+) (*ExecutionAuthorization, error) {
+	var authorization ExecutionAuthorization
+	if executionID == uuid.Nil || strings.TrimSpace(audience) == "" {
+		return nil, commonapi.ErrNotFound
+	}
+	if err := r.db.WithContext(ctx).
+		Where("audience = ? AND execution_id = ?", audience, executionID).
+		Take(&authorization).Error; err != nil {
+		return nil, wrapRepositoryError(err)
+	}
+	return &authorization, nil
+}
+
+func (r *Repository) ExecutionAuthorizationEngineAvailable(
+	ctx context.Context,
+	tenantID int64,
+	engineID int64,
+) (bool, error) {
+	if tenantID <= 0 || engineID <= 0 {
+		return false, commonapi.ErrBadRequest
+	}
+	var available bool
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM system.engines engine
+			WHERE engine.id = ?
+			  AND engine.lifecycle_state = 'active'
+			  AND (
+				  engine.tenant_id = ?
+				  OR (engine.tenant_id IS NULL AND engine.is_builtin = true)
+			  )
+		)
+	`, engineID, tenantID).Scan(&available).Error
+	return available, wrapRepositoryError(err)
+}
+
+type ExecutionAuthorizationProvenance struct {
+	ParentExecutionID          uuid.UUID `gorm:"column:parent_execution_id"`
+	ExecutionID                uuid.UUID `gorm:"column:execution_id"`
+	TenantID                   int64     `gorm:"column:tenant_id"`
+	ActorPrincipalID           int64     `gorm:"column:actor_principal_id"`
+	ActorTenantMembershipID    int64     `gorm:"column:actor_tenant_membership_id"`
+	IssuedAuthorizationVersion int64     `gorm:"column:issued_authorization_version"`
+}
+
+func (r *Repository) GetExecutionAuthorizationProvenance(
+	ctx context.Context,
+	parentExecutionID uuid.UUID,
+	executionID uuid.UUID,
+	audience string,
+) (*ExecutionAuthorizationProvenance, error) {
+	if parentExecutionID == uuid.Nil || executionID == uuid.Nil || strings.TrimSpace(audience) == "" {
+		return nil, commonapi.ErrBadRequest
+	}
+	var provenance ExecutionAuthorizationProvenance
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT parent.execution_id AS parent_execution_id,
+		       child.execution_id,
+		       child.tenant_id,
+		       child.actor_principal_id,
+		       child.actor_tenant_membership_id,
+		       child.issued_authorization_version
+		FROM common.task_executions child
+		JOIN common.task_executions parent
+		  ON parent.execution_id = child.parent_execution_id
+		 AND parent.tenant_id = child.tenant_id
+		WHERE parent.execution_id = ?
+		  AND child.execution_id = ?
+		  AND parent.module = 'orchestrator'
+		  AND child.module = ?
+		  AND parent.status = 'running'
+		  AND child.status = 'pending'
+		  AND parent.actor_principal_id = child.actor_principal_id
+		  AND parent.actor_tenant_membership_id = child.actor_tenant_membership_id
+		  AND parent.issued_authorization_version = child.issued_authorization_version
+		  AND child.actor_principal_id IS NOT NULL
+		  AND child.actor_tenant_membership_id IS NOT NULL
+		  AND child.issued_authorization_version IS NOT NULL
+	`, parentExecutionID, executionID, audience).Take(&provenance).Error
+	if err != nil {
+		return nil, wrapRepositoryError(err)
+	}
+	return &provenance, nil
+}
+
+func (r *Repository) LockTaskAuthorizationSubject(
+	ctx context.Context,
+	ownerModule string,
+	taskRef uuid.UUID,
+) (*TaskAuthorizationSubject, error) {
+	var subject TaskAuthorizationSubject
+	err := r.db.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("owner_module = ? AND task_ref = ?", ownerModule, taskRef).
+		Take(&subject).Error
+	if err != nil {
+		return nil, wrapRepositoryError(err)
+	}
+	return &subject, nil
+}
+
+func (r *Repository) CreateTaskAuthorizationSubject(
+	ctx context.Context,
+	subject *TaskAuthorizationSubject,
+) error {
+	if subject == nil {
+		return commonapi.ErrBadRequest
+	}
+	return wrapRepositoryError(r.db.WithContext(ctx).Create(subject).Error)
+}
+
+func (r *Repository) UpdateTaskAuthorizationSubject(
+	ctx context.Context,
+	subject *TaskAuthorizationSubject,
+) error {
+	if subject == nil || subject.ID <= 0 {
+		return commonapi.ErrBadRequest
+	}
+	result := r.db.WithContext(ctx).Model(&TaskAuthorizationSubject{}).
+		Where("id = ? AND tenant_id = ?", subject.ID, subject.TenantID).
+		Updates(map[string]any{
+			"definition_hash": subject.DefinitionHash,
+			"principal_id": subject.PrincipalID,
+			"tenant_membership_id": subject.TenantMembershipID,
+			"authorization_version": subject.AuthorizationVersion,
+			"authorized_at": subject.AuthorizedAt,
+			"updated_at": subject.UpdatedAt,
+		})
+	if result.Error != nil {
+		return wrapRepositoryError(result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return commonapi.ErrNotFound
+	}
+	return nil
+}
+
+func (r *Repository) GetTaskAuthorizationSubject(
+	ctx context.Context,
+	id int64,
+) (*TaskAuthorizationSubject, error) {
+	var subject TaskAuthorizationSubject
+	if id <= 0 {
+		return nil, commonapi.ErrNotFound
+	}
+	if err := r.db.WithContext(ctx).First(&subject, id).Error; err != nil {
+		return nil, wrapRepositoryError(err)
+	}
+	return &subject, nil
+}
+
 func (r *Repository) GetRefreshTokenByHash(ctx context.Context, tokenHash string) (*RefreshToken, error) {
 	var token RefreshToken
 	if err := r.db.WithContext(ctx).Where("token_hash = ?", tokenHash).Take(&token).Error; err != nil {
@@ -465,7 +669,7 @@ func (r *Repository) RefreshTokenFamilyContextIsActive(
 	switch family.ContextType {
 	case ContextTypePlatform:
 		if family.TenantMembershipID != nil ||
-			(family.AssuranceLevel != AssuranceLevelAAL2 && family.AssuranceLevel != AssuranceLevelAAL3) {
+			!validPlatformContextAssurance(principal.PrincipalType, family.AssuranceLevel) {
 			return false, nil
 		}
 		return r.HasEffectivePlatformRole(ctx, principal.ID, at)

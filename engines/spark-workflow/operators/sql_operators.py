@@ -77,6 +77,7 @@ SQL_METADATA = OperatorMetadata(
     description="SQL查询",
     brief_description="执行自由 SQL 查询,支持复杂的表关联和聚合分析",
     execution_modes=["workflow"],
+    effects=["read"],
     overview="sql 算子允许执行任意 Apache Spark 查询,支持 SELECT、JOIN、GROUP BY、窗口函数等标准 SQL 语法。适合复杂的数据分析和多表关联场景,也支持 Apache Sedona 的空间 SQL 函数。",
     params=[
         OperatorParam(
@@ -117,6 +118,7 @@ CREATE_TEMP_VIEW_METADATA = OperatorMetadata(
     description="创建临时视图",
     brief_description="将 DataFrame 注册为 SQL 临时视图,供后续 SQL 查询使用",
     execution_modes=["workflow"],
+    effects=["read"],
     overview="create_temp_view 将 DataFrame 注册为 Apache Spark 临时视图,使其可以在 sql 算子中通过表名引用。视图在 Spark Session 生命周期内有效,支持替换已存在的同名视图。",
     params=[
         OperatorParam(

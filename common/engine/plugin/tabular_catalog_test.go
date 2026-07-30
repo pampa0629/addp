@@ -285,6 +285,7 @@ func (*tabularCatalogTestPlugin) EngineOrigin() string                          
 func (*tabularCatalogTestPlugin) DefaultPort() int                                     { return 0 }
 func (*tabularCatalogTestPlugin) RequiredFields() []string                             { return nil }
 func (*tabularCatalogTestPlugin) SensitiveFields() []string                            { return nil }
+func (*tabularCatalogTestPlugin) ConnectionIdentityFields() []string                   { return []string{"host"} }
 func (*tabularCatalogTestPlugin) ValidateConnectionInfo(ConnectionInfo) error          { return nil }
 func (*tabularCatalogTestPlugin) TestConnection(context.Context, ConnectionInfo) error { return nil }
 func (*tabularCatalogTestPlugin) Capabilities() EngineCapabilities                     { return EngineCapabilities{} }

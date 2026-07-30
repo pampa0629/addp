@@ -123,6 +123,10 @@ func (p *NFSPlugin) SensitiveFields() []string {
 	return []string{} // NFS 基于 IP 访问控制，无密钥
 }
 
+func (p *NFSPlugin) ConnectionIdentityFields() []string {
+	return []string{"server", "export_path"}
+}
+
 func (p *NFSPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewFileCapabilities(p.Type())
 }

@@ -330,7 +330,11 @@
 
     <!-- 激活状态 -->
     <el-form-item v-if="showActiveSwitch" :label="t('storageEngine.activeStatus')">
-      <el-switch v-model="formState.is_active" />
+      <el-switch
+        v-model="formState.lifecycle_state"
+        active-value="active"
+        inactive-value="disabled"
+      />
       <span style="margin-left: 10px; font-size: 12px; color: var(--el-text-color-secondary)">
         {{ t('storageEngine.activeHint') }}
       </span>
@@ -630,10 +634,10 @@ const applySensitiveHints = () => {
 }
 
 const formState = reactive({
-  engine_type: '',
-  name: '',
-  description: '',
-  is_active: true,
+	engine_type: '',
+	name: '',
+	description: '',
+	lifecycle_state: 'active',
   connection_info: {},
   scan_config: {
     enabled: true,
@@ -651,7 +655,7 @@ const syncFromProps = (value) => {
   formState.engine_type = value.engine_type || ''
   formState.name = value.name || ''
   formState.description = value.description || ''
-  formState.is_active = value.is_active !== undefined ? value.is_active : true
+	formState.lifecycle_state = value.lifecycle_state || 'active'
   formState.connection_info = { ...(value.connection_info || {}) }
 
   // 同步扫描配置
@@ -747,7 +751,7 @@ watch(
       engine_type: value.engine_type,
       name: value.name,
       description: value.description,
-      is_active: value.is_active,
+		lifecycle_state: value.lifecycle_state,
       connection_info: { ...value.connection_info }
     }
     payload.scan_config = { ...value.scan_config, enabled: scanConfigEnabled.value }

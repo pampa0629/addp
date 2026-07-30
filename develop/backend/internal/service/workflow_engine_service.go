@@ -16,22 +16,78 @@ import (
 	"github.com/addp/common/engine/workflowaccess"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
-	"github.com/addp/common/utils"
 	"github.com/addp/develop/backend/internal/models"
+	"github.com/google/uuid"
 )
 
 // WorkflowEngineService 工作流执行引擎服务
 // 通过 Common Engine 的 WorkflowRuntimeProvider 统一调用工作流运行时。
 type WorkflowEngineService struct {
-	systemClient *commonClient.SystemClient
+	systemService *commonClient.SystemServiceClient
 }
 
 var workflowRuntimeStatusPollInterval = 2 * time.Second
 
+type workflowEngineAccessResolver struct {
+	systemService *commonClient.SystemServiceClient
+	tenantID      uint
+	executionID   uuid.UUID
+	authorization *IssuedWorkflowExecutionAuthorization
+	engines       map[uint]*commonModels.Engine
+}
+
+func newWorkflowEngineAccessResolver(
+	systemService *commonClient.SystemServiceClient,
+	tenantID uint,
+	executionID uuid.UUID,
+	authorization *IssuedWorkflowExecutionAuthorization,
+) *workflowEngineAccessResolver {
+	return &workflowEngineAccessResolver{
+		systemService: systemService,
+		tenantID:      tenantID,
+		executionID:   executionID,
+		authorization: authorization,
+		engines:       make(map[uint]*commonModels.Engine),
+	}
+}
+
+func (r *workflowEngineAccessResolver) engine(ctx context.Context, engineID uint) (*commonModels.Engine, error) {
+	if r == nil || r.authorization == nil || engineID == 0 {
+		return nil, fmt.Errorf("工作流执行期引擎访问上下文无效")
+	}
+	if engine := r.engines[engineID]; engine != nil {
+		return engine, nil
+	}
+	if r.systemService == nil {
+		return nil, fmt.Errorf("工作流执行期引擎访问上下文无效")
+	}
+	requiredEffects := r.authorization.EngineEffects[engineID]
+	if len(requiredEffects) == 0 {
+		return nil, fmt.Errorf("引擎 %d 不在本次工作流 Execution Authorization 中", engineID)
+	}
+	engineIDText := strconv.FormatUint(uint64(engineID), 10)
+	access, err := r.systemService.WithTenantID(r.tenantID).GetExecutionEngineAccess(
+		ctx,
+		strconv.FormatInt(r.authorization.AuthorizationID, 10),
+		commonClient.ExecutionEngineAccessRequest{
+			ExecutionID: r.executionID.String(), EngineID: engineIDText,
+			RequiredEffects: append([]string(nil), requiredEffects...),
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("获取工作流执行期引擎 %d 访问失败: %w", engineID, err)
+	}
+	if access.Engine == nil {
+		return nil, fmt.Errorf("System 未返回工作流执行期引擎 %d", engineID)
+	}
+	r.engines[engineID] = access.Engine
+	return access.Engine, nil
+}
+
 // NewWorkflowEngineService 创建工作流引擎服务
-func NewWorkflowEngineService(systemClient *commonClient.SystemClient) *WorkflowEngineService {
+func NewWorkflowEngineService(systemService *commonClient.SystemServiceClient) *WorkflowEngineService {
 	return &WorkflowEngineService{
-		systemClient: systemClient,
+		systemService: systemService,
 	}
 }
 
@@ -50,21 +106,46 @@ type WorkflowResponse struct {
 }
 
 type WorkflowProducedTarget struct {
-	EngineID   uint                 `json:"engine_id"`
-	Type       string               `json:"type"`
-	Path       []string             `json:"path"`
-	Locator    string               `json:"locator"`
-	AccessPlan commonModels.JSONMap `json:"access_plan,omitempty"`
+	EngineID uint     `json:"engine_id"`
+	Type     string   `json:"type"`
+	Path     []string `json:"path"`
+	Locator  string   `json:"locator"`
 }
 
 // ExecuteWorkflow 执行工作流（支持 JSONB 配置）
 func (s *WorkflowEngineService) ExecuteWorkflow(
 	ctx context.Context,
 	tenantID uint,
+	executionID uuid.UUID,
 	workflowDef map[string]interface{},
 	inputData map[string]interface{},
 	executionConfig string,
+	authorization *IssuedWorkflowExecutionAuthorization,
 ) (*WorkflowResponse, error) {
+	if s == nil || s.systemService == nil || tenantID == 0 || executionID == uuid.Nil ||
+		authorization == nil || authorization.AuthorizationID <= 0 ||
+		!authorization.ExpiresAt.After(time.Now().UTC()) {
+		return nil, fmt.Errorf("工作流执行授权无效或已过期")
+	}
+	resolver := newWorkflowEngineAccessResolver(s.systemService, tenantID, executionID, authorization)
+	return s.executeWorkflowWithResolver(
+		ctx, tenantID, executionID, workflowDef, inputData, executionConfig, authorization, resolver,
+	)
+}
+
+func (s *WorkflowEngineService) executeWorkflowWithResolver(
+	ctx context.Context,
+	tenantID uint,
+	executionID uuid.UUID,
+	workflowDef map[string]interface{},
+	inputData map[string]interface{},
+	executionConfig string,
+	authorization *IssuedWorkflowExecutionAuthorization,
+	resolver *workflowEngineAccessResolver,
+) (*WorkflowResponse, error) {
+	if resolver == nil {
+		return nil, fmt.Errorf("工作流执行期引擎访问解析器不可用")
+	}
 	// 1. 解析执行配置
 	var config models.WorkflowExecutionConfig
 	if err := json.Unmarshal([]byte(executionConfig), &config); err != nil {
@@ -72,11 +153,11 @@ func (s *WorkflowEngineService) ExecuteWorkflow(
 	}
 
 	// 2. 查询工作流引擎
-	engine, err := s.systemClient.GetEngineByID(config.EngineID)
+	engine, err := resolver.engine(ctx, config.EngineID)
 	if err != nil {
 		return nil, fmt.Errorf("查询工作流引擎失败: %w", err)
 	}
-	if engine == nil || !engine.IsActive {
+	if !engine.IsUsable() {
 		return nil, fmt.Errorf("工作流引擎未启用")
 	}
 	if engine.TenantID != nil && *engine.TenantID != tenantID {
@@ -85,14 +166,23 @@ func (s *WorkflowEngineService) ExecuteWorkflow(
 
 	// 3. 预处理数据源参数：将 locator / target_parent_locator 派生为 connection_info 和运行时路径。
 	// Spark Workflow 的顶层运行时 engine_id 由 workflowRuntimeOptions 单独处理。
-	preprocessedWorkflowDef, producedTargets, err := s.preprocessWorkflowParamsWithTargets(ctx, tenantID, engine.EngineType, workflowDef)
+	preprocessedWorkflowDef, producedTargets, err := s.preprocessWorkflowParamsWithTargets(
+		ctx, tenantID, engine.EngineType, workflowDef, resolver,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("预处理工作流参数失败: %w", err)
 	}
 
-	runtimeOptions, err := s.workflowRuntimeOptions(tenantID, engine.EngineType, config)
+	runtimeOptions, err := s.workflowRuntimeOptions(ctx, tenantID, engine.EngineType, config, resolver)
 	if err != nil {
 		return nil, err
+	}
+	if runtimeOptions == nil {
+		runtimeOptions = make(map[string]interface{})
+	}
+	runtimeOptions["execution_authorization"] = map[string]interface{}{
+		"id":      authorization.AuthorizationID,
+		"effects": append([]string(nil), authorization.Effects...),
 	}
 
 	// 4. 通过 Common Engine 的 WorkflowRuntimeProvider 执行工作流
@@ -155,7 +245,13 @@ func (s *WorkflowEngineService) waitWorkflowRuntimeTerminalStatus(
 	}
 }
 
-func (s *WorkflowEngineService) workflowRuntimeOptions(tenantID uint, engineType string, config models.WorkflowExecutionConfig) (map[string]interface{}, error) {
+func (s *WorkflowEngineService) workflowRuntimeOptions(
+	ctx context.Context,
+	tenantID uint,
+	engineType string,
+	config models.WorkflowExecutionConfig,
+	resolver *workflowEngineAccessResolver,
+) (map[string]interface{}, error) {
 	sparkClusterID, hasSparkClusterID := config.EngineSpecific["spark_cluster_id"]
 	if engineType != "spark_workflow" {
 		if hasSparkClusterID {
@@ -173,14 +269,14 @@ func (s *WorkflowEngineService) workflowRuntimeOptions(tenantID uint, engineType
 		return nil, fmt.Errorf("spark_cluster_id 必须是有效的 Spark 通用引擎资源 ID: %w", err)
 	}
 
-	sparkEngine, err := s.systemClient.GetEngineByID(engineID)
+	sparkEngine, err := resolver.engine(ctx, engineID)
 	if err != nil {
 		return nil, fmt.Errorf("查询 Spark 通用引擎资源失败: %w", err)
 	}
 	if sparkEngine.EngineType != "spark" {
 		return nil, fmt.Errorf("spark_cluster_id 必须指向 engine_type=spark 的通用引擎资源")
 	}
-	if !sparkEngine.IsActive {
+	if !sparkEngine.IsUsable() {
 		return nil, fmt.Errorf("spark_cluster_id 指向的 Spark 通用引擎资源未启用")
 	}
 	if err := requireTenantBusinessEngine(sparkEngine, tenantID, "Spark 通用引擎资源"); err != nil {
@@ -372,8 +468,9 @@ func (s *WorkflowEngineService) preprocessWorkflowParams(
 	tenantID uint,
 	workflowEngineType string,
 	workflowDef map[string]interface{},
+	resolver *workflowEngineAccessResolver,
 ) (map[string]interface{}, error) {
-	result, _, err := s.preprocessWorkflowParamsWithTargets(ctx, tenantID, workflowEngineType, workflowDef)
+	result, _, err := s.preprocessWorkflowParamsWithTargets(ctx, tenantID, workflowEngineType, workflowDef, resolver)
 	return result, err
 }
 
@@ -382,7 +479,11 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 	tenantID uint,
 	workflowEngineType string,
 	workflowDef map[string]interface{},
+	resolver *workflowEngineAccessResolver,
 ) (map[string]interface{}, []WorkflowProducedTarget, error) {
+	if resolver == nil {
+		return nil, nil, fmt.Errorf("工作流执行期引擎访问解析器不可用")
+	}
 	// 深拷贝 workflowDef，避免派生运行时参数时修改已保存的公开工作流定义。
 	encodedWorkflow, err := json.Marshal(workflowDef)
 	if err != nil {
@@ -436,7 +537,7 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 			continue
 		}
 		if adapterSpec.AccessPlan != nil {
-			targets, err := s.deriveWorkflowAccessPlan(tenantID, params, adapterSpec)
+			targets, err := s.deriveWorkflowAccessPlan(ctx, tenantID, params, adapterSpec, resolver)
 			if err != nil {
 				return nil, nil, fmt.Errorf("任务 %d 工作流访问计划派生失败: %w", i, err)
 			}
@@ -483,7 +584,7 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 		}
 
 		// 从 System API 获取引擎信息（包含解密后的 connection_info）
-		engine, err := s.systemClient.GetEngineByID(engineID)
+		engine, err := resolver.engine(ctx, engineID)
 		if err != nil {
 			return nil, nil, fmt.Errorf("获取引擎 %d 信息失败: %w", engineID, err)
 		}
@@ -517,9 +618,11 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 }
 
 func (s *WorkflowEngineService) deriveWorkflowAccessPlan(
+	ctx context.Context,
 	tenantID uint,
 	params map[string]interface{},
 	adapter workflowOperatorAdapterSpec,
+	resolver *workflowEngineAccessResolver,
 ) ([]WorkflowProducedTarget, error) {
 	spec := adapter.AccessPlan
 	if spec == nil {
@@ -542,18 +645,18 @@ func (s *WorkflowEngineService) deriveWorkflowAccessPlan(
 	if err != nil {
 		return nil, fmt.Errorf("invalid target_parent_locator: %w", err)
 	}
-	sourceEngine, err := s.systemClient.GetEngineByID(sourceLocator.EngineID)
+	sourceEngine, err := resolver.engine(ctx, sourceLocator.EngineID)
 	if err != nil {
 		return nil, fmt.Errorf("get source engine %d: %w", sourceLocator.EngineID, err)
 	}
-	targetEngine, err := s.systemClient.GetEngineByID(targetParent.EngineID)
+	targetEngine, err := resolver.engine(ctx, targetParent.EngineID)
 	if err != nil {
 		return nil, fmt.Errorf("get target engine %d: %w", targetParent.EngineID, err)
 	}
-	if sourceEngine == nil || !sourceEngine.IsActive {
+	if !sourceEngine.IsUsable() {
 		return nil, fmt.Errorf("source engine is not active")
 	}
-	if targetEngine == nil || !targetEngine.IsActive {
+	if !targetEngine.IsUsable() {
 		return nil, fmt.Errorf("target engine is not active")
 	}
 	if err := requireTenantBusinessEngine(sourceEngine, tenantID, "source engine"); err != nil {
@@ -625,7 +728,6 @@ func (s *WorkflowEngineService) deriveWorkflowAccessPlan(
 		resourceType = resourcetree.TypeObject
 	}
 	producedTarget := workflowProducedTarget(targetLocator.EngineID, resourceType, targetLocator.Path)
-	producedTarget.AccessPlan = plan.AuditJSONMap()
 	return []WorkflowProducedTarget{producedTarget}, nil
 }
 
@@ -870,20 +972,4 @@ func stringParam(params map[string]interface{}, key string) string {
 	default:
 		return ""
 	}
-}
-
-// ListWorkflowEngines 获取支持 compute.workflow 能力的工作流引擎列表
-// 用于工作流画布的引擎选择功能
-func (s *WorkflowEngineService) ListWorkflowEngines(ctx context.Context, tenantID uint) ([]commonModels.Engine, error) {
-	// 从System获取所有资源
-	allEngines, err := s.systemClient.ListEngines("", tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch engines from system: %w", err)
-	}
-
-	// 过滤出支持 compute.workflow 能力的引擎
-	workflowEngines := utils.FilterEnginesByComputeEntrypoint(allEngines, "workflow")
-
-	log.Printf("✅ Develop: 获取工作流引擎列表成功 (tenant_id=%d, total=%d)", tenantID, len(workflowEngines))
-	return workflowEngines, nil
 }

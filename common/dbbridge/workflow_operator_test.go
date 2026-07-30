@@ -40,6 +40,9 @@ func (p *workflowOperatorProvider) DefaultPort() int { return 0 }
 func (p *workflowOperatorProvider) RequiredFields() []string { return nil }
 
 func (p *workflowOperatorProvider) SensitiveFields() []string { return nil }
+func (p *workflowOperatorProvider) ConnectionIdentityFields() []string {
+	return []string{"host", "port"}
+}
 
 func (p *workflowOperatorProvider) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewWorkflowCapabilities(p.Type(), "addp.workflow/v1")
@@ -99,6 +102,7 @@ func (p *workflowOperatorProvider) ListOperators(ctx context.Context, connInfo p
 				},
 			},
 			ExecutionModes: []string{"workflow"},
+			Effects:        []string{"read"},
 			Attributes: map[string]interface{}{
 				"direct_binary": map[string]interface{}{
 					"content_type": "application/vnd.apache.arrow.stream",
@@ -206,6 +210,7 @@ func TestListWorkflowOperatorsRejectsIncompleteOperatorMetadata(t *testing.T) {
 				Parameters:     []plugin.ParameterDescriptor{},
 				OutputPorts:    []plugin.OutputPortDescriptor{},
 				ExecutionModes: []string{"workflow"},
+				Effects:        []string{"read"},
 			},
 		},
 	}
@@ -244,6 +249,7 @@ func TestInvokeOperatorAllowsDirectOperator(t *testing.T) {
 				Parameters:     []plugin.ParameterDescriptor{},
 				OutputPorts:    []plugin.OutputPortDescriptor{},
 				ExecutionModes: []string{"workflow", "direct"},
+				Effects:        []string{"read"},
 			},
 		},
 	}
@@ -299,7 +305,7 @@ func TestInvokeOperatorUsesGenericHTTPProviderForCustomWorkflowRuntime(t *testin
 		Name:           "ACME Geo Workflow",
 		EngineType:     engineType,
 		EngineOrigin:   "extension",
-		IsActive:       true,
+		LifecycleState: models.EngineLifecycleActive,
 		ConnectionInfo: testWorkflowConnectionInfo(t, server.URL),
 		Capabilities:   testWorkflowCapabilities(t, engineType),
 	}
@@ -400,7 +406,7 @@ func TestResolveDirectWorkflowOperatorFindsCustomRuntimeByOperatorCapability(t *
 			ID:             10,
 			Name:           "Inactive Workflow",
 			EngineType:     "inactive_workflow",
-			IsActive:       false,
+			LifecycleState: models.EngineLifecycleDisabled,
 			ConnectionInfo: testWorkflowConnectionInfo(t, server.URL),
 			Capabilities:   testWorkflowCapabilities(t, "inactive_workflow"),
 		},
@@ -409,7 +415,7 @@ func TestResolveDirectWorkflowOperatorFindsCustomRuntimeByOperatorCapability(t *
 			Name:           "Tenant Raster Workflow",
 			EngineType:     engineType,
 			EngineOrigin:   "extension",
-			IsActive:       true,
+			LifecycleState: models.EngineLifecycleActive,
 			ConnectionInfo: testWorkflowConnectionInfo(t, server.URL),
 			Capabilities:   testWorkflowCapabilities(t, engineType),
 		},
@@ -448,7 +454,7 @@ func TestResolveDirectWorkflowOperatorDoesNotFallbackToBuiltinWorkflowRuntime(t 
 			EngineType:     engineType,
 			EngineOrigin:   "extension",
 			IsBuiltin:      true,
-			IsActive:       true,
+			LifecycleState: models.EngineLifecycleActive,
 			ConnectionInfo: testWorkflowConnectionInfo(t, server.URL),
 			Capabilities:   testWorkflowCapabilities(t, engineType),
 		},
@@ -532,6 +538,7 @@ func TestExecuteWorkflowRejectsDirectOnlyOperator(t *testing.T) {
 				Parameters:     []plugin.ParameterDescriptor{},
 				OutputPorts:    []plugin.OutputPortDescriptor{},
 				ExecutionModes: []string{"direct"},
+				Effects:        []string{"read"},
 			},
 		},
 	}
@@ -698,6 +705,7 @@ func testWorkflowOperatorPayload(engineType, name string, modes []string) map[st
 		"description":       "Raster operator",
 		"brief_description": "Raster operator",
 		"execution_modes":   modes,
+		"effects":           []string{"read"},
 		"parameters":        []map[string]interface{}{},
 		"output_ports": []map[string]interface{}{
 			{

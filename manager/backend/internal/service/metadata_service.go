@@ -81,11 +81,12 @@ func (s *MetadataService) RefreshItem(ctx context.Context, tenantID *uint, engin
 	if opts.ItemID == 0 {
 		return nil, fmt.Errorf("item_id is required")
 	}
+	metaClient := s.metaClient
 	if tenantID != nil {
-		s.metaClient.SetTenantID(tenantID)
+		metaClient = metaClient.WithTenantID(*tenantID)
 	}
 
-	result, err := s.metaClient.RefreshItem(opts.ItemID, opts)
+	result, err := metaClient.RefreshItem(opts.ItemID, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +113,7 @@ func (s *MetadataService) RefreshItem(ctx context.Context, tenantID *uint, engin
 }
 
 func resourceAccessible(resource *models.Engine, tenantID *uint) bool {
-	if resource == nil || !resource.IsActive {
+	if !resource.IsUsable() {
 		return false
 	}
 	if tenantID == nil {
@@ -173,7 +174,7 @@ func convertResource(src *commonModels.Engine) *models.Engine {
 		Description:    src.Description,
 		CreatedBy:      src.CreatedBy,
 		TenantID:       tenantIDPtr,
-		IsActive:       src.IsActive,
+		LifecycleState: src.LifecycleState,
 	}
 }
 
@@ -449,10 +450,11 @@ func (s *MetadataService) downloadMetaItem(engineID uint, storageRef string, ten
 	if s.metaClient == nil {
 		return nil
 	}
+	metaClient := s.metaClient
 	if tenantID != nil {
-		s.metaClient.SetTenantID(tenantID)
+		metaClient = metaClient.WithTenantID(*tenantID)
 	}
-	item, err := s.metaClient.GetItemByCatalogPath(engineID, storageRef)
+	item, err := metaClient.GetItemByCatalogPath(engineID, storageRef)
 	if err == nil && item != nil {
 		return item
 	}

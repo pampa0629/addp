@@ -1,13 +1,16 @@
 package models
 
 import (
+	"crypto/sha256"
 	"database/sql/driver"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
 	commonModels "github.com/addp/common/models"
 	"gorm.io/gorm"
+	"github.com/google/uuid"
 )
 
 // Orchestration 编排定义
@@ -25,9 +28,34 @@ type Orchestration struct {
 	LastExecutionID     *string              `gorm:"size:36" json:"last_execution_id,omitempty"`
 	LastExecutionStatus *string              `gorm:"size:20" json:"last_execution_status,omitempty"`
 	CreatedBy           *uint                `json:"created_by,omitempty"`
+	AuthorizationRef            *uuid.UUID `gorm:"column:authorization_ref;type:uuid" json:"authorization_ref,omitempty"`
+	AuthorizationSubjectID      *int64     `gorm:"column:authorization_subject_id" json:"authorization_subject_id,omitempty"`
+	AuthorizationDefinitionHash *string    `gorm:"column:authorization_definition_hash;size:64" json:"authorization_definition_hash,omitempty"`
+	AuthorizationPrincipalID    *int64     `gorm:"column:authorization_principal_id" json:"authorization_principal_id,omitempty"`
+	AuthorizationMembershipID   *int64     `gorm:"column:authorization_membership_id" json:"authorization_membership_id,omitempty"`
+	AuthorizationVersion        *int64     `gorm:"column:authorization_version" json:"authorization_version,omitempty"`
+	AuthorizedAt                *time.Time `gorm:"column:authorized_at" json:"authorized_at,omitempty"`
 	CreatedAt           time.Time            `json:"created_at"`
 	UpdatedAt           time.Time            `json:"updated_at"`
 	DeletedAt           gorm.DeletedAt       `gorm:"index" json:"deleted_at,omitempty"`
+}
+
+func (r OrchestrationDefinitionRequest) AuthorizationHash() (string, error) {
+	encoded, err := json.Marshal(struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Steps       Steps  `json:"steps"`
+		Enabled     bool   `json:"enabled"`
+		Schedule    string `json:"schedule"`
+	}{
+		Name: r.Name, Description: r.Description, Steps: r.Steps,
+		Enabled: r.Enabled, Schedule: r.Schedule,
+	})
+	if err != nil {
+		return "", fmt.Errorf("marshal orchestration authorization definition: %w", err)
+	}
+	digest := sha256.Sum256(encoded)
+	return fmt.Sprintf("%x", digest[:]), nil
 }
 
 // OrchestrationDefinitionRequest contains only user-editable orchestration fields.

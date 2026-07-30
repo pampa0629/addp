@@ -177,6 +177,12 @@ Develop 的 `query` 任务分为两条互斥主路径：
 
 DuckDB 联邦查询不是工作流引擎，也不是 System 中注册的普通引擎实例。Develop 前端可以在查询工作台中提供 DuckDB 查询模式选项，但该选项必须来自 Develop 自身的查询模式能力，而不是追加到 `/develop/engines` 的伪 Engine。`/develop/engines` 只能返回 System 中具备 query 能力的真实引擎实例；保存任务、即时执行和写入执行记录均不得使用虚拟 `engine_id=0`，必须使用 `query_mode="duckdb"` 标识该内置联邦查询路径。
 
+### Notebook 脚本任务
+
+Notebook 使用 `dev_type="script"`，并在 `execution_config.engine_id` 中绑定 System 注册的 Notebook 引擎实例。Develop 只列出 `active` 且声明 `compute.script.modes` 包含 `notebook` 的 Runtime Descriptor。上传时先选择引擎，再从该实例查询 Kernel；执行时沿用保存的引擎和 Kernel，不接受临时改绑。
+
+Develop 后端通过 `common/dbbridge.OpenScriptSession()` 消费 `ScriptRuntimeProvider`，并使用租户 Service Access Token 调用返回的受控运行端点。部署配置不再提供 `JUPYTER_URL`，Develop 也不代理引擎健康检查。
+
 ⚠️ **Spark Workflow 运行时特殊要求**:
 
 当用户选择 **Spark Workflow** 运行时时，除了该运行时自注册记录本身，还需要：

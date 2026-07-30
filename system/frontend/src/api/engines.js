@@ -10,6 +10,7 @@ export const enginesAPI = {
     if (filters.engineType) params.engine_type = filters.engineType
     if (filters.capabilityGroups?.length) params.capability_groups = filters.capabilityGroups.join(',')
     if (filters.engineOrigins?.length) params.engine_origins = filters.engineOrigins.join(',')
+    if (filters.lifecycleStates?.length) params.lifecycle_states = filters.lifecycleStates.join(',')
     if (filters.includeBuiltin === false) params.include_builtin = false
     return client.get('/system/engines', { params })
   },
@@ -22,8 +23,10 @@ export const enginesAPI = {
     return client.put(`/system/engines/${id}`, data)
   },
 
-  delete: (id) => {
-    return client.delete(`/system/engines/${id}`)
+  delete: (id, externalArtifactPolicy = 'delete') => {
+    return client.delete(`/system/engines/${id}`, {
+      data: { external_artifact_policy: externalArtifactPolicy }
+    })
   },
 
   testConnection: (data) => {

@@ -344,7 +344,7 @@ GET/POST/PUT/DELETE /api/standard/dimension-hierarchies/:id/levels
 **被依赖**（其他模块调用 Standard 的 API）:
 - **Model 模块**: 验证 domain_id、element_id、hierarchy_id、metric_id；代理标准对象查询
 
-资产发现属于服务间接口，固定使用 `/api/v1/standard/internal/assets/discoverable` 和 `X-Internal-API-Key + X-Tenant-ID`，不建立 User AuthContext。其他 `/api/v1/standard` 路由只接受 canonical Bearer Tenant AuthContext；文档下载还可使用 Standard owner 的 Browser Resource Ticket。
+资产发现固定使用 `/api/v1/standard/assets/discoverable`，只接受 `addp-asset` Tenant Service Access Token，并校验 `standard.metric.read`；Tenant 只来自 canonical AuthContext。其他 `/api/v1/standard` 路由同样只接受 canonical Bearer Tenant AuthContext；文档下载还可使用 Standard owner 的 Browser Resource Ticket。
 
 ## IAM Permission 所有权
 

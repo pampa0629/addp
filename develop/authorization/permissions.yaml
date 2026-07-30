@@ -1,7 +1,39 @@
 schema_version: addp.permission_manifest/v1
 owner_module: develop
-manifest_version: 3
+manifest_version: 5
 permissions:
+  - key: develop.data_ddl.execute
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: critical
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.develop.data_ddl.execute.name
+    description_i18n_key: permissions.develop.data_ddl.execute.description
+  - key: develop.data_external_effect.execute
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.develop.data_external_effect.execute.name
+    description_i18n_key: permissions.develop.data_external_effect.execute.description
+  - key: develop.data_read.execute
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.develop.data_read.execute.name
+    description_i18n_key: permissions.develop.data_read.execute.description
+  - key: develop.data_write.execute
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.develop.data_write.execute.name
+    description_i18n_key: permissions.develop.data_write.execute.description
   - key: develop.notebook.create
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium
@@ -90,3 +122,19 @@ permissions:
     status: active
     name_i18n_key: permissions.develop.task.update.name
     description_i18n_key: permissions.develop.task.update.description
+  - key: develop.task_provider.execute
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.develop.task_provider.execute.name
+    description_i18n_key: permissions.develop.task_provider.execute.description
+  - key: develop.task_provider.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.develop.task_provider.read.name
+    description_i18n_key: permissions.develop.task_provider.read.description

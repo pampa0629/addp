@@ -1,8 +1,8 @@
 # ADDP IAM Fosite Provider 与 Storage Adapter 设计
 
-更新日期：2026-07-27
+更新日期：2026-07-28
 
-状态：技术设计和 Fosite OAuth 唯一主路径已实现。受控 Fosite `v0.50.0-addp.2`、目标协议表 migration、ADDP Session、PostgreSQL Storage Adapter、Provider、Consent Bridge 与 System Router 已落地；开发数据库已迁移到 `18/clean` 并完成三员恢复，真实 Browser 登录与 OAuth 客户端协议 E2E 已覆盖 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、刷新轮换和撤销。该 E2E 使用一次性测试驱动，正式 `addp-cli` 尚未交付。OIDC 尚未启用，继续遵守“无 OpenID Handler、无 `openid` Scope、无 Discovery/JWKS 宣告”的单一路径，待 issuer、Claim 和密钥生命周期独立设计完成后再实施。
+状态：技术设计和 Fosite OAuth 唯一主路径已实现。受控 Fosite `v0.50.0-addp.2`、目标协议表 migration、ADDP Session、PostgreSQL Storage Adapter、Provider、Consent Bridge 与 System Router 已落地；开发数据库已迁移到 `25/clean` 并完成三员恢复，真实 Browser 登录与正式 `addp` CLI E2E 已覆盖 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、Keychain 刷新轮换、受委托 Tool 调用和撤销。OIDC 尚未启用，继续遵守“无 OpenID Handler、无 `openid` Scope、无 Discovery/JWKS 宣告”的单一路径，待 issuer、Claim 和密钥生命周期独立设计完成后再实施。
 
 ## 一、目标与边界
 
@@ -22,16 +22,16 @@
 - Go Adapter、Handler 或测试代码；
 - OIDC issuer、Subject 类型、Claim 发布策略和签名密钥生命周期；
 - MFA、外部 IdP 和账号恢复实现；
-- 动态 Client Registration、PAR、Token Exchange 或 Client Credentials。
+- 动态 Client Registration、PAR 或 Token Exchange。Client Credentials 已纳入唯一 Fosite Provider，且只服务于一对一绑定 Service Principal 的 Confidential Client。
 
 ## 二、核心设计结论
 
 1. **显式 Compose**：只组合已批准 Handler，禁止 `ComposeAllEnabled`。
-2. **一个 Provider**：Authorization Code、Device、Refresh、Revocation，以及后续启用的 Introspection 和 OIDC 使用同一个 Provider 实例。
+2. **一个 Provider**：Authorization Code、Device、Client Credentials、Refresh、Revocation，以及后续启用的 Introspection 和 OIDC 使用同一个 Provider 实例。
 3. **一个 Adapter**：所有启用 Handler 使用同一个 PostgreSQL Storage Adapter，不为 Device 或 OIDC 建独立 Store。
 4. **一个 Token Family**：OAuth 与第一方 Web 共用 `refresh_token_families`、`access_tokens`、`refresh_tokens`，但协议入口不同。
 5. **无通用 Session Blob**：不保存 Fosite Go 对象、Gob 或库私有 JSON；Adapter 从显式列和 ADDP 版本化 JSON 重建对象。
-6. **Context 只在批准时确定**：客户端请求不能提交 Principal、Tenant、Membership、Role、Permission 或授权版本。
+6. **Context 由 System 确定**：User OAuth Context 只在批准时确定；Client Credentials 的 `tenant_id` 只能选择已绑定 Service Principal 的有效 Membership。客户端不能提交 Principal、Membership、Role、Permission 或授权版本。
 7. **Token 只存 Hash**：随机 Code/Token 使用 SHA-256；低熵 User Code 使用服务端密钥 HMAC-SHA-256。
 8. **事务由 Adapter 控制**：Fosite `Transactional` 映射为 PostgreSQL 短事务，所有方法从 `context.Context` 取得同一事务连接。
 9. **重放事实保留**：Code、Refresh Token 和 Device Code 不物理删除，使用失效时间和状态返回 Fosite 指定错误。
@@ -514,7 +514,7 @@ Token Family Repository 同时供第一方 Session Service 和 Fosite Adapter �
 
 ### 14.3 Provider 与 E2E
 
-- 验证 Provider 未注册 implicit/password/client_credentials/hybrid/PAR；
+- 验证 Provider 未注册 implicit/password/hybrid/PAR，并且 Client Credentials 只允许绑定 Service Principal 的 Confidential Client；
 - Authorization Code + PKCE 动态 loopback；
 - Device approve/deny/expire/slow_down/replay；
 - OAuth Refresh、Revocation，以及启用后的 Introspection；

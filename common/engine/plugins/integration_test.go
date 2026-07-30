@@ -284,7 +284,7 @@ func TestBuiltinPluginCapabilityMatrix(t *testing.T) {
 		"minio":            {origin: "general", family: "object", storage: true},
 		"nfs":              {origin: "general", family: "file", storage: true},
 		"s3":               {origin: "general", family: "object", storage: true},
-		"jupyter":          {origin: "extension", family: "script", script: true, scriptModes: []string{"notebook", "lab"}, scriptLanguages: []string{"python"}},
+		"jupyter":          {origin: "extension", family: "script", script: true, scriptModes: []string{"notebook"}, scriptLanguages: []string{"python"}},
 		"math_workflow":    {origin: "extension", family: "workflow", workflow: true, workflowRuntime: "addp.workflow/v1"},
 		"model3d_workflow": {origin: "extension", family: "workflow", workflow: true, workflowRuntime: "addp.workflow/v1"},
 		"pointcloud_workflow": {
@@ -410,15 +410,6 @@ func TestExtensionRuntimeRegistrationOmitsCapabilities(t *testing.T) {
 				`"is_builtin": True`,
 			},
 			forbidden: []string{`"capabilities"`, `"schema_version"`, `"engine_family"`, `"compute"`, `"extensions"`, `"workflow_runtime"`},
-		},
-		{
-			name: "jupyter",
-			path: "engines/jupyter/register.py",
-			required: []string{
-				`"engine_type": "jupyter"`,
-				`"is_builtin": True`,
-			},
-			forbidden: []string{`"capabilities"`, `"schema_version"`, `"engine_family"`, `"compute"`, `"extensions"`, `"script_runtime"`, `"shell"`},
 		},
 	}
 

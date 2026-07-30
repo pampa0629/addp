@@ -2,7 +2,7 @@
 
 更新日期：2026-07-27
 
-状态：已接受并完成 OAuth 唯一主路径切换。ADDP 受控 Fosite `v0.50.0-addp.2`、PostgreSQL Storage Adapter、Provider、Consent Bridge 与 System Router 已实现；开发数据库已迁移到 `18/clean` 并完成三员恢复，真实 Browser 登录与 OAuth 客户端协议 E2E 已覆盖 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、刷新轮换和撤销。该 E2E 使用一次性测试驱动，不代表仓库已交付正式 `addp-cli`。OIDC 尚未启用，继续遵守“无 OpenID Handler、无 `openid` Scope、无 Discovery/JWKS 宣告”的单一路径，待 issuer、Claim 和密钥生命周期独立设计完成后再实施。
+状态：已接受并完成 OAuth 唯一主路径切换。ADDP 受控 Fosite `v0.50.0-addp.2`、PostgreSQL Storage Adapter、Provider、Consent Bridge 与 System Router 已实现；开发数据库已迁移到 `25/clean` 并完成三员恢复，真实 Browser 登录与正式 `addp` CLI E2E 已覆盖 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、Keychain 刷新轮换、受委托 Tool 调用和撤销。OIDC 尚未启用，继续遵守“无 OpenID Handler、无 `openid` Scope、无 Discovery/JWKS 宣告”的单一路径，待 issuer、Claim 和密钥生命周期独立设计完成后再实施。
 
 ## 一、决策摘要
 
@@ -275,5 +275,5 @@ Upstream baseline: a5f0b09bf31c17297b25637bb3fec2ff7a55b159
 2. 受控 Fosite 派生版本、强制补丁、许可和上游测试门禁已完成；
 3. Storage Adapter 协议表已进入显式 SQL migration；
 4. Fosite Provider 已一次性替换自研 OAuth 状态机，旧路径已删除；
-5. 真实 Browser 和一次性 OAuth 客户端协议 E2E 已通过；正式 `addp-cli` 仍是独立产品交付项；
+5. 真实 Browser 与正式 `addp` CLI 的 Authorization Code + PKCE、Device Flow、AuthContext、刷新和撤销 E2E 已通过；
 6. OIDC 仍处于设计门外；只有 issuer、Discovery/JWKS、Claim 和密钥生命周期设计完成后才能启用。

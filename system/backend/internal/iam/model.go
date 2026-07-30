@@ -527,6 +527,49 @@ type DelegatedAccessToken struct {
 
 func (DelegatedAccessToken) TableName() string { return "system.delegated_access_tokens" }
 
+// ExecutionAuthorization records a short-lived, user-derived authorization
+// boundary for one asynchronous execution. It is an auditable database fact,
+// not a bearer credential: a matching runtime Service Principal is still
+// required when the authorization is consumed.
+type ExecutionAuthorization struct {
+	ID                         int64          `gorm:"primaryKey;autoIncrement"`
+	ActorPrincipalID           int64          `gorm:"column:actor_principal_id;not null"`
+	TenantID                   int64          `gorm:"column:tenant_id;not null"`
+	TenantMembershipID         int64          `gorm:"column:tenant_membership_id;not null"`
+	IssuedAuthorizationVersion int64          `gorm:"column:issued_authorization_version;not null"`
+	ExecutionID                uuid.UUID      `gorm:"column:execution_id;type:uuid;not null"`
+	Audience                   string         `gorm:"column:audience;not null"`
+	Effects                    pq.StringArray `gorm:"column:effects;type:text[];not null"`
+	EngineIDs                  pq.Int64Array  `gorm:"column:engine_ids;type:bigint[];not null"`
+	ExpiresAt                  time.Time      `gorm:"column:expires_at;not null"`
+	RevokedAt                  *time.Time     `gorm:"column:revoked_at"`
+	RevokedReason              *string        `gorm:"column:revoked_reason"`
+	CreatedAt                  time.Time      `gorm:"column:created_at;autoCreateTime"`
+}
+
+func (ExecutionAuthorization) TableName() string {
+	return "system.execution_authorizations"
+}
+
+// TaskAuthorizationSubject is the durable IAM binding used by a persisted
+// task definition for scheduled execution. It contains no credential.
+type TaskAuthorizationSubject struct {
+	ID                   int64     `gorm:"primaryKey;autoIncrement"`
+	OwnerModule          string    `gorm:"column:owner_module;not null"`
+	TaskType             string    `gorm:"column:task_type;not null"`
+	TaskRef              uuid.UUID `gorm:"column:task_ref;type:uuid;not null"`
+	DefinitionHash       string    `gorm:"column:definition_hash;not null"`
+	TenantID             int64     `gorm:"column:tenant_id;not null"`
+	PrincipalID          int64     `gorm:"column:principal_id;not null"`
+	TenantMembershipID   int64     `gorm:"column:tenant_membership_id;not null"`
+	AuthorizationVersion int64     `gorm:"column:authorization_version;not null"`
+	AuthorizedAt         time.Time `gorm:"column:authorized_at;not null"`
+	CreatedAt            time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt            time.Time `gorm:"column:updated_at;autoUpdateTime"`
+}
+
+func (TaskAuthorizationSubject) TableName() string { return "system.task_authorization_subjects" }
+
 type LocalUserIdentity struct {
 	PrincipalID          int64
 	PrincipalStatus      PrincipalStatus

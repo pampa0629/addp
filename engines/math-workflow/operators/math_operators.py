@@ -49,6 +49,7 @@ ADD_METADATA = OperatorMetadata(
     description="两数相加",
     brief_description="计算两个数的和",
     execution_modes=["workflow"],
+    effects=["read"],
     parameters=[
         ParameterMetadata(
             name="a",
@@ -92,6 +93,7 @@ SUBTRACT_METADATA = OperatorMetadata(
     description="两数相减",
     brief_description="计算两个数的差",
     execution_modes=["workflow"],
+    effects=["read"],
     parameters=[
         ParameterMetadata(
             name="a",
@@ -126,6 +128,7 @@ MULTIPLY_METADATA = OperatorMetadata(
     description="两数相乘",
     brief_description="计算两个数的积",
     execution_modes=["workflow"],
+    effects=["read"],
     parameters=[
         ParameterMetadata(
             name="a",
@@ -160,6 +163,7 @@ DIVIDE_METADATA = OperatorMetadata(
     description="两数相除",
     brief_description="计算两个数的商",
     execution_modes=["workflow"],
+    effects=["read"],
     parameters=[
         ParameterMetadata(
             name="a",
@@ -199,6 +203,7 @@ AVERAGE_METADATA = OperatorMetadata(
     description="计算数组的平均值",
     brief_description="计算一组数的平均值",
     execution_modes=["workflow"],
+    effects=["read"],
     parameters=[
         ParameterMetadata(
             name="values",

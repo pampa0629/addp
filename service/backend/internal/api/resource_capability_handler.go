@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/dbbridge"
 	pgmapper "github.com/addp/common/format/mappers/postgresql"
 	commonJSON "github.com/addp/common/jsonmap"
+	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/common/models"
 	"github.com/addp/common/sqldialect"
@@ -30,29 +31,18 @@ type graphNodeShapeOption struct {
 	Properties []datatype.FieldInfo `json:"properties,omitempty"`
 }
 
-func authTokenFromContext(c *gin.Context) string {
-	authToken := c.GetString("jwt_token")
-	if authToken != "" {
-		return authToken
-	}
-	if header := c.GetHeader("Authorization"); len(header) > 7 && header[:7] == "Bearer " {
-		return header[7:]
-	}
-	return ""
-}
-
 // ResourceCapabilityHandler 处理 Service 模块仍需自有计算的资源辅助能力。
 // 资源选择、资源树和表级空间元数据统一走 Meta resource-tree / item API。
 type ResourceCapabilityHandler struct {
 	systemClient *commonClient.SystemClient
-	metaBaseURL  string
+	metaClient   *commonClient.MetaClient
 }
 
 // NewResourceCapabilityHandler 创建新的资源能力处理器。
-func NewResourceCapabilityHandler(systemClient *commonClient.SystemClient, metaBaseURL string) *ResourceCapabilityHandler {
+func NewResourceCapabilityHandler(systemClient *commonClient.SystemClient, metaClient *commonClient.MetaClient) *ResourceCapabilityHandler {
 	return &ResourceCapabilityHandler{
 		systemClient: systemClient,
-		metaBaseURL:  metaBaseURL,
+		metaClient:   metaClient,
 	}
 }
 
@@ -65,6 +55,7 @@ func NewResourceCapabilityHandler(systemClient *commonClient.SystemClient, metaB
 // @Success 200 {array} graphNodeShapeOption
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
+// @Failure 503 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["service.definition.read"]
 // @Router /graphs/node-shapes [get]
@@ -87,7 +78,11 @@ func (h *ResourceCapabilityHandler) GetGraphNodeShapes(c *gin.Context) {
 		database = "neo4j"
 	}
 
-	metaClient := commonClient.NewMetaClient(h.metaBaseURL, authTokenFromContext(c))
+	if h.metaClient == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Meta integration is unavailable"})
+		return
+	}
+	metaClient := h.metaClient.WithTenantID(commonAuth.GetTenantID(c))
 	item, err := metaClient.GetItemByCatalogPath(uint(engineID), fmt.Sprintf("%s.graph", database))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get graph item: " + err.Error()})
@@ -301,7 +296,7 @@ func (h *ResourceCapabilityHandler) detectSQLOutputContract(
 func (h *ResourceCapabilityHandler) HealthCheck(c *gin.Context) {
 	// 检查 System 和 Meta 服务的连通性
 	systemOK := h.systemClient != nil
-	metaOK := h.metaBaseURL != ""
+	metaOK := h.metaClient != nil
 
 	status := "healthy"
 	if !systemOK || !metaOK {

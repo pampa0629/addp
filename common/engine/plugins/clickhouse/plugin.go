@@ -51,6 +51,10 @@ func (p *ClickHousePlugin) SensitiveFields() []string {
 	return []string{"password"}
 }
 
+func (p *ClickHousePlugin) ConnectionIdentityFields() []string {
+	return []string{"host", "port", "database"}
+}
+
 func (p *ClickHousePlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), "database", plugin.TabularCapabilityOptions{
 		Write:             true,

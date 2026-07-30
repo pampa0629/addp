@@ -40,6 +40,10 @@ func (p *SparkWorkflowPlugin) SensitiveFields() []string {
 	return []string{} // 工作流引擎通常不需要敏感字段
 }
 
+func (p *SparkWorkflowPlugin) ConnectionIdentityFields() []string {
+	return []string{"protocol", "host", "port"}
+}
+
 func (p *SparkWorkflowPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewWorkflowCapabilities(p.Type(), "addp.workflow/v1")
 }

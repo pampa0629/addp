@@ -1365,6 +1365,26 @@ paths:
       tags:
       - QueryExecution
       x-addp-auth-mode: public
+  /assets/discoverable:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 列出可发现资产 | List discoverable assets
+      tags:
+      - Service
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - service.definition.read
   /data/aggregate:
     post:
       consumes:
@@ -1439,6 +1459,41 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - service.definition.read
+  /endpoints:
+    get:
+      parameters:
+      - description: 服务引用 | Service reference
+        in: query
+        name: ref
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.serviceEndpointResp'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取服务端点 | Get service endpoints
+      tags:
+      - Service
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - service.endpoint.read
   /graph:
     get:
       parameters:
@@ -1646,6 +1701,12 @@ paths:
             additionalProperties:
               type: string
             type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 获取图节点形状 | Get graph node shapes
@@ -1654,53 +1715,6 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - service.definition.read
-  /internal/assets/discoverable:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              additionalProperties: true
-              type: object
-            type: array
-      summary: 列出可发现资产 | List discoverable assets
-      tags:
-      - Service
-      x-addp-auth-mode: internal
-  /internal/endpoints:
-    get:
-      parameters:
-      - description: 服务引用 | Service reference
-        in: query
-        name: ref
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_api.serviceEndpointResp'
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: Not Found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: 获取服务端点 | Get service endpoints
-      tags:
-      - Service
-      x-addp-auth-mode: internal
   /ogc/features/{serviceName}:
     get:
       parameters:

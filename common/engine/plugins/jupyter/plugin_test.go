@@ -15,7 +15,7 @@ func TestJupyterCapabilitiesMatchRuntimeRegistration(t *testing.T) {
 	if caps.Compute == nil || caps.Compute.Script == nil || !caps.Compute.Script.Supported {
 		t.Fatalf("missing script capability: %#v", caps.Compute)
 	}
-	if got, want := caps.Compute.Script.Modes, []string{"notebook", "lab"}; !sameStrings(got, want) {
+	if got, want := caps.Compute.Script.Modes, []string{"notebook"}; !sameStrings(got, want) {
 		t.Fatalf("script modes = %#v, want %#v", got, want)
 	}
 	if got, want := caps.Compute.Script.Languages, []string{"python"}; !sameStrings(got, want) {

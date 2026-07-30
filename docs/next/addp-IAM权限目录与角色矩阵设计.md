@@ -216,12 +216,12 @@ System 不允许知道：
 | `permission` | 要求一个或多个稳定 Permission | 创建任务、管理 Tenant Membership |
 | `delegated_tool` | 同时要求 Role Permission、Tool Scope、audience 和审批 | Agent 代表用户执行 Tool |
 | `resource_ticket` | 原生 GET/HEAD 资源请求 | 图片、媒体、下载、三维内容 |
-| `internal` | 已验证 Service Principal / Internal API 身份 | 模块注册、内部配置读取 |
+| `internal` | 已验证 Service Principal | 模块注册、内部配置读取 |
 
 规则：
 
 - `self` 是 User 与自身身份资源的关系策略，不是隐藏的全局 Role；
-- `internal` 不携带或提升 User / Tenant Permission；
+- `internal` 仍使用 Service Access Token、AuthContext 和精确 Permission，不接受共享 Internal API Key；
 - `resource_ticket` 仍执行对应内容读取 Permission 和 owner Resource Policy；
 - `delegated_tool` 不能只校验 OAuth Scope，Role Permission 仍必须成立；
 - 一个路由需要多个 Permission 时按 all-of 计算，不支持含糊的字符串表达式；
@@ -285,11 +285,17 @@ x-addp-required-permissions:
 | `iam.project_group_membership` | `read, create, update, close` | Tenant, Project Group | false | System |
 | `iam.tenant_idp_connection` | `read, create, update, suspend` | Tenant | false | System |
 | `audit.tenant_event` | `read, export` | Tenant | false | System |
+| `audit.tenant_event` | `append` | Tenant | false | System |
 | `audit.tenant_subject` | `read` | Tenant | false | System |
 | `system.engine` | `read, create, update, delete, execute` | Tenant | false | System |
+| `system.execution_authorization` | `execute` | Tenant | false | System |
 | `system.application` | `read, create, update, delete` | Tenant | false | System |
 | `system.api_key` | `read, create, revoke` | Tenant | false | System |
 | `system.cleanup` | `read, execute` | Tenant | false | System |
+
+平台运行时注册使用独立 `system.runtime_registry.update`，Allowed Scope 固定为 Platform、
+`tenant_customizable=false`、`delegable=false`。它只授予平台所有内置 Service Principal 的
+专用 Platform Service Role，不授予平台三员、Tenant User 或自定义 Role。
 
 Tenant 管理员不能修改全局 User 状态或其他 Tenant Membership。邀请流程可以创建新 User 或关联已有 User，但结果始终是当前 Tenant Membership，不授予全局身份管理权。
 
@@ -301,6 +307,7 @@ Tenant 管理员不能修改全局 User 状态或其他 Tenant Membership。邀�
 | --- | --- | --- | --- | --- |
 | `manager.data_item` | `read, create, update, delete` | Tenant, Department, Project Group | true | Manager |
 | `manager.content` | `read` | Tenant, Department, Project Group | true | Manager |
+| `manager.data_profile` | `execute` | Tenant, Department, Project Group | true | Manager |
 | `manager.derived_artifact` | `read, create, update, delete` | Tenant, Department, Project Group | true | Manager |
 | `manager.search` | `execute` | Tenant, Department, Project Group | true | Manager |
 | `meta.catalog` | `read` | Tenant, Department, Project Group | true | Meta |
@@ -314,6 +321,10 @@ Tenant 管理员不能修改全局 User 状态或其他 Tenant Membership。邀�
 | `transfer.task` | `read, create, update, delete, execute, cancel` | Tenant, Department, Project Group | true | Transfer |
 | `develop.task` | `read, create, update, delete, execute, cancel` | Tenant, Department, Project Group | true | Develop |
 | `develop.notebook` | `read, create, update, delete, execute` | Tenant, Department, Project Group | true | Develop |
+| `develop.data_read` | `execute` | Tenant, Department, Project Group | true | Develop |
+| `develop.data_write` | `execute` | Tenant, Department, Project Group | true | Develop |
+| `develop.data_ddl` | `execute` | Tenant, Department, Project Group | true | Develop |
+| `develop.data_external_effect` | `execute` | Tenant, Department, Project Group | true | Develop |
 | `orchestrator.workflow` | `read, create, update, delete, execute, cancel` | Tenant, Department, Project Group | true | Orchestrator |
 | `monitor.execution` | `read, cancel, retry` | Tenant, Department, Project Group | true | Monitor |
 | `monitor.health` | `read` | Tenant | false | Monitor |
@@ -325,6 +336,10 @@ Tenant 管理员不能修改全局 User 状态或其他 Tenant Membership。邀�
 
 TaskProvider 不定义第二套 Permission。通过 TaskProvider 执行 Meta、Transfer、Develop、Manager、Quality 或 Graph 任务时，仍校验该 owner 任务类型对应的精确 `execute` Permission。
 
+`develop.task.execute` 和 `develop.notebook.execute` 只允许使用执行入口，不自动授权任意数据效果。Develop 必须由服务端解析 SQL 或汇总 Workflow Operator Spec，按实际效果追加校验 `develop.data_read.execute | develop.data_write.execute | develop.data_ddl.execute | develop.data_external_effect.execute`。一次执行可以要求多个效果，按 all-of 校验；无法可靠分类时默认拒绝。`system.execution_authorization.execute` 只授予 `tenant.develop_runtime` 等允许 `service_principal` 的最小 Runtime Role，并且 Handler 必须校验 OAuth Client、Service Principal、Tenant、audience 和 execution 全部匹配，不能用于通用 Engine 读取。
+
+`system.engine_descriptor.read` 只允许 Tenant Runtime Service Principal 读取同 Tenant 可见的 Engine Runtime Descriptor。该投影只包含 Engine 身份、生命周期、能力声明，以及工作流/脚本 Runtime 的 `protocol/host/port`；不得返回数据引擎明文连接、密码、Token 或任意连接参数 map。唯一服务路由为 `GET /api/v1/system/runtime/engine-descriptors` 和 `GET /api/v1/system/runtime/engine-descriptors/:id`。`tenant.develop_runtime` 使用它完成查询/工作流引擎列表和算子发现；真正执行仍必须消费 Execution Authorization。
+
 本节是 IAM 目标目录，不代表当前每个 owner 已存在同名运行时路由。例如 Transfer、Develop 和 Orchestrator 当前并未全部提供真实执行取消能力；`cancel` 在首次 SQL seed 前必须通过路由覆盖门禁证明已有唯一消费入口，否则应在初次发布前从未发布 Manifest 删除，不能把无实现的 active Permission 写入运行时目录。
 
 ### 8.3 数据服务与资产
@@ -334,13 +349,23 @@ TaskProvider 不定义第二套 Permission。通过 TaskProvider 执行 Meta、T
 | `service.definition` | `read, create, update, delete, publish, offline` | Tenant, Department, Project Group | true | Service |
 | `service.endpoint` | `read` | Tenant, Department, Project Group | true | Service |
 | `service.external_registration` | `read, create, update, delete` | Tenant, Department, Project Group | true | Service |
+| `asset.management` | `read` | Tenant, Department, Project Group | true | Asset |
 | `asset.catalog` | `read, create, update, delete` | Tenant, Department, Project Group | true | Asset |
 | `asset.entry` | `read, update, delete, publish, offline` | Tenant, Department, Project Group | true | Asset |
 | `asset.application` | `read, create, approve, reject, revoke` | Tenant, Department, Project Group | true | Asset |
 | `asset.authorization` | `read, revoke` | Tenant, Department, Project Group | true | Asset |
 | `asset.rating` | `read, create, update` | Tenant, Department, Project Group | true | Asset |
 
-Portal 是 Asset 的用户入口，不创建 `portal.asset.*` 平行 Permission。Portal 调用 Asset 时保留当前 Principal 和 Tenant 上下文，最终使用 Asset Permission 与 Resource Policy。
+`asset.management.read` 是进入 Asset 管理面的稳定能力，管理路由必须将它与具体资源 Permission
+按 all-of 校验。它不授予任何 CRUD、审批或上下架动作；`tenant.asset_manager` 默认拥有该能力，
+Tenant 也可以用它组合只读资产审计 Role。`tenant.asset_consumer` 不拥有该能力，因此不能直接调用
+管理 API。
+
+Portal 是 Asset 的用户入口，不创建 `portal.asset.*` 平行 Permission。Portal 只在同步调用栈中
+转发当前 User Bearer 到 Asset 消费 API，最终仍由 Asset Permission 与 Resource Policy 决定。
+消费 API 强制只读已发布资产，并把申请、授权和评价约束为当前 Principal 自身；请求不得包含
+由调用方指定的 `applicant_id` 或 `user_id`。`addp-portal` Service Principal 不持有任何
+`asset.*` Permission，只以 `service.endpoint.read` 读取已授权资产的端点投影。
 
 `service.definition` 统一覆盖 Query、Graph、Tile 等 ADDP 内建服务定义，`service.external_registration` 对应外部 Registered Service。Service 当前主要通过通用 status 更新表达服务启停，尚未形成独立 publish/offline 路由；`publish/offline` 与上一节 `cancel` 一样，首次 SQL seed 前必须通过路由覆盖门禁收敛，不能长期保留无唯一消费入口的 active Permission。
 
@@ -471,6 +496,17 @@ Role Key：`platform.statistics_viewer`
 
 该 Role 可与一个平台三员角色组合，但不会因此获得 Tenant 业务明细权限。
 
+### 9.5 平台控制面运行角色
+
+每个需要注册 Module、发送心跳或发布 TaskProvider 契约的内置模块使用独立的 Platform
+Runtime Role。当前 Role Key 包括 `platform.meta_runtime` 和 `platform.develop_runtime`，均只允许
+Platform Scope 和 `service_principal`。
+
+这些 Role 只包含 `system.runtime_registry.update`。Handler 必须校验 OAuth Client / Service
+Principal 与请求中的 `module_name` 一致。Platform Runtime Role 不包含平台三员、Tenant、引擎
+或审计 Permission；后续模块迁移到 Service Access Token 注册路径时，必须同时新增对应的独立
+Platform Runtime Role，不得复用其他模块的 Role。
+
 ## 十、Tenant 管理 Role 矩阵
 
 ### 10.1 Tenant Administrator
@@ -507,13 +543,22 @@ Role Key：`tenant.auditor`，只允许 Tenant Scope。
 
 包含 `audit.tenant_event.read/export`、`audit.tenant_subject.read` 和只读的 `monitor.execution.read`、`monitor.statistics.read`。不包含任何写 Permission。
 
-### 10.4 Department Coordinator
+### 10.4 Meta Tenant Runtime
+
+Role Key：`tenant.meta_runtime`，只允许 Tenant Scope 和 `service_principal`。
+
+只包含 `system.engine.read` 与 `audit.tenant_event.create`。`addp-meta` 必须按 execution 或
+当前请求的 `tenant_id` 即时取得该 Tenant Context 的 Service Access Token；引擎列表仍
+返回脱敏投影，引擎详情只对该 Service Principal 返回解密连接信息。Token 不进入
+`execution_config`、任务载荷、缓存、日志或审计详情。
+
+### 10.5 Department Coordinator
 
 Role Key：`tenant.department_coordinator`，只允许 Department Scope。
 
 包含当前 Department 的 `iam.department.read` 和 `iam.department_membership.read/create/update/close`。不能修改 Department Parent、其他 Department 或 Tenant Role。
 
-### 10.5 Project Group Coordinator
+### 10.6 Project Group Coordinator
 
 Role Key：`tenant.project_group_coordinator`，只允许 Project Group Scope。
 
@@ -531,13 +576,14 @@ Tenant Role 选择器必须先按当前 Assignment Scope 过滤可用 Role；目
 
 | Role Key | 主要 Permission 集合 | Allowed Scope |
 | --- | --- | --- |
-| `tenant.data_viewer` | Manager Data Item / Content read、Manager Search execute、Meta Catalog read | Tenant, Department, Project Group |
-| `tenant.data_steward` | Data Viewer + Manager Data Item create/update/delete、Derived Artifact read/create/update/delete、Meta Inspect、Meta Scan Task 全生命周期 | Tenant, Department, Project Group |
-| `tenant.data_engineer` | Data Viewer + Transfer Task、Develop Task、Develop Notebook、Orchestrator Workflow 全生命周期及 Monitor Execution read | Tenant, Department, Project Group |
+| `tenant.data_viewer` | Manager Data Item / Content read、Manager Search execute、Meta Catalog read、Develop Data Access read；不包含 Develop 执行入口 | Tenant, Department, Project Group |
+| `tenant.data_steward` | Data Viewer + Manager Data Item create/update/delete、Derived Artifact read/create/update/delete、Meta Inspect、Meta Scan Task 全生命周期、Develop Data Access write；不包含 Develop 执行入口 | Tenant, Department, Project Group |
+| `tenant.data_engineer` | Data Viewer + Develop Data Access write、Manager Data Profile execute、Transfer Task、Develop Task、Develop Notebook、Orchestrator Workflow 全生命周期及 Monitor Execution read；不默认包含 DDL 或 external_effect | Tenant, Department, Project Group |
 | `tenant.service_publisher` | Data Viewer + Service Definition / External Registration 全生命周期 | Tenant, Department, Project Group |
 | `tenant.governance_manager` | Standard Domain/Element/Metric/Code Set/Document、Model Logical Model、Quality Rule Application/Check Task 的全部显式 actions，Quality Issue read/update，Monitor Execution read | Tenant, Department, Project Group |
-| `tenant.asset_consumer` | Asset Catalog / Entry read、Application read/create、Authorization read、Rating read/create/update、Service Endpoint read | Tenant, Department, Project Group |
-| `tenant.asset_manager` | Asset Catalog、Entry、Application、Authorization、Rating 的全部显式 actions | Tenant, Department, Project Group |
+| `tenant.asset_consumer` | Asset 已发布 Catalog / Entry read、自己的 Application read/create、自己的 Authorization read、Rating read/create/update；不包含管理面访问 | Tenant, Department, Project Group |
+| `tenant.asset_manager` | Asset Management access，以及 Catalog、Entry、Application、Authorization、Rating 的全部显式 actions | Tenant, Department, Project Group |
+| `tenant.portal_runtime` | Service Endpoint read；仅允许 `addp-portal` Service Principal | Tenant |
 | `tenant.graph_engineer` | Graph Ontology、Graph、Build Task、Analysis、Review | Tenant, Department, Project Group |
 | `tenant.ai_user` | Agent Session / Run、Copilot 生成能力 | Tenant, Department, Project Group |
 | `tenant.monitoring_operator` | Monitor Execution / Statistics / Health read、Alert Incident read/update、Alert Rule 全生命周期、Notification Destination 全生命周期和测试、Notification Delivery read/retry | Tenant |

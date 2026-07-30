@@ -1516,8 +1516,8 @@ func (s *QuickViewService) GetSpatialMetadataFromMeta(
 	if s.metaClient == nil {
 		return nil, fmt.Errorf("meta client not initialized, cannot query spatial metadata")
 	}
-	s.metaClient.SetTenantID(&tenantID)
-	spatialMeta, err := s.metaClient.GetItemSpatialMetadataByCatalogPath(engineID, fmt.Sprintf("%s.%s", schema, table))
+	metaClient := s.metaClient.WithTenantID(tenantID)
+	spatialMeta, err := metaClient.GetItemSpatialMetadataByCatalogPath(engineID, fmt.Sprintf("%s.%s", schema, table))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get spatial metadata from Meta API: %w", err)
 	}
@@ -2560,10 +2560,11 @@ func (s *QuickViewService) RasterMosaicSourceForLocator(ctx context.Context, ten
 	if loc.ItemID == nil || *loc.ItemID == 0 {
 		return QuickViewSource{}, false, nil
 	}
+	metaClient := s.metaClient
 	if tenantID != nil {
-		s.metaClient.SetTenantID(tenantID)
+		metaClient = metaClient.WithTenantID(*tenantID)
 	}
-	item, err := s.metaClient.GetItemByID(*loc.ItemID)
+	item, err := metaClient.GetItemByID(*loc.ItemID)
 	if err != nil {
 		return QuickViewSource{}, false, err
 	}

@@ -12,8 +12,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	engineplugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/common/events"
 	commonutils "github.com/addp/common/utils"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
@@ -51,7 +53,7 @@ func TestListFiltersBeforePagination(t *testing.T) {
 			EngineType:     "postgresql",
 			EngineOrigin:   "general",
 			ConnectionInfo: models.ConnectionInfo{},
-			IsActive:       true,
+			LifecycleState: models.EngineLifecycleActive,
 			TenantID:       &tenantID,
 			Capabilities:   storageCapabilities,
 		}); err != nil {
@@ -64,7 +66,7 @@ func TestListFiltersBeforePagination(t *testing.T) {
 			EngineType:     "custom_workflow",
 			EngineOrigin:   "extension",
 			ConnectionInfo: models.ConnectionInfo{},
-			IsActive:       true,
+			LifecycleState: models.EngineLifecycleActive,
 			IsBuiltin:      i == 0,
 			TenantID:       &tenantID,
 			Capabilities:   computeCapabilities,
@@ -96,6 +98,72 @@ func TestListFiltersBeforePagination(t *testing.T) {
 	}
 	if total != 3 || len(engines) != 3 {
 		t.Fatalf("non-builtin filtered total/page size = %d/%d, want 3/3", total, len(engines))
+	}
+}
+
+func TestRuntimeDescriptorsExposeOnlyWorkflowEndpointAndNoDataConnection(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.Engine{}); err != nil {
+		t.Fatal(err)
+	}
+	repo := repository.NewEngineRepository(db)
+	tenantID := uint(7)
+	workflowCapabilities, err := engineplugin.MarshalEngineCapabilities(
+		engineplugin.NewWorkflowCapabilities("acme_workflow", engineplugin.WorkflowRuntimeAPIAddpV1),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflowCapabilitiesJSON := models.JSONString(workflowCapabilities)
+	workflow := &models.Engine{
+		TenantID: &tenantID, Name: "workflow", EngineType: "acme_workflow",
+		EngineOrigin: "extension", LifecycleState: models.EngineLifecycleActive,
+		Capabilities: &workflowCapabilitiesJSON,
+		ConnectionInfo: models.ConnectionInfo{
+			"protocol": "http", "host": "workflow.internal", "port": 8099,
+		},
+	}
+	data := &models.Engine{
+		TenantID: &tenantID, Name: "database", EngineType: "postgresql",
+		EngineOrigin: "general", LifecycleState: models.EngineLifecycleActive,
+		Capabilities: toJSONStringPtr(`{"schema_version":"engine.capabilities/v1","engine_type":"postgresql","engine_family":"tabular","storage":{}}`),
+		ConnectionInfo: models.ConnectionInfo{
+			"host": "database.internal", "port": 5432, "database": "business", "password": "must-not-be-read",
+		},
+	}
+	if err := repo.Create(workflow); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Create(data); err != nil {
+		t.Fatal(err)
+	}
+
+	descriptors, total, err := NewEngineService(repo, nil, nil).ListRuntimeDescriptors(
+		1, 10, EngineListFilter{IncludeBuiltin: true}, tenantID,
+	)
+	if err != nil {
+		t.Fatalf("ListRuntimeDescriptors() error = %v", err)
+	}
+	if total != 2 || len(descriptors) != 2 {
+		t.Fatalf("descriptors total/len = %d/%d", total, len(descriptors))
+	}
+	if descriptors[0].RuntimeEndpoint == nil || descriptors[0].RuntimeEndpoint.Host != "workflow.internal" {
+		t.Fatalf("workflow descriptor = %#v", descriptors[0])
+	}
+	if descriptors[1].RuntimeEndpoint != nil {
+		t.Fatalf("data descriptor exposed runtime endpoint: %#v", descriptors[1])
+	}
+	encoded, err := json.Marshal(descriptors)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"connection_info", "database.internal", "business", "must-not-be-read"} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Fatalf("descriptor serialization leaked %q: %s", forbidden, encoded)
+		}
 	}
 }
 
@@ -269,7 +337,7 @@ func TestEnrichInstanceCapabilitiesBindsFirstAvailableSuperMapWorkflowEngine(t *
 		Name:           "SuperMap Runtime A",
 		EngineType:     "supermap_workflow",
 		TenantID:       &tenantID,
-		IsActive:       true,
+		LifecycleState: models.EngineLifecycleActive,
 		ConnectionInfo: models.ConnectionInfo{},
 	}
 	if err := repo.Create(firstRuntime); err != nil {
@@ -279,7 +347,7 @@ func TestEnrichInstanceCapabilitiesBindsFirstAvailableSuperMapWorkflowEngine(t *
 		Name:           "SuperMap Runtime B",
 		EngineType:     "supermap_workflow",
 		TenantID:       &tenantID,
-		IsActive:       true,
+		LifecycleState: models.EngineLifecycleActive,
 		ConnectionInfo: models.ConnectionInfo{},
 	}
 	if err := repo.Create(secondRuntime); err != nil {
@@ -390,6 +458,7 @@ func TestEnableSpatialWorkspaceInvokesBoundSuperMapWorkflowRuntime(t *testing.T)
 						"category_path":   []string{"数据源"},
 						"description":     "对已有 PostgreSQL/PostGIS 数据库执行 SuperMap SDX+ 初始化。",
 						"execution_modes": []string{"direct"},
+						"effects":         []string{"ddl"},
 						"parameters": []map[string]interface{}{
 							{"name": "connection_info", "type": "object", "param_type": "param", "required": true},
 							{"name": "alias", "type": "string", "param_type": "param", "required": false},
@@ -428,7 +497,7 @@ func TestEnableSpatialWorkspaceInvokesBoundSuperMapWorkflowRuntime(t *testing.T)
 		Name:           "SuperMap Runtime",
 		EngineType:     "supermap_workflow",
 		TenantID:       &tenantID,
-		IsActive:       true,
+		LifecycleState: models.EngineLifecycleActive,
 		ConnectionInfo: models.ConnectionInfo(runtimeURL),
 	}
 	if err := engineRepo.Create(runtimeEngine); err != nil {
@@ -471,7 +540,7 @@ func TestEnableSpatialWorkspaceInvokesBoundSuperMapWorkflowRuntime(t *testing.T)
 		Name:           "PostGIS 数据库",
 		EngineType:     "custom_postgis",
 		TenantID:       &tenantID,
-		IsActive:       true,
+		LifecycleState: models.EngineLifecycleActive,
 		ConnectionInfo: models.ConnectionInfo{"host": "127.0.0.1", "port": 5432, "database": "gisdb", "user": "supermap"},
 		Capabilities:   toJSONStringPtr(targetCapabilities),
 	}
@@ -649,4 +718,254 @@ func TestMergePlainConnectionInfoReplacesSensitiveValue(t *testing.T) {
 	if merged["password"] != "new-password" {
 		t.Fatalf("password = %q, want new-password", merged["password"])
 	}
+}
+
+func TestValidateConnectionIdentityUnchangedForPostgreSQL(t *testing.T) {
+	service := NewEngineService(&repository.EngineRepository{}, nil, nil)
+	original := models.ConnectionInfo{
+		"host":     "db.internal",
+		"database": "analytics",
+	}
+
+	for _, test := range []struct {
+		name    string
+		updated models.ConnectionInfo
+		wantErr bool
+	}{
+		{
+			name: "default port is equivalent to explicit port",
+			updated: models.ConnectionInfo{
+				"host":     "db.internal",
+				"port":     5432,
+				"database": "analytics",
+			},
+		},
+		{
+			name: "credentials may change",
+			updated: models.ConnectionInfo{
+				"host":     "db.internal",
+				"database": "analytics",
+				"user":     "new-user",
+				"password": "new-password",
+			},
+		},
+		{
+			name: "host is immutable",
+			updated: models.ConnectionInfo{
+				"host":     "db-new.internal",
+				"database": "analytics",
+			},
+			wantErr: true,
+		},
+		{
+			name: "port is immutable",
+			updated: models.ConnectionInfo{
+				"host":     "db.internal",
+				"port":     5433,
+				"database": "analytics",
+			},
+			wantErr: true,
+		},
+		{
+			name: "database is immutable",
+			updated: models.ConnectionInfo{
+				"host":     "db.internal",
+				"database": "warehouse",
+			},
+			wantErr: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := service.validateConnectionIdentityUnchanged("postgresql", original, test.updated)
+			if test.wantErr && !errors.Is(err, ErrEngineIdentityImmutable) {
+				t.Fatalf("validateConnectionIdentityUnchanged() error = %v, want ErrEngineIdentityImmutable", err)
+			}
+			if !test.wantErr && err != nil {
+				t.Fatalf("validateConnectionIdentityUnchanged() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestUpdateRejectsInvalidLifecycleAndDeletingEngine(t *testing.T) {
+	repo := newEngineServiceTestRepository(t)
+	tenantID := uint(7)
+	engine := &models.Engine{
+		Name:           "Runtime",
+		EngineType:     "custom_runtime",
+		EngineOrigin:   "extension",
+		TenantID:       &tenantID,
+		LifecycleState: models.EngineLifecycleActive,
+		ConnectionInfo: models.ConnectionInfo{"protocol": "http", "host": "runtime.internal", "port": 8080},
+		Capabilities:   customRuntimeCapabilities(),
+	}
+	if err := repo.Create(engine); err != nil {
+		t.Fatalf("create engine: %v", err)
+	}
+	service := NewEngineService(repo, nil, nil)
+
+	invalid := "deleting"
+	if _, err := service.Update(engine.ID, tenantID, &models.EngineUpdateRequest{LifecycleState: &invalid}); !errors.Is(err, ErrInvalidEngineLifecycle) {
+		t.Fatalf("Update() error = %v, want ErrInvalidEngineLifecycle", err)
+	}
+
+	engine.LifecycleState = models.EngineLifecycleDeleting
+	if err := repo.Update(engine); err != nil {
+		t.Fatalf("mark deleting: %v", err)
+	}
+	description := "updated"
+	if _, err := service.Update(engine.ID, tenantID, &models.EngineUpdateRequest{Description: &description}); !errors.Is(err, ErrEngineDeleting) {
+		t.Fatalf("Update() error = %v, want ErrEngineDeleting", err)
+	}
+}
+
+func TestBeginDeletionWaitsForCleanupBeforeDeletingEngine(t *testing.T) {
+	repo := newEngineServiceTestRepository(t)
+	tenantID := uint(7)
+	actorID := uint(42)
+	engine := createDeletionTestEngine(t, repo, tenantID)
+	cleanup := &engineDeletionCleanupStub{
+		scanTaskID:    "scan-1",
+		executeTaskID: "execute-1",
+		scanGate:      make(chan struct{}),
+		scanStatus:    "completed",
+		executeStatus: "completed",
+	}
+	service := NewEngineService(repo, nil, nil)
+	service.cleanup = cleanup
+
+	started, err := service.BeginDeletion(engine.ID, tenantID, actorID, models.ExternalArtifactPolicyAbandon)
+	if err != nil {
+		t.Fatalf("BeginDeletion() error = %v", err)
+	}
+	if started.LifecycleState != models.EngineLifecycleDeleting || started.DeletionScanTaskID == nil || *started.DeletionScanTaskID != "scan-1" {
+		t.Fatalf("deletion start = %#v", started)
+	}
+	stored, err := repo.GetByID(engine.ID)
+	if err != nil {
+		t.Fatalf("engine was deleted before cleanup completed: %v", err)
+	}
+	if stored.LifecycleState != models.EngineLifecycleDeleting {
+		t.Fatalf("stored lifecycle_state = %q, want deleting", stored.LifecycleState)
+	}
+	if cleanup.scanContext["engine_id"] != engine.ID || cleanup.scanContext["external_artifact_policy"] != models.ExternalArtifactPolicyAbandon {
+		t.Fatalf("cleanup context = %#v", cleanup.scanContext)
+	}
+
+	close(cleanup.scanGate)
+	waitForEngineDeleted(t, repo, engine.ID)
+	if cleanup.executeMode != events.CleanupModePhysical || cleanup.executeActorID != actorID || !cleanup.confirmation.Confirmed || cleanup.confirmation.ConfirmationToken != "CONFIRM" {
+		t.Fatalf("execute request mode=%q actor=%d confirmation=%#v", cleanup.executeMode, cleanup.executeActorID, cleanup.confirmation)
+	}
+}
+
+func TestBeginDeletionKeepsEngineWhenCleanupFails(t *testing.T) {
+	repo := newEngineServiceTestRepository(t)
+	tenantID := uint(7)
+	engine := createDeletionTestEngine(t, repo, tenantID)
+	cleanup := &engineDeletionCleanupStub{
+		scanTaskID: "scan-failed",
+		scanStatus: "completed_with_errors",
+	}
+	service := NewEngineService(repo, nil, nil)
+	service.cleanup = cleanup
+
+	if _, err := service.BeginDeletion(engine.ID, tenantID, 42, models.ExternalArtifactPolicyDelete); err != nil {
+		t.Fatalf("BeginDeletion() error = %v", err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		stored, err := repo.GetByID(engine.ID)
+		if err != nil {
+			t.Fatalf("engine deleted after failed cleanup: %v", err)
+		}
+		if strings.Contains(stored.DeletionError, "completed_with_errors") {
+			if stored.LifecycleState != models.EngineLifecycleDeleting {
+				t.Fatalf("lifecycle_state = %q, want deleting", stored.LifecycleState)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("cleanup failure was not persisted")
+}
+
+type engineDeletionCleanupStub struct {
+	scanTaskID     string
+	executeTaskID  string
+	scanGate       chan struct{}
+	scanStatus     string
+	executeStatus  string
+	scanContext    map[string]interface{}
+	executeMode    string
+	executeActorID uint
+	confirmation   CleanupExecuteConfirmation
+}
+
+func (s *engineDeletionCleanupStub) CreateEngineDeletionScanTask(_ context.Context, _ uint, _ []string, _ uint, cleanupContext map[string]interface{}) (string, error) {
+	s.scanContext = cleanupContext
+	return s.scanTaskID, nil
+}
+
+func (s *engineDeletionCleanupStub) CreateExecuteTask(_ context.Context, _ string, mode string, actorID uint, confirmation CleanupExecuteConfirmation) (string, error) {
+	s.executeMode = mode
+	s.executeActorID = actorID
+	s.confirmation = confirmation
+	return s.executeTaskID, nil
+}
+
+func (s *engineDeletionCleanupStub) GetTaskStatus(_ context.Context, taskID string) (*models.TaskStatusResponse, error) {
+	if taskID == s.scanTaskID {
+		if s.scanGate != nil {
+			<-s.scanGate
+		}
+		return &models.TaskStatusResponse{Status: s.scanStatus}, nil
+	}
+	return &models.TaskStatusResponse{Status: s.executeStatus}, nil
+}
+
+func newEngineServiceTestRepository(t *testing.T) *repository.EngineRepository {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&models.Engine{}); err != nil {
+		t.Fatalf("auto migrate engine: %v", err)
+	}
+	return repository.NewEngineRepository(db)
+}
+
+func customRuntimeCapabilities() *models.JSONString {
+	return toJSONStringPtr(`{"schema_version":"engine.capabilities/v1","engine_type":"custom_runtime","engine_family":"workflow","compute":{"workflow":{"supported":true,"runtime_api":"addp.workflow/v1","dynamic_operators":true}}}`)
+}
+
+func createDeletionTestEngine(t *testing.T, repo *repository.EngineRepository, tenantID uint) *models.Engine {
+	t.Helper()
+	engine := &models.Engine{
+		Name:                   "Deletion Test Engine",
+		EngineType:             "custom_runtime",
+		EngineOrigin:           "extension",
+		TenantID:               &tenantID,
+		LifecycleState:         models.EngineLifecycleActive,
+		ExternalArtifactPolicy: models.ExternalArtifactPolicyDelete,
+		ConnectionInfo:         models.ConnectionInfo{"protocol": "http", "host": "runtime.internal", "port": 8080},
+		Capabilities:           customRuntimeCapabilities(),
+	}
+	if err := repo.Create(engine); err != nil {
+		t.Fatalf("create engine: %v", err)
+	}
+	return engine
+}
+
+func waitForEngineDeleted(t *testing.T, repo *repository.EngineRepository, engineID uint) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := repo.GetByID(engineID); err != nil {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("engine %d was not deleted after cleanup completed", engineID)
 }

@@ -6,7 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/events"
 	"github.com/addp/common/models"
+	"github.com/lib/pq"
 )
 
 // TaskExecution 统一执行记录
@@ -38,6 +40,15 @@ type TaskExecution struct {
 	// 触发信息
 	TriggerType string `gorm:"size:50;not null;index:idx_task_executions_trigger_type" json:"trigger_type"` // 'manual'/'scheduled'/'event'
 	TriggeredBy *int   `json:"triggered_by,omitempty"`                                                      // 触发用户ID
+
+	// User-derived execution authorization facts. The raw User/Service tokens
+	// and engine connection details are never persisted in task executions.
+	ActorPrincipalID           *int64         `json:"actor_principal_id,omitempty"`
+	ActorTenantMembershipID    *int64         `json:"actor_tenant_membership_id,omitempty"`
+	IssuedAuthorizationVersion *int64         `json:"issued_authorization_version,omitempty"`
+	ExecutionAuthorizationID   *int64         `json:"execution_authorization_id,omitempty"`
+	AuthorizationEffects       pq.StringArray `gorm:"type:text[]" json:"authorization_effects,omitempty"`
+	AuthorizationExpiresAt     *time.Time     `json:"authorization_expires_at,omitempty"`
 
 	// JSONB 字段
 	ExecutionConfig models.JSONMap `gorm:"type:jsonb" json:"execution_config,omitempty"` // 执行配置
@@ -73,6 +84,20 @@ const (
 	ExecutionStatusTimeout   = "timeout"
 	ExecutionStatusCancelled = "cancelled"
 )
+
+// StatusFromCleanupResult maps cleanup protocol results to terminal execution statuses.
+func StatusFromCleanupResult(status string) string {
+	switch status {
+	case events.CleanupResultSuccess, events.CleanupResultSkipped:
+		return ExecutionStatusSuccess
+	case events.CleanupResultTimeout:
+		return ExecutionStatusTimeout
+	case events.CleanupResultFailed, events.CleanupResultPartialSuccess:
+		return ExecutionStatusFailed
+	default:
+		return ExecutionStatusFailed
+	}
+}
 
 // 模块常量
 const (

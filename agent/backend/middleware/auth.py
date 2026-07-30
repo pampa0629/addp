@@ -42,6 +42,12 @@ async def auth_middleware(request: Request, call_next):
             content={"error": "System 认证服务不可用"},
         )
 
+    if authorization_context.principal_type != "user":
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"error": "此接口只接受用户身份"},
+        )
+
     request.state.authorization_context = authorization_context
     request.state.principal_id = authorization_context.principal_id
     request.state.tenant_id = authorization_context.tenant_id

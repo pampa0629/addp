@@ -70,6 +70,19 @@ func main() {
 	}
 
 	logger.L().Info("数据库连接初始化完成")
+	tokenSource, err := commonClient.NewOAuthServiceTokenSource(
+		cfg.SystemServiceURL,
+		"addp-meta",
+		cfg.ServiceClientSecret,
+		nil,
+	)
+	if err != nil {
+		logger.L().Error("初始化 addp-meta Service Principal 凭据失败", "error", err)
+		os.Exit(1)
+	}
+	systemClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, tokenSource, nil)
+	runtimeContext, cancelRuntime := context.WithCancel(context.Background())
+	defer cancelRuntime()
 
 	// 初始化 Redis 客户端（可选，用于资源变更事件同步和任务队列）
 	var redisClient *redis.Client
@@ -94,17 +107,7 @@ func main() {
 	}
 
 	// 初始化服务
-	engineService := service.NewEngineService(db, cfg.SystemServiceURL, cfg.InternalAPIKey)
-	if err := engineService.PreloadResources(); err != nil {
-		logger.L().Warn("资源预加载失败，延迟到首次请求", "error", err)
-	}
-
-	// 初始化 System 客户端（用于审计日志和服务间调用）
-	var systemClient *commonClient.SystemClient
-	if cfg.EnableIntegration && cfg.InternalAPIKey != "" {
-		systemClient = commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-		logger.L().Info("SystemClient 已初始化", "system_url", cfg.SystemServiceURL)
-	}
+	engineService := service.NewEngineService(db, systemClient)
 
 	searchIndexer, err := search.NewIndexer(cfg)
 	if err != nil {
@@ -175,9 +178,8 @@ func main() {
 	serviceURL := utils.BuildServiceURL(serviceHost, port)
 
 	// ========== 模块注册（注册到 System service_registry）==========
-	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
-		registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-		registryClient.RegisterAndHeartbeatWithMetadata("meta", serviceURL, "/meta", map[string]interface{}{
+	if cfg.EnableIntegration {
+		systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "meta", serviceURL, "/meta", map[string]interface{}{
 			"module": "meta",
 			"capabilities": map[string]interface{}{
 				"cleanup_executor": map[string]interface{}{
@@ -188,19 +190,15 @@ func main() {
 	}
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
-	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
-		taskProviderRegistry := service.NewTaskProviderRegistryService(
-			cfg.SystemServiceURL,
-			cfg.InternalAPIKey,
-			serviceURL,
-		)
+	if cfg.EnableIntegration {
+		taskProviderRegistry := service.NewTaskProviderRegistryService(systemClient, serviceURL)
 
 		// 后台异步注册（不阻塞启动，支持重试）
 		go func() {
 			time.Sleep(2 * time.Second) // 等待服务完全启动
 			maxRetries := 5
 			for attempt := 1; attempt <= maxRetries; attempt++ {
-				if err := taskProviderRegistry.Register(); err != nil {
+				if err := taskProviderRegistry.Register(runtimeContext); err != nil {
 					logger.L().Warn("任务提供者注册失败",
 						"attempt", fmt.Sprintf("%d/%d", attempt, maxRetries),
 						"error", err)

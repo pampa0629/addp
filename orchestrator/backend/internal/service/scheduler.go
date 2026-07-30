@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"sync"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	"github.com/addp/orchestrator/internal/repository"
@@ -19,6 +21,7 @@ type Scheduler struct {
 	orchRepo         *repository.OrchestrationRepository
 	executionService *ExecutionService
 	executor         *Executor
+	systemClient     *commonClient.SystemServiceClient
 	log              *slog.Logger
 
 	stopCh   chan struct{}
@@ -31,11 +34,13 @@ func NewScheduler(
 	orchRepo *repository.OrchestrationRepository,
 	executionService *ExecutionService,
 	executor *Executor,
+	systemClient *commonClient.SystemServiceClient,
 ) *Scheduler {
 	return &Scheduler{
 		orchRepo:         orchRepo,
 		executionService: executionService,
 		executor:         executor,
+		systemClient:     systemClient,
 		log:              logger.With("component", "orchestrator_scheduler"),
 		stopCh:           make(chan struct{}),
 	}
@@ -138,11 +143,54 @@ func (s *Scheduler) triggerOrchestration(ctx context.Context, orchID uint) error
 	if err != nil || !orch.Enabled {
 		return err
 	}
+	if s.systemClient == nil || orch.AuthorizationSubjectID == nil || orch.AuthorizationRef == nil ||
+		orch.AuthorizationDefinitionHash == nil {
+		return fmt.Errorf("orchestration task authorization subject is required")
+	}
+	subject, err := s.systemClient.WithTenantID(orch.TenantID).ResolveTaskAuthorizationSubject(
+		ctx,
+		fmt.Sprintf("%d", *orch.AuthorizationSubjectID),
+		commonClient.TaskAuthorizationSubjectRequest{
+			OwnerModule: commonExecution.ModuleOrchestrator,
+			TaskType: commonExecution.TaskTypeOrchestration,
+			TaskRef: orch.AuthorizationRef.String(),
+			DefinitionHash: *orch.AuthorizationDefinitionHash,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("resolve scheduled task authorization subject: %w", err)
+	}
+	principalID, err := parsePositiveActorID(subject.PrincipalID)
+	if err != nil {
+		return err
+	}
+	membershipID, err := parsePositiveActorID(subject.TenantMembershipID)
+	if err != nil {
+		return err
+	}
+	authorizationVersion, err := parsePositiveActorID(subject.AuthorizationVersion)
+	if err != nil {
+		return err
+	}
 
-	execution, err := s.executionService.CreateExecution(ctx, orchID, orch.TenantID, commonExecution.TriggerTypeScheduled)
+	execution, err := s.executionService.CreateExecutionWithContext(
+		ctx, orchID, orch.TenantID, commonExecution.TriggerTypeScheduled,
+		commonExecution.ModuleOrchestrator, nil, ExecutionActor{
+			PrincipalID: principalID, TenantMembershipID: membershipID,
+			AuthorizationVersion: authorizationVersion,
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("create scheduled orchestration execution: %w", err)
 	}
 	s.executor.ExecuteAsync(uint(execution.ID))
 	return nil
+}
+
+func parsePositiveActorID(value string) (int64, error) {
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed <= 0 || strconv.FormatInt(parsed, 10) != value {
+		return 0, fmt.Errorf("invalid task authorization actor ID")
+	}
+	return parsed, nil
 }

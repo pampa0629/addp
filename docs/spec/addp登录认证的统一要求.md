@@ -1,6 +1,6 @@
 # ADDP 登录认证的统一要求
 
-更新日期：2026-07-24
+更新日期：2026-07-28
 
 ## 一、认证事实与唯一主路径
 
@@ -22,6 +22,29 @@ HttpOnly Refresh Token Cookie
 ```
 
 禁止保留 JWT、本地持久化 Access Token或 URL query Token 等平行路径。
+
+内部服务请求的唯一认证主线为：
+
+```text
+独立 Confidential OAuth Client
+  -> POST /api/v1/system/oauth/token
+     (client_credentials + tenant_id | context_type=platform)
+  -> System 校验 OAuth Client、Service Principal 与目标 Context
+  -> 短期 Service Access Token
+  -> Authorization: Bearer <service_access_token>
+  -> System AuthContext
+  -> owner 模块精确 Permission Guard
+```
+
+Service Access Token 有效期最多 5 分钟且不可刷新。每个模块独立持有 Client Secret，
+System 只保存 BCrypt Hash；Secret 轮换使旧 Client Credential 立即失效，Service Principal
+的 Membership、Role、Tenant 或 `authorization_version` 变化使已签发 Token 立即失效。
+owner 路由不得接受共享 Internal API Key、`X-Tenant-ID` 或 User Token 代传来构造服务身份。
+
+Tenant Runtime 必须提交正整数 `tenant_id`，并绑定该 Service Principal 的有效 Membership。
+平台控制面必须显式提交 `context_type=platform`，只允许平台所有 Service Principal 的专用
+Platform Service Role；平台三员 Role 仍只允许实名 User。两种 Context 参数互斥，不能用
+空 Tenant、默认 Tenant 或任意 Tenant Membership 模拟平台控制面权限。
 
 每枚 User Access Token 必须绑定且只能绑定一种会话模式：
 

@@ -30,8 +30,7 @@ var (
 )
 
 type RasterMosaicMetaClient interface {
-	GetItemByID(itemID uint) (*commonModels.MetaItem, error)
-	SetTenantID(tenantID *uint)
+	GetItemByIDForTenant(tenantID, itemID uint) (*commonModels.MetaItem, error)
 }
 
 type RasterMosaicRuntime interface {
@@ -172,10 +171,10 @@ func (s *RasterMosaicTileService) RenderTile(ctx context.Context, req RasterMosa
 	if loc.ItemID == nil || *loc.ItemID == 0 {
 		return nil, fmt.Errorf("%w: locator must include item_id", ErrRasterMosaicTileInvalidLocator)
 	}
-	if req.TenantID != nil {
-		s.metaClient.SetTenantID(req.TenantID)
+	if req.TenantID == nil || *req.TenantID == 0 {
+		return nil, ErrEngineAccessDenied
 	}
-	item, err := s.metaClient.GetItemByID(*loc.ItemID)
+	item, err := s.metaClient.GetItemByIDForTenant(*req.TenantID, *loc.ItemID)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +195,7 @@ func (s *RasterMosaicTileService) RenderTile(ctx context.Context, req RasterMosa
 	if err != nil {
 		return nil, err
 	}
-	if engine == nil || !engine.IsActive {
+	if !engine.IsUsable() {
 		return nil, errors.New("engine is not active")
 	}
 	if !resourceAccessible(engine, req.TenantID) {

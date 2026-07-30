@@ -20,9 +20,9 @@ func TestResourceActionsStorageNodeSupportsUploadOnly(t *testing.T) {
 	svc := NewResourceActionService(fakeResourceActionSystemClient{
 		engines: map[uint]*commonModels.Engine{
 			3: {
-				ID:         3,
-				EngineType: "minio",
-				IsActive:   true,
+				ID:             3,
+				EngineType:     "minio",
+				LifecycleState: "active",
 			},
 		},
 	})
@@ -48,9 +48,9 @@ func TestResourceActionsStorageItemSupportsDownloadOnly(t *testing.T) {
 	svc := NewResourceActionService(fakeResourceActionSystemClient{
 		engines: map[uint]*commonModels.Engine{
 			3: {
-				ID:         3,
-				EngineType: "minio",
-				IsActive:   true,
+				ID:             3,
+				EngineType:     "minio",
+				LifecycleState: "active",
 			},
 		},
 	})
@@ -76,9 +76,9 @@ func TestResourceActionsDatabaseNodeSupportsImportOnly(t *testing.T) {
 	svc := NewResourceActionService(fakeResourceActionSystemClient{
 		engines: map[uint]*commonModels.Engine{
 			8: {
-				ID:         8,
-				EngineType: "postgresql",
-				IsActive:   true,
+				ID:             8,
+				EngineType:     "postgresql",
+				LifecycleState: "active",
 			},
 		},
 	})
@@ -107,9 +107,9 @@ func TestResourceActionsDatabaseItemSupportsExportOnly(t *testing.T) {
 	svc := NewResourceActionService(fakeResourceActionSystemClient{
 		engines: map[uint]*commonModels.Engine{
 			8: {
-				ID:         8,
-				EngineType: "postgresql",
-				IsActive:   true,
+				ID:             8,
+				EngineType:     "postgresql",
+				LifecycleState: "active",
 			},
 		},
 	})
@@ -147,9 +147,9 @@ func TestResourceActionsRespectsInactiveEngine(t *testing.T) {
 	svc := NewResourceActionService(fakeResourceActionSystemClient{
 		engines: map[uint]*commonModels.Engine{
 			3: {
-				ID:         3,
-				EngineType: "minio",
-				IsActive:   false,
+				ID:             3,
+				EngineType:     "minio",
+				LifecycleState: "disabled",
 			},
 		},
 	})
@@ -169,10 +169,10 @@ func TestResourceActionsUsesStoredCapabilities(t *testing.T) {
 	svc := NewResourceActionService(fakeResourceActionSystemClient{
 		engines: map[uint]*commonModels.Engine{
 			9: {
-				ID:           9,
-				EngineType:   "custom_object",
-				IsActive:     true,
-				Capabilities: &raw,
+				ID:             9,
+				EngineType:     "custom_object",
+				LifecycleState: "active",
+				Capabilities:   &raw,
 			},
 		},
 	})

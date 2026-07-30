@@ -82,7 +82,8 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
   if (typeof localStorage !== 'undefined') localStorage.removeItem('token')
   const authSession = createBrowserAuthSession({
     refresh: () => authAPI.refresh(),
-    revoke: () => authAPI.logout()
+    revoke: () => authAPI.logout(),
+    switchContext: (token, context) => authAPI.switchContext(token, context)
   })
   let boundStore = null
   let unsubscribe = null
@@ -249,6 +250,25 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
       async refreshAuthorization() {
         await this.refreshAccessToken({ force: true })
         return this.fetchAuthContext()
+      },
+
+      async fetchContextOptions() {
+        const token = getAccessToken() || this.token
+        if (!token) throw new Error('authentication_required')
+        const response = await authAPI.getContextOptions(token)
+        const payload = response.data || response
+        if (!Array.isArray(payload?.contexts)) throw new Error('auth_context_options_invalid')
+        return payload.contexts
+      },
+
+      async switchContext(context) {
+        bindStore(this)
+        const session = await authSession.switchContext(context)
+        this.authContext = null
+        this.authContextLoadPromise = null
+        await this.fetchSessionState()
+        this.sessionStatus = 'authenticated'
+        return session
       },
 
       async fetchUser() {
@@ -431,6 +451,18 @@ export function createAuthAPI(client) {
     }),
     getAuthContext: (token) => client.get('/auth/context', {
       headers: { Authorization: `Bearer ${token}` }
+    }),
+    getContextOptions: (token) => client.get('/auth/context-options', {
+      headers: { Authorization: `Bearer ${token}` }
+    }),
+    switchContext: (token, context) => client.post('/auth/context-switches', {
+      context_type: context.type,
+      ...(context.tenant_membership_id
+        ? { tenant_membership_id: context.tenant_membership_id }
+        : {})
+    }, {
+      headers: { Authorization: `Bearer ${token}` },
+      withCredentials: true
     })
   }
 }

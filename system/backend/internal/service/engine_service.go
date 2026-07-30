@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -24,6 +23,11 @@ var (
 	ErrBuiltinResourceImmutable = errors.New("内置资源不可删除或修改")
 	ErrUnsupportedEngineType    = errors.New("不支持的系统引擎类型")
 	ErrSpatialWorkspaceNotFound = errors.New("未找到可启用的空间工作区")
+	ErrEngineIdentityImmutable  = errors.New("引擎物理端点身份不可修改")
+	ErrEngineDeleting           = errors.New("引擎正在删除，不能执行该操作")
+	ErrInvalidEngineLifecycle   = errors.New("无效的引擎生命周期状态")
+	ErrInvalidArtifactPolicy    = errors.New("无效的外部产物处理策略")
+	ErrEngineCleanupUnavailable = errors.New("引擎删除所需的资源回收服务不可用")
 )
 
 var disallowedSystemEngineTypes = map[string]struct{}{
@@ -35,7 +39,13 @@ type EngineService struct {
 	repo           *repository.EngineRepository
 	encryptionKey  []byte
 	eventPublisher *events.EngineEventPublisher
-	cleanup        *CleanupOrchestratorService
+	cleanup        EngineCleanupOrchestrator
+}
+
+type EngineCleanupOrchestrator interface {
+	CreateEngineDeletionScanTask(context.Context, uint, []string, uint, map[string]interface{}) (string, error)
+	CreateExecuteTask(context.Context, string, string, uint, CleanupExecuteConfirmation) (string, error)
+	GetTaskStatus(context.Context, string) (*models.TaskStatusResponse, error)
 }
 
 type EngineListFilter struct {
@@ -43,6 +53,7 @@ type EngineListFilter struct {
 	CapabilityGroups []string
 	EngineOrigins    []string
 	IncludeBuiltin   bool
+	LifecycleStates  []string
 }
 
 func NewEngineService(repo *repository.EngineRepository, encryptionKey []byte, redisClient *redis.Client) *EngineService {
@@ -71,13 +82,14 @@ func (s *EngineService) Create(req *models.EngineCreateRequest, createdBy, tenan
 	}
 
 	engine := &models.Engine{
-		Name:           req.Name, // 显示名称
-		EngineType:     req.EngineType,
-		ConnectionInfo: encryptedConnInfo,
-		Description:    req.Description,
-		CreatedBy:      &createdBy,
-		TenantID:       &tenantID,
-		IsActive:       true,
+		Name:                   req.Name, // 显示名称
+		EngineType:             req.EngineType,
+		ConnectionInfo:         encryptedConnInfo,
+		Description:            req.Description,
+		CreatedBy:              &createdBy,
+		TenantID:               &tenantID,
+		LifecycleState:         models.EngineLifecycleActive,
+		ExternalArtifactPolicy: models.ExternalArtifactPolicyDelete,
 	}
 
 	// 设置引擎来源（如果提供）
@@ -123,13 +135,14 @@ func (s *EngineService) CreateInternal(req *models.EngineCreateRequest, tenantID
 	}
 
 	engine := &models.Engine{
-		Name:           req.Name, // 显示名称
-		EngineType:     req.EngineType,
-		ConnectionInfo: encryptedConnInfo,
-		Description:    req.Description,
-		TenantID:       tenantPtr,
-		IsActive:       true,
-		CreatedBy:      createdBy,
+		Name:                   req.Name, // 显示名称
+		EngineType:             req.EngineType,
+		ConnectionInfo:         encryptedConnInfo,
+		Description:            req.Description,
+		TenantID:               tenantPtr,
+		LifecycleState:         models.EngineLifecycleActive,
+		ExternalArtifactPolicy: models.ExternalArtifactPolicyDelete,
+		CreatedBy:              createdBy,
 	}
 
 	if req.Capabilities != nil {
@@ -169,7 +182,11 @@ func (s *EngineService) GetByID(id, tenantID uint) (*models.Engine, error) {
 }
 
 func (s *EngineService) List(page, pageSize int, filter EngineListFilter, tenantID uint) ([]models.Engine, int64, error) {
-	engines, err := s.repo.ListVisibleByTenant(tenantID, filter.EngineType)
+	lifecycleStates, err := normalizeLifecycleStateFilter(filter.LifecycleStates)
+	if err != nil {
+		return nil, 0, err
+	}
+	engines, err := s.repo.ListVisibleByTenant(tenantID, filter.EngineType, lifecycleStates)
 
 	if err != nil {
 		return nil, 0, err
@@ -194,6 +211,85 @@ func (s *EngineService) List(page, pageSize int, filter EngineListFilter, tenant
 	}
 
 	return sanitized, total, nil
+}
+
+func (s *EngineService) ListRuntimeDescriptors(
+	page, pageSize int,
+	filter EngineListFilter,
+	tenantID uint,
+) ([]models.EngineRuntimeDescriptor, int64, error) {
+	lifecycleStates, err := normalizeLifecycleStateFilter(filter.LifecycleStates)
+	if err != nil {
+		return nil, 0, err
+	}
+	engines, err := s.repo.ListVisibleByTenant(tenantID, filter.EngineType, lifecycleStates)
+	if err != nil {
+		return nil, 0, err
+	}
+	filtered := filterEngines(engines, filter)
+	total := int64(len(filtered))
+	start := (page - 1) * pageSize
+	if start > len(filtered) {
+		start = len(filtered)
+	}
+	end := start + pageSize
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	descriptors := make([]models.EngineRuntimeDescriptor, 0, end-start)
+	for index := start; index < end; index++ {
+		descriptor, err := s.buildRuntimeDescriptor(&filtered[index])
+		if err != nil {
+			return nil, 0, err
+		}
+		descriptors = append(descriptors, *descriptor)
+	}
+	return descriptors, total, nil
+}
+
+func (s *EngineService) GetRuntimeDescriptor(id, tenantID uint) (*models.EngineRuntimeDescriptor, error) {
+	engine, err := s.repo.GetByID(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrResourceNotFound
+		}
+		return nil, err
+	}
+	if err := s.authorizeResourceAccess(engine, tenantID); err != nil {
+		return nil, err
+	}
+	return s.buildRuntimeDescriptor(engine)
+}
+
+func (s *EngineService) buildRuntimeDescriptor(engine *models.Engine) (*models.EngineRuntimeDescriptor, error) {
+	if engine == nil {
+		return nil, ErrResourceNotFound
+	}
+	descriptor := &models.EngineRuntimeDescriptor{
+		ID: engine.ID, Name: engine.Name, EngineType: engine.EngineType,
+		EngineOrigin: engine.EngineOrigin, Description: engine.Description,
+		LifecycleState: engine.LifecycleState, IsBuiltin: engine.IsBuiltin,
+		Capabilities: engine.Capabilities, ConnectionStatus: engine.ConnectionStatus,
+	}
+	if !commonutils.SupportsComputeEntrypoint(engine, "workflow") &&
+		!commonutils.SupportsComputeEntrypoint(engine, "script") {
+		return descriptor, nil
+	}
+	connectionInfo, err := s.decryptStoredConnectionInfo(engine.ConnectionInfo)
+	if err != nil {
+		return nil, fmt.Errorf("解密运行时端点失败: %w", err)
+	}
+	protocol := strings.TrimSpace(engineplugin.GetString(engineplugin.ConnectionInfo(connectionInfo), "protocol"))
+	if protocol == "" {
+		protocol = "http"
+	}
+	host := strings.TrimSpace(engineplugin.GetString(engineplugin.ConnectionInfo(connectionInfo), "host"))
+	port := engineplugin.GetInt(engineplugin.ConnectionInfo(connectionInfo), "port")
+	if host == "" || port <= 0 {
+		return nil, fmt.Errorf("运行时引擎 %d 缺少有效 host/port", engine.ID)
+	}
+	descriptor.RuntimeEndpoint = &models.EngineRuntimeEndpoint{Protocol: protocol, Host: host, Port: port}
+	return descriptor, nil
 }
 
 func filterEngines(engines []models.Engine, filter EngineListFilter) []models.Engine {
@@ -247,6 +343,28 @@ func stringSet(values []string) map[string]struct{} {
 	return set
 }
 
+func normalizeLifecycleStateFilter(values []string) ([]string, error) {
+	if len(values) == 0 {
+		return []string{models.EngineLifecycleActive}, nil
+	}
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		state := strings.TrimSpace(value)
+		switch state {
+		case models.EngineLifecycleActive, models.EngineLifecycleDisabled, models.EngineLifecycleDeleting:
+		default:
+			return nil, fmt.Errorf("%w: %s", ErrInvalidEngineLifecycle, state)
+		}
+		if _, ok := seen[state]; ok {
+			continue
+		}
+		seen[state] = struct{}{}
+		result = append(result, state)
+	}
+	return result, nil
+}
+
 func (s *EngineService) Update(id, tenantID uint, req *models.EngineUpdateRequest) (*models.Engine, error) {
 	engine, err := s.repo.GetByID(id)
 	if err != nil {
@@ -258,6 +376,9 @@ func (s *EngineService) Update(id, tenantID uint, req *models.EngineUpdateReques
 
 	if err := s.authorizeResourceAccess(engine, tenantID); err != nil {
 		return nil, err
+	}
+	if engine.LifecycleState == models.EngineLifecycleDeleting {
+		return nil, ErrEngineDeleting
 	}
 
 	// 检查是否为内置资源（内置资源不允许修改核心配置）
@@ -278,6 +399,9 @@ func (s *EngineService) Update(id, tenantID uint, req *models.EngineUpdateReques
 		}
 		// 合并明文连接信息：如果新值是脱敏占位符，保留原值。
 		mergedConnInfo := s.mergePlainConnectionInfo(plainConnInfo, *req.ConnectionInfo)
+		if err := s.validateConnectionIdentityUnchanged(engine.EngineType, plainConnInfo, mergedConnInfo); err != nil {
+			return nil, err
+		}
 
 		// 加密敏感字段
 		encryptedConnInfo, err := s.encryptConnectionInfoForStorage(mergedConnInfo)
@@ -289,8 +413,12 @@ func (s *EngineService) Update(id, tenantID uint, req *models.EngineUpdateReques
 	if req.Description != nil {
 		engine.Description = *req.Description
 	}
-	if req.IsActive != nil {
-		engine.IsActive = *req.IsActive
+	if req.LifecycleState != nil {
+		state := strings.TrimSpace(*req.LifecycleState)
+		if state != models.EngineLifecycleActive && state != models.EngineLifecycleDisabled {
+			return nil, fmt.Errorf("%w: %s", ErrInvalidEngineLifecycle, state)
+		}
+		engine.LifecycleState = state
 	}
 	if req.Capabilities != nil {
 		engine.Capabilities = req.Capabilities
@@ -311,46 +439,209 @@ func (s *EngineService) Update(id, tenantID uint, req *models.EngineUpdateReques
 	return s.sanitizeResource(engine), nil
 }
 
-func (s *EngineService) Delete(id, tenantID, actorID uint) error {
+func (s *EngineService) BeginDeletion(id, tenantID, actorID uint, externalArtifactPolicy string) (*models.Engine, error) {
 	engine, err := s.repo.GetByID(id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrResourceNotFound
+			return nil, ErrResourceNotFound
 		}
-		return err
+		return nil, err
 	}
 
 	if err := s.authorizeResourceAccess(engine, tenantID); err != nil {
-		return err
+		return nil, err
 	}
 
 	// 检查是否为内置资源
 	if engine.IsBuiltin {
-		return ErrBuiltinResourceImmutable
+		return nil, ErrBuiltinResourceImmutable
+	}
+	if s.cleanup == nil {
+		return nil, ErrEngineCleanupUnavailable
+	}
+	policy, err := normalizeExternalArtifactPolicy(externalArtifactPolicy)
+	if err != nil {
+		return nil, err
+	}
+	if engine.TenantID == nil {
+		return nil, errors.New("平台共享引擎不支持租户删除工作流")
+	}
+	if engine.LifecycleState == models.EngineLifecycleDeleting &&
+		engine.ExternalArtifactPolicy == policy &&
+		engine.DeletionError == "" {
+		return s.sanitizeResource(engine), nil
 	}
 
-	if err := s.repo.Delete(id); err != nil {
-		return err
+	now := time.Now()
+	engine.LifecycleState = models.EngineLifecycleDeleting
+	engine.ExternalArtifactPolicy = policy
+	engine.DeletionRequestedAt = &now
+	engine.DeletionRequestedBy = &actorID
+	engine.DeletionScanTaskID = nil
+	engine.DeletionExecuteTaskID = nil
+	engine.DeletionError = ""
+	if err := s.repo.Update(engine); err != nil {
+		return nil, err
 	}
 
-	if s.cleanup != nil && engine.TenantID != nil {
-		if _, err := s.cleanup.CreateEventScanTask(
-			context.Background(),
-			*engine.TenantID,
-			nil,
-			actorID,
-			events.CleanupCauseEngineDeleted,
-			cleanupEngineContext(id),
-		); err != nil {
-			log.Printf("触发 engine 删除资源回收评估失败: engine_id=%d error=%v", id, err)
+	cleanupContext := cleanupEngineDeletionContext(id, policy)
+	scanTaskID, err := s.cleanup.CreateEngineDeletionScanTask(
+		context.Background(), *engine.TenantID, nil, actorID, cleanupContext,
+	)
+	if err != nil {
+		engine.DeletionError = err.Error()
+		_ = s.repo.Update(engine)
+		return nil, err
+	}
+	engine.DeletionScanTaskID = &scanTaskID
+	if err := s.repo.Update(engine); err != nil {
+		return nil, err
+	}
+	go s.continueDeletion(engine.ID, scanTaskID)
+	return s.sanitizeResource(engine), nil
+}
+
+func normalizeExternalArtifactPolicy(value string) (string, error) {
+	policy := strings.TrimSpace(value)
+	if policy == "" {
+		policy = models.ExternalArtifactPolicyDelete
+	}
+	switch policy {
+	case models.ExternalArtifactPolicyDelete, models.ExternalArtifactPolicyAbandon:
+		return policy, nil
+	default:
+		return "", fmt.Errorf("%w: %s", ErrInvalidArtifactPolicy, policy)
+	}
+}
+
+func cleanupEngineDeletionContext(engineID uint, policy string) map[string]interface{} {
+	return map[string]interface{}{
+		"engine_id":                engineID,
+		"external_artifact_policy": policy,
+	}
+}
+
+func (s *EngineService) continueDeletion(engineID uint, scanTaskID string) {
+	ctx := context.Background()
+	engine, err := s.repo.GetByID(engineID)
+	if err != nil || engine.LifecycleState != models.EngineLifecycleDeleting || engine.DeletionScanTaskID == nil || *engine.DeletionScanTaskID != scanTaskID {
+		return
+	}
+
+	executeTaskID := ""
+	if engine.DeletionExecuteTaskID != nil {
+		executeTaskID = strings.TrimSpace(*engine.DeletionExecuteTaskID)
+	}
+	if executeTaskID == "" {
+		scanStatus, err := s.waitForCleanupTask(ctx, scanTaskID, 45*time.Second)
+		if err != nil {
+			s.setDeletionError(engineID, scanTaskID, fmt.Sprintf("cleanup scan failed: %v", err))
+			return
+		}
+		if scanStatus.Status != "completed" {
+			s.setDeletionError(engineID, scanTaskID, fmt.Sprintf("cleanup scan ended with status %s", scanStatus.Status))
+			return
+		}
+		executeTaskID, err = s.cleanup.CreateExecuteTask(
+			ctx,
+			scanTaskID,
+			events.CleanupModePhysical,
+			valueOrZero(engine.DeletionRequestedBy),
+			CleanupExecuteConfirmation{Confirmed: true, ConfirmationToken: "CONFIRM"},
+		)
+		if err != nil {
+			s.setDeletionError(engineID, scanTaskID, fmt.Sprintf("create cleanup execute task: %v", err))
+			return
+		}
+		if !s.setDeletionExecuteTask(engineID, scanTaskID, executeTaskID) {
+			return
 		}
 	}
 
-	// 发布资源删除事件
-	if s.eventPublisher != nil {
-		_ = s.eventPublisher.PublishEngineChange(context.Background(), id, events.ActionDelete)
+	executeStatus, err := s.waitForCleanupTask(ctx, executeTaskID, 6*time.Minute)
+	if err != nil {
+		s.setDeletionError(engineID, scanTaskID, fmt.Sprintf("cleanup execute failed: %v", err))
+		return
+	}
+	if executeStatus.Status != "completed" {
+		s.setDeletionError(engineID, scanTaskID, fmt.Sprintf("cleanup execute ended with status %s", executeStatus.Status))
+		return
 	}
 
+	current, err := s.repo.GetByID(engineID)
+	if err != nil || current.LifecycleState != models.EngineLifecycleDeleting || current.DeletionScanTaskID == nil || *current.DeletionScanTaskID != scanTaskID {
+		return
+	}
+	if err := s.repo.Delete(engineID); err != nil {
+		s.setDeletionError(engineID, scanTaskID, fmt.Sprintf("finalize engine deletion: %v", err))
+		return
+	}
+	if s.eventPublisher != nil {
+		_ = s.eventPublisher.PublishEngineChange(context.Background(), engineID, events.ActionDelete)
+	}
+}
+
+func (s *EngineService) waitForCleanupTask(ctx context.Context, taskID string, timeout time.Duration) (*models.TaskStatusResponse, error) {
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		status, err := s.cleanup.GetTaskStatus(ctx, taskID)
+		if err != nil {
+			return nil, err
+		}
+		if status != nil && isTaskTerminal(status.Status) {
+			return status, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-deadline.C:
+			return nil, fmt.Errorf("task %s timed out", taskID)
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *EngineService) setDeletionExecuteTask(engineID uint, scanTaskID, executeTaskID string) bool {
+	engine, err := s.repo.GetByID(engineID)
+	if err != nil || engine.DeletionScanTaskID == nil || *engine.DeletionScanTaskID != scanTaskID {
+		return false
+	}
+	engine.DeletionExecuteTaskID = &executeTaskID
+	engine.DeletionError = ""
+	return s.repo.Update(engine) == nil
+}
+
+func (s *EngineService) setDeletionError(engineID uint, scanTaskID, message string) {
+	engine, err := s.repo.GetByID(engineID)
+	if err != nil || engine.DeletionScanTaskID == nil || *engine.DeletionScanTaskID != scanTaskID {
+		return
+	}
+	engine.DeletionError = strings.TrimSpace(message)
+	_ = s.repo.Update(engine)
+}
+
+func valueOrZero(value *uint) uint {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+func (s *EngineService) ResumeDeletingEngines() error {
+	engines, err := s.repo.ListDeleting()
+	if err != nil {
+		return err
+	}
+	for i := range engines {
+		engine := &engines[i]
+		if engine.DeletionScanTaskID == nil || strings.TrimSpace(*engine.DeletionScanTaskID) == "" {
+			continue
+		}
+		go s.continueDeletion(engine.ID, *engine.DeletionScanTaskID)
+	}
 	return nil
 }
 
@@ -444,6 +735,19 @@ func (s *EngineService) GetForConnection(id, tenantID uint) (*models.Engine, err
 	return &engineCopy, nil
 }
 
+// GetForExecution returns decrypted connection information only for an active
+// engine inside the already-authorized execution tenant boundary.
+func (s *EngineService) GetForExecution(id, tenantID uint) (*models.Engine, error) {
+	engine, err := s.GetForConnection(id, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if engine.LifecycleState != models.EngineLifecycleActive {
+		return nil, ErrResourceForbidden
+	}
+	return engine, nil
+}
+
 // BuildConnectionTestEngine 返回带解密连接信息的资源副本，并用可选的当前表单配置覆盖。
 // 用于编辑弹窗测试未保存的配置，同时复用已有资源的权限、类型与状态更新链路。
 func (s *EngineService) BuildConnectionTestEngine(id, tenantID uint, override *models.ConnectionInfo) (*models.Engine, error) {
@@ -500,6 +804,73 @@ func (s *EngineService) mergePlainConnectionInfo(original, updated models.Connec
 	}
 
 	return merged
+}
+
+func (s *EngineService) validateConnectionIdentityUnchanged(engineType string, original, updated models.ConnectionInfo) error {
+	fields, plugin, err := connectionIdentityDefinition(engineType)
+	if err != nil {
+		return err
+	}
+	changed := make([]string, 0)
+	for _, field := range fields {
+		before := normalizedConnectionIdentityValue(field, original, plugin)
+		after := normalizedConnectionIdentityValue(field, updated, plugin)
+		if before != after {
+			changed = append(changed, field)
+		}
+	}
+	if len(changed) > 0 {
+		return fmt.Errorf("%w: %s", ErrEngineIdentityImmutable, strings.Join(changed, ", "))
+	}
+	return nil
+}
+
+func connectionIdentityDefinition(engineType string) ([]string, engineplugin.EnginePlugin, error) {
+	plugin, err := engineplugin.Get(strings.TrimSpace(engineType))
+	if err == nil {
+		identityProvider, ok := plugin.(engineplugin.ConnectionIdentityProvider)
+		if !ok {
+			return nil, nil, fmt.Errorf("engine plugin %s did not implement ConnectionIdentityProvider", engineType)
+		}
+		fields := identityProvider.ConnectionIdentityFields()
+		if len(fields) == 0 {
+			return nil, nil, fmt.Errorf("engine plugin %s did not declare connection identity fields", engineType)
+		}
+		return fields, plugin, nil
+	}
+	// 未编译进当前进程的 extension engine 使用 addp.workflow/v1 标准 HTTP 端点身份。
+	return []string{"protocol", "host", "port"}, nil, nil
+}
+
+func normalizedConnectionIdentityValue(field string, connInfo models.ConnectionInfo, plugin engineplugin.EnginePlugin) string {
+	field = strings.TrimSpace(field)
+	switch field {
+	case "port":
+		port := engineplugin.GetInt(engineplugin.ConnectionInfo(connInfo), field)
+		if port == 0 && plugin != nil {
+			port = plugin.DefaultPort()
+		}
+		return fmt.Sprintf("%d", port)
+	case "protocol":
+		value := strings.ToLower(strings.TrimSpace(engineplugin.GetString(engineplugin.ConnectionInfo(connInfo), field)))
+		if value == "" {
+			value = "http"
+		}
+		return value
+	case "host", "server":
+		value := engineplugin.NormalizeHost(strings.TrimSpace(engineplugin.GetString(engineplugin.ConnectionInfo(connInfo), field)))
+		return strings.ToLower(value)
+	case "endpoint":
+		return strings.ToLower(strings.TrimRight(strings.TrimSpace(engineplugin.GetString(engineplugin.ConnectionInfo(connInfo), field)), "/"))
+	case "export_path":
+		value := strings.TrimSpace(engineplugin.GetString(engineplugin.ConnectionInfo(connInfo), field))
+		if value == "/" {
+			return value
+		}
+		return strings.TrimRight(value, "/")
+	default:
+		return strings.TrimSpace(engineplugin.GetString(engineplugin.ConnectionInfo(connInfo), field))
+	}
 }
 
 func (s *EngineService) stripConnectionInfoMetaFields(connInfo models.ConnectionInfo) models.ConnectionInfo {
@@ -925,6 +1296,12 @@ func (s *EngineService) GetByEngineTypeAndTenant(engineType string, tenantID *ui
 
 // CreateEngine 创建引擎
 func (s *EngineService) CreateEngine(engine *models.Engine) error {
+	if strings.TrimSpace(engine.LifecycleState) == "" {
+		engine.LifecycleState = models.EngineLifecycleActive
+	}
+	if strings.TrimSpace(engine.ExternalArtifactPolicy) == "" {
+		engine.ExternalArtifactPolicy = models.ExternalArtifactPolicyDelete
+	}
 	if err := s.prepareEngineCapabilities(engine); err != nil {
 		return err
 	}
@@ -933,6 +1310,29 @@ func (s *EngineService) CreateEngine(engine *models.Engine) error {
 
 // UpdateEngine 更新引擎
 func (s *EngineService) UpdateEngine(engine *models.Engine) error {
+	if engine == nil || engine.ID == 0 {
+		return errors.New("无效的引擎数据")
+	}
+	stored, err := s.repo.GetByID(engine.ID)
+	if err != nil {
+		return err
+	}
+	if stored.LifecycleState == models.EngineLifecycleDeleting {
+		return ErrEngineDeleting
+	}
+	original, err := s.decryptStoredConnectionInfo(stored.ConnectionInfo)
+	if err != nil {
+		return fmt.Errorf("解密连接信息失败: %w", err)
+	}
+	updated := s.mergePlainConnectionInfo(original, engine.ConnectionInfo)
+	if err := s.validateConnectionIdentityUnchanged(engine.EngineType, original, updated); err != nil {
+		return err
+	}
+	encryptedConnInfo, err := s.encryptConnectionInfoForStorage(updated)
+	if err != nil {
+		return fmt.Errorf("加密连接信息失败: %w", err)
+	}
+	engine.ConnectionInfo = encryptedConnInfo
 	if err := s.prepareEngineCapabilities(engine); err != nil {
 		return err
 	}

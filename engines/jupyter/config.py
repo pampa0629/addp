@@ -16,7 +16,6 @@ class Config:
 
     # API 配置
     API_PORT = int(os.getenv('API_PORT', '8097'))
-    JUPYTER_PORT = int(os.getenv('JUPYTER_PORT', '8088'))
 
     # MinIO 配置（与 Manager 模块保持一致）
     MINIO_API_PORT = os.getenv('MINIO_API_PORT', '19000')
@@ -26,21 +25,14 @@ class Config:
     MINIO_USE_SSL = os.getenv('MINIO_USE_SSL', 'false').lower() == 'true'
     MINIO_BUCKET = 'develop'  # Notebook 专用 bucket
 
-    # System 服务配置
+    # canonical AuthContext 解析服务
     SYSTEM_URL = os.getenv('SYSTEM_URL', 'http://localhost:8180')
-    INTERNAL_API_KEY = os.getenv('INTERNAL_API_KEY', '')
 
     # 日志配置
     LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
 
     # Workspace 配置
     WORKSPACE_DIR = os.getenv('WORKSPACE_DIR', '/workspace/notebooks')
-
-    # 默认租户配置（开发环境）
-    DEFAULT_TENANT_ID = os.getenv('DEFAULT_TENANT_ID', '1')
-
-    # JWT 密钥（用于解析 token）
-    JWT_SECRET = os.getenv('JWT_SECRET', 'your-secret-key-change-this')
 
     @classmethod
     def validate(cls):
@@ -56,14 +48,12 @@ class Config:
         print("=" * 60)
         print("Jupyter Engine 配置:")
         print(f"  API_PORT: {cls.API_PORT}")
-        print(f"  JUPYTER_PORT: {cls.JUPYTER_PORT}")
         print(f"  MINIO_ENDPOINT: {cls.MINIO_ENDPOINT}")
         print(f"  MINIO_BUCKET: {cls.MINIO_BUCKET}")
         print(f"  MINIO_USE_SSL: {cls.MINIO_USE_SSL}")
         print(f"  SYSTEM_URL: {cls.SYSTEM_URL}")
         print(f"  LOG_LEVEL: {cls.LOG_LEVEL}")
         print(f"  WORKSPACE_DIR: {cls.WORKSPACE_DIR}")
-        print(f"  DEFAULT_TENANT_ID: {cls.DEFAULT_TENANT_ID}")
         print("=" * 60)
 
 # 全局配置实例

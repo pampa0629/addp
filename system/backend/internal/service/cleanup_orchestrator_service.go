@@ -72,6 +72,24 @@ func (s *CleanupOrchestratorService) CreateEventScanTask(
 	return s.createScanTask(ctx, tenantID, scope, userID, triggerType, causeEvent, cleanupContext)
 }
 
+func (s *CleanupOrchestratorService) CreateEngineDeletionScanTask(
+	ctx context.Context,
+	tenantID uint,
+	scope []string,
+	userID uint,
+	cleanupContext map[string]interface{},
+) (string, error) {
+	return s.createScanTask(
+		ctx,
+		tenantID,
+		scope,
+		userID,
+		commonExecution.TriggerTypeManual,
+		events.CleanupCauseEngineDeleting,
+		cleanupContext,
+	)
+}
+
 func (s *CleanupOrchestratorService) createScanTask(
 	ctx context.Context,
 	tenantID uint,
@@ -703,7 +721,7 @@ func (s *CleanupOrchestratorService) calculateOverallStatus(
 		// 全部完成
 		hasFailure := false
 		for _, status := range progress.Modules {
-			if status == "failed" || status == "timeout" {
+			if status == events.CleanupResultFailed || status == events.CleanupResultPartialSuccess || status == events.CleanupResultTimeout {
 				hasFailure = true
 				break
 			}
@@ -890,7 +908,11 @@ func summaryFromResults(results map[string]interface{}) events.CleanupResultSumm
 		summary.MarkedOutdated += resultData.Summary.MarkedOutdated
 		summary.DisabledTaskDefinitions += resultData.Summary.DisabledTaskDefinitions
 		summary.SkippedItems += resultData.Summary.SkippedItems
-		summary.ErrorCount += resultData.Summary.ErrorCount + len(resultData.Errors)
+		errorCount := resultData.Summary.ErrorCount
+		if len(resultData.Errors) > errorCount {
+			errorCount = len(resultData.Errors)
+		}
+		summary.ErrorCount += errorCount
 		summary.RiskLevel = higherRisk(summary.RiskLevel, resultData.Summary.RiskLevel)
 	}
 	return summary

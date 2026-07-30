@@ -317,6 +317,41 @@ func TestCleanupTaskTerminalStatuses(t *testing.T) {
 	}
 }
 
+func TestCleanupOverallStatusTreatsPartialSuccessAsError(t *testing.T) {
+	t.Parallel()
+
+	svc := &CleanupOrchestratorService{}
+	task := &models.CleanupTask{}
+	progress := &models.TaskProgress{
+		Total:     2,
+		Completed: 2,
+		Modules: map[string]string{
+			"meta":    events.CleanupResultSuccess,
+			"manager": events.CleanupResultPartialSuccess,
+		},
+	}
+	if got := svc.calculateOverallStatus(task, progress, false); got != "completed_with_errors" {
+		t.Fatalf("overall status = %q, want completed_with_errors", got)
+	}
+}
+
+func TestCleanupSummaryDoesNotDoubleCountReportedErrors(t *testing.T) {
+	t.Parallel()
+
+	results := map[string]interface{}{
+		"manager": events.CleanupResultData{
+			Status: events.CleanupResultPartialSuccess,
+			Summary: events.CleanupResultSummary{
+				ErrorCount: 2,
+			},
+			Errors: []string{"first", "second"},
+		},
+	}
+	if got := summaryFromResults(results).ErrorCount; got != 2 {
+		t.Fatalf("error count = %d, want 2", got)
+	}
+}
+
 type cleanupAuditWriterStub struct {
 	events []iam.AuditEvent
 }

@@ -4,9 +4,9 @@ import (
 	"net/http"
 
 	commoni18n "github.com/addp/common/middleware/i18n"
+	sysi18n "github.com/addp/system/i18n"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/service"
-	sysi18n "github.com/addp/system/i18n"
 	"github.com/gin-gonic/gin"
 )
 
@@ -40,6 +40,37 @@ func (h *ModuleRegistryHandler) Register(c *gin.Context) {
 	})
 }
 
+// RegisterService godoc
+// @Summary      注册当前运行模块 | Register current runtime module
+// @Description  平台 Service Principal 只能注册与自身 OAuth Client 对应的模块 | A platform service principal can only register the module matching its OAuth client
+// @Tags         运行时注册 | Runtime Registry
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body models.ModuleRegistrationRequest true "模块注册信息 | Module registration"
+// @Success      200 {object} object{message=string,module=string}
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      403 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.runtime_registry.update"]
+// @Router       /runtime/modules [post]
+func (h *ModuleRegistryHandler) RegisterService(c *gin.Context) {
+	var req models.ModuleRegistrationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := iamServiceOwnsModule(c, req.ModuleName); err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	if err := h.service.Register(&req); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgModuleRegistered), "module": req.ModuleName})
+}
+
 // Heartbeat 心跳更新
 // POST /api/v1/internal/modules/heartbeat
 func (h *ModuleRegistryHandler) Heartbeat(c *gin.Context) {
@@ -58,6 +89,36 @@ func (h *ModuleRegistryHandler) Heartbeat(c *gin.Context) {
 		"message": commoni18n.T(c, sysi18n.MsgModuleHeartbeat),
 		"module":  req.ModuleName,
 	})
+}
+
+// HeartbeatService godoc
+// @Summary      更新当前运行模块心跳 | Update current runtime module heartbeat
+// @Tags         运行时注册 | Runtime Registry
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body models.HeartbeatRequest true "模块心跳 | Module heartbeat"
+// @Success      200 {object} object{message=string,module=string}
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      403 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.runtime_registry.update"]
+// @Router       /runtime/modules/heartbeat [post]
+func (h *ModuleRegistryHandler) HeartbeatService(c *gin.Context) {
+	var req models.HeartbeatRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := iamServiceOwnsModule(c, req.ModuleName); err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	if err := h.service.SendHeartbeat(req.ModuleName); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgModuleHeartbeat), "module": req.ModuleName})
 }
 
 // ListModules 查询模块列表

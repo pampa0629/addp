@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/orchestrator/internal/models"
 	"github.com/stretchr/testify/assert"
@@ -233,18 +234,21 @@ func TestResolveTemplateReferencesRejectsMissingPath(t *testing.T) {
 	}
 }
 
-func TestExecuteWithTaskProviderPassesTenantHeader(t *testing.T) {
-	executeTenantHeader := ""
-	statusTenantHeader := ""
+func TestExecuteWithTaskProviderUsesTenantServiceBearer(t *testing.T) {
+	executeAuthorization := ""
+	statusAuthorization := ""
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/quality/tasks/check/42/execute":
-			executeTenantHeader = r.Header.Get("X-Tenant-ID")
+			executeAuthorization = r.Header.Get("Authorization")
+			if r.Header.Get("X-Internal-API-Key") != "" || r.Header.Get("X-Tenant-ID") != "" {
+				t.Fatal("legacy internal headers must not be sent")
+			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
 			_ = json.NewEncoder(w).Encode(map[string]string{"execution_id": "child-exec"})
 		case "/api/v1/quality/executions/child-exec":
-			statusTenantHeader = r.Header.Get("X-Tenant-ID")
+			statusAuthorization = r.Header.Get("Authorization")
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"execution_id": "child-exec",
@@ -270,7 +274,9 @@ func TestExecuteWithTaskProviderPassesTenantHeader(t *testing.T) {
 			cacheTTL:    time.Hour,
 			lastRefresh: time.Now(),
 		},
-		internalAPIKey: "internal",
+		serviceTokens: commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+			return "addp_at_orchestrator", nil
+		}),
 	}
 
 	result, err := executor.executeWithTaskProvider(
@@ -285,8 +291,8 @@ func TestExecuteWithTaskProviderPassesTenantHeader(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, "success", result.Status)
-	assert.Equal(t, "7", executeTenantHeader)
-	assert.Equal(t, "7", statusTenantHeader)
+	assert.Equal(t, "Bearer addp_at_orchestrator", executeAuthorization)
+	assert.Equal(t, "Bearer addp_at_orchestrator", statusAuthorization)
 }
 
 func TestExecuteWithTaskProviderForwardsScheduledExistingResultActionWithoutOwnerScheduleFields(t *testing.T) {
@@ -330,6 +336,9 @@ func TestExecuteWithTaskProviderForwardsScheduledExistingResultActionWithoutOwne
 			cacheTTL:    time.Hour,
 			lastRefresh: time.Now(),
 		},
+		serviceTokens: commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+			return "addp_at_orchestrator", nil
+		}),
 	}
 
 	result, err := executor.executeWithTaskProvider(

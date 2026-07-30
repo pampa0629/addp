@@ -353,7 +353,7 @@ func assertTenantCodeCount(t *testing.T, db *gorm.DB, code string, want int64) {
 
 func assertTenantInitializationFacts(t *testing.T, db *gorm.DB, tenantID, administratorID int64) {
 	t.Helper()
-	var membershipCount, assignmentCount, auditCount int64
+	var membershipCount, assignmentCount, serviceMembershipCount, serviceAssignmentCount, auditCount int64
 	if err := db.Model(&TenantMembership{}).Where("tenant_id = ? AND principal_id = ? AND status = 'active'", tenantID, administratorID).Count(&membershipCount).Error; err != nil {
 		t.Fatalf("count initial membership: %v", err)
 	}
@@ -367,7 +367,24 @@ func assertTenantInitializationFacts(t *testing.T, db *gorm.DB, tenantID, admini
 	}).Count(&auditCount).Error; err != nil {
 		t.Fatalf("count tenant initialization audit: %v", err)
 	}
-	if membershipCount != 1 || assignmentCount != 1 || auditCount != 3 {
-		t.Fatalf("initialization facts membership=%d assignment=%d audit=%d", membershipCount, assignmentCount, auditCount)
+	if err := db.Table("system.tenant_memberships membership").
+		Joins("JOIN system.principals principal ON principal.id = membership.principal_id").
+		Where("membership.tenant_id = ? AND membership.status = 'active' AND membership.source_type = 'bootstrap' AND membership.created_by_principal_id IS NOT NULL AND principal.principal_type = 'service_principal'", tenantID).
+		Count(&serviceMembershipCount).Error; err != nil {
+		t.Fatalf("count service runtime memberships: %v", err)
+	}
+	if err := db.Table("system.role_assignments assignment").
+		Joins("JOIN system.roles role ON role.id = assignment.role_id").
+		Joins("JOIN system.principals principal ON principal.id = assignment.principal_id").
+		Where("assignment.tenant_id = ? AND assignment.status = 'active' AND assignment.source_type = 'bootstrap' AND assignment.created_by_principal_id IS NULL AND principal.principal_type = 'service_principal' AND role.role_key LIKE 'tenant.%_runtime'", tenantID).
+		Count(&serviceAssignmentCount).Error; err != nil {
+		t.Fatalf("count service runtime assignments: %v", err)
+	}
+	var serviceRuntimeCount int
+	if err := db.Raw(`SELECT (details->>'service_runtime_count')::int FROM system.audit_logs WHERE request_id = ? AND event_name = 'iam.tenant.created'`, "tenant-administration-closure").Scan(&serviceRuntimeCount).Error; err != nil {
+		t.Fatalf("read tenant creation service runtime audit: %v", err)
+	}
+	if membershipCount != 1 || assignmentCount != 1 || serviceMembershipCount != 10 || serviceAssignmentCount != 10 || auditCount != 3 || serviceRuntimeCount != 10 {
+		t.Fatalf("initialization facts membership=%d assignment=%d service_membership=%d service_assignment=%d audit=%d service_runtime_count=%d", membershipCount, assignmentCount, serviceMembershipCount, serviceAssignmentCount, auditCount, serviceRuntimeCount)
 	}
 }

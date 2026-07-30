@@ -4,18 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/models"
+	"github.com/google/uuid"
 )
 
 func TestPreprocessWorkflowParamsDerivesTableSourceFromLocator(t *testing.T) {
@@ -128,10 +125,10 @@ func TestPreprocessWorkflowParamsDerivesSuperMapPostgisTargetFromParentLocator(t
 func TestPreprocessWorkflowParamsDerivesSuperMapUdbxTargetFromNFSDirectory(t *testing.T) {
 	svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{
 		3: {
-			ID:         3,
-			Name:       "test-nfs",
-			EngineType: "nfs",
-			IsActive:   true,
+			ID:             3,
+			Name:           "test-nfs",
+			EngineType:     "nfs",
+			LifecycleState: "active",
 			ConnectionInfo: commonModels.ConnectionInfo{
 				"server":      "nfs.local",
 				"export_path": "/exports/addp",
@@ -709,11 +706,11 @@ func TestExecuteWorkflowReturnsErrorForTerminalRuntimeFailure(t *testing.T) {
 func TestConversionAdaptersDeriveAccessPlanV1(t *testing.T) {
 	svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{
 		1: {
-			ID: 1, Name: "business-nfs", EngineType: "nfs", IsActive: true,
+			ID: 1, Name: "business-nfs", EngineType: "nfs", LifecycleState: "active",
 			ConnectionInfo: commonModels.ConnectionInfo{"mount_path": "/data"},
 		},
 		2: {
-			ID: 2, Name: "business-minio", EngineType: "minio", IsActive: true,
+			ID: 2, Name: "business-minio", EngineType: "minio", LifecycleState: "active",
 			ConnectionInfo: commonModels.ConnectionInfo{"endpoint": "minio:9000", "access_key": "key", "secret_key": "secret"},
 		},
 	})
@@ -769,10 +766,12 @@ func TestConversionAdaptersDeriveAccessPlanV1(t *testing.T) {
 			if len(targets) != 1 || targets[0].EngineID != 2 {
 				t.Fatalf("produced targets = %#v", targets)
 			}
-			targetAudit := targets[0].AccessPlan["target"].(commonModels.JSONMap)
-			targetAuditAccess := targetAudit["access"].(commonModels.JSONMap)
-			if _, leaked := targetAuditAccess["secret_key"]; leaked {
-				t.Fatalf("produced target audit leaked credentials: %#v", targets[0].AccessPlan)
+			encodedTarget, err := json.Marshal(targets[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(encodedTarget), "access_plan") || strings.Contains(string(encodedTarget), "secret_key") {
+				t.Fatalf("produced target leaked execution access plan: %s", encodedTarget)
 			}
 			for _, publicName := range []string{"locator", "target_parent_locator", "target_name", "write_mode"} {
 				if _, exists := params[publicName]; exists {
@@ -786,8 +785,8 @@ func TestConversionAdaptersDeriveAccessPlanV1(t *testing.T) {
 func TestConversionAdapterRejectsInfraTargetEngine(t *testing.T) {
 	tenantID := uint(7)
 	svc := newWorkflowEngineServiceWithRawEnginesForTest(t, map[uint]commonModels.Engine{
-		1: {ID: 1, TenantID: &tenantID, EngineType: "nfs", IsActive: true, ConnectionInfo: commonModels.ConnectionInfo{"mount_path": "/data"}},
-		2: {ID: 2, TenantID: nil, EngineType: "minio", IsActive: true, ConnectionInfo: commonModels.ConnectionInfo{"endpoint": "minio:9000", "access_key": "key", "secret_key": "secret"}},
+		1: {ID: 1, TenantID: &tenantID, EngineType: "nfs", LifecycleState: "active", ConnectionInfo: commonModels.ConnectionInfo{"mount_path": "/data"}},
+		2: {ID: 2, TenantID: nil, EngineType: "minio", LifecycleState: "active", ConnectionInfo: commonModels.ConnectionInfo{"endpoint": "minio:9000", "access_key": "key", "secret_key": "secret"}},
 	})
 	workflow := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{
 		"id": "convert", "operator": "las_to_copc", "depends_on": []interface{}{},
@@ -806,11 +805,11 @@ func TestConversionAdapterRejectsInfraTargetEngine(t *testing.T) {
 func TestConversionAdapterDerivesObjectStoreParentSource(t *testing.T) {
 	svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{
 		3: {
-			ID: 3, EngineType: "minio", IsActive: true,
+			ID: 3, EngineType: "minio", LifecycleState: "active",
 			ConnectionInfo: commonModels.ConnectionInfo{"endpoint": "minio:9000", "access_key": "key", "secret_key": "secret"},
 		},
 		4: {
-			ID: 4, EngineType: "nfs", IsActive: true,
+			ID: 4, EngineType: "nfs", LifecycleState: "active",
 			ConnectionInfo: commonModels.ConnectionInfo{"mount_path": "/business"},
 		},
 	})
@@ -835,14 +834,62 @@ func TestConversionAdapterDerivesObjectStoreParentSource(t *testing.T) {
 	}
 }
 
-func newWorkflowEngineServiceForTest(t *testing.T, engineID uint, engineType string) *WorkflowEngineService {
+type workflowEngineServiceTestHarness struct {
+	service  *WorkflowEngineService
+	resolver *workflowEngineAccessResolver
+}
+
+func (h *workflowEngineServiceTestHarness) preprocessWorkflowParams(
+	ctx context.Context,
+	tenantID uint,
+	workflowEngineType string,
+	workflowDef map[string]interface{},
+) (map[string]interface{}, error) {
+	return h.service.preprocessWorkflowParams(ctx, tenantID, workflowEngineType, workflowDef, h.resolver)
+}
+
+func (h *workflowEngineServiceTestHarness) preprocessWorkflowParamsWithTargets(
+	ctx context.Context,
+	tenantID uint,
+	workflowEngineType string,
+	workflowDef map[string]interface{},
+) (map[string]interface{}, []WorkflowProducedTarget, error) {
+	return h.service.preprocessWorkflowParamsWithTargets(ctx, tenantID, workflowEngineType, workflowDef, h.resolver)
+}
+
+func (h *workflowEngineServiceTestHarness) workflowRuntimeOptions(
+	tenantID uint,
+	engineType string,
+	config models.WorkflowExecutionConfig,
+) (map[string]interface{}, error) {
+	return h.service.workflowRuntimeOptions(context.Background(), tenantID, engineType, config, h.resolver)
+}
+
+func (h *workflowEngineServiceTestHarness) ExecuteWorkflow(
+	ctx context.Context,
+	tenantID uint,
+	workflowDef map[string]interface{},
+	inputData map[string]interface{},
+	executionConfig string,
+) (*WorkflowResponse, error) {
+	authorization := &IssuedWorkflowExecutionAuthorization{
+		AuthorizationID: 1,
+		Effects:         []string{"read"},
+		ExpiresAt:       time.Now().Add(time.Hour),
+	}
+	return h.service.executeWorkflowWithResolver(
+		ctx, tenantID, uuid.New(), workflowDef, inputData, executionConfig, authorization, h.resolver,
+	)
+}
+
+func newWorkflowEngineServiceForTest(t *testing.T, engineID uint, engineType string) *workflowEngineServiceTestHarness {
 	t.Helper()
 	return newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{
 		engineID: {
-			ID:         engineID,
-			Name:       "test-engine",
-			EngineType: engineType,
-			IsActive:   true,
+			ID:             engineID,
+			Name:           "test-engine",
+			EngineType:     engineType,
+			LifecycleState: "active",
 			ConnectionInfo: commonModels.ConnectionInfo{
 				"host":     "localhost",
 				"port":     "5432",
@@ -854,7 +901,7 @@ func newWorkflowEngineServiceForTest(t *testing.T, engineID uint, engineType str
 	})
 }
 
-func newWorkflowEngineServiceWithEnginesForTest(t *testing.T, engines map[uint]commonModels.Engine) *WorkflowEngineService {
+func newWorkflowEngineServiceWithEnginesForTest(t *testing.T, engines map[uint]commonModels.Engine) *workflowEngineServiceTestHarness {
 	t.Helper()
 	tenantID := uint(7)
 	for id, engine := range engines {
@@ -866,36 +913,32 @@ func newWorkflowEngineServiceWithEnginesForTest(t *testing.T, engines map[uint]c
 	return newWorkflowEngineServiceWithRawEnginesForTest(t, engines)
 }
 
-func newWorkflowEngineServiceWithRawEnginesForTest(t *testing.T, engines map[uint]commonModels.Engine) *WorkflowEngineService {
+func newWorkflowEngineServiceWithRawEnginesForTest(t *testing.T, engines map[uint]commonModels.Engine) *workflowEngineServiceTestHarness {
 	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		const prefix = "/api/v1/internal/engines/"
-		if !strings.HasPrefix(r.URL.Path, prefix) {
-			http.NotFound(w, r)
-			return
-		}
-		id64, err := strconv.ParseUint(strings.TrimPrefix(r.URL.Path, prefix), 10, 32)
-		if err != nil {
-			http.NotFound(w, r)
-			return
-		}
-		engine, ok := engines[uint(id64)]
-		if !ok {
-			http.NotFound(w, r)
-			return
-		}
-		_ = json.NewEncoder(w).Encode(engine)
-	}))
-	t.Cleanup(server.Close)
-	return NewWorkflowEngineService(commonClient.NewSystemClientWithInternalKey(server.URL, "internal-key"))
+	cached := make(map[uint]*commonModels.Engine, len(engines))
+	for id, engine := range engines {
+		copy := engine
+		cached[id] = &copy
+	}
+	authorization := &IssuedWorkflowExecutionAuthorization{AuthorizationID: 1, ExpiresAt: time.Now().Add(time.Hour)}
+	return &workflowEngineServiceTestHarness{
+		service: NewWorkflowEngineService(nil),
+		resolver: &workflowEngineAccessResolver{
+			tenantID: 7, executionID: uuid.New(), authorization: authorization, engines: cached,
+		},
+	}
 }
 
 func testEngine(id uint, engineType string, active bool) commonModels.Engine {
+	lifecycleState := commonModels.EngineLifecycleDisabled
+	if active {
+		lifecycleState = commonModels.EngineLifecycleActive
+	}
 	return commonModels.Engine{
-		ID:         id,
-		Name:       "test-" + engineType,
-		EngineType: engineType,
-		IsActive:   active,
+		ID:             id,
+		Name:           "test-" + engineType,
+		EngineType:     engineType,
+		LifecycleState: lifecycleState,
 		ConnectionInfo: commonModels.ConnectionInfo{
 			"host": "localhost",
 			"port": "10000",
@@ -949,6 +992,7 @@ func (p *testWorkflowRuntimePlugin) ListOperators(ctx context.Context, connInfo 
 			CategoryPath:   []string{"测试"},
 			Description:    "Async operator for tests",
 			ExecutionModes: []string{"workflow"},
+			Effects:        []string{"read"},
 			Parameters:     []plugin.ParameterDescriptor{},
 			OutputPorts: []plugin.OutputPortDescriptor{
 				{Name: "default", Type: "object", IsDefault: true},

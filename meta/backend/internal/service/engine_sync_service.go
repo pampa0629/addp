@@ -6,7 +6,6 @@ import (
 
 	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
-	commonModels "github.com/addp/common/models"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -74,20 +73,8 @@ func (s *EngineSyncService) handleEngineChangeEvent(event events.EngineChangeEve
 	switch event.Action {
 	case events.ActionCreate, events.ActionUpdate:
 		s.engineService.ClearEngineCache(event.EngineID)
-
-		resource, err := s.loadEngine(event.EngineID)
-		if err != nil {
-			s.log.Error("获取资源详情失败，跳过 catalog root 维护",
-				"engine_id", event.EngineID,
-				"error", err)
-			return nil
-		}
-		if s.engineService.rootReconciler != nil {
-			s.engineService.rootReconciler.Reconcile(resource)
-		}
-
 		if event.Action == events.ActionCreate {
-			s.log.Debug("资源已创建", "engine_id", event.EngineID)
+			s.log.Debug("资源已创建，等待首个 Tenant Context 请求加载详情", "engine_id", event.EngineID)
 		} else {
 			s.log.Info("资源已更新，缓存已清除", "engine_id", event.EngineID)
 		}
@@ -100,22 +87,4 @@ func (s *EngineSyncService) handleEngineChangeEvent(event events.EngineChangeEve
 	}
 
 	return nil
-}
-
-func (s *EngineSyncService) loadEngine(engineID uint) (*commonModels.Engine, error) {
-	if s.engineService == nil {
-		return nil, fmt.Errorf("engine service not configured")
-	}
-
-	s.engineService.ensureInternalClient()
-	if s.engineService.internalClient == nil {
-		return nil, fmt.Errorf("internal client not configured")
-	}
-
-	resource, err := s.engineService.internalClient.GetEngine(engineID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get engine from system api: %w", err)
-	}
-
-	return resource, nil
 }

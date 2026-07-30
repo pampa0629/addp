@@ -1,13 +1,26 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 
+	commonClient "github.com/addp/common/client"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/taskprovider"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
+
+type registrationServiceTokens string
+
+func (token registrationServiceTokens) Token(context.Context, uint) (string, error) {
+	return string(token), nil
+}
+
+func (token registrationServiceTokens) PlatformToken(context.Context) (string, error) {
+	return string(token), nil
+}
 
 type registrationTaskCapability struct {
 	Type                    string                 `json:"type"`
@@ -24,26 +37,30 @@ type registrationTaskCapability struct {
 }
 
 func TestTaskProviderRegistrationRegistersStandardOrchestratorContract(t *testing.T) {
-	var captured TaskProviderRegistration
+	var captured commonModels.TaskProvider
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("method = %s, want POST", r.Method)
 		}
-		if r.URL.Path != "/api/v1/internal/task-providers/register" {
-			t.Fatalf("path = %s, want /api/v1/internal/task-providers/register", r.URL.Path)
+		if r.URL.Path != "/api/v1/system/runtime/task-providers" {
+			t.Fatalf("path = %s, want runtime task provider route", r.URL.Path)
 		}
-		if got := r.Header.Get("X-Internal-API-Key"); got != "internal-key" {
-			t.Fatalf("X-Internal-API-Key = %q, want internal-key", got)
+		if got := r.Header.Get("Authorization"); got != "Bearer addp_at_orchestrator" {
+			t.Fatalf("Authorization = %q", got)
+		}
+		if r.Header.Get("X-Internal-API-Key") != "" || r.Header.Get("X-Tenant-ID") != "" {
+			t.Fatal("legacy internal headers must not be sent")
 		}
 		if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
 			t.Fatalf("decode payload: %v", err)
 		}
-		w.WriteHeader(http.StatusCreated)
+		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 
-	registry := NewTaskProviderRegistrationService(server.URL, "internal-key", "http://orchestrator.internal")
-	if err := registry.Register(); err != nil {
+	systemClient := commonClient.NewSystemServiceClient(server.URL, registrationServiceTokens("addp_at_orchestrator"), server.Client())
+	registry := NewTaskProviderRegistrationService(systemClient, "http://orchestrator.internal")
+	if err := registry.Register(context.Background()); err != nil {
 		t.Fatalf("Register() error = %v", err)
 	}
 
@@ -70,7 +87,7 @@ func TestTaskProviderRegistrationRegistersStandardOrchestratorContract(t *testin
 	if captured.Capabilities == nil {
 		t.Fatal("capabilities is nil")
 	}
-	if _, err := taskprovider.ParseCapabilities(*captured.Capabilities); err != nil {
+	if _, err := taskprovider.ParseCapabilities(string(*captured.Capabilities)); err != nil {
 		t.Fatalf("capabilities contract invalid: %v; capabilities=%s", err, *captured.Capabilities)
 	}
 	if err := json.Unmarshal([]byte(*captured.Capabilities), &capabilities); err != nil {

@@ -21,14 +21,6 @@ type Handler struct {
 	ratingSvc        *service.RatingService
 }
 
-type ratingUpsertRequest struct {
-	AssetID int64    `json:"asset_id" binding:"required"`
-	UserID  int64    `json:"user_id" binding:"required"`
-	Score   float32  `json:"score" binding:"required,min=1,max=5"`
-	Comment string   `json:"comment"`
-	Tags    []string `json:"tags"`
-}
-
 type ratingHandledRequest struct {
 	IsHandled bool `json:"is_handled"`
 }
@@ -61,7 +53,7 @@ func pathID(c *gin.Context, name string) (int64, bool) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.entry.read"]
+// @x-addp-required-permissions ["asset.management.read","asset.entry.read"]
 // @Router /type-definitions [get]
 func (h *Handler) listTypes(c *gin.Context) {
 	types, err := h.typeSvc.ListTypes(commonAuth.GetTenantID(c))
@@ -80,7 +72,7 @@ func (h *Handler) listTypes(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.entry.read"]
+// @x-addp-required-permissions ["asset.management.read","asset.entry.read"]
 // @Router /type-definitions/{id} [get]
 func (h *Handler) getType(c *gin.Context) {
 	id, ok := pathID(c, "id")
@@ -102,7 +94,7 @@ func (h *Handler) getType(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.catalog.read"]
+// @x-addp-required-permissions ["asset.management.read","asset.catalog.read"]
 // @Router /catalogs [get]
 func (h *Handler) listCatalogs(c *gin.Context) {
 	catalogs, err := h.catalogSvc.ListAll(commonAuth.GetTenantID(c))
@@ -120,7 +112,7 @@ func (h *Handler) listCatalogs(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.catalog.read"]
+// @x-addp-required-permissions ["asset.management.read","asset.catalog.read"]
 // @Router /catalogs/tree [get]
 func (h *Handler) getCatalogTree(c *gin.Context) {
 	tree, err := h.catalogSvc.GetTree(commonAuth.GetTenantID(c))
@@ -139,7 +131,7 @@ func (h *Handler) getCatalogTree(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.catalog.read"]
+// @x-addp-required-permissions ["asset.management.read","asset.catalog.read"]
 // @Router /catalogs/{id} [get]
 func (h *Handler) getCatalog(c *gin.Context) {
 	id, ok := pathID(c, "id")
@@ -163,7 +155,7 @@ func (h *Handler) getCatalog(c *gin.Context) {
 // @Success 201 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.catalog.create"]
+// @x-addp-required-permissions ["asset.management.read","asset.catalog.create"]
 // @Router /catalogs [post]
 func (h *Handler) createCatalog(c *gin.Context) {
 	var request service.CreateCatalogReq
@@ -188,7 +180,7 @@ func (h *Handler) createCatalog(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.catalog.update"]
+// @x-addp-required-permissions ["asset.management.read","asset.catalog.update"]
 // @Router /catalogs/{id} [put]
 func (h *Handler) updateCatalog(c *gin.Context) {
 	id, ok := pathID(c, "id")
@@ -215,7 +207,7 @@ func (h *Handler) updateCatalog(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.catalog.delete"]
+// @x-addp-required-permissions ["asset.management.read","asset.catalog.delete"]
 // @Router /catalogs/{id} [delete]
 func (h *Handler) deleteCatalog(c *gin.Context) {
 	id, ok := pathID(c, "id")
@@ -236,7 +228,7 @@ func (h *Handler) deleteCatalog(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.entry.read"]
+// @x-addp-required-permissions ["asset.management.read","asset.entry.read"]
 // @Router /assets [get]
 func (h *Handler) listAssets(c *gin.Context) {
 	page, pageSize := commonAPI.GetPaginationParams(c)
@@ -265,7 +257,7 @@ func (h *Handler) listAssets(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.entry.read"]
+// @x-addp-required-permissions ["asset.management.read","asset.entry.read"]
 // @Router /assets/{id} [get]
 func (h *Handler) getAsset(c *gin.Context) {
 	id, ok := pathID(c, "id")
@@ -290,7 +282,7 @@ func (h *Handler) getAsset(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.entry.update"]
+// @x-addp-required-permissions ["asset.management.read","asset.entry.update"]
 // @Router /assets/{id} [put]
 func (h *Handler) updateAsset(c *gin.Context) {
 	id, ok := pathID(c, "id")
@@ -317,7 +309,7 @@ func (h *Handler) updateAsset(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.entry.delete"]
+// @x-addp-required-permissions ["asset.management.read","asset.entry.delete"]
 // @Router /assets/{id} [delete]
 func (h *Handler) deleteAsset(c *gin.Context) {
 	id, ok := pathID(c, "id")
@@ -339,7 +331,7 @@ func (h *Handler) deleteAsset(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.entry.publish"]
+// @x-addp-required-permissions ["asset.management.read","asset.entry.publish"]
 // @Router /assets/{id}/publish [post]
 func (h *Handler) publishAsset(c *gin.Context) {
 	h.assetStatusAction(c, h.assetSvc.Publish, i18nkeys.MsgAssetPublished)
@@ -353,7 +345,7 @@ func (h *Handler) publishAsset(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.entry.offline"]
+// @x-addp-required-permissions ["asset.management.read","asset.entry.offline"]
 // @Router /assets/{id}/offline [post]
 func (h *Handler) offlineAsset(c *gin.Context) {
 	h.assetStatusAction(c, h.assetSvc.Offline, i18nkeys.MsgAssetOfflined)
@@ -380,7 +372,7 @@ func (h *Handler) assetStatusAction(c *gin.Context, action func(uint, int64) err
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.entry.publish"]
+// @x-addp-required-permissions ["asset.management.read","asset.entry.publish"]
 // @Router /assets/batch-publish [post]
 func (h *Handler) batchPublishAssets(c *gin.Context) {
 	h.batchAssetAction(c, h.assetSvc.BatchPublish)
@@ -395,7 +387,7 @@ func (h *Handler) batchPublishAssets(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.entry.offline"]
+// @x-addp-required-permissions ["asset.management.read","asset.entry.offline"]
 // @Router /assets/batch-offline [post]
 func (h *Handler) batchOfflineAssets(c *gin.Context) {
 	h.batchAssetAction(c, h.assetSvc.BatchOffline)
@@ -423,7 +415,7 @@ func (h *Handler) batchAssetAction(c *gin.Context, action func(uint, []int64) (i
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.entry.update"]
+// @x-addp-required-permissions ["asset.management.read","asset.entry.update"]
 // @Router /assets/batch-catalog [post]
 func (h *Handler) batchCatalogAssets(c *gin.Context) {
 	var request service.BatchCatalogReq
@@ -445,10 +437,10 @@ func (h *Handler) batchCatalogAssets(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.entry.update"]
+// @x-addp-required-permissions ["asset.management.read","asset.entry.update"]
 // @Router /assets/sync [post]
 func (h *Handler) syncAssets(c *gin.Context) {
-	result, err := h.assetSvc.Sync(commonAuth.GetTenantID(c))
+	result, err := h.assetSvc.Sync(c.Request.Context(), commonAuth.GetTenantID(c))
 	if err != nil {
 		commonAPI.InternalServerError(c, err.Error())
 		return
@@ -463,7 +455,7 @@ func (h *Handler) syncAssets(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.entry.read"]
+// @x-addp-required-permissions ["asset.management.read","asset.entry.read"]
 // @Router /assets/stats [get]
 func (h *Handler) getAssetStats(c *gin.Context) {
 	result, err := h.assetSvc.GetStats(commonAuth.GetTenantID(c))
@@ -481,7 +473,7 @@ func (h *Handler) getAssetStats(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.entry.read"]
+// @x-addp-required-permissions ["asset.management.read","asset.entry.read"]
 // @Router /assets/stats/dashboard [get]
 func (h *Handler) getAssetDashboardStats(c *gin.Context) {
 	result, err := h.assetSvc.GetDashboardStats(commonAuth.GetTenantID(c))
@@ -500,7 +492,7 @@ func (h *Handler) getAssetDashboardStats(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.entry.read"]
+// @x-addp-required-permissions ["asset.management.read","asset.entry.read"]
 // @Router /assets/type-fields/{type_id} [get]
 func (h *Handler) getAssetTypeFields(c *gin.Context) {
 	typeID, err := strconv.ParseInt(c.Param("type_id"), 10, 64)
@@ -523,7 +515,7 @@ func (h *Handler) getAssetTypeFields(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.application.read"]
+// @x-addp-required-permissions ["asset.management.read","asset.application.read"]
 // @Router /applications [get]
 func (h *Handler) listApplications(c *gin.Context) {
 	page, pageSize := commonAPI.GetPaginationParams(c)
@@ -540,30 +532,6 @@ func (h *Handler) listApplications(c *gin.Context) {
 	commonAPI.SendPaginatedResponse(c, items, total, page, pageSize)
 }
 
-// createApplication godoc
-// @Summary 创建资产申请 | Create asset application
-// @Tags Asset Application
-// @Accept json
-// @Produce json
-// @Param request body service.CreateApplicationReq true "申请 | Application"
-// @Success 201 {object} map[string]interface{}
-// @Security BearerAuth
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.application.create"]
-// @Router /applications [post]
-func (h *Handler) createApplication(c *gin.Context) {
-	var request service.CreateApplicationReq
-	if !commonAPI.BindJSON(c, &request) {
-		return
-	}
-	application, err := h.applicationSvc.Create(commonAuth.GetTenantID(c), &request)
-	if err != nil {
-		commonAPI.BadRequestError(c, err.Error())
-		return
-	}
-	commonAPI.CreatedResponse(c, application)
-}
-
 // getApplication godoc
 // @Summary 获取资产申请详情 | Get asset application
 // @Tags Asset Application
@@ -572,7 +540,7 @@ func (h *Handler) createApplication(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.application.read"]
+// @x-addp-required-permissions ["asset.management.read","asset.application.read"]
 // @Router /applications/{id} [get]
 func (h *Handler) getApplication(c *gin.Context) {
 	id, ok := pathID(c, "id")
@@ -597,7 +565,7 @@ func (h *Handler) getApplication(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.application.approve"]
+// @x-addp-required-permissions ["asset.management.read","asset.application.approve"]
 // @Router /applications/{id}/approve [post]
 func (h *Handler) approveApplication(c *gin.Context) {
 	id, ok := pathID(c, "id")
@@ -625,7 +593,7 @@ func (h *Handler) approveApplication(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.application.reject"]
+// @x-addp-required-permissions ["asset.management.read","asset.application.reject"]
 // @Router /applications/{id}/reject [post]
 func (h *Handler) rejectApplication(c *gin.Context) {
 	id, ok := pathID(c, "id")
@@ -651,7 +619,7 @@ func (h *Handler) rejectApplication(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.application.revoke"]
+// @x-addp-required-permissions ["asset.management.read","asset.application.revoke"]
 // @Router /applications/{id}/revoke [post]
 func (h *Handler) revokeApplication(c *gin.Context) {
 	id, ok := pathID(c, "id")
@@ -672,7 +640,7 @@ func (h *Handler) revokeApplication(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.authorization.read"]
+// @x-addp-required-permissions ["asset.management.read","asset.authorization.read"]
 // @Router /authorizations [get]
 func (h *Handler) listAuthorizations(c *gin.Context) {
 	page, pageSize := commonAPI.GetPaginationParams(c)
@@ -699,7 +667,7 @@ func (h *Handler) listAuthorizations(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.authorization.read"]
+// @x-addp-required-permissions ["asset.management.read","asset.authorization.read"]
 // @Router /authorizations/{id} [get]
 func (h *Handler) getAuthorization(c *gin.Context) {
 	id, ok := pathID(c, "id")
@@ -722,7 +690,7 @@ func (h *Handler) getAuthorization(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.authorization.revoke"]
+// @x-addp-required-permissions ["asset.management.read","asset.authorization.revoke"]
 // @Router /authorizations/{id}/revoke [post]
 func (h *Handler) revokeAuthorization(c *gin.Context) {
 	id, ok := pathID(c, "id")
@@ -743,7 +711,7 @@ func (h *Handler) revokeAuthorization(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.rating.read"]
+// @x-addp-required-permissions ["asset.management.read","asset.rating.read"]
 // @Router /ratings [get]
 func (h *Handler) listRatings(c *gin.Context) {
 	page, pageSize := commonAPI.GetPaginationParams(c)
@@ -763,35 +731,6 @@ func (h *Handler) listRatings(c *gin.Context) {
 	commonAPI.SendPaginatedResponse(c, items, total, page, pageSize)
 }
 
-// upsertRating godoc
-// @Summary 提交或更新资产评价 | Submit or update asset rating
-// @Tags Asset Rating
-// @Accept json
-// @Produce json
-// @Param request body ratingUpsertRequest true "评价 | Rating"
-// @Success 201 {object} map[string]interface{}
-// @Security BearerAuth
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.rating.create","asset.rating.update"]
-// @Router /ratings [post]
-func (h *Handler) upsertRating(c *gin.Context) {
-	var request ratingUpsertRequest
-	if !commonAPI.BindJSON(c, &request) {
-		return
-	}
-	rating, err := h.ratingSvc.Upsert(
-		commonAuth.GetTenantID(c),
-		request.UserID,
-		request.AssetID,
-		&service.UpsertRatingReq{Score: request.Score, Comment: request.Comment, Tags: request.Tags},
-	)
-	if err != nil {
-		commonAPI.InternalServerError(c, err.Error())
-		return
-	}
-	commonAPI.CreatedResponse(c, rating)
-}
-
 // markRatingHandled godoc
 // @Summary 标记评价反馈状态 | Mark rating feedback status
 // @Tags Asset Rating
@@ -802,7 +741,7 @@ func (h *Handler) upsertRating(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.rating.update"]
+// @x-addp-required-permissions ["asset.management.read","asset.rating.update"]
 // @Router /ratings/{id}/mark-handled [post]
 func (h *Handler) markRatingHandled(c *gin.Context) {
 	id, ok := pathID(c, "id")
@@ -828,7 +767,7 @@ func (h *Handler) markRatingHandled(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.rating.read"]
+// @x-addp-required-permissions ["asset.management.read","asset.rating.read"]
 // @Router /ratings/stats [get]
 func (h *Handler) getRatingStats(c *gin.Context) {
 	assetID, err := strconv.ParseInt(c.Query("asset_id"), 10, 64)

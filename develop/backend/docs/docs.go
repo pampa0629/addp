@@ -135,6 +135,46 @@ const docTemplate = `{
                 ]
             }
         },
+        "/assets/discoverable": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回当前租户下可被资产模块发现的开发任务 | List active develop tasks for Asset discovery",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Develop"
+                ],
+                "summary": "列出可发现资产 | List discoverable assets",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
+                ]
+            }
+        },
         "/duckdb/sample-query": {
             "get": {
                 "produces": [
@@ -224,11 +264,11 @@ const docTemplate = `{
                 "summary": "获取可用于 SQL 查询的数据源列表 | List data sources available for SQL queries",
                 "responses": {
                     "200": {
-                        "description": "引擎列表 | Engine list",
+                        "description": "引擎运行时描述列表 | Engine runtime descriptor list",
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/models.Engine"
+                                "$ref": "#/definitions/models.EngineRuntimeDescriptor"
                             }
                         }
                     }
@@ -323,6 +363,12 @@ const docTemplate = `{
                     }
                 },
                 "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "develop.data_read.execute",
+                    "develop.data_write.execute",
+                    "develop.data_ddl.execute",
+                    "develop.data_external_effect.execute"
+                ],
                 "x-addp-required-permissions": [
                     "develop.task.execute"
                 ]
@@ -462,6 +508,13 @@ const docTemplate = `{
                     }
                 },
                 "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "develop.data_read.execute",
+                    "develop.data_write.execute",
+                    "develop.data_ddl.execute",
+                    "develop.data_external_effect.execute",
+                    "develop.notebook.execute"
+                ],
                 "x-addp-required-permissions": [
                     "develop.task.execute"
                 ]
@@ -602,272 +655,35 @@ const docTemplate = `{
                     }
                 },
                 "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "develop.data_read.execute",
+                    "develop.data_write.execute",
+                    "develop.data_ddl.execute",
+                    "develop.data_external_effect.execute",
+                    "develop.notebook.execute"
+                ],
                 "x-addp-required-permissions": [
                     "develop.task.execute"
                 ]
             }
         },
-        "/internal/assets/discoverable": {
+        "/notebook-engines": {
             "get": {
-                "description": "返回当前租户下可被资产模块发现的开发任务 | List active develop tasks for Asset discovery",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Develop"
+                    "Notebook"
                 ],
-                "summary": "列出可发现资产 | List discoverable assets",
+                "summary": "列出 Notebook 引擎 | List Notebook engines",
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "Notebook引擎列表 | Notebook engine list",
                         "schema": {
                             "type": "array",
                             "items": {
-                                "type": "object",
-                                "additionalProperties": true
+                                "$ref": "#/definitions/models.EngineRuntimeDescriptor"
                             }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "internal"
-            }
-        },
-        "/internal/executions/{execution_id}": {
-            "get": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Execution"
-                ],
-                "summary": "获取 TaskProvider 执行状态 | Get TaskProvider execution status",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "执行ID（UUID）| Execution ID (UUID)",
-                        "name": "execution_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "执行详情 | Execution details",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevTaskSwagger"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "internal"
-            }
-        },
-        "/internal/tasks": {
-            "get": {
-                "description": "返回可供 TaskProvider 编排复用的开发任务；task_type 是对外任务类型契约，映射到 Develop 内部 dev_type。| List active develop tasks exposed by TaskProvider; task_type is the external task contract mapped to Develop internal dev_type.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Develop"
-                ],
-                "summary": "列出可编排任务 | List orchestratable tasks",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "TaskProvider 任务类型：query/workflow/script | TaskProvider task type: query/workflow/script",
-                        "name": "task_type",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 1,
-                        "description": "页码 | Page",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 20,
-                        "description": "每页数量 | Page size",
-                        "name": "page_size",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ListProviderDevTasksSwaggerResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "internal"
-            }
-        },
-        "/internal/tasks/{task_type}/{id}": {
-            "get": {
-                "description": "按标准 TaskProvider 路径获取开发任务详情；task_type 是对外任务类型契约，映射到 Develop 内部 dev_type。| Get development task detail through the standard TaskProvider path; task_type is the external task contract mapped to Develop internal dev_type.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "DevTask"
-                ],
-                "summary": "获取 TaskProvider 开发任务详情 | Get TaskProvider development task detail",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "TaskProvider 任务类型：query/workflow/script | TaskProvider task type: query/workflow/script",
-                        "name": "task_type",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "开发任务ID | Development task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "开发任务详情 | Development task detail",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ProviderDevTaskSwagger"
-                        }
-                    },
-                    "400": {
-                        "description": "参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "任务不存在 | Task not found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "internal"
-            }
-        },
-        "/internal/tasks/{task_type}/{id}/execute": {
-            "post": {
-                "description": "按标准 TaskProvider 协议执行开发任务；task_type 是对外任务类型契约，映射到 Develop 内部 dev_type，parameters 会传入本次执行。| Execute a development task through the standard TaskProvider protocol; task_type is the external task contract mapped to Develop internal dev_type, and parameters are passed to this execution.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Execution"
-                ],
-                "summary": "执行 TaskProvider 开发任务 | Execute TaskProvider development task",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "TaskProvider 任务类型：query/workflow/script | TaskProvider task type: query/workflow/script",
-                        "name": "task_type",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "开发任务ID | Development task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "TaskProvider 执行请求 | TaskProvider execution request",
-                        "name": "request",
-                        "in": "body",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.providerExecuteDevRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "202": {
-                        "description": "执行已启动 | Execution started",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.providerExecuteDevResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "服务器错误 | Server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "internal"
-            }
-        },
-        "/jupyter/instance/start": {
-            "post": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Jupyter Instance"
-                ],
-                "summary": "启动 Jupyter 实例 | Start Jupyter instance",
-                "responses": {
-                    "200": {
-                        "description": "实例信息 | Instance information",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.JupyterInstance"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "develop.notebook.execute"
-                ]
-            }
-        },
-        "/jupyter/instance/status": {
-            "get": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Jupyter Instance"
-                ],
-                "summary": "获取 Jupyter 实例状态 | Get Jupyter instance status",
-                "responses": {
-                    "200": {
-                        "description": "实例状态 | Instance status",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.JupyterInstance"
                         }
                     }
                 },
@@ -877,202 +693,29 @@ const docTemplate = `{
                 ]
             }
         },
-        "/jupyter/instance/stop": {
-            "post": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Jupyter Instance"
-                ],
-                "summary": "停止 Jupyter 实例 | Stop Jupyter instance",
-                "responses": {
-                    "200": {
-                        "description": "停止成功 | Stopped successfully",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "develop.notebook.execute"
-                ]
-            }
-        },
-        "/jupyter/server/status": {
+        "/notebook-engines/{id}/kernels": {
             "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Jupyter"
+                    "Notebook"
                 ],
-                "summary": "获取 Jupyter Server 状态 | Get Jupyter server status",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "develop.notebook.read"
-                ]
-            }
-        },
-        "/jupyter/venv": {
-            "delete": {
-                "security": [
+                "summary": "按 Notebook 引擎列出 Kernel | List kernels by Notebook engine",
+                "parameters": [
                     {
-                        "BearerAuth": []
+                        "type": "integer",
+                        "description": "Notebook 引擎实例 ID | Notebook engine instance ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
                     }
                 ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Jupyter"
-                ],
-                "summary": "删除 Jupyter 虚拟环境 | Delete Jupyter venv",
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "Kernel列表 | Kernel list",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "develop.notebook.delete"
-                ]
-            }
-        },
-        "/jupyter/venv/init": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Jupyter"
-                ],
-                "summary": "初始化 Jupyter 虚拟环境 | Init Jupyter venv",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "develop.notebook.create"
-                ]
-            }
-        },
-        "/jupyter/venv/status": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Jupyter"
-                ],
-                "summary": "获取 Jupyter 虚拟环境状态 | Get Jupyter venv status",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/internal_api.ListKernelsResponse"
                         }
                     }
                 },
@@ -1185,129 +828,6 @@ const docTemplate = `{
                 ]
             }
         },
-        "/notebooks/execute": {
-            "post": {
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Notebook"
-                ],
-                "summary": "执行 Notebook | Execute Notebook",
-                "parameters": [
-                    {
-                        "description": "执行请求 | Execution request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.ExecuteNotebookRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "执行结果 | Execution result",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.ExecuteNotebookResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "develop.notebook.execute"
-                ]
-            }
-        },
-        "/notebooks/health": {
-            "get": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Notebook"
-                ],
-                "summary": "检查 Jupyter Engine 健康状态 | Check Jupyter Engine health status",
-                "responses": {
-                    "200": {
-                        "description": "健康状态 | Health status",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "develop.notebook.read"
-                ]
-            }
-        },
-        "/notebooks/jupyter-url": {
-            "post": {
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Notebook"
-                ],
-                "summary": "获取 Jupyter Lab 访问 URL | Get Jupyter Lab access URL",
-                "parameters": [
-                    {
-                        "description": "请求 | Request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.GetJupyterURLRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Jupyter URL | Jupyter URL",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.GetJupyterURLResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "develop.notebook.execute"
-                ]
-            }
-        },
-        "/notebooks/kernels": {
-            "get": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Notebook"
-                ],
-                "summary": "列出可用的 Kernel | List available kernels",
-                "responses": {
-                    "200": {
-                        "description": "Kernel列表 | Kernel list",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.ListKernelsResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "develop.notebook.read"
-                ]
-            }
-        },
         "/notebooks/upload": {
             "post": {
                 "consumes": [
@@ -1343,15 +863,23 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "数据源 IDs (JSON 数组) | Data source IDs (JSON array)",
-                        "name": "data_sources",
-                        "in": "formData"
-                    },
-                    {
-                        "type": "string",
                         "description": "参数 (JSON 对象) | Parameters (JSON object)",
                         "name": "parameters",
                         "in": "formData"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Notebook 引擎实例 ID | Notebook engine instance ID",
+                        "name": "engine_id",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Kernel 名称 | Kernel name",
+                        "name": "kernel",
+                        "in": "formData",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -1405,11 +933,11 @@ const docTemplate = `{
                 "summary": "获取所有 Apache Spark 通用引擎资源列表 | List all Apache Spark general engine resources",
                 "responses": {
                     "200": {
-                        "description": "Spark通用引擎资源列表 | Spark general engine resource list",
+                        "description": "Spark通用引擎描述列表 | Spark general engine descriptor list",
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/models.Engine"
+                                "$ref": "#/definitions/models.EngineRuntimeDescriptor"
                             }
                         }
                     }
@@ -1695,8 +1223,239 @@ const docTemplate = `{
                     }
                 },
                 "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "develop.data_read.execute",
+                    "develop.data_write.execute",
+                    "develop.data_ddl.execute",
+                    "develop.data_external_effect.execute",
+                    "develop.notebook.execute"
+                ],
                 "x-addp-required-permissions": [
                     "develop.task.execute"
+                ]
+            }
+        },
+        "/task-provider/executions/{execution_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Execution"
+                ],
+                "summary": "获取 TaskProvider 执行状态 | Get TaskProvider execution status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "执行ID（UUID）| Execution ID (UUID)",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "执行详情 | Execution details",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevTaskSwagger"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task_provider.read"
+                ]
+            }
+        },
+        "/task-provider/tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回可供 TaskProvider 编排复用的开发任务；task_type 是对外任务类型契约，映射到 Develop 内部 dev_type。| List active develop tasks exposed by TaskProvider; task_type is the external task contract mapped to Develop internal dev_type.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Develop"
+                ],
+                "summary": "列出可编排任务 | List orchestratable tasks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "TaskProvider 任务类型：query/workflow/script | TaskProvider task type: query/workflow/script",
+                        "name": "task_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ListProviderDevTasksSwaggerResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task_provider.read"
+                ]
+            }
+        },
+        "/task-provider/tasks/{task_type}/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按标准 TaskProvider 路径获取开发任务详情；task_type 是对外任务类型契约，映射到 Develop 内部 dev_type。| Get development task detail through the standard TaskProvider path; task_type is the external task contract mapped to Develop internal dev_type.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DevTask"
+                ],
+                "summary": "获取 TaskProvider 开发任务详情 | Get TaskProvider development task detail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "TaskProvider 任务类型：query/workflow/script | TaskProvider task type: query/workflow/script",
+                        "name": "task_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "开发任务ID | Development task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "开发任务详情 | Development task detail",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ProviderDevTaskSwagger"
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task_provider.read"
+                ]
+            }
+        },
+        "/task-provider/tasks/{task_type}/{id}/execute": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按标准 TaskProvider 协议执行开发任务；task_type 是对外任务类型契约，映射到 Develop 内部 dev_type，parameters 会传入本次执行。| Execute a development task through the standard TaskProvider protocol; task_type is the external task contract mapped to Develop internal dev_type, and parameters are passed to this execution.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Execution"
+                ],
+                "summary": "执行 TaskProvider 开发任务 | Execute TaskProvider development task",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "TaskProvider 任务类型：query/workflow/script | TaskProvider task type: query/workflow/script",
+                        "name": "task_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "开发任务ID | Development task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "TaskProvider 执行请求 | TaskProvider execution request",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.providerExecuteDevRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "执行已启动 | Execution started",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.providerExecuteDevResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误 | Server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task_provider.execute"
                 ]
             }
         },
@@ -1730,11 +1489,54 @@ const docTemplate = `{
                                 "type": "string"
                             }
                         }
+                    },
+                    "400": {
+                        "description": "资源ID无效 | Invalid resource ID",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "需要登录 | Authentication required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无执行或数据读取权限 | Execution or data-read permission denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "授权状态冲突 | Authorization conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "502": {
+                        "description": "数据源连接失败 | Data source connection failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "授权服务不可用 | Authorization service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "develop.task.read"
+                    "develop.task.execute",
+                    "develop.data_read.execute"
                 ]
             }
         },
@@ -1749,11 +1551,11 @@ const docTemplate = `{
                 "summary": "获取支持 workflow 的计算引擎列表 | List workflow-capable compute engines",
                 "responses": {
                     "200": {
-                        "description": "工作流引擎列表 | Workflow engine list",
+                        "description": "工作流引擎运行时描述列表 | Workflow engine runtime descriptor list",
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/models.Engine"
+                                "$ref": "#/definitions/models.EngineRuntimeDescriptor"
                             }
                         }
                     }
@@ -2707,37 +2509,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_develop_backend_internal_service.JupyterInstance": {
-            "type": "object",
-            "properties": {
-                "container_id": {
-                    "type": "string"
-                },
-                "container_name": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "jupyter_port": {
-                    "type": "integer"
-                },
-                "jupyter_url": {
-                    "description": "Jupyter Lab 访问 URL",
-                    "type": "string"
-                },
-                "started_at": {
-                    "type": "string"
-                },
-                "status": {
-                    "description": "running, stopped, starting",
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                }
-            }
-        },
         "github_com_addp_develop_backend_internal_service.KernelInfo": {
             "type": "object",
             "properties": {
@@ -2787,6 +2558,13 @@ const docTemplate = `{
                 "display_name": {
                     "description": "中文显示名 (如 \"深度扫描\")",
                     "type": "string"
+                },
+                "effects": {
+                    "description": "read/write/ddl/external_effect",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "engine_type": {
                     "description": "所属扩展引擎类型 (如 acme_geo_workflow)",
@@ -2839,6 +2617,21 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "github_com_addp_develop_backend_internal_service.SQLExecutionEffect": {
+            "type": "string",
+            "enum": [
+                "read",
+                "write",
+                "ddl",
+                "external_effect"
+            ],
+            "x-enum-varnames": [
+                "SQLExecutionEffectRead",
+                "SQLExecutionEffectWrite",
+                "SQLExecutionEffectDDL",
+                "SQLExecutionEffectExternalEffect"
+            ]
         },
         "github_com_addp_develop_backend_internal_service.TableRef": {
             "type": "object",
@@ -2910,59 +2703,6 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.ExecuteNotebookRequest": {
-            "type": "object",
-            "required": [
-                "input_path",
-                "output_path"
-            ],
-            "properties": {
-                "input_path": {
-                    "type": "string"
-                },
-                "output_path": {
-                    "type": "string"
-                },
-                "parameters": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "timeout": {
-                    "description": "超时时间（秒）",
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api.ExecuteNotebookResponse": {
-            "type": "object",
-            "properties": {
-                "error_message": {
-                    "type": "string"
-                },
-                "execution_time_seconds": {
-                    "type": "number"
-                },
-                "message": {
-                    "type": "string"
-                },
-                "output_count": {
-                    "type": "integer"
-                },
-                "output_path": {
-                    "type": "string"
-                },
-                "outputs": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": true
-                    }
-                },
-                "status": {
-                    "type": "string"
-                }
-            }
-        },
         "internal_api.ExecuteQueryRequest": {
             "type": "object",
             "required": [
@@ -2993,16 +2733,14 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "effect": {
+                    "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.SQLExecutionEffect"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
                 "execution_time_ms": {
                     "type": "integer"
-                },
-                "graph_data": {
-                    "description": "图数据（仅图数据库引擎）",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/plugin.GraphData"
-                        }
-                    ]
                 },
                 "rows": {
                     "type": "array",
@@ -3016,24 +2754,6 @@ const docTemplate = `{
                 },
                 "rows_count": {
                     "type": "integer"
-                }
-            }
-        },
-        "internal_api.GetJupyterURLRequest": {
-            "type": "object",
-            "properties": {
-                "notebook_path": {
-                    "description": "Notebook 文件路径",
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.GetJupyterURLResponse": {
-            "type": "object",
-            "properties": {
-                "jupyter_url": {
-                    "description": "Jupyter Lab URL",
-                    "type": "string"
                 }
             }
         },
@@ -3130,235 +2850,51 @@ const docTemplate = `{
                 }
             }
         },
-        "models.CapabilitiesView": {
-            "type": "object",
-            "properties": {
-                "json_view": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.CapabilityJSONNode"
-                    }
-                },
-                "sections": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.CapabilityViewSection"
-                    }
-                },
-                "summary": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.CapabilityViewBadge"
-                    }
-                }
-            }
-        },
-        "models.CapabilityJSONNode": {
-            "type": "object",
-            "properties": {
-                "children": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.CapabilityJSONNode"
-                    }
-                },
-                "key": {
-                    "type": "string"
-                },
-                "value": {
-                    "type": "string"
-                }
-            }
-        },
-        "models.CapabilityPathNode": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "string"
-                },
-                "label_key": {
-                    "type": "string"
-                },
-                "tags": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.CapabilityViewTag"
-                    }
-                },
-                "value": {
-                    "type": "string"
-                }
-            }
-        },
-        "models.CapabilityViewBadge": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "string"
-                },
-                "label_key": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "value": {
-                    "type": "string"
-                },
-                "value_key": {
-                    "type": "string"
-                }
-            }
-        },
-        "models.CapabilityViewItem": {
-            "type": "object",
-            "properties": {
-                "description_key": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "label_key": {
-                    "type": "string"
-                },
-                "reason_key": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "tags": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.CapabilityViewTag"
-                    }
-                },
-                "value": {
-                    "type": "string"
-                },
-                "value_key": {
-                    "type": "string"
-                }
-            }
-        },
-        "models.CapabilityViewSection": {
-            "type": "object",
-            "properties": {
-                "description_key": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.CapabilityViewItem"
-                    }
-                },
-                "path": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.CapabilityPathNode"
-                    }
-                },
-                "status": {
-                    "type": "string"
-                },
-                "title_key": {
-                    "type": "string"
-                }
-            }
-        },
-        "models.CapabilityViewTag": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "string"
-                },
-                "label_key": {
-                    "type": "string"
-                },
-                "type": {
-                    "type": "string"
-                },
-                "value": {
-                    "type": "string"
-                }
-            }
-        },
-        "models.ConnectionInfo": {
-            "type": "object",
-            "additionalProperties": true
-        },
-        "models.Engine": {
+        "models.EngineRuntimeDescriptor": {
             "type": "object",
             "properties": {
                 "capabilities": {
-                    "description": "能力声明（JSONB）",
                     "type": "string"
-                },
-                "capabilities_view": {
-                    "description": "System 后端生成的能力展示模型",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.CapabilitiesView"
-                        }
-                    ]
-                },
-                "check_message": {
-                    "description": "检测结果消息（错误信息等）",
-                    "type": "string"
-                },
-                "connection_info": {
-                    "$ref": "#/definitions/models.ConnectionInfo"
                 },
                 "connection_status": {
-                    "description": "连接状态缓存（优化扫描性能）",
                     "type": "string"
-                },
-                "created_at": {
-                    "description": "时间戳字段",
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "integer"
                 },
                 "description": {
                     "type": "string"
                 },
                 "engine_origin": {
-                    "description": "引擎来源：general 或 extension",
                     "type": "string"
                 },
                 "engine_type": {
-                    "description": "引擎类型（postgresql, mysql, acme_geo_workflow 等）",
                     "type": "string"
                 },
                 "id": {
                     "type": "integer"
                 },
-                "is_active": {
-                    "type": "boolean"
-                },
                 "is_builtin": {
-                    "description": "扩展引擎字段",
                     "type": "boolean"
                 },
-                "last_check_at": {
-                    "description": "上次检测时间",
+                "lifecycle_state": {
                     "type": "string"
                 },
                 "name": {
-                    "description": "显示名称（原 display_name）",
                     "type": "string"
                 },
-                "tenant_id": {
-                    "description": "租户ID，平台共享引擎为 null",
+                "runtime_endpoint": {
+                    "$ref": "#/definitions/models.EngineRuntimeEndpoint"
+                }
+            }
+        },
+        "models.EngineRuntimeEndpoint": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "type": "string"
+                },
+                "port": {
                     "type": "integer"
                 },
-                "updated_at": {
+                "protocol": {
                     "type": "string"
                 }
             }
@@ -3460,62 +2996,6 @@ const docTemplate = `{
                 },
                 "ui_type": {
                     "description": "UI 组件类型 (resource_tree_picker 等)",
-                    "type": "string"
-                }
-            }
-        },
-        "plugin.GraphData": {
-            "type": "object",
-            "properties": {
-                "nodes": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/plugin.GraphNode"
-                    }
-                },
-                "relationships": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/plugin.GraphRelationship"
-                    }
-                }
-            }
-        },
-        "plugin.GraphNode": {
-            "type": "object",
-            "properties": {
-                "element_id": {
-                    "type": "string"
-                },
-                "labels": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "properties": {
-                    "type": "object",
-                    "additionalProperties": true
-                }
-            }
-        },
-        "plugin.GraphRelationship": {
-            "type": "object",
-            "properties": {
-                "element_id": {
-                    "type": "string"
-                },
-                "end_node_id": {
-                    "type": "string"
-                },
-                "properties": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "start_node_id": {
-                    "type": "string"
-                },
-                "type": {
                     "type": "string"
                 }
             }

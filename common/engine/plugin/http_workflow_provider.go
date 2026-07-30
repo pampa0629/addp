@@ -55,6 +55,10 @@ func (p *HTTPWorkflowRuntimeProvider) SensitiveFields() []string {
 	return []string{}
 }
 
+func (p *HTTPWorkflowRuntimeProvider) ConnectionIdentityFields() []string {
+	return []string{"protocol", "host", "port"}
+}
+
 func (p *HTTPWorkflowRuntimeProvider) Capabilities() EngineCapabilities {
 	return NewWorkflowCapabilities(p.Type(), WorkflowRuntimeAPIAddpV1)
 }

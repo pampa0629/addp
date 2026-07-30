@@ -134,12 +134,21 @@ func main() {
 
 	// 初始化 Meta 客户端（用于查询元数据）
 	var metaClient *commonClient.MetaClient
-	if cfg.EnableMetaIntegration && cfg.InternalAPIKey != "" && cfg.MetaServiceURL != "" {
-		metaClient = commonClient.NewMetaClientWithInternalKey(cfg.MetaServiceURL, cfg.InternalAPIKey)
+	if cfg.EnableMetaIntegration {
+		if cfg.ServiceClientSecret == "" || cfg.MetaServiceURL == "" || cfg.SystemServiceURL == "" {
+			logger.L().Error("Meta 集成已启用，但 Service Client Credential 或服务 URL 未配置")
+			os.Exit(1)
+		}
+		tokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-manager", cfg.ServiceClientSecret, nil)
+		if err != nil {
+			logger.L().Error("Service Token Source 初始化失败", "error", err)
+			os.Exit(1)
+		}
+		metaClient = commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
 		logger.L().Info("MetaClient 已初始化",
 			"meta_url", cfg.MetaServiceURL)
 	} else {
-		logger.L().Warn("Meta 集成未启用或配置不完整，元数据查询功能将不可用")
+		logger.L().Info("Meta 集成未启用")
 	}
 
 	contentRegistry := objectcontent.NewObjectContentRegistry()
@@ -150,7 +159,7 @@ func main() {
 
 	previewRegistry := preview.NewPreviewRegistry()
 
-	preview.LoadPreviewPlugins(previewRegistry, metadataRepo, metaClient, contentRegistry, cfg.MetaServiceURL, buildPluginDirSpec(pluginDirs))
+	preview.LoadPreviewPlugins(previewRegistry, metadataRepo, metaClient, contentRegistry, buildPluginDirSpec(pluginDirs))
 	preview.ConfigureCADPreviewRepository(previewRegistry, cadPreviewRepo)
 	logger.L().Info("数据预览: 已激活预览插件", "providers", previewRegistry.Providers())
 	profilePreviewResolver := preview.NewPreviewResolver(previewRegistry, systemClient, metaClient)

@@ -189,7 +189,7 @@ func (e *ManagerGaussianSplatKSplatExecutor) prepareSource(ctx context.Context, 
 	if err != nil {
 		return workflowaccess.Source{}, nil, fmt.Errorf("get source engine: %w", err)
 	}
-	if engine == nil || !engine.IsActive {
+	if !engine.IsUsable() {
 		return workflowaccess.Source{}, nil, errors.New("source engine is not active")
 	}
 	if engine.TenantID != nil && *engine.TenantID != tenantID {

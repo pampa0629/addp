@@ -1,6 +1,8 @@
 const CHANNEL_NAME = 'addp-auth-session'
 const REFRESH_LOCK_NAME = 'addp-auth-refresh'
+const CONTEXT_SWITCH_LOCK_NAME = 'addp-auth-context-switch'
 const FALLBACK_LOCK_KEY = 'addp-auth-refresh-lock'
+const FALLBACK_CONTEXT_SWITCH_LOCK_KEY = 'addp-auth-context-switch-lock'
 const PROTOCOL = 'addp-auth/v1'
 const REFRESH_EARLY_MS = 60_000
 const FALLBACK_LOCK_TTL_MS = 15_000
@@ -98,28 +100,28 @@ function createChannel(onMessage) {
   return channel
 }
 
-function readFallbackLock() {
+function readFallbackLock(key) {
   try {
-    const value = localStorage.getItem(FALLBACK_LOCK_KEY)
+    const value = localStorage.getItem(key)
     return value ? JSON.parse(value) : null
   } catch {
     return null
   }
 }
 
-function writeFallbackLock(value) {
+function writeFallbackLock(key, value) {
   try {
-    localStorage.setItem(FALLBACK_LOCK_KEY, JSON.stringify(value))
+    localStorage.setItem(key, JSON.stringify(value))
     return true
   } catch {
     return false
   }
 }
 
-function removeFallbackLock(owner) {
+function removeFallbackLock(key, owner) {
   try {
-    const current = readFallbackLock()
-    if (current?.owner === owner) localStorage.removeItem(FALLBACK_LOCK_KEY)
+    const current = readFallbackLock(key)
+    if (current?.owner === owner) localStorage.removeItem(key)
   } catch {
     // A failed cleanup only leaves an expiring coordination lease.
   }
@@ -129,19 +131,19 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function withFallbackRefreshLock(owner, callback) {
+async function withFallbackLock(key, owner, callback) {
   const deadline = now() + FALLBACK_LOCK_TTL_MS
   while (now() < deadline) {
-    const current = readFallbackLock()
+    const current = readFallbackLock(key)
     if (!current || current.expiresAt <= now()) {
       const lease = { owner, expiresAt: now() + FALLBACK_LOCK_TTL_MS }
-      if (writeFallbackLock(lease)) {
+      if (writeFallbackLock(key, lease)) {
         await wait(25)
-        if (readFallbackLock()?.owner === owner) {
+        if (readFallbackLock(key)?.owner === owner) {
           try {
             return await callback()
           } finally {
-            removeFallbackLock(owner)
+            removeFallbackLock(key, owner)
           }
         }
       }
@@ -151,14 +153,27 @@ async function withFallbackRefreshLock(owner, callback) {
   throw new Error('auth_refresh_lock_timeout')
 }
 
-async function withRefreshLock(owner, callback) {
+async function withNamedLock(lockName, fallbackKey, owner, callback) {
   if (isBrowser() && navigator.locks?.request) {
-    return navigator.locks.request(REFRESH_LOCK_NAME, { mode: 'exclusive' }, callback)
+    return navigator.locks.request(lockName, { mode: 'exclusive' }, callback)
   }
-  return withFallbackRefreshLock(owner, callback)
+  return withFallbackLock(fallbackKey, owner, callback)
 }
 
-export function createBrowserAuthSession({ refresh, revoke } = {}) {
+async function withRefreshLock(owner, callback) {
+  return withNamedLock(REFRESH_LOCK_NAME, FALLBACK_LOCK_KEY, owner, callback)
+}
+
+async function withContextSwitchLock(owner, callback) {
+  return withRefreshLock(owner, () => withNamedLock(
+    CONTEXT_SWITCH_LOCK_NAME,
+    FALLBACK_CONTEXT_SWITCH_LOCK_KEY,
+    owner,
+    callback
+  ))
+}
+
+export function createBrowserAuthSession({ refresh, revoke, switchContext } = {}) {
   const instanceID = randomID()
   let refreshPromise = null
   let initializePromise = null
@@ -184,12 +199,23 @@ export function createBrowserAuthSession({ refresh, revoke } = {}) {
     if (broadcastEvent && !isEmbedded()) broadcast({ type: 'logout' })
   }
 
+  const publishContextToken = (token, expiresAt) => {
+    applyRuntimeToken(token, expiresAt, 'context-switch')
+    scheduleProactiveRefresh()
+    if (!isEmbedded()) broadcast({ type: 'context_changed', token, expiresAt })
+  }
+
   const onChannelMessage = (message) => {
     if (!message || message.sender === instanceID) return
     if (message.type === 'token' && message.token) {
       publishToken(message.token, message.expiresAt, 'broadcast', false)
       tokenRequestResolvers.forEach((resolve) => resolve(message.token))
       tokenRequestResolvers.clear()
+      return
+    }
+    if (message.type === 'context_changed' && message.token) {
+      publishToken(message.token, message.expiresAt, 'context-switch-broadcast', false)
+      if (isBrowser()) window.location.reload()
       return
     }
     if (message.type === 'token-request' && isUsableToken()) {
@@ -369,6 +395,22 @@ export function createBrowserAuthSession({ refresh, revoke } = {}) {
     }
   }
 
+  async function switchContextSession(choice) {
+    if (isEmbedded()) throw new Error('context_switch_requires_top_level_console')
+    return withContextSwitchLock(instanceID, async () => {
+      if (!isUsableToken(runtimeToken, runtimeExpiresAt, 0)) {
+        throw createSessionError('authentication_required', 'authentication_required', 401)
+      }
+      if (typeof switchContext !== 'function') throw new Error('auth_context_switch_not_configured')
+      const response = await switchContext(runtimeToken, choice)
+      const payload = response?.data || response
+      if (!payload?.access_token) throw new Error('context_switch_response_missing_access_token')
+      const expiresAt = payload.expires_in ? now() + Number(payload.expires_in) * 1000 : 0
+      publishContextToken(payload.access_token, expiresAt)
+      return payload
+    })
+  }
+
   function dispose() {
     disposed = true
     if (proactiveTimer) clearTimeout(proactiveTimer)
@@ -384,6 +426,7 @@ export function createBrowserAuthSession({ refresh, revoke } = {}) {
     clearToken,
     initialize,
     refreshAccessToken,
+    switchContext: switchContextSession,
     logout,
     dispose,
     isEmbedded

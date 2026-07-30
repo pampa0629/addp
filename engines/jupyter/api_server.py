@@ -5,12 +5,13 @@ Jupyter Engine API Server
 
 import os
 import io
-import json
+import asyncio
 import logging
 import traceback
 import tempfile
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from functools import wraps
+from flask import Flask, g, request, jsonify
+import httpx
 import papermill as pm
 import nbformat
 from datetime import datetime
@@ -18,6 +19,7 @@ from minio import Minio
 
 # 加载配置
 from config import config
+from addp_common.auth import resolve_authorization_context
 
 # 配置日志
 logging.basicConfig(
@@ -51,7 +53,36 @@ except Exception as e:
     minio_client = None
 
 app = Flask(__name__)
-CORS(app)  # 允许跨域请求
+
+
+def require_develop_service(handler):
+    @wraps(handler)
+    def wrapped(*args, **kwargs):
+        authorization = request.headers.get('Authorization', '')
+        if not authorization.startswith('Bearer '):
+            return jsonify({'status': 'error', 'message': 'authentication required'}), 401
+        token = authorization[7:].strip()
+        if not token:
+            return jsonify({'status': 'error', 'message': 'authentication required'}), 401
+        try:
+            context = asyncio.run(resolve_authorization_context(config.SYSTEM_URL, token))
+        except httpx.HTTPStatusError as exc:
+            status = 401 if exc.response.status_code in {401, 403} else 503
+            return jsonify({'status': 'error', 'message': 'invalid credential' if status == 401 else 'authentication service unavailable'}), status
+        except (httpx.RequestError, ValueError):
+            return jsonify({'status': 'error', 'message': 'authentication service unavailable'}), 503
+        if (
+            context.principal_type != 'service_principal'
+            or context.token_type != 'service_access_token'
+            or context.client_id != 'addp-develop'
+            or context.context_type != 'tenant'
+            or context.tenant_id is None
+        ):
+            return jsonify({'status': 'error', 'message': 'permission denied'}), 403
+        g.authorization_context = context
+        return handler(*args, **kwargs)
+
+    return wrapped
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -63,18 +94,16 @@ def health():
     })
 
 @app.route('/api/execute', methods=['POST'])
+@require_develop_service
 def execute_notebook():
     """
-    执行 Notebook（支持自动注入数据源连接）
+    执行 Notebook
 
     请求体:
     {
         "tenant_id": 1,                    # 租户 ID（由 Develop 模块传递）
         "notebook_path": "test.ipynb",     # Notebook 相对路径
-        "parameters": {
-            "user_param1": "value1",
-            "ds_5": {"type": "postgresql", "connection_string": "..."}
-        },
+        "parameters": {"user_param1": "value1"},
         "kernel": "python3"
     }
 
@@ -86,7 +115,9 @@ def execute_notebook():
     - 租户内的用户默认共享所有 Notebook
     """
     try:
-        data = request.json
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'status': 'error', 'message': 'request body must be a JSON object'}), 400
 
         # 1. 获取租户信息（由 Develop 模块传递）
         tenant_id = data.get('tenant_id')
@@ -95,11 +126,17 @@ def execute_notebook():
         kernel = data.get('kernel', 'python3')
 
         # 验证必需参数
-        if not tenant_id or not notebook_path:
+        if not isinstance(tenant_id, int) or isinstance(tenant_id, bool) or tenant_id <= 0 or not isinstance(notebook_path, str) or not notebook_path:
             return jsonify({
                 'status': 'error',
                 'message': 'tenant_id and notebook_path are required'
             }), 400
+        if tenant_id != g.authorization_context.tenant_id:
+            return jsonify({'status': 'error', 'message': 'tenant context mismatch'}), 403
+        if not isinstance(parameters, dict) or any(str(key).startswith('ds_') for key in parameters):
+            return jsonify({'status': 'error', 'message': 'data source injection is not supported'}), 400
+        if kernel != 'python3':
+            return jsonify({'status': 'error', 'message': 'unsupported kernel'}), 400
 
         # 2. 构造 MinIO 路径（租户级别隔离）
         input_minio_path = f"tenant_{tenant_id}/notebooks/{notebook_path}"
@@ -137,134 +174,59 @@ def execute_notebook():
             # 关闭 output_temp_fd，papermill 需要写入
             os.close(output_temp_fd)
 
-            # 4. 分离数据源连接配置和用户参数
-            connections = {}
-            user_params = {}
-            for key, value in parameters.items():
-                if key.startswith('ds_'):
-                    connections[key] = value
-                else:
-                    user_params[key] = value
+            logger.info(f"开始执行 Notebook: {input_temp_path} -> {output_temp_path}")
+            start_time = datetime.now()
 
-            # 5. 读取原始 Notebook
-            with open(input_temp_path, 'r', encoding='utf-8') as f:
-                nb = nbformat.read(f, as_version=4)
+            # 使用 papermill 执行 Notebook，只传递公开任务参数。
+            pm.execute_notebook(
+                input_temp_path,
+                output_temp_path,
+                parameters=parameters,
+                kernel_name=kernel,
+                progress_bar=False
+            )
 
-            # 6. 如果有连接配置，注入到 Notebook
-            injected_cell_index = None
-            if connections:
-                logger.info(f"注入 {len(connections)} 个数据源连接配置")
+            end_time = datetime.now()
+            execution_time = (end_time - start_time).total_seconds()
 
-                # 生成连接配置的 Python 代码
-                connection_code_lines = ["# 自动注入的数据源连接配置 (由 ADDP 平台管理)"]
-                for var_name, conn_info in connections.items():
-                    # 将连接信息转换为 Python 字典字面量
-                    # JSON 的 null 需要转换为 Python 的 None
-                    conn_str = json.dumps(conn_info, indent=2).replace('null', 'None')
-                    connection_code_lines.append(f"{var_name} = {conn_str}")
+            logger.info(f"Notebook 执行完成，耗时 {execution_time:.2f} 秒")
 
-                connection_code = "\n".join(connection_code_lines)
+            with open(output_temp_path, 'r', encoding='utf-8') as f:
+                output_nb = nbformat.read(f, as_version=4)
 
-                # 创建新的 Code Cell
-                injected_cell = nbformat.v4.new_code_cell(source=connection_code)
-                injected_cell.metadata['tags'] = ['injected', 'parameters']
-
-                # 插入到第一个 Cell 之前
-                nb.cells.insert(0, injected_cell)
-                injected_cell_index = 0
-
-                logger.info(f"已注入连接配置到第 0 个 Cell")
-
-            # 将注入后的 Notebook 写到临时文件（供 papermill 执行）
-            temp_nb_fd, temp_nb_path = tempfile.mkstemp(suffix='.ipynb')
-            try:
-                with os.fdopen(temp_nb_fd, 'w', encoding='utf-8') as f:
-                    nbformat.write(nb, f)
-
-                logger.info(f"开始执行 Notebook: {temp_nb_path} -> {output_temp_path}")
-                start_time = datetime.now()
-
-                # 7. 使用 papermill 执行 Notebook（仅传递用户参数）
-                pm.execute_notebook(
-                    temp_nb_path,
-                    output_temp_path,
-                    parameters=user_params,
-                    kernel_name=kernel,
-                    progress_bar=False
+            with open(output_temp_path, 'rb') as f:
+                data = f.read()
+                minio_client.put_object(
+                    config.MINIO_BUCKET,
+                    output_minio_path,
+                    io.BytesIO(data),
+                    length=len(data),
+                    content_type='application/x-ipynb+json'
                 )
 
-                end_time = datetime.now()
-                execution_time = (end_time - start_time).total_seconds()
+            logger.info(f"已上传输出到 MinIO: {output_minio_path}")
 
-                logger.info(f"Notebook 执行完成，耗时 {execution_time:.2f} 秒")
+            outputs = []
+            output_count = 0
+            for cell in output_nb.cells:
+                if cell.cell_type == 'code':
+                    cell_outputs = cell.get('outputs', [])
+                    output_count += len(cell_outputs)
+                    if len(outputs) < 5:
+                        for output in cell_outputs[:5 - len(outputs)]:
+                            outputs.append(output)
 
-                # 8. 读取执行后的 Notebook
-                with open(output_temp_path, 'r', encoding='utf-8') as f:
-                    output_nb = nbformat.read(f, as_version=4)
-
-                # 9. 从输出中删除注入的 Cell（标记为 'injected' 的 Cell）
-                if injected_cell_index is not None:
-                    filtered_cells = []
-                    for cell in output_nb.cells:
-                        tags = cell.metadata.get('tags', [])
-                        if 'injected' not in tags:
-                            filtered_cells.append(cell)
-
-                    removed_count = len(output_nb.cells) - len(filtered_cells)
-                    output_nb.cells = filtered_cells
-
-                    if removed_count > 0:
-                        logger.info(f"已从输出中删除 {removed_count} 个注入的 Cell")
-
-                        # 保存清理后的 Notebook
-                        with open(output_temp_path, 'w', encoding='utf-8') as f:
-                            nbformat.write(output_nb, f)
-
-                # 10. 上传输出 Notebook 到 MinIO
-                with open(output_temp_path, 'rb') as f:
-                    data = f.read()
-                    minio_client.put_object(
-                        config.MINIO_BUCKET,
-                        output_minio_path,
-                        io.BytesIO(data),
-                        length=len(data),
-                        content_type='application/x-ipynb+json'
-                    )
-
-                logger.info(f"已上传输出到 MinIO: {output_minio_path}")
-
-                # 11. 提取所有单元格的输出
-                outputs = []
-                output_count = 0
-                for cell in output_nb.cells:
-                    if cell.cell_type == 'code':
-                        cell_outputs = cell.get('outputs', [])
-                        output_count += len(cell_outputs)
-                        # 只返回前 5 个输出的预览
-                        if len(outputs) < 5:
-                            for output in cell_outputs[:5 - len(outputs)]:
-                                outputs.append(output)
-
-                # 提取导出的变量（TODO: 实现变量提取逻辑）
-                variables_exported = {}
-
-                return jsonify({
-                    'status': 'success',
-                    'message': 'Notebook executed successfully',
-                    'execution_time_seconds': execution_time,
-                    'output_path': output_minio_path,
-                    'cell_count': len(output_nb.cells),
-                    'execution_count': sum(1 for c in output_nb.cells if c.cell_type == 'code'),
-                    'output_count': output_count,
-                    'outputs': outputs,
-                    'variables_exported': variables_exported
-                })
-
-            finally:
-                # 清理临时文件
-                if os.path.exists(temp_nb_path):
-                    os.remove(temp_nb_path)
-                    logger.debug(f"已删除临时文件: {temp_nb_path}")
+            return jsonify({
+                'status': 'success',
+                'message': 'Notebook executed successfully',
+                'execution_time_seconds': execution_time,
+                'output_path': output_minio_path,
+                'cell_count': len(output_nb.cells),
+                'execution_count': sum(1 for c in output_nb.cells if c.cell_type == 'code'),
+                'output_count': output_count,
+                'outputs': outputs,
+                'variables_exported': {}
+            })
 
         except Exception as e:
             logger.error(f"从 MinIO 下载或执行 Notebook 失败: {e}")
@@ -285,11 +247,11 @@ def execute_notebook():
         return jsonify({
             'status': 'error',
             'message': str(e),
-            'traceback': error_trace,
             'error_message': str(e)
         }), 500
 
 @app.route('/api/kernels', methods=['GET'])
+@require_develop_service
 def list_kernels():
     """列出可用的 Kernel"""
     try:

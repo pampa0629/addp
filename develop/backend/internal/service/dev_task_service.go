@@ -334,6 +334,12 @@ func stringSliceFromInterface(value interface{}) ([]string, bool) {
 }
 
 func validateDevTaskExecutionConfig(devType string, content map[string]interface{}, executionConfig map[string]interface{}) error {
+	if devType == commonExecution.TaskTypeScript {
+		if devTaskExecutionConfigEngineID(executionConfig) == nil {
+			return fmt.Errorf("script 任务必须提供 execution_config.engine_id")
+		}
+		return nil
+	}
 	if devType != commonExecution.TaskTypeQuery {
 		return nil
 	}

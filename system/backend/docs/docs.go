@@ -788,6 +788,79 @@ const docTemplate = `{
                 "x-addp-auth-mode": "authenticated"
             }
         },
+        "/auth/execution-authorizations": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "从当前 Tenant User Access Token 派生绑定唯一执行、引擎和效果的短期授权；效果权限在请求体解析后动态校验 | Derive a short-lived authorization bound to one execution, its engines, and effects from the current tenant user access token; effect permissions are checked after parsing the request",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证 | Authentication"
+                ],
+                "summary": "签发执行授权 | Issue execution authorization",
+                "parameters": [
+                    {
+                        "description": "执行授权边界 | Execution authorization boundary",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMIssueExecutionAuthorizationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMExecutionAuthorizationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "develop.data_read.execute",
+                    "develop.data_write.execute",
+                    "develop.data_ddl.execute",
+                    "develop.data_external_effect.execute"
+                ],
+                "x-addp-required-permissions": [
+                    "develop.task.execute"
+                ]
+            }
+        },
         "/auth/mfa": {
             "get": {
                 "security": [
@@ -995,6 +1068,67 @@ const docTemplate = `{
                 "x-addp-auth-mode": "self"
             }
         },
+        "/auth/task-authorization-subjects": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "从当前 Tenant User AuthContext 为一个版本化任务定义创建或替换任务授权主体，不保存 Access Token | Create or replace a task authorization subject for a versioned task definition from the current tenant user context without storing an access token",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证 | Authentication"
+                ],
+                "summary": "授权持久任务主体 | Authorize a persisted task subject",
+                "parameters": [
+                    {
+                        "description": "任务定义身份 | Task definition identity",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMTaskAuthorizationSubjectRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMTaskAuthorizationSubjectResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "orchestrator.workflow.execute"
+                ]
+            }
+        },
         "/engines": {
             "get": {
                 "security": [
@@ -1002,7 +1136,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "先按引擎类型、能力分组、来源和内置状态过滤，再返回分页结果 | Filter by engine type, capability group, origin, and builtin state before pagination",
+                "description": "先按当前 Tenant、引擎类型、能力分组、来源和内置状态过滤，再返回脱敏分页结果；User 与 Service Principal 使用同一契约 | Filter by current tenant, engine type, capability group, origin, and builtin state, then return a masked paginated result through the same contract for users and service principals",
                 "consumes": [
                     "application/json"
                 ],
@@ -1052,6 +1186,13 @@ const docTemplate = `{
                         "description": "是否包含内置引擎 | Whether to include builtin engines",
                         "name": "include_builtin",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "active",
+                        "description": "生命周期，逗号分隔：active,disabled,deleting | Comma-separated lifecycle states: active,disabled,deleting",
+                        "name": "lifecycle_states",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -1076,6 +1217,12 @@ const docTemplate = `{
                                     "type": "integer"
                                 }
                             }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     },
                     "500": {
@@ -1193,6 +1340,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "User 返回脱敏连接信息；具有 system.engine.read 的 Tenant Service Principal 返回同 Tenant 的解密连接信息 | Return masked connection details to users and decrypted same-tenant details to tenant service principals with system.engine.read",
                 "produces": [
                     "application/json"
                 ],
@@ -1218,6 +1366,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
@@ -1313,13 +1467,29 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "删除策略 | Deletion policy",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineDeleteRequest"
+                        }
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "202": {
+                        "description": "Accepted",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.SuccessResponse"
+                            "type": "object",
+                            "properties": {
+                                "engine": {
+                                    "$ref": "#/definitions/github_com_addp_system_internal_models.EngineResponse"
+                                },
+                                "message": {
+                                    "type": "string"
+                                }
+                            }
                         }
                     },
                     "400": {
@@ -1545,6 +1715,80 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "system.engine.execute"
+                ]
+            }
+        },
+        "/execution-authorizations/{id}/engine-accesses": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅匹配 audience 的 Tenant Runtime Service Principal 可消费执行授权并取得同 Tenant 的明文引擎连接 | Only the tenant runtime service principal matching the audience may consume the authorization and receive same-tenant plaintext engine connection details",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runtime 执行授权 | Runtime Execution Authorization"
+                ],
+                "summary": "消费执行授权并获取引擎访问 | Consume execution authorization for engine access",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "执行授权 ID | Execution authorization ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "执行和效果边界 | Execution and effect boundary",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMExecutionEngineAccessRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMExecutionEngineAccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.execution_authorization.execute"
                 ]
             }
         },
@@ -1850,11 +2094,95 @@ const docTemplate = `{
                     "OAuth"
                 ],
                 "summary": "兑换 OAuth Token | Exchange OAuth token",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Confidential Client 使用 HTTP Basic，用户名为 client_id、密码为 Client Secret | Confidential clients use HTTP Basic with client_id as username and Client Secret as password",
+                        "name": "Authorization",
+                        "in": "header"
+                    },
+                    {
+                        "enum": [
+                            "authorization_code",
+                            "refresh_token",
+                            "client_credentials",
+                            "urn:ietf:params:oauth:grant-type:device_code"
+                        ],
+                        "type": "string",
+                        "description": "授权类型 | Grant type",
+                        "name": "grant_type",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Public Client ID；Confidential Client 必须改用 HTTP Basic | Public client ID; confidential clients must use HTTP Basic",
+                        "name": "client_id",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Authorization Code Grant 的授权码 | Authorization code for Authorization Code Grant",
+                        "name": "code",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Authorization Code Grant 的回调 URI | Redirect URI for Authorization Code Grant",
+                        "name": "redirect_uri",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Authorization Code Grant 的 PKCE verifier | PKCE verifier for Authorization Code Grant",
+                        "name": "code_verifier",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Refresh Token Grant 的 Refresh Token | Refresh token for Refresh Token Grant",
+                        "name": "refresh_token",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Device Code Grant 的 Device Code | Device code for Device Code Grant",
+                        "name": "device_code",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Client Credentials 固定为 addp.api | Fixed to addp.api for Client Credentials",
+                        "name": "scope",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Client Credentials 固定为 addp.api | Fixed to addp.api for Client Credentials",
+                        "name": "audience",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Tenant Runtime Client Credentials 必填，用于选择有效 Tenant Membership；与 context_type 互斥 | Required for Tenant Runtime Client Credentials to select an effective Tenant Membership; mutually exclusive with context_type",
+                        "name": "tenant_id",
+                        "in": "formData"
+                    },
+                    {
+                        "enum": [
+                            "platform"
+                        ],
+                        "type": "string",
+                        "description": "平台控制面 Client Credentials 固定为 platform；与 tenant_id 互斥 | Fixed to platform for control-plane Client Credentials; mutually exclusive with tenant_id",
+                        "name": "context_type",
+                        "in": "formData"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object"
+                            "$ref": "#/definitions/internal_api.IAMOAuthTokenResponse"
                         }
                     }
                 },
@@ -3182,6 +3510,542 @@ const docTemplate = `{
                 "x-addp-auth-mode": "public"
             }
         },
+        "/runtime/engine-descriptors": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回同 Tenant 可见的脱敏控制面投影；仅工作流/脚本运行时包含 protocol/host/port，数据引擎不返回 connection_info | Return same-tenant masked control-plane projections; only workflow/script runtimes include protocol/host/port and data engines never expose connection_info",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "运行时控制面 | Runtime Control Plane"
+                ],
+                "summary": "获取引擎运行时描述列表 | List engine runtime descriptors",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 10,
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "引擎类型 | Engine type",
+                        "name": "engine_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "能力分组，逗号分隔：storage,compute | Comma-separated capability groups: storage,compute",
+                        "name": "capability_groups",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "引擎来源，逗号分隔：general,extension | Comma-separated engine origins: general,extension",
+                        "name": "engine_origins",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_addp_system_internal_models.EngineRuntimeDescriptor"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_descriptor.read"
+                ]
+            }
+        },
+        "/runtime/engine-descriptors/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回单个同 Tenant Engine Instance 的脱敏控制面投影，不返回数据引擎明文连接 | Return one same-tenant masked Engine Instance control-plane projection without data-engine plaintext connection details",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "运行时控制面 | Runtime Control Plane"
+                ],
+                "summary": "获取引擎运行时描述 | Get engine runtime descriptor",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineRuntimeDescriptor"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_descriptor.read"
+                ]
+            }
+        },
+        "/runtime/execution-authorizations": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅匹配 audience 的 Tenant Runtime Service Principal 可基于可验证的 Orchestrator 父 execution 与 owner 子 execution 来源链签发授权 | Only the tenant runtime service principal matching the audience may issue from a verified Orchestrator parent and owner child execution chain",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runtime 执行授权 | Runtime Execution Authorization"
+                ],
+                "summary": "从父子执行来源签发执行授权 | Issue execution authorization from execution provenance",
+                "parameters": [
+                    {
+                        "description": "父子执行与授权边界 | Parent/child execution and authorization boundary",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMIssueExecutionAuthorizationFromExecutionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMExecutionAuthorizationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.execution_authorization.execute"
+                ]
+            }
+        },
+        "/runtime/modules": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "平台 Service Principal 只能注册与自身 OAuth Client 对应的模块 | A platform service principal can only register the module matching its OAuth client",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "运行时注册 | Runtime Registry"
+                ],
+                "summary": "注册当前运行模块 | Register current runtime module",
+                "parameters": [
+                    {
+                        "description": "模块注册信息 | Module registration",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ModuleRegistrationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "message": {
+                                    "type": "string"
+                                },
+                                "module": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.runtime_registry.update"
+                ]
+            }
+        },
+        "/runtime/modules/heartbeat": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "运行时注册 | Runtime Registry"
+                ],
+                "summary": "更新当前运行模块心跳 | Update current runtime module heartbeat",
+                "parameters": [
+                    {
+                        "description": "模块心跳 | Module heartbeat",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.HeartbeatRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "message": {
+                                    "type": "string"
+                                },
+                                "module": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.runtime_registry.update"
+                ]
+            }
+        },
+        "/runtime/task-authorization-subjects/{id}/resolve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 addp-orchestrator Tenant Service Principal 可解析与当前定义哈希匹配且仍有效的任务授权主体 | Only the addp-orchestrator tenant service principal may resolve a still-valid task subject matching the current definition hash",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runtime 执行授权 | Runtime Execution Authorization"
+                ],
+                "summary": "解析定时任务授权主体 | Resolve a scheduled task authorization subject",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务授权主体 ID | Task authorization subject ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "任务定义身份 | Task definition identity",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMTaskAuthorizationSubjectRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMTaskAuthorizationSubjectResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.task_authorization.execute"
+                ]
+            }
+        },
+        "/runtime/task-providers": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 Platform Runtime Service Principal 可读取已启用 TaskProvider | Only platform runtime service principals may read enabled TaskProviders",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "运行时注册 | Runtime Registry"
+                ],
+                "summary": "读取 TaskProvider 注册表 | Read TaskProvider registry",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_system_internal_models.TaskProvider"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.runtime_registry.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "平台 Service Principal 只能发布与自身 OAuth Client 对应的 TaskProvider | A platform service principal can only publish the TaskProvider matching its OAuth client",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "运行时注册 | Runtime Registry"
+                ],
+                "summary": "注册当前模块 TaskProvider | Register current module TaskProvider",
+                "parameters": [
+                    {
+                        "description": "TaskProvider 契约 | TaskProvider contract",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.TaskProvider"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.TaskProvider"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.runtime_registry.update"
+                ]
+            }
+        },
+        "/runtime/task-providers/{module_name}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "运行时注册 | Runtime Registry"
+                ],
+                "summary": "读取 TaskProvider 详情 | Read TaskProvider detail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "模块名 | Module name",
+                        "name": "module_name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.TaskProvider"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.runtime_registry.read"
+                ]
+            }
+        },
         "/tenant/audit/events": {
             "get": {
                 "security": [
@@ -3242,6 +4106,64 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "audit.tenant_event.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Principal、Context 与 Tenant 只从 Service Access Token 获取，请求体中的同名字段不会成为授权事实 | Principal, context, and tenant are derived only from the Service Access Token; matching request fields are not authorization facts",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tenant 审计 | Tenant Audit"
+                ],
+                "summary": "追加 Tenant 服务审计事件 | Append tenant service audit event",
+                "parameters": [
+                    {
+                        "description": "审计事件 | Audit event",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.AuditLogCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "message": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "audit.tenant_event.create"
                 ]
             }
         },
@@ -5001,6 +5923,20 @@ const docTemplate = `{
             "type": "object",
             "additionalProperties": true
         },
+        "github_com_addp_common_models.EngineRuntimeEndpoint": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "type": "string"
+                },
+                "port": {
+                    "type": "integer"
+                },
+                "protocol": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_system_internal_iam.AuditResult": {
             "type": "string",
             "enum": [
@@ -5552,6 +6488,21 @@ const docTemplate = `{
                 "created_by": {
                     "type": "integer"
                 },
+                "deletion_error": {
+                    "type": "string"
+                },
+                "deletion_execute_task_id": {
+                    "type": "string"
+                },
+                "deletion_requested_at": {
+                    "type": "string"
+                },
+                "deletion_requested_by": {
+                    "type": "integer"
+                },
+                "deletion_scan_task_id": {
+                    "type": "string"
+                },
                 "description": {
                     "type": "string"
                 },
@@ -5563,11 +6514,11 @@ const docTemplate = `{
                     "description": "引擎类型（postgresql, mysql, acme_geo_workflow 等）",
                     "type": "string"
                 },
+                "external_artifact_policy": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "integer"
-                },
-                "is_active": {
-                    "type": "boolean"
                 },
                 "is_builtin": {
                     "description": "扩展引擎字段",
@@ -5575,6 +6526,9 @@ const docTemplate = `{
                 },
                 "last_check_at": {
                     "description": "上次检测时间",
+                    "type": "string"
+                },
+                "lifecycle_state": {
                     "type": "string"
                 },
                 "name": {
@@ -5654,6 +6608,14 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_system_internal_models.EngineDeleteRequest": {
+            "type": "object",
+            "properties": {
+                "external_artifact_policy": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_system_internal_models.EngineResponse": {
             "type": "object",
             "properties": {
@@ -5682,6 +6644,21 @@ const docTemplate = `{
                 "created_by": {
                     "type": "integer"
                 },
+                "deletion_error": {
+                    "type": "string"
+                },
+                "deletion_execute_task_id": {
+                    "type": "string"
+                },
+                "deletion_requested_at": {
+                    "type": "string"
+                },
+                "deletion_requested_by": {
+                    "type": "integer"
+                },
+                "deletion_scan_task_id": {
+                    "type": "string"
+                },
                 "description": {
                     "type": "string"
                 },
@@ -5693,11 +6670,11 @@ const docTemplate = `{
                     "description": "引擎类型（postgresql, mysql, acme_geo_workflow 等）",
                     "type": "string"
                 },
+                "external_artifact_policy": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "integer"
-                },
-                "is_active": {
-                    "type": "boolean"
                 },
                 "is_builtin": {
                     "description": "扩展引擎字段",
@@ -5705,6 +6682,9 @@ const docTemplate = `{
                 },
                 "last_check_at": {
                     "description": "上次检测时间",
+                    "type": "string"
+                },
+                "lifecycle_state": {
                     "type": "string"
                 },
                 "name": {
@@ -5717,6 +6697,41 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.EngineRuntimeDescriptor": {
+            "type": "object",
+            "properties": {
+                "capabilities": {
+                    "type": "string"
+                },
+                "connection_status": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "engine_origin": {
+                    "type": "string"
+                },
+                "engine_type": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_builtin": {
+                    "type": "boolean"
+                },
+                "lifecycle_state": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "runtime_endpoint": {
+                    "$ref": "#/definitions/github_com_addp_common_models.EngineRuntimeEndpoint"
                 }
             }
         },
@@ -5733,8 +6748,8 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
-                "is_active": {
-                    "type": "boolean"
+                "lifecycle_state": {
+                    "type": "string"
                 },
                 "name": {
                     "description": "显示名称",
@@ -5748,6 +6763,43 @@ const docTemplate = `{
                 "error": {
                     "type": "string",
                     "example": "invalid credentials"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.HeartbeatRequest": {
+            "type": "object",
+            "required": [
+                "module_name"
+            ],
+            "properties": {
+                "module_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.ModuleRegistrationRequest": {
+            "type": "object",
+            "required": [
+                "module_name",
+                "module_url",
+                "route_prefix"
+            ],
+            "properties": {
+                "health_check_url": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "module_name": {
+                    "type": "string"
+                },
+                "module_url": {
+                    "type": "string"
+                },
+                "route_prefix": {
+                    "type": "string"
                 }
             }
         },
@@ -5777,6 +6829,57 @@ const docTemplate = `{
                 "total": {
                     "description": "期望模块数",
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.TaskProvider": {
+            "type": "object",
+            "properties": {
+                "base_url": {
+                    "description": "API 配置",
+                    "type": "string"
+                },
+                "capabilities": {
+                    "description": "能力描述（JSON 格式，含 task.capabilities/v1、task_capabilities 等）",
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_enabled": {
+                    "description": "状态",
+                    "type": "boolean"
+                },
+                "module_name": {
+                    "description": "'transfer', 'meta', 'develop'",
+                    "type": "string"
+                },
+                "task_cancel_endpoint": {
+                    "type": "string"
+                },
+                "task_detail_endpoint": {
+                    "type": "string"
+                },
+                "task_execute_endpoint": {
+                    "type": "string"
+                },
+                "task_list_endpoint": {
+                    "type": "string"
+                },
+                "task_status_endpoint": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },
@@ -6354,6 +7457,93 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.IAMExecutionAuthorizationResponse": {
+            "type": "object",
+            "properties": {
+                "actor_principal_id": {
+                    "type": "string"
+                },
+                "audience": {
+                    "type": "string"
+                },
+                "effects": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "engine_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "issued_authorization_version": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "tenant_membership_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMExecutionEngineAccessRequest": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "required_effects": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_api.IAMExecutionEngineAccessResponse": {
+            "type": "object",
+            "properties": {
+                "audience": {
+                    "type": "string"
+                },
+                "authorization_id": {
+                    "type": "string"
+                },
+                "effects": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "engine": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.Engine"
+                },
+                "engine_id": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api.IAMInitializeTenantRequest": {
             "type": "object",
             "properties": {
@@ -6429,6 +7619,61 @@ const docTemplate = `{
                 },
                 "username": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMIssueExecutionAuthorizationFromExecutionRequest": {
+            "type": "object",
+            "properties": {
+                "audience": {
+                    "type": "string"
+                },
+                "effects": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "engine_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "expires_in": {
+                    "type": "integer"
+                },
+                "parent_execution_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMIssueExecutionAuthorizationRequest": {
+            "type": "object",
+            "properties": {
+                "audience": {
+                    "type": "string"
+                },
+                "effects": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "engine_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "expires_in": {
+                    "type": "integer"
                 }
             }
         },
@@ -6634,6 +7879,26 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.IAMOAuthTokenResponse": {
+            "type": "object",
+            "properties": {
+                "access_token": {
+                    "type": "string"
+                },
+                "expires_in": {
+                    "type": "integer"
+                },
+                "refresh_token": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "token_type": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api.IAMPasswordRotationResponse": {
             "type": "object",
             "properties": {
@@ -6706,6 +7971,58 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMTaskAuthorizationSubjectRequest": {
+            "type": "object",
+            "properties": {
+                "definition_hash": {
+                    "type": "string"
+                },
+                "owner_module": {
+                    "type": "string"
+                },
+                "task_ref": {
+                    "type": "string"
+                },
+                "task_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMTaskAuthorizationSubjectResponse": {
+            "type": "object",
+            "properties": {
+                "authorization_version": {
+                    "type": "string"
+                },
+                "authorized_at": {
+                    "type": "string"
+                },
+                "definition_hash": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "owner_module": {
+                    "type": "string"
+                },
+                "principal_id": {
+                    "type": "string"
+                },
+                "task_ref": {
+                    "type": "string"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "tenant_membership_id": {
                     "type": "string"
                 }
             }

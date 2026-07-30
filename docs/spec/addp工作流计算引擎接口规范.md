@@ -228,9 +228,17 @@ Content-Type: application/json
     ]
   },
   "input_data": {},  // 可选，外部输入数据
-  "engine_id": 34    // 条件必填：spark_workflow 必须提供，指向实际 Spark 通用引擎资源
+  "engine_id": 34,   // 条件必填：spark_workflow 必须提供，指向实际 Spark 通用引擎资源
+  "runtime": {
+    "execution_authorization": {
+      "id": 71,
+      "effects": ["read"]
+    }
+  }
 }
 ```
+
+`runtime.execution_authorization` 是 Workflow Runtime 的必填执行期授权摘要。`id` 必须为正整数；`effects` 必须是非空、无重复的 `read | write | ddl | external_effect` 集合，并覆盖本次 DAG 全部算子声明的 `effects`。Runtime 必须在执行前重新聚合 DAG effects 并拒绝缺失授权、未知效果或授权不足的请求。该摘要不是 Access Token；Runtime 不接收 User Token、Service Token 或明文 Engine 连接作为授权事实。
 
 **响应**：
 ```json
@@ -635,27 +643,7 @@ Copilot 等上层智能生成链路也必须沿用同一实例 ID 契约：生�
 
 工作流运行时注册后才成为 ADDP 可用运行时。生产内置运行时可以在启动时向 System Backend 自注册；参考示例运行时可以只作为扩展规范样例存在，由用户在 System 引擎管理中按扩展引擎手动注册。
 
-GeoPython Workflow / Spark Workflow 等生产内置运行时自注册示例；需要外部 SDK 或许可绑定的运行时（例如 SuperMap Workflow）也可以启动后由 System 扩展引擎表单手动注册：
-
-```python
-# api_server.py
-
-def register_to_system():
-    """向 System Backend 自注册"""
-    payload = {
-        "engine_type": "geopython_workflow",
-        "name": "GeoPython 工作流引擎",
-        "connection_info": {
-            "protocol": "http",
-            "port": 8099
-        },
-        "is_builtin": True
-    }
-
-    requests.post(f"{SYSTEM_URL}/api/v1/internal/engines/register",
-                  json=payload,
-                  headers={"X-Internal-API-Key": API_KEY})
-```
+GeoPython Workflow / Spark Workflow 等生产内置运行时的注册由所属模块使用独立 Service Principal 和 Confidential OAuth Client 完成：先以 `context_type=platform` 通过 Client Credentials Grant 获取短期 Platform Service Access Token，再调用 System 唯一的公开注册 API，并且只发送 `Authorization: Bearer <service_access_token>`。不得调用 `/api/v1/internal/**`，不得发送 `X-Internal-API-Key` 或 `X-Tenant-ID`。需要外部 SDK 或许可绑定的运行时（例如 SuperMap Workflow）也可以启动后由 System 扩展引擎表单手动注册。
 
 Math Workflow 是 `addp.workflow/v1` 参考实现，可以随 ADDP 开发环境启动服务，但不随启动自动注册。需要使用时，在 System 引擎管理中选择“注册扩展引擎”，填入 `engine_type=math_workflow`、默认端口 `8089`，可先通过表单“检查服务”确认 `/health` 与 `/api/operators` 可达，再测试连接并保存。
 
@@ -779,6 +767,9 @@ Develop Adapter Spec registry 为 Public Operator Spec 提供资源选择器 `ui
 6. 调用方必须同时生成不含密钥的 audit plan，用于领域结果或统一执行记录；不得把运行时访问计划原文长期保存。
 7. Manager infra 目标和 Develop 业务目标分别在调用方领域边界内解析，再进入同一个访问计划构造器。Develop 的源和目标存储必须是当前租户的业务 Engine Instance，不得选择 `tenant_id=nil` 的平台 infra 存储；Manager 可按私有 artifact 生命周期显式构造 infra 目标。访问计划不表达 owner module、artifact/data item 归属或 Meta 扫描策略。
 8. Runtime 完成写入后只返回转换结果事实。Manager 负责登记私有 artifact；Develop 负责记录 `produced_targets` 并触发 Meta scan。
+9. 每个 Runtime Operator Spec 必须声明 `effects` 非空集合，值只允许 `read`、`write`、`ddl`、`external_effect`。纯计算且不访问外部资源的算子声明 `read`；写入持久化目标至少声明 `write`；修改 schema、database、table 或 Engine 原生结构声明 `ddl`；发送消息、网络投递或调用外部有副作用系统声明 `external_effect`。
+10. Develop 在执行前按整个 DAG 汇总效果，并结合源/目标 locator 和当前 User AuthContext 创建 Execution Authorization。客户端提交的效果、Runtime 返回值或 Engine 创建人均不能替代服务端汇总结果。
+11. Workflow Access Plan 只承载本次运行所需的临时访问参数；其允许效果不得超过 Execution Authorization。Runtime 收到计划后必须按算子声明再次拒绝越权效果，不得把连接信息、访问计划或 Token写入运行时状态、统一 execution 或用户任务定义。
 
 Python 实现的 Workflow Runtime 应共享 `common-python` 中的协议执行核心，包括 workflow definition 校验、DAG 拓扑排序、引用解析、异步 execution 状态和标准错误；GeoDataFrame、Spark DataFrame、PDAL、三维转换器等领域执行仍保留在各自运行时。该公共核心是库，不是新的 System Engine Instance 或独立服务。
 

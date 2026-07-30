@@ -107,6 +107,37 @@ func TestStartExecutionAtomicallySetsRunningAndStartedAt(t *testing.T) {
 	}
 }
 
+func TestGetRunningExecutionsWithZeroTenantReturnsAllTenants(t *testing.T) {
+	db := newTaskExecutionRepositoryTestDB(t)
+	repo := NewTaskExecutionRepository(db)
+	createdAt := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
+	for _, exec := range []*TaskExecution{
+		{TenantID: 7, ExecutionID: "pending-7", Module: ModuleMeta, TaskType: TaskTypeScan, Source: ModuleMeta, Status: ExecutionStatusPending, TriggerType: TriggerTypeManual, CreatedAt: createdAt, UpdatedAt: createdAt},
+		{TenantID: 8, ExecutionID: "running-8", Module: ModuleMeta, TaskType: TaskTypeScan, Source: ModuleMeta, Status: ExecutionStatusRunning, TriggerType: TriggerTypeManual, CreatedAt: createdAt.Add(time.Minute), UpdatedAt: createdAt.Add(time.Minute)},
+		{TenantID: 9, ExecutionID: "success-9", Module: ModuleMeta, TaskType: TaskTypeScan, Source: ModuleMeta, Status: ExecutionStatusSuccess, TriggerType: TriggerTypeManual, CreatedAt: createdAt.Add(2 * time.Minute), UpdatedAt: createdAt.Add(2 * time.Minute)},
+	} {
+		if err := repo.Create(context.Background(), exec); err != nil {
+			t.Fatalf("create %s: %v", exec.ExecutionID, err)
+		}
+	}
+
+	executions, err := repo.GetRunningExecutions(context.Background(), 0)
+	if err != nil {
+		t.Fatalf("GetRunningExecutions() error = %v", err)
+	}
+	if len(executions) != 2 || executions[0].ExecutionID != "running-8" || executions[1].ExecutionID != "pending-7" {
+		t.Fatalf("executions = %#v", executions)
+	}
+
+	tenantExecutions, err := repo.GetRunningExecutions(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("GetRunningExecutions(tenant 7) error = %v", err)
+	}
+	if len(tenantExecutions) != 1 || tenantExecutions[0].ExecutionID != "pending-7" {
+		t.Fatalf("tenant 7 executions = %#v", tenantExecutions)
+	}
+}
+
 func newTaskExecutionRepositoryTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
@@ -131,6 +162,12 @@ func newTaskExecutionRepositoryTestDB(t *testing.T) *gorm.DB {
 		current_step TEXT,
 		trigger_type TEXT NOT NULL,
 		triggered_by INTEGER,
+		actor_principal_id INTEGER,
+		actor_tenant_membership_id INTEGER,
+		issued_authorization_version INTEGER,
+		execution_authorization_id INTEGER,
+		authorization_effects TEXT,
+		authorization_expires_at DATETIME,
 		execution_config JSON,
 		error_details JSON,
 		metadata JSON,

@@ -18,6 +18,31 @@ info:
   title: ADDP Standard API
   version: "1.0"
 paths:
+  /assets/discoverable:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/client.DiscoverableAsset'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 可发现资产列表 | List discoverable assets
+      tags:
+      - AssetDiscoverable
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.metric.read
   /classifications:
     get:
       produces:
@@ -1116,27 +1141,6 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.classification.update
-  /internal/assets/discoverable:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/client.DiscoverableAsset'
-            type: array
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: 可发现资产列表 | List discoverable assets
-      tags:
-      - AssetDiscoverable
-      x-addp-auth-mode: internal
   /measurement-categories:
     get:
       produces:

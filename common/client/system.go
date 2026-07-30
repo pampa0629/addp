@@ -570,7 +570,7 @@ func (c *SystemClient) ListWorkflowEngines(tenantID uint) ([]models.Engine, erro
 	// 过滤出具备 compute.workflow 能力的引擎。
 	filtered := make([]models.Engine, 0)
 	for _, r := range engines {
-		if r.IsActive && commonutils.SupportsComputeEntrypoint(&r, "workflow") {
+		if r.LifecycleState == models.EngineLifecycleActive && commonutils.SupportsComputeEntrypoint(&r, "workflow") {
 			filtered = append(filtered, r)
 		}
 	}
@@ -613,7 +613,7 @@ func (c *SystemClient) ListSparkRuntimes(tenantID uint) ([]models.Engine, error)
 	// 过滤出活跃的 Spark 通用引擎资源
 	filtered := make([]models.Engine, 0)
 	for _, r := range engines {
-		if r.IsActive {
+		if r.LifecycleState == models.EngineLifecycleActive {
 			filtered = append(filtered, r)
 		}
 	}

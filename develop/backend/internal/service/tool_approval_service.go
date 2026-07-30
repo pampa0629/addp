@@ -46,6 +46,7 @@ type approvalExecution interface {
 		uint,
 		uint,
 		string,
+		string,
 		int,
 	) (*preparedContentExecution, error)
 	persistPreparedContentExecution(
@@ -87,6 +88,7 @@ func (service *ToolApprovalService) CreateWorkflowRunApproval(
 		req.ExecutionConfig,
 		reqTenantID(authContext),
 		authContextUserID(authContext),
+		"",
 		req.TriggerType,
 		req.Timeout,
 	); err != nil {
@@ -243,6 +245,7 @@ func (service *ToolApprovalService) ConsumeWorkflowRunApproval(
 		req.ExecutionConfig,
 		snapshot.TenantID,
 		snapshot.UserID,
+		"",
 		req.TriggerType,
 		req.Timeout,
 	)

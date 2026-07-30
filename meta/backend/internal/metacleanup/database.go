@@ -15,7 +15,7 @@ import (
 
 type DatabaseCleaner struct {
 	db           *gorm.DB
-	systemClient *commonClient.SystemClient
+	systemClient *commonClient.SystemServiceClient
 	log          *slog.Logger
 }
 
@@ -30,7 +30,7 @@ func metaEngineEligibilityByID(engines []commonModels.Engine) map[uint]metaEngin
 		engine := &engines[index]
 		eligibility := metaEngineEligibility{name: engine.Name}
 		switch {
-		case !engine.IsActive:
+		case !engine.IsUsable():
 			eligibility.invalidReason = "引擎已禁用"
 		case !commonUtils.HasStorageCapability(engine):
 			eligibility.invalidReason = "引擎不具备存储能力"
@@ -40,7 +40,7 @@ func metaEngineEligibilityByID(engines []commonModels.Engine) map[uint]metaEngin
 	return eligibilityByID
 }
 
-func NewDatabaseCleaner(db *gorm.DB, systemClient *commonClient.SystemClient, log *slog.Logger) *DatabaseCleaner {
+func NewDatabaseCleaner(db *gorm.DB, systemClient *commonClient.SystemServiceClient, log *slog.Logger) *DatabaseCleaner {
 	return &DatabaseCleaner{db: db, systemClient: systemClient, log: log}
 }
 
@@ -57,7 +57,7 @@ func (c *DatabaseCleaner) ScanInvalidEnginesWithScope(ctx context.Context, tenan
 		return details, nil
 	}
 
-	allEngines, err := c.systemClient.ListEngines("", tenantID)
+	allEngines, err := c.systemClient.WithTenantID(tenantID).ListEngines(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("获取引擎列表失败: %w", err)
 	}
@@ -116,30 +116,20 @@ func (c *DatabaseCleaner) ScanInvalidEnginesWithScope(ctx context.Context, tenan
 func (c *DatabaseCleaner) ScanOrphanItems(ctx context.Context, tenantID uint) ([]models.OrphanItemDetail, error) {
 	var items []models.OrphanItemDetail
 
-	query := `
-		SELECT mi.id, mi.name, mi.node_id
-		FROM meta.meta_item mi
-		LEFT JOIN meta.meta_node mn ON mi.node_id = mn.id
-		WHERE mn.id IS NULL
-	`
+	query := c.db.WithContext(ctx).
+		Table("meta.meta_item AS mi").
+		Select("mi.id AS item_id, mi.name AS item_name, mi.node_id").
+		Joins("LEFT JOIN meta.meta_node mn ON mi.node_id = mn.id").
+		Where("mn.id IS NULL").
+		Where("mi.deleted_at IS NULL")
 	if tenantID > 0 {
-		query += fmt.Sprintf(" AND mi.tenant_id = %d", tenantID)
+		query = query.Where("mi.tenant_id = ?", tenantID)
 	}
-	query += " LIMIT 100"
-
-	rows, err := c.db.Raw(query).Rows()
-	if err != nil {
+	if err := query.Limit(100).Scan(&items).Error; err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var item models.OrphanItemDetail
-		if err := rows.Scan(&item.ItemID, &item.ItemName, &item.NodeID); err != nil {
-			return nil, err
-		}
-		item.Reason = "node_id不存在"
-		items = append(items, item)
+	for index := range items {
+		items[index].Reason = "node_id不存在"
 	}
 	return items, nil
 }
@@ -239,20 +229,18 @@ func (c *DatabaseCleaner) ExecuteSoftDelete(ctx context.Context, tenantID uint, 
 		}
 	}
 
-	orphanSQL := `
-		DELETE FROM meta.meta_item
-		WHERE id IN (
-			SELECT mi.id
-			FROM meta.meta_item mi
-			LEFT JOIN meta.meta_node mn ON mi.node_id = mn.id
-			WHERE mn.id IS NULL
-	`
+	orphanIDs := c.db.Table("meta.meta_item AS mi").
+		Select("mi.id").
+		Joins("LEFT JOIN meta.meta_node mn ON mi.node_id = mn.id").
+		Where("mn.id IS NULL").
+		Where("mi.deleted_at IS NULL")
 	if tenantID > 0 {
-		orphanSQL += fmt.Sprintf(" AND mi.tenant_id = %d", tenantID)
+		orphanIDs = orphanIDs.Where("mi.tenant_id = ?", tenantID)
 	}
-	orphanSQL += ")"
 
-	orphanResult := c.db.Exec(orphanSQL)
+	orphanResult := c.db.WithContext(ctx).
+		Where("id IN (?)", orphanIDs).
+		Delete(&models.MetaItem{})
 	if orphanResult.Error != nil {
 		result.Errors = append(result.Errors, fmt.Sprintf("软删除孤儿项失败: %v", orphanResult.Error))
 	} else {
@@ -313,7 +301,7 @@ func (c *DatabaseCleaner) InvalidEngineIDsWithScope(ctx context.Context, tenantI
 		return ids
 	}
 
-	allEngines, err := c.systemClient.ListEngines("", tenantID)
+	allEngines, err := c.systemClient.WithTenantID(tenantID).ListEngines(ctx)
 	if err != nil {
 		if c.log != nil {
 			c.log.Error("获取引擎列表失败", "error", err)
@@ -326,7 +314,6 @@ func (c *DatabaseCleaner) InvalidEngineIDsWithScope(ctx context.Context, tenantI
 	var allEngineIDsInDB []uint
 	query := c.db.Table("meta.meta_node").
 		Select("DISTINCT engine_id").
-		Where("deleted_at IS NULL").
 		Order("engine_id")
 	if tenantID > 0 {
 		query = query.Where("tenant_id = ?", tenantID)

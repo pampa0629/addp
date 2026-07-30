@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"time"
@@ -76,19 +77,26 @@ func main() {
 
 	// 初始化 ExecutionService（使用统一执行表）
 	executionService := service.NewExecutionService(db, orchRepo)
+	serviceTokenSource, err := commonClient.NewOAuthServiceTokenSource(
+		cfg.SystemServiceURL, "addp-orchestrator", cfg.ServiceClientSecret, nil,
+	)
+	if err != nil {
+		log.Fatalf("Service Token Source 初始化失败: %v", err)
+	}
+	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, serviceTokenSource, nil)
+	taskAuthorizationClient := commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemServiceURL, nil)
 
 	// 初始化 TaskProviderRegistry（从 System 动态加载任务提供者）
 	taskProviderRegistry := service.NewTaskProviderRegistry(
-		cfg.SystemServiceURL,
-		cfg.InternalAPIKey,
+		systemServiceClient,
 		5*time.Minute, // 缓存 TTL
 	)
 
 	// 初始化 Executor（通过 TaskProvider 引用任务）
-	executor := service.NewExecutor(executionService, orchRepo, taskProviderRegistry, cfg.InternalAPIKey)
+	executor := service.NewExecutor(executionService, orchRepo, taskProviderRegistry, serviceTokenSource)
 
 	// 初始化 Scheduler（使用统一执行服务）
-	scheduler := service.NewScheduler(orchRepo, executionService, executor)
+	scheduler := service.NewScheduler(orchRepo, executionService, executor, systemServiceClient)
 	if err := scheduler.Start(); err != nil {
 		log.Fatalf("调度器启动失败: %v", err)
 	}
@@ -97,31 +105,28 @@ func main() {
 	log.Println("✅ 调度器启动成功")
 	log.Println("✅ 任务提供者注册表已初始化（从 System 动态加载）")
 
-	// 初始化 System 客户端（用于审计日志）
-	var systemClient *commonClient.SystemClient
-	if cfg.InternalAPIKey != "" {
-		systemClient = commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-		log.Println("✅ SystemClient 已初始化（用于审计日志）")
-	}
-
 	// 设置路由（传递 taskProviderRegistry、systemURL、redisClient 和 systemClient）
-	router := api.SetupRouter(orchRepo, executionService, executor, taskProviderRegistry, cfg.SystemServiceURL, redisClient, systemClient)
+	router := api.SetupRouter(
+		orchRepo, executionService, executor, taskProviderRegistry,
+		cfg.SystemServiceURL, redisClient, systemServiceClient, taskAuthorizationClient, serviceTokenSource,
+	)
 
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("orchestrator")
 	serviceURL := utils.BuildServiceURL(serviceHost, port)
 
 	// ========== 模块注册（注册到 System service_registry）==========
-	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
-		registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-		registryClient.RegisterAndHeartbeat("orchestrator", serviceURL, "/orchestrator")
+	if cfg.SystemServiceURL != "" {
+		systemServiceClient.RegisterAndHeartbeatWithMetadata(
+			context.Background(), "orchestrator", serviceURL, "/orchestrator",
+			map[string]interface{}{"module": "orchestrator"},
+		)
 	}
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
-	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
+	if cfg.SystemServiceURL != "" {
 		taskProviderRegistration := service.NewTaskProviderRegistrationService(
-			cfg.SystemServiceURL,
-			cfg.InternalAPIKey,
+			systemServiceClient,
 			serviceURL,
 		)
 
@@ -129,7 +134,7 @@ func main() {
 			time.Sleep(2 * time.Second)
 			maxRetries := 5
 			for attempt := 1; attempt <= maxRetries; attempt++ {
-				if err := taskProviderRegistration.Register(); err != nil {
+				if err := taskProviderRegistration.Register(context.Background()); err != nil {
 					log.Printf("⚠️  Orchestrator 任务提供者注册失败 (尝试 %d/%d): %v", attempt, maxRetries, err)
 					time.Sleep(time.Duration(attempt*2) * time.Second)
 					continue

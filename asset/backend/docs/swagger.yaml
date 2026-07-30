@@ -29,21 +29,30 @@ definitions:
     required:
     - ids
     type: object
-  github_com_addp_asset_internal_service.CreateApplicationReq:
+  github_com_addp_asset_internal_service.CatalogEntry:
     properties:
-      applicant_id:
+      children:
+        items:
+          $ref: '#/definitions/github_com_addp_asset_internal_service.CatalogEntry'
+        type: array
+      count:
         type: integer
-      asset_id:
-        type: integer
-      duration_day:
-        description: 0 时默认 30 天
-        type: integer
-      reason:
+      created_at:
         type: string
-    required:
-    - applicant_id
-    - asset_id
-    - reason
+      description:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      parent_id:
+        type: integer
+      sort_order:
+        type: integer
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
     type: object
   github_com_addp_asset_internal_service.CreateCatalogReq:
     properties:
@@ -88,15 +97,17 @@ definitions:
       sort_order:
         type: integer
     type: object
-  internal_api.ratingHandledRequest:
+  internal_api.consumerApplicationRequest:
     properties:
-      is_handled:
-        type: boolean
-    type: object
-  internal_api.ratingUpsertRequest:
-    properties:
-      asset_id:
+      duration_day:
         type: integer
+      reason:
+        type: string
+    required:
+    - reason
+    type: object
+  internal_api.consumerRatingRequest:
+    properties:
       comment:
         type: string
       score:
@@ -107,12 +118,13 @@ definitions:
         items:
           type: string
         type: array
-      user_id:
-        type: integer
     required:
-    - asset_id
     - score
-    - user_id
+    type: object
+  internal_api.ratingHandledRequest:
+    properties:
+      is_handled:
+        type: boolean
     type: object
 info:
   contact: {}
@@ -138,33 +150,8 @@ paths:
       - Asset Application
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.application.read
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: 申请 | Application
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_asset_internal_service.CreateApplicationReq'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 创建资产申请 | Create asset application
-      tags:
-      - Asset Application
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - asset.application.create
   /applications/{id}:
     get:
       parameters:
@@ -188,6 +175,7 @@ paths:
       - Asset Application
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.application.read
   /applications/{id}/approve:
     post:
@@ -220,6 +208,7 @@ paths:
       - Asset Application
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.application.approve
   /applications/{id}/reject:
     post:
@@ -252,6 +241,7 @@ paths:
       - Asset Application
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.application.reject
   /applications/{id}/revoke:
     post:
@@ -276,6 +266,7 @@ paths:
       - Asset Application
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.application.revoke
   /assets:
     get:
@@ -294,6 +285,7 @@ paths:
       - Asset
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.entry.read
   /assets/{id}:
     delete:
@@ -318,6 +310,7 @@ paths:
       - Asset
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.entry.delete
     get:
       parameters:
@@ -341,6 +334,7 @@ paths:
       - Asset
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.entry.read
     put:
       consumes:
@@ -372,6 +366,7 @@ paths:
       - Asset
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.entry.update
   /assets/{id}/offline:
     post:
@@ -396,6 +391,7 @@ paths:
       - Asset
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.entry.offline
   /assets/{id}/publish:
     post:
@@ -420,6 +416,7 @@ paths:
       - Asset
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.entry.publish
   /assets/batch-catalog:
     post:
@@ -447,6 +444,7 @@ paths:
       - Asset
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.entry.update
   /assets/batch-offline:
     post:
@@ -474,6 +472,7 @@ paths:
       - Asset
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.entry.offline
   /assets/batch-publish:
     post:
@@ -501,6 +500,7 @@ paths:
       - Asset
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.entry.publish
   /assets/stats:
     get:
@@ -519,6 +519,7 @@ paths:
       - Asset
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.entry.read
   /assets/stats/dashboard:
     get:
@@ -537,6 +538,7 @@ paths:
       - Asset
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.entry.read
   /assets/sync:
     post:
@@ -555,6 +557,7 @@ paths:
       - Asset
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.entry.update
   /assets/type-fields/{type_id}:
     get:
@@ -579,6 +582,7 @@ paths:
       - Asset
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.entry.read
   /authorizations:
     get:
@@ -597,6 +601,7 @@ paths:
       - Asset Authorization
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.authorization.read
   /authorizations/{id}:
     get:
@@ -621,6 +626,7 @@ paths:
       - Asset Authorization
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.authorization.read
   /authorizations/{id}/revoke:
     post:
@@ -645,6 +651,7 @@ paths:
       - Asset Authorization
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.authorization.revoke
   /catalogs:
     get:
@@ -663,6 +670,7 @@ paths:
       - Asset Catalog
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.catalog.read
     post:
       consumes:
@@ -689,6 +697,7 @@ paths:
       - Asset Catalog
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.catalog.create
   /catalogs/{id}:
     delete:
@@ -713,6 +722,7 @@ paths:
       - Asset Catalog
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.catalog.delete
     get:
       parameters:
@@ -736,6 +746,7 @@ paths:
       - Asset Catalog
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.catalog.read
     put:
       consumes:
@@ -767,6 +778,7 @@ paths:
       - Asset Catalog
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.catalog.update
   /catalogs/tree:
     get:
@@ -783,6 +795,230 @@ paths:
       summary: 获取资产目录树 | Get asset catalog tree
       tags:
       - Asset Catalog
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.management.read
+      - asset.catalog.read
+  /consumer/applications:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取我的资产申请 | List my asset applications
+      tags:
+      - Asset Consumer
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.application.read
+  /consumer/assets:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 浏览已上架资产 | Browse published assets
+      tags:
+      - Asset Consumer
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.entry.read
+  /consumer/assets/{id}:
+    get:
+      parameters:
+      - description: 资产 ID | Asset ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取已上架资产详情 | Get published asset detail
+      tags:
+      - Asset Consumer
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.entry.read
+  /consumer/assets/{id}/application-status:
+    get:
+      parameters:
+      - description: 资产 ID | Asset ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取我的资产申请状态 | Get my asset application status
+      tags:
+      - Asset Consumer
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.application.read
+      - asset.authorization.read
+  /consumer/assets/{id}/applications:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 资产 ID | Asset ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 申请 | Application
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.consumerApplicationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 申请使用资产 | Apply for asset access
+      tags:
+      - Asset Consumer
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.application.create
+  /consumer/assets/{id}/ratings:
+    get:
+      parameters:
+      - description: 资产 ID | Asset ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取已上架资产评价 | List published asset ratings
+      tags:
+      - Asset Consumer
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.rating.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 资产 ID | Asset ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 评价 | Rating
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.consumerRatingRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 提交或更新资产评价 | Submit or update asset rating
+      tags:
+      - Asset Consumer
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.rating.create
+      - asset.rating.update
+  /consumer/assets/stats:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取已上架资产统计 | Get published asset statistics
+      tags:
+      - Asset Consumer
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.entry.read
+  /consumer/catalogs:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_asset_internal_service.CatalogEntry'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 浏览已上架资产目录 | Browse published asset catalogs
+      tags:
+      - Asset Consumer
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - asset.catalog.read
@@ -803,34 +1039,8 @@ paths:
       - Asset Rating
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.rating.read
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: 评价 | Rating
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_api.ratingUpsertRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 提交或更新资产评价 | Submit or update asset rating
-      tags:
-      - Asset Rating
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - asset.rating.create
-      - asset.rating.update
   /ratings/{id}/mark-handled:
     post:
       consumes:
@@ -862,6 +1072,7 @@ paths:
       - Asset Rating
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.rating.update
   /ratings/stats:
     get:
@@ -886,6 +1097,7 @@ paths:
       - Asset Rating
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.rating.read
   /type-definitions:
     get:
@@ -904,6 +1116,7 @@ paths:
       - Asset Type
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.entry.read
   /type-definitions/{id}:
     get:
@@ -928,6 +1141,7 @@ paths:
       - Asset Type
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - asset.management.read
       - asset.entry.read
 securityDefinitions:
   BearerAuth:

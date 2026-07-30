@@ -30,8 +30,7 @@ type UploadSystemClient interface {
 }
 
 type UploadMetaClient interface {
-	CreateManualScanRun(opts commonClient.MetaScanOptions) (*commonExecution.TaskExecution, error)
-	SetTenantID(tenantID *uint)
+	CreateManualScanRunForTenant(tenantID uint, opts commonClient.MetaScanOptions) (*commonExecution.TaskExecution, error)
 }
 
 type UploadService struct {
@@ -245,9 +244,6 @@ func (s *UploadService) submitUploadScan(tenantID uint, engineID uint, uploadedP
 	if len(refGroups) == 0 {
 		return nil, nil
 	}
-	if tenantID > 0 {
-		s.metaClient.SetTenantID(&tenantID)
-	}
 	opts := commonClient.MetaScanOptions{
 		EngineID:    engineID,
 		RefGroups:   refGroups,
@@ -256,7 +252,7 @@ func (s *UploadService) submitUploadScan(tenantID uint, engineID uint, uploadedP
 		TriggerType: commonExecution.TriggerTypeManual,
 		Source:      commonExecution.ModuleManager,
 	}
-	return s.metaClient.CreateManualScanRun(opts)
+	return s.metaClient.CreateManualScanRunForTenant(tenantID, opts)
 }
 
 func uploadScanRefGroups(uploadedPaths []string) []commonClient.MetaScanRefGroup {

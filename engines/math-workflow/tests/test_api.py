@@ -19,6 +19,9 @@ for parent in Path(__file__).resolve().parents:
 from workflow_operator_contract import assert_operator_metadata_contract
 
 
+AUTHORIZED_RUNTIME = {"execution_authorization": {"id": 71, "effects": ["read"]}}
+
+
 @pytest.fixture
 def client():
     """创建 Flask 测试客户端"""
@@ -104,6 +107,7 @@ class TestOperatorsEndpoint:
         assert add_operator['engine_type'] == 'math_workflow'
         assert add_operator['category_path'] == ['数学运算']
         assert add_operator['execution_modes'] == ['workflow']
+        assert add_operator['effects'] == ['read']
         assert 'module' not in add_operator
         assert len(add_operator['parameters']) == 2
         assert len(add_operator['output_ports']) == 1
@@ -263,7 +267,7 @@ class TestWorkflowExecution:
 
         response = client.post(
             '/api/workflow',
-            json={'workflow_def': workflow_def},
+            json={'workflow_def': workflow_def, 'runtime': AUTHORIZED_RUNTIME},
             content_type='application/json'
         )
 
@@ -293,7 +297,7 @@ class TestWorkflowExecution:
 
         response = client.post(
             '/api/workflow',
-            json={'workflow_def': workflow_def},
+            json={'workflow_def': workflow_def, 'runtime': AUTHORIZED_RUNTIME},
             content_type='application/json'
         )
 
@@ -316,7 +320,7 @@ class TestWorkflowExecution:
 
         response = client.post(
             '/api/workflow',
-            json={'workflow_def': workflow_def},
+            json={'workflow_def': workflow_def, 'runtime': AUTHORIZED_RUNTIME},
             content_type='application/json'
         )
 
@@ -349,7 +353,7 @@ class TestWorkflowExecution:
 
         response = client.post(
             '/api/workflow',
-            json={'workflow_def': workflow_def},
+            json={'workflow_def': workflow_def, 'runtime': AUTHORIZED_RUNTIME},
             content_type='application/json'
         )
 
@@ -396,7 +400,7 @@ class TestExecutionStatusEndpoint:
 
         execute_response = client.post(
             '/api/workflow',
-            json={'workflow_def': workflow_def},
+            json={'workflow_def': workflow_def, 'runtime': AUTHORIZED_RUNTIME},
             content_type='application/json'
         )
         execution_id = execute_response.get_json()['execution_id']
@@ -419,6 +423,18 @@ class TestExecutionStatusEndpoint:
         data = response.get_json()
         assert data['status'] == 'failed'
         assert data['error_code'] == 'EXECUTION_NOT_FOUND'
+
+    def test_workflow_rejects_missing_execution_authorization(self, client):
+        workflow_def = {
+            "tasks": [
+                {"id": "task1", "operator": "add", "params": {"a": 10, "b": 20}, "depends_on": []}
+            ]
+        }
+
+        response = client.post('/api/workflow', json={'workflow_def': workflow_def})
+
+        assert response.status_code == 400
+        assert response.get_json()['error_code'] == 'WORKFLOW_INVALID'
 
     def test_failed_workflow_status_keeps_runtime_error_fields(self, client):
         """已生成 execution_id 的失败工作流可以查询标准错误状态"""

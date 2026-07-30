@@ -26,10 +26,10 @@ func TestUpdateInternalUpdatesTenantEngineThroughService(t *testing.T) {
 	tenantID := uint(1)
 	repo := repository.NewEngineRepository(db)
 	engine := &models.Engine{
-		Name:       "Business Spark",
-		EngineType: "spark",
-		TenantID:   &tenantID,
-		IsActive:   true,
+		Name:           "Business Spark",
+		EngineType:     "spark",
+		TenantID:       &tenantID,
+		LifecycleState: models.EngineLifecycleActive,
 		ConnectionInfo: models.ConnectionInfo{
 			"host":        "host.docker.internal",
 			"port":        11000,
@@ -64,5 +64,55 @@ func TestUpdateInternalUpdatesTenantEngineThroughService(t *testing.T) {
 	}
 	if updated.ConnectionInfo["master_port"] != float64(7077) && updated.ConnectionInfo["master_port"] != 7077 {
 		t.Fatalf("master_port was not preserved: %#v", updated.ConnectionInfo["master_port"])
+	}
+}
+
+func TestRegisterEngineInternalRejectsPhysicalEndpointChange(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&models.Engine{}); err != nil {
+		t.Fatalf("auto migrate engine: %v", err)
+	}
+
+	repo := repository.NewEngineRepository(db)
+	engine := &models.Engine{
+		Name:           "GeoPython Runtime",
+		EngineType:     "geopython_workflow",
+		EngineOrigin:   "extension",
+		IsBuiltin:      true,
+		LifecycleState: models.EngineLifecycleActive,
+		ConnectionInfo: models.ConnectionInfo{
+			"protocol": "http",
+			"host":     "runtime.internal",
+			"port":     8080,
+		},
+	}
+	if err := repo.Create(engine); err != nil {
+		t.Fatalf("create engine: %v", err)
+	}
+
+	router := gin.New()
+	handler := NewEngineHandler(service.NewEngineService(repo, nil, nil))
+	router.POST("/api/v1/internal/engines/register", handler.RegisterEngineInternal)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/internal/engines/register",
+		bytes.NewBufferString(`{"engine_type":"geopython_workflow","name":"GeoPython Runtime","connection_info":{"protocol":"http","port":8080},"is_builtin":true}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusConflict {
+		t.Fatalf("register status = %d body=%s, want 409", response.Code, response.Body.String())
+	}
+	stored, err := repo.GetByID(engine.ID)
+	if err != nil {
+		t.Fatalf("get stored engine: %v", err)
+	}
+	if stored.ConnectionInfo["host"] != "runtime.internal" {
+		t.Fatalf("stored host = %#v, want unchanged runtime.internal", stored.ConnectionInfo["host"])
 	}
 }

@@ -36,7 +36,7 @@ func (r *SystemEngineResolver) ResolveEngine(ref EngineRef) (EngineBinding, erro
 	if engine == nil {
 		return EngineBinding{}, fmt.Errorf("engine %d not found", ref.ID)
 	}
-	if !engine.IsActive {
+	if !engine.IsUsable() {
 		return EngineBinding{}, fmt.Errorf("engine %d is inactive", ref.ID)
 	}
 

@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	dataProfileConfigVersion      = "data-profile-config/v1"
+	dataProfileConfigVersion      = "data-profile-config/v2"
 	defaultDataProfileConcurrency = 4
 )
 

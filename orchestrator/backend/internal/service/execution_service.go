@@ -22,6 +22,12 @@ type ExecutionService struct {
 	logger            *slog.Logger
 }
 
+type ExecutionActor struct {
+	PrincipalID          int64
+	TenantMembershipID  int64
+	AuthorizationVersion int64
+}
+
 // NewExecutionService 创建执行服务
 func NewExecutionService(
 	db *gorm.DB,
@@ -35,14 +41,13 @@ func NewExecutionService(
 }
 
 // CreateExecution 创建执行记录
-func (s *ExecutionService) CreateExecution(ctx context.Context, orchestrationID, tenantID uint, triggerType string) (*commonExecution.TaskExecution, error) {
-	return s.CreateExecutionWithContext(ctx, orchestrationID, tenantID, triggerType, commonExecution.ModuleOrchestrator, nil, 0)
-}
-
 // CreateExecutionWithContext 创建带标准 TaskProvider 上下文的编排执行记录。
-func (s *ExecutionService) CreateExecutionWithContext(ctx context.Context, orchestrationID, tenantID uint, triggerType, source string, parentExecutionID *string, triggeredBy uint) (*commonExecution.TaskExecution, error) {
+func (s *ExecutionService) CreateExecutionWithContext(ctx context.Context, orchestrationID, tenantID uint, triggerType, source string, parentExecutionID *string, actor ExecutionActor) (*commonExecution.TaskExecution, error) {
 	if tenantID == 0 {
 		return nil, fmt.Errorf("tenant_id is required")
+	}
+	if actor.PrincipalID <= 0 || actor.TenantMembershipID <= 0 || actor.AuthorizationVersion <= 0 {
+		return nil, fmt.Errorf("execution actor facts are required")
 	}
 	// 获取编排信息
 	orch, err := s.orchRepo.GetByIDAndTenant(orchestrationID, tenantID)
@@ -62,10 +67,11 @@ func (s *ExecutionService) CreateExecutionWithContext(ctx context.Context, orche
 	now := time.Now()
 	orchName := orch.Name
 	var triggeredByPtr *int
-	if triggeredBy > 0 {
-		value := int(triggeredBy)
-		triggeredByPtr = &value
-	}
+	value := int(actor.PrincipalID)
+	triggeredByPtr = &value
+	principalID := actor.PrincipalID
+	membershipID := actor.TenantMembershipID
+	authorizationVersion := actor.AuthorizationVersion
 
 	execution := &commonExecution.TaskExecution{
 		TenantID:          int(tenantID),
@@ -80,6 +86,9 @@ func (s *ExecutionService) CreateExecutionWithContext(ctx context.Context, orche
 		Progress:          0,
 		TriggerType:       normalizedTriggerType,
 		TriggeredBy:       triggeredByPtr,
+		ActorPrincipalID: &principalID,
+		ActorTenantMembershipID: &membershipID,
+		IssuedAuthorizationVersion: &authorizationVersion,
 		Metadata:          make(commonModels.JSONMap),
 		CreatedAt:         now,
 		UpdatedAt:         now,

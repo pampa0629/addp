@@ -12,9 +12,80 @@ import (
 	"testing"
 
 	engineplugin "github.com/addp/common/engine/plugin"
+	sharedauth "github.com/addp/common/middleware/auth"
 	"github.com/addp/system/internal/models"
+	"github.com/addp/system/internal/repository"
+	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
+
+func TestListEnginesRejectsInvalidLifecycleStates(t *testing.T) {
+	router := newEngineListTestRouter(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/engines?lifecycle_states=invalid", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body=%s", rec.Code, rec.Body.String())
+	}
+	var response models.ErrorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if strings.TrimSpace(response.Error) == "" {
+		t.Fatalf("response = %#v, want non-empty error", response)
+	}
+}
+
+func TestListEnginesAcceptsAllLifecycleStates(t *testing.T) {
+	router := newEngineListTestRouter(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/engines?lifecycle_states=active,disabled,deleting", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Data     []models.EngineResponse `json:"data"`
+		Total    int64                   `json:"total"`
+		Page     int                     `json:"page"`
+		PageSize int                     `json:"page_size"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Total != 0 || len(response.Data) != 0 || response.Page != 1 || response.PageSize != 10 {
+		t.Fatalf("response = %#v, want empty first page", response)
+	}
+}
+
+func newEngineListTestRouter(t *testing.T) *gin.Engine {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&models.Engine{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	handler := NewEngineHandler(service.NewEngineService(repository.NewEngineRepository(db), nil, nil))
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		if err := sharedauth.SetAuthContextForGin(c, testIAMActorContext("tenant")); err != nil {
+			t.Fatal(err)
+		}
+		c.Next()
+	})
+	router.GET("/engines", handler.List)
+	return router
+}
 
 func TestTestConnectionBeforeCreateProbesCustomWorkflowRuntime(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -41,6 +112,7 @@ func TestTestConnectionBeforeCreateProbesCustomWorkflowRuntime(t *testing.T) {
 						"category_path":   []string{"Raster"},
 						"description":     "Convert TIFF to COG",
 						"execution_modes": []string{"direct"},
+						"effects":         []string{"read", "write"},
 						"parameters":      []map[string]interface{}{},
 						"output_ports": []map[string]interface{}{
 							{"name": "default", "type": "object", "is_default": true},
@@ -121,6 +193,7 @@ func TestProbeWorkflowRuntimeBeforeSaveRejectsMismatchedOperatorEngineType(t *te
 						"category_path":   []string{"Raster"},
 						"description":     "Convert TIFF to COG",
 						"execution_modes": []string{"direct"},
+						"effects":         []string{"read", "write"},
 						"parameters":      []map[string]interface{}{},
 						"output_ports": []map[string]interface{}{
 							{"name": "default", "type": "object", "is_default": true},

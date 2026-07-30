@@ -96,12 +96,19 @@ func main() {
 		"standard": cfg.StandardURL,
 		"develop":  cfg.DevelopURL,
 	}
+	serviceTokenSource, err := commonClient.NewOAuthServiceTokenSource(
+		cfg.SystemURL, "addp-asset", cfg.ServiceClientSecret, nil,
+	)
+	if err != nil {
+		log.Fatalf("Asset Service Token Source 初始化失败: %v", err)
+	}
+	systemClient := commonClient.NewSystemServiceClient(cfg.SystemURL, serviceTokenSource, nil)
 	indexer, err := search.NewIndexer(cfg.MeilisearchURL, cfg.MeilisearchMasterKey, cfg.MeilisearchAssetIndex)
 	if err != nil {
 		log.Printf("⚠️  Meilisearch 初始化失败，搜索功能将 fallback 到数据库: %v", err)
 		indexer = nil
 	}
-	assetSvc := service.NewAssetService(db, moduleURLs, cfg.InternalAPIKey, indexer)
+	assetSvc := service.NewAssetService(db, moduleURLs, serviceTokenSource, indexer)
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 
 	var redisClient *redis.Client
@@ -113,8 +120,6 @@ func main() {
 		})
 		defer redisClient.Close()
 	}
-
-	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemURL, cfg.InternalAPIKey)
 
 	authSvc := service.NewAuthorizationService(db)
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
@@ -157,7 +162,7 @@ func main() {
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("asset")
 	serviceURL := utils.BuildServiceURL(serviceHost, port)
-	systemClient.RegisterAndHeartbeatWithMetadata("asset", serviceURL, "/asset", map[string]interface{}{
+	systemClient.RegisterAndHeartbeatWithMetadata(context.Background(), "asset", serviceURL, "/asset", map[string]interface{}{
 		"module": "asset",
 		"capabilities": map[string]interface{}{
 			"cleanup_executor": map[string]interface{}{

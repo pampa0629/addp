@@ -2,6 +2,7 @@ package dbbridge
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"sort"
 	"strconv"
@@ -237,6 +238,15 @@ func GetWorkflowExecutionStatus(ctx context.Context, engine *models.Engine, exec
 	return workflowProvider.GetExecutionStatus(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), executionID)
 }
 
+// OpenScriptSession 通过脚本运行时 Provider 打开受控运行会话。
+func OpenScriptSession(ctx context.Context, engine *models.Engine, req plugin.ScriptSessionRequest) (*plugin.ScriptSession, error) {
+	scriptProvider, err := scriptRuntimeProvider(engine)
+	if err != nil {
+		return nil, err
+	}
+	return scriptProvider.OpenSession(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), req)
+}
+
 type DirectWorkflowOperatorSelector struct {
 	OperatorName string
 	EngineName   string
@@ -260,7 +270,7 @@ func ResolveDirectWorkflowOperator(ctx context.Context, engines []models.Engine,
 	failures := make([]string, 0)
 	workflowOnlyMatches := make([]string, 0)
 	for _, candidate := range candidates {
-		if !candidate.IsActive {
+		if candidate.LifecycleState != models.EngineLifecycleActive {
 			continue
 		}
 		if engineName != "" && candidate.Name != engineName {
@@ -315,6 +325,21 @@ func workflowRuntimeProvider(engine *models.Engine) (plugin.WorkflowRuntimeProvi
 		return nil, pluginErr
 	}
 	return nil, fmt.Errorf("plugin %s does not implement WorkflowRuntimeProvider", engine.EngineType)
+}
+
+func scriptRuntimeProvider(engine *models.Engine) (plugin.ScriptRuntimeProvider, error) {
+	if engine == nil {
+		return nil, fmt.Errorf("script engine cannot be nil")
+	}
+	p, err := plugin.Get(engine.EngineType)
+	if err != nil {
+		return nil, err
+	}
+	scriptProvider, ok := p.(plugin.ScriptRuntimeProvider)
+	if !ok {
+		return nil, fmt.Errorf("plugin %s does not implement ScriptRuntimeProvider", engine.EngineType)
+	}
+	return scriptProvider, nil
 }
 
 func supportsADDPWorkflowRuntime(engine *models.Engine) bool {
@@ -620,6 +645,7 @@ func toModelOperators(engine *models.Engine, operators []plugin.OperatorDescript
 			Inputs:              toStringInputs(op.Inputs),
 			OutputPorts:         toModelOutputPorts(op.OutputPorts),
 			ExecutionModes:      op.ExecutionModes,
+			Effects:             op.Effects,
 			Attributes:          op.Attributes,
 		})
 	}
@@ -670,6 +696,21 @@ func validateWorkflowOperatorDescriptor(engine *models.Engine, op plugin.Operato
 		if mode != "workflow" && mode != "direct" {
 			return fmt.Errorf("workflow operator metadata invalid: unsupported execution mode %q for operator %q", mode, op.Name)
 		}
+	}
+	if len(op.Effects) == 0 {
+		return fmt.Errorf("workflow operator metadata invalid: effects is required for operator %q", op.Name)
+	}
+	seenEffects := make(map[string]struct{}, len(op.Effects))
+	for _, effect := range op.Effects {
+		switch effect {
+		case "read", "write", "ddl", "external_effect":
+		default:
+			return fmt.Errorf("workflow operator metadata invalid: unsupported effect %q for operator %q", effect, op.Name)
+		}
+		if _, exists := seenEffects[effect]; exists {
+			return fmt.Errorf("workflow operator metadata invalid: duplicated effect %q for operator %q", effect, op.Name)
+		}
+		seenEffects[effect] = struct{}{}
 	}
 	return nil
 }
@@ -990,9 +1031,62 @@ func ExecuteGraphQuery(ctx context.Context, engine *models.Engine, query string)
 	return &plugin.GraphQueryResult{QueryResult: *qr}, nil
 }
 
-// ExecuteDML 执行 DML 语句（INSERT/UPDATE/DELETE），仅适用于 SQL 引擎，返回影响行数
-// NoSQL 引擎的写操作请使用 ExecuteQuery（在命令中包含写操作即可）
-func ExecuteDML(ctx context.Context, engine *models.Engine, query string) (int64, error) {
+// SupportsReadOnlySQLExecution reports whether dbbridge can establish a real
+// database read-only transaction for the engine. Unsupported engines must be
+// rejected instead of falling back to an ordinary privileged connection.
+func SupportsReadOnlySQLExecution(engineType string) bool {
+	switch strings.ToLower(strings.TrimSpace(engineType)) {
+	case "postgresql", "mysql":
+		return true
+	default:
+		return false
+	}
+}
+
+// ExecuteReadOnlyQuery executes one SQL query in a database-enforced read-only
+// transaction. It is the only dbbridge path for User executions classified as
+// read.
+func ExecuteReadOnlyQuery(ctx context.Context, engine *models.Engine, query string) (*plugin.QueryResult, error) {
+	if engine == nil || !SupportsReadOnlySQLExecution(engine.EngineType) {
+		return nil, fmt.Errorf("引擎不支持受控只读 SQL 执行")
+	}
+	db, err := GetOrCreatePool(engine, DefaultPoolConfig())
+	if err != nil {
+		return nil, fmt.Errorf("获取连接池失败：%w", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("获取数据库连接失败：%w", err)
+	}
+	tx, err := sqlDB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("开启只读事务失败：%w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	rows, err := tx.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	result, err := scanSQLRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("提交只读事务失败：%w", err)
+	}
+	committed = true
+	return result, nil
+}
+
+// ExecuteStatement executes one non-read SQL statement and returns affected
+// rows. The caller must classify and authorize the statement effect first.
+func ExecuteStatement(ctx context.Context, engine *models.Engine, query string) (int64, error) {
 	db, err := GetOrCreatePool(engine, DefaultPoolConfig())
 	if err != nil {
 		return 0, fmt.Errorf("获取连接池失败：%w", err)
@@ -1015,8 +1109,11 @@ func executeSQLQuery(ctx context.Context, engine *models.Engine, query string) (
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	return scanSQLRows(rows)
+}
 
+func scanSQLRows(rows *sql.Rows) (*plugin.QueryResult, error) {
+	defer rows.Close()
 	columns, err := rows.Columns()
 	if err != nil {
 		return nil, fmt.Errorf("获取列名失败：%w", err)

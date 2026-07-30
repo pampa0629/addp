@@ -3,6 +3,9 @@ package service
 import (
 	"reflect"
 	"testing"
+
+	"github.com/addp/common/datatype"
+	"github.com/addp/manager/internal/models"
 )
 
 func TestProfileSamplePagesSpreadsBudgetAcrossSource(t *testing.T) {
@@ -35,5 +38,31 @@ func TestProfileTargetKeyNormalizesSelection(t *testing.T) {
 	})
 	if left != right {
 		t.Fatalf("normalized target keys differ: %q != %q", left, right)
+	}
+}
+
+func TestProfileFieldsFromPreviewUsesCanonicalGeometryField(t *testing.T) {
+	table := &models.TablePreview{
+		Columns: []string{"parcel_shape"},
+		Fields: []datatype.FieldInfo{{
+			Name:       "parcel_shape",
+			Type:       datatype.FieldTypeGeometry,
+			NativeType: "geometry",
+			Nullable:   true,
+		}},
+		ColumnMetadata: []models.ColumnMetadata{{
+			ColumnName: "parcel_shape",
+			Type:       "GEOMETRY(Polygon, 32650)",
+			IsNullable: true,
+		}},
+	}
+
+	fields := profileFieldsFromPreview(table)
+	if len(fields) != 1 {
+		t.Fatalf("fields = %d, want 1", len(fields))
+	}
+	field := fields[0]
+	if field.Name != "parcel_shape" || field.Type != datatype.FieldTypeGeometry || field.NativeType != "geometry" {
+		t.Fatalf("unexpected canonical geometry field: %#v", field)
 	}
 }
