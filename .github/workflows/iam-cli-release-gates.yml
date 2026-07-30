@@ -1,0 +1,80 @@
+name: IAM and CLI release gates
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: iam-cli-release-gates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cli-product-macos:
+    name: CLI product gate (macOS Keychain)
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: common-python/pyproject.toml
+
+      - name: Run installed-wheel product gate
+        env:
+          ADDP_CLI_RELEASE_DIST: ${{ runner.temp }}/addp-cli-dist
+        run: make test-common-python-cli-release
+
+      - name: Upload verified wheel
+        uses: actions/upload-artifact@v7
+        with:
+          name: addp-cli-wheel
+          path: ${{ runner.temp }}/addp-cli-dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  system-iam-postgres:
+    name: System IAM gate (PostgreSQL 15)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: addp_ci
+          POSTGRES_PASSWORD: addp_ci_password
+          POSTGRES_DB: addp_iam_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U addp_ci -d addp_iam_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: system/backend/go.mod
+          cache-dependency-path: |
+            system/backend/go.sum
+            common/go.sum
+
+      - name: Run System IAM PostgreSQL gate
+        env:
+          ADDP_SYSTEM_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_iam_test?sslmode=disable
+        run: make test-system-iam-postgres

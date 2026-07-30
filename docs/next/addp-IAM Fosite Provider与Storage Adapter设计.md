@@ -1,8 +1,8 @@
 # ADDP IAM Fosite Provider 与 Storage Adapter 设计
 
-更新日期：2026-07-28
+更新日期：2026-07-31
 
-状态：技术设计和 Fosite OAuth 唯一主路径已实现。受控 Fosite `v0.50.0-addp.2`、目标协议表 migration、ADDP Session、PostgreSQL Storage Adapter、Provider、Consent Bridge 与 System Router 已落地；开发数据库已迁移到 `25/clean` 并完成三员恢复，真实 Browser 登录与正式 `addp` CLI E2E 已覆盖 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、Keychain 刷新轮换、受委托 Tool 调用和撤销。OIDC 尚未启用，继续遵守“无 OpenID Handler、无 `openid` Scope、无 Discovery/JWKS 宣告”的单一路径，待 issuer、Claim 和密钥生命周期独立设计完成后再实施。
+状态：技术设计和 Fosite OAuth 唯一主路径已实现。受控 Fosite `v0.50.0-addp.2`、目标协议表 migration、ADDP Session、PostgreSQL Storage Adapter、Provider、Consent Bridge 与 System Router 已落地；开发数据库已迁移到 `34/clean` 并完成三员恢复，真实 Browser 登录与正式 `addp` CLI E2E 已覆盖 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、Keychain 刷新轮换、受委托 Tool 调用和撤销。OIDC 尚未启用，继续遵守“无 OpenID Handler、无 `openid` Scope、无 Discovery/JWKS 宣告”的单一路径，待 issuer、Claim 和密钥生命周期独立设计完成后再实施。
 
 ## 一、目标与边界
 

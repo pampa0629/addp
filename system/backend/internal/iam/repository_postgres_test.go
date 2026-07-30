@@ -16,9 +16,9 @@ import (
 )
 
 func TestRepositoryAgainstPostgres(t *testing.T) {
-	dsn := os.Getenv("ADDP_IAM_RUNTIME_TEST_DSN")
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
-		t.Skip("set ADDP_IAM_RUNTIME_TEST_DSN to a disposable PostgreSQL 15+ database")
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
 	}
 	testsupport.RequireDisposablePostgresDSN(t, dsn)
 
@@ -34,6 +34,10 @@ func TestRepositoryAgainstPostgres(t *testing.T) {
 	defer cancel()
 	if err := migration.NewRunner(dsn).Run(ctx); err != nil {
 		t.Fatalf("apply IAM migrations: %v", err)
+	}
+	var baselinePrincipalCount int64
+	if err := db.Table("system.principals").Count(&baselinePrincipalCount).Error; err != nil {
+		t.Fatalf("count migration principal baseline: %v", err)
 	}
 
 	repository := NewRepository(db)
@@ -129,7 +133,7 @@ func TestRepositoryAgainstPostgres(t *testing.T) {
 	if !errors.Is(err, commonapi.ErrConflict) {
 		t.Fatalf("duplicate normalized username error = %v, want conflict", err)
 	}
-	assertRuntimeTableCount(t, db, "system.principals", 1)
+	assertRuntimeTableCount(t, db, "system.principals", baselinePrincipalCount+1)
 	assertRuntimeTableCount(t, db, "system.users", 1)
 	assertRuntimeTableCount(t, db, "system.local_accounts", 1)
 

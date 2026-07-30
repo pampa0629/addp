@@ -38,20 +38,27 @@ def test_tools_list_writes_strict_json(capsys):
 
 
 def test_tool_call_requires_user_token(capsys):
-    code = asyncio.run(cli._run(argparse.Namespace(
-        group="tool",
-        command="call",
-        name="data.search",
-        arguments='{"query":"roads"}',
-        base_url="http://gateway",
-        token=None,
-    )))
+    async def missing_login(_base_url):
+        raise OAuthLoginError("authentication_required")
+
+    with patch.object(cli, "refresh_access_token", missing_login):
+        code = asyncio.run(cli._run(argparse.Namespace(
+            group="tool",
+            command="call",
+            name="data.search",
+            arguments='{"query":"roads"}',
+            base_url="http://gateway",
+        )))
     payload = json.loads(capsys.readouterr().out)
     assert code == cli.EXIT_USAGE
     assert payload["error"]["code"] == "authentication_required"
 
 
 def test_tool_call_outputs_result_without_adapter_envelope(capsys):
+    async def fake_refresh(base_url):
+        assert base_url == "http://gateway"
+        return "token"
+
     class FakeExecutor:
         def __init__(self, base_url, token):
             assert base_url == "http://gateway"
@@ -64,14 +71,13 @@ def test_tool_call_outputs_result_without_adapter_envelope(capsys):
             assert uuid.UUID(tool_call_id)
             return {"total": 1, "hits": []}
 
-    with patch.object(cli, "ToolExecutor", FakeExecutor):
+    with patch.object(cli, "refresh_access_token", fake_refresh), patch.object(cli, "ToolExecutor", FakeExecutor):
         code = asyncio.run(cli._run(argparse.Namespace(
             group="tool",
             command="call",
             name="data.search",
             arguments='{"query":"roads"}',
             base_url="http://gateway",
-            token="token",
         )))
 
     assert code == cli.EXIT_OK
@@ -182,6 +188,28 @@ def test_auth_status_distinguishes_missing_login_from_service_failure(capsys):
     assert json.loads(capsys.readouterr().out)["error"]["code"] == "authentication_unavailable"
 
 
+def test_auth_keyring_failure_does_not_expose_backend_message(capsys):
+    secret = "addp_rt_keyring_error_must_not_reach_terminal"
+
+    async def unavailable_keyring(_base_url):
+        raise cli.keyring.errors.KeyringError(secret)
+
+    with patch.object(cli, "refresh_access_token", unavailable_keyring):
+        code = asyncio.run(cli._run(argparse.Namespace(
+            group="auth",
+            command="status",
+            base_url="http://gateway",
+        )))
+
+    captured = capsys.readouterr()
+    assert code == cli.EXIT_EXECUTION_FAILED
+    assert json.loads(captured.out)["error"] == {
+        "code": "authentication_unavailable",
+        "message": "无法访问操作系统凭据存储",
+    }
+    assert secret not in captured.out + captured.err
+
+
 def test_version_is_one_json_document(capsys):
     with pytest.raises(SystemExit) as exited:
         cli._parser().parse_args(["--version"])
@@ -191,6 +219,21 @@ def test_version_is_one_json_document(capsys):
         "name": "addp",
         "version": cli.PACKAGE_VERSION,
     }
+
+
+def test_cli_rejects_manual_access_token_inputs(monkeypatch, capsys):
+    manual_token = "addp_at_manual_must_not_be_logged"
+    with pytest.raises(SystemExit) as exited:
+        cli._parser().parse_args(["--token", manual_token, "tools", "list"])
+
+    assert exited.value.code == cli.EXIT_USAGE
+    output = capsys.readouterr().out
+    assert json.loads(output)["error"]["code"] == "invalid_command"
+    assert manual_token not in output
+
+    monkeypatch.setenv("ADDP_TOKEN", "addp_at_environment")
+    parsed = cli._parser().parse_args(["tool", "call", "data.search"])
+    assert not hasattr(parsed, "token")
 
 
 def test_tool_call_validates_json_before_refreshing_login(capsys):
@@ -204,7 +247,6 @@ def test_tool_call_validates_json_before_refreshing_login(capsys):
             name="data.search",
             arguments="not-json",
             base_url="http://gateway",
-            token=None,
         )))
 
     assert code == cli.EXIT_USAGE
@@ -222,7 +264,6 @@ def test_tool_call_reports_temporary_refresh_failure_without_requesting_login(ca
             name="data.search",
             arguments="{}",
             base_url="http://gateway",
-            token=None,
         )))
 
     assert code == cli.EXIT_EXECUTION_FAILED
@@ -230,3 +271,32 @@ def test_tool_call_reports_temporary_refresh_failure_without_requesting_login(ca
         "code": "authentication_unavailable",
         "message": "无法刷新 ADDP 登录会话: temporarily_unavailable",
     }
+
+
+def test_tool_call_internal_error_does_not_log_exception_message(capsys):
+    async def fake_refresh(_base_url):
+        return "addp_at_input"
+
+    class FailingExecutor:
+        def __init__(self, _base_url, _token):
+            pass
+
+        async def call(self, *_args, **_kwargs):
+            raise RuntimeError("addp_rt_must_not_reach_terminal")
+
+    with patch.object(cli, "refresh_access_token", fake_refresh), patch.object(cli, "ToolExecutor", FailingExecutor):
+        code = asyncio.run(cli._run(argparse.Namespace(
+            group="tool",
+            command="call",
+            name="data.search",
+            arguments="{}",
+            base_url="http://gateway",
+            agent_run_id=None,
+            tool_call_id=None,
+        )))
+
+    captured = capsys.readouterr()
+    assert code == cli.EXIT_EXECUTION_FAILED
+    assert json.loads(captured.out)["error"]["code"] == "internal_error"
+    assert "RuntimeError" in captured.err
+    assert "addp_rt_must_not_reach_terminal" not in captured.out + captured.err

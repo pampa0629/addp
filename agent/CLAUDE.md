@@ -99,7 +99,7 @@ agent.skill_usage -- Skill 使用统计
 
 阶段 5 的 Agent 评测场景唯一目录为仓库根 `evals/agent-scenarios/`，统一使用 `addp.agent-scenario/v1`。离线门禁通过脚本化 Runtime 决策和受控 owner 响应消费真实结构化事件，不调用真实 LLM；定向在线层消费同一契约，凭据和环境私有 ID 不进入 fixture。
 
-定向在线评测唯一入口为 `evals/agent-scenarios/online_runner.py`，只经过生产 `ToolExecutor` 验证真实委托和 Owner API，不调用 LLM。Token 仅来自 `ADDP_TOKEN` 或现有 OAuth 登录，workflow 输入和证据 JSON 必须放在 ADDP 仓库外。示例：
+定向在线评测唯一入口为 `evals/agent-scenarios/online_runner.py`，只经过生产 `ToolExecutor` 验证真实委托和 Owner API，不调用 LLM。User Access Token 只通过正式 `addp` OAuth 登录和 OS Keychain 中的 Refresh Token 刷新获得，不接受环境变量或命令参数注入；workflow 输入和证据 JSON 必须放在 ADDP 仓库外。示例：
 
 ```bash
 python evals/agent-scenarios/online_runner.py \

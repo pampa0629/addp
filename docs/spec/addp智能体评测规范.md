@@ -1,6 +1,6 @@
 # ADDP 智能体评测规范
 
-更新日期：2026-07-18
+更新日期：2026-07-31
 
 状态：正式规范。智能体场景、在线证据、统一门禁、报告比较和正式发布评测基线以本文为准。
 
@@ -35,7 +35,7 @@
 
 在线评测唯一入口为 `evals/agent-scenarios/online_runner.py`。Runner 经过生产 ToolExecutor、System 委托和 owner API 验证真实路径，不调用 LLM，不自动登录，不自动决定审批，也不启动或重启 ADDP 服务。
 
-Token 只来自 `ADDP_TOKEN` 或现有 OAuth 登录。workflow 输入、阶段性审批证据和最终证据都必须显式指定仓库外路径。
+User Access Token 只能通过正式 `addp` OAuth 登录保存在 OS Keychain 中的 Refresh Token 刷新获得；Runner 不接受 `ADDP_TOKEN`、命令参数或其他手工 Token 注入。workflow 输入、阶段性审批证据和最终证据都必须显式指定仓库外路径。
 
 ## 三、场景契约
 
@@ -221,4 +221,3 @@ make test-agent-eval
 - `docs/skills/addp-Skill规范.md`
 - `docs/spec/addp OAuth授权规范.md`
 - `agent/CLAUDE.md`
-

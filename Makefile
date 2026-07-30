@@ -1,4 +1,4 @@
-.PHONY: help init dev build up down logs clean test test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release dev-all \
+.PHONY: help init dev build up down logs clean test test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres dev-all \
         build-backend build-frontend build-debug build-release build-iam-bootstrap build-iam-recovery clean-dist \
         infra-up infra-down infra-restart infra-status ports-validate
 
@@ -430,6 +430,15 @@ test-agent-eval: ## 运行 Agent 统一离线评测门禁
 
 test-agent-eval-release: ## 使用三份新鲜在线证据运行 Agent 发布门禁
 	@bash scripts/test/agent-evaluation-gate.sh release
+
+test-common-python: ## 运行 common-python 全量测试
+	@cd common-python && .venv/bin/pytest -q
+
+test-common-python-cli-release: ## 构建 wheel 并运行全新环境 ADDP CLI 产品发布门禁
+	@bash scripts/test/common-python-cli-release-gate.sh
+
+test-system-iam-postgres: ## 使用一次性 PostgreSQL 数据库运行 System IAM 发布门禁
+	@bash scripts/test/system-iam-postgres-gate.sh
 
 compare-agent-eval: ## 比较两份仓库外 Agent v2 评测报告
 	@bash scripts/test/agent-evaluation-gate.sh compare

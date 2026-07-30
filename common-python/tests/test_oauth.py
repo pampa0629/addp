@@ -420,6 +420,16 @@ async def test_refresh_access_token_preserves_keyring_value_for_non_json_failure
     assert deleted == []
 
 
+def test_oauth_error_does_not_expose_unrecognized_server_value():
+    secret = "addp_rt_server_echo_must_not_reach_terminal"
+    response = httpx.Response(400, json={"error": secret})
+
+    error = oauth._oauth_error(response)
+
+    assert error == "oauth_request_failed"
+    assert secret not in error
+
+
 @pytest.mark.asyncio
 async def test_refresh_access_token_maps_network_failure(monkeypatch):
     class NetworkFailureAsyncClient:

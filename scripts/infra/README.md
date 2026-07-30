@@ -71,6 +71,26 @@ bash scripts/test/certify-infra-kafka-ha.sh
 
 ## 项目隔离
 
+### PostgreSQL database 清单
+
+`addp-postgres` 实例只长期保留以下非模板 database：
+
+| database | 用途 | 生命周期与约束 |
+|----------|------|----------------|
+| `addp` | ADDP 开发环境系统数据库 | 必须保留；应用服务只连接该库，禁止运行破坏性测试门禁。 |
+| `addp_test` | Transfer、Manager、Quality、Graph 和 Infra Kafka 等共享集成测试库 | 必须保留；只允许测试使用，各测试负责清理自己拥有的 Schema 或事实。 |
+| `addp_iam_test` | System IAM、Fosite、API 与 Migration PostgreSQL 发布门禁库 | 必须保留；只允许 `make test-system-iam-postgres` 串行使用，门禁会重建 `system` 和 `common` Schema。 |
+| `postgres` | PostgreSQL 默认维护连接库 | 必须保留；只用于管理操作，不存放 ADDP 业务表。 |
+
+`template0` 和 `template1` 是 PostgreSQL 内置模板库；`template_postgis` 是当前 PostGIS 镜像提供的空间数据库模板。三者都不属于 ADDP 业务清单，也不得删除。临时测试 database 必须使用带独立 `test` 或 `disposable` 段的名称，并在任务结束后删除；不得长期保留 `addp_iam_test` 之外的 `addp_iam_*` database。CI 使用每个 Job 独占的临时 PostgreSQL 15 实例和 `addp_iam_test`，不连接开发环境 Infra。
+
+本地 IAM 发布门禁使用：
+
+```bash
+ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://addp:addp_password@localhost:15432/addp_iam_test?sslmode=disable' \
+  make test-system-iam-postgres
+```
+
 ### Docker Compose 项目
 
 - `addp-infra` - 本目录管理（`docker-compose.infra.yml`）

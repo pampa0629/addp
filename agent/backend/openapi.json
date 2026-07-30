@@ -1322,7 +1322,7 @@
     },
     "securitySchemes": {
       "BearerAuth": {
-        "description": "ADDP JWT：Authorization: Bearer <token>",
+        "description": "ADDP 用户访问令牌：Authorization: Bearer <token> | ADDP User Access Token",
         "scheme": "bearer",
         "type": "http"
       }

@@ -24,9 +24,9 @@ import (
 )
 
 func TestBootstrapBrowserLoginAgainstPostgres(t *testing.T) {
-	dsn := os.Getenv("ADDP_IAM_RUNTIME_TEST_DSN")
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
-		t.Skip("set ADDP_IAM_RUNTIME_TEST_DSN to a disposable PostgreSQL 15+ database")
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
 	}
 	testsupport.RequireDisposablePostgresDSN(t, dsn)
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
@@ -49,6 +49,8 @@ func TestBootstrapBrowserLoginAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create IAM runtime: %v", err)
 	}
+	runtime.ExecutionAuthorizationHandler = &IAMExecutionAuthorizationHandler{}
+	runtime.TaskAuthorizationSubjectHandler = &IAMTaskAuthorizationSubjectHandler{}
 	cipher, err := iam.NewMFACredentialCipher(cfg.IAMMFAEncryptionKey)
 	if err != nil {
 		t.Fatal(err)

@@ -1,161 +1,56 @@
-# Common-Python 模块实施报告
+# Common-Python 当前实施状态
 
-## 概述
+更新日期：2026-07-30
 
-创建了 `common-python` 模块，为 ADDP 平台的 Python 后端提供统一的 HTTP 客户端，消除重复代码。
+## 模块边界
 
-## 实施内容
+`common-python` 是 ADDP Python 共享库，同时发布正式 `addp` CLI entry point。它负责：
 
-### 1. 创建 common-python 模块
+- 各 owner 模块的异步 Python SDK Client；
+- `addp.auth_context/v1` 的严格解析；
+- `addp.tool-manifest/v1` 与唯一 `ToolExecutor`；
+- `addp.workflow/v1` 的通用协议执行核心；
+- `addp-cli` 公共 OAuth Client 的 Browser PKCE、Device Flow、刷新、状态和撤销。
 
-**目录结构**:
-```
-common-python/
-├── pyproject.toml
-├── README.md
-└── addp_common/
-    ├── __init__.py
-    └── client/
-        ├── __init__.py
-        ├── base.py      # 基础 HTTP 客户端
-        ├── system.py    # System 模块客户端
-        ├── meta.py      # Meta 模块客户端
-        ├── develop.py   # Develop 模块客户端
-        └── manager.py   # Manager 模块客户端
-```
+它不是独立认证服务、远程 Tool 服务或 Workflow Engine。OAuth 协议状态与 Token 事实仍只属于 System，正式协议引擎仍只有 Fosite。
 
-**核心特性**:
-- 统一的异步 HTTP 客户端基类 (`BaseClient`)
-- 支持两种认证方式: `internal_api_key` (服务间) 和 `user_token` (用户请求)
-- 自动处理 JSON 序列化和错误处理
-- 支持 `async with` 上下文管理器
+## CLI 认证主路径
 
-### 2. 重构 Copilot 模块
+CLI 登录只有两种标准交互：
 
-**修改文件**:
-- `requirements.txt` - 添加 `-e ../../common-python`
-- `tools/develop_tools.py` - 从 363 行减少到约 150 行 (减少 58%)
-- `tools/meta_tools.py` - 从 108 行减少到约 70 行 (减少 35%)
-- `pyrightconfig.json` - 新增，配置 Python 解释器
+1. `addp auth login` 使用 Authorization Code + PKCE 和 RFC 8252 动态 loopback；
+2. `addp auth login --device` 使用 Device Authorization Flow。
 
-**代码对比** (以 EngineTool 为例):
+两者固定使用公共客户端 `client_id=addp-cli`、`scope=addp.api`，不配置 Client Secret。CLI 不提供用户名密码直传、API Key、Client Secret 或手工 Token 登录。
 
-**重构前** (45 行):
-```python
-headers = {}
-if settings.internal_api_key:
-    headers["X-Internal-API-Key"] = settings.internal_api_key
+Refresh Token 按归一化 ADDP Base URL 隔离，只保存到 OS Keychain。Access Token、Authorization Request Secret、PKCE verifier、Authorization Code 和 Device Code 只存在于进程内存。同一 Base URL 的登录、刷新、状态和撤销共用跨进程文件锁，刷新轮换后原子更新 Keychain。
 
-try:
-    async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
-        url = f"{settings.develop_service_url}/api/develop/engines"
-        response = await client.get(url, headers=headers)
-        response.raise_for_status()
-        data = response.json()
-        # ... 处理逻辑
-except httpx.HTTPError as e:
-    # ... 错误处理
-```
+`addp auth status` 会先刷新，再调用 System 唯一 AuthContext API；Keychain 中有值不等于已认证。OAuth Family 在浏览器批准时绑定 Platform 或 Tenant Context，CLI 不提供事后 Context Switch，需要其他 Context 时先撤销并重新授权。
 
-**重构后** (15 行):
-```python
-try:
-    async with DevelopClient(
-        base_url=settings.develop_service_url,
-        internal_api_key=settings.internal_api_key
-    ) as client:
-        engines = await client.list_engines()
-        # ... 处理逻辑
-except Exception as e:
-    # ... 错误处理
-```
+## 安装与版本
 
-**保留文件**:
-- `clients/system_client.py` - 保留用于 `module_registry.py` 的同步注册逻辑
+包名固定为 `addp-common`，命令固定为 `addp`。版本只在 `addp_common.__version__` 定义，构建元数据和 `addp --version` 都读取该事实源。当前版本为 `0.1.11`。
 
-### 3. 重构 Agent 模块
-
-**修改文件**:
-- `requirements.txt` - 添加 `-e ../../common-python`
-- `tools/base_client.py` - 改为从 `addp_common` 导入的别名
-- `tools/system_client.py` - 继承 `addp_common.client.BaseClient`
-- `tools/meta_client.py` - 继承 `addp_common.client.BaseClient`
-- `tools/develop_client.py` - 继承 `addp_common.client.BaseClient`
-- `tools/manager_client.py` - 继承 `addp_common.client.BaseClient`
-- `tools/copilot_client.py` - 继承 `addp_common.client.BaseClient`
-- `pyrightconfig.json` - 新增，配置 Python 解释器
-
-**架构改进**:
-- Agent 工作流工具通过 `workflow_engine_id` 选择具体工作流引擎实例；执行 Spark Workflow 时必须额外提供 `spark_cluster_id`，并通过 `execution_config.engine_specific.spark_cluster_id` 传递真实 Spark 通用引擎资源
-- 执行轮询等通用客户端能力由 `addp_common.client` 提供
-- 基础 HTTP 调用统一使用 `addp_common.client.BaseClient`
-
-### 4. 安装配置
+正式交付使用 wheel，不以 editable 源码目录作为用户安装方式。构建、全新环境安装和产品 E2E 的唯一入口为：
 
 ```bash
-# 在 agent 和 copilot 的 venv 中安装
-agent/backend/venv/bin/pip install -e common-python
-copilot/backend/venv/bin/pip install -e common-python
+make test-common-python-cli-release
 ```
 
-## 收益分析
+## 发布门禁
 
-### 代码减少
+门禁按固定顺序执行：
 
-| 模块 | 文件 | 重构前 | 重构后 | 减少 |
-|------|------|--------|--------|------|
-| Copilot | develop_tools.py | 363 行 | ~150 行 | 58% |
-| Copilot | meta_tools.py | 108 行 | ~70 行 | 35% |
-| Agent | 各 client 文件 | 分散实现 | 统一继承 | - |
+1. 从 `common-python` 构建 wheel；
+2. 创建全新 venv 并只安装 wheel、运行依赖和测试依赖；
+3. 对已安装 wheel 运行 common-python 全量测试；
+4. 校验 `addp` entry point、安装元数据和 JSON 版本输出一致；
+5. 使用真实 OS Keychain 后端运行 CLI 产品 E2E。
 
-**总计**: 减少约 **250+ 行重复代码**
+产品 E2E 覆盖 Browser loopback + PKCE、Device Flow、权威 AuthContext、Context 绑定、独立进程刷新竞争、OAuth Revocation、Keychain 删除时机，以及 Access Token、Refresh Token、Authorization Code、PKCE Verifier、Device Code 和 Request Secret 不进入 stdout/stderr。
 
-### 维护成本降低
+测试 OAuth 协议服务器只用于驱动已安装 CLI 的客户端行为，不进入生产包、不新增生产端点，也不替代 System Fosite 协议验收。System Fosite Provider、PostgreSQL Storage、刷新重用和审计事务仍由 System 测试独立证明；正式发布要求两侧门禁都通过。
 
-- **API 变更**: 从修改 N 处 → 修改 1 处
-- **错误处理**: 统一在 `BaseClient` 中处理
-- **认证逻辑**: 统一管理，不会遗漏
-- **类型提示**: 统一的类型定义，减少错误
+## 延期边界
 
-### 架构一致性
-
-- **Go 后端**: `common/client/` (system.go, meta.go, ...)
-- **前端**: `common-frontend/` (Vue 组件)
-- **Python 后端**: `common-python/` (HTTP 客户端) ✅
-
-## 使用示例
-
-```python
-from addp_common.client import SystemClient, DevelopClient, MetaClient
-
-# 服务间调用
-async with SystemClient(
-    base_url="http://localhost:8180",
-    internal_api_key="your-key"
-) as client:
-    engines = await client.list_internal_engines()
-
-# 用户请求
-async with DevelopClient(
-    base_url="http://localhost:8000",
-    user_token="jwt-token"
-) as client:
-    workflow_engines = await client.list_workflow_engines()
-    operators = await client.list_operators(workflow_engines[0]["id"])
-```
-
-## 后续建议
-
-1. **扩展客户端**: 按需添加其他模块的客户端 (Transfer, Service, Standard 等)
-2. **共享模型**: 在 `addp_common/models/` 中定义共享的 Pydantic 模型
-3. **工具函数**: 添加常用的工具函数 (如配置加载、日志格式化等)
-4. **测试**: 为客户端添加单元测试
-
-## 总结
-
-通过创建 `common-python` 模块:
-- ✅ 消除了 250+ 行重复代码
-- ✅ 统一了 Python 后端的 HTTP 客户端实现
-- ✅ 提升了代码可维护性和一致性
-- ✅ 符合 ADDP 的 DRY 开发原则
-- ✅ 为未来的 Python 模块提供了可复用的基础设施
+OIDC、外部 IdP、跨域 SSO 与单点退出不在本阶段实现。当前 System 不注册 OpenID Handler，不允许 `openid` Scope，也不发布 Discovery/JWKS；这些能力必须在后续独立阶段完成 issuer、Claim、密钥生命周期和 External Identity 映射设计后实施。

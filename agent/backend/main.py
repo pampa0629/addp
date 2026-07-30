@@ -22,7 +22,7 @@ _API_PREFIX = "/api/v1/agent"
 _bearer_auth = HTTPBearer(
     auto_error=False,
     scheme_name="BearerAuth",
-    description="ADDP JWT：Authorization: Bearer <token>",
+    description="ADDP 用户访问令牌：Authorization: Bearer <token> | ADDP User Access Token",
 )
 
 app = FastAPI(

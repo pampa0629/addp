@@ -22,9 +22,9 @@ import (
 )
 
 func TestAuthContextServiceAgainstPostgres(t *testing.T) {
-	dsn := os.Getenv("ADDP_IAM_RUNTIME_TEST_DSN")
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
-		t.Skip("set ADDP_IAM_RUNTIME_TEST_DSN to a disposable PostgreSQL 15+ database")
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
 	}
 	testsupport.RequireDisposablePostgresDSN(t, dsn)
 
@@ -725,6 +725,7 @@ func assertTenantAuthContext(
 	for index, assignment := range authContext.Authorization.RoleAssignments {
 		if assignment.Scope.Type != wantScopes[index] || assignment.RoleKey != "tenant.data_viewer" ||
 			!reflect.DeepEqual(assignment.Permissions, []string{
+				"develop.data_read.execute",
 				"manager.content.read",
 				"manager.data_item.read",
 				"manager.search.execute",

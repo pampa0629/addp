@@ -17,9 +17,9 @@ import (
 )
 
 func TestLogoutServiceAgainstPostgres(t *testing.T) {
-	dsn := os.Getenv("ADDP_IAM_RUNTIME_TEST_DSN")
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
-		t.Skip("set ADDP_IAM_RUNTIME_TEST_DSN to a disposable PostgreSQL 15+ database")
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
 	}
 	testsupport.RequireDisposablePostgresDSN(t, dsn)
 

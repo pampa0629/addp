@@ -1,8 +1,8 @@
 # ADDP IAM OAuth/OIDC 协议引擎 ADR
 
-更新日期：2026-07-27
+更新日期：2026-07-31
 
-状态：已接受并完成 OAuth 唯一主路径切换。ADDP 受控 Fosite `v0.50.0-addp.2`、PostgreSQL Storage Adapter、Provider、Consent Bridge 与 System Router 已实现；开发数据库已迁移到 `25/clean` 并完成三员恢复，真实 Browser 登录与正式 `addp` CLI E2E 已覆盖 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、Keychain 刷新轮换、受委托 Tool 调用和撤销。OIDC 尚未启用，继续遵守“无 OpenID Handler、无 `openid` Scope、无 Discovery/JWKS 宣告”的单一路径，待 issuer、Claim 和密钥生命周期独立设计完成后再实施。
+状态：已接受并完成 OAuth 唯一主路径切换。ADDP 受控 Fosite `v0.50.0-addp.2`、PostgreSQL Storage Adapter、Provider、Consent Bridge 与 System Router 已实现；开发数据库已迁移到 `34/clean` 并完成三员恢复，真实 Browser 登录与正式 `addp` CLI E2E 已覆盖 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、Keychain 刷新轮换、受委托 Tool 调用和撤销。OIDC 尚未启用，继续遵守“无 OpenID Handler、无 `openid` Scope、无 Discovery/JWKS 宣告”的单一路径，待 issuer、Claim 和密钥生命周期独立设计完成后再实施。
 
 ## 一、决策摘要
 
