@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 import keyring
 
+from addp_common import __version__
 from addp_common.auth import AuthorizationContext, resolve_authorization_context
 from addp_common.tools import ToolExecutionError, ToolExecutor, get_tool, load_manifest
 from addp_common.oauth import (
@@ -30,7 +31,7 @@ EXIT_EXECUTION_FAILED = 4
 try:
     PACKAGE_VERSION = version("addp-common")
 except PackageNotFoundError:
-    PACKAGE_VERSION = "0.1.0"
+    PACKAGE_VERSION = __version__
 
 
 def _write_json(value: Any) -> None:
@@ -47,8 +48,8 @@ def _write_device_instructions(device: dict[str, Any]) -> None:
 
 
 class JSONArgumentParser(argparse.ArgumentParser):
-    def error(self, message):
-        _write_json({"error": {"code": "invalid_command", "message": message}})
+    def error(self, _message):
+        _write_json({"error": {"code": "invalid_command", "message": "命令参数无效"}})
         raise SystemExit(EXIT_USAGE)
 
 
@@ -102,7 +103,6 @@ def _parser() -> argparse.ArgumentParser:
     parser = JSONArgumentParser(prog="addp")
     parser.add_argument("--version", action=JSONVersionAction)
     parser.add_argument("--base-url", default=os.getenv("ADDP_BASE_URL", "http://localhost:8000"))
-    parser.add_argument("--token", default=os.getenv("ADDP_TOKEN"))
     parser.add_argument("--console-url", default=os.getenv("ADDP_CONSOLE_URL", "http://localhost:5170"))
     groups = parser.add_subparsers(dest="group", required=True)
 
@@ -194,29 +194,27 @@ async def _run(args: argparse.Namespace) -> int:
         _write_json({"error": {"code": "invalid_json", "message": str(exc)}})
         return EXIT_USAGE
 
-    user_token = args.token
-    if not user_token:
-        try:
-            user_token = await refresh_access_token(args.base_url)
-        except OAuthLoginError as exc:
-            if str(exc) in {"authentication_required", "invalid_grant"}:
-                _write_json({"error": {"code": "authentication_required", "message": "请先执行 addp auth login"}})
-                return EXIT_USAGE
-            _write_json({
-                "error": {
-                    "code": "authentication_unavailable",
-                    "message": f"无法刷新 ADDP 登录会话: {exc}",
-                }
-            })
-            return EXIT_EXECUTION_FAILED
-        except keyring.errors.KeyringError:
-            _write_json({
-                "error": {
-                    "code": "authentication_unavailable",
-                    "message": "无法访问操作系统凭据存储",
-                }
-            })
-            return EXIT_EXECUTION_FAILED
+    try:
+        user_token = await refresh_access_token(args.base_url)
+    except OAuthLoginError as exc:
+        if str(exc) in {"authentication_required", "invalid_grant"}:
+            _write_json({"error": {"code": "authentication_required", "message": "请先执行 addp auth login"}})
+            return EXIT_USAGE
+        _write_json({
+            "error": {
+                "code": "authentication_unavailable",
+                "message": f"无法刷新 ADDP 登录会话: {exc}",
+            }
+        })
+        return EXIT_EXECUTION_FAILED
+    except keyring.errors.KeyringError:
+        _write_json({
+            "error": {
+                "code": "authentication_unavailable",
+                "message": "无法访问操作系统凭据存储",
+            }
+        })
+        return EXIT_EXECUTION_FAILED
 
     try:
         result = await ToolExecutor(args.base_url, user_token).call(
@@ -229,7 +227,7 @@ async def _run(args: argparse.Namespace) -> int:
         _write_json(exc.as_dict())
         return EXIT_TOOL_NOT_FOUND if exc.code == "tool_not_found" else EXIT_EXECUTION_FAILED
     except Exception as exc:
-        print(f"addp CLI internal error: {type(exc).__name__}: {exc}", file=sys.stderr)
+        print(f"addp CLI internal error: {type(exc).__name__}", file=sys.stderr)
         _write_json({"error": {"code": "internal_error", "message": "CLI 内部错误"}})
         return EXIT_EXECUTION_FAILED
     _write_json(result)

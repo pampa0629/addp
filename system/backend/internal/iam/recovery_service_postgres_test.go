@@ -16,9 +16,9 @@ import (
 )
 
 func TestRecoveryServiceAgainstPostgres(t *testing.T) {
-	dsn := os.Getenv("ADDP_IAM_RUNTIME_TEST_DSN")
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
-		t.Skip("set ADDP_IAM_RUNTIME_TEST_DSN to a disposable PostgreSQL 15+ database")
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
 	}
 	testsupport.RequireDisposablePostgresDSN(t, dsn)
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
@@ -245,8 +245,8 @@ func createRecoverySessionFacts(t *testing.T, db *gorm.DB, principalID int64, no
 	if err := db.Exec(`
 		INSERT INTO system.mfa_challenges
 		    (token_hash, principal_id, issued_authorization_version, authentication_methods,
-		     authenticated_at, expires_at, created_at)
-		VALUES (?, ?, ?, ARRAY['password'], ?, ?, ?)
+		     authenticated_at, expires_at, created_at, purpose)
+		VALUES (?, ?, ?, ARRAY['password'], ?, ?, ?, 'login')
 	`, hashOpaqueToken("mfa-challenge-"+strconv.FormatInt(principalID, 10)), principalID,
 		authorizationVersion, createdAt, now.Add(time.Hour), createdAt).Error; err != nil {
 		t.Fatalf("create recovery MFA challenge: %v", err)

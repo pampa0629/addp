@@ -1,16 +1,18 @@
 # ADDP IAM 三员初始化操作指南
 
-更新日期：2026-07-26
+更新日期：2026-07-30
 
 ## 一、适用范围
 
-本指南用于在全新的 ADDP IAM 数据库中，通过离线 CLI 一次性创建：
+本指南用于在已经完成当前 migration、但尚未建立任何 User Principal 的 ADDP IAM 数据库中，通过离线 CLI 一次性创建：
 
 - 平台系统管理员；
 - 平台安全管理员；
 - 平台审计管理员。
 
 初始化只允许执行一次。成功后 Bootstrap 永久关闭，不能通过默认密码、网络注册接口或开发模式绕过。
+
+当前 migration 会预置平台内置 Service Principal、对应 OAuth Client 和机器 Role Assignment。这些机器身份是全新数据库的正常基线，不使用 User 密码、MFA 或平台三员 Role，也不阻断三员 Bootstrap。这里的“尚未初始化”只表示不存在任何 User Principal 且不存在 Bootstrap 状态，不表示 `system.principals` 或 `system.role_assignments` 物理空表。
 
 ## 二、先区分三种内容
 
@@ -151,7 +153,18 @@ from system.iam_bootstrap_state;
 
 select count(*) from system.users;
 select count(*) from system.mfa_credentials where status = 'active';
-select count(*) from system.role_assignments where status = 'active';
+select count(*)
+from system.role_assignments assignment
+join system.roles role on role.id = assignment.role_id
+join system.principals principal on principal.id = assignment.principal_id
+where assignment.status = 'active'
+  and assignment.scope_type = 'platform'
+  and principal.principal_type = 'user'
+  and role.role_key in (
+    'platform.system_administrator',
+    'platform.security_administrator',
+    'platform.audit_administrator'
+  );
 "
 ```
 
@@ -159,7 +172,9 @@ select count(*) from system.role_assignments where status = 'active';
 
 - Bootstrap 状态为 `completed`；
 - `secret_hash is null` 为 `true`；
-- User、有效 MFA Credential、有效 Role Assignment 均为 3。
+- User 和有效 MFA Credential 均为 3；
+- 上述按 User、Platform Scope 和三员 Role 精确过滤的有效 Role Assignment 为 3；
+- `system.principals` 和全部 `system.role_assignments` 还包含 migration 预置的机器身份事实，总数不应按 3 验收。
 
 ## 七、初始化后的首次登录
 
@@ -220,7 +235,7 @@ dist/release-$(go env GOOS)-$(go env GOARCH)/addp-iam-recovery apply
 3. 输入认证器当前显示的 6 位验证码；
 4. 等验证码变化后输入紧邻的下一个 6 位验证码。
 
-三个账号全部验证成功后才会在一个事务中替换凭据、撤销旧会话并完成恢复。任一步失败都不会留下部分恢复结果。恢复完成后应全量重启 ADDP，再分别验证三员 Browser `platform + AAL2` 登录。正式 `addp-cli` 交付后，还应在它的发布验收中验证 OAuth 登录；当前仓库尚无该产品可执行程序。
+三个账号全部验证成功后才会在一个事务中替换凭据、撤销旧会话并完成恢复。任一步失败都不会留下部分恢复结果。恢复完成后应全量重启 ADDP，再分别验证三员 Browser `platform + AAL2` 登录。仓库已由 `common-python` wheel 发布正式 `addp` 命令入口；版本发布前还必须运行 `make test-common-python-cli-release`，验证 OAuth 登录、Context 绑定、Keychain、刷新轮换和撤销。三员 Platform Context 的在线人工验收仍要求 AAL2，不能用 CLI 的通用 Tenant E2E 替代。
 
 若 `prepare` 报告三员角色持有人缺失、重复、已暂停或账号已禁用，不得使用 SQL 临时修补后继续。该状态已经超出凭据恢复边界，需要先按身份与授权治理流程处理。
 

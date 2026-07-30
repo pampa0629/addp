@@ -1,8 +1,8 @@
 # ADDP OAuth 授权规范
 
-更新日期：2026-07-27
+更新日期：2026-07-31
 
-状态：阶段 4.3 正式规范。OAuth 登录、浏览器会话、资源票据和受委托访问令牌均以本文为准；OAuth 运行代码已一次性切换到受控 Fosite 唯一主路径，真实 Browser 登录与 OAuth 客户端协议 E2E 已覆盖 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、刷新轮换和撤销。OIDC 尚未启用，当前唯一运行路径不注册 OpenID Handler、不允许 `openid` Scope，也不宣告 Discovery/JWKS；待 issuer、Claim 和密钥生命周期独立设计完成后再实施。
+状态：阶段 4.3 正式规范。OAuth 登录、浏览器会话、资源票据和受委托访问令牌均以本文为准；OAuth 运行代码已一次性切换到受控 Fosite 唯一主路径。System 负责 Fosite Provider、PostgreSQL Storage 和协议事务验收，`common-python` 发布门禁负责 wheel 安装后的 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、刷新轮换、撤销和真实 OS Keychain 产品 E2E。CLI 最终目标支持主流桌面操作系统；当前受发布测试环境约束，只以 macOS Keychain E2E 作为正式发布证据，不宣称 Windows Credential Manager 或 Linux Secret Service 已完成验证。OIDC 尚未启用，当前唯一运行路径不注册 OpenID Handler、不允许 `openid` Scope，也不宣告 Discovery/JWKS；待 issuer、Claim 和密钥生命周期独立设计完成后再实施。
 
 System 协议验收与正式 `addp` CLI 使用同一个 `addp-cli` 公共客户端和同一组 OAuth 端点，不保留测试专用授权实现。CLI 的发布、凭据存储、上下文确认和命令契约见第七节；协议与产品 E2E 必须共同通过后才能发布。
 
@@ -136,6 +136,8 @@ OAuth 成功响应包含 `access_token`、`token_type=Bearer`、`expires_in`、`
 
 两种方式使用同一个 `client_id=addp-cli`、同一个 `scope=addp.api` 和同一套 Token Family。它们不是兼容双轨，也不得增加用户名密码直传、Client Secret、API Key 或手工粘贴 Access Token 的登录路径。
 
+正式 CLI 不接受 `--token`、`ADDP_TOKEN` 或其他调用方注入 User Access Token 的参数。每次 Tool 调用都必须从 OS Keychain 中的 Refresh Token 开始，在同一 Base URL 的跨进程锁内完成刷新轮换；Python SDK 在当前进程内接收上游已获取 User Access Token 的能力不属于 CLI 登录入口。
+
 OAuth 授权页和设备授权页必须在批准前展示当前 Browser Context，并允许用户通过第一方 Browser Context Switch 选择目标 Platform 或 Tenant Context。批准事务只读取当时 Bearer Token 的权威 AuthContext；签发后的 OAuth Family 永久绑定该 Context。CLI 不提供 Context Switch 命令，需要另一个 Context 时必须 `addp auth logout` 后重新授权。
 
 `addp auth status` 必须在跨进程锁内轮换 Refresh Token，再调用唯一 AuthContext 接口确认服务端会话，并返回 Principal、Context、Client 和 Scope 摘要。Keychain 中存在字符串不代表已认证。网络或服务故障必须返回“状态不可用”，不能伪装成未登录；`invalid_grant` 才删除失效的本地 Refresh Token。
@@ -149,6 +151,22 @@ CLI 还必须满足：
 - stdout 每次只输出一个紧凑 JSON 文档，稳定错误码和退出码供 Agent 消费；浏览器地址、User Code 等人工操作提示只写 stderr；
 - `addp auth login`、刷新、状态和退出对同一 Base URL 的 Refresh Token 读写必须服从同一个跨进程锁，不能遗留可并发覆盖 Keychain 的旁路；
 - 正式验收至少覆盖可安装 wheel、命令入口、Browser PKCE、Device Flow、权威状态、轮换、撤销、并发刷新、Context 绑定和凭据不进入终端输出。
+
+CLI wheel、全新环境、命令入口和真实 OS Keychain 的唯一发布门禁为：
+
+```bash
+make test-common-python-cli-release
+```
+
+门禁只能使用 macOS 原生 Keychain；不得通过测试环境变量切换到明文文件、内存或空 Keyring 后端后宣告发布通过。Windows 和 Linux 保持产品目标，但必须在各自真实 OS 凭据后端建立同等级发布证据后，才能加入正式支持矩阵。门禁中的临时 OAuth 协议服务器只验证已安装 CLI 的客户端行为，不进入生产包，也不替代 System Fosite 协议、PostgreSQL 事务和安全审计测试。正式发布必须同时通过 CLI 产品门禁与 System IAM PostgreSQL 门禁：
+
+```bash
+make test-common-python-cli-release
+ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?sslmode=disable' \
+  make test-system-iam-postgres
+```
+
+System 门禁只接受数据库名含独立 `test` 或 `disposable` 段的一次性 PostgreSQL 数据库，并串行覆盖 Migration、IAM Domain、Fosite Storage 和 IAM API；不得把缺少 DSN 导致的测试 Skip 作为发布通过。
 
 ### 7.2 OAuth 安全审计
 

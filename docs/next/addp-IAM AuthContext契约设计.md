@@ -1,8 +1,8 @@
 # ADDP IAM AuthContext 契约设计
 
-更新日期：2026-07-27
+更新日期：2026-07-31
 
-状态：技术设计和全平台切换已完成。唯一 JSON Schema、共享 Go/Python/前端类型、第一方/OAuth/Resource Ticket/Delegated Token 投影、System 与 owner Common Middleware/Guard、委托签发和 HTTP 消费器已实现，旧认证路径已删除；15 个 owner 的 678/678 个 OpenAPI Operation 与 9/9 个 Tool 授权覆盖 `complete=true`。开发数据库已迁移到 `25/clean` 并完成三员恢复，三员 Browser AuthContext 与正式 `addp` CLI 的 loopback/Device AuthContext、Keychain 刷新、受委托 Tool 和撤销 E2E 通过。
+状态：技术设计和全平台切换已完成。唯一 JSON Schema、共享 Go/Python/前端类型、第一方/OAuth/Resource Ticket/Delegated Token 投影、System 与 owner Common Middleware/Guard、委托签发和 HTTP 消费器已实现，旧认证路径已删除；15 个 owner 的 678/678 个 OpenAPI Operation 与 9/9 个 Tool 授权覆盖 `complete=true`。开发数据库已迁移到 `34/clean` 并完成三员恢复，三员 Browser AuthContext 与正式 `addp` CLI 的 loopback/Device AuthContext、Keychain 刷新、受委托 Tool 和撤销 E2E 通过。
 
 ## 一、目标与边界
 

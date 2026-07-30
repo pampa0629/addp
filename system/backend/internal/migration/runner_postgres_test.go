@@ -16,9 +16,9 @@ import (
 )
 
 func TestMetaServicePrincipalForwardMigrationAgainstPostgres(t *testing.T) {
-	dsn := os.Getenv("ADDP_IAM_MIGRATION_TEST_DSN")
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
-		t.Skip("set ADDP_IAM_MIGRATION_TEST_DSN to a disposable PostgreSQL 15+ database")
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
 	}
 	testsupport.RequireDisposablePostgresDSN(t, dsn)
 
@@ -191,9 +191,9 @@ func TestMetaServicePrincipalForwardMigrationAgainstPostgres(t *testing.T) {
 }
 
 func TestAssetPortalBoundaryForwardMigrationAgainstPostgres(t *testing.T) {
-	dsn := os.Getenv("ADDP_IAM_MIGRATION_TEST_DSN")
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
-		t.Skip("set ADDP_IAM_MIGRATION_TEST_DSN to a disposable PostgreSQL 15+ database")
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
 	}
 	testsupport.RequireDisposablePostgresDSN(t, dsn)
 
@@ -277,9 +277,9 @@ func TestAssetPortalBoundaryForwardMigrationAgainstPostgres(t *testing.T) {
 }
 
 func TestAssetPortalBoundaryMigrationRollsBackBusinessFactsAgainstPostgres(t *testing.T) {
-	dsn := os.Getenv("ADDP_IAM_MIGRATION_TEST_DSN")
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
-		t.Skip("set ADDP_IAM_MIGRATION_TEST_DSN to a disposable PostgreSQL 15+ database")
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
 	}
 	testsupport.RequireDisposablePostgresDSN(t, dsn)
 
@@ -350,9 +350,9 @@ func TestAssetPortalBoundaryMigrationRollsBackBusinessFactsAgainstPostgres(t *te
 }
 
 func TestPortalPlatformRuntimeForwardMigrationAgainstPostgres(t *testing.T) {
-	dsn := os.Getenv("ADDP_IAM_MIGRATION_TEST_DSN")
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
-		t.Skip("set ADDP_IAM_MIGRATION_TEST_DSN to a disposable PostgreSQL 15+ database")
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
 	}
 	testsupport.RequireDisposablePostgresDSN(t, dsn)
 
@@ -422,9 +422,9 @@ func TestPortalPlatformRuntimeForwardMigrationAgainstPostgres(t *testing.T) {
 }
 
 func TestPortalPlatformRuntimeMigrationRollsBackAgainstPostgres(t *testing.T) {
-	dsn := os.Getenv("ADDP_IAM_MIGRATION_TEST_DSN")
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
-		t.Skip("set ADDP_IAM_MIGRATION_TEST_DSN to a disposable PostgreSQL 15+ database")
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
 	}
 	testsupport.RequireDisposablePostgresDSN(t, dsn)
 
@@ -494,9 +494,9 @@ func TestPortalPlatformRuntimeMigrationRollsBackAgainstPostgres(t *testing.T) {
 }
 
 func TestDevelopNotebookUpdateForwardMigrationAgainstPostgres(t *testing.T) {
-	dsn := os.Getenv("ADDP_IAM_MIGRATION_TEST_DSN")
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
-		t.Skip("set ADDP_IAM_MIGRATION_TEST_DSN to a disposable PostgreSQL 15+ database")
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
 	}
 	testsupport.RequireDisposablePostgresDSN(t, dsn)
 
@@ -626,9 +626,9 @@ func seedInitializedMigrationTenant(t *testing.T, db *sql.DB, code, name string)
 }
 
 func TestRunnerAgainstPostgres(t *testing.T) {
-	dsn := os.Getenv("ADDP_IAM_MIGRATION_TEST_DSN")
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
-		t.Skip("set ADDP_IAM_MIGRATION_TEST_DSN to a disposable PostgreSQL 15+ database")
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
 	}
 	testsupport.RequireDisposablePostgresDSN(t, dsn)
 

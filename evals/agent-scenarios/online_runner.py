@@ -188,13 +188,10 @@ def _require_tool_result(name: str, result: Any | None, events: list[AgentEvent]
 
 
 async def _source_token(base_url: str) -> str:
-    token = os.getenv("ADDP_TOKEN")
-    if token:
-        return token
     try:
         return await refresh_access_token(base_url)
     except OAuthLoginError as exc:
-        raise ValueError("缺少 ADDP_TOKEN，且现有 OAuth 登录无法刷新") from exc
+        raise ValueError("现有 OAuth 登录无法刷新，请先执行 addp auth login") from exc
 
 
 async def _read_only(args: argparse.Namespace, executor: ToolExecutor) -> tuple[dict[str, Any], str]:

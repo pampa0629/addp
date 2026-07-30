@@ -114,12 +114,12 @@ func (s *BootstrapService) Prepare(ctx context.Context) (string, time.Time, erro
 		} else if !errors.Is(err, commonapi.ErrNotFound) {
 			return err
 		}
-		factCount, err := tx.CountIAMBootstrapIdentityFacts(ctx)
+		factCount, err := tx.CountIAMBootstrapBlockingUserFacts(ctx)
 		if err != nil {
 			return err
 		}
 		if factCount != 0 {
-			return fmt.Errorf("%w: IAM bootstrap requires an empty identity store", commonapi.ErrConflict)
+			return fmt.Errorf("%w: IAM bootstrap requires no existing user principals", commonapi.ErrConflict)
 		}
 		if err := tx.CreateIAMBootstrapState(ctx, &IAMBootstrapState{
 			Singleton: true, Status: IAMBootstrapStatusPrepared, SecretHash: &secretHash,
@@ -160,12 +160,15 @@ func (s *BootstrapService) Apply(ctx context.Context, input BootstrapApplyInput)
 			subtle.ConstantTimeCompare([]byte(*state.SecretHash), []byte(providedHash)) != 1 {
 			return commonapi.ErrUnauthorized
 		}
-		factCount, err := tx.CountIAMBootstrapIdentityFacts(ctx)
+		if err := tx.LockIAMBootstrapPrincipalWrites(ctx); err != nil {
+			return err
+		}
+		factCount, err := tx.CountIAMBootstrapBlockingUserFacts(ctx)
 		if err != nil {
 			return err
 		}
 		if factCount != 0 {
-			return fmt.Errorf("%w: IAM bootstrap identity store is not empty", commonapi.ErrConflict)
+			return fmt.Errorf("%w: IAM bootstrap user principals already exist", commonapi.ErrConflict)
 		}
 		for _, administrator := range prepared {
 			created, err := s.identityService.createLocalUserTx(

@@ -29,6 +29,19 @@ class _Executor:
 
 
 class AgentOnlineRunnerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_source_token_only_uses_oauth_refresh(self):
+        async def refresh(base_url):
+            self.assertEqual(base_url, "http://gateway")
+            return "addp_at_refreshed"
+
+        with (
+            patch.dict(online_runner.os.environ, {"ADDP_TOKEN": "addp_at_manual"}),
+            patch.object(online_runner, "refresh_access_token", refresh),
+        ):
+            token = await online_runner._source_token("http://gateway")
+
+        self.assertEqual(token, "addp_at_refreshed")
+
     async def test_read_only_uses_explicit_observed_locator_and_evaluates_trace(self):
         locator = "addp://engine/8/path/public/railway?type=table&item_id=60"
         executor = _Executor(

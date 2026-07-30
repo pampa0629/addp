@@ -4,14 +4,20 @@ Python 共享模块，为 ADDP 平台的 Python 后端提供统一客户端、�
 
 `addp_common.workflow_runtime` 负责 `addp.workflow/v1` 的 workflow definition 校验、拓扑排序、`$ref` 解析、异步 execution 状态和标准错误。它不是独立工作流引擎，不包含 GeoPandas、Spark、PDAL 或三维转换器领域逻辑。
 
-## 安装
+## CLI 安装
 
-在其他 Python 模块中使用本地开发模式安装:
+正式 CLI 交付物是 `addp-common` wheel，当前版本为 `0.1.11`。从仓库构建并安装到隔离环境：
 
 ```bash
-# 在 agent/backend 或 copilot/backend 的 requirements.txt 中添加
--e ../../common-python
+python3 -m pip wheel --no-deps --wheel-dir /tmp/addp-cli-dist ./common-python
+python3 -m venv /tmp/addp-cli
+/tmp/addp-cli/bin/python -m pip install /tmp/addp-cli-dist/addp_common-*.whl
+/tmp/addp-cli/bin/addp --version
 ```
+
+也可以使用 `pipx install /tmp/addp-cli-dist/addp_common-*.whl` 将 `addp` 安装到用户命令路径。构建目录只能保留本次生成的一个 wheel；正式安装不使用 editable 源码目录，也不从仓库内 `.venv` 暴露命令入口。
+
+其他 ADDP Python 模块在仓库内开发时继续通过各自依赖声明引用 `../../common-python`，不把 CLI wheel 当作服务运行时部署机制。
 
 ## 使用示例
 
@@ -69,31 +75,43 @@ addp tool call workflow.validate --agent-run-id <run-id> --tool-call-id <call-id
 
 ## 认证方式
 
-认证只保留 Bearer Token 主路径：
+认证只保留 OAuth/Bearer 主路径：
 
 1. **服务间请求**：各模块使用独立 Confidential OAuth Client，通过 Client Credentials Grant 即时获取短期 Service Access Token；业务请求不得发送 `X-Internal-API-Key` 或 `X-Tenant-ID`。
 2. **用户请求**：Web 使用 HttpOnly Refresh Token Cookie，CLI 使用 OS Keychain 保存轮换 Refresh Token。
-3. **显式短期 Token**：`--token` / `ADDP_TOKEN` 只用于调用方已经持有短期 Access Token 的自动化环境。
+
+CLI 登录只有 `addp auth login` 和 `addp auth login --device` 两种交互，两者都使用无 Client Secret 的公共客户端 `addp-cli`。不支持用户名密码直传、Client Secret、API Key 或手工粘贴 Token 登录。
+
+CLI 最终目标支持主流桌面操作系统。当前受发布测试环境约束，正式支持和真实 OS Keychain 发布证据仅覆盖 macOS；Windows Credential Manager 与 Linux Secret Service 待各自建立同等级 E2E 后加入支持矩阵。Python 共享 SDK 的运行平台不受这一 CLI 发布证据边界限制。
 
 CLI Browser Login 按 RFC 8252 在 `127.0.0.1` 绑定随机空闲端口，先向 System 创建五分钟有效的 Authorization Request，再以浏览器 URL 中唯一的 `request_id` 完成用户授权；完整 redirect URI 和 PKCE 只在 CLI 与 System 之间传输。CLI 提前退出或超时时使用内存中的 Request Secret 取消请求，并在授权与 Code 兑换阶段使用同一个完整 redirect URI。CLI 每次执行 Tool 前按 ADDP Base URL 获取跨进程锁，再使用 Keychain 中的 Refresh Token 换取短期 User Access Token，并原子保存轮换后的 Refresh Token；User Access Token 不持久化。ToolExecutor 再按调用即时换取不可刷新、默认 2 分钟的 Delegated Access Token，原始 User Access Token 不进入 owner Client。
 
 授权页会在批准前显示当前 Platform 或 Tenant Context，并允许使用 Browser Context Switch 选择目标。OAuth Family 在批准后永久绑定该 Context；CLI 不提供事后切换命令，需要进入其他 Context 时先执行 `addp auth logout`，再重新登录并授权。`addp auth status` 会实际轮换 Refresh Token 并解析 System AuthContext，输出当前 Principal 与 Context 摘要，不以 Keychain 中是否存在值代替服务端会话检查。
 
-本地开发安装与验证：
+本地开发环境与单元测试：
 
 ```bash
 cd common-python
-python -m pip install -e ".[dev]"
+uv sync --extra dev
+uv run pytest -q
 addp --version
-addp auth status
 ```
 
 Tool 与 Adapter 变更至少运行 common-python 全量测试和 `make test-agent-eval`；场景与发布门禁规则见 `docs/spec/addp智能体评测规范.md`。
 
-## 开发
+CLI 正式发布必须从仓库根目录运行唯一产品门禁：
 
 ```bash
-cd common-python
-pip install -e ".[dev]"
-pytest
+make test-common-python-cli-release
+```
+
+门禁构建 wheel，在全新 venv 中安装依赖和 wheel，校验 `addp` entry point 与版本，然后使用真实 macOS Keychain 完成 Browser loopback + PKCE、Device Flow、AuthContext、跨进程刷新轮换、撤销和终端敏感信息 E2E。非 macOS 环境或缺少可用 macOS Keychain 后端时门禁失败，不降级到明文文件凭据库。
+
+GitHub Actions 的 `CLI product gate (macOS Keychain)` Job 使用同一入口，并归档通过 `twine check`、全新环境安装和产品 E2E 的同一个 wheel 及其 SHA-256；不得在门禁后重新构建另一个待发布 wheel。
+
+CLI 门禁验证已安装客户端，不替代 System Fosite 和 PostgreSQL 事务验收。正式发布还必须对专用一次性数据库运行：
+
+```bash
+ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?sslmode=disable' \
+  make test-system-iam-postgres
 ```

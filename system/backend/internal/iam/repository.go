@@ -232,6 +232,11 @@ func (r *Repository) LockIAMBootstrapTable(ctx context.Context) error {
 		Exec("LOCK TABLE system.iam_bootstrap_state IN EXCLUSIVE MODE").Error)
 }
 
+func (r *Repository) LockIAMBootstrapPrincipalWrites(ctx context.Context) error {
+	return wrapRepositoryError(r.db.WithContext(ctx).
+		Exec("LOCK TABLE system.principals IN SHARE MODE").Error)
+}
+
 func (r *Repository) CreateIAMBootstrapState(ctx context.Context, state *IAMBootstrapState) error {
 	if state == nil {
 		return fmt.Errorf("%w: IAM bootstrap state is required", commonapi.ErrBadRequest)
@@ -270,13 +275,12 @@ func (r *Repository) CompleteIAMBootstrap(ctx context.Context, completedAt time.
 	return nil
 }
 
-func (r *Repository) CountIAMBootstrapIdentityFacts(ctx context.Context) (int64, error) {
+func (r *Repository) CountIAMBootstrapBlockingUserFacts(ctx context.Context) (int64, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Raw(`
-		SELECT
-		    (SELECT count(*) FROM system.principals)
-		  + (SELECT count(*) FROM system.role_assignments)
-		  + (SELECT count(*) FROM system.mfa_credentials)
+		SELECT count(*)
+		FROM system.principals
+		WHERE principal_type = 'user'
 	`).Scan(&count).Error
 	return count, wrapRepositoryError(err)
 }

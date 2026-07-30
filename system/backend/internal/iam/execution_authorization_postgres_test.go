@@ -18,9 +18,9 @@ import (
 )
 
 func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
-	dsn := os.Getenv("ADDP_IAM_RUNTIME_TEST_DSN")
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
-		t.Skip("set ADDP_IAM_RUNTIME_TEST_DSN to a disposable PostgreSQL 15+ database")
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
 	}
 	testsupport.RequireDisposablePostgresDSN(t, dsn)
 
@@ -57,6 +57,11 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 	`).Error; err != nil {
 		t.Fatalf("create execution engine fixture table: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := db.Exec(`DROP SCHEMA IF EXISTS common CASCADE`).Error; err != nil {
+			t.Errorf("clean execution authorization fixture schema: %v", err)
+		}
+	})
 
 	repository := NewRepository(db)
 	tokenService, err := NewTokenFamilyService(repository, BrowserSessionConfig{

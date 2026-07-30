@@ -422,7 +422,8 @@ scripts/utils/
 ```bash
 scripts/test/
 ├── agent-evaluation-gate.sh  # Agent 离线/发布统一评测门禁
-└── verify-operator-api.sh    # 工作流算子 API 定向验证
+├── common-python-cli-release-gate.sh # ADDP CLI wheel 与 macOS Keychain 产品发布门禁
+└── system-iam-postgres-gate.sh # System IAM 与 Fosite 一次性 PostgreSQL 发布门禁
 ```
 
 Agent 默认离线门禁使用 `make test-agent-eval`，并已包含在根 `make test`。人工发布验收使用 `make test-agent-eval-release`，需要显式提供三份仓库外在线证据路径；脚本不自动执行 OAuth 登录或生成在线证据。输出统一为仓库外 `addp.agent-evaluation-gate/v2`，外部发布流程可归档其中的源码版本、契约/证据摘要和检查耗时，脚本自身不维护历史记录。
@@ -432,6 +433,12 @@ Agent 默认离线门禁使用 `make test-agent-eval`，并已包含在根 `make
 正式发布基线使用 `make compare-agent-eval-release`，复用相同环境变量，但强制 baseline/current 均为 clean、passed 的 `online_required` 报告且不存在回归。普通 dirty/离线报告只用于开发比较；脚本不自动选择、归档或更新 baseline。
 
 阶段 5 封板后，上述四个 Make 目标与 `scripts/test/agent-evaluation-gate.sh` 是唯一标准入口；不新增旁路脚本、仓库内报告归档或兼容旧 Schema 的命令。
+
+正式 `addp` CLI 发布使用 `make test-common-python-cli-release`。该入口构建 wheel，在全新 venv 安装并运行全量测试，校验安装后的 `addp` entry point 和版本，再使用真实 macOS Keychain 执行 Browser PKCE、Device Flow、AuthContext、跨进程刷新、撤销和终端敏感信息产品 E2E。CLI 最终目标支持主流桌面操作系统，Windows 与 Linux 在各自真实 OS 凭据后端建立同等级 E2E 后再加入支持矩阵。门禁不接受明文文件 Keyring 降级，也不替代 System Fosite 与 PostgreSQL 协议测试。
+
+GitHub Actions 的 IAM/CLI 发布工作流并行运行 macOS CLI 产品门禁和 Linux PostgreSQL 15 System 门禁。macOS Job 归档通过 `twine check` 和产品 E2E 的同一个 wheel 及 SHA-256，不在测试后重新构建发布制品；PostgreSQL Job 使用独占的临时 `addp_iam_test` database，不连接开发环境 Infra。
+
+System IAM 和 Fosite 正式发布使用 `make test-system-iam-postgres`，必须显式提供唯一变量 `ADDP_SYSTEM_POSTGRES_TEST_DSN`，且数据库名包含独立的 `test` 或 `disposable` 段。门禁先清理一次性数据库中的 `system` 和 `common` Schema，再串行运行 IAM Domain、Fosite Storage、IAM API 和 Migration 的全部 PostgreSQL `AgainstPostgres` 测试；缺少 DSN、指向非一次性数据库或测试被阻断时立即失败。该入口只能指向专用临时数据库。
 
 ---
 
@@ -619,5 +626,5 @@ bash scripts/prod/stop.sh --volumes
 
 ---
 
-**Version**: 0.0.13
-**Last Updated**: 2025-12-10
+**Version**: 0.1.11
+**Last Updated**: 2026-07-31

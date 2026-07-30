@@ -1,8 +1,8 @@
 # ADDP IAM 目标数据模型设计
 
-更新日期：2026-07-28
+更新日期：2026-07-30
 
-状态：核心 IAM、Fosite、管理 API、MFA Runtime、离线三员 Bootstrap、离线三员凭据恢复与二十五版 migration 已实现；开发数据库已迁移到 `25/clean`。Tenant 原子创建/初始化、Tenant Role/Assignment API、IAM Workbench、数据库最后管理员约束、普通 User 本地密码重置、授权版本 Refresh 推进、普通 User TOTP 自助登记、Browser Session 内 step-up、高风险自我授权 AAL2 Guard、Swagger 和前端契约测试已经收口；Recovery Attempt 1 已完成，既有三员 Browser `platform + AAL2` 登录与正式 `addp` CLI 已覆盖 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、Keychain 刷新轮换、受委托 Tool 调用和撤销。Tenant 管理 Browser E2E 已覆盖安全管理员创建普通 User、系统管理员初始化 Tenant、首位 Tenant Administrator 进入 Tenant Context、显式授予基础设施管理员、密码受控重置以及引擎、应用和 Cleanup 正常使用；MFA 安全设置页面与密码确认入口已完成真实 Browser 验证，登记/step-up/自我授权事务闭环由一次性 PostgreSQL E2E 覆盖。
+状态：核心 IAM、Fosite、管理 API、MFA Runtime、离线三员 Bootstrap、离线三员凭据恢复与三十四版 migration 已实现；开发数据库已迁移到 `34/clean`。Tenant 原子创建/初始化、Tenant Role/Assignment API、IAM Workbench、数据库最后管理员约束、普通 User 本地密码重置、授权版本 Refresh 推进、普通 User TOTP 自助登记、Browser Session 内 step-up、高风险自我授权 AAL2 Guard、Swagger 和前端契约测试已经收口；Recovery Attempt 1 已完成，既有三员 Browser `platform + AAL2` 登录与正式 `addp` CLI 已覆盖 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、Keychain 刷新轮换、受委托 Tool 调用和撤销。Tenant 管理 Browser E2E 已覆盖安全管理员创建普通 User、系统管理员初始化 Tenant、首位 Tenant Administrator 进入 Tenant Context、显式授予基础设施管理员、密码受控重置以及引擎、应用和 Cleanup 正常使用；MFA 安全设置页面与密码确认入口已完成真实 Browser 验证，登记/step-up/自我授权事务闭环由一次性 PostgreSQL E2E 覆盖。
 
 ## 一、目标与边界
 
@@ -606,10 +606,12 @@ Platform Assignment 除离线 Bootstrap 外只能由已批准 Request 生成；�
 
 ### 10.2 初始引导
 
-不创建默认 `SuperAdmin`。空系统只允许通过一次性离线 Bootstrap 流程。命令固定为两个阶段：
+不创建默认 `SuperAdmin`。尚未建立任何 User Principal 的系统只允许通过一次性离线 Bootstrap 流程创建首批平台三员。完成当前 migration 后，平台内置 Service Principal、对应 OAuth Client 和机器 Role Assignment 已经存在；它们不属于三员 Bootstrap 的初始化对象，也不构成 User 身份事实。命令固定为两个阶段：
 
-1. `iam-bootstrap prepare` 在 migration 完成且 IAM 事实为空时创建唯一 `prepared` 状态，生成 256 bit 随机 `addp_bs_...` Secret，只向终端显示一次，数据库只保存 SHA-256 Hash；
+1. `iam-bootstrap prepare` 在 migration 完成、Bootstrap 状态不存在且没有任何 `principal_type=user` 的 Principal 时创建唯一 `prepared` 状态，生成 256 bit 随机 `addp_bs_...` Secret，只向终端显示一次，数据库只保存 SHA-256 Hash；
 2. `iam-bootstrap apply` 读取不含任何 Secret 的三员实名 Manifest，从 TTY 分别接收三人的独立密码，逐人在终端直接渲染 TOTP 二维码并显示手动设置密钥备用值，然后要求连续两个不同时间窗口的有效验证码；二维码只存在于终端输出，不写入图片文件。
+
+`apply` 必须在单个数据库事务中再次确认不存在 User Principal，并锁定 Principal 写入窗口直到三员和完成状态一起提交。Service Principal 无论是否已经具有机器专用 Assignment 都不得被统计为 Bootstrap 阻断事实；数据库 Role 的 `allowed_principal_types` 继续保证 Service Principal 不能持有平台三员 Role。`prepare` 与 `apply` 之间出现任何 User Principal 时，`apply` 必须整体拒绝，不得留下部分管理员。
 
 `apply` 验证三人的密码和 TOTP 持有事实后，在单个事务中：
 
