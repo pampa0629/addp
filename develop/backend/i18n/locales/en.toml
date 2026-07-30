@@ -88,6 +88,21 @@ other = "Failed to store the Notebook file"
 [develop.notebook.create_failed]
 other = "Failed to create the Notebook task"
 
+[develop.notebook.invalid_id]
+other = "Invalid Notebook ID"
+
+[develop.notebook.invalid_runtime_binding]
+other = "Invalid Notebook runtime binding"
+
+[develop.notebook.not_found]
+other = "Notebook not found"
+
+[develop.notebook.task_not_notebook]
+other = "The task is not a Notebook"
+
+[develop.notebook.runtime_binding_failed]
+other = "Failed to update the Notebook runtime binding"
+
 [develop.approval.invalid_request]
 other = "Invalid approval request"
 

@@ -88,6 +88,21 @@ other = "保存 Notebook 文件失败"
 [develop.notebook.create_failed]
 other = "创建 Notebook 任务失败"
 
+[develop.notebook.invalid_id]
+other = "Notebook ID 无效"
+
+[develop.notebook.invalid_runtime_binding]
+other = "Notebook 运行时绑定参数无效"
+
+[develop.notebook.not_found]
+other = "Notebook 不存在"
+
+[develop.notebook.task_not_notebook]
+other = "该任务不是 Notebook"
+
+[develop.notebook.runtime_binding_failed]
+other = "更新 Notebook 运行时绑定失败"
+
 [develop.approval.invalid_request]
 other = "审批请求无效"
 

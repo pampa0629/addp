@@ -97,6 +97,24 @@ other = "资源回收服务不可用，暂时不能删除引擎"
 [system.engine.deletion_started]
 other = "已开始清理并删除引擎"
 
+[system.engine.deletion_assessment_invalid]
+other = "引擎删除影响评估无效，请重新评估"
+
+[system.engine.deletion_assessment_pending]
+other = "引擎删除影响评估尚未完成"
+
+[system.engine.deletion_assessment_expired]
+other = "引擎删除影响评估已过期，请重新评估"
+
+[system.engine.deletion_impact_changed]
+other = "引擎删除影响已经变化，请查看最新评估后重新确认"
+
+[system.engine.deletion_running_executions]
+other = "仍有运行任务正在使用该引擎，请等待任务结束或先取消任务"
+
+[system.engine.deletion_confirmation_invalid]
+other = "删除确认文本必须与引擎名称完全一致"
+
 [system.cleanup.confirm_required]
 other = "执行资源回收前必须确认评估结果和影响范围"
 

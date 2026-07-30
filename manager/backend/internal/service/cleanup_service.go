@@ -339,6 +339,16 @@ func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis
 		result.Status = events.CleanupResultSuccess
 		result.Statistics = managerCleanupStatsToMap(stats)
 		result.Summary = managerScanSummary(stats)
+		if event.CauseEvent == events.CleanupCauseEngineDeleting {
+			impact, err := s.managerEngineDeletionImpact(ctx, event.TenantID, event.Context)
+			if err != nil {
+				result.Status = events.CleanupResultFailed
+				result.Errors = []string{err.Error()}
+				result.Summary = events.CleanupResultSummary{ErrorCount: 1, RiskLevel: "low"}
+				return
+			}
+			result.Impact = &impact
+		}
 	case events.CleanupActionExecute:
 		executeContext := cloneCleanupContext(event.Context)
 		executeContext["requested_by"] = event.RequestedBy
@@ -414,6 +424,16 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 	case events.CleanupModeLogical, events.CleanupModePhysical:
 	default:
 		return stats, fmt.Errorf("unsupported cleanup_mode: %s", cleanupMode)
+	}
+	if uintFromCleanupContext(cleanupContext, "engine_id") > 0 {
+		impact, err := s.managerEngineDeletionImpact(ctx, tenantID, cleanupContext)
+		if err != nil {
+			return nil, err
+		}
+		if impact.Summary.Running > 0 {
+			stats.Errors = append(stats.Errors, "manager resources are still running")
+			return stats, nil
+		}
 	}
 
 	if s.previewStateRepo != nil {
@@ -546,13 +566,17 @@ func (s *CleanupService) cleanupTaskDefinitions(ctx context.Context, tenantID ui
 	if stats == nil {
 		return nil
 	}
+	taskCleanupMode := cleanupMode
+	if uintFromCleanupContext(cleanupContext, "engine_id") > 0 {
+		taskCleanupMode = events.CleanupModeLogical
+	}
 	if s.embeddingRepo != nil {
 		tasks, err := s.embeddingRepo.ListAllEmbeddingTasks(ctx, tenantID)
 		if err != nil {
 			return err
 		}
 		for _, task := range s.filterEmbeddingTasksForCleanup(ctx, tenantID, tasks, cleanupContext) {
-			if cleanupMode == events.CleanupModePhysical {
+			if taskCleanupMode == events.CleanupModePhysical {
 				if err := s.embeddingRepo.DeleteEmbeddingTask(ctx, task.ID, tenantID); err != nil {
 					stats.Errors = append(stats.Errors, fmt.Sprintf("delete embedding_task %d: %v", task.ID, err))
 					continue
@@ -570,7 +594,7 @@ func (s *CleanupService) cleanupTaskDefinitions(ctx context.Context, tenantID ui
 			return err
 		}
 		for _, task := range s.filterTileCacheTasksForCleanup(ctx, tenantID, tasks, cleanupContext) {
-			if cleanupMode == events.CleanupModePhysical {
+			if taskCleanupMode == events.CleanupModePhysical {
 				if err := s.tileCacheSvc.tileCacheRepo.DeleteTask(ctx, task.ID, tenantID); err != nil {
 					stats.Errors = append(stats.Errors, fmt.Sprintf("delete vector_tile_cache_task %d: %v", task.ID, err))
 					continue
@@ -588,7 +612,7 @@ func (s *CleanupService) cleanupTaskDefinitions(ctx context.Context, tenantID ui
 			return err
 		}
 		for _, task := range s.filterVectorMaterializedViewTasksForCleanup(ctx, tenantID, tasks, cleanupContext) {
-			if cleanupMode == events.CleanupModePhysical {
+			if taskCleanupMode == events.CleanupModePhysical {
 				if err := s.optimizationSvc.repo.DeleteTask(ctx, task.ID, tenantID); err != nil {
 					stats.Errors = append(stats.Errors, fmt.Sprintf("delete vector_materialized_view_generation_task %d: %v", task.ID, err))
 					continue
@@ -601,6 +625,106 @@ func (s *CleanupService) cleanupTaskDefinitions(ctx context.Context, tenantID ui
 		}
 	}
 	return nil
+}
+
+func (s *CleanupService) managerEngineDeletionImpact(ctx context.Context, tenantID uint, cleanupContext map[string]interface{}) (events.CleanupImpactData, error) {
+	if uintFromCleanupContext(cleanupContext, "engine_id") == 0 {
+		return events.CleanupImpactData{}, errors.New("manager engine deletion assessment requires engine_id")
+	}
+	items := make([]events.CleanupImpactItem, 0)
+	appendImpact := func(stableRef, disposition string) {
+		items = append(items, events.CleanupImpactItem{StableRef: stableRef, Disposition: disposition})
+	}
+	if s.previewStateRepo != nil {
+		values, err := s.previewStateRepo.ListPreviewStates(ctx, tenantID)
+		if err != nil {
+			return events.CleanupImpactData{}, err
+		}
+		for _, item := range s.filterMissingPreviewStates(ctx, tenantID, values, cleanupContext) {
+			appendImpact(fmt.Sprintf("manager_preview_state:%d", item.ID), events.CleanupImpactWillDelete)
+		}
+	}
+	if s.tileCacheSvc != nil && s.tileCacheSvc.tileCacheRepo != nil {
+		values, err := s.tileCacheSvc.tileCacheRepo.ListAllTileCaches(ctx, tenantID)
+		if err != nil {
+			return events.CleanupImpactData{}, err
+		}
+		for _, item := range s.filterMissingTileCaches(ctx, tenantID, values, cleanupContext) {
+			stableRef := fmt.Sprintf("manager_vector_tile_cache:%d", item.ID)
+			appendImpact(stableRef, events.CleanupImpactWillDelete)
+			if item.Status == models.TileCacheStatusGenerating {
+				appendImpact(stableRef, events.CleanupImpactRunning)
+			}
+		}
+		tasks, err := s.tileCacheSvc.tileCacheRepo.ListAllTasks(ctx, tenantID)
+		if err != nil {
+			return events.CleanupImpactData{}, err
+		}
+		for _, task := range s.filterTileCacheTasksForCleanup(ctx, tenantID, tasks, cleanupContext) {
+			stableRef := fmt.Sprintf("manager_vector_tile_cache_task:%d", task.ID)
+			appendImpact(stableRef, events.CleanupImpactWillDisable)
+			if cleanupExecutionRunning(task.LastExecutionStatus) {
+				appendImpact(stableRef, events.CleanupImpactRunning)
+			}
+		}
+	}
+	if s.embeddingRepo != nil {
+		values, err := s.embeddingRepo.ListAllEmbeddings(ctx, tenantID)
+		if err != nil {
+			return events.CleanupImpactData{}, err
+		}
+		for _, item := range s.filterMissingEmbeddings(ctx, tenantID, values, cleanupContext) {
+			appendImpact(fmt.Sprintf("manager_embedding:%d", item.ID), events.CleanupImpactWillDelete)
+		}
+		tasks, err := s.embeddingRepo.ListAllEmbeddingTasks(ctx, tenantID)
+		if err != nil {
+			return events.CleanupImpactData{}, err
+		}
+		for _, task := range s.filterEmbeddingTasksForCleanup(ctx, tenantID, tasks, cleanupContext) {
+			stableRef := fmt.Sprintf("manager_embedding_task:%d", task.ID)
+			appendImpact(stableRef, events.CleanupImpactWillDisable)
+			if cleanupExecutionRunning(task.LastExecutionStatus) {
+				appendImpact(stableRef, events.CleanupImpactRunning)
+			}
+		}
+	}
+	if s.optimizationSvc != nil && s.optimizationSvc.repo != nil {
+		values, err := s.optimizationSvc.repo.ListAllResults(ctx, tenantID)
+		if err != nil {
+			return events.CleanupImpactData{}, err
+		}
+		for _, item := range s.filterMissingVectorMaterializedViews(ctx, tenantID, values, cleanupContext) {
+			stableRef := fmt.Sprintf("manager_vector_materialized_view:%d", item.ID)
+			appendImpact(stableRef, events.CleanupImpactExternalArtifact)
+			if item.Status == models.VectorMaterializedViewStatusBuilding {
+				appendImpact(stableRef, events.CleanupImpactRunning)
+			}
+		}
+		tasks, err := s.optimizationSvc.repo.ListAllTasks(ctx, tenantID)
+		if err != nil {
+			return events.CleanupImpactData{}, err
+		}
+		for _, task := range s.filterVectorMaterializedViewTasksForCleanup(ctx, tenantID, tasks, cleanupContext) {
+			stableRef := fmt.Sprintf("manager_vector_materialized_view_task:%d", task.ID)
+			appendImpact(stableRef, events.CleanupImpactWillDisable)
+			if cleanupExecutionRunning(task.LastExecutionStatus) {
+				appendImpact(stableRef, events.CleanupImpactRunning)
+			}
+		}
+	}
+	return events.BuildCleanupImpactData(items, "/manager")
+}
+
+func cleanupExecutionRunning(status *string) bool {
+	if status == nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(*status)) {
+	case commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *CleanupService) filterMissingPreviewStates(ctx context.Context, tenantID uint, items []*models.PreviewState, cleanupContext map[string]interface{}) []*models.PreviewState {

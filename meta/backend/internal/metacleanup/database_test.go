@@ -85,7 +85,7 @@ func TestDatabaseCleanerClassifiesInvalidMetaEngines(t *testing.T) {
 	}
 }
 
-func TestDatabaseCleanerScopedInvalidEngineIDsStillChecksEligibility(t *testing.T) {
+func TestDatabaseCleanerScopedInvalidEngineIDsTrustsDeletionContext(t *testing.T) {
 	t.Parallel()
 
 	engines := []commonModels.Engine{
@@ -106,8 +106,8 @@ func TestDatabaseCleanerScopedInvalidEngineIDsStillChecksEligibility(t *testing.
 	}
 
 	cleaner := NewDatabaseCleaner(db, newMetaCleanupSystemClient(t, server), nil)
-	if got := cleaner.InvalidEngineIDsWithScope(t.Context(), 7, CleanupScope{EngineID: 1}); len(got) != 0 {
-		t.Fatalf("valid scoped engine IDs = %v, want none", got)
+	if got, want := cleaner.InvalidEngineIDsWithScope(t.Context(), 7, CleanupScope{EngineID: 1}), []uint{1}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("scoped engine IDs = %v, want %v", got, want)
 	}
 	if got, want := cleaner.InvalidEngineIDsWithScope(t.Context(), 7, CleanupScope{EngineID: 2}), []uint{2}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("invalid scoped engine IDs = %v, want %v", got, want)

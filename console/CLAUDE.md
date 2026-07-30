@@ -30,6 +30,7 @@ console/frontend/
 - Console 只做入口聚合，不承载业务模块的核心业务逻辑。
 - 前端样式遵守 `common-frontend/docs/addp前端风格设计规范.md`，不要硬编码 ADDP 主题色。
 - 各模块仍应支持独立运行，Console iframe 集成不能破坏 standalone 模式。
+- Portal 是独立顶层产品界面，但正式入口固定为当前 Console origin 的 `/portal/`；开发环境由 Console Vite 代理到 Portal 前端，不能直接打开 `5185` 形成第二个顶层认证 origin。
 
 ## 开发与验证
 

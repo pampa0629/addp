@@ -320,8 +320,6 @@
         "delete": "删除",
         "retryDelete": "重试清理",
         "cleanupAndDelete": "清理并删除",
-        "abandonExternal": "放弃外部产物",
-        "abandonAndDelete": "放弃并删除",
         "testConnection": "测试连接",
         "save": "保存",
         "cancel": "取消"
@@ -456,17 +454,41 @@
         "updateSuccess": "更新成功",
         "opFailed": "操作失败",
         "scanPolicySyncFailed": "引擎已保存，但元数据扫描编排失败：{error}",
-        "deleteConfirm": "确定要删除引擎 \"{name}\" 吗？系统会先清理平台登记的关联资源，完成后再删除引擎。",
-        "retryDeleteConfirm": "确定要重新清理并删除引擎 \"{name}\" 吗？",
-        "deleteTitle": "确认删除",
         "deleteStarted": "已开始清理，完成后将自动删除引擎",
-        "abandonExternalTitle": "放弃外部产物并删除",
-        "abandonExternalConfirm": "引擎 \"{name}\" 的外部产物清理失败。继续后，平台将保留对象位置和错误审计，但不再尝试删除这些外部对象；外部对象需由 DBA 处理。确定继续吗？",
         "builtinCannotDelete": "内置引擎不可删除",
         "detailFailed": "获取引擎详情失败",
         "fillRequired": "请完整填写必填信息",
         "capabilitiesJsonInvalid": "能力声明 JSON 格式不正确",
         "extensionEditUnsupported": "扩展引擎由对应运行时自注册维护，不在通用引擎表单中编辑"
+      },
+      "deletionAssessment": {
+        "title": "删除引擎 - {name}",
+        "externalPolicy": "外部物化对象",
+        "deleteExternal": "同步删除",
+        "keepExternal": "保留不管",
+        "refresh": "重新评估",
+        "module": "负责模块",
+        "status": "评估状态",
+        "rebindable": "可重绑定",
+        "willDisable": "将停用",
+        "willDelete": "将删除",
+        "running": "运行中",
+        "externalArtifact": "外部产物",
+        "manage": "处理",
+        "open": "打开",
+        "runningBlocked": "仍有 {count} 个运行中的任务或产物，停止后才能删除引擎",
+        "confirmName": "输入引擎名称“{name}”确认删除",
+        "failedStatus": "影响评估未完成，当前状态：{status}",
+        "timeout": "影响评估超时，请重新评估",
+        "invalidResponse": "影响评估未返回任务编号",
+        "statuses": {
+          "pending": "等待中",
+          "running": "评估中",
+          "success": "完成",
+          "failed": "失败",
+          "partial_success": "部分失败",
+          "timeout": "超时"
+        }
       },
       "capabilityView": {
         "actions": {
@@ -1026,6 +1048,10 @@
       "orchestrator_runtime": {
         "name": "编排服务平台运行时",
         "description": "供 Orchestrator 发现任务提供者并注册自身运行时能力。"
+      },
+      "portal_runtime": {
+        "name": "资产门户平台运行时",
+        "description": "供 Portal 注册模块并发送运行时心跳，不授予用户或租户业务权限。"
       }
     },
     "tenant": {

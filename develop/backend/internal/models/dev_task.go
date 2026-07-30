@@ -177,8 +177,24 @@ func (d *DevTask) GetEngineID() *uint {
 			id := uint(engineID)
 			return &id
 		}
+		if engineID, ok := d.ExecutionConfig["engine_id"].(uint); ok {
+			if engineID == 0 {
+				return nil
+			}
+			id := engineID
+			return &id
+		}
 	}
 	return nil
+}
+
+// IsNotebookScript 判断脚本任务是否由 Notebook 文件承载。
+func (d *DevTask) IsNotebookScript() bool {
+	if d == nil || d.DevType != "script" || d.Content == nil {
+		return false
+	}
+	notebookPath, ok := d.Content["notebook_path"].(string)
+	return ok && strings.TrimSpace(notebookPath) != ""
 }
 
 // DevTaskContent 开发任务内容（支持任意 JSON 结构）
@@ -229,6 +245,12 @@ type UpdateDevTaskRequest struct {
 	Description     string                 `json:"description"`
 	Tags            []string               `json:"tags"`
 	Status          string                 `json:"status" binding:"omitempty,oneof=active inactive archived"`
+}
+
+// NotebookRuntimeBindingRequest 完整替换 Notebook 当前任务的运行时绑定。
+type NotebookRuntimeBindingRequest struct {
+	EngineID uint   `json:"engine_id" binding:"required"`
+	Kernel   string `json:"kernel" binding:"required"`
 }
 
 // ListDevTasksRequest 查询开发任务列表请求

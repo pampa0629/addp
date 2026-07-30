@@ -37,12 +37,12 @@ type UpsertRatingReq struct {
 
 // RatingListParams 评价列表查询参数
 type RatingListParams struct {
-	AssetID      int64
-	UserID       int64
-	HasFeedback  bool // 仅查询有问题反馈标签的评价
-	IsHandled    *bool
-	Page         int
-	PageSize     int
+	AssetID     int64
+	UserID      int64
+	HasFeedback bool // 仅查询有问题反馈标签的评价
+	IsHandled   *bool
+	Page        int
+	PageSize    int
 }
 
 // ============================================================
@@ -59,7 +59,7 @@ func (s *RatingService) List(tenantID uint, params RatingListParams) ([]RatingWi
 	}
 
 	query := s.db.Table("asset.ratings r").
-		Select("r.*, u.username AS user_name, a.name AS asset_name").
+		Select("r.*, u.display_name AS user_name, a.name AS asset_name").
 		Joins("LEFT JOIN system.users u ON u.id = r.user_id").
 		Joins("LEFT JOIN asset.assets a ON a.id = r.asset_id").
 		Where("r.tenant_id = ?", tenantID)

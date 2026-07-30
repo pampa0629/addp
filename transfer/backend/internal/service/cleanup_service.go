@@ -270,6 +270,23 @@ func (s *TransferCleanupService) handleCleanupRequest(ctx context.Context, messa
 			result.Summary = events.CleanupResultSummary{ErrorCount: 1, RiskLevel: "low"}
 			return
 		}
+		if event.CauseEvent == events.CleanupCauseEngineDeleting {
+			tasks, err := s.listCandidateTaskDefinitions(ctx, event.TenantID, event.Context)
+			if err != nil {
+				result.Status = events.CleanupResultFailed
+				result.Errors = []string{err.Error()}
+				result.Summary = events.CleanupResultSummary{ErrorCount: 1, RiskLevel: "low"}
+				return
+			}
+			impact, err := transferEngineDeletionImpact(tasks)
+			if err != nil {
+				result.Status = events.CleanupResultFailed
+				result.Errors = []string{err.Error()}
+				result.Summary = events.CleanupResultSummary{ErrorCount: 1, RiskLevel: "low"}
+				return
+			}
+			result.Impact = &impact
+		}
 		result.Status = events.CleanupResultSuccess
 		result.Statistics = transferCleanupStatsToMap(stats)
 		result.Summary = transferScanSummary(stats)
@@ -333,6 +350,7 @@ func (s *TransferCleanupService) ExecuteCleanup(ctx context.Context, tenantID ui
 	}
 
 	stats := &TransferCleanupStats{TaskDefinitions: len(tasks)}
+	_, engineDeletion := cleanupContextUint(cleanupContext, "engine_id")
 	now := time.Now()
 	for _, task := range tasks {
 		isCDC := planner.IsDatabaseCDCTaskConfig(task.Config)
@@ -347,7 +365,15 @@ func (s *TransferCleanupService) ExecuteCleanup(ctx context.Context, tenantID ui
 		if hasDeadLetterResources {
 			stats.DeadLetterTopics++
 		}
-		switch cleanupMode {
+		if engineDeletion && transferTaskIsRunning(task) {
+			stats.Errors = append(stats.Errors, fmt.Sprintf("transfer task %d is running", task.ID))
+			continue
+		}
+		effectiveMode := cleanupMode
+		if engineDeletion {
+			effectiveMode = events.CleanupModeLogical
+		}
+		switch effectiveMode {
 		case events.CleanupModeLogical:
 			if isCDC {
 				if s.captureControl == nil {
@@ -393,6 +419,22 @@ func (s *TransferCleanupService) ExecuteCleanup(ctx context.Context, tenantID ui
 		}
 	}
 	return stats, nil
+}
+
+func transferEngineDeletionImpact(tasks []models.TransferTask) (events.CleanupImpactData, error) {
+	items := make([]events.CleanupImpactItem, 0, len(tasks)*2)
+	for _, task := range tasks {
+		stableRef := fmt.Sprintf("transfer_task:%d", task.ID)
+		items = append(items, events.CleanupImpactItem{StableRef: stableRef, Disposition: events.CleanupImpactWillDisable})
+		if transferTaskIsRunning(task) {
+			items = append(items, events.CleanupImpactItem{StableRef: stableRef, Disposition: events.CleanupImpactRunning})
+		}
+	}
+	return events.BuildCleanupImpactData(items, "/transfer/tasks")
+}
+
+func transferTaskIsRunning(task models.TransferTask) bool {
+	return task.Status == models.TaskStatusRunning || task.DesiredState == models.TaskDesiredStateRunning
 }
 
 func (s *TransferCleanupService) listCandidateTaskDefinitions(ctx context.Context, tenantID uint, cleanupContext map[string]interface{}) ([]models.TransferTask, error) {

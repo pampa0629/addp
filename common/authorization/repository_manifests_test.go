@@ -21,8 +21,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	}
 
 	roles := report.Roles
-	if len(roles) != 30 {
-		t.Fatalf("role count = %d, want 30", len(roles))
+	if len(roles) != 31 {
+		t.Fatalf("role count = %d, want 31", len(roles))
 	}
 	if roles[0].Key != "platform.asset_runtime" || roles[len(roles)-1].Key != "tenant.transfer_runtime" {
 		t.Fatalf("role boundary keys = %q, %q", roles[0].Key, roles[len(roles)-1].Key)
@@ -40,6 +40,10 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"service.endpoint.read",
 	})
 	assertRepositoryRolePermissions(t, roles, "platform.develop_runtime", []string{
+		"system.runtime_registry.update",
+	})
+	assertRepositoryRolePrincipalTypes(t, roles, "platform.portal_runtime", []string{"service_principal"})
+	assertRepositoryRolePermissions(t, roles, "platform.portal_runtime", []string{
 		"system.runtime_registry.update",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.data_viewer", []string{
@@ -87,6 +91,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"develop.notebook.delete",
 		"develop.notebook.execute",
 		"develop.notebook.read",
+		"develop.notebook.update",
 		"develop.task.create",
 		"develop.task.delete",
 		"develop.task.execute",

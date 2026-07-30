@@ -132,8 +132,7 @@ frontend/src/
 ├── composables/      # Vue Composables
 │   ├── usePagination.js           # 分页逻辑复用
 │   ├── useFormDialog.js           # 对话框状态管理
-│   ├── useUserManagement.js       # 用户管理业务逻辑
-│   └── useEngineManagement.js     # 引擎管理业务逻辑
+│   └── useUserManagement.js       # 用户管理业务逻辑
 ├── store/            # Pinia 状态管理
 │   └── auth.js           # 认证状态
 ├── views/            # 页面组件

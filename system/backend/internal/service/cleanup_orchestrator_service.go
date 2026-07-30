@@ -72,17 +72,16 @@ func (s *CleanupOrchestratorService) CreateEventScanTask(
 	return s.createScanTask(ctx, tenantID, scope, userID, triggerType, causeEvent, cleanupContext)
 }
 
-func (s *CleanupOrchestratorService) CreateEngineDeletionScanTask(
+func (s *CleanupOrchestratorService) CreateEngineDeletionAssessment(
 	ctx context.Context,
 	tenantID uint,
-	scope []string,
 	userID uint,
 	cleanupContext map[string]interface{},
 ) (string, error) {
 	return s.createScanTask(
 		ctx,
 		tenantID,
-		scope,
+		nil,
 		userID,
 		commonExecution.TriggerTypeManual,
 		events.CleanupCauseEngineDeleting,
@@ -102,7 +101,7 @@ func (s *CleanupOrchestratorService) createScanTask(
 	taskID := fmt.Sprintf("cleanup-scan-%d-%s", time.Now().Unix(), uuid.New().String()[:8])
 	now := time.Now()
 
-	scope, err := s.resolveExpectedModules(scope)
+	scope, err := s.resolveExpectedModulesForCause(scope, causeEvent)
 	if err != nil {
 		return "", err
 	}
@@ -497,6 +496,43 @@ func (s *CleanupOrchestratorService) resolveExpectedModules(scope []string) ([]s
 	return result, nil
 }
 
+func (s *CleanupOrchestratorService) resolveExpectedModulesForCause(scope []string, causeEvent string) ([]string, error) {
+	if causeEvent != events.CleanupCauseEngineDeleting {
+		return s.resolveExpectedModules(scope)
+	}
+	if len(scope) > 0 {
+		return nil, fmt.Errorf("Engine 删除影响评估不允许缩小模块范围")
+	}
+	if s.registry == nil {
+		return nil, fmt.Errorf("module registry service is not configured")
+	}
+	modules, err := s.registry.ListModules()
+	if err != nil {
+		return nil, fmt.Errorf("查询 Engine 删除影响评估模块失败: %w", err)
+	}
+
+	expected := make([]string, 0, len(modules))
+	unavailable := make([]string, 0)
+	for _, module := range modules {
+		if module == nil || !cleanupExecutorSupportsCause(module.Metadata, causeEvent) {
+			continue
+		}
+		expected = append(expected, module.ModuleName)
+		if module.Status != "up" {
+			unavailable = append(unavailable, module.ModuleName)
+		}
+	}
+	sort.Strings(expected)
+	sort.Strings(unavailable)
+	if len(expected) == 0 {
+		return nil, fmt.Errorf("未发现支持 Engine 删除影响评估的模块")
+	}
+	if len(unavailable) > 0 {
+		return nil, fmt.Errorf("以下模块当前不可用，无法完整评估 Engine 删除影响: %s", strings.Join(unavailable, ", "))
+	}
+	return expected, nil
+}
+
 func (s *CleanupOrchestratorService) enabledCleanupExecutorModules() ([]string, error) {
 	if s.registry == nil {
 		return nil, fmt.Errorf("module registry service is not configured")
@@ -530,6 +566,29 @@ func cleanupExecutorEnabled(metadata map[string]interface{}) bool {
 	}
 	enabled, ok := cleanupExecutor["enabled"].(bool)
 	return ok && enabled
+}
+
+func cleanupExecutorSupportsCause(metadata map[string]interface{}, causeEvent string) bool {
+	if !cleanupExecutorEnabled(metadata) {
+		return false
+	}
+	capabilities, _ := metadata["capabilities"].(map[string]interface{})
+	cleanupExecutor, _ := capabilities["cleanup_executor"].(map[string]interface{})
+	switch causes := cleanupExecutor["causes"].(type) {
+	case []interface{}:
+		for _, value := range causes {
+			if cause, ok := value.(string); ok && strings.TrimSpace(cause) == causeEvent {
+				return true
+			}
+		}
+	case []string:
+		for _, cause := range causes {
+			if strings.TrimSpace(cause) == causeEvent {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func validateExecutableScanTask(scanTask *models.TaskStatusResponse) error {
@@ -748,6 +807,7 @@ func (s *CleanupOrchestratorService) aggregateScanSummary(results map[string]int
 	summary := models.TaskSummary{
 		CleanupResultSummary: summaryFromResults(results),
 	}
+	summary.Impact, summary.ImpactDigest = impactFromResults(results)
 	if summary.RiskLevel == "" {
 		summary.RiskLevel = "low"
 	}
@@ -759,6 +819,7 @@ func (s *CleanupOrchestratorService) aggregateExecuteSummary(results map[string]
 	summary := models.ExecuteSummary{
 		CleanupResultSummary: summaryFromResults(results),
 	}
+	summary.Impact, summary.ImpactDigest = impactFromResults(results)
 
 	for _, result := range results {
 		if resultData, ok := result.(events.CleanupResultData); ok {
@@ -769,6 +830,31 @@ func (s *CleanupOrchestratorService) aggregateExecuteSummary(results map[string]
 	}
 
 	return summary
+}
+
+func impactFromResults(results map[string]interface{}) (events.CleanupImpactSummary, string) {
+	var summary events.CleanupImpactSummary
+	tokens := make([]string, 0, len(results))
+	for module, resultValue := range results {
+		result, ok := resultValue.(events.CleanupResultData)
+		if !ok || result.Impact == nil {
+			continue
+		}
+		summary.Add(result.Impact.Summary)
+		tokens = append(tokens, module+":"+result.Impact.Digest)
+	}
+	sort.Strings(tokens)
+	if len(tokens) == 0 {
+		return summary, ""
+	}
+	digest, err := events.BuildCleanupImpactData([]events.CleanupImpactItem{{
+		StableRef:   strings.Join(tokens, "|"),
+		Disposition: events.CleanupImpactWillDelete,
+	}}, "")
+	if err != nil {
+		return summary, ""
+	}
+	return summary, digest.Digest
 }
 
 func (s *CleanupOrchestratorService) createParentExecution(

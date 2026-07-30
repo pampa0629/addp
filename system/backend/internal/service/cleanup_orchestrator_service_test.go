@@ -112,6 +112,51 @@ func TestCleanupExecutorEnabledReadsModuleRegistryCapability(t *testing.T) {
 	}
 }
 
+func TestCleanupExecutorSupportsCause(t *testing.T) {
+	t.Parallel()
+	metadata := map[string]interface{}{
+		"capabilities": map[string]interface{}{
+			"cleanup_executor": map[string]interface{}{
+				"enabled": true,
+				"causes":  []interface{}{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted},
+			},
+		},
+	}
+	if !cleanupExecutorSupportsCause(metadata, events.CleanupCauseEngineDeleting) {
+		t.Fatal("expected engine.deleting cause to be supported")
+	}
+	if cleanupExecutorSupportsCause(metadata, "item.deleted") {
+		t.Fatal("unexpected item.deleted support")
+	}
+}
+
+func TestImpactFromResultsAggregatesStableDigest(t *testing.T) {
+	t.Parallel()
+	developImpact, err := events.BuildCleanupImpactData([]events.CleanupImpactItem{
+		{StableRef: "task:3", Disposition: events.CleanupImpactRebindable},
+	}, "/develop/tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	transferImpact, err := events.BuildCleanupImpactData([]events.CleanupImpactItem{
+		{StableRef: "task:8", Disposition: events.CleanupImpactWillDisable},
+	}, "/transfer/tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	results := map[string]interface{}{
+		"transfer": events.CleanupResultData{Impact: &transferImpact},
+		"develop":  events.CleanupResultData{Impact: &developImpact},
+	}
+	summary, digest := impactFromResults(results)
+	if summary.Rebindable != 1 || summary.WillDisable != 1 || summary.Total() != 2 {
+		t.Fatalf("summary = %#v", summary)
+	}
+	if digest == "" {
+		t.Fatal("impact digest is empty")
+	}
+}
+
 func TestValidateExecutableScanTask(t *testing.T) {
 	t.Parallel()
 

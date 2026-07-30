@@ -110,7 +110,7 @@
         </el-table-column>
 
         <!-- 操作列 -->
-        <el-table-column :label="t('system.engine.columns.actions')" width="430" fixed="right">
+        <el-table-column :label="t('system.engine.columns.actions')" width="340" fixed="right">
           <template #default="{ row }">
             <el-button size="small" type="primary" :disabled="row.lifecycle_state === 'deleting'" @click="testConnection(row)">{{ t('system.engine.actions.test') }}</el-button>
             <el-button size="small" @click="viewEngineDetails(row)">{{ t('system.engine.actions.detail') }}</el-button>
@@ -131,15 +131,6 @@
               @click="deleteEngine(row)"
             >
               {{ row.lifecycle_state === 'deleting' ? t('system.engine.actions.retryDelete') : t('system.engine.actions.delete') }}
-            </el-button>
-            <el-button
-              v-if="row.lifecycle_state === 'deleting' && row.deletion_error"
-              size="small"
-              type="danger"
-              plain
-              @click="abandonExternalAndDelete(row)"
-            >
-              {{ t('system.engine.actions.abandonExternal') }}
             </el-button>
           </template>
         </el-table-column>
@@ -555,6 +546,100 @@
     </el-dialog>
 
     <el-dialog
+      v-model="deletionDialogVisible"
+      :title="t('system.engine.deletionAssessment.title', { name: deletionEngine?.name || '' })"
+      width="820px"
+      destroy-on-close
+      @closed="resetDeletionDialog"
+    >
+      <el-alert
+        v-if="deletionAssessmentError"
+        type="error"
+        :title="deletionAssessmentError"
+        show-icon
+        :closable="false"
+        class="deletion-alert"
+      />
+      <el-alert
+        v-else-if="deletionImpact.running > 0"
+        type="warning"
+        :title="t('system.engine.deletionAssessment.runningBlocked', { count: deletionImpact.running })"
+        show-icon
+        :closable="false"
+        class="deletion-alert"
+      />
+
+      <div class="deletion-toolbar">
+        <span class="deletion-toolbar-label">{{ t('system.engine.deletionAssessment.externalPolicy') }}</span>
+        <el-radio-group v-model="deletionExternalPolicy" :disabled="deletionAssessing || deletionSubmitting" @change="runDeletionAssessment">
+          <el-radio-button value="delete">{{ t('system.engine.deletionAssessment.deleteExternal') }}</el-radio-button>
+          <el-radio-button value="abandon">{{ t('system.engine.deletionAssessment.keepExternal') }}</el-radio-button>
+        </el-radio-group>
+        <el-button :loading="deletionAssessing" :disabled="deletionSubmitting" @click="runDeletionAssessment">
+          {{ t('system.engine.deletionAssessment.refresh') }}
+        </el-button>
+      </div>
+
+      <div v-loading="deletionAssessing" class="deletion-content">
+        <div class="impact-summary">
+          <div v-for="item in deletionImpactCards" :key="item.key" class="impact-summary-item">
+            <span class="impact-summary-value">{{ item.value }}</span>
+            <span class="impact-summary-label">{{ item.label }}</span>
+          </div>
+        </div>
+
+        <el-table :data="deletionModuleRows" size="small" border empty-text="-">
+          <el-table-column :label="t('system.engine.deletionAssessment.module')" min-width="130">
+            <template #default="{ row }">{{ cleanupModuleLabel(row.module) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('system.engine.deletionAssessment.status')" width="110">
+            <template #default="{ row }">
+              <el-tag size="small" :type="cleanupModuleStatusType(row.status)">
+                {{ cleanupModuleStatusLabel(row.status) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="rebindable" :label="t('system.engine.deletionAssessment.rebindable')" width="90" align="right" />
+          <el-table-column prop="willDisable" :label="t('system.engine.deletionAssessment.willDisable')" width="90" align="right" />
+          <el-table-column prop="willDelete" :label="t('system.engine.deletionAssessment.willDelete')" width="90" align="right" />
+          <el-table-column prop="running" :label="t('system.engine.deletionAssessment.running')" width="80" align="right" />
+          <el-table-column prop="externalArtifact" :label="t('system.engine.deletionAssessment.externalArtifact')" width="90" align="right" />
+          <el-table-column :label="t('system.engine.deletionAssessment.manage')" width="80" align="center">
+            <template #default="{ row }">
+              <el-link v-if="row.managementPath" :href="row.managementPath" target="_top" type="primary">
+                {{ t('system.engine.deletionAssessment.open') }}
+              </el-link>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <div class="deletion-confirmation">
+          <div class="deletion-confirmation-label">
+            {{ t('system.engine.deletionAssessment.confirmName', { name: deletionEngine?.name || '' }) }}
+          </div>
+          <el-input
+            v-model="deletionConfirmation"
+            :placeholder="deletionEngine?.name || ''"
+            :disabled="!deletionAssessmentReady || deletionSubmitting"
+          />
+        </div>
+      </div>
+
+      <template #footer>
+        <el-button @click="deletionDialogVisible = false">{{ t('system.engine.actions.cancel') }}</el-button>
+        <el-button
+          type="danger"
+          :loading="deletionSubmitting"
+          :disabled="!canConfirmEngineDeletion"
+          @click="confirmEngineDeletion"
+        >
+          {{ t('system.engine.actions.cleanupAndDelete') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="jsonViewVisible"
       :title="t('system.engine.capabilityView.actions.viewJson')"
       width="720px"
@@ -594,6 +679,16 @@ const loading = ref(false)
 const currentPage = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
+const deletionDialogVisible = ref(false)
+const deletionEngine = ref(null)
+const deletionAssessment = ref(null)
+const deletionAssessmentError = ref('')
+const deletionAssessmentID = ref('')
+const deletionExternalPolicy = ref('delete')
+const deletionConfirmation = ref('')
+const deletionAssessing = ref(false)
+const deletionSubmitting = ref(false)
+let deletionAssessmentGeneration = 0
 
 // 能力过滤
 const selectedCategories = ref(['storage', 'compute', 'general', 'extension', 'builtin']) // 默认显示全部引擎
@@ -1480,46 +1575,158 @@ const deleteEngine = async (row) => {
     return
   }
 
-	try {
-		await ElMessageBox.confirm(
-			row.lifecycle_state === 'deleting'
-				? t('system.engine.msg.retryDeleteConfirm', { name: row.name })
-				: t('system.engine.msg.deleteConfirm', { name: row.name }),
-		t('system.engine.msg.deleteTitle'),
-		{
-			confirmButtonText: t('system.engine.actions.cleanupAndDelete'),
-			cancelButtonText: t('system.engine.actions.cancel'),
-			type: 'warning'
+	deletionEngine.value = row
+	deletionExternalPolicy.value = 'delete'
+	deletionConfirmation.value = ''
+	deletionDialogVisible.value = true
+	await runDeletionAssessment()
+}
+
+const unwrapAPIData = (value) => value?.data || value
+
+const waitForDeletionAssessment = async (engineID, assessmentID, generation) => {
+	for (let attempt = 0; attempt < 45; attempt += 1) {
+		if (generation !== deletionAssessmentGeneration || !deletionDialogVisible.value) return
+		const response = await enginesAPI.getDeletionAssessment(engineID, assessmentID)
+		const assessment = unwrapAPIData(response)
+		deletionAssessment.value = assessment
+		if (['completed', 'completed_with_errors', 'failed', 'timeout'].includes(assessment?.status)) {
+			if (assessment.status !== 'completed') {
+				deletionAssessmentError.value = t('system.engine.deletionAssessment.failedStatus', { status: assessment.status })
+			}
+			return
 		}
-		)
-		await enginesAPI.delete(row.id, 'delete')
-		ElMessage.success(t('system.engine.msg.deleteStarted'))
-		await loadEngines()
+		await new Promise(resolve => window.setTimeout(resolve, 1000))
+	}
+	throw new Error(t('system.engine.deletionAssessment.timeout'))
+}
+
+const runDeletionAssessment = async () => {
+	if (!deletionEngine.value?.id) return
+	const generation = ++deletionAssessmentGeneration
+	deletionAssessing.value = true
+	deletionAssessment.value = null
+	deletionAssessmentID.value = ''
+	deletionAssessmentError.value = ''
+	deletionConfirmation.value = ''
+	try {
+		const response = await enginesAPI.createDeletionAssessment(deletionEngine.value.id, {
+			external_artifact_policy: deletionExternalPolicy.value
+		})
+		const assessmentID = unwrapAPIData(response)?.assessment_id
+		if (!assessmentID) throw new Error(t('system.engine.deletionAssessment.invalidResponse'))
+		deletionAssessmentID.value = assessmentID
+		await waitForDeletionAssessment(deletionEngine.value.id, assessmentID, generation)
 	} catch (error) {
-		if (error === 'cancel' || error === 'close') return
-		const errorMsg = error.response?.data?.error || t('system.engine.msg.opFailed')
-		ElMessage.error(errorMsg)
+		if (generation !== deletionAssessmentGeneration) return
+		deletionAssessmentError.value = error.response?.data?.error || error.message || t('system.engine.msg.opFailed')
+	} finally {
+		if (generation === deletionAssessmentGeneration) deletionAssessing.value = false
 	}
 }
 
-const abandonExternalAndDelete = async (row) => {
+const deletionImpact = computed(() => {
+	const summary = deletionAssessment.value?.summary?.impact
+	if (summary) return summary
+	return deletionModuleRows.value.reduce((total, row) => ({
+		rebindable: total.rebindable + row.rebindable,
+		will_disable: total.will_disable + row.willDisable,
+		will_delete: total.will_delete + row.willDelete,
+		running: total.running + row.running,
+		external_artifact: total.external_artifact + row.externalArtifact
+	}), { rebindable: 0, will_disable: 0, will_delete: 0, running: 0, external_artifact: 0 })
+})
+
+const deletionModuleRows = computed(() => {
+	const assessment = deletionAssessment.value
+	const expectedModules = assessment?.task?.expected_modules || []
+	const results = assessment?.results || {}
+	return expectedModules.map(module => {
+		const result = results[module] || {}
+		const summary = result.impact?.summary || {}
+		return {
+			module,
+			status: result.status || assessment?.progress?.modules?.[module] || 'pending',
+			rebindable: summary.rebindable || 0,
+			willDisable: summary.will_disable || 0,
+			willDelete: summary.will_delete || 0,
+			running: summary.running || 0,
+			externalArtifact: summary.external_artifact || 0,
+			managementPath: result.impact?.management_path || ''
+		}
+	})
+})
+
+const deletionImpactCards = computed(() => ([
+	{ key: 'rebindable', label: t('system.engine.deletionAssessment.rebindable'), value: deletionImpact.value.rebindable || 0 },
+	{ key: 'willDisable', label: t('system.engine.deletionAssessment.willDisable'), value: deletionImpact.value.will_disable || 0 },
+	{ key: 'willDelete', label: t('system.engine.deletionAssessment.willDelete'), value: deletionImpact.value.will_delete || 0 },
+	{ key: 'running', label: t('system.engine.deletionAssessment.running'), value: deletionImpact.value.running || 0 },
+	{ key: 'externalArtifact', label: t('system.engine.deletionAssessment.externalArtifact'), value: deletionImpact.value.external_artifact || 0 }
+]))
+
+const deletionAssessmentReady = computed(() => (
+	deletionAssessment.value?.status === 'completed' &&
+	!deletionAssessmentError.value &&
+	(deletionImpact.value.running || 0) === 0 &&
+	deletionModuleRows.value.every(row => row.status === 'success')
+))
+
+const canConfirmEngineDeletion = computed(() => (
+	deletionAssessmentReady.value &&
+	deletionConfirmation.value === deletionEngine.value?.name &&
+	!deletionSubmitting.value
+))
+
+const cleanupModuleLabel = (module) => {
+	const key = `system.cleanup.modules.names.${module}`
+	const label = t(key)
+	return label === key ? module : label
+}
+
+const cleanupModuleStatusLabel = (status) => {
+	const key = `system.engine.deletionAssessment.statuses.${status || 'pending'}`
+	const label = t(key)
+	return label === key ? status : label
+}
+
+const cleanupModuleStatusType = (status) => ({
+	success: 'success',
+	failed: 'danger',
+	partial_success: 'danger',
+	timeout: 'danger',
+	running: 'warning',
+	pending: 'info'
+}[status] || 'info')
+
+const confirmEngineDeletion = async () => {
+	if (!canConfirmEngineDeletion.value) return
+	deletionSubmitting.value = true
 	try {
-		await ElMessageBox.confirm(
-			t('system.engine.msg.abandonExternalConfirm', { name: row.name }),
-			t('system.engine.msg.abandonExternalTitle'),
-			{
-				confirmButtonText: t('system.engine.actions.abandonAndDelete'),
-				cancelButtonText: t('system.engine.actions.cancel'),
-				type: 'error'
-			}
-		)
-		await enginesAPI.delete(row.id, 'abandon')
+		await enginesAPI.delete(deletionEngine.value.id, {
+			assessment_id: deletionAssessmentID.value,
+			confirmation_token: deletionConfirmation.value,
+			external_artifact_policy: deletionExternalPolicy.value
+		})
 		ElMessage.success(t('system.engine.msg.deleteStarted'))
+		deletionDialogVisible.value = false
 		await loadEngines()
 	} catch (error) {
-		if (error === 'cancel' || error === 'close') return
-		ElMessage.error(error.response?.data?.error || t('system.engine.msg.opFailed'))
+		deletionAssessmentError.value = error.response?.data?.error || error.message || t('system.engine.msg.opFailed')
+	} finally {
+		deletionSubmitting.value = false
 	}
+}
+
+const resetDeletionDialog = () => {
+	deletionAssessmentGeneration += 1
+	deletionEngine.value = null
+	deletionAssessment.value = null
+	deletionAssessmentError.value = ''
+	deletionAssessmentID.value = ''
+	deletionExternalPolicy.value = 'delete'
+	deletionConfirmation.value = ''
+	deletionAssessing.value = false
 }
 
 const viewEngineDetails = async (row) => {
@@ -1601,6 +1808,77 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.deletion-alert {
+  margin-bottom: 16px;
+}
+
+.deletion-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.deletion-toolbar-label {
+  color: var(--addp-text-secondary);
+}
+
+.deletion-content {
+  min-height: 260px;
+}
+
+.impact-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border: 1px solid var(--addp-border-color);
+  margin-bottom: 16px;
+}
+
+.impact-summary-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 8px;
+  border-right: 1px solid var(--addp-border-color-light);
+}
+
+.impact-summary-item:last-child {
+  border-right: 0;
+}
+
+.impact-summary-value {
+  color: var(--addp-text-primary);
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.impact-summary-label {
+  color: var(--addp-text-secondary);
+  font-size: 12px;
+  text-align: center;
+}
+
+.deletion-confirmation {
+  margin-top: 18px;
+}
+
+.deletion-confirmation-label {
+  margin-bottom: 8px;
+  color: var(--addp-text-primary);
+}
+
+@media (max-width: 900px) {
+  .impact-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .impact-summary-item {
+    border-bottom: 1px solid var(--addp-border-color-light);
+  }
+}
+
 .card-header {
   display: flex;
   justify-content: space-between;

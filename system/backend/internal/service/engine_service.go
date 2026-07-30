@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,16 +20,22 @@ import (
 )
 
 var (
-	ErrResourceNotFound         = errors.New("资源不存在")
-	ErrResourceForbidden        = errors.New("没有权限访问该资源")
-	ErrBuiltinResourceImmutable = errors.New("内置资源不可删除或修改")
-	ErrUnsupportedEngineType    = errors.New("不支持的系统引擎类型")
-	ErrSpatialWorkspaceNotFound = errors.New("未找到可启用的空间工作区")
-	ErrEngineIdentityImmutable  = errors.New("引擎物理端点身份不可修改")
-	ErrEngineDeleting           = errors.New("引擎正在删除，不能执行该操作")
-	ErrInvalidEngineLifecycle   = errors.New("无效的引擎生命周期状态")
-	ErrInvalidArtifactPolicy    = errors.New("无效的外部产物处理策略")
-	ErrEngineCleanupUnavailable = errors.New("引擎删除所需的资源回收服务不可用")
+	ErrResourceNotFound          = errors.New("资源不存在")
+	ErrResourceForbidden         = errors.New("没有权限访问该资源")
+	ErrBuiltinResourceImmutable  = errors.New("内置资源不可删除或修改")
+	ErrUnsupportedEngineType     = errors.New("不支持的系统引擎类型")
+	ErrSpatialWorkspaceNotFound  = errors.New("未找到可启用的空间工作区")
+	ErrEngineIdentityImmutable   = errors.New("引擎物理端点身份不可修改")
+	ErrEngineDeleting            = errors.New("引擎正在删除，不能执行该操作")
+	ErrInvalidEngineLifecycle    = errors.New("无效的引擎生命周期状态")
+	ErrInvalidArtifactPolicy     = errors.New("无效的外部产物处理策略")
+	ErrEngineCleanupUnavailable  = errors.New("引擎删除所需的资源回收服务不可用")
+	ErrDeletionAssessmentInvalid = errors.New("引擎删除影响评估无效")
+	ErrDeletionAssessmentPending = errors.New("引擎删除影响评估尚未完成")
+	ErrDeletionAssessmentExpired = errors.New("引擎删除影响评估已过期")
+	ErrDeletionImpactChanged     = errors.New("引擎删除影响已经变化，需要重新确认")
+	ErrDeletionRunningExecutions = errors.New("仍有运行任务正在使用该引擎")
+	ErrDeletionConfirmation      = errors.New("删除确认文本与引擎名称不一致")
 )
 
 var disallowedSystemEngineTypes = map[string]struct{}{
@@ -43,7 +51,7 @@ type EngineService struct {
 }
 
 type EngineCleanupOrchestrator interface {
-	CreateEngineDeletionScanTask(context.Context, uint, []string, uint, map[string]interface{}) (string, error)
+	CreateEngineDeletionAssessment(context.Context, uint, uint, map[string]interface{}) (string, error)
 	CreateExecuteTask(context.Context, string, string, uint, CleanupExecuteConfirmation) (string, error)
 	GetTaskStatus(context.Context, string) (*models.TaskStatusResponse, error)
 }
@@ -439,7 +447,43 @@ func (s *EngineService) Update(id, tenantID uint, req *models.EngineUpdateReques
 	return s.sanitizeResource(engine), nil
 }
 
-func (s *EngineService) BeginDeletion(id, tenantID, actorID uint, externalArtifactPolicy string) (*models.Engine, error) {
+func (s *EngineService) CreateDeletionAssessment(id, tenantID, actorID uint, externalArtifactPolicy string) (string, error) {
+	engine, err := s.repo.GetByID(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", ErrResourceNotFound
+		}
+		return "", err
+	}
+
+	if err := s.authorizeResourceAccess(engine, tenantID); err != nil {
+		return "", err
+	}
+	if engine.IsBuiltin {
+		return "", ErrBuiltinResourceImmutable
+	}
+	if s.cleanup == nil {
+		return "", ErrEngineCleanupUnavailable
+	}
+	policy, err := normalizeExternalArtifactPolicy(externalArtifactPolicy)
+	if err != nil {
+		return "", err
+	}
+	if engine.TenantID == nil {
+		return "", errors.New("平台共享引擎不支持租户删除工作流")
+	}
+	cleanupContext := cleanupEngineDeletionContext(id, policy)
+	cleanupContext["assessment_phase"] = "preflight"
+	taskID, err := s.cleanup.CreateEngineDeletionAssessment(
+		context.Background(), *engine.TenantID, actorID, cleanupContext,
+	)
+	if err != nil {
+		return "", err
+	}
+	return taskID, nil
+}
+
+func (s *EngineService) GetDeletionAssessment(id, tenantID uint, assessmentID string) (*models.TaskStatusResponse, error) {
 	engine, err := s.repo.GetByID(id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -447,29 +491,59 @@ func (s *EngineService) BeginDeletion(id, tenantID, actorID uint, externalArtifa
 		}
 		return nil, err
 	}
-
 	if err := s.authorizeResourceAccess(engine, tenantID); err != nil {
 		return nil, err
 	}
+	if s.cleanup == nil {
+		return nil, ErrEngineCleanupUnavailable
+	}
+	status, err := s.cleanup.GetTaskStatus(context.Background(), strings.TrimSpace(assessmentID))
+	if err != nil {
+		return nil, err
+	}
+	if err := validateDeletionAssessmentIdentity(status, id, tenantID); err != nil {
+		return nil, err
+	}
+	return status, nil
+}
 
-	// 检查是否为内置资源
+func (s *EngineService) BeginDeletion(id, tenantID, actorID uint, req *models.EngineDeleteRequest) (*models.Engine, error) {
+	if req == nil || strings.TrimSpace(req.AssessmentID) == "" {
+		return nil, ErrDeletionAssessmentInvalid
+	}
+	engine, err := s.repo.GetByID(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrResourceNotFound
+		}
+		return nil, err
+	}
+	if err := s.authorizeResourceAccess(engine, tenantID); err != nil {
+		return nil, err
+	}
 	if engine.IsBuiltin {
 		return nil, ErrBuiltinResourceImmutable
 	}
 	if s.cleanup == nil {
 		return nil, ErrEngineCleanupUnavailable
 	}
-	policy, err := normalizeExternalArtifactPolicy(externalArtifactPolicy)
+	policy, err := normalizeExternalArtifactPolicy(req.ExternalArtifactPolicy)
 	if err != nil {
 		return nil, err
 	}
 	if engine.TenantID == nil {
 		return nil, errors.New("平台共享引擎不支持租户删除工作流")
 	}
-	if engine.LifecycleState == models.EngineLifecycleDeleting &&
-		engine.ExternalArtifactPolicy == policy &&
-		engine.DeletionError == "" {
-		return s.sanitizeResource(engine), nil
+	if strings.TrimSpace(req.ConfirmationToken) != engine.Name {
+		return nil, ErrDeletionConfirmation
+	}
+	assessment, err := s.GetDeletionAssessment(id, tenantID, req.AssessmentID)
+	if err != nil {
+		return nil, err
+	}
+	confirmedDigest, err := validateDeletionAssessmentReady(assessment, policy, time.Now())
+	if err != nil {
+		return nil, err
 	}
 
 	now := time.Now()
@@ -485,8 +559,11 @@ func (s *EngineService) BeginDeletion(id, tenantID, actorID uint, externalArtifa
 	}
 
 	cleanupContext := cleanupEngineDeletionContext(id, policy)
-	scanTaskID, err := s.cleanup.CreateEngineDeletionScanTask(
-		context.Background(), *engine.TenantID, nil, actorID, cleanupContext,
+	cleanupContext["assessment_phase"] = "validation"
+	cleanupContext["confirmed_assessment_id"] = strings.TrimSpace(req.AssessmentID)
+	cleanupContext["confirmed_impact_digest"] = confirmedDigest
+	scanTaskID, err := s.cleanup.CreateEngineDeletionAssessment(
+		context.Background(), *engine.TenantID, actorID, cleanupContext,
 	)
 	if err != nil {
 		engine.DeletionError = err.Error()
@@ -521,6 +598,97 @@ func cleanupEngineDeletionContext(engineID uint, policy string) map[string]inter
 	}
 }
 
+func validateDeletionAssessmentIdentity(status *models.TaskStatusResponse, engineID, tenantID uint) error {
+	if status == nil || status.Task.Action != events.CleanupActionScan || status.Task.CauseEvent != events.CleanupCauseEngineDeleting {
+		return ErrDeletionAssessmentInvalid
+	}
+	if status.Task.TenantID != tenantID {
+		return ErrResourceForbidden
+	}
+	contextEngineID, ok := cleanupContextUint(status.Task.Context, "engine_id")
+	if !ok || contextEngineID != engineID {
+		return ErrDeletionAssessmentInvalid
+	}
+	return nil
+}
+
+func validateDeletionAssessmentReady(status *models.TaskStatusResponse, policy string, now time.Time) (string, error) {
+	if status == nil || status.Status != "completed" {
+		return "", ErrDeletionAssessmentPending
+	}
+	if strings.TrimSpace(stringFromContext(status.Task.Context, "assessment_phase")) != "preflight" {
+		return "", ErrDeletionAssessmentInvalid
+	}
+	if strings.TrimSpace(stringFromContext(status.Task.Context, "external_artifact_policy")) != policy {
+		return "", ErrDeletionAssessmentInvalid
+	}
+	startedAt, err := time.Parse(time.RFC3339, status.Task.StartedAt)
+	if err != nil || now.Sub(startedAt) > 10*time.Minute {
+		return "", ErrDeletionAssessmentExpired
+	}
+	impact, digest, err := validatedDeletionImpact(status)
+	if err != nil {
+		return "", err
+	}
+	if impact.Running > 0 {
+		return "", ErrDeletionRunningExecutions
+	}
+	return digest, nil
+}
+
+func validatedDeletionImpact(status *models.TaskStatusResponse) (events.CleanupImpactSummary, string, error) {
+	if status == nil || len(status.Task.ExpectedModules) == 0 {
+		return events.CleanupImpactSummary{}, "", ErrDeletionAssessmentInvalid
+	}
+	for _, module := range status.Task.ExpectedModules {
+		value, ok := status.Results[module]
+		if !ok {
+			return events.CleanupImpactSummary{}, "", ErrDeletionAssessmentPending
+		}
+		result, ok := value.(events.CleanupResultData)
+		if !ok || result.Status != events.CleanupResultSuccess || result.Impact == nil || strings.TrimSpace(result.Impact.Digest) == "" {
+			return events.CleanupImpactSummary{}, "", ErrDeletionAssessmentInvalid
+		}
+	}
+	impact, digest := impactFromResults(status.Results)
+	if strings.TrimSpace(digest) == "" {
+		return events.CleanupImpactSummary{}, "", ErrDeletionAssessmentInvalid
+	}
+	return impact, digest, nil
+}
+
+func cleanupContextUint(values map[string]interface{}, key string) (uint, bool) {
+	if values == nil {
+		return 0, false
+	}
+	switch value := values[key].(type) {
+	case uint:
+		return value, value > 0
+	case int:
+		return uint(value), value > 0
+	case int64:
+		return uint(value), value > 0
+	case float64:
+		return uint(value), value > 0
+	case json.Number:
+		parsed, err := strconv.ParseUint(string(value), 10, 32)
+		return uint(parsed), err == nil && parsed > 0
+	case string:
+		parsed, err := strconv.ParseUint(strings.TrimSpace(value), 10, 32)
+		return uint(parsed), err == nil && parsed > 0
+	default:
+		return 0, false
+	}
+}
+
+func stringFromContext(values map[string]interface{}, key string) string {
+	if values == nil {
+		return ""
+	}
+	value, _ := values[key].(string)
+	return value
+}
+
 func (s *EngineService) continueDeletion(engineID uint, scanTaskID string) {
 	ctx := context.Background()
 	engine, err := s.repo.GetByID(engineID)
@@ -540,6 +708,20 @@ func (s *EngineService) continueDeletion(engineID uint, scanTaskID string) {
 		}
 		if scanStatus.Status != "completed" {
 			s.setDeletionError(engineID, scanTaskID, fmt.Sprintf("cleanup scan ended with status %s", scanStatus.Status))
+			return
+		}
+		impact, digest, err := validatedDeletionImpact(scanStatus)
+		if err != nil {
+			s.setDeletionError(engineID, scanTaskID, fmt.Sprintf("validate deletion impact: %v", err))
+			return
+		}
+		if impact.Running > 0 {
+			s.setDeletionError(engineID, scanTaskID, ErrDeletionRunningExecutions.Error())
+			return
+		}
+		confirmedDigest := strings.TrimSpace(stringFromContext(scanStatus.Task.Context, "confirmed_impact_digest"))
+		if confirmedDigest == "" || confirmedDigest != digest {
+			s.setDeletionError(engineID, scanTaskID, ErrDeletionImpactChanged.Error())
 			return
 		}
 		executeTaskID, err = s.cleanup.CreateExecuteTask(

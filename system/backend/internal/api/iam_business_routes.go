@@ -66,6 +66,8 @@ func RegisterIAMMigratedBusinessRoutes(
 		engines.GET("", runtime.BusinessCredential, engineListDelegation, engineListPermission, engineHandler.List)
 		engines.GET("/:id", engineDetailCredential, enginePermissions["system.engine.read"], engineHandler.GetByID)
 		engines.PUT("/:id", runtime.UserAccessCredential, enginePermissions["system.engine.update"], engineHandler.Update)
+		engines.POST("/:id/deletion-assessments", runtime.UserAccessCredential, enginePermissions["system.engine.delete"], engineHandler.CreateDeletionAssessment)
+		engines.GET("/:id/deletion-assessments/:assessment_id", runtime.UserAccessCredential, enginePermissions["system.engine.delete"], engineHandler.GetDeletionAssessment)
 		engines.DELETE("/:id", runtime.UserAccessCredential, enginePermissions["system.engine.delete"], engineHandler.Delete)
 		engines.POST("/:id/test", runtime.UserAccessCredential, enginePermissions["system.engine.execute"], engineHandler.TestConnection)
 		engines.POST("/test-connection", runtime.UserAccessCredential, enginePermissions["system.engine.execute"], engineHandler.TestConnectionBeforeCreate)

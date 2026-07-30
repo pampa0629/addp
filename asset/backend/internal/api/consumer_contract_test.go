@@ -76,6 +76,12 @@ func TestConsumerProjectionFiltersVisibilityAndDerivesCurrentUser(t *testing.T) 
 	if savedRating.UserID != 9 || savedRating.TenantID != 7 || savedRating.AssetID != published.ID {
 		t.Fatalf("rating identity = tenant:%d user:%d asset:%d", savedRating.TenantID, savedRating.UserID, savedRating.AssetID)
 	}
+	ratings := consumerRequest(t, router, http.MethodGet,
+		"/api/v1/asset/consumer/assets/"+int64String(published.ID)+"/ratings", "",
+	)
+	if ratings.Code != http.StatusOK || !strings.Contains(ratings.Body.String(), `"user_name":"Consumer User"`) {
+		t.Fatalf("consumer ratings do not use the IAM display name: status=%d body=%s", ratings.Code, ratings.Body.String())
+	}
 
 	applications := consumerRequest(t, router, http.MethodGet, "/api/v1/asset/consumer/applications?applicant_id=999", "")
 	if applications.Code != http.StatusOK || !strings.Contains(applications.Body.String(), `"applicant_id":9`) {
@@ -95,10 +101,10 @@ func consumerTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS system").Error; err != nil {
 		t.Fatalf("attach system schema: %v", err)
 	}
-	if err := db.Exec("CREATE TABLE system.users (id INTEGER PRIMARY KEY, username TEXT)").Error; err != nil {
+	if err := db.Exec("CREATE TABLE system.users (id INTEGER PRIMARY KEY, display_name TEXT NOT NULL)").Error; err != nil {
 		t.Fatalf("create system users: %v", err)
 	}
-	if err := db.Exec("INSERT INTO system.users (id, username) VALUES (9, 'consumer')").Error; err != nil {
+	if err := db.Exec("INSERT INTO system.users (id, display_name) VALUES (9, 'Consumer User')").Error; err != nil {
 		t.Fatalf("seed system user: %v", err)
 	}
 	statements := []string{

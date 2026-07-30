@@ -69,9 +69,7 @@ export const MODULE_URLS = {
   graph:        _url(5187, 'graph'),
 }
 
-export const PORTAL_URL = _dev
-  ? `${_protocol}//${_host}:5185`
-  : `${_protocol}//${_host}/portal`
+export const PORTAL_URL = window.location.origin
 
 // ─── 页面映射（menu index 的 page 段 → 实际 URL 路径段）────────────────────
 // 规则：map[page] 存在则用 map[page]；否则 page 直接透传。

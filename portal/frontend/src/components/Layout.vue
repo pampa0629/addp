@@ -28,7 +28,7 @@
         <el-dropdown @command="handleCommand">
           <span class="user-dropdown">
             <el-icon><User /></el-icon>
-            {{ authStore.user?.username || t('portal.layout.user') }}
+            {{ userDisplayName }}
             <el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </span>
           <template #dropdown>
@@ -51,7 +51,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
@@ -65,6 +65,11 @@ const { t } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
 const searchKeyword = ref('')
+const userDisplayName = computed(() =>
+  authStore.user?.display_name ||
+  authStore.user?.local_account?.username ||
+  t('portal.layout.user')
+)
 
 const handleSearch = () => {
   if (searchKeyword.value.trim()) {

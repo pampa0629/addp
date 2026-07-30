@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -128,12 +130,23 @@ func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis
 
 	switch event.Action {
 	case events.CleanupActionScan:
-		stats, err := s.ScanReclaimCandidates(ctx, event.TenantID, event.Context)
+		candidates, err := s.listCandidates(ctx, event.TenantID, event.Context)
 		if err != nil {
 			result.Status = events.CleanupResultFailed
 			result.Errors = []string{err.Error()}
 			result.Summary = events.CleanupResultSummary{ErrorCount: 1, RiskLevel: "low"}
 			return
+		}
+		stats := candidates.stats()
+		if event.CauseEvent == events.CleanupCauseEngineDeleting {
+			impact, err := developEngineDeletionImpact(candidates)
+			if err != nil {
+				result.Status = events.CleanupResultFailed
+				result.Errors = []string{err.Error()}
+				result.Summary = events.CleanupResultSummary{ErrorCount: 1, RiskLevel: "low"}
+				return
+			}
+			result.Impact = &impact
 		}
 		result.Status = events.CleanupResultSuccess
 		result.Statistics = developCleanupStatsToMap(stats)
@@ -179,6 +192,15 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 	}
 
 	stats := candidates.stats()
+	if _, hasEngineID := developCleanupContextUint(cleanupContext, "engine_id"); hasEngineID {
+		for _, task := range candidates.devTasks {
+			switch strings.ToLower(strings.TrimSpace(task.LastExecutionStatus)) {
+			case commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning:
+				stats.Errors = append(stats.Errors, fmt.Sprintf("develop task %d is running", task.ID))
+			}
+		}
+		return stats, nil
+	}
 	switch cleanupMode {
 	case events.CleanupModeLogical:
 		s.archiveTasks(ctx, candidates, stats)
@@ -204,10 +226,97 @@ func (s *CleanupService) listCandidates(ctx context.Context, tenantID uint, clea
 		return developCleanupCandidates{}, fmt.Errorf("develop resource reclaim database is not configured")
 	}
 	contextTenantID, hasContextTenantID := developCleanupContextUint(cleanupContext, "tenant_id")
+	engineID, hasEngineID := developCleanupContextUint(cleanupContext, "engine_id")
+	if hasEngineID {
+		return s.listEngineCandidates(ctx, tenantID, engineID)
+	}
 	if hasContextTenantID && contextTenantID == tenantID {
 		return s.listTenantCandidates(ctx, tenantID)
 	}
 	return developCleanupCandidates{}, nil
+}
+
+func (s *CleanupService) listEngineCandidates(ctx context.Context, tenantID, engineID uint) (developCleanupCandidates, error) {
+	var tasks []models.DevTask
+	if err := s.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&tasks).Error; err != nil {
+		return developCleanupCandidates{}, err
+	}
+	candidates := developCleanupCandidates{devTasks: make([]models.DevTask, 0, len(tasks))}
+	for _, task := range tasks {
+		if devTaskReferencesEngine(task, engineID) {
+			candidates.devTasks = append(candidates.devTasks, task)
+		}
+	}
+	return candidates, nil
+}
+
+func devTaskReferencesEngine(task models.DevTask, engineID uint) bool {
+	return structuredValueReferencesEngine(task.ExecutionConfig, engineID) || structuredValueReferencesEngine(task.Content, engineID)
+}
+
+func structuredValueReferencesEngine(value interface{}, engineID uint) bool {
+	switch typed := value.(type) {
+	case models.DevTaskContent:
+		return structuredValueReferencesEngine(map[string]interface{}(typed), engineID)
+	case map[string]interface{}:
+		for key, child := range typed {
+			if (key == "engine_id" || strings.HasSuffix(key, "_engine_id")) && cleanupEngineIDValue(child) == engineID {
+				return true
+			}
+			if structuredValueReferencesEngine(child, engineID) {
+				return true
+			}
+		}
+	case []interface{}:
+		for _, child := range typed {
+			if structuredValueReferencesEngine(child, engineID) {
+				return true
+			}
+		}
+	case string:
+		locator, err := resourcetree.ParseURI(strings.TrimSpace(typed))
+		return err == nil && locator.EngineID == engineID
+	}
+	return false
+}
+
+func cleanupEngineIDValue(value interface{}) uint {
+	switch typed := value.(type) {
+	case uint:
+		return typed
+	case int:
+		if typed > 0 {
+			return uint(typed)
+		}
+	case int64:
+		if typed > 0 {
+			return uint(typed)
+		}
+	case float64:
+		if typed > 0 {
+			return uint(typed)
+		}
+	case json.Number:
+		parsed, _ := strconv.ParseUint(string(typed), 10, 32)
+		return uint(parsed)
+	case string:
+		parsed, _ := strconv.ParseUint(strings.TrimSpace(typed), 10, 32)
+		return uint(parsed)
+	}
+	return 0
+}
+
+func developEngineDeletionImpact(candidates developCleanupCandidates) (events.CleanupImpactData, error) {
+	items := make([]events.CleanupImpactItem, 0, len(candidates.devTasks)*2)
+	for _, task := range candidates.devTasks {
+		stableRef := fmt.Sprintf("dev_task:%d", task.ID)
+		items = append(items, events.CleanupImpactItem{StableRef: stableRef, Disposition: events.CleanupImpactRebindable})
+		switch strings.ToLower(strings.TrimSpace(task.LastExecutionStatus)) {
+		case commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning:
+			items = append(items, events.CleanupImpactItem{StableRef: stableRef, Disposition: events.CleanupImpactRunning})
+		}
+	}
+	return events.BuildCleanupImpactData(items, "/develop/tasks")
 }
 
 func (s *CleanupService) listTenantCandidates(ctx context.Context, tenantID uint) (developCleanupCandidates, error) {

@@ -23,9 +23,17 @@ export const enginesAPI = {
     return client.put(`/system/engines/${id}`, data)
   },
 
-  delete: (id, externalArtifactPolicy = 'delete') => {
+  createDeletionAssessment: (id, data) => {
+    return client.post(`/system/engines/${id}/deletion-assessments`, data)
+  },
+
+  getDeletionAssessment: (id, assessmentId) => {
+    return client.get(`/system/engines/${id}/deletion-assessments/${encodeURIComponent(assessmentId)}`)
+  },
+
+  delete: (id, data) => {
     return client.delete(`/system/engines/${id}`, {
-      data: { external_artifact_policy: externalArtifactPolicy }
+      data
     })
   },
 

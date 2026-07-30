@@ -13,6 +13,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/dbbridge"
+	"github.com/addp/common/events"
 	"github.com/addp/common/utils"
 	"github.com/addp/develop/backend/internal/api"
 	"github.com/addp/develop/backend/internal/config"
@@ -145,6 +146,7 @@ func main() {
 			"capabilities": map[string]interface{}{
 				"cleanup_executor": map[string]interface{}{
 					"enabled": true,
+					"causes":  []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted},
 				},
 			},
 		})

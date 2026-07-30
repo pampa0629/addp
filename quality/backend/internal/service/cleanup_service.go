@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/addp/common/events"
@@ -134,12 +135,23 @@ func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis
 
 	switch event.Action {
 	case events.CleanupActionScan:
-		stats, err := s.ScanReclaimCandidates(ctx, event.TenantID, event.Context)
+		candidates, err := s.listCandidates(ctx, event.TenantID, event.Context)
 		if err != nil {
 			result.Status = events.CleanupResultFailed
 			result.Errors = []string{err.Error()}
 			result.Summary = events.CleanupResultSummary{ErrorCount: 1, RiskLevel: "low"}
 			return
+		}
+		stats := candidates.stats()
+		if event.CauseEvent == events.CleanupCauseEngineDeleting {
+			impact, err := qualityEngineDeletionImpact(candidates)
+			if err != nil {
+				result.Status = events.CleanupResultFailed
+				result.Errors = []string{err.Error()}
+				result.Summary = events.CleanupResultSummary{ErrorCount: 1, RiskLevel: "low"}
+				return
+			}
+			result.Impact = &impact
 		}
 		result.Status = events.CleanupResultSuccess
 		result.Statistics = qualityCleanupStatsToMap(stats)
@@ -185,6 +197,19 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 	}
 
 	stats := candidates.stats()
+	if _, hasEngineID := qualityCleanupContextInt64(cleanupContext, "engine_id"); hasEngineID {
+		for _, task := range candidates.checkTasks {
+			switch strings.ToLower(strings.TrimSpace(task.LastExecutionStatus)) {
+			case commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning:
+				stats.Errors = append(stats.Errors, fmt.Sprintf("quality check task %d is running", task.ID))
+			}
+		}
+		if len(stats.Errors) > 0 {
+			return stats, nil
+		}
+		s.disableCandidates(ctx, candidates, stats)
+		return stats, nil
+	}
 	switch cleanupMode {
 	case events.CleanupModeLogical:
 		s.disableCandidates(ctx, candidates, stats)
@@ -192,6 +217,25 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 		s.deleteCandidates(ctx, candidates, stats)
 	}
 	return stats, nil
+}
+
+func qualityEngineDeletionImpact(candidates qualityCleanupCandidates) (events.CleanupImpactData, error) {
+	items := make([]events.CleanupImpactItem, 0, len(candidates.ruleApplications)+len(candidates.checkTasks)*2+len(candidates.issues))
+	for _, item := range candidates.ruleApplications {
+		items = append(items, events.CleanupImpactItem{StableRef: fmt.Sprintf("quality_rule_application:%d", item.ID), Disposition: events.CleanupImpactWillDisable})
+	}
+	for _, item := range candidates.checkTasks {
+		stableRef := fmt.Sprintf("quality_check_task:%d", item.ID)
+		items = append(items, events.CleanupImpactItem{StableRef: stableRef, Disposition: events.CleanupImpactWillDisable})
+		switch strings.ToLower(strings.TrimSpace(item.LastExecutionStatus)) {
+		case commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning:
+			items = append(items, events.CleanupImpactItem{StableRef: stableRef, Disposition: events.CleanupImpactRunning})
+		}
+	}
+	for _, item := range candidates.issues {
+		items = append(items, events.CleanupImpactItem{StableRef: fmt.Sprintf("quality_issue:%d", item.ID), Disposition: events.CleanupImpactWillDisable})
+	}
+	return events.BuildCleanupImpactData(items, "/quality/check-tasks")
 }
 
 type qualityCleanupCandidates struct {

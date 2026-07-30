@@ -6,6 +6,7 @@ import (
 	"log"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/utils"
 	_ "github.com/addp/model/i18n"
@@ -131,6 +132,7 @@ func main() {
 		"capabilities": map[string]interface{}{
 			"cleanup_executor": map[string]interface{}{
 				"enabled": true,
+				"causes":  []string{events.CleanupCauseTenantDeleted},
 			},
 		},
 	})

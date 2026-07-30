@@ -66,6 +66,18 @@ export const notebookAPI = {
   },
 
   /**
+   * 完整替换 Notebook 当前任务的运行时绑定
+   * @param {number} id - DevTask ID
+   * @param {Object} binding - 运行时绑定
+   * @param {number} binding.engine_id - Notebook 引擎实例 ID
+   * @param {string} binding.kernel - Kernel 名称
+   * @returns {Promise}
+   */
+  updateRuntimeBinding(id, binding) {
+    return client.put(`/develop/notebooks/${id}/runtime-binding`, binding)
+  },
+
+  /**
    * 下载 Notebook 文件
    * @param {number} id - DevTask ID
    * @returns {Promise}

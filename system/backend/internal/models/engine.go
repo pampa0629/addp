@@ -38,5 +38,15 @@ type EngineUpdateRequest struct {
 }
 
 type EngineDeleteRequest struct {
+	AssessmentID           string `json:"assessment_id" binding:"required"`
+	ConfirmationToken      string `json:"confirmation_token" binding:"required"`
 	ExternalArtifactPolicy string `json:"external_artifact_policy"`
+}
+
+type EngineDeletionAssessmentRequest struct {
+	ExternalArtifactPolicy string `json:"external_artifact_policy"`
+}
+
+type EngineDeletionAssessmentResponse struct {
+	AssessmentID string `json:"assessment_id"`
 }

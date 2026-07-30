@@ -29,6 +29,28 @@ func (r *DevTaskRepository) Update(item *models.DevTask) error {
 	return r.db.Save(item).Error
 }
 
+// UpdateNotebookRuntimeBinding 原子更新 Notebook 当前任务的运行时绑定。
+func (r *DevTaskRepository) UpdateNotebookRuntimeBinding(item *models.DevTask, userID uint) error {
+	updatedAt := time.Now()
+	result := r.db.Model(&models.DevTask{}).
+		Where("id = ? AND tenant_id = ?", item.ID, item.TenantID).
+		Updates(map[string]interface{}{
+			"content":          item.Content,
+			"execution_config": item.ExecutionConfig,
+			"updated_by":       userID,
+			"updated_at":       updatedAt,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	item.UpdatedBy = &userID
+	item.UpdatedAt = updatedAt
+	return nil
+}
+
 // FindByID 根据ID获取开发任务
 func (r *DevTaskRepository) FindByID(id uint, tenantID uint) (*models.DevTask, error) {
 	var item models.DevTask

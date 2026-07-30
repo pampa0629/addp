@@ -132,12 +132,23 @@ func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis
 
 	switch event.Action {
 	case events.CleanupActionScan:
-		stats, err := s.ScanReclaimCandidates(ctx, event.TenantID, event.Context)
+		candidates, err := s.listCandidates(ctx, event.TenantID, event.Context)
 		if err != nil {
 			result.Status = events.CleanupResultFailed
 			result.Errors = []string{err.Error()}
 			result.Summary = events.CleanupResultSummary{ErrorCount: 1, RiskLevel: "low"}
 			return
+		}
+		stats := candidates.stats()
+		if event.CauseEvent == events.CleanupCauseEngineDeleting {
+			impact, err := serviceEngineDeletionImpact(candidates)
+			if err != nil {
+				result.Status = events.CleanupResultFailed
+				result.Errors = []string{err.Error()}
+				result.Summary = events.CleanupResultSummary{ErrorCount: 1, RiskLevel: "low"}
+				return
+			}
+			result.Impact = &impact
 		}
 		result.Status = events.CleanupResultSuccess
 		result.Statistics = serviceCleanupStatsToMap(stats)
@@ -183,6 +194,10 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 	}
 
 	stats := candidates.stats()
+	if _, hasEngineID := cleanupContextUint(cleanupContext, "engine_id"); hasEngineID {
+		s.disableCandidates(ctx, candidates, stats)
+		return stats, nil
+	}
 	switch cleanupMode {
 	case events.CleanupModeLogical:
 		s.disableCandidates(ctx, candidates, stats)
@@ -190,6 +205,23 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 		s.deleteCandidates(ctx, candidates, stats)
 	}
 	return stats, nil
+}
+
+func serviceEngineDeletionImpact(candidates serviceCleanupCandidates) (events.CleanupImpactData, error) {
+	items := make([]events.CleanupImpactItem, 0, len(candidates.queryServices)+len(candidates.graphQueryServices)+len(candidates.tileServices)+len(candidates.tileLayers))
+	for _, item := range candidates.queryServices {
+		items = append(items, events.CleanupImpactItem{StableRef: fmt.Sprintf("query_service:%d", item.ID), Disposition: events.CleanupImpactWillDisable})
+	}
+	for _, item := range candidates.graphQueryServices {
+		items = append(items, events.CleanupImpactItem{StableRef: fmt.Sprintf("graph_query_service:%d", item.ID), Disposition: events.CleanupImpactWillDisable})
+	}
+	for _, item := range candidates.tileServices {
+		items = append(items, events.CleanupImpactItem{StableRef: fmt.Sprintf("tile_service:%d", item.ID), Disposition: events.CleanupImpactWillDisable})
+	}
+	for _, item := range candidates.tileLayers {
+		items = append(items, events.CleanupImpactItem{StableRef: fmt.Sprintf("tile_service_layer:%d", item.ID), Disposition: events.CleanupImpactWillDisable})
+	}
+	return events.BuildCleanupImpactData(items, "/service/services")
 }
 
 type serviceCleanupCandidates struct {

@@ -499,7 +499,8 @@ Role Key：`platform.statistics_viewer`
 ### 9.5 平台控制面运行角色
 
 每个需要注册 Module、发送心跳或发布 TaskProvider 契约的内置模块使用独立的 Platform
-Runtime Role。当前 Role Key 包括 `platform.meta_runtime` 和 `platform.develop_runtime`，均只允许
+Runtime Role。当前已迁移的 Role Key 包括 `platform.meta_runtime`、`platform.develop_runtime`、
+`platform.orchestrator_runtime`、`platform.asset_runtime` 和 `platform.portal_runtime`，均只允许
 Platform Scope 和 `service_principal`。
 
 这些 Role 只包含 `system.runtime_registry.update`。Handler 必须校验 OAuth Client / Service

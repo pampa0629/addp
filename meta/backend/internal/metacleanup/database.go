@@ -50,19 +50,21 @@ func (c *DatabaseCleaner) ScanInvalidEngines(ctx context.Context, tenantID uint)
 
 func (c *DatabaseCleaner) ScanInvalidEnginesWithScope(ctx context.Context, tenantID uint, scope CleanupScope) ([]models.InvalidEngineDetail, error) {
 	var details []models.InvalidEngineDetail
-	if c.systemClient == nil {
+	if c.systemClient == nil && scope.EngineID == 0 {
 		if c.log != nil {
 			c.log.Warn("SystemClient 未配置，跳过无效引擎检查")
 		}
 		return details, nil
 	}
 
-	allEngines, err := c.systemClient.WithTenantID(tenantID).ListEngines(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("获取引擎列表失败: %w", err)
+	var eligibilityByID map[uint]metaEngineEligibility
+	if scope.EngineID == 0 {
+		allEngines, err := c.systemClient.WithTenantID(tenantID).ListEngines(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("获取引擎列表失败: %w", err)
+		}
+		eligibilityByID = metaEngineEligibilityByID(allEngines)
 	}
-
-	eligibilityByID := metaEngineEligibilityByID(allEngines)
 
 	type engineStats struct {
 		EngineID      uint
@@ -89,6 +91,13 @@ func (c *DatabaseCleaner) ScanInvalidEnginesWithScope(ctx context.Context, tenan
 	}
 
 	for _, stat := range stats {
+		if scope.EngineID > 0 {
+			details = append(details, models.InvalidEngineDetail{
+				EngineID: stat.EngineID, EngineName: fmt.Sprintf("Engine#%d", stat.EngineID),
+				AffectedNodes: int(stat.AffectedNodes), AffectedItems: int(stat.AffectedItems), Reason: "引擎正在删除",
+			})
+			continue
+		}
 		eligibility, exists := eligibilityByID[stat.EngineID]
 		if !exists {
 			details = append(details, models.InvalidEngineDetail{
@@ -260,30 +269,31 @@ func (c *DatabaseCleaner) ExecuteHardDelete(ctx context.Context, tenantID uint) 
 func (c *DatabaseCleaner) ExecuteHardDeleteWithScope(ctx context.Context, tenantID uint, scope CleanupScope) (*models.MetaCleanupExecuteResult, error) {
 	result := &models.MetaCleanupExecuteResult{}
 
-	nodeQuery := c.db.Unscoped().Where("deleted_at IS NOT NULL")
+	itemQuery := c.db.Unscoped()
+	nodeQuery := c.db.Unscoped()
+	if scope.EngineID == 0 {
+		itemQuery = itemQuery.Where("deleted_at IS NOT NULL")
+		nodeQuery = nodeQuery.Where("deleted_at IS NOT NULL")
+	}
 	if tenantID > 0 {
+		itemQuery = itemQuery.Where("tenant_id = ?", tenantID)
 		nodeQuery = nodeQuery.Where("tenant_id = ?", tenantID)
 	}
 	if scope.EngineID > 0 {
+		itemQuery = itemQuery.Where("engine_id = ?", scope.EngineID)
 		nodeQuery = nodeQuery.Where("engine_id = ?", scope.EngineID)
 	}
-	if err := nodeQuery.Delete(&models.MetaNode{}).Error; err != nil {
-		result.Errors = append(result.Errors, fmt.Sprintf("物理删除节点失败: %v", err))
+	itemDelete := itemQuery.Delete(&models.MetaItem{})
+	if itemDelete.Error != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("物理删除项失败: %v", itemDelete.Error))
 	} else {
-		result.DeletedNodes = int(nodeQuery.RowsAffected)
+		result.DeletedItems = int(itemDelete.RowsAffected)
 	}
-
-	itemQuery := c.db.Unscoped().Where("deleted_at IS NOT NULL")
-	if tenantID > 0 {
-		itemQuery = itemQuery.Where("tenant_id = ?", tenantID)
-	}
-	if scope.EngineID > 0 {
-		itemQuery = itemQuery.Where("engine_id = ?", scope.EngineID)
-	}
-	if err := itemQuery.Delete(&models.MetaItem{}).Error; err != nil {
-		result.Errors = append(result.Errors, fmt.Sprintf("物理删除项失败: %v", err))
+	nodeDelete := nodeQuery.Delete(&models.MetaNode{})
+	if nodeDelete.Error != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("物理删除节点失败: %v", nodeDelete.Error))
 	} else {
-		result.DeletedItems = int(itemQuery.RowsAffected)
+		result.DeletedNodes = int(nodeDelete.RowsAffected)
 	}
 	return result, nil
 }
@@ -294,6 +304,9 @@ func (c *DatabaseCleaner) InvalidEngineIDs(ctx context.Context, tenantID uint) [
 
 func (c *DatabaseCleaner) InvalidEngineIDsWithScope(ctx context.Context, tenantID uint, scope CleanupScope) []uint {
 	var ids []uint
+	if scope.EngineID > 0 {
+		return []uint{scope.EngineID}
+	}
 	if c.systemClient == nil {
 		if c.log != nil {
 			c.log.Warn("SystemClient 未配置，无法获取无效引擎列表")

@@ -1453,6 +1453,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "必须引用已完成的影响评估并提交与引擎名称一致的确认文本；确认后引擎进入 deleting 并执行权威复扫 | Requires a completed impact assessment and a confirmation token equal to the engine name; the engine then enters deleting and performs an authoritative rescan",
                 "produces": [
                     "application/json"
                 ],
@@ -1469,9 +1470,10 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "删除策略 | Deletion policy",
+                        "description": "评估引用、确认文本与外部产物策略 | Assessment reference, confirmation token, and external artifact policy",
                         "name": "request",
                         "in": "body",
+                        "required": true,
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_system_internal_models.EngineDeleteRequest"
                         }
@@ -1582,6 +1584,129 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "system.engine.read"
+                ]
+            }
+        },
+        "/engines/{id}/deletion-assessments": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "在不改变引擎生命周期的前提下，请各 owner 模块扫描任务、服务、运行执行和派生产物影响 | Ask owner modules to scan task, service, running execution, and derived artifact impact without changing the engine lifecycle",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "引擎管理 | Engine Management"
+                ],
+                "summary": "评估删除引擎的影响 | Assess engine deletion impact",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "外部产物策略 | External artifact policy",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineDeletionAssessmentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineDeletionAssessmentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine.delete"
+                ]
+            }
+        },
+        "/engines/{id}/deletion-assessments/{assessment_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "引擎管理 | Engine Management"
+                ],
+                "summary": "查询删除引擎影响评估 | Get engine deletion impact assessment",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "影响评估ID | Impact assessment ID",
+                        "name": "assessment_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.TaskStatusResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine.delete"
                 ]
             }
         },
@@ -6610,8 +6735,34 @@ const docTemplate = `{
         },
         "github_com_addp_system_internal_models.EngineDeleteRequest": {
             "type": "object",
+            "required": [
+                "assessment_id",
+                "confirmation_token"
+            ],
+            "properties": {
+                "assessment_id": {
+                    "type": "string"
+                },
+                "confirmation_token": {
+                    "type": "string"
+                },
+                "external_artifact_policy": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.EngineDeletionAssessmentRequest": {
+            "type": "object",
             "properties": {
                 "external_artifact_policy": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.EngineDeletionAssessmentResponse": {
+            "type": "object",
+            "properties": {
+                "assessment_id": {
                     "type": "string"
                 }
             }
@@ -6879,6 +7030,32 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.TaskStatusResponse": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "progress": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.TaskProgress"
+                },
+                "results": {
+                    "description": "key=module, value=CleanupResultData",
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "status": {
+                    "type": "string"
+                },
+                "summary": {},
+                "task": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.CleanupTask"
+                },
+                "task_id": {
                     "type": "string"
                 }
             }

@@ -137,12 +137,23 @@ func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis
 
 	switch event.Action {
 	case events.CleanupActionScan:
-		stats, err := s.ScanReclaimCandidates(ctx, event.TenantID, event.Context)
+		candidates, err := s.listCandidates(ctx, event.TenantID, event.Context)
 		if err != nil {
 			result.Status = events.CleanupResultFailed
 			result.Errors = []string{err.Error()}
 			result.Summary = events.CleanupResultSummary{ErrorCount: 1, RiskLevel: "low"}
 			return
+		}
+		stats := candidates.stats()
+		if event.CauseEvent == events.CleanupCauseEngineDeleting {
+			impact, err := graphEngineDeletionImpact(candidates)
+			if err != nil {
+				result.Status = events.CleanupResultFailed
+				result.Errors = []string{err.Error()}
+				result.Summary = events.CleanupResultSummary{ErrorCount: 1, RiskLevel: "low"}
+				return
+			}
+			result.Impact = &impact
 		}
 		result.Status = events.CleanupResultSuccess
 		result.Statistics = graphCleanupStatsToMap(stats)
@@ -188,6 +199,18 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 	}
 
 	stats := candidates.stats()
+	if _, hasEngineID := graphCleanupContextUint(cleanupContext, "engine_id"); hasEngineID {
+		for _, task := range candidates.buildTasks {
+			if task.Status == models.BuildStatusRunning {
+				stats.Errors = append(stats.Errors, fmt.Sprintf("graph build task %d is running", task.ID))
+			}
+		}
+		if len(stats.Errors) > 0 {
+			return stats, nil
+		}
+		s.logicalCleanup(ctx, candidates, stats)
+		return stats, nil
+	}
 	switch cleanupMode {
 	case events.CleanupModeLogical:
 		s.logicalCleanup(ctx, candidates, stats)
@@ -195,6 +218,31 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 		s.physicalCleanup(ctx, candidates, stats)
 	}
 	return stats, nil
+}
+
+func graphEngineDeletionImpact(candidates graphCleanupCandidates) (events.CleanupImpactData, error) {
+	items := make([]events.CleanupImpactItem, 0,
+		len(candidates.ontologies)+len(candidates.entityTypes)+len(candidates.relationTypes)+len(candidates.ontologyVersions)+
+			len(candidates.knowledgeGraphs)+len(candidates.buildTasks)*2+len(candidates.buildMaterials)+len(candidates.reviewItems))
+	appendItems := func(prefix string, ids []uint) {
+		for _, id := range ids {
+			items = append(items, events.CleanupImpactItem{StableRef: fmt.Sprintf("%s:%d", prefix, id), Disposition: events.CleanupImpactWillDisable})
+		}
+	}
+	appendItems("ontology", ontologyIDs(candidates.ontologies))
+	appendItems("entity_type", entityTypeIDs(candidates.entityTypes))
+	appendItems("relation_type", relationTypeIDs(candidates.relationTypes))
+	appendItems("ontology_version", ontologyVersionIDs(candidates.ontologyVersions))
+	appendItems("knowledge_graph", knowledgeGraphIDs(candidates.knowledgeGraphs))
+	appendItems("graph_build_task", buildTaskIDs(candidates.buildTasks))
+	appendItems("graph_build_material", buildMaterialIDs(candidates.buildMaterials))
+	appendItems("graph_review_item", reviewItemIDs(candidates.reviewItems))
+	for _, task := range candidates.buildTasks {
+		if task.Status == models.BuildStatusRunning {
+			items = append(items, events.CleanupImpactItem{StableRef: fmt.Sprintf("graph_build_task:%d", task.ID), Disposition: events.CleanupImpactRunning})
+		}
+	}
+	return events.BuildCleanupImpactData(items, "/graph/graphs")
 }
 
 type graphCleanupCandidates struct {

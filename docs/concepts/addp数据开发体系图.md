@@ -181,6 +181,8 @@ DuckDB 联邦查询不是工作流引擎，也不是 System 中注册的普通�
 
 Notebook 使用 `dev_type="script"`，并在 `execution_config.engine_id` 中绑定 System 注册的 Notebook 引擎实例。Develop 只列出 `active` 且声明 `compute.script.modes` 包含 `notebook` 的 Runtime Descriptor。上传时先选择引擎，再从该实例查询 Kernel；执行时沿用保存的引擎和 Kernel，不接受临时改绑。
 
+已保存的 Notebook 可以由用户显式更换绑定引擎和 Kernel。重绑定直接更新原任务，不复制任务或 Notebook 文件，也不自动匹配替代引擎；目标引擎与 Kernel 校验通过后，`execution_config.engine_id` 和 `content.kernel` 必须在同一次数据库更新中生效。任务的新绑定只供后续执行使用，既有 `common.task_executions.execution_config` 快照保持不变。绑定引擎失效时，任务仍可查看、下载、删除和重绑定，但不可执行。
+
 Develop 后端通过 `common/dbbridge.OpenScriptSession()` 消费 `ScriptRuntimeProvider`，并使用租户 Service Access Token 调用返回的受控运行端点。部署配置不再提供 `JUPYTER_URL`，Develop 也不代理引擎健康检查。
 
 ⚠️ **Spark Workflow 运行时特殊要求**:

@@ -24,6 +24,11 @@ export default defineConfig({
       clientPort: 5170
     },
     proxy: {
+      '/portal': {
+        target: 'http://localhost:5185',
+        changeOrigin: true,
+        ws: true
+      },
       '/api': {
         target: 'http://localhost:8000', // 统一通过 Gateway 访问
         changeOrigin: true

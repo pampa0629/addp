@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -259,7 +260,7 @@ func (h *NotebookHandler) DownloadNotebook(c *gin.Context) {
 		return
 	}
 
-	if !isNotebookScript(devTask) {
+	if !devTask.IsNotebookScript() {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "不是 Notebook 类型"})
 		return
 	}
@@ -327,6 +328,85 @@ func (h *NotebookHandler) ListNotebooks(c *gin.Context) {
 	})
 }
 
+// UpdateRuntimeBinding 完整替换原 Notebook 任务的运行时绑定。
+// @Summary 更换 Notebook 运行时绑定 | Replace Notebook runtime binding
+// @Description 校验目标引擎和 Kernel 后更新原任务，仅影响后续执行，历史执行快照保持不变。| Validate the target engine and kernel, then update the original task for future executions only; historical execution snapshots remain unchanged.
+// @Tags Notebook
+// @Accept json
+// @Produce json
+// @Param id path int true "DevTask ID | DevTask ID"
+// @Param body body models.NotebookRuntimeBindingSwaggerRequest true "运行时绑定 | Runtime binding"
+// @Success 200 {object} models.DevTaskSwagger "已更新的 Notebook | Updated Notebook"
+// @Failure 400 {object} models.ErrorResponse "请求参数错误 | Invalid request"
+// @Failure 404 {object} models.ErrorResponse "Notebook 不存在 | Notebook not found"
+// @Failure 422 {object} models.ErrorResponse "引擎、Kernel 或任务类型校验失败 | Engine, kernel, or task type validation failed"
+// @Failure 500 {object} models.ErrorResponse "更新失败 | Update failed"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.notebook.update"]
+// @Router /notebooks/{id}/runtime-binding [put]
+func (h *NotebookHandler) UpdateRuntimeBinding(c *gin.Context) {
+	var uri struct {
+		ID uint `uri:"id" binding:"required"`
+	}
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookInvalidID)})
+		return
+	}
+
+	var req models.NotebookRuntimeBindingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookInvalidRuntimeBinding)})
+		return
+	}
+	req.Kernel = strings.TrimSpace(req.Kernel)
+	if req.EngineID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookEngineRequired)})
+		return
+	}
+	if req.Kernel == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookKernelRequired)})
+		return
+	}
+
+	tenantID := tenantIDValue(c)
+	userID := userIDValue(c)
+	task, err := h.devTaskService.GetDevTask(uri.ID, tenantID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookNotFound)})
+		return
+	}
+	if !task.IsNotebookScript() {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": commoni18n.T(c, developi18n.MsgTaskNotNotebook)})
+		return
+	}
+	if _, err := h.jupyterService.GetNotebookEngine(c.Request.Context(), tenantID, req.EngineID); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"error": commoni18n.TWithDetail(c, developi18n.MsgNotebookEngineUnavailable, err.Error()),
+		})
+		return
+	}
+	if err := h.jupyterService.ValidateKernel(c.Request.Context(), tenantID, req.EngineID, req.Kernel); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"error": commoni18n.TWithDetail(c, developi18n.MsgNotebookKernelUnavailable, err.Error()),
+		})
+		return
+	}
+
+	updated, err := h.devTaskService.RebindNotebookRuntime(uri.ID, tenantID, userID, req.EngineID, req.Kernel)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrNotebookNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookNotFound)})
+		case errors.Is(err, service.ErrTaskNotNotebook):
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": commoni18n.T(c, developi18n.MsgTaskNotNotebook)})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookRuntimeBindingFailed)})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, updated)
+}
+
 // DeleteNotebook 删除 Notebook
 // @Summary 删除 Notebook | Delete Notebook
 // @Tags Notebook
@@ -354,7 +434,7 @@ func (h *NotebookHandler) DeleteNotebook(c *gin.Context) {
 		return
 	}
 
-	if !isNotebookScript(devTask) {
+	if !devTask.IsNotebookScript() {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "不是 Notebook 类型"})
 		return
 	}
@@ -370,12 +450,4 @@ func (h *NotebookHandler) DeleteNotebook(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Notebook 删除成功",
 	})
-}
-
-func isNotebookScript(devTask *models.DevTask) bool {
-	if devTask == nil || devTask.DevType != "script" || devTask.Content == nil {
-		return false
-	}
-	notebookPath, ok := devTask.Content["notebook_path"].(string)
-	return ok && notebookPath != ""
 }

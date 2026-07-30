@@ -184,6 +184,7 @@ func main() {
 			"capabilities": map[string]interface{}{
 				"cleanup_executor": map[string]interface{}{
 					"enabled": true,
+					"causes":  []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted},
 				},
 			},
 		})

@@ -1,7 +1,10 @@
 package events
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -47,6 +50,14 @@ const (
 	CleanupResultPartialSuccess = "partial_success"
 	CleanupResultSkipped        = "skipped"
 	CleanupResultTimeout        = "timeout"
+)
+
+const (
+	CleanupImpactRebindable       = "rebindable"
+	CleanupImpactWillDisable      = "will_disable"
+	CleanupImpactWillDelete       = "will_delete"
+	CleanupImpactRunning          = "running"
+	CleanupImpactExternalArtifact = "external_artifact"
 )
 
 // 模块名称常量
@@ -100,6 +111,71 @@ type CleanupResultSummary struct {
 	RiskLevel                string `json:"risk_level,omitempty"`
 }
 
+// CleanupImpactSummary 是 Engine 删除评估中跨模块共享的影响分类摘要。
+type CleanupImpactSummary struct {
+	Rebindable       int `json:"rebindable,omitempty"`
+	WillDisable      int `json:"will_disable,omitempty"`
+	WillDelete       int `json:"will_delete,omitempty"`
+	Running          int `json:"running,omitempty"`
+	ExternalArtifact int `json:"external_artifact,omitempty"`
+}
+
+func (s CleanupImpactSummary) Total() int {
+	return s.Rebindable + s.WillDisable + s.WillDelete + s.Running + s.ExternalArtifact
+}
+
+func (s *CleanupImpactSummary) Add(other CleanupImpactSummary) {
+	s.Rebindable += other.Rebindable
+	s.WillDisable += other.WillDisable
+	s.WillDelete += other.WillDelete
+	s.Running += other.Running
+	s.ExternalArtifact += other.ExternalArtifact
+}
+
+// CleanupImpactData 只暴露通用影响摘要和确定性指纹；资源详情仍归 owner 模块。
+type CleanupImpactData struct {
+	Summary        CleanupImpactSummary `json:"summary"`
+	Digest         string               `json:"digest"`
+	ManagementPath string               `json:"management_path,omitempty"`
+}
+
+// CleanupImpactItem 是 owner 模块计算影响指纹时使用的稳定资源引用。
+type CleanupImpactItem struct {
+	StableRef   string
+	Disposition string
+}
+
+func BuildCleanupImpactData(items []CleanupImpactItem, managementPath string) (CleanupImpactData, error) {
+	tokens := make([]string, 0, len(items))
+	result := CleanupImpactData{ManagementPath: strings.TrimSpace(managementPath)}
+	for _, item := range items {
+		stableRef := strings.TrimSpace(item.StableRef)
+		if stableRef == "" {
+			return CleanupImpactData{}, fmt.Errorf("cleanup impact stable_ref is required")
+		}
+		disposition := strings.TrimSpace(item.Disposition)
+		switch disposition {
+		case CleanupImpactRebindable:
+			result.Summary.Rebindable++
+		case CleanupImpactWillDisable:
+			result.Summary.WillDisable++
+		case CleanupImpactWillDelete:
+			result.Summary.WillDelete++
+		case CleanupImpactRunning:
+			result.Summary.Running++
+		case CleanupImpactExternalArtifact:
+			result.Summary.ExternalArtifact++
+		default:
+			return CleanupImpactData{}, fmt.Errorf("unsupported cleanup impact disposition %q", disposition)
+		}
+		tokens = append(tokens, disposition+":"+stableRef)
+	}
+	sort.Strings(tokens)
+	digest := sha256.Sum256([]byte(strings.Join(tokens, "\n")))
+	result.Digest = hex.EncodeToString(digest[:])
+	return result, nil
+}
+
 // CleanupResultData - 资源回收结果数据（各模块写入 Redis）
 type CleanupResultData struct {
 	Module      string                 `json:"module"`                 // 模块名称
@@ -111,6 +187,7 @@ type CleanupResultData struct {
 	TriggerType string                 `json:"trigger_type"`           // manual/scheduled/event
 	Timestamp   time.Time              `json:"timestamp"`              // 完成时间
 	Summary     CleanupResultSummary   `json:"summary"`                // 标准摘要
+	Impact      *CleanupImpactData     `json:"impact,omitempty"`       // Engine 删除影响评估
 	Statistics  map[string]interface{} `json:"statistics,omitempty"`   // 模块私有统计
 	Details     interface{}            `json:"details,omitempty"`      // 详细信息
 	Errors      []string               `json:"errors,omitempty"`       // 错误摘要

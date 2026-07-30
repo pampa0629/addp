@@ -7,6 +7,12 @@ const NOTEBOOK_ENGINE = {
   engine_type: 'jupyter',
   lifecycle_state: 'active'
 }
+const ALTERNATE_NOTEBOOK_ENGINE = {
+  id: 11,
+  name: 'Alternate Jupyter',
+  engine_type: 'jupyter',
+  lifecycle_state: 'active'
+}
 
 test('uses an engine-selected kernel for upload and the saved engine for execution', async ({ page }) => {
   const consoleErrors = []
@@ -37,6 +43,42 @@ test('uses an engine-selected kernel for upload and the saved engine for executi
   await expect.poll(() => consoleErrors).toEqual([])
 })
 
+test('rebinds the original Notebook task for future executions', async ({ page }) => {
+  const bindingRequests = []
+  await installMockBackend(page, { bindingRequests })
+  await page.goto(`/notebook?id=${NOTEBOOK_ID}`)
+
+  await page.getByRole('button', { name: '更换引擎', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '更换 Notebook 引擎', exact: true })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByRole('textbox', { name: '当前绑定', exact: true })).toHaveValue('Jupyter Engine / python3')
+  await expect(dialog).toContainText('新绑定仅用于后续执行，历史执行记录保持不变。')
+
+  await dialog.locator('.el-select').nth(0).click()
+  await page.getByRole('option', { name: 'Alternate Jupyter', exact: true }).click()
+  await dialog.locator('.el-select').nth(1).click()
+  await page.getByRole('option', { name: 'Python 3.12', exact: true }).click()
+  await dialog.getByRole('button', { name: '确认更换', exact: true }).click()
+
+  await expect(dialog).toBeHidden()
+  await expect(page.getByRole('row', { name: 'Notebook 引擎 Alternate Jupyter', exact: true })).toBeVisible()
+  await expect(page.getByRole('row', { name: 'Kernel python312', exact: true })).toBeVisible()
+  expect(bindingRequests).toEqual([{ engine_id: 11, kernel: 'python312' }])
+  expect(new URL(page.url()).searchParams.get('id')).toBe(String(NOTEBOOK_ID))
+})
+
+test('keeps execution disabled but allows rebinding when the saved engine is unavailable', async ({ page }) => {
+  await installMockBackend(page, { boundEngineID: 8 })
+  await page.goto(`/notebook?id=${NOTEBOOK_ID}`)
+
+  await expect(page.getByRole('row', { name: 'Notebook 引擎 已失效的引擎 #8', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '执行', exact: true })).toBeDisabled()
+  const changeEngine = page.getByRole('button', { name: '更换引擎', exact: true })
+  await expect(changeEngine).toBeEnabled()
+  await changeEngine.click()
+  await expect(page.getByRole('dialog', { name: '更换 Notebook 引擎', exact: true })).toBeVisible()
+})
+
 test.describe('窄屏布局', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
@@ -61,8 +103,8 @@ test.describe('窄屏布局', () => {
   })
 })
 
-async function installMockBackend(page) {
-  const notebook = {
+async function installMockBackend(page, { boundEngineID = NOTEBOOK_ENGINE.id, bindingRequests = [] } = {}) {
+  let notebook = {
     id: NOTEBOOK_ID,
     tenant_id: 1,
     name: 'scripts2',
@@ -76,7 +118,7 @@ async function installMockBackend(page) {
       parameters: {}
     },
     execution_config: {
-      engine_id: NOTEBOOK_ENGINE.id
+      engine_id: boundEngineID
     }
   }
 
@@ -92,17 +134,33 @@ async function installMockBackend(page) {
       return fulfillJSON(route, { id: 1, username: 'develop-e2e' })
     }
     if (path === '/api/v1/develop/notebook-engines') {
-      return fulfillJSON(route, [NOTEBOOK_ENGINE])
+      return fulfillJSON(route, [NOTEBOOK_ENGINE, ALTERNATE_NOTEBOOK_ENGINE])
     }
     if (path === `/api/v1/develop/notebook-engines/${NOTEBOOK_ENGINE.id}/kernels`) {
       return fulfillJSON(route, {
         kernels: [{ name: 'python3', display_name: 'Python 3', language: 'python' }]
       })
     }
+    if (path === `/api/v1/develop/notebook-engines/${ALTERNATE_NOTEBOOK_ENGINE.id}/kernels`) {
+      return fulfillJSON(route, {
+        kernels: [{ name: 'python312', display_name: 'Python 3.12', language: 'python' }]
+      })
+    }
     if (path === '/api/v1/develop/notebooks') {
       return fulfillJSON(route, { items: [notebook], total: 1, page: 1, page_size: 20 })
     }
     if (path === `/api/v1/develop/task-definitions/${NOTEBOOK_ID}`) {
+      return fulfillJSON(route, notebook)
+    }
+    if (request.method() === 'PUT' && path === `/api/v1/develop/notebooks/${NOTEBOOK_ID}/runtime-binding`) {
+      const binding = request.postDataJSON()
+      bindingRequests.push(binding)
+      notebook = {
+        ...notebook,
+        updated_at: '2026-07-30T10:30:00+08:00',
+        content: { ...notebook.content, kernel: binding.kernel },
+        execution_config: { ...notebook.execution_config, engine_id: binding.engine_id }
+      }
       return fulfillJSON(route, notebook)
     }
 

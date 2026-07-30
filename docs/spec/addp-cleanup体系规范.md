@@ -125,11 +125,11 @@ Transfer、Develop、Service、Asset、Portal 等模块按同一原则处理：
 - 可以消费 System 或 owner 模块发布的生命周期事件。
 - 不得让其他模块代替自己解释私有表、任务定义或物理路径。
 
-Transfer 已实现的资源回收执行方当前只治理 Transfer-owned 任务定义残留：
+Transfer 已实现的资源回收执行方当前治理 Transfer-owned 任务定义和受管运行资源：
 
 - `engine.deleted` 时，扫描 source / target endpoint locator 引用该 engine 的 `transfer.transfer_tasks`。
-- `logical_cleanup` 禁用命中的任务定义、清空下一次调度并恢复 idle 状态。
-- `physical_cleanup` 删除 Transfer 任务定义本身；不删除任务曾经写入的 target 业务数据。
+- engine 生命周期 cleanup 无论使用何种 cleanup mode，都只禁用命中的用户任务定义、清空下一次调度并恢复 idle 状态；任务定义必须保留供用户后续重绑定或显式删除。
+- tenant 生命周期 `logical_cleanup` 禁用任务定义；tenant 生命周期 `physical_cleanup` 才允许删除 Transfer 任务定义本身。
 - 没有明确 lifecycle context 的普通 scan 不应把全部 Transfer 任务定义视作待回收对象。
 - Transfer 不拥有目标引擎中的表、文件或对象生命周期；这些资源只有在被其他 owner 模块登记为 artifact state 时，才由对应 owner executor 清理。
 
@@ -146,7 +146,8 @@ Service 第一阶段资源回收执行方只治理 Service-owned 服务发布定
 - `engine.deleted` 时，扫描直接绑定该 engine 的 `service.query_services`、`service.graph_query_services`，以及 `service.tile_service_layers.layer_config.source.engine_id` 指向该 engine 的动态图层。
 - `tenant.deleted` 时，扫描该租户下 Service-owned query service、graph query service、tile service 和 tile layer。
 - `logical_cleanup` 将命中的服务发布定义置为 `inactive` 并记录 `missing_source` 原因，动态图层置为 disabled。
-- `physical_cleanup` 删除命中的 Service-owned 服务发布定义和动态图层状态记录。
+- engine 生命周期 cleanup 无论使用何种 cleanup mode，都只将命中的服务发布定义置为 `inactive` 并记录 `missing_source`，动态图层置为 disabled；定义必须保留供用户后续重绑定或显式删除。
+- tenant 生命周期 `physical_cleanup` 才允许删除 Service-owned 服务发布定义和动态图层状态记录。
 - 没有明确 lifecycle context 的普通 scan 不应把全部 Service 发布定义视作待回收对象。
 - Service cleanup 不删除外部 registered services，不删除外部服务端点，不推断或删除 MinIO 静态瓦片、缓存对象或业务引擎中的源数据。
 
@@ -155,13 +156,14 @@ Quality 第一阶段资源回收执行方只治理 Quality-owned 质量配置和
 - `engine.deleted` 时，扫描绑定该 engine 的 `quality.rule_applications`、`quality.check_tasks` 和 `quality.issues`。
 - `tenant.deleted` 时，扫描该租户下 Quality-owned 规则应用、检查任务和问题工单。
 - `logical_cleanup` 禁用规则应用和检查任务，清空检查任务下一次调度，并将命中的 open 问题工单置为 ignored。
-- `physical_cleanup` 删除命中的 Quality-owned 规则应用、检查任务和问题工单状态记录。
+- engine 生命周期 cleanup 无论使用何种 cleanup mode，都只禁用规则应用和检查任务、清空下一次调度，并将命中的 open 问题工单置为 ignored；配置必须保留供用户后续重绑定或显式删除。
+- tenant 生命周期 `physical_cleanup` 才允许删除 Quality-owned 规则应用、检查任务和问题工单状态记录。
 - 没有明确 lifecycle context 的普通 scan 不应把全部 Quality 配置和问题工单视作待回收对象。
 - Quality cleanup 不删除源业务表、源数据、Standard 数据元或规则定义，也不删除 `common.task_executions` 历史执行记录。
 
-Develop 第一阶段资源回收执行方只在租户生命周期回收中治理 Develop-owned 开发任务定义：
+Develop 资源回收执行方评估 engine 影响，并只在租户生命周期回收中治理 Develop-owned 开发任务定义：
 
-- `engine.deleted` 时，不扫描、不归档、不禁用、不删除 `develop.dev_tasks`。SQL / workflow / script 等开发任务定义属于用户创作成果，engine 只是可替换的运行环境引用。
+- `engine.deleting` 时扫描 `develop.dev_tasks` 中对目标 Engine 的运行时绑定和资源引用，统一报告为 `rebindable` 影响；不归档、不禁用、不删除任务定义。
 - `tenant.deleted` 时，扫描该租户下 Develop-owned 开发任务定义。
 - `logical_cleanup` 将租户删除范围内的开发任务置为 `archived`、关闭调度、清空下一次调度。
 - `physical_cleanup` 仅在租户删除范围内删除 Develop-owned 开发任务定义本身；不删除 `common.task_executions` 历史执行记录。
@@ -173,7 +175,8 @@ Graph 第一阶段资源回收执行方只治理 Graph-owned 图谱建模和构�
 - `engine.deleted` 时，扫描绑定该 engine 的 `graph.knowledge_graphs`，以及这些 graph 下的 `graph.build_tasks`、`graph.build_materials`、`graph.review_items`。
 - `tenant.deleted` 时，扫描该租户下 Graph-owned 本体、实体类型、关系类型、本体版本、知识图谱实例、构建任务、构建材料和审核项。
 - `logical_cleanup` 将命中的本体和知识图谱实例置为 `archived`，将未完成的构建任务置为 `cancelled`；实体类型、关系类型、本体版本、构建材料和审核项不单独改写状态，只随本体、任务和图谱离开活跃路径。
-- `physical_cleanup` 删除 Graph-owned PostgreSQL 状态记录，删除顺序必须先子状态后父状态。
+- engine 生命周期 cleanup 无论使用何种 cleanup mode，都只归档知识图谱实例并取消未完成的构建任务；图谱、本体、构建材料和审核状态必须保留供用户后续重绑定或显式删除。
+- tenant 生命周期 `physical_cleanup` 才允许删除 Graph-owned PostgreSQL 状态记录，删除顺序必须先子状态后父状态。
 - 没有明确 lifecycle context 的普通 scan 不应把全部 Graph 本体、图谱或构建状态视作待回收对象。
 - Graph cleanup 第一阶段不删除 Neo4j database 中的真实图数据，不删除 MinIO 中的构建材料文件，不删除 `common.task_executions` 历史执行记录；这些物理产物只有在后续被明确登记为 Graph-owned artifact state 后，才进入对应 owner executor。
 
@@ -261,6 +264,22 @@ cleanup request（资源回收请求）必须保持中性。
 - 未指定模块时，System 按 `module_registry.metadata.capabilities.cleanup_executor.enabled=true` 且状态为 `up` 的模块集合生成列表。
 - executor 收到请求后，如自身不在 `expected_modules` 中，必须忽略并不得写入结果。
 - `expected_modules` 不得硬编码在 System 或 UI；显式指定的模块也必须是已注册且启用资源回收执行方的模块。
+- Engine 删除影响评估是严格模式：System 必须从全部已安装模块注册记录中选择声明支持 `engine.deleting` 的 cleanup executor，不得只选择状态为 `up` 的模块。任一参与模块为 `down`、响应超时或检查失败时，评估不完整并硬阻断删除。
+- cleanup executor 必须在 `module_registry.metadata.capabilities.cleanup_executor.causes[]` 声明自己支持的 lifecycle cause；未声明 `engine.deleting` 的模块不参与 Engine 删除评估。
+
+### Engine 删除影响模型
+
+Engine 删除 scan 除可回收对象外，还必须报告不会被自动删除、但会因 Engine 退出而受影响的 owner 资源。公共结果只保存稳定的跨模块分类，模块私有表、字段和判断逻辑仍留在 executor 内部。
+
+| 分类 | 语义 | 删除处理 |
+| --- | --- | --- |
+| `rebindable` | 用户创建且可显式更换 Engine 的任务、服务或配置。 | 保留；未重绑定时后续执行不可用。 |
+| `will_disable` | 强绑定目标 Engine、删除后必须退出活跃路径的配置。 | 禁用或标记 `missing_engine`，不得因 Engine 删除物理删除定义。 |
+| `will_delete` | Meta 快照、缓存、受管派生产物等可回收 owner 状态。 | 按 owner 策略物理回收。 |
+| `running` | 当前仍在使用目标 Engine 的执行。 | 硬阻断删除，必须先等待结束或由 owner 显式取消。 |
+| `external_artifact` | 位于外部 Engine 内且由 ADDP owner 明确登记的产物。 | 删除失败时硬阻断；管理员可显式选择 `abandon`。 |
+
+每个 executor 必须返回各分类数量和 `impact_digest`。Digest 由 owner 使用稳定资源 ID 和 disposition 计算，System 只比较摘要，不解释模块私有资源。模块可返回安全的 `management_path` 供 Console 跳转到 owner 页面处理依赖。
 
 ## 六、scan 与 execute
 
@@ -403,7 +422,7 @@ cleanup 不等于所有生命周期事件都必须由 System 同步调度。
 
 | 事件 | 发布方 | 处理方式 |
 | --- | --- | --- |
-| engine deleting / disabled | System | `disabled` 只退出正常消费；用户确认删除时 Engine 先进入 `deleting`，System 在保留连接的前提下发起 scan 和 physical cleanup。只有 owner 模块明确把某类运行配置定义判定为强绑定 engine 且不可替换时，才可禁用并记录 `missing_engine`；用户创作成果类定义不因 engine 生命周期自动回收。 |
+| engine deleting / disabled | System | `disabled` 只退出正常消费；删除先执行只读影响评估，用户确认后 Engine 进入 `deleting` 并执行权威复扫。用户创建的任务、服务和治理配置只允许保留、重绑定或禁用，不因 engine 生命周期物理删除；Meta 快照、缓存和明确登记的派生产物按 owner 策略回收。 |
 | tenant deleted | System | 必须触发 system-owned cleanup execution，各模块清理本租户 owner 资源并写审计摘要；System 审计日志保留。 |
 | item deleted | Meta 或 item owner | 相关模块标记 artifact state 为 `missing_source`，并按策略清理物理产物。 |
 | source facts changed | Meta | 相关模块优先标记派生产物 `outdated`；查询和执行时做惰性复查。 |
@@ -420,25 +439,30 @@ cleanup 不等于所有生命周期事件都必须由 System 同步调度。
 
 ### Engine 删除工作流
 
-Engine 删除必须遵循单一顺序：
+Engine 删除必须遵循单一的两阶段顺序：
 
 ```text
 active / disabled
-→ deleting（退出正常业务列表，但保留连接和凭据）
-→ cleanup scan
-→ physical cleanup execute
+→ 只读影响评估 scan（Engine 仍保持原生命周期）
+→ 用户确认评估结果
+→ deleting（冻结新绑定和新执行，但保留连接和凭据）
+→ 权威复扫并比较 impact digest
+→ cleanup execute
 → cleanup 全部成功
 → 物理删除 system.engines 记录并发布 engine.deleted
 ```
 
 约束：
 
-1. scan 和 execute 的 `context.engine_id` 指向正在删除的 Engine；各 executor 必须把该 Engine 当作即将失效来源，不能因为 System 记录仍存在而跳过候选。
-2. cleanup 失败时 Engine 保持 `deleting`，保留 scan / execute task ID 和错误摘要，允许管理员重试；不得先删除连接配置。
-3. 外部引擎不可达且存在 owner 已登记外部产物时，管理员可显式选择 `external_artifact_policy=abandon`。Owner 模块必须把记录终止为 `abandoned_external`，保存外部 schema/object、最后错误、放弃时间和操作者审计；该记录不再进入自动 cleanup 候选。
-4. `abandoned_external` 表示平台放弃后续物理删除责任，不表示外部对象已删除。外部对象由 DBA 或外部系统管理员处理。
-5. System 不读取或修改 owner 私有表；放弃语义仍通过 cleanup request 的中性 context 传递，由 owner executor 落库。
-6. 删除后重新注册产生新的 Engine Instance；cleanup 不做旧 ID 到新 ID 的自动映射。
+1. 只读预评估不改变 Engine 生命周期，也不得产生任何 cleanup 副作用；评估结果必须绑定 Tenant、Engine、参与模块集合和有效期。
+2. 用户确认必须引用一次已完成且参与者完整的评估。确认后 System 原子切换 Engine 为 `deleting`，所有 owner 的新建、更新和执行入口必须重新校验目标 Engine 为 `active`。
+3. `deleting` 后必须执行权威复扫。若发现新增影响、任一模块不可用或 `impact_digest` 与用户确认的评估不一致，删除暂停并要求用户查看新结果，不得自动继续。
+4. scan 和 execute 的 `context.engine_id` 指向正在删除的 Engine；各 executor 必须把该 Engine 当作即将失效来源，不能因为 System 记录仍存在而跳过候选。
+5. cleanup 失败时 Engine 保持 `deleting`，保留 scan / execute task ID 和错误摘要，允许管理员重试；不得先删除连接配置。
+6. 外部引擎不可达且存在 owner 已登记外部产物时，管理员可显式选择 `external_artifact_policy=abandon`。Owner 模块必须把记录终止为 `abandoned_external`，保存外部 schema/object、最后错误、放弃时间和操作者审计；该记录不再进入自动 cleanup 候选。
+7. `abandoned_external` 表示平台放弃后续物理删除责任，不表示外部对象已删除。外部对象由 DBA 或外部系统管理员处理。
+8. System 不读取或修改 owner 私有表；放弃语义仍通过 cleanup request 的中性 context 传递，由 owner executor 落库。
+9. 删除后重新注册产生新的 Engine Instance；cleanup 不做旧 ID 到新 ID 的自动映射。
 
 ## 十一、与任务体系的关系
 
@@ -551,7 +575,8 @@ curl -sS "$BASE/monitor/executions/by-execution-id/$EXECUTION_ID/tree" \
 | 问题 | 决策 |
 | --- | --- |
 | item 删除后 artifact state 如何处理 | 有审计和诊断价值的 artifact state 默认标记 `missing_source`，从活跃查询中隐藏；纯缓存可物理删除，但必须保留 execution / audit 摘要。 |
-| engine 删除后任务定义如何处理 | 自动触发 scan；只有 owner 模块明确判定为强绑定且不可替换的运行配置类任务定义，才默认禁用并记录 `missing_engine`；SQL、workflow、script、Notebook 等用户创作成果不因 engine 生命周期自动清理。 |
+| engine 删除前如何检查影响 | 先执行无副作用的只读影响评估；确认后进入 `deleting` 并权威复扫。参与模块缺失、运行任务、扫描失败或影响摘要变化时硬阻断删除。 |
+| engine 删除后任务定义如何处理 | 用户创建的任务、服务和治理配置统一保留；可重绑定的报告为 `rebindable`，强绑定配置禁用并记录 `missing_engine`。只有 Meta 快照、缓存和明确登记的派生产物可以随 engine 生命周期物理清理。 |
 | tenant 删除后如何处理 cleanup | 必须通过 system-owned cleanup execution 汇总各模块结果；业务资源可清理，System 审计日志保留或归档。 |
 | 源事实变化后如何处理派生产物 | 主路径是事件驱动标记 `outdated`；查询和执行时做惰性复查作为防线；不因 facts 变化直接物理删除派生产物。 |
 | 配置变化如何判断产物过期 | 按产物类型保存和比较 `source_version`、`config_version`；不使用一个粗粒度全局版本覆盖所有产物。 |

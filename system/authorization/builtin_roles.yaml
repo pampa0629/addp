@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 25
+manifest_version: 27
 roles:
   - key: platform.asset_runtime
     role_type: platform_builtin
@@ -43,6 +43,14 @@ roles:
     allowed_principal_types: [service_principal]
     permissions:
       - system.runtime_registry.read
+      - system.runtime_registry.update
+  - key: platform.portal_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.portal_runtime.name
+    description_i18n_key: roles.platform.portal_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
       - system.runtime_registry.update
   - key: platform.security_administrator
     role_type: platform_builtin
@@ -191,6 +199,7 @@ roles:
       - develop.notebook.delete
       - develop.notebook.execute
       - develop.notebook.read
+      - develop.notebook.update
       - develop.task.create
       - develop.task.delete
       - develop.task.execute

@@ -91,6 +91,7 @@ Gateway（API 网关）是全域数据平台的**统一入口**，所有外部�
 | `/api/v1/develop/*` | Develop (8185) | SQL 执行、工作流 |
 | `/api/v1/service/*` | Service (8086) | 数据服务、OGC 标准 |
 | `/api/v1/copilot/*` | Copilot (8087) | AI 助手 |
+| `/api/v1/portal/*` | Portal (8184) | 资产使用侧 BFF |
 
 ### 3. 限流控制 ⏱️
 
@@ -222,7 +223,7 @@ Response
 
 ## 模块注册与动态路由
 
-Gateway 只保留一条模块路由主路径：System 使用配置中的 `SYSTEM_URL` 作为模块注册表的 bootstrap 目标，所有 `/api/v1/system/**` 请求透明转发到该目标；其他模块统一通过 System 模块注册表动态发现，不保留硬编码模块 fallback。
+Gateway 只保留一条模块路由主路径：System 使用配置中的 `SYSTEM_URL` 作为模块注册表的 bootstrap 目标，所有 `/api/v1/system/**` 请求透明转发到该目标；Portal 等其他后端模块统一通过 System 模块注册表动态发现，不保留硬编码模块 fallback。Portal 的独立顶层前端定位不改变其 BFF 后端必须注册后才能经 Gateway 访问的约束。
 
 ### 模块注册表（system.module_registry）
 

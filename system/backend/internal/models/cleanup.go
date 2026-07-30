@@ -42,10 +42,14 @@ type TaskProgress struct {
 // TaskSummary - 任务汇总（仅scan任务）
 type TaskSummary struct {
 	events.CleanupResultSummary
+	Impact       events.CleanupImpactSummary `json:"impact"`
+	ImpactDigest string                      `json:"impact_digest,omitempty"`
 }
 
 // ExecuteSummary - 执行汇总（execute任务）
 type ExecuteSummary struct {
 	events.CleanupResultSummary
-	HasErrors bool `json:"has_errors"`
+	Impact       events.CleanupImpactSummary `json:"impact"`
+	ImpactDigest string                      `json:"impact_digest,omitempty"`
+	HasErrors    bool                        `json:"has_errors"`
 }

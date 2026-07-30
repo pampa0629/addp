@@ -320,8 +320,6 @@
         "delete": "Delete",
         "retryDelete": "Retry cleanup",
         "cleanupAndDelete": "Clean up and delete",
-        "abandonExternal": "Abandon external artifacts",
-        "abandonAndDelete": "Abandon and delete",
         "testConnection": "Test Connection",
         "save": "Save",
         "cancel": "Cancel"
@@ -456,17 +454,41 @@
         "updateSuccess": "Updated successfully",
         "opFailed": "Operation failed",
         "scanPolicySyncFailed": "Engine saved, but metadata scan orchestration failed: {error}",
-        "deleteConfirm": "Delete engine \"{name}\"? Registered related resources will be reclaimed before the engine is removed.",
-        "retryDeleteConfirm": "Retry cleanup and deletion for engine \"{name}\"?",
-        "deleteTitle": "Confirm Delete",
         "deleteStarted": "Cleanup started; the engine will be removed automatically when it completes",
-        "abandonExternalTitle": "Abandon external artifacts and delete",
-        "abandonExternalConfirm": "Cleanup of external artifacts for engine \"{name}\" failed. Continuing keeps object locations and error audit records but stops further deletion attempts; a DBA must handle the external objects. Continue?",
         "builtinCannotDelete": "Built-in engines cannot be deleted",
         "detailFailed": "Failed to get engine details",
         "fillRequired": "Please fill in all required fields",
         "capabilitiesJsonInvalid": "Capabilities JSON is invalid",
         "extensionEditUnsupported": "Extension engines are maintained by their runtime self-registration and cannot be edited in the general engine form."
+      },
+      "deletionAssessment": {
+        "title": "Delete Engine - {name}",
+        "externalPolicy": "External materialized objects",
+        "deleteExternal": "Delete with engine",
+        "keepExternal": "Leave in place",
+        "refresh": "Reassess",
+        "module": "Owner module",
+        "status": "Status",
+        "rebindable": "Rebindable",
+        "willDisable": "Will disable",
+        "willDelete": "Will delete",
+        "running": "Running",
+        "externalArtifact": "External artifacts",
+        "manage": "Manage",
+        "open": "Open",
+        "runningBlocked": "{count} running tasks or artifacts still use this engine. Stop them before deletion.",
+        "confirmName": "Enter engine name \"{name}\" to confirm deletion",
+        "failedStatus": "Impact assessment did not complete. Current status: {status}",
+        "timeout": "Impact assessment timed out. Reassess and try again.",
+        "invalidResponse": "The impact assessment did not return a task ID.",
+        "statuses": {
+          "pending": "Pending",
+          "running": "Assessing",
+          "success": "Complete",
+          "failed": "Failed",
+          "partial_success": "Partial failure",
+          "timeout": "Timed out"
+        }
       },
       "capabilityView": {
         "actions": {
@@ -1026,6 +1048,10 @@
       "orchestrator_runtime": {
         "name": "Orchestrator Platform Runtime",
         "description": "Discovers task providers and registers Orchestrator runtime capabilities."
+      },
+      "portal_runtime": {
+        "name": "Portal Platform Runtime",
+        "description": "Registers the Portal module and sends runtime heartbeats without user or tenant business permissions."
       }
     },
     "tenant": {

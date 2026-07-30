@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -314,6 +315,16 @@ func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis
 		result.Status = events.CleanupResultSuccess
 		result.Statistics = metacleanup.ToMap(stats)
 		result.Summary = metaScanSummary(stats)
+		if event.CauseEvent == events.CleanupCauseEngineDeleting {
+			impact, err := s.metaEngineDeletionImpact(ctx, event.TenantID, event.Context, stats)
+			if err != nil {
+				result.Status = events.CleanupResultFailed
+				result.Errors = []string{err.Error()}
+				result.Summary = events.CleanupResultSummary{ErrorCount: 1, RiskLevel: "low"}
+				return
+			}
+			result.Impact = &impact
+		}
 		s.log.Info("扫描资源回收候选完成", "tenant_id", event.TenantID, "task_id", event.TaskID)
 
 	case events.CleanupActionExecute:
@@ -339,6 +350,45 @@ func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis
 		result.Errors = []string{"unknown action: " + event.Action}
 		s.log.Error("未知的清理动作", "action", event.Action)
 	}
+}
+
+func (s *CleanupService) metaEngineDeletionImpact(ctx context.Context, tenantID uint, cleanupContext map[string]interface{}, stats *models.MetaCleanupStatistics) (events.CleanupImpactData, error) {
+	scope := metacleanup.ScopeFromContext(cleanupContext)
+	if scope.EngineID == 0 {
+		return events.CleanupImpactData{}, errors.New("meta engine deletion assessment requires engine_id")
+	}
+	type idRow struct{ ID uint }
+	var nodes []idRow
+	if err := s.db.WithContext(ctx).Unscoped().Model(&models.MetaNode{}).
+		Select("id").Where("tenant_id = ? AND engine_id = ?", tenantID, scope.EngineID).Find(&nodes).Error; err != nil {
+		return events.CleanupImpactData{}, err
+	}
+	var metaItems []idRow
+	if err := s.db.WithContext(ctx).Unscoped().Model(&models.MetaItem{}).
+		Select("id").Where("tenant_id = ? AND engine_id = ?", tenantID, scope.EngineID).Find(&metaItems).Error; err != nil {
+		return events.CleanupImpactData{}, err
+	}
+	var scanTasks []idRow
+	if err := s.invalidEngineScanTaskDefinitionsQuery(ctx, tenantID, scope, []uint{scope.EngineID}).Unscoped().Select("id").Find(&scanTasks).Error; err != nil {
+		return events.CleanupImpactData{}, err
+	}
+	items := make([]events.CleanupImpactItem, 0, len(nodes)+len(metaItems)+len(scanTasks)+1)
+	for _, node := range nodes {
+		items = append(items, events.CleanupImpactItem{StableRef: fmt.Sprintf("meta_node:%d", node.ID), Disposition: events.CleanupImpactWillDelete})
+	}
+	for _, item := range metaItems {
+		items = append(items, events.CleanupImpactItem{StableRef: fmt.Sprintf("meta_item:%d", item.ID), Disposition: events.CleanupImpactWillDelete})
+	}
+	for _, task := range scanTasks {
+		items = append(items, events.CleanupImpactItem{StableRef: fmt.Sprintf("meta_scan_task:%d", task.ID), Disposition: events.CleanupImpactWillDelete})
+	}
+	if stats != nil && stats.MeilisearchIndexes.Count > 0 {
+		items = append(items, events.CleanupImpactItem{
+			StableRef:   fmt.Sprintf("meta_search_index:engine:%d:count:%d", scope.EngineID, stats.MeilisearchIndexes.Count),
+			Disposition: events.CleanupImpactWillDelete,
+		})
+	}
+	return events.BuildCleanupImpactData(items, "/meta/catalog")
 }
 
 // ScanReclaimCandidates 扫描资源回收候选

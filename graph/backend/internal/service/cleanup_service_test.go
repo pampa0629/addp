@@ -61,8 +61,11 @@ func TestGraphCleanupEngineDeletedOnlyTargetsBoundKnowledgeGraphs(t *testing.T) 
 	if stats.Ontologies != 0 || stats.EntityTypes != 0 || stats.RelationTypes != 0 || stats.OntologyVersions != 0 {
 		t.Fatalf("engine cleanup must not include ontology definitions: %+v", stats)
 	}
+	if err := db.Model(&models.BuildTask{}).Where("id = ?", matchedTaskID).Update("status", models.BuildStatusPending).Error; err != nil {
+		t.Fatalf("mark build task pending: %v", err)
+	}
 
-	stats, err = svc.ExecuteCleanup(context.Background(), 1, events.CleanupModeLogical, map[string]interface{}{"engine_id": 7})
+	stats, err = svc.ExecuteCleanup(context.Background(), 1, events.CleanupModePhysical, map[string]interface{}{"engine_id": 7})
 	if err != nil {
 		t.Fatalf("ExecuteCleanup: %v", err)
 	}

@@ -329,13 +329,86 @@ func (h *EngineHandler) EnableSpatialWorkspace(c *gin.Context) {
 	commonapi.RespondSuccess(c, toEngineResponse(engine))
 }
 
-// Delete godoc
-// @Summary      删除引擎 | Delete engine
+// CreateDeletionAssessment godoc
+// @Summary      评估删除引擎的影响 | Assess engine deletion impact
+// @Description  在不改变引擎生命周期的前提下，请各 owner 模块扫描任务、服务、运行执行和派生产物影响 | Ask owner modules to scan task, service, running execution, and derived artifact impact without changing the engine lifecycle
+// @Tags         引擎管理 | Engine Management
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "引擎ID | Engine ID"
+// @Param        request body models.EngineDeletionAssessmentRequest false "外部产物策略 | External artifact policy"
+// @Success      202 {object} models.EngineDeletionAssessmentResponse
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Failure      503 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.engine.delete"]
+// @Router       /engines/{id}/deletion-assessments [post]
+func (h *EngineHandler) CreateDeletionAssessment(c *gin.Context) {
+	id, err := commonapi.BindIDParam(c, "id")
+	if err != nil {
+		return
+	}
+	actorID, tenantID, err := iamTenantUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	var req models.EngineDeletionAssessmentRequest
+	if c.Request.Body != nil && c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			commonapi.RespondError(c, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	assessmentID, err := h.engineService.CreateDeletionAssessment(id, tenantID, actorID, req.ExternalArtifactPolicy)
+	if err != nil {
+		h.respondWithResourceError(c, err)
+		return
+	}
+	c.JSON(http.StatusAccepted, models.EngineDeletionAssessmentResponse{AssessmentID: assessmentID})
+}
+
+// GetDeletionAssessment godoc
+// @Summary      查询删除引擎影响评估 | Get engine deletion impact assessment
 // @Tags         引擎管理 | Engine Management
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id path int true "引擎ID | Engine ID"
-// @Param        request body models.EngineDeleteRequest false "删除策略 | Deletion policy"
+// @Param        assessment_id path string true "影响评估ID | Impact assessment ID"
+// @Success      200 {object} models.TaskStatusResponse
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.engine.delete"]
+// @Router       /engines/{id}/deletion-assessments/{assessment_id} [get]
+func (h *EngineHandler) GetDeletionAssessment(c *gin.Context) {
+	id, err := commonapi.BindIDParam(c, "id")
+	if err != nil {
+		return
+	}
+	_, tenantID, err := iamTenantUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	assessment, err := h.engineService.GetDeletionAssessment(id, tenantID, c.Param("assessment_id"))
+	if err != nil {
+		h.respondWithResourceError(c, err)
+		return
+	}
+	commonapi.RespondSuccess(c, assessment)
+}
+
+// Delete godoc
+// @Summary      删除引擎 | Delete engine
+// @Description  必须引用已完成的影响评估并提交与引擎名称一致的确认文本；确认后引擎进入 deleting 并执行权威复扫 | Requires a completed impact assessment and a confirmation token equal to the engine name; the engine then enters deleting and performs an authoritative rescan
+// @Tags         引擎管理 | Engine Management
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "引擎ID | Engine ID"
+// @Param        request body models.EngineDeleteRequest true "评估引用、确认文本与外部产物策略 | Assessment reference, confirmation token, and external artifact policy"
 // @Success      202 {object} object{message=string,engine=models.EngineResponse}
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse
@@ -354,13 +427,11 @@ func (h *EngineHandler) Delete(c *gin.Context) {
 		return
 	}
 	var req models.EngineDeleteRequest
-	if c.Request.Body != nil && c.Request.ContentLength > 0 {
-		if err := c.ShouldBindJSON(&req); err != nil {
-			commonapi.RespondError(c, http.StatusBadRequest, err.Error())
-			return
-		}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		commonapi.RespondError(c, http.StatusBadRequest, err.Error())
+		return
 	}
-	engine, err := h.engineService.BeginDeletion(id, tenantID, actorID, req.ExternalArtifactPolicy)
+	engine, err := h.engineService.BeginDeletion(id, tenantID, actorID, &req)
 	if err != nil {
 		h.respondWithResourceError(c, err)
 		return
@@ -394,6 +465,18 @@ func (h *EngineHandler) respondWithResourceError(c *gin.Context, err error) {
 		commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgEngineArtifactPolicyInvalid))
 	case errors.Is(err, service.ErrEngineCleanupUnavailable):
 		commonapi.RespondError(c, http.StatusServiceUnavailable, commoni18n.T(c, sysi18n.MsgEngineCleanupUnavailable))
+	case errors.Is(err, service.ErrDeletionAssessmentInvalid):
+		commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgEngineDeletionAssessmentInvalid))
+	case errors.Is(err, service.ErrDeletionConfirmation):
+		commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgEngineDeletionConfirmationInvalid))
+	case errors.Is(err, service.ErrDeletionAssessmentPending):
+		commonapi.RespondError(c, http.StatusConflict, commoni18n.T(c, sysi18n.MsgEngineDeletionAssessmentPending))
+	case errors.Is(err, service.ErrDeletionAssessmentExpired):
+		commonapi.RespondError(c, http.StatusConflict, commoni18n.T(c, sysi18n.MsgEngineDeletionAssessmentExpired))
+	case errors.Is(err, service.ErrDeletionImpactChanged):
+		commonapi.RespondError(c, http.StatusConflict, commoni18n.T(c, sysi18n.MsgEngineDeletionImpactChanged))
+	case errors.Is(err, service.ErrDeletionRunningExecutions):
+		commonapi.RespondError(c, http.StatusConflict, commoni18n.T(c, sysi18n.MsgEngineDeletionRunningExecutions))
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}

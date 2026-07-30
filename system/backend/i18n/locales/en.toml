@@ -97,6 +97,24 @@ other = "Resource reclaim is unavailable, so the engine cannot be deleted now"
 [system.engine.deletion_started]
 other = "Engine cleanup and deletion started"
 
+[system.engine.deletion_assessment_invalid]
+other = "The engine deletion impact assessment is invalid; run a new assessment"
+
+[system.engine.deletion_assessment_pending]
+other = "The engine deletion impact assessment has not completed"
+
+[system.engine.deletion_assessment_expired]
+other = "The engine deletion impact assessment has expired; run a new assessment"
+
+[system.engine.deletion_impact_changed]
+other = "The engine deletion impact changed; review the latest assessment and confirm again"
+
+[system.engine.deletion_running_executions]
+other = "Running tasks are still using this engine; wait for them to finish or cancel them first"
+
+[system.engine.deletion_confirmation_invalid]
+other = "The deletion confirmation text must exactly match the engine name"
+
 [system.cleanup.confirm_required]
 other = "Confirm the assessment result and impact scope before executing resource reclaim"
 

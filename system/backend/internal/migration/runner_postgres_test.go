@@ -177,15 +177,15 @@ func TestMetaServicePrincipalForwardMigrationAgainstPostgres(t *testing.T) {
 	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
 		t.Fatalf("read Manager catalog migration version: %v", err)
 	}
-	if version != 32 || dirty {
-		t.Fatalf("Asset/Portal boundary migration state = (%d, %t), want (32, false)", version, dirty)
+	if version != 34 || dirty {
+		t.Fatalf("latest migration state = (%d, %t), want (34, false)", version, dirty)
 	}
 	var authorizationVersionAfter int64
 	if err := db.QueryRow(`SELECT authorization_version FROM system.principals WHERE id = $1`, administratorID).Scan(&authorizationVersionAfter); err != nil {
 		t.Fatalf("read authorization version after Manager catalog migration: %v", err)
 	}
-	if authorizationVersionAfter != authorizationVersionBefore+3 {
-		t.Fatalf("authorization version after catalog migrations = %d, want %d", authorizationVersionAfter, authorizationVersionBefore+3)
+	if authorizationVersionAfter != authorizationVersionBefore+4 {
+		t.Fatalf("authorization version after catalog migrations = %d, want %d", authorizationVersionAfter, authorizationVersionBefore+4)
 	}
 	assertManagerDataProfileAuthorizationCatalog(t, db)
 }
@@ -349,6 +349,219 @@ func TestAssetPortalBoundaryMigrationRollsBackBusinessFactsAgainstPostgres(t *te
 	}
 }
 
+func TestPortalPlatformRuntimeForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_IAM_MIGRATION_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_IAM_MIGRATION_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset Portal platform runtime schemas: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	through32, through33 := migrationFilesBeforeAndThrough(t, "000033_iam_portal_platform_runtime.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through32, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 32: %v", err)
+	}
+	if err := (&Runner{DSN: dsn, FS: through33, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply Portal platform runtime migration 33: %v", err)
+	}
+
+	var version int
+	var dirty bool
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("read Portal platform runtime migration version: %v", err)
+	}
+	var roleCount, permissionCount, assignmentCount int
+	if err := db.QueryRow(`
+		SELECT count(*) FROM system.roles
+		WHERE role_key = 'platform.portal_runtime'
+		  AND role_type = 'platform_builtin'
+		  AND allowed_scope_types = ARRAY['platform']::text[]
+		  AND allowed_principal_types = ARRAY['service_principal']::text[]
+		  AND immutable AND status = 'active'
+	`).Scan(&roleCount); err != nil {
+		t.Fatalf("count Portal platform runtime role: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions role_permission
+		JOIN system.roles role ON role.id = role_permission.role_id
+		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+		WHERE role.role_key = 'platform.portal_runtime'
+		  AND permission.permission_key = 'system.runtime_registry.update'
+	`).Scan(&permissionCount); err != nil {
+		t.Fatalf("count Portal platform runtime permission: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_assignments assignment
+		JOIN system.service_principals principal ON principal.id = assignment.principal_id
+		JOIN system.roles role ON role.id = assignment.role_id
+		WHERE principal.name = 'addp-portal'
+		  AND role.role_key = 'platform.portal_runtime'
+		  AND assignment.scope_type = 'platform'
+		  AND assignment.status = 'active'
+	`).Scan(&assignmentCount); err != nil {
+		t.Fatalf("count Portal platform runtime assignment: %v", err)
+	}
+	if version != 33 || dirty || roleCount != 1 || permissionCount != 1 || assignmentCount != 1 {
+		t.Fatalf(
+			"Portal platform runtime migration state=(%d,%t) roles=%d permissions=%d assignments=%d",
+			version, dirty, roleCount, permissionCount, assignmentCount,
+		)
+	}
+}
+
+func TestPortalPlatformRuntimeMigrationRollsBackAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_IAM_MIGRATION_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_IAM_MIGRATION_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset Portal platform runtime rollback schemas: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	through32, through33 := migrationFilesBeforeAndThrough(t, "000033_iam_portal_platform_runtime.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through32, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 32: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO system.roles (
+			role_key, name_i18n_key, description_i18n_key, role_type,
+			allowed_scope_types, allowed_principal_types, immutable, status
+		) VALUES (
+			'platform.portal_runtime', 'conflict.name', 'conflict.description', 'platform_builtin',
+			ARRAY['platform']::text[], ARRAY['service_principal']::text[], true, 'active'
+		)
+	`); err != nil {
+		t.Fatalf("create conflicting Portal platform role: %v", err)
+	}
+
+	if err := (&Runner{DSN: dsn, FS: through33, Root: DefaultMigrationsRoot}).Run(ctx); err == nil {
+		t.Fatal("migration 33 succeeded despite conflicting Portal platform role")
+	}
+	var version int
+	var dirty bool
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("read rolled-back Portal migration version: %v", err)
+	}
+	var permissionCount, assignmentCount int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions role_permission
+		JOIN system.roles role ON role.id = role_permission.role_id
+		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+		WHERE role.role_key = 'platform.portal_runtime'
+		  AND permission.permission_key = 'system.runtime_registry.update'
+	`).Scan(&permissionCount); err != nil {
+		t.Fatalf("count rolled-back Portal permission: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_assignments assignment
+		JOIN system.service_principals principal ON principal.id = assignment.principal_id
+		JOIN system.roles role ON role.id = assignment.role_id
+		WHERE principal.name = 'addp-portal'
+		  AND role.role_key = 'platform.portal_runtime'
+		  AND assignment.scope_type = 'platform'
+	`).Scan(&assignmentCount); err != nil {
+		t.Fatalf("count rolled-back Portal assignment: %v", err)
+	}
+	if version != 33 || !dirty || permissionCount != 0 || assignmentCount != 0 {
+		t.Fatalf(
+			"rolled-back Portal migration state=(%d,%t) permissions=%d assignments=%d",
+			version, dirty, permissionCount, assignmentCount,
+		)
+	}
+}
+
+func TestDevelopNotebookUpdateForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_IAM_MIGRATION_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_IAM_MIGRATION_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset Develop Notebook update schemas: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	through33, through34 := migrationFilesBeforeAndThrough(t, "000034_iam_develop_notebook_update.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through33, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 33: %v", err)
+	}
+
+	var status string
+	var rolePermissionCount int
+	if err := db.QueryRow(`
+		SELECT status FROM system.permissions
+		WHERE permission_key = 'develop.notebook.update'
+	`).Scan(&status); err != nil {
+		t.Fatalf("read Notebook update permission before migration 34: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions role_permission
+		JOIN system.roles role ON role.id = role_permission.role_id
+		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+		WHERE role.role_key = 'tenant.data_engineer'
+		  AND permission.permission_key = 'develop.notebook.update'
+	`).Scan(&rolePermissionCount); err != nil {
+		t.Fatalf("count Notebook update role binding before migration 34: %v", err)
+	}
+	if status != "disabled" || rolePermissionCount != 0 {
+		t.Fatalf("before migration 34 status=%q role_permissions=%d", status, rolePermissionCount)
+	}
+
+	if err := (&Runner{DSN: dsn, FS: through34, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply Develop Notebook update migration 34: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT permission.status, count(*)
+		FROM system.permissions permission
+		JOIN system.role_permissions role_permission ON role_permission.permission_id = permission.id
+		JOIN system.roles role ON role.id = role_permission.role_id
+		WHERE permission.permission_key = 'develop.notebook.update'
+		  AND role.role_key = 'tenant.data_engineer'
+		GROUP BY permission.status
+	`).Scan(&status, &rolePermissionCount); err != nil {
+		t.Fatalf("read Notebook update catalog after migration 34: %v", err)
+	}
+	var version int
+	var dirty bool
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("read migration 34 version: %v", err)
+	}
+	if version != 34 || dirty || status != "active" || rolePermissionCount != 1 {
+		t.Fatalf("migration 34 state=(%d,%t) status=%q role_permissions=%d", version, dirty, status, rolePermissionCount)
+	}
+}
+
 func migrationFilesBeforeAndThrough(t *testing.T, boundary string) (fstest.MapFS, fstest.MapFS) {
 	t.Helper()
 	before := fstest.MapFS{}
@@ -443,8 +656,8 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
 		t.Fatalf("read migration version: %v", err)
 	}
-	if version != 32 || dirty {
-		t.Fatalf("migration state = (%d, %t), want (32, false)", version, dirty)
+	if version != 34 || dirty {
+		t.Fatalf("migration state = (%d, %t), want (34, false)", version, dirty)
 	}
 
 	assertIAMCatalogSeed(t, db)
@@ -481,7 +694,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	if err := runner.Run(ctx); err == nil || !strings.Contains(err.Error(), "is dirty") {
 		t.Fatalf("Run() error = %v, want dirty-state rejection", err)
 	}
-	if _, err := db.Exec(`UPDATE system.schema_migrations SET version = 33, dirty = false`); err != nil {
+	if _, err := db.Exec(`UPDATE system.schema_migrations SET version = 35, dirty = false`); err != nil {
 		t.Fatalf("set newer migration version: %v", err)
 	}
 	if err := runner.Run(ctx); err == nil || !strings.Contains(err.Error(), "newer than embedded") {
@@ -1128,8 +1341,8 @@ func assertAuthorizationCatalogRetirement(t *testing.T, db *sql.DB) {
 	`).Scan(&activePermissionCount, &disabledPermissionCount); err != nil {
 		t.Fatalf("read retired Permission counts: %v", err)
 	}
-	if activePermissionCount != 241 || disabledPermissionCount != 70 {
-		t.Fatalf("Permission status counts = active:%d disabled:%d, want 241 and 70", activePermissionCount, disabledPermissionCount)
+	if activePermissionCount != 242 || disabledPermissionCount != 69 {
+		t.Fatalf("Permission status counts = active:%d disabled:%d, want 242 and 69", activePermissionCount, disabledPermissionCount)
 	}
 
 	var disabledRoles string
@@ -1686,14 +1899,14 @@ func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	t.Helper()
 
 	assertTableCount(t, db, "system.permissions", 311)
-	assertTableCount(t, db, "system.roles", 33)
-	assertTableCount(t, db, "system.role_permissions", 282)
+	assertTableCount(t, db, "system.roles", 34)
+	assertTableCount(t, db, "system.role_permissions", 284)
 	assertTableCount(t, db, "system.role_conflicts", 3)
 	assertTableCount(t, db, "system.oauth_clients", 11)
 	assertTableCount(t, db, "system.principals", 10)
 	assertTableCount(t, db, "system.service_principals", 10)
 	assertTableCount(t, db, "system.tenants", 0)
-	assertTableCount(t, db, "system.role_assignments", 4)
+	assertTableCount(t, db, "system.role_assignments", 5)
 
 	var ownerCount, systemPermissionCount int
 	if err := db.QueryRow(`SELECT count(DISTINCT owner_module), count(*) FILTER (WHERE owner_module = 'system') FROM system.permissions`).Scan(&ownerCount, &systemPermissionCount); err != nil {

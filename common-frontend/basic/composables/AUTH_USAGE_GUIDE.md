@@ -10,12 +10,14 @@
 4. Access Token 到期前由 Browser AuthSession 主动刷新；业务请求遇到 401 时只兜底刷新并重试一次。
 5. 同源顶层页面通过 Web Locks、BroadcastChannel 和无 Token 的短期锁租约协调刷新与登出。
 6. Console 是 iframe 集成模式下唯一刷新协调者；模块 iframe 通过可信 `postMessage` 获取 Access Token。
+7. Portal 新窗口使用 Console 当前 origin 的 `/portal/` 正式入口，与 Console 共享顶层页面刷新锁和 Token 广播。
 
 禁止：
 
 - 在 localStorage、sessionStorage、IndexedDB 或 URL 中持久化 Access Token；
 - 从路由 query 读取 Token；
 - 在 Console iframe URL 或新窗口 URL 中拼接 `?token=`；
+- 从 Console 打开 Portal 前端开发端口，形成无法协调的第二个顶层认证 origin；
 - 为旧认证方式保留兼容分支。
 
 ## 二、Auth Store

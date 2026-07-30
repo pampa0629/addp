@@ -10,28 +10,32 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestDevelopCleanupEngineContextDoesNotTreatUserTasksAsReclaimCandidates(t *testing.T) {
+func TestDevelopCleanupEngineContextReportsRebindableTasksWithoutMutatingThem(t *testing.T) {
 	t.Parallel()
 
 	db := newDevelopCleanupTestDB(t)
 	svc := NewCleanupService(db, nil, nil)
 	task := createDevelopCleanupTask(t, db, 7, "query-match", "query", map[string]interface{}{"engine_id": float64(12)})
-	createDevelopCleanupTask(t, db, 7, "content-only", "workflow", nil)
+	contentTask := createDevelopCleanupTask(t, db, 7, "content-locator", "workflow", nil)
+	contentTask.Content = models.DevTaskContent{"source": "addp://engine/12/path/public/orders?type=table"}
+	if err := db.Save(&contentTask).Error; err != nil {
+		t.Fatalf("save content task: %v", err)
+	}
 
 	stats, err := svc.ScanReclaimCandidates(context.Background(), 7, map[string]interface{}{"engine_id": uint(12)})
 	if err != nil {
 		t.Fatalf("ScanReclaimCandidates() error = %v", err)
 	}
-	if stats.DevTasks != 0 {
-		t.Fatalf("DevTasks for engine lifecycle = %d, want 0", stats.DevTasks)
+	if stats.DevTasks != 2 {
+		t.Fatalf("DevTasks for engine lifecycle = %d, want 2", stats.DevTasks)
 	}
 
 	stats, err = svc.ExecuteCleanup(context.Background(), 7, events.CleanupModeLogical, map[string]interface{}{"engine_id": uint(12)})
 	if err != nil {
 		t.Fatalf("ExecuteCleanup() error = %v", err)
 	}
-	if stats.DevTasks != 0 {
-		t.Fatalf("ExecuteCleanup for engine lifecycle DevTasks = %d, want 0", stats.DevTasks)
+	if stats.DevTasks != 2 || stats.ArchivedTasks != 0 || stats.DeletedTasks != 0 {
+		t.Fatalf("ExecuteCleanup for engine lifecycle stats = %#v", stats)
 	}
 
 	var updated models.DevTask

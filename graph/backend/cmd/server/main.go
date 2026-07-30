@@ -25,6 +25,7 @@ import (
 	"github.com/addp/common/engine/contentadapter"
 	commonPlugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/minio"
+	"github.com/addp/common/events"
 	commonLogger "github.com/addp/common/logger"
 	"github.com/addp/common/utils"
 	"github.com/addp/graph/internal/api"
@@ -129,6 +130,7 @@ func main() {
 			"capabilities": map[string]interface{}{
 				"cleanup_executor": map[string]interface{}{
 					"enabled": true,
+					"causes":  []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted},
 				},
 			},
 		})

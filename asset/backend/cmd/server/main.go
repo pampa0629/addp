@@ -14,6 +14,7 @@ import (
 	"github.com/addp/asset/internal/search"
 	"github.com/addp/asset/internal/service"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/utils"
 	"github.com/redis/go-redis/v9"
@@ -167,6 +168,7 @@ func main() {
 		"capabilities": map[string]interface{}{
 			"cleanup_executor": map[string]interface{}{
 				"enabled": true,
+				"causes":  []string{events.CleanupCauseTenantDeleted},
 			},
 		},
 	})

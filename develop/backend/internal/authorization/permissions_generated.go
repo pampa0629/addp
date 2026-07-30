@@ -12,6 +12,7 @@ const (
 	PermissionDevelopNotebookDelete            = "develop.notebook.delete"
 	PermissionDevelopNotebookExecute           = "develop.notebook.execute"
 	PermissionDevelopNotebookRead              = "develop.notebook.read"
+	PermissionDevelopNotebookUpdate            = "develop.notebook.update"
 	PermissionDevelopTaskCreate                = "develop.task.create"
 	PermissionDevelopTaskDelete                = "develop.task.delete"
 	PermissionDevelopTaskExecute               = "develop.task.execute"
@@ -30,6 +31,7 @@ var permissionKeys = [...]string{
 	"develop.notebook.delete",
 	"develop.notebook.execute",
 	"develop.notebook.read",
+	"develop.notebook.update",
 	"develop.task.create",
 	"develop.task.delete",
 	"develop.task.execute",

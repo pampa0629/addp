@@ -34,6 +34,8 @@ portal/
 - Portal 调用 Asset 消费 API 时只在当前同步请求栈内转发已验证的 User Bearer，不保存 Token，不提交 User/Tenant/Role 字段，也不使用 Portal Service Principal 替代资产使用者。
 - Portal 仅在 Asset 已按当前 User 确认有效授权后，以 `addp-portal` Client Credentials 获取当前 Tenant 的短期 Service Access Token，并读取 Service 端点投影；`tenant.portal_runtime` 不包含任何 `asset.*` Permission。
 - Portal 不读取 `INTERNAL_API_KEY`，也不发送 `X-Internal-API-Key` 或 `X-Tenant-ID`。
+- Portal 正式浏览器入口固定为 Console 当前 origin 的 `/portal/`。开发端口 `5185` 只承载前端服务，由 Console Vite 代理；Console 不直接打开该端口，确保 Portal 与 Console 共享 Browser AuthSession 协调域。
+- Portal Backend 使用 `addp-portal` 的 Platform Service Token 向 System 唯一模块注册表注册 `/portal` 并持续心跳；Gateway 不保留 Portal 静态地址或未注册 fallback。平台 `platform.portal_runtime` 只包含 `system.runtime_registry.update`，Tenant `tenant.portal_runtime` 只包含 Portal 读取 Service endpoint 投影所需权限。
 
 ## 开发与验证
 

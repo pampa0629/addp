@@ -95,6 +95,12 @@ type UpdateDevTaskSwaggerRequest struct {
 	Status          string                        `json:"status,omitempty" enums:"active,inactive,archived" example:"active"`
 }
 
+// NotebookRuntimeBindingSwaggerRequest Notebook 运行时绑定请求体。
+type NotebookRuntimeBindingSwaggerRequest struct {
+	EngineID uint   `json:"engine_id" binding:"required" example:"10"`
+	Kernel   string `json:"kernel" binding:"required" example:"python3"`
+}
+
 // DevTaskSwagger 开发任务 Swagger 响应摘要。
 type DevTaskSwagger struct {
 	ID                  uint                          `json:"id" example:"1"`

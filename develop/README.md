@@ -11,7 +11,7 @@
 
 - **SQL 工作台**: Monaco Editor + 多数据库支持（PostgreSQL、MySQL 等）
 - **GIS 工作流**: 可视化编辑和执行空间计算工作流（21个 GeoPython Workflow 算子）
-- **Notebook 任务**: 上传、执行、下载 Notebook，并查看统一执行历史
+- **Notebook 任务**: 上传、执行、下载和显式重绑定 Notebook 引擎，并查看统一执行历史
 - **算子管理**: 聚合工作流运行时动态算子，供工作流编辑器使用
 - **执行历史**: 保存所有执行记录，支持历史回溯
 
@@ -48,6 +48,7 @@ Notebook引擎: GET /api/v1/develop/notebook-engines
 Kernel发现: GET /api/v1/develop/notebook-engines/{engine_id}/kernels
 Notebook:   GET /api/v1/develop/notebooks
 Notebook上传: POST /api/v1/develop/notebooks/upload
+Notebook运行绑定: PUT /api/v1/develop/notebooks/{id}/runtime-binding
 ```
 
 完整 API 文档请查看 [CLAUDE.md#常见开发场景](./CLAUDE.md#常见开发场景)

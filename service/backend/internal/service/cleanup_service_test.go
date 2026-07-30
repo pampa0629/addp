@@ -91,7 +91,7 @@ func TestServiceCleanupLogicalDisablesEngineBoundServices(t *testing.T) {
 	}
 }
 
-func TestServiceCleanupPhysicalDeletesEngineBoundServices(t *testing.T) {
+func TestServiceCleanupPhysicalDisablesEngineBoundServices(t *testing.T) {
 	t.Parallel()
 
 	db := newServiceCleanupTestDB(t)
@@ -105,11 +105,15 @@ func TestServiceCleanupPhysicalDeletesEngineBoundServices(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteCleanup() error = %v", err)
 	}
-	if stats.DeletedServiceRecords != 1 {
-		t.Fatalf("DeletedServiceRecords = %d, want 1", stats.DeletedServiceRecords)
+	if stats.DisabledServiceRecords != 1 || stats.DeletedServiceRecords != 0 {
+		t.Fatalf("cleanup stats = %#v, want one disabled service", stats)
 	}
-	if err := db.First(&models.QueryService{}, query.ID).Error; err == nil {
-		t.Fatal("engine-bound query service should be deleted")
+	var updated models.QueryService
+	if err := db.First(&updated, query.ID).Error; err != nil {
+		t.Fatalf("engine-bound query service should remain: %v", err)
+	}
+	if updated.Status != "inactive" {
+		t.Fatalf("engine-bound query status = %q, want inactive", updated.Status)
 	}
 	if err := db.First(&models.QueryService{}, other.ID).Error; err != nil {
 		t.Fatalf("other query service should remain: %v", err)

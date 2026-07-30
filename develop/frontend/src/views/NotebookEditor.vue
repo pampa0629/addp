@@ -74,6 +74,9 @@
               </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
+                  <el-dropdown-item command="rebind">
+                    <el-icon><Switch /></el-icon> {{ t('develop.notebook.changeEngine') }}
+                  </el-dropdown-item>
                   <el-dropdown-item command="download">
                     <el-icon><Download /></el-icon> {{ t('develop.notebook.download') }}
                   </el-dropdown-item>
@@ -117,6 +120,9 @@
               @click="showExecuteDialog(currentNotebook)"
             >
               <el-icon><VideoPlay /></el-icon> {{ t('develop.notebook.execute') }}
+            </el-button>
+            <el-button size="small" @click="showBindingDialog(currentNotebook)">
+              <el-icon><Switch /></el-icon> {{ t('develop.notebook.changeEngine') }}
             </el-button>
             <el-button size="small" @click="downloadNotebook(currentNotebook)">
               <el-icon><Download /></el-icon> {{ t('develop.notebook.download') }}
@@ -243,6 +249,88 @@
       </template>
     </el-dialog>
 
+    <!-- Notebook 运行时绑定对话框 -->
+    <el-dialog
+      v-model="bindingDialogVisible"
+      :title="t('develop.notebook.changeEngineDialogTitle')"
+      width="520px"
+      :close-on-click-modal="!rebinding"
+      :close-on-press-escape="!rebinding"
+      :show-close="!rebinding"
+      @closed="resetBindingDialog"
+    >
+      <el-form :model="bindingForm" label-width="100px">
+        <el-form-item :label="t('develop.notebook.currentBinding')">
+          <el-input :model-value="notebookRuntimeBindingLabel(bindingNotebook)" disabled />
+        </el-form-item>
+
+        <el-form-item :label="t('develop.notebook.targetEngine')" required>
+          <el-select
+            v-model="bindingForm.engine_id"
+            :placeholder="t('develop.notebook.selectEngine')"
+            :loading="enginesLoading"
+            :disabled="rebinding"
+            style="width: 100%"
+            @change="handleBindingEngineChange"
+          >
+            <el-option
+              v-for="engine in notebookEngines"
+              :key="engine.id"
+              :label="engine.name"
+              :value="engine.id"
+            />
+          </el-select>
+          <div v-if="!enginesLoading && notebookEngines.length === 0" class="form-status error">
+            {{ t('develop.notebook.noEngineAvailable') }}
+          </div>
+        </el-form-item>
+
+        <el-form-item :label="t('develop.notebook.kernel')" required>
+          <el-select
+            v-model="bindingForm.kernel"
+            :placeholder="t('develop.notebook.selectKernel')"
+            :loading="bindingKernelsLoading"
+            :disabled="!bindingForm.engine_id || rebinding"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="kernel in bindingKernels"
+              :key="kernel.name"
+              :label="kernel.display_name || kernel.name"
+              :value="kernel.name"
+            />
+          </el-select>
+          <div
+            v-if="bindingForm.engine_id && !bindingKernelsLoading && bindingKernels.length === 0"
+            class="form-status error"
+          >
+            {{ t('develop.notebook.noKernelAvailable') }}
+          </div>
+        </el-form-item>
+
+        <el-alert
+          :title="t('develop.notebook.runtimeBindingEffect')"
+          type="info"
+          :closable="false"
+          show-icon
+        />
+      </el-form>
+
+      <template #footer>
+        <el-button :disabled="rebinding" @click="bindingDialogVisible = false">
+          {{ t('develop.notebook.cancel') }}
+        </el-button>
+        <el-button
+          type="primary"
+          :loading="rebinding"
+          :disabled="!bindingForm.engine_id || !bindingForm.kernel || bindingKernelsLoading"
+          @click="confirmRuntimeBinding"
+        >
+          {{ t('develop.notebook.confirmChangeEngine') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 执行 Notebook 对话框 -->
     <el-dialog
       v-model="executeDialogVisible"
@@ -281,7 +369,7 @@
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, Refresh, Search, Document, VideoPlay, Clock, More, Download, Delete } from '@element-plus/icons-vue'
+import { Upload, Refresh, Search, Document, VideoPlay, Clock, More, Download, Delete, Switch } from '@element-plus/icons-vue'
 import { notebookAPI } from '@/api/notebook'
 import { deleteDevTask, executeDevTask, getDevTask } from '@/api/devTask'
 import { openMonitorExecution } from '@addp/common-frontend'
@@ -316,6 +404,18 @@ const uploadForm = ref({
   engine_id: null,
   kernel: ''
 })
+
+// 运行时绑定对话框
+const bindingDialogVisible = ref(false)
+const rebinding = ref(false)
+const bindingNotebook = ref(null)
+const bindingKernels = ref([])
+const bindingKernelsLoading = ref(false)
+const bindingForm = ref({
+  engine_id: null,
+  kernel: ''
+})
+let bindingKernelRequestSequence = 0
 
 // 执行对话框
 const executeDialogVisible = ref(false)
@@ -359,6 +459,33 @@ const loadKernels = async (engineId) => {
 }
 
 const handleUploadEngineChange = (engineId) => loadKernels(engineId)
+
+const loadBindingKernels = async (engineId) => {
+  const requestSequence = ++bindingKernelRequestSequence
+  bindingKernels.value = []
+  bindingForm.value.kernel = ''
+  if (!engineId) {
+    bindingKernelsLoading.value = false
+    return
+  }
+
+  bindingKernelsLoading.value = true
+  try {
+    const response = await notebookAPI.listKernels(engineId)
+    if (requestSequence !== bindingKernelRequestSequence) return
+    bindingKernels.value = response.kernels || []
+  } catch (error) {
+    if (requestSequence !== bindingKernelRequestSequence) return
+    console.error('加载重绑定 Kernel 失败:', error)
+    ElMessage.error(error.response?.data?.error || t('develop.notebook.loadKernelsFailed'))
+  } finally {
+    if (requestSequence === bindingKernelRequestSequence) {
+      bindingKernelsLoading.value = false
+    }
+  }
+}
+
+const handleBindingEngineChange = (engineId) => loadBindingKernels(engineId)
 
 // 加载 Notebook 列表
 const loadNotebooks = async () => {
@@ -480,6 +607,67 @@ const confirmUpload = async () => {
   }
 }
 
+const showBindingDialog = async (notebook) => {
+  bindingNotebook.value = notebook
+  bindingForm.value = {
+    engine_id: null,
+    kernel: ''
+  }
+  bindingKernels.value = []
+  bindingDialogVisible.value = true
+  if (notebookEngines.value.length === 0 && !enginesLoading.value) {
+    await loadNotebookEngines()
+  }
+}
+
+const resetBindingDialog = () => {
+  bindingKernelRequestSequence += 1
+  bindingNotebook.value = null
+  bindingKernels.value = []
+  bindingKernelsLoading.value = false
+  bindingForm.value = {
+    engine_id: null,
+    kernel: ''
+  }
+}
+
+const replaceNotebookState = (updated) => {
+  const index = notebooks.value.findIndex(notebook => String(notebook.id) === String(updated.id))
+  if (index >= 0) {
+    notebooks.value.splice(index, 1, updated)
+  }
+  if (String(currentNotebook.value?.id) === String(updated.id)) {
+    currentNotebook.value = updated
+  }
+}
+
+const confirmRuntimeBinding = async () => {
+  if (!bindingNotebook.value || !bindingForm.value.engine_id) {
+    ElMessage.warning(t('develop.notebook.engineRequired'))
+    return
+  }
+  if (!bindingForm.value.kernel) {
+    ElMessage.warning(t('develop.notebook.kernelRequired'))
+    return
+  }
+
+  rebinding.value = true
+  try {
+    const updated = await notebookAPI.updateRuntimeBinding(bindingNotebook.value.id, {
+      engine_id: bindingForm.value.engine_id,
+      kernel: bindingForm.value.kernel
+    })
+    replaceNotebookState(updated)
+    ElMessage.success(t('develop.notebook.runtimeBindingUpdated'))
+    bindingDialogVisible.value = false
+  } catch (error) {
+    console.error('更换 Notebook 引擎失败:', error)
+    ElMessage.error(error.response?.data?.error || t('develop.notebook.runtimeBindingUpdateFailed'))
+  } finally {
+    rebinding.value = false
+  }
+}
+
 // 显示执行对话框
 const showExecuteDialog = (notebook) => {
   if (!isNotebookEngineAvailable(notebook)) {
@@ -534,6 +722,9 @@ const viewHistory = (notebook) => {
 // 下拉菜单命令处理
 const handleCommand = async (command, notebook) => {
   switch (command) {
+    case 'rebind':
+      await showBindingDialog(notebook)
+      break
     case 'download':
       await downloadNotebook(notebook)
       break
@@ -617,6 +808,12 @@ const notebookEngineLabel = (notebook) => {
   if (engine) return engine.name
   const engineId = notebookEngineID(notebook)
   return engineId ? t('develop.notebook.unavailableEngine', { id: engineId }) : t('develop.notebook.engineNotBound')
+}
+
+const notebookRuntimeBindingLabel = (notebook) => {
+  if (!notebook) return '-'
+  const kernel = notebook.content?.kernel || '-'
+  return `${notebookEngineLabel(notebook)} / ${kernel}`
 }
 
 onMounted(async () => {

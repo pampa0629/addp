@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -11,6 +12,12 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/repository"
+	"gorm.io/gorm"
+)
+
+var (
+	ErrNotebookNotFound = errors.New("notebook task not found")
+	ErrTaskNotNotebook  = errors.New("task is not a notebook")
 )
 
 // DevTaskService 开发任务业务逻辑层
@@ -155,6 +162,53 @@ func (s *DevTaskService) UpdateDevTask(id uint, req *models.UpdateDevTaskRequest
 
 	log.Printf("✅ [DevTaskService] 更新开发任务成功 id=%d name=%s", item.ID, item.Name)
 	return item, nil
+}
+
+// RebindNotebookRuntime 更新原 Notebook 任务的引擎和 Kernel，仅影响后续执行。
+func (s *DevTaskService) RebindNotebookRuntime(
+	id uint,
+	tenantID uint,
+	userID uint,
+	engineID uint,
+	kernel string,
+) (*models.DevTask, error) {
+	item, err := s.devTaskRepo.FindByID(id, tenantID)
+	if err != nil {
+		return nil, ErrNotebookNotFound
+	}
+	if !item.IsNotebookScript() {
+		return nil, ErrTaskNotNotebook
+	}
+	if engineID == 0 {
+		return nil, fmt.Errorf("engine_id must be a positive integer")
+	}
+	kernel = strings.TrimSpace(kernel)
+	if kernel == "" {
+		return nil, fmt.Errorf("kernel must not be empty")
+	}
+
+	content := cloneDevTaskContent(item.Content)
+	content["kernel"] = kernel
+	executionConfig := cloneDevTaskContent(item.ExecutionConfig)
+	executionConfig["engine_id"] = engineID
+	item.Content = content
+	item.ExecutionConfig = executionConfig
+
+	if err := s.devTaskRepo.UpdateNotebookRuntimeBinding(item, userID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotebookNotFound
+		}
+		return nil, fmt.Errorf("update notebook runtime binding: %w", err)
+	}
+	return item, nil
+}
+
+func cloneDevTaskContent(source models.DevTaskContent) models.DevTaskContent {
+	cloned := make(models.DevTaskContent, len(source)+1)
+	for key, value := range source {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func isDevelopDevType(devType string) bool {

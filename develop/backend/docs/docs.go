@@ -896,6 +896,75 @@ const docTemplate = `{
                 ]
             }
         },
+        "/notebooks/{id}/runtime-binding": {
+            "put": {
+                "description": "校验目标引擎和 Kernel 后更新原任务，仅影响后续执行，历史执行快照保持不变。| Validate the target engine and kernel, then update the original task for future executions only; historical execution snapshots remain unchanged.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Notebook"
+                ],
+                "summary": "更换 Notebook 运行时绑定 | Replace Notebook runtime binding",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "DevTask ID | DevTask ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "运行时绑定 | Runtime binding",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.NotebookRuntimeBindingSwaggerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已更新的 Notebook | Updated Notebook",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskSwagger"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Notebook 不存在 | Notebook not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "引擎、Kernel 或任务类型校验失败 | Engine, kernel, or task type validation failed",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "更新失败 | Update failed",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.notebook.update"
+                ]
+            }
+        },
         "/query-modes": {
             "get": {
                 "produces": [
@@ -1970,6 +2039,19 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_develop_backend_internal_models.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer",
+                    "example": 400
+                },
+                "message": {
+                    "type": "string",
+                    "example": "请求参数错误"
+                }
+            }
+        },
         "github_com_addp_develop_backend_internal_models.ExecutionStartedResponse": {
             "type": "object",
             "properties": {
@@ -2204,6 +2286,23 @@ const docTemplate = `{
                 "total": {
                     "type": "integer",
                     "example": 1
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.NotebookRuntimeBindingSwaggerRequest": {
+            "type": "object",
+            "required": [
+                "engine_id",
+                "kernel"
+            ],
+            "properties": {
+                "engine_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "kernel": {
+                    "type": "string",
+                    "example": "python3"
                 }
             }
         },

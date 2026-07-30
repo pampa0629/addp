@@ -49,6 +49,9 @@ func TestTransferCleanupLogicalDisablesTaskDefinitions(t *testing.T) {
 	svc := NewTransferCleanupService(db, nil, nil, transferCleanupTestConfig())
 	task := createTransferCleanupTestTask(t, db, 7, "match", 1, 2, true)
 	createTransferCleanupTestTask(t, db, 7, "other", 3, 4, true)
+	if err := db.Model(&models.TransferTask{}).Where("id = ?", task.ID).Update("status", models.TaskStatusIdle).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	stats, err := svc.ExecuteCleanup(context.Background(), 7, events.CleanupModeLogical, map[string]interface{}{"engine_id": 1})
 	if err != nil {
@@ -67,7 +70,7 @@ func TestTransferCleanupLogicalDisablesTaskDefinitions(t *testing.T) {
 	}
 }
 
-func TestTransferCleanupPhysicalDeletesTaskDefinitions(t *testing.T) {
+func TestTransferCleanupPhysicalDisablesEngineBoundTaskDefinitions(t *testing.T) {
 	t.Parallel()
 
 	db := newTransferCleanupTestDB(t)
@@ -82,16 +85,16 @@ func TestTransferCleanupPhysicalDeletesTaskDefinitions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteCleanup() error = %v", err)
 	}
-	if stats.DeletedTaskDefinitions != 1 || stats.DisabledTaskDefinitions != 0 {
-		t.Fatalf("stats = %#v, want one deleted", stats)
+	if stats.DeletedTaskDefinitions != 0 || stats.DisabledTaskDefinitions != 1 {
+		t.Fatalf("stats = %#v, want one disabled", stats)
 	}
 
-	var deleted models.TransferTask
-	if err := db.First(&deleted, task.ID).Error; err == nil {
-		t.Fatal("physically cleaned task should be deleted from active query")
+	var disabled models.TransferTask
+	if err := db.First(&disabled, task.ID).Error; err != nil {
+		t.Fatalf("engine-bound task should remain: %v", err)
 	}
-	if err := db.Unscoped().First(&deleted, task.ID).Error; err == nil {
-		t.Fatal("physically cleaned task should be deleted from table")
+	if disabled.Enabled || disabled.Status != models.TaskStatusIdle {
+		t.Fatalf("engine-bound task = %#v, want disabled and idle", disabled)
 	}
 
 	var kept models.TransferTask

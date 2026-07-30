@@ -243,6 +243,8 @@
 | cleanup executor | 资源回收执行方 | 评估和回收本模块 owner 范围内资源，并写回 cleanup result（资源回收结果）的角色。 | Meta、Manager、Transfer 等模块按 owner 范围分别承担。 |
 | cleanup request | 资源回收请求 | 资源回收协调方发布的中性资源回收请求。 | 不携带模块私有表结构、bucket prefix 或物理删除规则。 |
 | cleanup result | 资源回收结果 | 资源回收执行方写回的模块级资源回收结果。 | 包含通用摘要和模块私有统计。 |
+| engine deletion impact assessment | 引擎删除影响评估 | Engine 删除前由 System 协调、各 owner 模块自治执行的无副作用 scan。 | 报告 `rebindable`、`will_disable`、`will_delete`、`running`、`external_artifact` 等影响；System 不读取业务模块私有表。 |
+| impact digest | 影响摘要指纹 | owner 模块根据稳定资源 ID 和处理分类计算的确定性摘要。 | 用于比较只读预评估与 `deleting` 后权威复扫，摘要变化时必须重新确认。 |
 | owner module | 归属模块 | 某个事实、产物、任务定义或物理资源生命周期归属的模块。 | cleanup 责任跟随 owner module，不跟随触发事件来源。 |
 | physical artifact | 物理产物 | 可删除的实际存储资源。 | 例如对象存储 key、PG 派生对象、向量行、缓存 key。 |
 | lifecycle event | 生命周期事件 | 表示 engine、tenant、item 或配置发生生命周期变化的中性事件。 | 各模块独立消费并处理自身 owner 范围内资源。 |

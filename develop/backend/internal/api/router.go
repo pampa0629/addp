@@ -162,6 +162,7 @@ func SetupRouter(
 		{
 			notebooks.POST("/upload", permission(developauthorization.PermissionDevelopNotebookCreate), notebookHandler.UploadNotebook)
 			notebooks.GET("", permission(developauthorization.PermissionDevelopNotebookRead), notebookHandler.ListNotebooks)
+			notebooks.PUT("/:id/runtime-binding", permission(developauthorization.PermissionDevelopNotebookUpdate), notebookHandler.UpdateRuntimeBinding)
 			notebooks.GET("/:id/download", permission(developauthorization.PermissionDevelopNotebookRead), notebookHandler.DownloadNotebook)
 			notebooks.DELETE("/:id", permission(developauthorization.PermissionDevelopNotebookDelete), notebookHandler.DeleteNotebook)
 		}
