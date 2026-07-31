@@ -24,6 +24,35 @@
           </dl>
         </section>
 
+        <section v-if="inputParameters.length" class="section">
+          <div class="section-heading">
+            <h4 class="section-title">{{ t('develop.operatorParams.inputConnections') }}</h4>
+          </div>
+          <el-form-item
+            v-for="param in inputParameters"
+            :key="param.name"
+            :label="param.name"
+            class="input-connection-field"
+          >
+            <el-select
+              :model-value="inputConnectionKey(param.name)"
+              clearable
+              filterable
+              :placeholder="inputConnectionPlaceholder(param.name)"
+              @change="value => changeInputConnection(param.name, value)"
+            >
+              <el-option
+                v-for="option in inputConnectionOptionsFor(param.name)"
+                :key="option.key"
+                :label="inputConnectionOptionLabel(option)"
+                :value="option.key"
+                :disabled="option.disabled"
+              />
+            </el-select>
+            <div v-if="param.description" class="field-hint">{{ param.description }}</div>
+          </el-form-item>
+        </section>
+
         <!-- 参数配置 -->
         <section class="section">
           <div class="section-heading">
@@ -37,7 +66,9 @@
             :closable="false"
             show-icon
           >
-            {{ t('develop.operatorParams.noParams') }}
+            {{ inputParameters.length
+              ? t('develop.operatorParams.noOtherParams')
+              : t('develop.operatorParams.noParams') }}
           </el-alert>
 
           <div v-else>
@@ -178,14 +209,16 @@
 
     <el-dialog
       v-model="resourcePickerDialogVisible"
-      :title="resourcePickerDialogParam?.name || t('develop.operatorParams.dataSourceSelect')"
-      width="min(760px, 92vw)"
+      :title="resourcePickerDialogTitle"
+      width="min(760px, calc(100vw - 24px))"
       append-to-body
       destroy-on-close
-      class="workflow-resource-picker-dialog"
+      class="addp-dialog workflow-resource-picker-dialog"
+      @opened="focusResourcePicker"
     >
       <ResourceTreePicker
         v-if="resourcePickerDialogParam"
+        ref="resourcePickerRef"
         :api-base-url="resourcePickerDialogParam.ui_config?.api_base_url || '/api/v1/meta'"
         :engine-families="resourcePickerEngineFamilies(resourcePickerDialogParam)"
         :engine-id="resourcePickerEngineId(resourcePickerDialogParam)"
@@ -198,7 +231,7 @@
         :search-selectable-only="true"
         :show-disabled-label="false"
         :show-count="false"
-        tree-height="52vh"
+        tree-height="clamp(240px, 44vh, 420px)"
         :initial-locator="resourcePickerInitialLocator(resourcePickerDialogParam)"
         @update:model-value="selection => resourcePickerDraftSelection = selection"
       />
@@ -258,20 +291,37 @@ const props = defineProps({
   validationIssues: {
     type: Array,
     default: () => []
+  },
+  inputConnections: {
+    type: Array,
+    default: () => []
+  },
+  inputConnectionOptions: {
+    type: Array,
+    default: () => []
   }
 })
 
-const emit = defineEmits(['update'])
+const emit = defineEmits(['update', 'update-connection'])
 
 const formData = ref({})
 const panelRef = ref(null)
+const resourcePickerRef = ref(null)
 const highlightedParamName = ref('')
 const resourcePickerDialogVisible = ref(false)
 const resourcePickerDialogParam = ref(null)
 const resourcePickerDraftSelection = ref(null)
+const resourcePickerDialogTitle = computed(() => {
+  const name = resourcePickerDialogParam.value?.name
+  return name
+    ? t('develop.operatorParams.resourceDialogTitle', { name })
+    : t('develop.operatorParams.dataSourceSelect')
+})
 const resourceGeometryColumnsByParam = ref({})
 let syncingFromProps = false
 let highlightTimer = null
+
+const inputParameters = computed(() => props.publicParameters.filter(isWorkflowInputParameter))
 
 // 使用工作流引擎返回的结构化参数定义。
 const effectiveParameters = computed(() => {
@@ -328,6 +378,40 @@ const dependencyMap = computed(() => {
   })
   return deps
 })
+
+function inputConnectionOptionsFor(targetParam) {
+  return props.inputConnectionOptions.filter(option => option.targetParam === targetParam)
+}
+
+function inputConnectionKey(targetParam) {
+  const connection = props.inputConnections.find(item => item.targetParam === targetParam)
+  return connection ? JSON.stringify([connection.sourceId, connection.sourcePort || 'default']) : ''
+}
+
+function inputConnectionOptionLabel(option) {
+  const nodeLabel = option.sourceLabel === option.sourceId
+    ? option.sourceLabel
+    : `${option.sourceLabel} (${option.sourceId})`
+  return option.sourcePort && option.sourcePort !== 'default'
+    ? `${nodeLabel} / ${option.sourcePortLabel || option.sourcePort}`
+    : nodeLabel
+}
+
+function inputConnectionPlaceholder(targetParam) {
+  return inputConnectionOptionsFor(targetParam).length
+    ? t('develop.operatorParams.selectInputConnection')
+    : t('develop.operatorParams.noCompatibleOutputs')
+}
+
+function changeInputConnection(targetParam, optionKey) {
+  const option = props.inputConnectionOptions.find(item => item.key === optionKey && item.targetParam === targetParam)
+  emit('update-connection', {
+    nodeId: props.nodeId,
+    targetParam,
+    sourceId: option?.sourceId || '',
+    sourcePort: option?.sourcePort || 'default'
+  })
+}
 
 // 监听 initialParams 变化,初始化表单
 watch(() => props.initialParams, (newParams) => {
@@ -492,6 +576,10 @@ const openResourcePicker = (param) => {
   resourcePickerDialogParam.value = param
   resourcePickerDraftSelection.value = null
   resourcePickerDialogVisible.value = true
+}
+
+const focusResourcePicker = () => {
+  resourcePickerRef.value?.focus?.()
 }
 
 const confirmResourceSelection = () => {
@@ -727,6 +815,10 @@ defineExpose({ focusParam })
 }
 
 .geometry-column-field :deep(.el-select) {
+  width: 100%;
+}
+
+.input-connection-field :deep(.el-select) {
   width: 100%;
 }
 

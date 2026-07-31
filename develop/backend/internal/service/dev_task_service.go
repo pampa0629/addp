@@ -1,34 +1,48 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
+	commonUtils "github.com/addp/common/utils"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/repository"
 	"gorm.io/gorm"
 )
 
 var (
-	ErrNotebookNotFound = errors.New("notebook task not found")
-	ErrTaskNotNotebook  = errors.New("task is not a notebook")
+	ErrNotebookNotFound          = errors.New("notebook task not found")
+	ErrTaskNotNotebook           = errors.New("task is not a notebook")
+	ErrDevTaskNotFound           = errors.New("development task not found")
+	ErrTaskNotWorkflow           = errors.New("task is not a workflow")
+	ErrStorageBindingNotFound    = errors.New("storage engine binding not found")
+	ErrStorageBindingConflict    = errors.New("storage engine binding changed concurrently")
+	ErrStorageEngineUnavailable  = errors.New("storage engine is unavailable")
+	ErrStorageEngineIncompatible = errors.New("storage engine is incompatible with resource locators")
+	ErrStorageEngineDiscovery    = errors.New("storage engine discovery is unavailable")
 )
 
 // DevTaskService 开发任务业务逻辑层
 type DevTaskService struct {
-	devTaskRepo *repository.DevTaskRepository
+	devTaskRepo  *repository.DevTaskRepository
+	systemClient *commonClient.SystemServiceClient
 }
 
 // NewDevTaskService 创建开发任务服务
-func NewDevTaskService(devTaskRepo *repository.DevTaskRepository) *DevTaskService {
+func NewDevTaskService(devTaskRepo *repository.DevTaskRepository, systemClient *commonClient.SystemServiceClient) *DevTaskService {
 	return &DevTaskService{
-		devTaskRepo: devTaskRepo,
+		devTaskRepo:  devTaskRepo,
+		systemClient: systemClient,
 	}
 }
 
@@ -201,6 +215,314 @@ func (s *DevTaskService) RebindNotebookRuntime(
 		return nil, fmt.Errorf("update notebook runtime binding: %w", err)
 	}
 	return item, nil
+}
+
+// ListWorkflowStorageEngineBindings 返回工作流当前 Locator 绑定和可选存储 Engine。
+func (s *DevTaskService) ListWorkflowStorageEngineBindings(
+	ctx context.Context,
+	id uint,
+	tenantID uint,
+) (*models.WorkflowStorageEngineBindingsResponse, error) {
+	item, err := s.devTaskRepo.FindByID(id, tenantID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrDevTaskNotFound
+		}
+		return nil, fmt.Errorf("load workflow task: %w", err)
+	}
+	if item.DevType != commonExecution.TaskTypeWorkflow {
+		return nil, ErrTaskNotWorkflow
+	}
+
+	bindings := collectWorkflowStorageEngineBindings(item.Content)
+	candidates, err := s.listStorageEngineDescriptors(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	descriptorsByID := make(map[uint]models.WorkflowStorageEngineCandidate, len(candidates))
+	responseCandidates := make([]models.WorkflowStorageEngineCandidate, 0, len(candidates))
+	for index := range candidates {
+		candidate := workflowStorageEngineCandidate(candidates[index])
+		descriptorsByID[candidate.ID] = candidate
+		responseCandidates = append(responseCandidates, candidate)
+	}
+
+	items := make([]models.WorkflowStorageEngineBinding, 0, len(bindings))
+	for _, binding := range bindings {
+		entry := models.WorkflowStorageEngineBinding{
+			EngineID:       binding.engineID,
+			ReferenceCount: binding.referenceCount,
+			ResourceTypes:  binding.resourceTypes,
+		}
+		if descriptor, ok := descriptorsByID[binding.engineID]; ok {
+			descriptorCopy := descriptor
+			entry.Available = true
+			entry.Engine = &descriptorCopy
+		}
+		for index := range candidates {
+			if storageEngineSupportsResourceTypes(&candidates[index], binding.resourceTypes) {
+				entry.CompatibleEngineIDs = append(entry.CompatibleEngineIDs, candidates[index].ID)
+			}
+		}
+		items = append(items, entry)
+	}
+
+	return &models.WorkflowStorageEngineBindingsResponse{
+		Items:            items,
+		CandidateEngines: responseCandidates,
+	}, nil
+}
+
+func workflowStorageEngineCandidate(descriptor commonModels.EngineRuntimeDescriptor) models.WorkflowStorageEngineCandidate {
+	return models.WorkflowStorageEngineCandidate{
+		ID:               descriptor.ID,
+		Name:             descriptor.Name,
+		EngineType:       descriptor.EngineType,
+		LifecycleState:   descriptor.LifecycleState,
+		ConnectionStatus: descriptor.ConnectionStatus,
+	}
+}
+
+// RebindWorkflowStorageEngine 原子替换工作流内容中指向 sourceEngineID 的全部标准 Locator。
+func (s *DevTaskService) RebindWorkflowStorageEngine(
+	ctx context.Context,
+	id uint,
+	tenantID uint,
+	userID uint,
+	sourceEngineID uint,
+	targetEngineID uint,
+) (*models.RebindWorkflowStorageEngineResponse, error) {
+	item, err := s.devTaskRepo.FindByID(id, tenantID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrDevTaskNotFound
+		}
+		return nil, fmt.Errorf("load workflow task: %w", err)
+	}
+	if item.DevType != commonExecution.TaskTypeWorkflow {
+		return nil, ErrTaskNotWorkflow
+	}
+	if sourceEngineID == 0 || targetEngineID == 0 || sourceEngineID == targetEngineID {
+		return nil, ErrStorageEngineUnavailable
+	}
+
+	bindings := collectWorkflowStorageEngineBindings(item.Content)
+	var sourceBinding *workflowStorageEngineBindingFacts
+	for index := range bindings {
+		if bindings[index].engineID == sourceEngineID {
+			sourceBinding = &bindings[index]
+			break
+		}
+	}
+	if sourceBinding == nil {
+		return nil, ErrStorageBindingNotFound
+	}
+
+	candidates, err := s.listStorageEngineDescriptors(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	var target *commonModels.EngineRuntimeDescriptor
+	for index := range candidates {
+		if candidates[index].ID == targetEngineID {
+			target = &candidates[index]
+			break
+		}
+	}
+	if target == nil {
+		return nil, ErrStorageEngineUnavailable
+	}
+	if !storageEngineSupportsResourceTypes(target, sourceBinding.resourceTypes) {
+		return nil, ErrStorageEngineIncompatible
+	}
+
+	content, err := cloneWorkflowContent(item.Content)
+	if err != nil {
+		return nil, fmt.Errorf("clone workflow content: %w", err)
+	}
+	rewritten, replaced := rewriteWorkflowStorageEngineLocators(content, sourceEngineID, targetEngineID)
+	if replaced == 0 {
+		return nil, ErrStorageBindingNotFound
+	}
+	item.Content = models.DevTaskContent(rewritten.(map[string]interface{}))
+	expectedUpdatedAt := item.UpdatedAt
+	if err := s.devTaskRepo.UpdateWorkflowStorageEngineBindings(item, userID, expectedUpdatedAt); err != nil {
+		if errors.Is(err, repository.ErrDevTaskConcurrentUpdate) {
+			return nil, ErrStorageBindingConflict
+		}
+		return nil, fmt.Errorf("update workflow storage engine binding: %w", err)
+	}
+
+	return &models.RebindWorkflowStorageEngineResponse{
+		Task:                 *item,
+		SourceEngineID:       sourceEngineID,
+		TargetEngineID:       targetEngineID,
+		ReplacedLocatorCount: replaced,
+	}, nil
+}
+
+type workflowStorageEngineBindingFacts struct {
+	engineID       uint
+	referenceCount int
+	resourceTypes  []string
+}
+
+func collectWorkflowStorageEngineBindings(content models.DevTaskContent) []workflowStorageEngineBindingFacts {
+	counts := make(map[uint]int)
+	typesByEngine := make(map[uint]map[string]struct{})
+	walkWorkflowStorageLocators(content, func(locator *resourcetree.ResourceLocator) {
+		if locator.EngineID == 0 {
+			return
+		}
+		counts[locator.EngineID]++
+		if typesByEngine[locator.EngineID] == nil {
+			typesByEngine[locator.EngineID] = make(map[string]struct{})
+		}
+		typesByEngine[locator.EngineID][string(locator.Type)] = struct{}{}
+	})
+
+	engineIDs := make([]uint, 0, len(counts))
+	for engineID := range counts {
+		engineIDs = append(engineIDs, engineID)
+	}
+	sort.Slice(engineIDs, func(i, j int) bool { return engineIDs[i] < engineIDs[j] })
+
+	bindings := make([]workflowStorageEngineBindingFacts, 0, len(engineIDs))
+	for _, engineID := range engineIDs {
+		resourceTypes := make([]string, 0, len(typesByEngine[engineID]))
+		for resourceType := range typesByEngine[engineID] {
+			resourceTypes = append(resourceTypes, resourceType)
+		}
+		sort.Strings(resourceTypes)
+		bindings = append(bindings, workflowStorageEngineBindingFacts{
+			engineID:       engineID,
+			referenceCount: counts[engineID],
+			resourceTypes:  resourceTypes,
+		})
+	}
+	return bindings
+}
+
+func walkWorkflowStorageLocators(value interface{}, visit func(*resourcetree.ResourceLocator)) {
+	switch typed := value.(type) {
+	case models.DevTaskContent:
+		walkWorkflowStorageLocators(map[string]interface{}(typed), visit)
+	case map[string]interface{}:
+		for _, child := range typed {
+			walkWorkflowStorageLocators(child, visit)
+		}
+	case []interface{}:
+		for _, child := range typed {
+			walkWorkflowStorageLocators(child, visit)
+		}
+	case string:
+		locator, err := resourcetree.ParseURI(strings.TrimSpace(typed))
+		if err == nil {
+			visit(locator)
+		}
+	}
+}
+
+func (s *DevTaskService) listStorageEngineDescriptors(ctx context.Context, tenantID uint) ([]commonModels.EngineRuntimeDescriptor, error) {
+	if s.systemClient == nil {
+		return nil, fmt.Errorf("%w: system engine client is not configured", ErrStorageEngineDiscovery)
+	}
+	descriptors, err := s.systemClient.WithTenantID(tenantID).ListEngineRuntimeDescriptors(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrStorageEngineDiscovery, err)
+	}
+	candidates := make([]commonModels.EngineRuntimeDescriptor, 0, len(descriptors))
+	for index := range descriptors {
+		descriptor := &descriptors[index]
+		if descriptor.LifecycleState != commonModels.EngineLifecycleActive || !commonUtils.HasStorageCapability(descriptor.AsEngine()) {
+			continue
+		}
+		candidates = append(candidates, *descriptor)
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].Name == candidates[j].Name {
+			return candidates[i].ID < candidates[j].ID
+		}
+		return candidates[i].Name < candidates[j].Name
+	})
+	return candidates, nil
+}
+
+func storageEngineSupportsResourceTypes(engine *commonModels.EngineRuntimeDescriptor, resourceTypes []string) bool {
+	if engine == nil || engine.LifecycleState != commonModels.EngineLifecycleActive {
+		return false
+	}
+	capabilities, err := commonUtils.ParseCapabilities(engine.Capabilities)
+	if err != nil || capabilities == nil || capabilities.Storage == nil || capabilities.Storage.CatalogModel == nil {
+		return false
+	}
+	catalogModel := capabilities.Storage.CatalogModel
+	for _, resourceType := range resourceTypes {
+		supported := catalogModel.RootTerm == resourceType
+		for _, level := range catalogModel.Levels {
+			if level.Term == resourceType {
+				supported = true
+				break
+			}
+			for _, kind := range level.Kinds {
+				if kind == resourceType {
+					supported = true
+					break
+				}
+			}
+			if supported {
+				break
+			}
+		}
+		if !supported {
+			return false
+		}
+	}
+	return len(resourceTypes) > 0
+}
+
+func cloneWorkflowContent(content models.DevTaskContent) (map[string]interface{}, error) {
+	raw, err := json.Marshal(content)
+	if err != nil {
+		return nil, err
+	}
+	var cloned map[string]interface{}
+	if err := json.Unmarshal(raw, &cloned); err != nil {
+		return nil, err
+	}
+	return cloned, nil
+}
+
+func rewriteWorkflowStorageEngineLocators(value interface{}, sourceEngineID, targetEngineID uint) (interface{}, int) {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		total := 0
+		for key, child := range typed {
+			rewritten, count := rewriteWorkflowStorageEngineLocators(child, sourceEngineID, targetEngineID)
+			typed[key] = rewritten
+			total += count
+		}
+		return typed, total
+	case []interface{}:
+		total := 0
+		for index, child := range typed {
+			rewritten, count := rewriteWorkflowStorageEngineLocators(child, sourceEngineID, targetEngineID)
+			typed[index] = rewritten
+			total += count
+		}
+		return typed, total
+	case string:
+		locator, err := resourcetree.ParseURI(strings.TrimSpace(typed))
+		if err != nil || locator.EngineID != sourceEngineID {
+			return typed, 0
+		}
+		locator.EngineID = targetEngineID
+		locator.NodeID = nil
+		locator.ItemID = nil
+		return locator.ToURI(), 1
+	default:
+		return value, 0
+	}
 }
 
 func cloneDevTaskContent(source models.DevTaskContent) models.DevTaskContent {

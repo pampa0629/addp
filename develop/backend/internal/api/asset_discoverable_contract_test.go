@@ -44,7 +44,7 @@ func TestAssetDiscoverableRouteAuthenticationAndTenantContract(t *testing.T) {
 	defer systemServer.Close()
 	cfg := &config.Config{}
 	cfg.SystemServiceURL = systemServer.URL
-	devTaskService := developservice.NewDevTaskService(repository.NewDevTaskRepository(db))
+	devTaskService := developservice.NewDevTaskService(repository.NewDevTaskRepository(db), nil)
 	router := SetupRouter(cfg, db, nil, nil, nil, nil, nil, nil, nil, devTaskService, nil, nil)
 
 	authtest.AssertAssetDiscoverableContract(t, router, "/api/v1/develop/assets/discoverable", "tenant-seven")

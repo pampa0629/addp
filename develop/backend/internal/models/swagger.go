@@ -101,6 +101,44 @@ type NotebookRuntimeBindingSwaggerRequest struct {
 	Kernel   string `json:"kernel" binding:"required" example:"python3"`
 }
 
+// RebindWorkflowStorageEngineSwaggerRequest 工作流存储引擎重绑定请求体。
+type RebindWorkflowStorageEngineSwaggerRequest struct {
+	TargetEngineID uint `json:"target_engine_id" binding:"required" example:"15"`
+}
+
+// StorageEngineDescriptorSwagger 存储引擎脱敏候选摘要。
+type StorageEngineDescriptorSwagger struct {
+	ID               uint   `json:"id" example:"15"`
+	Name             string `json:"name" example:"Business Doris"`
+	EngineType       string `json:"engine_type" example:"doris"`
+	LifecycleState   string `json:"lifecycle_state" example:"active"`
+	ConnectionStatus string `json:"connection_status" example:"connected"`
+}
+
+// WorkflowStorageEngineBindingSwagger 工作流中的一个存储引擎引用集合。
+type WorkflowStorageEngineBindingSwagger struct {
+	EngineID            uint                            `json:"engine_id" example:"5"`
+	ReferenceCount      int                             `json:"reference_count" example:"2"`
+	ResourceTypes       []string                        `json:"resource_types" example:"table,database"`
+	Available           bool                            `json:"available" example:"false"`
+	Engine              *StorageEngineDescriptorSwagger `json:"engine,omitempty"`
+	CompatibleEngineIDs []uint                          `json:"compatible_engine_ids" example:"2,15"`
+}
+
+// WorkflowStorageEngineBindingsSwaggerResponse 工作流存储引擎绑定列表。
+type WorkflowStorageEngineBindingsSwaggerResponse struct {
+	Items            []WorkflowStorageEngineBindingSwagger `json:"items"`
+	CandidateEngines []StorageEngineDescriptorSwagger      `json:"candidate_engines"`
+}
+
+// RebindWorkflowStorageEngineSwaggerResponse 工作流存储引擎重绑定结果。
+type RebindWorkflowStorageEngineSwaggerResponse struct {
+	Task                 DevTaskSwagger `json:"task"`
+	SourceEngineID       uint           `json:"source_engine_id" example:"5"`
+	TargetEngineID       uint           `json:"target_engine_id" example:"15"`
+	ReplacedLocatorCount int            `json:"replaced_locator_count" example:"2"`
+}
+
 // DevTaskSwagger 开发任务 Swagger 响应摘要。
 type DevTaskSwagger struct {
 	ID                  uint                          `json:"id" example:"1"`

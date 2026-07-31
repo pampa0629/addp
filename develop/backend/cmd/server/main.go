@@ -96,7 +96,7 @@ func main() {
 	log.Printf("✅ NotebookExecutionService 初始化完成")
 
 	// 4. DevTask业务逻辑服务
-	devTaskService := service.NewDevTaskService(devTaskRepo)
+	devTaskService := service.NewDevTaskService(devTaskRepo, systemServiceClient)
 	log.Printf("✅ DevTaskService 初始化完成")
 
 	// 6. DuckDB 联邦查询服务

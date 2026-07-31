@@ -121,7 +121,7 @@ func newNotebookBindingHandlerForTest(t *testing.T) (*NotebookHandler, *service.
 		commonClient.NewSystemServiceClient(systemServer.URL, tokens, systemServer.Client()),
 		tokens,
 	)
-	taskService := service.NewDevTaskService(repository.NewDevTaskRepository(db))
+	taskService := service.NewDevTaskService(repository.NewDevTaskRepository(db), nil)
 	return NewNotebookHandler(jupyterService, nil, taskService), taskService
 }
 

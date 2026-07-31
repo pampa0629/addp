@@ -79,6 +79,41 @@ test('keeps execution disabled but allows rebinding when the saved engine is una
   await expect(page.getByRole('dialog', { name: '更换 Notebook 引擎', exact: true })).toBeVisible()
 })
 
+test.describe('responsive notebook dialogs', () => {
+  test.use({ viewport: { width: 620, height: 560 }, colorScheme: 'dark' })
+
+  test('keeps notebook dialogs visible and visually stable in a narrow window', async ({ page }) => {
+    await installMockBackend(page)
+    await page.goto(`/notebook?id=${NOTEBOOK_ID}`)
+    await expect(page.getByText('scripts2', { exact: true }).first()).toBeVisible()
+
+    await page.locator('.detail-toolbar .el-button--primary').click()
+    const executeDialog = page.getByRole('dialog', { name: '执行 Notebook', exact: true })
+    const executeSurface = visibleDialogSurface(page)
+    await expectDialogWithinViewport(page, executeSurface)
+    await expect(executeSurface.locator('.el-dialog__body')).toHaveCSS('overflow', 'auto')
+    await expect(executeSurface).toHaveScreenshot('notebook-execute-narrow.png', { animations: 'disabled' })
+    await executeDialog.getByRole('button', { name: '取消', exact: true }).click()
+    await expect(executeDialog).not.toBeVisible()
+
+    await page.getByRole('button', { name: '更换引擎', exact: true }).click()
+    const bindingDialog = page.getByRole('dialog', { name: '更换 Notebook 引擎', exact: true })
+    const bindingSurface = visibleDialogSurface(page)
+    await expectDialogWithinViewport(page, bindingSurface)
+    await expect(bindingSurface.locator('.el-dialog__body')).toHaveCSS('overflow', 'auto')
+    await expect(bindingSurface).toHaveScreenshot('notebook-binding-narrow.png', { animations: 'disabled' })
+    await bindingDialog.getByRole('button', { name: '取消', exact: true }).click()
+    await expect(bindingDialog).not.toBeVisible()
+
+    await page.locator('.sidebar-header .el-button--primary').click()
+    const uploadDialog = page.getByRole('dialog', { name: '上传 Notebook', exact: true })
+    const uploadSurface = visibleDialogSurface(page)
+    await expectDialogWithinViewport(page, uploadSurface)
+    await expect(uploadSurface.locator('.el-dialog__body')).toHaveCSS('overflow', 'auto')
+    await expect(uploadSurface).toHaveScreenshot('notebook-upload-narrow.png', { animations: 'disabled' })
+  })
+})
+
 test.describe('窄屏布局', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
@@ -174,4 +209,31 @@ async function fulfillJSON(route, body, status = 200) {
     contentType: 'application/json',
     body: JSON.stringify(body)
   })
+}
+
+function visibleDialogSurface(page) {
+  return page.locator('.el-dialog.addp-dialog:visible')
+}
+
+async function expectDialogWithinViewport(page, dialog) {
+  await expect(dialog).toHaveCount(1)
+  await expect(dialog).toBeVisible()
+  await expect.poll(() => dialog.evaluate(element => {
+    const animations = []
+    let current = element
+    while (current && current !== document.body) {
+      animations.push(...current.getAnimations({ subtree: false }))
+      current = current.parentElement
+    }
+    return animations.every(animation => animation.playState === 'finished')
+  })).toBe(true)
+  const box = await dialog.boundingBox()
+  expect(box).not.toBeNull()
+  const viewport = page.viewportSize()
+  expect(viewport).not.toBeNull()
+  expect(box.x).toBeGreaterThanOrEqual(12)
+  expect(box.y).toBeGreaterThanOrEqual(0)
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width - 12)
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false)
 }

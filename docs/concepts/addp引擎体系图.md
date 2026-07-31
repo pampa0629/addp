@@ -22,6 +22,7 @@
 - 删除后重新注册始终产生新的自增 ID。平台不根据相似连接信息自动关联新旧 Engine Instance，也不迁移旧 locator、fingerprint 或 owner 状态。
 - 生命周期统一为 `active`、`disabled`、`deleting`。只有 `active` 进入业务消费列表。删除前先在原生命周期执行只读影响评估；用户确认后才进入 `deleting`，冻结新绑定和新执行并保留连接配置供权威复扫和 cleanup 使用。参与模块不可用、存在运行任务或复扫影响变化时删除必须暂停；cleanup 完成后才物理删除 System 记录和凭据。
 - Engine 删除不物理删除用户创建的任务、服务或治理配置；owner 模块将其保留为可重绑定状态，或禁用并标记 `missing_engine`。Meta 快照、缓存和明确登记的派生产物可由各 owner cleanup executor 物理回收。
+- 删除后重新注册产生新的 Engine Instance。旧任务不会按名称或连接信息自动迁移；用户必须在 owner 模块显式选择目标 Engine，由 owner 校验能力并原子改写其私有绑定。ResourceLocator 重绑定保留 path/type，清除旧 Meta `node_id/item_id`。
 - 用户登记的 Engine Instance 归当前 Tenant，不归登记人。`created_by` 只记录审计来源，不能成为后续读取、写入、DDL 或执行授权依据。
 - `tenant_id=NULL` 只允许平台共享的内置计算 Runtime；共享 Runtime 只提供计算能力，不因此获得任意 Tenant 数据权限。
 

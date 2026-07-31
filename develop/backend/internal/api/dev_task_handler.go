@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -114,6 +115,106 @@ func (h *DevTaskHandler) GetDevTask(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, item)
+}
+
+// ListWorkflowStorageEngineBindings 查询算子工作流存储引擎绑定。
+// @Summary 查询工作流存储引擎绑定 | List workflow storage engine bindings
+// @Description 返回任务 content 中标准 ResourceLocator 的当前 Engine 引用、可用状态和兼容候选；不改变工作流运行引擎绑定。| Return current Engine references, availability, and compatible candidates for standard ResourceLocators in task content without changing the workflow runtime binding.
+// @Tags DevTask
+// @Produce json
+// @Param id path int true "开发任务 ID | Development task ID"
+// @Success 200 {object} models.WorkflowStorageEngineBindingsSwaggerResponse "存储引擎绑定 | Storage engine bindings"
+// @Failure 400 {object} models.ErrorResponse "参数错误 | Invalid request"
+// @Failure 404 {object} models.ErrorResponse "任务不存在 | Task not found"
+// @Failure 422 {object} models.ErrorResponse "任务不是工作流 | Task is not a workflow"
+// @Failure 503 {object} models.ErrorResponse "System 引擎发现不可用 | System engine discovery unavailable"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read"]
+// @Router /task-definitions/{id}/storage-engine-bindings [get]
+func (h *DevTaskHandler) ListWorkflowStorageEngineBindings(c *gin.Context) {
+	var uri struct {
+		ID uint `uri:"id" binding:"required"`
+	}
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgInvalidTaskID)})
+		return
+	}
+
+	result, err := h.devTaskService.ListWorkflowStorageEngineBindings(c.Request.Context(), uri.ID, tenantIDValue(c))
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrDevTaskNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, developi18n.MsgTaskNotFound)})
+		case errors.Is(err, service.ErrTaskNotWorkflow):
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": commoni18n.T(c, developi18n.MsgTaskNotWorkflow)})
+		case errors.Is(err, service.ErrStorageEngineDiscovery):
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, developi18n.MsgStorageEngineDiscoveryFailed)})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, developi18n.MsgStorageBindingListFailed)})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// RebindWorkflowStorageEngine 显式替换算子工作流中的一个存储引擎绑定。
+// @Summary 重绑定工作流存储引擎 | Rebind workflow storage engine
+// @Description 原子替换任务 content 中指向旧 Engine 的全部标准 ResourceLocator，保留 path/type、清除旧 Meta ID，不改变 execution_config.engine_id。| Atomically replace all standard ResourceLocators in task content that reference the old Engine, preserve path/type, clear stale Meta IDs, and keep execution_config.engine_id unchanged.
+// @Tags DevTask
+// @Accept json
+// @Produce json
+// @Param id path int true "开发任务 ID | Development task ID"
+// @Param source_engine_id path int true "原存储引擎 ID | Source storage engine ID"
+// @Param body body models.RebindWorkflowStorageEngineSwaggerRequest true "目标存储引擎 | Target storage engine"
+// @Success 200 {object} models.RebindWorkflowStorageEngineSwaggerResponse "重绑定结果 | Rebind result"
+// @Failure 400 {object} models.ErrorResponse "参数错误 | Invalid request"
+// @Failure 404 {object} models.ErrorResponse "任务或绑定不存在 | Task or binding not found"
+// @Failure 409 {object} models.ErrorResponse "任务发生并发修改 | Task changed concurrently"
+// @Failure 422 {object} models.ErrorResponse "任务类型、目标引擎状态或能力不合法 | Invalid task type, target engine state, or capability"
+// @Failure 503 {object} models.ErrorResponse "System 引擎发现不可用 | System engine discovery unavailable"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.update"]
+// @Router /task-definitions/{id}/storage-engine-bindings/{source_engine_id} [put]
+func (h *DevTaskHandler) RebindWorkflowStorageEngine(c *gin.Context) {
+	var uri struct {
+		ID             uint `uri:"id" binding:"required"`
+		SourceEngineID uint `uri:"source_engine_id" binding:"required"`
+	}
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgInvalidStorageBinding)})
+		return
+	}
+	var req models.RebindWorkflowStorageEngineRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.TargetEngineID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgInvalidStorageBinding)})
+		return
+	}
+
+	result, err := h.devTaskService.RebindWorkflowStorageEngine(
+		c.Request.Context(), uri.ID, tenantIDValue(c), userIDValue(c), uri.SourceEngineID, req.TargetEngineID,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrDevTaskNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, developi18n.MsgTaskNotFound)})
+		case errors.Is(err, service.ErrStorageBindingNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, developi18n.MsgStorageBindingNotFound)})
+		case errors.Is(err, service.ErrStorageBindingConflict):
+			c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, developi18n.MsgStorageBindingConflict)})
+		case errors.Is(err, service.ErrTaskNotWorkflow):
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": commoni18n.T(c, developi18n.MsgTaskNotWorkflow)})
+		case errors.Is(err, service.ErrStorageEngineUnavailable):
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": commoni18n.T(c, developi18n.MsgStorageEngineUnavailable)})
+		case errors.Is(err, service.ErrStorageEngineIncompatible):
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": commoni18n.T(c, developi18n.MsgStorageEngineIncompatible)})
+		case errors.Is(err, service.ErrStorageEngineDiscovery):
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, developi18n.MsgStorageEngineDiscoveryFailed)})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, developi18n.MsgStorageBindingUpdateFailed)})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }
 
 // ProviderGetDevTask 按 TaskProvider 标准路径获取开发任务详情。

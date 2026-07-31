@@ -1,12 +1,15 @@
 package repository
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/addp/develop/backend/internal/models"
 	"gorm.io/gorm"
 )
+
+var ErrDevTaskConcurrentUpdate = errors.New("dev task changed concurrently")
 
 // DevTaskRepository 开发任务数据访问层
 type DevTaskRepository struct {
@@ -45,6 +48,27 @@ func (r *DevTaskRepository) UpdateNotebookRuntimeBinding(item *models.DevTask, u
 	}
 	if result.RowsAffected == 0 {
 		return gorm.ErrRecordNotFound
+	}
+	item.UpdatedBy = &userID
+	item.UpdatedAt = updatedAt
+	return nil
+}
+
+// UpdateWorkflowStorageEngineBindings 只在任务未并发变化时原子更新工作流内容。
+func (r *DevTaskRepository) UpdateWorkflowStorageEngineBindings(item *models.DevTask, userID uint, expectedUpdatedAt time.Time) error {
+	updatedAt := time.Now()
+	result := r.db.Model(&models.DevTask{}).
+		Where("id = ? AND tenant_id = ? AND updated_at = ?", item.ID, item.TenantID, expectedUpdatedAt).
+		Updates(map[string]interface{}{
+			"content":    item.Content,
+			"updated_by": userID,
+			"updated_at": updatedAt,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrDevTaskConcurrentUpdate
 	}
 	item.UpdatedBy = &userID
 	item.UpdatedAt = updatedAt

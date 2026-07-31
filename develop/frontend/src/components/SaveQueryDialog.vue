@@ -1,8 +1,9 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="t('develop.saveQueryDialog.title')"
-    width="600px"
+    class="addp-dialog"
+    :title="dialogTitle || t('develop.saveQueryDialog.title')"
+    width="min(600px, calc(100vw - 24px))"
     :close-on-click-modal="false"
     @close="handleClose"
   >
@@ -10,7 +11,7 @@
       ref="formRef"
       :model="formData"
       :rules="rules"
-      label-width="100px"
+      label-position="top"
     >
       <el-form-item :label="t('develop.saveQueryDialog.taskName')" prop="name">
         <el-input
@@ -105,6 +106,14 @@ const props = defineProps({
   sql: {
     type: String,
     required: true
+  },
+  dialogTitle: {
+    type: String,
+    default: ''
+  },
+  initialValue: {
+    type: Object,
+    default: null
   }
 })
 
@@ -142,20 +151,20 @@ const rules = {
   ]
 }
 
-// 监听对话框打开，重置表单
-watch(visible, (val) => {
-  if (val) {
+watch([visible, () => props.initialValue], ([isVisible]) => {
+  if (isVisible) {
     resetForm()
   }
-})
+}, { deep: true })
 
 const resetForm = () => {
+  const initialValue = props.initialValue || {}
   formData.value = {
-    name: '',
-    display_name: '',
-    description: '',
-    tags: [],
-    timeout: 300
+    name: initialValue.name || '',
+    display_name: initialValue.display_name || '',
+    description: initialValue.description || '',
+    tags: Array.isArray(initialValue.tags) ? [...initialValue.tags] : [],
+    timeout: Number(initialValue.timeout) || 300
   }
   formRef.value?.clearValidate()
 }

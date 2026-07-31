@@ -29,6 +29,24 @@ assert.deepEqual(
   mod.applyWorkflowInputRefs({
     params: {},
     parameters: [
+      { name: 'left_df', type: 'dataframe', param_type: 'input' },
+      { name: 'right_df', type: 'dataframe', param_type: 'input' }
+    ],
+    inputEdges: [
+      { sourceId: 'shared', sourcePort: 'default', sourceType: 'dataframe', targetParam: 'left_df' },
+      { sourceId: 'shared', sourcePort: 'default', sourceType: 'dataframe', targetParam: 'right_df' }
+    ]
+  }),
+  {
+    left_df: { $ref: 'shared' },
+    right_df: { $ref: 'shared' }
+  }
+)
+
+assert.deepEqual(
+  mod.applyWorkflowInputRefs({
+    params: {},
+    parameters: [
       { name: 'left_df', type: 'dataframe', param_type: 'input', required: true },
       { name: 'right_df', type: 'dataframe', param_type: 'input', required: true }
     ],

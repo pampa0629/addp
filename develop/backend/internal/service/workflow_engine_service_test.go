@@ -4,12 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/addp/common/engine/plugin"
+	_ "github.com/addp/common/engine/plugins/spark_workflow"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/google/uuid"
@@ -428,7 +432,7 @@ func TestPreprocessWorkflowParamsRejectsEmptyTasks(t *testing.T) {
 	}
 }
 
-func TestWorkflowRuntimeOptionsMapsSparkClusterID(t *testing.T) {
+func TestWorkflowRuntimeEngineIDMapsSparkClusterID(t *testing.T) {
 	svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{
 		34: testEngine(34, "spark", true),
 	})
@@ -438,16 +442,16 @@ func TestWorkflowRuntimeOptionsMapsSparkClusterID(t *testing.T) {
 		},
 	}
 
-	got, err := svc.workflowRuntimeOptions(7, "spark_workflow", cfg)
+	got, err := svc.workflowRuntimeEngineID(7, "spark_workflow", cfg)
 	if err != nil {
-		t.Fatalf("workflowRuntimeOptions(7, ) error = %v", err)
+		t.Fatalf("workflowRuntimeEngineID(7, ) error = %v", err)
 	}
-	if got["engine_id"] != uint(34) {
-		t.Fatalf("runtime engine_id = %#v, want 34", got["engine_id"])
+	if got != uint(34) {
+		t.Fatalf("runtime engine_id = %#v, want 34", got)
 	}
 }
 
-func TestWorkflowRuntimeOptionsMapsSparkClusterIDString(t *testing.T) {
+func TestWorkflowRuntimeEngineIDMapsSparkClusterIDString(t *testing.T) {
 	svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{
 		34: testEngine(34, "spark", true),
 	})
@@ -457,25 +461,25 @@ func TestWorkflowRuntimeOptionsMapsSparkClusterIDString(t *testing.T) {
 		},
 	}
 
-	got, err := svc.workflowRuntimeOptions(7, "spark_workflow", cfg)
+	got, err := svc.workflowRuntimeEngineID(7, "spark_workflow", cfg)
 	if err != nil {
-		t.Fatalf("workflowRuntimeOptions(7, ) error = %v", err)
+		t.Fatalf("workflowRuntimeEngineID(7, ) error = %v", err)
 	}
-	if got["engine_id"] != uint(34) {
-		t.Fatalf("runtime engine_id = %#v, want 34", got["engine_id"])
+	if got != uint(34) {
+		t.Fatalf("runtime engine_id = %#v, want 34", got)
 	}
 }
 
-func TestWorkflowRuntimeOptionsRequiresSparkClusterIDForSparkWorkflow(t *testing.T) {
+func TestWorkflowRuntimeEngineIDRequiresSparkClusterIDForSparkWorkflow(t *testing.T) {
 	svc := newWorkflowEngineServiceWithEnginesForTest(t, nil)
 	cfg := models.WorkflowExecutionConfig{}
 
-	if _, err := svc.workflowRuntimeOptions(7, "spark_workflow", cfg); err == nil {
-		t.Fatal("workflowRuntimeOptions(7, ) error = nil, want missing spark_cluster_id error")
+	if _, err := svc.workflowRuntimeEngineID(7, "spark_workflow", cfg); err == nil {
+		t.Fatal("workflowRuntimeEngineID(7, ) error = nil, want missing spark_cluster_id error")
 	}
 }
 
-func TestWorkflowRuntimeOptionsRejectsSparkClusterIDForNonSparkWorkflow(t *testing.T) {
+func TestWorkflowRuntimeEngineIDRejectsSparkClusterIDForNonSparkWorkflow(t *testing.T) {
 	svc := newWorkflowEngineServiceWithEnginesForTest(t, nil)
 	cfg := models.WorkflowExecutionConfig{
 		EngineSpecific: map[string]interface{}{
@@ -483,12 +487,12 @@ func TestWorkflowRuntimeOptionsRejectsSparkClusterIDForNonSparkWorkflow(t *testi
 		},
 	}
 
-	if _, err := svc.workflowRuntimeOptions(7, "geopython_workflow", cfg); err == nil {
-		t.Fatal("workflowRuntimeOptions(7, ) error = nil, want non-spark workflow error")
+	if _, err := svc.workflowRuntimeEngineID(7, "geopython_workflow", cfg); err == nil {
+		t.Fatal("workflowRuntimeEngineID(7, ) error = nil, want non-spark workflow error")
 	}
 }
 
-func TestWorkflowRuntimeOptionsRejectsInvalidSparkClusterID(t *testing.T) {
+func TestWorkflowRuntimeEngineIDRejectsInvalidSparkClusterID(t *testing.T) {
 	svc := newWorkflowEngineServiceWithEnginesForTest(t, nil)
 	cfg := models.WorkflowExecutionConfig{
 		EngineSpecific: map[string]interface{}{
@@ -496,12 +500,12 @@ func TestWorkflowRuntimeOptionsRejectsInvalidSparkClusterID(t *testing.T) {
 		},
 	}
 
-	if _, err := svc.workflowRuntimeOptions(7, "spark_workflow", cfg); err == nil {
-		t.Fatal("workflowRuntimeOptions(7, ) error = nil, want invalid spark_cluster_id error")
+	if _, err := svc.workflowRuntimeEngineID(7, "spark_workflow", cfg); err == nil {
+		t.Fatal("workflowRuntimeEngineID(7, ) error = nil, want invalid spark_cluster_id error")
 	}
 }
 
-func TestWorkflowRuntimeOptionsRejectsNonSparkRuntimeEngine(t *testing.T) {
+func TestWorkflowRuntimeEngineIDRejectsNonSparkRuntimeEngine(t *testing.T) {
 	svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{
 		34: testEngine(34, "postgresql", true),
 	})
@@ -511,12 +515,12 @@ func TestWorkflowRuntimeOptionsRejectsNonSparkRuntimeEngine(t *testing.T) {
 		},
 	}
 
-	if _, err := svc.workflowRuntimeOptions(7, "spark_workflow", cfg); err == nil {
-		t.Fatal("workflowRuntimeOptions(7, ) error = nil, want non-spark runtime engine error")
+	if _, err := svc.workflowRuntimeEngineID(7, "spark_workflow", cfg); err == nil {
+		t.Fatal("workflowRuntimeEngineID(7, ) error = nil, want non-spark runtime engine error")
 	}
 }
 
-func TestWorkflowRuntimeOptionsRejectsInactiveSparkRuntimeEngine(t *testing.T) {
+func TestWorkflowRuntimeEngineIDRejectsInactiveSparkRuntimeEngine(t *testing.T) {
 	svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{
 		34: testEngine(34, "spark", false),
 	})
@@ -526,8 +530,8 @@ func TestWorkflowRuntimeOptionsRejectsInactiveSparkRuntimeEngine(t *testing.T) {
 		},
 	}
 
-	if _, err := svc.workflowRuntimeOptions(7, "spark_workflow", cfg); err == nil {
-		t.Fatal("workflowRuntimeOptions(7, ) error = nil, want inactive spark runtime engine error")
+	if _, err := svc.workflowRuntimeEngineID(7, "spark_workflow", cfg); err == nil {
+		t.Fatal("workflowRuntimeEngineID(7, ) error = nil, want inactive spark runtime engine error")
 	}
 }
 
@@ -598,6 +602,139 @@ func TestWorkflowRuntimeStatusSummaryKeepsDiagnosticFieldsOnly(t *testing.T) {
 	if _, ok := summary["raw"]; ok {
 		t.Fatalf("summary should not include raw runtime payload: %#v", summary)
 	}
+}
+
+func TestExecuteWorkflowSendsCanonicalSparkHTTPRuntimeRequest(t *testing.T) {
+	runtime := newWorkflowRuntimeContractServer(t, "spark_workflow")
+	svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{
+		91: {
+			ID: 91, Name: "test-spark-workflow", EngineType: "spark_workflow", LifecycleState: "active",
+			ConnectionInfo: runtime.connectionInfo,
+		},
+		34: testEngine(34, "spark", true),
+	})
+
+	resp, err := svc.ExecuteWorkflow(
+		context.Background(),
+		7,
+		map[string]interface{}{"tasks": []interface{}{map[string]interface{}{
+			"id": "contract", "operator": "contract_op", "params": map[string]interface{}{}, "depends_on": []interface{}{},
+		}}},
+		nil,
+		`{"engine_id":91,"engine_specific":{"spark_cluster_id":34}}`,
+	)
+	if err != nil {
+		t.Fatalf("ExecuteWorkflow() error = %v", err)
+	}
+	if resp.Status != "success" || resp.ExecutionID != "runtime-contract-exec" {
+		t.Fatalf("response = %#v, want successful runtime execution", resp)
+	}
+	if runtime.captured["engine_id"] != float64(34) {
+		t.Fatalf("top-level engine_id = %#v, want 34: %#v", runtime.captured["engine_id"], runtime.captured)
+	}
+	assertCanonicalWorkflowRuntimeAuthorization(t, runtime.captured)
+}
+
+func TestExecuteWorkflowOmitsTopLevelEngineIDForNonSparkHTTPRuntime(t *testing.T) {
+	engineType := "test_http_workflow_contract"
+	plugin.Register(plugin.NewHTTPWorkflowRuntimeProvider(engineType, "Test HTTP Workflow Runtime"))
+	runtime := newWorkflowRuntimeContractServer(t, engineType)
+	svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{
+		92: {
+			ID: 92, Name: "test-http-workflow", EngineType: engineType, LifecycleState: "active",
+			ConnectionInfo: runtime.connectionInfo,
+		},
+	})
+
+	resp, err := svc.ExecuteWorkflow(
+		context.Background(),
+		7,
+		map[string]interface{}{"tasks": []interface{}{map[string]interface{}{
+			"id": "contract", "operator": "contract_op", "params": map[string]interface{}{}, "depends_on": []interface{}{},
+		}}},
+		nil,
+		`{"engine_id":92}`,
+	)
+	if err != nil {
+		t.Fatalf("ExecuteWorkflow() error = %v", err)
+	}
+	if resp.Status != "success" || resp.ExecutionID != "runtime-contract-exec" {
+		t.Fatalf("response = %#v, want successful runtime execution", resp)
+	}
+	if _, exists := runtime.captured["engine_id"]; exists {
+		t.Fatalf("non-Spark runtime must not receive top-level engine_id: %#v", runtime.captured)
+	}
+	assertCanonicalWorkflowRuntimeAuthorization(t, runtime.captured)
+}
+
+func assertCanonicalWorkflowRuntimeAuthorization(t *testing.T, captured map[string]interface{}) {
+	t.Helper()
+	runtimeContext, ok := captured["runtime"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("runtime context missing: %#v", captured)
+	}
+	authorization, ok := runtimeContext["execution_authorization"].(map[string]interface{})
+	if !ok || authorization["id"] != float64(1) {
+		t.Fatalf("runtime execution authorization missing: %#v", captured)
+	}
+	effects, ok := authorization["effects"].([]interface{})
+	if !ok || len(effects) != 1 || effects[0] != "read" {
+		t.Fatalf("authorization effects = %#v, want [read]", authorization["effects"])
+	}
+	if _, exists := captured["execution_authorization"]; exists {
+		t.Fatalf("execution_authorization must not be flattened: %#v", captured)
+	}
+}
+
+type workflowRuntimeContractServer struct {
+	captured       map[string]interface{}
+	connectionInfo commonModels.ConnectionInfo
+}
+
+func newWorkflowRuntimeContractServer(t *testing.T, engineType string) *workflowRuntimeContractServer {
+	t.Helper()
+	fixture := &workflowRuntimeContractServer{}
+	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/operators":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"status": "success",
+				"operators": []map[string]interface{}{
+					{
+						"id": "contract_op", "name": "contract_op", "display_name": "Contract Operator",
+						"engine_type": engineType, "category": "测试", "category_path": []string{"测试"},
+						"description": "Canonical HTTP request contract", "execution_modes": []string{"workflow"},
+						"effects": []string{"read"}, "parameters": []interface{}{},
+						"output_ports": []map[string]interface{}{{"name": "default", "type": "object", "is_default": true}},
+					},
+				},
+			})
+		case "/api/workflow":
+			if err := json.NewDecoder(r.Body).Decode(&fixture.captured); err != nil {
+				t.Errorf("decode workflow request: %v", err)
+				http.Error(w, "invalid request", http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"status": "success", "execution_id": "runtime-contract-exec",
+			})
+		case "/api/executions/runtime-contract-exec":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"status": "success", "execution_id": "runtime-contract-exec", "progress": 100,
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(runtime.Close)
+
+	host, port, err := net.SplitHostPort(strings.TrimPrefix(runtime.URL, "http://"))
+	if err != nil {
+		t.Fatalf("parse runtime URL: %v", err)
+	}
+	fixture.connectionInfo = commonModels.ConnectionInfo{"protocol": "http", "host": host, "port": port}
+	return fixture
 }
 
 func TestExecuteWorkflowWaitsForAsyncRuntimeTerminalStatus(t *testing.T) {
@@ -857,12 +994,12 @@ func (h *workflowEngineServiceTestHarness) preprocessWorkflowParamsWithTargets(
 	return h.service.preprocessWorkflowParamsWithTargets(ctx, tenantID, workflowEngineType, workflowDef, h.resolver)
 }
 
-func (h *workflowEngineServiceTestHarness) workflowRuntimeOptions(
+func (h *workflowEngineServiceTestHarness) workflowRuntimeEngineID(
 	tenantID uint,
 	engineType string,
 	config models.WorkflowExecutionConfig,
-) (map[string]interface{}, error) {
-	return h.service.workflowRuntimeOptions(context.Background(), tenantID, engineType, config, h.resolver)
+) (uint, error) {
+	return h.service.workflowRuntimeEngineID(context.Background(), tenantID, engineType, config, h.resolver)
 }
 
 func (h *workflowEngineServiceTestHarness) ExecuteWorkflow(

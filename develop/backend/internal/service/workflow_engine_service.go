@@ -165,7 +165,7 @@ func (s *WorkflowEngineService) executeWorkflowWithResolver(
 	}
 
 	// 3. 预处理数据源参数：将 locator / target_parent_locator 派生为 connection_info 和运行时路径。
-	// Spark Workflow 的顶层运行时 engine_id 由 workflowRuntimeOptions 单独处理。
+	// Spark Workflow 的顶层 engine_id 与嵌套 runtime 授权上下文分别组装。
 	preprocessedWorkflowDef, producedTargets, err := s.preprocessWorkflowParamsWithTargets(
 		ctx, tenantID, engine.EngineType, workflowDef, resolver,
 	)
@@ -173,23 +173,23 @@ func (s *WorkflowEngineService) executeWorkflowWithResolver(
 		return nil, fmt.Errorf("预处理工作流参数失败: %w", err)
 	}
 
-	runtimeOptions, err := s.workflowRuntimeOptions(ctx, tenantID, engine.EngineType, config, resolver)
+	runtimeEngineID, err := s.workflowRuntimeEngineID(ctx, tenantID, engine.EngineType, config, resolver)
 	if err != nil {
 		return nil, err
 	}
-	if runtimeOptions == nil {
-		runtimeOptions = make(map[string]interface{})
-	}
-	runtimeOptions["execution_authorization"] = map[string]interface{}{
-		"id":      authorization.AuthorizationID,
-		"effects": append([]string(nil), authorization.Effects...),
+	runtimeContext := &plugin.WorkflowRuntimeContext{
+		ExecutionAuthorization: plugin.WorkflowExecutionAuthorization{
+			ID:      authorization.AuthorizationID,
+			Effects: append([]string(nil), authorization.Effects...),
+		},
 	}
 
 	// 4. 通过 Common Engine 的 WorkflowRuntimeProvider 执行工作流
 	workflowReq := plugin.WorkflowExecuteRequest{
 		WorkflowDef: preprocessedWorkflowDef,
 		InputData:   inputData,
-		Runtime:     runtimeOptions,
+		EngineID:    runtimeEngineID,
+		Runtime:     runtimeContext,
 	}
 	result, err := dbbridge.ExecuteWorkflow(ctx, engine, workflowReq)
 	if err != nil {
@@ -245,45 +245,45 @@ func (s *WorkflowEngineService) waitWorkflowRuntimeTerminalStatus(
 	}
 }
 
-func (s *WorkflowEngineService) workflowRuntimeOptions(
+func (s *WorkflowEngineService) workflowRuntimeEngineID(
 	ctx context.Context,
 	tenantID uint,
 	engineType string,
 	config models.WorkflowExecutionConfig,
 	resolver *workflowEngineAccessResolver,
-) (map[string]interface{}, error) {
+) (uint, error) {
 	sparkClusterID, hasSparkClusterID := config.EngineSpecific["spark_cluster_id"]
 	if engineType != "spark_workflow" {
 		if hasSparkClusterID {
-			return nil, fmt.Errorf("只有 spark_workflow 可以配置 spark_cluster_id")
+			return 0, fmt.Errorf("只有 spark_workflow 可以配置 spark_cluster_id")
 		}
-		return nil, nil
+		return 0, nil
 	}
 
 	if !hasSparkClusterID {
-		return nil, fmt.Errorf("spark_workflow 执行必须配置 spark_cluster_id")
+		return 0, fmt.Errorf("spark_workflow 执行必须配置 spark_cluster_id")
 	}
 
 	engineID, err := positiveUintFromInterface(sparkClusterID)
 	if err != nil {
-		return nil, fmt.Errorf("spark_cluster_id 必须是有效的 Spark 通用引擎资源 ID: %w", err)
+		return 0, fmt.Errorf("spark_cluster_id 必须是有效的 Spark 通用引擎资源 ID: %w", err)
 	}
 
 	sparkEngine, err := resolver.engine(ctx, engineID)
 	if err != nil {
-		return nil, fmt.Errorf("查询 Spark 通用引擎资源失败: %w", err)
+		return 0, fmt.Errorf("查询 Spark 通用引擎资源失败: %w", err)
 	}
 	if sparkEngine.EngineType != "spark" {
-		return nil, fmt.Errorf("spark_cluster_id 必须指向 engine_type=spark 的通用引擎资源")
+		return 0, fmt.Errorf("spark_cluster_id 必须指向 engine_type=spark 的通用引擎资源")
 	}
 	if !sparkEngine.IsUsable() {
-		return nil, fmt.Errorf("spark_cluster_id 指向的 Spark 通用引擎资源未启用")
+		return 0, fmt.Errorf("spark_cluster_id 指向的 Spark 通用引擎资源未启用")
 	}
 	if err := requireTenantBusinessEngine(sparkEngine, tenantID, "Spark 通用引擎资源"); err != nil {
-		return nil, err
+		return 0, err
 	}
 
-	return map[string]interface{}{"engine_id": engineID}, nil
+	return engineID, nil
 }
 
 func positiveUintFromInterface(value interface{}) (uint, error) {
@@ -462,7 +462,7 @@ func workflowRuntimeResultMap(values map[string]interface{}) map[string]string {
 // preprocessWorkflowParams 预处理工作流参数。
 // 表/文件资源以 locator / target_parent_locator + target_name 作为存储契约。
 // 执行前在 Develop 边界派生数据源 connection_info、schema/table 或 path。
-// Spark Workflow 的 Spark 通用引擎资源绑定走请求顶层 runtime.engine_id，不与这里的数据源连接混用。
+// Spark Workflow 的 Spark 通用引擎资源绑定走请求顶层 engine_id，不与这里的数据源连接混用。
 func (s *WorkflowEngineService) preprocessWorkflowParams(
 	ctx context.Context,
 	tenantID uint,

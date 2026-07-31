@@ -41,6 +41,8 @@ docker compose up -d develop-backend develop-frontend jupyter-engine
 ```
 SQL执行:     POST /api/v1/develop/execute
 任务定义:    GET/POST /api/v1/develop/task-definitions
+存储引擎绑定: GET /api/v1/develop/task-definitions/{id}/storage-engine-bindings
+存储引擎重绑定: PUT /api/v1/develop/task-definitions/{id}/storage-engine-bindings/{source_engine_id}
 任务执行:    POST /api/v1/develop/task-definitions/:id/execute
 算子发现:   GET /api/v1/develop/workflow-engines/{workflow_engine_id}/operators
 执行历史:   GET /api/v1/develop/executions

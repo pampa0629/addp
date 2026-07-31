@@ -132,3 +132,36 @@ other = "审批请求指纹不匹配"
 
 [develop.approval.unavailable]
 other = "审批服务不可用"
+
+[develop.task.invalid_id]
+other = "开发任务 ID 无效"
+
+[develop.task.not_found]
+other = "开发任务不存在"
+
+[develop.workflow.task_not_workflow]
+other = "该任务不是算子工作流"
+
+[develop.workflow.invalid_storage_binding]
+other = "存储引擎重绑定参数无效"
+
+[develop.workflow.storage_binding_list_failed]
+other = "获取工作流存储引擎绑定失败"
+
+[develop.workflow.storage_binding_not_found]
+other = "原存储引擎绑定不存在或已发生变化"
+
+[develop.workflow.storage_binding_conflict]
+other = "任务已被其他操作修改，请刷新后重试"
+
+[develop.workflow.storage_engine_unavailable]
+other = "目标存储引擎不可用"
+
+[develop.workflow.storage_engine_incompatible]
+other = "目标存储引擎不支持当前资源类型"
+
+[develop.workflow.storage_engine_discovery_failed]
+other = "存储引擎发现服务暂时不可用，请稍后重试"
+
+[develop.workflow.storage_binding_update_failed]
+other = "更新工作流存储引擎绑定失败"

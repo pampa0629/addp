@@ -3,6 +3,82 @@ import { expect, test } from '@playwright/test'
 const SAVED_TASK_ID = 42
 const ENGINE_A = { id: 1, name: 'Engine A', engine_type: 'engine_a' }
 const ENGINE_B = { id: 2, name: 'Engine B', engine_type: 'engine_b' }
+const RESOURCE_ENGINE = {
+  id: 7,
+  name: 'Fixture PostgreSQL',
+  engine_type: 'postgresql',
+  engine_family: 'tabular'
+}
+const RESOURCE_LOCATOR = `addp://engine/${RESOURCE_ENGINE.id}/path/public/roads?type=table&item_id=701`
+
+test.describe('responsive workflow dialogs', () => {
+  test.use({ viewport: { width: 620, height: 560 }, colorScheme: 'dark' })
+
+  test('keeps workflow dialogs visible and visually stable in a narrow window', async ({ page }) => {
+    await installMockBackend(page)
+    await openSavedWorkflow(page)
+
+    await requestEngineSwitch(page, ENGINE_B)
+    const switchDialog = engineSwitchDialog(page)
+    const switchSurface = visibleDialogSurface(page)
+    await expectDialogWithinViewport(page, switchSurface)
+    await expect(switchSurface).toHaveScreenshot('workflow-engine-switch-narrow.png', { animations: 'disabled' })
+    await switchDialog.getByRole('button', { name: '取消', exact: true }).click()
+    await expect(switchDialog).not.toBeVisible()
+
+    await primaryExecuteButton(page).click()
+    const executeDialog = page.getByRole('dialog', { name: '执行工作流', exact: true })
+    const executeSurface = visibleDialogSurface(page)
+    await expectDialogWithinViewport(page, executeSurface)
+    await expect(executeSurface.locator('.el-dialog__body')).toHaveCSS('overflow', 'auto')
+    await expect(executeSurface).toHaveScreenshot('workflow-execute-narrow.png', { animations: 'disabled' })
+    await executeDialog.getByRole('button', { name: '取消', exact: true }).click()
+    await expect(executeDialog).not.toBeVisible()
+
+    await page.getByRole('button', { name: '更多', exact: true }).click()
+    await page.getByRole('menuitem', { name: '清空', exact: true }).click()
+    const clearDialog = page.getByRole('dialog', { name: '确认清空', exact: true })
+    const clearSurface = page.locator('.el-message-box.addp-message-box:visible')
+    await expectDialogWithinViewport(page, clearSurface)
+    await expect(clearDialog.getByRole('button', { name: '取消', exact: true })).toBeVisible()
+    await expect(clearDialog.getByRole('button', { name: '确定', exact: true })).toHaveClass(/el-button--danger/)
+    await expect(clearSurface).toHaveScreenshot('workflow-clear-confirm-narrow.png', { animations: 'disabled' })
+  })
+
+  test('keeps the resource picker stable after focusing a validation issue', async ({ page }) => {
+    const validationError = {
+      code: 'REQUIRED_PARAMETER',
+      path: 'tasks[0].params.source_locator',
+      message: 'Source locator is required'
+    }
+    await installMockBackend(page, {
+      validationErrors: [validationError],
+      includeResourcePicker: true
+    })
+    await openSavedWorkflow(page)
+
+    await primaryExecuteButton(page).click()
+    const validation = page.locator('.header-validation')
+    await expect(validation).toContainText(validationError.message)
+    await validation.getByRole('button').click()
+    const issue = page.locator('.validation-item').filter({ hasText: validationError.message })
+    await expect(issue).toHaveCount(1)
+    await issue.click()
+
+    const selectResource = page.getByRole('button', { name: '更换资源', exact: true })
+    await expect(selectResource).toBeVisible()
+    await selectResource.click()
+    const resourceDialog = page.getByRole('dialog', { name: '选择数据源', exact: true })
+    await expect(resourceDialog.getByText(RESOURCE_ENGINE.name, { exact: true })).toBeVisible()
+    await expect(resourceDialog.locator('.el-tag__content')).toContainText(RESOURCE_ENGINE.name)
+    await expect(resourceDialog.getByRole('button', { name: '确定', exact: true })).toBeEnabled()
+    await expect(page.locator('.el-message')).toHaveCount(0)
+    const resourceSurface = visibleDialogSurface(page)
+    await expectDialogWithinViewport(page, resourceSurface)
+    await expect(resourceSurface.locator('.el-dialog__body')).toHaveCSS('overflow', 'auto')
+    await expect(resourceSurface).toHaveScreenshot('workflow-resource-picker-narrow.png', { animations: 'disabled' })
+  })
+})
 
 test('cancel keeps the current engine and workflow', async ({ page }) => {
   const backend = await installMockBackend(page)
@@ -20,6 +96,77 @@ test('cancel keeps the current engine and workflow', async ({ page }) => {
   await expect(primarySaveButton(page)).toBeEnabled()
   expect(backend.updates).toHaveLength(0)
   expect(backend.creates).toHaveLength(0)
+})
+
+test('keeps dialog and canvas keyboard focus predictable', async ({ page }) => {
+  await installMockBackend(page)
+  await openSavedWorkflow(page)
+
+  const executeTrigger = primaryExecuteButton(page)
+  await executeTrigger.click()
+  const executeDialog = page.getByRole('dialog', { name: '执行工作流', exact: true })
+  await expect(executeDialog.getByRole('textbox', { name: '执行参数', exact: true })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(executeDialog).not.toBeVisible()
+  await expect(executeTrigger).toBeFocused()
+
+  const moreTrigger = page.getByRole('button', { name: '更多', exact: true })
+  await moreTrigger.click()
+  await page.getByRole('menuitem', { name: '查看 JSON', exact: true }).click()
+  const jsonDialog = page.getByRole('dialog', { name: '工作流 JSON', exact: true })
+  await expect(jsonDialog.getByRole('button', { name: '关闭', exact: true })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(jsonDialog).not.toBeVisible()
+  await expect(moreTrigger).toBeFocused()
+
+  await requestEngineSwitch(page, ENGINE_B)
+  const switchDialog = engineSwitchDialog(page)
+  await expect(switchDialog.getByRole('button', { name: '取消', exact: true })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(switchDialog).not.toBeVisible()
+  await expect(page.locator('.engine-select input')).toBeFocused()
+
+  const canvas = page.getByRole('region', { name: '工作流 DAG 画布', exact: true })
+  await expect(canvas).toHaveAttribute('tabindex', '0')
+  await expect(canvas).toHaveAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight ArrowUp ArrowDown Enter Delete Escape')
+  await canvas.focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(page.getByRole('status', { name: '工作流画布选择状态' })).toContainText('Operator A')
+  await expect(page.getByRole('button', { name: '删除选中项', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: '打开节点参数', exact: true })).toBeVisible()
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.right-panel')).toBeVisible()
+})
+
+test('edits port bindings from the parameter panel and persists every input reference', async ({ page }) => {
+  const backend = await installMockBackend(page, { includeInputConnections: true })
+  await openSavedWorkflow(page)
+
+  const canvas = page.locator('#workflow-dag-container canvas')
+  const canvasBox = await requiredBoundingBox(canvas)
+  await page.mouse.click(canvasBox.x + 520, canvasBox.y + 180)
+
+  const panel = page.locator('.right-panel')
+  await expect(panel.getByRole('heading', { name: '输入连接', exact: true })).toBeVisible()
+  for (const inputName of ['left_value', 'right_value']) {
+    const field = panel.locator('.input-connection-field').filter({ hasText: inputName })
+    await expect(field).toHaveCount(1)
+    await field.locator('.el-select__wrapper').click()
+    const option = page.locator('.el-select-dropdown__item:visible').filter({ hasText: 'Operator A (operator_a_1)' })
+    await expect(option).toHaveCount(1)
+    await option.click({ force: true })
+    await expect(page.locator('.el-select-dropdown:visible')).toHaveCount(0)
+  }
+
+  await primarySaveButton(page).click()
+  await expect.poll(() => backend.updates.length).toBe(1)
+  const target = backend.updates[0].payload.content.workflow_definition.tasks
+    .find(task => task.id === 'operator_input_1')
+  expect(target.params).toEqual({
+    left_value: { $ref: 'operator_a_1' },
+    right_value: { $ref: 'operator_a_1' }
+  })
+  expect(target.depends_on).toEqual(['operator_a_1'])
 })
 
 test('clear and switch detaches the saved task without updating it', async ({ page }) => {
@@ -140,6 +287,7 @@ test('keeps save pending until post-save validation finishes', async ({ page }) 
   await expect(saveButton).toBeDisabled()
   await expect(saveButton).toHaveClass(/is-loading/)
   await expect(page.locator('.editor-content')).toHaveAttribute('inert', '')
+  await expect(page.getByRole('status', { name: '工作流状态' })).toHaveText('正在校验工作流')
 
   backend.releaseValidation()
 
@@ -163,6 +311,7 @@ test('keeps execute pending through validation and automatic save', async ({ pag
   await expect(executeButton).toBeDisabled()
   await expect(executeButton).toHaveClass(/is-loading/)
   await expect(page.locator('.editor-content')).toHaveAttribute('inert', '')
+  await expect(page.getByRole('status', { name: '工作流状态' })).toHaveText('正在校验工作流')
 
   backend.releaseValidation()
 
@@ -170,6 +319,7 @@ test('keeps execute pending through validation and automatic save', async ({ pag
   await expect(executeButton).toBeDisabled()
   await expect(executeButton).toHaveClass(/is-loading/)
   await expect(page.locator('.editor-content')).toHaveAttribute('inert', '')
+  await expect(page.getByRole('status', { name: '工作流状态' })).toHaveText('正在保存工作流')
 
   backend.releaseUpdate()
 
@@ -199,6 +349,7 @@ test('locks the execute dialog while submission is pending', async ({ page }) =>
   await expect(confirmButton).toBeDisabled()
   await expect(confirmButton).toHaveClass(/is-loading/)
   await expect(dialog.locator('.el-dialog__headerbtn')).toHaveCount(0)
+  await expect(page.getByRole('status', { name: '工作流状态' })).toHaveText('正在提交工作流执行')
 
   await page.keyboard.press('Escape')
   await expect(dialog).toBeVisible()
@@ -388,6 +539,10 @@ function engineSwitchDialog(page) {
   return page.getByRole('dialog', { name: '切换工作流引擎', exact: true })
 }
 
+function visibleDialogSurface(page) {
+  return page.locator('.el-dialog.addp-dialog:visible')
+}
+
 async function installMockBackend(page, {
   validationErrors = [],
   deferValidation = false,
@@ -396,7 +551,9 @@ async function installMockBackend(page, {
   executionError = '',
   deferCreate = false,
   createError = '',
-  deferGeneration = false
+  deferGeneration = false,
+  includeResourcePicker = false,
+  includeInputConnections = false
 } = {}) {
   const updates = []
   const creates = []
@@ -424,15 +581,47 @@ async function installMockBackend(page, {
   const generationGate = deferGeneration
     ? new Promise(resolve => { releaseGeneration = resolve })
     : null
-  const task = createSavedTask()
+  const task = createSavedTask(includeResourcePicker, includeInputConnections)
+  const operatorAParameters = [
+    { name: 'source', type: 'string', required: false, description: 'Source input' }
+  ]
+  if (includeResourcePicker) {
+    operatorAParameters.push({
+      name: '数据源',
+      type: 'string',
+      required: false,
+      description: '选择测试数据源',
+      ui_type: 'resource_tree_picker',
+      ui_config: {
+        api_base_url: '/api/v1/meta',
+        engine_families: ['tabular'],
+        resource_binding: {
+          mode: 'existing',
+          locator_param: 'source_locator'
+        }
+      }
+    })
+  }
   const operatorsByEngine = {
-    [ENGINE_A.id]: [createOperator(
-      'operator_a',
-      'Operator A',
-      'Category A',
-      ENGINE_A.engine_type,
-      [{ name: 'source', type: 'string', required: false, description: 'Source input' }]
-    )],
+    [ENGINE_A.id]: [
+      createOperator(
+        'operator_a',
+        'Operator A',
+        'Category A',
+        ENGINE_A.engine_type,
+        operatorAParameters
+      ),
+      ...(includeInputConnections ? [createOperator(
+        'operator_input',
+        'Operator Input',
+        'Category A',
+        ENGINE_A.engine_type,
+        [
+          { name: 'left_value', type: 'number', param_type: 'input', required: true },
+          { name: 'right_value', type: 'number', param_type: 'input', required: true }
+        ]
+      )] : [])
+    ],
     [ENGINE_B.id]: [createOperator('operator_b', 'Operator B', 'Category B', ENGINE_B.engine_type)]
   }
 
@@ -451,6 +640,57 @@ async function installMockBackend(page, {
     }
     if (path === '/api/v1/develop/workflow-engines') {
       return fulfillJSON(route, [ENGINE_A, ENGINE_B])
+    }
+    if (path === '/api/v1/meta/engines') {
+      return fulfillJSON(route, [RESOURCE_ENGINE])
+    }
+    if (path === `/api/v1/meta/resource-tree/${RESOURCE_ENGINE.id}`) {
+      return fulfillJSON(route, {
+        id: `addp://engine/${RESOURCE_ENGINE.id}/path?type=database`,
+        locator: `addp://engine/${RESOURCE_ENGINE.id}/path?type=database`,
+        label: RESOURCE_ENGINE.name,
+        type: 'database',
+        children: [{
+          id: `addp://engine/${RESOURCE_ENGINE.id}/path/public?type=schema`,
+          locator: `addp://engine/${RESOURCE_ENGINE.id}/path/public?type=schema`,
+          label: 'public',
+          type: 'schema',
+          children: [{
+            id: RESOURCE_LOCATOR,
+            locator: RESOURCE_LOCATOR,
+            label: 'roads',
+            type: 'table',
+            children: []
+          }]
+        }]
+      })
+    }
+    if (path === `/api/v1/meta/resource-tree/${RESOURCE_ENGINE.id}/ancestors`) {
+      return fulfillJSON(route, {
+        engine_id: RESOURCE_ENGINE.id,
+        target_locator: RESOURCE_LOCATOR,
+        target_kind: 'item',
+        ancestors: [
+          {
+            id: `addp://engine/${RESOURCE_ENGINE.id}/path?type=database`,
+            locator: `addp://engine/${RESOURCE_ENGINE.id}/path?type=database`,
+            label: RESOURCE_ENGINE.name,
+            type: 'database'
+          },
+          {
+            id: `addp://engine/${RESOURCE_ENGINE.id}/path/public?type=schema`,
+            locator: `addp://engine/${RESOURCE_ENGINE.id}/path/public?type=schema`,
+            label: 'public',
+            type: 'schema'
+          },
+          {
+            id: RESOURCE_LOCATOR,
+            locator: RESOURCE_LOCATOR,
+            label: 'roads',
+            type: 'table'
+          }
+        ]
+      })
     }
     const operatorMatch = path.match(/^\/api\/v1\/develop\/workflow-engines\/(\d+)\/operators$/)
     if (operatorMatch) {
@@ -532,7 +772,21 @@ async function installMockBackend(page, {
   }
 }
 
-function createSavedTask() {
+function createSavedTask(includeResourcePicker = false, includeInputConnections = false) {
+  const tasks = [{
+    id: 'operator_a_1',
+    operator: 'operator_a',
+    params: includeResourcePicker ? { source_locator: RESOURCE_LOCATOR } : {},
+    depends_on: []
+  }]
+  if (includeInputConnections) {
+    tasks.push({
+      id: 'operator_input_1',
+      operator: 'operator_input',
+      params: {},
+      depends_on: []
+    })
+  }
   return {
     id: SAVED_TASK_ID,
     name: 'Saved workflow',
@@ -541,12 +795,7 @@ function createSavedTask() {
     dev_type: 'workflow',
     content: {
       workflow_definition: {
-        tasks: [{
-          id: 'operator_a_1',
-          operator: 'operator_a',
-          params: {},
-          depends_on: []
-        }]
+        tasks
       },
       inputs: {}
     },
@@ -555,7 +804,10 @@ function createSavedTask() {
       engine_id: ENGINE_A.id
     },
     editor_layout: {
-      nodes: { operator_a_1: { x: 260, y: 180 } },
+      nodes: {
+        operator_a_1: { x: 260, y: 180 },
+        ...(includeInputConnections ? { operator_input_1: { x: 520, y: 180 } } : {})
+      },
       viewport: { zoom: 1, translate_x: 0, translate_y: 0 }
     }
   }
@@ -583,4 +835,32 @@ async function fulfillJSON(route, body, status = 200) {
     contentType: 'application/json',
     body: JSON.stringify(body)
   })
+}
+
+async function requiredBoundingBox(locator) {
+  const box = await locator.boundingBox()
+  expect(box).not.toBeNull()
+  return box
+}
+
+async function expectDialogWithinViewport(page, dialog) {
+  await expect(dialog).toHaveCount(1)
+  await expect(dialog).toBeVisible()
+  await expect.poll(() => dialog.evaluate(element => {
+    const animations = []
+    let current = element
+    while (current && current !== document.body) {
+      animations.push(...current.getAnimations({ subtree: false }))
+      current = current.parentElement
+    }
+    return animations.every(animation => animation.playState === 'finished')
+  })).toBe(true)
+  const box = await requiredBoundingBox(dialog)
+  const viewport = page.viewportSize()
+  expect(viewport).not.toBeNull()
+  expect(box.x).toBeGreaterThanOrEqual(12)
+  expect(box.y).toBeGreaterThanOrEqual(0)
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width - 12)
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false)
 }

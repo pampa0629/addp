@@ -1,5 +1,9 @@
 <template>
   <div class="workflow-dag-canvas">
+    <StatusAnnouncer
+      :label="t('develop.workflowCanvas.navigationStatusLabel')"
+      :message="navigationAnnouncement"
+    />
     <div class="canvas-toolbar">
       <div class="canvas-toolbar-group">
         <el-tooltip :content="t('develop.workflowCanvas.undo')">
@@ -54,6 +58,10 @@
     <div
       id="workflow-dag-container"
       ref="container"
+      class="addp-dag-focus-region"
+      role="region"
+      :aria-label="t('develop.workflowCanvas.canvasAriaLabel')"
+      aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Enter Delete Escape"
       tabindex="0"
       @dragover.prevent
       @drop="handleDrop"
@@ -66,6 +74,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+import { StatusAnnouncer } from '@addp/common-frontend'
 import {
   CopyDocument,
   Delete,
@@ -79,8 +88,11 @@ import {
   ZoomOut
 } from '@element-plus/icons-vue'
 import {
+  createDAGKeyboardHandler,
   createDAGDirectEdgeBehavior,
   createDAGDragNodeBehavior,
+  getDAGIncomingEdgeModels,
+  getDAGUpstreamCandidates,
   isDAGPortEvent,
   useDAGClipboard,
   useDAGCore,
@@ -130,9 +142,10 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['update:workflow', 'update:layout', 'node-click'])
+const emit = defineEmits(['update:workflow', 'update:layout', 'node-click', 'node-select'])
 const container = ref(null)
 const nodeCounter = ref(0)
+const inspectedNodeId = ref('')
 const lastEmittedSignature = ref('')
 const edgeStyle = resolveEdgeStyle()
 
@@ -178,7 +191,17 @@ const { graph, initGraph } = useDAGCore(container, {
 })
 
 const { hasLoop } = useLoopDetection(graph)
-const { selectedItem, initSelectionListener, deleteSelected } = useDAGSelection(graph)
+const {
+  selectedItem,
+  initSelectionListener,
+  selectItem,
+  selectPreviousNode,
+  selectNextNode,
+  deleteSelected,
+  clearSelection
+} = useDAGSelection(graph, {
+  focusTarget: container
+})
 const {
   zoom,
   canZoomIn,
@@ -203,6 +226,15 @@ const {
   restore: restoreGraphSnapshot
 })
 const canCopyNode = computed(() => selectedItem.value?.getType?.() === 'node')
+const navigationAnnouncement = computed(() => {
+  if (selectedItem.value?.getType?.() !== 'node') return ''
+  const model = selectedItem.value.getModel()
+  const name = model.displayName || model.label || model.operator || model.id
+  const issueCount = props.validationIssues.filter(issue => issue.nodeId === model.id).length
+  return issueCount
+    ? t('develop.workflowCanvas.nodeSelectedWithIssues', { name, count: issueCount })
+    : t('develop.workflowCanvas.nodeSelected', { name })
+})
 
 onMounted(() => {
   registerWorkflowEditorNode()
@@ -213,10 +245,11 @@ onMounted(() => {
   graph.value.on('node:click', handleNodeClick)
   graph.value.on('canvas:click', clearNodeSelection)
   graph.value.on('edge:click', () => emit('node-click', null))
-  graph.value.on('aftercreateedge', () => {
+  graph.value.on('aftercreateedge', ({ edge }) => {
     recordHistory()
     emitWorkflow()
     emitLayout()
+    refreshInspectedNode(edge?.getModel?.()?.target)
     ElMessage.success(t('develop.workflowCanvas.connected'))
   })
   graph.value.on('node:dragend', () => {
@@ -269,7 +302,13 @@ function canConnectPorts({ sourceId, targetId, sourcePort, targetPort }) {
     graph: graph.value,
     sourceId,
     targetId,
-    hasLoop
+    hasLoop,
+    isDuplicate: model => (
+      model.source === sourceId &&
+      model.target === targetId &&
+      (model.sourcePort || 'default') === (sourcePort?.name || 'default') &&
+      model.targetParam === targetPort?.name
+    )
   })
   if (baseResult !== true) return baseResult
   if (!areWorkflowTypesCompatible(sourcePort?.type, targetPort?.type)) {
@@ -311,18 +350,12 @@ function handleConnectionRejected({ reason }) {
 
 function handleNodeClick(event) {
   if (isDAGPortEvent(event)) return
-  const model = event.item.getModel()
-  emit('node-click', {
-    id: model.id,
-    operator: model.operator,
-    params: model.params,
-    label: model.label,
-    displayName: model.displayName,
-    publicParameters: model.publicParameters
-  })
+  inspectedNodeId.value = event.item.getModel().id
+  emit('node-click', nodeViewModel(event.item.getModel()))
 }
 
 function clearNodeSelection() {
+  inspectedNodeId.value = ''
   emit('node-click', null)
 }
 
@@ -331,7 +364,12 @@ function handleDelete() {
   if (!selected) return
   const type = selected.getType?.()
   if (deleteSelected()) {
-    if (type === 'node') emit('node-click', null)
+    if (type === 'node') {
+      inspectedNodeId.value = ''
+      emit('node-click', null)
+    } else {
+      refreshInspectedNode(selected.getModel?.()?.target)
+    }
     recordHistory()
     emitWorkflow()
     emitLayout()
@@ -402,10 +440,16 @@ function loadWorkflow(workflow) {
 
   workflow.tasks.forEach(task => {
     task.depends_on.forEach(sourceId => {
-      const binding = findWorkflowBinding(task.params, sourceId)
+      const bindings = findWorkflowBindings(task.params, sourceId)
       const sourceNode = nodeById.get(sourceId)
       const targetNode = nodeById.get(task.id)
-      edges.push(buildLoadedEdge(sourceId, task.id, sourceNode, targetNode, binding))
+      if (bindings.length === 0) {
+        edges.push(buildLoadedEdge(sourceId, task.id, sourceNode, targetNode, null))
+      } else {
+        bindings.forEach(binding => {
+          edges.push(buildLoadedEdge(sourceId, task.id, sourceNode, targetNode, binding))
+        })
+      }
     })
   })
 
@@ -575,9 +619,76 @@ function updateNodeParams(nodeId, params, publicParameters = null) {
   emitWorkflow()
 }
 
+function updateInputConnection({ nodeId, targetParam, sourceId = '', sourcePort = 'default' }) {
+  const targetItem = graph.value?.findById(nodeId)
+  const targetModel = targetItem?.getModel?.()
+  const targetPort = (targetModel?.inputPorts || []).find(port => port.name === targetParam)
+  if (!targetItem || !targetPort) return false
+
+  const currentEdges = graph.value.getEdges().filter(edge => {
+    const model = edge.getModel()
+    return model.target === nodeId && model.targetParam === targetParam
+  })
+
+  if (sourceId) {
+    const sourceItem = graph.value.findById(sourceId)
+    const outputPort = (sourceItem?.getModel?.()?.outputPorts || []).find(port => port.name === sourcePort)
+    if (!sourceItem || !outputPort) return false
+
+    const unchanged = currentEdges.length === 1 && currentEdges[0].getModel().source === sourceId &&
+      (currentEdges[0].getModel().sourcePort || 'default') === sourcePort
+    if (unchanged) return true
+
+    const connectionResult = validateDAGConnection({
+      graph: {
+        getEdges: () => graph.value.getEdges().filter(edge => !currentEdges.includes(edge))
+      },
+      sourceId,
+      targetId: nodeId,
+      hasLoop,
+      isDuplicate: model => (
+        model.source === sourceId &&
+        model.target === nodeId &&
+        (model.sourcePort || 'default') === sourcePort &&
+        model.targetParam === targetParam
+      )
+    })
+    if (connectionResult !== true || !areWorkflowTypesCompatible(outputPort.type, targetPort.type)) {
+      handleConnectionRejected({
+        reason: connectionResult !== true ? connectionResult : 'type_mismatch'
+      })
+      return false
+    }
+
+    currentEdges.forEach(edge => graph.value.removeItem(edge, false))
+    graph.value.addItem('edge', {
+      source: sourceId,
+      target: nodeId,
+      ...buildEdgeConfig({
+        sourceItem,
+        targetItem,
+        sourcePort: outputPort,
+        targetPort
+      })
+    })
+  } else {
+    if (currentEdges.length === 0) return true
+    currentEdges.forEach(edge => graph.value.removeItem(edge, false))
+  }
+
+  graph.value.paint()
+  recordHistory()
+  emitWorkflow()
+  emitLayout()
+  refreshInspectedNode(nodeId)
+  ElMessage.success(t(sourceId ? 'develop.workflowCanvas.connected' : 'develop.workflowCanvas.disconnected'))
+  return true
+}
+
 function clearGraph() {
   graph.value?.clear()
   nodeCounter.value = 0
+  inspectedNodeId.value = ''
   emit('node-click', null)
   recordHistory()
   emitWorkflow()
@@ -618,29 +729,33 @@ function handleDuplicate() {
   if (handleCopy()) handlePaste()
 }
 
-function handleKeydown(event) {
-  const modifier = event.metaKey || event.ctrlKey
-  const key = event.key.toLowerCase()
-  if (modifier && key === 'z') {
-    event.preventDefault()
-    event.shiftKey ? handleRedo() : handleUndo()
-  } else if (modifier && key === 'y') {
-    event.preventDefault()
-    handleRedo()
-  } else if (modifier && key === 'c') {
-    event.preventDefault()
-    handleCopy()
-  } else if (modifier && key === 'v') {
-    event.preventDefault()
-    handlePaste()
-  } else if (modifier && key === 'd') {
-    event.preventDefault()
-    handleDuplicate()
-  } else if (key === 'delete' || key === 'backspace') {
-    event.preventDefault()
-    handleDelete()
-  }
+function handleCancelSelection() {
+  if (clearSelection()) emit('node-click', null)
 }
+
+function handleKeyboardNodeSelection(selectNode) {
+  const item = selectNode()
+  if (!item) return
+  const model = item.getModel()
+  emit('node-select', nodeViewModel(model))
+}
+
+function activateKeyboardSelection() {
+  if (selectedItem.value?.getType?.() === 'node') handleNodeClick({ item: selectedItem.value })
+}
+
+const handleKeydown = createDAGKeyboardHandler({
+  undo: handleUndo,
+  redo: handleRedo,
+  copy: handleCopy,
+  paste: handlePaste,
+  duplicate: handleDuplicate,
+  delete: handleDelete,
+  cancelSelection: handleCancelSelection,
+  selectPreviousNode: () => handleKeyboardNodeSelection(selectPreviousNode),
+  selectNextNode: () => handleKeyboardNodeSelection(selectNextNode),
+  activateSelection: activateKeyboardSelection
+})
 
 function handleZoomIn() {
   zoomIn()
@@ -686,11 +801,62 @@ function createCopiedNodeId(node) {
 }
 
 function selectGraphItem(item) {
-  graph.value.getNodes().forEach(node => graph.value.setItemState(node, 'selected', false))
-  graph.value.setItemState(item, 'selected', true)
-  selectedItem.value = item
+  selectItem(item)
   handleNodeClick({ item })
-  container.value?.focus()
+}
+
+function nodeViewModel(model) {
+  return {
+    id: model.id,
+    operator: model.operator,
+    params: model.params,
+    label: model.label,
+    displayName: model.displayName,
+    publicParameters: model.publicParameters,
+    inputConnections: inputConnectionsForNode(model.id),
+    inputConnectionOptions: inputConnectionOptionsForNode(model)
+  }
+}
+
+function inputConnectionsForNode(nodeId) {
+  return getDAGIncomingEdgeModels(graph.value, nodeId).map(edge => {
+    const source = graph.value.findById(edge.source)?.getModel?.() || {}
+    return {
+      targetParam: edge.targetParam,
+      sourceId: edge.source,
+      sourceLabel: source.displayName || source.label || source.operator || edge.source,
+      sourcePort: edge.sourcePort || 'default'
+    }
+  })
+}
+
+function inputConnectionOptionsForNode(targetModel) {
+  const candidates = getDAGUpstreamCandidates({
+    graph: graph.value,
+    targetId: targetModel.id,
+    hasLoop
+  })
+
+  return (targetModel.inputPorts || []).flatMap(inputPort => candidates.flatMap(candidate => {
+    const source = candidate.node
+    return (source.outputPorts || [])
+      .filter(outputPort => areWorkflowTypesCompatible(outputPort.type, inputPort.type))
+      .map(outputPort => ({
+        key: JSON.stringify([source.id, outputPort.name]),
+        targetParam: inputPort.name,
+        sourceId: source.id,
+        sourceLabel: source.displayName || source.label || source.operator || source.id,
+        sourcePort: outputPort.name,
+        sourcePortLabel: outputPort.name,
+        disabled: candidate.disabled
+      }))
+  }))
+}
+
+function refreshInspectedNode(changedNodeId) {
+  if (!inspectedNodeId.value || inspectedNodeId.value !== changedNodeId) return
+  const model = graph.value?.findById(inspectedNodeId.value)?.getModel?.()
+  if (model) emit('node-click', nodeViewModel(model))
 }
 
 function hasStoredLayout(layout) {
@@ -707,14 +873,8 @@ function selectNode(nodeId) {
   graph.value.setItemState(node, 'selected', true)
   graph.value.focusItem(node, true, { duration: 200, easing: 'easeCubic' })
   const model = node.getModel()
-  emit('node-click', {
-    id: model.id,
-    operator: model.operator,
-    params: model.params,
-    label: model.label,
-    displayName: model.displayName,
-    publicParameters: model.publicParameters
-  })
+  inspectedNodeId.value = model.id
+  emit('node-click', nodeViewModel(model))
 }
 
 function applyValidationStates() {
@@ -758,13 +918,10 @@ function defaultOperatorParams(operator) {
   return params
 }
 
-function findWorkflowBinding(params, sourceId) {
-  for (const [parameterName, value] of Object.entries(params || {})) {
-    if (isWorkflowReference(value) && value.$ref === sourceId) {
-      return { parameterName, ref: value }
-    }
-  }
-  return null
+function findWorkflowBindings(params, sourceId) {
+  return Object.entries(params || {})
+    .filter(([, value]) => isWorkflowReference(value) && value.$ref === sourceId)
+    .map(([parameterName, ref]) => ({ parameterName, ref }))
 }
 
 function isWorkflowReference(value) {
@@ -801,6 +958,7 @@ function cssColor(name) {
 defineExpose({
   addOperator,
   updateNodeParams,
+  updateInputConnection,
   clearGraph,
   getWorkflow: buildWorkflowFromGraph,
   getClientValidationIssues,
@@ -848,7 +1006,6 @@ defineExpose({
   z-index: 1;
   flex: 1;
   overflow: hidden;
-  outline: none;
   background-color: var(--addp-bg-secondary);
   background-image: radial-gradient(var(--addp-border-color-light) 1px, transparent 1px);
   background-size: 20px 20px;

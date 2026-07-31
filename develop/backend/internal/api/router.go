@@ -106,6 +106,8 @@ func SetupRouter(
 			taskDefinitions.POST("", permission(developauthorization.PermissionDevelopTaskCreate), devTaskHandler.CreateDevTask)
 			taskDefinitions.GET("", permission(developauthorization.PermissionDevelopTaskRead), devTaskHandler.ListDevTasks)
 			taskDefinitions.GET("/statistics", permission(developauthorization.PermissionDevelopTaskRead), devTaskHandler.GetDevTaskStatistics)
+			taskDefinitions.GET("/:id/storage-engine-bindings", permission(developauthorization.PermissionDevelopTaskRead), devTaskHandler.ListWorkflowStorageEngineBindings)
+			taskDefinitions.PUT("/:id/storage-engine-bindings/:source_engine_id", permission(developauthorization.PermissionDevelopTaskUpdate), devTaskHandler.RebindWorkflowStorageEngine)
 			taskDefinitions.GET("/:id", permission(developauthorization.PermissionDevelopTaskRead), devTaskHandler.GetDevTask)
 			taskDefinitions.PUT("/:id", permission(developauthorization.PermissionDevelopTaskUpdate), devTaskHandler.UpdateDevTask)
 			taskDefinitions.DELETE("/:id", permission(developauthorization.PermissionDevelopTaskDelete), devTaskHandler.DeleteDevTask)

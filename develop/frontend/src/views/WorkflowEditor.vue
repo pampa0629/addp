@@ -1,9 +1,16 @@
 <template>
   <div class="workflow-editor-page">
+    <StatusAnnouncer :label="t('develop.workflow.statusLabel')" :message="workflowAnnouncement" />
     <header class="editor-header">
       <div class="editor-identity">
         <el-tooltip :content="t('develop.workflow.toggleOperatorPanel')">
-          <el-button circle text :disabled="editorBusy" @click="leftPanelCollapsed = !leftPanelCollapsed">
+          <el-button
+            circle
+            text
+            :aria-label="t('develop.workflow.toggleOperatorPanel')"
+            :disabled="editorBusy"
+            @click="leftPanelCollapsed = !leftPanelCollapsed"
+          >
             <el-icon><Grid /></el-icon>
           </el-button>
         </el-tooltip>
@@ -51,6 +58,40 @@
                 {{ t('develop.workflow.engineUnavailable') }}
               </el-tag>
             </el-tooltip>
+
+            <el-button
+              v-if="unavailableStorageBindings.length"
+              class="storage-binding-status"
+              type="danger"
+              plain
+              size="small"
+              :disabled="editorBusy"
+              @click="openStorageBindingDialog()"
+            >
+              <el-icon><WarningFilled /></el-icon>
+              {{ t('develop.workflow.storageBindingsUnavailable', { count: unavailableStorageBindings.length }) }}
+            </el-button>
+            <el-button
+              v-else-if="currentTaskId && storageBindingsLoadError"
+              class="storage-binding-status"
+              type="warning"
+              plain
+              size="small"
+              :disabled="editorBusy"
+              @click="loadStorageEngineBindings(currentTaskId)"
+            >
+              <el-icon><WarningFilled /></el-icon>
+              {{ t('develop.workflow.storageBindingsCheckFailed') }}
+            </el-button>
+            <el-tag
+              v-else-if="currentTaskId && storageBindingsLoading"
+              class="storage-binding-status"
+              size="small"
+              type="info"
+              effect="plain"
+            >
+              {{ t('develop.workflow.storageBindingsChecking') }}
+            </el-tag>
 
             <template v-if="needsSparkRuntime()">
               <span class="engine-label">{{ t('develop.workflow.sparkRuntime') }}</span>
@@ -138,12 +179,12 @@
           <el-icon><DocumentAdd /></el-icon>
           {{ t('develop.workflow.save') }}
         </el-button>
-        <el-button type="success" :disabled="!canExecute" :loading="executionButtonLoading" @click="handleExecute">
+        <el-button ref="executeTriggerButtonRef" type="success" :disabled="!canExecute" :loading="executionButtonLoading" @click="handleExecute">
           <el-icon><VideoPlay /></el-icon>
           {{ t('develop.workflow.execute') }}
         </el-button>
         <el-dropdown trigger="click" @command="handleMoreCommand">
-          <el-button :disabled="editorBusy" :loading="importing">
+          <el-button ref="moreActionsButtonRef" :disabled="editorBusy" :loading="importing">
             {{ t('develop.workflow.more') }}
             <el-icon class="el-icon--right"><MoreFilled /></el-icon>
           </el-button>
@@ -174,7 +215,13 @@
       <aside v-if="!leftPanelCollapsed" class="left-panel">
         <div class="panel-header">
           <span class="panel-title">{{ t('develop.workflow.operatorPanel') }}</span>
-          <el-button circle text size="small" @click="leftPanelCollapsed = true">
+          <el-button
+            circle
+            text
+            size="small"
+            :aria-label="t('develop.workflow.collapseOperatorPanel')"
+            @click="leftPanelCollapsed = true"
+          >
             <el-icon><ArrowLeft /></el-icon>
           </el-button>
         </div>
@@ -199,6 +246,7 @@
           @update:workflow="handleWorkflowUpdate"
           @update:layout="handleLayoutUpdate"
           @node-click="handleNodeClick"
+          @node-select="handleNodeSelect"
         />
 
       </section>
@@ -214,7 +262,13 @@
               {{ selectedNode.operator }}
             </span>
           </div>
-          <el-button circle text size="small" @click="rightPanelCollapsed = true">
+          <el-button
+            circle
+            text
+            size="small"
+            :aria-label="t('develop.workflow.collapseParamsPanel')"
+            @click="rightPanelCollapsed = true"
+          >
             <el-icon><ArrowRight /></el-icon>
           </el-button>
         </div>
@@ -226,13 +280,21 @@
             :public-parameters="selectedNode.publicParameters"
             :initial-params="selectedNode.params"
             :validation-issues="selectedNodeValidationIssues"
+            :input-connections="selectedNode.inputConnections"
+            :input-connection-options="selectedNode.inputConnectionOptions"
             @update="handleParamsUpdate"
+            @update-connection="handleInputConnectionUpdate"
           />
         </div>
       </aside>
 
       <el-tooltip v-if="selectedNode && rightPanelCollapsed" :content="t('develop.workflow.openParamsPanel')">
-        <el-button class="open-inspector" circle @click="rightPanelCollapsed = false">
+        <el-button
+          class="open-inspector"
+          circle
+          :aria-label="t('develop.workflow.openParamsPanel')"
+          @click="rightPanelCollapsed = false"
+        >
           <el-icon><Setting /></el-icon>
         </el-button>
       </el-tooltip>
@@ -240,11 +302,13 @@
 
     <el-dialog
       v-model="engineSwitchDialogVisible"
+      class="addp-dialog"
       :title="t('develop.workflow.engineSwitchTitle')"
-      width="min(520px, 90vw)"
+      width="min(520px, calc(100vw - 24px))"
       :close-on-click-modal="false"
       :close-on-press-escape="!switchingEngine && !saving"
       :show-close="!switchingEngine && !saving"
+      @opened="focusEngineSwitchCancel"
       @closed="handleEngineSwitchDialogClosed"
     >
       <el-alert
@@ -254,29 +318,121 @@
         show-icon
       />
       <template #footer>
-        <el-button :disabled="switchingEngine || saving" @click="cancelEngineSwitch">
+        <el-button ref="engineSwitchCancelRef" :disabled="switchingEngine || saving" @click="cancelEngineSwitch">
           {{ t('develop.workflow.cancel') }}
+        </el-button>
+        <el-button type="danger" plain :loading="switchingEngine" :disabled="saving" @click="clearAndSwitchEngine">
+          {{ t('develop.workflow.clearAndSwitch') }}
         </el-button>
         <el-button type="primary" :loading="saving" :disabled="switchingEngine" @click="saveAndSwitchEngine">
           {{ t('develop.workflow.saveAndClear') }}
         </el-button>
-        <el-button type="danger" plain :loading="switchingEngine" :disabled="saving" @click="clearAndSwitchEngine">
-          {{ t('develop.workflow.clearAndSwitch') }}
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="storageBindingDialogVisible"
+      class="addp-dialog"
+      :title="t('develop.workflow.rebindStorageEngineTitle')"
+      width="min(620px, calc(100vw - 24px))"
+      :close-on-click-modal="!rebindingStorageEngine"
+      :close-on-press-escape="!rebindingStorageEngine"
+      :show-close="!rebindingStorageEngine"
+      @opened="focusStorageBindingTarget"
+    >
+      <div class="dialog-body-stack">
+        <el-alert
+          :title="t('develop.workflow.rebindStorageEngineMessage')"
+          type="warning"
+          :closable="false"
+          show-icon
+        />
+        <el-form class="workflow-dialog-form" label-position="top" :disabled="rebindingStorageEngine">
+          <el-form-item :label="t('develop.workflow.sourceStorageEngine')">
+            <el-select
+              v-if="unavailableStorageBindings.length > 1"
+              v-model="rebindSourceEngineId"
+              class="storage-engine-select"
+              @change="rebindTargetEngineId = null"
+            >
+              <el-option
+                v-for="binding in unavailableStorageBindings"
+                :key="binding.engine_id"
+                :label="formatStorageBindingLabel(binding)"
+                :value="binding.engine_id"
+              />
+            </el-select>
+            <span v-else class="binding-source-value">
+              {{ selectedStorageBinding ? formatStorageBindingLabel(selectedStorageBinding) : '-' }}
+            </span>
+          </el-form-item>
+          <el-form-item :label="t('develop.workflow.resourceTypes')">
+            <div class="binding-resource-types">
+              <el-tag
+                v-for="resourceType in selectedStorageBinding?.resource_types || []"
+                :key="resourceType"
+                size="small"
+                type="info"
+                effect="plain"
+              >
+                {{ resourceType }}
+              </el-tag>
+            </div>
+          </el-form-item>
+          <el-form-item :label="t('develop.workflow.targetStorageEngine')" required>
+            <el-select
+              ref="rebindTargetSelectRef"
+              v-model="rebindTargetEngineId"
+              class="storage-engine-select"
+              :placeholder="t('develop.workflow.selectTargetStorageEngine')"
+              :disabled="compatibleStorageEngines.length === 0"
+            >
+              <el-option
+                v-for="engine in compatibleStorageEngines"
+                :key="engine.id"
+                :label="formatStorageEngineLabel(engine)"
+                :value="engine.id"
+              />
+            </el-select>
+          </el-form-item>
+        </el-form>
+        <el-alert
+          v-if="selectedStorageBinding && compatibleStorageEngines.length === 0"
+          :title="t('develop.workflow.noCompatibleStorageEngine')"
+          type="error"
+          :closable="false"
+          show-icon
+        />
+      </div>
+      <template #footer>
+        <el-button :disabled="rebindingStorageEngine" @click="storageBindingDialogVisible = false">
+          {{ t('develop.workflow.cancel') }}
+        </el-button>
+        <el-button
+          type="primary"
+          :loading="rebindingStorageEngine"
+          :disabled="!rebindTargetEngineId || compatibleStorageEngines.length === 0"
+          @click="confirmStorageEngineRebind"
+        >
+          {{ t('develop.workflow.confirmRebindStorageEngine') }}
         </el-button>
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="saveDialogVisible"
+      class="addp-dialog"
       :title="saveDialogTitle"
-      width="500px"
+      width="min(500px, calc(100vw - 24px))"
       :close-on-click-modal="!saving"
       :close-on-press-escape="!saving"
       :show-close="!saving"
+      @opened="focusSaveName"
+      @closed="handleSaveDialogClosed"
     >
-      <el-form :model="saveForm" label-width="100px" :disabled="saving">
+      <el-form class="workflow-dialog-form" :model="saveForm" label-position="top" :disabled="saving">
         <el-form-item :label="t('develop.workflow.workflowName')" required>
-          <el-input v-model="saveForm.name" :placeholder="t('develop.workflow.workflowNamePlaceholder')" />
+          <el-input ref="saveNameInputRef" v-model="saveForm.name" :placeholder="t('develop.workflow.workflowNamePlaceholder')" />
         </el-form-item>
         <el-form-item :label="t('develop.workflow.displayName')">
           <el-input v-model="saveForm.display_name" :placeholder="t('develop.workflow.optional')" />
@@ -300,18 +456,22 @@
 
     <el-dialog
       v-model="executeDialogVisible"
+      class="addp-dialog"
       :title="t('develop.workflow.executeDialogTitle')"
-      width="500px"
+      width="min(500px, calc(100vw - 24px))"
       :close-on-click-modal="!executing"
       :close-on-press-escape="!executing"
       :show-close="!executing"
+      @opened="focusExecuteInputs"
+      @closed="restoreExecuteTriggerFocus"
     >
-      <el-form label-width="100px" :disabled="executing">
-        <el-form-item :label="t('develop.workflow.taskCount')">
-          <el-input :model-value="workflowData?.tasks?.length || 0" disabled />
-        </el-form-item>
+      <div class="execution-summary">
+        <span>{{ t('develop.workflow.taskCount') }}</span>
+        <strong>{{ workflowData?.tasks?.length || 0 }}</strong>
+      </div>
+      <el-form class="workflow-dialog-form" label-position="top" :disabled="executing">
         <el-form-item :label="t('develop.workflow.execParams')">
-          <el-input v-model="executeInputs" type="textarea" :rows="5" placeholder='{"key": "value"}' />
+          <el-input ref="executeInputsRef" v-model="executeInputs" type="textarea" :rows="5" placeholder='{"key": "value"}' />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -324,10 +484,17 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="jsonDialogVisible" :title="t('develop.workflow.jsonDialogTitle')" width="min(840px, 86vw)">
+    <el-dialog
+      v-model="jsonDialogVisible"
+      class="addp-dialog"
+      :title="t('develop.workflow.jsonDialogTitle')"
+      width="min(840px, calc(100vw - 24px))"
+      @opened="focusJsonClose"
+      @closed="restoreMoreActionsFocus"
+    >
       <div class="json-viewer"><pre>{{ workflowJSON }}</pre></div>
       <template #footer>
-        <el-button @click="jsonDialogVisible = false">{{ t('develop.workflow.close') }}</el-button>
+        <el-button ref="jsonCloseButtonRef" @click="jsonDialogVisible = false">{{ t('develop.workflow.close') }}</el-button>
         <el-button type="primary" @click="copyJSON">{{ t('develop.workflow.copyToClipboard') }}</el-button>
       </template>
     </el-dialog>
@@ -410,7 +577,11 @@ import {
 import OperatorPalette from '@/components/workflow/OperatorPalette.vue'
 import WorkflowDAGCanvas from '@/components/workflow/WorkflowDAGCanvas.vue'
 import OperatorParamsPanel from '@/components/workflow/OperatorParamsPanel.vue'
-import { getDevTask } from '@/api/devTask'
+import {
+  getDevTask,
+  getWorkflowStorageEngineBindings,
+  rebindWorkflowStorageEngine
+} from '@/api/devTask'
 import { listOperatorsByWorkflowEngine, validateWorkflowDefinition } from '@/api/operator'
 import { generateWorkflowFromNL } from '@/api/copilot'
 import { getWorkflowEngines, getSparkRuntimes } from '@/api/engines'
@@ -425,7 +596,7 @@ import { resolveWorkflowGenerationResult } from '@/utils/workflowGenerationResul
 import { getResourceBinding } from '@/utils/workflowResourceBindings'
 import { hasDistinctText } from '@/utils/displayText'
 import { groupValidationIssues, validationIssueParamName } from '@/utils/workflowValidationIssues'
-import { openMonitorExecution } from '@addp/common-frontend'
+import { focusElement, openMonitorExecution, StatusAnnouncer } from '@addp/common-frontend'
 
 const route = useRoute()
 const router = useRouter()
@@ -444,6 +615,13 @@ const canvasRef = ref(null)
 const paramsPanelRef = ref(null)
 const fileInputRef = ref(null)
 const engineSelectRef = ref(null)
+const moreActionsButtonRef = ref(null)
+const rebindTargetSelectRef = ref(null)
+const engineSwitchCancelRef = ref(null)
+const saveNameInputRef = ref(null)
+const executeInputsRef = ref(null)
+const jsonCloseButtonRef = ref(null)
+const executeTriggerButtonRef = ref(null)
 const workflowData = ref({ tasks: [] })
 const editorLayout = ref({})
 const selectedNode = ref(null)
@@ -462,6 +640,15 @@ const saveForm = reactive({ name: '', display_name: '', description: '' })
 const engineSwitchDialogVisible = ref(false)
 const pendingWorkflowEngineId = ref(null)
 const switchingEngine = ref(false)
+const storageBindings = ref([])
+const storageCandidateEngines = ref([])
+const storageBindingsLoading = ref(false)
+const storageBindingsLoadError = ref('')
+const storageBindingDialogVisible = ref(false)
+const rebindSourceEngineId = ref(null)
+const rebindTargetEngineId = ref(null)
+const rebindingStorageEngine = ref(false)
+let storageBindingRevision = 0
 
 const executeDialogVisible = ref(false)
 const executeInputs = ref('{}')
@@ -489,6 +676,23 @@ const workflowEngineUnavailable = computed(() => Boolean(
 ))
 const pendingWorkflowEngine = computed(() => (
   workflowEngines.value.find(engine => engine.id === pendingWorkflowEngineId.value) || null
+))
+const unavailableStorageBindings = computed(() => (
+  storageBindings.value.filter(binding => !binding.available)
+))
+const selectedStorageBinding = computed(() => (
+  unavailableStorageBindings.value.find(binding => binding.engine_id === rebindSourceEngineId.value) || null
+))
+const compatibleStorageEngines = computed(() => {
+  const compatibleIds = new Set(selectedStorageBinding.value?.compatible_engine_ids || [])
+  return storageCandidateEngines.value.filter(engine => compatibleIds.has(engine.id))
+})
+const storageBindingsExecutable = computed(() => Boolean(
+  !currentTaskId.value || (
+    !storageBindingsLoading.value &&
+    !storageBindingsLoadError.value &&
+    unavailableStorageBindings.value.length === 0
+  )
 ))
 const validationErrors = computed(() => validationResult.value?.errors || [])
 const validationWarnings = computed(() => validationResult.value?.warnings || [])
@@ -520,10 +724,18 @@ const validationSummary = computed(() => {
   if (validationRequestError.value) return t('develop.workflow.validationUnavailable')
   return t('develop.workflow.validationPassed')
 })
+const workflowAnnouncement = computed(() => {
+  if (validating.value) return validationSummary.value
+  if (saving.value) return t('develop.workflow.savingStatus')
+  if (executing.value) return t('develop.workflow.submittingExecution')
+  if (preparingExecution.value) return t('develop.workflow.preparingExecution')
+  return hasValidationStatus.value ? validationSummary.value : ''
+})
 const editorBusy = computed(() => (
   saving.value ||
   preparingExecution.value ||
   switchingEngine.value ||
+  rebindingStorageEngine.value ||
   generating.value ||
   importing.value
 ))
@@ -532,6 +744,7 @@ const canSave = computed(() => Boolean(workflowEngineId.value && hasValidWorkflo
 const canExecute = computed(() => Boolean(
   canSave.value &&
   selectedEngine.value &&
+  storageBindingsExecutable.value &&
   (!needsSparkRuntime() || sparkRuntimeId.value) &&
   !saving.value &&
   !preparingExecution.value &&
@@ -560,12 +773,122 @@ function handleNodeClick(node) {
   if (node) rightPanelCollapsed.value = false
 }
 
+function handleNodeSelect(node) {
+  selectedNode.value = node
+  if (node) rightPanelCollapsed.value = true
+}
+
 function handleParamsUpdate(data) {
   canvasRef.value?.updateNodeParams(data.nodeId, data.params, selectedNode.value?.publicParameters)
 }
 
+function handleInputConnectionUpdate(connection) {
+  canvasRef.value?.updateInputConnection(connection)
+}
+
 function handleOperatorClick(operator) {
   canvasRef.value?.addOperator(operator)
+}
+
+async function loadStorageEngineBindings(taskId) {
+  if (!taskId) {
+    resetStorageBindingState()
+    return false
+  }
+  const revision = ++storageBindingRevision
+  storageBindingsLoading.value = true
+  storageBindingsLoadError.value = ''
+  try {
+    const result = await getWorkflowStorageEngineBindings(taskId)
+    if (revision !== storageBindingRevision) return false
+    storageBindings.value = Array.isArray(result?.items) ? result.items : []
+    storageCandidateEngines.value = Array.isArray(result?.candidate_engines)
+      ? result.candidate_engines
+      : []
+    return true
+  } catch (error) {
+    if (revision !== storageBindingRevision) return false
+    storageBindings.value = []
+    storageCandidateEngines.value = []
+    storageBindingsLoadError.value = error.response?.data?.error || error.message
+    return false
+  } finally {
+    if (revision === storageBindingRevision) storageBindingsLoading.value = false
+  }
+}
+
+function resetStorageBindingState() {
+  storageBindingRevision += 1
+  storageBindings.value = []
+  storageCandidateEngines.value = []
+  storageBindingsLoading.value = false
+  storageBindingsLoadError.value = ''
+  storageBindingDialogVisible.value = false
+  rebindSourceEngineId.value = null
+  rebindTargetEngineId.value = null
+}
+
+function openStorageBindingDialog(sourceEngineId = null) {
+  if (isDirty.value) {
+    ElMessage.warning(t('develop.workflow.saveBeforeStorageRebind'))
+    return
+  }
+  const binding = unavailableStorageBindings.value.find(item => item.engine_id === sourceEngineId) ||
+    unavailableStorageBindings.value[0]
+  if (!binding) return
+  rebindSourceEngineId.value = binding.engine_id
+  rebindTargetEngineId.value = null
+  storageBindingDialogVisible.value = true
+}
+
+function focusStorageBindingTarget() {
+  focusElement(rebindTargetSelectRef.value)
+}
+
+function focusEngineSwitchCancel() {
+  focusElement(engineSwitchCancelRef.value)
+}
+
+async function confirmStorageEngineRebind() {
+  if (rebindingStorageEngine.value || !currentTaskId.value || !selectedStorageBinding.value || !rebindTargetEngineId.value) return
+  rebindingStorageEngine.value = true
+  try {
+    const result = await rebindWorkflowStorageEngine(
+      currentTaskId.value,
+      selectedStorageBinding.value.engine_id,
+      rebindTargetEngineId.value
+    )
+    const task = result?.task
+    if (!task?.content?.workflow_definition) throw new Error(t('develop.workflow.corruptedConfig'))
+    currentTask.value = task
+    currentTaskName.value = task.name
+    workflowData.value = task.content.workflow_definition
+    editorLayout.value = task.editor_layout || {}
+    selectedNode.value = null
+    await nextTick()
+    markSaved()
+    resetValidationState()
+    storageBindingDialogVisible.value = false
+    await loadStorageEngineBindings(task.id)
+    ElMessage.success(t('develop.workflow.storageRebindSuccess', {
+      count: result.replaced_locator_count
+    }))
+  } catch (error) {
+    ElMessage.error(t('develop.workflow.storageRebindFailed') + (error.response?.data?.error || error.message))
+  } finally {
+    rebindingStorageEngine.value = false
+  }
+}
+
+function formatStorageBindingLabel(binding) {
+  return t('develop.workflow.storageBindingLabel', {
+    id: binding.engine_id,
+    count: binding.reference_count
+  })
+}
+
+function formatStorageEngineLabel(engine) {
+  return `${engine.name} (${engine.engine_type || '-'})`
 }
 
 async function loadWorkflowEngines() {
@@ -641,6 +964,7 @@ function cancelEngineSwitch() {
 function handleEngineSwitchDialogClosed() {
   if (pendingAction.value !== 'switchEngine') {
     pendingWorkflowEngineId.value = null
+    nextTick(() => focusElement(engineSelectRef.value))
   }
 }
 
@@ -682,6 +1006,7 @@ async function applyEngineSwitch(engineId, { saved = false } = {}) {
   currentTaskId.value = null
   currentTaskName.value = ''
   currentTask.value = null
+  resetStorageBindingState()
   workflowEngineId.value = engineId
   selectedEngine.value = workflowEngines.value.find(engine => engine.id === engineId) || null
   sparkRuntimeId.value = null
@@ -774,6 +1099,32 @@ function cancelSaveDialog() {
   pendingAction.value = null
 }
 
+function handleSaveDialogClosed() {
+  if (saveAsMode.value && !pendingAction.value) restoreMoreActionsFocus()
+}
+
+function focusSaveName() {
+  focusElement(saveNameInputRef.value)
+}
+
+function focusExecuteInputs() {
+  focusElement(executeInputsRef.value)
+}
+
+function restoreExecuteTriggerFocus() {
+  nextTick(() => focusElement(executeTriggerButtonRef.value))
+}
+
+function focusJsonClose() {
+  focusElement(jsonCloseButtonRef.value)
+}
+
+function restoreMoreActionsFocus() {
+  nextTick(() => {
+    focusElement(moreActionsButtonRef.value)
+  })
+}
+
 async function confirmSave() {
   if (saving.value) return
   if (!saveForm.name.trim()) {
@@ -797,6 +1148,7 @@ async function confirmSave() {
       saveDialogVisible.value = false
       saveAsMode.value = false
       markSaved(savedSignature)
+      await loadStorageEngineBindings(task.id)
       saved = true
     } catch (error) {
       ElMessage.error(t('develop.workflow.saveFailed') + (error.response?.data?.error || error.message))
@@ -808,6 +1160,7 @@ async function confirmSave() {
     if (action === 'execute') {
       await setTaskRouteQuery(currentTaskId.value)
       ElMessage.success(t('develop.workflow.saveSuccess'))
+      if (!guardStorageBindingsExecutable()) return
       openExecuteDialog()
     } else if (action === 'switchEngine') {
       await applyEngineSwitch(pendingWorkflowEngineId.value, { saved: true })
@@ -833,6 +1186,7 @@ async function saveCurrentTask() {
     currentTask.value = task
     currentTaskName.value = task.name
     markSaved(savedSignature)
+    await loadStorageEngineBindings(task.id)
     return true
   } catch (error) {
     ElMessage.error(t('develop.workflow.saveFailed') + (error.response?.data?.error || error.message))
@@ -876,6 +1230,7 @@ async function handleExecute() {
         saving.value = false
       }
     }
+    if (!guardStorageBindingsExecutable()) return
     openExecuteDialog()
   } finally {
     preparingExecution.value = false
@@ -924,7 +1279,27 @@ function guardWorkflowExecutable() {
     ElMessage.warning(t('develop.workflow.engineUnavailableAction'))
     return false
   }
+  if (!guardStorageBindingsExecutable()) return false
   return guardWorkflowReady()
+}
+
+function guardStorageBindingsExecutable() {
+  if (!currentTaskId.value) return true
+  if (storageBindingsLoading.value) {
+    ElMessage.warning(t('develop.workflow.storageBindingsChecking'))
+    return false
+  }
+  if (storageBindingsLoadError.value) {
+    ElMessage.warning(t('develop.workflow.storageBindingsCheckFailed'))
+    return false
+  }
+  if (unavailableStorageBindings.value.length) {
+    ElMessage.warning(t('develop.workflow.storageBindingsUnavailableAction', {
+      count: unavailableStorageBindings.value.length
+    }))
+    return false
+  }
+  return true
 }
 
 function guardWorkflowSavable() {
@@ -947,7 +1322,11 @@ async function handleMoreCommand(command) {
 async function handleClear() {
   if (editorBusy.value) return
   try {
-    await ElMessageBox.confirm(t('develop.workflow.clearConfirmMsg'), t('develop.workflow.clearConfirmTitle'), { type: 'warning' })
+    await ElMessageBox.confirm(
+      t('develop.workflow.clearConfirmMsg'),
+      t('develop.workflow.clearConfirmTitle'),
+      workflowConfirmOptions({ danger: true })
+    )
     canvasRef.value?.clearGraph()
     selectedNode.value = null
     resetValidationState()
@@ -1065,6 +1444,18 @@ async function validateCurrentWorkflow() {
 }
 
 async function validateAfterSave() {
+  if (unavailableStorageBindings.value.length) {
+    resetValidationState()
+    ElMessage.warning(t('develop.workflow.saveSuccessStorageUnavailable', {
+      count: unavailableStorageBindings.value.length
+    }))
+    return false
+  }
+  if (storageBindingsLoadError.value) {
+    resetValidationState()
+    ElMessage.warning(t('develop.workflow.saveSuccessStorageCheckFailed'))
+    return false
+  }
   if (workflowEngineUnavailable.value) {
     resetValidationState()
     ElMessage.warning(t('develop.workflow.saveSuccessEngineUnavailable'))
@@ -1206,6 +1597,7 @@ async function loadTask(taskId) {
     await nextTick()
     markSaved()
     resetValidationState()
+    await loadStorageEngineBindings(task.id)
   } catch (error) {
     ElMessage.error(t('develop.workflow.loadTaskFailed') + (error.response?.data?.error || error.message))
   }
@@ -1267,13 +1659,23 @@ function handleBeforeUnload(event) {
   event.returnValue = ''
 }
 
+function workflowConfirmOptions({ danger = false } = {}) {
+  return {
+    type: 'warning',
+    customClass: 'addp-message-box',
+    confirmButtonText: t('develop.workflow.confirm'),
+    cancelButtonText: t('develop.workflow.cancel'),
+    ...(danger ? { confirmButtonClass: 'el-button--danger' } : {})
+  }
+}
+
 onBeforeRouteLeave(async () => {
   if (!isDirty.value) return true
   try {
     await ElMessageBox.confirm(
       t('develop.workflow.leaveConfirm'),
       t('develop.workflow.unsaved'),
-      { type: 'warning' }
+      workflowConfirmOptions()
     )
     return true
   } catch {
@@ -1377,9 +1779,54 @@ function firstQueryValue(value) {
   flex-shrink: 0;
 }
 
+.storage-binding-status {
+  flex-shrink: 0;
+}
+
 .engine-option {
   justify-content: space-between;
   gap: 12px;
+}
+
+.dialog-body-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.workflow-dialog-form :deep(.el-form-item:last-child) {
+  margin-bottom: 0;
+}
+
+.execution-summary {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--addp-text-secondary);
+  border-bottom: 1px solid var(--addp-border-color-light);
+}
+
+.execution-summary strong {
+  color: var(--addp-text-primary);
+  font-size: 16px;
+}
+
+.storage-engine-select {
+  width: 100%;
+}
+
+.binding-source-value {
+  color: var(--addp-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.binding-resource-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .primary-actions {
@@ -1703,6 +2150,10 @@ function firstQueryValue(value) {
 
   .engine-select {
     width: 190px;
+  }
+
+  .engine-row {
+    flex-wrap: wrap;
   }
 
   .validation-preview {

@@ -253,6 +253,44 @@ type NotebookRuntimeBindingRequest struct {
 	Kernel   string `json:"kernel" binding:"required"`
 }
 
+// WorkflowStorageEngineBinding 描述工作流内容中对一个存储 Engine 的 Locator 引用集合。
+type WorkflowStorageEngineBinding struct {
+	EngineID            uint                            `json:"engine_id"`
+	ReferenceCount      int                             `json:"reference_count"`
+	ResourceTypes       []string                        `json:"resource_types"`
+	Available           bool                            `json:"available"`
+	Engine              *WorkflowStorageEngineCandidate `json:"engine,omitempty"`
+	CompatibleEngineIDs []uint                          `json:"compatible_engine_ids"`
+}
+
+// WorkflowStorageEngineCandidate 是面向用户 API 的最小存储 Engine 摘要。
+type WorkflowStorageEngineCandidate struct {
+	ID               uint   `json:"id"`
+	Name             string `json:"name"`
+	EngineType       string `json:"engine_type"`
+	LifecycleState   string `json:"lifecycle_state"`
+	ConnectionStatus string `json:"connection_status"`
+}
+
+// WorkflowStorageEngineBindingsResponse 返回任务当前绑定和可选择的存储 Engine。
+type WorkflowStorageEngineBindingsResponse struct {
+	Items            []WorkflowStorageEngineBinding   `json:"items"`
+	CandidateEngines []WorkflowStorageEngineCandidate `json:"candidate_engines"`
+}
+
+// RebindWorkflowStorageEngineRequest 替换一个旧存储 Engine 绑定。
+type RebindWorkflowStorageEngineRequest struct {
+	TargetEngineID uint `json:"target_engine_id" binding:"required"`
+}
+
+// RebindWorkflowStorageEngineResponse 返回更新后的任务和替换数量。
+type RebindWorkflowStorageEngineResponse struct {
+	Task                 DevTask `json:"task"`
+	SourceEngineID       uint    `json:"source_engine_id"`
+	TargetEngineID       uint    `json:"target_engine_id"`
+	ReplacedLocatorCount int     `json:"replaced_locator_count"`
+}
+
 // ListDevTasksRequest 查询开发任务列表请求
 type ListDevTasksRequest struct {
 	Page     int    `form:"page" binding:"min=1"`

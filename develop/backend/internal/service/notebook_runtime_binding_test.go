@@ -24,7 +24,7 @@ func TestRebindNotebookRuntimeUpdatesOnlyCurrentTaskBinding(t *testing.T) {
 		t.Fatalf("seed notebook: %v", err)
 	}
 
-	service := NewDevTaskService(repository.NewDevTaskRepository(db))
+	service := NewDevTaskService(repository.NewDevTaskRepository(db), nil)
 	updated, err := service.RebindNotebookRuntime(14, 7, 3, 10, "python3")
 	if err != nil {
 		t.Fatalf("RebindNotebookRuntime() error = %v", err)
@@ -73,7 +73,7 @@ func TestRebindNotebookRuntimeRejectsNonNotebookTask(t *testing.T) {
 		t.Fatalf("seed query: %v", err)
 	}
 
-	service := NewDevTaskService(repository.NewDevTaskRepository(db))
+	service := NewDevTaskService(repository.NewDevTaskRepository(db), nil)
 	_, err := service.RebindNotebookRuntime(15, 7, 3, 10, "python3")
 	if !errors.Is(err, ErrTaskNotNotebook) {
 		t.Fatalf("error = %v, want ErrTaskNotNotebook", err)

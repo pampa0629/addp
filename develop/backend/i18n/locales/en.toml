@@ -132,3 +132,36 @@ other = "Approval request fingerprint mismatch"
 
 [develop.approval.unavailable]
 other = "Approval service unavailable"
+
+[develop.task.invalid_id]
+other = "Invalid development task ID"
+
+[develop.task.not_found]
+other = "Development task not found"
+
+[develop.workflow.task_not_workflow]
+other = "The task is not an operator workflow"
+
+[develop.workflow.invalid_storage_binding]
+other = "Invalid storage engine rebind request"
+
+[develop.workflow.storage_binding_list_failed]
+other = "Failed to list workflow storage engine bindings"
+
+[develop.workflow.storage_binding_not_found]
+other = "The source storage engine binding does not exist or has changed"
+
+[develop.workflow.storage_binding_conflict]
+other = "The task was changed by another operation. Refresh and try again"
+
+[develop.workflow.storage_engine_unavailable]
+other = "The target storage engine is unavailable"
+
+[develop.workflow.storage_engine_incompatible]
+other = "The target storage engine does not support the current resource types"
+
+[develop.workflow.storage_engine_discovery_failed]
+other = "Storage engine discovery is temporarily unavailable. Try again later"
+
+[develop.workflow.storage_binding_update_failed]
+other = "Failed to update the workflow storage engine binding"

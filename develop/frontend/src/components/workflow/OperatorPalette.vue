@@ -35,39 +35,50 @@
               class="operator-item"
               draggable="true"
               @dragstart="handleDragStart($event, operator)"
-              @click="handleOperatorClick(operator)"
             >
-              <div class="operator-header">
-                <span class="operator-name">{{ operator.displayName }}</span>
-                <el-tooltip placement="right" :show-after="300">
-                  <template #content>
-                    <div class="operator-help">
-                      <h4>{{ operator.displayName }}</h4>
-                      <p
-                        v-if="hasDistinctText(operator.description, operator.displayName, operator.name)"
-                        class="description"
-                      >
-                        {{ operator.description }}
-                      </p>
-                      <div class="params-section" v-if="operator.params && Object.keys(operator.params).length > 0">
-                        <h5>{{ t('develop.operatorPalette.params') }}:</h5>
-                        <ul>
-                          <li v-for="(desc, paramName) in operator.params" :key="paramName">
-                            <strong>{{ paramName }}</strong>: {{ desc }}
-                          </li>
-                        </ul>
-                      </div>
-                    </div>
-                  </template>
-                  <el-icon class="info-icon"><InfoFilled /></el-icon>
-                </el-tooltip>
-              </div>
-              <div
-                v-if="hasDistinctText(operator.description, operator.displayName, operator.name)"
-                class="operator-description"
+              <button
+                type="button"
+                class="operator-add-button"
+                :aria-label="t('develop.operatorPalette.addLabel', { name: operator.displayName })"
+                @click="handleOperatorClick(operator)"
               >
-                {{ operator.description }}
-              </div>
+                <span class="operator-name">{{ operator.displayName }}</span>
+                <span
+                  v-if="hasDistinctText(operator.description, operator.displayName, operator.name)"
+                  class="operator-description"
+                >
+                  {{ operator.description }}
+                </span>
+              </button>
+              <el-tooltip effect="light" placement="right" :show-after="300">
+                <template #content>
+                  <div class="operator-help">
+                    <h4>{{ operator.displayName }}</h4>
+                    <p
+                      v-if="hasDistinctText(operator.description, operator.displayName, operator.name)"
+                      class="description"
+                    >
+                      {{ operator.description }}
+                    </p>
+                    <div class="params-section" v-if="operator.params && Object.keys(operator.params).length > 0">
+                      <h5>{{ t('develop.operatorPalette.params') }}:</h5>
+                      <ul>
+                        <li v-for="(desc, paramName) in operator.params" :key="paramName">
+                          <strong>{{ paramName }}</strong>: {{ desc }}
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                </template>
+                <button
+                  type="button"
+                  class="info-button"
+                  :aria-label="t('develop.operatorPalette.helpLabel', { name: operator.displayName })"
+                  @click.stop
+                >
+                  <el-icon class="info-icon"><InfoFilled /></el-icon>
+                </button>
+              </el-tooltip>
             </div>
           </div>
         </el-collapse-item>
@@ -296,10 +307,14 @@ const handleOperatorClick = (operator) => {
 .operator-item {
   padding: 12px;
   margin: 4px 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px;
+  align-items: start;
+  gap: 8px;
   background: var(--addp-bg-secondary);
   border: 1px solid var(--addp-border-color);
   border-radius: 4px;
-  cursor: pointer;
+  cursor: grab;
   transition: all 0.2s;
 }
 
@@ -313,14 +328,26 @@ const handleOperatorClick = (operator) => {
   cursor: grabbing;
 }
 
-.operator-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 4px;
+.operator-add-button {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.operator-add-button:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 3px;
 }
 
 .operator-name {
+  display: block;
   min-width: 0;
   overflow: hidden;
   font-weight: 600;
@@ -330,17 +357,41 @@ const handleOperatorClick = (operator) => {
   white-space: nowrap;
 }
 
-.info-icon {
+.info-button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
   color: var(--addp-text-tertiary);
+  font: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
   cursor: help;
-  font-size: 16px;
 }
 
-.info-icon:hover {
+.info-button:hover {
   color: var(--el-color-primary);
+  background: var(--addp-bg-primary);
+}
+
+.info-button:focus-visible {
+  color: var(--el-color-primary);
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 1px;
+}
+
+.info-icon {
+  font-size: 16px;
+  pointer-events: none;
 }
 
 .operator-description {
+  margin-top: 4px;
+  display: block;
   font-size: 12px;
   color: var(--addp-text-secondary);
   line-height: 1.4;

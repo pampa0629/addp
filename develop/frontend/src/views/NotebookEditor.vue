@@ -162,10 +162,11 @@
     <!-- 上传 Notebook 对话框 -->
     <el-dialog
       v-model="uploadDialogVisible"
+      class="addp-dialog"
       :title="t('develop.notebook.uploadDialogTitle')"
-      width="600px"
+      width="min(600px, calc(100vw - 24px))"
     >
-      <el-form :model="uploadForm" label-width="100px">
+      <el-form :model="uploadForm" label-position="top">
         <el-form-item :label="t('develop.notebook.engine')" required>
           <el-select
             v-model="uploadForm.engine_id"
@@ -252,14 +253,15 @@
     <!-- Notebook 运行时绑定对话框 -->
     <el-dialog
       v-model="bindingDialogVisible"
+      class="addp-dialog"
       :title="t('develop.notebook.changeEngineDialogTitle')"
-      width="520px"
+      width="min(520px, calc(100vw - 24px))"
       :close-on-click-modal="!rebinding"
       :close-on-press-escape="!rebinding"
       :show-close="!rebinding"
       @closed="resetBindingDialog"
     >
-      <el-form :model="bindingForm" label-width="100px">
+      <el-form :model="bindingForm" label-position="top">
         <el-form-item :label="t('develop.notebook.currentBinding')">
           <el-input :model-value="notebookRuntimeBindingLabel(bindingNotebook)" disabled />
         </el-form-item>
@@ -334,10 +336,11 @@
     <!-- 执行 Notebook 对话框 -->
     <el-dialog
       v-model="executeDialogVisible"
+      class="addp-dialog"
       :title="t('develop.notebook.executeDialogTitle')"
-      width="600px"
+      width="min(600px, calc(100vw - 24px))"
     >
-      <el-form :model="executeForm" label-width="100px">
+      <el-form :model="executeForm" label-position="top">
         <el-form-item :label="t('develop.notebook.notebook')">
           <el-input :value="executeNotebook?.display_name || executeNotebook?.name" disabled />
         </el-form-item>
@@ -763,9 +766,11 @@ const deleteNotebook = async (notebook) => {
       t('develop.notebook.deleteConfirmMsg', { name: notebook.display_name || notebook.name }),
       t('develop.notebook.deleteConfirmTitle'),
       {
-        confirmButtonText: t('develop.notebook.confirm'),
+        confirmButtonText: t('develop.notebook.deleteConfirmAction'),
         cancelButtonText: t('develop.notebook.cancel'),
-        type: 'warning'
+        type: 'warning',
+        customClass: 'addp-message-box',
+        confirmButtonClass: 'el-button--danger'
       }
     )
 

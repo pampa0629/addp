@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-
 import {
   applyDAGNodePositions,
   calculateDAGFitViewport,
@@ -10,6 +9,12 @@ import {
   normalizeDAGEditorLayout,
   restoreDAGViewport
 } from '../../../common-frontend/dag/src/utils/editing.js'
+import {
+  createDAGKeyboardHandler,
+  findAdjacentDAGNode,
+  isDAGKeyboardEventFromEditableTarget,
+  sortDAGNodesSpatially
+} from '../../../common-frontend/dag/src/utils/keyboard.js'
 
 assert.deepEqual(cloneDAGValue({ id: 'node', draw: () => 'ignored' }), { id: 'node' })
 assert.equal(clampDAGZoom(0.1), 0.5)
@@ -56,6 +61,74 @@ assert.deepEqual(history.redo(), { value: 'ab' })
 history.undo()
 history.record({ value: 'new branch' }, { now: 800 })
 assert.equal(history.canRedo(), false)
+
+const keyboardActions = []
+const keyboardHandler = createDAGKeyboardHandler({
+  undo: () => keyboardActions.push('undo'),
+  redo: () => keyboardActions.push('redo'),
+  copy: () => keyboardActions.push('copy'),
+  paste: () => keyboardActions.push('paste'),
+  duplicate: () => keyboardActions.push('duplicate'),
+  delete: () => keyboardActions.push('delete'),
+  cancelSelection: () => keyboardActions.push('cancelSelection'),
+  selectPreviousNode: () => keyboardActions.push('selectPreviousNode'),
+  selectNextNode: () => keyboardActions.push('selectNextNode'),
+  activateSelection: () => keyboardActions.push('activateSelection')
+})
+
+for (const [key, options, expected] of [
+  ['z', { ctrlKey: true }, 'undo'],
+  ['z', { metaKey: true, shiftKey: true }, 'redo'],
+  ['y', { ctrlKey: true }, 'redo'],
+  ['c', { metaKey: true }, 'copy'],
+  ['v', { ctrlKey: true }, 'paste'],
+  ['d', { ctrlKey: true }, 'duplicate'],
+  ['Delete', {}, 'delete'],
+  ['Backspace', {}, 'delete'],
+  ['Escape', {}, 'cancelSelection'],
+  ['ArrowLeft', {}, 'selectPreviousNode'],
+  ['ArrowUp', {}, 'selectPreviousNode'],
+  ['ArrowRight', {}, 'selectNextNode'],
+  ['ArrowDown', {}, 'selectNextNode'],
+  ['Enter', {}, 'activateSelection']
+]) {
+  let prevented = false
+  assert.equal(keyboardHandler({
+    key,
+    target: { closest: () => null },
+    preventDefault: () => { prevented = true },
+    ...options
+  }), true)
+  assert.equal(prevented, true)
+  assert.equal(keyboardActions.at(-1), expected)
+}
+
+const editableTarget = { closest: () => ({ tagName: 'INPUT' }) }
+const actionBeforeEditableEvent = keyboardActions.at(-1)
+assert.equal(isDAGKeyboardEventFromEditableTarget({ target: editableTarget }), true)
+assert.equal(keyboardHandler({ key: 'Backspace', target: editableTarget }), false)
+assert.equal(keyboardActions.at(-1), actionBeforeEditableEvent)
+
+const spatialNodes = [
+  { id: 'right', x: 200, y: 20 },
+  { id: 'left-bottom', x: 20, y: 100 },
+  { id: 'left-top', x: 20, y: 10 }
+]
+assert.deepEqual(
+  sortDAGNodesSpatially(spatialNodes).map(node => node.id),
+  ['left-top', 'left-bottom', 'right']
+)
+assert.equal(keyboardHandler({
+  key: 'ArrowLeft',
+  altKey: true,
+  target: { closest: () => null }
+}), false)
+
+const orderedSpatialNodes = sortDAGNodesSpatially(spatialNodes)
+assert.equal(findAdjacentDAGNode(spatialNodes, null, 1).id, 'left-top')
+assert.equal(findAdjacentDAGNode(spatialNodes, null, -1).id, 'right')
+assert.equal(findAdjacentDAGNode(spatialNodes, orderedSpatialNodes[0], 1).id, 'left-bottom')
+assert.equal(findAdjacentDAGNode(spatialNodes, orderedSpatialNodes[0], -1).id, 'right')
 
 const copied = cloneDAGNodeForPaste({
   id: 'source',

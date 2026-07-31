@@ -165,22 +165,16 @@
       </div>
     </div>
 
-    <!-- 编辑任务对话框 -->
-    <el-dialog
+    <SaveQueryDialog
+      v-if="showEditDialog"
       v-model="showEditDialog"
-      :title="t('develop.queryTasks.editDialogTitle')"
-      width="600px"
-      :close-on-click-modal="false"
-    >
-      <SaveQueryDialog
-        v-if="showEditDialog"
-        v-model="showEditDialog"
-        :engine-id="getEngineID(editingTask)"
-        :query-mode="getQueryMode(editingTask)"
-        :sql="editingTask?.content?.query || editingTask?.content?.sql || ''"
-        @saved="handleUpdateTask"
-      />
-    </el-dialog>
+      :dialog-title="t('develop.queryTasks.editDialogTitle')"
+      :initial-value="editingTask"
+      :engine-id="getEngineID(editingTask)"
+      :query-mode="getQueryMode(editingTask)"
+      :sql="editingTask?.content?.query || editingTask?.content?.sql || ''"
+      @saved="handleUpdateTask"
+    />
   </div>
 </template>
 
@@ -310,9 +304,11 @@ const handleDelete = async (task) => {
       t('develop.queryTasks.deleteConfirmMsg', { name: task.display_name || task.name }),
       t('develop.queryTasks.deleteConfirmTitle'),
       {
-        confirmButtonText: t('develop.queryTasks.confirm'),
+        confirmButtonText: t('develop.queryTasks.deleteConfirmAction'),
         cancelButtonText: t('develop.queryTasks.cancel'),
-        type: 'warning'
+        type: 'warning',
+        customClass: 'addp-message-box',
+        confirmButtonClass: 'el-button--danger'
       }
     )
 

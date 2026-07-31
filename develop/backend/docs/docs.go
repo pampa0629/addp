@@ -1304,6 +1304,145 @@ const docTemplate = `{
                 ]
             }
         },
+        "/task-definitions/{id}/storage-engine-bindings": {
+            "get": {
+                "description": "返回任务 content 中标准 ResourceLocator 的当前 Engine 引用、可用状态和兼容候选；不改变工作流运行引擎绑定。| Return current Engine references, availability, and compatible candidates for standard ResourceLocators in task content without changing the workflow runtime binding.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DevTask"
+                ],
+                "summary": "查询工作流存储引擎绑定 | List workflow storage engine bindings",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "开发任务 ID | Development task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "存储引擎绑定 | Storage engine bindings",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.WorkflowStorageEngineBindingsSwaggerResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "任务不是工作流 | Task is not a workflow",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "System 引擎发现不可用 | System engine discovery unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
+                ]
+            }
+        },
+        "/task-definitions/{id}/storage-engine-bindings/{source_engine_id}": {
+            "put": {
+                "description": "原子替换任务 content 中指向旧 Engine 的全部标准 ResourceLocator，保留 path/type、清除旧 Meta ID，不改变 execution_config.engine_id。| Atomically replace all standard ResourceLocators in task content that reference the old Engine, preserve path/type, clear stale Meta IDs, and keep execution_config.engine_id unchanged.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DevTask"
+                ],
+                "summary": "重绑定工作流存储引擎 | Rebind workflow storage engine",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "开发任务 ID | Development task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "原存储引擎 ID | Source storage engine ID",
+                        "name": "source_engine_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "目标存储引擎 | Target storage engine",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.RebindWorkflowStorageEngineSwaggerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "重绑定结果 | Rebind result",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.RebindWorkflowStorageEngineSwaggerResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "任务或绑定不存在 | Task or binding not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "任务发生并发修改 | Task changed concurrently",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "任务类型、目标引擎状态或能力不合法 | Invalid task type, target engine state, or capability",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "System 引擎发现不可用 | System engine discovery unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.update"
+                ]
+            }
+        },
         "/task-provider/executions/{execution_id}": {
             "get": {
                 "security": [
@@ -2408,6 +2547,63 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_develop_backend_internal_models.RebindWorkflowStorageEngineSwaggerRequest": {
+            "type": "object",
+            "required": [
+                "target_engine_id"
+            ],
+            "properties": {
+                "target_engine_id": {
+                    "type": "integer",
+                    "example": 15
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.RebindWorkflowStorageEngineSwaggerResponse": {
+            "type": "object",
+            "properties": {
+                "replaced_locator_count": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "source_engine_id": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "target_engine_id": {
+                    "type": "integer",
+                    "example": 15
+                },
+                "task": {
+                    "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskSwagger"
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.StorageEngineDescriptorSwagger": {
+            "type": "object",
+            "properties": {
+                "connection_status": {
+                    "type": "string",
+                    "example": "connected"
+                },
+                "engine_type": {
+                    "type": "string",
+                    "example": "doris"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 15
+                },
+                "lifecycle_state": {
+                    "type": "string",
+                    "example": "active"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Business Doris"
+                }
+            }
+        },
         "github_com_addp_develop_backend_internal_models.ToolApprovalDecisionRequest": {
             "type": "object",
             "required": [
@@ -2554,6 +2750,63 @@ const docTemplate = `{
                 "spark_cluster_id": {
                     "type": "integer",
                     "example": 34
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.WorkflowStorageEngineBindingSwagger": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "compatible_engine_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    },
+                    "example": [
+                        2,
+                        15
+                    ]
+                },
+                "engine": {
+                    "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.StorageEngineDescriptorSwagger"
+                },
+                "engine_id": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "reference_count": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "resource_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "table",
+                        "database"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.WorkflowStorageEngineBindingsSwaggerResponse": {
+            "type": "object",
+            "properties": {
+                "candidate_engines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.StorageEngineDescriptorSwagger"
+                    }
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.WorkflowStorageEngineBindingSwagger"
+                    }
                 }
             }
         },

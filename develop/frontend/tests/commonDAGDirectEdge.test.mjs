@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
 
 const mod = await import(pathToFileURL(resolve('../../common-frontend/dag/src/utils/directEdge.js')))
+const connections = await import(pathToFileURL(resolve('../../common-frontend/dag/src/utils/connections.js')))
 
 const outputEvent = {
   item: { getID: () => 'source' },
@@ -102,5 +103,40 @@ assert.equal(mod.validateDAGConnection({
   targetId: 'existing',
   hasLoop: noLoop
 }), 'duplicate')
+assert.equal(mod.validateDAGConnection({
+  graph: connectionGraph,
+  sourceId: 'source',
+  targetId: 'existing',
+  hasLoop: noLoop,
+  isDuplicate: model => model.source === 'source' && model.target === 'other'
+}), true)
+
+const graphNodes = [
+  { getModel: () => ({ id: 'source', label: 'Source' }) },
+  { getModel: () => ({ id: 'blocked', label: 'Blocked' }) },
+  { getModel: () => ({ id: 'target', label: 'Target' }) }
+]
+const candidateGraph = {
+  getNodes: () => graphNodes,
+  getEdges: () => [{ getModel: () => ({ source: 'source', target: 'target' }) }]
+}
+assert.deepEqual(connections.getDAGIncomingEdgeModels(candidateGraph, 'target'), [
+  { source: 'source', target: 'target' }
+])
+assert.deepEqual(
+  connections.getDAGUpstreamCandidates({
+    graph: candidateGraph,
+    targetId: 'target',
+    hasLoop: sourceId => sourceId === 'blocked'
+  }).map(candidate => ({
+    id: candidate.node.id,
+    connected: candidate.connected,
+    disabled: candidate.disabled
+  })),
+  [
+    { id: 'source', connected: true, disabled: false },
+    { id: 'blocked', connected: false, disabled: true }
+  ]
+)
 
 console.log('commonDAGDirectEdge tests passed')

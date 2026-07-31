@@ -96,6 +96,8 @@
 
 `workflow_definition.tasks[]` 必须遵循工作流计算引擎接口规范：每个任务显式包含 `id`、`operator`、`params`、`depends_on`，无依赖时 `depends_on` 写空数组 `[]`。
 
+其中 `locator`、`target_parent_locator` 等标准 ResourceLocator 形成工作流的存储 Engine 绑定。Engine 删除后任务和旧 Locator 保留，但不可继续执行。用户必须通过 Develop 的存储 Engine 绑定接口显式选择替代 Engine；重绑定只改写 Locator 的 `engine_id`，保留 path/type，并清除属于旧 Meta 快照的 `node_id/item_id`。`execution_config.engine_id` 表示工作流运行时，不能被存储 Engine 重绑定改写。
+
 工作流编辑器布局单独保存在顶层 `editor_layout`：
 
 ```json
@@ -194,6 +196,22 @@ DuckDB 是 Develop 内置联邦查询执行模式，不是 System 中注册的�
   "status": "pending"
 }
 ```
+
+### 5.4 GET /api/v1/develop/task-definitions/{id}/storage-engine-bindings - 查询存储 Engine 绑定
+
+返回任务当前 ResourceLocator 引用的 Engine、引用数量、资源类型、可用状态，以及当前租户可选择的存储 Engine 候选。该接口不修改任务。
+
+### 5.5 PUT /api/v1/develop/task-definitions/{id}/storage-engine-bindings/{source_engine_id} - 重绑定存储 Engine
+
+请求体：
+
+```json
+{
+  "target_engine_id": 15
+}
+```
+
+Develop 校验任务归属、目标 Engine 生命周期和存储能力，并以目标 Engine 的 `storage.catalog_model` 校验全部 Locator type 的路径语义兼容性后，一次原子替换任务中指向 `source_engine_id` 的全部标准 ResourceLocator。响应返回更新后的任务和替换数量；并发修改时返回 `409 Conflict`。
 
 ---
 

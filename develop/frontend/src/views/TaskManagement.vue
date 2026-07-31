@@ -153,10 +153,11 @@
     <!-- 创建/编辑对话框 -->
     <el-dialog
       v-model="dialogVisible"
+      class="addp-dialog"
       :title="dialogMode === 'create' ? t('develop.taskManagement.createDialogTitle') : t('develop.taskManagement.editDialogTitle')"
-      width="600px"
+      width="min(600px, calc(100vw - 24px))"
     >
-      <el-form :model="formData" label-width="100px">
+      <el-form :model="formData" label-position="top">
         <el-form-item :label="t('develop.taskManagement.fieldName')" required>
           <el-input v-model="formData.name" :placeholder="t('develop.taskManagement.namePlaceholder')" />
         </el-form-item>
@@ -229,10 +230,11 @@
     <!-- 执行对话框 -->
     <el-dialog
       v-model="executeDialogVisible"
+      class="addp-dialog"
       :title="t('develop.taskManagement.executeDialogTitle')"
-      width="500px"
+      width="min(500px, calc(100vw - 24px))"
     >
-      <el-form label-width="100px">
+      <el-form label-position="top">
         <el-form-item :label="t('develop.taskManagement.fieldName')">
           <el-input :value="currentTask?.name" disabled />
         </el-form-item>
@@ -534,7 +536,13 @@ const handleDelete = async (row) => {
     await ElMessageBox.confirm(
       t('develop.taskManagement.deleteConfirmMsg', { name: row.name }),
       t('develop.taskManagement.deleteConfirmTitle'),
-      { type: 'warning' }
+      {
+        confirmButtonText: t('develop.taskManagement.delete'),
+        cancelButtonText: t('develop.taskManagement.cancel'),
+        type: 'warning',
+        customClass: 'addp-message-box',
+        confirmButtonClass: 'el-button--danger'
+      }
     )
     await deleteDevTask(row.id)
     ElMessage.success(t('develop.taskManagement.deleteSuccess'))

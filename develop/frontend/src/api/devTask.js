@@ -12,6 +12,18 @@ export const getDevTask = (id) => client.get(`/develop/task-definitions/${id}`)
 // 更新开发任务
 export const updateDevTask = (id, data) => client.put(`/develop/task-definitions/${id}`, data)
 
+// 获取算子工作流 content 中的存储引擎绑定
+export const getWorkflowStorageEngineBindings = (id) => (
+  client.get(`/develop/task-definitions/${id}/storage-engine-bindings`)
+)
+
+// 原子替换算子工作流 content 中指向旧引擎的全部 ResourceLocator
+export const rebindWorkflowStorageEngine = (id, sourceEngineId, targetEngineId) => (
+  client.put(`/develop/task-definitions/${id}/storage-engine-bindings/${sourceEngineId}`, {
+    target_engine_id: targetEngineId
+  })
+)
+
 // 删除开发任务
 export const deleteDevTask = (id) => client.delete(`/develop/task-definitions/${id}`)
 

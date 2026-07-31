@@ -144,7 +144,9 @@ const decide = async (decision) => {
       {
         confirmButtonText: actionLabel,
         cancelButtonText: t('develop.approval.cancel'),
-        type: decision === 'approved' ? 'warning' : 'error'
+        type: decision === 'approved' ? 'warning' : 'error',
+        customClass: 'addp-message-box',
+        ...(decision === 'rejected' ? { confirmButtonClass: 'el-button--danger' } : {})
       }
     )
   } catch {

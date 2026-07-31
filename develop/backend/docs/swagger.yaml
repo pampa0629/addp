@@ -485,6 +485,46 @@ definitions:
         example: 1
         type: integer
     type: object
+  github_com_addp_develop_backend_internal_models.RebindWorkflowStorageEngineSwaggerRequest:
+    properties:
+      target_engine_id:
+        example: 15
+        type: integer
+    required:
+    - target_engine_id
+    type: object
+  github_com_addp_develop_backend_internal_models.RebindWorkflowStorageEngineSwaggerResponse:
+    properties:
+      replaced_locator_count:
+        example: 2
+        type: integer
+      source_engine_id:
+        example: 5
+        type: integer
+      target_engine_id:
+        example: 15
+        type: integer
+      task:
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskSwagger'
+    type: object
+  github_com_addp_develop_backend_internal_models.StorageEngineDescriptorSwagger:
+    properties:
+      connection_status:
+        example: connected
+        type: string
+      engine_type:
+        example: doris
+        type: string
+      id:
+        example: 15
+        type: integer
+      lifecycle_state:
+        example: active
+        type: string
+      name:
+        example: Business Doris
+        type: string
+    type: object
   github_com_addp_develop_backend_internal_models.ToolApprovalDecisionRequest:
     properties:
       decision:
@@ -584,6 +624,45 @@ definitions:
       spark_cluster_id:
         example: 34
         type: integer
+    type: object
+  github_com_addp_develop_backend_internal_models.WorkflowStorageEngineBindingSwagger:
+    properties:
+      available:
+        example: false
+        type: boolean
+      compatible_engine_ids:
+        example:
+        - 2
+        - 15
+        items:
+          type: integer
+        type: array
+      engine:
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.StorageEngineDescriptorSwagger'
+      engine_id:
+        example: 5
+        type: integer
+      reference_count:
+        example: 2
+        type: integer
+      resource_types:
+        example:
+        - table
+        - database
+        items:
+          type: string
+        type: array
+    type: object
+  github_com_addp_develop_backend_internal_models.WorkflowStorageEngineBindingsSwaggerResponse:
+    properties:
+      candidate_engines:
+        items:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.StorageEngineDescriptorSwagger'
+        type: array
+      items:
+        items:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.WorkflowStorageEngineBindingSwagger'
+        type: array
     type: object
   github_com_addp_develop_backend_internal_models.WorkflowTaskDefinitionSwagger:
     properties:
@@ -1820,6 +1899,106 @@ paths:
       - develop.notebook.execute
       x-addp-required-permissions:
       - develop.task.execute
+  /task-definitions/{id}/storage-engine-bindings:
+    get:
+      description: 返回任务 content 中标准 ResourceLocator 的当前 Engine 引用、可用状态和兼容候选；不改变工作流运行引擎绑定。|
+        Return current Engine references, availability, and compatible candidates
+        for standard ResourceLocators in task content without changing the workflow
+        runtime binding.
+      parameters:
+      - description: 开发任务 ID | Development task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 存储引擎绑定 | Storage engine bindings
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.WorkflowStorageEngineBindingsSwaggerResponse'
+        "400":
+          description: 参数错误 | Invalid request
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+        "404":
+          description: 任务不存在 | Task not found
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+        "422":
+          description: 任务不是工作流 | Task is not a workflow
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+        "503":
+          description: System 引擎发现不可用 | System engine discovery unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+      summary: 查询工作流存储引擎绑定 | List workflow storage engine bindings
+      tags:
+      - DevTask
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - develop.task.read
+  /task-definitions/{id}/storage-engine-bindings/{source_engine_id}:
+    put:
+      consumes:
+      - application/json
+      description: 原子替换任务 content 中指向旧 Engine 的全部标准 ResourceLocator，保留 path/type、清除旧
+        Meta ID，不改变 execution_config.engine_id。| Atomically replace all standard ResourceLocators
+        in task content that reference the old Engine, preserve path/type, clear stale
+        Meta IDs, and keep execution_config.engine_id unchanged.
+      parameters:
+      - description: 开发任务 ID | Development task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 原存储引擎 ID | Source storage engine ID
+        in: path
+        name: source_engine_id
+        required: true
+        type: integer
+      - description: 目标存储引擎 | Target storage engine
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.RebindWorkflowStorageEngineSwaggerRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 重绑定结果 | Rebind result
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.RebindWorkflowStorageEngineSwaggerResponse'
+        "400":
+          description: 参数错误 | Invalid request
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+        "404":
+          description: 任务或绑定不存在 | Task or binding not found
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+        "409":
+          description: 任务发生并发修改 | Task changed concurrently
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+        "422":
+          description: 任务类型、目标引擎状态或能力不合法 | Invalid task type, target engine state,
+            or capability
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+        "503":
+          description: System 引擎发现不可用 | System engine discovery unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+      summary: 重绑定工作流存储引擎 | Rebind workflow storage engine
+      tags:
+      - DevTask
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - develop.task.update
   /task-definitions/statistics:
     get:
       produces:
