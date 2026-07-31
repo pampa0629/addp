@@ -1,6 +1,7 @@
 import { requestConsoleBridge } from './consoleBridge'
 
 export const CONSOLE_NAVIGATION_CHANNEL = 'console-navigation'
+const CONSOLE_NAVIGATION_HISTORY = new Set(['push', 'replace'])
 
 function hasValue(value) {
   return value !== null && value !== undefined && String(value).trim() !== ''
@@ -34,6 +35,24 @@ function normalizeConsoleRoute(route) {
   if (!hasValue(route)) return ''
   const normalized = String(route).trim()
   return normalized.startsWith('/') ? normalized : `/${normalized}`
+}
+
+export function buildConsoleNavigationRequest(route, options = {}) {
+  const normalizedRoute = normalizeConsoleRoute(route)
+  if (!normalizedRoute || normalizedRoute.startsWith('//')) {
+    throw new Error('console route must be an absolute application route')
+  }
+
+  const history = options.history || 'push'
+  if (!CONSOLE_NAVIGATION_HISTORY.has(history)) {
+    throw new Error('console navigation history must be push or replace')
+  }
+
+  return {
+    route: normalizedRoute,
+    history,
+    synchronized: options.synchronized === true
+  }
 }
 
 export function fillTaskOwnerUrlTemplate(rawUrl, replacements = {}) {
@@ -99,30 +118,25 @@ export function buildMonitorExecutionUrl(executionId, options = {}) {
 }
 
 export async function openConsoleRoute(route, options = {}) {
-  const normalizedRoute = normalizeConsoleRoute(route)
-  if (!normalizedRoute) return false
-
   const {
     source = 'addp-module',
     timeout = 1500,
     target = '_self',
-    windowFeatures = 'noopener,noreferrer'
+    windowFeatures = 'noopener,noreferrer',
+    history = 'push'
   } = options
+  const request = buildConsoleNavigationRequest(route, { history })
 
   if (typeof window !== 'undefined' && window.parent !== window) {
-    try {
-      await requestConsoleBridge(
-        CONSOLE_NAVIGATION_CHANNEL,
-        { route: normalizedRoute },
-        { source, timeout }
-      )
-      return true
-    } catch {
-      // 独立模块或旧 Console 中没有该 bridge 时，回退到直接打开 Console 路由。
-    }
+    await requestConsoleBridge(
+      CONSOLE_NAVIGATION_CHANNEL,
+      request,
+      { source, timeout }
+    )
+    return true
   }
 
-  const url = resolveConsoleRouteUrl(normalizedRoute, options)
+  const url = resolveConsoleRouteUrl(request.route, options)
   if (!url || typeof window === 'undefined') return false
 
   if (target && target !== '_self') {
@@ -130,6 +144,24 @@ export async function openConsoleRoute(route, options = {}) {
   } else {
     window.location.assign(url)
   }
+  return true
+}
+
+export async function syncConsoleRoute(route, options = {}) {
+  if (typeof window === 'undefined' || window.parent === window) {
+    return false
+  }
+
+  const {
+    source = 'addp-module',
+    timeout = 1500,
+    history = 'replace'
+  } = options
+  await requestConsoleBridge(
+    CONSOLE_NAVIGATION_CHANNEL,
+    buildConsoleNavigationRequest(route, { history, synchronized: true }),
+    { source, timeout }
+  )
   return true
 }
 

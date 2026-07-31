@@ -150,10 +150,10 @@ const activeRunId = ref(null)
 const retryRunId = ref(null)
 
 const quickHints = computed(() => [
-  t('agent.quickHints.viewCatalog'),
-  t('agent.quickHints.listSources'),
-  t('agent.quickHints.importShapefile'),
-  t('agent.quickHints.runSQL')
+  t('agent.quickHints.listWorkflowEngines'),
+  t('agent.quickHints.listGeoPythonOperators'),
+  t('agent.quickHints.listSparkOperators'),
+  t('agent.quickHints.listPointCloudOperators')
 ])
 
 async function loadSessions() {
@@ -540,6 +540,7 @@ onMounted(async () => {
 }
 
 .empty-hint {
+  width: min(100%, 760px);
   margin: auto;
   text-align: center;
   color: var(--addp-text-secondary);
@@ -557,6 +558,11 @@ onMounted(async () => {
 }
 
 .quick-tag {
+  max-width: 100%;
+  height: auto;
+  line-height: 1.4;
+  padding-block: 4px;
+  white-space: normal;
   cursor: pointer;
 }
 

@@ -6,6 +6,7 @@ import {
   Files, Tickets, Key, Refresh, Lock,
   MapLocation,
 } from '@element-plus/icons-vue'
+import { splitConsoleRoute } from '../utils/consoleNavigation'
 
 // ─── 群组导航配置 ────────────────────────────────────────────────────────────
 // label 值为 i18n key，渲染时通过 t(group.label) 翻译
@@ -357,7 +358,7 @@ export function buildModuleUrl(module, page) {
   if (!base) return null
 
   const map = PAGE_MAPS[module]
-  const [pagePath, queryPart] = String(page || '').split('?')
+  const [pagePath, queryPart] = splitConsoleRoute(page)
   // map[pagePath] 存在则用映射值；否则透传 pagePath（'' 键作为默认路由）
   const mappedPage = (map && map[pagePath] !== undefined) ? map[pagePath] : pagePath
   const actualPage = queryPart ? `${mappedPage}?${queryPart}` : mappedPage

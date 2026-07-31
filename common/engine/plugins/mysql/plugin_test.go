@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/format"
 )
 
 func TestMySQLCatalogFieldTypeMapsNativeTypes(t *testing.T) {
@@ -22,5 +23,16 @@ func TestMySQLCatalogFieldTypeMapsNativeTypes(t *testing.T) {
 		if got := mysqlCatalogFactsDialect.MapFieldType(nativeType); got != want {
 			t.Fatalf("mysqlCatalogFieldType(%q) = %q, want %q", nativeType, got, want)
 		}
+	}
+}
+
+func TestMySQLCapabilitiesDeclareEWKBTableWriteEncoding(t *testing.T) {
+	capabilities := (&MySQLPlugin{}).Capabilities()
+	if capabilities.Storage == nil || capabilities.Storage.Store == nil || capabilities.Storage.Store.TableSpatialEncoding == nil {
+		t.Fatal("MySQL capabilities do not declare table spatial encoding")
+	}
+	encodings := capabilities.Storage.Store.TableSpatialEncoding.GeometryWriteEncodings
+	if len(encodings) != 1 || encodings[0] != string(format.GeometryEncodingEWKB) {
+		t.Fatalf("geometry write encodings = %#v, want [ewkb]", encodings)
 	}
 }

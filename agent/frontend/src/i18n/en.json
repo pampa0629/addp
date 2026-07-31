@@ -13,7 +13,7 @@
     "chat": {
       "newSession": "New Chat",
       "noSessions": "No conversations",
-      "welcome": "Hello! I'm the ADDP AI Assistant. I can help you with data management, analysis, and publishing.",
+      "welcome": "Hello! I'm the ADDP AI Assistant.",
       "inputPlaceholder": "Type a message, Ctrl+Enter to send...",
       "send": "Send",
       "cancel": "Stop",
@@ -51,10 +51,10 @@
       }
     },
     "quickHints": {
-      "viewCatalog": "View my data catalog",
-      "listSources": "What data sources are available?",
-      "importShapefile": "How do I import a Shapefile?",
-      "runSQL": "Help me run a SQL query"
+      "listWorkflowEngines": "Show the currently available workflow engines",
+      "listGeoPythonOperators": "Show the public operators supported by the GeoPython workflow engine",
+      "listSparkOperators": "Show the public operators supported by the Spark workflow engine",
+      "listPointCloudOperators": "Show the public operators supported by the PointCloud workflow engine"
     }
   }
 }

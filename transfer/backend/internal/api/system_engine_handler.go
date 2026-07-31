@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	commonClient "github.com/addp/common/client"
+	commonAuth "github.com/addp/common/middleware/auth"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/transfer/internal/service"
 	"github.com/gin-gonic/gin"
@@ -38,7 +39,7 @@ func (h *SystemEngineHandler) List(c *gin.Context) {
 		return
 	}
 
-	tenantID := c.GetUint("tenant_id")
+	tenantID := commonAuth.GetTenantID(c)
 	engineType := strings.TrimSpace(c.Query("engine_type"))
 
 	engines, err := h.systemClient.ListEngines(engineType, tenantID)

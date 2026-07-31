@@ -7,6 +7,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/shared"
+	"github.com/addp/common/format"
 	_ "github.com/go-sql-driver/mysql"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -70,10 +71,13 @@ func (p *MySQLPlugin) Capabilities() plugin.EngineCapabilities {
 		BatchWrite:        true,
 		TableWriteSession: true,
 		TableWritePrepare: true,
-		Delete:            true,
-		SupportsExplain:   true,
-		SupportsCancel:    true,
-		WriterConnector:   "mysql_insert",
+		TableSpatialEncoding: &plugin.NativeTableSpatialEncodingCapability{
+			GeometryWriteEncodings: []string{string(format.GeometryEncodingEWKB)},
+		},
+		Delete:          true,
+		SupportsExplain: true,
+		SupportsCancel:  true,
+		WriterConnector: "mysql_insert",
 	})
 }
 

@@ -102,6 +102,50 @@ func TestUpdateStatusStartsPendingExecution(t *testing.T) {
 	}
 }
 
+func TestGetExecutionLogsIncludesTerminalFailure(t *testing.T) {
+	ctx := context.Background()
+	db := newExecutionServiceTestDB(t)
+	task := createExecutionServiceTestTask(t, db)
+	execution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusFailed)
+	execution.ErrorDetails = commonModels.JSONMap{
+		"logs":    "2026-07-31T22:38:05Z batch=0\n",
+		"message": "failed to write target geometry",
+	}
+	if err := db.Save(&execution).Error; err != nil {
+		t.Fatalf("save execution error details: %v", err)
+	}
+	service := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+
+	logs, err := service.GetExecutionLogs(ctx, uint(execution.ID), uint(task.TenantID))
+	if err != nil {
+		t.Fatalf("GetExecutionLogs() error = %v", err)
+	}
+	want := "2026-07-31T22:38:05Z batch=0\nERROR failed to write target geometry"
+	if logs != want {
+		t.Fatalf("logs = %q, want %q", logs, want)
+	}
+}
+
+func TestGetExecutionLogsUsesTerminalFailureWhenProgressLogsAreEmpty(t *testing.T) {
+	ctx := context.Background()
+	db := newExecutionServiceTestDB(t)
+	task := createExecutionServiceTestTask(t, db)
+	execution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusFailed)
+	execution.ErrorDetails = commonModels.JSONMap{"message": "failed before first batch"}
+	if err := db.Save(&execution).Error; err != nil {
+		t.Fatalf("save execution error details: %v", err)
+	}
+	service := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+
+	logs, err := service.GetExecutionLogs(ctx, uint(execution.ID), uint(task.TenantID))
+	if err != nil {
+		t.Fatalf("GetExecutionLogs() error = %v", err)
+	}
+	if logs != "ERROR failed before first batch" {
+		t.Fatalf("logs = %q, want terminal failure log", logs)
+	}
+}
+
 func TestRetryExecutionDoesNotCarryCheckpointState(t *testing.T) {
 	ctx := context.Background()
 	db := newExecutionServiceTestDB(t)

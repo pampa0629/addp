@@ -68,7 +68,7 @@ func NewTenantUserAuthContextServer(t testing.TB, tenantID string, tokenPermissi
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(tenantUserAuthContext(tenantID, permissions)); err != nil {
+		if err := json.NewEncoder(w).Encode(NewTenantUserAuthContext(tenantID, "9", permissions)); err != nil {
 			t.Errorf("encode AuthContext: %v", err)
 		}
 	}))
@@ -103,8 +103,10 @@ func NewTenantServiceAuthContextServer(t testing.TB, tenantID string, tokenIdent
 	}))
 }
 
-func tenantUserAuthContext(tenantID string, permissions []string) commonauth.AuthContext {
+// NewTenantUserAuthContext builds a canonical tenant User AuthContext for tests.
+func NewTenantUserAuthContext(tenantID, principalID string, permissions []string) commonauth.AuthContext {
 	authContext := tenantAuthContext("user", "addp-web", tenantID, "iam.user.read")
+	authContext.Principal.ID = principalID
 	authContext.Authorization.RoleAssignments[0].Permissions = append([]string(nil), permissions...)
 	sort.Strings(authContext.Authorization.RoleAssignments[0].Permissions)
 	return authContext

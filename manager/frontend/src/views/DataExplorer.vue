@@ -37,6 +37,7 @@
 
         <ItemPanel
           v-else
+          :active-tab="activeTab"
           :selected-node="selectedPreviewNode"
           :preview-data="store.previewData"
           :profile-preview-data="store.activeChildPreviewData || store.previewData"
@@ -46,6 +47,7 @@
           :loading="store.previewLoading || store.childPreviewLoading"
           @page-change="handlePageChange"
           @child-change="handleChildChange"
+          @tab-change="handleTabChange"
         />
       </div>
     </div>
@@ -54,10 +56,10 @@
 
 <script setup>
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { engineRootLocator, parseLocator } from '@addp/common-frontend'
+import { engineRootLocator, parseLocator, syncConsoleRoute } from '@addp/common-frontend'
 import ExplorerTree from '@/components/explorer/ExplorerTree.vue'
 import ExplorerSearch from '@/components/explorer/ExplorerSearch.vue'
 import EnginePanel from '@/components/explorer/EnginePanel.vue'
@@ -66,6 +68,11 @@ import ItemPanel from '@/components/explorer/ItemPanel.vue'
 import Splitter from '@/components/explorer/Splitter.vue'
 import { useResizable } from '@common-ui'
 import { useExplorerStore } from '@/stores/explorer'
+import {
+  buildDataExplorerConsoleRoute,
+  buildDataExplorerQuery,
+  normalizeDataExplorerTab
+} from '@/utils/dataExplorerRoute'
 
 const { t } = useI18n()
 
@@ -73,7 +80,9 @@ const { t } = useI18n()
 const { size: treeWidth, startResize: startTreeResize } = useResizable(320, 220, 600, 'horizontal')
 
 const route = useRoute()
+const router = useRouter()
 const store = useExplorerStore()
+const activeTab = ref(normalizeDataExplorerTab(route.query.tab))
 
 // 引用
 const treeRef = ref(null)
@@ -154,9 +163,28 @@ const currentNodeChildren = computed(() => {
   return node.children || []
 })
 
-// 事件处理：节点选择（从 ExplorerTree 组件触发）
-const handleNodeSelect = async ({ node, locator }) => {
+const replaceDataExplorerRoute = async (locator, tab = activeTab.value) => {
+  const normalizedTab = normalizeDataExplorerTab(tab)
+  const query = buildDataExplorerQuery(locator, normalizedTab)
+  const nextRoute = router.resolve({ name: 'DataExplorer', query })
+  if (route.fullPath !== nextRoute.fullPath) {
+    await router.replace({ name: 'DataExplorer', query })
+  }
   try {
+    await syncConsoleRoute(buildDataExplorerConsoleRoute(locator, normalizedTab), { history: 'replace' })
+  } catch (error) {
+    console.error('[DataExplorer] 同步 Console 路由失败:', error)
+  }
+}
+
+// 事件处理：节点选择（从 ExplorerTree 组件触发）
+const handleNodeSelect = async ({ node, locator }, options = {}) => {
+  try {
+    if (options.updateRoute !== false) {
+      activeTab.value = 'preview'
+      await replaceDataExplorerRoute(locator, activeTab.value)
+    }
+
     if (nodeTypes.has(node.type) && node.hasChildren && !node.loaded) {
       await store.loadNodeChildren(locator)
     }
@@ -221,10 +249,20 @@ const handleChildChange = async (payload) => {
   const refSwitch = typeof payload === 'object' && payload?.refSwitch
   if (!store.selectedLocator || (!childName && !refPath && !nestedChildPath && !refSwitch)) return
   try {
+    if (activeTab.value !== 'preview') {
+      activeTab.value = 'preview'
+      await replaceDataExplorerRoute(store.selectedLocator, activeTab.value)
+    }
     await store.loadPreview(store.selectedLocator, 1, childName, refPath, nestedChildPath, childKey)
   } catch (error) {
     ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message }))
   }
+}
+
+const handleTabChange = async (tab) => {
+  const normalizedTab = normalizeDataExplorerTab(tab)
+  activeTab.value = normalizedTab
+  await replaceDataExplorerRoute(store.selectedLocator, normalizedTab)
 }
 
 const handleOpenNode = async (locator) => {
@@ -278,10 +316,23 @@ onMounted(async () => {
   }
 })
 
-// 监听路由变化，根据参数自动定位和选中对象
-watch(() => route.query, async (query) => {
-  const targetLocator = String(query.locator || '').trim()
+watch(() => route.query.tab, async (tab) => {
+  const normalizedTab = normalizeDataExplorerTab(tab)
+  activeTab.value = normalizedTab
+  const rawTab = String(tab || '').trim().toLowerCase()
+  if (rawTab && rawTab !== normalizedTab) {
+    await replaceDataExplorerRoute(String(route.query.locator || '').trim(), normalizedTab)
+  }
+}, { immediate: true })
+
+// 监听 locator 变化，根据标准资源身份定位和选中对象。
+watch(() => route.query.locator, async (locator) => {
+  const targetLocator = String(locator || '').trim()
   if (!targetLocator) {
+    return
+  }
+
+  if (targetLocator === store.selectedLocator) {
     return
   }
 
@@ -310,9 +361,14 @@ watch(() => route.query, async (query) => {
     }
 
     const revealed = await store.revealLocator(targetLocator)
-    const targetNode = revealed.node || nodeContextFromLocator(revealed.locator || targetLocator, { type: loc.type })
-    await scrollToLocatedNode(revealed.path || [], revealed.locator || targetLocator)
-    await handleNodeSelect({ node: targetNode, locator: revealed.locator || targetLocator })
+    const revealedLocator = revealed.locator || targetLocator
+    const targetNode = revealed.node || nodeContextFromLocator(revealedLocator, { type: loc.type })
+    await scrollToLocatedNode(revealed.path || [], revealedLocator)
+    await handleNodeSelect({ node: targetNode, locator: revealedLocator }, { updateRoute: false })
+
+    if (revealedLocator !== targetLocator) {
+      await replaceDataExplorerRoute(revealedLocator, activeTab.value)
+    }
 
     ElMessage.success(t('manager.explorer.locateSuccess'))
   } catch (error) {

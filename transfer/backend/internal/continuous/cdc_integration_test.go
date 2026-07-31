@@ -16,10 +16,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/authtest"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/kafka"
 	"github.com/addp/common/engine/plugins/postgresql"
 	commonExecution "github.com/addp/common/execution"
+	commonAuth "github.com/addp/common/middleware/auth"
 	transferapi "github.com/addp/transfer/internal/api"
 	"github.com/addp/transfer/internal/capture"
 	transferconfig "github.com/addp/transfer/internal/config"
@@ -180,7 +182,7 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 	taskService.SetExecutionService(executionService)
 	taskService.SetCaptureControl(captureSupervisor)
 	taskService.SetSchemaChangeInspector(capturePlanResolver)
-	apiRouter := cdcDataAPIRouter(taskService, uint(700000+suffix%90000), 700001)
+	apiRouter := cdcDataAPIRouter(t, taskService, uint(700000+suffix%90000), 700001)
 	task := cdcDataCreateTaskViaAPI(t, apiRouter, cdcDataTaskConfig(schema, sourceTable, targetTable))
 	defer cleanupCDCDataInfraRows(infraDB, task.ID)
 
@@ -563,12 +565,19 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 	assertCDCDataCaptureCleanup(t, ctx, businessDB, captureRepo, connectClient, task, resource)
 }
 
-func cdcDataAPIRouter(taskService *service.TaskService, tenantID, userID uint) *gin.Engine {
+func cdcDataAPIRouter(t *testing.T, taskService *service.TaskService, tenantID, userID uint) *gin.Engine {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
+	authContext := authtest.NewTenantUserAuthContext(
+		strconv.FormatUint(uint64(tenantID), 10),
+		strconv.FormatUint(uint64(userID), 10),
+		[]string{"transfer.task.read"},
+	)
 	router.Use(func(c *gin.Context) {
-		c.Set("tenant_id", tenantID)
-		c.Set("user_id", userID)
+		if err := commonAuth.SetAuthContextForGin(c, authContext); err != nil {
+			t.Fatalf("set canonical AuthContext: %v", err)
+		}
 		c.Next()
 	})
 	handler := transferapi.NewTaskHandler(taskService)

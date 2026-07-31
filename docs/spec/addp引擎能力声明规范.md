@@ -258,7 +258,7 @@ type NativeTableSpatialEncodingCapability struct {
 
 `read` / `write` 总开关无独立调用价值，不进入 Store 能力声明。`delete` 只表达引擎能删除对应 catalog 资源，不表达上层业务删除策略、回收流程或级联清理。`atomic_rename`、`transactions`、`formats` 不作为 Store 顶层字段；如有真实调用方，应在对应 Provider 或更具体能力中声明。
 
-`table_spatial_encoding` 只表达跨出 native table provider 后的 row value 编码，不表达数据库内部类型。PostGIS `geometry` 这类 engine-internal type 不应作为 encoding 暴露；PostgreSQL / PostGIS 第一阶段声明 `geometry_read_encodings=["ewkb","geojson"]`、`geometry_write_encodings=["ewkb"]`、`read_transform=true`、`native_spatial_functions=true`。
+`table_spatial_encoding` 只表达跨出 native table provider 后的 row value 编码，不表达数据库内部类型。PostGIS `geometry` 这类 engine-internal type 不应作为 encoding 暴露；PostgreSQL / PostGIS 第一阶段声明 `geometry_read_encodings=["ewkb","geojson"]`、`geometry_write_encodings=["ewkb"]`、`read_transform=true`、`native_spatial_functions=true`。MySQL 第一阶段只声明 `geometry_write_encodings=["ewkb"]`：Provider 必须把 EWKB 行值转换为标准 WKB，并通过 MySQL 空间构造函数连同 SRID 写入；不得把直接绑定数据库内部 geometry 二进制、普通 `batch_write` 或建表能力误报为空间行值写入能力。
 
 `bounded_watermark_read` 与普通 `batch_read` / `table_read_session` 不等价。前者必须冻结 execution 上界、使用稳定复合游标并能从读取行生成 committed position。`table_upsert` 也不能从 `batch_write` 推导；只有目标 Provider 能校验唯一键并以幂等冲突处理提交批次时才能声明。第一版仅 PostgreSQL 声明这两项能力。
 

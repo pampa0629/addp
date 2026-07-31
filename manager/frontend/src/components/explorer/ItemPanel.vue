@@ -7,7 +7,7 @@
         type="button"
         role="tab"
         :aria-selected="activeTab === 'preview'"
-        @click="activeTab = 'preview'"
+        @click="selectTab('preview')"
       >
         {{ t('manager.explorer.previewTab') }}
       </button>
@@ -29,7 +29,7 @@
         type="button"
         role="tab"
         :aria-selected="activeTab === 'attributes'"
-        @click="activeTab = 'attributes'"
+        @click="selectTab('attributes')"
       >
         {{ t('manager.explorer.attributesTab') }}
       </button>
@@ -249,6 +249,10 @@ const DataProfilePanel = defineAsyncComponent(() => import('@/components/explore
 const { t } = useI18n()
 
 const props = defineProps({
+  activeTab: {
+    type: String,
+    default: 'preview'
+  },
   selectedNode: {
     type: Object,
     default: null
@@ -279,9 +283,8 @@ const props = defineProps({
   }
 })
 
-defineEmits(['page-change', 'navigate', 'child-change'])
+const emit = defineEmits(['page-change', 'navigate', 'child-change', 'tab-change'])
 
-const activeTab = ref('preview')
 const profileVisited = ref(false)
 const jsonDialogVisible = ref(false)
 
@@ -291,8 +294,7 @@ watch(() => [
   props.selectedRefPath,
   props.selectedNestedChildPath
 ], () => {
-  activeTab.value = 'preview'
-  profileVisited.value = false
+  profileVisited.value = props.activeTab === 'profile'
   jsonDialogVisible.value = false
 })
 
@@ -313,8 +315,31 @@ const profileSupported = computed(() => {
 
 const openProfileTab = () => {
   profileVisited.value = true
-  activeTab.value = 'profile'
+  emit('tab-change', 'profile')
 }
+
+const selectTab = (tab) => {
+  emit('tab-change', tab)
+}
+
+watch(() => props.activeTab, (tab) => {
+  if (tab === 'profile') {
+    profileVisited.value = true
+  }
+}, { immediate: true })
+
+watch([
+  () => props.loading,
+  () => props.activeTab,
+  () => props.previewData,
+  profileSupported,
+  itemMeta
+], ([loading, tab, preview, supportsProfile, metadata]) => {
+  if (loading || !preview) return
+  if ((tab === 'profile' && !supportsProfile) || (tab === 'attributes' && !metadata)) {
+    emit('tab-change', 'preview')
+  }
+})
 
 const sectionOrder = [
   'item',

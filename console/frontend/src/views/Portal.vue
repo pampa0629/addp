@@ -138,6 +138,7 @@ import { navigateGuide } from '../api/copilot'
 import { createManualScanRun, deleteEngineScanTask, getScanTasks, upsertEngineScanTask } from '../api/meta'
 import PortalIframe from '../components/portal/PortalIframe.vue'
 import ApiDocs from './ApiDocs.vue'
+import { consoleRouteModule, isSynchronizedIframeRoute, splitConsoleRoute } from '../utils/consoleNavigation'
 
 const router = useRouter()
 const route = useRoute()
@@ -161,6 +162,7 @@ let stopConsoleNavigationBridge = null
 let iframeAuthCoordinator = null
 let narrowViewportQuery = null
 let syncNarrowViewport = null
+let synchronizedIframeModule = ''
 
 const effectiveSidebarCollapsed = computed(() => isCollapsed.value || isNarrowViewport.value)
 
@@ -227,13 +229,35 @@ onBeforeUnmount(() => {
   iframeAuthCoordinator = null
 })
 
-const handleConsoleNavigationBridge = async (payload = {}) => {
+const handleConsoleNavigationBridge = async (payload = {}, _message, event) => {
   const targetRoute = typeof payload.route === 'string' ? payload.route.trim() : ''
-  if (!targetRoute || !targetRoute.startsWith('/')) {
+  if (!targetRoute || !targetRoute.startsWith('/') || targetRoute.startsWith('//')) {
     throw new Error('route must be an absolute console route')
   }
-  await router.push(targetRoute)
-  return { route: targetRoute }
+
+  const iframe = document.querySelector('iframe.module-iframe')
+  if (!iframe || event?.source !== iframe.contentWindow) {
+    throw new Error('navigation request must come from the active module iframe')
+  }
+
+  const resolvedRoute = router.resolve(targetRoute).fullPath
+  const targetModule = consoleRouteModule(resolvedRoute)
+  const history = payload.history === 'replace' ? 'replace' : 'push'
+  const synchronized = payload.synchronized === true
+
+  if (synchronized) {
+    if (!targetModule || targetModule !== currentModule.value) {
+      throw new Error('synchronized navigation must stay within the active module')
+    }
+    synchronizedIframeModule = targetModule
+  }
+
+  await router[history](resolvedRoute)
+  await nextTick()
+  if (synchronizedIframeModule === targetModule) {
+    synchronizedIframeModule = ''
+  }
+  return { route: resolvedRoute, history }
 }
 
 const normalizeScanConfig = (scanConfig) => {
@@ -330,7 +354,7 @@ const handleMenuSelect = (index) => {
 }
 
 function syncRouteToPortal(fullPath) {
-  const [pathPart, queryPart] = String(fullPath || '/').split('?')
+  const [pathPart, queryPart] = splitConsoleRoute(fullPath || '/')
   activeMenu.value = pathPart || '/'
 
   const parts = pathPart.split('/').filter(Boolean)
@@ -342,6 +366,10 @@ function syncRouteToPortal(fullPath) {
     return
   }
   const module = parts[0]
+  const keepCurrentIframe = isSynchronizedIframeRoute(synchronizedIframeModule, fullPath)
+  if (keepCurrentIframe) {
+    synchronizedIframeModule = ''
+  }
   const pagePath = parts.slice(1).join('/')
   const page = queryPart ? `${pagePath}?${queryPart}` : pagePath
   currentModule.value = module
@@ -354,9 +382,9 @@ function syncRouteToPortal(fullPath) {
   }
 
   const url = buildModuleUrl(module, page)
-  if (url) {
+  if (url && !keepCurrentIframe) {
     iframeUrl.value = url
-  } else {
+  } else if (!url) {
     console.error('[Console] Module URL not found for:', module)
   }
 

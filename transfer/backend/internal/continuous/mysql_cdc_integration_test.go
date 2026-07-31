@@ -178,7 +178,7 @@ func TestIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T) {
 	taskService.SetExecutionService(executionService)
 	taskService.SetCaptureControl(captureSupervisor)
 	taskService.SetSchemaChangeInspector(capturePlanResolver)
-	apiRouter := cdcDataAPIRouter(taskService, uint(800000+suffix%90000), 800001)
+	apiRouter := cdcDataAPIRouter(t, taskService, uint(800000+suffix%90000), 800001)
 	task := cdcDataCreateTaskViaAPI(t, apiRouter, mysqlCDCDataTaskConfig(sourceDatabase, sourceTable, targetSchema, targetTable))
 	defer cleanupCDCDataInfraRows(infraDB, task.ID)
 

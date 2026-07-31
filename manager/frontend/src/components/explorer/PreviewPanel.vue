@@ -484,7 +484,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { MagicStick, Download, Location, Collection, Document, View, Refresh, Select, InfoFilled, WarningFilled, Grid } from '@element-plus/icons-vue'
 import { getPreviewComponent } from '@/plugins/previews'
-import { parseLocator } from '@addp/common-frontend'
+import { openConsoleRoute, parseLocator } from '@addp/common-frontend'
 import client from '@/api/client'
 import { dataExplorerAPI } from '@/api/dataExplorer'
 import { quickViewAPI } from '@/api/quickView'
@@ -548,6 +548,19 @@ import {
 const { t } = useI18n()
 const router = useRouter()
 const executeWithCurrentResultConfirmation = useCurrentResultConfirmation()
+
+const navigateManagerRoute = async (location) => {
+  if (typeof window !== 'undefined' && window.parent !== window) {
+    const target = router.resolve(location)
+    try {
+      return await openConsoleRoute(`/manager${target.fullPath}`)
+    } catch (error) {
+      console.error('同步 Console 页面导航失败:', error)
+      return false
+    }
+  }
+  return router.push(location)
+}
 
 const executeConfirmedQuickViewAction = (locator, action) => executeWithCurrentResultConfirmation(payload => (
   quickViewAPI.executeQuickViewAction(locator, action, toQuickViewExistingResultPayload(payload))
@@ -1994,28 +2007,28 @@ const handleBackToBasicPreview = async () => {
   }
 }
 
-const handleGenerateTileCache = () => {
+const handleGenerateTileCache = async () => {
   const target = spatialPreviewTarget.value
   if (!target) return
-  router.push({
+  await navigateManagerRoute({
     name: 'TileCache',
     query: buildTileCacheCreateQuery(target, quickViewStatus.value)
   })
 }
 
-const handleGenerateVectorTileSet = () => {
+const handleGenerateVectorTileSet = async () => {
   const target = spatialPreviewTarget.value
   if (!target?.locator) return
-  router.push({
+  await navigateManagerRoute({
     name: 'VectorTileSet',
     query: { create: '1', locator: target.locator }
   })
 }
 
-const handleVectorMaterializedView = () => {
+const handleVectorMaterializedView = async () => {
   const target = spatialPreviewTarget.value
   if (!target) return
-  router.push({
+  await navigateManagerRoute({
     name: 'VectorMaterializedView',
     query: buildVectorMaterializedViewCreateQuery(target, quickViewStatus.value)
   })

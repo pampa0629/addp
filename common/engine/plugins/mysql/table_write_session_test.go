@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"bytes"
 	"reflect"
 	"strings"
 	"testing"
@@ -8,6 +9,9 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/resume"
+	"github.com/twpayne/go-geom"
+	"github.com/twpayne/go-geom/encoding/ewkb"
+	"github.com/twpayne/go-geom/encoding/wkb"
 )
 
 func TestMySQLFieldColumnsUsesFieldOrder(t *testing.T) {
@@ -58,7 +62,10 @@ func TestBuildMySQLInsertSQL(t *testing.T) {
 		{"id": 2, "city`name": "Shanghai"},
 	}
 
-	sql, args := buildMySQLInsertSQL("analytics", "target table", []string{"id", "city`name"}, rows)
+	sql, args, err := buildMySQLInsertSQL("analytics", "target table", []string{"id", "city`name"}, rows, nil)
+	if err != nil {
+		t.Fatalf("buildMySQLInsertSQL() error = %v", err)
+	}
 	wantSQL := "INSERT INTO `analytics`.`target table` (`id`, `city``name`) VALUES (?, ?), (?, ?)"
 	if sql != wantSQL {
 		t.Fatalf("sql = %q, want %q", sql, wantSQL)
@@ -66,6 +73,46 @@ func TestBuildMySQLInsertSQL(t *testing.T) {
 	wantArgs := []interface{}{1, "Hangzhou", 2, "Shanghai"}
 	if !reflect.DeepEqual(args, wantArgs) {
 		t.Fatalf("args = %#v, want %#v", args, wantArgs)
+	}
+}
+
+func TestBuildMySQLInsertSQLConvertsEWKBGeometryToMySQLWKB(t *testing.T) {
+	geometry := geom.NewPointFlat(geom.XY, []float64{116.4, 39.9}).SetSRID(4326)
+	ewkbValue, err := ewkb.Marshal(geometry, ewkb.NDR)
+	if err != nil {
+		t.Fatalf("encode EWKB: %v", err)
+	}
+
+	sqlText, args, err := buildMySQLInsertSQL(
+		"analytics",
+		"features",
+		[]string{"id", "shape"},
+		[]map[string]interface{}{{"id": 1, "shape": ewkbValue}},
+		map[string]int{"shape": 4326},
+	)
+	if err != nil {
+		t.Fatalf("buildMySQLInsertSQL() error = %v", err)
+	}
+	wantSQL := "INSERT INTO `analytics`.`features` (`id`, `shape`) VALUES (?, ST_GeomFromWKB(?, 4326))"
+	if sqlText != wantSQL {
+		t.Fatalf("sql = %q, want %q", sqlText, wantSQL)
+	}
+	if len(args) != 2 || args[0] != 1 {
+		t.Fatalf("args = %#v, want id and geometry WKB", args)
+	}
+	wkbValue, ok := args[1].([]byte)
+	if !ok {
+		t.Fatalf("geometry arg type = %T, want []byte", args[1])
+	}
+	if bytes.Equal(wkbValue, ewkbValue) {
+		t.Fatal("geometry arg still contains EWKB SRID envelope")
+	}
+	decoded, err := wkb.Unmarshal(wkbValue)
+	if err != nil {
+		t.Fatalf("decode generated WKB: %v", err)
+	}
+	if decoded.SRID() != 0 {
+		t.Fatalf("generated WKB SRID = %d, want standard WKB without SRID envelope", decoded.SRID())
 	}
 }
 

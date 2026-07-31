@@ -60,6 +60,17 @@ await openMonitorExecution(execution.execution_id)
 
 该工具在 Console iframe 中会请求父级切换到 `/monitor/executions?execution_id=...`；模块独立运行时会回退为在新窗口打开 Console 路由。业务模块不要自行硬编码 Console 端口或拼接跨模块 iframe URL。
 
+模块内需要进入另一个 Console 页面时使用 `openConsoleRoute()`。iframe 内的模块已经完成同页 query 导航、只需要同步浏览器地址栏时使用 `syncConsoleRoute()`：
+
+```js
+import { openConsoleRoute, syncConsoleRoute } from '@addp/common-frontend'
+
+await openConsoleRoute('/manager/spatial-quick-view/vector-tile-cache?create=1')
+await syncConsoleRoute('/manager/data-explorer?locator=...', { history: 'replace' })
+```
+
+`openConsoleRoute()` 默认新增浏览器历史并由 Console 加载目标页面；`syncConsoleRoute()` 只允许当前 iframe 同步自身模块路由，支持 `push` / `replace`，且不得重载已经完成导航的 iframe。模块独立运行时由模块自身 Router 处理本地路由，`syncConsoleRoute()` 不建立第二套 Console 历史。
+
 ### 导入类型定义
 
 ```js

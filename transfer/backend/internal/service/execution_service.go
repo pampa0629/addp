@@ -595,7 +595,16 @@ func (s *ExecutionService) GetExecutionLogs(ctx context.Context, id, tenantID ui
 		return "", err
 	}
 
-	return execution.Logs, nil
+	logs := strings.TrimSpace(execution.Logs)
+	errorMsg := strings.TrimSpace(execution.ErrorMsg)
+	if errorMsg == "" {
+		return logs, nil
+	}
+	errorLine := "ERROR " + errorMsg
+	if logs == "" {
+		return errorLine, nil
+	}
+	return logs + "\n" + errorLine, nil
 }
 
 // GetExecutionStatistics 获取执行统计信息

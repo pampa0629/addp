@@ -5,11 +5,14 @@ import (
 	"database/sql"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/resume"
+	"github.com/twpayne/go-geom/encoding/ewkb"
+	"github.com/twpayne/go-geom/encoding/wkb"
 )
 
 const mysqlDefaultInsertChunkSize = 1000
@@ -72,12 +75,13 @@ func (p *MySQLPlugin) OpenTableWriteSession(ctx context.Context, connInfo plugin
 	}
 
 	return &mysqlTableWriteSession{
-		db:        db,
-		tx:        tx,
-		database:  database,
-		table:     table,
-		columns:   columns,
-		chunkSize: effectiveMySQLInsertChunkSize(len(columns), mysqlDefaultInsertChunkSize),
+		db:            db,
+		tx:            tx,
+		database:      database,
+		table:         table,
+		columns:       columns,
+		geometrySRIDs: mysqlGeometrySRIDs(opts.Fields, opts.SpatialInfo),
+		chunkSize:     effectiveMySQLInsertChunkSize(len(columns), mysqlDefaultInsertChunkSize),
 	}, nil
 }
 
@@ -169,7 +173,7 @@ func effectiveMySQLInsertChunkSize(columnCount, requested int) int {
 	return requested
 }
 
-func buildMySQLInsertSQL(database, table string, columns []string, rows []map[string]interface{}) (string, []interface{}) {
+func buildMySQLInsertSQL(database, table string, columns []string, rows []map[string]interface{}, geometrySRIDs map[string]int) (string, []interface{}, error) {
 	dialect := mysqlDialect()
 	quotedColumns := make([]string, 0, len(columns))
 	for _, column := range columns {
@@ -188,13 +192,69 @@ func buildMySQLInsertSQL(database, table string, columns []string, rows []map[st
 	for _, row := range rows {
 		group := make([]string, len(columns))
 		for i, column := range columns {
-			group[i] = "?"
-			args = append(args, row[column])
+			value := row[column]
+			expectedSRID, isGeometry := geometrySRIDs[column]
+			if !isGeometry || value == nil {
+				group[i] = "?"
+				args = append(args, value)
+				continue
+			}
+			wkbValue, srid, err := mysqlGeometryWriteValue(value, expectedSRID)
+			if err != nil {
+				return "", nil, fmt.Errorf("encode mysql geometry column %q: %w", column, err)
+			}
+			group[i] = "ST_GeomFromWKB(?)"
+			if srid > 0 {
+				group[i] = "ST_GeomFromWKB(?, " + strconv.Itoa(srid) + ")"
+			}
+			args = append(args, wkbValue)
 		}
 		valueGroups = append(valueGroups, "("+strings.Join(group, ", ")+")")
 	}
 	sb.WriteString(strings.Join(valueGroups, ", "))
-	return sb.String(), args
+	return sb.String(), args, nil
+}
+
+func mysqlGeometrySRIDs(fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) map[string]int {
+	result := make(map[string]int)
+	for _, field := range fields {
+		if !datatype.IsSpatialFieldType(field.Type) {
+			continue
+		}
+		name := strings.TrimSpace(field.Name)
+		if name == "" {
+			continue
+		}
+		srid := 0
+		if column := mysqlSpatialColumnForField(spatialInfo, name); column != nil && column.SRID != nil {
+			srid = *column.SRID
+		}
+		result[name] = srid
+	}
+	return result
+}
+
+func mysqlGeometryWriteValue(value interface{}, expectedSRID int) ([]byte, int, error) {
+	data, ok := value.([]byte)
+	if !ok {
+		return nil, 0, fmt.Errorf("EWKB geometry value must be []byte, got %T", value)
+	}
+	geometry, err := ewkb.Unmarshal(data)
+	if err != nil {
+		return nil, 0, fmt.Errorf("decode EWKB geometry: %w", err)
+	}
+	srid := geometry.SRID()
+	if expectedSRID > 0 {
+		if srid > 0 && srid != expectedSRID {
+			return nil, 0, fmt.Errorf("EWKB SRID %d does not match target SRID %d", srid, expectedSRID)
+		}
+		srid = expectedSRID
+	}
+	data, err = wkb.Marshal(geometry, wkb.NDR)
+	if err != nil {
+		return nil, 0, fmt.Errorf("encode standard WKB geometry: %w", err)
+	}
+	return data, srid, nil
 }
 
 type mysqlTableWriteSession struct {
@@ -203,6 +263,7 @@ type mysqlTableWriteSession struct {
 	database       string
 	table          string
 	columns        []string
+	geometrySRIDs  map[string]int
 	chunkSize      int
 	batchesWritten int64
 	rowsWritten    int64
@@ -233,7 +294,10 @@ func (s *mysqlTableWriteSession) WriteBatch(ctx context.Context, batch *plugin.B
 		if end > len(batch.Rows) {
 			end = len(batch.Rows)
 		}
-		insertSQL, args := buildMySQLInsertSQL(s.database, s.table, s.columns, batch.Rows[start:end])
+		insertSQL, args, err := buildMySQLInsertSQL(s.database, s.table, s.columns, batch.Rows[start:end], s.geometrySRIDs)
+		if err != nil {
+			return fmt.Errorf("build mysql table write session rows %d-%d: %w", start, end, err)
+		}
 		if _, err := s.tx.ExecContext(ctx, insertSQL, args...); err != nil {
 			return fmt.Errorf("execute mysql table write session rows %d-%d: %w", start, end, err)
 		}

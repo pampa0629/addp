@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	commonAPI "github.com/addp/common/api"
+	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/service"
@@ -37,7 +38,7 @@ func NewExecutionHandler(executionService *service.ExecutionService) *ExecutionH
 // @Router /executions/{execution_id} [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecution(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := commonAuth.GetTenantID(c)
 	executionID := c.Param("execution_id")
 
 	execution, err := h.executionService.GetExecutionByExecutionID(c.Request.Context(), executionID, tenantID)
@@ -64,7 +65,7 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 // @Router /executions [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := commonAuth.GetTenantID(c)
 
 	// 分页参数
 	page, pageSize := commonAPI.GetPaginationParams(c)
@@ -117,7 +118,7 @@ func (h *ExecutionHandler) GetTaskExecutions(c *gin.Context) {
 		return
 	}
 
-	tenantID := c.GetUint("tenant_id")
+	tenantID := commonAuth.GetTenantID(c)
 
 	// 分页参数
 	page, pageSize := commonAPI.GetPaginationParams(c)
@@ -146,8 +147,8 @@ func (h *ExecutionHandler) GetTaskExecutions(c *gin.Context) {
 // @Router /executions/{execution_id}/retry [post]
 // @Security BearerAuth
 func (h *ExecutionHandler) RetryExecution(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := commonAuth.GetTenantID(c)
+	userID := commonAuth.GetUserID(c)
 	execution, ok := h.getExecutionByExecutionID(c, tenantID)
 	if !ok {
 		return
@@ -178,7 +179,7 @@ func (h *ExecutionHandler) RetryExecution(c *gin.Context) {
 // @Router /executions/{execution_id}/progress [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecutionProgress(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := commonAuth.GetTenantID(c)
 	execution, ok := h.getExecutionByExecutionID(c, tenantID)
 	if !ok {
 		return
@@ -206,7 +207,7 @@ func (h *ExecutionHandler) GetExecutionProgress(c *gin.Context) {
 // @Router /executions/{execution_id}/logs [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecutionLogs(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := commonAuth.GetTenantID(c)
 	execution, ok := h.getExecutionByExecutionID(c, tenantID)
 	if !ok {
 		return
@@ -265,7 +266,7 @@ func (h *ExecutionHandler) getExecutionByExecutionID(c *gin.Context, tenantID ui
 // @Router /executions/statistics [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecutionStatistics(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := commonAuth.GetTenantID(c)
 
 	filters := make(map[string]interface{})
 	if taskID := c.Query("task_id"); taskID != "" {

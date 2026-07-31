@@ -139,7 +139,7 @@ func TestTaskHandlerDeadLettersAreTaskScopedAndDoNotExposePayloadReference(t *te
 	taskSvc := service.NewTaskService(db, nil, nil, nil)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		c.Set("tenant_id", uint(7))
+		setTransferTestAuthContext(t, c, 7, 9)
 		c.Next()
 	})
 	handler := NewTaskHandler(taskSvc)
@@ -194,8 +194,7 @@ func TestTaskHandlerResumeSchemaBlockedCDCReturnsConflict(t *testing.T) {
 	taskSvc := service.NewTaskService(db, nil, nil, nil)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		c.Set("tenant_id", uint(7))
-		c.Set("user_id", uint(9))
+		setTransferTestAuthContext(t, c, 7, 9)
 		c.Next()
 	})
 	router.POST("/task-definitions/:id/resume", NewTaskHandler(taskSvc).ResumeTask)
@@ -230,8 +229,7 @@ func TestExecutionHandlerRetrySchemaBlockedCDCReturnsConflict(t *testing.T) {
 	executionSvc := service.NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		c.Set("tenant_id", uint(7))
-		c.Set("user_id", uint(9))
+		setTransferTestAuthContext(t, c, 7, 9)
 		c.Next()
 	})
 	router.POST("/executions/:execution_id/retry", NewExecutionHandler(executionSvc).RetryExecution)
@@ -264,7 +262,7 @@ func TestTaskHandlerListTasksUsesStandardItemsShape(t *testing.T) {
 
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		c.Set("tenant_id", uint(7))
+		setTransferTestAuthContext(t, c, 7, 9)
 		c.Next()
 	})
 	handler := NewTaskHandler(taskSvc)
@@ -346,8 +344,7 @@ func TestProviderExecuteTaskUsesStandardExecutionShape(t *testing.T) {
 
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		c.Set("tenant_id", uint(7))
-		c.Set("user_id", uint(9))
+		setTransferTestAuthContext(t, c, 7, 9)
 		c.Next()
 	})
 	router.POST("/tasks/:task_type/:id/execute", NewTaskHandler(taskSvc).ProviderExecuteTask)

@@ -8,6 +8,7 @@ import (
 	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
+	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	transferI18n "github.com/addp/transfer/i18n"
 	"github.com/addp/transfer/internal/models"
@@ -51,9 +52,8 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 		return
 	}
 
-	// 从上下文获取租户和用户信息（由 AuthMiddleware 注入）
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := commonAuth.GetTenantID(c)
+	userID := commonAuth.GetUserID(c)
 
 	task, err := h.taskService.CreateTask(c.Request.Context(), &req, tenantID, userID)
 	if err != nil {
@@ -85,7 +85,7 @@ func (h *TaskHandler) GetTask(c *gin.Context) {
 		return
 	}
 
-	tenantID := c.GetUint("tenant_id")
+	tenantID := commonAuth.GetTenantID(c)
 
 	task, err := h.taskService.GetTask(c.Request.Context(), id, tenantID)
 	if err != nil {
@@ -115,7 +115,7 @@ func (h *TaskHandler) GetTask(c *gin.Context) {
 // @Router /tasks [get]
 // @Security BearerAuth
 func (h *TaskHandler) ListTasks(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := commonAuth.GetTenantID(c)
 
 	// 构建请求参数
 	var req models.ListTasksRequest
@@ -183,7 +183,7 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 		return
 	}
 
-	tenantID := c.GetUint("tenant_id")
+	tenantID := commonAuth.GetTenantID(c)
 
 	// 修正参数顺序：id, tenantID, req
 	task, err := h.taskService.UpdateTask(c.Request.Context(), id, tenantID, &req)
@@ -217,7 +217,7 @@ func (h *TaskHandler) DeleteTask(c *gin.Context) {
 		return
 	}
 
-	tenantID := c.GetUint("tenant_id")
+	tenantID := commonAuth.GetTenantID(c)
 
 	if err := h.taskService.DeleteTask(c.Request.Context(), id, tenantID); err != nil {
 		respondTaskServiceError(c, err)
@@ -248,8 +248,8 @@ func (h *TaskHandler) StartTask(c *gin.Context) {
 		return
 	}
 
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := commonAuth.GetTenantID(c)
+	userID := commonAuth.GetUserID(c)
 
 	execution, err := h.taskService.StartTask(c.Request.Context(), id, tenantID, userID)
 	if err != nil {
@@ -288,7 +288,7 @@ func (h *TaskHandler) ReplayTask(c *gin.Context) {
 		commonAPI.BadRequestError(c, i18nmiddleware.T(c, transferI18n.MsgReplayInvalid))
 		return
 	}
-	execution, err := h.taskService.ReplayTask(c.Request.Context(), id, c.GetUint("tenant_id"), c.GetUint("user_id"), req)
+	execution, err := h.taskService.ReplayTask(c.Request.Context(), id, commonAuth.GetTenantID(c), commonAuth.GetUserID(c), req)
 	if err != nil {
 		respondReplayTaskError(c, err)
 		return
@@ -314,7 +314,7 @@ func (h *TaskHandler) GetSchemaChange(c *gin.Context) {
 	if !ok {
 		return
 	}
-	request, err := h.taskService.GetSchemaChange(c.Request.Context(), id, c.GetUint("tenant_id"))
+	request, err := h.taskService.GetSchemaChange(c.Request.Context(), id, commonAuth.GetTenantID(c))
 	if err != nil {
 		respondSchemaChangeError(c, err)
 		return
@@ -350,7 +350,7 @@ func (h *TaskHandler) ApproveSchemaChange(c *gin.Context) {
 		commonAPI.BadRequestError(c, i18nmiddleware.T(c, transferI18n.MsgSchemaChangeInvalid))
 		return
 	}
-	result, err := h.taskService.ApproveSchemaChange(c.Request.Context(), id, c.GetUint("tenant_id"), c.GetUint("user_id"), request)
+	result, err := h.taskService.ApproveSchemaChange(c.Request.Context(), id, commonAuth.GetTenantID(c), commonAuth.GetUserID(c), request)
 	if err != nil {
 		respondSchemaChangeError(c, err)
 		return
@@ -402,7 +402,7 @@ func (h *TaskHandler) ListDeadLetters(c *gin.Context) {
 	request.ErrorCategory = strings.TrimSpace(request.ErrorCategory)
 	request.ErrorCode = strings.TrimSpace(request.ErrorCode)
 
-	deadLetters, total, err := h.taskService.ListDeadLetters(c.Request.Context(), taskID, c.GetUint("tenant_id"), request)
+	deadLetters, total, err := h.taskService.ListDeadLetters(c.Request.Context(), taskID, commonAuth.GetTenantID(c), request)
 	if err != nil {
 		respondDeadLetterError(c, err)
 		return
@@ -435,7 +435,7 @@ func (h *TaskHandler) GetDeadLetter(c *gin.Context) {
 		commonAPI.BadRequestError(c, i18nmiddleware.T(c, transferI18n.MsgDeadLetterInvalidID))
 		return
 	}
-	deadLetter, err := h.taskService.GetDeadLetter(c.Request.Context(), taskID, c.GetUint("tenant_id"), identity)
+	deadLetter, err := h.taskService.GetDeadLetter(c.Request.Context(), taskID, commonAuth.GetTenantID(c), identity)
 	if err != nil {
 		respondDeadLetterError(c, err)
 		return
@@ -531,8 +531,8 @@ func (h *TaskHandler) ProviderExecuteTask(c *gin.Context) {
 		parentExecutionID = &req.ParentExecutionID
 	}
 
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := commonAuth.GetTenantID(c)
+	userID := commonAuth.GetUserID(c)
 	task, err := h.taskService.GetTask(c.Request.Context(), id, tenantID)
 	if err != nil {
 		respondTaskServiceError(c, err)
@@ -580,7 +580,7 @@ func (h *TaskHandler) PauseTask(c *gin.Context) {
 		return
 	}
 
-	tenantID := c.GetUint("tenant_id")
+	tenantID := commonAuth.GetTenantID(c)
 
 	if err := h.taskService.PauseTask(c.Request.Context(), id, tenantID); err != nil {
 		respondTaskServiceError(c, err)
@@ -610,8 +610,8 @@ func (h *TaskHandler) ResumeTask(c *gin.Context) {
 		return
 	}
 
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
+	tenantID := commonAuth.GetTenantID(c)
+	userID := commonAuth.GetUserID(c)
 
 	execution, err := h.taskService.ResumeTask(c.Request.Context(), id, tenantID, userID)
 	if err != nil {
@@ -652,7 +652,7 @@ func (h *TaskHandler) StopTask(c *gin.Context) {
 		commonAPI.BadRequestError(c, err.Error())
 		return
 	}
-	if err := h.taskService.StopTask(c.Request.Context(), id, c.GetUint("tenant_id"), req); err != nil {
+	if err := h.taskService.StopTask(c.Request.Context(), id, commonAuth.GetTenantID(c), req); err != nil {
 		respondTaskServiceError(c, err)
 		return
 	}
@@ -672,7 +672,7 @@ func (h *TaskHandler) StopTask(c *gin.Context) {
 // @Router /task-definitions/statistics [get]
 // @Security BearerAuth
 func (h *TaskHandler) GetTaskStatistics(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
+	tenantID := commonAuth.GetTenantID(c)
 
 	// 添加调试日志
 	logger.L().Info("getting task statistics", "tenant_id", tenantID)
