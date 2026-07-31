@@ -350,7 +350,7 @@ frontend/src/
 
 ### 引擎管理（需认证）
 - `POST /api/v1/system/engines` - 创建引擎（自动关联当前用户租户）
-- `GET /api/v1/system/engines` - 获取引擎列表（自动过滤本租户，支持 engine_type 过滤）
+- `GET /api/v1/system/engines` - 获取当前 Tenant 的完整过滤后引擎数组；System 管理页面在前端分页
 - `GET /api/v1/system/engines/:id` - 获取指定引擎
 - `PUT /api/v1/system/engines/:id` - 更新引擎（敏感字段自动重新加密）
 - `DELETE /api/v1/system/engines/:id` - 删除引擎

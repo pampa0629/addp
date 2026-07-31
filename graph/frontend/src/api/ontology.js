@@ -107,7 +107,7 @@ export const engineAPI = {
   getNeo4jEngines() {
     return client.get('/system/engines', {
       params: { engine_type: 'neo4j' }
-    }).then(res => res.data)
+    })
   },
   // 获取指定引擎的数据库列表（Neo4j database 对应顶层 catalog 节点）
   getDatabases(engineId) {

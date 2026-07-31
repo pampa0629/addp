@@ -5,21 +5,15 @@ import httpx
 from addp_common.client.system import SystemClient
 
 
-def test_list_engines_decodes_paginated_response():
-    asyncio.run(_test_list_engines_decodes_paginated_response())
+def test_list_engines_decodes_array_response():
+    asyncio.run(_test_list_engines_decodes_array_response())
 
 
-async def _test_list_engines_decodes_paginated_response():
+async def _test_list_engines_decodes_array_response():
     async def handler(request):
         assert request.url.path == "/api/v1/system/engines"
         assert request.url.params["tenant_id"] == "7"
-        return httpx.Response(200, json={
-            "data": [{"id": 1, "name": "GeoPython Workflow"}],
-            "total": 1,
-            "page": 1,
-            "page_size": 10,
-            "total_pages": 1,
-        })
+        return httpx.Response(200, json=[{"id": 1, "name": "GeoPython Workflow"}])
 
     client = SystemClient("http://system")
     client._client = httpx.AsyncClient(
@@ -35,11 +29,11 @@ async def _test_list_engines_decodes_paginated_response():
     assert engines == [{"id": 1, "name": "GeoPython Workflow"}]
 
 
-def test_list_engines_rejects_legacy_response_shape():
-    asyncio.run(_test_list_engines_rejects_legacy_response_shape())
+def test_list_engines_rejects_invalid_response_shape():
+    asyncio.run(_test_list_engines_rejects_invalid_response_shape())
 
 
-async def _test_list_engines_rejects_legacy_response_shape():
+async def _test_list_engines_rejects_invalid_response_shape():
     async def handler(request):
         return httpx.Response(200, json={"engines": []})
 
@@ -53,9 +47,9 @@ async def _test_list_engines_rejects_legacy_response_shape():
         try:
             await client.list_engines()
         except ValueError as err:
-            assert "paginated object with data" in str(err)
+            assert "must be a list" in str(err)
         else:
-            raise AssertionError("list_engines() should reject legacy response shape")
+            raise AssertionError("list_engines() should reject invalid response shape")
     finally:
         await client.close()
 
@@ -107,8 +101,7 @@ def test_get_workflow_engines_filters_active_v1_workflow_engines():
 
 async def _test_get_workflow_engines_filters_active_v1_workflow_engines():
     async def handler(request):
-        return httpx.Response(200, json={
-            "data": [
+        return httpx.Response(200, json=[
                 {
                     "id": 1,
                     "name": "GeoPython Workflow",
@@ -145,9 +138,7 @@ async def _test_get_workflow_engines_filters_active_v1_workflow_engines():
                     "is_active": True,
                     "capabilities": {"compute": [{"dev_modes": ["workflow"]}]},
                 },
-            ],
-            "total": 3,
-        })
+            ])
 
     client = SystemClient("http://system")
     client._client = httpx.AsyncClient(

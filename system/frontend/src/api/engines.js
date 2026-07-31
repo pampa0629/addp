@@ -5,8 +5,8 @@ export const enginesAPI = {
     return client.post('/system/engines', data)
   },
 
-  list: (page = 1, pageSize = 10, filters = {}) => {
-    const params = { page, page_size: pageSize }
+  list: (filters = {}) => {
+    const params = {}
     if (filters.engineType) params.engine_type = filters.engineType
     if (filters.capabilityGroups?.length) params.capability_groups = filters.capabilityGroups.join(',')
     if (filters.engineOrigins?.length) params.engine_origins = filters.engineOrigins.join(',')

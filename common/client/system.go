@@ -148,21 +148,11 @@ func (c *SystemClient) ListEngines(engineType string, tenantID uint) ([]models.E
 		return nil, fmt.Errorf("system api returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	if c.internalKey != "" {
-		var engines []models.Engine
-		if err := json.NewDecoder(resp.Body).Decode(&engines); err != nil {
-			return nil, fmt.Errorf("failed to decode internal engines response: %w", err)
-		}
-		return engines, nil
+	var engines []models.Engine
+	if err := json.NewDecoder(resp.Body).Decode(&engines); err != nil {
+		return nil, fmt.Errorf("failed to decode engines response: %w", err)
 	}
-
-	var result struct {
-		Data []models.Engine `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode paginated engines response: %w", err)
-	}
-	return result.Data, nil
+	return engines, nil
 }
 
 // CreateEngine 创建资源（支持内部或用户接口）

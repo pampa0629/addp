@@ -56,9 +56,7 @@ func TestCreateUnscannedRunsSubmitsUnscannedEngines(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/api/v1/system/engines":
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"data": []commonModels.Engine{engine}, "total": 1, "page": 1, "page_size": 100,
-			})
+			_ = json.NewEncoder(w).Encode([]commonModels.Engine{engine})
 		case "/api/v1/system/engines/9":
 			_ = json.NewEncoder(w).Encode(engine)
 		default:

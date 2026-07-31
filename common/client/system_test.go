@@ -61,7 +61,7 @@ func TestSystemClientListEnginesDecodesInternalCapabilitiesView(t *testing.T) {
 	}
 }
 
-func TestSystemClientListEnginesDecodesPaginatedCapabilitiesView(t *testing.T) {
+func TestSystemClientListEnginesDecodesPublicListResponse(t *testing.T) {
 	t.Parallel()
 
 	var gotPath string
@@ -72,8 +72,7 @@ func TestSystemClientListEnginesDecodesPaginatedCapabilitiesView(t *testing.T) {
 		gotAuth = r.Header.Get("Authorization")
 		gotQuery = r.URL.RawQuery
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-			"data":[{
+		_, _ = w.Write([]byte(`[{
 				"id":1,
 				"name":"GeoPython Workflow",
 				"engine_type":"geopython_workflow",
@@ -83,12 +82,7 @@ func TestSystemClientListEnginesDecodesPaginatedCapabilitiesView(t *testing.T) {
 					"sections":[{"id":"compute","title_key":"system.engine.capabilityView.sections.compute"}],
 					"json_view":[{"key":"schema_version","value":"engine.capabilities/v1"}]
 				}
-			}],
-			"total":1,
-			"page":1,
-			"page_size":10,
-			"total_pages":1
-		}`))
+			}]`))
 	}))
 	defer server.Close()
 

@@ -156,9 +156,9 @@ register_engine() {
   echo -e "${YELLOW}▶ 注册引擎: ${name}${NC}"
 
   # 检查引擎是否已存在
-  EXISTING=$(curl -s -X GET "${SYSTEM_API_URL}/api/v1/system/engines?page_size=1000" \
+  EXISTING=$(curl -s -X GET "${SYSTEM_API_URL}/api/v1/system/engines" \
     -H "Authorization: Bearer ${TOKEN}" \
-    | jq -r ".data[] | select(.name == \"${name}\") | .id // empty")
+    | jq -r ".[] | select(.name == \"${name}\") | .id // empty")
 
   # 创建或更新引擎
   PAYLOAD=$(cat <<EOF

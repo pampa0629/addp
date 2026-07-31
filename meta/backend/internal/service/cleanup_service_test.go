@@ -203,9 +203,7 @@ func newEmptyEngineSystemClient(t *testing.T) *commonClient.SystemServiceClient 
 			http.NotFound(w, r)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"data": []interface{}{}, "total": 0, "page": 1, "page_size": 100,
-		})
+		_ = json.NewEncoder(w).Encode([]interface{}{})
 	}))
 	t.Cleanup(server.Close)
 	tokenSource, err := commonClient.NewOAuthServiceTokenSource(

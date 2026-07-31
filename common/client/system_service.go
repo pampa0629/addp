@@ -73,33 +73,9 @@ func (c *SystemServiceClient) GetEngine(ctx context.Context, engineID uint) (*mo
 }
 
 func (c *SystemServiceClient) ListEngines(ctx context.Context) ([]models.Engine, error) {
-	const pageSize = 100
-	engines := make([]models.Engine, 0, pageSize)
-	for page := 1; ; page++ {
-		var response struct {
-			Data     []models.Engine `json:"data"`
-			Total    int64           `json:"total"`
-			Page     int             `json:"page"`
-			PageSize int             `json:"page_size"`
-		}
-		path := fmt.Sprintf("/api/v1/system/engines?page=%d&page_size=%d", page, pageSize)
-		if err := c.doTenantJSON(ctx, http.MethodGet, path, nil, &response); err != nil {
-			return nil, err
-		}
-		if response.Total < 0 || response.Page != page || response.PageSize != pageSize || len(response.Data) > pageSize {
-			return nil, errors.New("System engine list returned an invalid pagination response")
-		}
-		engines = append(engines, response.Data...)
-		if int64(len(engines)) >= response.Total {
-			if int64(len(engines)) != response.Total {
-				return nil, errors.New("System engine list pagination exceeded the declared total")
-			}
-			return engines, nil
-		}
-		if len(response.Data) == 0 {
-			return nil, errors.New("System engine list pagination ended before the declared total")
-		}
-	}
+	var engines []models.Engine
+	err := c.doTenantJSON(ctx, http.MethodGet, "/api/v1/system/engines", nil, &engines)
+	return engines, err
 }
 
 func (c *SystemServiceClient) GetEngineRuntimeDescriptor(

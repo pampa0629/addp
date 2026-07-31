@@ -353,47 +353,39 @@ System engine 表不保存元数据扫描策略。注册引擎时的扫描计划
 
 #### 列表查询
 ```
-GET /api/v1/system/engines?page=1&page_size=10&capability_groups=storage,compute&engine_origins=general,extension&include_builtin=true
+GET /api/v1/system/engines?capability_groups=storage,compute&engine_origins=general,extension&include_builtin=true
 ```
 
 **查询参数**：
-- `page`（可选，默认 `1`）- 页码
-- `page_size`（可选，默认 `10`）- 每页数量
 - `engine_type`（可选）- 按类型过滤
 - `capability_groups`（可选）- 按能力分组过滤，支持 `storage`、`compute`，多个值以逗号分隔
 - `engine_origins`（可选）- 按来源过滤，支持 `general`、`extension`，多个值以逗号分隔
 - `include_builtin`（可选，默认 `true`）- 是否包含内置引擎
 - `lifecycle_states`（可选，默认 `active`）- 按生命周期过滤，支持 `active`、`disabled`、`deleting`，多个值以逗号分隔
 
-过滤在分页前执行，响应中的 `data`、`total` 和 `total_pages` 均以过滤后的结果集为准。
+响应始终是过滤后的完整引擎数组。System 管理页面需要分页展示时，在前端对该数组分页，不改变本接口契约。
 
 **响应示例**：
 ```json
-{
-  "data": [
-    {
-      "id": 1,
-      "tenant_id": 1,
-      "name": "生产PostgreSQL",
-      "engine_type": "postgresql",
-      "engine_origin": "general",
-      "connection_info": {
-        "host": "localhost",
-        "port": 5432,
-        "username": "admin",
-        "password": "******",
-        "database": "production"
-      },
-      "lifecycle_state": "active",
-      "connection_status": "online",
-      "last_check_at": "2026-01-01T10:00:00Z"
-    }
-  ],
-  "total": 1,
-  "page": 1,
-  "page_size": 10,
-  "total_pages": 1
-}
+[
+  {
+    "id": 1,
+    "tenant_id": 1,
+    "name": "生产PostgreSQL",
+    "engine_type": "postgresql",
+    "engine_origin": "general",
+    "connection_info": {
+      "host": "localhost",
+      "port": 5432,
+      "username": "admin",
+      "password": "******",
+      "database": "production"
+    },
+    "lifecycle_state": "active",
+    "connection_status": "online",
+    "last_check_at": "2026-01-01T10:00:00Z"
+  }
+]
 ```
 
 #### 获取单个引擎
@@ -495,7 +487,7 @@ GET /api/v1/system/engines?engine_type={type}
 **特性**：
 - Tenant 只取自 Service Access Token 的 AuthContext；
 - User 与 Service Principal 都返回脱敏 `connection_info`；
-- 响应使用分页对象 `{data,total,page,page_size,total_pages}`。
+- 响应始终是过滤后的完整引擎数组。
 
 #### 引擎详情
 ```

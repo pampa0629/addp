@@ -124,7 +124,7 @@ const elementCache = ref({})
 const fetchEngines = async () => {
   try {
     const res = await systemEngineAPI.list()
-    engines.value = res.data || res || []
+    engines.value = res
   } catch {
     engines.value = []
   }

@@ -146,7 +146,7 @@ Header 中的群组 Tab（数据准备、数据治理、开发监控……）是
 
 ```js
 const [engines, datasets, services, tasks] = await Promise.allSettled([
-  api.get('/api/v1/system/engines?page_size=1'),
+  api.get('/api/v1/system/engines'),
   api.get('/api/v1/meta/items?page_size=1'),          // 数据集总数
   api.get('/api/v1/service/services?page_size=1'),
   api.get('/api/v1/monitor/executions?status=running&page_size=1'),

@@ -1129,7 +1129,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "先按当前 Tenant、引擎类型、能力分组、来源和内置状态过滤，再返回脱敏分页结果；User 与 Service Principal 使用同一契约 | Filter by current tenant, engine type, capability group, origin, and builtin state, then return a masked paginated result through the same contract for users and service principals",
+                "description": "按当前 Tenant、引擎类型、能力分组、来源、内置状态和生命周期过滤，返回完整脱敏数组；System 管理页面在前端分页；User 与 Service Principal 使用同一契约 | Filter by current tenant, engine type, capability group, origin, builtin state, and lifecycle, then return the complete masked array; the System management page paginates client-side; users and service principals share the same contract",
                 "consumes": [
                     "application/json"
                 ],
@@ -1141,20 +1141,6 @@
                 ],
                 "summary": "获取引擎列表 | List engines",
                 "parameters": [
-                    {
-                        "type": "integer",
-                        "default": 1,
-                        "description": "页码 | Page number",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 10,
-                        "description": "每页数量 | Page size",
-                        "name": "page_size",
-                        "in": "query"
-                    },
                     {
                         "type": "string",
                         "description": "引擎类型 | Engine type",
@@ -1190,25 +1176,11 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "完整引擎数组 | Complete engine array",
                         "schema": {
-                            "type": "object",
-                            "properties": {
-                                "data": {
-                                    "type": "array",
-                                    "items": {
-                                        "$ref": "#/definitions/github_com_addp_system_internal_models.Engine"
-                                    }
-                                },
-                                "page": {
-                                    "type": "integer"
-                                },
-                                "page_size": {
-                                    "type": "integer"
-                                },
-                                "total": {
-                                    "type": "integer"
-                                }
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_system_internal_models.EngineResponse"
                             }
                         }
                     },

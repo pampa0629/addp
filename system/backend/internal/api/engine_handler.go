@@ -76,26 +76,23 @@ func (h *EngineHandler) Create(c *gin.Context) {
 
 // List godoc
 // @Summary      获取引擎列表 | List engines
-// @Description  先按当前 Tenant、引擎类型、能力分组、来源和内置状态过滤，再返回脱敏分页结果；User 与 Service Principal 使用同一契约 | Filter by current tenant, engine type, capability group, origin, and builtin state, then return a masked paginated result through the same contract for users and service principals
+// @Description  按当前 Tenant、引擎类型、能力分组、来源、内置状态和生命周期过滤，返回完整脱敏数组；System 管理页面在前端分页；User 与 Service Principal 使用同一契约 | Filter by current tenant, engine type, capability group, origin, builtin state, and lifecycle, then return the complete masked array; the System management page paginates client-side; users and service principals share the same contract
 // @Tags         引擎管理 | Engine Management
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        page query int false "页码 | Page number" default(1)
-// @Param        page_size query int false "每页数量 | Page size" default(10)
 // @Param        engine_type query string false "引擎类型 | Engine type"
 // @Param        capability_groups query string false "能力分组，逗号分隔：storage,compute | Comma-separated capability groups: storage,compute"
 // @Param        engine_origins query string false "引擎来源，逗号分隔：general,extension | Comma-separated engine origins: general,extension"
 // @Param        include_builtin query bool false "是否包含内置引擎 | Whether to include builtin engines" default(true)
 // @Param        lifecycle_states query string false "生命周期，逗号分隔：active,disabled,deleting | Comma-separated lifecycle states: active,disabled,deleting" default(active)
-// @Success      200 {object} object{data=[]models.Engine,total=int,page=int,page_size=int}
+// @Success      200 {array} models.EngineResponse "完整引擎数组 | Complete engine array"
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.engine.read"]
 // @Router       /engines [get]
 func (h *EngineHandler) List(c *gin.Context) {
-	page, pageSize := commonapi.ParsePagination(c)
 	filter := service.EngineListFilter{
 		EngineType:       c.Query("engine_type"),
 		CapabilityGroups: splitCommaSeparatedQuery(c.Query("capability_groups")),
@@ -109,7 +106,7 @@ func (h *EngineHandler) List(c *gin.Context) {
 		respondIAMError(c, err)
 		return
 	}
-	engines, total, err := h.engineService.List(page, pageSize, filter, tenantID)
+	engines, err := h.engineService.List(filter, tenantID)
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidEngineLifecycle) {
 			commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgEngineLifecycleInvalid))
@@ -118,7 +115,7 @@ func (h *EngineHandler) List(c *gin.Context) {
 		commonapi.RespondError(c, 500, err.Error())
 		return
 	}
-	commonapi.RespondPaginated(c, toEngineResponses(engines), total, page, pageSize)
+	c.JSON(http.StatusOK, toEngineResponses(engines))
 }
 
 // ListRuntimeDescriptors godoc

@@ -189,36 +189,24 @@ func (s *EngineService) GetByID(id, tenantID uint) (*models.Engine, error) {
 	return s.sanitizeResource(engine), nil
 }
 
-func (s *EngineService) List(page, pageSize int, filter EngineListFilter, tenantID uint) ([]models.Engine, int64, error) {
+func (s *EngineService) List(filter EngineListFilter, tenantID uint) ([]models.Engine, error) {
 	lifecycleStates, err := normalizeLifecycleStateFilter(filter.LifecycleStates)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	engines, err := s.repo.ListVisibleByTenant(tenantID, filter.EngineType, lifecycleStates)
 
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	filtered := filterEngines(engines, filter)
-	total := int64(len(filtered))
-	start := (page - 1) * pageSize
-	if start > len(filtered) {
-		start = len(filtered)
-	}
-	end := start + pageSize
-	if end > len(filtered) {
-		end = len(filtered)
+	sanitized := make([]models.Engine, 0, len(filtered))
+	for i := range filtered {
+		sanitized = append(sanitized, *s.sanitizeResource(&filtered[i]))
 	}
 
-	// 只对过滤后的当前页数据脱敏。
-	pageEngines := filtered[start:end]
-	sanitized := make([]models.Engine, 0, len(pageEngines))
-	for i := range pageEngines {
-		sanitized = append(sanitized, *s.sanitizeResource(&pageEngines[i]))
-	}
-
-	return sanitized, total, nil
+	return sanitized, nil
 }
 
 func (s *EngineService) ListRuntimeDescriptors(

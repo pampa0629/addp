@@ -13,6 +13,7 @@ import (
 
 	engineplugin "github.com/addp/common/engine/plugin"
 	sharedauth "github.com/addp/common/middleware/auth"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 	"github.com/addp/system/internal/service"
@@ -50,21 +51,47 @@ func TestListEnginesAcceptsAllLifecycleStates(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200, body=%s", rec.Code, rec.Body.String())
 	}
-	var response struct {
-		Data     []models.EngineResponse `json:"data"`
-		Total    int64                   `json:"total"`
-		Page     int                     `json:"page"`
-		PageSize int                     `json:"page_size"`
-	}
+	var response []models.EngineResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if response.Total != 0 || len(response.Data) != 0 || response.Page != 1 || response.PageSize != 10 {
-		t.Fatalf("response = %#v, want empty first page", response)
+	if len(response) != 0 {
+		t.Fatalf("response = %#v, want empty list", response)
 	}
 }
 
-func newEngineListTestRouter(t *testing.T) *gin.Engine {
+func TestListEnginesReturnsCompleteArray(t *testing.T) {
+	tenantID := uint(3)
+	engines := make([]models.Engine, 12)
+	for i := range engines {
+		engines[i] = models.Engine{
+			TenantID:       &tenantID,
+			Name:           "engine-" + strconv.Itoa(i+1),
+			EngineType:     "postgresql",
+			EngineOrigin:   "general",
+			ConnectionInfo: models.ConnectionInfo{},
+			LifecycleState: models.EngineLifecycleActive,
+		}
+	}
+	router := newEngineListTestRouter(t, engines...)
+
+	req := httptest.NewRequest(http.MethodGet, "/engines", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", rec.Code, rec.Body.String())
+	}
+	var response []models.EngineResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v, body=%s", err, rec.Body.String())
+	}
+	if len(response) != len(engines) {
+		t.Fatalf("response = %#v, want all %d engines in one response", response, len(engines))
+	}
+}
+
+func newEngineListTestRouter(t *testing.T, engines ...models.Engine) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
@@ -74,9 +101,15 @@ func newEngineListTestRouter(t *testing.T) *gin.Engine {
 	if err := db.AutoMigrate(&models.Engine{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
+	if len(engines) > 0 {
+		if err := db.Create(&engines).Error; err != nil {
+			t.Fatalf("seed engines: %v", err)
+		}
+	}
 
 	handler := NewEngineHandler(service.NewEngineService(repository.NewEngineRepository(db), nil, nil))
 	router := gin.New()
+	router.Use(commoni18n.I18nMiddleware())
 	router.Use(func(c *gin.Context) {
 		if err := sharedauth.SetAuthContextForGin(c, testIAMActorContext("tenant")); err != nil {
 			t.Fatal(err)

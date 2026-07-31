@@ -138,12 +138,14 @@
 
       <el-pagination
         v-model:current-page="currentPage"
-        :page-size="pageSize"
+        v-model:page-size="pageSize"
+        :page-sizes="[10, 20, 50, 100]"
         :total="total"
-        layout="total, prev, pager, next"
+        layout="total, sizes, prev, pager, next"
         style="margin-top: 20px; justify-content: flex-end"
-        @current-change="loadEngines"
+        @size-change="handlePageSizeChange"
       />
+
     </el-card>
 
     <!-- 新增/编辑对话框 -->
@@ -671,14 +673,16 @@ import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { StorageEngineForm, requestConsoleBridge } from '@common-ui'
 import { useI18n } from 'vue-i18n'
+import { paginateEngines } from '../utils/engineList'
 
 const { t } = useI18n()
 
-const engines = ref([])
+const allEngines = ref([])
 const loading = ref(false)
 const currentPage = ref(1)
 const pageSize = ref(10)
-const total = ref(0)
+const total = computed(() => allEngines.value.length)
+const engines = computed(() => paginateEngines(allEngines.value, currentPage.value, pageSize.value))
 const deletionDialogVisible = ref(false)
 const deletionEngine = ref(null)
 const deletionAssessment = ref(null)
@@ -1054,6 +1058,10 @@ const handleFilterChange = () => {
   loadEngines()
 }
 
+const handlePageSizeChange = () => {
+  currentPage.value = 1
+}
+
 const getEngineTypeLabel = (type, engine = null) => {
   if (engine?.name && engine.engine_type === type) {
     return type
@@ -1219,19 +1227,22 @@ const loadEngines = async () => {
     const capabilityGroups = ['storage', 'compute'].filter(value => selectedCategories.value.includes(value))
     const engineOrigins = ['general', 'extension'].filter(value => selectedCategories.value.includes(value))
     if (capabilityGroups.length === 0 && engineOrigins.length === 0) {
-      engines.value = []
-      total.value = 0
+      allEngines.value = []
       return
     }
 
-    const response = await enginesAPI.list(currentPage.value, pageSize.value, {
+    const response = await enginesAPI.list({
       capabilityGroups,
       engineOrigins,
       lifecycleStates: ['active', 'disabled', 'deleting'],
       includeBuiltin: selectedCategories.value.includes('builtin')
     })
-    engines.value = response?.data || []
-    total.value = response?.total || 0
+    if (!Array.isArray(response)) {
+      throw new TypeError('System engine list response must be an array')
+    }
+    allEngines.value = response
+    const lastPage = Math.max(1, Math.ceil(response.length / pageSize.value))
+    currentPage.value = Math.min(currentPage.value, lastPage)
   } catch (error) {
     ElMessage.error(t('system.engine.msg.loadFailed'))
     console.error(error)
@@ -1796,7 +1807,7 @@ let deletionPollTimer = null
 onMounted(() => {
 	loadEngines()
 	deletionPollTimer = window.setInterval(() => {
-		if (engines.value.some(engine => engine.lifecycle_state === 'deleting')) {
+		if (allEngines.value.some(engine => engine.lifecycle_state === 'deleting')) {
 			loadEngines()
 		}
 	}, 3000)

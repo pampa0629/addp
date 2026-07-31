@@ -10,17 +10,15 @@ class SystemClient(BaseClient):
     async def list_engines(
         self,
         tenant_id: Optional[int] = None,
-        page: int = 1,
-        page_size: int = 100,
     ) -> List[Dict[str, Any]]:
         """获取引擎列表"""
-        params: Dict[str, Any] = {"page": page, "page_size": page_size}
+        params: Dict[str, Any] = {}
         if tenant_id:
             params["tenant_id"] = tenant_id
         resp = await self.get("/api/v1/system/engines", params=params)
-        if not isinstance(resp, dict) or not isinstance(resp.get("data"), list):
-            raise ValueError("system engines response must be a paginated object with data")
-        return resp["data"]
+        if not isinstance(resp, list):
+            raise ValueError("system engines response must be a list")
+        return resp
 
     async def get_authorization_context(self) -> Dict[str, Any]:
         """Resolve the current user access token through System AuthContext."""

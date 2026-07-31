@@ -716,7 +716,7 @@ onMounted(async () => {
   // 加载存储引擎列表（SQL 模式下使用）
   try {
     const response = await queryServiceAPI.getStorageEngines()
-    engines.value = response?.data || []
+    engines.value = response
   } catch (error) {
     console.error('[QueryServiceForm] 加载存储引擎失败:', error)
     ElMessage.warning(t('service.query.loadEnginesFailed'))

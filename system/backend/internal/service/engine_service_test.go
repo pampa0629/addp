@@ -23,7 +23,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestListFiltersBeforePagination(t *testing.T) {
+func TestListReturnsCompleteFilteredResult(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -76,7 +76,7 @@ func TestListFiltersBeforePagination(t *testing.T) {
 	}
 
 	engineService := NewEngineService(engineRepo, nil, nil)
-	engines, total, err := engineService.List(1, 10, EngineListFilter{
+	engines, err := engineService.List(EngineListFilter{
 		CapabilityGroups: []string{"compute"},
 		EngineOrigins:    []string{"extension"},
 		IncludeBuiltin:   true,
@@ -84,11 +84,11 @@ func TestListFiltersBeforePagination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list filtered engines: %v", err)
 	}
-	if total != 4 || len(engines) != 4 {
-		t.Fatalf("filtered total/page size = %d/%d, want 4/4", total, len(engines))
+	if len(engines) != 4 {
+		t.Fatalf("filtered list size = %d, want 4", len(engines))
 	}
 
-	engines, total, err = engineService.List(1, 10, EngineListFilter{
+	engines, err = engineService.List(EngineListFilter{
 		CapabilityGroups: []string{"compute"},
 		EngineOrigins:    []string{"extension"},
 		IncludeBuiltin:   false,
@@ -96,8 +96,8 @@ func TestListFiltersBeforePagination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list filtered non-builtin engines: %v", err)
 	}
-	if total != 3 || len(engines) != 3 {
-		t.Fatalf("non-builtin filtered total/page size = %d/%d, want 3/3", total, len(engines))
+	if len(engines) != 3 {
+		t.Fatalf("non-builtin filtered list size = %d, want 3", len(engines))
 	}
 }
 

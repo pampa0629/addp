@@ -141,10 +141,10 @@ func TestSystemServiceClientUsesTenantAndPlatformBearerWithoutLegacyHeaders(t *t
 	}
 }
 
-func TestSystemServiceClientListsEveryEnginePage(t *testing.T) {
+func TestSystemServiceClientListsEveryEngine(t *testing.T) {
 	t.Parallel()
 
-	requestedPages := make([]int, 0, 3)
+	engineRequests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/system/oauth/token":
@@ -155,20 +155,15 @@ func TestSystemServiceClientListsEveryEnginePage(t *testing.T) {
 			if r.Header.Get("Authorization") != "Bearer addp_at_tenant_7" {
 				t.Fatalf("Authorization = %q", r.Header.Get("Authorization"))
 			}
-			page, err := strconv.Atoi(r.URL.Query().Get("page"))
-			if err != nil || page < 1 || r.URL.Query().Get("page_size") != "100" {
-				t.Fatalf("unexpected pagination query: %s", r.URL.RawQuery)
+			if r.URL.RawQuery != "" {
+				t.Fatalf("unexpected engine list query: %s", r.URL.RawQuery)
 			}
-			requestedPages = append(requestedPages, page)
-			start := (page - 1) * 100
-			end := min(start+100, 205)
-			data := make([]models.Engine, 0, max(0, end-start))
-			for index := start; index < end; index++ {
+			engineRequests++
+			data := make([]models.Engine, 0, 205)
+			for index := 0; index < 205; index++ {
 				data = append(data, models.Engine{ID: uint(index + 1)})
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"data": data, "total": 205, "page": page, "page_size": 100,
-			})
+			_ = json.NewEncoder(w).Encode(data)
 		default:
 			http.NotFound(w, r)
 		}
@@ -187,8 +182,8 @@ func TestSystemServiceClientListsEveryEnginePage(t *testing.T) {
 	if len(engines) != 205 || engines[0].ID != 1 || engines[204].ID != 205 {
 		t.Fatalf("engines length=%d first=%d last=%d", len(engines), engines[0].ID, engines[len(engines)-1].ID)
 	}
-	if len(requestedPages) != 3 || requestedPages[0] != 1 || requestedPages[1] != 2 || requestedPages[2] != 3 {
-		t.Fatalf("requested pages = %v", requestedPages)
+	if engineRequests != 1 {
+		t.Fatalf("engine requests = %d, want 1", engineRequests)
 	}
 }
 

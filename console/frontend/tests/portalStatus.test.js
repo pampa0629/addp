@@ -5,7 +5,9 @@ import { fetchPortalStatus } from '../src/utils/portalStatus'
 describe('fetchPortalStatus', () => {
   it('requests only status APIs allowed by the current AuthContext permissions', async () => {
     const client = {
-      get: vi.fn(async url => ({ data: { total: url.length } }))
+      get: vi.fn(async url => url === '/system/engines'
+        ? [{ id: 1 }, { id: 2 }]
+        : { data: { total: url.length } })
     }
 
     const status = await fetchPortalStatus(client, [
@@ -14,10 +16,10 @@ describe('fetchPortalStatus', () => {
     ])
 
     expect(client.get).toHaveBeenCalledTimes(2)
-    expect(client.get).toHaveBeenNthCalledWith(1, '/system/engines?page_size=1')
+    expect(client.get).toHaveBeenNthCalledWith(1, '/system/engines')
     expect(client.get).toHaveBeenNthCalledWith(2, '/monitor/executions?status=running&page_size=1')
     expect(status).toEqual({
-      engines: '/system/engines?page_size=1'.length,
+      engines: 2,
       datasets: null,
       services: null,
       tasks: '/monitor/executions?status=running&page_size=1'.length

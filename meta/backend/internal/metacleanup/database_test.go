@@ -211,9 +211,7 @@ func newMetaCleanupSystemServer(t *testing.T, engines []commonModels.Engine) *ht
 			t.Error("legacy authentication header was sent")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]interface{}{
-			"data": engines, "total": len(engines), "page": 1, "page_size": 100,
-		}); err != nil {
+		if err := json.NewEncoder(w).Encode(engines); err != nil {
 			t.Errorf("encode engines: %v", err)
 		}
 	}))
