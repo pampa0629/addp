@@ -22,6 +22,27 @@ addp --version
 
 GitHub Release 是当前唯一正式分发路径。也可以用 `python3 -m venv` 和该 wheel 安装到隔离环境；正式安装不使用本地源码构建、editable 源码目录或仓库内 `.venv`。PyPI 或私有包仓库待账号、权限和发布策略明确后另行设计，不与当前路径并存。
 
+### CLI 升级与卸载
+
+升级时先把上面的 `RELEASE` 改为目标版本，重新下载并验证该 GitHub Release 的 wheel 和 SHA-256，再覆盖现有 pipx 环境：
+
+```bash
+pipx install --force "./${WHEEL}"
+addp --version
+addp auth status
+```
+
+当前没有 PyPI 索引版本，不能假设 `pipx upgrade` 会发现新的 GitHub Release。`pipx install --force` 会更新现有 `addp-common` 隔离环境，OS Keychain 中按 ADDP Base URL 保存的登录会话不属于 Python 虚拟环境；升级后通过 `addp auth status` 实际刷新并验证会话。
+
+卸载前必须先撤销 OAuth 会话并删除 Keychain 中的 Refresh Token，再移除 pipx 环境：
+
+```bash
+addp auth logout
+pipx uninstall addp-common
+```
+
+`pipx uninstall` 只删除 Python 环境和 `addp` 命令，不代替 OAuth 撤销。如果 `addp auth logout` 因 System 暂时不可用而失败，应在服务恢复后先完成退出，不要直接把遗留凭据改存到文件、环境变量或其他旁路。
+
 ### macOS Keychain 首次授权
 
 macOS 首次保存或读取 CLI Refresh Token 时，可能显示“Python 想要访问你的钥匙串中的密码 `addp-cli`”。此处应在系统弹窗中输入当前用户的“登录”钥匙串密码，通常就是 macOS 登录密码；它不是 ADDP 账号密码，也不应输入终端、浏览器授权页或发送给其他人。
