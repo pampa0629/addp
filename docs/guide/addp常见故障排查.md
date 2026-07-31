@@ -122,6 +122,67 @@ bash scripts/dev/stop.sh
 
 ---
 
+## CLI 问题
+
+### 1. macOS 询问 Python 访问 `addp-cli` 钥匙串密码
+
+#### 问题现象
+
+执行 `addp auth login`、`addp auth status` 或需要刷新登录会话的 Tool 命令时，macOS 显示系统弹窗：
+
+```text
+Python 想要访问你的钥匙串中的密码“addp-cli”。
+若要给予许可，请输入“登录”钥匙串的密码。
+```
+
+选择“拒绝”或未通过系统验证后，CLI 返回：
+
+```json
+{"error":{"code":"authentication_unavailable","message":"无法访问操作系统凭据存储"}}
+```
+
+登录阶段可能使用 `authentication_failed`，但消息相同。
+
+#### 根本原因
+
+正式 `addp` CLI 由 Python wheel 安装并通过 macOS Keychain 保存 Refresh Token。macOS 会按请求访问钥匙串条目的应用身份实施访问控制；首次访问已有条目，或 Python、pipx 环境、可执行文件身份发生变化后，系统可能要求当前用户再次确认。弹窗中的请求方因此显示为 `Python`。
+
+这是 macOS 对“登录”钥匙串的本地授权，不是 ADDP OAuth 登录、ADDP 账号密码或 System 服务故障。OAuth 主路径和凭据存储边界不变：Refresh Token 只进入 OS Keychain，Access Token 只存在于当前进程内存。
+
+#### 正确处理
+
+1. 确认弹窗来自 macOS，访问的条目名是 `addp-cli`，当前执行的命令确实是已安装的 `addp` CLI。
+2. 只在该系统弹窗中输入当前 macOS 用户的“登录”钥匙串密码，通常就是系统登录密码；不要把密码输入终端或浏览器授权页。
+3. 正常首次使用选择“允许”完成单次授权。项目不默认建议对通用 `Python` 进程选择“始终允许”。
+4. 重新执行状态检查：
+
+   ```bash
+   addp --version
+   addp auth status
+   ```
+
+5. 如果状态检查正常执行但返回 `authenticated:false`，说明此前登录未能保存 Refresh Token，重新执行：
+
+   ```bash
+   addp auth login
+   addp auth status
+   ```
+
+6. 完成临时验收后需要撤销会话时，使用正式退出命令：
+
+   ```bash
+   addp auth logout
+   ```
+
+#### 禁止的处理方式
+
+- 不使用 `security find-generic-password -w` 等命令把 Refresh Token 输出到终端。
+- 不把 Refresh Token 复制到文件、环境变量、命令参数或日志。
+- 不删除整个“登录”钥匙串，也不把删除 `addp-cli` 条目作为常规授权处理。
+- 不配置明文文件 Keyring 降级，不新增手工 Token、密码、Client Secret 或 API Key 登录路径。
+
+---
+
 ## 前端问题
 
 ### 1. Manager 数据预览显示"暂无数据"（双重 .data 访问问题）

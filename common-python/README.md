@@ -22,6 +22,12 @@ addp --version
 
 GitHub Release 是当前唯一正式分发路径。也可以用 `python3 -m venv` 和该 wheel 安装到隔离环境；正式安装不使用本地源码构建、editable 源码目录或仓库内 `.venv`。PyPI 或私有包仓库待账号、权限和发布策略明确后另行设计，不与当前路径并存。
 
+### macOS Keychain 首次授权
+
+macOS 首次保存或读取 CLI Refresh Token 时，可能显示“Python 想要访问你的钥匙串中的密码 `addp-cli`”。此处应在系统弹窗中输入当前用户的“登录”钥匙串密码，通常就是 macOS 登录密码；它不是 ADDP 账号密码，也不应输入终端、浏览器授权页或发送给其他人。
+
+正常首次使用选择“允许”即可，本项目不默认建议对通用 `Python` 进程选择“始终允许”。如果选择“拒绝”，CLI 会返回“无法访问操作系统凭据存储”，不会降级到明文文件。重新执行原命令并允许访问；如果 `addp auth status` 随后返回 `authenticated:false`，说明先前登录没有保存 Refresh Token，需要重新执行 `addp auth login`。Python、pipx 环境或可执行文件身份变化后，macOS 可能再次询问。完整排查步骤见 [ADDP 常见故障排查指南](../docs/guide/addp常见故障排查.md#1-macos-询问-python-访问-addp-cli-钥匙串密码)。
+
 其他 ADDP Python 模块在仓库内开发时继续通过各自依赖声明引用 `../../common-python`，不把 CLI wheel 当作服务运行时部署机制。
 
 ## 使用示例
