@@ -32,7 +32,15 @@
       <el-table-column :label="t('orchestrator.orchestrationList.colActions')" width="300">
         <template #default="scope">
           <el-button size="small" @click="handleEdit(scope.row)">{{ t('orchestrator.orchestrationList.editBtn') }}</el-button>
-          <el-button size="small" type="success" @click="handleExecute(scope.row)">{{ t('orchestrator.orchestrationList.executeBtn') }}</el-button>
+          <el-button
+            size="small"
+            type="success"
+            :loading="executingId === scope.row.id"
+            :disabled="executingId !== null"
+            @click="handleExecute(scope.row)"
+          >
+            {{ t('orchestrator.orchestrationList.executeBtn') }}
+          </el-button>
           <el-button size="small" type="info" @click="handleViewExecutions(scope.row)">{{ t('orchestrator.orchestrationList.recordsBtn') }}</el-button>
           <el-button size="small" type="danger" @click="handleDelete(scope.row)">{{ t('orchestrator.orchestrationList.deleteBtn') }}</el-button>
         </template>
@@ -53,6 +61,7 @@ const { t } = useI18n()
 const router = useRouter()
 const orchestrations = ref([])
 const loading = ref(false)
+const executingId = ref(null)
 
 onMounted(() => {
   loadOrchestrations()
@@ -79,10 +88,26 @@ function handleEdit(row) {
 
 async function handleExecute(row) {
   try {
+    await ElMessageBox.confirm(
+      t('orchestrator.orchestrationList.executeConfirmMessage', { name: row.name }),
+      t('orchestrator.orchestrationList.executeConfirmTitle'),
+      {
+        type: 'warning',
+        customClass: 'addp-message-box',
+        confirmButtonText: t('orchestrator.orchestrationList.executeConfirmAction'),
+        cancelButtonText: t('orchestrator.orchestrationList.executeConfirmCancel')
+      }
+    )
+
+    executingId.value = row.id
     await orchestrationAPI.execute(row.id)
     ElMessage.success(t('orchestrator.orchestrationList.executeSuccess'))
   } catch (error) {
-    ElMessage.error(t('orchestrator.orchestrationList.executeFailed'))
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(t('orchestrator.orchestrationList.executeFailed'))
+    }
+  } finally {
+    executingId.value = null
   }
 }
 
@@ -92,9 +117,17 @@ function handleViewExecutions(row) {
 
 async function handleDelete(row) {
   try {
-    await ElMessageBox.confirm(t('orchestrator.orchestrationList.deleteConfirm'), t('orchestrator.orchestrationList.deleteWarning'), {
-      type: 'warning'
-    })
+    await ElMessageBox.confirm(
+      t('orchestrator.orchestrationList.deleteConfirm'),
+      t('orchestrator.orchestrationList.deleteWarning'),
+      {
+        type: 'warning',
+        customClass: 'addp-message-box',
+        confirmButtonText: t('orchestrator.orchestrationList.deleteConfirmAction'),
+        cancelButtonText: t('orchestrator.orchestrationList.deleteConfirmCancel'),
+        confirmButtonClass: 'el-button--danger'
+      }
+    )
 
     await orchestrationAPI.delete(row.id)
     ElMessage.success(t('orchestrator.orchestrationList.deleteSuccess'))

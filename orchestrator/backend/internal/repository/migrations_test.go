@@ -103,7 +103,7 @@ func openOrchestratorMigrationIntegrationDB(t *testing.T) *gorm.DB {
 		orchestratorMigrationIntegrationEnv("ADDP_TEST_POSTGRES_PORT", "15432"),
 		orchestratorMigrationIntegrationEnv("ADDP_TEST_POSTGRES_USER", "addp"),
 		orchestratorMigrationIntegrationEnv("ADDP_TEST_POSTGRES_PASSWORD", "addp_password"),
-		orchestratorMigrationIntegrationEnv("ADDP_TEST_POSTGRES_DATABASE", "addp"),
+		orchestratorMigrationIntegrationEnv("ADDP_TEST_POSTGRES_DATABASE", "addp_test"),
 		orchestratorMigrationIntegrationEnv("ADDP_TEST_POSTGRES_SSLMODE", "disable"),
 	)
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})

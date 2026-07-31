@@ -1,5 +1,9 @@
 <template>
   <div class="dag-editor">
+    <StatusAnnouncer
+      :label="t('orchestrator.dagEditor.navigationStatusLabel')"
+      :message="navigationAnnouncement"
+    />
     <div class="toolbar">
       <div class="toolbar-left">
         <el-tooltip :content="t('orchestrator.dagEditor.undo')">
@@ -46,6 +50,10 @@
     <div
       id="dag-container"
       ref="container"
+      class="addp-dag-focus-region"
+      role="region"
+      :aria-label="t('orchestrator.dagEditor.canvasAriaLabel')"
+      aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Enter Delete Escape"
       tabindex="0"
       @dragover.prevent
       @drop="handleDrop"
@@ -53,7 +61,11 @@
     ></div>
 
     <!-- 节点配置抽屉 -->
-    <el-drawer v-model="drawerVisible" :title="t('orchestrator.dagEditor.drawerTitle')" size="40%">
+    <el-drawer
+      v-model="drawerVisible"
+      :title="t('orchestrator.dagEditor.drawerTitle')"
+      size="min(520px, calc(100vw - 12px))"
+    >
       <el-form :model="currentNode" label-width="100px">
         <el-form-item :label="t('orchestrator.dagEditor.stepNameLabel')">
           <el-input v-model="currentNode.name" :placeholder="t('orchestrator.dagEditor.stepNamePlaceholder')"></el-input>
@@ -94,6 +106,29 @@
 
         <el-form-item :label="t('orchestrator.dagEditor.timeoutLabel')">
           <el-input-number v-model="currentNode.timeout" :min="0" :max="3600"></el-input-number>
+        </el-form-item>
+
+        <el-divider content-position="left">{{ t('orchestrator.dagEditor.dependenciesLabel') }}</el-divider>
+        <el-form-item :label="t('orchestrator.dagEditor.predecessorsLabel')">
+          <el-select
+            v-model="currentDependencyIds"
+            multiple
+            clearable
+            filterable
+            :placeholder="t('orchestrator.dagEditor.predecessorsPlaceholder')"
+            @change="applyCurrentDependencies"
+          >
+            <el-option
+              v-for="candidate in currentDependencyCandidates"
+              :key="candidate.node.id"
+              :label="dependencyOptionLabel(candidate.node)"
+              :value="candidate.node.id"
+              :disabled="candidate.disabled"
+            >
+              <span class="dependency-option-name">{{ candidate.node.name || candidate.node.label || candidate.node.id }}</span>
+              <span class="dependency-option-id">{{ candidate.node.id }}</span>
+            </el-option>
+          </el-select>
         </el-form-item>
 
         <template v-if="parameterEditorMode === 'structured'">
@@ -196,11 +231,14 @@ import {
   ZoomIn,
   ZoomOut
 } from '@element-plus/icons-vue'
-import { buildTaskOwnerUrl } from '@addp/common-frontend'
+import { buildTaskOwnerUrl, StatusAnnouncer } from '@addp/common-frontend'
 import {
+  createDAGKeyboardHandler,
   createDAGDirectEdgeBehavior,
   createDAGDragNodeBehavior,
   generateColor,
+  getDAGIncomingEdgeModels,
+  getDAGUpstreamCandidates,
   linkPointPort,
   useDAGClipboard,
   useDAGCore,
@@ -239,6 +277,7 @@ const emit = defineEmits(['update:steps', 'update:layout'])
 const container = ref(null)
 const drawerVisible = ref(false)
 const currentNode = ref({})
+const currentDependencyIds = ref([])
 const parametersStr = ref('')
 const structuredParameters = ref({})
 const parameterEditorMode = ref('json')
@@ -250,6 +289,7 @@ const lastStepsSignature = ref('')
 let nodeCopyCounter = 0
 let addedNodeCounter = 0
 let syncingNodeDraft = false
+let syncingDependencies = false
 const canvasColors = resolveCanvasColors()
 
 // 使用 composables
@@ -302,7 +342,18 @@ const { graph, initGraph, loadData } = useDAGCore(container, {
 })
 
 const { hasLoop } = useLoopDetection(graph)
-const { selectedItem, initSelectionListener, deleteSelected, clearGraph } = useDAGSelection(graph)
+const {
+  selectedItem,
+  initSelectionListener,
+  selectItem,
+  selectPreviousNode,
+  selectNextNode,
+  deleteSelected,
+  clearSelection,
+  clearGraph
+} = useDAGSelection(graph, {
+  focusTarget: container
+})
 const { canZoomIn, canZoomOut, zoomIn, zoomOut, fitView, autoLayout } = useDAGViewport(graph)
 const { captureLayout, applyNodePositions, restoreViewport } = useDAGLayout(graph)
 const { copiedNode, copy, paste } = useDAGClipboard(graph, { createNodeId: createCopiedNodeId })
@@ -318,6 +369,12 @@ const {
   restore: restoreGraphSnapshot
 })
 const canCopyNode = computed(() => selectedItem.value?.getType?.() === 'node')
+const navigationAnnouncement = computed(() => {
+  if (selectedItem.value?.getType?.() !== 'node') return ''
+  const model = selectedItem.value.getModel()
+  const name = model.name || model.label || model.provider || model.id
+  return t('orchestrator.dagEditor.nodeSelected', { name })
+})
 
 const currentOwnerEditUrl = computed(() => resolveNodeEditUrl(currentNode.value))
 const currentOwnerGraphId = computed(() => resolveNodeGraphId(currentNode.value))
@@ -335,6 +392,11 @@ const currentExecutionSchema = computed(() => {
   return executionSchemaIndex.value.get(taskTypeIndexKey(currentNode.value?.provider, currentNode.value?.taskType)) || null
 })
 const parameterFields = computed(() => executionSchemaFields(currentExecutionSchema.value))
+const currentDependencyCandidates = computed(() => getDAGUpstreamCandidates({
+  graph: graph.value,
+  targetId: currentNode.value?.id,
+  hasLoop
+}))
 
 watch(currentExecutionSchema, () => {
   if (drawerVisible.value) {
@@ -382,11 +444,12 @@ onMounted(async () => {
   graph.value.on('node:dblclick', handleNodeClick)
 
   // 边创建后的处理
-  graph.value.on('aftercreateedge', () => {
+  graph.value.on('aftercreateedge', ({ edge }) => {
     recordHistory()
     ElMessage.success(t('orchestrator.dagEditor.edgeCreated'))
     emitSteps()
     emitLayout()
+    syncCurrentDependencies(edge?.getModel?.()?.target)
   })
   graph.value.on('node:dragend', () => {
     recordHistory()
@@ -406,6 +469,7 @@ function handleNodeClick(evt) {
       graphId: resolveNodeGraphId(model),
       editUrl: resolveNodeEditUrl(model)
     }
+    syncCurrentDependencies(model.id, true)
     syncParameterEditors(model.parameters || {})
     drawerVisible.value = true
   })
@@ -458,6 +522,59 @@ function usesBooleanSwitch(field) {
   return field.required || Object.prototype.hasOwnProperty.call(field.schema, 'default')
 }
 
+function dependencyOptionLabel(node) {
+  const name = node?.name || node?.label || node?.id || ''
+  return name === node?.id ? name : `${name} (${node.id})`
+}
+
+function syncCurrentDependencies(changedTargetId = currentNode.value?.id, force = false) {
+  if (!force && changedTargetId !== currentNode.value?.id) return
+  syncingDependencies = true
+  currentDependencyIds.value = getDAGIncomingEdgeModels(graph.value, currentNode.value?.id)
+    .map(edge => edge.source)
+  syncingDependencies = false
+}
+
+function applyCurrentDependencies(sourceIds) {
+  if (syncingDependencies || !graph.value || !currentNode.value?.id) return
+  const targetId = currentNode.value.id
+  const nextSourceIds = [...new Set(sourceIds || [])]
+  const currentEdges = getDAGIncomingEdgeModels(graph.value, targetId)
+  const currentSourceIds = new Set(currentEdges.map(edge => edge.source))
+  const additions = nextSourceIds.filter(sourceId => !currentSourceIds.has(sourceId))
+
+  for (const sourceId of additions) {
+    const result = canCreateDependency({ sourceId, targetId })
+    if (result !== true) {
+      handleConnectionRejected({ reason: result })
+      syncCurrentDependencies(targetId, true)
+      return
+    }
+  }
+
+  const nextSourceIdSet = new Set(nextSourceIds)
+  graph.value.getEdges().forEach(edge => {
+    const model = edge.getModel()
+    if (model.target === targetId && !nextSourceIdSet.has(model.source)) {
+      graph.value.removeItem(edge, false)
+    }
+  })
+  additions.forEach(sourceId => {
+    graph.value.addItem('edge', {
+      source: sourceId,
+      target: targetId,
+      sourceAnchor: 1,
+      targetAnchor: 0
+    }, false)
+  })
+  graph.value.paint()
+  syncCurrentDependencies(targetId, true)
+  recordHistory()
+  emitSteps()
+  emitLayout()
+  ElMessage.success(t('orchestrator.dagEditor.dependenciesUpdated'))
+}
+
 function canCreateDependency({ sourceId, targetId }) {
   return validateDAGConnection({
     graph: graph.value,
@@ -476,12 +593,19 @@ function handleConnectionRejected({ reason }) {
 }
 
 function handleDelete() {
+  const selectedModel = selectedItem.value?.getModel?.()
   const itemType = selectedItem.value?.getType?.()
   if (deleteSelected()) {
     ElMessage.success(itemType === 'edge' ? t('orchestrator.dagEditor.edgeDeleted') : t('orchestrator.dagEditor.nodeDeleted'))
     recordHistory()
     emitSteps()
     emitLayout()
+    if (itemType === 'edge') syncCurrentDependencies(selectedModel?.target)
+    if (itemType === 'node' && selectedModel?.id === currentNode.value?.id) {
+      drawerVisible.value = false
+      currentNode.value = {}
+      currentDependencyIds.value = []
+    }
   }
 }
 
@@ -491,7 +615,13 @@ async function handleClear() {
     await ElMessageBox.confirm(
       t('orchestrator.dagEditor.clearConfirm'),
       t('orchestrator.dagEditor.clearBtn'),
-      { type: 'warning' }
+      {
+        type: 'warning',
+        customClass: 'addp-message-box',
+        confirmButtonText: t('orchestrator.dagEditor.clearConfirmAction'),
+        cancelButtonText: t('orchestrator.dagEditor.clearConfirmCancel'),
+        confirmButtonClass: 'el-button--danger'
+      }
     )
     clearGraph()
     recordHistory()
@@ -688,29 +818,33 @@ function handleDuplicate() {
   if (handleCopy()) handlePaste()
 }
 
-function handleKeydown(event) {
-  const modifier = event.metaKey || event.ctrlKey
-  const key = event.key.toLowerCase()
-  if (modifier && key === 'z') {
-    event.preventDefault()
-    event.shiftKey ? handleRedo() : handleUndo()
-  } else if (modifier && key === 'y') {
-    event.preventDefault()
-    handleRedo()
-  } else if (modifier && key === 'c') {
-    event.preventDefault()
-    handleCopy()
-  } else if (modifier && key === 'v') {
-    event.preventDefault()
-    handlePaste()
-  } else if (modifier && key === 'd') {
-    event.preventDefault()
-    handleDuplicate()
-  } else if (key === 'delete' || key === 'backspace') {
-    event.preventDefault()
-    handleDelete()
-  }
+function handleCancelSelection() {
+  if (!clearSelection()) return
+  drawerVisible.value = false
 }
+
+function handleKeyboardNodeSelection(selectNode) {
+  const item = selectNode()
+  if (!item) return
+  drawerVisible.value = false
+}
+
+function activateKeyboardSelection() {
+  if (selectedItem.value?.getType?.() === 'node') handleNodeClick({ item: selectedItem.value })
+}
+
+const handleKeydown = createDAGKeyboardHandler({
+  undo: handleUndo,
+  redo: handleRedo,
+  copy: handleCopy,
+  paste: handlePaste,
+  duplicate: handleDuplicate,
+  delete: handleDelete,
+  cancelSelection: handleCancelSelection,
+  selectPreviousNode: () => handleKeyboardNodeSelection(selectPreviousNode),
+  selectNextNode: () => handleKeyboardNodeSelection(selectNextNode),
+  activateSelection: activateKeyboardSelection
+})
 
 function handleZoomIn() {
   zoomIn()
@@ -750,10 +884,7 @@ function createCopiedNodeId(node) {
 }
 
 function selectGraphItem(item) {
-  graph.value.getNodes().forEach(node => graph.value.setItemState(node, 'selected', false))
-  graph.value.setItemState(item, 'selected', true)
-  selectedItem.value = item
-  container.value?.focus()
+  selectItem(item)
 }
 
 function stepsSignature(steps) {
@@ -952,12 +1083,28 @@ defineExpose({
   padding: 16px 0;
 }
 
+:deep(.el-form-item .el-select) {
+  width: 100%;
+}
+
+.dependency-option-name {
+  float: left;
+}
+
+.dependency-option-id {
+  float: right;
+  max-width: 48%;
+  overflow: hidden;
+  color: var(--addp-text-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 #dag-container {
   flex: 1;
   background: var(--addp-bg-secondary) !important;
   position: relative;
   overflow: hidden;
-  outline: none;
 }
 
 :deep(.el-alert--info) {

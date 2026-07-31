@@ -50,7 +50,12 @@
     </div>
 
     <!-- 执行详情对话框 -->
-    <el-dialog v-model="detailVisible" :title="t('orchestrator.executionRecords.detailDialogTitle')" width="800px">
+    <el-dialog
+      v-model="detailVisible"
+      class="addp-dialog"
+      :title="t('orchestrator.executionRecords.detailDialogTitle')"
+      width="min(800px, calc(100vw - 24px))"
+    >
       <div v-if="currentExecution" class="execution-detail">
         <div class="detail-actions">
           <el-button size="small" type="primary" @click="openExecutionInMonitor(currentExecution.execution_id)">

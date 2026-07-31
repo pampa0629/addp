@@ -6,6 +6,99 @@ const INTERACTION_ORCHESTRATION_ID = 'dag-interactions-e2e'
 const SOURCE_NODE_ID = 'source-step'
 const TARGET_NODE_ID = 'target-step'
 const TASK_LIBRARY_ORCHESTRATION_ID = 'task-library-e2e'
+const EXECUTION_ID = 31
+
+test.describe('responsive orchestration dialogs', () => {
+  test.use({ viewport: { width: 620, height: 560 }, colorScheme: 'dark' })
+
+  test('keeps editor dialogs visible and visually stable in a narrow window', async ({ page }) => {
+    await installMockBackend(page, createLayoutFixture())
+    await page.goto(`/orchestrations/${ORCHESTRATION_ID}/edit`)
+    await expect(page.getByRole('heading', { name: '编辑编排' })).toBeVisible()
+
+    await page.getByRole('button', { name: '保存', exact: true }).click()
+    const saveDialog = page.getByRole('dialog', { name: '保存编排信息', exact: true })
+    const saveSurface = visibleDialogSurface(page)
+    await expectDialogWithinViewport(page, saveSurface)
+    await expect(saveSurface.locator('.el-dialog__body')).toHaveCSS('overflow', 'auto')
+    await expect(saveSurface).toHaveScreenshot('orchestration-save-narrow.png', { animations: 'disabled' })
+    await saveDialog.getByRole('button', { name: '取消', exact: true }).click()
+
+    await page.getByRole('button', { name: '调度', exact: true }).click()
+    const scheduleDialog = page.getByRole('dialog', { name: '设置定时调度', exact: true })
+    const scheduleSurface = visibleDialogSurface(page)
+    await expectDialogWithinViewport(page, scheduleSurface)
+    await expect(scheduleSurface.locator('.el-dialog__body')).toHaveCSS('overflow', 'auto')
+    await expect(scheduleSurface).toHaveScreenshot('orchestration-schedule-narrow.png', { animations: 'disabled' })
+
+    await scheduleDialog.getByRole('button', { name: '自定义时间', exact: true }).click()
+    const dialogSurfaces = page.locator('.el-dialog.addp-dialog:visible')
+    await expect(dialogSurfaces).toHaveCount(2)
+    const customScheduleSurface = dialogSurfaces.last()
+    await expectDialogWithinViewport(page, customScheduleSurface)
+    await expect(customScheduleSurface.locator('.el-dialog__body')).toHaveCSS('overflow', 'auto')
+    await expect(customScheduleSurface).toHaveScreenshot('orchestration-custom-schedule-narrow.png', { animations: 'disabled' })
+    await customScheduleSurface.getByRole('button', { name: '取消', exact: true }).click()
+    await expect(dialogSurfaces).toHaveCount(1)
+    await scheduleDialog.getByRole('button', { name: '取消', exact: true }).click()
+
+    await page.getByRole('button', { name: '查看 JSON', exact: true }).click()
+    const jsonDialog = page.getByRole('dialog', { name: '编排 JSON 配置', exact: true })
+    const jsonSurface = visibleDialogSurface(page)
+    await expectDialogWithinViewport(page, jsonSurface)
+    await expect(jsonSurface.locator('.json-content')).toHaveCSS('overflow', 'auto')
+    await expect(jsonSurface).toHaveScreenshot('orchestration-json-narrow.png', { animations: 'disabled' })
+    await jsonDialog.getByRole('button', { name: '关闭', exact: true }).click()
+
+    await page.getByRole('button', { name: '清空', exact: true }).click()
+    const clearDialog = page.getByRole('dialog', { name: '清空', exact: true })
+    const clearSurface = page.locator('.el-message-box.addp-message-box:visible')
+    await expectDialogWithinViewport(page, clearSurface)
+    await expect(clearDialog.getByRole('button', { name: '取消', exact: true })).toBeVisible()
+    await expect(clearDialog.getByRole('button', { name: '清空', exact: true })).toHaveClass(/el-button--danger/)
+    await expect(clearSurface).toHaveScreenshot('orchestration-clear-confirm-narrow.png', { animations: 'disabled' })
+  })
+
+  test('keeps execution details readable in a narrow window', async ({ page }) => {
+    const execution = createExecutionFixture()
+    await installMockBackend(page, createLayoutFixture(), { executions: [execution] })
+    await page.goto(`/orchestrations/${ORCHESTRATION_ID}/executions`)
+    await expect(page.getByRole('heading', { name: '执行记录', exact: true })).toBeVisible()
+
+    await page.getByRole('button', { name: '详情', exact: true }).click()
+    const detailDialog = page.getByRole('dialog', { name: '执行详情', exact: true })
+    const detailSurface = visibleDialogSurface(page)
+    await expect(detailDialog.getByText(execution.execution_id, { exact: true })).toBeVisible()
+    await expectDialogWithinViewport(page, detailSurface)
+    await expect(detailSurface.locator('.el-dialog__body')).toHaveCSS('overflow', 'auto')
+    await expect(detailSurface).toHaveScreenshot('orchestration-execution-detail-narrow.png', { animations: 'disabled' })
+  })
+})
+
+test('confirms orchestration execution and locks duplicate submissions', async ({ page }) => {
+  const orchestration = createLayoutFixture()
+  const backend = await installMockBackend(page, orchestration, { deferExecute: true })
+  await page.goto('/orchestrations')
+  await expect(page.getByRole('heading', { name: '任务编排', exact: true })).toBeVisible()
+
+  const executeButton = page.locator('.orchestration-list').getByRole('button', { name: '执行', exact: true })
+  await executeButton.click()
+  let confirmDialog = page.getByRole('dialog', { name: '确认执行', exact: true })
+  await expect(confirmDialog).toContainText(`确定要执行编排“${orchestration.name}”吗？`)
+  await confirmDialog.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(confirmDialog).not.toBeVisible()
+  expect(backend.getExecuteRequestCount()).toBe(0)
+
+  await executeButton.click()
+  confirmDialog = page.getByRole('dialog', { name: '确认执行', exact: true })
+  await confirmDialog.getByRole('button', { name: '执行', exact: true }).click()
+  await expect.poll(() => backend.getExecuteRequestCount()).toBe(1)
+  await expect(executeButton).toBeDisabled()
+
+  backend.releaseExecute()
+  await expect(page.locator('.el-message').filter({ hasText: '编排已触发' })).toBeVisible()
+  await expect(executeButton).toBeEnabled()
+})
 
 test('persists node position and viewport across reload', async ({ page }) => {
   const orchestration = createLayoutFixture()
@@ -71,6 +164,98 @@ test('persists node position and viewport across reload', async ({ page }) => {
   expect(zoomWarnings).toEqual([])
 })
 
+test('keeps orchestration dialog and canvas focus predictable', async ({ page }) => {
+  const orchestration = createLayoutFixture()
+  await installMockBackend(page, orchestration)
+  await page.goto(`/orchestrations/${ORCHESTRATION_ID}/edit`)
+  await expect(page.getByRole('heading', { name: '编辑编排' })).toBeVisible()
+
+  const saveTrigger = page.getByRole('button', { name: '保存', exact: true })
+  await saveTrigger.click()
+  const saveDialog = page.getByRole('dialog', { name: '保存编排信息', exact: true })
+  await expect(saveDialog.getByPlaceholder('请输入编排名称', { exact: true })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(saveDialog).not.toBeVisible()
+  await expect(saveTrigger).toBeFocused()
+
+  const scheduleTrigger = page.getByRole('button', { name: '调度', exact: true })
+  await scheduleTrigger.click()
+  const scheduleDialog = page.getByRole('dialog', { name: '设置定时调度', exact: true })
+  await expect(scheduleDialog.getByRole('switch')).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(scheduleDialog).not.toBeVisible()
+  await expect(scheduleTrigger).toBeFocused()
+
+  const jsonTrigger = page.getByRole('button', { name: '查看 JSON', exact: true })
+  await jsonTrigger.click()
+  const jsonDialog = page.getByRole('dialog', { name: '编排 JSON 配置', exact: true })
+  await expect(jsonDialog.getByRole('button', { name: '关闭', exact: true })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(jsonDialog).not.toBeVisible()
+  await expect(jsonTrigger).toBeFocused()
+
+  const canvasRegion = page.getByRole('region', { name: '编排 DAG 画布', exact: true })
+  const canvas = canvasRegion.locator('canvas')
+  const canvasBox = await requiredBoundingBox(canvas)
+  await page.mouse.click(
+    canvasBox.x + orchestration.editor_layout.nodes[NODE_ID].x,
+    canvasBox.y + orchestration.editor_layout.nodes[NODE_ID].y
+  )
+  await expect(canvasRegion).toBeFocused()
+  await expect(page.getByRole('button', { name: '删除选中项', exact: true })).toBeEnabled()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('button', { name: '删除选中项', exact: true })).toBeDisabled()
+
+  await expect(canvasRegion).toHaveAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight ArrowUp ArrowDown Enter Delete Escape')
+  await page.keyboard.press('ArrowRight')
+  await expect(page.getByRole('status', { name: '编排画布选择状态' })).toHaveText('已选择节点“Fixture task”')
+  await expect(page.getByRole('button', { name: '删除选中项', exact: true })).toBeEnabled()
+  await expect(page.locator('.el-drawer')).not.toBeVisible()
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.el-drawer')).toBeVisible()
+})
+
+test('announces orchestration save progress', async ({ page }) => {
+  const orchestration = createLayoutFixture()
+  const backend = await installMockBackend(page, orchestration, { deferPersist: true })
+  await page.goto(`/orchestrations/${ORCHESTRATION_ID}/edit`)
+  await expect(page.getByRole('heading', { name: '编辑编排' })).toBeVisible()
+
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  const saveDialog = page.getByRole('dialog', { name: '保存编排信息', exact: true })
+  await saveDialog.getByRole('button', { name: '确认保存', exact: true }).click()
+
+  await expect.poll(() => backend.getPersistedPayload()).not.toBeNull()
+  await expect(page.locator('.orchestration-form')).toHaveAttribute('aria-busy', 'true')
+  await expect(page.getByRole('status', { name: '编排状态' })).toHaveText('正在保存编排')
+
+  backend.releasePersist()
+  await expect(page).toHaveURL(/\/orchestrations$/)
+})
+
+test('resizes the task library with the keyboard', async ({ page }) => {
+  await installMockBackend(page, createLayoutFixture())
+  await page.goto(`/orchestrations/${ORCHESTRATION_ID}/edit`)
+  await expect(page.getByRole('heading', { name: '编辑编排' })).toBeVisible()
+
+  const splitter = page.getByRole('separator', { name: '调整任务库宽度', exact: true })
+  const taskPanel = page.locator('#task-library-panel')
+  await expect(splitter).toHaveAttribute('aria-valuenow', '320')
+  await splitter.focus()
+
+  await page.keyboard.press('ArrowRight')
+  await expect(splitter).toHaveAttribute('aria-valuenow', '336')
+  await expect(taskPanel).toHaveCSS('width', '336px')
+
+  await page.keyboard.press('Home')
+  await expect(splitter).toHaveAttribute('aria-valuenow', '240')
+  await expect(taskPanel).toHaveCSS('width', '240px')
+
+  await page.keyboard.press('End')
+  await expect(splitter).toHaveAttribute('aria-valuenow', '560')
+  await expect(taskPanel).toHaveCSS('width', '560px')
+})
+
 test('connects ports and preserves the redone edge without copying it', async ({ page }) => {
   const orchestration = createInteractionFixture()
   const backend = await installMockBackend(page, orchestration)
@@ -130,6 +315,46 @@ test('connects ports and preserves the redone edge without copying it', async ({
   const pastedStep = persistedPayload.steps.find(step => ![SOURCE_NODE_ID, TARGET_NODE_ID].includes(step.id))
   expect(pastedStep).toBeDefined()
   expect(pastedStep.depends_on).toEqual([])
+})
+
+test('edits predecessor steps in the drawer and disables circular candidates', async ({ page }) => {
+  const orchestration = createInteractionFixture()
+  const backend = await installMockBackend(page, orchestration)
+  await page.goto(`/orchestrations/${INTERACTION_ORCHESTRATION_ID}/edit`)
+  await expect(page.getByRole('heading', { name: '编辑编排' })).toBeVisible()
+
+  const canvas = page.locator('#dag-container canvas')
+  const canvasBox = await requiredBoundingBox(canvas)
+  const source = orchestration.editor_layout.nodes[SOURCE_NODE_ID]
+  const target = orchestration.editor_layout.nodes[TARGET_NODE_ID]
+
+  await page.mouse.dblclick(canvasBox.x + target.x, canvasBox.y + target.y)
+  let drawer = page.getByRole('dialog', { name: '配置步骤', exact: true })
+  await expect(drawer).toBeVisible()
+  const predecessorField = drawer.locator('.el-form-item').filter({ hasText: '前置步骤' })
+  await predecessorField.locator('.el-select__wrapper').click()
+  const sourceOption = page.locator('.el-select-dropdown__item:visible').filter({ hasText: 'Source task' })
+  await expect(sourceOption).toHaveCount(1)
+  await sourceOption.click({ force: true })
+  await expect(page.locator('.el-message').filter({ hasText: '依赖关系已更新' })).toBeVisible()
+  await drawer.getByRole('button', { name: 'Close this dialog', exact: true }).click()
+  await expect(drawer).not.toBeVisible()
+
+  await page.mouse.dblclick(canvasBox.x + source.x, canvasBox.y + source.y)
+  drawer = page.getByRole('dialog', { name: '配置步骤', exact: true })
+  await expect(drawer).toBeVisible()
+  await drawer.locator('.el-form-item').filter({ hasText: '前置步骤' }).locator('.el-select__wrapper').click()
+  const circularOption = page.locator('.el-select-dropdown__item:visible').filter({ hasText: 'Target task' })
+  await expect(circularOption).toHaveCount(1)
+  await expect(circularOption).toHaveClass(/is-disabled/)
+  await page.keyboard.press('Escape')
+  await drawer.getByRole('button', { name: 'Close this dialog', exact: true }).click()
+
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await page.getByRole('button', { name: '确认保存', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '任务编排' })).toBeVisible()
+  const persistedTarget = backend.getPersistedPayload().steps.find(step => step.id === TARGET_NODE_ID)
+  expect(persistedTarget.depends_on).toEqual([SOURCE_NODE_ID])
 })
 
 test('persists the last valid node draft without a separate config save', async ({ page }) => {
@@ -310,12 +535,42 @@ function createTaskLibraryFixture() {
   }
 }
 
+function createExecutionFixture() {
+  return {
+    id: EXECUTION_ID,
+    execution_id: 'orchestration-execution-31',
+    status: 'failed',
+    current_step: 'transform-step',
+    started_at: null,
+    completed_at: null,
+    error_details: { message: 'Fixture execution failed during transform' },
+    metadata: {
+      step_results: {
+        'transform-step': {
+          status: 'failed',
+          error: 'Fixture transform error'
+        }
+      }
+    }
+  }
+}
+
 async function installMockBackend(page, initialOrchestration, taskLibrary = {}) {
   let persistedPayload = null
+  let executeRequestCount = 0
   let orchestration = initialOrchestration
   const taskProviders = taskLibrary.taskProviders || []
   const tasksByType = taskLibrary.tasksByType || {}
+  const executions = taskLibrary.executions || []
   const pendingTaskRequests = []
+  let releasePersist = () => {}
+  let releaseExecute = () => {}
+  const persistGate = taskLibrary.deferPersist
+    ? new Promise(resolve => { releasePersist = resolve })
+    : null
+  const executeGate = taskLibrary.deferExecute
+    ? new Promise(resolve => { releaseExecute = resolve })
+    : null
 
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   await page.route('**/api/v1/**', async route => {
@@ -345,11 +600,25 @@ async function installMockBackend(page, initialOrchestration, taskLibrary = {}) 
     }
     if (path === detailPath && request.method() === 'PUT') {
       persistedPayload = request.postDataJSON()
+      if (persistGate) await persistGate
       orchestration = { ...orchestration, ...persistedPayload }
       return fulfillJSON(route, orchestration)
     }
+    if (path === `${detailPath}/execute` && request.method() === 'POST') {
+      executeRequestCount += 1
+      if (executeGate) await executeGate
+      return fulfillJSON(route, { execution_id: 'orchestration-execution-e2e' })
+    }
     if (path === '/api/v1/orchestrator/orchestrations' && request.method() === 'GET') {
       return fulfillJSON(route, [orchestration])
+    }
+    if (path === `${detailPath}/executions` && request.method() === 'GET') {
+      return fulfillJSON(route, { data: executions, total: executions.length })
+    }
+    const executionDetailMatch = path.match(/^\/api\/v1\/orchestrator\/orch-executions\/(\d+)$/)
+    if (executionDetailMatch && request.method() === 'GET') {
+      const execution = executions.find(item => item.id === Number(executionDetailMatch[1]))
+      return fulfillJSON(route, execution || {})
     }
 
     return fulfillJSON(route, {})
@@ -357,6 +626,9 @@ async function installMockBackend(page, initialOrchestration, taskLibrary = {}) 
 
   return {
     getPersistedPayload: () => persistedPayload,
+    getExecuteRequestCount: () => executeRequestCount,
+    releasePersist,
+    releaseExecute,
     releaseTaskRequests: () => pendingTaskRequests.splice(0).forEach(resolve => resolve())
   }
 }
@@ -373,6 +645,32 @@ async function requiredBoundingBox(locator) {
   const box = await locator.boundingBox()
   expect(box).not.toBeNull()
   return box
+}
+
+function visibleDialogSurface(page) {
+  return page.locator('.el-dialog.addp-dialog:visible')
+}
+
+async function expectDialogWithinViewport(page, dialog) {
+  await expect(dialog).toHaveCount(1)
+  await expect(dialog).toBeVisible()
+  await expect.poll(() => dialog.evaluate(element => {
+    const animations = []
+    let current = element
+    while (current && current !== document.body) {
+      animations.push(...current.getAnimations({ subtree: false }))
+      current = current.parentElement
+    }
+    return animations.every(animation => animation.playState === 'finished')
+  })).toBe(true)
+  const box = await requiredBoundingBox(dialog)
+  const viewport = page.viewportSize()
+  expect(viewport).not.toBeNull()
+  expect(box.x).toBeGreaterThanOrEqual(12)
+  expect(box.y).toBeGreaterThanOrEqual(0)
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width - 12)
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false)
 }
 
 async function canvasPixel(canvas, x, y) {

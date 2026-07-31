@@ -151,6 +151,13 @@ func newOrchestrationScheduleTestDB(t *testing.T) *gorm.DB {
 			last_execution_id TEXT,
 			last_execution_status TEXT,
 			created_by INTEGER,
+			authorization_ref TEXT,
+			authorization_subject_id INTEGER,
+			authorization_definition_hash TEXT,
+			authorization_principal_id INTEGER,
+			authorization_membership_id INTEGER,
+			authorization_version INTEGER,
+			authorized_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME,
 			deleted_at DATETIME

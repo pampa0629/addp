@@ -1,5 +1,6 @@
 <template>
-  <div class="orchestration-form">
+  <div class="orchestration-form" :aria-busy="saving">
+    <StatusAnnouncer :label="t('orchestrator.orchestrationForm.statusLabel')" :message="formAnnouncement" />
     <div class="header">
       <div class="header-title">
         <h2>{{ isEdit ? t('orchestrator.orchestrationForm.editTitle') : t('orchestrator.orchestrationForm.createTitle') }}</h2>
@@ -33,11 +34,23 @@
     <!-- 三栏布局 -->
     <div class="three-column-layout">
       <!-- 左侧任务库 -->
-      <div class="left-panel" :style="{ width: `${leftPanelWidth}px` }">
+      <div id="task-library-panel" class="left-panel" :style="{ width: `${leftPanelWidth}px` }">
         <TaskPanel @add-task="handleAddTask" />
       </div>
 
-      <div class="panel-splitter" @mousedown="startLeftPanelResize"></div>
+      <div
+        class="panel-splitter"
+        role="separator"
+        aria-orientation="vertical"
+        aria-controls="task-library-panel"
+        :aria-label="t('orchestrator.orchestrationForm.resizeTaskPanel')"
+        :aria-valuemin="leftPanelMinWidth"
+        :aria-valuemax="leftPanelMaxWidth"
+        :aria-valuenow="Math.round(leftPanelWidth)"
+        tabindex="0"
+        @mousedown="startLeftPanelResize"
+        @keydown="handleLeftPanelResizeKeydown"
+      ></div>
 
       <!-- 中央 DAG 画布 -->
       <div class="center-panel">
@@ -53,16 +66,18 @@
 
     <el-dialog
       v-model="metadataDialogVisible"
+      class="addp-dialog"
       :title="t('orchestrator.orchestrationForm.saveDialogTitle')"
-      width="520px"
+      width="min(520px, calc(100vw - 24px))"
       :close-on-click-modal="false"
+      @opened="focusMetadataName"
     >
-      <el-form :model="metadataDraft" label-width="100px">
+      <el-form :model="metadataDraft" label-position="top">
         <el-form-item :label="t('orchestrator.orchestrationForm.nameLabel')" required>
           <el-input
+            ref="metadataNameInputRef"
             v-model="metadataDraft.name"
             :placeholder="t('orchestrator.orchestrationForm.namePlaceholder')"
-            autofocus
           />
         </el-form-item>
         <el-form-item :label="t('orchestrator.orchestrationForm.descriptionLabel')">
@@ -86,15 +101,17 @@
 
     <el-dialog
       v-model="scheduleDialogVisible"
+      class="addp-dialog"
       :title="t('orchestrator.orchestrationForm.scheduleDialogTitle')"
-      width="720px"
+      width="min(720px, calc(100vw - 24px))"
       :close-on-click-modal="false"
+      @opened="focusScheduleEnabled"
     >
-      <el-form :model="scheduleDraft" label-width="100px">
+      <el-form :model="scheduleDraft" label-position="top">
         <el-form-item :label="t('orchestrator.orchestrationForm.enabledLabel')">
-          <el-switch v-model="scheduleDraft.enabled" />
+          <el-switch ref="scheduleEnabledSwitchRef" v-model="scheduleDraft.enabled" />
         </el-form-item>
-        <el-form-item :label="t('orchestrator.orchestrationForm.scheduleLabel')">
+        <el-form-item>
           <ScheduleConfig
             v-model="scheduleDraft.schedule"
             :allow-custom-cron="true"
@@ -114,17 +131,22 @@
     <!-- JSON 预览对话框 -->
     <el-dialog
       v-model="jsonDialogVisible"
+      class="addp-dialog"
       :title="t('orchestrator.orchestrationForm.jsonDialogTitle')"
-      width="60%"
+      width="min(840px, calc(100vw - 24px))"
       :close-on-click-modal="false"
+      @opened="focusJsonClose"
     >
       <div class="json-preview">
-        <div class="json-actions">
-          <el-button size="small" @click="copyJSON">{{ t('orchestrator.orchestrationForm.copyJsonBtn') }}</el-button>
-          <el-button size="small" @click="downloadJSON">{{ t('orchestrator.orchestrationForm.downloadJsonBtn') }}</el-button>
-        </div>
         <pre class="json-content">{{ formattedJSON }}</pre>
       </div>
+      <template #footer>
+        <el-button ref="jsonCloseButtonRef" @click="jsonDialogVisible = false">
+          {{ t('orchestrator.orchestrationForm.jsonDialogClose') }}
+        </el-button>
+        <el-button @click="downloadJSON">{{ t('orchestrator.orchestrationForm.downloadJsonBtn') }}</el-button>
+        <el-button type="primary" @click="copyJSON">{{ t('orchestrator.orchestrationForm.copyJsonBtn') }}</el-button>
+      </template>
     </el-dialog>
 
   </div>
@@ -140,19 +162,28 @@ import DAGEditor from '../components/DAGEditor.vue'
 import TaskPanel from '../components/TaskPanel.vue'
 import orchestrationAPI from '../api/orchestration'
 import { buildOrchestrationPayload } from '../utils/orchestrationPayload'
-import { ScheduleConfig, ScheduleDisplay, useResizable } from '@common-ui'
+import { focusElement, ScheduleConfig, ScheduleDisplay, StatusAnnouncer, useResizable } from '@common-ui'
 
 const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const dagEditor = ref(null)
+const metadataNameInputRef = ref(null)
+const scheduleEnabledSwitchRef = ref(null)
+const jsonCloseButtonRef = ref(null)
 
 const isEdit = ref(false)
 const saving = ref(false)
 const jsonDialogVisible = ref(false)
 const metadataDialogVisible = ref(false)
 const scheduleDialogVisible = ref(false)
-const { size: leftPanelWidth, startResize: startLeftPanelResize } = useResizable(320, 240, 560, 'horizontal')
+const {
+  size: leftPanelWidth,
+  minSize: leftPanelMinWidth,
+  maxSize: leftPanelMaxWidth,
+  startResize: startLeftPanelResize,
+  handleResizeKeydown: handleLeftPanelResizeKeydown
+} = useResizable(320, 240, 560, 'horizontal')
 
 const form = reactive({
   name: '',
@@ -177,6 +208,9 @@ const scheduleDraft = reactive({
 const formattedJSON = computed(() => {
   return JSON.stringify(form, null, 2)
 })
+const formAnnouncement = computed(() => saving.value
+  ? t('orchestrator.orchestrationForm.savingStatus')
+  : '')
 
 onMounted(async () => {
   const id = route.params.id
@@ -285,6 +319,18 @@ function handleCancel() {
 
 function handleViewJSON() {
   jsonDialogVisible.value = true
+}
+
+function focusMetadataName() {
+  focusElement(metadataNameInputRef.value)
+}
+
+function focusScheduleEnabled() {
+  focusElement(scheduleEnabledSwitchRef.value)
+}
+
+function focusJsonClose() {
+  focusElement(jsonCloseButtonRef.value)
 }
 
 async function copyJSON() {
@@ -399,12 +445,19 @@ function downloadJSON() {
   opacity: 0.9;
 }
 
-.panel-splitter:hover {
+.panel-splitter:hover,
+.panel-splitter:focus-visible {
   background: color-mix(in srgb, var(--el-color-primary) 10%, transparent);
 }
 
-.panel-splitter:hover::before {
+.panel-splitter:hover::before,
+.panel-splitter:focus-visible::before {
   background: var(--el-color-primary);
+}
+
+.panel-splitter:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
 }
 
 .center-panel {
@@ -417,16 +470,7 @@ function downloadJSON() {
 .json-preview {
   display: flex;
   flex-direction: column;
-  height: 70vh;
-}
-
-.json-actions {
-  margin-bottom: 12px;
-  padding: 8px 12px;
-  background: var(--addp-bg-tertiary);
-  border-radius: 4px;
-  display: flex;
-  gap: 8px;
+  height: clamp(260px, 55vh, 520px);
 }
 
 .json-content {
