@@ -53,8 +53,10 @@
     <!-- 自定义配置对话框 -->
     <el-dialog
       v-model="dialogVisible"
+      class="addp-dialog"
       :title="t('schedule.dialogTitle')"
-      width="520px"
+      width="min(520px, calc(100vw - 24px))"
+      append-to-body
     >
       <el-form :model="customForm" label-width="100px">
         <el-form-item :label="t('schedule.scheduleType')">

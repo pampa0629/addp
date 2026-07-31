@@ -901,8 +901,9 @@ const rules = {
 <template>
   <el-dialog
     v-model="dialogVisible"
+    class="addp-dialog"
     title="对话框标题"
-    width="500px"
+    width="min(500px, calc(100vw - 24px))"
   >
     <div>对话框内容</div>
     <template #footer>
@@ -930,10 +931,11 @@ const handleConfirm = () => {
 <template>
   <el-dialog
     v-model="dialogVisible"
+    class="addp-dialog"
     title="编辑用户"
-    width="500px"
+    width="min(500px, calc(100vw - 24px))"
   >
-    <el-form :model="form" label-width="100px">
+    <el-form :model="form" label-position="top">
       <el-form-item label="用户名">
         <el-input v-model="form.username" />
       </el-form-item>
@@ -948,6 +950,14 @@ const handleConfirm = () => {
   </el-dialog>
 </template>
 ```
+
+所有业务对话框使用共享 `addp-dialog` 类。该类统一标题、正文、页脚间距，并限制正文最大高度；内容超过可用高度时只滚动正文，标题和操作按钮保持可见。宽度必须同时声明桌面目标宽度和 `100vw - 24px` 的窄窗口上限，不能只写固定像素宽度。
+
+页脚操作按钮默认作为一组整体右对齐，不得把取消按钮和主操作分散到页脚两端。组内从左到右依次为取消、关闭或返回等次要操作，危险但非推荐的操作，以及唯一推荐的主操作；主操作始终位于最右侧。只有一个关闭按钮时，该按钮也保持右对齐。页脚允许按钮在窄窗口下换行，不能让按钮或文字溢出对话框。字段较少的业务表单优先使用顶部标签，避免长标签在窄窗口中挤压输入区域。
+
+`ElMessageBox.confirm` 类确认框使用共享 `addp-message-box` 类，并显式传入已国际化的确定、取消按钮文案，不得依赖 Element Plus 的默认语言。按钮组整体右对齐，取消在确认左侧、确认位于最右侧；删除、清空等不可逆操作的确认按钮必须使用危险样式。
+
+弹窗打开后必须有明确且安全的初始焦点：表单弹窗优先聚焦首个主要输入字段，只读弹窗优先聚焦关闭按钮，包含不可逆操作的弹窗优先聚焦取消按钮。关闭弹窗后应把焦点恢复到触发该弹窗的控件；下拉菜单项触发或连续弹窗等无法依赖组件默认恢复的场景，调用方必须显式恢复到稳定的触发按钮。弹窗继续使用 Element Plus 的焦点陷阱和 `Esc` 关闭能力，不在业务模块重复实现焦点循环。
 
 ---
 
@@ -1081,6 +1091,18 @@ ElNotification({
 - Tab：焦点移动
 - Enter / Space：确认操作
 - Esc：关闭对话框/弹窗
+
+### 4. 动态状态播报
+
+校验、保存、执行等异步状态不能只依赖颜色、加载图标或短暂提示。业务页面应使用共享 `StatusAnnouncer` 播报进行中和校验结果；普通进度使用 `role="status"` 和 `aria-live="polite"`，需要用户立即处理的错误继续使用具备 alert 语义的错误提示组件，避免同一消息重复播报。
+
+纯图标按钮必须提供国际化的 `aria-label`。Tooltip 只用于视觉说明，不能代替按钮的可访问名称。
+
+可拖拽分隔条必须同时支持键盘操作：使用 `role="separator"`、正确的 `aria-orientation`、`aria-valuemin/max/now` 和受控区域 `aria-controls`；方向键逐步调整，`Home` / `End` 跳到最小/最大尺寸，并提供清晰的 `:focus-visible` 状态。
+
+Canvas DAG 编辑器必须提供不依赖鼠标的节点导航。画布获得焦点后，方向键按共享的画布位置顺序循环选择节点，Enter 打开节点配置，`Esc` 清除选择；当前节点名称和校验问题数量通过带名称的共享 `StatusAnnouncer` 播报。
+
+DAG 连线不得要求进入全局“连线模式”。鼠标通过端口直接拖拽连线；键盘通过节点参数面板或配置抽屉维护输入连接或前置步骤。画布边是依赖关系的唯一编辑事实源，表单操作必须复用同一套环路、重复连接校验和历史记录。
 
 ---
 

@@ -14,6 +14,10 @@ export function useResizable(initialSize, minSize, maxSize, direction = 'horizon
   let startPosition = 0
   let startSize = 0
 
+  const setSize = (nextSize) => {
+    size.value = Math.min(maxSize, Math.max(minSize, nextSize))
+  }
+
   const onResize = (event) => {
     if (!isResizing.value) return
 
@@ -21,11 +25,27 @@ export function useResizable(initialSize, minSize, maxSize, direction = 'horizon
       ? event.clientX - startPosition
       : event.clientY - startPosition
 
-    const nextSize = Math.min(maxSize, Math.max(minSize, startSize + delta))
-    size.value = nextSize
+    setSize(startSize + delta)
   }
 
   const resizeClass = direction === 'horizontal' ? 'is-h-resizing' : 'is-v-resizing'
+
+  const handleResizeKeydown = (event, step = 16) => {
+    const key = event?.key
+    let nextSize = null
+
+    if (key === 'Home') nextSize = minSize
+    else if (key === 'End') nextSize = maxSize
+    else if (direction === 'horizontal' && key === 'ArrowLeft') nextSize = size.value - step
+    else if (direction === 'horizontal' && key === 'ArrowRight') nextSize = size.value + step
+    else if (direction === 'vertical' && key === 'ArrowUp') nextSize = size.value - step
+    else if (direction === 'vertical' && key === 'ArrowDown') nextSize = size.value + step
+
+    if (nextSize === null) return false
+    event.preventDefault?.()
+    setSize(nextSize)
+    return true
+  }
 
   const stopResize = () => {
     if (!isResizing.value) return
@@ -55,7 +75,10 @@ export function useResizable(initialSize, minSize, maxSize, direction = 'horizon
   return {
     size,
     isResizing,
+    minSize,
+    maxSize,
     startResize,
+    handleResizeKeydown,
     stopResize
   }
 }

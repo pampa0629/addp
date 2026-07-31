@@ -31,6 +31,16 @@ export {
   validateDAGConnection
 } from './utils/directEdge.js'
 export {
+  createDAGKeyboardHandler,
+  findAdjacentDAGNode,
+  isDAGKeyboardEventFromEditableTarget,
+  sortDAGNodesSpatially
+} from './utils/keyboard.js'
+export {
+  getDAGIncomingEdgeModels,
+  getDAGUpstreamCandidates
+} from './utils/connections.js'
+export {
   applyDAGNodePositions,
   captureDAGEditorLayout,
   clampDAGZoom,

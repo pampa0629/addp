@@ -7,6 +7,7 @@ export { default as StorageEngineForm } from './components/StorageEngineForm.vue
 export { default as ResourceTree } from './components/ResourceTree.vue'
 export { default as ResourceTreePicker } from './components/ResourceTreePicker.vue'
 export { default as AuthLoginFlow } from './components/AuthLoginFlow.vue'
+export { default as StatusAnnouncer } from './components/StatusAnnouncer.vue'
 
 // Schedule Components
 export { default as ScheduleConfig } from './components/ScheduleConfig.vue'
@@ -20,6 +21,7 @@ export * from './utils/engineDisplay'
 export * from './utils/consoleBridge'
 export * from './utils/taskOwnerUrl'
 export * from './utils/continuousExecution'
+export * from './utils/focus'
 export { toAmisResponse, toAmisListResponse, createAmisInterceptor } from './utils/amis-adaptor'
 
 // Types

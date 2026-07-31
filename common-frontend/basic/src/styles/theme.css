@@ -45,6 +45,32 @@
   --addp-module-asset: #2563EB;
   --addp-module-monitor: #0891B2;
   --addp-module-portal: #059669;
+
+  /* 图谱语义视觉编码 */
+  --addp-graph-category-1: #2563EB;
+  --addp-graph-category-2: #059669;
+  --addp-graph-category-3: #D97706;
+  --addp-graph-category-4: #DC2626;
+  --addp-graph-category-5: #7C3AED;
+  --addp-graph-category-6: #0891B2;
+  --addp-graph-category-7: #DB2777;
+  --addp-graph-category-8: #4D7C0F;
+  --addp-graph-category-9: #EA580C;
+  --addp-graph-category-10: #0F766E;
+  --addp-graph-category-11: #9333EA;
+  --addp-graph-category-12: #475569;
+  --addp-graph-label-light: #FFFFFF;
+  --addp-graph-label-dark: #111827;
+  --addp-graph-node-stroke: #FFFFFF;
+  --addp-graph-edge-default: #909399;
+  --addp-graph-edge-label: #303133;
+  --addp-graph-edge-label-stroke: #FFFFFF;
+  --addp-graph-selection: #F59E0B;
+  --addp-graph-related: #409EFF;
+  --addp-graph-search-match: #F56C6C;
+  --addp-graph-path: #E6A23C;
+  --addp-graph-analysis-low: #3B82F6;
+  --addp-graph-analysis-high: #EF4444;
 }
 
 /* ==================== 深色模式变量 ==================== */
@@ -88,6 +114,11 @@ html.dark {
   --addp-module-asset: #60A5FA;
   --addp-module-monitor: #22D3EE;
   --addp-module-portal: #34D399;
+
+  --addp-graph-node-stroke: #374151;
+  --addp-graph-edge-default: #6B7280;
+  --addp-graph-edge-label: #D1D5DB;
+  --addp-graph-edge-label-stroke: #1D1E1F;
 }
 
 /* ==================== 蓝色模式变量 ==================== */
@@ -131,6 +162,11 @@ html.blue {
   --addp-module-asset: #93C5FD;
   --addp-module-monitor: #67E8F9;
   --addp-module-portal: #6EE7B7;
+
+  --addp-graph-node-stroke: #1E3A8A;
+  --addp-graph-edge-default: #64748B;
+  --addp-graph-edge-label: #E0E7FF;
+  --addp-graph-edge-label-stroke: #0F1629;
 
   /* ==================== Element Plus 变量覆盖（蓝色主题） ==================== */
   /* 覆盖 Element Plus 的 CSS 变量，使其与蓝色主题一致 */
@@ -201,6 +237,11 @@ html.purple {
   --addp-module-monitor: #67e8f9;
   --addp-module-portal: #6ee7b7;
 
+  --addp-graph-node-stroke: #4C1D95;
+  --addp-graph-edge-default: #7C708A;
+  --addp-graph-edge-label: #EDE9FE;
+  --addp-graph-edge-label-stroke: #1A1025;
+
   /* ==================== Element Plus 变量覆盖（紫色主题） ==================== */
   --el-bg-color: #1a1025;
   --el-bg-color-page: #110b1a;
@@ -259,6 +300,131 @@ video {
 .el-zoom-in-center-enter-active,
 .el-zoom-in-center-leave-active {
   transition: none !important;
+}
+
+/* ==================== 统一业务对话框 ==================== */
+.addp-dialog {
+  --el-dialog-margin-top: max(16px, 6vh);
+  --el-dialog-padding-primary: 16px;
+  max-width: calc(100vw - 24px);
+  margin-bottom: 24px;
+}
+
+.addp-dialog .el-dialog__header {
+  margin-right: 0;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--addp-border-color);
+}
+
+.addp-dialog .el-dialog__title {
+  color: var(--addp-text-primary);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.addp-dialog .el-dialog__body {
+  box-sizing: border-box;
+  max-height: min(68vh, calc(100vh - 190px));
+  padding: 16px 0;
+  overflow: auto;
+}
+
+.addp-dialog .el-dialog__footer {
+  padding-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-top: 1px solid var(--addp-border-color);
+}
+
+.addp-dialog .el-dialog__footer .el-button {
+  margin-left: 0;
+}
+
+@media (max-width: 640px), (max-height: 560px) {
+  .addp-dialog {
+    --el-dialog-margin-top: 12px;
+    --el-dialog-padding-primary: 12px;
+    margin-bottom: 12px;
+  }
+
+  .addp-dialog .el-dialog__header,
+  .addp-dialog .el-dialog__body,
+  .addp-dialog .el-dialog__footer {
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+
+  .addp-dialog .el-dialog__body {
+    max-height: calc(100vh - 150px);
+  }
+}
+
+.addp-message-box {
+  box-sizing: border-box;
+  width: min(420px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+  padding: 0;
+}
+
+.addp-message-box .el-message-box__header {
+  padding: 16px;
+  border-bottom: 1px solid var(--addp-border-color);
+}
+
+.addp-message-box .el-message-box__title {
+  color: var(--addp-text-primary);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.addp-message-box .el-message-box__content {
+  padding: 16px;
+  color: var(--addp-text-secondary);
+}
+
+.addp-message-box .el-message-box__btns {
+  padding: 16px;
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-top: 1px solid var(--addp-border-color);
+}
+
+.addp-message-box .el-message-box__btns .el-button {
+  margin-left: 0;
+}
+
+.addp-dag-focus-region {
+  outline: none;
+}
+
+.addp-dag-focus-region:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--el-color-primary);
+}
+
+.addp-visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+@media (max-width: 640px), (max-height: 560px) {
+  .addp-message-box .el-message-box__header,
+  .addp-message-box .el-message-box__content,
+  .addp-message-box .el-message-box__btns {
+    padding: 12px;
+  }
 }
 
 /* ==================== 暗黑模式下的 Element Plus 组件覆盖 ==================== */

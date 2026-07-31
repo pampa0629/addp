@@ -19,13 +19,15 @@ export function createDAGDragNodeBehavior() {
   }
 }
 
-export function validateDAGConnection({ graph, sourceId, targetId, hasLoop } = {}) {
+export function validateDAGConnection({ graph, sourceId, targetId, hasLoop, isDuplicate } = {}) {
   if (!sourceId || !targetId || sourceId === targetId || hasLoop?.(sourceId, targetId)) {
     return 'loop'
   }
   const duplicated = (graph?.getEdges?.() || []).some(edge => {
     const model = edge.getModel()
-    return model.source === sourceId && model.target === targetId
+    return typeof isDuplicate === 'function'
+      ? isDuplicate(model)
+      : model.source === sourceId && model.target === targetId
   })
   return duplicated ? 'duplicate' : true
 }

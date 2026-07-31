@@ -2,8 +2,9 @@
  * DAG 节点/边选中管理 Composable
  */
 import { ref } from 'vue'
+import { findAdjacentDAGNode } from '../utils/keyboard.js'
 
-export function useDAGSelection(graph) {
+export function useDAGSelection(graph, { focusTarget = null } = {}) {
   const selectedItem = ref(null)
 
   /**
@@ -19,7 +20,44 @@ export function useDAGSelection(graph) {
       } else {
         selectedItem.value = null
       }
+      if (selectedItem.value) focusSelectionTarget()
     })
+  }
+
+  function focusSelectionTarget() {
+    const target = focusTarget?.value || focusTarget
+    target?.focus?.({ preventScroll: true })
+  }
+
+  function selectItem(item) {
+    if (!item || !graph.value) return null
+    const items = [
+      ...(graph.value.getNodes?.() || []),
+      ...(graph.value.getEdges?.() || [])
+    ]
+    items.forEach(candidate => {
+      graph.value.setItemState?.(candidate, 'selected', candidate === item)
+    })
+    selectedItem.value = item
+    focusSelectionTarget()
+    return item
+  }
+
+  function selectAdjacentNode(offset) {
+    const item = findAdjacentDAGNode(
+      graph.value?.getNodes?.() || [],
+      selectedItem.value,
+      offset
+    )
+    return selectItem(item)
+  }
+
+  function selectPreviousNode() {
+    return selectAdjacentNode(-1)
+  }
+
+  function selectNextNode() {
+    return selectAdjacentNode(1)
   }
 
   /**
@@ -34,6 +72,13 @@ export function useDAGSelection(graph) {
     return false
   }
 
+  function clearSelection() {
+    if (!selectedItem.value) return false
+    graph.value?.setItemState?.(selectedItem.value, 'selected', false)
+    selectedItem.value = null
+    return true
+  }
+
   /**
    * 清空画布
    */
@@ -45,7 +90,11 @@ export function useDAGSelection(graph) {
   return {
     selectedItem,
     initSelectionListener,
+    selectItem,
+    selectPreviousNode,
+    selectNextNode,
     deleteSelected,
+    clearSelection,
     clearGraph
   }
 }

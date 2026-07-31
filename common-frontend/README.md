@@ -225,6 +225,11 @@ import { createAuthenticatedFetch } from '@common-ui'
 ### 表单组件
 
 - **StorageEngineForm** - 存储引擎配置表单（支持 PostgreSQL、MinIO/S3）
+- **StatusAnnouncer** - 为校验、保存、执行等动态状态提供统一的辅助技术播报区域
+
+### 可调整布局
+
+- **useResizable** - 提供受最小/最大值约束的鼠标拖拽和键盘调整能力；分隔条消费方使用方向键逐步调整，使用 `Home` / `End` 跳到边界
 
 ### 树形组件
 

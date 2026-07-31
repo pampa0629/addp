@@ -2,6 +2,7 @@
   <div class="resource-tree-picker">
     <el-form-item v-if="showEngineSelector" :label="engineLabel">
       <el-select
+        ref="engineSelectRef"
         v-model="selectedEngineValue"
         :placeholder="enginePlaceholder"
         :loading="loadingEngines"
@@ -23,6 +24,7 @@
 
     <el-input
       v-if="showSearch"
+      ref="searchInputRef"
       v-model="searchKeyword"
       class="picker-search"
       :placeholder="activeSearchPlaceholder"
@@ -230,6 +232,8 @@ const engines = ref([])
 const selectedEngineValue = ref(props.engineMultiple ? [] : null)
 const treeData = ref([])
 const treeRef = ref(null)
+const engineSelectRef = ref(null)
+const searchInputRef = ref(null)
 const currentNodeKey = ref(null)
 const expandedKeys = ref([])
 const currentSelection = ref(props.modelValue)
@@ -855,6 +859,11 @@ onBeforeUnmount(() => {
 defineExpose({
   loadEngines,
   loadTree,
+  focus: async () => {
+    await nextTick()
+    const target = props.showSearch ? searchInputRef.value : engineSelectRef.value
+    target?.focus?.()
+  },
   getSelection: () => currentSelection.value
 })
 </script>
