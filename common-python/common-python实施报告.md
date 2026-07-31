@@ -1,6 +1,6 @@
 # Common-Python 当前实施状态
 
-更新日期：2026-07-30
+更新日期：2026-07-31
 
 ## 模块边界
 
@@ -31,7 +31,7 @@ Refresh Token 按归一化 ADDP Base URL 隔离，只保存到 OS Keychain。Acc
 
 包名固定为 `addp-common`，命令固定为 `addp`。版本只在 `addp_common.__version__` 定义，构建元数据和 `addp --version` 都读取该事实源。当前版本为 `0.1.11`。
 
-正式交付使用 wheel，不以 editable 源码目录作为用户安装方式。构建、全新环境安装和产品 E2E 的唯一入口为：
+正式交付使用 GitHub Release 中的 wheel，不以本地源码构建或 editable 源码目录作为用户安装方式。维护者复现构建、全新环境安装和产品 E2E 的唯一入口为：
 
 ```bash
 make test-common-python-cli-release
@@ -50,6 +50,8 @@ make test-common-python-cli-release
 产品 E2E 覆盖 Browser loopback + PKCE、Device Flow、权威 AuthContext、Context 绑定、独立进程刷新竞争、OAuth Revocation、Keychain 删除时机，以及 Access Token、Refresh Token、Authorization Code、PKCE Verifier、Device Code 和 Request Secret 不进入 stdout/stderr。
 
 测试 OAuth 协议服务器只用于驱动已安装 CLI 的客户端行为，不进入生产包、不新增生产端点，也不替代 System Fosite 协议验收。System Fosite Provider、PostgreSQL Storage、刷新重用和审计事务仍由 System 测试独立证明；正式发布要求两侧门禁都通过。
+
+GitHub Release 是当前唯一正式分发路径。推送 `v<version>` Tag 后，同一次 GitHub Actions 运行必须重新通过 macOS CLI 产品门禁和 PostgreSQL 15 System IAM 门禁；发布 Job 只下载前者归档的已验证 wheel，复核 SHA-256、包名和 wheel `METADATA` 版本与 Tag 一致，然后创建 Release。发布阶段不检出源码、不重新构建。PyPI 与私有包仓库待账号、权限和发布策略独立确定后再设计。
 
 ## 延期边界
 

@@ -168,6 +168,8 @@ ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?sslmode=disable' \
 
 System 门禁只接受数据库名含独立 `test` 或 `disposable` 段的一次性 PostgreSQL 数据库，并串行覆盖 Migration、IAM Domain、Fosite Storage 和 IAM API；不得把缺少 DSN 导致的测试 Skip 作为发布通过。
 
+正式 CLI 当前只通过 GitHub Release 分发。推送与包版本一致的 `v<version>` Tag 后，必须在同一次工作流中重新通过 macOS CLI 产品门禁和 System IAM PostgreSQL 门禁；发布阶段只能下载 CLI 门禁归档的同一个 wheel，复核 SHA-256、包名和 wheel `METADATA` 版本后创建 Release，不得检出源码或重新构建制品。PyPI 或私有包仓库不作为并行发布路径，待账号、权限和发布策略明确后另行决策。
+
 ### 7.2 OAuth 安全审计
 
 System 的 `system.audit_logs` 是 OAuth 安全事件的唯一持久化落点，不另建 OAuth 日志表，也不经跨模块审计 API 回写自身。每个 OAuth 非 GET 请求只生成一条结构化审计记录，`event_name` 与 `entity_id` 使用同一个稳定事件名，`entity_type=oauth_security_event`：

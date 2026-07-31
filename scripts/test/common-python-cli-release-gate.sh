@@ -67,7 +67,11 @@ if payload != {"name": "addp", "version": installed}:
 
 if [ -n "${ADDP_CLI_RELEASE_DIST:-}" ]; then
     mkdir -p "$ADDP_CLI_RELEASE_DIST"
-    RELEASE_WHEEL="$ADDP_CLI_RELEASE_DIST/$(basename "$WHEEL")"
+    RELEASE_FILENAME=$(basename "$WHEEL")
+    RELEASE_WHEEL="$ADDP_CLI_RELEASE_DIST/$RELEASE_FILENAME"
     cp "$WHEEL" "$RELEASE_WHEEL"
-    shasum -a 256 "$RELEASE_WHEEL" > "$RELEASE_WHEEL.sha256"
+    (
+        cd "$ADDP_CLI_RELEASE_DIST"
+        shasum -a 256 "$RELEASE_FILENAME" > "$RELEASE_FILENAME.sha256"
+    )
 fi
