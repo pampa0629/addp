@@ -168,7 +168,7 @@ ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?sslmode=disable' \
 
 System 门禁只接受数据库名含独立 `test` 或 `disposable` 段的一次性 PostgreSQL 数据库，并串行覆盖 Migration、IAM Domain、Fosite Storage 和 IAM API；不得把缺少 DSN 导致的测试 Skip 作为发布通过。
 
-正式 CLI 当前只通过 GitHub Release 分发。版本发布预检必须复用 common-python 全量测试中的唯一版本一致性测试，统一覆盖运行时、安装包、命令和长期文档版本，不维护第二套脚本。推送与包版本一致的 `v<version>` Tag 后，必须在同一次工作流中重新通过 macOS CLI 产品门禁和 System IAM PostgreSQL 门禁；发布阶段只能下载 CLI 门禁归档的同一个 wheel，复核 SHA-256、包名和 wheel `METADATA` 版本，使用 GitHub OIDC 生成 build provenance attestation 后创建 Release，不得检出源码或重新构建制品。Release 仍只包含 wheel 和 checksum，attestation 由 GitHub Attestations API 保存并通过 `gh attestation verify` 验证。PyPI 或私有包仓库不作为并行发布路径，待账号、权限和发布策略明确后另行决策。
+正式 CLI 当前只通过 GitHub Release 分发。版本发布预检必须复用 common-python 全量测试中的唯一版本一致性测试，统一覆盖运行时、安装包、命令和长期文档版本，不维护第二套脚本。发布工作流的第三方 `uses:` 必须固定到不可变提交 SHA，并由固定版本的供应链静态分析在现有 required Job 内阻断浮动 Action Tag 和中高风险问题。推送与包版本一致的 `v<version>` Tag 后，必须在同一次工作流中重新通过 macOS CLI 产品门禁和 System IAM PostgreSQL 门禁；发布阶段只能下载 CLI 门禁归档的同一个 wheel，复核 SHA-256、包名和 wheel `METADATA` 版本，使用 GitHub OIDC 生成 build provenance attestation 后创建 Release，不得检出源码或重新构建制品。Release 仍只包含 wheel 和 checksum，attestation 由 GitHub Attestations API 保存并通过 `gh attestation verify` 验证。PyPI 或私有包仓库不作为并行发布路径，待账号、权限和发布策略明确后另行决策。
 
 ### 7.2 OAuth 安全审计
 
