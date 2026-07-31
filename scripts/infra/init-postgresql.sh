@@ -208,16 +208,6 @@ if [ "$SKIP_EXTENSIONS" = false ]; then
         echo -e "  ${GREEN}✓ PostGIS 扩展创建完成${NC}"
     fi
 
-    # Install PostGIS Topology extension
-    TOPOLOGY_CHECK=$(docker exec "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" -t -c "SELECT COUNT(*) FROM pg_extension WHERE extname='postgis_topology';" 2>/dev/null | tr -d '[:space:]' || echo "0")
-
-    if [ "${TOPOLOGY_CHECK}" = "1" ]; then
-        echo -e "  ${GREEN}✓ PostGIS Topology 已安装${NC}"
-    else
-        docker exec "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" -c "CREATE EXTENSION IF NOT EXISTS postgis_topology;" >/dev/null 2>&1 || true
-        echo -e "  ${GREEN}✓ PostGIS Topology 安装完成${NC}"
-    fi
-
     echo ""
 
     # ==================== pgvector Extension ====================
@@ -326,7 +316,7 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 echo -e "${GREEN}ADDP 系统数据库现已支持:${NC}"
 echo -e "  ✓ ${GREEN}外部客户端连接${NC} (DBeaver, pgAdmin, DataGrip)"
-echo -e "  ✓ ${GREEN}空间数据操作${NC} (PostGIS + Topology)"
+echo -e "  ✓ ${GREEN}空间数据操作${NC} (PostGIS)"
 echo -e "  ✓ ${GREEN}向量嵌入与相似度搜索${NC} (pgvector)"
 echo -e "  ✓ ${GREEN}完整的模块 Schema${NC} (system, manager, meta, transfer, orchestrator, develop, service)"
 echo ""

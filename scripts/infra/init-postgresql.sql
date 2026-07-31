@@ -16,7 +16,11 @@
 -- ARM64: imresamu/postgis-arm64:15-3.4
 -- AMD64: postgis/postgis:15-3.4
 CREATE EXTENSION IF NOT EXISTS postgis;
-CREATE EXTENSION IF NOT EXISTS postgis_topology;
+
+-- ADDP Infra 只使用 PostGIS 核心 geometry/geography 能力。基础镜像会默认安装
+-- postgis_topology；不带 CASCADE 删除扩展及其空 schema，可在存在真实拓扑依赖时阻止误清理。
+DROP EXTENSION IF EXISTS postgis_topology;
+DROP SCHEMA IF EXISTS topology;
 
 -- ==================== 创建 Schema ====================
 -- 所有表由各模块的 GORM AutoMigrate 自动创建

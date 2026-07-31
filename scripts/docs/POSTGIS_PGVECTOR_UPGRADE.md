@@ -90,7 +90,6 @@ docker exec addp-postgres psql -U addp -d addp -c "SELECT extversion FROM pg_ext
 ------------------+---------+------------+------------------------------------------------------------
  plpgsql          | 1.0     | pg_catalog | PL/pgSQL procedural language
  postgis          | 3.4.x   | public     | PostGIS geometry and geography spatial types and functions
- postgis_topology | 3.4.x   | topology   | PostGIS topology spatial types and functions
  vector           | 0.7.0   | public     | vector data type and ivfflat and hnsw access methods
 ```
 

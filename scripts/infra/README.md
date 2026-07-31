@@ -463,7 +463,6 @@ POSTGRES_IMAGE=imresamu/postgis-arm64:15-3.4 ./scripts/infra/up.sh
 **安装的扩展**:
 - **PostGIS 3.4** - 空间数据操作支持
   - postgis - 核心空间功能
-  - postgis_topology - 拓扑支持
 - **pgvector 0.7.0** - 向量检索支持
   - 从源码编译安装
   - 支持向量嵌入和相似度搜索
