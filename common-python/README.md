@@ -6,16 +6,20 @@ Python 共享模块，为 ADDP 平台的 Python 后端提供统一客户端、�
 
 ## CLI 安装
 
-正式 CLI 交付物是 `addp-common` wheel，当前版本为 `0.1.11`。从仓库构建并安装到隔离环境：
+正式 CLI 交付物是 GitHub Release 中的 `addp-common` wheel，当前版本为 `0.1.11`。下载 wheel 和同名 SHA-256 文件，校验后安装到隔离环境：
 
 ```bash
-python3 -m pip wheel --no-deps --wheel-dir /tmp/addp-cli-dist ./common-python
-python3 -m venv /tmp/addp-cli
-/tmp/addp-cli/bin/python -m pip install /tmp/addp-cli-dist/addp_common-*.whl
-/tmp/addp-cli/bin/addp --version
+RELEASE=v0.1.11
+VERSION=${RELEASE#v}
+WHEEL="addp_common-${VERSION}-py3-none-any.whl"
+curl -fLO "https://github.com/pampa0629/addp/releases/download/${RELEASE}/${WHEEL}"
+curl -fLO "https://github.com/pampa0629/addp/releases/download/${RELEASE}/${WHEEL}.sha256"
+shasum -a 256 -c "${WHEEL}.sha256"
+pipx install "./${WHEEL}"
+addp --version
 ```
 
-也可以使用 `pipx install /tmp/addp-cli-dist/addp_common-*.whl` 将 `addp` 安装到用户命令路径。构建目录只能保留本次生成的一个 wheel；正式安装不使用 editable 源码目录，也不从仓库内 `.venv` 暴露命令入口。
+GitHub Release 是当前唯一正式分发路径。也可以用 `python3 -m venv` 和该 wheel 安装到隔离环境；正式安装不使用本地源码构建、editable 源码目录或仓库内 `.venv`。PyPI 或私有包仓库待账号、权限和发布策略明确后另行设计，不与当前路径并存。
 
 其他 ADDP Python 模块在仓库内开发时继续通过各自依赖声明引用 `../../common-python`，不把 CLI wheel 当作服务运行时部署机制。
 
@@ -108,6 +112,8 @@ make test-common-python-cli-release
 门禁构建 wheel，在全新 venv 中安装依赖和 wheel，校验 `addp` entry point 与版本，然后使用真实 macOS Keychain 完成 Browser loopback + PKCE、Device Flow、AuthContext、跨进程刷新轮换、撤销和终端敏感信息 E2E。非 macOS 环境或缺少可用 macOS Keychain 后端时门禁失败，不降级到明文文件凭据库。
 
 GitHub Actions 的 `CLI product gate (macOS Keychain)` Job 使用同一入口，并归档通过 `twine check`、全新环境安装和产品 E2E 的同一个 wheel 及其 SHA-256；不得在门禁后重新构建另一个待发布 wheel。
+
+推送与包版本一致的 `v<version>` Tag 会重新运行 macOS CLI 产品门禁和 PostgreSQL 15 System IAM 门禁。两项均通过后，发布 Job 只下载同一次运行归档的 wheel，校验 SHA-256、包名和 `METADATA` 版本，再创建 GitHub Release；发布阶段不检出源码、不重新构建。`make test-common-python-cli-release` 仅用于维护者在本地复现产品门禁，其输出不是正式发布物。
 
 CLI 门禁验证已安装客户端，不替代 System Fosite 和 PostgreSQL 事务验收。正式发布还必须对专用一次性数据库运行：
 

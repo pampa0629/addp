@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -78,3 +80,81 @@ jobs:
         env:
           ADDP_SYSTEM_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_iam_test?sslmode=disable
         run: make test-system-iam-postgres
+
+  release-cli:
+    name: Publish ADDP CLI GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - cli-product-macos
+      - system-iam-postgres
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified wheel
+        uses: actions/download-artifact@v8
+        with:
+          name: addp-cli-wheel
+          path: ${{ runner.temp }}/addp-cli-release
+
+      - name: Verify release assets
+        env:
+          ADDP_RELEASE_DIR: ${{ runner.temp }}/addp-cli-release
+          ADDP_RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$ADDP_RELEASE_DIR"
+          shopt -s nullglob
+          wheels=(addp_common-*.whl)
+          checksums=(addp_common-*.whl.sha256)
+          if [[ ${#wheels[@]} -ne 1 || ${#checksums[@]} -ne 1 ]]; then
+            echo "expected exactly one addp-common wheel and one checksum" >&2
+            exit 1
+          fi
+          sha256sum --check "${checksums[0]}"
+          python3 - <<'PY'
+          import os
+          from email.parser import BytesParser
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          release_dir = Path(os.environ["ADDP_RELEASE_DIR"])
+          tag = os.environ["ADDP_RELEASE_TAG"]
+          wheels = list(release_dir.glob("addp_common-*.whl"))
+          if len(wheels) != 1:
+              raise SystemExit("expected exactly one addp-common wheel")
+          if not tag.startswith("v") or len(tag) == 1:
+              raise SystemExit(f"release tag must use v<version>: {tag!r}")
+
+          with ZipFile(wheels[0]) as archive:
+              metadata_files = [
+                  name
+                  for name in archive.namelist()
+                  if name.endswith(".dist-info/METADATA")
+              ]
+              if len(metadata_files) != 1:
+                  raise SystemExit("wheel must contain exactly one METADATA file")
+              metadata = BytesParser().parsebytes(archive.read(metadata_files[0]))
+
+          if metadata["Name"] != "addp-common":
+              raise SystemExit(f"unexpected package name: {metadata['Name']!r}")
+          expected_version = tag[1:]
+          if metadata["Version"] != expected_version:
+              raise SystemExit(
+                  f"wheel version {metadata['Version']!r} does not match tag {tag!r}"
+              )
+          PY
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ADDP_RELEASE_DIR: ${{ runner.temp }}/addp-cli-release
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "$ADDP_RELEASE_DIR"/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --generate-notes \
+            --title "ADDP CLI $GITHUB_REF_NAME"
