@@ -4,7 +4,7 @@
 
 **全域数据平台 - 企业级微服务数据平台**
 
-[![Version](https://img.shields.io/badge/version-0.1.12-blue.svg)](https://github.com/addp/addp)
+[![Version](https://img.shields.io/badge/version-0.1.13-blue.svg)](https://github.com/addp/addp)
 [![Go](https://img.shields.io/badge/Go-1.23+-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.x-4FC08D.svg)](https://vuejs.org/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg)](https://www.docker.com/)

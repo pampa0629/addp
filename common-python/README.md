@@ -6,10 +6,10 @@ Python 共享模块，为 ADDP 平台的 Python 后端提供统一客户端、�
 
 ## CLI 安装
 
-正式 CLI 交付物是 GitHub Release 中的 `addp-common` wheel，当前版本为 `0.1.12`。下载 wheel 和同名 SHA-256 文件，校验后安装到隔离环境：
+正式 CLI 交付物是 GitHub Release 中的 `addp-common` wheel，当前版本为 `0.1.13`。下载 wheel 和同名 SHA-256 文件，校验后安装到隔离环境：
 
 ```bash
-RELEASE=v0.1.12
+RELEASE=v0.1.13
 VERSION=${RELEASE#v}
 WHEEL="addp_common-${VERSION}-py3-none-any.whl"
 curl -fLO "https://github.com/pampa0629/addp/releases/download/${RELEASE}/${WHEEL}"
@@ -114,7 +114,7 @@ make test-common-python-cli-release
 
 GitHub Actions 的 `CLI product gate (macOS Keychain)` Job 使用同一入口，并归档通过 `twine check`、全新环境安装和产品 E2E 的同一个 wheel 及其 SHA-256；不得在门禁后重新构建另一个待发布 wheel。
 
-版本发布预检由全量测试中的 `tests/test_version.py` 统一执行，校验运行时单一版本源、包元数据、命令版本和长期文档版本，不增加第二套版本脚本。推送与包版本一致的 `v<version>` Tag 会重新运行 macOS CLI 产品门禁和 PostgreSQL 15 System IAM 门禁。两项均通过后，发布 Job 只下载同一次运行归档的 wheel，校验 SHA-256、包名和 `METADATA` 版本，使用 GitHub OIDC 为 wheel 生成 build provenance attestation，再创建 GitHub Release；发布阶段不检出源码、不重新构建。用户可使用 `gh attestation verify` 验证 wheel 来源。`make test-common-python-cli-release` 仅用于维护者在本地复现产品门禁，其输出不是正式发布物。
+版本发布预检由全量测试中的 `tests/test_version.py` 统一执行，校验运行时单一版本源、包元数据、命令版本和长期文档版本，不增加第二套版本脚本。发布工作流中的所有第三方 `uses:` 固定到不可变提交 SHA，并由固定版本的 zizmor 在现有 required Job 中扫描，禁止重新引入浮动 Action Tag。推送与包版本一致的 `v<version>` Tag 会重新运行 macOS CLI 产品门禁和 PostgreSQL 15 System IAM 门禁。两项均通过后，发布 Job 只下载同一次运行归档的 wheel，校验 SHA-256、包名和 `METADATA` 版本，使用 GitHub OIDC 为 wheel 生成 build provenance attestation，再创建 GitHub Release；发布阶段不检出源码、不重新构建。用户可使用 `gh attestation verify` 验证 wheel 来源。`make test-common-python-cli-release` 仅用于维护者在本地复现产品门禁，其输出不是正式发布物。
 
 CLI 门禁验证已安装客户端，不替代 System Fosite 和 PostgreSQL 事务验收。正式发布还必须对专用一次性数据库运行：
 
