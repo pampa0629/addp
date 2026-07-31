@@ -23,7 +23,7 @@ func TestBuildNumericAndTextProfiles(t *testing.T) {
 		{Name: "active", Type: datatype.FieldTypeBool, Nullable: true},
 	}, BuildOptions{RowsScanned: 20, RowCount: &rowCount, TopN: 3, HistogramBins: 4, Truncated: true})
 
-	if profile.SchemaVersion != SchemaVersionV1 || profile.SampleSize != 4 || profile.RowsScanned != 20 || !profile.Truncated {
+	if profile.SchemaVersion != SchemaVersionV2 || profile.DataScope.Kind != DataScopeKindAll || profile.SampleSize != 4 || profile.RowsScanned != 20 || !profile.Truncated {
 		t.Fatalf("unexpected profile summary: %#v", profile)
 	}
 	id := profile.Fields[0]

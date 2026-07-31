@@ -26,7 +26,7 @@ func TestDataProfileRepositoryReplaceCurrentAtomicallyReplacesFields(t *testing.
 		LastExecutionID: "execution-1",
 	}
 	first := dataprofile.Profile{
-		SchemaVersion: dataprofile.SchemaVersionV1, Mode: dataprofile.ModeSample,
+		SchemaVersion: dataprofile.SchemaVersionV2, Mode: dataprofile.ModeSample, DataScope: dataprofile.DataScope{Kind: dataprofile.DataScopeKindAll},
 		SampleMethod: "systematic_pages_reservoir", SampleSize: 2, RowsScanned: 4,
 		FieldCount: 2, ProfiledAt: profiledAt,
 		Fields: []dataprofile.FieldProfile{
@@ -140,6 +140,7 @@ func newDataProfileRepositoryTestDB(t *testing.T) *gorm.DB {
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL,
 			item_id INTEGER, engine_id INTEGER NOT NULL, locator TEXT NOT NULL, source_version TEXT NOT NULL,
 			dependency_snapshot JSON NOT NULL, profile_mode TEXT NOT NULL, profile_config_hash TEXT NOT NULL,
+			data_scope JSON NOT NULL DEFAULT '{"kind":"all"}',
 			schema_version TEXT NOT NULL, sample_method TEXT NOT NULL, sample_size INTEGER NOT NULL,
 			rows_scanned INTEGER NOT NULL, row_count INTEGER, row_count_exact NUMERIC NOT NULL,
 			field_count INTEGER NOT NULL, truncated NUMERIC NOT NULL, partial NUMERIC NOT NULL,
@@ -166,6 +167,7 @@ func newDataProfileRepositoryTestDB(t *testing.T) *gorm.DB {
 			t.Fatalf("execute test schema statement: %v", err)
 		}
 	}
+	addTaskExecutionAuthorizationColumns(t, db)
 	t.Cleanup(func() {
 		sqlDB, sqlErr := db.DB()
 		if sqlErr == nil {

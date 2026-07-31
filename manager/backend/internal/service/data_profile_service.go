@@ -15,11 +15,12 @@ import (
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/internal/profilefilter"
 	"github.com/google/uuid"
 )
 
 const (
-	dataProfileConfigVersion      = "data-profile-config/v2"
+	dataProfileConfigVersion      = "data-profile-config/v4"
 	defaultDataProfileConcurrency = 4
 )
 
@@ -48,13 +49,15 @@ type DataProfileService struct {
 }
 
 type DataProfileCurrentRequest struct {
-	Locator string `form:"locator" json:"locator"`
+	Locator           string `form:"locator" json:"locator"`
+	ProfileConfigHash string `form:"profile_config_hash" json:"profile_config_hash,omitempty"`
 	DataProfileSelection
 }
 
 type DataProfileExecutionRequest struct {
-	Locator string `json:"locator"`
-	Mode    string `json:"mode,omitempty"`
+	Locator   string                `json:"locator"`
+	Mode      string                `json:"mode,omitempty"`
+	DataScope dataprofile.DataScope `json:"data_scope,omitempty"`
 	DataProfileSelection
 }
 
@@ -82,11 +85,14 @@ type DataProfileCurrentResponse struct {
 	ActiveExecution     *DataProfileExecutionView `json:"active_execution,omitempty"`
 	LatestExecution     *DataProfileExecutionView `json:"latest_execution,omitempty"`
 	ProfileExecution    *DataProfileExecutionView `json:"profile_execution,omitempty"`
+	ConditionSupported  bool                      `json:"condition_supported"`
 }
 
 type DataProfileExecutionResponse struct {
-	Execution *DataProfileExecutionView `json:"execution"`
-	Reused    bool                      `json:"reused"`
+	Execution         *DataProfileExecutionView `json:"execution"`
+	Reused            bool                      `json:"reused"`
+	ProfileConfigHash string                    `json:"profile_config_hash"`
+	DataScope         dataprofile.DataScope     `json:"data_scope"`
 }
 
 func NewDataProfileService(
@@ -115,12 +121,17 @@ func (s *DataProfileService) GetCurrent(
 	if err != nil {
 		return nil, err
 	}
-	configHash := dataProfileConfigHash(target.Selection, s.budget)
+	configHash := strings.TrimSpace(req.ProfileConfigHash)
+	if configHash == "" {
+		configHash = dataProfileConfigHash(target.Selection, dataprofile.DataScope{Kind: dataprofile.DataScopeKindAll}, s.budget)
+	} else if !validProfileConfigHash(configHash) {
+		return nil, fmt.Errorf("%w: invalid profile_config_hash", ErrDataProfileInvalidRequest)
+	}
 	state, profile, err := s.profiles.GetCurrent(ctx, tenantID, target.ItemFingerprint, dataprofile.ModeSample, configHash)
 	if err != nil {
 		return nil, err
 	}
-	targetKey := profileTargetKey(tenantID, target.Locator, target.Selection)
+	targetKey := profileTargetKey(tenantID, target.Locator, target.Selection, configHash)
 	active, err := s.executions.GetActive(ctx, int(tenantID), targetKey)
 	if err != nil {
 		return nil, err
@@ -130,13 +141,14 @@ func (s *DataProfileService) GetCurrent(
 		return nil, err
 	}
 	response := &DataProfileCurrentResponse{
-		Supported:         true,
-		Profile:           profile,
-		ItemFingerprint:   target.ItemFingerprint,
-		SourceVersion:     target.SourceVersion,
-		ProfileConfigHash: configHash,
-		ActiveExecution:   dataProfileExecutionView(active),
-		LatestExecution:   dataProfileExecutionView(latest),
+		Supported:          true,
+		Profile:            profile,
+		ItemFingerprint:    target.ItemFingerprint,
+		SourceVersion:      target.SourceVersion,
+		ProfileConfigHash:  configHash,
+		ActiveExecution:    dataProfileExecutionView(active),
+		LatestExecution:    dataProfileExecutionView(latest),
+		ConditionSupported: target.ConditionSupported,
 	}
 	if state != nil {
 		profileExecution, err := s.executions.GetByExecutionID(ctx, int(tenantID), state.LastExecutionID)
@@ -174,8 +186,15 @@ func (s *DataProfileService) CreateExecution(
 	if err != nil {
 		return nil, err
 	}
-	targetKey := profileTargetKey(tenantID, target.Locator, target.Selection)
-	configHash := dataProfileConfigHash(target.Selection, s.budget)
+	dataScope, err := profilefilter.Normalize(req.DataScope, target.Fields)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrDataProfileInvalidRequest, err)
+	}
+	if dataScope.Kind == dataprofile.DataScopeKindCondition && !target.ConditionSupported {
+		return nil, fmt.Errorf("%w: conditional profiling is not supported", ErrDataProfileUnsupported)
+	}
+	configHash := dataProfileConfigHash(target.Selection, dataScope, s.budget)
+	targetKey := profileTargetKey(tenantID, target.Locator, target.Selection, configHash)
 	now := time.Now().UTC()
 	executionID := uuid.NewString()
 	executionConfig := commonModels.JSONMap{
@@ -189,7 +208,8 @@ func (s *DataProfileService) CreateExecution(
 		"source_version":      target.SourceVersion,
 		"profile_mode":        mode,
 		"profile_config_hash": configHash,
-		"sample_method":       "systematic_pages_reservoir",
+		"data_scope":          dataScope,
+		"sample_method":       sampleMethodForScope(dataScope),
 		"budget": map[string]interface{}{
 			"sample_size":      s.budget.SampleSize,
 			"max_rows_scanned": s.budget.MaxRowsScanned,
@@ -221,16 +241,19 @@ func (s *DataProfileService) CreateExecution(
 		return nil, err
 	}
 	if created {
-		go s.runExecution(target, configHash, stored)
+		go s.runExecution(target, dataScope, configHash, stored)
 	}
 	return &DataProfileExecutionResponse{
-		Execution: dataProfileExecutionView(stored),
-		Reused:    !created,
+		Execution:         dataProfileExecutionView(stored),
+		Reused:            !created,
+		ProfileConfigHash: configHash,
+		DataScope:         dataScope,
 	}, nil
 }
 
 func (s *DataProfileService) runExecution(
 	target *DataProfileTarget,
+	dataScope dataprofile.DataScope,
 	configHash string,
 	execution *commonExecution.TaskExecution,
 ) {
@@ -257,7 +280,7 @@ func (s *DataProfileService) runExecution(
 			logger.L().Error("更新数据剖析失败状态失败", "execution_id", execution.ExecutionID, "error", updateErr)
 		}
 	}
-	sample, err := s.sampler.Sample(ctx, target, s.budget)
+	sample, err := s.sampler.Sample(ctx, target, dataScope, s.budget)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			fail("timeout", err)
@@ -268,10 +291,11 @@ func (s *DataProfileService) runExecution(
 	}
 	profile := dataprofile.Build(sample.Rows, sample.Fields, dataprofile.BuildOptions{
 		Mode:          dataprofile.ModeSample,
-		SampleMethod:  "systematic_pages_reservoir",
+		DataScope:     dataScope,
+		SampleMethod:  sampleMethodForScope(dataScope),
 		RowsScanned:   sample.RowsScanned,
-		RowCount:      target.RowCount,
-		RowCountExact: target.RowCountExact,
+		RowCount:      sample.RowCount,
+		RowCountExact: sample.RowCountExact,
 		Truncated:     sample.Truncated,
 		Partial:       sample.Partial,
 		TopN:          10,
@@ -310,20 +334,22 @@ func (s *DataProfileService) runExecution(
 	}
 }
 
-func dataProfileConfigHash(selection DataProfileSelection, budget DataProfileBudget) string {
+func dataProfileConfigHash(selection DataProfileSelection, dataScope dataprofile.DataScope, budget DataProfileBudget) string {
 	payload, _ := json.Marshal(struct {
-		Version        string               `json:"version"`
-		Mode           string               `json:"mode"`
-		Selection      DataProfileSelection `json:"selection"`
-		SampleSize     int                  `json:"sample_size"`
-		MaxRowsScanned int                  `json:"max_rows_scanned"`
-		PageSize       int                  `json:"page_size"`
-		TopN           int                  `json:"top_n"`
-		HistogramBins  int                  `json:"histogram_bins"`
+		Version        string                `json:"version"`
+		Mode           string                `json:"mode"`
+		Selection      DataProfileSelection  `json:"selection"`
+		DataScope      dataprofile.DataScope `json:"data_scope"`
+		SampleSize     int                   `json:"sample_size"`
+		MaxRowsScanned int                   `json:"max_rows_scanned"`
+		PageSize       int                   `json:"page_size"`
+		TopN           int                   `json:"top_n"`
+		HistogramBins  int                   `json:"histogram_bins"`
 	}{
 		Version:        dataProfileConfigVersion,
 		Mode:           dataprofile.ModeSample,
 		Selection:      normalizeDataProfileSelection(selection),
+		DataScope:      dataScope,
 		SampleSize:     budget.SampleSize,
 		MaxRowsScanned: budget.MaxRowsScanned,
 		PageSize:       budget.PageSize,
@@ -332,6 +358,21 @@ func dataProfileConfigHash(selection DataProfileSelection, budget DataProfileBud
 	})
 	hash := sha256.Sum256(payload)
 	return hex.EncodeToString(hash[:])
+}
+
+func validProfileConfigHash(value string) bool {
+	if len(value) != sha256.Size*2 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
+func sampleMethodForScope(scope dataprofile.DataScope) string {
+	if scope.Kind == dataprofile.DataScopeKindCondition {
+		return "filtered_bounded_reservoir"
+	}
+	return "systematic_pages_reservoir"
 }
 
 func dataProfileExecutionView(execution *commonExecution.TaskExecution) *DataProfileExecutionView {

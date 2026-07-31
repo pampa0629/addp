@@ -18,6 +18,107 @@
       </el-button>
     </div>
 
+    <section v-if="profile" class="scope-band" :aria-label="t('manager.explorer.profile.dataScope')">
+      <div class="scope-mode-row">
+        <span class="scope-label">{{ t('manager.explorer.profile.dataScope') }}</span>
+        <el-segmented
+          v-model="scopeMode"
+          size="small"
+          :options="scopeModeOptions"
+          :disabled="submitting || executionActive || !conditionSupported"
+          @change="handleScopeModeChange"
+        />
+      </div>
+      <template v-if="scopeMode === 'condition' && conditionSupported">
+        <div class="condition-toolbar">
+          <el-segmented v-model="conditionLogic" size="small" :options="conditionLogicOptions" />
+          <el-button
+            :icon="Plus"
+            size="small"
+            circle
+            :disabled="conditions.length >= 8"
+            :aria-label="t('manager.explorer.profile.addCondition')"
+            @click="addCondition"
+          />
+        </div>
+        <div class="condition-list">
+          <div v-for="(condition, index) in conditions" :key="condition.id" class="condition-row">
+            <el-select v-model="condition.field" filterable @change="resetCondition(condition)">
+              <el-option
+                v-for="field in allFields"
+                :key="field.name"
+                :label="field.name"
+                :value="field.name"
+              />
+            </el-select>
+            <el-select v-model="condition.operator" @change="resetConditionValue(condition)">
+              <el-option
+                v-for="operator in conditionOperators(condition)"
+                :key="operator"
+                :label="t(`manager.explorer.profile.operators.${operator}`)"
+                :value="operator"
+              />
+            </el-select>
+            <div class="condition-values">
+              <template v-if="condition.operator === 'between'">
+                <el-input-number
+                  v-if="isNumericCondition(condition)"
+                  v-model="condition.values[0]"
+                  :controls="false"
+                  :placeholder="t('manager.explorer.profile.rangeStart')"
+                />
+                <el-input v-else v-model="condition.values[0]" :placeholder="t('manager.explorer.profile.rangeStart')" />
+                <span class="range-separator">-</span>
+                <el-input-number
+                  v-if="isNumericCondition(condition)"
+                  v-model="condition.values[1]"
+                  :controls="false"
+                  :placeholder="t('manager.explorer.profile.rangeEnd')"
+                />
+                <el-input v-else v-model="condition.values[1]" :placeholder="t('manager.explorer.profile.rangeEnd')" />
+              </template>
+              <el-select
+                v-else-if="condition.operator === 'in' || condition.operator === 'not_in'"
+                v-model="condition.values"
+                multiple
+                filterable
+                allow-create
+                default-first-option
+                :placeholder="t('manager.explorer.profile.multipleValues')"
+              />
+              <span v-else-if="isNullOperator(condition.operator)" class="no-value">
+                {{ t('manager.explorer.profile.noValueRequired') }}
+              </span>
+              <el-select v-else-if="conditionField(condition)?.type === 'bool'" v-model="condition.value">
+                <el-option :label="t('manager.explorer.booleanYes')" :value="true" />
+                <el-option :label="t('manager.explorer.booleanNo')" :value="false" />
+              </el-select>
+              <el-input-number
+                v-else-if="isNumericCondition(condition)"
+                v-model="condition.value"
+                :controls="false"
+                :placeholder="t('manager.explorer.profile.value')"
+              />
+              <el-input v-else v-model="condition.value" :placeholder="conditionValuePlaceholder(condition)" />
+            </div>
+            <el-button
+              :icon="Delete"
+              size="small"
+              text
+              :disabled="conditions.length === 1"
+              :aria-label="t('manager.explorer.profile.removeCondition')"
+              @click="removeCondition(index)"
+            />
+          </div>
+        </div>
+        <div class="condition-actions">
+          <el-button type="primary" size="small" :icon="Filter" :loading="submitting" @click="applyConditions">
+            {{ t('manager.explorer.profile.applyConditions') }}
+          </el-button>
+        </div>
+      </template>
+    </section>
+
     <el-alert
       v-if="errorText"
       type="error"
@@ -116,7 +217,7 @@
             @row-click="selectField"
           >
             <el-table-column prop="name" :label="t('manager.explorer.profile.field')" min-width="150" show-overflow-tooltip />
-            <el-table-column prop="type" :label="t('manager.explorer.profile.type')" width="100" show-overflow-tooltip />
+            <el-table-column prop="type" :label="t('manager.explorer.profile.canonicalType')" width="110" show-overflow-tooltip />
             <el-table-column :label="t('manager.explorer.profile.nullRate')" width="90" align="right">
               <template #default="{ row }">{{ formatPercent(row.null_rate) }}</template>
             </el-table-column>
@@ -138,7 +239,18 @@
           <div class="field-detail-header">
             <div class="field-name" :title="selectedField.name">{{ selectedField.name }}</div>
             <div class="field-tags">
-              <el-tag size="small" effect="plain">{{ selectedField.type }}</el-tag>
+              <el-tag size="small" effect="plain" :title="`${t('manager.explorer.profile.canonicalType')}: ${selectedField.type}`">
+                {{ t('manager.explorer.profile.canonicalType') }}: {{ selectedField.type }}
+              </el-tag>
+              <el-tag
+                v-if="selectedField.native_type"
+                size="small"
+                effect="plain"
+                type="info"
+                :title="`${t('manager.explorer.profile.nativeType')}: ${selectedField.native_type}`"
+              >
+                {{ t('manager.explorer.profile.nativeType') }}: {{ selectedField.native_type }}
+              </el-tag>
               <el-tag v-if="selectedField.primary_key" size="small" effect="plain" type="success">
                 {{ t('manager.explorer.profile.primaryKey') }}
               </el-tag>
@@ -192,10 +304,16 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh, Search } from '@element-plus/icons-vue'
+import { Delete, Filter, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import DataProfileChart from '@/components/explorer/DataProfileChart.vue'
 import { dataExplorerAPI } from '@/api/dataExplorer'
+import {
+  buildProfileDataScope,
+  isNumericProfileType,
+  newProfileCondition,
+  operatorsForProfileField
+} from '@/utils/dataProfileScope'
 
 const POLL_INTERVAL_MS = 2000
 const ACTIVE_STATUSES = new Set(['pending', 'running'])
@@ -217,6 +335,12 @@ const fieldTypeFilter = ref('')
 const observationFilter = ref('')
 const selectedFieldName = ref('')
 const autoRequested = ref(false)
+const scopeMode = ref('all')
+const conditionLogic = ref('and')
+const conditions = ref([])
+const appliedScope = ref({ kind: 'all' })
+const activeConfigHash = ref('')
+let conditionID = 0
 let pollTimer = null
 let requestSequence = 0
 
@@ -232,6 +356,15 @@ const latestExecution = computed(() => current.value?.latest_execution || null)
 const profileExecution = computed(() => current.value?.profile_execution || null)
 const executionActive = computed(() => ACTIVE_STATUSES.has(activeExecution.value?.status))
 const allFields = computed(() => Array.isArray(profile.value?.fields) ? profile.value.fields : [])
+const conditionSupported = computed(() => Boolean(current.value?.condition_supported && allFields.value.length))
+const scopeModeOptions = computed(() => [
+  { label: t('manager.explorer.profile.allData'), value: 'all' },
+  { label: t('manager.explorer.profile.conditionRange'), value: 'condition', disabled: !conditionSupported.value }
+])
+const conditionLogicOptions = computed(() => [
+  { label: 'AND', value: 'and' },
+  { label: 'OR', value: 'or' }
+])
 const fieldTypes = computed(() => [...new Set(allFields.value.map(field => field.type).filter(Boolean))].sort())
 const observationCodes = computed(() => [...new Set(
   allFields.value.flatMap(field => field.observations || []).map(item => item.code).filter(Boolean)
@@ -299,6 +432,7 @@ const executionDuration = execution => {
 }
 
 const summaryItems = computed(() => [
+  { key: 'scope', label: t('manager.explorer.profile.dataScope'), value: scopeSummary.value },
   { key: 'rows', label: t('manager.explorer.profile.rows'), value: profile.value?.row_count == null ? '-' : formatInteger(profile.value.row_count) },
   { key: 'fields', label: t('manager.explorer.profile.fields'), value: formatInteger(profile.value?.field_count) },
   { key: 'mode', label: t('manager.explorer.profile.mode'), value: t('manager.explorer.profile.sampleMode') },
@@ -308,6 +442,15 @@ const summaryItems = computed(() => [
   { key: 'profiled', label: t('manager.explorer.profile.profiledAt'), value: formatDateTime(profile.value?.profiled_at) },
   { key: 'source', label: t('manager.explorer.profile.sourceVersion'), value: shortHash(current.value?.stored_source_version), title: current.value?.stored_source_version }
 ])
+
+const scopeSummary = computed(() => {
+  const scope = profile.value?.data_scope
+  if (scope?.kind !== 'condition') return t('manager.explorer.profile.allData')
+  return t('manager.explorer.profile.conditionCount', {
+    logic: String(scope.logic || 'and').toUpperCase(),
+    count: scope.conditions?.length || 0
+  })
+})
 
 const metric = (key, value, formatter = formatNumber) => ({
   key,
@@ -375,12 +518,64 @@ const schedulePoll = () => {
   pollTimer = window.setTimeout(() => loadCurrent(false), POLL_INTERVAL_MS)
 }
 
-const startExecution = async (manual = false) => {
+const createEditorCondition = () => ({ id: ++conditionID, ...newProfileCondition(allFields.value) })
+const conditionField = condition => allFields.value.find(field => field.name === condition.field)
+const conditionOperators = condition => operatorsForProfileField(conditionField(condition))
+const isNumericCondition = condition => isNumericProfileType(conditionField(condition)?.type)
+const isNullOperator = operator => ['is_null', 'is_not_null'].includes(operator)
+const conditionValuePlaceholder = condition => {
+  const type = conditionField(condition)?.type
+  if (['date', 'time', 'timestamp'].includes(type)) return t('manager.explorer.profile.isoValue')
+  return t('manager.explorer.profile.value')
+}
+const resetConditionValue = condition => {
+  const type = conditionField(condition)?.type
+  condition.value = type === 'bool' ? true : (isNumericProfileType(type) ? null : '')
+  condition.values = condition.operator === 'between'
+    ? (isNumericProfileType(type) ? [null, null] : ['', ''])
+    : []
+}
+const resetCondition = condition => {
+  condition.operator = conditionOperators(condition)[0] || 'is_null'
+  resetConditionValue(condition)
+}
+const addCondition = () => {
+  if (conditions.value.length < 8) conditions.value.push(createEditorCondition())
+}
+const removeCondition = index => {
+  if (conditions.value.length > 1) conditions.value.splice(index, 1)
+}
+
+const handleScopeModeChange = mode => {
+  if (mode !== 'all') {
+    if (!conditions.value.length) conditions.value = [createEditorCondition()]
+    return
+  }
+  appliedScope.value = { kind: 'all' }
+  activeConfigHash.value = ''
+  current.value = null
+  selectedFieldName.value = ''
+  clearPoll()
+  loadCurrent(true)
+}
+
+const applyConditions = async () => {
+  try {
+    const scope = buildProfileDataScope(allFields.value, conditionLogic.value, conditions.value)
+    await startExecution(true, scope)
+  } catch {
+    ElMessage.warning(t('manager.explorer.profile.invalidConditions'))
+  }
+}
+
+const startExecution = async (manual = false, scope = appliedScope.value) => {
   if (!props.locator || submitting.value || executionActive.value) return
   submitting.value = true
   errorText.value = ''
   try {
-    const response = await dataExplorerAPI.createDataProfileExecution(props.locator, selection.value)
+    const response = await dataExplorerAPI.createDataProfileExecution(props.locator, selection.value, scope)
+    activeConfigHash.value = response?.profile_config_hash || ''
+    appliedScope.value = response?.data_scope || scope
     current.value = {
       ...(current.value || {}),
       active_execution: response?.execution || null,
@@ -402,9 +597,23 @@ const loadCurrent = async (allowAutoStart = true) => {
   if (!current.value) loading.value = true
   errorText.value = ''
   try {
-    const response = await dataExplorerAPI.getDataProfileCurrent(props.locator, selection.value)
+    const response = await dataExplorerAPI.getDataProfileCurrent(props.locator, selection.value, activeConfigHash.value)
     if (sequence !== requestSequence) return
+    if (activeConfigHash.value && !response?.profile && ['failed', 'timeout'].includes(response?.latest_execution?.status)) {
+      const message = response.latest_execution.error || t('manager.explorer.profile.latestFailed')
+      activeConfigHash.value = ''
+      appliedScope.value = { kind: 'all' }
+      scopeMode.value = 'all'
+      clearPoll()
+      ElMessage.error(message)
+      await loadCurrent(false)
+      return
+    }
     current.value = response
+    if (response?.profile?.data_scope?.kind === 'condition') {
+      scopeMode.value = 'condition'
+      appliedScope.value = response.profile.data_scope
+    }
     if (!selectedFieldName.value && response?.profile?.fields?.length) {
       selectedFieldName.value = response.profile.fields[0].name
     }
@@ -412,7 +621,7 @@ const loadCurrent = async (allowAutoStart = true) => {
       schedulePoll()
     } else {
       clearPoll()
-      if (allowAutoStart && !response?.profile && !autoRequested.value) {
+      if (allowAutoStart && !activeConfigHash.value && !response?.profile && !autoRequested.value) {
         autoRequested.value = true
         await startExecution(false)
       }
@@ -438,6 +647,11 @@ watch(targetKey, () => {
   errorText.value = ''
   selectedFieldName.value = ''
   autoRequested.value = false
+  scopeMode.value = 'all'
+  conditions.value = []
+  conditionLogic.value = 'and'
+  appliedScope.value = { kind: 'all' }
+  activeConfigHash.value = ''
   loadCurrent(true)
 })
 
@@ -480,11 +694,95 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
 }
 
+.field-tags {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.field-tags :deep(.el-tag) {
+  max-width: 100%;
+}
+
+.field-tags :deep(.el-tag__content) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .profile-title,
 .section-heading {
   color: var(--addp-text-primary);
   font-size: 14px;
   font-weight: 600;
+}
+
+.scope-band {
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-bottom: 1px solid var(--addp-border-color);
+  background: var(--addp-bg-secondary) !important;
+}
+
+.scope-mode-row,
+.condition-toolbar,
+.condition-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.scope-mode-row {
+  justify-content: space-between;
+}
+
+.scope-label {
+  color: var(--addp-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.condition-toolbar {
+  justify-content: flex-end;
+}
+
+.condition-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.condition-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) 150px minmax(220px, 2fr) 32px;
+  align-items: center;
+  gap: 8px;
+}
+
+.condition-values {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.condition-values > :deep(.el-input),
+.condition-values > :deep(.el-input-number),
+.condition-values > :deep(.el-select) {
+  width: 100%;
+}
+
+.range-separator,
+.no-value {
+  flex: 0 0 auto;
+  color: var(--addp-text-secondary);
+  font-size: 12px;
+}
+
+.condition-actions {
+  justify-content: flex-end;
 }
 
 .profile-alert {
@@ -662,6 +960,20 @@ onBeforeUnmount(() => {
 
   .metric-grid {
     grid-template-columns: repeat(2, minmax(100px, 1fr));
+  }
+
+  .scope-mode-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .condition-row {
+    grid-template-columns: 1fr 1fr 32px;
+  }
+
+  .condition-values {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 }
 </style>

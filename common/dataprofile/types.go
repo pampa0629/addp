@@ -7,8 +7,13 @@ import (
 )
 
 const (
-	SchemaVersionV1 = "data.profile/v1"
+	SchemaVersionV2 = "data.profile/v2"
 	ModeSample      = "sample"
+
+	DataScopeKindAll       = "all"
+	DataScopeKindCondition = "condition"
+	DataScopeLogicAnd      = "and"
+	DataScopeLogicOr       = "or"
 
 	MetricStatusComputed    = "computed"
 	MetricStatusUnsupported = "unsupported"
@@ -24,6 +29,7 @@ const (
 type Profile struct {
 	SchemaVersion string         `json:"schema_version"`
 	Mode          string         `json:"mode"`
+	DataScope     DataScope      `json:"data_scope"`
 	SampleMethod  string         `json:"sample_method"`
 	SampleSize    int64          `json:"sample_size"`
 	RowsScanned   int64          `json:"rows_scanned"`
@@ -35,6 +41,20 @@ type Profile struct {
 	ProfiledAt    time.Time      `json:"profiled_at"`
 	Fields        []FieldProfile `json:"fields"`
 	Observations  []Observation  `json:"observations,omitempty"`
+}
+
+// DataScope identifies the logical row population analyzed by a profile.
+type DataScope struct {
+	Kind       string               `json:"kind"`
+	Logic      string               `json:"logic,omitempty"`
+	Conditions []DataScopeCondition `json:"conditions,omitempty"`
+}
+
+type DataScopeCondition struct {
+	Field    string        `json:"field"`
+	Operator string        `json:"operator"`
+	Value    interface{}   `json:"value,omitempty"`
+	Values   []interface{} `json:"values,omitempty"`
 }
 
 type FieldProfile struct {
@@ -119,6 +139,7 @@ type Observation struct {
 
 type BuildOptions struct {
 	Mode          string
+	DataScope     DataScope
 	SampleMethod  string
 	RowsScanned   int64
 	RowCount      *int64

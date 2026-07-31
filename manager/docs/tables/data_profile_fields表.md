@@ -4,7 +4,7 @@
 
 ## 一、表定位
 
-字段结果从 `manager.data_profiles` 拆分，便于按顺序加载和后续建立字段级投影。完整指标仍以 `data.profile/v1` 的 `FieldProfile` JSON 为事实结构，关系字段只保存查询和校验所需的稳定投影。
+字段结果从 `manager.data_profiles` 拆分，便于按顺序加载和后续建立字段级投影。完整指标仍以 `data.profile/v2` 的 `FieldProfile` JSON 为事实结构，关系字段只保存查询和校验所需的稳定投影。
 
 ## 二、核心字段
 

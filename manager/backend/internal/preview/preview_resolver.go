@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataprofile"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
@@ -69,6 +70,7 @@ type PreviewResolverRequest struct {
 	RefPath          string                        // multi child 内的单个ref 路径，指向容器内原始对象
 	NestedChildPath  string                        // 当前 child 是容器时，继续寻址其内部 child 的相对路径
 	GraphSample      plugin.GraphSampleFilter      // 图预览样本过滤条件
+	DataScope        dataprofile.DataScope         // Manager 剖析内部使用的数据范围；公共预览不接受该参数
 }
 
 // Pagination 分页参数
@@ -524,6 +526,7 @@ func (r *PreviewResolver) buildProviderRequest(req *PreviewResolverRequest) (*Pr
 		RefPath:         req.RefPath,
 		NestedChildPath: req.NestedChildPath,
 		GraphSample:     req.GraphSample.Clone(),
+		DataScope:       req.DataScope,
 		Attributes:      req.MetadataAttributes(),
 	}, nil
 }

@@ -23,9 +23,10 @@
 | `source_version` | varchar(64) | 结果所依据的源内容版本 |
 | `dependency_snapshot` | jsonb | 执行时冻结的源依赖快照 |
 | `profile_mode` | varchar(32) | 当前为 `sample`，契约预留 `full` |
-| `profile_config_hash` | varchar(64) | 采样预算、选择上下文和算法版本的 hash |
-| `schema_version` | varchar(64) | 公共结果契约版本，当前为 `data.profile/v1` |
-| `sample_method` | varchar(64) | 当前为 `systematic_pages_reservoir` |
+| `profile_config_hash` | varchar(64) | 采样预算、选择上下文、规范化数据范围和算法版本的 hash |
+| `data_scope` | jsonb | 本结果分析的数据范围：`all` 或规范化后的单层 `condition` |
+| `schema_version` | varchar(64) | 公共结果契约版本，当前为 `data.profile/v2` |
+| `sample_method` | varchar(64) | 全范围为 `systematic_pages_reservoir`，条件范围为 `filtered_bounded_reservoir` |
 | `sample_size` / `rows_scanned` | bigint | 最终样本行数 / 实际扫描行数 |
 | `row_count` / `row_count_exact` | bigint / boolean | Meta 提供的行数及精确语义 |
 | `field_count` | integer | 字段数 |
@@ -43,6 +44,8 @@ tenant_id + item_fingerprint + profile_mode + profile_config_hash
 ```
 
 新 execution 成功时，在一个事务中更新本表并替换 `manager.data_profile_fields`。失败或超时不修改本表，因此上一份成功结果继续可读。
+
+`data_scope` 必须在服务端校验、规范化后参与 `profile_config_hash` 计算。全范围与不同条件范围因此分别保存当前成功结果，互不覆盖。
 
 ## 四、索引
 

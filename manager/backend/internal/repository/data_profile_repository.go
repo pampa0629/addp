@@ -67,6 +67,11 @@ func (r *DataProfileRepository) ReplaceCurrent(
 		return fmt.Errorf("marshal profile observations: %w", err)
 	}
 	state.Observations = observations
+	dataScope, err := json.Marshal(profile.DataScope)
+	if err != nil {
+		return fmt.Errorf("marshal profile data scope: %w", err)
+	}
+	state.DataScope = dataScope
 	state.SchemaVersion = profile.SchemaVersion
 	state.ProfileMode = profile.Mode
 	state.SampleMethod = profile.SampleMethod
@@ -144,6 +149,9 @@ func decodeStoredProfile(state *models.DataProfile) (*dataprofile.Profile, error
 		Partial:       state.Partial,
 		ProfiledAt:    state.ProfiledAt,
 		Fields:        make([]dataprofile.FieldProfile, 0, len(state.Fields)),
+	}
+	if err := json.Unmarshal(state.DataScope, &profile.DataScope); err != nil {
+		return nil, fmt.Errorf("decode profile data scope: %w", err)
 	}
 	if len(state.Observations) > 0 {
 		if err := json.Unmarshal(state.Observations, &profile.Observations); err != nil {

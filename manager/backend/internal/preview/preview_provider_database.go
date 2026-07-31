@@ -7,11 +7,13 @@ import (
 	"strings"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataprofile"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/spatial"
 	"github.com/addp/common/sqldialect"
 	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/internal/profilefilter"
 	"github.com/addp/manager/internal/repository"
 )
 
@@ -65,6 +67,10 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		}
 		return nil, fmt.Errorf("failed to describe table: %w", err)
 	}
+	profileFields := append([]datatype.FieldInfo(nil), columns...)
+	if metaTable := tableInfoFromMetaAttributes(req.Attributes, tableName); metaTable != nil && len(metaTable.Fields) > 0 {
+		profileFields = append([]datatype.FieldInfo(nil), metaTable.Fields...)
+	}
 
 	// 3. 尝试从 Meta 获取列元数据（优先用于展示，包含更准确的几何类型）。
 	columnMetadata, geometryColumns, srid, sourceCRS, sourceCRSDefinition, extent, metaErr := p.getColumnMetadataFromMeta(ctx, req.TenantID, req.Engine.ID, req.Schema, tableName)
@@ -104,6 +110,9 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 
 	// 4. 获取总行数，优先使用 Meta / CatalogFacts 中已知的估算值。
 	totalCount := p.resolveTableRowCount(req, catalogFacts)
+	if req.DataScope.Kind == "condition" {
+		totalCount = -1
+	}
 	catalogSpatial := plugin.CatalogFactsSpatialInfo(catalogFacts)
 	if srid == 0 {
 		srid = databasePreviewSourceSRID(columns, geometryColumns)
@@ -136,7 +145,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	limit := pageSize
 
 	// 6. 执行分页查询
-	rows, err := p.queryData(ctx, batchReader, connInfo, req.ProviderPath, req.Engine.EngineType, req.Schema, tableName, offset, limit, columns)
+	rows, err := p.queryData(ctx, batchReader, connInfo, req.ProviderPath, req.Engine.EngineType, req.Schema, tableName, offset, limit, columns, req.DataScope)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query data: %w", err)
 	}
@@ -144,7 +153,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	return &models.TablePreview{
 		Mode:                PreviewModeTable,
 		Columns:             columnNames,
-		Fields:              append([]datatype.FieldInfo(nil), columns...),
+		Fields:              profileFields,
 		ColumnMetadata:      columnMetadata,
 		Rows:                rows,
 		Total:               int(totalCount),
@@ -177,25 +186,31 @@ func (p *DatabaseTablePreviewProvider) queryData(
 	engineType, schema, table string,
 	offset, limit int,
 	columns []datatype.FieldInfo,
+	dataScope dataprofile.DataScope,
 ) ([]map[string]interface{}, error) {
 	dialect := sqldialect.ForEngine(engineType)
+	whereClause, args, err := profilefilter.SQL(dataScope, dialect, "")
+	if err != nil {
+		return nil, err
+	}
 	selectExpr := "*"
 	query := ""
 	if dialect.IsPostgreSQL() {
 		primaryKeys := databasePrimaryKeyColumns(columns)
 		if len(primaryKeys) > 0 {
 			selectExpr = databasePreviewSelectExpr(dialect, columns, databasePreviewSourceAlias)
-			query = databasePreviewPostgreSQLPrimaryKeyPageQuery(dialect, selectExpr, schema, table, primaryKeys, limit, offset)
+			query = databasePreviewPostgreSQLPrimaryKeyPageQuery(dialect, selectExpr, schema, table, primaryKeys, whereClause, limit, offset)
 		} else {
 			selectExpr = databasePreviewSelectExpr(dialect, columns, "")
 		}
 	}
 
 	if query == "" {
-		query = dialect.SelectTableSQL(selectExpr, schema, table, "", "", limit, offset)
+		query = dialect.SelectTableSQL(selectExpr, schema, table, whereClause, "", limit, offset)
 	}
 	result, err := batchReader.ReadBatch(ctx, connInfo, providerPath, plugin.BatchReadOptions{
 		Query: query,
+		Args:  args,
 	})
 	if err != nil {
 		return nil, err
@@ -263,14 +278,19 @@ func databasePreviewPostgreSQLPrimaryKeyPageQuery(
 	dialect sqldialect.Dialect,
 	selectExpr, schema, table string,
 	primaryKeys []string,
+	whereClause string,
 	limit, offset int,
 ) string {
 	qualifiedTable := dialect.QualifiedTable(schema, table)
 	sourceAlias := dialect.QuoteIdentifier(databasePreviewSourceAlias)
 	sourceOrderBy := databasePreviewOrderByClause(dialect, databasePreviewSourceAlias, primaryKeys)
 	limitClause := databasePreviewLimitOffsetClause(limit, offset)
+	whereSQL := ""
+	if strings.TrimSpace(whereClause) != "" {
+		whereSQL = " WHERE " + strings.TrimSpace(whereClause)
+	}
 	if offset <= 0 {
-		return fmt.Sprintf("SELECT %s FROM %s AS %s ORDER BY %s%s", selectExpr, qualifiedTable, sourceAlias, sourceOrderBy, limitClause)
+		return fmt.Sprintf("SELECT %s FROM %s AS %s%s ORDER BY %s%s", selectExpr, qualifiedTable, sourceAlias, whereSQL, sourceOrderBy, limitClause)
 	}
 
 	keySelect := databasePreviewKeyColumnList(dialect, primaryKeys)
@@ -279,10 +299,11 @@ func databasePreviewPostgreSQLPrimaryKeyPageQuery(
 	keyAlias := dialect.QuoteIdentifier(databasePreviewKeyAlias)
 	joinClause := databasePreviewPrimaryKeyJoinClause(dialect, primaryKeys)
 	return fmt.Sprintf(
-		"WITH %s AS (SELECT %s FROM %s ORDER BY %s%s) SELECT %s FROM %s AS %s JOIN %s AS %s ON %s ORDER BY %s",
+		"WITH %s AS (SELECT %s FROM %s%s ORDER BY %s%s) SELECT %s FROM %s AS %s JOIN %s AS %s ON %s ORDER BY %s",
 		keyCTE,
 		keySelect,
 		qualifiedTable,
+		whereSQL,
 		keyOrderBy,
 		limitClause,
 		selectExpr,

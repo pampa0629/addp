@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS manager.data_profiles (
     dependency_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
     profile_mode VARCHAR(32) NOT NULL,
     profile_config_hash VARCHAR(64) NOT NULL,
+    data_scope JSONB NOT NULL DEFAULT '{"kind":"all"}'::jsonb,
     schema_version VARCHAR(64) NOT NULL,
     sample_method VARCHAR(64) NOT NULL,
     sample_size BIGINT NOT NULL,

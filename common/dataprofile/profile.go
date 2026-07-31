@@ -37,8 +37,9 @@ func Build(rows []map[string]interface{}, fields []datatype.FieldInfo, opts Buil
 	}
 	fields = normalizedFields(rows, fields)
 	profile := Profile{
-		SchemaVersion: SchemaVersionV1,
+		SchemaVersion: SchemaVersionV2,
 		Mode:          opts.Mode,
+		DataScope:     opts.DataScope,
 		SampleMethod:  opts.SampleMethod,
 		SampleSize:    int64(len(rows)),
 		RowsScanned:   opts.RowsScanned,
@@ -49,6 +50,9 @@ func Build(rows []map[string]interface{}, fields []datatype.FieldInfo, opts Buil
 		Partial:       opts.Partial,
 		ProfiledAt:    opts.ProfiledAt.UTC(),
 		Fields:        make([]FieldProfile, 0, len(fields)),
+	}
+	if profile.DataScope.Kind == "" {
+		profile.DataScope.Kind = DataScopeKindAll
 	}
 	for _, field := range fields {
 		fp := buildField(rows, field, opts)

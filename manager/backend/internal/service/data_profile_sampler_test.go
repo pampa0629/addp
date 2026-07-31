@@ -32,10 +32,10 @@ func TestProfileSamplePagesSpreadsBudgetAcrossSource(t *testing.T) {
 func TestProfileTargetKeyNormalizesSelection(t *testing.T) {
 	left := profileTargetKey(7, " addp://engine/1/item/a ", DataProfileSelection{
 		ChildName: " Sheet 1 ", RefPath: "/data.csv/", NestedChildPath: "/nested/table/",
-	})
+	}, "config")
 	right := profileTargetKey(7, "addp://engine/1/item/a", DataProfileSelection{
 		ChildName: "Sheet 1", RefPath: "data.csv", NestedChildPath: "nested/table",
-	})
+	}, "config")
 	if left != right {
 		t.Fatalf("normalized target keys differ: %q != %q", left, right)
 	}
@@ -64,5 +64,18 @@ func TestProfileFieldsFromPreviewUsesCanonicalGeometryField(t *testing.T) {
 	field := fields[0]
 	if field.Name != "parcel_shape" || field.Type != datatype.FieldTypeGeometry || field.NativeType != "geometry" {
 		t.Fatalf("unexpected canonical geometry field: %#v", field)
+	}
+}
+
+func TestProfileFieldsMatchColumnsRejectsChangedSourceStructure(t *testing.T) {
+	table := &models.TablePreview{
+		Columns: []string{"id", "renamed"},
+		Fields: []datatype.FieldInfo{
+			{Name: "id", Type: datatype.FieldTypeBigInt},
+			{Name: "name", Type: datatype.FieldTypeString},
+		},
+	}
+	if profileFieldsMatchColumns(table) {
+		t.Fatal("profileFieldsMatchColumns() = true, want source structure mismatch")
 	}
 }

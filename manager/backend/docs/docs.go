@@ -472,7 +472,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "为指定表格型 data item 创建或复用一次采样剖析 ad-hoc execution；不会创建任务定义。| Create or reuse a sample profiling ad-hoc execution for a tabular data item without creating a task definition.",
+                "description": "为指定表格型 data item 创建或复用一次全范围或结构化条件范围的采样剖析 ad-hoc execution；不会创建任务定义，也不接受 SQL。| Create or reuse an all-data or structured-condition sample profiling ad-hoc execution for a tabular data item without creating a task definition or accepting SQL.",
                 "consumes": [
                     "application/json"
                 ],
@@ -534,7 +534,7 @@ const docTemplate = `{
                 "x-addp-required-permissions": [
                     "manager.data_profile.execute"
                 ],
-                "x-ai-hint": "为指定 locator 发起有界采样剖析；mode 首期只允许 sample，重复的活动执行会被复用。"
+                "x-ai-hint": "为指定 locator 发起有界采样剖析；mode 首期只允许 sample，data_scope 只允许 all 或单层 and/or 结构化条件，重复的活动执行会被复用。"
             }
         },
         "/data-profiles/current": {
@@ -544,7 +544,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "查询指定表格型 data item 和内容选择上下文的当前成功剖析结果、活跃执行及新鲜度，不会隐式触发执行。| Query the current successful profile, active execution, and freshness for a tabular data item and content selection without implicitly starting an execution.",
+                "description": "查询指定表格型 data item、内容选择上下文和可选剖析配置哈希的当前成功结果、活跃执行及新鲜度，不会隐式触发执行。| Query the current successful profile, active execution, and freshness for a tabular data item, content selection, and optional profile config hash without implicitly starting an execution.",
                 "produces": [
                     "application/json"
                 ],
@@ -576,6 +576,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "嵌套容器 child 路径 | Nested container child path",
                         "name": "nested_child_path",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "服务端返回的条件剖析配置哈希；省略时查询全范围剖析 | Server-issued conditional profile config hash; omit for the all-data profile",
+                        "name": "profile_config_hash",
                         "in": "query"
                     }
                 ],
@@ -6682,6 +6688,39 @@ const docTemplate = `{
                 }
             }
         },
+        "dataprofile.DataScope": {
+            "type": "object",
+            "properties": {
+                "conditions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprofile.DataScopeCondition"
+                    }
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "logic": {
+                    "type": "string"
+                }
+            }
+        },
+        "dataprofile.DataScopeCondition": {
+            "type": "object",
+            "properties": {
+                "field": {
+                    "type": "string"
+                },
+                "operator": {
+                    "type": "string"
+                },
+                "value": {},
+                "values": {
+                    "type": "array",
+                    "items": {}
+                }
+            }
+        },
         "dataprofile.DistributionBucket": {
             "type": "object",
             "properties": {
@@ -6824,6 +6863,9 @@ const docTemplate = `{
         "dataprofile.Profile": {
             "type": "object",
             "properties": {
+                "data_scope": {
+                    "$ref": "#/definitions/dataprofile.DataScope"
+                },
                 "field_count": {
                     "type": "integer"
                 },
@@ -7804,6 +7846,9 @@ const docTemplate = `{
                 "active_execution": {
                     "$ref": "#/definitions/github_com_addp_manager_internal_service.DataProfileExecutionView"
                 },
+                "condition_supported": {
+                    "type": "boolean"
+                },
                 "item_fingerprint": {
                     "type": "string"
                 },
@@ -7845,6 +7890,9 @@ const docTemplate = `{
                 "child_name": {
                     "type": "string"
                 },
+                "data_scope": {
+                    "$ref": "#/definitions/dataprofile.DataScope"
+                },
                 "locator": {
                     "type": "string"
                 },
@@ -7862,8 +7910,14 @@ const docTemplate = `{
         "github_com_addp_manager_internal_service.DataProfileExecutionResponse": {
             "type": "object",
             "properties": {
+                "data_scope": {
+                    "$ref": "#/definitions/dataprofile.DataScope"
+                },
                 "execution": {
                     "$ref": "#/definitions/github_com_addp_manager_internal_service.DataProfileExecutionView"
+                },
+                "profile_config_hash": {
+                    "type": "string"
                 },
                 "reused": {
                     "type": "boolean"

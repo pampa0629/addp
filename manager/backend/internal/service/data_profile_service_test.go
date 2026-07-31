@@ -7,12 +7,13 @@ import (
 	"time"
 
 	"github.com/addp/common/dataprofile"
+	"github.com/addp/common/datatype"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/manager/internal/models"
 )
 
 func TestDataProfileServiceGetCurrentMarksStoredResultStale(t *testing.T) {
-	profile := &dataprofile.Profile{SchemaVersion: dataprofile.SchemaVersionV1, Mode: dataprofile.ModeSample}
+	profile := &dataprofile.Profile{SchemaVersion: dataprofile.SchemaVersionV2, Mode: dataprofile.ModeSample, DataScope: dataprofile.DataScope{Kind: dataprofile.DataScopeKindAll}}
 	profiles := &dataProfileServiceTestProfileStore{
 		state:   &models.DataProfile{ID: 12, SourceVersion: "old-version"},
 		profile: profile,
@@ -57,6 +58,38 @@ func TestDataProfileServiceRejectsUnsupportedMode(t *testing.T) {
 	}
 }
 
+func TestDataProfileServiceRejectsConditionalScopeWithoutProviderSupport(t *testing.T) {
+	profileService := NewDataProfileService(
+		&dataProfileServiceTestProfileStore{},
+		&dataProfileServiceTestExecutionStore{},
+		&dataProfileServiceTestSampler{target: &DataProfileTarget{
+			Locator: "addp://engine/1/path/public/orders?type=table",
+			Fields:  []datatype.FieldInfo{{Name: "status", Type: datatype.FieldTypeString}},
+		}},
+	)
+	_, err := profileService.CreateExecution(context.Background(), 7, 9, DataProfileExecutionRequest{
+		Locator: "addp://engine/1/path/public/orders?type=table",
+		DataScope: dataprofile.DataScope{
+			Kind: dataprofile.DataScopeKindCondition, Logic: dataprofile.DataScopeLogicAnd,
+			Conditions: []dataprofile.DataScopeCondition{{Field: "status", Operator: "eq", Value: "active"}},
+		},
+	})
+	if !errors.Is(err, ErrDataProfileUnsupported) {
+		t.Fatalf("CreateExecution() error = %v, want ErrDataProfileUnsupported", err)
+	}
+}
+
+func TestDataProfileConfigHashSeparatesAllAndConditionalScopes(t *testing.T) {
+	all := dataProfileConfigHash(DataProfileSelection{}, dataprofile.DataScope{Kind: dataprofile.DataScopeKindAll}, DefaultDataProfileBudget)
+	condition := dataProfileConfigHash(DataProfileSelection{}, dataprofile.DataScope{
+		Kind: dataprofile.DataScopeKindCondition, Logic: dataprofile.DataScopeLogicAnd,
+		Conditions: []dataprofile.DataScopeCondition{{Field: "status", Operator: "eq", Value: "active"}},
+	}, DefaultDataProfileBudget)
+	if all == condition {
+		t.Fatalf("all and conditional scopes share config hash %q", all)
+	}
+}
+
 func TestDataProfileServiceFailedRefreshDoesNotReplaceSuccessfulResult(t *testing.T) {
 	profiles := &dataProfileServiceTestProfileStore{}
 	executions := &dataProfileServiceTestExecutionStore{}
@@ -65,7 +98,7 @@ func TestDataProfileServiceFailedRefreshDoesNotReplaceSuccessfulResult(t *testin
 	target := &DataProfileTarget{ItemFingerprint: "fingerprint", SourceVersion: "version"}
 	execution := &commonExecution.TaskExecution{TenantID: 7, ExecutionID: "execution-1"}
 
-	profileService.runExecution(target, "config", execution)
+	profileService.runExecution(target, dataprofile.DataScope{Kind: dataprofile.DataScopeKindAll}, "config", execution)
 
 	if profiles.replaceCalls != 0 {
 		t.Fatalf("ReplaceCurrent calls = %d, want 0", profiles.replaceCalls)
@@ -130,6 +163,6 @@ type dataProfileServiceTestSampler struct {
 func (s *dataProfileServiceTestSampler) ResolveTarget(context.Context, uint, string, DataProfileSelection) (*DataProfileTarget, error) {
 	return s.target, nil
 }
-func (s *dataProfileServiceTestSampler) Sample(context.Context, *DataProfileTarget, DataProfileBudget) (*DataProfileSample, error) {
+func (s *dataProfileServiceTestSampler) Sample(context.Context, *DataProfileTarget, dataprofile.DataScope, DataProfileBudget) (*DataProfileSample, error) {
 	return nil, s.sampleErr
 }

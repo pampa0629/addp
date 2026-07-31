@@ -12,8 +12,10 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataprofile"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/preview"
@@ -23,6 +25,7 @@ var (
 	ErrDataProfileUnsupported    = errors.New("data profiling is not supported for this resource")
 	ErrDataProfileUnavailable    = errors.New("data profiling is unavailable")
 	ErrDataProfileInvalidRequest = errors.New("invalid data profiling request")
+	ErrDataProfileSourceChanged  = errors.New("data profile source structure changed")
 )
 
 type DataProfileSelection struct {
@@ -41,15 +44,19 @@ type DataProfileTarget struct {
 	DependencySnapshot map[string]interface{}
 	RowCount           *int64
 	RowCountExact      bool
+	Fields             []datatype.FieldInfo
+	ConditionSupported bool
 	resolved           *preview.PreviewResolverRequest
 }
 
 type DataProfileSample struct {
-	Rows        []map[string]interface{}
-	Fields      []datatype.FieldInfo
-	RowsScanned int64
-	Truncated   bool
-	Partial     bool
+	Rows          []map[string]interface{}
+	Fields        []datatype.FieldInfo
+	RowsScanned   int64
+	Truncated     bool
+	Partial       bool
+	RowCount      *int64
+	RowCountExact bool
 }
 
 type DataProfileBudget struct {
@@ -68,7 +75,7 @@ var DefaultDataProfileBudget = DataProfileBudget{
 
 type DataProfileSampleProvider interface {
 	ResolveTarget(context.Context, uint, string, DataProfileSelection) (*DataProfileTarget, error)
-	Sample(context.Context, *DataProfileTarget, DataProfileBudget) (*DataProfileSample, error)
+	Sample(context.Context, *DataProfileTarget, dataprofile.DataScope, DataProfileBudget) (*DataProfileSample, error)
 }
 
 // PreviewDataProfileSampleProvider reuses the registered engine/format data
@@ -146,6 +153,15 @@ func (p *PreviewDataProfileSampleProvider) ResolveTarget(
 	if selectionTargetsChild(selection) {
 		dependencySnapshot["selection"] = selection
 	}
+	fields := profileFieldsFromAttributes(item.Attributes)
+	conditionSupported := false
+	if !selectionTargetsChild(selection) && len(fields) > 0 && resolved.Engine != nil {
+		if plug, pluginErr := plugin.Get(resolved.Engine.EngineType); pluginErr == nil {
+			parameterized, parameterizedOK := plug.(plugin.ParameterizedSQLQueryRuntimeProvider)
+			_, batchReadable := plug.(plugin.BatchReadableProvider)
+			conditionSupported = batchReadable && parameterizedOK && parameterized.SupportsParameterizedQueries()
+		}
+	}
 
 	return &DataProfileTarget{
 		Locator:            locator,
@@ -157,6 +173,8 @@ func (p *PreviewDataProfileSampleProvider) ResolveTarget(
 		DependencySnapshot: dependencySnapshot,
 		RowCount:           item.RowCount,
 		RowCountExact:      item.RowCount != nil,
+		Fields:             fields,
+		ConditionSupported: conditionSupported,
 		resolved:           resolved,
 	}, nil
 }
@@ -164,14 +182,18 @@ func (p *PreviewDataProfileSampleProvider) ResolveTarget(
 func (p *PreviewDataProfileSampleProvider) Sample(
 	ctx context.Context,
 	target *DataProfileTarget,
+	dataScope dataprofile.DataScope,
 	budget DataProfileBudget,
 ) (*DataProfileSample, error) {
 	if p == nil || p.resolver == nil || target == nil || target.resolved == nil {
 		return nil, ErrDataProfileUnavailable
 	}
 	budget = normalizeDataProfileBudget(budget)
+	if dataScope.Kind == dataprofile.DataScopeKindCondition && !target.ConditionSupported {
+		return nil, fmt.Errorf("%w: conditional profiling is not supported", ErrDataProfileUnsupported)
+	}
 	reservoir := make([]map[string]interface{}, 0, budget.SampleSize)
-	rng := rand.New(rand.NewSource(stableProfileSampleSeed(target)))
+	rng := rand.New(rand.NewSource(stableProfileSampleSeed(target, dataScope)))
 	rowsScanned := int64(0)
 	fields := []datatype.FieldInfo(nil)
 	total := int64(-1)
@@ -188,6 +210,7 @@ func (p *PreviewDataProfileSampleProvider) Sample(
 
 		request := *target.resolved
 		request.Pagination = &preview.Pagination{Page: page, PageSize: budget.PageSize}
+		request.DataScope = dataScope
 		result, err := p.resolver.Preview(ctx, &request)
 		if err != nil {
 			return nil, err
@@ -197,6 +220,9 @@ func (p *PreviewDataProfileSampleProvider) Sample(
 			return nil, ErrDataProfileUnsupported
 		}
 		if len(fields) == 0 {
+			if !profileFieldsMatchColumns(table) {
+				return nil, ErrDataProfileSourceChanged
+			}
 			fields = profileFieldsFromPreview(table)
 		}
 		if table.Total >= 0 {
@@ -231,11 +257,24 @@ func (p *PreviewDataProfileSampleProvider) Sample(
 		fields = []datatype.FieldInfo{}
 	}
 	truncated := total > rowsScanned || rowsScanned >= int64(budget.MaxRowsScanned)
+	rowCount := target.RowCount
+	rowCountExact := target.RowCountExact
+	if dataScope.Kind == dataprofile.DataScopeKindCondition {
+		rowCount = nil
+		rowCountExact = false
+		if !truncated && total < 0 {
+			matched := rowsScanned
+			rowCount = &matched
+			rowCountExact = true
+		}
+	}
 	return &DataProfileSample{
-		Rows:        reservoir,
-		Fields:      fields,
-		RowsScanned: rowsScanned,
-		Truncated:   truncated,
+		Rows:          reservoir,
+		Fields:        fields,
+		RowsScanned:   rowsScanned,
+		Truncated:     truncated,
+		RowCount:      rowCount,
+		RowCountExact: rowCountExact,
 	}, nil
 }
 
@@ -289,6 +328,18 @@ func profileFieldsFromPreview(table *models.TablePreview) []datatype.FieldInfo {
 	return append([]datatype.FieldInfo(nil), table.Fields...)
 }
 
+func profileFieldsMatchColumns(table *models.TablePreview) bool {
+	if table == nil || len(table.Fields) == 0 || len(table.Columns) != len(table.Fields) {
+		return false
+	}
+	for index, field := range table.Fields {
+		if field.Name != table.Columns[index] {
+			return false
+		}
+	}
+	return true
+}
+
 func dataTypeFromAttributes(attributes map[string]interface{}) string {
 	item, _ := attributes["item"].(map[string]interface{})
 	return strings.ToLower(strings.TrimSpace(fmt.Sprint(item["data_type"])))
@@ -302,12 +353,13 @@ func cloneProfileRow(row map[string]interface{}) map[string]interface{} {
 	return cloned
 }
 
-func stableProfileSampleSeed(target *DataProfileTarget) int64 {
+func stableProfileSampleSeed(target *DataProfileTarget, dataScope dataprofile.DataScope) int64 {
 	payload, _ := json.Marshal(struct {
-		Fingerprint string               `json:"fingerprint"`
-		Version     string               `json:"version"`
-		Selection   DataProfileSelection `json:"selection"`
-	}{target.ItemFingerprint, target.SourceVersion, target.Selection})
+		Fingerprint string                `json:"fingerprint"`
+		Version     string                `json:"version"`
+		Selection   DataProfileSelection  `json:"selection"`
+		DataScope   dataprofile.DataScope `json:"data_scope"`
+	}{target.ItemFingerprint, target.SourceVersion, target.Selection, dataScope})
 	hash := sha256.Sum256(payload)
 	var seed int64
 	for _, value := range hash[:8] {
@@ -328,12 +380,21 @@ func selectionTargetsChild(selection DataProfileSelection) bool {
 	return selection.ChildName != "" || selection.RefPath != "" || selection.NestedChildPath != ""
 }
 
-func profileTargetKey(tenantID uint, locator string, selection DataProfileSelection) string {
+func profileTargetKey(tenantID uint, locator string, selection DataProfileSelection, configHash string) string {
 	payload, _ := json.Marshal(struct {
-		TenantID  uint                 `json:"tenant_id"`
-		Locator   string               `json:"locator"`
-		Selection DataProfileSelection `json:"selection"`
-	}{tenantID, strings.TrimSpace(locator), normalizeDataProfileSelection(selection)})
+		TenantID   uint                 `json:"tenant_id"`
+		Locator    string               `json:"locator"`
+		Selection  DataProfileSelection `json:"selection"`
+		ConfigHash string               `json:"profile_config_hash"`
+	}{tenantID, strings.TrimSpace(locator), normalizeDataProfileSelection(selection), strings.TrimSpace(configHash)})
 	hash := sha256.Sum256(payload)
 	return hex.EncodeToString(hash[:])
+}
+
+func profileFieldsFromAttributes(attributes map[string]interface{}) []datatype.FieldInfo {
+	table := datatype.TableInfoFromPayload(commonJSON.Section(attributes, "type_info.table"), "")
+	if table == nil {
+		return nil
+	}
+	return append([]datatype.FieldInfo(nil), table.Fields...)
 }

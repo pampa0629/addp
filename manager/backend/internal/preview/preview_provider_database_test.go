@@ -2,9 +2,11 @@ package preview
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/addp/common/dataprofile"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/sqldialect"
@@ -21,7 +23,7 @@ func TestDatabasePreviewPostgreSQLPrimaryKeyPageQueryUsesKeyCTEForDeepOffset(t *
 		{Name: "DLMC", NativeType: "text"},
 	}
 	selectExpr := databasePreviewSelectExpr(dialect, columns, databasePreviewSourceAlias)
-	query := databasePreviewPostgreSQLPrimaryKeyPageQuery(dialect, selectExpr, "public", "dltb", databasePrimaryKeyColumns(columns), 20, 10000000)
+	query := databasePreviewPostgreSQLPrimaryKeyPageQuery(dialect, selectExpr, "public", "dltb", databasePrimaryKeyColumns(columns), "", 20, 10000000)
 
 	mustContain := []string{
 		`WITH "__addp_page_keys" AS (SELECT "SmID" FROM "public"."dltb" ORDER BY "SmID" LIMIT 20 OFFSET 10000000)`,
@@ -45,7 +47,7 @@ func TestDatabasePreviewPostgreSQLPrimaryKeyPageQueryOrdersFirstPage(t *testing.
 		{Name: "name", NativeType: "text"},
 	}
 	selectExpr := databasePreviewSelectExpr(dialect, columns, databasePreviewSourceAlias)
-	query := databasePreviewPostgreSQLPrimaryKeyPageQuery(dialect, selectExpr, "public", "cities", databasePrimaryKeyColumns(columns), 50, 0)
+	query := databasePreviewPostgreSQLPrimaryKeyPageQuery(dialect, selectExpr, "public", "cities", databasePrimaryKeyColumns(columns), "", 50, 0)
 
 	want := `SELECT "__addp_src"."id" AS "id", "__addp_src"."name" AS "name" FROM "public"."cities" AS "__addp_src" ORDER BY "__addp_src"."id" LIMIT 50`
 	if query != want {
@@ -104,6 +106,15 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 	}()
 
 	provider := &DatabaseTablePreviewProvider{}
+	metaRowCount := int64(321)
+	metaTable := datatype.TableInfoPayload(&datatype.TableInfo{
+		RowCount: &metaRowCount,
+		Fields: []datatype.FieldInfo{
+			{Name: "SmID", Type: datatype.FieldTypeBigInt, NativeType: "int8", Nullable: false, PrimaryKey: true},
+			{Name: "SmGeometry", Type: datatype.FieldTypeGeometry, NativeType: "geometry", Nullable: true},
+			{Name: "DLMC", Type: datatype.FieldTypeString, NativeType: "character varying", Nullable: true},
+		},
+	})
 	req := &PreviewRequest{
 		Engine: &models.Engine{
 			ID:         7,
@@ -124,9 +135,7 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 		},
 		Attributes: map[string]interface{}{
 			"type_info": map[string]interface{}{
-				"table": map[string]interface{}{
-					"row_count": int64(321),
-				},
+				"table": metaTable,
 			},
 		},
 	}
@@ -157,8 +166,8 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 	if preview.GeometryColumn != "SmGeometry" {
 		t.Fatalf("GeometryColumn = %q, want SmGeometry", preview.GeometryColumn)
 	}
-	if len(preview.Fields) != 3 || preview.Fields[1].Name != "SmGeometry" || preview.Fields[1].Type != datatype.FieldTypeGeometry {
-		t.Fatalf("canonical preview fields = %#v, want SmGeometry as geometry", preview.Fields)
+	if len(preview.Fields) != 3 || preview.Fields[1].Name != "SmGeometry" || preview.Fields[1].Type != datatype.FieldTypeGeometry || preview.Fields[2].NativeType != "character varying" {
+		t.Fatalf("canonical preview fields = %#v, want fields from Meta attributes", preview.Fields)
 	}
 	if preview.SourceSRID != 2360 || preview.SourceCRS != "EPSG:2360" {
 		t.Fatalf("source CRS = %d/%q, want 2360/EPSG:2360", preview.SourceSRID, preview.SourceCRS)
@@ -171,6 +180,31 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 	}
 	if strings.Contains(enginePlugin.readBatchCalls[0].Query, "ST_Transform") {
 		t.Fatalf("ReadBatch query should not transform geometry:\n%s", enginePlugin.readBatchCalls[0].Query)
+	}
+}
+
+func TestDatabaseTablePreviewProviderBindsProfileConditionsBeforePaging(t *testing.T) {
+	reader := &recordingDatabasePreviewPlugin{engineType: "postgresql", batchData: &plugin.BatchData{}}
+	provider := &DatabaseTablePreviewProvider{}
+	_, err := provider.queryData(
+		context.Background(), reader, nil,
+		plugin.TabularItemPath(7, plugin.CatalogTermSchema, "public", "orders"),
+		"postgresql", "public", "orders", 0, 500,
+		[]datatype.FieldInfo{{Name: "status", Type: datatype.FieldTypeString}},
+		dataprofile.DataScope{
+			Kind: dataprofile.DataScopeKindCondition, Logic: dataprofile.DataScopeLogicAnd,
+			Conditions: []dataprofile.DataScopeCondition{{Field: "status", Operator: "eq", Value: "active"}},
+		},
+	)
+	if err != nil {
+		t.Fatalf("queryData() error = %v", err)
+	}
+	call := reader.readBatchCalls[0]
+	if !strings.Contains(call.Query, `WHERE ("status" = ?)`) || strings.Contains(call.Query, "active") {
+		t.Fatalf("parameterized query = %q", call.Query)
+	}
+	if !reflect.DeepEqual(call.Args, []interface{}{"active"}) {
+		t.Fatalf("query args = %#v", call.Args)
 	}
 }
 

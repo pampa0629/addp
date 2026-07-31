@@ -19,6 +19,7 @@ type DataProfile struct {
 	DependencySnapshot datatypes.JSON     `gorm:"type:jsonb;not null;default:'{}'" json:"dependency_snapshot"`
 	ProfileMode        string             `gorm:"size:32;not null;uniqueIndex:idx_data_profiles_current,priority:3" json:"profile_mode"`
 	ProfileConfigHash  string             `gorm:"size:64;not null;uniqueIndex:idx_data_profiles_current,priority:4" json:"profile_config_hash"`
+	DataScope          datatypes.JSON     `gorm:"type:jsonb;not null;default:'{\"kind\":\"all\"}'" json:"data_scope"`
 	SchemaVersion      string             `gorm:"size:64;not null" json:"schema_version"`
 	SampleMethod       string             `gorm:"size:64;not null" json:"sample_method"`
 	SampleSize         int64              `gorm:"not null" json:"sample_size"`

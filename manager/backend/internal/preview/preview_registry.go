@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/addp/common/dataprofile"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/manager/internal/models"
 )
@@ -40,6 +41,7 @@ type PreviewRequest struct {
 	RefPath         string                   // multi child 内的单个ref 路径，指向容器内原始对象
 	NestedChildPath string                   // 当前 child 是容器时，继续寻址其内部 child 的相对路径
 	GraphSample     plugin.GraphSampleFilter // 图预览样本过滤条件
+	DataScope       dataprofile.DataScope    // Manager 剖析内部使用的数据范围
 	Attributes      map[string]interface{}   // 来自 meta_item/meta_node 的标准属性分区
 }
 
