@@ -1,0 +1,86 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigestsToSemver"
+  ],
+  "enabledManagers": [
+    "github-actions"
+  ],
+  "timezone": "Asia/Tokyo",
+  "schedule": [
+    "before 6am on monday"
+  ],
+  "dependencyDashboard": true,
+  "dependencyDashboardApproval": true,
+  "automerge": false,
+  "reviewers": [
+    "pampa0629"
+  ],
+  "branchPrefix": "renovate/",
+  "pruneStaleBranches": true,
+  "prConcurrentLimit": 2,
+  "prHourlyLimit": 1,
+  "rebaseWhen": "behind-base-branch",
+  "packageRules": [
+    {
+      "description": "Disable workflow dependencies unless explicitly allowed below",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Require settled releases and immutable references for GitHub Actions",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDepTypes": [
+        "action"
+      ],
+      "minimumReleaseAge": "7 days",
+      "pinDigests": true,
+      "enabled": true,
+      "automerge": false
+    },
+    {
+      "description": "Group non-major GitHub Actions updates after the release delay",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDepTypes": [
+        "action"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest",
+        "pin",
+        "pinDigest"
+      ],
+      "groupName": "GitHub Actions non-major updates"
+    },
+    {
+      "description": "Update only the digest behind the PostgreSQL 15 tag",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDepTypes": [
+        "service"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "postgres"
+      ],
+      "matchUpdateTypes": [
+        "digest"
+      ],
+      "minimumReleaseAge": "7 days",
+      "enabled": true,
+      "automerge": false,
+      "groupName": "PostgreSQL 15 image digest"
+    }
+  ]
+}
