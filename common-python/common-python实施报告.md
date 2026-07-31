@@ -29,7 +29,7 @@ Refresh Token 按归一化 ADDP Base URL 隔离，只保存到 OS Keychain。Acc
 
 ## 安装与版本
 
-包名固定为 `addp-common`，命令固定为 `addp`。版本只在 `addp_common.__version__` 定义，构建元数据和 `addp --version` 都读取该事实源。当前版本为 `0.1.13`。
+包名固定为 `addp-common`，命令固定为 `addp`。版本只在 `addp_common.__version__` 定义，构建元数据和 `addp --version` 都读取该事实源。当前版本为 `0.1.14`。
 
 正式交付使用 GitHub Release 中的 wheel，不以本地源码构建或 editable 源码目录作为用户安装方式。维护者复现构建、全新环境安装和产品 E2E 的唯一入口为：
 

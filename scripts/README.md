@@ -628,5 +628,5 @@ bash scripts/prod/stop.sh --volumes
 
 ---
 
-**Version**: 0.1.13
+**Version**: 0.1.14
 **Last Updated**: 2026-07-31

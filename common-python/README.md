@@ -6,10 +6,10 @@ Python 共享模块，为 ADDP 平台的 Python 后端提供统一客户端、�
 
 ## CLI 安装
 
-正式 CLI 交付物是 GitHub Release 中的 `addp-common` wheel，当前版本为 `0.1.13`。下载 wheel 和同名 SHA-256 文件，校验后安装到隔离环境：
+正式 CLI 交付物是 GitHub Release 中的 `addp-common` wheel，当前版本为 `0.1.14`。下载 wheel 和同名 SHA-256 文件，校验后安装到隔离环境：
 
 ```bash
-RELEASE=v0.1.13
+RELEASE=v0.1.14
 VERSION=${RELEASE#v}
 WHEEL="addp_common-${VERSION}-py3-none-any.whl"
 curl -fLO "https://github.com/pampa0629/addp/releases/download/${RELEASE}/${WHEEL}"
