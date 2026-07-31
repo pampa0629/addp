@@ -26,6 +26,7 @@ describe('BrowserAuthSession', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 
@@ -188,6 +189,47 @@ describe('BrowserAuthSession', () => {
     iframe.remove()
   })
 
+  it('coalesces repeated iframe refresh messages with the same request id', async () => {
+    const trustedOrigin = 'https://module.example'
+    const iframe = document.createElement('iframe')
+    document.body.appendChild(iframe)
+    const postMessage = vi.spyOn(iframe.contentWindow, 'postMessage').mockImplementation(() => {})
+    let resolveRefresh
+    const refreshResult = new Promise(resolve => { resolveRefresh = resolve })
+    const refreshToken = vi.fn(() => refreshResult)
+    const coordinator = createIframeAuthCoordinator({
+      allowedOrigins: [trustedOrigin],
+      getToken: getAccessToken,
+      getExpiresAt: getAccessTokenExpiresAt,
+      refreshToken,
+      logout: vi.fn()
+    })
+    const event = () => new MessageEvent('message', {
+      data: {
+        protocol: 'addp-auth/v1',
+        type: 'addp-auth-refresh-request',
+        requestId: 'repeated-refresh'
+      },
+      origin: trustedOrigin,
+      source: iframe.contentWindow
+    })
+
+    window.dispatchEvent(event())
+    window.dispatchEvent(event())
+
+    await vi.waitFor(() => expect(refreshToken).toHaveBeenCalledTimes(1))
+    setRuntimeAccessToken('coalesced-token', Date.now() + 900_000)
+    resolveRefresh('coalesced-token')
+    await vi.waitFor(() => expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'addp-auth-token',
+      requestId: 'repeated-refresh',
+      token: 'coalesced-token'
+    }), trustedOrigin))
+
+    coordinator.dispose()
+    iframe.remove()
+  })
+
   it('propagates a rejected parent refresh as an authentication failure', async () => {
     const parent = { postMessage: vi.fn() }
     const listeners = new Map()
@@ -220,6 +262,49 @@ describe('BrowserAuthSession', () => {
       status: 401,
       code: 'authentication_required'
     })
+    session.dispose()
+  })
+
+  it('retries an iframe handshake when the parent misses the first ready message', async () => {
+    vi.useFakeTimers()
+    const parent = { postMessage: vi.fn() }
+    const listeners = new Map()
+    const childWindow = {
+      self: null,
+      top: {},
+      parent,
+      addEventListener: vi.fn((type, listener) => listeners.set(type, listener)),
+      removeEventListener: vi.fn()
+    }
+    childWindow.self = childWindow
+    vi.stubGlobal('window', childWindow)
+    vi.stubGlobal('document', { referrer: 'https://console.example/orchestrator/orchestrations' })
+    const session = createBrowserAuthSession()
+
+    const initialization = session.initialize()
+    expect(parent.postMessage).toHaveBeenCalledTimes(1)
+    const firstRequest = parent.postMessage.mock.calls[0][0]
+
+    await vi.advanceTimersByTimeAsync(300)
+    expect(parent.postMessage).toHaveBeenCalledTimes(2)
+    expect(parent.postMessage.mock.calls[1][0]).toMatchObject({
+      type: 'addp-auth-ready',
+      requestId: firstRequest.requestId
+    })
+
+    listeners.get('message')({
+      data: {
+        protocol: 'addp-auth/v1',
+        type: 'addp-auth-token',
+        requestId: firstRequest.requestId,
+        token: 'parent-token',
+        expiresAt: Date.now() + 900_000
+      },
+      origin: 'https://console.example',
+      source: parent
+    })
+
+    await expect(initialization).resolves.toBe('parent-token')
     session.dispose()
   })
 

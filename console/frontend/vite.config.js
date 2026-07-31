@@ -4,6 +4,7 @@ import { resolve } from 'path'
 
 const BUILD_TYPE = process.env.BUILD_TYPE || 'release'
 const OUT_BASE = process.env.OUT_DIR
+const IS_E2E = process.env.ADDP_E2E === '1'
 
 export default defineConfig({
   plugins: [vue()],
@@ -17,7 +18,7 @@ export default defineConfig({
   server: {
     port: 5170,
     strictPort: true, // 端口被占用时报错，不自动切换
-    hmr: {
+    hmr: IS_E2E ? false : {
       protocol: 'ws',
       host: 'localhost',
       port: 5170,

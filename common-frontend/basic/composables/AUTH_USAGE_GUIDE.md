@@ -71,7 +71,9 @@ router.beforeEach(createAuthGuard(useAuthStore, {
 守卫会先执行 `initializeSession()`：
 
 - 顶层页面优先请求同源标签页的内存 Token，没有可用 Token 时通过 Cookie 刷新；
+- 初始化身份请求遇到 401 时，在全局刷新锁内强制刷新并重试一次，避免把已被服务端轮换撤销的标签页 Token 误判为有效会话；
 - iframe 请求 Console 父页面提供 Token；
+- iframe 在认证超时窗口内使用同一个请求 ID 重发握手，直到父 Console 返回明确结果；
 - 认证失败才进入登录页；
 - 网络故障标记会话初始化错误，不把用户错误地当作已退出。
 
@@ -116,6 +118,9 @@ const coordinator = createIframeAuthCoordinator({
 ```
 
 协调器同时校验消息的 `origin` 和 `source` 是否属于当前页面中的 iframe。模块不需要编写 Token query 解析逻辑；统一 AuthSession 会自动向可信父页面请求 Token。
+
+握手消息可能早于 Console 组件的挂载回调，因此模块会在超时窗口内重发同一个幂等请求。Console
+不得依赖只接收一次 `addp-auth-ready`，也不得把重复握手视为重复登录或创建新的会话。
 
 ## 六、验证
 

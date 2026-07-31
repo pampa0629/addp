@@ -189,9 +189,19 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
         this.sessionError = null
         this.sessionInitPromise = (async () => {
           try {
-            const token = await authSession.initialize()
+            let token = await authSession.initialize()
             if (token) {
-              await this.fetchSessionState()
+              try {
+                await this.fetchSessionState()
+              } catch (error) {
+                if (!isAuthenticationFailure(error)) throw error
+                await Promise.allSettled([
+                  this.userLoadPromise,
+                  this.authContextLoadPromise
+                ].filter(Boolean))
+                token = await authSession.refreshAccessToken({ force: true })
+                await this.fetchSessionState()
+              }
               this.sessionStatus = 'authenticated'
             } else {
               this.sessionStatus = 'anonymous'

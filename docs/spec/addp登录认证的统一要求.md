@@ -135,6 +135,11 @@ Refresh Token Family 采用严格轮换。跨标签页刷新互斥仍是安全�
 
 收到其他标签页的新 Access Token 后，本标签页只更新内存状态，不再次调用 Refresh API。
 
+页面启动时可以优先复用其他标签页广播的内存 Access Token，但本地过期时间不能证明该 Token
+仍被服务端接受。初始化阶段读取 `/users/me` 或 `/auth/context` 返回 401 时，Browser AuthSession
+必须在全局刷新锁内强制刷新并重试初始化请求一次；只有 Refresh 本身返回认证失败，或重试后的
+初始化请求仍返回 401，才能把会话判定为失效并进入登录页。
+
 用户主动退出时，当前页面调用 System `/logout`，随后广播退出事件。其他标签页必须立即清空内存状态并进入登录页。
 
 ## 五、Console 与 iframe
@@ -158,6 +163,7 @@ Console Browser AuthSession
 - Console 刷新 Access Token 后向当前受信任 iframe 推送更新；
 - iframe 不把父级 Token 写入任何持久存储；
 - iframe 中的模块刷新页面后重新发起握手；
+- iframe 在认证超时窗口内使用同一个 `requestId` 重发握手消息，收到 Token、Logout 或 Error 后立即停止；Console 必须按幂等请求处理重复消息；
 - iframe 等待认证期间保持初始化状态，不跳转到模块登录页；
 - 模块作为顶层页面独立运行时，由自身 Browser AuthSession 通过 Cookie 恢复会话。
 

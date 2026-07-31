@@ -6,6 +6,8 @@ const FALLBACK_CONTEXT_SWITCH_LOCK_KEY = 'addp-auth-context-switch-lock'
 const PROTOCOL = 'addp-auth/v1'
 const REFRESH_EARLY_MS = 60_000
 const FALLBACK_LOCK_TTL_MS = 15_000
+const PARENT_REQUEST_RETRY_MS = 250
+const COORDINATOR_REQUEST_TTL_MS = 10_000
 
 let runtimeToken = null
 let runtimeExpiresAt = 0
@@ -229,6 +231,11 @@ export function createBrowserAuthSession({ refresh, revoke, switchContext } = {}
 
   const channel = createChannel(onChannelMessage)
 
+  const clearParentRequestTimers = (pending) => {
+    clearTimeout(pending.timer)
+    clearInterval(pending.retryTimer)
+  }
+
   const onParentMessage = (event) => {
     const expectedOrigin = parentOrigin()
     if (!isEmbedded() || !expectedOrigin || event.source !== window.parent || event.origin !== expectedOrigin) return
@@ -239,7 +246,7 @@ export function createBrowserAuthSession({ refresh, revoke, switchContext } = {}
       const pending = parentRequestResolvers.get(message.requestId)
       if (pending) {
         parentRequestResolvers.delete(message.requestId)
-        clearTimeout(pending.timer)
+        clearParentRequestTimers(pending)
         pending.resolve(message.token)
       }
       return
@@ -251,8 +258,9 @@ export function createBrowserAuthSession({ refresh, revoke, switchContext } = {}
         message.error_code || 'authentication_required',
         401
       )
-      parentRequestResolvers.forEach(({ reject, timer }) => {
-        clearTimeout(timer)
+      parentRequestResolvers.forEach((pending) => {
+        clearParentRequestTimers(pending)
+        const { reject } = pending
         reject(error)
       })
       parentRequestResolvers.clear()
@@ -262,7 +270,7 @@ export function createBrowserAuthSession({ refresh, revoke, switchContext } = {}
       const pending = parentRequestResolvers.get(message.requestId)
       if (!pending) return
       parentRequestResolvers.delete(message.requestId)
-      clearTimeout(pending.timer)
+      clearParentRequestTimers(pending)
       pending.reject(createSessionError(
         'parent_session_refresh_failed',
         message.error_code || 'session_refresh_failed',
@@ -299,17 +307,22 @@ export function createBrowserAuthSession({ refresh, revoke, switchContext } = {}
     const expectedOrigin = parentOrigin()
     if (!isEmbedded() || !expectedOrigin) return Promise.reject(new Error('trusted_parent_origin_required'))
     const requestID = randomID()
+    const request = {
+      protocol: PROTOCOL,
+      type: forceRefresh ? 'addp-auth-refresh-request' : 'addp-auth-ready',
+      requestId: requestID
+    }
     return new Promise((resolve, reject) => {
+      const sendRequest = () => window.parent.postMessage(request, expectedOrigin)
+      const retryTimer = setInterval(sendRequest, PARENT_REQUEST_RETRY_MS)
       const timer = setTimeout(() => {
+        const pending = parentRequestResolvers.get(requestID)
+        if (pending) clearParentRequestTimers(pending)
         parentRequestResolvers.delete(requestID)
         reject(new Error('parent_auth_timeout'))
       }, timeoutMs)
-      parentRequestResolvers.set(requestID, { resolve, reject, timer })
-      window.parent.postMessage({
-        protocol: PROTOCOL,
-        type: forceRefresh ? 'addp-auth-refresh-request' : 'addp-auth-ready',
-        requestId: requestID
-      }, expectedOrigin)
+      parentRequestResolvers.set(requestID, { resolve, reject, timer, retryTimer })
+      sendRequest()
     })
   }
 
@@ -417,7 +430,7 @@ export function createBrowserAuthSession({ refresh, revoke, switchContext } = {}
     channel?.close()
     if (isBrowser()) window.removeEventListener('message', onParentMessage)
     tokenRequestResolvers.clear()
-    parentRequestResolvers.forEach(({ timer }) => clearTimeout(timer))
+    parentRequestResolvers.forEach(clearParentRequestTimers)
     parentRequestResolvers.clear()
   }
 
@@ -437,6 +450,7 @@ export function createIframeAuthCoordinator({ allowedOrigins, getToken, getExpir
   if (!isBrowser()) return { dispose() {} }
   const trustedOrigins = new Set(allowedOrigins || [])
   const clients = new Map()
+  const requestsByClient = new Map()
 
   function isTrustedSource(source) {
     return Array.from(document.querySelectorAll('iframe')).some((iframe) => iframe.contentWindow === source)
@@ -455,36 +469,61 @@ export function createIframeAuthCoordinator({ allowedOrigins, getToken, getExpir
     return true
   }
 
+  async function respondToAuthRequest(event, message) {
+    if (message.type === 'addp-auth-refresh-request' || !getToken()) {
+      try {
+        await refreshToken({ force: true })
+      } catch (error) {
+        if (isAuthFailure(error)) {
+          event.source.postMessage({
+            protocol: PROTOCOL,
+            type: 'addp-auth-logout',
+            requestId: message.requestId,
+            error_code: 'authentication_required'
+          }, event.origin)
+        } else {
+          const status = errorStatus(error)
+          event.source.postMessage({
+            protocol: PROTOCOL,
+            type: 'addp-auth-error',
+            requestId: message.requestId,
+            error_code: 'session_refresh_failed',
+            ...(status ? { status } : {})
+          }, event.origin)
+        }
+        return
+      }
+    }
+    sendToken(event.source, event.origin, message.requestId)
+  }
+
+  function coalesceAuthRequest(event, message) {
+    let clientRequests = requestsByClient.get(event.source)
+    if (!clientRequests) {
+      clientRequests = new Map()
+      requestsByClient.set(event.source, clientRequests)
+    }
+    const existing = clientRequests.get(message.requestId)
+    if (existing) return existing.promise
+
+    const promise = respondToAuthRequest(event, message)
+    const timer = setTimeout(() => {
+      if (clientRequests.get(message.requestId)?.promise === promise) {
+        clientRequests.delete(message.requestId)
+        if (clientRequests.size === 0) requestsByClient.delete(event.source)
+      }
+    }, COORDINATOR_REQUEST_TTL_MS)
+    clientRequests.set(message.requestId, { promise, timer })
+    return promise
+  }
+
   async function handleMessage(event) {
     const message = event.data
     if (!message || message.protocol !== PROTOCOL || !trustedOrigins.has(event.origin) || !isTrustedSource(event.source)) return
     if (message.type === 'addp-auth-ready' || message.type === 'addp-auth-refresh-request') {
+      if (typeof message.requestId !== 'string' || !message.requestId) return
       clients.set(event.source, event.origin)
-      if (message.type === 'addp-auth-refresh-request' || !getToken()) {
-        try {
-          await refreshToken({ force: true })
-        } catch (error) {
-          if (isAuthFailure(error)) {
-            event.source.postMessage({
-              protocol: PROTOCOL,
-              type: 'addp-auth-logout',
-              requestId: message.requestId,
-              error_code: 'authentication_required'
-            }, event.origin)
-          } else {
-            const status = errorStatus(error)
-            event.source.postMessage({
-              protocol: PROTOCOL,
-              type: 'addp-auth-error',
-              requestId: message.requestId,
-              error_code: 'session_refresh_failed',
-              ...(status ? { status } : {})
-            }, event.origin)
-          }
-          return
-        }
-      }
-      sendToken(event.source, event.origin, message.requestId)
+      await coalesceAuthRequest(event, message)
       return
     }
     if (message.type === 'addp-auth-logout-request') await logout()
@@ -506,6 +545,10 @@ export function createIframeAuthCoordinator({ allowedOrigins, getToken, getExpir
     dispose() {
       window.removeEventListener('message', handleMessage)
       unsubscribe()
+      requestsByClient.forEach((requests) => {
+        requests.forEach(({ timer }) => clearTimeout(timer))
+      })
+      requestsByClient.clear()
       clients.clear()
     }
   }
