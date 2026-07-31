@@ -90,7 +90,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
+      artifact-metadata: write
+      attestations: write
       contents: write
+      id-token: write
     steps:
       - name: Download verified wheel
         uses: actions/download-artifact@v8
@@ -147,13 +150,19 @@ jobs:
               )
           PY
 
+      - name: Attest release wheel
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-path: "${{ runner.temp }}/addp-cli-release/addp_common-*.whl"
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           ADDP_RELEASE_DIR: ${{ runner.temp }}/addp-cli-release
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            "$ADDP_RELEASE_DIR"/* \
+            "$ADDP_RELEASE_DIR"/addp_common-*.whl \
+            "$ADDP_RELEASE_DIR"/addp_common-*.whl.sha256 \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --generate-notes \
