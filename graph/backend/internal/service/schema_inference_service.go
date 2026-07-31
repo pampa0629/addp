@@ -111,7 +111,7 @@ func (s *SchemaInferenceService) inferWithEngine(ctx context.Context, engine *co
 
 	// 获取所有节点形状。Neo4j 节点可以有多个 label，因此这里按完整 label set 推导 ADDP node shape。
 	nodeShapeResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		"MATCH (n) WHERE "+businessNodePredicate("n")+" RETURN labels(n) AS labels, count(n) AS cnt ORDER BY cnt DESC LIMIT 500")
+		"MATCH (n) WHERE "+businessNodePredicate("n")+" RETURN labels(n) AS labels, count(n) AS cnt ORDER BY cnt DESC")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get node shapes: %w", err)
 	}
@@ -138,9 +138,10 @@ func (s *SchemaInferenceService) inferWithEngine(ctx context.Context, engine *co
 			for _, r := range propResult.Rows {
 				if k, ok := r["k"]; ok {
 					et.Properties = append(et.Properties, models.PropertyDefinition{
-						Name:     fmt.Sprintf("%v", k),
-						Label:    fmt.Sprintf("%v", k),
-						DataType: "string", // 默认 string，Neo4j 无法可靠推断类型
+						Name:       fmt.Sprintf("%v", k),
+						Label:      fmt.Sprintf("%v", k),
+						DataType:   "string", // 默认 string，Neo4j 无法可靠推断类型
+						Searchable: true,
 					})
 				}
 			}
@@ -151,7 +152,7 @@ func (s *SchemaInferenceService) inferWithEngine(ctx context.Context, engine *co
 
 	// 提取关系模式（来源节点形状 + 关系类型 + 目标节点形状）
 	relResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		"MATCH (a)-[r]->(b) WHERE "+businessRelationshipPredicate("r", "a", "b")+" RETURN labels(a) AS src, type(r) AS rel, labels(b) AS tgt, count(r) AS cnt ORDER BY rel, cnt DESC LIMIT 500")
+		"MATCH (a)-[r]->(b) WHERE "+businessRelationshipPredicate("r", "a", "b")+" RETURN labels(a) AS src, type(r) AS rel, labels(b) AS tgt, count(r) AS cnt ORDER BY rel, cnt DESC")
 	if err != nil {
 		return preview, nil // 关系推导失败不影响实体推导结果
 	}
@@ -235,9 +236,10 @@ func (s *SchemaInferenceService) applyPreview(tenantID, ontologyID uint, preview
 				continue
 			}
 			updateReq := &models.UpdateEntityTypeRequest{
-				Label:      et.Name,
-				NodeLabels: et.Labels,
-				Properties: et.Properties,
+				Label:           et.Name,
+				NodeLabels:      et.Labels,
+				DisplayProperty: existing.DisplayProperty,
+				Properties:      et.Properties,
 			}
 			if _, err := s.ontologySvc.UpdateEntityType(existing.ID, ontologyID, tenantID, updateReq); err != nil {
 				result.Errors = append(result.Errors, err.Error())

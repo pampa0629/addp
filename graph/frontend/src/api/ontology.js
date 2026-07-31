@@ -105,13 +105,9 @@ export const knowledgeGraphAPI = {
 export const engineAPI = {
   // 获取 Neo4j 引擎列表
   getNeo4jEngines() {
-    return client.get('/system/engines').then(res => {
-      const engines = Array.isArray(res) ? res : (res?.engines || res?.data || [])
-      return engines.filter(e =>
-        e.engine_type?.toLowerCase() === 'neo4j' ||
-        e.type?.toLowerCase() === 'neo4j'
-      )
-    })
+    return client.get('/system/engines', {
+      params: { engine_type: 'neo4j' }
+    }).then(res => res.data)
   },
   // 获取指定引擎的数据库列表（Neo4j database 对应顶层 catalog 节点）
   getDatabases(engineId) {

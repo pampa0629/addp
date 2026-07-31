@@ -2,7 +2,16 @@
   <div class="node-panel" v-if="selected">
     <div class="panel-header">
       <span class="panel-title">
-        <el-tag v-if="selected.type === 'node'" :style="{ backgroundColor: selected.color, borderColor: selected.color }" effect="dark" size="small">
+        <el-tag
+          v-if="selected.type === 'node'"
+          :style="{
+            backgroundColor: selected.visual_color || selected.color,
+            borderColor: selected.visual_color || selected.color,
+            color: selected.visual_label_color
+          }"
+          effect="dark"
+          size="small"
+        >
           {{ nodeTypeLabel }}
         </el-tag>
         <el-tag v-else type="info" size="small">{{ t('graph.nodePanel.relation') }}</el-tag>
@@ -58,7 +67,7 @@ const displayName = computed(() => {
   if (props.selected.type === 'node') {
     return props.selected.display_name || props.selected.id
   }
-  return props.selected.type || props.selected.relation_type || props.selected.id
+  return props.selected.relation_type || props.selected.type || props.selected.id
 })
 
 const hasProperties = computed(() => {

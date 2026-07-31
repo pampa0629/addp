@@ -162,8 +162,9 @@ func (s *ModelImportService) ImportFromModel(ontologyID, tenantID uint, req *Imp
 			}
 			// overwrite: 更新属性
 			updateReq := &models.UpdateEntityTypeRequest{
-				Label:      ep.Label,
-				Properties: ep.Properties,
+				Label:           ep.Label,
+				DisplayProperty: existing.DisplayProperty,
+				Properties:      ep.Properties,
 			}
 			if _, err := s.ontologySvc.UpdateEntityType(existing.ID, ontologyID, tenantID, updateReq); err != nil {
 				result.Errors = append(result.Errors, err.Error())
@@ -267,11 +268,13 @@ func mapModelAttributes(attrs []commonClient.ModelEntityAttribute) []models.Prop
 		if a.IsPK {
 			continue // 主键不导入为属性
 		}
+		dataType := mapDataType(a.DataType)
 		prop := models.PropertyDefinition{
-			Name:     a.Name,
-			Label:    a.Name,
-			DataType: mapDataType(a.DataType),
-			Required: !a.Nullable,
+			Name:       a.Name,
+			Label:      a.Name,
+			DataType:   dataType,
+			Required:   !a.Nullable,
+			Searchable: dataType == "string",
 		}
 		props = append(props, prop)
 	}

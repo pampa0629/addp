@@ -36,6 +36,7 @@ type EntityType struct {
 	Color              string         `gorm:"default:'#5B8FF9'" json:"color"`                       // 可视化颜色
 	Icon               string         `json:"icon"`
 	ParentID           *uint          `json:"parent_id"`                                                     // 继承关系 (subClassOf)
+	DisplayProperty    string         `json:"display_property"`                                              // 节点展示字段（可引用继承的字符串属性）
 	Properties         datatypes.JSON `gorm:"type:jsonb;default:'[]'" json:"properties"`                     // 属性定义列表
 	Constraints        datatypes.JSON `gorm:"type:jsonb;default:'[]'" json:"constraints"`                    // 约束规则列表
 	IsSpatialLayer     bool           `gorm:"default:false" json:"is_spatial_layer"`                         // 是否为空间图层类型

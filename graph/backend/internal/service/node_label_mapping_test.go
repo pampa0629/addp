@@ -62,9 +62,17 @@ func TestBusinessGraphFilterDetectsInternalSpatialNodes(t *testing.T) {
 	}
 }
 
+func TestBusinessNodePredicateRequiresBusinessLabel(t *testing.T) {
+	got := businessNodePredicate("node")
+	want := "size(labels(node)) > 0 AND NOT (any(label IN labels(node) WHERE label IN ['SpatialLayer']))"
+	if got != want {
+		t.Fatalf("unexpected predicate:\nwant: %s\n got: %s", want, got)
+	}
+}
+
 func TestBusinessRelationshipPredicateFiltersInternalEndpoints(t *testing.T) {
 	got := businessRelationshipPredicate("r", "source", "target")
-	want := "NOT (type(r) IN ['RTREE_METADATA', 'RTREE_REFERENCE', 'RTREE_ROOT']) AND NOT (any(label IN labels(source) WHERE label IN ['SpatialLayer'])) AND NOT (any(label IN labels(target) WHERE label IN ['SpatialLayer']))"
+	want := "NOT (type(r) IN ['RTREE_METADATA', 'RTREE_REFERENCE', 'RTREE_ROOT']) AND size(labels(source)) > 0 AND NOT (any(label IN labels(source) WHERE label IN ['SpatialLayer'])) AND size(labels(target)) > 0 AND NOT (any(label IN labels(target) WHERE label IN ['SpatialLayer']))"
 	if got != want {
 		t.Fatalf("unexpected predicate:\nwant: %s\n got: %s", want, got)
 	}

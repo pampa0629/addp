@@ -1,9 +1,14 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
+import Components from 'unplugin-vue-components/vite'
+import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    Components({ resolvers: [ElementPlusResolver()] })
+  ],
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
@@ -22,6 +27,16 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true
+      }
+    }
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('/node_modules/@antv/')) return 'graph-vendor'
+          if (id.includes('/node_modules/element-plus/')) return 'element-vendor'
+        }
       }
     }
   },

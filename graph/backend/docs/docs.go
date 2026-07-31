@@ -448,6 +448,50 @@ const docTemplate = `{
                 ]
             }
         },
+        "/graphs/{id}/browse-snapshot": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "从同一组图事实返回 Schema、统计和聚合概览 | Return schema, statistics and aggregate overview derived from the same graph facts",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "图谱浏览 | Graph Browse"
+                ],
+                "summary": "图谱浏览快照 | Get graph browse snapshot",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "知识图谱 ID | Knowledge graph ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.BrowseSnapshot"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.graph.read"
+                ]
+            }
+        },
         "/graphs/{id}/build/tasks": {
             "get": {
                 "security": [
@@ -1041,7 +1085,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取指定节点的邻居节点和关系 | Get neighbor nodes and relations of a specified node",
+                "description": "展开聚合桶的代表性实体，或按跳数和双预算展开实体局部子图 | Expand representative entities of an aggregate bucket, or an entity-centric subgraph with depth and node/relationship budgets",
                 "consumes": [
                     "application/json"
                 ],
@@ -1051,7 +1095,7 @@ const docTemplate = `{
                 "tags": [
                     "图谱浏览 | Graph Browse"
                 ],
-                "summary": "展开节点邻居 | Expand node neighbors",
+                "summary": "展开图视图目标 | Expand graph view target",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1205,50 +1249,6 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "graph.graph.update"
-                ]
-            }
-        },
-        "/graphs/{id}/overview": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "获取图谱概览子图（采样约100条关系）| Get graph overview subgraph (sampling ~100 relations)",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "图谱浏览 | Graph Browse"
-                ],
-                "summary": "图谱概览 | Get graph overview",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "知识图谱 ID | Knowledge graph ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_graph_internal_models.SubgraphResult"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "graph.graph.read"
                 ]
             }
         },
@@ -1739,50 +1739,6 @@ const docTemplate = `{
                 ]
             }
         },
-        "/graphs/{id}/schema": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "获取知识图谱的节点形状、关系形状和连接模式 Schema | Get node shape, relationship shape and pattern schema of a knowledge graph",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "图谱浏览 | Graph Browse"
-                ],
-                "summary": "图谱 Schema | Get graph schema",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "知识图谱 ID | Knowledge graph ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_graph_internal_models.BrowseSchema"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "graph.graph.read"
-                ]
-            }
-        },
         "/graphs/{id}/search": {
             "post": {
                 "security": [
@@ -1830,50 +1786,6 @@ const docTemplate = `{
                         "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "graph.graph.read"
-                ]
-            }
-        },
-        "/graphs/{id}/stats": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "获取知识图谱的节点数、关系数、按标签分组统计 | Get node count, relation count and label-grouped statistics of a knowledge graph",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "图谱浏览 | Graph Browse"
-                ],
-                "summary": "图谱统计 | Get graph statistics",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "知识图谱 ID | Knowledge graph ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_graph_internal_models.BrowseStats"
                         }
                     },
                     "500": {
@@ -3614,6 +3526,20 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_graph_internal_models.BrowseSnapshot": {
+            "type": "object",
+            "properties": {
+                "overview": {
+                    "$ref": "#/definitions/github_com_addp_graph_internal_models.SubgraphResult"
+                },
+                "schema": {
+                    "$ref": "#/definitions/github_com_addp_graph_internal_models.BrowseSchema"
+                },
+                "stats": {
+                    "$ref": "#/definitions/github_com_addp_graph_internal_models.BrowseStats"
+                }
+            }
+        },
         "github_com_addp_graph_internal_models.BrowseStats": {
             "type": "object",
             "properties": {
@@ -3803,6 +3729,9 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "display_property": {
+                    "type": "string"
+                },
                 "icon": {
                     "type": "string"
                 },
@@ -3966,6 +3895,10 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "display_property": {
+                    "description": "节点展示字段（可引用继承的字符串属性）",
+                    "type": "string"
+                },
                 "icon": {
                     "type": "string"
                 },
@@ -4038,14 +3971,40 @@ const docTemplate = `{
         "github_com_addp_graph_internal_models.ExpandRequest": {
             "type": "object",
             "required": [
-                "node_id"
+                "target"
             ],
             "properties": {
-                "limit": {
+                "depth": {
                     "type": "integer"
                 },
-                "node_id": {
+                "node_limit": {
+                    "type": "integer"
+                },
+                "relationship_limit": {
+                    "type": "integer"
+                },
+                "target": {
+                    "$ref": "#/definitions/github_com_addp_graph_internal_models.ExpandTarget"
+                }
+            }
+        },
+        "github_com_addp_graph_internal_models.ExpandTarget": {
+            "type": "object",
+            "required": [
+                "kind"
+            ],
+            "properties": {
+                "id": {
                     "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "labels": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -4056,8 +4015,19 @@ const docTemplate = `{
                     "description": "本体中定义的颜色",
                     "type": "string"
                 },
+                "count": {
+                    "type": "integer"
+                },
+                "directed": {
+                    "description": "是否按本体定义显示方向",
+                    "type": "boolean"
+                },
                 "id": {
                     "description": "Neo4j elementId",
+                    "type": "string"
+                },
+                "kind": {
+                    "description": "entity | aggregate",
                     "type": "string"
                 },
                 "properties": {
@@ -4115,12 +4085,19 @@ const docTemplate = `{
                     "description": "Neo4j elementId",
                     "type": "string"
                 },
+                "kind": {
+                    "description": "entity | aggregate",
+                    "type": "string"
+                },
                 "labels": {
                     "description": "Neo4j 标签列表",
                     "type": "array",
                     "items": {
                         "type": "string"
                     }
+                },
+                "member_count": {
+                    "type": "integer"
                 },
                 "properties": {
                     "type": "object",
@@ -4207,6 +4184,9 @@ const docTemplate = `{
         "github_com_addp_graph_internal_models.NodeShapeDTO": {
             "type": "object",
             "properties": {
+                "color": {
+                    "type": "string"
+                },
                 "count": {
                     "type": "integer"
                 },
@@ -4395,6 +4375,9 @@ const docTemplate = `{
                 "required": {
                     "type": "boolean"
                 },
+                "searchable": {
+                    "type": "boolean"
+                },
                 "unique": {
                     "type": "boolean"
                 }
@@ -4484,8 +4467,14 @@ const docTemplate = `{
         "github_com_addp_graph_internal_models.RelationshipShapeDTO": {
             "type": "object",
             "properties": {
+                "color": {
+                    "type": "string"
+                },
                 "count": {
                     "type": "integer"
+                },
+                "directed": {
+                    "type": "boolean"
                 },
                 "patterns": {
                     "type": "array",
@@ -4630,6 +4619,9 @@ const docTemplate = `{
                     }
                 },
                 "description": {
+                    "type": "string"
+                },
+                "display_property": {
                     "type": "string"
                 },
                 "icon": {

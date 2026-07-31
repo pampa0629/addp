@@ -5,7 +5,11 @@
       <div class="toolbar-left">
         <span class="graph-name">{{ graphName }}</span>
         <el-tag v-if="stats" size="small" type="info">
+          {{ t('graph.browser.totalCount') }}:
           {{ stats.node_count }} {{ t('graph.browser.nodes') }} / {{ stats.relationship_count }} {{ t('graph.browser.relations') }}
+        </el-tag>
+        <el-tag size="small" type="success">
+          {{ canvasSummary }}
         </el-tag>
         <!-- 着色状态标签 -->
         <el-tag v-if="analysisActive" size="small" type="warning" closable @close="handleClearScores">
@@ -17,7 +21,7 @@
           v-model="searchQuery"
           :placeholder="t('graph.browser.searchPlaceholder')"
           clearable
-          style="width: 280px"
+          class="search-input"
           @keyup.enter="handleSearch"
           @clear="clearSearch"
         >
@@ -27,7 +31,17 @@
         </el-input>
       </div>
       <div class="toolbar-right">
-        <el-select v-model="currentLayout" class="layout-select" @change="onLayoutChange">
+        <el-tooltip :content="t('graph.browser.expandDepth')">
+          <el-segmented
+            v-model="expandDepth"
+            size="small"
+            :options="expandDepthOptions"
+            :disabled="!canExpandSelectedNode"
+            :aria-label="t('graph.browser.expandDepth')"
+            @change="handleExpandDepthChange"
+          />
+        </el-tooltip>
+        <el-select v-model="currentLayout" class="layout-select">
           <el-option :label="t('graph.browser.layoutForce')" value="force" />
           <el-option :label="t('graph.browser.layoutDagre')" value="dagre" />
           <el-option :label="t('graph.browser.layoutCircular')" value="circular" />
@@ -42,7 +56,7 @@
             {{ t('graph.browser.edgeLabels') }}
           </el-button>
         </el-tooltip>
-        <el-button :icon="Refresh" @click="loadOverview" :title="t('graph.browser.resetView')" />
+        <el-button :icon="Refresh" @click="loadBrowseSnapshot" :title="t('graph.browser.resetView')" />
         <!-- 图分析切换按钮 -->
         <el-button
           :type="activeRightPanel === 'analysis' ? 'primary' : ''"
@@ -82,8 +96,15 @@
           <div class="filter-title">{{ t('graph.browser.relationTypes') }}</div>
           <div v-if="relationshipTypes.length === 0" class="filter-empty">—</div>
           <el-checkbox-group v-else v-model="visibleRelTypes" @change="applyFilter">
-            <div v-for="rt in relationshipTypes" :key="rt" class="filter-item">
-              <el-checkbox :label="rt" :value="rt">{{ rt }}</el-checkbox>
+            <div v-for="shape in relationshipShapes" :key="shape.type" class="filter-item">
+              <el-checkbox :label="shape.type" :value="shape.type">
+                <span
+                  class="edge-swatch"
+                  :class="[`dash-${getRelationshipVisual(shape).dashIndex}`, { 'is-directed': getRelationshipVisual(shape).directed }]"
+                  :style="{ color: getRelationshipVisual(shape).color }"
+                ></span>
+                {{ shape.type }}
+              </el-checkbox>
             </div>
           </el-checkbox-group>
         </div>
@@ -98,6 +119,13 @@
           :layout="currentLayout"
           :show-edge-labels="showEdgeLabels"
           :loading="loading"
+          :theme="graphTheme"
+          :selected-node-id="selectedNodeId"
+          :selected-edge-id="selectedEdgeId"
+          :search-match-node-ids="searchMatchNodeIds"
+          :path-node-ids="pathNodeIds"
+          :path-edge-ids="pathEdgeIds"
+          :expansion-anchor-id="expansionAnchorId"
           @node-click="handleNodeClick"
           @node-select="handleNodeSelect"
           @edge-select="handleEdgeSelect"
@@ -106,12 +134,12 @@
       </div>
 
       <!-- 右侧面板 -->
-      <div class="detail-panel">
+      <div class="detail-panel" :class="{ 'is-open': selectedItem || activeRightPanel === 'analysis' }">
         <!-- Tab 切换：详情 / 分析 -->
         <div v-if="activeRightPanel === 'detail'" style="height: 100%; overflow: hidden;">
           <NodePanel
             :selected="selectedItem"
-            @close="selectedItem = null"
+            @close="clearSelection"
             @expand="handleExpand"
             @set-path-node="handleSetPathNode"
           />
@@ -135,7 +163,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Search, Refresh, DataAnalysis } from '@element-plus/icons-vue'
@@ -145,6 +173,13 @@ import { knowledgeGraphAPI } from '../api/ontology'
 import GraphCanvas from '../components/GraphCanvas.vue'
 import NodePanel from '../components/NodePanel.vue'
 import AnalysisPanel from '../components/AnalysisPanel.vue'
+import {
+  createGraphVisualEncoding,
+  getContrastingTextColor,
+  graphNodeTypeKey,
+  readGraphTheme
+} from '../utils/graphVisualEncoding'
+import { createLatestOperationController } from '../utils/graphOperationController'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -175,6 +210,16 @@ const currentLayout = ref('force')
 const showEdgeLabels = ref(false)
 const selectedItem = ref(null)
 const canvasRef = ref(null)
+const selectedNodeId = ref('')
+const selectedEdgeId = ref('')
+const searchMatchNodeIds = ref([])
+const pathNodeIds = ref([])
+const pathEdgeIds = ref([])
+const graphTheme = ref({ categoryColors: [] })
+const viewMode = ref('overview')
+const expandDepth = ref(1)
+const expansionAnchorId = ref('')
+const browseOperationController = createLatestOperationController()
 
 // 右侧面板状态
 const activeRightPanel = ref('detail')  // 'detail' | 'analysis'
@@ -194,8 +239,65 @@ const nodeShapes = computed(() => {
 })
 
 const relationshipTypes = computed(() => {
-  return (schema.value.relationship_shapes || []).map(shape => shape.type).filter(Boolean)
+  return relationshipShapes.value.map(shape => shape.type).filter(Boolean)
 })
+
+const relationshipShapes = computed(() => schema.value.relationship_shapes || [])
+
+const expandDepthOptions = computed(() => [1, 2, 3].map(value => ({
+  value,
+  label: t('graph.browser.hopCount', { count: value })
+})))
+
+const canExpandSelectedNode = computed(() => {
+  const node = nodeMap.value[selectedNodeId.value]
+  return Boolean(node && node.kind !== 'aggregate')
+})
+
+const canvasSummary = computed(() => {
+  const counts = {
+    nodes: filteredNodes.value.length,
+    relations: filteredEdges.value.length
+  }
+  if (viewMode.value === 'overview') {
+    return t('graph.browser.overviewCount', counts)
+  }
+  return `${t('graph.browser.canvasCount')}: ${counts.nodes} ${t('graph.browser.nodes')} / ${counts.relations} ${t('graph.browser.relations')}`
+})
+
+const visualEncoding = computed(() => createGraphVisualEncoding({
+  nodeShapes: nodeShapes.value,
+  relationshipShapes: relationshipShapes.value,
+  nodes: allNodes.value,
+  edges: allEdges.value,
+  palette: graphTheme.value.categoryColors
+}))
+
+const visuallyEncodedNodes = computed(() => allNodes.value.map(node => {
+  const encoding = visualEncoding.value.nodeTypes.get(graphNodeTypeKey(node))
+  const visualColor = encoding?.color || node.color || graphTheme.value.categoryColors[0]
+  return {
+    ...node,
+    visual_color: visualColor,
+    visual_label_color: getContrastingTextColor(
+      visualColor,
+      graphTheme.value.labelLight,
+      graphTheme.value.labelDark
+    )
+  }
+}))
+
+const visuallyEncodedEdges = computed(() => allEdges.value.map(edge => {
+  const relationType = edge.relation_type || edge.type
+  const encoding = visualEncoding.value.relationshipTypes.get(relationType)
+  return {
+    ...edge,
+    visual_color: encoding?.color || edge.color || graphTheme.value.edgeDefault,
+    visual_line_dash: encoding?.lineDash || [],
+    visual_dash_index: encoding?.dashIndex || 0,
+    directed: typeof edge.directed === 'boolean' ? edge.directed : encoding?.directed !== false
+  }
+}))
 
 const selectedNodeShapeFilters = computed(() => {
   if (visibleNodeShapes.value.length === 0) return []
@@ -207,10 +309,10 @@ const selectedNodeShapeFilters = computed(() => {
 
 // 过滤后的节点/边
 const filteredNodes = computed(() => {
-  if (visibleNodeShapes.value.length === 0) return allNodes.value
+  if (visibleNodeShapes.value.length === 0) return visuallyEncodedNodes.value
   const filters = selectedNodeShapeFilters.value
-  if (filters.length === 0) return allNodes.value
-  return allNodes.value.filter(n => {
+  if (filters.length === 0) return visuallyEncodedNodes.value
+  return visuallyEncodedNodes.value.filter(n => {
     if (!n.labels || n.labels.length === 0) return true
     return filters.some(labels => labels.every(label => n.labels.includes(label)))
   })
@@ -218,26 +320,23 @@ const filteredNodes = computed(() => {
 
 const filteredEdges = computed(() => {
   const nodeIds = new Set(filteredNodes.value.map(n => n.id))
-  return allEdges.value.filter(e => {
+  return visuallyEncodedEdges.value.filter(e => {
     if (visibleRelTypes.value.length > 0 && !visibleRelTypes.value.includes(e.type)) return false
     return nodeIds.has(e.source) && nodeIds.has(e.target)
   })
 })
 
-// Neo4j label → color 映射（仅用于给 node shape 图例取色）
-const labelColorMap = computed(() => {
-  const map = {}
-  allNodes.value.forEach(n => {
-    if (n.labels && n.color) {
-      n.labels.forEach(l => { if (!map[l]) map[l] = n.color })
-    }
-  })
-  return map
-})
-
 function getNodeShapeColor(shape) {
-  const labels = shape.labels?.length ? shape.labels : [shape.name]
-  return labels.map(label => labelColorMap.value[label]).find(Boolean) || '#5B8FF9'
+  return visualEncoding.value.nodeTypes.get(shape.name)?.color || graphTheme.value.categoryColors[0]
+}
+
+function getRelationshipVisual(shape) {
+  return visualEncoding.value.relationshipTypes.get(shape.type) || {
+    color: graphTheme.value.edgeDefault,
+    lineDash: [],
+    dashIndex: 0,
+    directed: shape.directed !== false
+  }
 }
 
 // 合并新节点/边到画布（去重）
@@ -257,44 +356,48 @@ function mergeSubgraph(result) {
   })
 }
 
-// 初始化加载
-async function loadOverview() {
-  loading.value = true
+function replaceSubgraph(result) {
   allNodes.value = []
   allEdges.value = []
   nodeMap.value = {}
   edgeMap.value = {}
-  try {
-    const res = await browseAPI.getOverview(graphId.value)
-    mergeSubgraph(res)
-    // 初始化过滤器为全选
-    visibleNodeShapes.value = nodeShapes.value.map(shape => shape.name)
-    visibleRelTypes.value = [...relationshipTypes.value]
-  } catch (e) {
-    ElMessage.error(t('graph.browser.loadOverviewFailed') + ': ' + e.message)
-  } finally {
-    loading.value = false
-  }
+  mergeSubgraph(result)
 }
 
-async function loadSchema() {
-  try {
-    const res = await browseAPI.getSchema(graphId.value)
-    schema.value = res || { node_shapes: [], relationship_shapes: [] }
-    visibleNodeShapes.value = nodeShapes.value.map(shape => shape.name)
-    visibleRelTypes.value = [...relationshipTypes.value]
-  } catch (e) {
-    // schema 加载失败不影响主流程
-  }
+function runBrowseOperation(kind, request, onSuccess, errorMessageKey) {
+  return browseOperationController.execute(kind, request, {
+    onStart: () => {
+      loading.value = true
+      searching.value = kind === 'search'
+    },
+    onSuccess,
+    onError: error => {
+      ElMessage.error(t(errorMessageKey) + ': ' + error.message)
+    },
+    onFinish: () => {
+      loading.value = false
+      searching.value = false
+    },
+  })
 }
 
-async function loadStats() {
-  try {
-    const res = await browseAPI.getStats(graphId.value)
-    stats.value = res
-  } catch (e) {
-    // 统计加载失败不影响主流程
-  }
+// 初始化加载
+function loadBrowseSnapshot() {
+  return runBrowseOperation(
+    'snapshot',
+    signal => browseAPI.getBrowseSnapshot(graphId.value, signal),
+    snapshot => {
+      clearTransientState()
+      viewMode.value = 'overview'
+      expansionAnchorId.value = ''
+      schema.value = snapshot?.schema || { node_shapes: [], relationship_shapes: [] }
+      stats.value = snapshot?.stats || null
+      replaceSubgraph(snapshot?.overview)
+      visibleNodeShapes.value = nodeShapes.value.map(shape => shape.name)
+      visibleRelTypes.value = [...relationshipTypes.value]
+    },
+    'graph.browser.loadOverviewFailed',
+  )
 }
 
 async function loadGraphMeta() {
@@ -315,40 +418,43 @@ async function loadCapabilities() {
 }
 
 // 搜索
-async function handleSearch() {
+function handleSearch() {
   if (!searchQuery.value.trim()) return
-  searching.value = true
-  try {
-    const res = await browseAPI.searchNodes(graphId.value, searchQuery.value.trim())
-    const result = res
-    mergeSubgraph(result)
-    if (!result?.nodes?.length) {
-      ElMessage.info(t('graph.browser.noMatchingNodes'))
-    } else {
-      ElMessage.success(t('graph.browser.foundNodes', { count: result.nodes.length }))
-      // 等待 Vue 响应式更新后触发定位（afterlayout 中执行高亮+居中）
-      await nextTick()
-      const foundIds = result.nodes.map(n => n.id)
-      canvasRef.value?.focusNodes(foundIds)
-      // 单个结果自动展示详情
-      if (result.nodes.length === 1) {
-        selectedItem.value = { ...result.nodes[0], type: 'node' }
+  const query = searchQuery.value.trim()
+  searchMatchNodeIds.value = []
+  return runBrowseOperation(
+    'search',
+    signal => browseAPI.searchNodes(graphId.value, query, 30, signal),
+    async result => {
+      if (!result?.nodes?.length) {
+        ElMessage.info(t('graph.browser.noMatchingNodes'))
+      } else {
+        viewMode.value = 'entity'
+        expansionAnchorId.value = ''
+        replaceSubgraph(result)
+        ElMessage.success(t('graph.browser.foundNodes', { count: result.nodes.length }))
+        await nextTick()
+        const foundIds = result.nodes.map(n => n.id)
+        searchMatchNodeIds.value = foundIds
+        canvasRef.value?.focusNodes(foundIds)
+        if (result.nodes.length === 1) {
+          const encodedNode = visuallyEncodedNodes.value.find(node => node.id === result.nodes[0].id)
+          selectedItem.value = { ...(encodedNode || result.nodes[0]), type: 'node' }
+        }
       }
-    }
-  } catch (e) {
-    ElMessage.error(t('graph.browser.searchFailed') + ': ' + e.message)
-  } finally {
-    searching.value = false
-  }
+    },
+    'graph.browser.searchFailed',
+  )
 }
 
 function clearSearch() {
   searchQuery.value = ''
-  canvasRef.value?.clearHighlight()
+  searchMatchNodeIds.value = []
 }
 
 // 节点点击
 function handleNodeClick(nodeId) {
+  if (nodeMap.value[nodeId]?.kind === 'aggregate') return
   selectedNode.value = nodeId
   if (pathMode.value) {
     handleSetPathNode(nodeId)
@@ -356,8 +462,14 @@ function handleNodeClick(nodeId) {
 }
 
 function handleNodeSelect(node) {
+  if (node.kind === 'aggregate') {
+    handleExpand(node)
+    return
+  }
   selectedItem.value = { ...node, type: 'node' }
   selectedNode.value = node.id
+  selectedNodeId.value = node.id
+  selectedEdgeId.value = ''
   // 选中节点后自动切换到详情面板（分析面板打开时不切换）
   if (activeRightPanel.value !== 'analysis') {
     activeRightPanel.value = 'detail'
@@ -366,23 +478,49 @@ function handleNodeSelect(node) {
 
 function handleEdgeSelect(edge) {
   selectedItem.value = { ...edge, type: 'edge' }
+  selectedNode.value = ''
+  selectedNodeId.value = ''
+  selectedEdgeId.value = edge.id
 }
 
 function handleCanvasClick() {
+  clearSelection()
+}
+
+function clearSelection() {
   selectedItem.value = null
+  selectedNode.value = ''
+  selectedNodeId.value = ''
+  selectedEdgeId.value = ''
 }
 
 // 展开节点邻居
-async function handleExpand(nodeId) {
-  loading.value = true
-  try {
-    const res = await browseAPI.expandNode(graphId.value, nodeId)
-    mergeSubgraph(res)
-  } catch (e) {
-    ElMessage.error(t('graph.browser.expandFailed') + ': ' + e.message)
-  } finally {
-    loading.value = false
-  }
+function handleExpand(targetValue) {
+  const node = typeof targetValue === 'string' ? nodeMap.value[targetValue] : targetValue
+  if (!node) return
+  const target = node.kind === 'aggregate'
+    ? { kind: 'aggregate', labels: node.labels || [] }
+    : { kind: 'entity', id: node.id }
+  return runBrowseOperation(
+    'expand',
+    signal => browseAPI.expandTarget(graphId.value, target, expandDepth.value, 200, 400, signal),
+    async result => {
+      viewMode.value = 'entity'
+      expansionAnchorId.value = ''
+      replaceSubgraph(result)
+      if (node.kind === 'aggregate') {
+        ElMessage.success(t('graph.browser.aggregateExpanded', { count: result?.nodes?.length || 0 }))
+      }
+      await nextTick()
+      canvasRef.value?.fitView()
+    },
+    'graph.browser.expandFailed',
+  )
+}
+
+function handleExpandDepthChange() {
+  if (!canExpandSelectedNode.value) return
+  handleExpand(selectedNodeId.value)
 }
 
 // 路径查找
@@ -396,19 +534,23 @@ function handleSetPathNode(nodeId) {
   }
 }
 
-async function findPath() {
+function findPath() {
   const [src, dst] = pathNodes.value
-  loading.value = true
-  try {
-    const res = await browseAPI.findPath(graphId.value, src, dst)
-    mergeSubgraph(res)
-    ElMessage.success(t('graph.browser.pathShown'))
-  } catch (e) {
-    ElMessage.error(t('graph.browser.pathFailed') + ': ' + e.message)
-  } finally {
-    loading.value = false
-    cancelPathMode()
-  }
+  pathNodeIds.value = []
+  pathEdgeIds.value = []
+  expansionAnchorId.value = ''
+  cancelPathMode()
+  return runBrowseOperation(
+    'path',
+    signal => browseAPI.findPath(graphId.value, src, dst, signal),
+    result => {
+      mergeSubgraph(result)
+      pathNodeIds.value = result?.nodes?.map(node => node.id) || []
+      pathEdgeIds.value = result?.edges?.map(edge => edge.id).filter(Boolean) || []
+      ElMessage.success(t('graph.browser.pathShown'))
+    },
+    'graph.browser.pathFailed',
+  )
 }
 
 function cancelPathMode() {
@@ -418,10 +560,6 @@ function cancelPathMode() {
 
 function applyFilter() {
   // filteredNodes/filteredEdges 是 computed，自动更新
-}
-
-function onLayoutChange() {
-  // currentLayout 变化后 GraphCanvas 内部 watch 会自动更新布局
 }
 
 // 分析面板相关
@@ -447,13 +585,40 @@ function handleFocusNode(nodeId) {
 }
 
 function handleLoadSubgraph(subgraph) {
+  viewMode.value = 'entity'
+  expansionAnchorId.value = selectedNodeId.value
   mergeSubgraph(subgraph)
   ElMessage.success(t('graph.browser.subgraphLoaded', { count: subgraph.nodes?.length || 0 }))
 }
 
+function clearTransientState() {
+  canvasRef.value?.resetNodeColors()
+  clearSelection()
+  searchQuery.value = ''
+  searchMatchNodeIds.value = []
+  pathNodeIds.value = []
+  pathEdgeIds.value = []
+  cancelPathMode()
+  analysisActive.value = false
+  analysisAlgoName.value = ''
+}
+
+let themeObserver = null
+
+function syncGraphTheme() {
+  graphTheme.value = readGraphTheme()
+}
+
 onMounted(async () => {
-  await Promise.all([loadGraphMeta(), loadSchema(), loadStats()])
-  await Promise.all([loadOverview(), loadCapabilities()])
+  syncGraphTheme()
+  themeObserver = new MutationObserver(syncGraphTheme)
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+  await Promise.all([loadGraphMeta(), loadBrowseSnapshot(), loadCapabilities()])
+})
+
+onBeforeUnmount(() => {
+  browseOperationController.cancel()
+  themeObserver?.disconnect()
 })
 </script>
 
@@ -470,6 +635,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   padding: 8px 16px;
   border-bottom: 1px solid var(--addp-border-color);
   background: var(--addp-bg-primary);
@@ -480,18 +646,28 @@ onMounted(async () => {
 .toolbar-left {
   display: flex;
   align-items: center;
+  flex: 1 1 320px;
+  flex-wrap: wrap;
+  min-width: 0;
   gap: 8px;
 }
 
 .toolbar-center {
-  flex: 1;
+  flex: 1 1 240px;
   display: flex;
   justify-content: center;
+}
+
+.search-input {
+  width: 280px;
 }
 
 .toolbar-right {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
   gap: 8px;
 }
 
@@ -502,6 +678,11 @@ onMounted(async () => {
 .graph-name {
   font-weight: 600;
   font-size: 15px;
+  white-space: nowrap;
+}
+
+.toolbar :deep(.el-tag) {
+  white-space: nowrap;
 }
 
 .main-area {
@@ -555,6 +736,46 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 
+.edge-swatch {
+  position: relative;
+  display: inline-block;
+  width: 24px;
+  height: 8px;
+  margin-right: 5px;
+  flex-shrink: 0;
+}
+
+.edge-swatch::before {
+  content: '';
+  position: absolute;
+  inset: 3px 0 auto;
+  height: 2px;
+  background: currentColor;
+}
+
+.edge-swatch.dash-1::before {
+  background: repeating-linear-gradient(to right, currentColor 0 8px, transparent 8px 12px);
+}
+
+.edge-swatch.dash-2::before {
+  background: repeating-linear-gradient(to right, currentColor 0 2px, transparent 2px 6px);
+}
+
+.edge-swatch.dash-3::before {
+  background: linear-gradient(to right, currentColor 0 10px, transparent 10px 13px, currentColor 13px 15px, transparent 15px 18px);
+  background-size: 18px 2px;
+}
+
+.edge-swatch.is-directed::after {
+  content: '>';
+  position: absolute;
+  right: -2px;
+  top: -9px;
+  color: currentColor;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .canvas-area {
   flex: 1;
   min-height: 0;
@@ -569,5 +790,63 @@ onMounted(async () => {
   border-left: 1px solid var(--addp-border-color);
   overflow: hidden;
   background: var(--addp-bg-primary);
+}
+
+@media (max-width: 720px) {
+  .toolbar {
+    flex-wrap: wrap;
+    padding: 8px;
+  }
+
+  .toolbar-left {
+    min-width: 0;
+  }
+
+  .toolbar-center {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .toolbar-right {
+    width: 100%;
+  }
+
+  .search-input {
+    width: 100%;
+  }
+
+  .main-area {
+    position: relative;
+  }
+
+  .filter-panel {
+    width: 124px;
+    padding: 8px;
+  }
+
+  .filter-item :deep(.el-checkbox__label) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .detail-panel {
+    position: absolute;
+    z-index: 2;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 0;
+    border-left: 0;
+    box-shadow: none;
+    transition: width 0.2s ease;
+  }
+
+  .detail-panel.is-open {
+    width: min(240px, 72vw);
+    border-left: 1px solid var(--addp-border-color);
+    box-shadow: var(--addp-shadow-card);
+  }
 }
 </style>

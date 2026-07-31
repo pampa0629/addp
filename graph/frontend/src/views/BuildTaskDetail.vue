@@ -118,10 +118,12 @@ const canUpload = computed(() => task.value && task.value.status !== 'running')
 
 async function loadTask() {
   try {
-    const res = await buildAPI.getTask(graphId, taskId)
+    const [res, countRes] = await Promise.all([
+      buildAPI.getTask(graphId, taskId),
+      buildAPI.getPendingCount(graphId),
+    ])
     task.value = res
     materials.value = task.value.materials || []
-    const countRes = await buildAPI.getPendingCount(graphId)
     pendingCount.value = countRes.count || 0
   } catch (e) {
     ElMessage.error(t('graph.common.loadFailed'))
@@ -184,18 +186,28 @@ async function handleDeleteMaterial(materialId) {
 
 function startPolling() {
   if (pollTimer) return
-  pollTimer = setInterval(async () => {
-    await loadTask()
-    if (task.value && task.value.status !== 'running') {
-      stopPolling()
-    }
-  }, 3000)
+  pollTimer = setTimeout(pollTask, 3000)
+}
+
+async function pollTask() {
+  pollTimer = null
+  if (document.hidden) return
+  await loadTask()
+  if (task.value?.status === 'running') startPolling()
 }
 
 function stopPolling() {
   if (pollTimer) {
-    clearInterval(pollTimer)
+    clearTimeout(pollTimer)
     pollTimer = null
+  }
+}
+
+function handleVisibilityChange() {
+  if (document.hidden) {
+    stopPolling()
+  } else if (task.value?.status === 'running') {
+    startPolling()
   }
 }
 
@@ -230,10 +242,14 @@ function formatSize(bytes) {
 }
 
 onMounted(async () => {
+  document.addEventListener('visibilitychange', handleVisibilityChange)
   await loadTask()
   if (task.value?.status === 'running') startPolling()
 })
-onUnmounted(stopPolling)
+onUnmounted(() => {
+  stopPolling()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+})
 </script>
 
 <style scoped>

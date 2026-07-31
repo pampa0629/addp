@@ -37,6 +37,7 @@ type AnalysisService struct {
 	graphRepo    *repository.KnowledgeGraphRepository
 	ontologyRepo *repository.OntologyRepository
 	systemClient *commonClient.SystemClient
+	neo4jSvc     *Neo4jService
 
 	// GDS 能力缓存（实例级）
 	gdsChecked bool
@@ -59,11 +60,13 @@ func NewAnalysisService(
 	graphRepo *repository.KnowledgeGraphRepository,
 	ontologyRepo *repository.OntologyRepository,
 	systemClient *commonClient.SystemClient,
+	neo4jSvc *Neo4jService,
 ) *AnalysisService {
 	return &AnalysisService{
 		graphRepo:    graphRepo,
 		ontologyRepo: ontologyRepo,
 		systemClient: systemClient,
+		neo4jSvc:     neo4jSvc,
 	}
 }
 
@@ -350,6 +353,9 @@ func (s *AnalysisService) RunAlgorithm(ctx context.Context, graphID, tenantID ui
 	if req.Limit <= 0 || req.Limit > 200 {
 		req.Limit = 50
 	}
+	if req.Algorithm == "khop_neighbors" {
+		return s.runKhopNeighbors(ctx, graphID, tenantID, req)
+	}
 
 	_, engine, err := s.getGraphAndEngine(graphID, tenantID)
 	if err != nil {
@@ -388,9 +394,7 @@ func (s *AnalysisService) RunAlgorithm(ctx context.Context, graphID, tenantID ui
 
 	switch req.Algorithm {
 	case "degree_centrality":
-		return s.runDegreeCentrality(ctx, engine, req)
-	case "khop_neighbors":
-		return s.runKhopNeighbors(ctx, graphID, tenantID, engine, req)
+		return s.runDegreeCentrality(ctx, graphID, tenantID, engine, req)
 	case "multi_path":
 		return s.runMultiPath(ctx, graphID, tenantID, engine, req)
 	case "pagerank":
@@ -411,7 +415,7 @@ func (s *AnalysisService) RunAlgorithm(ctx context.Context, graphID, tenantID ui
 }
 
 // runDegreeCentrality 度中心性（Cypher）
-func (s *AnalysisService) runDegreeCentrality(ctx context.Context, engine *commonmodels.Engine, req *models.AlgorithmRunRequest) (*models.AlgorithmResult, error) {
+func (s *AnalysisService) runDegreeCentrality(ctx context.Context, graphID, tenantID uint, engine *commonmodels.Engine, req *models.AlgorithmRunRequest) (*models.AlgorithmResult, error) {
 	start := time.Now()
 
 	labelFilter := ""
@@ -428,7 +432,7 @@ CALL {
   RETURN count(r) AS degree
 }
 RETURN elementId(n) AS node_id,
-       coalesce(n.name, n.title, n.label, elementId(n)) AS display_name,
+       properties(n) AS node_properties,
        labels(n) AS node_labels,
        toFloat(degree) AS score
 ORDER BY degree DESC
@@ -439,7 +443,7 @@ LIMIT %d`, labelFilter, req.Limit)
 		return nil, fmt.Errorf("degree centrality failed: %w", err)
 	}
 
-	scores := rowsToNodeScores(result.Rows)
+	scores := rowsToNodeScores(result.Rows, s.analysisOntologySemantics(graphID, tenantID))
 	return &models.AlgorithmResult{
 		Algorithm:     "degree_centrality",
 		AlgorithmName: "度中心性",
@@ -452,8 +456,8 @@ LIMIT %d`, labelFilter, req.Limit)
 	}, nil
 }
 
-// runKhopNeighbors K跳邻居分析（Cypher）
-func (s *AnalysisService) runKhopNeighbors(ctx context.Context, graphID, tenantID uint, engine *commonmodels.Engine, req *models.AlgorithmRunRequest) (*models.AlgorithmResult, error) {
+// runKhopNeighbors 复用探索页的统一双预算展开语义。
+func (s *AnalysisService) runKhopNeighbors(ctx context.Context, graphID, tenantID uint, req *models.AlgorithmRunRequest) (*models.AlgorithmResult, error) {
 	start := time.Now()
 
 	nodeID, _ := req.Params["node_id"].(string)
@@ -472,25 +476,18 @@ func (s *AnalysisService) runKhopNeighbors(ctx context.Context, graphID, tenantI
 	if hops < 1 {
 		hops = 1
 	}
-	if hops > 4 {
-		hops = 4
+	if hops > MaxExpandDepth {
+		hops = MaxExpandDepth
 	}
-
-	cypher := fmt.Sprintf(
-		"MATCH path = (start)-[*1..%d]-(n) WHERE elementId(start) = '%s' AND NONE(rel IN relationships(path) WHERE type(rel) IN "+internalRelationshipTypeList+") RETURN path LIMIT %d",
-		hops, escapeCypher(nodeID), req.Limit,
-	)
-	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, cypher)
+	subgraph, err := s.neo4jSvc.Expand(ctx, graphID, tenantID, &models.ExpandRequest{
+		Target:            models.ExpandTarget{Kind: "entity", ID: nodeID},
+		Depth:             hops,
+		NodeLimit:         req.Limit,
+		RelationshipLimit: min(req.Limit*2, MaxExpandRelationshipLimit),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("khop neighbors failed: %w", err)
 	}
-
-	kg, err := s.graphRepo.GetByID(graphID, tenantID)
-	nodeColors, edgeColors := map[string]string{}, map[string]string{}
-	if err == nil {
-		nodeColors, edgeColors = buildColorMapsFromOntology(s.ontologyRepo, kg.OntologyID, tenantID)
-	}
-	subgraph := buildSubgraph(result, nodeColors, edgeColors)
 
 	return &models.AlgorithmResult{
 		Algorithm:     "khop_neighbors",
@@ -533,8 +530,14 @@ func (s *AnalysisService) runMultiPath(ctx context.Context, graphID, tenantID ui
 
 	kg, err := s.graphRepo.GetByID(graphID, tenantID)
 	nodeColors, edgeColors := map[string]string{}, map[string]string{}
+	edgeDirections := map[string]bool{}
+	semantics := newOntologySemantics(nil)
 	if err == nil {
-		nodeColors, edgeColors = buildColorMapsFromOntology(s.ontologyRepo, kg.OntologyID, tenantID)
+		ontology, ontologyErr := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
+		if ontologyErr == nil {
+			nodeColors, edgeColors, edgeDirections = buildVisualMaps(ontology)
+			semantics = newOntologySemantics(ontology)
+		}
 	}
 
 	// 合并多对路径结果
@@ -554,7 +557,7 @@ func (s *AnalysisService) runMultiPath(ctx context.Context, graphID, tenantID ui
 		if err != nil {
 			continue
 		}
-		sub := buildSubgraph(result, nodeColors, edgeColors)
+		sub := buildSubgraph(result, nodeColors, edgeColors, edgeDirections, semantics)
 		for _, n := range sub.Nodes {
 			if !nodeSet[n.ID] {
 				nodeSet[n.ID] = true
@@ -626,7 +629,7 @@ CALL gds.pageRank.stream('%s', {maxIterations:20, dampingFactor:0.85})
 YIELD nodeId, score
 MATCH (n) WHERE id(n) = nodeId
 RETURN elementId(n) AS node_id,
-       coalesce(n.name, n.title, n.label, toString(id(n))) AS display_name,
+       properties(n) AS node_properties,
        labels(n) AS node_labels,
        score,
        0 AS community_id
@@ -639,7 +642,7 @@ CALL gds.betweenness.stream('%s')
 YIELD nodeId, score
 MATCH (n) WHERE id(n) = nodeId
 RETURN elementId(n) AS node_id,
-       coalesce(n.name, n.title, n.label, toString(id(n))) AS display_name,
+       properties(n) AS node_properties,
        labels(n) AS node_labels,
        score,
        0 AS community_id
@@ -652,7 +655,7 @@ CALL gds.louvain.stream('%s')
 YIELD nodeId, communityId
 MATCH (n) WHERE id(n) = nodeId
 RETURN elementId(n) AS node_id,
-       coalesce(n.name, n.title, n.label, toString(id(n))) AS display_name,
+       properties(n) AS node_properties,
        labels(n) AS node_labels,
        toFloat(communityId) AS score,
        communityId AS community_id
@@ -665,7 +668,7 @@ CALL gds.wcc.stream('%s')
 YIELD nodeId, componentId
 MATCH (n) WHERE id(n) = nodeId
 RETURN elementId(n) AS node_id,
-       coalesce(n.name, n.title, n.label, toString(id(n))) AS display_name,
+       properties(n) AS node_properties,
        labels(n) AS node_labels,
        toFloat(componentId) AS score,
        componentId AS community_id
@@ -678,7 +681,7 @@ LIMIT %d`, projName, req.Limit)
 		return nil, fmt.Errorf("GDS %s failed: %w", algo, err)
 	}
 
-	scores := rowsToNodeScoresWithCommunity(result.Rows)
+	scores := rowsToNodeScoresWithCommunity(result.Rows, s.analysisOntologySemantics(graphID, tenantID))
 	metadata := map[string]interface{}{
 		"elapsed_ms": time.Since(start).Milliseconds(),
 		"node_count": len(scores),
@@ -745,7 +748,7 @@ func (s *AnalysisService) runNearbyNodes(ctx context.Context, graphID, tenantID 
 	cypher := fmt.Sprintf(`
 CALL spatial.withinDistance('%s', {lon:%s, lat:%s}, %s) YIELD node AS n, distance
 RETURN elementId(n) AS node_id,
-       coalesce(n.name, n.title, n.label, elementId(n)) AS display_name,
+       properties(n) AS node_properties,
        labels(n) AS node_labels,
        distance AS score
 ORDER BY distance ASC
@@ -760,7 +763,7 @@ LIMIT %d`,
 		return nil, fmt.Errorf("nearby nodes query failed: %w", err)
 	}
 
-	scores := rowsToNodeScores(result.Rows)
+	scores := rowsToNodeScores(result.Rows, s.analysisOntologySemantics(graphID, tenantID))
 	return &models.AlgorithmResult{
 		Algorithm:     "nearby_nodes",
 		AlgorithmName: "邻近节点",
@@ -804,7 +807,7 @@ func (s *AnalysisService) runWithinArea(ctx context.Context, graphID, tenantID u
 			"WHERE areaGeom IS NOT NULL\n"+
 			"CALL spatial.intersects('%s', areaGeom) YIELD node AS n\n"+
 			"RETURN elementId(n) AS node_id,\n"+
-			"       coalesce(n.name, n.title, n.label, elementId(n)) AS display_name,\n"+
+			"       properties(n) AS node_properties,\n"+
 			"       labels(n) AS node_labels,\n"+
 			"       0.0 AS score\n"+
 			"LIMIT %d",
@@ -819,7 +822,7 @@ func (s *AnalysisService) runWithinArea(ctx context.Context, graphID, tenantID u
 		return nil, fmt.Errorf("within area query failed: %w", err)
 	}
 
-	scores := rowsToNodeScores(result.Rows)
+	scores := rowsToNodeScores(result.Rows, s.analysisOntologySemantics(graphID, tenantID))
 	return &models.AlgorithmResult{
 		Algorithm:     "within_area",
 		AlgorithmName: "区域内节点",
@@ -835,7 +838,19 @@ func (s *AnalysisService) runWithinArea(ctx context.Context, graphID, tenantID u
 
 // ============ 内部辅助 ============
 
-func rowsToNodeScores(rows []map[string]interface{}) []models.NodeScore {
+func (s *AnalysisService) analysisOntologySemantics(graphID, tenantID uint) *ontologySemantics {
+	kg, err := s.graphRepo.GetByID(graphID, tenantID)
+	if err != nil {
+		return newOntologySemantics(nil)
+	}
+	ontology, err := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
+	if err != nil {
+		return newOntologySemantics(nil)
+	}
+	return newOntologySemantics(ontology)
+}
+
+func rowsToNodeScores(rows []map[string]interface{}, semantics *ontologySemantics) []models.NodeScore {
 	scores := make([]models.NodeScore, 0, len(rows))
 	for i, row := range rows {
 		ns := models.NodeScore{
@@ -844,17 +859,21 @@ func rowsToNodeScores(rows []map[string]interface{}) []models.NodeScore {
 		if v, ok := row["node_id"]; ok {
 			ns.NodeID = fmt.Sprintf("%v", v)
 		}
-		if v, ok := row["display_name"]; ok && v != nil {
-			ns.DisplayName = fmt.Sprintf("%v", v)
-		}
 		if v, ok := row["entity_type"]; ok && v != nil {
 			ns.EntityType = fmt.Sprintf("%v", v)
 		}
+		var labels []string
 		if v, ok := row["node_labels"]; ok && v != nil {
-			if labels := interfaceToStringSlice(v); len(labels) > 0 {
+			labels = interfaceToStringSlice(v)
+			if len(labels) > 0 {
 				ns.EntityType = endpointShapeName(labels)
 			}
 		}
+		properties, _ := row["node_properties"].(map[string]interface{})
+		if semantics == nil {
+			semantics = newOntologySemantics(nil)
+		}
+		ns.DisplayName = semantics.displayName(labels, properties, ns.NodeID)
 		if v, ok := row["score"]; ok {
 			switch sv := v.(type) {
 			case float64:
@@ -870,8 +889,8 @@ func rowsToNodeScores(rows []map[string]interface{}) []models.NodeScore {
 	return scores
 }
 
-func rowsToNodeScoresWithCommunity(rows []map[string]interface{}) []models.NodeScore {
-	scores := rowsToNodeScores(rows)
+func rowsToNodeScoresWithCommunity(rows []map[string]interface{}, semantics *ontologySemantics) []models.NodeScore {
+	scores := rowsToNodeScores(rows, semantics)
 	for i, row := range rows {
 		if i < len(scores) {
 			if v, ok := row["community_id"]; ok {
@@ -880,30 +899,6 @@ func rowsToNodeScoresWithCommunity(rows []map[string]interface{}) []models.NodeS
 		}
 	}
 	return scores
-}
-
-func buildColorMapsFromOntology(ontologyRepo *repository.OntologyRepository, ontologyID, tenantID uint) (nodeColors, edgeColors map[string]string) {
-	nodeColors = make(map[string]string)
-	edgeColors = make(map[string]string)
-	ontology, err := ontologyRepo.GetDetail(ontologyID, tenantID)
-	if err != nil {
-		return
-	}
-	byID := entityTypeByID(ontology.EntityTypes)
-	for _, et := range ontology.EntityTypes {
-		if et.Color != "" {
-			nodeColors[et.Name] = et.Color
-			if labels := effectiveNodeLabels(&et, byID); len(labels) > 0 {
-				nodeColors[endpointShapeName(labels)] = et.Color
-			}
-		}
-	}
-	for _, rt := range ontology.RelationTypes {
-		if rt.Color != "" {
-			edgeColors[rt.Name] = rt.Color
-		}
-	}
-	return
 }
 
 // floatParam 从 params map 中安全读取 float64，不存在或类型不符时返回 defaultVal

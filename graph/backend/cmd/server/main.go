@@ -93,7 +93,7 @@ func main() {
 	knowledgeSvc := service.NewKnowledgeService(neo4jSvc, ontologyRepo, graphRepo)
 	schemaInferenceSvc := service.NewSchemaInferenceService(graphRepo, ontologyRepo, neo4jSvc, ontologySvc, systemClient)
 	buildSvc := service.NewBuildService(buildRepo, ontologyRepo, ontologySvc, graphRepo, taskExecutionRepo, neo4jSvc, materialReader, materialWriter, cfg.CopilotServiceURL, cfg.InternalAPIKey)
-	analysisSvc := service.NewAnalysisService(graphRepo, ontologyRepo, systemClient)
+	analysisSvc := service.NewAnalysisService(graphRepo, ontologyRepo, systemClient, neo4jSvc)
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
 	if err := cleanupSvc.Start(context.Background()); err != nil {
 		logger.Warn("Graph 资源回收执行方启动失败", "error", err)

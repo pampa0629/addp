@@ -1,23 +1,28 @@
 package models
 
-// GraphNodeDTO 图节点（供前端 G6 使用）
+// GraphNodeDTO 图视图节点。kind 区分 Neo4j 实体与仅用于概览的聚合桶。
 type GraphNodeDTO struct {
 	ID          string                 `json:"id"`           // Neo4j elementId
+	Kind        string                 `json:"kind"`         // entity | aggregate
 	Labels      []string               `json:"labels"`       // Neo4j 标签列表
 	EntityType  string                 `json:"entity_type"`  // 匹配到的本体实体类型 name
 	Color       string                 `json:"color"`        // 本体中定义的颜色
 	DisplayName string                 `json:"display_name"` // 用于图标签的展示名称
+	MemberCount int64                  `json:"member_count,omitempty"`
 	Properties  map[string]interface{} `json:"properties"`
 }
 
-// GraphEdgeDTO 图关系（供前端 G6 使用）
+// GraphEdgeDTO 图视图关系。聚合关系的 count 表示桶之间的真实关系数。
 type GraphEdgeDTO struct {
 	ID           string                 `json:"id"`            // Neo4j elementId
+	Kind         string                 `json:"kind"`          // entity | aggregate
 	Type         string                 `json:"type"`          // 关系类型名称（大写）
 	RelationType string                 `json:"relation_type"` // 本体关系类型 name
 	Color        string                 `json:"color"`         // 本体中定义的颜色
+	Directed     bool                   `json:"directed"`      // 是否按本体定义显示方向
 	Source       string                 `json:"source"`        // 源节点 elementId
 	Target       string                 `json:"target"`        // 目标节点 elementId
+	Count        int64                  `json:"count,omitempty"`
 	Properties   map[string]interface{} `json:"properties"`
 }
 
@@ -26,12 +31,15 @@ type NodeShapeDTO struct {
 	Name   string   `json:"name"`
 	Kind   string   `json:"kind,omitempty"`
 	Labels []string `json:"labels,omitempty"`
+	Color  string   `json:"color"`
 	Count  *int64   `json:"count,omitempty"`
 }
 
 // RelationshipShapeDTO 关系结构形状。
 type RelationshipShapeDTO struct {
 	Type     string                   `json:"type"`
+	Color    string                   `json:"color"`
+	Directed bool                     `json:"directed"`
 	Patterns []RelationshipPatternDTO `json:"patterns,omitempty"`
 	Count    *int64                   `json:"count,omitempty"`
 }
@@ -68,16 +76,32 @@ type BrowseStats struct {
 	ByLabel           map[string]int64 `json:"by_label"`           // 按标签分组的节点数
 }
 
+// BrowseSnapshot 是同一次图事实读取派生的浏览初始化数据。
+type BrowseSnapshot struct {
+	Schema   BrowseSchema   `json:"schema"`
+	Stats    BrowseStats    `json:"stats"`
+	Overview SubgraphResult `json:"overview"`
+}
+
 // SearchRequest 全文搜索请求
 type SearchRequest struct {
 	Query string `json:"query" binding:"required"`
 	Limit int    `json:"limit"`
 }
 
-// ExpandRequest 节点展开请求
+// ExpandTarget 展开目标。聚合目标通过完整 label set 标识，实体目标通过 elementId 标识。
+type ExpandTarget struct {
+	Kind   string   `json:"kind" binding:"required"`
+	ID     string   `json:"id"`
+	Labels []string `json:"labels"`
+}
+
+// ExpandRequest 统一的聚合桶/实体子图展开请求。
 type ExpandRequest struct {
-	NodeID string `json:"node_id" binding:"required"`
-	Limit  int    `json:"limit"`
+	Target            ExpandTarget `json:"target" binding:"required"`
+	Depth             int          `json:"depth"`
+	NodeLimit         int          `json:"node_limit"`
+	RelationshipLimit int          `json:"relationship_limit"`
 }
 
 // PathRequest 路径查询请求

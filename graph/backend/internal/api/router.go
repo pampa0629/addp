@@ -95,14 +95,12 @@ func SetupRouter(
 			// 图谱浏览 API
 			graph := graphs.Group("/:id")
 			{
-				graph.GET("/schema", permission(graphauthorization.PermissionGraphGraphRead), browseHandler.GetSchema)
-				graph.GET("/stats", permission(graphauthorization.PermissionGraphGraphRead), browseHandler.GetStats)
-				graph.GET("/overview", permission(graphauthorization.PermissionGraphGraphRead), browseHandler.GetOverview)
+				graph.GET("/browse-snapshot", permission(graphauthorization.PermissionGraphGraphRead), browseHandler.GetBrowseSnapshot)
 				graph.GET("/constraints", permission(graphauthorization.PermissionGraphGraphRead), browseHandler.GetConstraints)
 				graph.GET("/infer-schema", permission(graphauthorization.PermissionGraphGraphRead), browseHandler.InferSchema)
 				graph.POST("/infer-schema/apply", permission(graphauthorization.PermissionGraphGraphUpdate), browseHandler.ApplyInferredSchema)
 				graph.POST("/search", permission(graphauthorization.PermissionGraphGraphRead), browseHandler.SearchNodes)
-				graph.POST("/expand", permission(graphauthorization.PermissionGraphGraphRead), browseHandler.ExpandNode)
+				graph.POST("/expand", permission(graphauthorization.PermissionGraphGraphRead), browseHandler.ExpandTarget)
 				graph.POST("/path", permission(graphauthorization.PermissionGraphGraphRead), browseHandler.FindPath)
 
 				// 图谱构建 API

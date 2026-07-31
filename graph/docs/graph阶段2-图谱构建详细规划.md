@@ -5,7 +5,7 @@
 阶段1（本体建模）和阶段3（知识探索/G6可视化）均已完成，Graph 模块目前具备：
 - 完整的本体 CRUD（ontologies, entity_types, relation_types, ontology_versions 表）
 - 知识图谱实例管理（knowledge_graphs 表，绑定 ontology + Neo4j engine + database）
-- Neo4j 连接层（GetSchema/Stats/Overview/Search/Expand/Path），含 `SyncConstraints()`
+- Neo4j 连接层（BrowseSnapshot/Search/Expand/Path），含 `SyncConstraints()`
 - G6 图谱浏览器（GraphBrowser.vue + GraphCanvas.vue）
 
 阶段2目标：实现"从原始材料 → LLM 抽取 → 置信度分类 → 自动写入/审核 → Neo4j"的完整图谱构建流水线。

@@ -39,7 +39,11 @@ func internalNodePredicate(nodeVar string) string {
 }
 
 func businessNodePredicate(nodeVar string) string {
-	return "NOT (" + internalNodePredicate(nodeVar) + ")"
+	nodeVar = strings.TrimSpace(nodeVar)
+	if nodeVar == "" {
+		nodeVar = "n"
+	}
+	return "size(labels(" + nodeVar + ")) > 0 AND NOT (" + internalNodePredicate(nodeVar) + ")"
 }
 
 func businessRelationshipPredicate(relVar, sourceVar, targetVar string) string {

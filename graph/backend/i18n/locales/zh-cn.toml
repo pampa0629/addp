@@ -22,6 +22,12 @@ other = "本体更新成功"
 [graph.ontology.deleted]
 other = "本体删除成功"
 
+[graph.ontology.display_property_not_found]
+other = "节点展示字段必须是本实体类型或其祖先中已定义的属性"
+
+[graph.ontology.display_property_not_string]
+other = "节点展示字段必须是字符串类型"
+
 [graph.kg.created]
 other = "知识图谱创建成功"
 
@@ -30,6 +36,9 @@ other = "知识图谱更新成功"
 
 [graph.kg.deleted]
 other = "知识图谱删除成功"
+
+[graph.browse.expand_target_invalid]
+other = "展开目标、跳数或节点/关系预算无效"
 
 [graph.build.task_started]
 other = "任务已启动"

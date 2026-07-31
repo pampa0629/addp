@@ -2,10 +2,11 @@ package models
 
 // KSEntity 知识服务 API：单个实体（本体感知）
 type KSEntity struct {
-	ID         string                 `json:"id"`          // Neo4j elementId
-	Type       string                 `json:"type"`        // 本体实体类型 name
-	TypeLabel  string                 `json:"type_label"`  // 本体实体类型显示名
-	Properties map[string]interface{} `json:"properties"`  // 所有属性
+	ID          string                 `json:"id"`           // Neo4j elementId
+	DisplayName string                 `json:"display_name"` // 本体展示字段对应的节点名称
+	Type        string                 `json:"type"`         // 本体实体类型 name
+	TypeLabel   string                 `json:"type_label"`   // 本体实体类型显示名
+	Properties  map[string]interface{} `json:"properties"`   // 所有属性
 }
 
 // KSNeighborItem 邻居节点项
@@ -46,10 +47,11 @@ type KSOntologyResponse struct {
 
 // KSEntityType 本体实体类型描述
 type KSEntityType struct {
-	Name       string           `json:"name"`
-	Label      string           `json:"label"`
-	Properties []KSPropertyInfo `json:"properties"`
-	Count      int64            `json:"count"` // Neo4j 节点数量
+	Name            string           `json:"name"`
+	Label           string           `json:"label"`
+	DisplayProperty string           `json:"display_property"`
+	Properties      []KSPropertyInfo `json:"properties"`
+	Count           int64            `json:"count"` // Neo4j 节点数量
 }
 
 // KSPropertyInfo 属性定义

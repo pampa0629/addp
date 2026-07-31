@@ -53,6 +53,14 @@ Graph 模块里的本体 `EntityType` 是概念层定义，`EntityType.Name` 是
 5. `RelationType.SourceTypeID` / `TargetTypeID` 指向本体实体类型；运行时查询、构建、空间图层和算法过滤需要 Neo4j label 时，必须通过 `NodeLabels` 或默认映射解析。
 6. Neo4j 约束同步受 Cypher DDL 限制，只能作用于单个 label。当前策略使用 `NodeLabels[0]`；复合 label set 的约束策略如需增强，应在 Graph 模块单独设计。
 
+实体类型展示与搜索规则：
+
+1. `DisplayProperty` 是节点展示名称的唯一事实源，可引用本实体类型或祖先继承的字符串属性。
+2. `DisplayProperty` 自动纳入该实体类型的 Neo4j full-text index；本类型自己定义的展示属性保存时必须规范化为 `searchable=true`，界面中不可取消。
+3. 节点标题、搜索结果标题、路径与图分析结果中的节点名称统一使用 `DisplayProperty`。
+4. 未配置展示字段或节点缺少对应属性值时，真实节点显示实体 ID；不得按 `name`、`title`、`label` 等字段名猜测展示字段。
+5. 其他全文搜索字段仍由属性上的 `searchable=true` 显式声明，避免无边界索引和搜索噪声。
+
 ### 空间图层与业务图视图
 
 Neo4j Spatial 图层属于 Graph 模块的本体配置和运行时能力，不进入 `common/datatype.GraphInfo`。空间图层链路必须区分：
@@ -131,13 +139,29 @@ copilot/backend/
 
 **核心能力：**
 - G6 驱动的交互式图谱浏览器
-- 以节点为中心的展开探索（点击节点 → 展开邻居）
+- 浏览初始化使用单一 `browse snapshot` 事实源：一次读取完整节点形状和关系模式，派生 Schema、统计和聚合概览；Schema、统计和概览不得分别扫描图谱
+- 默认概览按完整节点形状和关系类型聚合，不直接加载全量实体；聚合节点只属于探索视图，不是 Neo4j 实体
+- 统一的展开探索：聚合节点展开代表性实体，实体节点按 1～3 跳展开局部子图
+- 展开查询同时受节点预算和关系预算约束，关系预算只计算此前未返回的新关系；K-hop 分析复用同一展开语义，不单独枚举路径
 - 按实体类型/关系类型过滤（本体感知，不是原始 Neo4j 标签）
-- 全文实体搜索（输入关键词 → 定位节点）
+- 全文实体搜索只查询本体属性中显式声明 `searchable=true` 的字符串属性以及实体类型的 `DisplayProperty`，并使用 Neo4j full-text index；不保留任意属性全图扫描路线
+- 搜索前按当前本体声明校验并同步当前图谱数据库的全文索引，属性声明变化后以本体定义为唯一事实源
 - 多种布局算法切换（力导向、层级、环形）
+- 增量展开保留已有节点位置，仅对新增节点按 hop 和父节点分簇执行有限迭代的局部布局；样式变化和容器尺寸变化不得触发全图重排
+- 按缩放级别控制标签和关系可见性，远景只展示概览语义
 - 节点/关系属性面板（点击查看详情）
 - 路径高亮显示（两个节点间的关系路径）
 - 子图保存与分享
+
+**浏览 API：**
+```
+GET  /graphs/{id}/browse-snapshot    同一图事实快照中的 Schema、统计和聚合概览
+POST /graphs/{id}/search             基于本体 searchable 属性的全文索引搜索
+POST /graphs/{id}/expand             聚合桶或实体的统一双预算展开
+POST /graphs/{id}/path               两个实体间的最短路径
+```
+
+`browse-snapshot` 是浏览初始化唯一入口，不同时保留独立的 `schema`、`stats`、`overview` 路由。Knowledge Service 的统计和本体描述复用同一快照派生结果。
 
 ---
 

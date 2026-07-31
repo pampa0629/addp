@@ -972,8 +972,15 @@ func buildOntologySchema(ontology *models.Ontology) *ontologySchemaDTO {
 func collectInheritedProperties(et *models.EntityType, byID map[uint]*models.EntityType) []models.PropertyDefinition {
 	// 收集祖先链（从根到当前）
 	chain := []*models.EntityType{}
+	visited := make(map[uint]struct{})
 	cur := et
 	for cur != nil {
+		if cur.ID != 0 {
+			if _, exists := visited[cur.ID]; exists {
+				break
+			}
+			visited[cur.ID] = struct{}{}
+		}
 		chain = append([]*models.EntityType{cur}, chain...)
 		if cur.ParentID == nil {
 			break
@@ -985,13 +992,15 @@ func collectInheritedProperties(et *models.EntityType, byID map[uint]*models.Ent
 		cur = parent
 	}
 	// 从根到叶合并属性，后者覆盖前者（同名属性子类优先）
-	seen := make(map[string]bool)
+	indexes := make(map[string]int)
 	var result []models.PropertyDefinition
 	for _, node := range chain {
 		props, _ := node.ParsedProperties()
 		for _, p := range props {
-			if !seen[p.Name] {
-				seen[p.Name] = true
+			if index, exists := indexes[p.Name]; exists {
+				result[index] = p
+			} else {
+				indexes[p.Name] = len(result)
 				result = append(result, p)
 			}
 		}

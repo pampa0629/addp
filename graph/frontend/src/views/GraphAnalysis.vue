@@ -652,12 +652,12 @@ const onGraphChange = async (id) => {
   selectedAlgo.value = ''
   if (!id) return
   try {
-    const [caps, sc] = await Promise.all([
+    const [caps, snapshot] = await Promise.all([
       analysisAPI.getCapabilities(id),
-      browseAPI.getSchema(id),
+      browseAPI.getBrowseSnapshot(id),
     ])
     capabilities.value = caps.data || caps
-    schema.value = sc.data || sc
+    schema.value = (snapshot.data || snapshot)?.schema || { node_shapes: [], relationship_shapes: [] }
     // 根据能力自动展开对应分组
     openGroups.value = ['cypher']
     if (capabilities.value?.gds_available) openGroups.value.push('gds')

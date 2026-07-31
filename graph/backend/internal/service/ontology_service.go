@@ -2,11 +2,18 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/addp/graph/internal/models"
 	"github.com/addp/graph/internal/repository"
 	"gorm.io/datatypes"
+)
+
+var (
+	ErrDisplayPropertyNotFound  = errors.New("display property does not exist")
+	ErrDisplayPropertyNotString = errors.New("display property must be a string")
 )
 
 type OntologyService struct {
@@ -121,11 +128,19 @@ func (s *OntologyService) CreateEntityType(ontologyID, tenantID uint, req *model
 		Color:              color,
 		Icon:               req.Icon,
 		ParentID:           req.ParentID,
+		DisplayProperty:    strings.TrimSpace(req.DisplayProperty),
 		Properties:         datatypes.JSON(props),
 		Constraints:        datatypes.JSON(constraints),
 		IsSpatialLayer:     req.IsSpatialLayer,
 		SpatialLayerConfig: spatialConfig,
 		SortOrder:          req.SortOrder,
+	}
+	entityTypes, err := s.entityTypeRepo.ListByOntology(ontologyID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if err := normalizeEntityTypeDisplayProperty(et, entityTypeByID(entityTypes)); err != nil {
+		return nil, err
 	}
 	if err := s.entityTypeRepo.Create(et); err != nil {
 		return nil, fmt.Errorf("failed to create entity type: %w", err)
@@ -158,6 +173,7 @@ func (s *OntologyService) UpdateEntityType(id, ontologyID, tenantID uint, req *m
 		et.Icon = req.Icon
 	}
 	et.ParentID = req.ParentID
+	et.DisplayProperty = strings.TrimSpace(req.DisplayProperty)
 	if req.Properties != nil {
 		props, _ := json.Marshal(req.Properties)
 		et.Properties = datatypes.JSON(props)
@@ -174,7 +190,55 @@ func (s *OntologyService) UpdateEntityType(id, ontologyID, tenantID uint, req *m
 		et.SpatialLayerConfig = datatypes.JSON("{}")
 	}
 	et.SortOrder = req.SortOrder
+	entityTypes, err := s.entityTypeRepo.ListByOntology(ontologyID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	byID := entityTypeByID(entityTypes)
+	byID[et.ID] = et
+	if err := normalizeEntityTypeDisplayProperty(et, byID); err != nil {
+		return nil, err
+	}
 	return et, s.entityTypeRepo.Update(et)
+}
+
+func normalizeEntityTypeDisplayProperty(et *models.EntityType, byID map[uint]*models.EntityType) error {
+	displayProperty := strings.TrimSpace(et.DisplayProperty)
+	et.DisplayProperty = displayProperty
+	if displayProperty == "" {
+		return nil
+	}
+
+	var selected *models.PropertyDefinition
+	for _, property := range collectInheritedProperties(et, byID) {
+		if strings.TrimSpace(property.Name) == displayProperty {
+			propertyCopy := property
+			selected = &propertyCopy
+			break
+		}
+	}
+	if selected == nil {
+		return fmt.Errorf("%w: %s", ErrDisplayPropertyNotFound, displayProperty)
+	}
+	if selected.DataType != "string" {
+		return fmt.Errorf("%w: %s", ErrDisplayPropertyNotString, displayProperty)
+	}
+
+	properties, err := et.ParsedProperties()
+	if err != nil {
+		return err
+	}
+	for index := range properties {
+		if strings.TrimSpace(properties[index].Name) == displayProperty {
+			properties[index].Searchable = true
+		}
+	}
+	encoded, err := json.Marshal(properties)
+	if err != nil {
+		return err
+	}
+	et.Properties = datatypes.JSON(encoded)
+	return nil
 }
 
 func (s *OntologyService) DeleteEntityType(id, ontologyID, tenantID uint) error {

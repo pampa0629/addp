@@ -298,7 +298,7 @@ Body: {
 **推导 Cypher**（`schema_inference_service.go` 的 `inferWithEngine`）：
 ```cypher
 -- 获取所有节点形状
-MATCH (n) RETURN labels(n) AS labels, count(n) AS cnt ORDER BY cnt DESC LIMIT 500
+MATCH (n) RETURN labels(n) AS labels, count(n) AS cnt ORDER BY cnt DESC
 
 -- 对每个节点形状采样属性 key
 MATCH (n:`Person`) UNWIND keys(n) AS k RETURN DISTINCT k LIMIT 1000
@@ -306,8 +306,9 @@ MATCH (n:`Person`) UNWIND keys(n) AS k RETURN DISTINCT k LIMIT 1000
 -- 提取关系模式（来源节点形状 + 关系类型 + 目标节点形状）
 MATCH (a)-[r]->(b)
 RETURN labels(a) AS src, type(r) AS rel, labels(b) AS tgt, count(r) AS cnt
-LIMIT 500
 ```
+
+节点形状和关系模式属于完整 Schema 事实，不设置数量上限；只有属性 key 读取保留采样上限。
 
 **前端两步流程**（`InferFromEngineDialog.vue`）：
 ```

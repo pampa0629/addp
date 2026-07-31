@@ -3,7 +3,10 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	graphi18n "github.com/addp/graph/i18n"
 	"github.com/addp/graph/internal/models"
 	"github.com/addp/graph/internal/service"
 	"github.com/gin-gonic/gin"
@@ -18,73 +21,27 @@ func NewBrowseHandler(neo4jSvc *service.Neo4jService, schemaInference *service.S
 	return &BrowseHandler{neo4jSvc: neo4jSvc, schemaInference: schemaInference}
 }
 
-// GetSchema godoc
-// @Summary      图谱 Schema | Get graph schema
-// @Description  获取知识图谱的节点形状、关系形状和连接模式 Schema | Get node shape, relationship shape and pattern schema of a knowledge graph
+// GetBrowseSnapshot godoc
+// @Summary      图谱浏览快照 | Get graph browse snapshot
+// @Description  从同一组图事实返回 Schema、统计和聚合概览 | Return schema, statistics and aggregate overview derived from the same graph facts
 // @Tags         图谱浏览 | Graph Browse
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id path int true "知识图谱 ID | Knowledge graph ID"
-// @Success      200 {object} models.BrowseSchema
+// @Success      200 {object} models.BrowseSnapshot
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.graph.read"]
-// @Router       /graphs/{id}/schema [get]
-func (h *BrowseHandler) GetSchema(c *gin.Context) {
+// @Router       /graphs/{id}/browse-snapshot [get]
+func (h *BrowseHandler) GetBrowseSnapshot(c *gin.Context) {
 	id := parseUintParam(c, "id")
 	tenantID := getTenantID(c)
-	schema, err := h.neo4jSvc.GetSchema(c.Request.Context(), id, tenantID)
+	snapshot, err := h.neo4jSvc.GetBrowseSnapshot(c.Request.Context(), id, tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, schema)
-}
-
-// GetStats godoc
-// @Summary      图谱统计 | Get graph statistics
-// @Description  获取知识图谱的节点数、关系数、按标签分组统计 | Get node count, relation count and label-grouped statistics of a knowledge graph
-// @Tags         图谱浏览 | Graph Browse
-// @Produce      json
-// @Security     BearerAuth
-// @Param        id path int true "知识图谱 ID | Knowledge graph ID"
-// @Success      200 {object} models.BrowseStats
-// @Failure      500 {object} models.ErrorResponse
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["graph.graph.read"]
-// @Router       /graphs/{id}/stats [get]
-func (h *BrowseHandler) GetStats(c *gin.Context) {
-	id := parseUintParam(c, "id")
-	tenantID := getTenantID(c)
-	stats, err := h.neo4jSvc.GetStats(c.Request.Context(), id, tenantID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, stats)
-}
-
-// GetOverview godoc
-// @Summary      图谱概览 | Get graph overview
-// @Description  获取图谱概览子图（采样约100条关系）| Get graph overview subgraph (sampling ~100 relations)
-// @Tags         图谱浏览 | Graph Browse
-// @Produce      json
-// @Security     BearerAuth
-// @Param        id path int true "知识图谱 ID | Knowledge graph ID"
-// @Success      200 {object} models.SubgraphResult
-// @Failure      500 {object} models.ErrorResponse
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["graph.graph.read"]
-// @Router       /graphs/{id}/overview [get]
-func (h *BrowseHandler) GetOverview(c *gin.Context) {
-	id := parseUintParam(c, "id")
-	tenantID := getTenantID(c)
-	result, err := h.neo4jSvc.GetOverview(c.Request.Context(), id, tenantID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, result)
+	c.JSON(http.StatusOK, snapshot)
 }
 
 // SearchNodes godoc
@@ -118,9 +75,9 @@ func (h *BrowseHandler) SearchNodes(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// ExpandNode godoc
-// @Summary      展开节点邻居 | Expand node neighbors
-// @Description  获取指定节点的邻居节点和关系 | Get neighbor nodes and relations of a specified node
+// ExpandTarget godoc
+// @Summary      展开图视图目标 | Expand graph view target
+// @Description  展开聚合桶的代表性实体，或按跳数和双预算展开实体局部子图 | Expand representative entities of an aggregate bucket, or an entity-centric subgraph with depth and node/relationship budgets
 // @Tags         图谱浏览 | Graph Browse
 // @Accept       json
 // @Produce      json
@@ -133,20 +90,48 @@ func (h *BrowseHandler) SearchNodes(c *gin.Context) {
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.graph.read"]
 // @Router       /graphs/{id}/expand [post]
-func (h *BrowseHandler) ExpandNode(c *gin.Context) {
+func (h *BrowseHandler) ExpandTarget(c *gin.Context) {
 	id := parseUintParam(c, "id")
 	tenantID := getTenantID(c)
 	var req models.ExpandRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, graphi18n.MsgExpandTargetInvalid)})
 		return
 	}
-	result, err := h.neo4jSvc.ExpandNode(c.Request.Context(), id, tenantID, req.NodeID, req.Limit)
+	if err := validateExpandRequest(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, graphi18n.MsgExpandTargetInvalid)})
+		return
+	}
+	result, err := h.neo4jSvc.Expand(c.Request.Context(), id, tenantID, &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+func validateExpandRequest(req *models.ExpandRequest) error {
+	if req == nil {
+		return fmt.Errorf("request is required")
+	}
+	switch req.Target.Kind {
+	case "entity":
+		if strings.TrimSpace(req.Target.ID) == "" {
+			return fmt.Errorf("entity target id is required")
+		}
+	case "aggregate":
+		if len(req.Target.Labels) == 0 {
+			return fmt.Errorf("aggregate target labels are required")
+		}
+	default:
+		return fmt.Errorf("unsupported target kind")
+	}
+	if req.Depth < 0 || req.Depth > service.MaxExpandDepth ||
+		req.NodeLimit < 0 || req.NodeLimit > service.MaxExpandNodeLimit ||
+		req.RelationshipLimit < 0 || req.RelationshipLimit > service.MaxExpandRelationshipLimit {
+		return fmt.Errorf("expand budget is out of range")
+	}
+	return nil
 }
 
 // FindPath godoc

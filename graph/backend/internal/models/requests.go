@@ -31,6 +31,7 @@ type CreateEntityTypeRequest struct {
 	Color              string                 `json:"color"`
 	Icon               string                 `json:"icon"`
 	ParentID           *uint                  `json:"parent_id"`
+	DisplayProperty    string                 `json:"display_property"`
 	Properties         []PropertyDefinition   `json:"properties"`
 	Constraints        []ConstraintDefinition `json:"constraints"`
 	IsSpatialLayer     bool                   `json:"is_spatial_layer"`
@@ -47,6 +48,7 @@ type UpdateEntityTypeRequest struct {
 	Color              string                 `json:"color"`
 	Icon               string                 `json:"icon"`
 	ParentID           *uint                  `json:"parent_id"`
+	DisplayProperty    string                 `json:"display_property"`
 	Properties         []PropertyDefinition   `json:"properties"`
 	Constraints        []ConstraintDefinition `json:"constraints"`
 	IsSpatialLayer     bool                   `json:"is_spatial_layer"`
@@ -89,6 +91,7 @@ type PropertyDefinition struct {
 	DataType    string      `json:"data_type"` // string, integer, float, boolean, date, datetime, wkt
 	Required    bool        `json:"required"`
 	Unique      bool        `json:"unique"`
+	Searchable  bool        `json:"searchable"`
 	DefaultVal  interface{} `json:"default_val,omitempty"`
 	Description string      `json:"description"`
 }

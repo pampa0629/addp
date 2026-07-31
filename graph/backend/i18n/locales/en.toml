@@ -22,6 +22,12 @@ other = "Ontology updated successfully"
 [graph.ontology.deleted]
 other = "Ontology deleted successfully"
 
+[graph.ontology.display_property_not_found]
+other = "The node display property must be defined by this entity type or one of its ancestors"
+
+[graph.ontology.display_property_not_string]
+other = "The node display property must be a string"
+
 [graph.kg.created]
 other = "Knowledge graph created successfully"
 
@@ -30,6 +36,9 @@ other = "Knowledge graph updated successfully"
 
 [graph.kg.deleted]
 other = "Knowledge graph deleted successfully"
+
+[graph.browse.expand_target_invalid]
+other = "Invalid expand target, depth, or node/relationship budget"
 
 [graph.build.task_started]
 other = "Task started"

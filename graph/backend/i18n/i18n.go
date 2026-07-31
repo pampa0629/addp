@@ -19,14 +19,17 @@ const (
 	MsgUnauthorized = "graph.err.unauthorized"
 
 	// 本体
-	MsgOntologyCreated = "graph.ontology.created"
-	MsgOntologyUpdated = "graph.ontology.updated"
-	MsgOntologyDeleted = "graph.ontology.deleted"
+	MsgOntologyCreated          = "graph.ontology.created"
+	MsgOntologyUpdated          = "graph.ontology.updated"
+	MsgOntologyDeleted          = "graph.ontology.deleted"
+	MsgDisplayPropertyNotFound  = "graph.ontology.display_property_not_found"
+	MsgDisplayPropertyNotString = "graph.ontology.display_property_not_string"
 
 	// 图谱
-	MsgGraphCreated = "graph.kg.created"
-	MsgGraphUpdated = "graph.kg.updated"
-	MsgGraphDeleted = "graph.kg.deleted"
+	MsgGraphCreated        = "graph.kg.created"
+	MsgGraphUpdated        = "graph.kg.updated"
+	MsgGraphDeleted        = "graph.kg.deleted"
+	MsgExpandTargetInvalid = "graph.browse.expand_target_invalid"
 
 	// 构建
 	MsgTaskStarted         = "graph.build.task_started"

@@ -6,3 +6,5 @@
 export { default as GraphSchemaView } from './GraphSchemaView.vue'
 export { default as GraphResultView } from './GraphResultView.vue'
 export { default as OntologyView } from './OntologyView.vue'
+export { default as graphMessagesZhCn } from './i18n/zh-cn.json'
+export { default as graphMessagesEn } from './i18n/en.json'

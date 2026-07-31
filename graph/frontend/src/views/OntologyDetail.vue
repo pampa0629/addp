@@ -9,7 +9,7 @@
         {{ ontology?.status === 'active' ? t('graph.common.active') : t('graph.common.archived') }}
       </el-tag>
       <el-button size="small" @click="$router.push(`/ontologies/${$route.params.id}/edit`)">{{ t('graph.common.edit') }}</el-button>
-      <el-button size="small" type="success" @click="showVersionDialog = true">{{ t('graph.ontology.createSnapshot') }}</el-button>
+      <el-button size="small" type="success" @click="showVersionDialog = true">{{ t('graph.ontology.createVersionSnapshot') }}</el-button>
       <el-button size="small" type="warning" @click="openImportFromModel">{{ t('graph.ontology.importFromModel') }}</el-button>
       <el-button size="small" type="info" @click="openInferFromEngine">{{ t('graph.ontology.inferFromNeo4j') }}</el-button>
     </div>
@@ -23,8 +23,11 @@
           </el-button>
         </div>
         <el-table :data="entityTypes" border size="small">
-          <el-table-column prop="name" :label="t('graph.ontology.identifier')" width="150" />
-          <el-table-column prop="label" :label="t('graph.ontology.displayName')" width="150" />
+          <el-table-column prop="name" :label="t('graph.common.identifier')" width="150" />
+          <el-table-column prop="label" :label="t('graph.common.displayName')" width="150" />
+          <el-table-column prop="display_property" :label="t('graph.ontology.displayProperty')" width="150">
+            <template #default="{ row }">{{ row.display_property || '-' }}</template>
+          </el-table-column>
           <el-table-column :label="t('graph.ontology.nodeLabels')" width="180" show-overflow-tooltip>
             <template #default="{ row }">
               {{ formatNodeLabels(row) }}
@@ -35,11 +38,11 @@
             <template #default="{ row }">
               <template v-if="row.is_spatial_layer">
                 <el-tag type="success" size="small">
-                  {{ t('graph.ontology.spatial') }}·{{ row.spatial_layer_config?.geometry_type === 'wkt' ? t('graph.ontology.linePolygon') : t('graph.ontology.point') }}
+                  {{ row.spatial_layer_config?.geometry_type === 'wkt' ? t('graph.ontology.spatialLine') : t('graph.ontology.spatialPoint') }}
                 </el-tag>
               </template>
               <template v-else-if="getSpatialAncestor(row)">
-                <el-tooltip :content="t('graph.ontology.inheritSpatial', { name: getSpatialAncestor(row) })" placement="top">
+                <el-tooltip :content="t('graph.ontology.spatialInherited', { name: getSpatialAncestor(row) })" placement="top">
                   <el-icon style="color:var(--el-color-success);cursor:default"><Location /></el-icon>
                 </el-tooltip>
               </template>
@@ -67,12 +70,12 @@
           </el-button>
         </div>
         <el-table :data="relationTypes" border size="small">
-          <el-table-column prop="name" :label="t('graph.ontology.identifier')" width="150" />
-          <el-table-column prop="label" :label="t('graph.ontology.displayName')" width="150" />
+          <el-table-column prop="name" :label="t('graph.common.identifier')" width="150" />
+          <el-table-column prop="label" :label="t('graph.common.displayName')" width="150" />
           <el-table-column :label="t('graph.ontology.sourceTarget')" width="200">
             <template #default="{ row }">
-              {{ row.source_type?.label || row.source_type?.name || t('graph.ontology.any') }}
-              → {{ row.target_type?.label || row.target_type?.name || t('graph.ontology.any') }}
+              {{ row.source_type?.label || row.source_type?.name || t('graph.ontology.anyType') }}
+              → {{ row.target_type?.label || row.target_type?.name || t('graph.ontology.anyType') }}
             </template>
           </el-table-column>
           <el-table-column prop="directed" :label="t('graph.ontology.directed')" width="80">
@@ -105,18 +108,22 @@
       <!-- 图形视图 -->
       <el-tab-pane :label="t('graph.ontology.graphView')" name="graph">
         <div class="graph-tab-container">
-          <OntologyView :entity-types="entityTypes" :relation-types="relationTypes" />
+          <OntologyView
+            v-if="activeTab === 'graph'"
+            :entity-types="entityTypes"
+            :relation-types="relationTypes"
+          />
         </div>
       </el-tab-pane>
     </el-tabs>
 
     <!-- 实体类型表单对话框 -->
     <el-dialog v-model="entityDialogVisible" :title="editingEntity ? t('graph.ontology.editEntityType') : t('graph.ontology.addEntityType')" width="750px">
-      <el-form ref="entityFormRef" :model="entityForm" :rules="entityRules" label-width="80px">
-        <el-form-item :label="t('graph.ontology.identifier')" prop="name">
+      <el-form ref="entityFormRef" :model="entityForm" :rules="entityRules" label-width="104px">
+        <el-form-item :label="t('graph.common.identifier')" prop="name">
           <el-input v-model="entityForm.name" :placeholder="t('graph.ontology.identifierPlaceholder')" />
         </el-form-item>
-        <el-form-item :label="t('graph.ontology.displayName')" prop="label">
+        <el-form-item :label="t('graph.common.displayName')" prop="label">
           <el-input v-model="entityForm.label" :placeholder="t('graph.ontology.displayNamePlaceholder')" />
         </el-form-item>
         <el-form-item :label="t('graph.common.description')">
@@ -130,12 +137,28 @@
           <div class="form-help">{{ t('graph.ontology.nodeLabelsHelp') }}</div>
         </el-form-item>
         <el-form-item :label="t('graph.ontology.parentType')">
-          <el-select v-model="entityForm.parent_id" :placeholder="t('graph.ontology.noParent')" clearable style="width:100%">
+          <el-select v-model="entityForm.parent_id" :placeholder="t('graph.ontology.noParent')" clearable style="width:100%" @change="normalizeDisplayPropertySelection">
             <el-option
               v-for="et in entityTypes.filter(e => e.id !== editingEntity?.id)"
               :key="et.id"
               :label="`${et.label || et.name}（${et.name}）`"
               :value="et.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('graph.ontology.displayProperty')">
+          <el-select
+            v-model="entityForm.display_property"
+            :placeholder="t('graph.ontology.displayPropertyPlaceholder')"
+            clearable
+            style="width:100%"
+            @change="onDisplayPropertyChange"
+          >
+            <el-option
+              v-for="property in displayPropertyOptions"
+              :key="property.value"
+              :label="property.label"
+              :value="property.value"
             />
           </el-select>
         </el-form-item>
@@ -145,14 +168,14 @@
         <el-form-item :label="t('graph.ontology.spatialLayer')">
           <el-switch v-model="entityForm.is_spatial_layer" @change="onSpatialLayerToggle" />
           <span v-if="entityForm.is_spatial_layer" style="margin-left:12px;font-size:12px;color:var(--el-text-color-secondary)">
-            {{ t('graph.ontology.selectGeometryType') }}
+            {{ t('graph.ontology.spatialLayerHint') }}
           </span>
         </el-form-item>
         <template v-if="entityForm.is_spatial_layer">
           <el-form-item :label="t('graph.ontology.geometryType')">
             <el-radio-group v-model="entityForm.spatial_layer_config.geometry_type" @change="onGeometryTypeChange">
-              <el-radio value="point">{{ t('graph.ontology.pointLonLat') }}</el-radio>
-              <el-radio value="wkt">{{ t('graph.ontology.linePolygonWkt') }}</el-radio>
+              <el-radio value="point">{{ t('graph.ontology.pointGeom') }}</el-radio>
+              <el-radio value="wkt">{{ t('graph.ontology.wktGeom') }}</el-radio>
             </el-radio-group>
           </el-form-item>
           <el-form-item v-if="entityForm.spatial_layer_config.geometry_type" :label="t('graph.ontology.layerConfig')">
@@ -164,59 +187,64 @@
               <template v-if="entityForm.spatial_layer_config.geometry_type === 'point'">
                 <div style="display:flex;align-items:center;gap:8px">
                   <span style="width:80px;flex-shrink:0;font-size:13px">{{ t('graph.ontology.lonField') }}</span>
-                  <el-input v-model="entityForm.spatial_layer_config.lon_field" size="small" style="flex:1" :placeholder="t('graph.ontology.defaultLon')" />
+                  <el-input v-model="entityForm.spatial_layer_config.lon_field" size="small" style="flex:1" :placeholder="t('graph.ontology.lonDefault')" />
                 </div>
                 <div style="display:flex;align-items:center;gap:8px">
                   <span style="width:80px;flex-shrink:0;font-size:13px">{{ t('graph.ontology.latField') }}</span>
-                  <el-input v-model="entityForm.spatial_layer_config.lat_field" size="small" style="flex:1" :placeholder="t('graph.ontology.defaultLat')" />
+                  <el-input v-model="entityForm.spatial_layer_config.lat_field" size="small" style="flex:1" :placeholder="t('graph.ontology.latDefault')" />
                 </div>
               </template>
               <template v-if="entityForm.spatial_layer_config.geometry_type === 'wkt'">
                 <div style="display:flex;align-items:center;gap:8px">
                   <span style="width:80px;flex-shrink:0;font-size:13px">{{ t('graph.ontology.geomField') }}</span>
-                  <el-input v-model="entityForm.spatial_layer_config.geom_field" size="small" style="flex:1" :placeholder="t('graph.ontology.defaultWkt')" />
+                  <el-input v-model="entityForm.spatial_layer_config.geom_field" size="small" style="flex:1" :placeholder="t('graph.ontology.geomDefault')" />
                 </div>
               </template>
             </div>
           </el-form-item>
         </template>
-        <el-form-item :label="t('graph.ontology.propertyDefs')">
+        <el-form-item :label="t('graph.common.properties')">
           <div class="prop-table">
             <el-table :data="entityForm.properties" border size="small" style="width:100%">
-              <el-table-column :label="t('graph.ontology.fieldName')" min-width="110">
+              <el-table-column :label="t('graph.common.fieldName')" min-width="110">
                 <template #default="{ row }">
-                  <el-input v-model="row.name" size="small" :placeholder="t('graph.ontology.fieldNamePlaceholder')" />
+                  <el-input v-model="row.name" size="small" :placeholder="t('graph.ontology.identifierPlaceholder')" @input="onEntityPropertyNameChange(row)" />
                 </template>
               </el-table-column>
-              <el-table-column :label="t('graph.ontology.displayName')" min-width="90">
+              <el-table-column :label="t('graph.common.displayName')" min-width="90">
                 <template #default="{ row }">
-                  <el-input v-model="row.label" size="small" :placeholder="t('graph.ontology.displayNamePlaceholder2')" />
+                  <el-input v-model="row.label" size="small" :placeholder="t('graph.ontology.displayNamePlaceholder')" />
                 </template>
               </el-table-column>
-              <el-table-column :label="t('graph.ontology.dataType')" min-width="110">
+              <el-table-column :label="t('graph.common.dataType')" min-width="110">
                 <template #default="{ row }">
-                  <el-select v-model="row.data_type" size="small">
+                  <el-select v-model="row.data_type" size="small" @change="normalizeEntityProperty(row)">
                     <el-option v-for="t in dataTypes" :key="t.value" :label="t.label" :value="t.value" />
                   </el-select>
                 </template>
               </el-table-column>
-              <el-table-column :label="t('graph.ontology.required')" width="60" align="center">
+              <el-table-column :label="t('graph.common.required')" width="60" align="center">
                 <template #default="{ row }">
                   <el-checkbox v-model="row.required" />
                 </template>
               </el-table-column>
-              <el-table-column :label="t('graph.ontology.unique')" width="60" align="center">
+              <el-table-column :label="t('graph.common.unique')" width="60" align="center">
                 <template #default="{ row }">
                   <el-checkbox v-model="row.unique" />
                 </template>
               </el-table-column>
+              <el-table-column :label="t('graph.common.searchable')" width="72" align="center">
+                <template #default="{ row }">
+                  <el-checkbox v-model="row.searchable" :disabled="row.data_type !== 'string' || isDisplayProperty(row)" />
+                </template>
+              </el-table-column>
               <el-table-column :label="t('graph.common.actions')" width="60" align="center">
                 <template #default="{ $index }">
-                  <el-button link type="danger" size="small" @click="entityForm.properties.splice($index, 1)">{{ t('graph.common.del') }}</el-button>
+                  <el-button link type="danger" size="small" @click="removeEntityProperty($index)">{{ t('graph.common.delete') }}</el-button>
                 </template>
               </el-table-column>
             </el-table>
-            <el-button size="small" style="margin-top:8px" @click="addEntityProp">+ {{ t('graph.ontology.addProperty') }}</el-button>
+            <el-button size="small" style="margin-top:8px" @click="addEntityProp">{{ t('graph.common.addProperty') }}</el-button>
           </div>
         </el-form-item>
       </el-form>
@@ -229,65 +257,65 @@
     <!-- 关系类型表单对话框 -->
     <el-dialog v-model="relationDialogVisible" :title="editingRelation ? t('graph.ontology.editRelationType') : t('graph.ontology.addRelationType')" width="750px">
       <el-form ref="relationFormRef" :model="relationForm" :rules="relationRules" label-width="80px">
-        <el-form-item :label="t('graph.ontology.identifier')" prop="name">
+        <el-form-item :label="t('graph.common.identifier')" prop="name">
           <el-input v-model="relationForm.name" :placeholder="t('graph.ontology.relationIdentifierPlaceholder')" />
         </el-form-item>
-        <el-form-item :label="t('graph.ontology.displayName')" prop="label">
+        <el-form-item :label="t('graph.common.displayName')" prop="label">
           <el-input v-model="relationForm.label" :placeholder="t('graph.ontology.relationDisplayNamePlaceholder')" />
         </el-form-item>
         <el-form-item :label="t('graph.common.description')">
           <el-input v-model="relationForm.description" type="textarea" :rows="2" />
         </el-form-item>
         <el-form-item :label="t('graph.ontology.sourceType')">
-          <el-select v-model="relationForm.source_type_id" :placeholder="t('graph.ontology.any')" clearable>
+          <el-select v-model="relationForm.source_type_id" :placeholder="t('graph.ontology.anyType')" clearable>
             <el-option v-for="et in entityTypes" :key="et.id" :label="et.label || et.name" :value="et.id" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('graph.ontology.targetType')">
-          <el-select v-model="relationForm.target_type_id" :placeholder="t('graph.ontology.any')" clearable>
+          <el-select v-model="relationForm.target_type_id" :placeholder="t('graph.ontology.anyType')" clearable>
             <el-option v-for="et in entityTypes" :key="et.id" :label="et.label || et.name" :value="et.id" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('graph.ontology.directed')">
           <el-switch v-model="relationForm.directed" />
         </el-form-item>
-        <el-form-item :label="t('graph.ontology.propertyDefs')">
+        <el-form-item :label="t('graph.common.properties')">
           <div class="prop-table">
             <el-table :data="relationForm.properties" border size="small" style="width:100%">
-              <el-table-column :label="t('graph.ontology.fieldName')" min-width="110">
+              <el-table-column :label="t('graph.common.fieldName')" min-width="110">
                 <template #default="{ row }">
-                  <el-input v-model="row.name" size="small" :placeholder="t('graph.ontology.fieldNamePlaceholder')" />
+                  <el-input v-model="row.name" size="small" :placeholder="t('graph.ontology.identifierPlaceholder')" />
                 </template>
               </el-table-column>
-              <el-table-column :label="t('graph.ontology.displayName')" min-width="90">
+              <el-table-column :label="t('graph.common.displayName')" min-width="90">
                 <template #default="{ row }">
-                  <el-input v-model="row.label" size="small" :placeholder="t('graph.ontology.displayNamePlaceholder2')" />
+                  <el-input v-model="row.label" size="small" :placeholder="t('graph.ontology.displayNamePlaceholder')" />
                 </template>
               </el-table-column>
-              <el-table-column :label="t('graph.ontology.dataType')" min-width="110">
+              <el-table-column :label="t('graph.common.dataType')" min-width="110">
                 <template #default="{ row }">
                   <el-select v-model="row.data_type" size="small">
                     <el-option v-for="t in dataTypes" :key="t.value" :label="t.label" :value="t.value" />
                   </el-select>
                 </template>
               </el-table-column>
-              <el-table-column :label="t('graph.ontology.required')" width="60" align="center">
+              <el-table-column :label="t('graph.common.required')" width="60" align="center">
                 <template #default="{ row }">
                   <el-checkbox v-model="row.required" />
                 </template>
               </el-table-column>
-              <el-table-column :label="t('graph.ontology.unique')" width="60" align="center">
+              <el-table-column :label="t('graph.common.unique')" width="60" align="center">
                 <template #default="{ row }">
                   <el-checkbox v-model="row.unique" />
                 </template>
               </el-table-column>
               <el-table-column :label="t('graph.common.actions')" width="60" align="center">
                 <template #default="{ $index }">
-                  <el-button link type="danger" size="small" @click="relationForm.properties.splice($index, 1)">{{ t('graph.common.del') }}</el-button>
+                  <el-button link type="danger" size="small" @click="relationForm.properties.splice($index, 1)">{{ t('graph.common.delete') }}</el-button>
                 </template>
               </el-table-column>
             </el-table>
-            <el-button size="small" style="margin-top:8px" @click="addRelationProp">+ {{ t('graph.ontology.addProperty') }}</el-button>
+            <el-button size="small" style="margin-top:8px" @click="addRelationProp">{{ t('graph.common.addProperty') }}</el-button>
           </div>
         </el-form-item>
       </el-form>
@@ -298,7 +326,7 @@
     </el-dialog>
 
     <!-- 版本快照对话框 -->
-    <el-dialog v-model="showVersionDialog" :title="t('graph.ontology.createSnapshot')" width="400px">
+    <el-dialog v-model="showVersionDialog" :title="t('graph.ontology.createVersionSnapshot')" width="400px">
       <el-form ref="versionFormRef" :model="versionForm" :rules="versionRules" label-width="80px">
         <el-form-item :label="t('graph.ontology.versionNumber')" prop="version">
           <el-input v-model="versionForm.version" :placeholder="t('graph.ontology.versionPlaceholder')" />
@@ -358,6 +386,8 @@ const entityFormRef = ref(null)
 const entityForm = ref({
   name: '', label: '', description: '', color: '#5B8FF9', properties: [],
   node_labels: [],
+  parent_id: null,
+  display_property: '',
   is_spatial_layer: false,
   spatial_layer_config: { geometry_type: '', layer_name: '', lon_field: 'lon', lat_field: 'lat', geom_field: 'wkt' }
 })
@@ -382,7 +412,80 @@ const dataTypes = [
 ]
 
 const addEntityProp = () => {
-  entityForm.value.properties.push({ name: '', label: '', data_type: 'string', required: false, unique: false })
+  entityForm.value.properties.push({ name: '', label: '', data_type: 'string', required: false, unique: false, searchable: false })
+}
+
+const normalizeEntityProperty = row => {
+  if (row.data_type !== 'string') {
+    row.searchable = false
+    if (isDisplayProperty(row)) entityForm.value.display_property = ''
+  }
+}
+
+const displayPropertyOptions = computed(() => {
+  const optionsByName = new Map()
+  const ancestors = []
+  const visited = new Set()
+  let parentID = entityForm.value.parent_id
+  while (parentID && !visited.has(parentID)) {
+    visited.add(parentID)
+    const parent = entityTypes.value.find(item => item.id === parentID)
+    if (!parent) break
+    ancestors.unshift(parent)
+    parentID = parent.parent_id
+  }
+
+  ancestors.forEach(entityType => {
+    const inheritedProperties = entityType.properties || []
+    inheritedProperties.forEach(property => {
+      const name = String(property.name || '').trim()
+      if (property.data_type !== 'string' || !name) return
+      optionsByName.set(name, {
+        value: name,
+        label: `${property.label || name} (${name}) · ${t('graph.ontology.inheritedFrom', { name: entityType.label || entityType.name })}`,
+      })
+    })
+  })
+  const ownProperties = entityForm.value.properties || []
+  ownProperties.forEach(property => {
+    const name = String(property.name || '').trim()
+    if (property.data_type !== 'string' || !name) return
+    optionsByName.set(name, { value: name, label: `${property.label || name} (${name})` })
+  })
+  return [...optionsByName.values()]
+})
+
+const isDisplayProperty = row => {
+  const name = String(row.name || '').trim()
+  return !!name && name === entityForm.value.display_property
+}
+
+const onDisplayPropertyChange = value => {
+  const selected = String(value || '').trim()
+  entityForm.value.display_property = selected
+  entityForm.value.properties.forEach(property => {
+    if (String(property.name || '').trim() === selected) property.searchable = true
+  })
+}
+
+const normalizeDisplayPropertySelection = () => {
+  const selected = entityForm.value.display_property
+  if (selected && !displayPropertyOptions.value.some(property => property.value === selected)) {
+    entityForm.value.display_property = ''
+  }
+}
+
+const onEntityPropertyNameChange = row => {
+  normalizeDisplayPropertySelection()
+  const name = String(row.name || '').trim()
+  if (!entityForm.value.display_property && row.data_type === 'string' && name) {
+    onDisplayPropertyChange(name)
+  }
+}
+
+const removeEntityProperty = index => {
+  entityForm.value.properties.splice(index, 1)
+  normalizeDisplayPropertySelection()
 }
 
 const addRelationProp = () => {
@@ -426,7 +529,11 @@ const showEntityForm = (row) => {
       node_labels: Array.isArray(row.node_labels) ? [...row.node_labels] : [],
       color: row.color || '#5B8FF9',
       parent_id: row.parent_id || null,
-      properties: Array.isArray(row.properties) ? row.properties.map(p => ({ ...p })) : [],
+      display_property: row.display_property || '',
+      properties: Array.isArray(row.properties) ? row.properties.map(p => ({
+        ...p,
+        searchable: p.name === row.display_property ? true : !!p.searchable,
+      })) : [],
       is_spatial_layer: !!row.is_spatial_layer,
       spatial_layer_config: {
         geometry_type: slc.geometry_type || '',
@@ -441,6 +548,7 @@ const showEntityForm = (row) => {
       name: '', label: '', description: '', color: '#5B8FF9',
       node_labels: [],
       parent_id: null,
+      display_property: '',
       properties: [],
       is_spatial_layer: false,
       spatial_layer_config: { geometry_type: '', layer_name: '', lon_field: 'lon', lat_field: 'lat', geom_field: 'wkt' }
@@ -473,7 +581,7 @@ const onGeometryTypeChange = (newType) => {
     }
   } else if (newType === 'wkt') {
     if (!entityForm.value.properties.find(p => p.name === entityForm.value.spatial_layer_config.geom_field || p.name === 'wkt')) {
-      entityForm.value.properties.push({ name: entityForm.value.spatial_layer_config.geom_field || 'wkt', label: t('graph.ontology.geometryWkt'), data_type: 'geometry', required: false, unique: false })
+      entityForm.value.properties.push({ name: entityForm.value.spatial_layer_config.geom_field || 'wkt', label: t('graph.ontology.geometry'), data_type: 'geometry', required: false, unique: false })
     }
   }
   // 更新图层名称默认值
@@ -502,6 +610,8 @@ const submitEntityType = async () => {
   try {
     const payload = { ...entityForm.value }
     payload.node_labels = parseNodeLabels(entityNodeLabelsText.value)
+    onDisplayPropertyChange(payload.display_property)
+    payload.properties = entityForm.value.properties.map(property => ({ ...property }))
     if (!payload.is_spatial_layer) {
       payload.spatial_layer_config = null
     }
@@ -600,7 +710,7 @@ const submitVersion = async () => {
   saving.value = true
   try {
     await ontologyAPI.createVersion(ontologyId, versionForm.value)
-    ElMessage.success(t('graph.ontology.snapshotSuccess'))
+    ElMessage.success(t('graph.ontology.versionSnapshotCreated'))
     showVersionDialog.value = false
     versionForm.value = { version: '', description: '' }
     loadVersions()
@@ -621,5 +731,7 @@ const formatDate = (str) => str ? new Date(str).toLocaleString() : '-'
 .tab-toolbar { margin-bottom: 12px; }
 .color-dot { display: inline-block; width: 16px; height: 16px; border-radius: 50%; }
 .prop-table { width: 100%; }
-.graph-tab-container { min-height: 480px; }
+.graph-tab-container {
+  height: clamp(480px, calc(100vh - 240px), 760px);
+}
 </style>

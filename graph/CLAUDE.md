@@ -53,7 +53,7 @@ graph/
 │       │   ├── router.go            # 路由（/api/v1/graph/*）
 │       │   ├── ontology_handler.go  # 本体 CRUD handler
 │       │   ├── knowledge_graph_handler.go
-│       │   └── browse_handler.go    # 图谱浏览 handler（schema/stats/overview/search/expand/path）
+│       │   └── browse_handler.go    # 图谱浏览 handler（browse-snapshot/search/expand/path）
 │       ├── config/config.go         # 配置（port 8186, schema=graph）
 │       ├── models/
 │       │   ├── ontology.go          # 数据库模型
@@ -67,7 +67,8 @@ graph/
 │       └── service/
 │           ├── ontology_service.go
 │           ├── knowledge_graph_service.go
-│           └── neo4j_service.go     # Neo4j 查询服务（GetSchema/GetStats/GetOverview/SearchNodes/ExpandNode/FindPath）
+│           ├── neo4j_service.go     # Neo4j 查询和写入服务
+│           └── ontology_semantics.go # 本体执行映射和全文索引定义
 └── frontend/
     ├── package.json                 # @antv/g6 依赖
     ├── vite.config.js               # port 5187, base=/graph/
@@ -76,7 +77,7 @@ graph/
         │   ├── auth.js
         │   ├── client.js
         │   ├── ontology.js          # ontologyAPI + knowledgeGraphAPI
-        │   └── browse.js            # browseAPI（getSchema/getStats/getOverview/searchNodes/expandNode/findPath）
+        │   └── browse.js            # browseAPI（getBrowseSnapshot/searchNodes/expandTarget/findPath）
         ├── components/
         │   ├── Layout.vue           # 支持双模式（嵌入/独立）
         │   ├── GraphCanvas.vue      # G6 可视化核心组件（力导向/分层/环形/辐射布局）
@@ -126,11 +127,9 @@ GET    /api/v1/graph/graphs/:id/analysis/capabilities  算法能力探测（GDS/
 POST   /api/v1/graph/graphs/:id/analysis/run           执行图算法（度中心性/K跳/最短路径/PageRank/Louvain/WCC/介数中心性）
 POST   /api/v1/graph/graphs/:id/analysis/sync-spatial  同步空间图层
 
-GET    /api/v1/graph/graphs/:id/schema                   图谱 Schema（标签 + 关系类型）
-GET    /api/v1/graph/graphs/:id/stats                    图谱统计（节点数/关系数/按标签分组）
-GET    /api/v1/graph/graphs/:id/overview                 概览子图（采样100条关系）
+GET    /api/v1/graph/graphs/:id/browse-snapshot          浏览快照（同一事实源派生 Schema、统计和聚合概览）
 POST   /api/v1/graph/graphs/:id/search                   全文搜索节点 (body: {query, limit})
-POST   /api/v1/graph/graphs/:id/expand                   展开节点邻居 (body: {node_id, limit})
+POST   /api/v1/graph/graphs/:id/expand                   展开目标 (body: {target, depth, node_limit, relationship_limit})
 POST   /api/v1/graph/graphs/:id/path                     最短路径查询 (body: {source_id, target_id})
 
 GET/POST   /api/v1/graph/graphs/:id/build/tasks                         构建任务列表/创建

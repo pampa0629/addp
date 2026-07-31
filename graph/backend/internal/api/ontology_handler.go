@@ -1,10 +1,13 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
+	graphi18n "github.com/addp/graph/i18n"
 	"github.com/addp/graph/internal/models"
 	"github.com/addp/graph/internal/service"
 	"github.com/gin-gonic/gin"
@@ -197,6 +200,9 @@ func (h *OntologyHandler) CreateEntityType(c *gin.Context) {
 	}
 	et, err := h.svc.CreateEntityType(ontologyID, tenantID, &req)
 	if err != nil {
+		if writeDisplayPropertyError(c, err) {
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -229,10 +235,26 @@ func (h *OntologyHandler) UpdateEntityType(c *gin.Context) {
 	}
 	et, err := h.svc.UpdateEntityType(eid, ontologyID, tenantID, &req)
 	if err != nil {
+		if writeDisplayPropertyError(c, err) {
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, et)
+}
+
+func writeDisplayPropertyError(c *gin.Context, err error) bool {
+	switch {
+	case errors.Is(err, service.ErrDisplayPropertyNotFound):
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, graphi18n.MsgDisplayPropertyNotFound)})
+		return true
+	case errors.Is(err, service.ErrDisplayPropertyNotString):
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, graphi18n.MsgDisplayPropertyNotString)})
+		return true
+	default:
+		return false
+	}
 }
 
 // DeleteEntityType godoc

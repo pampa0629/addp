@@ -48,7 +48,7 @@
         </el-menu>
       </el-aside>
 
-      <el-main class="content">
+      <el-main class="content" :class="{ 'content-full': isFullPageRoute }">
         <router-view />
       </el-main>
     </el-container>
@@ -151,6 +151,11 @@ const handleCommand = (command) => {
   overflow-y: auto;
 }
 
+.content-full {
+  padding: 0;
+  overflow: hidden;
+}
+
 .content-only {
   background: var(--addp-bg-secondary) !important;
   height: auto;
@@ -161,5 +166,53 @@ const handleCommand = (command) => {
 .content-only-full {
   height: 100vh;
   overflow: hidden;
+}
+
+@media (max-width: 720px) {
+  .header {
+    height: 56px;
+    padding: 0 12px;
+  }
+
+  .main-container {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    order: 2;
+    width: 100% !important;
+    height: 56px;
+    border-top: 1px solid var(--addp-border-color);
+    border-right: 0;
+  }
+
+  .sidebar-menu {
+    display: flex;
+    height: 56px;
+  }
+
+  .sidebar-menu :deep(.el-menu-item) {
+    flex: 1;
+    min-width: 0;
+    height: 56px;
+    padding: 0 6px;
+    justify-content: center;
+  }
+
+  .sidebar-menu :deep(.el-menu-item span) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .content {
+    order: 1;
+    width: 100%;
+    padding: 12px;
+  }
+
+  .content-full {
+    padding: 0;
+  }
 }
 </style>

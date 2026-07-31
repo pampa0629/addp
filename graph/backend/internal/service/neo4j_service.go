@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"sort"
 	"strings"
@@ -12,6 +13,19 @@ import (
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/graph/internal/models"
 	"github.com/addp/graph/internal/repository"
+)
+
+const (
+	defaultGraphNodeColor = "#5B8FF9"
+	defaultGraphEdgeColor = "#C0C0C0"
+
+	DefaultExpandDepth             = 1
+	MaxExpandDepth                 = 3
+	DefaultExpandNodeLimit         = 200
+	MaxExpandNodeLimit             = 500
+	DefaultExpandRelationshipLimit = 400
+	MaxExpandRelationshipLimit     = 1000
+	maxAggregateSeedCount          = 20
 )
 
 // Neo4jService 提供面向知识图谱的 Neo4j 查询能力
@@ -56,214 +70,471 @@ func (s *Neo4jService) getGraphAndEngine(graphID, tenantID uint) (*models.Knowle
 	return kg, &engineCopy, nil
 }
 
-// buildColorMaps 从本体中构建 node shape→颜色 和 relType→颜色 的映射
-func (s *Neo4jService) buildColorMaps(ontologyID, tenantID uint) (nodeColors, edgeColors map[string]string) {
-	nodeColors = make(map[string]string)
-	edgeColors = make(map[string]string)
-	ontology, err := s.ontologyRepo.GetDetail(ontologyID, tenantID)
-	if err != nil {
-		return
-	}
-	byID := entityTypeByID(ontology.EntityTypes)
-	for _, et := range ontology.EntityTypes {
-		if et.Color != "" {
-			nodeColors[et.Name] = et.Color
-			if labels := effectiveNodeLabels(&et, byID); len(labels) > 0 {
-				nodeColors[endpointShapeName(labels)] = et.Color
-			}
-		}
-	}
-	for _, rt := range ontology.RelationTypes {
-		if rt.Color != "" {
-			edgeColors[rt.Name] = rt.Color
-		}
-	}
-	return
-}
-
-// GetSchema 获取图谱的 Schema（节点形状 + 关系类型）
-func (s *Neo4jService) GetSchema(ctx context.Context, graphID, tenantID uint) (*models.BrowseSchema, error) {
-	_, engine, err := s.getGraphAndEngine(graphID, tenantID)
+// GetBrowseSnapshot 从同一组图事实派生 Schema、统计和聚合概览。
+func (s *Neo4jService) GetBrowseSnapshot(ctx context.Context, graphID, tenantID uint) (*models.BrowseSnapshot, error) {
+	kg, engine, err := s.getGraphAndEngine(graphID, tenantID)
 	if err != nil {
 		return nil, err
 	}
-
-	nodeShapeResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		"MATCH (n) WHERE "+businessNodePredicate("n")+" RETURN labels(n) AS labels, count(n) AS cnt ORDER BY cnt DESC LIMIT 500")
+	ontology, _ := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
+	nodeColors, edgeColors, edgeDirections := buildVisualMaps(ontology)
+	nodeResult, relationshipResult, err := queryBrowseFacts(ctx, engine)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get node shapes: %w", err)
+		return nil, err
 	}
-	nodeShapes := make([]models.NodeShapeDTO, 0, len(nodeShapeResult.Rows))
-	for _, row := range nodeShapeResult.Rows {
-		labels := interfaceToStringSlice(row["labels"])
-		if len(labels) == 0 || isInternalNodeLabelSet(labels) {
-			continue
+	return buildBrowseSnapshot(nodeResult, relationshipResult, nodeColors, edgeColors, edgeDirections), nil
+}
+
+func queryBrowseFacts(ctx context.Context, engine *commonmodels.Engine) (*plugin.GraphQueryResult, *plugin.GraphQueryResult, error) {
+	nodeResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
+		"MATCH (n) WHERE "+businessNodePredicate("n")+
+			" RETURN labels(n) AS labels, count(n) AS cnt ORDER BY cnt DESC")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get browse node facts: %w", err)
+	}
+	relationshipResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
+		"MATCH (n)-[r]->(m) WHERE "+businessRelationshipPredicate("r", "n", "m")+
+			" RETURN labels(n) AS source_labels, type(r) AS rel_type, labels(m) AS target_labels, count(r) AS cnt ORDER BY rel_type, cnt DESC")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get browse relationship facts: %w", err)
+	}
+	return nodeResult, relationshipResult, nil
+}
+
+func buildBrowseSnapshot(
+	nodeResult, relationshipResult *plugin.GraphQueryResult,
+	nodeColors, edgeColors map[string]string,
+	edgeDirections map[string]bool,
+) *models.BrowseSnapshot {
+	snapshot := &models.BrowseSnapshot{
+		Schema: models.BrowseSchema{
+			NodeShapes:         []models.NodeShapeDTO{},
+			RelationshipShapes: []models.RelationshipShapeDTO{},
+		},
+		Stats: models.BrowseStats{ByLabel: make(map[string]int64)},
+	}
+	snapshot.Overview = *buildAggregatedOverview(nodeResult, relationshipResult, nodeColors, edgeColors, edgeDirections)
+
+	if nodeResult != nil {
+		for _, row := range nodeResult.Rows {
+			labels := normalizedStringSet(interfaceToStringSlice(row["labels"]))
+			if len(labels) == 0 || isInternalNodeLabelSet(labels) {
+				continue
+			}
+			count := toInt64(row["cnt"])
+			shapeName := endpointShapeName(labels)
+			color := nodeColors[shapeName]
+			if color == "" {
+				color = defaultGraphNodeColor
+			}
+			snapshot.Schema.NodeShapes = append(snapshot.Schema.NodeShapes, models.NodeShapeDTO{
+				Name: shapeName, Kind: "label_set", Labels: labels, Color: color, Count: &count,
+			})
+			snapshot.Stats.NodeCount += count
+			for _, label := range labels {
+				snapshot.Stats.ByLabel[label] += count
+			}
 		}
-		count := toInt64(row["cnt"])
-		nodeShapes = append(nodeShapes, models.NodeShapeDTO{
-			Name:   endpointShapeName(labels),
-			Kind:   "label_set",
-			Labels: labels,
-			Count:  &count,
-		})
 	}
 
-	relResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		`MATCH (a)-[r]->(b)
-		WITH type(r) AS relType, labels(a) AS fromLabels, labels(b) AS toLabels, count(r) AS cnt
-		WHERE NOT (relType IN `+internalRelationshipTypeList+`)
-		  AND none(label IN fromLabels WHERE label IN `+internalNodeLabelList+`)
-		  AND none(label IN toLabels WHERE label IN `+internalNodeLabelList+`)
-		RETURN relType, fromLabels, toLabels, cnt
-		ORDER BY relType, cnt DESC`)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get relationship types: %w", err)
-	}
-	relationshipShapes := make([]models.RelationshipShapeDTO, 0)
 	relationshipShapeByType := make(map[string]int)
-	for _, row := range relResult.Rows {
-		relType := fmt.Sprintf("%v", row["relType"])
-		if relType == "" || relType == "<nil>" || isInternalRelationshipType(relType) {
-			continue
-		}
-		fromLabels := interfaceToStringSlice(row["fromLabels"])
-		toLabels := interfaceToStringSlice(row["toLabels"])
-		if isInternalNodeLabelSet(fromLabels) || isInternalNodeLabelSet(toLabels) {
-			continue
-		}
-		index, ok := relationshipShapeByType[relType]
-		if !ok {
-			index = len(relationshipShapes)
-			relationshipShapes = append(relationshipShapes, models.RelationshipShapeDTO{Type: relType})
-			relationshipShapeByType[relType] = index
-		}
-		count := toInt64(row["cnt"])
-		relationshipShapes[index].Count = addInt64Ptr(relationshipShapes[index].Count, count)
-		if len(fromLabels) > 0 || len(toLabels) > 0 {
-			relationshipShapes[index].Patterns = append(relationshipShapes[index].Patterns, models.RelationshipPatternDTO{
+	if relationshipResult != nil {
+		for _, row := range relationshipResult.Rows {
+			relType := fmt.Sprintf("%v", row["rel_type"])
+			fromLabels := normalizedStringSet(interfaceToStringSlice(row["source_labels"]))
+			toLabels := normalizedStringSet(interfaceToStringSlice(row["target_labels"]))
+			if relType == "" || relType == "<nil>" || isInternalRelationshipType(relType) || isInternalNodeLabelSet(fromLabels) || isInternalNodeLabelSet(toLabels) {
+				continue
+			}
+			count := toInt64(row["cnt"])
+			snapshot.Stats.RelationshipCount += count
+			index, ok := relationshipShapeByType[relType]
+			if !ok {
+				color := edgeColors[relType]
+				if color == "" {
+					color = defaultGraphEdgeColor
+				}
+				directed, hasDirection := edgeDirections[relType]
+				if !hasDirection {
+					directed = true
+				}
+				index = len(snapshot.Schema.RelationshipShapes)
+				snapshot.Schema.RelationshipShapes = append(snapshot.Schema.RelationshipShapes, models.RelationshipShapeDTO{
+					Type: relType, Color: color, Directed: directed,
+				})
+				relationshipShapeByType[relType] = index
+			}
+			shape := &snapshot.Schema.RelationshipShapes[index]
+			shape.Count = addInt64Ptr(shape.Count, count)
+			shape.Patterns = append(shape.Patterns, models.RelationshipPatternDTO{
 				From:  models.GraphEndpointDTO{ShapeName: endpointShapeName(fromLabels), Labels: fromLabels},
 				To:    models.GraphEndpointDTO{ShapeName: endpointShapeName(toLabels), Labels: toLabels},
 				Count: &count,
 			})
 		}
 	}
-
-	return &models.BrowseSchema{
-		NodeShapes:         nodeShapes,
-		RelationshipShapes: relationshipShapes,
-	}, nil
+	return snapshot
 }
 
-// GetStats 获取图谱统计（总节点数、总关系数、按标签分组节点数）
-func (s *Neo4jService) GetStats(ctx context.Context, graphID, tenantID uint) (*models.BrowseStats, error) {
-	_, engine, err := s.getGraphAndEngine(graphID, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	stats := &models.BrowseStats{ByLabel: make(map[string]int64)}
-
-	nodeResult, err := dbbridge.ExecuteGraphQuery(ctx, engine, "MATCH (n) WHERE "+businessNodePredicate("n")+" RETURN count(n) AS total")
-	if err != nil {
-		return nil, fmt.Errorf("failed to count nodes: %w", err)
-	}
-	if len(nodeResult.Rows) > 0 {
-		stats.NodeCount = toInt64(nodeResult.Rows[0]["total"])
+func buildAggregatedOverview(
+	nodeResult, relationshipResult *plugin.GraphQueryResult,
+	nodeColors, edgeColors map[string]string,
+	edgeDirections map[string]bool,
+) *models.SubgraphResult {
+	out := &models.SubgraphResult{Nodes: []models.GraphNodeDTO{}, Edges: []models.GraphEdgeDTO{}}
+	if nodeResult == nil {
+		return out
 	}
 
-	edgeResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		"MATCH (a)-[r]->(b) WHERE "+businessRelationshipPredicate("r", "a", "b")+" RETURN count(r) AS total")
-	if err != nil {
-		return nil, fmt.Errorf("failed to count edges: %w", err)
-	}
-	if len(edgeResult.Rows) > 0 {
-		stats.RelationshipCount = toInt64(edgeResult.Rows[0]["total"])
-	}
-
-	labelResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		"MATCH (n) WHERE "+businessNodePredicate("n")+" UNWIND labels(n) AS lbl RETURN lbl, count(n) AS cnt")
-	if err == nil {
-		for _, row := range labelResult.Rows {
-			if lbl, ok := row["lbl"]; ok {
-				if isInternalNodeLabel(fmt.Sprintf("%v", lbl)) {
-					continue
-				}
-				if cnt, ok2 := row["cnt"]; ok2 {
-					stats.ByLabel[fmt.Sprintf("%v", lbl)] = toInt64(cnt)
-				}
-			}
+	bucketIDs := make(map[string]string, len(nodeResult.Rows))
+	for _, row := range nodeResult.Rows {
+		labels := normalizedStringSet(interfaceToStringSlice(row["labels"]))
+		if len(labels) == 0 || isInternalNodeLabelSet(labels) {
+			continue
 		}
-	}
-	return stats, nil
-}
-
-// GetOverview 获取图谱概览子图（采样关系，若无则退回到采样节点）
-func (s *Neo4jService) GetOverview(ctx context.Context, graphID, tenantID uint) (*models.SubgraphResult, error) {
-	kg, engine, err := s.getGraphAndEngine(graphID, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	nodeColors, edgeColors := s.buildColorMaps(kg.OntologyID, tenantID)
-
-	result, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		"MATCH (n)-[r]->(m) WHERE "+businessRelationshipPredicate("r", "n", "m")+" RETURN n, r, m LIMIT 100")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get overview: %w", err)
-	}
-
-	// 无关系则退回到仅节点
-	if result.GraphData == nil || len(result.GraphData.Nodes) == 0 {
-		result, err = dbbridge.ExecuteGraphQuery(ctx, engine, "MATCH (n) WHERE "+businessNodePredicate("n")+" RETURN n LIMIT 50")
-		if err != nil {
-			return nil, fmt.Errorf("failed to get overview nodes: %w", err)
+		shapeName := endpointShapeName(labels)
+		bucketID := aggregateNodeID(labels)
+		bucketIDs[nodeLabelsKey(labels)] = bucketID
+		color := nodeColors[shapeName]
+		if color == "" {
+			color = defaultGraphNodeColor
 		}
+		out.Nodes = append(out.Nodes, models.GraphNodeDTO{
+			ID:          bucketID,
+			Kind:        "aggregate",
+			Labels:      labels,
+			EntityType:  shapeName,
+			Color:       color,
+			DisplayName: shapeName,
+			MemberCount: toInt64(row["cnt"]),
+		})
 	}
 
-	return buildSubgraph(result, nodeColors, edgeColors), nil
+	if relationshipResult == nil {
+		return out
+	}
+	for _, row := range relationshipResult.Rows {
+		sourceLabels := normalizedStringSet(interfaceToStringSlice(row["source_labels"]))
+		targetLabels := normalizedStringSet(interfaceToStringSlice(row["target_labels"]))
+		relType := fmt.Sprintf("%v", row["rel_type"])
+		sourceID := bucketIDs[nodeLabelsKey(sourceLabels)]
+		targetID := bucketIDs[nodeLabelsKey(targetLabels)]
+		if sourceID == "" || targetID == "" || relType == "" || isInternalRelationshipType(relType) {
+			continue
+		}
+		color := edgeColors[relType]
+		if color == "" {
+			color = defaultGraphEdgeColor
+		}
+		directed, ok := edgeDirections[relType]
+		if !ok {
+			directed = true
+		}
+		out.Edges = append(out.Edges, models.GraphEdgeDTO{
+			ID:           aggregateEdgeID(sourceID, relType, targetID),
+			Kind:         "aggregate",
+			Type:         relType,
+			RelationType: relType,
+			Color:        color,
+			Directed:     directed,
+			Source:       sourceID,
+			Target:       targetID,
+			Count:        toInt64(row["cnt"]),
+		})
+	}
+	return out
 }
 
-// SearchNodes 全文搜索：在所有节点属性中匹配关键词
+func aggregateNodeID(labels []string) string {
+	sum := sha256.Sum256([]byte(nodeLabelsKey(labels)))
+	return fmt.Sprintf("aggregate:%x", sum[:8])
+}
+
+func aggregateEdgeID(sourceID, relType, targetID string) string {
+	sum := sha256.Sum256([]byte(sourceID + "\x00" + relType + "\x00" + targetID))
+	return fmt.Sprintf("aggregate-edge:%x", sum[:8])
+}
+
+// SearchNodes 使用本体声明的实体全文索引搜索节点。
 func (s *Neo4jService) SearchNodes(ctx context.Context, graphID, tenantID uint, query string, limit int) (*models.SubgraphResult, error) {
 	kg, engine, err := s.getGraphAndEngine(graphID, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	nodeColors, edgeColors := s.buildColorMaps(kg.OntologyID, tenantID)
-
+	ontology, err := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get search ontology: %w", err)
+	}
+	nodeColors, edgeColors, edgeDirections := buildVisualMaps(ontology)
 	if limit <= 0 || limit > 50 {
 		limit = 30
 	}
-	// 只对字符串属性搜索，避免数组类型传入 toString 时触发 Neo4j TypeError
+	definitions := buildSearchIndexDefinitions(graphID, ontology)
+	if strings.TrimSpace(query) == "" {
+		return &models.SubgraphResult{Nodes: []models.GraphNodeDTO{}, Edges: []models.GraphEdgeDTO{}}, nil
+	}
+	if err := syncSearchIndexes(ctx, engine, graphID, definitions); err != nil {
+		return nil, fmt.Errorf("failed to sync search indexes: %w", err)
+	}
+	if len(definitions) == 0 {
+		return &models.SubgraphResult{Nodes: []models.GraphNodeDTO{}, Edges: []models.GraphEdgeDTO{}}, nil
+	}
 	cypher := fmt.Sprintf(
-		"MATCH (n) WHERE "+businessNodePredicate("n")+" AND ANY(key IN keys(n) WHERE valueType(n[key]) STARTS WITH 'STRING' AND n[key] CONTAINS '%s') RETURN n LIMIT %d",
-		escapeCypher(query), limit,
+		"%s WITH node, max(score) AS score WHERE %s RETURN node ORDER BY score DESC, elementId(node) LIMIT %d",
+		fulltextSearchSubquery(definitions, query), businessNodePredicate("node"), limit,
 	)
 	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, cypher)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
-	return buildSubgraph(result, nodeColors, edgeColors), nil
+	return buildSubgraph(result, nodeColors, edgeColors, edgeDirections, newOntologySemantics(ontology)), nil
 }
 
-// ExpandNode 展开节点的 1 跳邻居
-func (s *Neo4jService) ExpandNode(ctx context.Context, graphID, tenantID uint, nodeID string, limit int) (*models.SubgraphResult, error) {
+func searchIndexPrefix(graphID uint) string {
+	return fmt.Sprintf("addp_graph_%d_search_", graphID)
+}
+
+func searchIndexName(graphID uint, entityType string) string {
+	sum := sha256.Sum256([]byte(entityType))
+	return fmt.Sprintf("%s%x", searchIndexPrefix(graphID), sum[:8])
+}
+
+func syncSearchIndexes(ctx context.Context, engine *commonmodels.Engine, graphID uint, definitions []searchIndexDefinition) error {
+	prefix := searchIndexPrefix(graphID)
+	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, fmt.Sprintf(
+		"SHOW FULLTEXT INDEXES YIELD name, labelsOrTypes, properties, state WHERE name STARTS WITH '%s' RETURN name, labelsOrTypes, properties, state",
+		escapeCypher(prefix),
+	))
+	if err != nil {
+		return err
+	}
+
+	expected := make(map[string]searchIndexDefinition, len(definitions))
+	for _, definition := range definitions {
+		expected[definition.Name] = definition
+	}
+	existing := make(map[string]bool, len(result.Rows))
+	needsAwait := false
+	for _, row := range result.Rows {
+		name := fmt.Sprintf("%v", row["name"])
+		definition, ok := expected[name]
+		matches := ok && sameStringSet(interfaceToStringSlice(row["labelsOrTypes"]), []string{definition.Labels[0]}) &&
+			sameStringSet(interfaceToStringSlice(row["properties"]), definition.Properties)
+		if matches {
+			existing[name] = true
+			needsAwait = needsAwait || fmt.Sprintf("%v", row["state"]) != "ONLINE"
+			continue
+		}
+		if _, err := dbbridge.ExecuteGraphQuery(ctx, engine,
+			fmt.Sprintf("DROP INDEX `%s` IF EXISTS", escapeCypherIdentifier(name))); err != nil {
+			return err
+		}
+		needsAwait = true
+	}
+
+	for name, definition := range expected {
+		if !existing[name] {
+			properties := make([]string, 0, len(definition.Properties))
+			for _, property := range definition.Properties {
+				properties = append(properties, fmt.Sprintf("n.`%s`", escapeCypherIdentifier(property)))
+			}
+			createQuery := fmt.Sprintf(
+				"CREATE FULLTEXT INDEX `%s` IF NOT EXISTS FOR (n:`%s`) ON EACH [%s]",
+				escapeCypherIdentifier(name), escapeCypherIdentifier(definition.Labels[0]), strings.Join(properties, ", "),
+			)
+			if _, err := dbbridge.ExecuteGraphQuery(ctx, engine, createQuery); err != nil {
+				return err
+			}
+			needsAwait = true
+		}
+	}
+	if needsAwait && len(expected) > 0 {
+		if _, err := dbbridge.ExecuteGraphQuery(ctx, engine, "CALL db.awaitIndexes(30)"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func fulltextSearchSubquery(definitions []searchIndexDefinition, query string) string {
+	parts := make([]string, 0, len(definitions))
+	queryLiteral := escapeCypher(fulltextPhrase(query))
+	for _, definition := range definitions {
+		parts = append(parts, fmt.Sprintf(
+			"CALL db.index.fulltext.queryNodes('%s', '%s') YIELD node, score WHERE all(label IN %s WHERE label IN labels(node)) RETURN node, score",
+			escapeCypher(definition.Name), queryLiteral, cypherStringList(definition.Labels),
+		))
+	}
+	return "CALL { " + strings.Join(parts, " UNION ALL ") + " }"
+}
+
+func fulltextPhrase(query string) string {
+	query = strings.TrimSpace(query)
+	query = strings.ReplaceAll(query, `\`, `\\`)
+	query = strings.ReplaceAll(query, `"`, `\"`)
+	return `"` + query + `"`
+}
+
+// Expand 使用节点/关系双预算展开聚合桶或真实实体。
+func (s *Neo4jService) Expand(ctx context.Context, graphID, tenantID uint, req *models.ExpandRequest) (*models.SubgraphResult, error) {
 	kg, engine, err := s.getGraphAndEngine(graphID, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	nodeColors, edgeColors := s.buildColorMaps(kg.OntologyID, tenantID)
+	ontology, _ := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
+	nodeColors, edgeColors, edgeDirections := buildVisualMaps(ontology)
+	semantics := newOntologySemantics(ontology)
 
-	if limit <= 0 || limit > 200 {
-		limit = 100
+	depth, nodeLimit, relationshipLimit := normalizeExpandBudget(req)
+	var seedResult *plugin.GraphQueryResult
+	switch req.Target.Kind {
+	case "aggregate":
+		seedLimit := min(maxAggregateSeedCount, nodeLimit)
+		seedResult, err = dbbridge.ExecuteGraphQuery(ctx, engine, aggregateSeedQuery(req.Target.Labels, seedLimit))
+	case "entity":
+		seedResult, err = dbbridge.ExecuteGraphQuery(ctx, engine, fmt.Sprintf(
+			"MATCH (n) WHERE elementId(n) = '%s' AND %s RETURN n",
+			escapeCypher(req.Target.ID), businessNodePredicate("n"),
+		))
+	default:
+		return nil, fmt.Errorf("unsupported expand target kind %q", req.Target.Kind)
 	}
-	cypher := fmt.Sprintf(
-		"MATCH (n)-[r]-(m) WHERE elementId(n) = '%s' AND "+businessRelationshipPredicate("r", "n", "m")+" RETURN n, r, m LIMIT %d",
-		escapeCypher(nodeID), limit,
-	)
-	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, cypher)
 	if err != nil {
-		return nil, fmt.Errorf("expand failed: %w", err)
+		return nil, fmt.Errorf("failed to get expand seeds: %w", err)
 	}
-	return buildSubgraph(result, nodeColors, edgeColors), nil
+	return s.expandFromSeeds(ctx, engine, seedResult, depth, nodeLimit, relationshipLimit, nodeColors, edgeColors, edgeDirections, semantics)
+}
+
+func normalizeExpandBudget(req *models.ExpandRequest) (depth, nodeLimit, relationshipLimit int) {
+	depth = req.Depth
+	if depth <= 0 {
+		depth = DefaultExpandDepth
+	}
+	nodeLimit = req.NodeLimit
+	if nodeLimit <= 0 {
+		nodeLimit = DefaultExpandNodeLimit
+	}
+	relationshipLimit = req.RelationshipLimit
+	if relationshipLimit <= 0 {
+		relationshipLimit = DefaultExpandRelationshipLimit
+	}
+	return
+}
+
+func aggregateSeedQuery(labels []string, limit int) string {
+	labels = normalizedStringSet(labels)
+	shapePredicate := fmt.Sprintf(
+		"size(labels(n)) = %d AND all(label IN %s WHERE label IN labels(n))",
+		len(labels), cypherStringList(labels),
+	)
+	return fmt.Sprintf(
+		"MATCH (n) WHERE %s AND %s WITH n, COUNT { (n)--() } AS degree RETURN n ORDER BY degree DESC, elementId(n) LIMIT %d",
+		businessNodePredicate("n"), shapePredicate, limit,
+	)
+}
+
+func (s *Neo4jService) expandFromSeeds(
+	ctx context.Context,
+	engine *commonmodels.Engine,
+	seedResult *plugin.GraphQueryResult,
+	depth, nodeLimit, relationshipLimit int,
+	nodeColors, edgeColors map[string]string,
+	edgeDirections map[string]bool,
+	semantics *ontologySemantics,
+) (*models.SubgraphResult, error) {
+	out := &models.SubgraphResult{Nodes: []models.GraphNodeDTO{}, Edges: []models.GraphEdgeDTO{}}
+	nodeSeen := make(map[string]bool, nodeLimit)
+	edgeSeen := make(map[string]bool, relationshipLimit)
+	frontier := mergeExpandedSubgraph(out, buildSubgraph(seedResult, nodeColors, edgeColors, edgeDirections, semantics), nodeSeen, edgeSeen, nodeLimit, relationshipLimit)
+
+	for hop := 0; hop < depth && len(frontier) > 0 && len(out.Nodes) < nodeLimit && len(out.Edges) < relationshipLimit; hop++ {
+		remainingRelationships := relationshipLimit - len(out.Edges)
+		result, err := dbbridge.ExecuteGraphQuery(ctx, engine, expandFrontierQuery(frontier, seenIDs(edgeSeen), remainingRelationships))
+		if err != nil {
+			return nil, fmt.Errorf("expand hop %d failed: %w", hop+1, err)
+		}
+		frontier = mergeExpandedSubgraph(
+			out,
+			buildSubgraph(result, nodeColors, edgeColors, edgeDirections, semantics),
+			nodeSeen,
+			edgeSeen,
+			nodeLimit,
+			relationshipLimit,
+		)
+	}
+	return out, nil
+}
+
+func expandFrontierQuery(frontier, seenRelationshipIDs []string, relationshipLimit int) string {
+	seenPredicate := ""
+	if len(seenRelationshipIDs) > 0 {
+		seenPredicate = " AND NOT elementId(r) IN " + cypherStringList(seenRelationshipIDs)
+	}
+	return fmt.Sprintf(
+		"MATCH (n)-[r]-(m) WHERE elementId(n) IN %s AND %s%s WITH DISTINCT r RETURN startNode(r) AS source, r, endNode(r) AS target ORDER BY elementId(r) LIMIT %d",
+		cypherStringList(frontier),
+		businessRelationshipPredicate("r", "n", "m"),
+		seenPredicate,
+		relationshipLimit,
+	)
+}
+
+func seenIDs(seen map[string]bool) []string {
+	ids := make([]string, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func mergeExpandedSubgraph(
+	out, incoming *models.SubgraphResult,
+	nodeSeen, edgeSeen map[string]bool,
+	nodeLimit, relationshipLimit int,
+) []string {
+	if incoming == nil {
+		return nil
+	}
+	nodeByID := make(map[string]models.GraphNodeDTO, len(incoming.Nodes))
+	for _, node := range incoming.Nodes {
+		nodeByID[node.ID] = node
+	}
+	newNodeIDs := make([]string, 0)
+	addNode := func(id string) bool {
+		if nodeSeen[id] {
+			return true
+		}
+		if len(out.Nodes) >= nodeLimit {
+			return false
+		}
+		node, ok := nodeByID[id]
+		if !ok {
+			return false
+		}
+		nodeSeen[id] = true
+		out.Nodes = append(out.Nodes, node)
+		newNodeIDs = append(newNodeIDs, id)
+		return true
+	}
+
+	for _, node := range incoming.Nodes {
+		if len(incoming.Edges) > 0 {
+			break
+		}
+		addNode(node.ID)
+	}
+	for _, edge := range incoming.Edges {
+		if len(out.Edges) >= relationshipLimit || edgeSeen[edge.ID] {
+			continue
+		}
+		if !addNode(edge.Source) || !addNode(edge.Target) {
+			continue
+		}
+		edgeSeen[edge.ID] = true
+		out.Edges = append(out.Edges, edge)
+	}
+	return newNodeIDs
 }
 
 // FindPath 查找两节点间的最短路径（最多 10 跳）
@@ -272,7 +543,8 @@ func (s *Neo4jService) FindPath(ctx context.Context, graphID, tenantID uint, sou
 	if err != nil {
 		return nil, err
 	}
-	nodeColors, edgeColors := s.buildColorMaps(kg.OntologyID, tenantID)
+	ontology, _ := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
+	nodeColors, edgeColors, edgeDirections := buildVisualMaps(ontology)
 
 	cypher := fmt.Sprintf(
 		"MATCH p = shortestPath((a)-[*..10]-(b)) WHERE elementId(a) = '%s' AND elementId(b) = '%s' AND NONE(rel IN relationships(p) WHERE type(rel) IN "+internalRelationshipTypeList+") RETURN p",
@@ -282,7 +554,7 @@ func (s *Neo4jService) FindPath(ctx context.Context, graphID, tenantID uint, sou
 	if err != nil {
 		return nil, fmt.Errorf("path query failed: %w", err)
 	}
-	return buildSubgraph(result, nodeColors, edgeColors), nil
+	return buildSubgraph(result, nodeColors, edgeColors, edgeDirections, newOntologySemantics(ontology)), nil
 }
 
 // SyncConstraints 将实体类型的唯一属性约束同步到 Neo4j（幂等，使用 IF NOT EXISTS）
@@ -345,8 +617,42 @@ func (s *Neo4jService) GetConstraints(ctx context.Context, graphID, tenantID uin
 
 // ============ 内部辅助函数 ============
 
+func buildVisualMapsFromOntology(ontologyRepo *repository.OntologyRepository, ontologyID, tenantID uint) (nodeColors, edgeColors map[string]string, edgeDirections map[string]bool) {
+	ontology, err := ontologyRepo.GetDetail(ontologyID, tenantID)
+	if err != nil {
+		return buildVisualMaps(nil)
+	}
+	return buildVisualMaps(ontology)
+}
+
+func buildVisualMaps(ontology *models.Ontology) (nodeColors, edgeColors map[string]string, edgeDirections map[string]bool) {
+	nodeColors = make(map[string]string)
+	edgeColors = make(map[string]string)
+	edgeDirections = make(map[string]bool)
+	if ontology == nil {
+		return
+	}
+	byID := entityTypeByID(ontology.EntityTypes)
+	for _, entityType := range ontology.EntityTypes {
+		if entityType.Color == "" {
+			continue
+		}
+		nodeColors[entityType.Name] = entityType.Color
+		if labels := effectiveNodeLabels(&entityType, byID); len(labels) > 0 {
+			nodeColors[endpointShapeName(labels)] = entityType.Color
+		}
+	}
+	for _, relationType := range ontology.RelationTypes {
+		if relationType.Color != "" {
+			edgeColors[relationType.Name] = relationType.Color
+		}
+		edgeDirections[relationType.Name] = relationType.Directed
+	}
+	return
+}
+
 // buildSubgraph 将 GraphQueryResult 转换为 SubgraphResult（含本体着色）
-func buildSubgraph(result *plugin.GraphQueryResult, nodeColors, edgeColors map[string]string) *models.SubgraphResult {
+func buildSubgraph(result *plugin.GraphQueryResult, nodeColors, edgeColors map[string]string, edgeDirections map[string]bool, semantics *ontologySemantics) *models.SubgraphResult {
 	out := &models.SubgraphResult{
 		Nodes: []models.GraphNodeDTO{},
 		Edges: []models.GraphEdgeDTO{},
@@ -357,30 +663,23 @@ func buildSubgraph(result *plugin.GraphQueryResult, nodeColors, edgeColors map[s
 
 	for _, n := range result.GraphData.Nodes {
 		dto := models.GraphNodeDTO{
-			ID:         n.ElementId,
-			Labels:     n.Labels,
-			Color:      "#5B8FF9", // default
-			Properties: displayGraphProperties(n.Properties),
+			ID:          n.ElementId,
+			Kind:        "entity",
+			Labels:      n.Labels,
+			Color:       defaultGraphNodeColor,
+			DisplayName: n.ElementId,
+			Properties:  displayGraphProperties(n.Properties),
 		}
-		// 优先使用完整 label set 对应的 node shape，单 label 作为兼容兜底。
+		// 节点类型以完整 Label Set 对应的 node shape 为唯一语义。
 		if len(n.Labels) > 0 {
 			shapeName := endpointShapeName(n.Labels)
 			dto.EntityType = shapeName
 			if color, ok := nodeColors[shapeName]; ok {
 				dto.Color = color
-			} else if color, ok := nodeColors[n.Labels[0]]; ok {
-				dto.Color = color
 			}
 		}
-		// 从属性中提取展示名
-		for _, key := range []string{"name", "title", "label", "id"} {
-			if v, ok := n.Properties[key]; ok && v != nil {
-				dto.DisplayName = fmt.Sprintf("%v", v)
-				break
-			}
-		}
-		if dto.DisplayName == "" && len(n.Labels) > 0 {
-			dto.DisplayName = n.Labels[0]
+		if semantics != nil {
+			dto.DisplayName = semantics.displayName(n.Labels, n.Properties, n.ElementId)
 		}
 		out.Nodes = append(out.Nodes, dto)
 	}
@@ -391,15 +690,20 @@ func buildSubgraph(result *plugin.GraphQueryResult, nodeColors, edgeColors map[s
 		}
 		dto := models.GraphEdgeDTO{
 			ID:           r.ElementId,
+			Kind:         "entity",
 			Type:         r.Type,
 			RelationType: r.Type,
-			Color:        "#C0C0C0", // default
+			Color:        defaultGraphEdgeColor,
+			Directed:     true,
 			Source:       r.StartNodeId,
 			Target:       r.EndNodeId,
 			Properties:   displayGraphProperties(r.Properties),
 		}
 		if color, ok := edgeColors[r.Type]; ok {
 			dto.Color = color
+		}
+		if directed, ok := edgeDirections[r.Type]; ok {
+			dto.Directed = directed
 		}
 		out.Edges = append(out.Edges, dto)
 	}

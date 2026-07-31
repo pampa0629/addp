@@ -181,7 +181,7 @@ async function handleOpen() {
   loadingEngines.value = true
   try {
     const res = await ontologyAPI.listNeo4jEngines()
-    engines.value = Array.isArray(res) ? res : (res?.data || [])
+    engines.value = res
   } catch (e) {
     ElMessage.error(t('graph.inferFromEngine.loadEnginesFailed', { msg: e.message || e }))
   } finally {

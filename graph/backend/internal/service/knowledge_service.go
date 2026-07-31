@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/addp/common/dbbridge"
-	commonmodels "github.com/addp/common/models"
 	"github.com/addp/graph/internal/models"
 	"github.com/addp/graph/internal/repository"
 )
@@ -52,6 +52,7 @@ func (s *KnowledgeService) ListEntitiesByType(
 	}
 
 	ontology, _ := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
+	semantics := newOntologySemantics(ontology)
 	entityLabels := entityTypeNodeLabels(ontology, entityTypeName)
 	countResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
 		fmt.Sprintf("MATCH (n%s) WHERE %s RETURN count(n) AS total", nodeLabelsPattern(entityLabels), businessNodePredicate("n")))
@@ -74,15 +75,19 @@ func (s *KnowledgeService) ListEntitiesByType(
 		return nil, 0, fmt.Errorf("list failed: %w", err)
 	}
 
-	typeLabel := s.resolveEntityTypeLabel(kg.OntologyID, tenantID, entityTypeName)
+	typeLabel := entityTypeName
+	if entityType, ok := semantics.entityType(entityTypeName); ok {
+		typeLabel = entityType.Label
+	}
 	entities := make([]models.KSEntity, 0)
 	if result.GraphData != nil {
 		for _, n := range result.GraphData.Nodes {
 			entities = append(entities, models.KSEntity{
-				ID:         n.ElementId,
-				Type:       entityTypeName,
-				TypeLabel:  typeLabel,
-				Properties: n.Properties,
+				ID:          n.ElementId,
+				DisplayName: semantics.displayName(n.Labels, n.Properties, n.ElementId),
+				Type:        entityTypeName,
+				TypeLabel:   typeLabel,
+				Properties:  n.Properties,
 			})
 		}
 	}
@@ -110,12 +115,15 @@ func (s *KnowledgeService) GetEntityDetail(
 	}
 
 	n := result.GraphData.Nodes[0]
-	entityType, typeLabel := s.enrichEntityType(kg.OntologyID, tenantID, n.Labels)
+	ontology, _ := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
+	semantics := newOntologySemantics(ontology)
+	entityType, typeLabel := semantics.resolveEntityType(n.Labels)
 	return &models.KSEntity{
-		ID:         n.ElementId,
-		Type:       entityType,
-		TypeLabel:  typeLabel,
-		Properties: n.Properties,
+		ID:          n.ElementId,
+		DisplayName: semantics.displayName(n.Labels, n.Properties, n.ElementId),
+		Type:        entityType,
+		TypeLabel:   typeLabel,
+		Properties:  n.Properties,
 	}, nil
 }
 
@@ -133,6 +141,8 @@ func (s *KnowledgeService) GetEntityNeighbors(
 	if limit <= 0 || limit > 200 {
 		limit = 100
 	}
+	ontology, _ := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
+	semantics := newOntologySemantics(ontology)
 
 	// 获取中心节点
 	nodeResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
@@ -141,12 +151,13 @@ func (s *KnowledgeService) GetEntityNeighbors(
 		return nil, fmt.Errorf("node not found: %s", nodeID)
 	}
 	centerNode := nodeResult.GraphData.Nodes[0]
-	centerType, centerTypeLabel := s.enrichEntityType(kg.OntologyID, tenantID, centerNode.Labels)
+	centerType, centerTypeLabel := semantics.resolveEntityType(centerNode.Labels)
 	center := models.KSEntity{
-		ID:         centerNode.ElementId,
-		Type:       centerType,
-		TypeLabel:  centerTypeLabel,
-		Properties: centerNode.Properties,
+		ID:          centerNode.ElementId,
+		DisplayName: semantics.displayName(centerNode.Labels, centerNode.Properties, centerNode.ElementId),
+		Type:        centerType,
+		TypeLabel:   centerTypeLabel,
+		Properties:  centerNode.Properties,
 	}
 
 	// 查询邻居：显式返回 elementId(m) 以便对齐
@@ -165,17 +176,17 @@ func (s *KnowledgeService) GetEntityNeighbors(
 	nodeIndex := make(map[string]models.KSEntity)
 	if result.GraphData != nil {
 		for _, n := range result.GraphData.Nodes {
-			eType, eTypeLabel := s.enrichEntityType(kg.OntologyID, tenantID, n.Labels)
+			eType, eTypeLabel := semantics.resolveEntityType(n.Labels)
 			nodeIndex[n.ElementId] = models.KSEntity{
-				ID:         n.ElementId,
-				Type:       eType,
-				TypeLabel:  eTypeLabel,
-				Properties: n.Properties,
+				ID:          n.ElementId,
+				DisplayName: semantics.displayName(n.Labels, n.Properties, n.ElementId),
+				Type:        eType,
+				TypeLabel:   eTypeLabel,
+				Properties:  n.Properties,
 			}
 		}
 	}
 
-	relTypeLabels := s.resolveRelationTypeLabels(kg.OntologyID, tenantID)
 	neighbors := make([]models.KSNeighborItem, 0, len(result.Rows))
 	for _, row := range result.Rows {
 		mEid := fmt.Sprintf("%v", row["m_eid"])
@@ -184,7 +195,7 @@ func (s *KnowledgeService) GetEntityNeighbors(
 			continue
 		}
 		relType := fmt.Sprintf("%v", row["rel_type"])
-		relLabel := relTypeLabels[relType]
+		relLabel := semantics.relationLabel[relType]
 		if relLabel == "" {
 			relLabel = relType
 		}
@@ -217,16 +228,35 @@ func (s *KnowledgeService) SearchEntities(
 		return nil, 0, err
 	}
 
-	typeFilter := ""
-	if entityType != "" {
-		ontology, _ := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
-		typeFilter = fmt.Sprintf(" AND all(label IN %s WHERE label IN labels(n))", cypherStringList(entityTypeNodeLabels(ontology, entityType)))
+	ontology, err := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("get search ontology failed: %w", err)
 	}
-
+	semantics := newOntologySemantics(ontology)
+	allDefinitions := buildSearchIndexDefinitions(graphID, ontology)
+	if strings.TrimSpace(query) == "" {
+		return []models.KSEntity{}, 0, nil
+	}
+	if err := syncSearchIndexes(ctx, engine, graphID, allDefinitions); err != nil {
+		return nil, 0, fmt.Errorf("sync search indexes failed: %w", err)
+	}
+	definitions := allDefinitions
+	if entityType != "" {
+		filtered := definitions[:0]
+		for _, definition := range definitions {
+			if definition.EntityType == entityType {
+				filtered = append(filtered, definition)
+			}
+		}
+		definitions = filtered
+	}
+	if len(definitions) == 0 {
+		return []models.KSEntity{}, 0, nil
+	}
+	searchSubquery := fulltextSearchSubquery(definitions, query)
 	countCypher := fmt.Sprintf(
-		"MATCH (n) WHERE "+businessNodePredicate("n")+" AND any(key IN keys(n) WHERE toLower(toString(n[key])) CONTAINS toLower('%s'))%s "+
-			"RETURN count(n) AS total",
-		escapeCypher(query), typeFilter,
+		"%s WITH node, max(score) AS score WHERE %s RETURN count(node) AS total",
+		searchSubquery, businessNodePredicate("node"),
 	)
 	countResult, err := dbbridge.ExecuteGraphQuery(ctx, engine, countCypher)
 	if err != nil {
@@ -242,9 +272,8 @@ func (s *KnowledgeService) SearchEntities(
 
 	skip := (page - 1) * pageSize
 	cypher := fmt.Sprintf(
-		"MATCH (n) WHERE "+businessNodePredicate("n")+" AND any(key IN keys(n) WHERE toLower(toString(n[key])) CONTAINS toLower('%s'))%s "+
-			"RETURN n SKIP %d LIMIT %d",
-		escapeCypher(query), typeFilter, skip, pageSize,
+		"%s WITH node, max(score) AS score WHERE %s RETURN node ORDER BY score DESC, elementId(node) SKIP %d LIMIT %d",
+		searchSubquery, businessNodePredicate("node"), skip, pageSize,
 	)
 	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, cypher)
 	if err != nil {
@@ -254,12 +283,13 @@ func (s *KnowledgeService) SearchEntities(
 	entities := make([]models.KSEntity, 0)
 	if result.GraphData != nil {
 		for _, n := range result.GraphData.Nodes {
-			eType, eTypeLabel := s.enrichEntityType(kg.OntologyID, tenantID, n.Labels)
+			eType, eTypeLabel := semantics.resolveEntityType(n.Labels)
 			entities = append(entities, models.KSEntity{
-				ID:         n.ElementId,
-				Type:       eType,
-				TypeLabel:  eTypeLabel,
-				Properties: n.Properties,
+				ID:          n.ElementId,
+				DisplayName: semantics.displayName(n.Labels, n.Properties, n.ElementId),
+				Type:        eType,
+				TypeLabel:   eTypeLabel,
+				Properties:  n.Properties,
 			})
 		}
 	}
@@ -281,12 +311,6 @@ func (s *KnowledgeService) GetSubgraph(
 	graphID, tenantID uint,
 	req *models.KSSubgraphRequest,
 ) (*models.SubgraphResult, error) {
-	kg, engine, err := s.neo4jSvc.getGraphAndEngine(graphID, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	nodeColors, edgeColors := s.neo4jSvc.buildColorMaps(kg.OntologyID, tenantID)
-
 	depth := req.Depth
 	if depth <= 0 {
 		depth = 2
@@ -302,20 +326,12 @@ func (s *KnowledgeService) GetSubgraph(
 		limit = 200
 	}
 
-	// 收集 N 跳范围内节点，再查边
-	cypher := fmt.Sprintf(
-		"MATCH (n)-[r*1..%d]-(m) WHERE elementId(n) = '%s' "+
-			"AND NONE(rel IN r WHERE type(rel) IN "+internalRelationshipTypeList+") "+
-			"AND "+businessNodePredicate("n")+" AND "+businessNodePredicate("m")+" "+
-			"RETURN DISTINCT n, r, m LIMIT %d",
-		depth, escapeCypher(req.NodeID), limit,
-	)
-	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, cypher)
-	if err != nil {
-		// 回退到简单展开
-		return s.neo4jSvc.ExpandNode(ctx, graphID, tenantID, req.NodeID, limit)
-	}
-	return buildSubgraph(result, nodeColors, edgeColors), nil
+	return s.neo4jSvc.Expand(ctx, graphID, tenantID, &models.ExpandRequest{
+		Target:            models.ExpandTarget{Kind: "entity", ID: req.NodeID},
+		Depth:             depth,
+		NodeLimit:         limit,
+		RelationshipLimit: min(limit*2, MaxExpandRelationshipLimit),
+	})
 }
 
 // GetOntologyDescription 本体感知的图谱描述（PostgreSQL 本体 + Neo4j 统计）
@@ -323,7 +339,7 @@ func (s *KnowledgeService) GetOntologyDescription(
 	ctx context.Context,
 	graphID, tenantID uint,
 ) (*models.KSOntologyResponse, error) {
-	kg, engine, err := s.neo4jSvc.getGraphAndEngine(graphID, tenantID)
+	kg, err := s.graphRepo.GetByID(graphID, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -333,17 +349,20 @@ func (s *KnowledgeService) GetOntologyDescription(
 		return nil, fmt.Errorf("get ontology failed: %w", err)
 	}
 
-	// 各关系类型数量
-	relCounts := make(map[string]int64)
-	relCountResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		"MATCH (a)-[r]->(b) WHERE "+businessRelationshipPredicate("r", "a", "b")+" RETURN type(r) AS rel_type, count(r) AS cnt")
-	if err == nil {
-		for _, row := range relCountResult.Rows {
-			if rt, ok := row["rel_type"]; ok {
-				if cnt, ok2 := row["cnt"]; ok2 {
-					relCounts[fmt.Sprintf("%v", rt)] = toInt64(cnt)
-				}
-			}
+	snapshot, err := s.neo4jSvc.GetBrowseSnapshot(ctx, graphID, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("get browse snapshot failed: %w", err)
+	}
+	nodeCounts := make(map[string]int64, len(snapshot.Schema.NodeShapes))
+	for _, shape := range snapshot.Schema.NodeShapes {
+		if shape.Count != nil {
+			nodeCounts[nodeLabelsKey(shape.Labels)] = *shape.Count
+		}
+	}
+	relCounts := make(map[string]int64, len(snapshot.Schema.RelationshipShapes))
+	for _, shape := range snapshot.Schema.RelationshipShapes {
+		if shape.Count != nil {
+			relCounts[shape.Type] = *shape.Count
 		}
 	}
 
@@ -362,10 +381,11 @@ func (s *KnowledgeService) GetOntologyDescription(
 			}
 		}
 		entityTypes = append(entityTypes, models.KSEntityType{
-			Name:       et.Name,
-			Label:      et.Label,
-			Properties: props,
-			Count:      s.countNodesByLabels(ctx, engine, effectiveNodeLabels(&et, entityTypesByID)),
+			Name:            et.Name,
+			Label:           et.Label,
+			DisplayProperty: et.DisplayProperty,
+			Properties:      props,
+			Count:           nodeCounts[nodeLabelsKey(effectiveNodeLabels(&et, entityTypesByID))],
 		})
 	}
 
@@ -396,87 +416,11 @@ func (s *KnowledgeService) GetOntologyDescription(
 	}, nil
 }
 
-func (s *KnowledgeService) countNodesByLabels(ctx context.Context, engine *commonmodels.Engine, labels []string) int64 {
-	if engine == nil || len(labels) == 0 {
-		return 0
-	}
-	result, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		fmt.Sprintf("MATCH (n%s) WHERE %s RETURN count(n) AS cnt", nodeLabelsPattern(labels), businessNodePredicate("n")))
-	if err != nil || len(result.Rows) == 0 {
-		return 0
-	}
-	return toInt64(result.Rows[0]["cnt"])
-}
-
-// GetStats 复用 neo4jSvc.GetStats
+// GetStats 复用统一浏览快照。
 func (s *KnowledgeService) GetStats(ctx context.Context, graphID, tenantID uint) (*models.BrowseStats, error) {
-	return s.neo4jSvc.GetStats(ctx, graphID, tenantID)
-}
-
-// ─── 内部辅助 ───────────────────────────────────────────
-
-func (s *KnowledgeService) enrichEntityType(ontologyID, tenantID uint, labels []string) (string, string) {
-	if len(labels) == 0 {
-		return "", ""
-	}
-	ontology, err := s.ontologyRepo.GetDetail(ontologyID, tenantID)
+	snapshot, err := s.neo4jSvc.GetBrowseSnapshot(ctx, graphID, tenantID)
 	if err != nil {
-		shapeName := endpointShapeName(labels)
-		return shapeName, shapeName
+		return nil, err
 	}
-	byID := entityTypeByID(ontology.EntityTypes)
-	for _, et := range ontology.EntityTypes {
-		if sameStringSet(effectiveNodeLabels(&et, byID), labels) {
-			label := et.Label
-			if label == "" {
-				label = et.Name
-			}
-			return et.Name, label
-		}
-	}
-	for _, lbl := range labels {
-		for _, et := range ontology.EntityTypes {
-			if et.Name == lbl {
-				label := et.Label
-				if label == "" {
-					label = et.Name
-				}
-				return et.Name, label
-			}
-		}
-	}
-	shapeName := endpointShapeName(labels)
-	return shapeName, shapeName
-}
-
-func (s *KnowledgeService) resolveEntityTypeLabel(ontologyID, tenantID uint, entityTypeName string) string {
-	ontology, err := s.ontologyRepo.GetDetail(ontologyID, tenantID)
-	if err != nil {
-		return entityTypeName
-	}
-	for _, et := range ontology.EntityTypes {
-		if et.Name == entityTypeName {
-			if et.Label != "" {
-				return et.Label
-			}
-			return et.Name
-		}
-	}
-	return entityTypeName
-}
-
-func (s *KnowledgeService) resolveRelationTypeLabels(ontologyID, tenantID uint) map[string]string {
-	m := make(map[string]string)
-	ontology, err := s.ontologyRepo.GetDetail(ontologyID, tenantID)
-	if err != nil {
-		return m
-	}
-	for _, rt := range ontology.RelationTypes {
-		label := rt.Label
-		if label == "" {
-			label = rt.Name
-		}
-		m[rt.Name] = label
-	}
-	return m
+	return &snapshot.Stats, nil
 }
