@@ -7,7 +7,8 @@ import (
 )
 
 type fakeSQLRuntimeProvider struct {
-	lastSQL string
+	lastSQL     string
+	lastOptions QueryOptions
 }
 
 func (p *fakeSQLRuntimeProvider) Type() string { return "postgresql" }
@@ -41,14 +42,31 @@ func (p *fakeSQLRuntimeProvider) ExecuteRuntimeQuery(context.Context, Connection
 
 func (p *fakeSQLRuntimeProvider) SQLDialect() string { return "postgresql" }
 
-func (p *fakeSQLRuntimeProvider) ExecuteSQL(_ context.Context, _ ConnectionInfo, sql string, _ QueryOptions) (*QueryResult, error) {
+func (p *fakeSQLRuntimeProvider) SupportsParameterizedQueries() bool { return true }
+
+func (p *fakeSQLRuntimeProvider) ExecuteSQL(_ context.Context, _ ConnectionInfo, sql string, opts QueryOptions) (*QueryResult, error) {
 	p.lastSQL = sql
+	p.lastOptions = opts
 	return &QueryResult{
 		Columns: []string{"id"},
 		Rows: []map[string]interface{}{
 			{"id": 1},
 		},
 	}, nil
+}
+
+func TestReadSQLBatchPassesBoundParameters(t *testing.T) {
+	provider := &fakeSQLRuntimeProvider{}
+	_, err := ReadSQLBatch(context.Background(), provider, nil, CatalogPath{}, BatchReadOptions{
+		Query: "SELECT * FROM public.yanshi WHERE status = ?",
+		Args:  []interface{}{"active"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.lastOptions.Args) != 1 || provider.lastOptions.Args[0] != "active" {
+		t.Fatalf("query args = %#v", provider.lastOptions.Args)
+	}
 }
 
 func TestReadSQLBatchUsesOffsetForTablePath(t *testing.T) {

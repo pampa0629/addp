@@ -2,12 +2,9 @@ package scanruntime
 
 import (
 	"context"
-	"strings"
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/format"
-	_ "github.com/addp/common/format/builtin"
 	commonModels "github.com/addp/common/models"
 )
 
@@ -56,40 +53,10 @@ func mergeDatabaseTableInfo(base, described datatype.TableInfo) datatype.TableIn
 	if len(described.Native) == 0 {
 		described.Native = base.Native
 	}
-	described.Fields = normalizeDatabaseFields(described.Fields)
 	if len(described.PrimaryKey) == 0 {
 		described.PrimaryKey = primaryKeyFieldNames(described.Fields)
 	}
 	return described
-}
-
-func normalizeDatabaseFields(input []datatype.FieldInfo) []datatype.FieldInfo {
-	fields := make([]datatype.FieldInfo, 0, len(input))
-	for _, field := range input {
-		nativeType := field.NativeType
-		if nativeType == "" {
-			nativeType = string(field.Type)
-		}
-		field.NativeType = nativeType
-		field.Type = standardizeDatabaseFieldType(nativeType, string(field.Type))
-		fields = append(fields, field)
-	}
-	return fields
-}
-
-func standardizeDatabaseFieldType(nativeType, fieldType string) datatype.FieldType {
-	if nativeType == "" && fieldType == "" {
-		return datatype.FieldTypeUnknown
-	}
-	typeToMap := nativeType
-	if typeToMap == "" {
-		typeToMap = fieldType
-	}
-	mapped := format.InferCommonFieldType(strings.ToLower(strings.TrimSpace(typeToMap)))
-	if mapped == "" || mapped == datatype.FieldTypeUnknown {
-		return datatype.FieldTypeString
-	}
-	return mapped
 }
 
 func primaryKeyFieldNames(fields []datatype.FieldInfo) []string {

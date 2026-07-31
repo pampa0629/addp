@@ -168,6 +168,10 @@ func (p *PostgreSQLPlugin) SQLDialect() string {
 	return p.GetDialect()
 }
 
+func (p *PostgreSQLPlugin) SupportsParameterizedQueries() bool {
+	return true
+}
+
 func (p *PostgreSQLPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
 	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts)
 }
@@ -340,25 +344,28 @@ func postgresTableNative(tableType, relkind string) map[string]interface{} {
 
 // ListColumns 列出指定表的所有列
 func (p *PostgreSQLPlugin) listColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]datatype.FieldInfo, error) {
-	var fields []datatype.FieldInfo
+	var columns []postgresColumnInfo
 
 	query := `
 		SELECT
 			c.column_name as name,
-			CASE
-				WHEN c.data_type = 'USER-DEFINED' THEN c.udt_name
-				ELSE c.data_type
-			END as native_type,
+			c.data_type as data_type,
+			c.udt_name as udt_name,
+			format_type(a.atttypid, a.atttypmod) as native_type,
 			CASE WHEN c.is_nullable = 'YES' THEN true ELSE false END as nullable,
 			CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as primary_key,
-			COALESCE(
-				col_description(
-					(quote_ident(c.table_schema)||'.'||quote_ident(c.table_name))::regclass,
-					c.ordinal_position
-				),
-				''
-			) as comment
+			COALESCE(col_description(cls.oid, a.attnum), '') as comment
 		FROM information_schema.columns c
+		JOIN pg_catalog.pg_namespace n
+			ON n.nspname = c.table_schema
+		JOIN pg_catalog.pg_class cls
+			ON cls.relnamespace = n.oid
+			AND cls.relname = c.table_name
+		JOIN pg_catalog.pg_attribute a
+			ON a.attrelid = cls.oid
+			AND a.attname = c.column_name
+			AND a.attnum > 0
+			AND NOT a.attisdropped
 		LEFT JOIN (
 			SELECT kcu.column_name
 			FROM information_schema.table_constraints tc
@@ -374,11 +381,15 @@ func (p *PostgreSQLPlugin) listColumns(ctx context.Context, db *gorm.DB, schema,
 		ORDER BY c.ordinal_position
 	`
 
-	err := db.WithContext(ctx).Raw(query, schema, table).Scan(&fields).Error
+	err := db.WithContext(ctx).Raw(query, schema, table).Scan(&columns).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list columns: %w", err)
 	}
 
+	fields := make([]datatype.FieldInfo, 0, len(columns))
+	for _, column := range columns {
+		fields = append(fields, postgresFieldInfoFromColumn(column))
+	}
 	return plugin.NormalizeFieldInfos(fields), nil
 }
 

@@ -70,6 +70,21 @@ func TestClickHouseFieldInfoMapsDefaultExpression(t *testing.T) {
 	}
 }
 
+func TestClickHouseFieldInfoMapsNativeTypesToCanonicalTypes(t *testing.T) {
+	tests := map[string]datatype.FieldType{
+		"Int64":                         datatype.FieldTypeBigInt,
+		"Nullable(String)":              datatype.FieldTypeString,
+		"Decimal(18, 2)":                datatype.FieldTypeDecimal,
+		"Array(LowCardinality(String))": datatype.FieldTypeArray,
+	}
+	for nativeType, want := range tests {
+		field := clickhouseFieldInfo(clickhouseColumnRow{Name: "value", NativeType: nativeType})
+		if field.Type != want || field.NativeType != nativeType {
+			t.Fatalf("clickhouseFieldInfo(%q) = %#v, want type %q", nativeType, field, want)
+		}
+	}
+}
+
 func TestClickHouseFieldInfoMapsGeneratedExpression(t *testing.T) {
 	tests := []string{"MATERIALIZED", "ALIAS"}
 	for _, defaultKind := range tests {

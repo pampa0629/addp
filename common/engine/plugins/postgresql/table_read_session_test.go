@@ -42,6 +42,29 @@ func TestPostgresFieldInfoFromColumnKeepsSpatialNativeType(t *testing.T) {
 	}
 }
 
+func TestPostgresFieldInfoFromColumnMapsNativeTypesToCanonicalTypes(t *testing.T) {
+	tests := []struct {
+		name       string
+		column     postgresColumnInfo
+		wantType   datatype.FieldType
+		wantNative string
+	}{
+		{name: "integer", column: postgresColumnInfo{DataType: "integer", UDTName: "int4", NativeType: "integer"}, wantType: datatype.FieldTypeInt, wantNative: "integer"},
+		{name: "numeric", column: postgresColumnInfo{DataType: "numeric", UDTName: "numeric", NativeType: "numeric(18,2)"}, wantType: datatype.FieldTypeDecimal, wantNative: "numeric(18,2)"},
+		{name: "text", column: postgresColumnInfo{DataType: "text", UDTName: "text", NativeType: "text"}, wantType: datatype.FieldTypeString, wantNative: "text"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.column.Name = tt.name
+			field := postgresFieldInfoFromColumn(tt.column)
+			if field.Type != tt.wantType || field.NativeType != tt.wantNative {
+				t.Fatalf("field = %#v, want type %q and native type %q", field, tt.wantType, tt.wantNative)
+			}
+		})
+	}
+}
+
 func TestPostgresReadBatchFieldsKeepsTableFieldFactsInColumnOrder(t *testing.T) {
 	fields := postgresReadBatchFields([]string{"id", "SmGeometry"}, []datatype.FieldInfo{
 		{Name: "SmGeometry", Type: "geometry", NativeType: "geometry(MultiPolygon,4326)"},

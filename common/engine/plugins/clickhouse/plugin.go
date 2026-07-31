@@ -115,6 +115,10 @@ func (p *ClickHousePlugin) SQLDialect() string {
 	return p.GetDialect()
 }
 
+func (p *ClickHousePlugin) SupportsParameterizedQueries() bool {
+	return true
+}
+
 func (p *ClickHousePlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
 	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts)
 }
@@ -302,7 +306,13 @@ type clickhouseColumnRow struct {
 }
 
 func clickhouseFieldInfo(row clickhouseColumnRow) datatype.FieldInfo {
-	field := plugin.FieldInfoFromNative(row.Name, row.NativeType, row.Nullable, false, row.Comment)
+	field := datatype.FieldInfo{
+		Name:       row.Name,
+		Type:       clickhouseCommonFieldType(row.NativeType),
+		NativeType: row.NativeType,
+		Nullable:   row.Nullable,
+		Comment:    row.Comment,
+	}
 	expression := strings.TrimSpace(row.DefaultExpression)
 	if expression == "" {
 		return field

@@ -119,9 +119,13 @@ func (p *SparkSQLPlugin) DescribeCatalogFacts(ctx context.Context, connInfo plug
 		if name == "" || nativeType == "" || strings.HasPrefix(name, "#") {
 			continue
 		}
-		fields = append(fields, plugin.FieldInfoFromNative(
-			name, nativeType, true, false, sparkRowString(row, "comment"),
-		))
+		fields = append(fields, datatype.FieldInfo{
+			Name:       name,
+			Type:       sparkCommonFieldType(nativeType),
+			NativeType: nativeType,
+			Nullable:   true,
+			Comment:    sparkRowString(row, "comment"),
+		})
 	}
 	fields = plugin.NormalizeFieldInfos(fields)
 	table := sparkSQLTableInfo(tableName)
@@ -167,6 +171,42 @@ func sparkCatalogBusinessSegments(path plugin.CatalogPath) ([]plugin.CatalogSegm
 
 func sparkSQLTableInfo(tableName string) datatype.TableInfo {
 	return datatype.TableInfo{Name: tableName, Kind: plugin.CatalogKindTable}
+}
+
+func sparkCommonFieldType(nativeType string) datatype.FieldType {
+	normalized := strings.ToLower(strings.TrimSpace(nativeType))
+	baseType := normalized
+	if index := strings.IndexAny(baseType, "(<"); index > 0 {
+		baseType = baseType[:index]
+	}
+	switch baseType {
+	case "char", "varchar", "string":
+		return datatype.FieldTypeString
+	case "boolean", "bool":
+		return datatype.FieldTypeBool
+	case "binary":
+		return datatype.FieldTypeBytes
+	case "byte", "tinyint", "short", "smallint", "int", "integer":
+		return datatype.FieldTypeInt
+	case "long", "bigint":
+		return datatype.FieldTypeBigInt
+	case "float":
+		return datatype.FieldTypeFloat
+	case "double":
+		return datatype.FieldTypeDouble
+	case "decimal", "numeric":
+		return datatype.FieldTypeDecimal
+	case "date":
+		return datatype.FieldTypeDate
+	case "timestamp", "timestamp_ltz", "timestamp_ntz":
+		return datatype.FieldTypeTimestamp
+	case "array":
+		return datatype.FieldTypeArray
+	case "map", "struct":
+		return datatype.FieldTypeJSON
+	default:
+		return datatype.FieldTypeUnknown
+	}
 }
 
 func sparkRowString(row map[string]interface{}, candidates ...string) string {

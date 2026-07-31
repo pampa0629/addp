@@ -158,6 +158,8 @@ type CatalogFactsProvider interface {
 
 `CatalogFacts` 是 engine 侧 catalog entry 的统一事实详情结果。它回答“这个条目自身有哪些 engine 直接知道的事实”，不同于 `CatalogEntry` 的实时列表结构。对于 table 型 leaf，必须优先填充 `Table *datatype.TableInfo`，字段、主键、行数、大小、更新时间、表类型、注释和表级 native 事实都随 `TableInfo` 传递；对于 graph 型 leaf，必须优先填充 `Graph *datatype.GraphInfo`，节点结构、关系结构、连接模式、属性结构、节点数和关系数都随 `GraphInfo` 传递；对于 file / object leaf，必须优先填充 `Storage *CatalogStorageFacts` 表达名称、路径、大小、MIME、etag、扩展名等存储事实。`CatalogFacts` 不保留 `Stats` 兜底口袋；公共消费方需要 table 字段、graph facts 或完整 storage facts 时，应使用 `CatalogFactsTableInfo()` / `CatalogFactsGraphInfo()` 或直接消费 `CatalogFacts.Storage`；构造列表 entry 时应使用 `CatalogEntryTableInfo()` / `CatalogEntryStorageInfo()` 这类摘要 helper。
 
+`CatalogFacts.Table.Fields` 必须满足统一字段类型契约：`FieldInfo.Type` 是已经映射完成的 ADDP 标准字段类型，`FieldInfo.NativeType` 是来源引擎的原生类型。Provider 必须显式选择自身的类型映射规则，不得把 `integer`、`numeric`、`String` 等原生类型交给公共 canonical parser 猜测，也不得依赖遍历全局 mapper 的无来源推断。无法映射时返回显式 `type=unknown`；`type` 为空是 Provider 契约错误。公共 normalizer 只负责规范化和校验，不得从 `native_type` 补推 `type`。
+
 `CatalogFacts` 不承载 `DocumentInfo`、`MediaInfo` 或 `ContainerInfo`。文档、图片、音视频、压缩包、Excel、SQLite / GeoPackage 等 encoded content 的标题、语言、页数、宽高、时长、编码、颜色空间、内部 child 列表、默认入口等信息，必须由 Meta / Manager / Transfer 等编排层先通过 StoreProvider 构造内容读取抽象，再交给 `common/format` 的 `DocumentInfoProvider`、`MediaInfoProvider`、`ContainerInfoProvider` 或对应 content reader 提取。Engine 只提供 catalog / storage 事实和内容访问能力，不读取内容后裁决 format 语义。
 
 Kafka topic 使用 `CatalogFacts.Topic *TopicFacts` 表达实时 topic 事实。第一版 `TopicFacts` 只允许 `PartitionCount`、`ReplicationFactor` 和按 partition 的 leader / replica / ISR / earliest offset / latest offset 诊断；不得读取消息样本推断 schema，也不得把 partition 投影为 catalog child。Topic facts 默认只用于实时诊断，在 Meta attributes 正式定义持久化结构前不得塞入 `Native` 或其他兜底 map。

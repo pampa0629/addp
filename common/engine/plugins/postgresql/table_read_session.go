@@ -335,6 +335,8 @@ type postgresColumnInfo struct {
 	UDTName    string
 	NativeType string
 	Nullable   bool
+	PrimaryKey bool
+	Comment    string
 }
 
 func (c postgresColumnInfo) IsSpatial() bool {
@@ -401,6 +403,8 @@ func postgresFieldInfoFromColumn(column postgresColumnInfo) datatype.FieldInfo {
 		Type:       postgresCommonFieldType(column, nativeType),
 		NativeType: nativeType,
 		Nullable:   column.Nullable,
+		PrimaryKey: column.PrimaryKey,
+		Comment:    column.Comment,
 	}
 }
 

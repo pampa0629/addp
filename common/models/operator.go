@@ -48,29 +48,3 @@ type ParameterDescriptor struct {
 	UIType      string                         `json:"ui_type,omitempty"`    // UI 组件类型 (resource_tree_picker 等)
 	UIConfig    map[string]interface{}         `json:"ui_config,omitempty"`  // UI 组件配置参数
 }
-
-// OperatorsResponse 表达算子列表返回格式。
-// 工作流引擎通过 WorkflowRuntimeProvider.ListOperators() 获取，
-// 当前 addp.workflow/v1 HTTP 入口为 GET /api/operators。
-type OperatorsResponse struct {
-	Status    string               `json:"status"`    // "success"
-	Operators []OperatorDescriptor `json:"operators"` // 算子列表
-	Count     int                  `json:"count"`     // 算子总数
-}
-
-// OperatorInvokeRequest 表达单算子 direct 调用请求格式。
-// 当前 addp.workflow/v1 入口为 POST /api/operators/{name}/invoke。
-type OperatorInvokeRequest struct {
-	Params  map[string]interface{} `json:"params" binding:"required"` // 算子参数
-	Runtime map[string]interface{} `json:"runtime,omitempty"`         // 执行期运行时绑定参数
-}
-
-// OperatorInvokeResponse 表达单算子 direct 调用响应格式。
-type OperatorInvokeResponse struct {
-	Status          string                 `json:"status"`                 // "success"/"failed"
-	ExecutionID     string                 `json:"execution_id,omitempty"` // runtime 本地执行ID，不是 ADDP 任务ID
-	Result          map[string]interface{} `json:"result,omitempty"`       // 调用结果
-	Error           string                 `json:"error,omitempty"`        // 错误信息
-	Message         string                 `json:"message,omitempty"`      // 提示信息
-	ExecutionTimeMs *float64               `json:"execution_time_ms,omitempty"`
-}

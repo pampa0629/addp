@@ -6,7 +6,7 @@ import (
 	"github.com/addp/common/datatype"
 )
 
-func TestMergeDatabaseTableInfoPreservesListFactsAndNormalizesFields(t *testing.T) {
+func TestMergeDatabaseTableInfoPreservesListAndProviderFieldFacts(t *testing.T) {
 	rowCount := int64(12)
 	estimatedRowCount := int64(15)
 	sizeBytes := int64(2048)
@@ -24,7 +24,7 @@ func TestMergeDatabaseTableInfoPreservesListFactsAndNormalizesFields(t *testing.
 	described := datatype.TableInfo{
 		Fields: []datatype.FieldInfo{
 			{Name: "id", Type: datatype.FieldTypeBigInt, PrimaryKey: true},
-			{Name: "name", NativeType: "varchar"},
+			{Name: "name", Type: datatype.FieldTypeString, NativeType: "varchar"},
 		},
 	}
 
@@ -46,7 +46,7 @@ func TestMergeDatabaseTableInfoPreservesListFactsAndNormalizesFields(t *testing.
 		t.Fatalf("Native = %#v", merged.Native)
 	}
 	if len(merged.Fields) != 2 ||
-		merged.Fields[0].NativeType != "bigint" ||
+		merged.Fields[0].NativeType != "" ||
 		merged.Fields[0].Type != datatype.FieldTypeBigInt ||
 		merged.Fields[1].Type != datatype.FieldTypeString {
 		t.Fatalf("Fields = %#v", merged.Fields)
@@ -69,7 +69,7 @@ func TestMergeDatabaseTableInfoKeepsExactAndEstimatedCountsSeparate(t *testing.T
 		Kind:              "table",
 		EstimatedRowCount: &describedEstimate,
 		Fields: []datatype.FieldInfo{
-			{Name: "smgeometry", NativeType: "geometry"},
+			{Name: "smgeometry", Type: datatype.FieldTypeGeometry, NativeType: "geometry"},
 		},
 	}
 
@@ -80,5 +80,16 @@ func TestMergeDatabaseTableInfoKeepsExactAndEstimatedCountsSeparate(t *testing.T
 	}
 	if merged.EstimatedRowCount == nil || *merged.EstimatedRowCount != describedEstimate {
 		t.Fatalf("EstimatedRowCount = %#v, want estimate %d", merged.EstimatedRowCount, describedEstimate)
+	}
+}
+
+func TestMergeDatabaseTableInfoDoesNotInferCanonicalTypeFromNativeType(t *testing.T) {
+	described := datatype.TableInfo{Fields: []datatype.FieldInfo{{
+		Name: "payload", Type: datatype.FieldTypeUnknown, NativeType: "text",
+	}}}
+
+	merged := mergeDatabaseTableInfo(datatype.TableInfo{Name: "events"}, described)
+	if len(merged.Fields) != 1 || merged.Fields[0].Type != datatype.FieldTypeUnknown || merged.Fields[0].NativeType != "text" {
+		t.Fatalf("Fields = %#v, want provider canonical type preserved", merged.Fields)
 	}
 }

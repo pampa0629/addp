@@ -274,6 +274,8 @@ func clickhouseCommonFieldType(nativeType string) datatype.FieldType {
 		return datatype.FieldTypeUUID
 	case "JSON":
 		return datatype.FieldTypeJSON
+	case "Array":
+		return datatype.FieldTypeArray
 	default:
 		return datatype.FieldTypeUnknown
 	}

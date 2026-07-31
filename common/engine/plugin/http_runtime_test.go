@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func TestHTTPExecuteWorkflowIncludesRuntimeFields(t *testing.T) {
+func TestHTTPExecuteWorkflowUsesCanonicalRequestShape(t *testing.T) {
 	var got map[string]interface{}
 	server := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -52,8 +52,12 @@ func TestHTTPExecuteWorkflowIncludesRuntimeFields(t *testing.T) {
 			"input":     "value",
 			"engine_id": float64(99),
 		},
-		Runtime: map[string]interface{}{
-			"engine_id": float64(34),
+		EngineID: 34,
+		Runtime: &WorkflowRuntimeContext{
+			ExecutionAuthorization: WorkflowExecutionAuthorization{
+				ID:      71,
+				Effects: []string{"read"},
+			},
 		},
 	})
 	if err != nil {
@@ -70,6 +74,17 @@ func TestHTTPExecuteWorkflowIncludesRuntimeFields(t *testing.T) {
 	}
 	if got["engine_id"] != float64(34) {
 		t.Fatalf("engine_id was not included at top level: %#v", got)
+	}
+	runtimeOptions, ok := got["runtime"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("runtime was not included as an object: %#v", got)
+	}
+	authorization, ok := runtimeOptions["execution_authorization"].(map[string]interface{})
+	if !ok || authorization["id"] != float64(71) {
+		t.Fatalf("runtime execution authorization missing: %#v", got)
+	}
+	if _, exists := got["execution_authorization"]; exists {
+		t.Fatalf("execution_authorization must not be flattened: %#v", got)
 	}
 	if _, ok := got["workflow_def"].(map[string]interface{}); !ok {
 		t.Fatalf("workflow_def missing from request: %#v", got)
@@ -182,7 +197,7 @@ func TestHTTPExecuteWorkflowReturnsErrorForFailedStatusWithOKHTTPStatus(t *testi
 	}
 }
 
-func TestHTTPInvokeOperatorIncludesRuntimeFields(t *testing.T) {
+func TestHTTPInvokeOperatorUsesCanonicalRequestShape(t *testing.T) {
 	var got map[string]interface{}
 	server := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -219,9 +234,7 @@ func TestHTTPInvokeOperatorIncludesRuntimeFields(t *testing.T) {
 		Params: map[string]interface{}{
 			"source_uri": "s3://bucket/source.tif",
 		},
-		Runtime: map[string]interface{}{
-			"engine_id": float64(34),
-		},
+		EngineID: 34,
 	})
 	if err != nil {
 		t.Fatalf("HTTPInvokeOperator returned error: %v", err)
@@ -301,6 +314,9 @@ func TestHTTPInvokeOperatorIncludesBinaryPayload(t *testing.T) {
 	}
 	if gotPayload, ok := got["binary_payload"].(map[string]interface{}); !ok || gotPayload["name"] != "geometry_batch" {
 		t.Fatalf("binary payload missing from request: %#v", got)
+	}
+	if _, exists := got["engine_id"]; exists {
+		t.Fatalf("engine_id must be omitted when the caller does not bind a Spark engine: %#v", got)
 	}
 }
 

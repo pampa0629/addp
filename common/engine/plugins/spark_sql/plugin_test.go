@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 )
 
@@ -35,6 +36,22 @@ func TestSparkSQLTableInfoLeavesUnknownStatisticsEmpty(t *testing.T) {
 	}
 	if info.RowCount != nil || info.SizeBytes != nil {
 		t.Fatalf("Spark SQL list table stats = row:%#v size:%#v, want nil unknown stats", info.RowCount, info.SizeBytes)
+	}
+}
+
+func TestSparkCommonFieldTypeMapsNativeTypes(t *testing.T) {
+	tests := map[string]datatype.FieldType{
+		"string":        datatype.FieldTypeString,
+		"int":           datatype.FieldTypeInt,
+		"bigint":        datatype.FieldTypeBigInt,
+		"decimal(18,2)": datatype.FieldTypeDecimal,
+		"array<string>": datatype.FieldTypeArray,
+		"timestamp_ntz": datatype.FieldTypeTimestamp,
+	}
+	for nativeType, want := range tests {
+		if got := sparkCommonFieldType(nativeType); got != want {
+			t.Fatalf("sparkCommonFieldType(%q) = %q, want %q", nativeType, got, want)
+		}
 	}
 }
 

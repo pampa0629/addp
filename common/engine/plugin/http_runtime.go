@@ -66,8 +66,11 @@ func HTTPExecuteWorkflow(ctx context.Context, connInfo ConnectionInfo, req Workf
 		"workflow_def": req.WorkflowDef,
 		"input_data":   req.InputData,
 	}
-	for key, value := range req.Runtime {
-		payload[key] = value
+	if req.EngineID > 0 {
+		payload["engine_id"] = req.EngineID
+	}
+	if req.Runtime != nil {
+		payload["runtime"] = req.Runtime
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -136,8 +139,8 @@ func HTTPInvokeOperator(ctx context.Context, connInfo ConnectionInfo, operatorNa
 	payload := map[string]interface{}{
 		"params": req.Params,
 	}
-	for key, value := range req.Runtime {
-		payload[key] = value
+	if req.EngineID > 0 {
+		payload["engine_id"] = req.EngineID
 	}
 	if req.BinaryPayload != nil {
 		payload["binary_payload"] = req.BinaryPayload

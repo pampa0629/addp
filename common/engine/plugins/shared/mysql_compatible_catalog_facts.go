@@ -17,6 +17,7 @@ type MySQLCompatibleCatalogFactsDialect struct {
 	SystemSchemas  map[string]bool
 	IncludeComment bool
 	IncludeEngine  bool
+	MapFieldType   func(nativeType string) datatype.FieldType
 }
 
 func (d MySQLCompatibleCatalogFactsDialect) ListNamespaces(ctx context.Context, db *gorm.DB, root plugin.CatalogPath, namespaceTerm string) ([]plugin.CatalogEntry, error) {
@@ -126,7 +127,7 @@ func (d MySQLCompatibleCatalogFactsDialect) ListColumns(ctx context.Context, db 
 	query := `
 		SELECT
 			column_name as name,
-			data_type as native_type,
+			column_type as native_type,
 			IF(is_nullable = 'YES', true, false) as nullable,
 			IF(column_key = 'PRI', true, false) as primary_key,
 			COALESCE(column_comment, '') as comment
@@ -138,6 +139,12 @@ func (d MySQLCompatibleCatalogFactsDialect) ListColumns(ctx context.Context, db 
 
 	if err := db.WithContext(ctx).Raw(query, schema, table).Scan(&fields).Error; err != nil {
 		return nil, fmt.Errorf("failed to list columns: %w", err)
+	}
+	for i := range fields {
+		fields[i].Type = datatype.FieldTypeUnknown
+		if d.MapFieldType != nil {
+			fields[i].Type = d.MapFieldType(fields[i].NativeType)
+		}
 	}
 	return plugin.NormalizeFieldInfos(fields), nil
 }

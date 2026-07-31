@@ -44,6 +44,25 @@ func TestDorisCatalogFactsDialectDoesNotIncludeEngine(t *testing.T) {
 	}
 }
 
+func TestDorisCatalogFieldTypeMapsNativeTypes(t *testing.T) {
+	if dorisCatalogFactsDialect.MapFieldType == nil {
+		t.Fatal("Doris CatalogFacts dialect must declare its field type mapper")
+	}
+	tests := map[string]datatype.FieldType{
+		"int":             datatype.FieldTypeInt,
+		"largeint":        datatype.FieldTypeBigInt,
+		"decimalv3(18,2)": datatype.FieldTypeDecimal,
+		"string":          datatype.FieldTypeString,
+		"datetimev2(6)":   datatype.FieldTypeTimestamp,
+		"variant":         datatype.FieldTypeJSON,
+	}
+	for nativeType, want := range tests {
+		if got := dorisCatalogFactsDialect.MapFieldType(nativeType); got != want {
+			t.Fatalf("dorisCatalogFieldType(%q) = %q, want %q", nativeType, got, want)
+		}
+	}
+}
+
 func TestDorisDSNsInterpolateParametersClientSide(t *testing.T) {
 	connInfo := plugin.ConnectionInfo{
 		"host":     "doris.example",

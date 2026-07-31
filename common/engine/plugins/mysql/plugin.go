@@ -21,6 +21,11 @@ var mysqlCatalogFactsDialect = shared.MySQLCompatibleCatalogFactsDialect{
 	},
 	IncludeComment: true,
 	IncludeEngine:  true,
+	MapFieldType:   mysqlCatalogFieldType,
+}
+
+func mysqlCatalogFieldType(nativeType string) datatype.FieldType {
+	return mysqlCommonFieldType(mysqlColumnInfo{NativeType: nativeType})
 }
 
 // MySQLPlugin MySQL 数据库插件
@@ -117,6 +122,10 @@ func (p *MySQLPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.C
 
 func (p *MySQLPlugin) SQLDialect() string {
 	return p.GetDialect()
+}
+
+func (p *MySQLPlugin) SupportsParameterizedQueries() bool {
+	return true
 }
 
 func (p *MySQLPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {

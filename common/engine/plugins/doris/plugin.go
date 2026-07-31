@@ -20,6 +20,11 @@ var dorisCatalogFactsDialect = shared.MySQLCompatibleCatalogFactsDialect{
 		"sys":                true,
 		"__internal_schema":  true,
 	},
+	MapFieldType: dorisCatalogFieldType,
+}
+
+func dorisCatalogFieldType(nativeType string) datatype.FieldType {
+	return dorisCommonFieldType(dorisColumnInfo{NativeType: nativeType})
 }
 
 // DorisPlugin Apache Doris 数据库插件
@@ -117,6 +122,10 @@ func (p *DorisPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.C
 
 func (p *DorisPlugin) SQLDialect() string {
 	return p.GetDialect()
+}
+
+func (p *DorisPlugin) SupportsParameterizedQueries() bool {
+	return true
 }
 
 func (p *DorisPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {

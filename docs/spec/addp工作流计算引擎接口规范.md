@@ -278,12 +278,15 @@ POST /api/operators/add/invoke
 Content-Type: application/json
 
 {
+  "engine_id": 34,
   "params": {
     "a": 5,
     "b": 3
   }
 }
 ```
+
+`engine_id` 仅在 `spark_workflow` direct 调用时出现；其他 Workflow Runtime 的 direct 请求不得携带该字段。
 
 **响应**：
 ```json

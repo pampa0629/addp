@@ -288,6 +288,13 @@ type SQLQueryRuntimeProvider interface {
 	ExecuteSQL(ctx context.Context, connInfo ConnectionInfo, sql string, opts QueryOptions) (*QueryResult, error)
 }
 
+// ParameterizedSQLQueryRuntimeProvider explicitly declares that QueryOptions.Args
+// are bound by the driver instead of interpolated into SQL text.
+type ParameterizedSQLQueryRuntimeProvider interface {
+	SQLQueryRuntimeProvider
+	SupportsParameterizedQueries() bool
+}
+
 // GraphQueryProvider is a dedicated runtime for graph-shaped queries and results.
 // It is intentionally separate from QueryRuntimeProvider so graph modules can
 // consume graph-specific results without coupling ordinary table-oriented query flows.
@@ -476,6 +483,7 @@ type BatchReadOptions struct {
 	Limit  int
 	Offset int64
 	Query  string
+	Args   []interface{}
 	Hints  map[string]interface{}
 }
 
@@ -533,6 +541,7 @@ type QueryOptions struct {
 	Limit      int
 	Timeout    time.Duration
 	ReadOnly   bool
+	Args       []interface{}
 }
 
 type OperatorDescriptor struct {
@@ -582,10 +591,20 @@ type OutputPortDescriptor struct {
 }
 
 type WorkflowExecuteRequest struct {
-	WorkflowDef map[string]interface{} `json:"workflow_def"`
-	InputData   map[string]interface{} `json:"input_data,omitempty"`
-	Runtime     map[string]interface{} `json:"runtime,omitempty"`
-	Timeout     time.Duration          `json:"-"`
+	WorkflowDef map[string]interface{}  `json:"workflow_def"`
+	InputData   map[string]interface{}  `json:"input_data,omitempty"`
+	EngineID    uint                    `json:"engine_id,omitempty"`
+	Runtime     *WorkflowRuntimeContext `json:"runtime,omitempty"`
+	Timeout     time.Duration           `json:"-"`
+}
+
+type WorkflowRuntimeContext struct {
+	ExecutionAuthorization WorkflowExecutionAuthorization `json:"execution_authorization"`
+}
+
+type WorkflowExecutionAuthorization struct {
+	ID      int64    `json:"id"`
+	Effects []string `json:"effects"`
 }
 
 type WorkflowExecuteResult struct {
@@ -600,7 +619,7 @@ type WorkflowExecuteResult struct {
 
 type OperatorInvokeRequest struct {
 	Params        map[string]interface{} `json:"params,omitempty"`
-	Runtime       map[string]interface{} `json:"runtime,omitempty"`
+	EngineID      uint                   `json:"engine_id,omitempty"`
 	BinaryPayload *BinaryPayload         `json:"binary_payload,omitempty"`
 	Timeout       time.Duration          `json:"-"`
 }

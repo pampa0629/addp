@@ -185,7 +185,7 @@ func postgresPrepareIntegrationConnInfo() plugin.ConnectionInfo {
 		"port":     postgresPrepareIntegrationEnv("ADDP_TEST_POSTGRES_PORT", "15432"),
 		"user":     postgresPrepareIntegrationEnv("ADDP_TEST_POSTGRES_USER", "addp"),
 		"password": postgresPrepareIntegrationEnv("ADDP_TEST_POSTGRES_PASSWORD", "addp_password"),
-		"database": postgresPrepareIntegrationEnv("ADDP_TEST_POSTGRES_DATABASE", "addp"),
+		"database": postgresPrepareIntegrationEnv("ADDP_TEST_POSTGRES_DATABASE", "addp_test"),
 		"sslmode":  postgresPrepareIntegrationEnv("ADDP_TEST_POSTGRES_SSLMODE", "disable"),
 	}
 }

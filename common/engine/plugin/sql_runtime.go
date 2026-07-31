@@ -46,7 +46,7 @@ func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin ConnectionPool
 		}
 	}
 
-	rows, err := db.WithContext(ctx).Raw(sql).Rows()
+	rows, err := db.WithContext(ctx).Raw(sql, opts.Args...).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -87,6 +87,12 @@ func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin ConnectionPool
 
 // ReadSQLBatch adapts SQLQueryRuntimeProvider to BatchReadableProvider.
 func ReadSQLBatch(ctx context.Context, provider SQLQueryRuntimeProvider, connInfo ConnectionInfo, path CatalogPath, opts BatchReadOptions) (*BatchData, error) {
+	if len(opts.Args) > 0 {
+		parameterized, ok := provider.(ParameterizedSQLQueryRuntimeProvider)
+		if !ok || !parameterized.SupportsParameterizedQueries() {
+			return nil, fmt.Errorf("engine %s does not support parameterized SQL batch reads", provider.Type())
+		}
+	}
 	query := strings.TrimSpace(opts.Query)
 	if query == "" {
 		segments := CatalogPathWithoutRoot(path).Segments
@@ -99,7 +105,7 @@ func ReadSQLBatch(ctx context.Context, provider SQLQueryRuntimeProvider, connInf
 	} else if opts.Limit > 0 {
 		query = sqldialect.PaginateQuerySQL(query, opts.Limit, int(opts.Offset))
 	}
-	result, err := provider.ExecuteSQL(ctx, connInfo, query, QueryOptions{Limit: opts.Limit})
+	result, err := provider.ExecuteSQL(ctx, connInfo, query, QueryOptions{Limit: opts.Limit, Args: opts.Args})
 	if err != nil {
 		return nil, err
 	}
