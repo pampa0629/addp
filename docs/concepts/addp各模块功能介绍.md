@@ -366,7 +366,7 @@
 - **Resource 模型**：共享数据模型（用户、引擎、任务等）
 - **Engine connection_info**：共享引擎连接信息模型；DSN 仅由需要底层 driver 的数据库类插件按需构建
 - **配置加载器**：集中式配置加载，支持回退（`common/config/loader.go`）
-- **工具函数**：JWT、加密、日志、类型转换等
+- **工具函数**：AuthContext、加密、日志、类型转换等；业务模块不解析用户 Token
 
 **模块路径**：`common/`
 

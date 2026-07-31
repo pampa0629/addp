@@ -164,6 +164,8 @@ Quality 第一阶段资源回收执行方只治理 Quality-owned 质量配置和
 Develop 资源回收执行方评估 engine 影响，并只在租户生命周期回收中治理 Develop-owned 开发任务定义：
 
 - `engine.deleting` 时扫描 `develop.dev_tasks` 中对目标 Engine 的运行时绑定和资源引用，统一报告为 `rebindable` 影响；不归档、不禁用、不删除任务定义。
+- 算子工作流中的存储 Engine 引用以标准 ResourceLocator 为唯一事实。Engine 删除后 Develop 保留旧 Locator；用户可通过 Develop 的存储 Engine 绑定接口显式选择新 Engine，一次原子改写同一旧 Engine 的全部 Locator。改写保留 path/type，清除属于旧 Meta 快照的 `node_id/item_id`。
+- System 不按 Engine 名称、连接信息或指纹自动改写 Develop 私有任务。目标 Engine 的租户、生命周期和存储能力由 Develop 在重绑定时校验；Locator 类型兼容性以目标 Engine 的 `storage.catalog_model` 为事实源，不得只按 `engine_family` 粗分类猜测。
 - `tenant.deleted` 时，扫描该租户下 Develop-owned 开发任务定义。
 - `logical_cleanup` 将租户删除范围内的开发任务置为 `archived`、关闭调度、清空下一次调度。
 - `physical_cleanup` 仅在租户删除范围内删除 Develop-owned 开发任务定义本身；不删除 `common.task_executions` 历史执行记录。
@@ -273,7 +275,7 @@ Engine 删除 scan 除可回收对象外，还必须报告不会被自动删除�
 
 | 分类 | 语义 | 删除处理 |
 | --- | --- | --- |
-| `rebindable` | 用户创建且可显式更换 Engine 的任务、服务或配置。 | 保留；未重绑定时后续执行不可用。 |
+| `rebindable` | 用户创建且可显式更换 Engine 的任务、服务或配置。 | 保留原绑定；未重绑定时后续执行不可用，由 owner 提供显式重绑定入口。 |
 | `will_disable` | 强绑定目标 Engine、删除后必须退出活跃路径的配置。 | 禁用或标记 `missing_engine`，不得因 Engine 删除物理删除定义。 |
 | `will_delete` | Meta 快照、缓存、受管派生产物等可回收 owner 状态。 | 按 owner 策略物理回收。 |
 | `running` | 当前仍在使用目标 Engine 的执行。 | 硬阻断删除，必须先等待结束或由 owner 显式取消。 |
@@ -577,6 +579,7 @@ curl -sS "$BASE/monitor/executions/by-execution-id/$EXECUTION_ID/tree" \
 | item 删除后 artifact state 如何处理 | 有审计和诊断价值的 artifact state 默认标记 `missing_source`，从活跃查询中隐藏；纯缓存可物理删除，但必须保留 execution / audit 摘要。 |
 | engine 删除前如何检查影响 | 先执行无副作用的只读影响评估；确认后进入 `deleting` 并权威复扫。参与模块缺失、运行任务、扫描失败或影响摘要变化时硬阻断删除。 |
 | engine 删除后任务定义如何处理 | 用户创建的任务、服务和治理配置统一保留；可重绑定的报告为 `rebindable`，强绑定配置禁用并记录 `missing_engine`。只有 Meta 快照、缓存和明确登记的派生产物可以随 engine 生命周期物理清理。 |
+| 删除后重新注册能否自动重绑定 | 不能。新注册始终产生新的 Engine Instance；System 不按名称或连接信息猜测对应关系。用户在 owner 模块选择目标 Engine 后，由 owner 原子更新自己的绑定并保留审计。 |
 | tenant 删除后如何处理 cleanup | 必须通过 system-owned cleanup execution 汇总各模块结果；业务资源可清理，System 审计日志保留或归档。 |
 | 源事实变化后如何处理派生产物 | 主路径是事件驱动标记 `outdated`；查询和执行时做惰性复查作为防线；不因 facts 变化直接物理删除派生产物。 |
 | 配置变化如何判断产物过期 | 按产物类型保存和比较 `source_version`、`config_version`；不使用一个粗粒度全局版本覆盖所有产物。 |

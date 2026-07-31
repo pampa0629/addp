@@ -248,13 +248,13 @@ S3M 同样使用 `data_type=model_3d`。SCP 的 XML / JSON 编码、S3M 版本�
 
 `type_info.gaussian_splat` 只承载高斯泼溅跨格式稳定结构摘要。`representation` 第一版固定使用 `3d_gaussian_splatting`，`splat_count` 表示高斯基元数量，`has_opacity`、`has_scale`、`has_rotation`、`has_spherical_harmonics` 和 `sh_degree` 表示渲染所需属性能力。3DGS PLY、`.splat`、`.ksplat`、`.spz` 等都使用 `data_type=gaussian_splat`；不得因为 PLY 内部使用 vertex 记录就归为 `point_cloud`，也不得因为它能三维渲染就归为 `model_3d`。原始高斯数据、压缩产物、前端渲染协议、排序结果或派生 splat artifact 不写入 `type_info.gaussian_splat`；格式私有 header、属性列表和 layout 写入 `format_info.<format>`。
 
-表字段统一放在 `type_info.table.fields`，不得写入 attributes 顶层。`type_info.table` 是 `common/datatype.TableInfo` 的直接 JSON payload，`type_info.table.fields[]` 是 `common/datatype.FieldInfo` 的直接 JSON payload。字段不是 data item，字段类型只能使用 `type` 表达 ADDP 标准字段类型，不得在字段对象内写入 `data_type`。原生字段类型如需展示，只能作为只读诊断信息写入 `native_type`，不得参与执行决策；哪个字段是空间字段、SRID、extent 等属于 `capabilities.spatial`，不得塞回 `type_info.table`。
+表字段统一放在 `type_info.table.fields`，不得写入 attributes 顶层。`type_info.table` 是 `common/datatype.TableInfo` 的直接 JSON payload，`type_info.table.fields[]` 是 `common/datatype.FieldInfo` 的直接 JSON payload。字段不是 data item，字段类型只能使用 `type` 表达 ADDP 标准字段类型，不得在字段对象内写入 `data_type`。Engine / Format Provider 必须在返回 `FieldInfo` 前完成原生类型到 ADDP 标准字段类型的映射；跨过 Provider 边界后，Meta、Manager、Transfer、Quality、Model 等模块只能依据 `type` 做语义判断，不得重新解析 `native_type`。原生字段类型如需展示，只能作为只读诊断信息写入 `native_type`；哪个字段是空间字段、SRID、extent 等属于 `capabilities.spatial`，不得塞回 `type_info.table`。
 
 字段属性只有能影响扫描、展示、查询建议、质量检测、传输写入、建模标准化或智能生成中的至少一个决策，才进入 ADDP metadata 链路；仅因引擎能查到而没有明确消费方的原生细节，不进入公共模型。
 
 | 字段属性 | 典型来源 | 语义层级 | 主要消费方 | 作用 | 规范归属 |
 | --- | --- | --- | --- | --- | --- |
-| `native_type` | 各 SQL/文件格式 provider | 通用基础属性 | Meta、Manager、Transfer、Model、Copilot | 保留原生类型，辅助 schema 展示、类型映射、导入导出和代码生成 | `datatype.FieldInfo.NativeType` |
+| `native_type` | 各 SQL/文件格式 provider | 通用基础属性 | Meta、Manager、Transfer、Model、Copilot | 保留原生类型，辅助 schema 展示、Provider 边界映射、同源诊断和代码生成；不得作为跨模块执行决策依据 | `datatype.FieldInfo.NativeType` |
 | `nullable` | `information_schema.columns`、`system.columns`、文件格式 schema | 通用结构语义 | Meta、Manager、Quality、Transfer | 展示字段约束，推荐非空质量规则，辅助写入校验 | `FieldInfo.Nullable` |
 | `primary_key` | PostgreSQL 约束表、MySQL `column_key`、部分引擎原生 metadata | 通用结构语义 | Meta、Manager、Quality、Model、Standard | 唯一性识别、主键规则推荐、模型字段识别 | `FieldInfo.PrimaryKey`；ClickHouse primary key 偏稀疏索引 / 排序表达式语义，暂不映射为 ADDP 通用主键 |
 | `comment` | `col_description`、`column_comment`、`system.columns.comment` | 通用描述语义 | Meta、Manager、Model、Standard、Copilot | 字段理解、数据元匹配、智能生成上下文 | `FieldInfo.Comment` |

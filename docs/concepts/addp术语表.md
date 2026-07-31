@@ -10,6 +10,7 @@
 | Engine Instance | 引擎实例 | System 中一条绑定到确定物理端点的引擎登记事实。 | `engine_id` 只标识该实例；物理端点身份不可原地改变，端点变化必须创建新的 Engine Instance。 |
 | Engine Runtime Descriptor | 引擎运行时描述 | System 面向受信 Runtime Service Principal 提供的脱敏 Engine Instance 控制面投影。 | 只包含实例身份、生命周期、能力声明和工作流/脚本运行时的 `protocol/host/port`；不包含数据引擎凭据、数据库连接参数或可直接读取业务数据的明文连接。 |
 | engine lifecycle state | 引擎生命周期状态 | Engine Instance 当前能否被正常消费或正在退出平台的状态。 | 统一使用 `active`、`disabled`、`deleting`；`deleting` 保留连接只用于删除前 cleanup，不进入正常业务选择。 |
+| storage engine binding | 存储引擎绑定 | owner 任务或配置通过标准 ResourceLocator 对某个存储 Engine Instance 的显式引用集合。 | Engine 删除后绑定保持原 ID 并变为不可执行；重绑定由 owner 在用户确认后原子改写 Locator，不按名称或连接信息自动匹配。 |
 | external artifact abandonment | 外部产物放弃 | 当外部引擎不可达时，管理员明确接受平台不再删除某个 owner 已登记外部产物，并把后续处置交给外部系统管理员。 | 必须保留对象身份、最后错误、放弃时间和审计；不得伪装成物理删除成功。 |
 | node | 资源节点 | 引擎内用于组织资源树的节点。 | 例如目录、bucket、prefix、schema。node 不等同于 data item。 |
 | resource tree | 资源树 | 以树形方式展示 engine 内 node 和 data item 的视图。 | 用于浏览、展开、刷新和定位；不是新的身份层。 |
@@ -94,6 +95,8 @@
 | data profile | 数据剖析结果 | Manager 对某个稳定 data item、源版本和剖析配置保存的当前成功分析结果。 | 归 Manager 私有结果表；不写入 Meta attributes，不是 data item、任务定义或 execution。 |
 | profiling execution | 剖析执行 | 实际读取源数据并生成或刷新 data profile 的一次有界执行。 | 首期统一为 `task_type=data_profiling` 的 ad-hoc execution，`source_task_id` 为空。 |
 | profile mode | 剖析模式 | 一次剖析执行读取源数据的范围策略。 | 取值预留 `sample` / `full`；首期只开放 `sample`。它不是 task type，也不决定是否存在任务定义。 |
+| profile data scope | 剖析数据范围 | 一次剖析执行所分析的行集合。 | 固定为 `all` 或结构化 `condition`；条件范围参与 `profile_config_hash`，不得用 SQL 文本表达。 |
+| conditional profiling | 条件剖析 | 先按结构化字段条件限定数据范围，再在命中行集合上采样并计算数据剖析结果。 | 归 Manager；不是预览页过滤，也不是 Develop SQL 查询。条件必须由 Provider 在采样前执行。 |
 | profile observation | 剖析观察 | 根据字段级统计派生的描述性数据特征提示。 | 例如高缺失、常量、高基数和分布偏斜；不是质量问题或质量评分。 |
 
 ## 任务与执行
@@ -281,6 +284,13 @@
 | vectorization | 向量化 | 对可支持的数据项生成向量表示的派生能力。 | 服务 Manager 数据检索；资源树触发的是一次性 execution，独立页面创建的配置才是任务定义。 |
 | embedding result | 向量化结果 | 某个 data item 当前留下的向量表示及其状态。 | 当前实现对应 `manager.embeddings`；属于 artifact state，不是 execution。 |
 | embedding task | 向量化任务 | Manager 中可重复执行、可调度、可编排的向量化任务定义。 | 当前实现对应 `manager.embedding_tasks`，TaskProvider `task_type=embedding`。 |
+
+## 知识图谱
+
+| 英文术语 | 中文术语 | 定义 | 备注 |
+|---|---|---|---|
+| ontology entity type | 本体实体类型 | Graph 模块中对一类实体的概念定义，包含属性、约束、继承关系和图引擎执行映射。 | 不等同于 Neo4j label；具体执行映射由 `NodeLabels` 表达。 |
+| node display property | 节点展示字段 | 本体实体类型指定的字符串属性，用作图谱节点标题、搜索结果标题和图分析节点名称。 | 可引用本类型或继承属性，并自动纳入该实体类型的全文搜索索引。 |
 
 ## 命名约定
 
