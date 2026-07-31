@@ -702,6 +702,7 @@ func newRasterCOGTaskServiceTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create task_executions table: %v", err)
 	}
+	addTaskExecutionAuthorizationColumns(t, db)
 	if err := db.Exec(`CREATE TABLE manager.raster_cog_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
@@ -789,6 +790,7 @@ func writeTiffToCOGOperatorList(w http.ResponseWriter, engineType string, execut
 				"category_path":   []string{"格式转换"},
 				"description":     "生成云优化 GeoTIFF",
 				"execution_modes": executionModes,
+				"effects":         []string{"read", "write"},
 				"parameters": []map[string]interface{}{
 					{"name": "source_uri", "type": "string", "required": true, "description": "源 TIFF URI"},
 					{"name": "target_uri", "type": "string", "required": true, "description": "目标 COG URI"},

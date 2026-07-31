@@ -519,6 +519,7 @@ func createExecutionServiceTestTables(t *testing.T, db *gorm.DB) {
 			t.Fatalf("create test table: %v", err)
 		}
 	}
+	addTaskExecutionAuthorizationColumns(t, db)
 }
 
 func createExecutionServiceTestTask(t *testing.T, db *gorm.DB) models.TransferTask {

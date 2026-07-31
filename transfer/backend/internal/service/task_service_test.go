@@ -550,6 +550,7 @@ func newTransferTaskServiceTestDB(t *testing.T) *gorm.DB {
 	`).Error; err != nil {
 		t.Fatalf("create task_executions table: %v", err)
 	}
+	addTaskExecutionAuthorizationColumns(t, db)
 	if err := db.Exec(`
 			CREATE TABLE transfer.schema_change_requests (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,

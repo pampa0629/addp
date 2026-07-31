@@ -33,6 +33,7 @@ func TestWorkflowGeometryBatchReprojectProviderInvokesDirectRuntimeAndNormalizes
 					"parameters":      []interface{}{},
 					"output_ports":    []interface{}{},
 					"execution_modes": []string{"workflow", "direct"},
+					"effects":         []string{"read"},
 				}},
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/operators/vector_reproject/invoke":
@@ -155,7 +156,15 @@ func TestWorkflowGeometryBatchReprojectProviderRejectsNonEWKBResponse(t *testing
 				"operators": []map[string]interface{}{{
 					"id":              "vector_reproject",
 					"name":            "vector_reproject",
+					"display_name":    "Vector Reproject",
+					"engine_type":     engineType,
+					"category":        "spatial_transform",
+					"category_path":   []string{"spatial", "transform"},
+					"description":     "Reproject geometry batch",
+					"parameters":      []interface{}{},
+					"output_ports":    []interface{}{},
 					"execution_modes": []string{"workflow", "direct"},
+					"effects":         []string{"read"},
 				}},
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/operators/vector_reproject/invoke":

@@ -851,6 +851,7 @@ func newTileCacheExecutionRepositoryTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec(tileCacheRepositoryExecutionTableSQL).Error; err != nil {
 		t.Fatalf("create common execution test table: %v", err)
 	}
+	addTaskExecutionAuthorizationColumns(t, db)
 	if err := db.Exec(`CREATE TABLE manager.vector_tile_cache_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL,
 		description TEXT, enabled BOOLEAN, schedule TEXT, next_run_at DATETIME, last_run_at DATETIME,

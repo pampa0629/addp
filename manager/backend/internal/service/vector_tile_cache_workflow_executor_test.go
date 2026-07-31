@@ -184,6 +184,7 @@ func writeVectorTileOperatorList(w http.ResponseWriter, engineType string, execu
 				"category_path":   []string{"瓦片缓存"},
 				"description":     "从空间数据生成 MVT 瓦片缓存",
 				"execution_modes": executionModes,
+				"effects":         []string{"read", "write"},
 				"parameters": []map[string]interface{}{
 					{"name": "access_plan", "type": "object", "required": true},
 					{"name": "tile", "type": "object", "required": true},

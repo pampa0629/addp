@@ -208,7 +208,7 @@ func webhookIntegrationDSN() string {
 		webhookIntegrationEnv("ADDP_TEST_POSTGRES_PORT", "15432"),
 		webhookIntegrationEnv("ADDP_TEST_POSTGRES_USER", "addp"),
 		webhookIntegrationEnv("ADDP_TEST_POSTGRES_PASSWORD", "addp_password"),
-		webhookIntegrationEnv("ADDP_TEST_POSTGRES_DATABASE", "addp"),
+		webhookIntegrationEnv("ADDP_TEST_POSTGRES_DATABASE", "addp_test"),
 		webhookIntegrationEnv("ADDP_TEST_POSTGRES_SSLMODE", "disable"),
 	)
 }

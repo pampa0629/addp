@@ -283,6 +283,7 @@ func newTaskRepositoryTestDB(t *testing.T) *gorm.DB {
 			t.Fatalf("create test table: %v", err)
 		}
 	}
+	addTaskExecutionAuthorizationColumns(t, db)
 	return db
 }
 

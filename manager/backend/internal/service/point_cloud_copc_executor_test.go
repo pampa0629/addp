@@ -474,6 +474,7 @@ func writePointCloudOperatorList(w http.ResponseWriter, engineType string, execu
 				"category_path":   []string{"点云转换", "快显"},
 				"description":     "生成 COPC",
 				"execution_modes": executionModes,
+				"effects":         []string{"read", "write"},
 				"parameters": []map[string]interface{}{
 					{"name": "access_plan", "type": "object", "required": true, "description": "访问计划"},
 				},
@@ -490,6 +491,7 @@ func writePointCloudOperatorList(w http.ResponseWriter, engineType string, execu
 				"category_path":   []string{"点云转换", "快显"},
 				"description":     "生成 COPC",
 				"execution_modes": executionModes,
+				"effects":         []string{"read", "write"},
 				"parameters": []map[string]interface{}{
 					{"name": "access_plan", "type": "object", "required": true, "description": "访问计划"},
 				},
@@ -506,6 +508,7 @@ func writePointCloudOperatorList(w http.ResponseWriter, engineType string, execu
 				"category_path":   []string{"点云转换", "快显"},
 				"description":     "生成 COPC",
 				"execution_modes": executionModes,
+				"effects":         []string{"read", "write"},
 				"parameters": []map[string]interface{}{
 					{"name": "access_plan", "type": "object", "required": true, "description": "访问计划"},
 				},
@@ -522,6 +525,7 @@ func writePointCloudOperatorList(w http.ResponseWriter, engineType string, execu
 				"category_path":   []string{"点云转换", "快显"},
 				"description":     "生成 COPC",
 				"execution_modes": executionModes,
+				"effects":         []string{"read", "write"},
 				"parameters": []map[string]interface{}{
 					{"name": "access_plan", "type": "object", "required": true, "description": "访问计划"},
 				},
@@ -538,6 +542,7 @@ func writePointCloudOperatorList(w http.ResponseWriter, engineType string, execu
 				"category_path":   []string{"点云转换", "快显"},
 				"description":     "生成 COPC",
 				"execution_modes": executionModes,
+				"effects":         []string{"read", "write"},
 				"parameters": []map[string]interface{}{
 					{"name": "access_plan", "type": "object", "required": true, "description": "访问计划"},
 				},
@@ -624,6 +629,7 @@ func newPointCloudCOPCTaskServiceTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create task_executions table: %v", err)
 	}
+	addTaskExecutionAuthorizationColumns(t, db)
 	if err := db.Exec(`CREATE TABLE manager.point_cloud_copc_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,

@@ -1502,5 +1502,6 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create task_executions table: %v", err)
 	}
+	addTaskExecutionAuthorizationColumns(t, db)
 	return db
 }

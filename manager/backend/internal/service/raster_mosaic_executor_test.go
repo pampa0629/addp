@@ -227,6 +227,7 @@ func writeBuildRasterMosaicOperatorList(w http.ResponseWriter, engineType string
 				"category_path":   []string{"格式转换"},
 				"description":     "生成栅格 mosaic 数据集",
 				"execution_modes": executionModes,
+				"effects":         []string{"read", "write"},
 				"parameters": []map[string]interface{}{
 					{"name": "access_plan", "type": "object", "required": true, "description": "GDAL 访问计划"},
 					{"name": "placement", "type": "object", "required": true, "description": "生成位置模式"},

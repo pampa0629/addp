@@ -3167,6 +3167,7 @@ func newWorkflowOperatorServerForTest(t *testing.T, operatorNames ...string) *ht
 					"description": "Model 3D test operator", "parameters": []map[string]interface{}{},
 					"output_ports":    []map[string]interface{}{{"name": "default", "type": "object", "is_default": true}},
 					"execution_modes": []string{"workflow", "direct"},
+					"effects":         []string{"read", "write"},
 				})
 			}
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"operators": operators})

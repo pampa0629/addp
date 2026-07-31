@@ -515,6 +515,7 @@ func writeModel3DOperatorList(w http.ResponseWriter, engineType string, executio
 				"category_path":   []string{"三维模型转换"},
 				"description":     "生成 GLB",
 				"execution_modes": executionModes,
+				"effects":         []string{"read", "write"},
 				"parameters": []map[string]interface{}{
 					{"name": "access_plan", "type": "object", "required": true, "description": "访问计划"},
 				},
@@ -531,6 +532,7 @@ func writeModel3DOperatorList(w http.ResponseWriter, engineType string, executio
 				"category_path":   []string{"三维模型转换"},
 				"description":     "生成 GLB",
 				"execution_modes": executionModes,
+				"effects":         []string{"read", "write"},
 				"parameters": []map[string]interface{}{
 					{"name": "access_plan", "type": "object", "required": true, "description": "访问计划"},
 				},
@@ -547,6 +549,7 @@ func writeModel3DOperatorList(w http.ResponseWriter, engineType string, executio
 				"category_path":   []string{"三维模型转换"},
 				"description":     "生成 GLB",
 				"execution_modes": executionModes,
+				"effects":         []string{"read", "write"},
 				"parameters": []map[string]interface{}{
 					{"name": "access_plan", "type": "object", "required": true, "description": "访问计划"},
 				},
@@ -563,6 +566,7 @@ func writeModel3DOperatorList(w http.ResponseWriter, engineType string, executio
 				"category_path":   []string{"三维模型转换"},
 				"description":     "生成 GLB",
 				"execution_modes": executionModes,
+				"effects":         []string{"read", "write"},
 				"parameters": []map[string]interface{}{
 					{"name": "access_plan", "type": "object", "required": true, "description": "访问计划"},
 				},
@@ -579,6 +583,7 @@ func writeModel3DOperatorList(w http.ResponseWriter, engineType string, executio
 				"category_path":   []string{"三维模型转换"},
 				"description":     "生成 GLB",
 				"execution_modes": executionModes,
+				"effects":         []string{"read", "write"},
 				"parameters": []map[string]interface{}{
 					{"name": "access_plan", "type": "object", "required": true, "description": "访问计划"},
 				},
@@ -595,6 +600,7 @@ func writeModel3DOperatorList(w http.ResponseWriter, engineType string, executio
 				"category_path":   []string{"三维模型转换"},
 				"description":     "生成 GLB",
 				"execution_modes": executionModes,
+				"effects":         []string{"read", "write"},
 				"parameters": []map[string]interface{}{
 					{"name": "access_plan", "type": "object", "required": true, "description": "访问计划"},
 				},
@@ -611,6 +617,7 @@ func writeModel3DOperatorList(w http.ResponseWriter, engineType string, executio
 				"category_path":   []string{"三维模型转换"},
 				"description":     "生成 3D Tiles",
 				"execution_modes": executionModes,
+				"effects":         []string{"read", "write"},
 				"parameters": []map[string]interface{}{
 					{"name": "access_plan", "type": "object", "required": true, "description": "访问计划"},
 				},
@@ -627,6 +634,7 @@ func writeModel3DOperatorList(w http.ResponseWriter, engineType string, executio
 				"category_path":   []string{"三维模型转换"},
 				"description":     "生成 S3M",
 				"execution_modes": executionModes,
+				"effects":         []string{"read", "write"},
 				"parameters": []map[string]interface{}{
 					{"name": "access_plan", "type": "object", "required": true, "description": "访问计划"},
 				},

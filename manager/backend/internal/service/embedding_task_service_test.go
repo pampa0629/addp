@@ -407,6 +407,7 @@ func newEmbeddingTaskServiceTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create task_executions table: %v", err)
 	}
+	addTaskExecutionAuthorizationColumns(t, db)
 	if err := db.Exec(`CREATE TABLE manager.embedding_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
