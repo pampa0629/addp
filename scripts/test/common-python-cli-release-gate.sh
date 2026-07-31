@@ -31,7 +31,7 @@ fi
 VENV_PYTHON="$WORK_DIR/venv/bin/python"
 VENV_ADDP="$WORK_DIR/venv/bin/addp"
 
-"$VENV_PYTHON" -m pip install --disable-pip-version-check "$WHEEL" pytest pytest-asyncio twine
+"$VENV_PYTHON" -m pip install --disable-pip-version-check "$WHEEL" pytest pytest-asyncio twine pipx==1.16.5
 "$VENV_PYTHON" -m twine check "$WHEEL"
 "$VENV_PYTHON" -c '
 from pathlib import Path
@@ -60,10 +60,58 @@ if payload != {"name": "addp", "version": installed}:
     raise SystemExit(f"entry point version mismatch: {payload!r} != {installed!r}")
 ' "$VERSION_JSON"
 
+export PIPX_HOME="$WORK_DIR/pipx/home"
+export PIPX_BIN_DIR="$WORK_DIR/pipx/bin"
+export PIPX_MAN_DIR="$WORK_DIR/pipx/man"
+export PIPX_DEFAULT_BACKEND=pip
+PIPX_ADDP="$PIPX_BIN_DIR/addp"
+
+"$VENV_PYTHON" -m pipx install "$WHEEL"
+"$VENV_PYTHON" -m pipx install --force "$WHEEL"
+PIPX_VERSION_JSON=$(cd "$WORK_DIR" && "$PIPX_ADDP" --version)
+PIPX_LIST_JSON=$("$VENV_PYTHON" -m pipx list --json)
+"$VENV_PYTHON" -c '
+from pathlib import Path
+import importlib.metadata
+import json
+import sys
+
+version_payload = json.loads(sys.argv[1])
+pipx_payload = json.loads(sys.argv[2])
+wheel = Path(sys.argv[3]).resolve()
+installed = importlib.metadata.version("addp-common")
+main_package = pipx_payload["venvs"]["addp-common"]["metadata"]["main_package"]
+if version_payload != {"name": "addp", "version": installed}:
+    raise SystemExit(f"pipx entry point version mismatch: {version_payload!r} != {installed!r}")
+if main_package["package"] != "addp-common" or main_package["package_version"] != installed:
+    raise SystemExit(f"unexpected pipx package metadata: {main_package!r}")
+apps = main_package["apps"]
+if apps != ["addp"]:
+    raise SystemExit(f"unexpected pipx apps: {apps!r}")
+package_or_url = main_package["package_or_url"]
+if Path(package_or_url).resolve() != wheel:
+    raise SystemExit(f"pipx did not install the verified wheel: {package_or_url!r}")
+' "$PIPX_VERSION_JSON" "$PIPX_LIST_JSON" "$WHEEL"
+
 (
     cd "$WORK_DIR"
-    PYTHONPATH= "$VENV_PYTHON" "$SOURCE_DIR/tests/cli_product_e2e.py" --addp "$VENV_ADDP"
+    PYTHONPATH= "$VENV_PYTHON" "$SOURCE_DIR/tests/cli_product_e2e.py" --addp "$PIPX_ADDP"
 )
+
+"$VENV_PYTHON" -m pipx uninstall addp-common
+PIPX_LIST_JSON=$("$VENV_PYTHON" -m pipx list --json)
+"$VENV_PYTHON" -c '
+import json
+import sys
+
+payload = json.loads(sys.argv[1])
+if payload.get("venvs") != {}:
+    raise SystemExit(f"pipx environment was not removed: {payload!r}")
+' "$PIPX_LIST_JSON"
+if [ -e "$PIPX_ADDP" ]; then
+    echo "pipx addp entry point remains after uninstall" >&2
+    exit 1
+fi
 
 if [ -n "${ADDP_CLI_RELEASE_DIST:-}" ]; then
     mkdir -p "$ADDP_CLI_RELEASE_DIST"

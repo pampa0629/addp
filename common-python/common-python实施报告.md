@@ -44,8 +44,10 @@ make test-common-python-cli-release
 1. 从 `common-python` 构建 wheel；
 2. 创建全新 venv 并只安装 wheel、运行依赖和测试依赖；
 3. 对已安装 wheel 运行 common-python 全量测试；
-4. 校验 `addp` entry point、安装元数据和 JSON 版本输出一致；
-5. 使用真实 OS Keychain 后端运行 CLI 产品 E2E。
+4. 校验 venv 中的 `addp` entry point、安装元数据和 JSON 版本输出一致；
+5. 在临时 pipx 根目录中通过 `PIPX_DEFAULT_BACKEND=pip` 安装并强制重装同一个 wheel，校验包来源、版本和命令入口；
+6. 通过 pipx 安装的 `addp` 使用真实 OS Keychain 后端运行 CLI 产品 E2E；
+7. 卸载 pipx 环境并校验命令入口和环境无残留。
 
 全量测试中的 `tests/test_version.py` 是版本发布预检的唯一实现，统一校验运行时单一版本源、安装包元数据、命令版本、根 README、CLI README、实施报告和脚本文档，不维护第二套版本同步脚本。
 

@@ -16,7 +16,7 @@ curl -fLO "https://github.com/pampa0629/addp/releases/download/${RELEASE}/${WHEE
 curl -fLO "https://github.com/pampa0629/addp/releases/download/${RELEASE}/${WHEEL}.sha256"
 shasum -a 256 -c "${WHEEL}.sha256"
 gh attestation verify "${WHEEL}" --repo pampa0629/addp
-pipx install "./${WHEEL}"
+PIPX_DEFAULT_BACKEND=pip pipx install "./${WHEEL}"
 addp --version
 ```
 
@@ -27,12 +27,12 @@ GitHub Release 是当前唯一正式分发路径。也可以用 `python3 -m venv
 升级时先把上面的 `RELEASE` 改为目标版本，重新下载并验证该 GitHub Release 的 wheel 和 SHA-256，再覆盖现有 pipx 环境：
 
 ```bash
-pipx install --force "./${WHEEL}"
+PIPX_DEFAULT_BACKEND=pip pipx install --force "./${WHEEL}"
 addp --version
 addp auth status
 ```
 
-当前没有 PyPI 索引版本，不能假设 `pipx upgrade` 会发现新的 GitHub Release。`pipx install --force` 会更新现有 `addp-common` 隔离环境，OS Keychain 中按 ADDP Base URL 保存的登录会话不属于 Python 虚拟环境；升级后通过 `addp auth status` 实际刷新并验证会话。
+当前没有 PyPI 索引版本，不能假设 `pipx upgrade` 会发现新的 GitHub Release。`PIPX_DEFAULT_BACKEND=pip` 固定使用 pip 安装已验证的 wheel，避免 PATH 中其他包管理器版本影响结果，并兼容尚无 `--backend` 参数的 pipx 版本；`pipx install --force` 会更新现有 `addp-common` 隔离环境。OS Keychain 中按 ADDP Base URL 保存的登录会话不属于 Python 虚拟环境；升级后通过 `addp auth status` 实际刷新并验证会话。
 
 卸载前必须先撤销 OAuth 会话并删除 Keychain 中的 Refresh Token，再移除 pipx 环境：
 

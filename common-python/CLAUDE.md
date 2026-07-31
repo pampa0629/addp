@@ -59,7 +59,7 @@ cd common-python
 uv sync --extra dev
 uv run pytest -q
 
-# 正式 CLI wheel、全新环境、命令入口和 macOS Keychain 产品门禁
+# 正式 CLI wheel、全新 venv、pipx 生命周期和 macOS Keychain 产品门禁
 cd ..
 make test-common-python-cli-release
 ```

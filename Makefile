@@ -434,7 +434,7 @@ test-agent-eval-release: ## 使用三份新鲜在线证据运行 Agent 发布门
 test-common-python: ## 运行 common-python 全量测试
 	@cd common-python && .venv/bin/pytest -q
 
-test-common-python-cli-release: ## 构建 wheel 并运行全新环境 ADDP CLI 产品发布门禁
+test-common-python-cli-release: ## 构建 wheel 并运行全新 venv、pipx 生命周期和 macOS Keychain 发布门禁
 	@bash scripts/test/common-python-cli-release-gate.sh
 
 test-system-iam-postgres: ## 使用一次性 PostgreSQL 数据库运行 System IAM 发布门禁
