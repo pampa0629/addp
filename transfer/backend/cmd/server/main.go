@@ -293,7 +293,15 @@ func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err := transferRepo.MigrateCaptureProviderResources(db); err != nil {
 		return nil, err
 	}
-	if err := db.AutoMigrate(
+	if err := db.AutoMigrate(transferSchemaModels()...); err != nil {
+		return nil, fmt.Errorf("auto-migrate transfer models: %w", err)
+	}
+
+	return db, nil
+}
+
+func transferSchemaModels() []interface{} {
+	return []interface{}{
 		&models.TransferTask{},
 		&models.SyncState{},
 		&models.RuntimeLease{},
@@ -301,9 +309,6 @@ func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 		&models.PostgreSQLCaptureResource{},
 		&models.MySQLCaptureResource{},
 		&models.SchemaChangeRequest{},
-	); err != nil {
-		return nil, fmt.Errorf("auto-migrate transfer models: %w", err)
+		&models.DeadLetter{},
 	}
-
-	return db, nil
 }

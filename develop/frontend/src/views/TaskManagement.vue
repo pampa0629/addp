@@ -4,10 +4,20 @@
     <div class="toolbar">
       <div class="toolbar-left">
         <h2>{{ t('develop.taskManagement.title') }}</h2>
-        <el-button type="primary" @click="handleCreate">
-          <el-icon><Plus /></el-icon>
-          {{ t('develop.taskManagement.newTask') }}
-        </el-button>
+        <el-dropdown @command="handleCreate">
+          <el-button type="primary">
+            <el-icon><Plus /></el-icon>
+            {{ t('develop.taskManagement.newTask') }}
+            <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="query">{{ t('develop.taskManagement.typeQuery') }}</el-dropdown-item>
+              <el-dropdown-item command="workflow">{{ t('develop.taskManagement.typeWorkflow') }}</el-dropdown-item>
+              <el-dropdown-item command="script">{{ t('develop.taskManagement.typeScript') }}</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <el-button @click="handleRefresh">
           <el-icon><Refresh /></el-icon>
           {{ t('develop.taskManagement.refresh') }}
@@ -150,83 +160,6 @@
       </div>
     </div>
 
-    <!-- 创建/编辑对话框 -->
-    <el-dialog
-      v-model="dialogVisible"
-      class="addp-dialog"
-      :title="dialogMode === 'create' ? t('develop.taskManagement.createDialogTitle') : t('develop.taskManagement.editDialogTitle')"
-      width="min(600px, calc(100vw - 24px))"
-    >
-      <el-form :model="formData" label-position="top">
-        <el-form-item :label="t('develop.taskManagement.fieldName')" required>
-          <el-input v-model="formData.name" :placeholder="t('develop.taskManagement.namePlaceholder')" />
-        </el-form-item>
-        <el-form-item :label="t('develop.taskManagement.fieldDisplayName')">
-          <el-input v-model="formData.display_name" :placeholder="t('develop.taskManagement.optional')" />
-        </el-form-item>
-        <el-form-item :label="t('develop.taskManagement.fieldType')" required>
-          <el-select v-model="formData.dev_type" style="width: 100%;">
-            <el-option :label="t('develop.taskManagement.typeQuery')" value="query" />
-            <el-option :label="t('develop.taskManagement.typeScript')" value="script" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('develop.taskManagement.fieldResource')">
-          <el-select
-            v-model="formData.engine_id"
-            style="width: 100%;"
-            clearable
-            :placeholder="t('develop.taskManagement.resourcePlaceholder')"
-          >
-            <el-option
-              v-for="res in engines"
-              :key="res.id"
-              :label="res.name"
-              :value="res.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('develop.taskManagement.fieldDescription')">
-          <el-input
-            v-model="formData.description"
-            type="textarea"
-            :rows="3"
-            :placeholder="t('develop.taskManagement.descriptionPlaceholder')"
-          />
-        </el-form-item>
-        <el-form-item :label="t('develop.taskManagement.fieldTags')">
-          <el-tag
-            v-for="tag in formData.tags"
-            :key="tag"
-            closable
-            @close="removeTag(tag)"
-            style="margin-right: 8px;"
-          >
-            {{ tag }}
-          </el-tag>
-          <el-input
-            v-if="tagInputVisible"
-            ref="tagInputRef"
-            v-model="tagInputValue"
-            size="small"
-            style="width: 100px;"
-            @blur="handleTagInputConfirm"
-            @keyup.enter="handleTagInputConfirm"
-          />
-          <el-button
-            v-else
-            size="small"
-            @click="showTagInput"
-          >
-            + {{ t('develop.taskManagement.addTag') }}
-          </el-button>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="dialogVisible = false">{{ t('develop.taskManagement.cancel') }}</el-button>
-        <el-button type="primary" @click="handleSave">{{ t('develop.taskManagement.save') }}</el-button>
-      </template>
-    </el-dialog>
-
     <!-- 执行对话框 -->
     <el-dialog
       v-model="executeDialogVisible"
@@ -267,12 +200,13 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch, nextTick } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { ref, reactive, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Plus,
+  ArrowDown,
   Refresh,
   Search,
   VideoPlay,
@@ -282,18 +216,15 @@ import {
 } from '@element-plus/icons-vue'
 import {
   listDevTasks,
-  createDevTask,
-  updateDevTask,
   deleteDevTask,
   executeDevTask,
   listEngines
 } from '@/api/devTask'
 import { openMonitorExecution } from '@addp/common-frontend'
+import { navigateDevelopTaskEditor } from '@/utils/developNavigation'
 
 const router = useRouter()
-const route = useRoute()
 const { t } = useI18n()
-const editableDevTypes = ['query', 'script']
 
 // 状态管理
 const loading = ref(false)
@@ -315,24 +246,6 @@ const pagination = reactive({
   page_size: 20,
   total: 0
 })
-
-// 对话框状态
-const dialogVisible = ref(false)
-const dialogMode = ref('create') // 'create' | 'edit'
-const formData = reactive({
-  name: '',
-  display_name: '',
-  dev_type: 'query',
-  engine_id: null,
-  description: '',
-  tags: [],
-  content: {}
-})
-
-// 标签输入
-const tagInputVisible = ref(false)
-const tagInputValue = ref('')
-const tagInputRef = ref(null)
 
 // 执行对话框
 const executeDialogVisible = ref(false)
@@ -422,82 +335,18 @@ const formatTime = (time) => {
 }
 
 // 操作函数
-const normalizeDevType = (type) => {
-  return editableDevTypes.includes(type) ? type : 'query'
-}
-
-const resetFormData = (devType = 'query') => {
-  Object.assign(formData, {
-    id: undefined,
-    name: '',
-    display_name: '',
-    dev_type: normalizeDevType(devType),
-    engine_id: null,
-    description: '',
-    tags: [],
-    content: {}
-  })
-}
-
-const handleCreate = (devType = 'query') => {
-  if (devType === 'workflow') {
-    router.push({ path: '/workflow' })
-    return
-  }
-
-  dialogMode.value = 'create'
-  resetFormData(devType)
-  dialogVisible.value = true
-}
-
-const handleEdit = (row) => {
-  if (row.dev_type === 'workflow') {
-    router.push({ path: '/workflow', query: { taskId: row.id } })
-    return
-  }
-
-  dialogMode.value = 'edit'
-  Object.assign(formData, {
-    id: row.id,
-    name: row.name,
-    display_name: row.display_name,
-    dev_type: row.dev_type,
-    engine_id: row.engine_id,
-    description: row.description,
-    tags: row.tags || [],
-    content: row.content || {}
-  })
-  dialogVisible.value = true
-}
-
-const handleView = (row) => {
-  // 根据类型跳转到对应编辑器,传递任务 ID
-  if (row.dev_type === 'query') {
-    router.push({ path: '/sql', query: { taskId: row.id } })
-  } else if (row.dev_type === 'workflow') {
-    router.push({ path: '/workflow', query: { taskId: row.id } })
-  } else {
-    ElMessage.info(t('develop.taskManagement.viewNotSupported'))
+const openTaskEditor = async (devType, taskID = '') => {
+  try {
+    await navigateDevelopTaskEditor(router, devType, taskID)
+  } catch (error) {
+    console.error('进入任务编辑器失败:', error)
+    ElMessage.error(error.message)
   }
 }
 
-const handleRouteAction = () => {
-  const action = String(route.query.action || '')
-  if (action === 'create') {
-    handleCreate(String(route.query.task_type || 'query'))
-    return
-  }
-
-  if (action === 'edit' && route.query.id) {
-    const targetID = Number(route.query.id)
-    const target = tasks.value.find(task => Number(task.id) === targetID)
-    if (target) {
-      handleEdit(target)
-    } else {
-      ElMessage.warning(t('develop.taskManagement.taskNotFound'))
-    }
-  }
-}
+const handleCreate = (devType) => openTaskEditor(devType)
+const handleEdit = (row) => openTaskEditor(row.dev_type, row.id)
+const handleView = (row) => openTaskEditor(row.dev_type, row.id)
 
 const handleExecute = (row) => {
   currentTask.value = row
@@ -555,33 +404,6 @@ const handleDelete = async (row) => {
   }
 }
 
-const handleSave = async () => {
-  if (!formData.name) {
-    ElMessage.warning(t('develop.taskManagement.nameRequired'))
-    return
-  }
-
-  if (formData.dev_type === 'workflow') {
-    router.push(formData.id ? { path: '/workflow', query: { taskId: formData.id } } : { path: '/workflow' })
-    return
-  }
-
-  try {
-    if (dialogMode.value === 'create') {
-      await createDevTask(formData)
-      ElMessage.success(t('develop.taskManagement.createSuccess'))
-    } else {
-      await updateDevTask(formData.id, formData)
-      ElMessage.success(t('develop.taskManagement.updateSuccess'))
-    }
-    dialogVisible.value = false
-    loadTasks()
-  } catch (error) {
-    console.error('保存任务失败:', error)
-    ElMessage.error(t('develop.taskManagement.saveFailed') + (error.response?.data?.error || error.message))
-  }
-}
-
 const handleRefresh = () => {
   loadTasks()
 }
@@ -595,43 +417,16 @@ const handlePageSizeChange = () => {
   loadTasks()
 }
 
-// 标签操作
-const showTagInput = () => {
-  tagInputVisible.value = true
-  nextTick(() => {
-    tagInputRef.value?.focus()
-  })
-}
-
-const handleTagInputConfirm = () => {
-  if (tagInputValue.value) {
-    if (!formData.tags.includes(tagInputValue.value)) {
-      formData.tags.push(tagInputValue.value)
-    }
-  }
-  tagInputVisible.value = false
-  tagInputValue.value = ''
-}
-
-const removeTag = (tag) => {
-  formData.tags.splice(formData.tags.indexOf(tag), 1)
-}
-
 // 监听筛选器变化
 watch([filters], () => {
   pagination.page = 1
   loadTasks()
 }, { deep: true })
 
-watch(() => route.query, () => {
-  handleRouteAction()
-}, { deep: true })
-
 // 初始化
 onMounted(async () => {
   await loadTasks()
   await loadEngines()
-  handleRouteAction()
 })
 </script>
 

@@ -165,6 +165,7 @@
       class="addp-dialog"
       :title="t('develop.notebook.uploadDialogTitle')"
       width="min(600px, calc(100vw - 24px))"
+      @closed="handleUploadDialogClosed"
     >
       <el-form :model="uploadForm" label-position="top">
         <el-form-item :label="t('develop.notebook.engine')" required>
@@ -369,7 +370,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, Refresh, Search, Document, VideoPlay, Clock, More, Download, Delete, Switch } from '@element-plus/icons-vue'
@@ -377,6 +378,15 @@ import { notebookAPI } from '@/api/notebook'
 import { deleteDevTask, executeDevTask, getDevTask } from '@/api/devTask'
 import { openMonitorExecution } from '@addp/common-frontend'
 import { useRoute, useRouter } from 'vue-router'
+import {
+  buildDevelopTaskEditorLocation,
+  buildDevelopTaskPageLocation,
+  developTaskIDFromRoute
+} from '@/utils/developTaskRoute'
+import {
+  navigateDevelopRoute,
+  navigateDevelopTaskEditor
+} from '@/utils/developNavigation'
 import dayjs from 'dayjs'
 
 const router = useRouter()
@@ -515,8 +525,11 @@ const loadNotebooks = async () => {
 }
 
 // 选择 Notebook
-const selectNotebook = (notebook) => {
+const selectNotebook = async (notebook, options = {}) => {
   currentNotebook.value = notebook
+  if (options.updateRoute !== false) {
+    await navigateDevelopTaskEditor(router, 'script', notebook.id)
+  }
 }
 
 const selectNotebookByID = async (id) => {
@@ -524,7 +537,7 @@ const selectNotebookByID = async (id) => {
 
   const existing = notebooks.value.find(item => String(item.id) === String(id))
   if (existing) {
-    selectNotebook(existing)
+    await selectNotebook(existing, { updateRoute: false })
     return
   }
 
@@ -545,7 +558,11 @@ const selectNotebookByID = async (id) => {
 }
 
 // 显示上传对话框
-const showUploadDialog = async () => {
+const showUploadDialog = async (options = {}) => {
+  if (options.updateRoute !== false) {
+    await navigateDevelopTaskEditor(router, 'script')
+    return
+  }
   uploadForm.value = {
     file: null,
     name: '',
@@ -558,6 +575,11 @@ const showUploadDialog = async () => {
   if (uploadForm.value.engine_id) {
     await loadKernels(uploadForm.value.engine_id)
   }
+}
+
+const handleUploadDialogClosed = async () => {
+  if (String(route.query.action || '') !== 'create') return
+  await navigateDevelopRoute(router, { path: '/notebook' }, { history: 'replace' })
 }
 
 // 文件选择改变
@@ -592,7 +614,7 @@ const confirmUpload = async () => {
 
   uploading.value = true
   try {
-    await notebookAPI.uploadNotebook(uploadForm.value.file, {
+    const response = await notebookAPI.uploadNotebook(uploadForm.value.file, {
       name: uploadForm.value.name,
       description: uploadForm.value.description,
       engine_id: uploadForm.value.engine_id,
@@ -602,6 +624,11 @@ const confirmUpload = async () => {
     ElMessage.success(t('develop.notebook.uploadSuccess'))
     uploadDialogVisible.value = false
     await loadNotebooks()
+    const uploadedTask = response.dev_task
+    if (uploadedTask?.id) {
+      await selectNotebook(uploadedTask, { updateRoute: false })
+      await navigateDevelopTaskEditor(router, 'script', uploadedTask.id, { history: 'replace' })
+    }
   } catch (error) {
     console.error('上传失败:', error)
     ElMessage.error(error.response?.data?.error || t('develop.notebook.uploadFailed'))
@@ -716,7 +743,7 @@ const confirmExecute = async () => {
 
 // 查看执行历史
 const viewHistory = (notebook) => {
-  router.push({
+  return navigateDevelopRoute(router, {
     path: '/executions',
     query: { source_task_id: notebook.id, dev_type: 'script' }
   })
@@ -780,6 +807,7 @@ const deleteNotebook = async (notebook) => {
     // 如果删除的是当前选中的 Notebook，清空选中状态
     if (currentNotebook.value && currentNotebook.value.id === notebook.id) {
       currentNotebook.value = null
+      await navigateDevelopRoute(router, { path: '/notebook' }, { history: 'replace' })
     }
 
     await loadNotebooks()
@@ -821,23 +849,48 @@ const notebookRuntimeBindingLabel = (notebook) => {
   return `${notebookEngineLabel(notebook)} / ${kernel}`
 }
 
+const notebookTaskRouteReady = ref(false)
+let applyingNotebookTaskRoute = false
+
+async function applyNotebookTaskRoute() {
+  if (applyingNotebookTaskRoute) return
+  applyingNotebookTaskRoute = true
+  try {
+    const taskId = developTaskIDFromRoute(route)
+    const action = String(route.query.action || '')
+    const canonicalLocation = taskId || action === 'create'
+      ? buildDevelopTaskEditorLocation('script', taskId)
+      : buildDevelopTaskPageLocation('script')
+    if (route.fullPath !== router.resolve(canonicalLocation).fullPath) {
+      await navigateDevelopTaskEditor(router, 'script', taskId, { history: 'replace' })
+    }
+
+    if (taskId) {
+      uploadDialogVisible.value = false
+      if (String(currentNotebook.value?.id || '') !== taskId) await selectNotebookByID(taskId)
+    } else if (action === 'create') {
+      currentNotebook.value = null
+      await showUploadDialog({ updateRoute: false })
+    } else {
+      uploadDialogVisible.value = false
+      currentNotebook.value = null
+    }
+  } catch (error) {
+    ElMessage.error(error.response?.data?.error || t('develop.notebook.loadTaskFailed'))
+  } finally {
+    applyingNotebookTaskRoute = false
+  }
+}
+
 onMounted(async () => {
   await Promise.all([loadNotebookEngines(), loadNotebooks()])
-
-  const taskId = firstQueryValue(route.query.id || route.query.taskId)
-  if (taskId) {
-    await selectNotebookByID(taskId)
-  } else if (firstQueryValue(route.query.action) === 'create') {
-    showUploadDialog()
-  }
+  await applyNotebookTaskRoute()
+  notebookTaskRouteReady.value = true
 })
 
-function firstQueryValue(value) {
-  if (Array.isArray(value)) {
-    return value[0] || ''
-  }
-  return value || ''
-}
+watch(() => route.fullPath, () => {
+  if (notebookTaskRouteReady.value) applyNotebookTaskRoute()
+})
 </script>
 
 <style scoped>

@@ -1,8 +1,8 @@
 # ADDP OAuth 授权规范
 
-更新日期：2026-07-31
+更新日期：2026-08-01
 
-状态：阶段 4.3 正式规范。OAuth 登录、浏览器会话、资源票据和受委托访问令牌均以本文为准；OAuth 运行代码已一次性切换到受控 Fosite 唯一主路径。System 负责 Fosite Provider、PostgreSQL Storage 和协议事务验收，`common-python` 发布门禁负责 wheel 安装后的 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、刷新轮换、撤销和真实 OS Keychain 产品 E2E。CLI 最终目标支持主流桌面操作系统；当前受发布测试环境约束，只以 macOS Keychain E2E 作为正式发布证据，不宣称 Windows Credential Manager 或 Linux Secret Service 已完成验证。OIDC 尚未启用，当前唯一运行路径不注册 OpenID Handler、不允许 `openid` Scope，也不宣告 Discovery/JWKS；待 issuer、Claim 和密钥生命周期独立设计完成后再实施。
+状态：正式规范。OAuth 登录、浏览器会话、资源票据和受委托访问令牌均以本文为准；OAuth 运行代码使用受控 Fosite 唯一主路径。System 负责 Provider、PostgreSQL Storage 和协议事务验收，`common-python` 发布门禁负责 wheel 安装后的 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、刷新轮换、撤销和真实 OS Keychain 产品 E2E。CLI 最终目标支持主流桌面操作系统；当前发布证据只覆盖 macOS Keychain，不宣称 Windows Credential Manager 或 Linux Secret Service 已完成验证。OIDC 尚未启用，当前唯一运行路径不注册 OpenID Handler、不允许 `openid` Scope，也不宣告 Discovery/JWKS。
 
 System 协议验收与正式 `addp` CLI 使用同一个 `addp-cli` 公共客户端和同一组 OAuth 端点，不保留测试专用授权实现。CLI 的发布、凭据存储、上下文确认和命令契约见第七节；协议与产品 E2E 必须共同通过后才能发布。
 
@@ -25,7 +25,7 @@ System 不再签发或解析用户 JWT；旧的“允许过期 Access Token 调 
 
 ### 1.1 协议引擎实现约束
 
-System 内嵌 ADDP 受控 Fosite 派生版本，作为 Authorization Code、PKCE、Device Flow、OAuth Refresh、Revocation 和 OIDC 的唯一协议引擎。目标版本、证据和治理要求见 [ADDP IAM OAuth/OIDC 协议引擎 ADR](../next/addp-IAM%20OAuth-OIDC协议引擎ADR.md)。
+System 内嵌 ADDP 受控 Fosite 派生版本，作为 Authorization Code、PKCE、Device Flow、OAuth Refresh、Revocation，以及后续 OIDC 的唯一协议引擎。已接受的架构决策、当前 Provider 组合、Storage 映射和版本治理见 [System OAuth 与 Fosite 实现说明](../../system/docs/OAuth与Fosite实现说明.md)；OIDC 启用门见 [ADDP IAM OIDC 启用设计](../next/addp-IAM%20OIDC启用设计.md)。
 
 System 仍是 ADDP 唯一 Auth Server 和 IAM 事实权威，不新增独立认证服务。Fosite 不负责账号、MFA、Tenant Context、Role Permission、owner Resource Grant、页面或外部 IdP 身份映射；这些事实由 System 计算后通过 Authentication / Consent Bridge 写入 Fosite Session。
 

@@ -67,6 +67,7 @@ import { taskAPI } from '@/api/tasks'
 import { getItemByID, getItemFieldsByID } from '@/api/meta'
 import { systemEnginesAPI } from '@/api/systemEngines'
 import { parseTransferLocator } from '@/utils/resourceLocator'
+import { navigateTransferRoute } from '@/utils/moduleNavigation'
 import { taskEngineTypes } from './continuousTask.mjs'
 
 // 导入步骤组件
@@ -206,7 +207,7 @@ async function handleSubmit() {
 
     if (success) {
       // 跳转到任务列表页面
-      router.push('/tasks')
+      await navigateTransferRoute(router, '/tasks', { history: 'replace' })
     }
   } catch (error) {
     if (error !== 'cancel') {
@@ -236,7 +237,7 @@ async function handleCancel() {
 
     wizardState.reset()
     // 跳转到任务列表页面
-    router.push('/tasks')
+    await navigateTransferRoute(router, '/tasks', { history: 'replace' })
   } catch (error) {
     // 用户点击了"继续编辑"
   }

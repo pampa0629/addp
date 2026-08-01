@@ -1,8 +1,6 @@
 <template>
   <div class="raster-mosaic">
     <el-card>
-      <el-tabs v-model="activeTab" @tab-change="handleTabChange">
-        <el-tab-pane :label="t('manager.rasterMosaic.tasksTab')" name="tasks">
           <div class="tab-toolbar">
             <div class="toolbar-tip">
               <span class="toolbar-tip-text">{{ t('manager.rasterMosaic.subtitle') }}</span>
@@ -14,7 +12,7 @@
                 <el-icon class="inline-tip-icon"><InfoFilled /></el-icon>
               </el-tooltip>
             </div>
-            <el-button type="primary" @click="openCreateDialog">{{ t('manager.rasterMosaic.create') }}</el-button>
+            <el-button type="primary" @click="requestCreateDialog">{{ t('manager.rasterMosaic.create') }}</el-button>
             <el-button :icon="Refresh" circle @click="loadTasks" />
           </div>
 
@@ -54,7 +52,7 @@
             <el-table-column :label="t('manager.rasterMosaic.actions')" width="300" fixed="right">
               <template #default="{ row }">
                 <div class="row-actions">
-                  <el-button size="small" @click="openEditDialog(row)">{{ t('manager.rasterMosaic.edit') }}</el-button>
+                  <el-button size="small" @click="requestEditTask(row)">{{ t('manager.rasterMosaic.edit') }}</el-button>
                   <el-button type="primary" size="small" :loading="executingId === row.id" @click="executeTask(row)">
                     {{ t('manager.rasterMosaic.execute') }}
                   </el-button>
@@ -77,8 +75,6 @@
             @size-change="handleTasksSizeChange"
             @current-change="loadTasks"
           />
-        </el-tab-pane>
-      </el-tabs>
     </el-card>
 
     <el-dialog
@@ -86,6 +82,7 @@
       :title="editingTask ? t('manager.rasterMosaic.editTitle') : t('manager.rasterMosaic.createTitle')"
       width="820px"
       destroy-on-close
+      @closed="clearTaskDialogRoute"
     >
       <el-form label-position="top" :model="form">
         <div class="form-grid">
@@ -197,8 +194,10 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { navigateManagerRoute } from '@/utils/moduleNavigation'
+import { resolveManagerTaskWorkspaceRouteState } from '@/utils/taskWorkspaceRoute'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { InfoFilled, Refresh } from '@element-plus/icons-vue'
@@ -208,12 +207,18 @@ import { useQuickViewResourceDisplay } from '../composables/useQuickViewResource
 import { formatDateTime } from '../utils/formatters'
 import { rasterCOGExecutionStatusTagType, rasterCOGLastExecutionStatus } from '../utils/rasterCOGDisplay'
 
+const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
-const { t } = useI18n()
 const { displayText, loadQuickViewEngines, resourceLabel } = useQuickViewResourceDisplay(t)
 
-const activeTab = ref(route.query.tab === 'tasks' ? 'tasks' : 'tasks')
+const resolveRouteState = routeQuery => resolveManagerTaskWorkspaceRouteState({
+  routeQuery,
+  allowedQuery: ['create', 'task_id']
+})
+let routeDataReady = false
+let workspaceRestoreSequence = 0
+
 const tasks = ref([])
 const tasksLoading = ref(false)
 const tasksPage = ref(1)
@@ -348,6 +353,25 @@ const openCreateDialog = () => {
   dialogVisible.value = true
 }
 
+const requestCreateDialog = async () => {
+  const routeState = resolveRouteState({ create: '1' })
+  await navigateManagerRoute(router, {
+    path: route.path,
+    query: routeState.query
+  }, { history: 'push' })
+}
+
+const clearTaskDialogRoute = async () => {
+  const nextQuery = { ...route.query }
+  delete nextQuery.create
+  delete nextQuery.task_id
+  const routeState = resolveRouteState(nextQuery)
+  const location = { path: route.path, query: routeState.query }
+  if (router.resolve(location).fullPath !== route.fullPath) {
+    await navigateManagerRoute(router, location, { history: 'replace' })
+  }
+}
+
 const openEditDialog = (task) => {
   resetForm()
   editingTask.value = task
@@ -373,6 +397,14 @@ const openEditDialog = (task) => {
   sourceInitialLocator.value = form.sourceLocator
   targetInitialLocator.value = form.targetLocator
   dialogVisible.value = true
+}
+
+const requestEditTask = async (task) => {
+  const routeState = resolveRouteState({ task_id: task.id })
+  await navigateManagerRoute(router, {
+    path: route.path,
+    query: routeState.query
+  }, { history: 'push' })
 }
 
 const validateForm = () => {
@@ -503,22 +535,52 @@ const deleteTask = async (task) => {
 
 const openTaskExecution = (task) => openMonitorExecution(task.last_execution_id)
 
-const handleTabChange = async () => {
-  await router.replace({
-    query: {
-      ...route.query,
-      tab: activeTab.value
-    }
-  })
-  await loadTasks()
-}
-
 const handleTasksSizeChange = () => {
   tasksPage.value = 1
   loadTasks()
 }
 
-onMounted(() => Promise.all([loadQuickViewEngines(), loadTasks()]))
+async function restoreWorkspaceFromRoute() {
+  const restoreSequence = ++workspaceRestoreSequence
+  const routeState = resolveRouteState(route.query)
+  if (routeState.changed) {
+    await navigateManagerRoute(router, {
+      path: route.path,
+      query: routeState.query
+    }, { history: 'replace' })
+    return
+  }
+  if (!routeDataReady) return
+
+  const taskID = Number(routeState.query.task_id || 0)
+  if (taskID) {
+    try {
+      const response = await quickViewAPI.getRasterMosaicTask(taskID)
+      if (restoreSequence !== workspaceRestoreSequence) return
+      openEditDialog(response?.data?.data || response?.data || response)
+    } catch (error) {
+      if (restoreSequence !== workspaceRestoreSequence) return
+      dialogVisible.value = false
+      ElMessage.error(errorMessage(error, t('manager.rasterMosaic.loadTasksFailed')))
+      await clearTaskDialogRoute()
+      return
+    }
+  } else if (routeState.query.create === '1') {
+    openCreateDialog()
+  } else {
+    dialogVisible.value = false
+  }
+  await loadTasks()
+}
+
+watch(() => route.query, restoreWorkspaceFromRoute)
+
+onMounted(async () => {
+  await restoreWorkspaceFromRoute()
+  await loadQuickViewEngines()
+  routeDataReady = true
+  await restoreWorkspaceFromRoute()
+})
 </script>
 
 <style scoped>

@@ -64,3 +64,10 @@ bash scripts/swagger/check-route-coverage.sh asset
 - `docs/plan/数据资产模块群开发计划.md`
 - `docs/spec/addp-API设计规范.md`
 - `docs/spec/addp-Swagger集成指南.md`
+
+## 前端公开路由
+
+- 模块内 Router 使用 `/assets`、`/applications`、`/categories` 等无模块前缀路径；Console 公开 URL 统一加 `/asset` 前缀。
+- 资产只允许后端真实支持的 `/assets/:id` 详情和 `/assets/:id/edit` 编目编辑；资产由 owner 模块自动发现，不提供手工创建路由。
+- 资产列表当前目录使用 `catalog_id`；申请与授权默认 `applications` Tab 省略，问题反馈使用 `?tab=feedbacks`。
+- 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`；编辑保存和取消均用 `replace` 回到详情。

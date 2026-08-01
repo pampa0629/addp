@@ -16,8 +16,8 @@ import {
 } from '../src/views/TaskWizard/continuousTask.mjs'
 
 const databaseCDCCapability = {
-	sources: ['postgresql', 'mysql'],
-	target: 'postgresql',
+		sources: ['postgresql', 'mysql'],
+		targets: ['postgresql', 'mysql'],
 	bootstrap: ['initial_snapshot'],
 	apply_mode: 'upsert_delete'
 }
@@ -140,6 +140,16 @@ test('database CDC availability reports provider-specific blocking reasons', () 
 			{ name: 'id', type: 'bigint', primary_key: true },
 			{ name: 'payload', type: 'bytes' }
 		],
+			databaseCDCCapability
+		}), [])
+	assert.deepEqual(databaseCDCUnavailableReasonCodes({
+		sourceEngineType: 'postgresql',
+		sourceLocator: 'addp://engine/8/path/public/orders?type=table',
+		sourceRepresentation: 'native',
+		sourceDataType: 'table',
+		targetEngineType: 'mysql',
+		targetRepresentation: 'native',
+		sourceFields: [{ name: 'id', type: 'bigint', primary_key: true }],
 		databaseCDCCapability
 	}), [])
 
@@ -156,7 +166,7 @@ test('database CDC availability reports provider-specific blocking reasons', () 
 	assert.deepEqual(unavailable.map(reason => reason.code), [
 		'sourceDatabaseRequired',
 		'sourceNativeRequired',
-		'targetPostgreSQLRequired',
+			'targetAtomicApplyRequired',
 		'targetNativeRequired',
 		'sourcePrimaryKeyRequired',
 		'sourceFieldTypesUnsupported'

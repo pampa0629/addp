@@ -14,6 +14,7 @@ import (
 
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/kafka"
+	mysqlplugin "github.com/addp/common/engine/plugins/mysql"
 	"github.com/addp/common/engine/plugins/postgresql"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/transfer/internal/capture"
@@ -35,6 +36,14 @@ func TestIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T) {
 	if os.Getenv("ADDP_MYSQL_CDC_DATA_E2E") != "1" {
 		t.Skip("set ADDP_MYSQL_CDC_DATA_E2E=1 to run MySQL CDC full-lifecycle integration test")
 	}
+	for _, targetType := range []string{"postgresql", "mysql"} {
+		t.Run("target="+targetType, func(t *testing.T) {
+			runIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t, targetType)
+		})
+	}
+}
+
+func runIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T, targetType string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -66,7 +75,7 @@ func TestIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T) {
 	suffix := time.Now().UnixNano()
 	sourceDatabase := fmt.Sprintf("cdc_mysql_%d", suffix)
 	sourceTable := "orders"
-	targetSchema := fmt.Sprintf("cdc_mysql_target_%d", suffix)
+	targetNamespace := fmt.Sprintf("cdc_mysql_target_%d", suffix)
 	targetTable := "orders_target"
 
 	rootInfo := mysqlCDCConnInfo(
@@ -102,23 +111,8 @@ func TestIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	targetInfo := cdcDataBusinessPostgresConnInfo()
-	targetDSN, err := (&postgresql.PostgreSQLPlugin{}).BuildDSN(targetInfo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	targetDB, err := sql.Open("postgres", targetDSN)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer targetDB.Close()
-	if err := targetDB.PingContext(ctx); err != nil {
-		t.Fatalf("business PostgreSQL is unavailable: %v", err)
-	}
-	if _, err := targetDB.ExecContext(ctx, `CREATE SCHEMA `+pq.QuoteIdentifier(targetSchema)); err != nil {
-		t.Fatal(err)
-	}
-	defer targetDB.ExecContext(context.Background(), `DROP SCHEMA IF EXISTS `+pq.QuoteIdentifier(targetSchema)+` CASCADE`)
+	target := openCDCDataE2ETarget(t, ctx, targetType, targetNamespace, targetTable, rootInfo, rootDB)
+	defer target.Close()
 
 	sourceInfo := mysqlCDCConnInfo(
 		cdcDataEnv("ADDP_TEST_BUSINESS_MYSQL_CDC_USER", "addp_cdc"),
@@ -127,7 +121,10 @@ func TestIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T) {
 	)
 	resolver := planner.StaticEngineResolver{
 		12: {Type: "mysql", EngineID: 12, ConnInfo: sourceInfo},
-		20: {Type: "postgresql", EngineID: 20, ConnInfo: targetInfo, Capabilities: ptrEngineCapabilities((&postgresql.PostgreSQLPlugin{}).Capabilities())},
+		target.EngineID: {
+			Type: target.Type, EngineID: target.EngineID, ConnInfo: target.ConnInfo,
+			Capabilities: ptrEngineCapabilities(target.Plugin.Capabilities()),
+		},
 	}
 	captureRepo := repository.NewCaptureRepository(infraDB)
 	topicAdmin, err := capture.NewKafkaTopicAdmin(capture.KafkaAdminConfig{
@@ -179,7 +176,7 @@ func TestIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T) {
 	taskService.SetCaptureControl(captureSupervisor)
 	taskService.SetSchemaChangeInspector(capturePlanResolver)
 	apiRouter := cdcDataAPIRouter(t, taskService, uint(800000+suffix%90000), 800001)
-	task := cdcDataCreateTaskViaAPI(t, apiRouter, mysqlCDCDataTaskConfig(sourceDatabase, sourceTable, targetSchema, targetTable))
+	task := cdcDataCreateTaskViaAPI(t, apiRouter, mysqlCDCDataTaskConfig(sourceDatabase, sourceTable, target))
 	defer cleanupCDCDataInfraRows(infraDB, task.ID)
 
 	execution := cdcDataStartTaskViaAPI(t, apiRouter, task.ID)
@@ -212,6 +209,8 @@ func TestIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T) {
 				return &kafka.KafkaPlugin{}, nil
 			case "postgresql":
 				return &postgresql.PostgreSQLPlugin{}, nil
+			case "mysql":
+				return &mysqlplugin.MySQLPlugin{}, nil
 			default:
 				return nil, fmt.Errorf("unexpected engine type %q", engineType)
 			}
@@ -221,19 +220,19 @@ func TestIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T) {
 	firstCtx, cancelFirst := context.WithCancel(ctx)
 	firstDone := make(chan error, 1)
 	go func() { firstDone <- runner.Run(firstCtx, *claim) }()
-	waitCDCDataRow(t, ctx, firstDone, targetDB, targetSchema, targetTable, 1, "snapshot", true)
-	assertMySQLCDCTypeMatrix(t, ctx, targetDB, targetSchema, targetTable)
+	target.WaitRow(t, ctx, firstDone, 1, "snapshot", true)
+	target.AssertMySQLSourceTypeMatrix(t, ctx)
 	if _, err := rootDB.ExecContext(ctx, "INSERT INTO "+mysqlCDCQuoteIdentifier(sourceDatabase)+"."+mysqlCDCQuoteIdentifier(sourceTable)+` VALUES (
 		2, 'inserted', 2.5000, '2024-02-03', '04:05:06.007', '2024-02-03 04:05:06.007',
 		'2024-02-03 04:05:06.007', JSON_OBJECT('inserted', true), X'', 22.25
 	)`); err != nil {
 		t.Fatal(err)
 	}
-	waitCDCDataRow(t, ctx, firstDone, targetDB, targetSchema, targetTable, 2, "inserted", true)
+	target.WaitRow(t, ctx, firstDone, 2, "inserted", true)
 	if _, err := rootDB.ExecContext(ctx, "UPDATE "+mysqlCDCQuoteIdentifier(sourceDatabase)+"."+mysqlCDCQuoteIdentifier(sourceTable)+" SET name='updated', binary_payload=X'CAFE' WHERE id=1"); err != nil {
 		t.Fatal(err)
 	}
-	waitCDCDataRow(t, ctx, firstDone, targetDB, targetSchema, targetTable, 1, "updated", true)
+	target.WaitRow(t, ctx, firstDone, 1, "updated", true)
 
 	cancelFirst()
 	if err := <-firstDone; !errors.Is(err, context.Canceled) {
@@ -257,7 +256,7 @@ func TestIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T) {
 	if _, err := rootDB.ExecContext(ctx, "DELETE FROM "+mysqlCDCQuoteIdentifier(sourceDatabase)+"."+mysqlCDCQuoteIdentifier(sourceTable)+" WHERE id=2"); err != nil {
 		t.Fatal(err)
 	}
-	waitCDCDataRow(t, ctx, secondDone, targetDB, targetSchema, targetTable, 2, "", false)
+	target.WaitRow(t, ctx, secondDone, 2, "", false)
 
 	mysqlCDCPauseTaskViaAPI(t, apiRouter, task.ID)
 	pauseErr := waitMySQLCDCRunnerExit(t, secondDone, 10*time.Second)
@@ -274,7 +273,7 @@ func TestIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(750 * time.Millisecond)
-	assertMySQLCDCTargetRowAbsent(t, ctx, targetDB, targetSchema, targetTable, 3)
+	target.AssertRowAbsent(t, ctx, 3)
 
 	resumeExecution := mysqlCDCResumeTaskViaAPI(t, apiRouter, task.ID)
 	thirdClaim, err := leaseRepo.ClaimNext(ctx, "mysql-cdc-worker-c", time.Now(), 30*time.Second)
@@ -283,15 +282,10 @@ func TestIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T) {
 	}
 	thirdDone := make(chan error, 1)
 	go func() { thirdDone <- runner.Run(ctx, *thirdClaim) }()
-	waitCDCDataRow(t, ctx, thirdDone, targetDB, targetSchema, targetTable, 3, "paused-backlog", true)
+	target.WaitRow(t, ctx, thirdDone, 3, "paused-backlog", true)
 
 	committedBeforeDrift := mysqlCDCCommittedOffset(t, ctx, stateRepo, task.ID, resource.SourceIdentity)
-	var ledgerOffset int64
-	if err := targetDB.QueryRowContext(ctx, `
-		SELECT next_offset FROM addp_transfer.apply_positions
-		WHERE apply_identity=$1::uuid AND partition='0'`, task.ApplyIdentity).Scan(&ledgerOffset); err != nil {
-		t.Fatal(err)
-	}
+	ledgerOffset := target.LedgerOffset(t, ctx, task.ApplyIdentity)
 	if ledgerOffset != committedBeforeDrift {
 		t.Fatalf("MySQL CDC target ledger=%d Transfer committed=%d", ledgerOffset, committedBeforeDrift)
 	}
@@ -312,7 +306,7 @@ func TestIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T) {
 	if got := mysqlCDCCommittedOffset(t, ctx, stateRepo, task.ID, resource.SourceIdentity); got != committedBeforeDrift {
 		t.Fatalf("schema drift advanced committed position: before=%d after=%d", committedBeforeDrift, got)
 	}
-	assertMySQLCDCTargetRowAbsent(t, ctx, targetDB, targetSchema, targetTable, 4)
+	target.AssertRowAbsent(t, ctx, 4)
 	if err := leaseRepo.Finish(context.Background(), *thirdClaim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", runnerErr.Error(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -343,9 +337,9 @@ func TestIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T) {
 	fourthCtx, cancelFourth := context.WithCancel(ctx)
 	fourthDone := make(chan error, 1)
 	go func() { fourthDone <- runner.Run(fourthCtx, *fourthClaim) }()
-	waitCDCDataRow(t, ctx, fourthDone, targetDB, targetSchema, targetTable, 4, "blocked", true)
-	var additiveValue string
-	if err := targetDB.QueryRowContext(ctx, `SELECT schema_drift FROM `+pq.QuoteIdentifier(targetSchema)+`.`+pq.QuoteIdentifier(targetTable)+` WHERE id=4`).Scan(&additiveValue); err != nil || additiveValue != "new-field" {
+	target.WaitRow(t, ctx, fourthDone, 4, "blocked", true)
+	additiveValue, err := target.AdditiveValue(ctx, 4)
+	if err != nil || additiveValue != "new-field" {
 		t.Fatalf("resumed MySQL additive value=%q err=%v", additiveValue, err)
 	}
 	if _, err := rootDB.ExecContext(ctx, "INSERT INTO "+mysqlCDCQuoteIdentifier(sourceDatabase)+"."+mysqlCDCQuoteIdentifier(sourceTable)+` (
@@ -354,7 +348,7 @@ func TestIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T) {
 		'2024-05-06 07:08:09.010', JSON_OBJECT('after', true), X'05', 55.5, 'continued')`); err != nil {
 		t.Fatal(err)
 	}
-	waitCDCDataRow(t, ctx, fourthDone, targetDB, targetSchema, targetTable, 5, "after-additive", true)
+	target.WaitRow(t, ctx, fourthDone, 5, "after-additive", true)
 	mysqlCDCPauseTaskViaAPI(t, apiRouter, task.ID)
 	cancelFourth()
 	if err := <-fourthDone; !errors.Is(err, context.Canceled) {
@@ -397,11 +391,284 @@ func TestIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T) {
 	assertMySQLCDCCleanup(t, ctx, captureRepo, connectClient, admin, task, resource)
 }
 
-func mysqlCDCDataTaskConfig(sourceDatabase, sourceTable, targetSchema, targetTable string) models.JSONMap {
+type cdcDataE2ETarget struct {
+	EngineID      uint
+	Type          string
+	Namespace     string
+	NamespaceTerm string
+	Table         string
+	ConnInfo      engineplugin.ConnectionInfo
+	DB            *sql.DB
+	Plugin        engineplugin.EnginePlugin
+}
+
+func openCDCDataE2ETarget(
+	t *testing.T,
+	ctx context.Context,
+	targetType, namespace, table string,
+	mysqlRootInfo engineplugin.ConnectionInfo,
+	mysqlRootDB *sql.DB,
+) *cdcDataE2ETarget {
+	t.Helper()
+	switch targetType {
+	case "postgresql":
+		connInfo := cdcDataBusinessPostgresConnInfo()
+		dsn, err := (&postgresql.PostgreSQLPlugin{}).BuildDSN(connInfo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		db, err := sql.Open("postgres", dsn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := db.PingContext(ctx); err != nil {
+			db.Close()
+			t.Fatalf("business PostgreSQL is unavailable: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, `CREATE SCHEMA `+pq.QuoteIdentifier(namespace)); err != nil {
+			db.Close()
+			t.Fatal(err)
+		}
+		return &cdcDataE2ETarget{
+			EngineID: 20, Type: "postgresql", Namespace: namespace, NamespaceTerm: "schema", Table: table,
+			ConnInfo: connInfo, DB: db, Plugin: &postgresql.PostgreSQLPlugin{},
+		}
+	case "mysql":
+		if mysqlRootDB == nil {
+			t.Fatal("MySQL target requires the root integration connection")
+		}
+		if _, err := mysqlRootDB.ExecContext(ctx, "CREATE DATABASE "+mysqlCDCQuoteIdentifier(namespace)+" CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"); err != nil {
+			t.Fatal(err)
+		}
+		connInfo := mysqlCDCConnInfo(
+			fmt.Sprint(mysqlRootInfo["user"]), fmt.Sprint(mysqlRootInfo["password"]), namespace,
+		)
+		db := openMySQLIntegrationDB(t, connInfo)
+		return &cdcDataE2ETarget{
+			EngineID: 21, Type: "mysql", Namespace: namespace, NamespaceTerm: "database", Table: table,
+			ConnInfo: connInfo, DB: db, Plugin: &mysqlplugin.MySQLPlugin{},
+		}
+	default:
+		t.Fatalf("unsupported MySQL CDC E2E target %q", targetType)
+		return nil
+	}
+}
+
+func (target *cdcDataE2ETarget) Close() {
+	if target == nil || target.DB == nil {
+		return
+	}
+	switch target.Type {
+	case "postgresql":
+		_, _ = target.DB.ExecContext(context.Background(), `DROP SCHEMA IF EXISTS `+pq.QuoteIdentifier(target.Namespace)+` CASCADE`)
+	case "mysql":
+		_, _ = target.DB.ExecContext(context.Background(), "DROP DATABASE IF EXISTS "+mysqlCDCQuoteIdentifier(target.Namespace))
+	}
+	_ = target.DB.Close()
+}
+
+func (target *cdcDataE2ETarget) ParentLocator() string {
+	return fmt.Sprintf("addp://engine/%d/path/%s?type=%s", target.EngineID, target.Namespace, target.NamespaceTerm)
+}
+
+func (target *cdcDataE2ETarget) WaitRow(
+	t *testing.T,
+	ctx context.Context,
+	runnerDone <-chan error,
+	id int64,
+	wantName string,
+	wantExists bool,
+) {
+	t.Helper()
+	if target.Type == "postgresql" {
+		waitCDCDataRow(t, ctx, runnerDone, target.DB, target.Namespace, target.Table, id, wantName, wantExists)
+		return
+	}
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	qualified := mysqlCDCQuoteIdentifier(target.Namespace) + "." + mysqlCDCQuoteIdentifier(target.Table)
+	for {
+		var name sql.NullString
+		err := target.DB.QueryRowContext(ctx, "SELECT name FROM "+qualified+" WHERE id = ?", id).Scan(&name)
+		if wantExists && err == nil && name.Valid && name.String == wantName {
+			return
+		}
+		if !wantExists && errors.Is(err, sql.ErrNoRows) {
+			return
+		}
+		select {
+		case err := <-runnerDone:
+			t.Fatalf("MySQL CDC runner exited before %s target row converged: %v", target.Type, err)
+		case <-ctx.Done():
+			t.Fatalf("wait %s target row exists=%v name=%q: %v", target.Type, wantExists, wantName, ctx.Err())
+		case <-ticker.C:
+		}
+	}
+}
+
+func (target *cdcDataE2ETarget) AssertRowAbsent(t *testing.T, ctx context.Context, id int64) {
+	t.Helper()
+	if target.Type == "postgresql" {
+		assertMySQLCDCPostgreSQLTargetRowAbsent(t, ctx, target.DB, target.Namespace, target.Table, id)
+		return
+	}
+	var count int
+	err := target.DB.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM "+mysqlCDCQuoteIdentifier(target.Namespace)+"."+mysqlCDCQuoteIdentifier(target.Table)+" WHERE id = ?", id,
+	).Scan(&count)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("MySQL target row id=%d unexpectedly exists", id)
+	}
+}
+
+func (target *cdcDataE2ETarget) AssertMySQLSourceTypeMatrix(t *testing.T, ctx context.Context) {
+	t.Helper()
+	if target.Type == "postgresql" {
+		assertMySQLCDCPostgreSQLTargetTypeMatrix(t, ctx, target.DB, target.Namespace, target.Table)
+		return
+	}
+	var amount, date, businessTime, changedAt, changedTimestamp, payload, binaryHex string
+	var score float64
+	err := target.DB.QueryRowContext(ctx, `
+		SELECT CAST(amount AS CHAR), DATE_FORMAT(business_date, '%Y-%m-%d'),
+		       DATE_FORMAT(business_time, '%H:%i:%s.%f'), DATE_FORMAT(changed_at, '%Y-%m-%d %H:%i:%s.%f'),
+		       DATE_FORMAT(changed_timestamp, '%Y-%m-%d %H:%i:%s.%f'), CAST(payload AS CHAR),
+		       LOWER(HEX(binary_payload)), score
+		FROM `+mysqlCDCQuoteIdentifier(target.Namespace)+`.`+mysqlCDCQuoteIdentifier(target.Table)+` WHERE id = ?`, 1).
+		Scan(&amount, &date, &businessTime, &changedAt, &changedTimestamp, &payload, &binaryHex, &score)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if amount != "12345678901234567890.1234" || date != "2024-01-02" || !strings.HasPrefix(businessTime, "03:04:05.006") ||
+		!strings.HasPrefix(changedAt, "2024-01-02 03:04:05.006") || !strings.HasPrefix(changedTimestamp, "2024-01-02 03:04:05.006") ||
+		!strings.Contains(payload, `"enabled": true`) || !strings.Contains(payload, `"items": 2`) || binaryHex != "0001fe" || score != 12.5 {
+		t.Fatalf("MySQL CDC MySQL target type matrix mismatch: amount=%q date=%q time=%q datetime=%q timestamp=%q payload=%q bytes=%q score=%v",
+			amount, date, businessTime, changedAt, changedTimestamp, payload, binaryHex, score)
+	}
+}
+
+func (target *cdcDataE2ETarget) AssertPostgreSQLSourceTypeMatrix(t *testing.T, ctx context.Context) {
+	t.Helper()
+	if target.Type == "postgresql" {
+		assertCDCDataTypeMatrix(t, ctx, target.DB, target.Namespace, target.Table)
+		return
+	}
+	var amount, businessDate, businessTime, changedAt, changedAtTZ, payload, ref, geometryType, geometryText string
+	var geometrySRID int
+	var enabled bool
+	err := target.DB.QueryRowContext(ctx, `
+		SELECT CAST(amount AS CHAR), DATE_FORMAT(business_date, '%Y-%m-%d'),
+		       DATE_FORMAT(business_time, '%H:%i:%s.%f'), DATE_FORMAT(changed_at, '%Y-%m-%d %H:%i:%s.%f'),
+		       DATE_FORMAT(changed_at_tz, '%Y-%m-%d %H:%i:%s.%f'), enabled, CAST(payload AS CHAR), ref,
+		       ST_GeometryType(geometry), ST_SRID(geometry), ST_AsText(geometry)
+		FROM `+mysqlCDCQuoteIdentifier(target.Namespace)+`.`+mysqlCDCQuoteIdentifier(target.Table)+` WHERE id = ?`, 1).
+		Scan(&amount, &businessDate, &businessTime, &changedAt, &changedAtTZ, &enabled, &payload, &ref, &geometryType, &geometrySRID, &geometryText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if amount != "12345678901234567890.1234" || businessDate != "2024-01-02" || !strings.HasPrefix(businessTime, "03:04:05.006") ||
+		!strings.HasPrefix(changedAt, "2024-01-02 03:04:05.006") || changedAtTZ != "2024-01-01 19:04:05.006789" || !enabled ||
+		!strings.Contains(payload, `"items": 2`) || !strings.Contains(payload, `"enabled": true`) ||
+		ref != "550e8400-e29b-41d4-a716-446655440000" || !strings.EqualFold(geometryType, "MULTIPOLYGON") ||
+		geometrySRID != 4549 || geometryText != "MULTIPOLYGON(((0 0,10 0,10 10,0 0)))" {
+		t.Fatalf("PostgreSQL CDC MySQL target type matrix mismatch: amount=%q date=%q time=%q ts=%q tstz=%q enabled=%v payload=%q ref=%q geometry=%s/%d/%q",
+			amount, businessDate, businessTime, changedAt, changedAtTZ, enabled, payload, ref, geometryType, geometrySRID, geometryText)
+	}
+}
+
+func (target *cdcDataE2ETarget) WaitGeometry(
+	t *testing.T,
+	ctx context.Context,
+	runnerDone <-chan error,
+	wantText string,
+) {
+	t.Helper()
+	if target.Type == "postgresql" {
+		waitCDCDataGeometry(t, ctx, runnerDone, target.DB, target.Namespace, target.Table, wantText)
+		return
+	}
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	qualified := mysqlCDCQuoteIdentifier(target.Namespace) + "." + mysqlCDCQuoteIdentifier(target.Table)
+	for {
+		var geometryType, geometryText string
+		var srid int
+		err := target.DB.QueryRowContext(ctx,
+			"SELECT ST_GeometryType(geometry), ST_SRID(geometry), ST_AsText(geometry) FROM "+qualified+" WHERE id = ?", 1,
+		).Scan(&geometryType, &srid, &geometryText)
+		if err == nil && strings.EqualFold(geometryType, "MULTIPOLYGON") && srid == 4549 && geometryText == wantText {
+			return
+		}
+		select {
+		case err := <-runnerDone:
+			t.Fatalf("CDC data runner exited before MySQL target geometry converged: %v", err)
+		case <-ctx.Done():
+			t.Fatalf("wait MySQL target geometry %q: %v", wantText, ctx.Err())
+		case <-ticker.C:
+		}
+	}
+}
+
+func (target *cdcDataE2ETarget) HasNullableColumn(ctx context.Context, column string) (bool, error) {
+	var exists bool
+	if target.Type == "postgresql" {
+		err := target.DB.QueryRowContext(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema=$1 AND table_name=$2 AND column_name=$3 AND is_nullable='YES'
+			)`, target.Namespace, target.Table, column).Scan(&exists)
+		return exists, err
+	}
+	err := target.DB.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_schema=? AND table_name=? AND column_name=? AND is_nullable='YES'
+		)`, target.Namespace, target.Table, column).Scan(&exists)
+	return exists, err
+}
+
+func (target *cdcDataE2ETarget) LedgerOffset(t *testing.T, ctx context.Context, applyIdentity string) int64 {
+	t.Helper()
+	var offset int64
+	var err error
+	if target.Type == "postgresql" {
+		err = target.DB.QueryRowContext(ctx, `
+			SELECT next_offset FROM addp_transfer.apply_positions
+			WHERE apply_identity=$1::uuid AND partition='0'`, applyIdentity).Scan(&offset)
+	} else {
+		err = target.DB.QueryRowContext(ctx,
+			"SELECT next_offset FROM "+mysqlCDCQuoteIdentifier(target.Namespace)+".`_addp_transfer_apply_positions` WHERE apply_identity = ? AND partition_key = ?",
+			applyIdentity, "0",
+		).Scan(&offset)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return offset
+}
+
+func (target *cdcDataE2ETarget) AdditiveValue(ctx context.Context, id int64) (string, error) {
+	var value string
+	if target.Type == "postgresql" {
+		err := target.DB.QueryRowContext(ctx, `SELECT schema_drift FROM `+pq.QuoteIdentifier(target.Namespace)+`.`+pq.QuoteIdentifier(target.Table)+` WHERE id=$1`, id).Scan(&value)
+		return value, err
+	}
+	err := target.DB.QueryRowContext(ctx,
+		"SELECT schema_drift FROM "+mysqlCDCQuoteIdentifier(target.Namespace)+"."+mysqlCDCQuoteIdentifier(target.Table)+" WHERE id = ?", id,
+	).Scan(&value)
+	return value, err
+}
+
+func mysqlCDCDataTaskConfig(sourceDatabase, sourceTable string, target *cdcDataE2ETarget) models.JSONMap {
 	fields := []interface{}{
 		map[string]interface{}{"source": "id", "target": "id", "target_type": "bigint", "nullable": false},
 		map[string]interface{}{"source": "name", "target": "name", "target_type": "string", "nullable": true},
-		map[string]interface{}{"source": "amount", "target": "amount", "target_type": "decimal", "nullable": false},
+		map[string]interface{}{
+			"source": "amount", "target": "amount", "target_type": "decimal", "precision": 30, "scale": 4, "nullable": false,
+		},
 		map[string]interface{}{"source": "business_date", "target": "business_date", "target_type": "date", "nullable": false},
 		map[string]interface{}{"source": "business_time", "target": "business_time", "target_type": "time", "nullable": false},
 		map[string]interface{}{"source": "changed_at", "target": "changed_at", "target_type": "timestamp", "nullable": false},
@@ -418,7 +685,7 @@ func mysqlCDCDataTaskConfig(sourceDatabase, sourceTable, targetSchema, targetTab
 			"data_type": "table", "representation": "native",
 		},
 		"target": map[string]interface{}{
-			"parent_locator": fmt.Sprintf("addp://engine/20/path/%s?type=schema", targetSchema), "name": targetTable,
+			"parent_locator": target.ParentLocator(), "name": target.Table,
 			"data_type": "table", "representation": "native",
 			"policy": map[string]interface{}{"apply_mode": "upsert_delete", "keys": []interface{}{"id"}},
 		},
@@ -455,7 +722,7 @@ func mysqlCDCQuoteIdentifier(value string) string {
 	return "`" + strings.ReplaceAll(value, "`", "``") + "`"
 }
 
-func assertMySQLCDCTypeMatrix(t *testing.T, ctx context.Context, db *sql.DB, schema, table string) {
+func assertMySQLCDCPostgreSQLTargetTypeMatrix(t *testing.T, ctx context.Context, db *sql.DB, schema, table string) {
 	t.Helper()
 	var amount, date, businessTime, changedAt, changedTimestamp, payload, binaryHex string
 	var score float64
@@ -514,7 +781,7 @@ func waitMySQLCDCRunnerExit(t *testing.T, done <-chan error, timeout time.Durati
 	}
 }
 
-func assertMySQLCDCTargetRowAbsent(t *testing.T, ctx context.Context, db *sql.DB, schema, table string, id int64) {
+func assertMySQLCDCPostgreSQLTargetRowAbsent(t *testing.T, ctx context.Context, db *sql.DB, schema, table string, id int64) {
 	t.Helper()
 	var exists bool
 	if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM `+pq.QuoteIdentifier(schema)+`.`+pq.QuoteIdentifier(table)+` WHERE id=$1)`, id).Scan(&exists); err != nil {

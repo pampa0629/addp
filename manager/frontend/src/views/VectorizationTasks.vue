@@ -4,7 +4,7 @@
       <el-tabs v-model="activeTab" @tab-change="handleTabChange">
         <el-tab-pane :label="t('manager.vectorization.tasksTab')" name="tasks">
           <div class="tab-toolbar task-tab-toolbar">
-            <el-button type="primary" :icon="Plus" @click="openCreateDialog">
+            <el-button type="primary" :icon="Plus" @click="requestCreateDialog">
               {{ t('manager.vectorization.create') }}
             </el-button>
             <el-button :icon="Refresh" circle @click="loadTasks" />
@@ -67,7 +67,7 @@
                   <el-button type="primary" size="small" :loading="executingId === row.id" @click="executeTask(row)">
                     {{ t('manager.vectorization.execute') }}
                   </el-button>
-                  <el-button size="small" @click="openEditDialog(row)">
+                  <el-button size="small" @click="requestEditTask(row)">
                     {{ t('manager.vectorization.edit') }}
                   </el-button>
                   <el-button size="small" @click="viewTaskResults(row)">
@@ -222,7 +222,7 @@
       </el-tabs>
     </el-card>
 
-    <el-dialog v-model="formDialogVisible" :title="formTitle" width="960px" class="vectorization-task-dialog">
+    <el-dialog v-model="formDialogVisible" :title="formTitle" width="960px" class="vectorization-task-dialog" @closed="clearFormDialogRoute">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="120px">
         <div class="form-section-title">{{ t('manager.vectorization.basicInfo') }}</div>
         <el-form-item :label="t('manager.vectorization.name')" prop="name">
@@ -389,8 +389,10 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { navigateManagerRoute } from '@/utils/moduleNavigation'
+import { resolveManagerTaskWorkspaceRouteState } from '@/utils/taskWorkspaceRoute'
 import { ArrowDown, Close, Plus, Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
@@ -410,7 +412,16 @@ const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 
-const activeTab = ref('tasks')
+const resolveRouteState = routeQuery => resolveManagerTaskWorkspaceRouteState({
+  routeQuery,
+  allowedQueryByTab: {
+    tasks: ['create', 'task_id'],
+    results: ['task_id']
+  }
+})
+const activeTab = ref(resolveRouteState(route.query).tab)
+let routeDataReady = false
+let workspaceRestoreSequence = 0
 
 const results = ref([])
 const resultsLoading = ref(false)
@@ -619,16 +630,16 @@ const loadTasks = async () => {
   }
 }
 
-const refreshActiveTab = () => {
-  if (activeTab.value === 'results') {
-    loadResults()
-  } else {
-    loadTasks()
+const handleTabChange = async (tab) => {
+  const routeState = resolveRouteState({
+    ...route.query,
+    tab,
+    task_id: tab === 'results' ? route.query.task_id : undefined
+  })
+  const location = { path: route.path, query: routeState.query }
+  if (router.resolve(location).fullPath !== route.fullPath) {
+    await navigateManagerRoute(router, location, { history: 'replace' })
   }
-}
-
-const handleTabChange = () => {
-  refreshActiveTab()
 }
 
 const handleResultsSizeChange = () => {
@@ -681,11 +692,39 @@ const openCreateDialog = async () => {
   await loadResourceTrees()
 }
 
+const requestCreateDialog = async () => {
+  const routeState = resolveRouteState({ tab: 'tasks', create: '1' })
+  await navigateManagerRoute(router, {
+    path: route.path,
+    query: routeState.query
+  }, { history: 'push' })
+}
+
+const clearFormDialogRoute = async () => {
+  if (resolveRouteState(route.query).tab !== 'tasks') return
+  const nextQuery = { ...route.query }
+  delete nextQuery.create
+  delete nextQuery.task_id
+  const routeState = resolveRouteState(nextQuery)
+  const location = { path: route.path, query: routeState.query }
+  if (router.resolve(location).fullPath !== route.fullPath) {
+    await navigateManagerRoute(router, location, { history: 'replace' })
+  }
+}
+
 const openEditDialog = async (task) => {
   resetForm(task)
   formDialogVisible.value = true
   await loadResourceTrees()
   await revealSelectedResource()
+}
+
+const requestEditTask = async (task) => {
+  const routeState = resolveRouteState({ tab: 'tasks', task_id: task.id })
+  await navigateManagerRoute(router, {
+    path: route.path,
+    query: routeState.query
+  }, { history: 'push' })
 }
 
 const saveTask = async () => {
@@ -718,19 +757,19 @@ const showTaskDetail = (task) => {
   detailDialogVisible.value = true
 }
 
-const openTaskFromQuery = async () => {
-  const taskId = Number(route.query.task_id || 0)
+const openTaskFromQuery = async (taskId, restoreSequence) => {
   if (!taskId) return
   activeTab.value = 'tasks'
   try {
     const response = await client.get(`/manager/embedding_tasks/${taskId}`)
-    selectedTask.value = response.data || response
-    detailDialogVisible.value = true
+    if (restoreSequence !== workspaceRestoreSequence) return
+    await openEditDialog(response.data || response)
   } catch (error) {
+    if (restoreSequence !== workspaceRestoreSequence) return
     console.error('加载向量化任务详情失败:', error)
     ElMessage.error(t('manager.vectorization.loadTasksFailed'))
-  } finally {
-    router.replace({ query: { ...route.query, task_id: undefined } })
+    formDialogVisible.value = false
+    await clearFormDialogRoute()
   }
 }
 
@@ -768,7 +807,11 @@ const viewTaskResults = async (task) => {
     : null
   resultsPage.value = 1
   activeTab.value = 'results'
-  await loadResults()
+  const routeState = resolveRouteState({ tab: 'results', task_id: task.id })
+  await navigateManagerRoute(router, {
+    path: route.path,
+    query: routeState.query
+  }, { history: 'replace' })
 }
 
 const loadStorageEngines = async (force = false) => {
@@ -1215,7 +1258,7 @@ const openResultExecution = async (result) => {
 
 const locateResult = (result) => {
   if (!result?.locator) return
-  router.push({
+  navigateManagerRoute(router, {
     name: 'DataExplorer',
     query: {
       locator: result.locator
@@ -1311,11 +1354,57 @@ const embeddingStatusLabel = (status) => {
   return t(`manager.vectorization.embeddingStatus.${status}`)
 }
 
+async function restoreWorkspaceFromRoute() {
+  const restoreSequence = ++workspaceRestoreSequence
+  const routeState = resolveRouteState(route.query)
+  activeTab.value = routeState.tab
+  if (routeState.changed) {
+    await navigateManagerRoute(router, {
+      path: route.path,
+      query: routeState.query
+    }, { history: 'replace' })
+    return
+  }
+  if (!routeDataReady) return
+
+  const taskId = Number(routeState.query.task_id || 0)
+  if (routeState.tab === 'results') {
+    formDialogVisible.value = false
+    detailDialogVisible.value = false
+    if (taskId) {
+      try {
+        const response = await client.get(`/manager/embedding_tasks/${taskId}`)
+        if (restoreSequence !== workspaceRestoreSequence) return
+        const task = response.data || response
+        Object.assign(resultFilters, defaultResultFilters(), {
+          engine_id: Number(task.target?.engine_id || 0) || null,
+          node_id: Number(task.target?.node_id || 0) || null,
+          item_id: Number(task.target?.item_id || 0) || null
+        })
+      } catch (error) {
+        if (restoreSequence !== workspaceRestoreSequence) return
+        ElMessage.error(t('manager.vectorization.loadTasksFailed'))
+      }
+    }
+    await loadResults()
+    return
+  }
+
+  if (taskId) await openTaskFromQuery(taskId, restoreSequence)
+  else if (routeState.query.create === '1') await openCreateDialog()
+  else formDialogVisible.value = false
+  await loadTasks()
+}
+
+watch(() => route.query, restoreWorkspaceFromRoute)
+
 onMounted(async () => {
+  await restoreWorkspaceFromRoute()
   await loadStorageEngines()
   await loadTasks()
   await loadResults()
-  await openTaskFromQuery()
+  routeDataReady = true
+  await restoreWorkspaceFromRoute()
 })
 </script>
 

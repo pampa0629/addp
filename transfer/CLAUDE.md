@@ -74,8 +74,8 @@ Transfer 是 `transfer.task.*` 的 Permission owner；定义只存在于 `author
 - checkpoint 当前只用于进度展示、故障定位和 provider marker 观测；失败执行 retry 按 restartable 从头重新入队，append 任务 retry 会被拒绝。不得宣称 table Transfer 已支持 checkpoint resumable。
 - 大数据传输要优先考虑批大小、连续读取 / 写入 session、进度日志和 restartable retry。
 - Worker 任务载荷只保存 ID 和必要上下文，不要塞入大对象。
-- 工作包 2B/2C 已实现业务 Kafka keyed JSON record -> PostgreSQL monotonic upsert；工作包 3D 已在同一 continuous worker 主循环中实现 PostgreSQL CDC Debezium envelope -> PostgreSQL snapshot/upsert/delete。两条路线共用 `ChangeStreamReaderProvider`、partition position、目标 ledger、Infra state CAS、runtime lease/fencing 和 retention 防护；不得新增第二套 CDC consumer。
-- continuous resume 前必须验证 committed `next_offset` 仍在 Kafka 保留范围内；低于 earliest offset 时明确失败，不能静默跳到 earliest。目标 PostgreSQL 被锁时必须响应 context 取消并回滚业务写入与 apply ledger。
+- 工作包 2B/2C 已实现业务 Kafka keyed JSON record -> PostgreSQL/MySQL monotonic upsert；数据库 CDC 已在同一 continuous worker 主循环中实现 PostgreSQL/MySQL Debezium envelope -> PostgreSQL/MySQL snapshot/upsert/delete。两条路线共用 `ChangeStreamReaderProvider`、partition position、目标 ledger、Infra state CAS、runtime lease/fencing 和 retention 防护；不得新增第二套 CDC consumer。
+- continuous resume 前必须验证 committed `next_offset` 仍在 Kafka 保留范围内；低于 earliest offset 时明确失败，不能静默跳到 earliest。PostgreSQL/MySQL 目标被锁时必须响应 context 取消并回滚业务写入与 apply ledger。
 - 工作包 4B 已完成：业务 Kafka DLQ 按确定性 record error -> Infra Kafka payload -> `transfer.dead_letters` -> 目标 `skip` ledger -> Infra CAS 运行；公开任务 API 接受显式 `runtime.record_failure.mode=block|dead_letter`，Console 默认显式发送 `block`。唯一 replay API 为 `POST /task-definitions/:id/replay`，只接受显式 partition offset ranges 与不存在的新 PostgreSQL `parent_locator + name`，并通过独立 bounded execution/apply identity 写隔离目标，不能触碰主任务状态、水位或目标。
 - 工作包 4D 的 DLQ payload availability 治理由 continuous worker 内唯一 reconciler 承担：按 identity 游标分批核验当前 Infra Kafka exact topic/partition/offset，只有 topic/partition/offset 明确消失或 exact record 身份/schema 不匹配时才以 payload reference CAS 标记 unavailable；网络、认证和 broker 错误保持原状态。reconciler 不解码/记录 payload、不提交 Kafka offset，也不进入 HTTP 请求链路。
 - task 直接删除与 System physical cleanup 必须复用同一 task-owned resource cleanup：CDC capture（如适用）→ 业务 Kafka 确定性 DLQ topic → tenant/task scoped `transfer.dead_letters` → task definition。logical cleanup、pause/stop 保留 DLQ；Kafka 删除失败时不得先删索引或任务。
@@ -87,9 +87,15 @@ Transfer 是 `transfer.task.*` 的 Permission owner；定义只存在于 `author
 - 数据库 CDC 数据面固定接受 Debezium Connect 3.6.0.Final schemaless JSON；`r -> snapshot/upsert`、`c|u -> upsert`、`d -> delete`，tombstone、truncate、message、来源身份不匹配和未知字段严格阻塞且不得推进 offset。PostgreSQL 与 MySQL 使用各自严格 source adapter 和类型矩阵，Decimal 固定 string、时间固定 Connect 毫秒编码，MySQL binary 固定 base64；字段、类型或 envelope/source 漂移统一以 `schema_change_blocked` 阻塞。只有当前阻塞消息中的新增 nullable 非 geometry 字段可通过专用 API 人工审批，复用目标 Provider 幂等加列后任务进入 paused，再由用户 Resume；其他变化只能 Stop 后创建新任务和新目标表。当前公开能力仍不支持 CDC replay/DLQ、Schema Registry、Avro、Protobuf、Kafka target、Oracle CDC 或自动 DDL；Oracle 后置。
 - additive migration 提交后的 Meta deep scan 使用 `schema_change_requests` 中唯一 `pending -> running(token, lease) -> success|failed` claim；并发审批不能重复触发，过期 claim 只由相同重复审批 POST 接管，GET 保持只读，迟到 token 不得覆盖新结果。真实 Meta 失败不自动重试；`TRANSFER_SCHEMA_CHANGE_META_SCAN_CLAIM_TTL` 必须大于 Meta client 60 秒超时。
 - 业务 Kafka 注册为 System Engine，topic 使用 `type=topic` ResourceLocator；partition 只属于 runtime assignment/position/diagnostics。Infra Kafka 来自 ADDP 部署配置，不进入 System engines、资源树或用户任务 JSON。
-- continuous source 必须消费 common `ChangeStreamReaderProvider`；原始 ChangeRecord 到 ChangeEvent 的解码以及 ChangeApplyWriter 归 Transfer runtime。第一版目标必须消费 PostgreSQL `PartitionedTableChangeApplyProvider`，把业务行与业务库 `addp_transfer.apply_positions` 原子提交；普通 `TableUpsertProvider` 不足以阻止失效 worker 写回旧状态。
+- continuous source 必须消费 common `ChangeStreamReaderProvider`；原始 ChangeRecord 到 ChangeEvent 的解码以及 ChangeApplyWriter 归 Transfer runtime。目标必须消费声明原子、单调及所需 operations 的 `PartitionedTableChangeApplyProvider`。PostgreSQL 把业务行与业务库 `addp_transfer.apply_positions` 原子提交；MySQL 把业务行与同一目标数据库的 `_addp_transfer_apply_positions` InnoDB 私有表原子提交。普通 `TableUpsertProvider` 不足以阻止失效 worker 写回旧状态。
 - continuous session 不进入 Asynq；使用 `transfer.runtime_leases` 做 owner lease、heartbeat 和 fencing，并使用 `transfer.sync_states` 按 partition 保存 `kafka_offset/v1.next_offset`。
 - 修改 API 后同步 Swagger：`bash scripts/swagger/gen-swagger.sh transfer` 和 `bash scripts/swagger/check-route-coverage.sh transfer`。
+
+## 前端公开路由
+
+- Transfer 前端遵守 `docs/spec/addp前端路由与可恢复状态规范.md`，模块内公开导航统一通过 `src/utils/moduleNavigation.js`。
+- 任务和执行身份固定使用 path parameter：`/tasks/:id/edit|detail`、`/executions/:execution_id`；不得把编辑中的具体对象退化为列表 URL 或 iframe 私有状态。
+- 列表进入创建、编辑、详情和执行页使用 `push`；保存或取消后离开已失效的表单历史项使用 `replace`。
 
 ## 开发与验证
 

@@ -422,3 +422,10 @@ Standard 的 `elements`、`units`、`code_sets` 等被其他 Schema（model、me
 5. **`DocumentPanel` 组件**: 前端复用组件，用于在各详情页嵌入文档关联管理，避免重复实现。
 
 6. **前端 API 统一入口**: 所有 API 调用集中在 [frontend/src/api/standard.js](frontend/src/api/standard.js)。
+
+## 前端公开路由
+
+- 模块内 Router 使用 `/domains`、`/glossaries`、`/elements`、`/code-sets`、`/metrics`、`/dimension-hierarchies` 等无模块前缀路径；Console 公开 URL 统一加 `/standard` 前缀。
+- 术语、数据元、码集、指标和维度层级详情使用 `/:id` 表达对象身份；详情返回使用明确列表路由，不依赖 `router.back()`。
+- 创建成功进入详情使用 `replace`，列表进入详情和跨标准对象导航使用 `push`。
+- 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`。

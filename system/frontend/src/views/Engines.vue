@@ -392,11 +392,13 @@
       :title="t('system.engine.dialog.details', { name: selectedEngine?.name || '' })"
       width="920px"
       destroy-on-close
+      @closed="handleDetailsClosed"
     >
       <div v-loading="detailsLoading" style="min-height: 300px">
-        <el-tabs v-if="selectedEngine" type="border-card">
+        <el-empty v-if="detailError" :description="detailError" />
+        <el-tabs v-else-if="selectedEngine" v-model="detailTab" type="border-card" @tab-change="selectDetailTab">
           <!-- 基本信息标签页 -->
-          <el-tab-pane :label="t('system.engine.dialog.detailTabs.basic')">
+          <el-tab-pane name="basic" :label="t('system.engine.dialog.detailTabs.basic')">
             <el-descriptions :column="2" border>
               <el-descriptions-item :label="t('system.engine.dialog.basicInfo.id')">{{ selectedEngine.id }}</el-descriptions-item>
               <el-descriptions-item :label="t('system.engine.dialog.basicInfo.name')">{{ selectedEngine.name }}</el-descriptions-item>
@@ -435,7 +437,7 @@
           </el-tab-pane>
 
           <!-- 连接配置标签页 -->
-          <el-tab-pane :label="t('system.engine.dialog.detailTabs.connection')" v-if="selectedEngine.connection_info && Object.keys(selectedEngine.connection_info).length > 0">
+          <el-tab-pane v-if="selectedEngine.connection_info && Object.keys(selectedEngine.connection_info).length > 0" name="connection" :label="t('system.engine.dialog.detailTabs.connection')">
             <el-descriptions :column="1" border>
               <el-descriptions-item
                 v-for="[key, value] in sortedConnectionInfo"
@@ -448,7 +450,7 @@
           </el-tab-pane>
 
           <!-- 能力声明标签页 -->
-          <el-tab-pane :label="t('system.engine.dialog.detailTabs.capabilities')" v-if="hasSelectedCapabilitiesView">
+          <el-tab-pane v-if="hasSelectedCapabilitiesView" name="capabilities" :label="t('system.engine.dialog.detailTabs.capabilities')">
             <div class="capability-detail">
               <div class="capability-toolbar">
                 <div class="capability-summary">
@@ -543,7 +545,7 @@
         </el-tabs>
       </div>
       <template #footer>
-        <el-button @click="detailsVisible = false">{{ t('system.engine.dialog.close') }}</el-button>
+        <el-button @click="closeEngineDetails">{{ t('system.engine.dialog.close') }}</el-button>
       </template>
     </el-dialog>
 
@@ -673,9 +675,14 @@ import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { StorageEngineForm, requestConsoleBridge } from '@common-ui'
 import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 import { paginateEngines } from '../utils/engineList'
+import { navigateSystemRoute } from '../utils/moduleNavigation'
+import { resolveEngineDetailRouteState } from '../utils/routeState'
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
 
 const allEngines = ref([])
 const loading = ref(false)
@@ -761,6 +768,8 @@ const extensionRuntimeStatusTagType = computed(() => {
 const detailsVisible = ref(false)
 const selectedEngine = ref(null)
 const detailsLoading = ref(false)
+const detailError = ref('')
+const detailTab = ref('basic')
 const jsonViewVisible = ref(false)
 
 const form = ref({
@@ -1740,22 +1749,89 @@ const resetDeletionDialog = () => {
 	deletionAssessing.value = false
 }
 
-const viewEngineDetails = async (row) => {
+const availableDetailTabs = computed(() => {
+  const tabs = ['basic']
+  if (selectedEngine.value?.connection_info && Object.keys(selectedEngine.value.connection_info).length > 0) {
+    tabs.push('connection')
+  }
+  if (hasSelectedCapabilitiesView.value) tabs.push('capabilities')
+  return tabs
+})
+
+const restoreDetailTab = async () => {
+  if (!route.params.id || !selectedEngine.value) return
+  const routeState = resolveEngineDetailRouteState(availableDetailTabs.value, route.query)
+  detailTab.value = routeState.activeTab
+  if (routeState.changed) {
+    await navigateSystemRoute(router, {
+      name: 'EngineDetail',
+      params: { id: String(route.params.id) },
+      query: routeState.query
+    }, { history: 'replace' })
+  }
+}
+
+const loadEngineDetails = async (engineID) => {
   detailsLoading.value = true
   detailsVisible.value = true
+  detailError.value = ''
+  detailTab.value = 'basic'
   jsonViewVisible.value = false
   selectedEngine.value = null
 
   try {
-    const response = await enginesAPI.getById(row.id)
+    const response = await enginesAPI.getById(engineID)
     selectedEngine.value = response
+    await restoreDetailTab()
   } catch (error) {
-    ElMessage.error(t('system.engine.msg.detailFailed'))
+    detailError.value = t('system.engine.msg.detailFailed')
     console.error(error)
-    detailsVisible.value = false
   } finally {
     detailsLoading.value = false
   }
+}
+
+const restoreEngineDetails = async () => {
+  const engineID = String(route.params.id || '').trim()
+  if (!engineID) {
+    detailsVisible.value = false
+    selectedEngine.value = null
+    detailError.value = ''
+    return
+  }
+  if (String(selectedEngine.value?.id || '') !== engineID) {
+    await loadEngineDetails(engineID)
+    return
+  }
+  detailsVisible.value = true
+  await restoreDetailTab()
+}
+
+const viewEngineDetails = async (row) => {
+  await navigateSystemRoute(router, {
+    name: 'EngineDetail',
+    params: { id: String(row.id) }
+  })
+}
+
+const selectDetailTab = async (tab) => {
+  const tabName = String(tab || '')
+  if (!route.params.id || !availableDetailTabs.value.includes(tabName)) return
+  detailTab.value = tabName
+  await navigateSystemRoute(router, {
+    name: 'EngineDetail',
+    params: { id: String(route.params.id) },
+    query: tabName === 'basic' ? {} : { tab: tabName }
+  }, { history: 'replace' })
+}
+
+const closeEngineDetails = () => {
+  detailsVisible.value = false
+}
+
+const handleDetailsClosed = async () => {
+  if (!route.params.id) return
+  await navigateSystemRoute(router, { name: 'Engines' }, { history: 'replace' })
 }
 
 // 表格行样式
@@ -1805,13 +1881,16 @@ watch(extensionCapabilitiesText, () => {
 let deletionPollTimer = null
 
 onMounted(() => {
-	loadEngines()
+		loadEngines()
+		restoreEngineDetails()
 	deletionPollTimer = window.setInterval(() => {
 		if (allEngines.value.some(engine => engine.lifecycle_state === 'deleting')) {
 			loadEngines()
 		}
 	}, 3000)
 })
+
+watch(() => [route.params.id, route.query.tab], restoreEngineDetails)
 
 onUnmounted(() => {
 	if (deletionPollTimer) window.clearInterval(deletionPollTimer)

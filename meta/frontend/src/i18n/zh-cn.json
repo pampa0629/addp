@@ -46,6 +46,8 @@
       "batchScan": "批量扫描",
       "refresh": "刷新",
       "selectEngineHint": "请从左侧选择一个存储引擎",
+      "engineUnavailable": "指定引擎不存在或无权访问",
+      "taskUnavailable": "指定扫描任务不存在或无权访问",
       "close": "关闭",
       "engineScheduleSettings": "引擎定时扫描设置",
       "enableSchedule": "是否启用",

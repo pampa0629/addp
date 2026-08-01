@@ -14,35 +14,47 @@ const routes = [
   {
     path: '/',
     component: Layout,
-    redirect: '/asset/assets',
+    redirect: '/assets',
     meta: { requiresAuth: true },
     children: [
       {
-        path: 'asset/type-definitions',
+        path: 'type-definitions',
         name: 'TypeDefinitionList',
         component: () => import('../views/TypeDefinitionList.vue'),
         meta: { requiresAuth: true, title: '资产类型' }
       },
       {
-        path: 'asset/categories',
+        path: 'categories',
         name: 'CatalogManagement',
         component: () => import('../views/CatalogManagement.vue'),
         meta: { requiresAuth: true, title: '目录管理' }
       },
       {
-        path: 'asset/assets',
+        path: 'assets',
         name: 'AssetManager',
         component: () => import('../views/AssetManager.vue'),
         meta: { requiresAuth: true, title: '资产管理' }
       },
       {
-        path: 'asset/applications',
+        path: 'assets/:id',
+        name: 'AssetDetail',
+        component: () => import('../views/AssetDetail.vue'),
+        meta: { requiresAuth: true, title: '资产详情' }
+      },
+      {
+        path: 'assets/:id/edit',
+        name: 'AssetEdit',
+        component: () => import('../views/AssetDetail.vue'),
+        meta: { requiresAuth: true, title: '编辑资产' }
+      },
+      {
+        path: 'applications',
         name: 'ApplicationList',
         component: () => import('../views/ApplicationList.vue'),
         meta: { requiresAuth: true, title: '申请与授权' }
       },
       {
-        path: 'asset/dashboard',
+        path: 'dashboard',
         name: 'Dashboard',
         component: () => import('../views/Dashboard.vue'),
         meta: { requiresAuth: true, title: '运营看板' }

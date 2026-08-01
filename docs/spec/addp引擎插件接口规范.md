@@ -160,6 +160,10 @@ type CatalogFactsProvider interface {
 
 `CatalogFacts.Table.Fields` 必须满足统一字段类型契约：`FieldInfo.Type` 是已经映射完成的 ADDP 标准字段类型，`FieldInfo.NativeType` 是来源引擎的原生类型。Provider 必须显式选择自身的类型映射规则，不得把 `integer`、`numeric`、`String` 等原生类型交给公共 canonical parser 猜测，也不得依赖遍历全局 mapper 的无来源推断。无法映射时返回显式 `type=unknown`；`type` 为空是 Provider 契约错误。公共 normalizer 只负责规范化和校验，不得从 `native_type` 补推 `type`。
 
+Decimal 字段使用 `FieldInfo.Precision` 表达总有效位数，使用 `FieldInfo.Scale` 表达小数位数；已声明的原生精度必须由 Provider 无损写入这两个字段。`Precision=0` 表示来源未声明有限精度，不得解释为某个默认精度。当目标引擎只支持有界 decimal 时，调用方必须提供显式 `Precision/Scale`；目标 Provider 必须按自身上限严格校验，不得选择更大的默认 decimal、截断小数或改写为浮点数。
+
+`FieldInfo` 当前未单独表达时间类型的小数秒精度。目标 Provider 不得因此退化为原生零位小数秒并静默截断；在目标类型允许时必须选择该引擎可稳定支持的无损精度。MySQL table write、upsert 和 partitioned change apply 统一使用 `TIME(6)`、`DATETIME(6)`，已有低精度目标列不得被误判为兼容。
+
 `CatalogFacts` 不承载 `DocumentInfo`、`MediaInfo` 或 `ContainerInfo`。文档、图片、音视频、压缩包、Excel、SQLite / GeoPackage 等 encoded content 的标题、语言、页数、宽高、时长、编码、颜色空间、内部 child 列表、默认入口等信息，必须由 Meta / Manager / Transfer 等编排层先通过 StoreProvider 构造内容读取抽象，再交给 `common/format` 的 `DocumentInfoProvider`、`MediaInfoProvider`、`ContainerInfoProvider` 或对应 content reader 提取。Engine 只提供 catalog / storage 事实和内容访问能力，不读取内容后裁决 format 语义。
 
 Kafka topic 使用 `CatalogFacts.Topic *TopicFacts` 表达实时 topic 事实。第一版 `TopicFacts` 只允许 `PartitionCount`、`ReplicationFactor` 和按 partition 的 leader / replica / ISR / earliest offset / latest offset 诊断；不得读取消息样本推断 schema，也不得把 partition 投影为 catalog child。Topic facts 默认只用于实时诊断，在 Meta attributes 正式定义持久化结构前不得塞入 `Native` 或其他兜底 map。
@@ -244,14 +248,14 @@ type StoreProvider interface {
 - `BoundedWatermarkReadProvider.OpenBoundedWatermarkRead()`：在引擎一致性读边界内冻结复合 watermark 上界，按稳定顺序读取 `(start, upper_bound]`。session 必须返回上界，并能从已读取行生成 provider 可解释的复合位置；普通 batch reader 不得被推断为具备该语义。
 - `TableUpsertProvider.PrepareTableUpsert()` / `UpsertBatch()`：按显式稳定键准备目标并幂等应用 insert/update。Provider 必须校验键字段和唯一约束；普通 `BatchWritableProvider` 或 COPY session 不得被推断为 upsert。
 - `ChangeStreamReaderProvider.OpenChangeStream()`：打开 partitioned change stream，按 provider position seek、poll 原始记录并支持受控 pause/resume/close。Kafka topic 不能伪装成 `BatchReadableProvider` 或 content `stream_read`。
-- `PartitionedTableChangeApplyProvider.PreparePartitionedTableChangeApply()` / `ApplyPartitionedTableChanges()`：把单个 source partition 的已映射表变化与目标 apply position 在同一目标事务中提交。PostgreSQL 当前真实实现 `upsert|delete|skip`；`skip` 只推进 ledger，不修改业务行。同一 key 在批内只保留最高 position 的最终数据操作，目标行变化和 `addp_transfer.apply_positions` 必须原子提交。普通 `TableUpsertProvider`、Infra state CAS 或 runtime lease 均不得被推断为具备目标侧 monotonic apply 语义。
+- `PartitionedTableChangeApplyProvider.PreparePartitionedTableChangeApply()` / `ApplyPartitionedTableChanges()`：把单个 source partition 的已映射表变化与目标 apply position 在同一目标事务中提交。PostgreSQL 与 MySQL 当前真实实现 `upsert|delete|skip`；`skip` 只推进 ledger，不修改业务行。同一 key 在批内只保留最高 position 的最终数据操作，目标行变化和对应 Provider 的 apply ledger 必须原子提交。普通 `TableUpsertProvider`、Infra state CAS 或 runtime lease 均不得被推断为具备目标侧 monotonic apply 语义。
 
-第一版 PostgreSQL watermark 契约：
+当前 bounded watermark 契约：
 
 - `BoundedWatermarkReadOptions` 必须包含一个 watermark field、至少一个 tie breaker 和可选 committed start cursor。
-- Provider 在 PostgreSQL repeatable-read 只读事务中冻结上界；游标字段不得为 NULL，tie breaker 必须匹配非 partial unique/primary key。
+- 当前 source Provider 由 PostgreSQL 实现，在 repeatable-read 只读事务中冻结上界；游标字段不得为 NULL，tie breaker 必须匹配非 partial unique/primary key。
 - `WatermarkCursor.Values` 使用 canonical string 保存，具体列类型转换由 source Provider 解释。
-- `TableUpsertProvider` 使用稳定 keys 和单批事务提交；重复应用同一批必须得到相同目标状态。
+- `TableUpsertProvider` 使用稳定 keys 和单批事务提交；重复应用同一批必须得到相同目标状态。PostgreSQL 使用显式 `ON CONFLICT(keys)`；MySQL 使用 InnoDB 和 `ON DUPLICATE KEY UPDATE`，并必须拒绝会绕过配置 keys 的其他唯一约束。
 - Transfer 只在目标批次提交成功后推进 `transfer.sync_states`，Provider 不直接维护任务状态。
 
 ### ChangeStreamReaderProvider
@@ -297,7 +301,7 @@ Provider 只返回原始 ChangeRecord，不负责 JSON、Debezium、Avro 或 Pro
 第一版 PostgreSQL 契约：
 
 - Transfer task 提供服务端生成且不可变的 `apply_identity` UUID；Provider 同时记录并校验 source identity、target identity、partition、position type/version。
-- Provider 在业务目标 PostgreSQL 的 `addp_transfer.apply_positions` 保存目标 apply ledger；该表不是 Infra PostgreSQL 的 `transfer.sync_states`，也不是用户业务表的隐藏 offset 列。
+- PostgreSQL Provider 在业务目标库的 `addp_transfer.apply_positions` 保存目标 apply ledger；MySQL Provider 在目标业务数据库的 `_addp_transfer_apply_positions` InnoDB 私有表保存 ledger。两者都不是 Infra PostgreSQL 的 `transfer.sync_states`，也不是用户业务表的隐藏 offset 列。
 - 每次 apply 只接受一个 partition，batch 包含 start/end position，且每条变化携带消费后的 position。Kafka v1 只接受单调递增的 `kafka_offset/v1.next_offset`。
 - Provider 在事务内锁定或创建 ledger 行；ledger 落后于 batch start 表示位置缺口，必须失败；ledger 位于 batch 内或之后表示重放，必须跳过已应用记录。
 - 对过滤后的同 key 多条 upsert，Provider 保留 position 最大的最后一条，再调用目标表 upsert；目标数据与 ledger end position 在同一事务提交。
@@ -385,7 +389,8 @@ type ScriptRuntimeProvider interface {
 | 引擎 | 推荐接口组合 |
 | --- | --- |
 | PostgreSQL | 通用 tabular 组合 + `BoundedWatermarkReadProvider` + `TableUpsertProvider` + `PartitionedTableChangeApplyProvider` |
-| MySQL / Doris / ClickHouse / Spark SQL | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `SQLQueryRuntimeProvider` + `ConnectionPoolPlugin` |
+| MySQL | 通用 tabular 组合 + `TableUpsertProvider` + `PartitionedTableChangeApplyProvider` |
+| Doris / ClickHouse / Spark SQL | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `SQLQueryRuntimeProvider` + `ConnectionPoolPlugin` |
 | MongoDB | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `DynamicSchemaSamplingProvider` + `QueryRuntimeProvider` |
 | Neo4j | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `GraphSampleProvider` + `QueryRuntimeProvider` + `GraphQueryProvider` |
 | MinIO / S3 | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `ContentReadableProvider` + `RangeReadableProvider` + `ContentWritableProvider` + `ResourceDeleteProvider` |
@@ -405,7 +410,7 @@ type ScriptRuntimeProvider interface {
 - Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`；Notebook 引擎实例通过 `execution_config.engine_id` 绑定，并以 System Runtime Descriptor + `ScriptRuntimeProvider.OpenSession()` 解析端点；图结构展示入口使用 `CatalogFactsProvider` / `GraphQueryProvider`。
 - Service：发布普通查询服务时使用 query runtime 和 Meta item/spatial 元数据；图查询服务使用 `GraphQueryProvider`。图查询服务的易用向导应消费 graph item 的 `type_info.graph.node_shapes`，不得再从 Meta 树读取 Neo4j label item。
 - Transfer：使用 source / target endpoint 生成执行计划。snapshot native table 读写消费 `TableReadSessionProvider`、`BatchReadableProvider`、`TableWritePreparer`、`TableWriteSessionProvider`、`BatchWritableProvider`；watermark bounded incremental 必须消费 `BoundedWatermarkReadProvider` 和幂等 `TableUpsertProvider`；encoded file/object 读写先通过 engine content provider 和 `common/engine/contentadapter` 构造 `common/contentio` 抽象，再交给 `common/format` provider。高吞吐数据搬运优先消费 batch / table session / content stream 能力，而不是 query runtime。
-- Transfer continuous runtime：业务 Kafka source 必须消费 `ChangeStreamReaderProvider`，由 Transfer adapter 生成 ChangeEvent 并通过 ChangeApplyWriter 组合目标 Provider。第一版目标只允许 PostgreSQL `PartitionedTableChangeApplyProvider`；Infra Kafka 连接来自 ADDP infra 配置，不注册 System Engine，但复用同一 Kafka reader/client 底层实现。
+- Transfer continuous runtime：业务 Kafka source 必须消费 `ChangeStreamReaderProvider`，由 Transfer adapter 生成 ChangeEvent 并通过 ChangeApplyWriter 组合目标 Provider。目标必须声明原子、单调且覆盖所需 operation 的 `PartitionedTableChangeApplyProvider`；当前 PostgreSQL 与 MySQL 实现该 Provider。Infra Kafka 连接来自 ADDP infra 配置，不注册 System Engine，但复用同一 Kafka reader/client 底层实现。
 
 ---
 

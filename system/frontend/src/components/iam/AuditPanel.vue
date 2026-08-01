@@ -8,12 +8,12 @@
 
     <div class="iam-toolbar audit-toolbar">
       <div class="iam-filters audit-filters">
-        <el-date-picker v-model="dateRange" type="datetimerange" :range-separator="t('system.iam.audit.to')" :start-placeholder="t('system.iam.audit.startTime')" :end-placeholder="t('system.iam.audit.endTime')" @change="reload" />
-        <el-input v-model="filters.event_name" :placeholder="t('system.iam.audit.eventName')" clearable @keyup.enter="reload" @clear="reload" />
-        <el-select v-model="filters.result" :placeholder="t('system.iam.audit.result')" clearable @change="reload"><el-option v-for="value in results" :key="value" :label="statusLabel(value)" :value="value" /></el-select>
-        <el-select v-model="filters.risk_level" :placeholder="t('system.iam.audit.risk')" clearable @change="reload"><el-option v-for="value in risks" :key="value" :label="statusLabel(value)" :value="value" /></el-select>
-        <el-input v-model="filters.module_name" :placeholder="t('system.iam.audit.module')" clearable @keyup.enter="reload" @clear="reload" />
-        <el-button :icon="Refresh" @click="reload">{{ t('system.iam.common.refresh') }}</el-button>
+        <el-date-picker v-model="dateRange" type="datetimerange" :range-separator="t('system.iam.audit.to')" :start-placeholder="t('system.iam.audit.startTime')" :end-placeholder="t('system.iam.audit.endTime')" @change="applyFilters" />
+        <el-input v-model="filters.event_name" :placeholder="t('system.iam.audit.eventName')" clearable @keyup.enter="applyFilters" @clear="applyFilters" />
+        <el-select v-model="filters.result" :placeholder="t('system.iam.audit.result')" clearable @change="applyFilters"><el-option v-for="value in results" :key="value" :label="statusLabel(value)" :value="value" /></el-select>
+        <el-select v-model="filters.risk_level" :placeholder="t('system.iam.audit.risk')" clearable @change="applyFilters"><el-option v-for="value in risks" :key="value" :label="statusLabel(value)" :value="value" /></el-select>
+        <el-input v-model="filters.module_name" :placeholder="t('system.iam.audit.module')" clearable @keyup.enter="applyFilters" @clear="applyFilters" />
+        <el-button :icon="Refresh" @click="load">{{ t('system.iam.common.refresh') }}</el-button>
       </div>
       <el-dropdown v-if="canExport" @command="exportEvents">
         <el-button :icon="Download">{{ t('system.iam.common.export') }}<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
@@ -32,7 +32,7 @@
       <el-table-column :label="t('system.iam.audit.time')" width="180"><template #default="{ row }">{{ formatDate(row.created_at) }}</template></el-table-column>
     </el-table>
 
-    <el-pagination v-model:current-page="page" v-model:page-size="pageSize" class="iam-pagination" :total="total" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next" @current-change="load" @size-change="reload" />
+    <el-pagination v-model:current-page="page" v-model:page-size="pageSize" class="iam-pagination" :total="total" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next" @current-change="changePage" @size-change="applyFilters" />
 
     <el-drawer v-model="detailVisible" :title="t('system.iam.audit.detail')" size="min(620px, 92vw)">
       <el-descriptions v-if="selected" :column="1" border>
@@ -50,15 +50,19 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ArrowDown, Download, Refresh } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
+import { navigateSystemRoute } from '../../utils/moduleNavigation'
 
 const props = defineProps({ scope: { type: String, required: true } })
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 const exportPermission = computed(() => props.scope === 'platform' ? 'audit.event.export' : 'audit.tenant_event.export')
 const canExport = computed(() => authStore.hasPermission(exportPermission.value))
@@ -67,10 +71,17 @@ const risks = ['low', 'medium', 'high', 'critical']
 const rows = ref([])
 const summary = ref({ total: 0, succeeded: 0, failed: 0, denied: 0, ignored: 0, high_risk: 0 })
 const loading = ref(false)
-const page = ref(1)
+const page = ref(normalizePage(route.query.page))
 const pageSize = ref(20)
 const total = ref(0)
-const filters = reactive({ event_name: '', result: '', risk_level: '', module_name: '' })
+const filters = reactive({
+  event_name: String(route.query.event_name || ''),
+  result: String(route.query.result || ''),
+  risk_level: String(route.query.risk_level || ''),
+  module_name: String(route.query.module_name || ''),
+  entity_type: String(route.query.entity_type || ''),
+  entity_id: String(route.query.entity_id || '')
+})
 const dateRange = ref(null)
 const detailVisible = ref(false)
 const selected = ref(null)
@@ -80,6 +91,10 @@ function statusLabel(status) { return t(`system.iam.status.${status}`) }
 function resultType(result) { return ({ succeeded: 'success', failed: 'danger', denied: 'warning', ignored: 'info' })[result] || 'info' }
 function riskType(risk) { return ({ low: 'success', medium: 'warning', high: 'danger', critical: 'danger' })[risk] || 'info' }
 function formatDate(value) { return value ? new Date(value).toLocaleString() : '-' }
+function normalizePage(value) {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 1
+}
 function requestParams() {
   return {
     ...filters,
@@ -99,7 +114,33 @@ async function load() {
   } catch (error) { ElMessage.error(error.response?.data?.error || t('system.iam.common.loadFailed')) }
   finally { loading.value = false }
 }
-function reload() { page.value = 1; return load() }
+function buildRouteQuery() {
+  const query = { tab: String(route.query.tab || '') }
+  for (const key of ['event_name', 'result', 'risk_level', 'module_name', 'entity_type', 'entity_id']) {
+    const value = String(filters[key] || '').trim()
+    if (value) query[key] = value
+  }
+  if (page.value > 1) query.page = String(page.value)
+  return query
+}
+async function applyFilters() {
+  page.value = 1
+  const query = buildRouteQuery()
+  const unchanged = Object.keys(route.query).length === Object.keys(query).length &&
+    Object.keys(query).every(key => String(route.query[key] || '') === String(query[key]))
+  if (unchanged) {
+    await load()
+    return
+  }
+  await navigateSystemRoute(router, { name: 'IAMWorkbench', query }, { history: 'replace' })
+}
+async function changePage(nextPage) {
+  page.value = nextPage
+  await navigateSystemRoute(router, {
+    name: 'IAMWorkbench',
+    query: buildRouteQuery()
+  }, { history: 'replace' })
+}
 function openDetail(row) { selected.value = row; detailVisible.value = true }
 async function exportEvents(format) {
   try {
@@ -110,7 +151,13 @@ async function exportEvents(format) {
     URL.revokeObjectURL(url)
   } catch (error) { ElMessage.error(error.response?.data?.error || t('system.iam.common.exportFailed')) }
 }
-onMounted(load)
+watch(() => route.query, async query => {
+  for (const key of ['event_name', 'result', 'risk_level', 'module_name', 'entity_type', 'entity_id']) {
+    filters[key] = String(query[key] || '')
+  }
+  page.value = normalizePage(query.page)
+  await load()
+}, { immediate: true })
 </script>
 
 <style scoped>

@@ -20,7 +20,7 @@
       <el-table :data="filteredList" v-loading="loading" stripe>
         <el-table-column :label="$t('standard.dimHierarchy.nameLabel')" prop="name" min-width="160">
           <template #default="{ row }">
-            <el-link type="primary" @click="$router.push(`/standard/dimension-hierarchies/${row.id}`)">
+            <el-link type="primary" @click="openDetail(row)">
               {{ row.name }}
             </el-link>
           </template>
@@ -39,7 +39,7 @@
         </el-table-column>
         <el-table-column :label="$t('standard.common.actions')" width="120" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="$router.push(`/standard/dimension-hierarchies/${row.id}`)">
+            <el-button link type="primary" @click="openDetail(row)">
               {{ $t('standard.dimHierarchy.manageLevels') }}
             </el-button>
             <el-popconfirm :title="$t('standard.dimHierarchy.confirmDelete')" @confirm="handleDelete(row.id)">
@@ -80,6 +80,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
 import { dimensionHierarchyAPI } from '../api/standard'
+import { navigateStandardRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -127,13 +128,15 @@ async function handleCreate() {
   try {
     const res = await dimensionHierarchyAPI.create({ ...createForm })
     createVisible.value = false
-    router.push(`/standard/dimension-hierarchies/${res.id}`)
+    await navigateStandardRoute(router, `/dimension-hierarchies/${res.id}`, { history: 'replace' })
   } catch (e) {
     ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
   } finally {
     creating.value = false
   }
 }
+
+const openDetail = row => navigateStandardRoute(router, `/dimension-hierarchies/${row.id}`)
 
 async function handleDelete(id) {
   try {

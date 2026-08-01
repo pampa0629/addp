@@ -46,6 +46,8 @@
       "batchScan": "Batch Scan",
       "refresh": "Refresh",
       "selectEngineHint": "Please select a storage engine on the left",
+      "engineUnavailable": "The specified engine does not exist or is not accessible",
+      "taskUnavailable": "The specified scan task does not exist or is not accessible",
       "close": "Close",
       "engineScheduleSettings": "Engine Scheduled Scan Settings",
       "enableSchedule": "Enable",

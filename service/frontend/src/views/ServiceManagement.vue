@@ -131,6 +131,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus, Download, DocumentCopy } from '@element-plus/icons-vue'
 import serviceAPI from '../api/service'
 import { copyToClipboard } from '../utils/serviceHelper'
+import { navigateServiceRoute } from '@/utils/moduleNavigation'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -183,15 +184,15 @@ const handleSearch = async () => {
 }
 
 const handleCreate = () => {
-  router.push('/services/create')
+  navigateServiceRoute(router, '/services/create')
 }
 
 const handleEdit = (row) => {
-  router.push(`/services/${row.id}/edit`)
+  navigateServiceRoute(router, `/services/${row.id}/edit`)
 }
 
 const handleRowClick = (row) => {
-  router.push(`/services/${row.id}`)
+  navigateServiceRoute(router, `/services/${row.id}`)
 }
 
 const handleRefresh = async (row) => {

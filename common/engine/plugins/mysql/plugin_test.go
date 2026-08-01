@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 )
 
@@ -34,5 +35,35 @@ func TestMySQLCapabilitiesDeclareEWKBTableWriteEncoding(t *testing.T) {
 	encodings := capabilities.Storage.Store.TableSpatialEncoding.GeometryWriteEncodings
 	if len(encodings) != 1 || encodings[0] != string(format.GeometryEncodingEWKB) {
 		t.Fatalf("geometry write encodings = %#v, want [ewkb]", encodings)
+	}
+}
+
+func TestMySQLCapabilitiesDeclareIdempotentTableUpsert(t *testing.T) {
+	capabilities := (&MySQLPlugin{}).Capabilities()
+	if capabilities.Storage == nil || capabilities.Storage.Store == nil || capabilities.Storage.Store.TableUpsert == nil {
+		t.Fatal("MySQL capabilities do not declare table upsert")
+	}
+	if !capabilities.Storage.Store.TableUpsert.Supported || !capabilities.Storage.Store.TableUpsert.Idempotent {
+		t.Fatalf("table upsert capability = %#v, want supported idempotent", capabilities.Storage.Store.TableUpsert)
+	}
+}
+
+func TestMySQLCapabilitiesDeclareAtomicPartitionedTableChangeApply(t *testing.T) {
+	capabilities := (&MySQLPlugin{}).Capabilities()
+	apply := capabilities.Storage.Store.PartitionedTableChangeApply
+	if apply == nil || !apply.Supported || !apply.AtomicPositionCommit || !apply.Monotonic {
+		t.Fatalf("partitioned table change apply capability = %#v", apply)
+	}
+	for _, operation := range []string{plugin.TableChangeOperationUpsert, plugin.TableChangeOperationDelete, plugin.TableChangeOperationSkip} {
+		found := false
+		for _, declared := range apply.Operations {
+			if declared == operation {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("partitioned table change apply operations = %#v, missing %q", apply.Operations, operation)
+		}
 	}
 }

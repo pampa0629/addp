@@ -326,3 +326,11 @@ open（待处理）
 5. **规则类型扩展**: 新增规则类型需同步修改 `sql_generator.go` 中的 `GenerateCheckSQL()` 方法，以及前端的规则类型枚举和展示逻辑
 
 6. **当前 MVP 状态**: 暂未实现定时调度（Cron）和事件触发，仅支持手动执行；趋势分析、报告导出等功能规划在 Phase 2
+
+## 前端公开路由
+
+- 模块内 Router 使用 `/rule-applications`、`/check-tasks`、`/executions`、`/issues` 等无模块前缀路径；Console 公开 URL 统一加 `/quality` 前缀。
+- 执行详情唯一使用 `/executions/:execution_id`，参数名与 Task Execution 领域身份一致，不接受 `id` 别名。
+- 列表进入详情使用 `push`，详情返回 `/executions` 使用 `replace`。
+- 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`。
+- 检查任务列表使用 `create=1` 恢复创建弹窗、使用 `task_id` 恢复编辑弹窗；默认列表省略 query，TaskProvider `create_url` / `edit_url` 必须使用同一契约。

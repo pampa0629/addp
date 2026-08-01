@@ -116,6 +116,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { openMonitorExecution } from '@addp/common-frontend'
 import orchestrationAPI from '../api/orchestration'
+import { navigateOrchestratorRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -187,7 +188,7 @@ function handlePageChange() {
 }
 
 function handleBack() {
-  router.push('/orchestrations')
+  navigateOrchestratorRoute(router, '/orchestrations', { history: 'replace' })
 }
 
 function getStatusType(status) {

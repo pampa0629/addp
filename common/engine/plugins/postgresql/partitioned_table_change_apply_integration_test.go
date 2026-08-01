@@ -10,6 +10,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	pluginshared "github.com/addp/common/engine/plugins/shared"
 	"github.com/google/uuid"
 )
 
@@ -112,7 +113,7 @@ func TestIntegrationPostgresPartitionedTableChangeApplyCommitsDeleteWithLedger(t
 	}
 	deleted := plugin.PartitionedTableChange{
 		Operation: plugin.TableChangeOperationDelete,
-		Position:  kafkaOffsetPosition("0", 2),
+		Position:  pluginshared.KafkaOffsetPosition("0", 2),
 		Row:       map[string]interface{}{"id": int64(1)},
 	}
 	result, err := pg.ApplyPartitionedTableChanges(ctx, connInfo, path, partitionedApplyBatch("0", 1, 2, deleted), opts)
@@ -164,7 +165,7 @@ func TestIntegrationPostgresPartitionedTableChangeApplyCommitsSkipWithoutChangin
 	}
 	skip := plugin.PartitionedTableChange{
 		Operation: plugin.TableChangeOperationSkip,
-		Position:  kafkaOffsetPosition("0", 2),
+		Position:  pluginshared.KafkaOffsetPosition("0", 2),
 	}
 	result, err := pg.ApplyPartitionedTableChanges(ctx, connInfo, path, partitionedApplyBatch("0", 1, 2, skip), opts)
 	if err != nil {
@@ -274,8 +275,8 @@ func TestIntegrationPostgresPartitionedTableChangeApplyCancelsWhileTargetLocked(
 func partitionedApplyBatch(partition string, start, end int64, changes ...plugin.PartitionedTableChange) *plugin.PartitionedTableChangeBatch {
 	return &plugin.PartitionedTableChangeBatch{
 		Partition:     partition,
-		StartPosition: kafkaOffsetPosition(partition, start),
-		EndPosition:   kafkaOffsetPosition(partition, end),
+		StartPosition: pluginshared.KafkaOffsetPosition(partition, start),
+		EndPosition:   pluginshared.KafkaOffsetPosition(partition, end),
 		Changes:       changes,
 	}
 }
@@ -283,7 +284,7 @@ func partitionedApplyBatch(partition string, start, end int64, changes ...plugin
 func positionedChange(nextOffset, id int64, name string) plugin.PartitionedTableChange {
 	return plugin.PartitionedTableChange{
 		Operation: plugin.TableChangeOperationUpsert,
-		Position:  kafkaOffsetPosition("0", nextOffset),
+		Position:  pluginshared.KafkaOffsetPosition("0", nextOffset),
 		Row:       map[string]interface{}{"id": id, "name": name},
 	}
 }

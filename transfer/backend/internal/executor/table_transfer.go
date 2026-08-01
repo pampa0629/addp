@@ -102,6 +102,8 @@ type FieldMappingFieldPlan struct {
 	Source     string
 	Target     string
 	TargetType string
+	Precision  *int
+	Scale      *int
 	Nullable   bool
 	Default    interface{}
 	Format     string

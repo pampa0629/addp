@@ -203,6 +203,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { metricAPI, metricCategoryAPI } from '../api/standard'
+import { navigateStandardRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -280,7 +281,7 @@ const createMetric = async () => {
 }
 
 const openDetail = (row) => {
-  router.push(`/standard/metrics/${row.id}`)
+  navigateStandardRoute(router, `/metrics/${row.id}`)
 }
 
 const approveMetric = async (row) => {

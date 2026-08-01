@@ -65,20 +65,12 @@ export const quickViewAPI = {
     return request.delete(`/manager/vector_materialized_view/${id}`)
   },
 
-  createRasterCOGTask(payload) {
-    return request.post('/manager/raster_cog_tasks', payload)
-  },
-
   listRasterCOGTasks(params = {}) {
     return request.get('/manager/raster_cog_tasks', { params })
   },
 
   getRasterCOGTask(id) {
     return request.get(`/manager/raster_cog_tasks/${id}`)
-  },
-
-  updateRasterCOGTask(id, payload) {
-    return request.put(`/manager/raster_cog_tasks/${id}`, payload)
   },
 
   deleteRasterCOGTask(id) {
@@ -297,10 +289,6 @@ export const quickViewAPI = {
     return request.delete(`/manager/cad-previews/${id}`)
   },
 
-  createModel3DTilesTask(payload) {
-    return request.post('/manager/model3d_tiles_tasks', payload)
-  },
-
   listModel3DTilesTasks(params = {}) {
     return request.get('/manager/model3d_tiles_tasks', { params })
   },
@@ -315,10 +303,6 @@ export const quickViewAPI = {
 
   getModel3DTilesTask(id) {
     return request.get(`/manager/model3d_tiles_tasks/${id}`)
-  },
-
-  updateModel3DTilesTask(id, payload) {
-    return request.put(`/manager/model3d_tiles_tasks/${id}`, payload)
   },
 
   deleteModel3DTilesTask(id) {

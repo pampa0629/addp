@@ -32,6 +32,38 @@ func TestBuildWatermarkIncrementalPlanRequiresPostgresCapabilities(t *testing.T)
 	}
 }
 
+func TestBuildWatermarkIncrementalPlanAcceptsMySQLIdempotentTarget(t *testing.T) {
+	spec := TableExportTaskSpec{
+		Runtime: RuntimeSpec{Boundary: runtimeBoundaryBounded},
+		Load: LoadSpec{Mode: loadModeIncremental, ChangeDetection: &ChangeDetectionSpec{
+			Type: changeTypeWatermark, Field: "updated_at", TieBreaker: []string{"id"}, Start: "committed", End: "execution_upper_bound",
+		}},
+		Source: EndpointSpec{Locator: tableLocator(1, "public", "orders"), DataType: dataTypeTable, Representation: representationNative},
+		Target: EndpointSpec{
+			ParentLocator: "addp://engine/2/path/business?type=database&node_id=2",
+			Name: "orders", DataType: dataTypeTable, Representation: representationNative,
+			Policy: map[string]interface{}{"apply_mode": "upsert", "keys": []string{"id"}},
+		},
+		BatchSize: 100,
+	}
+	sourceCaps := engineplugin.EngineCapabilities{Storage: &engineplugin.StorageCapabilities{Store: &engineplugin.StoreCapability{
+		BoundedWatermarkRead: true,
+	}}}
+	targetCaps := engineplugin.EngineCapabilities{Storage: &engineplugin.StorageCapabilities{Store: &engineplugin.StoreCapability{
+		TableUpsert: &engineplugin.TableUpsertCapability{Supported: true, Idempotent: true},
+	}}}
+	result, err := BuildWatermarkIncrementalPlan(spec, StaticEngineResolver{
+		1: {Type: "postgresql", EngineID: 1, Capabilities: &sourceCaps},
+		2: {Type: "mysql", EngineID: 2, Capabilities: &targetCaps},
+	})
+	if err != nil {
+		t.Fatalf("BuildWatermarkIncrementalPlan failed: %v", err)
+	}
+	if result.SourceEngineType != "postgresql" || result.TargetEngineType != "mysql" {
+		t.Fatalf("engine types = %s -> %s, want postgresql -> mysql", result.SourceEngineType, result.TargetEngineType)
+	}
+}
+
 func TestParseWatermarkIncrementalRejectsLegacyWriteMode(t *testing.T) {
 	config := map[string]interface{}{
 		"runtime": map[string]interface{}{"boundary": "bounded"},

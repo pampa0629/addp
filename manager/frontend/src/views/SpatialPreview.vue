@@ -109,6 +109,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
+import { navigateManagerRoute } from '@/utils/moduleNavigation'
 import { ElMessage } from 'element-plus'
 import { InfoFilled, Select } from '@element-plus/icons-vue'
 import { formatLocatorDisplayPath } from '@addp/common-frontend'
@@ -322,14 +323,14 @@ const backToBasicPreview = async () => {
 }
 
 const openTileCacheCreate = () => {
-  router.push({
+  navigateManagerRoute(router, {
     name: 'TileCache',
     query: buildTileCacheCreateQuery(spatialPreviewNavigationTarget(), quickViewStatus.value)
   })
 }
 
 const openVectorMaterializedViewCreate = () => {
-  router.push({
+  navigateManagerRoute(router, {
     name: 'VectorMaterializedView',
     query: buildVectorMaterializedViewCreateQuery(spatialPreviewNavigationTarget(), quickViewStatus.value)
   })

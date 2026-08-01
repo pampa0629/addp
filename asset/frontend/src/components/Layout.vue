@@ -37,15 +37,15 @@
               <el-icon><Folder /></el-icon>
               <span>{{ t('asset.layout.assetCatalog') }}</span>
             </template>
-            <el-menu-item index="/asset/type-definitions">
+            <el-menu-item index="/type-definitions">
               <el-icon><Grid /></el-icon>
               <span>{{ t('asset.layout.assetTypes') }}</span>
             </el-menu-item>
-            <el-menu-item index="/asset/categories">
+            <el-menu-item index="/categories">
               <el-icon><Files /></el-icon>
               <span>{{ t('asset.layout.catalogManagement') }}</span>
             </el-menu-item>
-            <el-menu-item index="/asset/assets">
+            <el-menu-item index="/assets">
               <el-icon><List /></el-icon>
               <span>{{ t('asset.layout.assetWorkbench') }}</span>
             </el-menu-item>
@@ -56,13 +56,13 @@
               <el-icon><Document /></el-icon>
               <span>{{ t('asset.layout.applicationAndAuth') }}</span>
             </template>
-            <el-menu-item index="/asset/applications">
+            <el-menu-item index="/applications">
               <el-icon><Tickets /></el-icon>
               <span>{{ t('asset.layout.applicationAndAuth') }}</span>
             </el-menu-item>
           </el-sub-menu>
 
-          <el-menu-item index="/asset/dashboard">
+          <el-menu-item index="/dashboard">
             <el-icon><DataAnalysis /></el-icon>
             <span>{{ t('asset.layout.dashboard') }}</span>
           </el-menu-item>
@@ -98,11 +98,11 @@ onMounted(() => {
 
 const activeMenu = computed(() => {
   const path = route.path
-  if (path.startsWith('/asset/type-definitions')) return '/asset/type-definitions'
-  if (path.startsWith('/asset/categories')) return '/asset/categories'
-  if (path.startsWith('/asset/assets')) return '/asset/assets'
-  if (path.startsWith('/asset/applications')) return '/asset/applications'
-  if (path.startsWith('/asset/dashboard')) return '/asset/dashboard'
+  if (path.startsWith('/type-definitions')) return '/type-definitions'
+  if (path.startsWith('/categories')) return '/categories'
+  if (path.startsWith('/assets')) return '/assets'
+  if (path.startsWith('/applications')) return '/applications'
+  if (path.startsWith('/dashboard')) return '/dashboard'
   return path
 })
 

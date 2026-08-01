@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/datatype"
+	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/resourcetree"
 )
 
@@ -79,8 +80,8 @@ func validateDatabaseCDCTaskSpec(spec DatabaseCDCTaskSpec) error {
 		return fmt.Errorf("database CDC source must be a native table")
 	}
 	parent, err := spec.Target.ParentResourceLocator()
-	if err != nil || parent.Type != resourcetree.TypeSchema || len(parent.Path) != 1 {
-		return fmt.Errorf("database CDC target.parent_locator must identify one schema")
+	if err != nil || !isNativeTableParentType(parent.Type) || len(parent.Path) != 1 {
+		return fmt.Errorf("database CDC target.parent_locator must identify one database or schema")
 	}
 	if strings.TrimSpace(spec.Target.Name) == "" || spec.Target.DataType != dataTypeTable || spec.Target.Representation != representationNative {
 		return fmt.Errorf("database CDC target must be a named native table")
@@ -165,8 +166,8 @@ func ResolveDatabaseCDCBindings(spec DatabaseCDCTaskSpec, resolver EngineResolve
 	if sourceType != "postgresql" && sourceType != "mysql" {
 		return DatabaseCDCBindings{}, fmt.Errorf("database CDC v1 does not support source engine type %q", sourceType)
 	}
-	if targetType != "postgresql" {
-		return DatabaseCDCBindings{}, fmt.Errorf("database CDC v1 requires PostgreSQL target, got %q", targetType)
+	if !declaresPartitionedMonotonicApply(target, engineplugin.TableChangeOperationUpsert, engineplugin.TableChangeOperationDelete) {
+		return DatabaseCDCBindings{}, fmt.Errorf("database CDC target engine %q does not declare atomic monotonic upsert/delete partitioned_table_change_apply", targetType)
 	}
 	return DatabaseCDCBindings{Source: source, Target: target, SourceType: sourceType, TargetType: targetType}, nil
 }

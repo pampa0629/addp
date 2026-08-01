@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"database/sql"
 	"strings"
 	"testing"
 
@@ -36,19 +37,46 @@ func TestMySQLSQLTypeForField(t *testing.T) {
 		field       datatype.FieldInfo
 		spatialInfo *datatype.SpatialInfo
 		want        string
+		wantErr     bool
 	}{
 		{name: "common bigint", field: datatype.FieldInfo{Name: "id", Type: datatype.FieldTypeBigInt}, want: "BIGINT"},
 		{name: "common bool", field: datatype.FieldInfo{Name: "active", Type: datatype.FieldTypeBool}, want: "TINYINT(1)"},
-		{name: "common decimal", field: datatype.FieldInfo{Name: "amount", Type: datatype.FieldTypeDecimal}, want: "DECIMAL(10,2)"},
+		{name: "time preserves fractional seconds", field: datatype.FieldInfo{Name: "business_time", Type: datatype.FieldTypeTime}, want: "TIME(6)"},
+		{name: "timestamp preserves fractional seconds", field: datatype.FieldInfo{Name: "changed_at", Type: datatype.FieldTypeTimestamp}, want: "DATETIME(6)"},
+		{name: "decimal requires explicit precision", field: datatype.FieldInfo{Name: "amount", Type: datatype.FieldTypeDecimal}, wantErr: true},
+		{name: "decimal precision and scale", field: datatype.FieldInfo{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 20, Scale: 10}, want: "DECIMAL(20,10)"},
 		{name: "unknown defaults text", field: datatype.FieldInfo{Name: "x", Type: datatype.FieldTypeUnknown}, want: "TEXT"},
 		{name: "spatial info geometry type", field: datatype.FieldInfo{Name: "geom", Type: datatype.FieldTypeGeometry}, spatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 0), want: "POINT"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := mysqlSQLTypeForField(tt.field, tt.spatialInfo); got != tt.want {
+			got, err := mysqlSQLTypeForField(tt.field, tt.spatialInfo)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("mysqlSQLTypeForField() = %q, want error", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("mysqlSQLTypeForField() failed: %v", err)
+			}
+			if got != tt.want {
 				t.Fatalf("mysqlSQLTypeForField() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestMySQLSQLTypeForFieldRejectsInvalidDecimalBounds(t *testing.T) {
+	tests := []datatype.FieldInfo{
+		{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 66, Scale: 2},
+		{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 20, Scale: 31},
+		{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 4, Scale: 5},
+	}
+	for _, field := range tests {
+		if _, err := mysqlSQLTypeForField(field, nil); err == nil {
+			t.Fatalf("mysqlSQLTypeForField(%#v) succeeded, want bounds error", field)
+		}
 	}
 }
 
@@ -89,11 +117,52 @@ func TestMySQLSchemaEvolutionStatementsRejectsTypeConflict(t *testing.T) {
 	}
 }
 
+func TestMySQLSchemaEvolutionStatementsRejectsDecimalPrecisionConflict(t *testing.T) {
+	_, err := mysqlSchemaEvolutionStatements("analytics", "target", []datatype.FieldInfo{
+		{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 20, Scale: 10},
+	}, nil, []mysqlColumnInfo{
+		{
+			Name:             "amount",
+			DataType:         "decimal",
+			NativeType:       "decimal(10,2)",
+			NumericPrecision: sql.NullInt64{Int64: 10, Valid: true},
+			NumericScale:     sql.NullInt64{Int64: 2, Valid: true},
+		},
+	})
+	if err == nil {
+		t.Fatal("mysqlSchemaEvolutionStatements succeeded with decimal precision conflict, want error")
+	}
+}
+
 func TestMySQLColumnCompatibleWithFieldAcceptsTinyIntOneAsBool(t *testing.T) {
 	column := mysqlColumnInfo{Name: "active", DataType: "tinyint", NativeType: "tinyint(1)"}
 	field := datatype.FieldInfo{Name: "active", Type: datatype.FieldTypeBool}
 	if !mysqlColumnCompatibleWithField(column, field, nil) {
 		t.Fatal("mysqlColumnCompatibleWithField rejected tinyint(1) bool column")
+	}
+}
+
+func TestMySQLColumnCompatibleWithFieldRequiresLosslessTemporalPrecision(t *testing.T) {
+	field := datatype.FieldInfo{Name: "changed_at", Type: datatype.FieldTypeTimestamp}
+	if mysqlColumnCompatibleWithField(mysqlColumnInfo{
+		Name: "changed_at", DataType: "datetime", NativeType: "datetime", TemporalPrecision: sql.NullInt64{Int64: 0, Valid: true},
+	}, field, nil) {
+		t.Fatal("mysqlColumnCompatibleWithField accepted zero-precision datetime")
+	}
+	if !mysqlColumnCompatibleWithField(mysqlColumnInfo{
+		Name: "changed_at", DataType: "datetime", NativeType: "datetime(6)", TemporalPrecision: sql.NullInt64{Int64: 6, Valid: true},
+	}, field, nil) {
+		t.Fatal("mysqlColumnCompatibleWithField rejected microsecond datetime")
+	}
+}
+
+func TestMySQLColumnCompatibleWithFieldRequiresExactUUIDStorage(t *testing.T) {
+	field := datatype.FieldInfo{Name: "ref", Type: datatype.FieldTypeUUID}
+	if !mysqlColumnCompatibleWithField(mysqlColumnInfo{Name: "ref", DataType: "varchar", NativeType: "varchar(36)"}, field, nil) {
+		t.Fatal("mysqlColumnCompatibleWithField rejected VARCHAR(36) UUID storage")
+	}
+	if mysqlColumnCompatibleWithField(mysqlColumnInfo{Name: "ref", DataType: "varchar", NativeType: "varchar(255)"}, field, nil) {
+		t.Fatal("mysqlColumnCompatibleWithField accepted ambiguous VARCHAR(255) UUID storage")
 	}
 }
 

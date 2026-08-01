@@ -185,6 +185,8 @@ import {
   dataTypeLabel,
   engineOptionLabel,
   formatLabel,
+	hasAtomicPartitionedTableChangeApply,
+  hasIdempotentTableUpsert,
   hasStorageCapability,
   isContentEngine,
   isNativeTableEngine,
@@ -280,7 +282,9 @@ const targetEnginePlaceholder = computed(() => {
 
 const isNativeTableTarget = computed(() => {
   if (isRawCopySource.value) return false
-  if (isContinuousSource.value) return isPostgresqlEngine(selectedEngine.value)
+  if (isContinuousSource.value) {
+		return isNativeTableEngine(selectedEngine.value) && hasAtomicPartitionedTableChangeApply(selectedEngine.value)
+	}
   return isNativeTableEngine(selectedEngine.value)
 })
 
@@ -466,10 +470,11 @@ function syncTarget() {
         extensionError: outputFileNameError.value
       }
 
-  props.wizardState.updateTarget({
-    engineID: formData.engineID,
-    engineType: selectedEngine.value.engine_type,
-    targetType: targetStorageKind.value,
+	props.wizardState.updateTarget({
+		engineID: formData.engineID,
+		engineType: selectedEngine.value.engine_type,
+		capabilities: selectedEngine.value.capabilities,
+		targetType: targetStorageKind.value,
     schema: isNativeTableTarget.value ? targetSchema.value : '',
     table: isNativeTableTarget.value ? targetTable.value : '',
     representation: isNativeTableTarget.value ? 'native' : 'encoded',
@@ -486,10 +491,11 @@ function syncTargetDraft() {
     clearTarget()
     return
   }
-  props.wizardState.updateTarget({
-    engineID: normalizeEngineID(formData.engineID),
-    engineType: selectedEngine.value.engine_type,
-    targetType: targetStorageKind.value,
+	props.wizardState.updateTarget({
+		engineID: normalizeEngineID(formData.engineID),
+		engineType: selectedEngine.value.engine_type,
+		capabilities: selectedEngine.value.capabilities,
+		targetType: targetStorageKind.value,
     schema: '',
     table: '',
     representation: isNativeTableTarget.value ? 'native' : 'encoded',
@@ -724,14 +730,12 @@ async function loadEngines() {
 
 function isAllowedTargetEngine(engine) {
   if (!sourceTransferSupported.value) return false
-  if (isContinuousSource.value) return isPostgresqlEngine(engine)
+  if (isContinuousSource.value) return isNativeTableEngine(engine) && hasAtomicPartitionedTableChangeApply(engine)
+  if (props.wizardState.isWatermarkIncremental?.value) {
+    return isNativeTableEngine(engine) && hasIdempotentTableUpsert(engine)
+  }
   if (isRawCopySource.value) return isContentEngine(engine)
   return isNativeTableEngine(engine) || isContentEngine(engine)
-}
-
-function isPostgresqlEngine(engine) {
-  const type = String(engine?.engine_type || engine || '').trim().toLowerCase()
-  return type === 'postgresql' || type === 'postgres' || type.includes('postgresql')
 }
 
 function supportedEncodedSourceFormat(format) {

@@ -143,6 +143,8 @@ type FieldMappingSpecDoc struct {
 	Source     string      `json:"source,omitempty" example:"geom"`
 	Target     string      `json:"target" example:"geometry"`
 	TargetType string      `json:"target_type,omitempty" example:"geometry"`
+	Precision  *int        `json:"precision,omitempty" example:"18" description:"十进制目标字段的总有效位数，必须与 scale 同时提供。"`
+	Scale      *int        `json:"scale,omitempty" example:"4" description:"十进制目标字段的小数位数，必须与 precision 同时提供。"`
 	Nullable   bool        `json:"nullable,omitempty" example:"true"`
 	Default    interface{} `json:"default,omitempty"`
 	Format     string      `json:"format,omitempty"`

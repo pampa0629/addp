@@ -107,6 +107,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
 import { codeSetAPI } from '../api/standard'
+import { navigateStandardRoute } from '@/utils/moduleNavigation'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -159,7 +160,7 @@ const handleCreate = async () => {
     const res = await codeSetAPI.create(createForm)
     ElMessage.success(t('standard.common.createSuccess'))
     createDialogVisible.value = false
-    router.push(`/standard/code-sets/${res.id}`)
+    await navigateStandardRoute(router, `/code-sets/${res.id}`, { history: 'replace' })
   } catch (err) {
     ElMessage.error(err.response?.data?.error || t('standard.common.operationFailed'))
   } finally {
@@ -178,7 +179,7 @@ const handleDelete = async (id) => {
 }
 
 const goToDetail = (row) => {
-  router.push(`/standard/code-sets/${row.id}`)
+  navigateStandardRoute(router, `/code-sets/${row.id}`)
 }
 
 onMounted(() => {

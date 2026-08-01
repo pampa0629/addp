@@ -146,7 +146,7 @@
       </div>
 
       <div class="form-actions">
-        <el-button @click="$router.back()">{{ $t('service.common.cancel') }}</el-button>
+        <el-button @click="cancelForm">{{ $t('service.common.cancel') }}</el-button>
         <el-button type="primary" :disabled="!validateStep0()" @click="nextStep">
           {{ $t('service.tile.nextStep') }}
         </el-button>
@@ -273,6 +273,7 @@ import tileServiceAPI from '@/api/tileService'
 import { ResourceTreePicker, detectTableMetadata, locatorPathFromSelection } from '@common-ui'
 import { ElMessage } from 'element-plus'
 import { DocumentCopy } from '@element-plus/icons-vue'
+import { navigateServiceRoute } from '@/utils/moduleNavigation'
 import {
   defaultTileLayerName,
   isNativeTableEngine,
@@ -517,8 +518,12 @@ export default {
 
     viewDetail() {
       if (this.createdService && this.createdService.id) {
-        this.$router.push(`/tile/${this.createdService.id}`)
+        navigateServiceRoute(this.$router, `/tile/${this.createdService.id}`, { history: 'replace' })
       }
+    },
+
+    cancelForm() {
+      navigateServiceRoute(this.$router, '/tile', { history: 'replace' })
     },
 
     createAnother() {

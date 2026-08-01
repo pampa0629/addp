@@ -1,20 +1,20 @@
 <template>
   <div class="page-container">
     <div class="page-header">
-      <el-button link @click="$router.push('/ontologies')">
+      <el-button link @click="returnToList">
         <el-icon><ArrowLeft /></el-icon> {{ t('graph.common.back') }}
       </el-button>
       <h2>{{ ontology?.name }}</h2>
       <el-tag :type="ontology?.status === 'active' ? 'success' : 'info'" size="small">
         {{ ontology?.status === 'active' ? t('graph.common.active') : t('graph.common.archived') }}
       </el-tag>
-      <el-button size="small" @click="$router.push(`/ontologies/${$route.params.id}/edit`)">{{ t('graph.common.edit') }}</el-button>
+      <el-button size="small" @click="openEdit">{{ t('graph.common.edit') }}</el-button>
       <el-button size="small" type="success" @click="showVersionDialog = true">{{ t('graph.ontology.createVersionSnapshot') }}</el-button>
       <el-button size="small" type="warning" @click="openImportFromModel">{{ t('graph.ontology.importFromModel') }}</el-button>
       <el-button size="small" type="info" @click="openInferFromEngine">{{ t('graph.ontology.inferFromNeo4j') }}</el-button>
     </div>
 
-    <el-tabs v-model="activeTab">
+    <el-tabs v-model="activeTab" @tab-change="handleTabChange">
       <!-- 实体类型 -->
       <el-tab-pane :label="t('graph.ontology.entityTypes')" name="entities">
         <div class="tab-toolbar">
@@ -358,8 +358,8 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, onMounted, computed, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Plus, Location } from '@element-plus/icons-vue'
 import { ontologyAPI } from '../api/ontology'
@@ -367,17 +367,47 @@ import { OntologyView } from '@addp/common-frontend/graph'
 import ImportFromModelDialog from '../components/ImportFromModelDialog.vue'
 import InferFromEngineDialog from '../components/InferFromEngineDialog.vue'
 import { useI18n } from 'vue-i18n'
+import { resolveCanonicalTabRouteState } from '@common-ui'
+import { navigateGraphRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 
 const route = useRoute()
+const router = useRouter()
 const ontologyId = route.params.id
 const ontology = ref(null)
 const entityTypes = ref([])
 const relationTypes = ref([])
 const versions = ref([])
-const activeTab = ref('entities')
+const ontologyTabs = ['entities', 'relations', 'versions', 'graph']
+const resolveRouteState = routeQuery => resolveCanonicalTabRouteState({
+  allowedTabs: ontologyTabs,
+  defaultTab: 'entities',
+  routeQuery
+})
+const activeTab = ref(resolveRouteState(route.query).tab)
 const saving = ref(false)
+const returnToList = () => navigateGraphRoute(router, '/ontologies', { history: 'replace' })
+const openEdit = () => navigateGraphRoute(router, `/ontologies/${ontologyId}/edit`)
+
+async function handleTabChange(tab) {
+  const routeState = resolveRouteState({ tab })
+  const location = { path: route.path, query: routeState.query }
+  if (router.resolve(location).fullPath !== route.fullPath) {
+    await navigateGraphRoute(router, location, { history: 'replace' })
+  }
+}
+
+async function restoreTabFromRoute() {
+  const routeState = resolveRouteState(route.query)
+  activeTab.value = routeState.tab
+  if (routeState.changed) {
+    await navigateGraphRoute(router, {
+      path: route.path,
+      query: routeState.query
+    }, { history: 'replace' })
+  }
+}
 
 // entity form
 const entityDialogVisible = ref(false)
@@ -508,7 +538,11 @@ const loadVersions = async () => {
   const res = await ontologyAPI.listVersions(ontologyId)
   versions.value = res || []
 }
-onMounted(() => { loadOntology(); loadVersions() })
+watch(() => route.query, restoreTabFromRoute)
+onMounted(async () => {
+  await restoreTabFromRoute()
+  await Promise.all([loadOntology(), loadVersions()])
+})
 
 // F4: 从 Model 导入
 const importFromModelRef = ref(null)

@@ -3,7 +3,7 @@
     <!-- 顶部操作栏 -->
     <div class="detail-header">
       <div class="header-left">
-        <el-button text @click="$router.back()">
+        <el-button text @click="backToList">
           <el-icon><ArrowLeft /></el-icon>
           {{ t('model.common.back') }}
         </el-button>
@@ -23,7 +23,7 @@
     </div>
 
     <!-- Tab 标签页 -->
-    <el-tabs v-model="activeTab" type="border-card">
+    <el-tabs v-model="activeTab" type="border-card" @tab-change="handleTabChange">
       <!-- 基本信息标签页 -->
       <el-tab-pane :label="t('model.logical_table.basic_info')" name="basic">
         <el-form :model="form" label-width="90px">
@@ -295,14 +295,23 @@ import { ArrowLeft, Plus, Refresh, DocumentCopy } from '@element-plus/icons-vue'
 import { entityAPI, entityRelationAPI, domainAPI, elementAPI } from '../api/model'
 import mermaid from 'mermaid'
 import { useI18n } from 'vue-i18n'
+import { resolveCanonicalTabRouteState } from '@common-ui'
+import { navigateModelRoute } from '../utils/moduleNavigation'
 
 const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
-const entityId = parseInt(route.params.id)
+const entityId = computed(() => Number(route.params.id))
 
-const activeTab = ref('basic')
+const ENTITY_TABS = ['basic', 'attributes', 'relations']
+const resolveRouteState = routeQuery => resolveCanonicalTabRouteState({
+  allowedTabs: ENTITY_TABS,
+  defaultTab: 'basic',
+  routeQuery
+})
+const activeTab = ref(resolveRouteState(route.query).tab)
+let routeDataReady = false
 const saving = ref(false)
 const attrLoading = ref(false)
 const relationLoading = ref(false)
@@ -344,7 +353,7 @@ const relationRules = {
 }
 
 // 排除当前实体的其他实体列表
-const otherEntities = computed(() => allEntities.value.filter(e => e.id !== entityId))
+const otherEntities = computed(() => allEntities.value.filter(e => e.id !== entityId.value))
 
 const getElementName = (id) => elements.value.find(e => e.id === id)?.name
 const getEntityName = (id) => allEntities.value.find(e => e.id === id)?.name || `Entity#${id}`
@@ -364,7 +373,7 @@ const formatRelationType = (type) => {
 }
 
 const getTargetEntityId = (relation) => {
-  return relation.source_entity === entityId ? relation.target_entity : relation.source_entity
+  return relation.source_entity === entityId.value ? relation.target_entity : relation.source_entity
 }
 
 const getTargetEntityName = (relation) => {
@@ -373,11 +382,21 @@ const getTargetEntityName = (relation) => {
 }
 
 const navigateToEntity = (id) => {
-  router.push(`/entity/${id}`)
+  navigateModelRoute(router, `/entities/${id}`)
+}
+
+const backToList = () => navigateModelRoute(router, '/entities', { history: 'replace' })
+
+const handleTabChange = async (tab) => {
+  const routeState = resolveRouteState({ tab })
+  const location = { path: route.path, query: routeState.query }
+  if (router.resolve(location).fullPath !== route.fullPath) {
+    await navigateModelRoute(router, location, { history: 'replace' })
+  }
 }
 
 const loadEntity = async () => {
-  const res = await entityAPI.get(entityId)
+  const res = await entityAPI.get(entityId.value)
   entity.value = res || {}
   Object.assign(form, {
     name: entity.value.name,
@@ -389,7 +408,7 @@ const loadEntity = async () => {
 const loadAttributes = async () => {
   attrLoading.value = true
   try {
-    const res = await entityAPI.getAttributes(entityId)
+    const res = await entityAPI.getAttributes(entityId.value)
     attributes.value = res || []
   } finally {
     attrLoading.value = false
@@ -399,7 +418,7 @@ const loadAttributes = async () => {
 const loadRelations = async () => {
   relationLoading.value = true
   try {
-    const res = await entityRelationAPI.getByEntityId(entityId)
+    const res = await entityRelationAPI.getByEntityId(entityId.value)
     relations.value = res || []
     await refreshLocalDiagram()
   } finally {
@@ -410,7 +429,7 @@ const loadRelations = async () => {
 const handleSave = async () => {
   saving.value = true
   try {
-    await entityAPI.update(entityId, form)
+    await entityAPI.update(entityId.value, form)
     ElMessage.success(t('model.common.save_success'))
     loadEntity()
   } catch (err) {
@@ -422,7 +441,7 @@ const handleSave = async () => {
 
 const handleApprove = async () => {
   try {
-    await entityAPI.approve(entityId)
+    await entityAPI.approve(entityId.value)
     ElMessage.success(t('model.entity.approve_success'))
     loadEntity()
   } catch {
@@ -451,10 +470,10 @@ const handleAttrSubmit = async () => {
   attrSubmitting.value = true
   try {
     if (editingAttr.value) {
-      await entityAPI.updateAttribute(entityId, editingAttr.value.id, attrForm)
+      await entityAPI.updateAttribute(entityId.value, editingAttr.value.id, attrForm)
       ElMessage.success(t('model.common.update_success'))
     } else {
-      await entityAPI.createAttribute(entityId, attrForm)
+      await entityAPI.createAttribute(entityId.value, attrForm)
       ElMessage.success(t('model.common.add_success'))
     }
     attrDialogVisible.value = false
@@ -468,7 +487,7 @@ const handleAttrSubmit = async () => {
 
 const deleteAttr = async (attrId) => {
   try {
-    await entityAPI.deleteAttribute(entityId, attrId)
+    await entityAPI.deleteAttribute(entityId.value, attrId)
     ElMessage.success(t('model.common.delete_success'))
     loadAttributes()
   } catch {
@@ -480,7 +499,7 @@ const openRelationDialog = (relation = null) => {
   editingRelation.value = relation
   if (relation) {
     Object.assign(relationForm, {
-      direction: relation.source_entity === entityId ? 'outgoing' : 'incoming',
+      direction: relation.source_entity === entityId.value ? 'outgoing' : 'incoming',
       targetEntityId: getTargetEntityId(relation),
       relationType: relation.relation_type,
       name: relation.name || '',
@@ -503,8 +522,8 @@ const handleRelationSubmit = async () => {
   relationSubmitting.value = true
   try {
     const payload = {
-      source_entity: relationForm.direction === 'outgoing' ? entityId : relationForm.targetEntityId,
-      target_entity: relationForm.direction === 'outgoing' ? relationForm.targetEntityId : entityId,
+      source_entity: relationForm.direction === 'outgoing' ? entityId.value : relationForm.targetEntityId,
+      target_entity: relationForm.direction === 'outgoing' ? relationForm.targetEntityId : entityId.value,
       relation_type: relationForm.relationType,
       name: relationForm.name,
       description: relationForm.description
@@ -550,7 +569,7 @@ const refreshLocalDiagram = async () => {
     // 获取相关实体的ID
     const relatedEntityIds = new Set()
     relations.value.forEach(rel => {
-      if (rel.source_entity === entityId) {
+      if (rel.source_entity === entityId.value) {
         relatedEntityIds.add(rel.target_entity)
       } else {
         relatedEntityIds.add(rel.source_entity)
@@ -583,10 +602,10 @@ const refreshLocalDiagram = async () => {
 
     // 关系定义
     relations.value.forEach(rel => {
-      const sourceEntity = rel.source_entity === entityId
+      const sourceEntity = rel.source_entity === entityId.value
         ? entity.value
         : relatedEntities.find(e => e.id === rel.source_entity)
-      const targetEntity = rel.target_entity === entityId
+      const targetEntity = rel.target_entity === entityId.value
         ? entity.value
         : relatedEntities.find(e => e.id === rel.target_entity)
 
@@ -665,14 +684,34 @@ const copyMermaidCode = async () => {
   }
 }
 
-// 监听标签页切换，自动加载对应数据
-watch(activeTab, (newTab) => {
-  if (newTab === 'relations' && relations.value.length === 0) {
+async function restoreTabFromRoute() {
+  const routeState = resolveRouteState(route.query)
+  activeTab.value = routeState.tab
+  if (routeState.changed) {
+    await navigateModelRoute(router, {
+      path: route.path,
+      query: routeState.query
+    }, { history: 'replace' })
+  }
+  if (routeDataReady && activeTab.value === 'relations' && relations.value.length === 0) {
     loadRelations()
   }
+}
+
+watch(() => route.query, restoreTabFromRoute)
+
+watch(() => route.params.id, async () => {
+  entity.value = {}
+  attributes.value = []
+  relations.value = []
+  await loadEntity()
+  loadAttributes()
+  if (activeTab.value === 'relations') loadRelations()
 })
 
 onMounted(async () => {
+  await restoreTabFromRoute()
+
   // 初始化Mermaid
   mermaid.initialize({
     startOnLoad: false,
@@ -691,6 +730,7 @@ onMounted(async () => {
   domains.value = domainsRes.data || []
   elements.value = elementsRes.data || []
   allEntities.value = entitiesRes.data || []
+  routeDataReady = true
 
   // 加载关系（如果tab是relations）
   if (activeTab.value === 'relations') {

@@ -285,11 +285,11 @@ continuous execution 表示一次长期运行的 runtime session，不是把 bou
 2. `envelope` 只允许 `record`，`encoding` 只允许 `json`，value 必须是 JSON object；tombstone、数组、标量、Avro、Protobuf、Schema Registry 和 Debezium envelope 均不支持。
 3. 稳定 key 只允许从 JSON value 的显式非空字段提取；`key.source` 固定为 `value`，`key.fields` 非空。Kafka 原生 record key 第一版只保留为诊断事实，不参与目标身份推导。
 4. 同一业务 key 的事件必须由生产者稳定写入同一 partition。Transfer 保证 partition 内顺序，不承诺跨 partition 的同 key 全局顺序。
-5. 目标只支持 PostgreSQL native table，并且必须使用 `apply_mode=upsert`、显式目标 keys 和 `PartitionedTableChangeApplyProvider`；普通 `TableUpsertProvider` 不能单独满足 continuous fencing。keyless append 和可能产生重复的普通 append 不进入第一版。
+5. 目标支持声明完整原子应用能力的 PostgreSQL/MySQL native table，并且必须使用 `apply_mode=upsert`、显式目标 keys 和 `PartitionedTableChangeApplyProvider`；普通 `TableUpsertProvider` 不能单独满足 continuous fencing。keyless append 和可能产生重复的普通 append 不进入第一版。
 6. Kafka JSON 没有可依赖的表 schema，任务必须通过显式 `field_mapping` 固定目标字段和类型；source key fields 映射后的目标字段必须与 `target.policy.keys` 一一对应且非空。未知字段、缺失必填字段或不兼容 schema 变化必须阻塞 partition 并使当前 execution 失败，不得静默丢弃。
 7. `start.mode` 固定为 `committed`。没有 committed state 的 partition 必须由任务显式选择 `initial=earliest|latest`；不得由 consumer 默认值或 auto commit 猜测。
 8. Transfer 为每个 partition 在 `transfer.sync_states` 保存 `position.type=kafka_offset`、`position.version=v1` 和 `next_offset`。目标批次成功提交后才允许用 runtime fencing token 和 state version 做 CAS 推进；worker 恢复时必须 seek 到 `next_offset`。
-9. 每个 continuous task 必须有服务端生成且不可修改的 `apply_identity` UUID，不写入 config。PostgreSQL Provider 在业务目标库维护 `addp_transfer.apply_positions`，以 `apply_identity + source_identity + target_identity + partition` 校验应用主线；业务行 upsert 与目标 `next_offset` 必须在同一事务提交。
+9. 每个 continuous task 必须有服务端生成且不可修改的 `apply_identity` UUID，不写入 config。PostgreSQL Provider 在业务目标库维护 `addp_transfer.apply_positions`，MySQL Provider 在目标业务数据库维护 `_addp_transfer_apply_positions` InnoDB 私有表；两者都以 `apply_identity + source_identity + target_identity + partition` 校验应用主线，并把业务行 upsert 与目标 `next_offset` 在同一事务提交。
 10. Transfer 必须把 poll 结果按 partition 拆成顺序批次，每条已映射记录携带消费后 `next_offset`。Provider 锁定 ledger 行，拒绝位置缺口，跳过不大于已应用位置的重复记录；同一批剩余记录出现相同目标 key 时保留最高 `next_offset` 的最后状态，再执行一次原子 upsert。
 11. 投递保证固定为 `at-least-once delivery + target monotonic apply`。目标提交与 Infra position CAS 之间崩溃会重放，但目标 ledger 必须吸收重复批次，并阻止租约过期 worker 在新 worker 之后写回旧状态；不得宣称跨 Kafka、业务 PostgreSQL 和 Infra PostgreSQL 的分布式 exactly-once。
 12. consumer auto commit 禁用。Kafka consumer group 只用于分区分配，不是 Transfer committed position 的事实源。
@@ -353,9 +353,9 @@ continuous task 与 execution 生命周期：
 
 ```text
 PostgreSQL 单表 -> Debezium PostgreSQL Connector -> Infra Kafka
-  -> Transfer Continuous Worker -> PostgreSQL 新目标表
+  -> Transfer Continuous Worker -> PostgreSQL/MySQL 新目标表
 MySQL 8.0 单表 -> Debezium MySQL Connector -> Infra Kafka
-  -> Transfer Continuous Worker -> PostgreSQL 新目标表
+  -> Transfer Continuous Worker -> PostgreSQL/MySQL 新目标表
 ```
 
 公开任务配置不暴露 provider 类型、connector、replication slot、publication、schema-history topic、Infra Kafka data topic 或 consumer group；source provider 只由 source locator 对应的 System Engine 解析结果决定：
@@ -397,14 +397,14 @@ MySQL 8.0 单表 -> Debezium MySQL Connector -> Infra Kafka
 
 契约约束：
 
-1. 当前 CDC source 只允许 PostgreSQL 或 MySQL 8.0 native table，target 固定为 PostgreSQL native table；一个任务只捕获一张源表。公开 capability 固定声明 `sources=[postgresql,mysql]`、`target=postgresql`、`bootstrap=[initial_snapshot]`、`apply_mode=upsert_delete`。Oracle 已延期且不进入当前实施计划；多表 connector、无主键表和 Kafka target 也未进入当前实现。
+1. 当前 CDC source 只允许 PostgreSQL 或 MySQL 8.0 native table，target 允许声明完整原子应用能力的 PostgreSQL 或 MySQL native table；一个任务只捕获一张源表。公开 capability 固定声明 `sources=[postgresql,mysql]`、`targets=[postgresql,mysql]`、`bootstrap=[initial_snapshot]`、`apply_mode=upsert_delete`。Oracle 已延期且不进入当前实施计划；多表 connector、无主键表和 Kafka target 也未进入当前实现。
 2. 源表必须有稳定、非空且捕获期间不可修改的主键；Debezium record key 必须完整包含该复合主键。源主键经 `field_mapping` 映射后必须与 `target.policy.keys` 一一对应。
 3. `bootstrap` 第一版只允许 `initial_snapshot`，对应 Debezium `snapshot.mode=initial`。Debezium 负责一致性 snapshot、日志起点和 snapshot/stream 无空洞交接；Transfer 只按 Infra Kafka 顺序消费，不另起 bounded snapshot 路线。
 4. 初次 bootstrap 的目标表必须不存在，由本任务按固定字段映射创建。第一版不接管、清空或合并已有目标表，避免 snapshot upsert 无法识别目标残留行。
 5. Debezium payload 固定使用无 schema wrapper 的 JSON envelope；key/value converter 的 `schemas.enable=false`，`tombstones.on.delete=false`。为消除 schemaless JSON 的类型歧义，connector 同时固定 `decimal.handling.mode=string` 和 `time.precision.mode=connect`，MySQL 额外固定 `binary.handling.mode=base64`。内部 CDC data topic 第一版固定为单 partition。
 6. Debezium `op=r` 归一化为 `snapshot` 并按 upsert 应用，`op=c|u` 归一化为 `upsert`，`op=d` 使用 Kafka record key 归一化为 `delete`。`op=t|m`、空 value tombstone、来源表身份不匹配和未知 op 均视为协议错误，不得静默推进 offset。
-7. delete 只按映射后的稳定目标 key 执行物理行删除，不依赖 `before` 包含完整旧行。目标必须使用 `apply_mode=upsert_delete`，PostgreSQL `PartitionedTableChangeApplyProvider` 必须真实声明并实现 `operations=[upsert,delete]` 后才可开放 CDC capability。
-8. snapshot/upsert/delete 与业务目标库 `addp_transfer.apply_positions` 必须在同一事务按 partition monotonic apply；`transfer.sync_states` 继续保存 `kafka_offset/v1.next_offset`，目标提交后才允许以 runtime fencing + state version 做 CAS 推进。
+7. delete 只按映射后的稳定目标 key 执行物理行删除，不依赖 `before` 包含完整旧行。目标必须使用 `apply_mode=upsert_delete`，目标 `PartitionedTableChangeApplyProvider` 必须真实声明并实现 `operations=[upsert,delete]` 后才可开放 CDC capability。
+8. snapshot/upsert/delete 必须与目标 Provider 的业务库 apply ledger 在同一事务按 partition monotonic apply；PostgreSQL 使用 `addp_transfer.apply_positions`，MySQL 使用目标业务数据库内的 `_addp_transfer_apply_positions` InnoDB 私有表。`transfer.sync_states` 继续保存 `kafka_offset/v1.next_offset`，目标提交后才允许以 runtime fencing + state version 做 CAS 推进。
 9. Kafka Connect offset 是捕获位点，回答源数据库日志已捕获到哪里；Transfer committed position 是消费位点，回答目标已应用到哪个 Infra Kafka offset。两者由各自 owner 管理，任何一方都不能代替另一方。
 10. PostgreSQL LSN、MySQL binlog file/position/GTID、事务 ID 和事件时间可以进入 ChangeEvent 诊断信息，但不得替代 Kafka partition offset，也不承诺把一个源数据库事务跨多行原子提交到目标；交付保证仍是 at-least-once + target monotonic apply。
 11. PostgreSQL CDC v1 接受可无歧义映射到 ADDP `string|bool|int|bigint|float|double|decimal|date|time|timestamp|json|uuid|geometry` 的源字段；完整源表字段必须逐一映射且声明类型必须与真实 PostgreSQL 类型一致。PostGIS 只开放带 typmod 的 `geometry(<OGC type>[Z], <positive SRID>)`，不开放 `geography`、未约束的 generic geometry、M/ZM、geometry 主键或运行时重投影。capture generation 创建前必须从源库冻结每个 geometry 字段的 OGC type、SRID、维度和 nullable，并持久化为 generation source spatial facts；Debezium schemaless JSON geometry 固定按 `{wkb: <base64>, srid: <number>}` 解码。进入 ADDP 数据面的标准中间表示仍是行内 `[]byte` EWKB 加表级 `datatype.SpatialInfo`，`geom.T` 只允许作为 native encoding 与 EWKB 转换、校验时的短生命周期对象，不进入 ChangeEvent、Provider、任务配置或持久状态。消息 SRID、几何类型或维度与冻结事实不一致时按 schema drift 阻塞且不得推进 offset。目标 Engine Provider 使用映射后的字段名和同一组空间事实转换为目标 native geometry；PostgreSQL 目标按此创建 geometry typmod 列。跨引擎或跨执行边界的空间链路默认复用 native geometry ↔ EWKB + `SpatialInfo` 边界，不能引入数据库私有的跨层几何对象；只有 source 与 target 通过能力声明协商出完全相同的 native geometry encoding，且链路不经过编码转换、CRS 转换或中间几何算子时，planner 才可选择 native encoding 直通。PostGIS `geometry` 是数据库内部类型而不是跨 Provider encoding；当前 PostgreSQL CDC 经过 Debezium 和 Infra Kafka，不满足 native 直通条件。`bytea`、数组、interval、枚举和其他用户定义类型在创建 capture 前明确拒绝，不得先启动 connector 再让运行时失败。Decimal 以原始十进制字符串传递；date 使用 epoch days；time 和无时区 timestamp 只允许声明精度 `0..3` 并使用毫秒编码，默认微秒精度或显式精度大于 3 的列必须拒绝，不能静默截断；带时区 timestamp 接受 RFC 3339 并按 UTC instant 写入目标 `timestamp`；JSON/JSONB 使用合法 JSON 字符串。
@@ -413,7 +413,7 @@ MySQL 8.0 单表 -> Debezium MySQL Connector -> Infra Kafka
 12. schema drift 默认严格阻塞。字段缺失、主键变化、类型不兼容、geometry 空间事实变化或 envelope/source 结构变化必须在 execution metadata 保存 missing/unexpected/incompatible schema diff，并以 `schema_change_blocked` 结束 execution；任务原子进入 `status=blocked`，当前消息和 committed offset 均不得推进。
 13. 唯一可在原 capture generation 内恢复的 schema change 是人工确认的 additive migration：当前阻塞消息只能包含新增字段，`missing_fields` 与 `incompatible_fields` 必须为空；新增字段必须仍存在于源表、允许 NULL、不是主键且不是 geometry。服务端为该 task/generation/阻塞 execution 创建唯一 pending schema change request，并记录当前 Kafka partition/offset、schema diff 和 mapping revision。`GET /task-definitions/:id/schema-change` 是查询当前 request 与服务端复查建议的唯一入口；任务 JSON 不增加 `manual|additive` 策略开关。
 14. 审批必须通过唯一 `POST /task-definitions/:id/schema-change/approve`，显式覆盖 pending request 的全部新增源字段，并逐一提交新的 target 名、`target_type` 和 `nullable=true`。服务端必须重新验证现有字段、主键和待新增字段的实时源事实，拒绝重名、覆盖既有 source/target、类型不匹配、非 nullable、geometry、缺失字段或不完整审批；普通 `PUT /task-definitions/:id` 继续禁止修改已有 capture generation 的 CDC config。
-15. 目标 PostgreSQL DDL 必须复用 `PartitionedTableChangeApplyProvider` 的 prepare/evolution 主路径，只允许幂等新增 nullable 列并验证既有列兼容，不能建立 Transfer 私有 DDL 通道。外部 DDL 与 Infra 状态无法组成分布式事务，因此审批使用 Infra request/task 行锁串行执行；若目标 DDL 已提交但 Infra 事务回滚，重试必须先验证已存在目标列完全兼容，再完成同一 request，不能创建补偿列或第二条恢复路径。
+15. 目标 PostgreSQL/MySQL DDL 必须复用各自 `PartitionedTableChangeApplyProvider` 的 prepare/evolution 主路径，只允许幂等新增 nullable 列并验证既有列兼容，不能建立 Transfer 私有 DDL 通道。外部 DDL 与 Infra 状态无法组成分布式事务，因此审批使用 Infra request/task 行锁串行执行；若目标 DDL 已提交但 Infra 事务回滚，重试必须先验证已存在目标列完全兼容，再完成同一 request，不能创建补偿列或第二条恢复路径。
 16. 审批完成时在同一 Infra PostgreSQL 事务追加唯一 field mapping、递增 capture `schema_revision`、把 request 标记为 `applied`，并把 task 收敛为 `status=idle, desired_state=paused`。服务端随后触发目标表 Meta deep scan；Meta scan 失败不得回滚已完成 DDL/mapping revision，但必须记录并返回可观测错误。用户继续使用既有 Resume API 创建新 execution，从未推进的 committed offset 恢复；审批 API 不隐式启动 runtime。
     Meta scan 触发固定使用 request 内的持久化 claim 状态机：`pending -> running(claim_token, lease_until, attempt+1) -> success|failed`。只有 `pending` 或 claim 已过期的 `running` 可通过 CAS 取得新 UUID token；完成更新必须同时匹配 request、`running` 和 token，过期 claimant 的迟到结果不得覆盖新 claimant。并发审批只能有一个 claimant 调用 Meta；进程在 claim 后崩溃时，由相同重复审批 POST 在 `TRANSFER_SCHEMA_CHANGE_META_SCAN_CLAIM_TTL` 到期后接管，schema change GET 始终只读。真实 Meta API 返回失败后状态固定为 `failed`，不得由重复审批自动循环重试；用户可在 Meta 使用既有手动扫描能力。claim TTL 是部署配置，不进入任务 JSON，并且必须大于 Meta client 的 HTTP 超时。
 17. request 只允许 `pending -> applied`，历史 request 是 generation 内 mapping revision 审计事实。重复审批已 applied request 必须幂等返回同一结果；同一 generation 同时只能有一个 pending request。下一次新增字段再次阻塞时创建下一 revision request。task physical cleanup 随 capture generation 级联删除这些私有 request；统一 execution 和 System audit 继续保存长期审计。
@@ -457,7 +457,7 @@ DLQ v1 约束：
 3. dead-letter identity 固定由 `apply_identity + source_identity + partition + record_offset` 计算，重复处理同一源记录必须得到同一 identity。Infra Kafka topic 固定使用 Transfer-owned `__addp_dlq.<tenant_id>.<task_id>` namespace，原业务 Kafka principal 不得访问。
 4. DLQ envelope schema 固定为 `transfer.dead_letter/v1`，至少包含 dead-letter identity、tenant/task/execution、source identity、原 topic/partition/offset/timestamp、原 key/value/headers 的无损 base64、稳定错误 code/category/message 和 detected_at。不得在错误文本中写入连接凭据。
 5. `transfer.dead_letters` 只保存查询和审计所需的控制索引、Infra Kafka payload reference 和首次/最近观测时间；原始大 payload 只保存在 Infra Kafka。控制索引按 dead-letter identity 唯一，重复写入不得产生第二条逻辑记录。
-6. 处理顺序固定为：幂等写 DLQ payload -> 幂等落控制索引 -> PostgreSQL 目标以 `operation=skip` 原子推进业务目标 ledger -> Transfer 以 runtime fencing + state version CAS 推进 `transfer.sync_states`。只有前一步成功才能执行下一步；任一步失败都不得提交后续 position。
+6. 处理顺序固定为：幂等写 DLQ payload -> 幂等落控制索引 -> PostgreSQL/MySQL 目标以 `operation=skip` 原子推进各自业务目标 ledger -> Transfer 以 runtime fencing + state version CAS 推进 `transfer.sync_states`。只有前一步成功才能执行下一步；任一步失败都不得提交后续 position。
 7. `skip` 只表示该 source position 已经由显式 dead-letter 策略审计跳过，不携带业务 row，也不修改目标业务表。目标 Provider 必须在同一事务校验 apply identity/source/target/partition 和单调位置后推进 ledger。
 8. 目标 ledger 已推进但 Infra state CAS 前崩溃时，重试必须复用同一 dead-letter identity，目标 `skip` 必须按 monotonic ledger 幂等吸收，随后重新提交 Infra state；不得产生静默丢数或位置缺口。
 9. DLQ topic 和控制索引在普通 pause/stop 后保留；task 删除和 System cleanup 由 Transfer cleanup owner 幂等删除。Infra retention 到期只删除 payload 后，控制索引必须明确显示 payload unavailable，不得伪装为可 replay。
@@ -687,7 +687,7 @@ TaskProvider 注册时必须使用 `task.capabilities/v1` schema，并声明稳�
 | `supports_schedule` | 该任务类型是否支持定时 |
 | `supports_cancel` | 该任务类型是否支持真实取消；不能中断执行体时必须为 `false` |
 | `supports_inline_execution` | v1 保留字段；当前必须为 `false`，不支持无持久任务定义的一次性执行 |
-| `create_url` / `edit_url` | owner 模块前端入口；优先使用 Console 模块路由，例如 `/develop/sql?action=create` |
+| `create_url` / `edit_url` | owner 模块创建入口与任务定义入口；优先使用 Console 模块路由，例如 `/develop/sql?action=create` |
 | `deprecated` | 是否废弃 |
 
 约束：
@@ -703,9 +703,11 @@ TaskProvider 注册时必须使用 `task.capabilities/v1` schema，并声明稳�
 9. `supports_inline_execution` 在 `task.capabilities/v1` 中必须为 `false`。内联执行需要新的 endpoint、执行配置 schema 和 Orchestrator Step 模型，必须作为后续专题设计，不得只通过 capabilities 布尔值打开。
 10. `supports_cancel` 与 `task_cancel_endpoint` 必须双向一致：任一任务类型声明 `supports_cancel=true` 时 provider 必须注册标准取消 endpoint；没有任务类型支持取消时 provider 不得注册 `task_cancel_endpoint`。模块内部已有取消 API 不等于 TaskProvider 标准取消能力。
 11. Orchestrator 可以缓存 TaskProvider capabilities，但必须能从 System 刷新。
-12. `create_url` / `edit_url` 应使用 Console 路由形式，可包含模块内深层路径和 query，例如 `/transfer/tasks/:id/edit`、`/develop/workflow?action=edit&id=:id`、`/graph/graphs/:graph_id/build/tasks/:id`；前端负责替换 `:id` / `{id}` / `:task_id` / `{task_id}` / `:graph_id` / `{graph_id}`。
+12. `create_url` / `edit_url` 应使用 Console 路由形式，可包含模块内深层路径和 query，例如 `/transfer/tasks/:id/edit`、`/develop/workflow?action=edit&id=:id`、`/graph/graphs/:graph_id/build/tasks/:id`；前端负责替换 `:id` / `{id}` / `:task_id` / `{task_id}` / `:graph_id` / `{graph_id}`。地址栏同步、canonical 参数和浏览器历史必须同时遵守 `docs/spec/addp前端路由与可恢复状态规范.md`。
 13. 模块新增或删除任务类型时，必须更新自身 capabilities、文档和 Swagger。
 14. `deprecated=true` 的 task type 不再作为可用任务类型处理。Orchestrator 保存和执行编排时都必须拒绝引用 deprecated task type；ADDP 当前不为废弃任务类型保留兼容迁移路径。历史 execution 查询只按既有 execution 记录展示，不要求 owner 继续提供可编辑任务定义入口。
+15. `edit_url` 是 TaskProvider v1 的任务定义入口字段，不承诺任务定义一定可修改。来源驱动且定义不可变的任务必须在该 URL 展示带稳定任务 ID 的只读定义；不得把结果筛选页、无任务身份的模块首页或 Data Explorer 通用入口冒充任务定义入口。
+16. 来源驱动任务的 `create_url` 可以指向 owner 的来源选择页，由用户选择源对象后通过 owner 领域动作派生任务定义。此类任务不得同时保留允许调用方直接提交私有任务配置的第二套创建或更新 API。
 
 `common/taskprovider` 是 TaskProvider 契约的公共解析和校验边界，负责校验 `task.capabilities/v1`、标准任务列表响应 `{items,total,page,page_size}` 和 `execution_schema` 参数实例。System 注册入口、Monitor provider health、Orchestrator 编排保存和执行前校验必须复用该公共能力，不得在各模块重复维护一套 capabilities、任务发现响应或 schema 实例校验逻辑。owner 模块负责生成自身 capabilities 并实现标准 endpoint；`common/taskprovider` 不访问 System 注册表，不调用 owner 模块，也不处理执行调度。
 

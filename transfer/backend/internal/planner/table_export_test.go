@@ -990,6 +990,50 @@ func TestBuildTableTransferPlanConsumesMetaWholeSourceAttributes(t *testing.T) {
 	}
 }
 
+func TestValidateTransformSpecsAcceptsDecimalPrecisionAndScale(t *testing.T) {
+	precision := 20
+	scale := 10
+	err := validateTransformSpecs([]TransformSpec{{
+		Type: "field_mapping",
+		Fields: []FieldMappingSpec{{
+			Source:     "amount",
+			Target:     "amount",
+			TargetType: "decimal",
+			Precision:  &precision,
+			Scale:      &scale,
+		}},
+	}})
+	if err != nil {
+		t.Fatalf("validateTransformSpecs failed: %v", err)
+	}
+
+	fields := buildFieldMappingFields([]FieldMappingSpec{{
+		Source:     "amount",
+		Target:     "amount",
+		TargetType: "decimal",
+		Precision:  &precision,
+		Scale:      &scale,
+	}})
+	if len(fields) != 1 || fields[0].Precision == nil || *fields[0].Precision != 20 || fields[0].Scale == nil || *fields[0].Scale != 10 {
+		t.Fatalf("field mapping plan = %#v, want precision/scale 20/10", fields)
+	}
+}
+
+func TestValidateTransformSpecsRejectsIncompleteDecimalPrecision(t *testing.T) {
+	precision := 20
+	err := validateTransformSpecs([]TransformSpec{{
+		Type: "field_mapping",
+		Fields: []FieldMappingSpec{{
+			Target:     "amount",
+			TargetType: "decimal",
+			Precision:  &precision,
+		}},
+	}})
+	if err == nil || !strings.Contains(err.Error(), "precision and scale must be provided together") {
+		t.Fatalf("validateTransformSpecs error = %v, want precision/scale pair error", err)
+	}
+}
+
 func TestBuildTableTransferPlanUsesMetaObjectWholePhysicalPathAsScope(t *testing.T) {
 	spec := minimalEncodedToEncodedSpec()
 	spec.Source.Format = ""

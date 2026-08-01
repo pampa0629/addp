@@ -177,7 +177,7 @@ replace / append / upsert / upsert_delete 是 Transfer apply policy；upsert 和
 | `replace` | 写入前由 Transfer 规划删除目标资源或重建目标，再执行写入。 |
 | `append` | 追加写入；失败 retry 当前拒绝 append，避免重复写。 |
 | `upsert` | 按稳定键幂等新增或更新；第一版仅 PostgreSQL native table。 |
-| `upsert_delete` | 按稳定键新增、更新和物理删除；第一版仅 PostgreSQL CDC 到 PostgreSQL 新目标表。 |
+| `upsert_delete` | 按稳定键新增、更新和物理删除；数据库 CDC 支持 PostgreSQL/MySQL 源到 PostgreSQL/MySQL 新目标表。 |
 
 `TableWritePreparer` 只做 ensure / create table / schema evolution，不承载 replace / append 策略。DeleteResource 是 common engine 提供的原子删除能力；watermark upsert 使用独立强类型 Provider。
 

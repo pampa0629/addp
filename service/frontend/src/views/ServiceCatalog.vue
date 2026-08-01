@@ -3,12 +3,12 @@
     <div class="header">
       <h2>{{ t('service.catalog.title') }}</h2>
       <div class="header-actions">
-        <el-button type="success" @click="$router.push('/query-services')">{{ t('service.catalog.manageQuery') }}</el-button>
-        <el-button type="primary" @click="$router.push('/registered-services')">{{ t('service.catalog.manageRegistered') }}</el-button>
+        <el-button type="success" @click="openQueryServices">{{ t('service.catalog.manageQuery') }}</el-button>
+        <el-button type="primary" @click="openRegisteredServices">{{ t('service.catalog.manageRegistered') }}</el-button>
       </div>
     </div>
 
-    <el-tabs v-model="activeTab" v-loading="loading">
+    <el-tabs v-model="activeTab" v-loading="loading" @tab-change="handleTabChange">
       <el-tab-pane :label="t('service.catalog.tabAll')" name="all">
         <div class="service-grid">
           <ServiceCard
@@ -117,22 +117,30 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import serviceAPI from '../api/service'
+import { resolveCanonicalTabRouteState } from '@common-ui'
 import queryServiceAPI from '../api/queryService'
 import registeredServiceAPI from '../api/registeredService'
 import tileServiceAPI from '../api/tileService'
 import graphQueryServiceAPI from '../api/graphQueryService'
 import ServiceCard from '../components/ServiceCard.vue'
 import { getEnabledProtocols } from '../utils/serviceHelper'
+import { navigateServiceRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
+const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
-const activeTab = ref('all')
+const catalogTabs = ['all', 'wms', 'wfs', 'wmts', 'ogc_api', 'xyz', 'rest', 'graph']
+const resolveRouteState = routeQuery => resolveCanonicalTabRouteState({
+  allowedTabs: catalogTabs,
+  defaultTab: 'all',
+  routeQuery
+})
+const activeTab = ref(resolveRouteState(route.query).tab)
 const externalServices = ref([])
 const queryServices = ref([])  // 查询服务（原内部服务）
 const registeredServices = ref([])  // 注册服务
@@ -217,12 +225,6 @@ const loadCatalog = async () => {
   }
 }
 
-// 加载外部服务 (已废弃,保留空实现以兼容)
-const loadExternalServices = async () => {
-  // 旧架构的外部服务已废弃,现在统一使用注册服务
-  return []
-}
-
 // 加载图查询服务
 const loadGraphQueryServices = async () => {
   try {
@@ -270,20 +272,44 @@ const loadTileServices = async () => {
 // 处理服务点击
 const handleServiceClick = (service) => {
   if (service._source === 'external') {
-    router.push(`/services/${service.id}`)
+    navigateServiceRoute(router, `/services/${service.id}`)
   } else if (service._source === 'query') {
-    router.push(`/query-services/${service.id}`)
+    navigateServiceRoute(router, `/query-services/${service.id}`)
   } else if (service._source === 'registered') {
-    router.push(`/registered-services/${service.id}`)
+    navigateServiceRoute(router, `/registered-services/${service.id}`)
   } else if (service._source === 'tile') {
-    router.push(`/tile/${service.id}`)
+    navigateServiceRoute(router, `/tile/${service.id}`)
   } else if (service._source === 'graph') {
-    router.push(`/graph-services/${service.id}`)
+    navigateServiceRoute(router, `/graph-services/${service.id}`)
   }
 }
 
-onMounted(() => {
-  loadCatalog()
+const openQueryServices = () => navigateServiceRoute(router, '/query-services')
+const openRegisteredServices = () => navigateServiceRoute(router, '/registered-services')
+
+async function handleTabChange(tab) {
+  const routeState = resolveRouteState({ tab })
+  const location = { path: route.path, query: routeState.query }
+  if (router.resolve(location).fullPath !== route.fullPath) {
+    await navigateServiceRoute(router, location, { history: 'replace' })
+  }
+}
+
+async function restoreTabFromRoute() {
+  const routeState = resolveRouteState(route.query)
+  activeTab.value = routeState.tab
+  if (routeState.changed) {
+    await navigateServiceRoute(router, {
+      path: route.path,
+      query: routeState.query
+    }, { history: 'replace' })
+  }
+}
+
+watch(() => route.query, restoreTabFromRoute)
+onMounted(async () => {
+  await restoreTabFromRoute()
+  await loadCatalog()
 })
 </script>
 

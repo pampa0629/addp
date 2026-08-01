@@ -156,7 +156,11 @@
       >
         <el-table-column prop="source_field" :label="t('transfer.taskWizard.reviewSourceFieldCol')" width="200" />
         <el-table-column prop="target_field" :label="t('transfer.taskWizard.reviewTargetFieldCol')" width="200" />
-        <el-table-column prop="target_type" :label="t('transfer.taskWizard.reviewTypeCol')" width="120" />
+        <el-table-column :label="t('transfer.taskWizard.reviewTypeCol')" width="160">
+          <template #default="{ row }">
+            {{ mappedTypeLabel(row) }}
+          </template>
+        </el-table-column>
         <el-table-column :label="t('transfer.taskWizard.reviewFormatDefaultCol')">
           <template #default="{ row }">
             {{ row.format || row.default_value || '-' }}
@@ -298,6 +302,13 @@ const targetResourcePath = computed(() => {
   }
   return [config.resourcePath, config.resourceFile].filter(Boolean).join('/') || '-'
 })
+
+function mappedTypeLabel(row) {
+  if (row?.target_type !== 'decimal' || !Number.isInteger(row?.precision) || !Number.isInteger(row?.scale)) {
+    return row?.target_type || '-'
+  }
+  return `decimal(${row.precision},${row.scale})`
+}
 
 function copyConfig() {
   const config = JSON.stringify(props.wizardState.taskConfig.value, null, 2)

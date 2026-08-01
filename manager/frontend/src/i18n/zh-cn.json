@@ -612,6 +612,7 @@
       "tasksTab": "瓦片快显任务",
       "resultsTab": "瓦片快显结果",
       "goGenerate": "前往数据探查生成",
+      "id": "ID",
       "name": "任务名称",
       "sourceEngine": "源引擎",
       "source": "源倾斜摄影",

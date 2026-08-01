@@ -52,8 +52,8 @@ export function databaseCDCUnavailableReasonCodes({
 } = {}) {
 	const reasons = []
 	const provider = normalizedEngineType(sourceEngineType)
-	if (['postgresql', 'mysql'].includes(provider) && normalizedEngineType(targetEngineType) === 'postgresql' &&
-		!databaseCDCCapabilitySupports(databaseCDCCapability, provider, targetEngineType)) {
+	if (['postgresql', 'mysql'].includes(provider) &&
+			!databaseCDCCapabilitySupports(databaseCDCCapability, provider, targetEngineType)) {
 		reasons.push({ code: 'capabilityUnavailable' })
 	}
 	if (!['postgresql', 'mysql'].includes(provider)) {
@@ -64,8 +64,8 @@ export function databaseCDCUnavailableReasonCodes({
 	if (String(sourceRepresentation || '').trim().toLowerCase() !== 'native') {
 		reasons.push({ code: 'sourceNativeRequired' })
 	}
-	if (String(targetEngineType || '').trim().toLowerCase() !== 'postgresql') {
-		reasons.push({ code: 'targetPostgreSQLRequired' })
+	if (!['postgresql', 'mysql'].includes(normalizedEngineType(targetEngineType))) {
+		reasons.push({ code: 'targetAtomicApplyRequired' })
 	}
 	if (String(targetRepresentation || '').trim().toLowerCase() !== 'native') {
 		reasons.push({ code: 'targetNativeRequired' })
@@ -92,13 +92,16 @@ export function databaseCDCUnavailableReasonCodes({
 function databaseCDCCapabilitySupports(capability, sourceType, targetType) {
 	if (!capability || typeof capability !== 'object') return false
 	const sources = Array.isArray(capability.sources)
-		? capability.sources.map(normalizedEngineType)
-		: []
+			? capability.sources.map(normalizedEngineType)
+			: []
+	const targets = Array.isArray(capability.targets)
+			? capability.targets.map(normalizedEngineType)
+			: []
 	const bootstrap = Array.isArray(capability.bootstrap)
 		? capability.bootstrap.map(value => String(value || '').trim().toLowerCase())
 		: []
 	return sources.includes(normalizedEngineType(sourceType)) &&
-		normalizedEngineType(capability.target) === normalizedEngineType(targetType) &&
+			targets.includes(normalizedEngineType(targetType)) &&
 		bootstrap.includes('initial_snapshot') &&
 		String(capability.apply_mode || capability.applyMode || '').trim().toLowerCase() === 'upsert_delete'
 }

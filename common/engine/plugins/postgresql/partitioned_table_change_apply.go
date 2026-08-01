@@ -3,13 +3,11 @@ package postgresql
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
-	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
+	pluginshared "github.com/addp/common/engine/plugins/shared"
 	"github.com/addp/common/sqldialect"
 	"github.com/google/uuid"
 )
@@ -23,13 +21,6 @@ type postgresApplyLedgerPosition struct {
 	PositionType    string
 	PositionVersion string
 	NextOffset      int64
-}
-
-type positionedPostgresRow struct {
-	nextOffset int64
-	operation  string
-	key        string
-	row        map[string]interface{}
 }
 
 func (p *PostgreSQLPlugin) PreparePartitionedTableChangeApply(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.PartitionedTableChangeApplyOptions) error {
@@ -66,11 +57,11 @@ func (p *PostgreSQLPlugin) ApplyPartitionedTableChanges(ctx context.Context, con
 		return nil, err
 	}
 	targetIdentity := schema + "." + table
-	startOffset, err := kafkaNextOffset(batch.StartPosition, batch.Partition)
+	startOffset, err := pluginshared.KafkaNextOffset(batch.StartPosition, batch.Partition)
 	if err != nil {
 		return nil, fmt.Errorf("invalid start position: %w", err)
 	}
-	endOffset, err := kafkaNextOffset(batch.EndPosition, batch.Partition)
+	endOffset, err := pluginshared.KafkaNextOffset(batch.EndPosition, batch.Partition)
 	if err != nil {
 		return nil, fmt.Errorf("invalid end position: %w", err)
 	}
@@ -107,7 +98,7 @@ func (p *PostgreSQLPlugin) ApplyPartitionedTableChanges(ctx context.Context, con
 		return nil, fmt.Errorf("postgresql target apply ledger gap for partition %q: ledger next_offset=%d, batch start=%d", batch.Partition, ledger.NextOffset, startOffset)
 	}
 
-	changes, skipped, err := filterAndCoalescePostgresChanges(batch, keys, startOffset, ledger.NextOffset, endOffset)
+	changes, skipped, err := pluginshared.FilterAndCoalesceTableChanges(batch, keys, startOffset, ledger.NextOffset, endOffset)
 	if err != nil {
 		return nil, err
 	}
@@ -115,13 +106,13 @@ func (p *PostgreSQLPlugin) ApplyPartitionedTableChanges(ctx context.Context, con
 		upsertRows := make([]map[string]interface{}, 0, len(changes))
 		deleteRows := make([]map[string]interface{}, 0, len(changes))
 		for _, change := range changes {
-			switch change.operation {
+			switch change.Operation {
 			case plugin.TableChangeOperationUpsert:
-				upsertRows = append(upsertRows, change.row)
+				upsertRows = append(upsertRows, change.Row)
 			case plugin.TableChangeOperationDelete:
-				deleteRows = append(deleteRows, change.row)
+				deleteRows = append(deleteRows, change.Row)
 			default:
-				return nil, fmt.Errorf("unsupported coalesced table change operation %q", change.operation)
+				return nil, fmt.Errorf("unsupported coalesced table change operation %q", change.Operation)
 			}
 		}
 		if len(upsertRows) > 0 {
@@ -149,7 +140,7 @@ func (p *PostgreSQLPlugin) ApplyPartitionedTableChanges(ctx context.Context, con
 	return &plugin.PartitionedTableChangeApplyResult{
 		AppliedRecords: len(changes),
 		SkippedRecords: skipped,
-		Position:       kafkaOffsetPosition(batch.Partition, committedOffset),
+		Position:       pluginshared.KafkaOffsetPosition(batch.Partition, committedOffset),
 	}, nil
 }
 
@@ -263,67 +254,6 @@ func updatePostgresApplyLedger(ctx context.Context, tx *sql.Tx, applyIdentity, p
 	return nil
 }
 
-func filterAndCoalescePostgresChanges(batch *plugin.PartitionedTableChangeBatch, keys []string, startOffset, ledgerOffset, endOffset int64) ([]positionedPostgresRow, int, error) {
-	if endOffset > startOffset && len(batch.Changes) == 0 {
-		return nil, 0, fmt.Errorf("table change batch cannot advance from %d to %d without changes", startOffset, endOffset)
-	}
-	byKey := make(map[string]positionedPostgresRow)
-	skipped := 0
-	previousOffset := int64(-1)
-	for index, change := range batch.Changes {
-		if change.Operation != plugin.TableChangeOperationUpsert && change.Operation != plugin.TableChangeOperationDelete && change.Operation != plugin.TableChangeOperationSkip {
-			return nil, 0, fmt.Errorf("unsupported table change operation %q at index %d", change.Operation, index)
-		}
-		if change.Operation == plugin.TableChangeOperationSkip && len(change.Row) != 0 {
-			return nil, 0, fmt.Errorf("skip operation must not contain a row at index %d", index)
-		}
-		nextOffset, err := kafkaNextOffset(change.Position, batch.Partition)
-		if err != nil {
-			return nil, 0, fmt.Errorf("invalid change position at index %d: %w", index, err)
-		}
-		if previousOffset >= 0 && nextOffset <= previousOffset {
-			return nil, 0, fmt.Errorf("table change positions must be strictly increasing: %d after %d", nextOffset, previousOffset)
-		}
-		previousOffset = nextOffset
-		if nextOffset <= startOffset {
-			return nil, 0, fmt.Errorf("table change next_offset %d must be after batch start %d", nextOffset, startOffset)
-		}
-		if nextOffset > endOffset {
-			return nil, 0, fmt.Errorf("table change next_offset %d exceeds batch end %d", nextOffset, endOffset)
-		}
-		if nextOffset <= ledgerOffset {
-			skipped++
-			continue
-		}
-		if change.Operation == plugin.TableChangeOperationSkip {
-			skipped++
-			continue
-		}
-		key, err := postgresChangeKey(change.Row, keys)
-		if err != nil {
-			return nil, 0, fmt.Errorf("invalid table change key at index %d: %w", index, err)
-		}
-		if _, exists := byKey[key]; exists {
-			skipped++
-		}
-		byKey[key] = positionedPostgresRow{nextOffset: nextOffset, operation: change.Operation, key: key, row: change.Row}
-	}
-	if len(batch.Changes) > 0 && previousOffset != endOffset {
-		return nil, 0, fmt.Errorf("last table change next_offset %d does not match batch end %d", previousOffset, endOffset)
-	}
-	rows := make([]positionedPostgresRow, 0, len(byKey))
-	for _, row := range byKey {
-		rows = append(rows, row)
-	}
-	sort.Slice(rows, func(i, j int) bool {
-		if rows[i].nextOffset == rows[j].nextOffset {
-			return rows[i].key < rows[j].key
-		}
-		return rows[i].nextOffset < rows[j].nextOffset
-	})
-	return rows, skipped, nil
-}
-
 func deletePostgresRowsTx(ctx context.Context, tx *sql.Tx, schema, table string, rows []map[string]interface{}, keys []string) error {
 	if len(rows) == 0 {
 		return nil
@@ -360,47 +290,4 @@ func deletePostgresRowsTx(ctx context.Context, tx *sql.Tx, schema, table string,
 		}
 	}
 	return nil
-}
-
-func postgresChangeKey(row map[string]interface{}, keys []string) (string, error) {
-	values := make([]interface{}, 0, len(keys))
-	for _, key := range keys {
-		value, ok := row[key]
-		if !ok || value == nil {
-			return "", fmt.Errorf("missing non-null key field %q", key)
-		}
-		values = append(values, value)
-	}
-	encoded, err := json.Marshal(values)
-	if err != nil {
-		return "", fmt.Errorf("encode key: %w", err)
-	}
-	return string(encoded), nil
-}
-
-func kafkaNextOffset(position plugin.ChangeStreamPosition, partition string) (int64, error) {
-	if position.Type != plugin.ChangeStreamPositionTypeKafkaOffset || position.Version != plugin.ChangeStreamPositionVersionV1 {
-		return 0, fmt.Errorf("unsupported position %s/%s", position.Type, position.Version)
-	}
-	if position.Partition != partition {
-		return 0, fmt.Errorf("position partition %q does not match batch partition %q", position.Partition, partition)
-	}
-	raw, ok := position.Values["next_offset"]
-	if !ok {
-		return 0, fmt.Errorf("position requires next_offset")
-	}
-	value, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || value < 0 {
-		return 0, fmt.Errorf("invalid next_offset %q", raw)
-	}
-	return value, nil
-}
-
-func kafkaOffsetPosition(partition string, nextOffset int64) plugin.ChangeStreamPosition {
-	return plugin.ChangeStreamPosition{
-		Type:      plugin.ChangeStreamPositionTypeKafkaOffset,
-		Version:   plugin.ChangeStreamPositionVersionV1,
-		Partition: partition,
-		Values:    map[string]string{"next_offset": strconv.FormatInt(nextOffset, 10)},
-	}
 }

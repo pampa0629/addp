@@ -102,6 +102,7 @@ import { ontologyAPI, knowledgeGraphAPI, engineAPI } from '../api/ontology'
 import { buildAPI } from '../api/graphBuild'
 import SchemaInferenceDialog from '../components/SchemaInferenceDialog.vue'
 import { useI18n } from 'vue-i18n'
+import { navigateGraphRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 const loading = ref(false)
@@ -204,15 +205,15 @@ const handleDelete = async (row) => {
 }
 
 const handleBrowse = (row) => {
-  router.push({ name: 'GraphBrowser', params: { id: row.id } })
+  navigateGraphRoute(router, { name: 'GraphBrowser', params: { id: row.id } })
 }
 
 const handleBuild = (row) => {
-  router.push({ name: 'BuildManager', params: { id: row.id } })
+  navigateGraphRoute(router, { name: 'BuildManager', params: { id: row.id } })
 }
 
 const handleReview = (row) => {
-  router.push({ name: 'ReviewQueue', params: { id: row.id } })
+  navigateGraphRoute(router, { name: 'ReviewQueue', params: { id: row.id } })
 }
 
 const handleEdit = (row) => {

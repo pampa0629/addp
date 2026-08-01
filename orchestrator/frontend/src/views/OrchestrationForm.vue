@@ -163,6 +163,7 @@ import TaskPanel from '../components/TaskPanel.vue'
 import orchestrationAPI from '../api/orchestration'
 import { buildOrchestrationPayload } from '../utils/orchestrationPayload'
 import { focusElement, ScheduleConfig, ScheduleDisplay, StatusAnnouncer, useResizable } from '@common-ui'
+import { navigateOrchestratorRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -305,7 +306,7 @@ async function persistForm() {
       await orchestrationAPI.create(payload)
       ElMessage.success(t('orchestrator.orchestrationForm.createSuccess'))
     }
-    router.push('/orchestrations')
+    await navigateOrchestratorRoute(router, '/orchestrations', { history: 'replace' })
   } catch (error) {
     ElMessage.error(isEdit.value ? t('orchestrator.orchestrationForm.updateFailed') : t('orchestrator.orchestrationForm.createFailed'))
   } finally {
@@ -314,7 +315,7 @@ async function persistForm() {
 }
 
 function handleCancel() {
-  router.back()
+  navigateOrchestratorRoute(router, '/orchestrations', { history: 'replace' })
 }
 
 function handleViewJSON() {

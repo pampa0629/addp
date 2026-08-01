@@ -103,6 +103,7 @@ manager/
 - CAD 栅格预览任务统一使用 `manager.cad_preview_tasks` / `cad_preview_generation`；源必须是 `data_type=cad + layout=single + format=dwg|dxf`。后端只把 ready artifact 的受控 manifest URL 交给 `frontend_renderer=cad`，不得把源 CAD `storage-stream` URL 交给 CAD renderer。
 - 分块三维模型瓦片任务统一使用 `manager.model3d_tiles_tasks` / `model3d_tiles_generation`，结果统一进入 `manager.model3d_tiles`；`target_format=3d_tiles` 调用 `osgb_scene_to_3dtiles`，`target_format=s3m` 调用 `osgb_scene_to_s3m`。不得恢复写业务存储并触发 Meta scan 的旧 Manager 路径。
 - Manager 受管快显任务的语义身份统一为 `tenant_id + item_fingerprint + artifact_variant`。重复创建必须复用原任务 ID，重复执行必须新建 execution 并刷新同一当前结果；`item_id`、`locator`、`source_engine_id` 只作执行与回查事实。派生变体、并发唯一约束和业务派生任务的例外见 `manager/docs/快显实现规范.md`。
+- Raster COG 与 Model3D Tiles 是来源驱动的只读任务定义：只允许 Data Explorer 的 Quick View action 按源事实派生，不提供直接创建或更新任务配置的 API。管理页任务 Tab 的 `task_id` 打开只读任务定义，结果 Tab 的 `task_id` 只筛选该任务结果。
 - Manager 受管当前结果任务统一不启动自身定时调度，但允许 Orchestrator 定时 Pipeline 调用。周期性刷新由用户在 Step 参数中显式配置 `existing_result_action=overwrite`；Manager 不得按 scheduled 来源自动补充已有结果动作。Embedding 的逐 item 调度语义独立保留。
 - COG 生成只能由 Manager 任务执行器派生 GDAL 参数后，通过 `WorkflowRuntimeProvider.InvokeOperator("tiff_to_cog")` direct 调用 GeoPython Workflow；不得退回构造单节点 workflow 或直接拼接 GeoPython Workflow 私有 HTTP。
 - 瓦片缓存生成任务不得隐式创建 3857 物化视图、空间索引或执行准备动作；需要性能准备时必须显式执行矢量物化视图任务。
@@ -111,6 +112,13 @@ manager/
 - 快显瓦片缓存的默认最大层级必须同时受记录数和累计候选瓦片预算约束；默认预算为 10000 个 WebMercatorQuad 矩形候选瓦片。前端必须显示当前层级的预计候选数，用户可显式提高层级，但不得把 `max_zoom=18` 作为无条件默认值。
 - 业务矢量瓦片集页面复用同一候选瓦片估算能力，但不把快显预算作为业务生成硬限制；后端推荐层级与用户当前选择必须分开显示，用户超过推荐层级时提示预计生成规模和成本风险。
 - 修改 API 后同步 Swagger：`bash scripts/swagger/gen-swagger.sh manager` 和 `bash scripts/swagger/check-route-coverage.sh manager`。
+
+## 前端公开路由
+
+- Manager 前端遵守 `docs/spec/addp前端路由与可恢复状态规范.md`，模块内公开导航统一通过 `src/utils/moduleNavigation.js`，不得直接形成 iframe 私有历史。
+- Data Explorer 使用 ResourceLocator 表达当前资源身份，默认 `preview` Tab 从 URL 省略，非默认稳定 Tab 使用 `tab` query。
+- 快显与空间任务管理页的稳定 Tab、当前任务筛选和创建来源参数必须保留在 canonical query 中；Tab、筛选和参数规范化使用 `replace`，跨页面进入资源或任务使用 `push`。
+- Raster COG 与 Model3D Tiles 的创建入口固定为 Data Explorer；TaskProvider `edit_url` 分别指向对应管理页的 `?task_id=:id` 只读任务定义，不得指向结果筛选或无任务身份的通用页面。
 
 ## 开发与验证
 

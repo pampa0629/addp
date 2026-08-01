@@ -142,6 +142,12 @@ definitions:
       nullable:
         example: true
         type: boolean
+      precision:
+        example: 18
+        type: integer
+      scale:
+        example: 4
+        type: integer
       source:
         example: geom
         type: string
@@ -780,8 +786,10 @@ definitions:
         items:
           type: string
         type: array
-      target:
-        type: string
+      targets:
+        items:
+          type: string
+        type: array
     type: object
   internal_api.TransferDeadLetterCapability:
     properties:
@@ -1153,13 +1161,14 @@ paths:
       consumes:
       - application/json
       description: 创建 bounded、业务 Kafka continuous 或数据库 CDC 任务。业务 Kafka continuous
-        必须显式使用 runtime.record_failure.mode=block|dead_letter；dead_letter 只处理确定性记录级数据错误。CDC
-        第一版支持 PostgreSQL/MySQL 单表 initial_snapshot、block 和 PostgreSQL 新目标表 upsert_delete。旧
-        mode/write_mode 字段会被拒绝。| Create a bounded, business Kafka continuous, or database
-        CDC task. Business Kafka continuous tasks must explicitly use runtime.record_failure.mode=block|dead_letter;
-        dead_letter only handles deterministic record-level data errors. CDC v1 supports
-        a single PostgreSQL or MySQL table with initial_snapshot, block policy, and
-        a new PostgreSQL upsert_delete target. Legacy mode/write_mode fields are rejected.
+        必须显式使用 runtime.record_failure.mode=block|dead_letter；dead_letter 只处理确定性记录级数据错误。数据库
+        CDC 支持 PostgreSQL/MySQL 单表 initial_snapshot、block 和 PostgreSQL/MySQL 新目标表
+        upsert_delete。旧 mode/write_mode 字段会被拒绝。| Create a bounded, business Kafka
+        continuous, or database CDC task. Business Kafka continuous tasks must explicitly
+        use runtime.record_failure.mode=block|dead_letter; dead_letter only handles
+        deterministic record-level data errors. Database CDC supports a single PostgreSQL
+        or MySQL source table with initial_snapshot, block policy, and a new PostgreSQL
+        or MySQL upsert_delete target. Legacy mode/write_mode fields are rejected.
       parameters:
       - description: 任务创建请求 | Task creation request
         in: body

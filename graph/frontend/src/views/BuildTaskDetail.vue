@@ -1,12 +1,12 @@
 <template>
   <div class="build-task-detail">
     <div class="page-header">
-      <el-button text @click="$router.back()">← {{ t('graph.common.back') }}</el-button>
+      <el-button text @click="returnToBuild">← {{ t('graph.common.back') }}</el-button>
       <h2>{{ task?.name || t('graph.build.taskDetail') }}</h2>
       <div class="header-actions">
         <el-button v-if="canRun" type="primary" :loading="running" @click="handleRun">{{ t('graph.build.runTask') }}</el-button>
         <el-button v-if="task?.status === 'running'" type="warning" @click="handleCancel">{{ t('graph.build.cancel') }}</el-button>
-        <el-button @click="$router.push(`/graphs/${graphId}/review`)">
+        <el-button @click="openReview">
           {{ t('graph.build.reviewQueue') }}
           <el-badge v-if="pendingCount > 0" :value="pendingCount" style="margin-left:6px" />
         </el-button>
@@ -98,6 +98,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { buildAPI } from '../api/graphBuild'
 import { useI18n } from 'vue-i18n'
+import { navigateGraphRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 
@@ -105,6 +106,8 @@ const route = useRoute()
 const router = useRouter()
 const graphId = route.params.id
 const taskId = route.params.tid
+const returnToBuild = () => navigateGraphRoute(router, `/graphs/${graphId}/build`, { history: 'replace' })
+const openReview = () => navigateGraphRoute(router, `/graphs/${graphId}/review`)
 
 const task = ref(null)
 const materials = ref([])

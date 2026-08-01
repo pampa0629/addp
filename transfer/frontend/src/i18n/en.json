@@ -58,6 +58,13 @@
         "unknown": "Unknown"
       }
     },
+    "executionStatus": {
+      "pending": "Pending",
+      "running": "Running",
+      "success": "Success",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    },
     "dashboard": {
       "totalTasks": "Total Tasks",
       "notExecuted": "Not Executed",
@@ -493,6 +500,8 @@
       "sourceTypeCol": "Source Type",
       "targetFieldCol": "Target Field",
       "dataTypeCol": "Target Type",
+      "precisionCol": "Precision",
+      "scaleCol": "Scale",
       "defaultValueCol": "Default Value",
       "formatCol": "Format",
       "nullableCol": "Nullable",
@@ -547,11 +556,11 @@
 			"cdcSyncDesc": "The first run loads the current source table, then continuously synchronizes inserts, updates, and physical deletes. Interrupted runs resume from the last committed position.",
 			"databaseCDCLoad": "Continuously Sync Inserts, Updates, and Deletes",
 			"databaseCDCUnavailableReasons": {
-				"capabilityUnavailable": "The Transfer backend does not declare database CDC support from this source to PostgreSQL.",
+				"capabilityUnavailable": "The Transfer backend does not declare database CDC support from this source to the selected target.",
 				"sourceDatabaseRequired": "The source must use a PostgreSQL or MySQL engine.",
 				"sourceTableRequired": "The source must be a database table.",
 				"sourceNativeRequired": "The source must use a native database table.",
-				"targetPostgreSQLRequired": "The target must use a PostgreSQL engine.",
+				"targetAtomicApplyRequired": "The target must use a PostgreSQL or MySQL engine with atomic continuous apply support.",
 				"targetNativeRequired": "The target must create a native database table.",
 				"sourceFieldsRequired": "Source fields have not been loaded. Return to the source step and reselect or refresh the table.",
 				"sourcePrimaryKeyRequired": "The source table must have a stable, non-null primary key.",
@@ -564,7 +573,7 @@
       "continuousKeyFieldsPlaceholder": "Select JSON fields that uniquely identify a business record",
       "continuousKeyFieldsHint": "The producer must route the same identity to the same partition. Selected fields are automatically non-null in the target mapping.",
       "continuousTargetKeysLabel": "Target Identity Fields",
-      "continuousTargetKeysHint": "Derived from field mappings and used to insert or update the same PostgreSQL row.",
+      "continuousTargetKeysHint": "Derived from field mappings and used to insert or update the same row in the target database.",
       "continuousInitialPositionLabel": "Initial Read Range",
       "continuousInitialEarliest": "Read all messages still retained by the topic",
       "continuousInitialLatest": "Read only messages produced after task startup",
@@ -579,7 +588,7 @@
       "loadModeLabel": "Synchronization Scope",
       "snapshotLoad": "Synchronize All Data Each Time",
       "watermarkIncrementalLoad": "Synchronize Inserts and Updates Only",
-      "watermarkIncrementalUnsupported": "Synchronizing changed data currently supports PostgreSQL table to PostgreSQL table only.",
+      "watermarkIncrementalUnsupported": "Changed-data synchronization currently supports PostgreSQL tables to PostgreSQL or MySQL tables.",
       "watermarkIncrementalNoticeTitle": "Incremental Synchronization Requirements",
       "watermarkIncrementalNotice": "The source table must have a field that changes whenever a record is inserted or updated, plus a primary or unique key that identifies each record. Interrupted tasks resume from the last successful position. Physical deletes in the source table are not handled yet.",
       "watermarkFieldLabel": "Change Detection Field",

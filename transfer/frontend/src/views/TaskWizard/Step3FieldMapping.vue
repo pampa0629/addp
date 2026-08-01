@@ -92,6 +92,36 @@
         </template>
       </el-table-column>
 
+      <el-table-column :label="t('transfer.taskWizard.precisionCol')" width="120">
+        <template #default="{ row, $index }">
+          <el-input-number
+            v-if="row.target_type === 'decimal'"
+            v-model="row.precision"
+            class="decimal-number-input"
+            :min="1"
+            :max="decimalPrecisionMax"
+            controls-position="right"
+            @change="handleMappingChange($index)"
+          />
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
+
+      <el-table-column :label="t('transfer.taskWizard.scaleCol')" width="120">
+        <template #default="{ row, $index }">
+          <el-input-number
+            v-if="row.target_type === 'decimal'"
+            v-model="row.scale"
+            class="decimal-number-input"
+            :min="0"
+            :max="decimalScaleMax(row)"
+            controls-position="right"
+            @change="handleMappingChange($index)"
+          />
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
+
       <el-table-column :label="t('transfer.taskWizard.defaultValueCol')" width="150">
         <template #default="{ row, $index }">
           <el-input
@@ -168,6 +198,15 @@ const targetTypeOptions = computed(() => {
   }))
 })
 
+const isMySQLTarget = computed(() => String(props.wizardState.targetEngineType.value || '').toLowerCase().includes('mysql'))
+const decimalPrecisionMax = computed(() => isMySQLTarget.value ? 65 : 1000)
+
+function decimalScaleMax(row) {
+  const precision = Number(row?.precision)
+  const engineMaximum = isMySQLTarget.value ? 30 : 1000
+  return Number.isInteger(precision) && precision > 0 ? Math.min(engineMaximum, precision) : engineMaximum
+}
+
 function autoMap() {
   props.wizardState.autoGenerateFieldMappings()
   ElMessage.success(t('transfer.taskWizard.autoMapSuccess'))
@@ -227,7 +266,7 @@ function sourceFieldType(fieldName) {
 
 <style scoped>
 .step3-field-mapping {
-  max-width: 1200px;
+  max-width: 1440px;
   margin: 0 auto;
 }
 
@@ -247,5 +286,9 @@ function sourceFieldType(fieldName) {
 
 .empty-hint {
   margin-top: 40px;
+}
+
+.decimal-number-input {
+  width: 100%;
 }
 </style>

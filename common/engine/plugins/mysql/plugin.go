@@ -32,6 +32,11 @@ func mysqlCatalogFieldType(nativeType string) datatype.FieldType {
 // MySQLPlugin MySQL 数据库插件
 type MySQLPlugin struct{}
 
+var (
+	_ plugin.TableUpsertProvider                 = (*MySQLPlugin)(nil)
+	_ plugin.PartitionedTableChangeApplyProvider = (*MySQLPlugin)(nil)
+)
+
 func init() {
 	plugin.Register(&MySQLPlugin{})
 }
@@ -71,6 +76,12 @@ func (p *MySQLPlugin) Capabilities() plugin.EngineCapabilities {
 		BatchWrite:        true,
 		TableWriteSession: true,
 		TableWritePrepare: true,
+		TableUpsert:       true,
+		PartitionedTableChangeApplyOperations: []string{
+			plugin.TableChangeOperationUpsert,
+			plugin.TableChangeOperationDelete,
+			plugin.TableChangeOperationSkip,
+		},
 		TableSpatialEncoding: &plugin.NativeTableSpatialEncodingCapability{
 			GeometryWriteEncodings: []string{string(format.GeometryEncodingEWKB)},
 		},

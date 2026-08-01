@@ -43,7 +43,7 @@
             <el-table-column :label="t('manager.model3DTiles.lastRunAt')" width="170">
               <template #default="{ row }">{{ formatDateTime(row.last_run_at) }}</template>
             </el-table-column>
-            <el-table-column :label="t('manager.model3DTiles.actions')" width="430" fixed="right">
+            <el-table-column :label="t('manager.model3DTiles.actions')" width="490" fixed="right">
               <template #default="{ row }">
                 <div class="row-actions">
                   <el-button
@@ -55,6 +55,7 @@
                   >
                     {{ t('manager.model3DTiles.generate') }}
                   </el-button>
+                  <el-button size="small" @click="requestTaskDetail(row)">{{ t('common.detail') }}</el-button>
                   <el-button size="small" @click="openSourcePreview(taskSource(row).item_locator)">{{ t('manager.model3DTiles.preview') }}</el-button>
                   <el-button size="small" @click="viewTaskResults(row)">{{ t('manager.model3DTiles.results') }}</el-button>
                   <el-button size="small" :disabled="!row.last_execution_id" @click="openExecution(row.last_execution_id)">{{ t('manager.model3DTiles.monitor') }}</el-button>
@@ -138,12 +139,42 @@
         </el-tab-pane>
       </el-tabs>
     </el-card>
+
+    <el-dialog
+      v-model="taskDetailVisible"
+      :title="taskDetailTitle"
+      width="720px"
+      destroy-on-close
+      @closed="clearTaskDetailRoute"
+    >
+      <el-descriptions v-if="taskDetail" :column="2" border>
+        <el-descriptions-item :label="t('manager.model3DTiles.id')">{{ taskDetail.id }}</el-descriptions-item>
+        <el-descriptions-item :label="t('manager.model3DTiles.sourceEngine')">{{ engineName(taskSource(taskDetail).source_engine_id) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('manager.model3DTiles.source')" :span="2">{{ resourcePath(taskSource(taskDetail).item_locator) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('manager.model3DTiles.targetFormat')">{{ formatLabel(taskTargetFormat(taskDetail)) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('manager.model3DTiles.sourceSize')">{{ formatBytes(taskSource(taskDetail).source_size_bytes) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('manager.model3DTiles.enabled')">
+          <el-tag :type="taskDetail.enabled ? 'success' : 'info'">{{ taskDetail.enabled ? t('manager.model3DTiles.yes') : t('manager.model3DTiles.no') }}</el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('manager.model3DTiles.lastExecutionStatus')">
+          <el-tag :type="executionStatusTagType(taskDetail.last_execution_status)">{{ executionStatusLabel(taskDetail.last_execution_status) }}</el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('manager.model3DTiles.lastRunAt')">{{ formatDateTime(taskDetail.last_run_at) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('common.createdAt')">{{ formatDateTime(taskDetail.created_at) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('common.updatedAt')">{{ formatDateTime(taskDetail.updated_at) }}</el-descriptions-item>
+      </el-descriptions>
+      <template #footer>
+        <el-button @click="taskDetailVisible = false">{{ t('common.close') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { navigateManagerRoute } from '@/utils/moduleNavigation'
+import { resolveManagerTaskWorkspaceRouteState } from '@/utils/taskWorkspaceRoute'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { InfoFilled, Refresh } from '@element-plus/icons-vue'
@@ -158,7 +189,17 @@ const router = useRouter()
 const { t } = useI18n()
 const executeWithCurrentResultConfirmation = useCurrentResultConfirmation()
 const { displayText, engineName, loadQuickViewEngines, resourcePath } = useQuickViewResourceDisplay(t)
-const activeTab = ref(route.query.tab === 'results' ? 'results' : 'tasks')
+const resolveRouteState = routeQuery => resolveManagerTaskWorkspaceRouteState({
+  routeQuery,
+  allowedQueryByTab: {
+    tasks: ['task_id'],
+    results: ['task_id']
+  }
+})
+const activeTab = ref(resolveRouteState(route.query).tab)
+let routeDataReady = false
+let workspaceRestoreSequence = 0
+let resultsRequestSequence = 0
 const tasks = ref([])
 const tasksLoading = ref(false)
 const tasksPage = ref(1)
@@ -171,8 +212,15 @@ const resultsPageSize = ref(20)
 const resultsTotal = ref(0)
 const executingId = ref(null)
 const selectedTask = ref(null)
+const taskDetail = ref(null)
+const taskDetailVisible = ref(false)
 const resultStatuses = ['building', 'ready', 'failed', 'stale']
 const resultFilters = reactive({ task_id: undefined, target_format: '', status: '', q: '' })
+const taskDetailTitle = computed(() => (
+  taskDetail.value?.name
+    ? displayText(taskDetail.value.name)
+    : t('manager.model3DTiles.taskWithId', { id: taskDetail.value?.id || route.query.task_id })
+))
 
 const unwrapPayload = (response) => response?.data?.data || response?.data || response || {}
 const unwrapList = (response) => {
@@ -212,6 +260,7 @@ const loadTasks = async () => {
 }
 
 const loadResults = async () => {
+  const requestSequence = ++resultsRequestSequence
   resultsLoading.value = true
   try {
     const params = { page: resultsPage.value, page_size: resultsPageSize.value }
@@ -220,26 +269,31 @@ const loadResults = async () => {
     if (resultFilters.status) params.status = resultFilters.status
     if (resultFilters.q) params.q = resultFilters.q
     const { items, total } = unwrapList(await quickViewAPI.listModel3DTilesResults(params))
+    if (requestSequence !== resultsRequestSequence) return
     results.value = items
     resultsTotal.value = total
   } catch (error) {
     ElMessage.error(errorMessage(error, t('manager.model3DTiles.loadResultsFailed')))
   } finally {
-    resultsLoading.value = false
+    if (requestSequence === resultsRequestSequence) {
+      resultsLoading.value = false
+    }
   }
 }
 
 const handleTabChange = async (tab) => {
-  await router.replace({ query: { ...route.query, tab } })
-  if (tab === 'tasks') await loadTasks()
-  else await loadResults()
+  const routeState = resolveRouteState({ ...route.query, tab })
+  const location = { path: route.path, query: routeState.query }
+  if (router.resolve(location).fullPath !== route.fullPath) {
+    await navigateManagerRoute(router, location, { history: 'replace' })
+  }
 }
 const handleTasksSizeChange = () => { tasksPage.value = 1; loadTasks() }
 const handleResultsSizeChange = () => { resultsPage.value = 1; loadResults() }
 const applyResultFilters = () => { resultsPage.value = 1; loadResults() }
 const resetResultFilters = () => { resultFilters.target_format = ''; resultFilters.status = ''; resultFilters.q = ''; applyResultFilters() }
-const openDataExplorer = () => router.push({ name: 'DataExplorer' })
-const openSourcePreview = (locator) => { if (locator) router.push({ name: 'DataExplorer', query: { locator } }) }
+const openDataExplorer = () => navigateManagerRoute(router, { name: 'DataExplorer' })
+const openSourcePreview = (locator) => { if (locator) navigateManagerRoute(router, { name: 'DataExplorer', query: { locator } }) }
 const openExecution = (executionID) => openMonitorExecution(executionID)
 const taskExecutionActive = (task) => ['pending', 'running'].includes(String(task?.last_execution_status || '').toLowerCase())
 const taskDeleteDisabled = (task) => taskExecutionActive(task)
@@ -282,25 +336,95 @@ const viewTaskResults = async (task) => {
   resultFilters.task_id = task.id
   resultsPage.value = 1
   activeTab.value = 'results'
-  await router.replace({ query: { ...route.query, tab: 'results', task_id: task.id } })
-  await loadResults()
+  await navigateManagerRoute(router, { query: { ...route.query, tab: 'results', task_id: task.id } }, { history: 'replace' })
+}
+const requestTaskDetail = async (task) => {
+  const routeState = resolveRouteState({ task_id: task.id })
+  await navigateManagerRoute(router, {
+    path: route.path,
+    query: routeState.query
+  }, { history: 'push' })
+}
+const clearTaskDetailRoute = async () => {
+  if (resolveRouteState(route.query).tab !== 'tasks') return
+  const query = { ...route.query }
+  delete query.task_id
+  const routeState = resolveRouteState(query)
+  const location = { path: route.path, query: routeState.query }
+  if (router.resolve(location).fullPath !== route.fullPath) {
+    await navigateManagerRoute(router, location, { history: 'replace' })
+  }
 }
 const clearTaskFilter = async () => {
   selectedTask.value = null
   resultFilters.task_id = undefined
   const query = { ...route.query }
   delete query.task_id
-  await router.replace({ query })
-  await loadResults()
+  await navigateManagerRoute(router, { query }, { history: 'replace' })
 }
 
-onMounted(async () => {
-  const taskID = Number(route.query.task_id || 0)
-  if (taskID) {
-    resultFilters.task_id = taskID
-    try { selectedTask.value = unwrapPayload(await quickViewAPI.getModel3DTilesTask(taskID)) } catch { selectedTask.value = null }
+async function restoreWorkspaceFromRoute() {
+  const restoreSequence = ++workspaceRestoreSequence
+  const routeState = resolveRouteState(route.query)
+  activeTab.value = routeState.tab
+  if (routeState.changed) {
+    await navigateManagerRoute(router, {
+      path: route.path,
+      query: routeState.query
+    }, { history: 'replace' })
+    return
   }
-  await Promise.all([loadQuickViewEngines(), loadTasks(), loadResults()])
+  if (!routeDataReady) return
+  if (routeState.tab === 'results') {
+    taskDetailVisible.value = false
+    taskDetail.value = null
+    const taskID = Number(routeState.query.task_id || 0)
+    resultFilters.task_id = taskID || undefined
+    selectedTask.value = null
+    if (taskID) {
+      try {
+        const task = unwrapPayload(await quickViewAPI.getModel3DTilesTask(taskID))
+        if (restoreSequence !== workspaceRestoreSequence) return
+        selectedTask.value = task
+      } catch {
+        if (restoreSequence !== workspaceRestoreSequence) return
+        selectedTask.value = null
+      }
+    }
+    if (restoreSequence !== workspaceRestoreSequence) return
+    await loadResults()
+    return
+  }
+  await loadTasks()
+  if (restoreSequence !== workspaceRestoreSequence) return
+  selectedTask.value = null
+  resultFilters.task_id = undefined
+  const taskID = Number(routeState.query.task_id || 0)
+  if (!taskID) {
+    taskDetailVisible.value = false
+    taskDetail.value = null
+    return
+  }
+  try {
+    const detail = unwrapPayload(await quickViewAPI.getModel3DTilesTask(taskID))
+    if (restoreSequence !== workspaceRestoreSequence) return
+    taskDetail.value = detail
+    taskDetailVisible.value = true
+  } catch (error) {
+    if (restoreSequence !== workspaceRestoreSequence) return
+    ElMessage.error(errorMessage(error, t('manager.model3DTiles.loadTasksFailed')))
+    taskDetailVisible.value = false
+    taskDetail.value = null
+    await clearTaskDetailRoute()
+  }
+}
+
+watch(() => route.query, restoreWorkspaceFromRoute)
+
+onMounted(async () => {
+  await restoreWorkspaceFromRoute()
+  routeDataReady = true
+  await Promise.all([loadQuickViewEngines(), restoreWorkspaceFromRoute()])
 })
 </script>
 

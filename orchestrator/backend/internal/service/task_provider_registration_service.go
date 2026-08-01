@@ -39,7 +39,7 @@ func (s *TaskProviderRegistrationService) Register(ctx context.Context) error {
 				"supports_schedule":         true,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
-				"create_url":                "/orchestrator/orchestrations",
+				"create_url":                "/orchestrator/orchestrations/new",
 				"edit_url":                  "/orchestrator/orchestrations/:id/edit",
 				"deprecated":                false,
 			},

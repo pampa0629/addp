@@ -1,5 +1,13 @@
 <template>
   <div class="metadata-scan">
+    <el-alert
+      v-if="routeSelectionError"
+      :title="routeSelectionError"
+      type="error"
+      :closable="false"
+      show-icon
+      style="margin-bottom: 12px"
+    />
     <el-card>
       <div
         v-if="activeScan.visible"
@@ -277,7 +285,7 @@
       v-model="scheduleDialogVisible"
       :title="t('meta.scan.engineScheduleSettings')"
       width="600px"
-      @close="resetScheduleForm"
+      @close="handleScheduleDialogClose"
     >
       <!-- 继承关系统计 -->
       <el-alert
@@ -319,6 +327,7 @@
       v-model="catalogEntryScheduleDialogVisible"
       :title="`${currentCatalogEntry?.name || ''}${t('meta.scan.entryScheduleTitleSuffix')}`"
       width="600px"
+      @close="handleScheduleDialogClose"
     >
       <!-- 继承说明 -->
       <el-alert
@@ -363,15 +372,18 @@
 
 <script setup>
 import { ref, computed, onMounted, reactive, watch, nextTick, onBeforeUnmount } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { Search, Refresh, CircleCheck, CircleClose, Warning, QuestionFilled, Clock, Link, Document } from '@element-plus/icons-vue'
 import { ScheduleConfig, describeCron, decodeScheduleToForm } from '@common-ui'
 import metaApi from '../api/meta'
+import { navigateMetaRoute } from '../utils/moduleNavigation'
+import { resolveMetadataScanRouteState } from '../utils/routeState'
 
 const { t } = useI18n()
 const route = useRoute()
+const router = useRouter()
 
 const AUTO_SCHEDULE_DESC_MARK = '[PortalAutoSchedule]'
 const SCAN_RUN_POLL_INTERVAL_MS = 2000
@@ -407,6 +419,7 @@ const activeScan = ref({
 
 const allScanTasks = ref([])
 const openedRouteTaskID = ref('')
+const routeStateReady = ref(false)
 const scheduleDialogVisible = ref(false)
 const savingSchedule = ref(false)
 const scheduleCron = ref('') // Cron 表达式
@@ -432,6 +445,18 @@ let scanStatusTimer = 0
 // 计算属性：过滤后的引擎列表（当前不进行筛选，直接返回所有引擎）
 const filteredEngines = computed(() => {
   return engines.value
+})
+
+const routeSelectionError = computed(() => {
+  if (!routeStateReady.value) return ''
+  const routeState = resolveMetadataScanRouteState(engines.value, allScanTasks.value, route.query)
+  if (routeState.kind === 'task-unavailable') {
+    return t('meta.scan.taskUnavailable')
+  }
+  if (routeState.kind === 'engine-unavailable') {
+    return t('meta.scan.engineUnavailable')
+  }
+  return ''
 })
 
 const resourcePlanMap = computed(() => {
@@ -537,19 +562,14 @@ const loadEngines = async () => {
     const res = await metaApi.getResources()
     // createAPIClient 提取了 axios 的 response.data，后端直接返回数组
     engines.value = Array.isArray(res) ? res : []
-    if (!selectedResource.value && engines.value.length) {
-      selectedResource.value = engines.value[0]
-      await nextTick()
-      resourceTableRef.value?.setCurrentRow(selectedResource.value)
-      await Promise.all([loadCatalogEntries(), loadScanTasks()])
-    }
+    await loadScanTasks()
+    routeStateReady.value = true
     if (!engines.value.length) {
       selectedResource.value = null
       await nextTick()
       resourceTableRef.value?.setCurrentRow(null)
-      allScanTasks.value = []
-    } else if (!allScanTasks.value.length) {
-      await loadScanTasks()
+    } else {
+      await restoreRouteState()
     }
     enforceBounds()
   } catch (error) {
@@ -561,11 +581,25 @@ const loadEngines = async () => {
 
 // 选择引擎
 const handleSelectResource = async (row) => {
+  if (!row) return
+  if (String(selectedResource.value?.id || '') === String(row.id)) {
+    if (route.query.task_id) {
+      await navigateMetaRoute(router, {
+        name: 'MetadataScan',
+        query: { engine_id: String(row.id) }
+      }, { history: 'replace' })
+    }
+    return
+  }
   selectedResource.value = row
   await nextTick()
   resourceTableRef.value?.setCurrentRow(row)
   await loadCatalogEntries()
   enforceBounds()
+  await navigateMetaRoute(router, {
+    name: 'MetadataScan',
+    query: { engine_id: String(row.id) }
+  }, { history: 'replace' })
 }
 
 const handleScheduleClick = async row => {
@@ -581,22 +615,10 @@ const handleScheduleClick = async row => {
 const openScanTaskFromRoute = async () => {
   const taskID = String(route.query.task_id || '').trim()
   if (!taskID || openedRouteTaskID.value === taskID) return
-  if (!allScanTasks.value.length) {
-    await loadScanTasks()
-  }
-
   const task = allScanTasks.value.find(item => String(item.id) === taskID)
   if (!task) return
 
   openedRouteTaskID.value = taskID
-  const resource = engines.value.find(item => Number(item.id) === Number(task.engine_id))
-  if (resource && (!selectedResource.value || Number(selectedResource.value.id) !== Number(resource.id))) {
-    selectedResource.value = resource
-    await nextTick()
-    resourceTableRef.value?.setCurrentRow(resource)
-    await loadCatalogEntries()
-  }
-
   const catalogPaths = Array.isArray(task.parameters?.catalog_paths) ? task.parameters.catalog_paths : []
   if (catalogPaths.length === 1) {
     const target = catalogPaths[0]
@@ -614,6 +636,78 @@ const openScanTaskFromRoute = async () => {
 
   prefillScheduleForm(task)
   scheduleDialogVisible.value = true
+}
+
+const restoreRouteState = async () => {
+  if (!routeStateReady.value) return
+
+  const routeState = resolveMetadataScanRouteState(engines.value, allScanTasks.value, route.query)
+  if (routeState.kind === 'task-unavailable') {
+    openedRouteTaskID.value = ''
+    if (!routeState.engine) {
+      selectedResource.value = null
+      catalogEntries.value = []
+      await nextTick()
+      resourceTableRef.value?.setCurrentRow(null)
+      return
+    }
+  }
+
+  if (routeState.kind === 'empty') {
+    selectedResource.value = null
+    catalogEntries.value = []
+    await nextTick()
+    resourceTableRef.value?.setCurrentRow(null)
+    return
+  }
+
+  if (routeState.kind === 'redirect') {
+    await navigateMetaRoute(router, {
+      name: 'MetadataScan',
+      query: routeState.query
+    }, { history: 'replace' })
+    return
+  }
+
+  if (routeState.kind === 'engine-unavailable') {
+    selectedResource.value = null
+    catalogEntries.value = []
+    await nextTick()
+    resourceTableRef.value?.setCurrentRow(null)
+    return
+  }
+
+  if (String(selectedResource.value?.id || '') !== String(routeState.engine.id)) {
+    selectedResource.value = routeState.engine
+    await nextTick()
+    resourceTableRef.value?.setCurrentRow(routeState.engine)
+    await loadCatalogEntries()
+  }
+
+  if (routeState.kind === 'task-unavailable') return
+
+  if (routeState.changed) {
+    await navigateMetaRoute(router, {
+      name: 'MetadataScan',
+      query: routeState.query
+    }, { history: 'replace' })
+    return
+  }
+
+  if (routeState.task) await openScanTaskFromRoute()
+}
+
+const handleScheduleDialogClose = async () => {
+  resetScheduleForm()
+  const taskID = String(route.query.task_id || '').trim()
+  if (!taskID || openedRouteTaskID.value !== taskID) return
+
+  openedRouteTaskID.value = ''
+  const engineID = String(selectedResource.value?.id || '').trim()
+  await navigateMetaRoute(router, {
+    name: 'MetadataScan',
+    query: engineID ? { engine_id: engineID } : {}
+  }, { history: 'replace' })
 }
 
 const computeBounds = () => {
@@ -1314,12 +1408,13 @@ watch(selectedResource, () => {
 })
 
 onMounted(() => {
-  loadEngines().then(openScanTaskFromRoute)
+  loadEngines()
   window.addEventListener('resize', enforceBounds)
 })
 
-watch(() => route.query.task_id, () => {
-  openScanTaskFromRoute()
+watch(() => [route.query.engine_id, route.query.task_id], () => {
+  if (!route.query.task_id) openedRouteTaskID.value = ''
+  restoreRouteState()
 })
 
 onBeforeUnmount(() => {

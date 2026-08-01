@@ -198,6 +198,7 @@ import { Link } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import publishedServiceAPI from '../api/publishedService'
 import { copyToClipboard } from '../utils/serviceHelper'
+import { navigateServiceRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -281,12 +282,12 @@ const testEndpoint = (url) => {
 
 // 跳转到编辑页
 const goToEdit = () => {
-  router.push(`/published-services/${route.params.id}/edit`)
+  navigateServiceRoute(router, `/published-services/${route.params.id}/edit`)
 }
 
 // 跳转到测试页
 const goToTest = () => {
-  router.push(`/published-services/${route.params.id}/test`)
+  navigateServiceRoute(router, `/published-services/${route.params.id}/test`)
 }
 
 // 删除服务
@@ -300,7 +301,7 @@ const handleDelete = async () => {
 
     await publishedServiceAPI.deleteService(route.params.id)
     ElMessage.success(t('service.published.deleteSuccess'))
-    router.push('/published-services')
+    await navigateServiceRoute(router, '/published-services', { history: 'replace' })
   } catch (error) {
     if (error !== 'cancel') {
       ElMessage.error(t('service.published.deleteFailed') + ': ' + (error.message || t('service.common.unknownError')))

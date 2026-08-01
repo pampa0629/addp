@@ -1,6 +1,6 @@
 # ADDP 账号与权限体系
 
-更新日期：2026-07-23
+更新日期：2026-08-01
 
 状态：正式概念文档。本文定义 ADDP IAM 的稳定概念、事实归属和授权边界，不预设 Fosite、Keycloak、Casdoor、OIDC Provider、SAML 或具体策略引擎。
 
@@ -16,27 +16,27 @@
 
 本文只回答“有哪些稳定概念、事实归谁、边界如何划分”，不回答数据库表、API、协议库或产品选型。
 
-## 二、当前事实与需要修正的认识
+## 二、当前事实与后续边界
 
-当前 ADDP 已具备以下基础：
+当前 ADDP 已完成 IAM 核心主路径切换：
 
-- System 持有 `users`、`tenants`、opaque Token、Refresh Token Family、OAuth Client 和 AuthContext；
-- Web、CLI 和外部 Agent 最终都映射为 ADDP User Access Token；
-- 业务模块消费 System AuthContext，并继续执行租户和资源权限校验；
-- OAuth Scope 只能缩小能力，不能提升用户权限；
-- Asset 已有资产申请和授权事实，各业务 owner 已有部分资源级校验。
+- System 以 Principal、User、Service Principal、Tenant Membership、Role、Permission 和 Role Assignment 作为唯一 IAM 事实；
+- 平台系统管理员、安全管理员和审计管理员三个 Role 替代旧全权账号，角色互斥且不存在 `super_admin` 兼容判断；
+- Web、CLI、Service Principal 和外部 Agent 使用统一 opaque Token Family 与 `addp.auth_context/v1`；
+- 业务模块通过共享中间件消费 System AuthContext，并继续执行 Tenant、Scope 和资源级校验；
+- OAuth Scope 只能缩小能力，不能提升 Role Permission；
+- Permission 由业务 owner 声明并在发布期聚合，内置 Role 使用单一 Manifest；
+- Tenant 与 Department、Project Group 已分离，Platform Context 与 Tenant Context 互斥。
 
-但当前模型仍有明显边界不足：
+尚未完成的后续能力不改变上述概念：
 
-- `super_admin | tenant_admin | user` 是固定管理层级，不是完整 RBAC；
-- Tenant 目前常被描述为“组织”，未来必须与部门树分离；
-- AuthContext 还不能表达角色、组织成员关系和可计算的权限事实；
-- 用户、角色、部门、项目组和资源授权之间缺少统一主体模型；
-- 外部 IdP 身份映射、账号供应和离职撤权尚未形成概念闭环；
+- owner Resource Grant / Policy、Explicit Deny 和 Asset 跨服务履约尚未形成统一运行时；
+- 外部 IdP 登录、账号供应、属性同步和单点退出尚未启用；
+- OIDC ID Token、Discovery 和 JWKS 尚未启用。
 
 ## 三、核心决策
 
-本方案确定以下目标决策：
+本体系确定以下稳定决策：
 
 1. **ADDP 始终保留自己的内部用户身份。** 外部 IdP 负责证明“你是谁”，不能成为 ADDP 租户、权限和数据授权的直接事实源。
 2. **System 是 ADDP 的唯一 IAM 权威。** 是否未来拆成独立部署不改变逻辑事实源，也不建立第二套用户、角色或会话。
@@ -193,7 +193,7 @@ Permission 是稳定、最小的功能动作，例如“查看用户”“创建
 
 ### 6.2 Role
 
-Role 是 Permission 的命名集合。目标体系允许：
+Role 是 Permission 的命名集合。当前体系允许：
 
 - ADDP 内置平台角色；
 - ADDP 内置 Tenant 角色；
@@ -219,7 +219,7 @@ Tenant 没有独立登录账号或租户密码。User 先通过全局账号完�
 
 ### 6.4 平台三员分立
 
-目标模型在 Platform Realm 采用三员分立，使用三个内置且不可修改权限集合的平台角色替代永久 `super_admin`。这里的三员是职责分离，不是把一个超级管理员改成三个名称不同但都可执行全部操作的账号。
+Platform Realm 采用三员分立，使用三个内置且不可修改权限集合的平台角色，不存在永久 `super_admin`。这里的三员是职责分离，不是把一个超级管理员改成三个名称不同但都可执行全部操作的账号。
 
 | 平台角色 | 主要职责 | 明确禁止 |
 | --- | --- | --- |
@@ -237,7 +237,7 @@ Tenant 没有独立登录账号或租户密码。User 先通过全局账号完�
 - 不保留常驻 root 或超级管理员。紧急处置使用双人批准、限定动作、限定时长、自动失效且全程审计的 Break-glass Grant；它也不能删除审计记录或静默修改三员规则；
 - 审计记录应写入追加式、独立保护的存储。拥有业务数据库管理能力的主体不能同时拥有审计记录删除或覆盖能力。
 
-最终等保定级、适用控制项和测评口径仍需由项目的定级与测评结论确认；ADDP 的目标模型先提供可被严格执行的职责分离能力，而不把合规简化为角色命名。
+最终等保定级、适用控制项和测评口径仍需由项目的定级与测评结论确认；ADDP 提供可被严格执行的职责分离能力，而不把合规简化为角色命名。
 
 ## 七、数据与资源权限
 
@@ -249,7 +249,7 @@ Tenant 没有独立登录账号或租户密码。User 先通过全局账号完�
 
 ### 7.2 可授权主体
 
-资源授权的目标可以是：
+资源授权的主体可以是：
 
 - 单个 User；
 - Department 的直接成员；
@@ -323,9 +323,9 @@ Allow = Principal 有效
 - Tenant 维度查询、筛选和导出必须记录访问审计；任何从聚合统计下钻到业务明细的操作都重新执行 Tenant Membership、Role 和 owner 资源授权判断；
 - Statistics Permission 只允许读取已发布统计结果，不授予 `tenant.data.read`，也不能作为 API 批量枚举 Tenant 业务资源的依据。
 
-## 八、AuthContext 的目标定位
+## 八、AuthContext 定位
 
-AuthContext 是一次请求的权威主体投影，不应膨胀为“当前用户能访问的全部资源列表”。目标上应能够表达：
+AuthContext 是一次请求的权威主体投影，不应膨胀为“当前用户能访问的全部资源列表”。它表达：
 
 - Principal 类型和稳定 ID；
 - User、Tenant 和 Tenant Membership 状态；
@@ -399,19 +399,20 @@ flowchart LR
 
 System IAM 负责统一身份和通用授权事实，但不承载所有业务资源 ACL。Gateway 负责流量入口和粗粒度策略，但不根据 URL 自行推断数据权限。Owner 模块是资源访问的最终执行点。
 
-## 十二、当前实现到目标模型的概念迁移
+## 十二、已删除的旧概念
 
-| 当前概念 | 目标解释 |
+以下概念已从当前 IAM 主路径删除，不构成兼容契约：
+
+| 旧概念 | 当前唯一解释 |
 | --- | --- |
-| `users.user_type=super_admin` | 按实际职责拆分为互斥的 Platform Role Assignment，删除全权角色，不再隐式获得 Tenant 数据权限。 |
-| `users.user_type=tenant_admin` | 迁移为 Tenant Administration Role Assignment。 |
-| `users.user_type=user` | 回归普通 User 身份，不代表具体业务权限。 |
-| `users.tenant_id` | 迁移为独立 Tenant Membership；业务会话只投影唯一当前 Tenant。 |
-| OAuth Scope | 继续作为客户端令牌能力上限，不替代 Role Permission。 |
-| Asset Authorization | 保持 Asset 业务授权事实，不升级为全局 Role。 |
-| owner 内部权限判断 | 保持最终执行责任，但统一消费 IAM 主体和授权事实。 |
+| `users.user_type=super_admin` | 互斥 Platform Role Assignment，不存在全权角色。 |
+| `users.user_type=tenant_admin` | Tenant 管理 Role Assignment。 |
+| `users.user_type=user` | User 只是自然人身份，能力来自 Role Permission。 |
+| `users.tenant_id` | 独立 Tenant Membership；会话只选择一个当前 Tenant。 |
+| JWT 用户令牌 | System 签发并解析随机 opaque Token。 |
+| `/users/me` 验证令牌 | 唯一验证接口为 `/api/v1/system/auth/context`。 |
 
-实施时只允许一次性切换到目标模型，不保留 `user_type` 与 Role 双轨权限判断。
+任何新实现不得恢复旧字段、旧 helper、旧路由或双轨判断。
 
 ## 十三、已确认的概念决策
 
@@ -426,17 +427,14 @@ System IAM 负责统一身份和通用授权事实，但不承载所有业务资
 9. **外部身份供应**：同时保留管理员预配和策略控制的即时供应，不默认开启即时供应。
 10. **Service Principal**：纳入同一 IAM 主体模型，但与 User、OAuth Client、API Key 严格分离。
 
-## 十四、后续技术讨论顺序
+## 十四、规范与后续专题
 
-概念已经确认。下一阶段按以下顺序讨论技术实现，避免先选产品再反推模型：
+已实现能力以以下正式文档为准：
 
-1. User、External Identity、Tenant Membership、Department、Project Group 的目标数据模型；
-2. Permission 目录、Role、Role Assignment、三员互斥规则和权限命名；
-3. AuthContext / Authorization Facts 契约及缓存失效；
-4. owner 资源 Grant / Policy 接口和 Asset 授权衔接；
-5. OAuth/OIDC Server 协议实现与 Fosite 等技术选型；
-6. 本地认证、MFA、账号恢复和会话治理；
-7. 外部 IdP 联合、账号供应和单点退出；
-8. 管理控制台、跨租户统计、审计、紧急访问和迁移方案。
+- `docs/spec/addp授权上下文规范.md`；
+- `docs/spec/addp权限与角色发布规范.md`；
+- `docs/spec/addp OAuth授权规范.md`；
+- `system/docs/IAM数据模型与迁移规范.md`；
+- `system/docs/OAuth与Fosite实现说明.md`。
 
-前四项边界和第 5 项协议引擎决策已经完成；决策结果见 [ADDP IAM OAuth/OIDC 协议引擎 ADR](../next/addp-IAM%20OAuth-OIDC协议引擎ADR.md)。下一步先完成协议存储边界和首批 IAM 数据基础，再进入本地认证、MFA 与账号恢复设计。
+未完成能力分别由 `docs/next/addp-IAM owner资源授权与Asset衔接设计.md`、`docs/next/addp-IAM OIDC启用设计.md` 和 `docs/next/addp-IAM外部IdP与账号供应设计.md` 跟进。后续实现完成后必须把稳定结论并入正式文档并删除对应 next 文档。

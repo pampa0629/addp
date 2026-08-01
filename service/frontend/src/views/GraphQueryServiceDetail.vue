@@ -1,11 +1,11 @@
 <template>
   <div class="graph-service-detail" v-loading="loading">
     <div class="page-header">
-      <el-button @click="$router.back()" :icon="ArrowLeft" circle />
+      <el-button @click="goBack" :icon="ArrowLeft" circle />
       <h2>{{ service?.title || t('service.graph.detailTitle') }}</h2>
       <div class="header-actions">
         <el-tag :type="statusType(service?.status)" size="default">{{ statusText(service?.status) }}</el-tag>
-        <el-button @click="$router.push(`/graph-services/${id}/edit`)">{{ t('service.common.edit') }}</el-button>
+        <el-button @click="goToEdit">{{ t('service.common.edit') }}</el-button>
       </div>
     </div>
 
@@ -172,15 +172,19 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import graphApi from '../api/graphQueryService'
+import { navigateServiceRoute } from '@/utils/moduleNavigation'
 
 const route = useRoute()
+const router = useRouter()
 const { t } = useI18n()
 const id = route.params.id
+const goBack = () => navigateServiceRoute(router, '/graph-services', { history: 'replace' })
+const goToEdit = () => navigateServiceRoute(router, `/graph-services/${id}/edit`)
 
 const loading = ref(false)
 const service = ref(null)

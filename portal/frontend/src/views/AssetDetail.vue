@@ -2,7 +2,7 @@
   <div class="asset-detail" v-loading="loading">
     <!-- 返回按钮 -->
     <div class="back-bar">
-      <el-button text :icon="ArrowLeft" @click="$router.back()">{{ t('portal.common.back') }}</el-button>
+      <el-button text :icon="ArrowLeft" @click="handleBack">{{ t('portal.common.back') }}</el-button>
     </div>
 
     <template v-if="asset">
@@ -225,18 +225,20 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, FolderOpened } from '@element-plus/icons-vue'
 import { formatDate } from '@common-ui'
 import { assetAPI } from '../api/portal'
 import { useAssetType } from '../composables/useAssetType'
+import { assetDetailReturnTarget } from '../utils/routeState'
 
 const { t } = useI18n()
 const { getTypeName } = useAssetType()
 const route = useRoute()
+const router = useRouter()
 
 const loading = ref(false)
 const asset = ref(null)
@@ -381,6 +383,15 @@ async function fetchAsset() {
   }
 }
 
+async function handleBack() {
+  const target = assetDetailReturnTarget(window.history.state?.back, asset.value?.catalog_id)
+  if (target.history === 'back') {
+    router.back()
+    return
+  }
+  await router.replace(target.location)
+}
+
 async function fetchApplyStatus() {
   try {
     const data = await assetAPI.getApplyStatus(route.params.id)
@@ -412,13 +423,19 @@ async function submitApply() {
   })
 }
 
-onMounted(async () => {
+watch(() => route.params.id, async () => {
+  asset.value = null
+  applyStatus.value = 'none'
+  serviceEndpoints.value = null
+  ratings.value = []
+  myRating.value = null
+  ratingStats.value = { avg_score: 0, count: 0 }
   await fetchAsset()
   if (asset.value) {
     fetchApplyStatus()
     fetchRatings()
   }
-})
+}, { immediate: true })
 </script>
 
 <style scoped>

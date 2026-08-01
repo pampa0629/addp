@@ -85,3 +85,10 @@ curl http://localhost:8086/health
 - `service/docs/API测试指南.md`
 - `service/docs/tables/`
 - `gateway/docs/gateway架构说明.md`
+
+## 前端公开路由
+
+- 模块内 Router 使用 `/query-services`、`/registered-services`、`/published-services`、`/tile`、`/graph-services` 等无模块前缀路径；Console 公开 URL 统一加 `/service` 前缀。
+- 资源身份和创建、编辑、详情、测试职责使用 path 表达；创建成功后用 `replace` 进入详情，其余列表到详情使用 `push`。
+- 服务目录默认 `all` Tab 省略，其他稳定类型使用唯一 `tab` query。
+- 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`。

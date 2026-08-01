@@ -218,3 +218,10 @@ bash scripts/dev/restart.sh -graph
 - [图谱构建详细规划](docs/graph阶段2-图谱构建详细规划.md)
 - [ADDP 开发原则](../docs/spec/addp开发原则.md)
 - [新模块开发指南](../docs/spec/addp新模块开发指南.md)
+
+## 十、前端公开路由
+
+- 模块内 Router 使用 `/ontologies`、`/graphs`、`/analysis`、`/knowledge-service` 等无模块前缀路径；Console 公开 URL 统一加 `/graph` 前缀。
+- 本体、图谱和构建任务使用 path parameter 表达对象身份；创建成功后用 `replace` 进入详情，列表进入详情使用 `push`。
+- 本体详情默认 `entities` Tab 省略，其他稳定 Tab 使用 `tab`；审核队列默认 `entity` 省略；知识服务当前图谱使用 `graph_id`。
+- 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`，不得直接操作父窗口或在页面中调用 `router.push/replace/back`。

@@ -1,6 +1,7 @@
 package postgresql
 
 import (
+	"database/sql"
 	"testing"
 
 	"github.com/addp/common/datatype"
@@ -62,6 +63,21 @@ func TestPostgresFieldInfoFromColumnMapsNativeTypesToCanonicalTypes(t *testing.T
 				t.Fatalf("field = %#v, want type %q and native type %q", field, tt.wantType, tt.wantNative)
 			}
 		})
+	}
+}
+
+func TestPostgresFieldInfoFromColumnKeepsDecimalPrecisionAndScale(t *testing.T) {
+	field := postgresFieldInfoFromColumn(postgresColumnInfo{
+		Name:             "amount",
+		DataType:         "numeric",
+		UDTName:          "numeric",
+		NativeType:       "numeric(18,2)",
+		NumericPrecision: sql.NullInt64{Int64: 18, Valid: true},
+		NumericScale:     sql.NullInt64{Int64: 2, Valid: true},
+	})
+
+	if field.Precision != 18 || field.Scale != 2 {
+		t.Fatalf("decimal precision/scale = %d/%d, want 18/2", field.Precision, field.Scale)
 	}
 }
 

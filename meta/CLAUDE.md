@@ -171,6 +171,12 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 - 跨模块定位时使用 `engine_id + catalog_path` 的正式条件查询：`/nodes/by-catalog-path`、`/items/by-catalog-path`。
 - `/metadata/object` 历史对象快捷查询已删除；对象 item 定位统一使用 `items/by-catalog-path`，不新增按存储技术形态分叉的新快捷入口。
 
+## 前端公开路由
+
+- 元数据扫描模块内路由为 `/scan`，当前引擎使用 `engine_id`，TaskProvider 调度入口使用 `task_id`。
+- `engine_id` 与 `task_id` 并存时，扫描任务记录中的 `engine_id` 是事实源，前端使用 `replace` 规范化 URL。
+- 普通引擎切换使用 `replace` 并清除任务入口；Router 不接受重复的 `/meta` 模块前缀。
+
 ## 开发规则
 
 - 扫描必须执行租户隔离校验，不能绕过 System 引擎归属与 execution/request 的 Tenant Context。
@@ -191,6 +197,7 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 bash scripts/dev/start.sh -meta
 bash scripts/dev/restart.sh -meta
 curl http://localhost:8082/health
+cd meta/frontend && npm test && npm run build
 ```
 
 常用日志：

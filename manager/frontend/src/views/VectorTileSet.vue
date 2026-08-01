@@ -7,7 +7,7 @@
       </div>
       <div class="commands">
         <el-button :icon="Refresh" @click="loadTasks">{{ t('common.refresh') }}</el-button>
-        <el-button type="primary" :icon="Plus" @click="openCreate">{{ t('manager.vectorTileSet.create') }}</el-button>
+        <el-button type="primary" :icon="Plus" @click="requestCreateDialog">{{ t('manager.vectorTileSet.create') }}</el-button>
       </div>
     </div>
 
@@ -28,14 +28,14 @@
       <el-table-column :label="t('manager.vectorTileSet.actions')" width="250" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" :icon="VideoPlay" :loading="executing === row.id" @click="execute(row)">{{ t('manager.vectorTileSet.execute') }}</el-button>
-          <el-button link :icon="Edit" @click="openEdit(row)">{{ t('common.edit') }}</el-button>
+          <el-button link :icon="Edit" @click="requestEditTask(row)">{{ t('common.edit') }}</el-button>
           <el-button link type="danger" :icon="Delete" @click="remove(row)">{{ t('common.delete') }}</el-button>
         </template>
       </el-table-column>
     </el-table>
     <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" layout="total, prev, pager, next" @current-change="loadTasks" />
 
-    <el-dialog v-model="dialog" :title="editing ? t('manager.vectorTileSet.edit') : t('manager.vectorTileSet.create')" width="860px" destroy-on-close>
+    <el-dialog v-model="dialog" :title="editing ? t('manager.vectorTileSet.edit') : t('manager.vectorTileSet.create')" width="860px" destroy-on-close @closed="clearTaskDialogRoute">
       <el-form label-position="top" :model="form">
         <div class="form-grid">
           <el-form-item :label="t('manager.vectorTileSet.name')"><el-input v-model="form.name" /></el-form-item>
@@ -81,7 +81,9 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { navigateManagerRoute } from '@/utils/moduleNavigation'
+import { resolveManagerTaskWorkspaceRouteState } from '@/utils/taskWorkspaceRoute'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Edit, Plus, Refresh, VideoPlay } from '@element-plus/icons-vue'
@@ -92,6 +94,13 @@ import { isVectorTileSourceItem } from '../utils/vectorTileSetResource'
 
 const { t } = useI18n()
 const route = useRoute()
+const router = useRouter()
+const resolveRouteState = routeQuery => resolveManagerTaskWorkspaceRouteState({
+  routeQuery,
+  allowedQuery: ['create', 'locator', 'task_id']
+})
+let routeDataReady = false
+let workspaceRestoreSequence = 0
 const tasks = ref([]); const loading = ref(false); const page = ref(1); const pageSize = ref(20); const total = ref(0)
 const dialog = ref(false); const editing = ref(null); const saving = ref(false); const executing = ref(null); const sourceDetecting = ref(false)
 const sourceSelection = ref(null); const targetSelection = ref(null)
@@ -193,11 +202,30 @@ const openCreate = (sourceLocator = '') => {
   form.sourceLocator = String(sourceLocator || '').trim()
   dialog.value = true
 }
+const requestCreateDialog = async () => {
+  const routeState = resolveRouteState({ create: '1' })
+  await navigateManagerRoute(router, { path: route.path, query: routeState.query }, { history: 'push' })
+}
+const clearTaskDialogRoute = async () => {
+  const nextQuery = { ...route.query }
+  delete nextQuery.create
+  delete nextQuery.locator
+  delete nextQuery.task_id
+  const routeState = resolveRouteState(nextQuery)
+  const location = { path: route.path, query: routeState.query }
+  if (router.resolve(location).fullPath !== route.fullPath) {
+    await navigateManagerRoute(router, location, { history: 'replace' })
+  }
+}
 const openEdit = (task) => {
   reset(); editing.value = task
   const c = task.config || {}; const s = c.source || {}; const target = c.target || {}; const tile = c.tile || {}; const options = c.options || {}
   Object.assign(form, { name: task.name, fileName: String(target.name || '').replace(/\.pmtiles$/i, ''), sourceLocator: s.locator, sourceEngineID: s.source_engine_id, sourceItemID: s.item_id, targetLocator: target.storage_locator, targetEngineID: target.engine_id, minZoom: tile.min_zoom, maxZoom: tile.max_zoom, layerName: options.layer_name, sourceSRID: tile.source_srid || 0, extent: tile.extent || [], extentSRID: tile.extent_srid || 0, geometryColumn: options.geometry_column || '' })
   dialog.value = true
+}
+const requestEditTask = async (task) => {
+  const routeState = resolveRouteState({ task_id: task.id })
+  await navigateManagerRoute(router, { path: route.path, query: routeState.query }, { history: 'push' })
 }
 const payload = () => ({ name: form.name.trim(), enabled: true, config: {
   source: { source_engine_id: engineID(sourceSelection.value, form.sourceEngineID), locator: locator(sourceSelection.value, form.sourceLocator), item_id: itemID(sourceSelection.value, form.sourceItemID) },
@@ -217,18 +245,42 @@ const execute = async (task) => { executing.value = task.id; try { const data = 
 const remove = async (task) => { await ElMessageBox.confirm(t('manager.vectorTileSet.deleteConfirm'), t('common.delete'), { type: 'warning' }); await quickViewAPI.deleteVectorTileSetTask(task.id); await loadTasks() }
 const targetText = (task) => `${task.config?.target?.storage_locator || ''}/${task.config?.target?.name || ''}`
 const statusType = (status) => ({ success: 'success', failed: 'danger', running: 'warning', pending: 'info' }[status] || 'info')
-onMounted(async () => {
-  await loadTasks()
-  const taskID = Number(route.query.task_id || 0)
+async function restoreWorkspaceFromRoute() {
+  const restoreSequence = ++workspaceRestoreSequence
+  const routeState = resolveRouteState(route.query)
+  if (routeState.changed) {
+    await navigateManagerRoute(router, { path: route.path, query: routeState.query }, { history: 'replace' })
+    return
+  }
+  if (!routeDataReady) return
+
+  const taskID = Number(routeState.query.task_id || 0)
   if (taskID) {
     try {
-      openEdit(await quickViewAPI.getVectorTileSetTask(taskID))
+      const task = await quickViewAPI.getVectorTileSetTask(taskID)
+      if (restoreSequence !== workspaceRestoreSequence) return
+      openEdit(task?.data?.data || task?.data || task)
     } catch (error) {
+      if (restoreSequence !== workspaceRestoreSequence) return
+      dialog.value = false
       ElMessage.error(error?.response?.data?.error || t('manager.vectorTileSet.loadFailed'))
+      await clearTaskDialogRoute()
+      return
     }
-  } else if (route.query.create === '1') {
-    openCreate(route.query.locator)
+  } else if (routeState.query.create === '1') {
+    openCreate(routeState.query.locator)
+  } else {
+    dialog.value = false
   }
+  await loadTasks()
+}
+
+watch(() => route.query, restoreWorkspaceFromRoute)
+
+onMounted(async () => {
+  await restoreWorkspaceFromRoute()
+  routeDataReady = true
+  await restoreWorkspaceFromRoute()
 })
 </script>
 

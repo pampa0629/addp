@@ -151,6 +151,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { domainAPI, glossaryAPI, elementAPI } from '../api/standard'
 import DocumentPanel from '../components/DocumentPanel.vue'
+import { navigateStandardRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -173,7 +174,7 @@ const formatTime = (time) => {
   return new Date(time).toLocaleString()
 }
 
-const goBack = () => router.push('/standard/glossaries')
+const goBack = () => navigateStandardRoute(router, '/glossaries', { history: 'replace' })
 
 const flattenDomains = (nodes) => {
   const result = []

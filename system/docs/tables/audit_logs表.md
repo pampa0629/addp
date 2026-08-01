@@ -1,8 +1,8 @@
 # audit_logs 表结构说明
 
-更新日期：2026-07-24
+更新日期：2026-08-01
 
-状态：IAM 目标表契约；运行时查询 API 与中间件尚待随 IAM Runtime 一次性切换，不保留旧 `user_id / username / request_body / query_params` 兼容字段。
+状态：当前正式表契约。运行时查询 API 与中间件使用统一 IAM 审计模型，不保留旧 `user_id / username / request_body / query_params` 兼容字段。
 
 ## 一、定位
 
@@ -14,7 +14,7 @@
 
 不建立 IAM 专用表或 OAuth 专用表。访问日志、应用调试日志和错误堆栈不属于该表。
 
-## 二、目标字段
+## 二、当前字段
 
 | 字段 | 类型 | 约束 | 说明 |
 | --- | --- | --- | --- |
@@ -95,6 +95,6 @@ OAuth 事件的 `details` 仅允许 `client_id`、`grant_type`、`decision`、`s
 
 ## 七、相关规范
 
-- [IAM 目标数据模型设计](../../../docs/next/addp-IAM目标数据模型设计.md)
+- [System IAM 数据模型与迁移规范](../IAM数据模型与迁移规范.md)
 - [ADDP OAuth 授权规范](../../../docs/spec/addp%20OAuth授权规范.md)
 - [ADDP 授权上下文规范](../../../docs/spec/addp授权上下文规范.md)

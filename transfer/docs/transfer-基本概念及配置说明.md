@@ -2,7 +2,7 @@
 
 更新时间：2026-07-25
 
-本文档定义 Transfer 稳定任务配置、执行状态、bounded snapshot 主链路、PostgreSQL watermark bounded incremental 第一版规则，以及 continuous/Kafka 契约与当前实现边界。旧版顶层 `mode`、`target.policy.write_mode`、`connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段不再兼容。
+本文档定义 Transfer 稳定任务配置、执行状态、bounded snapshot 主链路、watermark bounded incremental 规则，以及 continuous/Kafka 契约与当前实现边界。旧版顶层 `mode`、`target.policy.write_mode`、`connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段不再兼容。
 
 ## 一、核心对象
 
@@ -202,6 +202,7 @@ raw copy 是 non-table encoded single content 的原始字节复制。它不调�
   "version": "v1",
   "mode": "project",
   "fields": [
+    {"source": "amount", "target": "amount", "target_type": "decimal", "precision": 18, "scale": 4},
     {"source": "name", "target": "road_name", "target_type": "string"},
     {"source": "geom", "target": "geometry", "target_type": "geometry", "nullable": false},
     {"target": "created_by", "target_type": "string", "default": "transfer"}
@@ -214,9 +215,13 @@ raw copy 是 non-table encoded single content 的原始字节复制。它不调�
 | `source` | 否 | 源字段名；为空表示常量 / 默认字段。 |
 | `target` | 是 | 目标字段名。 |
 | `target_type` | 否 | 目标字段类型。 |
+| `precision` | 否 | decimal 目标的总有效位数；必须为正整数。 |
+| `scale` | 否 | decimal 目标的小数位数；必须为非负整数且不大于 `precision`。 |
 | `nullable` | 否 | 是否可空；默认 true。 |
 | `default` | 否 | 源字段缺失或值为 nil 时使用的默认值。 |
 | `format` | 否 | 日期、时间、数字等简单解析 / 格式化提示。 |
+
+`precision` / `scale` 只属于 decimal 目标字段，两者必须同时出现或同时省略。源字段已声明有限精度时，向导默认继承该事实；PostgreSQL 无精度限制的 `numeric` 写入 MySQL 这类只支持有界 decimal 的目标时，必须在映射中显式填写。MySQL 要求 `1 <= precision <= 65`、`0 <= scale <= 30` 且 `scale <= precision`。系统不扫描数据猜测表结构，也不把无界 decimal 静默收缩为默认精度。
 
 `mode`：
 
@@ -235,33 +240,33 @@ raw copy 是 non-table encoded single content 的原始字节复制。它不调�
 |---|---|
 | `replace` | Transfer 写入前清理目标资源或让 prepare 重建目标。 |
 | `append` | 追加写入；失败 retry 当前拒绝 append，避免重复写入。 |
-| `upsert` | 按稳定键幂等新增或更新；第一版只支持 PostgreSQL native table 目标。 |
+| `upsert` | 按稳定键幂等新增或更新；当前支持声明幂等 upsert 能力的 PostgreSQL/MySQL native table 目标。 |
 | `upsert_delete` | 数据库 CDC v1 按稳定键新增、更新和物理删除；与目标 partition ledger 原子提交。 |
 
 apply mode 是 Transfer policy；真实 upsert/delete 能力必须由目标 engine Provider 和 capability 声明。raw copy 第一版只支持 `replace`，并要求目标 engine 提供删除资源能力。
 
-## 七、PostgreSQL watermark bounded incremental
+## 七、Watermark bounded incremental
 
-第一版唯一支持组合为：
+当前支持组合为：
 
 ```text
-PostgreSQL native table -> PostgreSQL native table
+PostgreSQL native table -> PostgreSQL/MySQL native table
 bounded + incremental + watermark + upsert
 ```
 
 配置必须声明 `load.change_detection.field`、非空 `tie_breaker`、`start=committed`、`end=execution_upper_bound`，并在 `target.policy.keys` 声明稳定目标键。watermark 字段不得为 NULL；tie breaker 必须唯一、稳定且不可变。每次 execution 在 PostgreSQL 一致性只读事务内冻结复合上界，只读取 `(committed_position, execution_upper_bound]` 并稳定排序。
 
-同步主状态存储在 `transfer.sync_states`。position 使用 `type=watermark`、`version=v1` 的 JSON；目标批次提交成功后才允许携带 `state_version` 和本次 fencing token 做 CAS 更新。重复应用必须由 PostgreSQL `ON CONFLICT ... DO UPDATE` 幂等吸收。
+同步主状态存储在 `transfer.sync_states`。position 使用 `type=watermark`、`version=v1` 的 JSON；目标批次提交成功后才允许携带 `state_version` 和本次 fencing token 做 CAS 更新。重复应用必须由目标 `TableUpsertProvider` 幂等吸收：PostgreSQL 使用 `ON CONFLICT ... DO UPDATE`，MySQL 使用 InnoDB 事务内的 `ON DUPLICATE KEY UPDATE`。MySQL 目标的配置 keys 必须精确匹配非空主键或唯一约束，且目标表不得存在与配置 keys 不同的唯一约束。
 
 第一版只支持 resume：新 execution 从 committed position 继续并在成功后推进主状态。不提供 replay，不发现物理删除，也不支持只读副本 lookback。源表所有 insert/update 必须可靠更新 watermark；时间回拨或未更新 watermark 的变化不在保证范围内。
 
 ## 八、Continuous/Kafka v1 契约与当前实现边界
 
-第一条 continuous 实现路径固定为业务 Kafka keyed JSON record -> PostgreSQL native table upsert。业务 Kafka 作为 System Engine 暴露 `service -> topic` catalog；用户选择 `type=topic` locator，partition 不进入资源树或 locator。Infra Kafka 是后续 CDC 的内部实现，不进入公开任务配置。
+第一条 continuous 实现路径为业务 Kafka keyed JSON record -> PostgreSQL/MySQL native table upsert。业务 Kafka 作为 System Engine 暴露 `service -> topic` catalog；用户选择 `type=topic` locator，partition 不进入资源树或 locator。Infra Kafka 是数据库 CDC 的内部实现，不进入公开任务配置。
 
 Kafka Provider 通过 `ChangeStreamReaderProvider` 返回原始 ChangeRecord 和 per-partition provider position；Transfer adapter 只接受 JSON object，从 value 的显式非空字段提取稳定 key，并归一化为 `operation=upsert` ChangeEvent。任务必须提供完整 `field_mapping` 固定目标 schema，source key 映射后必须与目标 keys 一一对应，并显式提交 `runtime.record_failure.mode=block|dead_letter`，不得依赖字段省略猜默认值。
 
-目标只允许 PostgreSQL `PartitionedTableChangeApplyProvider`。每个 task 由服务端生成不可变 `apply_identity`；Provider 在业务目标库维护 `addp_transfer.apply_positions`，把单 partition 的目标 upsert 与 `next_offset` 在同一事务提交。poll batch 必须先按 partition 拆分；同一批中相同目标 key 的有效记录保留最高 offset 的最后状态。普通 `TableUpsertProvider`、Infra state CAS 和 runtime lease 都不能替代该目标侧原子应用契约。
+目标必须声明原子、单调且覆盖任务所需 operation 的 `PartitionedTableChangeApplyProvider`，当前支持 PostgreSQL 与 MySQL。每个 task 由服务端生成不可变 `apply_identity`；PostgreSQL Provider 在业务目标库维护 `addp_transfer.apply_positions`，MySQL Provider 在目标业务数据库维护 `_addp_transfer_apply_positions` InnoDB 私有表，并把单 partition 的目标变更与 `next_offset` 在同一事务提交。MySQL 不跨数据库创建私有账本；同名表结构不符合唯一规范时直接失败。poll batch 必须先按 partition 拆分；同一批中相同目标 key 的有效记录保留最高 offset 的最后状态。普通 `TableUpsertProvider`、Infra state CAS 和 runtime lease 都不能替代该目标侧原子应用契约。
 
 每个 partition 的主状态继续存储在 `transfer.sync_states`，position 固定为 `type=kafka_offset`、`version=v1`、`next_offset`。consumer auto commit 禁用；目标提交后才允许以 runtime fencing token + state version 做 CAS。首次无状态 partition 必须显式选择 `earliest|latest`。
 
@@ -288,12 +293,12 @@ PostgreSQL/MySQL 单表
   -> 对应 Debezium Connector
   -> Infra Kafka
   -> Transfer Continuous Worker
-  -> PostgreSQL 新目标表
+  -> PostgreSQL/MySQL 新目标表
 ```
 
 公开任务只保存 `runtime.boundary=continuous`、`load.mode=incremental`、`load.change_detection.type=cdc`、`bootstrap=initial_snapshot`、源表 locator、目标表和 field mapping。source provider 只能由 locator 对应的 System Engine 解析结果决定，不进入任务 JSON。connector、provider 专属捕获资源、Infra Kafka topic 和 consumer group 都由服务端生成，不进入 System Engine 或 Meta 资源树。
 
-第一版只支持有稳定主键的单表。Debezium `op=r` 作为 snapshot upsert，`op=c|u` 作为 upsert，`op=d` 使用 record key 做物理 delete；目标固定为 `apply_mode=upsert_delete`。目标必须是不存在的新表，由 bootstrap 创建；不清空或接管已有目标表。捕获位点由 Kafka Connect 管理，Transfer 只在 `transfer.sync_states` 保存目标已应用的 Infra Kafka `next_offset`，两类位点不能互相代替。
+第一版只支持有稳定主键的单表。Debezium `op=r` 作为 snapshot upsert，`op=c|u` 作为 upsert，`op=d` 使用 record key 做物理 delete；目标固定为 `apply_mode=upsert_delete`，可选择声明完整原子应用能力的 PostgreSQL 或 MySQL。目标必须是不存在的新表，由 bootstrap 创建；不清空或接管已有目标表。捕获位点由 Kafka Connect 管理，Transfer 只在 `transfer.sync_states` 保存目标已应用的 Infra Kafka `next_offset`，两类位点不能互相代替。
 
 PostgreSQL CDC 在创建 capture 前核对完整源表字段和真实类型，开放 `string|bool|int|bigint|float|double|decimal|date|time|timestamp|json|uuid|geometry`。PostGIS geometry 必须固定 OGC type、正 SRID和 XY/XYZ 维度；Transfer 将 Debezium `{wkb,srid}` 解码为 EWKB，按源空间事实创建目标 geometry 列，不做坐标转换，geometry 也不能作为主键。connector 固定 Decimal 字符串和 Connect 毫秒时间编码；`time` 和无时区 `timestamp` 仅允许精度 `0..3`。`bytea`、数组、geography、未约束 geometry、M/ZM geometry、interval、枚举及其他用户定义类型明确拒绝。
 

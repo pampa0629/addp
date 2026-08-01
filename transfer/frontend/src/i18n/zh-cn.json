@@ -58,6 +58,13 @@
         "unknown": "未知"
       }
     },
+    "executionStatus": {
+      "pending": "待开始",
+      "running": "执行中",
+      "success": "成功",
+      "failed": "失败",
+      "cancelled": "已取消"
+    },
     "dashboard": {
       "totalTasks": "总任务数",
       "notExecuted": "未执行",
@@ -471,6 +478,8 @@
       "sourceTypeCol": "源类型",
       "targetFieldCol": "目标字段",
       "dataTypeCol": "目标类型",
+      "precisionCol": "精度",
+      "scaleCol": "小数位",
       "defaultValueCol": "默认值",
       "formatCol": "格式",
       "nullableCol": "可为空",
@@ -525,11 +534,11 @@
 			"cdcSyncDesc": "首次启动会装载源表当前数据，之后持续同步新增、更新和物理删除；中断后从上次成功位置恢复。",
 			"databaseCDCLoad": "持续同步新增、更新和删除",
 			"databaseCDCUnavailableReasons": {
-				"capabilityUnavailable": "当前 Transfer 后端未声明该源到 PostgreSQL 的数据库 CDC 能力。",
+				"capabilityUnavailable": "当前 Transfer 后端未声明该源到所选目标的数据库 CDC 能力。",
 				"sourceDatabaseRequired": "源必须选择 PostgreSQL 或 MySQL 引擎。",
 				"sourceTableRequired": "源必须选择一张数据库表。",
 				"sourceNativeRequired": "源必须使用数据库原生表。",
-				"targetPostgreSQLRequired": "目标必须选择 PostgreSQL 引擎。",
+				"targetAtomicApplyRequired": "目标必须选择支持原子持续应用的 PostgreSQL 或 MySQL 引擎。",
 				"targetNativeRequired": "目标必须创建数据库原生表。",
 				"sourceFieldsRequired": "尚未读取到源表字段，请返回源配置重新选择或刷新表。",
 				"sourcePrimaryKeyRequired": "源表必须有稳定且非空的主键。",
@@ -542,7 +551,7 @@
       "continuousKeyFieldsPlaceholder": "选择能唯一标识一条业务记录的 JSON 字段",
       "continuousKeyFieldsHint": "生产者必须保证相同标识的消息进入同一分区。所选字段在目标中会自动设为不可为空。",
       "continuousTargetKeysLabel": "目标唯一标识字段",
-      "continuousTargetKeysHint": "根据字段映射自动生成，用于在 PostgreSQL 中新增或更新同一条记录。",
+      "continuousTargetKeysHint": "根据字段映射自动生成，用于在目标数据库中新增或更新同一条记录。",
       "continuousInitialPositionLabel": "首次启动读取范围",
       "continuousInitialEarliest": "读取主题中仍保留的全部消息",
       "continuousInitialLatest": "只读取任务启动后的新消息",
@@ -557,7 +566,7 @@
       "loadModeLabel": "同步范围",
       "snapshotLoad": "每次同步全部数据",
       "watermarkIncrementalLoad": "只同步新增和更新",
-      "watermarkIncrementalUnsupported": "当前只有 PostgreSQL 表到 PostgreSQL 表支持只同步变化的数据。",
+      "watermarkIncrementalUnsupported": "当前支持从 PostgreSQL 表向 PostgreSQL 或 MySQL 表同步变化数据。",
       "watermarkIncrementalNoticeTitle": "增量同步要求",
       "watermarkIncrementalNotice": "源表必须有一个在记录新增或更新时都会变化的字段，并有能够唯一标识记录的主键或唯一键。任务中断后会从上次成功位置继续；暂不处理源表中的物理删除。",
       "watermarkFieldLabel": "变化判断字段",

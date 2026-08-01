@@ -88,7 +88,7 @@
 
     <!-- Tab 页签 -->
     <div class="content-area">
-      <el-tabs v-model="activeTab" type="border-card">
+      <el-tabs v-model="activeTab" type="border-card" @tab-change="handleTabChange">
         <el-tab-pane :label="t('develop.executionDetail.tabResult')" name="result">
           <div class="tab-content">
             <div v-if="execution?.status === 'success' && executionResult">
@@ -210,6 +210,8 @@ import {
   retryExecution
 } from '@/api/execution'
 import QueryResult from '@/components/QueryResult.vue'
+import { navigateDevelopRoute } from '@/utils/developNavigation'
+import { resolveExecutionDetailRouteState } from '@/utils/executionDetailRouteState'
 
 const route = useRoute()
 const router = useRouter()
@@ -218,7 +220,8 @@ const { t } = useI18n()
 // 状态管理
 const execution = ref(null)
 const logs = ref([])
-const activeTab = ref('result')
+const activeTab = ref(resolveExecutionDetailRouteState(route.query).tab)
+let routeDataReady = false
 
 const executionResult = computed(() => execution.value?.metadata?.result || null)
 const executionInputs = computed(() => execution.value?.execution_config?.inputs || {})
@@ -369,23 +372,42 @@ const formatSQLResult = (result) => {
 
 // 操作函数
 const handleBack = () => {
-  router.push('/executions')
+  navigateDevelopRoute(router, '/executions', { history: 'replace' })
 }
 
 const handleRetry = async () => {
   try {
     await retryExecution(executionId.value)
     ElMessage.success(t('develop.execution.retrySubmitted'))
-    router.push('/executions')
+    await navigateDevelopRoute(router, '/executions', { history: 'replace' })
   } catch (error) {
     console.error('重试执行失败:', error)
     ElMessage.error(t('develop.execution.retryFailed') + (error.response?.data?.error || error.message))
   }
 }
 
-const handleRefresh = () => {
-  loadExecution()
-  loadLogs()
+const handleRefresh = async () => {
+  await loadExecution()
+  await loadLogs()
+}
+
+const handleTabChange = async (tab) => {
+  const routeState = resolveExecutionDetailRouteState({ tab }, execution.value?.status)
+  const location = { path: route.path, query: routeState.query }
+  if (router.resolve(location).fullPath !== route.fullPath) {
+    await navigateDevelopRoute(router, location, { history: 'replace' })
+  }
+}
+
+async function restoreExecutionRoute() {
+  const routeState = resolveExecutionDetailRouteState(route.query, execution.value?.status)
+  activeTab.value = routeState.tab
+  if (routeState.changed) {
+    await navigateDevelopRoute(router, {
+      path: route.path,
+      query: routeState.query
+    }, { history: 'replace' })
+  }
 }
 
 // 自动刷新（仅 running 状态）
@@ -417,12 +439,30 @@ watch(() => execution.value?.status, (newStatus) => {
   } else if (newStatus === 'running' && !refreshTimer) {
     startAutoRefresh()
   }
+  if (routeDataReady) restoreExecutionRoute()
+})
+
+watch(() => route.query, () => {
+  if (routeDataReady) restoreExecutionRoute()
+})
+
+watch(executionId, async () => {
+  if (!routeDataReady) return
+  stopAutoRefresh()
+  execution.value = null
+  logs.value = []
+  await loadExecution()
+  await loadLogs()
+  await restoreExecutionRoute()
+  startAutoRefresh()
 })
 
 // 生命周期
-onMounted(() => {
-  loadExecution()
-  loadLogs()
+onMounted(async () => {
+  await loadExecution()
+  await loadLogs()
+  routeDataReady = true
+  await restoreExecutionRoute()
   startAutoRefresh()
 })
 

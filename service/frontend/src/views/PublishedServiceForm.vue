@@ -306,7 +306,7 @@
       >
         {{ isEdit ? t('service.published.updateBtn') : t('service.published.createBtn') }}
       </el-button>
-      <el-button @click="$router.back()">{{ t('service.common.cancel') }}</el-button>
+      <el-button @click="goBack">{{ t('service.common.cancel') }}</el-button>
     </div>
 
   </div>
@@ -325,6 +325,7 @@ import {
 import publishedServiceAPI from '../api/publishedService'
 import { ResourceTreePicker, detectTableMetadata, locatorPathFromSelection } from '@common-ui'
 import { NATIVE_TABLE_ENGINE_TYPES, isNativeTableNode, isNativeTableVisibleNode } from '@/utils/resourceSelection'
+import { navigateServiceRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -333,6 +334,11 @@ const formRef = ref(null)
 const inputRef = ref(null)
 
 const isEdit = computed(() => !!route.params.id)
+const goBack = () => navigateServiceRoute(
+  router,
+  isEdit.value ? `/published-services/${route.params.id}` : '/published-services',
+  { history: 'replace' }
+)
 const metaApiBaseUrl = computed(() => '/api/v1/meta')
 
 const currentStep = ref(0)
@@ -574,7 +580,7 @@ const handleSubmit = async () => {
 
       const response = await publishedServiceAPI.createService(createData)
       ElMessage.success(t('service.published.createSuccess'))
-      router.push(`/published-services/${response.id}`)
+      await navigateServiceRoute(router, `/published-services/${response.id}`, { history: 'replace' })
     }
   } catch (error) {
     if (error.message) {

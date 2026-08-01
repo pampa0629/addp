@@ -260,6 +260,7 @@ import { ArrowLeft, CircleCheck, List } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { elementAPI, codeSetAPI, glossaryAPI, unitAPI, classificationAPI, gradingLevelAPI } from '../api/standard'
 import DocumentPanel from '../components/DocumentPanel.vue'
+import { navigateStandardRoute } from '@/utils/moduleNavigation'
 
 const router = useRouter()
 const route = useRoute()
@@ -315,7 +316,7 @@ const statusLabel = (s) => ({
 }[s] || s)
 
 const goToGlossary = (id) => {
-  router.push(`/standard/glossaries/${id}`)
+  navigateStandardRoute(router, `/glossaries/${id}`)
 }
 
 const formatTime = (time) => {
@@ -323,7 +324,7 @@ const formatTime = (time) => {
   return new Date(time).toLocaleString()
 }
 
-const goBack = () => router.push('/standard/elements')
+const goBack = () => navigateStandardRoute(router, '/elements', { history: 'replace' })
 
 const loadElement = async () => {
   loading.value = true

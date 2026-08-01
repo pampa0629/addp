@@ -94,6 +94,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import serviceAPI from '../api/service'
 import { copyToClipboard } from '../utils/serviceHelper'
+import { navigateServiceRoute } from '@/utils/moduleNavigation'
 
 const router = useRouter()
 const route = useRoute()
@@ -141,11 +142,11 @@ const handleHealthCheck = async () => {
 }
 
 const handleEdit = () => {
-  router.push(`/services/${route.params.id}/edit`)
+  navigateServiceRoute(router, `/services/${route.params.id}/edit`)
 }
 
 const handleBack = () => {
-  router.push('/services')
+  navigateServiceRoute(router, '/services', { history: 'replace' })
 }
 
 const handleCopyURL = async (url) => {

@@ -484,7 +484,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { MagicStick, Download, Location, Collection, Document, View, Refresh, Select, InfoFilled, WarningFilled, Grid } from '@element-plus/icons-vue'
 import { getPreviewComponent } from '@/plugins/previews'
-import { openConsoleRoute, parseLocator } from '@addp/common-frontend'
+import { parseLocator } from '@addp/common-frontend'
 import client from '@/api/client'
 import { dataExplorerAPI } from '@/api/dataExplorer'
 import { quickViewAPI } from '@/api/quickView'
@@ -500,6 +500,7 @@ import PointCloudPreview from '@/components/explorer/PointCloudPreview.vue'
 import ThreeDTilesPreview from '@/components/explorer/ThreeDTilesPreview.vue'
 import S3MPreview from '@/components/explorer/S3MPreview.vue'
 import { useExplorerStore } from '@/stores/explorer'
+import { navigateManagerRoute } from '@/utils/moduleNavigation'
 import { dataFormatDisplayName } from '@/utils/formatDisplay'
 import {
   quickViewTileAdvisoryAction as tileAdvisoryAction,
@@ -548,19 +549,6 @@ import {
 const { t } = useI18n()
 const router = useRouter()
 const executeWithCurrentResultConfirmation = useCurrentResultConfirmation()
-
-const navigateManagerRoute = async (location) => {
-  if (typeof window !== 'undefined' && window.parent !== window) {
-    const target = router.resolve(location)
-    try {
-      return await openConsoleRoute(`/manager${target.fullPath}`)
-    } catch (error) {
-      console.error('同步 Console 页面导航失败:', error)
-      return false
-    }
-  }
-  return router.push(location)
-}
 
 const executeConfirmedQuickViewAction = (locator, action) => executeWithCurrentResultConfirmation(payload => (
   quickViewAPI.executeQuickViewAction(locator, action, toQuickViewExistingResultPayload(payload))
@@ -2010,7 +1998,7 @@ const handleBackToBasicPreview = async () => {
 const handleGenerateTileCache = async () => {
   const target = spatialPreviewTarget.value
   if (!target) return
-  await navigateManagerRoute({
+  await navigateManagerRoute(router, {
     name: 'TileCache',
     query: buildTileCacheCreateQuery(target, quickViewStatus.value)
   })
@@ -2019,7 +2007,7 @@ const handleGenerateTileCache = async () => {
 const handleGenerateVectorTileSet = async () => {
   const target = spatialPreviewTarget.value
   if (!target?.locator) return
-  await navigateManagerRoute({
+  await navigateManagerRoute(router, {
     name: 'VectorTileSet',
     query: { create: '1', locator: target.locator }
   })
@@ -2028,7 +2016,7 @@ const handleGenerateVectorTileSet = async () => {
 const handleVectorMaterializedView = async () => {
   const target = spatialPreviewTarget.value
   if (!target) return
-  await navigateManagerRoute({
+  await navigateManagerRoute(router, {
     name: 'VectorMaterializedView',
     query: buildVectorMaterializedViewCreateQuery(target, quickViewStatus.value)
   })

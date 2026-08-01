@@ -29,10 +29,11 @@ type CapturePlan struct {
 	TargetConnInfo              engineplugin.ConnectionInfo
 	SourceEngineID              uint
 	TargetEngineID              uint
+	TargetType                  string
 	SourceDatabase              string
 	SourceSchema                string
 	SourceTable                 string
-	TargetSchema                string
+	TargetNamespace             string
 	TargetTable                 string
 	SourceIdentity              string
 	SourceConnectionFingerprint string
@@ -152,8 +153,9 @@ func (r *DatabasePlanResolver) resolveBindings(task *models.TransferTask) (*Capt
 	plan := &CapturePlan{
 		SourceConnInfo: bindings.Source.ConnInfo, TargetConnInfo: bindings.Target.ConnInfo,
 		SourceEngineID: bindings.Source.EngineID, TargetEngineID: bindings.Target.EngineID,
-		SourceTable:  sourceLocator.Path[1],
-		TargetSchema: targetParent.Path[0], TargetTable: strings.TrimSpace(spec.Target.Name),
+		TargetType:      bindings.TargetType,
+		SourceTable:     sourceLocator.Path[1],
+		TargetNamespace: targetParent.Path[0], TargetTable: strings.TrimSpace(spec.Target.Name),
 		SourceIdentity: strings.TrimSpace(spec.Source.Locator),
 		SourceKeys:     sourceKeys, SourceFieldTypes: make(map[string]datatype.FieldType, len(spec.Transforms[0].Fields)),
 		SourceFieldNullables: make(map[string]bool, len(spec.Transforms[0].Fields)), TargetKeys: targetKeys,
@@ -531,22 +533,31 @@ func validateMySQLSourcePrimaryKey(ctx context.Context, plan *CapturePlan) error
 }
 
 func validateTargetDoesNotExist(ctx context.Context, plan *CapturePlan) error {
-	db, err := openPostgreSQL(plan.TargetConnInfo)
+	targetPlugin, err := engineplugin.Get(plan.TargetType)
 	if err != nil {
-		return err
+		return fmt.Errorf("load database CDC target plugin %q: %w", plan.TargetType, err)
 	}
-	defer db.Close()
-	var exists bool
-	err = db.QueryRowContext(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-			WHERE n.nspname = $1 AND c.relname = $2 AND c.relkind IN ('r','p')
-		)`, plan.TargetSchema, plan.TargetTable).Scan(&exists)
+	catalog, ok := targetPlugin.(engineplugin.CatalogProvider)
+	if !ok {
+		return fmt.Errorf("database CDC target plugin %q does not implement CatalogProvider", plan.TargetType)
+	}
+	modelProvider, ok := targetPlugin.(engineplugin.CatalogModelProvider)
+	if !ok {
+		return fmt.Errorf("database CDC target plugin %q does not implement CatalogModelProvider", plan.TargetType)
+	}
+	branch, ok := engineplugin.CatalogFirstBusinessBranch(modelProvider.CatalogModel())
+	if !ok {
+		return fmt.Errorf("database CDC target plugin %q has no namespace catalog level", plan.TargetType)
+	}
+	parent := engineplugin.TabularNamespacePath(plan.TargetEngineID, branch.Term, plan.TargetNamespace)
+	children, err := catalog.ListChildren(ctx, plan.TargetConnInfo, parent, engineplugin.ListOptions{})
 	if err != nil {
-		return fmt.Errorf("check PostgreSQL CDC target table: %w", err)
+		return fmt.Errorf("list database CDC target namespace %q: %w", plan.TargetNamespace, err)
 	}
-	if exists {
-		return fmt.Errorf("PostgreSQL CDC initial snapshot target table must not already exist")
+	for _, child := range children {
+		if child.Role == engineplugin.CatalogRoleLeaf && child.Name == plan.TargetTable {
+			return fmt.Errorf("database CDC initial snapshot target table must not already exist")
+		}
 	}
 	return nil
 }

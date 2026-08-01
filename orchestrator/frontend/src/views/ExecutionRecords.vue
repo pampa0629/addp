@@ -119,6 +119,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { openMonitorExecution } from '@addp/common-frontend'
 import orchestrationAPI from '../api/orchestration'
+import { navigateOrchestratorRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -185,7 +186,7 @@ function updateExecutionInList(execution) {
 
 function handleViewOrchestration(row) {
   if (row.source_task_id) {
-    router.push(`/orchestrations/${row.source_task_id}/executions`)
+    navigateOrchestratorRoute(router, `/orchestrations/${row.source_task_id}/executions`)
   }
 }
 

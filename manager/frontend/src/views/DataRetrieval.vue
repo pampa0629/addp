@@ -163,6 +163,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { navigateManagerRoute } from '@/utils/moduleNavigation'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Clock, Search } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
@@ -446,7 +447,7 @@ const navigateToDocument = (item = {}) => {
   }
 
   console.log('[DataRetrieval] 定位到对象:', { locator })
-  router.push({ path: '/data-explorer', query: { locator } })
+  navigateManagerRoute(router, { path: '/data-explorer', query: { locator } })
 }
 
 const hasLocator = (item = {}) => {

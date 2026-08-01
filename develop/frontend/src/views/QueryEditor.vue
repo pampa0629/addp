@@ -138,8 +138,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElLoading } from 'element-plus'
 import {
@@ -160,8 +160,14 @@ import { executeQuery as executeAPI, testConnection, saveQueryTask, updateQueryT
 import { testDuckDBConnection, getDuckDBSampleQuery } from '../api/duckdb.js'
 import { listEngines, listQueryModes } from '../api/engines.js'
 import { getDevTask } from '../api/devTask.js'
+import {
+  buildDevelopTaskEditorLocation,
+  developTaskIDFromRoute
+} from '@/utils/developTaskRoute'
+import { navigateDevelopTaskEditor } from '@/utils/developNavigation'
 
 const route = useRoute()
+const router = useRouter()
 const { t } = useI18n()
 
 // 引擎类型 → 编辑器语言
@@ -395,7 +401,11 @@ const applyQueryTarget = async (target, options = {}) => {
 // 保存任务
 const handleSaveTask = async (taskData) => {
   try {
-    await saveQueryTask(taskData)
+    const task = await saveQueryTask(taskData)
+    currentTaskId.value = task.id
+    currentTaskName.value = task.name
+    currentTask.value = task
+    await navigateDevelopTaskEditor(router, 'query', task.id, { history: 'replace' })
     ElMessage.success(t('develop.query.saveTaskSuccess'))
     showSaveDialog.value = false
   } catch (error) {
@@ -412,7 +422,7 @@ const handlePersistQueryTask = async () => {
 
   try {
     const task = currentTask.value || {}
-    await updateQueryTask(currentTaskId.value, {
+    const updatedTask = await updateQueryTask(currentTaskId.value, {
       name: task.name || currentTaskName.value,
       display_name: task.display_name || currentTaskName.value,
       engine_id: selectedEngineId.value,
@@ -423,6 +433,8 @@ const handlePersistQueryTask = async () => {
       tags: task.tags || [],
       timeout: task.timeout
     })
+    currentTask.value = updatedTask
+    currentTaskName.value = updatedTask.name
     ElMessage.success(t('develop.query.updateTaskSuccess'))
   } catch (error) {
     console.error('更新查询任务失败:', error)
@@ -467,23 +479,50 @@ const loadTask = async (taskId) => {
   }
 }
 
+const queryTaskRouteReady = ref(false)
+let applyingQueryTaskRoute = false
+
+async function resetQueryEditorForCreate() {
+  if (!currentTaskId.value) return
+  currentTaskId.value = null
+  currentTaskName.value = ''
+  currentTask.value = null
+  clearResult()
+  if (selectedTarget.value) await applyQueryTarget(selectedTarget.value)
+}
+
+async function applyQueryTaskRoute() {
+  if (applyingQueryTaskRoute) return
+  applyingQueryTaskRoute = true
+  try {
+    const taskId = developTaskIDFromRoute(route)
+    const canonicalLocation = buildDevelopTaskEditorLocation('query', taskId)
+    if (route.fullPath !== router.resolve(canonicalLocation).fullPath) {
+      await navigateDevelopTaskEditor(router, 'query', taskId, { history: 'replace' })
+    }
+
+    if (taskId) {
+      if (String(currentTaskId.value || '') !== taskId) await loadTask(taskId)
+    } else {
+      await resetQueryEditorForCreate()
+    }
+  } catch (error) {
+    ElMessage.error(t('develop.query.loadTaskFailed') + error.message)
+  } finally {
+    applyingQueryTaskRoute = false
+  }
+}
+
 // 页面加载
 onMounted(async () => {
   await loadEngines()
-
-  // 检查是否有任务 ID
-  const taskId = firstQueryValue(route.query.id || route.query.taskId)
-  if (taskId) {
-    await loadTask(taskId)
-  }
+  await applyQueryTaskRoute()
+  queryTaskRouteReady.value = true
 })
 
-function firstQueryValue(value) {
-  if (Array.isArray(value)) {
-    return value[0] || ''
-  }
-  return value || ''
-}
+watch(() => route.fullPath, () => {
+  if (queryTaskRouteReady.value) applyQueryTaskRoute()
+})
 </script>
 
 <style scoped>

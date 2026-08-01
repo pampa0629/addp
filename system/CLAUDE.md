@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> IAM 以 `docs/concepts/addp账号与权限体系图.md` 和 `docs/spec/addp授权上下文规范.md` 为唯一概念与运行时契约。当前实现已切换为 Principal、Tenant Membership、Role/Permission、Token Family 和 `addp.auth_context/v1`，不得恢复旧账号分级或平行认证路径。
+> IAM 概念与平台契约以 `docs/concepts/addp账号与权限体系图.md`、`docs/spec/addp授权上下文规范.md`、`docs/spec/addp权限与角色发布规范.md` 和 `docs/spec/addp OAuth授权规范.md` 为准；System 数据与协议实现以 `system/docs/IAM数据模型与迁移规范.md` 和 `system/docs/OAuth与Fosite实现说明.md` 为准。当前实现已切换为 Principal、Tenant Membership、Role/Permission、Token Family 和 `addp.auth_context/v1`，不得恢复旧账号分级或平行认证路径。
 
 ## 项目概述
 
@@ -222,11 +222,11 @@ frontend/src/
 
 **system.tenants 表**:
 - 租户信息
-- 字段: `id`, `name`, `description`, `is_active`, `created_at`
+- 字段: `id`, `code`, `name`, `description`, `status`, `created_at`, `updated_at`
 
 **system.audit_logs 表**:
 - IAM、OAuth 和通用操作审计的唯一追加式事实表
-- 目标字段使用 `principal_id`, `principal_type`, `context_type`, `tenant_id`, `event_name`, `result`, `risk_level`, `details`, `created_at` 等
+- 当前字段使用 `principal_id`, `principal_type`, `context_type`, `tenant_id`, `event_name`, `result`, `risk_level`, `details`, `created_at` 等
 - 身份、授权、Token 撤销和 OAuth 状态转换必须与权威事实同事务写入；普通运行时路径不得 UPDATE / DELETE / TRUNCATE
 
 **system.engines 表**:
@@ -277,7 +277,7 @@ frontend/src/
    - 在 `internal/api/router.go` 注册路由（注意路由前缀为 `/api/v1/system/`）
 
 2. **数据库迁移**:
-   - IAM 表以 `docs/next/addp-IAM目标数据模型设计.md` 和 `docs/next/addp-IAM PostgreSQL迁移与首批DDL设计.md` 为准，必须使用显式版本化 SQL，不得加入 `AutoMigrate`。
+   - IAM 表以 `system/docs/IAM数据模型与迁移规范.md` 为准，必须使用显式版本化 SQL，不得加入 `AutoMigrate`。
    - 非 IAM 表当前仍使用 `AutoMigrate`，后续迁移方案另行设计；不得借此改写 IAM 表或旧账号/OAuth 数据。
    - 迁移 runner 成功后才允许执行非 IAM 初始化，不能在启动过程中用表存在性或默认数据兜底。
 
@@ -295,7 +295,7 @@ frontend/src/
 
 ### 密码安全
 
-1. **用户密码加密** (system.users.password_hash)
+1. **用户密码 Hash** (`system.local_accounts.password_hash`)
    - 算法: **bcrypt** (cost factor 10)
    - 不可逆哈希,自动加盐
    - 验证: `CheckPassword(plaintext, hash)`
@@ -387,6 +387,12 @@ Engine Runtime Descriptor 不包含 `connection_info`。只有工作流或脚本
 - `GET /api/v1/system/admin/cleanup/tasks/:task_id` - 获取资源回收任务状态
 - `POST /api/v1/system/admin/cleanup/execute` - 创建资源回收执行任务
 - `GET /api/v1/system/admin/cleanup/history` - 获取资源回收任务历史
+
+### 前端公开路由
+
+- IAM 使用 `/iam?tab=...` 恢复当前权限上下文下可用的稳定 Tab；默认 Tab 省略，无权限或无效 Tab 规范化为默认值。
+- 引擎详情唯一使用 `/engines/:id`，详情稳定子视图使用 `tab=connection|capabilities`，默认基础信息省略。
+- 审计入口使用 IAM 的 `platform-audit` 或 `tenant-audit` Tab，并支持 `module_name`、`entity_type`、`entity_id` 稳定筛选；资源回收不再跳转不存在的 `Logs` route。
 
 ### 待迁移内部 API（受限遗留面）
 

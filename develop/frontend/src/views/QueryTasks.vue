@@ -18,7 +18,7 @@
       </div>
 
       <div class="toolbar-right">
-        <el-button type="primary" @click="$router.push('/sql-editor')">
+        <el-button type="primary" @click="handleCreate">
           <el-icon><Plus /></el-icon>
           {{ t('develop.queryTasks.newTask') }}
         </el-button>
@@ -165,16 +165,6 @@
       </div>
     </div>
 
-    <SaveQueryDialog
-      v-if="showEditDialog"
-      v-model="showEditDialog"
-      :dialog-title="t('develop.queryTasks.editDialogTitle')"
-      :initial-value="editingTask"
-      :engine-id="getEngineID(editingTask)"
-      :query-mode="getQueryMode(editingTask)"
-      :sql="editingTask?.content?.query || editingTask?.content?.sql || ''"
-      @saved="handleUpdateTask"
-    />
   </div>
 </template>
 
@@ -191,9 +181,9 @@ import {
   Delete
 } from '@element-plus/icons-vue'
 import { openMonitorExecution } from '@addp/common-frontend'
-import SaveQueryDialog from '../components/SaveQueryDialog.vue'
-import { listQueryTasks, deleteQueryTask, updateQueryTask } from '../api/query.js'
+import { listQueryTasks, deleteQueryTask } from '../api/query.js'
 import { executeDevTask } from '../api/devTask.js'
+import { navigateDevelopTaskEditor } from '@/utils/developNavigation'
 import dayjs from 'dayjs'
 
 const router = useRouter()
@@ -207,9 +197,6 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 const searchKeyword = ref('')
 const filterStatus = ref('')
-
-const showEditDialog = ref(false)
-const editingTask = ref(null)
 
 const statusMap = computed(() => ({
   active: t('develop.queryTasks.statusActive'),
@@ -278,24 +265,8 @@ const handleExecute = async (task) => {
   }
 }
 
-// 编辑任务
-const handleEdit = (task) => {
-  editingTask.value = task
-  showEditDialog.value = true
-}
-
-// 更新任务
-const handleUpdateTask = async (taskData) => {
-  try {
-    await updateQueryTask(editingTask.value.id, taskData)
-    ElMessage.success(t('develop.queryTasks.updateSuccess'))
-    showEditDialog.value = false
-    loadTasks()
-  } catch (error) {
-    console.error('更新任务失败:', error)
-    ElMessage.error(t('develop.queryTasks.updateFailed') + (error.response?.data?.error || error.message))
-  }
-}
+const handleCreate = () => navigateDevelopTaskEditor(router, 'query')
+const handleEdit = (task) => navigateDevelopTaskEditor(router, 'query', task.id)
 
 // 删除任务
 const handleDelete = async (task) => {

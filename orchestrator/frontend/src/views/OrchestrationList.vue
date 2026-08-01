@@ -56,6 +56,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import orchestrationAPI from '../api/orchestration'
 import { describeCron } from '@common-ui'
+import { navigateOrchestratorRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -79,11 +80,11 @@ async function loadOrchestrations() {
 }
 
 function handleCreate() {
-  router.push('/orchestrations/new')
+  navigateOrchestratorRoute(router, '/orchestrations/new')
 }
 
 function handleEdit(row) {
-  router.push(`/orchestrations/${row.id}/edit`)
+  navigateOrchestratorRoute(router, `/orchestrations/${row.id}/edit`)
 }
 
 async function handleExecute(row) {
@@ -112,7 +113,7 @@ async function handleExecute(row) {
 }
 
 function handleViewExecutions(row) {
-  router.push(`/orchestrations/${row.id}/executions`)
+  navigateOrchestratorRoute(router, `/orchestrations/${row.id}/executions`)
 }
 
 async function handleDelete(row) {

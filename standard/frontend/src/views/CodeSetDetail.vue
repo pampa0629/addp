@@ -3,7 +3,7 @@
     <!-- 顶部操作栏 -->
     <div class="detail-header">
       <div class="header-left">
-        <el-button text @click="$router.back()">
+        <el-button text @click="goBack">
           <el-icon><ArrowLeft /></el-icon>
           {{ $t('standard.common.back') }}
         </el-button>
@@ -133,9 +133,11 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Plus } from '@element-plus/icons-vue'
 import { codeSetAPI } from '../api/standard'
+import { navigateStandardRoute } from '@/utils/moduleNavigation'
 
 const route = useRoute()
 const router = useRouter()
+const goBack = () => navigateStandardRoute(router, '/code-sets', { history: 'replace' })
 const { t } = useI18n()
 const codeSetId = parseInt(route.params.id)
 

@@ -199,6 +199,7 @@
 <script>
 import registeredServiceAPI from '@/api/registeredService'
 import { copyToClipboard as copyTextToClipboard } from '../utils/serviceHelper'
+import { navigateServiceRoute } from '@/utils/moduleNavigation'
 
 export default {
   name: 'RegisteredServiceDetail',
@@ -336,11 +337,11 @@ export default {
     },
 
     goBack() {
-      this.$router.push('/registered-services')
+      navigateServiceRoute(this.$router, '/registered-services', { history: 'replace' })
     },
 
     goToEdit() {
-      this.$router.push(`/registered-services/${this.service.id}/edit`)
+      navigateServiceRoute(this.$router, `/registered-services/${this.service.id}/edit`)
     }
   }
 }

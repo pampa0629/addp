@@ -13,6 +13,7 @@
     "chat": {
       "newSession": "New Chat",
       "noSessions": "No conversations",
+      "sessionUnavailable": "This conversation does not exist or is not accessible",
       "welcome": "Hello! I'm the ADDP AI Assistant.",
       "inputPlaceholder": "Type a message, Ctrl+Enter to send...",
       "send": "Send",

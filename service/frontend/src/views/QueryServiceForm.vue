@@ -356,6 +356,7 @@ import {
   isQueryableTableNode,
   isQueryableTableVisibleNode
 } from '@/utils/resourceSelection'
+import { navigateServiceRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -697,7 +698,7 @@ const handleSubmit = async () => {
       ElMessage.success(t('service.query.createSuccess'))
     }
 
-    router.push('/query-services')
+    await navigateServiceRoute(router, '/query-services', { history: 'replace' })
   } catch (error) {
     ElMessage.error(t('service.query.submitFailed') + ': ' + (error.message || t('service.common.unknownError')))
     console.error('Failed to submit:', error)
@@ -708,7 +709,7 @@ const handleSubmit = async () => {
 
 // 方法：返回列表
 const goBack = () => {
-  router.push('/query-services')
+  navigateServiceRoute(router, '/query-services', { history: 'replace' })
 }
 
 // 生命周期：加载编辑数据

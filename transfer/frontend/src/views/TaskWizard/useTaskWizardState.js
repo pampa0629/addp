@@ -9,6 +9,7 @@ import { ElMessage } from 'element-plus'
 import { formatLocatorDisplayPath } from '@addp/common-frontend'
 import { taskAPI } from '@/api/tasks'
 import { parseTransferLocator } from '@/utils/resourceLocator'
+import { hasAtomicPartitionedTableChangeApply, hasIdempotentTableUpsert } from '@/utils/transferDisplay'
 import {
   buildContinuousSourceEndpoint,
   buildDatabaseCDCSourceEndpoint,
@@ -20,6 +21,11 @@ import {
   isKafkaTopicSource,
 	normalizeContinuousKeyFields
 } from './continuousTask.mjs'
+import {
+  decimalFactsFromSourceField,
+  mysqlDecimalMappingsValid,
+  withSourceDecimalFacts
+} from './decimalMapping.mjs'
 
 export function useTaskWizardState() {
   const { t } = useI18n()
@@ -58,6 +64,7 @@ export function useTaskWizardState() {
   const targetConfig = ref({})
   const targetEngineID = ref(null)
   const targetEngineType = ref('')
+  const targetEngineCapabilities = ref(null)
   const targetSchema = ref('')
   const targetTable = ref('')
   const targetType = ref('nfs')
@@ -85,7 +92,7 @@ export function useTaskWizardState() {
     return isPostgresqlEngineType(sourceEngineType.value) &&
       sourceRepresentation.value === 'native' &&
       sourceDataType.value === 'table' &&
-      isPostgresqlEngineType(targetEngineType.value) &&
+      hasIdempotentTableUpsert({ capabilities: targetEngineCapabilities.value }) &&
       targetRepresentation.value === 'native' &&
       !isRawCopyTask.value
   })
@@ -114,7 +121,10 @@ export function useTaskWizardState() {
 
   const supportsContinuousTarget = computed(() => {
     return isContinuousTask.value &&
-      isPostgresqlEngineType(targetEngineType.value) &&
+		hasAtomicPartitionedTableChangeApply(
+			{ capabilities: targetEngineCapabilities.value },
+			isDatabaseCDCTask.value ? ['upsert', 'delete'] : ['upsert']
+		) &&
       targetRepresentation.value === 'native'
   })
 
@@ -171,7 +181,13 @@ export function useTaskWizardState() {
         )
       case 2: // 字段映射
         if (isRawCopyTask.value) return true
-        return fieldMappings.value.length > 0 || sourceFields.value.length === 0
+        return (fieldMappings.value.length > 0 || sourceFields.value.length === 0) &&
+          mysqlDecimalMappingsValid(
+            fieldMappings.value,
+            sourceFields.value,
+            targetEngineType.value,
+            targetRepresentation.value
+          )
       case 3: // 配置
         return taskName.value.trim() !== '' &&
           (!isContinuousTask.value || continuousConfigValid.value) &&
@@ -261,6 +277,10 @@ export function useTaskWizardState() {
         const source = String(mapping.source_field || '').trim()
         if (source) field.source = source
         if (mapping.target_type) field.target_type = mapping.target_type
+        if (mapping.target_type === 'decimal' && Number.isInteger(mapping.precision) && Number.isInteger(mapping.scale)) {
+          field.precision = mapping.precision
+          field.scale = mapping.scale
+        }
         if (mapping.default_value !== undefined && mapping.default_value !== null && String(mapping.default_value).trim() !== '') {
           field.default = mapping.default_value
         }
@@ -593,6 +613,11 @@ export function useTaskWizardState() {
     }
     if (fieldMappings.value.length === 0) {
       autoGenerateFieldMappings()
+    } else {
+      fieldMappings.value = fieldMappings.value.map(mapping => withSourceDecimalFacts(
+        mapping,
+        sourceFields.value.find(field => sameFieldName(field?.name, mapping?.source_field))
+      ))
     }
   }
 
@@ -646,6 +671,7 @@ export function useTaskWizardState() {
     const extra = config.extra || {}
     targetEngineID.value = config.engineID
     targetEngineType.value = config.engineType || ''
+    targetEngineCapabilities.value = config.capabilities || null
     targetSchema.value = config.schema || extra.schema || ''
     targetTable.value = config.table || extra.table || ''
     targetType.value = config.targetType || 'nfs'
@@ -659,6 +685,7 @@ export function useTaskWizardState() {
   function clearTarget() {
     targetEngineID.value = null
     targetEngineType.value = ''
+    targetEngineCapabilities.value = null
     targetSchema.value = ''
     targetTable.value = ''
     targetType.value = 'nfs'
@@ -680,6 +707,7 @@ export function useTaskWizardState() {
       source_field: field.name,
       target_field: field.name, // 默认同名映射
       target_type: field.type || 'string',
+		...decimalFactsFromSourceField(field),
       format: '',
       default_value: '',
 		nullable: field.nullable !== false
@@ -688,8 +716,10 @@ export function useTaskWizardState() {
 
   function updateFieldMapping(index, mapping) {
     const previousTarget = String(fieldMappings.value[index]?.target_field || '').trim()
-    fieldMappings.value[index] = mapping
-    const nextTarget = String(mapping?.target_field || '').trim()
+    const sourceField = sourceFields.value.find(field => sameFieldName(field?.name, mapping?.source_field))
+    const nextMapping = withSourceDecimalFacts(mapping, sourceField)
+    fieldMappings.value[index] = nextMapping
+    const nextTarget = String(nextMapping?.target_field || '').trim()
     if (previousTarget && targetKeys.value.some(key => sameFieldName(key, previousTarget))) {
       targetKeys.value = normalizedFieldNames(
         targetKeys.value.map(key => sameFieldName(key, previousTarget) ? nextTarget : key)
@@ -817,6 +847,8 @@ export function useTaskWizardState() {
         source_field: field.source || '',
         target_field: field.target || '',
         target_type: field.target_type || 'string',
+        precision: Number.isInteger(field.precision) ? field.precision : undefined,
+        scale: Number.isInteger(field.scale) ? field.scale : undefined,
         format: field.format || '',
         default_value: field.default ?? '',
         nullable: field.nullable !== false
@@ -1145,6 +1177,7 @@ export function useTaskWizardState() {
     sourceConfig.value = {}
     targetEngineID.value = null
     targetEngineType.value = ''
+    targetEngineCapabilities.value = null
     targetSchema.value = ''
     targetTable.value = ''
     targetType.value = 'nfs'
@@ -1189,6 +1222,7 @@ export function useTaskWizardState() {
     targetConfig,
     targetEngineID,
     targetEngineType,
+    targetEngineCapabilities,
     targetSchema,
     targetTable,
     targetType,

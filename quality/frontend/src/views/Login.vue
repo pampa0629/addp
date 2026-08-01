@@ -85,7 +85,7 @@ const handleLogin = async () => {
     try {
       await authStore.login(loginForm.username, loginForm.password)
       ElMessage.success(t('quality.login.success'))
-      const redirect = route.query.redirect || '/quality/check-tasks'
+      const redirect = route.query.redirect || '/check-tasks'
       router.push(redirect)
     } catch (error) {
       ElMessage.error(error.message || t('quality.login.failed'))

@@ -45,7 +45,7 @@
                 <el-button
                   link
                   type="primary"
-                  @click="$router.push(`/modeling/logical-tables/${selectedTable.id}`)"
+                  @click="openLogicalTable(selectedTable.id)"
                 >
                   {{ t('model.star_schema.view_detail') }}
                 </el-button>
@@ -96,7 +96,7 @@
                       link
                       type="primary"
                       size="small"
-                      @click="$router.push(`/modeling/logical-tables/${rel.target_table}`)"
+                      @click="openLogicalTable(rel.target_table)"
                     >
                       {{ t('model.star_schema.detail') }}
                     </el-button>
@@ -212,14 +212,16 @@
 
 <script setup>
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import mermaid from 'mermaid'
 import { logicalTableAPI, standardMetricAPI } from '../api/model'
 import { useI18n } from 'vue-i18n'
+import { navigateModelRoute } from '../utils/moduleNavigation'
 
 const { t } = useI18n()
 
+const route = useRoute()
 const router = useRouter()
 
 const loadingTables = ref(false)
@@ -227,6 +229,7 @@ const loadingRelated = ref(false)
 const loadingMetrics = ref(false)
 
 const factTables = ref([])
+const factTablesReady = ref(false)
 const selectedTableId = ref(null)
 const selectedTable = ref(null)
 const tableFields = ref([])
@@ -324,6 +327,7 @@ const loadFactTables = async () => {
     factTables.value = res.data || []
   } finally {
     loadingTables.value = false
+    factTablesReady.value = true
   }
 }
 
@@ -334,7 +338,21 @@ const loadAllDimensionTables = async () => {
   } catch {}
 }
 
-const selectTable = async (t) => {
+let selectionVersion = 0
+
+const clearSelection = () => {
+  selectionVersion += 1
+  selectedTableId.value = null
+  selectedTable.value = null
+  tableFields.value = []
+  dimensionRelations.value = []
+  factMetrics.value = []
+  loadingRelated.value = false
+  loadingMetrics.value = false
+}
+
+const loadSelectedTable = async (t) => {
+  const requestVersion = ++selectionVersion
   selectedTableId.value = t.id
   selectedTable.value = t
   tableFields.value = []
@@ -349,16 +367,58 @@ const selectTable = async (t) => {
       logicalTableAPI.listDimensionRelations(t.id),
       logicalTableAPI.listMetrics(t.id),
     ])
+    if (requestVersion !== selectionVersion) return
     tableFields.value = fieldsRes || []
     dimensionRelations.value = relationsRes || []
     factMetrics.value = metricsRes || []
   } finally {
-    loadingRelated.value = false
-    loadingMetrics.value = false
+    if (requestVersion === selectionVersion) {
+      loadingRelated.value = false
+      loadingMetrics.value = false
+    }
   }
 
+  if (requestVersion !== selectionVersion) return
   await nextTick()
   renderMermaid()
+}
+
+const selectTable = async (table) => {
+  const tableId = String(table.id)
+  if (route.query.table_id === tableId) {
+    if (selectedTableId.value !== table.id) await loadSelectedTable(table)
+    return
+  }
+  await navigateModelRoute(router, {
+    path: '/star-schema',
+    query: { table_id: tableId }
+  }, { history: 'replace' })
+}
+
+const syncSelectedTableFromRoute = async () => {
+  if (!factTablesReady.value) return
+
+  const tableId = route.query.table_id
+  if (tableId === undefined) {
+    clearSelection()
+    return
+  }
+
+  const table = typeof tableId === 'string'
+    ? factTables.value.find(item => String(item.id) === tableId)
+    : null
+
+  if (!table) {
+    clearSelection()
+    await navigateModelRoute(router, '/star-schema', { history: 'replace' })
+    return
+  }
+
+  if (selectedTableId.value !== table.id) await loadSelectedTable(table)
+}
+
+const openLogicalTable = (tableId) => {
+  navigateModelRoute(router, `/logical-tables/${tableId}`)
 }
 
 const openAddDimDialog = () => {
@@ -436,9 +496,12 @@ watch(mermaidCode, async () => {
   renderMermaid()
 })
 
+watch(() => route.query.table_id, syncSelectedTableFromRoute)
+
 onMounted(async () => {
   mermaid.initialize({ startOnLoad: false, theme: 'default' })
-  loadFactTables()
+  await loadFactTables()
+  await syncSelectedTableFromRoute()
   loadAllDimensionTables()
   try {
     const res = await standardMetricAPI.list({ page_size: 500 })

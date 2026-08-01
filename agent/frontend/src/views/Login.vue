@@ -28,13 +28,15 @@
 
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ChatDotRound } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
+import { navigateAgentRoute } from '../utils/moduleNavigation'
 
 const { t } = useI18n()
+const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 
@@ -49,7 +51,12 @@ async function handleLogin() {
   loading.value = true
   try {
     await authStore.login(form.value.username, form.value.password)
-    router.push('/agent')
+    const redirect = typeof route.query.redirect === 'string' &&
+      route.query.redirect.startsWith('/') &&
+      !route.query.redirect.startsWith('//')
+      ? route.query.redirect
+      : null
+    await navigateAgentRoute(router, redirect || { name: 'Chat' })
   } catch (e) {
     ElMessage.error(e?.response?.data?.message || t('agent.login.failed'))
   } finally {

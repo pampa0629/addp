@@ -231,15 +231,6 @@ type VectorMaterializedViewTaskResponse struct {
 	UpdatedAt           time.Time                                   `json:"updated_at"`
 }
 
-type RasterCOGTaskRequest struct {
-	Name        string               `json:"name"`
-	Description string               `json:"description,omitempty"`
-	Enabled     *bool                `json:"enabled,omitempty"`
-	Schedule    string               `json:"schedule,omitempty"`
-	NextRunAt   *time.Time           `json:"next_run_at,omitempty"`
-	Config      commonModels.JSONMap `json:"config"`
-}
-
 type RasterCOGTaskTargetResponse struct {
 	ItemID          uint   `json:"item_id,omitempty"`
 	ItemFingerprint string `json:"item_fingerprint,omitempty"`
@@ -331,15 +322,6 @@ type RasterMosaicTaskResponse struct {
 	Placement           *RasterMosaicTaskPlacementResponse `json:"placement,omitempty"`
 	CreatedAt           time.Time                          `json:"created_at"`
 	UpdatedAt           time.Time                          `json:"updated_at"`
-}
-
-type Model3DTilesTaskRequest struct {
-	Name        string               `json:"name"`
-	Description string               `json:"description,omitempty"`
-	Enabled     *bool                `json:"enabled,omitempty"`
-	Schedule    string               `json:"schedule,omitempty"`
-	NextRunAt   *time.Time           `json:"next_run_at,omitempty"`
-	Config      commonModels.JSONMap `json:"config"`
 }
 
 type Model3DTilesTaskSourceResponse struct {
@@ -2043,46 +2025,6 @@ func (h *TaskProviderHandler) ListRasterCOGTasks(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": items, "total": total, "page": page, "page_size": pageSize})
 }
 
-// CreateRasterCOGTask POST /api/v1/manager/raster_cog_tasks
-// @Summary 创建栅格快显 COG 任务配置 | Create raster COG generation task configuration
-// @Tags Manager
-// @Accept json
-// @Produce json
-// @Param body body RasterCOGTaskRequest true "raster COG generation task configuration"
-// @Success 201 {object} RasterCOGTaskResponse "创建的任务配置 | Created task configuration"
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["manager.derived_artifact.create"]
-// @Router /raster_cog_tasks [post]
-// @Security BearerAuth
-func (h *TaskProviderHandler) CreateRasterCOGTask(c *gin.Context) {
-	tenantID := tenantIDValue(c)
-	userID := userIDValue(c)
-	req, err := decodeRasterCOGTaskRequest(c)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	enabled := true
-	if req.Enabled != nil {
-		enabled = *req.Enabled
-	}
-	task := models.RasterCOGTask{
-		TenantID:    tenantID,
-		Name:        strings.TrimSpace(req.Name),
-		Description: strings.TrimSpace(req.Description),
-		Enabled:     enabled,
-		Schedule:    strings.TrimSpace(req.Schedule),
-		NextRunAt:   req.NextRunAt,
-		Config:      req.Config,
-		CreatedBy:   &userID,
-	}
-	if err := h.rasterCOGTaskSvc.Create(c.Request.Context(), &task); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusCreated, rasterCOGTaskResponse(&task))
-}
-
 // GetRasterCOGTask GET /api/v1/manager/raster_cog_tasks/:id
 // @Summary 获取栅格快显 COG 任务配置 | Get raster COG generation task configuration
 // @Tags Manager
@@ -2096,54 +2038,6 @@ func (h *TaskProviderHandler) CreateRasterCOGTask(c *gin.Context) {
 func (h *TaskProviderHandler) GetRasterCOGTask(c *gin.Context) {
 	c.Params = append(c.Params, gin.Param{Key: "task_type", Value: commonExecution.TaskTypeRasterCOGGeneration})
 	h.TaskDetail(c)
-}
-
-// UpdateRasterCOGTask PUT /api/v1/manager/raster_cog_tasks/:id
-// @Summary 更新栅格快显 COG 任务配置 | Update raster COG generation task configuration
-// @Tags Manager
-// @Accept json
-// @Produce json
-// @Param id path int true "任务ID | Task ID"
-// @Param body body RasterCOGTaskRequest true "raster COG generation task configuration"
-// @Success 200 {object} RasterCOGTaskResponse "更新后的任务配置 | Updated task configuration"
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["manager.derived_artifact.update"]
-// @Router /raster_cog_tasks/{id} [put]
-// @Security BearerAuth
-func (h *TaskProviderHandler) UpdateRasterCOGTask(c *gin.Context) {
-	tenantID := tenantIDValue(c)
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
-		return
-	}
-	existing, err := h.rasterCOGTaskSvc.GetByID(c.Request.Context(), uint(id), tenantID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if existing == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
-		return
-	}
-	req, err := decodeRasterCOGTaskRequest(c)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	existing.Name = strings.TrimSpace(req.Name)
-	existing.Description = strings.TrimSpace(req.Description)
-	if req.Enabled != nil {
-		existing.Enabled = *req.Enabled
-	}
-	existing.Schedule = strings.TrimSpace(req.Schedule)
-	existing.NextRunAt = req.NextRunAt
-	existing.Config = req.Config
-	if err := h.rasterCOGTaskSvc.Update(c.Request.Context(), existing); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, rasterCOGTaskResponse(existing))
 }
 
 // DeleteRasterCOGTask DELETE /api/v1/manager/raster_cog_tasks/:id
@@ -2361,48 +2255,6 @@ func (h *TaskProviderHandler) ListModel3DTilesTasks(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": items, "total": total, "page": page, "page_size": pageSize})
 }
 
-// CreateModel3DTilesTask POST /api/v1/manager/model3d_tiles_tasks
-// @Summary 创建三维模型 3D Tiles 任务配置 | Create model 3D Tiles generation task configuration
-// @Description 创建或复用分块三维模型瓦片任务。同一 tenant_id、item_fingerprint 和 target_format 返回同一任务 ID；结果写入 Manager infra MinIO。| Create or reuse a model3d tiles task. The same tenant_id, item_fingerprint, and target_format return the same task ID; results are stored in Manager infra MinIO.
-// @Tags Manager
-// @Accept json
-// @Produce json
-// @Param body body Model3DTilesTaskRequest true "model 3D Tiles generation task configuration"
-// @Success 201 {object} Model3DTilesTaskResponse "创建的任务配置 | Created task configuration"
-// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["manager.derived_artifact.create"]
-// @Router /model3d_tiles_tasks [post]
-// @Security BearerAuth
-func (h *TaskProviderHandler) CreateModel3DTilesTask(c *gin.Context) {
-	tenantID := tenantIDValue(c)
-	userID := userIDValue(c)
-	req, err := decodeModel3DTilesTaskRequest(c)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	enabled := true
-	if req.Enabled != nil {
-		enabled = *req.Enabled
-	}
-	task := models.Model3DTilesTask{
-		TenantID:    tenantID,
-		Name:        strings.TrimSpace(req.Name),
-		Description: strings.TrimSpace(req.Description),
-		Enabled:     enabled,
-		Schedule:    strings.TrimSpace(req.Schedule),
-		NextRunAt:   req.NextRunAt,
-		Config:      req.Config,
-		CreatedBy:   &userID,
-	}
-	if err := h.model3DTilesTaskSvc.Create(c.Request.Context(), &task); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusCreated, model3DTilesTaskResponse(&task))
-}
-
 // GetModel3DTilesTask GET /api/v1/manager/model3d_tiles_tasks/:id
 // @Summary 获取三维模型 3D Tiles 任务配置 | Get model 3D Tiles generation task configuration
 // @Tags Manager
@@ -2418,56 +2270,6 @@ func (h *TaskProviderHandler) CreateModel3DTilesTask(c *gin.Context) {
 func (h *TaskProviderHandler) GetModel3DTilesTask(c *gin.Context) {
 	c.Params = append(c.Params, gin.Param{Key: "task_type", Value: commonExecution.TaskTypeModel3DTilesGeneration})
 	h.TaskDetail(c)
-}
-
-// UpdateModel3DTilesTask PUT /api/v1/manager/model3d_tiles_tasks/:id
-// @Summary 更新三维模型 3D Tiles 任务配置 | Update model 3D Tiles generation task configuration
-// @Tags Manager
-// @Accept json
-// @Produce json
-// @Param id path int true "任务ID | Task ID"
-// @Param body body Model3DTilesTaskRequest true "model 3D Tiles generation task configuration"
-// @Success 200 {object} Model3DTilesTaskResponse "更新后的任务配置 | Updated task configuration"
-// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["manager.derived_artifact.update"]
-// @Router /model3d_tiles_tasks/{id} [put]
-// @Security BearerAuth
-func (h *TaskProviderHandler) UpdateModel3DTilesTask(c *gin.Context) {
-	tenantID := tenantIDValue(c)
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
-		return
-	}
-	existing, err := h.model3DTilesTaskSvc.GetByID(c.Request.Context(), uint(id), tenantID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if existing == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
-		return
-	}
-	req, err := decodeModel3DTilesTaskRequest(c)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	existing.Name = strings.TrimSpace(req.Name)
-	existing.Description = strings.TrimSpace(req.Description)
-	if req.Enabled != nil {
-		existing.Enabled = *req.Enabled
-	}
-	existing.Schedule = strings.TrimSpace(req.Schedule)
-	existing.NextRunAt = req.NextRunAt
-	existing.Config = req.Config
-	if err := h.model3DTilesTaskSvc.Update(c.Request.Context(), existing); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, model3DTilesTaskResponse(existing))
 }
 
 // DeleteModel3DTilesTask DELETE /api/v1/manager/model3d_tiles_tasks/:id
@@ -3647,40 +3449,8 @@ func decodeVectorMaterializedViewTaskRequest(c *gin.Context) (VectorMaterialized
 	return req, nil
 }
 
-func decodeRasterCOGTaskRequest(c *gin.Context) (RasterCOGTaskRequest, error) {
-	var req RasterCOGTaskRequest
-	decoder := json.NewDecoder(c.Request.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&req); err != nil {
-		return req, err
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return req, errors.New("request body must contain a single JSON object")
-	}
-	if req.Config == nil {
-		req.Config = commonModels.JSONMap{}
-	}
-	return req, nil
-}
-
 func decodeRasterMosaicTaskRequest(c *gin.Context) (RasterMosaicTaskRequest, error) {
 	var req RasterMosaicTaskRequest
-	decoder := json.NewDecoder(c.Request.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&req); err != nil {
-		return req, err
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return req, errors.New("request body must contain a single JSON object")
-	}
-	if req.Config == nil {
-		req.Config = commonModels.JSONMap{}
-	}
-	return req, nil
-}
-
-func decodeModel3DTilesTaskRequest(c *gin.Context) (Model3DTilesTaskRequest, error) {
-	var req Model3DTilesTaskRequest
 	decoder := json.NewDecoder(c.Request.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&req); err != nil {

@@ -87,6 +87,7 @@
 
 <script>
 import publishedServiceAPI from '@/api/publishedService'
+import { navigateServiceRoute } from '@/utils/moduleNavigation'
 
 export default {
   name: 'PublishedServiceList',
@@ -154,19 +155,19 @@ export default {
     },
 
     goToCreate() {
-      this.$router.push('/published-services/create')
+      navigateServiceRoute(this.$router, '/published-services/create')
     },
 
     goToDetail(id) {
-      this.$router.push(`/published-services/${id}`)
+      navigateServiceRoute(this.$router, `/published-services/${id}`)
     },
 
     goToEdit(id) {
-      this.$router.push(`/published-services/${id}/edit`)
+      navigateServiceRoute(this.$router, `/published-services/${id}/edit`)
     },
 
     goToTest(id) {
-      this.$router.push(`/published-services/${id}/test`)
+      navigateServiceRoute(this.$router, `/published-services/${id}/test`)
     },
 
     previousPage() {

@@ -197,19 +197,33 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { formatDate } from '@common-ui'
+import { formatDate, resolveCanonicalTabRouteState } from '@common-ui'
 import { applicationAPI, ratingAPI } from '../api/asset'
+import { navigateAssetRoute } from '../utils/moduleNavigation'
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
 
 // ===== Tab =====
-const activeTab = ref('applications')
+const APPLICATION_TABS = ['applications', 'feedbacks']
+const resolveRouteState = routeQuery => resolveCanonicalTabRouteState({
+  allowedTabs: APPLICATION_TABS,
+  defaultTab: 'applications',
+  routeQuery
+})
+const activeTab = ref(resolveRouteState(route.query).tab)
 
-function handleTabChange(tab) {
-  if (tab === 'feedbacks') fetchFeedbacks()
+async function handleTabChange(tab) {
+  const routeState = resolveRouteState({ tab })
+  const location = { path: route.path, query: routeState.query }
+  if (router.resolve(location).fullPath !== route.fullPath) {
+    await navigateAssetRoute(router, location, { history: 'replace' })
+  }
 }
 
 // ===== 申请与授权 =====
@@ -406,7 +420,23 @@ async function toggleHandled(row) {
   }
 }
 
-onMounted(() => {
+async function restoreTabFromRoute() {
+  const routeState = resolveRouteState(route.query)
+  activeTab.value = routeState.tab
+  if (routeState.changed) {
+    await navigateAssetRoute(router, {
+      path: route.path,
+      query: routeState.query
+    }, { history: 'replace' })
+    return
+  }
+  if (routeState.tab === 'feedbacks') await fetchFeedbacks()
+}
+
+watch(() => route.query, restoreTabFromRoute)
+
+onMounted(async () => {
+  await restoreTabFromRoute()
   fetchApplications()
   fetchUnhandledCount()
 })

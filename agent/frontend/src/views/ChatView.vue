@@ -36,7 +36,12 @@
 
     <main class="chat-main">
       <div ref="messagesAreaRef" class="messages-area">
-        <div v-if="messages.length === 0 && !liveMessage" class="empty-hint">
+        <el-empty
+          v-if="sessionUnavailable"
+          class="empty-hint"
+          :description="t('agent.chat.sessionUnavailable')"
+        />
+        <div v-else-if="messages.length === 0 && !liveMessage" class="empty-hint">
           <el-icon size="48"><ChatDotRound /></el-icon>
           <p>{{ t('agent.chat.welcome') }}</p>
           <div class="quick-actions">
@@ -123,22 +128,29 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ChatDotRound, CircleClose, Delete, Loading, Plus, Position, RefreshRight } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
+import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { resolveTaskOwnerUrl } from '@common-ui'
 
 import { createAgentClient, replayAgentRunEvents } from '../agent/createAgentClient'
 import { runAPI, sessionAPI } from '../api/index'
 import MessagePartsRenderer from '../components/MessagePartsRenderer.vue'
 import { useAuthStore } from '../store/auth'
+import { navigateAgentRoute } from '../utils/moduleNavigation'
+import { routeAfterSessionDeletion, resolveAgentSessionRouteState } from '../utils/routeState'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
+const route = useRoute()
+const router = useRouter()
 
 const sessions = ref([])
 const currentSessionId = ref(null)
+const sessionUnavailable = ref(false)
+const sessionsLoaded = ref(false)
 const messages = ref([])
 const inputText = ref('')
 const isLoading = ref(false)
@@ -168,7 +180,10 @@ async function createSession() {
   try {
     const session = await sessionAPI.create({ title: null })
     sessions.value.unshift(session)
-    await switchSession(session.id)
+    await navigateAgentRoute(router, {
+      name: 'ChatSession',
+      params: { session_id: String(session.id) }
+    })
     return session.id
   } catch (error) {
     ElMessage.error(t('agent.chat.createFailed'))
@@ -176,25 +191,64 @@ async function createSession() {
   }
 }
 
-async function switchSession(sessionId) {
+async function loadSessionMessages(sessionId) {
   if (isLoading.value) return
-  currentSessionId.value = sessionId
+  currentSessionId.value = String(sessionId)
+  sessionUnavailable.value = false
   try {
     messages.value = await sessionAPI.getMessages(sessionId) || []
     scrollToBottom()
   } catch (error) {
+    messages.value = []
+    sessionUnavailable.value = true
     console.error('Failed to load messages', error)
   }
+}
+
+async function switchSession(sessionId) {
+  if (isLoading.value || String(sessionId) === currentSessionId.value) return
+  await navigateAgentRoute(router, {
+    name: 'ChatSession',
+    params: { session_id: String(sessionId) }
+  })
+}
+
+async function restoreRouteSession(sessionId) {
+  if (!sessionsLoaded.value) return
+
+  const routeState = resolveAgentSessionRouteState(sessions.value, sessionId)
+  if (routeState.kind === 'redirect') {
+    currentSessionId.value = null
+    sessionUnavailable.value = false
+    messages.value = []
+    await navigateAgentRoute(router, routeState.location, { history: 'replace' })
+    return
+  }
+
+  if (routeState.kind === 'empty') {
+    currentSessionId.value = null
+    sessionUnavailable.value = false
+    messages.value = []
+    return
+  }
+
+  if (routeState.kind === 'unavailable') {
+    currentSessionId.value = routeState.sessionId
+    messages.value = []
+    sessionUnavailable.value = true
+    return
+  }
+
+  await loadSessionMessages(routeState.sessionId)
 }
 
 async function deleteSession(sessionId) {
   if (isLoading.value) return
   try {
     await sessionAPI.delete(sessionId)
-    sessions.value = sessions.value.filter(session => session.id !== sessionId)
-    if (currentSessionId.value === sessionId) {
-      currentSessionId.value = null
-      messages.value = []
+    sessions.value = sessions.value.filter(session => String(session.id) !== String(sessionId))
+    if (currentSessionId.value === String(sessionId)) {
+      await navigateAgentRoute(router, routeAfterSessionDeletion(sessions.value), { history: 'replace' })
     }
   } catch (error) {
     ElMessage.error(t('agent.chat.deleteFailed'))
@@ -350,7 +404,7 @@ async function runAgent({ userMessage = null, resume = null } = {}) {
     isLoading.value = false
     isCancelling.value = false
     activeRunId.value = null
-    await Promise.all([loadSessions(), switchSession(currentSessionId.value)])
+    await Promise.all([loadSessions(), loadSessionMessages(currentSessionId.value)])
   }
 }
 
@@ -386,7 +440,7 @@ async function retryFailedRun() {
     liveTools.value = []
     isLoading.value = false
     activeRunId.value = null
-    await Promise.all([loadSessions(), switchSession(currentSessionId.value)])
+    await Promise.all([loadSessions(), loadSessionMessages(currentSessionId.value)])
   }
 }
 
@@ -447,7 +501,19 @@ function scrollToBottom() {
 
 onMounted(async () => {
   await loadSessions()
-  if (sessions.value.length > 0) await switchSession(sessions.value[0].id)
+  sessionsLoaded.value = true
+  await restoreRouteSession(route.params.session_id)
+})
+
+watch(() => route.params.session_id, sessionId => {
+  restoreRouteSession(sessionId)
+})
+
+onBeforeRouteUpdate((to, from) => {
+  if (isLoading.value && String(to.params.session_id || '') !== String(from.params.session_id || '')) {
+    return false
+  }
+  return true
 })
 </script>
 

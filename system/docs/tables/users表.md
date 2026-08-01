@@ -43,5 +43,5 @@
 ## 相关文档
 
 - [System 数据库架构](../数据库架构.md)
-- [ADDP IAM 目标数据模型设计](../../../docs/next/addp-IAM目标数据模型设计.md)
+- [System IAM 数据模型与迁移规范](../IAM数据模型与迁移规范.md)
 - [ADDP 授权上下文规范](../../../docs/spec/addp授权上下文规范.md)

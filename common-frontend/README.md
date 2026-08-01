@@ -60,16 +60,28 @@ await openMonitorExecution(execution.execution_id)
 
 该工具在 Console iframe 中会请求父级切换到 `/monitor/executions?execution_id=...`；模块独立运行时会回退为在新窗口打开 Console 路由。业务模块不要自行硬编码 Console 端口或拼接跨模块 iframe URL。
 
-模块内需要进入另一个 Console 页面时使用 `openConsoleRoute()`。iframe 内的模块已经完成同页 query 导航、只需要同步浏览器地址栏时使用 `syncConsoleRoute()`：
+模块内公开导航使用 `navigateConsoleModuleRoute()`；跨模块或需要由 Console 加载目标页面时使用 `openConsoleRoute()`。只有页面已经自行完成受控状态切换、只需要同步地址栏时，才直接使用底层 `syncConsoleRoute()`：
 
 ```js
-import { openConsoleRoute, syncConsoleRoute } from '@addp/common-frontend'
+import {
+  navigateConsoleModuleRoute,
+  openConsoleRoute,
+  syncConsoleRoute
+} from '@addp/common-frontend'
 
+await navigateConsoleModuleRoute(router, 'develop', {
+  path: '/workflow',
+  query: { action: 'edit', id: '544' }
+})
 await openConsoleRoute('/manager/spatial-quick-view/vector-tile-cache?create=1')
 await syncConsoleRoute('/manager/data-explorer?locator=...', { history: 'replace' })
 ```
 
-`openConsoleRoute()` 默认新增浏览器历史并由 Console 加载目标页面；`syncConsoleRoute()` 只允许当前 iframe 同步自身模块路由，支持 `push` / `replace`，且不得重载已经完成导航的 iframe。模块独立运行时由模块自身 Router 处理本地路由，`syncConsoleRoute()` 不建立第二套 Console 历史。
+`navigateConsoleModuleRoute()` 默认使用 `push`。在 iframe 中，它用模块 Router 的 `replace` 完成无刷新切换，再由 Console 写入唯一公开历史；standalone 模式直接使用模块 Router 的同名历史操作。创建成功写入 ID、Tab 切换或参数规范化时显式传 `{ history: 'replace' }`。
+
+`openConsoleRoute()` 默认新增浏览器历史并由 Console 加载目标页面；`syncConsoleRoute()` 只允许当前 iframe 同步自身模块路由，支持 `push` / `replace`，且不得重载已经完成导航的 iframe。完整约束见 [`docs/spec/addp前端路由与可恢复状态规范.md`](../docs/spec/addp前端路由与可恢复状态规范.md)。
+
+多个页面共享的稳定 Tab 使用 `resolveCanonicalTabRouteState()` 解析。业务模块负责提供允许值、默认值，以及已经按 owner 事实验证过的伴随 query；该函数统一省略默认 Tab、删除未知参数，并返回是否需要 `replace` 到 canonical URL。
 
 ### 导入类型定义
 

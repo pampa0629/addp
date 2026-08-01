@@ -2,7 +2,7 @@
   <div class="published-service-test" v-loading="loading">
     <div class="page-header">
       <h2>{{ t('service.published.testTitle') }} - {{ service?.title }}</h2>
-      <el-button @click="$router.back()">{{ t('service.common.back') }}</el-button>
+      <el-button @click="goBack">{{ t('service.common.back') }}</el-button>
     </div>
 
     <el-row :gutter="20">
@@ -182,14 +182,17 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
 import publishedServiceAPI from "../api/publishedService"
+import { navigateServiceRoute } from '@/utils/moduleNavigation'
 
 const route = useRoute()
+const router = useRouter()
 const { t } = useI18n()
+const goBack = () => navigateServiceRoute(router, `/published-services/${route.params.id}`, { history: 'replace' })
 
 const service = ref(null)
 const loading = ref(true)

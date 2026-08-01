@@ -6,6 +6,7 @@ import (
 	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/kafka"
+	"github.com/addp/common/engine/plugins/mysql"
 	"github.com/addp/common/engine/plugins/postgresql"
 )
 
@@ -38,6 +39,26 @@ func TestBuildContinuousPlanRequiresKafkaAndAtomicMonotonicPostgres(t *testing.T
 	}
 	if len(plan.Target.Fields) != 2 || plan.Target.Fields[0].Type != "int" || len(plan.Target.Keys) != 1 || plan.Target.Keys[0] != "id" {
 		t.Fatalf("continuous target plan = %#v", plan.Target)
+	}
+}
+
+func TestBuildContinuousPlanAcceptsMySQLAtomicTarget(t *testing.T) {
+	spec, err := ParseContinuousTaskSpec(validContinuousConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec.Target.ParentLocator = "addp://engine/8/path/business?type=database"
+	sourceCaps := (&kafka.KafkaPlugin{}).Capabilities()
+	targetCaps := (&mysql.MySQLPlugin{}).Capabilities()
+	plan, err := BuildContinuousPlan(spec, StaticEngineResolver{
+		30: {Type: "kafka", Capabilities: &sourceCaps},
+		8:  {Type: "mysql", Capabilities: &targetCaps},
+	})
+	if err != nil {
+		t.Fatalf("BuildContinuousPlan() error = %v", err)
+	}
+	if plan.TargetType != "mysql" || plan.Target.Path.StringPath() != "business/orders" {
+		t.Fatalf("MySQL continuous target plan = %#v", plan)
 	}
 }
 
@@ -156,6 +177,44 @@ func TestBuildDatabaseCDCContinuousPlanRoutesMySQLEnvelope(t *testing.T) {
 	}
 	if plan.Envelope != ContinuousEnvelopeMySQLDebezium || plan.CDC.Provider != "mysql" || plan.CDC.Schema != "" {
 		t.Fatalf("MySQL CDC plan = %#v", plan)
+	}
+}
+
+func TestBuildDatabaseCDCContinuousPlanAcceptsMySQLTarget(t *testing.T) {
+	config := validPostgreSQLCDCConfig()
+	config["target"].(map[string]interface{})["parent_locator"] = "addp://engine/20/path/business?type=database"
+	spec, err := ParseDatabaseCDCTaskSpec(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetCaps := (&mysql.MySQLPlugin{}).Capabilities()
+	plan, err := BuildDatabaseCDCContinuousPlan(spec, StaticEngineResolver{
+		12: {Type: "postgresql", ConnInfo: engineplugin.ConnectionInfo{"database": "business"}},
+		20: {Type: "mysql", Capabilities: &targetCaps},
+	}, DatabaseCDCStreamBinding{
+		Provider: "postgresql", ConnInfo: engineplugin.ConnectionInfo{"bootstrap_servers": "infra"},
+		ConsumerGroup: "group", SourceIdentity: "addp://engine/12/path/public/orders?type=table",
+		Database: "business", Schema: "public", Table: "orders",
+	}, 100)
+	if err != nil {
+		t.Fatalf("BuildDatabaseCDCContinuousPlan() error = %v", err)
+	}
+	if plan.TargetType != "mysql" || plan.Target.Path.StringPath() != "business/orders_cdc" {
+		t.Fatalf("MySQL database CDC target plan = %#v", plan)
+	}
+}
+
+func TestBuildContinuousFieldsPreservesDecimalPrecisionAndScale(t *testing.T) {
+	precision, scale := 20, 10
+	mappings, fields, err := buildDatabaseCDCFields([]FieldMappingSpec{{
+		Source: "amount", Target: "amount", TargetType: "decimal", Precision: &precision, Scale: &scale, Nullable: boolPtr(false),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mappings) != 1 || mappings[0].Precision != 20 || mappings[0].Scale != 10 ||
+		len(fields) != 1 || fields[0].Precision != 20 || fields[0].Scale != 10 {
+		t.Fatalf("decimal mappings=%#v fields=%#v", mappings, fields)
 	}
 }
 

@@ -14,35 +14,35 @@ const routes = [
   {
     path: '/',
     component: Layout,
-    redirect: '/quality/check-tasks',
+    redirect: '/check-tasks',
     meta: { requiresAuth: true },
     children: [
       {
-        path: 'quality/rule-applications',
+        path: 'rule-applications',
         name: 'RuleApplicationList',
         component: () => import('../views/RuleApplicationList.vue'),
         meta: { requiresAuth: true, title: '规则应用配置' }
       },
       {
-        path: 'quality/check-tasks',
+        path: 'check-tasks',
         name: 'CheckTaskList',
         component: () => import('../views/CheckTaskList.vue'),
         meta: { requiresAuth: true, title: '检查任务' }
       },
       {
-        path: 'quality/executions',
+        path: 'executions',
         name: 'ExecutionList',
         component: () => import('../views/ExecutionList.vue'),
         meta: { requiresAuth: true, title: '执行记录' }
       },
       {
-        path: 'quality/executions/:id',
+        path: 'executions/:execution_id',
         name: 'ExecutionDetail',
         component: () => import('../views/ExecutionDetail.vue'),
         meta: { requiresAuth: true, title: '执行详情' }
       },
       {
-        path: 'quality/issues',
+        path: 'issues',
         name: 'IssueList',
         component: () => import('../views/IssueList.vue'),
         meta: { requiresAuth: true, title: '问题工单' }

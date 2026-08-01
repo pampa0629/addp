@@ -110,6 +110,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import serviceAPI from '../api/service'
+import { navigateServiceRoute } from '@/utils/moduleNavigation'
 
 const router = useRouter()
 const route = useRoute()
@@ -260,7 +261,7 @@ const handleSubmit = async () => {
 }
 
 const handleBack = () => {
-  router.push('/services')
+  navigateServiceRoute(router, '/services', { history: 'replace' })
 }
 
 onMounted(() => {

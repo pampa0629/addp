@@ -48,6 +48,9 @@ bash scripts/dev/start.sh -agent
 
 # 重启 Agent 后端
 bash scripts/dev/restart.sh -agent
+
+# 前端测试与构建
+cd agent/frontend && npm test && npm run build
 ```
 
 ## API 接口
@@ -160,6 +163,12 @@ python evals/agent-scenarios/gate.py --output /tmp/addp-agent-evaluation-gate.js
 - A2UI Vue Renderer 位于 `common-frontend/agent-ui`。
 - 平台级 Skill 唯一目录为仓库根目录 `skills/`，Agent 从 `agents/addp.yaml` 装配 Tool Manifest 中的稳定 Tool。
 - Agent Tool Provider 是 `common-python` `ToolExecutor` 的 LangChain 薄 Adapter，不直接调用模块 API Client。
+
+## 前端公开路由
+
+- 模块内聊天首页为 `/`，会话为 `/sessions/:session_id`；Console 公开 URL 分别为 `/agent`、`/agent/sessions/:session_id`。
+- 当前会话由 path 参数唯一驱动。点击和创建会话使用 `push`，首次自动选择与删除当前会话后的重定向使用 `replace`。
+- `/agent` 旧模块内前缀不再接受；无效或无权访问的会话 ID 保留错误上下文，不得静默切换到其他会话。
 
 ## 配置项
 

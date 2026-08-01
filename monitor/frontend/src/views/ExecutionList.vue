@@ -366,7 +366,7 @@
 
 <script setup>
 import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Link } from '@element-plus/icons-vue'
@@ -382,11 +382,14 @@ import {
   hasContinuousExecutionMetadata,
   resolveTaskTypeDisplayName
 } from '@common-ui'
-import { listExecutions, getExecutionTree, getExecutionTreeByExecutionID, listTaskProviders } from '@/api/monitor'
+import { listExecutions, getExecutionTreeByExecutionID, listTaskProviders } from '@/api/monitor'
 import ExecutionTable from '@/components/ExecutionTable.vue'
+import { executionDetailLocation } from '@/utils/executionNavigation'
+import { navigateMonitorRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 const route = useRoute()
+const router = useRouter()
 
 // 过滤条件
 const filters = ref({
@@ -775,13 +778,9 @@ function handleSizeChange(size) {
 
 // 查看执行详情
 async function handleViewExecution(row) {
-  try {
-    const data = await getExecutionTree(row.id)
-    openExecutionTree(data)
-  } catch (error) {
-    ElMessage.error(t('monitor.execution.detail_failed'))
-    console.error(error)
-  }
+  const location = executionDetailLocation(row)
+  if (!location) return
+  await navigateMonitorRoute(router, location)
 }
 
 async function openExecutionByExecutionID(executionID) {
@@ -974,7 +973,14 @@ onBeforeUnmount(stopAutoRefresh)
 watch(
   () => route.query.execution_id,
   executionID => {
-    openExecutionByExecutionID(executionID)
+    if (hasValue(firstQueryValue(executionID))) {
+      openExecutionByExecutionID(executionID)
+      return
+    }
+    executionTreeData.value = []
+    currentExecution.value = null
+    openedExecutionID.value = ''
+    detailDialogVisible.value = false
   }
 )
 
@@ -995,10 +1001,14 @@ watch(hasRunningExecution, running => {
   }
 })
 
-watch(detailDialogVisible, visible => {
-  if (!visible) {
-    openedExecutionID.value = ''
-  }
+watch(detailDialogVisible, async visible => {
+  if (visible) return
+  openedExecutionID.value = ''
+  if (!hasValue(firstQueryValue(route.query.execution_id))) return
+  await navigateMonitorRoute(router, {
+    path: '/executions',
+    query: { ...route.query, execution_id: undefined }
+  }, { history: 'replace' })
 })
 </script>
 

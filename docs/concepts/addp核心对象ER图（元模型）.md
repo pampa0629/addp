@@ -5,7 +5,7 @@
 
 Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段设计问题。
 
-> IAM 的目标概念以 [ADDP 账号与权限体系](addp账号与权限体系图.md) 为准。本文不再展示旧 `user_type` 和 User 单 Tenant 表结构；User、Tenant Membership、External Identity、Department、Project Group、Role 等具体字段与关系将在下一阶段数据模型设计后补入。
+> IAM 概念以 [ADDP 账号与权限体系](addp账号与权限体系图.md) 为准。本文不展示旧 `user_type` 和 User 单 Tenant 表结构；IAM 具体字段、关系与迁移边界见 [System IAM 数据模型与迁移规范](../../system/docs/IAM数据模型与迁移规范.md)。
 
 ---
 
@@ -216,7 +216,7 @@ Service 模块有三个相互独立的子系统：
 
 ### 2.1 系统非 IAM 核心对象图（System 模块）
 
-> 本图只保留当前不依赖 IAM 目标数据模型的 System 对象。IAM 实体字段和数据库关系待专项数据模型确认后一次性加入。
+> 本图只展示跨模块元模型需要的 System 对象。IAM 实体字段和数据库关系由 [System IAM 数据模型与迁移规范](../../system/docs/IAM数据模型与迁移规范.md) 及实际 migration 维护，避免在两份关系图中重复定义。
 
 ```mermaid
 erDiagram

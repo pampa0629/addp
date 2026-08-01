@@ -1,6 +1,6 @@
 <template>
   <div class="alert-list">
-    <el-tabs v-model="activeView" class="alert-tabs">
+    <el-tabs v-model="activeView" class="alert-tabs" @tab-change="handleTabChange">
       <el-tab-pane :label="t('monitor.alert.incident_tab')" name="incidents">
         <el-card>
       <template #header><span class="page-title">{{ t('monitor.alert.title') }}</span></template>
@@ -65,16 +65,20 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { acknowledgeAlert, listAlerts, suppressAlert } from '@/api/monitor'
 import AlertRuleList from './AlertRuleList.vue'
+import { navigateMonitorRoute } from '@/utils/moduleNavigation'
+import { resolveMonitorTabRouteState } from '@/utils/tabRouteState'
 
 const { t } = useI18n()
 const router = useRouter()
-const activeView = ref('incidents')
+const route = useRoute()
+const resolveRouteState = routeQuery => resolveMonitorTabRouteState(routeQuery, ['incidents', 'rules'], 'incidents')
+const activeView = ref(resolveRouteState(route.query).tab)
 const loading = ref(false)
 const alerts = ref([])
 const filters = reactive({ status: '', severity: '' })
@@ -101,7 +105,21 @@ function signalText(code) {
   return translated === key ? code : translated
 }
 function formatDate(value) { return value ? new Date(value).toLocaleString() : '-' }
-function openExecution(row) { router.push({ path: '/executions', query: { execution_id: row.execution_id } }) }
+function openExecution(row) { navigateMonitorRoute(router, { path: '/executions', query: { execution_id: row.execution_id } }) }
+async function handleTabChange(tab) {
+  const routeState = resolveRouteState({ tab })
+  const location = { path: route.path, query: routeState.query }
+  if (router.resolve(location).fullPath !== route.fullPath) {
+    await navigateMonitorRoute(router, location, { history: 'replace' })
+  }
+}
+async function restoreTabFromRoute() {
+  const routeState = resolveRouteState(route.query)
+  activeView.value = routeState.tab
+  if (routeState.changed) {
+    await navigateMonitorRoute(router, { path: route.path, query: routeState.query }, { history: 'replace' })
+  }
+}
 async function acknowledge(row) {
   await acknowledgeAlert(row.id)
   ElMessage.success(t('monitor.alert.acknowledged'))
@@ -113,8 +131,13 @@ async function suppress(row) {
   ElMessage.success(t('monitor.alert.suppressed'))
   await loadAlerts()
 }
-onMounted(() => { loadAlerts(); timer = window.setInterval(loadAlerts, 15000) })
+onMounted(async () => {
+  await restoreTabFromRoute()
+  await loadAlerts()
+  timer = window.setInterval(loadAlerts, 15000)
+})
 onBeforeUnmount(() => { if (timer) window.clearInterval(timer) })
+watch(() => route.query, restoreTabFromRoute)
 </script>
 
 <style scoped>

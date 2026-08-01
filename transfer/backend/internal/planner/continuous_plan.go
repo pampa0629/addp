@@ -10,11 +10,13 @@ import (
 )
 
 type ContinuousFieldPlan struct {
-	Source   string
-	Target   string
-	Type     datatype.FieldType
-	Nullable bool
-	Default  interface{}
+	Source    string
+	Target    string
+	Type      datatype.FieldType
+	Precision int
+	Scale     int
+	Nullable  bool
+	Default   interface{}
 }
 
 const (
@@ -97,8 +99,8 @@ func BuildContinuousPlan(spec ContinuousTaskSpec, resolver EngineResolver) (*Con
 	}
 	sourceType := strings.ToLower(strings.TrimSpace(effectiveEngineType(source, sourceRef)))
 	targetType := strings.ToLower(strings.TrimSpace(effectiveEngineType(target, targetRef)))
-	if sourceType != "kafka" || targetType != "postgresql" {
-		return nil, fmt.Errorf("continuous v1 only supports Kafka -> PostgreSQL, got %s -> %s", sourceType, targetType)
+	if sourceType != "kafka" {
+		return nil, fmt.Errorf("continuous v1 requires Kafka source, got %q", sourceType)
 	}
 	if !declaresChangeStreamRead(source) {
 		return nil, fmt.Errorf("source Kafka engine does not declare partitioned seekable change_stream_read")
@@ -108,7 +110,7 @@ func BuildContinuousPlan(spec ContinuousTaskSpec, resolver EngineResolver) (*Con
 		requiredOperations = append(requiredOperations, engineplugin.TableChangeOperationSkip)
 	}
 	if !declaresPartitionedMonotonicApply(target, requiredOperations...) {
-		return nil, fmt.Errorf("target PostgreSQL engine does not declare atomic monotonic partitioned_table_change_apply")
+		return nil, fmt.Errorf("target engine %q does not declare atomic monotonic partitioned_table_change_apply", targetType)
 	}
 	sourcePlugin, err := engineplugin.Get(sourceType)
 	if err != nil {
@@ -170,7 +172,7 @@ func BuildDatabaseCDCContinuousPlan(spec DatabaseCDCTaskSpec, resolver EngineRes
 		return nil, fmt.Errorf("database CDC stream provider does not match source engine")
 	}
 	if !declaresPartitionedMonotonicApply(bindings.Target, engineplugin.TableChangeOperationUpsert, engineplugin.TableChangeOperationDelete) {
-		return nil, fmt.Errorf("target PostgreSQL engine does not declare atomic monotonic upsert/delete partitioned_table_change_apply")
+		return nil, fmt.Errorf("target engine %q does not declare atomic monotonic upsert/delete partitioned_table_change_apply", bindings.TargetType)
 	}
 	sourceLocator, _ := spec.Source.ResourceLocator()
 	if stream.SourceIdentity != strings.TrimSpace(spec.Source.Locator) || stream.Table != sourceLocator.Path[1] {
@@ -223,7 +225,7 @@ func BuildDatabaseCDCContinuousPlan(spec DatabaseCDCTaskSpec, resolver EngineRes
 			PollBatchSize: pollBatchSize,
 		},
 		Target:   ContinuousTargetPlan{ConnInfo: bindings.Target.ConnInfo, Path: targetPath, Fields: fields, SpatialInfo: targetSpatialInfo, Keys: targetKeys},
-		Mappings: mappings, SourceKeys: sourceKeys, SourceType: "kafka", TargetType: "postgresql",
+		Mappings: mappings, SourceKeys: sourceKeys, SourceType: "kafka", TargetType: bindings.TargetType,
 		Envelope: envelope, RecordFailureMode: RecordFailureModeBlock,
 		CDC: &DatabaseCDCSourcePlan{Provider: bindings.SourceType, Database: stream.Database, Schema: stream.Schema, Table: stream.Table, SpatialInfo: stream.SpatialInfo.Clone()},
 	}, nil
@@ -346,10 +348,17 @@ func buildContinuousFieldsWithTypeSupport(specs []FieldMappingSpec, supported fu
 		if strings.TrimSpace(spec.Format) != "" {
 			return nil, nil, fmt.Errorf("continuous field %q does not support format conversion", target)
 		}
+		if err := validateFieldMappingDecimalSpec(spec); err != nil {
+			return nil, nil, fmt.Errorf("continuous field %q: %w", target, err)
+		}
+		precision, scale := 0, 0
+		if spec.Precision != nil {
+			precision, scale = *spec.Precision, *spec.Scale
+		}
 		mappings = append(mappings, ContinuousFieldPlan{
-			Source: source, Target: target, Type: fieldType, Nullable: *spec.Nullable, Default: spec.Default,
+			Source: source, Target: target, Type: fieldType, Precision: precision, Scale: scale, Nullable: *spec.Nullable, Default: spec.Default,
 		})
-		fields = append(fields, datatype.FieldInfo{Name: target, Type: fieldType, Nullable: *spec.Nullable})
+		fields = append(fields, datatype.FieldInfo{Name: target, Type: fieldType, Precision: precision, Scale: scale, Nullable: *spec.Nullable})
 	}
 	return mappings, fields, nil
 }

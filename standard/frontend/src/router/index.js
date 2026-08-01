@@ -14,89 +14,89 @@ const routes = [
   {
     path: '/',
     component: Layout,
-    redirect: '/standard/domains',
+    redirect: '/domains',
     meta: { requiresAuth: true },
     children: [
       {
-        path: 'standard/domains',
+        path: 'domains',
         name: 'DomainList',
         component: () => import('../views/DomainList.vue'),
         meta: { requiresAuth: true, title: '业务域管理' }
       },
       {
-        path: 'standard/glossaries',
+        path: 'glossaries',
         name: 'GlossaryList',
         component: () => import('../views/GlossaryList.vue'),
         meta: { requiresAuth: true, title: '业务术语词典' }
       },
       {
-        path: 'standard/glossaries/:id',
+        path: 'glossaries/:id',
         name: 'GlossaryDetail',
         component: () => import('../views/GlossaryDetail.vue'),
         meta: { requiresAuth: true, title: '业务术语详情' }
       },
       {
-        path: 'standard/elements',
+        path: 'elements',
         name: 'ElementList',
         component: () => import('../views/ElementList.vue'),
         meta: { requiresAuth: true, title: '数据元管理' }
       },
       {
-        path: 'standard/elements/:id',
+        path: 'elements/:id',
         name: 'ElementDetail',
         component: () => import('../views/ElementDetail.vue'),
         meta: { requiresAuth: true, title: '数据元详情' }
       },
       {
-        path: 'standard/code-sets',
+        path: 'code-sets',
         name: 'CodeSetList',
         component: () => import('../views/CodeSetList.vue'),
         meta: { requiresAuth: true, title: '码值集管理' }
       },
       {
-        path: 'standard/code-sets/:id',
+        path: 'code-sets/:id',
         name: 'CodeSetDetail',
         component: () => import('../views/CodeSetDetail.vue'),
         meta: { requiresAuth: true, title: '码值集详情' }
       },
       {
-        path: 'standard/units',
+        path: 'units',
         name: 'UnitList',
         component: () => import('../views/UnitList.vue'),
         meta: { requiresAuth: true, title: '计量单位' }
       },
       {
-        path: 'standard/classifications',
+        path: 'classifications',
         name: 'ClassificationList',
         component: () => import('../views/ClassificationList.vue'),
         meta: { requiresAuth: true, title: '数据分类与分级' }
       },
       {
-        path: 'standard/metrics',
+        path: 'metrics',
         name: 'MetricList',
         component: () => import('../views/MetricList.vue'),
         meta: { requiresAuth: true, title: '指标管理' }
       },
       {
-        path: 'standard/metrics/:id',
+        path: 'metrics/:id',
         name: 'MetricDetail',
         component: () => import('../views/MetricDetail.vue'),
         meta: { requiresAuth: true, title: '指标详情' }
       },
       {
-        path: 'standard/documents',
+        path: 'documents',
         name: 'DocumentList',
         component: () => import('../views/DocumentList.vue'),
         meta: { requiresAuth: true, title: '全局文档库' }
       },
       {
-        path: 'standard/dimension-hierarchies',
+        path: 'dimension-hierarchies',
         name: 'DimensionHierarchyList',
         component: () => import('../views/DimensionHierarchyList.vue'),
         meta: { requiresAuth: true, title: '维度层级' }
       },
       {
-        path: 'standard/dimension-hierarchies/:id',
+        path: 'dimension-hierarchies/:id',
         name: 'DimensionHierarchyDetail',
         component: () => import('../views/DimensionHierarchyDetail.vue'),
         meta: { requiresAuth: true, title: '维度层级详情' }

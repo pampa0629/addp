@@ -88,6 +88,9 @@ openssl rand -base64 32
 ## 📚 相关文档
 
 - **[CLAUDE.md](./CLAUDE.md)** - 完整技术文档（架构、开发指南、API 详解）
+- **[IAM 数据模型与迁移规范](./docs/IAM数据模型与迁移规范.md)** - IAM PostgreSQL 模型、事务和迁移边界
+- **[OAuth 与 Fosite 实现说明](./docs/OAuth与Fosite实现说明.md)** - OAuth 协议引擎、Provider 和 Storage 边界
+- **[权限与角色发布规范](../docs/spec/addp权限与角色发布规范.md)** - Permission、Role、Manifest 和发布门禁
 - **[../docs/spec/addp技术栈规约.md](../docs/spec/addp技术栈规约.md)** - 技术栈和依赖版本
 - **[../docs/spec/addp配置介绍.md](../docs/spec/addp配置介绍.md)** - 配置中心说明
 

@@ -1,7 +1,7 @@
 <template>
   <div class="page-container">
     <div class="page-header">
-      <el-button link @click="$router.push('/ontologies')">
+      <el-button link @click="returnToList">
         <el-icon><ArrowLeft /></el-icon> {{ t('graph.common.back') }}
       </el-button>
       <h2>{{ isEdit ? t('graph.ontology.edit') : t('graph.ontology.create') }}</h2>
@@ -25,7 +25,7 @@
           <el-button type="primary" :loading="saving" @click="handleSubmit">
             {{ saving ? t('graph.common.saving') : t('graph.common.save') }}
           </el-button>
-          <el-button @click="$router.back()">{{ t('graph.common.cancel') }}</el-button>
+          <el-button @click="returnToList">{{ t('graph.common.cancel') }}</el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -39,6 +39,7 @@ import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { ontologyAPI } from '../api/ontology'
 import { useI18n } from 'vue-i18n'
+import { navigateGraphRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -50,6 +51,7 @@ const form = ref({ name: '', description: '', status: 'active' })
 const rules = computed(() => ({
   name: [{ required: true, message: t('graph.ontology.nameRequired'), trigger: 'blur' }]
 }))
+const returnToList = () => navigateGraphRoute(router, '/ontologies', { history: 'replace' })
 
 onMounted(async () => {
   if (isEdit.value) {
@@ -70,11 +72,11 @@ const handleSubmit = async () => {
     if (isEdit.value) {
       await ontologyAPI.update(route.params.id, form.value)
       ElMessage.success(t('graph.common.updateSuccess'))
-      router.push(`/ontologies/${route.params.id}`)
+      await navigateGraphRoute(router, `/ontologies/${route.params.id}`, { history: 'replace' })
     } else {
       const res = await ontologyAPI.create(form.value)
       ElMessage.success(t('graph.common.createSuccess'))
-      router.push(`/ontologies/${res.id}`)
+      await navigateGraphRoute(router, `/ontologies/${res.id}`, { history: 'replace' })
     }
   } catch (e) {
     ElMessage.error(e.response?.data?.error || t('graph.common.saveFailed'))

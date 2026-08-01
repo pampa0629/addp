@@ -24,7 +24,7 @@
       </el-table-column>
       <el-table-column :label="t('quality.execution.actions')" width="100">
         <template #default="{ row }">
-          <el-button size="small" @click="$router.push(`/quality/executions/${row.execution_id}`)">{{ t('quality.execution.detail') }}</el-button>
+          <el-button size="small" @click="openExecution(row.execution_id)">{{ t('quality.execution.detail') }}</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -35,8 +35,11 @@
 import { ref, onMounted } from 'vue'
 import { executionAPI } from '../api/quality'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
+import { navigateQualityRoute } from '../utils/moduleNavigation'
 
 const { t } = useI18n()
+const router = useRouter()
 
 const list = ref([])
 const loading = ref(false)
@@ -44,6 +47,10 @@ const loading = ref(false)
 const statusType = (status) => {
   const map = { success: 'success', failed: 'danger', running: 'warning', pending: 'info' }
   return map[status] || 'info'
+}
+
+const openExecution = (executionId) => {
+  navigateQualityRoute(router, `/executions/${executionId}`)
 }
 
 const fetchList = async () => {

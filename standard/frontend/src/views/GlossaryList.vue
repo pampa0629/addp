@@ -137,6 +137,7 @@ import { Plus, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { domainAPI, glossaryAPI } from '../api/standard'
+import { navigateStandardRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 
@@ -231,7 +232,7 @@ const openCreateDialog = () => {
 }
 
 const goToDetail = (row) => {
-  router.push(`/standard/glossaries/${row.id}`)
+  navigateStandardRoute(router, `/glossaries/${row.id}`)
 }
 
 const openEditDialog = (row) => {

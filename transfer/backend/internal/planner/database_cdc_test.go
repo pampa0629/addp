@@ -1,6 +1,11 @@
 package planner
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/addp/common/engine/plugins/mysql"
+	"github.com/addp/common/engine/plugins/postgresql"
+)
 
 func TestParseDatabaseCDCTaskSpecAcceptsFrozenV1Contract(t *testing.T) {
 	spec, err := ParseDatabaseCDCTaskSpec(validPostgreSQLCDCConfig())
@@ -48,15 +53,36 @@ func TestDatabaseCDCProviderComesFromResolvedSourceEngine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	targetCaps := (&postgresql.PostgreSQLPlugin{}).Capabilities()
 	bindings, err := ResolveDatabaseCDCBindings(spec, StaticEngineResolver{
 		12: {Type: "mysql", EngineID: 12},
-		20: {Type: "postgresql", EngineID: 20},
+		20: {Type: "postgresql", EngineID: 20, Capabilities: &targetCaps},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if bindings.SourceType != "mysql" {
 		t.Fatalf("source type = %q, want mysql", bindings.SourceType)
+	}
+}
+
+func TestResolveDatabaseCDCBindingsAcceptsMySQLAtomicTarget(t *testing.T) {
+	config := validPostgreSQLCDCConfig()
+	config["target"].(map[string]interface{})["parent_locator"] = "addp://engine/20/path/business?type=database"
+	spec, err := ParseDatabaseCDCTaskSpec(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetCaps := (&mysql.MySQLPlugin{}).Capabilities()
+	bindings, err := ResolveDatabaseCDCBindings(spec, StaticEngineResolver{
+		12: {Type: "postgresql", EngineID: 12},
+		20: {Type: "mysql", EngineID: 20, Capabilities: &targetCaps},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bindings.TargetType != "mysql" {
+		t.Fatalf("target type = %q, want mysql", bindings.TargetType)
 	}
 }
 

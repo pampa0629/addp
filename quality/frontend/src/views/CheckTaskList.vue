@@ -2,7 +2,7 @@
   <div>
     <div class="page-header">
       <h2>{{ t('quality.checkTask.title') }}</h2>
-      <el-button type="primary" :icon="Plus" @click="showCreateDialog = true">{{ t('quality.checkTask.createTask') }}</el-button>
+      <el-button type="primary" :icon="Plus" @click="requestCreateDialog">{{ t('quality.checkTask.createTask') }}</el-button>
     </div>
 
     <el-table :data="tasks" v-loading="loading" border>
@@ -21,14 +21,14 @@
       </el-table-column>
       <el-table-column :label="t('quality.checkTask.actions')" width="260">
         <template #default="{ row }">
-          <el-button size="small" @click="editTask(row)">{{ t('quality.checkTask.edit') }}</el-button>
+          <el-button size="small" @click="requestEditTask(row)">{{ t('quality.checkTask.edit') }}</el-button>
           <el-button size="small" type="primary" @click="runTask(row.id)">{{ t('quality.checkTask.run') }}</el-button>
           <el-button size="small" @click="deleteTask(row.id)" type="danger">{{ t('quality.checkTask.delete') }}</el-button>
         </template>
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="showCreateDialog" :title="dialogTitle" width="500px">
+    <el-dialog v-model="showCreateDialog" :title="dialogTitle" width="500px" @closed="clearTaskDialogRoute">
       <el-form :model="form" label-width="100px">
         <el-form-item :label="t('quality.checkTask.name')"><el-input v-model="form.name" /></el-form-item>
         <el-form-item :label="t('quality.checkTask.description')"><el-input v-model="form.description" type="textarea" /></el-form-item>
@@ -49,20 +49,24 @@
 
 <script setup>
 import { computed, ref, onMounted, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { checkTaskAPI } from '../api/quality'
+import { navigateQualityRoute } from '../utils/moduleNavigation'
+import { resolveCheckTaskRouteState } from '../utils/checkTaskRouteState'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
 const route = useRoute()
+const router = useRouter()
 
 const tasks = ref([])
 const loading = ref(false)
 const showCreateDialog = ref(false)
 const editingTaskID = ref(null)
-const openedRouteTaskID = ref('')
+let routeDataReady = false
+let routeRestoreSequence = 0
 const defaultForm = () => ({ name: '', description: '', engine_id: 1, schema_name: '', table_name: '', enabled: true })
 const form = ref(defaultForm())
 const isEditing = computed(() => editingTaskID.value !== null)
@@ -73,7 +77,6 @@ const fetchTasks = async () => {
   try {
     const res = await checkTaskAPI.list()
     tasks.value = res || []
-    openTaskFromRoute()
   } finally {
     loading.value = false
   }
@@ -98,13 +101,29 @@ const editTask = (task) => {
   showCreateDialog.value = true
 }
 
-const openTaskFromRoute = () => {
-  const taskID = String(route.query.task_id || '').trim()
-  if (!taskID || openedRouteTaskID.value === taskID) return
-  const task = tasks.value.find(item => String(item.id) === taskID)
-  if (!task) return
-  openedRouteTaskID.value = taskID
-  editTask(task)
+const requestCreateDialog = async () => {
+  const routeState = resolveCheckTaskRouteState({ create: '1' })
+  await navigateQualityRoute(router, {
+    path: route.path,
+    query: routeState.query
+  }, { history: 'push' })
+}
+
+const requestEditTask = async (task) => {
+  const routeState = resolveCheckTaskRouteState({ task_id: task.id })
+  await navigateQualityRoute(router, {
+    path: route.path,
+    query: routeState.query
+  }, { history: 'push' })
+}
+
+const clearTaskDialogRoute = async () => {
+  if (resolveCheckTaskRouteState(route.query).mode === 'list') return
+  const routeState = resolveCheckTaskRouteState({})
+  const location = { path: route.path, query: routeState.query }
+  if (router.resolve(location).fullPath !== route.fullPath) {
+    await navigateQualityRoute(router, location, { history: 'replace' })
+  }
 }
 
 const saveTask = async () => {
@@ -143,10 +162,47 @@ const deleteTask = async (id) => {
   await fetchTasks()
 }
 
-onMounted(fetchTasks)
+async function restoreTaskFromRoute() {
+  const restoreSequence = ++routeRestoreSequence
+  const routeState = resolveCheckTaskRouteState(route.query)
+  if (routeState.changed) {
+    await navigateQualityRoute(router, {
+      path: route.path,
+      query: routeState.query
+    }, { history: 'replace' })
+    return
+  }
+  if (!routeDataReady) return
 
-watch(() => route.query.task_id, () => {
-  openTaskFromRoute()
+  if (routeState.mode === 'edit') {
+    try {
+      const task = await checkTaskAPI.get(routeState.taskID)
+      if (restoreSequence !== routeRestoreSequence) return
+      editTask(task)
+    } catch (error) {
+      if (restoreSequence !== routeRestoreSequence) return
+      showCreateDialog.value = false
+      ElMessage.error(error.response?.data?.error || t('quality.checkTask.updateFailed'))
+      await clearTaskDialogRoute()
+    }
+    return
+  }
+  if (routeState.mode === 'create') {
+    editingTaskID.value = null
+    form.value = defaultForm()
+    showCreateDialog.value = true
+    return
+  }
+  showCreateDialog.value = false
+}
+
+watch(() => route.query, restoreTaskFromRoute)
+
+onMounted(async () => {
+  await restoreTaskFromRoute()
+  await fetchTasks()
+  routeDataReady = true
+  await restoreTaskFromRoute()
 })
 </script>
 

@@ -25,7 +25,7 @@ type TransferContinuousCapabilities struct {
 
 type TransferDatabaseCDCCapability struct {
 	Sources   []string `json:"sources"`
-	Target    string   `json:"target"`
+	Targets   []string `json:"targets"`
 	Bootstrap []string `json:"bootstrap"`
 	ApplyMode string   `json:"apply_mode"`
 }
@@ -98,7 +98,7 @@ func (h *TransferCapabilityHandler) Get(c *gin.Context) {
 func buildContinuousCapabilities() TransferContinuousCapabilities {
 	return TransferContinuousCapabilities{
 		DatabaseCDC: TransferDatabaseCDCCapability{
-			Sources: []string{"postgresql", "mysql"}, Target: "postgresql",
+			Sources: []string{"postgresql", "mysql"}, Targets: []string{"postgresql", "mysql"},
 			Bootstrap: []string{"initial_snapshot"}, ApplyMode: "upsert_delete",
 		},
 		BusinessKafka: TransferBusinessKafkaCapabilities{

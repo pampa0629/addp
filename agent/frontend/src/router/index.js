@@ -4,24 +4,26 @@ import { useAuthStore } from '../store/auth'
 
 const routes = [
   {
-    path: '/agent/login',
+    path: '/login',
     name: 'Login',
     component: () => import('../views/Login.vue'),
   },
   {
-    path: '/agent',
+    path: '/',
     name: 'Chat',
     component: () => import('../views/ChatView.vue'),
     meta: { requiresAuth: true },
   },
   {
-    path: '/',
-    redirect: '/agent',
+    path: '/sessions/:session_id',
+    name: 'ChatSession',
+    component: () => import('../views/ChatView.vue'),
+    meta: { requiresAuth: true },
   },
 ]
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.DEV ? '/' : '/agent/'),
   routes,
 })
 

@@ -186,6 +186,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import graphApi from '../api/graphQueryService'
+import { navigateServiceRoute } from '@/utils/moduleNavigation'
 
 const router = useRouter()
 const route = useRoute()
@@ -352,10 +353,10 @@ const submit = async () => {
       const payload = buildPayload()
       const result = await graphApi.createService(payload)
       ElMessage.success(t('service.graph.createSuccess'))
-      router.push(`/graph-services/${result.id}`)
+      await navigateServiceRoute(router, `/graph-services/${result.id}`, { history: 'replace' })
       return
     }
-    router.push(`/graph-services/${id}`)
+    await navigateServiceRoute(router, `/graph-services/${id}`, { history: 'replace' })
   } catch (e) {
     ElMessage.error(t('service.graph.operationFailed') + '：' + (e.response?.data?.error || e.message))
   } finally {
@@ -363,7 +364,7 @@ const submit = async () => {
   }
 }
 
-const goBack = () => router.back()
+const goBack = () => navigateServiceRoute(router, isEdit.value ? `/graph-services/${id}` : '/graph-services', { history: 'replace' })
 
 onMounted(async () => {
   if (isEdit.value) {

@@ -84,6 +84,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { navigateDevelopRoute } from '@/utils/developNavigation'
 import { Check, Close, Refresh, Stamp } from '@element-plus/icons-vue'
 import { decideToolApproval, getToolApproval } from '@/api/approval'
 
@@ -170,7 +171,10 @@ const formatTimeout = (value) => value ? t('develop.approval.seconds', { value }
 
 const openExecution = () => {
   if (approval.value?.execution_id) {
-    router.push(`/executions/${approval.value.execution_id}`)
+    navigateDevelopRoute(router, {
+      name: 'ExecutionDetail',
+      params: { execution_id: approval.value.execution_id }
+    })
   }
 }
 

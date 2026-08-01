@@ -51,7 +51,7 @@ func (s *TaskProviderRegistryService) Register() error {
 				"supports_schedule":         false,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
-				"create_url":                "/quality/check-tasks",
+				"create_url":                "/quality/check-tasks?create=1",
 				"edit_url":                  "/quality/check-tasks?task_id=:id",
 				"deprecated":                false,
 			},

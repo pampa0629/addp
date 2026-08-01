@@ -41,14 +41,11 @@ func BuildWatermarkIncrementalPlan(spec TableExportTaskSpec, resolver EngineReso
 	}
 	sourceType := strings.ToLower(effectiveEngineType(source, sourceRef))
 	targetType := strings.ToLower(effectiveEngineType(target, targetRef))
-	if sourceType != "postgresql" || targetType != "postgresql" {
-		return nil, fmt.Errorf("watermark incremental first version only supports PostgreSQL -> PostgreSQL, got %s -> %s", sourceType, targetType)
-	}
 	if source.Capabilities == nil || source.Capabilities.Storage == nil || source.Capabilities.Storage.Store == nil || !source.Capabilities.Storage.Store.BoundedWatermarkRead {
-		return nil, fmt.Errorf("source PostgreSQL engine does not declare bounded_watermark_read")
+		return nil, fmt.Errorf("source engine %q does not declare bounded_watermark_read", sourceType)
 	}
 	if target.Capabilities == nil || target.Capabilities.Storage == nil || target.Capabilities.Storage.Store == nil || target.Capabilities.Storage.Store.TableUpsert == nil || !target.Capabilities.Storage.Store.TableUpsert.Supported || !target.Capabilities.Storage.Store.TableUpsert.Idempotent {
-		return nil, fmt.Errorf("target PostgreSQL engine does not declare idempotent table_upsert")
+		return nil, fmt.Errorf("target engine %q does not declare idempotent table_upsert", targetType)
 	}
 	sourcePlan, err := buildTableSourcePlan(spec.Source, source, spec.Transforms)
 	if err != nil {

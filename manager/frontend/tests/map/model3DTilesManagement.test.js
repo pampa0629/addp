@@ -41,4 +41,28 @@ describe('model3d tiles management deletion', () => {
     expect(previewPanelSource).toContain('toQuickViewExistingResultPayload(payload)')
     expect(apiSource).toContain('executeQuickViewAction(locator, action, payload = {})')
   })
+
+  it('guards URL restoration and result loading against stale async responses', () => {
+    expect(viewSource).toContain('let workspaceRestoreSequence = 0')
+    expect(viewSource).toContain('const restoreSequence = ++workspaceRestoreSequence')
+    expect(viewSource).toContain('if (restoreSequence !== workspaceRestoreSequence) return')
+    expect(viewSource).toContain('let resultsRequestSequence = 0')
+    expect(viewSource).toContain('if (requestSequence !== resultsRequestSequence) return')
+    expect(viewSource).toContain('routeDataReady = true\n  await Promise.all([loadQuickViewEngines(), restoreWorkspaceFromRoute()])')
+  })
+
+  it('restores a read-only task definition on the task tab', () => {
+    expect(viewSource).toContain("tasks: ['task_id']")
+    expect(viewSource).toContain("results: ['task_id']")
+    expect(viewSource).toContain('@click="requestTaskDetail(row)"')
+    expect(viewSource).toContain("history: 'push'")
+    expect(viewSource).toContain('taskDetailVisible')
+    expect(viewSource).toContain('getModel3DTilesTask(taskID)')
+    expect(viewSource).toContain('@closed="clearTaskDetailRoute"')
+  })
+
+  it('does not expose direct model 3D Tiles task create or update API methods', () => {
+    expect(apiSource).not.toContain('createModel3DTilesTask(')
+    expect(apiSource).not.toContain('updateModel3DTilesTask(')
+  })
 })

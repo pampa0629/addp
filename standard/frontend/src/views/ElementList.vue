@@ -143,6 +143,7 @@ import { useI18n } from 'vue-i18n'
 import { Plus, Search, Checked } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { domainAPI, elementAPI, unitAPI } from '../api/standard'
+import { navigateStandardRoute } from '@/utils/moduleNavigation'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -254,7 +255,7 @@ const handlePageChange = (page) => {
 }
 
 const goToDetail = (row) => {
-  router.push(`/standard/elements/${row.id}`)
+  navigateStandardRoute(router, `/elements/${row.id}`)
 }
 
 const openCreateDialog = () => {

@@ -260,11 +260,11 @@ type NativeTableSpatialEncodingCapability struct {
 
 `table_spatial_encoding` 只表达跨出 native table provider 后的 row value 编码，不表达数据库内部类型。PostGIS `geometry` 这类 engine-internal type 不应作为 encoding 暴露；PostgreSQL / PostGIS 第一阶段声明 `geometry_read_encodings=["ewkb","geojson"]`、`geometry_write_encodings=["ewkb"]`、`read_transform=true`、`native_spatial_functions=true`。MySQL 第一阶段只声明 `geometry_write_encodings=["ewkb"]`：Provider 必须把 EWKB 行值转换为标准 WKB，并通过 MySQL 空间构造函数连同 SRID 写入；不得把直接绑定数据库内部 geometry 二进制、普通 `batch_write` 或建表能力误报为空间行值写入能力。
 
-`bounded_watermark_read` 与普通 `batch_read` / `table_read_session` 不等价。前者必须冻结 execution 上界、使用稳定复合游标并能从读取行生成 committed position。`table_upsert` 也不能从 `batch_write` 推导；只有目标 Provider 能校验唯一键并以幂等冲突处理提交批次时才能声明。第一版仅 PostgreSQL 声明这两项能力。
+`bounded_watermark_read` 与普通 `batch_read` / `table_read_session` 不等价。前者必须冻结 execution 上界、使用稳定复合游标并能从读取行生成 committed position。`table_upsert` 也不能从 `batch_write` 推导；只有目标 Provider 能校验唯一键并以幂等冲突处理提交批次时才能声明。当前只有 PostgreSQL 声明 `bounded_watermark_read`；PostgreSQL 与 MySQL 声明幂等 `table_upsert`。MySQL 目标必须使用 InnoDB，并要求配置键精确匹配非空主键或唯一约束；为避免 `ON DUPLICATE KEY UPDATE` 被其他唯一约束触发，目标表不得存在与配置键不同的唯一约束。
 
 `change_stream_read` 与 content `stream_read`、`batch_read` 都不等价。它必须声明 `partitioned=true`、`seek=true`、`pause_resume=true`，Kafka 第一版 `position_types` 只允许 `kafka_offset/v1`。实现该能力的 reader 必须同时返回每分区当前 earliest/latest position，供运行时计算 lag 和 retention 窗口；这不是独立能力开关。该能力只表达原始 record 和 position 读取，不声明 JSON/Avro/Protobuf、Debezium envelope、Transfer target apply 或 exactly-once。第一版仅业务 Kafka Engine 声明该能力；Infra Kafka 不产生 System capabilities 记录。
 
-`partitioned_table_change_apply` 与普通 `table_upsert` 不等价。PostgreSQL 当前声明 `atomic_position_commit=true`、`monotonic=true`、`position_types=["kafka_offset/v1"]`、`operations=["upsert","delete","skip"]`；其位置账本位于业务目标 PostgreSQL，并与目标 upsert/delete/skip 在同一事务提交。该能力不表示 Kafka 与 Infra PostgreSQL 之间存在分布式 exactly-once。`skip` 只推进目标 ledger，不修改业务行，供 Transfer 在 dead-letter 事实已持久化后越过该 position。插件不得重复或声明未实现操作。
+`partitioned_table_change_apply` 与普通 `table_upsert` 不等价。PostgreSQL 与 MySQL 当前都声明 `atomic_position_commit=true`、`monotonic=true`、`position_types=["kafka_offset/v1"]`、`operations=["upsert","delete","skip"]`。PostgreSQL 位置账本固定为业务目标库的 `addp_transfer.apply_positions`；MySQL 位置账本固定为目标业务数据库内的 `_addp_transfer_apply_positions` InnoDB 表，不跨数据库创建私有 schema/database。MySQL 同名账本表结构不符合 Provider 唯一规范时必须直接失败。两种实现都必须把目标 upsert/delete/skip 与账本 position 在同一目标数据库事务提交。该能力不表示 Kafka 与 Infra state 之间存在分布式 exactly-once。`skip` 只推进目标 ledger，不修改业务行，供 Transfer 在 dead-letter 事实已持久化后越过该 position。插件不得重复或声明未实现操作。
 
 ### Checkpoint / Resume 能力
 

@@ -330,13 +330,15 @@ func postgresSpatialSourceSRIDPolicyError(columnName string) error {
 }
 
 type postgresColumnInfo struct {
-	Name       string
-	DataType   string
-	UDTName    string
-	NativeType string
-	Nullable   bool
-	PrimaryKey bool
-	Comment    string
+	Name             string
+	DataType         string
+	UDTName          string
+	NativeType       string
+	NumericPrecision sql.NullInt64
+	NumericScale     sql.NullInt64
+	Nullable         bool
+	PrimaryKey       bool
+	Comment          string
 }
 
 func (c postgresColumnInfo) IsSpatial() bool {
@@ -362,6 +364,8 @@ func postgresTableColumns(ctx context.Context, db *sql.DB, schema, table string)
 			c.data_type,
 			c.udt_name,
 			format_type(a.atttypid, a.atttypmod) AS native_type,
+			c.numeric_precision,
+			c.numeric_scale,
 			(c.is_nullable = 'YES') AS nullable
 		FROM information_schema.columns c
 		JOIN pg_catalog.pg_namespace n
@@ -385,7 +389,15 @@ func postgresTableColumns(ctx context.Context, db *sql.DB, schema, table string)
 	columns := make([]postgresColumnInfo, 0)
 	for rows.Next() {
 		var column postgresColumnInfo
-		if err := rows.Scan(&column.Name, &column.DataType, &column.UDTName, &column.NativeType, &column.Nullable); err != nil {
+		if err := rows.Scan(
+			&column.Name,
+			&column.DataType,
+			&column.UDTName,
+			&column.NativeType,
+			&column.NumericPrecision,
+			&column.NumericScale,
+			&column.Nullable,
+		); err != nil {
 			return nil, fmt.Errorf("scan postgresql table column: %w", err)
 		}
 		columns = append(columns, column)
@@ -398,7 +410,7 @@ func postgresTableColumns(ctx context.Context, db *sql.DB, schema, table string)
 
 func postgresFieldInfoFromColumn(column postgresColumnInfo) datatype.FieldInfo {
 	nativeType := postgresColumnNativeType(column)
-	return datatype.FieldInfo{
+	field := datatype.FieldInfo{
 		Name:       column.Name,
 		Type:       postgresCommonFieldType(column, nativeType),
 		NativeType: nativeType,
@@ -406,6 +418,13 @@ func postgresFieldInfoFromColumn(column postgresColumnInfo) datatype.FieldInfo {
 		PrimaryKey: column.PrimaryKey,
 		Comment:    column.Comment,
 	}
+	if field.Type == datatype.FieldTypeDecimal && column.NumericPrecision.Valid && column.NumericPrecision.Int64 > 0 {
+		field.Precision = int(column.NumericPrecision.Int64)
+		if column.NumericScale.Valid && column.NumericScale.Int64 >= 0 {
+			field.Scale = int(column.NumericScale.Int64)
+		}
+	}
+	return field
 }
 
 func postgresColumnNativeType(column postgresColumnInfo) string {

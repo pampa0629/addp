@@ -5,7 +5,7 @@
         <el-tab-pane :label="t('manager.cadPreviewManagement.tasksTab')" name="tasks">
           <div class="toolbar">
             <span class="toolbar-tip">{{ t('manager.cadPreviewManagement.subtitle') }}</span>
-            <el-button type="primary" @click="openCreateDialog">{{ t('manager.cadPreviewManagement.create') }}</el-button>
+            <el-button type="primary" @click="requestCreateDialog">{{ t('manager.cadPreviewManagement.create') }}</el-button>
             <el-button :icon="Refresh" circle @click="loadTasks" />
           </div>
 
@@ -47,7 +47,7 @@
                     {{ t('manager.cadPreviewManagement.execute') }}
                   </el-button>
                   <el-button size="small" @click="viewTaskResults(row)">{{ t('manager.cadPreviewManagement.results') }}</el-button>
-                  <el-button size="small" @click="editTask(row)">{{ t('manager.cadPreviewManagement.edit') }}</el-button>
+                  <el-button size="small" @click="requestEditTask(row)">{{ t('manager.cadPreviewManagement.edit') }}</el-button>
                   <el-button size="small" :disabled="!row.last_execution_id" @click="openTaskExecution(row)">
                     {{ t('manager.cadPreviewManagement.monitor') }}
                   </el-button>
@@ -152,6 +152,7 @@
       :title="editingTask ? t('manager.cadPreviewManagement.editTitle') : t('manager.cadPreviewManagement.createTitle')"
       width="820px"
       destroy-on-close
+      @closed="clearTaskDialogRoute"
     >
       <el-form :model="form" label-position="top">
         <div class="form-grid">
@@ -208,6 +209,8 @@
 <script setup>
 import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { navigateManagerRoute } from '@/utils/moduleNavigation'
+import { resolveManagerTaskWorkspaceRouteState } from '@/utils/taskWorkspaceRoute'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
@@ -223,7 +226,16 @@ const { t } = useI18n()
 const executeWithCurrentResultConfirmation = useCurrentResultConfirmation()
 const { displayText, engineName, loadQuickViewEngines, resourcePath } = useQuickViewResourceDisplay(t)
 
-const activeTab = ref(route.query.tab === 'results' ? 'results' : 'tasks')
+const resolveRouteState = routeQuery => resolveManagerTaskWorkspaceRouteState({
+  routeQuery,
+  allowedQueryByTab: {
+    tasks: ['create', 'task_id'],
+    results: ['task_id']
+  }
+})
+const activeTab = ref(resolveRouteState(route.query).tab)
+let routeDataReady = false
+let workspaceRestoreSequence = 0
 const tasks = ref([])
 const tasksLoading = ref(false)
 const tasksPage = ref(1)
@@ -325,9 +337,11 @@ const loadResults = async () => {
 }
 
 const handleTabChange = async (tab) => {
-  await router.replace({ query: { ...route.query, tab } })
-  if (tab === 'tasks') await loadTasks()
-  else await loadResults()
+  const routeState = resolveRouteState({ ...route.query, tab })
+  const location = { path: route.path, query: routeState.query }
+  if (router.resolve(location).fullPath !== route.fullPath) {
+    await navigateManagerRoute(router, location, { history: 'replace' })
+  }
 }
 const handleTasksSizeChange = () => { tasksPage.value = 1; loadTasks() }
 const handleResultsSizeChange = () => { resultsPage.value = 1; loadResults() }
@@ -344,6 +358,26 @@ const resetForm = () => {
   sourceInitialLocator.value = ''
 }
 const openCreateDialog = () => { resetForm(); taskDialogVisible.value = true }
+const requestCreateDialog = async () => {
+  const routeState = resolveRouteState({ tab: 'tasks', create: '1' })
+  await navigateManagerRoute(router, {
+    path: route.path,
+    query: routeState.query
+  }, { history: 'push' })
+}
+
+const clearTaskDialogRoute = async () => {
+  if (resolveRouteState(route.query).tab !== 'tasks') return
+  const nextQuery = { ...route.query }
+  delete nextQuery.create
+  delete nextQuery.task_id
+  const routeState = resolveRouteState(nextQuery)
+  const location = { path: route.path, query: routeState.query }
+  if (router.resolve(location).fullPath !== route.fullPath) {
+    await navigateManagerRoute(router, location, { history: 'replace' })
+  }
+}
+
 const editTask = (task) => {
   resetForm()
   editingTask.value = task
@@ -354,6 +388,14 @@ const editTask = (task) => {
   form.options = { ...defaultForm().options, ...taskOptions(task) }
   sourceInitialLocator.value = form.source.item_locator
   taskDialogVisible.value = true
+}
+
+const requestEditTask = async (task) => {
+  const routeState = resolveRouteState({ tab: 'tasks', task_id: task.id })
+  await navigateManagerRoute(router, {
+    path: route.path,
+    query: routeState.query
+  }, { history: 'push' })
 }
 
 const loadSourceFacts = async (locator) => {
@@ -451,16 +493,14 @@ const viewTaskResults = async (task) => {
   resultFilters.task_id = task.id
   resultsPage.value = 1
   activeTab.value = 'results'
-  await router.replace({ query: { ...route.query, tab: 'results', task_id: task.id } })
-  await loadResults()
+  await navigateManagerRoute(router, { query: { ...route.query, tab: 'results', task_id: task.id } }, { history: 'replace' })
 }
 const clearTaskFilter = async () => {
   selectedResultTask.value = null
   resultFilters.task_id = undefined
   const query = { ...route.query }
   delete query.task_id
-  await router.replace({ query })
-  await loadResults()
+  await navigateManagerRoute(router, { query }, { history: 'replace' })
 }
 
 const deleteTask = async (task) => {
@@ -483,17 +523,69 @@ const deleteResult = async (result) => {
 }
 const openTaskExecution = (task) => openMonitorExecution(task.last_execution_id)
 const openResultExecution = (result) => openMonitorExecution(result.last_execution_id)
-const openSourcePreview = (result) => router.push({ name: 'DataExplorer', query: { locator: result.locator } })
+const openSourcePreview = (result) => navigateManagerRoute(router, { name: 'DataExplorer', query: { locator: result.locator } })
 
 watch(() => sourceSelection.value?.identity?.locator || '', (locator) => { if (locator) loadSourceFacts(locator) })
 
-onMounted(async () => {
-  const taskID = Number(route.query.task_id || 0)
-  if (taskID && activeTab.value === 'results') {
-    resultFilters.task_id = taskID
-    try { selectedResultTask.value = unwrapPayload(await quickViewAPI.getCADPreviewTask(taskID)) } catch { selectedResultTask.value = null }
+async function restoreWorkspaceFromRoute() {
+  const restoreSequence = ++workspaceRestoreSequence
+  const routeState = resolveRouteState(route.query)
+  activeTab.value = routeState.tab
+  if (routeState.changed) {
+    await navigateManagerRoute(router, {
+      path: route.path,
+      query: routeState.query
+    }, { history: 'replace' })
+    return
   }
-  await Promise.all([loadQuickViewEngines(), loadTasks(), loadResults()])
+  if (!routeDataReady) return
+  if (routeState.tab === 'results') {
+    taskDialogVisible.value = false
+    const taskID = Number(routeState.query.task_id || 0)
+    resultFilters.task_id = taskID || undefined
+    selectedResultTask.value = null
+    if (taskID) {
+      try {
+        const task = unwrapPayload(await quickViewAPI.getCADPreviewTask(taskID))
+        if (restoreSequence !== workspaceRestoreSequence) return
+        selectedResultTask.value = task
+      } catch {
+        if (restoreSequence !== workspaceRestoreSequence) return
+        selectedResultTask.value = null
+      }
+    }
+    await loadResults()
+    return
+  }
+
+  const taskID = Number(routeState.query.task_id || 0)
+  if (taskID) {
+    try {
+      const task = unwrapPayload(await quickViewAPI.getCADPreviewTask(taskID))
+      if (restoreSequence !== workspaceRestoreSequence) return
+      editTask(task)
+    } catch (error) {
+      if (restoreSequence !== workspaceRestoreSequence) return
+      taskDialogVisible.value = false
+      ElMessage.error(errorMessage(error, t('manager.cadPreviewManagement.loadTasksFailed')))
+      await clearTaskDialogRoute()
+      return
+    }
+  } else if (routeState.query.create === '1') {
+    openCreateDialog()
+  } else {
+    taskDialogVisible.value = false
+  }
+  await loadTasks()
+}
+
+watch(() => route.query, restoreWorkspaceFromRoute)
+
+onMounted(async () => {
+  await restoreWorkspaceFromRoute()
+  await loadQuickViewEngines()
+  routeDataReady = true
+  await restoreWorkspaceFromRoute()
 })
 </script>
 

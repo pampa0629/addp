@@ -354,6 +354,7 @@ import { TablePreview } from '@common-ui-map'
 import queryServiceAPI from '@/api/queryService'
 import { buildQueryServicePreview, queryServicePreviewFields } from '@/utils/queryServicePreview'
 import { copyToClipboard } from '../utils/serviceHelper'
+import { navigateServiceRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -533,7 +534,7 @@ const handleDelete = async () => {
 
     await queryServiceAPI.deleteService(serviceId.value)
     ElMessage.success(t('service.query.deleteServiceSuccess'))
-    router.push('/query-services')
+    await navigateServiceRoute(router, '/query-services', { history: 'replace' })
   } catch (error) {
     if (error !== 'cancel') {
       ElMessage.error(t('service.query.deleteServiceFailed') + ': ' + (error.message || t('service.common.unknownError')))
@@ -543,11 +544,11 @@ const handleDelete = async () => {
 
 // 方法：导航
 const goBack = () => {
-  router.push('/query-services')
+  navigateServiceRoute(router, '/query-services', { history: 'replace' })
 }
 
 const goToEdit = () => {
-  router.push(`/query-services/${serviceId.value}/edit`)
+  navigateServiceRoute(router, `/query-services/${serviceId.value}/edit`)
 }
 
 const checkSourceSnapshot = async () => {

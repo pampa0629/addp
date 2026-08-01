@@ -101,6 +101,7 @@
 
 <script>
 import tileServiceAPI from '@/api/tileService'
+import { navigateServiceRoute } from '@/utils/moduleNavigation'
 
 export default {
   name: 'TileServiceList',
@@ -158,11 +159,11 @@ export default {
     },
 
     goToCreate() {
-      this.$router.push('/tile/create')
+      navigateServiceRoute(this.$router, '/tile/create')
     },
 
     goToDetail(id) {
-      this.$router.push(`/tile/${id}`)
+      navigateServiceRoute(this.$router, `/tile/${id}`)
     },
 
     async confirmDelete(id) {

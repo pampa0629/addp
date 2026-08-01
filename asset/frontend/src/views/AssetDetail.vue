@@ -3,21 +3,17 @@
     <!-- 顶部工具栏 -->
     <div class="page-header">
       <div class="breadcrumb">
-        <el-button link @click="$router.push('/asset/assets')">
+        <el-button link @click="backToList">
           <el-icon><ArrowLeft /></el-icon> {{ t('asset.assetDetail.backToList') }}
         </el-button>
         <span class="separator">/</span>
-        <span>{{ isCreate ? t('asset.assetDetail.createAsset') : (editMode ? t('asset.assetDetail.editAsset') : t('asset.assetDetail.assetDetail')) }}</span>
+        <span>{{ editMode ? t('asset.assetDetail.editAsset') : t('asset.assetDetail.assetDetail') }}</span>
       </div>
-      <div class="header-actions" v-if="!isCreate && !editMode && asset">
-        <el-button v-if="canEdit" @click="editMode = true">{{ t('asset.assetDetail.edit') }}</el-button>
-        <el-button v-if="asset.status === 'draft' || asset.status === 'rejected'" type="success" @click="handleSubmit">
-          {{ t('asset.assetDetail.submitPublish') }}
-        </el-button>
-        <el-button v-if="asset.status === 'pending'" type="success" @click="handleApprove">{{ t('asset.assetDetail.approve') }}</el-button>
-        <el-button v-if="asset.status === 'pending'" type="danger" plain @click="openReject">{{ t('asset.assetDetail.reject') }}</el-button>
+      <div class="header-actions" v-if="!editMode && asset">
+        <el-button v-if="canEdit" @click="startEdit">{{ t('asset.assetDetail.edit') }}</el-button>
+        <el-button v-if="asset.status === 'draft'" type="success" @click="handlePublish">{{ t('asset.assetDetail.submitPublish') }}</el-button>
         <el-button v-if="asset.status === 'published'" type="warning" plain @click="handleOffline">{{ t('asset.assetDetail.offline') }}</el-button>
-        <el-button v-if="asset.status === 'offline'" type="primary" @click="handleRepublish">{{ t('asset.assetDetail.republish') }}</el-button>
+        <el-button v-if="asset.status === 'offline'" type="primary" @click="handlePublish">{{ t('asset.assetDetail.republish') }}</el-button>
         <el-popconfirm v-if="asset.status === 'draft'" :title="t('asset.assetDetail.deleteConfirm')" @confirm="handleDelete">
           <template #reference>
             <el-button type="danger" plain>{{ t('asset.assetDetail.delete') }}</el-button>
@@ -28,7 +24,7 @@
 
     <!-- 状态横幅（仅详情模式） -->
     <el-alert
-      v-if="!isCreate && !editMode && asset"
+      v-if="!editMode && asset"
       :type="statusAlertType(asset.status)"
       :closable="false"
       style="margin-bottom: 20px"
@@ -41,18 +37,9 @@
       </template>
     </el-alert>
 
-    <!-- 被驳回时显示原因 -->
-    <el-alert
-      v-if="rejectNote && !isCreate && !editMode"
-      type="error"
-      :title="`${t('asset.assetDetail.rejectReasonPrefix')}${rejectNote}`"
-      :closable="false"
-      style="margin-bottom: 20px"
-    />
-
     <div v-loading="loading">
       <!-- 详情展示模式 -->
-      <template v-if="!isCreate && !editMode && asset">
+      <template v-if="!editMode && asset">
         <el-descriptions :column="2" border>
           <el-descriptions-item :label="t('asset.assetDetail.assetName')">{{ asset.name }}</el-descriptions-item>
           <el-descriptions-item :label="t('asset.assetDetail.assetType')">
@@ -84,9 +71,9 @@
         </template>
       </template>
 
-      <!-- 创建/编辑表单模式 -->
+      <!-- 编辑表单模式 -->
       <el-form
-        v-if="isCreate || editMode"
+        v-if="editMode"
         ref="formRef"
         :model="form"
         :rules="rules"
@@ -97,22 +84,6 @@
 
         <el-form-item :label="t('asset.assetDetail.assetName')" prop="name">
           <el-input v-model="form.name" :placeholder="t('asset.assetDetail.assetNamePlaceholder')" maxlength="500" />
-        </el-form-item>
-
-        <el-form-item :label="t('asset.assetDetail.assetType')" prop="type_id">
-          <el-select
-            v-model="form.type_id"
-            :placeholder="t('asset.assetDetail.assetTypePlaceholder')"
-            style="width: 100%"
-            :disabled="!isCreate"
-            @change="onTypeChange"
-          >
-            <el-option v-for="t in types" :key="t.id" :label="t.name" :value="t.id">
-              <span>{{ t.name }}</span>
-              <span style="float: right; color: #999; font-size: 12px">{{ t.description }}</span>
-            </el-option>
-          </el-select>
-          <div v-if="!isCreate" class="form-hint">{{ t('asset.assetDetail.assetTypeHint') }}</div>
         </el-form-item>
 
         <el-form-item :label="t('asset.assetDetail.category')">
@@ -155,76 +126,12 @@
           </div>
         </el-form-item>
 
-        <h3 class="section-title">{{ t('asset.assetDetail.sourceAssociation') }}</h3>
-
-        <el-form-item :label="t('asset.assetDetail.sourceModule')">
-          <el-select v-model="form.source_module" :placeholder="t('asset.assetDetail.sourceModulePlaceholder')" clearable style="width: 200px">
-            <el-option :label="t('asset.assetDetail.sourceModuleMeta')" value="meta" />
-            <el-option :label="t('asset.assetDetail.sourceModuleService')" value="service" />
-            <el-option :label="t('asset.assetDetail.sourceModuleStandard')" value="standard" />
-            <el-option :label="t('asset.assetDetail.sourceModuleDevelop')" value="develop" />
-            <el-option :label="t('asset.assetDetail.sourceModuleManual')" value="manual" />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item :label="t('asset.assetDetail.sourceReference')">
-          <el-input
-            v-model="form.source_reference"
-            :placeholder="t('asset.assetDetail.sourceReferencePlaceholder')"
-            maxlength="500"
-          />
-          <div class="form-hint">{{ t('asset.assetDetail.sourceReferenceHint') }}</div>
-        </el-form-item>
-
-        <template v-if="typeFieldSchemas.length > 0">
-          <h3 class="section-title">{{ t('asset.assetDetail.extFields') }}</h3>
-          <el-form-item v-for="schema in typeFieldSchemas" :key="schema.field_key" :label="schema.field_name">
-            <el-input
-              v-if="schema.field_type === 'string'"
-              v-model="form.ext_fields[schema.field_key]"
-              :placeholder="`${t('asset.assetDetail.assetNamePlaceholder').split('请输入')[0]}${schema.field_name}`"
-            />
-            <el-input-number
-              v-else-if="schema.field_type === 'number'"
-              v-model="form.ext_fields[schema.field_key]"
-            />
-            <el-switch
-              v-else-if="schema.field_type === 'boolean'"
-              v-model="form.ext_fields[schema.field_key]"
-            />
-            <el-date-picker
-              v-else-if="schema.field_type === 'date'"
-              v-model="form.ext_fields[schema.field_key]"
-              type="date"
-              style="width: 100%"
-            />
-            <el-input
-              v-else
-              v-model="form.ext_fields[schema.field_key]"
-              type="textarea"
-              :rows="2"
-              :placeholder="`${schema.field_name} (JSON)`"
-            />
-            <div v-if="schema.required" class="form-hint form-hint--required">{{ t('asset.assetDetail.required') }}</div>
-          </el-form-item>
-        </template>
-
         <el-form-item>
-          <el-button type="primary" :loading="submitting" @click="save('draft')">{{ t('asset.assetDetail.saveDraft') }}</el-button>
-          <el-button type="success" :loading="submitting" @click="save('submit')">{{ t('asset.assetDetail.saveAndSubmit') }}</el-button>
+          <el-button type="primary" :loading="submitting" @click="save">{{ t('asset.assetDetail.save') }}</el-button>
           <el-button @click="cancelEdit">{{ t('asset.assetDetail.backToList') }}</el-button>
         </el-form-item>
       </el-form>
     </div>
-
-    <!-- 驳回对话框 -->
-    <el-dialog v-model="rejectVisible" :title="t('asset.assetDetail.rejectDialogTitle')" width="400px" :close-on-click-modal="false">
-      <el-input v-model="rejectNoteInput" type="textarea" :rows="3" :placeholder="t('asset.assetDetail.rejectReasonPlaceholder')" maxlength="500" />
-      <template #footer>
-        <el-button @click="rejectVisible = false">{{ t('asset.assetDetail.backToList') }}</el-button>
-        <el-button type="danger" :loading="actionLoading" @click="submitReject">{{ t('asset.assetDetail.confirmReject') }}</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
@@ -233,28 +140,22 @@ import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
-import { assetAPI, typeDefinitionAPI, categoryAPI } from '../api/asset'
+import { assetAPI, catalogAPI } from '../api/asset'
 import { useI18n } from 'vue-i18n'
+import { navigateAssetRoute } from '../utils/moduleNavigation'
 
 const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
 
-const isCreate = computed(() => route.name === 'AssetCreate' || route.params.id === 'create')
-const assetId = computed(() => isCreate.value ? null : route.params.id)
+const editMode = computed(() => route.name === 'AssetEdit')
+const assetId = computed(() => route.params.id)
 
 const loading = ref(false)
 const submitting = ref(false)
-const actionLoading = ref(false)
-const editMode = ref(false)
 const asset = ref(null)
-const types = ref([])
 const categoryTree = ref([])
-const typeFieldSchemas = ref([])
-const rejectNote = ref('')
-const rejectVisible = ref(false)
-const rejectNoteInput = ref('')
 
 const formRef = ref()
 const tagInputVisible = ref(false)
@@ -263,22 +164,17 @@ const tagInputValue = ref('')
 
 const form = reactive({
   name: '',
-  type_id: null,
   category_id: null,
   category_id_path: null,
   description: '',
-  tags: [],
-  source_module: '',
-  source_reference: '',
-  ext_fields: {}
+  tags: []
 })
 
 const rules = computed(() => ({
-  name: [{ required: true, message: t('asset.assetDetail.assetNameRequired'), trigger: 'blur' }],
-  type_id: [{ required: true, message: t('asset.assetDetail.assetTypeRequired'), trigger: 'change' }]
+  name: [{ required: true, message: t('asset.assetDetail.assetNameRequired'), trigger: 'blur' }]
 }))
 
-const canEdit = computed(() => asset.value && (asset.value.status === 'draft' || asset.value.status === 'rejected'))
+const canEdit = computed(() => Boolean(asset.value))
 
 // 将分类树扁平化为 el-cascader 所需格式（保留树形结构）
 const categoryOptions = computed(() => categoryTree.value)
@@ -286,16 +182,9 @@ const categoryOptions = computed(() => categoryTree.value)
 async function loadData() {
   loading.value = true
   try {
-    const [typesRes, catRes] = await Promise.all([
-      typeDefinitionAPI.list(),
-      categoryAPI.tree()
-    ])
-    types.value = typesRes.data || []
-    categoryTree.value = catRes.data || []
-
-    if (!isCreate.value) {
-      await loadAsset()
-    }
+    const catRes = await catalogAPI.tree()
+    categoryTree.value = catRes || []
+    await loadAsset()
   } catch (e) {
     ElMessage.error(t('asset.assetDetail.loadFailed'))
   } finally {
@@ -305,98 +194,41 @@ async function loadData() {
 
 async function loadAsset() {
   const res = await assetAPI.get(assetId.value)
-  asset.value = res.data
-
-  // 提取驳回原因
-  const rejectEf = asset.value.ext_fields?.find(f => f.field_key === '_reject_note')
-  rejectNote.value = rejectEf?.value?.note || ''
-
-  // 如果是创建模式不需要填充表单
-  if (asset.value.type_id) {
-    await loadTypeFields(asset.value.type_id)
-  }
-}
-
-async function onTypeChange(typeId) {
-  form.ext_fields = {}
-  if (typeId) {
-    await loadTypeFields(typeId)
-  } else {
-    typeFieldSchemas.value = []
-  }
-}
-
-async function loadTypeFields(typeId) {
-  try {
-    const res = await assetAPI.typeFields(typeId)
-    typeFieldSchemas.value = res.data || []
-  } catch (e) {
-    typeFieldSchemas.value = []
-  }
+  asset.value = res
 }
 
 function onCategoryChange(val) {
   form.category_id = val || null
 }
 
-// 填充编辑表单
-watch(editMode, (val) => {
-  if (val && asset.value) {
-    form.name = asset.value.name
-    form.type_id = asset.value.type_id
-    form.category_id = asset.value.category_id || null
-    form.category_id_path = asset.value.category_id || null
-    form.description = asset.value.description || ''
-    form.tags = [...(asset.value.tags || [])]
-    form.source_module = asset.value.source_module || ''
-    form.source_reference = asset.value.source_reference || ''
-    // 填充扩展字段
-    form.ext_fields = {}
-    asset.value.ext_fields?.forEach(ef => {
-      if (!ef.field_key.startsWith('_')) {
-        form.ext_fields[ef.field_key] = ef.value?.value ?? ef.value
-      }
-    })
+watch([editMode, asset], ([editing, currentAsset]) => {
+  if (editing && currentAsset) {
+    form.name = currentAsset.name
+    form.category_id = currentAsset.category_id || null
+    form.category_id_path = currentAsset.category_id || null
+    form.description = currentAsset.description || ''
+    form.tags = [...(currentAsset.tags || [])]
   }
 })
 
-async function save(mode) {
+async function save() {
   await formRef.value.validate()
   submitting.value = true
   try {
     const payload = {
       name: form.name,
-      type_id: form.type_id,
       category_id: form.category_id || null,
       description: form.description,
-      tags: form.tags,
-      source_module: form.source_module,
-      source_reference: form.source_reference,
-      ext_fields: form.ext_fields
+      tags: form.tags
     }
 
-    let savedId
-    if (isCreate.value) {
-      const res = await assetAPI.create(payload)
-      savedId = res.data.id
-      ElMessage.success(t('asset.assetDetail.assetCreated'))
-    } else {
-      await assetAPI.update(assetId.value, payload)
-      savedId = assetId.value
-      editMode.value = false
-      ElMessage.success(t('asset.assetDetail.saved'))
+    await assetAPI.update(assetId.value, payload)
+    if (form.category_id === null && asset.value.category_id !== null) {
+      await assetAPI.batchCatalog([assetId.value], null)
     }
-
-    if (mode === 'submit') {
-      await assetAPI.submit(savedId)
-      ElMessage.success(t('asset.assetDetail.submitSuccess'))
-    }
-
-    if (isCreate.value) {
-      router.replace(`/asset/assets/${savedId}`)
-    } else {
-      await loadAsset()
-    }
+    ElMessage.success(t('asset.assetDetail.saved'))
+    await navigateAssetRoute(router, `/assets/${assetId.value}`, { history: 'replace' })
+    await loadAsset()
   } catch (e) {
     ElMessage.error(e.response?.data?.error || t('asset.assetDetail.saveFailed'))
   } finally {
@@ -405,53 +237,24 @@ async function save(mode) {
 }
 
 function cancelEdit() {
-  if (isCreate.value) {
-    router.push('/asset/assets')
-  } else {
-    editMode.value = false
-  }
+  navigateAssetRoute(router, `/assets/${assetId.value}`, { history: 'replace' })
 }
 
-async function handleSubmit() {
-  try {
-    await assetAPI.submit(assetId.value)
-    ElMessage.success(t('asset.assetDetail.submitSuccess'))
-    await loadAsset()
-  } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('asset.assetDetail.operationFailed'))
-  }
+function backToList() {
+  navigateAssetRoute(router, '/assets', { history: 'replace' })
 }
 
-async function handleApprove() {
+function startEdit() {
+  navigateAssetRoute(router, `/assets/${assetId.value}/edit`)
+}
+
+async function handlePublish() {
   try {
-    await assetAPI.approve(assetId.value)
+    await assetAPI.publish(assetId.value)
     ElMessage.success(t('asset.assetDetail.assetPublished'))
     await loadAsset()
   } catch (e) {
     ElMessage.error(e.response?.data?.error || t('asset.assetDetail.operationFailed'))
-  }
-}
-
-function openReject() {
-  rejectNoteInput.value = ''
-  rejectVisible.value = true
-}
-
-async function submitReject() {
-  if (!rejectNoteInput.value.trim()) {
-    ElMessage.warning(t('asset.assetDetail.rejectReasonRequired'))
-    return
-  }
-  actionLoading.value = true
-  try {
-    await assetAPI.reject(assetId.value, { note: rejectNoteInput.value })
-    ElMessage.success(t('asset.assetDetail.rejected'))
-    rejectVisible.value = false
-    await loadAsset()
-  } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('asset.assetDetail.operationFailed'))
-  } finally {
-    actionLoading.value = false
   }
 }
 
@@ -465,21 +268,11 @@ async function handleOffline() {
   }
 }
 
-async function handleRepublish() {
-  try {
-    await assetAPI.republish(assetId.value)
-    ElMessage.success(t('asset.assetDetail.republishSuccess'))
-    await loadAsset()
-  } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('asset.assetDetail.operationFailed'))
-  }
-}
-
 async function handleDelete() {
   try {
     await assetAPI.delete(assetId.value)
     ElMessage.success(t('asset.assetDetail.deleted'))
-    router.push('/asset/assets')
+    backToList()
   } catch (e) {
     ElMessage.error(e.response?.data?.error || t('asset.assetDetail.deleteFailed'))
   }
@@ -507,16 +300,14 @@ function removeTag(tag) {
 function statusLabel(status) {
   const map = {
     draft: t('asset.assetDetail.statusDraft'),
-    pending: t('asset.assetDetail.statusPending'),
     published: t('asset.assetDetail.statusPublished'),
-    rejected: t('asset.assetDetail.statusRejected'),
     offline: t('asset.assetDetail.statusOffline')
   }
   return map[status] || status
 }
 
 function statusAlertType(status) {
-  const map = { draft: 'info', pending: 'warning', published: 'success', rejected: 'error', offline: 'info' }
+  const map = { draft: 'info', published: 'success', offline: 'info' }
   return map[status] || 'info'
 }
 
@@ -533,9 +324,10 @@ function formatExtValue(val) {
 
 onMounted(() => {
   loadData()
-  if (isCreate.value) {
-    editMode.value = true
-  }
+})
+
+watch(assetId, () => {
+  loadData()
 })
 </script>
 

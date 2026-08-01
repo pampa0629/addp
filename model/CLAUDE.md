@@ -292,3 +292,10 @@ draft → approved → materialized
 4. **代理路由位置**: 代理到 Standard 的路由配置在 `router.go` 末尾，通过 `proxyToStandard()` 函数实现。
 
 5. **前端 API 统一入口**: 所有 API 调用集中在 [frontend/src/api/model.js](frontend/src/api/model.js)，新增接口在此文件追加。
+
+## 前端公开路由
+
+- 模块内 Router 使用 `/dw-layers`、`/entities`、`/logical-tables`、`/er-diagram`、`/star-schema`；Console 模块名为 `modeling`，公开 URL 统一加 `/modeling` 前缀。
+- 实体和逻辑表详情使用 `/:id`；实体详情默认 `basic` Tab 省略，`attributes`、`relations` 使用唯一 `tab` query。
+- 星型模型当前事实表使用 `table_id`，并响应刷新及浏览器前进/后退；无选择时省略该 query。
+- 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`；详情返回明确列表路由。

@@ -14,7 +14,7 @@
                 <el-icon class="inline-tip-icon"><InfoFilled /></el-icon>
               </el-tooltip>
             </div>
-            <el-button type="primary" :icon="Plus" @click="openCreateDialog">
+            <el-button type="primary" :icon="Plus" @click="requestCreateDialog">
               {{ t('manager.vectorMaterializedView.create') }}
             </el-button>
             <el-button :icon="Refresh" circle @click="loadTasks" />
@@ -61,7 +61,7 @@
                   <el-button type="primary" size="small" :loading="executingId === row.id" @click="executeTask(row)">
                     {{ t('manager.vectorMaterializedView.execute') }}
                   </el-button>
-                  <el-button size="small" @click="openEditDialog(row)">{{ t('manager.vectorMaterializedView.edit') }}</el-button>
+                  <el-button size="small" @click="requestEditTask(row)">{{ t('manager.vectorMaterializedView.edit') }}</el-button>
                   <el-button size="small" @click="viewTaskResults(row)">{{ t('manager.vectorMaterializedView.results') }}</el-button>
                   <el-button size="small" :disabled="!row.last_execution_id" @click="openTaskExecution(row)">
                     {{ t('manager.vectorMaterializedView.monitor') }}
@@ -172,7 +172,7 @@
       </el-tabs>
     </el-card>
 
-    <el-dialog v-model="formDialogVisible" :title="formTitle" width="860px">
+    <el-dialog v-model="formDialogVisible" :title="formTitle" width="860px" @closed="clearFormDialogRoute">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="128px" v-loading="capabilityLoading">
         <div class="form-section-title">{{ t('manager.vectorMaterializedView.basicInfo') }}</div>
         <el-form-item :label="t('manager.vectorMaterializedView.name')" prop="name">
@@ -302,8 +302,10 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { navigateManagerRoute } from '@/utils/moduleNavigation'
+import { resolveManagerTaskWorkspaceRouteState } from '@/utils/taskWorkspaceRoute'
 import { ArrowDown, InfoFilled, Plus, Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
@@ -344,7 +346,16 @@ const executeWithCurrentResultConfirmation = useCurrentResultConfirmation()
 const route = useRoute()
 const router = useRouter()
 
-const activeTab = ref(route.query.tab === 'results' ? 'results' : 'tasks')
+const routeQueryKeys = ['create', 'geom', 'geometry_columns', 'item_fingerprint', 'item_id', 'locator', 'source_srid', 'task_id']
+const resolveRouteState = routeQuery => resolveManagerTaskWorkspaceRouteState({
+  routeQuery,
+  allowedQueryByTab: {
+    tasks: routeQueryKeys,
+    results: ['item_fingerprint', 'item_id', 'task_id']
+  }
+})
+const activeTab = ref(resolveRouteState(route.query).tab)
+let routeDataReady = false
 const tasks = ref([])
 const tasksLoading = ref(false)
 const tasksPage = ref(1)
@@ -689,6 +700,22 @@ const openCreateDialog = async () => {
   }
 }
 
+const requestCreateDialog = async () => {
+  const routeState = resolveRouteState({ tab: 'tasks', create: '1' })
+  await navigateManagerRoute(router, { path: route.path, query: routeState.query }, { history: 'push' })
+}
+
+const clearFormDialogRoute = async () => {
+  if (activeTab.value !== 'tasks') return
+  const nextQuery = { ...route.query }
+  for (const key of routeQueryKeys) delete nextQuery[key]
+  const routeState = resolveRouteState(nextQuery)
+  const location = { path: route.path, query: routeState.query }
+  if (router.resolve(location).fullPath !== route.fullPath) {
+    await navigateManagerRoute(router, location, { history: 'replace' })
+  }
+}
+
 const openEditDialog = async (task) => {
   resetForm(task)
   const columns = task?.config?.geometry?.geometry_column ? [task.config.geometry.geometry_column] : []
@@ -697,6 +724,11 @@ const openEditDialog = async (task) => {
   await loadResourceTrees()
   await loadQuickViewCapabilityForForm(columns)
   await revealSelectedResource()
+}
+
+const requestEditTask = async (task) => {
+  const routeState = resolveRouteState({ tab: 'tasks', task_id: task.id })
+  await navigateManagerRoute(router, { path: route.path, query: routeState.query }, { history: 'push' })
 }
 
 const saveTask = async () => {
@@ -787,7 +819,7 @@ const viewTaskResults = async (task) => {
   resultFilters.q = ''
   resultsPage.value = 1
   activeTab.value = 'results'
-  await router.replace({
+  await navigateManagerRoute(router, {
     query: {
       ...route.query,
       tab: 'results',
@@ -796,8 +828,7 @@ const viewTaskResults = async (task) => {
       item_fingerprint: undefined,
       create: undefined
     }
-  })
-  await loadResults()
+  }, { history: 'replace' })
 }
 
 const loadResultTaskFilterFromRoute = async () => {
@@ -812,18 +843,15 @@ const loadResultTaskFilterFromRoute = async () => {
   }
 }
 
-const handleTabChange = async () => {
-  await router.replace({
-    query: {
-      ...route.query,
-      tab: activeTab.value,
-      task_id: activeTab.value === 'results' ? route.query.task_id : undefined
-    }
+const handleTabChange = async (tab) => {
+  const routeState = resolveRouteState({
+    ...route.query,
+    tab,
+    task_id: tab === 'results' ? route.query.task_id : undefined
   })
-  if (activeTab.value === 'results') {
-    await loadResults()
-  } else {
-    await loadTasks()
+  const location = { path: route.path, query: routeState.query }
+  if (router.resolve(location).fullPath !== route.fullPath) {
+    await navigateManagerRoute(router, location, { history: 'replace' })
   }
 }
 
@@ -845,21 +873,21 @@ const applyResultFilters = () => {
 const resetResultFilters = async () => {
   selectedResultTask.value = null
   Object.assign(resultFilters, { item_id: undefined, item_fingerprint: '', task_id: undefined, status: '', q: '' })
-  await router.replace({
+  await navigateManagerRoute(router, {
     query: {
       ...route.query,
       task_id: undefined,
       item_id: undefined,
       item_fingerprint: undefined
     }
-  })
+  }, { history: 'replace' })
   applyResultFilters()
 }
 
 const clearResultTaskFilter = async () => {
   selectedResultTask.value = null
   resultFilters.task_id = undefined
-  await router.replace({ query: { ...route.query, task_id: undefined } })
+  await navigateManagerRoute(router, { query: { ...route.query, task_id: undefined } }, { history: 'replace' })
   applyResultFilters()
 }
 
@@ -891,7 +919,7 @@ const openCreateDialogFromResult = async (result, options = {}) => {
 }
 
 const openTileCacheCreate = (result) => {
-  router.push({
+  navigateManagerRoute(router, {
     name: 'TileCache',
     query: {
       ...buildTileCacheCreateQuery({
@@ -963,7 +991,48 @@ const errorMessage = (error, fallback) => {
   return fallback
 }
 
+async function restoreWorkspaceFromRoute() {
+  const routeState = resolveRouteState(route.query)
+  activeTab.value = routeState.tab
+  if (routeState.changed) {
+    await navigateManagerRoute(router, { path: route.path, query: routeState.query }, { history: 'replace' })
+    return
+  }
+  if (!routeDataReady) return
+
+  if (routeState.tab === 'results') {
+    formDialogVisible.value = false
+    Object.assign(resultFilters, {
+      item_id: Number(routeState.query.item_id || 0) || undefined,
+      item_fingerprint: String(routeState.query.item_fingerprint || ''),
+      task_id: Number(routeState.query.task_id || 0) || undefined
+    })
+    selectedResultTask.value = null
+    await loadResultTaskFilterFromRoute()
+    await loadResults()
+    return
+  }
+
+  const taskId = Number(routeState.query.task_id || 0)
+  if (taskId) {
+    try {
+      const response = await quickViewAPI.getOptimizationTask(taskId)
+      await openEditDialog(response)
+    } catch (error) {
+      ElMessage.error(t('manager.vectorMaterializedView.loadTasksFailed'))
+    }
+  } else if (routeState.query.create === '1') {
+    await openCreateDialog()
+  } else {
+    formDialogVisible.value = false
+  }
+  await loadTasks()
+}
+
+watch(() => route.query, restoreWorkspaceFromRoute)
+
 onMounted(async () => {
+  await restoreWorkspaceFromRoute()
   await Promise.all([loadTasks(), loadEngines()])
   if (activeTab.value === 'results') {
     if (route.query.item_id) resultFilters.item_id = Number(route.query.item_id)
@@ -983,6 +1052,7 @@ onMounted(async () => {
   } else if (route.query.create === '1') {
     await openCreateDialog()
   }
+  routeDataReady = true
 })
 </script>
 

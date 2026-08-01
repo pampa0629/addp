@@ -612,6 +612,7 @@
       "tasksTab": "Tile Quick View Tasks",
       "resultsTab": "Tile Quick View Results",
       "goGenerate": "Generate in Data Explorer",
+      "id": "ID",
       "name": "Task Name",
       "sourceEngine": "Source Engine",
       "source": "Source Photogrammetry",

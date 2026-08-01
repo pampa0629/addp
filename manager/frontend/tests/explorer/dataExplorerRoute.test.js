@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest'
 import {
   buildDataExplorerConsoleRoute,
   buildDataExplorerQuery,
-  normalizeDataExplorerTab
+  normalizeDataExplorerTab,
+  resolveDataExplorerRouteState
 } from '../../src/utils/dataExplorerRoute'
 
 describe('dataExplorerRoute', () => {
@@ -33,5 +34,27 @@ describe('dataExplorerRoute', () => {
       tab: undefined
     })
     expect(buildDataExplorerConsoleRoute('', 'attributes')).toBe('/manager/data-explorer')
+  })
+
+  it('canonicalizes the full recoverable query', () => {
+    expect(resolveDataExplorerRouteState({
+      locator: ` ${locator} `,
+      tab: ['ATTRIBUTES', 'profile'],
+      legacy: 'old'
+    })).toEqual({
+      locator,
+      tab: 'attributes',
+      query: { locator, tab: 'attributes' },
+      changed: true
+    })
+  })
+
+  it('removes a tab and unknown query when no resource is selected', () => {
+    expect(resolveDataExplorerRouteState({ tab: 'profile', legacy: 'old' })).toEqual({
+      locator: '',
+      tab: 'preview',
+      query: {},
+      changed: true
+    })
   })
 })

@@ -119,6 +119,7 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { metricAPI, metricCategoryAPI } from '../api/standard'
 import DocumentPanel from '../components/DocumentPanel.vue'
+import { navigateStandardRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -145,7 +146,7 @@ const formatTime = (time) => {
   return new Date(time).toLocaleString('zh-CN')
 }
 
-const goBack = () => router.push('/standard/metrics')
+const goBack = () => navigateStandardRoute(router, '/metrics', { history: 'replace' })
 
 const loadMetric = async () => {
   loading.value = true

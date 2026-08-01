@@ -103,6 +103,7 @@
       "addTag": "+ Add Tag",
       "sourceModulePlaceholder": "Select source module (optional)",
       "sourceReferencePlaceholder": "Unique identifier or path of source data (optional)",
+      "save": "Save",
       "saveDraft": "Save Draft",
       "saveAndSubmit": "Save & Submit",
       "rejectDialogTitle": "Reject Reason",

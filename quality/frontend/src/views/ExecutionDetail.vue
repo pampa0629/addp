@@ -1,6 +1,6 @@
 <template>
   <div v-loading="loading">
-    <el-page-header @back="$router.back()" :content="`${t('quality.execution.detailTitle')} - ${execution?.execution_id || ''}`" />
+    <el-page-header @back="backToList" :content="`${t('quality.execution.detailTitle')} - ${execution?.execution_id || ''}`" />
 
     <el-descriptions v-if="execution" :column="2" border style="margin-top:20px">
       <el-descriptions-item :label="t('quality.execution.status')">
@@ -55,12 +55,14 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { executionAPI } from '../api/quality'
 import { useI18n } from 'vue-i18n'
+import { navigateQualityRoute } from '../utils/moduleNavigation'
 
 const { t } = useI18n()
 const route = useRoute()
+const router = useRouter()
 const execution = ref(null)
 const loading = ref(false)
 
@@ -69,10 +71,12 @@ const statusType = (status) => {
   return map[status] || 'info'
 }
 
+const backToList = () => navigateQualityRoute(router, '/executions', { history: 'replace' })
+
 onMounted(async () => {
   loading.value = true
   try {
-    const res = await executionAPI.get(route.params.id)
+    const res = await executionAPI.get(route.params.execution_id)
     execution.value = res
   } finally {
     loading.value = false

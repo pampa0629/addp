@@ -2,7 +2,7 @@
   <div class="dim-hierarchy-detail">
     <div class="detail-header">
       <div class="header-left">
-        <el-button text @click="$router.back()">
+        <el-button text @click="goBack">
           <el-icon><ArrowLeft /></el-icon>{{ $t('standard.common.back') }}
         </el-button>
         <span class="title">{{ hierarchy.name || $t('standard.common.loadFailed') }}</span>
@@ -113,14 +113,17 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Plus } from '@element-plus/icons-vue'
 import { dimensionHierarchyAPI } from '../api/standard'
+import { navigateStandardRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 const route = useRoute()
+const router = useRouter()
+const goBack = () => navigateStandardRoute(router, '/dimension-hierarchies', { history: 'replace' })
 const hierarchyId = parseInt(route.params.id)
 
 const hierarchy = ref({})

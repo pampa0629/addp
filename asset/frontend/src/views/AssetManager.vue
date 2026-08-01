@@ -70,7 +70,6 @@
           </el-select>
           <span class="total-label">{{ t('asset.assetManager.total', { count: total }) }}</span>
           <el-button
-            type="primary"
             :loading="syncing"
             @click="handleSync"
           >
@@ -105,7 +104,11 @@
           style="width: 100%"
         >
           <el-table-column type="selection" width="44" />
-          <el-table-column prop="name" :label="t('asset.assetManager.name')" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="name" :label="t('asset.assetManager.name')" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">
+              <el-link type="primary" @click="openDetail(row.id)">{{ row.name }}</el-link>
+            </template>
+          </el-table-column>
           <el-table-column prop="type_name" :label="t('asset.assetManager.type')" width="90" />
           <el-table-column prop="source_module" :label="t('asset.assetManager.source')" width="90" />
           <el-table-column prop="catalog_name" :label="t('asset.assetManager.catalog')" width="120" show-overflow-tooltip>
@@ -121,8 +124,11 @@
               <el-tag v-else-if="row.status === 'offline'" type="warning" size="small">{{ t('asset.assetManager.offline') }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column :label="t('asset.assetManager.actions')" width="100" fixed="right">
+          <el-table-column :label="t('asset.assetManager.actions')" width="160" fixed="right">
             <template #default="{ row }">
+              <el-button link type="primary" size="small" @click="openDetail(row.id)">
+                {{ t('asset.assetDetail.assetDetail') }}
+              </el-button>
               <el-button
                 v-if="row.status !== 'published'"
                 link
@@ -171,13 +177,17 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Folder, FolderOpened, ArrowDown } from '@element-plus/icons-vue'
 import { assetAPI, catalogAPI, typeDefinitionAPI } from '../api/asset'
 import { useI18n } from 'vue-i18n'
+import { navigateAssetRoute } from '../utils/moduleNavigation'
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
 
 // ===== 状态 =====
 const syncing = ref(false)
@@ -192,6 +202,7 @@ const categories = ref([])
 const typeOptions = ref([])
 const selectedCategoryId = ref(null) // null = 未分类, number = 分类ID
 const uncategorizedCount = ref(0)
+const categoryRouteReady = ref(false)
 
 const filters = reactive({
   keyword: '',
@@ -222,7 +233,19 @@ const flatCategories = computed(() => {
 // ===== 生命周期 =====
 onMounted(async () => {
   await Promise.all([loadCategories(), loadTypes()])
+  await initializeCategoryRoute()
+  categoryRouteReady.value = true
   await handleSync()
+})
+
+watch(() => route.query.catalog_id, async () => {
+  if (!categoryRouteReady.value) return
+  if (!applyCategoryFromRoute()) {
+    await navigateAssetRoute(router, '/assets', { history: 'replace' })
+    return
+  }
+  page.value = 1
+  await loadAssets()
 })
 
 // ===== 同步 =====
@@ -362,16 +385,37 @@ async function loadTypes() {
   }
 }
 
+function applyCategoryFromRoute() {
+  const catalogId = route.query.catalog_id
+  if (catalogId === undefined) {
+    selectedCategoryId.value = null
+    return true
+  }
+  if (typeof catalogId !== 'string') return false
+
+  const category = flatCategories.value.find(item => String(item.id) === catalogId)
+  if (!category) return false
+  selectedCategoryId.value = category.id
+  return true
+}
+
+async function initializeCategoryRoute() {
+  if (applyCategoryFromRoute()) return
+  selectedCategoryId.value = null
+  await navigateAssetRoute(router, '/assets', { history: 'replace' })
+}
+
 function selectCategory(id) {
-  selectedCategoryId.value = id
-  page.value = 1
-  loadAssets()
+  const query = id === null ? {} : { catalog_id: String(id) }
+  navigateAssetRoute(router, { path: '/assets', query }, { history: 'replace' })
 }
 
 function onTreeNodeClick(data) {
-  selectedCategoryId.value = data.id
-  page.value = 1
-  loadAssets()
+  selectCategory(data.id)
+}
+
+function openDetail(assetId) {
+  navigateAssetRoute(router, `/assets/${assetId}`)
 }
 
 function openAddRootCategory() {

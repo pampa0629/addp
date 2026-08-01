@@ -140,6 +140,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
 import { logicalTableAPI, domainAPI } from '../api/model'
+import { navigateModelRoute } from '../utils/moduleNavigation'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -205,7 +206,7 @@ const handleCreate = async () => {
     const res = await logicalTableAPI.create(createForm)
     ElMessage.success(t('model.common.create_success'))
     createDialogVisible.value = false
-    router.push(`/modeling/logical-tables/${res.id}`)
+    navigateModelRoute(router, `/logical-tables/${res.id}`, { history: 'replace' })
   } catch (err) {
     ElMessage.error(err.response?.data?.error || t('model.common.create_failed'))
   } finally {
@@ -224,7 +225,7 @@ const handleDelete = async (id) => {
 }
 
 const goToDetail = (row) => {
-  router.push(`/modeling/logical-tables/${row.id}`)
+  navigateModelRoute(router, `/logical-tables/${row.id}`)
 }
 
 onMounted(async () => {

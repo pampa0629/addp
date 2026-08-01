@@ -29,6 +29,19 @@ export function hasStorageCapability(engine) {
   return isNativeTableEngine(engine) || isContentEngine(engine) || isDocumentEngine(engine) || isGraphEngine(engine)
 }
 
+export function hasIdempotentTableUpsert(engine) {
+  const upsert = parseCapabilities(engine)?.storage?.store?.table_upsert
+  return upsert?.supported === true && upsert?.idempotent === true
+}
+
+export function hasAtomicPartitionedTableChangeApply(engine, requiredOperations = ['upsert']) {
+  const apply = parseCapabilities(engine)?.storage?.store?.partitioned_table_change_apply
+  if (apply?.supported !== true || apply?.atomic_position_commit !== true || apply?.monotonic !== true) return false
+  if (!Array.isArray(apply.position_types) || !apply.position_types.includes('kafka_offset/v1')) return false
+  const operations = Array.isArray(apply.operations) ? apply.operations : []
+  return requiredOperations.every(operation => operations.includes(operation))
+}
+
 export function isNativeTableEngine(engineOrType) {
   const caps = typeof engineOrType === 'object' ? parseCapabilities(engineOrType) : null
   if (caps?.engine_family === 'tabular') return true

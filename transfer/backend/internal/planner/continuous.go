@@ -137,8 +137,8 @@ func validateContinuousTaskSpec(spec ContinuousTaskSpec) error {
 		return fmt.Errorf("continuous source.change_stream.poll_batch_size must be greater than zero")
 	}
 	parent, err := spec.Target.ParentResourceLocator()
-	if err != nil || parent.Type != resourcetree.TypeSchema {
-		return fmt.Errorf("continuous target.parent_locator must identify a schema")
+	if err != nil || !isNativeTableParentType(parent.Type) {
+		return fmt.Errorf("continuous target.parent_locator must identify a database or schema")
 	}
 	if strings.TrimSpace(spec.Target.Name) == "" || spec.Target.DataType != dataTypeTable || spec.Target.Representation != representationNative {
 		return fmt.Errorf("continuous target must be a named native table")

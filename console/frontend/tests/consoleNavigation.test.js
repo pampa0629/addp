@@ -2,6 +2,10 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 import { buildConsoleNavigationRequest } from '../../../common-frontend/basic/src/utils/taskOwnerUrl'
+import {
+  buildConsoleModuleRoute,
+  navigateConsoleModuleRoute
+} from '../../../common-frontend/basic/src/utils/moduleRouteNavigation'
 import { isSynchronizedIframeRoute, splitConsoleRoute } from '../src/utils/consoleNavigation'
 
 describe('Console navigation bridge', () => {
@@ -45,6 +49,85 @@ describe('Console navigation bridge', () => {
     const portalSource = readFileSync(new URL('../src/views/Portal.vue', import.meta.url), 'utf8')
     expect(portalSource).toContain('isSynchronizedIframeRoute(synchronizedIframeModule, fullPath)')
     expect(portalSource).toContain('if (url && !keepCurrentIframe)')
+    expect(portalSource).toContain('iframeNavigationKey.value += 1')
     expect(portalSource).toContain("targetModule !== currentModule.value")
+
+    const iframeSource = readFileSync(new URL('../src/components/portal/PortalIframe.vue', import.meta.url), 'utf8')
+    expect(iframeSource).toContain(':key="iframeKey || iframeUrl"')
+  })
+
+  it('builds a Console route from one module-local fullPath', () => {
+    expect(buildConsoleModuleRoute('develop', '/workflow?action=edit&id=544'))
+      .toBe('/develop/workflow?action=edit&id=544')
+    expect(buildConsoleModuleRoute('develop', '/')).toBe('/develop')
+    expect(() => buildConsoleModuleRoute('develop', '/develop/workflow'))
+      .toThrow('must not include the Console module prefix')
+  })
+
+  it('uses local replace and one Console push for iframe module navigation', async () => {
+    const listeners = new Map()
+    const previousWindow = globalThis.window
+    const postedMessages = []
+    const parent = {
+      postMessage(message) {
+        postedMessages.push(message)
+        queueMicrotask(() => {
+          listeners.get('message')?.({
+            data: {
+              type: 'addp:console-bridge:response',
+              channel: message.channel,
+              requestId: message.requestId,
+              ok: true,
+              data: {}
+            }
+          })
+        })
+      }
+    }
+    globalThis.window = {
+      parent,
+      addEventListener(type, listener) {
+        listeners.set(type, listener)
+      },
+      removeEventListener(type, listener) {
+        if (listeners.get(type) === listener) listeners.delete(type)
+      },
+      setTimeout,
+      clearTimeout
+    }
+
+    const calls = []
+    const router = {
+      currentRoute: { value: { fullPath: '/tasks' } },
+      resolve: location => ({ fullPath: `${location.path}?action=edit&id=${location.query.id}` }),
+      async push(location) {
+        calls.push(['push', location])
+      },
+      async replace(location) {
+        calls.push(['replace', location])
+        this.currentRoute.value.fullPath = this.resolve(location).fullPath
+      }
+    }
+
+    try {
+      await navigateConsoleModuleRoute(router, 'develop', {
+        path: '/workflow',
+        query: { action: 'edit', id: '544' }
+      })
+    } finally {
+      if (previousWindow === undefined) delete globalThis.window
+      else globalThis.window = previousWindow
+    }
+
+    expect(calls).toEqual([['replace', {
+      path: '/workflow',
+      query: { action: 'edit', id: '544' }
+    }]])
+    expect(postedMessages).toHaveLength(1)
+    expect(postedMessages[0].payload).toEqual({
+      route: '/develop/workflow?action=edit&id=544',
+      history: 'push',
+      synchronized: true
+    })
   })
 })

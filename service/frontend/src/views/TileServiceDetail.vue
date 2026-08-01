@@ -387,6 +387,7 @@ import { Link } from '@element-plus/icons-vue'
 import tileServiceAPI from '@/api/tileService'
 import { TilePreview } from '@common-ui-map'
 import { copyToClipboard } from '../utils/serviceHelper'
+import { navigateServiceRoute } from '@/utils/moduleNavigation'
 import { tilePreviewConfig, tilePreviewCoordinate } from '../utils/tileServicePreview'
 import { ResourceTreePicker, detectTableMetadata, locatorPathFromSelection } from '@common-ui'
 import {
@@ -683,7 +684,7 @@ const handleDelete = async () => {
 
     await tileServiceAPI.deleteService(serviceId.value)
     ElMessage.success(t('service.tile.deleteSuccess'))
-    router.push('/tile')
+    await navigateServiceRoute(router, '/tile', { history: 'replace' })
   } catch (error) {
     if (error !== 'cancel') {
       ElMessage.error(t('service.tile.deleteFailed') + ': ' + (error.response?.data?.error || error.message))
@@ -693,11 +694,11 @@ const handleDelete = async () => {
 
 // 方法：导航
 const goBack = () => {
-  router.push('/tile')
+  navigateServiceRoute(router, '/tile', { history: 'replace' })
 }
 
 const goToEdit = () => {
-  router.push(`/tile/${serviceId.value}/edit`)
+  navigateServiceRoute(router, `/tile/${serviceId.value}/edit`)
 }
 
 // 图层管理方法

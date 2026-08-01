@@ -2515,54 +2515,6 @@ const docTemplate = `{
                 "x-addp-required-permissions": [
                     "manager.derived_artifact.read"
                 ]
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "创建或复用分块三维模型瓦片任务。同一 tenant_id、item_fingerprint 和 target_format 返回同一任务 ID；结果写入 Manager infra MinIO。| Create or reuse a model3d tiles task. The same tenant_id, item_fingerprint, and target_format return the same task ID; results are stored in Manager infra MinIO.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "创建三维模型 3D Tiles 任务配置 | Create model 3D Tiles generation task configuration",
-                "parameters": [
-                    {
-                        "description": "model 3D Tiles generation task configuration",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.Model3DTilesTaskRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "创建的任务配置 | Created task configuration",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.Model3DTilesTaskResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "请求参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "manager.derived_artifact.create"
-                ]
             }
         },
         "/model3d_tiles_tasks/{id}": {
@@ -2613,67 +2565,6 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "manager.derived_artifact.read"
-                ]
-            },
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "更新三维模型 3D Tiles 任务配置 | Update model 3D Tiles generation task configuration",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "model 3D Tiles generation task configuration",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.Model3DTilesTaskRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "更新后的任务配置 | Updated task configuration",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.Model3DTilesTaskResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "请求参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "任务不存在 | Task not found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "manager.derived_artifact.update"
                 ]
             },
             "delete": {
@@ -4567,46 +4458,6 @@ const docTemplate = `{
                 "x-addp-required-permissions": [
                     "manager.derived_artifact.read"
                 ]
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "创建栅格快显 COG 任务配置 | Create raster COG generation task configuration",
-                "parameters": [
-                    {
-                        "description": "raster COG generation task configuration",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.RasterCOGTaskRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "创建的任务配置 | Created task configuration",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.RasterCOGTaskResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "manager.derived_artifact.create"
-                ]
             }
         },
         "/raster_cog_tasks/{id}": {
@@ -4643,53 +4494,6 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "manager.derived_artifact.read"
-                ]
-            },
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "更新栅格快显 COG 任务配置 | Update raster COG generation task configuration",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "raster COG generation task configuration",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.RasterCOGTaskRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "更新后的任务配置 | Updated task configuration",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.RasterCOGTaskResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "manager.derived_artifact.update"
                 ]
             },
             "delete": {
@@ -9565,29 +9369,6 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.Model3DTilesTaskRequest": {
-            "type": "object",
-            "properties": {
-                "config": {
-                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "enabled": {
-                    "type": "boolean"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "next_run_at": {
-                    "type": "string"
-                },
-                "schedule": {
-                    "type": "string"
-                }
-            }
-        },
         "internal_api.Model3DTilesTaskResponse": {
             "type": "object",
             "properties": {
@@ -9834,29 +9615,6 @@ const docTemplate = `{
                 },
                 "width": {
                     "type": "integer"
-                }
-            }
-        },
-        "internal_api.RasterCOGTaskRequest": {
-            "type": "object",
-            "properties": {
-                "config": {
-                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "enabled": {
-                    "type": "boolean"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "next_run_at": {
-                    "type": "string"
-                },
-                "schedule": {
-                    "type": "string"
                 }
             }
         },

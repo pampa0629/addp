@@ -265,6 +265,9 @@ func newFieldMappingTransform(plan FieldMappingTransformPlan) (*fieldMappingTran
 		if field.Target == "" {
 			return nil, fmt.Errorf("field_mapping field target is required")
 		}
+		if err := validateFieldMappingDecimalOptions(field); err != nil {
+			return nil, err
+		}
 		fields = append(fields, field)
 	}
 	return &fieldMappingTransform{mode: mode, fields: fields}, nil
@@ -353,9 +356,7 @@ func fieldInfoForMapping(tableInfo *datatype.TableInfo, mapping FieldMappingFiel
 		field = findFieldInfo(tableInfo, mapping.Target)
 	}
 	field.Name = mapping.Target
-	if mapping.TargetType != "" {
-		field.Type = datatype.FieldType(mapping.TargetType)
-	}
+	applyFieldMappingTypeFacts(&field, mapping)
 	field.Nullable = mapping.Nullable
 	if mapping.Format != "" {
 		field.Comment = mapping.Format
@@ -388,11 +389,48 @@ func engineFieldForMapping(source []datatype.FieldInfo, mapping FieldMappingFiel
 		field = findEngineField(source, mapping.Target)
 	}
 	field.Name = mapping.Target
-	if mapping.TargetType != "" {
-		field.Type = datatype.FieldType(mapping.TargetType)
-	}
+	applyFieldMappingTypeFacts(&field, mapping)
 	field.Nullable = mapping.Nullable
 	return field
+}
+
+func applyFieldMappingTypeFacts(field *datatype.FieldInfo, mapping FieldMappingFieldPlan) {
+	if field == nil {
+		return
+	}
+	if mapping.TargetType != "" {
+		field.Type = datatype.ParseFieldType(mapping.TargetType)
+	}
+	if field.Type != datatype.FieldTypeDecimal {
+		field.Precision = 0
+		field.Scale = 0
+		return
+	}
+	if mapping.Precision != nil {
+		field.Precision = *mapping.Precision
+		field.Scale = *mapping.Scale
+	}
+}
+
+func validateFieldMappingDecimalOptions(field FieldMappingFieldPlan) error {
+	hasPrecision := field.Precision != nil
+	hasScale := field.Scale != nil
+	if hasPrecision != hasScale {
+		return fmt.Errorf("field_mapping decimal field %q requires precision and scale together", field.Target)
+	}
+	if !hasPrecision {
+		return nil
+	}
+	if field.TargetType != "" && datatype.ParseFieldType(field.TargetType) != datatype.FieldTypeDecimal {
+		return fmt.Errorf("field_mapping field %q precision and scale require decimal target_type", field.Target)
+	}
+	if *field.Precision <= 0 {
+		return fmt.Errorf("field_mapping decimal field %q precision must be positive", field.Target)
+	}
+	if *field.Scale < 0 || *field.Scale > *field.Precision {
+		return fmt.Errorf("field_mapping decimal field %q scale must be between 0 and precision", field.Target)
+	}
+	return nil
 }
 
 func fieldMappingBatchSpatial(source *datatype.SpatialInfo, fields []datatype.FieldInfo, mappings []FieldMappingFieldPlan, mode FieldMappingMode) *datatype.SpatialInfo {

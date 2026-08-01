@@ -98,6 +98,7 @@
 
 <script>
 import registeredServiceAPI from '@/api/registeredService'
+import { navigateServiceRoute } from '@/utils/moduleNavigation'
 
 export default {
   name: 'RegisteredServiceList',
@@ -242,15 +243,15 @@ export default {
     },
 
     goToCreate() {
-      this.$router.push('/registered-services/create')
+      navigateServiceRoute(this.$router, '/registered-services/create')
     },
 
     goToDetail(id) {
-      this.$router.push(`/registered-services/${id}`)
+      navigateServiceRoute(this.$router, `/registered-services/${id}`)
     },
 
     goToEdit(id) {
-      this.$router.push(`/registered-services/${id}/edit`)
+      navigateServiceRoute(this.$router, `/registered-services/${id}/edit`)
     },
 
     previousPage() {

@@ -38,23 +38,23 @@
               <el-icon><Box /></el-icon>
               <span>{{ t('model.layout.modeling') }}</span>
             </template>
-            <el-menu-item index="/modeling/dw-layers">
+            <el-menu-item index="/dw-layers">
               <el-icon><Tickets /></el-icon>
               <span>{{ t('model.layout.dwLayers') }}</span>
             </el-menu-item>
-            <el-menu-item index="/modeling/entities">
+            <el-menu-item index="/entities">
               <el-icon><Memo /></el-icon>
               <span>{{ t('model.layout.entities') }}</span>
             </el-menu-item>
-            <el-menu-item index="/modeling/er-diagram">
+            <el-menu-item index="/er-diagram">
               <el-icon><Connection /></el-icon>
               <span>{{ t('model.layout.erDiagram') }}</span>
             </el-menu-item>
-            <el-menu-item index="/modeling/logical-tables">
+            <el-menu-item index="/logical-tables">
               <el-icon><Operation /></el-icon>
               <span>{{ t('model.layout.logicalTables') }}</span>
             </el-menu-item>
-            <el-menu-item index="/modeling/star-schema">
+            <el-menu-item index="/star-schema">
               <el-icon><Star /></el-icon>
               <span>{{ t('model.layout.starSchema') }}</span>
             </el-menu-item>
@@ -92,15 +92,11 @@ onMounted(() => {
 
 const activeMenu = computed(() => {
   const path = route.path
-  if (path.startsWith('/standard/domains')) return '/standard/domains'
-  if (path.startsWith('/standard/glossaries')) return '/standard/glossaries'
-  if (path.startsWith('/standard/elements')) return '/standard/elements'
-  if (path.startsWith('/standard/code-sets')) return '/standard/code-sets'
-  if (path.startsWith('/modeling/dw-layers')) return '/modeling/dw-layers'
-  if (path.startsWith('/modeling/entities')) return '/modeling/entities'
-  if (path.startsWith('/modeling/logical-tables')) return '/modeling/logical-tables'
-  if (path.startsWith('/modeling/er-diagram')) return '/modeling/er-diagram'
-  if (path.startsWith('/modeling/star-schema')) return '/modeling/star-schema'
+  if (path.startsWith('/dw-layers')) return '/dw-layers'
+  if (path.startsWith('/entities')) return '/entities'
+  if (path.startsWith('/logical-tables')) return '/logical-tables'
+  if (path.startsWith('/er-diagram')) return '/er-diagram'
+  if (path.startsWith('/star-schema')) return '/star-schema'
   return path
 })
 

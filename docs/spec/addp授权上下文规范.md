@@ -1,8 +1,10 @@
 # ADDP 授权上下文规范
 
-更新日期：2026-07-24
+更新日期：2026-08-01
 
-状态：正式目标规范。本规范定义 ADDP 访问令牌的唯一解析语义和模块消费路径；目标 JSON 契约固定为 `addp.auth_context/v1`，完整 Schema 和示例见 `docs/next/addp-IAM AuthContext契约设计.md`，现有 `user_type` 响应结构不是目标契约。
+状态：正式规范。本规范定义 ADDP 访问令牌的唯一解析语义和模块消费路径；当前唯一 JSON 契约为 `addp.auth_context/v1`。
+
+机器可校验的唯一 Schema 位于 `common/authorization/schemas/auth-context-v1.schema.json`，共享 Go 类型位于 `common/authorization`，Python 类型位于 `common-python/addp_common/auth.py`。本文不复制完整 Schema，避免形成第二事实源。
 
 ## 一、目标
 
@@ -184,20 +186,22 @@ Platform Service Role，不允许 Service Principal 持有或借用平台三员 
 - 用 API Key、OAuth Scope 或平台角色模拟 Tenant 业务授权；
 - 通过 Scope 提升 Role Permission 或跨 Tenant 权限；
 - 业务模块从 Token 字符串、日志或前端状态反推授权上下文；
-- 在目标实现中保留 `user_type` 与 Role Assignment 双轨权限判断。
+- 恢复 `user_type` 与 Role Assignment 双轨权限判断。
 
-## 九、实现切换要求
+## 九、当前实现与演进约束
 
-当前代码和部分 System 表/API文档仍使用 `users.user_type` 与 `users.tenant_id`。它们是待替换的实现差距，不构成兼容契约。实施目标 IAM 时必须同步完成：
+当前 IAM Runtime 使用唯一 `auth-context-v1.schema.json` 和共享类型投影第一方 Web、OAuth User、Service Principal、Browser Resource Access Ticket 与 Delegated Access Token。旧 `users.user_type`、`users.tenant_id`、JWT 用户令牌、平铺 Gin Context Key 和 `/users/me` 令牌验证路径已删除。
 
-1. 将已确认的 v1 JSON Schema 落为 `common/authorization/schemas/auth-context-v1.schema.json`，生成或校验共享 Go/Python/TypeScript 类型；
-2. 将所有调用方一次性迁移到新契约；
-3. 删除 `user_type` 字段、helper、条件分支和旧文档；
-4. 删除 `tenant_id=null` / `tenant_id=0` 的平台全权语义；
-5. 完成 System、common、common-python、Gateway 和 owner 模块契约测试后再切换运行路径。
+Resource Ticket 使用所属第一方 Browser Family 的同一身份与授权投影，并用 owner audience 和 `resource:read` 额外收窄；Delegated Token 回溯源 Access Token 与 Family，并用 owner Tool Scope 和审计绑定额外收窄；Service Access Token 只由 Fosite Client Credentials Grant 签发，并固定为一个 Tenant Membership Context 或一个显式 Platform Service Context。调用方不能保留共享 Internal API Key 与 Bearer 双轨。
 
-不允许旧 AuthContext 与新 AuthContext 按客户端、路由或配置双轨共存。
+Execution Authorization 不新增 AuthContext Token 类型，也不复用 Agent Delegated Access Token。它是由 User AuthContext 派生、由匹配 Runtime Service Principal 消费的执行期授权事实；禁止恢复“Service Principal 直接获得通用 Engine 明文读取权限”和“用户 Token 代传到 Worker/Runtime”两条旧路径。
 
-当前 IAM Runtime 使用唯一 `auth-context-v1.schema.json` 和共享类型投影第一方 Web、OAuth User、Service Principal、Browser Resource Access Ticket 与 Delegated Access Token。Resource Ticket 使用所属第一方 Browser Family 的同一身份与授权投影，并用 owner audience 和 `resource:read` 额外收窄；Delegated Token 回溯源 Access Token 与 Family，并用 owner Tool Scope 和审计绑定额外收窄；Service Access Token 只由 Fosite Client Credentials Grant 签发，并固定为一个 Tenant Membership Context 或一个显式 Platform Service Context。调用方必须一次性迁移，不能保留共享 Internal API Key 与 Bearer 双轨。
+v1 契约演进必须同步修改 Schema、共享 Go/Python 类型、System 投影、所有消费者和契约测试。ADDP 当前不提供按 Client 协商多个 AuthContext Schema 的兼容机制；需要破坏性变化时先修订本规范，再一次性切换全平台。
 
-Execution Authorization 不新增 AuthContext Token 类型，也不复用 Agent Delegated Access Token。它是由 User AuthContext 派生、由匹配 Runtime Service Principal 消费的执行期授权事实；调用方迁移后必须删除“Service Principal 直接获得通用 Engine 明文读取权限”和“用户 Token 代传到 Worker/Runtime”两条旧路径。
+最小验证：
+
+```bash
+make test-authorization
+cd system/backend && go test ./internal/iam/... ./internal/api/... ./internal/middleware/...
+cd ../../common-python && .venv/bin/pytest -q
+```

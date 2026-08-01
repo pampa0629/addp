@@ -43,6 +43,7 @@
         <PortalIframe
           v-else
           :iframe-url="iframeUrl"
+          :iframe-key="iframeNavigationKey"
           @load="handleIframeLoad"
         />
       </el-main>
@@ -150,6 +151,7 @@ const user = computed(() => authStore.user)
 const activeMenu = ref('/')
 const currentModule = ref('home')
 const iframeUrl = ref('')
+const iframeNavigationKey = ref(0)
 const isCollapsed = ref(false)
 const isNarrowViewport = ref(false)
 const activeGroup = ref(null)  // null = 全局首页
@@ -384,6 +386,7 @@ function syncRouteToPortal(fullPath) {
   const url = buildModuleUrl(module, page)
   if (url && !keepCurrentIframe) {
     iframeUrl.value = url
+    iframeNavigationKey.value += 1
   } else if (!url) {
     console.error('[Console] Module URL not found for:', module)
   }

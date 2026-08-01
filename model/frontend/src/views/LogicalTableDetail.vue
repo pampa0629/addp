@@ -3,7 +3,7 @@
     <!-- 顶部操作栏 -->
     <div class="detail-header">
       <div class="header-left">
-        <el-button text @click="$router.back()">
+        <el-button text @click="backToList">
           <el-icon><ArrowLeft /></el-icon>
           {{ t('model.common.back') }}
         </el-button>
@@ -382,17 +382,21 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Plus, View } from '@element-plus/icons-vue'
 import { logicalTableAPI, domainAPI, elementAPI, standardMetricAPI } from '../api/model'
 import DDLPreviewDialog from '../components/DDLPreviewDialog.vue'
 import { useI18n } from 'vue-i18n'
+import { navigateModelRoute } from '../utils/moduleNavigation'
 
 const { t } = useI18n()
 
 const route = useRoute()
+const router = useRouter()
 const tableId = parseInt(route.params.id)
+
+const backToList = () => navigateModelRoute(router, '/logical-tables', { history: 'replace' })
 
 const saving = ref(false)
 const fieldLoading = ref(false)

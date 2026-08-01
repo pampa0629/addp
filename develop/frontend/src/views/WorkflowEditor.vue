@@ -550,8 +550,8 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -596,6 +596,11 @@ import { resolveWorkflowGenerationResult } from '@/utils/workflowGenerationResul
 import { getResourceBinding } from '@/utils/workflowResourceBindings'
 import { hasDistinctText } from '@/utils/displayText'
 import { groupValidationIssues, validationIssueParamName } from '@/utils/workflowValidationIssues'
+import {
+  buildDevelopTaskEditorLocation,
+  developTaskIDFromRoute
+} from '@/utils/developTaskRoute'
+import { navigateDevelopTaskEditor } from '@/utils/developNavigation'
 import { focusElement, openMonitorExecution, StatusAnnouncer } from '@addp/common-frontend'
 
 const route = useRoute()
@@ -1027,21 +1032,14 @@ async function applyEngineSwitch(engineId, { saved = false } = {}) {
 }
 
 async function clearTaskRouteQuery() {
-  const query = { ...route.query }
-  const hasTaskQuery = Object.prototype.hasOwnProperty.call(query, 'id') ||
-    Object.prototype.hasOwnProperty.call(query, 'taskId')
-  if (!hasTaskQuery) return
-  delete query.id
-  delete query.taskId
-  await router.replace({ query })
+  await navigateDevelopTaskEditor(router, 'workflow', '', { history: 'replace' })
 }
 
 async function setTaskRouteQuery(taskId) {
   if (!taskId) return
-  const query = { ...route.query, id: String(taskId) }
-  delete query.taskId
-  if (String(route.query.id || '') === String(taskId) && !route.query.taskId) return
-  await router.replace({ query })
+  const target = buildDevelopTaskEditorLocation('workflow', taskId)
+  if (route.fullPath === router.resolve(target).fullPath) return
+  await navigateDevelopTaskEditor(router, 'workflow', taskId, { history: 'replace' })
 }
 
 async function ensureSparkRuntime() {
@@ -1669,7 +1667,7 @@ function workflowConfirmOptions({ danger = false } = {}) {
   }
 }
 
-onBeforeRouteLeave(async () => {
+async function confirmUnsavedRouteChange() {
   if (!isDirty.value) return true
   try {
     await ElMessageBox.confirm(
@@ -1681,26 +1679,74 @@ onBeforeRouteLeave(async () => {
   } catch {
     return false
   }
+}
+
+onBeforeRouteLeave(confirmUnsavedRouteChange)
+
+onBeforeRouteUpdate((to, from) => {
+  if (String(to.query.id || '') === String(from.query.id || '')) return true
+  return confirmUnsavedRouteChange()
 })
+
+const workflowTaskRouteReady = ref(false)
+let applyingWorkflowTaskRoute = false
+
+async function resetWorkflowEditorForCreate() {
+  if (!currentTaskId.value && workflowData.value.tasks.length === 0) return
+  canvasRef.value?.clearGraph()
+  workflowData.value = { tasks: [] }
+  editorLayout.value = {}
+  selectedNode.value = null
+  currentTaskId.value = null
+  currentTaskName.value = ''
+  currentTask.value = null
+  sparkRuntimeId.value = null
+  resetStorageBindingState()
+  resetValidationState()
+  await selectDefaultEngine()
+  markSaved()
+}
+
+async function applyWorkflowTaskRoute({ initializeCreate = false } = {}) {
+  if (applyingWorkflowTaskRoute) return
+  applyingWorkflowTaskRoute = true
+  try {
+    const taskId = developTaskIDFromRoute(route)
+    const canonicalLocation = buildDevelopTaskEditorLocation('workflow', taskId)
+    if (route.fullPath !== router.resolve(canonicalLocation).fullPath) {
+      await navigateDevelopTaskEditor(router, 'workflow', taskId, { history: 'replace' })
+    }
+
+    if (taskId) {
+      if (String(currentTaskId.value || '') !== taskId) await loadTask(taskId)
+    } else if (initializeCreate) {
+      await selectDefaultEngine()
+      markSaved()
+    } else {
+      await resetWorkflowEditorForCreate()
+    }
+  } catch (error) {
+    ElMessage.error(t('develop.workflow.loadTaskFailed') + error.message)
+  } finally {
+    applyingWorkflowTaskRoute = false
+  }
+}
 
 onMounted(async () => {
   window.addEventListener('beforeunload', handleBeforeUnload)
   await loadWorkflowEngines()
-  const taskId = firstQueryValue(route.query.id || route.query.taskId)
-  if (taskId) await loadTask(taskId)
-  else {
-    await selectDefaultEngine()
-    markSaved()
-  }
+  await applyWorkflowTaskRoute({ initializeCreate: true })
+  workflowTaskRouteReady.value = true
+})
+
+watch(() => route.fullPath, () => {
+  if (workflowTaskRouteReady.value) applyWorkflowTaskRoute()
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', handleBeforeUnload)
 })
 
-function firstQueryValue(value) {
-  return Array.isArray(value) ? value[0] || '' : value || ''
-}
 </script>
 
 <style scoped>

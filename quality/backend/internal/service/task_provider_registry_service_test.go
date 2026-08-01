@@ -73,7 +73,7 @@ func TestTaskProviderRegistryRegistersStandardQualityContract(t *testing.T) {
 		t.Fatalf("task_capabilities = %#v, want one entry", capabilities.TaskCapabilities)
 	}
 	capability := capabilities.TaskCapabilities[0]
-	if capability.Type != "check" || capability.CreateURL != "/quality/check-tasks" || capability.EditURL != "/quality/check-tasks?task_id=:id" {
+	if capability.Type != "check" || capability.CreateURL != "/quality/check-tasks?create=1" || capability.EditURL != "/quality/check-tasks?task_id=:id" {
 		t.Fatalf("check capability = %#v", capability)
 	}
 	if capability.SupportsSchedule || capability.SupportsCancel || capability.SupportsInlineExecution || capability.Deprecated {

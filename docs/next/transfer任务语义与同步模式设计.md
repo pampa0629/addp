@@ -49,8 +49,8 @@
 14. 当前 Asynq worker 继续作为 bounded worker；新增独立 continuous worker 进程角色，一个进程承载多个 runtime session，并通过 DB lease/fencing 支持多实例。
 15. Debezium 运行在独立 Kafka Connect distributed 集群中，由 Transfer capture supervisor 通过受控 API 管理，不嵌入 Transfer Go 进程。
 16. Schema 变化第一阶段默认严格阻塞，不静默忽略字段，也不默认自动执行目标 DDL。
-17. 业务 Kafka 第一版只支持 keyed JSON record -> PostgreSQL monotonic upsert；业务目标库通过 partition apply ledger 原子推进 `next_offset`，普通 append 不进入第一版。
-18. PostgreSQL CDC 第一版只支持有稳定主键的单表 initial snapshot -> snapshot/upsert/delete -> PostgreSQL 新目标表；pause 保持捕获，stop 是不可逆终态。
+17. 业务 Kafka 第一版只支持 keyed JSON record -> PostgreSQL/MySQL monotonic upsert；业务目标库通过 partition apply ledger 原子推进 `next_offset`，普通 append 不进入第一版。
+18. 数据库 CDC 第一版只支持 PostgreSQL/MySQL 有稳定主键的单表 initial snapshot -> snapshot/upsert/delete -> PostgreSQL/MySQL 新目标表；pause 保持捕获，stop 是不可逆终态。
 
 ## 三、Transfer 的稳定定位
 
@@ -406,7 +406,7 @@ type ChangeStreamReader interface {
 }
 ```
 
-JSON 解码、ChangeEvent 归一化和 ChangeApplyWriter 属于 Transfer continuous runtime。第一版目标使用 PostgreSQL `PartitionedTableChangeApplyProvider`：Provider 不理解 ChangeEvent，只接收已映射表行、目标 keys、每条记录 position 和单 partition 批次边界，并把业务数据与目标 apply ledger 原子提交。
+JSON 解码、ChangeEvent 归一化和 ChangeApplyWriter 属于 Transfer continuous runtime。目标使用声明完整语义的 `PartitionedTableChangeApplyProvider`，当前实现为 PostgreSQL 与 MySQL：Provider 不理解 ChangeEvent，只接收已映射表行、目标 keys、每条记录 position 和单 partition 批次边界，并把业务数据与目标 apply ledger 原子提交。
 
 Kafka topic 和数据库 CDC 不能伪装成当前 `BatchReadableProvider`。Kafka poll 可以按批返回消息，但它的 offset、rebalance、持续生命周期和 checkpoint 语义与 bounded table batch 不同。
 
@@ -430,7 +430,7 @@ at-least-once delivery + idempotent target apply
 任意外部数据库目标与 Kafka offset 之间通常不存在分布式原子事务。如果进程在步骤 4 和 5 之间崩溃，同一批事件会再次执行。因此：
 
 - upsert/delete 必须基于稳定键。
-- 第一版每个 task 使用不可变 `apply_identity`，目标账本固定为业务目标 PostgreSQL 的 `addp_transfer.apply_positions`。
+- 第一版每个 task 使用不可变 `apply_identity`；PostgreSQL 目标账本固定为业务目标库的 `addp_transfer.apply_positions`，MySQL 目标账本固定为同一目标数据库的 `_addp_transfer_apply_positions` InnoDB 私有表。
 - Transfer 按 partition 拆批；每条 mapped row 携带消费后的 position，同批同 key 保留最高 position 的最后状态。
 - Provider 必须跳过 ledger 已覆盖的记录，并在同一事务推进目标行与 `next_offset`，防止过期 runtime 写回旧状态。
 - 第一阶段不得宣称通用端到端 exactly-once。
@@ -607,7 +607,7 @@ MySQL binlog
   -> PostgreSQL target
 ```
 
-MySQL CDC v1 先冻结为单表、稳定非空主键、`initial` snapshot、schemaless JSON、`upsert_delete` 和不存在的新 PostgreSQL 目标表。源库必须满足 `log_bin=ON`、`binlog_format=ROW`、`binlog_row_image=FULL`、唯一正整数 `server_id`，并为 connector 提供最小 snapshot/binlog 权限；GTID 不是 v1 前提，捕获位点仍只由 Kafka Connect 管理。
+MySQL CDC v1 先冻结为单表、稳定非空主键、`initial` snapshot、schemaless JSON、`upsert_delete` 和不存在的新 PostgreSQL/MySQL 目标表。源库必须满足 `log_bin=ON`、`binlog_format=ROW`、`binlog_row_image=FULL`、唯一正整数 `server_id`，并为 connector 提供最小 snapshot/binlog 权限；GTID 不是 v1 前提，捕获位点仍只由 Kafka Connect 管理。
 
 3E-A 已把 `transfer.capture_resources` 收敛为 engine-neutral generation 主事实；PostgreSQL slot/publication 与 MySQL connector server id 分别只存在于一对一 provider-owned 子事实。generic 主表不保留兼容字段，也不使用空字符串、伪资源名或 JSON 猜测 provider。
 
@@ -883,8 +883,8 @@ Redpanda 认证矩阵：
 | RP-02 | SASL/ACL | `admin`、`connect`、`transfer` 三个 principal 使用部署级机制认证；Connect 只能写 CDC namespace，Transfer 只能读 CDC、读写 DLQ，不能读 Connect 内部 topic 或写 CDC topic | 正向操作成功，所有反向越权操作失败，ACL 列表可审计 | `redpanda-init` 的 `VERIFY_ACL=1` 探针 |
 | RP-03 | Kafka Connect | Debezium Connect 3.6.0.Final distributed worker 使用相同 Kafka API 连接并持久化 config/offset/status | REST ready，三个 compact internal topic 正常，worker 重启后 connector 状态恢复 | Connect REST、internal topic describe、重启前后状态 |
 | RP-04 | topic/group/admin API | 创建/describe/delete topic，produce/fetch，earliest/latest offset，consumer group create/describe/delete，prefix ACL 与 topic config API | ADDP 现有 admin/client 调用全部成功且错误分类不变 | `redpanda-init` 探针、Go Kafka/Transfer 集成测试 |
-| RP-05 | PostgreSQL CDC | Debezium initial snapshot 及 insert/update/delete 经 Infra Kafka 进入 PostgreSQL 目标 | 数据值、删除、committed position、connector/slot/publication/topic cleanup 全部符合现有 E2E 断言 | `ADDP_CDC_DATA_E2E=1` |
-| RP-06 | MySQL CDC | Debezium initial snapshot 及 insert/update/delete 经同一数据面进入 PostgreSQL 目标 | 数据值、删除、committed position、connector/topic/schema-history cleanup 全部符合现有 E2E 断言 | `ADDP_MYSQL_CDC_DATA_E2E=1` |
+| RP-05 | PostgreSQL CDC | Debezium initial snapshot 及 insert/update/delete 经 Infra Kafka 分别进入 PostgreSQL/MySQL 目标 | 数据值、删除、committed position、目标 ledger、connector/slot/publication/topic cleanup 全部符合 E2E 断言 | `ADDP_CDC_DATA_E2E=1` |
+| RP-06 | MySQL CDC | Debezium initial snapshot 及 insert/update/delete 经同一数据面分别进入 PostgreSQL/MySQL 目标 | 数据值、删除、committed position、目标 ledger、connector/topic/schema-history cleanup 全部符合 E2E 断言 | `ADDP_MYSQL_CDC_DATA_E2E=1` |
 | RP-07 | DLQ | 确定性 keyed DLQ 写入、读取、payload availability 与权限隔离 | DLQ E2E 通过，Connect 不能写 DLQ，清理后 payload 状态按既有规则收敛 | `ADDP_DLQ_KAFKA_INTEGRATION=1` 及 continuous DLQ E2E |
 | RP-08 | retention | time/bytes topic config 可读写；超过边界后 earliest offset 前移，resume 对过期 committed position 明确失败 | 不静默跳到 earliest，diagnostics 与既有 degraded/critical 规则一致 | retention 探针、continuous diagnostics E2E |
 | RP-09 | Stop cleanup | CDC stop 按 connector -> provider resource -> data/schema-history topic -> group/ACL 清理，业务 Kafka task-owned cleanup 删除 DLQ topic | 重复 cleanup 幂等，权限/网络失败阻断后续数据库删除，无残留 ADDP-owned broker 资源 | PostgreSQL/MySQL CDC 与 DLQ cleanup E2E |
@@ -1005,7 +1005,7 @@ Redpanda 认证矩阵：
 
 ### 13.3 PostgreSQL CDC v1（工作包 3A-3D 已完成第一版）
 
-PostgreSQL CDC 公开任务配置只引用源 PostgreSQL 表和目标 PostgreSQL Engine，不暴露 Infra Kafka topic：
+以下 PostgreSQL CDC 公开任务配置示例使用 PostgreSQL 目标；真实任务也可选择声明完整原子应用能力的 MySQL 目标，且不暴露 Infra Kafka topic：
 
 ```json
 {
@@ -1054,7 +1054,7 @@ Debezium connector 名称、slot、publication、内部 topic、consumer group �
 
 ### 13.4 MySQL CDC v1（工作包 3E 已完成）
 
-MySQL CDC 沿用 PostgreSQL CDC 的公开任务形态、Infra Kafka、ChangeEvent、目标 monotonic apply、execution/state 与 lifecycle 契约，source locator 指向 MySQL table，捕获实现使用 Debezium MySQL Connector。v1 固定 MySQL 8.0 单表、稳定非空主键、initial snapshot、ROW/FULL binlog、默认严格 schema drift 阻塞和 PostgreSQL 新目标表；公开 API、`continuous.database_cdc` capability、人工 additive migration 与 Console 共用唯一数据库 CDC 路线，不增加 provider 字段或 MySQL 专用 endpoint。
+MySQL CDC 沿用 PostgreSQL CDC 的公开任务形态、Infra Kafka、ChangeEvent、目标 monotonic apply、execution/state 与 lifecycle 契约，source locator 指向 MySQL table，捕获实现使用 Debezium MySQL Connector。v1 固定 MySQL 8.0 单表、稳定非空主键、initial snapshot、ROW/FULL binlog、默认严格 schema drift 阻塞和 PostgreSQL/MySQL 新目标表；公开 API、`continuous.database_cdc` capability、人工 additive migration 与 Console 共用唯一数据库 CDC 路线，不增加 provider 字段或 MySQL 专用 endpoint。
 
 ### 13.5 Oracle CDC（延期）
 
@@ -1087,20 +1087,20 @@ MySQL CDC 沿用 PostgreSQL CDC 的公开任务形态、Infra Kafka、ChangeEven
 2. 已确认业务 Kafka 与 Infra Kafka 的 owner/身份边界。
 3. 已确认 ChangeStreamReaderProvider 返回原始 ChangeRecord；ChangeEvent 和 ChangeApplyWriter 归 Transfer runtime。
 4. 已确认 `transfer.sync_states` 的 per-partition `kafka_offset/v1.next_offset` 与独立 `transfer.runtime_leases`。
-5. 已确认第一版只支持 keyed JSON record -> PostgreSQL partitioned monotonic upsert，不支持普通 append；目标表写入与业务库 apply ledger 必须同事务提交。
+5. 已确认第一版只支持 keyed JSON record -> PostgreSQL/MySQL partitioned monotonic upsert，不支持普通 append；目标表写入与业务库 apply ledger 必须同事务提交。
 
 ### 阶段 2B：Kafka continuous runtime 实现（已完成第一版）
 
 1. 增加用户可注册 Kafka Engine、`service -> topic` catalog 和 ChangeStreamReaderProvider。
 2. 实现专用 continuous runtime supervisor、runtime lease 和容量限制。
-3. 实现 keyed JSON record -> ChangeEvent(operation=upsert) -> PostgreSQL `PartitionedTableChangeApplyProvider`，并原子提交业务表与目标 apply ledger。
+3. 实现 keyed JSON record -> ChangeEvent(operation=upsert) -> PostgreSQL/MySQL `PartitionedTableChangeApplyProvider`，并原子提交业务表与目标 apply ledger。
 4. 实现 partition state、lag、heartbeat、真实暂停和停止。
 5. 已覆盖目标提交后 Infra position 可重复应用、rebalance、worker lease/fencing 失效、pause/resume/stop、目标锁取消、retention 已越过 committed position 和严格 schema drift；lag 与 retention horizon 提前告警由工作包 2D 完成。
 6. 当时将 Debezium envelope 与 upsert/delete 后置到工作包 3D，业务 Kafka DLQ/bounded replay 后置到 4A/4B；现均已完成。Schema Registry、Avro 和 Protobuf 继续后置。
 
 ### 阶段 2C：Continuous 产品化与运行保障（已完成第一版）
 
-1. Console Wizard 已开放业务 Kafka topic -> PostgreSQL，以及 PostgreSQL/MySQL 单表 CDC -> PostgreSQL 新目标表两类已实现路线，不提供未实现路线。
+1. Console Wizard 已按目标 Provider capability 开放业务 Kafka topic -> PostgreSQL/MySQL，以及 PostgreSQL/MySQL 单表 CDC -> PostgreSQL/MySQL 新目标表两类路线，不提供未实现路线。
 2. 任务列表和详情支持 continuous start/pause/resume/stop，execution 详情展示 owner、heartbeat、lease、fencing token、partition committed `next_offset`、最近提交时间和 checkpoint age。
 3. resume 前校验 committed position 是否仍在 Kafka earliest/latest 范围，retention 已清除时明确失败，不静默重置。
 4. PostgreSQL 目标锁等待响应 context 取消，并验证业务写入与 apply ledger 同时回滚。
@@ -1117,7 +1117,7 @@ MySQL CDC 沿用 PostgreSQL CDC 的公开任务形态、Infra Kafka、ChangeEven
 
 ### 工作包 3A：PostgreSQL CDC 契约冻结（已完成）
 
-1. 已冻结 PostgreSQL 单表、稳定主键、Debezium `initial` snapshot 和 PostgreSQL 新目标表的唯一第一版范围。
+1. 已冻结 PostgreSQL/MySQL 单表、稳定主键、Debezium `initial` snapshot 和 PostgreSQL/MySQL 新目标表的唯一第一版范围。
 2. 已冻结 schemaless JSON Debezium envelope：`r -> snapshot/upsert`、`c|u -> upsert`、`d -> delete`，tombstone/truncate/message 事件严格拒绝。
 3. 已冻结 Kafka Connect capture position 与 Transfer committed position 的双位点 owner 边界。
 4. 已冻结 `upsert_delete`、目标 ledger 原子应用、默认 strict schema drift、resume-only 和不提供 replay/DLQ/自动 DDL；后续工作包 4G 只增加专用人工 additive migration，不改变任务配置策略。
@@ -1219,7 +1219,7 @@ MySQL CDC 沿用 PostgreSQL CDC 的公开任务形态、Infra Kafka、ChangeEven
 1. 保持 Debezium schemaless JSON 与默认严格阻塞，不增加自动 DDL 或 task-level schema evolution 开关。只有当前阻塞消息实际出现的新增 nullable 非 geometry 字段可以进入人工 additive request；missing、incompatible、主键、非 nullable、geometry 和协议变化仍不可恢复。
 2. `transfer.schema_change_requests` 保存 task/generation/execution、Kafka partition/offset、schema diff、from/to mapping revision、审批字段和 applied 审计；同一 generation 同时只允许一个 pending request，physical cleanup 随 capture generation 级联删除。
 3. 唯一审批 API 为 `POST /task-definitions/:id/schema-change/approve`。请求必须逐字段提交 source/target/`target_type`/`nullable=true` 并完整覆盖 pending unexpected fields；普通 UpdateTask 继续拒绝修改已创建 generation 的 CDC config。
-4. 服务端重新读取源表，验证既有 mapping/主键未变化、审批字段仍存在且 nullable、类型受 provider v1 支持；目标 PostgreSQL 复用 `PartitionedTableChangeApplyProvider.Prepare...` 的既有安全 schema evolution，只新增 nullable 列，不建立私有 DDL。
+4. 服务端重新读取源表，验证既有 mapping/主键未变化、审批字段仍存在且 nullable、类型受 provider v1 支持；目标 PostgreSQL/MySQL 复用 `PartitionedTableChangeApplyProvider.Prepare...` 的既有安全 schema evolution，只新增 nullable 列，不建立 Transfer 私有 DDL。
 5. 外部目标 DDL 与 Infra PostgreSQL 通过 request/task 行锁和幂等 retry 收敛：目标列已存在时必须完全兼容；Infra 事务提交时追加 mapping、递增 generation `schema_revision`、标记 request applied，并把 task 置为 paused。审批不隐式恢复，用户通过既有 Resume 从原 committed offset 创建新 execution。
 6. DDL 成功后触发目标表 Meta deep scan；扫描失败不回滚 schema revision，但必须记录为可观测结果。触发使用 request 持久化 `pending -> running(token, lease) -> success|failed` claim；并发调用只能有一个 claimant，过期 `running` 只由相同重复审批 POST 接管，GET 保持只读，迟到 claimant 不能覆盖新结果。真实 Meta 失败不由重复审批自动循环重试，用户使用 Meta 既有手动扫描能力；claim TTL 只属于部署配置。真实 PostgreSQL/MySQL CDC E2E 必须验证 blocked offset 未推进、审批后目标加列、Resume 重放当前消息、后续数据继续同步，以及不安全变化继续被拒绝。
 7. 已完成：新增 `GET /task-definitions/:id/schema-change` 和唯一审批 API，Console 任务详情提供逐字段确认；repository/service/API/source inspection、cleanup 和前端行为测试已覆盖。真实 PostgreSQL 与 MySQL CDC E2E 均验证 pending request、blocked offset 不推进、审批、重复审批幂等、目标加列、任务进入 paused、Resume 重放阻塞消息、后续同步和 Stop cleanup；PostgreSQL E2E 进一步注入“目标 DDL 已提交但 Infra task update 失败”，验证 request/revision/config 整体回滚后两个并发相同审批收敛为同一 request、单次 revision 和单份 mapping。Meta scan claim 已通过 repository 测试覆盖过期接管与旧 token fencing，并通过真实 PostgreSQL E2E 验证并发审批只触发一次 Meta 调用、重复审批 POST 接管过期 claim；MySQL E2E 验证真实 Meta 失败后重复审批不自动重试。Swagger 27 个公开路由覆盖一致。
@@ -1235,16 +1235,16 @@ MySQL CDC 沿用 PostgreSQL CDC 的公开任务形态、Infra Kafka、ChangeEven
 ### 工作包 3E：MySQL CDC（已完成）
 
 1. 3E-A 已完成：capture generation 主事实已改为 engine-neutral，PostgreSQL/MySQL provider-specific source resource 子事实与 generation 同事务创建并外键级联清理；generic model 中的 slot/publication 已删除，不保留双轨读取。新安装基线与 017 clean-break 迁移一致，真实 PostgreSQL 已验证旧数据迁入、旧列删除、唯一索引、单一外键、级联清理和 PostgreSQL capture control E2E。
-2. 3E-B：数据库 CDC 任务 JSON 使用唯一 `DatabaseCDCTaskSpec`，只表达 continuous + incremental CDC、单表、initial snapshot、完整 field mapping 和 PostgreSQL `upsert_delete` 目标等通用语义；source provider 不写入任务 JSON，只能由 source locator 对应的 System Engine 解析结果决定。不得并行保留 PostgreSQL/MySQL 两个同形 parser，也不得在未解析 Engine 时用配置形态推断 provider。创建、更新和启动必须在进入 capture 前完成真实 provider 校验。
+2. 3E-B：数据库 CDC 任务 JSON 使用唯一 `DatabaseCDCTaskSpec`，只表达 continuous + incremental CDC、单表、initial snapshot、完整 field mapping 和 PostgreSQL/MySQL `upsert_delete` 目标等通用语义；source provider 不写入任务 JSON，只能由 source locator 对应的 System Engine 解析结果决定。不得并行保留 PostgreSQL/MySQL 两个同形 parser，也不得在未解析 Engine 时用配置形态推断 provider。创建、更新和启动必须在进入 capture 前完成真实 provider 校验。
 3. 3E-B 的 MySQL 8.0 v1 只支持有稳定主键的单表和无歧义类型集合：有符号 `TINYINT/SMALLINT/MEDIUMINT/INT/BIGINT`、`CHAR/VARCHAR/TEXT`、`DECIMAL/NUMERIC`、`FLOAT/DOUBLE`、`DATE/TIME/DATETIME/TIMESTAMP`（最高毫秒精度）、`JSON`、`BINARY/VARBINARY/BLOB`。拒绝所有 unsigned 整数、`TINYINT(1)`/`BOOL` 布尔歧义、`BIT`、`ENUM/SET`、`YEAR`、空间类型、超过毫秒的时间精度以及 zero date 默认值；字段 mapping 必须覆盖源表完整 schema，源主键必须按顺序一一映射到目标 keys。
 4. MySQL capture 前置校验固定要求 MySQL 8.0、`log_bin=ON`、`binlog_format=ROW`、`binlog_row_image=FULL`、非零 server id，并验证 connector 凭据可读取 binlog 状态。GTID 可为 `ON|OFF`，仅作为诊断事实，不进入 Transfer committed position；Kafka partition offset 仍是目标应用唯一主顺序。
 5. Debezium MySQL connector 固定 `initial` snapshot、schemaless JSON、decimal string、Connect 毫秒时间和 binary base64。除单分区数据 topic 外，每个 MySQL capture generation 还拥有独立 schema-history topic；Debezium 3.6 history record 使用空 key，不能依赖 compact topic 提供正确的历史保留语义，因此该 topic 固定为单分区 `cleanup.policy=delete + retention.ms=-1`，并由 capture cleanup 显式删除。其名称、ownership 和 connector server id 属于 MySQL provider 子事实，必须与 connector/data topic 一起创建、授权和清理，不能依赖 Kafka 自动建 topic 或留下未登记资源。
 6. MySQL envelope 使用独立严格 source schema adapter，不能复用 PostgreSQL exact source schema；两者只复用 outer envelope、key/row 映射和统一 `ChangeEvent`。MySQL `file/pos/gtid/row/server_id` 只用于协议校验和诊断，不替代 Kafka offset。tombstone、truncate、来源身份不匹配、未知 source/envelope 字段、字段/类型变化都阻塞且不得推进 offset。
 7. 3E-B 已完成：MySQL planner、源字段/主键/binlog 前置校验、Debezium connector config、严格 envelope adapter 已接入既有 PostgreSQL monotonic target apply；内部继续使用唯一 capture supervisor 和 continuous worker 主路径。单元测试覆盖 provider 解析、类型矩阵、connector/schema-history 资源、snapshot/c/u/d、空 BLOB、source/envelope/schema drift 和 runner committed progress；真实 MySQL 8.0.46 + Debezium 3.6.0.Final + Infra Kafka 已验证 preflight、connector RUNNING、initial snapshot 与 c/u/d 的实际 schemaless envelope。该验证不替代 3E-C 的完整恢复/生命周期 E2E。
 8. 3E-C 环境契约：Business MySQL 使用独立 `MYSQL_CDC_USER`/`MYSQL_CDC_PASSWORD`，启动后由 root 幂等创建或更新 connector 用户，并把权限收敛为 `SELECT`、`RELOAD`、`SHOW DATABASES`、`REPLICATION SLAVE`、`REPLICATION CLIENT`、`LOCK TABLES`。初始化必须在每次 `business/scripts/start.sh -mysql` 等待 ready 后执行，不能只依赖首次建卷的 `/docker-entrypoint-initdb.d`；Business MySQL 必须显式启用非零 server id、binlog、ROW format 和 FULL row image。CDC E2E 使用独立 schema/table，不复用包含 MySQL v1 非支持类型的业务样例表。
-9. 3E-C 真实全生命周期 gate：公共 API 创建 MySQL CDC 后，必须在真实 MySQL 8.0、Debezium 3.6、Infra Kafka 和 PostgreSQL 目标上覆盖 initial snapshot、insert/update/delete、pause/resume backlog、worker crash 后 lease/fencing recovery、retention 越界拒绝、strict schema drift 阻塞，以及 stop 后 connector、数据 topic、schema-history topic、ACL/group 的幂等清理；目标 apply ledger 必须始终与 Transfer committed offset 单调一致，MySQL 不伪造 slot/publication 资源。retention segment 推进若无法在共享开发 Kafka 中稳定制造，必须用隔离 topic 的确定性真实 Kafka integration 补证，不能降低为只验证错误文本。
-10. 3E-C 产品开放 gate：上述 E2E 通过后，删除公开 API 的临时 MySQL 拒绝分支；唯一 continuous capability 增加结构化 `database_cdc`，声明 `sources=[postgresql,mysql]`、`target=postgresql`、`bootstrap=[initial_snapshot]`、`apply_mode=upsert_delete`。Console 将 PostgreSQL-specific CDC helper clean break 为唯一 database CDC helper，按 source provider 使用各自可证明的类型矩阵，继续复用同一 Wizard、详情和生命周期操作，不增加 MySQL 专用 endpoint、页面或任务 JSON 字段。
-11. 3E-C 已完成：Business 初始化连续执行两次后账号权限和 MySQL binlog 前置条件保持一致；真实 MySQL 8.0.46 -> Debezium 3.6.0.Final -> Infra Kafka -> PostgreSQL E2E 通过公共 API 覆盖 snapshot、insert/update/delete、worker lease/fencing recovery、pause/resume backlog、schema drift 不推进位置、`DeleteRecords` 推进 earliest 后的 retention 拒绝，以及 connector、数据 topic、schema-history topic、consumer group 和 ACL cleanup。API gate 已删除，capability 与 Console 已按第 10 项开放。
+9. 3E-C 真实全生命周期 gate：公共 API 创建 PostgreSQL/MySQL CDC 后，必须在真实 PostgreSQL/MySQL source、Debezium 3.6、Infra Kafka 和 PostgreSQL/MySQL target 矩阵上覆盖 initial snapshot、insert/update/delete、pause/resume backlog、worker crash 后 lease/fencing recovery、retention 越界拒绝、strict schema drift 阻塞，以及 stop 后 provider 专属 connector/topic/group/ACL/slot/publication/schema-history 资源的幂等清理；目标 apply ledger 必须始终与 Transfer committed offset 单调一致，MySQL 不伪造 slot/publication 资源。retention segment 推进若无法在共享开发 Kafka 中稳定制造，必须用隔离 topic 的确定性真实 Kafka integration 补证，不能降低为只验证错误文本。
+10. 3E-C 产品开放 gate：上述 E2E 通过后，删除公开 API 的临时 MySQL 拒绝分支；唯一 continuous capability 增加结构化 `database_cdc`，声明 `sources=[postgresql,mysql]`、`targets=[postgresql,mysql]`、`bootstrap=[initial_snapshot]`、`apply_mode=upsert_delete`。Console 将 PostgreSQL-specific CDC helper clean break 为唯一 database CDC helper，按 source provider 使用各自可证明的类型矩阵，继续复用同一 Wizard、详情和生命周期操作，不增加 MySQL 专用 endpoint、页面或任务 JSON 字段。
+11. 3E-C 已完成：Business 初始化连续执行两次后账号权限和 MySQL binlog 前置条件保持一致；真实 PostgreSQL/MySQL source -> Debezium 3.6.0.Final -> Infra Kafka -> PostgreSQL/MySQL target 矩阵 E2E 通过公共 API 覆盖 snapshot、insert/update/delete、worker lease/fencing recovery、pause/resume backlog、schema drift 不推进位置、additive target DDL/Meta scan/resume、`DeleteRecords` 推进 earliest 后的 retention 拒绝，以及 provider 专属 capture 资源 cleanup。两类目标 ledger 均与 Transfer committed offset 对齐；API gate 已删除，capability 与 Console 已按第 10 项开放。
 
 ### 工作包 3F：Oracle CDC（延期，不进入当前实施序列）
 
@@ -1333,7 +1333,7 @@ target.policy.apply_mode
 
 分析：普通 Kafka 消息的 key、value 编码和业务 schema 没有统一保证；一开始同时支持 JSON、Avro、Protobuf 和多种 Registry 会稀释 continuous runtime 主线验证。
 
-结论：第一版只支持 JSON object value，并要求从 value 的显式非空字段提取稳定 key；目标固定为 PostgreSQL upsert。普通 append 无法满足 at-least-once 下的目标幂等要求，因此后置。Kafka 原生 record key 第一版只保留为诊断事实；Debezium JSON envelope、Schema Registry、Avro 和 Protobuf 后置。配置从一开始区分 `encoding` 与 `envelope`。
+结论：第一版只支持 JSON object value，并要求从 value 的显式非空字段提取稳定 key；目标必须使用 PostgreSQL 或 MySQL 原子单调 apply Provider。普通 append 无法满足 at-least-once 下的目标幂等要求，因此后置。Kafka 原生 record key 第一版只保留为诊断事实；Debezium JSON envelope、Schema Registry、Avro 和 Protobuf 后置。配置从一开始区分 `encoding` 与 `envelope`。
 
 ### 16.8 Continuous timeout、失联和自动恢复（已确认）
 
@@ -1383,7 +1383,7 @@ DLQ 不保存伪造的“已回放”状态，也不作为完整 replay source�
 
 分析：如果 stop 后删除 connector/slot 再直接 resume，会产生无法补齐的捕获空档；如果重新 snapshot 只做 upsert，又无法删除目标中已经不存在于源端的残留行。若为了 resume 让已 stop 的任务永久保持捕获，stop 就失去真实资源终止语义。
 
-结论：第一版 source 支持 PostgreSQL 或 MySQL 8.0 有稳定主键的单表，使用 Debezium `initial` snapshot，经单 partition Infra Kafka data topic 写入不存在的 PostgreSQL 新目标表。snapshot/c/u/d 归一化为 snapshot/upsert/delete，目标固定 `upsert_delete`，schema drift 默认严格阻塞；只有人工确认的 additive migration 可在原 generation 恢复。
+结论：第一版 source 支持 PostgreSQL 或 MySQL 8.0 有稳定主键的单表，使用 Debezium `initial` snapshot，经单 partition Infra Kafka data topic 写入不存在的 PostgreSQL 或 MySQL 新目标表。snapshot/c/u/d 归一化为 snapshot/upsert/delete，目标固定 `upsert_delete`，schema drift 默认严格阻塞；只有人工确认的 additive migration 可在原 generation 恢复。
 
 - pause 只停止目标应用，connector 继续捕获并推进源日志位置；resume 在 capture healthy 且 Kafka committed position 未过期时无损恢复。
 - 正常 pause 的主要资源代价是 Infra Kafka backlog、磁盘和 retention；connector/Kafka 故障时还必须分别观测 PostgreSQL WAL 或 MySQL binlog 保留风险。

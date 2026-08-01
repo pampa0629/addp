@@ -20,7 +20,6 @@ export const catalogAPI = {
 export const assetAPI = {
   list: (params) => client.get('/asset/assets', { params }),
   get: (id) => client.get(`/asset/assets/${id}`),
-  create: (data) => client.post('/asset/assets', data),
   update: (id, data) => client.put(`/asset/assets/${id}`, data),
   delete: (id) => client.delete(`/asset/assets/${id}`),
   // 状态流转（简化版：draft ↔ published ↔ offline）

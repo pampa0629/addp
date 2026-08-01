@@ -79,7 +79,11 @@ func createMySQLTableIfNotExists(ctx context.Context, db *sql.DB, database, tabl
 	definitions := make([]string, 0, len(writeFields)+1)
 	primaryKeys := make([]string, 0)
 	for _, field := range writeFields {
-		definitions = append(definitions, mysqlColumnDefinition(field, spatialInfo))
+		definition, err := mysqlColumnDefinition(field, spatialInfo)
+		if err != nil {
+			return err
+		}
+		definitions = append(definitions, definition)
 		if field.PrimaryKey {
 			primaryKeys = append(primaryKeys, dialect.QuoteIdentifier(field.Name))
 		}
@@ -116,14 +120,19 @@ func evolveMySQLTableSchema(ctx context.Context, db *sql.DB, database, table str
 }
 
 type mysqlColumnInfo struct {
-	Name       string
-	DataType   string
-	NativeType string
+	Name              string
+	DataType          string
+	NativeType        string
+	NumericPrecision  sql.NullInt64
+	NumericScale      sql.NullInt64
+	TemporalPrecision sql.NullInt64
+	Nullable          bool
 }
 
 func mysqlTableColumns(ctx context.Context, db *sql.DB, database, table string) ([]mysqlColumnInfo, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT column_name, data_type, column_type
+		SELECT column_name, data_type, column_type, numeric_precision, numeric_scale, datetime_precision,
+		       (is_nullable = 'YES') AS is_nullable
 		FROM information_schema.columns
 		WHERE table_schema = ? AND table_name = ?
 		ORDER BY ordinal_position
@@ -136,7 +145,10 @@ func mysqlTableColumns(ctx context.Context, db *sql.DB, database, table string) 
 	columns := make([]mysqlColumnInfo, 0)
 	for rows.Next() {
 		var column mysqlColumnInfo
-		if err := rows.Scan(&column.Name, &column.DataType, &column.NativeType); err != nil {
+		if err := rows.Scan(
+			&column.Name, &column.DataType, &column.NativeType, &column.NumericPrecision, &column.NumericScale,
+			&column.TemporalPrecision, &column.Nullable,
+		); err != nil {
 			return nil, fmt.Errorf("scan mysql table column: %w", err)
 		}
 		columns = append(columns, column)
@@ -156,10 +168,14 @@ func mysqlSchemaEvolutionStatements(database, table string, fields []datatype.Fi
 
 	statements := make([]string, 0)
 	for _, field := range mysqlWriteFields(fields) {
+		expectedType, err := mysqlSQLTypeForField(field, spatialInfo)
+		if err != nil {
+			return nil, err
+		}
 		column, exists := existingByName[field.Name]
 		if exists {
 			if !mysqlColumnCompatibleWithField(column, field, spatialInfo) {
-				return nil, fmt.Errorf("mysql target column %q has type %q, expected %q", field.Name, mysqlColumnNativeType(column), mysqlSQLTypeForField(field, spatialInfo))
+				return nil, fmt.Errorf("mysql target column %q has type %q, expected %q", field.Name, mysqlColumnNativeType(column), expectedType)
 			}
 			continue
 		}
@@ -169,7 +185,11 @@ func mysqlSchemaEvolutionStatements(database, table string, fields []datatype.Fi
 		if !mysqlMissingColumnCanBeAdded(field) {
 			return nil, fmt.Errorf("mysql schema evolution cannot add non-null column %q without default expression", field.Name)
 		}
-		statements = append(statements, "ALTER TABLE "+dialect.QualifiedTable(database, table)+" ADD COLUMN "+mysqlColumnDefinition(field, spatialInfo))
+		definition, err := mysqlColumnDefinition(field, spatialInfo)
+		if err != nil {
+			return nil, err
+		}
+		statements = append(statements, "ALTER TABLE "+dialect.QualifiedTable(database, table)+" ADD COLUMN "+definition)
 	}
 	return statements, nil
 }
@@ -192,15 +212,19 @@ func mysqlWriteFields(fields []datatype.FieldInfo) []datatype.FieldInfo {
 	return result
 }
 
-func mysqlColumnDefinition(field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) string {
-	definition := mysqlDialect().QuoteIdentifier(field.Name) + " " + mysqlSQLTypeForField(field, spatialInfo)
+func mysqlColumnDefinition(field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) (string, error) {
+	sqlType, err := mysqlSQLTypeForField(field, spatialInfo)
+	if err != nil {
+		return "", err
+	}
+	definition := mysqlDialect().QuoteIdentifier(field.Name) + " " + sqlType
 	if strings.TrimSpace(field.DefaultExpression) != "" {
 		definition += " DEFAULT " + strings.TrimSpace(field.DefaultExpression)
 	}
 	if !field.Nullable {
 		definition += " NOT NULL"
 	}
-	return definition
+	return definition, nil
 }
 
 func mysqlMissingColumnCanBeAdded(field datatype.FieldInfo) bool {
@@ -215,6 +239,18 @@ func mysqlColumnCompatibleWithField(column mysqlColumnInfo, field datatype.Field
 	}
 	if datatype.IsSpatialFieldType(expected) {
 		return mysqlSpatialColumnCompatibleWithField(column, field, spatialInfo)
+	}
+	if expected == datatype.FieldTypeDecimal && existing == datatype.FieldTypeDecimal {
+		return column.NumericPrecision.Valid &&
+			column.NumericScale.Valid &&
+			int(column.NumericPrecision.Int64) == field.Precision &&
+			int(column.NumericScale.Int64) == field.Scale
+	}
+	if (expected == datatype.FieldTypeTime || expected == datatype.FieldTypeTimestamp) && existing == expected {
+		return column.TemporalPrecision.Valid && column.TemporalPrecision.Int64 == 6
+	}
+	if expected == datatype.FieldTypeUUID {
+		return strings.EqualFold(strings.TrimSpace(column.NativeType), "varchar(36)")
 	}
 	return expected == existing
 }
@@ -234,16 +270,45 @@ func mysqlSpatialColumnCompatibleWithField(column mysqlColumnInfo, field datatyp
 	return expectedType == existing
 }
 
-func mysqlSQLTypeForField(field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) string {
+func mysqlSQLTypeForField(field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) (string, error) {
 	if sqlType := mysqlSpatialTypeForField(field, spatialInfo); sqlType != "" {
-		return sqlType
+		return sqlType, nil
 	}
 	fieldType := datatype.ParseFieldType(string(field.Type))
+	if fieldType == datatype.FieldTypeTime {
+		return "TIME(6)", nil
+	}
+	if fieldType == datatype.FieldTypeTimestamp {
+		return "DATETIME(6)", nil
+	}
 	if mapper := format.GetTypeMapper("mysql"); mapper != nil {
 		nativeType, size, precision := mapper.FromCommon(fieldType)
-		return mysqlNativeTypeWithSize(nativeType, size, precision)
+		if fieldType == datatype.FieldTypeDecimal {
+			if err := validateMySQLDecimalField(field); err != nil {
+				return "", err
+			}
+			size = field.Precision
+			precision = field.Scale
+		}
+		return mysqlNativeTypeWithSize(nativeType, size, precision), nil
 	}
-	return "TEXT"
+	return "TEXT", nil
+}
+
+func validateMySQLDecimalField(field datatype.FieldInfo) error {
+	if field.Precision <= 0 {
+		return fmt.Errorf("mysql decimal field %q requires explicit precision and scale", field.Name)
+	}
+	if field.Precision > 65 {
+		return fmt.Errorf("mysql decimal field %q precision %d exceeds maximum 65", field.Name, field.Precision)
+	}
+	if field.Scale < 0 || field.Scale > 30 {
+		return fmt.Errorf("mysql decimal field %q scale %d must be between 0 and 30", field.Name, field.Scale)
+	}
+	if field.Scale > field.Precision {
+		return fmt.Errorf("mysql decimal field %q scale %d exceeds precision %d", field.Name, field.Scale, field.Precision)
+	}
+	return nil
 }
 
 func mysqlSpatialTypeForField(field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) string {

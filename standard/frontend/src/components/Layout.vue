@@ -38,59 +38,41 @@
               <el-icon><Document /></el-icon>
               <span>{{ $t('standard.layout.dataStandard') }}</span>
             </template>
-            <el-menu-item index="/standard/domains">
+            <el-menu-item index="/domains">
               <el-icon><Grid /></el-icon>
               <span>{{ $t('standard.layout.domains') }}</span>
             </el-menu-item>
-            <el-menu-item index="/standard/glossaries">
+            <el-menu-item index="/glossaries">
               <el-icon><Reading /></el-icon>
               <span>{{ $t('standard.layout.glossaries') }}</span>
             </el-menu-item>
-            <el-menu-item index="/standard/elements">
+            <el-menu-item index="/elements">
               <el-icon><Collection /></el-icon>
               <span>{{ $t('standard.layout.elements') }}</span>
             </el-menu-item>
-            <el-menu-item index="/standard/code-sets">
+            <el-menu-item index="/code-sets">
               <el-icon><List /></el-icon>
               <span>{{ $t('standard.layout.codeSets') }}</span>
             </el-menu-item>
-            <el-menu-item index="/standard/units">
+            <el-menu-item index="/units">
               <el-icon><Odometer /></el-icon>
               <span>{{ $t('standard.layout.units') }}</span>
             </el-menu-item>
-            <el-menu-item index="/standard/classifications">
+            <el-menu-item index="/classifications">
               <el-icon><Share /></el-icon>
               <span>{{ $t('standard.layout.classifications') }}</span>
             </el-menu-item>
-            <el-menu-item index="/standard/dimension-hierarchies">
+            <el-menu-item index="/dimension-hierarchies">
               <el-icon><SortDown /></el-icon>
               <span>{{ $t('standard.layout.dimensionHierarchies') }}</span>
             </el-menu-item>
-            <el-menu-item index="/standard/metrics">
+            <el-menu-item index="/metrics">
               <el-icon><TrendCharts /></el-icon>
               <span>{{ $t('standard.layout.metrics') }}</span>
             </el-menu-item>
-            <el-menu-item index="/standard/documents">
+            <el-menu-item index="/documents">
               <el-icon><Files /></el-icon>
               <span>{{ $t('standard.layout.documents') }}</span>
-            </el-menu-item>
-          </el-sub-menu>
-          <el-sub-menu index="modeling">
-            <template #title>
-              <el-icon><Box /></el-icon>
-              <span>{{ $t('standard.layout.dataModeling') }}</span>
-            </template>
-            <el-menu-item index="/modeling/dw-layers">
-              <el-icon><Tickets /></el-icon>
-              <span>{{ $t('standard.layout.dwLayers') }}</span>
-            </el-menu-item>
-            <el-menu-item index="/modeling/entities">
-              <el-icon><Memo /></el-icon>
-              <span>{{ $t('standard.layout.entities') }}</span>
-            </el-menu-item>
-            <el-menu-item index="/modeling/logical-tables">
-              <el-icon><Operation /></el-icon>
-              <span>{{ $t('standard.layout.logicalTables') }}</span>
             </el-menu-item>
           </el-sub-menu>
         </el-menu>
@@ -110,7 +92,7 @@ import { useAuthStore } from '../store/auth'
 import {
   User, ArrowDown, SwitchButton, Document,
   Grid, Reading, Collection, DataAnalysis,
-  Box, Tickets, Memo, Operation, List,
+  List,
   Odometer, Share, TrendCharts, Files, SortDown
 } from '@element-plus/icons-vue'
 
@@ -125,18 +107,15 @@ onMounted(() => {
 
 const activeMenu = computed(() => {
   const path = route.path
-  if (path.startsWith('/standard/domains')) return '/standard/domains'
-  if (path.startsWith('/standard/glossaries')) return '/standard/glossaries'
-  if (path.startsWith('/standard/elements')) return '/standard/elements'
-  if (path.startsWith('/standard/code-sets')) return '/standard/code-sets'
-  if (path.startsWith('/standard/units')) return '/standard/units'
-  if (path.startsWith('/standard/classifications')) return '/standard/classifications'
-  if (path.startsWith('/standard/metrics')) return '/standard/metrics'
-  if (path.startsWith('/standard/documents')) return '/standard/documents'
-  if (path.startsWith('/standard/dimension-hierarchies')) return '/standard/dimension-hierarchies'
-  if (path.startsWith('/modeling/dw-layers')) return '/modeling/dw-layers'
-  if (path.startsWith('/modeling/entities')) return '/modeling/entities'
-  if (path.startsWith('/modeling/logical-tables')) return '/modeling/logical-tables'
+  if (path.startsWith('/domains')) return '/domains'
+  if (path.startsWith('/glossaries')) return '/glossaries'
+  if (path.startsWith('/elements')) return '/elements'
+  if (path.startsWith('/code-sets')) return '/code-sets'
+  if (path.startsWith('/units')) return '/units'
+  if (path.startsWith('/classifications')) return '/classifications'
+  if (path.startsWith('/metrics')) return '/metrics'
+  if (path.startsWith('/documents')) return '/documents'
+  if (path.startsWith('/dimension-hierarchies')) return '/dimension-hierarchies'
   return path
 })
 

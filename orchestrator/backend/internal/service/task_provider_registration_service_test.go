@@ -102,7 +102,7 @@ func TestTaskProviderRegistrationRegistersStandardOrchestratorContract(t *testin
 
 	orchestration := capabilities.TaskCapabilities[0]
 	if orchestration.Type != "orchestration" ||
-		orchestration.CreateURL != "/orchestrator/orchestrations" ||
+		orchestration.CreateURL != "/orchestrator/orchestrations/new" ||
 		orchestration.EditURL != "/orchestrator/orchestrations/:id/edit" {
 		t.Fatalf("orchestration capability = %#v", orchestration)
 	}

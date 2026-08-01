@@ -163,9 +163,7 @@ func SetupRouter(
 		rasterCOGTasksGroup := api.Group("/raster_cog_tasks")
 		{
 			rasterCOGTasksGroup.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.ListRasterCOGTasks)
-			rasterCOGTasksGroup.POST("", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), taskProviderHandler.CreateRasterCOGTask)
 			rasterCOGTasksGroup.GET("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.GetRasterCOGTask)
-			rasterCOGTasksGroup.PUT("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactUpdate), taskProviderHandler.UpdateRasterCOGTask)
 			rasterCOGTasksGroup.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), taskProviderHandler.DeleteRasterCOGTask)
 		}
 		rasterMosaicTasksGroup := api.Group("/raster_mosaic_tasks")
@@ -179,9 +177,7 @@ func SetupRouter(
 		model3DTilesTasksGroup := api.Group("/model3d_tiles_tasks")
 		{
 			model3DTilesTasksGroup.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.ListModel3DTilesTasks)
-			model3DTilesTasksGroup.POST("", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), taskProviderHandler.CreateModel3DTilesTask)
 			model3DTilesTasksGroup.GET("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.GetModel3DTilesTask)
-			model3DTilesTasksGroup.PUT("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactUpdate), taskProviderHandler.UpdateModel3DTilesTask)
 			model3DTilesTasksGroup.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), taskProviderHandler.DeleteModel3DTilesTask)
 		}
 		model3DTilesAssets := api.Group("/model3d_tiles")

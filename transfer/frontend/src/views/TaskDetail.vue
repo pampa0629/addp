@@ -1,6 +1,6 @@
 <template>
   <div class="task-detail">
-    <el-button @click="$router.back()" style="margin-bottom: 20px;">
+    <el-button @click="handleBack" style="margin-bottom: 20px;">
       <el-icon><ArrowLeft /></el-icon>
       {{ t('transfer.taskDetail.back') }}
     </el-button>
@@ -240,7 +240,7 @@
         <el-table-column prop="status" :label="t('transfer.taskDetail.status')" width="100">
           <template #default="{ row }">
             <el-tag :type="getExecutionTagType(row.status)">
-              {{ getExecutionLabel(row.status) }}
+              {{ getExecutionLabel(row.status, t) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -397,6 +397,7 @@ import { formatSchedule, getTaskStatusLabel, getTaskStatusTagType, getExecutionT
 import { buildCDCStopRequest, continuousStartDisabledReason, getCDCCaptureHealthWarning, isCDCSchemaBlocked as isCDCSchemaBlockedTask, isDatabaseCDCTask } from '@/utils/cdcTask.mjs'
 import { parseTransferLocator } from '@/utils/resourceLocator'
 import { buildSchemaChangeApproval, buildSchemaChangeScanRetry, getSchemaChangeScanNotice } from '@/utils/schemaChange.mjs'
+import { navigateTransferRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 
@@ -679,12 +680,14 @@ const handleEdit = () => {
     ElMessage.warning(t('transfer.taskDetail.taskRunning'))
     return
   }
-  router.push(`/tasks/${route.params.id}/edit`)
+  navigateTransferRoute(router, `/tasks/${route.params.id}/edit`)
 }
 
 const viewExecution = (executionId) => {
-  router.push(`/executions/${executionId}`)
+  navigateTransferRoute(router, `/executions/${executionId}`)
 }
+
+const handleBack = () => navigateTransferRoute(router, '/tasks', { history: 'replace' })
 
 const retryExecution = async (executionId) => {
   await executionAPI.retry(executionId)

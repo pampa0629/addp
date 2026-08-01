@@ -83,6 +83,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { buildAPI } from '../api/graphBuild'
 import { useI18n } from 'vue-i18n'
+import { navigateGraphRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 
@@ -184,11 +185,11 @@ async function handleDelete(taskId) {
 }
 
 function goDetail(taskId) {
-  router.push(`/graphs/${props.graphId}/build/tasks/${taskId}`)
+  navigateGraphRoute(router, `/graphs/${props.graphId}/build/tasks/${taskId}`)
 }
 
-function goReview(task) {
-  router.push(`/graphs/${props.graphId}/review`)
+function goReview() {
+  navigateGraphRoute(router, `/graphs/${props.graphId}/review`)
 }
 
 function statusTagType(status) {

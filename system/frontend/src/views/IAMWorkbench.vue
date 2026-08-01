@@ -17,13 +17,13 @@
         <strong>{{ t('system.iam.setup.title') }}</strong>
         <span>{{ t('system.iam.setup.description') }}</span>
       </div>
-      <el-button type="primary" plain :icon="UserFilled" @click="activeTab = 'role-assignments'">
+      <el-button type="primary" plain :icon="UserFilled" @click="selectTab('role-assignments')">
         {{ t('system.iam.setup.action') }}
       </el-button>
     </section>
 
     <el-alert v-if="!availableTabs.length" type="warning" :closable="false" show-icon :title="t('system.iam.noPermission')" />
-    <el-tabs v-else v-model="activeTab" class="iam-tabs">
+    <el-tabs v-else v-model="activeTab" class="iam-tabs" @tab-change="selectTab">
       <el-tab-pane v-for="tab in availableTabs" :key="tab.key" :name="tab.key">
         <template #label><el-icon><component :is="tab.icon" /></el-icon><span>{{ t(tab.label) }}</span></template>
         <component :is="tab.component" v-if="activeTab === tab.key" v-bind="tab.props || {}" />
@@ -37,6 +37,7 @@ import { computed, markRaw, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Bell, DocumentChecked, InfoFilled, Lock, OfficeBuilding, Refresh, Tickets, User, UserFilled } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import AuditPanel from '../components/iam/AuditPanel.vue'
 import IdentityChangesPanel from '../components/iam/IdentityChangesPanel.vue'
@@ -48,9 +49,13 @@ import TenantRolesPanel from '../components/iam/TenantRolesPanel.vue'
 import TenantRoleAssignmentsPanel from '../components/iam/TenantRoleAssignmentsPanel.vue'
 import MFASecurityPanel from '../components/iam/MFASecurityPanel.vue'
 import { needsTenantRoleSetup } from '../utils/iamRoles'
+import { navigateSystemRoute } from '../utils/moduleNavigation'
+import { resolveIAMRouteState } from '../utils/routeState'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
+const route = useRoute()
+const router = useRouter()
 const activeTab = ref('')
 const refreshing = ref(false)
 const authContext = computed(() => authStore.authContext)
@@ -75,9 +80,28 @@ const allTabs = [
 const availableTabs = computed(() => allTabs.filter((tab) =>
   (tab.context === 'any' || tab.context === contextType.value) && (!tab.permission || authStore.hasPermission(tab.permission))))
 
-watch(availableTabs, (tabs) => {
-  if (!tabs.some((tab) => tab.key === activeTab.value)) activeTab.value = tabs[0]?.key || ''
-}, { immediate: true })
+async function restoreTabFromRoute() {
+  const tabs = availableTabs.value
+  const routeState = resolveIAMRouteState(tabs.map(tab => tab.key), route.query)
+  activeTab.value = routeState.activeTab
+
+  if (routeState.changed) {
+    await navigateSystemRoute(router, { name: 'IAMWorkbench', query: routeState.query }, { history: 'replace' })
+  }
+}
+
+async function selectTab(tab) {
+  const tabKey = String(tab || '')
+  const defaultTab = availableTabs.value[0]?.key || ''
+  if (!availableTabs.value.some(item => item.key === tabKey)) return
+  activeTab.value = tabKey
+  await navigateSystemRoute(router, {
+    name: 'IAMWorkbench',
+    query: tabKey === defaultTab ? {} : { tab: tabKey }
+  }, { history: 'replace' })
+}
+
+watch([availableTabs, () => route.query], restoreTabFromRoute, { immediate: true })
 
 async function refreshContext() {
   refreshing.value = true

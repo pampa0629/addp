@@ -27,6 +27,25 @@ test('dashboard delegates recent execution details to the execution route', () =
   )
 
   assert.match(dashboardSource, /const location = executionDetailLocation\(row\)/)
-  assert.match(dashboardSource, /router\.push\(location\)/)
+  assert.match(dashboardSource, /navigateMonitorRoute\(router, location\)/)
   assert.doesNotMatch(dashboardSource, /monitor\.dashboard\.view_execution/)
+})
+
+test('execution list and stable tabs delegate to Monitor module navigation', () => {
+  const executionListSource = readFileSync(
+    new URL('../src/views/ExecutionList.vue', import.meta.url),
+    'utf8'
+  )
+  const alertSource = readFileSync(new URL('../src/views/AlertList.vue', import.meta.url), 'utf8')
+  const notificationSource = readFileSync(new URL('../src/views/NotificationList.vue', import.meta.url), 'utf8')
+  const navigationSource = readFileSync(new URL('../src/utils/moduleNavigation.js', import.meta.url), 'utf8')
+
+  assert.match(navigationSource, /navigateConsoleModuleRoute\(router, 'monitor', location, options\)/)
+  assert.match(executionListSource, /const location = executionDetailLocation\(row\)/)
+  assert.match(executionListSource, /navigateMonitorRoute\(router, location\)/)
+  assert.match(executionListSource, /execution_id: undefined/)
+  assert.match(alertSource, /resolveMonitorTabRouteState/)
+  assert.match(notificationSource, /resolveMonitorTabRouteState/)
+  assert.match(alertSource, /watch\(\(\) => route\.query, restoreTabFromRoute\)/)
+  assert.match(notificationSource, /watch\(\(\) => route\.query, restoreTabFromRoute\)/)
 })

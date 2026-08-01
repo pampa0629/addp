@@ -31,7 +31,7 @@
           v-for="asset in assets"
           :key="asset.id"
           class="result-item"
-          @click="$router.push(`/portal/assets/${asset.id}`)"
+          @click="openAsset(asset.id)"
         >
           <div class="result-item-header">
             <el-tag size="small" class="type-tag">{{ getTypeName(asset.type_code, asset.type_name) }}</el-tag>
@@ -63,7 +63,7 @@
           :page-size="pageSize"
           :total="total"
           layout="prev, pager, next, total"
-          @current-change="fetchAssets"
+          @current-change="handlePageChange"
         />
       </div>
     </div>
@@ -71,30 +71,50 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Search, FolderOpened } from '@element-plus/icons-vue'
 import { formatDate } from '@common-ui'
 import { searchAPI } from '../api/portal'
 import { useAssetType } from '../composables/useAssetType'
+import { buildSearchRouteQuery, resolveSearchRouteState } from '../utils/routeState'
 
 const { t } = useI18n()
 const { getTypeName } = useAssetType()
 const route = useRoute()
 const router = useRouter()
 
-const keyword = ref(route.query.keyword || '')
-const typeId = ref(route.query.type_id ? Number(route.query.type_id) : 0)
+const initialRouteState = resolveSearchRouteState(route.query)
+const keyword = ref(initialRouteState.keyword)
+const typeId = ref(initialRouteState.typeId)
 const loading = ref(false)
 const assets = ref([])
 const total = ref(0)
-const page = ref(1)
+const page = ref(initialRouteState.page)
 const pageSize = ref(15)
 
-function handleSearch() {
+function buildSearchQuery() {
+  return buildSearchRouteQuery({
+    keyword: keyword.value,
+    typeId: typeId.value,
+    page: page.value
+  })
+}
+
+async function handleSearch() {
+  keyword.value = String(keyword.value || '').trim()
   page.value = 1
-  router.push({ path: '/portal/search', query: keyword.value ? { keyword: keyword.value } : {} })
+  await router.replace({ name: 'Search', query: buildSearchQuery() })
+}
+
+async function handlePageChange(nextPage) {
+  page.value = nextPage
+  await router.replace({ name: 'Search', query: buildSearchQuery() })
+}
+
+async function openAsset(assetID) {
+  await router.push({ name: 'AssetDetail', params: { id: String(assetID) } })
 }
 
 async function fetchAssets() {
@@ -113,14 +133,18 @@ async function fetchAssets() {
   }
 }
 
-watch(() => route.query, (query) => {
-  keyword.value = query.keyword || ''
-  typeId.value = query.type_id ? Number(query.type_id) : 0
-  page.value = 1
-  fetchAssets()
-})
+watch(() => route.query, async (query) => {
+  const routeState = resolveSearchRouteState(query)
+  keyword.value = routeState.keyword
+  typeId.value = routeState.typeId
+  page.value = routeState.page
 
-onMounted(fetchAssets)
+  if (routeState.changed) {
+    await router.replace({ name: 'Search', query: routeState.query })
+    return
+  }
+  await fetchAssets()
+}, { immediate: true })
 </script>
 
 <style scoped>

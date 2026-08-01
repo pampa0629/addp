@@ -4,7 +4,7 @@
       <iframe
         v-if="iframeUrl"
         :src="iframeUrl"
-        :key="iframeUrl"
+        :key="iframeKey || iframeUrl"
         frameborder="0"
         allow="clipboard-write; clipboard-read"
         @load="$emit('load')"
@@ -23,6 +23,7 @@ import { Loading } from '@element-plus/icons-vue'
 
 defineProps({
   iframeUrl: { type: String, default: '' },
+  iframeKey: { type: [String, Number], default: '' },
 })
 
 defineEmits(['load'])

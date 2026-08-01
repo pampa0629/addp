@@ -17,6 +17,12 @@ import (
 // PostgreSQLPlugin PostgreSQL 数据库插件
 type PostgreSQLPlugin struct{}
 
+var (
+	_ plugin.BoundedWatermarkReadProvider        = (*PostgreSQLPlugin)(nil)
+	_ plugin.TableUpsertProvider                 = (*PostgreSQLPlugin)(nil)
+	_ plugin.PartitionedTableChangeApplyProvider = (*PostgreSQLPlugin)(nil)
+)
+
 var superMapSDXSystemTableNames = []string{
 	"smadditionalinfo",
 	"smbandregister",
@@ -352,6 +358,8 @@ func (p *PostgreSQLPlugin) listColumns(ctx context.Context, db *gorm.DB, schema,
 			c.data_type as data_type,
 			c.udt_name as udt_name,
 			format_type(a.atttypid, a.atttypmod) as native_type,
+			c.numeric_precision as numeric_precision,
+			c.numeric_scale as numeric_scale,
 			CASE WHEN c.is_nullable = 'YES' THEN true ELSE false END as nullable,
 			CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as primary_key,
 			COALESCE(col_description(cls.oid, a.attnum), '') as comment

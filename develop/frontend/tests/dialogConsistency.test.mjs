@@ -50,8 +50,8 @@ assert.equal((notebook.match(/class="addp-dialog"/g) || []).length, 3)
 assert.equal((notebook.match(/label-position="top"/g) || []).length, 3)
 assert.doesNotMatch(notebook, /width="(?:520px|600px)"/)
 
-assert.equal((taskManagement.match(/class="addp-dialog"/g) || []).length, 2)
-assert.equal((taskManagement.match(/label-position="top"/g) || []).length, 2)
+assert.equal((taskManagement.match(/class="addp-dialog"/g) || []).length, 1)
+assert.equal((taskManagement.match(/label-position="top"/g) || []).length, 1)
 assert.doesNotMatch(taskManagement, /width="(?:500px|600px)"/)
 
 for (const source of [notebook, queryTasks, taskManagement]) {
@@ -62,8 +62,8 @@ for (const source of [notebook, queryTasks, taskManagement]) {
 }
 
 assert.doesNotMatch(queryTasks, /<el-dialog/)
-assert.match(queryTasks, /<SaveQueryDialog[\s\S]*:dialog-title="t\('develop\.queryTasks\.editDialogTitle'\)"/)
-assert.match(queryTasks, /:initial-value="editingTask"/)
+assert.doesNotMatch(queryTasks, /<SaveQueryDialog/)
+assert.match(queryTasks, /navigateDevelopTaskEditor\(router, 'query', task\.id\)/)
 
 assert.match(saveQueryDialog, /class="addp-dialog"/)
 assert.match(saveQueryDialog, /width="min\(600px, calc\(100vw - 24px\)\)"/)

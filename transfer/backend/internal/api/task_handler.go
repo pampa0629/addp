@@ -33,7 +33,7 @@ func NewTaskHandler(taskService *service.TaskService) *TaskHandler {
 
 // CreateTask 创建任务
 // @Summary 创建数据传输任务 | Create data transfer task
-// @Description 创建 bounded、业务 Kafka continuous 或数据库 CDC 任务。业务 Kafka continuous 必须显式使用 runtime.record_failure.mode=block|dead_letter；dead_letter 只处理确定性记录级数据错误。CDC 第一版支持 PostgreSQL/MySQL 单表 initial_snapshot、block 和 PostgreSQL 新目标表 upsert_delete。旧 mode/write_mode 字段会被拒绝。| Create a bounded, business Kafka continuous, or database CDC task. Business Kafka continuous tasks must explicitly use runtime.record_failure.mode=block|dead_letter; dead_letter only handles deterministic record-level data errors. CDC v1 supports a single PostgreSQL or MySQL table with initial_snapshot, block policy, and a new PostgreSQL upsert_delete target. Legacy mode/write_mode fields are rejected.
+// @Description 创建 bounded、业务 Kafka continuous 或数据库 CDC 任务。业务 Kafka continuous 必须显式使用 runtime.record_failure.mode=block|dead_letter；dead_letter 只处理确定性记录级数据错误。数据库 CDC 支持 PostgreSQL/MySQL 单表 initial_snapshot、block 和 PostgreSQL/MySQL 新目标表 upsert_delete。旧 mode/write_mode 字段会被拒绝。| Create a bounded, business Kafka continuous, or database CDC task. Business Kafka continuous tasks must explicitly use runtime.record_failure.mode=block|dead_letter; dead_letter only handles deterministic record-level data errors. Database CDC supports a single PostgreSQL or MySQL source table with initial_snapshot, block policy, and a new PostgreSQL or MySQL upsert_delete target. Legacy mode/write_mode fields are rejected.
 // @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json

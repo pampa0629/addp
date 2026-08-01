@@ -19,6 +19,7 @@ import (
 	"github.com/addp/common/authtest"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/kafka"
+	mysqlplugin "github.com/addp/common/engine/plugins/mysql"
 	"github.com/addp/common/engine/plugins/postgresql"
 	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
@@ -41,6 +42,14 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 	if os.Getenv("ADDP_CDC_DATA_E2E") != "1" {
 		t.Skip("set ADDP_CDC_DATA_E2E=1 to run PostgreSQL CDC data-plane integration test")
 	}
+	for _, targetType := range []string{"postgresql", "mysql"} {
+		t.Run("target="+targetType, func(t *testing.T) {
+			runIntegrationPostgreSQLCDCDataPlaneViaPublicAPIFullLifecycle(t, targetType)
+		})
+	}
+}
+
+func runIntegrationPostgreSQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T, targetType string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
@@ -83,7 +92,8 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 		t.Fatalf("business PostgreSQL is unavailable: %v", err)
 	}
 	suffix := time.Now().UnixNano()
-	schema := fmt.Sprintf("cdc_data_%d", suffix)
+	schema := fmt.Sprintf("cdc_data_source_%d", suffix)
+	targetNamespace := fmt.Sprintf("cdc_data_target_%d", suffix)
 	sourceTable := "orders"
 	targetTable := "orders_target"
 	if _, err := businessDB.ExecContext(ctx, `CREATE SCHEMA `+pq.QuoteIdentifier(schema)); err != nil {
@@ -113,10 +123,26 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 	)`); err != nil {
 		t.Fatal(err)
 	}
+	var mysqlRootInfo engineplugin.ConnectionInfo
+	var mysqlRootDB *sql.DB
+	if targetType == "mysql" {
+		mysqlRootInfo = mysqlCDCConnInfo(
+			cdcDataEnv("ADDP_TEST_BUSINESS_MYSQL_ROOT_USER", "root"),
+			cdcDataEnv("ADDP_TEST_BUSINESS_MYSQL_ROOT_PASSWORD", "password"),
+			"mysql",
+		)
+		mysqlRootDB = openMySQLIntegrationDB(t, mysqlRootInfo)
+		defer mysqlRootDB.Close()
+	}
+	target := openCDCDataE2ETarget(t, ctx, targetType, targetNamespace, targetTable, mysqlRootInfo, mysqlRootDB)
+	defer target.Close()
 
 	resolver := planner.StaticEngineResolver{
 		12: {Type: "postgresql", EngineID: 12, ConnInfo: businessInfo},
-		20: {Type: "postgresql", EngineID: 20, ConnInfo: businessInfo, Capabilities: ptrEngineCapabilities((&postgresql.PostgreSQLPlugin{}).Capabilities())},
+		target.EngineID: {
+			Type: target.Type, EngineID: target.EngineID, ConnInfo: target.ConnInfo,
+			Capabilities: ptrEngineCapabilities(target.Plugin.Capabilities()),
+		},
 	}
 	captureRepo := repository.NewCaptureRepository(infraDB)
 	topicAdmin, err := capture.NewKafkaTopicAdmin(capture.KafkaAdminConfig{
@@ -174,16 +200,28 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 		}
 		metaServer.Close()
 	}()
-	taskService := service.NewTaskService(infraDB, nil, &transferconfig.Config{
+	const serviceClientSecret = "0123456789abcdef0123456789abcdef"
+	systemServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/system/oauth/token" {
+			t.Fatalf("unexpected System OAuth request %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"addp_at_cdc_e2e","token_type":"bearer","expires_in":300,"scope":"addp.api"}`))
+	}))
+	defer systemServer.Close()
+	taskConfig := &transferconfig.Config{
 		ContinuousRuntimeStopTimeout: 5 * time.Second, ContinuousRuntimeStopPollInterval: 50 * time.Millisecond,
-		MetaServiceURL: metaServer.URL, InternalAPIKey: "cdc-data-e2e", SchemaChangeMetaScanClaimTTL: 2 * time.Minute,
-	}, nil)
+		MetaServiceURL: metaServer.URL, ServiceClientSecret: serviceClientSecret,
+		SchemaChangeMetaScanClaimTTL: 2 * time.Minute,
+	}
+	taskConfig.SystemServiceURL = systemServer.URL
+	taskService := service.NewTaskService(infraDB, nil, taskConfig, nil)
 	taskService.SetEngineResolver(resolver)
 	taskService.SetExecutionService(executionService)
 	taskService.SetCaptureControl(captureSupervisor)
 	taskService.SetSchemaChangeInspector(capturePlanResolver)
 	apiRouter := cdcDataAPIRouter(t, taskService, uint(700000+suffix%90000), 700001)
-	task := cdcDataCreateTaskViaAPI(t, apiRouter, cdcDataTaskConfig(schema, sourceTable, targetTable))
+	task := cdcDataCreateTaskViaAPI(t, apiRouter, cdcDataTaskConfig(schema, sourceTable, target))
 	defer cleanupCDCDataInfraRows(infraDB, task.ID)
 
 	execution := cdcDataStartTaskViaAPI(t, apiRouter, task.ID)
@@ -218,6 +256,8 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 				return &kafka.KafkaPlugin{}, nil
 			case "postgresql":
 				return &postgresql.PostgreSQLPlugin{}, nil
+			case "mysql":
+				return &mysqlplugin.MySQLPlugin{}, nil
 			default:
 				return nil, fmt.Errorf("unexpected engine type %q", engineType)
 			}
@@ -227,14 +267,14 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 	firstCtx, cancelFirst := context.WithCancel(ctx)
 	firstDone := make(chan error, 1)
 	go func() { firstDone <- runner.Run(firstCtx, *claim) }()
-	waitCDCDataRow(t, ctx, firstDone, businessDB, schema, targetTable, 1, "snapshot", true)
-	assertCDCDataTypeMatrix(t, ctx, businessDB, schema, targetTable)
+	target.WaitRow(t, ctx, firstDone, 1, "snapshot", true)
+	target.AssertPostgreSQLSourceTypeMatrix(t, ctx)
 	if _, err := businessDB.ExecContext(ctx, `UPDATE `+pq.QuoteIdentifier(schema)+`.`+pq.QuoteIdentifier(sourceTable)+`
 		SET name='updated', shape=ST_GeomFromText('MULTIPOLYGON(((20 20,30 20,30 30,20 20)))', 4549) WHERE id=1`); err != nil {
 		t.Fatal(err)
 	}
-	waitCDCDataRow(t, ctx, firstDone, businessDB, schema, targetTable, 1, "updated", true)
-	waitCDCDataGeometry(t, ctx, firstDone, businessDB, schema, targetTable, "MULTIPOLYGON(((20 20,30 20,30 30,20 20)))")
+	target.WaitRow(t, ctx, firstDone, 1, "updated", true)
+	target.WaitGeometry(t, ctx, firstDone, "MULTIPOLYGON(((20 20,30 20,30 30,20 20)))")
 	cancelFirst()
 	if err := <-firstDone; !errors.Is(err, context.Canceled) {
 		t.Fatalf("first runner error = %v", err)
@@ -258,7 +298,7 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 	if _, err := businessDB.ExecContext(ctx, `DELETE FROM `+pq.QuoteIdentifier(schema)+`.`+pq.QuoteIdentifier(sourceTable)+` WHERE id=1`); err != nil {
 		t.Fatal(err)
 	}
-	waitCDCDataRow(t, ctx, secondDone, businessDB, schema, targetTable, 1, "", false)
+	target.WaitRow(t, ctx, secondDone, 1, "", false)
 
 	states, err := stateRepo.List(ctx, task.ID, resource.SourceIdentity)
 	if err != nil || len(states) != 1 {
@@ -275,10 +315,7 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 	if err != nil || committed <= 0 {
 		t.Fatalf("committed position=%#v err=%v", nextOffset, err)
 	}
-	var ledgerOffset int64
-	if err := businessDB.QueryRowContext(ctx, `SELECT next_offset FROM addp_transfer.apply_positions WHERE apply_identity=$1::uuid AND partition='0'`, task.ApplyIdentity).Scan(&ledgerOffset); err != nil {
-		t.Fatal(err)
-	}
+	ledgerOffset := target.LedgerOffset(t, ctx, task.ApplyIdentity)
 	if ledgerOffset != committed {
 		t.Fatalf("target ledger=%d transfer committed=%d", ledgerOffset, committed)
 	}
@@ -317,13 +354,7 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 	if err != nil || afterDriftCommitted != committed {
 		t.Fatalf("schema drift advanced committed position: before=%d after=%d err=%v", committed, afterDriftCommitted, err)
 	}
-	var targetRow2Exists bool
-	if err := businessDB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM `+pq.QuoteIdentifier(schema)+`.`+pq.QuoteIdentifier(targetTable)+` WHERE id=2)`).Scan(&targetRow2Exists); err != nil {
-		t.Fatal(err)
-	}
-	if targetRow2Exists {
-		t.Fatal("schema drift event was applied to target")
-	}
+	target.AssertRowAbsent(t, ctx, 2)
 	if err := leaseRepo.Finish(context.Background(), *secondClaim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", runnerErr.Error(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -380,12 +411,8 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 	if failTaskCommit {
 		t.Fatal("Infra task commit failure callback did not run")
 	}
-	var targetColumnExists bool
-	if err := businessDB.QueryRowContext(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM information_schema.columns
-			WHERE table_schema=$1 AND table_name=$2 AND column_name='schema_drift' AND is_nullable='YES'
-		)`, schema, targetTable).Scan(&targetColumnExists); err != nil || !targetColumnExists {
+	targetColumnExists, err := target.HasNullableColumn(ctx, "schema_drift")
+	if err != nil || !targetColumnExists {
 		t.Fatalf("target DDL did not commit before injected Infra rollback: exists=%v err=%v", targetColumnExists, err)
 	}
 	var rolledBackRequest models.SchemaChangeRequest
@@ -418,6 +445,11 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 	}()
 	select {
 	case <-metaScanEntered:
+	case result := <-firstApproval:
+		var persisted models.SchemaChangeRequest
+		_ = infraDB.First(&persisted, result.view.ID).Error
+		t.Fatalf("first concurrent approval returned before Meta scan: status=%d body=%s result=%#v scan_error=%q err=%v",
+			result.status, result.body, result.view, persisted.MetadataScanError, result.err)
 	case <-time.After(10 * time.Second):
 		t.Fatal("first concurrent approval did not claim and call Meta scan")
 	}
@@ -520,11 +552,8 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 	if metadataScan["status"] != "success" || metadataScan["execution_id"] != "meta-scan-2" || metadataScan["attempt"] != float64(2) {
 		t.Fatalf("reclaimed Meta scan execution projection=%#v", schemaChange)
 	}
-	if err := businessDB.QueryRowContext(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM information_schema.columns
-			WHERE table_schema=$1 AND table_name=$2 AND column_name='schema_drift' AND is_nullable='YES'
-		)`, schema, targetTable).Scan(&targetColumnExists); err != nil || !targetColumnExists {
+	targetColumnExists, err = target.HasNullableColumn(ctx, "schema_drift")
+	if err != nil || !targetColumnExists {
 		t.Fatalf("PostgreSQL additive target column exists=%v err=%v", targetColumnExists, err)
 	}
 
@@ -536,9 +565,9 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 	resumeCtx, cancelResume := context.WithCancel(ctx)
 	resumeDone := make(chan error, 1)
 	go func() { resumeDone <- runner.Run(resumeCtx, *resumeClaim) }()
-	waitCDCDataRow(t, ctx, resumeDone, businessDB, schema, targetTable, 2, "blocked", true)
-	var resumedValue string
-	if err := businessDB.QueryRowContext(ctx, `SELECT schema_drift FROM `+pq.QuoteIdentifier(schema)+`.`+pq.QuoteIdentifier(targetTable)+` WHERE id=2`).Scan(&resumedValue); err != nil || resumedValue != "new field" {
+	target.WaitRow(t, ctx, resumeDone, 2, "blocked", true)
+	resumedValue, err := target.AdditiveValue(ctx, 2)
+	if err != nil || resumedValue != "new field" {
 		t.Fatalf("resumed PostgreSQL additive value=%q err=%v", resumedValue, err)
 	}
 	if _, err := businessDB.ExecContext(ctx, `INSERT INTO `+pq.QuoteIdentifier(schema)+`.`+pq.QuoteIdentifier(sourceTable)+` (
@@ -550,7 +579,7 @@ func TestIntegrationPostgreSQLCDCDataPlaneViaPublicAPISnapshotUpdateDeleteCrashR
 	)`); err != nil {
 		t.Fatal(err)
 	}
-	waitCDCDataRow(t, ctx, resumeDone, businessDB, schema, targetTable, 3, "after-additive", true)
+	target.WaitRow(t, ctx, resumeDone, 3, "after-additive", true)
 	mysqlCDCPauseTaskViaAPI(t, apiRouter, task.ID)
 	cancelResume()
 	if err := <-resumeDone; !errors.Is(err, context.Canceled) {
@@ -733,7 +762,7 @@ func assertCDCDataCaptureCleanup(
 	}
 }
 
-func cdcDataTaskConfig(schema, sourceTable, targetTable string) models.JSONMap {
+func cdcDataTaskConfig(schema, sourceTable string, target *cdcDataE2ETarget) models.JSONMap {
 	return models.JSONMap{
 		"runtime": map[string]interface{}{"boundary": "continuous", "record_failure": map[string]interface{}{"mode": "block"}},
 		"load": map[string]interface{}{
@@ -743,7 +772,7 @@ func cdcDataTaskConfig(schema, sourceTable, targetTable string) models.JSONMap {
 			"locator": fmt.Sprintf("addp://engine/12/path/%s/%s?type=table", schema, sourceTable), "data_type": "table", "representation": "native",
 		},
 		"target": map[string]interface{}{
-			"parent_locator": fmt.Sprintf("addp://engine/20/path/%s?type=schema", schema), "name": targetTable,
+			"parent_locator": target.ParentLocator(), "name": target.Table,
 			"data_type": "table", "representation": "native", "policy": map[string]interface{}{"apply_mode": "upsert_delete", "keys": []interface{}{"id"}},
 		},
 		"transforms": []interface{}{map[string]interface{}{
@@ -751,7 +780,9 @@ func cdcDataTaskConfig(schema, sourceTable, targetTable string) models.JSONMap {
 			"fields": []interface{}{
 				map[string]interface{}{"source": "id", "target": "id", "target_type": "bigint", "nullable": false},
 				map[string]interface{}{"source": "name", "target": "name", "target_type": "string", "nullable": true},
-				map[string]interface{}{"source": "amount", "target": "amount", "target_type": "decimal", "nullable": false},
+				map[string]interface{}{
+					"source": "amount", "target": "amount", "target_type": "decimal", "precision": 30, "scale": 4, "nullable": false,
+				},
 				map[string]interface{}{"source": "business_date", "target": "business_date", "target_type": "date", "nullable": false},
 				map[string]interface{}{"source": "business_time", "target": "business_time", "target_type": "time", "nullable": false},
 				map[string]interface{}{"source": "changed_at", "target": "changed_at", "target_type": "timestamp", "nullable": false},

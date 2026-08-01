@@ -103,6 +103,7 @@
       "addTag": "+ 添加标签",
       "sourceModulePlaceholder": "选择来源模块（选填）",
       "sourceReferencePlaceholder": "来源数据的唯一标识或路径（选填）",
+      "save": "保存",
       "saveDraft": "保存草稿",
       "saveAndSubmit": "保存并提交上架",
       "rejectDialogTitle": "驳回原因",

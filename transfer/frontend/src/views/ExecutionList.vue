@@ -27,6 +27,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { executionAPI } from '@/api/tasks'
+import { navigateTransferRoute } from '@/utils/moduleNavigation'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -44,7 +45,7 @@ const loadExecutions = async () => {
 }
 
 const viewDetail = (executionId) => {
-  router.push(`/executions/${executionId}`)
+  navigateTransferRoute(router, `/executions/${executionId}`)
 }
 
 const getStatusType = (status) => {

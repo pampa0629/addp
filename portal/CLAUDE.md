@@ -37,12 +37,20 @@ portal/
 - Portal 正式浏览器入口固定为 Console 当前 origin 的 `/portal/`。开发端口 `5185` 只承载前端服务，由 Console Vite 代理；Console 不直接打开该端口，确保 Portal 与 Console 共享 Browser AuthSession 协调域。
 - Portal Backend 使用 `addp-portal` 的 Platform Service Token 向 System 唯一模块注册表注册 `/portal` 并持续心跳；Gateway 不保留 Portal 静态地址或未注册 fallback。平台 `platform.portal_runtime` 只包含 `system.runtime_registry.update`，Tenant `tenant.portal_runtime` 只包含 Portal 读取 Service endpoint 投影所需权限。
 
+## 前端公开路由
+
+- Portal 是独立用户门户，公开路由固定保留 `/portal` 前缀，不接入 Console iframe 模块导航桥。
+- 搜索页使用 `keyword`、`type_id`、`page`，目录页使用 path `/portal/catalogs/:id` 与 query `page`，默认页码 1 省略。
+- 资产详情唯一使用 `/portal/assets/:id`。返回操作只复用已验证的 `/portal/...` 浏览器历史；没有合法 Portal 来源时，根据资产 `catalog_id` 回目录，否则回搜索页。
+- 不接受任意 `return_url`，不把申请表单、API Key、Token 或服务凭据写入 URL。
+
 ## 开发与验证
 
 ```bash
 bash scripts/dev/start.sh -portal
 bash scripts/dev/restart.sh -portal
 curl http://localhost:8184/health
+cd portal/frontend && npm test && npm run build
 ```
 
 API 或路由变更后运行：

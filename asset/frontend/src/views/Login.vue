@@ -84,7 +84,7 @@ const handleLogin = async () => {
     try {
       await authStore.login(loginForm.username, loginForm.password)
       ElMessage.success(t('asset.login.success'))
-      const redirect = route.query.redirect || '/asset/assets'
+      const redirect = route.query.redirect || '/assets'
       router.push(redirect)
     } catch (error) {
       ElMessage.error(error.message || t('asset.login.failed'))

@@ -1,7 +1,7 @@
 <template>
   <div class="review-queue">
     <div class="page-header">
-      <el-button text @click="$router.back()">← {{ t('graph.common.back') }}</el-button>
+      <el-button text @click="returnToBuild">← {{ t('graph.common.back') }}</el-button>
       <h2>{{ t('graph.review.title') }}</h2>
       <div class="header-stats">
         <el-tag type="warning">{{ t('graph.review.pending') }} {{ total }}</el-tag>
@@ -10,10 +10,10 @@
 
     <!-- 过滤栏 -->
     <div class="filter-bar">
-      <el-tabs v-model="activeTab" @tab-change="loadItems">
+      <el-tabs v-model="activeTab" @tab-change="handleTabChange">
         <el-tab-pane :label="t('graph.review.pendingEntities')" name="entity" />
         <el-tab-pane :label="t('graph.review.pendingRelations')" name="relation" />
-        <el-tab-pane :label="t('graph.review.all')" name="" />
+        <el-tab-pane :label="t('graph.review.all')" name="all" />
       </el-tabs>
       <div class="filter-actions">
         <el-select v-model="filterStatus" @change="loadItems" placeholder="状态" style="width:120px" clearable>
@@ -136,15 +136,18 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { buildAPI } from '../api/graphBuild'
 import { useI18n } from 'vue-i18n'
+import { resolveCanonicalTabRouteState } from '@common-ui'
+import { navigateGraphRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 
 const route = useRoute()
+const router = useRouter()
 const graphId = route.params.id
 
 const items = ref([])
@@ -152,7 +155,13 @@ const loading = ref(false)
 const total = ref(0)
 const page = ref(1)
 const pageSize = 20
-const activeTab = ref('entity')
+const reviewTabs = ['entity', 'relation', 'all']
+const resolveRouteState = routeQuery => resolveCanonicalTabRouteState({
+  allowedTabs: reviewTabs,
+  defaultTab: 'entity',
+  routeQuery
+})
+const activeTab = ref(resolveRouteState(route.query).tab)
 const filterStatus = ref('pending')
 const selectedIds = ref([])
 
@@ -167,7 +176,7 @@ async function loadItems() {
     const params = {
       page: page.value,
       page_size: pageSize,
-      item_type: activeTab.value || undefined,
+      item_type: activeTab.value === 'all' ? undefined : activeTab.value,
       status: filterStatus.value || undefined
     }
     const res = await buildAPI.listReviewItems(graphId, params)
@@ -178,6 +187,30 @@ async function loadItems() {
   } finally {
     loading.value = false
   }
+}
+
+const returnToBuild = () => navigateGraphRoute(router, `/graphs/${graphId}/build`, { history: 'replace' })
+
+async function handleTabChange(tab) {
+  const routeState = resolveRouteState({ tab })
+  const location = { path: route.path, query: routeState.query }
+  if (router.resolve(location).fullPath !== route.fullPath) {
+    await navigateGraphRoute(router, location, { history: 'replace' })
+  }
+}
+
+async function restoreTabFromRoute() {
+  const routeState = resolveRouteState(route.query)
+  activeTab.value = routeState.tab
+  if (routeState.changed) {
+    await navigateGraphRoute(router, {
+      path: route.path,
+      query: routeState.query
+    }, { history: 'replace' })
+    return
+  }
+  page.value = 1
+  await loadItems()
 }
 
 function handleSelectionChange(rows) {
@@ -304,7 +337,8 @@ function reviewStatusLabel(s) {
   }[s] || s
 }
 
-onMounted(loadItems)
+watch(() => route.query, restoreTabFromRoute)
+onMounted(restoreTabFromRoute)
 </script>
 
 <style scoped>

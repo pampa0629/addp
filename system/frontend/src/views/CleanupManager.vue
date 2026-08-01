@@ -544,6 +544,7 @@ import { Search, Refresh, Delete, WarningFilled, Monitor } from '@element-plus/i
 import { openMonitorExecution, openMonitorExecutions } from '@common-ui'
 import { cleanupApi } from '../api/cleanup'
 import { useAuthStore } from '../store/auth'
+import { navigateSystemRoute } from '../utils/moduleNavigation'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -860,11 +861,13 @@ const openCleanupMonitor = async () => {
   })
 }
 
-const openAuditLogs = (taskId) => {
+const openAuditLogs = async (taskId) => {
   if (!taskId) return
-  router.push({
-    name: 'Logs',
+  const tab = authStore.contextType === 'platform' ? 'platform-audit' : 'tenant-audit'
+  await navigateSystemRoute(router, {
+    name: 'IAMWorkbench',
     query: {
+      tab,
       module_name: 'system',
       entity_type: 'cleanup',
       entity_id: taskId

@@ -113,6 +113,38 @@ func TestFieldMappingTransformPreservesCRSDefinitionForMappedGeometryColumn(t *t
 	}
 }
 
+func TestFieldMappingTransformOverridesDecimalPrecisionAndScale(t *testing.T) {
+	precision := 20
+	scale := 10
+	transform, err := newFieldMappingTransform(FieldMappingTransformPlan{
+		Mode: FieldMappingModeProject,
+		Fields: []FieldMappingFieldPlan{{
+			Source:     "amount",
+			Target:     "amount",
+			TargetType: string(datatype.FieldTypeDecimal),
+			Precision:  &precision,
+			Scale:      &scale,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("newFieldMappingTransform failed: %v", err)
+	}
+
+	nextInfo, _, err := transform.TransformTableInfo(&datatype.TableInfo{Fields: []datatype.FieldInfo{{
+		Name:      "amount",
+		Type:      datatype.FieldTypeDecimal,
+		Precision: 18,
+		Scale:     2,
+	}}}, nil)
+	if err != nil {
+		t.Fatalf("TransformTableInfo failed: %v", err)
+	}
+	field := nextInfo.GetField("amount")
+	if field == nil || field.Precision != 20 || field.Scale != 10 {
+		t.Fatalf("mapped decimal field = %#v, want precision/scale 20/10", field)
+	}
+}
+
 type fakeGeometryBatchReprojecter struct {
 	calls          int
 	sourceCRS      string

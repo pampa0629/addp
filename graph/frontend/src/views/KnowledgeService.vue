@@ -27,7 +27,7 @@
         </el-tag>
       </div>
 
-      <el-tabs v-model="activeTab" class="ks-tabs">
+      <el-tabs v-model="activeTab" class="ks-tabs" @tab-change="handleTabChange">
         <el-tab-pane :label="t('graph.service.configTab')" name="config">
           <div class="config-panel">
             <el-form label-width="120px">
@@ -119,16 +119,22 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { knowledgeServiceApi } from '../api/knowledgeService'
 import { useI18n } from 'vue-i18n'
+import { resolveKnowledgeServiceRouteState } from '@/utils/knowledgeServiceRouteState'
+import { navigateGraphRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
 
 const graphs = ref([])
+const graphsLoaded = ref(false)
 const selectedGraphId = ref(null)
-const activeTab = ref('config')
+const activeTab = ref(resolveKnowledgeServiceRouteState({ routeQuery: route.query }).tab)
 const isPublic = ref(false)
 const saving = ref(false)
 const testing = ref(false)
@@ -237,26 +243,72 @@ async function loadGraphs() {
     graphs.value = Array.isArray(res) ? res : (res.data || [])
   } catch {
     graphs.value = []
+  } finally {
+    graphsLoaded.value = true
   }
 }
 
-async function loadOntology() {
-  if (!selectedGraphId.value) return
+async function loadOntology(graphId = selectedGraphId.value) {
+  if (!graphId) return
   try {
-    const res = await knowledgeServiceApi.getOntology(selectedGraphId.value)
-    entityTypes.value = res.entity_types || []
+    const res = await knowledgeServiceApi.getOntology(graphId)
+    if (selectedGraphId.value === graphId) entityTypes.value = res.entity_types || []
   } catch {
-    entityTypes.value = []
+    if (selectedGraphId.value === graphId) entityTypes.value = []
   }
 }
 
-function handleGraphSelect(id) {
-  selectedGraphId.value = parseInt(id)
-  const g = graphs.value.find(g => g.id === selectedGraphId.value)
-  isPublic.value = g?.is_public ?? false
-  testResult.value = ''
+async function handleGraphSelect(id) {
+  const graphId = Number(id)
+  await applyGraphSelection(graphId)
+  await navigateKnowledgeRoute(graphId, activeTab.value)
+}
+
+async function handleTabChange(tab) {
+  const routeState = resolveKnowledgeServiceRouteState({
+    routeQuery: { graph_id: selectedGraphId.value, tab },
+    graphs: graphs.value
+  })
+  activeTab.value = routeState.tab
+  await navigateKnowledgeRoute(selectedGraphId.value, routeState.tab)
+}
+
+async function applyGraphSelection(graphId) {
+  if (selectedGraphId.value === graphId) return
+  selectedGraphId.value = graphId
+  const graph = graphs.value.find(item => item.id === graphId)
+  isPublic.value = graph?.is_public ?? false
+  testQuery.value = ''
   testEntityType.value = ''
-  loadOntology()
+  testResult.value = ''
+  entityTypes.value = []
+  await loadOntology(graphId)
+}
+
+async function navigateKnowledgeRoute(graphId, tab) {
+  const routeState = resolveKnowledgeServiceRouteState({
+    routeQuery: { graph_id: graphId, tab },
+    graphs: graphs.value
+  })
+  const location = { path: '/knowledge-service', query: routeState.query }
+  if (router.resolve(location).fullPath === route.fullPath) return
+  await navigateGraphRoute(router, location, { history: 'replace' })
+}
+
+async function restoreKnowledgeRoute() {
+  if (!graphsLoaded.value) return
+  const routeState = resolveKnowledgeServiceRouteState({
+    routeQuery: route.query,
+    graphs: graphs.value
+  })
+  activeTab.value = routeState.tab
+  await applyGraphSelection(routeState.graphId)
+  if (routeState.changed) {
+    await navigateGraphRoute(router, {
+      path: '/knowledge-service',
+      query: routeState.query
+    }, { history: 'replace' })
+  }
 }
 
 async function handlePublicToggle(val) {
@@ -302,7 +354,12 @@ async function handleTest() {
   }
 }
 
-onMounted(loadGraphs)
+watch(() => route.query, restoreKnowledgeRoute)
+
+onMounted(async () => {
+  await loadGraphs()
+  await restoreKnowledgeRoute()
+})
 </script>
 
 <style scoped>

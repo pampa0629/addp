@@ -41,4 +41,4 @@ Tenant 关闭是终态；暂停和恢复是受控状态转换。状态变化会�
 
 - [System 数据库架构](../数据库架构.md)
 - [ADDP 账号与权限体系](../../../docs/concepts/addp账号与权限体系图.md)
-- [ADDP IAM 目标数据模型设计](../../../docs/next/addp-IAM目标数据模型设计.md)
+- [System IAM 数据模型与迁移规范](../IAM数据模型与迁移规范.md)

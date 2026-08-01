@@ -22,6 +22,7 @@
           :placeholder="t('develop.execution.filterType')"
           clearable
           style="width: 120px; margin-right: 10px;"
+          @change="handleFilterChange"
         >
           <el-option :label="t('develop.execution.typeQuery')" value="query" />
           <el-option :label="t('develop.execution.typeWorkflow')" value="workflow" />
@@ -32,6 +33,7 @@
           :placeholder="t('develop.execution.filterStatus')"
           clearable
           style="width: 120px; margin-right: 10px;"
+          @change="handleFilterChange"
         >
           <el-option :label="t('develop.execution.statusPending')" value="pending" />
           <el-option :label="t('develop.execution.statusRunning')" value="running" />
@@ -45,6 +47,7 @@
           :placeholder="t('develop.execution.filterTrigger')"
           clearable
           style="width: 120px; margin-right: 10px;"
+          @change="handleFilterChange"
         >
           <el-option :label="t('develop.execution.triggerManual')" value="manual" />
           <el-option :label="t('develop.execution.triggerSchedule')" value="scheduled" />
@@ -56,6 +59,7 @@
           :start-placeholder="t('develop.execution.startDate')"
           :end-placeholder="t('develop.execution.endDate')"
           style="width: 240px;"
+          @change="handleFilterChange"
         />
       </div>
     </div>
@@ -220,6 +224,8 @@ import {
   retryExecution,
   getExecutionStatistics
 } from '@/api/execution'
+import { navigateDevelopRoute } from '@/utils/developNavigation'
+import { resolveExecutionMonitorRouteState } from '@/utils/executionMonitorRouteState'
 
 const route = useRoute()
 const router = useRouter()
@@ -379,9 +385,10 @@ const formatTime = (time) => {
 }
 
 // 操作函数
-const handleViewDetail = (row) => {
-  router.push(`/executions/${row.execution_id}`)
-}
+const handleViewDetail = (row) => navigateDevelopRoute(router, {
+  name: 'ExecutionDetail',
+  params: { execution_id: row.execution_id }
+})
 
 const handleRetry = async (row) => {
   try {
@@ -400,14 +407,32 @@ const handleRefresh = () => {
   loadStatistics()
 }
 
-const handlePageChange = () => {
-  loadExecutions()
+const formatRouteDate = (date) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return ''
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
-const handlePageSizeChange = () => {
-  pagination.page = 1
-  loadExecutions()
+const navigateToCurrentFilters = async ({ resetPage = false } = {}) => {
+  const [startDate, endDate] = Array.isArray(dateRange.value) ? dateRange.value : []
+  const routeState = resolveExecutionMonitorRouteState({
+    ...filters,
+    start_date: formatRouteDate(startDate),
+    end_date: formatRouteDate(endDate),
+    page: resetPage ? 1 : pagination.page,
+    page_size: pagination.page_size
+  })
+  const location = { path: route.path, query: routeState.query }
+  if (router.resolve(location).fullPath !== route.fullPath) {
+    await navigateDevelopRoute(router, location, { history: 'replace' })
+  }
 }
+
+const handleFilterChange = () => navigateToCurrentFilters({ resetPage: true })
+const handlePageChange = () => navigateToCurrentFilters()
+const handlePageSizeChange = () => navigateToCurrentFilters({ resetPage: true })
 
 // 自动刷新逻辑
 const startAutoRefresh = () => {
@@ -427,23 +452,28 @@ const stopAutoRefresh = () => {
   }
 }
 
-// 监听筛选器变化
-watch([filters, dateRange], () => {
-  pagination.page = 1
-  loadExecutions()
-  loadStatistics()
-}, { deep: true })
+async function restoreMonitorFromRoute() {
+  const routeState = resolveExecutionMonitorRouteState(route.query)
+  if (routeState.changed) {
+    await navigateDevelopRoute(router, {
+      path: route.path,
+      query: routeState.query
+    }, { history: 'replace' })
+    return
+  }
+
+  Object.assign(filters, routeState.filters)
+  dateRange.value = routeState.dateRange.map(value => new Date(`${value}T00:00:00`))
+  pagination.page = routeState.page
+  pagination.page_size = routeState.pageSize
+  await Promise.all([loadExecutions(), loadStatistics()])
+}
+
+watch(() => route.query, restoreMonitorFromRoute)
 
 // 生命周期
-onMounted(() => {
-  if (route.query.source_task_id) {
-    filters.source_task_id = String(route.query.source_task_id)
-  }
-  if (route.query.dev_type) {
-    filters.dev_type = String(route.query.dev_type)
-  }
-  loadExecutions()
-  loadStatistics()
+onMounted(async () => {
+  await restoreMonitorFromRoute()
   startAutoRefresh()
 })
 

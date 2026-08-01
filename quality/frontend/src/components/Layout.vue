@@ -38,19 +38,19 @@
               <el-icon><CircleCheck /></el-icon>
               <span>{{ t('quality.layout.qualityManagement') }}</span>
             </template>
-            <el-menu-item index="/quality/rule-applications">
+            <el-menu-item index="/rule-applications">
               <el-icon><Setting /></el-icon>
               <span>{{ t('quality.layout.ruleApplications') }}</span>
             </el-menu-item>
-            <el-menu-item index="/quality/check-tasks">
+            <el-menu-item index="/check-tasks">
               <el-icon><List /></el-icon>
               <span>{{ t('quality.layout.checkTasks') }}</span>
             </el-menu-item>
-            <el-menu-item index="/quality/executions">
+            <el-menu-item index="/executions">
               <el-icon><Clock /></el-icon>
               <span>{{ t('quality.layout.executions') }}</span>
             </el-menu-item>
-            <el-menu-item index="/quality/issues">
+            <el-menu-item index="/issues">
               <el-icon><Warning /></el-icon>
               <span>{{ t('quality.layout.issues') }}</span>
             </el-menu-item>
@@ -88,10 +88,10 @@ onMounted(() => {
 
 const activeMenu = computed(() => {
   const path = route.path
-  if (path.startsWith('/quality/rule-applications')) return '/quality/rule-applications'
-  if (path.startsWith('/quality/check-tasks')) return '/quality/check-tasks'
-  if (path.startsWith('/quality/executions')) return '/quality/executions'
-  if (path.startsWith('/quality/issues')) return '/quality/issues'
+  if (path.startsWith('/rule-applications')) return '/rule-applications'
+  if (path.startsWith('/check-tasks')) return '/check-tasks'
+  if (path.startsWith('/executions')) return '/executions'
+  if (path.startsWith('/issues')) return '/issues'
   return path
 })
 

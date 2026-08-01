@@ -89,6 +89,8 @@ type FieldMappingSpec struct {
 	Source     string      `json:"source,omitempty"`
 	Target     string      `json:"target"`
 	TargetType string      `json:"target_type,omitempty"`
+	Precision  *int        `json:"precision,omitempty"`
+	Scale      *int        `json:"scale,omitempty"`
 	Nullable   *bool       `json:"nullable,omitempty"`
 	Default    interface{} `json:"default,omitempty"`
 	Format     string      `json:"format,omitempty"`
@@ -968,10 +970,34 @@ func validateTransformSpecs(transforms []TransformSpec) error {
 				if strings.TrimSpace(field.Target) == "" {
 					return fmt.Errorf("transform[%d].fields[%d] target is required", i, j)
 				}
+				if err := validateFieldMappingDecimalSpec(field); err != nil {
+					return fmt.Errorf("transform[%d].fields[%d]: %w", i, j, err)
+				}
 			}
 		default:
 			return fmt.Errorf("unsupported transform type %q", transform.Type)
 		}
+	}
+	return nil
+}
+
+func validateFieldMappingDecimalSpec(field FieldMappingSpec) error {
+	hasPrecision := field.Precision != nil
+	hasScale := field.Scale != nil
+	if hasPrecision != hasScale {
+		return fmt.Errorf("decimal precision and scale must be provided together")
+	}
+	if !hasPrecision {
+		return nil
+	}
+	if field.TargetType != "" && datatype.ParseFieldType(field.TargetType) != datatype.FieldTypeDecimal {
+		return fmt.Errorf("precision and scale require decimal target_type")
+	}
+	if *field.Precision <= 0 {
+		return fmt.Errorf("decimal precision must be positive")
+	}
+	if *field.Scale < 0 || *field.Scale > *field.Precision {
+		return fmt.Errorf("decimal scale must be between 0 and precision")
 	}
 	return nil
 }
@@ -1060,6 +1086,8 @@ func buildFieldMappingFields(fields []FieldMappingSpec) []executor.FieldMappingF
 			Source:     strings.TrimSpace(field.Source),
 			Target:     strings.TrimSpace(field.Target),
 			TargetType: strings.TrimSpace(field.TargetType),
+			Precision:  field.Precision,
+			Scale:      field.Scale,
 			Nullable:   nullable,
 			Default:    field.Default,
 			Format:     strings.TrimSpace(field.Format),

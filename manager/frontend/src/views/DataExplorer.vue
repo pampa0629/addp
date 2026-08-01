@@ -59,7 +59,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { engineRootLocator, parseLocator, syncConsoleRoute } from '@addp/common-frontend'
+import { engineRootLocator, parseLocator } from '@addp/common-frontend'
 import ExplorerTree from '@/components/explorer/ExplorerTree.vue'
 import ExplorerSearch from '@/components/explorer/ExplorerSearch.vue'
 import EnginePanel from '@/components/explorer/EnginePanel.vue'
@@ -69,10 +69,11 @@ import Splitter from '@/components/explorer/Splitter.vue'
 import { useResizable } from '@common-ui'
 import { useExplorerStore } from '@/stores/explorer'
 import {
-  buildDataExplorerConsoleRoute,
   buildDataExplorerQuery,
-  normalizeDataExplorerTab
+  normalizeDataExplorerTab,
+  resolveDataExplorerRouteState
 } from '@/utils/dataExplorerRoute'
+import { navigateManagerRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 
@@ -82,7 +83,7 @@ const { size: treeWidth, startResize: startTreeResize } = useResizable(320, 220,
 const route = useRoute()
 const router = useRouter()
 const store = useExplorerStore()
-const activeTab = ref(normalizeDataExplorerTab(route.query.tab))
+const activeTab = ref(resolveDataExplorerRouteState(route.query).tab)
 
 // 引用
 const treeRef = ref(null)
@@ -166,12 +167,10 @@ const currentNodeChildren = computed(() => {
 const replaceDataExplorerRoute = async (locator, tab = activeTab.value) => {
   const normalizedTab = normalizeDataExplorerTab(tab)
   const query = buildDataExplorerQuery(locator, normalizedTab)
-  const nextRoute = router.resolve({ name: 'DataExplorer', query })
-  if (route.fullPath !== nextRoute.fullPath) {
-    await router.replace({ name: 'DataExplorer', query })
-  }
+  const location = { name: 'DataExplorer', query }
+  if (route.fullPath === router.resolve(location).fullPath) return
   try {
-    await syncConsoleRoute(buildDataExplorerConsoleRoute(locator, normalizedTab), { history: 'replace' })
+    await navigateManagerRoute(router, location, { history: 'replace' })
   } catch (error) {
     console.error('[DataExplorer] 同步 Console 路由失败:', error)
   }
@@ -316,12 +315,14 @@ onMounted(async () => {
   }
 })
 
-watch(() => route.query.tab, async (tab) => {
-  const normalizedTab = normalizeDataExplorerTab(tab)
-  activeTab.value = normalizedTab
-  const rawTab = String(tab || '').trim().toLowerCase()
-  if (rawTab && rawTab !== normalizedTab) {
-    await replaceDataExplorerRoute(String(route.query.locator || '').trim(), normalizedTab)
+watch(() => route.query, async (query) => {
+  const routeState = resolveDataExplorerRouteState(query)
+  activeTab.value = routeState.tab
+  if (routeState.changed) {
+    const location = { name: 'DataExplorer', query: routeState.query }
+    if (route.fullPath !== router.resolve(location).fullPath) {
+      await navigateManagerRoute(router, location, { history: 'replace' })
+    }
   }
 }, { immediate: true })
 

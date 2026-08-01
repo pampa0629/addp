@@ -214,6 +214,7 @@
 
 <script>
 import registeredServiceAPI from '@/api/registeredService'
+import { navigateServiceRoute } from '@/utils/moduleNavigation'
 
 export default {
   name: 'RegisteredServiceForm',
@@ -355,7 +356,7 @@ export default {
     },
 
     goBack() {
-      this.$router.push('/registered-services')
+      navigateServiceRoute(this.$router, '/registered-services', { history: 'replace' })
     }
   }
 }

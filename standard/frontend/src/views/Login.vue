@@ -86,7 +86,7 @@ const handleLogin = async () => {
     try {
       await authStore.login(loginForm.username, loginForm.password)
       ElMessage.success(t('standard.login.loginSuccess'))
-      const redirect = route.query.redirect || '/standard/domains'
+      const redirect = route.query.redirect || '/domains'
       router.push(redirect)
     } catch (error) {
       ElMessage.error(error.message || t('standard.login.loginFailed'))

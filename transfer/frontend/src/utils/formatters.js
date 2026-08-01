@@ -1,4 +1,5 @@
 import { describeCron } from '@common-ui'
+import { executionStatusLabelKey, executionStatusTagType } from './executionStatus.mjs'
 
 // Transfer 模块特定的格式化函数
 export const formatDuration = (ms) => {
@@ -71,27 +72,9 @@ export const getTaskStatusTagType = (task) => {
   return types[label] || 'info'
 }
 
-// 执行状态标签
-export const getLastExecutionLabel = (status) => {
-  if (!status || status === 'pending') return '未执行'
-  if (status === 'running') return '执行中'
-  if (status === 'success') return '成功'
-  if (status === 'failed' || status === 'cancelled') return '失败'
-  return status
-}
+export const getExecutionTagType = executionStatusTagType
 
-export const getExecutionTagType = (status) => {
-  const label = getLastExecutionLabel(status)
-  const types = {
-    未执行: 'info',
-    执行中: 'primary',
-    成功: 'success',
-    失败: 'danger'
-  }
-  return types[label] || 'info'
-}
-
-export const getExecutionLabel = (status) => {
-  const label = getLastExecutionLabel(status)
-  return label === '未执行' ? '待开始' : label
+export const getExecutionLabel = (status, t) => {
+  const key = executionStatusLabelKey(status)
+  return key && typeof t === 'function' ? t(key) : (status || 'pending')
 }

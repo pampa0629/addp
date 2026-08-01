@@ -35,6 +35,12 @@ const routes = [
         meta: { requiresAuth: true, title: '系统管理-addp', requiredPermissions: ['system.engine.read'] }
       },
       {
+        path: 'engines/:id',
+        name: 'EngineDetail',
+        component: () => import('../views/Engines.vue'),
+        meta: { requiresAuth: true, title: '系统管理-addp', requiredPermissions: ['system.engine.read'] }
+      },
+      {
         path: 'applications',
         name: 'Applications',
         component: () => import('../views/Applications.vue'),

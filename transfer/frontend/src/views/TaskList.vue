@@ -159,6 +159,7 @@ import { taskAPI } from '@/api/tasks'
 import { formatDate } from '@common-ui'
 import { formatSchedule, getTaskStatusLabel, getTaskStatusTagType } from '@/utils/formatters'
 import { buildCDCStopRequest, continuousStartDisabledReason, isCDCSchemaBlocked, isDatabaseCDCTask } from '@/utils/cdcTask.mjs'
+import { navigateTransferRoute } from '@/utils/moduleNavigation'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -265,16 +266,16 @@ const handleSizeChange = () => {
 
 // 创建任务
 const handleCreate = () => {
-  router.push('/tasks/create')
+  navigateTransferRoute(router, '/tasks/create')
 }
 
 // 查看详情
 const handleDetail = (id) => {
-  router.push(`/tasks/${id}/detail`)
+  navigateTransferRoute(router, `/tasks/${id}/detail`)
 }
 
 const handleEdit = (task) => {
-  router.push(`/tasks/${task.id}/edit`)
+  navigateTransferRoute(router, `/tasks/${task.id}/edit`)
 }
 
 // 任务执行（手动或单次执行）

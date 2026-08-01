@@ -2,7 +2,7 @@
   <div class="graph-service-list">
     <div class="page-header">
       <h2>{{ t('service.graph.listTitle') }}</h2>
-      <el-button type="primary" @click="$router.push('/graph-services/create')">
+      <el-button type="primary" @click="openCreate">
         {{ t('service.graph.createBtn') }}
       </el-button>
     </div>
@@ -67,8 +67,8 @@
           </td>
           <td>{{ formatDate(svc.created_at) }}</td>
           <td class="actions">
-            <el-button size="small" @click="$router.push(`/graph-services/${svc.id}`)">{{ t('service.common.detail') }}</el-button>
-            <el-button size="small" @click="$router.push(`/graph-services/${svc.id}/edit`)">{{ t('service.common.edit') }}</el-button>
+            <el-button size="small" @click="openDetail(svc)">{{ t('service.common.detail') }}</el-button>
+            <el-button size="small" @click="openEdit(svc)">{{ t('service.common.edit') }}</el-button>
             <el-button size="small" type="danger" @click="confirmDelete(svc)">{{ t('service.common.delete') }}</el-button>
           </td>
         </tr>
@@ -91,12 +91,18 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import graphApi from '../api/graphQueryService'
+import { navigateServiceRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
+const router = useRouter()
+const openCreate = () => navigateServiceRoute(router, '/graph-services/create')
+const openDetail = service => navigateServiceRoute(router, `/graph-services/${service.id}`)
+const openEdit = service => navigateServiceRoute(router, `/graph-services/${service.id}/edit`)
 
 const services = ref([])
 const loading = ref(false)

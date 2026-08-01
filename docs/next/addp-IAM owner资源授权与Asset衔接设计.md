@@ -2,7 +2,9 @@
 
 更新日期：2026-07-23
 
-状态：技术设计已确认。本文在已确认的 IAM 数据模型、Permission / Role 矩阵和 AuthContext v1 契约之上，确定 owner Resource Grant / Policy、Resource Scope Binding、最终访问判断和 Asset 授权申请衔接；不修改当前数据库、API、Swagger 或运行代码。
+状态：技术设计已确认、运行时尚未实现。IAM 数据模型、Permission/Role 发布和 AuthContext v1 前置能力已经落地；本文只跟进 owner Resource Grant/Policy、Resource Scope Binding、最终访问判断和 Asset 授权申请履约，不修改当前数据库、API、Swagger 或运行代码。
+
+已完成前置规范见 `docs/spec/addp授权上下文规范.md`、`docs/spec/addp权限与角色发布规范.md` 和 `system/docs/IAM数据模型与迁移规范.md`。
 
 ## 一、目标与边界
 
@@ -705,16 +707,14 @@ Principal authorization_version
 
 ## 十八、实施顺序
 
-本文确认后不立即写 owner 代码。IAM 技术设计按既定决策门继续：
+OAuth/Fosite、Permission Manifest、AuthContext、System IAM 数据模型和版本化 migration 前置能力已经完成。owner 资源授权按以下单一路径实施：
 
-1. 完成 OAuth/OIDC 协议需求矩阵与 Fosite ADR；
-2. ADR 通过后落各 owner 的 `authorization/permissions.yaml`、唯一发布期聚合器、AuthContext Schema 和版本化 SQL migration；
-3. 实现 System Principal / Membership / Role / Token / Context Selection；
-4. 实现 `common/authorization/resource` 语义类型和共享测试套件；
-5. 选择 Manager Data Item 作为第一个 owner vertical slice，实现单资源、列表和 Resource Ticket；
-6. 改造 Asset Offering、Application、Authorization 和 owner Grant Outbox；
-7. 一次性迁移其他 owner，并删除各模块 `user_type`、全 Tenant 可见和软授权分支；
-8. 同步 Swagger、前端、审计和在线 E2E 后才切换运行路径。
+1. 实现 `common/authorization/resource` 语义类型和共享测试套件；
+2. 选择 Manager Data Item 作为第一个 owner vertical slice，实现单资源、列表和 Resource Ticket；
+3. 改造 Asset Offering、Application、Authorization 和 owner Grant Outbox；
+4. 一次性迁移其他 owner，并删除全 Tenant 可见、软授权和 owner 直查 Asset ACL 分支；
+5. 同步 Swagger、前端、审计和在线 E2E 后切换运行路径；
+6. 把稳定契约并入正式规范并删除本文。
 
 不允许先实现 Asset 新授权表、再等待 owner 接入；那会形成第二套暂时性 ACL。
 

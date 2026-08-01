@@ -52,7 +52,7 @@
             :page-size="pageSize"
             :total="total"
             layout="prev, pager, next"
-            @current-change="fetchAssets"
+            @current-change="handlePageChange"
           />
         </div>
       </div>
@@ -67,6 +67,7 @@ import { useI18n } from 'vue-i18n'
 import { Folder, FolderOpened } from '@element-plus/icons-vue'
 import { catalogAPI } from '../api/portal'
 import AssetCard from '../components/AssetCard.vue'
+import { resolveCatalogRouteState } from '../utils/routeState'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -77,7 +78,7 @@ const assetLoading = ref(false)
 const catalogTree = ref([])
 const assets = ref([])
 const total = ref(0)
-const page = ref(1)
+const page = ref(resolveCatalogRouteState(route.query).page)
 const pageSize = ref(12)
 
 const currentCatalogId = computed(() => Number(route.params.id))
@@ -103,6 +104,15 @@ function findCatalogName(nodes, id) {
 
 function handleNodeClick(data) {
   router.push(`/portal/catalogs/${data.id}`)
+}
+
+function handlePageChange(nextPage) {
+  page.value = nextPage
+  router.replace({
+    name: 'Catalog',
+    params: { id: String(route.params.id) },
+    query: nextPage > 1 ? { page: String(nextPage) } : {}
+  })
 }
 
 async function fetchCatalogs() {
@@ -133,14 +143,22 @@ async function fetchAssets() {
   }
 }
 
-watch(() => route.params.id, () => {
-  page.value = 1
-  fetchAssets()
-})
+watch(() => [route.params.id, route.query], async () => {
+  const routeState = resolveCatalogRouteState(route.query)
+  page.value = routeState.page
+  if (routeState.changed) {
+    await router.replace({
+      name: 'Catalog',
+      params: { id: String(route.params.id) },
+      query: routeState.query
+    })
+    return
+  }
+  await fetchAssets()
+}, { immediate: true })
 
 onMounted(() => {
   fetchCatalogs()
-  fetchAssets()
 })
 </script>
 

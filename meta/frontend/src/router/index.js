@@ -1,19 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 
-const normalizeRedirect = fullPath => {
-  if (!fullPath) {
-    return '/scan'
-  }
-  if (fullPath === '/meta' || fullPath === '/meta/') {
-    return '/scan'
-  }
-  if (fullPath.startsWith('/meta/')) {
-    return fullPath.replace('/meta', '') || '/scan'
-  }
-  return fullPath
-}
-
 const routes = [
   {
     path: '/login',
@@ -57,8 +44,7 @@ import { createAuthGuard } from '@common-ui'
 
 router.beforeEach(createAuthGuard(useAuthStore, {
   moduleName: 'Meta',
-  loginRouteName: 'Login',
-  normalizeRedirect  // 传入自定义规范化函数
+  loginRouteName: 'Login'
 }))
 
 const DEFAULT_TITLE = '元数据-addp'

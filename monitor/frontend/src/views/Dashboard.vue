@@ -115,6 +115,7 @@ import ModuleStatusBadge from '@/components/ModuleStatusBadge.vue'
 import ExecutionTable from '@/components/ExecutionTable.vue'
 import { useTheme } from '@common-ui'
 import { executionDetailLocation } from '@/utils/executionNavigation'
+import { navigateMonitorRoute } from '@/utils/moduleNavigation'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -312,13 +313,13 @@ async function refreshExecutionSummary() {
 function handleViewExecution(row) {
   const location = executionDetailLocation(row)
   if (location) {
-    router.push(location)
+    navigateMonitorRoute(router, location)
   }
 }
 
 // 跳转到执行列表页
 function gotoExecutionList() {
-  router.push('/executions')
+  navigateMonitorRoute(router, '/executions')
 }
 
 // 初始化

@@ -108,6 +108,7 @@
 
 <script>
 import queryServiceAPI from '@/api/queryService'
+import { navigateServiceRoute } from '@/utils/moduleNavigation'
 
 export default {
   name: 'QueryServiceList',
@@ -215,15 +216,15 @@ export default {
     },
 
     goToCreate() {
-      this.$router.push('/query-services/create')
+      navigateServiceRoute(this.$router, '/query-services/create')
     },
 
     goToDetail(id) {
-      this.$router.push(`/query-services/${id}`)
+      navigateServiceRoute(this.$router, `/query-services/${id}`)
     },
 
     goToEdit(id) {
-      this.$router.push(`/query-services/${id}/edit`)
+      navigateServiceRoute(this.$router, `/query-services/${id}/edit`)
     },
 
     previousPage() {
