@@ -27,7 +27,7 @@ Service 后端当前真实注册了四类路径：
 | 类别 | 当前路径 | 代码位置 | 初步判断 |
 | --- | --- | --- | --- |
 | 管理 API | `/api/v1/service/...` | `service/backend/internal/api/router.go` | 主路径正确 |
-| 查询服务公开执行 | `GET /api/query/:serviceName` | `service/backend/internal/api/router.go`、`gateway/internal/router/router.go` | 公开 API，但游离于模块前缀之外 |
+| 查询服务公开执行 | `POST /api/query/:serviceName/query` | `service/backend/internal/api/router.go`、`gateway/internal/router/router.go` | 公开 API，但游离于模块前缀之外 |
 | 图查询服务公开执行 | `POST /api/gquery/:serviceName` | `service/backend/internal/api/router.go`、`gateway/internal/router/router.go` | 公开 API，但游离于模块前缀之外 |
 | 注册服务公开代理 | `ANY /api/service/registered/proxy/:id/*path` | `service/backend/internal/api/router.go` | 使用旧式 `/api/service`，应清理 |
 | OGC/瓦片标准访问 | `/ogc/features/...`、`/tiles/...`、`/wmts/...`、`/ogc/tiles/...` | `service/backend/internal/api/router.go`、`gateway/internal/router/router.go` | 行业/协议访问路径，先不并入本次 `/api/{module}` 清理 |
@@ -72,7 +72,7 @@ Service 当前存在多类路径：
 
 ```text
 /api/v1/service/...                 # 管理 API 主线
-/api/query/:serviceName             # 查询服务公开执行端点
+/api/query/:serviceName/query       # 查询服务公开执行端点
 /api/gquery/:serviceName            # 图查询服务公开执行端点
 /api/service/registered/proxy/:id/*path
 ```

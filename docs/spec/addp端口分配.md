@@ -24,6 +24,7 @@ PostgreSQL、Redis、MinIO 和 Meilisearch 当前来源于 `docker-compose.infra
 - Spark Master: `7077`
 - Spark Master UI: `18088`
 - Spark Thrift Server: `11000`
+- Business Kafka bootstrap: `29092`
 
 来源：`business/docker-compose.yml`，可通过 `business/.env` 覆盖。脚本固定使用这些端口，不会自动改动；若被其他进程占用，启动脚本会给出警告并继续尝试（可能失败）。
 
@@ -36,6 +37,7 @@ NEO4J_BOLT_PORT=7687
 SPARK_MASTER_PORT=7077
 SPARK_MASTER_UI=18088
 SPARK_THRIFT_PORT=11000
+BUSINESS_KAFKA_PORT=29092
 ```
 
 ## Reserved Policy（保留规则）
@@ -43,6 +45,7 @@ SPARK_THRIFT_PORT=11000
 - **System MinIO 使用 19000/19001**，Business 侧不得占用这两个端口。
 - **Business MinIO 使用 9002/9003**，System 侧不得占用这两个端口。
 - System PostgreSQL 使用 15432；Business PostgreSQL 使用 5433。
+- Infra Kafka 使用 19092；Business Kafka 使用 29092。两者必须是独立集群，Business Kafka 才能注册为 System Engine。
 
 脚本约束：
 
@@ -128,6 +131,7 @@ make ports-validate
 | Meilisearch           | 17700    | 17700       | 全文检索引擎               |
 | Infra Kafka           | 19092    | 9092        | 内部 CDC 总线；不注册为 System Engine |
 | Kafka Connect REST    | 18083    | 8083        | Transfer capture supervisor 内部控制面，不经 Gateway 暴露 |
+| Business Kafka        | 29092    | 9092        | 业务 Topic；以 `engine_type=kafka` 注册为 System Engine |
 
 ## 端口分配规则
 

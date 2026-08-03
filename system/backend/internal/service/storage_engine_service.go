@@ -79,8 +79,8 @@ func maskString(value interface{}) string {
 }
 
 // ListCatalogChildren 列出指定 catalog 路径下的实时子节点。
-func (s *StorageEngineService) ListCatalogChildren(resource *models.Engine, req models.CatalogListChildrenRequest) ([]models.CatalogEntry, error) {
-	nodes, err := dbbridge.ListCatalogChildren(context.Background(), resource, toPluginCatalogPath(req.Path), plugin.ListOptions{
+func (s *StorageEngineService) ListCatalogChildren(ctx context.Context, resource *models.Engine, req models.CatalogListChildrenRequest) ([]models.CatalogEntry, error) {
+	nodes, err := dbbridge.ListCatalogChildren(ctx, resource, toPluginCatalogPath(req.Path), plugin.ListOptions{
 		Recursive: req.Options.Recursive,
 		Limit:     req.Options.Limit,
 		Offset:    req.Options.Offset,

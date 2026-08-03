@@ -56,7 +56,7 @@ func ListTabularCatalogChildren(ctx context.Context, callbacks TabularCatalogCal
 		}
 		db, err := GetOrCreatePoolFromFactory(engine, DefaultPoolConfig())
 		if err != nil {
-			return nil, fmt.Errorf("获取连接池失败：%w", err)
+			return nil, WrapCatalogError(CatalogErrorUnavailable, fmt.Errorf("create catalog connection pool: %w", err))
 		}
 		namespaces, err := callbacks.ListNamespaces(ctx, db, parent)
 		if err != nil {
@@ -79,7 +79,7 @@ func ListTabularCatalogChildren(ctx context.Context, callbacks TabularCatalogCal
 	namespace := segments[0].Name
 	db, err := GetOrCreatePoolFromFactory(engine, DefaultPoolConfig())
 	if err != nil {
-		return nil, fmt.Errorf("获取连接池失败：%w", err)
+		return nil, WrapCatalogError(CatalogErrorUnavailable, fmt.Errorf("create catalog connection pool: %w", err))
 	}
 	tables, err := callbacks.ListTables(ctx, db, namespace)
 	if err != nil {

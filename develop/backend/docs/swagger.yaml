@@ -1,5 +1,159 @@
 basePath: /api/v1/develop
 definitions:
+  client.EngineCatalogEntry:
+    properties:
+      kind:
+        type: string
+      leaf_count:
+        type: integer
+      name:
+        type: string
+      path:
+        $ref: '#/definitions/client.EngineCatalogPath'
+      role:
+        type: string
+      storage:
+        $ref: '#/definitions/plugin.CatalogStorageFacts'
+      table:
+        $ref: '#/definitions/datatype.TableInfo'
+      term:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  client.EngineCatalogListChildrenResponse:
+    properties:
+      nodes:
+        items:
+          $ref: '#/definitions/client.EngineCatalogEntry'
+        type: array
+    type: object
+  client.EngineCatalogListOptions:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      recursive:
+        type: boolean
+    type: object
+  client.EngineCatalogPath:
+    properties:
+      engine_id:
+        type: integer
+      segments:
+        items:
+          $ref: '#/definitions/client.EngineCatalogSegment'
+        type: array
+      version:
+        type: string
+    type: object
+  client.EngineCatalogSegment:
+    properties:
+      kind:
+        type: string
+      name:
+        type: string
+      term:
+        type: string
+    type: object
+  datatype.FieldInfo:
+    properties:
+      comment:
+        type: string
+      default_expression:
+        type: string
+      generated:
+        type: boolean
+      generation_expression:
+        type: string
+      name:
+        type: string
+      native_type:
+        type: string
+      nullable:
+        type: boolean
+      ordinal_position:
+        type: integer
+      precision:
+        type: integer
+      primary_key:
+        type: boolean
+      scale:
+        type: integer
+      size:
+        type: integer
+      type:
+        $ref: '#/definitions/datatype.FieldType'
+    type: object
+  datatype.FieldType:
+    enum:
+    - unknown
+    - string
+    - bool
+    - bytes
+    - mixed
+    - int
+    - bigint
+    - float
+    - double
+    - decimal
+    - date
+    - time
+    - timestamp
+    - json
+    - array
+    - uuid
+    - geometry
+    type: string
+    x-enum-varnames:
+    - FieldTypeUnknown
+    - FieldTypeString
+    - FieldTypeBool
+    - FieldTypeBytes
+    - FieldTypeMixed
+    - FieldTypeInt
+    - FieldTypeBigInt
+    - FieldTypeFloat
+    - FieldTypeDouble
+    - FieldTypeDecimal
+    - FieldTypeDate
+    - FieldTypeTime
+    - FieldTypeTimestamp
+    - FieldTypeJSON
+    - FieldTypeArray
+    - FieldTypeUUID
+    - FieldTypeGeometry
+  datatype.TableInfo:
+    properties:
+      comment:
+        type: string
+      created_at:
+        type: string
+      estimated_row_count:
+        type: integer
+      fields:
+        items:
+          $ref: '#/definitions/datatype.FieldInfo'
+        type: array
+      kind:
+        type: string
+      name:
+        type: string
+      native:
+        additionalProperties: true
+        type: object
+      primary_key:
+        items:
+          type: string
+        type: array
+      row_count:
+        type: integer
+      size_bytes:
+        type: integer
+      updated_at:
+        type: string
+    type: object
   github_com_addp_develop_backend_internal_models.ApprovalRequiredResponse:
     properties:
       expires_at:
@@ -893,6 +1047,40 @@ definitions:
     - workflow_definition
     - workflow_engine_id
     type: object
+  internal_api.notebookCatalogChildrenRequest:
+    properties:
+      engine_id:
+        type: integer
+      options:
+        $ref: '#/definitions/client.EngineCatalogListOptions'
+      path:
+        $ref: '#/definitions/client.EngineCatalogPath'
+    type: object
+  internal_api.notebookQueryRequest:
+    properties:
+      engine_id:
+        type: integer
+      max_rows:
+        type: integer
+      params:
+        items: {}
+        type: array
+      query:
+        type: string
+      timeout:
+        type: integer
+    type: object
+  internal_api.notebookTableScanRequest:
+    properties:
+      batch_size:
+        type: integer
+      engine_id:
+        type: integer
+      max_rows:
+        type: integer
+      path:
+        $ref: '#/definitions/client.EngineCatalogPath'
+    type: object
   internal_api.providerExecuteDevRequest:
     properties:
       parameters:
@@ -1017,6 +1205,21 @@ definitions:
       ui_type:
         description: UI 组件类型 (resource_tree_picker 等)
         type: string
+    type: object
+  plugin.CatalogStorageFacts:
+    properties:
+      content_type:
+        type: string
+      etag:
+        type: string
+      extension:
+        type: string
+      name:
+        type: string
+      path:
+        type: string
+      size_bytes:
+        type: integer
     type: object
 host: localhost:8185
 info:
@@ -1481,6 +1684,86 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - develop.notebook.read
+  /notebook-kernel-sessions/{session_id}/catalog/children:
+    post:
+      consumes:
+      - application/json
+      description: 仅接受当前隔离 Kernel 的短期 Notebook Kernel Capability；Develop 使用 Session
+        绑定的 Notebook Session Authorization 调用 System。 | Only accepts the isolated
+        Kernel's short-lived Notebook Kernel Capability; Develop calls System with
+        the Session-bound Notebook Session Authorization.
+      parameters:
+      - description: Notebook 会话 ID | Notebook session ID
+        in: path
+        name: session_id
+        required: true
+        type: string
+      - description: Engine 与 Catalog 路径 | Engine and Catalog path
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.notebookCatalogChildrenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/client.EngineCatalogListChildrenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: Bad Gateway
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "504":
+          description: Gateway Timeout
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 获取 Notebook Kernel 实时 Catalog 子节点 | List live Catalog children for
+        a Notebook Kernel
+      tags:
+      - Notebook
+      x-addp-auth-mode: authenticated
   /notebook-kernel-sessions/{session_id}/engine-descriptors:
     get:
       description: 仅接受 Develop 注入当前隔离 Kernel 的短期 Notebook Kernel Capability Bearer；不接受用户或服务
@@ -1515,6 +1798,156 @@ paths:
             type: object
       summary: 获取 Notebook Kernel 可用查询引擎 | List query engines available to a Notebook
         Kernel
+      tags:
+      - Notebook
+      x-addp-auth-mode: authenticated
+  /notebook-kernel-sessions/{session_id}/queries:
+    post:
+      consumes:
+      - application/json
+      description: 查询必须是只读单语句并携带显式 max_rows 与 timeout；参数使用 PostgreSQL $1 形式。 | The
+        query must be one read-only statement with explicit max_rows and timeout;
+        parameters use PostgreSQL $1 syntax.
+      parameters:
+      - description: Notebook 会话 ID | Notebook session ID
+        in: path
+        name: session_id
+        required: true
+        type: string
+      - description: 查询与执行边界 | Query and execution boundary
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.notebookQueryRequest'
+      produces:
+      - application/vnd.apache.arrow.stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: Bad Gateway
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "504":
+          description: Gateway Timeout
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 执行 Notebook 有界只读查询 | Execute a bounded Notebook read query
+      tags:
+      - Notebook
+      x-addp-auth-mode: authenticated
+  /notebook-kernel-sessions/{session_id}/table-scans:
+    post:
+      consumes:
+      - application/json
+      description: 每次调用派生独立只读 Execution Authorization；连接只在 Develop 受控 Runtime 内使用。
+        | Each call derives an independent read-only Execution Authorization; connection
+        details remain inside the controlled Develop runtime.
+      parameters:
+      - description: Notebook 会话 ID | Notebook session ID
+        in: path
+        name: session_id
+        required: true
+        type: string
+      - description: 表路径与批大小 | Table path and batch size
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.notebookTableScanRequest'
+      produces:
+      - application/vnd.apache.arrow.stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: Bad Gateway
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "504":
+          description: Gateway Timeout
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 流式读取 Notebook 表 | Stream a Notebook table
       tags:
       - Notebook
       x-addp-auth-mode: authenticated

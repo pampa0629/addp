@@ -118,6 +118,36 @@ other = "Failed to open the Notebook editing session: {{.Detail}}"
 [develop.notebook.session_close_failed]
 other = "Failed to close the Notebook editing session: {{.Detail}}"
 
+[develop.notebook.session_unavailable]
+other = "The Notebook session is unavailable; reopen it"
+
+[develop.notebook.catalog_request_invalid]
+other = "The catalog request or path is invalid"
+
+[develop.notebook.catalog_forbidden]
+other = "The Notebook session authorization is no longer valid"
+
+[develop.notebook.catalog_control_plane_failed]
+other = "The catalog control plane is temporarily unavailable"
+
+[develop.notebook.catalog_provider_failed]
+other = "The engine catalog could not be read"
+
+[develop.notebook.catalog_engine_not_found]
+other = "The engine does not exist or is not accessible"
+
+[develop.notebook.catalog_entry_not_found]
+other = "The catalog entry does not exist"
+
+[develop.notebook.catalog_unsupported]
+other = "The engine does not support this catalog operation"
+
+[develop.notebook.catalog_engine_unavailable]
+other = "The engine is currently unavailable"
+
+[develop.notebook.catalog_timeout]
+other = "The catalog request timed out"
+
 [develop.approval.invalid_request]
 other = "Invalid approval request"
 

@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -13,142 +15,130 @@ import (
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/common/spatial"
 	"github.com/addp/common/sqldialect"
 	"github.com/addp/service/internal/models"
-	"github.com/addp/service/internal/repository"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
-// QueryExecutorService 查询执行服务
+// QueryExecutorService 执行已发布查询服务的结构化查询计划。
 type QueryExecutorService struct {
-	queryRepo     *repository.QueryServiceRepository
 	systemClient  *client.SystemClient
 	systemService *client.SystemServiceClient
+	tokenCodec    *queryTokenCodec
 }
 
-// NewQueryExecutorService 创建查询执行服务
 func NewQueryExecutorService(
-	queryRepo *repository.QueryServiceRepository,
 	systemClient *client.SystemClient,
 	systemService *client.SystemServiceClient,
+	encryptionKey []byte,
 ) *QueryExecutorService {
 	return &QueryExecutorService{
-		queryRepo:     queryRepo,
-		systemClient:  systemClient,
-		systemService: systemService,
+		systemClient: systemClient, systemService: systemService,
+		tokenCodec: newQueryTokenCodec(encryptionKey),
 	}
 }
 
-// QueryParams 查询参数
-type QueryParams struct {
-	// 通用参数
-	Page     int    `form:"page"`
-	PageSize int    `form:"page_size"`
-	Format   string `form:"format"` // json, csv, geojson
-
-	// Table 模式参数
-	Filter  string `form:"filter"`  // WHERE 条件
-	Fields  string `form:"fields"`  // 返回字段列表（逗号分隔）
-	OrderBy string `form:"orderBy"` // 排序
-}
-
-// QueryResult 查询结果
-type QueryResult struct {
-	Data       interface{} `json:"data"`
-	Pagination *Pagination `json:"pagination,omitempty"`
-}
-
-// Pagination 分页信息
-type Pagination struct {
-	Page       int   `json:"page"`
-	PageSize   int   `json:"page_size"`
-	Total      int64 `json:"total"`
-	TotalPages int   `json:"total_pages"`
-}
-
-// ExecuteQuery 执行查询
+// ExecuteQuery 执行 REST 查询服务请求。
 func (s *QueryExecutorService) ExecuteQuery(
 	ctx context.Context,
-	service *models.QueryService,
-	params *QueryParams,
-) (*QueryResult, error) {
-	// 设置分页参数
-	if params.Page < 1 {
-		params.Page = 1
-	}
-	if params.PageSize <= 0 {
-		params.PageSize = 50
-	}
-	maxFeatures := service.MaxFeatures
-	if maxFeatures <= 0 {
-		maxFeatures = 1000
-	}
-	if params.PageSize > maxFeatures {
-		params.PageSize = maxFeatures
-	}
+	queryService *models.QueryService,
+	request *models.QueryExecutionRequest,
+) (*models.QueryExecutionResult, error) {
+	return s.execute(ctx, queryService, request, queryProtocolREST)
+}
 
-	if service.UsesFederatedQueryRuntime() {
-		return s.executeFederatedQuery(ctx, service, params)
-	}
+// ExecuteOGCQuery 执行 OGC API Features 适配后的结构化请求。
+func (s *QueryExecutorService) ExecuteOGCQuery(
+	ctx context.Context,
+	queryService *models.QueryService,
+	request *models.QueryExecutionRequest,
+) (*models.QueryExecutionResult, error) {
+	return s.execute(ctx, queryService, request, queryProtocolOGC)
+}
 
-	// 1. 获取存储引擎信息
-	engine, err := s.systemClient.GetEngine(service.GetEngineID())
+func (s *QueryExecutorService) execute(
+	ctx context.Context,
+	queryService *models.QueryService,
+	request *models.QueryExecutionRequest,
+	protocol queryProtocol,
+) (*models.QueryExecutionResult, error) {
+	if queryService == nil || request == nil {
+		return nil, fmt.Errorf("%w: query service request is incomplete", ErrInvalidStructuredQuery)
+	}
+	if queryService.UsesFederatedQueryRuntime() {
+		return s.executeFederatedQuery(ctx, queryService, request, protocol)
+	}
+	return s.executeDirectQuery(ctx, queryService, request, protocol)
+}
+
+func (s *QueryExecutorService) executeDirectQuery(
+	ctx context.Context,
+	queryService *models.QueryService,
+	request *models.QueryExecutionRequest,
+	protocol queryProtocol,
+) (*models.QueryExecutionResult, error) {
+	engine, err := s.systemClient.GetEngine(queryService.GetEngineID())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get engine: %w", err)
 	}
-
-	// 转换为 common models
 	commonEngine := &commonModels.Engine{
-		ID:             engine.ID,
-		EngineType:     engine.EngineType,
+		ID: engine.ID, EngineType: engine.EngineType,
 		ConnectionInfo: commonModels.ConnectionInfo(engine.ConnectionInfo),
 	}
-
-	// 2. 获取或创建连接池
-	gormDB, err := dbbridge.GetOrCreatePool(commonEngine, dbbridge.DefaultPoolConfig())
+	db, err := dbbridge.GetOrCreatePool(commonEngine, dbbridge.DefaultPoolConfig())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get connection pool: %w", err)
 	}
-
-	// 3. 根据配置类型执行查询
-	var rows []map[string]interface{}
-	var total int64
-
-	if service.ConfigType == "table" {
-		rows, total, err = s.executeTableQuery(ctx, gormDB, engine.EngineType, service, params)
-	} else {
-		rows, total, err = s.executeSQLQuery(ctx, gormDB, engine.EngineType, service, params)
-	}
-
+	baseSQL, err := directSourceSQL(queryService, engine.EngineType)
 	if err != nil {
 		return nil, err
 	}
+	plan, err := compileQueryPlan(queryService, request, protocol, engine.EngineType, baseSQL, s.tokenCodec)
+	if err != nil {
+		return nil, err
+	}
+	var rows []map[string]interface{}
+	if err := db.WithContext(ctx).Raw(plan.SQL, plan.Args...).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("execute query plan: %w", err)
+	}
+	return s.finalizeResult(queryService, plan, rows)
+}
 
-	return &QueryResult{
-		Data: rows,
-		Pagination: &Pagination{
-			Page:       params.Page,
-			PageSize:   params.PageSize,
-			Total:      total,
-			TotalPages: int((total + int64(params.PageSize) - 1) / int64(params.PageSize)),
-		},
-	}, nil
+func directSourceSQL(queryService *models.QueryService, engineType string) (string, error) {
+	if queryService.ConfigType == "sql" {
+		query := strings.TrimSpace(queryService.SqlQuery)
+		if query == "" {
+			return "", fmt.Errorf("query service SQL is missing")
+		}
+		return query, nil
+	}
+	if queryService.ConfigType != "table" || strings.TrimSpace(queryService.TargetTable) == "" {
+		return "", fmt.Errorf("query service table source is missing")
+	}
+	dialect := sqldialect.ForEngine(engineType)
+	table := dialect.QuoteIdentifier(queryService.TargetTable)
+	if strings.TrimSpace(queryService.SchemaName) != "" {
+		table = dialect.QuoteIdentifier(queryService.SchemaName) + "." + table
+	}
+	return "SELECT * FROM " + table, nil
 }
 
 func (s *QueryExecutorService) executeFederatedQuery(
 	ctx context.Context,
-	service *models.QueryService,
-	params *QueryParams,
-) (*QueryResult, error) {
-	snapshot := service.SourceSnapshot()
-	if snapshot == nil || service.RuntimeEngineID == nil || *service.RuntimeEngineID == 0 ||
-		s.systemService == nil {
+	queryService *models.QueryService,
+	request *models.QueryExecutionRequest,
+	protocol queryProtocol,
+) (*models.QueryExecutionResult, error) {
+	snapshot := queryService.SourceSnapshot()
+	if snapshot == nil || queryService.RuntimeEngineID == nil || *queryService.RuntimeEngineID == 0 || s.systemService == nil {
 		return nil, fmt.Errorf("query service dependency snapshot is missing")
 	}
-	runtimeDescriptor, err := s.systemService.WithTenantID(service.TenantID).
-		GetEngineRuntimeDescriptor(ctx, *service.RuntimeEngineID)
+	if snapshot.DependencyHash == "" || queryServiceDependencyHash(snapshot) != snapshot.DependencyHash {
+		return nil, fmt.Errorf("query service dependency snapshot hash is invalid")
+	}
+	runtimeDescriptor, err := s.systemService.WithTenantID(queryService.TenantID).
+		GetEngineRuntimeDescriptor(ctx, *queryService.RuntimeEngineID)
 	if err != nil {
 		return nil, fmt.Errorf("get federated query runtime: %w", err)
 	}
@@ -158,152 +148,170 @@ func (s *QueryExecutorService) executeFederatedQuery(
 	}
 	provider, ok := enginePlugin.(plugin.FederatedQueryRuntimeProvider)
 	if !ok {
-		return nil, fmt.Errorf("engine %d does not implement federated query runtime", *service.RuntimeEngineID)
+		return nil, fmt.Errorf("engine %d does not implement federated query runtime", *queryService.RuntimeEngineID)
 	}
-	if snapshot.DependencyHash == "" || queryServiceDependencyHash(snapshot) != snapshot.DependencyHash {
-		return nil, fmt.Errorf("query service dependency snapshot hash is invalid")
-	}
-	baseSQL, sourceEngineIDs, objectTables, err := s.federatedExecutionPlan(ctx, service, params)
+	baseSQL, sourceEngineIDs, objectTables, err := s.federatedSourceSQL(ctx, queryService)
 	if err != nil {
 		return nil, err
 	}
 	if len(sourceEngineIDs) == 0 {
 		return nil, fmt.Errorf("query service dependency snapshot has no source engine")
 	}
+	plan, err := compileQueryPlan(queryService, request, protocol, runtimeDescriptor.EngineType, baseSQL, s.tokenCodec)
+	if err != nil {
+		return nil, err
+	}
 	executionID := uuid.New()
-	issued, err := s.systemService.WithTenantID(service.TenantID).
+	issued, err := s.systemService.WithTenantID(queryService.TenantID).
 		IssueExecutionAuthorizationFromServiceDefinition(ctx, client.IssueExecutionAuthorizationFromServiceDefinitionRequest{
 			ExecutionID: executionID.String(), EngineIDs: formatServiceEngineIDs(sourceEngineIDs),
-			DefinitionID: strconv.FormatUint(uint64(service.ID), 10), DefinitionVersion: snapshot.DependencyHash,
+			DefinitionID: strconv.FormatUint(uint64(queryService.ID), 10), DefinitionVersion: snapshot.DependencyHash,
 			ExpiresIn: 60,
 		})
 	if err != nil {
 		return nil, fmt.Errorf("issue service definition execution authorization: %w", err)
 	}
-	callerToken, err := s.systemService.TenantServiceAccessToken(ctx, service.TenantID)
+	callerToken, err := s.systemService.TenantServiceAccessToken(ctx, queryService.TenantID)
 	if err != nil {
 		return nil, err
 	}
-	execute := func(query string) (*plugin.QueryResult, error) {
-		return provider.ExecuteFederatedQuery(ctx, plugin.ConnectionInfo(runtimeDescriptor.AsEngine().ConnectionInfo), plugin.FederatedQueryRequest{
-			ExecutionID: executionID.String(), ExecutionAuthorizationID: issued.ID,
-			SourceEngineIDs: sourceEngineIDs, ObjectTables: objectTables,
-			Query: query, Language: "sql",
-			Options:           plugin.QueryOptions{Limit: federatedQueryLimit(service), Timeout: 60 * time.Second, ReadOnly: true},
-			CallerAccessToken: callerToken,
-		})
-	}
-	countResult, err := execute(sqldialect.CountSubquerySQL(baseSQL, "_q"))
+	result, err := provider.ExecuteFederatedQuery(ctx, plugin.ConnectionInfo(runtimeDescriptor.AsEngine().ConnectionInfo), plugin.FederatedQueryRequest{
+		ExecutionID: executionID.String(), ExecutionAuthorizationID: issued.ID,
+		SourceEngineIDs: sourceEngineIDs, ObjectTables: objectTables,
+		Query: plan.SQL, Language: "sql",
+		Options:           federatedQueryOptions(queryService, plan),
+		CallerAccessToken: callerToken,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("execute federated count query: %w", err)
+		return nil, fmt.Errorf("execute federated query plan: %w", err)
 	}
-	total, err := federatedCount(countResult)
-	if err != nil {
-		return nil, err
-	}
-	offset := (params.Page - 1) * params.PageSize
-	result, err := execute(sqldialect.PaginateQuerySQL(baseSQL, params.PageSize, offset))
-	if err != nil {
-		return nil, err
-	}
-	return &QueryResult{
-		Data: result.Rows,
-		Pagination: &Pagination{
-			Page:       params.Page,
-			PageSize:   params.PageSize,
-			Total:      total,
-			TotalPages: int((total + int64(params.PageSize) - 1) / int64(params.PageSize)),
-		},
-	}, nil
+	return s.finalizeResult(queryService, plan, result.Rows)
 }
 
-func (s *QueryExecutorService) federatedExecutionPlan(
+func federatedQueryOptions(queryService *models.QueryService, plan *compiledQueryPlan) plugin.QueryOptions {
+	return plugin.QueryOptions{
+		Limit: plan.Limit + 1, Timeout: 60 * time.Second, ReadOnly: true, Args: plan.Args,
+		Spatial: queryService.HasGeometry(),
+	}
+}
+
+func (s *QueryExecutorService) federatedSourceSQL(
 	ctx context.Context,
-	service *models.QueryService,
-	params *QueryParams,
+	queryService *models.QueryService,
 ) (string, []uint, map[string]map[string]string, error) {
-	snapshot := service.SourceSnapshot()
-	if service.ConfigType == "table" && service.IsObjectTable() {
-		if service.EngineID == nil || *service.EngineID == 0 || service.GetObjectTablePhysicalPath() == "" ||
-			len(snapshot.FederatedSourceEngineIDs) != 1 || snapshot.FederatedSourceEngineIDs[0] != *service.EngineID {
+	snapshot := queryService.SourceSnapshot()
+	if queryService.ConfigType == "table" && queryService.IsObjectTable() {
+		if queryService.EngineID == nil || *queryService.EngineID == 0 || queryService.GetObjectTablePhysicalPath() == "" ||
+			len(snapshot.FederatedSourceEngineIDs) != 1 || snapshot.FederatedSourceEngineIDs[0] != *queryService.EngineID {
 			return "", nil, nil, fmt.Errorf("object table source snapshot is incomplete")
 		}
-		descriptor, err := s.systemService.WithTenantID(service.TenantID).GetEngineRuntimeDescriptor(ctx, *service.EngineID)
+		descriptor, err := s.systemService.WithTenantID(queryService.TenantID).GetEngineRuntimeDescriptor(ctx, *queryService.EngineID)
 		if err != nil {
 			return "", nil, nil, err
 		}
 		engineName := sanitizeFederatedIdentifier(descriptor.Name)
-		tableName := sanitizeFederatedIdentifier(service.TargetTable)
-		objectTables := map[string]map[string]string{
-			engineName: {tableName: service.GetObjectTablePhysicalPath()},
-		}
-		selectFields, err := federatedTableSelectFields(service, params)
-		if err != nil {
-			return "", nil, nil, err
-		}
-		query := fmt.Sprintf("SELECT %s FROM %s.%s", selectFields, engineName, tableName)
-		if strings.TrimSpace(params.Filter) != "" {
-			query += " WHERE " + params.Filter
-		}
-		if strings.TrimSpace(params.OrderBy) != "" {
-			query += " ORDER BY " + params.OrderBy
-		}
-		return query,
-			[]uint{*service.EngineID}, objectTables, nil
+		tableName := sanitizeFederatedIdentifier(queryService.TargetTable)
+		return fmt.Sprintf("SELECT * FROM %s.%s", engineName, tableName),
+			[]uint{*queryService.EngineID},
+			map[string]map[string]string{engineName: {tableName: queryService.GetObjectTablePhysicalPath()}}, nil
 	}
-	if service.ConfigType != "sql" || strings.TrimSpace(service.SqlQuery) == "" {
+	if queryService.ConfigType != "sql" || strings.TrimSpace(queryService.SqlQuery) == "" {
 		return "", nil, nil, fmt.Errorf("federated query service SQL is missing")
 	}
-	return service.SqlQuery, append([]uint(nil), snapshot.FederatedSourceEngineIDs...),
+	return queryService.SqlQuery, append([]uint(nil), snapshot.FederatedSourceEngineIDs...),
 		cloneObjectTableMap(snapshot.FederatedObjectTables), nil
 }
 
-func federatedQueryLimit(service *models.QueryService) int {
-	if service != nil && service.MaxFeatures > 0 {
-		return service.MaxFeatures
+func (s *QueryExecutorService) finalizeResult(
+	queryService *models.QueryService,
+	plan *compiledQueryPlan,
+	rows []map[string]interface{},
+) (*models.QueryExecutionResult, error) {
+	hasMore := len(rows) > plan.Limit
+	if hasMore {
+		rows = rows[:plan.Limit]
 	}
-	return 1000
-}
-
-func federatedTableSelectFields(service *models.QueryService, params *QueryParams) (string, error) {
-	rawFields := ""
-	if params != nil {
-		rawFields = strings.TrimSpace(params.Fields)
-	}
-	fields := service.GetDefaultFields()
-	if rawFields != "" {
-		fields = strings.Split(rawFields, ",")
-	}
-	if len(fields) == 0 {
-		return "*", nil
-	}
-	dialect := sqldialect.ForEngine("duckdb")
-	quoted := make([]string, 0, len(fields))
-	for _, field := range fields {
-		field = strings.TrimSpace(field)
-		if field == "" {
-			return "", fmt.Errorf("query field must not be empty")
+	featureIDs := make([]string, len(rows))
+	for index, row := range rows {
+		featureID, err := s.encodeFeatureID(queryService, row)
+		if err != nil {
+			return nil, err
 		}
-		quoted = append(quoted, dialect.QuoteIdentifier(field))
+		featureIDs[index] = featureID
 	}
-	return strings.Join(quoted, ", "), nil
-}
-
-func federatedCount(result *plugin.QueryResult) (int64, error) {
-	if result == nil || len(result.Rows) != 1 {
-		return 0, fmt.Errorf("federated count query returned an invalid result")
-	}
-	for _, value := range result.Rows[0] {
-		switch count := value.(type) {
-		case int64:
-			return count, nil
-		case float64:
-			return int64(count), nil
-		case json.Number:
-			return count.Int64()
+	nextCursor := ""
+	if hasMore && len(rows) > 0 {
+		values, err := rowValues(rows[len(rows)-1], plan.OrderBy)
+		if err != nil {
+			return nil, err
+		}
+		nextCursor, err = s.tokenCodec.encodeCursor(queryCursorPayload{
+			ServiceID: queryService.ID, ServiceVersion: plan.ServiceVersion,
+			QueryHash: plan.QueryHash, OrderBy: plan.OrderBy, Values: values,
+		})
+		if err != nil {
+			return nil, err
 		}
 	}
-	return 0, fmt.Errorf("federated count query returned an invalid count")
+	for _, row := range rows {
+		for _, field := range plan.HiddenFields {
+			delete(row, field)
+		}
+	}
+	return &models.QueryExecutionResult{
+		Data:           rows,
+		Page:           models.QueryPageResult{Limit: plan.Limit, HasMore: hasMore, NextCursor: nextCursor},
+		ServiceVersion: plan.ServiceVersion,
+		Fields:         append([]string(nil), plan.SelectedFields...), FeatureIDs: featureIDs,
+	}, nil
+}
+
+func rowValues(row map[string]interface{}, orderBy []models.QueryOrder) ([]interface{}, error) {
+	values := make([]interface{}, len(orderBy))
+	for index, order := range orderBy {
+		value, exists := row[order.Field]
+		if !exists || value == nil {
+			return nil, fmt.Errorf("query result is missing stable order field %s", order.Field)
+		}
+		values[index] = value
+	}
+	return values, nil
+}
+
+func (s *QueryExecutorService) encodeFeatureID(queryService *models.QueryService, row map[string]interface{}) (string, error) {
+	stableKey := queryService.GetStableKey()
+	values := make([]interface{}, len(stableKey))
+	for index, field := range stableKey {
+		value, exists := row[field]
+		if !exists || value == nil {
+			return "", fmt.Errorf("query result is missing stable key field %s", field)
+		}
+		values[index] = value
+	}
+	return s.tokenCodec.encodeFeatureID(featureIDPayload{
+		ServiceID: queryService.ID, ServiceVersion: serviceDependencyVersion(queryService),
+		Fields: stableKey, Values: values,
+	})
+}
+
+func (s *QueryExecutorService) DecodeFeatureID(queryService *models.QueryService, token string) (*models.QueryFilter, error) {
+	payload, err := s.tokenCodec.decodeFeatureID(token)
+	stableKey := queryService.GetStableKey()
+	if err != nil || payload.ServiceID != queryService.ID || payload.ServiceVersion != serviceDependencyVersion(queryService) ||
+		len(payload.Fields) != len(stableKey) || len(payload.Values) != len(stableKey) {
+		return nil, ErrInvalidFeatureID
+	}
+	filters := make([]models.QueryFilter, len(stableKey))
+	for index, field := range stableKey {
+		if payload.Fields[index] != field || payload.Values[index] == nil {
+			return nil, ErrInvalidFeatureID
+		}
+		filters[index] = models.QueryFilter{Field: field, Op: "eq", Value: payload.Values[index]}
+	}
+	if len(filters) == 1 {
+		return &filters[0], nil
+	}
+	return &models.QueryFilter{And: filters}, nil
 }
 
 func formatServiceEngineIDs(engineIDs []uint) []string {
@@ -314,314 +322,99 @@ func formatServiceEngineIDs(engineIDs []uint) []string {
 	return values
 }
 
-// executeTableQuery 执行表配置模式的查询
-func (s *QueryExecutorService) executeTableQuery(
-	ctx context.Context,
-	db *gorm.DB,
-	engineType string,
-	service *models.QueryService,
-	params *QueryParams,
-) ([]map[string]interface{}, int64, error) {
-	schema := service.SchemaName
-	table := service.TargetTable
-	dialect := sqldialect.ForEngine(engineType)
-
-	// 1. 构建 SELECT 字段列表
-	selectFields := "*"
-	geomColumn := ""
-
-	if params.Fields != "" {
-		// 用户指定了字段列表
-		fields := strings.Split(params.Fields, ",")
-		quotedFields := make([]string, len(fields))
-		for i, field := range fields {
-			field = strings.TrimSpace(field)
-			quotedFields[i] = dialect.QuoteIdentifier(field)
-		}
-		selectFields = strings.Join(quotedFields, ", ")
-	} else {
-		// 使用默认字段
-		defaultFields := service.GetDefaultFields()
-		if len(defaultFields) > 0 {
-			quotedFields := make([]string, len(defaultFields))
-			for i, field := range defaultFields {
-				quotedFields[i] = dialect.QuoteIdentifier(field)
-			}
-			selectFields = strings.Join(quotedFields, ", ")
-		}
-	}
-
-	// 2. 处理空间字段（如果有）
-	if service.HasGeometry() {
-		geomColumn = service.GetGeometryColumn()
-		if dialect.IsPostgreSQL() && geomColumn != "" {
-			// 如果是 SELECT *，需要先获取所有列名，然后显式构建字段列表
-			if strings.TrimSpace(selectFields) == "*" {
-				selectFields = s.buildSelectFieldsWithGeometry(ctx, db, schema, table, geomColumn, engineType)
-			} else {
-				// 替换几何列为 ST_AsGeoJSON 格式
-				selectFields = s.replaceGeometryColumn(selectFields, geomColumn, engineType)
-			}
-		}
-	}
-
-	// 4. 构建 WHERE 条件
-	var whereClause string
-	if params.Filter != "" {
-		// 验证过滤字段（如果配置了 filterable_fields）
-		filterableFields := service.GetFilterableFields()
-		if len(filterableFields) > 0 {
-			// TODO: 验证 filter 中使用的字段是否在 filterable_fields 中
-			// 当前简化处理：直接使用用户提供的 filter
-		}
-		whereClause = " WHERE " + params.Filter
-	}
-
-	// 5. 构建 ORDER BY
-	var orderByClause string
-	if params.OrderBy != "" {
-		orderByClause = " ORDER BY " + params.OrderBy
-	}
-
-	// 6. 获取总数（不带 LIMIT）
-	countQuery := dialect.CountTableSQL(schema, table, params.Filter)
-	var total int64
-	if err := db.WithContext(ctx).Raw(countQuery).Scan(&total).Error; err != nil {
-		return nil, 0, fmt.Errorf("failed to get total count: %w", err)
-	}
-
-	// 7. 执行分页查询
-	offset := (params.Page - 1) * params.PageSize
-	limit := params.PageSize
-
-	query := dialect.SelectTableSQL(selectFields, schema, table, whereClause, orderByClause, limit, offset)
-
-	var rows []map[string]interface{}
-	if err := db.WithContext(ctx).Raw(query).Scan(&rows).Error; err != nil {
-		return nil, 0, fmt.Errorf("failed to query data: %w", err)
-	}
-
-	return rows, total, nil
-}
-
-// executeSQLQuery 执行 SQL 配置模式的查询
-func (s *QueryExecutorService) executeSQLQuery(
-	ctx context.Context,
-	db *gorm.DB,
-	engineType string,
-	service *models.QueryService,
-	params *QueryParams,
-) ([]map[string]interface{}, int64, error) {
-	sqlQuery := service.SqlQuery
-
-	// 1. 获取总数（使用子查询）
-	countQuery := sqldialect.CountSubquerySQL(sqlQuery, "subquery")
-	var total int64
-	if err := db.WithContext(ctx).Raw(countQuery).Scan(&total).Error; err != nil {
-		return nil, 0, fmt.Errorf("failed to get total count: %w", err)
-	}
-
-	// 2. 执行分页查询。空间输出契约存在时，在外层统一转换 primary geometry 为 GeoJSON。
-	offset := (params.Page - 1) * params.PageSize
-	limit := params.PageSize
-
-	dataQuery := sqlQuery
-	if sqldialect.ForEngine(engineType).IsPostgreSQL() && service.HasGeometry() {
-		if selectFields := sqlOutputSelectFields(service); selectFields != "" {
-			dataQuery = fmt.Sprintf("SELECT %s FROM (%s) AS _query_output", selectFields, sqlQuery)
-		}
-	}
-	paginatedQuery := sqldialect.PaginateQuerySQL(dataQuery, limit, offset)
-
-	var rows []map[string]interface{}
-	if err := db.WithContext(ctx).Raw(paginatedQuery).Scan(&rows).Error; err != nil {
-		return nil, 0, fmt.Errorf("failed to query data: %w", err)
-	}
-
-	return rows, total, nil
-}
-
-func sqlOutputSelectFields(service *models.QueryService) string {
-	table := service.GetTableInfo()
-	geometryColumn := service.GetGeometryColumn()
-	if table == nil || geometryColumn == "" || len(table.Fields) == 0 {
-		return ""
-	}
-	dialect := sqldialect.ForEngine("postgresql")
-	fields := make([]string, 0, len(table.Fields))
-	for _, field := range table.Fields {
-		quoted := dialect.QuoteIdentifier(field.Name)
-		if field.Name == geometryColumn {
-			fields = append(fields, fmt.Sprintf("ST_AsGeoJSON(%s) AS %s", quoted, quoted))
-			continue
-		}
-		fields = append(fields, quoted)
-	}
-	return strings.Join(fields, ", ")
-}
-
-// replaceGeometryColumn 替换几何列为空间函数
-func (s *QueryExecutorService) replaceGeometryColumn(selectFields, geomColumn, engineType string) string {
-	dialect := sqldialect.ForEngine(engineType)
-	if !dialect.IsPostgreSQL() {
-		return selectFields
-	}
-
-	// 如果是 SELECT *，需要特殊处理
-	if strings.TrimSpace(selectFields) == "*" {
-		return selectFields // 保持 SELECT *，让数据库返回原始几何数据
-	}
-
-	// 替换几何列为 ST_AsGeoJSON
-	quotedGeomColumn := dialect.QuoteIdentifier(geomColumn)
-	replacement := spatial.PostGISGeoJSONSelectExpression(geomColumn)
-
-	// 简单替换（实际应该更智能地解析 SQL）
-	selectFields = strings.ReplaceAll(selectFields, quotedGeomColumn, replacement)
-
-	return selectFields
-}
-
-// FormatAsCSV 格式化为 CSV
-func (s *QueryExecutorService) FormatAsCSV(data []map[string]interface{}) ([]byte, error) {
-	if len(data) == 0 {
+func (s *QueryExecutorService) FormatAsCSV(result *models.QueryExecutionResult) ([]byte, error) {
+	if result == nil || len(result.Data) == 0 {
 		return []byte{}, nil
 	}
-
-	// 获取列名（从第一行）
-	var columns []string
-	for col := range data[0] {
-		columns = append(columns, col)
+	columns := append([]string(nil), result.Fields...)
+	if len(columns) == 0 {
+		for column := range result.Data[0] {
+			columns = append(columns, column)
+		}
+		sort.Strings(columns)
 	}
-
-	// 构建 CSV
-	var buf strings.Builder
-	writer := csv.NewWriter(&buf)
-
-	// 写入表头
+	var buffer strings.Builder
+	writer := csv.NewWriter(&buffer)
 	if err := writer.Write(columns); err != nil {
 		return nil, err
 	}
-
-	// 写入数据行
-	for _, row := range data {
+	for _, row := range result.Data {
 		record := make([]string, len(columns))
-		for i, col := range columns {
-			value := row[col]
-			record[i] = fmt.Sprintf("%v", value)
+		for index, column := range columns {
+			record[index] = fmt.Sprintf("%v", row[column])
 		}
 		if err := writer.Write(record); err != nil {
 			return nil, err
 		}
 	}
-
 	writer.Flush()
 	if err := writer.Error(); err != nil {
 		return nil, err
 	}
-
-	return []byte(buf.String()), nil
+	return []byte(buffer.String()), nil
 }
 
-// FormatAsGeoJSON 格式化为 GeoJSON
-func (s *QueryExecutorService) FormatAsGeoJSON(
-	data []map[string]interface{},
-	service *models.QueryService,
-) ([]byte, error) {
-	if !service.HasGeometry() {
+func (s *QueryExecutorService) FormatAsGeoJSON(result *models.QueryExecutionResult, queryService *models.QueryService) ([]byte, error) {
+	features, err := s.geoJSONFeatures(result, queryService)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(map[string]interface{}{
+		"type": "FeatureCollection", "features": features,
+		"page": result.Page, "service_version": result.ServiceVersion,
+	})
+}
+
+func (s *QueryExecutorService) FormatFirstAsGeoJSON(result *models.QueryExecutionResult, queryService *models.QueryService) ([]byte, error) {
+	features, err := s.geoJSONFeatures(result, queryService)
+	if err != nil {
+		return nil, err
+	}
+	if len(features) == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return json.Marshal(features[0])
+}
+
+func (s *QueryExecutorService) geoJSONFeatures(result *models.QueryExecutionResult, queryService *models.QueryService) ([]map[string]interface{}, error) {
+	if result == nil || queryService == nil || !queryService.HasGeometry() {
 		return nil, fmt.Errorf("service does not have geometry column")
 	}
-
-	geomColumn := service.GetGeometryColumn()
-
-	// 构建 GeoJSON FeatureCollection
-	features := make([]map[string]interface{}, len(data))
-
-	for i, row := range data {
-		// 提取几何数据
-		geomData, ok := row[geomColumn]
-		if !ok {
-			return nil, fmt.Errorf("geometry column %s not found in row", geomColumn)
+	if len(result.FeatureIDs) != len(result.Data) {
+		return nil, errors.New("query result feature ids are incomplete")
+	}
+	geometryColumn := queryService.GetGeometryColumn()
+	features := make([]map[string]interface{}, len(result.Data))
+	for index, row := range result.Data {
+		geometryValue, exists := row[geometryColumn]
+		if !exists {
+			return nil, fmt.Errorf("geometry column %s not found in row", geometryColumn)
 		}
-
-		// 解析 GeoJSON 几何（假设已经是 GeoJSON 格式字符串）
 		var geometry map[string]interface{}
-		if geomStr, ok := geomData.(string); ok {
-			if err := json.Unmarshal([]byte(geomStr), &geometry); err != nil {
+		switch value := geometryValue.(type) {
+		case string:
+			if err := json.Unmarshal([]byte(value), &geometry); err != nil {
 				return nil, fmt.Errorf("failed to parse geometry: %w", err)
 			}
-		} else {
-			return nil, fmt.Errorf("geometry data is not string")
+		case []byte:
+			if err := json.Unmarshal(value, &geometry); err != nil {
+				return nil, fmt.Errorf("failed to parse geometry: %w", err)
+			}
+		case map[string]interface{}:
+			geometry = value
+		default:
+			return nil, fmt.Errorf("geometry data has unsupported type %T", geometryValue)
 		}
-
-		// 构建属性（排除几何列）
-		properties := make(map[string]interface{})
+		properties := make(map[string]interface{}, len(row)-1)
 		for key, value := range row {
-			if key != geomColumn {
+			if key != geometryColumn {
 				properties[key] = value
 			}
 		}
-
-		// 构建 Feature
-		features[i] = map[string]interface{}{
-			"type":       "Feature",
-			"geometry":   geometry,
-			"properties": properties,
+		features[index] = map[string]interface{}{
+			"type": "Feature", "id": result.FeatureIDs[index],
+			"geometry": geometry, "properties": properties,
 		}
 	}
-
-	featureCollection := map[string]interface{}{
-		"type":     "FeatureCollection",
-		"features": features,
-	}
-
-	return json.Marshal(featureCollection)
-}
-
-// buildSelectFieldsWithGeometry 为包含几何列的表构建显式字段列表
-// 用于替代 SELECT * 以确保几何列被正确转换为 GeoJSON
-func (s *QueryExecutorService) buildSelectFieldsWithGeometry(
-	ctx context.Context,
-	db *gorm.DB,
-	schema string,
-	table string,
-	geomColumn string,
-	engineType string,
-) string {
-	// 查询表的所有列名
-	var columns []struct {
-		ColumnName string `gorm:"column:column_name"`
-	}
-
-	query := `
-		SELECT column_name
-		FROM information_schema.columns
-		WHERE table_schema = ? AND table_name = ?
-		ORDER BY ordinal_position
-	`
-
-	if err := db.WithContext(ctx).Raw(query, schema, table).Scan(&columns).Error; err != nil {
-		// 查询失败，返回 *
-		return "*"
-	}
-
-	if len(columns) == 0 {
-		return "*"
-	}
-
-	// 构建字段列表
-	dialect := sqldialect.ForEngine(engineType)
-	fieldList := make([]string, len(columns))
-	for i, col := range columns {
-		quotedCol := dialect.QuoteIdentifier(col.ColumnName)
-
-		// 如果是几何列，使用 ST_AsGeoJSON 转换
-		if col.ColumnName == geomColumn {
-			fieldList[i] = spatial.PostGISGeoJSONSelectExpression(col.ColumnName)
-		} else {
-			fieldList[i] = quotedCol
-		}
-	}
-
-	return strings.Join(fieldList, ", ")
+	return features, nil
 }

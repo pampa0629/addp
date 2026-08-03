@@ -26,8 +26,6 @@ func TestManagerErrorMessagesRegistered(t *testing.T) {
 		manageri18n.MsgSystemClientUnavailable,
 		manageri18n.MsgSystemClientNotInitialized,
 		manageri18n.MsgEngineNotFound,
-		manageri18n.MsgUnsupportedPostgresOnly,
-		manageri18n.MsgDatabaseConnectionFailed,
 		manageri18n.MsgFeatureNotFound,
 		manageri18n.MsgFeatureInvalidGeometry,
 		manageri18n.MsgInvalidZParam,

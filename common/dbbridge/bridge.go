@@ -819,7 +819,8 @@ func ListCatalogChildren(ctx context.Context, engine *models.Engine, parent plug
 	}
 	modelProvider, ok := p.(plugin.CatalogModelProvider)
 	if !ok {
-		return nil, fmt.Errorf("plugin %s does not implement CatalogModelProvider", pluginEngine.EngineType)
+		return nil, plugin.WrapCatalogError(plugin.CatalogErrorUnsupported,
+			fmt.Errorf("plugin %s does not implement CatalogModelProvider", pluginEngine.EngineType))
 	}
 	if len(parent.Segments) == 0 {
 		return []plugin.CatalogEntry{
@@ -834,7 +835,8 @@ func ListCatalogChildren(ctx context.Context, engine *models.Engine, parent plug
 	}
 	catalogProvider, ok := p.(plugin.CatalogProvider)
 	if !ok {
-		return nil, fmt.Errorf("plugin %s does not implement CatalogProvider", pluginEngine.EngineType)
+		return nil, plugin.WrapCatalogError(plugin.CatalogErrorUnsupported,
+			fmt.Errorf("plugin %s does not implement CatalogProvider", pluginEngine.EngineType))
 	}
 	return catalogProvider.ListChildren(ctx, pluginEngine.ConnectionInfo, parent, opts)
 }
@@ -873,8 +875,16 @@ func SupportsDirectQuery(engineType string) bool {
 
 var ErrSampleQueryUnavailable = errors.New("当前引擎没有可生成样例查询的真实数据")
 
+// ExecutableSampleQueryOptions separates the query returned to the caller from
+// the bounded query used to validate it. QueryLimit only applies to generated
+// SQL; ValidationLimit never changes the returned query.
+type ExecutableSampleQueryOptions struct {
+	QueryLimit      int
+	ValidationLimit int
+}
+
 // GenerateSampleQuery 从当前引擎的实时 Catalog 生成一个可直接执行的样例查询。
-func GenerateSampleQuery(ctx context.Context, engine *models.Engine) (query string, language string, err error) {
+func GenerateSampleQuery(ctx context.Context, engine *models.Engine, queryLimit int) (query string, language string, err error) {
 	if engine == nil {
 		return "", "", fmt.Errorf("%w: 引擎不能为空", ErrSampleQueryUnavailable)
 	}
@@ -894,7 +904,7 @@ func GenerateSampleQuery(ctx context.Context, engine *models.Engine) (query stri
 		if !ok {
 			return "", "", fmt.Errorf("%w: 引擎未提供实时 Catalog", ErrSampleQueryUnavailable)
 		}
-		q, catalogErr := generateCatalogSampleQuery(sampleCtx, p, cp, connInfo, engine.ID, engineType)
+		q, catalogErr := generateCatalogSampleQuery(sampleCtx, p, cp, connInfo, engine.ID, engineType, queryLimit)
 		if catalogErr != nil {
 			return "", "", catalogErr
 		}
@@ -914,15 +924,24 @@ func GenerateSampleQuery(ctx context.Context, engine *models.Engine) (query stri
 
 // GenerateExecutableSampleQuery returns a real catalog-based sample only after
 // the same read-only runtime path has produced at least one row.
-func GenerateExecutableSampleQuery(ctx context.Context, engine *models.Engine, requiredLanguage string) (string, string, error) {
-	query, language, err := GenerateSampleQuery(ctx, engine)
+func GenerateExecutableSampleQuery(
+	ctx context.Context,
+	engine *models.Engine,
+	requiredLanguage string,
+	options ExecutableSampleQueryOptions,
+) (string, string, error) {
+	query, language, err := GenerateSampleQuery(ctx, engine, options.QueryLimit)
 	if err != nil {
 		return "", "", err
 	}
 	if requiredLanguage != "" && !strings.EqualFold(language, requiredLanguage) {
 		return "", "", fmt.Errorf("%w: 查询语言 %s 不受当前入口支持", ErrSampleQueryUnavailable, language)
 	}
-	result, err := ExecuteReadOnlyRuntimeQuery(ctx, engine, language, query)
+	validationQuery := query
+	if options.ValidationLimit > 0 && strings.EqualFold(language, "sql") {
+		validationQuery = sqldialect.PaginateQuerySQL(query, options.ValidationLimit, 0)
+	}
+	result, err := ExecuteReadOnlyRuntimeQuery(ctx, engine, language, validationQuery)
 	if err != nil {
 		return "", "", fmt.Errorf("%w: 样例查询执行失败: %v", ErrSampleQueryUnavailable, err)
 	}
@@ -932,7 +951,7 @@ func GenerateExecutableSampleQuery(ctx context.Context, engine *models.Engine, r
 	return query, language, nil
 }
 
-func generateCatalogSampleQuery(ctx context.Context, enginePlugin plugin.EnginePlugin, cp plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engineID uint, engineType string) (string, error) {
+func generateCatalogSampleQuery(ctx context.Context, enginePlugin plugin.EnginePlugin, cp plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engineID uint, engineType string, queryLimit int) (string, error) {
 	modelProvider, ok := enginePlugin.(plugin.CatalogModelProvider)
 	if !ok {
 		return "", fmt.Errorf("%w: 引擎未声明 Catalog 模型", ErrSampleQueryUnavailable)
@@ -965,11 +984,11 @@ func generateCatalogSampleQuery(ctx context.Context, enginePlugin plugin.EngineP
 			}
 			foundTable = true
 			if catalogEntryRowCount(item) > 0 {
-				return tableSampleSQL(engineType, namespace.Name, item.Name), nil
+				return tableSampleSQL(engineType, namespace.Name, item.Name, queryLimit), nil
 			}
 			count, countErr := plugin.CountCatalogItemRows(ctx, resource, item.Path)
 			if countErr == nil && count > 0 {
-				return tableSampleSQL(engineType, namespace.Name, item.Name), nil
+				return tableSampleSQL(engineType, namespace.Name, item.Name, queryLimit), nil
 			}
 		}
 	}
@@ -980,8 +999,8 @@ func generateCatalogSampleQuery(ctx context.Context, enginePlugin plugin.EngineP
 	return "", fmt.Errorf("%w: Catalog 中没有表", ErrSampleQueryUnavailable)
 }
 
-func tableSampleSQL(engineType, namespace, table string) string {
-	return sqldialect.SelectAllSampleSQL(engineType, namespace, table, 10)
+func tableSampleSQL(engineType, namespace, table string, limit int) string {
+	return sqldialect.SelectAllSampleSQL(engineType, namespace, table, limit)
 }
 
 func catalogEntryRowCount(entry plugin.CatalogEntry) int64 {

@@ -4,8 +4,20 @@ import assert from 'node:assert/strict'
 import {
   hasAtomicPartitionedTableChangeApply,
   hasBoundedWatermarkRead,
-  hasIdempotentTableUpsert
+  hasIdempotentTableUpsert,
+  hasStorageCapability
 } from '../src/utils/transferDisplay.js'
+
+test('resource-tree engine projection keeps event stream storage sources', () => {
+  assert.equal(hasStorageCapability({
+    engine_type: 'kafka',
+    engine_family: 'event_stream'
+  }), true)
+  assert.equal(hasStorageCapability({
+    engine_type: 'spark',
+    engine_family: 'compute'
+  }), false)
+})
 
 test('watermark source requires declared bounded watermark read', () => {
   assert.equal(hasBoundedWatermarkRead({

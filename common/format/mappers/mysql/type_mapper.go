@@ -60,7 +60,7 @@ func (m *TypeMapper) ToCommon(mysqlType string) datatype.FieldType {
 		return datatype.FieldTypeBytes
 
 	// 地理空间类型
-	case "geometry", "point", "linestring", "polygon", "multipoint", "multilinestring", "multipolygon", "geometrycollection":
+	case "geometry", "point", "linestring", "polygon", "multipoint", "multilinestring", "multipolygon", "geomcollection":
 		return datatype.FieldTypeGeometry
 
 	// 复杂类型

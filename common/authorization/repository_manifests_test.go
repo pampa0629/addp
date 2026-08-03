@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 313 {
-		t.Fatalf("descriptor count = %d, want 313", len(descriptors))
+	if len(descriptors) != 314 {
+		t.Fatalf("descriptor count = %d, want 314", len(descriptors))
 	}
 	if descriptors[0].Key != "agent.run.cancel" || descriptors[len(descriptors)-1].Key != "transfer.task.update" {
 		t.Fatalf("descriptor boundary keys = %q, %q", descriptors[0].Key, descriptors[len(descriptors)-1].Key)
@@ -119,6 +119,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"meta.scan_task.execute",
 		"system.engine_descriptor.read",
 		"system.execution_authorization.execute",
+		"system.notebook_session_authorization.execute",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.service_publisher", []string{
 		"manager.content.read",

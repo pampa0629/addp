@@ -405,6 +405,7 @@
         "types": {
           "postgresql": "企业级关系数据库",
           "mysql": "通用关系数据库",
+          "kafka": "事件流与消息系统",
           "doris": "MPP 分析型数据库",
           "clickhouse": "列式分析数据库",
           "mongodb": "文档型数据库",

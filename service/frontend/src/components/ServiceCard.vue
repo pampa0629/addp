@@ -152,7 +152,7 @@ const getServiceUrl = (service) => {
   if (props.source === 'query') {
     const serviceName = service.service_name
     const protocols = getEnabledProtocols(service)
-    if (protocols.some(p => p.key === 'rest_api')) return `/api/query/${serviceName}`
+    if (protocols.some(p => p.key === 'rest_api')) return `/api/query/${serviceName}/query`
     if (protocols.some(p => p.key === 'ogc_features')) return `/ogc/features/${serviceName}`
     return t('service.common.notConfigured')
   } else if (props.source === 'tile') {

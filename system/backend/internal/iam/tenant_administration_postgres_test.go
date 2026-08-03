@@ -384,7 +384,7 @@ func assertTenantInitializationFacts(t *testing.T, db *gorm.DB, tenantID, admini
 	if err := db.Raw(`SELECT (details->>'service_runtime_count')::int FROM system.audit_logs WHERE request_id = ? AND event_name = 'iam.tenant.created'`, "tenant-administration-closure").Scan(&serviceRuntimeCount).Error; err != nil {
 		t.Fatalf("read tenant creation service runtime audit: %v", err)
 	}
-	if membershipCount != 1 || assignmentCount != 1 || serviceMembershipCount != 10 || serviceAssignmentCount != 10 || auditCount != 3 || serviceRuntimeCount != 10 {
+	if membershipCount != 1 || assignmentCount != 1 || serviceMembershipCount != 11 || serviceAssignmentCount != 11 || auditCount != 3 || serviceRuntimeCount != 11 {
 		t.Fatalf("initialization facts membership=%d assignment=%d service_membership=%d service_assignment=%d audit=%d service_runtime_count=%d", membershipCount, assignmentCount, serviceMembershipCount, serviceAssignmentCount, auditCount, serviceRuntimeCount)
 	}
 }

@@ -65,6 +65,7 @@ func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 		log,
 		s.runtimes.Database,
 		s.runtimes.BranchLeaf,
+		s.runtimes.DirectLeaf,
 		s.runtimes.ContentCatalogScanner,
 	)
 

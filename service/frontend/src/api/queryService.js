@@ -44,23 +44,25 @@ export default {
 
   // REST 查询端点测试 API
 
-  // 测试查询端点（Table 模式）
-  testQuery(serviceName, params) {
-    return queryExecutionClient.get(`/api/query/${serviceName}`, { params })
+  testQuery(serviceName, request) {
+    return queryExecutionClient.post(`/api/query/${serviceName}/query`, request)
   },
 
   // 测试查询端点（导出 CSV）
-  testQueryCSV(serviceName, params) {
-    return queryExecutionClient.get(`/api/query/${serviceName}`, {
-      params: { ...params, format: 'csv' },
+  testQueryCSV(serviceName, request) {
+    return queryExecutionClient.post(`/api/query/${serviceName}/query`, {
+      ...request,
+      format: 'csv'
+    }, {
       responseType: 'blob'
     })
   },
 
   // 测试查询端点（导出 GeoJSON）
-  testQueryGeoJSON(serviceName, params) {
-    return queryExecutionClient.get(`/api/query/${serviceName}`, {
-      params: { ...params, format: 'geojson' }
+  testQueryGeoJSON(serviceName, request) {
+    return queryExecutionClient.post(`/api/query/${serviceName}/query`, {
+      ...request,
+      format: 'geojson'
     })
   },
 

@@ -22,6 +22,7 @@ type FederatedSession struct {
 type FederatedSessionOptions struct {
 	MemoryLimit string
 	Threads     int
+	LoadSpatial bool
 }
 
 // Close 释放连接和数据库资源
@@ -110,6 +111,11 @@ func configureFederatedSession(ctx context.Context, conn *sql.Conn, options Fede
 	}
 	if _, err := conn.ExecContext(ctx, fmt.Sprintf("SET threads = %d", options.Threads)); err != nil {
 		return fmt.Errorf("设置 DuckDB 线程数失败: %w", err)
+	}
+	if options.LoadSpatial {
+		if err := ensureDuckDBExtension(ctx, conn, "spatial", "spatial"); err != nil {
+			return err
+		}
 	}
 	return nil
 }

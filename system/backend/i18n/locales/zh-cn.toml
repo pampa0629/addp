@@ -34,8 +34,35 @@ other = "该执行已经创建过执行授权，请使用原执行授权"
 [system.auth.execution_authorization_unavailable]
 other = "执行授权已失效、越界或目标引擎不可用"
 
+[system.auth.notebook_session_authorization_conflict]
+other = "该 Notebook 会话已经创建过会话授权"
+
+[system.auth.notebook_session_authorization_forbidden]
+other = "Notebook 会话授权已失效或无权使用"
+
 [system.auth.internal_error]
 other = "认证服务暂时不可用"
+
+[system.catalog.control_plane_failed]
+other = "目录控制面暂时不可用"
+
+[system.catalog.provider_failed]
+other = "引擎目录读取失败"
+
+[system.catalog.engine_not_found]
+other = "引擎不存在或当前不可访问"
+
+[system.catalog.entry_not_found]
+other = "目录对象不存在"
+
+[system.catalog.operation_unsupported]
+other = "当前引擎不支持该目录操作"
+
+[system.catalog.engine_unavailable]
+other = "引擎当前不可用"
+
+[system.catalog.timeout]
+other = "目录读取超时"
 
 [system.auth.invalid_current_password]
 other = "当前密码不正确"

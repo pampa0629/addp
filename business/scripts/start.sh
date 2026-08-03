@@ -3,7 +3,7 @@
 # 业务库启动脚本
 #
 # 功能: 检查配置、检测架构、启动服务、验证健康、安装 PostGIS
-# 服务: PostgreSQL (必选), MinIO (必选), ClickHouse (可选), MongoDB (可选), Doris (可选), Spark (可选), Neo4j (可选), NFS (可选)
+# 服务: PostgreSQL (必选), MinIO (必选), ClickHouse (可选), MongoDB (可选), Doris (可选), Spark (可选), Neo4j (可选), MySQL (可选), Redpanda (可选), NFS (可选)
 # 特性: 幂等执行（可重复运行，已运行的服务会跳过）
 #
 # 使用方法:
@@ -17,6 +17,7 @@
 #   bash scripts/start.sh -spark             # 只启动 Spark
 #   bash scripts/start.sh -neo4j             # 只启动 Neo4j
 #   bash scripts/start.sh -mysql             # 只启动 MySQL
+#   bash scripts/start.sh -redpanda          # 只启动业务 Redpanda
 #   bash scripts/start.sh -nfs               # 只启动 NFS
 #   bash scripts/start.sh -postgres -minio   # 启动 PostgreSQL + MinIO
 #   bash scripts/start.sh -clickhouse -mongodb  # 启动 ClickHouse + MongoDB
@@ -44,6 +45,7 @@ ENABLE_SPARK=false
 ENABLE_NEO4J=false
 ENABLE_NFS=false
 ENABLE_MYSQL=false
+ENABLE_REDPANDA=false
 HAS_ARGS=false
 
 for arg in "$@"; do
@@ -59,6 +61,7 @@ for arg in "$@"; do
             ENABLE_NEO4J=true
             ENABLE_NFS=true
             ENABLE_MYSQL=true
+            ENABLE_REDPANDA=true
             ;;
         -postgres)
             ENABLE_PG=true
@@ -84,6 +87,9 @@ for arg in "$@"; do
         -mysql)
             ENABLE_MYSQL=true
             ;;
+        -redpanda)
+            ENABLE_REDPANDA=true
+            ;;
         -nfs)
             ENABLE_NFS=true
             ;;
@@ -99,6 +105,7 @@ for arg in "$@"; do
             echo "  bash scripts/start.sh -spark                # 只启动 Spark"
             echo "  bash scripts/start.sh -neo4j                # 只启动 Neo4j"
             echo "  bash scripts/start.sh -mysql               # 只启动 MySQL"
+            echo "  bash scripts/start.sh -redpanda            # 只启动业务 Redpanda"
             echo "  bash scripts/start.sh -nfs                  # 只启动 NFS"
             echo "  bash scripts/start.sh -postgres -minio      # 启动 PostgreSQL + MinIO"
             echo "  bash scripts/start.sh -clickhouse -mongodb  # 启动 ClickHouse + MongoDB"
@@ -163,6 +170,11 @@ if [ "$ENABLE_MYSQL" = true ]; then
 else
     echo -e "  MySQL: ✗ (使用 -mysql 启用)"
 fi
+if [ "$ENABLE_REDPANDA" = true ]; then
+    echo -e "  Redpanda: ✓"
+else
+    echo -e "  Redpanda: ✗ (使用 -redpanda 启用)"
+fi
 if [ "$ENABLE_NFS" = true ]; then
     echo -e "  NFS: ✓"
 else
@@ -223,6 +235,7 @@ SPARK_THRIFT_PORT=${SPARK_THRIFT_PORT:-11000}
 NEO4J_HTTP_PORT_VAL=${NEO4J_HTTP_PORT:-7474}
 NEO4J_BOLT_PORT_VAL=${NEO4J_BOLT_PORT:-7687}
 MYSQL_PORT_VAL=${MYSQL_PORT:-3306}
+BUSINESS_KAFKA_PORT_VAL=${BUSINESS_KAFKA_PORT:-29092}
 
 check_port_used_by_self() {
     local port=$1
@@ -243,6 +256,7 @@ PORTS_TO_CHECK=""
 [ "$ENABLE_SPARK" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $SPARK_MASTER_PORT $SPARK_MASTER_UI $SPARK_THRIFT_PORT"
 [ "$ENABLE_NEO4J" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $NEO4J_HTTP_PORT_VAL $NEO4J_BOLT_PORT_VAL"
 [ "$ENABLE_MYSQL" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $MYSQL_PORT_VAL"
+[ "$ENABLE_REDPANDA" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $BUSINESS_KAFKA_PORT_VAL"
 
 for port in $PORTS_TO_CHECK; do
     if lsof -nP -i ":${port}" >/dev/null 2>&1; then
@@ -253,7 +267,8 @@ for port in $PORTS_TO_CHECK; do
            check_port_used_by_self $port "business-doris-fe" || \
            check_port_used_by_self $port "business-spark-master" || \
            check_port_used_by_self $port "business-neo4j" || \
-           check_port_used_by_self $port "business-mysql"; then
+           check_port_used_by_self $port "business-mysql" || \
+           check_port_used_by_self $port "business-redpanda"; then
             echo -e "${GREEN}✓ 端口 ${port} 已被业务库容器使用${NC}"
         else
             echo -e "${YELLOW}⚠️  端口 ${port} 被其他进程占用${NC}"
@@ -392,6 +407,12 @@ fi
 if [ "$ENABLE_MYSQL" = true ]; then
     docker compose up -d mysql
     echo -e "${GREEN}✓ MySQL 配置已同步${NC}"
+fi
+
+# Redpanda
+if [ "$ENABLE_REDPANDA" = true ]; then
+    docker compose up -d business-redpanda
+    echo -e "${GREEN}✓ Redpanda 配置已同步${NC}"
 fi
 
 # NFS（macOS 内置 NFS）
@@ -537,6 +558,46 @@ if [ "$ENABLE_MYSQL" = true ]; then
 
     bash mysql/init-cdc.sh
 fi
+
+if [ "$ENABLE_REDPANDA" = true ]; then
+    REDPANDA_READY=false
+    for i in {1..60}; do
+        if docker inspect --format '{{.State.Health.Status}}' business-redpanda 2>/dev/null | grep -q '^healthy$'; then
+            echo -e "${GREEN}✓ Redpanda 就绪${NC}"
+            REDPANDA_READY=true
+            break
+        fi
+        sleep 1
+    done
+    if [ "$REDPANDA_READY" != true ]; then
+        echo -e "${RED}✗ Redpanda 未在 60 秒内就绪${NC}"
+        exit 1
+    fi
+
+    ADMIN_ARGS=(
+        -X brokers=localhost:29092
+        -X "user=${BUSINESS_KAFKA_ADMIN_USERNAME:-admin}"
+        -X "pass=${BUSINESS_KAFKA_ADMIN_PASSWORD:-addp_business_kafka_admin}"
+        -X sasl.mechanism=SCRAM-SHA-256
+    )
+    READER_USERNAME="${BUSINESS_KAFKA_READER_USERNAME:-addp_transfer}"
+    READER_PASSWORD="${BUSINESS_KAFKA_READER_PASSWORD:-addp_business_kafka_reader}"
+    EXISTING_USERS="$(docker exec business-redpanda rpk security user list "${ADMIN_ARGS[@]}")"
+    if awk 'NR > 1 {print $1}' <<<"${EXISTING_USERS}" | grep -Fxq "${READER_USERNAME}"; then
+        docker exec business-redpanda rpk security user update "${READER_USERNAME}" \
+            --new-password "${READER_PASSWORD}" --mechanism SCRAM-SHA-256 "${ADMIN_ARGS[@]}" >/dev/null
+    else
+        docker exec business-redpanda rpk security user create "${READER_USERNAME}" \
+            --password "${READER_PASSWORD}" --mechanism SCRAM-SHA-256 "${ADMIN_ARGS[@]}" >/dev/null
+    fi
+    docker exec business-redpanda rpk acl create --allow-principal "User:${READER_USERNAME}" \
+        --topic '*' --operation read,describe "${ADMIN_ARGS[@]}" >/dev/null
+    docker exec business-redpanda rpk acl create --allow-principal "User:${READER_USERNAME}" \
+        --group '*' --operation read,describe "${ADMIN_ARGS[@]}" >/dev/null
+    docker exec business-redpanda rpk acl create --allow-principal "User:${READER_USERNAME}" \
+        --cluster --operation describe "${ADMIN_ARGS[@]}" >/dev/null
+    echo -e "${GREEN}✓ Redpanda 只读 Engine 账号已同步${NC}"
+fi
 echo ""
 
 # 7. 验证 PostGIS（幂等，仅当 PostgreSQL 启用时）
@@ -598,6 +659,9 @@ if [ "$ENABLE_NEO4J" = true ]; then
 fi
 if [ "$ENABLE_MYSQL" = true ]; then
     echo -e "MySQL: localhost:${MYSQL_PORT_VAL:-3306}  (CDC 用户: ${MYSQL_CDC_USER:-addp_cdc})"
+fi
+if [ "$ENABLE_REDPANDA" = true ]; then
+    echo -e "Kafka API: localhost:${BUSINESS_KAFKA_PORT_VAL}  (Engine 用户: ${BUSINESS_KAFKA_READER_USERNAME:-addp_transfer})"
 fi
 if [ "$ENABLE_NFS" = true ]; then
     echo -e "NFS Server: localhost:2049 (export: ${PROJECT_ROOT}/nfs/data)"

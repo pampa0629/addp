@@ -27,7 +27,7 @@ graph TB
     Service --> RS[注册服务<br/>Registered Service<br/>外部服务接入]
     Service --> TS[瓦片服务<br/>Tile Service<br/>矢量瓦片地图]
 
-    QS --> QS_REST[REST Query API<br/>/api/query/:serviceName]
+    QS --> QS_REST[REST Query API<br/>/api/query/:serviceName/query]
     QS --> QS_OGC[OGC API Features 1.0<br/>/ogc/features/:serviceName/]
     QS --> QS_WFS[WFS 2.0<br/>/ogc/wfs/:serviceName]
 
@@ -59,7 +59,7 @@ graph TB
 
 ## 查询服务
 
-查询服务将内部数据库中的表或 SQL 查询结果，发布为标准服务接口，供外部调用。
+查询服务将内部数据源或固定查询发布为稳定、受治理的数据 API。表、固定 SQL 和联邦 SQL 只表达来源与执行绑定；REST Query、OGC API Features 和 WFS 是同一个不可变发布版本的协议投影，共用结构化查询内核，不各自构造 SQL。
 
 ### 配置模式
 
@@ -98,25 +98,49 @@ graph LR
 
 空间信息统一保存为标准 `SpatialInfo` payload，例如 `geometry_columns`、`primary_geometry_column`、`crs_ref`、`crs_definitions` 和原生 CRS 下的 `extent`，不再保存 Service 私有的 `column/srid/types` 简化结构。
 
+### 查询服务发布契约
+
+每个发布版本必须冻结：
+
+- 来源绑定和执行 Runtime；
+- 输出 `TableInfo` / `SpatialInfo`；
+- 非空唯一的稳定排序键，允许复合键；
+- 可选择字段、可过滤字段及允许的类型化操作符；
+- 最大返回行数、超时等资源限制；
+- 依赖快照和版本 hash。
+
+消费者只能提交结构化查询请求，不得提交 SQL、WHERE、ORDER BY 或引擎原生表达式。调用方排序不足以形成全序时，查询编译器自动追加稳定排序键。发布版本缺少稳定排序键时不得执行分页查询，也不得启用 OGC API Features。
+
+普通查询默认使用 cursor/keyset 分页，读取 `limit + 1` 行判断 `has_more`，不执行精确计数。游标绑定发布版本、查询指纹、有效排序和最后一行排序值。管理列表仍使用 `page/page_size`，两种分页语义不得混用。
+
 ### 支持的协议
 
 | 协议 | 端点 | 主要操作 | 状态 |
 |------|------|----------|------|
-| **REST Query API** | `GET /api/query/:serviceName` | 条件查询、分页、字段选择 | ✅ 已实现 |
+| **REST Query API** | `POST /api/query/:serviceName/query` | 结构化过滤、稳定排序、游标分页、字段选择 | ✅ 已实现 |
 | **OGC API Features 1.0** | `GET /ogc/features/:serviceName/` | Landing Page、Collections、Items | ✅ 已实现 |
 | **WFS 2.0** | `GET /ogc/wfs/:serviceName` | GetCapabilities、GetFeature、DescribeFeatureType | ✅ 已实现 |
 | WMS 1.3 | 待实现 | GetCapabilities、GetMap、GetFeatureInfo | ⏳ 规划中 |
 
-### REST Query API 参数
+### REST Query API 请求
 
-| 参数 | 说明 | 示例 |
-|------|------|------|
-| `filter` | 条件过滤（WHERE 子句） | `filter=population>1000000` |
-| `fields` | 指定返回字段 | `fields=name,population,area` |
-| `orderBy` | 排序 | `orderBy=population desc` |
-| `page` | 页码（从 1 开始） | `page=1` |
-| `pageSize` | 每页大小 | `pageSize=100` |
-| `format` | 输出编码 | `format=json` / `format=csv` / `format=spatial-json` |
+```json
+{
+  "select": ["id", "name", "updated_at"],
+  "filter": {
+    "field": "status",
+    "op": "eq",
+    "value": "active"
+  },
+  "order_by": [
+    {"field": "updated_at", "direction": "desc"}
+  ],
+  "page": {"limit": 100, "cursor": ""},
+  "format": "json"
+}
+```
+
+过滤节点只允许发布策略声明的字段和类型化操作符；逻辑组合使用 `and/or/not` 结构，不接受字符串表达式。响应分页只返回 `limit/has_more/next_cursor`，默认不返回总数。
 
 ### OGC API Features 端点
 
@@ -124,7 +148,7 @@ graph LR
 GET /ogc/features/:serviceName/                         ← Landing Page
 GET /ogc/features/:serviceName/conformance              ← 标准声明
 GET /ogc/features/:serviceName/collections              ← 集合列表
-GET /ogc/features/:serviceName/collections/:id/items   ← 要素列表
+GET /ogc/features/:serviceName/collections/:id/items   ← 要素列表（limit + opaque cursor）
 GET /ogc/features/:serviceName/collections/:id/items/:fid ← 单个要素
 ```
 
@@ -315,7 +339,7 @@ GET /api/service/catalog  ← 获取服务目录（聚合查询/注册/瓦片服
 
 | 端点类型 | 路径前缀 |
 |----------|----------|
-| REST 数据查询 | `GET /api/query/:serviceName` |
+| REST 数据查询 | `POST /api/query/:serviceName/query` |
 | OGC API Features | `GET /ogc/features/:serviceName/` |
 | WFS | `GET /ogc/wfs/:serviceName` |
 | XYZ 瓦片 | `GET /tiles/:serviceName/:layerName/:z/:x/:y` |

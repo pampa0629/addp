@@ -227,23 +227,13 @@
           <el-button @click="testRestAPI">{{ t('service.common.test') }}</el-button>
         </div>
 
-        <!-- Table模式：显示查询参数说明 -->
-        <div v-if="service?.config_type === 'table'" style="margin-top: 12px; font-size: 13px; color: var(--addp-text-secondary)">
+        <div style="margin-top: 12px; font-size: 13px; color: var(--addp-text-secondary)">
           <strong>{{ t('service.query.supportedParams') }}</strong>
           <ul style="margin: 8px 0; padding-left: 20px">
+            <li><code>select</code>：{{ t('service.query.paramFields') }}</li>
             <li><code>filter</code>：{{ t('service.query.paramFilter') }}</li>
-            <li><code>fields</code>：{{ t('service.query.paramFields') }}</li>
-            <li><code>orderBy</code>：{{ t('service.query.paramOrderBy') }}</li>
-            <li><code>page</code> {{ t('service.query.paramAnd') }} <code>page_size</code>：{{ t('service.query.paramPage') }}</li>
-            <li><code>format</code>：{{ t('service.query.paramFormat') }}</li>
-          </ul>
-        </div>
-
-        <!-- SQL模式：显示查询参数说明 -->
-        <div v-else style="margin-top: 12px; font-size: 13px; color: var(--addp-text-secondary)">
-          <strong>{{ t('service.query.supportedParams') }}</strong>
-          <ul style="margin: 8px 0; padding-left: 20px">
-            <li><code>page</code> {{ t('service.query.paramAnd') }} <code>page_size</code>：{{ t('service.query.paramPage') }}</li>
+            <li><code>order_by</code>：{{ t('service.query.paramOrderBy') }}</li>
+            <li><code>page.limit</code> {{ t('service.query.paramAnd') }} <code>page.cursor</code>：{{ t('service.query.paramPage') }}</li>
             <li><code>format</code>：{{ t('service.query.paramFormat') }}</li>
           </ul>
         </div>
@@ -324,7 +314,7 @@
           {{ previewData.length > 0 ? t('service.query.refreshData') : t('service.query.loadData') }}
         </el-button>
         <div v-if="previewData.length > 0" style="color: var(--addp-text-secondary); font-size: 14px">
-          {{ t('service.query.previewCount', { total: previewPagination.total, count: previewData.length }) }}
+          {{ t('service.query.previewCount', { page: previewPagination.page, count: previewData.length }) }}
         </div>
       </div>
 
@@ -372,7 +362,9 @@ const previewLoading = ref(false)
 const previewPagination = ref({
   page: 1,
   pageSize: 20,
-  total: 0
+  hasMore: false,
+  nextCursor: '',
+  cursors: ['']
 })
 
 const serviceId = computed(() => route.params.id)
@@ -404,7 +396,7 @@ const previewTableData = computed(() => buildQueryServicePreview({
   pagination: {
     page: previewPagination.value.page,
     page_size: previewPagination.value.pageSize,
-    total: previewPagination.value.total
+    has_more: previewPagination.value.hasMore
   },
 	spatial: spatialInfo.value
 }))
@@ -426,7 +418,7 @@ const baseURL = computed(() => {
 
 const restApiEndpoint = computed(() => {
   if (!service.value) return ''
-  return `${baseURL.value}/api/query/${service.value.service_name}`
+  return `${baseURL.value}/api/query/${service.value.service_name}/query`
 })
 
 const ogcFeaturesLandingPage = computed(() => {
@@ -500,9 +492,9 @@ const testEndpoint = (url) => {
 
 // 方法：测试 REST API
 const testRestAPI = () => {
-  // 构建测试URL（带分页参数）
-  const testUrl = `${restApiEndpoint.value}?page=1&page_size=10&format=json`
-  window.open(testUrl, '_blank')
+  previewPagination.value.page = 1
+  previewPagination.value.cursors = ['']
+  loadPreviewData()
 }
 
 // 方法：加载服务详情
@@ -591,9 +583,11 @@ const loadPreviewData = async () => {
 
   previewLoading.value = true
   try {
-    const params = {
-      page: previewPagination.value.page,
-      page_size: previewPagination.value.pageSize,
+    const request = {
+      page: {
+        limit: previewPagination.value.pageSize,
+        cursor: previewPagination.value.cursors[previewPagination.value.page - 1] || ''
+      },
       format: 'json'
     }
     const fields = queryServicePreviewFields({
@@ -601,18 +595,20 @@ const loadPreviewData = async () => {
       defaultFields: defaultFields.value,
 	  spatial: spatialInfo.value
     })
-    if (fields) params.fields = fields
+    if (fields.length > 0) request.select = fields
 
-    const response = await queryServiceAPI.testQuery(service.value.service_name, params)
+    const response = await queryServiceAPI.testQuery(service.value.service_name, request)
 
     if (response && Array.isArray(response.data)) {
       previewData.value = response.data
 
-      // 更新分页信息
-      if (response.pagination) {
-        previewPagination.value.page = response.pagination.page
-        previewPagination.value.pageSize = response.pagination.page_size
-        previewPagination.value.total = response.pagination.total
+	  if (response.page) {
+		previewPagination.value.pageSize = response.page.limit
+		previewPagination.value.hasMore = response.page.has_more === true
+		previewPagination.value.nextCursor = response.page.next_cursor || ''
+		if (response.page.next_cursor) {
+		  previewPagination.value.cursors[previewPagination.value.page] = response.page.next_cursor
+		}
       }
 
       ElMessage.success(t('service.query.loadPreviewSuccess', { count: response.data.length }))
@@ -628,8 +624,15 @@ const loadPreviewData = async () => {
 }
 
 const handlePreviewPageChange = ({ page, pageSize }) => {
+	if (pageSize !== previewPagination.value.pageSize) {
+	  previewPagination.value.page = 1
+	  previewPagination.value.pageSize = pageSize
+	  previewPagination.value.cursors = ['']
+	  loadPreviewData()
+	  return
+	}
+	if (!previewPagination.value.cursors[page - 1] && page !== 1) return
   previewPagination.value.page = page
-  previewPagination.value.pageSize = pageSize
   loadPreviewData()
 }
 

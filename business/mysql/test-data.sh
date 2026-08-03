@@ -1,6 +1,6 @@
 #!/bin/bash
 # MySQL 测试数据脚本
-# 创建多个测试表并插入示例数据，便于验证元数据扫描、预览和基础查询能力
+# 创建多个测试表并插入示例数据，便于验证元数据扫描、预览、空间和基础查询能力
 
 set -e
 
@@ -18,6 +18,17 @@ run_sql() {
     "$MYSQL_DATABASE"
 }
 
+query_scalar() {
+  docker exec -i "$CONTAINER" mysql \
+    -h127.0.0.1 \
+    -u"$MYSQL_USER" \
+    -p"$MYSQL_PASSWORD" \
+    --default-character-set=utf8mb4 \
+    --batch \
+    --skip-column-names \
+    "$MYSQL_DATABASE"
+}
+
 echo "=== MySQL 测试数据初始化开始 ==="
 
 run_sql <<'EOSQL'
@@ -27,6 +38,15 @@ DROP TABLE IF EXISTS order_items;
 DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS customers;
+DROP TABLE IF EXISTS spatial_multi_columns;
+DROP TABLE IF EXISTS projected_locations;
+DROP TABLE IF EXISTS mixed_features;
+DROP TABLE IF EXISTS spatial_collections;
+DROP TABLE IF EXISTS market_regions;
+DROP TABLE IF EXISTS transport_networks;
+DROP TABLE IF EXISTS regional_facilities;
+DROP TABLE IF EXISTS service_areas;
+DROP TABLE IF EXISTS delivery_routes;
 DROP TABLE IF EXISTS store_locations;
 
 CREATE TABLE customers (
@@ -102,6 +122,79 @@ CREATE TABLE store_locations (
     INDEX idx_store_locations_city (city)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE delivery_routes (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    route_code VARCHAR(32) NOT NULL UNIQUE,
+    name VARCHAR(120) NOT NULL,
+    geom LINESTRING SRID 4326 NOT NULL,
+    SPATIAL INDEX idx_delivery_routes_geom (geom)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE service_areas (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    area_code VARCHAR(32) NOT NULL UNIQUE,
+    name VARCHAR(120) NOT NULL,
+    geom POLYGON SRID 4326 NOT NULL,
+    SPATIAL INDEX idx_service_areas_geom (geom)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE regional_facilities (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    region_code VARCHAR(32) NOT NULL UNIQUE,
+    name VARCHAR(120) NOT NULL,
+    geom MULTIPOINT SRID 4326 NOT NULL,
+    SPATIAL INDEX idx_regional_facilities_geom (geom)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE transport_networks (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    network_code VARCHAR(32) NOT NULL UNIQUE,
+    name VARCHAR(120) NOT NULL,
+    geom MULTILINESTRING SRID 4326 NOT NULL,
+    SPATIAL INDEX idx_transport_networks_geom (geom)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE market_regions (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    region_code VARCHAR(32) NOT NULL UNIQUE,
+    name VARCHAR(120) NOT NULL,
+    geom MULTIPOLYGON SRID 4326 NOT NULL,
+    SPATIAL INDEX idx_market_regions_geom (geom)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE spatial_collections (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    collection_code VARCHAR(32) NOT NULL UNIQUE,
+    name VARCHAR(120) NOT NULL,
+    geom GEOMETRYCOLLECTION SRID 4326 NOT NULL,
+    SPATIAL INDEX idx_spatial_collections_geom (geom)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE mixed_features (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    feature_code VARCHAR(32) NOT NULL UNIQUE,
+    feature_kind VARCHAR(32) NOT NULL,
+    geom GEOMETRY SRID 4326 NOT NULL,
+    SPATIAL INDEX idx_mixed_features_geom (geom)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE projected_locations (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    location_code VARCHAR(32) NOT NULL UNIQUE,
+    name VARCHAR(120) NOT NULL,
+    geom POINT SRID 3857 NOT NULL,
+    SPATIAL INDEX idx_projected_locations_geom (geom)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE spatial_multi_columns (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    site_code VARCHAR(32) NOT NULL UNIQUE,
+    name VARCHAR(120) NOT NULL,
+    center POINT SRID 4326 NOT NULL,
+    coverage POLYGON SRID 4326 NULL,
+    SPATIAL INDEX idx_spatial_multi_columns_center (center)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 INSERT INTO customers (customer_code, name, gender, email, phone, city, membership_level, points, active, created_at, updated_at) VALUES
     ('CUST-10001', '王小丽', 'female', 'alice.wang@example.com', '13800010001', '上海', 'gold', 5800, TRUE, '2024-01-15 10:00:00', '2026-04-20 09:30:00'),
     ('CUST-10002', '陈大明', 'male', 'bob.chen@example.com', '13800010002', '北京', 'platinum', 12500, TRUE, '2023-06-20 11:20:00', '2026-04-18 16:45:00'),
@@ -130,10 +223,46 @@ INSERT INTO order_items (order_id, product_id, quantity, unit_price, discount_am
     (4, 5, 1, 11499.00, 0.00);
 
 INSERT INTO store_locations (store_code, name, city, address, longitude, latitude, geom, opened_on) VALUES
-    ('STORE-SH-001', '上海张江体验店', '上海', '上海市浦东新区张江高科技园区', 121.599960, 31.204270, ST_SRID(POINT(121.599960, 31.204270), 4326), '2024-05-01'),
-    ('STORE-BJ-001', '北京中关村体验店', '北京', '北京市海淀区中关村大街', 116.316200, 39.983200, ST_SRID(POINT(116.316200, 39.983200), 4326), '2023-10-15'),
-    ('STORE-SZ-001', '深圳南山体验店', '深圳', '深圳市南山区科技园', 113.944820, 22.540880, ST_SRID(POINT(113.944820, 22.540880), 4326), '2025-03-20'),
-    ('STORE-CD-001', '成都高新体验店', '成都', '成都市高新区天府大道', 104.066540, 30.572270, ST_SRID(POINT(104.066540, 30.572270), 4326), '2025-09-10');
+    ('STORE-SH-001', '上海张江体验店', '上海', '上海市浦东新区张江高科技园区', 121.599960, 31.204270, ST_GeomFromText('POINT(121.599960 31.204270)', 4326, 'axis-order=long-lat'), '2024-05-01'),
+    ('STORE-BJ-001', '北京中关村体验店', '北京', '北京市海淀区中关村大街', 116.316200, 39.983200, ST_GeomFromText('POINT(116.316200 39.983200)', 4326, 'axis-order=long-lat'), '2023-10-15'),
+    ('STORE-SZ-001', '深圳南山体验店', '深圳', '深圳市南山区科技园', 113.944820, 22.540880, ST_GeomFromText('POINT(113.944820 22.540880)', 4326, 'axis-order=long-lat'), '2025-03-20'),
+    ('STORE-CD-001', '成都高新体验店', '成都', '成都市高新区天府大道', 104.066540, 30.572270, ST_GeomFromText('POINT(104.066540 30.572270)', 4326, 'axis-order=long-lat'), '2025-09-10');
+
+INSERT INTO delivery_routes (route_code, name, geom) VALUES
+    ('ROUTE-SH-01', '上海城区配送线', ST_GeomFromText('LINESTRING(121.4737 31.2304,121.5200 31.2350,121.59996 31.20427)', 4326, 'axis-order=long-lat')),
+    ('ROUTE-BJ-01', '北京城区配送线', ST_GeomFromText('LINESTRING(116.3974 39.9093,116.3500 39.9500,116.3162 39.9832)', 4326, 'axis-order=long-lat'));
+
+INSERT INTO service_areas (area_code, name, geom) VALUES
+    ('AREA-SH-01', '上海核心服务区', ST_GeomFromText('POLYGON((121.40 31.10,121.75 31.10,121.75 31.35,121.40 31.35,121.40 31.10),(121.54 31.19,121.61 31.19,121.61 31.24,121.54 31.24,121.54 31.19))', 4326, 'axis-order=long-lat')),
+    ('AREA-BJ-01', '北京核心服务区', ST_GeomFromText('POLYGON((116.20 39.80,116.55 39.80,116.55 40.10,116.20 40.10,116.20 39.80))', 4326, 'axis-order=long-lat'));
+
+INSERT INTO regional_facilities (region_code, name, geom) VALUES
+    ('FAC-EAST-01', '华东设施组', ST_GeomFromText('MULTIPOINT((121.4737 31.2304),(120.1551 30.2741),(118.7969 32.0603))', 4326, 'axis-order=long-lat'));
+
+INSERT INTO transport_networks (network_code, name, geom) VALUES
+    ('NET-YRD-01', '长三角运输网络', ST_GeomFromText('MULTILINESTRING((121.4737 31.2304,120.1551 30.2741),(121.4737 31.2304,118.7969 32.0603))', 4326, 'axis-order=long-lat'));
+
+INSERT INTO market_regions (region_code, name, geom) VALUES
+    ('MARKET-SOUTH-01', '华南市场片区', ST_GeomFromText('MULTIPOLYGON(((113.80 22.40,114.15 22.40,114.15 22.70,113.80 22.70,113.80 22.40)),((112.90 22.90,113.20 22.90,113.20 23.20,112.90 23.20,112.90 22.90)))', 4326, 'axis-order=long-lat'));
+
+INSERT INTO spatial_collections (collection_code, name, geom) VALUES
+    ('COLL-SH-01', '上海混合空间集合', ST_GeomFromText('GEOMETRYCOLLECTION(POINT(121.4737 31.2304),LINESTRING(121.45 31.20,121.55 31.25),POLYGON((121.40 31.15,121.60 31.15,121.60 31.30,121.40 31.30,121.40 31.15)))', 4326, 'axis-order=long-lat'));
+
+INSERT INTO mixed_features (feature_code, feature_kind, geom) VALUES
+    ('MIXED-POINT-01', 'point', ST_GeomFromText('POINT(121.4737 31.2304)', 4326, 'axis-order=long-lat')),
+    ('MIXED-LINE-01', 'linestring', ST_GeomFromText('LINESTRING(121.40 31.20,121.60 31.25)', 4326, 'axis-order=long-lat')),
+    ('MIXED-POLYGON-01', 'polygon', ST_GeomFromText('POLYGON((121.40 31.15,121.60 31.15,121.60 31.30,121.40 31.30,121.40 31.15))', 4326, 'axis-order=long-lat'));
+
+INSERT INTO projected_locations (location_code, name, geom) VALUES
+    ('PROJECTED-SH-01', '上海 Web Mercator 点', ST_Transform(ST_GeomFromText('POINT(121.4737 31.2304)', 4326, 'axis-order=long-lat'), 3857));
+
+INSERT INTO spatial_multi_columns (site_code, name, center, coverage) VALUES
+    ('SITE-SH-01', '上海复合空间站点',
+     ST_GeomFromText('POINT(121.4737 31.2304)', 4326, 'axis-order=long-lat'),
+     ST_GeomFromText('POLYGON((121.43 31.19,121.52 31.19,121.52 31.27,121.43 31.27,121.43 31.19))', 4326, 'axis-order=long-lat')),
+    ('SITE-BJ-01', '北京无覆盖站点',
+     ST_GeomFromText('POINT(116.3974 39.9093)', 4326, 'axis-order=long-lat'),
+     NULL);
 
 SELECT 'customers' AS table_name, COUNT(*) AS row_count FROM customers
 UNION ALL
@@ -145,5 +274,52 @@ SELECT 'order_items', COUNT(*) FROM order_items
 UNION ALL
 SELECT 'store_locations', COUNT(*) FROM store_locations;
 EOSQL
+
+SPATIAL_TYPES="$(query_scalar <<'EOSQL'
+SELECT GROUP_CONCAT(DISTINCT CASE
+    WHEN data_type = 'geomcollection' THEN 'GEOMETRYCOLLECTION'
+    ELSE UPPER(data_type)
+END ORDER BY CASE WHEN data_type = 'geomcollection' THEN 'GEOMETRYCOLLECTION' ELSE UPPER(data_type) END SEPARATOR ',')
+FROM information_schema.columns
+WHERE table_schema = DATABASE()
+  AND data_type IN ('geometry', 'point', 'linestring', 'polygon', 'multipoint', 'multilinestring', 'multipolygon', 'geomcollection');
+EOSQL
+)"
+EXPECTED_SPATIAL_TYPES="GEOMETRY,GEOMETRYCOLLECTION,LINESTRING,MULTILINESTRING,MULTIPOINT,MULTIPOLYGON,POINT,POLYGON"
+if [ "$SPATIAL_TYPES" != "$EXPECTED_SPATIAL_TYPES" ]; then
+  echo "MySQL Spatial 类型校验失败: $SPATIAL_TYPES" >&2
+  exit 1
+fi
+
+INVALID_GEOMETRIES="$(query_scalar <<'EOSQL'
+SELECT SUM(invalid_count) FROM (
+    SELECT SUM(NOT ST_IsValid(geom)) AS invalid_count FROM store_locations
+    UNION ALL SELECT SUM(NOT ST_IsValid(geom)) FROM delivery_routes
+    UNION ALL SELECT SUM(NOT ST_IsValid(geom)) FROM service_areas
+    UNION ALL SELECT SUM(NOT ST_IsValid(geom)) FROM regional_facilities
+    UNION ALL SELECT SUM(NOT ST_IsValid(geom)) FROM transport_networks
+    UNION ALL SELECT SUM(NOT ST_IsValid(geom)) FROM market_regions
+    UNION ALL SELECT SUM(NOT ST_IsValid(geom)) FROM spatial_collections
+    UNION ALL SELECT SUM(NOT ST_IsValid(geom)) FROM mixed_features
+    UNION ALL SELECT SUM(NOT ST_IsValid(geom)) FROM projected_locations
+    UNION ALL SELECT SUM(NOT ST_IsValid(center)) + SUM(coverage IS NOT NULL AND NOT ST_IsValid(coverage)) FROM spatial_multi_columns
+) validation;
+EOSQL
+)"
+if [ "$INVALID_GEOMETRIES" != "0" ]; then
+  echo "MySQL Spatial 几何有效性校验失败: $INVALID_GEOMETRIES" >&2
+  exit 1
+fi
+
+SPATIAL_INDEX_COUNT="$(query_scalar <<'EOSQL'
+SELECT COUNT(DISTINCT table_name, index_name)
+FROM information_schema.statistics
+WHERE table_schema = DATABASE() AND index_type = 'SPATIAL';
+EOSQL
+)"
+if [ "$SPATIAL_INDEX_COUNT" -lt 10 ]; then
+  echo "MySQL Spatial 索引校验失败: $SPATIAL_INDEX_COUNT" >&2
+  exit 1
+fi
 
 echo "=== MySQL 测试数据初始化完成 ==="

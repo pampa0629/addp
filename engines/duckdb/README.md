@@ -13,7 +13,8 @@ Source Engine ID 从 System 获取短期连接信息。当前可挂载 PostgreSQ
 `scripts/dev/start.sh` 在 Runtime 启动前准备并验证扩展；生产镜像在 builder 阶段下载到
 BuildKit 扩展缓存，并随镜像写入 `/opt/addp/duckdb/extensions`。Builder 和 Runtime 固定使用
 Debian Bookworm，保证 DuckDB CGO 链接的 glibc 版本一致。请求处理阶段关闭 DuckDB 自动安装
-和自动加载，不下载扩展。
+和自动加载，不下载扩展。调用方通过 `QueryOptions.Spatial` 声明当前查询需要空间类型或函数；
+Runtime 只在这类独立查询会话锁定配置前从上述目录显式加载 `spatial`，普通查询不承担该加载成本。
 
 ## 本地运行
 
@@ -26,6 +27,8 @@ bash scripts/dev/start.sh -duckdb
 
 本地二进制默认不设置 `DUCKDB_SOURCE_LOOPBACK_HOST`，因此 System Engine 中的 `localhost`、
 `127.0.0.1` 和 `::1` 保持宿主机语义。
+开发启动脚本只复用自身 PID 文件管理的本地 Runtime，不启动或复用 Compose 中的
+`duckdb-engine`；镜像实例占用 `8104` 时会明确报错，必须先停止镜像实例。
 
 ## 镜像运行
 

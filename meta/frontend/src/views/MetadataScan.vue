@@ -145,13 +145,23 @@
           <div class="panel-header">
             <h3>{{ rightPanelTitle }}</h3>
             <div v-if="selectedResource" class="catalogEntry-actions-bar">
-              <!-- 选中提示 -->
-              <div v-if="selectedCatalogEntries.length" class="selection-info">
+              <el-button
+                v-if="selectedCatalogIsDirectLeaf"
+                type="primary"
+                size="default"
+                @click="handleScanSelectedEngine"
+                :loading="scanning"
+              >
+                <el-icon><Search /></el-icon>
+                {{ selectedResource.scanned_at ? t('meta.scan.rescanEngine') : t('meta.scan.scanEngine') }}
+              </el-button>
+
+              <div v-else-if="selectedCatalogEntries.length" class="selection-info">
                 {{ t('meta.scan.selectedCount', { n: selectedCatalogEntries.length, term: getCatalogEntryTerminology(selectedResource) }) }}
               </div>
 
-              <!-- 批量操作按钮 -->
               <el-button
+                v-if="!selectedCatalogIsDirectLeaf"
                 type="primary"
                 size="default"
                 @click="handleBatchScan"
@@ -202,7 +212,7 @@
               @selection-change="handleCatalogEntrySelectionChange"
               style="min-width: 720px"
             >
-              <el-table-column type="selection" width="55" />
+              <el-table-column v-if="!selectedCatalogIsDirectLeaf" type="selection" width="55" />
               <el-table-column :label="catalogEntryColumnLabel" width="250">
                 <template #default="{ row }">
                   <div class="catalogEntry-info">
@@ -251,7 +261,7 @@
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column :label="t('meta.scan.actions')" width="240" fixed="right">
+              <el-table-column v-if="!selectedCatalogIsDirectLeaf" :label="t('meta.scan.actions')" width="240" fixed="right">
                 <template #default="{ row }">
                   <div class="catalogEntry-actions">
                     <el-button
@@ -378,6 +388,7 @@ import { useI18n } from 'vue-i18n'
 import { Search, Refresh, CircleCheck, CircleClose, Warning, QuestionFilled, Clock, Link, Document } from '@element-plus/icons-vue'
 import { ScheduleConfig, describeCron, decodeScheduleToForm } from '@common-ui'
 import metaApi from '../api/meta'
+import { isDirectLeafCatalog } from '../utils/catalogScanView'
 import { navigateMetaRoute } from '../utils/moduleNavigation'
 import { resolveMetadataScanRouteState } from '../utils/routeState'
 
@@ -446,6 +457,8 @@ let scanStatusTimer = 0
 const filteredEngines = computed(() => {
   return engines.value
 })
+
+const selectedCatalogIsDirectLeaf = computed(() => isDirectLeafCatalog(selectedResource.value))
 
 const routeSelectionError = computed(() => {
   if (!routeStateReady.value) return ''
@@ -677,10 +690,11 @@ const restoreRouteState = async () => {
     return
   }
 
-  if (String(selectedResource.value?.id || '') !== String(routeState.engine.id)) {
-    selectedResource.value = routeState.engine
-    await nextTick()
-    resourceTableRef.value?.setCurrentRow(routeState.engine)
+  const engineChanged = String(selectedResource.value?.id || '') !== String(routeState.engine.id)
+  selectedResource.value = routeState.engine
+  await nextTick()
+  resourceTableRef.value?.setCurrentRow(routeState.engine)
+  if (engineChanged) {
     await loadCatalogEntries()
   }
 
@@ -791,9 +805,14 @@ const getCatalogEntryTerminology = (resource, plural = false) => {
       return t('meta.scan.directoryTerm')
     case 'collection':
       return 'Collection'
+    case 'topic':
+      return t('meta.scan.topicTerm')
   }
   if (itemTerm === 'file' || rootTerm === 'root') {
     return t('meta.scan.directoryTerm')
+  }
+  if (itemTerm === 'topic') {
+    return t('meta.scan.topicTerm')
   }
   if (itemTerm === 'object' || rootTerm === 'service') {
     return 'Bucket'
@@ -828,7 +847,7 @@ const loadCatalogEntries = async () => {
     } else {
       // 引擎在线或状态未知，统一通过 System 实时资源 API 获取顶层资源
       try {
-        const availableRes = await metaApi.listCatalogTopNodes(selectedResource.value.id)
+        const availableRes = await metaApi.listCatalogTopEntries(selectedResource.value.id, selectedResource.value)
         availableEntries = Array.isArray(availableRes) ? availableRes : []
       } catch (error) {
         // 捕获连接错误，但不阻止后续加载
@@ -850,7 +869,7 @@ const loadCatalogEntries = async () => {
 
   try {
     // 再获取已扫描的顶层资源状态信息
-    const scannedRes = await metaApi.getScannedCatalogTopNodes(selectedResource.value.id)
+    const scannedRes = await metaApi.getScannedCatalogTopEntries(selectedResource.value.id, selectedResource.value)
     const scannedEntries = Array.isArray(scannedRes) ? scannedRes : []
 
     if (catalogError && scannedEntries.length === 0) {
@@ -869,21 +888,20 @@ const loadCatalogEntries = async () => {
       catalogAvailability.value = { status: 'ready', message: '' }
       // 正常情况：合并两个列表
       catalogEntries.value = availableEntries
-        .filter(available => available?.role === 'branch')
         .map(available => {
-        const availableName = catalogEntryNameOf(available)
-        const scanned = scannedEntries.find(entry => catalogEntryNameOf(entry) === availableName)
-        return {
-          ...available,
-          name: availableName,
-          id: scanned?.id,
-          scan_status: scanned?.scan_status || 'pending',
-          leaf_count: available.leaf_count,
-          item_count: scanned?.item_count || 0,
-          scanned_at: scanned?.scanned_at || '',
-          total_size_bytes: scanned?.total_size_bytes || 0
-        }
-      })
+          const availableName = catalogEntryNameOf(available)
+          const scanned = scannedEntries.find(entry => catalogEntryNameOf(entry) === availableName)
+          return {
+            ...available,
+            name: availableName,
+            id: scanned?.id,
+            scan_status: scanned?.scan_status || 'pending',
+            leaf_count: available.leaf_count,
+            item_count: scanned?.item_count || 0,
+            scanned_at: scanned?.scanned_at || '',
+            total_size_bytes: scanned?.total_size_bytes || 0
+          }
+        })
     }
   } catch (error) {
     ElMessage.error(t('meta.scan.loadCatalogEntriesFailed', { msg: error.response?.data?.error || error.message }))
@@ -959,10 +977,37 @@ const resetScheduleForm = () => {
 }
 
 const deriveAutoTaskEntryPaths = () => {
+  if (selectedCatalogIsDirectLeaf.value) return []
   if (!Array.isArray(catalogEntries.value) || !catalogEntries.value.length) return []
   return catalogEntries.value
     .map(item => catalogEntryTargetOf(item))
     .filter(Boolean)
+}
+
+const handleScanSelectedEngine = async () => {
+  if (!selectedResource.value) return
+
+  const engineName = selectedResource.value.name
+  scanning.value = true
+  try {
+    const run = await metaApi.createManualScanRun(selectedResource.value.id, [], { scan_depth: 'deep', force: false })
+    startScanStatus(t('meta.scan.engineScanSubmitted', { name: engineName }), t('meta.scan.scanWaiting'), 5)
+    await waitForScanRun(run, {
+      onProgress: latest => updateScanStatusFromRun(latest, t('meta.scan.engineScanSubmitted', { name: engineName }))
+    })
+    completeScanStatus(
+      t('meta.scan.engineScanCompleted', { name: engineName }),
+      t('meta.scan.engineScanCompleted', { name: engineName })
+    )
+    ElMessage.success(t('meta.scan.engineScanCompleted', { name: engineName }))
+    await loadEngines()
+    await loadCatalogEntries()
+  } catch (error) {
+    failScanStatus(error)
+    ElMessage.error(t('meta.scan.scanError', { msg: error.response?.data?.error || error.message }))
+  } finally {
+    scanning.value = false
+  }
 }
 
 const getAutoScheduleTaskName = () => {
@@ -1243,7 +1288,7 @@ const submitScheduleForm = async () => {
     const existing = autoScheduleTask.value
 
     // 统一使用 cron 类型，直接传递 Cron 表达式
-    const existingCatalogPaths = existing?.parameters?.catalog_paths || []
+    const existingCatalogPaths = selectedCatalogIsDirectLeaf.value ? [] : (existing?.parameters?.catalog_paths || [])
     const payload = {
       name: existing?.name || getAutoScheduleTaskName(),
       description: ensureAutoScheduleDescription(existing?.description || ''),

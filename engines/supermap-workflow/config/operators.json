@@ -1,0 +1,1409 @@
+{
+  "status": "success",
+  "operators": [
+    {
+      "id": "overlay.clip",
+      "name": "overlay.clip",
+      "display_name": "叠加裁剪",
+      "engine_type": "supermap_workflow",
+      "category": "空间分析",
+      "category_path": [
+        "空间分析"
+      ],
+      "description": "对两个 DatasetVector 执行 OverlayAnalyst.clip，并写入目标 Datasource。",
+      "brief_description": "叠加裁剪",
+      "execution_modes": [
+        "workflow"
+      ],
+      "effects": [
+        "write"
+      ],
+      "parameters": [
+        {
+          "name": "input_dataset",
+          "type": "supermap.dataset",
+          "param_type": "input",
+          "required": true,
+          "description": "源 DatasetVector。"
+        },
+        {
+          "name": "overlay_dataset",
+          "type": "supermap.dataset",
+          "param_type": "input",
+          "required": true,
+          "description": "叠加 DatasetVector。"
+        },
+        {
+          "name": "output_datasource",
+          "type": "supermap.datasource",
+          "param_type": "input",
+          "required": true,
+          "description": "输出 Datasource。"
+        },
+        {
+          "name": "output_dataset_name",
+          "type": "string",
+          "param_type": "param",
+          "required": true,
+          "description": "输出数据集名称。"
+        },
+        {
+          "name": "overwrite",
+          "type": "boolean",
+          "param_type": "param",
+          "required": false,
+          "description": "输出数据集存在时是否覆盖，默认 false。"
+        },
+        {
+          "name": "tolerance",
+          "type": "float",
+          "param_type": "param",
+          "required": false,
+          "description": "叠加容差，默认 0。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "result_dataset",
+          "type": "supermap.dataset",
+          "description": "裁剪结果 DatasetVector 引用。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "vector.dissolve",
+      "name": "vector.dissolve",
+      "display_name": "矢量融合",
+      "engine_type": "supermap_workflow",
+      "category": "空间分析",
+      "category_path": [
+        "空间分析"
+      ],
+      "description": "按字段融合 DatasetVector 要素，并写入目标 Datasource。",
+      "brief_description": "矢量融合",
+      "execution_modes": [
+        "workflow"
+      ],
+      "effects": [
+        "write"
+      ],
+      "parameters": [
+        {
+          "name": "input_dataset",
+          "type": "supermap.dataset",
+          "param_type": "input",
+          "required": true,
+          "description": "输入 DatasetVector。"
+        },
+        {
+          "name": "output_datasource",
+          "type": "supermap.datasource",
+          "param_type": "input",
+          "required": true,
+          "description": "输出 Datasource。"
+        },
+        {
+          "name": "output_dataset_name",
+          "type": "string",
+          "param_type": "param",
+          "required": true,
+          "description": "输出数据集名称。"
+        },
+        {
+          "name": "field_names",
+          "type": "array",
+          "param_type": "param",
+          "required": false,
+          "description": "融合字段数组，或以逗号分隔的字段名。"
+        },
+        {
+          "name": "dissolve_type",
+          "type": "string",
+          "param_type": "param",
+          "required": false,
+          "description": "融合类型 single/multipart/only_multipart，默认 multipart。"
+        },
+        {
+          "name": "tolerance",
+          "type": "float",
+          "param_type": "param",
+          "required": false,
+          "description": "融合容差，默认 0。"
+        },
+        {
+          "name": "save_all_fields",
+          "type": "boolean",
+          "param_type": "param",
+          "required": false,
+          "description": "是否保留全部字段，默认 true。"
+        },
+        {
+          "name": "overwrite",
+          "type": "boolean",
+          "param_type": "param",
+          "required": false,
+          "description": "输出数据集存在时是否覆盖，默认 false。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "result_dataset",
+          "type": "supermap.dataset",
+          "description": "融合结果 DatasetVector 引用。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "vector.buffer",
+      "name": "vector.buffer",
+      "display_name": "缓冲区分析",
+      "engine_type": "supermap_workflow",
+      "category": "空间分析",
+      "category_path": [
+        "空间分析"
+      ],
+      "description": "对 DatasetVector 执行缓冲区分析，并写入目标 Datasource。",
+      "brief_description": "缓冲区分析",
+      "execution_modes": [
+        "workflow"
+      ],
+      "effects": [
+        "write"
+      ],
+      "parameters": [
+        {
+          "name": "input_dataset",
+          "type": "supermap.dataset",
+          "param_type": "input",
+          "required": true,
+          "description": "输入 DatasetVector。"
+        },
+        {
+          "name": "output_datasource",
+          "type": "supermap.datasource",
+          "param_type": "input",
+          "required": true,
+          "description": "输出 Datasource。"
+        },
+        {
+          "name": "output_dataset_name",
+          "type": "string",
+          "param_type": "param",
+          "required": true,
+          "description": "输出数据集名称。"
+        },
+        {
+          "name": "distance",
+          "type": "float",
+          "param_type": "param",
+          "required": true,
+          "description": "缓冲距离。"
+        },
+        {
+          "name": "radius_unit",
+          "type": "string",
+          "param_type": "param",
+          "required": false,
+          "description": "距离单位，支持 meter/kilometer/foot/mile，默认 meter。"
+        },
+        {
+          "name": "end_type",
+          "type": "string",
+          "param_type": "param",
+          "required": false,
+          "description": "线缓冲端点类型 round/flat，默认 round。"
+        },
+        {
+          "name": "semicircle_segments",
+          "type": "integer",
+          "param_type": "param",
+          "required": false,
+          "description": "半圆弧线段数，默认 10。"
+        },
+        {
+          "name": "dissolve",
+          "type": "boolean",
+          "param_type": "param",
+          "required": false,
+          "description": "是否融合缓冲结果，默认 false。"
+        },
+        {
+          "name": "keep_attributes",
+          "type": "boolean",
+          "param_type": "param",
+          "required": false,
+          "description": "是否保留属性，默认 true。"
+        },
+        {
+          "name": "overwrite",
+          "type": "boolean",
+          "param_type": "param",
+          "required": false,
+          "description": "输出数据集存在时是否覆盖，默认 false。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "result_dataset",
+          "type": "supermap.dataset",
+          "description": "缓冲区结果 DatasetVector 引用。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "overlay.erase",
+      "name": "overlay.erase",
+      "display_name": "叠加擦除",
+      "engine_type": "supermap_workflow",
+      "category": "空间分析",
+      "category_path": [
+        "空间分析"
+      ],
+      "description": "对两个 DatasetVector 执行 OverlayAnalyst.erase，并写入目标 Datasource。",
+      "brief_description": "叠加擦除",
+      "execution_modes": [
+        "workflow"
+      ],
+      "effects": [
+        "write"
+      ],
+      "parameters": [
+        {
+          "name": "input_dataset",
+          "type": "supermap.dataset",
+          "param_type": "input",
+          "required": true,
+          "description": "源 DatasetVector。"
+        },
+        {
+          "name": "overlay_dataset",
+          "type": "supermap.dataset",
+          "param_type": "input",
+          "required": true,
+          "description": "叠加 DatasetVector。"
+        },
+        {
+          "name": "output_datasource",
+          "type": "supermap.datasource",
+          "param_type": "input",
+          "required": true,
+          "description": "输出 Datasource。"
+        },
+        {
+          "name": "output_dataset_name",
+          "type": "string",
+          "param_type": "param",
+          "required": true,
+          "description": "输出数据集名称。"
+        },
+        {
+          "name": "overwrite",
+          "type": "boolean",
+          "param_type": "param",
+          "required": false,
+          "description": "输出数据集存在时是否覆盖，默认 false。"
+        },
+        {
+          "name": "tolerance",
+          "type": "float",
+          "param_type": "param",
+          "required": false,
+          "description": "叠加容差，默认 0。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "result_dataset",
+          "type": "supermap.dataset",
+          "description": "擦除结果 DatasetVector 引用。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "datasource.create",
+      "name": "datasource.create",
+      "display_name": "创建数据源",
+      "engine_type": "supermap_workflow",
+      "category": "数据源",
+      "category_path": [
+        "数据源"
+      ],
+      "description": "创建 UDBX 输出数据源，供后续空间分析或保存算子写入。",
+      "brief_description": "创建数据源",
+      "execution_modes": [
+        "workflow"
+      ],
+      "effects": [
+        "ddl"
+      ],
+      "parameters": [
+        {
+          "name": "connection_info",
+          "type": "object",
+          "param_type": "param",
+          "required": true,
+          "description": "运行时派生连接信息。"
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "param_type": "param",
+          "required": true,
+          "description": "目标 UDBX 文件路径。"
+        },
+        {
+          "name": "alias",
+          "type": "string",
+          "param_type": "param",
+          "required": false,
+          "description": "数据源别名。"
+        },
+        {
+          "name": "overwrite",
+          "type": "boolean",
+          "param_type": "param",
+          "required": false,
+          "description": "目标文件存在时是否覆盖，默认 false。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "datasource",
+          "type": "supermap.datasource",
+          "description": "运行时 Datasource 引用。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "vector.feature_envelope",
+      "name": "vector.feature_envelope",
+      "display_name": "要素外接矩形",
+      "engine_type": "supermap_workflow",
+      "category": "空间分析",
+      "category_path": [
+        "空间分析"
+      ],
+      "description": "为 DatasetVector 中每个要素生成外接矩形数据集。",
+      "brief_description": "要素外接矩形",
+      "execution_modes": [
+        "workflow"
+      ],
+      "effects": [
+        "write"
+      ],
+      "parameters": [
+        {
+          "name": "input_dataset",
+          "type": "supermap.dataset",
+          "param_type": "input",
+          "required": true,
+          "description": "输入 DatasetVector。"
+        },
+        {
+          "name": "output_datasource",
+          "type": "supermap.datasource",
+          "param_type": "input",
+          "required": true,
+          "description": "输出 Datasource。"
+        },
+        {
+          "name": "output_dataset_name",
+          "type": "string",
+          "param_type": "param",
+          "required": true,
+          "description": "输出数据集名称。"
+        },
+        {
+          "name": "overwrite",
+          "type": "boolean",
+          "param_type": "param",
+          "required": false,
+          "description": "输出数据集存在时是否覆盖，默认 false。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "result_dataset",
+          "type": "supermap.dataset",
+          "description": "外接矩形结果 DatasetVector 引用。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "dataset.project",
+      "name": "dataset.project",
+      "display_name": "数据集投影转换",
+      "engine_type": "supermap_workflow",
+      "category": "数据集",
+      "category_path": [
+        "数据集"
+      ],
+      "description": "把 DatasetVector 转换到目标 EPSG 坐标系，并写入目标 Datasource。",
+      "brief_description": "数据集投影转换",
+      "execution_modes": [
+        "workflow"
+      ],
+      "effects": [
+        "write"
+      ],
+      "parameters": [
+        {
+          "name": "dataset",
+          "type": "supermap.dataset",
+          "param_type": "input",
+          "required": true,
+          "description": "输入 DatasetVector。"
+        },
+        {
+          "name": "output_datasource",
+          "type": "supermap.datasource",
+          "param_type": "input",
+          "required": true,
+          "description": "输出 Datasource。"
+        },
+        {
+          "name": "output_dataset_name",
+          "type": "string",
+          "param_type": "param",
+          "required": true,
+          "description": "输出数据集名称。"
+        },
+        {
+          "name": "target_epsg",
+          "type": "integer",
+          "param_type": "param",
+          "required": true,
+          "description": "目标 EPSG 编码。"
+        },
+        {
+          "name": "method",
+          "type": "string",
+          "param_type": "param",
+          "required": false,
+          "description": "坐标转换方法，默认 geocentric_translation。"
+        },
+        {
+          "name": "overwrite",
+          "type": "boolean",
+          "param_type": "param",
+          "required": false,
+          "description": "输出数据集存在时是否覆盖，默认 false。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "result_dataset",
+          "type": "supermap.dataset",
+          "description": "投影转换结果 DatasetVector 引用。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "vector.inner_point",
+      "name": "vector.inner_point",
+      "display_name": "面内点提取",
+      "engine_type": "supermap_workflow",
+      "category": "空间分析",
+      "category_path": [
+        "空间分析"
+      ],
+      "description": "从面 DatasetVector 生成内部点 DatasetVector。",
+      "brief_description": "面内点提取",
+      "execution_modes": [
+        "workflow"
+      ],
+      "effects": [
+        "write"
+      ],
+      "parameters": [
+        {
+          "name": "input_dataset",
+          "type": "supermap.dataset",
+          "param_type": "input",
+          "required": true,
+          "description": "输入面 DatasetVector。"
+        },
+        {
+          "name": "output_datasource",
+          "type": "supermap.datasource",
+          "param_type": "input",
+          "required": true,
+          "description": "输出 Datasource。"
+        },
+        {
+          "name": "output_dataset_name",
+          "type": "string",
+          "param_type": "param",
+          "required": true,
+          "description": "输出数据集名称。"
+        },
+        {
+          "name": "overwrite",
+          "type": "boolean",
+          "param_type": "param",
+          "required": false,
+          "description": "输出数据集存在时是否覆盖，默认 false。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "result_dataset",
+          "type": "supermap.dataset",
+          "description": "面内点结果 DatasetVector 引用。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "datasource.enable_postgis",
+      "name": "datasource.enable_postgis",
+      "display_name": "启用 PostGIS 空间工作区",
+      "engine_type": "supermap_workflow",
+      "category": "数据源",
+      "category_path": [
+        "数据源"
+      ],
+      "description": "对已有 PostgreSQL/PostGIS 数据库执行 SuperMap SDX+ 初始化，可能创建 SuperMap 系统表。",
+      "brief_description": "启用 PostGIS 空间工作区",
+      "execution_modes": [
+        "direct"
+      ],
+      "effects": [
+        "ddl"
+      ],
+      "parameters": [
+        {
+          "name": "connection_info",
+          "type": "object",
+          "param_type": "param",
+          "required": true,
+          "description": "运行时派生连接信息。"
+        },
+        {
+          "name": "alias",
+          "type": "string",
+          "param_type": "param",
+          "required": false,
+          "description": "数据源别名。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "workspace",
+          "type": "supermap.spatial_workspace",
+          "description": "SuperMap SDX+ 空间工作区摘要。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "vector.merge",
+      "name": "vector.merge",
+      "display_name": "矢量合并",
+      "engine_type": "supermap_workflow",
+      "category": "空间分析",
+      "category_path": [
+        "空间分析"
+      ],
+      "description": "复制主 DatasetVector 后追加另一个 DatasetVector 的记录，生成合并结果。",
+      "brief_description": "矢量合并",
+      "execution_modes": [
+        "workflow"
+      ],
+      "effects": [
+        "write"
+      ],
+      "parameters": [
+        {
+          "name": "primary_dataset",
+          "type": "supermap.dataset",
+          "param_type": "input",
+          "required": true,
+          "description": "主 DatasetVector。"
+        },
+        {
+          "name": "append_dataset",
+          "type": "supermap.dataset",
+          "param_type": "input",
+          "required": true,
+          "description": "追加 DatasetVector。"
+        },
+        {
+          "name": "output_datasource",
+          "type": "supermap.datasource",
+          "param_type": "input",
+          "required": true,
+          "description": "输出 Datasource。"
+        },
+        {
+          "name": "output_dataset_name",
+          "type": "string",
+          "param_type": "param",
+          "required": true,
+          "description": "输出数据集名称。"
+        },
+        {
+          "name": "overwrite",
+          "type": "boolean",
+          "param_type": "param",
+          "required": false,
+          "description": "输出数据集存在时是否覆盖，默认 false。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "result_dataset",
+          "type": "supermap.dataset",
+          "description": "合并结果 DatasetVector 引用。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "cad.inspect",
+      "name": "cad.inspect",
+      "display_name": "检查 CAD 图纸",
+      "engine_type": "supermap_workflow",
+      "category": "CAD",
+      "category_path": [
+        "CAD"
+      ],
+      "description": "只读打开 DWG 或 DXF 并返回 Dataset 元数据、记录数和范围；不遍历 Geometry。",
+      "brief_description": "检查 CAD 图纸",
+      "execution_modes": [
+        "direct"
+      ],
+      "effects": [
+        "read"
+      ],
+      "parameters": [
+        {
+          "name": "access_plan",
+          "type": "object",
+          "param_type": "param",
+          "required": true,
+          "description": "ADDP 工作流资源访问计划。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "inspection",
+          "type": "addp.cad.inspect/v1",
+          "description": "CAD 图纸轻量检查结果。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "dataset.save",
+      "name": "dataset.save",
+      "display_name": "保存数据集",
+      "engine_type": "supermap_workflow",
+      "category": "数据集",
+      "category_path": [
+        "数据集"
+      ],
+      "description": "把上游 DatasetVector 复制保存到目标 Datasource。",
+      "brief_description": "保存数据集",
+      "execution_modes": [
+        "workflow"
+      ],
+      "effects": [
+        "write"
+      ],
+      "parameters": [
+        {
+          "name": "dataset",
+          "type": "supermap.dataset",
+          "param_type": "input",
+          "required": true,
+          "description": "输入 DatasetVector。"
+        },
+        {
+          "name": "target_datasource",
+          "type": "supermap.datasource",
+          "param_type": "input",
+          "required": true,
+          "description": "目标 Datasource。"
+        },
+        {
+          "name": "output_dataset_name",
+          "type": "string",
+          "param_type": "param",
+          "required": true,
+          "description": "输出数据集名称。"
+        },
+        {
+          "name": "overwrite",
+          "type": "boolean",
+          "param_type": "param",
+          "required": false,
+          "description": "目标数据集存在时是否覆盖，默认 false。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "saved_dataset",
+          "type": "supermap.dataset",
+          "description": "保存后的 DatasetVector 引用。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "cad.render_preview",
+      "name": "cad.render_preview",
+      "display_name": "渲染 CAD 预览",
+      "engine_type": "supermap_workflow",
+      "category": "CAD",
+      "category_path": [
+        "CAD"
+      ],
+      "description": "使用 SuperMap Map/Layer 直接渲染 DWG 或 DXF Dataset，生成受管 WebP 瓦片。",
+      "brief_description": "渲染 CAD 预览",
+      "execution_modes": [
+        "direct"
+      ],
+      "effects": [
+        "read",
+        "write"
+      ],
+      "parameters": [
+        {
+          "name": "access_plan",
+          "type": "object",
+          "param_type": "param",
+          "required": true,
+          "description": "ADDP 工作流源文件与目标 artifact 访问计划。"
+        },
+        {
+          "name": "tile_size",
+          "type": "integer",
+          "param_type": "param",
+          "required": false,
+          "description": "瓦片边长，默认 512。"
+        },
+        {
+          "name": "max_zoom",
+          "type": "integer",
+          "param_type": "param",
+          "required": false,
+          "description": "最大缩放级别，默认 4，最大 8。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "preview",
+          "type": "addp.cad.render-preview/v1",
+          "description": "CAD 栅格瓦片预览产物摘要。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "overlay.union",
+      "name": "overlay.union",
+      "display_name": "叠加合并",
+      "engine_type": "supermap_workflow",
+      "category": "空间分析",
+      "category_path": [
+        "空间分析"
+      ],
+      "description": "对两个 DatasetVector 执行 OverlayAnalyst.union，并写入目标 Datasource。",
+      "brief_description": "叠加合并",
+      "execution_modes": [
+        "workflow"
+      ],
+      "effects": [
+        "write"
+      ],
+      "parameters": [
+        {
+          "name": "input_dataset",
+          "type": "supermap.dataset",
+          "param_type": "input",
+          "required": true,
+          "description": "源 DatasetVector。"
+        },
+        {
+          "name": "overlay_dataset",
+          "type": "supermap.dataset",
+          "param_type": "input",
+          "required": true,
+          "description": "叠加 DatasetVector。"
+        },
+        {
+          "name": "output_datasource",
+          "type": "supermap.datasource",
+          "param_type": "input",
+          "required": true,
+          "description": "输出 Datasource。"
+        },
+        {
+          "name": "output_dataset_name",
+          "type": "string",
+          "param_type": "param",
+          "required": true,
+          "description": "输出数据集名称。"
+        },
+        {
+          "name": "overwrite",
+          "type": "boolean",
+          "param_type": "param",
+          "required": false,
+          "description": "输出数据集存在时是否覆盖，默认 false。"
+        },
+        {
+          "name": "tolerance",
+          "type": "float",
+          "param_type": "param",
+          "required": false,
+          "description": "叠加容差，默认 0。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "result_dataset",
+          "type": "supermap.dataset",
+          "description": "合并结果 DatasetVector 引用。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "overlay.intersect",
+      "name": "overlay.intersect",
+      "display_name": "叠加求交",
+      "engine_type": "supermap_workflow",
+      "category": "空间分析",
+      "category_path": [
+        "空间分析"
+      ],
+      "description": "对两个 DatasetVector 执行 OverlayAnalyst.intersect，并写入目标 Datasource。",
+      "brief_description": "叠加求交",
+      "execution_modes": [
+        "workflow"
+      ],
+      "effects": [
+        "write"
+      ],
+      "parameters": [
+        {
+          "name": "input_dataset",
+          "type": "supermap.dataset",
+          "param_type": "input",
+          "required": true,
+          "description": "源 DatasetVector。"
+        },
+        {
+          "name": "overlay_dataset",
+          "type": "supermap.dataset",
+          "param_type": "input",
+          "required": true,
+          "description": "叠加 DatasetVector。"
+        },
+        {
+          "name": "output_datasource",
+          "type": "supermap.datasource",
+          "param_type": "input",
+          "required": true,
+          "description": "输出 Datasource。"
+        },
+        {
+          "name": "output_dataset_name",
+          "type": "string",
+          "param_type": "param",
+          "required": true,
+          "description": "输出数据集名称。"
+        },
+        {
+          "name": "overwrite",
+          "type": "boolean",
+          "param_type": "param",
+          "required": false,
+          "description": "输出数据集存在时是否覆盖，默认 false。"
+        },
+        {
+          "name": "tolerance",
+          "type": "float",
+          "param_type": "param",
+          "required": false,
+          "description": "叠加容差，默认 0。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "result_dataset",
+          "type": "supermap.dataset",
+          "description": "叠加分析结果 DatasetVector 引用。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "vector.filter",
+      "name": "vector.filter",
+      "display_name": "矢量属性过滤",
+      "engine_type": "supermap_workflow",
+      "category": "空间分析",
+      "category_path": [
+        "空间分析"
+      ],
+      "description": "按 SuperMap 属性过滤表达式生成新的 DatasetVector，供下游分析继续使用。",
+      "brief_description": "矢量属性过滤",
+      "execution_modes": [
+        "workflow"
+      ],
+      "effects": [
+        "write"
+      ],
+      "parameters": [
+        {
+          "name": "dataset",
+          "type": "supermap.dataset",
+          "param_type": "input",
+          "required": true,
+          "description": "输入 DatasetVector。"
+        },
+        {
+          "name": "output_datasource",
+          "type": "supermap.datasource",
+          "param_type": "input",
+          "required": true,
+          "description": "输出 Datasource。"
+        },
+        {
+          "name": "output_dataset_name",
+          "type": "string",
+          "param_type": "param",
+          "required": true,
+          "description": "输出数据集名称。"
+        },
+        {
+          "name": "attribute_filter",
+          "type": "string",
+          "param_type": "param",
+          "required": true,
+          "description": "SuperMap 属性过滤表达式。"
+        },
+        {
+          "name": "overwrite",
+          "type": "boolean",
+          "param_type": "param",
+          "required": false,
+          "description": "输出数据集存在时是否覆盖，默认 false。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "result_dataset",
+          "type": "supermap.dataset",
+          "description": "过滤结果 DatasetVector 引用。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "datasource.open",
+      "name": "datasource.open",
+      "display_name": "打开数据源",
+      "engine_type": "supermap_workflow",
+      "category": "数据源",
+      "category_path": [
+        "数据源"
+      ],
+      "description": "打开已有 UDBX 数据源，输出运行时 Datasource 引用。",
+      "brief_description": "打开数据源",
+      "execution_modes": [
+        "workflow"
+      ],
+      "effects": [
+        "read"
+      ],
+      "parameters": [
+        {
+          "name": "path",
+          "type": "string",
+          "param_type": "param",
+          "required": true,
+          "description": "UDBX 文件路径。"
+        },
+        {
+          "name": "alias",
+          "type": "string",
+          "param_type": "param",
+          "required": false,
+          "description": "数据源别名。"
+        },
+        {
+          "name": "read_only",
+          "type": "boolean",
+          "param_type": "param",
+          "required": false,
+          "description": "是否只读打开，默认 true。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "datasource",
+          "type": "supermap.datasource",
+          "description": "运行时 Datasource 引用。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "dataset.select",
+      "name": "dataset.select",
+      "display_name": "选择矢量数据集",
+      "engine_type": "supermap_workflow",
+      "category": "数据集",
+      "category_path": [
+        "数据集"
+      ],
+      "description": "从 Datasource 中选择 DatasetVector。",
+      "brief_description": "选择矢量数据集",
+      "execution_modes": [
+        "workflow"
+      ],
+      "effects": [
+        "read"
+      ],
+      "parameters": [
+        {
+          "name": "datasource",
+          "type": "supermap.datasource",
+          "param_type": "input",
+          "required": true,
+          "description": "上游 Datasource 引用。"
+        },
+        {
+          "name": "dataset_name",
+          "type": "string",
+          "param_type": "param",
+          "required": true,
+          "description": "数据集名称。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "dataset",
+          "type": "supermap.dataset",
+          "description": "运行时 DatasetVector 引用。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "datasource.upgrade_udbx",
+      "name": "datasource.upgrade_udbx",
+      "display_name": "升级 UDBX 数据源",
+      "engine_type": "supermap_workflow",
+      "category": "数据源",
+      "category_path": [
+        "数据源"
+      ],
+      "description": "显式检查并原位升级已有 UDBX 的 SuperMap schema；只在旧 schema 时以可写方式打开。",
+      "brief_description": "升级 UDBX 数据源",
+      "execution_modes": [
+        "direct"
+      ],
+      "effects": [
+        "ddl"
+      ],
+      "parameters": [
+        {
+          "name": "connection_info",
+          "type": "object",
+          "param_type": "param",
+          "required": true,
+          "description": "运行时派生连接信息。"
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "param_type": "param",
+          "required": true,
+          "description": "目标 UDBX 文件路径；NFS 调用使用 export 内相对路径。"
+        },
+        {
+          "name": "alias",
+          "type": "string",
+          "param_type": "param",
+          "required": false,
+          "description": "数据源别名。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "upgrade",
+          "type": "supermap.udbx_upgrade",
+          "description": "UDBX schema 升级结果摘要。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "vector.spatial_filter",
+      "name": "vector.spatial_filter",
+      "display_name": "矢量空间筛选",
+      "engine_type": "supermap_workflow",
+      "category": "空间分析",
+      "category_path": [
+        "空间分析"
+      ],
+      "description": "按两个 DatasetVector 的空间关系筛选要素，并写入目标 Datasource。",
+      "brief_description": "矢量空间筛选",
+      "execution_modes": [
+        "workflow"
+      ],
+      "effects": [
+        "write"
+      ],
+      "parameters": [
+        {
+          "name": "input_dataset",
+          "type": "supermap.dataset",
+          "param_type": "input",
+          "required": true,
+          "description": "被筛选 DatasetVector。"
+        },
+        {
+          "name": "filter_dataset",
+          "type": "supermap.dataset",
+          "param_type": "input",
+          "required": true,
+          "description": "空间关系筛选 DatasetVector。"
+        },
+        {
+          "name": "output_datasource",
+          "type": "supermap.datasource",
+          "param_type": "input",
+          "required": true,
+          "description": "输出 Datasource。"
+        },
+        {
+          "name": "output_dataset_name",
+          "type": "string",
+          "param_type": "param",
+          "required": true,
+          "description": "输出数据集名称。"
+        },
+        {
+          "name": "relation",
+          "type": "string",
+          "param_type": "param",
+          "required": true,
+          "description": "空间关系，支持 intersect/contain/within/closest。"
+        },
+        {
+          "name": "overwrite",
+          "type": "boolean",
+          "param_type": "param",
+          "required": false,
+          "description": "输出数据集存在时是否覆盖，默认 false。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "result_dataset",
+          "type": "supermap.dataset",
+          "description": "空间筛选结果 DatasetVector 引用。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "vector.query",
+      "name": "vector.query",
+      "display_name": "矢量属性查询",
+      "engine_type": "supermap_workflow",
+      "category": "空间分析",
+      "category_path": [
+        "空间分析"
+      ],
+      "description": "对 DatasetVector 执行属性过滤并返回轻量查询摘要。",
+      "brief_description": "矢量属性查询",
+      "execution_modes": [
+        "workflow"
+      ],
+      "effects": [
+        "read"
+      ],
+      "parameters": [
+        {
+          "name": "dataset",
+          "type": "supermap.dataset",
+          "param_type": "input",
+          "required": true,
+          "description": "输入 DatasetVector。"
+        },
+        {
+          "name": "attribute_filter",
+          "type": "string",
+          "param_type": "param",
+          "required": false,
+          "description": "SuperMap 属性过滤表达式。"
+        },
+        {
+          "name": "max_records",
+          "type": "integer",
+          "param_type": "param",
+          "required": false,
+          "description": "预留参数，当前仅返回总数。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "query_result",
+          "type": "supermap.query_result",
+          "description": "查询结果摘要。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "osgb_scene_to_s3m",
+      "name": "osgb_scene_to_s3m",
+      "display_name": "OSGB Scene 转 S3M",
+      "engine_type": "supermap_workflow",
+      "category": "三维模型",
+      "category_path": [
+        "三维模型"
+      ],
+      "description": "使用 SuperMap iObjects Java 把整套 OSGB 倾斜摄影场景转换为 S3M 数据集。",
+      "brief_description": "OSGB Scene 转 S3M",
+      "execution_modes": [
+        "workflow",
+        "direct"
+      ],
+      "effects": [
+        "read",
+        "write"
+      ],
+      "parameters": [
+        {
+          "name": "access_plan",
+          "type": "object",
+          "param_type": "param",
+          "required": true,
+          "description": "ADDP 工作流资源访问计划。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "s3m",
+          "type": "supermap.s3m_dataset",
+          "description": "S3M 数据集发布摘要。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "datasource.open_postgis",
+      "name": "datasource.open_postgis",
+      "display_name": "打开 PostGIS 数据源",
+      "engine_type": "supermap_workflow",
+      "category": "数据源",
+      "category_path": [
+        "数据源"
+      ],
+      "description": "打开已由 Develop 派生连接信息的已有 PostGIS 空间表所在数据源，不创建 SuperMap 系统表。",
+      "brief_description": "打开 PostGIS 数据源",
+      "execution_modes": [
+        "workflow"
+      ],
+      "effects": [
+        "read"
+      ],
+      "parameters": [
+        {
+          "name": "connection_info",
+          "type": "object",
+          "param_type": "param",
+          "required": false,
+          "description": "运行时派生连接信息。"
+        },
+        {
+          "name": "schema",
+          "type": "string",
+          "param_type": "param",
+          "required": false,
+          "description": "运行时派生 schema。"
+        },
+        {
+          "name": "table",
+          "type": "string",
+          "param_type": "param",
+          "required": false,
+          "description": "运行时派生表名。"
+        },
+        {
+          "name": "alias",
+          "type": "string",
+          "param_type": "param",
+          "required": false,
+          "description": "数据源别名。"
+        },
+        {
+          "name": "read_only",
+          "type": "boolean",
+          "param_type": "param",
+          "required": false,
+          "description": "是否只读打开，默认 true。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "datasource",
+          "type": "supermap.datasource",
+          "description": "运行时 Datasource 引用。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "dataset.info",
+      "name": "dataset.info",
+      "display_name": "数据集信息",
+      "engine_type": "supermap_workflow",
+      "category": "数据集",
+      "category_path": [
+        "数据集"
+      ],
+      "description": "读取 DatasetVector 的字段、记录数、范围和坐标系摘要。",
+      "brief_description": "数据集信息",
+      "execution_modes": [
+        "workflow"
+      ],
+      "effects": [
+        "read"
+      ],
+      "parameters": [
+        {
+          "name": "dataset",
+          "type": "supermap.dataset",
+          "param_type": "input",
+          "required": true,
+          "description": "输入 DatasetVector。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "info",
+          "type": "supermap.dataset_info",
+          "description": "数据集轻量信息摘要。",
+          "is_default": true
+        }
+      ]
+    }
+  ],
+  "count": 24
+}

@@ -25,7 +25,7 @@ func (s *BranchLeafRuntime) softDeleteMissingItemsByType(tenantID, engineID, bra
 	}
 }
 
-func branchLeafItemType(node plugin.CatalogEntry) string {
+func catalogLeafItemType(node plugin.CatalogEntry) string {
 	if node.Role != plugin.CatalogRoleLeaf {
 		return ""
 	}

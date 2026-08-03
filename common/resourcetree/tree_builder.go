@@ -635,6 +635,7 @@ func convertNodeType(metaNodeType string) ResourceType {
 		"dir":        TypeDir,
 		"table":      TypeTable,
 		"collection": TypeCollection,
+		"topic":      TypeTopic,
 		"graph":      TypeGraph,
 		"object":     TypeObject,
 		"file":       TypeFile,
@@ -663,7 +664,7 @@ func CatalogRootResourceType(engine *models.Engine) ResourceType {
 		return rootType
 	}
 	switch engineFamily(engine) {
-	case "object":
+	case "object", "event_stream":
 		return TypeService
 	case "file":
 		return TypeRoot

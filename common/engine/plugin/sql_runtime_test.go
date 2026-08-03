@@ -106,7 +106,7 @@ func TestReadSQLBatchPaginatesCustomQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if provider.lastSQL != "SELECT * FROM public.yanshi LIMIT 50 OFFSET 150" {
+	if provider.lastSQL != "SELECT * FROM (SELECT * FROM public.yanshi) AS addp_page LIMIT 50 OFFSET 150" {
 		t.Fatalf("generated SQL = %q", provider.lastSQL)
 	}
 }

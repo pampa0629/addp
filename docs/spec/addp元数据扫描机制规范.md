@@ -234,11 +234,14 @@ Meta 的扫描编排必须分开回答三类问题：
 
 `engine_family` 只保留粗分类意义，不能单独决定扫描流程。Meta 可以因为执行语义不同而保留多种 strategy，例如：
 
+- direct leaf 型：root 下只有一层业务 leaf，直接把 leaf 投影为 item，例如 Kafka 的 `service -> topic`。
 - branch/leaf 型：动态 schema、图等先扫描 root 下业务 branch，再扫描 leaf。
 - object catalog 型：对象存储按 bucket / prefix / object 模型扫描，可做复合对象聚合。
 - file catalog 型：文件系统按 root / directory / file 模型扫描，可做复合文件聚合。
 
 这些 strategy 的差异来自 catalog model 和 provider 语义，不等于为每个具体引擎重建一套上层抽象。新增引擎时，优先复用已有 strategy；只有当 `CatalogModelSpec` 与 provider 组合都无法表达真实差异时，才新增 strategy。
+
+`direct_leaves` 的选择条件固定为：`CatalogModelSpec.Levels` 只有一个业务层，且该层 `role=leaf`。Meta 通过 `CatalogProvider.ListChildren(root)` 枚举 leaf，直接挂到结构 root 下；不得按 `engine_type` 写特例，也不得为 leaf 创建额外 branch node。Kafka 第一版按该策略扫描 topic，只落 item identity 和规范要求的基础 item attributes，不读取消息、不推断 schema、不创建 partition node/item。
 
 object catalog 与 file catalog 可以共用 Meta 内容目录扫描主链路，但不得抹平两者的 catalog model 术语：
 

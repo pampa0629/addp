@@ -26,6 +26,12 @@ const (
 	MsgQuerySampleForbidden    = "service.err.query_sample_forbidden"
 	MsgQuerySampleUnavailable  = "service.err.query_sample_unavailable"
 	MsgQuerySampleFailed       = "service.err.query_sample_failed"
+	MsgInvalidQueryRequest     = "service.err.invalid_query_request"
+	MsgInvalidQueryFormat      = "service.err.invalid_query_format"
+	MsgInvalidStructuredQuery  = "service.err.invalid_structured_query"
+	MsgQueryExecutionFailed    = "service.err.query_execution_failed"
+	MsgQueryFormatFailed       = "service.err.query_format_failed"
+	MsgInvalidFeatureID        = "service.err.invalid_feature_id"
 )
 
 func init() {

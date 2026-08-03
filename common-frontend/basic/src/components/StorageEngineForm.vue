@@ -151,6 +151,86 @@
       </div>
     </template>
 
+    <!-- Apache Kafka -->
+    <template v-else-if="formState.engine_type === 'kafka'">
+      <el-form-item :label="t('storageEngine.bootstrapServers')" prop="connection_info.bootstrap_servers">
+        <el-input
+          v-model="formState.connection_info.bootstrap_servers"
+          :placeholder="t('storageEngine.bootstrapServersPlaceholder')"
+        />
+      </el-form-item>
+      <el-form-item :label="t('storageEngine.clientIdOptional')">
+        <el-input
+          v-model="formState.connection_info.client_id"
+          :placeholder="t('storageEngine.clientIdPlaceholder')"
+        />
+      </el-form-item>
+      <el-form-item :label="t('storageEngine.securityProtocol')" prop="connection_info.security_protocol">
+        <el-select v-model="formState.connection_info.security_protocol">
+          <el-option label="PLAINTEXT" value="plaintext" />
+          <el-option label="SSL" value="ssl" />
+          <el-option label="SASL_PLAINTEXT" value="sasl_plaintext" />
+          <el-option label="SASL_SSL" value="sasl_ssl" />
+        </el-select>
+      </el-form-item>
+
+      <template v-if="kafkaUsesSasl">
+        <el-form-item :label="t('storageEngine.saslMechanism')" prop="connection_info.sasl_mechanism">
+          <el-select v-model="formState.connection_info.sasl_mechanism">
+            <el-option label="PLAIN" value="plain" />
+            <el-option label="SCRAM-SHA-256" value="scram-sha-256" />
+            <el-option label="SCRAM-SHA-512" value="scram-sha-512" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('storageEngine.username')" prop="connection_info.username">
+          <el-input v-model="formState.connection_info.username" />
+        </el-form-item>
+        <el-form-item :label="t('storageEngine.password')" prop="connection_info.password">
+          <el-input
+            v-model="formState.connection_info.password"
+            type="password"
+            show-password
+          />
+        </el-form-item>
+        <div v-if="hasStoredPassword" class="field-hint">
+          {{ t('storageEngine.passwordHint') }}
+        </div>
+      </template>
+
+      <template v-if="kafkaUsesTls">
+        <el-form-item :label="t('storageEngine.tlsCaCertOptional')">
+          <el-input
+            v-model="formState.connection_info.tls_ca_cert"
+            type="textarea"
+            :rows="3"
+            :placeholder="t('storageEngine.pemPlaceholder')"
+          />
+        </el-form-item>
+        <el-form-item :label="t('storageEngine.tlsClientCertOptional')" prop="connection_info.tls_client_cert">
+          <el-input
+            v-model="formState.connection_info.tls_client_cert"
+            type="textarea"
+            :rows="3"
+            :placeholder="t('storageEngine.pemPlaceholder')"
+          />
+        </el-form-item>
+        <el-form-item :label="t('storageEngine.tlsClientKeyOptional')" prop="connection_info.tls_client_key">
+          <el-input
+            v-model="formState.connection_info.tls_client_key"
+            type="textarea"
+            :rows="3"
+            :placeholder="t('storageEngine.pemPrivateKeyPlaceholder')"
+          />
+        </el-form-item>
+        <div v-if="hasStoredTlsClientKey" class="field-hint">
+          {{ t('storageEngine.tlsClientKeyHint') }}
+        </div>
+        <el-form-item :label="t('storageEngine.tlsInsecureSkipVerify')">
+          <el-switch v-model="formState.connection_info.tls_insecure_skip_verify" />
+        </el-form-item>
+      </template>
+    </template>
+
     <!-- MongoDB -->
     <template v-else-if="formState.engine_type === 'mongodb'">
       <el-form-item :label="t('storageEngine.host')" prop="connection_info.host">
@@ -428,6 +508,7 @@ const props = defineProps({
     default: () => ([
       { label: 'PostgreSQL', value: 'postgresql' },
       { label: 'MySQL', value: 'mysql' },
+      { label: 'Apache Kafka', value: 'kafka' },
       { label: 'Apache Doris', value: 'doris' },
       { label: 'ClickHouse', value: 'clickhouse' },
       { label: 'MongoDB', value: 'mongodb' },
@@ -462,11 +543,15 @@ const effectiveTypeOptions = computed(() =>
 const formRef = ref(null)
 const hasStoredPassword = ref(false)
 const hasStoredSecretKey = ref(false)
+const hasStoredTlsClientKey = ref(false)
 const immediateScanEnabled = ref(true)  // 默认启用立即扫描
 const scheduledScanEnabled = ref(false) // 默认不启用定时扫描
 const scanConfigExpanded = ref(false)   // 扫描配置折叠状态（默认折叠）
 
 const defaultScheduledScanCron = '0 0 * * *'
+
+const kafkaUsesSasl = computed(() => ['sasl_plaintext', 'sasl_ssl'].includes(formState.connection_info?.security_protocol))
+const kafkaUsesTls = computed(() => ['ssl', 'sasl_ssl'].includes(formState.connection_info?.security_protocol))
 
 const scanPolicyToCron = (scanConfig = {}) => {
   if (!scanConfig.scheduled_scan) {
@@ -537,6 +622,19 @@ const ensureConnectionDefaults = (form) => {
       database: original.database ?? '',
       user: original.user ?? '',
       password: original.password ?? ''
+    }
+  } else if (form.engine_type === 'kafka') {
+    form.connection_info = {
+      bootstrap_servers: original.bootstrap_servers ?? '',
+      client_id: original.client_id ?? 'addp-system',
+      security_protocol: original.security_protocol ?? 'plaintext',
+      sasl_mechanism: original.sasl_mechanism ?? 'scram-sha-256',
+      username: original.username ?? '',
+      password: original.password ?? '',
+      tls_ca_cert: original.tls_ca_cert ?? '',
+      tls_client_cert: original.tls_client_cert ?? '',
+      tls_client_key: original.tls_client_key ?? '',
+      tls_insecure_skip_verify: original.tls_insecure_skip_verify ?? false
     }
   } else if (form.engine_type === 'doris') {
     form.connection_info = {
@@ -619,19 +717,35 @@ const ensureConnectionDefaults = (form) => {
   } else {
     delete form.connection_info._has_secret_key
   }
+
+  if (original._has_tls_client_key === true) {
+    form.connection_info._has_tls_client_key = true
+  } else {
+    delete form.connection_info._has_tls_client_key
+  }
 }
 
 const applySensitiveHints = () => {
-  hasStoredPassword.value = formState.connection_info?._has_password === true
-  if (hasStoredPassword.value && (!formState.connection_info.password || formState.connection_info.password === '')) {
+  hasStoredPassword.value = formState.connection_info?._has_password === true || isMaskedSensitiveValue(formState.connection_info?.password)
+  if (hasStoredPassword.value) {
+    formState.connection_info._has_password = true
     formState.connection_info.password = SENSITIVE_PLACEHOLDER
   }
 
-  hasStoredSecretKey.value = formState.connection_info?._has_secret_key === true
-  if (hasStoredSecretKey.value && (!formState.connection_info.secret_key || formState.connection_info.secret_key === '')) {
+  hasStoredSecretKey.value = formState.connection_info?._has_secret_key === true || isMaskedSensitiveValue(formState.connection_info?.secret_key)
+  if (hasStoredSecretKey.value) {
+    formState.connection_info._has_secret_key = true
     formState.connection_info.secret_key = SENSITIVE_PLACEHOLDER
   }
+
+  hasStoredTlsClientKey.value = formState.connection_info?._has_tls_client_key === true || isMaskedSensitiveValue(formState.connection_info?.tls_client_key)
+  if (hasStoredTlsClientKey.value) {
+    formState.connection_info._has_tls_client_key = true
+    formState.connection_info.tls_client_key = SENSITIVE_PLACEHOLDER
+  }
 }
+
+const isMaskedSensitiveValue = (value) => typeof value === 'string' && /^\*{4,}$/.test(value)
 
 const formState = reactive({
 	engine_type: '',
@@ -773,7 +887,8 @@ const computedRules = computed(() => {
     'connection_info.endpoint': [{ required: true, message: t('storageEngine.valid.inputEndpoint'), trigger: 'blur' }],
     'connection_info.access_key': [{ required: true, message: t('storageEngine.valid.inputAccessKey'), trigger: 'blur' }],
     'connection_info.secret_key': [{ required: true, message: t('storageEngine.valid.inputSecretKey'), trigger: 'blur' }],
-    'connection_info.full_name': [{ required: true, message: t('storageEngine.valid.inputFilePath'), trigger: 'blur' }]
+    'connection_info.full_name': [{ required: true, message: t('storageEngine.valid.inputFilePath'), trigger: 'blur' }],
+    'connection_info.bootstrap_servers': [{ required: true, message: t('storageEngine.valid.inputBootstrapServers'), trigger: 'blur' }]
   }
 
   if (formState.engine_type === 'postgresql') {
@@ -797,6 +912,34 @@ const computedRules = computed(() => {
       'connection_info.user': rules['connection_info.user'],
       'connection_info.password': rules['connection_info.password']
     }
+  }
+
+  if (formState.engine_type === 'kafka') {
+    const kafkaRules = {
+      engine_type: rules.engine_type,
+      name: rules.name,
+      'connection_info.bootstrap_servers': rules['connection_info.bootstrap_servers'],
+      'connection_info.security_protocol': [{ required: true, message: t('storageEngine.valid.selectSecurityProtocol'), trigger: 'change' }]
+    }
+    if (kafkaUsesSasl.value) {
+      kafkaRules['connection_info.sasl_mechanism'] = [{ required: true, message: t('storageEngine.valid.selectSaslMechanism'), trigger: 'change' }]
+      kafkaRules['connection_info.username'] = [{ required: true, message: t('storageEngine.valid.inputUsername'), trigger: 'blur' }]
+      kafkaRules['connection_info.password'] = rules['connection_info.password']
+    }
+    if (kafkaUsesTls.value) {
+      const requireTlsPair = (_rule, _value, callback) => {
+        const cert = String(formState.connection_info.tls_client_cert || '').trim()
+        const key = String(formState.connection_info.tls_client_key || '').trim()
+        if ((cert && !key) || (!cert && key)) {
+          callback(new Error(t('storageEngine.valid.inputTlsClientPair')))
+          return
+        }
+        callback()
+      }
+      kafkaRules['connection_info.tls_client_cert'] = [{ validator: requireTlsPair, trigger: 'blur' }]
+      kafkaRules['connection_info.tls_client_key'] = [{ validator: requireTlsPair, trigger: 'blur' }]
+    }
+    return kafkaRules
   }
 
   if (formState.engine_type === 'doris') {
@@ -967,6 +1110,28 @@ watch(
     if (!hasValue) {
       delete formState.connection_info._has_secret_key
     }
+  }
+)
+
+watch(
+  () => formState.connection_info.tls_client_key,
+  (value) => {
+    if (syncingFromProps) return
+
+    const metaFlag = formState.connection_info?._has_tls_client_key === true
+    if (!metaFlag && value === SENSITIVE_PLACEHOLDER) {
+      formState.connection_info.tls_client_key = ''
+      return
+    }
+    if (value === SENSITIVE_PLACEHOLDER) {
+      hasStoredTlsClientKey.value = true
+      return
+    }
+
+    const hasValue = !!value
+    formState.connection_info._has_tls_client_key = hasValue
+    hasStoredTlsClientKey.value = hasValue
+    if (!hasValue) delete formState.connection_info._has_tls_client_key
   }
 )
 </script>

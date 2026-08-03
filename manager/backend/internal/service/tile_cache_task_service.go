@@ -54,6 +54,7 @@ type TileCacheTaskService struct {
 	quickViewSvc                *QuickViewService
 	metaClient                  *commonClient.MetaClient
 	sourceVersionResolver       func(context.Context, uint, tileCacheTaskTargetIdentity) (string, error)
+	sourceEngineTypeResolver    func(context.Context, uint) (string, error)
 	tileGenerator               TileCacheGenerator
 	workflowTileGenerator       WorkflowTileCacheGenerator
 	tileTargetResolver          RealtimeTileTargetResolver
@@ -124,6 +125,10 @@ func (s *TileCacheTaskService) SetMetaClient(metaClient *commonClient.MetaClient
 
 func (s *TileCacheTaskService) SetSourceVersionResolver(resolver func(context.Context, uint, tileCacheTaskTargetIdentity) (string, error)) {
 	s.sourceVersionResolver = resolver
+}
+
+func (s *TileCacheTaskService) SetSourceEngineTypeResolver(resolver func(context.Context, uint) (string, error)) {
+	s.sourceEngineTypeResolver = resolver
 }
 
 func (s *TileCacheTaskService) SetTileGenerator(generator TileCacheGenerator, defaultConcurrency int) {
@@ -775,6 +780,20 @@ func (s *TileCacheTaskService) prepareExecutionTileCache(ctx context.Context, ta
 	schema := identity.Schema
 	table := identity.Table
 	tableSource := identity.SourceKind == string(resourcetree.TypeTable)
+	workflowTableSource := false
+	if tableSource && s.sourceEngineTypeResolver != nil {
+		engineType, err := s.sourceEngineTypeResolver(ctx, identity.EngineID)
+		if err != nil {
+			return nil, execCfg, mvt.QuickViewConfig{}, nil, false, fmt.Errorf("resolve tile cache source engine type: %w", err)
+		}
+		switch {
+		case strings.EqualFold(strings.TrimSpace(engineType), "mysql"):
+			workflowTableSource = true
+		case spatial.IsPostGISEngine(engineType):
+		default:
+			return nil, execCfg, mvt.QuickViewConfig{}, nil, false, fmt.Errorf("database table engine %s does not support vector tile cache generation", engineType)
+		}
+	}
 
 	itemID := identity.ItemID
 	var itemIDPtr *uint
@@ -832,7 +851,7 @@ func (s *TileCacheTaskService) prepareExecutionTileCache(ctx context.Context, ta
 		Schema: schema, Table: table, GeomColumn: geomColumn, SRID: sourceSRID, PrimaryKey: primaryKey,
 		TargetKind: "workflow_source",
 	}
-	if tableSource {
+	if tableSource && !workflowTableSource {
 		tenantID := task.TenantID
 		generationTarget, err = s.resolveTileGenerationTarget(ctx, &tenantID, engineID, schema, table, geomColumn, sourceSRID, primaryKey)
 		if err != nil {
@@ -931,8 +950,10 @@ func (s *TileCacheTaskService) prepareExecutionTileCache(ctx context.Context, ta
 	execCfg["tile"] = tile
 	execCfg["options"] = options
 	targetKind := "workflow_pmtiles_archive"
-	if tableSource {
+	if tableSource && !workflowTableSource {
 		targetKind = "postgis_pmtiles_archive"
+	} else if workflowTableSource {
+		targetKind = "mysql_flatgeobuf_workflow_pmtiles_archive"
 	}
 	execCfg["tile_generation_target"] = commonModels.JSONMap{
 		"source_kind":              identity.SourceKind,
@@ -969,7 +990,7 @@ func (s *TileCacheTaskService) prepareExecutionTileCache(ctx context.Context, ta
 		cfg.Concurrency = s.defaultConcurrency
 	}
 	var workflowReq *WorkflowTileCacheRequest
-	if !tableSource {
+	if !tableSource || workflowTableSource {
 		workflowReq = &WorkflowTileCacheRequest{
 			Task: task, ExecutionID: executionID, Identity: identity, StorageRef: storageRef,
 			Tile: tile.Clone(), Options: options.Clone(),

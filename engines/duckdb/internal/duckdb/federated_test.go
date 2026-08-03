@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/addp/common/sqldialect"
 )
 
 var testFederatedSessionOptions = FederatedSessionOptions{MemoryLimit: "128MB", Threads: 1}
@@ -47,6 +49,69 @@ func TestPrepareFederatedQueryDoesNotRequireObjectTablesForLocalSQL(t *testing.T
 	}
 	if value == "" {
 		t.Fatal("DuckDB version must not be empty")
+	}
+}
+
+func TestServicePaginationWithExistingLimitExecutes(t *testing.T) {
+	t.Parallel()
+
+	baseQuery := "SELECT * FROM (VALUES (1), (2)) AS business(id) LIMIT 10"
+	serviceQuery := sqldialect.PaginateQuerySQL(baseQuery, 10, 0)
+	session, err := PrepareFederatedQueryWithEngines(context.Background(), serviceQuery, nil, nil, testFederatedSessionOptions)
+	if err != nil {
+		t.Fatalf("PrepareFederatedQueryWithEngines() error = %v", err)
+	}
+	defer session.Close()
+
+	runtimeQuery := fmt.Sprintf("SELECT * FROM (%s) AS addp_query LIMIT 1000 OFFSET 0", session.RewrittenSQL)
+	result, err := ExecuteQuery(context.Background(), session.Conn, runtimeQuery)
+	if err != nil {
+		t.Fatalf("ExecuteQuery() error = %v\nSQL: %s", err, runtimeQuery)
+	}
+	if result.RowCount != 2 {
+		t.Fatalf("row count = %d, want 2", result.RowCount)
+	}
+}
+
+func TestExecuteQueryBindsArgumentsWithoutSQLInterpolation(t *testing.T) {
+	t.Parallel()
+
+	session, err := PrepareFederatedQueryWithEngines(
+		context.Background(),
+		"SELECT value FROM (VALUES ('safe'), ('other')) AS business(value) WHERE value = ?",
+		nil, nil, testFederatedSessionOptions,
+	)
+	if err != nil {
+		t.Fatalf("PrepareFederatedQueryWithEngines() error = %v", err)
+	}
+	defer session.Close()
+
+	argument := "safe' OR 1=1 --"
+	result, err := ExecuteQuery(context.Background(), session.Conn, session.RewrittenSQL, argument)
+	if err != nil {
+		t.Fatalf("ExecuteQuery() error = %v", err)
+	}
+	if result.RowCount != 0 {
+		t.Fatalf("row count = %d, want 0", result.RowCount)
+	}
+}
+
+func TestDuckDBDescribeReturnsOutputColumns(t *testing.T) {
+	t.Parallel()
+
+	session, err := PrepareFederatedQueryWithEngines(
+		context.Background(), "SELECT 1::BIGINT AS id, 'value'::VARCHAR AS name", nil, nil, testFederatedSessionOptions,
+	)
+	if err != nil {
+		t.Fatalf("PrepareFederatedQueryWithEngines() error = %v", err)
+	}
+	defer session.Close()
+	result, err := ExecuteQuery(context.Background(), session.Conn, "DESCRIBE "+session.RewrittenSQL)
+	if err != nil {
+		t.Fatalf("ExecuteQuery(DESCRIBE) error = %v", err)
+	}
+	if result.RowCount != 2 || result.Rows[0]["column_name"] != "id" || result.Rows[1]["column_name"] != "name" {
+		t.Fatalf("describe rows = %#v", result.Rows)
 	}
 }
 

@@ -9,6 +9,7 @@
 # - mongodb: MongoDB（文档型 NoSQL 数据库）
 # - neo4j: Neo4j Community Edition（图数据库，知识图谱）
 # - spark-master/workers: Apache Spark 分布式计算引擎
+# - business-redpanda: 业务 Kafka API 消息流
 #
 # 使用方法:
 #   docker-compose up -d    # 启动
@@ -194,6 +195,64 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # Redpanda（独立业务 Kafka API 消息流，不承载 ADDP Infra Kafka）
+  business-redpanda:
+    image: ${BUSINESS_REDPANDA_IMAGE:-docker.redpanda.com/redpandadata/redpanda:v24.3.18}
+    container_name: business-redpanda
+    hostname: business-redpanda
+    command:
+      - redpanda
+      - start
+      - --mode
+      - dev-container
+      - --smp
+      - "1"
+      - --memory
+      - ${BUSINESS_REDPANDA_MEMORY:-1G}
+      - --reserve-memory
+      - 0M
+      - --node-id
+      - "0"
+      - --check=false
+      - --kafka-addr
+      - internal://0.0.0.0:29092,external://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - internal://business-redpanda:29092,external://localhost:${BUSINESS_KAFKA_PORT:-29092}
+      - --rpc-addr
+      - 0.0.0.0:33145
+      - --advertise-rpc-addr
+      - business-redpanda:33145
+      - --set
+      - redpanda.enable_sasl=true
+      - --set
+      - redpanda.auto_create_topics_enabled=false
+      - --set
+      - redpanda.write_caching_default=false
+      - --set
+      - 'redpanda.superusers=["${BUSINESS_KAFKA_ADMIN_USERNAME:-admin}"]'
+    environment:
+      RP_BOOTSTRAP_USER: ${BUSINESS_KAFKA_ADMIN_USERNAME:-admin}:${BUSINESS_KAFKA_ADMIN_PASSWORD:-addp_business_kafka_admin}
+      BUSINESS_KAFKA_ADMIN_PASSWORD: ${BUSINESS_KAFKA_ADMIN_PASSWORD:-addp_business_kafka_admin}
+    ports:
+      - "${BUSINESS_KAFKA_PORT:-29092}:9092"
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    networks:
+      - business-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          rpk cluster health -X brokers=localhost:29092
+          -X user=${BUSINESS_KAFKA_ADMIN_USERNAME:-admin}
+          -X pass=$${BUSINESS_KAFKA_ADMIN_PASSWORD}
+          -X sasl.mechanism=SCRAM-SHA-256 >/dev/null
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 20s
+
   # Neo4j Community Edition (图数据库，支持知识图谱)
   neo4j:
     image: neo4j:5-community
@@ -347,6 +406,8 @@ volumes:
   neo4j_data:
     driver: local
   neo4j_logs:
+    driver: local
+  redpanda_data:
     driver: local
 networks:
   business-network:

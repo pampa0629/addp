@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	_ "github.com/addp/common/engine/plugins/postgresql"
 	commonExecution "github.com/addp/common/execution"
 	"log"
 	"os"
@@ -74,6 +75,13 @@ func main() {
 	}
 	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, serviceTokenSource, nil)
 	executionAuthorizationClient := commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemServiceURL, nil)
+	notebookSessionAuthorizationIssuer := commonClient.NewSystemNotebookSessionAuthorizationClient(cfg.SystemServiceURL, nil)
+	notebookSessionControlPlane, err := service.NewNotebookSessionControlPlane(
+		notebookSessionAuthorizationIssuer, systemServiceClient,
+	)
+	if err != nil {
+		log.Fatalf("Notebook Catalog Control Plane 初始化失败: %v", err)
+	}
 
 	// ========== Service 层 ==========
 	// 1. 工作流引擎服务（从 System 动态获取引擎配置）
@@ -126,7 +134,7 @@ func main() {
 	operatorHandler := api.NewOperatorHandler(operatorDiscovery)
 	engineHandler := api.NewEngineHandler(systemServiceClient)
 	queryHandler := api.NewQueryHandler(sqlEngine, federatedQueryService)
-	notebookHandler := api.NewNotebookHandler(jupyterService, notebookExecutionService, devTaskService, cfg.DevelopServiceURL)
+	notebookHandler := api.NewNotebookHandler(jupyterService, notebookExecutionService, devTaskService, notebookSessionControlPlane, cfg.DevelopServiceURL)
 
 	log.Printf("✅ Handler 层初始化完成")
 

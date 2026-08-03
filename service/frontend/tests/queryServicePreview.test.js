@@ -25,7 +25,7 @@ test('uses published geometry metadata for map preview', () => {
   assert.equal(result.transform_status, 'not_transformed')
   assert.equal(result.page, 2)
   assert.equal(result.page_size, 20)
-  assert.equal(result.total, 41)
+	assert.equal(result.total, 21)
 })
 
 test('does not infer geometry columns from field names', () => {
@@ -63,25 +63,25 @@ test('requests the published geometry column in table preview', () => {
     }
   })
 
-  assert.equal(fields, 'id,name,custom_shape')
+	assert.deepEqual(fields, ['id', 'name', 'custom_shape'])
 })
 
 test('does not duplicate geometry or constrain SQL query fields', () => {
-  assert.equal(queryServicePreviewFields({
+	assert.deepEqual(queryServicePreviewFields({
     configType: 'table',
     defaultFields: ['id', 'custom_shape'],
     spatial: { geometry_columns: [{ name: 'custom_shape' }], primary_geometry_column: 'custom_shape' }
-  }), 'id,custom_shape')
-  assert.equal(queryServicePreviewFields({
+	}), ['id', 'custom_shape'])
+	assert.deepEqual(queryServicePreviewFields({
     configType: 'sql',
     defaultFields: ['id'],
     spatial: { geometry_columns: [{ name: 'custom_shape' }], primary_geometry_column: 'custom_shape' }
-  }), '')
-  assert.equal(queryServicePreviewFields({
+	}), ['id', 'custom_shape'])
+	assert.deepEqual(queryServicePreviewFields({
     configType: 'table',
     defaultFields: null,
     spatial: { geometry_columns: [{ name: 'custom_shape' }], primary_geometry_column: 'custom_shape' }
-  }), '')
+	}), [])
 })
 
 test('forwards an arbitrary CRS definition from the published snapshot', () => {

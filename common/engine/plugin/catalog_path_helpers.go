@@ -55,17 +55,23 @@ func CatalogPathWithoutRoot(path CatalogPath) CatalogPath {
 
 func requireCatalogRootPath(path CatalogPath, model CatalogModelSpec) error {
 	if !IsCatalogRootPath(path) || path.Segments[0].Term != model.RootTerm {
-		return fmt.Errorf("catalog root path requires explicit %s root segment", model.RootTerm)
+		return WrapCatalogError(CatalogErrorInvalidPath, fmt.Errorf("catalog root path requires explicit %s root segment", model.RootTerm))
+	}
+	if path.Version != CatalogPathVersion {
+		return WrapCatalogError(CatalogErrorInvalidPath, fmt.Errorf("unsupported catalog path version %q", path.Version))
 	}
 	return nil
 }
 
 func requireCatalogBusinessPath(path CatalogPath, model CatalogModelSpec) ([]CatalogSegment, error) {
 	if len(path.Segments) == 0 || !IsCatalogRootSegment(path.Segments[0]) || path.Segments[0].Term != model.RootTerm {
-		return nil, fmt.Errorf("catalog path requires explicit %s root segment", model.RootTerm)
+		return nil, WrapCatalogError(CatalogErrorInvalidPath, fmt.Errorf("catalog path requires explicit %s root segment", model.RootTerm))
 	}
 	if len(path.Segments) == 1 {
-		return nil, fmt.Errorf("catalog business path requires segments below %s root", model.RootTerm)
+		return nil, WrapCatalogError(CatalogErrorInvalidPath, fmt.Errorf("catalog business path requires segments below %s root", model.RootTerm))
+	}
+	if path.Version != CatalogPathVersion {
+		return nil, WrapCatalogError(CatalogErrorInvalidPath, fmt.Errorf("unsupported catalog path version %q", path.Version))
 	}
 	return path.Segments[1:], nil
 }

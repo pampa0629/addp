@@ -19,6 +19,7 @@ type PostgreSQLPlugin struct{}
 
 var (
 	_ plugin.BoundedWatermarkReadProvider        = (*PostgreSQLPlugin)(nil)
+	_ plugin.SpatialFeatureReadProvider          = (*PostgreSQLPlugin)(nil)
 	_ plugin.TableUpsertProvider                 = (*PostgreSQLPlugin)(nil)
 	_ plugin.PartitionedTableChangeApplyProvider = (*PostgreSQLPlugin)(nil)
 )

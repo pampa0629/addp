@@ -452,6 +452,75 @@ func (r *Repository) LockExecutionAuthorization(
 	return &authorization, nil
 }
 
+func (r *Repository) CreateNotebookSessionAuthorization(
+	ctx context.Context,
+	authorization *NotebookSessionAuthorization,
+) error {
+	if authorization == nil {
+		return fmt.Errorf("%w: notebook session authorization is required", commonapi.ErrBadRequest)
+	}
+	err := r.db.WithContext(ctx).Create(authorization).Error
+	var postgresError *pgconn.PgError
+	if errors.As(err, &postgresError) && postgresError.Code == "23505" &&
+		postgresError.ConstraintName == "notebook_session_authorizations_session_id_key" {
+		return ErrNotebookSessionAuthorizationConflict
+	}
+	return wrapRepositoryError(err)
+}
+
+func (r *Repository) LockNotebookSessionAuthorization(
+	ctx context.Context,
+	authorizationID uuid.UUID,
+) (*NotebookSessionAuthorization, error) {
+	if authorizationID == uuid.Nil {
+		return nil, commonapi.ErrNotFound
+	}
+	var authorization NotebookSessionAuthorization
+	err := r.db.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ?", authorizationID).
+		Take(&authorization).Error
+	if err != nil {
+		return nil, wrapRepositoryError(err)
+	}
+	return &authorization, nil
+}
+
+func (r *Repository) GetNotebookSessionAuthorization(
+	ctx context.Context,
+	authorizationID uuid.UUID,
+) (*NotebookSessionAuthorization, error) {
+	if authorizationID == uuid.Nil {
+		return nil, commonapi.ErrNotFound
+	}
+	var authorization NotebookSessionAuthorization
+	if err := r.db.WithContext(ctx).
+		Where("id = ?", authorizationID).
+		Take(&authorization).Error; err != nil {
+		return nil, wrapRepositoryError(err)
+	}
+	return &authorization, nil
+}
+
+// RevokeNotebookSessionAuthorization is intentionally idempotent and does not
+// reveal whether a UUID belongs to another Tenant or Session.
+func (r *Repository) RevokeNotebookSessionAuthorization(
+	ctx context.Context,
+	authorizationID, sessionID uuid.UUID,
+	tenantID int64,
+	revokedAt time.Time,
+	reason string,
+) error {
+	if authorizationID == uuid.Nil || sessionID == uuid.Nil || tenantID <= 0 ||
+		strings.TrimSpace(reason) == "" {
+		return fmt.Errorf("%w: invalid notebook session authorization revocation", commonapi.ErrBadRequest)
+	}
+	return wrapRepositoryError(r.db.WithContext(ctx).
+		Model(&NotebookSessionAuthorization{}).
+		Where("id = ? AND session_id = ? AND tenant_id = ? AND revoked_at IS NULL", authorizationID, sessionID, tenantID).
+		Updates(map[string]any{"revoked_at": revokedAt, "revoked_reason": reason}).Error)
+}
+
 func (r *Repository) FindExecutionAuthorization(
 	ctx context.Context,
 	audience string,
@@ -578,12 +647,12 @@ func (r *Repository) UpdateTaskAuthorizationSubject(
 	result := r.db.WithContext(ctx).Model(&TaskAuthorizationSubject{}).
 		Where("id = ? AND tenant_id = ?", subject.ID, subject.TenantID).
 		Updates(map[string]any{
-			"definition_hash": subject.DefinitionHash,
-			"principal_id": subject.PrincipalID,
-			"tenant_membership_id": subject.TenantMembershipID,
+			"definition_hash":       subject.DefinitionHash,
+			"principal_id":          subject.PrincipalID,
+			"tenant_membership_id":  subject.TenantMembershipID,
 			"authorization_version": subject.AuthorizationVersion,
-			"authorized_at": subject.AuthorizedAt,
-			"updated_at": subject.UpdatedAt,
+			"authorized_at":         subject.AuthorizedAt,
+			"updated_at":            subject.UpdatedAt,
 		})
 	if result.Error != nil {
 		return wrapRepositoryError(result.Error)

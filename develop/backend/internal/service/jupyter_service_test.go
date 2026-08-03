@@ -102,7 +102,11 @@ func TestJupyterServiceOpenInteractiveSessionUsesStandardControlPlane(t *testing
 		if request["session_id"] != "abc-123" || request["tenant_id"] != float64(7) {
 			t.Fatalf("request = %#v", request)
 		}
-		if request["owner_api_endpoint"] != "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/engine-descriptors" || request["owner_capability_token"] != "addp_nkc_kernel-secret" {
+		if request["owner_api_endpoint"] != "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/engine-descriptors" ||
+			request["owner_catalog_api_endpoint"] != "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/catalog/children" ||
+			request["owner_table_scan_api_endpoint"] != "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/table-scans" ||
+			request["owner_query_api_endpoint"] != "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/queries" ||
+			request["owner_capability_token"] != "addp_nkc_kernel-secret" {
 			t.Fatalf("owner capability request = %#v", request)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -118,8 +122,11 @@ func TestJupyterServiceOpenInteractiveSessionUsesStandardControlPlane(t *testing
 		SessionID: "abc-123", TenantID: 7, UserID: 9, TaskID: 11,
 		NotebookPath: "analysis.ipynb", Kernel: "python3",
 		BasePath: "/api/v1/develop/notebook-sessions/abc-123/", TTLSeconds: 3600,
-		OwnerAPIEndpoint:     "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/engine-descriptors",
-		OwnerCapabilityToken: "addp_nkc_kernel-secret",
+		OwnerAPIEndpoint:          "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/engine-descriptors",
+		OwnerCatalogAPIEndpoint:   "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/catalog/children",
+		OwnerTableScanAPIEndpoint: "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/table-scans",
+		OwnerQueryAPIEndpoint:     "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/queries",
+		OwnerCapabilityToken:      "addp_nkc_kernel-secret",
 	})
 	if err != nil {
 		t.Fatalf("OpenInteractiveSession() error = %v", err)

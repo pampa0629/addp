@@ -30,6 +30,18 @@ func TestCatalogScanPlanForPluginUsesCatalogModel(t *testing.T) {
 			wantLeaf:     plugin.CatalogTermCollection,
 		},
 		{
+			name: "direct leaf",
+			model: plugin.CatalogModelSpec{
+				PathVersion: plugin.CatalogPathVersion,
+				RootTerm:    plugin.CatalogTermService,
+				Levels: []plugin.CatalogLevelSpec{
+					{Term: "topic", Kinds: []string{"topic"}, Role: plugin.CatalogRoleLeaf},
+				},
+			},
+			wantStrategy: CatalogScanDirectLeaves,
+			wantLeaf:     "topic",
+		},
+		{
 			name:         "object",
 			model:        plugin.ObjectCatalogModel(),
 			wantStrategy: CatalogScanObject,

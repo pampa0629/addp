@@ -509,8 +509,29 @@ type BatchReadOptions struct {
 
 type TableReadSessionOptions struct {
 	Query        string
+	Args         []interface{}
 	Hints        map[string]interface{}
 	ResumeMarker *resume.Marker
+}
+
+// SpatialFeatureReadProvider reads one geometry feature by an exact identity
+// field without exposing engine-native spatial SQL to consumers.
+type SpatialFeatureReadProvider interface {
+	EnginePlugin
+	ReadSpatialFeature(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts SpatialFeatureReadOptions) (*SpatialFeatureData, error)
+}
+
+type SpatialFeatureReadOptions struct {
+	GeometryField string
+	IdentityField string
+	IdentityValue interface{}
+}
+
+type SpatialFeatureData struct {
+	GeometryEWKB []byte                `json:"geometry_ewkb,omitempty"`
+	CentroidEWKB []byte                `json:"centroid_ewkb,omitempty"`
+	SRID         int                   `json:"srid,omitempty"`
+	Spatial      *datatype.SpatialInfo `json:"spatial,omitempty"`
 }
 
 const (
@@ -574,6 +595,8 @@ type QueryOptions struct {
 	Timeout    time.Duration `json:"timeout,omitempty"`
 	ReadOnly   bool          `json:"read_only"`
 	Args       []interface{} `json:"args,omitempty"`
+	Describe   bool          `json:"describe,omitempty"`
+	Spatial    bool          `json:"spatial,omitempty"`
 }
 
 type OperatorDescriptor struct {
@@ -706,16 +729,19 @@ type ScriptSession struct {
 // InteractiveScriptSessionRequest is the standard control-plane request for
 // a short-lived, owner-proxied interactive script session.
 type InteractiveScriptSessionRequest struct {
-	SessionID            string `json:"session_id"`
-	TenantID             uint   `json:"tenant_id"`
-	UserID               uint   `json:"user_id"`
-	TaskID               uint   `json:"task_id"`
-	NotebookPath         string `json:"notebook_path"`
-	Kernel               string `json:"kernel"`
-	BasePath             string `json:"base_path"`
-	TTLSeconds           int    `json:"ttl_seconds"`
-	OwnerAPIEndpoint     string `json:"owner_api_endpoint"`
-	OwnerCapabilityToken string `json:"owner_capability_token"`
+	SessionID                 string `json:"session_id"`
+	TenantID                  uint   `json:"tenant_id"`
+	UserID                    uint   `json:"user_id"`
+	TaskID                    uint   `json:"task_id"`
+	NotebookPath              string `json:"notebook_path"`
+	Kernel                    string `json:"kernel"`
+	BasePath                  string `json:"base_path"`
+	TTLSeconds                int    `json:"ttl_seconds"`
+	OwnerAPIEndpoint          string `json:"owner_api_endpoint"`
+	OwnerCatalogAPIEndpoint   string `json:"owner_catalog_api_endpoint"`
+	OwnerTableScanAPIEndpoint string `json:"owner_table_scan_api_endpoint"`
+	OwnerQueryAPIEndpoint     string `json:"owner_query_api_endpoint"`
+	OwnerCapabilityToken      string `json:"owner_capability_token"`
 }
 
 // InteractiveScriptSession contains internal proxy facts. Callers must never

@@ -88,6 +88,12 @@ Role、Assignment、Membership、组织关系或 Principal 状态变化时，数
 
 Refresh 采用轮换和重用检测。并发 Refresh、logout、context switch、MFA 转换按统一 Principal 和 Family 锁顺序竞争；发现已消费旧 Refresh Token 时撤销整个 Family，但正常并发失败不能误报为重用攻击。
 
+### 6.3 Notebook Session Authorization
+
+`notebook_session_authorizations` 保存由当前 Tenant User Access Token 派生、绑定唯一 Notebook Session 和 Task 的短期授权事实。它不是 Token，不保存 Token Hash、Engine 列表或连接信息，也不新增 AuthContext 类型；身份边界通过 User Principal、Tenant Membership、Token Family 和签发时 `authorization_version` 固定。它只允许实时 Catalog 发现，以及为每次 Notebook 只读查询/扫描派生独立 Execution Authorization。派生记录必须通过 `execution_authorizations.source_notebook_session_authorization_id` 保存唯一来源，并继承 Session 的身份、有效期和撤销边界。
+
+签发、消费、撤销必须使用版本化 SQL 表和事务审计。每次消费实时回查 Principal、Tenant、Membership、Token Family、授权版本和当前 Permission；Family 或 Session 撤销必须在同一事务联动撤销 Session Authorization 及其派生且仍有效的 Execution Authorization。标准 Engine Access 租约复核必须沿来源外键重复校验这条生命周期链。详细契约以 `docs/spec/addp授权上下文规范.md` 和 `docs/spec/addp登录认证的统一要求.md` 为准。
+
 ## 七、Bootstrap、密码重置与灾难恢复
 
 ### 7.1 首批三员 Bootstrap

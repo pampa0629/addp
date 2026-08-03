@@ -58,6 +58,9 @@ class InteractiveSessionManagerTests(unittest.TestCase):
                 "base_path": "/api/v1/develop/notebook-sessions/abc-123/",
                 "ttl_seconds": 120,
                 "owner_api_endpoint": "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/engine-descriptors",
+                "owner_catalog_api_endpoint": "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/catalog/children",
+                "owner_table_scan_api_endpoint": "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/table-scans",
+                "owner_query_api_endpoint": "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/queries",
                 "owner_capability_token": "addp_nkc_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             }
             with patch.object(manager, "_available_port", return_value=31000), patch.object(
@@ -67,6 +70,7 @@ class InteractiveSessionManagerTests(unittest.TestCase):
 
             self.assertEqual(session.endpoint, "http://jupyter-engine:31000")
             self.assertNotIn("owner_api_endpoint", session.response())
+            self.assertNotIn("owner_catalog_api_endpoint", session.response())
             self.assertNotIn("owner_capability_token", session.response())
             self.assertTrue(Path(session.notebook_file).exists())
             manager.close("abc-123", tenant_id=7)
@@ -90,6 +94,9 @@ class InteractiveSessionManagerTests(unittest.TestCase):
                 "base_path": "/api/v1/develop/notebook-sessions/abc-123/",
                 "ttl_seconds": 120,
                 "owner_api_endpoint": "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/engine-descriptors",
+                "owner_catalog_api_endpoint": "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/catalog/children",
+                "owner_table_scan_api_endpoint": "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/table-scans",
+                "owner_query_api_endpoint": "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/queries",
                 "owner_capability_token": "addp_nkc_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             }
             with patch.object(manager, "_available_port", return_value=31000), patch.object(
@@ -101,6 +108,15 @@ class InteractiveSessionManagerTests(unittest.TestCase):
                 second["base_path"] = "/api/v1/develop/notebook-sessions/def-456/"
                 second["owner_api_endpoint"] = (
                     "http://develop:8185/api/v1/develop/notebook-kernel-sessions/def-456/engine-descriptors"
+                )
+                second["owner_catalog_api_endpoint"] = (
+                    "http://develop:8185/api/v1/develop/notebook-kernel-sessions/def-456/catalog/children"
+                )
+                second["owner_table_scan_api_endpoint"] = (
+                    "http://develop:8185/api/v1/develop/notebook-kernel-sessions/def-456/table-scans"
+                )
+                second["owner_query_api_endpoint"] = (
+                    "http://develop:8185/api/v1/develop/notebook-kernel-sessions/def-456/queries"
                 )
                 with self.assertRaises(SessionConflictError):
                     manager.create(second, "jupyter-engine")
@@ -116,6 +132,9 @@ class InteractiveSessionManagerTests(unittest.TestCase):
                     31000,
                     "runtime-secret",
                     "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/engine-descriptors",
+                    "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/catalog/children",
+                    "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/table-scans",
+                    "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/queries",
                     "addp_nkc_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 )
 
@@ -123,6 +142,18 @@ class InteractiveSessionManagerTests(unittest.TestCase):
             self.assertEqual(
                 environment["ADDP_NOTEBOOK_OWNER_API_ENDPOINT"],
                 "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/engine-descriptors",
+            )
+            self.assertEqual(
+                environment["ADDP_NOTEBOOK_CATALOG_API_ENDPOINT"],
+                "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/catalog/children",
+            )
+            self.assertEqual(
+                environment["ADDP_NOTEBOOK_TABLE_SCAN_API_ENDPOINT"],
+                "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/table-scans",
+            )
+            self.assertEqual(
+                environment["ADDP_NOTEBOOK_QUERY_API_ENDPOINT"],
+                "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/queries",
             )
             self.assertEqual(
                 environment["ADDP_NOTEBOOK_OWNER_CAPABILITY_TOKEN"],
@@ -143,6 +174,9 @@ class InteractiveSessionManagerTests(unittest.TestCase):
                 "base_path": "/api/v1/develop/notebook-sessions/abc-123/",
                 "ttl_seconds": 120,
                 "owner_api_endpoint": "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/engine-descriptors",
+                "owner_catalog_api_endpoint": "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/catalog/children",
+                "owner_table_scan_api_endpoint": "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/table-scans",
+                "owner_query_api_endpoint": "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/queries",
             }
             with self.assertRaisesRegex(Exception, "owner_capability_token"):
                 manager._validate_request(request)

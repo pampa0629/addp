@@ -164,6 +164,26 @@ func NewIAMServiceContextGuard(contextType string) (gin.HandlerFunc, error) {
 	}, nil
 }
 
+// NewIAMClientGuard restricts a service route to one exact OAuth Client.
+func NewIAMClientGuard(clientID string) (gin.HandlerFunc, error) {
+	if clientID == "" || strings.TrimSpace(clientID) != clientID {
+		return nil, fmt.Errorf("%w: invalid IAM OAuth client ID", commonapi.ErrBadRequest)
+	}
+	return func(c *gin.Context) {
+		authContext, exists := IAMAuthContextFromGin(c)
+		if !exists {
+			abortIAMAuthenticationRequired(c)
+			return
+		}
+		if authContext.Principal.Type != "service_principal" || authContext.Client.ClientID == nil ||
+			*authContext.Client.ClientID != clientID {
+			abortIAMPermissionDenied(c)
+			return
+		}
+		c.Next()
+	}, nil
+}
+
 // NewIAMPermissionGuard enforces all required Permission keys. Resource and
 // assignment-scope policy remains the responsibility of the owner handler.
 func NewIAMPermissionGuard(requiredPermissions ...string) (gin.HandlerFunc, error) {

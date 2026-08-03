@@ -82,7 +82,7 @@ Transfer API / Frontend
 - `data_type` 稳定支持 `table`；`document`、`media`、`cad`、`unknown` 已支持 encoded single raw copy。
 - `representation` 支持 `native` 和 `encoded`。
 - `format` 只用于 encoded endpoint。
-- `target.policy.apply_mode` 在 snapshot table Transfer 支持 `replace` 和 `append`；raw copy 只支持 `replace`；PostgreSQL watermark 和业务 Kafka continuous 使用幂等 `upsert`；PostgreSQL CDC 使用 `upsert_delete`。
+- `target.policy.apply_mode` 在 snapshot table Transfer 支持 `replace` 和 `append`；raw copy 只支持 `replace`；PostgreSQL/MySQL watermark 和业务 Kafka continuous 使用幂等 `upsert`；PostgreSQL/MySQL CDC 使用 `upsert_delete`。
 - 旧 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段出现即拒绝。
 
 ## 四、table Transfer 主路径
@@ -234,8 +234,8 @@ Business Kafka topic
   -> ChangeStreamReaderProvider
   -> keyed JSON ChangeEvent(operation=upsert)
   -> Transfer ChangeApplyWriter
-  -> PostgreSQL PartitionedTableChangeApplyProvider
-  -> business target addp_transfer.apply_positions + table upsert (one transaction)
+  -> PostgreSQL/MySQL PartitionedTableChangeApplyProvider
+  -> business target apply ledger + table upsert (one transaction)
   -> per-partition kafka_offset/v1 next_offset CAS
 ```
 
@@ -247,8 +247,8 @@ PostgreSQL 单表
   -> Infra Kafka 单分区 CDC topic
   -> 同一个 Transfer Continuous Worker
   -> snapshot/upsert/delete ChangeEvent
-  -> PostgreSQL PartitionedTableChangeApplyProvider
-  -> business target addp_transfer.apply_positions + table upsert/delete (one transaction)
+  -> PostgreSQL/MySQL PartitionedTableChangeApplyProvider
+  -> business target apply ledger + table upsert/delete (one transaction)
   -> per-partition kafka_offset/v1 next_offset CAS
 ```
 
@@ -260,8 +260,8 @@ MySQL 8.0 单表
   -> Infra Kafka 单分区 CDC data topic
   -> 同一个 Transfer Continuous Worker
   -> snapshot/upsert/delete ChangeEvent
-  -> PostgreSQL PartitionedTableChangeApplyProvider
-  -> business target addp_transfer.apply_positions + table upsert/delete (one transaction)
+  -> PostgreSQL/MySQL PartitionedTableChangeApplyProvider
+  -> business target apply ledger + table upsert/delete (one transaction)
   -> per-partition kafka_offset/v1 next_offset CAS
 ```
 

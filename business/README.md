@@ -9,9 +9,10 @@
 - **MinIO**：业务对象存储，端口 9002-9003
 - **ClickHouse** 🆕：高性能列式存储 OLAP，端口 9000, 8123
 - **MongoDB** 🆕：文档型 NoSQL 数据库，端口 27017
-- **MySQL 8.0**：业务关系库和 CDC 测试源，端口 3306
+- **MySQL 8.0**：支持 Spatial 与 CDC 的业务关系库测试源，端口 3306
 - **Apache Doris**：实时分析数据库，端口 9030, 8030
 - **Apache Spark**：分布式计算引擎，主机端口 7077、18088、11000；默认 Worker 为 Thrift 查询和工作流执行分别保留执行资源
+- **Redpanda**：兼容 Kafka API 的业务消息流，端口 29092
 
 Business 的 Doris all-in-one 服务是固定单 FE、单 BE 的本地开发拓扑，FE 因此固定使用 `force_olap_table_replication_num=1`。生产 Doris 集群不复用该单节点配置，应按实际 BE 数量和容灾策略设置副本数。
 
@@ -19,8 +20,10 @@ Business 的 Doris all-in-one 服务是固定单 FE、单 BE 的本地开发拓�
 - ✅ 独立部署，无依赖
 - ✅ CPU 架构自适应（ARM64/AMD64）
 - ✅ PostGIS 空间数据支持
+- ✅ MySQL 全二维几何族、SRID 与空间索引测试数据
 - ✅ 幂等启动脚本
 - ✅ 模块化启动（按需启动服务）
+- ✅ Business Kafka 与 ADDP Infra Kafka 物理隔离
 
 ## 快速开始
 
@@ -53,6 +56,9 @@ bash scripts/start.sh -mongodb
 # 只启动 MySQL，并幂等初始化专用 CDC 用户
 bash scripts/start.sh -mysql
 
+# 只启动业务 Redpanda，并幂等初始化只读 Engine 账号
+bash scripts/start.sh -redpanda
+
 # 启动 ClickHouse + MongoDB
 bash scripts/start.sh -clickhouse -mongodb
 
@@ -84,7 +90,8 @@ business/
 │   └── init.sh                     # MongoDB 初始化脚本
 │
 ├── mysql/                          # MySQL 配置与测试数据
-│   └── init-cdc.sh                 # 专用 CDC 用户幂等初始化
+│   ├── init-cdc.sh                 # 专用 CDC 用户幂等初始化
+│   └── test-data.sh                # 普通表与全二维几何族显式测试数据
 │
 ├── doris/                          # Apache Doris 配置
 │   └── init.sh                     # Doris 集群初始化
@@ -131,6 +138,17 @@ bash scripts/start.sh
 
 启用 MySQL 时，脚本还会在数据库 ready 后执行 `mysql/init-cdc.sh`。该脚本每次都创建或更新 `${MYSQL_CDC_USER:-addp_cdc}@%`，并将权限收敛为 Debezium 所需的最小权限集，因此已有数据卷也会生效。连接 MySQL CDC Engine 时使用 `.env` 中的 `MYSQL_CDC_USER` 和 `MYSQL_CDC_PASSWORD`，不要使用 root。
 
+### mysql/test-data.sh - MySQL Spatial 测试数据
+
+```bash
+bash scripts/start.sh -mysql
+bash mysql/test-data.sh
+```
+
+该脚本幂等重建普通业务表，以及 `POINT`、`LINESTRING`、`POLYGON`、`MULTIPOINT`、`MULTILINESTRING`、`MULTIPOLYGON`、`GEOMETRYCOLLECTION`、通用 `GEOMETRY`、多几何列和 3857 样例，并校验几何有效性与空间索引。测试数据只允许显式执行，不挂接 `scripts/start.sh -mysql`，避免启动业务数据库时破坏已有数据。
+
+启用 Redpanda 时，脚本会创建或轮换 `${BUSINESS_KAFKA_READER_USERNAME:-addp_transfer}` 的 SCRAM-SHA-256 密码，并只授予读取 Topic、消费组和描述集群所需权限。System 中统一注册为 `engine_type=kafka`，连接 `localhost:${BUSINESS_KAFKA_PORT:-29092}`；不要注册 `addp-redpanda` 的 Infra Kafka 地址。
+
 ### scripts/stop.sh - 停止服务
 
 ```bash
@@ -164,6 +182,7 @@ docker-compose logs -f postgres    # PostgreSQL 日志
 docker-compose logs -f minio       # MinIO 日志
 docker-compose logs -f clickhouse  # ClickHouse 日志
 docker-compose logs -f mongodb     # MongoDB 日志
+docker-compose logs -f business-redpanda # Business Redpanda 日志
 docker-compose logs -f doris-fe    # Doris 日志
 docker-compose logs -f spark-master  # Spark 日志
 ```

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/spatial"
 	"github.com/gogama/flatgeobuf/flatgeobuf"
 	"github.com/gogama/flatgeobuf/flatgeobuf/flat"
@@ -23,6 +24,119 @@ import (
 type testFlatGeobufFeatureReader struct {
 	features []spatial.FlatGeobufFeature
 	index    int
+}
+
+func TestFlatGeobufBatchFeatureReaderAppliesRowBudgetAcrossBufferedAndFetchedRows(t *testing.T) {
+	t.Parallel()
+
+	fields := []datatype.FieldInfo{
+		{Name: "shape", Type: datatype.FieldTypeGeometry},
+		{Name: "name", Type: datatype.FieldTypeString},
+		{Name: "active", Type: datatype.FieldTypeBool},
+		{Name: "count", Type: datatype.FieldTypeBigInt},
+		{Name: "ratio", Type: datatype.FieldTypeDecimal},
+		{Name: "payload", Type: datatype.FieldTypeBytes},
+		{Name: "metadata", Type: datatype.FieldTypeJSON},
+	}
+	spatialInfo := datatype.NewSingleGeometrySpatialInfo("shape", "Point", 4326, 2)
+	bufferedRows := []map[string]interface{}{
+		{"SHAPE": []byte{1}, "name": "buffered", "active": true, "count": int64(1)},
+		{"shape": nil, "name": "null geometry"},
+	}
+	var requestedLimits []int
+	reader, opts := spatial.NewFlatGeobufBatchFeatureReader(
+		func(_ context.Context, limit int) ([]map[string]interface{}, error) {
+			requestedLimits = append(requestedLimits, limit)
+			return []map[string]interface{}{
+				{"shape": []byte{2}, "name": "fetched", "ratio": 1.5, "metadata": map[string]interface{}{"kind": "test"}},
+				{"shape": []byte{3}, "name": "last", "payload": []byte("value")},
+				{"shape": []byte{4}, "name": "over budget"},
+			}, nil
+		},
+		bufferedRows,
+		"shape",
+		fields,
+		spatialInfo,
+		4,
+	)
+
+	if opts.SRID != 4326 || opts.GeometryType != "Point" || opts.DefaultEncoding != string(spatial.GeometryEncodingEWKB) {
+		t.Fatalf("FlatGeobuf options = %+v", opts)
+	}
+	wantColumnTypes := map[string]spatial.FlatGeobufPropertyType{
+		"name":     spatial.FlatGeobufPropertyString,
+		"active":   spatial.FlatGeobufPropertyBool,
+		"count":    spatial.FlatGeobufPropertyInt64,
+		"ratio":    spatial.FlatGeobufPropertyFloat64,
+		"payload":  spatial.FlatGeobufPropertyBinary,
+		"metadata": spatial.FlatGeobufPropertyJSON,
+	}
+	if len(opts.Columns) != len(wantColumnTypes) {
+		t.Fatalf("FlatGeobuf columns = %+v, want %d properties", opts.Columns, len(wantColumnTypes))
+	}
+	for _, column := range opts.Columns {
+		if want := wantColumnTypes[column.Name]; column.Type != want {
+			t.Fatalf("column %q type = %q, want %q", column.Name, column.Type, want)
+		}
+	}
+
+	var names []string
+	for {
+		feature, err := reader.NextFlatGeobufFeature(context.Background())
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("NextFlatGeobufFeature() error = %v", err)
+		}
+		if feature.GeometryEncoding != string(spatial.GeometryEncodingEWKB) || feature.GeometrySRID != 4326 {
+			t.Fatalf("feature geometry contract = %+v", feature)
+		}
+		if _, ok := feature.Properties["shape"]; ok {
+			t.Fatalf("feature properties unexpectedly include geometry: %+v", feature.Properties)
+		}
+		names = append(names, feature.Properties["name"].(string))
+	}
+	if strings.Join(names, ",") != "buffered,fetched,last" {
+		t.Fatalf("feature names = %v", names)
+	}
+	if len(requestedLimits) != 1 || requestedLimits[0] != 2 {
+		t.Fatalf("requested batch limits = %v, want [2]", requestedLimits)
+	}
+}
+
+func TestFlatGeobufBatchFeatureReaderCapsInitialBufferAtRowLimit(t *testing.T) {
+	t.Parallel()
+
+	readCalls := 0
+	reader, _ := spatial.NewFlatGeobufBatchFeatureReader(
+		func(context.Context, int) ([]map[string]interface{}, error) {
+			readCalls++
+			return nil, nil
+		},
+		[]map[string]interface{}{
+			{"shape": []byte{1}, "name": "first"},
+			{"shape": []byte{2}, "name": "over budget"},
+		},
+		"shape",
+		[]datatype.FieldInfo{
+			{Name: "shape", Type: datatype.FieldTypeGeometry},
+			{Name: "name", Type: datatype.FieldTypeString},
+		},
+		datatype.NewSingleGeometrySpatialInfo("shape", "Point", 4326, 2),
+		1,
+	)
+
+	feature, err := reader.NextFlatGeobufFeature(context.Background())
+	if err != nil || feature.Properties["name"] != "first" {
+		t.Fatalf("first feature = %+v, error = %v", feature, err)
+	}
+	if _, err := reader.NextFlatGeobufFeature(context.Background()); err != io.EOF {
+		t.Fatalf("second read error = %v, want io.EOF", err)
+	}
+	if readCalls != 0 {
+		t.Fatalf("readBatch calls = %d, want 0", readCalls)
+	}
 }
 
 func (r *testFlatGeobufFeatureReader) NextFlatGeobufFeature(context.Context) (*spatial.FlatGeobufFeature, error) {

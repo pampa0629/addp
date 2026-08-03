@@ -6,7 +6,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 )
 
-func TestBranchLeafItemType(t *testing.T) {
+func TestCatalogLeafItemType(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -35,8 +35,8 @@ func TestBranchLeafItemType(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := branchLeafItemType(tt.node); got != tt.want {
-				t.Fatalf("branchLeafItemType() = %q, want %q", got, tt.want)
+			if got := catalogLeafItemType(tt.node); got != tt.want {
+				t.Fatalf("catalogLeafItemType() = %q, want %q", got, tt.want)
 			}
 		})
 	}

@@ -53,8 +53,29 @@ func TestPaginateQuerySQL(t *testing.T) {
 	t.Parallel()
 
 	got := PaginateQuerySQL("SELECT * FROM t", 50, 100)
-	want := "SELECT * FROM t LIMIT 50 OFFSET 100"
+	want := "SELECT * FROM (SELECT * FROM t) AS addp_page LIMIT 50 OFFSET 100"
 	if got != want {
 		t.Fatalf("PaginateQuerySQL() = %q, want %q", got, want)
+	}
+}
+
+func TestPaginateQuerySQLWrapsExistingLimit(t *testing.T) {
+	t.Parallel()
+
+	query := "SELECT *\nFROM Business_PostgreSQL.addp_transfer.apply_positions\nLIMIT 10"
+	got := PaginateQuerySQL(query, 10, 0)
+	want := "SELECT * FROM (SELECT *\nFROM Business_PostgreSQL.addp_transfer.apply_positions\nLIMIT 10) AS addp_page LIMIT 10"
+	if got != want {
+		t.Fatalf("PaginateQuerySQL() = %q, want %q", got, want)
+	}
+}
+
+func TestSelectAllSampleSQLWithoutLimitReturnsBaseQuery(t *testing.T) {
+	t.Parallel()
+
+	got := SelectAllSampleSQL("mysql", "business", "orders", 0)
+	want := "SELECT *\nFROM `business`.`orders`"
+	if got != want {
+		t.Fatalf("SelectAllSampleSQL() = %q, want %q", got, want)
 	}
 }

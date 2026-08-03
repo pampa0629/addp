@@ -91,7 +91,7 @@
 | `representation` | `native` 或 `encoded`。 |
 | `format` | encoded endpoint 必填。 |
 | `options` | 格式读写选项。 |
-| `runtime.boundary` | 执行边界：`bounded` 或 `continuous`；continuous 第一版契约固定为业务 Kafka keyed JSON -> PostgreSQL upsert。 |
+| `runtime.boundary` | 执行边界：`bounded` 或 `continuous`；continuous 业务 Kafka keyed JSON 契约支持 PostgreSQL/MySQL upsert。 |
 | `load.mode` | `snapshot` 或 PostgreSQL/MySQL native table 的 `incremental`。 |
 | `load.change_detection` | incremental 第一版只支持复合 watermark。 |
 | `target.policy.apply_mode` | `replace` / `append` / `upsert`；按任务组合和目标 Provider 校验。 |

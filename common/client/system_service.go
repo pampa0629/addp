@@ -30,6 +30,7 @@ type SystemAPIError struct {
 	Method     string
 	Path       string
 	StatusCode int
+	ErrorCode  string
 }
 
 func (e *SystemAPIError) Error() string {
@@ -42,6 +43,14 @@ func SystemAPIStatusCode(err error) (int, bool) {
 		return apiError.StatusCode, true
 	}
 	return 0, false
+}
+
+func SystemAPIErrorCode(err error) (string, bool) {
+	var apiError *SystemAPIError
+	if errors.As(err, &apiError) && apiError.ErrorCode != "" {
+		return apiError.ErrorCode, true
+	}
+	return "", false
 }
 
 type ServiceTokenSource interface {
@@ -298,8 +307,13 @@ func (c *SystemServiceClient) doJSON(ctx context.Context, method, path, token st
 	}
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		var errorResponse struct {
+			ErrorCode string `json:"error_code"`
+		}
+		_ = json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&errorResponse)
 		return response.StatusCode, &SystemAPIError{
 			Method: method, Path: pathWithoutQuery(path), StatusCode: response.StatusCode,
+			ErrorCode: errorResponse.ErrorCode,
 		}
 	}
 	if result == nil || response.StatusCode == http.StatusNoContent {

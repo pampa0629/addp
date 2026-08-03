@@ -70,7 +70,8 @@ func (d Dialect) CountTableSQL(namespace, table, whereClause string) string {
 }
 
 func PaginateQuerySQL(query string, limit, offset int) string {
-	return strings.TrimSpace(query) + limitOffsetClause(limit, offset)
+	inner := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(query), ";"))
+	return fmt.Sprintf("SELECT * FROM (%s) AS addp_page%s", inner, limitOffsetClause(limit, offset))
 }
 
 func CountSubquerySQL(query, alias string) string {
@@ -81,11 +82,12 @@ func CountSubquerySQL(query, alias string) string {
 }
 
 func SelectAllSampleSQL(engineType, namespace, table string, limit int) string {
-	if limit <= 0 {
-		limit = 10
-	}
 	dialect := ForEngine(engineType)
-	return fmt.Sprintf("SELECT *\nFROM %s\nLIMIT %d", dialect.QualifiedTable(namespace, table), limit)
+	query := fmt.Sprintf("SELECT *\nFROM %s", dialect.QualifiedTable(namespace, table))
+	if limit > 0 {
+		query += fmt.Sprintf("\nLIMIT %d", limit)
+	}
+	return query
 }
 
 func normalizeClause(clause, keyword string) string {

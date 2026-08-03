@@ -17,11 +17,31 @@ type engineScanStats struct {
 	lastScanByID map[uint]*time.Time
 }
 
-func loadEngineScanStats(db *gorm.DB, engineIDs []uint) (*engineScanStats, error) {
+func loadEngineScanStats(db *gorm.DB, resources []*commonModels.Engine) (*engineScanStats, error) {
 	stats := &engineScanStats{
 		totalCount:   make(map[uint]int64),
 		scannedCount: make(map[uint]int64),
 		lastScanByID: make(map[uint]*time.Time),
+	}
+	if len(resources) == 0 {
+		return stats, nil
+	}
+	engineIDs := make([]uint, 0, len(resources))
+	branchEngineIDs := make([]uint, 0, len(resources))
+	directLeafEngineIDs := make([]uint, 0, len(resources))
+	for _, resource := range resources {
+		if resource == nil {
+			continue
+		}
+		engineIDs = append(engineIDs, resource.ID)
+		enginePlugin, err := plugin.Get(resource.EngineType)
+		if err == nil {
+			if plan, ok := scanflow.CatalogScanPlanForPlugin(enginePlugin); ok && plan.Strategy == scanflow.CatalogScanDirectLeaves {
+				directLeafEngineIDs = append(directLeafEngineIDs, resource.ID)
+				continue
+			}
+		}
+		branchEngineIDs = append(branchEngineIDs, resource.ID)
 	}
 	if len(engineIDs) == 0 {
 		return stats, nil
@@ -31,36 +51,69 @@ func loadEngineScanStats(db *gorm.DB, engineIDs []uint) (*engineScanStats, error
 		EngineID uint
 		Count    int64
 	}
-	var totals []countRow
-	if err := db.Table("meta.meta_node").
-		Where("engine_id IN ? AND parent_node_id IN (?)", engineIDs,
-			db.Table("meta.meta_node").
-				Select("id").
-				Where("engine_id IN ? AND parent_node_id IS NULL AND full_name = ?", engineIDs, ""),
-		).
-		Select("engine_id, COUNT(*) AS count").
-		Group("engine_id").
-		Scan(&totals).Error; err != nil {
-		return nil, fmt.Errorf("failed to count meta nodes: %w", err)
-	}
-	for _, row := range totals {
-		stats.totalCount[row.EngineID] = row.Count
+	if len(branchEngineIDs) > 0 {
+		var totals []countRow
+		if err := db.Table("meta.meta_node").
+			Where("engine_id IN ? AND deleted_at IS NULL AND parent_node_id IN (?)", branchEngineIDs,
+				db.Table("meta.meta_node").
+					Select("id").
+					Where("engine_id IN ? AND parent_node_id IS NULL AND full_name = ? AND deleted_at IS NULL", branchEngineIDs, ""),
+			).
+			Select("engine_id, COUNT(*) AS count").
+			Group("engine_id").
+			Scan(&totals).Error; err != nil {
+			return nil, fmt.Errorf("failed to count meta nodes: %w", err)
+		}
+		for _, row := range totals {
+			stats.totalCount[row.EngineID] = row.Count
+		}
 	}
 
-	var scanned []countRow
-	if err := db.Table("meta.meta_node").
-		Where("engine_id IN ? AND scan_status = ? AND parent_node_id IN (?)", engineIDs, "completed",
-			db.Table("meta.meta_node").
-				Select("id").
-				Where("engine_id IN ? AND parent_node_id IS NULL AND full_name = ?", engineIDs, ""),
-		).
-		Select("engine_id, COUNT(*) AS count").
-		Group("engine_id").
-		Scan(&scanned).Error; err != nil {
-		return nil, fmt.Errorf("failed to count scanned nodes: %w", err)
+	if len(branchEngineIDs) > 0 {
+		var scanned []countRow
+		if err := db.Table("meta.meta_node").
+			Where("engine_id IN ? AND scan_status = ? AND deleted_at IS NULL AND parent_node_id IN (?)", branchEngineIDs, "completed",
+				db.Table("meta.meta_node").
+					Select("id").
+					Where("engine_id IN ? AND parent_node_id IS NULL AND full_name = ? AND deleted_at IS NULL", branchEngineIDs, ""),
+			).
+			Select("engine_id, COUNT(*) AS count").
+			Group("engine_id").
+			Scan(&scanned).Error; err != nil {
+			return nil, fmt.Errorf("failed to count scanned nodes: %w", err)
+		}
+		for _, row := range scanned {
+			stats.scannedCount[row.EngineID] = row.Count
+		}
 	}
-	for _, row := range scanned {
-		stats.scannedCount[row.EngineID] = row.Count
+
+	if len(directLeafEngineIDs) > 0 {
+		rootIDs := db.Table("meta.meta_node").
+			Select("id").
+			Where("engine_id IN ? AND parent_node_id IS NULL AND full_name = ? AND deleted_at IS NULL", directLeafEngineIDs, "")
+		var totals []countRow
+		if err := db.Table("meta.meta_item").
+			Where("engine_id IN ? AND node_id IN (?) AND deleted_at IS NULL", directLeafEngineIDs, rootIDs).
+			Select("engine_id, COUNT(*) AS count").
+			Group("engine_id").
+			Scan(&totals).Error; err != nil {
+			return nil, fmt.Errorf("failed to count direct catalog leaves: %w", err)
+		}
+		for _, row := range totals {
+			stats.totalCount[row.EngineID] = row.Count
+		}
+
+		var scanned []countRow
+		if err := db.Table("meta.meta_item").
+			Where("engine_id IN ? AND node_id IN (?) AND deleted_at IS NULL AND scanned_at IS NOT NULL", directLeafEngineIDs, rootIDs).
+			Select("engine_id, COUNT(*) AS count").
+			Group("engine_id").
+			Scan(&scanned).Error; err != nil {
+			return nil, fmt.Errorf("failed to count scanned direct catalog leaves: %w", err)
+		}
+		for _, row := range scanned {
+			stats.scannedCount[row.EngineID] = row.Count
+		}
 	}
 
 	type lastScanRow struct {
@@ -144,7 +197,10 @@ func catalogViewTerms(engineType string) (engineFamily, rootTerm, topTerm, topI1
 	}
 
 	rootTerm = model.RootTerm
-	if level, ok := plugin.CatalogFirstBusinessBranch(*model); ok {
+	if len(model.Levels) == 1 && model.Levels[0].Role == plugin.CatalogRoleLeaf {
+		topTerm = model.Levels[0].Term
+		topI18nKey = plugin.CatalogLevelI18nKey(*model, topTerm)
+	} else if level, ok := plugin.CatalogFirstBusinessBranch(*model); ok {
 		topTerm = level.Term
 		topI18nKey = level.I18nKey
 		if topI18nKey == "" {

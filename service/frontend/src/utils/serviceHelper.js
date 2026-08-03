@@ -41,7 +41,7 @@ export function getQueryServiceEndpoints(service, baseURL = '') {
 
   const endpoints = {}
   if (isProtocolEnabled(service, 'rest_api')) {
-    endpoints.rest_api = `${baseURL}/api/query/${service.service_name}`
+    endpoints.rest_api = `${baseURL}/api/query/${service.service_name}/query`
   }
   if (isProtocolEnabled(service, 'ogc_features')) {
     endpoints.ogc_features = `${baseURL}/ogc/features/${service.service_name}`
@@ -117,8 +117,8 @@ export function formatServiceEndpoints(service, baseURL = '') {
     endpoints.push({
       protocol: 'rest_api',
       name: 'REST API',
-      url: `${baseURL}/api/query/${service.service_name}`,
-      description: '支持查询参数: filter, fields, orderBy, page, pageSize, format'
+      url: `${baseURL}/api/query/${service.service_name}/query`,
+      description: '结构化查询请求'
     })
   }
 

@@ -405,6 +405,7 @@
         "types": {
           "postgresql": "Enterprise relational database",
           "mysql": "General-purpose relational database",
+          "kafka": "Event streaming and messaging",
           "doris": "MPP analytical database",
           "clickhouse": "Columnar analytical database",
           "mongodb": "Document database",

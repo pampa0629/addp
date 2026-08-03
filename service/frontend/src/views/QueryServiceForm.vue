@@ -171,6 +171,7 @@
                 :rows="10"
                 :placeholder="t('service.query.sqlPlaceholder')"
                 :disabled="loadingSampleQuery"
+				@input="resetSQLOutputContract"
                 style="font-family: 'Courier New', monospace"
               />
               <div class="help-text">
@@ -178,13 +179,37 @@
               </div>
             </el-form-item>
 
+			<el-form-item :label="t('service.query.stableKeyLabel')" required>
+			  <el-select
+				v-model="sqlStableKey"
+				multiple
+				filterable
+				:disabled="isEdit || sqlStableKeyFields.length === 0"
+				:placeholder="t('service.query.stableKeyPlaceholder')"
+				style="width: 100%"
+			  >
+				<el-option v-for="field in sqlStableKeyFields" :key="field.name" :label="field.name" :value="field.name" />
+			  </el-select>
+			  <div class="help-text">{{ t('service.query.stableKeyHelp') }}</div>
+			</el-form-item>
+
+			<el-form-item :label="t('service.query.defaultFieldsLabel')">
+			  <el-input v-model="defaultFieldsInput" :placeholder="t('service.query.defaultFieldsPlaceholder')" />
+			  <div class="help-text">{{ t('service.query.defaultFieldsHelp') }}</div>
+			</el-form-item>
+
+			<el-form-item :label="t('service.query.filterableFieldsLabel')">
+			  <el-input v-model="filterableFieldsInput" :placeholder="t('service.query.filterableFieldsPlaceholder')" />
+			  <div class="help-text">{{ t('service.query.filterableFieldsHelp') }}</div>
+			</el-form-item>
+
             <el-divider content-position="left">空间字段配置（可选）</el-divider>
 
             <el-form-item>
               <el-button
                 type="primary"
                 :loading="detectingSQLSpatial"
-                :disabled="!form.engine_id || !form.sql_query"
+				:disabled="!form.execution_engine_id || !form.sql_query"
                 @click="detectSQLSpatialFields"
               >
                 {{ t('service.query.detectSpatialBtn') }}
@@ -434,6 +459,7 @@ const sqlGeometryColumn = ref('')
 const sqlSrid = ref(0)
 const sqlGeometryType = ref('')
 const sqlOutputContract = ref(null)
+const sqlStableKey = ref([])
 
 // 字段配置输入
 const defaultFieldsInput = ref('')
@@ -474,6 +500,11 @@ const hasGeometryField = computed(() => {
 
 const sqlSupportedEngines = computed(() => queryServiceExecutionEngines(engines.value))
 const queryRuntimes = computed(() => federatedQueryRuntimes(engines.value))
+const sqlOutputFields = computed(() => sqlOutputContract.value?.table?.fields || [])
+const sqlStableKeyFields = computed(() => {
+	const scalarTypes = new Set(['string', 'bool', 'int', 'bigint', 'float', 'double', 'decimal', 'date', 'time', 'timestamp', 'uuid'])
+	return sqlOutputFields.value.filter(field => scalarTypes.has(String(field?.type || '').toLowerCase()))
+})
 
 // 计算属性：是否可以进入下一步
 const canProceed = computed(() => {
@@ -483,7 +514,7 @@ const canProceed = computed(() => {
     if (form.config_type === 'table') {
       return !!form.locator && (!tableUsesRuntime.value || !!form.runtime_engine_id)
     } else {
-      return !!form.execution_engine_id && !!form.sql_query
+		return !!form.execution_engine_id && !!form.sql_query && !!sqlOutputContract.value?.table && sqlStableKey.value.length > 0
     }
   }
   return true
@@ -491,26 +522,31 @@ const canProceed = computed(() => {
 
 // 方法：检测 SQL 查询结果的空间字段
 const detectSQLSpatialFields = async () => {
-  if (!form.engine_id || !form.sql_query) {
+	if (!form.execution_engine_id || !form.sql_query) {
     ElMessage.warning(t('service.query.detectSqlRequired'))
     return
   }
 
   console.log('[QueryServiceForm] Detecting SQL spatial fields...', {
-    engine_id: form.engine_id,
+	  engine_id: form.execution_engine_id,
     sql: form.sql_query
   })
 
   detectingSQLSpatial.value = true
   try {
     const response = await queryServiceAPI.detectSQLOutputContract({
-      engine_id: form.engine_id,
+		engine_id: form.execution_engine_id,
       sql: form.sql_query
     })
 
     console.log('[QueryServiceForm] Detection response:', response)
 
-	  sqlOutputContract.value = response
+		  sqlOutputContract.value = response
+		  const outputNames = new Set((response?.table?.fields || []).map(field => field.name))
+		  sqlStableKey.value = sqlStableKey.value.filter(field => outputNames.has(field))
+		  if (sqlStableKey.value.length === 0 && Array.isArray(response?.table?.primary_key)) {
+			sqlStableKey.value = response.table.primary_key.filter(field => outputNames.has(field))
+		  }
 	  const spatial = response?.spatial
 	  const columns = spatial?.geometry_columns || []
 	  const primary = columns.find(column => column.name === spatial?.primary_geometry_column) || (columns.length === 1 ? columns[0] : null)
@@ -541,7 +577,8 @@ const detectSQLSpatialFields = async () => {
 }
 
 const resetSQLOutputContract = () => {
-  sqlOutputContract.value = null
+	  sqlOutputContract.value = null
+	  sqlStableKey.value = []
   sqlHasGeometry.value = false
   sqlGeometryColumn.value = ''
   sqlSrid.value = 0
@@ -695,6 +732,8 @@ const buildSQLOutputContract = () => {
 	return { ...(table ? { table } : {}), spatial }
 }
 
+const parseFieldInput = value => String(value || '').split(',').map(field => field.trim()).filter(Boolean)
+
 // 方法：提交表单
 const handleSubmit = async () => {
   submitting.value = true
@@ -725,15 +764,8 @@ const handleSubmit = async () => {
         dataConfig.locator = form.locator
       }
 
-      // 默认字段
-      if (defaultFieldsInput.value.trim()) {
-        dataConfig.default_fields = defaultFieldsInput.value.split(',').map(f => f.trim())
-      }
-
-      // 可过滤字段
-      if (filterableFieldsInput.value.trim()) {
-        dataConfig.filterable_fields = filterableFieldsInput.value.split(',').map(f => f.trim())
-      }
+		  dataConfig.default_fields = parseFieldInput(defaultFieldsInput.value)
+		  dataConfig.filterable_fields = parseFieldInput(filterableFieldsInput.value)
 
       if (Object.keys(dataConfig).length > 0) {
         requestData.data_config = dataConfig
@@ -746,12 +778,17 @@ const handleSubmit = async () => {
       } else {
         requestData.engine_id = form.engine_id
       }
-      requestData.sql_query = form.sql_query
+		requestData.sql_query = form.sql_query
+		const dataConfig = {}
+		dataConfig.default_fields = parseFieldInput(defaultFieldsInput.value)
+		dataConfig.filterable_fields = parseFieldInput(filterableFieldsInput.value)
 
-	  if (!isEdit.value) {
-		const outputContract = buildSQLOutputContract()
-		if (outputContract) requestData.output_contract = outputContract
-	  }
+		  if (!isEdit.value) {
+			const outputContract = buildSQLOutputContract()
+			requestData.output_contract = outputContract
+			dataConfig.stable_key = [...sqlStableKey.value]
+		  }
+		if (Object.keys(dataConfig).length > 0) requestData.data_config = dataConfig
     }
 
     // 协议配置
@@ -829,6 +866,8 @@ onMounted(async () => {
       })
 
 	  const snapshot = service.data_config?.source_snapshot
+	  defaultFieldsInput.value = (service.data_config?.default_fields || []).join(',')
+	  filterableFieldsInput.value = (service.data_config?.filterable_fields || []).join(',')
 	  const spatial = snapshot?.spatial
 	  const columns = spatial?.geometry_columns || []
 	  const primary = columns.find(column => column.name === spatial?.primary_geometry_column) || (columns.length === 1 ? columns[0] : null)
@@ -843,6 +882,7 @@ onMounted(async () => {
 		} : { hasGeometry: false }
 	  } else {
 		sqlOutputContract.value = { table: snapshot?.table || null, spatial: spatial || null }
+		sqlStableKey.value = service.data_config?.stable_key || []
 		sqlHasGeometry.value = !!primary
 		sqlGeometryColumn.value = primary?.name || ''
 		sqlSrid.value = primary?.srid || spatial?.srid || 0

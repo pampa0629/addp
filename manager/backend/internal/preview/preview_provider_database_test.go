@@ -55,6 +55,39 @@ func TestDatabasePreviewPostgreSQLPrimaryKeyPageQueryOrdersFirstPage(t *testing.
 	}
 }
 
+func TestDatabaseGeometryColumnsUsesCommonSpatialFactsForMySQL(t *testing.T) {
+	srid := 4326
+	columns := databaseGeometryColumns(&datatype.SpatialInfo{
+		GeometryColumns:       []datatype.GeometryColumnInfo{{Name: "shape", GeometryType: "Polygon", SRID: &srid}},
+		PrimaryGeometryColumn: "shape",
+	}, []datatype.FieldInfo{
+		{Name: "id", Type: datatype.FieldTypeBigInt, NativeType: "bigint"},
+		{Name: "shape", Type: datatype.FieldTypeGeometry, NativeType: "polygon"},
+	})
+	if !reflect.DeepEqual(columns, []string{"shape"}) {
+		t.Fatalf("geometry columns = %#v", columns)
+	}
+}
+
+func TestDatabasePreviewMySQLUsesCatalogReadWithGeoJSONHint(t *testing.T) {
+	reader := &recordingDatabasePreviewPlugin{engineType: "mysql"}
+	provider := &DatabaseTablePreviewProvider{}
+	_, err := provider.queryData(context.Background(), reader, nil, plugin.CatalogPath{}, "mysql", "business", "store_locations", 20, 10, nil, dataprofile.DataScope{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reader.readBatchCalls) != 1 {
+		t.Fatalf("read calls = %d", len(reader.readBatchCalls))
+	}
+	call := reader.readBatchCalls[0]
+	if call.Query != "" || call.Limit != 10 || call.Offset != 20 {
+		t.Fatalf("MySQL batch options = %#v", call)
+	}
+	if call.Hints[plugin.TableReadHintGeometryEncoding] != "geojson" {
+		t.Fatalf("MySQL geometry hint = %#v", call.Hints)
+	}
+}
+
 func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t *testing.T) {
 	previous, previousErr := plugin.Get("postgresql")
 	rowCount := int64(999)

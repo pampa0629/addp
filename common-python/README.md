@@ -90,7 +90,38 @@ from addp_common.notebook import engines
 
 available_engines = engines.list()
 available_engines
+
+# PostgreSQL 使用原生 Schema / Table 术语，无需理解 CatalogPath
+pg = engines.client(available_engines[0]["id"])
+schemas = pg.schemas()
+tables = pg.tables(schema="public")
+roads = pg.table(schema="public", name="roads")
+
+# 也可以从 Schema 对象继续导航
+public = next(schema for schema in schemas if schema.name == "public")
+public.tables()
+public.table("roads")
+
+# 小样本读取返回 pandas.DataFrame
+roads.head(100)
+
+# 全量读取使用 Arrow RecordBatch 流，不会一次性装入内存
+for batch in roads.scan(batch_size=65536):
+    train_one_batch(batch)
+
+# 确实需要单机完整 DataFrame 时必须显式声明内存预算
+roads_df = roads.to_pandas(memory_limit="8GiB")
+
+# 原生 PostgreSQL 参数化只读 SQL 必须显式限制行数和整数秒超时
+filtered = pg.sql(
+    "SELECT * FROM public.roads WHERE id > $1",
+    params=[100],
+    max_rows=1000,
+    timeout=30,
+)
 ```
+
+`engines.client()` 按精确 `engine_type` 返回已注册的原生只读门面；首期支持 PostgreSQL。SDK 内部仍使用统一 Catalog 契约，只缓存服务端返回的 root/branch 规范路径，不缓存 children、失败或数据内容。`scan()` 是算法读取全部数据的主路径；`to_pandas()` 只消费 `scan()`，并同时检查 Catalog 估算大小和实际 Arrow 解码字节。任意 SQL 的流式 `scan_sql()` 属于后续阶段，当前 `sql()` 固定返回有 `max_rows` 边界的 DataFrame。
 
 该 SDK 只读取 Runtime 注入当前 Kernel process 的短期 Notebook Kernel Capability，不接受手工 Token，不读取 `ADDP_TOKEN`，也不返回 `connection_info`。在普通 Python process、已关闭或已过期的 Notebook 会话中调用时会 fail-closed。
 

@@ -20,6 +20,7 @@ func RegisterIAMRoutes(
 	if api == nil || runtime == nil || cfg == nil ||
 		runtime.AuthHandler == nil || runtime.OAuthHandler == nil ||
 		runtime.DelegationHandler == nil || runtime.ExecutionAuthorizationHandler == nil ||
+		runtime.NotebookSessionAuthorizationHandler == nil ||
 		runtime.TaskAuthorizationSubjectHandler == nil ||
 		runtime.UserSelfHandler == nil || runtime.MFASessionHandler == nil ||
 		runtime.TenantInvitationHandler == nil ||
@@ -40,6 +41,18 @@ func RegisterIAMRoutes(
 		return err
 	}
 	executionAuthorizationExecute, err := middleware.NewIAMPermissionGuard("system.execution_authorization.execute")
+	if err != nil {
+		return err
+	}
+	notebookCatalogIssue, err := middleware.NewIAMPermissionGuard("system.engine.read")
+	if err != nil {
+		return err
+	}
+	notebookCatalogExecute, err := middleware.NewIAMPermissionGuard("system.notebook_session_authorization.execute")
+	if err != nil {
+		return err
+	}
+	developClient, err := middleware.NewIAMClientGuard("addp-develop")
 	if err != nil {
 		return err
 	}
@@ -80,10 +93,14 @@ func RegisterIAMRoutes(
 		auth.POST("/mfa/step-up-verifications", runtime.FirstPartyCredential, userRateLimit, runtime.MFASessionHandler.CompleteStepUp)
 		auth.POST("/delegations", runtime.UserAccessCredential, runtime.DelegationHandler.CreateDelegation)
 		auth.POST("/execution-authorizations", runtime.UserAccessCredential, tenantContext, executionAuthorizationIssue, runtime.ExecutionAuthorizationHandler.Issue)
+		auth.POST("/notebook-session-authorizations", runtime.UserAccessCredential, tenantContext, notebookCatalogIssue, runtime.NotebookSessionAuthorizationHandler.Issue)
 		auth.POST("/task-authorization-subjects", runtime.UserAccessCredential, tenantContext, orchestratorExecute, runtime.TaskAuthorizationSubjectHandler.Authorize)
 	}
 
 	api.POST("/execution-authorizations/:id/engine-accesses", runtime.Authentication, runtime.ServiceCredential, tenantServiceContext, executionAuthorizationExecute, runtime.ExecutionAuthorizationHandler.AuthorizeEngineAccess)
+	api.POST("/notebook-session-authorizations/:id/catalog/children", runtime.Authentication, runtime.ServiceCredential, tenantServiceContext, developClient, notebookCatalogExecute, runtime.NotebookSessionAuthorizationHandler.ListCatalogChildren)
+	api.POST("/notebook-session-authorizations/:id/execution-engine-accesses", runtime.Authentication, runtime.ServiceCredential, tenantServiceContext, developClient, notebookCatalogExecute, runtime.NotebookSessionAuthorizationHandler.DeriveExecutionEngineAccess)
+	api.POST("/notebook-session-authorizations/:id/revocations", runtime.Authentication, runtime.ServiceCredential, tenantServiceContext, developClient, notebookCatalogExecute, runtime.NotebookSessionAuthorizationHandler.Revoke)
 
 	users := api.Group("/users")
 	users.Use(runtime.Authentication, runtime.FirstPartyCredential)

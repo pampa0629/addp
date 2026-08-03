@@ -50,6 +50,7 @@ func TestBootstrapBrowserLoginAgainstPostgres(t *testing.T) {
 		t.Fatalf("create IAM runtime: %v", err)
 	}
 	runtime.ExecutionAuthorizationHandler = &IAMExecutionAuthorizationHandler{}
+	runtime.NotebookSessionAuthorizationHandler = &IAMNotebookSessionAuthorizationHandler{}
 	runtime.TaskAuthorizationSubjectHandler = &IAMTaskAuthorizationSubjectHandler{}
 	cipher, err := iam.NewMFACredentialCipher(cfg.IAMMFAEncryptionKey)
 	if err != nil {

@@ -237,7 +237,7 @@ type ComputeCapabilities struct {
 
 详细规范见 [ADDP 引擎能力声明规范](../../../docs/spec/addp引擎能力声明规范.md)。
 
-业务 Kafka Engine 插件已实现 `engine_family=event_stream`、`service -> topic` catalog 和 `storage.store.change_stream_read`，System 后端可按普通 Engine 注册；Console 配置表单与 Transfer continuous runtime 尚未开放。Infra Kafka 属于 ADDP 部署配置，不写入 `system.engines`，也不产生本表 capabilities 记录。
+业务 Kafka Engine 插件已实现 `engine_family=event_stream`、`service -> topic` catalog 和 `storage.store.change_stream_read`，System 可按普通 Engine 注册并由 Console 配置连接，Transfer continuous runtime 可将 Topic 作为源。Infra Kafka 属于 ADDP 部署配置，不写入 `system.engines`，也不产生本表 capabilities 记录。
 
 Kafka `connection_info` 第一版字段：
 

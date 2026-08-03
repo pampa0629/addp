@@ -42,3 +42,21 @@ other = "No SQL sample that executes successfully and returns business data is a
 
 [service.err.query_sample_failed]
 other = "Failed to generate a query service sample"
+
+[service.err.invalid_query_request]
+other = "Invalid query request"
+
+[service.err.invalid_query_format]
+other = "Invalid query response format"
+
+[service.err.invalid_structured_query]
+other = "Invalid structured query"
+
+[service.err.query_execution_failed]
+other = "Query execution failed"
+
+[service.err.query_format_failed]
+other = "Failed to format query result"
+
+[service.err.invalid_feature_id]
+other = "Feature ID is invalid or expired"

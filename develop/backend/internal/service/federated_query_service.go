@@ -135,7 +135,7 @@ func (s *FederatedQueryService) ExecuteQuery(
 }
 
 func (s *FederatedQueryService) CandidateQueries(sources []DataSource) []federatedquery.Candidate {
-	return federatedquery.Candidates(sources)
+	return federatedquery.Candidates(sources, 10)
 }
 
 func (s *FederatedQueryService) GetSources(ctx context.Context, tenantID, runtimeEngineID uint) ([]DataSource, error) {

@@ -108,3 +108,36 @@ func TestExecutorRejectsUnsafeSQLBeforeConsumingAuthorization(t *testing.T) {
 		t.Fatalf("System authorization calls = %d, want 0", calls)
 	}
 }
+
+func TestRuntimeQueryDescribeDoesNotWrapOrPaginateSQL(t *testing.T) {
+	t.Parallel()
+
+	query := runtimeQuery("SELECT id FROM business.orders LIMIT 10;", plugin.QueryOptions{
+		Describe: true, Limit: 1, Offset: 20,
+	}, 100)
+	if query != "DESCRIBE SELECT id FROM business.orders LIMIT 10" {
+		t.Fatalf("runtimeQuery() = %q", query)
+	}
+}
+
+func TestExecutorMapsSpatialQueryOptionToFederatedSession(t *testing.T) {
+	t.Parallel()
+
+	executor := &Executor{maxMemory: "128MB", threads: 2}
+	options := executor.sessionOptions(plugin.QueryOptions{Spatial: true})
+	if options.MemoryLimit != "128MB" || options.Threads != 2 || !options.LoadSpatial {
+		t.Fatalf("session options = %#v", options)
+	}
+}
+
+func TestNormalizeQueryArgsPreservesJSONIntegers(t *testing.T) {
+	t.Parallel()
+
+	args, err := normalizeQueryArgs([]interface{}{json.Number("9007199254740993"), json.Number("1.25"), "value"})
+	if err != nil {
+		t.Fatalf("normalizeQueryArgs() error = %v", err)
+	}
+	if args[0] != int64(9007199254740993) || args[1] != 1.25 || args[2] != "value" {
+		t.Fatalf("args = %#v", args)
+	}
+}

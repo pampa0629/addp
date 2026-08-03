@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -42,7 +43,10 @@ func NewRouter(cfg RouterConfig, executor *runtime.Executor) (*gin.Engine, error
 			return
 		}
 		var body plugin.FederatedQueryRequest
-		if err := c.ShouldBindJSON(&body); err != nil || uuid.Validate(body.ExecutionID) != nil ||
+		decoder := json.NewDecoder(c.Request.Body)
+		decoder.DisallowUnknownFields()
+		decoder.UseNumber()
+		if err := decoder.Decode(&body); err != nil || uuid.Validate(body.ExecutionID) != nil ||
 			!canonicalID(body.ExecutionAuthorizationID) || len(body.SourceEngineIDs) == 0 || strings.TrimSpace(body.Query) == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid federated query request"})
 			return

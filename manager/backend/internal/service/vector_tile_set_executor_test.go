@@ -72,11 +72,15 @@ func (g *staticPostGISPMTilesGenerator) Generate(_ context.Context, cfg mvt.Quic
 func TestVectorTileSetExecutorUsesPostGISGeneratorWithoutWorkflow(t *testing.T) {
 	targetRoot := t.TempDir()
 	systemServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/internal/engines/26" {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/internal/engines/26":
+			_, _ = w.Write([]byte(`{"id":26,"tenant_id":7,"name":"Business NFS","engine_type":"nfs","connection_info":{"mount_path":"` + targetRoot + `"},"lifecycle_state":"active"}`))
+		case "/api/v1/internal/engines/11":
+			_, _ = w.Write([]byte(`{"id":11,"tenant_id":7,"name":"Business PostGIS","engine_type":"postgresql","connection_info":{},"lifecycle_state":"active"}`))
+		default:
 			t.Fatalf("unexpected system path: %s", r.URL.Path)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":26,"tenant_id":7,"name":"Business NFS","engine_type":"nfs","connection_info":{"mount_path":"` + targetRoot + `"},"lifecycle_state":"active"}`))
 	}))
 	defer systemServer.Close()
 

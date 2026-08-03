@@ -1,19 +1,22 @@
 package api
 
 import (
-	"database/sql"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/logger"
-	"github.com/addp/common/spatial"
 	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/twpayne/go-geom"
+	"github.com/twpayne/go-geom/encoding/ewkb"
+	"github.com/twpayne/go-geom/encoding/geojson"
 )
 
 // FeatureHandler 处理要素相关的请求（用于地图与表格关联）
@@ -78,8 +81,9 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 
 	geomCol := strings.TrimSpace(c.Query("geom"))
 	primaryKey := strings.TrimSpace(c.Query("primary_key"))
+	var spatialMeta *service.SpatialMetadataResult
 	if geomCol == "" || primaryKey == "" {
-		spatialMeta, err := spatialMetadataFromMeta(c, h.quickViewService, uint(engineID), schema, table)
+		spatialMeta, err = spatialMetadataFromMeta(c, h.quickViewService, uint(engineID), schema, table)
 		if err != nil {
 			logger.L().Warn("无法从 Meta 获取要素定位空间元数据", "error", err, "engine_id", engineID, "schema", schema, "table", table)
 			managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewGeometryMissing)
@@ -109,45 +113,31 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 		return
 	}
 
-	// 4. 验证引擎类型（当前为空间预览的 PostGIS 专用能力）
-	if !spatial.IsPostGISEngine(engine.EngineType) {
-		managerError(c, http.StatusBadRequest, manageri18n.MsgUnsupportedPostgresOnly)
+	if !featureEngineAccessible(c, engine.TenantID) {
+		managerError(c, http.StatusForbidden, manageri18n.MsgEngineAccessDenied)
 		return
 	}
-
-	// 5. 获取 PostGIS 连接池
-	db, err := spatial.GetPostGISPool(engine, nil)
+	feature, err := readSpatialFeature(c, engine.EngineType, engine.ID, plugin.ConnectionInfo(engine.ConnectionInfo), schema, table, geomCol, primaryKey, featureIDStr)
 	if err != nil {
-		managerError(c, http.StatusInternalServerError, manageri18n.MsgDatabaseConnectionFailed)
+		logger.L().Warn("读取要素中心点失败", "error", err, "engine_id", engineID, "schema", schema, "table", table)
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgQueryFailed)
 		return
 	}
-
-	sqlStr := spatial.BuildPostGISFeatureCentroidQuery(schema, table, geomCol, primaryKey)
-
-	// 7. 执行查询
-	var x, y sql.NullFloat64
-	sourceSRID := 0
-	err = db.WithContext(c.Request.Context()).Raw(sqlStr, featureIDStr).Row().Scan(&x, &y, &sourceSRID)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			managerError(c, http.StatusNotFound, manageri18n.MsgFeatureNotFound)
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("query failed: %v", err)})
+	if feature == nil {
+		managerError(c, http.StatusNotFound, manageri18n.MsgFeatureNotFound)
 		return
 	}
-
-	if !x.Valid || !y.Valid {
+	x, y, ok, err := spatialFeatureCentroid(feature.CentroidEWKB)
+	if err != nil || !ok {
 		managerError(c, http.StatusNotFound, manageri18n.MsgFeatureInvalidGeometry)
 		return
 	}
 
-	// 8. 返回源坐标中心点和 CRS 契约
-	sourceCRS, sourceCRSDefinition := postGISCRSDefinition(db, sourceSRID)
-	response := spatialPreviewContract(geomCol, sourceSRID, sourceCRS, sourceCRSDefinition)
+	sourceCRS, sourceCRSDefinition := spatialFeatureCRS(feature, spatialMeta)
+	response := spatialPreviewContract(geomCol, feature.SRID, sourceCRS, sourceCRSDefinition)
 	response["centroid"] = gin.H{
-		"x": x.Float64,
-		"y": y.Float64,
+		"x": x,
+		"y": y,
 	}
 	c.JSON(http.StatusOK, response)
 }
@@ -197,8 +187,9 @@ func (h *FeatureHandler) GetFeatureGeometry(c *gin.Context) {
 
 	geomCol := strings.TrimSpace(c.Query("geom"))
 	primaryKey := strings.TrimSpace(c.Query("primary_key"))
+	var spatialMeta *service.SpatialMetadataResult
 	if geomCol == "" || primaryKey == "" {
-		spatialMeta, err := spatialMetadataFromMeta(c, h.quickViewService, uint(engineID), schema, table)
+		spatialMeta, err = spatialMetadataFromMeta(c, h.quickViewService, uint(engineID), schema, table)
 		if err != nil {
 			logger.L().Warn("无法从 Meta 获取要素几何空间元数据", "error", err, "engine_id", engineID, "schema", schema, "table", table)
 			managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewGeometryMissing)
@@ -228,49 +219,102 @@ func (h *FeatureHandler) GetFeatureGeometry(c *gin.Context) {
 		return
 	}
 
-	// 4. 验证引擎类型（当前为空间预览的 PostGIS 专用能力）
-	if !spatial.IsPostGISEngine(engine.EngineType) {
-		managerError(c, http.StatusBadRequest, manageri18n.MsgUnsupportedPostgresOnly)
+	if !featureEngineAccessible(c, engine.TenantID) {
+		managerError(c, http.StatusForbidden, manageri18n.MsgEngineAccessDenied)
 		return
 	}
-
-	// 5. 获取 PostGIS 连接池
-	db, err := spatial.GetPostGISPool(engine, nil)
+	feature, err := readSpatialFeature(c, engine.EngineType, engine.ID, plugin.ConnectionInfo(engine.ConnectionInfo), schema, table, geomCol, primaryKey, featureIDStr)
 	if err != nil {
-		managerError(c, http.StatusInternalServerError, manageri18n.MsgDatabaseConnectionFailed)
+		logger.L().Warn("读取要素几何失败", "error", err, "engine_id", engineID, "schema", schema, "table", table)
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgQueryFailed)
 		return
 	}
-
-	sqlStr := spatial.BuildPostGISFeatureGeometryQuery(schema, table, geomCol, primaryKey)
-
-	// 7. 执行查询
-	var geojson sql.NullString
-	var x, y, minX, minY, maxX, maxY sql.NullFloat64
-	sourceSRID := 0
-	err = db.WithContext(c.Request.Context()).Raw(sqlStr, featureIDStr).Row().Scan(&geojson, &x, &y, &minX, &minY, &maxX, &maxY, &sourceSRID)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			managerError(c, http.StatusNotFound, manageri18n.MsgFeatureNotFound)
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("query failed: %v", err)})
+	if feature == nil {
+		managerError(c, http.StatusNotFound, manageri18n.MsgFeatureNotFound)
 		return
 	}
-
-	if !geojson.Valid {
+	geometry, err := ewkb.Unmarshal(feature.GeometryEWKB)
+	if err != nil || geometry == nil || geometry.Bounds().IsEmpty() {
 		managerError(c, http.StatusNotFound, manageri18n.MsgFeatureInvalidGeometry)
 		return
 	}
-
-	// 8. 返回源坐标几何、中心点坐标、边界框和 CRS 契约
-	sourceCRS, sourceCRSDefinition := postGISCRSDefinition(db, sourceSRID)
-	response := spatialPreviewContract(geomCol, sourceSRID, sourceCRS, sourceCRSDefinition)
-	response["geojson"] = geojson.String
-	response["centroid"] = gin.H{
-		"x": x.Float64,
-		"y": y.Float64,
+	encodedGeoJSON, err := geojson.Marshal(geometry)
+	if err != nil {
+		managerError(c, http.StatusNotFound, manageri18n.MsgFeatureInvalidGeometry)
+		return
 	}
-	response["extent"] = []float64{minX.Float64, minY.Float64, maxX.Float64, maxY.Float64}
-	response["extent_srid"] = sourceSRID
+	x, y, ok, err := spatialFeatureCentroid(feature.CentroidEWKB)
+	if err != nil || !ok {
+		managerError(c, http.StatusNotFound, manageri18n.MsgFeatureInvalidGeometry)
+		return
+	}
+	bounds := geometry.Bounds()
+	sourceCRS, sourceCRSDefinition := spatialFeatureCRS(feature, spatialMeta)
+	response := spatialPreviewContract(geomCol, feature.SRID, sourceCRS, sourceCRSDefinition)
+	response["geojson"] = string(encodedGeoJSON)
+	response["centroid"] = gin.H{
+		"x": x,
+		"y": y,
+	}
+	response["extent"] = []float64{bounds.Min(0), bounds.Min(1), bounds.Max(0), bounds.Max(1)}
+	response["extent_srid"] = feature.SRID
 	c.JSON(http.StatusOK, response)
+}
+
+func readSpatialFeature(c *gin.Context, engineType string, engineID uint, connInfo plugin.ConnectionInfo, schema, table, geometryField, identityField, identityValue string) (*plugin.SpatialFeatureData, error) {
+	plug, err := plugin.Get(engineType)
+	if err != nil {
+		return nil, err
+	}
+	provider, ok := plug.(plugin.SpatialFeatureReadProvider)
+	if !ok {
+		return nil, fmt.Errorf("engine %s does not implement SpatialFeatureReadProvider", engineType)
+	}
+	modelProvider, ok := plug.(plugin.CatalogModelProvider)
+	if !ok {
+		return nil, fmt.Errorf("engine %s does not implement CatalogModelProvider", engineType)
+	}
+	branch, ok := plugin.CatalogFirstBusinessBranch(modelProvider.CatalogModel())
+	if !ok || strings.TrimSpace(branch.Term) == "" {
+		return nil, fmt.Errorf("engine %s catalog model has no business namespace", engineType)
+	}
+	return provider.ReadSpatialFeature(c.Request.Context(), connInfo, plugin.TabularItemPath(engineID, branch.Term, schema, table), plugin.SpatialFeatureReadOptions{
+		GeometryField: geometryField,
+		IdentityField: identityField,
+		IdentityValue: identityValue,
+	})
+}
+
+func featureEngineAccessible(c *gin.Context, engineTenantID *uint) bool {
+	tenantID := tenantIDFromContext(c)
+	return tenantID == nil || engineTenantID == nil || *tenantID == *engineTenantID
+}
+
+func spatialFeatureCentroid(encoded []byte) (float64, float64, bool, error) {
+	if len(encoded) == 0 {
+		return 0, 0, false, nil
+	}
+	geometry, err := ewkb.Unmarshal(encoded)
+	if err != nil {
+		return 0, 0, false, err
+	}
+	point, ok := geometry.(*geom.Point)
+	if !ok || point.Empty() || len(point.FlatCoords()) < 2 {
+		return 0, 0, false, nil
+	}
+	return point.FlatCoords()[0], point.FlatCoords()[1], true, nil
+}
+
+func spatialFeatureCRS(feature *plugin.SpatialFeatureData, meta *service.SpatialMetadataResult) (string, *datatype.CRSDefinition) {
+	if meta != nil && (strings.TrimSpace(meta.SourceCRS) != "" || meta.SourceCRSDefinition != nil) {
+		return strings.TrimSpace(meta.SourceCRS), meta.SourceCRSDefinition
+	}
+	if feature != nil && feature.Spatial != nil {
+		crsRef := feature.Spatial.PrimaryCRSRef()
+		return crsRef, feature.Spatial.CRSDefinitionByID(crsRef)
+	}
+	if feature != nil && feature.SRID > 0 {
+		return datatype.EPSGCRSRef(feature.SRID), nil
+	}
+	return "", nil
 }

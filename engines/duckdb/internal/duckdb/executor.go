@@ -16,10 +16,10 @@ type QueryResult struct {
 }
 
 // ExecuteQuery 在给定连接上执行 SQL 并返回结果
-func ExecuteQuery(ctx context.Context, conn *sql.Conn, sqlStr string) (*QueryResult, error) {
+func ExecuteQuery(ctx context.Context, conn *sql.Conn, sqlStr string, args ...interface{}) (*QueryResult, error) {
 	start := time.Now()
 
-	rows, err := conn.QueryContext(ctx, sqlStr)
+	rows, err := conn.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, fmt.Errorf("DuckDB 查询执行失败: %w", err)
 	}

@@ -12,8 +12,30 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 36 {
-		t.Fatalf("LatestVersion = %d, want 36", catalog.LatestVersion)
+	if catalog.LatestVersion != 37 {
+		t.Fatalf("LatestVersion = %d, want 37", catalog.LatestVersion)
+	}
+}
+
+func TestNotebookSessionAuthorizationMigrationPublishesBoundary(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000037_iam_notebook_session_authorization.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 37: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"CREATE TABLE system.notebook_session_authorizations",
+		"operations text[] NOT NULL CHECK",
+		"ARRAY['catalog.list_children', 'execution_engine_access.derive']::text[]",
+		"token_family_id bigint NOT NULL REFERENCES system.refresh_token_families(id)",
+		"source_notebook_session_authorization_id uuid",
+		"trg_notebook_session_authorizations_revoke_executions",
+		"'system.notebook_session_authorization.execute'",
+		"role.role_key = 'tenant.develop_runtime'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 37 missing %q", fragment)
+		}
 	}
 }
 

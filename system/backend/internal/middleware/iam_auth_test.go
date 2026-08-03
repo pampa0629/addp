@@ -233,6 +233,39 @@ func TestIAMCredentialGuardAllowsOnlyConfiguredTokenTypes(t *testing.T) {
 	}
 }
 
+func TestIAMClientGuardRequiresExactServiceOAuthClient(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	guard, err := NewIAMClientGuard("addp-develop")
+	if err != nil {
+		t.Fatalf("NewIAMClientGuard() error = %v", err)
+	}
+	authContext := testIAMAuthContext()
+	authContext.Principal.Type = "service_principal"
+	authContext.Authentication.Methods = []string{"service_secret"}
+	authContext.Authentication.AssuranceLevel = "not_applicable"
+	authContext.Token.Type = "service_access_token"
+	clientID := "addp-develop"
+	authContext.Client.ClientID = &clientID
+
+	allowed := performIAMGuardRequest(withIAMAuthContext(authContext), guard)
+	if allowed.Code != http.StatusNoContent {
+		t.Fatalf("allowed status = %d, body = %s", allowed.Code, allowed.Body.String())
+	}
+
+	otherClientID := "addp-meta"
+	authContext.Client.ClientID = &otherClientID
+	deniedClient := performIAMGuardRequest(withIAMAuthContext(authContext), guard)
+	if deniedClient.Code != http.StatusForbidden || !responseContainsErrorCode(deniedClient, "permission_denied") {
+		t.Fatalf("other client status = %d, body = %s", deniedClient.Code, deniedClient.Body.String())
+	}
+
+	authContext = testIAMAuthContext()
+	deniedUser := performIAMGuardRequest(withIAMAuthContext(authContext), guard)
+	if deniedUser.Code != http.StatusForbidden || !responseContainsErrorCode(deniedUser, "permission_denied") {
+		t.Fatalf("user status = %d, body = %s", deniedUser.Code, deniedUser.Body.String())
+	}
+}
+
 func TestIAMPermissionGuardRejectsInvalidConfiguration(t *testing.T) {
 	for _, permissions := range [][]string{
 		nil,
@@ -253,6 +286,11 @@ func TestIAMPermissionGuardRejectsInvalidConfiguration(t *testing.T) {
 	} {
 		if _, err := NewIAMCredentialGuard(tokenTypes...); !errors.Is(err, commonapi.ErrBadRequest) {
 			t.Fatalf("NewIAMCredentialGuard(%v) error = %v", tokenTypes, err)
+		}
+	}
+	for _, clientID := range []string{"", " addp-develop", "addp-develop "} {
+		if _, err := NewIAMClientGuard(clientID); !errors.Is(err, commonapi.ErrBadRequest) {
+			t.Fatalf("NewIAMClientGuard(%q) error = %v", clientID, err)
 		}
 	}
 }

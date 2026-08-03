@@ -619,7 +619,7 @@ func TestValidateSystemEngineTypeAcceptsRegisteredPlugin(t *testing.T) {
 func TestDecryptStoredConnectionInfoRejectsPlainSensitiveValue(t *testing.T) {
 	service := NewEngineService(&repository.EngineRepository{}, []byte("addp-dev-encryption-key-2025!!!!"), nil)
 
-	_, err := service.decryptStoredConnectionInfo(models.ConnectionInfo{
+	_, err := service.decryptStoredConnectionInfo("postgresql", models.ConnectionInfo{
 		"host":     "localhost",
 		"password": "plain-password",
 	})
@@ -639,7 +639,7 @@ func TestDecryptStoredConnectionInfoReturnsPlainConnectionInfo(t *testing.T) {
 	}
 	service := NewEngineService(&repository.EngineRepository{}, key, nil)
 
-	connInfo, err := service.decryptStoredConnectionInfo(models.ConnectionInfo{
+	connInfo, err := service.decryptStoredConnectionInfo("postgresql", models.ConnectionInfo{
 		"host":     "localhost",
 		"password": secret,
 	})
@@ -658,23 +658,24 @@ func TestConnectionInfoStorageRoundTrip(t *testing.T) {
 	key := []byte("addp-dev-encryption-key-2025!!!!")
 	service := NewEngineService(&repository.EngineRepository{}, key, nil)
 	original := models.ConnectionInfo{
-		"host":       "localhost",
-		"password":   "business_password",
-		"access_key": "business-access-key",
+		"bootstrap_servers": "broker.internal:9092",
+		"password":          "business_password",
+		"tls_client_key":    "private-key-pem",
+		"tls_client_cert":   "client-cert-pem",
 	}
 
-	stored, err := service.encryptConnectionInfoForStorage(original)
+	stored, err := service.encryptConnectionInfoForStorage("kafka", original)
 	if err != nil {
 		t.Fatalf("encryptConnectionInfoForStorage: %v", err)
 	}
-	if stored["password"] == original["password"] || stored["access_key"] == original["access_key"] {
+	if stored["password"] == original["password"] || stored["tls_client_key"] == original["tls_client_key"] {
 		t.Fatal("stored sensitive fields must be encrypted")
 	}
-	if stored["host"] != original["host"] {
-		t.Fatalf("stored host = %q, want unchanged host", stored["host"])
+	if stored["tls_client_cert"] != original["tls_client_cert"] {
+		t.Fatalf("stored tls_client_cert = %q, want unchanged certificate", stored["tls_client_cert"])
 	}
 
-	plain, err := service.decryptStoredConnectionInfo(stored)
+	plain, err := service.decryptStoredConnectionInfo("kafka", stored)
 	if err != nil {
 		t.Fatalf("decryptStoredConnectionInfo: %v", err)
 	}
@@ -685,10 +686,41 @@ func TestConnectionInfoStorageRoundTrip(t *testing.T) {
 	}
 }
 
+func TestKafkaSensitiveFieldsUsePluginDeclaration(t *testing.T) {
+	service := NewEngineService(&repository.EngineRepository{}, nil, nil)
+	masked := service.maskSensitiveFields("kafka", models.ConnectionInfo{
+		"bootstrap_servers": "broker.internal:9092",
+		"password":          "secret",
+		"tls_client_cert":   "client-cert-pem",
+		"tls_client_key":    "private-key-pem",
+	})
+
+	if masked["password"] != "******" || masked["tls_client_key"] != "******" {
+		t.Fatalf("masked Kafka secrets = %#v", masked)
+	}
+	if masked["tls_client_cert"] != "client-cert-pem" {
+		t.Fatalf("tls_client_cert = %q, want unchanged certificate", masked["tls_client_cert"])
+	}
+}
+
+func TestMergePlainConnectionInfoPreservesKafkaTLSClientKeyPlaceholder(t *testing.T) {
+	service := NewEngineService(&repository.EngineRepository{}, nil, nil)
+	merged := service.mergePlainConnectionInfo(
+		"kafka",
+		models.ConnectionInfo{"tls_client_key": "private-key-pem"},
+		models.ConnectionInfo{"tls_client_key": "********"},
+	)
+
+	if merged["tls_client_key"] != "private-key-pem" {
+		t.Fatalf("tls_client_key = %q, want original private key", merged["tls_client_key"])
+	}
+}
+
 func TestMergePlainConnectionInfoPreservesSensitiveValueForMaskedOverride(t *testing.T) {
 	service := NewEngineService(&repository.EngineRepository{}, []byte("addp-dev-encryption-key-2025!!!!"), nil)
 
 	merged := service.mergePlainConnectionInfo(
+		"postgresql",
 		models.ConnectionInfo{
 			"host":     "localhost",
 			"password": "business_password",
@@ -711,6 +743,7 @@ func TestMergePlainConnectionInfoReplacesSensitiveValue(t *testing.T) {
 	service := NewEngineService(&repository.EngineRepository{}, []byte("addp-dev-encryption-key-2025!!!!"), nil)
 
 	merged := service.mergePlainConnectionInfo(
+		"postgresql",
 		models.ConnectionInfo{"password": "old-password"},
 		models.ConnectionInfo{"password": "new-password"},
 	)

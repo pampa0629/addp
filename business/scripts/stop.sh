@@ -26,7 +26,7 @@ for arg in "$@"; do
     case $arg in
         -all) HAS_ARGS=false; break ;;
         -h|--help)
-            echo "使用方法: bash scripts/stop.sh [-postgres|-minio|-clickhouse|-mongodb|-doris|-spark|-neo4j|-mysql|-nfs|-all]"
+            echo "使用方法: bash scripts/stop.sh [-postgres|-minio|-clickhouse|-mongodb|-doris|-spark|-neo4j|-mysql|-redpanda|-nfs|-all]"
             exit 0
             ;;
         -nfs)
@@ -37,6 +37,9 @@ for arg in "$@"; do
             case "$key" in
                 postgres|minio|clickhouse|mongodb|neo4j|mysql)
                     SERVICES+=("$key")
+                    ;;
+                redpanda)
+                    SERVICES+=("business-redpanda")
                     ;;
                 doris)
                     SERVICES+=("doris-fe")

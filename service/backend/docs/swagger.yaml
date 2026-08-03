@@ -628,6 +628,97 @@ definitions:
         description: string | integer | float | boolean
         type: string
     type: object
+  github_com_addp_service_internal_models.QueryExecutionRequest:
+    properties:
+      filter:
+        $ref: '#/definitions/github_com_addp_service_internal_models.QueryFilter'
+      format:
+        enum:
+        - json
+        - csv
+        - geojson
+        type: string
+      order_by:
+        items:
+          $ref: '#/definitions/github_com_addp_service_internal_models.QueryOrder'
+        type: array
+      page:
+        $ref: '#/definitions/github_com_addp_service_internal_models.QueryPageRequest'
+      select:
+        items:
+          type: string
+        type: array
+    type: object
+  github_com_addp_service_internal_models.QueryExecutionResult:
+    properties:
+      data:
+        items:
+          additionalProperties: true
+          type: object
+        type: array
+      page:
+        $ref: '#/definitions/github_com_addp_service_internal_models.QueryPageResult'
+      service_version:
+        type: string
+    type: object
+  github_com_addp_service_internal_models.QueryFilter:
+    properties:
+      and:
+        items:
+          $ref: '#/definitions/github_com_addp_service_internal_models.QueryFilter'
+        type: array
+      field:
+        type: string
+      not:
+        $ref: '#/definitions/github_com_addp_service_internal_models.QueryFilter'
+      op:
+        enum:
+        - eq
+        - ne
+        - lt
+        - lte
+        - gt
+        - gte
+        - in
+        - is_null
+        - is_not_null
+        - bbox_intersects
+        type: string
+      or:
+        items:
+          $ref: '#/definitions/github_com_addp_service_internal_models.QueryFilter'
+        type: array
+      value:
+        type: object
+    type: object
+  github_com_addp_service_internal_models.QueryOrder:
+    properties:
+      direction:
+        enum:
+        - asc
+        - desc
+        type: string
+      field:
+        type: string
+    type: object
+  github_com_addp_service_internal_models.QueryPageRequest:
+    properties:
+      cursor:
+        type: string
+      limit:
+        maximum: 10000
+        minimum: 1
+        type: integer
+    type: object
+  github_com_addp_service_internal_models.QueryPageResult:
+    properties:
+      has_more:
+        type: boolean
+      limit:
+        type: integer
+      next_cursor:
+        type: string
+    type: object
   github_com_addp_service_internal_models.QueryServiceDTO:
     properties:
       config_type:
@@ -1305,41 +1396,29 @@ paths:
       tags:
       - GraphQueryExecution
       x-addp-auth-mode: public
-  /api/query/{serviceName}:
-    get:
+  /api/query/{serviceName}/query:
+    post:
+      consumes:
+      - application/json
       parameters:
       - description: 服务名称 | Service name
         in: path
         name: serviceName
         required: true
         type: string
-      - default: 1
-        description: 页码 | Page
-        in: query
-        name: page
-        type: integer
-      - default: 50
-        description: 每页数量 | Page size
-        in: query
-        name: page_size
-        type: integer
-      - default: json
-        description: 返回格式 (json,csv,geojson) | Response format (json,csv,geojson)
-        in: query
-        name: format
-        type: string
-      - description: 过滤条件 | Filter
-        in: query
-        name: filter
-        type: string
+      - description: 结构化查询请求 | Structured query request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_service_internal_models.QueryExecutionRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/github_com_addp_service_internal_models.QueryExecutionResult'
         "400":
           description: Bad Request
           schema:
@@ -1818,11 +1897,10 @@ paths:
         in: query
         name: limit
         type: integer
-      - default: 0
-        description: 偏移量 | Offset
+      - description: 查询游标 | Query cursor
         in: query
-        name: offset
-        type: integer
+        name: cursor
+        type: string
       - description: 空间范围 | Bounding box
         in: query
         name: bbox

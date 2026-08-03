@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"github.com/addp/common/client"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/resourcetree"
+	"github.com/addp/common/sqleffect"
 	"github.com/addp/service/internal/models"
 	"github.com/addp/service/internal/repository"
 )
@@ -62,6 +64,12 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 	if req.ConfigType == "sql" {
 		if req.SqlQuery == "" {
 			return nil, errors.New("sql_query is required for sql mode")
+		}
+		if err := sqleffect.RequireReadOnly(req.SqlQuery); err != nil {
+			return nil, fmt.Errorf("sql_query must be read-only: %w", err)
+		}
+		if req.OutputContract == nil || req.OutputContract.Table == nil || len(req.OutputContract.Table.Fields) == 0 {
+			return nil, errors.New("sql mode requires a detected output_contract")
 		}
 		if req.SchemaName != "" || req.TableName != "" {
 			return nil, errors.New("schema_name and table_name should not be provided in sql mode")
@@ -129,6 +137,15 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 			snapshot.DependencyHash = queryServiceDependencyHash(snapshot)
 		}
 	}
+	stableKey, err := publishedStableKey(req.ConfigType, dataConfig, snapshot)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateQueryFieldPolicy(dataConfig, snapshot.Table); err != nil {
+		return nil, err
+	}
+	snapshot.DependencyHash = queryServiceDependencyHash(snapshot)
+	dataConfig["stable_key"] = stableKey
 	if req.ConfigType == "table" {
 		if snapshot != nil && snapshot.ObjectTable != nil {
 			if req.RuntimeEngineID == nil || *req.RuntimeEngineID == 0 {
@@ -444,15 +461,21 @@ func queryServiceUserDataConfig(input map[string]interface{}, configType string)
 	for key, value := range input {
 		switch key {
 		case "default_fields", "filterable_fields":
-			if configType != "table" {
-				return nil, fmt.Errorf("data_config.%s is only valid in table mode", key)
-			}
 			result[key] = value
 		case "locator":
 			if configType != "table" {
 				return nil, errors.New("data_config.locator is only valid in table mode")
 			}
 			result[key] = value
+		case "stable_key":
+			if configType != "sql" {
+				return nil, errors.New("data_config.stable_key is managed by Service in table mode")
+			}
+			stableKey, err := normalizeStableKey(value)
+			if err != nil {
+				return nil, err
+			}
+			result[key] = stableKey
 		case models.QueryServiceSourceSnapshotKey, "geometry", "object_table":
 			return nil, fmt.Errorf("data_config.%s is managed by Service and cannot be provided", key)
 		default:
@@ -467,15 +490,164 @@ func queryServiceMutableDataConfig(input map[string]interface{}, configType stri
 	for key, value := range input {
 		switch key {
 		case "default_fields", "filterable_fields":
-			if configType != "table" {
-				return nil, fmt.Errorf("data_config.%s is only valid in table mode", key)
-			}
 			result[key] = value
-		case "locator", models.QueryServiceSourceSnapshotKey, "geometry", "object_table":
+		case "locator", "stable_key", models.QueryServiceSourceSnapshotKey, "geometry", "object_table":
 			return nil, fmt.Errorf("data_config.%s cannot be changed after publication", key)
 		default:
 			return nil, fmt.Errorf("unsupported data_config field %s", key)
 		}
+	}
+	return result, nil
+}
+
+func publishedStableKey(configType string, dataConfig models.JSONB, snapshot *models.QueryServiceDependencySnapshot) ([]string, error) {
+	if snapshot == nil {
+		return nil, errors.New("query service output contract is missing")
+	}
+	if configType == "table" {
+		if snapshot.Table == nil || len(snapshot.Table.PrimaryKey) == 0 {
+			return nil, errors.New("table query service requires a non-empty primary key as stable_key")
+		}
+		return validateStableKey(snapshot.Table.PrimaryKey, snapshot.Table)
+	}
+	stableKey, err := normalizeStableKey(dataConfig["stable_key"])
+	if err != nil {
+		return nil, err
+	}
+	if snapshot.Table != nil && len(snapshot.Table.Fields) > 0 {
+		validated, err := validateStableKeyFields(stableKey, snapshot.Table, false)
+		if err != nil {
+			return nil, err
+		}
+		stableFields := make(map[string]struct{}, len(validated))
+		for _, name := range validated {
+			stableFields[name] = struct{}{}
+		}
+		for index := range snapshot.Table.Fields {
+			if _, stable := stableFields[snapshot.Table.Fields[index].Name]; stable {
+				// SQL 模式的 stable_key 是发布者对非空唯一性的显式契约。
+				snapshot.Table.Fields[index].Nullable = false
+			}
+		}
+		return validated, nil
+	}
+	return stableKey, nil
+}
+
+func normalizeStableKey(value interface{}) ([]string, error) {
+	var values []interface{}
+	switch typed := value.(type) {
+	case []interface{}:
+		values = typed
+	case []string:
+		values = make([]interface{}, len(typed))
+		for index := range typed {
+			values[index] = typed[index]
+		}
+	default:
+		return nil, errors.New("data_config.stable_key is required and must be an array")
+	}
+	if len(values) == 0 {
+		return nil, errors.New("data_config.stable_key must not be empty")
+	}
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		field, ok := value.(string)
+		field = strings.TrimSpace(field)
+		if !ok || field == "" {
+			return nil, errors.New("data_config.stable_key contains an invalid field")
+		}
+		key := strings.ToLower(field)
+		if _, exists := seen[key]; exists {
+			return nil, errors.New("data_config.stable_key contains duplicate fields")
+		}
+		seen[key] = struct{}{}
+		result = append(result, field)
+	}
+	return result, nil
+}
+
+func validateStableKey(stableKey []string, table *datatype.TableInfo) ([]string, error) {
+	return validateStableKeyFields(stableKey, table, true)
+}
+
+func validateStableKeyFields(stableKey []string, table *datatype.TableInfo, requireNonNull bool) ([]string, error) {
+	if len(stableKey) == 0 || table == nil {
+		return nil, errors.New("query service stable_key is missing from output contract")
+	}
+	fields := make(map[string]datatype.FieldInfo, len(table.Fields))
+	for _, field := range table.Fields {
+		fields[field.Name] = field
+	}
+	for _, name := range stableKey {
+		field, exists := fields[name]
+		if !exists {
+			return nil, fmt.Errorf("stable_key field %s is not present in output contract", name)
+		}
+		if !isStableOrderFieldType(field.Type) {
+			return nil, fmt.Errorf("stable_key field %s must use a supported scalar type", name)
+		}
+		if requireNonNull && field.Nullable {
+			return nil, fmt.Errorf("stable_key field %s must not be nullable", name)
+		}
+	}
+	return append([]string(nil), stableKey...), nil
+}
+
+func validateQueryFieldPolicy(dataConfig models.JSONB, table *datatype.TableInfo) error {
+	if table == nil {
+		return errors.New("query service output contract is missing")
+	}
+	available := make(map[string]struct{}, len(table.Fields))
+	for _, field := range table.Fields {
+		available[field.Name] = struct{}{}
+	}
+	for _, key := range []string{"default_fields", "filterable_fields"} {
+		value, exists := dataConfig[key]
+		if !exists {
+			continue
+		}
+		fields, err := normalizeQueryFieldList(value, key)
+		if err != nil {
+			return err
+		}
+		for _, field := range fields {
+			if _, exists := available[field]; !exists {
+				return fmt.Errorf("data_config.%s field %s is not present in output contract", key, field)
+			}
+		}
+		dataConfig[key] = fields
+	}
+	return nil
+}
+
+func normalizeQueryFieldList(value interface{}, key string) ([]string, error) {
+	var raw []interface{}
+	switch typed := value.(type) {
+	case []interface{}:
+		raw = typed
+	case []string:
+		raw = make([]interface{}, len(typed))
+		for index := range typed {
+			raw[index] = typed[index]
+		}
+	default:
+		return nil, fmt.Errorf("data_config.%s must be an array", key)
+	}
+	result := make([]string, 0, len(raw))
+	seen := make(map[string]struct{}, len(raw))
+	for _, item := range raw {
+		field, ok := item.(string)
+		field = strings.TrimSpace(field)
+		if !ok || field == "" {
+			return nil, fmt.Errorf("data_config.%s contains an invalid field", key)
+		}
+		if _, duplicate := seen[field]; duplicate {
+			return nil, fmt.Errorf("data_config.%s contains duplicate field %s", key, field)
+		}
+		seen[field] = struct{}{}
+		result = append(result, field)
 	}
 	return result, nil
 }
@@ -583,6 +755,9 @@ func (s *QueryServiceService) UpdateService(id uint, req *models.UpdateQueryServ
 		for k, v := range mutableConfig {
 			currentConfig[k] = v
 		}
+		if err := validateQueryFieldPolicy(currentConfig, service.GetTableInfo()); err != nil {
+			return nil, err
+		}
 		updates["data_config"] = currentConfig
 	}
 	if req.Protocols != nil {
@@ -683,10 +858,15 @@ func (s *QueryServiceService) RefreshSourceSnapshot(id, tenantID uint) (*models.
 	if err != nil {
 		return nil, err
 	}
+	stableKey, err := publishedStableKey("table", service.DataConfig, current)
+	if err != nil {
+		return nil, fmt.Errorf("refresh stable key failed: %w", err)
+	}
 	dataConfig := service.DataConfig
 	if dataConfig == nil {
 		dataConfig = models.JSONB{}
 	}
+	dataConfig["stable_key"] = stableKey
 	dataConfig[models.QueryServiceSourceSnapshotKey] = queryServiceSnapshotPayload(current)
 
 	updates := map[string]interface{}{"data_config": dataConfig}
@@ -786,7 +966,7 @@ func (s *QueryServiceService) buildEndpoints(service *models.QueryService) map[s
 
 	// REST API 端点
 	if service.IsRESTAPIEnabled() {
-		endpoints["rest_api"] = fmt.Sprintf("%s/api/query/%s", s.baseURL, service.ServiceName)
+		endpoints["rest_api"] = fmt.Sprintf("%s/api/query/%s/query", s.baseURL, service.ServiceName)
 	}
 
 	// OGC Features 端点

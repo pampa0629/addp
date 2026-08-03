@@ -46,7 +46,8 @@ func TestMySQLSQLTypeForField(t *testing.T) {
 		{name: "decimal requires explicit precision", field: datatype.FieldInfo{Name: "amount", Type: datatype.FieldTypeDecimal}, wantErr: true},
 		{name: "decimal precision and scale", field: datatype.FieldInfo{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 20, Scale: 10}, want: "DECIMAL(20,10)"},
 		{name: "unknown defaults text", field: datatype.FieldInfo{Name: "x", Type: datatype.FieldTypeUnknown}, want: "TEXT"},
-		{name: "spatial info geometry type", field: datatype.FieldInfo{Name: "geom", Type: datatype.FieldTypeGeometry}, spatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 0), want: "POINT"},
+		{name: "spatial info geometry type and SRID", field: datatype.FieldInfo{Name: "geom", Type: datatype.FieldTypeGeometry}, spatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 0), want: "POINT SRID 4326"},
+		{name: "spatial dimension is limited to two", field: datatype.FieldInfo{Name: "geom", Type: datatype.FieldTypeGeometry}, spatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 3), wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -94,7 +95,7 @@ func TestMySQLSchemaEvolutionStatementsAddsMissingColumns(t *testing.T) {
 	}
 	want := []string{
 		"ALTER TABLE `analytics`.`events` ADD COLUMN `name` TEXT",
-		"ALTER TABLE `analytics`.`events` ADD COLUMN `geom` POINT",
+		"ALTER TABLE `analytics`.`events` ADD COLUMN `geom` POINT SRID 4326",
 	}
 	if len(statements) != len(want) {
 		t.Fatalf("statements = %#v, want %#v", statements, want)
@@ -166,15 +167,36 @@ func TestMySQLColumnCompatibleWithFieldRequiresExactUUIDStorage(t *testing.T) {
 	}
 }
 
-func TestMySQLSQLTypeForGeometryTypeNormalizesUnsupportedDimensions(t *testing.T) {
-	if got := mysqlSQLTypeForGeometryType("PointZ"); got != "POINT" {
-		t.Fatalf("mysqlSQLTypeForGeometryType(PointZ) = %q, want POINT", got)
-	}
-	if got := mysqlSQLTypeForGeometryType("MultiPolygonZ"); got != "MULTIPOLYGON" {
-		t.Fatalf("mysqlSQLTypeForGeometryType(MultiPolygonZ) = %q, want MULTIPOLYGON", got)
-	}
+func TestMySQLSQLTypeForGeometryTypeMapsCanonicalTypes(t *testing.T) {
 	if got := mysqlSQLTypeForGeometryType("GeometryCollection"); got != "GEOMETRYCOLLECTION" {
 		t.Fatalf("mysqlSQLTypeForGeometryType(GeometryCollection) = %q, want GEOMETRYCOLLECTION", got)
+	}
+}
+
+func TestMySQLSpatialColumnCompatibilityRequiresMatchingSRID(t *testing.T) {
+	field := datatype.FieldInfo{Name: "geom", Type: datatype.FieldTypeGeometry}
+	spatialInfo := datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 2)
+	if !mysqlSpatialColumnCompatibleWithField(mysqlColumnInfo{
+		Name: "geom", DataType: "point", NativeType: "point", SRSID: sql.NullInt64{Int64: 4326, Valid: true},
+	}, field, spatialInfo) {
+		t.Fatal("matching MySQL spatial SRID was rejected")
+	}
+	if mysqlSpatialColumnCompatibleWithField(mysqlColumnInfo{
+		Name: "geom", DataType: "point", NativeType: "point", SRSID: sql.NullInt64{Int64: 3857, Valid: true},
+	}, field, spatialInfo) {
+		t.Fatal("mismatching MySQL spatial SRID was accepted")
+	}
+}
+
+func TestMySQLSpatialIndexNameUsesExplicitNameAndLimit(t *testing.T) {
+	if got := mysqlSpatialIndexName("idx_shape", "geom"); got != "idx_shape" {
+		t.Fatalf("index name = %q", got)
+	}
+	if got := mysqlSpatialIndexName("", "shape"); got != "idx_spatial_shape" {
+		t.Fatalf("default index name = %q", got)
+	}
+	if got := mysqlSpatialIndexName(strings.Repeat("x", 70), "shape"); len([]rune(got)) != 64 {
+		t.Fatalf("limited index name length = %d", len([]rune(got)))
 	}
 }
 

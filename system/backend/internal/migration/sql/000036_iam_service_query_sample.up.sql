@@ -84,14 +84,10 @@ INSERT INTO system.role_permissions (
 SELECT role.id, permission.id, 'product', NULL
 FROM system.roles AS role
 JOIN system.permissions AS permission
-  ON permission.permission_key IN (
-      'system.engine_descriptor.read',
-      'system.execution_authorization.execute'
-  )
+  ON permission.permission_key = 'system.engine_descriptor.read'
 WHERE role.tenant_id IS NULL
   AND role.role_key = 'tenant.service_runtime'
   AND role.role_type = 'tenant_builtin'
-  AND role.status = 'active'
-ORDER BY permission.permission_key;
+  AND role.status = 'active';
 
 COMMIT;

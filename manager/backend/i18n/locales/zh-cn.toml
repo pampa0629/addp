@@ -49,12 +49,6 @@ other = "系统服务客户端未初始化"
 [manager.error.engine_not_found]
 other = "存储引擎不存在"
 
-[manager.error.unsupported_postgres_only]
-other = "仅支持 PostgreSQL 存储引擎"
-
-[manager.error.database_connection_failed]
-other = "数据库连接失败"
-
 [manager.error.feature_not_found]
 other = "要素不存在"
 

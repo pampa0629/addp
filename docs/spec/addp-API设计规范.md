@@ -187,6 +187,24 @@ ADDP 采用**灵活响应策略**，根据场景选择最合适的响应格式�
 
 ### 2.4 分页响应格式
 
+本节的 `page/page_size` 用于平台管理列表。已发布查询服务面向业务数据的查询不能默认执行精确计数，也不能以 `OFFSET` 作为深分页主路径，统一使用稳定排序键上的 cursor/keyset 分页：
+
+```json
+{
+  "data": [],
+  "page": {
+    "limit": 100,
+    "has_more": true,
+    "next_cursor": "opaque-cursor"
+  },
+  "service_version": "revision-id"
+}
+```
+
+查询游标必须绑定服务发布版本、查询指纹、有效排序和最后一行排序值，并由服务端完整性保护。消费者不得构造或修改游标。精确计数属于显式、高成本能力，不进入普通查询默认路径。
+
+OGC API Features 继续遵循协议参数和响应结构，但 Items 的 `next` link 应携带同一查询游标；`numberReturned` 必须准确，`numberMatched` 只有在已取得低成本精确值时才返回，不得为每个 Items 请求强制执行 `COUNT(*)`。
+
 **请求参数：**
 
 ```

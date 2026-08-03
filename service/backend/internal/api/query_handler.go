@@ -2,11 +2,13 @@ package api
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	commoni18n "github.com/addp/common/middleware/i18n"
 	servicei18n "github.com/addp/service/i18n"
@@ -324,20 +326,18 @@ func (h *QueryServiceHandler) RefreshSourceSnapshot(c *gin.Context) {
 // QueryData 查询服务数据
 // @Summary 执行查询服务 | Execute query service
 // @Tags QueryExecution
+// @Accept json
 // @Produce json
 // @Param serviceName path string true "服务名称 | Service name"
-// @Param page query int false "页码 | Page" default(1)
-// @Param page_size query int false "每页数量 | Page size" default(50)
-// @Param format query string false "返回格式 (json,csv,geojson) | Response format (json,csv,geojson)" default(json)
-// @Param filter query string false "过滤条件 | Filter"
-// @Success 200 {object} map[string]interface{}
+// @Param request body models.QueryExecutionRequest true "结构化查询请求 | Structured query request"
+// @Success 200 {object} models.QueryExecutionResult
 // @Failure 400 {object} map[string]string
 // @Failure 401 {object} map[string]string
 // @Failure 403 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @x-addp-auth-mode "public"
-// @Router /api/query/{serviceName} [get]
+// @Router /api/query/{serviceName}/query [post]
 func (h *QueryServiceHandler) QueryData(c *gin.Context) {
 	serviceName := c.Param("serviceName")
 
@@ -380,60 +380,53 @@ func (h *QueryServiceHandler) QueryData(c *gin.Context) {
 		return
 	}
 
-	// 解析查询参数
-	var params svc.QueryParams
-	if err := c.ShouldBindQuery(&params); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid query parameters: " + err.Error()})
+	var request models.QueryExecutionRequest
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	decoder.UseNumber()
+	if err := decoder.Decode(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgInvalidQueryRequest, err.Error())})
+		return
+	}
+	var trailing interface{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidQueryRequest)})
+		return
+	}
+	request.Format = strings.ToLower(strings.TrimSpace(request.Format))
+	if request.Format == "" {
+		request.Format = "json"
+	}
+	if request.Format != "json" && request.Format != "csv" && request.Format != "geojson" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidQueryFormat)})
 		return
 	}
 
-	// 设置默认值
-	if params.Page < 1 {
-		params.Page = 1
-	}
-	if params.PageSize <= 0 {
-		params.PageSize = 50
-	}
-	if params.Format == "" {
-		params.Format = "json"
-	}
-
-	// 执行查询
-	result, err := h.executorSvc.ExecuteQuery(c.Request.Context(), service, &params)
+	result, err := h.executorSvc.ExecuteQuery(c.Request.Context(), service, &request)
 	if err != nil {
 		log.Printf("[QueryService] Query execution failed: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Query execution failed: " + err.Error()})
+		writeQueryExecutionError(c, err)
 		return
 	}
 
-	// 根据格式返回结果
-	switch params.Format {
+	switch request.Format {
 	case "csv":
-		// 转换为 CSV 格式
-		rows, ok := result.Data.([]map[string]interface{})
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid data format for CSV export"})
-			return
-		}
-		csvData, err := h.executorSvc.FormatAsCSV(rows)
+		csvData, err := h.executorSvc.FormatAsCSV(result)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to format as CSV: " + err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgQueryFormatFailed, err.Error())})
 			return
 		}
 		c.Header("Content-Type", "text/csv")
 		c.Header("Content-Disposition", "attachment; filename="+serviceName+".csv")
+		c.Header("X-ADDP-Has-More", strconv.FormatBool(result.Page.HasMore))
+		c.Header("X-ADDP-Next-Cursor", result.Page.NextCursor)
+		c.Header("X-ADDP-Service-Version", result.ServiceVersion)
 		c.Data(http.StatusOK, "text/csv", csvData)
 
 	case "geojson":
-		// 转换为 GeoJSON 格式
-		rows, ok := result.Data.([]map[string]interface{})
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid data format for GeoJSON export"})
-			return
-		}
-		geojsonData, err := h.executorSvc.FormatAsGeoJSON(rows, service)
+		geojsonData, err := h.executorSvc.FormatAsGeoJSON(result, service)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to format as GeoJSON: " + err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgQueryFormatFailed, err.Error())})
 			return
 		}
 		c.Header("Content-Type", "application/geo+json")
@@ -444,49 +437,10 @@ func (h *QueryServiceHandler) QueryData(c *gin.Context) {
 	}
 }
 
-// parseQueryParams 解析查询参数
-func (h *QueryServiceHandler) parseQueryParams(c *gin.Context, configType string) map[string]interface{} {
-	params := make(map[string]interface{})
-
-	// 通用参数（所有模式都支持）
-	if page := c.Query("page"); page != "" {
-		if parsed, err := strconv.Atoi(page); err == nil && parsed > 0 {
-			params["page"] = parsed
-		} else {
-			params["page"] = 1
-		}
-	} else {
-		params["page"] = 1
+func writeQueryExecutionError(c *gin.Context, err error) {
+	if errors.Is(err, svc.ErrInvalidStructuredQuery) || errors.Is(err, svc.ErrInvalidQueryCursor) || errors.Is(err, svc.ErrInvalidFeatureID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgInvalidStructuredQuery, err.Error())})
+		return
 	}
-
-	if pageSize := c.Query("page_size"); pageSize != "" {
-		if parsed, err := strconv.Atoi(pageSize); err == nil && parsed > 0 && parsed <= 1000 {
-			params["page_size"] = parsed
-		} else {
-			params["page_size"] = 50
-		}
-	} else {
-		params["page_size"] = 50
-	}
-
-	if format := c.Query("format"); format != "" {
-		params["format"] = format
-	} else {
-		params["format"] = "json"
-	}
-
-	// Table 模式支持的额外参数
-	if configType == "table" {
-		if filter := c.Query("filter"); filter != "" {
-			params["filter"] = filter
-		}
-		if fields := c.Query("fields"); fields != "" {
-			params["fields"] = fields
-		}
-		if orderBy := c.Query("orderBy"); orderBy != "" {
-			params["order_by"] = orderBy
-		}
-	}
-
-	return params
+	c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgQueryExecutionFailed, err.Error())})
 }

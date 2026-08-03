@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -210,5 +211,14 @@ func (s *recordingVectorTileObjectStore) BucketExists(context.Context, string) (
 
 func (s *recordingVectorTileObjectStore) MakeBucket(context.Context, string, minio.MakeBucketOptions) error {
 	s.exists = true
+	return nil
+}
+
+func (s *recordingVectorTileObjectStore) PutObject(_ context.Context, _, _ string, reader io.Reader, _ int64, _ minio.PutObjectOptions) (minio.UploadInfo, error) {
+	_, err := io.Copy(io.Discard, reader)
+	return minio.UploadInfo{}, err
+}
+
+func (s *recordingVectorTileObjectStore) RemoveObject(context.Context, string, string, minio.RemoveObjectOptions) error {
 	return nil
 }

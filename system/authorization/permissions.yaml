@@ -890,6 +890,14 @@ permissions:
     status: active
     name_i18n_key: permissions.system.execution_authorization.execute.name
     description_i18n_key: permissions.system.execution_authorization.execute.description
+  - key: system.notebook_session_authorization.execute
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.notebook_session_authorization.execute.name
+    description_i18n_key: permissions.system.notebook_session_authorization.execute.description
   - key: system.runtime_registry.read
     allowed_scope_types: [platform]
     risk_level: low

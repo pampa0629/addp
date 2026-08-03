@@ -250,6 +250,13 @@ func main() {
 	cadPreviewTaskSvc.SetCleaner(service.NewMinIOCADPreviewCleaner(minioClient, minioBucket))
 	var postGISTileGenerator *mvt.PMTilesGenerator
 	if systemClient != nil {
+		tileCacheTaskSvc.SetSourceEngineTypeResolver(func(ctx context.Context, engineID uint) (string, error) {
+			engine, err := systemClient.GetEngine(engineID)
+			if err != nil {
+				return "", err
+			}
+			return engine.EngineType, nil
+		})
 		postGISTileGenerator = mvt.NewPMTilesGenerator(mvt.NewTileGenerator(systemClient, cfg.TileCache.MaxDBConns))
 		tileCacheTaskSvc.SetTileGenerator(
 			service.NewManagerPostGISVectorTileCacheExecutor(postGISTileGenerator, minioClient, minioBucket),
@@ -437,6 +444,9 @@ func main() {
 		))
 		vectorTileSetExecutor := service.NewManagerVectorTileSetExecutor(
 			systemClient, systemClient, minioClient, serviceURL, cfg.InternalAPIKey, cfg.RasterMosaicGeneration.Timeout,
+		)
+		vectorTileSetExecutor.SetTemporarySourceStorage(
+			cfg.MinioEndpoint, cfg.MinioAccessKey, cfg.MinioSecretKey, cfg.MinioUseSSL, minioBucket,
 		)
 		vectorTileSetExecutor.SetPostGISGenerator(postGISTileGenerator, cfg.TileCache.Concurrency)
 		vectorTileSetTaskSvc.SetExecutor(vectorTileSetExecutor)

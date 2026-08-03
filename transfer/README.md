@@ -80,9 +80,9 @@ non-table raw copy 已形成第一版最小闭环：`document`、`media`、`cad`
 
 `target.policy.apply_mode` 支持 snapshot 的 `replace` / `append`、PostgreSQL/MySQL watermark 和业务 Kafka 的幂等 `upsert`，以及数据库 CDC 的 `upsert_delete`。旧 `write_mode` 不兼容。snapshot replace 失败执行可按 restartable 从头 retry；watermark 和未阻塞的 continuous/CDC 从 `transfer.sync_states` committed position resume；append retry 被拒绝。数据库 CDC schema drift 会把任务置为 `status=blocked` 且不推进当前 offset。只有当前消息新增的 nullable 非 geometry 字段可由用户逐字段审批，平台复用目标 Provider 幂等加列并把任务置为 paused；其他变化仍只能 Stop 后创建新任务和新目标表。
 
-continuous 当前有两类实现路径：业务 Kafka keyed JSON record -> PostgreSQL upsert，以及 PostgreSQL/MySQL 单表 -> Debezium -> Infra Kafka -> PostgreSQL snapshot/upsert/delete。它们复用同一个 Transfer continuous worker 和 `PartitionedTableChangeApplyProvider`；Provider 在业务目标库将目标变化与 `addp_transfer.apply_positions.next_offset` 原子提交，Infra PostgreSQL 的 `transfer.sync_states` 保存任务 committed position。业务 Kafka 已支持显式 `block|dead_letter` 和显式 offset ranges 到新 PostgreSQL 隔离表的 bounded replay。交付保证是 at-least-once + 目标 monotonic 幂等应用，不宣称分布式 exactly-once。当前仍不支持无 key append、Schema Registry、Avro、Protobuf、Kafka target、数据库 CDC replay/DLQ、Oracle CDC 或自动 DDL。Infra Kafka 不进入 System engines 或用户任务配置。
+continuous 当前有两类实现路径：业务 Kafka keyed JSON record -> PostgreSQL/MySQL upsert，以及 PostgreSQL/MySQL 单表 -> Debezium -> Infra Kafka -> PostgreSQL/MySQL snapshot/upsert/delete。它们复用同一个 Transfer continuous worker 和 `PartitionedTableChangeApplyProvider`；Provider 在业务目标库将目标变化与目标 apply ledger 的 `next_offset` 原子提交，Infra PostgreSQL 的 `transfer.sync_states` 保存任务 committed position。业务 Kafka 已支持显式 `block|dead_letter` 和显式 offset ranges 到新 PostgreSQL 隔离表的 bounded replay。交付保证是 at-least-once + 目标 monotonic 幂等应用，不宣称分布式 exactly-once。当前仍不支持无 key append、Schema Registry、Avro、Protobuf、Kafka target、数据库 CDC replay/DLQ、Oracle CDC 或自动 DDL。Infra Kafka 不进入 System engines 或用户任务配置。
 
-恢复 continuous task 时，Kafka Provider 会先验证 committed `next_offset` 是否仍处于 topic partition 的 earliest/latest 范围。位置已被 retention 清除时 execution 明确失败，不允许静默重置。目标 PostgreSQL 锁等待响应 runtime context 取消，未完成事务会同时回滚业务表和 `addp_transfer.apply_positions`。
+恢复 continuous task 时，Kafka Provider 会先验证 committed `next_offset` 是否仍处于 topic partition 的 earliest/latest 范围。位置已被 retention 清除时 execution 明确失败，不允许静默重置。PostgreSQL/MySQL 目标锁等待响应 runtime context 取消，未完成事务会同时回滚业务表和对应目标 apply ledger。
 
 ## API
 

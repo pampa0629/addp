@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -20,6 +21,8 @@ import (
 type vectorTileCacheObjectStore interface {
 	BucketExists(ctx context.Context, bucketName string) (bool, error)
 	MakeBucket(ctx context.Context, bucketName string, opts minio.MakeBucketOptions) error
+	PutObject(ctx context.Context, bucketName, objectName string, reader io.Reader, objectSize int64, opts minio.PutObjectOptions) (minio.UploadInfo, error)
+	RemoveObject(ctx context.Context, bucketName, objectName string, opts minio.RemoveObjectOptions) error
 }
 
 type ManagerVectorTileCacheWorkflowExecutor struct {
@@ -67,7 +70,7 @@ func NewManagerVectorTileCacheWorkflowExecutor(
 	}
 }
 
-func (e *ManagerVectorTileCacheWorkflowExecutor) GenerateVectorTileCache(ctx context.Context, req WorkflowTileCacheRequest) (*mvt.GenerateResult, commonModels.JSONMap, error) {
+func (e *ManagerVectorTileCacheWorkflowExecutor) GenerateVectorTileCache(ctx context.Context, req WorkflowTileCacheRequest) (output *mvt.GenerateResult, outputMetadata commonModels.JSONMap, returnErr error) {
 	if e == nil || e.systemClient == nil || e.workflowEngines == nil || e.objectStore == nil {
 		return nil, nil, errors.New("vector tile cache workflow executor is not fully configured")
 	}
@@ -77,10 +80,25 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) GenerateVectorTileCache(ctx con
 	if strings.TrimSpace(req.ExecutionID) == "" {
 		return nil, nil, errors.New("vector tile cache execution_id is required")
 	}
-	sourceURI, sourceEnv, sourceFacts, err := e.prepareSourceURI(ctx, req.Task.TenantID, req.Identity)
+	var sourceURI string
+	var sourceEnv, sourceFacts commonModels.JSONMap
+	var err error
+	cleanupSource := func(context.Context) error { return nil }
+	if req.Identity.SourceKind == "table" {
+		sourceURI, sourceEnv, sourceFacts, cleanupSource, err = e.prepareMySQLTableFlatGeobufSource(ctx, req.Task.TenantID, req.ExecutionID, req.Identity, req.Options)
+	} else {
+		sourceURI, sourceEnv, sourceFacts, err = e.prepareSourceURI(ctx, req.Task.TenantID, req.Identity)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
+	defer func() {
+		if cleanupErr := cleanupSource(context.Background()); cleanupErr != nil {
+			output = nil
+			outputMetadata = nil
+			returnErr = errors.Join(returnErr, fmt.Errorf("clean temporary vector source: %w", cleanupErr))
+		}
+	}()
 	bucket, objectName, err := tilecache.ObjectLocation(req.StorageRef, e.defaultBucket)
 	if err != nil {
 		return nil, nil, err

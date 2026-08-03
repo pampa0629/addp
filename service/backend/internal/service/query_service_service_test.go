@@ -72,6 +72,28 @@ func TestBuildTableDependencySnapshotUsesCommonFacts(t *testing.T) {
 	}
 }
 
+func TestValidateQueryFieldPolicyNormalizesAndRejectsUnknownFields(t *testing.T) {
+	t.Parallel()
+
+	table := &datatype.TableInfo{Fields: []datatype.FieldInfo{
+		{Name: "id", Type: datatype.FieldTypeBigInt},
+		{Name: "name", Type: datatype.FieldTypeString},
+	}}
+	config := serviceModels.JSONB{
+		"default_fields":    []interface{}{" id ", "name"},
+		"filterable_fields": []string{"name"},
+	}
+	if err := validateQueryFieldPolicy(config, table); err != nil {
+		t.Fatalf("validateQueryFieldPolicy() error = %v", err)
+	}
+	if fields, ok := config["default_fields"].([]string); !ok || len(fields) != 2 || fields[0] != "id" {
+		t.Fatalf("normalized default fields = %#v", config["default_fields"])
+	}
+	if err := validateQueryFieldPolicy(serviceModels.JSONB{"filterable_fields": []interface{}{"missing"}}, table); err == nil {
+		t.Fatal("unknown filterable field must be rejected")
+	}
+}
+
 func TestDependencyHashIgnoresExtentAndScanTimes(t *testing.T) {
 	t.Parallel()
 

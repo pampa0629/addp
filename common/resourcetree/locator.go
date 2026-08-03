@@ -13,6 +13,7 @@ type ResourceType string
 const (
 	TypeTable      ResourceType = "table"
 	TypeCollection ResourceType = "collection"
+	TypeTopic      ResourceType = "topic"
 	TypeGraph      ResourceType = "graph"  // 图数据库整体
 	TypeObject     ResourceType = "object" // 对象存储文件
 	TypeFile       ResourceType = "file"   // 文件系统文件（NFS/本地FS）
@@ -89,6 +90,9 @@ func ParseFullNamePath(engineType, resourceType, fullName string) []string {
 	fullName = strings.TrimSpace(fullName)
 	if fullName == "" {
 		return []string{}
+	}
+	if strings.EqualFold(strings.TrimSpace(resourceType), string(TypeTopic)) {
+		return []string{fullName}
 	}
 	if UsesSlashFullName(engineType, resourceType) {
 		return splitLocatorSlashPath(fullName)

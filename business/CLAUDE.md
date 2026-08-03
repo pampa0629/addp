@@ -7,6 +7,7 @@
 ## 包含组件
 
 - PostgreSQL/PostGIS、MySQL：业务关系库与 CDC 测试源。
+- Redpanda：独立业务 Kafka API 消息流，不承载 ADDP Infra Kafka topic。
 - MinIO：业务对象存储。
 - ClickHouse、MongoDB、Doris、Spark：可选业务数据源和分析组件。
 - Neo4j：图业务数据测试环境。
@@ -34,6 +35,8 @@ business/
 - 修改业务库端口、账号或容器名时，同步检查 `docs/spec/addp配置介绍.md`、`docs/spec/addp端口分配.md` 和依赖该业务源的测试数据说明。
 - 业务库脚本应保持幂等，可重复启动、停止和重启。
 - MySQL CDC 必须使用 `MYSQL_CDC_USER` 专用账号；`scripts/start.sh -mysql` 每次在数据库 ready 后执行 `mysql/init-cdc.sh`，确保已有 volume 也能补齐账号、轮换密码并收敛最小权限。
+- MySQL 普通表和全二维几何族样例只通过 `mysql/test-data.sh` 显式重建；不得挂接到 `scripts/start.sh -mysql`，避免启动时破坏已有业务数据。
+- Business Redpanda 必须与 Infra Kafka 分离；System Engine 使用 `BUSINESS_KAFKA_READER_USERNAME` 只读账号，不能登记 admin 或 Infra principal。
 - 生产部署前必须修改 `.env` 默认密码并限制网络访问。
 
 ## 启动与验证
@@ -42,6 +45,7 @@ business/
 cd business
 bash scripts/start.sh
 bash scripts/start.sh -all
+bash mysql/test-data.sh
 bash scripts/stop.sh
 ```
 

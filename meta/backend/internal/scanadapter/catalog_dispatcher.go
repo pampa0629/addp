@@ -21,6 +21,10 @@ type branchScanner interface {
 	ScanBranch(ctx context.Context, enginePlugin plugin.EnginePlugin, resource *commonModels.Engine, tenantID uint, branchName string, scanDepth string, force bool) (int, int, int, error)
 }
 
+type directLeafScanner interface {
+	ScanRoot(ctx context.Context, enginePlugin plugin.EnginePlugin, resource *commonModels.Engine, tenantID uint, scanDepth string, force bool) (int, error)
+}
+
 type scanLocker interface {
 	GenerateNamespaceLockKey(tenantID, engineID uint, namespaceName string) string
 	GenerateBranchLockKey(tenantID, engineID uint, branchName string) string
@@ -34,6 +38,7 @@ type CatalogDispatcher struct {
 	log            *slog.Logger
 	namespaceScan  namespaceScanner
 	branchScan     branchScanner
+	directLeafScan directLeafScanner
 	contentScanner *ContentCatalogScanner
 	locker         scanLocker
 }
@@ -44,6 +49,7 @@ func NewCatalogDispatcher(
 	log *slog.Logger,
 	namespaceScan namespaceScanner,
 	branchScan branchScanner,
+	directLeafScan directLeafScanner,
 	contentScanner *ContentCatalogScanner,
 ) *CatalogDispatcher {
 	return &CatalogDispatcher{
@@ -52,6 +58,7 @@ func NewCatalogDispatcher(
 		log:            log,
 		namespaceScan:  namespaceScan,
 		branchScan:     branchScan,
+		directLeafScan: directLeafScan,
 		contentScanner: contentScanner,
 	}
 }
@@ -77,6 +84,8 @@ func (d *CatalogDispatcher) Dispatch(req scanflow.DispatchRequest) (scanflow.Dis
 	switch plan.Strategy {
 	case scanflow.CatalogScanTabular:
 		return d.dispatchTabularScan(context.Background(), enginePlugin, plan, req)
+	case scanflow.CatalogScanDirectLeaves:
+		return d.dispatchDirectLeafScan(context.Background(), enginePlugin, req)
 	case scanflow.CatalogScanBranchLeaves:
 		return d.dispatchBranchLeafScan(context.Background(), enginePlugin, req)
 	case scanflow.CatalogScanObject:

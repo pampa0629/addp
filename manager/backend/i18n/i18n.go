@@ -28,8 +28,6 @@ const (
 	MsgSystemClientUnavailable      = "manager.error.system_client_unavailable"
 	MsgSystemClientNotInitialized   = "manager.error.system_client_not_initialized"
 	MsgEngineNotFound               = "manager.error.engine_not_found"
-	MsgUnsupportedPostgresOnly      = "manager.error.unsupported_postgres_only"
-	MsgDatabaseConnectionFailed     = "manager.error.database_connection_failed"
 	MsgFeatureNotFound              = "manager.error.feature_not_found"
 	MsgFeatureInvalidGeometry       = "manager.error.feature_invalid_geometry"
 	MsgInvalidZParam                = "manager.error.invalid_z_parameter"

@@ -218,11 +218,11 @@ Notebook 面向算法工程师提供 `Notebook Native Engine Facade`。Facade �
 
 ```mermaid
 flowchart LR
-    User["Notebook 使用者<br/>schemas / tables / collections"]
+    User["Notebook 使用者<br/>schemas / tables / scan / sql"]
     Facade["common-python<br/>Native Engine Facade"]
-    Develop["Develop<br/>Session Catalog Proxy"]
-    System["System<br/>Notebook Catalog Authorization"]
-    Provider["CatalogProvider<br/>ListChildren"]
+    Develop["Develop<br/>Session Data Proxy"]
+    System["System<br/>Notebook Session Authorization"]
+    Provider["CatalogProvider / TableReadSessionProvider"]
 
     User --> Facade --> Develop --> System --> Provider
 ```
@@ -252,13 +252,28 @@ pg.table(schema="public", name="roads")
 
 延迟和新鲜度规则：
 
-- Notebook Interactive Session 创建时只签发一次 Notebook Catalog Authorization；每个 Facade 方法不得重新签发授权。
+- Notebook Interactive Session 创建时只签发一次 Notebook Session Authorization；每个 Facade 方法不得重新签发授权。
 - Develop 到 System 的一次 Catalog 请求必须同时完成授权校验和 `ListChildren`，不能先调用授权检查 API 再发第二次 Catalog 请求。
 - SDK 默认使用单一端到端 deadline，并把取消向 Develop、System 和 Provider 传播；多层调用不能在每一层重新开始完整超时。
 - SDK 可以在当前 Python Engine Client 内缓存服务端已经返回的 root 和 branch `CatalogPath`，减少 `tables(schema=...)` 等后续导航的重复列举；不得缓存 children 列表、CatalogFacts 或失败响应。
 - 首次按名称直接访问尚未缓存的父级时，SDK 通过逐层 `ListChildren` 找到规范路径。第一阶段不为减少一次往返新增 Catalog resolve API；先以真实 E2E 延迟度量决定是否需要扩展唯一 Catalog 契约。
 
-第一阶段只开放目录发现。`columns()` 和 `describe()` 必须在 System 提供唯一 Catalog Facts 路由后接入 `DescribeCatalogFacts`；`sql()`、`cypher()`、`query()`、`to_pandas()` 等真实数据读取必须使用 Execution Authorization 和 Query Runtime，不能使用 Notebook Catalog Authorization。
+数据读取沿用同一 Facade，但不使用 Session Authorization 直接访问数据：
+
+```python
+table = pg.table(schema="public", name="farmland")
+table.head(100)
+table.scan(batch_size=65536)
+table.to_pandas(memory_limit="8GiB")
+pg.sql("SELECT * FROM public.farmland WHERE id > $1", params=[100], max_rows=1000, timeout=30)
+```
+
+- `head()` 是有显式 `max_rows` 的单次只读查询；`scan()` 复用 `TableReadSessionProvider`，以服务端 Cursor 和 Arrow IPC 流返回扫描开始时的一致快照，不设隐式总行数上限。
+- 每次查询或扫描由 Develop 生成独立 execution，并通过 Notebook Session Authorization 原子派生只读 Execution Authorization 与执行期 Engine Access；连接信息只在 Develop 受控 Runtime 内使用，不返回 Kernel。
+- `to_pandas()` 只能消费同一条 `scan()` 路径。它先用 Catalog Facts 估算，并持续检查实际解码字节；超过调用者显式 `memory_limit` 时抛出类型化异常且不返回半截 DataFrame。
+- 长扫描采用短租约周期复核 Session、Family 与授权版本；Session 关闭、到期、登出、Family 撤销或授权失效时，Develop 必须取消活动请求并关闭 Cursor。当前不支持断点续读，连接中断后从新快照重新开始。
+- `pg.sql()` 第一阶段只提供有显式 `max_rows` 的 PostgreSQL 参数化只读 SQL；任意 SQL 流式读取统一由后续 `pg.scan_sql()` 接入新的 Query Runtime 流式契约，不得借用表扫描接口。
+- TB 级、需要容错或需要持久化中间结果的算法应转为 Managed Script、GeoPython Workflow 或 Spark Workflow，不在交互 Kernel 中强制全量入内存。
 
 错误必须保持可区分且 fail-closed：空列表只表示引擎真实返回零个子项，权限失效、对象不存在、不支持、超时和 Provider 故障都不能降级为空列表或占位对象。Notebook Catalog API 使用稳定 `error_code`，SDK 映射为类型化异常：
 
@@ -266,7 +281,7 @@ pg.table(schema="public", name="roads")
 | --- | --- | --- | --- |
 | 400 | `catalog_request_invalid` | 参数或路径无效 | 否 |
 | 401 | `notebook_session_unavailable` | Kernel Capability 或 Session 已失效 | 否，重新打开 Session |
-| 403 | `notebook_catalog_forbidden` | 目录授权、Membership 或 Permission 已失效 | 否 |
+| 403 | `notebook_catalog_forbidden` | Notebook 会话授权、Membership 或 Permission 已失效 | 否 |
 | 404 | `engine_not_found` / `catalog_entry_not_found` | Engine 或原生对象不存在 | 否 |
 | 422 | `catalog_operation_unsupported` | Engine capabilities / CatalogModel 不支持该方法 | 否 |
 | 502 | `catalog_control_plane_failed` | Develop 到 System 的服务认证、协议或响应异常 | 仅由调用者显式重试 |
@@ -285,7 +300,7 @@ pg.table(schema="public", name="roads")
 | 图数据库 | Neo4j |
 | 对象存储 | MinIO、S3 |
 | 文件系统 | NFS |
-| 消息流 | Kafka（common 插件与 Transfer keyed JSON -> PostgreSQL continuous v1 已实现，Console Wizard 已开放该单一路线） |
+| 消息流 | Kafka（common 插件与 Transfer keyed JSON -> PostgreSQL/MySQL continuous v1 已实现，Console Wizard 已开放该单一路线） |
 | 工作流运行时 | GeoPython Workflow / Spark Workflow、自动启动服务但手动注册的 Math Workflow 参考实现、Model3D Workflow、PointCloud Workflow、SuperMap Workflow，及用户自研扩展工作流运行时 |
 | 脚本/Notebook | Jupyter |
 

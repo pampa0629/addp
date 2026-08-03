@@ -1387,8 +1387,19 @@ echo ""
 if [ "$START_DUCKDB" = true ]; then
   echo -e "${YELLOW}Step 3.5/5: 准备并启动 DuckDB Federated Query Runtime${NC}"
   if curl -fsS "http://localhost:${DUCKDB_RUNTIME_PORT}/health" > /dev/null 2>&1; then
-    DUCKDB_PID=$(lsof -ti :"${DUCKDB_RUNTIME_PORT}" -sTCP:LISTEN 2>/dev/null | head -1)
-    echo "复用已就绪的 DuckDB Runtime (PID: ${DUCKDB_PID:-external})"
+    DUCKDB_LISTENER_PID=$(lsof -ti :"${DUCKDB_RUNTIME_PORT}" -sTCP:LISTEN 2>/dev/null | head -1)
+    DUCKDB_MANAGED_PID=$(cat .dev-pids/duckdb.pid 2>/dev/null || true)
+    DUCKDB_LISTENER_COMMAND=$(ps -p "${DUCKDB_LISTENER_PID}" -o command= 2>/dev/null || true)
+    if [ -n "$DUCKDB_MANAGED_PID" ] && [ "$DUCKDB_LISTENER_PID" = "$DUCKDB_MANAGED_PID" ] &&
+      echo "$DUCKDB_LISTENER_COMMAND" | grep -qE '(^|/)addp-duckdb([[:space:]]|$)'; then
+      DUCKDB_PID=$DUCKDB_MANAGED_PID
+      echo "复用已就绪的本地 DuckDB Runtime (PID: $DUCKDB_PID)"
+    else
+      echo -e "${RED}✗ 端口 ${DUCKDB_RUNTIME_PORT} 上存在非 dev 脚本管理的 DuckDB Runtime${NC}"
+      echo -e "${YELLOW}  监听进程: ${DUCKDB_LISTENER_COMMAND:-unknown} (PID: ${DUCKDB_LISTENER_PID:-unknown})${NC}"
+      echo -e "${YELLOW}  开发模式只启动本地二进制；如为镜像实例，请先执行: docker compose stop duckdb-engine${NC}"
+      exit 1
+    fi
   else
     DUCKDB_EXTENSION_DIRECTORY="${DUCKDB_EXTENSION_DIRECTORY:-.cache/duckdb/extensions}"
     if [[ "$DUCKDB_EXTENSION_DIRECTORY" != /* ]]; then

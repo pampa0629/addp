@@ -20,11 +20,17 @@ export function hasStorageCapability(engine) {
   if (caps) {
     const storage = caps.storage || {}
     const store = storage.store || {}
-    return Boolean(
+    if (Boolean(
       storage.catalog?.supported ||
       storage.facts?.supported ||
       Object.values(store).some(Boolean)
-    )
+    )) {
+      return true
+    }
+  }
+  const family = String(caps?.engine_family || engine?.engine_family || '').toLowerCase()
+  if (['tabular', 'dynamic_schema', 'document', 'graph', 'object', 'file', 'event_stream'].includes(family)) {
+    return true
   }
   return isNativeTableEngine(engine) || isContentEngine(engine) || isDocumentEngine(engine) || isGraphEngine(engine)
 }

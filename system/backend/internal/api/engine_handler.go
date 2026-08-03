@@ -820,7 +820,7 @@ func (h *EngineHandler) ListCatalogChildren(c *gin.Context) {
 		return
 	}
 
-	nodes, err := h.storageEngineService.ListCatalogChildren(engine, req)
+	nodes, err := h.storageEngineService.ListCatalogChildren(c.Request.Context(), engine, req)
 	if err != nil {
 		commonapi.RespondError(c, http.StatusInternalServerError, err.Error())
 		return

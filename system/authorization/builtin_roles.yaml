@@ -269,6 +269,7 @@ roles:
       - meta.scan_task.execute
       - system.engine_descriptor.read
       - system.execution_authorization.execute
+      - system.notebook_session_authorization.execute
   - key: tenant.governance_manager
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.governance_manager.name

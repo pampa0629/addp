@@ -85,16 +85,26 @@ curl -X PUT "http://localhost:8086/api/v1/service/query/{id}" \
 
 ```bash
 # JSON (default)
-curl "http://localhost:8086/api/query/{service_name}?limit=10"
+curl -X POST "http://localhost:8086/api/query/{service_name}/query" \
+  -H "Content-Type: application/json" \
+  -d '{"page":{"limit":10},"format":"json"}'
 
 # CSV export
-curl "http://localhost:8086/api/query/{service_name}?format=csv"
+curl -X POST "http://localhost:8086/api/query/{service_name}/query" \
+  -H "Content-Type: application/json" \
+  -d '{"page":{"limit":10},"format":"csv"}'
 
 # With filters
-curl "http://localhost:8086/api/query/{service_name}?where=area>1000&order_by=area DESC&page=1&limit=20"
+curl -X POST "http://localhost:8086/api/query/{service_name}/query" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filter":{"field":"area","op":"gt","value":1000},
+    "order_by":[{"field":"area","direction":"desc"}],
+    "page":{"limit":20}
+  }'
 ```
 
-The canonical public endpoint goes through the Gateway: `http://localhost:8000/api/query/{service_name}`
+The canonical public endpoint goes through the Gateway: `http://localhost:8000/api/query/{service_name}/query`
 
 ## Key Parameters
 
@@ -112,16 +122,16 @@ The canonical public endpoint goes through the Gateway: `http://localhost:8000/a
 | public_access | ❌ | Default false |
 | max_features | ❌ | Default 1000 |
 
-**Query endpoint (`GET /api/query/{service_name}`):**
+**Query endpoint (`POST /api/query/{service_name}/query`):**
 
-| Param | Notes |
+| Body field | Notes |
 |-------|-------|
-| limit | Max records per page (default 50, max 1000) |
-| page | Page number (default 1) |
+| select | Array of fields from the published output contract |
+| filter | Typed filter tree; raw SQL is rejected |
+| order_by | Array of field and direction objects |
+| page.limit | Max records per page |
+| page.cursor | Opaque cursor returned by the previous response |
 | format | `json` / `csv` / `geojson` |
-| fields | Comma-separated column names |
-| where | SQL WHERE clause |
-| order_by | SQL ORDER BY clause |
 
 ## Service Management
 

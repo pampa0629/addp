@@ -32,7 +32,7 @@ func (p *PostgreSQLPlugin) OpenTableReadSession(ctx context.Context, connInfo pl
 		db.Close()
 		return nil, err
 	}
-	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
 	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("begin postgresql table read session: %w", err)
@@ -40,7 +40,7 @@ func (p *PostgreSQLPlugin) OpenTableReadSession(ctx context.Context, connInfo pl
 
 	cursorName := "addp_transfer_read_cursor"
 	declareSQL := fmt.Sprintf("DECLARE %s NO SCROLL CURSOR FOR %s", cursorName, query)
-	if _, err := tx.ExecContext(ctx, declareSQL); err != nil {
+	if _, err := tx.ExecContext(ctx, declareSQL, opts.Args...); err != nil {
 		tx.Rollback()
 		db.Close()
 		return nil, fmt.Errorf("declare postgresql read cursor: %w", err)
@@ -672,12 +672,33 @@ func scanPostgresRowsToBatch(rows *sql.Rows, tableFields []datatype.FieldInfo, s
 		return nil, fmt.Errorf("iterate postgresql cursor rows: %w", err)
 	}
 
+	resolvedFields := tableFields
+	if len(resolvedFields) == 0 {
+		resolvedFields = postgresFieldsFromColumnTypes(rows, columns)
+	}
 	return &plugin.BatchData{
 		Rows:    resultRows,
-		Fields:  postgresReadBatchFields(columns, tableFields),
+		Fields:  postgresReadBatchFields(columns, resolvedFields),
 		Spatial: spatialInfo.Clone(),
 		Offset:  offset,
 	}, nil
+}
+
+func postgresFieldsFromColumnTypes(rows *sql.Rows, columns []string) []datatype.FieldInfo {
+	columnTypes, err := rows.ColumnTypes()
+	if err != nil || len(columnTypes) != len(columns) {
+		return postgresReadBatchFields(columns, nil)
+	}
+	fields := make([]datatype.FieldInfo, 0, len(columns))
+	for index, columnType := range columnTypes {
+		nativeType := strings.ToLower(strings.TrimSpace(columnType.DatabaseTypeName()))
+		nullable, _ := columnType.Nullable()
+		fields = append(fields, postgresFieldInfoFromColumn(postgresColumnInfo{
+			Name: columns[index], DataType: nativeType, UDTName: nativeType,
+			NativeType: nativeType, Nullable: nullable,
+		}))
+	}
+	return fields
 }
 
 func isGeometryColumn(fields []datatype.FieldInfo, column string) bool {

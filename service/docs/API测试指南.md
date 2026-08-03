@@ -371,48 +371,57 @@ ab -n 100 -c 10 "http://localhost:8086/ogc/wmts/test-service/tile/cities/10/851/
 
 ## 4. REST Query API 测试
 
-简化的 REST 查询 API，支持 JSON/CSV/GeoJSON 格式输出。
+REST 查询 API 接受结构化请求体，支持 JSON/CSV/GeoJSON 格式输出。
 
 ### 3.1 基础 JSON 查询
 
 ```bash
-curl "http://localhost:8086/api/query/test-service/cities?page=1&page_size=50"
+curl -X POST "http://localhost:8086/api/query/cities/query" \
+  -H "Content-Type: application/json" \
+  -d '{"page":{"limit":50},"format":"json"}'
 ```
 
 **预期响应**：
 ```json
 {
-  "page": 1,
-  "page_size": 50,
-  "count": 10,
   "data": [
     {"id": 1, "name": "北京", "population": 21540000, ...}
-  ]
+  ],
+  "page": {"limit": 50, "has_more": true, "next_cursor": "opaque-cursor"},
+  "service_version": "dependency-hash"
 }
 ```
 
 ### 3.2 过滤查询
 
 ```bash
-curl "http://localhost:8086/api/query/test-service/cities?filter=population>1000000&page=1&page_size=50"
+curl -X POST "http://localhost:8086/api/query/cities/query" \
+  -H "Content-Type: application/json" \
+  -d '{"filter":{"field":"population","op":"gt","value":1000000},"page":{"limit":50}}'
 ```
 
 ### 3.3 字段选择
 
 ```bash
-curl "http://localhost:8086/api/query/test-service/cities?fields=id,name,population&page=1"
+curl -X POST "http://localhost:8086/api/query/cities/query" \
+  -H "Content-Type: application/json" \
+  -d '{"select":["id","name","population"],"page":{"limit":50}}'
 ```
 
 ### 3.4 排序
 
 ```bash
-curl "http://localhost:8086/api/query/test-service/cities?orderBy=population DESC&page=1"
+curl -X POST "http://localhost:8086/api/query/cities/query" \
+  -H "Content-Type: application/json" \
+  -d '{"order_by":[{"field":"population","direction":"desc"}],"page":{"limit":50}}'
 ```
 
 ### 3.5 CSV 导出
 
 ```bash
-curl "http://localhost:8086/api/query/test-service/cities?format=csv" -o cities.csv
+curl -X POST "http://localhost:8086/api/query/cities/query" \
+  -H "Content-Type: application/json" \
+  -d '{"page":{"limit":50},"format":"csv"}' -o cities.csv
 ```
 
 **预期响应**：CSV 格式文件
@@ -420,7 +429,9 @@ curl "http://localhost:8086/api/query/test-service/cities?format=csv" -o cities.
 ### 3.6 GeoJSON 格式（空间数据）
 
 ```bash
-curl "http://localhost:8086/api/query/test-service/cities?format=geojson&page=1"
+curl -X POST "http://localhost:8086/api/query/cities/query" \
+  -H "Content-Type: application/json" \
+  -d '{"page":{"limit":50},"format":"geojson"}'
 ```
 
 **预期响应**：
@@ -430,7 +441,7 @@ curl "http://localhost:8086/api/query/test-service/cities?format=geojson&page=1"
   "features": [
     {
       "type": "Feature",
-      "id": 1,
+      "id": "opaque-feature-id",
       "properties": {"name": "北京", "population": 21540000},
       "geometry": {"type": "Point", "coordinates": [116.4074, 39.9042]}
     }
@@ -442,7 +453,9 @@ curl "http://localhost:8086/api/query/test-service/cities?format=geojson&page=1"
 
 ```bash
 # 假设有非空间数据图层 "statistics"
-curl "http://localhost:8086/api/query/test-service/statistics?format=json&page=1"
+curl -X POST "http://localhost:8086/api/query/statistics/query" \
+  -H "Content-Type: application/json" \
+  -d '{"page":{"limit":50},"format":"json"}'
 ```
 
 **注意**：非空间数据图层不能使用 `format=geojson`，会返回错误。
@@ -966,7 +979,7 @@ ab -n 5000 -c 50 "http://localhost:8086/ogc/wmts/test-service/tile/cities/10/851
 
 ```bash
 # 目标：200 req/s, 平均延迟 <200ms
-ab -n 1000 -c 10 "http://localhost:8086/api/query/test-service/cities?page=1&page_size=50"
+hey -n 1000 -c 10 -m POST -H "Content-Type: application/json" -d '{"page":{"limit":50}}' "http://localhost:8086/api/query/cities/query"
 ```
 
 ---

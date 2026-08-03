@@ -13,12 +13,13 @@ func TestMySQLCatalogFieldTypeMapsNativeTypes(t *testing.T) {
 		t.Fatal("MySQL CatalogFacts dialect must declare its field type mapper")
 	}
 	tests := map[string]datatype.FieldType{
-		"int":           datatype.FieldTypeInt,
-		"bigint":        datatype.FieldTypeBigInt,
-		"decimal(18,2)": datatype.FieldTypeDecimal,
-		"varchar(255)":  datatype.FieldTypeString,
-		"tinyint(1)":    datatype.FieldTypeBool,
-		"geometry":      datatype.FieldTypeGeometry,
+		"int":            datatype.FieldTypeInt,
+		"bigint":         datatype.FieldTypeBigInt,
+		"decimal(18,2)":  datatype.FieldTypeDecimal,
+		"varchar(255)":   datatype.FieldTypeString,
+		"tinyint(1)":     datatype.FieldTypeBool,
+		"geometry":       datatype.FieldTypeGeometry,
+		"geomcollection": datatype.FieldTypeGeometry,
 	}
 	for nativeType, want := range tests {
 		if got := mysqlCatalogFactsDialect.MapFieldType(nativeType); got != want {
@@ -35,6 +36,24 @@ func TestMySQLCapabilitiesDeclareEWKBTableWriteEncoding(t *testing.T) {
 	encodings := capabilities.Storage.Store.TableSpatialEncoding.GeometryWriteEncodings
 	if len(encodings) != 1 || encodings[0] != string(format.GeometryEncodingEWKB) {
 		t.Fatalf("geometry write encodings = %#v, want [ewkb]", encodings)
+	}
+}
+
+func TestMySQLCapabilitiesDeclareSpatialReadAndFacts(t *testing.T) {
+	capabilities := (&MySQLPlugin{}).Capabilities()
+	if capabilities.Storage == nil || capabilities.Storage.Facts == nil || !capabilities.Storage.Facts.SpatialFacts {
+		t.Fatalf("spatial facts capability = %#v", capabilities.Storage)
+	}
+	store := capabilities.Storage.Store
+	if store == nil || !store.TableReadSession || !store.TableReadSpatialTransform || store.TableSpatialEncoding == nil {
+		t.Fatalf("spatial read capability = %#v", store)
+	}
+	spatialEncoding := store.TableSpatialEncoding
+	if len(spatialEncoding.GeometryReadEncodings) != 2 || spatialEncoding.GeometryReadEncodings[0] != string(format.GeometryEncodingEWKB) || spatialEncoding.GeometryReadEncodings[1] != string(format.GeometryEncodingGeoJSON) {
+		t.Fatalf("geometry read encodings = %#v", spatialEncoding.GeometryReadEncodings)
+	}
+	if !spatialEncoding.ReadTransform || !spatialEncoding.NativeSpatialFunctions {
+		t.Fatalf("spatial encoding capability = %#v", spatialEncoding)
 	}
 }
 

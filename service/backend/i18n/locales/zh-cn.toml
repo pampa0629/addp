@@ -42,3 +42,21 @@ other = "当前业务库没有可真实执行并返回数据的 SQL 样例"
 
 [service.err.query_sample_failed]
 other = "生成查询服务样例失败"
+
+[service.err.invalid_query_request]
+other = "查询请求格式错误"
+
+[service.err.invalid_query_format]
+other = "查询返回格式无效"
+
+[service.err.invalid_structured_query]
+other = "结构化查询条件无效"
+
+[service.err.query_execution_failed]
+other = "查询执行失败"
+
+[service.err.query_format_failed]
+other = "查询结果格式化失败"
+
+[service.err.invalid_feature_id]
+other = "要素 ID 无效或已过期"

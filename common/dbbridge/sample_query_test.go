@@ -75,7 +75,7 @@ func TestGenerateCatalogSampleQueryPrefersTableWithRows(t *testing.T) {
 		},
 	}
 
-	query, err := generateCatalogSampleQuery(context.Background(), cp, cp, nil, 1, "postgresql")
+	query, err := generateCatalogSampleQuery(context.Background(), cp, cp, nil, 1, "postgresql", 10)
 	if err != nil {
 		t.Fatalf("expected catalog sample query: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestGenerateCatalogSampleQueryRejectsEmptyTables(t *testing.T) {
 		},
 	}
 
-	query, err := generateCatalogSampleQuery(context.Background(), cp, cp, nil, 1, "mysql")
+	query, err := generateCatalogSampleQuery(context.Background(), cp, cp, nil, 1, "mysql", 10)
 	if !errors.Is(err, ErrSampleQueryUnavailable) || query != "" {
 		t.Fatalf("generateCatalogSampleQuery() = (%q, %v), want unavailable", query, err)
 	}
@@ -117,7 +117,7 @@ func TestGenerateCatalogSampleQueryRequiresTableLeafModel(t *testing.T) {
 		},
 	}
 
-	query, err := generateCatalogSampleQuery(context.Background(), cp, cp, nil, 1, "postgresql")
+	query, err := generateCatalogSampleQuery(context.Background(), cp, cp, nil, 1, "postgresql", 10)
 	if !errors.Is(err, ErrSampleQueryUnavailable) || query != "" {
 		t.Fatalf("generateCatalogSampleQuery() = (%q, %v), want unavailable for non-table catalog", query, err)
 	}
@@ -149,10 +149,18 @@ func TestTableSampleSQLEscapesIdentifiers(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tableSampleSQL(tt.engineType, tt.namespace, tt.table); got != tt.want {
+			if got := tableSampleSQL(tt.engineType, tt.namespace, tt.table, 10); got != tt.want {
 				t.Fatalf("unexpected query:\nwant: %s\ngot:  %s", tt.want, got)
 			}
 		})
+	}
+}
+
+func TestTableSampleSQLCanReturnUnboundedBaseQuery(t *testing.T) {
+	got := tableSampleSQL("postgresql", "public", "orders", 0)
+	const want = "SELECT *\nFROM \"public\".\"orders\""
+	if got != want {
+		t.Fatalf("unexpected query:\nwant: %s\ngot:  %s", want, got)
 	}
 }
 

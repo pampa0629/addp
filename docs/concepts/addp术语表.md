@@ -63,6 +63,11 @@
 | source version | 源版本 | 表达某个稳定数据项的当前内容版本事实。 | 可由 `content_hash`、`data_updated_at`、`last_modified_at` 或格式专用版本事实组成；用于判断派生结果是否过期，不替代 item fingerprint。 |
 | dependency snapshot | 依赖快照 | 业务定义在创建或显式刷新时，从上游当前事实中选择其执行和对外契约真正依赖的部分并冻结保存。 | 不是完整 Meta item 副本。Meta 提供源事实和源时间；业务模块记录采集时间并对依赖投影计算 hash。差异用于提示重新发布，不自动改变既有业务契约。 |
 | output contract snapshot | 输出契约快照 | 对没有单一 Meta item 身份的查询或计算结果，保存其已检测输出字段、主键、空间信息等契约事实。 | SQL 查询服务使用该快照；查询结果未物化并经 Meta 扫描前，不创建或伪造 Meta item。 |
+| query service | 查询服务 | Service 将一个受治理的数据源或固定查询发布为稳定数据 API 的业务定义。 | 表、固定 SQL 和联邦 SQL 是来源表达；REST Query、OGC API Features、WFS 是协议投影，不是不同的查询执行路径。 |
+| query service revision | 查询服务发布版本 | 查询服务一次通过验证并发布的不可变执行与输出契约。 | 包含来源绑定、输出契约、稳定排序键、查询策略、资源限制、执行绑定和依赖快照；修改定义必须产生新版本并原子切换，不原地改变已发布契约。 |
+| structured query request | 结构化查询请求 | 消费者按字段、类型化过滤、排序和分页对象表达的查询请求。 | 不接受 SQL、WHERE/ORDER BY 片段或其他引擎原生表达式；协议适配层将 REST、OGC 参数编译为同一结构。 |
+| stable order key | 稳定排序键 | 查询服务发布时声明的非空唯一字段序列，用于确定结果的全序和 Feature ID。 | 支持复合键；调用方排序不是全序时必须追加该键。没有稳定排序键的结果不得发布为可分页查询服务或 OGC Features。 |
+| query cursor | 查询游标 | 由 Service 签发、绑定发布版本、查询指纹、有效排序和最后一行排序值的 opaque 分页位置。 | 游标不承载 SQL、凭据或授权；已发布数据查询使用 keyset/cursor 分页，不以 OFFSET 作为主路径。 |
 | access index | 访问定位索引 | 为高效读取内容窗口而生成的定位索引。 | 标准落点为 `attributes.access_index.<data_type>`；例如 CSV / JSONL 表格的稀疏行号到字节偏移索引。它不是全文索引。 |
 | content hash | 内容哈希 | 对原始内容二进制流计算得到的哈希值。 | 标准落点为 `attributes.storage.content_hash`，用于判断内容是否变化；不用于定位外部全文索引记录。 |
 | basic scan | 基础扫描 | 快速发现资源树和 data item 身份的低成本扫描。 | 原则上不读取 file/object 内容。 |
@@ -170,7 +175,7 @@
 | Runtime Operator Spec | 运行时算子规范 | Workflow Runtime 实际执行算子时消费的内部契约，只声明运行时真实需要的参数、输入输出端口和执行行为。 | 不解析 ADDP `ResourceLocator`，不承载资源树 UI 配置；`connection_info/schema/table/path` 属于适配层到运行时的内部参数。 |
 | Workflow Access Plan | 工作流访问计划 | Develop、Manager 等调用方把已解析的存储资源转换为 Workflow Runtime 可执行读写计划的内部契约。 | 当前版本为 `addp.workflow.access-plan/v1`；只在执行期携带 `mounted_path` 或 `object_store` 访问参数，不作为用户任务定义、资源身份或长期事实源。 |
 | Execution Effect | 执行效果 | 一次计算对数据或外部系统可能产生的效果分类。 | 固定为 `read`、`write`、`ddl`、`external_effect`；工作流按全部算子的最高效果收窄授权，不能由客户端自报后直接信任。 |
-| Execution Authorization | 执行授权 | System 基于当前 User AuthContext 或已发布服务定义来源，绑定唯一 execution、Tenant、owner audience、Source Engine、允许效果、来源版本和有效期的短期授权事实。 | 两种来源互斥；服务定义来源只允许 owner Service Principal 为自己的已发布定义签发只读授权。它不是 Role、OAuth Scope 或第二种 Tenant Membership，只允许匹配 audience 的 Runtime Service Principal 消费。 |
+| Execution Authorization | 执行授权 | System 基于当前 User AuthContext 或已发布服务定义来源，绑定唯一 execution、Tenant、owner audience、Source Engine、允许效果、来源版本和有效期的短期授权事实。 | 两种来源互斥；Notebook 派生的用户来源还绑定其 Notebook Session Authorization，并继承 Session 与 Token Family 生命周期。服务定义来源只允许 owner Service Principal 为自己的已发布定义签发只读授权。它不是 Role、OAuth Scope 或第二种 Tenant Membership，只允许匹配 audience 的 Runtime Service Principal 消费。 |
 | Task Authorization Subject | 任务授权主体 | 持久任务定义为定时或延迟执行绑定的 User、Tenant Membership 和授权版本事实。 | 只能由同 Tenant 的当前 User AuthContext 在创建、更新或显式重新授权任务时写入；不保存 Access Token。任务定义变化或授权版本变化后必须重新授权，执行开始时仍需重新校验 Membership、Role、资源规则和授权版本。 |
 | Managed Compute Session | 受控计算会话 | Develop 按 Execution Authorization 创建并管理的 SQL、Workflow 或 Jupyter 执行会话。 | Runtime 只获得本次执行所需的短期访问能力；Jupyter 不再直接获得长期 Engine 凭据或共享 Lab 的无限制数据访问。 |
 | Notebook Interactive Session | Notebook 交互会话 | Develop 为一个 Tenant、User、Notebook Task 和 Script Engine 临时创建的隔离 JupyterLab 会话。 | 由已鉴权 API 创建，浏览器只访问 Develop 同源代理；会话关闭、过期或 Develop 重启后失效，Runtime 在清理前把 Notebook 保存回 owner 路径。它不是共享 Lab，也不是任务执行记录。 |
@@ -240,10 +245,11 @@
 | Browser AuthSession | 浏览器认证会话 | 浏览器顶层页面持有的前端会话协调器，负责以内存保存 Access Token、通过 HttpOnly Refresh Cookie 静默恢复、跨标签页互斥刷新和 iframe Token 投递。 | Console 模式由 Console 持有；模块独立运行时由模块顶层页面持有。不得把 Access Token 持久化到浏览器存储。 |
 | Browser Resource Access Ticket | 浏览器资源访问票据 | System 基于当前第一方浏览器会话签发、供原生图片、媒体、下载和三维资源请求使用的短期 opaque 凭据。 | 只保存 SHA-256 Hash，通过 HttpOnly、Owner Path 限定 Cookie 传输；只允许对应 Owner 明确声明的 GET/HEAD 资源路由消费，不进入 URL。 |
 | Browser Session Capability Cookie | 浏览器会话能力 Cookie | 业务 owner 在 Bearer 已鉴权的会话创建请求成功后，为单个短期交互会话签发的 opaque HttpOnly Cookie。 | 只绑定一个会话 ID、owner 路径、Tenant、User 和到期时间；可代理该会话协议所需的方法与 WebSocket，但不能访问其他业务 API，不能替代 Browser Access Token 或只读 Resource Access Ticket。服务端只保存 Hash，关闭、过期、Context 变更或 owner 重启即失效。 |
-| Notebook Kernel Capability Token | Notebook Kernel 能力令牌 | Develop 为单个 Notebook Interactive Session 签发并注入其隔离 Kernel process 的短期 opaque Bearer Capability。 | 只允许调用该会话的脱敏查询 Engine Runtime Descriptor 和只读 Catalog 代理；服务端只保存 SHA-256 Hash，不能访问其他 Develop API，也不能替代 User Access Token、Service Access Token、Execution Authorization、Notebook Catalog Authorization 或浏览器会话 Cookie。关闭、过期或 Develop 重启后即失效。 |
-| Notebook Catalog Authorization | Notebook 目录授权 | System 从创建 Notebook Interactive Session 的当前 User AuthContext 派生并保存、绑定唯一 Session、Tenant、User、Task、授权版本和有效期的短期只读 Catalog 授权事实。 | 只允许 `addp-develop` Service Principal 代表该 Session 消费；不冻结 Engine 列表，不包含连接信息，不是 Token、Execution Authorization 或 Agent Delegated Access Token。 |
+| Notebook Kernel Capability Token | Notebook Kernel 能力令牌 | Develop 为单个 Notebook Interactive Session 签发并注入其隔离 Kernel process 的短期 opaque Bearer Capability。 | 只允许调用该会话的脱敏 Engine Runtime Descriptor、实时 Catalog 和受控只读数据代理；服务端只保存 SHA-256 Hash，不能访问其他 Develop API，也不能替代 User Access Token、Service Access Token、Execution Authorization、Notebook Session Authorization 或浏览器会话 Cookie。关闭、过期或 Develop 重启后即失效。 |
+| Notebook Session Authorization | Notebook 会话授权 | System 从创建 Notebook Interactive Session 的当前 User AuthContext 派生并保存、绑定唯一 Session、Tenant、User、Task、Token Family、授权版本和有效期的短期授权事实。 | 允许 `addp-develop` 代表该 Session 执行实时 Catalog 发现，或为每次只读查询/扫描派生独立 Execution Authorization；不冻结 Engine 列表、不包含连接信息，本身不是 Token、Execution Authorization 或 Agent Delegated Access Token。 |
+| Notebook Table Scan | Notebook 表扫描 | Notebook Native Engine Facade 对一个已由实时 Catalog 解析的表发起的流式只读执行。 | 每次扫描使用独立 execution、服务端 Cursor 和 Arrow IPC 流；返回扫描开始时的一致快照，不设隐式总行数上限，当前不支持断点续读。 |
 | Delegated Access Token | 受委托访问令牌 | System 为 Agent 代表当前用户调用特定 owner 能力签发的短期、限 audience 和 Scope 令牌。 | 不改变原用户和租户；可绑定 AgentRun / ToolCall 用于审计。 |
-| Runtime Service Principal | 运行时服务主体 | Develop、DuckDB Runtime、Workflow Runtime、Jupyter 等工作负载用于 Client Credentials 和控制面识别的 Service Principal。 | 只证明机器身份并消费与自身 audience 匹配的 Execution Authorization 或 Notebook Catalog Authorization；不继承发起用户、服务创建人、引擎创建人或 Tenant 全量数据权限。 |
+| Runtime Service Principal | 运行时服务主体 | Develop、DuckDB Runtime、Workflow Runtime、Jupyter 等工作负载用于 Client Credentials 和控制面识别的 Service Principal。 | 只证明机器身份并消费与自身 audience 匹配的 Execution Authorization 或 Notebook Session Authorization；不继承发起用户、服务创建人、引擎创建人或 Tenant 全量数据权限。 |
 
 ## Cleanup 与生命周期
 

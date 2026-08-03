@@ -21,6 +21,8 @@ addp = "addp_common.cli:main"
 
 [project.optional-dependencies]
 dev = [
+	"pandas>=2.2.0",
+	"pyarrow>=18.0.0",
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
 ]

@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -84,22 +85,64 @@ func (e *Executor) Execute(
 	if objectTables == nil {
 		objectTables = duckdb.BuildObjectTableMap(execCtx, tenantID, engines, e.meta)
 	}
-	session, err := duckdb.PrepareFederatedQueryWithEngines(execCtx, req.Query, engines, objectTables, duckdb.FederatedSessionOptions{
-		MemoryLimit: e.maxMemory,
-		Threads:     e.threads,
-	})
+	session, err := duckdb.PrepareFederatedQueryWithEngines(execCtx, req.Query, engines, objectTables, e.sessionOptions(req.Options))
 	if err != nil {
 		return nil, err
 	}
 	defer session.Close()
-	limit := req.Options.Limit
-	if limit <= 0 || limit > e.maxRows {
-		limit = e.maxRows
+	query := runtimeQuery(session.RewrittenSQL, req.Options, e.maxRows)
+	args, err := normalizeQueryArgs(req.Options.Args)
+	if err != nil {
+		return nil, err
 	}
-	query := fmt.Sprintf("SELECT * FROM (%s) AS addp_query LIMIT %d OFFSET %d", strings.TrimSuffix(strings.TrimSpace(session.RewrittenSQL), ";"), limit, max(req.Options.Offset, 0))
-	result, err := duckdb.ExecuteQuery(execCtx, session.Conn, query)
+	result, err := duckdb.ExecuteQuery(execCtx, session.Conn, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	return &plugin.QueryResult{Columns: result.Columns, Rows: result.Rows}, nil
+}
+
+func (e *Executor) sessionOptions(options plugin.QueryOptions) duckdb.FederatedSessionOptions {
+	return duckdb.FederatedSessionOptions{
+		MemoryLimit: e.maxMemory,
+		Threads:     e.threads,
+		LoadSpatial: options.Spatial,
+	}
+}
+
+func normalizeQueryArgs(args []interface{}) ([]interface{}, error) {
+	result := make([]interface{}, len(args))
+	for index, value := range args {
+		number, ok := value.(json.Number)
+		if !ok {
+			result[index] = value
+			continue
+		}
+		if strings.ContainsAny(number.String(), ".eE") {
+			parsed, err := number.Float64()
+			if err != nil {
+				return nil, fmt.Errorf("invalid numeric query argument: %w", err)
+			}
+			result[index] = parsed
+			continue
+		}
+		parsed, err := number.Int64()
+		if err != nil {
+			return nil, fmt.Errorf("invalid integer query argument: %w", err)
+		}
+		result[index] = parsed
+	}
+	return result, nil
+}
+
+func runtimeQuery(rewrittenSQL string, options plugin.QueryOptions, maxRows int) string {
+	inner := strings.TrimSuffix(strings.TrimSpace(rewrittenSQL), ";")
+	if options.Describe {
+		return "DESCRIBE " + inner
+	}
+	limit := options.Limit
+	if limit <= 0 || limit > maxRows {
+		limit = maxRows
+	}
+	return fmt.Sprintf("SELECT * FROM (%s) AS addp_query LIMIT %d OFFSET %d", inner, limit, max(options.Offset, 0))
 }

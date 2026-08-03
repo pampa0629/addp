@@ -21,7 +21,7 @@ meta/
 │   ├── internal/models/       # node、item、scan_task、cleanup
 │   ├── internal/service/      # 应用服务门面、装配、查询代理、刷新入口
 │   ├── internal/scanadapter/  # catalog strategy dispatch 与 object/file path/ref group adapter
-│   ├── internal/scanruntime/  # tabular/branch-leaf/object/file 扫描运行时
+│   ├── internal/scanruntime/  # tabular/direct-leaf/branch-leaf/object/file 扫描运行时
 │   ├── internal/scanprocessor/# item 持久化、deep enrich、content hash、索引调度
 │   ├── internal/metatest/     # Meta 后端测试基础设施
 │   ├── internal/search/       # Meilisearch indexer
@@ -118,12 +118,12 @@ service.ScanService
   -> repository.UpsertItemWithDepth
 ```
 
-数据库 / branch-leaf catalog scan：
+数据库 / direct-leaf / branch-leaf catalog scan：
 
 ```text
 service.ScanService
   -> scanadapter.CatalogDispatcher
-  -> scanruntime.DatabaseRuntime / BranchLeafRuntime
+  -> scanruntime.DatabaseRuntime / DirectLeafRuntime / BranchLeafRuntime
   -> metaattr
   -> repository.UpsertNode / UpsertItemWithDepth
 ```

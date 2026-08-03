@@ -40,19 +40,24 @@ Service 模块将服务分为三大类：
 - 通过资源树选择器选择资源
 - 自动检测空间字段（调用 Meta resource-tree / item 能力）
 - 支持配置默认返回字段和可过滤字段
-- 支持动态查询参数：filter、fields、orderBy、page、page_size、format
+- 对外只接受结构化字段选择、类型化过滤、排序和游标分页，不接受 SQL 片段
 
 **方式二：SQL 配置（SQL 模式）**
 - 编写自定义 SQL 查询语句
+- 新建服务选择查询引擎时，默认 SQL 从该引擎当前业务 Catalog 中选择有数据的真实表生成；返回表单前必须通过同一只读执行链路以最多 10 行完成验证
+- 默认 SQL 是不含 `LIMIT/OFFSET` 的基础查询，发布后由 Service 在外层统一追加分页；工作台样例中的展示行数限制不属于查询服务定义
 - 手动指定空间字段配置
-- 仅支持分页和格式参数：page、page_size、format
-- **不支持** filter/fields/orderBy 等动态拼接（避免 SQL 注入）
+- 固定 SQL 只作为发布来源；对外查询仍通过输出契约上的结构化查询能力执行
+- 发布前必须通过所选查询引擎真实检测输出契约；DuckDB 联邦 SQL 在完成授权和挂载后使用 Runtime describe 能力取得字段，发布者从实际输出字段中声明非空唯一稳定键
+- 不支持客户端提交 SQL、WHERE、ORDER BY 或其他原生表达式
+
+两种来源必须形成同一个发布契约：输出字段、空间信息、非空唯一稳定排序键、查询字段策略、资源限制、执行绑定和依赖快照。发布版本不可变；修改契约生成新版本并原子切换。
 
 #### 协议支持
 
 **REST API（默认启用）**
-- 端点：`GET /api/query/{serviceName}`
-- 查询参数：filter、fields、orderBy、page、page_size、format
+- 端点：`POST /api/query/{serviceName}/query`
+- 请求体：`select`、结构化 `filter`、`order_by`、`page.limit`、`page.cursor`、`format`
 - 输出格式：JSON、CSV、GeoJSON（有空间字段时）
 
 **OGC API Features（自动启用）**
@@ -442,7 +447,7 @@ CREATE TABLE service.registered_service_layers (
 
 ```
 # 查询服务端点
-GET /api/query/:serviceName                              → REST查询API
+POST /api/query/:serviceName/query                      → REST 查询 API
 GET /ogc/features/:serviceName/collections/:collectionId/items  → OGC Features
 
 # 瓦片服务端点
@@ -451,11 +456,11 @@ GET /tms/:serviceName/:layerName/:z/:x/:y.:format        → TMS
 GET /ogc/tiles/:serviceName/:layerName/:z/:x/:y         → OGC Tiles
 
 # 查询服务管理
-POST   /api/service/query                                → 创建查询服务
-GET    /api/service/query                                → 列出查询服务
-GET    /api/service/query/:id                            → 获取查询服务详情
-PUT    /api/service/query/:id                            → 更新查询服务
-DELETE /api/service/query/:id                            → 删除查询服务
+POST   /api/v1/service/query                             → 创建查询服务
+GET    /api/v1/service/query                             → 列出查询服务
+GET    /api/v1/service/query/:id                         → 获取查询服务详情
+PUT    /api/v1/service/query/:id                         → 更新查询服务
+DELETE /api/v1/service/query/:id                         → 删除查询服务
 
 # 瓦片服务管理
 POST   /api/service/tile                                 → 创建瓦片服务
@@ -528,10 +533,11 @@ Content-Type: application/json
 		"primary_geometry_column": "geom"
 	  }
 	},
+    "stable_key": ["id"],
     "default_fields": ["id", "name", "category", "geom"]
   },
   "endpoints": {
-    "rest_api": "http://localhost:8000/api/query/beijing_poi",
+    "rest_api": "http://localhost:8000/api/query/beijing_poi/query",
     "ogc_features": "http://localhost:8000/ogc/features/beijing_poi"
   }
 }
@@ -541,21 +547,26 @@ Content-Type: application/json
 
 **请求**：
 ```http
-GET /api/query/beijing_poi?filter=category='餐饮'&fields=id,name,geom&page=1&page_size=50&format=geojson
+POST /api/query/beijing_poi/query
+Content-Type: application/json
+
+{
+  "select": ["id", "name", "geom"],
+  "filter": {"field": "category", "op": "eq", "value": "餐饮"},
+  "order_by": [{"field": "name", "direction": "asc"}],
+  "page": {"limit": 50},
+  "format": "json"
+}
 ```
 
 **响应**：
 ```json
 {
   "data": [
-    {"id": 1, "name": "北京烤鸭", "geom": "POINT(116.31 39.99)"}
+    {"id": 1, "name": "北京烤鸭", "geom": "{\"type\":\"Point\",\"coordinates\":[116.31,39.99]}"}
   ],
-  "pagination": {
-    "page": 1,
-    "page_size": 50,
-    "total": 1000,
-    "total_pages": 20
-  }
+  "page": {"limit": 50, "has_more": true, "next_cursor": "opaque-cursor"},
+  "service_version": "dependency-hash"
 }
 ```
 
@@ -703,14 +714,15 @@ GET /ogc/tiles/beijing_map/road/12/3421/1532
 
 ## 六、核心设计决策
 
-### 6.1 SQL 配置方式的限制
+### 6.1 查询服务统一执行契约
 
-**决策**：SQL 固定，仅支持分页和格式参数，不支持动态拼接
+**决策**：表、固定 SQL 和联邦 SQL 只区分来源与 Runtime，REST Query、OGC API Features 和 WFS 统一编译为结构化查询计划
 
 **理由**：
-- 避免 SQL 注入风险
-- 保持实现简单
-- 用户如需动态查询使用 Table 模式
+- 避免 SQL 注入和协议层重复构造 SQL
+- 统一字段策略、稳定排序键、游标、授权、配额和审计
+- 让 OGC bbox、Feature ID 和 REST 过滤共享同一类型化谓词
+- 查询默认读取 `limit + 1` 行判断下一页，不执行精确 `COUNT(*)`
 
 ### 6.2 空间字段自动检测
 

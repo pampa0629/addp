@@ -522,6 +522,37 @@ func TestBuildFromMetaKeepsObjectPrefixLocatorType(t *testing.T) {
 	}
 }
 
+func TestBuildFromMetaKeepsTopicLocatorTypeAndName(t *testing.T) {
+	builder := NewTreeBuilder()
+	engine := &models.Engine{
+		ID:         19,
+		Name:       "Business Kafka",
+		EngineType: "kafka",
+	}
+	rootID := uint(342)
+	tree, err := builder.BuildFromMeta(engine, []*models.MetaNode{
+		{ID: rootID, EngineID: 19, NodeType: "service", Name: "Business Kafka", FullName: "", ItemCount: 1},
+		{
+			ID: 152381, EngineID: 19, ParentNodeID: &rootID, NodeType: "topic",
+			Name: "addp.transfer.orders.v1", FullName: "addp.transfer.orders.v1",
+			Attributes: map[string]interface{}{"item_id": uint(52381)},
+		},
+	}, -1)
+	if err != nil {
+		t.Fatalf("BuildFromMeta() error = %v", err)
+	}
+	if len(tree.Children) != 1 {
+		t.Fatalf("len(tree.Children) = %d, want 1", len(tree.Children))
+	}
+	topic := tree.Children[0]
+	if topic.Type != "topic" {
+		t.Fatalf("topic.Type = %q, want topic", topic.Type)
+	}
+	if topic.Locator != "addp://engine/19/path/addp.transfer.orders.v1?type=topic&item_id=52381" {
+		t.Fatalf("topic.Locator = %q", topic.Locator)
+	}
+}
+
 func TestConvertNodeToTree(t *testing.T) {
 	builder := NewTreeBuilder()
 

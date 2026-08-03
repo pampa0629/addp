@@ -177,15 +177,15 @@ func TestMetaServicePrincipalForwardMigrationAgainstPostgres(t *testing.T) {
 	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
 		t.Fatalf("read Manager catalog migration version: %v", err)
 	}
-	if version != 35 || dirty {
-		t.Fatalf("latest migration state = (%d, %t), want (35, false)", version, dirty)
+	if version != 37 || dirty {
+		t.Fatalf("latest migration state = (%d, %t), want (37, false)", version, dirty)
 	}
 	var authorizationVersionAfter int64
 	if err := db.QueryRow(`SELECT authorization_version FROM system.principals WHERE id = $1`, administratorID).Scan(&authorizationVersionAfter); err != nil {
 		t.Fatalf("read authorization version after Manager catalog migration: %v", err)
 	}
-	if authorizationVersionAfter != authorizationVersionBefore+4 {
-		t.Fatalf("authorization version after catalog migrations = %d, want %d", authorizationVersionAfter, authorizationVersionBefore+4)
+	if authorizationVersionAfter != authorizationVersionBefore+5 {
+		t.Fatalf("authorization version after catalog migrations = %d, want %d", authorizationVersionAfter, authorizationVersionBefore+5)
 	}
 	assertManagerDataProfileAuthorizationCatalog(t, db)
 }
@@ -656,8 +656,8 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
 		t.Fatalf("read migration version: %v", err)
 	}
-	if version != 35 || dirty {
-		t.Fatalf("migration state = (%d, %t), want (35, false)", version, dirty)
+	if version != 37 || dirty {
+		t.Fatalf("migration state = (%d, %t), want (37, false)", version, dirty)
 	}
 
 	assertIAMCatalogSeed(t, db)
@@ -695,7 +695,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	if err := runner.Run(ctx); err == nil || !strings.Contains(err.Error(), "is dirty") {
 		t.Fatalf("Run() error = %v, want dirty-state rejection", err)
 	}
-	if _, err := db.Exec(`UPDATE system.schema_migrations SET version = 36, dirty = false`); err != nil {
+	if _, err := db.Exec(`UPDATE system.schema_migrations SET version = 38, dirty = false`); err != nil {
 		t.Fatalf("set newer migration version: %v", err)
 	}
 	if err := runner.Run(ctx); err == nil || !strings.Contains(err.Error(), "newer than embedded") {
@@ -1008,7 +1008,7 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&permissionCount); err != nil {
 		t.Fatalf("count built-in service runtime permissions: %v", err)
 	}
-	if principalCount != 11 || clientCount != 11 || roleCount != 11 || permissionCount != 25 {
+	if principalCount != 11 || clientCount != 11 || roleCount != 11 || permissionCount != 27 {
 		t.Fatalf("service runtime catalog principals=%d clients=%d roles=%d permissions=%d", principalCount, clientCount, roleCount, permissionCount)
 	}
 	var metaTenantPermissions, developTenantPermissions, metaPlatformPermissions, developPlatformPermissions string
@@ -1049,7 +1049,7 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 		t.Fatalf("read platform.develop_runtime permissions: %v", err)
 	}
 	if metaTenantPermissions != "audit.tenant_event.create,system.engine.read" ||
-		developTenantPermissions != "meta.catalog.read,meta.scan_task.execute,system.engine_descriptor.read,system.execution_authorization.execute" ||
+		developTenantPermissions != "meta.catalog.read,meta.scan_task.execute,system.engine_descriptor.read,system.execution_authorization.execute,system.notebook_session_authorization.execute" ||
 		metaPlatformPermissions != "system.runtime_registry.update" ||
 		developPlatformPermissions != "system.runtime_registry.update" {
 		t.Fatalf("runtime permissions meta_tenant=%q develop_tenant=%q meta_platform=%q develop_platform=%q",
@@ -1390,8 +1390,8 @@ func assertAuthorizationCatalogRetirement(t *testing.T, db *sql.DB) {
 	`).Scan(&activePermissionCount, &disabledPermissionCount); err != nil {
 		t.Fatalf("read retired Permission counts: %v", err)
 	}
-	if activePermissionCount != 242 || disabledPermissionCount != 69 {
-		t.Fatalf("Permission status counts = active:%d disabled:%d, want 242 and 69", activePermissionCount, disabledPermissionCount)
+	if activePermissionCount != 245 || disabledPermissionCount != 69 {
+		t.Fatalf("Permission status counts = active:%d disabled:%d, want 245 and 69", activePermissionCount, disabledPermissionCount)
 	}
 
 	var disabledRoles string
@@ -1947,9 +1947,9 @@ func assertAuditContextConstraints(t *testing.T, db *sql.DB) {
 func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	t.Helper()
 
-	assertTableCount(t, db, "system.permissions", 311)
+	assertTableCount(t, db, "system.permissions", 314)
 	assertTableCount(t, db, "system.roles", 35)
-	assertTableCount(t, db, "system.role_permissions", 287)
+	assertTableCount(t, db, "system.role_permissions", 292)
 	assertTableCount(t, db, "system.role_conflicts", 3)
 	assertTableCount(t, db, "system.oauth_clients", 12)
 	assertTableCount(t, db, "system.principals", 11)
@@ -1961,8 +1961,8 @@ func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	if err := db.QueryRow(`SELECT count(DISTINCT owner_module), count(*) FILTER (WHERE owner_module = 'system') FROM system.permissions`).Scan(&ownerCount, &systemPermissionCount); err != nil {
 		t.Fatalf("read seeded Permission owners: %v", err)
 	}
-	if ownerCount != 15 || systemPermissionCount != 113 {
-		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 15 and 113", ownerCount, systemPermissionCount)
+	if ownerCount != 15 || systemPermissionCount != 115 {
+		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 15 and 115", ownerCount, systemPermissionCount)
 	}
 
 	var invalidRoleCount int

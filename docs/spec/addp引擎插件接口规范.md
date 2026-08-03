@@ -186,7 +186,7 @@ SQL catalog facts provider 差异矩阵：
 | 引擎 | namespace 术语 | catalog facts 来源 | 表类型映射 | 字段信息来源 | row count 策略 | 系统 namespace / leaf 过滤 | 当前复用边界 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | PostgreSQL | schema | `information_schema.schemata/tables/columns` + `pg_class` + `pg_stat_user_tables` | `BASE TABLE` -> `table`，`VIEW` -> `view`，其他 `table_type` 转小写下划线 | `information_schema.columns`，主键来自约束表，注释来自 `col_description` | 列表使用 `pg_class.reltuples` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count`，不主动 `ANALYZE` | `pg_catalog`、`information_schema`、`pg_toast`、`pg_temp_*`、`pg_toast_*`；当实例检测到 SuperMap SDX+ 时过滤 `sm*` 系统 leaf | 暂留插件内；PostgreSQL 原生 catalog 语义较强，不与 MySQL/Doris 合并 |
-| MySQL | database | `information_schema.schemata/tables/columns` | `BASE TABLE` -> `table`，`VIEW` -> `view`，其他 `table_type` 转小写下划线 | `information_schema.columns`，主键来自 `column_key`，注释来自 `column_comment` | 列表将 `information_schema.tables.table_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count` | `information_schema`、`mysql`、`performance_schema`、`sys` | 与 Doris 共享 `MySQLCompatibleCatalogFactsDialect`；可启用表级 `Native.engine` |
+| MySQL | database | `information_schema.schemata/tables/columns/statistics/st_spatial_reference_systems` | `BASE TABLE` -> `table`，`VIEW` -> `view`，其他 `table_type` 转小写下划线 | `information_schema.columns`，主键来自 `column_key`，注释来自 `column_comment`；geometry 类型、SRID、nullable、CRS 和空间索引由 MySQL 插件自身补充为 `SpatialInfo` | 列表将 `information_schema.tables.table_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count`；空间 extent 不通过全表聚合推断 | `information_schema`、`mysql`、`performance_schema`、`sys` | 普通表事实与 Doris 共享 `MySQLCompatibleCatalogFactsDialect`；MySQL 空间事实和行值编码保留在 MySQL 插件内；可启用表级 `Native.engine` |
 | Doris | database | MySQL 兼容 `information_schema.schemata/tables/columns` | 同 MySQL 兼容逻辑 | 同 MySQL 兼容逻辑，注释能力按引擎实际返回 | 列表将 `information_schema.tables.table_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count` | MySQL 系统库 + `__internal_schema` | 与 MySQL 共享 `MySQLCompatibleCatalogFactsDialect`；`Native.engine` 待确认 `information_schema.tables.engine` 稳定性后再启用 |
 | ClickHouse | database | `system.databases`、`system.tables`、`system.columns` | `MaterializedView` -> `materialized_view`，`View`/其他包含 `View` 的 engine -> `view`，其他 -> `table` | `system.columns`，nullable 从类型字符串推断，`DEFAULT` / `MATERIALIZED` / `ALIAS` 映射到通用默认值和生成列字段，当前不表达主键 | 列表将 `system.tables.total_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count` | `system`、`information_schema`、`INFORMATION_SCHEMA` | 暂留插件内；ClickHouse `system.*` 语义独立 |
 | Spark SQL | database | `SHOW DATABASES`、`SHOW TABLES`、`DESCRIBE`，部分环境可查询 `information_schema` | 当前 `SHOW TABLES` 结果统一映射为 `table` | `DESCRIBE table` | 列表阶段不做真实 count，未知 `row_count` / `size_bytes` 保持为空；单表 catalog facts 显式请求统计时才执行 `COUNT(*)` | `information_schema`、`sys` | 暂留插件内；Spark catalog facts 更偏命令式接口 |
@@ -242,6 +242,7 @@ type StoreProvider interface {
 - `RangeWritableProvider.WriteRange()`：按 byte range / offset 写入内容。
 - `BatchReadableProvider.ReadBatch()`：批量读取表或集合数据；图数据读取使用 `GraphSampleProvider` / `GraphQueryProvider`。
 - `TableReadSessionProvider.OpenTableReadSession()`：打开表读取会话，连续读取批次；适合 PostgreSQL cursor、JDBC cursor、Parquet row group reader 等避免 offset 翻页退化的实现。
+- `SpatialFeatureReadProvider.ReadSpatialFeature()`：按一个精确 identity field 读取单个空间要素，统一返回 geometry EWKB、centroid EWKB、SRID 和空间事实。Manager 的要素定位与高亮只消费该 Provider，不得在 Handler 中拼接 PostGIS、MySQL 等原生空间 SQL；Provider 必须校验 geometry field 和 identity field 后再引用标识符。
 - `BatchWritableProvider.WriteBatch()`：批量写入表或集合数据；图写入应由图模块或专用 graph provider 明确建模。
 - `TableWriteSessionProvider.OpenTableWriteSession()`：打开表写入会话，连续写入批次；适合 PostgreSQL COPY、JDBC bulk load 等避免每批重复建立写入会话的实现。
 - `TableWritePreparer.PrepareTableWrite()`：执行表级写入前准备动作，例如 ensure database / schema、create table、校验目标表结构和安全 schema evolution。该能力不写入数据行，也不承载 Transfer 的 replace / append policy。
@@ -253,7 +254,7 @@ type StoreProvider interface {
 当前 bounded watermark 契约：
 
 - `BoundedWatermarkReadOptions` 必须包含一个 watermark field、至少一个 tie breaker 和可选 committed start cursor。
-- 当前 source Provider 由 PostgreSQL 实现，在 repeatable-read 只读事务中冻结上界；游标字段不得为 NULL，tie breaker 必须匹配非 partial unique/primary key。
+- 当前 source Provider 由 PostgreSQL 与 MySQL 实现，分别在 repeatable-read 只读事务和 InnoDB consistent snapshot 中冻结上界；游标字段不得为 NULL，tie breaker 必须匹配非 partial unique/primary key。
 - `WatermarkCursor.Values` 使用 canonical string 保存，具体列类型转换由 source Provider 解释。
 - `TableUpsertProvider` 使用稳定 keys 和单批事务提交；重复应用同一批必须得到相同目标状态。PostgreSQL 使用显式 `ON CONFLICT(keys)`；MySQL 使用 InnoDB 和 `ON DUPLICATE KEY UPDATE`，并必须拒绝会绕过配置 keys 的其他唯一约束。
 - Transfer 只在目标批次提交成功后推进 `transfer.sync_states`，Provider 不直接维护任务状态。
@@ -354,6 +355,8 @@ type QueryRuntimeProvider interface {
 type FederatedQueryRuntimeProvider interface {
     EnginePlugin
     QueryLanguages() []string
+    ResolveSourceEngineIDs(query string, candidates []FederatedQuerySource) []uint
+    ResolveObjectTableReferences(query string, candidates []FederatedQuerySource) []FederatedQueryObjectTableReference
     ExecuteFederatedQuery(
         ctx context.Context,
         runtimeConn ConnectionInfo,
@@ -365,12 +368,17 @@ type FederatedQueryRequest struct {
     ExecutionID              string
     ExecutionAuthorizationID string
     SourceEngineIDs          []uint
+    ObjectTables             map[string]map[string]string
     Query                    string
     Language                 string
     Options                  QueryOptions
     CallerAccessToken        string
 }
 ```
+
+`QueryOptions.Args` 是驱动参数绑定值，Runtime 不得把它插值回 SQL 文本。`QueryOptions.Describe=true` 表示只返回查询输出结构，不读取业务结果行；联邦 Runtime 必须在完成授权、挂载和对象表改写后使用引擎原生 describe 能力执行，不能通过实际扫描整份结果推断字段。`Describe` 不是独立查询路由，也不能绕过只读校验、Execution Authorization 或资源限制。
+
+`QueryOptions.Spatial=true` 表示本次查询计划需要 Runtime 的空间类型或空间函数。DuckDB Runtime 必须在锁定该次独立会话配置前，从随 Runtime 打包的扩展目录显式加载 `spatial`；不得扫描 SQL 文本猜测空间依赖，也不得在请求处理阶段联网安装或自动加载扩展。调用方应根据已发布的空间元数据或明确的执行上下文设置该选项；用于检测任意联邦 SQL 输出结构或探测可执行样例时可以保守启用。
 
 `runtimeConn` 只包含 Runtime Engine 的 `protocol/host/port`。`CallerAccessToken` 只用于当前同步服务间请求的 Bearer 认证，必须使用 `json:"-"`，不得进入请求体、任务定义、执行记录或日志。Runtime 使用自己的 Service Principal 消费 `ExecutionAuthorizationID`，不能要求调用方提供 Source Engine `connection_info`。
 
@@ -379,7 +387,7 @@ type FederatedQueryRequest struct {
 - `GET /health`：运行时和离线扩展完整性检查。
 - `POST /api/v1/queries`：同步执行一次只读联邦查询。
 
-查询请求必须绑定唯一 execution。Runtime 按 Execution Authorization 逐个取得 Source Engine 连接，限制可挂载引擎、对象物理路径、内存、线程、临时目录、超时和最大返回行数。HTTP 请求取消必须传递到 DuckDB 查询上下文；若未提供独立取消资源端点，`supports_cancel` 不得声明为 true。
+查询请求必须绑定唯一 execution。Runtime 按 Execution Authorization 逐个取得 Source Engine 连接，限制可挂载引擎、对象物理路径、内存、线程、临时目录、超时和最大返回行数。HTTP JSON 解码必须保留整数精度，参数只能通过数据库驱动绑定。HTTP 请求取消必须传递到 DuckDB 查询上下文；若未提供独立取消资源端点，`supports_cancel` 不得声明为 true。
 
 查询语言差异由 `QueryRequest.Language` 与 `capabilities.compute.query.languages` 表达，不按数据库类别新增查询入口。`QueryRuntimeProvider` 是普通查询主路径，适用于 SQL、MQL、Cypher 表格结果、OpenSearch DSL、Mango Query 等能返回 `QueryResult` 的查询。
 

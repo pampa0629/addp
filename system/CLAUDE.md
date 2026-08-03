@@ -182,6 +182,7 @@ frontend/src/
 | refresh_tokens | system | 轮换 Refresh Token Hash |
 | access_tokens | system | 短期 User Access Token Hash |
 | delegated_access_tokens | system | Agent Tool 短期受委托访问令牌 Hash 与审计绑定 |
+| notebook_session_authorizations | system | Notebook Session 绑定的用户派生短期只读 Catalog 授权事实 |
 | resource_access_tickets | system | Owner Path 浏览器资源票据 Hash |
 | module_registry | (public) | 模块注册表，供 Gateway 动态路由 |
 | task_providers | (public) | 任务提供者表，供 Orchestrator 调用 |
@@ -196,6 +197,7 @@ frontend/src/
 - [engines表](docs/tables/engines表.md) - 引擎配置表,引擎连接管理
 - [resource_access_tickets表](docs/tables/resource_access_tickets表.md) - 浏览器原生资源访问票据
 - [delegated_access_tokens表](docs/tables/delegated_access_tokens表.md) - Agent Tool 短期受委托访问令牌
+- [notebook_session_authorizations表](docs/tables/notebook_session_authorizations表.md) - Notebook Session 会话授权事实
 
 **重要**:修改表结构或 API 时,必须同步更新对应的单表文档。
 
@@ -305,7 +307,7 @@ frontend/src/
    - 密钥管理:
      - 开发环境: 默认32字节密钥
      - 生产环境: 环境变量 `ENCRYPTION_KEY` (Base64编码)
-   - 加密字段: `password`, `access_key`, `secret_key`, `token`, `api_key`
+   - 加密字段: 由当前引擎插件的 `SensitiveFields()` 唯一声明
    - 自动加密: 创建/更新引擎时自动加密敏感字段
    - 自动解密: 查询引擎时自动解密返回
 

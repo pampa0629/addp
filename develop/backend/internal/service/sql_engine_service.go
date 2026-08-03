@@ -478,7 +478,10 @@ func (s *SQLEngineService) GenerateAuthorizedSampleQuery(
 }
 
 func generateExecutableSampleQuery(ctx context.Context, engine *commonModels.Engine) (string, string, error) {
-	return dbbridge.GenerateExecutableSampleQuery(ctx, engine, "")
+	return dbbridge.GenerateExecutableSampleQuery(ctx, engine, "", dbbridge.ExecutableSampleQueryOptions{
+		QueryLimit:      10,
+		ValidationLimit: 10,
+	})
 }
 
 func formatEngineIDs(engineIDs []uint) []string {

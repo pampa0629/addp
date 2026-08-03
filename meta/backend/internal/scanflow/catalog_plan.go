@@ -6,6 +6,7 @@ type CatalogScanStrategy string
 
 const (
 	CatalogScanTabular      CatalogScanStrategy = "tabular"
+	CatalogScanDirectLeaves CatalogScanStrategy = "direct_leaves"
 	CatalogScanBranchLeaves CatalogScanStrategy = "branch_leaves"
 	CatalogScanObject       CatalogScanStrategy = "object_catalog"
 	CatalogScanFile         CatalogScanStrategy = "file_catalog"
@@ -28,6 +29,10 @@ func CatalogScanPlanForPlugin(p plugin.EnginePlugin) (CatalogScanPlan, bool) {
 	plan := CatalogScanPlan{
 		Model:    *model,
 		LeafTerm: leafTerm,
+	}
+	if len(model.Levels) == 1 && model.Levels[0].Role == plugin.CatalogRoleLeaf {
+		plan.Strategy = CatalogScanDirectLeaves
+		return plan, true
 	}
 	switch leafTerm {
 	case plugin.CatalogTermTable:

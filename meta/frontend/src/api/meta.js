@@ -3,6 +3,10 @@ import {
   listSystemCatalogChildren,
   normalizeCatalogPath
 } from './metaCatalog'
+import {
+  selectLiveCatalogTopEntries,
+  selectScannedCatalogTopEntries
+} from '../utils/catalogScanView'
 
 export default {
   // 统计
@@ -24,26 +28,11 @@ export default {
     return client.get('/meta/engines')
   },
 
-  // 获取指定引擎已扫描的 catalog 顶层容器
-  getScannedCatalogTopNodes(engineId) {
-    return client.get(`/meta/engines/${engineId}/tree`).then(res => {
-      const root = findCatalogRootNode(res)
-      const childNodes = Array.isArray(res?.child_nodes) ? res.child_nodes : []
-      const nodes = root
-        ? childNodes.filter(node => node.parent_node_id === root.id)
-        : []
-      return nodes.map(node => ({
-        id: node.id,
-        name: node.name,
-        node_type: node.node_type,
-        path: node.full_name || node.name,
-        scan_status: node.scan_status,
-        scanned_depth: node.scanned_depth,
-        scanned_at: node.scanned_at,
-        item_count: node.item_count || 0,
-        total_size_bytes: node.total_size_bytes || 0
-      }))
-    })
+  // 获取指定引擎已扫描的 catalog 顶层业务项。
+  getScannedCatalogTopEntries(engineId, resource) {
+    return client
+      .get(`/meta/engines/${engineId}/tree`)
+      .then(tree => selectScannedCatalogTopEntries(tree, resource))
   },
 
   // 获取指定引擎的实时 catalog 子节点（系统控制面）
@@ -51,17 +40,15 @@ export default {
     return listSystemCatalogChildren(client, engineId, path, options)
   },
 
-  // 获取扫描配置使用的实时 catalog 顶层节点
-  async listCatalogTopNodes(engineId) {
+  // 获取扫描配置使用的实时 catalog 顶层业务项。
+  async listCatalogTopEntries(engineId, resource) {
     const roots = await listSystemCatalogChildren(client, engineId)
     const root = roots.find(isCatalogRootEntry)
     if (!root) {
       return []
     }
     const children = await listSystemCatalogChildren(client, engineId, normalizeCatalogPath(root.path))
-    return children
-      .filter(node => node?.role === 'branch')
-      .map(toCatalogBrowserNode)
+    return selectLiveCatalogTopEntries(children, resource).map(toCatalogBrowserNode)
   },
 
   // 为所有未扫描的引擎提交手动后台扫描运行
@@ -175,10 +162,6 @@ function fileExtension(name = '') {
   return index >= 0 ? name.slice(index) : ''
 }
 
-function findCatalogRootNode(tree) {
-  const roots = Array.isArray(tree?.top_nodes) ? tree.top_nodes : []
-  return roots.find(node => String(node?.full_name || '').trim() === '')
-}
 
 function isCatalogRootEntry(node) {
   if (!node) return false

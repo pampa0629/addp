@@ -51,7 +51,7 @@ func SetupRouter(
 	// 查询服务端点（支持公开访问，handler内部会检查权限）
 	// 可选认证：有 Bearer Header 就解析 AuthContext，没有就按公开访问处理。
 	optionalAuth := optionalSystemAuth(cfg.SystemServiceURL)
-	router.GET("/api/query/:serviceName", optionalAuth, queryServiceHandler.QueryData)
+	router.POST("/api/query/:serviceName/query", optionalAuth, queryServiceHandler.QueryData)
 
 	// 图查询服务执行端点（支持公开访问）
 	router.POST("/api/gquery/:serviceName", optionalAuth, graphQueryHandler.ExecuteQuery)

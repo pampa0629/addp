@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	developi18n "github.com/addp/develop/backend/i18n"
 	"github.com/addp/develop/backend/internal/service"
@@ -32,7 +33,12 @@ func (h *NotebookHandler) CreateSession(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookInvalidID)})
 		return
 	}
-	session, secret, err := h.notebookSessionService.Create(c.Request.Context(), tenantIDValue(c), userIDValue(c), uri.ID)
+	userAccessToken, tokenErr := requestUserAccessToken(c)
+	if tokenErr != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, developi18n.MsgAuthenticationRequired), "error_code": "authentication_required"})
+		return
+	}
+	session, secret, err := h.notebookSessionService.Create(c.Request.Context(), userAccessToken, tenantIDValue(c), userIDValue(c), uri.ID)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrNotebookNotFound):
@@ -54,6 +60,269 @@ func (h *NotebookHandler) CreateSession(c *gin.Context) {
 		Expires: session.ExpiresAt, MaxAge: max(1, int(time.Until(session.ExpiresAt).Seconds())),
 	})
 	c.JSON(http.StatusCreated, session)
+}
+
+type notebookCatalogChildrenRequest struct {
+	EngineID uint                                  `json:"engine_id"`
+	Path     commonClient.EngineCatalogPath        `json:"path"`
+	Options  commonClient.EngineCatalogListOptions `json:"options,omitempty"`
+}
+
+type notebookTableScanRequest struct {
+	EngineID  uint                           `json:"engine_id"`
+	Path      commonClient.EngineCatalogPath `json:"path"`
+	BatchSize int                            `json:"batch_size"`
+	MaxRows   int64                          `json:"max_rows,omitempty"`
+}
+
+type notebookQueryRequest struct {
+	EngineID uint          `json:"engine_id"`
+	Query    string        `json:"query"`
+	Params   []interface{} `json:"params,omitempty"`
+	MaxRows  int64         `json:"max_rows"`
+	Timeout  int64         `json:"timeout"`
+}
+
+// StreamSessionQuery executes one bounded PostgreSQL read query as Arrow IPC.
+// @Summary 执行 Notebook 有界只读查询 | Execute a bounded Notebook read query
+// @Description 查询必须是只读单语句并携带显式 max_rows 与 timeout；参数使用 PostgreSQL $1 形式。 | The query must be one read-only statement with explicit max_rows and timeout; parameters use PostgreSQL $1 syntax.
+// @Tags Notebook
+// @Accept json
+// @Produce application/vnd.apache.arrow.stream
+// @Param session_id path string true "Notebook 会话 ID | Notebook session ID"
+// @Param request body notebookQueryRequest true "查询与执行边界 | Query and execution boundary"
+// @Success 200 {file} binary
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 422 {object} map[string]string
+// @Failure 502 {object} map[string]string
+// @Failure 503 {object} map[string]string
+// @Failure 504 {object} map[string]string
+// @x-addp-auth-mode "authenticated"
+// @Router /notebook-kernel-sessions/{session_id}/queries [post]
+func (h *NotebookHandler) StreamSessionQuery(c *gin.Context) {
+	token, ok := notebookKernelBearer(c.GetHeader("Authorization"))
+	if !ok {
+		respondDevelopCatalogError(c, http.StatusUnauthorized, "notebook_session_unavailable", developi18n.MsgNotebookSessionUnavailable)
+		return
+	}
+	var request notebookQueryRequest
+	if err := c.ShouldBindJSON(&request); err != nil || request.EngineID == 0 || request.MaxRows <= 0 ||
+		request.MaxRows > 1_000_000 || request.Timeout <= 0 || request.Timeout > 300 {
+		respondDevelopCatalogError(c, http.StatusBadRequest, "query_request_invalid", developi18n.MsgNotebookCatalogRequestInvalid)
+		return
+	}
+	ready := false
+	err := h.notebookSessionService.StreamQuery(c.Request.Context(), c.Param("session_id"), token,
+		service.NotebookQueryRequest{
+			EngineID: request.EngineID, Query: request.Query, Params: request.Params,
+			MaxRows: request.MaxRows, Timeout: time.Duration(request.Timeout) * time.Second,
+		}, c.Writer, func() {
+			ready = true
+			c.Header("Content-Type", "application/vnd.apache.arrow.stream")
+			c.Header("Cache-Control", "no-store")
+			c.Header("X-Content-Type-Options", "nosniff")
+			c.Status(http.StatusOK)
+		})
+	if err == nil || ready {
+		return
+	}
+	if errors.Is(err, service.ErrNotebookSessionNotFound) {
+		respondDevelopCatalogError(c, http.StatusUnauthorized, "notebook_session_unavailable", developi18n.MsgNotebookSessionUnavailable)
+		return
+	}
+	if errors.Is(err, service.ErrNotebookQueryInvalid) {
+		respondDevelopCatalogError(c, http.StatusBadRequest, "query_request_invalid", developi18n.MsgNotebookCatalogRequestInvalid)
+		return
+	}
+	if errors.Is(err, service.ErrNotebookTableScanUnsupported) {
+		respondDevelopCatalogError(c, http.StatusUnprocessableEntity, "query_unsupported", developi18n.MsgNotebookCatalogUnsupported)
+		return
+	}
+	if code, exists := commonClient.SystemAPIErrorCode(err); exists {
+		if code == "notebook_session_authorization_forbidden" || code == "execution_access_forbidden" {
+			respondDevelopCatalogError(c, http.StatusForbidden, "notebook_data_forbidden", developi18n.MsgNotebookCatalogForbidden)
+			return
+		}
+		if code == "engine_unavailable" {
+			respondDevelopCatalogError(c, http.StatusServiceUnavailable, code, developi18n.MsgNotebookCatalogEngineUnavailable)
+			return
+		}
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		respondDevelopCatalogError(c, http.StatusGatewayTimeout, "query_timeout", developi18n.MsgNotebookCatalogTimeout)
+		return
+	}
+	respondDevelopCatalogError(c, http.StatusBadGateway, "query_failed", developi18n.MsgNotebookCatalogProviderFailed)
+}
+
+// StreamSessionTable streams one catalog-resolved table as Arrow IPC.
+// @Summary 流式读取 Notebook 表 | Stream a Notebook table
+// @Description 每次调用派生独立只读 Execution Authorization；连接只在 Develop 受控 Runtime 内使用。 | Each call derives an independent read-only Execution Authorization; connection details remain inside the controlled Develop runtime.
+// @Tags Notebook
+// @Accept json
+// @Produce application/vnd.apache.arrow.stream
+// @Param session_id path string true "Notebook 会话 ID | Notebook session ID"
+// @Param request body notebookTableScanRequest true "表路径与批大小 | Table path and batch size"
+// @Success 200 {file} binary
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 409 {object} map[string]string
+// @Failure 422 {object} map[string]string
+// @Failure 502 {object} map[string]string
+// @Failure 503 {object} map[string]string
+// @Failure 504 {object} map[string]string
+// @x-addp-auth-mode "authenticated"
+// @Router /notebook-kernel-sessions/{session_id}/table-scans [post]
+func (h *NotebookHandler) StreamSessionTable(c *gin.Context) {
+	token, ok := notebookKernelBearer(c.GetHeader("Authorization"))
+	if !ok {
+		respondDevelopCatalogError(c, http.StatusUnauthorized, "notebook_session_unavailable", developi18n.MsgNotebookSessionUnavailable)
+		return
+	}
+	var request notebookTableScanRequest
+	if err := c.ShouldBindJSON(&request); err != nil || request.EngineID == 0 || request.BatchSize <= 0 ||
+		request.BatchSize > 1_000_000 || request.MaxRows < 0 {
+		respondDevelopCatalogError(c, http.StatusBadRequest, "table_scan_request_invalid", developi18n.MsgNotebookCatalogRequestInvalid)
+		return
+	}
+	ready := false
+	err := h.notebookSessionService.StreamTable(c.Request.Context(), c.Param("session_id"), token,
+		service.NotebookTableScanRequest{
+			EngineID: request.EngineID, Path: request.Path, BatchSize: request.BatchSize, MaxRows: request.MaxRows,
+		}, c.Writer, func() {
+			ready = true
+			c.Header("Content-Type", "application/vnd.apache.arrow.stream")
+			c.Header("Cache-Control", "no-store")
+			c.Header("X-Content-Type-Options", "nosniff")
+			c.Status(http.StatusOK)
+		})
+	if err == nil || ready {
+		return
+	}
+	if errors.Is(err, service.ErrNotebookSessionNotFound) {
+		respondDevelopCatalogError(c, http.StatusUnauthorized, "notebook_session_unavailable", developi18n.MsgNotebookSessionUnavailable)
+		return
+	}
+	if errors.Is(err, service.ErrNotebookTableScanInvalid) {
+		respondDevelopCatalogError(c, http.StatusBadRequest, "table_scan_request_invalid", developi18n.MsgNotebookCatalogRequestInvalid)
+		return
+	}
+	if errors.Is(err, service.ErrNotebookTableScanUnsupported) {
+		respondDevelopCatalogError(c, http.StatusUnprocessableEntity, "table_scan_unsupported", developi18n.MsgNotebookCatalogUnsupported)
+		return
+	}
+	if code, exists := commonClient.SystemAPIErrorCode(err); exists {
+		switch code {
+		case "notebook_session_authorization_forbidden", "execution_access_forbidden":
+			respondDevelopCatalogError(c, http.StatusForbidden, "notebook_data_forbidden", developi18n.MsgNotebookCatalogForbidden)
+			return
+		case "execution_authorization_conflict":
+			respondDevelopCatalogError(c, http.StatusConflict, code, developi18n.MsgNotebookSessionConflict)
+			return
+		case "engine_unavailable":
+			respondDevelopCatalogError(c, http.StatusServiceUnavailable, code, developi18n.MsgNotebookCatalogEngineUnavailable)
+			return
+		}
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		respondDevelopCatalogError(c, http.StatusGatewayTimeout, "table_scan_timeout", developi18n.MsgNotebookCatalogTimeout)
+		return
+	}
+	respondDevelopCatalogError(c, http.StatusBadGateway, "table_scan_failed", developi18n.MsgNotebookCatalogProviderFailed)
+}
+
+// ListSessionCatalogChildren returns live Catalog children for the current Kernel Session.
+// @Summary 获取 Notebook Kernel 实时 Catalog 子节点 | List live Catalog children for a Notebook Kernel
+// @Description 仅接受当前隔离 Kernel 的短期 Notebook Kernel Capability；Develop 使用 Session 绑定的 Notebook Session Authorization 调用 System。 | Only accepts the isolated Kernel's short-lived Notebook Kernel Capability; Develop calls System with the Session-bound Notebook Session Authorization.
+// @Tags Notebook
+// @Accept json
+// @Produce json
+// @Param session_id path string true "Notebook 会话 ID | Notebook session ID"
+// @Param request body notebookCatalogChildrenRequest true "Engine 与 Catalog 路径 | Engine and Catalog path"
+// @Success 200 {object} commonClient.EngineCatalogListChildrenResponse
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 422 {object} map[string]string
+// @Failure 502 {object} map[string]string
+// @Failure 503 {object} map[string]string
+// @Failure 504 {object} map[string]string
+// @x-addp-auth-mode "authenticated"
+// @Router /notebook-kernel-sessions/{session_id}/catalog/children [post]
+func (h *NotebookHandler) ListSessionCatalogChildren(c *gin.Context) {
+	token, ok := notebookKernelBearer(c.GetHeader("Authorization"))
+	if !ok {
+		respondDevelopCatalogError(c, http.StatusUnauthorized, "notebook_session_unavailable", developi18n.MsgNotebookSessionUnavailable)
+		return
+	}
+	var request notebookCatalogChildrenRequest
+	if err := c.ShouldBindJSON(&request); err != nil || request.EngineID == 0 || request.Options.Limit <= 0 ||
+		request.Options.Limit > 1000 || request.Options.Offset < 0 || request.Options.Recursive {
+		respondDevelopCatalogError(c, http.StatusBadRequest, "catalog_request_invalid", developi18n.MsgNotebookCatalogRequestInvalid)
+		return
+	}
+	nodes, err := h.notebookSessionService.ListCatalogChildren(c.Request.Context(), c.Param("session_id"), token,
+		commonClient.NotebookCatalogChildrenRequest{EngineID: request.EngineID, Path: request.Path, Options: request.Options})
+	if err != nil {
+		if errors.Is(err, service.ErrNotebookSessionNotFound) {
+			respondDevelopCatalogError(c, http.StatusUnauthorized, "notebook_session_unavailable", developi18n.MsgNotebookSessionUnavailable)
+			return
+		}
+		if code, exists := commonClient.SystemAPIErrorCode(err); exists {
+			if code == "notebook_session_authorization_forbidden" {
+				respondDevelopCatalogError(c, http.StatusForbidden, "notebook_catalog_forbidden", developi18n.MsgNotebookCatalogForbidden)
+				return
+			}
+			if status, ok := commonClient.SystemAPIStatusCode(err); ok && isNotebookCatalogProviderError(status, code) {
+				respondDevelopCatalogError(c, status, code, notebookCatalogMessageID(code))
+				return
+			}
+		}
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			respondDevelopCatalogError(c, http.StatusGatewayTimeout, "catalog_timeout", developi18n.MsgNotebookCatalogTimeout)
+			return
+		}
+		respondDevelopCatalogError(c, http.StatusBadGateway, "catalog_control_plane_failed", developi18n.MsgNotebookSessionControlPlaneFailed)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, commonClient.EngineCatalogListChildrenResponse{Nodes: nodes})
+}
+
+func isNotebookCatalogProviderError(status int, code string) bool {
+	return (status == http.StatusBadRequest && code == "catalog_request_invalid") ||
+		(status == http.StatusNotFound && (code == "engine_not_found" || code == "catalog_entry_not_found")) ||
+		(status == http.StatusUnprocessableEntity && code == "catalog_operation_unsupported") ||
+		(status == http.StatusBadGateway && code == "catalog_provider_failed") ||
+		(status == http.StatusServiceUnavailable && code == "engine_unavailable") ||
+		(status == http.StatusGatewayTimeout && code == "catalog_timeout")
+}
+
+func notebookCatalogMessageID(code string) string {
+	switch code {
+	case "catalog_request_invalid":
+		return developi18n.MsgNotebookCatalogRequestInvalid
+	case "engine_not_found":
+		return developi18n.MsgNotebookCatalogEngineNotFound
+	case "catalog_entry_not_found":
+		return developi18n.MsgNotebookCatalogEntryNotFound
+	case "catalog_operation_unsupported":
+		return developi18n.MsgNotebookCatalogUnsupported
+	case "engine_unavailable":
+		return developi18n.MsgNotebookCatalogEngineUnavailable
+	case "catalog_timeout":
+		return developi18n.MsgNotebookCatalogTimeout
+	default:
+		return developi18n.MsgNotebookCatalogProviderFailed
+	}
+}
+
+func respondDevelopCatalogError(c *gin.Context, status int, code, messageID string) {
+	c.JSON(status, gin.H{"error": commoni18n.T(c, messageID), "error_code": code})
 }
 
 // ListSessionEngineDescriptors 返回当前 Notebook Kernel 可发现的查询引擎。

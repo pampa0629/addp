@@ -55,6 +55,7 @@ func TestCatalogDispatcherFinalizesContentCatalogRoot(t *testing.T) {
 				slog.New(slog.NewTextHandler(io.Discard, nil)),
 				nil,
 				nil,
+				nil,
 				NewContentCatalogScanner(contentAdapter, contentAdapter),
 			)
 
@@ -85,6 +86,60 @@ func TestCatalogDispatcherFinalizesContentCatalogRoot(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCatalogDispatcherRoutesDirectLeaves(t *testing.T) {
+	db := openCatalogDispatcherTestDB(t)
+	repo := metaRepo.NewScanRepository(db)
+	enginePlugin := catalogDispatcherTestPlugin{
+		engineType: "dispatcher-direct-leaf-test",
+		model: plugin.CatalogModelSpec{
+			PathVersion: plugin.CatalogPathVersion,
+			RootTerm:    plugin.CatalogTermService,
+			Levels: []plugin.CatalogLevelSpec{
+				{Term: "topic", Kinds: []string{"topic"}, Role: plugin.CatalogRoleLeaf},
+			},
+		},
+	}
+	plugin.Register(enginePlugin)
+	t.Cleanup(func() {
+		plugin.Unregister(enginePlugin.Type())
+	})
+
+	directScanner := &catalogDispatcherTestDirectScanner{items: 2}
+	dispatcher := NewCatalogDispatcher(
+		db,
+		repo,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		nil,
+		nil,
+		directScanner,
+		nil,
+	)
+	resource := &commonModels.Engine{ID: 32, Name: "Kafka", EngineType: enginePlugin.Type()}
+	result, err := dispatcher.Dispatch(scanflow.DispatchRequest{
+		Resource:  resource,
+		TenantID:  1,
+		ScanDepth: models.ScannedDepthBasic,
+		Force:     true,
+		Mode:      scanflow.DispatchManual,
+	})
+	if err != nil {
+		t.Fatalf("Dispatch() error = %v", err)
+	}
+	if !directScanner.called || result.CatalogNodes != 0 || result.Items != 2 || result.Fields != 0 {
+		t.Fatalf("direct scanner called/result = %v/%#v", directScanner.called, result)
+	}
+}
+
+type catalogDispatcherTestDirectScanner struct {
+	called bool
+	items  int
+}
+
+func (s *catalogDispatcherTestDirectScanner) ScanRoot(context.Context, plugin.EnginePlugin, *commonModels.Engine, uint, string, bool) (int, error) {
+	s.called = true
+	return s.items, nil
 }
 
 type catalogDispatcherTestContentAdapter struct {

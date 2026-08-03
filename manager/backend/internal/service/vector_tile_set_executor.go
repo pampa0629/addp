@@ -30,8 +30,21 @@ type ManagerVectorTileSetExecutor struct {
 	managerBaseURL, internalAPIKey string
 	invokeTimeout                  time.Duration
 	infraObjectStore               *minio.Client
+	infraEndpoint                  string
+	infraAccessKey                 string
+	infraSecretKey                 string
+	infraUseSSL                    bool
+	infraBucket                    string
 	nativeGenerator                PostGISPMTilesArchiveGenerator
 	nativeConcurrency              int
+}
+
+func (e *ManagerVectorTileSetExecutor) SetTemporarySourceStorage(endpoint, accessKey, secretKey string, useSSL bool, bucket string) {
+	e.infraEndpoint = strings.TrimSpace(endpoint)
+	e.infraAccessKey = accessKey
+	e.infraSecretKey = secretKey
+	e.infraUseSSL = useSSL
+	e.infraBucket = strings.TrimSpace(bucket)
 }
 
 func (e *ManagerVectorTileSetExecutor) SetPostGISGenerator(generator PostGISPMTilesArchiveGenerator, concurrency int) {
@@ -81,7 +94,18 @@ func (e *ManagerVectorTileSetExecutor) GenerateVectorTileSet(ctx context.Context
 		}}, nil
 	}
 	if req.Config.Source.SourceKind == string(resourcetree.TypeTable) {
-		return e.generatePostGISVectorTileSet(ctx, req, targetEngine, targetURI)
+		sourceEngine, err := e.systemClient.GetEngine(req.Config.Source.EngineID)
+		if err != nil {
+			return nil, fmt.Errorf("get vector tile set source engine: %w", err)
+		}
+		switch {
+		case spatial.IsPostGISEngine(sourceEngine.EngineType):
+			return e.generatePostGISVectorTileSet(ctx, req, targetEngine, targetURI)
+		case strings.EqualFold(strings.TrimSpace(sourceEngine.EngineType), "mysql"):
+			return e.generateMySQLWorkflowVectorTileSet(ctx, req, targetURI, targetEnv, targetFacts)
+		default:
+			return nil, fmt.Errorf("database table engine %s does not support vector tile set generation", sourceEngine.EngineType)
+		}
 	}
 	if e.workflowEngines == nil {
 		return nil, errors.New("workflow runtime is required for file vector tile set generation")
@@ -91,6 +115,33 @@ func (e *ManagerVectorTileSetExecutor) GenerateVectorTileSet(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
+	return e.invokeWorkflowVectorTileSet(ctx, req, sourceURI, sourceEnv, sourceFacts, targetURI, targetEnv, targetFacts)
+}
+
+func (e *ManagerVectorTileSetExecutor) generateMySQLWorkflowVectorTileSet(ctx context.Context, req VectorTileSetExecutionRequest, targetURI string, targetEnv, targetFacts commonModels.JSONMap) (*VectorTileSetExecutionResult, error) {
+	if e.workflowEngines == nil || e.infraObjectStore == nil {
+		return nil, errors.New("workflow runtime and infra object store are required for MySQL vector tile set generation")
+	}
+	sourceMaterializer := &ManagerVectorTileCacheWorkflowExecutor{
+		systemClient: e.systemClient, objectStore: e.infraObjectStore,
+		minioEndpoint: e.infraEndpoint, minioAccessKey: e.infraAccessKey, minioSecretKey: e.infraSecretKey,
+		minioUseSSL: e.infraUseSSL, defaultBucket: e.infraBucket,
+	}
+	sourceURI, sourceEnv, sourceFacts, cleanup, err := sourceMaterializer.prepareMySQLTableFlatGeobufSource(
+		ctx, req.Task.TenantID, req.ExecutionID, req.Config.Source, req.Config.Options,
+	)
+	if err != nil {
+		return nil, err
+	}
+	result, invokeErr := e.invokeWorkflowVectorTileSet(ctx, req, sourceURI, sourceEnv, sourceFacts, targetURI, targetEnv, targetFacts)
+	cleanupErr := cleanup(context.Background())
+	if invokeErr != nil || cleanupErr != nil {
+		return nil, errors.Join(invokeErr, cleanupErr)
+	}
+	return result, nil
+}
+
+func (e *ManagerVectorTileSetExecutor) invokeWorkflowVectorTileSet(ctx context.Context, req VectorTileSetExecutionRequest, sourceURI string, sourceEnv, sourceFacts commonModels.JSONMap, targetURI string, targetEnv, targetFacts commonModels.JSONMap) (*VectorTileSetExecutionResult, error) {
 	engines, err := e.workflowEngines.ListWorkflowEngines(req.Task.TenantID)
 	if err != nil {
 		return nil, err

@@ -12,6 +12,7 @@ import (
 type Runtimes struct {
 	Database              *DatabaseRuntime
 	BranchLeaf            *BranchLeafRuntime
+	DirectLeaf            *DirectLeafRuntime
 	ObjectCatalog         *ObjectStorageCatalogRuntime
 	FilesystemCatalog     *FilesystemCatalogRuntime
 	ItemRefresh           *ItemRefreshRuntime
@@ -42,6 +43,7 @@ func NewRuntimes(
 	runtimes := &Runtimes{
 		Database:          NewDatabaseRuntime(db, log, repo, indexer),
 		BranchLeaf:        NewBranchLeafRuntime(db, log, repo),
+		DirectLeaf:        NewDirectLeafRuntime(log, repo),
 		ObjectCatalog:     NewObjectStorageCatalogRuntime(db, log, repo, indexer),
 		FilesystemCatalog: NewFilesystemCatalogRuntime(db, log, repo, indexer),
 		ItemRefresh:       NewItemRefreshRuntime(repo, indexer, log),

@@ -26,7 +26,7 @@ func TestRefreshKnownTabularItemUsesCatalogFactsWithoutContentReader(t *testing.
 	nullable := true
 	rowCount := int64(12)
 	enginePlugin := &catalogFactsOnlyTablePlugin{
-		engineType: "known-refresh-table-test",
+		engineType: "known-refresh-mysql-spatial-table-test",
 		facts: &plugin.CatalogFacts{
 			Table: &datatype.TableInfo{
 				Name:     "roads",
@@ -52,7 +52,7 @@ func TestRefreshKnownTabularItemUsesCatalogFactsWithoutContentReader(t *testing.
 					ID:                 datatype.EPSGCRSRef(srid),
 					DefinitionEncoding: datatype.CRSDefinitionEncodingWKT,
 					Definition:         `PROJCS["CGCS2000_3_Degree_GK_CM_117E"]`,
-					Source:             datatype.CRSDefinitionSourcePostGISSpatialRefSys,
+					Source:             datatype.CRSDefinitionSourceMySQLSpatialRefSys,
 				}},
 			},
 		},
@@ -128,6 +128,9 @@ func TestRefreshKnownTabularItemUsesCatalogFactsWithoutContentReader(t *testing.
 	definition := commonJSON.InterfaceMap(definitions[0])
 	if commonJSON.InterfaceString(definition["definition_encoding"]) != datatype.CRSDefinitionEncodingWKT {
 		t.Fatalf("definition_encoding = %#v", definition["definition_encoding"])
+	}
+	if commonJSON.InterfaceString(definition["source"]) != datatype.CRSDefinitionSourceMySQLSpatialRefSys {
+		t.Fatalf("definition source = %#v", definition["source"])
 	}
 	tableInfo := datatype.TableInfoFromPayload(commonJSON.Section(refreshed.Attributes, "type_info.table"), "roads")
 	if tableInfo == nil || len(tableInfo.Fields) != 2 {

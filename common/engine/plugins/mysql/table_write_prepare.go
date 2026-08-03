@@ -99,7 +99,10 @@ func createMySQLTableIfNotExists(ctx context.Context, db *sql.DB, database, tabl
 	if _, err := db.ExecContext(ctx, createSQL); err != nil {
 		return fmt.Errorf("create mysql table %s.%s: %w", database, table, err)
 	}
-	return evolveMySQLTableSchema(ctx, db, database, table, writeFields, spatialInfo)
+	if err := evolveMySQLTableSchema(ctx, db, database, table, writeFields, spatialInfo); err != nil {
+		return err
+	}
+	return ensureMySQLSpatialIndex(ctx, db, database, table, writeFields, spatialInfo)
 }
 
 func evolveMySQLTableSchema(ctx context.Context, db *sql.DB, database, table string, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) error {
@@ -123,16 +126,19 @@ type mysqlColumnInfo struct {
 	Name              string
 	DataType          string
 	NativeType        string
+	SRSID             sql.NullInt64
 	NumericPrecision  sql.NullInt64
 	NumericScale      sql.NullInt64
 	TemporalPrecision sql.NullInt64
 	Nullable          bool
+	PrimaryKey        bool
+	Comment           string
 }
 
 func mysqlTableColumns(ctx context.Context, db *sql.DB, database, table string) ([]mysqlColumnInfo, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT column_name, data_type, column_type, numeric_precision, numeric_scale, datetime_precision,
-		       (is_nullable = 'YES') AS is_nullable
+		SELECT column_name, data_type, column_type, srs_id, numeric_precision, numeric_scale, datetime_precision,
+		       (is_nullable = 'YES') AS is_nullable, (column_key = 'PRI') AS primary_key, COALESCE(column_comment, '')
 		FROM information_schema.columns
 		WHERE table_schema = ? AND table_name = ?
 		ORDER BY ordinal_position
@@ -146,8 +152,8 @@ func mysqlTableColumns(ctx context.Context, db *sql.DB, database, table string) 
 	for rows.Next() {
 		var column mysqlColumnInfo
 		if err := rows.Scan(
-			&column.Name, &column.DataType, &column.NativeType, &column.NumericPrecision, &column.NumericScale,
-			&column.TemporalPrecision, &column.Nullable,
+			&column.Name, &column.DataType, &column.NativeType, &column.SRSID, &column.NumericPrecision, &column.NumericScale,
+			&column.TemporalPrecision, &column.Nullable, &column.PrimaryKey, &column.Comment,
 		); err != nil {
 			return nil, fmt.Errorf("scan mysql table column: %w", err)
 		}
@@ -255,14 +261,17 @@ func mysqlColumnCompatibleWithField(column mysqlColumnInfo, field datatype.Field
 	return expected == existing
 }
 
-func mysqlSpatialColumnCompatibleWithField(column mysqlColumnInfo, field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) bool {
-	existing := mysqlCommonFieldType(column)
+func mysqlSpatialColumnCompatibleWithField(existingColumn mysqlColumnInfo, field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) bool {
+	existing := mysqlCommonFieldType(existingColumn)
 	if !datatype.IsSpatialFieldType(existing) {
 		return false
 	}
 	expectedType := datatype.ParseFieldType(string(field.Type))
-	if column := mysqlSpatialColumnForField(spatialInfo, field.Name); column != nil {
-		expectedType = mysqlFieldTypeForGeometryType(column.GeometryType)
+	if spatialColumn := mysqlSpatialColumnForField(spatialInfo, field.Name); spatialColumn != nil {
+		expectedType = mysqlFieldTypeForGeometryType(spatialColumn.GeometryType)
+		if spatialColumn.SRID != nil && *spatialColumn.SRID > 0 && (!existingColumn.SRSID.Valid || int(existingColumn.SRSID.Int64) != *spatialColumn.SRID) {
+			return false
+		}
 	}
 	if expectedType == datatype.FieldTypeGeometry || existing == datatype.FieldTypeGeometry {
 		return true
@@ -271,8 +280,8 @@ func mysqlSpatialColumnCompatibleWithField(column mysqlColumnInfo, field datatyp
 }
 
 func mysqlSQLTypeForField(field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) (string, error) {
-	if sqlType := mysqlSpatialTypeForField(field, spatialInfo); sqlType != "" {
-		return sqlType, nil
+	if datatype.IsSpatialFieldType(field.Type) {
+		return mysqlSpatialTypeForField(field, spatialInfo)
 	}
 	fieldType := datatype.ParseFieldType(string(field.Type))
 	if fieldType == datatype.FieldTypeTime {
@@ -311,16 +320,22 @@ func validateMySQLDecimalField(field datatype.FieldInfo) error {
 	return nil
 }
 
-func mysqlSpatialTypeForField(field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) string {
+func mysqlSpatialTypeForField(field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) (string, error) {
 	if !datatype.IsSpatialFieldType(field.Type) {
-		return ""
+		return "", nil
 	}
 	if column := mysqlSpatialColumnForField(spatialInfo, field.Name); column != nil {
+		if column.Dimension != nil && *column.Dimension > 2 {
+			return "", fmt.Errorf("mysql spatial field %q only supports two-dimensional geometry, got dimension %d", field.Name, *column.Dimension)
+		}
 		if sqlType := mysqlSQLTypeForGeometryType(column.GeometryType); sqlType != "" {
-			return sqlType
+			if column.SRID != nil && *column.SRID > 0 {
+				sqlType += " SRID " + fmt.Sprint(*column.SRID)
+			}
+			return sqlType, nil
 		}
 	}
-	return "GEOMETRY"
+	return "GEOMETRY", nil
 }
 
 func mysqlSpatialColumnForField(spatialInfo *datatype.SpatialInfo, fieldName string) *datatype.GeometryColumnInfo {
@@ -333,6 +348,62 @@ func mysqlSpatialColumnForField(spatialInfo *datatype.SpatialInfo, fieldName str
 		}
 	}
 	return nil
+}
+
+func ensureMySQLSpatialIndex(ctx context.Context, db *sql.DB, database, table string, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) error {
+	if spatialInfo == nil || spatialInfo.HasSpatialIndex == nil || !*spatialInfo.HasSpatialIndex {
+		return nil
+	}
+	primary := spatialInfo.PrimaryGeometry()
+	if primary == nil || strings.TrimSpace(primary.Name) == "" {
+		return fmt.Errorf("mysql spatial index requires an explicit primary geometry column")
+	}
+	var primaryField *datatype.FieldInfo
+	for i := range fields {
+		if strings.EqualFold(fields[i].Name, primary.Name) {
+			primaryField = &fields[i]
+			break
+		}
+	}
+	if primaryField == nil || !datatype.IsSpatialFieldType(primaryField.Type) {
+		return fmt.Errorf("mysql spatial index primary geometry column %q is not present in table fields", primary.Name)
+	}
+	if primaryField.Nullable {
+		return fmt.Errorf("mysql spatial index primary geometry column %q must be NOT NULL", primary.Name)
+	}
+
+	var count int
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM information_schema.statistics
+		WHERE table_schema = ? AND table_name = ? AND column_name = ? AND index_type = 'SPATIAL'
+	`, database, table, primary.Name).Scan(&count); err != nil {
+		return fmt.Errorf("query mysql spatial index for %s.%s: %w", database, table, err)
+	}
+	if count > 0 {
+		return nil
+	}
+
+	indexName := mysqlSpatialIndexName(spatialInfo.IndexName, primary.Name)
+	statement := "ALTER TABLE " + mysqlDialect().QualifiedTable(database, table) +
+		" ADD SPATIAL INDEX " + mysqlDialect().QuoteIdentifier(indexName) +
+		" (" + mysqlDialect().QuoteIdentifier(primary.Name) + ")"
+	if _, err := db.ExecContext(ctx, statement); err != nil {
+		return fmt.Errorf("create mysql spatial index %s on %s.%s: %w", indexName, database, table, err)
+	}
+	return nil
+}
+
+func mysqlSpatialIndexName(requested, column string) string {
+	name := strings.TrimSpace(requested)
+	if name == "" {
+		name = "idx_spatial_" + strings.TrimSpace(column)
+	}
+	runes := []rune(name)
+	if len(runes) > 64 {
+		name = string(runes[:64])
+	}
+	return name
 }
 
 func mysqlSQLTypeForGeometryType(geometryType string) string {

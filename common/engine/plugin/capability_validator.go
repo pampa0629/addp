@@ -179,6 +179,11 @@ func validateTableSpatialEncodingCapability(p EnginePlugin, spatial *NativeTable
 	if (len(spatial.GeometryWriteEncodings) > 0 || spatial.WriteTransform) && !implementsNativeTableWriter(p) {
 		return fmt.Errorf("%s declares table_spatial_encoding write capability but does not implement native table write provider", p.Type())
 	}
+	if spatial.NativeSpatialFunctions {
+		if _, ok := p.(SpatialFeatureReadProvider); !ok {
+			return fmt.Errorf("%s declares native_spatial_functions but does not implement SpatialFeatureReadProvider", p.Type())
+		}
+	}
 	return nil
 }
 
@@ -296,6 +301,11 @@ func validateStoreProviderCapabilities(p EnginePlugin, storage *StorageCapabilit
 	}
 	if _, ok := p.(TableReadSessionProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool { return store.TableReadSession }) {
 		return fmt.Errorf("%s implements TableReadSessionProvider but does not declare table_read_session", p.Type())
+	}
+	if _, ok := p.(SpatialFeatureReadProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool {
+		return store.TableSpatialEncoding != nil && store.TableSpatialEncoding.NativeSpatialFunctions
+	}) {
+		return fmt.Errorf("%s implements SpatialFeatureReadProvider but does not declare native_spatial_functions", p.Type())
 	}
 	if _, ok := p.(BatchWritableProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool { return store.BatchWrite }) {
 		return fmt.Errorf("%s implements BatchWritableProvider but does not declare batch_write", p.Type())

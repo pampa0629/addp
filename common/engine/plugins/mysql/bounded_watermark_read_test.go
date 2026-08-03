@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"database/sql"
 	"testing"
 	"time"
 
@@ -68,12 +69,31 @@ func TestMySQLWatermarkCursorTypeSupport(t *testing.T) {
 	}
 }
 
-func TestMySQLWatermarkFieldsRejectSpatialColumns(t *testing.T) {
-	_, _, err := mysqlWatermarkFields([]mysqlColumnInfo{
+func TestMySQLWatermarkFieldsDescribeSpatialColumns(t *testing.T) {
+	fields, spatialInfo, _, err := mysqlWatermarkFields([]mysqlColumnInfo{
 		{Name: "id", NativeType: "bigint"},
-		{Name: "shape", NativeType: "geometry"},
+		{Name: "shape", DataType: "point", NativeType: "point", SRSID: sqlNullInt64(4326)},
 	})
-	if err == nil {
-		t.Fatal("mysqlWatermarkFields accepted a spatial source column")
+	if err != nil {
+		t.Fatal(err)
 	}
+	if len(fields) != 2 || fields[1].Type != datatype.FieldTypeGeometry {
+		t.Fatalf("fields = %#v", fields)
+	}
+	if spatialInfo == nil || spatialInfo.PrimaryGeometryName() != "shape" || spatialInfo.PrimarySRIDValue() != 4326 {
+		t.Fatalf("spatial info = %#v", spatialInfo)
+	}
+}
+
+func TestResolveMySQLWatermarkCursorRejectsSpatialColumn(t *testing.T) {
+	columns := map[string]mysqlColumnInfo{
+		"shape": {Name: "shape", DataType: "point", NativeType: "point", SRSID: sqlNullInt64(4326)},
+	}
+	if _, _, err := resolveMySQLWatermarkCursorFields([]string{"shape"}, columns); err == nil {
+		t.Fatal("spatial watermark cursor was accepted")
+	}
+}
+
+func sqlNullInt64(value int64) sql.NullInt64 {
+	return sql.NullInt64{Int64: value, Valid: true}
 }

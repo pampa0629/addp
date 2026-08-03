@@ -34,8 +34,35 @@ other = "An execution authorization already exists for this execution; use the e
 [system.auth.execution_authorization_unavailable]
 other = "The execution authorization is expired, out of bounds, or targets an unavailable engine"
 
+[system.auth.notebook_session_authorization_conflict]
+other = "This Notebook session already has a session authorization"
+
+[system.auth.notebook_session_authorization_forbidden]
+other = "The Notebook session authorization is unavailable or forbidden"
+
 [system.auth.internal_error]
 other = "The authentication service is temporarily unavailable"
+
+[system.catalog.control_plane_failed]
+other = "The catalog control plane is temporarily unavailable"
+
+[system.catalog.provider_failed]
+other = "The engine catalog could not be read"
+
+[system.catalog.engine_not_found]
+other = "The engine does not exist or is not accessible"
+
+[system.catalog.entry_not_found]
+other = "The catalog entry does not exist"
+
+[system.catalog.operation_unsupported]
+other = "The engine does not support this catalog operation"
+
+[system.catalog.engine_unavailable]
+other = "The engine is currently unavailable"
+
+[system.catalog.timeout]
+other = "The catalog request timed out"
 
 [system.auth.invalid_current_password]
 other = "The current password is incorrect"

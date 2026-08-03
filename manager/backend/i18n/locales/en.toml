@@ -49,12 +49,6 @@ other = "System client is not initialized"
 [manager.error.engine_not_found]
 other = "Engine not found"
 
-[manager.error.unsupported_postgres_only]
-other = "Only PostgreSQL engines are supported"
-
-[manager.error.database_connection_failed]
-other = "Database connection failed"
-
 [manager.error.feature_not_found]
 other = "Feature not found"
 

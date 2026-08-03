@@ -10,6 +10,7 @@ import (
 	"github.com/addp/common/dataprofile"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	"github.com/addp/common/spatial"
 	"github.com/addp/common/sqldialect"
 	"github.com/addp/manager/internal/models"
@@ -67,6 +68,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		}
 		return nil, fmt.Errorf("failed to describe table: %w", err)
 	}
+	catalogSpatial := plugin.CatalogFactsSpatialInfo(catalogFacts)
 	profileFields := append([]datatype.FieldInfo(nil), columns...)
 	if metaTable := tableInfoFromMetaAttributes(req.Attributes, tableName); metaTable != nil && len(metaTable.Fields) > 0 {
 		profileFields = append([]datatype.FieldInfo(nil), metaTable.Fields...)
@@ -83,7 +85,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 			columnNames[i] = meta.ColumnName
 		}
 		if len(geometryColumns) == 0 {
-			geometryColumns = p.detectGeometryColumns(req.Engine.EngineType, columns)
+			geometryColumns = databaseGeometryColumns(catalogSpatial, columns)
 		}
 	} else {
 		// Meta 不可用或无数据，回退到 CatalogFactsProvider。
@@ -93,7 +95,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		}
 
 		// 检测几何列
-		geometryColumns = p.detectGeometryColumns(req.Engine.EngineType, columns)
+		geometryColumns = databaseGeometryColumns(catalogSpatial, columns)
 
 		// 转换列元数据
 		columnMetadata = make([]models.ColumnMetadata, len(columns))
@@ -113,7 +115,6 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	if req.DataScope.Kind == "condition" {
 		totalCount = -1
 	}
-	catalogSpatial := plugin.CatalogFactsSpatialInfo(catalogFacts)
 	if srid == 0 {
 		srid = databasePreviewSourceSRID(columns, geometryColumns)
 		if srid == 0 && catalogSpatial != nil {
@@ -192,6 +193,19 @@ func (p *DatabaseTablePreviewProvider) queryData(
 	whereClause, args, err := profilefilter.SQL(dataScope, dialect, "")
 	if err != nil {
 		return nil, err
+	}
+	if strings.EqualFold(strings.TrimSpace(engineType), "mysql") && strings.TrimSpace(whereClause) == "" {
+		result, err := batchReader.ReadBatch(ctx, connInfo, providerPath, plugin.BatchReadOptions{
+			Limit:  limit,
+			Offset: int64(offset),
+			Hints: map[string]interface{}{
+				plugin.TableReadHintGeometryEncoding: string(format.GeometryEncodingGeoJSON),
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		return result.Rows, nil
 	}
 	selectExpr := "*"
 	query := ""
@@ -364,25 +378,19 @@ func databasePreviewWKTExpr(columnRef, dataType string) string {
 	return fmt.Sprintf("ST_AsText(%s)", columnRef)
 }
 
-// detectGeometryColumns 检测几何列（仅 PostgreSQL + PostGIS）
-func (p *DatabaseTablePreviewProvider) detectGeometryColumns(engineType string, columns []datatype.FieldInfo) []string {
-	if !sqldialect.ForEngine(engineType).IsPostgreSQL() {
-		return []string{}
+func databaseGeometryColumns(spatialInfo *datatype.SpatialInfo, columns []datatype.FieldInfo) []string {
+	if spatialInfo != nil {
+		if names := spatialInfo.GeometryColumnNames(); len(names) > 0 {
+			return names
+		}
 	}
-
-	geometryColumns := []string{}
+	geometryColumns := make([]string, 0)
 	for _, col := range columns {
-		if p.isSpatialType(databaseFieldNativeType(col)) {
+		if datatype.IsSpatialFieldType(col.Type) || spatial.IsPostGISSpatialType(databaseFieldNativeType(col)) {
 			geometryColumns = append(geometryColumns, col.Name)
 		}
 	}
-
 	return geometryColumns
-}
-
-// isSpatialType 判断是否为空间类型
-func (p *DatabaseTablePreviewProvider) isSpatialType(dataType string) bool {
-	return spatial.IsPostGISSpatialType(dataType)
 }
 
 type tablePreviewCRSContract struct {

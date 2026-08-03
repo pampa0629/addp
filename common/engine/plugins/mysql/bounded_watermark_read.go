@@ -9,6 +9,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 )
 
 type mysqlBoundedWatermarkSession struct {
@@ -16,9 +17,11 @@ type mysqlBoundedWatermarkSession struct {
 	tx           *sql.Tx
 	rows         *sql.Rows
 	fields       []datatype.FieldInfo
+	spatialInfo  *datatype.SpatialInfo
 	upper        *plugin.WatermarkCursor
 	cursorFields []string
 	offset       int64
+	exhausted    bool
 	closed       bool
 }
 
@@ -55,7 +58,7 @@ func (p *MySQLPlugin) OpenBoundedWatermarkRead(
 	if err != nil {
 		return fail(err)
 	}
-	fields, columnsByName, err := mysqlWatermarkFields(columns)
+	fields, spatialInfo, columnsByName, err := mysqlWatermarkFields(columns)
 	if err != nil {
 		return fail(err)
 	}
@@ -102,8 +105,11 @@ func (p *MySQLPlugin) OpenBoundedWatermarkRead(
 		upper = &plugin.WatermarkCursor{Values: values}
 	}
 
-	selectFields := quoteMySQLFields(mysqlFieldColumns(fields))
-	query := "SELECT " + strings.Join(selectFields, ", ") + " FROM " + qualified
+	selectExpr, err := mysqlSelectExpr(columns, fields, nil, format.GeometryEncodingEWKB)
+	if err != nil {
+		return failTx(fmt.Errorf("build mysql watermark projection: %w", err))
+	}
+	query := "SELECT " + selectExpr + " FROM " + qualified
 	args := make([]interface{}, 0, len(cursorFields)*2)
 	predicates := make([]string, 0, 2)
 	if upper == nil {
@@ -122,7 +128,7 @@ func (p *MySQLPlugin) OpenBoundedWatermarkRead(
 		return failTx(fmt.Errorf("open mysql watermark row stream: %w", err))
 	}
 	return &mysqlBoundedWatermarkSession{
-		db: db, tx: tx, rows: rows, fields: fields, upper: upper, cursorFields: cursorFields,
+		db: db, tx: tx, rows: rows, fields: fields, spatialInfo: spatialInfo, upper: upper, cursorFields: cursorFields,
 	}, nil
 }
 
@@ -149,22 +155,25 @@ func validateMySQLWatermarkSourceTable(ctx context.Context, db *sql.DB, database
 	return nil
 }
 
-func mysqlWatermarkFields(columns []mysqlColumnInfo) ([]datatype.FieldInfo, map[string]mysqlColumnInfo, error) {
+func mysqlWatermarkFields(columns []mysqlColumnInfo) ([]datatype.FieldInfo, *datatype.SpatialInfo, map[string]mysqlColumnInfo, error) {
 	if len(columns) == 0 {
-		return nil, nil, fmt.Errorf("mysql watermark source has no columns")
+		return nil, nil, nil, fmt.Errorf("mysql watermark source has no columns")
 	}
 	fields := make([]datatype.FieldInfo, 0, len(columns))
 	columnsByName := make(map[string]mysqlColumnInfo, len(columns))
+	spatialRows := make([]mysqlSpatialColumnRow, 0)
 	for index, column := range columns {
 		field := mysqlFieldInfoFromColumn(column)
 		field.OrdinalPosition = index + 1
 		if datatype.IsSpatialFieldType(field.Type) {
-			return nil, nil, fmt.Errorf("mysql bounded watermark source does not support spatial column %q", column.Name)
+			spatialRows = append(spatialRows, mysqlSpatialColumnRow{
+				Name: column.Name, DataType: column.DataType, SRSID: column.SRSID, Nullable: column.Nullable,
+			})
 		}
 		fields = append(fields, field)
 		columnsByName[strings.ToLower(column.Name)] = column
 	}
-	return fields, columnsByName, nil
+	return fields, buildMySQLSpatialInfo(spatialRows, nil, nil), columnsByName, nil
 }
 
 func mysqlFieldInfoFromColumn(column mysqlColumnInfo) datatype.FieldInfo {
@@ -338,7 +347,7 @@ func (s *mysqlBoundedWatermarkSession) UpperBound() *plugin.WatermarkCursor {
 }
 
 func (s *mysqlBoundedWatermarkSession) TableInfo() (*datatype.TableInfo, *datatype.SpatialInfo) {
-	return &datatype.TableInfo{Fields: append([]datatype.FieldInfo(nil), s.fields...)}, nil
+	return &datatype.TableInfo{Fields: append([]datatype.FieldInfo(nil), s.fields...)}, s.spatialInfo.Clone()
 }
 
 func (s *mysqlBoundedWatermarkSession) PositionForRow(row map[string]interface{}) (*plugin.WatermarkCursor, error) {
@@ -386,12 +395,21 @@ func (s *mysqlBoundedWatermarkSession) ReadBatch(ctx context.Context, limit int)
 	if limit <= 0 {
 		limit = 1000
 	}
+	if s.exhausted {
+		return &plugin.BatchData{
+			Fields: append([]datatype.FieldInfo(nil), s.fields...), Spatial: s.spatialInfo.Clone(), Offset: s.offset,
+		}, nil
+	}
 	columns, err := s.rows.Columns()
 	if err != nil {
 		return nil, fmt.Errorf("get mysql watermark row columns: %w", err)
 	}
 	resultRows := make([]map[string]interface{}, 0, limit)
-	for len(resultRows) < limit && s.rows.Next() {
+	for len(resultRows) < limit {
+		if !s.rows.Next() {
+			s.exhausted = true
+			break
+		}
 		values := make([]interface{}, len(columns))
 		pointers := make([]interface{}, len(columns))
 		for index := range values {
@@ -402,11 +420,11 @@ func (s *mysqlBoundedWatermarkSession) ReadBatch(ctx context.Context, limit int)
 		}
 		row := make(map[string]interface{}, len(columns))
 		for index, column := range columns {
-			if bytes, ok := values[index].([]byte); ok {
-				row[column] = string(bytes)
-			} else {
-				row[column] = values[index]
+			value, err := mysqlReadValue(column, values[index], s.fields, s.spatialInfo, format.GeometryEncodingEWKB)
+			if err != nil {
+				return nil, err
 			}
+			row[column] = value
 		}
 		resultRows = append(resultRows, row)
 	}
@@ -414,7 +432,7 @@ func (s *mysqlBoundedWatermarkSession) ReadBatch(ctx context.Context, limit int)
 		return nil, fmt.Errorf("iterate mysql watermark rows: %w", err)
 	}
 	batch := &plugin.BatchData{
-		Rows: resultRows, Fields: append([]datatype.FieldInfo(nil), s.fields...), Offset: s.offset,
+		Rows: resultRows, Fields: append([]datatype.FieldInfo(nil), s.fields...), Spatial: s.spatialInfo.Clone(), Offset: s.offset,
 	}
 	s.offset += int64(len(resultRows))
 	return batch, nil

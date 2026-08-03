@@ -24,13 +24,15 @@ func TestQueryServiceReadsSpatialFactsOnlyFromSourceSnapshot(t *testing.T) {
 	}
 	service := &QueryService{DataConfig: JSONB{
 		QueryServiceSourceSnapshotKey: commonJSON.MapFromStruct(snapshot),
+		"stable_key":                  []interface{}{"gid"},
 	}}
 
 	if !service.HasGeometry() || service.GetGeometryColumn() != "custom_shape" || service.GetSRID() != 32650 {
 		t.Fatalf("spatial helpers returned unexpected values")
 	}
-	if service.GetPrimaryKey() != "gid" {
-		t.Fatalf("primary key = %q, want gid", service.GetPrimaryKey())
+	stableKey := service.GetStableKey()
+	if len(stableKey) != 1 || stableKey[0] != "gid" {
+		t.Fatalf("stable key = %#v, want [gid]", stableKey)
 	}
 }
 

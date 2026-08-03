@@ -61,7 +61,7 @@ func ParseGeometryType(value string) GeometryType {
 		return GeometryTypePolygon
 	case "multipolygon":
 		return GeometryTypeMultiPolygon
-	case "geometrycollection":
+	case "geometrycollection", "geomcollection":
 		return GeometryTypeGeometryCollection
 	default:
 		return GeometryTypeUnknown

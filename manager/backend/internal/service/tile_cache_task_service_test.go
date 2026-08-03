@@ -188,6 +188,43 @@ func TestObjectTileCacheGenerationUsesWorkflow(t *testing.T) {
 	}
 }
 
+func TestMySQLTableTileCacheGenerationUsesFlatGeobufWorkflow(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	repo := repository.NewTileCacheRepository(db)
+	execRepo := commonExecution.NewTaskExecutionRepository(db)
+	svc := NewTileCacheTaskService(repo, execRepo)
+	native := &fakeTileCacheGenerator{}
+	workflow := &fakeWorkflowTileCacheGenerator{result: &mvt.GenerateResult{
+		TotalTiles: 1, CachedTiles: 1, TilesTotalEstimate: 1, TilesProcessed: 1,
+		GeneratedTiles: 1, TotalSizeBytes: 128, ActualMaxZoom: 0,
+		StopReason: "workflow_ogr2ogr_pmtiles", ExtentWGS84: []float64{110, 20, 120, 30},
+	}}
+	svc.SetTileGenerator(native, 4)
+	svc.SetWorkflowTileGenerator(workflow)
+	svc.SetSourceEngineTypeResolver(func(context.Context, uint) (string, error) { return "mysql", nil })
+	svc.SetSourceVersionResolver(func(context.Context, uint, tileCacheTaskTargetIdentity) (string, error) {
+		return strings.Repeat("d", 64), nil
+	})
+	task := newTileCacheTaskDefinition()
+	if err := svc.Create(context.Background(), task); err != nil {
+		t.Fatalf("create MySQL table task: %v", err)
+	}
+	executionID, err := svc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, false)
+	if err != nil {
+		t.Fatalf("execute MySQL table task: %v", err)
+	}
+	exec := waitForTileCacheTaskExecution(t, execRepo, executionID, int(task.TenantID))
+	if exec.Status != commonExecution.ExecutionStatusSuccess {
+		t.Fatalf("execution status = %s, error=%#v", exec.Status, exec.ErrorDetails)
+	}
+	if native.calls != 0 {
+		t.Fatalf("MySQL table unexpectedly invoked native generator %d times", native.calls)
+	}
+	if workflow.calls != 1 || workflow.lastReq.Identity.SourceKind != "table" || workflow.lastReq.Identity.Schema != "public" {
+		t.Fatalf("workflow calls=%d request=%#v", workflow.calls, workflow.lastReq)
+	}
+}
+
 type fakeTileCacheGenerator struct {
 	result       *mvt.GenerateResult
 	err          error

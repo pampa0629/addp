@@ -123,11 +123,7 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 	if len(engines) == 0 {
 		return []*models.ResourceWithStats{}, nil
 	}
-	engineIDs := make([]uint, 0, len(engines))
-	for _, resource := range engines {
-		engineIDs = append(engineIDs, resource.ID)
-	}
-	stats, err := loadEngineScanStats(s.db, engineIDs)
+	stats, err := loadEngineScanStats(s.db, engines)
 	if err != nil {
 		return nil, err
 	}

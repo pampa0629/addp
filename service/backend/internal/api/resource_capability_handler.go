@@ -12,7 +12,10 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/dbbridge"
+	"github.com/addp/common/engine/plugin"
+	mysqlmapper "github.com/addp/common/format/mappers/mysql"
 	pgmapper "github.com/addp/common/format/mappers/postgresql"
+	spatialitemapper "github.com/addp/common/format/mappers/spatialite"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
@@ -223,6 +226,28 @@ func (h *ResourceCapabilityHandler) GetSQLOutputContract(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgSQLOutputContractFailed, err.Error())})
 		return
 	}
+	if enginePlugin, pluginErr := plugin.Get(engine.EngineType); pluginErr == nil {
+		if _, federated := enginePlugin.(plugin.FederatedQueryRuntimeProvider); federated {
+			userAccessToken, tokenErr := serviceUserAccessToken(c)
+			if tokenErr != nil {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, servicei18n.MsgAuthenticationRequired)})
+				return
+			}
+			if h.querySamples == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, servicei18n.MsgSQLOutputContractFailed)})
+				return
+			}
+			contract, describeErr := h.querySamples.DescribeFederatedSQL(
+				c.Request.Context(), tenantIDValue(c), userAccessToken, req.EngineID, req.SQL,
+			)
+			if describeErr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgSQLOutputContractFailed, describeErr.Error())})
+				return
+			}
+			c.JSON(http.StatusOK, contract)
+			return
+		}
+	}
 
 	// 2. 转换为 common models 并创建连接池
 	commonEngine := &models.Engine{
@@ -251,11 +276,6 @@ func (h *ResourceCapabilityHandler) detectSQLOutputContract(
 	engineType string,
 	query string,
 ) (*serviceModels.QueryServiceOutputContract, error) {
-	// 仅支持 PostgreSQL（PostGIS）
-	if engineType != "postgresql" {
-		return nil, fmt.Errorf("SQL output contract detection only supports PostgreSQL")
-	}
-
 	query = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(query), ";"))
 	testSQL := fmt.Sprintf("SELECT * FROM (%s) AS subquery LIMIT 1", query)
 	rows, err := db.WithContext(ctx).Raw(testSQL).Rows()
@@ -270,12 +290,11 @@ func (h *ResourceCapabilityHandler) detectSQLOutputContract(
 		return nil, fmt.Errorf("failed to get column types: %w", err)
 	}
 
-	mapper := &pgmapper.TypeMapper{}
 	tableInfo := &datatype.TableInfo{Kind: "query", Fields: make([]datatype.FieldInfo, 0, len(columnTypes))}
 	var geometryColumn string
 	for index, colType := range columnTypes {
 		nativeType := strings.ToLower(strings.TrimSpace(colType.DatabaseTypeName()))
-		fieldType := mapper.ToCommon(nativeType)
+		fieldType := queryOutputFieldType(engineType, nativeType)
 		if nativeType == "geography" {
 			fieldType = datatype.FieldTypeGeometry
 		}
@@ -300,6 +319,15 @@ func (h *ResourceCapabilityHandler) detectSQLOutputContract(
 
 	if geometryColumn == "" {
 		return &serviceModels.QueryServiceOutputContract{Table: tableInfo}, nil
+	}
+	if engineType != "postgresql" {
+		return &serviceModels.QueryServiceOutputContract{
+			Table: tableInfo,
+			Spatial: &datatype.SpatialInfo{
+				GeometryColumns:       []datatype.GeometryColumnInfo{{Name: geometryColumn, GeometryType: "Geometry"}},
+				PrimaryGeometryColumn: geometryColumn,
+			},
+		}, nil
 	}
 
 	quotedGeometryColumn := sqldialect.ForEngine(engineType).QuoteIdentifier(geometryColumn)
@@ -374,6 +402,51 @@ func (h *ResourceCapabilityHandler) detectSQLOutputContract(
 	}
 
 	return &serviceModels.QueryServiceOutputContract{Table: tableInfo, Spatial: spatialInfo}, nil
+}
+
+func queryOutputFieldType(engineType, nativeType string) datatype.FieldType {
+	switch strings.ToLower(strings.TrimSpace(engineType)) {
+	case "postgresql":
+		return (&pgmapper.TypeMapper{}).ToCommon(nativeType)
+	case "mysql":
+		return (&mysqlmapper.TypeMapper{}).ToCommon(nativeType)
+	case "sqlite", "spatialite":
+		return (&spatialitemapper.TypeMapper{}).ToCommon(nativeType)
+	default:
+		return serviceInternalFieldType(nativeType)
+	}
+}
+
+func serviceInternalFieldType(nativeType string) datatype.FieldType {
+	typeName := strings.ToUpper(strings.TrimSpace(nativeType))
+	switch {
+	case strings.Contains(typeName, "GEOMETRY") || strings.Contains(typeName, "POINT") || strings.Contains(typeName, "POLYGON"):
+		return datatype.FieldTypeGeometry
+	case strings.Contains(typeName, "INT"):
+		return datatype.FieldTypeBigInt
+	case strings.Contains(typeName, "DECIMAL") || strings.Contains(typeName, "NUMERIC"):
+		return datatype.FieldTypeDecimal
+	case strings.Contains(typeName, "DOUBLE") || strings.Contains(typeName, "FLOAT") || strings.Contains(typeName, "REAL"):
+		return datatype.FieldTypeDouble
+	case strings.Contains(typeName, "BOOL"):
+		return datatype.FieldTypeBool
+	case strings.Contains(typeName, "TIMESTAMP") || strings.Contains(typeName, "DATETIME"):
+		return datatype.FieldTypeTimestamp
+	case typeName == "DATE":
+		return datatype.FieldTypeDate
+	case strings.Contains(typeName, "JSON") || strings.Contains(typeName, "STRUCT") || strings.Contains(typeName, "MAP"):
+		return datatype.FieldTypeJSON
+	case strings.Contains(typeName, "ARRAY") || strings.Contains(typeName, "LIST"):
+		return datatype.FieldTypeArray
+	case strings.Contains(typeName, "BLOB") || strings.Contains(typeName, "BINARY"):
+		return datatype.FieldTypeBytes
+	case strings.Contains(typeName, "UUID"):
+		return datatype.FieldTypeUUID
+	case strings.Contains(typeName, "CHAR") || strings.Contains(typeName, "TEXT") || strings.Contains(typeName, "STRING"):
+		return datatype.FieldTypeString
+	default:
+		return datatype.FieldTypeUnknown
+	}
 }
 
 // HealthCheck 健康检查

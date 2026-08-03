@@ -18,12 +18,15 @@ export function buildQueryServicePreview({ rows, pagination, spatial } = {}) {
   const definitions = Array.isArray(spatial?.crs_definitions) ? spatial.crs_definitions : []
   const sourceCRSDefinition = definitions.find((definition) => definition?.id === sourceCRS) || null
 
+	const page = positiveNumber(pagination?.page, 1)
+	const pageSize = positiveNumber(pagination?.page_size, 20)
+	const syntheticTotal = (page - 1) * pageSize + normalizedRows.length + (pagination?.has_more === true ? 1 : 0)
   return {
     columns: normalizedRows.length > 0 ? Object.keys(normalizedRows[0]) : [],
     rows: normalizedRows,
-    total: positiveNumber(pagination?.total),
-    page: positiveNumber(pagination?.page, 1),
-    page_size: positiveNumber(pagination?.page_size, 20),
+	total: syntheticTotal,
+	page,
+	page_size: pageSize,
     geometry_columns: geometryColumn ? [geometryColumn] : [],
     source_srid: sourceSRID,
     source_crs: sourceCRS,
@@ -33,15 +36,13 @@ export function buildQueryServicePreview({ rows, pagination, spatial } = {}) {
 }
 
 export function queryServicePreviewFields({ configType, defaultFields, spatial } = {}) {
-  if (configType !== 'table') return ''
-
   const fields = Array.isArray(defaultFields)
     ? defaultFields.map((field) => String(field || '').trim()).filter(Boolean)
     : []
-  if (fields.length === 0) return ''
+  if (fields.length === 0) return []
 
   const geometryColumn = String(primaryGeometry(spatial)?.name || '').trim()
 
   if (geometryColumn) fields.push(geometryColumn)
-  return [...new Set(fields)].join(',')
+  return [...new Set(fields)]
 }

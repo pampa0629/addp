@@ -84,8 +84,11 @@
                 "x-addp-auth-mode": "public"
             }
         },
-        "/api/query/{serviceName}": {
-            "get": {
+        "/api/query/{serviceName}/query": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -102,39 +105,20 @@
                         "required": true
                     },
                     {
-                        "type": "integer",
-                        "default": 1,
-                        "description": "页码 | Page",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 50,
-                        "description": "每页数量 | Page size",
-                        "name": "page_size",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "default": "json",
-                        "description": "返回格式 (json,csv,geojson) | Response format (json,csv,geojson)",
-                        "name": "format",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "过滤条件 | Filter",
-                        "name": "filter",
-                        "in": "query"
+                        "description": "结构化查询请求 | Structured query request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.QueryExecutionRequest"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.QueryExecutionResult"
                         }
                     },
                     "400": {
@@ -874,10 +858,9 @@
                         "in": "query"
                     },
                     {
-                        "type": "integer",
-                        "default": 0,
-                        "description": "偏移量 | Offset",
-                        "name": "offset",
+                        "type": "string",
+                        "description": "查询游标 | Query cursor",
+                        "name": "cursor",
                         "in": "query"
                     },
                     {
@@ -3886,6 +3869,138 @@
                 },
                 "type": {
                     "description": "string | integer | float | boolean",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.QueryExecutionRequest": {
+            "type": "object",
+            "properties": {
+                "filter": {
+                    "$ref": "#/definitions/github_com_addp_service_internal_models.QueryFilter"
+                },
+                "format": {
+                    "type": "string",
+                    "enum": [
+                        "json",
+                        "csv",
+                        "geojson"
+                    ]
+                },
+                "order_by": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_service_internal_models.QueryOrder"
+                    }
+                },
+                "page": {
+                    "$ref": "#/definitions/github_com_addp_service_internal_models.QueryPageRequest"
+                },
+                "select": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.QueryExecutionResult": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "page": {
+                    "$ref": "#/definitions/github_com_addp_service_internal_models.QueryPageResult"
+                },
+                "service_version": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.QueryFilter": {
+            "type": "object",
+            "properties": {
+                "and": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_service_internal_models.QueryFilter"
+                    }
+                },
+                "field": {
+                    "type": "string"
+                },
+                "not": {
+                    "$ref": "#/definitions/github_com_addp_service_internal_models.QueryFilter"
+                },
+                "op": {
+                    "type": "string",
+                    "enum": [
+                        "eq",
+                        "ne",
+                        "lt",
+                        "lte",
+                        "gt",
+                        "gte",
+                        "in",
+                        "is_null",
+                        "is_not_null",
+                        "bbox_intersects"
+                    ]
+                },
+                "or": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_service_internal_models.QueryFilter"
+                    }
+                },
+                "value": {
+                    "type": "object"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.QueryOrder": {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "type": "string",
+                    "enum": [
+                        "asc",
+                        "desc"
+                    ]
+                },
+                "field": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.QueryPageRequest": {
+            "type": "object",
+            "properties": {
+                "cursor": {
+                    "type": "string"
+                },
+                "limit": {
+                    "type": "integer",
+                    "maximum": 10000,
+                    "minimum": 1
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.QueryPageResult": {
+            "type": "object",
+            "properties": {
+                "has_more": {
+                    "type": "boolean"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "next_cursor": {
                     "type": "string"
                 }
             }

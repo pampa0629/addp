@@ -185,7 +185,8 @@ async function handlePickerSelect(selection) {
 }
 
 function isSelectablePickerNode(node, context = {}) {
-  return isSelectableSourceItem(treeNodeToCatalogEntry(node, context.engine || selectedEngine.value))
+  const engine = context.engine || selectedEngine.value
+  return isSelectableSourceItem(treeNodeToCatalogEntry(node, engine), engine)
 }
 
 function treeNodeToCatalogEntry(node, selectionOrEngine = selectedEngine.value) {
@@ -581,12 +582,12 @@ function catalogRoleFromTreeNode(node) {
   return isItemTreeNode(node) ? 'leaf' : 'branch'
 }
 
-function isSelectableSourceItem(node) {
+function isSelectableSourceItem(node, engine = selectedEngine.value) {
   if (node?.role !== 'leaf') return false
   if (treeNodeType(node) === 'topic') {
-    return normalizeEngineType(selectedEngine.value?.engine_type) === 'kafka'
+    return normalizeEngineType(engine?.engine_type) === 'kafka'
   }
-  return isSupportedSourceShape(nodeDataType(node), representationForSelection(node), nodeFormat(node))
+  return isSupportedSourceShape(nodeDataType(node), representationForSelection(node, engine), nodeFormat(node))
 }
 
 function isSupportedSourceShape(dataType, representation, sourceFormat) {
@@ -654,7 +655,7 @@ function treeNodeType(node) {
 }
 
 function isItemTreeNode(node) {
-  return ['table', 'collection', 'label', 'relationship', 'object', 'file'].includes(treeNodeType(node)) && !node.hasChildren
+  return ['table', 'collection', 'label', 'relationship', 'object', 'file', 'topic'].includes(treeNodeType(node)) && !node.hasChildren
 }
 
 onMounted(async () => {

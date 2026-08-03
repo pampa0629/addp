@@ -1071,6 +1071,73 @@ const docTemplate = `{
                 "x-addp-auth-mode": "self"
             }
         },
+        "/auth/notebook-session-authorizations": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "从当前 Tenant User Access Token 派生绑定唯一 Notebook Session 和 Task 的短期会话授权事实 | Derive short-lived session authorization facts bound to one Notebook Session and Task from the current tenant user access token",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证 | Authentication"
+                ],
+                "summary": "签发 Notebook 会话授权 | Issue Notebook session authorization",
+                "parameters": [
+                    {
+                        "description": "Notebook 会话边界 | Notebook session boundary",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMIssueNotebookSessionAuthorizationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMNotebookSessionAuthorizationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine.read"
+                ]
+            }
+        },
         "/auth/task-authorization-subjects": {
             "post": {
                 "security": [
@@ -1982,6 +2049,234 @@ const docTemplate = `{
                     }
                 },
                 "x-addp-auth-mode": "authenticated"
+            }
+        },
+        "/notebook-session-authorizations/{id}/catalog/children": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 addp-develop Tenant Service Principal 可消费绑定 Session 的用户派生授权；授权复核与 CatalogProvider.ListChildren 在同一请求完成 | Only the addp-develop tenant service principal may consume the session-bound user-derived authorization; authorization review and CatalogProvider.ListChildren complete in one request",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Notebook 会话授权 | Notebook Session Authorization"
+                ],
+                "summary": "使用 Notebook 会话授权列出实时 Catalog 子节点 | List live Catalog children with Notebook session authorization",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Notebook 会话授权 ID | Notebook session authorization ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Session、Engine 与 Catalog 路径 | Session, Engine, and Catalog path",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMNotebookCatalogChildrenRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.CatalogListChildrenResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.notebook_session_authorization.execute"
+                ]
+            }
+        },
+        "/notebook-session-authorizations/{id}/execution-engine-accesses": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "为新的 execution 原子创建只读 Execution Authorization 并返回仅供 addp-develop 受控 Runtime 使用的引擎访问 | Atomically create a read-only Execution Authorization for a new execution and return engine access only to the controlled addp-develop runtime",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Notebook 会话授权 | Notebook Session Authorization"
+                ],
+                "summary": "派生 Notebook 单次只读执行访问 | Derive one Notebook read execution access",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Notebook 会话授权 ID | Notebook session authorization ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Session、execution 与 Engine 边界 | Session, execution, and Engine boundary",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMNotebookExecutionEngineAccessRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMExecutionEngineAccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.notebook_session_authorization.execute"
+                ]
+            }
+        },
+        "/notebook-session-authorizations/{id}/revocations": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "addp-develop 关闭 Session 时幂等撤销其会话授权 | Idempotently revoke the session authorization when addp-develop closes the Session",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Notebook 会话授权 | Notebook Session Authorization"
+                ],
+                "summary": "撤销 Notebook 会话授权 | Revoke Notebook session authorization",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Notebook 会话授权 ID | Notebook session authorization ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Notebook Session | Notebook Session",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMRevokeNotebookSessionAuthorizationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.notebook_session_authorization.execute"
+                ]
             }
         },
         "/oauth/authorization_requests": {
@@ -7928,6 +8223,20 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.IAMIssueNotebookSessionAuthorizationRequest": {
+            "type": "object",
+            "properties": {
+                "expires_in": {
+                    "type": "integer"
+                },
+                "session_id": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.IAMLifecycleReasonRequest": {
             "type": "object",
             "properties": {
@@ -8063,6 +8372,57 @@ const docTemplate = `{
                 },
                 "user": {
                     "$ref": "#/definitions/internal_api.IAMManagedUserResponse"
+                }
+            }
+        },
+        "internal_api.IAMNotebookCatalogChildrenRequest": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "options": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.CatalogListOptions"
+                },
+                "path": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.CatalogPath"
+                },
+                "session_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMNotebookExecutionEngineAccessRequest": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "expires_in": {
+                    "type": "integer"
+                },
+                "session_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMNotebookSessionAuthorizationResponse": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "session_id": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "integer"
                 }
             }
         },
@@ -8214,6 +8574,14 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMRevokeNotebookSessionAuthorizationRequest": {
+            "type": "object",
+            "properties": {
+                "session_id": {
                     "type": "string"
                 }
             }

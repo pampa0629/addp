@@ -45,6 +45,7 @@ type QueryService struct {
 	    "table": {"fields": [], "primary_key": []},
 	    "spatial": {"geometry_columns": [], "primary_geometry_column": "geom"}
 	  },
+	  "stable_key": ["id"],
 	  "default_fields": ["id", "name", "geom"],
 	  "filterable_fields": ["name", "category"]
 	}
@@ -168,21 +169,27 @@ func (q *QueryService) GetSRID() int {
 	return 0
 }
 
-// GetPrimaryKey 获取已发布主键字段名。
-func (q *QueryService) GetPrimaryKey() string {
-	table := q.GetTableInfo()
-	if table == nil {
-		return ""
+// GetStableKey 获取发布契约中的非空唯一稳定排序键。
+func (q *QueryService) GetStableKey() []string {
+	if q == nil || q.DataConfig == nil {
+		return nil
 	}
-	if len(table.PrimaryKey) > 0 {
-		return table.PrimaryKey[0]
-	}
-	for _, field := range table.Fields {
-		if field.PrimaryKey {
-			return field.Name
+	values, ok := q.DataConfig["stable_key"].([]interface{})
+	if !ok {
+		if typed, typedOK := q.DataConfig["stable_key"].([]string); typedOK {
+			return append([]string(nil), typed...)
 		}
+		return nil
 	}
-	return ""
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		field, ok := value.(string)
+		if !ok || field == "" {
+			return nil
+		}
+		result = append(result, field)
+	}
+	return result
 }
 
 // GetDefaultFields 获取默认返回字段

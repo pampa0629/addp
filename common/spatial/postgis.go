@@ -83,35 +83,6 @@ func PostGISGeoJSONSelectExpression(columnName string) string {
 	return fmt.Sprintf("ST_AsGeoJSON(%s) AS %s", quotedColumn, quotedColumn)
 }
 
-func BuildPostGISFeatureCentroidQuery(schema, table, geomColumn, primaryKey string) string {
-	qGeom := QuotePostGISIdentifier(geomColumn)
-	return fmt.Sprintf(`
-		SELECT
-			ST_X(ST_Centroid(%s)) AS x,
-			ST_Y(ST_Centroid(%s)) AS y,
-			ST_SRID(%s) AS source_srid
-		FROM %s
-		WHERE %s = $1
-	`, qGeom, qGeom, qGeom, QualifiedPostGISTable(schema, table), QuotePostGISIdentifier(primaryKey))
-}
-
-func BuildPostGISFeatureGeometryQuery(schema, table, geomColumn, primaryKey string) string {
-	qGeom := QuotePostGISIdentifier(geomColumn)
-	return fmt.Sprintf(`
-		SELECT
-			ST_AsGeoJSON(%s) AS geojson,
-			ST_X(ST_Centroid(%s)) AS x,
-			ST_Y(ST_Centroid(%s)) AS y,
-			ST_XMin(Box2D(%s)) AS min_x,
-			ST_YMin(Box2D(%s)) AS min_y,
-			ST_XMax(Box2D(%s)) AS max_x,
-			ST_YMax(Box2D(%s)) AS max_y,
-			ST_SRID(%s) AS source_srid
-		FROM %s
-		WHERE %s = $1
-	`, qGeom, qGeom, qGeom, qGeom, qGeom, qGeom, qGeom, qGeom, QualifiedPostGISTable(schema, table), QuotePostGISIdentifier(primaryKey))
-}
-
 func BuildPostGISGeoJSONPageQuery(schema, table, geomColumn string, limit, offset int) string {
 	qGeom := QuotePostGISIdentifier(geomColumn)
 	return fmt.Sprintf(`

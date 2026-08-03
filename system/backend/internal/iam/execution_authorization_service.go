@@ -465,13 +465,44 @@ func (s *ExecutionAuthorizationService) AuthorizeEngineAccess(
 	}
 	var authorized *AuthorizedExecutionEngineAccess
 	err = s.repository.Transaction(ctx, func(tx *Repository) error {
-		authorization, err := tx.LockExecutionAuthorization(ctx, input.AuthorizationID)
+		snapshot, err := tx.GetExecutionAuthorization(ctx, input.AuthorizationID)
 		if err != nil {
 			return err
 		}
-		principal, membership, now, err := lockAndValidateExecutionSource(ctx, tx, authorization)
-		if err != nil {
-			return err
+		var authorization *ExecutionAuthorization
+		var principal *Principal
+		var membership *TenantMembership
+		var now time.Time
+		if snapshot.SourceNotebookSessionAuthorizationID != nil {
+			sessionAuthorization, lockedPrincipal, lockedMembership, _, lockedNow, lockErr :=
+				lockAndValidateNotebookSessionSource(ctx, tx, *snapshot.SourceNotebookSessionAuthorizationID)
+			if lockErr != nil {
+				return ErrExecutionAuthorizationUnavailable
+			}
+			authorization, err = tx.LockExecutionAuthorization(ctx, input.AuthorizationID)
+			if err != nil {
+				return err
+			}
+			if authorization.SourceNotebookSessionAuthorizationID == nil ||
+				*authorization.SourceNotebookSessionAuthorizationID != sessionAuthorization.ID ||
+				sessionAuthorization.RevokedAt != nil || !sessionAuthorization.ExpiresAt.After(lockedNow) ||
+				authorization.ActorPrincipalID != sessionAuthorization.ActorPrincipalID ||
+				authorization.TenantID != sessionAuthorization.TenantID ||
+				authorization.TenantMembershipID != sessionAuthorization.TenantMembershipID ||
+				authorization.IssuedAuthorizationVersion != sessionAuthorization.IssuedAuthorizationVersion ||
+				authorization.ExpiresAt.After(sessionAuthorization.ExpiresAt) {
+				return ErrExecutionAuthorizationUnavailable
+			}
+			principal, membership, now = lockedPrincipal, lockedMembership, lockedNow
+		} else {
+			authorization, err = tx.LockExecutionAuthorization(ctx, input.AuthorizationID)
+			if err != nil {
+				return err
+			}
+			principal, membership, now, err = lockAndValidateExecutionSource(ctx, tx, authorization)
+			if err != nil {
+				return err
+			}
 		}
 		if authorization.RevokedAt != nil || !authorization.ExpiresAt.After(now) ||
 			authorization.ExecutionID != input.ExecutionID || authorization.Audience == "" {

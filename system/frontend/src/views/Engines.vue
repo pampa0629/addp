@@ -886,6 +886,12 @@ const storageEngineTypeOptions = computed(() => ([
     desc: t('system.engine.registerPanel.types.mysql')
   },
   {
+    value: 'kafka',
+    icon: '📨',
+    label: 'Apache Kafka',
+    desc: t('system.engine.registerPanel.types.kafka')
+  },
+  {
     value: 'doris',
     icon: '🟠',
     label: 'Apache Doris',

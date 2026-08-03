@@ -44,7 +44,7 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 	totalFields := 0
 
 	for i, node := range nodes {
-		itemType := branchLeafItemType(node)
+		itemType := catalogLeafItemType(node)
 		if itemType == "" {
 			continue
 		}

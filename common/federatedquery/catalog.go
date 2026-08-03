@@ -107,7 +107,7 @@ func (c *Catalog) Sources(
 	return sources, nil
 }
 
-func Candidates(sources []Source) []Candidate {
+func Candidates(sources []Source, limit int) []Candidate {
 	candidates := make([]Candidate, 0)
 	for _, source := range sources {
 		for _, table := range source.Tables {
@@ -116,8 +116,12 @@ func Candidates(sources []Source) []Candidate {
 				parts = append(parts, sanitizeIdentifier(table.Schema))
 			}
 			parts = append(parts, sanitizeIdentifier(table.Table))
+			query := fmt.Sprintf("SELECT *\nFROM %s", strings.Join(parts, "."))
+			if limit > 0 {
+				query += fmt.Sprintf("\nLIMIT %d", limit)
+			}
 			candidates = append(candidates, Candidate{
-				Query:    fmt.Sprintf("SELECT *\nFROM %s\nLIMIT 10", strings.Join(parts, ".")),
+				Query:    query,
 				EngineID: source.EngineID,
 			})
 		}

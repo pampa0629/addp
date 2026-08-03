@@ -34,6 +34,8 @@ type MySQLPlugin struct{}
 
 var (
 	_ plugin.BoundedWatermarkReadProvider        = (*MySQLPlugin)(nil)
+	_ plugin.SpatialFeatureReadProvider          = (*MySQLPlugin)(nil)
+	_ plugin.TableReadSessionProvider            = (*MySQLPlugin)(nil)
 	_ plugin.TableUpsertProvider                 = (*MySQLPlugin)(nil)
 	_ plugin.PartitionedTableChangeApplyProvider = (*MySQLPlugin)(nil)
 )
@@ -72,22 +74,28 @@ func (p *MySQLPlugin) ConnectionIdentityFields() []string {
 
 func (p *MySQLPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), "database", plugin.TabularCapabilityOptions{
-		Write:                true,
-		BulkWrite:            true,
-		BatchWrite:           true,
-		TableWriteSession:    true,
-		TableWritePrepare:    true,
-		BoundedWatermarkRead: true,
-		TableUpsert:          true,
+		Write:                     true,
+		BulkWrite:                 true,
+		BatchWrite:                true,
+		TableReadSession:          true,
+		TableReadSpatialTransform: true,
+		TableWriteSession:         true,
+		TableWritePrepare:         true,
+		BoundedWatermarkRead:      true,
+		TableUpsert:               true,
 		PartitionedTableChangeApplyOperations: []string{
 			plugin.TableChangeOperationUpsert,
 			plugin.TableChangeOperationDelete,
 			plugin.TableChangeOperationSkip,
 		},
 		TableSpatialEncoding: &plugin.NativeTableSpatialEncodingCapability{
+			GeometryReadEncodings:  []string{string(format.GeometryEncodingEWKB), string(format.GeometryEncodingGeoJSON)},
 			GeometryWriteEncodings: []string{string(format.GeometryEncodingEWKB)},
+			ReadTransform:          true,
+			NativeSpatialFunctions: true,
 		},
 		Delete:          true,
+		SpatialFacts:    true,
 		SupportsExplain: true,
 		SupportsCancel:  true,
 		WriterConnector: "mysql_insert",
@@ -109,6 +117,7 @@ func (p *MySQLPlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallbacks {
 		ListTables:            p.listTables,
 		ListColumns:           p.listColumns,
 		RowCount:              p.getTableRowCount,
+		DescribeSpatial:       p.describeSpatialFacts,
 		IsSystemNamespaceFunc: p.isSystemSchema,
 	}
 }
@@ -150,7 +159,7 @@ func (p *MySQLPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.Connection
 }
 
 func (p *MySQLPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
-	return plugin.ReadSQLBatch(ctx, p, connInfo, path, opts)
+	return p.readBatch(ctx, connInfo, path, opts)
 }
 
 func (p *MySQLPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
