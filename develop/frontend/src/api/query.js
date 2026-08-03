@@ -17,20 +17,18 @@ export const getSampleQuery = (engineId) => {
 
 /**
  * 执行 SQL
- * @param {number|null} engineId - 数据源ID；DuckDB 联邦查询传 null
- * @param {string} sql - SQL语句
+ * @param {number} engineId - 查询引擎ID；DuckDB 联邦查询传真实 Runtime Engine ID
+ * @param {string} query - 查询语句
+ * @param {string} queryType - 查询语言类型
  * @param {number} timeout - 超时时间（秒）
- * @param {string} queryMode - 查询模式；DuckDB 联邦查询使用 duckdb
  */
-export const executeQuery = (engineId, sql, timeout = 30, queryMode = '') => {
-  const mode = (queryMode || '').trim().toLowerCase()
-  const executionConfig = mode ? { query_mode: mode } : { engine_id: engineId }
+export const executeQuery = (engineId, query, queryType = 'sql', timeout = 30) => {
   return client.post('/develop/execute', {
     content: {
-      query: sql,
-      query_type: 'sql'
+      query,
+      query_type: queryType
     },
-    execution_config: executionConfig,
+    execution_config: { engine_id: engineId },
     timeout: timeout
   })
 }
@@ -96,14 +94,6 @@ export const deleteQueryTask = (id) => {
 
 const toQueryDevTaskPayload = (taskData, includeDevType = true) => {
   const queryType = taskData.query_type || 'sql'
-  const queryMode = (taskData.query_mode || '').trim().toLowerCase()
-  const executionConfig = {}
-  if (queryMode) {
-    executionConfig.query_mode = queryMode
-  } else {
-    executionConfig.engine_id = taskData.engine_id
-  }
-
   const payload = {
     name: taskData.name,
     display_name: taskData.display_name,
@@ -111,7 +101,7 @@ const toQueryDevTaskPayload = (taskData, includeDevType = true) => {
       query: taskData.query,
       query_type: queryType
     },
-    execution_config: executionConfig,
+    execution_config: { engine_id: taskData.engine_id },
     timeout: taskData.timeout,
     description: taskData.description,
     tags: taskData.tags

@@ -12,7 +12,7 @@ import {
 	isKafkaTopicSource,
 	isDatabaseTableCDCSource,
 	normalizeContinuousKeyFields,
-	taskEngineTypes
+	taskEngineDescriptors
 } from '../src/views/TaskWizard/continuousTask.mjs'
 
 const databaseCDCCapability = {
@@ -198,16 +198,21 @@ test('database CDC availability reports provider-specific blocking reasons', () 
 	}), [{ code: 'capabilityUnavailable' }])
 })
 
-test('snapshot task engine types are restored from System engines instead of load mode guesses', () => {
+test('task engine descriptors restore types and capabilities from System engines', () => {
 	const task = {
 		config: {
 			source: { locator: 'addp://engine/8/path/public/source?type=table' },
 			target: { parent_locator: 'addp://engine/20/path/tiger?type=schema' }
 		}
 	}
-	assert.deepEqual(taskEngineTypes(task, [
-		{ id: 8, engine_type: 'postgresql' },
-		{ id: 20, engine_type: 'postgresql' }
-	]), { source: 'postgresql', target: 'postgresql' })
-	assert.deepEqual(taskEngineTypes(task, []), { source: '', target: '' })
+	const sourceCapabilities = { storage: { store: { bounded_watermark_read: true } } }
+	const targetCapabilities = { storage: { store: { table_upsert: { supported: true, idempotent: true } } } }
+	assert.deepEqual(taskEngineDescriptors(task, [
+		{ id: 8, engine_type: 'mysql', capabilities: sourceCapabilities },
+		{ id: 20, engine_type: 'postgresql', capabilities: targetCapabilities }
+	]), {
+		source: { engine_type: 'mysql', capabilities: sourceCapabilities },
+		target: { engine_type: 'postgresql', capabilities: targetCapabilities }
+	})
+	assert.deepEqual(taskEngineDescriptors(task, []), { source: null, target: null })
 })

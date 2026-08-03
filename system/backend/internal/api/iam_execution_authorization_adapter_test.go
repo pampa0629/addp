@@ -15,9 +15,26 @@ import (
 )
 
 type fakeExecutionAuthorizationService struct {
-	issueInput         iam.IssueExecutionAuthorizationInput
-	issueFromExecution iam.IssueExecutionAuthorizationFromExecutionInput
-	consumeInput       iam.AuthorizeExecutionEngineAccessInput
+	issueInput                 iam.IssueExecutionAuthorizationInput
+	issueFromExecution         iam.IssueExecutionAuthorizationFromExecutionInput
+	issueFromServiceDefinition iam.IssueExecutionAuthorizationFromServiceDefinitionInput
+	consumeInput               iam.AuthorizeExecutionEngineAccessInput
+}
+
+func (service *fakeExecutionAuthorizationService) IssueFromServiceDefinition(
+	_ context.Context,
+	input iam.IssueExecutionAuthorizationFromServiceDefinitionInput,
+) (*iam.IssuedExecutionAuthorization, error) {
+	service.issueFromServiceDefinition = input
+	definitionID := input.DefinitionID
+	definitionVersion := input.DefinitionVersion
+	return &iam.IssuedExecutionAuthorization{
+		ID: 93, ExecutionID: input.ExecutionID, Audience: "duckdb",
+		EngineIDs: input.EngineIDs, Effects: []string{"read"}, ExpiresAt: time.Now().UTC().Add(time.Minute),
+		ActorPrincipalID: 7, TenantID: input.TenantID, TenantMembershipID: 8, IssuedAuthorizationVersion: 3,
+		SourceType: "service_definition", SourceDefinitionID: &definitionID,
+		SourceDefinitionVersion: &definitionVersion,
+	}, nil
 }
 
 func (service *fakeExecutionAuthorizationService) IssueFromExecution(

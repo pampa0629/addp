@@ -5,34 +5,39 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
-	"github.com/addp/common/duckdb"
+	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/spatial"
 	"github.com/addp/common/sqldialect"
 	"github.com/addp/service/internal/models"
 	"github.com/addp/service/internal/repository"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 // QueryExecutorService 查询执行服务
 type QueryExecutorService struct {
-	queryRepo    *repository.QueryServiceRepository
-	systemClient *client.SystemClient
+	queryRepo     *repository.QueryServiceRepository
+	systemClient  *client.SystemClient
+	systemService *client.SystemServiceClient
 }
 
 // NewQueryExecutorService 创建查询执行服务
 func NewQueryExecutorService(
 	queryRepo *repository.QueryServiceRepository,
 	systemClient *client.SystemClient,
+	systemService *client.SystemServiceClient,
 ) *QueryExecutorService {
 	return &QueryExecutorService{
-		queryRepo:    queryRepo,
-		systemClient: systemClient,
+		queryRepo:     queryRepo,
+		systemClient:  systemClient,
+		systemService: systemService,
 	}
 }
 
@@ -84,14 +89,8 @@ func (s *QueryExecutorService) ExecuteQuery(
 		params.PageSize = maxFeatures
 	}
 
-	// sql 模式 + engine_id IS NULL → DuckDB 联邦查询执行路径
-	if service.IsDuckDBSQL() {
-		return s.executeDuckDBSQLQuery(ctx, service, params)
-	}
-
-	// table 模式 + 对象存储表格资源 → DuckDB 执行路径
-	if service.ConfigType == "table" && service.IsObjectTable() {
-		return s.executeObjectTableQuery(ctx, service, params)
+	if service.UsesFederatedQueryRuntime() {
+		return s.executeFederatedQuery(ctx, service, params)
 	}
 
 	// 1. 获取存储引擎信息
@@ -138,88 +137,75 @@ func (s *QueryExecutorService) ExecuteQuery(
 	}, nil
 }
 
-// executeObjectTableQuery 通过 DuckDB 执行对象存储表格查询。
-func (s *QueryExecutorService) executeObjectTableQuery(
+func (s *QueryExecutorService) executeFederatedQuery(
 	ctx context.Context,
 	service *models.QueryService,
 	params *QueryParams,
 ) (*QueryResult, error) {
-	// 获取引擎连接信息
-	engine, err := s.systemClient.GetEngine(service.GetEngineID())
+	snapshot := service.SourceSnapshot()
+	if snapshot == nil || service.RuntimeEngineID == nil || *service.RuntimeEngineID == 0 ||
+		s.systemService == nil {
+		return nil, fmt.Errorf("query service dependency snapshot is missing")
+	}
+	runtimeDescriptor, err := s.systemService.WithTenantID(service.TenantID).
+		GetEngineRuntimeDescriptor(ctx, *service.RuntimeEngineID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get engine: %w", err)
+		return nil, fmt.Errorf("get federated query runtime: %w", err)
 	}
-
-	commonEngine := commonModels.Engine{
-		ID:             engine.ID,
-		Name:           engine.Name,
-		EngineType:     engine.EngineType,
-		ConnectionInfo: commonModels.ConnectionInfo(engine.ConnectionInfo),
-	}
-
-	physicalPath := service.GetObjectTablePhysicalPath()
-	if physicalPath == "" {
-		return nil, fmt.Errorf("object table physical_path is empty")
-	}
-	tableExpr := duckdb.BuildReadParquetExpr(physicalPath)
-
-	// 打开 DuckDB 连接
-	db, err := duckdb.OpenDB()
+	enginePlugin, err := plugin.Get(runtimeDescriptor.EngineType)
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
-
-	execCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	conn, err := db.Conn(execCtx)
+	provider, ok := enginePlugin.(plugin.FederatedQueryRuntimeProvider)
+	if !ok {
+		return nil, fmt.Errorf("engine %d does not implement federated query runtime", *service.RuntimeEngineID)
+	}
+	if snapshot.DependencyHash == "" || queryServiceDependencyHash(snapshot) != snapshot.DependencyHash {
+		return nil, fmt.Errorf("query service dependency snapshot hash is invalid")
+	}
+	baseSQL, sourceEngineIDs, objectTables, err := s.federatedExecutionPlan(ctx, service, params)
 	if err != nil {
-		return nil, fmt.Errorf("获取 DuckDB 连接失败: %w", err)
+		return nil, err
 	}
-	defer conn.Close()
-
-	// 挂载 S3 引擎
-	if err := duckdb.MountObjectStorage(execCtx, conn, commonEngine); err != nil {
-		return nil, fmt.Errorf("挂载 S3 引擎失败: %w", err)
+	if len(sourceEngineIDs) == 0 {
+		return nil, fmt.Errorf("query service dependency snapshot has no source engine")
 	}
-
-	// 构建 SELECT 字段
-	selectFields := "*"
-	if params.Fields != "" {
-		selectFields = params.Fields
+	executionID := uuid.New()
+	issued, err := s.systemService.WithTenantID(service.TenantID).
+		IssueExecutionAuthorizationFromServiceDefinition(ctx, client.IssueExecutionAuthorizationFromServiceDefinitionRequest{
+			ExecutionID: executionID.String(), EngineIDs: formatServiceEngineIDs(sourceEngineIDs),
+			DefinitionID: strconv.FormatUint(uint64(service.ID), 10), DefinitionVersion: snapshot.DependencyHash,
+			ExpiresIn: 60,
+		})
+	if err != nil {
+		return nil, fmt.Errorf("issue service definition execution authorization: %w", err)
 	}
-
-	// 构建 WHERE 条件
-	whereClause := ""
-	if params.Filter != "" {
-		whereClause = " WHERE " + params.Filter
+	callerToken, err := s.systemService.TenantServiceAccessToken(ctx, service.TenantID)
+	if err != nil {
+		return nil, err
 	}
-
-	// 构建 ORDER BY
-	orderByClause := ""
-	if params.OrderBy != "" {
-		orderByClause = " ORDER BY " + params.OrderBy
+	execute := func(query string) (*plugin.QueryResult, error) {
+		return provider.ExecuteFederatedQuery(ctx, plugin.ConnectionInfo(runtimeDescriptor.AsEngine().ConnectionInfo), plugin.FederatedQueryRequest{
+			ExecutionID: executionID.String(), ExecutionAuthorizationID: issued.ID,
+			SourceEngineIDs: sourceEngineIDs, ObjectTables: objectTables,
+			Query: query, Language: "sql",
+			Options:           plugin.QueryOptions{Limit: federatedQueryLimit(service), Timeout: 60 * time.Second, ReadOnly: true},
+			CallerAccessToken: callerToken,
+		})
 	}
-
-	// 获取总数
-	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM %s%s", tableExpr, whereClause)
-	var total int64
-	row := conn.QueryRowContext(execCtx, countSQL)
-	if err := row.Scan(&total); err != nil {
-		return nil, fmt.Errorf("获取总数失败: %w", err)
+	countResult, err := execute(sqldialect.CountSubquerySQL(baseSQL, "_q"))
+	if err != nil {
+		return nil, fmt.Errorf("execute federated count query: %w", err)
 	}
-
-	// 分页查询
+	total, err := federatedCount(countResult)
+	if err != nil {
+		return nil, err
+	}
 	offset := (params.Page - 1) * params.PageSize
-	dataSQL := fmt.Sprintf("SELECT %s FROM %s%s%s LIMIT %d OFFSET %d",
-		selectFields, tableExpr, whereClause, orderByClause, params.PageSize, offset)
-
-	result, err := duckdb.ExecuteQuery(execCtx, conn, dataSQL)
+	result, err := execute(sqldialect.PaginateQuerySQL(baseSQL, params.PageSize, offset))
 	if err != nil {
 		return nil, err
 	}
-
 	return &QueryResult{
 		Data: result.Rows,
 		Pagination: &Pagination{
@@ -231,56 +217,101 @@ func (s *QueryExecutorService) executeObjectTableQuery(
 	}, nil
 }
 
-// executeDuckDBSQLQuery 通过 DuckDB 执行联邦 SQL 查询（engine_id IS NULL 时）
-func (s *QueryExecutorService) executeDuckDBSQLQuery(
+func (s *QueryExecutorService) federatedExecutionPlan(
 	ctx context.Context,
 	service *models.QueryService,
 	params *QueryParams,
-) (*QueryResult, error) {
-	execCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-
+) (string, []uint, map[string]map[string]string, error) {
 	snapshot := service.SourceSnapshot()
-	if snapshot == nil {
-		return nil, fmt.Errorf("query service dependency snapshot is missing")
+	if service.ConfigType == "table" && service.IsObjectTable() {
+		if service.EngineID == nil || *service.EngineID == 0 || service.GetObjectTablePhysicalPath() == "" ||
+			len(snapshot.FederatedSourceEngineIDs) != 1 || snapshot.FederatedSourceEngineIDs[0] != *service.EngineID {
+			return "", nil, nil, fmt.Errorf("object table source snapshot is incomplete")
+		}
+		descriptor, err := s.systemService.WithTenantID(service.TenantID).GetEngineRuntimeDescriptor(ctx, *service.EngineID)
+		if err != nil {
+			return "", nil, nil, err
+		}
+		engineName := sanitizeFederatedIdentifier(descriptor.Name)
+		tableName := sanitizeFederatedIdentifier(service.TargetTable)
+		objectTables := map[string]map[string]string{
+			engineName: {tableName: service.GetObjectTablePhysicalPath()},
+		}
+		selectFields, err := federatedTableSelectFields(service, params)
+		if err != nil {
+			return "", nil, nil, err
+		}
+		query := fmt.Sprintf("SELECT %s FROM %s.%s", selectFields, engineName, tableName)
+		if strings.TrimSpace(params.Filter) != "" {
+			query += " WHERE " + params.Filter
+		}
+		if strings.TrimSpace(params.OrderBy) != "" {
+			query += " ORDER BY " + params.OrderBy
+		}
+		return query,
+			[]uint{*service.EngineID}, objectTables, nil
 	}
-	session, err := duckdb.PrepareFederatedQueryWithObjectTables(
-		execCtx,
-		service.TenantID,
-		service.SqlQuery,
-		s.systemClient,
-		snapshot.FederatedObjectTables,
-	)
-	if err != nil {
-		return nil, err
+	if service.ConfigType != "sql" || strings.TrimSpace(service.SqlQuery) == "" {
+		return "", nil, nil, fmt.Errorf("federated query service SQL is missing")
 	}
-	defer session.Close()
+	return service.SqlQuery, append([]uint(nil), snapshot.FederatedSourceEngineIDs...),
+		cloneObjectTableMap(snapshot.FederatedObjectTables), nil
+}
 
-	// 获取总数
-	countSQL := sqldialect.CountSubquerySQL(session.RewrittenSQL, "_q")
-	var total int64
-	row := session.Conn.QueryRowContext(execCtx, countSQL)
-	if err := row.Scan(&total); err != nil {
-		return nil, fmt.Errorf("获取总数失败: %w", err)
+func federatedQueryLimit(service *models.QueryService) int {
+	if service != nil && service.MaxFeatures > 0 {
+		return service.MaxFeatures
 	}
+	return 1000
+}
 
-	// 分页查询
-	offset := (params.Page - 1) * params.PageSize
-	paginatedSQL := sqldialect.PaginateQuerySQL(session.RewrittenSQL, params.PageSize, offset)
-	result, err := duckdb.ExecuteQuery(execCtx, session.Conn, paginatedSQL)
-	if err != nil {
-		return nil, err
+func federatedTableSelectFields(service *models.QueryService, params *QueryParams) (string, error) {
+	rawFields := ""
+	if params != nil {
+		rawFields = strings.TrimSpace(params.Fields)
 	}
+	fields := service.GetDefaultFields()
+	if rawFields != "" {
+		fields = strings.Split(rawFields, ",")
+	}
+	if len(fields) == 0 {
+		return "*", nil
+	}
+	dialect := sqldialect.ForEngine("duckdb")
+	quoted := make([]string, 0, len(fields))
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			return "", fmt.Errorf("query field must not be empty")
+		}
+		quoted = append(quoted, dialect.QuoteIdentifier(field))
+	}
+	return strings.Join(quoted, ", "), nil
+}
 
-	return &QueryResult{
-		Data: result.Rows,
-		Pagination: &Pagination{
-			Page:       params.Page,
-			PageSize:   params.PageSize,
-			Total:      total,
-			TotalPages: int((total + int64(params.PageSize) - 1) / int64(params.PageSize)),
-		},
-	}, nil
+func federatedCount(result *plugin.QueryResult) (int64, error) {
+	if result == nil || len(result.Rows) != 1 {
+		return 0, fmt.Errorf("federated count query returned an invalid result")
+	}
+	for _, value := range result.Rows[0] {
+		switch count := value.(type) {
+		case int64:
+			return count, nil
+		case float64:
+			return int64(count), nil
+		case json.Number:
+			return count.Int64()
+		}
+	}
+	return 0, fmt.Errorf("federated count query returned an invalid count")
+}
+
+func formatServiceEngineIDs(engineIDs []uint) []string {
+	values := make([]string, len(engineIDs))
+	for index, engineID := range engineIDs {
+		values[index] = strconv.FormatUint(uint64(engineID), 10)
+	}
+	return values
 }
 
 // executeTableQuery 执行表配置模式的查询

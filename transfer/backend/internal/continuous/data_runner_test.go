@@ -77,6 +77,37 @@ func TestDataSessionRunnerAppliesThenCommitsPartitionPosition(t *testing.T) {
 	}
 }
 
+func TestDataSessionRunnerScansPreparedContinuousTargetOnce(t *testing.T) {
+	reader := &fakeChangeStreamReader{}
+	target := &fakeChangeApplyProvider{}
+	states := &fakeContinuousStateStore{target: target}
+	progress := &fakeContinuousProgressStore{committed: make(chan repository.ContinuousProgress, 1)}
+	runner := continuousTestRunner(reader, target, states, progress)
+	claim := continuousRunnerClaim()
+	claim.Task.AutoScanMetadata = true
+
+	ctx, cancel := context.WithCancel(context.Background())
+	scanner := &fakePreparedTargetMetadataScanner{scan: func(_ context.Context, got repository.RuntimeLeaseClaim, plan *planner.ContinuousPlan) error {
+		if got.Task.ID != claim.Task.ID {
+			t.Fatalf("task ID = %d, want %d", got.Task.ID, claim.Task.ID)
+		}
+		if plan.Target.EngineID != 8 || plan.Target.Path.StringPath() != "public/orders" {
+			t.Fatalf("target = engine %d path %q", plan.Target.EngineID, plan.Target.Path.StringPath())
+		}
+		cancel()
+		return nil
+	}}
+	runner.MetadataScanner = scanner
+
+	err := runner.Run(ctx, claim)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v, want context.Canceled", err)
+	}
+	if scanner.calls != 1 {
+		t.Fatalf("metadata scan calls = %d, want 1", scanner.calls)
+	}
+}
+
 func TestDataSessionRunnerConsumesRegisteredPostgreSQLCDCGeneration(t *testing.T) {
 	targetCaps := (&postgresql.PostgreSQLPlugin{}).Capabilities()
 	resolver := planner.StaticEngineResolver{
@@ -414,6 +445,19 @@ func continuousRunnerClaim() repository.RuntimeLeaseClaim {
 		Execution: commonExecution.TaskExecution{ExecutionID: "exec-continuous"},
 		Lease:     models.RuntimeLease{TaskID: 42, OwnerInstanceID: "worker-a", FencingToken: 3},
 	}
+}
+
+type fakePreparedTargetMetadataScanner struct {
+	calls int
+	scan  func(context.Context, repository.RuntimeLeaseClaim, *planner.ContinuousPlan) error
+}
+
+func (s *fakePreparedTargetMetadataScanner) ScanPreparedTarget(ctx context.Context, claim repository.RuntimeLeaseClaim, plan *planner.ContinuousPlan) error {
+	s.calls++
+	if s.scan == nil {
+		return nil
+	}
+	return s.scan(ctx, claim, plan)
 }
 
 func continuousRunnerConfig() models.JSONMap {

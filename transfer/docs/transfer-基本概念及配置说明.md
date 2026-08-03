@@ -73,7 +73,7 @@ snapshot checkpoint 用于 progress / diagnostics，不表示可从 checkpoint �
 | 字段 | 必填 | 说明 |
 |---|---:|---|
 | `runtime` | 是 | 执行边界；当前 worker 只支持 `boundary=bounded`。 |
-| `load` | 是 | 装载方式；支持 `mode=snapshot` 和 PostgreSQL native table 的 `mode=incremental + change_detection.type=watermark`。 |
+| `load` | 是 | 装载方式；支持 `mode=snapshot` 和 PostgreSQL/MySQL native table 的 `mode=incremental + change_detection.type=watermark`。 |
 | `source` | 是 | 源 endpoint。 |
 | `target` | 是 | 目标 endpoint。 |
 | `transforms` | 否 | table batch transform 列表。 |
@@ -250,11 +250,11 @@ apply mode 是 Transfer policy；真实 upsert/delete 能力必须由目标 engi
 当前支持组合为：
 
 ```text
-PostgreSQL native table -> PostgreSQL/MySQL native table
+PostgreSQL/MySQL native table -> PostgreSQL/MySQL native table
 bounded + incremental + watermark + upsert
 ```
 
-配置必须声明 `load.change_detection.field`、非空 `tie_breaker`、`start=committed`、`end=execution_upper_bound`，并在 `target.policy.keys` 声明稳定目标键。watermark 字段不得为 NULL；tie breaker 必须唯一、稳定且不可变。每次 execution 在 PostgreSQL 一致性只读事务内冻结复合上界，只读取 `(committed_position, execution_upper_bound]` 并稳定排序。
+配置必须声明 `load.change_detection.field`、非空 `tie_breaker`、`start=committed`、`end=execution_upper_bound`，并在 `target.policy.keys` 声明稳定目标键。watermark 字段不得为 NULL；tie breaker 必须精确匹配非空主键或唯一约束，并且稳定、不可变。每次 execution 在源数据库的一致性快照内冻结复合上界，只读取 `(committed_position, execution_upper_bound]` 并稳定排序；MySQL 源必须是 InnoDB 基表，且当前不得包含空间字段。
 
 同步主状态存储在 `transfer.sync_states`。position 使用 `type=watermark`、`version=v1` 的 JSON；目标批次提交成功后才允许携带 `state_version` 和本次 fencing token 做 CAS 更新。重复应用必须由目标 `TableUpsertProvider` 幂等吸收：PostgreSQL 使用 `ON CONFLICT ... DO UPDATE`，MySQL 使用 InnoDB 事务内的 `ON DUPLICATE KEY UPDATE`。MySQL 目标的配置 keys 必须精确匹配非空主键或唯一约束，且目标表不得存在与配置 keys 不同的唯一约束。
 
@@ -310,7 +310,7 @@ MySQL CDC 固定支持 MySQL 8.0、有稳定非空主键的单表、`log_bin=ON`
 
 原 capture generation 的唯一恢复路线是人工确认 additive migration。`GET /task-definitions/:id/schema-change` 返回当前请求与服务端重新检查后的建议字段；只有当前阻塞消息实际包含、源表中仍存在、允许 NULL、不是主键且不是 geometry 的新增字段可审批。`POST /task-definitions/:id/schema-change/approve` 必须逐字段提交 `source`、`target`、`target_type` 和 `nullable=true`，完整覆盖本次新增字段。服务端复用 `PartitionedTableChangeApplyProvider` 幂等新增目标列，追加唯一 field mapping、递增 generation schema revision，并把任务收敛为 `status=idle, desired_state=paused`；审批不会隐式恢复，用户需通过既有 Resume 从原 committed offset 继续。删除字段、类型或主键变化、非 nullable/geometry 新增以及协议变化仍只能永久 Stop 后创建新任务和新目标表。
 
-审批提交后的 Meta deep scan 使用 request 持久化 `pending -> running(token, lease) -> success|failed` claim。并发审批只有一个调用者触发 Meta；进程崩溃留下的过期 `running` 只由相同重复审批 POST 接管，GET 始终只读，旧 token 的迟到结果被拒绝。真实 Meta 调用失败进入 `failed` 且不由重复审批自动重试，用户可在 Meta 手动扫描；claim TTL 由 `TRANSFER_SCHEMA_CHANGE_META_SCAN_CLAIM_TTL` 配置，默认 2 分钟。
+审批提交后的 Meta deep scan 使用 request 持久化 `pending -> running(token, lease) -> success|failed` claim。并发审批只有一个调用者触发 Meta；进程崩溃留下的过期 `running` 只由相同重复审批 POST 接管，GET 始终只读，旧 token 的迟到结果被拒绝。真实 Meta 调用失败进入 `failed` 且不由重复审批自动重试，用户可在 Meta 手动扫描；claim TTL 由统一的 `TRANSFER_META_SCAN_CLAIM_TTL` 配置，默认 2 分钟。
 
 `pause` 停止目标应用，但 connector 继续把 PostgreSQL WAL 或 MySQL binlog 变化写入 Infra Kafka并推进捕获位置。正常 pause 的主要代价是 Kafka backlog、磁盘和 retention 窗口；connector/Kafka 故障时还必须分别观测 PostgreSQL slot/WAL 或 MySQL binlog 保留风险。resume 只在 committed position 尚未过期时保证无损。
 
@@ -337,11 +337,16 @@ capture supervisor 已通过 Kafka Connect REST 和 Infra Kafka admin API 管理
 |---|---|
 | observable | 已支持，用于进度展示和故障定位。 |
 | restartable | 已支持 retry 从头重跑；append 拒绝。 |
-| resumable | PostgreSQL watermark incremental 通过 `transfer.sync_states` 支持 execution 间 resume；snapshot checkpoint 仍仅可观测。 |
+| resumable | PostgreSQL/MySQL watermark incremental 通过 `transfer.sync_states` 支持 execution 间 resume；snapshot checkpoint 仍仅可观测。 |
 
 ## 十一、写后 Meta 扫描
 
-成功写入后，如果 `auto_scan_metadata=true`，Transfer 触发 Meta deep scan。
+`auto_scan_metadata=true` 时，Transfer 按 runtime boundary 触发 Meta deep scan：
+
+- bounded execution 在成功写入后扫描一次。
+- continuous execution 不等待任务结束；目标 Provider 首次成功建立目标结构后，按 task `apply_identity` 提交一次目标父 catalog 扫描。空源表同样触发。
+- continuous 首次扫描使用持久化 claim 防止 worker recovery、resume 或并发实例重复提交；Meta 提交失败不阻断数据面，后续 runtime session 可重新领取。
+- 目标 schema 经正式审批发生变化后再次扫描；普通 DML、单条事件和单个 batch 不扫描。持续变化的行数等统计由低频计划扫描或手动刷新维护。
 
 Transfer 不直接推导目标文件 attributes。GeoJSON 导出目标使用独立 `format=geojson` 写出；写后扫描由 Meta 按统一格式探测和 GeoJSON provider 解析目标内容，负责写入 `type_info.table`、`format_info.geojson` 和实际存在的 `capabilities.spatial`。
 

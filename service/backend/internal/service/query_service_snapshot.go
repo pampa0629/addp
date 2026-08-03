@@ -12,7 +12,6 @@ import (
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
-	"github.com/addp/common/duckdb"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/service/internal/models"
@@ -36,7 +35,7 @@ func buildTableDependencySnapshot(item *commonModels.MetaItem, capturedAt time.T
 	spatial := datatype.SpatialInfoFromPayload(commonJSON.Section(item.Attributes, "capabilities.spatial"))
 
 	var objectTable *dataitem.ItemDescriptor
-	if descriptor, ok := duckdb.ObjectTableDescriptorFromMetaItem(*item); ok {
+	if descriptor, ok := objectTableDescriptorFromMetaItem(*item); ok {
 		projected := projectObjectTableDescriptor(descriptor)
 		objectTable = &projected
 	}
@@ -56,6 +55,17 @@ func buildTableDependencySnapshot(item *commonModels.MetaItem, capturedAt time.T
 	}
 	snapshot.DependencyHash = queryServiceDependencyHash(snapshot)
 	return snapshot, nil
+}
+
+func objectTableDescriptorFromMetaItem(item commonModels.MetaItem) (dataitem.ItemDescriptor, bool) {
+	if item.ItemType != "object" && item.ItemType != "file" {
+		return dataitem.ItemDescriptor{}, false
+	}
+	descriptor := dataitem.DescriptorFromAttributes(item.Attributes)
+	if descriptor.DataType != datatype.Table || strings.TrimSpace(descriptor.PhysicalPath) == "" {
+		return dataitem.ItemDescriptor{}, false
+	}
+	return descriptor, true
 }
 
 func buildSQLDependencySnapshot(sql string, contract *models.QueryServiceOutputContract, capturedAt time.Time) *models.QueryServiceDependencySnapshot {
@@ -129,21 +139,32 @@ func queryServiceDependencyHash(snapshot *models.QueryServiceDependencySnapshot)
 		objectTable = &projected
 	}
 	payload := struct {
-		QueryHash             string                       `json:"query_hash,omitempty"`
-		Table                 *datatype.TableInfo          `json:"table,omitempty"`
-		Spatial               *datatype.SpatialInfo        `json:"spatial,omitempty"`
-		ObjectTable           *dataitem.ItemDescriptor     `json:"object_table,omitempty"`
-		FederatedObjectTables map[string]map[string]string `json:"federated_object_tables,omitempty"`
+		QueryHash                string                       `json:"query_hash,omitempty"`
+		Table                    *datatype.TableInfo          `json:"table,omitempty"`
+		Spatial                  *datatype.SpatialInfo        `json:"spatial,omitempty"`
+		ObjectTable              *dataitem.ItemDescriptor     `json:"object_table,omitempty"`
+		FederatedSourceEngineIDs []uint                       `json:"federated_source_engine_ids,omitempty"`
+		FederatedObjectTables    map[string]map[string]string `json:"federated_object_tables,omitempty"`
 	}{
-		QueryHash:             snapshot.QueryHash,
-		Table:                 projectTableInfo(snapshot.Table),
-		Spatial:               spatial,
-		ObjectTable:           objectTable,
-		FederatedObjectTables: cloneObjectTableMap(snapshot.FederatedObjectTables),
+		QueryHash:                snapshot.QueryHash,
+		Table:                    projectTableInfo(snapshot.Table),
+		Spatial:                  spatial,
+		ObjectTable:              objectTable,
+		FederatedSourceEngineIDs: sortedEngineIDs(snapshot.FederatedSourceEngineIDs),
+		FederatedObjectTables:    cloneObjectTableMap(snapshot.FederatedObjectTables),
 	}
 	encoded, _ := json.Marshal(payload)
 	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:])
+}
+
+func sortedEngineIDs(input []uint) []uint {
+	if len(input) == 0 {
+		return nil
+	}
+	result := append([]uint(nil), input...)
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result
 }
 
 func cloneObjectTableMap(input map[string]map[string]string) map[string]map[string]string {

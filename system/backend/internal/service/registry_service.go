@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"strconv"
 	"strings"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/models"
@@ -42,7 +45,7 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 	if req.IsBuiltin {
 		// 内置引擎：通过 engine_type + is_builtin 查找
 		existing, err = s.resourceRepo.FindByEngineTypeAndBuiltin(ctx, req.EngineType)
-		if err != nil && err.Error() != "record not found" {
+		if err != nil && !errors.Is(err, commonapi.ErrNotFound) {
 			return 0, fmt.Errorf("failed to query existing resource: %w", err)
 		}
 	}
@@ -71,6 +74,7 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 			"is_builtin":      req.IsBuiltin,
 			"capabilities":    capabilitiesJSON,
 			"lifecycle_state": models.EngineLifecycleActive,
+			"connection_info": connectionInfo,
 		}
 
 		if err := s.resourceRepo.UpdateByID(ctx, existing.ID, updates); err != nil {
@@ -112,6 +116,46 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 	}
 
 	return resource.ID, nil
+}
+
+func (s *RegistryService) RegisterBuiltinRuntime(
+	ctx context.Context,
+	engineType, runtimeURL, description string,
+) (uint, error) {
+	connectionInfo, err := runtimeConnectionInfo(runtimeURL)
+	if err != nil {
+		return 0, err
+	}
+	return s.RegisterCapability(ctx, &models.CapabilityRegistrationRequest{
+		Name:           engineType,
+		EngineType:     engineType,
+		IsBuiltin:      true,
+		Description:    description,
+		ConnectionInfo: connectionInfo,
+	})
+}
+
+func runtimeConnectionInfo(rawURL string) (map[string]interface{}, error) {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" ||
+		parsed.User != nil || (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return nil, fmt.Errorf("invalid runtime URL %q", rawURL)
+	}
+	port := 80
+	if parsed.Scheme == "https" {
+		port = 443
+	}
+	if parsed.Port() != "" {
+		port, err = strconv.Atoi(parsed.Port())
+		if err != nil || port <= 0 || port > 65535 {
+			return nil, fmt.Errorf("invalid runtime URL port %q", parsed.Port())
+		}
+	}
+	return map[string]interface{}{
+		"protocol": parsed.Scheme,
+		"host":     parsed.Hostname(),
+		"port":     port,
+	}, nil
 }
 
 func (s *RegistryService) prepareRegistrationCapabilities(req *models.CapabilityRegistrationRequest) (*string, error) {

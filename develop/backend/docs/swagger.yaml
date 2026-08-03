@@ -80,6 +80,25 @@ definitions:
         example: manual
         type: string
     type: object
+  github_com_addp_develop_backend_internal_models.CreateNotebookSwaggerRequest:
+    properties:
+      description:
+        example: Exploratory analysis
+        type: string
+      engine_id:
+        example: 10
+        type: integer
+      kernel:
+        example: python3
+        type: string
+      name:
+        example: analysis
+        type: string
+    required:
+    - engine_id
+    - kernel
+    - name
+    type: object
   github_com_addp_develop_backend_internal_models.DAGEditorLayoutSwagger:
     properties:
       nodes:
@@ -129,7 +148,7 @@ definitions:
         enum:
         - sql
         - mql
-        - dsl
+        - cypher
         example: sql
         type: string
       workflow_definition:
@@ -142,11 +161,6 @@ definitions:
         type: integer
       engine_specific:
         $ref: '#/definitions/github_com_addp_develop_backend_internal_models.WorkflowEngineSpecificConfigSwagger'
-      query_mode:
-        enum:
-        - duckdb
-        example: duckdb
-        type: string
       type:
         example: workflow
         type: string
@@ -686,19 +700,6 @@ definitions:
     - operator
     - params
     type: object
-  github_com_addp_develop_backend_internal_service.DataSource:
-    properties:
-      engine_id:
-        type: integer
-      engine_name:
-        type: string
-      engine_type:
-        type: string
-      tables:
-        items:
-          $ref: '#/definitions/github_com_addp_develop_backend_internal_service.TableRef'
-        type: array
-    type: object
   github_com_addp_develop_backend_internal_service.KernelInfo:
     properties:
       display_name:
@@ -706,6 +707,17 @@ definitions:
       language:
         type: string
       name:
+        type: string
+    type: object
+  github_com_addp_develop_backend_internal_service.NotebookSession:
+    properties:
+      expires_at:
+        type: string
+      id:
+        type: string
+      task_id:
+        type: integer
+      url:
         type: string
     type: object
   github_com_addp_develop_backend_internal_service.PublicOperatorDescriptor:
@@ -785,32 +797,10 @@ definitions:
     - external_effect
     type: string
     x-enum-varnames:
-    - SQLExecutionEffectRead
-    - SQLExecutionEffectWrite
-    - SQLExecutionEffectDDL
-    - SQLExecutionEffectExternalEffect
-  github_com_addp_develop_backend_internal_service.TableRef:
-    properties:
-      engine_name:
-        type: string
-      fields:
-        items:
-          type: string
-        type: array
-      format:
-        type: string
-      item_type:
-        description: table
-        type: string
-      layout:
-        type: string
-      physical_path:
-        type: string
-      schema:
-        type: string
-      table:
-        type: string
-    type: object
+    - Read
+    - Write
+    - DDL
+    - ExternalEffect
   github_com_addp_develop_backend_internal_service.WorkflowValidationIssue:
     properties:
       code:
@@ -891,17 +881,6 @@ definitions:
         type: string
       workflow_engine_id:
         type: integer
-    type: object
-  internal_api.QueryMode:
-    properties:
-      description:
-        type: string
-      mode:
-        type: string
-      name:
-        type: string
-      query_type:
-        type: string
     type: object
   internal_api.WorkflowValidationRequest:
     properties:
@@ -1156,58 +1135,6 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - develop.task.read
-  /duckdb/sample-query:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: 获取 DuckDB 样例查询
-      tags:
-      - DuckDB
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - develop.task.read
-  /duckdb/sources:
-    get:
-      description: 返回当前租户下所有可通过 DuckDB 查询的数据源（对象存储表 + 关系型表）
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/github_com_addp_develop_backend_internal_service.DataSource'
-            type: array
-      summary: 获取联邦查询数据源
-      tags:
-      - DuckDB
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - develop.task.read
-  /duckdb/test:
-    get:
-      description: 执行 SELECT 1 验证 DuckDB 引擎可用
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      summary: 测试 DuckDB 连接
-      tags:
-      - DuckDB
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - develop.task.read
   /engines:
     get:
       produces:
@@ -1246,8 +1173,33 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无执行或数据读取权限 | Execution or data-read permission denied
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 授权状态冲突 | Authorization conflict
+          schema:
+            additionalProperties: true
+            type: object
+        "422":
+          description: 当前业务库没有可用真实样例 | No real sample data is available
+          schema:
+            additionalProperties: true
+            type: object
         "500":
           description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 授权服务不可用 | Authorization service unavailable
           schema:
             additionalProperties: true
             type: object
@@ -1258,7 +1210,8 @@ paths:
       - Query
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - develop.task.read
+      - develop.task.execute
+      - develop.data_read.execute
   /execute:
     post:
       consumes:
@@ -1528,6 +1481,43 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - develop.notebook.read
+  /notebook-kernel-sessions/{session_id}/engine-descriptors:
+    get:
+      description: 仅接受 Develop 注入当前隔离 Kernel 的短期 Notebook Kernel Capability Bearer；不接受用户或服务
+        Token。 | Only accepts the short-lived Notebook Kernel Capability Bearer injected
+        by Develop into the isolated Kernel; user and service tokens are not accepted.
+      parameters:
+      - description: Notebook 会话 ID | Notebook session ID
+        in: path
+        name: session_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 脱敏查询引擎描述列表 | Masked query engine descriptor list
+          schema:
+            items:
+              $ref: '#/definitions/models.EngineRuntimeDescriptor'
+            type: array
+        "401":
+          description: 会话能力无效或已过期 | Session capability is invalid or expired
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: 查询引擎发现失败 | Query engine discovery failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 获取 Notebook Kernel 可用查询引擎 | List query engines available to a Notebook
+        Kernel
+      tags:
+      - Notebook
+      x-addp-auth-mode: authenticated
   /notebooks:
     get:
       parameters:
@@ -1554,6 +1544,29 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - develop.notebook.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Notebook 创建参数 | Notebook creation parameters
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.CreateNotebookSwaggerRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 已创建的 Notebook | Created Notebook
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.UploadNotebookSwaggerResponse'
+      summary: 新建空白 Notebook | Create blank Notebook
+      tags:
+      - Notebook
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - develop.notebook.create
   /notebooks/:id:
     delete:
       parameters:
@@ -1645,6 +1658,50 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - develop.notebook.update
+  /notebooks/{id}/sessions:
+    post:
+      parameters:
+      - description: DevTask ID | DevTask ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Notebook 交互会话 | Notebook interactive session
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_service.NotebookSession'
+      summary: 创建 Notebook 交互会话 | Create Notebook interactive session
+      tags:
+      - Notebook
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - develop.notebook.update
+      - develop.task.read
+  /notebooks/{id}/sessions/{session_id}:
+    delete:
+      parameters:
+      - description: DevTask ID | DevTask ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 会话 ID | Session ID
+        in: path
+        name: session_id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+      summary: 关闭 Notebook 交互会话 | Close Notebook interactive session
+      tags:
+      - Notebook
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - develop.notebook.update
   /notebooks/upload:
     post:
       consumes:
@@ -1691,23 +1748,6 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - develop.notebook.create
-  /query-modes:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 查询模式列表 | Query mode list
-          schema:
-            items:
-              $ref: '#/definitions/internal_api.QueryMode'
-            type: array
-      summary: 获取 Develop 内置查询模式列表 | List Develop-owned query modes
-      tags:
-      - Engines
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - develop.task.read
   /spark-runtimes:
     get:
       produces:

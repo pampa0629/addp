@@ -12,7 +12,7 @@
 - `transfer/docs/transfer-基本概念及配置说明.md`
 - `transfer/docs/design.md`
 
-当前实现支持 bounded snapshot 的 `replace` / `append`、PostgreSQL bounded watermark incremental、业务 Kafka keyed JSON continuous upsert + `block|dead_letter`、业务 Kafka 显式 offset 范围到新 PostgreSQL 隔离表的 bounded replay，以及 PostgreSQL/MySQL 单表 CDC initial snapshot + upsert/delete。continuous/CDC 使用目标 monotonic apply、业务库 ledger、Infra state CAS 与 runtime fencing；replay 使用独立 execution-scoped apply identity，不读写主状态。
+当前实现支持 bounded snapshot 的 `replace` / `append`、PostgreSQL/MySQL bounded watermark incremental、业务 Kafka keyed JSON continuous upsert + `block|dead_letter`、业务 Kafka 显式 offset 范围到新 PostgreSQL 隔离表的 bounded replay，以及 PostgreSQL/MySQL 单表 CDC initial snapshot + upsert/delete。continuous/CDC 使用目标 monotonic apply、业务库 ledger、Infra state CAS 与 runtime fencing；replay 使用独立 execution-scoped apply identity，不读写主状态。
 
 ## 一、本文要解决的问题
 
@@ -1315,7 +1315,7 @@ target.policy.apply_mode
 
 分析：不同数据库的事务快照、时间类型和复合游标查询能力不同。如果第一版同时覆盖过多数据库，会把增量语义验证与方言适配混在一起。
 
-结论：第一版只支持 PostgreSQL native table，使用复合游标和数据库一致性读获得本次上界，并已通过真实并发写入集成测试验证相同 watermark 值不会漏读；验证稳定后再接 MySQL。只读副本未进入第一版，后续开放前必须明确最大复制延迟和 lookback 策略。
+结论：PostgreSQL 与 MySQL native table 都使用复合游标和数据库一致性读获得本次上界，并通过真实并发写入集成测试验证相同 watermark 值不会漏读。MySQL 只接受 InnoDB 基表，使用 `REPEATABLE READ` consistent snapshot；只读副本仍未开放，后续开放前必须明确最大复制延迟和 lookback 策略。
 
 ### 16.5 Replay 是否进入第一版（已确认）
 

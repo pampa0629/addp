@@ -240,12 +240,16 @@ services:
       - "${SPARK_THRIFT_PORT:-11000}:10000" # Thrift Server (SQL 接口)
     volumes:
       - ./spark:/opt/spark/conf
-    command: >
-      bash -c "
-        /opt/spark/sbin/start-master.sh &&
-        /opt/spark/sbin/start-thriftserver.sh --master spark://spark-master:7077 --conf spark.cores.max=1 --conf spark.executor.cores=1 --conf spark.executor.memory=1g &&
-        tail -f /dev/null
-      "
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        /opt/spark/sbin/start-master.sh
+        /opt/spark/sbin/start-thriftserver.sh --master spark://spark-master:7077 --conf spark.cores.max=1 --conf spark.executor.cores=1 --conf spark.executor.memory=1g
+        rm -f /tmp/addp-spark-sample-ready
+        /opt/spark/conf/init-test-data.sh >/tmp/addp-spark-sample-init.log 2>&1 &
+        exec tail -f /dev/null
     networks:
       - business-network
     healthcheck:

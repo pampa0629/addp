@@ -187,8 +187,18 @@ func validateComputeCapabilities(p EnginePlugin, compute *ComputeCapabilities) e
 		return nil
 	}
 	if compute.Query != nil && compute.Query.Supported {
-		if _, ok := p.(QueryRuntimeProvider); !ok {
-			return fmt.Errorf("%s declares query support but does not implement QueryRuntimeProvider", p.Type())
+		_, nativeQuery := p.(QueryRuntimeProvider)
+		_, federatedQuery := p.(FederatedQueryRuntimeProvider)
+		if !nativeQuery && !federatedQuery {
+			return fmt.Errorf("%s declares query support but does not implement a query runtime provider", p.Type())
+		}
+		if compute.Query.Federation != nil && compute.Query.Federation.Supported {
+			if !federatedQuery {
+				return fmt.Errorf("%s declares query federation but does not implement FederatedQueryRuntimeProvider", p.Type())
+			}
+			if compute.Query.Federation.RuntimeAPI == "" {
+				return fmt.Errorf("%s declares query federation without runtime_api", p.Type())
+			}
 		}
 		if Contains(compute.Query.ResultKinds, "graph") {
 			if _, ok := p.(GraphQueryProvider); !ok {
@@ -204,6 +214,9 @@ func validateComputeCapabilities(p EnginePlugin, compute *ComputeCapabilities) e
 	if compute.Script != nil && compute.Script.Supported {
 		if _, ok := p.(ScriptRuntimeProvider); !ok {
 			return fmt.Errorf("%s declares script support but does not implement ScriptRuntimeProvider", p.Type())
+		}
+		if compute.Script.Interactive && !Contains(compute.Script.Modes, "notebook") {
+			return fmt.Errorf("%s declares interactive script support without notebook mode", p.Type())
 		}
 	}
 	return nil
@@ -236,6 +249,12 @@ func validateProviderCapabilities(p EnginePlugin, caps EngineCapabilities) error
 	if _, ok := p.(QueryRuntimeProvider); ok {
 		if caps.Compute == nil || caps.Compute.Query == nil || !caps.Compute.Query.Supported {
 			return fmt.Errorf("%s implements QueryRuntimeProvider but does not declare query support", p.Type())
+		}
+	}
+	if _, ok := p.(FederatedQueryRuntimeProvider); ok {
+		if caps.Compute == nil || caps.Compute.Query == nil || !caps.Compute.Query.Supported ||
+			caps.Compute.Query.Federation == nil || !caps.Compute.Query.Federation.Supported {
+			return fmt.Errorf("%s implements FederatedQueryRuntimeProvider but does not declare query federation", p.Type())
 		}
 	}
 	if _, ok := p.(GraphQueryProvider); ok {

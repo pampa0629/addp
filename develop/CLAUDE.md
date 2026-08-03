@@ -18,10 +18,11 @@ Develop 模块是 ADDP 平台的**开发工作台**，负责以下核心功能�
 前端请求（SQL/工作流/Notebook）
   ↓
 DevExecutor（统一执行器）
-  ├─ SQL 执行 → SQLEngineService / DuckDBService
-  │  ├─ 通过 System 获取数据库连接
+  ├─ SQL 执行 → SQLEngineService / FederatedQueryService
+  │  ├─ 普通查询通过 System 获取单引擎执行期连接
   │  ├─ 普通 SQL 使用 common/dbbridge 执行查询
-  │  ├─ DuckDB 联邦查询使用 execution_config.query_mode="duckdb"
+  │  ├─ DuckDB 联邦查询按 execution_config.engine_id 解析真实 Runtime Engine
+  │  ├─ 独立 DuckDB Runtime 消费授权并取得各 Source Engine 连接
   │  └─ 返回查询结果
   ├─ 工作流执行 → WorkflowEngineService
   │  ├─ 解析工作流 JSON（DAG 结构）
@@ -74,9 +75,17 @@ TaskProvider、执行状态回查和 Asset 发现属于服务间接口，统一�
 - 当前 User AuthContext、owner Resource Rule/Policy、Engine 归属和执行效果共同决定 Execution Authorization；Engine 创建人和 Runtime Service Principal 都不是授权来源。
 - 异步执行只保存 Execution Authorization ID、发起 Principal、Tenant Membership、签发授权版本和脱敏效果/资源摘要，不保存 User Token、Service Token、明文连接或 Workflow Access Plan。
 - Jupyter 只通过 Develop 受控会话使用数据访问能力，不直接返回共享 Lab 数据访问入口，不注入长期明文 Engine 连接。
+- Notebook 交互编辑只允许 `POST /notebooks/{id}/sessions` 创建的短期隔离会话。Develop 返回同源 `/notebook-sessions/{session_id}/...` 路径并设置仅限该路径的 HttpOnly 能力 Cookie；浏览器不得获得 Runtime 地址、Jupyter Token、Service Token 或 URL Token。Develop 在代理 HTTP/WebSocket 前校验会话、Tenant、User、Task 和到期时间；会话关闭、过期或 Develop 重启后 fail-closed。
+- Notebook Kernel 获取当前可用查询 Engine 及其实时 Catalog 时，只允许使用 Develop 为同一交互会话签发的短期 Notebook Kernel Capability Token 调用该 Session 的只读 Engine Runtime Descriptor 与 Catalog 代理。Token 绑定 Session、Tenant、User、Task 与 TTL，Develop 只保存 Hash；Runtime 只注入隔离 Kernel process，不写入 Notebook、日志或公开会话响应。接口不得返回 `connection_info`，也不得把 Notebook Script Engine 或长期数据连接伪装成当前可用查询 Engine。
+- Notebook Session 创建时，Develop 必须在同步请求栈内使用当前 User Bearer 向 System 签发 Notebook Catalog Authorization，随后丢弃 User Bearer；只在内存 Session 保存授权 ID。后续 Catalog 请求由 `addp-develop` Service Principal 消费该用户派生授权，不能依赖自身通用 `system.engine.read`。授权绑定 Session、Tenant、User、Task、Token Family、授权版本和 TTL；关闭、过期、撤权、登出或 Develop 重启后 fail-closed。
+- Notebook Native Engine Facade 只存在于 `common-python`，按具体 Engine 原生术语把 `schemas()`、`tables()`、`collections()` 等调用编译为统一 Catalog 请求。Develop 不新增 PostgreSQL/MySQL/MongoDB/MinIO 专用目录 API，不自行拼接 `CatalogPath`，不为未知引擎提供暴露内部 Catalog 术语的 fallback。
+- Runtime 在交互会话创建时从任务绑定的 Notebook owner 路径装载文件，在关闭和 TTL 清理时原子保存回同一路径并终止 kernel/process。新建空白 Notebook 与上传 Notebook 都创建同一种 `script` 任务和 MinIO 对象，随后进入同一交互会话；不得恢复共享 Lab、直连 Runtime 或第二套 Notebook 实体。
 - Notebook 任务允许用户显式重绑定原任务的 Script Engine 和 Kernel。重绑定只更新任务定义并影响后续执行；历史执行保留创建时的 `execution_config` 快照，不复制任务或 Notebook 文件，也不自动选择替代引擎。
 - 算子工作流的存储 Engine 绑定来自 `content` 中的标准 ResourceLocator（主要位于 `workflow_definition`），不是 `execution_config.engine_id` 的工作流运行时绑定。Engine 删除后任务定义和旧 Locator 保留；用户在 Develop 显式选择新存储 Engine 后，Develop 原子改写该旧 Engine 的全部 Locator，保留 path/type 并清除旧 Meta `node_id/item_id`。System 不跨模块回写任务，也不按名称自动匹配新旧 Engine。
-- DuckDB 联邦查询和 Notebook 数据源注入在接入同一 Execution Authorization 消费路径前必须 fail-closed；不得用 `tenant.develop_runtime` 的通用 Engine 明文读取权限替代。
+- DuckDB 联邦查询先从 SQL 中解析已注册的 Source Engine 引用，为本次 execution 一次性签发只读 Execution Authorization，再由独立 DuckDB Runtime 按 Engine 逐个消费执行期连接；当前联邦查询必须至少引用一个 Source Engine。普通引擎的可执行样例查询也必须先签发并消费单 Engine 的只读 Execution Authorization，再实时发现真实表。两条路径都不得用 `tenant.develop_runtime` 的通用 Engine 明文读取权限替代。
+- 查询样例只允许来自当前 Engine Instance 的实时 Catalog 且必须指向确认有数据的 leaf；DuckDB 对象表还必须通过只读 Execution Authorization 取得执行期连接并真实读取成功，不能仅凭 Meta 条目存在就返回。Catalog 失败、对象已失效、无数据或无法构造查询时返回明确错误，前后端都不得回退到 `SELECT 1`、版本查询或占位集合名。
+- 查询编辑器必须把样例返回的真实语言（如 `sql`、`mql`、`cypher`）原样带入执行和任务定义。非 SQL 查询不得进入 SQL 效果分类器；各 Query Runtime 必须在 `QueryOptions.ReadOnly=true` 时建立等价只读边界。
+- Notebook 数据源注入在接入同一 Execution Authorization 消费路径前必须 fail-closed。
 
 ### IAM Permission
 
@@ -148,10 +157,6 @@ Develop 是 `develop.task.*` 和 `develop.notebook.*` 的 Permission owner；定
 curl -H "Authorization: Bearer <token>" \
   "http://localhost:8185/api/v1/develop/engines"
 
-# Develop 内置查询模式单独暴露；DuckDB 不作为 /develop/engines 的虚拟 Engine
-curl -H "Authorization: Bearer <token>" \
-  "http://localhost:8185/api/v1/develop/query-modes"
-
 # 1. 通过 API 执行普通引擎查询
 curl -X POST http://localhost:8185/api/v1/develop/execute \
   -H "Authorization: Bearer <token>" \
@@ -159,7 +164,7 @@ curl -X POST http://localhost:8185/api/v1/develop/execute \
   -d '{
     "content": {
       "query_type": "sql",
-      "query": "SELECT * FROM public.cities LIMIT 10"
+      "query": "<sample-query 返回的 query>"
     },
     "execution_config": {
       "engine_id": 1
@@ -167,17 +172,17 @@ curl -X POST http://localhost:8185/api/v1/develop/execute \
     "timeout": 30
   }'
 
-# DuckDB 联邦查询使用同一执行入口
+# DuckDB 联邦查询使用同一执行入口和真实 Runtime Engine ID
 curl -X POST http://localhost:8185/api/v1/develop/execute \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
     "content": {
       "query_type": "sql",
-      "query": "SELECT * FROM postgres_main.public.cities LIMIT 10"
+      "query": "SELECT * FROM <source_engine>.<schema>.<table> LIMIT 10"
     },
     "execution_config": {
-      "query_mode": "duckdb"
+      "engine_id": 2
     },
     "timeout": 30
   }'

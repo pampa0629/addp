@@ -3,6 +3,7 @@ package iam
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,10 +14,16 @@ import (
 	"github.com/lib/pq"
 )
 
+var serviceDefinitionVersionPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
 const (
-	defaultExecutionAuthorizationTTL = 15 * time.Minute
-	maximumExecutionAuthorizationTTL = time.Hour
-	developExecutionPermission       = "develop.task.execute"
+	defaultExecutionAuthorizationTTL              = 15 * time.Minute
+	maximumExecutionAuthorizationTTL              = time.Hour
+	developExecutionPermission                    = "develop.task.execute"
+	serviceQuerySamplePermission                  = "service.definition.create"
+	serviceDataReadPermission                     = "service.data_read.execute"
+	executionAuthorizationSourceUser              = "user"
+	executionAuthorizationSourceServiceDefinition = "service_definition"
 )
 
 var (
@@ -34,6 +41,8 @@ var executionEffectPermissions = map[string]string{
 
 var executionAudienceClients = map[string]string{
 	"develop": "addp-develop",
+	"duckdb":  "addp-duckdb",
+	"service": "addp-service",
 }
 
 type IssueExecutionAuthorizationInput struct {
@@ -59,6 +68,18 @@ type IssueExecutionAuthorizationFromExecutionInput struct {
 	Audit              AuditMetadata
 }
 
+type IssueExecutionAuthorizationFromServiceDefinitionInput struct {
+	ExecutionID        uuid.UUID
+	EngineIDs          []int64
+	DefinitionID       int64
+	DefinitionVersion  string
+	ServicePrincipalID int64
+	ServiceClientID    string
+	TenantID           int64
+	ExpiresIn          time.Duration
+	Audit              AuditMetadata
+}
+
 type IssuedExecutionAuthorization struct {
 	ID                         int64
 	ExecutionID                uuid.UUID
@@ -70,6 +91,9 @@ type IssuedExecutionAuthorization struct {
 	TenantID                   int64
 	TenantMembershipID         int64
 	IssuedAuthorizationVersion int64
+	SourceType                 string
+	SourceDefinitionID         *int64
+	SourceDefinitionVersion    *string
 }
 
 type AuthorizeExecutionEngineAccessInput struct {
@@ -169,6 +193,7 @@ func (s *ExecutionAuthorizationService) Issue(
 			ActorPrincipalID: principal.ID, TenantID: *lockedSnapshot.TenantID,
 			TenantMembershipID:         *lockedSnapshot.TenantMembershipID,
 			IssuedAuthorizationVersion: principal.AuthorizationVersion,
+			SourceType:                 executionAuthorizationSourceUser,
 			ExecutionID:                input.ExecutionID, Audience: audience,
 			Effects:   pq.StringArray(append([]string(nil), effects...)),
 			EngineIDs: pq.Int64Array(append([]int64(nil), engineIDs...)),
@@ -206,6 +231,106 @@ func (s *ExecutionAuthorizationService) Issue(
 			ExpiresAt: expiresAt, ActorPrincipalID: principal.ID, TenantID: *lockedSnapshot.TenantID,
 			TenantMembershipID:         *lockedSnapshot.TenantMembershipID,
 			IssuedAuthorizationVersion: principal.AuthorizationVersion,
+			SourceType:                 executionAuthorizationSourceUser,
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return issued, nil
+}
+
+func (s *ExecutionAuthorizationService) IssueFromServiceDefinition(
+	ctx context.Context,
+	input IssueExecutionAuthorizationFromServiceDefinitionInput,
+) (*IssuedExecutionAuthorization, error) {
+	if s == nil || s.repository == nil {
+		return nil, fmt.Errorf("%w: execution authorization service is required", commonapi.ErrBadRequest)
+	}
+	if input.ExpiresIn == 0 {
+		input.ExpiresIn = time.Minute
+	}
+	audience, engineIDs, effects, ttl, err := normalizeExecutionAuthorizationRequest(
+		"duckdb", input.ExecutionID, input.EngineIDs, []string{"read"}, input.ExpiresIn,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if input.DefinitionID <= 0 || !serviceDefinitionVersionPattern.MatchString(input.DefinitionVersion) ||
+		input.ServicePrincipalID <= 0 || input.ServiceClientID != "addp-service" || input.TenantID <= 0 {
+		return nil, ErrExecutionAuthorizationPermissionDenied
+	}
+	if ttl > time.Minute {
+		return nil, fmt.Errorf("%w: service definition authorization exceeds one minute", commonapi.ErrBadRequest)
+	}
+	var issued *IssuedExecutionAuthorization
+	err = s.repository.Transaction(ctx, func(tx *Repository) error {
+		principal, err := tx.LockPrincipal(ctx, input.ServicePrincipalID)
+		if err != nil {
+			return ErrExecutionAuthorizationUnavailable
+		}
+		membership, err := tx.LockTenantMembership(ctx, input.TenantID, input.ServicePrincipalID)
+		if err != nil {
+			return ErrExecutionAuthorizationUnavailable
+		}
+		tenant, err := tx.LockTenant(ctx, input.TenantID)
+		if err != nil {
+			return ErrExecutionAuthorizationUnavailable
+		}
+		now, err := tx.CurrentDatabaseTime(ctx)
+		if err != nil {
+			return err
+		}
+		if principal.PrincipalType != PrincipalTypeServicePrincipal || principal.Status != PrincipalStatusActive ||
+			membership.Status != TenantMembershipStatusActive || membership.TenantID != input.TenantID ||
+			membership.PrincipalID != principal.ID || tenant.Status != TenantStatusActive {
+			return ErrExecutionAuthorizationUnavailable
+		}
+		for _, engineID := range engineIDs {
+			available, err := tx.ExecutionAuthorizationEngineAvailable(ctx, input.TenantID, engineID)
+			if err != nil {
+				return err
+			}
+			if !available {
+				return ErrExecutionAuthorizationUnavailable
+			}
+		}
+		expiresAt := now.UTC().Add(ttl)
+		definitionID := input.DefinitionID
+		definitionVersion := input.DefinitionVersion
+		authorization := &ExecutionAuthorization{
+			ActorPrincipalID: principal.ID, TenantID: input.TenantID,
+			TenantMembershipID: membership.ID, IssuedAuthorizationVersion: principal.AuthorizationVersion,
+			SourceType:         executionAuthorizationSourceServiceDefinition,
+			SourceDefinitionID: &definitionID, SourceDefinitionVersion: &definitionVersion,
+			ExecutionID: input.ExecutionID, Audience: audience,
+			Effects: pq.StringArray(effects), EngineIDs: pq.Int64Array(engineIDs),
+			ExpiresAt: expiresAt, CreatedAt: now.UTC(),
+		}
+		if err := tx.CreateExecutionAuthorization(ctx, authorization); err != nil {
+			return err
+		}
+		if err := NewAuditWriter(tx).Write(ctx, AuditEvent{
+			Metadata: input.Audit, EventName: "iam.execution_authorization.issued_from_service_definition",
+			Result: AuditResultSucceeded, RiskLevel: AuditRiskLow, ModuleName: "system",
+			EntityType: "execution_authorization", EntityID: strconv.FormatInt(authorization.ID, 10),
+			Details: map[string]any{
+				"audience": audience, "execution_id": input.ExecutionID.String(),
+				"definition_id":      strconv.FormatInt(input.DefinitionID, 10),
+				"definition_version": input.DefinitionVersion,
+				"engine_ids":         formatExecutionEngineIDs(engineIDs), "effects": effects,
+			},
+		}); err != nil {
+			return err
+		}
+		issued = &IssuedExecutionAuthorization{
+			ID: authorization.ID, ExecutionID: input.ExecutionID, Audience: audience,
+			EngineIDs: append([]int64(nil), engineIDs...), Effects: append([]string(nil), effects...),
+			ExpiresAt: expiresAt, ActorPrincipalID: principal.ID, TenantID: input.TenantID,
+			TenantMembershipID: membership.ID, IssuedAuthorizationVersion: principal.AuthorizationVersion,
+			SourceType:         executionAuthorizationSourceServiceDefinition,
+			SourceDefinitionID: &definitionID, SourceDefinitionVersion: &definitionVersion,
 		}
 		return nil
 	})
@@ -229,6 +354,9 @@ func (s *ExecutionAuthorizationService) IssueFromExecution(
 		return nil, err
 	}
 	expectedClientID := executionAudienceClients[audience]
+	if audience == "duckdb" {
+		expectedClientID = "addp-develop"
+	}
 	if input.ParentExecutionID == uuid.Nil || input.ServicePrincipalID <= 0 || input.TenantID <= 0 ||
 		input.ServiceClientID != expectedClientID {
 		return nil, ErrExecutionAuthorizationPermissionDenied
@@ -276,6 +404,7 @@ func (s *ExecutionAuthorizationService) IssueFromExecution(
 			ActorPrincipalID: principal.ID, TenantID: provenance.TenantID,
 			TenantMembershipID:         membership.ID,
 			IssuedAuthorizationVersion: principal.AuthorizationVersion,
+			SourceType:                 executionAuthorizationSourceUser,
 			ExecutionID:                input.ExecutionID, Audience: audience,
 			Effects:   pq.StringArray(append([]string(nil), effects...)),
 			EngineIDs: pq.Int64Array(append([]int64(nil), engineIDs...)),
@@ -303,6 +432,7 @@ func (s *ExecutionAuthorizationService) IssueFromExecution(
 			EngineIDs: append([]int64(nil), engineIDs...), Effects: append([]string(nil), effects...),
 			ExpiresAt: expiresAt, ActorPrincipalID: principal.ID, TenantID: provenance.TenantID,
 			TenantMembershipID: membership.ID, IssuedAuthorizationVersion: principal.AuthorizationVersion,
+			SourceType: executionAuthorizationSourceUser,
 		}
 		return nil
 	})
@@ -339,10 +469,7 @@ func (s *ExecutionAuthorizationService) AuthorizeEngineAccess(
 		if err != nil {
 			return err
 		}
-		principal, membership, now, err := lockAndValidateExecutionActor(
-			ctx, tx, authorization.ActorPrincipalID, authorization.TenantMembershipID,
-			authorization.TenantID, authorization.IssuedAuthorizationVersion,
-		)
+		principal, membership, now, err := lockAndValidateExecutionSource(ctx, tx, authorization)
 		if err != nil {
 			return err
 		}
@@ -357,15 +484,17 @@ func (s *ExecutionAuthorizationService) AuthorizeEngineAccess(
 			return ErrExecutionAuthorizationPermissionDenied
 		}
 
-		permissionRows, err := tx.ListEffectiveRoleAssignmentPermissions(
-			ctx, principal.ID, principal.PrincipalType, ContextTypeTenant,
-			&membership.TenantID, &membership.ID, now,
-		)
-		if err != nil {
-			return err
-		}
-		if !containsAllExecutionPermissions(permissionRows, authorization.Audience, requiredEffects) {
-			return ErrExecutionAuthorizationPermissionDenied
+		if authorization.SourceType == executionAuthorizationSourceUser {
+			permissionRows, err := tx.ListEffectiveRoleAssignmentPermissions(
+				ctx, principal.ID, principal.PrincipalType, ContextTypeTenant,
+				&membership.TenantID, &membership.ID, now,
+			)
+			if err != nil {
+				return err
+			}
+			if !containsAllExecutionPermissions(permissionRows, authorization.Audience, requiredEffects) {
+				return ErrExecutionAuthorizationPermissionDenied
+			}
 		}
 		engineAvailable, err := tx.ExecutionAuthorizationEngineAvailable(ctx, input.TenantID, input.EngineID)
 		if err != nil {
@@ -400,6 +529,47 @@ func (s *ExecutionAuthorizationService) AuthorizeEngineAccess(
 		return nil, err
 	}
 	return authorized, nil
+}
+
+func lockAndValidateExecutionSource(
+	ctx context.Context,
+	repository *Repository,
+	authorization *ExecutionAuthorization,
+) (*Principal, *TenantMembership, time.Time, error) {
+	if authorization == nil {
+		return nil, nil, time.Time{}, ErrExecutionAuthorizationUnavailable
+	}
+	if authorization.SourceType == executionAuthorizationSourceUser {
+		return lockAndValidateExecutionActor(ctx, repository, authorization.ActorPrincipalID,
+			authorization.TenantMembershipID, authorization.TenantID, authorization.IssuedAuthorizationVersion)
+	}
+	if authorization.SourceType != executionAuthorizationSourceServiceDefinition ||
+		authorization.SourceDefinitionID == nil || authorization.SourceDefinitionVersion == nil {
+		return nil, nil, time.Time{}, ErrExecutionAuthorizationUnavailable
+	}
+	principal, err := repository.LockPrincipal(ctx, authorization.ActorPrincipalID)
+	if err != nil {
+		return nil, nil, time.Time{}, ErrExecutionAuthorizationUnavailable
+	}
+	membership, err := repository.LockTenantMembershipByID(ctx, authorization.TenantMembershipID)
+	if err != nil {
+		return nil, nil, time.Time{}, ErrExecutionAuthorizationUnavailable
+	}
+	tenant, err := repository.LockTenant(ctx, authorization.TenantID)
+	if err != nil {
+		return nil, nil, time.Time{}, ErrExecutionAuthorizationUnavailable
+	}
+	now, err := repository.CurrentDatabaseTime(ctx)
+	if err != nil {
+		return nil, nil, time.Time{}, err
+	}
+	if principal.PrincipalType != PrincipalTypeServicePrincipal || principal.Status != PrincipalStatusActive ||
+		principal.AuthorizationVersion != authorization.IssuedAuthorizationVersion ||
+		membership.PrincipalID != principal.ID || membership.TenantID != authorization.TenantID ||
+		membership.Status != TenantMembershipStatusActive || tenant.Status != TenantStatusActive {
+		return nil, nil, time.Time{}, ErrExecutionAuthorizationUnavailable
+	}
+	return principal, membership, now.UTC(), nil
 }
 
 func lockAndValidateExecutionActor(
@@ -525,20 +695,36 @@ func containsAllExecutionPermissions(
 	for _, row := range rows {
 		available[row.PermissionKey] = struct{}{}
 	}
-	if audience == "develop" {
+	containsDevelopBoundary := func() bool {
 		if _, exists := available[developExecutionPermission]; !exists {
 			return false
 		}
-	} else {
-		return false
+		for _, effect := range effects {
+			if _, exists := available[executionEffectPermissions[effect]]; !exists {
+				return false
+			}
+		}
+		return true
 	}
-	for _, effect := range effects {
-		permission := executionEffectPermissions[effect]
-		if _, exists := available[permission]; !exists {
+	containsServiceSampleBoundary := func() bool {
+		if len(effects) != 1 || effects[0] != "read" {
 			return false
 		}
+		_, canCreate := available[serviceQuerySamplePermission]
+		_, canRead := available[serviceDataReadPermission]
+		return canCreate && canRead
 	}
-	return true
+
+	switch audience {
+	case "develop":
+		return containsDevelopBoundary()
+	case "service":
+		return containsServiceSampleBoundary()
+	case "duckdb":
+		return containsDevelopBoundary() || containsServiceSampleBoundary()
+	default:
+		return false
+	}
 }
 
 func containsExecutionEngine(engineIDs []int64, required int64) bool {

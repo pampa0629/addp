@@ -3,7 +3,9 @@ package dbbridge
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -869,59 +871,84 @@ func SupportsDirectQuery(engineType string) bool {
 	return false
 }
 
-// GenerateSampleQuery 生成该引擎一个可直接执行的样例查询
-func GenerateSampleQuery(ctx context.Context, engine *models.Engine) (query string, language string) {
+var ErrSampleQueryUnavailable = errors.New("当前引擎没有可生成样例查询的真实数据")
+
+// GenerateSampleQuery 从当前引擎的实时 Catalog 生成一个可直接执行的样例查询。
+func GenerateSampleQuery(ctx context.Context, engine *models.Engine) (query string, language string, err error) {
+	if engine == nil {
+		return "", "", fmt.Errorf("%w: 引擎不能为空", ErrSampleQueryUnavailable)
+	}
 	engineType := strings.ToLower(engine.EngineType)
 
 	sampleCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	p, err := plugin.Get(engineType)
-	if err == nil {
-		connInfo := plugin.ConnectionInfo(engine.ConnectionInfo)
+	if err != nil {
+		return "", "", fmt.Errorf("%w: %v", ErrSampleQueryUnavailable, err)
+	}
+	connInfo := plugin.ConnectionInfo(engine.ConnectionInfo)
 
-		// SQL 表格引擎优先通过实时 Catalog 发现真实数据表，避免默认示例生成不可执行的占位 SQL。
-		if _, ok := p.(plugin.SQLQueryRuntimeProvider); ok {
-			if cp, ok := p.(plugin.CatalogProvider); ok {
-				if q, ok := generateCatalogSampleQuery(sampleCtx, p, cp, connInfo, engine.ID, engineType); ok {
-					return q, "sql"
-				}
-			}
-			return "SELECT 1", "sql"
+	if _, ok := p.(plugin.SQLQueryRuntimeProvider); ok {
+		cp, ok := p.(plugin.CatalogProvider)
+		if !ok {
+			return "", "", fmt.Errorf("%w: 引擎未提供实时 Catalog", ErrSampleQueryUnavailable)
 		}
-
-		// 原生查询引擎（MongoDB/Neo4j 等）：插件自带 GenerateSampleQuery。
-		if qp, ok := p.(plugin.QueryRuntimeProvider); ok {
-			return qp.GenerateSampleQuery(sampleCtx, connInfo, plugin.SampleQueryOptions{})
+		q, catalogErr := generateCatalogSampleQuery(sampleCtx, p, cp, connInfo, engine.ID, engineType)
+		if catalogErr != nil {
+			return "", "", catalogErr
 		}
-
-		// 非 QueryRuntime 的表格引擎兜底仍通过 CatalogProvider 发现第一张可查询表。
-		if cp, ok := p.(plugin.CatalogProvider); ok {
-			if q, ok := generateCatalogSampleQuery(sampleCtx, p, cp, connInfo, engine.ID, engineType); ok {
-				return q, "sql"
-			}
-		}
+		return q, "sql", nil
 	}
 
-	return "SELECT 1", "sql"
+	qp, ok := p.(plugin.QueryRuntimeProvider)
+	if !ok {
+		return "", "", fmt.Errorf("%w: 引擎未提供查询运行时", ErrSampleQueryUnavailable)
+	}
+	q, language := qp.GenerateSampleQuery(sampleCtx, connInfo, plugin.SampleQueryOptions{})
+	if strings.TrimSpace(q) == "" || strings.TrimSpace(language) == "" {
+		return "", "", ErrSampleQueryUnavailable
+	}
+	return q, language, nil
 }
 
-func generateCatalogSampleQuery(ctx context.Context, enginePlugin plugin.EnginePlugin, cp plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engineID uint, engineType string) (string, bool) {
+// GenerateExecutableSampleQuery returns a real catalog-based sample only after
+// the same read-only runtime path has produced at least one row.
+func GenerateExecutableSampleQuery(ctx context.Context, engine *models.Engine, requiredLanguage string) (string, string, error) {
+	query, language, err := GenerateSampleQuery(ctx, engine)
+	if err != nil {
+		return "", "", err
+	}
+	if requiredLanguage != "" && !strings.EqualFold(language, requiredLanguage) {
+		return "", "", fmt.Errorf("%w: 查询语言 %s 不受当前入口支持", ErrSampleQueryUnavailable, language)
+	}
+	result, err := ExecuteReadOnlyRuntimeQuery(ctx, engine, language, query)
+	if err != nil {
+		return "", "", fmt.Errorf("%w: 样例查询执行失败: %v", ErrSampleQueryUnavailable, err)
+	}
+	if result == nil || len(result.Rows) == 0 {
+		return "", "", fmt.Errorf("%w: 样例查询没有返回数据", ErrSampleQueryUnavailable)
+	}
+	return query, language, nil
+}
+
+func generateCatalogSampleQuery(ctx context.Context, enginePlugin plugin.EnginePlugin, cp plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engineID uint, engineType string) (string, error) {
 	modelProvider, ok := enginePlugin.(plugin.CatalogModelProvider)
 	if !ok {
-		return "", false
+		return "", fmt.Errorf("%w: 引擎未声明 Catalog 模型", ErrSampleQueryUnavailable)
 	}
 	model := modelProvider.CatalogModel()
 	if plugin.CatalogLeafTerm(model) != plugin.CatalogTermTable {
-		return "", false
+		return "", fmt.Errorf("%w: Catalog leaf 不是表", ErrSampleQueryUnavailable)
 	}
 
 	namespaces, err := cp.ListChildren(ctx, connInfo, plugin.CatalogRootPath(model, engineID), plugin.ListOptions{})
 	if err != nil {
-		return "", false
+		return "", fmt.Errorf("%w: 列出 Catalog namespace 失败: %v", ErrSampleQueryUnavailable, err)
 	}
 
-	var fallbackNamespace, fallbackItem string
+	resource := &plugin.Engine{ID: engineID, EngineType: engineType, ConnectionInfo: connInfo}
+	foundTable := false
 	for _, namespace := range namespaces {
 		if namespace.Role != plugin.CatalogRoleBranch {
 			continue
@@ -929,28 +956,28 @@ func generateCatalogSampleQuery(ctx context.Context, enginePlugin plugin.EngineP
 
 		items, err := cp.ListChildren(ctx, connInfo, namespace.Path, plugin.ListOptions{})
 		if err != nil {
-			continue
+			return "", fmt.Errorf("%w: 列出 Catalog leaf 失败: %v", ErrSampleQueryUnavailable, err)
 		}
 
 		for _, item := range items {
 			if item.Role != plugin.CatalogRoleLeaf {
 				continue
 			}
-
-			if fallbackItem == "" {
-				fallbackNamespace = namespace.Name
-				fallbackItem = item.Name
-			}
+			foundTable = true
 			if catalogEntryRowCount(item) > 0 {
-				return tableSampleSQL(engineType, namespace.Name, item.Name), true
+				return tableSampleSQL(engineType, namespace.Name, item.Name), nil
+			}
+			count, countErr := plugin.CountCatalogItemRows(ctx, resource, item.Path)
+			if countErr == nil && count > 0 {
+				return tableSampleSQL(engineType, namespace.Name, item.Name), nil
 			}
 		}
 	}
 
-	if fallbackItem != "" {
-		return tableSampleSQL(engineType, fallbackNamespace, fallbackItem), true
+	if foundTable {
+		return "", fmt.Errorf("%w: Catalog 中没有有数据的表", ErrSampleQueryUnavailable)
 	}
-	return "", false
+	return "", fmt.Errorf("%w: Catalog 中没有表", ErrSampleQueryUnavailable)
 }
 
 func tableSampleSQL(engineType, namespace, table string) string {
@@ -1036,7 +1063,7 @@ func ExecuteGraphQuery(ctx context.Context, engine *models.Engine, query string)
 // rejected instead of falling back to an ordinary privileged connection.
 func SupportsReadOnlySQLExecution(engineType string) bool {
 	switch strings.ToLower(strings.TrimSpace(engineType)) {
-	case "postgresql", "mysql":
+	case "postgresql", "mysql", "doris", "spark":
 		return true
 	default:
 		return false
@@ -1049,6 +1076,19 @@ func SupportsReadOnlySQLExecution(engineType string) bool {
 func ExecuteReadOnlyQuery(ctx context.Context, engine *models.Engine, query string) (*plugin.QueryResult, error) {
 	if engine == nil || !SupportsReadOnlySQLExecution(engine.EngineType) {
 		return nil, fmt.Errorf("引擎不支持受控只读 SQL 执行")
+	}
+	if strings.EqualFold(engine.EngineType, "spark") || strings.EqualFold(engine.EngineType, "doris") {
+		p, err := plugin.Get(engine.EngineType)
+		if err != nil {
+			return nil, err
+		}
+		sqlRuntime, ok := p.(plugin.SQLQueryRuntimeProvider)
+		if !ok {
+			return nil, fmt.Errorf("%s 引擎未提供 SQL 查询运行时", engine.EngineType)
+		}
+		return sqlRuntime.ExecuteSQL(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), query, plugin.QueryOptions{
+			EngineID: engine.ID, EngineType: engine.EngineType, ReadOnly: true,
+		})
 	}
 	db, err := GetOrCreatePool(engine, DefaultPoolConfig())
 	if err != nil {
@@ -1082,6 +1122,33 @@ func ExecuteReadOnlyQuery(ctx context.Context, engine *models.Engine, query stri
 	}
 	committed = true
 	return result, nil
+}
+
+// ExecuteReadOnlyRuntimeQuery executes a non-SQL query through the engine's
+// native QueryRuntimeProvider. The provider must enforce QueryOptions.ReadOnly.
+func ExecuteReadOnlyRuntimeQuery(ctx context.Context, engine *models.Engine, language, query string) (*plugin.QueryResult, error) {
+	if engine == nil {
+		return nil, fmt.Errorf("引擎不能为空")
+	}
+	p, err := plugin.Get(engine.EngineType)
+	if err != nil {
+		return nil, err
+	}
+	qp, ok := p.(plugin.QueryRuntimeProvider)
+	if !ok {
+		return nil, fmt.Errorf("引擎不支持普通查询运行时")
+	}
+	language = strings.ToLower(strings.TrimSpace(language))
+	if language == "" || !slices.Contains(qp.QueryLanguages(), language) {
+		return nil, fmt.Errorf("引擎不支持查询语言: %s", language)
+	}
+	return qp.ExecuteRuntimeQuery(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.QueryRequest{
+		Language: language,
+		Query:    query,
+		Options: plugin.QueryOptions{
+			EngineID: engine.ID, EngineType: engine.EngineType, ReadOnly: true,
+		},
+	})
 }
 
 // ExecuteStatement executes one non-read SQL statement and returns affected

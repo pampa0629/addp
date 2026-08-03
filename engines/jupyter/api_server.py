@@ -20,6 +20,12 @@ from minio import Minio
 # 加载配置
 from config import config
 from addp_common.auth import resolve_authorization_context
+from interactive_sessions import (
+    InteractiveSessionManager,
+    SessionConflictError,
+    SessionNotFoundError,
+    SessionValidationError,
+)
 
 # 配置日志
 logging.basicConfig(
@@ -53,6 +59,12 @@ except Exception as e:
     minio_client = None
 
 app = Flask(__name__)
+interactive_session_manager = InteractiveSessionManager(
+    minio_client,
+    config.MINIO_BUCKET,
+    config.WORKSPACE_DIR,
+    config.SESSION_TTL_SECONDS,
+)
 
 
 def require_develop_service(handler):
@@ -272,6 +284,40 @@ def list_kernels():
             'status': 'error',
             'message': str(e)
         }), 500
+
+
+@app.route('/api/interactive-sessions', methods=['POST'])
+@require_develop_service
+def create_interactive_session():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'status': 'error', 'message': 'request body must be a JSON object'}), 400
+    if data.get('tenant_id') != g.authorization_context.tenant_id:
+        return jsonify({'status': 'error', 'message': 'tenant context mismatch'}), 403
+    runtime_host = request.host.rsplit(':', 1)[0]
+    try:
+        session = interactive_session_manager.create(data, runtime_host)
+    except SessionValidationError as exc:
+        return jsonify({'status': 'error', 'message': str(exc)}), 400
+    except SessionConflictError as exc:
+        return jsonify({'status': 'error', 'message': str(exc)}), 409
+    except Exception as exc:
+        logger.exception('failed to create interactive notebook session')
+        return jsonify({'status': 'error', 'message': str(exc)}), 500
+    return jsonify({'status': 'success', **session.response()}), 201
+
+
+@app.route('/api/interactive-sessions/<session_id>', methods=['DELETE'])
+@require_develop_service
+def close_interactive_session(session_id):
+    try:
+        interactive_session_manager.close(session_id, g.authorization_context.tenant_id)
+    except SessionNotFoundError:
+        return jsonify({'status': 'error', 'message': 'interactive session not found'}), 404
+    except Exception as exc:
+        logger.exception('failed to close interactive notebook session id=%s', session_id)
+        return jsonify({'status': 'error', 'message': str(exc)}), 500
+    return '', 204
 
 if __name__ == '__main__':
     logger.info(f"启动 Jupyter Engine API Server (端口: {config.API_PORT})...")

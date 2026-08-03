@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: system
-manifest_version: 11
+manifest_version: 12
 permissions:
   - key: audit.event.export
     allowed_scope_types: [platform]
@@ -874,6 +874,14 @@ permissions:
     status: active
     name_i18n_key: permissions.system.engine_descriptor.read.name
     description_i18n_key: permissions.system.engine_descriptor.read.description
+  - key: system.execution_authorization.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.execution_authorization.create.name
+    description_i18n_key: permissions.system.execution_authorization.create.description
   - key: system.execution_authorization.execute
     allowed_scope_types: [tenant]
     risk_level: high

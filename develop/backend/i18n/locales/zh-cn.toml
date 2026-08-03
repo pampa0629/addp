@@ -32,10 +32,10 @@ other = "登录状态已失效，请重新登录"
 other = "无法可靠判断该 SQL 的执行效果，请改为单条受支持语句"
 
 [develop.query.controlled_engine_unsupported]
-other = "该引擎暂不支持受控 SQL 执行，目前仅支持 PostgreSQL 和 MySQL"
+other = "该引擎暂不支持受控只读查询"
 
-[develop.query.controlled_duckdb_unavailable]
-other = "DuckDB 联邦查询正在迁移到受控执行授权，当前不可执行"
+[develop.query.duckdb_read_only]
+other = "DuckDB 联邦查询仅支持只读 SQL"
 
 [develop.query.effect_permission_denied]
 other = "当前账号没有执行该类数据操作的权限"
@@ -54,6 +54,9 @@ other = "连接测试成功"
 
 [develop.query.connection_test_failed]
 other = "无法连接到数据源，请检查引擎状态和连接配置"
+
+[develop.query.sample_query_unavailable]
+other = "当前业务库中没有可生成样例的真实数据"
 
 [develop.notebook.execution_permission_denied]
 other = "当前账号没有执行 Notebook 的权限"
@@ -102,6 +105,18 @@ other = "该任务不是 Notebook"
 
 [develop.notebook.runtime_binding_failed]
 other = "更新 Notebook 运行时绑定失败"
+
+[develop.notebook.session_conflict]
+other = "Notebook 已有活动编辑会话"
+
+[develop.notebook.session_not_found]
+other = "Notebook 编辑会话不存在"
+
+[develop.notebook.session_open_failed]
+other = "打开 Notebook 编辑会话失败：{{.Detail}}"
+
+[develop.notebook.session_close_failed]
+other = "关闭 Notebook 编辑会话失败：{{.Detail}}"
 
 [develop.approval.invalid_request]
 other = "审批请求无效"

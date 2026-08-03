@@ -14,6 +14,7 @@ import (
 var builtinServiceClientIDs = []string{
 	"addp-asset",
 	"addp-develop",
+	"addp-duckdb",
 	"addp-manager",
 	"addp-meta",
 	"addp-monitor",

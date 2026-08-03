@@ -212,7 +212,7 @@ func runIntegrationPostgreSQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T,
 	taskConfig := &transferconfig.Config{
 		ContinuousRuntimeStopTimeout: 5 * time.Second, ContinuousRuntimeStopPollInterval: 50 * time.Millisecond,
 		MetaServiceURL: metaServer.URL, ServiceClientSecret: serviceClientSecret,
-		SchemaChangeMetaScanClaimTTL: 2 * time.Minute,
+		MetaScanClaimTTL: 2 * time.Minute,
 	}
 	taskConfig.SystemServiceURL = systemServer.URL
 	taskService := service.NewTaskService(infraDB, nil, taskConfig, nil)

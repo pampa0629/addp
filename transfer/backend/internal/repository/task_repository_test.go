@@ -175,6 +175,73 @@ func TestFinalizeContinuousStopCancelsExecutionAfterLeaseExpiry(t *testing.T) {
 	}
 }
 
+func TestInitialMetadataScanClaimIsFencedAndRetryable(t *testing.T) {
+	db := newTaskRepositoryTestDB(t)
+	task := createTaskRepositoryTestTask(t, db, 7, "continuous-meta-scan")
+	if err := db.Model(&task).Updates(map[string]interface{}{
+		"config": models.JSONMap{
+			"runtime": map[string]interface{}{"boundary": "continuous"},
+			"load":    map[string]interface{}{"mode": "incremental"},
+		},
+		"auto_scan_metadata": true,
+		"desired_state":      models.TaskDesiredStateRunning,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	execution := claimTestExecution(task, "continuous-meta-scan-execution")
+	execution.Status = commonExecution.ExecutionStatusRunning
+	if err := db.Create(&execution).Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := NewRuntimeLeaseRepository(db, testContinuousRecoveryPolicy())
+	now := time.Now()
+	lease := models.RuntimeLease{
+		TaskID: task.ID, ExecutionID: execution.ExecutionID, OwnerInstanceID: "worker-a",
+		LeaseUntil: now.Add(time.Minute), HeartbeatAt: now, FencingToken: 1, ClaimedAt: now,
+	}
+	if err := db.Create(&lease).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&task, task.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	claim := &RuntimeLeaseClaim{Task: task, Execution: execution, Lease: lease}
+
+	claimed, owned, err := repo.ClaimInitialMetadataScan(context.Background(), *claim, now, 2*time.Minute)
+	if err != nil || !owned || claimed.InitialMetadataScanClaimToken == "" || claimed.InitialMetadataScanAttempt != 1 {
+		t.Fatalf("first metadata scan claim=%#v owned=%v error=%v", claimed, owned, err)
+	}
+	if _, owned, err := repo.ClaimInitialMetadataScan(context.Background(), *claim, now.Add(time.Second), 2*time.Minute); err != nil || owned {
+		t.Fatalf("second active metadata scan claim owned=%v error=%v", owned, err)
+	}
+
+	if _, owned, err := repo.CompleteInitialMetadataScan(
+		context.Background(), *claim, "stale-token", models.InitialMetadataScanSuccess, "meta-stale", "", now.Add(2*time.Second),
+	); err != nil || owned {
+		t.Fatalf("stale completion owned=%v error=%v", owned, err)
+	}
+	failed, owned, err := repo.CompleteInitialMetadataScan(
+		context.Background(), *claim, claimed.InitialMetadataScanClaimToken, models.InitialMetadataScanFailed, "", "meta unavailable", now.Add(3*time.Second),
+	)
+	if err != nil || !owned || failed.InitialMetadataScanStatus != models.InitialMetadataScanFailed {
+		t.Fatalf("failed completion=%#v owned=%v error=%v", failed, owned, err)
+	}
+
+	retried, owned, err := repo.ClaimInitialMetadataScan(context.Background(), *claim, now.Add(4*time.Second), 2*time.Minute)
+	if err != nil || !owned || retried.InitialMetadataScanAttempt != 2 || retried.InitialMetadataScanClaimToken == claimed.InitialMetadataScanClaimToken {
+		t.Fatalf("retry claim=%#v owned=%v error=%v", retried, owned, err)
+	}
+	succeeded, owned, err := repo.CompleteInitialMetadataScan(
+		context.Background(), *claim, retried.InitialMetadataScanClaimToken, models.InitialMetadataScanSuccess, "meta-success", "", now.Add(5*time.Second),
+	)
+	if err != nil || !owned || succeeded.InitialMetadataScanExecutionID != "meta-success" {
+		t.Fatalf("success completion=%#v owned=%v error=%v", succeeded, owned, err)
+	}
+	if _, owned, err := repo.ClaimInitialMetadataScan(context.Background(), *claim, now.Add(6*time.Second), 2*time.Minute); err != nil || owned {
+		t.Fatalf("completed metadata scan reclaimed owned=%v error=%v", owned, err)
+	}
+}
+
 func newTaskRepositoryTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
@@ -201,6 +268,12 @@ func newTaskRepositoryTestDB(t *testing.T) *gorm.DB {
 			batch_size INTEGER,
 			enabled BOOLEAN,
 			auto_scan_metadata BOOLEAN,
+			initial_metadata_scan_status TEXT NOT NULL DEFAULT '',
+			initial_metadata_scan_claim_token TEXT NOT NULL DEFAULT '',
+			initial_metadata_scan_lease_until DATETIME,
+			initial_metadata_scan_attempt INTEGER NOT NULL DEFAULT 0,
+			initial_metadata_scan_execution_id TEXT NOT NULL DEFAULT '',
+			initial_metadata_scan_error TEXT NOT NULL DEFAULT '',
 			status TEXT,
 			desired_state TEXT NOT NULL DEFAULT 'stopped',
 			progress REAL,

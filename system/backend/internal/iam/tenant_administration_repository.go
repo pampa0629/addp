@@ -210,7 +210,7 @@ func (r *Repository) ListBuiltinServiceRuntimeBindings(ctx context.Context) ([]B
 		 AND role.status = 'active'
 		WHERE service_principal.owner_scope = 'platform'
 		  AND service_principal.name IN (
-		      'addp-asset', 'addp-develop', 'addp-manager', 'addp-meta', 'addp-monitor',
+		      'addp-asset', 'addp-develop', 'addp-duckdb', 'addp-manager', 'addp-meta', 'addp-monitor',
 		      'addp-orchestrator', 'addp-portal', 'addp-quality', 'addp-service', 'addp-transfer'
 		  )
 		ORDER BY service_principal.name

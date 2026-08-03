@@ -117,6 +117,18 @@ func TestDependencyHashIncludesFederatedObjectTableMapping(t *testing.T) {
 	}
 }
 
+func TestDependencyHashIncludesFederatedSourceEngineIDs(t *testing.T) {
+	t.Parallel()
+
+	first := buildSQLDependencySnapshot("SELECT * FROM source.sales", nil, time.Now())
+	first.FederatedSourceEngineIDs = []uint{9}
+	second := buildSQLDependencySnapshot("SELECT * FROM source.sales", nil, time.Now())
+	second.FederatedSourceEngineIDs = []uint{10}
+	if queryServiceDependencyHash(first) == queryServiceDependencyHash(second) {
+		t.Fatal("federated source engine change must change dependency hash")
+	}
+}
+
 func TestTableResourceRefFromRequestDerivesExecutionSnapshot(t *testing.T) {
 	t.Parallel()
 
@@ -161,26 +173,24 @@ func TestQueryServiceUserDataConfigRejectsManagedSnapshotFields(t *testing.T) {
 	}
 }
 
-func TestFilterFederatedObjectTablesKeepsOnlyReferencedDependencies(t *testing.T) {
+func TestMatchesFederatedObjectTable(t *testing.T) {
 	t.Parallel()
 
-	result := filterFederatedObjectTables(
-		"SELECT * FROM lake.public.sales JOIN lake.customers USING (customer_id)",
-		map[string]map[string]string{
-			"lake": {
-				"public.sales": "bucket/public/sales.parquet",
-				"sales":        "bucket/public/sales.parquet",
-				"customers":    "bucket/customers.parquet",
-				"unrelated":    "bucket/unrelated.parquet",
-			},
-		},
-	)
-
-	if len(result["lake"]) != 3 {
-		t.Fatalf("filtered tables = %#v", result)
-	}
-	if _, ok := result["lake"]["unrelated"]; ok {
-		t.Fatal("unrelated object table must not enter the dependency snapshot")
+	for _, test := range []struct {
+		reference string
+		name      string
+		fullName  string
+		want      bool
+	}{
+		{reference: "sales", name: "sales", want: true},
+		{reference: "sales_2026", name: "sales 2026", want: true},
+		{reference: "public.sales", name: "sales", fullName: "public.sales", want: true},
+		{reference: "public.sales", name: "sales", fullName: "bucket/public.sales", want: true},
+		{reference: "customers", name: "sales", fullName: "public.sales", want: false},
+	} {
+		if got := matchesFederatedObjectTable(test.reference, test.name, test.fullName); got != test.want {
+			t.Fatalf("matchesFederatedObjectTable(%q, %q, %q) = %t, want %t", test.reference, test.name, test.fullName, got, test.want)
+		}
 	}
 }
 

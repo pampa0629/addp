@@ -249,6 +249,30 @@ func NewWorkflowCapabilities(engineType, runtimeAPI string) EngineCapabilities {
 	}
 }
 
+func NewFederatedQueryCapabilities(
+	engineType, runtimeAPI string,
+	sourceEngineTypes, objectFormats []string,
+) EngineCapabilities {
+	return EngineCapabilities{
+		SchemaVersion: CapabilitiesSchemaVersion,
+		EngineType:    engineType,
+		EngineFamily:  "query_runtime",
+		Compute: &ComputeCapabilities{Query: &QueryCapability{
+			Supported:       true,
+			Languages:       []string{"sql"},
+			DefaultLanguage: "sql",
+			ResultKinds:     []string{"table", "scalar"},
+			ReadOnly:        true,
+			Federation: &QueryFederationCapability{
+				Supported:         true,
+				RuntimeAPI:        runtimeAPI,
+				SourceEngineTypes: append([]string(nil), sourceEngineTypes...),
+				ObjectFormats:     append([]string(nil), objectFormats...),
+			},
+		}},
+	}
+}
+
 func PtrCatalogModel(model CatalogModelSpec) *CatalogModelSpec {
 	return &model
 }
@@ -319,16 +343,17 @@ func storeCapabilitySemantics(store *StoreCapability) []string {
 	return semantics
 }
 
-func NewScriptCapabilities(engineType string, modes, languages []string) EngineCapabilities {
+func NewScriptCapabilities(engineType string, modes, languages []string, interactive bool) EngineCapabilities {
 	return EngineCapabilities{
 		SchemaVersion: CapabilitiesSchemaVersion,
 		EngineType:    engineType,
 		EngineFamily:  "script",
 		Compute: &ComputeCapabilities{
 			Script: &ScriptCapability{
-				Supported: true,
-				Modes:     modes,
-				Languages: languages,
+				Supported:   true,
+				Modes:       modes,
+				Languages:   languages,
+				Interactive: interactive,
 			},
 		},
 	}

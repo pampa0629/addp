@@ -32,10 +32,10 @@ other = "Your session is no longer valid. Please sign in again."
 other = "The SQL effect cannot be classified reliably. Use one supported statement."
 
 [develop.query.controlled_engine_unsupported]
-other = "Controlled SQL execution currently supports PostgreSQL and MySQL only."
+other = "This engine does not support controlled read-only queries."
 
-[develop.query.controlled_duckdb_unavailable]
-other = "DuckDB federated queries are being migrated to controlled execution authorization and are currently unavailable."
+[develop.query.duckdb_read_only]
+other = "DuckDB federated queries only support read-only SQL."
 
 [develop.query.effect_permission_denied]
 other = "Your account is not allowed to perform this type of data operation."
@@ -54,6 +54,9 @@ other = "Connection test succeeded"
 
 [develop.query.connection_test_failed]
 other = "Could not connect to the data source. Check the engine status and connection settings."
+
+[develop.query.sample_query_unavailable]
+other = "No real data is available in the current business database for a sample query."
 
 [develop.notebook.execution_permission_denied]
 other = "Your account is not allowed to execute notebooks."
@@ -102,6 +105,18 @@ other = "The task is not a Notebook"
 
 [develop.notebook.runtime_binding_failed]
 other = "Failed to update the Notebook runtime binding"
+
+[develop.notebook.session_conflict]
+other = "The Notebook already has an active editing session"
+
+[develop.notebook.session_not_found]
+other = "Notebook editing session not found"
+
+[develop.notebook.session_open_failed]
+other = "Failed to open the Notebook editing session: {{.Detail}}"
+
+[develop.notebook.session_close_failed]
+other = "Failed to close the Notebook editing session: {{.Detail}}"
 
 [develop.approval.invalid_request]
 other = "Invalid approval request"

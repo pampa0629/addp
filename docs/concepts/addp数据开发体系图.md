@@ -170,20 +170,20 @@ graph TB
 
 ### 查询任务与 DuckDB 联邦查询
 
-Develop 的 `query` 任务分为两条互斥主路径：
+Develop 的 `query` 任务只有一条引擎绑定路径：`content.query_type` 保存真实查询语言，`execution_config.engine_id` 指向 System 中具备 `compute.query.supported=true` 的 Runtime Engine Instance。
 
-1. 普通 SQL 查询：`content.query_type="sql"`，`execution_config.engine_id` 指向 System 中具备 query 能力的真实引擎实例。
-2. DuckDB 联邦查询：`content.query_type="sql"`，`execution_config.query_mode="duckdb"`，由 Develop 内置 DuckDB 服务执行，运行时根据 SQL 引用动态挂载 PostgreSQL、MySQL、MinIO/S3 等真实 System 引擎。
-
-DuckDB 联邦查询不是工作流引擎，也不是 System 中注册的普通引擎实例。Develop 前端可以在查询工作台中提供 DuckDB 查询模式选项，但该选项必须来自 Develop 自身的查询模式能力，而不是追加到 `/develop/engines` 的伪 Engine。`/develop/engines` 只能返回 System 中具备 query 能力的真实引擎实例；保存任务、即时执行和写入执行记录均不得使用虚拟 `engine_id=0`，必须使用 `query_mode="duckdb"` 标识该内置联邦查询路径。
+- PostgreSQL、MySQL 等 native query engine 同时是 Runtime Engine 和唯一 Source Engine。
+- DuckDB 是 System 中注册的共享联邦查询 Runtime Engine。SQL 引用的 PostgreSQL、MySQL、MinIO/S3 等保持独立 Source Engine 身份，并逐个进入本次只读 Execution Authorization。
+- `/develop/engines` 按 capability 返回包括 DuckDB 在内的全部真实 Query Runtime；Develop 不再提供 `/develop/query-modes`、`query_mode=duckdb` 或 DuckDB 专用执行路由。
+- DuckDB 样例由 Develop 从当前租户真实 Catalog/Meta 构造候选，逐个签发只读授权并调用 DuckDB Runtime 验证；没有返回数据的候选不能作为样例，也不允许退回 `SELECT 1`。
 
 ### Notebook 脚本任务
 
-Notebook 使用 `dev_type="script"`，并在 `execution_config.engine_id` 中绑定 System 注册的 Notebook 引擎实例。Develop 只列出 `active` 且声明 `compute.script.modes` 包含 `notebook` 的 Runtime Descriptor。上传时先选择引擎，再从该实例查询 Kernel；执行时沿用保存的引擎和 Kernel，不接受临时改绑。
+Notebook 使用 `dev_type="script"`，并在 `execution_config.engine_id` 中绑定 System 注册的 Notebook 引擎实例。Develop 只列出 `active`、`compute.script.modes` 包含 `notebook` 且 `compute.script.interactive=true` 的 Runtime Descriptor。新建空白与上传导入都创建同一种 script 任务和 MinIO Notebook 对象；编辑和执行沿用保存的引擎与 Kernel，不接受临时改绑。
 
 已保存的 Notebook 可以由用户显式更换绑定引擎和 Kernel。重绑定直接更新原任务，不复制任务或 Notebook 文件，也不自动匹配替代引擎；目标引擎与 Kernel 校验通过后，`execution_config.engine_id` 和 `content.kernel` 必须在同一次数据库更新中生效。任务的新绑定只供后续执行使用，既有 `common.task_executions.execution_config` 快照保持不变。绑定引擎失效时，任务仍可查看、下载、删除和重绑定，但不可执行。
 
-Develop 后端通过 `common/dbbridge.OpenScriptSession()` 消费 `ScriptRuntimeProvider`，并使用租户 Service Access Token 调用返回的受控运行端点。部署配置不再提供 `JUPYTER_URL`，Develop 也不代理引擎健康检查。
+Develop 后端通过 `common/dbbridge.OpenScriptSession()` 消费 `ScriptRuntimeProvider`，并使用租户 Service Access Token 调用返回的受控运行端点。交互编辑由 Bearer `POST /notebooks/{id}/sessions` 创建，浏览器只得到同源 `/notebook-sessions/{session_id}/...` URL 和单会话 Path 限定 HttpOnly Cookie；Develop 校验后代理 JupyterLab HTTP/WebSocket 并注入内部 Runtime Token。关闭或过期时 Runtime 保存回原 MinIO 对象并清理 process。部署配置不提供 `JUPYTER_URL` 或共享 Lab 入口，Develop 也不代理引擎健康检查。
 
 ⚠️ **Spark Workflow 运行时特殊要求**:
 
@@ -365,7 +365,8 @@ sequenceDiagram
     "script": {
       "supported": true,
       "modes": ["notebook"],
-      "languages": ["python"]
+      "languages": ["python"],
+      "interactive": true
     }
   }
 }

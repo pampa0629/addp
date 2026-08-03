@@ -119,6 +119,15 @@ func sampleSQLForEngine(engineType, namespace, item string, limit int, offset in
 	return sqldialect.ForEngine(engineType).SelectTableSQL("*", namespace, item, "", "", limit, int(offset))
 }
 
+// SampleSQLForCatalogPath builds a bounded query for one real tabular Catalog leaf.
+func SampleSQLForCatalogPath(engineType string, path CatalogPath, limit int) string {
+	segments := CatalogPathWithoutRoot(path).Segments
+	if len(segments) < 2 {
+		return ""
+	}
+	return sampleSQLForEngine(engineType, segments[len(segments)-2].Name, segments[len(segments)-1].Name, limit, 0)
+}
+
 func QueryResultToBatchData(result *QueryResult, offset int64) *BatchData {
 	if result == nil {
 		return &BatchData{Offset: offset}

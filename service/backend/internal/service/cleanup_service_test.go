@@ -192,6 +192,7 @@ func newServiceCleanupTestDB(t *testing.T) *gorm.DB {
 			keywords TEXT,
 			config_type TEXT NOT NULL,
 			engine_id INTEGER,
+			runtime_engine_id INTEGER,
 			schema_name TEXT,
 			table_name TEXT,
 			sql_query TEXT,

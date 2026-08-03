@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 
-	commonClient "github.com/addp/common/client"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	developi18n "github.com/addp/develop/backend/i18n"
 	"github.com/addp/develop/backend/internal/service"
@@ -19,11 +19,12 @@ import (
 // QueryHandler 查询开发 API 处理器
 type QueryHandler struct {
 	sqlEngine *service.SQLEngineService
+	federated *service.FederatedQueryService
 }
 
 // NewQueryHandler 创建 查询处理器
-func NewQueryHandler(sqlEngine *service.SQLEngineService) *QueryHandler {
-	return &QueryHandler{sqlEngine: sqlEngine}
+func NewQueryHandler(sqlEngine *service.SQLEngineService, federated *service.FederatedQueryService) *QueryHandler {
+	return &QueryHandler{sqlEngine: sqlEngine, federated: federated}
 }
 
 // TestConnectionRequest 测试连接请求
@@ -56,9 +57,14 @@ type ExecuteQueryResponse struct {
 // @Param id path int true "引擎ID | Engine ID"
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{} "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]interface{} "无执行或数据读取权限 | Execution or data-read permission denied"
+// @Failure 409 {object} map[string]interface{} "授权状态冲突 | Authorization conflict"
+// @Failure 422 {object} map[string]interface{} "当前业务库没有可用真实样例 | No real sample data is available"
 // @Failure 500 {object} map[string]interface{}
+// @Failure 503 {object} map[string]interface{} "授权服务不可用 | Authorization service unavailable"
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["develop.task.read"]
+// @x-addp-required-permissions ["develop.task.execute","develop.data_read.execute"]
 // @Router /engines/{id}/sample-query [get]
 // @Security BearerAuth
 func (h *QueryHandler) GetSampleQuery(c *gin.Context) {
@@ -69,8 +75,31 @@ func (h *QueryHandler) GetSampleQuery(c *gin.Context) {
 		return
 	}
 
-	query, language, err := h.sqlEngine.GenerateSampleQuery(c.Request.Context(), tenantIDValue(c), uint(engineID))
+	userAccessToken, err := requestUserAccessToken(c)
 	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": commoni18n.T(c, developi18n.MsgAuthenticationRequired), "error_code": "authentication_required",
+		})
+		return
+	}
+	tenantID := tenantIDValue(c)
+	if h.federated != nil && h.federated.IsRuntime(c.Request.Context(), tenantID, uint(engineID)) {
+		h.getFederatedSampleQuery(c, tenantID, uint(engineID), userAccessToken)
+		return
+	}
+	query, language, err := h.sqlEngine.GenerateAuthorizedSampleQuery(
+		c.Request.Context(), tenantID, userAccessToken, uuid.New(), uint(engineID),
+	)
+	if err != nil {
+		if h.writeExecutionAuthorizationError(c, err) {
+			return
+		}
+		if errors.Is(err, service.ErrSampleQueryUnavailable) {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{
+				"error": commoni18n.T(c, developi18n.MsgSampleQueryUnavailable), "error_code": "sample_query_unavailable",
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -78,6 +107,52 @@ func (h *QueryHandler) GetSampleQuery(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"query":    query,
 		"language": language,
+	})
+}
+
+func (h *QueryHandler) getFederatedSampleQuery(c *gin.Context, tenantID, runtimeEngineID uint, userAccessToken string) {
+	sources, err := h.federated.GetSources(c.Request.Context(), tenantID, runtimeEngineID)
+	if err != nil {
+		h.writeSQLExecutionError(c, err)
+		return
+	}
+	candidates := h.federated.CandidateQueries(sources)
+	var firstFailure error
+	for _, candidate := range candidates {
+		executionID := uuid.New()
+		authorization, issueErr := h.sqlEngine.IssueFederatedReadExecutionAuthorization(
+			c.Request.Context(), tenantID, userAccessToken, executionID, []uint{candidate.EngineID}, 30,
+		)
+		if issueErr != nil {
+			if h.writeExecutionAuthorizationError(c, issueErr) {
+				return
+			}
+			if firstFailure == nil {
+				firstFailure = issueErr
+			}
+			continue
+		}
+		result, executeErr := h.federated.ExecuteQuery(
+			c.Request.Context(), tenantID, runtimeEngineID, executionID,
+			authorization.AuthorizationID, candidate.Query, 30, []uint{candidate.EngineID},
+		)
+		if executeErr == nil && result != nil && result.RowCount > 0 {
+			c.JSON(http.StatusOK, gin.H{"query": candidate.Query, "language": "sql"})
+			return
+		}
+		if firstFailure == nil {
+			if executeErr != nil {
+				firstFailure = executeErr
+			} else {
+				firstFailure = fmt.Errorf("样例查询没有返回数据")
+			}
+		}
+	}
+	slog.WarnContext(c.Request.Context(), "DuckDB 样例查询没有可执行候选",
+		"runtime_engine_id", runtimeEngineID, "source_count", len(sources),
+		"candidate_count", len(candidates), "first_failure", firstFailure)
+	c.JSON(http.StatusUnprocessableEntity, gin.H{
+		"error": commoni18n.T(c, developi18n.MsgSampleQueryUnavailable), "error_code": "sample_query_unavailable",
 	})
 }
 
@@ -157,12 +232,12 @@ func (h *QueryHandler) ExecuteQuery(c *gin.Context) {
 		return
 	}
 
-	sql, err := queryRequestSQL(req.Content)
+	query, queryType, err := queryRequestContent(req.Content)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if sql == "" {
+	if query == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "查询语句不能为空"})
 		return
 	}
@@ -171,25 +246,6 @@ func (h *QueryHandler) ExecuteQuery(c *gin.Context) {
 	timeout := req.Timeout
 	if timeout <= 0 {
 		timeout = 30 // 默认 30 秒
-	}
-
-	queryMode := queryRequestMode(req.ExecutionConfig)
-	if queryMode == "duckdb" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":      commoni18n.T(c, developi18n.MsgControlledDuckDBUnavailable),
-			"error_code": "controlled_duckdb_unavailable",
-		})
-		return
-	}
-	if queryMode != "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("不支持的查询执行模式: %s", queryMode)})
-		return
-	}
-
-	engineID, err := queryRequestEngineID(req.ExecutionConfig)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
 	}
 
 	userAccessToken, err := requestUserAccessToken(c)
@@ -201,8 +257,21 @@ func (h *QueryHandler) ExecuteQuery(c *gin.Context) {
 		return
 	}
 	executionID := uuid.New()
-	result, err := h.sqlEngine.ExecuteAuthorizedSQL(
-		c.Request.Context(), tenantIDValue(c), userAccessToken, executionID, engineID, sql, timeout,
+	engineID, err := queryRequestEngineID(req.ExecutionConfig)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if h.federated != nil && h.federated.IsRuntime(c.Request.Context(), tenantIDValue(c), engineID) {
+		if queryType != "sql" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "联邦查询 Runtime 只支持 sql 查询类型"})
+			return
+		}
+		h.executeFederatedQuery(c, userAccessToken, executionID, engineID, query, timeout)
+		return
+	}
+	result, err := h.sqlEngine.ExecuteAuthorizedQuery(
+		c.Request.Context(), tenantIDValue(c), userAccessToken, executionID, engineID, queryType, query, timeout,
 	)
 	if err != nil {
 		h.writeSQLExecutionError(c, err)
@@ -211,6 +280,59 @@ func (h *QueryHandler) ExecuteQuery(c *gin.Context) {
 	c.JSON(http.StatusOK, ExecuteQueryResponse{
 		Columns: result.Columns, Rows: result.Rows, RowsCount: len(result.Rows),
 		RowsAffected: result.RowsAffected, ExecutionID: executionID.String(), Effect: result.Effect,
+	})
+}
+
+func (h *QueryHandler) executeFederatedQuery(
+	c *gin.Context,
+	userAccessToken string,
+	executionID uuid.UUID,
+	runtimeEngineID uint,
+	sql string,
+	timeout int,
+) {
+	effect, err := service.ClassifySQLExecutionEffect(sql)
+	if err != nil {
+		h.writeSQLExecutionError(c, fmt.Errorf("%w: %v", service.ErrSQLExecutionUnclassifiable, err))
+		return
+	}
+	if effect != service.SQLExecutionEffectRead {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": commoni18n.T(c, developi18n.MsgDuckDBReadOnly), "error_code": "duckdb_read_only",
+		})
+		return
+	}
+	if h.federated == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": commoni18n.T(c, developi18n.MsgSQLExecutionFailed), "error_code": "sql_execution_failed",
+		})
+		return
+	}
+	tenantID := tenantIDValue(c)
+	engineIDs, err := h.federated.ReferencedEngineIDs(c.Request.Context(), tenantID, runtimeEngineID, sql)
+	if err != nil {
+		h.writeSQLExecutionError(c, err)
+		return
+	}
+	authorization, err := h.sqlEngine.IssueFederatedReadExecutionAuthorization(
+		c.Request.Context(), tenantID, userAccessToken, executionID, engineIDs, timeout,
+	)
+	if err != nil {
+		h.writeSQLExecutionError(c, err)
+		return
+	}
+	result, err := h.federated.ExecuteQuery(
+		c.Request.Context(), tenantID, runtimeEngineID, executionID,
+		authorization.AuthorizationID, sql, timeout, engineIDs,
+	)
+	if err != nil {
+		h.writeSQLExecutionError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, ExecuteQueryResponse{
+		Columns: result.Columns, Rows: result.Rows, RowsCount: result.RowCount,
+		RowsAffected: int64(result.RowCount), ExecutionTimeMs: result.ExecutionTimeMs,
+		ExecutionID: executionID.String(), Effect: service.SQLExecutionEffectRead,
 	})
 }
 
@@ -239,20 +361,7 @@ func (h *QueryHandler) writeSQLExecutionError(c *gin.Context, err error) {
 }
 
 func (h *QueryHandler) writeExecutionAuthorizationError(c *gin.Context, err error) bool {
-	if status, ok := commonClient.SystemAPIStatusCode(err); ok {
-		switch status {
-		case http.StatusUnauthorized:
-			c.JSON(status, gin.H{"error": commoni18n.T(c, developi18n.MsgAuthenticationRequired), "error_code": "authentication_required"})
-		case http.StatusForbidden:
-			c.JSON(status, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionEffectForbidden), "error_code": "execution_effect_permission_denied"})
-		case http.StatusConflict:
-			c.JSON(status, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionConflict), "error_code": "execution_authorization_conflict"})
-		default:
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionAuthorizationUnavailable), "error_code": "execution_authorization_unavailable"})
-		}
-		return true
-	}
-	return false
+	return writeExecutionAuthorizationError(c, err)
 }
 
 func requestUserAccessToken(c *gin.Context) (string, error) {
@@ -267,28 +376,20 @@ func requestUserAccessToken(c *gin.Context) (string, error) {
 	return parts[1], nil
 }
 
-func queryRequestSQL(content map[string]interface{}) (string, error) {
+func queryRequestContent(content map[string]interface{}) (string, string, error) {
 	if content == nil {
-		return "", fmt.Errorf("content 不能为空")
+		return "", "", fmt.Errorf("content 不能为空")
 	}
-	if queryType, ok := content["query_type"].(string); ok && strings.TrimSpace(queryType) != "" && strings.ToLower(strings.TrimSpace(queryType)) != "sql" {
-		return "", fmt.Errorf("不支持的查询类型: %s", queryType)
+	queryType, ok := content["query_type"].(string)
+	queryType = strings.ToLower(strings.TrimSpace(queryType))
+	if !ok || queryType == "" {
+		return "", "", fmt.Errorf("content.query_type 必须提供查询语言")
 	}
 	query, ok := content["query"].(string)
 	if !ok {
-		return "", fmt.Errorf("content.query 必须提供查询内容")
+		return "", "", fmt.Errorf("content.query 必须提供查询内容")
 	}
-	return strings.TrimSpace(query), nil
-}
-
-func queryRequestMode(executionConfig map[string]interface{}) string {
-	if executionConfig == nil {
-		return ""
-	}
-	if mode, ok := executionConfig["query_mode"].(string); ok {
-		return strings.ToLower(strings.TrimSpace(mode))
-	}
-	return ""
+	return strings.TrimSpace(query), queryType, nil
 }
 
 func queryRequestEngineID(executionConfig map[string]interface{}) (uint, error) {

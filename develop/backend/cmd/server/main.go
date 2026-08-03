@@ -99,17 +99,17 @@ func main() {
 	devTaskService := service.NewDevTaskService(devTaskRepo, systemServiceClient)
 	log.Printf("✅ DevTaskService 初始化完成")
 
-	// 6. DuckDB 联邦查询服务
+	// 6. 联邦查询 Runtime 编排服务
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, serviceTokenSource)
-	duckdbService := service.NewDuckDBService(cfg, systemServiceClient, metaClient)
-	log.Printf("✅ DuckDBService 初始化完成")
+	federatedQueryService := service.NewFederatedQueryService(systemServiceClient, metaClient)
+	log.Printf("✅ FederatedQueryService 初始化完成")
 
 	// 7. 算子发现与工作流校验服务（动态发现工作流引擎）
 	operatorDiscovery := service.NewOperatorDiscoveryService(systemServiceClient)
 	log.Printf("✅ OperatorDiscoveryService 初始化完成")
 
 	// 8. DevExecutor 统一执行器（执行前复用正式工作流校验）
-	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, operatorDiscovery, metaClient, sqlEngine, duckdbService, notebookExecutionService)
+	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, operatorDiscovery, metaClient, sqlEngine, federatedQueryService, notebookExecutionService)
 	log.Printf("✅ DevExecutor 初始化完成（使用统一执行表）")
 	toolApprovalService := service.NewToolApprovalService(db, devExecutor)
 
@@ -125,14 +125,13 @@ func main() {
 	toolApprovalHandler := api.NewToolApprovalHandler(toolApprovalService)
 	operatorHandler := api.NewOperatorHandler(operatorDiscovery)
 	engineHandler := api.NewEngineHandler(systemServiceClient)
-	queryHandler := api.NewQueryHandler(sqlEngine)
-	notebookHandler := api.NewNotebookHandler(jupyterService, notebookExecutionService, devTaskService)
-	duckdbHandler := api.NewDuckDBHandler(duckdbService)
+	queryHandler := api.NewQueryHandler(sqlEngine, federatedQueryService)
+	notebookHandler := api.NewNotebookHandler(jupyterService, notebookExecutionService, devTaskService, cfg.DevelopServiceURL)
 
 	log.Printf("✅ Handler 层初始化完成")
 
 	// ========== 设置路由 ==========
-	router := api.SetupRouter(cfg, db, devTaskHandler, executionHandler, toolApprovalHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, devTaskService, systemServiceClient, duckdbHandler)
+	router := api.SetupRouter(cfg, db, devTaskHandler, executionHandler, toolApprovalHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, devTaskService, systemServiceClient)
 	log.Printf("✅ 路由设置完成")
 
 	serviceHost := utils.GetServiceHost()
@@ -194,6 +193,9 @@ func main() {
 	// 等待终止信号
 	<-sigCh
 	log.Println("🛑 Shutting down Develop Service...")
+	sessionShutdownContext, cancelSessionShutdown := context.WithTimeout(context.Background(), 20*time.Second)
+	notebookHandler.ShutdownSessions(sessionShutdownContext)
+	cancelSessionShutdown()
 
 	// 优雅关闭：关闭所有数据库连接池
 	dbbridge.CloseAllPools()

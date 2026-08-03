@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -80,6 +81,29 @@ func (s *JupyterService) ListNotebookEngines(ctx context.Context, tenantID uint)
 		}
 	}
 	return result, nil
+}
+
+func (s *JupyterService) ListQueryEngines(ctx context.Context, tenantID uint) ([]commonModels.EngineRuntimeDescriptor, error) {
+	if s == nil || s.systemClient == nil {
+		return nil, fmt.Errorf("System service client is required")
+	}
+	descriptors, err := s.systemClient.WithTenantID(tenantID).ListEngineRuntimeDescriptors(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return FilterQueryEngineDescriptors(descriptors), nil
+}
+
+// FilterQueryEngineDescriptors is the single Develop rule for query Engine discovery.
+func FilterQueryEngineDescriptors(descriptors []commonModels.EngineRuntimeDescriptor) []commonModels.EngineRuntimeDescriptor {
+	filtered := make([]commonModels.EngineRuntimeDescriptor, 0, len(descriptors))
+	for index := range descriptors {
+		descriptor := &descriptors[index]
+		if descriptor.LifecycleState == commonModels.EngineLifecycleActive && utils.SupportsComputeEntrypoint(descriptor.AsEngine(), "query") {
+			filtered = append(filtered, *descriptor)
+		}
+	}
+	return filtered
 }
 
 func (s *JupyterService) GetNotebookEngine(
@@ -172,6 +196,81 @@ func (s *JupyterService) ExecuteNotebook(
 		return nil, fmt.Errorf("notebook execution failed: %s", result.ErrorMessage)
 	}
 	return &result, nil
+}
+
+func (s *JupyterService) OpenInteractiveSession(
+	ctx context.Context,
+	tenantID uint,
+	engineID uint,
+	request plugin.InteractiveScriptSessionRequest,
+) (*plugin.InteractiveScriptSession, string, error) {
+	descriptor, err := s.GetNotebookEngine(ctx, tenantID, engineID)
+	if err != nil {
+		return nil, "", err
+	}
+	capabilities, err := utils.ParseCapabilities(descriptor.Capabilities)
+	if err != nil || capabilities == nil || capabilities.Compute == nil || capabilities.Compute.Script == nil || !capabilities.Compute.Script.Interactive {
+		return nil, "", fmt.Errorf("notebook engine %d does not support interactive sessions", engineID)
+	}
+	controlEndpoint, err := s.openNotebookEndpoint(ctx, tenantID, engineID)
+	if err != nil {
+		return nil, "", err
+	}
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return nil, "", fmt.Errorf("encode interactive notebook session request: %w", err)
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	body, err := s.doRuntimeRequest(requestCtx, tenantID, http.MethodPost, controlEndpoint+"/api/interactive-sessions", bytes.NewReader(payload))
+	if err != nil {
+		return nil, "", err
+	}
+	var envelope struct {
+		Status string `json:"status"`
+		plugin.InteractiveScriptSession
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, "", fmt.Errorf("decode interactive notebook session response: %w", err)
+	}
+	session := envelope.InteractiveScriptSession
+	if envelope.Status != "success" || session.SessionID != request.SessionID || session.RuntimeToken == "" || session.Endpoint == "" || session.NotebookName == "" || session.ExpiresAt.IsZero() {
+		return nil, "", fmt.Errorf("runtime returned an invalid interactive notebook session")
+	}
+	if err := validateInteractiveSessionEndpoint(controlEndpoint, session.Endpoint); err != nil {
+		return nil, "", err
+	}
+	return &session, controlEndpoint, nil
+}
+
+func (s *JupyterService) CloseInteractiveSession(ctx context.Context, tenantID uint, controlEndpoint, sessionID string) error {
+	controlEndpoint = strings.TrimRight(strings.TrimSpace(controlEndpoint), "/")
+	if controlEndpoint == "" || strings.TrimSpace(sessionID) == "" {
+		return fmt.Errorf("interactive notebook session control endpoint and id are required")
+	}
+	_, err := s.doRuntimeRequest(
+		ctx,
+		tenantID,
+		http.MethodDelete,
+		controlEndpoint+"/api/interactive-sessions/"+url.PathEscape(sessionID),
+		nil,
+	)
+	return err
+}
+
+func validateInteractiveSessionEndpoint(controlEndpoint, sessionEndpoint string) error {
+	controlURL, err := url.Parse(controlEndpoint)
+	if err != nil {
+		return fmt.Errorf("invalid notebook runtime control endpoint: %w", err)
+	}
+	sessionURL, err := url.Parse(sessionEndpoint)
+	if err != nil {
+		return fmt.Errorf("invalid interactive notebook session endpoint: %w", err)
+	}
+	if sessionURL.Scheme != controlURL.Scheme || !strings.EqualFold(sessionURL.Hostname(), controlURL.Hostname()) || sessionURL.Port() == "" {
+		return fmt.Errorf("interactive notebook session endpoint is outside the bound runtime")
+	}
+	return nil
 }
 
 func (s *JupyterService) openNotebookEndpoint(ctx context.Context, tenantID uint, engineID uint) (string, error) {

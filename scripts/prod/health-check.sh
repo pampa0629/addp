@@ -57,6 +57,13 @@ else
   echo -e "${RED}✗ jupyter-engine${NC}"
 fi
 
+# DuckDB Federated Query Runtime
+if docker compose -f docker-compose.yml exec -T duckdb-engine curl -fsS http://localhost:8104/health > /dev/null 2>&1; then
+  echo -e "${GREEN}✓ duckdb-engine${NC}"
+else
+  echo -e "${RED}✗ duckdb-engine${NC}"
+fi
+
 # Spark Spark 工作流引擎
 if curl -f http://localhost:8098/health > /dev/null 2>&1; then
   echo -e "${GREEN}✓ spark-workflow-engine${NC}"

@@ -81,6 +81,19 @@ results = await manager.search("城市", page_size=10)
 - `ManagerClient` - Manager 模块 (数据管理、预览)
 - `CopilotClient` - Copilot 模块（结构化生成）
 
+## Notebook 会话能力
+
+Develop 创建的隔离 Notebook 会话可以通过专用同步 SDK 获取当前租户、当前用户可用的查询 Engine 描述：
+
+```python
+from addp_common.notebook import engines
+
+available_engines = engines.list()
+available_engines
+```
+
+该 SDK 只读取 Runtime 注入当前 Kernel process 的短期 Notebook Kernel Capability，不接受手工 Token，不读取 `ADDP_TOKEN`，也不返回 `connection_info`。在普通 Python process、已关闭或已过期的 Notebook 会话中调用时会 fail-closed。
+
 ## Tool 与 CLI
 
 `addp_common/tools/manifest.json` 定义稳定 Tool 契约，完整开放规则见 `docs/spec/addp智能体Tool开放规范.md`。`ToolExecutor` 在每次 Tool 调用前使用当前 User Access Token 向 System 申请绑定 owner audience、稳定 Tool Scope、AgentRun 和 ToolCall 的短期 Delegated Access Token，随后只通过持有该委托令牌的 SDK Client 调用 owner API。安装后可供 Codex 等本地 Agent 使用：

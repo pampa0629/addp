@@ -46,8 +46,8 @@ for (const { path, source } of vueSources) {
   }
 }
 
-assert.equal((notebook.match(/class="addp-dialog"/g) || []).length, 3)
-assert.equal((notebook.match(/label-position="top"/g) || []).length, 3)
+assert.equal((notebook.match(/class="addp-dialog"/g) || []).length, 4)
+assert.equal((notebook.match(/label-position="top"/g) || []).length, 4)
 assert.doesNotMatch(notebook, /width="(?:520px|600px)"/)
 
 assert.equal((taskManagement.match(/class="addp-dialog"/g) || []).length, 1)

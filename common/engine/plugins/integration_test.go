@@ -18,6 +18,7 @@ func TestAllPluginsRegistered(t *testing.T) {
 	expectedTypes := []string{
 		"clickhouse",
 		"doris",
+		"duckdb",
 		"jupyter",
 		"kafka",
 		"math_workflow",
@@ -57,8 +58,8 @@ func TestAllPluginsRegistered(t *testing.T) {
 func TestGetAllPlugins(t *testing.T) {
 	plugins := plugin.GetAll()
 
-	if len(plugins) != 18 {
-		t.Errorf("Expected 18 plugins, got %d", len(plugins))
+	if len(plugins) != 19 {
+		t.Errorf("Expected 19 plugins, got %d", len(plugins))
 	}
 
 	// 验证每个插件的基本信息
@@ -71,6 +72,7 @@ func TestGetAllPlugins(t *testing.T) {
 		{"doris", "Apache Doris"},
 		{"spark", "Apache Spark"},
 		{"clickhouse", "ClickHouse"},
+		{"duckdb", "DuckDB 联邦查询 Runtime"},
 		{"jupyter", "Jupyter Engine"},
 		{"kafka", "Apache Kafka"},
 		{"math_workflow", "Math Workflow"},
@@ -116,6 +118,7 @@ func TestPluginCapabilities(t *testing.T) {
 		{"s3", "general"},
 		{"nfs", "general"},
 		{"neo4j", "general"},
+		{"duckdb", "extension"},
 		{"geopython_workflow", "extension"},
 		{"spark_workflow", "extension"},
 		{"math_workflow", "extension"},
@@ -165,6 +168,7 @@ func TestPluginDefaultPorts(t *testing.T) {
 		{"s3", 443},
 		{"nfs", 2049},
 		{"neo4j", 7687},
+		{"duckdb", 8104},
 		{"geopython_workflow", 8099},
 		{"spark_workflow", 8098},
 		{"math_workflow", 8089},
@@ -204,6 +208,7 @@ func TestPluginRequiredFields(t *testing.T) {
 		{"s3", "access_key"},
 		{"nfs", "server"},
 		{"neo4j", "password"},
+		{"duckdb", "host"},
 		{"geopython_workflow", "host"},
 		{"spark_workflow", "port"},
 		{"math_workflow", "host"},
@@ -284,6 +289,7 @@ func TestBuiltinPluginCapabilityMatrix(t *testing.T) {
 		"minio":            {origin: "general", family: "object", storage: true},
 		"nfs":              {origin: "general", family: "file", storage: true},
 		"s3":               {origin: "general", family: "object", storage: true},
+		"duckdb":           {origin: "extension", family: "query_runtime", query: true},
 		"jupyter":          {origin: "extension", family: "script", script: true, scriptModes: []string{"notebook"}, scriptLanguages: []string{"python"}},
 		"math_workflow":    {origin: "extension", family: "workflow", workflow: true, workflowRuntime: "addp.workflow/v1"},
 		"model3d_workflow": {origin: "extension", family: "workflow", workflow: true, workflowRuntime: "addp.workflow/v1"},

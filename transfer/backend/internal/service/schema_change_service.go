@@ -413,7 +413,7 @@ func (s *TaskService) claimSchemaChangeMetaScan(ctx context.Context, request *mo
 	if request == nil || s.schemaChangeRepo == nil {
 		return false
 	}
-	claimed, ownsClaim, err := s.schemaChangeRepo.ClaimMetadataScan(ctx, request.ID, time.Now(), s.schemaChangeMetaScanClaimTTL())
+	claimed, ownsClaim, err := s.schemaChangeRepo.ClaimMetadataScan(ctx, request.ID, time.Now(), s.metaScanClaimTTL())
 	if err != nil {
 		s.logger.Error("failed to claim schema change Meta scan", "request_id", request.ID, "error", err)
 		return false
@@ -468,9 +468,9 @@ func (s *TaskService) reconcileSchemaChangeMetaScanResult(
 	}
 }
 
-func (s *TaskService) schemaChangeMetaScanClaimTTL() time.Duration {
-	if s != nil && s.cfg != nil && s.cfg.SchemaChangeMetaScanClaimTTL > 0 {
-		return s.cfg.SchemaChangeMetaScanClaimTTL
+func (s *TaskService) metaScanClaimTTL() time.Duration {
+	if s != nil && s.cfg != nil && s.cfg.MetaScanClaimTTL > 0 {
+		return s.cfg.MetaScanClaimTTL
 	}
 	return 2 * time.Minute
 }

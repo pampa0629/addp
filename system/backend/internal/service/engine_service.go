@@ -268,7 +268,8 @@ func (s *EngineService) buildRuntimeDescriptor(engine *models.Engine) (*models.E
 		Capabilities: engine.Capabilities, ConnectionStatus: engine.ConnectionStatus,
 	}
 	if !commonutils.SupportsComputeEntrypoint(engine, "workflow") &&
-		!commonutils.SupportsComputeEntrypoint(engine, "script") {
+		!commonutils.SupportsComputeEntrypoint(engine, "script") &&
+		!supportsFederatedQueryRuntime(engine) {
 		return descriptor, nil
 	}
 	connectionInfo, err := s.decryptStoredConnectionInfo(engine.ConnectionInfo)
@@ -286,6 +287,16 @@ func (s *EngineService) buildRuntimeDescriptor(engine *models.Engine) (*models.E
 	}
 	descriptor.RuntimeEndpoint = &models.EngineRuntimeEndpoint{Protocol: protocol, Host: host, Port: port}
 	return descriptor, nil
+}
+
+func supportsFederatedQueryRuntime(engine *models.Engine) bool {
+	if engine == nil || engine.Capabilities == nil {
+		return false
+	}
+	capabilities, err := engineplugin.ParseEngineCapabilities(string(*engine.Capabilities))
+	return err == nil && capabilities != nil && capabilities.Compute != nil &&
+		capabilities.Compute.Query != nil && capabilities.Compute.Query.Supported &&
+		capabilities.Compute.Query.Federation != nil && capabilities.Compute.Query.Federation.Supported
 }
 
 func filterEngines(engines []models.Engine, filter EngineListFilter) []models.Engine {

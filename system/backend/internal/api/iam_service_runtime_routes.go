@@ -77,6 +77,7 @@ func RegisterIAMServiceRuntimeRoutes(
 		tenantEngineRoutes.GET("/:id", engineHandler.GetRuntimeDescriptor)
 	}
 	runtimeRoutes.POST("/execution-authorizations", tenantContext, executionAuthorizationIssue, runtime.ExecutionAuthorizationHandler.IssueFromExecution)
+	runtimeRoutes.POST("/execution-authorizations/service-definitions", tenantContext, executionAuthorizationIssue, runtime.ExecutionAuthorizationHandler.IssueFromServiceDefinition)
 	runtimeRoutes.POST("/task-authorization-subjects/:id/resolve", tenantContext, taskAuthorizationResolve, runtime.TaskAuthorizationSubjectHandler.Resolve)
 
 	api.POST("/tenant/audit/events", runtime.Authentication, runtime.ServiceCredential, tenantContext, tenantAuditCreate, runtime.InternalAuditHandler.CreateService)

@@ -34,6 +34,10 @@ export function hasIdempotentTableUpsert(engine) {
   return upsert?.supported === true && upsert?.idempotent === true
 }
 
+export function hasBoundedWatermarkRead(engine) {
+  return parseCapabilities(engine)?.storage?.store?.bounded_watermark_read === true
+}
+
 export function hasAtomicPartitionedTableChangeApply(engine, requiredOperations = ['upsert']) {
   const apply = parseCapabilities(engine)?.storage?.store?.partitioned_table_change_apply
   if (apply?.supported !== true || apply?.atomic_position_commit !== true || apply?.monotonic !== true) return false

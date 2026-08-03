@@ -24,6 +24,7 @@ export * from './utils/moduleRouteNavigation'
 export * from './utils/recoverableRouteState'
 export * from './utils/continuousExecution'
 export * from './utils/focus'
+export * from './utils/latestRequest'
 export { toAmisResponse, toAmisListResponse, createAmisInterceptor } from './utils/amis-adaptor'
 
 // Types

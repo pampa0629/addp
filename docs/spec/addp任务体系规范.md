@@ -232,7 +232,7 @@ Transfer `sync` 的稳定语义由以下正交维度表达：
 3. watermark 增量必须使用稳定复合游标 `(watermark_field, tie_breaker...)`，读取区间为 `(committed_position, execution_upper_bound]`；普通 watermark 只保证 insert/update，不支持物理删除，不得称为完整 CDC。
 4. 增量 committed position 归 Transfer 私有同步状态，不能写入任务定义或用 execution checkpoint 代替。只有目标批次成功提交后才能通过 CAS/fencing 推进同步状态。
 5. 同一增量任务默认只允许一个 active execution 推进主状态；任务 claim 与 pending execution 创建必须在同一数据库事务中完成。
-6. resume 创建新 execution 并从 committed position 继续；replay 是独立执行参数且永不推进主状态。第一版 PostgreSQL watermark 只支持 resume，不支持 replay。
+6. resume 创建新 execution 并从 committed position 继续；replay 是独立执行参数且永不推进主状态。PostgreSQL/MySQL watermark 只支持 resume，不支持 replay。
 7. TaskProvider capability 只能声明已真实实现并验证的边界；不具备真实 worker 中断、资源释放和一致落库能力时必须 `supports_cancel=false`，也不得保留只改数据库状态的伪取消入口。
 
 #### Transfer continuous sync v1 契约
@@ -346,6 +346,7 @@ continuous task 与 execution 生命周期：
 7. 工作包 2B 真实中断闭环完成时可以恢复 Transfer 私有 task-definition stop 控制入口；但 `supports_cancel` 是整个 `sync` task type 的 TaskProvider 能力，在 bounded execution 也具备真实取消前必须继续为 `false`，不得注册标准 execution cancel endpoint。
 8. continuous execution 不使用 0 到 100 作为主要进度；Monitor 应展示 per-partition next offset、source latest offset、lag、吞吐、last event time、last committed time、checkpoint age/health、retry/rebalance、恢复 circuit 和 heartbeat。Monitor 只消费 owner 写入的统一 execution metadata；不得自行连接 Kafka 或 Transfer 私有表补算这些事实。
 9. Orchestrator v1 不编排 continuous Transfer task。Transfer 的 TaskProvider 任务发现不得把 continuous task 暴露为可选编排步骤，provider execute 入口也必须拒绝 `source=orchestrator` 触发 continuous task；长期服务型 Step 语义进入 Orchestrator v2 专题。
+10. `auto_scan_metadata=true` 的 continuous task 不等待 execution 成功结束。目标 Provider 首次成功建立目标结构后，Transfer 必须按 task `apply_identity` 触发一次目标父 catalog 的 Meta deep scan，使新目标进入资源树；空源表也必须触发，不能依赖首条数据事件。首次扫描使用 task 私有持久化 claim：`running(claim_token, lease_until, attempt+1) -> success|failed`，worker 恢复或并发实例不得重复提交；过期 claim 可由后续 runtime session 接管。Meta 提交失败不得中断 CDC/Kafka 数据面，失败状态由后续 runtime session 重试或由用户手动刷新。目标 schema 经正式流程变化后另行触发 deep scan；普通 DML、单条事件和单个 batch 不触发 Meta scan。claim TTL 统一使用部署配置 `TRANSFER_META_SCAN_CLAIM_TTL`，并且必须大于 Meta client 的 HTTP 超时。
 
 #### Transfer 数据库 CDC v1 契约（PostgreSQL/MySQL 已完成）
 
@@ -415,7 +416,7 @@ MySQL 8.0 单表 -> Debezium MySQL Connector -> Infra Kafka
 14. 审批必须通过唯一 `POST /task-definitions/:id/schema-change/approve`，显式覆盖 pending request 的全部新增源字段，并逐一提交新的 target 名、`target_type` 和 `nullable=true`。服务端必须重新验证现有字段、主键和待新增字段的实时源事实，拒绝重名、覆盖既有 source/target、类型不匹配、非 nullable、geometry、缺失字段或不完整审批；普通 `PUT /task-definitions/:id` 继续禁止修改已有 capture generation 的 CDC config。
 15. 目标 PostgreSQL/MySQL DDL 必须复用各自 `PartitionedTableChangeApplyProvider` 的 prepare/evolution 主路径，只允许幂等新增 nullable 列并验证既有列兼容，不能建立 Transfer 私有 DDL 通道。外部 DDL 与 Infra 状态无法组成分布式事务，因此审批使用 Infra request/task 行锁串行执行；若目标 DDL 已提交但 Infra 事务回滚，重试必须先验证已存在目标列完全兼容，再完成同一 request，不能创建补偿列或第二条恢复路径。
 16. 审批完成时在同一 Infra PostgreSQL 事务追加唯一 field mapping、递增 capture `schema_revision`、把 request 标记为 `applied`，并把 task 收敛为 `status=idle, desired_state=paused`。服务端随后触发目标表 Meta deep scan；Meta scan 失败不得回滚已完成 DDL/mapping revision，但必须记录并返回可观测错误。用户继续使用既有 Resume API 创建新 execution，从未推进的 committed offset 恢复；审批 API 不隐式启动 runtime。
-    Meta scan 触发固定使用 request 内的持久化 claim 状态机：`pending -> running(claim_token, lease_until, attempt+1) -> success|failed`。只有 `pending` 或 claim 已过期的 `running` 可通过 CAS 取得新 UUID token；完成更新必须同时匹配 request、`running` 和 token，过期 claimant 的迟到结果不得覆盖新 claimant。并发审批只能有一个 claimant 调用 Meta；进程在 claim 后崩溃时，由相同重复审批 POST 在 `TRANSFER_SCHEMA_CHANGE_META_SCAN_CLAIM_TTL` 到期后接管，schema change GET 始终只读。真实 Meta API 返回失败后状态固定为 `failed`，不得由重复审批自动循环重试；用户可在 Meta 使用既有手动扫描能力。claim TTL 是部署配置，不进入任务 JSON，并且必须大于 Meta client 的 HTTP 超时。
+    Meta scan 触发固定使用 request 内的持久化 claim 状态机：`pending -> running(claim_token, lease_until, attempt+1) -> success|failed`。只有 `pending` 或 claim 已过期的 `running` 可通过 CAS 取得新 UUID token；完成更新必须同时匹配 request、`running` 和 token，过期 claimant 的迟到结果不得覆盖新 claimant。并发审批只能有一个 claimant 调用 Meta；进程在 claim 后崩溃时，由相同重复审批 POST 在 `TRANSFER_META_SCAN_CLAIM_TTL` 到期后接管，schema change GET 始终只读。真实 Meta API 返回失败后状态固定为 `failed`，不得由重复审批自动循环重试；用户可在 Meta 使用既有手动扫描能力。claim TTL 是部署配置，不进入任务 JSON，并且必须大于 Meta client 的 HTTP 超时。
 17. request 只允许 `pending -> applied`，历史 request 是 generation 内 mapping revision 审计事实。重复审批已 applied request 必须幂等返回同一结果；同一 generation 同时只能有一个 pending request。下一次新增字段再次阻塞时创建下一 revision request。task physical cleanup 随 capture generation 级联删除这些私有 request；统一 execution 和 System audit 继续保存长期审计。
 18. 删除字段、类型变化、主键变化、非 nullable 新增、geometry 新增以及其他协议漂移仍是当前 generation 的不可恢复终态，只能不可逆 Stop 后创建新任务和新目标表。数据库 CDC 仍不支持 replay、DLQ、Schema Registry、Avro、Protobuf、truncate、历史补洞或全自动 DDL。
 
@@ -515,7 +516,7 @@ Graph 的 `kg_build` 任务定义由 `graph.build_tasks` 保存。`graph.build_t
 
 Develop 的任务类型按开发方式划分为 `query`、`workflow`、`script`。`script` 表示命令式代码开发任务，当前可由 Jupyter Notebook runtime 承载；`notebook` 只是脚本开发的实现形态和 UI 入口，不作为独立 `task_type` 声明，不进入 TaskProvider capabilities。
 
-Develop 的 `develop.dev_tasks.content` 必须使用规范字段：`query` 使用 `content.query` 和 `content.query_type`；普通 SQL 查询的执行目标写入 `execution_config.engine_id`，DuckDB 联邦查询写入 `execution_config.query_mode="duckdb"` 且不得携带 `engine_id`；`workflow` 使用 `content.workflow_definition` 和可选 `content.inputs`，执行目标只写 `execution_config.engine_id` 指向具体工作流运行时实例，不写 `execution_config.engine_type`，运行时类型必须由后端按该实例 ID 从 System 查询；`script` 的 Notebook 形态使用 `content.notebook_path`。Develop 的 ad-hoc 临时执行同样必须提交 `execution_config`，不得使用顶层 `engine_id` 表达查询目标。Develop 的查询目标发现必须区分真实查询引擎与内置查询模式：`/develop/engines` 只能返回 System 中具备 query 能力的真实引擎实例；DuckDB 联邦查询通过 Develop 查询模式能力暴露，不得追加为 `id=0` 的虚拟 Engine。不得再新增或消费 `content.sql`、`content.workflow_def`、`content.input_data`、`execution_config.data_source_id` 等旧字段。
+Develop 的 `develop.dev_tasks.content` 必须使用规范字段：`query` 使用 `content.query` 和 `content.query_type`，执行目标统一写入 `execution_config.engine_id` 并指向 System 中具备 query 能力的真实 Engine；DuckDB 联邦查询绑定平台内置 DuckDB Runtime Engine，不使用独立模式字段或虚拟 Engine。`workflow` 使用 `content.workflow_definition` 和可选 `content.inputs`，执行目标只写 `execution_config.engine_id` 指向具体工作流运行时实例，不写 `execution_config.engine_type`，运行时类型必须由后端按该实例 ID 从 System 查询；`script` 的 Notebook 形态使用 `content.notebook_path`。Develop 的 ad-hoc 临时执行同样必须提交 `execution_config`，不得使用顶层 `engine_id` 表达查询目标。`/develop/engines` 统一返回 System 中具备 query 能力的真实 Engine Instance，不提供 Develop 私有查询模式或 `id=0` 虚拟 Engine。不得再新增或消费 `content.sql`、`content.workflow_def`、`content.input_data`、`execution_config.data_source_id` 等旧字段。
 
 Develop 启动归一化和数据库迁移只允许删除上述旧字段，不得把 `content.sql`、`content.workflow_def`、顶层 `content.nodes/content.edges` 或 `content.input_data` 搬迁为规范字段；仍含旧字段的历史任务应按规范重新创建或由人工一次性处理。
 

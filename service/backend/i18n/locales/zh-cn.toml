@@ -30,3 +30,15 @@ other = "刷新查询服务依赖快照失败"
 
 [service.err.sql_output_contract_failed]
 other = "检测 SQL 输出契约失败"
+
+[service.err.authentication_required]
+other = "需要登录后才能生成查询样例"
+
+[service.err.query_sample_forbidden]
+other = "没有查询服务样例的数据读取权限"
+
+[service.err.query_sample_unavailable]
+other = "当前业务库没有可真实执行并返回数据的 SQL 样例"
+
+[service.err.query_sample_failed]
+other = "生成查询服务样例失败"

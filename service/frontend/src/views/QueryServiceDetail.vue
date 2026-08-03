@@ -53,7 +53,7 @@
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item :label="t('service.query.labelEngine')">
-          Engine #{{ service?.engine_id }}
+          {{ service?.runtime_engine_id ? `Runtime #${service.runtime_engine_id}` : `Engine #${service?.engine_id}` }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('service.query.labelDescription')" :span="2">
           {{ service?.description || t('service.common.none') }}

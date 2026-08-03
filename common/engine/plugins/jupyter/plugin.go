@@ -45,7 +45,7 @@ func (p *JupyterPlugin) ConnectionIdentityFields() []string {
 }
 
 func (p *JupyterPlugin) Capabilities() plugin.EngineCapabilities {
-	return plugin.NewScriptCapabilities(p.Type(), []string{"notebook"}, []string{"python"})
+	return plugin.NewScriptCapabilities(p.Type(), []string{"notebook"}, []string{"python"}, true)
 }
 
 func (p *JupyterPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {

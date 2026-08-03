@@ -110,6 +110,19 @@ func main() {
 	// 统一刷新引擎能力声明。旧 capabilities 结构不再保留，Meta/Develop 等消费端只读取新结构。
 	{
 		engineRepo := repository.NewEngineRepository(db)
+		registryService := service.NewRegistryService(engineRepo)
+		registrationContext, cancelRegistration := context.WithTimeout(context.Background(), 10*time.Second)
+		_, err := registryService.RegisterBuiltinRuntime(
+			registrationContext,
+			"duckdb",
+			cfg.DuckDBRuntimeURL,
+			"ADDP 内置联邦只读查询 Runtime",
+		)
+		cancelRegistration()
+		if err != nil {
+			logger.L().Error("注册内置 DuckDB Runtime 失败", "error", err)
+			os.Exit(1)
+		}
 		engineService := service.NewEngineService(engineRepo, cfg.EncryptionKey, nil)
 		if err := engineService.RefreshAllEngineCapabilities(); err != nil {
 			logger.L().Error("刷新引擎能力声明失败", "error", err)

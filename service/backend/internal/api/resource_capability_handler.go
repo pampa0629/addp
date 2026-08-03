@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -19,6 +20,7 @@ import (
 	"github.com/addp/common/sqldialect"
 	servicei18n "github.com/addp/service/i18n"
 	serviceModels "github.com/addp/service/internal/models"
+	serviceInternal "github.com/addp/service/internal/service"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -36,6 +38,88 @@ type graphNodeShapeOption struct {
 type ResourceCapabilityHandler struct {
 	systemClient *commonClient.SystemClient
 	metaClient   *commonClient.MetaClient
+	querySamples *serviceInternal.QuerySampleService
+}
+
+func (h *ResourceCapabilityHandler) SetQuerySampleService(querySamples *serviceInternal.QuerySampleService) {
+	if h != nil {
+		h.querySamples = querySamples
+	}
+}
+
+// GetQuerySample 获取经过真实执行验收的查询服务 SQL 样例。
+// @Summary 获取查询服务 SQL 样例 | Get query service SQL sample
+// @Tags 资源能力 | Resource Capabilities
+// @Produce json
+// @Param id path int true "查询引擎ID | Query engine ID"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 422 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Failure 503 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.create","service.data_read.execute"]
+// @Router /query-engines/{id}/sample-query [get]
+// @Security BearerAuth
+func (h *ResourceCapabilityHandler) GetQuerySample(c *gin.Context) {
+	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil || engineID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid query engine ID", "error_code": "invalid_query_engine_id"})
+		return
+	}
+	userAccessToken, err := serviceUserAccessToken(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": commoni18n.T(c, servicei18n.MsgAuthenticationRequired), "error_code": "authentication_required",
+		})
+		return
+	}
+	if h == nil || h.querySamples == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": commoni18n.T(c, servicei18n.MsgQuerySampleFailed), "error_code": "query_sample_unavailable",
+		})
+		return
+	}
+	query, language, err := h.querySamples.Generate(c.Request.Context(), tenantIDValue(c), userAccessToken, uint(engineID))
+	if err != nil {
+		if errors.Is(err, serviceInternal.ErrQuerySampleUnavailable) {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{
+				"error": commoni18n.T(c, servicei18n.MsgQuerySampleUnavailable), "error_code": "query_sample_unavailable",
+			})
+			return
+		}
+		if status, ok := commonClient.SystemAPIStatusCode(err); ok {
+			switch status {
+			case http.StatusUnauthorized:
+				c.JSON(status, gin.H{"error": commoni18n.T(c, servicei18n.MsgAuthenticationRequired), "error_code": "authentication_required"})
+			case http.StatusForbidden:
+				c.JSON(status, gin.H{"error": commoni18n.T(c, servicei18n.MsgQuerySampleForbidden), "error_code": "query_sample_permission_denied"})
+			default:
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, servicei18n.MsgQuerySampleFailed), "error_code": "query_sample_failed"})
+			}
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": commoni18n.T(c, servicei18n.MsgQuerySampleFailed), "error_code": "query_sample_failed",
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"query": query, "language": language})
+}
+
+func serviceUserAccessToken(c *gin.Context) (string, error) {
+	values := c.Request.Header.Values("Authorization")
+	if len(values) != 1 {
+		return "", errors.New("Authorization header must be singular")
+	}
+	parts := strings.Fields(values[0])
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") ||
+		!strings.HasPrefix(parts[1], "addp_at_") || len(parts[1]) == len("addp_at_") {
+		return "", errors.New("Authorization header must contain a canonical Bearer token")
+	}
+	return parts[1], nil
 }
 
 // NewResourceCapabilityHandler 创建新的资源能力处理器。

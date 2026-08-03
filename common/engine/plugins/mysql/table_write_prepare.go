@@ -411,12 +411,12 @@ func mysqlCommonFieldType(column mysqlColumnInfo) datatype.FieldType {
 
 func mysqlTablePathParts(path plugin.CatalogPath) (string, string, error) {
 	if len(path.Segments) < 2 {
-		return "", "", fmt.Errorf("mysql table write requires database/table catalog path")
+		return "", "", fmt.Errorf("mysql table path requires database/table catalog path")
 	}
 	database := strings.TrimSpace(path.Segments[len(path.Segments)-2].Name)
 	table := strings.TrimSpace(path.Segments[len(path.Segments)-1].Name)
 	if database == "" || table == "" {
-		return "", "", fmt.Errorf("mysql table write requires non-empty database and table")
+		return "", "", fmt.Errorf("mysql table path requires non-empty database and table")
 	}
 	return database, table, nil
 }

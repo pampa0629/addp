@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	commonClient "github.com/addp/common/client"
@@ -18,6 +19,7 @@ var (
 	ErrControlledSQLExecutionUnsupported = errors.New("该引擎暂不支持受控 SQL 执行")
 	ErrSQLExecutionUnclassifiable        = errors.New("SQL 效果无法可靠判定")
 	ErrSQLConnectionTestFailed           = errors.New("数据源连接测试失败")
+	ErrSampleQueryUnavailable            = dbbridge.ErrSampleQueryUnavailable
 )
 
 // SQLEngineService executes SQL only through a User-derived Execution
@@ -51,6 +53,7 @@ type SQLResult struct {
 type IssuedSQLExecutionAuthorization struct {
 	AuthorizationID            int64
 	Effect                     SQLExecutionEffect
+	EngineIDs                  []uint
 	ActorPrincipalID           int64
 	ActorTenantMembershipID    int64
 	IssuedAuthorizationVersion int64
@@ -81,6 +84,45 @@ func (s *SQLEngineService) ExecuteAuthorizedSQL(
 	)
 }
 
+func (s *SQLEngineService) ExecuteAuthorizedQuery(
+	ctx context.Context,
+	tenantID uint,
+	userAccessToken string,
+	executionID uuid.UUID,
+	engineID uint,
+	language string,
+	query string,
+	timeout int,
+) (*SQLResult, error) {
+	language = strings.ToLower(strings.TrimSpace(language))
+	if language == "sql" {
+		return s.ExecuteAuthorizedSQL(ctx, tenantID, userAccessToken, executionID, engineID, query, timeout)
+	}
+	authorization, err := s.IssueReadExecutionAuthorization(
+		ctx, tenantID, userAccessToken, executionID, []uint{engineID}, timeout,
+	)
+	if err != nil {
+		return nil, err
+	}
+	engine, err := s.executionEngine(ctx, tenantID, executionID, engineID, authorization)
+	if err != nil {
+		return nil, err
+	}
+	execCtx, cancel := context.WithTimeout(ctx, time.Duration(s.normalizedTimeout(timeout))*time.Second)
+	defer cancel()
+	queryResult, err := dbbridge.ExecuteReadOnlyRuntimeQuery(execCtx, engine, language, query)
+	if err != nil {
+		return nil, err
+	}
+	rows := queryResult.Rows
+	if rows == nil {
+		rows = []map[string]interface{}{}
+	}
+	return &SQLResult{
+		Columns: queryResult.Columns, Rows: rows, RowsAffected: int64(len(rows)), Effect: SQLExecutionEffectRead,
+	}, nil
+}
+
 func (s *SQLEngineService) IssueSQLExecutionAuthorization(
 	ctx context.Context,
 	tenantID uint,
@@ -97,15 +139,64 @@ func (s *SQLEngineService) IssueSQLExecutionAuthorization(
 	if err != nil {
 		return nil, err
 	}
-	engineIDText := strconv.FormatUint(uint64(engineID), 10)
+	return s.issueExecutionAuthorization(
+		ctx, tenantID, userAccessToken, executionID, []uint{engineID}, effect, expiresIn, "develop",
+	)
+}
+
+func (s *SQLEngineService) IssueReadExecutionAuthorization(
+	ctx context.Context,
+	tenantID uint,
+	userAccessToken string,
+	executionID uuid.UUID,
+	engineIDs []uint,
+	timeout int,
+) (*IssuedSQLExecutionAuthorization, error) {
+	if s == nil || s.cfg == nil {
+		return nil, fmt.Errorf("SQL 执行授权服务未正确初始化")
+	}
+	return s.issueExecutionAuthorization(
+		ctx, tenantID, userAccessToken, executionID, engineIDs, SQLExecutionEffectRead,
+		int64(s.normalizedTimeout(timeout)+30), "develop",
+	)
+}
+
+func (s *SQLEngineService) IssueFederatedReadExecutionAuthorization(
+	ctx context.Context,
+	tenantID uint,
+	userAccessToken string,
+	executionID uuid.UUID,
+	engineIDs []uint,
+	timeout int,
+) (*IssuedSQLExecutionAuthorization, error) {
+	return s.issueExecutionAuthorization(
+		ctx, tenantID, userAccessToken, executionID, engineIDs, SQLExecutionEffectRead,
+		int64(s.normalizedTimeout(timeout)+30), "duckdb",
+	)
+}
+
+func (s *SQLEngineService) issueExecutionAuthorization(
+	ctx context.Context,
+	tenantID uint,
+	userAccessToken string,
+	executionID uuid.UUID,
+	engineIDs []uint,
+	effect SQLExecutionEffect,
+	expiresIn int64,
+	audience string,
+) (*IssuedSQLExecutionAuthorization, error) {
+	if s == nil || s.cfg == nil || s.executionAuthorizations == nil || tenantID == 0 ||
+		executionID == uuid.Nil || !validEngineIDs(engineIDs) {
+		return nil, fmt.Errorf("SQL 执行授权服务未正确初始化")
+	}
 	issued, err := s.executionAuthorizations.Issue(ctx, userAccessToken, commonClient.IssueExecutionAuthorizationRequest{
-		Audience: "develop", ExecutionID: executionID.String(), EngineIDs: []string{engineIDText},
+		Audience: audience, ExecutionID: executionID.String(), EngineIDs: formatEngineIDs(engineIDs),
 		Effects: []string{string(effect)}, ExpiresIn: expiresIn,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("签发执行授权失败: %w", err)
 	}
-	return issuedSQLExecutionAuthorization(issued, tenantID, effect)
+	return issuedSQLExecutionAuthorization(issued, tenantID, effect, engineIDs)
 }
 
 func (s *SQLEngineService) TestAuthorizedConnection(
@@ -120,17 +211,11 @@ func (s *SQLEngineService) TestAuthorizedConnection(
 		return fmt.Errorf("SQL 连接测试服务未正确初始化")
 	}
 	timeout := s.normalizedTimeout(0)
-	engineIDText := strconv.FormatUint(uint64(engineID), 10)
-	issued, err := s.executionAuthorizations.Issue(ctx, userAccessToken, commonClient.IssueExecutionAuthorizationRequest{
-		Audience: "develop", ExecutionID: executionID.String(), EngineIDs: []string{engineIDText},
-		Effects: []string{string(SQLExecutionEffectRead)}, ExpiresIn: int64(timeout + 30),
-	})
+	authorization, err := s.IssueReadExecutionAuthorization(
+		ctx, tenantID, userAccessToken, executionID, []uint{engineID}, timeout,
+	)
 	if err != nil {
 		return fmt.Errorf("签发连接测试授权失败: %w", err)
-	}
-	authorization, err := issuedSQLExecutionAuthorization(issued, tenantID, SQLExecutionEffectRead)
-	if err != nil {
-		return err
 	}
 	engine, err := s.executionEngine(ctx, tenantID, executionID, engineID, authorization)
 	if err != nil {
@@ -162,13 +247,63 @@ func (s *SQLEngineService) IssueSQLExecutionAuthorizationFromExecution(
 	if err != nil {
 		return nil, err
 	}
+	return s.issueExecutionAuthorizationFromExecution(
+		ctx, tenantID, parentExecutionID, executionID, []uint{engineID}, effect, expiresIn, "develop",
+	)
+}
+
+func (s *SQLEngineService) IssueReadExecutionAuthorizationFromExecution(
+	ctx context.Context,
+	tenantID uint,
+	parentExecutionID uuid.UUID,
+	executionID uuid.UUID,
+	engineIDs []uint,
+	timeout int,
+) (*IssuedSQLExecutionAuthorization, error) {
+	if s == nil || s.cfg == nil {
+		return nil, fmt.Errorf("SQL 执行授权服务未正确初始化")
+	}
+	return s.issueExecutionAuthorizationFromExecution(
+		ctx, tenantID, parentExecutionID, executionID, engineIDs, SQLExecutionEffectRead,
+		int64(s.normalizedTimeout(timeout)+30), "develop",
+	)
+}
+
+func (s *SQLEngineService) IssueFederatedReadExecutionAuthorizationFromExecution(
+	ctx context.Context,
+	tenantID uint,
+	parentExecutionID uuid.UUID,
+	executionID uuid.UUID,
+	engineIDs []uint,
+	timeout int,
+) (*IssuedSQLExecutionAuthorization, error) {
+	return s.issueExecutionAuthorizationFromExecution(
+		ctx, tenantID, parentExecutionID, executionID, engineIDs, SQLExecutionEffectRead,
+		int64(s.normalizedTimeout(timeout)+30), "duckdb",
+	)
+}
+
+func (s *SQLEngineService) issueExecutionAuthorizationFromExecution(
+	ctx context.Context,
+	tenantID uint,
+	parentExecutionID uuid.UUID,
+	executionID uuid.UUID,
+	engineIDs []uint,
+	effect SQLExecutionEffect,
+	expiresIn int64,
+	audience string,
+) (*IssuedSQLExecutionAuthorization, error) {
+	if s == nil || s.cfg == nil || s.systemService == nil || tenantID == 0 || !validEngineIDs(engineIDs) ||
+		parentExecutionID == uuid.Nil || executionID == uuid.Nil {
+		return nil, fmt.Errorf("SQL 执行授权服务未正确初始化")
+	}
 	issued, err := s.systemService.WithTenantID(tenantID).IssueExecutionAuthorizationFromExecution(
 		ctx,
 		commonClient.IssueExecutionAuthorizationFromExecutionRequest{
 			ParentExecutionID: parentExecutionID.String(),
-			Audience:          "develop",
+			Audience:          audience,
 			ExecutionID:       executionID.String(),
-			EngineIDs:         []string{strconv.FormatUint(uint64(engineID), 10)},
+			EngineIDs:         formatEngineIDs(engineIDs),
 			Effects:           []string{string(effect)},
 			ExpiresIn:         expiresIn,
 		},
@@ -176,7 +311,7 @@ func (s *SQLEngineService) IssueSQLExecutionAuthorizationFromExecution(
 	if err != nil {
 		return nil, fmt.Errorf("从父执行签发 SQL 执行授权失败: %w", err)
 	}
-	return issuedSQLExecutionAuthorization(issued, tenantID, effect)
+	return issuedSQLExecutionAuthorization(issued, tenantID, effect, engineIDs)
 }
 
 func (s *SQLEngineService) sqlExecutionAuthorizationRequest(
@@ -195,6 +330,7 @@ func issuedSQLExecutionAuthorization(
 	issued *commonClient.IssuedExecutionAuthorization,
 	tenantID uint,
 	effect SQLExecutionEffect,
+	engineIDs []uint,
 ) (*IssuedSQLExecutionAuthorization, error) {
 	if issued == nil || issued.TenantID != strconv.FormatUint(uint64(tenantID), 10) {
 		return nil, fmt.Errorf("执行授权租户与当前上下文不一致")
@@ -216,7 +352,7 @@ func issuedSQLExecutionAuthorization(
 		return nil, err
 	}
 	return &IssuedSQLExecutionAuthorization{
-		AuthorizationID: authorizationID, Effect: effect, ActorPrincipalID: actorPrincipalID,
+		AuthorizationID: authorizationID, Effect: effect, EngineIDs: append([]uint(nil), engineIDs...), ActorPrincipalID: actorPrincipalID,
 		ActorTenantMembershipID: membershipID, IssuedAuthorizationVersion: authorizationVersion,
 		ExpiresAt: issued.ExpiresAt.UTC(),
 	}, nil
@@ -274,6 +410,7 @@ func (s *SQLEngineService) executionEngine(
 ) (*commonModels.Engine, error) {
 	if s == nil || s.systemService == nil || tenantID == 0 || engineID == 0 || executionID == uuid.Nil ||
 		authorization == nil || authorization.AuthorizationID <= 0 || authorization.Effect == "" ||
+		!containsEngineID(authorization.EngineIDs, engineID) ||
 		!authorization.ExpiresAt.After(time.Now().UTC()) {
 		return nil, fmt.Errorf("执行授权无效或已过期")
 	}
@@ -292,6 +429,26 @@ func (s *SQLEngineService) executionEngine(
 	return access.Engine, nil
 }
 
+func (s *SQLEngineService) ExecutionEngines(
+	ctx context.Context,
+	tenantID uint,
+	executionID uuid.UUID,
+	authorization *IssuedSQLExecutionAuthorization,
+) ([]commonModels.Engine, error) {
+	if authorization == nil || len(authorization.EngineIDs) == 0 {
+		return nil, nil
+	}
+	engines := make([]commonModels.Engine, 0, len(authorization.EngineIDs))
+	for _, engineID := range authorization.EngineIDs {
+		engine, err := s.executionEngine(ctx, tenantID, executionID, engineID, authorization)
+		if err != nil {
+			return nil, err
+		}
+		engines = append(engines, *engine)
+	}
+	return engines, nil
+}
+
 func parseIssuedAuthorizationID(value string) (int64, error) {
 	parsed, err := strconv.ParseInt(value, 10, 64)
 	if err != nil || parsed <= 0 || strconv.FormatInt(parsed, 10) != value {
@@ -300,17 +457,62 @@ func parseIssuedAuthorizationID(value string) (int64, error) {
 	return parsed, nil
 }
 
-func (s *SQLEngineService) GenerateSampleQuery(ctx context.Context, tenantID, engineID uint) (string, string, error) {
-	descriptor, err := s.systemService.WithTenantID(tenantID).GetEngineRuntimeDescriptor(ctx, engineID)
+func (s *SQLEngineService) GenerateAuthorizedSampleQuery(
+	ctx context.Context,
+	tenantID uint,
+	userAccessToken string,
+	executionID uuid.UUID,
+	engineID uint,
+) (string, string, error) {
+	authorization, err := s.IssueReadExecutionAuthorization(
+		ctx, tenantID, userAccessToken, executionID, []uint{engineID}, 10,
+	)
 	if err != nil {
-		return "", "", fmt.Errorf("获取引擎描述失败：%w", err)
+		return "", "", err
 	}
-	resource := descriptor.AsEngine()
-	if resource == nil {
-		return "", "", fmt.Errorf("引擎描述为空")
+	engine, err := s.executionEngine(ctx, tenantID, executionID, engineID, authorization)
+	if err != nil {
+		return "", "", err
 	}
-	query, language := dbbridge.GenerateSampleQuery(ctx, resource)
-	return query, language, nil
+	return generateExecutableSampleQuery(ctx, engine)
+}
+
+func generateExecutableSampleQuery(ctx context.Context, engine *commonModels.Engine) (string, string, error) {
+	return dbbridge.GenerateExecutableSampleQuery(ctx, engine, "")
+}
+
+func formatEngineIDs(engineIDs []uint) []string {
+	result := make([]string, 0, len(engineIDs))
+	for _, engineID := range engineIDs {
+		result = append(result, strconv.FormatUint(uint64(engineID), 10))
+	}
+	return result
+}
+
+func validEngineIDs(engineIDs []uint) bool {
+	if len(engineIDs) == 0 {
+		return false
+	}
+	seen := make(map[uint]struct{}, len(engineIDs))
+	for _, engineID := range engineIDs {
+		if engineID == 0 {
+			return false
+		}
+		if _, exists := seen[engineID]; exists {
+			return false
+		}
+		seen[engineID] = struct{}{}
+	}
+	return true
+}
+
+func containsEngineID(engineIDs []uint, target uint) bool {
+	for _, engineID := range engineIDs {
+		if engineID == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *SQLEngineService) normalizedTimeout(timeout int) int {

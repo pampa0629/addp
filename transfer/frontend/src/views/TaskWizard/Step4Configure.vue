@@ -44,15 +44,35 @@
 					<el-radio value="incremental" :disabled="!watermarkIncrementalSupported">
 						{{ t('transfer.taskWizard.watermarkIncrementalLoad') }}
 					</el-radio>
-					<el-radio value="cdc" :disabled="!databaseCDCSupported">
-						{{ t('transfer.taskWizard.databaseCDCLoad') }}
-					</el-radio>
+					<span class="cdc-mode-option">
+						<el-radio value="cdc" :disabled="!databaseCDCSupported">
+							{{ t('transfer.taskWizard.databaseCDCLoad') }}
+						</el-radio>
+						<el-popover
+							v-if="databaseCDCUnavailableReasons.length"
+							:title="t('transfer.taskWizard.databaseCDCUnavailableTitle')"
+							placement="bottom"
+							:width="320"
+							trigger="click"
+						>
+							<template #reference>
+								<el-button
+									:icon="QuestionFilled"
+									:aria-label="t('transfer.taskWizard.databaseCDCUnavailableHelp')"
+									link
+									circle
+									size="small"
+									class="cdc-help-button"
+								/>
+							</template>
+							<ul class="cdc-unavailable-reasons">
+								<li v-for="reason in databaseCDCUnavailableReasons" :key="reason.code">
+									{{ databaseCDCReasonText(reason) }}
+								</li>
+							</ul>
+						</el-popover>
+					</span>
 				</el-radio-group>
-				<ul v-if="databaseCDCUnavailableReasons.length" class="field-hint block-hint cdc-unavailable-reasons">
-					<li v-for="reason in databaseCDCUnavailableReasons" :key="reason.code">
-						{{ databaseCDCReasonText(reason) }}
-					</li>
-				</ul>
 			</el-form-item>
 
       <template v-if="isContinuousTask">
@@ -217,6 +237,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { QuestionFilled } from '@element-plus/icons-vue'
 import { ScheduleConfig } from '@common-ui'
 
 const { t } = useI18n()
@@ -450,8 +471,31 @@ watch(
 }
 
 .cdc-unavailable-reasons {
-	margin: 6px 0 0;
-	padding-left: 20px;
+	margin: 0;
+	padding-left: 18px;
+	color: var(--addp-text-secondary);
+	line-height: 1.6;
+}
+
+.cdc-mode-option {
+	display: inline-flex;
+	align-items: center;
+}
+
+.cdc-mode-option :deep(.el-radio) {
+	margin-right: 2px;
+}
+
+.cdc-help-button {
+	width: 24px;
+	height: 24px;
+	padding: 0;
+	color: var(--addp-text-tertiary);
+}
+
+.cdc-help-button:hover,
+.cdc-help-button:focus-visible {
+	color: var(--el-color-primary);
 }
 
 .step-description {

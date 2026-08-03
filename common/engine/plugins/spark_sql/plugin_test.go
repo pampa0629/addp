@@ -125,3 +125,21 @@ func TestCreateConnectionPoolRejectsSparkThriftProtocol(t *testing.T) {
 		t.Fatal("CreateConnectionPool() error = nil, want unsupported protocol error")
 	}
 }
+
+func TestExecuteSQLRejectsWriteInReadOnlyMode(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	spark := &SparkSQLPlugin{query: func(context.Context, plugin.ConnectionInfo, string) (*plugin.QueryResult, error) {
+		called = true
+		return &plugin.QueryResult{}, nil
+	}}
+	if _, err := spark.ExecuteSQL(
+		context.Background(), nil, "DELETE FROM orders", plugin.QueryOptions{ReadOnly: true},
+	); err == nil {
+		t.Fatal("ExecuteSQL() error = nil, want read-only rejection")
+	}
+	if called {
+		t.Fatal("write query reached Spark runtime in read-only mode")
+	}
+}

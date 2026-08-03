@@ -260,7 +260,7 @@ type NativeTableSpatialEncodingCapability struct {
 
 `table_spatial_encoding` 只表达跨出 native table provider 后的 row value 编码，不表达数据库内部类型。PostGIS `geometry` 这类 engine-internal type 不应作为 encoding 暴露；PostgreSQL / PostGIS 第一阶段声明 `geometry_read_encodings=["ewkb","geojson"]`、`geometry_write_encodings=["ewkb"]`、`read_transform=true`、`native_spatial_functions=true`。MySQL 第一阶段只声明 `geometry_write_encodings=["ewkb"]`：Provider 必须把 EWKB 行值转换为标准 WKB，并通过 MySQL 空间构造函数连同 SRID 写入；不得把直接绑定数据库内部 geometry 二进制、普通 `batch_write` 或建表能力误报为空间行值写入能力。
 
-`bounded_watermark_read` 与普通 `batch_read` / `table_read_session` 不等价。前者必须冻结 execution 上界、使用稳定复合游标并能从读取行生成 committed position。`table_upsert` 也不能从 `batch_write` 推导；只有目标 Provider 能校验唯一键并以幂等冲突处理提交批次时才能声明。当前只有 PostgreSQL 声明 `bounded_watermark_read`；PostgreSQL 与 MySQL 声明幂等 `table_upsert`。MySQL 目标必须使用 InnoDB，并要求配置键精确匹配非空主键或唯一约束；为避免 `ON DUPLICATE KEY UPDATE` 被其他唯一约束触发，目标表不得存在与配置键不同的唯一约束。
+`bounded_watermark_read` 与普通 `batch_read` / `table_read_session` 不等价。前者必须冻结 execution 上界、使用稳定复合游标并能从读取行生成 committed position。PostgreSQL 与 MySQL 当前都声明该能力，并分别在一致性只读事务和 InnoDB consistent snapshot 中冻结上界；MySQL 当前没有 native geometry read encoding，因此 bounded watermark Provider 明确拒绝包含空间字段的源表。`table_upsert` 也不能从 `batch_write` 推导；只有目标 Provider 能校验唯一键并以幂等冲突处理提交批次时才能声明。PostgreSQL 与 MySQL 声明幂等 `table_upsert`。MySQL 目标必须使用 InnoDB，并要求配置键精确匹配非空主键或唯一约束；为避免 `ON DUPLICATE KEY UPDATE` 被其他唯一约束触发，目标表不得存在与配置键不同的唯一约束。
 
 `change_stream_read` 与 content `stream_read`、`batch_read` 都不等价。它必须声明 `partitioned=true`、`seek=true`、`pause_resume=true`，Kafka 第一版 `position_types` 只允许 `kafka_offset/v1`。实现该能力的 reader 必须同时返回每分区当前 earliest/latest position，供运行时计算 lag 和 retention 窗口；这不是独立能力开关。该能力只表达原始 record 和 position 读取，不声明 JSON/Avro/Protobuf、Debezium envelope、Transfer target apply 或 exactly-once。第一版仅业务 Kafka Engine 声明该能力；Infra Kafka 不产生 System capabilities 记录。
 
@@ -302,7 +302,8 @@ Develop 等上层模块如仍需面向用户的开发入口，应从 `compute` �
 | --- | --- |
 | 查询工作台 | `compute.query.supported=true` |
 | 工作流编辑器 | `compute.workflow.supported=true` |
-| Notebook / 脚本编辑器 | `compute.script.supported=true`，并结合 `compute.script.modes` |
+| Notebook 无头执行 | `compute.script.supported=true`，并结合 `compute.script.modes` |
+| Notebook 交互编辑 | 在 Notebook 模式基础上还要求 `compute.script.interactive=true` |
 
 这些派生名称可作为前端路由或展示文案使用，但不得反向写回为 `dev_modes` 字段。
 
@@ -317,6 +318,14 @@ type QueryCapability struct {
     ReadOnly        bool     `json:"read_only,omitempty"`
     SupportsExplain bool     `json:"supports_explain,omitempty"`
     SupportsCancel  bool     `json:"supports_cancel,omitempty"`
+    Federation      *QueryFederationCapability `json:"federation,omitempty"`
+}
+
+type QueryFederationCapability struct {
+    Supported         bool     `json:"supported"`
+    RuntimeAPI        string   `json:"runtime_api"`
+    SourceEngineTypes []string `json:"source_engine_types,omitempty"`
+    ObjectFormats     []string `json:"object_formats,omitempty"`
 }
 ```
 
@@ -329,8 +338,13 @@ type QueryCapability struct {
 | `read_only` | 运行时是否只允许只读查询。 |
 | `supports_explain` | 是否支持查询计划 / 性能诊断。 |
 | `supports_cancel` | 是否支持取消运行中的查询。 |
+| `federation` | 可选的多数据源联邦查询能力；声明后必须实现 `FederatedQueryRuntimeProvider`。 |
+
+DuckDB Runtime 第一阶段声明 `runtime_api="addp.query-runtime/v1"`、`source_engine_types=["postgresql","mysql","minio","s3"]`、`object_formats=["parquet"]`。能力只声明当前真正实现并验证过的连接器；Doris、ClickHouse、Spark SQL、MongoDB、Neo4j、Kafka 等不能仅因 ADDP 已支持该 Engine 类型就自动列入。
 
 查询语言差异只通过 `languages` / `default_language` 和 `QueryRequest.Language` 表达，不新增按数据库类别拆分的 query provider。`result_kinds=document` 只表示原生查询结果可能是 JSON document / record 形态，不表示 data item 的 `data_type=document`。图结构查询如果需要节点 / 关系结构结果，仍使用 `GraphQueryProvider`。
+
+查询工作台的默认样例不属于静态 capability。样例必须在用户切换具体 Engine Instance 时，通过执行授权消费该实例连接、实时发现有数据的 Catalog leaf，再由 Query Runtime 按 `default_language` 生成。Catalog 发现失败或当前实例没有有数据的 leaf 时返回明确错误，不允许用固定诊断查询伪装成实例样例。
 
 ### 4.2 WorkflowCapability
 
@@ -370,6 +384,7 @@ type ScriptCapability struct {
 | --- | --- |
 | `supported` | 是否可作为脚本或 Notebook 运行时。 |
 | `modes` | 交互模式，如 `notebook`。 |
+| `interactive` | 是否支持由 owner 模块创建、代理和关闭短期隔离交互会话；不得仅因存在共享 Lab 入口而声明。 |
 | `languages` | 支持的语言，如 `python`。 |
 
 ---
@@ -425,10 +440,10 @@ type CapabilitiesView struct {
 - 声明 `storage.store.batch_write=true` 的插件必须实现 `BatchWritableProvider`。
 - 声明 `storage.store.table_write_session=true` 的插件必须实现 `TableWriteSessionProvider`。
 - 声明 `storage.store.table_write_prepare=true` 的插件必须实现 `TableWritePreparer`。
-- 声明 `compute.query.supported=true` 的插件必须实现对应 query runtime provider。
+- 声明 `compute.query.supported=true` 的插件必须实现 `QueryRuntimeProvider` 或 `FederatedQueryRuntimeProvider`。声明 `compute.query.federation.supported=true` 时必须实现 `FederatedQueryRuntimeProvider`，且 `runtime_api` 非空。
 - 声明 `compute.workflow.supported=true` 的插件必须实现 `WorkflowRuntimeProvider`。若 `dynamic_operators=true`，则其 `ListOperators()` 必须可调用，并返回符合工作流计算引擎接口规范的算子描述。
 - 声明 `compute.script.supported=true` 的插件必须实现 `ScriptRuntimeProvider`。
-- 反向也必须成立：插件实现 `CatalogModelProvider`、`CatalogProvider`、`CatalogFactsProvider`、`DynamicSchemaSamplingProvider`、具体 Store Provider、`ChangeStreamReaderProvider`、`QueryRuntimeProvider`、`GraphQueryProvider`、`WorkflowRuntimeProvider` 或 `ScriptRuntimeProvider` 时，`Capabilities()` 必须声明对应能力。`StoreProvider` 本身只是 marker，不单独触发能力声明；以具体读写 Provider 为准。
+- 反向也必须成立：插件实现 `CatalogModelProvider`、`CatalogProvider`、`CatalogFactsProvider`、`DynamicSchemaSamplingProvider`、具体 Store Provider、`ChangeStreamReaderProvider`、`QueryRuntimeProvider`、`FederatedQueryRuntimeProvider`、`GraphQueryProvider`、`WorkflowRuntimeProvider` 或 `ScriptRuntimeProvider` 时，`Capabilities()` 必须声明对应能力。`StoreProvider` 本身只是 marker，不单独触发能力声明；以具体读写 Provider 为准。
 - capabilities 由插件返回结构体，System 统一序列化为 JSONB。插件 `Capabilities()` 是 Provider 能力模板，不得做实例连接或运行时探测。
 - 已注册插件引擎的落库能力事实源是插件 `Capabilities()` 与可选实例能力解析结果。普通 Engine API、内部自注册接口和 Registry 能力注册接口收到插件引擎提交的 `capabilities` 时都必须忽略，并改用插件模板和实例解析结果生成落库声明。内置扩展引擎自注册 payload 不提交 `capabilities`；自注册脚本不得额外声明 `workflow_runtime`、`script_runtime` 等平行运行时能力。
 - 旧 capabilities 结构不再兼容，发现旧结构可直接刷新或清空。

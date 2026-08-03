@@ -55,6 +55,7 @@ type DatabaseCDCStreamBinding struct {
 }
 
 type ContinuousTargetPlan struct {
+	EngineID    uint
 	ConnInfo    engineplugin.ConnectionInfo
 	Path        engineplugin.CatalogPath
 	Fields      []datatype.FieldInfo
@@ -142,7 +143,7 @@ func BuildContinuousPlan(spec ContinuousTaskSpec, resolver EngineResolver) (*Con
 			InitialPosition: spec.Source.ChangeStream.Start.Initial, PollBatchSize: spec.Source.ChangeStream.PollBatchSize,
 		},
 		Target: ContinuousTargetPlan{
-			ConnInfo: target.ConnInfo, Path: targetPath, Fields: fields,
+			EngineID: targetRef.ID, ConnInfo: target.ConnInfo, Path: targetPath, Fields: fields,
 			Keys: append([]string(nil), mustPolicyStrings(spec.Target.Policy, "keys")...),
 		},
 		Mappings: mappings, SourceKeys: append([]string(nil), spec.Source.ChangeStream.Key.Fields...), SourceType: sourceType, TargetType: targetType,
@@ -195,6 +196,10 @@ func BuildDatabaseCDCContinuousPlan(spec DatabaseCDCTaskSpec, resolver EngineRes
 	if err != nil {
 		return nil, fmt.Errorf("build database CDC target path: %w", err)
 	}
+	targetRef, err := spec.Target.EngineRef()
+	if err != nil {
+		return nil, fmt.Errorf("resolve database CDC target engine reference: %w", err)
+	}
 	mappings, fields, err := buildDatabaseCDCFields(spec.Transforms[0].Fields)
 	if err != nil {
 		return nil, err
@@ -224,7 +229,7 @@ func BuildDatabaseCDCContinuousPlan(spec DatabaseCDCTaskSpec, resolver EngineRes
 			ConsumerGroup: stream.ConsumerGroup, InitialPosition: engineplugin.ChangeStreamInitialEarliest,
 			PollBatchSize: pollBatchSize,
 		},
-		Target:   ContinuousTargetPlan{ConnInfo: bindings.Target.ConnInfo, Path: targetPath, Fields: fields, SpatialInfo: targetSpatialInfo, Keys: targetKeys},
+		Target:   ContinuousTargetPlan{EngineID: targetRef.ID, ConnInfo: bindings.Target.ConnInfo, Path: targetPath, Fields: fields, SpatialInfo: targetSpatialInfo, Keys: targetKeys},
 		Mappings: mappings, SourceKeys: sourceKeys, SourceType: "kafka", TargetType: bindings.TargetType,
 		Envelope: envelope, RecordFailureMode: RecordFailureModeBlock,
 		CDC: &DatabaseCDCSourcePlan{Provider: bindings.SourceType, Database: stream.Database, Schema: stream.Schema, Table: stream.Table, SpatialInfo: stream.SpatialInfo.Clone()},

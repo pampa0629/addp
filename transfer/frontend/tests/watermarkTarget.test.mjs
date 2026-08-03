@@ -1,7 +1,32 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { hasAtomicPartitionedTableChangeApply, hasIdempotentTableUpsert } from '../src/utils/transferDisplay.js'
+import {
+  hasAtomicPartitionedTableChangeApply,
+  hasBoundedWatermarkRead,
+  hasIdempotentTableUpsert
+} from '../src/utils/transferDisplay.js'
+
+test('watermark source requires declared bounded watermark read', () => {
+  assert.equal(hasBoundedWatermarkRead({
+    capabilities: {
+      storage: {
+        store: { bounded_watermark_read: true }
+      }
+    }
+  }), true)
+
+  assert.equal(hasBoundedWatermarkRead({
+    capabilities: JSON.stringify({
+      storage: {
+        store: { bounded_watermark_read: false }
+      }
+    })
+  }), false)
+
+  assert.equal(hasBoundedWatermarkRead({ engine_type: 'postgresql' }), false)
+  assert.equal(hasBoundedWatermarkRead({ engine_type: 'mysql' }), false)
+})
 
 test('watermark target requires declared idempotent table upsert', () => {
   assert.equal(hasIdempotentTableUpsert({

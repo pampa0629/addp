@@ -32,7 +32,6 @@ func SetupRouter(
 	notebookHandler *NotebookHandler,
 	devTaskService interface{}, // 添加 devTaskService 参数
 	systemClient *commonClient.SystemServiceClient, // 用于审计日志
-	duckdbHandler *DuckDBHandler, // DuckDB 联邦查询
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -55,6 +54,13 @@ func SetupRouter(
 
 	taskListHandler := NewTaskListHandler(devTaskService.(*service.DevTaskService))
 	assetDiscHandler := newAssetDiscoverableHandler(db)
+
+	// Kernel Capability 只允许访问独立的只读引擎发现端点。
+	router.GET("/api/v1/develop/notebook-kernel-sessions/:session_id/engine-descriptors", notebookHandler.ListSessionEngineDescriptors)
+
+	// Notebook 原生交互协议使用单会话、单路径 HttpOnly 能力 Cookie。
+	router.Any("/api/v1/develop/notebook-sessions/:session_id", notebookHandler.ProxySession)
+	router.Any("/api/v1/develop/notebook-sessions/:session_id/*path", notebookHandler.ProxySession)
 
 	// 用户 API 只接受 canonical Bearer AuthContext。
 	api := router.Group("/api/v1/develop")
@@ -137,7 +143,6 @@ func SetupRouter(
 		{
 			engines.GET("", permission(developauthorization.PermissionDevelopTaskRead), engineHandler.ListEngines)
 		}
-		api.GET("/query-modes", permission(developauthorization.PermissionDevelopTaskRead), engineHandler.ListQueryModes)
 
 		// ========== 工作流引擎管理 ==========
 		api.GET("/workflow-engines", permission(developauthorization.PermissionDevelopTaskRead), engineHandler.ListWorkflowEngines)
@@ -154,7 +159,14 @@ func SetupRouter(
 			),
 			queryHandler.TestConnection,
 		)
-		api.GET("/engines/:id/sample-query", permission(developauthorization.PermissionDevelopTaskRead), queryHandler.GetSampleQuery)
+		api.GET(
+			"/engines/:id/sample-query",
+			permission(
+				developauthorization.PermissionDevelopTaskExecute,
+				developauthorization.PermissionDevelopDataReadExecute,
+			),
+			queryHandler.GetSampleQuery,
+		)
 		api.POST("/execute", permission(developauthorization.PermissionDevelopTaskExecute), queryHandler.ExecuteQuery)
 
 		// ========== Notebook 开发 ==========
@@ -162,22 +174,19 @@ func SetupRouter(
 		api.GET("/notebook-engines/:id/kernels", permission(developauthorization.PermissionDevelopNotebookRead), notebookHandler.ListKernels)
 		notebooks := api.Group("/notebooks")
 		{
+			notebooks.POST("", permission(developauthorization.PermissionDevelopNotebookCreate), notebookHandler.CreateNotebook)
 			notebooks.POST("/upload", permission(developauthorization.PermissionDevelopNotebookCreate), notebookHandler.UploadNotebook)
 			notebooks.GET("", permission(developauthorization.PermissionDevelopNotebookRead), notebookHandler.ListNotebooks)
+			notebooks.POST("/:id/sessions", permission(
+				developauthorization.PermissionDevelopNotebookUpdate,
+				developauthorization.PermissionDevelopTaskRead,
+			), notebookHandler.CreateSession)
+			notebooks.DELETE("/:id/sessions/:session_id", permission(developauthorization.PermissionDevelopNotebookUpdate), notebookHandler.CloseSession)
 			notebooks.PUT("/:id/runtime-binding", permission(developauthorization.PermissionDevelopNotebookUpdate), notebookHandler.UpdateRuntimeBinding)
 			notebooks.GET("/:id/download", permission(developauthorization.PermissionDevelopNotebookRead), notebookHandler.DownloadNotebook)
 			notebooks.DELETE("/:id", permission(developauthorization.PermissionDevelopNotebookDelete), notebookHandler.DeleteNotebook)
 		}
 
-		// ========== DuckDB 联邦查询 ==========
-		if duckdbHandler != nil {
-			duckdb := api.Group("/duckdb")
-			{
-				duckdb.GET("/sources", permission(developauthorization.PermissionDevelopTaskRead), duckdbHandler.GetFederatedSources)
-				duckdb.GET("/test", permission(developauthorization.PermissionDevelopTaskRead), duckdbHandler.TestConnection)
-				duckdb.GET("/sample-query", permission(developauthorization.PermissionDevelopTaskRead), duckdbHandler.GetSampleQuery)
-			}
-		}
 	}
 
 	return router

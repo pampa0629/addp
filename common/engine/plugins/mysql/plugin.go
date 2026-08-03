@@ -33,6 +33,7 @@ func mysqlCatalogFieldType(nativeType string) datatype.FieldType {
 type MySQLPlugin struct{}
 
 var (
+	_ plugin.BoundedWatermarkReadProvider        = (*MySQLPlugin)(nil)
 	_ plugin.TableUpsertProvider                 = (*MySQLPlugin)(nil)
 	_ plugin.PartitionedTableChangeApplyProvider = (*MySQLPlugin)(nil)
 )
@@ -71,12 +72,13 @@ func (p *MySQLPlugin) ConnectionIdentityFields() []string {
 
 func (p *MySQLPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), "database", plugin.TabularCapabilityOptions{
-		Write:             true,
-		BulkWrite:         true,
-		BatchWrite:        true,
-		TableWriteSession: true,
-		TableWritePrepare: true,
-		TableUpsert:       true,
+		Write:                true,
+		BulkWrite:            true,
+		BatchWrite:           true,
+		TableWriteSession:    true,
+		TableWritePrepare:    true,
+		BoundedWatermarkRead: true,
+		TableUpsert:          true,
 		PartitionedTableChangeApplyOperations: []string{
 			plugin.TableChangeOperationUpsert,
 			plugin.TableChangeOperationDelete,
@@ -128,7 +130,7 @@ func (p *MySQLPlugin) QueryLanguages() []string {
 }
 
 func (p *MySQLPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
-	return "SELECT *\nFROM your_database.your_table\nLIMIT 10", "sql"
+	return plugin.SampleSQLForCatalogPath(p.Type(), opts.Path, 10), "sql"
 }
 
 func (p *MySQLPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {

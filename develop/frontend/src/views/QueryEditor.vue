@@ -37,7 +37,7 @@
       </div>
 
       <div class="toolbar-right">
-        <el-button @click="formatSQL" :disabled="!queryContent">
+        <el-button @click="formatSQL" :disabled="loadingSampleQuery || !queryContent">
           <el-icon><MagicStick /></el-icon>
           {{ t('develop.query.format') }}
         </el-button>
@@ -45,7 +45,7 @@
         <el-button
           type="primary"
           @click="handlePersistQueryTask"
-          :disabled="!selectedQueryTarget || !queryContent"
+          :disabled="loadingSampleQuery || !selectedQueryTarget || !queryContent"
         >
           <el-icon><FolderAdd /></el-icon>
           {{ currentTaskId ? t('develop.query.updateTask') : t('develop.query.saveAsTask') }}
@@ -55,7 +55,7 @@
           type="success"
           @click="executeQuery"
           :loading="executing"
-          :disabled="!selectedQueryTarget || !queryContent"
+          :disabled="loadingSampleQuery || !selectedQueryTarget || !queryContent"
         >
           <el-icon><VideoPlay /></el-icon>
           {{ t('develop.query.execute') }}
@@ -74,7 +74,11 @@
           </span>
           <span class="hint">{{ t('develop.query.hint') }}</span>
         </div>
-        <div class="editor-content">
+        <div
+          v-loading="loadingSampleQuery"
+          class="editor-content"
+          :aria-busy="loadingSampleQuery"
+        >
           <MonacoEditor
             ref="editorRef"
             v-model="queryContent"
@@ -130,7 +134,6 @@
     <SaveQueryDialog
       v-model="showSaveDialog"
       :engine-id="selectedEngineId"
-      :query-mode="selectedQueryMode"
       :sql="queryContent"
       @saved="handleSaveTask"
     />
@@ -157,14 +160,14 @@ import QueryResult from '../components/QueryResult.vue'
 import SaveQueryDialog from '../components/SaveQueryDialog.vue'
 import { GraphResultView } from '@addp/common-frontend/graph'
 import { executeQuery as executeAPI, testConnection, saveQueryTask, updateQueryTask, getSampleQuery } from '../api/query.js'
-import { testDuckDBConnection, getDuckDBSampleQuery } from '../api/duckdb.js'
-import { listEngines, listQueryModes } from '../api/engines.js'
+import { listEngines } from '../api/engines.js'
 import { getDevTask } from '../api/devTask.js'
 import {
   buildDevelopTaskEditorLocation,
   developTaskIDFromRoute
 } from '@/utils/developTaskRoute'
 import { navigateDevelopTaskEditor } from '@/utils/developNavigation'
+import { createLatestRequestCoordinator } from '@common-ui'
 
 const route = useRoute()
 const router = useRouter()
@@ -188,11 +191,12 @@ const currentTaskName = ref('')
 const currentTask = ref(null)
 const selectedQueryTarget = ref('')
 const engines = ref([])
-const queryModes = ref([])
 const queryContent = ref('')
+const currentQueryLanguage = ref('sql')
 const executionResult = ref(null)
 const executing = ref(false)
 const testingConnection = ref(false)
+const loadingSampleQuery = ref(false)
 const editorRef = ref(null)
 const showSaveDialog = ref(false)
 const resultViewMode = ref('table') // 'table' | 'graph'
@@ -210,40 +214,26 @@ const queryTargets = computed(() => [
     label: `${engine.name} (${engine.engine_type})`,
     typeLabel: engine.engine_type,
     engine
-  })),
-  ...queryModes.value.map(mode => ({
-    kind: 'mode',
-    value: `mode:${mode.mode}`,
-    name: mode.name,
-    label: `${mode.name} (${mode.mode})`,
-    typeLabel: mode.mode,
-    queryMode: mode.mode
   }))
 ])
 
 const selectedTarget = computed(() => queryTargets.value.find(target => target.value === selectedQueryTarget.value) || null)
-const isDuckDB = computed(() => selectedTarget.value?.kind === 'mode' && selectedTarget.value.queryMode === 'duckdb')
-const selectedQueryMode = computed(() => selectedTarget.value?.kind === 'mode' ? selectedTarget.value.queryMode : '')
-const selectedEngineId = computed(() => selectedTarget.value?.kind === 'engine' ? selectedTarget.value.engine.id : null)
+const selectedEngineId = computed(() => selectedTarget.value?.engine.id || null)
+const sampleRequests = createLatestRequestCoordinator()
 
 // 加载数据源列表
 const loadEngines = async () => {
   try {
-    const [engineResponse, modeResponse] = await Promise.all([
-      listEngines(),
-      listQueryModes()
-    ])
+    const engineResponse = await listEngines()
 
     // 添加 null 安全检查
-    if (!Array.isArray(engineResponse) || !Array.isArray(modeResponse)) {
-      console.warn('Develop: 获取到的查询目标列表为空或格式不正确:', { engineResponse, modeResponse })
+    if (!Array.isArray(engineResponse)) {
+      console.warn('Develop: 获取到的查询目标列表为空或格式不正确:', engineResponse)
       engines.value = []
-      queryModes.value = []
       return
     }
 
     engines.value = engineResponse
-    queryModes.value = modeResponse
 
     // 默认选择第一个
     if (queryTargets.value.length > 0 && !selectedQueryTarget.value) {
@@ -254,7 +244,6 @@ const loadEngines = async () => {
     console.error('Develop: 加载查询目标失败:', error)
     ElMessage.error(t('develop.query.loadEnginesFailed') + (error.response?.data?.error || error.message))
     engines.value = []
-    queryModes.value = []
   }
 }
 
@@ -264,11 +253,7 @@ const handleTestConnection = async () => {
 
   testingConnection.value = true
   try {
-    if (isDuckDB.value) {
-      await testDuckDBConnection()
-    } else {
-      await testConnection(selectedEngineId.value)
-    }
+    await testConnection(selectedEngineId.value)
     ElMessage.success(t('develop.query.testConnectionSuccess'))
   } catch (error) {
     ElMessage.error(t('develop.query.testConnectionFailed') + (error.response?.data?.error || error.message))
@@ -279,6 +264,8 @@ const handleTestConnection = async () => {
 
 // 执行查询
 const executeQuery = async () => {
+  if (loadingSampleQuery.value) return
+
   if (!selectedTarget.value) {
     ElMessage.warning(t('develop.query.selectDataSourceFirst'))
     return
@@ -298,10 +285,10 @@ const executeQuery = async () => {
 
   try {
     const response = await executeAPI(
-      isDuckDB.value ? null : selectedEngineId.value,
+      selectedEngineId.value,
       queryContent.value.trim(),
-      120,
-      selectedQueryMode.value
+      currentQueryLanguage.value,
+      120
     )
 
     executionResult.value = {
@@ -338,7 +325,7 @@ const executeQuery = async () => {
 
 // 格式化 SQL
 const formatSQL = () => {
-  if (!queryContent.value) return
+  if (loadingSampleQuery.value || !queryContent.value) return
 
   try {
     const formatted = format(queryContent.value, {
@@ -361,47 +348,50 @@ const clearResult = () => {
 }
 
 // 查询目标切换
-const onQueryTargetChange = () => {
-  executionResult.value = null
-  if (selectedTarget.value) {
-    applyQueryTarget(selectedTarget.value)
-  }
+const onQueryTargetChange = (targetValue) => {
+  const target = queryTargets.value.find(item => item.value === targetValue)
+  if (target) applyQueryTarget(target)
 }
 
 // 根据查询目标切换编辑器语言，并自动拉取样例查询填充编辑器
 const applyQueryTarget = async (target, options = {}) => {
   const { refreshQuery = true } = options
-  const type = target.kind === 'mode' ? target.queryMode : target.engine.engine_type?.toLowerCase() || ''
+  const type = target.engine.engine_type?.toLowerCase() || ''
   const lang = ENGINE_LANGUAGE_MAP[type] || 'sql'
-  editorRef.value?.setLanguage(lang)
   if (!refreshQuery) {
+    sampleRequests.invalidate()
+    loadingSampleQuery.value = false
+    editorRef.value?.setLanguage(currentQueryLanguage.value || lang)
     return
   }
 
+  const request = sampleRequests.begin(target.value)
+  queryContent.value = ''
+  currentQueryLanguage.value = lang
+  clearResult()
+  loadingSampleQuery.value = true
+  editorRef.value?.setLanguage(lang)
+
   try {
-    let query, language
-    if (target.kind === 'mode' && target.queryMode === 'duckdb') {
-      ;({ query, language } = await getDuckDBSampleQuery())
-    } else {
-      ;({ query, language } = await getSampleQuery(target.engine.id))
-    }
+    const { query, language } = await getSampleQuery(target.engine.id)
+    if (!sampleRequests.isCurrent(request, selectedQueryTarget.value)) return
     queryContent.value = query
+    currentQueryLanguage.value = language
     editorRef.value?.setLanguage(language)
-  } catch {
-    // 降级：使用静态模板（网络失败或引擎未连接时）
-    const fallbackMap = {
-      mongodb: '{"find": "collection_name", "filter": {}, "limit": 10}',
-      neo4j: 'MATCH (n)\nRETURN n\nLIMIT 10',
-      duckdb: 'SELECT version() AS duckdb_version',
+  } catch (error) {
+    if (!sampleRequests.isCurrent(request, selectedQueryTarget.value)) return
+    ElMessage.error(error.response?.data?.error || error.message)
+  } finally {
+    if (sampleRequests.isCurrent(request, selectedQueryTarget.value)) {
+      loadingSampleQuery.value = false
     }
-    queryContent.value = fallbackMap[type] ?? 'SELECT 1'
   }
 }
 
 // 保存任务
 const handleSaveTask = async (taskData) => {
   try {
-    const task = await saveQueryTask(taskData)
+    const task = await saveQueryTask({ ...taskData, query_type: currentQueryLanguage.value })
     currentTaskId.value = task.id
     currentTaskName.value = task.name
     currentTask.value = task
@@ -415,6 +405,8 @@ const handleSaveTask = async (taskData) => {
 }
 
 const handlePersistQueryTask = async () => {
+  if (loadingSampleQuery.value) return
+
   if (!currentTaskId.value) {
     showSaveDialog.value = true
     return
@@ -426,9 +418,8 @@ const handlePersistQueryTask = async () => {
       name: task.name || currentTaskName.value,
       display_name: task.display_name || currentTaskName.value,
       engine_id: selectedEngineId.value,
-      query_mode: selectedQueryMode.value,
       query: queryContent.value,
-      query_type: task.content?.query_type || 'sql',
+      query_type: currentQueryLanguage.value,
       description: task.description,
       tags: task.tags || [],
       timeout: task.timeout
@@ -455,15 +446,11 @@ const loadTask = async (taskId) => {
     // 加载 SQL 内容
     if (task.content && task.content.query) {
       queryContent.value = task.content.query
+      currentQueryLanguage.value = task.content.query_type || 'sql'
 
-      const queryMode = (task.execution_config?.query_mode || '').trim().toLowerCase()
-      if (queryMode === 'duckdb') {
-        selectedQueryTarget.value = `mode:${queryMode}`
-      } else {
-        const engineID = task.execution_config?.engine_id
-        if (engineID) {
-          selectedQueryTarget.value = `engine:${engineID}`
-        }
+      const engineID = task.execution_config?.engine_id
+      if (engineID) {
+        selectedQueryTarget.value = `engine:${engineID}`
       }
       if (selectedTarget.value) {
         await applyQueryTarget(selectedTarget.value, { refreshQuery: false })

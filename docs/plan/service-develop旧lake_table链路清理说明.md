@@ -1,8 +1,8 @@
 # Service / Develop 旧 `lake_table` 链路清理记录
 
-更新时间：2026-05-25
+更新时间：2026-08-03
 
-本文记录 Service、Develop 与 `common/duckdb` 中旧 `lake_table` / `lake_mode` 链路的清理结果。当前结论是：这些概念不再作为代码实现和对外 API 的事实来源。
+本文记录 Service、Develop 与独立 `engines/duckdb` Runtime 中旧 `lake_table` / `lake_mode` 链路的清理结果。当前结论是：这些概念不再作为代码实现和对外 API 的事实来源。
 
 ## 背景
 
@@ -23,35 +23,37 @@ ADDP 的数据类型与格式模型已经收口为：
 - `QueryService.IsLakeTable()` 已替换为 `QueryService.IsObjectTable()`。
 - `QueryService.GetLakeMode()` 已替换为 `QueryService.GetObjectTablePhysicalPath()`。
 - 创建查询服务时不再从 Meta tree 中查找 `item_type == "lake_table"`。
-- 对象存储表执行事实写入 `data_config.object_table`：
+- 对象存储表执行事实写入唯一的发布快照：
 
 ```json
 {
-  "object_table": {
-    "physical_path": "bucket/path/orders",
-    "format": "parquet",
-    "layout": "whole"
+  "source_snapshot": {
+    "object_table": {
+      "physical_path": "bucket/path/orders",
+      "format": "parquet",
+      "layout": "whole"
+    },
+    "federated_source_engine_ids": [9]
   }
 }
 ```
 
-- DuckDB 执行路径直接使用 `storage.physical_path` 构造 `read_parquet(...)`，不再通过 `schema/table/lake_mode` 推导路径。
+- 发布时冻结 Source Engine ID 与对象表映射；独立 DuckDB Runtime 使用 `storage.physical_path` 构造 `read_parquet(...)`，不再通过旧字段推导路径。
 - 前端选择项不再包含 `lake_table`。
 
 ### Develop DuckDB 联邦查询
 
 - `TableRef.ItemType` 不再暴露 `"lake_table"`，对象存储表也返回 `table`。
-- 对象存储表通过 `duckdb.IsObjectTableItem` 判断。
-- 样例 SQL 优先选择带 `physical_path` 的对象存储表。
+- 对象存储表通过实时 Catalog 和标准 attributes 判断。
+- 样例 SQL 只有经独立 DuckDB Runtime 真实执行并返回数据后才可展示。
 - API 描述与 Swagger 已改为“对象存储表 + 关系型表”。
 
-### common/duckdb
+### 独立 DuckDB Runtime
 
-- `IsLakeTableEngine` 已替换为 `IsObjectTableEngine`。
-- `BuildLakeTableMap` 已替换为 `BuildObjectTableMap`。
-- `isLakeTableItem` 已替换为导出的 `IsObjectTableItem`。
-- `engineLakeTables` 命名已替换为 `engineObjectTables`。
-- `BuildLakeTableS3Path` 已删除。
+- DuckDB 原生依赖和查询实现已从共享库迁入 `engines/duckdb`。
+- Develop、Service 只消费 `common/engine/plugin` 的联邦查询契约和 HTTP Provider。
+- Runtime 通过 Execution Authorization 获取 Source Engine 的执行期连接。
+- 扩展在镜像构建或开发启动准备阶段下载；查询请求只加载本地扩展。
 
 ## 当前目标模型
 
@@ -61,7 +63,7 @@ ADDP 的数据类型与格式模型已经收口为：
 | --- | --- |
 | `meta_item.item_type` | `object` 或 `file` |
 | `attributes.item.data_type` | `table` |
-| `attributes.item.format` | `parquet`、`orc`、`avro` |
+| `attributes.item.format` | 当前 DuckDB Runtime 只接受 `parquet` |
 | `attributes.item.layout` | `single` 或 `whole` |
 | `attributes.storage.physical_path` | 必须存在 |
 
@@ -72,9 +74,10 @@ ADDP 的数据类型与格式模型已经收口为：
 已完成：
 
 ```bash
-go test ./service/backend/internal/...
+cd service/backend && go test ./internal/service ./internal/api ./cmd/server
 npm run build --prefix service/frontend
-go test ./common/duckdb ./develop/backend/internal/...
+cd engines/duckdb && GOWORK=off go test ./...
+cd develop/backend && go test ./internal/service ./internal/api ./cmd/server
 npm run build --prefix develop/frontend
 bash scripts/swagger/gen-swagger.sh develop
 ```

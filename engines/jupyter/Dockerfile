@@ -1,6 +1,7 @@
 FROM localhost:5001/python:3.12-slim
 
 WORKDIR /workspace
+ENV WORKSPACE_DIR=/workspace/notebooks
 
 # 安装系统依赖
 RUN apt-get update && apt-get install -y \

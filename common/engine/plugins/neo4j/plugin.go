@@ -95,7 +95,7 @@ func (p *Neo4jPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.C
 }
 
 func (p *Neo4jPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
-	return p.executeQuery(ctx, connInfo, req.Query)
+	return p.executeQuery(ctx, connInfo, req.Query, req.Options.ReadOnly)
 }
 
 func (p *Neo4jPlugin) ExecuteGraphQuery(ctx context.Context, connInfo plugin.ConnectionInfo, cypher string, opts plugin.QueryOptions) (*plugin.GraphQueryResult, error) {
@@ -727,11 +727,9 @@ func extractGraphElements(v interface{}, nodes map[string]plugin.GraphNode, rels
 
 // 查询数据库中第一个 Node Label，生成可执行的 Cypher 查询
 func (p *Neo4jPlugin) generateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo) (string, string) {
-	const fallback = "MATCH (n)\nRETURN n\nLIMIT 10"
-
 	driver, err := p.createDriver(ctx, connInfo)
 	if err != nil {
-		return fallback, "cypher"
+		return "", "cypher"
 	}
 	defer driver.Close(ctx) //nolint:errcheck
 
@@ -741,39 +739,43 @@ func (p *Neo4jPlugin) generateSampleQuery(ctx context.Context, connInfo plugin.C
 	})
 	defer session.Close(ctx)
 
-	result, err := session.Run(ctx, "CALL db.labels() YIELD label RETURN label LIMIT 1", nil)
+	result, err := session.Run(ctx, "MATCH (n) RETURN labels(n)[0] AS label LIMIT 1", nil)
 	if err != nil {
-		return fallback, "cypher"
+		return "", "cypher"
 	}
 
 	records, err := result.Collect(ctx)
 	if err != nil || len(records) == 0 {
-		return fallback, "cypher"
+		return "", "cypher"
 	}
 
 	labelVal, ok := records[0].Get("label")
 	if !ok {
-		return fallback, "cypher"
+		return "", "cypher"
 	}
 	label, ok := labelVal.(string)
 	if !ok {
-		return fallback, "cypher"
+		return "MATCH (n)\nRETURN n\nLIMIT 10", "cypher"
 	}
 
-	return fmt.Sprintf("MATCH (n:%s)\nRETURN n\nLIMIT 10", label), "cypher"
+	return fmt.Sprintf("MATCH (n:%s)\nRETURN n\nLIMIT 10", cypherIdentifier(label)), "cypher"
 }
 
 // query 为 Cypher 字符串，如 MATCH (n:Person) RETURN n.name, n.age LIMIT 10
 // 写操作（CREATE/MERGE/DELETE/SET/REMOVE/DROP）自动使用写路由，其余使用读路由
-func (p *Neo4jPlugin) executeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string) (*plugin.QueryResult, error) {
+func (p *Neo4jPlugin) executeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string, readOnly bool) (*plugin.QueryResult, error) {
 	driver, err := p.createDriver(ctx, connInfo)
 	if err != nil {
 		return nil, err
 	}
 	defer driver.Close(ctx) //nolint:errcheck
 
+	isWrite := isCypherWriteQuery(query)
+	if readOnly && isWrite {
+		return nil, fmt.Errorf("只读 Cypher 不允许写操作")
+	}
 	routing := neo4jdriver.ExecuteQueryWithReadersRouting()
-	if isCypherWriteQuery(query) {
+	if isWrite {
 		routing = neo4jdriver.ExecuteQueryWithWritersRouting()
 	}
 

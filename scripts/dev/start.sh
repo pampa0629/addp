@@ -12,8 +12,8 @@ show_usage() {
   echo "  -meta         启动 Meta 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -transfer     启动 Transfer 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -orchestrator 启动 Orchestrator 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
-  echo "  -develop      启动 Develop 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + Python/Math/Spark Workflow Engine + Jupyter)"
-  echo "  -service      启动 Service 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
+  echo "  -develop      启动 Develop 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + DuckDB + Python/Math/Spark Workflow Engine + Jupyter)"
+  echo "  -service      启动 Service 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + DuckDB)"
   echo "  -monitor      启动 Monitor 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -copilot      启动 Copilot 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + Develop)"
   echo "  -agent        启动 Agent 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
@@ -30,6 +30,7 @@ show_usage() {
   echo "  -supermap-workflow  启动 SuperMap Workflow Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console，需配置 SDK 挂载路径)"
   echo "  -spark-workflow     启动 Spark 工作流引擎 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -jupyter      启动 Jupyter Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
+  echo "  -duckdb       启动 DuckDB Federated Query Runtime (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -gateway      启动 Gateway (依赖: 所有后端模块)"
   echo "  -console      启动 Console (依赖: 所有模块)"
   echo ""
@@ -78,6 +79,10 @@ fi
 export MODEL3D_WORKFLOW_PORT="${MODEL3D_WORKFLOW_PORT:-8101}"
 export POINTCLOUD_WORKFLOW_PORT="${POINTCLOUD_WORKFLOW_PORT:-8102}"
 export SUPERMAP_WORKFLOW_PORT="${SUPERMAP_WORKFLOW_PORT:-8103}"
+export DUCKDB_RUNTIME_PORT="${DUCKDB_RUNTIME_PORT:-8104}"
+if [ -z "${DUCKDB_RUNTIME_URL:-}" ]; then
+  export DUCKDB_RUNTIME_URL="http://${SERVICE_HOST:-localhost}:${DUCKDB_RUNTIME_PORT}"
+fi
 
 ensure_model3d_node_dependencies() {
   local dir="engines/model3d-workflow"
@@ -240,7 +245,7 @@ for arg in "$@"; do
     -h|--help)
       show_usage
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-agent|-standard|-model|-quality|-asset|-portal|-graph|-python-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-supermap-workflow|-spark-workflow|-jupyter|-gateway|-console)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-agent|-standard|-model|-quality|-asset|-portal|-graph|-python-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-supermap-workflow|-spark-workflow|-jupyter|-duckdb|-gateway|-console)
       SELECTED_MODULE="${arg#-}"
       START_ALL=false
       ;;
@@ -295,6 +300,7 @@ START_POINTCLOUD_WORKFLOW=false
 START_SUPERMAP_WORKFLOW=false
 START_SPARK_WORKFLOW=false
 START_JUPYTER=false
+START_DUCKDB=false
 
 enable_single_module_common_dependencies() {
   START_SYSTEM_BACKEND=true
@@ -350,6 +356,7 @@ if [ "$START_ALL" = true ]; then
   START_SUPERMAP_WORKFLOW=true
   START_SPARK_WORKFLOW=true
   START_JUPYTER=true
+  START_DUCKDB=true
 else
   # 根据选择的模块设置依赖
   case $SELECTED_MODULE in
@@ -385,10 +392,12 @@ else
       START_MATH_WORKFLOW=true
       START_SPARK_WORKFLOW=true
       START_JUPYTER=true
+      START_DUCKDB=true
       ;;
     service)
       START_SERVICE_BACKEND=true
       START_SERVICE_FRONTEND=true
+      START_DUCKDB=true
       ;;
     monitor)
       START_MONITOR_BACKEND=true
@@ -398,6 +407,7 @@ else
       START_DEVELOP_BACKEND=true
       START_PYTHON_WORKFLOW=true
       START_JUPYTER=true
+      START_DUCKDB=true
       START_COPILOT_BACKEND=true
       ;;
     agent)
@@ -453,6 +463,9 @@ else
     jupyter)
       START_JUPYTER=true
       ;;
+    duckdb)
+      START_DUCKDB=true
+      ;;
     gateway)
       START_MANAGER_BACKEND=true
       START_TRANSFER_BACKEND=true
@@ -470,6 +483,7 @@ else
       START_POINTCLOUD_WORKFLOW=true
       START_SPARK_WORKFLOW=true
       START_JUPYTER=true
+      START_DUCKDB=true
       START_GATEWAY=true
       ;;
     console)
@@ -503,6 +517,7 @@ else
       START_POINTCLOUD_WORKFLOW=true
       START_SPARK_WORKFLOW=true
       START_JUPYTER=true
+      START_DUCKDB=true
       ;;
   esac
 
@@ -584,7 +599,7 @@ build_service() {
     local binary_path="${output_dir}/${binary_name}"
 
     # 检查是否需要重新编译（增量编译）
-    if [[ -f "$binary_path" ]]; then
+    if [[ -f "$binary_path" ]] && { [[ "$name" != "duckdb" ]] || [[ -f "${output_dir}/addp-duckdb-prepare" ]]; }; then
         local src_newer=$(find "$src_dir" -type f -name "*.go" -newer "$binary_path" 2>/dev/null | wc -l | tr -d ' ')
         if [[ $src_newer -eq 0 ]]; then
             echo "  ✓ ${binary_name} 已是最新"
@@ -604,6 +619,13 @@ build_service() {
         echo "  ✗ 编译失败: ${name}"
         return 1
     }
+
+    if [[ "$name" == "duckdb" ]]; then
+        (cd "$src_dir" && go build -o "${PROJECT_ROOT}/${output_dir}/addp-duckdb-prepare" cmd/prepare-extensions/main.go) || {
+            echo "  ✗ 编译失败: DuckDB extension preparer"
+            return 1
+        }
+    fi
 
     echo "  ✓ ${binary_name} 编译完成"
 }
@@ -861,7 +883,7 @@ fi
 
 # 3. 并行启动所有后端服务 + Workers (System 已就绪)
 # 跳过检查：如果没有任何后端模块需要启动
-if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ]; then
+if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_DUCKDB" = true ]; then
   echo -e "${YELLOW}Step 3/5: 并行启动后端服务和选定 Worker${NC}"
 
   # ============================================================
@@ -871,6 +893,11 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 
   # 并行编译后端服务(仅编译需要启动的)
   BUILD_PIDS=()
+
+  if [ "$START_DUCKDB" = true ]; then
+    build_service "duckdb" "engines/duckdb" &
+    BUILD_PIDS+=($!)
+  fi
 
   if [ "$START_MANAGER_BACKEND" = true ]; then
     build_service "manager" "manager/backend" &
@@ -1354,6 +1381,50 @@ echo "  Meta Worker:        PID $META_WORKER_PID"
 echo "  Transfer Bounded Worker: PID $TRANSFER_BOUNDED_WORKER_PID"
 echo "  Transfer Continuous Worker: PID $TRANSFER_CONTINUOUS_WORKER_PID"
 echo ""
+
+# DuckDB Runtime 必须在 System 和 Meta 就绪后启动。扩展只在启动准备阶段
+# 下载并校验，请求处理阶段仅允许从本地目录 LOAD。
+if [ "$START_DUCKDB" = true ]; then
+  echo -e "${YELLOW}Step 3.5/5: 准备并启动 DuckDB Federated Query Runtime${NC}"
+  if curl -fsS "http://localhost:${DUCKDB_RUNTIME_PORT}/health" > /dev/null 2>&1; then
+    DUCKDB_PID=$(lsof -ti :"${DUCKDB_RUNTIME_PORT}" -sTCP:LISTEN 2>/dev/null | head -1)
+    echo "复用已就绪的 DuckDB Runtime (PID: ${DUCKDB_PID:-external})"
+  else
+    DUCKDB_EXTENSION_DIRECTORY="${DUCKDB_EXTENSION_DIRECTORY:-.cache/duckdb/extensions}"
+    if [[ "$DUCKDB_EXTENSION_DIRECTORY" != /* ]]; then
+      DUCKDB_EXTENSION_DIRECTORY="${PROJECT_ROOT}/${DUCKDB_EXTENSION_DIRECTORY}"
+    fi
+    export DUCKDB_EXTENSION_DIRECTORY
+
+    echo "准备 DuckDB 扩展: ${DUCKDB_EXTENSION_DIRECTORY}"
+    .dev-bins/addp-duckdb-prepare --output "${DUCKDB_EXTENSION_DIRECTORY}"
+
+    if ! check_service_running "duckdb" "$DUCKDB_RUNTIME_PORT"; then
+      echo -e "${RED}✗ DuckDB Runtime 端口已占用但健康检查失败${NC}"
+      exit 1
+    fi
+    .dev-bins/addp-duckdb > logs/duckdb-runtime.log 2> logs/duckdb-runtime-stderr.log &
+    DUCKDB_PID=$!
+    echo "$DUCKDB_PID" > .dev-pids/duckdb.pid
+  fi
+
+  echo -n "等待 DuckDB Runtime 就绪"
+  WAIT_COUNT=0
+  until curl -f "http://localhost:${DUCKDB_RUNTIME_PORT}/health" > /dev/null 2>&1; do
+    echo -n "."
+    sleep 1
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    if [ "$WAIT_COUNT" -ge "$MAX_WAIT" ]; then
+      echo ""
+      echo -e "${RED}✗ DuckDB Runtime 启动超时${NC}"
+      echo "查看日志: tail -f logs/duckdb-runtime-stderr.log"
+      exit 1
+    fi
+  done
+  echo ""
+  echo -e "${GREEN}✓ DuckDB Runtime 就绪 (PID: ${DUCKDB_PID}, 端口: ${DUCKDB_RUNTIME_PORT})${NC}"
+  echo ""
+fi
 
 # ============================================================
 # Step 4: Start GeoPython Workflow Engine (Python service)
@@ -2641,6 +2712,7 @@ echo "  GeoPython Workflow Engine:    http://localhost:${PYTHON_WORKFLOW_PORT}"
 echo "  Model3D Workflow Engine:   http://localhost:${MODEL3D_WORKFLOW_PORT}"
 echo "  PointCloud Workflow Engine: http://localhost:${POINTCLOUD_WORKFLOW_PORT}"
 echo "  SuperMap Workflow Engine:  http://localhost:${SUPERMAP_WORKFLOW_PORT}"
+echo "  DuckDB Runtime:            http://localhost:${DUCKDB_RUNTIME_PORT}"
 echo "  Raster Mosaic Runtime:     http://localhost:${RASTER_MOSAIC_RUNTIME_PORT}"
 echo "  System FE:    http://localhost:${SYSTEM_FE_PORT}"
 echo "  Manager FE:   http://localhost:${MANAGER_FE_PORT}"
@@ -2664,6 +2736,7 @@ echo "  Transfer Backend:     $TRANSFER_PID"
 echo "  Orchestrator Backend: $ORCHESTRATOR_PID"
 echo "  Develop Backend:      $DEVELOP_PID"
 echo "  Service Backend:      $SERVICE_PID"
+echo "  DuckDB Runtime:       $DUCKDB_PID"
 echo "  Raster Mosaic Runtime:      $RASTER_MOSAIC_RUNTIME_PID"
 echo "  GeoPython Workflow Engine:     $PYTHON_WORKFLOW_PID"
 echo "  Model3D Workflow Engine:    $MODEL3D_WORKFLOW_PID"
@@ -2691,6 +2764,7 @@ echo "  Transfer: logs/transfer-backend.log"
 echo "  Orchestrator: logs/orchestrator-backend.log"
 echo "  Develop:  logs/develop-backend.log"
 echo "  Service:  logs/service-backend.log"
+echo "  DuckDB Runtime: logs/duckdb-runtime.log"
 echo "  Copilot:  logs/copilot-backend.log"
 echo "  Agent:    logs/agent-backend.log"
 echo "  Monitor:  logs/monitor-backend.log"

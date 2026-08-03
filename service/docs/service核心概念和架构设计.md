@@ -168,8 +168,9 @@ CREATE TABLE service.query_services (
     -- 配置方式（互斥）
     config_type VARCHAR(50) NOT NULL CHECK (config_type IN ('table', 'sql')),
 
-    -- 存储引擎
-    engine_id UUID NOT NULL REFERENCES system.storage_engines(id),
+    -- Source Engine 与联邦查询 Runtime（按 config_type 和源类型显式互斥）
+    engine_id BIGINT REFERENCES system.engines(id) ON DELETE RESTRICT,
+    runtime_engine_id BIGINT REFERENCES system.engines(id) ON DELETE RESTRICT,
 
     -- Table 模式字段
     schema_name VARCHAR(255),
@@ -200,7 +201,8 @@ CREATE TABLE service.query_services (
 		},
 		"federated_object_tables": {
 		  "lake": {"public.sales": "bucket/public/sales.parquet"}
-		}
+		},
+		"federated_source_engine_ids": [9]
       },
       "default_fields": ["id", "name", "geom"],  // 默认返回字段（Table模式）
       "filterable_fields": ["name", "category"]  // 可过滤字段（Table模式）
@@ -232,10 +234,12 @@ CREATE TABLE service.query_services (
 
 **核心字段说明**：
 - `config_type`: 'table' 或 'sql'，创建后不可修改
+- `engine_id`: 普通 SQL 或表服务的 Source Engine；联邦 SQL 必须为空。
+- `runtime_engine_id`: 联邦 SQL 的 DuckDB Runtime Engine；Parquet 对象表同时保存 Source `engine_id` 和该字段；关系表必须为空。
 - `data_config`: JSONB 字段，存储 locator、Service 依赖快照、默认字段和可过滤字段。依赖快照只保存执行所需事实，不复制完整 Meta attributes。
-- `dependency_hash`: 只计算字段、主键、空间字段/CRS、对象表执行描述符和 SQL query hash；排除行数、大小、扫描时间、数据更新时间、extent 和空间索引状态。
+- `dependency_hash`: 只计算字段、主键、空间字段/CRS、对象表执行描述符、联邦 Source Engine ID 和 SQL query hash；排除行数、大小、扫描时间、数据更新时间、extent 和空间索引状态。
 - `verification_status`: 新发布或显式刷新的快照为 `verified`；一次性迁移的历史快照为 `unverifiable`，需通过管理动作重新检查或刷新。
-- DuckDB 联邦 SQL 只保存查询实际引用的对象表映射。执行时仍从 System 获取当前连接配置，但不再调用 Meta；对象表映射变化需要重新发布查询服务。
+- DuckDB 联邦 SQL 在发布时冻结查询实际引用的 Source Engine ID，并只保存实际引用的对象表映射；两者都纳入 `dependency_hash`。执行时按冻结 ID 从 System 获取当前连接配置，不在请求期按名称重新绑定 Engine，也不再调用 Meta；数据源绑定或对象表映射变化需要重新发布查询服务。
 - 历史表模式记录只有在 locator 能定位同租户且具有 fingerprint 的 Meta item 时才迁移；无法建立可靠源身份的旧记录在迁移时删除，需重新创建。
 - 历史 DuckDB 联邦 SQL 无法仅靠旧几何配置节点还原对象表依赖，迁移时直接删除，需重新创建；运行时不为旧记录恢复 Meta 动态解析分支。
 - `protocols`: 协议配置，默认启用 REST API

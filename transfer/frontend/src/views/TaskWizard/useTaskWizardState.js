@@ -9,7 +9,11 @@ import { ElMessage } from 'element-plus'
 import { formatLocatorDisplayPath } from '@addp/common-frontend'
 import { taskAPI } from '@/api/tasks'
 import { parseTransferLocator } from '@/utils/resourceLocator'
-import { hasAtomicPartitionedTableChangeApply, hasIdempotentTableUpsert } from '@/utils/transferDisplay'
+import {
+  hasAtomicPartitionedTableChangeApply,
+  hasBoundedWatermarkRead,
+  hasIdempotentTableUpsert
+} from '@/utils/transferDisplay'
 import {
   buildContinuousSourceEndpoint,
   buildDatabaseCDCSourceEndpoint,
@@ -48,6 +52,7 @@ export function useTaskWizardState() {
   const sourceConfig = ref({})
   const sourceEngineID = ref(null)
   const sourceEngineType = ref('')
+  const sourceEngineCapabilities = ref(null)
   const sourceSchema = ref('')
   const sourceTable = ref('')
   const sourceType = ref('postgresql')
@@ -89,7 +94,7 @@ export function useTaskWizardState() {
   })
 
   const supportsWatermarkIncremental = computed(() => {
-    return isPostgresqlEngineType(sourceEngineType.value) &&
+    return hasBoundedWatermarkRead({ capabilities: sourceEngineCapabilities.value }) &&
       sourceRepresentation.value === 'native' &&
       sourceDataType.value === 'table' &&
       hasIdempotentTableUpsert({ capabilities: targetEngineCapabilities.value }) &&
@@ -217,7 +222,7 @@ export function useTaskWizardState() {
       schedule: isContinuousTask.value ? '' : schedule.value,
       enabled: isContinuousTask.value ? false : (schedule.value ? enabled.value : false),
       batch_size: isContinuousTask.value ? continuousPollBatchSize.value : batchSize.value,
-      auto_scan_metadata: !isContinuousTask.value
+      auto_scan_metadata: true
     }
 
     if (!isContinuousTask.value) {
@@ -539,6 +544,7 @@ export function useTaskWizardState() {
 
     sourceEngineID.value = config.engineID
     sourceEngineType.value = config.engineType || ''
+    sourceEngineCapabilities.value = config.capabilities || null
     sourceSchema.value = config.schema || extra.schema || ''
     sourceTable.value = config.table || extra.table || ''
     sourceType.value = config.sourceType || 'postgresql'
@@ -565,6 +571,7 @@ export function useTaskWizardState() {
       fieldMappings.value = []
       targetEngineID.value = null
       targetEngineType.value = ''
+      targetEngineCapabilities.value = null
       targetSchema.value = ''
       targetTable.value = ''
       targetConfig.value = {}
@@ -785,7 +792,7 @@ export function useTaskWizardState() {
   }
 
   // 从任务详情加载数据（编辑模式）
-  function loadFromTask(task, engineTypes = {}) {
+  function loadFromTask(task, engineDescriptors = {}) {
     if (!task) return
 
     // 基本信息
@@ -816,7 +823,8 @@ export function useTaskWizardState() {
       const source = task.config.source
       const sourceLoc = parseTransferLocator(source.locator)
       sourceEngineID.value = sourceLoc.engineID || null
-			sourceEngineType.value = normalizeEngineType(engineTypes.source || '')
+			sourceEngineType.value = normalizeEngineType(engineDescriptors.source?.engine_type || '')
+      sourceEngineCapabilities.value = engineDescriptors.source?.capabilities || null
       sourceSchema.value = sourceLoc.path.length >= 2 ? sourceLoc.path[sourceLoc.path.length - 2] : ''
       sourceTable.value = sourceLoc.path.length >= 1 ? sourceLoc.path[sourceLoc.path.length - 1] : ''
 			sourceType.value = normalizeEngineType(sourceEngineType.value)
@@ -832,7 +840,8 @@ export function useTaskWizardState() {
       const target = task.config.target
       const targetParentLoc = parseTransferLocator(target.parent_locator)
       targetEngineID.value = targetParentLoc.engineID || null
-			targetEngineType.value = normalizeEngineType(engineTypes.target || '')
+			targetEngineType.value = normalizeEngineType(engineDescriptors.target?.engine_type || '')
+      targetEngineCapabilities.value = engineDescriptors.target?.capabilities || null
       targetSchema.value = targetParentLoc.type === 'schema' && targetParentLoc.path.length >= 1 ? targetParentLoc.path[targetParentLoc.path.length - 1] : ''
       targetTable.value = target.representation === 'native' ? (target.name || '') : ''
       targetType.value = normalizeTargetType(target)
@@ -866,11 +875,6 @@ export function useTaskWizardState() {
     if (type.includes('kafka')) return 'kafka'
     if (type.includes('s3') || type.includes('minio')) return 's3'
 		return type
-  }
-
-  function isPostgresqlEngineType(engineType) {
-    const type = String(engineType || '').trim().toLowerCase()
-    return !!type && normalizeEngineType(type) === 'postgresql'
   }
 
   function sameLocatorIdentity(left, right) {
@@ -1163,6 +1167,7 @@ export function useTaskWizardState() {
     continuousPollBatchSize.value = 1000
     sourceEngineID.value = null
     sourceEngineType.value = ''
+    sourceEngineCapabilities.value = null
     sourceSchema.value = ''
     sourceTable.value = ''
     sourceType.value = 'postgresql'
@@ -1208,6 +1213,7 @@ export function useTaskWizardState() {
     sourceConfig,
     sourceEngineID,
     sourceEngineType,
+    sourceEngineCapabilities,
     sourceSchema,
     sourceTable,
     sourceType,

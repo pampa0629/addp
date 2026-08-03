@@ -177,8 +177,8 @@ func TestMetaServicePrincipalForwardMigrationAgainstPostgres(t *testing.T) {
 	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
 		t.Fatalf("read Manager catalog migration version: %v", err)
 	}
-	if version != 34 || dirty {
-		t.Fatalf("latest migration state = (%d, %t), want (34, false)", version, dirty)
+	if version != 35 || dirty {
+		t.Fatalf("latest migration state = (%d, %t), want (35, false)", version, dirty)
 	}
 	var authorizationVersionAfter int64
 	if err := db.QueryRow(`SELECT authorization_version FROM system.principals WHERE id = $1`, administratorID).Scan(&authorizationVersionAfter); err != nil {
@@ -656,8 +656,8 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
 		t.Fatalf("read migration version: %v", err)
 	}
-	if version != 34 || dirty {
-		t.Fatalf("migration state = (%d, %t), want (34, false)", version, dirty)
+	if version != 35 || dirty {
+		t.Fatalf("migration state = (%d, %t), want (35, false)", version, dirty)
 	}
 
 	assertIAMCatalogSeed(t, db)
@@ -683,6 +683,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	assertExecutionAuthorizationConstraints(t, db)
 	assertEngineRuntimeDescriptorConstraints(t, db)
 	assertTaskExecutionRuntimeConstraints(t, db)
+	assertDuckDBRuntimeConstraints(t, db)
 	assertAssetServiceRuntimeConstraints(t, db)
 	assertAssetPortalBoundaryConstraints(t, db)
 	assertRoleKeyNamespace(t, db)
@@ -694,7 +695,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	if err := runner.Run(ctx); err == nil || !strings.Contains(err.Error(), "is dirty") {
 		t.Fatalf("Run() error = %v, want dirty-state rejection", err)
 	}
-	if _, err := db.Exec(`UPDATE system.schema_migrations SET version = 35, dirty = false`); err != nil {
+	if _, err := db.Exec(`UPDATE system.schema_migrations SET version = 36, dirty = false`); err != nil {
 		t.Fatalf("set newer migration version: %v", err)
 	}
 	if err := runner.Run(ctx); err == nil || !strings.Contains(err.Error(), "newer than embedded") {
@@ -706,6 +707,54 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	}
 	if err := runner.Run(ctx); err == nil || !strings.Contains(err.Error(), "legacy system IAM schema") {
 		t.Fatalf("Run() error = %v, want legacy-schema rejection", err)
+	}
+}
+
+func assertDuckDBRuntimeConstraints(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var roleCount, rolePermissionCount, principalCount, clientCount, sourceConstraintCount int
+	if err := db.QueryRow(`
+		SELECT count(*) FROM system.roles
+		WHERE tenant_id IS NULL AND role_key = 'tenant.duckdb_runtime'
+		  AND role_type = 'tenant_builtin' AND status = 'active'
+	`).Scan(&roleCount); err != nil {
+		t.Fatalf("count DuckDB runtime role: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions role_permission
+		JOIN system.roles role ON role.id = role_permission.role_id
+		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+		WHERE role.tenant_id IS NULL AND role.role_key = 'tenant.duckdb_runtime'
+		  AND permission.permission_key IN ('system.execution_authorization.execute', 'meta.catalog.read')
+	`).Scan(&rolePermissionCount); err != nil {
+		t.Fatalf("count DuckDB runtime permissions: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*) FROM system.service_principals
+		WHERE name = 'addp-duckdb' AND owner_scope = 'platform'
+	`).Scan(&principalCount); err != nil {
+		t.Fatalf("count DuckDB service principal: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*) FROM system.oauth_clients
+		WHERE client_id = 'addp-duckdb' AND client_type = 'confidential'
+		  AND token_endpoint_auth_method = 'client_secret_basic' AND status = 'disabled'
+	`).Scan(&clientCount); err != nil {
+		t.Fatalf("count DuckDB OAuth client: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*) FROM pg_constraint
+		WHERE conrelid = 'system.execution_authorizations'::regclass
+		  AND conname = 'execution_authorizations_source_check'
+	`).Scan(&sourceConstraintCount); err != nil {
+		t.Fatalf("count execution authorization source constraint: %v", err)
+	}
+	if roleCount != 1 || rolePermissionCount != 2 || principalCount != 1 || clientCount != 1 || sourceConstraintCount != 1 {
+		t.Fatalf(
+			"DuckDB runtime catalog role=%d permissions=%d principal=%d client=%d source_constraint=%d",
+			roleCount, rolePermissionCount, principalCount, clientCount, sourceConstraintCount,
+		)
 	}
 }
 
@@ -922,7 +971,7 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 		SELECT count(*)
 		FROM system.service_principals
 		WHERE owner_scope = 'platform'
-		  AND name IN ('addp-asset', 'addp-develop', 'addp-manager', 'addp-meta', 'addp-monitor', 'addp-orchestrator', 'addp-portal', 'addp-quality', 'addp-service', 'addp-transfer')
+		  AND name IN ('addp-asset', 'addp-develop', 'addp-duckdb', 'addp-manager', 'addp-meta', 'addp-monitor', 'addp-orchestrator', 'addp-portal', 'addp-quality', 'addp-service', 'addp-transfer')
 	`).Scan(&principalCount); err != nil {
 		t.Fatalf("count built-in service principals: %v", err)
 	}
@@ -959,7 +1008,7 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&permissionCount); err != nil {
 		t.Fatalf("count built-in service runtime permissions: %v", err)
 	}
-	if principalCount != 10 || clientCount != 10 || roleCount != 10 || permissionCount != 22 {
+	if principalCount != 11 || clientCount != 11 || roleCount != 11 || permissionCount != 25 {
 		t.Fatalf("service runtime catalog principals=%d clients=%d roles=%d permissions=%d", principalCount, clientCount, roleCount, permissionCount)
 	}
 	var metaTenantPermissions, developTenantPermissions, metaPlatformPermissions, developPlatformPermissions string
@@ -1899,12 +1948,12 @@ func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	t.Helper()
 
 	assertTableCount(t, db, "system.permissions", 311)
-	assertTableCount(t, db, "system.roles", 34)
-	assertTableCount(t, db, "system.role_permissions", 284)
+	assertTableCount(t, db, "system.roles", 35)
+	assertTableCount(t, db, "system.role_permissions", 287)
 	assertTableCount(t, db, "system.role_conflicts", 3)
-	assertTableCount(t, db, "system.oauth_clients", 11)
-	assertTableCount(t, db, "system.principals", 10)
-	assertTableCount(t, db, "system.service_principals", 10)
+	assertTableCount(t, db, "system.oauth_clients", 12)
+	assertTableCount(t, db, "system.principals", 11)
+	assertTableCount(t, db, "system.service_principals", 11)
 	assertTableCount(t, db, "system.tenants", 0)
 	assertTableCount(t, db, "system.role_assignments", 5)
 

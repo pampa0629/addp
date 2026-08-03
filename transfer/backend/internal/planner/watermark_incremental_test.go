@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	engineplugin "github.com/addp/common/engine/plugin"
+	mysqlplugin "github.com/addp/common/engine/plugins/mysql"
+	postgresqlplugin "github.com/addp/common/engine/plugins/postgresql"
 )
 
-func TestBuildWatermarkIncrementalPlanRequiresPostgresCapabilities(t *testing.T) {
+func TestBuildWatermarkIncrementalPlanRequiresDeclaredCapabilities(t *testing.T) {
 	spec := TableExportTaskSpec{
 		Runtime: RuntimeSpec{Boundary: runtimeBoundaryBounded},
 		Load: LoadSpec{Mode: loadModeIncremental, ChangeDetection: &ChangeDetectionSpec{
@@ -32,6 +34,58 @@ func TestBuildWatermarkIncrementalPlanRequiresPostgresCapabilities(t *testing.T)
 	}
 }
 
+func TestBuildWatermarkIncrementalPlanAcceptsMySQLSourceCapabilities(t *testing.T) {
+	spec := TableExportTaskSpec{
+		Runtime: RuntimeSpec{Boundary: runtimeBoundaryBounded},
+		Load: LoadSpec{Mode: loadModeIncremental, ChangeDetection: &ChangeDetectionSpec{
+			Type: changeTypeWatermark, Field: "updated_at", TieBreaker: []string{"id"}, Start: "committed", End: "execution_upper_bound",
+		}},
+		Source:    EndpointSpec{Locator: tableLocator(1, "business", "orders"), DataType: dataTypeTable, Representation: representationNative},
+		BatchSize: 100,
+	}
+	mysqlCapabilities := (&mysqlplugin.MySQLPlugin{}).Capabilities()
+	postgresqlCapabilities := (&postgresqlplugin.PostgreSQLPlugin{}).Capabilities()
+	tests := []struct {
+		name       string
+		target     EndpointSpec
+		targetType string
+		targetCaps *engineplugin.EngineCapabilities
+	}{
+		{
+			name: "PostgreSQL target",
+			target: EndpointSpec{
+				ParentLocator: schemaLocator(2, "public"), Name: "orders", DataType: dataTypeTable,
+				Representation: representationNative, Policy: map[string]interface{}{"apply_mode": "upsert", "keys": []string{"id"}},
+			},
+			targetType: "postgresql", targetCaps: &postgresqlCapabilities,
+		},
+		{
+			name: "MySQL target",
+			target: EndpointSpec{
+				ParentLocator: "addp://engine/2/path/business?type=database", Name: "orders", DataType: dataTypeTable,
+				Representation: representationNative, Policy: map[string]interface{}{"apply_mode": "upsert", "keys": []string{"id"}},
+			},
+			targetType: "mysql", targetCaps: &mysqlCapabilities,
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			taskSpec := spec
+			taskSpec.Target = testCase.target
+			result, err := BuildWatermarkIncrementalPlan(taskSpec, StaticEngineResolver{
+				1: {Type: "mysql", EngineID: 1, Capabilities: &mysqlCapabilities},
+				2: {Type: testCase.targetType, EngineID: 2, Capabilities: testCase.targetCaps},
+			})
+			if err != nil {
+				t.Fatalf("BuildWatermarkIncrementalPlan failed: %v", err)
+			}
+			if result.SourceEngineType != "mysql" || result.TargetEngineType != testCase.targetType {
+				t.Fatalf("engine types = %s -> %s, want mysql -> %s", result.SourceEngineType, result.TargetEngineType, testCase.targetType)
+			}
+		})
+	}
+}
+
 func TestBuildWatermarkIncrementalPlanAcceptsMySQLIdempotentTarget(t *testing.T) {
 	spec := TableExportTaskSpec{
 		Runtime: RuntimeSpec{Boundary: runtimeBoundaryBounded},
@@ -41,7 +95,7 @@ func TestBuildWatermarkIncrementalPlanAcceptsMySQLIdempotentTarget(t *testing.T)
 		Source: EndpointSpec{Locator: tableLocator(1, "public", "orders"), DataType: dataTypeTable, Representation: representationNative},
 		Target: EndpointSpec{
 			ParentLocator: "addp://engine/2/path/business?type=database&node_id=2",
-			Name: "orders", DataType: dataTypeTable, Representation: representationNative,
+			Name:          "orders", DataType: dataTypeTable, Representation: representationNative,
 			Policy: map[string]interface{}{"apply_mode": "upsert", "keys": []string{"id"}},
 		},
 		BatchSize: 100,

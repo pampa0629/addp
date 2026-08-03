@@ -162,14 +162,19 @@
 |---|---|---|---|
 | ADDP Operator | ADDP 算子 | ADDP 平台统一的可编排能力定义，包含稳定 ID、参数、输入输出端口、执行模式和展示元数据。 | 面向 Develop 前端、工作流定义、参数校验、执行历史和血缘；不承载具体引擎私有类名。 |
 | Workflow Runtime | 工作流运行时 | 按 `addp.workflow/v1` 协议接收算子列表查询和 workflow_def 执行请求的独立执行服务。 | 例如 GeoPython Workflow、Spark Workflow、Model3D Workflow、PointCloud Workflow、SuperMap Workflow。 |
+| Federated Query Runtime | 联邦查询运行时 | 通过统一查询协议执行 SQL，并按本次执行授权动态挂载多个 Source Engine 或对象表的独立计算服务。 | DuckDB Runtime 是首个实现；Runtime Engine 只表示计算端点，SQL 引用的数据源仍分别保持自己的 Engine Instance 身份。 |
+| Runtime Engine | 运行时引擎 | System 中代表独立计算 Runtime 物理端点的 Engine Instance。 | Develop 任务和 Service 定义绑定 Runtime Engine；它不等于查询涉及的 Source Engine，也不因此获得 Source Engine 数据权限。 |
+| Source Engine | 数据源引擎 | 一次查询、工作流或服务执行实际读取或写入数据的 Engine Instance。 | Source Engine 必须逐个进入 Execution Authorization；不能用 Runtime Engine ID 替代或隐式扩大数据源范围。 |
 | Public Operator Spec | 公开算子规范 | 面向用户、前端、AI 和 Develop 任务定义的算子公开契约，声明公开参数、资源选择方式和校验规则。 | 资源身份使用 `locator` 或 `target_parent_locator + target_name`；不得暴露 `connection_info` 等内部连接参数。 |
 | Develop Adapter Spec | Develop 适配规范 | Develop Backend 按工作流引擎类型和算子 ID 选择的显式执行前转换契约，声明公开资源参数如何派生为运行时参数。 | 负责查询 System Engine Instance、派生 `connection_info/schema/table/path` 并移除公开资源参数；不得按参数名隐式触发。 |
 | Runtime Operator Spec | 运行时算子规范 | Workflow Runtime 实际执行算子时消费的内部契约，只声明运行时真实需要的参数、输入输出端口和执行行为。 | 不解析 ADDP `ResourceLocator`，不承载资源树 UI 配置；`connection_info/schema/table/path` 属于适配层到运行时的内部参数。 |
 | Workflow Access Plan | 工作流访问计划 | Develop、Manager 等调用方把已解析的存储资源转换为 Workflow Runtime 可执行读写计划的内部契约。 | 当前版本为 `addp.workflow.access-plan/v1`；只在执行期携带 `mounted_path` 或 `object_store` 访问参数，不作为用户任务定义、资源身份或长期事实源。 |
 | Execution Effect | 执行效果 | 一次计算对数据或外部系统可能产生的效果分类。 | 固定为 `read`、`write`、`ddl`、`external_effect`；工作流按全部算子的最高效果收窄授权，不能由客户端自报后直接信任。 |
-| Execution Authorization | 执行授权 | System 从当前 User AuthContext 派生、绑定唯一 execution、Tenant、owner audience、Engine Instance、允许效果、授权版本和有效期的短期授权事实。 | 不是 Role、Service Principal Permission、OAuth Scope 或第二种 Tenant Membership；只允许匹配 audience 的 Service Principal 消费，不保存或转发原始 User Access Token。 |
+| Execution Authorization | 执行授权 | System 基于当前 User AuthContext 或已发布服务定义来源，绑定唯一 execution、Tenant、owner audience、Source Engine、允许效果、来源版本和有效期的短期授权事实。 | 两种来源互斥；服务定义来源只允许 owner Service Principal 为自己的已发布定义签发只读授权。它不是 Role、OAuth Scope 或第二种 Tenant Membership，只允许匹配 audience 的 Runtime Service Principal 消费。 |
 | Task Authorization Subject | 任务授权主体 | 持久任务定义为定时或延迟执行绑定的 User、Tenant Membership 和授权版本事实。 | 只能由同 Tenant 的当前 User AuthContext 在创建、更新或显式重新授权任务时写入；不保存 Access Token。任务定义变化或授权版本变化后必须重新授权，执行开始时仍需重新校验 Membership、Role、资源规则和授权版本。 |
 | Managed Compute Session | 受控计算会话 | Develop 按 Execution Authorization 创建并管理的 SQL、Workflow 或 Jupyter 执行会话。 | Runtime 只获得本次执行所需的短期访问能力；Jupyter 不再直接获得长期 Engine 凭据或共享 Lab 的无限制数据访问。 |
+| Notebook Interactive Session | Notebook 交互会话 | Develop 为一个 Tenant、User、Notebook Task 和 Script Engine 临时创建的隔离 JupyterLab 会话。 | 由已鉴权 API 创建，浏览器只访问 Develop 同源代理；会话关闭、过期或 Develop 重启后失效，Runtime 在清理前把 Notebook 保存回 owner 路径。它不是共享 Lab，也不是任务执行记录。 |
+| Notebook Native Engine Facade | Notebook 原生引擎门面 | `common-python` 面向 Notebook 使用者提供、按具体 Engine 原生术语组织的只读 Python 客户端。 | 例如 PostgreSQL 的 `schemas()` / `tables(schema=...)`、MongoDB 的 `databases()` / `collections(database=...)`。它只把用户表达编译为统一 Catalog 请求，不新增引擎专用后端契约，不模拟完整原生驱动。 |
 | workflow_def | 工作流定义 | ADDP 工作流运行时协议中的 DAG 定义结构。 | 由 ADDP 前端和后端消费；不得直接等同于某个引擎的私有 DAG JSON。 |
 | SuperMap SPS | SuperMap SPS | SuperMap GPA / 处理自动化模型的 Java 扩展与执行框架。 | 当前按 `sps-core`、`IWorkflow`、`IProcess`、`IDataItem`、`WorkflowExecutor` 等已验证能力使用；不在 ADDP 文档中硬展开 SPS 缩写。 |
 | SPS Process | SPS 处理节点 | SuperMap SPS 工作流中的可执行节点，实现或等价实现 SPS `IProcess`，声明 input / output 并由 `WorkflowExecutor` 调度。 | 在 `supermap_workflow` runtime 内部使用；不是独立 OS 进程、独立 HTTP 服务或独立容器。 |
@@ -234,8 +239,11 @@
 | Refresh Token Family | 刷新令牌族 | 一次用户授权会话中经轮换先后产生的 Refresh Token 链。 | 旧 Refresh Token 重复使用视为泄露信号，必须撤销整个 family。 |
 | Browser AuthSession | 浏览器认证会话 | 浏览器顶层页面持有的前端会话协调器，负责以内存保存 Access Token、通过 HttpOnly Refresh Cookie 静默恢复、跨标签页互斥刷新和 iframe Token 投递。 | Console 模式由 Console 持有；模块独立运行时由模块顶层页面持有。不得把 Access Token 持久化到浏览器存储。 |
 | Browser Resource Access Ticket | 浏览器资源访问票据 | System 基于当前第一方浏览器会话签发、供原生图片、媒体、下载和三维资源请求使用的短期 opaque 凭据。 | 只保存 SHA-256 Hash，通过 HttpOnly、Owner Path 限定 Cookie 传输；只允许对应 Owner 明确声明的 GET/HEAD 资源路由消费，不进入 URL。 |
+| Browser Session Capability Cookie | 浏览器会话能力 Cookie | 业务 owner 在 Bearer 已鉴权的会话创建请求成功后，为单个短期交互会话签发的 opaque HttpOnly Cookie。 | 只绑定一个会话 ID、owner 路径、Tenant、User 和到期时间；可代理该会话协议所需的方法与 WebSocket，但不能访问其他业务 API，不能替代 Browser Access Token 或只读 Resource Access Ticket。服务端只保存 Hash，关闭、过期、Context 变更或 owner 重启即失效。 |
+| Notebook Kernel Capability Token | Notebook Kernel 能力令牌 | Develop 为单个 Notebook Interactive Session 签发并注入其隔离 Kernel process 的短期 opaque Bearer Capability。 | 只允许调用该会话的脱敏查询 Engine Runtime Descriptor 和只读 Catalog 代理；服务端只保存 SHA-256 Hash，不能访问其他 Develop API，也不能替代 User Access Token、Service Access Token、Execution Authorization、Notebook Catalog Authorization 或浏览器会话 Cookie。关闭、过期或 Develop 重启后即失效。 |
+| Notebook Catalog Authorization | Notebook 目录授权 | System 从创建 Notebook Interactive Session 的当前 User AuthContext 派生并保存、绑定唯一 Session、Tenant、User、Task、授权版本和有效期的短期只读 Catalog 授权事实。 | 只允许 `addp-develop` Service Principal 代表该 Session 消费；不冻结 Engine 列表，不包含连接信息，不是 Token、Execution Authorization 或 Agent Delegated Access Token。 |
 | Delegated Access Token | 受委托访问令牌 | System 为 Agent 代表当前用户调用特定 owner 能力签发的短期、限 audience 和 Scope 令牌。 | 不改变原用户和租户；可绑定 AgentRun / ToolCall 用于审计。 |
-| Runtime Service Principal | 运行时服务主体 | Develop、Workflow Runtime、Jupyter 等工作负载用于 Client Credentials 和控制面识别的 Service Principal。 | 只证明机器身份并消费与自身 audience 匹配的 Execution Authorization；不继承发起用户、引擎创建人或 Tenant 全量数据权限。 |
+| Runtime Service Principal | 运行时服务主体 | Develop、DuckDB Runtime、Workflow Runtime、Jupyter 等工作负载用于 Client Credentials 和控制面识别的 Service Principal。 | 只证明机器身份并消费与自身 audience 匹配的 Execution Authorization 或 Notebook Catalog Authorization；不继承发起用户、服务创建人、引擎创建人或 Tenant 全量数据权限。 |
 
 ## Cleanup 与生命周期
 
@@ -304,3 +312,4 @@
 8. 靠近 Engine / Plugin / Manager 探查入口的内部契约使用 `catalog` 体系，例如 `CatalogRoot`、`CatalogEntry`、`CatalogPath`、`catalog_paths`。`catalog` 表达引擎原生目录和可枚举层级，不应被泛化为 `resource`。
 9. 靠近 Meta 存储和扫描结果的内部契约使用 `node` / `item` 体系，例如 `meta_node`、`meta_item`、`node_id`、`item_id`。`node` 表达 Meta 树结构，`item` 表达已识别数据项，不应与 engine-side `catalog entry` 混用。
 10. `resource` 只作为 UI 或资源树展示语境中的宽泛称呼使用。Meta 模块、Engine 插件接口和跨模块 API 不应新增 `resource_*` 字段来替代已有 `catalog_*`、`node_*` 或 `item_*` 术语。
+11. Notebook Native Engine Facade 的公开方法、参数和返回对象使用具体引擎原生术语；`CatalogPath`、`CatalogEntry` 和 `CatalogFacts` 只作为其内部实现契约，不要求 Notebook 使用者理解。

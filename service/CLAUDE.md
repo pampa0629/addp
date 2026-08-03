@@ -9,7 +9,7 @@ Service 模块负责数据服务发布与外部服务注册，覆盖查询服务
 - 后端：Go + Gin + GORM，默认端口 `8086`，环境变量 `SERVICE_BACKEND_PORT`。
 - 前端：Vue 3 + Element Plus + OpenLayers，开发端口 `5180`，启动脚本环境变量 `SERVICE_FE_PORT`。
 - 数据库：PostgreSQL `service` schema。
-- 依赖：System、Manager、Meta、Gateway、Redis、MinIO。
+- 依赖：System、Manager、Meta、DuckDB Federated Query Runtime、Gateway、Redis、MinIO。
 
 ## 重要目录
 
@@ -56,6 +56,9 @@ Service 是 `service.definition.*`、`service.endpoint.read` 和 `service.extern
 ## 开发规则
 
 - 存储引擎连接信息必须从 System 获取，Service 不管理连接配置。
+- 查询服务执行目标必须显式且互斥：普通 SQL 和关系表只使用 `engine_id`；联邦 SQL 只使用 `runtime_engine_id`；Parquet 对象表同时保存 Source `engine_id` 与 DuckDB `runtime_engine_id`。不得通过 `engine_id IS NULL` 或 SQL 内容猜测执行模式。
+- 查询服务 SQL 样例按 Engine capability 发现，不按 `engine_type` 固定列表。样例必须从当前业务 Catalog 构造，并在当前用户的 `service.definition.create + service.data_read.execute` 边界内真实执行且返回非空数据后才能展示；不得回退到 `SELECT 1` 或硬编码业务表。
+- 联邦 SQL 发布时冻结实际引用的 Source Engine ID 并纳入 `dependency_hash`。每次请求由 Service 基于发布快照签发 `service_definition` Execution Authorization，独立 DuckDB Runtime 消费授权并取得连接；Service 不链接 DuckDB 原生库。
 - 表结构、空间信息和资源树通过 Meta 共享能力获取；Service 不重复实现资源树、表空间检测或按 `schema/table` 查找资源的代理接口。
 - 静态二维瓦片发布只接受 Meta 已识别、位于 Business 存储的 `data_type=media + format=pmtiles + layout=single` item。发布配置保存 ResourceLocator 和 PMTiles v3 依赖快照，运行时通过 System engine provider Range Read，不接受裸路径、URL 或 Manager infra `storage_ref`。
 - 三维瓦片不并入二维瓦片服务。3D Tiles / S3M 后续使用独立“三维场景服务”入口和服务类型。

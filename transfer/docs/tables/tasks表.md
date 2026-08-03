@@ -1,6 +1,6 @@
 # transfer.transfer_tasks 表说明
 
-更新时间：2026-07-25
+更新时间：2026-08-02
 
 `transfer.transfer_tasks` 存储 Transfer 任务定义。任务的执行历史不在本表中保存，统一写入 `common.task_executions`。
 
@@ -18,7 +18,11 @@
 | `schedule` | Cron 表达式；为空表示手动任务。 |
 | `batch_size` | 默认批大小。 |
 | `enabled` | 定时任务是否启用。 |
-| `auto_scan_metadata` | 成功后是否触发 Meta deep scan。 |
+| `auto_scan_metadata` | 是否自动触发 Meta deep scan。bounded 在成功后触发；continuous 在目标结构首次建立后触发。 |
+| `initial_metadata_scan_status` | continuous 首次目标扫描私有状态：空值、`running`、`success` 或 `failed`。 |
+| `initial_metadata_scan_claim_token` / `initial_metadata_scan_lease_until` | continuous 首次扫描的 fencing claim；仅 `running` 时有效。 |
+| `initial_metadata_scan_attempt` | continuous 首次扫描领取次数。 |
+| `initial_metadata_scan_execution_id` / `initial_metadata_scan_error` | Meta execution UUID 或最近一次提交错误。 |
 | `status` | `idle`、`running` 或 `blocked`；`blocked` 表示数据库 CDC 当前 generation 被 schema drift 阻塞。只有专用 additive 审批成功后可回到 `idle`，其他变化只允许 Stop。 |
 | `desired_state` | continuous runtime 用户期望状态：`running` / `paused` / `stopped`，默认 `stopped`；bounded task 不消费。该字段不能单独判定数据库 CDC 是否永久停止，终态以 `capture_resources.status=stopped` 为准。 |
 | `progress` | 当前任务进度百分比。 |
@@ -88,7 +92,7 @@
 | `format` | encoded endpoint 必填。 |
 | `options` | 格式读写选项。 |
 | `runtime.boundary` | 执行边界：`bounded` 或 `continuous`；continuous 第一版契约固定为业务 Kafka keyed JSON -> PostgreSQL upsert。 |
-| `load.mode` | `snapshot` 或 PostgreSQL native table 的 `incremental`。 |
+| `load.mode` | `snapshot` 或 PostgreSQL/MySQL native table 的 `incremental`。 |
 | `load.change_detection` | incremental 第一版只支持复合 watermark。 |
 | `target.policy.apply_mode` | `replace` / `append` / `upsert`；按任务组合和目标 Provider 校验。 |
 | `target.policy.keys` | upsert 的稳定目标键。 |
@@ -125,6 +129,6 @@
 | `POST` | `/task-definitions/:id/schema-change/approve` | 审批当前 additive request；成功后任务进入 paused，不隐式 Resume。 |
 | `GET` | `/task-definitions/:id/executions` | 查询任务执行记录。 |
 
-bounded 的 `/task-definitions/:id/resume` 是调度控制 API；PostgreSQL watermark execution 的 resume 由新 execution 自动读取 `transfer.sync_states` 完成。普通 continuous resume 总是创建新 execution，不复用已取消 execution；数据库 CDC blocked generation 必须先完成专用 additive 审批，其他 schema drift 不支持 resume 或 retry。
+bounded 的 `/task-definitions/:id/resume` 是调度控制 API；PostgreSQL/MySQL watermark execution 的 resume 由新 execution 自动读取 `transfer.sync_states` 完成。普通 continuous resume 总是创建新 execution，不复用已取消 execution；数据库 CDC blocked generation 必须先完成专用 additive 审批，其他 schema drift 不支持 resume 或 retry。
 
 TaskProvider 注册的任务发现地址是唯一标准 `/tasks`。服务端在请求带 `task_type=sync` 时强制过滤为 bounded，避免 Orchestrator v1 选择 continuous task；Console 不带 `task_type` 时仍通过同一路由查询全部任务。不保留 `/provider-tasks` 私有路由。

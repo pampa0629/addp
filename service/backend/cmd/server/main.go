@@ -88,6 +88,7 @@ func main() {
 
 	// 初始化 Meta 客户端
 	var metaClient *commonClient.MetaClient
+	var systemServiceClient *commonClient.SystemServiceClient
 	if cfg.EnableIntegration {
 		if cfg.ServiceClientSecret == "" || cfg.MetaServiceURL == "" || cfg.SystemServiceURL == "" {
 			logger.L().Error("服务集成已启用，但 Meta Service Client Credential 或服务 URL 未配置")
@@ -98,6 +99,7 @@ func main() {
 			logger.L().Error("Service Token Source 初始化失败", "error", err)
 			os.Exit(1)
 		}
+		systemServiceClient = commonClient.NewSystemServiceClient(cfg.SystemServiceURL, tokenSource, nil)
 		metaClient = commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
 		logger.L().Info("MetaClient 已初始化", "meta_url", cfg.MetaServiceURL)
 	} else {
@@ -107,7 +109,12 @@ func main() {
 	// 构建服务基础URL用于查询服务
 	// 使用 Gateway URL 作为对外服务端点的基础地址
 	queryServiceService := serviceInternal.NewQueryServiceService(queryServiceRepo, systemClient, metaClient, cfg.GatewayURL)
-	queryExecutorService := serviceInternal.NewQueryExecutorService(queryServiceRepo, systemClient)
+	queryExecutorService := serviceInternal.NewQueryExecutorService(queryServiceRepo, systemClient, systemServiceClient)
+	querySampleService := serviceInternal.NewQuerySampleService(
+		systemServiceClient,
+		commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemServiceURL, nil),
+		metaClient,
+	)
 
 	// 图查询服务
 	graphQueryServiceService := serviceInternal.NewGraphQueryServiceService(graphQueryServiceRepo, cfg.GatewayURL)
@@ -156,6 +163,7 @@ func main() {
 	ogcTilesHandler := api.NewOGCTilesHandler(tileServiceService, tileEndpointHandler)
 	dataServiceHandler := api.NewDataServiceHandler(queryService)
 	resourceCapabilityHandler := api.NewResourceCapabilityHandler(systemClient, metaClient)
+	resourceCapabilityHandler.SetQuerySampleService(querySampleService)
 	serviceEndpointHandler := api.NewServiceEndpointHandler(queryServiceService, registeredServiceService, tileServiceService)
 	graphQueryHandler := api.NewGraphQueryHandler(graphQueryServiceService, graphQueryExecutor)
 

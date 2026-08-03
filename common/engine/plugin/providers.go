@@ -282,6 +282,26 @@ type QueryRuntimeProvider interface {
 	ExecuteRuntimeQuery(ctx context.Context, connInfo ConnectionInfo, req QueryRequest) (*QueryResult, error)
 }
 
+type FederatedQueryRuntimeProvider interface {
+	EnginePlugin
+	QueryLanguages() []string
+	ResolveSourceEngineIDs(query string, candidates []FederatedQuerySource) []uint
+	ResolveObjectTableReferences(query string, candidates []FederatedQuerySource) []FederatedQueryObjectTableReference
+	ExecuteFederatedQuery(ctx context.Context, runtimeConn ConnectionInfo, req FederatedQueryRequest) (*QueryResult, error)
+}
+
+type FederatedQuerySource struct {
+	ID             uint
+	Name           string
+	EngineType     string
+	LifecycleState string
+}
+
+type FederatedQueryObjectTableReference struct {
+	SourceName string
+	TableName  string
+}
+
 type SQLQueryRuntimeProvider interface {
 	QueryRuntimeProvider
 	SQLDialect() string
@@ -535,13 +555,25 @@ type QueryRequest struct {
 	Options  QueryOptions
 }
 
+type FederatedQueryRequest struct {
+	ExecutionID              string                       `json:"execution_id"`
+	ExecutionAuthorizationID string                       `json:"execution_authorization_id"`
+	SourceEngineIDs          []uint                       `json:"source_engine_ids"`
+	ObjectTables             map[string]map[string]string `json:"object_tables,omitempty"`
+	Query                    string                       `json:"query"`
+	Language                 string                       `json:"language"`
+	Options                  QueryOptions                 `json:"options"`
+	CallerAccessToken        string                       `json:"-"`
+}
+
 type QueryOptions struct {
-	EngineID   uint
-	EngineType string
-	Limit      int
-	Timeout    time.Duration
-	ReadOnly   bool
-	Args       []interface{}
+	EngineID   uint          `json:"engine_id,omitempty"`
+	EngineType string        `json:"engine_type,omitempty"`
+	Limit      int           `json:"limit,omitempty"`
+	Offset     int           `json:"offset,omitempty"`
+	Timeout    time.Duration `json:"timeout,omitempty"`
+	ReadOnly   bool          `json:"read_only"`
+	Args       []interface{} `json:"args,omitempty"`
 }
 
 type OperatorDescriptor struct {
@@ -669,4 +701,29 @@ type ScriptSession struct {
 	ID       string                 `json:"id"`
 	Endpoint string                 `json:"endpoint,omitempty"`
 	Info     map[string]interface{} `json:"info,omitempty"`
+}
+
+// InteractiveScriptSessionRequest is the standard control-plane request for
+// a short-lived, owner-proxied interactive script session.
+type InteractiveScriptSessionRequest struct {
+	SessionID            string `json:"session_id"`
+	TenantID             uint   `json:"tenant_id"`
+	UserID               uint   `json:"user_id"`
+	TaskID               uint   `json:"task_id"`
+	NotebookPath         string `json:"notebook_path"`
+	Kernel               string `json:"kernel"`
+	BasePath             string `json:"base_path"`
+	TTLSeconds           int    `json:"ttl_seconds"`
+	OwnerAPIEndpoint     string `json:"owner_api_endpoint"`
+	OwnerCapabilityToken string `json:"owner_capability_token"`
+}
+
+// InteractiveScriptSession contains internal proxy facts. Callers must never
+// expose Endpoint or RuntimeToken to a browser.
+type InteractiveScriptSession struct {
+	SessionID    string    `json:"session_id"`
+	Endpoint     string    `json:"endpoint"`
+	RuntimeToken string    `json:"runtime_token"`
+	NotebookName string    `json:"notebook_name"`
+	ExpiresAt    time.Time `json:"expires_at"`
 }

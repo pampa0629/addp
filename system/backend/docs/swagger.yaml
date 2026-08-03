@@ -1464,6 +1464,12 @@ definitions:
         type: string
       issued_authorization_version:
         type: string
+      source_definition_id:
+        type: string
+      source_definition_version:
+        type: string
+      source_type:
+        type: string
       tenant_id:
         type: string
       tenant_membership_id:
@@ -1567,6 +1573,21 @@ definitions:
         type: integer
       parent_execution_id:
         type: string
+    type: object
+  internal_api.IAMIssueExecutionAuthorizationFromServiceDefinitionRequest:
+    properties:
+      definition_id:
+        type: string
+      definition_version:
+        type: string
+      engine_ids:
+        items:
+          type: string
+        type: array
+      execution_id:
+        type: string
+      expires_in:
+        type: integer
     type: object
   internal_api.IAMIssueExecutionAuthorizationRequest:
     properties:
@@ -2633,12 +2654,15 @@ paths:
       - 认证 | Authentication
       x-addp-auth-mode: permission
       x-addp-conditional-permissions:
+      - develop.task.execute
       - develop.data_read.execute
       - develop.data_write.execute
       - develop.data_ddl.execute
       - develop.data_external_effect.execute
+      - service.definition.create
+      - service.data_read.execute
       x-addp-required-permissions:
-      - develop.task.execute
+      - system.execution_authorization.create
   /auth/mfa:
     get:
       produces:
@@ -4573,6 +4597,52 @@ paths:
       security:
       - BearerAuth: []
       summary: 从父子执行来源签发执行授权 | Issue execution authorization from execution provenance
+      tags:
+      - Runtime 执行授权 | Runtime Execution Authorization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.execution_authorization.execute
+  /runtime/execution-authorizations/service-definitions:
+    post:
+      consumes:
+      - application/json
+      description: 仅 addp-service 可基于当前已发布定义版本为 DuckDB Runtime 签发最长 60 秒的只读授权 | Only
+        addp-service may issue a read-only authorization of at most 60 seconds for
+        the DuckDB Runtime from the current published definition version
+      parameters:
+      - description: 服务定义和授权边界 | Service definition and authorization boundary
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMIssueExecutionAuthorizationFromServiceDefinitionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.IAMExecutionAuthorizationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 从已发布服务定义签发只读执行授权 | Issue read-only execution authorization from a published
+        service definition
       tags:
       - Runtime 执行授权 | Runtime Execution Authorization
       x-addp-auth-mode: permission

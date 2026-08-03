@@ -80,6 +80,62 @@ class NotebookRuntimeAuthTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    def test_create_interactive_session_rejects_tenant_mismatch(self):
+        async def resolve(*_args):
+            return _context(tenant_id=7)
+
+        with patch.object(api_server, "resolve_authorization_context", resolve), patch.object(
+            api_server.interactive_session_manager, "create"
+        ) as create:
+            response = self.client.post(
+                "/api/interactive-sessions",
+                headers={"Authorization": "Bearer token"},
+                json={"tenant_id": 8},
+            )
+
+        self.assertEqual(response.status_code, 403)
+        create.assert_not_called()
+
+    def test_create_interactive_session_returns_internal_session_facts(self):
+        async def resolve(*_args):
+            return _context(tenant_id=7)
+
+        session = SimpleNamespace(
+            response=lambda: {
+                "session_id": "abc",
+                "endpoint": "http://jupyter:31000",
+                "runtime_token": "secret",
+                "notebook_name": "analysis.ipynb",
+                "expires_at": "2026-08-02T00:00:00Z",
+            }
+        )
+        with patch.object(api_server, "resolve_authorization_context", resolve), patch.object(
+            api_server.interactive_session_manager, "create", return_value=session
+        ):
+            response = self.client.post(
+                "/api/interactive-sessions",
+                headers={"Authorization": "Bearer token"},
+                json={"tenant_id": 7},
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json()["runtime_token"], "secret")
+
+    def test_close_interactive_session_is_tenant_scoped(self):
+        async def resolve(*_args):
+            return _context(tenant_id=7)
+
+        with patch.object(api_server, "resolve_authorization_context", resolve), patch.object(
+            api_server.interactive_session_manager, "close"
+        ) as close:
+            response = self.client.delete(
+                "/api/interactive-sessions/abc",
+                headers={"Authorization": "Bearer token"},
+            )
+
+        self.assertEqual(response.status_code, 204)
+        close.assert_called_once_with("abc", 7)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -527,16 +527,17 @@ type DelegatedAccessToken struct {
 
 func (DelegatedAccessToken) TableName() string { return "system.delegated_access_tokens" }
 
-// ExecutionAuthorization records a short-lived, user-derived authorization
-// boundary for one asynchronous execution. It is an auditable database fact,
-// not a bearer credential: a matching runtime Service Principal is still
-// required when the authorization is consumed.
+// ExecutionAuthorization records a short-lived authorization boundary for one
+// execution. It is an auditable database fact, not a bearer credential.
 type ExecutionAuthorization struct {
 	ID                         int64          `gorm:"primaryKey;autoIncrement"`
 	ActorPrincipalID           int64          `gorm:"column:actor_principal_id;not null"`
 	TenantID                   int64          `gorm:"column:tenant_id;not null"`
 	TenantMembershipID         int64          `gorm:"column:tenant_membership_id;not null"`
 	IssuedAuthorizationVersion int64          `gorm:"column:issued_authorization_version;not null"`
+	SourceType                 string         `gorm:"column:source_type;not null"`
+	SourceDefinitionID         *int64         `gorm:"column:source_definition_id"`
+	SourceDefinitionVersion    *string        `gorm:"column:source_definition_version"`
 	ExecutionID                uuid.UUID      `gorm:"column:execution_id;type:uuid;not null"`
 	Audience                   string         `gorm:"column:audience;not null"`
 	Effects                    pq.StringArray `gorm:"column:effects;type:text[];not null"`

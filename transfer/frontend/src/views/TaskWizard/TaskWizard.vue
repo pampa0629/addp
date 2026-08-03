@@ -68,7 +68,7 @@ import { getItemByID, getItemFieldsByID } from '@/api/meta'
 import { systemEnginesAPI } from '@/api/systemEngines'
 import { parseTransferLocator } from '@/utils/resourceLocator'
 import { navigateTransferRoute } from '@/utils/moduleNavigation'
-import { taskEngineTypes } from './continuousTask.mjs'
+import { taskEngineDescriptors } from './continuousTask.mjs'
 
 // 导入步骤组件
 import Step1SelectSource from './Step1SelectSource.vue'
@@ -111,8 +111,8 @@ async function loadTaskDetail() {
     const task = response.data || response
 
     // 回填任务数据到向导状态
-		const engineTypes = await loadTaskEngineTypes(task)
-		wizardState.loadFromTask(task, engineTypes)
+		const engineDescriptors = await loadTaskEngineDescriptors(task)
+		wizardState.loadFromTask(task, engineDescriptors)
     await restoreSourceItemForEdit(task)
 
     // 加载源字段和目标字段
@@ -128,9 +128,9 @@ async function loadTaskDetail() {
   }
 }
 
-async function loadTaskEngineTypes(task) {
+async function loadTaskEngineDescriptors(task) {
 	const engines = await systemEnginesAPI.list()
-	return taskEngineTypes(task, engines)
+	return taskEngineDescriptors(task, engines)
 }
 
 async function restoreSourceItemForEdit(task) {

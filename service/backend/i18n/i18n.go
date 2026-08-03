@@ -22,6 +22,10 @@ const (
 	MsgSnapshotCheckFailed     = "service.err.snapshot_check_failed"
 	MsgSnapshotRefreshFailed   = "service.err.snapshot_refresh_failed"
 	MsgSQLOutputContractFailed = "service.err.sql_output_contract_failed"
+	MsgAuthenticationRequired  = "service.err.authentication_required"
+	MsgQuerySampleForbidden    = "service.err.query_sample_forbidden"
+	MsgQuerySampleUnavailable  = "service.err.query_sample_unavailable"
+	MsgQuerySampleFailed       = "service.err.query_sample_failed"
 )
 
 func init() {

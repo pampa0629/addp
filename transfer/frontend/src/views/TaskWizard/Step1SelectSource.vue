@@ -319,6 +319,7 @@ function syncSource(node) {
   props.wizardState.updateSource({
     engineID: formData.engineID,
     engineType: engine.engine_type,
+    capabilities: engine.capabilities,
     schema: endpointResource.path?.schema || '',
     table: endpointResource.path?.table || '',
     sourceType: normalizeEngineType(engine.engine_type),

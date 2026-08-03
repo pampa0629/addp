@@ -851,13 +851,16 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-conditional-permissions": [
+                    "develop.task.execute",
                     "develop.data_read.execute",
                     "develop.data_write.execute",
                     "develop.data_ddl.execute",
-                    "develop.data_external_effect.execute"
+                    "develop.data_external_effect.execute",
+                    "service.definition.create",
+                    "service.data_read.execute"
                 ],
                 "x-addp-required-permissions": [
-                    "develop.task.execute"
+                    "system.execution_authorization.create"
                 ]
             }
         },
@@ -3781,6 +3784,73 @@ const docTemplate = `{
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/internal_api.IAMIssueExecutionAuthorizationFromExecutionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMExecutionAuthorizationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.execution_authorization.execute"
+                ]
+            }
+        },
+        "/runtime/execution-authorizations/service-definitions": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 addp-service 可基于当前已发布定义版本为 DuckDB Runtime 签发最长 60 秒的只读授权 | Only addp-service may issue a read-only authorization of at most 60 seconds for the DuckDB Runtime from the current published definition version",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runtime 执行授权 | Runtime Execution Authorization"
+                ],
+                "summary": "从已发布服务定义签发只读执行授权 | Issue read-only execution authorization from a published service definition",
+                "parameters": [
+                    {
+                        "description": "服务定义和授权边界 | Service definition and authorization boundary",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMIssueExecutionAuthorizationFromServiceDefinitionRequest"
                         }
                     }
                 ],
@@ -7639,6 +7709,15 @@ const docTemplate = `{
                 "issued_authorization_version": {
                     "type": "string"
                 },
+                "source_definition_id": {
+                    "type": "string"
+                },
+                "source_definition_version": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "type": "string"
+                },
                 "tenant_id": {
                     "type": "string"
                 },
@@ -7797,6 +7876,29 @@ const docTemplate = `{
                 },
                 "parent_execution_id": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMIssueExecutionAuthorizationFromServiceDefinitionRequest": {
+            "type": "object",
+            "properties": {
+                "definition_id": {
+                    "type": "string"
+                },
+                "definition_version": {
+                    "type": "string"
+                },
+                "engine_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "expires_in": {
+                    "type": "integer"
                 }
             }
         },

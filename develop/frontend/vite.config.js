@@ -58,7 +58,8 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:8000',  // 代理到 Gateway，由 Gateway 统一路由
-        changeOrigin: true
+        changeOrigin: true,
+        ws: true
       }
     }
   },

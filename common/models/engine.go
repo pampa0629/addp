@@ -141,7 +141,7 @@ type Engine struct {
 }
 
 // EngineRuntimeEndpoint is the non-secret control-plane endpoint of a
-// workflow or script runtime. Data-engine connection details never belong here.
+// workflow, script, or federated query runtime. Data-engine connection details never belong here.
 type EngineRuntimeEndpoint struct {
 	Protocol string `json:"protocol"`
 	Host     string `json:"host"`

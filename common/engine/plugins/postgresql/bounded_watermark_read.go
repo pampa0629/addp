@@ -31,7 +31,7 @@ func (p *PostgreSQLPlugin) OpenBoundedWatermarkRead(ctx context.Context, connInf
 	if err != nil {
 		return nil, err
 	}
-	cursorFields, err := normalizeWatermarkFields(opts.WatermarkField, opts.TieBreakers)
+	cursorFields, err := plugin.NormalizeWatermarkFields(opts.WatermarkField, opts.TieBreakers)
 	if err != nil {
 		return nil, err
 	}
@@ -135,27 +135,6 @@ func (p *PostgreSQLPlugin) OpenBoundedWatermarkRead(ctx context.Context, connInf
 		db: db, tx: tx, cursorName: cursorName, fields: fields,
 		spatialInfo: postgresSpatialInfoFromFields(fields), upper: upper, cursorFields: cursorFields,
 	}, nil
-}
-
-func normalizeWatermarkFields(watermark string, ties []string) ([]string, error) {
-	watermark = strings.TrimSpace(watermark)
-	if watermark == "" {
-		return nil, fmt.Errorf("watermark field is required")
-	}
-	result := []string{watermark}
-	seen := map[string]bool{watermark: true}
-	for _, tie := range ties {
-		tie = strings.TrimSpace(tie)
-		if tie == "" || seen[tie] {
-			return nil, fmt.Errorf("watermark tie_breaker fields must be non-empty and unique")
-		}
-		seen[tie] = true
-		result = append(result, tie)
-	}
-	if len(result) == 1 {
-		return nil, fmt.Errorf("watermark requires at least one tie_breaker field")
-	}
-	return result, nil
 }
 
 func validatePostgresUniqueTieBreakers(ctx context.Context, db *sql.DB, schema, table string, ties []string) error {

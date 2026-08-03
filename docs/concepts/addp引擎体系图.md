@@ -141,6 +141,11 @@ classDiagram
         +ExecuteRuntimeQuery()
     }
 
+    class FederatedQueryRuntimeProvider {
+        +QueryLanguages()
+        +ExecuteFederatedQuery()
+    }
+
     class WorkflowRuntimeProvider {
         +ListOperators()
         +ExecuteWorkflow()
@@ -163,6 +168,7 @@ classDiagram
     StoreProvider <|-- BatchWritableProvider
     StoreProvider <|-- ChangeStreamReaderProvider
     EnginePlugin <|-- QueryRuntimeProvider
+    EnginePlugin <|-- FederatedQueryRuntimeProvider
     EnginePlugin <|-- WorkflowRuntimeProvider
     EnginePlugin <|-- ScriptRuntimeProvider
 ```
@@ -180,16 +186,19 @@ classDiagram
 | Service | 使用 query runtime 和 Meta item/spatial 元数据发布数据服务。 |
 | Transfer | bounded table/content 路径消费 batch/session/content Provider；continuous source 消费 `ChangeStreamReaderProvider`，从同一 reader 获取分区 earliest/latest position 用于 lag/retention 诊断，由 Transfer adapter 归一化 ChangeEvent 并组合目标 Provider。 |
 
-### Develop / Service 内置 DuckDB 联邦查询边界
+### DuckDB 联邦查询 Runtime 边界
 
-DuckDB 当前不是用户在 System 中注册的外部 Engine Instance，也不是工作流运行时。它是 Develop 查询工作台和 Service 查询服务复用的内置联邦 SQL 执行模式：执行时根据 SQL 引用动态挂载 PostgreSQL、MySQL、MinIO/S3 等真实 System 引擎，并基于 Meta 标准 attributes 将对象存储表改写为 DuckDB `read_parquet(...)` 等读取表达式。
+DuckDB 是 `engines/duckdb` 提供的平台共享联邦查询 Runtime。System 保存一条 `engine_type=duckdb`、`tenant_id=NULL`、`is_builtin=true` 的 Runtime Engine Instance，其 `connection_info` 只保存 `protocol/host/port`，能力声明为 `compute.query.supported=true` 且 `compute.query.federation.supported=true`。
 
-因此：
+执行边界：
 
-- DuckDB 不进入 `GET /api/v1/develop/workflow-engines`，不参与工作流算子发现。
-- DuckDB 不作为普通 System 引擎实例要求 `connection_info`；Develop 查询工作台可以保留内置联邦查询入口，但该入口必须通过 Develop 查询模式发现接口暴露，不得混入 `/api/v1/develop/engines`。
-- Develop 查询任务持久化时，普通 SQL 查询使用 `execution_config.engine_id` 指向具备 query 能力的 System 引擎；DuckDB 联邦查询使用 `execution_config.query_mode="duckdb"`，不得写入虚拟 `engine_id=0` 或伪造 System 引擎记录。
-- 若未来要把 DuckDB 抽象为可注册的内置查询运行时，应单独设计 `compute.query` / `federated_query` 能力、租户隔离、扩展安装和数据源挂载规则，不在工作流引擎规范中旁路实现。
+- DuckDB Runtime 通过 `FederatedQueryRuntimeProvider` 和 `addp.query-runtime/v1` 协议调用，不进入工作流算子发现。
+- Develop 查询任务使用 `execution_config.engine_id` 绑定 DuckDB Runtime；不再存在 `query_mode=duckdb`、虚拟 `engine_id=0` 或 Develop 私有查询模式。
+- Service 查询服务使用 `runtime_engine_id` 绑定查询 Runtime；表和 SQL 引用的数据源继续通过 ResourceLocator、Source Engine ID 和依赖快照表达，不复用 Runtime Engine ID。
+- Develop 和 Service 先解析本次 SQL 或已发布服务快照涉及的 Source Engine，为唯一 execution 签发 audience 为 `duckdb` 的只读 Execution Authorization，再调用 Runtime。
+- DuckDB Runtime 使用 `addp-duckdb` Tenant Service Access Token 消费授权，逐个从 System 获取本次允许的明文连接；调用方不得把 User Token、长期凭据或 Source Engine 明文连接发送给 Runtime。
+- 每次执行创建隔离 DuckDB 连接，只挂载授权内数据源和对象表白名单；执行结束销毁连接，不跨 execution 或 Tenant 复用 attachment。
+- DuckDB、扩展二进制、挂载、SQL 重写和查询执行实现只存在于 `engines/duckdb`；Develop、Service 和 `common/` 不链接 DuckDB 原生运行库。
 
 ### Develop Notebook 引擎绑定边界
 
@@ -202,6 +211,68 @@ Notebook 是 Develop `script` 任务的当前交互形态。任务必须在 `exe
 - 用户可以在 Notebook 任务定义上显式更换引擎和 Kernel；Develop 必须先校验目标实例及 Kernel，再原子更新原任务的 `execution_config.engine_id` 和 `content.kernel`。该操作不复制任务、不迁移 Notebook 文件，也不自动猜测替代引擎。
 - 任务重绑定只影响后续执行。每次执行创建时保存的 `execution_config` 是历史执行快照，不能因任务之后重绑定而被回写或改写。
 - 引擎健康状态由 System 连接检查负责，Develop 不提供 Jupyter 专用健康代理 API。
+
+### Notebook 原生引擎门面
+
+Notebook 面向算法工程师提供 `Notebook Native Engine Facade`。Facade 只存在于 `common-python` 用户表达层；System、Develop 和 Engine Plugin 继续使用唯一 `CatalogModelSpec`、`CatalogPath`、`CatalogEntry`、`CatalogFacts`、`CatalogProvider.ListChildren` 和 `CatalogFactsProvider.DescribeCatalogFacts` 契约。
+
+```mermaid
+flowchart LR
+    User["Notebook 使用者<br/>schemas / tables / collections"]
+    Facade["common-python<br/>Native Engine Facade"]
+    Develop["Develop<br/>Session Catalog Proxy"]
+    System["System<br/>Notebook Catalog Authorization"]
+    Provider["CatalogProvider<br/>ListChildren"]
+
+    User --> Facade --> Develop --> System --> Provider
+```
+
+Facade 第一阶段按精确 `engine_type` 选择显式注册的原生客户端，并用 Runtime Descriptor 中的 capabilities 与 `CatalogModelSpec` 校验该客户端是否适配；不得只按 `engine_family` 猜测，不得为未知引擎回退到一个暴露内部 Catalog 术语的通用客户端。首个交付闭环为 PostgreSQL：
+
+```python
+pg = engines.client(engine_id)
+pg.schemas()
+pg.tables(schema="public")
+pg.table(schema="public", name="roads")
+```
+
+后续引擎沿同一注册机制扩展：
+
+| Engine | Facade 原生层级 | 公开发现方法 |
+| --- | --- | --- |
+| PostgreSQL | schema -> table/view | `schemas()`、`tables(schema=...)` |
+| MySQL、Doris、ClickHouse、Spark SQL | database -> table/view | `databases()`、`tables(database=...)` |
+| MongoDB | database -> collection | `databases()`、`collections(database=...)` |
+| Neo4j | database -> graph | `databases()`、`graphs(database=...)` |
+| MinIO、S3 | bucket -> prefix -> object | `buckets()`、`objects(bucket=..., prefix=...)` |
+| NFS | directory -> file | `directories(path=...)`、`files(path=...)` |
+| Kafka | service -> topic | `topics()` |
+
+列表方法返回可继续导航的原生资源对象，而不是无结构 `dict`；对象公开 `name` 和所属原生父级，内部保留服务端返回的规范 `CatalogPath`。`table()` 等单对象方法也必须通过实时列举结果解析并保存服务端路径，不能根据 schema、database、bucket 或名称自行拼接路径。名称不存在时返回明确错误，不能生成一个未经引擎确认的对象。
+
+延迟和新鲜度规则：
+
+- Notebook Interactive Session 创建时只签发一次 Notebook Catalog Authorization；每个 Facade 方法不得重新签发授权。
+- Develop 到 System 的一次 Catalog 请求必须同时完成授权校验和 `ListChildren`，不能先调用授权检查 API 再发第二次 Catalog 请求。
+- SDK 默认使用单一端到端 deadline，并把取消向 Develop、System 和 Provider 传播；多层调用不能在每一层重新开始完整超时。
+- SDK 可以在当前 Python Engine Client 内缓存服务端已经返回的 root 和 branch `CatalogPath`，减少 `tables(schema=...)` 等后续导航的重复列举；不得缓存 children 列表、CatalogFacts 或失败响应。
+- 首次按名称直接访问尚未缓存的父级时，SDK 通过逐层 `ListChildren` 找到规范路径。第一阶段不为减少一次往返新增 Catalog resolve API；先以真实 E2E 延迟度量决定是否需要扩展唯一 Catalog 契约。
+
+第一阶段只开放目录发现。`columns()` 和 `describe()` 必须在 System 提供唯一 Catalog Facts 路由后接入 `DescribeCatalogFacts`；`sql()`、`cypher()`、`query()`、`to_pandas()` 等真实数据读取必须使用 Execution Authorization 和 Query Runtime，不能使用 Notebook Catalog Authorization。
+
+错误必须保持可区分且 fail-closed：空列表只表示引擎真实返回零个子项，权限失效、对象不存在、不支持、超时和 Provider 故障都不能降级为空列表或占位对象。Notebook Catalog API 使用稳定 `error_code`，SDK 映射为类型化异常：
+
+| HTTP | `error_code` | SDK 语义 | 是否自动重试 |
+| --- | --- | --- | --- |
+| 400 | `catalog_request_invalid` | 参数或路径无效 | 否 |
+| 401 | `notebook_session_unavailable` | Kernel Capability 或 Session 已失效 | 否，重新打开 Session |
+| 403 | `notebook_catalog_forbidden` | 目录授权、Membership 或 Permission 已失效 | 否 |
+| 404 | `engine_not_found` / `catalog_entry_not_found` | Engine 或原生对象不存在 | 否 |
+| 422 | `catalog_operation_unsupported` | Engine capabilities / CatalogModel 不支持该方法 | 否 |
+| 502 | `catalog_control_plane_failed` | Develop 到 System 的服务认证、协议或响应异常 | 仅由调用者显式重试 |
+| 502 | `catalog_provider_failed` | Provider 返回未分类上游错误 | 仅由调用者显式重试 |
+| 503 | `engine_unavailable` | Engine 当前不可用 | 可按 `retry_after` 重试 |
+| 504 | `catalog_timeout` | 端到端 deadline 到期 | 可重试 |
 
 ---
 
@@ -231,7 +302,7 @@ Notebook 是 Develop `script` 任务的当前交互形态。任务必须在 `exe
 - 旧 `ListSchemas/ListTables/ListColumns/ListBuckets/ListCollections` 只能作为插件内部 helper，不作为上层契约。
 - 引擎能力只表达引擎自身 native 能力与 common/engine provider 能力；Transfer、Manager 预览等模块适配状态不进入 `engine.capabilities/v1`。
 - 工作流算子发现和执行通过 `WorkflowRuntimeProvider`；算子列表、参数、端口等动态能力不写入 capabilities。
-- SQL、Workflow 和 Jupyter 的数据访问权限来自本次执行发起者。调用方必须把算子或语句归类为 `read | write | ddl | external_effect`，创建绑定 execution 的短期 Execution Authorization，再由 Runtime Service Principal 消费；Engine Runtime 身份和 Engine 创建人都不是业务授权来源。
+- 交互式 SQL、Workflow 和 Jupyter 的数据访问权限来自本次执行发起者；已发布查询服务的权限来自其冻结的数据源绑定和公开/私有访问策略。调用方必须创建绑定 execution 的短期 Execution Authorization，再由 Runtime Service Principal 消费；Runtime 身份、服务创建人和 Engine 创建人都不是业务授权来源。
 - Runtime Service Principal 只负责机器认证、心跳、控制面注册和消费匹配 audience 的 Execution Authorization。除显式平台自动任务外，不授予通用 Tenant 数据权限或通用明文 Engine 读取权限。
 - Develop 等控制面调用方发现可用 Engine Instance 时只读取 Engine Runtime Descriptor。Descriptor 只暴露实例身份、能力和工作流/脚本运行时的 `protocol/host/port`；数据引擎明文连接只能在消费 Execution Authorization 时按单个 Engine 即时取得。
 - Jupyter 必须由 Develop 创建受控计算会话，不向 Notebook 注入长期明文 Engine 连接，不直接返回共享 Lab 作为数据访问主路径。Notebook 只能获得按 Execution Authorization 收窄的临时访问能力。

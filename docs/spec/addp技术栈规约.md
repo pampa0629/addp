@@ -16,7 +16,7 @@
 
 ### Go 依赖版本规范
 
-为确保所有模块依赖版本一致，ADDP 平台使用以下统一的 Go 依赖版本（最后更新: 2026-07-13）：
+为确保所有模块依赖版本一致，ADDP 平台使用以下统一的 Go 依赖版本（最后更新: 2026-08-02）：
 
 #### 核心框架
 
@@ -33,6 +33,9 @@
 
 #### 数据库驱动
 
+- **DuckDB**: `github.com/duckdb/duckdb-go/v2@v2.5.6`（DuckDB 1.4.5 LTS）
+  - 原生依赖只允许存在于 `engines/duckdb`。Develop 和 Service 统一通过 `FederatedQueryRuntimeProvider` 调用独立 Runtime，不得链接 DuckDB 驱动。
+  - 用户 SQL 执行前必须完成授权引擎挂载和对象路径白名单配置，再关闭 DuckDB 外部访问并锁定安全配置。
 - **MySQL**: `github.com/go-sql-driver/mysql@v1.9.3` ⚠️ **必须使用此版本**
   - **Doris 兼容性要求**: v1.8.x 版本无法正常连接 Doris,会返回 "invalid connection" 错误
   - **影响**: 所有需要连接 MySQL/Doris 的模块必须使用 v1.9.3+

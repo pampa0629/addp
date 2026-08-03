@@ -6,6 +6,7 @@ require (
 	github.com/addp/common v0.0.0-00010101000000-000000000000
 	github.com/gin-gonic/gin v1.11.0
 	github.com/redis/go-redis/v9 v9.17.2
+	golang.org/x/net v0.49.0
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.30.0
 )
@@ -49,7 +50,6 @@ require (
 	github.com/ugorji/go/codec v1.3.1 // indirect
 	golang.org/x/arch v0.23.0 // indirect
 	golang.org/x/crypto v0.47.0 // indirect
-	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect

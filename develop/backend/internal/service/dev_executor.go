@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	commonClient "github.com/addp/common/client"
-	commonExecution "github.com/addp/common/execution"
 	"log"
 	"strings"
 	"time"
+
+	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dbbridge"
+	commonExecution "github.com/addp/common/execution"
 
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/models"
@@ -26,12 +28,14 @@ type DevExecutor struct {
 	operatorDiscovery        *OperatorDiscoveryService
 	metaClient               *commonClient.MetaClient
 	sqlEngine                *SQLEngineService
-	duckdbService            federatedQueryExecutor
+	federatedQuery           federatedQueryExecutor
 	notebookExecutionService *NotebookExecutionService
 }
 
 type federatedQueryExecutor interface {
-	ExecuteQuery(ctx context.Context, tenantID uint, sqlStr string, timeout int) (*FederatedQueryResult, error)
+	IsRuntime(ctx context.Context, tenantID, engineID uint) bool
+	ReferencedEngineIDs(ctx context.Context, tenantID, runtimeEngineID uint, query string) ([]uint, error)
+	ExecuteQuery(ctx context.Context, tenantID, runtimeEngineID uint, executionID uuid.UUID, authorizationID int64, query string, timeout int, sourceEngineIDs []uint) (*FederatedQueryResult, error)
 }
 
 type preparedContentExecution struct {
@@ -56,7 +60,7 @@ func NewDevExecutor(
 	operatorDiscovery *OperatorDiscoveryService,
 	metaClient *commonClient.MetaClient,
 	sqlEngine *SQLEngineService,
-	duckdbService federatedQueryExecutor,
+	federatedQuery federatedQueryExecutor,
 	notebookExecutionService *NotebookExecutionService,
 ) *DevExecutor {
 	return &DevExecutor{
@@ -66,7 +70,7 @@ func NewDevExecutor(
 		operatorDiscovery:        operatorDiscovery,
 		metaClient:               metaClient,
 		sqlEngine:                sqlEngine,
-		duckdbService:            duckdbService,
+		federatedQuery:           federatedQuery,
 		notebookExecutionService: notebookExecutionService,
 	}
 }
@@ -342,11 +346,21 @@ func (e *DevExecutor) prepareSQLExecutionAuthorization(
 	if devTask == nil || devTask.DevType != commonExecution.TaskTypeQuery {
 		return nil, nil
 	}
-	if devTask.IsDuckDBQuery() {
-		return nil, fmt.Errorf("DuckDB 联邦查询尚未迁移到受控 Execution Authorization，当前拒绝执行")
-	}
 	if strings.TrimSpace(userAccessToken) == "" {
 		return nil, fmt.Errorf("异步 SQL 执行必须由当前 User Access Token 派生 Execution Authorization")
+	}
+	if e.isFederatedQuery(ctx, devTask, tenantID) {
+		engineIDs, err := e.federatedReadEngineIDs(ctx, devTask, tenantID)
+		if err != nil || len(engineIDs) == 0 {
+			return nil, err
+		}
+		parsedExecutionID, err := uuid.Parse(executionID)
+		if err != nil {
+			return nil, fmt.Errorf("执行 ID 无效: %w", err)
+		}
+		return e.sqlEngine.IssueFederatedReadExecutionAuthorization(
+			ctx, tenantID, userAccessToken, parsedExecutionID, engineIDs, devTask.Timeout,
+		)
 	}
 	engineID := devTask.GetEngineID()
 	if engineID == nil || *engineID == 0 {
@@ -360,9 +374,40 @@ func (e *DevExecutor) prepareSQLExecutionAuthorization(
 	if err != nil {
 		return nil, fmt.Errorf("执行 ID 无效: %w", err)
 	}
+	if devTask.GetQueryType() != "sql" {
+		return e.sqlEngine.IssueReadExecutionAuthorization(
+			ctx, tenantID, userAccessToken, parsedExecutionID, []uint{*engineID}, devTask.Timeout,
+		)
+	}
 	return e.sqlEngine.IssueSQLExecutionAuthorization(
 		ctx, tenantID, userAccessToken, parsedExecutionID, *engineID, sqlContent, devTask.Timeout,
 	)
+}
+
+func (e *DevExecutor) isFederatedQuery(ctx context.Context, devTask *models.DevTask, tenantID uint) bool {
+	if e == nil || e.federatedQuery == nil || devTask == nil || devTask.DevType != commonExecution.TaskTypeQuery || devTask.GetQueryType() != "sql" {
+		return false
+	}
+	engineID := devTask.GetEngineID()
+	return engineID != nil && e.federatedQuery.IsRuntime(ctx, tenantID, *engineID)
+}
+
+func (e *DevExecutor) federatedReadEngineIDs(ctx context.Context, devTask *models.DevTask, tenantID uint) ([]uint, error) {
+	if !e.isFederatedQuery(ctx, devTask, tenantID) {
+		return nil, fmt.Errorf("无效的联邦查询任务")
+	}
+	sqlContent, ok := devTask.Content["query"].(string)
+	if !ok || strings.TrimSpace(sqlContent) == "" {
+		return nil, fmt.Errorf("无效的查询内容")
+	}
+	effect, err := ClassifySQLExecutionEffect(sqlContent)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrSQLExecutionUnclassifiable, err)
+	}
+	if effect != SQLExecutionEffectRead {
+		return nil, fmt.Errorf("联邦查询 Runtime 仅支持只读 SQL")
+	}
+	return e.federatedQuery.ReferencedEngineIDs(ctx, tenantID, *devTask.GetEngineID(), sqlContent)
 }
 
 func applySQLExecutionAuthorizationFacts(
@@ -716,12 +761,8 @@ func (e *DevExecutor) executeQuery(ctx context.Context, devTask *models.DevTask,
 
 	// 根据 query_type 路由到不同执行器
 	switch queryType {
-	case "sql":
+	case "sql", "mql", "cypher":
 		return e.executeSQL(ctx, devTask, executionID, tenantID, authorization)
-	case "mql":
-		return nil, "MongoDB 查询功能尚未实现", nil
-	case "dsl":
-		return nil, "Elasticsearch 查询功能尚未实现", nil
 	default:
 		return nil, fmt.Sprintf("不支持的查询类型: %s", queryType), nil
 	}
@@ -730,18 +771,61 @@ func (e *DevExecutor) executeQuery(ctx context.Context, devTask *models.DevTask,
 // executeSQL 执行SQL
 func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, executionID string, tenantID int, authorization *IssuedSQLExecutionAuthorization) (commonModels.JSONMap, string, *int64) {
 	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 30, "执行SQL")
+	sqlContent, ok := devTask.Content["query"].(string)
+	parsedExecutionID, err := uuid.Parse(executionID)
+	if !ok || err != nil {
+		return nil, "异步 SQL 执行上下文无效", nil
+	}
+	if e.isFederatedQuery(ctx, devTask, uint(tenantID)) {
+		if e.federatedQuery == nil || authorization == nil {
+			return nil, "联邦查询服务或 Execution Authorization 未初始化", nil
+		}
+		runtimeEngineID := devTask.GetEngineID()
+		federatedResult, executeErr := e.federatedQuery.ExecuteQuery(
+			ctx, uint(tenantID), *runtimeEngineID, parsedExecutionID, authorization.AuthorizationID,
+			sqlContent, devTask.Timeout, authorization.EngineIDs,
+		)
+		if executeErr != nil {
+			return nil, fmt.Sprintf("联邦查询执行失败: %v", executeErr), nil
+		}
+		previewRows := federatedResult.Rows
+		if len(previewRows) > 10 {
+			previewRows = previewRows[:10]
+		}
+		rowsAffected := int64(federatedResult.RowCount)
+		return commonModels.JSONMap{
+			"columns": federatedResult.Columns, "rows_affected": rowsAffected, "effect": SQLExecutionEffectRead,
+			"summary": map[string]interface{}{
+				"total_rows": federatedResult.RowCount, "column_count": len(federatedResult.Columns), "preview_rows": previewRows,
+			},
+		}, "", &rowsAffected
+	}
 	if authorization == nil {
 		return nil, "异步 SQL 执行缺少 Execution Authorization", nil
 	}
 	engineID := devTask.GetEngineID()
-	sqlContent, ok := devTask.Content["query"].(string)
-	parsedExecutionID, err := uuid.Parse(executionID)
-	if engineID == nil || !ok || err != nil {
+	if engineID == nil {
 		return nil, "异步 SQL 执行上下文无效", nil
 	}
-	result, err := e.sqlEngine.ExecuteIssuedSQLAuthorization(
-		ctx, uint(tenantID), parsedExecutionID, *engineID, sqlContent, devTask.Timeout, authorization,
-	)
+	var result *SQLResult
+	if devTask.GetQueryType() == "sql" {
+		result, err = e.sqlEngine.ExecuteIssuedSQLAuthorization(
+			ctx, uint(tenantID), parsedExecutionID, *engineID, sqlContent, devTask.Timeout, authorization,
+		)
+	} else {
+		engine, accessErr := e.sqlEngine.executionEngine(ctx, uint(tenantID), parsedExecutionID, *engineID, authorization)
+		if accessErr != nil {
+			return nil, fmt.Sprintf("查询执行授权失败: %v", accessErr), nil
+		}
+		queryResult, queryErr := dbbridge.ExecuteReadOnlyRuntimeQuery(ctx, engine, devTask.GetQueryType(), sqlContent)
+		if queryErr != nil {
+			err = queryErr
+		} else {
+			result = &SQLResult{
+				Columns: queryResult.Columns, Rows: queryResult.Rows, RowsAffected: int64(len(queryResult.Rows)), Effect: SQLExecutionEffectRead,
+			}
+		}
+	}
 	if err != nil {
 		return nil, fmt.Sprintf("SQL执行失败: %v", err), nil
 	}
@@ -1181,14 +1265,26 @@ func (e *DevExecutor) ExecuteWithParamsFromParentExecution(
 	var workflowAuthorization *IssuedWorkflowExecutionAuthorization
 	switch preparedTask.task.DevType {
 	case commonExecution.TaskTypeQuery:
-		engineID := preparedTask.task.GetEngineID()
 		sqlContent, ok := preparedTask.task.Content["query"].(string)
-		if engineID == nil || *engineID == 0 || !ok || strings.TrimSpace(sqlContent) == "" {
+		if !ok || strings.TrimSpace(sqlContent) == "" {
 			err = fmt.Errorf("异步 SQL 执行上下文无效")
+		} else if e.isFederatedQuery(ctx, preparedTask.task, tenantID) {
+			var engineIDs []uint
+			engineIDs, err = e.federatedReadEngineIDs(ctx, preparedTask.task, tenantID)
+			if err == nil && len(engineIDs) > 0 {
+				sqlAuthorization, err = e.sqlEngine.IssueFederatedReadExecutionAuthorizationFromExecution(
+					ctx, tenantID, parsedParentExecutionID, executionUUID, engineIDs, preparedTask.task.Timeout,
+				)
+			}
 		} else {
-			sqlAuthorization, err = e.sqlEngine.IssueSQLExecutionAuthorizationFromExecution(
-				ctx, tenantID, parsedParentExecutionID, executionUUID, *engineID, sqlContent, preparedTask.task.Timeout,
-			)
+			engineID := preparedTask.task.GetEngineID()
+			if engineID == nil || *engineID == 0 {
+				err = fmt.Errorf("异步 SQL 执行上下文无效")
+			} else {
+				sqlAuthorization, err = e.sqlEngine.IssueSQLExecutionAuthorizationFromExecution(
+					ctx, tenantID, parsedParentExecutionID, executionUUID, *engineID, sqlContent, preparedTask.task.Timeout,
+				)
+			}
 		}
 	case commonExecution.TaskTypeWorkflow:
 		workflowAuthorization, err = e.prepareWorkflowExecutionAuthorizationFromExecution(
@@ -1243,10 +1339,6 @@ func validateExpectedDevTaskType(devType, expectedTaskType string) error {
 func devTaskExecutionRecordConfig(devTask *models.DevTask, inputs commonModels.JSONMap) commonModels.JSONMap {
 	config := commonModels.JSONMap{
 		"inputs": inputs,
-	}
-	if devTask != nil && devTask.IsDuckDBQuery() {
-		config["query_mode"] = "duckdb"
-		return config
 	}
 	if devTask != nil {
 		config["engine_id"] = devTask.GetEngineID()

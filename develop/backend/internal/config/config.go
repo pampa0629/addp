@@ -22,6 +22,7 @@ type Config struct {
 
 	// System 服务配置（用于获取资源配置和认证）
 	SystemServiceURL         string
+	DevelopServiceURL        string
 	EnableServiceIntegration bool
 	EncryptionKey            []byte
 	ServiceClientSecret      string
@@ -62,6 +63,7 @@ func Load() *Config {
 
 		// System 服务集成
 		SystemServiceURL:         getEnv("SYSTEM_URL", "http://localhost:8180"),
+		DevelopServiceURL:        getEnv("DEVELOP_URL", "http://localhost:8185"),
 		EnableServiceIntegration: getEnvAsBool("ENABLE_SERVICE_INTEGRATION", true),
 		EncryptionKey:            encryptionKey,
 		ServiceClientSecret:      getEnv("DEVELOP_SERVICE_CLIENT_SECRET", ""),

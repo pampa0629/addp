@@ -534,7 +534,7 @@ erDiagram
 - `Orchestration.steps` 是内嵌 JSONB 数组，每个 Step 通过 TaskProvider API 调用已有任务定义（`provider/task_type/task_id`）。
 - 工作流运行时由 Develop 消费；算子工作流必须先在 Develop 中形成 `workflow` 任务，再作为 `provider=develop, task_type=workflow` 的 Step 进入 Orchestrator。
 - `Orchestration` 执行后本身也产生 `TaskExecution`（task_type='orchestration'），并可作为 `provider=orchestrator, task_type=orchestration` 的任务被更高层 Orchestration 引用；保存和执行时必须防止自引用或循环引用。
-- `DevTask.execution_config` 表达执行目标：普通 `query` 任务使用 `engine_id` 指向具备 query 能力的真实 System 引擎；DuckDB 联邦查询使用 `query_mode="duckdb"`，不写虚拟 `engine_id=0`；`workflow` 任务的 `engine_id` 指向具体工作流运行时实例，不冗余保存 `engine_type`；`script` 类选择具备脚本执行能力的引擎，当前可由 Jupyter Notebook runtime 承载
+- `DevTask.execution_config` 表达执行目标：所有 `query` 任务统一使用 `engine_id` 指向具备 query 能力的真实 System Engine，DuckDB 联邦查询绑定平台内置 DuckDB Runtime Engine，不存在 `query_mode` 或虚拟 `engine_id=0`；`workflow` 任务的 `engine_id` 指向具体工作流运行时实例，不冗余保存 `engine_type`；`script` 类选择具备脚本执行能力的引擎，当前可由 Jupyter Notebook runtime 承载
 - `TaskExecution.error_details`：仅在失败时填充，存储错误类型、错误栈等诊断信息；`metadata`：每次执行均可写入，存储各模块特有的过程数据和结果统计
 
 **⚠️ 发现的问题**：

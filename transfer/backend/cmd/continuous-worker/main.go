@@ -88,6 +88,18 @@ func main() {
 		log.Fatalf("continuous worker DLQ availability reconciler 配置无效: %v", err)
 	}
 	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
+	if cfg.MetaServiceURL == "" || cfg.ServiceClientSecret == "" {
+		log.Fatal("continuous worker 需要 META_URL 和 TRANSFER_SERVICE_CLIENT_SECRET 提交目标元数据扫描")
+	}
+	tokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-transfer", cfg.ServiceClientSecret, nil)
+	if err != nil {
+		log.Fatalf("continuous worker Service Token Source 初始化失败: %v", err)
+	}
+	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
+	metadataScanner := &continuous.TargetMetadataScanner{
+		Store: leaseRepo, Client: metaClient, ClaimTTL: cfg.MetaScanClaimTTL,
+		Logger: logger.With("component", "continuous_target_metadata_scan"),
+	}
 	runner := &continuous.DataSessionRunner{
 		Resolver: planner.NewSystemEngineResolver(systemClient),
 		States:   repository.NewSyncStateRepository(db), Progress: leaseRepo,
@@ -98,6 +110,7 @@ func main() {
 		RetentionDegradedHorizon: cfg.ContinuousRetentionDegradedHorizon,
 		RetentionCriticalHorizon: cfg.ContinuousRetentionCriticalHorizon,
 		CheckpointStaleAfter:     cfg.ContinuousCheckpointStaleAfter,
+		MetadataScanner:          metadataScanner,
 	}
 	supervisor, err := continuous.NewSupervisor(
 		leaseRepo,

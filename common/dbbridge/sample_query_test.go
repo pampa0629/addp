@@ -2,6 +2,7 @@ package dbbridge
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/addp/common/datatype"
@@ -74,9 +75,9 @@ func TestGenerateCatalogSampleQueryPrefersTableWithRows(t *testing.T) {
 		},
 	}
 
-	query, ok := generateCatalogSampleQuery(context.Background(), cp, cp, nil, 1, "postgresql")
-	if !ok {
-		t.Fatal("expected catalog sample query")
+	query, err := generateCatalogSampleQuery(context.Background(), cp, cp, nil, 1, "postgresql")
+	if err != nil {
+		t.Fatalf("expected catalog sample query: %v", err)
 	}
 
 	const want = "SELECT *\nFROM \"public\".\"cities\"\nLIMIT 10"
@@ -85,7 +86,7 @@ func TestGenerateCatalogSampleQueryPrefersTableWithRows(t *testing.T) {
 	}
 }
 
-func TestGenerateCatalogSampleQueryFallsBackToFirstItem(t *testing.T) {
+func TestGenerateCatalogSampleQueryRejectsEmptyTables(t *testing.T) {
 	cp := &sampleCatalogProvider{
 		namespaces: []plugin.CatalogEntry{
 			namespaceNode("analytics"),
@@ -97,14 +98,9 @@ func TestGenerateCatalogSampleQueryFallsBackToFirstItem(t *testing.T) {
 		},
 	}
 
-	query, ok := generateCatalogSampleQuery(context.Background(), cp, cp, nil, 1, "mysql")
-	if !ok {
-		t.Fatal("expected catalog sample query")
-	}
-
-	const want = "SELECT *\nFROM `analytics`.`events`\nLIMIT 10"
-	if query != want {
-		t.Fatalf("unexpected query:\nwant: %s\ngot:  %s", want, query)
+	query, err := generateCatalogSampleQuery(context.Background(), cp, cp, nil, 1, "mysql")
+	if !errors.Is(err, ErrSampleQueryUnavailable) || query != "" {
+		t.Fatalf("generateCatalogSampleQuery() = (%q, %v), want unavailable", query, err)
 	}
 }
 
@@ -121,9 +117,9 @@ func TestGenerateCatalogSampleQueryRequiresTableLeafModel(t *testing.T) {
 		},
 	}
 
-	query, ok := generateCatalogSampleQuery(context.Background(), cp, cp, nil, 1, "postgresql")
-	if ok || query != "" {
-		t.Fatalf("generateCatalogSampleQuery() = (%q, %v), want no SQL sample for non-table catalog", query, ok)
+	query, err := generateCatalogSampleQuery(context.Background(), cp, cp, nil, 1, "postgresql")
+	if !errors.Is(err, ErrSampleQueryUnavailable) || query != "" {
+		t.Fatalf("generateCatalogSampleQuery() = (%q, %v), want unavailable for non-table catalog", query, err)
 	}
 }
 

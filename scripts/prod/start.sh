@@ -94,6 +94,7 @@ docker compose -f docker-compose.yml up -d \
   supermap-workflow-engine \
   spark-workflow-engine \
   jupyter-engine \
+  duckdb-engine \
   gateway
 
 # 第四步：等待所有后端服务就绪
@@ -118,6 +119,7 @@ services=(
   "asset-backend:8183"
   "portal-backend:8184"
   "jupyter-engine:8097"
+  "duckdb-engine:8104"
   "spark-workflow-engine:8098"
   "python-workflow-engine:8099"
   "model3d-workflow-engine:8101"

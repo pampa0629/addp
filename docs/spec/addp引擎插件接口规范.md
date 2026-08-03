@@ -348,7 +348,44 @@ type QueryRuntimeProvider interface {
 }
 ```
 
+联邦查询运行时使用独立 Provider，不把多数据源连接塞入普通 `QueryRequest`：
+
+```go
+type FederatedQueryRuntimeProvider interface {
+    EnginePlugin
+    QueryLanguages() []string
+    ExecuteFederatedQuery(
+        ctx context.Context,
+        runtimeConn ConnectionInfo,
+        req FederatedQueryRequest,
+    ) (*QueryResult, error)
+}
+
+type FederatedQueryRequest struct {
+    ExecutionID              string
+    ExecutionAuthorizationID string
+    SourceEngineIDs          []uint
+    Query                    string
+    Language                 string
+    Options                  QueryOptions
+    CallerAccessToken        string
+}
+```
+
+`runtimeConn` 只包含 Runtime Engine 的 `protocol/host/port`。`CallerAccessToken` 只用于当前同步服务间请求的 Bearer 认证，必须使用 `json:"-"`，不得进入请求体、任务定义、执行记录或日志。Runtime 使用自己的 Service Principal 消费 `ExecutionAuthorizationID`，不能要求调用方提供 Source Engine `connection_info`。
+
+`FederatedQueryRuntimeProvider` 当前标准 HTTP 协议为 `addp.query-runtime/v1`：
+
+- `GET /health`：运行时和离线扩展完整性检查。
+- `POST /api/v1/queries`：同步执行一次只读联邦查询。
+
+查询请求必须绑定唯一 execution。Runtime 按 Execution Authorization 逐个取得 Source Engine 连接，限制可挂载引擎、对象物理路径、内存、线程、临时目录、超时和最大返回行数。HTTP 请求取消必须传递到 DuckDB 查询上下文；若未提供独立取消资源端点，`supports_cancel` 不得声明为 true。
+
 查询语言差异由 `QueryRequest.Language` 与 `capabilities.compute.query.languages` 表达，不按数据库类别新增查询入口。`QueryRuntimeProvider` 是普通查询主路径，适用于 SQL、MQL、Cypher 表格结果、OpenSearch DSL、Mango Query 等能返回 `QueryResult` 的查询。
+
+`GenerateSampleQuery()` 只负责把调用方通过 `SampleQueryOptions.Path` 传入的真实 Catalog leaf 转换为该引擎语言的查询模板。调用方必须先通过实时 Catalog 发现并确认该 leaf 当前有数据；联邦查询还必须使用当前用户派生的只读执行授权真实探测候选，不能把可能过期的 Meta 条目直接当作可执行样例。Provider 不得在缺少可查询 leaf、对象已失效、发现失败或连接失败时返回版本查询、`SELECT 1`、占位集合名或其他静态兜底。没有真实数据样例时必须让调用方得到明确的“样例不可用”错误。
+
+当 `QueryRequest.Options.ReadOnly=true` 时，Provider 必须使用数据库只读事务、只读路由、只读命令白名单或其他等价的运行时约束执行查询。不得忽略该字段后使用普通高权限连接执行；无法建立可靠只读边界的 Provider 必须显式拒绝。
 
 `SQLQueryRuntimeProvider.ExecuteSQL()` 是 SQL 执行 helper 和 SQL dialect 适配层，当前仍可保留给 SQL 引擎和 batch read 适配使用；新增非 SQL 查询语言不得仿照它继续新增按数据库类别拆分的 provider。旧 `DocumentQueryRuntimeProvider` 已删除，不得恢复。
 
@@ -368,7 +405,8 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 工作流和脚本运行时使用独立 provider：
 
 - `WorkflowRuntimeProvider`：工作流端点、算子描述发现、工作流执行。`ListOperators()` 返回 `OperatorDescriptor`，其中参数和输出端口分别使用 `ParameterDescriptor` / `OutputPortDescriptor`；这些结构只描述运行时算子接口，不是 Meta 模块元数据。
-- `ScriptRuntimeProvider`：Notebook/脚本端点和会话。`ScriptSession.Info` 返回会话描述信息，例如 mode、language；它不是 catalog facts，也不是调用方 hints。
+- `ScriptRuntimeProvider`：Notebook/脚本受控运行端点。`ScriptSession.Info` 返回运行描述信息，例如 mode、language；它不是 catalog facts，也不是调用方 hints。
+- `ScriptRuntimeProvider` 在 `compute.script.interactive=true` 时还必须提供标准交互会话控制面。控制面负责创建、关闭有明确 TTL 的隔离会话；它返回的是服务间代理目标，不是浏览器可直接访问的共享 Lab URL。
 
 `ScriptRuntimeProvider` 的上层消费必须先从 System 获取目标 Engine Instance 的 Runtime Descriptor，再以该 Descriptor 构造的非敏感连接信息调用 `OpenSession()`。Develop Notebook 任务使用 `execution_config.engine_id` 保存实例绑定；上传、Kernel 发现和执行都使用同一个绑定实例，不接受执行时临时覆盖。
 
@@ -381,6 +419,8 @@ type ScriptRuntimeProvider interface {
 ```
 
 `ScriptSession.Endpoint` 是受控运行 API 的服务端调用地址，不是返回给浏览器的共享交互入口。调用方必须使用自身租户 Service Access Token 调用该端点。引擎健康检查由 System 负责；消费模块不得再维护固定运行时 URL 或专用健康代理。
+
+交互会话标准控制面为 `POST /api/interactive-sessions` 和 `DELETE /api/interactive-sessions/{session_id}`。请求/响应使用 `InteractiveScriptSessionRequest` 和 `InteractiveScriptSession` 强类型契约。会话必须绑定 `tenant_id`、owner task、发起 User、kernel、外部代理 base path 和到期时间。Runtime 只接受调用模块的 Tenant Service Access Token 创建或关闭会话；会话端点只能由 owner 模块反向代理消费。浏览器不得获得 Runtime host、端口、Jupyter token 或 Service Access Token。Runtime 必须在正常关闭和 TTL 清理时保存 Notebook 并终止 kernel/process；owner 模块重启后，已有浏览器会话必须失效，不能恢复成无主共享会话。
 
 ---
 
@@ -397,7 +437,8 @@ type ScriptRuntimeProvider interface {
 | NFS | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `ContentReadableProvider` + `RangeReadableProvider` + `ContentWritableProvider` + `ResourceDeleteProvider` |
 | Kafka | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `ChangeStreamReaderProvider` |
 | Python / Spark / Math Workflow | `EnginePlugin` + `WorkflowRuntimeProvider` |
-| Jupyter | `EnginePlugin` + `ScriptRuntimeProvider` |
+| DuckDB | `EnginePlugin` + `FederatedQueryRuntimeProvider` |
+| Jupyter | `EnginePlugin` + `ScriptRuntimeProvider`，并声明 `compute.script.interactive=true` |
 
 ---
 
@@ -407,16 +448,30 @@ type ScriptRuntimeProvider interface {
 - Meta：使用 `CatalogProvider` 扫描目录并落库，使用 `CatalogFactsProvider` / `DynamicSchemaSamplingProvider` 获取 catalog leaf facts；扫描编排必须先读取 `CatalogModelSpec`，再结合 provider 组合选择 catalog scan strategy。`engine_family` 只能作为粗分类或展示字段，不能单独决定 namespace 术语、leaf 术语、扫描层级和内容读取方式。公开 API 应聚焦扫描后元数据快照，不再新增实时浏览公共接口。
 - Meta 扫描 API 和任务参数中的路径型目标统一命名为 `catalog_paths`。它表示引擎 catalog model 下的路径。
 - Manager：使用 Meta 树构建探查树；预览由 Manager 自身 preview provider / composer 组合完成。结构化数据优先消费 `BatchReadableProvider` 或只读 sample query；graph 预览优先消费 `type_info.graph` / `CatalogFactsProvider` 得到 schema 视图，并通过 `GraphSampleProvider` 或 `GraphQueryProvider` 获取轻量子图样本；对象/文件优先消费 `ContentReadableProvider` 并结合格式解析。
-- Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`；Notebook 引擎实例通过 `execution_config.engine_id` 绑定，并以 System Runtime Descriptor + `ScriptRuntimeProvider.OpenSession()` 解析端点；图结构展示入口使用 `CatalogFactsProvider` / `GraphQueryProvider`。
+- Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`；Notebook 引擎实例通过 `execution_config.engine_id` 绑定，并以 System Runtime Descriptor + `ScriptRuntimeProvider.OpenSession()` 解析端点；Notebook Native Engine Facade 只在 `common-python` 把原生方法编译为 `CatalogProvider.ListChildren` / `CatalogFactsProvider.DescribeCatalogFacts`，不得反向新增 PostgreSQL、MongoDB、MinIO 等专用后端接口；图结构展示入口使用 `CatalogFactsProvider` / `GraphQueryProvider`。
 - Service：发布普通查询服务时使用 query runtime 和 Meta item/spatial 元数据；图查询服务使用 `GraphQueryProvider`。图查询服务的易用向导应消费 graph item 的 `type_info.graph.node_shapes`，不得再从 Meta 树读取 Neo4j label item。
 - Transfer：使用 source / target endpoint 生成执行计划。snapshot native table 读写消费 `TableReadSessionProvider`、`BatchReadableProvider`、`TableWritePreparer`、`TableWriteSessionProvider`、`BatchWritableProvider`；watermark bounded incremental 必须消费 `BoundedWatermarkReadProvider` 和幂等 `TableUpsertProvider`；encoded file/object 读写先通过 engine content provider 和 `common/engine/contentadapter` 构造 `common/contentio` 抽象，再交给 `common/format` provider。高吞吐数据搬运优先消费 batch / table session / content stream 能力，而不是 query runtime。
 - Transfer continuous runtime：业务 Kafka source 必须消费 `ChangeStreamReaderProvider`，由 Transfer adapter 生成 ChangeEvent 并通过 ChangeApplyWriter 组合目标 Provider。目标必须声明原子、单调且覆盖所需 operation 的 `PartitionedTableChangeApplyProvider`；当前 PostgreSQL 与 MySQL 实现该 Provider。Infra Kafka 连接来自 ADDP infra 配置，不注册 System Engine，但复用同一 Kafka reader/client 底层实现。
+
+### Catalog 错误契约
+
+`CatalogProvider` 和 `CatalogFactsProvider` 必须通过 `common/engine/plugin` 的类型化 Catalog 错误表达调用方需要稳定判断的失败类别；System、Develop 和 Python SDK 不得解析 driver 或 Provider 错误文本。统一类别为：
+
+| 类别 | 语义 | HTTP 映射 |
+| --- | --- | --- |
+| `invalid_path` | `CatalogPath` 版本、Engine ID、层级或 segment 不合法 | 400 |
+| `not_found` | 已确认的 Engine 原生 branch / leaf 不存在 | 404 |
+| `unsupported` | 当前 capabilities、CatalogModel 或 Provider 不支持请求操作 | 422 |
+| `unavailable` | Engine 连接暂时不可建立或当前不可服务 | 503 |
+
+`context.DeadlineExceeded` / `context.Canceled` 保留标准 Go 因果链，由最外层按端到端 deadline 映射为 504 或客户端取消；未知错误统一保留为 Provider failure，不得猜测成 not found 或 unavailable。各插件必须在能够理解原生 driver 语义的边界完成类型化包装，并保留 `errors.Is` / `errors.As` 因果链；用户响应不得暴露 DSN、凭据、host、driver 原始错误或查询文本。
 
 ---
 
 ## 六、禁止事项
 
 - 不得在上层模块直接依赖旧 `ListXXX` 接口。
+- 不得因为 Notebook Facade 使用 `schemas()`、`tables()`、`collections()` 等原生方法，就把同名方法加入 Engine Plugin、System 或 Develop 公共契约。
 - 不得把所有目录层级统一硬编码为 schema/table。
 - 不得把 Kafka topic / partition 伪装为 table batch、对象内容流或固定 partition ResourceLocator。
 - 不得把对象存储当作 POSIX 文件系统建模。
@@ -424,3 +479,4 @@ type ScriptRuntimeProvider interface {
 - 不得让非 DSN 引擎返回 JSON 字符串冒充 connection string。
 - 不得在 capabilities 中保存任务级运行参数。
 - 不得在 `CatalogProvider` / `CatalogFactsProvider` 中执行写入、DDL、统计刷新等有外部副作用的操作；连接测试也必须保持只读。
+- 不得按 Provider 或 driver 错误字符串推断 Catalog HTTP 状态码、`error_code` 或 SDK 异常类型。

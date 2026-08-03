@@ -66,6 +66,13 @@ func (c *SystemServiceClient) WithTenantID(tenantID uint) *SystemServiceClient {
 	}
 }
 
+func (c *SystemServiceClient) TenantServiceAccessToken(ctx context.Context, tenantID uint) (string, error) {
+	if c == nil || c.tenantTokens == nil || tenantID == 0 {
+		return "", errors.New("tenant service access token requires a tenant context")
+	}
+	return c.tenantTokens.Token(ctx, tenantID)
+}
+
 func (c *SystemServiceClient) GetEngine(ctx context.Context, engineID uint) (*models.Engine, error) {
 	var engine models.Engine
 	err := c.doTenantJSON(ctx, http.MethodGet, fmt.Sprintf("/api/v1/system/engines/%d", engineID), nil, &engine)

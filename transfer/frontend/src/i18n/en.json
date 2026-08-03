@@ -555,6 +555,8 @@
 			"cdcSyncTitle": "Continuously Synchronize Database Changes",
 			"cdcSyncDesc": "The first run loads the current source table, then continuously synchronizes inserts, updates, and physical deletes. Interrupted runs resume from the last committed position.",
 			"databaseCDCLoad": "Continuously Sync Inserts, Updates, and Deletes",
+			"databaseCDCUnavailableTitle": "Continuous sync unavailable",
+			"databaseCDCUnavailableHelp": "View why continuous sync is unavailable",
 			"databaseCDCUnavailableReasons": {
 				"capabilityUnavailable": "The Transfer backend does not declare database CDC support from this source to the selected target.",
 				"sourceDatabaseRequired": "The source must use a PostgreSQL or MySQL engine.",
@@ -588,7 +590,7 @@
       "loadModeLabel": "Synchronization Scope",
       "snapshotLoad": "Synchronize All Data Each Time",
       "watermarkIncrementalLoad": "Synchronize Inserts and Updates Only",
-      "watermarkIncrementalUnsupported": "Changed-data synchronization currently supports PostgreSQL tables to PostgreSQL or MySQL tables.",
+      "watermarkIncrementalUnsupported": "Changed-data synchronization currently supports PostgreSQL or MySQL tables as the source and PostgreSQL or MySQL tables as the target.",
       "watermarkIncrementalNoticeTitle": "Incremental Synchronization Requirements",
       "watermarkIncrementalNotice": "The source table must have a field that changes whenever a record is inserted or updated, plus a primary or unique key that identifies each record. Interrupted tasks resume from the last successful position. Physical deletes in the source table are not handled yet.",
       "watermarkFieldLabel": "Change Detection Field",

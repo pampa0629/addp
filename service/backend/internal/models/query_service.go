@@ -21,8 +21,11 @@ type QueryService struct {
 	// 配置方式（互斥）
 	ConfigType string `gorm:"size:50;not null;check:config_type IN ('table', 'sql');index:idx_query_services_config_type" json:"config_type"`
 
-	// 存储引擎（DuckDB SQL 模式时为 nil）
+	// 源存储引擎；联邦 SQL 的来源由 SQL 和发布快照表达。
 	EngineID *uint `gorm:"index:idx_query_services_engine" json:"engine_id"`
+
+	// 显式联邦查询 Runtime；不得通过 engine_id 空值推断。
+	RuntimeEngineID *uint `gorm:"index:idx_query_services_runtime_engine" json:"runtime_engine_id"`
 
 	// 表配置字段（config_type='table'时使用）
 	SchemaName  string `gorm:"size:255;column:schema_name" json:"schema_name"`
@@ -69,9 +72,8 @@ func (QueryService) TableName() string {
 	return "service.query_services"
 }
 
-// IsDuckDBSQL 是否为 DuckDB 联邦 SQL 模式（engine_id 为 nil）
-func (q *QueryService) IsDuckDBSQL() bool {
-	return q.ConfigType == "sql" && (q.EngineID == nil || *q.EngineID == 0)
+func (q *QueryService) UsesFederatedQueryRuntime() bool {
+	return q.RuntimeEngineID != nil && *q.RuntimeEngineID > 0
 }
 
 // GetEngineID 安全获取 EngineID（0 表示未设置）
@@ -264,8 +266,9 @@ type CreateQueryServiceRequest struct {
 	// 配置方式（table 或 sql）
 	ConfigType string `json:"config_type" binding:"required,oneof=table sql"`
 
-	// 存储引擎（table 模式必填；sql 模式 + DuckDB 时为 nil）
-	EngineID *uint `json:"engine_id"`
+	// Source Engine 与 Federated Query Runtime 显式互斥或组合，具体约束由 config_type 决定。
+	EngineID        *uint `json:"engine_id"`
+	RuntimeEngineID *uint `json:"runtime_engine_id"`
 
 	// 表配置字段由 data_config.locator 服务端派生，仅作为执行快照返回。
 	SchemaName string `json:"schema_name"`
@@ -318,8 +321,9 @@ type QueryServiceDTO struct {
 	Description string   `json:"description"`
 	Keywords    []string `json:"keywords"`
 
-	ConfigType string `json:"config_type"`
-	EngineID   *uint  `json:"engine_id"`
+	ConfigType      string `json:"config_type"`
+	EngineID        *uint  `json:"engine_id"`
+	RuntimeEngineID *uint  `json:"runtime_engine_id"`
 
 	// 表配置
 	SchemaName string `json:"schema_name,omitempty"`

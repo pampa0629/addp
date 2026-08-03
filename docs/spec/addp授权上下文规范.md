@@ -129,15 +129,23 @@ Grant 或 Resource Ticket 独立判断。
 
 ### 5.2 计算执行授权
 
-SQL、Workflow、Jupyter 等计算入口必须先在当前 User AuthContext 下完成两层判断：一是入口自身的功能 Permission，二是本次执行涉及资源与 `read | write | ddl | external_effect` 效果的 owner 决策。通过后由 System 创建绑定唯一 execution 的 Execution Authorization。
+SQL、Workflow、Jupyter 以及 Service 查询服务发布前的样例验收等用户计算入口，必须先在当前 User AuthContext 下完成两层判断：一是入口自身的功能 Permission，二是本次执行涉及资源与 `read | write | ddl | external_effect` 效果的 owner 决策。Service 样例验收使用 `service.definition.create + service.data_read.execute`，普通 SQL 的 Execution Authorization audience 为 `service`，联邦 SQL 的 audience 为 `duckdb`。已发布查询服务由 Service 根据不可变服务定义、数据源依赖快照、公开/私有访问策略和当前请求上下文作出 owner 决策。两类入口通过后都由 System 创建绑定唯一 execution 的 Execution Authorization。
 
-Execution Authorization 固定包含当前 Principal、Tenant Membership、`authorization_version`、owner audience、execution ID、允许的 Engine Instance、允许效果、签发时间和到期时间。它不是访问令牌，不进入 AuthContext Schema，也不得以源 Access Token 的存活、Refresh Token Family 或 Token ID 作为执行期授权事实；统一执行记录只保存其稳定 ID 和不含密钥的审计摘要。原始 User Access Token、Service Access Token、Engine 明文连接和运行时访问计划不得写入 `execution_config`、任务定义、日志或审计详情。
+Execution Authorization 的来源固定为互斥的 `user` 或 `service_definition`。用户来源包含当前 Principal、Tenant Membership 和 `authorization_version`；服务定义来源包含 owner module、definition ID、definition version/hash 和签发 Service Principal。两者都必须包含 owner audience、execution ID、允许的 Source Engine、允许效果、签发时间和到期时间。查询服务定义的 version/hash 必须覆盖发布时冻结的 Source Engine ID，Service 不得在请求期按当前 Engine 名称重新绑定数据源。服务定义来源第一阶段只允许 `addp-service` 为本 Tenant 的已发布查询服务签发 `read`，System 不接受客户端自报其他 owner、效果或 audience。
 
-匹配 audience 的 Runtime Service Principal 使用自身 Service Access Token 消费 Execution Authorization。System 必须同时校验 Service Principal/OAuth Client 与 audience 匹配、Tenant Context 相同、Execution Authorization 未过期或撤销、源 Principal/Membership/授权版本仍有效、Engine 与效果均在授权边界内。Service Principal 的 Runtime Role 只授予消费执行授权所需的内部 Permission，不授予通用 `system.engine.read`、Tenant 数据 Permission 或用户 Role。
+匹配 audience 的 Runtime Service Principal 使用自身 Service Access Token 消费 Execution Authorization。System 必须同时校验 Service Principal/OAuth Client 与 audience 匹配、Tenant Context 相同、Execution Authorization 未过期或撤销、来源仍有效、Engine 与效果均在授权边界内。用户来源继续校验 Principal/Membership/授权版本；服务定义来源校验 owner Service Principal、definition version/hash 和未撤销状态。需要在调用 Runtime 前解析脱敏端点的 owner Runtime Role，可以同时获得 `system.engine_descriptor.read` 与 `system.execution_authorization.execute`；它仍不得获得通用 `system.engine.read`、Tenant 数据 Permission 或用户 Role。
 
 交互式执行以当前 User 为授权主体；异步执行把创建 execution 时的 User、Tenant Membership 和授权版本写为不可变执行来源事实。定时执行绑定任务授权主体：该主体只能由同 Tenant 的当前 User AuthContext 在创建、更新或显式重新授权任务时写入，并必须绑定当前任务定义；任务定义或授权版本发生变化后不得继续沿用旧主体。每次执行开始前必须重新校验 Membership、Role、资源规则和授权版本；显式平台自动任务才使用 Service Principal 自身 Runtime Role。任何路径都不得持久化或代传原始 User Access Token。
 
 跨模块异步调用时，owner Runtime Service Principal 只能为与自身 audience 匹配的子 execution 请求 Execution Authorization。System 必须验证父 execution、子 execution、Tenant、User、Membership、授权版本和 `parent_execution_id` 来源链完全一致，并重新计算当前 Role Permission；调用方提交的主体字段不能单独成为授权事实。Orchestrator Service Principal 只负责调用 TaskProvider 和传递父 execution 身份，不获得数据效果 Permission，也不能任意指定或替换任务授权主体。
+
+### 5.3 Notebook 目录授权
+
+Notebook Interactive Session 中的 Engine Catalog 发现不是数据执行，不使用 Execution Authorization；它也不是 Agent Tool 调用，不复用 Delegated Access Token。Develop 必须在 Session 创建的同步 BFF 调用栈内，用当前 User Bearer 请求 System 创建 Notebook Catalog Authorization，随后丢弃 User Bearer。System 保存的授权事实至少绑定唯一 authorization ID、Notebook Session ID、Develop Task ID、Tenant、Principal、Tenant Membership、Token Family、`authorization_version`、固定 audience `develop`、签发时间、到期时间和撤销时间；不保存 User Token、Service Token、Engine ID 列表或连接信息。
+
+后续 Catalog 调用由 `addp-develop` Tenant Service Principal 使用自身 Service Access Token 和 authorization ID 消费。System 只给该 Runtime Role `system.notebook_catalog_authorization.execute`，不得授予通用 `system.engine.read` 或明文 Engine 连接权限；消费端同时校验固定 OAuth Client、Session ID 和当前用户授权事实，并在同一请求内执行 `CatalogProvider.ListChildren`。authorization ID 是引用，不是 Bearer Credential，不能独立通过 AuthContext，也不能访问其他 System API。
+
+授权有效期不晚于 Notebook Session，到期后不能刷新；普通 Access Token 与 Refresh Token 在同一 Token Family 内轮换不影响现有 Session。Token Family 撤销或重用、Membership/Role/资源规则变化、`authorization_version` 变化、Session 显式关闭或到期时必须拒绝后续消费。Develop 重启后本地 Session 与 authorization ID 一并丢失，Kernel 入口先 fail-closed；System 中尚未到期的孤立记录只能等待原 TTL 清理，不能据此恢复 Session。
 
 ## 六、共享中间件
 
@@ -194,7 +202,7 @@ Platform Service Role，不允许 Service Principal 持有或借用平台三员 
 
 Resource Ticket 使用所属第一方 Browser Family 的同一身份与授权投影，并用 owner audience 和 `resource:read` 额外收窄；Delegated Token 回溯源 Access Token 与 Family，并用 owner Tool Scope 和审计绑定额外收窄；Service Access Token 只由 Fosite Client Credentials Grant 签发，并固定为一个 Tenant Membership Context 或一个显式 Platform Service Context。调用方不能保留共享 Internal API Key 与 Bearer 双轨。
 
-Execution Authorization 不新增 AuthContext Token 类型，也不复用 Agent Delegated Access Token。它是由 User AuthContext 派生、由匹配 Runtime Service Principal 消费的执行期授权事实；禁止恢复“Service Principal 直接获得通用 Engine 明文读取权限”和“用户 Token 代传到 Worker/Runtime”两条旧路径。
+Execution Authorization 与 Notebook Catalog Authorization 都不新增 AuthContext Token 类型，也不复用 Agent Delegated Access Token。前者授权绑定 execution 的数据效果，后者只授权绑定 Notebook Session 的实时 Catalog 子项列举；两者不能互换。它们都只能由匹配 Runtime Service Principal 消费；禁止恢复“Service Principal 直接获得通用 Engine 明文读取权限”和“用户 Token 代传到 Worker/Runtime”两条旧路径。
 
 v1 契约演进必须同步修改 Schema、共享 Go/Python 类型、System 投影、所有消费者和契约测试。ADDP 当前不提供按 Client 协商多个 AuthContext Schema 的兼容机制；需要破坏性变化时先修订本规范，再一次性切换全平台。
 

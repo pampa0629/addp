@@ -36,6 +36,8 @@ func TestModuleRouteUsesSystemBootstrapForEverySystemPath(t *testing.T) {
 	r := gin.New()
 	api := r.Group("/api/v1")
 	registerModuleRoutes(api, proxy.NewServiceProxy(upstream.URL), discovery)
+	gateway := httptest.NewServer(r)
+	defer gateway.Close()
 
 	paths := []string{
 		"/api/v1/system/login",
@@ -45,11 +47,13 @@ func TestModuleRouteUsesSystemBootstrapForEverySystemPath(t *testing.T) {
 		"/api/v1/system/oauth/authorizations",
 	}
 	for _, path := range paths {
-		req := httptest.NewRequest(http.MethodPost, path, nil)
-		res := httptest.NewRecorder()
-		r.ServeHTTP(res, req)
-		if res.Code != http.StatusNoContent {
-			t.Fatalf("%s returned %d, want %d", path, res.Code, http.StatusNoContent)
+		res, err := http.Post(gateway.URL+path, "application/json", nil)
+		if err != nil {
+			t.Fatalf("%s request failed: %v", path, err)
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusNoContent {
+			t.Fatalf("%s returned %d, want %d", path, res.StatusCode, http.StatusNoContent)
 		}
 	}
 

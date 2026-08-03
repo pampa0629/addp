@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 311 {
-		t.Fatalf("descriptor count = %d, want 311", len(descriptors))
+	if len(descriptors) != 313 {
+		t.Fatalf("descriptor count = %d, want 313", len(descriptors))
 	}
 	if descriptors[0].Key != "agent.run.cancel" || descriptors[len(descriptors)-1].Key != "transfer.task.update" {
 		t.Fatalf("descriptor boundary keys = %q, %q", descriptors[0].Key, descriptors[len(descriptors)-1].Key)
@@ -107,6 +107,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"orchestrator.workflow.execute",
 		"orchestrator.workflow.read",
 		"orchestrator.workflow.update",
+		"system.execution_authorization.create",
 		"transfer.task.create",
 		"transfer.task.delete",
 		"transfer.task.execute",
@@ -124,6 +125,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"manager.data_item.read",
 		"manager.search.execute",
 		"meta.catalog.read",
+		"service.data_read.execute",
 		"service.definition.create",
 		"service.definition.delete",
 		"service.definition.read",
@@ -132,6 +134,12 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"service.external_registration.delete",
 		"service.external_registration.read",
 		"service.external_registration.update",
+		"system.execution_authorization.create",
+	})
+	assertRepositoryRolePermissions(t, roles, "tenant.service_runtime", []string{
+		"meta.catalog.read",
+		"system.engine_descriptor.read",
+		"system.execution_authorization.execute",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.asset_consumer", []string{
 		"asset.application.create",

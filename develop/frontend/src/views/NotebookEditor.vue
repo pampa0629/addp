@@ -5,10 +5,13 @@
       <div class="sidebar-header">
         <h3>{{ t('develop.notebook.listTitle') }}</h3>
         <div class="actions">
-          <el-button type="primary" size="small" @click="showUploadDialog">
+          <el-button type="primary" size="small" @click="showCreateDialog">
+            <el-icon><Plus /></el-icon> {{ t('develop.notebook.create') }}
+          </el-button>
+          <el-button size="small" @click="showUploadDialog">
             <el-icon><Upload /></el-icon> {{ t('develop.notebook.upload') }}
           </el-button>
-          <el-button size="small" @click="loadNotebooks">
+          <el-button size="small" circle :title="t('develop.notebook.refresh')" @click="loadNotebooks">
             <el-icon><Refresh /></el-icon>
           </el-button>
         </div>
@@ -44,9 +47,9 @@
           </div>
 
           <div class="notebook-actions" @click.stop>
-            <el-tooltip :content="t('develop.notebook.viewDetails')">
+            <el-tooltip :content="t('develop.notebook.edit')">
               <el-button type="primary" size="small" text @click="selectNotebook(notebook)">
-                <el-icon><Document /></el-icon>
+                <el-icon><EditPen /></el-icon>
               </el-button>
             </el-tooltip>
 
@@ -113,6 +116,9 @@
         <div class="detail-toolbar">
           <span class="current-notebook-name">{{ currentNotebook.display_name || currentNotebook.name }}</span>
           <div class="toolbar-actions">
+            <el-button size="small" :loading="sessionLoading" @click="openNotebookSession(currentNotebook, { force: true })">
+              <el-icon><Refresh /></el-icon> {{ t('develop.notebook.reloadEditor') }}
+            </el-button>
             <el-button
               type="primary"
               size="small"
@@ -132,32 +138,55 @@
             </el-button>
           </div>
         </div>
-        <div class="detail-content">
-          <el-descriptions :column="1" border>
-            <el-descriptions-item :label="t('develop.notebook.fieldDescription')">
-              {{ currentNotebook.description || '-' }}
-            </el-descriptions-item>
-            <el-descriptions-item :label="t('develop.notebook.fileName')">
-              {{ currentNotebook.content?.notebook_path || '-' }}
-            </el-descriptions-item>
-            <el-descriptions-item :label="t('develop.notebook.kernel')">
-              {{ currentNotebook.content?.kernel || 'python3' }}
-            </el-descriptions-item>
-            <el-descriptions-item :label="t('develop.notebook.engine')">
-              {{ notebookEngineLabel(currentNotebook) }}
-            </el-descriptions-item>
-            <el-descriptions-item :label="t('develop.notebook.updatedAt')">
-              {{ formatTime(currentNotebook.updated_at) }}
-            </el-descriptions-item>
-          </el-descriptions>
-
-          <section class="parameter-section">
-            <h4>{{ t('develop.notebook.fieldParams') }}</h4>
-            <pre>{{ formatParameters(currentNotebook.content?.parameters) }}</pre>
-          </section>
+        <div class="notebook-workspace" v-loading="sessionLoading">
+          <iframe
+            v-if="notebookSession"
+            :key="notebookSession.id"
+            class="notebook-frame"
+            :src="notebookSession.url"
+            :title="currentNotebook.display_name || currentNotebook.name"
+          />
+          <el-result v-else-if="sessionError" icon="error" :title="t('develop.notebook.editorUnavailable')" :sub-title="sessionError">
+            <template #extra>
+              <el-button type="primary" @click="openNotebookSession(currentNotebook, { force: true })">
+                {{ t('develop.notebook.retryEditor') }}
+              </el-button>
+            </template>
+          </el-result>
         </div>
       </div>
     </el-main>
+
+    <el-dialog
+      v-model="createDialogVisible"
+      class="addp-dialog"
+      :title="t('develop.notebook.createDialogTitle')"
+      width="min(600px, calc(100vw - 24px))"
+      @closed="handleCreateDialogClosed"
+    >
+      <el-form :model="createForm" label-position="top">
+        <el-form-item :label="t('develop.notebook.fieldName')" required>
+          <el-input v-model="createForm.name" :placeholder="t('develop.notebook.namePlaceholder')" autofocus />
+        </el-form-item>
+        <el-form-item :label="t('develop.notebook.engine')" required>
+          <el-select v-model="createForm.engine_id" :placeholder="t('develop.notebook.selectEngine')" :loading="enginesLoading" class="full-width" @change="handleCreateEngineChange">
+            <el-option v-for="engine in notebookEngines" :key="engine.id" :label="engine.name" :value="engine.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('develop.notebook.kernel')" required>
+          <el-select v-model="createForm.kernel" :placeholder="t('develop.notebook.selectKernel')" :loading="createKernelsLoading" :disabled="!createForm.engine_id" class="full-width">
+            <el-option v-for="kernel in createKernels" :key="kernel.name" :label="kernel.display_name || kernel.name" :value="kernel.name" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('develop.notebook.fieldDescription')">
+          <el-input v-model="createForm.description" type="textarea" :rows="3" :placeholder="t('develop.notebook.descriptionPlaceholder')" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="createDialogVisible = false">{{ t('develop.notebook.cancel') }}</el-button>
+        <el-button type="primary" :loading="creating" :disabled="notebookEngines.length === 0" @click="confirmCreate">{{ t('develop.notebook.confirmCreate') }}</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 上传 Notebook 对话框 -->
     <el-dialog
@@ -370,10 +399,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, Refresh, Search, Document, VideoPlay, Clock, More, Download, Delete, Switch } from '@element-plus/icons-vue'
+import { Upload, Refresh, Search, EditPen, VideoPlay, Clock, More, Download, Delete, Switch, Plus } from '@element-plus/icons-vue'
 import { notebookAPI } from '@/api/notebook'
 import { deleteDevTask, executeDevTask, getDevTask } from '@/api/devTask'
 import { openMonitorExecution } from '@addp/common-frontend'
@@ -405,6 +434,15 @@ const notebookEngines = ref([])
 const enginesLoading = ref(false)
 const kernels = ref([])
 const kernelsLoading = ref(false)
+const notebookSession = ref(null)
+const sessionLoading = ref(false)
+const sessionError = ref('')
+
+const createDialogVisible = ref(false)
+const creating = ref(false)
+const createKernels = ref([])
+const createKernelsLoading = ref(false)
+const createForm = ref({ name: '', description: '', engine_id: null, kernel: '' })
 
 // 上传对话框
 const uploadDialogVisible = ref(false)
@@ -473,6 +511,63 @@ const loadKernels = async (engineId) => {
 
 const handleUploadEngineChange = (engineId) => loadKernels(engineId)
 
+const loadCreateKernels = async (engineId) => {
+  createKernels.value = []
+  createForm.value.kernel = ''
+  if (!engineId) return
+  createKernelsLoading.value = true
+  try {
+    const response = await notebookAPI.listKernels(engineId)
+    createKernels.value = response.kernels || []
+    createForm.value.kernel = (createKernels.value.find(kernel => kernel.name === 'python3') || createKernels.value[0])?.name || ''
+  } catch (error) {
+    ElMessage.error(error.response?.data?.error || t('develop.notebook.loadKernelsFailed'))
+  } finally {
+    createKernelsLoading.value = false
+  }
+}
+
+const handleCreateEngineChange = (engineId) => loadCreateKernels(engineId)
+
+const showCreateDialog = async (options = {}) => {
+  if (options.updateRoute !== false) {
+    await navigateDevelopTaskEditor(router, 'script')
+    return
+  }
+  createForm.value = { name: '', description: '', engine_id: notebookEngines.value[0]?.id || null, kernel: '' }
+  createDialogVisible.value = true
+  if (createForm.value.engine_id) await loadCreateKernels(createForm.value.engine_id)
+}
+
+const handleCreateDialogClosed = async () => {
+  if (String(route.query.action || '') === 'create') {
+    await navigateDevelopRoute(router, { path: '/notebook' }, { history: 'replace' })
+  }
+}
+
+const confirmCreate = async () => {
+  if (!createForm.value.name.trim()) return ElMessage.warning(t('develop.notebook.nameRequired'))
+  if (!createForm.value.engine_id) return ElMessage.warning(t('develop.notebook.engineRequired'))
+  if (!createForm.value.kernel) return ElMessage.warning(t('develop.notebook.kernelRequired'))
+  creating.value = true
+  try {
+    const response = await notebookAPI.createNotebook({ ...createForm.value, name: createForm.value.name.trim() })
+    createDialogVisible.value = false
+    await loadNotebooks()
+    const task = response.dev_task
+    if (task?.id) {
+      await selectNotebook(task, { updateRoute: false })
+      await navigateDevelopTaskEditor(router, 'script', task.id, { history: 'replace' })
+      await openNotebookSession(task)
+    }
+    ElMessage.success(t('develop.notebook.createSuccess'))
+  } catch (error) {
+    ElMessage.error(error.response?.data?.error || t('develop.notebook.createFailed'))
+  } finally {
+    creating.value = false
+  }
+}
+
 const loadBindingKernels = async (engineId) => {
   const requestSequence = ++bindingKernelRequestSequence
   bindingKernels.value = []
@@ -526,10 +621,12 @@ const loadNotebooks = async () => {
 
 // 选择 Notebook
 const selectNotebook = async (notebook, options = {}) => {
+  if (String(currentNotebook.value?.id || '') !== String(notebook.id)) await closeNotebookSession()
   currentNotebook.value = notebook
   if (options.updateRoute !== false) {
     await navigateDevelopTaskEditor(router, 'script', notebook.id)
   }
+  await openNotebookSession(notebook)
 }
 
 const selectNotebookByID = async (id) => {
@@ -551,6 +648,7 @@ const selectNotebookByID = async (id) => {
     if (!notebooks.value.some(item => String(item.id) === String(task.id))) {
       notebooks.value.unshift(task)
     }
+    await openNotebookSession(task)
   } catch (error) {
     console.error('加载脚本任务失败:', error)
     ElMessage.error(error.response?.data?.error || t('develop.notebook.loadTaskFailed'))
@@ -559,10 +657,6 @@ const selectNotebookByID = async (id) => {
 
 // 显示上传对话框
 const showUploadDialog = async (options = {}) => {
-  if (options.updateRoute !== false) {
-    await navigateDevelopTaskEditor(router, 'script')
-    return
-  }
   uploadForm.value = {
     file: null,
     name: '',
@@ -578,8 +672,7 @@ const showUploadDialog = async (options = {}) => {
 }
 
 const handleUploadDialogClosed = async () => {
-  if (String(route.query.action || '') !== 'create') return
-  await navigateDevelopRoute(router, { path: '/notebook' }, { history: 'replace' })
+  uploadRef.value?.clearFiles()
 }
 
 // 文件选择改变
@@ -628,6 +721,7 @@ const confirmUpload = async () => {
     if (uploadedTask?.id) {
       await selectNotebook(uploadedTask, { updateRoute: false })
       await navigateDevelopTaskEditor(router, 'script', uploadedTask.id, { history: 'replace' })
+      await openNotebookSession(uploadedTask)
     }
   } catch (error) {
     console.error('上传失败:', error)
@@ -827,6 +921,34 @@ const formatTime = (time) => {
 
 const formatParameters = (parameters) => JSON.stringify(parameters || {}, null, 2)
 
+const closeNotebookSession = async () => {
+  const active = notebookSession.value
+  notebookSession.value = null
+  sessionError.value = ''
+  if (!active) return
+  try {
+    await notebookAPI.closeSession(active.task_id, active.id)
+  } catch (error) {
+    if (error.response?.status !== 404) console.error('关闭 Notebook 会话失败:', error)
+  }
+}
+
+const openNotebookSession = async (notebook, options = {}) => {
+  if (!notebook?.id || sessionLoading.value) return
+  if (notebookSession.value?.task_id === notebook.id && !options.force) return
+  if (options.force) await closeNotebookSession()
+  sessionLoading.value = true
+  sessionError.value = ''
+  try {
+    notebookSession.value = await notebookAPI.createSession(notebook.id)
+  } catch (error) {
+    notebookSession.value = null
+    sessionError.value = error.response?.data?.error || t('develop.notebook.openEditorFailed')
+  } finally {
+    sessionLoading.value = false
+  }
+}
+
 const notebookEngineID = (notebook) => Number(notebook?.execution_config?.engine_id || 0)
 
 const findNotebookEngine = (notebook) => {
@@ -869,10 +991,13 @@ async function applyNotebookTaskRoute() {
       uploadDialogVisible.value = false
       if (String(currentNotebook.value?.id || '') !== taskId) await selectNotebookByID(taskId)
     } else if (action === 'create') {
+      await closeNotebookSession()
       currentNotebook.value = null
-      await showUploadDialog({ updateRoute: false })
+      await showCreateDialog({ updateRoute: false })
     } else {
+      await closeNotebookSession()
       uploadDialogVisible.value = false
+      createDialogVisible.value = false
       currentNotebook.value = null
     }
   } catch (error) {
@@ -890,6 +1015,10 @@ onMounted(async () => {
 
 watch(() => route.fullPath, () => {
   if (notebookTaskRouteReady.value) applyNotebookTaskRoute()
+})
+
+onBeforeUnmount(() => {
+  closeNotebookSession()
 })
 </script>
 
@@ -1030,12 +1159,22 @@ watch(() => route.fullPath, () => {
   gap: 8px;
 }
 
-.detail-content {
+.notebook-workspace {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  padding: 20px;
+  overflow: hidden;
+  background: var(--addp-bg-primary);
 }
+
+.notebook-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--addp-bg-primary);
+}
+
+.full-width { width: 100%; }
 
 .parameter-section {
   margin-top: 20px;

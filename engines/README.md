@@ -1,6 +1,6 @@
 # ADDP 计算引擎开发指南
 
-本目录集中管理 ADDP 工作流和 Notebook 运行时。GeoPython Workflow、Spark Workflow、Jupyter 是默认部署的内置运行时；Math Workflow 是 `addp.workflow/v1` 参考实现，用于示范扩展引擎规范；Model3D Workflow 是三维模型转换专用运行时；PointCloud Workflow 是点云处理专用运行时；SuperMap Workflow 是面向超图 iObjects Java / SPS 的工作流运行时。
+本目录集中管理 ADDP 计算和 Notebook 运行时。GeoPython Workflow、Spark Workflow、DuckDB、Jupyter 是默认部署的内置运行时；Math Workflow 是 `addp.workflow/v1` 参考实现，用于示范扩展引擎规范；Model3D Workflow 是三维模型转换专用运行时；PointCloud Workflow 是点云处理专用运行时；SuperMap Workflow 是面向超图 iObjects Java / SPS 的工作流运行时。
 
 ## 目录结构
 
@@ -13,6 +13,7 @@ engines/
 ├── pointcloud-workflow/ # PointCloud Workflow 点云处理运行时，默认端口 8102
 ├── supermap-workflow/  # SuperMap Workflow 超图 SPS 工作流运行时，默认端口 8103
 ├── jupyter/            # 无头 Notebook 执行运行时，API 默认端口 8097
+├── duckdb/             # DuckDB 联邦查询运行时，API 默认端口 8104
 └── docs/               # 引擎 API 与设计文档
 ```
 
@@ -36,6 +37,14 @@ engines/
 
 **已有引擎**：
 - `jupyter` - 仅由 Develop 通过租户 Service Access Token 调用的无头 Notebook 运行时，不暴露共享 Lab。
+
+### 联邦查询运行时
+
+通过 `EnginePlugin + FederatedQueryRuntimeProvider` 纳入统一引擎体系，能力声明为
+`compute.query.federation.supported=true`。
+
+**已有引擎**：
+- `duckdb` - 由 Develop 和 Service 通过租户 Service Access Token 调用的内置联邦查询 Runtime；执行授权限定可挂载的源 Engine，支持 PostgreSQL、MySQL、MinIO 和 S3。
 
 ## 工作流运行时 HTTP 协议
 
@@ -170,6 +179,8 @@ Math Workflow 是参考实现，随 `scripts/dev/start.sh -all` / `-develop` 启
 - **Model3D Workflow Engine**: [model3d-workflow](./model3d-workflow/) - OSGB 快显和 OSGB Scene 转 3D Tiles 三维模型转换运行时。
 - **PointCloud Workflow Engine**: [pointcloud-workflow](./pointcloud-workflow/) - LAS / LAZ / E57 / PCD / XYZ 转 COPC 点云快显转换运行时。
 - **SuperMap Workflow Engine**: [supermap-workflow](./supermap-workflow/) - 超图 iObjects Java / SPS 工作流运行时。
+
+- **DuckDB Federated Query Runtime**: [duckdb](./duckdb/) - Develop 与 Service 共用的联邦查询运行时。
 
 ## 相关文档
 

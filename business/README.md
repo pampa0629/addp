@@ -153,7 +153,7 @@ bash scripts/restart.sh
 bash spark/init-test-data.sh
 ```
 
-初始化 Apache Spark 测试数据（中国城市 POI 数据）。
+幂等重建并真实查询验证 `default.addp_sample_orders`。Spark Master 启动时会自动执行该脚本，因此 Develop 查询工作台可以从 Spark 实时 Catalog 动态生成可执行样例。
 
 ## 常用操作
 

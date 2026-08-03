@@ -13,7 +13,7 @@
 #   服务状态:     docker compose ps
 #
 # 环境变量配置（可选，支持不同部署场景）:
-#   COMPOSE_PROJECT_NAME - 项目名称前缀，用于容器命名（默认: addp）
+#   Compose project 固定为 addp-app，所有内置计算引擎统一归入该应用项目
 #   NGINX_PORT           - Nginx 统一网关端口（默认: 80）
 #   CONSOLE_PORT         - Console 工作台独立访问端口（默认: 5170）
 #   REGISTRY             - 镜像仓库地址（默认: localhost:5001）
@@ -39,6 +39,8 @@ services:
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ASSET_SERVICE_CLIENT_SECRET=${ASSET_SERVICE_CLIENT_SECRET}
       - DEVELOP_SERVICE_CLIENT_SECRET=${DEVELOP_SERVICE_CLIENT_SECRET}
+      - DUCKDB_SERVICE_CLIENT_SECRET=${DUCKDB_SERVICE_CLIENT_SECRET}
+      - DUCKDB_RUNTIME_URL=http://duckdb-engine:8104
       - MANAGER_SERVICE_CLIENT_SECRET=${MANAGER_SERVICE_CLIENT_SECRET}
       - META_SERVICE_CLIENT_SECRET=${META_SERVICE_CLIENT_SECRET}
       - MONITOR_SERVICE_CLIENT_SECRET=${MONITOR_SERVICE_CLIENT_SECRET}
@@ -247,6 +249,45 @@ services:
     #       cpus: '0.5'    # Reserve at least 0.5 CPU core
     #       memory: 512M   # Reserve at least 512MB memory
 
+  # ==================== DuckDB 联邦查询计算引擎 ====================
+
+  duckdb-engine:
+    build:
+      context: .
+      dockerfile: engines/duckdb/Dockerfile
+    image: ${REGISTRY:-localhost:5001}/addp-duckdb-engine:${IMAGE_TAG:-latest}
+    container_name: duckdb-engine
+    environment:
+      - SYSTEM_URL=http://system-backend:8180
+      - META_URL=http://meta-backend:8082
+      - DUCKDB_SERVICE_CLIENT_SECRET=${DUCKDB_SERVICE_CLIENT_SECRET}
+      - DUCKDB_RUNTIME_PORT=8104
+      - DUCKDB_EXTENSION_DIRECTORY=/opt/addp/duckdb/extensions
+      - DUCKDB_MAX_ROWS=${DUCKDB_MAX_ROWS:-10000}
+      - DUCKDB_MAX_MEMORY=${DUCKDB_MAX_MEMORY:-1GB}
+      - DUCKDB_THREADS=${DUCKDB_THREADS:-4}
+      - DUCKDB_QUERY_TIMEOUT=${DUCKDB_QUERY_TIMEOUT:-60s}
+      - DUCKDB_SOURCE_LOOPBACK_HOST=host.docker.internal
+      - GIN_MODE=release
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    expose:
+      - "8104"
+    networks:
+      - addp-network
+    depends_on:
+      system-backend:
+        condition: service_healthy
+      meta-backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8104/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
   # ==================== Transfer 模块 ====================
 
   transfer-backend:
@@ -402,6 +443,7 @@ services:
       - DEVELOP_BACKEND_PORT=8185
       - ENV=production
       - SYSTEM_URL=http://system-backend:8180
+      - DEVELOP_URL=http://develop-backend:8185
       - META_URL=http://meta-backend:8082
       - DEVELOP_SERVICE_CLIENT_SECRET=${DEVELOP_SERVICE_CLIENT_SECRET}
       - TRANSFER_URL=http://transfer-backend:8083
@@ -425,6 +467,8 @@ services:
     depends_on:
       system-backend:
         condition: service_started
+      duckdb-engine:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8185'"]
@@ -483,6 +527,8 @@ services:
     depends_on:
       system-backend:
         condition: service_started
+      duckdb-engine:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8086'"]

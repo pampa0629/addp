@@ -3,6 +3,7 @@ Jupyter Engine 配置模块
 从项目根目录的 .env 文件加载配置（与 Go 模块保持一致）
 """
 import os
+import tempfile
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -32,7 +33,8 @@ class Config:
     LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
 
     # Workspace 配置
-    WORKSPACE_DIR = os.getenv('WORKSPACE_DIR', '/workspace/notebooks')
+    WORKSPACE_DIR = os.getenv('WORKSPACE_DIR', os.path.join(tempfile.gettempdir(), 'addp-jupyter-notebooks'))
+    SESSION_TTL_SECONDS = int(os.getenv('JUPYTER_SESSION_TTL_SECONDS', '3600'))
 
     @classmethod
     def validate(cls):
@@ -54,6 +56,7 @@ class Config:
         print(f"  SYSTEM_URL: {cls.SYSTEM_URL}")
         print(f"  LOG_LEVEL: {cls.LOG_LEVEL}")
         print(f"  WORKSPACE_DIR: {cls.WORKSPACE_DIR}")
+        print(f"  SESSION_TTL_SECONDS: {cls.SESSION_TTL_SECONDS}")
         print("=" * 60)
 
 # 全局配置实例

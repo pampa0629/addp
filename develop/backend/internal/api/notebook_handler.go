@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	commoni18n "github.com/addp/common/middleware/i18n"
 	commonModels "github.com/addp/common/models"
@@ -15,13 +17,16 @@ import (
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // NotebookHandler Notebook 开发 API 处理器
 type NotebookHandler struct {
-	jupyterService           *service.JupyterService
-	notebookExecutionService *service.NotebookExecutionService
-	devTaskService           *service.DevTaskService
+	jupyterService               *service.JupyterService
+	notebookExecutionService     *service.NotebookExecutionService
+	devTaskService               *service.DevTaskService
+	notebookSessionService       *service.NotebookSessionService
+	listSessionEngineDescriptors func(context.Context, string, string) ([]commonModels.EngineRuntimeDescriptor, error)
 }
 
 // NewNotebookHandler 创建 Notebook 处理器
@@ -29,12 +34,90 @@ func NewNotebookHandler(
 	jupyterService *service.JupyterService,
 	notebookExecutionService *service.NotebookExecutionService,
 	devTaskService *service.DevTaskService,
+	developServiceURL string,
 ) *NotebookHandler {
+	sessionService := service.NewNotebookSessionService(jupyterService, devTaskService, time.Hour, developServiceURL)
 	return &NotebookHandler{
-		jupyterService:           jupyterService,
-		notebookExecutionService: notebookExecutionService,
-		devTaskService:           devTaskService,
+		jupyterService:               jupyterService,
+		notebookExecutionService:     notebookExecutionService,
+		devTaskService:               devTaskService,
+		notebookSessionService:       sessionService,
+		listSessionEngineDescriptors: sessionService.ListQueryEngineDescriptors,
 	}
+}
+
+// CreateNotebook 创建空白 Notebook 和对应 script 任务。
+// @Summary 新建空白 Notebook | Create blank Notebook
+// @Tags Notebook
+// @Accept json
+// @Produce json
+// @Param body body models.CreateNotebookSwaggerRequest true "Notebook 创建参数 | Notebook creation parameters"
+// @Success 201 {object} models.UploadNotebookSwaggerResponse "已创建的 Notebook | Created Notebook"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.notebook.create"]
+// @Router /notebooks [post]
+func (h *NotebookHandler) CreateNotebook(c *gin.Context) {
+	var req models.CreateNotebookSwaggerRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookCreateFailed)})
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	req.Kernel = strings.TrimSpace(req.Kernel)
+	if req.Name == "" || req.EngineID == 0 || req.Kernel == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookCreateFailed)})
+		return
+	}
+	tenantID := tenantIDValue(c)
+	if _, err := h.jupyterService.GetNotebookEngine(c.Request.Context(), tenantID, req.EngineID); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": commoni18n.TWithDetail(c, developi18n.MsgNotebookEngineUnavailable, err.Error())})
+		return
+	}
+	if err := h.jupyterService.ValidateKernel(c.Request.Context(), tenantID, req.EngineID, req.Kernel); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": commoni18n.TWithDetail(c, developi18n.MsgNotebookKernelUnavailable, err.Error())})
+		return
+	}
+
+	notebookPath := uuid.NewString() + ".ipynb"
+	minioPath := fmt.Sprintf("tenant_%d/notebooks/%s", tenantID, notebookPath)
+	cellID := strings.ReplaceAll(uuid.NewString(), "-", "")[:8]
+	blankNotebook, err := json.Marshal(map[string]interface{}{
+		"cells": []map[string]interface{}{{
+			"cell_type": "code", "execution_count": nil, "id": cellID,
+			"metadata": map[string]interface{}{}, "outputs": []interface{}{}, "source": []string{},
+		}},
+		"metadata": map[string]interface{}{
+			"kernelspec":    map[string]interface{}{"display_name": "Python 3", "language": "python", "name": req.Kernel},
+			"language_info": map[string]interface{}{"name": "python"},
+		},
+		"nbformat": 4, "nbformat_minor": 5,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookCreateFailed)})
+		return
+	}
+	if err := h.notebookExecutionService.SaveNotebookToMinIO(c.Request.Context(), minioPath, blankNotebook); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, developi18n.MsgNotebookStoreFailed, err.Error())})
+		return
+	}
+	devTask, err := h.createNotebookTask(req.Name, req.Description, notebookPath, minioPath, req.Kernel, map[string]interface{}{}, req.EngineID, tenantID, userIDValue(c))
+	if err != nil {
+		_ = h.notebookExecutionService.DeleteNotebookFromMinIO(c.Request.Context(), minioPath)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, developi18n.MsgNotebookCreateFailed, err.Error())})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"message": "Notebook 创建成功", "dev_task": devTask})
+}
+
+func (h *NotebookHandler) createNotebookTask(name, description, notebookPath, minioPath, kernel string, parameters map[string]interface{}, engineID, tenantID, userID uint) (*models.DevTask, error) {
+	return h.devTaskService.CreateDevTask(&models.CreateDevTaskRequest{
+		Name: name, DisplayName: name, DevType: "script", Description: description, Timeout: 600,
+		Content: models.DevTaskContent{
+			"notebook_path": notebookPath, "minio_path": minioPath, "kernel": kernel,
+			"parameters": parameters, "description": description,
+		},
+		ExecutionConfig: models.DevTaskContent{"engine_id": engineID},
+	}, tenantID, userID)
 }
 
 // ListKernelsResponse 列出 Kernel 响应
@@ -186,12 +269,11 @@ func (h *NotebookHandler) UploadNotebook(c *gin.Context) {
 		return
 	}
 
-	// 只存储文件名作为 notebook_path（相对路径）
-	// Jupyter Engine 会根据 tenant_id 自动拼接完整路径：tenant_{tenant_id}/notebooks/{notebook_path}
-	notebookPath := file.Filename
+	// 对象路径使用服务端生成的不可冲突名称；用户文件名只作为导入来源信息。
+	notebookPath := uuid.NewString() + ".ipynb"
 
 	// 生成完整 MinIO 路径用于保存文件
-	minioPath := fmt.Sprintf("tenant_%d/notebooks/%s", tenantID, file.Filename)
+	minioPath := fmt.Sprintf("tenant_%d/notebooks/%s", tenantID, notebookPath)
 
 	// 保存到 MinIO
 	if err := h.notebookExecutionService.SaveNotebookToMinIO(c.Request.Context(), minioPath, notebookContent); err != nil {
@@ -199,29 +281,9 @@ func (h *NotebookHandler) UploadNotebook(c *gin.Context) {
 		return
 	}
 
-	// 创建开发任务
-	content := models.DevTaskContent{
-		"notebook_path": notebookPath, // 相对路径（仅文件名）
-		"minio_path":    minioPath,
-		"kernel":        kernel,
-		"parameters":    parameters,
-		"description":   description,
-	}
-
-	createReq := &models.CreateDevTaskRequest{
-		Name:        name,
-		DisplayName: name,
-		DevType:     "script",
-		Content:     content,
-		ExecutionConfig: models.DevTaskContent{
-			"engine_id": engineID,
-		},
-		Description: description,
-		Timeout:     600, // 默认 10 分钟
-	}
-
-	devTask, err := h.devTaskService.CreateDevTask(createReq, tenantID, userID)
+	devTask, err := h.createNotebookTask(name, description, notebookPath, minioPath, kernel, parameters, engineID, tenantID, userID)
 	if err != nil {
+		_ = h.notebookExecutionService.DeleteNotebookFromMinIO(c.Request.Context(), minioPath)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, developi18n.MsgNotebookCreateFailed, err.Error())})
 		return
 	}

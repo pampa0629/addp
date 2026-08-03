@@ -1,6 +1,7 @@
 package doris
 
 import (
+	"context"
 	"reflect"
 	"strings"
 	"testing"
@@ -9,6 +10,16 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/resume"
 )
+
+func TestExecuteSQLRejectsWriteInReadOnlyMode(t *testing.T) {
+	t.Parallel()
+
+	if _, err := (&DorisPlugin{}).ExecuteSQL(
+		context.Background(), nil, "DELETE FROM orders", plugin.QueryOptions{ReadOnly: true},
+	); err == nil {
+		t.Fatal("ExecuteSQL() error = nil, want read-only rejection")
+	}
+}
 
 func TestDorisCapabilitiesDeclareTableWriteProviders(t *testing.T) {
 	caps := (&DorisPlugin{}).Capabilities()

@@ -16,6 +16,7 @@ func TestSystemExecutionAuthorizationClientsUseRequestScopedUserAndServiceBearer
 	executionID := "9a21ab1a-2900-42a5-ae91-821339b3fcdd"
 	childExecutionID := "2aaeb79d-2bbd-47a2-a8d4-a607ce6d51a5"
 	parentExecutionID := "74d980cf-3ced-41ef-81fc-271f89249110"
+	definitionVersion := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	expiresAt := time.Now().UTC().Add(10 * time.Minute)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Internal-API-Key") != "" || r.Header.Get("X-Tenant-ID") != "" {
@@ -73,6 +74,18 @@ func TestSystemExecutionAuthorizationClientsUseRequestScopedUserAndServiceBearer
 				ActorPrincipalID: "7", TenantID: "5", TenantMembershipID: "8",
 				IssuedAuthorizationVersion: "3",
 			})
+		case "/api/v1/system/runtime/execution-authorizations/service-definitions":
+			var request IssueExecutionAuthorizationFromServiceDefinitionRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Fatal(err)
+			}
+			_ = json.NewEncoder(w).Encode(IssuedExecutionAuthorization{
+				ID: "93", ExecutionID: request.ExecutionID, Audience: "duckdb",
+				EngineIDs: request.EngineIDs, Effects: []string{"read"}, ExpiresAt: expiresAt,
+				ActorPrincipalID: "7", TenantID: "5", TenantMembershipID: "8",
+				IssuedAuthorizationVersion: "3", SourceType: "service_definition",
+				SourceDefinitionID: &request.DefinitionID, SourceDefinitionVersion: &request.DefinitionVersion,
+			})
 		default:
 			http.NotFound(w, r)
 		}
@@ -101,6 +114,15 @@ func TestSystemExecutionAuthorizationClientsUseRequestScopedUserAndServiceBearer
 	)
 	if err != nil || issuedFromExecution.ID != "92" {
 		t.Fatalf("IssueExecutionAuthorizationFromExecution() response=%#v error=%v", issuedFromExecution, err)
+	}
+	issuedFromDefinition, err := serviceClient.IssueExecutionAuthorizationFromServiceDefinition(
+		context.Background(), IssueExecutionAuthorizationFromServiceDefinitionRequest{
+			ExecutionID: childExecutionID, EngineIDs: []string{"12"}, DefinitionID: "41",
+			DefinitionVersion: definitionVersion, ExpiresIn: 60,
+		},
+	)
+	if err != nil || issuedFromDefinition.ID != "93" {
+		t.Fatalf("IssueExecutionAuthorizationFromServiceDefinition() response=%#v error=%v", issuedFromDefinition, err)
 	}
 	access, err := serviceClient.
 		GetExecutionEngineAccess(context.Background(), issued.ID, ExecutionEngineAccessRequest{

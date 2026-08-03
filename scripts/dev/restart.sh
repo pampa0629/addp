@@ -3,7 +3,7 @@ set -e
 
 # 使用说明
 show_usage() {
-  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-monitor] [-gateway] [-model] [-quality] [-asset] [-portal] [-python-workflow] [-math-workflow] [-model3d-workflow] [-pointcloud-workflow] [-supermap-workflow] [-copilot] [-agent] [-spark-workflow] [-jupyter]"
+  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-monitor] [-gateway] [-model] [-quality] [-asset] [-portal] [-python-workflow] [-math-workflow] [-model3d-workflow] [-pointcloud-workflow] [-supermap-workflow] [-copilot] [-agent] [-spark-workflow] [-jupyter] [-duckdb]"
   echo ""
   echo "选项:"
   echo "  无参数        只重启服务,自动检测 common 模块变化并增量编译受影响的模块"
@@ -32,6 +32,7 @@ show_usage() {
   echo "  -agent       重启 Agent Backend (Python 服务)"
   echo "  -spark-workflow 重启 Spark 工作流 Engine (Python 服务)"
   echo "  -jupyter     重启 Jupyter Engine (Python 服务)"
+  echo "  -duckdb      重新编译并重启 DuckDB Federated Query Runtime"
   echo ""
   echo "智能检测说明:"
   echo "  - 无参数时会自动检测 common 模块是否有变化"
@@ -135,7 +136,7 @@ for arg in "$@"; do
     -all)
       FORCE_BUILD_ALL=true
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-gateway|-standard|-model|-quality|-asset|-portal|-graph|-python-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-supermap-workflow|-copilot|-agent|-spark-workflow|-jupyter)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-gateway|-standard|-model|-quality|-asset|-portal|-graph|-python-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-supermap-workflow|-copilot|-agent|-spark-workflow|-jupyter|-duckdb)
       module="${arg#-}"  # 移除前导的 -
       FORCE_BUILD_MODULES+=("$module")
       ;;
@@ -190,6 +191,12 @@ only_python_service_params() {
         fi
     done
     return 0
+}
+
+only_duckdb_param() {
+    [ "$FORCE_BUILD_ALL" = false ] &&
+      [ ${#FORCE_BUILD_MODULES[@]} -eq 1 ] &&
+      [ "${FORCE_BUILD_MODULES[0]}" = "duckdb" ]
 }
 
 stop_pidfile_process() {
@@ -647,6 +654,14 @@ if only_python_service_params; then
     exit 0
 fi
 
+if only_duckdb_param; then
+    echo "局部重启 DuckDB Federated Query Runtime"
+    stop_pidfile_process ".dev-pids/duckdb.pid" "DuckDB Runtime"
+    stop_matching_port_process "${DUCKDB_RUNTIME_PORT:-8104}" "DuckDB Runtime" "addp-duckdb"
+    rm -f .dev-bins/addp-duckdb
+    exec env SKIP_MODTIDY=1 "${SCRIPT_DIR}/start.sh" -duckdb
+fi
+
 # 在用户未指定 Go 模块编译选项时，自动检测 common 变化
 if [ "$FORCE_BUILD_ALL" = false ] && ! has_go_module_params; then
     echo "🔍 检测 common 模块依赖..."
@@ -778,6 +793,8 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
     elif [ "$module" = "jupyter" ]; then
       # Jupyter Engine 是 Python 服务，不需要编译
       echo "  标记 Jupyter Engine 需要重启（无需编译）"
+    elif [ "$module" = "duckdb" ]; then
+      find engines/duckdb -type f -name "*.go" -exec touch {} \; 2>/dev/null || true
     elif [ "$module" = "standard" ]; then
       find "${module}/backend" -type f -name "*.go" -exec touch {} \; 2>/dev/null || true
     elif [ "$module" = "model" ]; then
@@ -818,6 +835,8 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
     elif [ "$module" = "jupyter" ]; then
       # Python 服务无二进制文件
       :
+    elif [ "$module" = "duckdb" ]; then
+      rm -f .dev-bins/addp-duckdb .dev-bins/addp-duckdb-prepare 2>/dev/null || true
     elif [ "$module" = "standard" ]; then
       rm -f .dev-bins/addp-standard 2>/dev/null || true
     elif [ "$module" = "model" ]; then
@@ -864,6 +883,8 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
     elif [ "$module" = "jupyter" ]; then
       # Python 服务无需清理 Go 缓存
       :
+    elif [ "$module" = "duckdb" ]; then
+      (cd engines/duckdb && go clean -cache 2>/dev/null) || true
     elif [ "$module" = "standard" ]; then
       (cd "${module}/backend" && go clean -cache 2>/dev/null) || true
     elif [ "$module" = "model" ]; then

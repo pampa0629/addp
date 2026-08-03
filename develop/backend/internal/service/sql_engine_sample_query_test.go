@@ -1,0 +1,117 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/addp/common/engine/plugin"
+	commonModels "github.com/addp/common/models"
+)
+
+type executableSampleQueryProvider struct {
+	query       string
+	language    string
+	result      *plugin.QueryResult
+	executeErr  error
+	executedReq *plugin.QueryRequest
+}
+
+func (p *executableSampleQueryProvider) Type() string { return "develop_sample_query_test" }
+
+func (p *executableSampleQueryProvider) DisplayName() string { return "Develop Sample Query Test" }
+
+func (p *executableSampleQueryProvider) EngineOrigin() string { return "general" }
+
+func (p *executableSampleQueryProvider) TestConnection(context.Context, plugin.ConnectionInfo) error {
+	return nil
+}
+
+func (p *executableSampleQueryProvider) ValidateConnectionInfo(plugin.ConnectionInfo) error {
+	return nil
+}
+
+func (p *executableSampleQueryProvider) DefaultPort() int { return 0 }
+
+func (p *executableSampleQueryProvider) RequiredFields() []string { return nil }
+
+func (p *executableSampleQueryProvider) SensitiveFields() []string { return nil }
+
+func (p *executableSampleQueryProvider) ConnectionIdentityFields() []string {
+	return []string{"endpoint"}
+}
+
+func (p *executableSampleQueryProvider) Capabilities() plugin.EngineCapabilities {
+	return plugin.EngineCapabilities{}
+}
+
+func (p *executableSampleQueryProvider) QueryLanguages() []string { return []string{"mql"} }
+
+func (p *executableSampleQueryProvider) GenerateSampleQuery(context.Context, plugin.ConnectionInfo, plugin.SampleQueryOptions) (string, string) {
+	return p.query, p.language
+}
+
+func (p *executableSampleQueryProvider) ExecuteRuntimeQuery(_ context.Context, _ plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
+	p.executedReq = &req
+	return p.result, p.executeErr
+}
+
+func TestGenerateExecutableSampleQueryRequiresSuccessfulNonEmptyExecution(t *testing.T) {
+	tests := []struct {
+		name       string
+		result     *plugin.QueryResult
+		executeErr error
+		wantOK     bool
+	}{
+		{
+			name:   "successful query with rows",
+			result: &plugin.QueryResult{Rows: []map[string]interface{}{{"name": "Beijing"}}},
+			wantOK: true,
+		},
+		{
+			name:       "runtime execution failure",
+			executeErr: errors.New("collection no longer exists"),
+		},
+		{
+			name:   "empty result",
+			result: &plugin.QueryResult{Rows: []map[string]interface{}{}},
+		},
+		{
+			name: "nil runtime result",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider := &executableSampleQueryProvider{
+				query: "db.places.find({}).limit(10)", language: "mql",
+				result: tt.result, executeErr: tt.executeErr,
+			}
+			plugin.Register(provider)
+			t.Cleanup(func() { plugin.Unregister(provider.Type()) })
+
+			query, language, err := generateExecutableSampleQuery(context.Background(), &commonModels.Engine{
+				ID: 42, EngineType: provider.Type(), ConnectionInfo: map[string]interface{}{"endpoint": "test"},
+			})
+			if provider.executedReq == nil {
+				t.Fatal("generated sample query was not executed")
+			}
+			if provider.executedReq.Query != provider.query || provider.executedReq.Language != provider.language {
+				t.Fatalf("executed request = %#v", provider.executedReq)
+			}
+			if !provider.executedReq.Options.ReadOnly {
+				t.Fatal("sample query execution was not read-only")
+			}
+
+			if tt.wantOK {
+				if err != nil || query != provider.query || language != provider.language {
+					t.Fatalf("generateExecutableSampleQuery() = (%q, %q, %v)", query, language, err)
+				}
+				return
+			}
+			if !errors.Is(err, ErrSampleQueryUnavailable) || query != "" || language != "" {
+				t.Fatalf("generateExecutableSampleQuery() = (%q, %q, %v), want unavailable", query, language, err)
+			}
+		})
+	}
+}

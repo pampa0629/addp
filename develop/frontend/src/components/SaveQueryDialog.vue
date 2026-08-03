@@ -99,10 +99,6 @@ const props = defineProps({
     type: Number,
     default: null
   },
-  queryMode: {
-    type: String,
-    default: ''
-  },
   sql: {
     type: String,
     required: true
@@ -182,8 +178,7 @@ const handleSave = async () => {
     const taskData = {
       name: formData.value.name,
       display_name: formData.value.display_name || formData.value.name,
-      engine_id: props.queryMode ? null : props.engineId,
-      query_mode: props.queryMode,
+      engine_id: props.engineId,
       query: props.sql,
       description: formData.value.description,
       tags: formData.value.tags,

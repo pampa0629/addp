@@ -98,6 +98,10 @@ export default {
     return client.post('/service/sql/output-contract', data)
   },
 
+  getQueryEngineSample(engineId) {
+    return client.get(`/service/query-engines/${engineId}/sample-query`)
+  },
+
   // 跨模块 API: 获取存储引擎列表（来自 System 模块）
   getStorageEngines() {
     return client.get('/system/engines')

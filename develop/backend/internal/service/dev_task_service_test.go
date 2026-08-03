@@ -64,39 +64,17 @@ func TestValidateDevTaskExecutionConfigRejectsMissingQueryEngineID(t *testing.T)
 	}
 }
 
-func TestValidateDevTaskExecutionConfigAcceptsDuckDBQueryMode(t *testing.T) {
+func TestValidateDevTaskExecutionConfigUsesEngineIDForDuckDBRuntime(t *testing.T) {
 	err := validateDevTaskExecutionConfig(
 		commonExecution.TaskTypeQuery,
 		map[string]interface{}{
 			"query":      "SELECT 1",
 			"query_type": "sql",
 		},
-		map[string]interface{}{
-			"query_mode": "duckdb",
-		},
+		map[string]interface{}{"engine_id": 1},
 	)
 	if err != nil {
-		t.Fatalf("expected DuckDB query_mode config to pass, got %v", err)
-	}
-}
-
-func TestValidateDevTaskExecutionConfigRejectsDuckDBEngineID(t *testing.T) {
-	err := validateDevTaskExecutionConfig(
-		commonExecution.TaskTypeQuery,
-		map[string]interface{}{
-			"query":      "SELECT 1",
-			"query_type": "sql",
-		},
-		map[string]interface{}{
-			"query_mode": "duckdb",
-			"engine_id":  1,
-		},
-	)
-	if err == nil {
-		t.Fatal("expected DuckDB query with engine_id to be rejected")
-	}
-	if !strings.Contains(err.Error(), "不得提供") {
-		t.Fatalf("expected DuckDB engine_id error, got %v", err)
+		t.Fatalf("expected runtime engine_id to pass, got %v", err)
 	}
 }
 
@@ -273,7 +251,7 @@ func TestValidateDevTaskContentRejectsWorkflowDependencyCycle(t *testing.T) {
 	}
 }
 
-func TestDevTaskExecutionRecordConfigUsesDuckDBQueryMode(t *testing.T) {
+func TestDevTaskExecutionRecordConfigUsesDuckDBRuntimeEngineID(t *testing.T) {
 	config := devTaskExecutionRecordConfig(
 		&models.DevTask{
 			DevType: commonExecution.TaskTypeQuery,
@@ -281,18 +259,14 @@ func TestDevTaskExecutionRecordConfigUsesDuckDBQueryMode(t *testing.T) {
 				"query":      "SELECT 1",
 				"query_type": "sql",
 			},
-			ExecutionConfig: models.DevTaskContent{
-				"query_mode": "duckdb",
-			},
+			ExecutionConfig: models.DevTaskContent{"engine_id": 9},
 		},
 		map[string]interface{}{},
 	)
 
-	if config["query_mode"] != "duckdb" {
-		t.Fatalf("query_mode = %#v, want duckdb", config["query_mode"])
-	}
-	if _, ok := config["engine_id"]; ok {
-		t.Fatalf("DuckDB execution record must not include engine_id: %#v", config)
+	engineID, ok := config["engine_id"].(*uint)
+	if !ok || engineID == nil || *engineID != 9 {
+		t.Fatalf("engine_id = %#v, want *uint(9)", config["engine_id"])
 	}
 }
 

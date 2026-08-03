@@ -416,6 +416,13 @@ check_service_changed() {
             fi
             ;;
 
+        duckdb-engine)
+            local duckdb_time
+            duckdb_time=$(find "$service_dir" common -type f \( -name "*.go" -o -name "go.mod" -o -name "go.sum" -o -name "Dockerfile" \) 2>/dev/null | \
+                xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
+            comparison_time="${duckdb_time:-0}"
+            ;;
+
         supermap-workflow-engine)
             comparison_time=$(find "$service_dir" -type f '(' -name "*.java" -o -name "Dockerfile" -o -name "run.sh" ')' \
                 -not -path "*/target/*" 2>/dev/null | \
@@ -611,6 +618,11 @@ build_service() {
             fi
             ;;
 
+        duckdb-engine)
+            build_context="."
+            dockerfile_path="${service_dir}/Dockerfile"
+            ;;
+
         copilot-backend|agent-backend)
             # Python 后端需要访问项目根目录的 common-python，使用根目录作为构建上下文
             build_context="."
@@ -796,7 +808,10 @@ seed_base_images() {
         "python:3.11-slim"
         "python:3.12-slim"
         "python:3.11-bullseye"
+        "golang:1.24=golang:1.24"
+        "golang:1.24-bookworm=golang:1.24-bookworm"
         "debian:bookworm-slim=debian-slim:latest"
+        "debian:bookworm-slim=debian-bookworm-slim:latest"
         "ubuntu:24.04=ubuntu24:latest"
     )
 
@@ -869,6 +884,7 @@ main() {
         "supermap-workflow-engine:engines/supermap-workflow"
         "spark-workflow-engine:engines/spark-workflow"
         "jupyter-engine:engines/jupyter"
+        "duckdb-engine:engines/duckdb"
         "transfer-worker:transfer/backend"
         "meta-worker:meta/backend"
         "gateway:gateway"

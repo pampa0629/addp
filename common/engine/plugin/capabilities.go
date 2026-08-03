@@ -227,13 +227,21 @@ type ComputeCapabilities struct {
 }
 
 type QueryCapability struct {
-	Supported       bool     `json:"supported"`
-	Languages       []string `json:"languages"`
-	DefaultLanguage string   `json:"default_language,omitempty"`
-	ResultKinds     []string `json:"result_kinds,omitempty"`
-	ReadOnly        bool     `json:"read_only,omitempty"`
-	SupportsExplain bool     `json:"supports_explain,omitempty"`
-	SupportsCancel  bool     `json:"supports_cancel,omitempty"`
+	Supported       bool                       `json:"supported"`
+	Languages       []string                   `json:"languages"`
+	DefaultLanguage string                     `json:"default_language,omitempty"`
+	ResultKinds     []string                   `json:"result_kinds,omitempty"`
+	ReadOnly        bool                       `json:"read_only,omitempty"`
+	SupportsExplain bool                       `json:"supports_explain,omitempty"`
+	SupportsCancel  bool                       `json:"supports_cancel,omitempty"`
+	Federation      *QueryFederationCapability `json:"federation,omitempty"`
+}
+
+type QueryFederationCapability struct {
+	Supported         bool     `json:"supported"`
+	RuntimeAPI        string   `json:"runtime_api"`
+	SourceEngineTypes []string `json:"source_engine_types,omitempty"`
+	ObjectFormats     []string `json:"object_formats,omitempty"`
 }
 
 type WorkflowCapability struct {
@@ -244,9 +252,10 @@ type WorkflowCapability struct {
 }
 
 type ScriptCapability struct {
-	Supported bool     `json:"supported"`
-	Modes     []string `json:"modes"`
-	Languages []string `json:"languages,omitempty"`
+	Supported   bool     `json:"supported"`
+	Modes       []string `json:"modes"`
+	Languages   []string `json:"languages,omitempty"`
+	Interactive bool     `json:"interactive,omitempty"`
 }
 
 func MarshalEngineCapabilities(capabilities EngineCapabilities) (string, error) {

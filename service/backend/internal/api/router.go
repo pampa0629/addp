@@ -177,6 +177,10 @@ func SetupRouter(
 		// 资源能力辅助 API。资源选择统一走 Meta resource-tree，Service 仅保留业务能力接口。
 		api.GET("/graphs/node-shapes", permission(serviceauthorization.PermissionServiceDefinitionRead), resourceCapabilityHandler.GetGraphNodeShapes)
 		api.POST("/sql/output-contract", permission(serviceauthorization.PermissionServiceDefinitionRead), resourceCapabilityHandler.GetSQLOutputContract)
+		api.GET("/query-engines/:id/sample-query",
+			permission(serviceauthorization.PermissionServiceDefinitionCreate, serviceauthorization.PermissionServiceDataReadExecute),
+			resourceCapabilityHandler.GetQuerySample,
+		)
 	}
 
 	return router

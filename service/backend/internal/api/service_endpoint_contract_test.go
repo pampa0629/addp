@@ -99,7 +99,7 @@ func serviceEndpointTestDB(t *testing.T) *gorm.DB {
 	}
 	if err := db.Exec(`CREATE TABLE service.query_services (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, service_name TEXT NOT NULL,
-		title TEXT NOT NULL, description TEXT, keywords TEXT, config_type TEXT, engine_id INTEGER,
+		title TEXT NOT NULL, description TEXT, keywords TEXT, config_type TEXT, engine_id INTEGER, runtime_engine_id INTEGER,
 		schema_name TEXT, table_name TEXT, sql_query TEXT, data_config TEXT, protocols TEXT,
 		public_access BOOLEAN, max_features INTEGER, status TEXT, error_message TEXT, created_by INTEGER,
 		created_at DATETIME, updated_at DATETIME

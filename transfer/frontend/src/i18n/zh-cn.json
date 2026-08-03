@@ -533,6 +533,8 @@
 			"cdcSyncTitle": "持续同步数据库变化",
 			"cdcSyncDesc": "首次启动会装载源表当前数据，之后持续同步新增、更新和物理删除；中断后从上次成功位置恢复。",
 			"databaseCDCLoad": "持续同步新增、更新和删除",
+			"databaseCDCUnavailableTitle": "持续同步不可用",
+			"databaseCDCUnavailableHelp": "查看持续同步不可用原因",
 			"databaseCDCUnavailableReasons": {
 				"capabilityUnavailable": "当前 Transfer 后端未声明该源到所选目标的数据库 CDC 能力。",
 				"sourceDatabaseRequired": "源必须选择 PostgreSQL 或 MySQL 引擎。",
@@ -566,7 +568,7 @@
       "loadModeLabel": "同步范围",
       "snapshotLoad": "每次同步全部数据",
       "watermarkIncrementalLoad": "只同步新增和更新",
-      "watermarkIncrementalUnsupported": "当前支持从 PostgreSQL 表向 PostgreSQL 或 MySQL 表同步变化数据。",
+      "watermarkIncrementalUnsupported": "当前支持从 PostgreSQL 或 MySQL 表向 PostgreSQL 或 MySQL 表同步变化数据。",
       "watermarkIncrementalNoticeTitle": "增量同步要求",
       "watermarkIncrementalNotice": "源表必须有一个在记录新增或更新时都会变化的字段，并有能够唯一标识记录的主键或唯一键。任务中断后会从上次成功位置继续；暂不处理源表中的物理删除。",
       "watermarkFieldLabel": "变化判断字段",

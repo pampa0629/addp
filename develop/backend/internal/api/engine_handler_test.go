@@ -85,25 +85,3 @@ func TestListEnginesReturnsOnlySystemQueryEngines(t *testing.T) {
 		t.Fatalf("Develop engine descriptor leaked connection_info: %s", resp.Body.String())
 	}
 }
-
-func TestListQueryModesDoesNotExposeUncontrolledDuckDBMode(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	handler := NewEngineHandler(nil)
-	router.GET("/query-modes", handler.ListQueryModes)
-
-	req := httptest.NewRequest(http.MethodGet, "/query-modes", nil)
-	resp := httptest.NewRecorder()
-	router.ServeHTTP(resp, req)
-
-	if resp.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", resp.Code, resp.Body.String())
-	}
-	var modes []QueryMode
-	if err := json.Unmarshal(resp.Body.Bytes(), &modes); err != nil {
-		t.Fatalf("decode query modes: %v; body=%s", err, resp.Body.String())
-	}
-	if len(modes) != 0 {
-		t.Fatalf("query modes = %#v, want no modes before controlled DuckDB migration", modes)
-	}
-}

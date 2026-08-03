@@ -145,6 +145,7 @@ if [ "$SKIP_PUSH" = false ]; then
         "supermap-workflow-engine"
         "spark-workflow-engine"
         "jupyter-engine"
+        "duckdb-engine"
         "gateway"
         "console-frontend"
         "system-frontend"

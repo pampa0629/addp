@@ -367,7 +367,8 @@ definitions:
       description:
         type: string
       engine_id:
-        description: 存储引擎（table 模式必填；sql 模式 + DuckDB 时为 nil）
+        description: Source Engine 与 Federated Query Runtime 显式互斥或组合，具体约束由 config_type
+          决定。
         type: integer
       keywords:
         items:
@@ -388,6 +389,8 @@ definitions:
       public_access:
         description: 访问控制
         type: boolean
+      runtime_engine_id:
+        type: integer
       schema_name:
         description: 表配置字段由 data_config.locator 服务端派生，仅作为执行快照返回。
         type: string
@@ -663,6 +666,8 @@ definitions:
       public_access:
         description: 访问控制
         type: boolean
+      runtime_engine_id:
+        type: integer
       schema_name:
         description: 表配置
         type: string
@@ -695,6 +700,10 @@ definitions:
             type: string
           type: object
         type: object
+      federated_source_engine_ids:
+        items:
+          type: integer
+        type: array
       object_table:
         $ref: '#/definitions/dataitem.ItemDescriptor'
       query_hash:
@@ -2238,6 +2247,68 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - service.definition.create
+  /query-engines/{id}/sample-query:
+    get:
+      parameters:
+      - description: 查询引擎ID | Query engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取查询服务 SQL 样例 | Get query service SQL sample
+      tags:
+      - 资源能力 | Resource Capabilities
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - service.definition.create
+      - service.data_read.execute
   /query/{id}:
     delete:
       parameters:

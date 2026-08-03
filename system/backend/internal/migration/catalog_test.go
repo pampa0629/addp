@@ -12,8 +12,45 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 34 {
-		t.Fatalf("LatestVersion = %d, want 34", catalog.LatestVersion)
+	if catalog.LatestVersion != 36 {
+		t.Fatalf("LatestVersion = %d, want 36", catalog.LatestVersion)
+	}
+}
+
+func TestServiceQuerySampleMigrationPublishesAuthorizationBoundary(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000036_iam_service_query_sample.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 36: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"audience IN ('develop', 'duckdb', 'service')",
+		"'service.data_read.execute'",
+		"'system.execution_authorization.create'",
+		"role.role_key = 'tenant.service_publisher'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 36 missing %q", fragment)
+		}
+	}
+}
+
+func TestDuckDBRuntimeMigrationPublishesAuthorizationBoundary(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000035_iam_duckdb_runtime.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 35: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"execution_authorizations_source_check",
+		"source_type = 'service_definition'",
+		"'tenant.duckdb_runtime'",
+		"'addp-duckdb'",
+		"'meta.catalog.read'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 35 missing %q", fragment)
+		}
 	}
 }
 

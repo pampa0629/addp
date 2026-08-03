@@ -21,6 +21,9 @@ func TestJupyterCapabilitiesMatchRuntimeRegistration(t *testing.T) {
 	if got, want := caps.Compute.Script.Languages, []string{"python"}; !sameStrings(got, want) {
 		t.Fatalf("script languages = %#v, want %#v", got, want)
 	}
+	if !caps.Compute.Script.Interactive {
+		t.Fatal("interactive script capability is not declared")
+	}
 }
 
 func sameStrings(got, want []string) bool {

@@ -202,6 +202,13 @@ func (s *NotebookExecutionService) SaveNotebookToMinIO(ctx context.Context, path
 	return nil
 }
 
+func (s *NotebookExecutionService) DeleteNotebookFromMinIO(ctx context.Context, path string) error {
+	if err := s.minioClient.RemoveObject(ctx, "develop", path, minio.RemoveObjectOptions{}); err != nil {
+		return fmt.Errorf("failed to remove object from MinIO: %w", err)
+	}
+	return nil
+}
+
 // ToMap 将执行结果转换为 map（用于写入统一执行记录的结果摘要）
 func (r *NotebookExecutionResult) ToMap() map[string]interface{} {
 	data, _ := json.Marshal(r)

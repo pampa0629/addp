@@ -54,6 +54,18 @@ export const notebookAPI = {
     })
   },
 
+  createNotebook(options) {
+    return client.post('/develop/notebooks', options)
+  },
+
+  createSession(id) {
+    return client.post(`/develop/notebooks/${id}/sessions`)
+  },
+
+  closeSession(id, sessionId) {
+    return client.delete(`/develop/notebooks/${id}/sessions/${sessionId}`)
+  },
+
   /**
    * 列出 Notebooks
    * @param {Object} params - 查询参数

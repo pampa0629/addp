@@ -75,6 +75,7 @@ check_images() {
         "${REGISTRY}/addp-supermap-workflow-engine:${IMAGE_TAG}"
         "${REGISTRY}/addp-spark-workflow-engine:${IMAGE_TAG}"
         "${REGISTRY}/addp-jupyter-engine:${IMAGE_TAG}"
+        "${REGISTRY}/addp-duckdb-engine:${IMAGE_TAG}"
         "${REGISTRY}/addp-gateway:${IMAGE_TAG}"
         "${REGISTRY}/addp-console:${IMAGE_TAG}"
         "${REGISTRY}/addp-nginx:${IMAGE_TAG}"

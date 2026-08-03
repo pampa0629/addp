@@ -202,16 +202,21 @@ function normalizedEngineType(value) {
 	return type
 }
 
-export function taskEngineTypes(task, engines) {
+export function taskEngineDescriptors(task, engines) {
 	const sourceEngineID = locatorEngineID(task?.config?.source?.locator)
 	const targetEngineID = locatorEngineID(task?.config?.target?.parent_locator)
 	const values = Array.isArray(engines) ? engines : []
-	const findType = engineID => String(
-		values.find(engine => Number(engine?.id) === Number(engineID))?.engine_type || ''
-	).trim()
+	const findDescriptor = engineID => {
+		const engine = values.find(candidate => Number(candidate?.id) === Number(engineID))
+		if (!engine) return null
+		return {
+			engine_type: String(engine.engine_type || '').trim(),
+			capabilities: engine.capabilities || null
+		}
+	}
 	return {
-		source: findType(sourceEngineID),
-		target: findType(targetEngineID)
+		source: findDescriptor(sourceEngineID),
+		target: findDescriptor(targetEngineID)
 	}
 }
 

@@ -70,6 +70,7 @@ type Config struct {
 	ManagerServiceURL      string
 	OrchestratorServiceURL string
 	DevelopServiceURL      string
+	DuckDBRuntimeURL       string
 
 	// 审计日志归档配置
 	AuditLogRetentionDays  int    // 审计日志数据库保留天数
@@ -158,6 +159,7 @@ func Load() *Config {
 		ServiceClientSecrets: map[string]string{
 			"addp-asset":        getEnv("ASSET_SERVICE_CLIENT_SECRET", ""),
 			"addp-develop":      getEnv("DEVELOP_SERVICE_CLIENT_SECRET", ""),
+			"addp-duckdb":       getEnv("DUCKDB_SERVICE_CLIENT_SECRET", ""),
 			"addp-manager":      getEnv("MANAGER_SERVICE_CLIENT_SECRET", ""),
 			"addp-meta":         getEnv("META_SERVICE_CLIENT_SECRET", ""),
 			"addp-monitor":      getEnv("MONITOR_SERVICE_CLIENT_SECRET", ""),
@@ -203,6 +205,7 @@ func Load() *Config {
 		ManagerServiceURL:      getEnv("MANAGER_URL", "http://localhost:8081"),
 		OrchestratorServiceURL: getEnv("ORCHESTRATOR_URL", "http://localhost:8084"),
 		DevelopServiceURL:      getEnv("DEVELOP_URL", "http://localhost:8185"),
+		DuckDBRuntimeURL:       getEnv("DUCKDB_RUNTIME_URL", "http://localhost:8104"),
 
 		// 审计日志归档配置
 		AuditLogRetentionDays:  getEnvAsPositiveInt("AUDIT_LOG_RETENTION_DAYS", 90), // 默认保留90天

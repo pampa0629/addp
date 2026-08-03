@@ -30,3 +30,15 @@ other = "Failed to refresh query service dependency snapshot"
 
 [service.err.sql_output_contract_failed]
 other = "Failed to detect SQL output contract"
+
+[service.err.authentication_required]
+other = "Sign in to generate a query sample"
+
+[service.err.query_sample_forbidden]
+other = "Data-read permission for query service samples is required"
+
+[service.err.query_sample_unavailable]
+other = "No SQL sample that executes successfully and returns business data is available"
+
+[service.err.query_sample_failed]
+other = "Failed to generate a query service sample"

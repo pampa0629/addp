@@ -145,21 +145,6 @@ func (d *DevTask) GetQueryType() string {
 	return ""
 }
 
-// GetQueryMode 从 execution_config 中获取查询执行模式。
-func (d *DevTask) GetQueryMode() string {
-	if d.ExecutionConfig != nil {
-		if mode, ok := d.ExecutionConfig["query_mode"].(string); ok {
-			return strings.ToLower(strings.TrimSpace(mode))
-		}
-	}
-	return ""
-}
-
-// IsDuckDBQuery 判断查询任务是否使用 Develop 内置 DuckDB 联邦查询模式。
-func (d *DevTask) IsDuckDBQuery() bool {
-	return d.DevType == "query" && d.GetQueryType() == "sql" && d.GetQueryMode() == "duckdb"
-}
-
 // GetEngineID 从 execution_config 中获取引擎 ID
 func (d *DevTask) GetEngineID() *uint {
 	if d.ExecutionConfig != nil {

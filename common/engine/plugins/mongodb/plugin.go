@@ -98,7 +98,7 @@ func (p *MongoDBPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin
 }
 
 func (p *MongoDBPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
-	return p.executeQuery(ctx, connInfo, req.Query)
+	return p.executeQuery(ctx, connInfo, req.Query, req.Options.ReadOnly)
 }
 
 func (p *MongoDBPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
@@ -190,26 +190,30 @@ func (p *MongoDBPlugin) createClient(ctx context.Context, connInfo plugin.Connec
 
 // 查询数据库中第一个集合名称，生成可执行的 find 命令
 func (p *MongoDBPlugin) generateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo) (string, string) {
-	const fallback = `{"find": "collection_name", "filter": {}, "limit": 10}`
-
 	client, err := p.createClient(ctx, connInfo)
 	if err != nil {
-		return fallback, "mql"
+		return "", "mql"
 	}
 	defer client.Disconnect(ctx) //nolint:errcheck
 
 	database := plugin.GetString(connInfo, "database")
 	names, err := client.Database(database).ListCollectionNames(ctx, bson.M{})
-	if err != nil || len(names) == 0 {
-		return fallback, "mql"
+	if err != nil {
+		return "", "mql"
 	}
-
-	return fmt.Sprintf(`{"find": "%s", "filter": {}, "limit": 10}`, names[0]), "mql"
+	for _, name := range names {
+		count, countErr := client.Database(database).Collection(name).EstimatedDocumentCount(ctx)
+		if countErr == nil && count > 0 {
+			encodedName, _ := json.Marshal(name)
+			return fmt.Sprintf(`{"find": %s, "filter": {}, "limit": 10}`, encodedName), "mql"
+		}
+	}
+	return "", "mql"
 }
 
 // query 为 JSON 命令字符串，支持 find/aggregate/count/distinct，其他命令走 RunCommand 通用路径
 // 示例：{"find":"users","filter":{"age":{"$gt":18}},"limit":10}
-func (p *MongoDBPlugin) executeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string) (*plugin.QueryResult, error) {
+func (p *MongoDBPlugin) executeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string, readOnly bool) (*plugin.QueryResult, error) {
 	// 解析 JSON 命令
 	var cmd map[string]interface{}
 	if err := json.Unmarshal([]byte(query), &cmd); err != nil {
@@ -232,6 +236,9 @@ func (p *MongoDBPlugin) executeQuery(ctx context.Context, connInfo plugin.Connec
 	if collName, ok := getStringKey(cmd, "find"); ok {
 		docs, err = p.execFind(ctx, db, collName, cmd)
 	} else if collName, ok := getStringKey(cmd, "aggregate"); ok {
+		if readOnly && mongoAggregateHasWriteStage(cmd["pipeline"]) {
+			return nil, fmt.Errorf("只读 MQL 不允许 $out 或 $merge 聚合阶段")
+		}
 		docs, err = p.execAggregate(ctx, db, collName, cmd)
 	} else if collName, ok := getStringKey(cmd, "count"); ok {
 		count, countErr := p.execCount(ctx, db, collName, cmd)
@@ -253,6 +260,9 @@ func (p *MongoDBPlugin) executeQuery(ctx context.Context, connInfo plugin.Connec
 		}
 		return &plugin.QueryResult{Columns: []string{"value"}, Rows: rows}, nil
 	} else {
+		if readOnly {
+			return nil, fmt.Errorf("只读 MQL 仅支持 find、aggregate、count 和 distinct")
+		}
 		// 通用 RunCommand 路径
 		docs, err = p.execRunCommand(ctx, db, cmd)
 	}
@@ -262,6 +272,24 @@ func (p *MongoDBPlugin) executeQuery(ctx context.Context, connInfo plugin.Connec
 	}
 
 	return bsonDocsToQueryResult(docs), nil
+}
+
+func mongoAggregateHasWriteStage(value interface{}) bool {
+	switch typed := value.(type) {
+	case []interface{}:
+		for _, item := range typed {
+			if mongoAggregateHasWriteStage(item) {
+				return true
+			}
+		}
+	case map[string]interface{}:
+		for key, item := range typed {
+			if key == "$out" || key == "$merge" || mongoAggregateHasWriteStage(item) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // execFind 执行 find 命令

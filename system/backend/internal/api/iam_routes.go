@@ -35,7 +35,7 @@ func RegisterIAMRoutes(
 	if err != nil {
 		return err
 	}
-	developExecute, err := middleware.NewIAMPermissionGuard("develop.task.execute")
+	executionAuthorizationIssue, err := middleware.NewIAMPermissionGuard("system.execution_authorization.create")
 	if err != nil {
 		return err
 	}
@@ -79,7 +79,7 @@ func RegisterIAMRoutes(
 		auth.POST("/mfa/step-up-challenges", runtime.FirstPartyCredential, userRateLimit, runtime.MFASessionHandler.BeginStepUp)
 		auth.POST("/mfa/step-up-verifications", runtime.FirstPartyCredential, userRateLimit, runtime.MFASessionHandler.CompleteStepUp)
 		auth.POST("/delegations", runtime.UserAccessCredential, runtime.DelegationHandler.CreateDelegation)
-		auth.POST("/execution-authorizations", runtime.UserAccessCredential, tenantContext, developExecute, runtime.ExecutionAuthorizationHandler.Issue)
+		auth.POST("/execution-authorizations", runtime.UserAccessCredential, tenantContext, executionAuthorizationIssue, runtime.ExecutionAuthorizationHandler.Issue)
 		auth.POST("/task-authorization-subjects", runtime.UserAccessCredential, tenantContext, orchestratorExecute, runtime.TaskAuthorizationSubjectHandler.Authorize)
 	}
 

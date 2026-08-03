@@ -8,20 +8,13 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/utils"
 	developi18n "github.com/addp/develop/backend/i18n"
+	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
 // EngineHandler 引擎管理 API 处理器
 type EngineHandler struct {
 	systemClient *commonClient.SystemServiceClient
-}
-
-// QueryMode 描述 Develop 自有的查询执行模式；它不是 System Engine。
-type QueryMode struct {
-	Mode        string `json:"mode"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	QueryType   string `json:"query_type"`
 }
 
 // NewEngineHandler 创建引擎处理器
@@ -52,24 +45,7 @@ func (h *EngineHandler) ListEngines(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, filterDevelopEngineDescriptors(engines, func(engine *commonModels.Engine) bool {
-		return utils.SupportsComputeEntrypoint(engine, "query")
-	}))
-}
-
-// ListQueryModes 获取 Develop 内置查询模式列表
-// @Summary 获取 Develop 内置查询模式列表 | List Develop-owned query modes
-// @Tags Engines
-// @Produce json
-// @Success 200 {array} QueryMode "查询模式列表 | Query mode list"
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["develop.task.read"]
-// @Router /query-modes [get]
-func (h *EngineHandler) ListQueryModes(c *gin.Context) {
-	// DuckDB must not be advertised until it consumes a User-derived Execution
-	// Authorization for every referenced engine. Returning an empty capability
-	// list keeps the discovery contract truthful without a parallel unsafe path.
-	c.JSON(http.StatusOK, []QueryMode{})
+	c.JSON(http.StatusOK, service.FilterQueryEngineDescriptors(engines))
 }
 
 // ListWorkflowEngines 获取工作流引擎列表

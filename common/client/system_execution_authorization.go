@@ -30,6 +30,14 @@ type IssueExecutionAuthorizationFromExecutionRequest struct {
 	ExpiresIn         int64    `json:"expires_in"`
 }
 
+type IssueExecutionAuthorizationFromServiceDefinitionRequest struct {
+	ExecutionID       string   `json:"execution_id"`
+	EngineIDs         []string `json:"engine_ids"`
+	DefinitionID      string   `json:"definition_id"`
+	DefinitionVersion string   `json:"definition_version"`
+	ExpiresIn         int64    `json:"expires_in"`
+}
+
 type IssuedExecutionAuthorization struct {
 	ID                         string    `json:"id"`
 	ExecutionID                string    `json:"execution_id"`
@@ -41,6 +49,9 @@ type IssuedExecutionAuthorization struct {
 	TenantID                   string    `json:"tenant_id"`
 	TenantMembershipID         string    `json:"tenant_membership_id"`
 	IssuedAuthorizationVersion string    `json:"issued_authorization_version"`
+	SourceType                 string    `json:"source_type"`
+	SourceDefinitionID         *string   `json:"source_definition_id,omitempty"`
+	SourceDefinitionVersion    *string   `json:"source_definition_version,omitempty"`
 }
 
 type ExecutionEngineAccessRequest struct {
@@ -146,6 +157,39 @@ func (c *SystemServiceClient) IssueExecutionAuthorizationFromExecution(
 	} {
 		if _, err := parseCanonicalPositiveID(value); err != nil {
 			return nil, errors.New("System execution authorization returned an invalid IAM ID")
+		}
+	}
+	return &response, nil
+}
+
+func (c *SystemServiceClient) IssueExecutionAuthorizationFromServiceDefinition(
+	ctx context.Context,
+	request IssueExecutionAuthorizationFromServiceDefinitionRequest,
+) (*IssuedExecutionAuthorization, error) {
+	if c == nil {
+		return nil, errors.New("System service client is required")
+	}
+	var response IssuedExecutionAuthorization
+	if err := c.doTenantJSON(
+		ctx, http.MethodPost, "/api/v1/system/runtime/execution-authorizations/service-definitions",
+		request, &response,
+	); err != nil {
+		return nil, err
+	}
+	if response.ExecutionID != request.ExecutionID || response.Audience != "duckdb" ||
+		!sameStringSet(response.EngineIDs, request.EngineIDs) ||
+		!sameStringSet(response.Effects, []string{"read"}) || response.SourceType != "service_definition" ||
+		response.SourceDefinitionID == nil || *response.SourceDefinitionID != request.DefinitionID ||
+		response.SourceDefinitionVersion == nil || *response.SourceDefinitionVersion != request.DefinitionVersion ||
+		!response.ExpiresAt.After(time.Now().UTC()) {
+		return nil, errors.New("System service definition authorization returned an invalid response")
+	}
+	for _, value := range []string{
+		response.ID, response.ActorPrincipalID, response.TenantID,
+		response.TenantMembershipID, response.IssuedAuthorizationVersion,
+	} {
+		if _, err := parseCanonicalPositiveID(value); err != nil {
+			return nil, errors.New("System service definition authorization returned an invalid IAM ID")
 		}
 	}
 	return &response, nil

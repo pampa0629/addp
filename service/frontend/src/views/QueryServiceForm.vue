@@ -92,6 +92,21 @@
           />
 
           <el-form :model="form" label-width="120px" style="margin-top: 16px">
+            <el-form-item v-if="tableUsesRuntime" :label="t('service.query.runtimeEngineLabel')" required>
+              <el-select
+                v-model="form.runtime_engine_id"
+                :placeholder="t('service.query.runtimeEnginePlaceholder')"
+                style="width: 400px"
+              >
+                <el-option
+                  v-for="engine in queryRuntimes"
+                  :key="engine.id"
+                  :label="engine.name"
+                  :value="engine.id"
+                />
+              </el-select>
+              <div class="help-text">{{ t('service.query.objectTableRuntimeHelp') }}</div>
+            </el-form-item>
 
             <!-- 字段配置（可选） -->
             <el-divider content-position="left">字段配置（可选）</el-divider>
@@ -130,7 +145,13 @@
 
           <el-form :model="form" label-width="120px">
             <el-form-item :label="t('service.query.engineLabel')" required>
-              <el-select v-model="form.engine_id" :placeholder="t('service.query.enginePlaceholder')" style="width: 400px">
+              <el-select
+                v-model="form.execution_engine_id"
+                :placeholder="t('service.query.enginePlaceholder')"
+                style="width: 400px"
+                :loading="loadingSampleQuery"
+                @change="handleSQLExecutionEngineChange"
+              >
                 <el-option
                   v-for="engine in sqlSupportedEngines"
                   :key="engine.id"
@@ -148,7 +169,8 @@
                 v-model="form.sql_query"
                 type="textarea"
                 :rows="10"
-                placeholder="示例：&#10;SELECT id, name, ST_AsGeoJSON(geom) as geometry&#10;FROM cities&#10;WHERE population > 1000000"
+                :placeholder="t('service.query.sqlPlaceholder')"
+                :disabled="loadingSampleQuery"
                 style="font-family: 'Courier New', monospace"
               />
               <div class="help-text">
@@ -162,7 +184,7 @@
               <el-button
                 type="primary"
                 :loading="detectingSQLSpatial"
-                :disabled="form.engine_id === null || !form.sql_query"
+                :disabled="!form.engine_id || !form.sql_query"
                 @click="detectSQLSpatialFields"
               >
                 {{ t('service.query.detectSpatialBtn') }}
@@ -350,12 +372,18 @@ import { ElMessage } from 'element-plus'
 import { ArrowLeft, Grid, Document, Search } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import queryServiceAPI from '@/api/queryService'
-import { ResourceTreePicker, detectTableMetadata, locatorPathFromSelection } from '@common-ui'
+import { ResourceTreePicker, createLatestRequestCoordinator, detectTableMetadata, locatorPathFromSelection } from '@common-ui'
 import {
   QUERY_TABLE_ENGINE_TYPES,
   isQueryableTableNode,
   isQueryableTableVisibleNode
 } from '@/utils/resourceSelection'
+import {
+  applySQLExecutionEngine,
+  federatedQueryRuntimes,
+  queryServiceExecutionEngines,
+  tableSelectionUsesRuntime
+} from '@/utils/queryServiceEngines'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
@@ -366,6 +394,8 @@ const loading = ref(false)
 const submitting = ref(false)
 const currentStep = ref(0)
 const detectingSQLSpatial = ref(false)
+const loadingSampleQuery = ref(false)
+const sampleRequests = createLatestRequestCoordinator()
 
 const isEdit = computed(() => !!route.params.id)
 
@@ -373,6 +403,8 @@ const isEdit = computed(() => !!route.params.id)
 const form = reactive({
   config_type: 'table',
   engine_id: null,
+  runtime_engine_id: null,
+  execution_engine_id: null,
   schema_name: '',
   table_name: '',
   sql_query: '',
@@ -386,6 +418,7 @@ const form = reactive({
 
 // 存储引擎列表（SQL 模式下使用）
 const engines = ref([])
+const tableUsesRuntime = ref(false)
 
 // Meta resource-tree API 基础 URL。资源选择使用 locator 主身份，业务层按需检测空间能力。
 const metaApiBaseUrl = computed(() => {
@@ -439,19 +472,8 @@ const hasGeometryField = computed(() => {
   }
 })
 
-// 计算属性：支持 SQL 的存储引擎（含 DuckDB 虚拟引擎）
-const sqlSupportedEngines = computed(() => {
-  const supportedTypes = ['postgresql', 'mysql', 'doris', 'clickhouse', 'mongodb', 'spark', 'minio', 's3']
-  const realEngines = engines.value.filter(engine => {
-    const engineType = engine.engine_type?.toLowerCase() || ''
-    return supportedTypes.includes(engineType)
-  })
-  // 追加 DuckDB 虚拟引擎（engine_id = null）
-  return [
-    ...realEngines,
-    { id: null, name: 'DuckDB', engine_type: 'duckdb', _virtual: true }
-  ]
-})
+const sqlSupportedEngines = computed(() => queryServiceExecutionEngines(engines.value))
+const queryRuntimes = computed(() => federatedQueryRuntimes(engines.value))
 
 // 计算属性：是否可以进入下一步
 const canProceed = computed(() => {
@@ -459,11 +481,9 @@ const canProceed = computed(() => {
     return !!form.config_type
   } else if (currentStep.value === 1) {
     if (form.config_type === 'table') {
-      return !!form.locator
+      return !!form.locator && (!tableUsesRuntime.value || !!form.runtime_engine_id)
     } else {
-      // SQL 模式：DuckDB 虚拟引擎（engine_id=null）只需要 sql_query
-      const isDuckDB = form.engine_id === null && form.config_type === 'sql'
-      return (isDuckDB || form.engine_id) && form.sql_query
+      return !!form.execution_engine_id && !!form.sql_query
     }
   }
   return true
@@ -520,6 +540,44 @@ const detectSQLSpatialFields = async () => {
   }
 }
 
+const resetSQLOutputContract = () => {
+  sqlOutputContract.value = null
+  sqlHasGeometry.value = false
+  sqlGeometryColumn.value = ''
+  sqlSrid.value = 0
+  sqlGeometryType.value = ''
+}
+
+const handleSQLExecutionEngineChange = async (engineID) => {
+  applySQLExecutionEngine(form, engineID, engines.value)
+  resetSQLOutputContract()
+  form.sql_query = ''
+  if (!form.execution_engine_id) {
+    sampleRequests.invalidate()
+    loadingSampleQuery.value = false
+    return
+  }
+
+  const request = sampleRequests.begin(form.execution_engine_id)
+  loadingSampleQuery.value = true
+  try {
+    const sample = await queryServiceAPI.getQueryEngineSample(form.execution_engine_id)
+    if (!sampleRequests.isCurrent(request, form.execution_engine_id)) return
+    if (String(sample?.language || '').toLowerCase() !== 'sql' || !String(sample?.query || '').trim()) {
+      throw new Error(t('service.query.sampleUnavailable'))
+    }
+    form.sql_query = sample.query
+  } catch (error) {
+    if (!sampleRequests.isCurrent(request, form.execution_engine_id)) return
+    form.sql_query = ''
+    ElMessage.warning(error.response?.data?.error || error.message || t('service.query.sampleUnavailable'))
+  } finally {
+    if (sampleRequests.isCurrent(request, form.execution_engine_id)) {
+      loadingSampleQuery.value = false
+    }
+  }
+}
+
 // 方法：处理表选择（ResourceTreePicker 回调）
 const handleTableSelection = async (selection) => {
   console.log('[QueryServiceForm] Table selection:', selection)
@@ -530,6 +588,8 @@ const handleTableSelection = async (selection) => {
     form.schema_name = ''
     form.table_name = ''
     form.locator = ''
+    form.runtime_engine_id = null
+    tableUsesRuntime.value = false
     spatialMetadata.value = null
     return
   }
@@ -543,6 +603,10 @@ const handleTableSelection = async (selection) => {
   form.schema_name = schemaName
   form.table_name = tableName
   form.locator = selection.identity?.locator || ''
+  tableUsesRuntime.value = tableSelectionUsesRuntime(selection)
+  if (!tableUsesRuntime.value) {
+    form.runtime_engine_id = null
+  }
 
   const geometry = await detectTableMetadata('/api/v1/meta', {
     locator: form.locator,
@@ -642,14 +706,16 @@ const handleSubmit = async () => {
       description: form.description,
       keywords: form.keywords,
       config_type: form.config_type,
-      // DuckDB 虚拟引擎时 engine_id 为 null
-      engine_id: form.engine_id !== null ? form.engine_id : undefined,
       public_access: form.public_access,
       max_features: form.max_features
     }
 
     // Table 模式特有字段
     if (form.config_type === 'table') {
+      requestData.engine_id = form.engine_id
+      if (tableUsesRuntime.value) {
+        requestData.runtime_engine_id = form.runtime_engine_id
+      }
       requestData.schema_name = form.schema_name
       requestData.table_name = form.table_name
 
@@ -675,6 +741,11 @@ const handleSubmit = async () => {
     }
     // SQL 模式特有字段
     else {
+      if (form.runtime_engine_id) {
+        requestData.runtime_engine_id = form.runtime_engine_id
+      } else {
+        requestData.engine_id = form.engine_id
+      }
       requestData.sql_query = form.sql_query
 
 	  if (!isEdit.value) {
@@ -743,6 +814,8 @@ onMounted(async () => {
       // 注意：数据源配置字段直接在服务对象顶层，不是嵌套在 source_config 下
       form.config_type = service.config_type || 'table'
       form.engine_id = service.engine_id
+      form.runtime_engine_id = service.runtime_engine_id
+      form.execution_engine_id = service.runtime_engine_id || service.engine_id
       form.schema_name = service.schema_name || ''
       form.table_name = service.table_name || ''
       form.locator = service.data_config?.locator || ''
@@ -760,6 +833,7 @@ onMounted(async () => {
 	  const columns = spatial?.geometry_columns || []
 	  const primary = columns.find(column => column.name === spatial?.primary_geometry_column) || (columns.length === 1 ? columns[0] : null)
 	  if (form.config_type === 'table') {
+		tableUsesRuntime.value = !!snapshot?.object_table
 		spatialMetadata.value = primary ? {
 		  hasGeometry: true,
 		  geometryColumn: primary.name,

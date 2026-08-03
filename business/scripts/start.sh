@@ -492,6 +492,12 @@ if [ "$ENABLE_SPARK" = true ]; then
         fi
         sleep 1
     done
+    if ! bash "${PROJECT_ROOT}/spark/init-test-data.sh"; then
+        echo -e "${RED}✗ Spark 样例数据初始化失败${NC}"
+        docker exec business-spark-master cat /tmp/addp-spark-sample-init.log 2>/dev/null || true
+        exit 1
+    fi
+    echo -e "${GREEN}✓ Spark 样例数据已真实查询验证${NC}"
 fi
 
 if [ "$ENABLE_NEO4J" = true ]; then

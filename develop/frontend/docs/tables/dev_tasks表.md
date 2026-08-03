@@ -129,11 +129,13 @@ DuckDB 联邦查询任务：
 
 ```json
 {
-  "query_mode": "duckdb"
+  "engine_id": 2
 }
 ```
 
-DuckDB 是 Develop 内置联邦查询执行模式，不是 System 中注册的普通引擎实例；因此不得使用虚拟 `engine_id=0` 表达 DuckDB。查询目标发现时，`/api/v1/develop/engines` 只返回真实查询引擎，DuckDB 通过 `/api/v1/develop/query-modes` 暴露。
+DuckDB 是 System 中 `tenant_id=NULL`、`is_builtin=true` 的真实联邦查询计算引擎。查询目标发现统一通过 `/api/v1/develop/engines` 返回真实 Engine，不存在虚拟 `engine_id=0`、空 Engine 或独立查询模式。
+
+执行 DuckDB 任务时，Develop 根据 `execution_config.engine_id` 解析 Runtime，从 `content.query` 解析所引用的 Source Engine，为本次 execution 签发只读 Execution Authorization；独立 DuckDB Runtime 按 Source Engine 即时消费连接。`execution_config` 只保存 Runtime Engine ID，不得保存 Source Engine ID 列表、连接信息或 Token；每次执行都必须重新解析并授权。
 
 ---
 

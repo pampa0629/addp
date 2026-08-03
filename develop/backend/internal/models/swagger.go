@@ -17,7 +17,7 @@ type SuccessResponse struct {
 // 实际运行时仍由 DevTaskService 按 dev_type 做强校验；此结构用于让 Swagger 展示 query/workflow/script 的规范字段。
 type DevTaskContentSwagger struct {
 	Query              string                     `json:"query,omitempty" example:"SELECT * FROM cities"`
-	QueryType          string                     `json:"query_type,omitempty" enums:"sql,mql,dsl" example:"sql"`
+	QueryType          string                     `json:"query_type,omitempty" enums:"sql,mql,cypher" example:"sql"`
 	WorkflowDefinition *WorkflowDefinitionSwagger `json:"workflow_definition,omitempty"`
 	Inputs             map[string]interface{}     `json:"inputs,omitempty" swaggertype:"object"`
 	NotebookPath       string                     `json:"notebook_path,omitempty" example:"demo.ipynb"`
@@ -41,7 +41,6 @@ type WorkflowTaskDefinitionSwagger struct {
 type DevTaskExecutionConfigSwagger struct {
 	Type           string                               `json:"type,omitempty" example:"workflow"`
 	EngineID       uint                                 `json:"engine_id,omitempty" example:"12"`
-	QueryMode      string                               `json:"query_mode,omitempty" enums:"duckdb" example:"duckdb"`
 	EngineSpecific *WorkflowEngineSpecificConfigSwagger `json:"engine_specific,omitempty"`
 }
 
@@ -189,6 +188,22 @@ type ListProviderDevTasksSwaggerResponse struct {
 type UploadNotebookSwaggerResponse struct {
 	Message string         `json:"message" example:"Notebook 上传成功"`
 	DevTask DevTaskSwagger `json:"dev_task"`
+}
+
+// CreateNotebookSwaggerRequest 新建空白 Notebook 请求。
+type CreateNotebookSwaggerRequest struct {
+	Name        string `json:"name" binding:"required" example:"analysis"`
+	Description string `json:"description,omitempty" example:"Exploratory analysis"`
+	EngineID    uint   `json:"engine_id" binding:"required" example:"10"`
+	Kernel      string `json:"kernel" binding:"required" example:"python3"`
+}
+
+// NotebookSessionSwaggerResponse 浏览器可见的 Notebook 交互会话事实。
+type NotebookSessionSwaggerResponse struct {
+	ID        string `json:"id" format:"uuid" example:"550e8400-e29b-41d4-a716-446655440000"`
+	TaskID    uint   `json:"task_id" example:"12"`
+	URL       string `json:"url" example:"/api/v1/develop/notebook-sessions/550e8400-e29b-41d4-a716-446655440000/lab/tree/analysis.ipynb"`
+	ExpiresAt string `json:"expires_at" format:"date-time" example:"2026-08-02T12:00:00Z"`
 }
 
 // TaskExecutionSwagger 统一执行记录 Swagger 响应摘要。

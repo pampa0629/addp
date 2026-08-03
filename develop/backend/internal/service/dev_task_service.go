@@ -557,6 +557,11 @@ func validateDevTaskContent(devType string, content map[string]interface{}) erro
 		if !ok || strings.TrimSpace(queryType) == "" {
 			return fmt.Errorf("query 类型必须在 content.query_type 中提供查询类型")
 		}
+		switch strings.ToLower(strings.TrimSpace(queryType)) {
+		case "sql", "mql", "cypher":
+		default:
+			return fmt.Errorf("不支持的查询类型: %s", queryType)
+		}
 	case commonExecution.TaskTypeWorkflow:
 		workflowDef, ok := content["workflow_definition"].(map[string]interface{})
 		if !ok {
@@ -723,31 +728,16 @@ func validateDevTaskExecutionConfig(devType string, content map[string]interface
 		return fmt.Errorf("query 类型必须提供 content")
 	}
 	queryType, _ := content["query_type"].(string)
-	if strings.TrimSpace(queryType) != "sql" {
-		return nil
-	}
+	queryType = strings.ToLower(strings.TrimSpace(queryType))
 	if executionConfig == nil {
-		return fmt.Errorf("SQL 查询任务必须提供 execution_config")
-	}
-
-	queryMode, _ := executionConfig["query_mode"].(string)
-	queryMode = strings.ToLower(strings.TrimSpace(queryMode))
-	_, hasEngineID := executionConfig["engine_id"]
-
-	if queryMode == "duckdb" {
-		if hasEngineID {
-			return fmt.Errorf("DuckDB 联邦查询任务不得提供 execution_config.engine_id")
-		}
-		return nil
-	}
-	if queryMode != "" {
-		return fmt.Errorf("不支持的查询执行模式: %s", queryMode)
+		return fmt.Errorf("查询任务必须提供 execution_config")
 	}
 
 	engineID := devTaskExecutionConfigEngineID(executionConfig)
 	if engineID == nil {
-		return fmt.Errorf("普通 SQL 查询任务必须提供 execution_config.engine_id")
+		return fmt.Errorf("查询任务必须提供 execution_config.engine_id")
 	}
+	_ = queryType
 	return nil
 }
 

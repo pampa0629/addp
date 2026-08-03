@@ -2,7 +2,7 @@
 
 ## 模块定位
 
-`engines/` 集中管理 ADDP 计算与 Notebook 运行时。GeoPython Workflow、Spark Workflow 和 Jupyter 是默认部署的内置运行时；Math Workflow 是 `addp.workflow/v1` 参考实现，用于示范扩展引擎规范；Model3D Workflow 是三维模型转换专用运行时；PointCloud Workflow 是点云处理专用运行时；SuperMap Workflow 是面向超图 iObjects Java / SPS 的工作流运行时。Develop 和业务模块通过引擎能力声明和 HTTP API 发现算子、执行工作流或 Notebook。
+`engines/` 集中管理 ADDP 计算与 Notebook 运行时。GeoPython Workflow、Spark Workflow、DuckDB 和 Jupyter 是默认部署的内置运行时；Math Workflow 是 `addp.workflow/v1` 参考实现，用于示范扩展引擎规范；Model3D Workflow 是三维模型转换专用运行时；PointCloud Workflow 是点云处理专用运行时；SuperMap Workflow 是面向超图 iObjects Java / SPS 的工作流运行时。Develop 和业务模块通过引擎能力声明和 HTTP API 发现算子、执行工作流、联邦查询或 Notebook。
 
 ## 重要目录与端口
 
@@ -15,10 +15,11 @@ engines/
 ├── pointcloud-workflow/ # 点云处理运行时，默认端口 8102；绑定 engine runtime 内部 PDAL 后自注册，POINTCLOUD_PDAL_BIN 不指向宿主机全局命令
 ├── supermap-workflow/ # 超图 SPS 工作流运行时，默认端口 8103；通过 Docker 绑定 SuperMap Java SDK 和许可，不提交 SDK 到仓库
 ├── jupyter/          # 无头 Notebook Runtime API，默认端口 8097
+├── duckdb/           # DuckDB 联邦查询 Runtime，默认端口 8104
 └── docs/             # 引擎 API 与设计文档
 ```
 
-端口以 `.env` 和 `scripts/dev/start.sh` 为准：`PYTHON_WORKFLOW_PORT`、`SPARK_WORKFLOW_PORT`、`MATH_WORKFLOW_PORT`、`MODEL3D_WORKFLOW_PORT`、`POINTCLOUD_WORKFLOW_PORT`、`SUPERMAP_WORKFLOW_PORT`、`JUPYTER_API_PORT`。
+端口以 `.env` 和 `scripts/dev/start.sh` 为准：`PYTHON_WORKFLOW_PORT`、`SPARK_WORKFLOW_PORT`、`MATH_WORKFLOW_PORT`、`MODEL3D_WORKFLOW_PORT`、`POINTCLOUD_WORKFLOW_PORT`、`SUPERMAP_WORKFLOW_PORT`、`JUPYTER_API_PORT`、`DUCKDB_RUNTIME_PORT`。
 
 ## 开发规则
 
@@ -40,6 +41,7 @@ bash scripts/dev/start.sh -model3d-workflow
 bash scripts/dev/start.sh -pointcloud-workflow
 bash scripts/dev/start.sh -supermap-workflow
 bash scripts/dev/start.sh -jupyter
+bash scripts/dev/start.sh -duckdb
 ```
 
 常用健康检查：
@@ -52,6 +54,7 @@ curl http://localhost:8101/health
 curl http://localhost:8102/health
 curl http://localhost:8103/health
 curl http://localhost:8097/health
+curl http://localhost:8104/health
 ```
 
 ## 相关文档

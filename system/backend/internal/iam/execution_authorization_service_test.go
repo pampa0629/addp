@@ -65,3 +65,21 @@ func TestContainsAllExecutionPermissionsRequiresFeatureAndEveryEffect(t *testing
 		t.Fatal("missing effect permission was accepted")
 	}
 }
+
+func TestContainsAllExecutionPermissionsAcceptsServiceReadSampleBoundary(t *testing.T) {
+	rows := []RoleAssignmentPermissionProjection{
+		{PermissionKey: serviceQuerySamplePermission},
+		{PermissionKey: serviceDataReadPermission},
+	}
+	for _, audience := range []string{"service", "duckdb"} {
+		if !containsAllExecutionPermissions(rows, audience, []string{"read"}) {
+			t.Fatalf("service sample boundary was rejected for audience %q", audience)
+		}
+	}
+	if containsAllExecutionPermissions(rows, "service", []string{"write"}) {
+		t.Fatal("service sample boundary accepted a write effect")
+	}
+	if containsAllExecutionPermissions(rows[:1], "service", []string{"read"}) {
+		t.Fatal("service feature permission without data read permission was accepted")
+	}
+}

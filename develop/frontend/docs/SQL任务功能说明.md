@@ -31,7 +31,7 @@ SQL 开发模块支持将 SQL 查询保存为可重用任务。当前 Develop �
 每个 SQL 任务包含以下信息:
 - **基本信息**: 名称、显示名称、描述
 - **SQL 内容**: 完整的 SQL 语句
-- **执行目标**: 普通 SQL 使用数据库资源 ID；DuckDB 联邦查询使用 `query_mode=duckdb`
+- **执行目标**: 普通查询和 DuckDB 联邦查询都使用 System 中真实 Engine 的 `engine_id`
 - **执行配置**: 超时时间(默认 300 秒)
 - **标签**: 多个标签用于分类
 - **状态**: active(活跃) / inactive(停用) / archived(归档)
@@ -44,9 +44,13 @@ SQL 开发模块支持将 SQL 查询保存为可重用任务。当前 Develop �
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/api/v1/develop/engines` | 获取 System 中具备 query 能力的真实引擎实例 |
-| GET | `/api/v1/develop/query-modes` | 获取 Develop 内置查询模式，例如 DuckDB 联邦查询 |
+| GET | `/api/v1/develop/engines/{id}/sample-query` | 通过只读 Execution Authorization 获取该引擎的可执行样例查询 |
 
-DuckDB 联邦查询不是 System Engine，不得追加为 `id=0` 的虚拟引擎。
+DuckDB 联邦查询计算引擎是 System 注册的内置 Engine，前端从 `/develop/engines` 获取其真实 ID，不创建 `id=0`、`engine_id=null` 或其他虚拟选项。
+
+普通引擎样例查询会在执行期消费目标 Engine 的受控访问，从实时 Catalog 选择确认有数据的真实 leaf；Catalog 发现失败或没有可查询数据时返回明确错误，不返回版本查询、`SELECT 1`、占位集合名或其他静态兜底。
+
+DuckDB 执行前从 SQL 中解析已注册的 Source Engine 引用，为本次 execution 签发一次只读 Execution Authorization；独立 DuckDB Runtime 逐个消费连接后挂载。任务定义和执行记录不保存 Source Engine ID 列表、连接信息或 User Access Token。
 
 ### SQL 任务管理 API
 
@@ -80,7 +84,7 @@ DuckDB 联邦查询不是 System Engine，不得追加为 `id=0` 的虚拟引擎
 }
 ```
 
-DuckDB 联邦查询任务的 `execution_config` 使用内置查询模式，不写虚拟引擎 ID：
+DuckDB 联邦查询任务的 `execution_config.engine_id` 保存真实 DuckDB Runtime Engine ID：
 
 ```json
 {
@@ -89,10 +93,10 @@ DuckDB 联邦查询任务的 `execution_config` 使用内置查询模式，不�
   "dev_type": "query",
   "content": {
     "query_type": "sql",
-    "query": "SELECT * FROM postgres_main.public.cities LIMIT 10"
+    "query": "SELECT * FROM <source_engine>.<schema>.<table> LIMIT 10"
   },
   "execution_config": {
-    "query_mode": "duckdb"
+    "engine_id": 2
   },
   "timeout": 300
 }
@@ -127,7 +131,7 @@ CREATE TABLE develop.dev_tasks (
   -- 内容存储 (JSONB)
   content JSONB NOT NULL,  -- { "query_type": "sql", "query": "..." }
 
-  -- 执行配置：普通 SQL 为 { "engine_id": 1 }，DuckDB 联邦查询为 { "query_mode": "duckdb" }
+  -- 执行配置：统一使用真实查询 Engine ID，包括内置 DuckDB Runtime Engine
   execution_config JSONB,
   timeout INTEGER DEFAULT 300,
 

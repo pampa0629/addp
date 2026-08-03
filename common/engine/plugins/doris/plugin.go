@@ -7,6 +7,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/shared"
+	"github.com/addp/common/sqleffect"
 	_ "github.com/go-sql-driver/mysql"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -113,7 +114,7 @@ func (p *DorisPlugin) QueryLanguages() []string {
 }
 
 func (p *DorisPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
-	return "SELECT *\nFROM your_database.your_table\nLIMIT 10", "sql"
+	return plugin.SampleSQLForCatalogPath(p.Type(), opts.Path, 10), "sql"
 }
 
 func (p *DorisPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
@@ -129,6 +130,11 @@ func (p *DorisPlugin) SupportsParameterizedQueries() bool {
 }
 
 func (p *DorisPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
+	if opts.ReadOnly {
+		if err := sqleffect.RequireReadOnly(sql); err != nil {
+			return nil, fmt.Errorf("Doris 只读查询校验失败：%w", err)
+		}
+	}
 	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts)
 }
 

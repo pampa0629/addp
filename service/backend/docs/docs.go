@@ -1518,6 +1518,101 @@ const docTemplate = `{
                 ]
             }
         },
+        "/query-engines/{id}/sample-query": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "资源能力 | Resource Capabilities"
+                ],
+                "summary": "获取查询服务 SQL 样例 | Get query service SQL sample",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "查询引擎ID | Query engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.create",
+                    "service.data_read.execute"
+                ]
+            }
+        },
         "/query/{id}": {
             "get": {
                 "security": [
@@ -3438,7 +3533,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "engine_id": {
-                    "description": "存储引擎（table 模式必填；sql 模式 + DuckDB 时为 nil）",
+                    "description": "Source Engine 与 Federated Query Runtime 显式互斥或组合，具体约束由 config_type 决定。",
                     "type": "integer"
                 },
                 "keywords": {
@@ -3468,6 +3563,9 @@ const docTemplate = `{
                 "public_access": {
                     "description": "访问控制",
                     "type": "boolean"
+                },
+                "runtime_engine_id": {
+                    "type": "integer"
                 },
                 "schema_name": {
                     "description": "表配置字段由 data_config.locator 服务端派生，仅作为执行快照返回。",
@@ -3853,6 +3951,9 @@ const docTemplate = `{
                     "description": "访问控制",
                     "type": "boolean"
                 },
+                "runtime_engine_id": {
+                    "type": "integer"
+                },
                 "schema_name": {
                     "description": "表配置",
                     "type": "string"
@@ -3898,6 +3999,12 @@ const docTemplate = `{
                         "additionalProperties": {
                             "type": "string"
                         }
+                    }
+                },
+                "federated_source_engine_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
                     }
                 },
                 "object_table": {

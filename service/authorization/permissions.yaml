@@ -1,7 +1,15 @@
 schema_version: addp.permission_manifest/v1
 owner_module: service
-manifest_version: 3
+manifest_version: 4
 permissions:
+  - key: service.data_read.execute
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.service.data_read.execute.name
+    description_i18n_key: permissions.service.data_read.execute.description
   - key: service.definition.create
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium

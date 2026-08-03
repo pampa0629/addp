@@ -535,6 +535,150 @@ func (r *RuntimeLeaseRepository) RecordProgress(ctx context.Context, claim Runti
 	})
 }
 
+// ClaimInitialMetadataScan 为 active continuous runtime 领取一次目标结构 Meta scan。
+// success 不可再次领取；failed 或过期 running 可由后续 runtime session 接管。
+func (r *RuntimeLeaseRepository) ClaimInitialMetadataScan(
+	ctx context.Context,
+	claim RuntimeLeaseClaim,
+	now time.Time,
+	claimTTL time.Duration,
+) (*models.TransferTask, bool, error) {
+	if r == nil || r.db == nil {
+		return nil, false, fmt.Errorf("runtime lease repository is not configured")
+	}
+	if claimTTL <= 0 {
+		return nil, false, fmt.Errorf("initial metadata scan claim TTL must be greater than zero")
+	}
+	var task models.TransferTask
+	owned := false
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var leaseCount int64
+		if err := tx.Model(&models.RuntimeLease{}).
+			Where("task_id = ? AND execution_id = ? AND owner_instance_id = ? AND fencing_token = ? AND lease_until > ?",
+				claim.Task.ID, claim.Execution.ExecutionID, claim.Lease.OwnerInstanceID, claim.Lease.FencingToken, now).
+			Count(&leaseCount).Error; err != nil {
+			return err
+		}
+		if leaseCount != 1 {
+			return ErrRuntimeLeaseLost
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", claim.Task.ID).First(&task).Error; err != nil {
+			return err
+		}
+		if task.DesiredState != models.TaskDesiredStateRunning {
+			return ErrRuntimeLeaseLost
+		}
+		if !task.AutoScanMetadata || task.InitialMetadataScanStatus == models.InitialMetadataScanSuccess {
+			return nil
+		}
+		if task.InitialMetadataScanStatus == models.InitialMetadataScanRunning &&
+			task.InitialMetadataScanLeaseUntil != nil && task.InitialMetadataScanLeaseUntil.After(now) {
+			return nil
+		}
+		token := uuid.NewString()
+		leaseUntil := now.Add(claimTTL)
+		result := tx.Model(&task).Updates(map[string]interface{}{
+			"initial_metadata_scan_status":       models.InitialMetadataScanRunning,
+			"initial_metadata_scan_claim_token":  token,
+			"initial_metadata_scan_lease_until":  leaseUntil,
+			"initial_metadata_scan_attempt":      gorm.Expr("initial_metadata_scan_attempt + 1"),
+			"initial_metadata_scan_execution_id": "",
+			"initial_metadata_scan_error":        "",
+			"updated_at":                         now,
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrRuntimeLeaseLost
+		}
+		if err := tx.Where("id = ?", task.ID).First(&task).Error; err != nil {
+			return err
+		}
+		if err := updateInitialMetadataScanExecutionTx(tx, claim.Execution.ExecutionID, task, ""); err != nil {
+			return err
+		}
+		owned = true
+		return nil
+	})
+	return &task, owned, err
+}
+
+// CompleteInitialMetadataScan 只接受当前 claim token 的完成结果，迟到 claimant 不得覆盖新结果。
+func (r *RuntimeLeaseRepository) CompleteInitialMetadataScan(
+	ctx context.Context,
+	claim RuntimeLeaseClaim,
+	claimToken string,
+	status models.InitialMetadataScanStatus,
+	metaExecutionID, errorMessage string,
+	now time.Time,
+) (*models.TransferTask, bool, error) {
+	if r == nil || r.db == nil {
+		return nil, false, fmt.Errorf("runtime lease repository is not configured")
+	}
+	if claimToken == "" {
+		return nil, false, fmt.Errorf("initial metadata scan claim token is required")
+	}
+	if status != models.InitialMetadataScanSuccess && status != models.InitialMetadataScanFailed {
+		return nil, false, fmt.Errorf("initial metadata scan completion status %q is invalid", status)
+	}
+	var task models.TransferTask
+	owned := false
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&models.TransferTask{}).
+			Where("id = ? AND initial_metadata_scan_status = ? AND initial_metadata_scan_claim_token = ?",
+				claim.Task.ID, models.InitialMetadataScanRunning, claimToken).
+			Updates(map[string]interface{}{
+				"initial_metadata_scan_status":       status,
+				"initial_metadata_scan_claim_token":  "",
+				"initial_metadata_scan_lease_until":  nil,
+				"initial_metadata_scan_execution_id": metaExecutionID,
+				"initial_metadata_scan_error":        errorMessage,
+				"updated_at":                         now,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if err := tx.Where("id = ?", claim.Task.ID).First(&task).Error; err != nil {
+			return err
+		}
+		owned = result.RowsAffected == 1
+		if !owned {
+			return nil
+		}
+		return updateInitialMetadataScanExecutionTx(tx, claim.Execution.ExecutionID, task, errorMessage)
+	})
+	return &task, owned, err
+}
+
+func updateInitialMetadataScanExecutionTx(tx *gorm.DB, executionID string, task models.TransferTask, errorMessage string) error {
+	var execution commonExecution.TaskExecution
+	if err := tx.Where("execution_id = ?", executionID).First(&execution).Error; err != nil {
+		return err
+	}
+	metadata := execution.Metadata
+	if metadata == nil {
+		metadata = commonModels.JSONMap{}
+	}
+	continuousMeta, _ := metadata["continuous"].(map[string]interface{})
+	if continuousMeta == nil {
+		continuousMeta = map[string]interface{}{}
+	}
+	scan := map[string]interface{}{
+		"status":  string(task.InitialMetadataScanStatus),
+		"attempt": task.InitialMetadataScanAttempt,
+	}
+	if task.InitialMetadataScanExecutionID != "" {
+		scan["execution_id"] = task.InitialMetadataScanExecutionID
+	}
+	if errorMessage != "" {
+		scan["error"] = errorMessage
+	}
+	continuousMeta["metadata_scan"] = scan
+	metadata["continuous"] = continuousMeta
+	return tx.Model(&execution).Updates(map[string]interface{}{"metadata": metadata, "updated_at": task.UpdatedAt}).Error
+}
+
 func (r *RuntimeLeaseRepository) RecordDiagnostics(ctx context.Context, claim RuntimeLeaseClaim, diagnostics ContinuousDiagnostics) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var leaseCount int64

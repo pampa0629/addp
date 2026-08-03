@@ -11,6 +11,7 @@ Gateway 是 ADDP 平台的**统一 API 入口**，负责：
 3. **限流控制** - 基于 Redis 令牌桶算法，按应用 ID 独立限流
 4. **访问日志** - 异步记录已验证的外部 API Key 访问到 PostgreSQL，不采集请求体
 5. **透明代理** - 按 `/api/v1/:module/*path` 保持模块路径原样转发
+   - 同时支持普通 HTTP 与 WebSocket Upgrade；Notebook 等模块内协议仍由 owner 模块鉴权和代理
 6. **跨域处理** - 统一 CORS 配置
 
 ## 🏗️ 关键架构

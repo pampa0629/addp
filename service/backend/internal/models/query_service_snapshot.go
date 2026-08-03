@@ -33,15 +33,16 @@ type SQLQueryOutputContractRequest struct {
 
 // QueryServiceDependencySnapshot 是查询服务运行和对外契约依赖的冻结事实。
 type QueryServiceDependencySnapshot struct {
-	Source                *QueryServiceSourceRef       `json:"source,omitempty"`
-	CapturedAt            time.Time                    `json:"captured_at"`
-	DependencyHash        string                       `json:"dependency_hash"`
-	VerificationStatus    string                       `json:"verification_status,omitempty"`
-	QueryHash             string                       `json:"query_hash,omitempty"`
-	Table                 *datatype.TableInfo          `json:"table,omitempty"`
-	Spatial               *datatype.SpatialInfo        `json:"spatial,omitempty"`
-	ObjectTable           *dataitem.ItemDescriptor     `json:"object_table,omitempty"`
-	FederatedObjectTables map[string]map[string]string `json:"federated_object_tables,omitempty"`
+	Source                   *QueryServiceSourceRef       `json:"source,omitempty"`
+	CapturedAt               time.Time                    `json:"captured_at"`
+	DependencyHash           string                       `json:"dependency_hash"`
+	VerificationStatus       string                       `json:"verification_status,omitempty"`
+	QueryHash                string                       `json:"query_hash,omitempty"`
+	Table                    *datatype.TableInfo          `json:"table,omitempty"`
+	Spatial                  *datatype.SpatialInfo        `json:"spatial,omitempty"`
+	ObjectTable              *dataitem.ItemDescriptor     `json:"object_table,omitempty"`
+	FederatedSourceEngineIDs []uint                       `json:"federated_source_engine_ids,omitempty"`
+	FederatedObjectTables    map[string]map[string]string `json:"federated_object_tables,omitempty"`
 }
 
 // QueryServiceSnapshotDiff 是显式检查上游事实后的快照差异。

@@ -172,6 +172,19 @@ ADDP 采用**灵活响应策略**，根据场景选择最合适的响应格式�
 - HTTP 状态码已经表达了错误类型（400/401/403/404/500），无需在 body 中重复
 - 错误消息应该清晰、可读，可以直接展示给用户
 
+供 SDK、Runtime 或多跳代理消费且调用方必须区分会话失效、权限拒绝、资源不存在、不支持和瞬时上游故障的接口，应在 `error` 之外返回稳定的 `error_code`。`error_code` 使用小写下划线命名，不国际化，不包含动态文本，也不重复 HTTP 状态码；SDK 只能按 HTTP 状态码与 `error_code` 分支，不能解析本地化 `error` 文案。
+
+```json
+// HTTP 504 Gateway Timeout
+{
+  "error": "读取引擎目录超时",
+  "error_code": "catalog_timeout",
+  "error_type": "transient"
+}
+```
+
+`error_type` 和 `retry_after` 继续遵守第 13.2 节；同一个 `error_code` 的重试类别必须稳定。简单 CRUD 接口不需要为包装一致性强行增加 `error_code`。
+
 ### 2.4 分页响应格式
 
 **请求参数：**
@@ -598,7 +611,7 @@ System 把所选 Context 固化到短期、不可刷新的 Service Access Token 
 `X-Internal-API-Key`、`X-Tenant-ID` 或调用方提交的 Principal/Membership 作为 Tenant
 授权事实。
 
-Service Access Token 只证明当前服务主体及其固定 Context。服务代表用户执行 SQL、Workflow、Jupyter 或其他计算时，必须另外消费由当前 User AuthContext 派生、绑定唯一 execution 的 Execution Authorization。Service Principal 本身不得通过 Runtime Role 获得通用 Tenant 数据权限，也不得根据 Engine 创建人或注册时账号决定执行权限。
+Service Access Token 只证明当前服务主体及其固定 Context。服务代表用户执行 SQL、Workflow、Jupyter 或其他计算时，必须另外消费由当前 User AuthContext 派生、绑定唯一 execution 的 Execution Authorization。已发布查询服务可以由 `addp-service` 基于自身权威服务定义签发只读、限定 Source Engine 和 definition version/hash 的 Execution Authorization；该路径不允许其他 Service Principal、其他效果或任意 owner assertion。Service Principal 本身不得通过 Runtime Role 获得通用 Tenant 数据权限，也不得根据 Engine 创建人或注册时账号决定执行权限。
 
 同步 BFF 是用户请求链的传输边界，不是独立业务授权主体。Portal 等 BFF 调用 owner 的消费 API
 时，必须原样转发当前请求已经验证的 User Bearer，使 owner 继续以同一 Principal、Tenant Context、
@@ -1113,9 +1126,9 @@ func (h *ItemHandler) Execute(c *gin.Context) { ... }
 async def chat(request: ChatRequest): ...
 ```
 
-### 13.2 错误响应增加 error_type
+### 13.2 Agent 与 SDK 错误响应增加 error_type
 
-对于 agent 需要判断是否重试的场景，错误响应可附加 `error_type` 字段（可选）：
+对于 Agent 或 SDK 需要判断是否重试的场景，错误响应可附加 `error_type` 字段（可选）：
 
 ```json
 // 瞬时错误，可重试
@@ -1144,7 +1157,7 @@ async def chat(request: ChatRequest): ...
 | `permanent` | 永久错误（资源不存在） | 不重试，报告给用户 |
 | `user_error` | 用户输入错误 | 修正输入后重试 |
 
-**注意**：`error_type` 是可选字段，不强制要求所有接口都实现。优先在 agent 频繁调用的接口上添加。
+**注意**：`error_type` 是可选字段，不强制要求所有接口都实现。优先在 Agent、SDK 或 Runtime 频繁调用且确实需要稳定重试判断的接口上添加。
 
 ### 13.3 agent 调用其他模块的认证
 

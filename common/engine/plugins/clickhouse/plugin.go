@@ -104,7 +104,7 @@ func (p *ClickHousePlugin) QueryLanguages() []string {
 }
 
 func (p *ClickHousePlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
-	return "SELECT *\nFROM your_database.your_table\nLIMIT 10", "sql"
+	return plugin.SampleSQLForCatalogPath(p.Type(), opts.Path, 10), "sql"
 }
 
 func (p *ClickHousePlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {

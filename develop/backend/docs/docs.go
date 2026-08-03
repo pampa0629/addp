@@ -175,84 +175,6 @@ const docTemplate = `{
                 ]
             }
         },
-        "/duckdb/sample-query": {
-            "get": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "DuckDB"
-                ],
-                "summary": "获取 DuckDB 样例查询",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "develop.task.read"
-                ]
-            }
-        },
-        "/duckdb/sources": {
-            "get": {
-                "description": "返回当前租户下所有可通过 DuckDB 查询的数据源（对象存储表 + 关系型表）",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "DuckDB"
-                ],
-                "summary": "获取联邦查询数据源",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.DataSource"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "develop.task.read"
-                ]
-            }
-        },
-        "/duckdb/test": {
-            "get": {
-                "description": "执行 SELECT 1 验证 DuckDB 引擎可用",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "DuckDB"
-                ],
-                "summary": "测试 DuckDB 连接",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "develop.task.read"
-                ]
-            }
-        },
         "/engines": {
             "get": {
                 "produces": [
@@ -317,8 +239,43 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "需要登录 | Authentication required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无执行或数据读取权限 | Execution or data-read permission denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "授权状态冲突 | Authorization conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "422": {
+                        "description": "当前业务库没有可用真实样例 | No real sample data is available",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "授权服务不可用 | Authorization service unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -327,7 +284,8 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "develop.task.read"
+                    "develop.task.execute",
+                    "develop.data_read.execute"
                 ]
             }
         },
@@ -725,6 +683,57 @@ const docTemplate = `{
                 ]
             }
         },
+        "/notebook-kernel-sessions/{session_id}/engine-descriptors": {
+            "get": {
+                "description": "仅接受 Develop 注入当前隔离 Kernel 的短期 Notebook Kernel Capability Bearer；不接受用户或服务 Token。 | Only accepts the short-lived Notebook Kernel Capability Bearer injected by Develop into the isolated Kernel; user and service tokens are not accepted.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Notebook"
+                ],
+                "summary": "获取 Notebook Kernel 可用查询引擎 | List query engines available to a Notebook Kernel",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Notebook 会话 ID | Notebook session ID",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "脱敏查询引擎描述列表 | Masked query engine descriptor list",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.EngineRuntimeDescriptor"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "会话能力无效或已过期 | Session capability is invalid or expired",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "查询引擎发现失败 | Query engine discovery failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "authenticated"
+            }
+        },
         "/notebooks": {
             "get": {
                 "produces": [
@@ -761,6 +770,41 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "develop.notebook.read"
+                ]
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Notebook"
+                ],
+                "summary": "新建空白 Notebook | Create blank Notebook",
+                "parameters": [
+                    {
+                        "description": "Notebook 创建参数 | Notebook creation parameters",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.CreateNotebookSwaggerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "已创建的 Notebook | Created Notebook",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.UploadNotebookSwaggerResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.notebook.create"
                 ]
             }
         },
@@ -965,29 +1009,69 @@ const docTemplate = `{
                 ]
             }
         },
-        "/query-modes": {
-            "get": {
+        "/notebooks/{id}/sessions": {
+            "post": {
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Engines"
+                    "Notebook"
                 ],
-                "summary": "获取 Develop 内置查询模式列表 | List Develop-owned query modes",
+                "summary": "创建 Notebook 交互会话 | Create Notebook interactive session",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "DevTask ID | DevTask ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
-                    "200": {
-                        "description": "查询模式列表 | Query mode list",
+                    "201": {
+                        "description": "Notebook 交互会话 | Notebook interactive session",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/internal_api.QueryMode"
-                            }
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.NotebookSession"
                         }
                     }
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "develop.notebook.update",
                     "develop.task.read"
+                ]
+            }
+        },
+        "/notebooks/{id}/sessions/{session_id}": {
+            "delete": {
+                "tags": [
+                    "Notebook"
+                ],
+                "summary": "关闭 Notebook 交互会话 | Close Notebook interactive session",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "DevTask ID | DevTask ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "会话 ID | Session ID",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.notebook.update"
                 ]
             }
         },
@@ -1983,6 +2067,32 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_develop_backend_internal_models.CreateNotebookSwaggerRequest": {
+            "type": "object",
+            "required": [
+                "engine_id",
+                "kernel",
+                "name"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "example": "Exploratory analysis"
+                },
+                "engine_id": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "kernel": {
+                    "type": "string",
+                    "example": "python3"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "analysis"
+                }
+            }
+        },
         "github_com_addp_develop_backend_internal_models.DAGEditorLayoutSwagger": {
             "type": "object",
             "properties": {
@@ -2053,7 +2163,7 @@ const docTemplate = `{
                     "enum": [
                         "sql",
                         "mql",
-                        "dsl"
+                        "cypher"
                     ],
                     "example": "sql"
                 },
@@ -2071,13 +2181,6 @@ const docTemplate = `{
                 },
                 "engine_specific": {
                     "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.WorkflowEngineSpecificConfigSwagger"
-                },
-                "query_mode": {
-                    "type": "string",
-                    "enum": [
-                        "duckdb"
-                    ],
-                    "example": "duckdb"
                 },
                 "type": {
                     "type": "string",
@@ -2841,26 +2944,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_develop_backend_internal_service.DataSource": {
-            "type": "object",
-            "properties": {
-                "engine_id": {
-                    "type": "integer"
-                },
-                "engine_name": {
-                    "type": "string"
-                },
-                "engine_type": {
-                    "type": "string"
-                },
-                "tables": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.TableRef"
-                    }
-                }
-            }
-        },
         "github_com_addp_develop_backend_internal_service.KernelInfo": {
             "type": "object",
             "properties": {
@@ -2871,6 +2954,23 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_service.NotebookSession": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "url": {
                     "type": "string"
                 }
             }
@@ -2979,44 +3079,11 @@ const docTemplate = `{
                 "external_effect"
             ],
             "x-enum-varnames": [
-                "SQLExecutionEffectRead",
-                "SQLExecutionEffectWrite",
-                "SQLExecutionEffectDDL",
-                "SQLExecutionEffectExternalEffect"
+                "Read",
+                "Write",
+                "DDL",
+                "ExternalEffect"
             ]
-        },
-        "github_com_addp_develop_backend_internal_service.TableRef": {
-            "type": "object",
-            "properties": {
-                "engine_name": {
-                    "type": "string"
-                },
-                "fields": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "format": {
-                    "type": "string"
-                },
-                "item_type": {
-                    "description": "table",
-                    "type": "string"
-                },
-                "layout": {
-                    "type": "string"
-                },
-                "physical_path": {
-                    "type": "string"
-                },
-                "schema": {
-                    "type": "string"
-                },
-                "table": {
-                    "type": "string"
-                }
-            }
         },
         "github_com_addp_develop_backend_internal_service.WorkflowValidationIssue": {
             "type": "object",
@@ -3137,23 +3204,6 @@ const docTemplate = `{
                 },
                 "workflow_engine_id": {
                     "type": "integer"
-                }
-            }
-        },
-        "internal_api.QueryMode": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "mode": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "query_type": {
-                    "type": "string"
                 }
             }
         },

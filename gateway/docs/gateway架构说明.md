@@ -131,6 +131,7 @@ Redis 原子操作（Lua 脚本）
 ### 5. 其他功能
 
 - **请求代理**：完整转发 HTTP 请求（方法、头部、体、查询参数）
+- **协议透明**：模块代理支持 HTTP 和 WebSocket Upgrade；Gateway 不终止或解释模块内交互会话协议
 - **编码透明**：代理不自动解压上游 gzip 响应，原样保留 `Content-Encoding` 与响应字节（例如 PMTiles 内的 gzip MVT）
 - **透明代理**：按 `/api/v1/:module/*path` 提取模块名，完整保留请求路径、头、体和查询参数
 - **跨域处理**：统一配置 CORS，允许前端跨域访问

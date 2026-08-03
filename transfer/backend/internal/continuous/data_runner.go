@@ -64,6 +64,7 @@ type DataSessionRunner struct {
 	CheckpointStaleAfter     time.Duration
 	Now                      func() time.Time
 	DeadLetters              ContinuousDeadLetterRecorder
+	MetadataScanner          PreparedTargetMetadataScanner
 }
 
 const (
@@ -115,6 +116,14 @@ func (r *DataSessionRunner) Run(ctx context.Context, claim repository.RuntimeLea
 	}
 	if err := target.PreparePartitionedTableChangeApply(ctx, plan.Target.ConnInfo, plan.Target.Path, applyOptions); err != nil {
 		return fmt.Errorf("prepare continuous target: %w", err)
+	}
+	if claim.Task.AutoScanMetadata {
+		if r.MetadataScanner == nil {
+			return fmt.Errorf("continuous target metadata scanner is required when auto_scan_metadata is enabled")
+		}
+		if err := r.MetadataScanner.ScanPreparedTarget(ctx, claim, plan); err != nil {
+			return fmt.Errorf("scan prepared continuous target metadata: %w", err)
+		}
 	}
 	committed, committedAtByPartition, err := r.committedPositions(ctx, claim.Task.ID, plan.Source.SourceIdentity)
 	if err != nil {

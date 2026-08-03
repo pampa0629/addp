@@ -222,6 +222,66 @@ func TestExecuteQueryRejectsMultipleStatementsBeforeIssuingAuthorization(t *test
 	}
 }
 
+func TestGetSampleQueryUsesAuthorizedEngineAndRejectsUnavailableCatalog(t *testing.T) {
+	var issuedExecutionID string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/v1/system/auth/execution-authorizations":
+			var payload commonClient.IssueExecutionAuthorizationRequest
+			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			if request.Header.Get("Authorization") != "Bearer addp_at_user" ||
+				len(payload.EngineIDs) != 1 || payload.EngineIDs[0] != "12" ||
+				len(payload.Effects) != 1 || payload.Effects[0] != "read" {
+				t.Fatalf("sample issue request = %#v, headers=%#v", payload, request.Header)
+			}
+			issuedExecutionID = payload.ExecutionID
+			_ = json.NewEncoder(w).Encode(commonClient.IssuedExecutionAuthorization{
+				ID: "77", ExecutionID: payload.ExecutionID, Audience: "develop",
+				EngineIDs: []string{"12"}, Effects: []string{"read"}, ExpiresAt: time.Now().Add(time.Minute),
+				ActorPrincipalID: "1", TenantID: "7", TenantMembershipID: "9", IssuedAuthorizationVersion: "3",
+			})
+		case "/api/v1/system/execution-authorizations/77/engine-accesses":
+			if request.Header.Get("Authorization") != "Bearer addp_at_service" {
+				t.Fatalf("sample consume Authorization = %q", request.Header.Get("Authorization"))
+			}
+			_ = json.NewEncoder(w).Encode(commonClient.ExecutionEngineAccess{
+				AuthorizationID: "77", ExecutionID: issuedExecutionID, Audience: "develop", EngineID: "12",
+				Effects: []string{"read"}, ExpiresAt: time.Now().Add(time.Minute),
+				Engine: &models.Engine{
+					ID: 12, EngineType: "postgresql",
+					ConnectionInfo: models.ConnectionInfo{"host": "127.0.0.1", "port": 1, "database": "business"},
+				},
+			})
+		default:
+			t.Fatalf("unexpected System path: %s", request.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/engines/:id/sample-query", func(c *gin.Context) {
+		setTenantAuthContextForTest(c, 7, 1)
+		newAuthorizedQueryHandlerForTest(server.URL).GetSampleQuery(c)
+	})
+	request := httptest.NewRequest(http.MethodGet, "/engines/12/sample-query", nil)
+	request.Header.Set("Authorization", "Bearer addp_at_user")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusUnprocessableEntity || issuedExecutionID == "" {
+		t.Fatalf("status = %d, execution = %q, body = %s", response.Code, issuedExecutionID, response.Body.String())
+	}
+	var body map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["error_code"] != "sample_query_unavailable" || body["query"] != "" {
+		t.Fatalf("sample response = %#v", body)
+	}
+}
+
 func newAuthorizedQueryHandlerForTest(systemURL string) *QueryHandler {
 	systemService := commonClient.NewSystemServiceClient(
 		systemURL, staticDevelopServiceTokens("addp_at_service"), nil,
@@ -230,7 +290,7 @@ func newAuthorizedQueryHandlerForTest(systemURL string) *QueryHandler {
 		&config.Config{DefaultQueryTimeout: 30, MaxQueryTimeout: 300},
 		systemService,
 		commonClient.NewSystemExecutionAuthorizationClient(systemURL, nil),
-	))
+	), nil)
 }
 
 func executeQueryRequestForTest(t *testing.T, handler *QueryHandler, sql string) *httptest.ResponseRecorder {
@@ -270,4 +330,16 @@ func testConnectionRequestForTest(handler *QueryHandler, token string) *httptest
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	return response
+}
+
+func TestQueryRequestContentPreservesNativeLanguage(t *testing.T) {
+	query, language, err := queryRequestContent(map[string]interface{}{
+		"query_type": " Cypher ", "query": " MATCH (n) RETURN n LIMIT 10 ",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if language != "cypher" || query != "MATCH (n) RETURN n LIMIT 10" {
+		t.Fatalf("queryRequestContent() = (%q, %q)", query, language)
+	}
 }

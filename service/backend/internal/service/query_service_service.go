@@ -1,14 +1,13 @@
 package service
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/addp/common/client"
-	"github.com/addp/common/duckdb"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/service/internal/models"
 	"github.com/addp/service/internal/repository"
@@ -67,7 +66,15 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 		if req.SchemaName != "" || req.TableName != "" {
 			return nil, errors.New("schema_name and table_name should not be provided in sql mode")
 		}
-		// engine_id 为 nil 时表示 DuckDB 联邦查询模式，合法
+		if req.RuntimeEngineID != nil && *req.RuntimeEngineID > 0 {
+			if req.EngineID != nil {
+				return nil, errors.New("federated sql mode must not provide engine_id")
+			}
+		} else if req.EngineID == nil || *req.EngineID == 0 {
+			return nil, errors.New("sql mode requires engine_id or runtime_engine_id")
+		} else if err := s.validateDirectSQLQueryEngine(*req.EngineID); err != nil {
+			return nil, err
+		}
 	}
 
 	// 4. 检查服务名称是否唯一
@@ -109,13 +116,31 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 		}
 	} else {
 		snapshot = buildSQLDependencySnapshot(req.SqlQuery, req.OutputContract, time.Now())
-		if req.EngineID == nil || *req.EngineID == 0 {
-			objectTables, err := s.captureFederatedObjectTables(tenantID, req.SqlQuery)
+		if req.RuntimeEngineID != nil && *req.RuntimeEngineID > 0 {
+			if err := s.validateFederatedRuntime(*req.RuntimeEngineID, ""); err != nil {
+				return nil, err
+			}
+			sourceEngineIDs, objectTables, err := s.captureFederatedDependencies(tenantID, *req.RuntimeEngineID, req.SqlQuery)
 			if err != nil {
 				return nil, err
 			}
+			snapshot.FederatedSourceEngineIDs = sourceEngineIDs
 			snapshot.FederatedObjectTables = objectTables
 			snapshot.DependencyHash = queryServiceDependencyHash(snapshot)
+		}
+	}
+	if req.ConfigType == "table" {
+		if snapshot != nil && snapshot.ObjectTable != nil {
+			if req.RuntimeEngineID == nil || *req.RuntimeEngineID == 0 {
+				return nil, errors.New("object table service requires runtime_engine_id")
+			}
+			if err := s.validateFederatedRuntime(*req.RuntimeEngineID, snapshot.ObjectTable.Format); err != nil {
+				return nil, err
+			}
+			snapshot.FederatedSourceEngineIDs = []uint{tableRef.EngineID}
+			snapshot.DependencyHash = queryServiceDependencyHash(snapshot)
+		} else if req.RuntimeEngineID != nil {
+			return nil, errors.New("relational table service must not provide runtime_engine_id")
 		}
 	}
 	dataConfig[models.QueryServiceSourceSnapshotKey] = queryServiceSnapshotPayload(snapshot)
@@ -137,8 +162,9 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 		Description: req.Description,
 		Keywords:    models.StringArray(req.Keywords),
 
-		ConfigType: req.ConfigType,
-		EngineID:   req.EngineID,
+		ConfigType:      req.ConfigType,
+		EngineID:        req.EngineID,
+		RuntimeEngineID: req.RuntimeEngineID,
 
 		SchemaName:  req.SchemaName,
 		TargetTable: req.TableName,
@@ -168,74 +194,179 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 	return s.convertToDTO(service), nil
 }
 
-func (s *QueryServiceService) captureFederatedObjectTables(tenantID uint, sql string) (map[string]map[string]string, error) {
-	referenced := duckdb.ExtractReferencedEngineNames(sql)
-	if len(referenced) == 0 {
-		return nil, nil
+func (s *QueryServiceService) validateDirectSQLQueryEngine(engineID uint) error {
+	if s.systemClient == nil || engineID == 0 {
+		return errors.New("System client and engine_id are required")
 	}
+	engine, err := s.systemClient.GetEngine(engineID)
+	if err != nil {
+		return fmt.Errorf("get SQL query engine %d failed: %w", engineID, err)
+	}
+	if engine.LifecycleState != "active" {
+		return fmt.Errorf("SQL query engine %d is not active", engineID)
+	}
+	enginePlugin, err := plugin.Get(engine.EngineType)
+	if err != nil {
+		return err
+	}
+	provider, ok := enginePlugin.(plugin.SQLQueryRuntimeProvider)
+	if !ok || !containsQueryLanguage(provider.QueryLanguages(), "sql") {
+		return fmt.Errorf("engine %d does not support SQL query runtime", engineID)
+	}
+	return nil
+}
+
+func (s *QueryServiceService) validateFederatedRuntime(engineID uint, objectFormat string) error {
+	if s.systemClient == nil || engineID == 0 {
+		return errors.New("System client and runtime_engine_id are required")
+	}
+	engine, err := s.systemClient.GetEngine(engineID)
+	if err != nil {
+		return fmt.Errorf("get federated query runtime %d failed: %w", engineID, err)
+	}
+	enginePlugin, err := plugin.Get(engine.EngineType)
+	if err != nil {
+		return err
+	}
+	if _, ok := enginePlugin.(plugin.FederatedQueryRuntimeProvider); !ok {
+		return fmt.Errorf("engine %d does not support federated query runtime", engineID)
+	}
+	if engine.LifecycleState != "active" {
+		return fmt.Errorf("federated query runtime %d is not active", engineID)
+	}
+	if objectFormat != "" && !supportsFederatedObjectFormat(enginePlugin.Capabilities(), objectFormat) {
+		return fmt.Errorf("federated query runtime %d does not support object format %s", engineID, objectFormat)
+	}
+	return nil
+}
+
+func supportsFederatedObjectFormat(capabilities plugin.EngineCapabilities, objectFormat string) bool {
+	if capabilities.Compute == nil || capabilities.Compute.Query == nil || capabilities.Compute.Query.Federation == nil {
+		return false
+	}
+	for _, supported := range capabilities.Compute.Query.Federation.ObjectFormats {
+		if supported == objectFormat {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *QueryServiceService) captureFederatedDependencies(
+	tenantID, runtimeEngineID uint,
+	sql string,
+) ([]uint, map[string]map[string]string, error) {
 	if s.systemClient == nil {
-		return nil, errors.New("system client is required for DuckDB federated SQL publication")
+		return nil, nil, errors.New("system client is required for federated SQL publication")
+	}
+	runtimeEngine, err := s.systemClient.GetEngine(runtimeEngineID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get federated query runtime failed: %w", err)
+	}
+	enginePlugin, err := plugin.Get(runtimeEngine.EngineType)
+	if err != nil {
+		return nil, nil, err
+	}
+	provider, ok := enginePlugin.(plugin.FederatedQueryRuntimeProvider)
+	if !ok {
+		return nil, nil, fmt.Errorf("engine %d is not a federated query runtime", runtimeEngineID)
 	}
 	engines, err := s.systemClient.ListEngines("", tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("list federated engines failed: %w", err)
+		return nil, nil, fmt.Errorf("list federated engines failed: %w", err)
 	}
-	engines = duckdb.FilterEnginesByName(engines, referenced)
-	hasObjectEngine := false
+	candidates := make([]plugin.FederatedQuerySource, 0, len(engines))
 	for _, engine := range engines {
-		if duckdb.IsObjectTableEngine(engine.EngineType) {
-			hasObjectEngine = true
-			break
-		}
+		candidates = append(candidates, plugin.FederatedQuerySource{
+			ID: engine.ID, Name: engine.Name, EngineType: engine.EngineType, LifecycleState: engine.LifecycleState,
+		})
 	}
-	if !hasObjectEngine {
-		return nil, nil
+	referencedIDs := provider.ResolveSourceEngineIDs(sql, candidates)
+	if len(referencedIDs) == 0 {
+		return nil, nil, errors.New("federated SQL must reference at least one active supported source engine")
 	}
-	if s.metaClient == nil {
-		return nil, errors.New("meta client is required for DuckDB object table publication")
+	referenced := make(map[uint]struct{}, len(referencedIDs))
+	for _, id := range referencedIDs {
+		referenced[id] = struct{}{}
 	}
-	allObjectTables := duckdb.BuildObjectTableMap(context.Background(), tenantID, engines, s.metaClient.WithTenantID(tenantID))
-	filtered := filterFederatedObjectTables(sql, allObjectTables)
-	if len(filtered) == 0 {
-		return nil, errors.New("no referenced object tables could be resolved from Meta")
-	}
-	return filtered, nil
-}
-
-func filterFederatedObjectTables(sql string, all map[string]map[string]string) map[string]map[string]string {
-	result := map[string]map[string]string{}
-	add := func(engineName, tableName string) {
-		tables := all[engineName]
-		if tables == nil {
-			return
-		}
-		physicalPath, ok := tables[tableName]
-		if !ok {
-			return
-		}
-		if result[engineName] == nil {
-			result[engineName] = map[string]string{}
-		}
-		result[engineName][tableName] = physicalPath
-	}
-	for _, ref := range duckdb.ExtractTableRefs(sql) {
-		parts := strings.SplitN(ref, ".", 3)
-		if len(parts) != 3 {
+	result := make(map[string]map[string]string)
+	objectReferences := provider.ResolveObjectTableReferences(sql, candidates)
+	for _, engine := range engines {
+		if _, ok := referenced[engine.ID]; !ok || (engine.EngineType != "minio" && engine.EngineType != "s3") {
 			continue
 		}
-		add(parts[0], parts[1]+"."+parts[2])
-		add(parts[0], parts[2])
-	}
-	for _, ref := range duckdb.ExtractTwoPartTableRefs(sql) {
-		parts := strings.SplitN(ref, ".", 2)
-		if len(parts) == 2 {
-			add(parts[0], parts[1])
+		if s.metaClient == nil {
+			return nil, nil, errors.New("meta client is required for object table publication")
+		}
+		items, itemErr := s.metaClient.WithTenantID(tenantID).ListEngineItems(engine.ID, "")
+		if itemErr != nil {
+			return nil, nil, fmt.Errorf("list object tables for engine %d failed: %w", engine.ID, itemErr)
+		}
+		engineAlias := sanitizeFederatedIdentifier(engine.Name)
+		matchedReferences := 0
+		for _, reference := range objectReferences {
+			if reference.SourceName != engine.Name && reference.SourceName != engineAlias {
+				continue
+			}
+			physicalPath := ""
+			for _, item := range items {
+				descriptor, descriptorOK := objectTableDescriptorFromMetaItem(item)
+				if !descriptorOK || !supportsFederatedObjectFormat(enginePlugin.Capabilities(), descriptor.Format) ||
+					!matchesFederatedObjectTable(reference.TableName, item.Name, item.FullName) {
+					continue
+				}
+				physicalPath = descriptor.PhysicalPath
+				break
+			}
+			if physicalPath == "" {
+				return nil, nil, fmt.Errorf("object table %s.%s could not be resolved from the published Meta catalog", reference.SourceName, reference.TableName)
+			}
+			if result[reference.SourceName] == nil {
+				result[reference.SourceName] = make(map[string]string)
+			}
+			result[reference.SourceName][reference.TableName] = physicalPath
+			matchedReferences++
+		}
+		if matchedReferences == 0 {
+			return nil, nil, fmt.Errorf("object source engine %s has no referenced table", engine.Name)
 		}
 	}
-	if len(result) == 0 {
-		return nil
+	return sortedEngineIDs(referencedIDs), result, nil
+}
+
+func matchesFederatedObjectTable(reference, itemName, itemFullName string) bool {
+	for _, candidate := range []string{itemName, sanitizeFederatedIdentifier(itemName), itemFullName} {
+		if candidate != "" && reference == candidate {
+			return true
+		}
 	}
-	return result
+	if itemFullName != "" {
+		for _, separator := range []string{".", "/"} {
+			if strings.HasSuffix(itemFullName, separator+reference) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func sanitizeFederatedIdentifier(value string) string {
+	var result strings.Builder
+	for _, char := range value {
+		if char == '_' || char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' {
+			result.WriteRune(char)
+		} else {
+			result.WriteByte('_')
+		}
+	}
+	value = result.String()
+	if value == "" {
+		return "engine"
+	}
+	if value[0] >= '0' && value[0] <= '9' {
+		return "_" + value
+	}
+	return value
 }
 
 func tableResourceRefFromRequest(req *models.CreateQueryServiceRequest) (*tableResourceRef, error) {
@@ -617,8 +748,9 @@ func (s *QueryServiceService) convertToDTO(service *models.QueryService) *models
 		Description: service.Description,
 		Keywords:    []string(service.Keywords),
 
-		ConfigType: service.ConfigType,
-		EngineID:   service.EngineID,
+		ConfigType:      service.ConfigType,
+		EngineID:        service.EngineID,
+		RuntimeEngineID: service.RuntimeEngineID,
 
 		DataConfig: service.DataConfig,
 		Protocols:  service.Protocols,
