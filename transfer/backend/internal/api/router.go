@@ -74,9 +74,13 @@ func SetupRouter(
 	executionHandler := NewExecutionHandler(executionService)
 	systemEngineHandler := NewSystemEngineHandler(systemClient)
 	capabilityHandler := NewTransferCapabilityHandler()
+	fieldDefinitionRecommendationHandler := NewFieldDefinitionRecommendationHandler(
+		service.NewFieldDefinitionRecommendationService(systemClient),
+	)
 
 	protected.GET("/system-engines", permission(transferauthorization.PermissionTransferTaskRead), systemEngineHandler.List)
 	protected.GET("/capabilities", permission(transferauthorization.PermissionTransferTaskRead), capabilityHandler.Get)
+	protected.POST("/field-definition-recommendations", permission(transferauthorization.PermissionTransferTaskCreate), fieldDefinitionRecommendationHandler.Create)
 	// 任务管理路由
 	tasks := protected.Group("/tasks")
 	{

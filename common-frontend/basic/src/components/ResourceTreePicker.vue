@@ -103,6 +103,12 @@ import { Search } from '@element-plus/icons-vue'
 import { parseLocatorSafe } from '../types/resourceLocator.js'
 import { getEngineFamily } from '../utils/engineDisplay.js'
 import {
+  addExpandedKey,
+  defaultExpandedKeys,
+  hasExpandableChildren,
+  removeExpandedKey
+} from '../utils/resourceTreeState.mjs'
+import {
   getResourceTree,
   getResourceTreeAncestors,
   getResourceTreeNode,
@@ -312,6 +318,7 @@ const loadTree = async (engineId) => {
   const requestSeq = ++treeLoadRequestSeq
   if (!engineId) {
     treeData.value = []
+    expandedKeys.value = []
     loadingTree.value = false
     return
   }
@@ -321,7 +328,9 @@ const loadTree = async (engineId) => {
     if (requestSeq !== treeLoadRequestSeq || !selectedEngineIds.value.includes(normalizeEngineId(engineId))) {
       return
     }
-    upsertTreeRoot(normalizeVisibleTree(root))
+    const normalizedRoot = normalizeVisibleTree(root)
+    upsertTreeRoot(normalizedRoot)
+    expandedKeys.value = addExpandedKey(expandedKeys.value, normalizedRoot?.id)
   } catch (error) {
     if (requestSeq === treeLoadRequestSeq) {
       removeTreeRoot(engineId)
@@ -339,6 +348,7 @@ const loadSelectedTrees = async () => {
   const engineIds = selectedEngineIds.value
   if (engineIds.length === 0) {
     treeData.value = []
+    expandedKeys.value = []
     loadingTree.value = false
     return
   }
@@ -357,6 +367,7 @@ const loadSelectedTrees = async () => {
       return
     }
     treeData.value = roots.filter(Boolean)
+    expandedKeys.value = defaultExpandedKeys(treeData.value, { expandRoot: true })
   } finally {
     if (requestSeq === treeLoadRequestSeq) {
       loadingTree.value = false
@@ -366,6 +377,8 @@ const loadSelectedTrees = async () => {
 
 const handleEngineChange = async () => {
   restoreRequestSeq += 1
+  searchRequestSeq += 1
+  searching.value = false
   searchResults.value = []
   expandedKeys.value = []
   const selectionEngineId = normalizeEngineId(currentSelection.value?.identity?.engine_id)
@@ -390,7 +403,7 @@ const loadNode = async (treeNode, resolve) => {
     return
   }
   const data = treeNode.data
-  if (!data?.locator || !data?.hasChildren) {
+  if (!data?.locator || !hasExpandableChildren(data)) {
     resolve([])
     return
   }
@@ -557,6 +570,8 @@ const searchResultPath = (node) => {
 
 const restoreInitialLocator = async (locator) => {
   const requestSeq = ++restoreRequestSeq
+  searchRequestSeq += 1
+  searching.value = false
   if (!locator) {
     treeLoadRequestSeq += 1
     loadingTree.value = false
@@ -600,6 +615,9 @@ const restoreInitialLocator = async (locator) => {
     }
     const ancestors = result?.ancestors || []
     if (ancestors.length === 0) {
+      currentNodeKey.value = null
+      currentSelection.value = null
+      emit('update:modelValue', null)
       return
     }
     mergeAncestorChain(ancestors)
@@ -623,6 +641,8 @@ const restoreInitialLocator = async (locator) => {
 
 const loadExternalEngine = async (engineId) => {
   restoreRequestSeq += 1
+  searchRequestSeq += 1
+  searching.value = false
   expandedKeys.value = []
   searchResults.value = []
   const normalizedEngineIds = normalizeEngineIds(engineId)
@@ -765,7 +785,13 @@ const upsertTreeRoot = (root) => {
 
 const removeTreeRoot = (engineId) => {
   const normalizedEngineId = normalizeEngineId(engineId)
+  const removedRootIds = treeData.value
+    .filter(node => parseLocatorSafe(node.locator || node.id).engineId === normalizedEngineId)
+    .map(node => node.id)
   treeData.value = treeData.value.filter(node => parseLocatorSafe(node.locator || node.id).engineId !== normalizedEngineId)
+  for (const rootId of removedRootIds) {
+    expandedKeys.value = removeExpandedKey(expandedKeys.value, rootId)
+  }
 }
 
 const engineForNode = (node) => {
@@ -830,6 +856,7 @@ const scheduleSearch = () => {
 
 watch(() => props.modelValue, value => {
   currentSelection.value = value
+  currentNodeKey.value = value?.raw?.node?.id || value?.identity?.locator || null
 })
 
 watch(

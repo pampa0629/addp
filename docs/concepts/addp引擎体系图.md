@@ -126,6 +126,10 @@ classDiagram
         +ReadBatch()
     }
 
+    class RecordReadSessionProvider {
+        +OpenRecordReadSession()
+    }
+
     class BatchWritableProvider {
         +WriteBatch()
     }
@@ -165,6 +169,7 @@ classDiagram
     StoreProvider <|-- RangeReadableProvider
     StoreProvider <|-- RangeWritableProvider
     StoreProvider <|-- BatchReadableProvider
+    StoreProvider <|-- RecordReadSessionProvider
     StoreProvider <|-- BatchWritableProvider
     StoreProvider <|-- ChangeStreamReaderProvider
     EnginePlugin <|-- QueryRuntimeProvider
@@ -218,16 +223,18 @@ Notebook 面向算法工程师提供 `Notebook Native Engine Facade`。Facade �
 
 ```mermaid
 flowchart LR
-    User["Notebook 使用者<br/>schemas / tables / scan / sql"]
+    User["Notebook 使用者<br/>原生目录 / 受控读取 / 原生查询"]
     Facade["common-python<br/>Native Engine Facade"]
     Develop["Develop<br/>Session Data Proxy"]
     System["System<br/>Notebook Session Authorization"]
-    Provider["CatalogProvider / TableReadSessionProvider"]
+    Provider["Catalog / Table / Record / Graph / Content / ChangeStream Provider"]
 
     User --> Facade --> Develop --> System --> Provider
 ```
 
-Facade 第一阶段按精确 `engine_type` 选择显式注册的原生客户端，并用 Runtime Descriptor 中的 capabilities 与 `CatalogModelSpec` 校验该客户端是否适配；不得只按 `engine_family` 猜测，不得为未知引擎回退到一个暴露内部 Catalog 术语的通用客户端。首个交付闭环为 PostgreSQL：
+Facade 按精确 `engine_type` 选择显式注册的原生客户端，并用 Runtime Descriptor 中的 capabilities 与 `CatalogModelSpec` 校验该客户端是否适配；不得只按 `engine_family` 猜测，不得为未知引擎回退到一个暴露内部 Catalog 术语的通用客户端。`engines.list()` 只返回当前 Notebook Session Authorization 可访问、处于 `active` 且声明受支持 `CatalogModelSpec` 的数据引擎；授权复核与列表生成必须在 System 的同一请求中完成。DuckDB 是联邦查询 Runtime，不拥有可导航的数据源 Catalog，因此不进入 `engines.list()` 和 `engines.client()`。
+
+PostgreSQL 使用示例：
 
 ```python
 pg = engines.client(engine_id)
@@ -236,17 +243,17 @@ pg.tables(schema="public")
 pg.table(schema="public", name="roads")
 ```
 
-后续引擎沿同一注册机制扩展：
+全部支持引擎沿同一注册机制扩展：
 
-| Engine | Facade 原生层级 | 公开发现方法 |
-| --- | --- | --- |
-| PostgreSQL | schema -> table/view | `schemas()`、`tables(schema=...)` |
-| MySQL、Doris、ClickHouse、Spark SQL | database -> table/view | `databases()`、`tables(database=...)` |
-| MongoDB | database -> collection | `databases()`、`collections(database=...)` |
-| Neo4j | database -> graph | `databases()`、`graphs(database=...)` |
-| MinIO、S3 | bucket -> prefix -> object | `buckets()`、`objects(bucket=..., prefix=...)` |
-| NFS | directory -> file | `directories(path=...)`、`files(path=...)` |
-| Kafka | service -> topic | `topics()` |
+| Engine | Facade 原生层级 | 公开发现方法 | 公开读取方法 |
+| --- | --- | --- | --- |
+| PostgreSQL | schema -> table/view | `schemas()`、`tables(schema=...)` | table/view: `head()`、`scan()`、`to_pandas()`；engine: `sql()` |
+| MySQL、Doris、ClickHouse、Spark SQL | database -> table/view | `databases()`、`tables(database=...)` | table/view: `head()`、`scan()`、`to_pandas()`；engine: `sql()` |
+| MongoDB | database -> collection | `databases()`、`collections(database=...)` | collection: `head()`、`scan()`、`to_pandas()`；engine: `mql()` |
+| Neo4j | database -> graph | `databases()`、`graphs(database=...)` | graph: `sample()`；engine: `cypher()` |
+| MinIO、S3 | bucket -> prefix -> object | `buckets()`、`objects(bucket=..., prefix=...)` | object: `open()`、`read_range()` |
+| NFS | directory -> file | `directories(path=...)`、`files(path=...)` | file: `open()`、`read_range()` |
+| Kafka | service -> topic | `topics()` | topic: `stream(initial_position=..., positions=...)` |
 
 列表方法返回可继续导航的原生资源对象，而不是无结构 `dict`；对象公开 `name` 和所属原生父级，内部保留服务端返回的规范 `CatalogPath`。`table()` 等单对象方法也必须通过实时列举结果解析并保存服务端路径，不能根据 schema、database、bucket 或名称自行拼接路径。名称不存在时返回明确错误，不能生成一个未经引擎确认的对象。
 
@@ -268,11 +275,16 @@ table.to_pandas(memory_limit="8GiB")
 pg.sql("SELECT * FROM public.farmland WHERE id > $1", params=[100], max_rows=1000, timeout=30)
 ```
 
-- `head()` 是有显式 `max_rows` 的单次只读查询；`scan()` 复用 `TableReadSessionProvider`，以服务端 Cursor 和 Arrow IPC 流返回扫描开始时的一致快照，不设隐式总行数上限。
+- 关系表的 `head()` 是有显式 `max_rows` 的单次只读查询；`scan()` 复用 `TableReadSessionProvider`，以服务端 Cursor 和 Arrow IPC 流返回扫描开始时的一致快照，不得使用 `LIMIT/OFFSET` 假装全量流。
+- MongoDB collection 的 `scan()` 使用 `RecordReadSessionProvider`，保留 MongoDB Cursor 的读取与关闭语义，通过 Arrow IPC 返回动态 schema 记录；不复用表语义的 `TableReadSessionProvider`。
+- Neo4j `sample()` 复用 `GraphSampleProvider` 返回有界图结果，`cypher()` 复用 `GraphQueryProvider` 并保留 node / relationship 语义；不将图伪装为表扫描。
+- MinIO/S3/NFS 复用 `ContentReadableProvider` 和 `RangeReadableProvider`，`open()` 返回可关闭的流，`read_range()` 必须显式给出非负 offset 和正 length。
+- Kafka `stream()` 复用 `ChangeStreamReaderProvider`，要求显式 `initial_position` 或 partition positions；迭代器关闭、Session 关闭、超时或授权失效都必须取消 poll 并关闭 reader。
 - 每次查询或扫描由 Develop 生成独立 execution，并通过 Notebook Session Authorization 原子派生只读 Execution Authorization 与执行期 Engine Access；连接信息只在 Develop 受控 Runtime 内使用，不返回 Kernel。
+- Develop 对外只保留同一 Notebook Kernel Session 下的通用受控代理：`table-scans`、`record-scans`、`queries`、`graph-samples`、`graph-queries`、`content-reads`、`change-streams`。这些路径按 Provider 契约分流，不按 PostgreSQL、MongoDB、Neo4j、MinIO 或 Kafka 新增专用 API。
 - `to_pandas()` 只能消费同一条 `scan()` 路径。它先用 Catalog Facts 估算，并持续检查实际解码字节；超过调用者显式 `memory_limit` 时抛出类型化异常且不返回半截 DataFrame。
 - 长扫描采用短租约周期复核 Session、Family 与授权版本；Session 关闭、到期、登出、Family 撤销或授权失效时，Develop 必须取消活动请求并关闭 Cursor。当前不支持断点续读，连接中断后从新快照重新开始。
-- `pg.sql()` 第一阶段只提供有显式 `max_rows` 的 PostgreSQL 参数化只读 SQL；任意 SQL 流式读取统一由后续 `pg.scan_sql()` 接入新的 Query Runtime 流式契约，不得借用表扫描接口。
+- `sql()`、`mql()` 和 `cypher()` 都必须显式给出返回上限和超时，Develop 按 Provider 原生语言执行只读请求；任意查询的无界流式读取需要独立 Query Cursor 契约，不得借用表或 collection 扫描接口。
 - TB 级、需要容错或需要持久化中间结果的算法应转为 Managed Script、GeoPython Workflow 或 Spark Workflow，不在交互 Kernel 中强制全量入内存。
 
 错误必须保持可区分且 fail-closed：空列表只表示引擎真实返回零个子项，权限失效、对象不存在、不支持、超时和 Provider 故障都不能降级为空列表或占位对象。Notebook Catalog API 使用稳定 `error_code`，SDK 映射为类型化异常：

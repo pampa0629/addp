@@ -1310,8 +1310,14 @@ const isGraphOverview = computed(() => {
   return props.previewData?.preview_kind === 'graph_overview'
 })
 
+const isEventStreamTopicPreview = computed(() => {
+  return props.previewData?.preview_kind === 'event_stream_topic'
+})
+
 const tableInfoLabel = computed(() => {
-  return isGraphOverview.value ? t('manager.explorer.graphOverview') : t('manager.explorer.dataTable')
+  if (isGraphOverview.value) return t('manager.explorer.graphOverview')
+  if (isEventStreamTopicPreview.value) return t('manager.explorer.eventStreamTopic')
+  return t('manager.explorer.dataTable')
 })
 
 const tableTotal = computed(() => {

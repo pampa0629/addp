@@ -402,7 +402,7 @@ func isContentFileItemType(itemType string) bool {
 
 func isPreviewItemType(itemType string) bool {
 	switch itemType {
-	case "table", "view", "materialized_view", "collection", "graph", "object", "file":
+	case "table", "view", "materialized_view", "collection", "graph", "topic", "object", "file":
 		return true
 	default:
 		return false
@@ -567,6 +567,8 @@ func providerNamesForMeta(req *PreviewResolverRequest, providerReq *PreviewReque
 		return []string{"builtin:dynamic-schema-collection"}
 	case "graph":
 		return []string{"builtin:graph"}
+	case "topic":
+		return []string{"builtin:event-stream-topic"}
 	}
 
 	if isNodePreview(req, providerReq) {

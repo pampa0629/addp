@@ -1278,7 +1278,7 @@
       "category_path": [
         "三维模型"
       ],
-      "description": "使用 SuperMap iObjects Java 把整套 OSGB 倾斜摄影场景转换为 S3M 数据集。",
+      "description": "使用 SuperMap iObjects C++ 把整套 OSGB 倾斜摄影场景转换为 S3M 数据集。",
       "brief_description": "OSGB Scene 转 S3M",
       "execution_modes": [
         "workflow",
@@ -1328,7 +1328,7 @@
           "name": "connection_info",
           "type": "object",
           "param_type": "param",
-          "required": false,
+          "required": true,
           "description": "运行时派生连接信息。"
         },
         {

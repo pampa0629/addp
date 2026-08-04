@@ -257,12 +257,13 @@ func (r *ItemRefreshRuntime) refreshKnownCatalogFactsItem(
 	item models.MetaItem,
 	parentNode models.MetaNode,
 ) (scanprocessor.Result, bool, error) {
-	if scanflow.CatalogLeafTermForPlugin(p, "") != plugin.CatalogTermTable || item.ItemType != plugin.CatalogTermTable {
-		return scanprocessor.Result{}, false, nil
-	}
 	factsProvider, ok := p.(plugin.CatalogFactsProvider)
 	if !ok {
-		return scanprocessor.Result{}, true, fmt.Errorf("engine %s does not implement CatalogFactsProvider", resource.EngineType)
+		return scanprocessor.Result{}, false, nil
+	}
+
+	if scanflow.CatalogLeafTermForPlugin(p, "") != plugin.CatalogTermTable || item.ItemType != plugin.CatalogTermTable {
+		return r.refreshKnownDirectCatalogLeafFactsItem(ctx, resource, tenantID, p, factsProvider, item, parentNode)
 	}
 
 	schemaName := parentNode.FullName
@@ -338,6 +339,71 @@ func (r *ItemRefreshRuntime) refreshKnownCatalogFactsItem(
 	}
 
 	return scanprocessor.Result{Item: refreshed, Fields: len(tableInfo.Fields)}, true, nil
+}
+
+func (r *ItemRefreshRuntime) refreshKnownDirectCatalogLeafFactsItem(
+	ctx context.Context,
+	resource *commonModels.Engine,
+	tenantID uint,
+	p plugin.EnginePlugin,
+	factsProvider plugin.CatalogFactsProvider,
+	item models.MetaItem,
+	parentNode models.MetaNode,
+) (scanprocessor.Result, bool, error) {
+	model := scanflow.CatalogModelForPlugin(p)
+	if model == nil || len(model.Levels) != 1 {
+		return scanprocessor.Result{}, false, nil
+	}
+	leaf := model.Levels[0]
+	if leaf.Role != plugin.CatalogRoleLeaf || leaf.Term != item.ItemType {
+		return scanprocessor.Result{}, false, nil
+	}
+	if strings.TrimSpace(item.Name) == "" || len(leaf.Kinds) != 1 || strings.TrimSpace(leaf.Kinds[0]) == "" {
+		return scanprocessor.Result{}, true, fmt.Errorf("catalog leaf refresh target is incomplete; rescan the parent node")
+	}
+
+	path := plugin.CatalogRootPath(*model, resource.ID)
+	path.Segments = append(path.Segments, plugin.CatalogSegment{
+		Term: leaf.Term,
+		Kind: leaf.Kinds[0],
+		Name: item.Name,
+	})
+	facts, err := factsProvider.DescribeCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), path, plugin.CatalogFactsOptions{
+		IncludeStatistics: true,
+	})
+	if err != nil {
+		return scanprocessor.Result{}, true, fmt.Errorf("catalog leaf facts refresh failed: %w", err)
+	}
+	if facts == nil {
+		return scanprocessor.Result{}, true, fmt.Errorf("catalog leaf facts refresh returned no facts")
+	}
+
+	fullName := strings.TrimSpace(item.FullName)
+	if fullName == "" {
+		fullName = item.Name
+	}
+	dataUpdatedAt := item.DataUpdatedAt
+	if facts.UpdatedAt != nil {
+		dataUpdatedAt = facts.UpdatedAt
+	}
+	refreshed, err := r.repo.UpdateItemByIDWithDepth(
+		tenantID,
+		item.ID,
+		resource.ID,
+		&parentNode,
+		item.ItemType,
+		item.Name,
+		fullName,
+		metaattr.JSONMap(cloneJSONMap(item.Attributes)),
+		item.RowCount,
+		item.SizeBytes,
+		dataUpdatedAt,
+		scanflow.ScanDepthDeep,
+	)
+	if err != nil {
+		return scanprocessor.Result{}, true, err
+	}
+	return scanprocessor.Result{Item: refreshed}, true, nil
 }
 
 func restoreKnownItemStorage(attrs models.JSONMap, descriptor dataitem.ItemDescriptor, item *models.MetaItem) {

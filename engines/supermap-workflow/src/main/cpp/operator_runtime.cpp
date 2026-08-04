@@ -1,4 +1,8 @@
 #include "operator_runtime.hpp"
+#include "cad_runtime.hpp"
+#include "runtime_access.hpp"
+#include "s3m_runtime.hpp"
+#include "udbx_runtime.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -58,12 +62,71 @@ bool optional_bool(const ResolvedParams& params, const std::string& name, bool f
   return json.get<bool>();
 }
 
+double required_double(const ResolvedParams& params, const std::string& name) {
+  const Json& value = required_json(params, name);
+  if (!value.is_number()) {
+    throw std::invalid_argument("parameter must be a number: " + name);
+  }
+  return value.get<double>();
+}
+
 int required_int(const ResolvedParams& params, const std::string& name) {
   const Json& value = required_json(params, name);
   if (!value.is_number_integer()) {
     throw std::invalid_argument("parameter must be an integer: " + name);
   }
   return value.get<int>();
+}
+
+int optional_int(const ResolvedParams& params, const std::string& name, int fallback) {
+  if (params.find(name) == params.end()) {
+    return fallback;
+  }
+  return required_int(params, name);
+}
+
+std::vector<std::string> optional_string_array(
+    const ResolvedParams& params, const std::string& name) {
+  const auto value = params.find(name);
+  if (value == params.end()) {
+    return {};
+  }
+  const auto* json = std::get_if<Json>(&value->second);
+  if (json == nullptr) {
+    throw std::invalid_argument("parameter must be a string array: " + name);
+  }
+  std::vector<std::string> result;
+  if (json->is_string()) {
+    std::string text = json->get<std::string>();
+    std::size_t start = 0;
+    while (start <= text.size()) {
+      const std::size_t separator = text.find(',', start);
+      std::string item = text.substr(start, separator - start);
+      const auto first = item.find_first_not_of(" \t\r\n");
+      const auto last = item.find_last_not_of(" \t\r\n");
+      if (first != std::string::npos) {
+        result.push_back(item.substr(first, last - first + 1));
+      }
+      if (separator == std::string::npos) {
+        break;
+      }
+      start = separator + 1;
+    }
+    return result;
+  }
+  if (!json->is_array()) {
+    throw std::invalid_argument("parameter must be a string array: " + name);
+  }
+  for (const Json& item : *json) {
+    if (!item.is_string()) {
+      throw std::invalid_argument("parameter must be a string array: " + name);
+    }
+    const std::string text = item.get<std::string>();
+    if (!text.empty()) {
+      result.push_back(text);
+    }
+  }
+  return result;
 }
 
 Json required_object(const ResolvedParams& params, const std::string& name) {
@@ -218,6 +281,16 @@ std::string asset_ref_for(const Json& task) {
 
 OperatorRuntime::OperatorRuntime(addp::workflow::OperatorCatalog catalog)
     : catalog_(std::move(catalog)) {
+  direct_handlers_.emplace("cad.inspect", inspect_cad);
+  direct_handlers_.emplace("cad.render_preview", render_cad_preview);
+  direct_handlers_.emplace("datasource.upgrade_udbx", upgrade_udbx);
+  direct_handlers_.emplace("osgb_scene_to_s3m", convert_osgb_scene_to_s3m);
+  handlers_.emplace(
+      "osgb_scene_to_s3m",
+      [](const ResolvedParams& params, ExecutionContext&) -> RuntimeValue {
+        return convert_osgb_scene_to_s3m(
+            Json{{"access_plan", required_object(params, "access_plan")}});
+      });
   handlers_.emplace(
       "datasource.open",
       [](const ResolvedParams& params, ExecutionContext& context) -> RuntimeValue {
@@ -254,8 +327,9 @@ OperatorRuntime::OperatorRuntime(addp::workflow::OperatorCatalog catalog)
   handlers_.emplace(
       "datasource.create",
       [](const ResolvedParams& params, ExecutionContext& context) -> RuntimeValue {
+        const Json connection_info = required_object(params, "connection_info");
         return context.create_udbx(
-            required_string(params, "path"),
+            resolve_udbx_path(connection_info, required_string(params, "path")).string(),
             optional_string(params, "alias", ""),
             optional_bool(params, "overwrite", false));
       });
@@ -312,6 +386,80 @@ OperatorRuntime::OperatorRuntime(addp::workflow::OperatorCatalog catalog)
             optional_bool(params, "overwrite", false));
       });
   handlers_.emplace(
+      "vector.feature_envelope",
+      [](const ResolvedParams& params, ExecutionContext& context) -> RuntimeValue {
+        return context.feature_envelope(
+            required_ref<DatasetRef>(params, "input_dataset"),
+            required_ref<DatasourceRef>(params, "output_datasource"),
+            required_string(params, "output_dataset_name"),
+            optional_bool(params, "overwrite", false));
+      });
+  handlers_.emplace(
+      "vector.inner_point",
+      [](const ResolvedParams& params, ExecutionContext& context) -> RuntimeValue {
+        return context.inner_point_dataset(
+            required_ref<DatasetRef>(params, "input_dataset"),
+            required_ref<DatasourceRef>(params, "output_datasource"),
+            required_string(params, "output_dataset_name"),
+            optional_bool(params, "overwrite", false));
+      });
+  handlers_.emplace(
+      "vector.buffer",
+      [](const ResolvedParams& params, ExecutionContext& context) -> RuntimeValue {
+        return context.buffer_dataset(
+            required_ref<DatasetRef>(params, "input_dataset"),
+            required_ref<DatasourceRef>(params, "output_datasource"),
+            required_string(params, "output_dataset_name"),
+            required_double(params, "distance"),
+            optional_string(params, "radius_unit", "meter"),
+            optional_string(params, "end_type", "round"),
+            optional_int(params, "semicircle_segments", 10),
+            optional_bool(params, "dissolve", false),
+            optional_bool(params, "keep_attributes", true),
+            optional_bool(params, "overwrite", false));
+      });
+  handlers_.emplace(
+      "vector.spatial_filter",
+      [](const ResolvedParams& params, ExecutionContext& context) -> RuntimeValue {
+        return context.spatial_filter_dataset(
+            required_ref<DatasetRef>(params, "input_dataset"),
+            required_ref<DatasetRef>(params, "filter_dataset"),
+            required_ref<DatasourceRef>(params, "output_datasource"),
+            required_string(params, "output_dataset_name"),
+            required_string(params, "relation"),
+            optional_bool(params, "overwrite", false));
+      });
+  handlers_.emplace(
+      "vector.dissolve",
+      [](const ResolvedParams& params, ExecutionContext& context) -> RuntimeValue {
+        return context.dissolve_dataset(
+            required_ref<DatasetRef>(params, "input_dataset"),
+            required_ref<DatasourceRef>(params, "output_datasource"),
+            required_string(params, "output_dataset_name"),
+            optional_string_array(params, "field_names"),
+            optional_string(params, "dissolve_type", "multipart"),
+            params.find("tolerance") == params.end() ? 0.0
+                                                       : required_double(params, "tolerance"),
+            optional_bool(params, "save_all_fields", true),
+            optional_bool(params, "overwrite", false));
+      });
+  for (const std::string operator_id : {
+           "overlay.clip", "overlay.erase", "overlay.intersect", "overlay.union"}) {
+    handlers_.emplace(
+        operator_id,
+        [operator_id](const ResolvedParams& params, ExecutionContext& context) -> RuntimeValue {
+          return context.overlay_datasets(
+              operator_id,
+              required_ref<DatasetRef>(params, "input_dataset"),
+              required_ref<DatasetRef>(params, "overlay_dataset"),
+              required_ref<DatasourceRef>(params, "output_datasource"),
+              required_string(params, "output_dataset_name"),
+              params.find("tolerance") == params.end() ? 0.0
+                                                         : required_double(params, "tolerance"),
+              optional_bool(params, "overwrite", false));
+        });
+  }
+  handlers_.emplace(
       "vector.query",
       [](const ResolvedParams& params, ExecutionContext& context) -> RuntimeValue {
         return context.query_dataset(
@@ -359,6 +507,17 @@ Json OperatorRuntime::execute_workflow(const std::string& execution_id, const Js
 }
 
 const addp::workflow::OperatorCatalog& OperatorRuntime::catalog() const { return catalog_; }
+
+Json OperatorRuntime::invoke_direct(const std::string& id, const Json& params) const {
+  if (!catalog_.supports_mode(id, "direct")) {
+    throw std::invalid_argument("operator does not support direct execution: " + id);
+  }
+  const auto handler = direct_handlers_.find(id);
+  if (handler == direct_handlers_.end()) {
+    throw std::runtime_error("C++ direct operator is not implemented yet: " + id);
+  }
+  return handler->second(params);
+}
 
 RuntimeValue OperatorRuntime::execute_operator(
     const std::string& id, const ResolvedParams& params, ExecutionContext& context) const {

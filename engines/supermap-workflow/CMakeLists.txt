@@ -19,6 +19,9 @@ target_link_libraries(addp_workflow_core PUBLIC nlohmann_json::nlohmann_json)
 target_compile_options(addp_workflow_core PRIVATE -Wall -Wextra -Wpedantic -Werror)
 
 if(SUPERMAP_SDK_ROOT)
+  find_package(CURL REQUIRED)
+  find_path(CPP_HTTPLIB_INCLUDE_DIR httplib.h REQUIRED)
+  find_library(CPP_HTTPLIB_LIBRARY cpp-httplib REQUIRED)
   if(NOT EXISTS "${SUPERMAP_SDK_ROOT}/include/Engine/UGDataSource.h")
     message(FATAL_ERROR "SUPERMAP_SDK_ROOT does not contain the iObjects C++ headers")
   endif()
@@ -29,13 +32,18 @@ if(SUPERMAP_SDK_ROOT)
   target_compile_definitions(addp_workflow_core PUBLIC _GLIBCXX_USE_CXX11_ABI=0)
 
   add_library(addp_supermap_runtime
+    src/main/cpp/cad_runtime.cpp
     src/main/cpp/operator_runtime.cpp
+    src/main/cpp/runtime_access.cpp
+    src/main/cpp/s3m_runtime.cpp
     src/main/cpp/supermap_runtime.cpp
+    src/main/cpp/udbx_runtime.cpp
   )
   target_include_directories(addp_supermap_runtime PUBLIC src/main/cpp)
   target_include_directories(addp_supermap_runtime SYSTEM PUBLIC
     "${SUPERMAP_SDK_ROOT}/include"
     "${SUPERMAP_SDK_ROOT}/include/private"
+    ${CURL_INCLUDE_DIRS}
   )
   target_compile_definitions(
     addp_supermap_runtime PUBLIC _GLIBCXX_USE_CXX11_ABI=0 _UGUNICODE
@@ -51,8 +59,61 @@ if(SUPERMAP_SDK_ROOT)
   target_link_directories(addp_supermap_runtime PUBLIC "${SUPERMAP_SDK_ROOT}/bin/bin")
   target_link_libraries(addp_supermap_runtime
     PUBLIC addp_workflow_core
-    PRIVATE SuEngine SuElement SuGeometry SuProjection SuToolkit SuBase SuOGDC
+    PRIVATE
+      SuEngine
+      SuCacheBuilder
+      SuElement
+      SuGeneralization
+      SuGeometry
+      SuGraphicsQT
+      SuGraphics
+      SuDrawing
+      SuMap
+      SuOverlay
+      SuProximity
+      SuProjection
+      SuToolkit
+      SuTopoBase
+      SuTileStorage
+      SuWorkspace
+      SuBase
+      SuBase3D
+      SuOGDC
+      "${SUPERMAP_SDK_ROOT}/bin/bin/libsqlite328.so.0"
+      "${SUPERMAP_SDK_ROOT}/bin/bin/libcurl.so.4"
   )
+
+  add_library(addp_supermap_runtime_bridge src/main/cpp/runtime_bridge.cpp)
+  target_include_directories(addp_supermap_runtime_bridge PUBLIC src/main/cpp)
+  target_compile_definitions(
+    addp_supermap_runtime_bridge PRIVATE _GLIBCXX_USE_CXX11_ABI=0 _UGUNICODE
+  )
+  target_compile_options(addp_supermap_runtime_bridge PRIVATE
+    -fshort-wchar
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Werror
+  )
+  target_link_libraries(addp_supermap_runtime_bridge PRIVATE addp_supermap_runtime)
+  set_property(TARGET addp_supermap_runtime_bridge PROPERTY CXX_STANDARD 17)
+
+  add_executable(supermap-workflow-server
+    src/main/cpp/http_server.cpp
+    src/main/cpp/main.cpp
+  )
+  target_link_libraries(
+    supermap-workflow-server
+    PRIVATE addp_supermap_runtime_bridge "${CPP_HTTPLIB_LIBRARY}" nlohmann_json::nlohmann_json
+  )
+  target_include_directories(
+    supermap-workflow-server SYSTEM PRIVATE "${CPP_HTTPLIB_INCLUDE_DIR}"
+  )
+  target_compile_options(
+    supermap-workflow-server PRIVATE -Wall -Wextra -Wpedantic -Werror
+  )
+  target_compile_definitions(supermap-workflow-server PRIVATE _GLIBCXX_USE_CXX11_ABI=1)
+  set_property(TARGET supermap-workflow-server PROPERTY CXX_STANDARD 20)
 endif()
 
 include(CTest)

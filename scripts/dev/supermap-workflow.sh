@@ -23,7 +23,6 @@ platform="${SUPERMAP_WORKFLOW_PLATFORM:-linux/arm64}"
 output_dir="${SUPERMAP_OUTPUT_HOST_PATH:-/tmp/supermap-out}"
 data_dir="${SUPERMAP_DATA_HOST_PATH:-}"
 memory_limit="${SUPERMAP_WORKFLOW_MEMORY_LIMIT:-8g}"
-java_opts="${SUPERMAP_JAVA_OPTS:--Xms128m -Xmx4g}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "❌ SuperMap Workflow Engine 需要 Docker" >&2
@@ -53,8 +52,10 @@ supermap_workflow_source_fingerprint() {
     done < <(
       {
         printf '%s\n' \
+          engines/supermap-workflow/CMakeLists.txt \
           engines/supermap-workflow/Dockerfile \
-          engines/supermap-workflow/run.sh
+          engines/supermap-workflow/run.sh \
+          engines/supermap-workflow/config/operators.json
         find engines/supermap-workflow/src -type f
       } | LC_ALL=C sort
     )
@@ -76,7 +77,7 @@ ensure_supermap_workflow_image() {
     return 0
   fi
 
-  echo "  编译 SuperMap Workflow 当前 Java 代码（构建输入已变化或镜像不存在）..."
+  echo "  编译 SuperMap Workflow C++ Runtime（构建输入已变化或镜像不存在）..."
   docker build \
     --platform "${platform}" \
     --build-arg "BASE_IMAGE=${base_image}" \
@@ -109,7 +110,6 @@ docker run -d \
   --memory "${memory_limit}" \
   -p "${port}:8103" \
   -e PORT=8103 \
-  -e SUPERMAP_JAVA_OPTS="${java_opts}" \
   -e SUPERMAP_RESOURCE_LOCALHOST_ALIAS="${SUPERMAP_RESOURCE_LOCALHOST_ALIAS:-host.docker.internal}" \
   "${mount_args[@]}" \
   "${image}" > .dev-pids/supermap-workflow-engine.pid
@@ -135,7 +135,7 @@ if [ -n "${INTERNAL_API_KEY:-}" ]; then
   http_code="$(curl -sS -o "${response_file}" -w '%{http_code}' \
     -H "X-Internal-API-Key: ${INTERNAL_API_KEY}" \
     -H "Content-Type: application/json" \
-    -d "{\"engine_type\":\"supermap_workflow\",\"name\":\"SuperMap 工作流引擎\",\"description\":\"面向超图 iObjects Java / SPS 的工作流运行时\",\"connection_info\":{\"protocol\":\"http\",\"port\":${port}},\"is_builtin\":true}" \
+    -d "{\"engine_type\":\"supermap_workflow\",\"name\":\"SuperMap 工作流引擎\",\"description\":\"面向超图 iObjects C++ 的工作流运行时\",\"connection_info\":{\"protocol\":\"http\",\"port\":${port}},\"is_builtin\":true}" \
     "${system_url%/}/api/v1/internal/engines/register" || true)"
   if [ "${http_code}" = "200" ] || [ "${http_code}" = "202" ]; then
     echo "  ✓ SuperMap Workflow Engine 已注册到 System"

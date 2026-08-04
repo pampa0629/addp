@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/sqldialect"
 	"github.com/addp/common/sqleffect"
 	"github.com/beltran/gohive"
 	"gorm.io/gorm"
@@ -52,8 +53,9 @@ func (p *SparkSQLPlugin) ConnectionIdentityFields() []string {
 
 func (p *SparkSQLPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), "database", plugin.TabularCapabilityOptions{
-		Write:           false,
-		SupportsExplain: true,
+		Write:            false,
+		TableReadSession: true,
+		SupportsExplain:  true,
 	})
 }
 
@@ -86,6 +88,9 @@ func (p *SparkSQLPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.Connect
 		if err := sqleffect.RequireReadOnly(sql); err != nil {
 			return nil, fmt.Errorf("Spark 只读查询校验失败：%w", err)
 		}
+	}
+	if opts.Limit > 0 {
+		sql = sqldialect.PaginateQuerySQL(sql, opts.Limit, 0)
 	}
 	return p.runQuery(ctx, connInfo, sql)
 }

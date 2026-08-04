@@ -190,9 +190,9 @@ func NewDynamicSchemaCapabilities(engineType string) EngineCapabilities {
 				NativeFacts: true,
 			},
 			Store: &StoreCapability{
-				BatchRead: true,
+				RecordReadSession: true,
 			},
-			Semantics: []string{"database", "collection", "dynamic_schema"},
+			Semantics: []string{"database", "collection", "dynamic_schema", "record_read_session"},
 		},
 		Compute: &ComputeCapabilities{
 			Query: &QueryCapability{
@@ -315,6 +315,9 @@ func storeCapabilitySemantics(store *StoreCapability) []string {
 	}
 	if store.TableReadSession {
 		semantics = append(semantics, "table_read_session")
+	}
+	if store.RecordReadSession {
+		semantics = append(semantics, "record_read_session")
 	}
 	if store.TableReadSpatialTransform {
 		semantics = append(semantics, "table_read_spatial_transform")

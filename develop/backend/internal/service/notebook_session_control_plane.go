@@ -5,11 +5,13 @@ import (
 	"errors"
 
 	commonClient "github.com/addp/common/client"
+	commonModels "github.com/addp/common/models"
 )
 
 type NotebookSessionControlPlane interface {
 	Issue(context.Context, string, commonClient.IssueNotebookSessionAuthorizationRequest) (*commonClient.IssuedNotebookSessionAuthorization, error)
 	ListChildren(context.Context, uint, string, commonClient.NotebookCatalogChildrenRequest) ([]commonClient.EngineCatalogEntry, error)
+	ListEngineDescriptors(context.Context, uint, string, string) ([]commonModels.EngineRuntimeDescriptor, error)
 	DeriveExecutionEngineAccess(context.Context, uint, string, commonClient.NotebookExecutionEngineAccessRequest) (*commonClient.ExecutionEngineAccess, error)
 	ValidateExecutionEngineAccess(context.Context, uint, string, commonClient.ExecutionEngineAccessRequest) (*commonClient.ExecutionEngineAccess, error)
 	Revoke(context.Context, uint, string, commonClient.RevokeNotebookSessionAuthorizationRequest) error
@@ -45,6 +47,14 @@ func (c *systemNotebookSessionControlPlane) ListChildren(
 	request commonClient.NotebookCatalogChildrenRequest,
 ) ([]commonClient.EngineCatalogEntry, error) {
 	return c.system.WithTenantID(tenantID).ListNotebookCatalogChildren(ctx, authorizationID, request)
+}
+
+func (c *systemNotebookSessionControlPlane) ListEngineDescriptors(
+	ctx context.Context,
+	tenantID uint,
+	authorizationID, sessionID string,
+) ([]commonModels.EngineRuntimeDescriptor, error) {
+	return c.system.WithTenantID(tenantID).ListNotebookEngineDescriptors(ctx, authorizationID, sessionID)
 }
 
 func (c *systemNotebookSessionControlPlane) Revoke(

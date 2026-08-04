@@ -60,6 +60,7 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 ORIGINAL_ARGS=("$@")
 
 cd "${ROOT_DIR}"
+source "${SCRIPT_DIR}/jupyter-env.sh"
 
 # 加载 .env 配置
 if [ -f ".env" ]; then
@@ -568,9 +569,9 @@ restart_spark_workflow_service() {
 
 restart_jupyter_service() {
     local api_port="${JUPYTER_API_PORT:-8097}"
+    ensure_jupyter_python_env "$ROOT_DIR"
     stop_pidfile_process ".dev-pids/jupyter-api-server.pid" "Jupyter API Server"
     stop_matching_port_process "$api_port" "Jupyter API Server" "python.*api_server\\.py|engines/jupyter"
-    require_service_python "engines/jupyter" "Jupyter Engine" "jupyter"
     echo "  启动 Jupyter Notebook Runtime..."
     (
         cd engines/jupyter

@@ -52,11 +52,15 @@ func (s *Storage) CreateAccessTokenSession(
 	if expiresAt.IsZero() || expiresAt.After(family.ExpiresAt) {
 		return fosite.ErrInvalidRequest
 	}
+	now, err := s.databaseNow(ctx)
+	if err != nil {
+		return err
+	}
 	return toFositeStorageError(repository.CreateAccessToken(ctx, &iam.AccessToken{
 		TokenHash: signature,
 		FamilyID:  family.ID,
 		ExpiresAt: expiresAt.UTC(),
-		CreatedAt: s.now(),
+		CreatedAt: now,
 	}))
 }
 
@@ -141,7 +145,11 @@ func (s *Storage) DeleteAccessTokenSession(ctx context.Context, signature string
 	if token.RevokedAt != nil {
 		return nil
 	}
-	return repositoryErrorToFosite(repository.RevokeAccessToken(ctx, token.ID, s.now()))
+	now, err := s.databaseNow(ctx)
+	if err != nil {
+		return err
+	}
+	return repositoryErrorToFosite(repository.RevokeAccessToken(ctx, token.ID, now))
 }
 
 func (s *Storage) CreateRefreshTokenSession(
@@ -188,13 +196,17 @@ func (s *Storage) CreateRefreshTokenSession(
 	if expiresAt.IsZero() || expiresAt.After(family.ExpiresAt) {
 		expiresAt = family.ExpiresAt
 	}
+	now, err := s.databaseNow(ctx)
+	if err != nil {
+		return err
+	}
 	replacement := &iam.RefreshToken{
 		TokenHash:           signature,
 		FamilyID:            family.ID,
 		IssuedAccessTokenID: accessToken.ID,
 		ParentTokenID:       parentTokenID,
 		ExpiresAt:           expiresAt.UTC(),
-		CreatedAt:           s.now(),
+		CreatedAt:           now,
 	}
 	if err := repository.CreateRefreshToken(ctx, replacement); err != nil {
 		return repositoryErrorToFosite(err)
@@ -254,7 +266,11 @@ func (s *Storage) DeleteRefreshTokenSession(ctx context.Context, signature strin
 	if token.UsedAt == nil || token.ReplacedByTokenID == nil {
 		return fosite.ErrSerializationFailure
 	}
-	return repositoryErrorToFosite(repository.MarkRefreshTokenReuseDetected(ctx, token.ID, s.now()))
+	now, err := s.databaseNow(ctx)
+	if err != nil {
+		return err
+	}
+	return repositoryErrorToFosite(repository.MarkRefreshTokenReuseDetected(ctx, token.ID, now))
 }
 
 func (s *Storage) RotateRefreshToken(ctx context.Context, requestID string, refreshSignature string) error {
@@ -287,12 +303,16 @@ func (s *Storage) RotateRefreshToken(ctx context.Context, requestID string, refr
 	if err != nil {
 		return repositoryErrorToFosite(err)
 	}
+	now, err := s.databaseNow(ctx)
+	if err != nil {
+		return err
+	}
 	if token.ID != snapshot.ID || token.FamilyID != family.ID || token.UsedAt != nil ||
 		token.RevokedAt != nil || token.ReuseDetectedAt != nil || family.RevokedAt != nil ||
-		!token.ExpiresAt.After(s.now()) || !family.ExpiresAt.After(s.now()) {
+		!token.ExpiresAt.After(now) || !family.ExpiresAt.After(now) {
 		return fosite.ErrSerializationFailure
 	}
-	contextActive, err := repository.RefreshTokenFamilyContextIsActive(ctx, principal, family, s.now())
+	contextActive, err := repository.RefreshTokenFamilyContextIsActive(ctx, principal, family, now)
 	if err != nil {
 		return repositoryErrorToFosite(err)
 	}
@@ -321,7 +341,6 @@ func (s *Storage) RotateRefreshToken(ctx context.Context, requestID string, refr
 			event.Details["authorization_version_advanced"] = true
 		})
 	}
-	now := s.now()
 	if err := repository.MarkRefreshTokenUsed(ctx, token.ID, now); err != nil {
 		return fosite.ErrSerializationFailure
 	}
@@ -359,9 +378,13 @@ func (s *Storage) RevokeAccessToken(ctx context.Context, requestID string) error
 	if err != nil {
 		return toFositeStorageError(err)
 	}
+	now, err := s.databaseNow(ctx)
+	if err != nil {
+		return err
+	}
 	return toFositeStorageError(db.Model(&iam.AccessToken{}).
 		Where("family_id = ? AND revoked_at IS NULL", family.ID).
-		Update("revoked_at", s.now()).Error)
+		Update("revoked_at", now).Error)
 }
 
 func (s *Storage) revokeFamilyByRequestID(ctx context.Context, requestID string) error {
@@ -404,7 +427,11 @@ func (s *Storage) revokeFamilyByRequestID(ctx context.Context, requestID string)
 			event.RiskLevel = iam.AuditRiskHigh
 		})
 	}
-	return repositoryErrorToFosite(repository.RevokeTokenFamily(ctx, family.ID, s.now(), reason))
+	now, err := s.databaseNow(ctx)
+	if err != nil {
+		return err
+	}
+	return repositoryErrorToFosite(repository.RevokeTokenFamily(ctx, family.ID, now, reason))
 }
 
 func (s *Storage) createOAuthFamily(
@@ -425,7 +452,10 @@ func (s *Storage) createOAuthFamily(
 	if expiresAt.IsZero() {
 		return nil, fosite.ErrInvalidRequest
 	}
-	now := s.now()
+	now, err := s.databaseNow(ctx)
+	if err != nil {
+		return nil, err
+	}
 	family := &iam.RefreshTokenFamily{
 		ProtocolRequestID:          &requestID,
 		PrincipalID:                session.PrincipalID,

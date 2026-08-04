@@ -59,7 +59,12 @@ func SetupRouter(
 	router.GET("/api/v1/develop/notebook-kernel-sessions/:session_id/engine-descriptors", notebookHandler.ListSessionEngineDescriptors)
 	router.POST("/api/v1/develop/notebook-kernel-sessions/:session_id/catalog/children", notebookHandler.ListSessionCatalogChildren)
 	router.POST("/api/v1/develop/notebook-kernel-sessions/:session_id/table-scans", notebookHandler.StreamSessionTable)
+	router.POST("/api/v1/develop/notebook-kernel-sessions/:session_id/record-scans", notebookHandler.StreamSessionRecords)
 	router.POST("/api/v1/develop/notebook-kernel-sessions/:session_id/queries", notebookHandler.StreamSessionQuery)
+	router.POST("/api/v1/develop/notebook-kernel-sessions/:session_id/graph-samples", notebookHandler.SampleSessionGraph)
+	router.POST("/api/v1/develop/notebook-kernel-sessions/:session_id/graph-queries", notebookHandler.QuerySessionGraph)
+	router.POST("/api/v1/develop/notebook-kernel-sessions/:session_id/content-reads", notebookHandler.StreamSessionContent)
+	router.POST("/api/v1/develop/notebook-kernel-sessions/:session_id/change-streams", notebookHandler.StreamSessionChanges)
 
 	// Notebook 原生交互协议使用单会话、单路径 HttpOnly 能力 Cookie。
 	router.Any("/api/v1/develop/notebook-sessions/:session_id", notebookHandler.ProxySession)

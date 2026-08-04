@@ -178,6 +178,7 @@ type StoreCapability struct {
 	Delete                      bool                                   `json:"delete,omitempty"`
 	BatchRead                   bool                                   `json:"batch_read,omitempty"`
 	TableReadSession            bool                                   `json:"table_read_session,omitempty"`
+	RecordReadSession           bool                                   `json:"record_read_session,omitempty"`
 	TableReadSpatialTransform   bool                                   `json:"table_read_spatial_transform,omitempty"`
 	BatchWrite                  bool                                   `json:"batch_write,omitempty"`
 	TableWriteSession           bool                                   `json:"table_write_session,omitempty"`

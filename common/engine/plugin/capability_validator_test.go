@@ -82,6 +82,68 @@ func (p *spatialEncodingWritablePlugin) WriteBatch(context.Context, ConnectionIn
 	return nil
 }
 
+type recordReadSessionPlugin struct {
+	spatialEncodingPlugin
+}
+
+func (p *recordReadSessionPlugin) OpenRecordReadSession(context.Context, ConnectionInfo, CatalogPath, RecordReadSessionOptions) (RecordReadSession, error) {
+	return nil, nil
+}
+
+func TestValidatePluginCapabilitiesAcceptsRecordReadSessionDeclaration(t *testing.T) {
+	plugin := &recordReadSessionPlugin{spatialEncodingPlugin: spatialEncodingPlugin{
+		MockPlugin: MockPlugin{TypeValue: "record_reader"},
+		caps: EngineCapabilities{
+			SchemaVersion: CapabilitiesSchemaVersion,
+			EngineType:    "record_reader",
+			EngineFamily:  "dynamic_schema",
+			Storage: &StorageCapabilities{Store: &StoreCapability{
+				RecordReadSession: true,
+			}},
+		},
+	}}
+
+	if err := ValidatePluginCapabilities(plugin); err != nil {
+		t.Fatalf("ValidatePluginCapabilities() error = %v", err)
+	}
+}
+
+func TestValidatePluginCapabilitiesRejectsRecordReadSessionMismatch(t *testing.T) {
+	t.Run("declared_without_provider", func(t *testing.T) {
+		plugin := &spatialEncodingPlugin{
+			MockPlugin: MockPlugin{TypeValue: "declared_record_reader"},
+			caps: EngineCapabilities{
+				SchemaVersion: CapabilitiesSchemaVersion,
+				EngineType:    "declared_record_reader",
+				EngineFamily:  "dynamic_schema",
+				Storage: &StorageCapabilities{Store: &StoreCapability{
+					RecordReadSession: true,
+				}},
+			},
+		}
+		err := ValidatePluginCapabilities(plugin)
+		if err == nil || !strings.Contains(err.Error(), "does not implement RecordReadSessionProvider") {
+			t.Fatalf("ValidatePluginCapabilities() error = %v, want missing provider error", err)
+		}
+	})
+
+	t.Run("provider_without_declaration", func(t *testing.T) {
+		plugin := &recordReadSessionPlugin{spatialEncodingPlugin: spatialEncodingPlugin{
+			MockPlugin: MockPlugin{TypeValue: "undeclared_record_reader"},
+			caps: EngineCapabilities{
+				SchemaVersion: CapabilitiesSchemaVersion,
+				EngineType:    "undeclared_record_reader",
+				EngineFamily:  "dynamic_schema",
+				Storage:       &StorageCapabilities{Store: &StoreCapability{}},
+			},
+		}}
+		err := ValidatePluginCapabilities(plugin)
+		if err == nil || !strings.Contains(err.Error(), "does not declare record_read_session") {
+			t.Fatalf("ValidatePluginCapabilities() error = %v, want missing declaration error", err)
+		}
+	})
+}
+
 func TestValidatePluginCapabilitiesRejectsSpatialEncodingWithoutReader(t *testing.T) {
 	plugin := &spatialEncodingPlugin{
 		MockPlugin: MockPlugin{TypeValue: "spatial_read_only"},

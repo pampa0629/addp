@@ -3550,7 +3550,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "根据资源定位符预览数据内容，支持表格、文件等多种格式 | Preview data content by resource locator, supports tables, files, and more",
+                "description": "根据资源定位符预览数据内容，支持表格、消息主题、文件等多种资源 | Preview data content by resource locator, including tables, message topics, files, and more",
                 "produces": [
                     "application/json"
                 ],

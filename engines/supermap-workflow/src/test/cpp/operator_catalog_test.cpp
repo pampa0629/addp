@@ -50,7 +50,7 @@ int main(int argc, char** argv) {
   for (const auto& descriptor : catalog.descriptors()) {
     actual.insert(descriptor.at("id").get<std::string>());
   }
-  require(actual == expected, "catalog keeps all 24 Java runtime operators");
+  require(actual == expected, "catalog keeps all 24 C++ runtime operators");
   require(catalog.default_output_port("datasource.open") == "datasource", "default port");
   require(catalog.supports_mode("osgb_scene_to_s3m", "workflow"), "S3M workflow mode");
   require(catalog.supports_mode("osgb_scene_to_s3m", "direct"), "S3M direct mode");

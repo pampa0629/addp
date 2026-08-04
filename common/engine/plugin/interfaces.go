@@ -137,8 +137,8 @@ type IndexFacts struct {
 
 // QueryResult 通用查询结果（SQL/MQL/Cypher 统一格式）
 type QueryResult struct {
-	Columns []string                 // 有序列名列表
-	Rows    []map[string]interface{} // 每行：列名 → 值
+	Columns []string                 `json:"columns"` // 有序列名列表
+	Rows    []map[string]interface{} `json:"rows"`    // 每行：列名 → 值
 }
 
 // ============ 图数据库插件 ============

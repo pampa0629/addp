@@ -240,8 +240,9 @@ type StoreProvider interface {
 - `ContentWritableProvider.CreateContent()`：写对象或文件内容。
 - `RangeReadableProvider.OpenRange()`：按 byte range 读取对象或文件内容。
 - `RangeWritableProvider.WriteRange()`：按 byte range / offset 写入内容。
-- `BatchReadableProvider.ReadBatch()`：批量读取表或集合数据；图数据读取使用 `GraphSampleProvider` / `GraphQueryProvider`。
+- `BatchReadableProvider.ReadBatch()`：执行一次有界的固定 schema 批量读取；大表连续扫描优先使用 `TableReadSessionProvider`，动态 schema collection 使用 `RecordReadSessionProvider`，图数据使用 `GraphSampleProvider` / `GraphQueryProvider`。
 - `TableReadSessionProvider.OpenTableReadSession()`：打开表读取会话，连续读取批次；适合 PostgreSQL cursor、JDBC cursor、Parquet row group reader 等避免 offset 翻页退化的实现。
+- `RecordReadSessionProvider.OpenRecordReadSession()`：打开动态 schema 记录游标，连续返回原生 record map；适合 MongoDB cursor。collection 不得实现或复用表语义的 `TableReadSessionProvider`。
 - `SpatialFeatureReadProvider.ReadSpatialFeature()`：按一个精确 identity field 读取单个空间要素，统一返回 geometry EWKB、centroid EWKB、SRID 和空间事实。Manager 的要素定位与高亮只消费该 Provider，不得在 Handler 中拼接 PostGIS、MySQL 等原生空间 SQL；Provider 必须校验 geometry field 和 identity field 后再引用标识符。
 - `BatchWritableProvider.WriteBatch()`：批量写入表或集合数据；图写入应由图模块或专用 graph provider 明确建模。
 - `TableWriteSessionProvider.OpenTableWriteSession()`：打开表写入会话，连续写入批次；适合 PostgreSQL COPY、JDBC bulk load 等避免每批重复建立写入会话的实现。
@@ -250,6 +251,32 @@ type StoreProvider interface {
 - `TableUpsertProvider.PrepareTableUpsert()` / `UpsertBatch()`：按显式稳定键准备目标并幂等应用 insert/update。Provider 必须校验键字段和唯一约束；普通 `BatchWritableProvider` 或 COPY session 不得被推断为 upsert。
 - `ChangeStreamReaderProvider.OpenChangeStream()`：打开 partitioned change stream，按 provider position seek、poll 原始记录并支持受控 pause/resume/close。Kafka topic 不能伪装成 `BatchReadableProvider` 或 content `stream_read`。
 - `PartitionedTableChangeApplyProvider.PreparePartitionedTableChangeApply()` / `ApplyPartitionedTableChanges()`：把单个 source partition 的已映射表变化与目标 apply position 在同一目标事务中提交。PostgreSQL 与 MySQL 当前真实实现 `upsert|delete|skip`；`skip` 只推进 ledger，不修改业务行。同一 key 在批内只保留最高 position 的最终数据操作，目标行变化和对应 Provider 的 apply ledger 必须原子提交。普通 `TableUpsertProvider`、Infra state CAS 或 runtime lease 均不得被推断为具备目标侧 monotonic apply 语义。
+
+动态记录读取的强类型契约为：
+
+```go
+type RecordReadSessionProvider interface {
+    StoreProvider
+    OpenRecordReadSession(
+        ctx context.Context,
+        connInfo ConnectionInfo,
+        path CatalogPath,
+        opts RecordReadSessionOptions,
+    ) (RecordReadSession, error)
+}
+
+type RecordReadSession interface {
+    ReadBatch(ctx context.Context, limit int) (*RecordBatchData, error)
+    Close(ctx context.Context) error
+}
+
+type RecordBatchData struct {
+    Records []map[string]interface{} `json:"records"`
+    Offset  int64                    `json:"offset,omitempty"`
+}
+```
+
+`limit` 是调用方本批允许接收的最大记录数，Provider 不得返回更多记录。`Close()` 必须释放底层 cursor；调用方取消 context 后，正在进行的 `ReadBatch()` 必须尽快返回。`RecordBatchData` 不声明稳定字段列表，因为同一 cursor 生命周期内后续记录仍可出现新字段。跨 HTTP 的 Notebook transport 使用单个稳定 `document: JSON` Arrow 字段承载每条 record，SDK 解码后恢复为原生 `dict`；该 transport 表达不能反向把 collection 定义成 table。
 
 当前 bounded watermark 契约：
 

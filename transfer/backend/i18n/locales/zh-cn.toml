@@ -87,3 +87,12 @@ other = "死信记录不存在"
 
 [transfer.dead_letter.internal_error]
 other = "查询死信记录失败"
+
+[transfer.field_recommendation.invalid]
+other = "字段定义推荐请求无效"
+
+[transfer.field_recommendation.unsupported]
+other = "当前源或目标不支持字段定义自动推荐"
+
+[transfer.field_recommendation.unavailable]
+other = "字段定义自动推荐暂时不可用"

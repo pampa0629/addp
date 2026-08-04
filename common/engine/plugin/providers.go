@@ -94,6 +94,28 @@ type TableReadSession interface {
 	Close(ctx context.Context) error
 }
 
+// RecordReadSessionProvider opens a native cursor for schema-flexible records.
+// It is intentionally separate from TableReadSessionProvider: a collection is
+// not a table and records may introduce different fields over the cursor lifetime.
+type RecordReadSessionProvider interface {
+	StoreProvider
+	OpenRecordReadSession(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts RecordReadSessionOptions) (RecordReadSession, error)
+}
+
+type RecordReadSessionOptions struct {
+	Hints map[string]interface{}
+}
+
+type RecordReadSession interface {
+	ReadBatch(ctx context.Context, limit int) (*RecordBatchData, error)
+	Close(ctx context.Context) error
+}
+
+type RecordBatchData struct {
+	Records []map[string]interface{} `json:"records"`
+	Offset  int64                    `json:"offset,omitempty"`
+}
+
 // WatermarkCursor is a provider-owned composite position. Values are encoded as
 // canonical strings and interpreted using the source column types.
 type WatermarkCursor struct {
@@ -729,19 +751,24 @@ type ScriptSession struct {
 // InteractiveScriptSessionRequest is the standard control-plane request for
 // a short-lived, owner-proxied interactive script session.
 type InteractiveScriptSessionRequest struct {
-	SessionID                 string `json:"session_id"`
-	TenantID                  uint   `json:"tenant_id"`
-	UserID                    uint   `json:"user_id"`
-	TaskID                    uint   `json:"task_id"`
-	NotebookPath              string `json:"notebook_path"`
-	Kernel                    string `json:"kernel"`
-	BasePath                  string `json:"base_path"`
-	TTLSeconds                int    `json:"ttl_seconds"`
-	OwnerAPIEndpoint          string `json:"owner_api_endpoint"`
-	OwnerCatalogAPIEndpoint   string `json:"owner_catalog_api_endpoint"`
-	OwnerTableScanAPIEndpoint string `json:"owner_table_scan_api_endpoint"`
-	OwnerQueryAPIEndpoint     string `json:"owner_query_api_endpoint"`
-	OwnerCapabilityToken      string `json:"owner_capability_token"`
+	SessionID                    string `json:"session_id"`
+	TenantID                     uint   `json:"tenant_id"`
+	UserID                       uint   `json:"user_id"`
+	TaskID                       uint   `json:"task_id"`
+	NotebookPath                 string `json:"notebook_path"`
+	Kernel                       string `json:"kernel"`
+	BasePath                     string `json:"base_path"`
+	TTLSeconds                   int    `json:"ttl_seconds"`
+	OwnerAPIEndpoint             string `json:"owner_api_endpoint"`
+	OwnerCatalogAPIEndpoint      string `json:"owner_catalog_api_endpoint"`
+	OwnerTableScanAPIEndpoint    string `json:"owner_table_scan_api_endpoint"`
+	OwnerRecordScanAPIEndpoint   string `json:"owner_record_scan_api_endpoint"`
+	OwnerQueryAPIEndpoint        string `json:"owner_query_api_endpoint"`
+	OwnerGraphSampleAPIEndpoint  string `json:"owner_graph_sample_api_endpoint"`
+	OwnerGraphQueryAPIEndpoint   string `json:"owner_graph_query_api_endpoint"`
+	OwnerContentReadAPIEndpoint  string `json:"owner_content_read_api_endpoint"`
+	OwnerChangeStreamAPIEndpoint string `json:"owner_change_stream_api_endpoint"`
+	OwnerCapabilityToken         string `json:"owner_capability_token"`
 }
 
 // InteractiveScriptSession contains internal proxy facts. Callers must never

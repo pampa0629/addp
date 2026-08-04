@@ -32,7 +32,7 @@ flowchart LR
 ```
 
 - Go 侧只做 DWG / DXF header 识别，不嵌入 SuperMap 或 ODA。
-- SuperMap iObjects Java 是 deep scan、渲染和后续 CAD→GIS 导入的唯一 CAD provider。
+- SuperMap iObjects C++ 是 deep scan、渲染和后续 CAD→GIS 导入的唯一 CAD provider。
 - 不直接调用 SuperMap 组件内部 ODA 原生库，不引入独立 ODA Viewer / Open Cloud 或 LibreDWG 备用路径。
 - Meta、Manager 通过现有 Workflow Runtime direct operator 调用 `supermap_workflow`，不构造私有 HTTP 请求。
 
@@ -98,9 +98,19 @@ Transfer 对 `data_type=cad + layout=single` 仅提供 encoded raw copy。传输
 
 - `example_2000.dwg`（AC1015）、`example_2018.dwg`（AC1032）、`example_r14.dwg`（AC1014）、`sample_2018.dwg`（AC1032）均可由 `cad.inspect` 打开；前三个样例各得到 1 个 Dataset / 64 条记录，`sample_2018.dwg` 得到 1 个 Dataset / 6 条记录，全部返回 `geometry_traversed=false`。
 - `sample_2018.dwg` 与 `example_r14.dwg` 已真实生成 manifest、thumbnail 和 WebP 金字塔。`sample_2018.dwg` 使用默认 `tile_size=512`、`max_zoom=4` 时生成 341 张瓦片，耗时约 5.8 秒，产物约 1.4 MiB；全部瓦片均为真实 512×512 WebP。
-- SuperMap 12.1 通用 `Map.outputMapToFile(..., ImageType.WEBP, ...)` 实际不支持 WebP，渲染实现已收敛为专用 `Map.outputMapToWEBP(...)`。CAD 常见白色线条在白底下不可见，当前统一使用深色背景并禁用 bounds inflate。
+- 上述 Java 12.1 运行时的通用 `Map.outputMapToFile(..., ImageType.WEBP, ...)` 不支持 WebP，因此 Java 实现使用专用 `Map.outputMapToWEBP(...)`。该限制不适用于最新 C++ 12.1 SDK；C++ 实现使用 `UGMap::OutputMapToFile(..., UGFileType::WEBP, ...)`。两种实现均使用深色背景并禁用 bounds inflate，避免 CAD 常见白色线条在白底下不可见。
 - `max_zoom=8` 会超过 25,000 张瓦片上限并被明确拒绝，证明输出预算限制生效。
 
-平台内验收已将 `sample_2018.dwg` 的只读测试副本放入 Business NFS 的 `cad/sample_2018.dwg`。通过两层镜像重建并局部重启 `localhost:8103` 后，Runtime 动态暴露 24 个算子，其中包含 `cad.inspect` / `cad.render_preview`。Meta deep scan 用时约 3.6 秒，写入 AC1032、1 个 Dataset、6 条解释记录、真实二维范围和 `geometry_traversed=false`。Manager `cad_preview_generation` 用时约 4.0 秒生成 21 张 256×256 WebP；正式 manifest API 和 z0 tile API 均返回 200，tile `Content-Type=image/webp`。Java MinIO client 已统一把 access plan 中无 scheme 的 endpoint 按 `use_ssl` 补全，并把 localhost 归一为容器可访问地址。代码同时修正 CAD deep enrich 失败仍错误升级 `scanned_depth=deep` 的问题，未引入备用解析或渲染路线。
+截至 2026-08-04，最新 iObjects C++ 12.1 SDK 的驱动级迁移验收结果如下：
+
+- `cad.inspect` 已使用 `UGDataSourceManager::CreateDataSource(VectorFile)` 只读打开 DWG / DXF。`sample_2018.dwg` 返回 AC1032、1 个 Dataset / 6 条记录；`example_r14.dxf` 返回 AC1014、1 个 Dataset / 64 条记录，provider 固定为 `supermap_iobjects_cpp`，均未遍历 Geometry。
+- `cad.render_preview` 已使用 `UGMap + Layer + GT_QT` 直接渲染。`sample_2018.dwg` 在 `tile_size=256`、`max_zoom=2` 时生成 manifest、thumbnail 和 21 张瓦片，共 23 个文件；thumbnail 与 z0 瓦片均验证为真实 256×256 WebP。manifest 使用正方形渲染范围，同时保留真实 drawing bounds。
+- C++ 运行时通过 SDK 自带 libcurl 的 SigV4 能力直接完成 MinIO/S3 GET/PUT，不引入 AWS SDK、awscli 或 mc 运行时依赖。DXF 的 23 个预览对象已成功发布到 MinIO，MinIO 中的 DWG 源文件也已成功物化后检查。
+- Qt 图形 provider 依赖系统 Qt5 Core/Gui/Widgets。SDK 自带旧 FreeType 与 Qt/HarfBuzz 不兼容，当前驱动验收通过预加载系统 `libfreetype.so.6` 运行；正式镜像必须让系统 FreeType 优先于 SDK 同名库。渲染时仍出现 SDK libpng 1.2 与系统 libpng 1.6 的版本 warning，但当前 WebP 结果有效，镜像裁剪阶段仍需消除或隔离该动态库冲突。
+- `max_zoom=8` 在创建或发布目标产物前被 25,000 瓦片上限拒绝。object store endpoint 已限制为 HTTP/HTTPS host，可选 port，不接受 credentials、path、query 或 fragment；对象 key 按 UTF-8 字节进行严格 percent encoding。
+
+以上是 C++ 算子驱动级验收，不代表 `addp.workflow/v1` C++ HTTP runtime 已完成切换。当前 `localhost:8103` 仍运行 Java/GPA 容器；下一阶段必须完成 C++ HTTP 外壳、24 算子协议回归和容器切换后，才能删除 Java/GPA 并把下述平台内验收更新为纯 C++ 结果。
+
+此前 Java 平台内验收已将 `sample_2018.dwg` 的只读测试副本放入 Business NFS 的 `cad/sample_2018.dwg`。通过两层镜像重建并局部重启 `localhost:8103` 后，Runtime 动态暴露 24 个算子，其中包含 `cad.inspect` / `cad.render_preview`。Meta deep scan 用时约 3.6 秒，写入 AC1032、1 个 Dataset、6 条解释记录、真实二维范围和 `geometry_traversed=false`。Manager `cad_preview_generation` 用时约 4.0 秒生成 21 张 256×256 WebP；正式 manifest API 和 z0 tile API 均返回 200，tile `Content-Type=image/webp`。Java MinIO client 已统一把 access plan 中无 scheme 的 endpoint 按 `use_ssl` 补全，并把 localhost 归一为容器可访问地址。代码同时修正 CAD deep enrich 失败仍错误升级 `scanned_depth=deep` 的问题，未引入备用解析或渲染路线。
 
 DXF 平台内验收使用 Business NFS `cad/example_r14.dxf`：Meta 强制 deep scan 将旧的 `media/image` 身份迁移为 `cad/dxf`，写入 AC1014、1 个 Dataset、64 条解释记录和 `geometry_traversed=false`。Manager Quick View capability 返回 `source_kind=cad`、`cad.format=dxf` 与 `generate_cad_preview`；任务执行后生成 341 张 512×512 WebP，manifest 与 z4 tile API 均返回 200。Business NFS 现有 5 个 DXF 样例已全部强制重扫为 `cad/dxf`，版本覆盖 AC1009、AC1014、AC1015、AC1032。

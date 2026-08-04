@@ -619,7 +619,9 @@
           "postgis": "PostGIS spatial extension",
           "postgisTopology": "PostGIS topology extension",
           "postgisTigerGeocoder": "PostGIS Tiger geocoder",
-          "spatialWorkspace": "SuperMap SDX+ for PostGIS",
+          "spatialWorkspace": "Spatial workspace",
+          "supermapSdx": "SuperMap SDX+ for PostGIS",
+          "arcgisSde": "ArcGIS SDE for PostgreSQL",
           "postgresqlExtraExtensions": "Other installed extensions",
           "pgvector": "pgvector vector extension"
         },

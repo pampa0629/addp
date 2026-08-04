@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
+	"github.com/addp/common/models"
 	"github.com/google/uuid"
 )
 
@@ -109,6 +111,28 @@ func (c *SystemServiceClient) ListNotebookCatalogChildren(
 		}
 	}
 	return response.Nodes, nil
+}
+
+func (c *SystemServiceClient) ListNotebookEngineDescriptors(
+	ctx context.Context,
+	authorizationID, sessionID string,
+) ([]models.EngineRuntimeDescriptor, error) {
+	if !canonicalNotebookUUID(authorizationID) || !canonicalNotebookUUID(sessionID) {
+		return nil, errors.New("notebook engine descriptor request is invalid")
+	}
+	path := fmt.Sprintf(
+		"/api/v1/system/notebook-session-authorizations/%s/engine-descriptors?session_id=%s",
+		authorizationID,
+		url.QueryEscape(sessionID),
+	)
+	var response []models.EngineRuntimeDescriptor
+	if err := c.doTenantJSON(ctx, http.MethodGet, path, nil, &response); err != nil {
+		return nil, err
+	}
+	if response == nil {
+		return nil, errors.New("System notebook engine descriptor list returned null")
+	}
+	return response, nil
 }
 
 func (c *SystemServiceClient) RevokeNotebookSessionAuthorization(

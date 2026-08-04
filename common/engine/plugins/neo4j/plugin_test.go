@@ -81,3 +81,12 @@ func TestGraphNodeShapeKindDistinguishesSingleLabel(t *testing.T) {
 		t.Fatalf("graphNodeShapeKind(label set) = %q, want %q", got, datatype.GraphNodeShapeKindLabelSet)
 	}
 }
+
+func TestBoundedCypherQueryAppliesOuterLimit(t *testing.T) {
+	if got := boundedCypherQuery(" MATCH (n) RETURN n; ", 25); got != "CALL { MATCH (n) RETURN n } RETURN * LIMIT 25" {
+		t.Fatalf("boundedCypherQuery() = %q", got)
+	}
+	if got := boundedCypherQuery("MATCH (n) RETURN n;", 0); got != "MATCH (n) RETURN n" {
+		t.Fatalf("boundedCypherQuery(unbounded) = %q", got)
+	}
+}

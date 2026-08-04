@@ -43,7 +43,7 @@ func NewNotebookHandler(
 		notebookExecutionService:     notebookExecutionService,
 		devTaskService:               devTaskService,
 		notebookSessionService:       sessionService,
-		listSessionEngineDescriptors: sessionService.ListQueryEngineDescriptors,
+		listSessionEngineDescriptors: sessionService.ListDataEngineDescriptors,
 	}
 }
 

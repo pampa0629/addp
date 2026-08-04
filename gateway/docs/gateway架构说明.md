@@ -328,7 +328,8 @@ MODULE_REFRESH_INTERVAL=30s         # 刷新间隔（默认 30 秒）
 |---------|---------|------|---------|---------|-----|
 | `/api/v1/system/*` | System bootstrap | 8180 | 由 System 按具体端点认证 | 透明转发 | 登录、会话、OAuth、AuthContext、用户、租户、引擎和日志 |
 | `/api/v1/{module}/*` | System 注册表中的活跃模块 | 动态发现 | Bearer Token 或 API Key | 透明转发 | 自动覆盖 Manager、Meta、Transfer、Develop、Service、Copilot 等所有注册模块 |
-| `/api/query/*`、`/ogc/*`、`/wmts/*`、`/tiles/*` | Service | 动态发现 | 由 Service 端点决定 | 透明转发 | 数据服务公开协议入口 |
+| `POST /api/query/:serviceName/query` | Service | 动态发现 | 由 Service 端点决定 | 透明转发 | 查询服务结构化查询入口 |
+| `/ogc/*`、`/wmts/*`、`/tiles/*` | Service | 动态发现 | 由 Service 端点决定 | 透明转发 | OGC 与瓦片服务公开协议入口 |
 
 ### 透明代理示例
 

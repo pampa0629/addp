@@ -992,6 +992,7 @@
       "spatial": "Spatial",
       "dataTable": "Table",
       "graphOverview": "Graph Overview",
+      "eventStreamTopic": "Message Topic",
       "graphSample": "Sample",
       "graphSampleStats": "Current sample: {nodes} nodes / {relationships} relationships",
       "graphFilteredSampleStats": "Filtered sample: showing {nodes} nodes / {relationships} relationships, {total} total",
@@ -1650,6 +1651,7 @@
       "table": "Table",
       "view": "View",
       "collection": "Collection",
+      "topic": "Message Topic",
       "graph": "Graph",
       "file": "File",
       "object": "Object"

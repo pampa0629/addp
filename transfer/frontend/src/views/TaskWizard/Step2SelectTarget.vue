@@ -45,7 +45,7 @@
         </el-select>
       </el-form-item>
 
-      <el-form-item v-if="isNativeTableTarget" :label="t('transfer.taskWizard.targetParentNodeLabel')">
+      <el-form-item v-if="isNativeTableTarget" :label="t('transfer.taskWizard.targetLocationLabel')">
         <ResourceTreePicker
           v-model="targetParentSelection"
           api-base-url="/api/v1/meta"
@@ -53,9 +53,9 @@
           :initial-locator="targetPickerInitialLocator"
           :show-engine-selector="false"
           :selectable-filter="isTargetParentSelectable"
-          mode="node"
+          mode="any"
           tree-height="320px"
-          :disabled-label="t('transfer.taskWizard.unsupportedTargetParentLabel')"
+          :disabled-label="t('transfer.taskWizard.unsupportedTargetLocationLabel')"
           :show-selection-summary="false"
           :show-count="false"
           @select="handleTargetParentSelect"
@@ -67,7 +67,7 @@
           v-model="targetTable"
           :placeholder="t('transfer.taskWizard.targetTablePlaceholder')"
           :disabled="!formData.engineID || !targetParentSelection?.identity?.locator"
-          @input="syncTarget"
+          @input="handleTargetTableInput"
         />
       </el-form-item>
 
@@ -178,9 +178,13 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ResourceTreePicker, buildLocator as buildResourceLocator } from '@addp/common-frontend'
 import { capabilitiesAPI } from '@/api/capabilities'
-import { getNodeByCatalogPath } from '@/api/meta'
+import { getItemFieldsByID, getNodeByCatalogPath } from '@/api/meta'
 import { systemEnginesAPI } from '@/api/systemEngines'
 import { parseTransferLocator } from '@/utils/resourceLocator'
+import {
+  isNativeTargetSelectable,
+  sameNativeTargetParentIdentity
+} from './nativeTargetSelection.mjs'
 import {
   dataTypeLabel,
   engineOptionLabel,
@@ -557,19 +561,27 @@ async function handleTargetEngineChange() {
   restoredParentLocator.value = ''
   targetSchema.value = ''
   targetTable.value = ''
+  props.wizardState.resetTargetFields?.()
   syncTarget()
 }
 
 async function handleTargetParentSelect(selection) {
   if (isNativeTableTarget.value) {
-		const previousParentLocator = targetParentLocator.value
-		const nextParentLocator = selection?.identity?.locator || ''
-    targetParentSelection.value = selection
-    normalizedTargetParentLocator.value = ''
-    targetSchema.value = targetParentNameFromSelection(selection)
-		if (!sameTargetParentIdentity(previousParentLocator, nextParentLocator)) {
-			targetTable.value = ''
-		}
+    if (selection?.resource?.kind === 'item') {
+      const selected = await selectExistingNativeTarget(selection)
+      if (!selected) return
+    } else {
+			const previousParentLocator = targetParentLocator.value
+			const nextParentLocator = selection?.identity?.locator || ''
+      const parentChanged = !sameTargetParentIdentity(previousParentLocator, nextParentLocator)
+      targetParentSelection.value = selection
+      normalizedTargetParentLocator.value = ''
+      targetSchema.value = targetParentNameFromSelection(selection)
+			if (parentChanged) {
+				targetTable.value = ''
+				props.wizardState.resetTargetFields?.()
+			}
+    }
   } else if (isContentTarget.value) {
     if (selection.resource?.kind === 'item') {
       const normalized = await normalizeExistingTargetSelection(selection)
@@ -591,19 +603,66 @@ async function handleTargetParentSelect(selection) {
   syncTarget()
 }
 
+async function selectExistingNativeTarget(selection) {
+  let normalized = null
+  try {
+    normalized = await normalizeExistingTargetSelection(selection)
+  } catch {}
+  if (!normalized) {
+    targetParentSelection.value = null
+    normalizedTargetParentLocator.value = ''
+    targetSchema.value = ''
+    targetTable.value = ''
+    props.wizardState.resetTargetFields?.()
+    ElMessage.warning(t('transfer.taskWizard.invalidExistingTargetSelection'))
+    syncTarget()
+    return false
+  }
+
+  targetParentSelection.value = selection
+  normalizedTargetParentLocator.value = normalized.parentLocator
+  targetSchema.value = targetParentNameFromSelection(selection)
+  targetTable.value = targetNameFromSelection(selection)
+  tableWriteMode.value = 'overwrite'
+  await loadExistingTargetFields(selection)
+  return true
+}
+
+async function loadExistingTargetFields(selection) {
+  const itemID = Number(selection?.identity?.item_id || parseTransferLocator(selection?.identity?.locator || '').itemID || 0)
+  if (!itemID) {
+    props.wizardState.resetTargetFields?.()
+    return
+  }
+
+  try {
+    const response = await getItemFieldsByID(itemID)
+    const fields = Array.isArray(response?.data) ? response.data : (response || [])
+    props.wizardState.loadTargetFields(fields)
+  } catch (error) {
+    props.wizardState.resetTargetFields?.()
+    ElMessage.warning(t('transfer.taskWizard.loadTargetFieldsWarning', {
+      error: error.response?.data?.error || error.message
+    }))
+  }
+}
+
+function handleTargetTableInput() {
+  if ((props.wizardState.targetFields?.value || []).length > 0) {
+    props.wizardState.resetTargetFields?.()
+  }
+  syncTarget()
+}
+
 function sameTargetParentIdentity(left, right) {
-	const leftLocator = parseTransferLocator(left)
-	const rightLocator = parseTransferLocator(right)
-	return !!leftLocator.engineID &&
-		leftLocator.engineID === rightLocator.engineID &&
-		leftLocator.type === rightLocator.type &&
-		leftLocator.path.join('/') === rightLocator.path.join('/')
+	return sameNativeTargetParentIdentity(parseTransferLocator(left), parseTransferLocator(right))
 }
 
 function isTargetParentSelectable(node, context = {}) {
   const type = String(node?.type || '').toLowerCase()
   if (isNativeTableTarget.value) {
-    return ['schema', 'database'].includes(type)
+    if (isContinuousSource.value && type === 'table') return false
+    return isNativeTargetSelectable(node, context)
   }
   if (['object', 'file'].includes(type)) {
     return !!context.locator?.itemId

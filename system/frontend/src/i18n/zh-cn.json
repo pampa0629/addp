@@ -619,7 +619,9 @@
           "postgis": "PostGIS 空间扩展",
           "postgisTopology": "PostGIS 拓扑扩展",
           "postgisTigerGeocoder": "PostGIS Tiger 地理编码",
-          "spatialWorkspace": "SuperMap SDX+ for PostGIS",
+          "spatialWorkspace": "空间工作区",
+          "supermapSdx": "SuperMap SDX+ for PostGIS",
+          "arcgisSde": "ArcGIS SDE for PostgreSQL",
           "postgresqlExtraExtensions": "其他已安装扩展",
           "pgvector": "pgvector 向量扩展"
         },

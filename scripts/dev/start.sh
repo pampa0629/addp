@@ -151,6 +151,7 @@ export GOTOOLCHAIN="local"
 
 # 加载颜色定义（提前加载，供检查函数使用）
 source "${SCRIPT_DIR}/../utils/colors.sh"
+source "${SCRIPT_DIR}/jupyter-env.sh"
 
 # ============================================================
 # Python 版本选择函数
@@ -2137,86 +2138,7 @@ fi
 if [ "$START_JUPYTER" = true ]; then
   echo -e "${YELLOW}Step 4.6/5: 启动 Jupyter Engine...${NC}"
 
-  # 检查 Python 3 是否安装
-  if ! command -v python3 &> /dev/null; then
-      echo -e "${RED}✗ Python 3 未安装，请先安装 Python 3.11+${NC}"
-      exit 1
-  fi
-
-  # 检查 Python 版本（需要 3.11+）
-  PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
-  REQUIRED_VERSION="3.11"
-  if [ "$(printf '%s\n' "$REQUIRED_VERSION" "$PYTHON_VERSION" | sort -V | head -n1)" != "$REQUIRED_VERSION" ]; then
-      echo -e "${RED}✗ Python 版本过低 ($PYTHON_VERSION)，需要 3.11+${NC}"
-      exit 1
-  fi
-
-# 检查并创建虚拟环境（幂等）
-NEED_INSTALL=false
-if [ ! -d "engines/jupyter/venv" ]; then
-    echo "首次启动，创建 Python 虚拟环境..."
-    cd engines/jupyter
-    # 优先使用兼容性好的 Python 版本（避免新版本兼容性问题）
-    # 优先级: 3.12 > 3.13 > 3.11 > 系统默认
-    if command -v /opt/homebrew/bin/python3.12 &> /dev/null; then
-        echo "  使用 Homebrew Python $(/opt/homebrew/bin/python3.12 --version)"
-        /opt/homebrew/bin/python3.12 -m venv venv
-    elif command -v /opt/homebrew/bin/python3.13 &> /dev/null; then
-        echo "  使用 Homebrew Python $(/opt/homebrew/bin/python3.13 --version)"
-        /opt/homebrew/bin/python3.13 -m venv venv
-    elif command -v /opt/homebrew/bin/python3.11 &> /dev/null; then
-        echo "  使用 Homebrew Python $(/opt/homebrew/bin/python3.11 --version)"
-        /opt/homebrew/bin/python3.11 -m venv venv
-    elif command -v /opt/homebrew/bin/python3 &> /dev/null; then
-        echo "  使用 Homebrew Python $(/opt/homebrew/bin/python3 --version)"
-        /opt/homebrew/bin/python3 -m venv venv
-    else
-        python3 -m venv venv
-    fi
-    NEED_INSTALL=true
-else
-    # 检查关键依赖是否已安装
-    if ! ./engines/jupyter/venv/bin/python -c "import flask, gunicorn, addp_common" &> /dev/null; then
-        echo "检测到虚拟环境缺少依赖，重新安装..."
-        cd engines/jupyter
-        NEED_INSTALL=true
-    else
-        echo "虚拟环境已存在且依赖完整，跳过安装"
-    fi
-fi
-
-if [ "$NEED_INSTALL" = true ]; then
-    # 使用 pip 安装依赖（更稳定，避免 uv 虚拟环境识别问题）
-    echo "使用 pip 安装依赖（首次安装可能需要 1-2 分钟）..."
-
-    # 构建 pip 安装命令（支持镜像源配置）
-    PIP_CMD="./venv/bin/python -m pip install"
-    if [ -n "$PIP_INDEX_URL" ]; then
-        echo "  使用镜像源: $PIP_INDEX_URL"
-        PIP_CMD="$PIP_CMD -i $PIP_INDEX_URL"
-        if [ -n "$PIP_TRUSTED_HOST" ]; then
-            PIP_CMD="$PIP_CMD --trusted-host $PIP_TRUSTED_HOST"
-        fi
-    else
-        echo "  使用官方源（国外可能较慢，建议在 .env 中配置 PIP_INDEX_URL）"
-    fi
-
-    # 升级 pip 并安装依赖
-    $PIP_CMD --upgrade pip
-    $PIP_CMD -r requirements.txt
-    $PIP_CMD -e ../../common-python
-
-    # 检查安装是否成功
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✓ Python 依赖安装完成${NC}"
-    else
-        echo -e "${RED}✗ Python 依赖安装失败，请检查错误信息${NC}"
-        echo -e "${YELLOW}提示：某些科学计算依赖可能需要系统库支持${NC}"
-        cd ../..
-        exit 1
-    fi
-    cd ../..
-fi
+  ensure_jupyter_python_env "$ROOT_DIR"
 
 # 启动 Jupyter Engine
 if check_service_running "jupyter-engine" "$JUPYTER_API_PORT"; then

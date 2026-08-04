@@ -82,8 +82,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	serviceHandler := registeredModuleHandler("service", moduleDiscovery)
 
 	// 查询服务数据访问端点（公开，无需 API Key，认证由 Service 模块内部判断）
-	// 注意：使用 /api/query 而非 /api/v1/query，与 Service 模块路由保持一致
-	router.GET("/api/query/:serviceName", serviceHandler)
+	registerQueryServiceRoute(router, serviceHandler)
 	router.POST("/api/gquery/:serviceName", serviceHandler)
 
 	// OGC API Features 公开路由（不需要 API Key 认证）
@@ -130,6 +129,10 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	}
 
 	return router
+}
+
+func registerQueryServiceRoute(router gin.IRoutes, handler gin.HandlerFunc) {
+	router.POST("/api/query/:serviceName/query", handler)
 }
 
 type moduleProxyLookup interface {

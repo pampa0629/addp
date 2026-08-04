@@ -790,16 +790,224 @@
                 "x-addp-auth-mode": "authenticated"
             }
         },
+        "/notebook-kernel-sessions/{session_id}/change-streams": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/x-ndjson"
+                ],
+                "tags": [
+                    "Notebook"
+                ],
+                "summary": "流式读取 Notebook Kafka topic | Stream a Notebook Kafka topic",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Notebook 会话 ID | Notebook session ID",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Topic 路径与起始位置 | Topic path and initial positions",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.notebookChangeStreamRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "authenticated"
+            }
+        },
+        "/notebook-kernel-sessions/{session_id}/content-reads": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Notebook"
+                ],
+                "summary": "读取 Notebook 对象或文件内容 | Read Notebook object or file content",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Notebook 会话 ID | Notebook session ID",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "内容路径与可选范围 | Content path and optional range",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.notebookContentReadRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "authenticated"
+            }
+        },
         "/notebook-kernel-sessions/{session_id}/engine-descriptors": {
             "get": {
-                "description": "仅接受 Develop 注入当前隔离 Kernel 的短期 Notebook Kernel Capability Bearer；不接受用户或服务 Token。 | Only accepts the short-lived Notebook Kernel Capability Bearer injected by Develop into the isolated Kernel; user and service tokens are not accepted.",
+                "description": "仅接受 Develop 注入当前隔离 Kernel 的短期 Notebook Kernel Capability Bearer；Develop 使用 Session Authorization 调用 System 完成授权复核和数据引擎发现。 | Only accepts the short-lived Notebook Kernel Capability Bearer injected by Develop into the isolated Kernel; Develop uses the Session Authorization to let System review authorization and discover data engines.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Notebook"
                 ],
-                "summary": "获取 Notebook Kernel 可用查询引擎 | List query engines available to a Notebook Kernel",
+                "summary": "获取 Notebook Kernel 可用数据引擎 | List data engines available to a Notebook Kernel",
                 "parameters": [
                     {
                         "type": "string",
@@ -811,7 +1019,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "脱敏查询引擎描述列表 | Masked query engine descriptor list",
+                        "description": "脱敏数据引擎描述列表 | Masked data engine descriptor list",
                         "schema": {
                             "type": "array",
                             "items": {
@@ -841,9 +1049,217 @@
                 "x-addp-auth-mode": "authenticated"
             }
         },
+        "/notebook-kernel-sessions/{session_id}/graph-queries": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Notebook"
+                ],
+                "summary": "执行 Notebook 图查询 | Execute a Notebook graph query",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Notebook 会话 ID | Notebook session ID",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Cypher 与执行边界 | Cypher and execution bounds",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.notebookGraphQueryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/plugin.GraphQueryResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "authenticated"
+            }
+        },
+        "/notebook-kernel-sessions/{session_id}/graph-samples": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Notebook"
+                ],
+                "summary": "获取 Notebook 图样本 | Get a Notebook graph sample",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Notebook 会话 ID | Notebook session ID",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "图路径与样本边界 | Graph path and sample bounds",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.notebookGraphSampleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/plugin.GraphData"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "authenticated"
+            }
+        },
         "/notebook-kernel-sessions/{session_id}/queries": {
             "post": {
-                "description": "查询必须是只读单语句并携带显式 max_rows 与 timeout；参数使用 PostgreSQL $1 形式。 | The query must be one read-only statement with explicit max_rows and timeout; parameters use PostgreSQL $1 syntax.",
+                "description": "language 必须与引擎 QueryRuntimeProvider 声明一致；查询必须携带显式 max_rows 与 timeout。 | Language must match the engine QueryRuntimeProvider declaration; the query requires explicit max_rows and timeout.",
                 "consumes": [
                     "application/json"
                 ],
@@ -869,6 +1285,111 @@
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/internal_api.notebookQueryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "authenticated"
+            }
+        },
+        "/notebook-kernel-sessions/{session_id}/record-scans": {
+            "post": {
+                "description": "每条动态 schema 文档以稳定 document JSON 字段传输，SDK 还原为原生记录。 | Each dynamic-schema document is transported in a stable document JSON field and restored by the SDK.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/vnd.apache.arrow.stream"
+                ],
+                "tags": [
+                    "Notebook"
+                ],
+                "summary": "流式读取 Notebook collection | Stream a Notebook collection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Notebook 会话 ID | Notebook session ID",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Collection 路径与批大小 | Collection path and batch size",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.notebookRecordScanRequest"
                         }
                     }
                 ],
@@ -3767,6 +4288,17 @@
                 }
             }
         },
+        "internal_api.notebookByteRange": {
+            "type": "object",
+            "properties": {
+                "length": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.notebookCatalogChildrenRequest": {
             "type": "object",
             "properties": {
@@ -3781,11 +4313,89 @@
                 }
             }
         },
+        "internal_api.notebookChangeStreamRequest": {
+            "type": "object",
+            "properties": {
+                "batch_size": {
+                    "type": "integer"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "initial_position": {
+                    "type": "string"
+                },
+                "path": {
+                    "$ref": "#/definitions/client.EngineCatalogPath"
+                },
+                "poll_timeout": {
+                    "type": "integer"
+                },
+                "positions": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                }
+            }
+        },
+        "internal_api.notebookContentReadRequest": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "path": {
+                    "$ref": "#/definitions/client.EngineCatalogPath"
+                },
+                "range": {
+                    "$ref": "#/definitions/internal_api.notebookByteRange"
+                }
+            }
+        },
+        "internal_api.notebookGraphQueryRequest": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "max_rows": {
+                    "type": "integer"
+                },
+                "query": {
+                    "type": "string"
+                },
+                "timeout": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.notebookGraphSampleRequest": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "path": {
+                    "$ref": "#/definitions/client.EngineCatalogPath"
+                },
+                "timeout": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.notebookQueryRequest": {
             "type": "object",
             "properties": {
                 "engine_id": {
                     "type": "integer"
+                },
+                "language": {
+                    "type": "string"
                 },
                 "max_rows": {
                     "type": "integer"
@@ -3799,6 +4409,23 @@
                 },
                 "timeout": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api.notebookRecordScanRequest": {
+            "type": "object",
+            "properties": {
+                "batch_size": {
+                    "type": "integer"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "max_rows": {
+                    "type": "integer"
+                },
+                "path": {
+                    "$ref": "#/definitions/client.EngineCatalogPath"
                 }
             }
         },
@@ -4018,6 +4645,85 @@
                 },
                 "size_bytes": {
                     "type": "integer"
+                }
+            }
+        },
+        "plugin.GraphData": {
+            "type": "object",
+            "properties": {
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.GraphNode"
+                    }
+                },
+                "relationships": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.GraphRelationship"
+                    }
+                }
+            }
+        },
+        "plugin.GraphNode": {
+            "type": "object",
+            "properties": {
+                "element_id": {
+                    "type": "string"
+                },
+                "labels": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "properties": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
+        "plugin.GraphQueryResult": {
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "description": "有序列名列表",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "graph_data": {
+                    "$ref": "#/definitions/plugin.GraphData"
+                },
+                "rows": {
+                    "description": "每行：列名 → 值",
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                }
+            }
+        },
+        "plugin.GraphRelationship": {
+            "type": "object",
+            "properties": {
+                "element_id": {
+                    "type": "string"
+                },
+                "end_node_id": {
+                    "type": "string"
+                },
+                "properties": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "start_node_id": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
                 }
             }
         }

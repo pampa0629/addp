@@ -138,6 +138,88 @@ func TestRefreshKnownTabularItemUsesCatalogFactsWithoutContentReader(t *testing.
 	}
 }
 
+func TestRefreshKnownDirectLeafItemUsesCatalogFactsWithoutContentReader(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
+	tenantID := uint(1)
+	engineID := uint(91)
+	enginePlugin := &catalogFactsOnlyDirectLeafPlugin{
+		engineType: "known-refresh-topic-test",
+		facts: &plugin.CatalogFacts{
+			Kind: "topic",
+			Topic: &plugin.TopicFacts{
+				PartitionCount:    1,
+				ReplicationFactor: 1,
+				Partitions: []plugin.TopicPartitionFacts{{
+					Partition:      0,
+					Leader:         1,
+					Replicas:       []int32{1},
+					ISR:            []int32{1},
+					EarliestOffset: 10,
+					LatestOffset:   20,
+				}},
+			},
+		},
+	}
+	pluginRegisterForTest(t, enginePlugin)
+
+	parentNode := models.MetaNode{
+		TenantID:   tenantID,
+		EngineID:   engineID,
+		NodeType:   plugin.CatalogTermService,
+		Name:       "Business Kafka",
+		FullName:   "",
+		Attributes: models.JSONMap{},
+	}
+	if err := db.Create(&parentNode).Error; err != nil {
+		t.Fatalf("create parent node: %v", err)
+	}
+	item := models.MetaItem{
+		TenantID:    tenantID,
+		EngineID:    engineID,
+		NodeID:      parentNode.ID,
+		ItemType:    "topic",
+		Name:        "orders",
+		FullName:    "orders",
+		Fingerprint: "known-refresh-topic",
+		Attributes: models.JSONMap{
+			"item": map[string]interface{}{
+				"layout":    "single",
+				"data_type": string(datatype.Unknown),
+			},
+		},
+	}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+
+	runtime := NewItemRefreshRuntime(metaRepo.NewScanRepository(db), nil, nil)
+	result, err := runtime.RefreshKnownItem(context.Background(), &commonModels.Engine{
+		ID:             engineID,
+		TenantID:       &tenantID,
+		EngineType:     enginePlugin.Type(),
+		LifecycleState: "active",
+	}, tenantID, item, parentNode)
+	if err != nil {
+		t.Fatalf("RefreshKnownItem() error = %v", err)
+	}
+	if result.Item == nil || result.Item.ScannedDepth != models.ScannedDepthDeep {
+		t.Fatalf("refreshed item = %#v, want deep scan", result.Item)
+	}
+	if len(enginePlugin.paths) != 1 {
+		t.Fatalf("DescribeCatalogFacts call count = %d, want 1", len(enginePlugin.paths))
+	}
+	path := enginePlugin.paths[0]
+	if path.EngineID != engineID || len(path.Segments) != 2 || !plugin.IsCatalogRootSegment(path.Segments[0]) || path.Segments[1].Term != "topic" || path.Segments[1].Name != "orders" {
+		t.Fatalf("DescribeCatalogFacts path = %#v", path)
+	}
+	if got := commonJSON.String(result.Item.Attributes, "item", "data_type"); got != string(datatype.Unknown) {
+		t.Fatalf("item.data_type = %q, want unknown", got)
+	}
+	if _, ok := result.Item.Attributes["type_info"]; ok {
+		t.Fatalf("topic runtime facts must not be persisted: %#v", result.Item.Attributes)
+	}
+}
+
 func TestRefreshKnownSingleOSGBItemRedetectsStaleGLBFormat(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	tenantID := uint(1)
@@ -304,6 +386,43 @@ func TestRefreshKnownWholeOSGBSceneRedetectsStaleOSGBFormat(t *testing.T) {
 type catalogFactsOnlyTablePlugin struct {
 	engineType string
 	facts      *plugin.CatalogFacts
+}
+
+type catalogFactsOnlyDirectLeafPlugin struct {
+	engineType string
+	facts      *plugin.CatalogFacts
+	paths      []plugin.CatalogPath
+}
+
+func (p *catalogFactsOnlyDirectLeafPlugin) Type() string { return p.engineType }
+func (p *catalogFactsOnlyDirectLeafPlugin) DisplayName() string {
+	return "known refresh topic test"
+}
+func (p *catalogFactsOnlyDirectLeafPlugin) EngineOrigin() string { return "general" }
+func (p *catalogFactsOnlyDirectLeafPlugin) TestConnection(context.Context, plugin.ConnectionInfo) error {
+	return nil
+}
+func (p *catalogFactsOnlyDirectLeafPlugin) ValidateConnectionInfo(plugin.ConnectionInfo) error {
+	return nil
+}
+func (p *catalogFactsOnlyDirectLeafPlugin) DefaultPort() int          { return 0 }
+func (p *catalogFactsOnlyDirectLeafPlugin) RequiredFields() []string  { return nil }
+func (p *catalogFactsOnlyDirectLeafPlugin) SensitiveFields() []string { return nil }
+func (p *catalogFactsOnlyDirectLeafPlugin) Capabilities() plugin.EngineCapabilities {
+	return plugin.EngineCapabilities{SchemaVersion: plugin.CapabilitiesSchemaVersion, EngineType: p.Type()}
+}
+func (p *catalogFactsOnlyDirectLeafPlugin) CatalogModel() plugin.CatalogModelSpec {
+	return plugin.CatalogModelSpec{
+		PathVersion: plugin.CatalogPathVersion,
+		RootTerm:    plugin.CatalogTermService,
+		Levels: []plugin.CatalogLevelSpec{{
+			Term: "topic", Kinds: []string{"topic"}, Role: plugin.CatalogRoleLeaf,
+		}},
+	}
+}
+func (p *catalogFactsOnlyDirectLeafPlugin) DescribeCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+	p.paths = append(p.paths, path)
+	return p.facts, nil
 }
 
 func (p *catalogFactsOnlyTablePlugin) Type() string { return p.engineType }

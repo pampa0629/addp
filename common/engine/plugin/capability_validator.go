@@ -103,6 +103,11 @@ func validateStoreCapabilities(p EnginePlugin, store *StoreCapability) error {
 			return fmt.Errorf("%s declares table_read_session but does not implement TableReadSessionProvider", p.Type())
 		}
 	}
+	if store.RecordReadSession {
+		if _, ok := p.(RecordReadSessionProvider); !ok {
+			return fmt.Errorf("%s declares record_read_session but does not implement RecordReadSessionProvider", p.Type())
+		}
+	}
 	if store.TableReadSpatialTransform && !implementsNativeTableReader(p) {
 		return fmt.Errorf("%s declares table_read_spatial_transform but does not implement native table read provider", p.Type())
 	}
@@ -301,6 +306,9 @@ func validateStoreProviderCapabilities(p EnginePlugin, storage *StorageCapabilit
 	}
 	if _, ok := p.(TableReadSessionProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool { return store.TableReadSession }) {
 		return fmt.Errorf("%s implements TableReadSessionProvider but does not declare table_read_session", p.Type())
+	}
+	if _, ok := p.(RecordReadSessionProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool { return store.RecordReadSession }) {
+		return fmt.Errorf("%s implements RecordReadSessionProvider but does not declare record_read_session", p.Type())
 	}
 	if _, ok := p.(SpatialFeatureReadProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool {
 		return store.TableSpatialEncoding != nil && store.TableSpatialEncoding.NativeSpatialFunctions

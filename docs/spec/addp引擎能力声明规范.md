@@ -196,6 +196,7 @@ type StoreCapability struct {
     Delete                    bool                                  `json:"delete,omitempty"`
     BatchRead                 bool                                  `json:"batch_read,omitempty"`
     TableReadSession          bool                                  `json:"table_read_session,omitempty"`
+    RecordReadSession         bool                                  `json:"record_read_session,omitempty"`
     TableReadSpatialTransform bool                                  `json:"table_read_spatial_transform,omitempty"`
     BatchWrite                bool                                  `json:"batch_write,omitempty"`
     TableWriteSession         bool                                  `json:"table_write_session,omitempty"`
@@ -244,8 +245,9 @@ type NativeTableSpatialEncodingCapability struct {
 | `range_read` | 从指定 byte range 读取内容。 | `RangeReadableProvider`，或 `OpenContent()` 明确支持 offset / length |
 | `range_write` | 向指定 byte range / offset 写入内容。 | `RangeWritableProvider` |
 | `delete` | 删除 catalog leaf 或空 branch 对应的外部资源。 | `ResourceDeleteProvider` |
-| `batch_read` | 按批次读取结构化 item，如表、集合数据。图数据使用 `GraphSampleProvider` / `GraphQueryProvider`。 | `BatchReadableProvider` |
+| `batch_read` | 执行一次有界的固定 schema 结构化 item 批量读取。动态 schema collection 使用 `record_read_session`，图数据使用 `GraphSampleProvider` / `GraphQueryProvider`。 | `BatchReadableProvider` |
 | `table_read_session` | 打开一次表读取会话并连续读取批次，避免大表 `LIMIT/OFFSET` 翻页退化。 | `TableReadSessionProvider` |
+| `record_read_session` | 打开一次动态 schema 记录游标并连续读取原生 record；collection 不因此获得 table 语义。 | `RecordReadSessionProvider` |
 | `table_read_spatial_transform` | 读取表时是否可通过 read hints 执行空间 CRS 转换。该字段是早期布尔声明，后续优先使用 `table_spatial_encoding.read_transform`。 | `BatchReadableProvider` / `TableReadSessionProvider` |
 | `batch_write` | 按批次写入结构化 item。 | `BatchWritableProvider` |
 | `table_write_session` | 打开一次表写入会话并连续写入批次，避免每批重复建立 COPY / bulk load 会话。 | `TableWriteSessionProvider` |
@@ -270,7 +272,7 @@ type NativeTableSpatialEncodingCapability struct {
 
 ### Checkpoint / Resume 能力
 
-`table_read_session`、`batch_read`、`range_read` 只说明引擎能连续读取、批量读取或按 byte range 读取，不等于支持 checkpoint resume。是否可以从失败点继续执行，必须另行声明恢复语义。
+`table_read_session`、`record_read_session`、`batch_read`、`range_read` 只说明引擎能连续读取、批量读取或按 byte range 读取，不等于支持 checkpoint resume。是否可以从失败点继续执行，必须另行声明恢复语义。
 
 第一版规则：
 
@@ -439,6 +441,7 @@ type CapabilitiesView struct {
 - 声明 `storage.store.delete=true` 的插件必须实现 `ResourceDeleteProvider`。
 - 声明 `storage.store.batch_read=true` 的插件必须实现 `BatchReadableProvider`。
 - 声明 `storage.store.table_read_session=true` 的插件必须实现 `TableReadSessionProvider`。
+- 声明 `storage.store.record_read_session=true` 的插件必须实现 `RecordReadSessionProvider`。
 - 声明 `storage.store.batch_write=true` 的插件必须实现 `BatchWritableProvider`。
 - 声明 `storage.store.table_write_session=true` 的插件必须实现 `TableWriteSessionProvider`。
 - 声明 `storage.store.table_write_prepare=true` 的插件必须实现 `TableWritePreparer`。

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -15,6 +16,30 @@ import (
 	commonAuth "github.com/addp/common/middleware/auth"
 	"github.com/gin-gonic/gin"
 )
+
+func TestQueryOutputFieldSizeOmitsUnboundedAndUnsafeLengths(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		length    int64
+		available bool
+		want      int
+	}{
+		{name: "bounded varchar", length: 50, available: true, want: 50},
+		{name: "driver does not provide length", length: 0, available: false, want: 0},
+		{name: "postgres text sentinel", length: math.MaxInt64, available: true, want: 0},
+		{name: "not exactly representable in JSON clients", length: maxJSONSafeInteger + 1, available: true, want: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := queryOutputFieldSize(tt.length, tt.available); got != tt.want {
+				t.Fatalf("queryOutputFieldSize(%d, %t) = %d, want %d", tt.length, tt.available, got, tt.want)
+			}
+		})
+	}
+}
 
 type recordingServiceTokenProvider struct {
 	tenantID atomic.Uint32

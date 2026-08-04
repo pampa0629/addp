@@ -184,11 +184,15 @@
 				v-model="sqlStableKey"
 				multiple
 				filterable
-				:disabled="isEdit || sqlStableKeyFields.length === 0"
+				:filter-method="filterSQLStableKeyFields"
+				:disabled="isEdit || !form.execution_engine_id || !form.sql_query.trim()"
+				:loading="detectingSQLOutput"
+				:loading-text="t('service.query.detectingOutputFields')"
 				:placeholder="t('service.query.stableKeyPlaceholder')"
+				@visible-change="handleSQLStableKeyVisibleChange"
 				style="width: 100%"
 			  >
-				<el-option v-for="field in sqlStableKeyFields" :key="field.name" :label="field.name" :value="field.name" />
+				<el-option v-for="field in filteredSQLStableKeyFields" :key="field.name" :label="field.name" :value="field.name" />
 			  </el-select>
 			  <div class="help-text">{{ t('service.query.stableKeyHelp') }}</div>
 			</el-form-item>
@@ -204,20 +208,6 @@
 			</el-form-item>
 
             <el-divider content-position="left">空间字段配置（可选）</el-divider>
-
-            <el-form-item>
-              <el-button
-                type="primary"
-                :loading="detectingSQLSpatial"
-				:disabled="!form.execution_engine_id || !form.sql_query"
-                @click="detectSQLSpatialFields"
-              >
-                {{ t('service.query.detectSpatialBtn') }}
-              </el-button>
-              <div class="help-text">
-                {{ t('service.query.detectSpatialHelp') }}
-              </div>
-            </el-form-item>
 
             <el-form-item :label="t('service.query.hasSpatialLabel')">
               <el-checkbox v-model="sqlHasGeometry">
@@ -418,9 +408,10 @@ const route = useRoute()
 const loading = ref(false)
 const submitting = ref(false)
 const currentStep = ref(0)
-const detectingSQLSpatial = ref(false)
+const detectingSQLOutput = ref(false)
 const loadingSampleQuery = ref(false)
 const sampleRequests = createLatestRequestCoordinator()
+const outputContractRequests = createLatestRequestCoordinator()
 
 const isEdit = computed(() => !!route.params.id)
 
@@ -460,6 +451,7 @@ const sqlSrid = ref(0)
 const sqlGeometryType = ref('')
 const sqlOutputContract = ref(null)
 const sqlStableKey = ref([])
+const sqlStableKeyFilter = ref('')
 
 // 字段配置输入
 const defaultFieldsInput = ref('')
@@ -505,6 +497,11 @@ const sqlStableKeyFields = computed(() => {
 	const scalarTypes = new Set(['string', 'bool', 'int', 'bigint', 'float', 'double', 'decimal', 'date', 'time', 'timestamp', 'uuid'])
 	return sqlOutputFields.value.filter(field => scalarTypes.has(String(field?.type || '').toLowerCase()))
 })
+const filteredSQLStableKeyFields = computed(() => {
+	const query = sqlStableKeyFilter.value.toLowerCase()
+	if (!query) return sqlStableKeyFields.value
+	return sqlStableKeyFields.value.filter(field => String(field.name || '').toLowerCase().includes(query))
+})
 
 // 计算属性：是否可以进入下一步
 const canProceed = computed(() => {
@@ -520,26 +517,23 @@ const canProceed = computed(() => {
   return true
 })
 
-// 方法：检测 SQL 查询结果的空间字段
-const detectSQLSpatialFields = async () => {
+const sqlOutputContractRequestKey = () => `${form.execution_engine_id}\n${form.sql_query}`
+
+// 检测 SQL 输出契约，并从同一份事实中更新稳定排序键候选和空间字段。
+const detectSQLOutputContract = async () => {
 	if (!form.execution_engine_id || !form.sql_query) {
-    ElMessage.warning(t('service.query.detectSqlRequired'))
-    return
+    return false
   }
 
-  console.log('[QueryServiceForm] Detecting SQL spatial fields...', {
-	  engine_id: form.execution_engine_id,
-    sql: form.sql_query
-  })
-
-  detectingSQLSpatial.value = true
+  const requestKey = sqlOutputContractRequestKey()
+  const request = outputContractRequests.begin(requestKey)
+  detectingSQLOutput.value = true
   try {
     const response = await queryServiceAPI.detectSQLOutputContract({
 		engine_id: form.execution_engine_id,
       sql: form.sql_query
     })
-
-    console.log('[QueryServiceForm] Detection response:', response)
+	if (!outputContractRequests.isCurrent(request, sqlOutputContractRequestKey())) return false
 
 		  sqlOutputContract.value = response
 		  const outputNames = new Set((response?.table?.fields || []).map(field => field.name))
@@ -558,27 +552,45 @@ const detectSQLSpatialFields = async () => {
       sqlSrid.value = primary.srid || spatial.srid || 0
       sqlGeometryType.value = primary.geometry_type || ''
 
-	  ElMessage.success(t('service.query.detectSpatialSuccess', { column: primary.name, srid: sqlSrid.value || '-' }))
     } else {
       // 未检测到空间字段
       sqlHasGeometry.value = false
       sqlGeometryColumn.value = ''
 	  sqlSrid.value = 0
       sqlGeometryType.value = ''
-
-      ElMessage.info(t('service.query.detectSpatialNone'))
     }
+    return true
   } catch (error) {
-    console.error('[QueryServiceForm] SQL spatial detection failed:', error)
-    ElMessage.warning(t('service.query.detectSpatialFailed') + ': ' + (error.message || error.response?.data?.error || t('service.common.unknownError')))
+    if (!outputContractRequests.isCurrent(request, sqlOutputContractRequestKey())) return false
+    console.error('[QueryServiceForm] SQL output detection failed:', error)
+    ElMessage.warning(t('service.query.detectOutputFailed') + ': ' + (error.response?.data?.error || error.message || t('service.common.unknownError')))
+    return false
   } finally {
-    detectingSQLSpatial.value = false
+    if (outputContractRequests.isCurrent(request, sqlOutputContractRequestKey())) {
+	  detectingSQLOutput.value = false
+    }
   }
 }
 
+const handleSQLStableKeyVisibleChange = visible => {
+  if (visible) {
+    sqlStableKeyFilter.value = ''
+    if (!sqlOutputContract.value && !detectingSQLOutput.value) {
+      detectSQLOutputContract()
+    }
+  }
+}
+
+const filterSQLStableKeyFields = query => {
+  sqlStableKeyFilter.value = String(query || '').trim()
+}
+
 const resetSQLOutputContract = () => {
+	  outputContractRequests.invalidate()
+	  detectingSQLOutput.value = false
 	  sqlOutputContract.value = null
 	  sqlStableKey.value = []
+	  sqlStableKeyFilter.value = ''
   sqlHasGeometry.value = false
   sqlGeometryColumn.value = ''
   sqlSrid.value = 0
@@ -808,7 +820,7 @@ const handleSubmit = async () => {
 
     await navigateServiceRoute(router, '/query-services', { history: 'replace' })
   } catch (error) {
-    ElMessage.error(t('service.query.submitFailed') + ': ' + (error.message || t('service.common.unknownError')))
+    ElMessage.error(t('service.query.submitFailed') + ': ' + (error.response?.data?.error || error.message || t('service.common.unknownError')))
     console.error('Failed to submit:', error)
   } finally {
     submitting.value = false

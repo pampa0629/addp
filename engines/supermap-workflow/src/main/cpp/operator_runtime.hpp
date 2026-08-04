@@ -11,12 +11,14 @@ namespace addp::supermap {
 
 using ResolvedParams = std::unordered_map<std::string, RuntimeValue>;
 using OperatorHandler = std::function<RuntimeValue(const ResolvedParams&, ExecutionContext&)>;
+using DirectOperatorHandler = std::function<Json(const Json&)>;
 
 class OperatorRuntime final {
  public:
   explicit OperatorRuntime(addp::workflow::OperatorCatalog catalog);
 
   Json execute_workflow(const std::string& execution_id, const Json& request) const;
+  Json invoke_direct(const std::string& id, const Json& params) const;
   const addp::workflow::OperatorCatalog& catalog() const;
 
  private:
@@ -25,6 +27,7 @@ class OperatorRuntime final {
 
   addp::workflow::OperatorCatalog catalog_;
   std::unordered_map<std::string, OperatorHandler> handlers_;
+  std::unordered_map<std::string, DirectOperatorHandler> direct_handlers_;
 };
 
 }  // namespace addp::supermap

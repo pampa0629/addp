@@ -1,6 +1,8 @@
 package migration
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"path"
@@ -15,6 +17,13 @@ type Catalog struct {
 	Root          string
 	LatestVersion uint
 	Names         []string
+	Files         []MigrationFile
+}
+
+type MigrationFile struct {
+	Version uint
+	Name    string
+	SHA256  string
 }
 
 func ReadCatalog(fsys fs.FS, root string) (Catalog, error) {
@@ -23,8 +32,7 @@ func ReadCatalog(fsys fs.FS, root string) (Catalog, error) {
 		return Catalog{}, fmt.Errorf("read migration directory %q: %w", root, err)
 	}
 
-	names := make([]string, 0, len(entries))
-	versions := make([]uint, 0, len(entries))
+	files := make([]MigrationFile, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() {
 			return Catalog{}, fmt.Errorf("migration directory %q contains subdirectory %q", root, entry.Name())
@@ -37,22 +45,31 @@ func ReadCatalog(fsys fs.FS, root string) (Catalog, error) {
 		if err != nil {
 			return Catalog{}, fmt.Errorf("parse migration version from %q: %w", entry.Name(), err)
 		}
-		names = append(names, entry.Name())
-		versions = append(versions, uint(version))
+		data, err := fs.ReadFile(fsys, path.Join(root, entry.Name()))
+		if err != nil {
+			return Catalog{}, fmt.Errorf("read migration %q: %w", path.Join(root, entry.Name()), err)
+		}
+		digest := sha256.Sum256(data)
+		files = append(files, MigrationFile{
+			Version: uint(version),
+			Name:    entry.Name(),
+			SHA256:  hex.EncodeToString(digest[:]),
+		})
 	}
 
-	if len(names) == 0 {
+	if len(files) == 0 {
 		return Catalog{}, fmt.Errorf("migration directory %q is empty", root)
 	}
 
-	sort.Slice(names, func(i, j int) bool { return names[i] < names[j] })
-	sort.Slice(versions, func(i, j int) bool { return versions[i] < versions[j] })
-	for index, version := range versions {
+	sort.Slice(files, func(i, j int) bool { return files[i].Version < files[j].Version })
+	names := make([]string, 0, len(files))
+	for index, migrationFile := range files {
 		expected := uint(index + 1)
-		if version != expected {
-			return Catalog{}, fmt.Errorf("migration versions must be contiguous from 000001: expected %06d, found %06d", expected, version)
+		if migrationFile.Version != expected {
+			return Catalog{}, fmt.Errorf("migration versions must be contiguous from 000001: expected %06d, found %06d", expected, migrationFile.Version)
 		}
+		names = append(names, migrationFile.Name)
 	}
 
-	return Catalog{Root: root, LatestVersion: versions[len(versions)-1], Names: names}, nil
+	return Catalog{Root: root, LatestVersion: files[len(files)-1].Version, Names: names, Files: files}, nil
 }

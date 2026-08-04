@@ -350,7 +350,7 @@ func spatialWorkspaceItems(value interface{}) []models.CapabilityViewItem {
 		}
 		item := models.CapabilityViewItem{
 			ID:       spatialWorkspaceItemID(workspace, i),
-			LabelKey: capabilityValueKey("extensions", "spatial_workspace"),
+			LabelKey: spatialWorkspaceLabelKey(workspace),
 			Status:   spatialWorkspaceStatus(stringValue(workspace["state"])),
 		}
 		if ecosystem := stringValue(workspace["ecosystem"]); ecosystem != "" {
@@ -418,6 +418,19 @@ func spatialWorkspaceItems(value interface{}) []models.CapabilityViewItem {
 		items = append(items, item)
 	}
 	return items
+}
+
+func spatialWorkspaceLabelKey(workspace map[string]interface{}) string {
+	ecosystem := strings.ToLower(strings.TrimSpace(stringValue(workspace["ecosystem"])))
+	kind := strings.ToLower(strings.TrimSpace(stringValue(workspace["kind"])))
+	switch ecosystem + "/" + kind {
+	case "supermap/sdx+":
+		return capabilityValueKey("extensions", "supermap_sdx")
+	case "arcgis/sde":
+		return capabilityValueKey("extensions", "arcgis_sde")
+	default:
+		return capabilityValueKey("extensions", "spatial_workspace")
+	}
 }
 
 func spatialWorkspaceMap(value interface{}) (map[string]interface{}, bool) {

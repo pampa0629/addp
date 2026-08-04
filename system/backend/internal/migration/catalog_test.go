@@ -12,8 +12,36 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 37 {
-		t.Fatalf("LatestVersion = %d, want 37", catalog.LatestVersion)
+	if catalog.LatestVersion != 38 {
+		t.Fatalf("LatestVersion = %d, want 38", catalog.LatestVersion)
+	}
+}
+
+func TestNotebookSessionAuthorizationRepairMigrationPublishesCanonicalState(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000038_iam_notebook_session_authorization_repair.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 38: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"to_regclass('system.notebook_catalog_authorizations')",
+		"RENAME TO notebook_session_authorizations",
+		"CREATE TABLE system.notebook_session_authorizations",
+		"source_notebook_session_authorization_id",
+		"system.schema_migration_checksums",
+		"legacy notebook catalog authorization schema still exists",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 38 missing %q", fragment)
+		}
+	}
+	for _, forbidden := range []string{
+		"DROP TABLE IF EXISTS system.notebook_catalog_authorizations",
+		"DELETE FROM system.permissions",
+	} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("migration 38 must preserve IAM history, found %q", forbidden)
+		}
 	}
 }
 

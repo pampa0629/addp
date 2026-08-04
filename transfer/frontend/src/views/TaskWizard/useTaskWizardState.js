@@ -26,10 +26,17 @@ import {
 	normalizeContinuousKeyFields
 } from './continuousTask.mjs'
 import {
-  decimalFactsFromSourceField,
+  applyDecimalRecommendations,
+  decimalFactsFromField,
   mysqlDecimalMappingsValid,
   withSourceDecimalFacts
 } from './decimalMapping.mjs'
+import {
+  applyFieldMappingEdit,
+  applyExistingTargetFields,
+  applyTargetFieldDefinition
+} from './fieldMapping.mjs'
+import { mergeTopicFieldRecommendations } from './topicFieldRecommendations.mjs'
 
 export function useTaskWizardState() {
   const { t } = useI18n()
@@ -191,7 +198,8 @@ export function useTaskWizardState() {
             fieldMappings.value,
             sourceFields.value,
             targetEngineType.value,
-            targetRepresentation.value
+            targetRepresentation.value,
+            targetFields.value
           )
       case 3: // 配置
         return taskName.value.trim() !== '' &&
@@ -703,28 +711,66 @@ export function useTaskWizardState() {
   }
 
   function loadTargetFields(fields) {
-    targetFields.value = fields
+    targetFields.value = Array.isArray(fields) ? fields : []
+    if (targetFields.value.length > 0) {
+      fieldMappings.value = applyExistingTargetFields(fieldMappings.value, targetFields.value)
+    }
+  }
+
+  function resetTargetFields() {
+    targetFields.value = []
+    if (sourceFields.value.length > 0) {
+      autoGenerateFieldMappings()
+    }
   }
 
   // 字段映射
   function autoGenerateFieldMappings() {
     if (sourceFields.value.length === 0) return
 
-	fieldMappings.value = sourceFields.value.map(field => ({
+		fieldMappings.value = applyExistingTargetFields(sourceFields.value.map(field => ({
       source_field: field.name,
       target_field: field.name, // 默认同名映射
       target_type: field.type || 'string',
-		...decimalFactsFromSourceField(field),
+		...decimalFactsFromField(field),
       format: '',
       default_value: '',
-		nullable: field.nullable !== false
-    }))
+		  nullable: field.nullable !== false
+		})), targetFields.value)
+  }
+
+  function applyTopicFieldRecommendations(recommendations) {
+    const result = mergeTopicFieldRecommendations({
+      recommendations,
+      sourceFields: sourceFields.value,
+      fieldMappings: fieldMappings.value,
+      targetFields: targetFields.value
+    })
+    sourceFields.value = result.sourceFields
+    fieldMappings.value = result.fieldMappings
+    normalizeContinuousKeys()
+    return { addedCount: result.addedCount }
   }
 
   function updateFieldMapping(index, mapping) {
-    const previousTarget = String(fieldMappings.value[index]?.target_field || '').trim()
     const sourceField = sourceFields.value.find(field => sameFieldName(field?.name, mapping?.source_field))
-    const nextMapping = withSourceDecimalFacts(mapping, sourceField)
+    const nextMapping = applyFieldMappingEdit(mapping, sourceField)
+    commitFieldMapping(index, nextMapping)
+  }
+
+  function applyTargetFieldMapping(index) {
+    const mapping = fieldMappings.value[index]
+    const targetField = targetFields.value.find(field => sameFieldName(field?.name, mapping?.target_field))
+    const nextMapping = targetField ? applyTargetFieldDefinition(mapping, targetField) : mapping
+    commitFieldMapping(index, nextMapping)
+  }
+
+  function applyRecommendedDecimalDefinitions(recommendations) {
+    fieldMappings.value = applyDecimalRecommendations(fieldMappings.value, recommendations)
+  }
+
+  function commitFieldMapping(index, nextMapping) {
+    const previousTarget = String(fieldMappings.value[index]?.target_field || '').trim()
     fieldMappings.value[index] = nextMapping
     const nextTarget = String(nextMapping?.target_field || '').trim()
     if (previousTarget && targetKeys.value.some(key => sameFieldName(key, previousTarget))) {
@@ -1265,11 +1311,15 @@ export function useTaskWizardState() {
     updateTarget,
     clearTarget,
     loadTargetFields,
+    resetTargetFields,
     initializeIncrementalDefaults,
     updateContinuousKeyFields,
 		setLoadMode,
     autoGenerateFieldMappings,
+    applyTopicFieldRecommendations,
     updateFieldMapping,
+    applyTargetFieldMapping,
+    applyRecommendedDecimalDefinitions,
     addFieldMapping,
     removeFieldMapping,
     addTransform,

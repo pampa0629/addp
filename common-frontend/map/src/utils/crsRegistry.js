@@ -1,5 +1,6 @@
 import proj4 from 'proj4'
 import { register } from 'ol/proj/proj4'
+import { normalizeCRSDefinition } from './crsDefinition.mjs'
 
 const WGS84 = 'EPSG:4326'
 const WEB_MERCATOR = 'EPSG:3857'
@@ -96,11 +97,6 @@ const canRegisterCRSDefinition = (code, crsDefinition) => {
   } catch (_error) {
     return false
   }
-}
-
-const normalizeCRSDefinition = (definition, encoding) => {
-  if (encoding !== 'esri_wkt' || !definition) return definition
-  return definition.replace(/PROJECTION\s*\[\s*"Gauss_Kruger"\s*\]/gi, 'PROJECTION["Transverse_Mercator"]')
 }
 
 const ensureProjection = (code, crsDefinition) => {

@@ -60,6 +60,7 @@ type iamNotebookSessionAuthorizationService interface {
 
 type notebookCatalogEngineResolver interface {
 	GetForExecution(id, tenantID uint) (*models.Engine, error)
+	ListRuntimeDescriptors(page, pageSize int, filter systemservice.EngineListFilter, tenantID uint) ([]models.EngineRuntimeDescriptor, int64, error)
 }
 
 type notebookCatalogChildrenLister interface {
@@ -205,6 +206,84 @@ func (h *IAMNotebookSessionAuthorizationHandler) ListCatalogChildren(c *gin.Cont
 	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, models.CatalogListChildrenResponse{Nodes: nodes})
+}
+
+// ListEngineDescriptors godoc
+// @Summary      使用 Notebook 会话授权列出可访问数据引擎 | List accessible data engines with Notebook session authorization
+// @Description  仅返回 active 且声明实时 CatalogModel 的数据引擎；授权复核与引擎发现在同一请求完成 | Only active data engines declaring a live CatalogModel are returned; authorization review and engine discovery complete in one request
+// @Tags         Notebook 会话授权 | Notebook Session Authorization
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Notebook 会话授权 ID | Notebook session authorization ID"
+// @Param        session_id query string true "Notebook 会话 ID | Notebook session ID"
+// @Success      200 {array} models.EngineRuntimeDescriptor
+// @Failure      400 {object} IAMErrorResponse
+// @Failure      403 {object} IAMErrorResponse
+// @Failure      502 {object} IAMErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.notebook_session_authorization.execute"]
+// @Router       /notebook-session-authorizations/{id}/engine-descriptors [get]
+func (h *IAMNotebookSessionAuthorizationHandler) ListEngineDescriptors(c *gin.Context) {
+	authorizationID, err := parseCanonicalNotebookCatalogUUID(c.Param("id"))
+	if err != nil {
+		respondNotebookCatalogError(c, fmt.Errorf("%w: invalid notebook session authorization ID", commonapi.ErrBadRequest))
+		return
+	}
+	sessionID, err := parseCanonicalNotebookCatalogUUID(c.Query("session_id"))
+	if err != nil {
+		respondNotebookCatalogError(c, fmt.Errorf("%w: invalid notebook session ID", commonapi.ErrBadRequest))
+		return
+	}
+	principalID, tenantID, principalType, err := iamTenantActor(c)
+	if err != nil || principalType != string(iam.PrincipalTypeServicePrincipal) {
+		respondNotebookCatalogError(c, iam.ErrNotebookSessionAuthorizationForbidden)
+		return
+	}
+	authContext, exists := middleware.IAMAuthContextFromGin(c)
+	if !exists || authContext.Client.ClientID == nil {
+		respondNotebookCatalogError(c, commonapi.ErrUnauthorized)
+		return
+	}
+	if _, err := h.service.Authorize(c.Request.Context(), iam.AuthorizeNotebookCatalogInput{
+		AuthorizationID: authorizationID, SessionID: sessionID,
+		ServicePrincipalID: int64(principalID), ServiceClientID: *authContext.Client.ClientID,
+		TenantID: int64(tenantID), Audit: iamAuditMetadataWithStatus(c, http.StatusOK),
+	}); err != nil {
+		respondNotebookCatalogError(c, err)
+		return
+	}
+
+	const pageSize = 100
+	result := make([]models.EngineRuntimeDescriptor, 0, pageSize)
+	for page := 1; ; page++ {
+		descriptors, total, err := h.engines.ListRuntimeDescriptors(page, pageSize, systemservice.EngineListFilter{
+			IncludeBuiltin: true, LifecycleStates: []string{models.EngineLifecycleActive},
+		}, tenantID)
+		if err != nil {
+			respondNotebookCatalogError(c, err)
+			return
+		}
+		for index := range descriptors {
+			if notebookDataEngineDescriptor(&descriptors[index]) {
+				result = append(result, descriptors[index])
+			}
+		}
+		if int64(page*pageSize) >= total {
+			break
+		}
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, result)
+}
+
+func notebookDataEngineDescriptor(descriptor *models.EngineRuntimeDescriptor) bool {
+	if descriptor == nil || descriptor.LifecycleState != models.EngineLifecycleActive || descriptor.Capabilities == nil {
+		return false
+	}
+	capabilities, err := engineplugin.ParseEngineCapabilities(string(*descriptor.Capabilities))
+	return err == nil && capabilities.Storage != nil && capabilities.Storage.Catalog != nil &&
+		capabilities.Storage.Catalog.Supported && capabilities.Storage.Catalog.RealTime &&
+		capabilities.Storage.CatalogModel != nil
 }
 
 // DeriveExecutionEngineAccess godoc

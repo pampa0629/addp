@@ -24,6 +24,9 @@ var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRe
 	"graph": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
 		return NewGraphPreviewProvider(), nil
 	},
+	"event-stream-topic": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
+		return NewEventStreamTopicPreviewProvider(), nil
+	},
 	"file-table": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
 		return NewFileTablePreviewProvider(), nil
 	},
@@ -87,6 +90,7 @@ func fallbackBuiltinPreviewPlugins() []PluginConfig {
 		{Name: "builtin:database-table", Type: "builtin", Builtin: "database-table"},
 		{Name: "builtin:dynamic-schema-collection", Type: "builtin", Builtin: "dynamic-schema-collection"},
 		{Name: "builtin:graph", Type: "builtin", Builtin: "graph"},
+		{Name: "builtin:event-stream-topic", Type: "builtin", Builtin: "event-stream-topic"},
 		{Name: "builtin:scope-table", Type: "builtin", Builtin: "scope-table"},
 		{Name: "builtin:container-child", Type: "builtin", Builtin: "container-child"},
 		{Name: "builtin:ref-file", Type: "builtin", Builtin: "ref-file"},

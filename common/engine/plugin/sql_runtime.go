@@ -3,10 +3,13 @@ package plugin
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
+	"time"
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/sqldialect"
+	"github.com/addp/common/sqleffect"
 	"gorm.io/gorm"
 )
 
@@ -16,6 +19,14 @@ import (
 func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin ConnectionPoolPlugin, connInfo ConnectionInfo, sql string, opts QueryOptions) (*QueryResult, error) {
 	if poolPlugin == nil {
 		return nil, fmt.Errorf("connection pool plugin cannot be nil")
+	}
+	if opts.ReadOnly {
+		if err := sqleffect.RequireReadOnly(sql); err != nil {
+			return nil, fmt.Errorf("read-only SQL validation failed: %w", err)
+		}
+	}
+	if opts.Limit > 0 {
+		sql = sqldialect.PaginateQuerySQL(sql, opts.Limit, 0)
 	}
 
 	var db *gorm.DB
@@ -134,11 +145,70 @@ func QueryResultToBatchData(result *QueryResult, offset int64) *BatchData {
 	}
 	fields := make([]datatype.FieldInfo, 0, len(result.Columns))
 	for _, column := range result.Columns {
-		fields = append(fields, datatype.FieldInfo{Name: column})
+		fields = append(fields, datatype.FieldInfo{
+			Name: column, Type: inferQueryResultFieldType(result.Rows, column), Nullable: true,
+		})
 	}
 	return &BatchData{
 		Rows:   result.Rows,
 		Fields: fields,
 		Offset: offset,
+	}
+}
+
+func inferQueryResultFieldType(rows []map[string]interface{}, column string) datatype.FieldType {
+	fieldType := datatype.FieldTypeUnknown
+	for _, row := range rows {
+		value := row[column]
+		if value == nil {
+			continue
+		}
+		candidate := queryResultValueFieldType(value)
+		if fieldType == datatype.FieldTypeUnknown {
+			fieldType = candidate
+			continue
+		}
+		if candidate != fieldType {
+			if datatype.IsNumericFieldType(fieldType) && datatype.IsNumericFieldType(candidate) {
+				fieldType = datatype.FieldTypeDouble
+				continue
+			}
+			return datatype.FieldTypeMixed
+		}
+	}
+	return fieldType
+}
+
+func queryResultValueFieldType(value interface{}) datatype.FieldType {
+	switch value.(type) {
+	case bool:
+		return datatype.FieldTypeBool
+	case int, int8, int16, int32:
+		return datatype.FieldTypeInt
+	case int64, uint, uint8, uint16, uint32, uint64:
+		return datatype.FieldTypeBigInt
+	case float32:
+		return datatype.FieldTypeFloat
+	case float64:
+		return datatype.FieldTypeDouble
+	case []byte:
+		return datatype.FieldTypeBytes
+	case time.Time:
+		return datatype.FieldTypeTimestamp
+	case map[string]interface{}:
+		return datatype.FieldTypeJSON
+	case []interface{}:
+		return datatype.FieldTypeArray
+	case string, fmt.Stringer:
+		return datatype.FieldTypeString
+	default:
+		kind := reflect.TypeOf(value).Kind()
+		if kind == reflect.Map || kind == reflect.Struct {
+			return datatype.FieldTypeJSON
+		}
+		if kind == reflect.Array || kind == reflect.Slice {
+			return datatype.FieldTypeArray
+		}
+		return datatype.FieldTypeUnknown
 	}
 }

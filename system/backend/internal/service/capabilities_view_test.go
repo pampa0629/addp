@@ -144,6 +144,18 @@ func TestBuildCapabilitiesViewFormatsSpatialWorkspaces(t *testing.T) {
 					"supermap_system_table_count": 0,
 				},
 			},
+			{
+				Ecosystem:         "arcgis",
+				Kind:              "sde",
+				State:             engineplugin.SpatialWorkspaceStateUnavailable,
+				BackendEngineType: "postgresql",
+				CanEnable:         false,
+				RiskLevel:         engineplugin.SpatialWorkspaceRiskHigh,
+				Evidence: map[string]interface{}{
+					"sde_schema_count": 0,
+					"sde_table_count":  0,
+				},
+			},
 		},
 	}
 	payload, err := engineplugin.MarshalEngineCapabilities(caps)
@@ -163,6 +175,9 @@ func TestBuildCapabilitiesViewFormatsSpatialWorkspaces(t *testing.T) {
 	if item.Status != capabilityStatusNotInstalled {
 		t.Fatalf("spatial workspace status = %q, want %q", item.Status, capabilityStatusNotInstalled)
 	}
+	if item.LabelKey != "system.engine.capabilityView.extensions.supermapSdx" {
+		t.Fatalf("supermap label key = %q", item.LabelKey)
+	}
 	assertCapabilityTag(t, *item, "ecosystem_supermap")
 	assertCapabilityTag(t, *item, "kind_sdx")
 	assertCapabilityTag(t, *item, "state_notDetected")
@@ -171,6 +186,18 @@ func TestBuildCapabilitiesViewFormatsSpatialWorkspaces(t *testing.T) {
 	assertCapabilityTag(t, *item, "risk_level_high")
 	assertCapabilityTag(t, *item, "can_enable")
 	assertCapabilityTag(t, *item, "evidence_postgisReady")
+
+	arcgis := findCapabilityItem(view, "extensions", "spatial_workspace_arcgis_sde_1")
+	if arcgis == nil {
+		t.Fatalf("ArcGIS spatial workspace item not found in view: %#v", view.Sections)
+	}
+	if arcgis.LabelKey != "system.engine.capabilityView.extensions.arcgisSde" {
+		t.Fatalf("arcgis label key = %q", arcgis.LabelKey)
+	}
+	assertCapabilityTag(t, *arcgis, "ecosystem_arcgis")
+	assertCapabilityTag(t, *arcgis, "kind_sde")
+	assertCapabilityTag(t, *arcgis, "evidence_sdeSchemaCount")
+	assertCapabilityTag(t, *arcgis, "evidence_sdeTableCount")
 }
 
 func findCapabilityItem(view *commonModels.CapabilitiesView, sectionID, itemID string) *commonModels.CapabilityViewItem {

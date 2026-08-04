@@ -2,7 +2,7 @@
 
 `supermap_workflow` 是 ADDP 面向超图 iObjects C++ 的工作流运行时，遵循 `addp.workflow/v1` HTTP 接口。运行时独立校验 `workflow_def`，按 `depends_on` 做稳定拓扑排序，并在单次执行上下文中串行执行 DAG；DAG 内部通过类型化 C++ 句柄传递 SuperMap 内存对象，HTTP 边界只返回 JSON 摘要、最终资产引用和血缘事件。
 
-SuperMap C++ SDK、native `.so` 和许可文件不进入 ADDP 代码仓库。完整 SDK 作为外部只读母版长期保存，通过 `SUPERMAP_CPP_SDK_PATH` 作为 Docker build context 构建稳定基础镜像；许可作为受控制品单独注入。最终生产镜像后续从同一母版生成裁剪运行包，但不得删除或修改完整母版。
+SuperMap C++ SDK、native `.so` 和许可文件不进入 ADDP 代码仓库。完整 SDK 作为外部只读母版长期保存，通过 `SUPERMAP_CPP_SDK_PATH` 作为 Docker build context 构建稳定基础镜像；许可作为受控制品单独注入。最终运行镜像从该基础镜像复制编译产物和 SDK `bin/bin`，不携带 SDK 的头文件、帮助、样例、支持库目录和构建工具；任何裁剪都不得删除或修改完整母版。
 
 ## 第一阶段范围
 
@@ -49,7 +49,7 @@ HTTP 层使用独立线程池，确保长时间 CAD 渲染或其他 SuperMap 算
 
 `datasource.open_postgis` 只打开已有 PostGIS 空间表所在数据源，不调用 SuperMap `create`，因此不会主动创建 SuperMap `sm*` 系统表。`datasource.enable_postgis` 是 direct-only 高危算子，用于 System 引擎管理入口显式启用 SuperMap SDX+ 空间工作区，可能在目标 PostgreSQL 数据库中创建 SuperMap 系统表，不进入 Develop 工作流画布。`datasource.upgrade_udbx` 同样是 direct-only 高危算子：它先以 SQLite 只读检查 UDBX 的 SuperMap 系统表与 `SmRegister` 关键字段，再以可写方式打开原文件，由当前 iObjects C++ SDK 完成原位 schema 升级，关闭后再次检查并返回是否发生变更。它不得在 `datasource.open` 或其他普通读取链路中隐式执行；调用方必须先备份文件并记录审计信息。`locator` 只属于 Develop/UI 的资源选择契约；调用 runtime 前，Develop Backend 必须把它派生为 `connection_info`、`schema` 和 `table` 并移除，SuperMap runtime 不解析 ADDP locator。
 
-`osgb_scene_to_s3m` 同时支持 workflow 和 direct 模式，输入输出统一使用 `addp.workflow.access-plan/v1`。源当前接受 NFS `mounted_path`，运行时按访问计划中的 `server + export_path + nfs_version` 动态挂载；源目录必须包含 `metadata.xml` 与 `Data/Tile_*/Tile_*.osgb`。目标支持 NFS `mounted_path` 与 MinIO/S3 `object_store`：对象存储目标先在本地临时目录完成转换，再递归发布。算子在可写临时目录中镜像 OSGB 场景层级，先调用 `OSGBCacheBuilder.generateConfigFile` 生成源 SCP，再使用 `ObliquePhotogrammetryBuilder` 构建 S3M 3.01：纹理压缩固定为 DXT，几何压缩固定为 Draco，文件类型固定为 S3MB。Builder 保留瓦片局部坐标，运行时随后用 SuperMap `CoordSysTranslator` 将 JSON manifest 的 `position` 与 `geoBounds` 从源 EPSG 规范化到 EPSG:4326。发布前必须验证 `version=3.01`、`crs=epsg:4326`、`position.unit=Degree`、位置经纬度范围、`s3m:TextureCompressionType=DXT`、`s3m:VertexCompressionType=DRACO` 及所有根瓦片存在。当前多根场景输出为 `config/scene.scp + config/scene/Data/**/*.s3mb`，manifest 中的 `./scene/Data/...` 相对 `config/scene.scp` 解析。Develop workflow 结果是业务存储中的 `format=s3m + layout=whole` 数据集并触发 Meta scan；Manager direct 结果写入 Manager infra MinIO 并由 Manager 维护生命周期。
+`osgb_scene_to_s3m` 同时支持 workflow 和 direct 模式，输入输出统一使用 `addp.workflow.access-plan/v1`。源当前接受 NFS `mounted_path`，运行时按访问计划中的 `server + export_path + nfs_version` 动态挂载；源目录必须包含 `metadata.xml` 与 `Data/Tile_*/Tile_*.osgb`。目标支持 NFS `mounted_path` 与 MinIO/S3 `object_store`：对象存储目标先在本地临时目录完成转换，再递归发布。算子在可写临时目录中镜像 OSGB 场景层级，先调用 `UGOSGBCacheBuilder::GenerateOSGBConfigFile` 生成源 SCP，再使用 `UGObliquePhotogrammetryBuilder::ProcessOSGB` 构建 S3M 3.01：纹理压缩固定为 DXT，几何压缩固定为 Draco，文件类型固定为 S3MB，存储类型固定为 `PURE_FILES`。Builder 保留瓦片局部坐标，运行时随后用 SuperMap `UGRefTranslator` 将 JSON manifest 的 `position` 与 `geoBounds` 从源 EPSG 规范化到 EPSG:4326。发布前必须验证 `version=3.01`、`crs=epsg:4326`、`position.unit=Degree`、位置经纬度范围、`s3m:TextureCompressionType=DXT`、`s3m:VertexCompressionType=DRACO` 及所有根瓦片存在。当前输出为 `config/scene.scp + config/Data/**/*.s3mb`，manifest 中的 `./Data/...` 相对 `config/scene.scp` 解析。Develop workflow 结果是业务存储中的 `format=s3m + layout=whole` 数据集并触发 Meta scan；Manager direct 结果写入 Manager infra MinIO 并由 Manager 维护生命周期。
 
 UDBX 升级调试示例：
 
@@ -95,7 +95,26 @@ SUPERMAP_CPP_SDK_PATH=/path/to/supermap-iobjectscpp-12.1.0-linux-arm64-all \
   bash scripts/build/build-supermap-workflow-base.sh
 ```
 
-基础镜像默认名为 `addp-supermap-workflow-base:local`，包含编译工具、完整 SuperMap C++ SDK、许可和 NFS/SQLite/Qt 系统依赖。它不包含 ADDP Runtime 源码，因此日常业务代码修改不需要重建基础镜像。完整 SDK 阶段只验证 C++ 功能等价；体积裁剪必须在 24 个算子全部通过后单独进行。
+基础镜像默认名为 `addp-supermap-workflow-base:local`，包含编译工具、完整 SuperMap C++ SDK、许可和 NFS/SQLite/Qt 系统依赖。它不包含 ADDP Runtime 源码，因此日常业务代码修改不需要重建基础镜像。完整 SDK 基础镜像用于编译和未来扩展算子；最终运行镜像只承载运行期文件。
+
+完整 SDK 自带的 FreeType 版本与 Ubuntu 24.04 Qt/Harfbuzz 不兼容。完整 SDK 母版和基础镜像仍原样保留该库；代码镜像的构建阶段和最终运行层只删除 SDK 副本中的 `libfreetype.so*`，统一使用系统 `libfreetype.so.6`。构建阶段不得全局设置 SDK `LD_LIBRARY_PATH`，否则 CMake 会误加载 SDK 自带 `libcurl/jsoncpp`；运行阶段只允许把 `/opt/supermap/bin/bin` 加入 `LD_LIBRARY_PATH`，不得加入 SDK `support/libs`。
+
+### 镜像裁剪结果
+
+以下是 2026-08-04 在 Linux ARM64 镜像上的实测结果。`压缩内容` 取自 `docker image inspect .Size`，`本地展开` 取自 Docker Desktop 的镜像列表；不同基础镜像补丁版本可能产生小幅变化。
+
+| 镜像 | 压缩内容 | 本地展开 | 说明 |
+| --- | ---: | ---: | --- |
+| 原 Java/GPA 参考镜像 | 1.515 GB | 6.16 GB | ObjectsJava、GPA、JRE 和系统运行库 |
+| 完整 C++ 候选 | 1.510 GB | 6.66 GB | 直接继承完整 SDK 基础镜像，未裁剪 |
+| 第一轮 C++ 运行镜像 | 0.963 GB | 4.75 GB | 多阶段构建，只保留 SDK `bin/bin` 和运行依赖 |
+| 当前 C++ 运行镜像 | 0.478 GB | 2.02 GB | 在第一轮基础上按动态追踪结果裁剪可选插件和资源包 |
+
+当前 C++ 运行镜像相对 Java/GPA 参考镜像，压缩内容减少约 68.4%，本地展开体积减少约 67.2%；相对第一轮 C++ 运行镜像，分别继续减少约 50.4% 和 57.5%。第一轮裁剪排除了 `include/`、`help/`、`sample/`、`support/`、编译器、CMake 和其他开发文件，运行镜像不包含 JRE、ObjectsJava 或 GPA runtime。
+
+第二轮对 20 节点二维 DAG、PostGIS 只读打开、CAD 检查与渲染、UDBX 升级和 OSGB 转 S3M 做了完整动态文件访问追踪，共确认 338 个实际打开的 SDK 文件。在与追踪结果零冲突的前提下，删除了 124 个未使用的 IFC/BIM、天气、海洋和 JVM 顶层插件文件，以及 `SilverLiningResource`、`OceanResource` 两个资源目录；这些文件在完整 SDK 中的展开体积合计约 2.25 GB。
+
+S3M 转换实际会动态加载 PCL、VTK 和 OpenVDB，因此这些库必须保留。CAD 核心实际会加载 `libUDKernel.so`、`libUDDrawing.so`、`libUDComponents.so` 和 `libUDDgn.so`，也必须保留。完整 SDK 母版和基础镜像继续保存全部插件、头文件和开发资源，以支持未来新增算子；后续扩大裁剪范围时仍必须先补充动态追踪场景，再重跑 24 个算子、PostGIS、UDBX、CAD、S3M、动态 NFS 和 MinIO/S3 回归，不能仅按静态链接关系删除 `.so`、`.sdx`、`.spi`、`.l3d` 或资源文件。
 
 日常启动和重启统一使用：
 

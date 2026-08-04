@@ -17,7 +17,6 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/common/sqldialect"
 	"github.com/google/uuid"
 )
 
@@ -30,6 +29,7 @@ var (
 	ErrNotebookTableScanInvalid     = errors.New("notebook table scan request is invalid")
 	ErrNotebookTableScanUnsupported = errors.New("notebook table scan is unsupported by this engine")
 	ErrNotebookQueryInvalid         = errors.New("notebook query request is invalid")
+	ErrNotebookQueryUnsupported     = errors.New("notebook query is unsupported by this engine")
 )
 
 const (
@@ -142,21 +142,31 @@ func (s *NotebookSessionService) Create(ctx context.Context, userAccessToken str
 	ownerAPIEndpoint := ownerSessionBase + "/engine-descriptors"
 	ownerCatalogAPIEndpoint := ownerSessionBase + "/catalog/children"
 	ownerTableScanAPIEndpoint := ownerSessionBase + "/table-scans"
+	ownerRecordScanAPIEndpoint := ownerSessionBase + "/record-scans"
 	ownerQueryAPIEndpoint := ownerSessionBase + "/queries"
+	ownerGraphSampleAPIEndpoint := ownerSessionBase + "/graph-samples"
+	ownerGraphQueryAPIEndpoint := ownerSessionBase + "/graph-queries"
+	ownerContentReadAPIEndpoint := ownerSessionBase + "/content-reads"
+	ownerChangeStreamAPIEndpoint := ownerSessionBase + "/change-streams"
 	runtimeSession, controlURL, err := s.jupyter.OpenInteractiveSession(ctx, tenantID, *engineID, plugin.InteractiveScriptSessionRequest{
-		SessionID:                 sessionID,
-		TenantID:                  tenantID,
-		UserID:                    userID,
-		TaskID:                    taskID,
-		NotebookPath:              notebookPath,
-		Kernel:                    kernel,
-		BasePath:                  basePath,
-		TTLSeconds:                int(s.ttl.Seconds()),
-		OwnerAPIEndpoint:          ownerAPIEndpoint,
-		OwnerCatalogAPIEndpoint:   ownerCatalogAPIEndpoint,
-		OwnerTableScanAPIEndpoint: ownerTableScanAPIEndpoint,
-		OwnerQueryAPIEndpoint:     ownerQueryAPIEndpoint,
-		OwnerCapabilityToken:      kernelCapabilityToken,
+		SessionID:                    sessionID,
+		TenantID:                     tenantID,
+		UserID:                       userID,
+		TaskID:                       taskID,
+		NotebookPath:                 notebookPath,
+		Kernel:                       kernel,
+		BasePath:                     basePath,
+		TTLSeconds:                   int(s.ttl.Seconds()),
+		OwnerAPIEndpoint:             ownerAPIEndpoint,
+		OwnerCatalogAPIEndpoint:      ownerCatalogAPIEndpoint,
+		OwnerTableScanAPIEndpoint:    ownerTableScanAPIEndpoint,
+		OwnerRecordScanAPIEndpoint:   ownerRecordScanAPIEndpoint,
+		OwnerQueryAPIEndpoint:        ownerQueryAPIEndpoint,
+		OwnerGraphSampleAPIEndpoint:  ownerGraphSampleAPIEndpoint,
+		OwnerGraphQueryAPIEndpoint:   ownerGraphQueryAPIEndpoint,
+		OwnerContentReadAPIEndpoint:  ownerContentReadAPIEndpoint,
+		OwnerChangeStreamAPIEndpoint: ownerChangeStreamAPIEndpoint,
+		OwnerCapabilityToken:         kernelCapabilityToken,
 	})
 	if err != nil {
 		return nil, "", err
@@ -277,6 +287,7 @@ func (s *NotebookSessionService) StreamTable(
 
 type NotebookQueryRequest struct {
 	EngineID uint
+	Language string
 	Query    string
 	Params   []interface{}
 	MaxRows  int64
@@ -290,12 +301,9 @@ func (s *NotebookSessionService) StreamQuery(
 	destination io.Writer,
 	ready func(),
 ) error {
-	if request.EngineID == 0 || strings.TrimSpace(request.Query) == "" || request.MaxRows <= 0 ||
+	request.Language = strings.ToLower(strings.TrimSpace(request.Language))
+	if request.EngineID == 0 || request.Language == "" || strings.TrimSpace(request.Query) == "" || request.MaxRows <= 0 ||
 		request.MaxRows > 1_000_000 || request.Timeout <= 0 || request.Timeout > 5*time.Minute || destination == nil {
-		return ErrNotebookQueryInvalid
-	}
-	effect, err := ClassifySQLExecutionEffect(request.Query)
-	if err != nil || effect != SQLExecutionEffectRead {
 		return ErrNotebookQueryInvalid
 	}
 	session, err := s.ResolveKernelCapability(sessionID, token)
@@ -322,27 +330,64 @@ func (s *NotebookSessionService) StreamQuery(
 	if err != nil {
 		return err
 	}
-	if access.Engine == nil || access.Engine.ID != request.EngineID || access.Engine.EngineType != "postgresql" {
-		return ErrNotebookTableScanUnsupported
+	if access.Engine == nil || access.Engine.ID != request.EngineID || access.Engine.EngineType == "" {
+		return ErrNotebookQueryUnsupported
 	}
 	enginePlugin, err := plugin.Get(access.Engine.EngineType)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrNotebookTableScanUnsupported, err)
+		return fmt.Errorf("%w: %v", ErrNotebookQueryUnsupported, err)
 	}
-	provider, ok := enginePlugin.(plugin.TableReadSessionProvider)
+	provider, ok := enginePlugin.(plugin.QueryRuntimeProvider)
 	if !ok {
-		return ErrNotebookTableScanUnsupported
+		return ErrNotebookQueryUnsupported
 	}
-	boundedQuery := sqldialect.PaginateQuerySQL(request.Query, int(request.MaxRows), 0)
-	readSession, err := provider.OpenTableReadSession(executionCtx, plugin.ConnectionInfo(access.Engine.ConnectionInfo),
-		plugin.CatalogPath{Version: plugin.CatalogPathVersion, EngineID: request.EngineID},
-		plugin.TableReadSessionOptions{Query: boundedQuery, Args: request.Params})
+	if !notebookQueryLanguageSupported(provider.QueryLanguages(), request.Language) {
+		return ErrNotebookQueryUnsupported
+	}
+	if len(request.Params) > 0 {
+		parameterized, ok := enginePlugin.(plugin.ParameterizedSQLQueryRuntimeProvider)
+		if request.Language != "sql" || !ok || !parameterized.SupportsParameterizedQueries() {
+			return ErrNotebookQueryUnsupported
+		}
+	}
+	result, err := provider.ExecuteRuntimeQuery(executionCtx, plugin.ConnectionInfo(access.Engine.ConnectionInfo), plugin.QueryRequest{
+		EngineID: request.EngineID,
+		Language: request.Language,
+		Query:    request.Query,
+		Options: plugin.QueryOptions{
+			EngineID: request.EngineID, EngineType: access.Engine.EngineType,
+			Limit: int(request.MaxRows), Timeout: request.Timeout, ReadOnly: true, Args: request.Params,
+		},
+	})
 	if err != nil {
 		return err
 	}
-	defer closeNotebookReadSession(readSession)
-	return s.streamNotebookReadSession(executionCtx, session, executionID, access, readSession,
-		min(65536, int(request.MaxRows)), request.MaxRows, destination, ready)
+	batch := plugin.QueryResultToBatchData(result, 0)
+	if len(batch.Rows) > int(request.MaxRows) {
+		batch.Rows = batch.Rows[:request.MaxRows]
+	}
+	writer, err := plugin.NewBatchArrowStreamWriter(destination, batch.Fields)
+	if err != nil {
+		return err
+	}
+	if ready != nil {
+		ready()
+	}
+	if err := writer.WriteBatch(batch); err != nil {
+		_ = writer.Close()
+		return err
+	}
+	notifyNotebookStreamFlush(destination)
+	return writer.Close()
+}
+
+func notebookQueryLanguageSupported(languages []string, requested string) bool {
+	for _, language := range languages {
+		if strings.EqualFold(strings.TrimSpace(language), requested) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *NotebookSessionService) streamNotebookReadSession(
@@ -364,6 +409,7 @@ func (s *NotebookSessionService) streamNotebookReadSession(
 	if firstBatch == nil || len(firstBatch.Fields) == 0 {
 		return fmt.Errorf("notebook table scan returned no schema")
 	}
+	trimNotebookBatchRows(firstBatch, maxRows)
 	if ready != nil {
 		ready()
 	}
@@ -396,6 +442,7 @@ func (s *NotebookSessionService) streamNotebookReadSession(
 		if batch == nil || len(batch.Rows) == 0 {
 			break
 		}
+		trimNotebookBatchRows(batch, maxRows-rowsRead)
 		if err := arrowWriter.WriteBatch(batch); err != nil {
 			return err
 		}
@@ -404,6 +451,13 @@ func (s *NotebookSessionService) streamNotebookReadSession(
 		firstBatch = batch
 	}
 	return arrowWriter.Close()
+}
+
+func trimNotebookBatchRows(batch *plugin.BatchData, maxRows int64) {
+	if batch == nil || maxRows <= 0 || int64(len(batch.Rows)) <= maxRows {
+		return
+	}
+	batch.Rows = batch.Rows[:maxRows]
 }
 
 func notebookPluginCatalogPath(path commonClient.EngineCatalogPath) plugin.CatalogPath {
@@ -489,12 +543,12 @@ func (s *NotebookSessionService) ResolveKernelCapability(sessionID, token string
 	return &copy, nil
 }
 
-func (s *NotebookSessionService) ListQueryEngineDescriptors(ctx context.Context, sessionID, token string) ([]commonModels.EngineRuntimeDescriptor, error) {
+func (s *NotebookSessionService) ListDataEngineDescriptors(ctx context.Context, sessionID, token string) ([]commonModels.EngineRuntimeDescriptor, error) {
 	session, err := s.ResolveKernelCapability(sessionID, token)
 	if err != nil {
 		return nil, err
 	}
-	return s.jupyter.ListQueryEngines(ctx, session.TenantID)
+	return s.catalog.ListEngineDescriptors(ctx, session.TenantID, session.SessionAuthorizationID, session.ID)
 }
 
 func (s *NotebookSessionService) Resolve(sessionID, secret string) (*NotebookSession, error) {

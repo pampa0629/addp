@@ -73,7 +73,7 @@
             <span
               class="tree-node-wrapper"
               :class="{ 'resource-tree-unloaded-children-inline': isUnloadedExpandable(data) }"
-              @dblclick="enableDblclickToggle ? handleNodeDblclick($event, node, data) : null"
+              @dblclick="enableDblclickToggle && !expandOnClickNode ? handleNodeDblclick($event, node, data) : null"
             >
               <span class="tree-node" :class="[data.type, { highlight: data.highlight }]">
                 <span class="node-main">
@@ -183,8 +183,14 @@ import {
   Share,
   Upload
 } from '@element-plus/icons-vue'
-import { getAllNodeKeys, traverseTree, findNodePath } from '../types/tree'
+import { traverseTree, findNodePath } from '../types/tree'
 import { getEngineIconName } from '../utils/engineDisplay.js'
+import {
+  addExpandedKey,
+  hasExpandableChildren,
+  removeExpandedKey,
+  resolveExpandedKeys
+} from '../utils/resourceTreeState.mjs'
 
 // 动作图标映射（将字符串名称映射到图标组件）
 const actionIconMap = {
@@ -388,30 +394,33 @@ const treeProps = {
   }
 }
 
-const hasExpandableChildren = (data) => {
-  if (!data) return false
-  if (data.hasChildren === true) return true
-  if (data.metadata?.has_children === true) return true
-  return Number(data.metadata?.item_count || 0) > 0
-}
-
 const isUnloadedExpandable = (data) => {
   return hasExpandableChildren(data) && (!data.children || data.children.length === 0)
 }
 
-// 计算展开的节点
-const computedExpandedKeys = computed(() => {
-  if (props.expandedKeys?.length) {
-    return props.expandedKeys
-  }
-  if (props.defaultExpandAll) {
-    return getAllNodeKeys(props.treeData)
-  }
-  if (props.defaultExpandRoot) {
-    return props.treeData.map((node) => node.id)
-  }
-  return []
-})
+// 用户第一次操作前允许应用默认展开；之后空数组代表明确的“全部收起”。
+const expandedKeysOverride = ref(null)
+const computedExpandedKeys = computed(() => (
+  resolveExpandedKeys({
+    override: expandedKeysOverride.value,
+    expandedKeys: props.expandedKeys,
+    treeData: props.treeData,
+    expandAll: props.defaultExpandAll,
+    expandRoot: props.defaultExpandRoot
+  })
+))
+
+const sameKeys = (left = [], right = []) => {
+  if (left.length !== right.length) return false
+  return left.every((key, index) => key === right[index])
+}
+
+const commitExpandedKeys = (keys) => {
+  const nextKeys = [...new Set(keys || [])]
+  expandedKeysOverride.value = nextKeys
+  emit('update:expanded-keys', nextKeys)
+  nextTick(() => updateExpandState())
+}
 
 // 默认过滤方法
 const defaultFilterMethod = (node, keyword) => {
@@ -526,14 +535,14 @@ watch(
         expandedKeysBeforeFilter.value = [...computedExpandedKeys.value]
       }
       const matchedPaths = findMatchedPaths(props.treeData, keyword)
-      emit('update:expanded-keys', matchedPaths)
+      commitExpandedKeys(matchedPaths)
       return
     }
 
     if (previousKeyword) {
       const restoredKeys = expandedKeysBeforeFilter.value || []
       expandedKeysBeforeFilter.value = null
-      emit('update:expanded-keys', restoredKeys)
+      commitExpandedKeys(restoredKeys)
     }
   },
   { deep: true }
@@ -551,14 +560,22 @@ const updateExpandState = () => {
     if (nextExpandedKeys.has(key)) continue
     const node = tree.store.getNode(key)
     if (node?.expanded) {
-      node.expanded = false
+      if (typeof node.collapse === 'function') {
+        node.collapse()
+      } else {
+        node.expanded = false
+      }
     }
   }
 
   for (const key of nextExpandedKeys) {
     const node = tree.store.getNode(key)
     if (node && !node.expanded) {
-      node.expanded = true
+      if (typeof node.expand === 'function') {
+        node.expand()
+      } else {
+        node.expanded = true
+      }
     }
   }
   appliedExpandedKeys = nextExpandedKeys
@@ -598,7 +615,12 @@ watch(
 // expandedKeys 变化时只更新展开状态，不触发 setCurrentKey / scrollIntoView，避免跳动
 watch(
   () => props.expandedKeys,
-  () => {
+  (keys, previousKeys) => {
+    const nextKeys = [...new Set(keys || [])]
+    const previous = [...new Set(previousKeys || [])]
+    if (!sameKeys(nextKeys, previous) && !sameKeys(nextKeys, expandedKeysOverride.value || [])) {
+      expandedKeysOverride.value = nextKeys
+    }
     if (hasTreeData.value) {
       nextTick(() => {
         updateExpandState()
@@ -654,17 +676,14 @@ const handleCurrentChange = (data, node) => {
 // 节点展开
 const handleNodeExpand = (data) => {
   if (!data) return
-  const keys = new Set(props.expandedKeys)
-  keys.add(data.id)
-  emit('update:expanded-keys', Array.from(keys))
+  commitExpandedKeys(addExpandedKey(computedExpandedKeys.value, data.id))
   emit('node-expand', data)
 }
 
 // 节点折叠
 const handleNodeCollapse = (data) => {
   if (!data) return
-  const keys = props.expandedKeys.filter((id) => id !== data.id)
-  emit('update:expanded-keys', keys)
+  commitExpandedKeys(removeExpandedKey(computedExpandedKeys.value, data.id))
   emit('node-collapse', data)
 }
 
@@ -680,12 +699,11 @@ const handleNodeDblclick = (event, node, data) => {
   // 切换节点展开/折叠状态
   if (node) {
     const willExpand = !node.expanded
-    node.expanded = willExpand
-
-    // 触发对应的展开/折叠事件，让父组件可以处理（例如懒加载数据）
     if (willExpand) {
+      node.expand?.()
       handleNodeExpand(data)
     } else {
+      node.collapse?.()
       handleNodeCollapse(data)
     }
   }

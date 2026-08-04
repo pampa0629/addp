@@ -23,3 +23,25 @@ test('query service form clears stale SQL before loading a real sample', async (
   assert.match(handler, /sampleRequests\.isCurrent\(request, form\.execution_engine_id\)/)
   assert.doesNotMatch(handler, /SELECT\s+1/i)
 })
+
+test('stable key selector detects the current SQL output when opened', async () => {
+  const source = await readFile(new URL('../src/views/QueryServiceForm.vue', import.meta.url), 'utf8')
+
+  assert.match(source, /@visible-change="handleSQLStableKeyVisibleChange"/)
+  assert.match(source, /:loading="detectingSQLOutput"/)
+  assert.match(source, /:filter-method="filterSQLStableKeyFields"/)
+  assert.match(source, /String\(query \|\| ''\)\.trim\(\)/)
+  assert.match(source, /if \(visible\)/)
+  assert.match(source, /!sqlOutputContract\.value\s*&&\s*!detectingSQLOutput\.value/)
+  assert.match(source, /outputContractRequests\.invalidate\(\)/)
+  assert.doesNotMatch(source, /@click="detectSQLSpatialFields"/)
+})
+
+test('query service form displays the backend error before the generic HTTP error', async () => {
+  const source = await readFile(new URL('../src/views/QueryServiceForm.vue', import.meta.url), 'utf8')
+  const submitStart = source.indexOf('const handleSubmit = async')
+  const submitEnd = source.indexOf('// 方法：返回列表', submitStart)
+  const submitHandler = source.slice(submitStart, submitEnd)
+
+  assert.match(submitHandler, /error\.response\?\.data\?\.error \|\| error\.message/)
+})

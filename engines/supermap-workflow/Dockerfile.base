@@ -1,26 +1,47 @@
-ARG BASE_IMAGE=192.168.106.71/datacenter/runtime-notebook-python:v3.0.0-aarch64
+ARG BASE_IMAGE=ubuntu:24.04
 FROM ${BASE_IMAGE}
 
 LABEL addp.service="supermap-workflow-base"
 LABEL addp.supermap.base="true"
+LABEL addp.supermap.runtime="iobjects-cpp"
 
-ENV JAVA_HOME=/opt/java
-ENV PATH=/opt/java/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ENV SUPERMAP_OBJECTSJAVA_BIN=/opt/supermap/objectsjava/bin_linux_arm64
-ENV SUPERMAP_GPA_LIB_DIR=/opt/supermap/gpa/libs
+ENV DEBIAN_FRONTEND=noninteractive
+ENV SUPERMAP_CPP_SDK_ROOT=/opt/supermap
 
 USER root
 WORKDIR /app
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends libminizip1 libblosc1 nfs-common netbase sqlite3 \
+  && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    cmake \
+    curl \
+    g++ \
+    libcpp-httplib-dev \
+    libcurl4-openssl-dev \
+    libfreetype6 \
+    libqt5core5t64 \
+    libqt5gui5t64 \
+    libqt5widgets5t64 \
+    libxinerama1 \
+    libxrandr2 \
+    netbase \
+    nfs-common \
+    ninja-build \
+    nlohmann-json3-dev \
+    sqlite3 \
   && rm -rf /var/lib/apt/lists/* \
-  && mkdir -p /opt/supermap/objectsjava/bin_linux_arm64 /opt/supermap/gpa/libs /app/license
+  && mkdir -p /opt/supermap /opt/supermap-license
 
-COPY --from=objectsjava . /opt/supermap/objectsjava/bin_linux_arm64/
-COPY --from=gpa_libs . /opt/supermap/gpa/libs/
-COPY --from=license . /app/license/
+COPY --from=supermap_sdk . /opt/supermap/
+COPY --from=license . /opt/supermap-license/
 
-RUN javac -version \
-  && test -d /opt/supermap/objectsjava/bin_linux_arm64 \
-  && test -d /opt/supermap/gpa/libs
+RUN license_file="$(find /opt/supermap-license -maxdepth 1 -type f -name '*.lic12' -print -quit)" \
+  && test -n "${license_file}" \
+  && cp "${license_file}" /opt/supermap/bin/bin/ \
+  && test -f /opt/supermap/include/Engine/UGDataSource.h \
+  && test -f /opt/supermap/include/private/CacheBuilder/UGOSGBCacheBuilder.h \
+  && test -f /opt/supermap/bin/bin/libSuEngine.so \
+  && test -f /opt/supermap/bin/bin/libSuCacheBuilder.so \
+  && test -f /opt/supermap/bin/bin/libSuTileStorage.so \
+  && test -f /opt/supermap/bin/bin/libSuBase3D.so

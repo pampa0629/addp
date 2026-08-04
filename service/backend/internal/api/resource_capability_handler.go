@@ -299,7 +299,7 @@ func (h *ResourceCapabilityHandler) detectSQLOutputContract(
 			fieldType = datatype.FieldTypeGeometry
 		}
 		nullable, _ := colType.Nullable()
-		length, _ := colType.Length()
+		length, hasLength := colType.Length()
 		precision, scale, _ := colType.DecimalSize()
 		field := datatype.FieldInfo{
 			Name:            colType.Name(),
@@ -307,7 +307,7 @@ func (h *ResourceCapabilityHandler) detectSQLOutputContract(
 			NativeType:      nativeType,
 			Nullable:        nullable,
 			OrdinalPosition: index + 1,
-			Size:            int(length),
+			Size:            queryOutputFieldSize(length, hasLength),
 			Precision:       int(precision),
 			Scale:           int(scale),
 		}
@@ -402,6 +402,16 @@ func (h *ResourceCapabilityHandler) detectSQLOutputContract(
 	}
 
 	return &serviceModels.QueryServiceOutputContract{Table: tableInfo, Spatial: spatialInfo}, nil
+}
+
+const maxJSONSafeInteger = int64(1<<53 - 1)
+
+func queryOutputFieldSize(length int64, available bool) int {
+	maxInt := int64(^uint(0) >> 1)
+	if !available || length <= 0 || length > maxJSONSafeInteger || length > maxInt {
+		return 0
+	}
+	return int(length)
 }
 
 func queryOutputFieldType(engineType, nativeType string) datatype.FieldType {

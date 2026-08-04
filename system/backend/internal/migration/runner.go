@@ -64,6 +64,21 @@ func (r *Runner) Run(ctx context.Context) error {
 	if err := rejectLegacySchema(ctx, db); err != nil {
 		return err
 	}
+	preMigrationVersion, preMigrationDirty, hasMigrationState, err := readExistingMigrationState(ctx, db)
+	if err != nil {
+		return err
+	}
+	if hasMigrationState {
+		if preMigrationDirty {
+			return fmt.Errorf("system IAM migration version %d is dirty", preMigrationVersion)
+		}
+		if preMigrationVersion > catalog.LatestVersion {
+			return fmt.Errorf("database migration version %d is newer than embedded version %d", preMigrationVersion, catalog.LatestVersion)
+		}
+		if err := verifyRecordedMigrationChecksums(ctx, db, catalog, preMigrationVersion); err != nil {
+			return err
+		}
+	}
 
 	sourceDriver, err := iofs.New(r.FS, root)
 	if err != nil {
@@ -81,8 +96,11 @@ func (r *Runner) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("create migration runner: %w", err)
 	}
+	migrationClosed := false
 	defer func() {
-		_, _ = m.Close()
+		if !migrationClosed {
+			_, _ = m.Close()
+		}
 	}()
 	// The database advisory lock is the startup gate. Orchestration may terminate
 	// the process, but System must never continue while another instance migrates.
@@ -98,7 +116,6 @@ func (r *Runner) Run(ctx context.Context) error {
 	if err == nil && version > catalog.LatestVersion {
 		return fmt.Errorf("database migration version %d is newer than embedded version %d", version, catalog.LatestVersion)
 	}
-
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("apply system IAM migrations: %w", err)
 	}
@@ -112,7 +129,44 @@ func (r *Runner) Run(ctx context.Context) error {
 	if version != catalog.LatestVersion {
 		return fmt.Errorf("applied migration version %d does not match embedded version %d", version, catalog.LatestVersion)
 	}
+	sourceCloseErr, databaseCloseErr := m.Close()
+	migrationClosed = true
+	if sourceCloseErr != nil {
+		return fmt.Errorf("close migration source: %w", sourceCloseErr)
+	}
+	if databaseCloseErr != nil {
+		return fmt.Errorf("close migration database driver: %w", databaseCloseErr)
+	}
+	checksumDB, err := sql.Open("postgres", r.DSN)
+	if err != nil {
+		return fmt.Errorf("open migration checksum database: %w", err)
+	}
+	checksumDB.SetMaxOpenConns(1)
+	checksumDB.SetMaxIdleConns(1)
+	defer checksumDB.Close()
+	if err := checksumDB.PingContext(ctx); err != nil {
+		return fmt.Errorf("ping migration checksum database: %w", err)
+	}
+	if err := recordAndVerifyMigrationChecksums(ctx, checksumDB, catalog, version); err != nil {
+		return err
+	}
 	return nil
+}
+
+func readExistingMigrationState(ctx context.Context, db *sql.DB) (uint, bool, bool, error) {
+	var exists bool
+	if err := db.QueryRowContext(ctx, `SELECT to_regclass('system.schema_migrations') IS NOT NULL`).Scan(&exists); err != nil {
+		return 0, false, false, fmt.Errorf("inspect migration state table: %w", err)
+	}
+	if !exists {
+		return 0, false, false, nil
+	}
+	var version uint
+	var dirty bool
+	if err := db.QueryRowContext(ctx, `SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		return 0, false, false, fmt.Errorf("read migration state: %w", err)
+	}
+	return version, dirty, true, nil
 }
 
 func rejectLegacySchema(ctx context.Context, db *sql.DB) error {

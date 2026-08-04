@@ -2,6 +2,7 @@ package shared
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"sort"
 	"strings"
@@ -123,11 +124,23 @@ func (d MySQLCompatibleCatalogFactsDialect) tableNative(engine string) map[strin
 }
 
 func (d MySQLCompatibleCatalogFactsDialect) ListColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]datatype.FieldInfo, error) {
-	var fields []datatype.FieldInfo
-	query := `
+	var rows []mysqlCompatibleColumnRow
+	if err := db.WithContext(ctx).Raw(mysqlCompatibleColumnsQuery, schema, table).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("failed to list columns: %w", err)
+	}
+	fields := make([]datatype.FieldInfo, 0, len(rows))
+	for _, row := range rows {
+		fields = append(fields, d.fieldInfo(row))
+	}
+	return plugin.NormalizeFieldInfos(fields), nil
+}
+
+const mysqlCompatibleColumnsQuery = `
 		SELECT
 			column_name as name,
 			column_type as native_type,
+			numeric_precision,
+			numeric_scale,
 			IF(is_nullable = 'YES', true, false) as nullable,
 			IF(column_key = 'PRI', true, false) as primary_key,
 			COALESCE(column_comment, '') as comment
@@ -137,16 +150,35 @@ func (d MySQLCompatibleCatalogFactsDialect) ListColumns(ctx context.Context, db 
 		ORDER BY ordinal_position
 	`
 
-	if err := db.WithContext(ctx).Raw(query, schema, table).Scan(&fields).Error; err != nil {
-		return nil, fmt.Errorf("failed to list columns: %w", err)
+type mysqlCompatibleColumnRow struct {
+	Name             string
+	NativeType       string
+	NumericPrecision sql.NullInt64
+	NumericScale     sql.NullInt64
+	Nullable         bool
+	PrimaryKey       bool
+	Comment          string
+}
+
+func (d MySQLCompatibleCatalogFactsDialect) fieldInfo(row mysqlCompatibleColumnRow) datatype.FieldInfo {
+	field := datatype.FieldInfo{
+		Name:       row.Name,
+		NativeType: row.NativeType,
+		Nullable:   row.Nullable,
+		PrimaryKey: row.PrimaryKey,
+		Comment:    row.Comment,
 	}
-	for i := range fields {
-		fields[i].Type = datatype.FieldTypeUnknown
-		if d.MapFieldType != nil {
-			fields[i].Type = d.MapFieldType(fields[i].NativeType)
+	field.Type = datatype.FieldTypeUnknown
+	if d.MapFieldType != nil {
+		field.Type = d.MapFieldType(field.NativeType)
+	}
+	if field.Type == datatype.FieldTypeDecimal && row.NumericPrecision.Valid && row.NumericPrecision.Int64 > 0 {
+		field.Precision = int(row.NumericPrecision.Int64)
+		if row.NumericScale.Valid && row.NumericScale.Int64 >= 0 {
+			field.Scale = int(row.NumericScale.Int64)
 		}
 	}
-	return plugin.NormalizeFieldInfos(fields), nil
+	return field
 }
 
 func (d MySQLCompatibleCatalogFactsDialect) RowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {

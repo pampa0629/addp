@@ -80,6 +80,7 @@ func TestLoadPreviewPluginsRegistersBuiltinDefaultsWithoutFiles(t *testing.T) {
 		"builtin:database-table",
 		"builtin:dynamic-schema-collection",
 		"builtin:graph",
+		"builtin:event-stream-topic",
 		"builtin:scope-table",
 		"builtin:container-child",
 		"builtin:ref-file",
@@ -91,6 +92,22 @@ func TestLoadPreviewPluginsRegistersBuiltinDefaultsWithoutFiles(t *testing.T) {
 		if _, err := registry.GetByName(name); err != nil {
 			t.Fatalf("expected default provider %s: %v", name, err)
 		}
+	}
+}
+
+func TestProviderNamesForMetaRoutesTopicToEventStreamProvider(t *testing.T) {
+	req := &PreviewResolverRequest{
+		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
+			"item": map[string]interface{}{"layout": "single", "data_type": "unknown"},
+		}},
+		ItemType: "topic",
+	}
+	names := providerNamesForMeta(req, &PreviewRequest{ItemType: "topic"})
+	if len(names) != 1 || names[0] != "builtin:event-stream-topic" {
+		t.Fatalf("provider names = %#v, want event stream topic provider", names)
+	}
+	if !isPreviewItemType("topic") {
+		t.Fatal("topic must be recognized as preview item type")
 	}
 }
 

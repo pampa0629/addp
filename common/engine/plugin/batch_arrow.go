@@ -21,8 +21,8 @@ type BatchArrowStreamWriter struct {
 }
 
 func NewBatchArrowStreamWriter(destination io.Writer, fields []datatype.FieldInfo) (*BatchArrowStreamWriter, error) {
-	if destination == nil || len(fields) == 0 {
-		return nil, fmt.Errorf("Arrow stream destination and fields are required")
+	if destination == nil {
+		return nil, fmt.Errorf("Arrow stream destination is required")
 	}
 	arrowFields := make([]arrow.Field, len(fields))
 	for index, field := range fields {

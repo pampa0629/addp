@@ -1047,6 +1047,13 @@ definitions:
     - workflow_definition
     - workflow_engine_id
     type: object
+  internal_api.notebookByteRange:
+    properties:
+      length:
+        type: integer
+      offset:
+        type: integer
+    type: object
   internal_api.notebookCatalogChildrenRequest:
     properties:
       engine_id:
@@ -1056,10 +1063,61 @@ definitions:
       path:
         $ref: '#/definitions/client.EngineCatalogPath'
     type: object
+  internal_api.notebookChangeStreamRequest:
+    properties:
+      batch_size:
+        type: integer
+      engine_id:
+        type: integer
+      initial_position:
+        type: string
+      path:
+        $ref: '#/definitions/client.EngineCatalogPath'
+      poll_timeout:
+        type: integer
+      positions:
+        additionalProperties:
+          format: int64
+          type: integer
+        type: object
+    type: object
+  internal_api.notebookContentReadRequest:
+    properties:
+      engine_id:
+        type: integer
+      path:
+        $ref: '#/definitions/client.EngineCatalogPath'
+      range:
+        $ref: '#/definitions/internal_api.notebookByteRange'
+    type: object
+  internal_api.notebookGraphQueryRequest:
+    properties:
+      engine_id:
+        type: integer
+      max_rows:
+        type: integer
+      query:
+        type: string
+      timeout:
+        type: integer
+    type: object
+  internal_api.notebookGraphSampleRequest:
+    properties:
+      engine_id:
+        type: integer
+      limit:
+        type: integer
+      path:
+        $ref: '#/definitions/client.EngineCatalogPath'
+      timeout:
+        type: integer
+    type: object
   internal_api.notebookQueryRequest:
     properties:
       engine_id:
         type: integer
+      language:
+        type: string
       max_rows:
         type: integer
       params:
@@ -1069,6 +1127,17 @@ definitions:
         type: string
       timeout:
         type: integer
+    type: object
+  internal_api.notebookRecordScanRequest:
+    properties:
+      batch_size:
+        type: integer
+      engine_id:
+        type: integer
+      max_rows:
+        type: integer
+      path:
+        $ref: '#/definitions/client.EngineCatalogPath'
     type: object
   internal_api.notebookTableScanRequest:
     properties:
@@ -1220,6 +1289,59 @@ definitions:
         type: string
       size_bytes:
         type: integer
+    type: object
+  plugin.GraphData:
+    properties:
+      nodes:
+        items:
+          $ref: '#/definitions/plugin.GraphNode'
+        type: array
+      relationships:
+        items:
+          $ref: '#/definitions/plugin.GraphRelationship'
+        type: array
+    type: object
+  plugin.GraphNode:
+    properties:
+      element_id:
+        type: string
+      labels:
+        items:
+          type: string
+        type: array
+      properties:
+        additionalProperties: true
+        type: object
+    type: object
+  plugin.GraphQueryResult:
+    properties:
+      columns:
+        description: 有序列名列表
+        items:
+          type: string
+        type: array
+      graph_data:
+        $ref: '#/definitions/plugin.GraphData'
+      rows:
+        description: 每行：列名 → 值
+        items:
+          additionalProperties: true
+          type: object
+        type: array
+    type: object
+  plugin.GraphRelationship:
+    properties:
+      element_id:
+        type: string
+      end_node_id:
+        type: string
+      properties:
+        additionalProperties: true
+        type: object
+      start_node_id:
+        type: string
+      type:
+        type: string
     type: object
 host: localhost:8185
 info:
@@ -1764,11 +1886,151 @@ paths:
       tags:
       - Notebook
       x-addp-auth-mode: authenticated
+  /notebook-kernel-sessions/{session_id}/change-streams:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Notebook 会话 ID | Notebook session ID
+        in: path
+        name: session_id
+        required: true
+        type: string
+      - description: Topic 路径与起始位置 | Topic path and initial positions
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.notebookChangeStreamRequest'
+      produces:
+      - application/x-ndjson
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: Bad Gateway
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "504":
+          description: Gateway Timeout
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 流式读取 Notebook Kafka topic | Stream a Notebook Kafka topic
+      tags:
+      - Notebook
+      x-addp-auth-mode: authenticated
+  /notebook-kernel-sessions/{session_id}/content-reads:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Notebook 会话 ID | Notebook session ID
+        in: path
+        name: session_id
+        required: true
+        type: string
+      - description: 内容路径与可选范围 | Content path and optional range
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.notebookContentReadRequest'
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: Bad Gateway
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "504":
+          description: Gateway Timeout
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 读取 Notebook 对象或文件内容 | Read Notebook object or file content
+      tags:
+      - Notebook
+      x-addp-auth-mode: authenticated
   /notebook-kernel-sessions/{session_id}/engine-descriptors:
     get:
-      description: 仅接受 Develop 注入当前隔离 Kernel 的短期 Notebook Kernel Capability Bearer；不接受用户或服务
-        Token。 | Only accepts the short-lived Notebook Kernel Capability Bearer injected
-        by Develop into the isolated Kernel; user and service tokens are not accepted.
+      description: 仅接受 Develop 注入当前隔离 Kernel 的短期 Notebook Kernel Capability Bearer；Develop
+        使用 Session Authorization 调用 System 完成授权复核和数据引擎发现。 | Only accepts the short-lived
+        Notebook Kernel Capability Bearer injected by Develop into the isolated Kernel;
+        Develop uses the Session Authorization to let System review authorization
+        and discover data engines.
       parameters:
       - description: Notebook 会话 ID | Notebook session ID
         in: path
@@ -1779,7 +2041,7 @@ paths:
       - application/json
       responses:
         "200":
-          description: 脱敏查询引擎描述列表 | Masked query engine descriptor list
+          description: 脱敏数据引擎描述列表 | Masked data engine descriptor list
           schema:
             items:
               $ref: '#/definitions/models.EngineRuntimeDescriptor'
@@ -1796,8 +2058,146 @@ paths:
             additionalProperties:
               type: string
             type: object
-      summary: 获取 Notebook Kernel 可用查询引擎 | List query engines available to a Notebook
+      summary: 获取 Notebook Kernel 可用数据引擎 | List data engines available to a Notebook
         Kernel
+      tags:
+      - Notebook
+      x-addp-auth-mode: authenticated
+  /notebook-kernel-sessions/{session_id}/graph-queries:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Notebook 会话 ID | Notebook session ID
+        in: path
+        name: session_id
+        required: true
+        type: string
+      - description: Cypher 与执行边界 | Cypher and execution bounds
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.notebookGraphQueryRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/plugin.GraphQueryResult'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: Bad Gateway
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "504":
+          description: Gateway Timeout
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 执行 Notebook 图查询 | Execute a Notebook graph query
+      tags:
+      - Notebook
+      x-addp-auth-mode: authenticated
+  /notebook-kernel-sessions/{session_id}/graph-samples:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Notebook 会话 ID | Notebook session ID
+        in: path
+        name: session_id
+        required: true
+        type: string
+      - description: 图路径与样本边界 | Graph path and sample bounds
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.notebookGraphSampleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/plugin.GraphData'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: Bad Gateway
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "504":
+          description: Gateway Timeout
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 获取 Notebook 图样本 | Get a Notebook graph sample
       tags:
       - Notebook
       x-addp-auth-mode: authenticated
@@ -1805,9 +2205,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: 查询必须是只读单语句并携带显式 max_rows 与 timeout；参数使用 PostgreSQL $1 形式。 | The
-        query must be one read-only statement with explicit max_rows and timeout;
-        parameters use PostgreSQL $1 syntax.
+      description: language 必须与引擎 QueryRuntimeProvider 声明一致；查询必须携带显式 max_rows 与 timeout。
+        | Language must match the engine QueryRuntimeProvider declaration; the query
+        requires explicit max_rows and timeout.
       parameters:
       - description: Notebook 会话 ID | Notebook session ID
         in: path
@@ -1870,6 +2270,78 @@ paths:
               type: string
             type: object
       summary: 执行 Notebook 有界只读查询 | Execute a bounded Notebook read query
+      tags:
+      - Notebook
+      x-addp-auth-mode: authenticated
+  /notebook-kernel-sessions/{session_id}/record-scans:
+    post:
+      consumes:
+      - application/json
+      description: 每条动态 schema 文档以稳定 document JSON 字段传输，SDK 还原为原生记录。 | Each dynamic-schema
+        document is transported in a stable document JSON field and restored by the
+        SDK.
+      parameters:
+      - description: Notebook 会话 ID | Notebook session ID
+        in: path
+        name: session_id
+        required: true
+        type: string
+      - description: Collection 路径与批大小 | Collection path and batch size
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.notebookRecordScanRequest'
+      produces:
+      - application/vnd.apache.arrow.stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: Bad Gateway
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "504":
+          description: Gateway Timeout
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 流式读取 Notebook collection | Stream a Notebook collection
       tags:
       - Notebook
       x-addp-auth-mode: authenticated

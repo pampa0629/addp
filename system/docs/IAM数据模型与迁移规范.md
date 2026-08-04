@@ -127,19 +127,20 @@ System 启动顺序固定为：
 
 1. 使用启动期专用单连接池连接 PostgreSQL；
 2. 读取嵌入 migration 目录并校验版本连续性；
-3. 获取 PostgreSQL session advisory lock；
-4. 拒绝 dirty、数据库版本超前和 legacy IAM schema；
+3. 拒绝 dirty、数据库版本超前和 legacy IAM schema，并校验已执行 migration 的文件名和 SHA-256 摘要；
+4. 获取 PostgreSQL session advisory lock，在锁内重新读取版本和 dirty 状态；
 5. 按版本分别在事务中执行向前 migration；
-6. 确认数据库版本等于嵌入最新版本并释放连接；
-7. 打开 GORM 运行时连接并启动 HTTP 服务。
+6. 确认数据库版本等于嵌入最新版本，并记录新执行 migration 的文件名和摘要；
+7. 释放启动期连接，打开 GORM 运行时连接并启动 HTTP 服务。
 
 等待锁的实例必须在获得锁后重新读取版本。migration 失败会保留 dirty 状态并阻止 System 启动，不允许自动回退、跳过版本或运行时兜底。
 
-当前版本由 `system/backend/internal/migration/sql` 和 `internal/migration/catalog_test.go` 共同约束；本文不固定抄写版本号。
+已执行 migration 的摘要记录在 `system.schema_migration_checksums`；该表只由 Migration Runner 维护，不是手工修改版本或跳过迁移的通道。当前版本由 `system/backend/internal/migration/sql` 和 `internal/migration/catalog_test.go` 共同约束；本文不固定抄写版本号。
 
 ## 十、迁移演进
 
 - 只增加新的 `NNNNNN_name.up.sql`，不修改已发布 migration；
+- 已执行 migration 的版本号、文件名和内容摘要必须保持不变；概念收敛或方案重做也必须使用新版本向前迁移；
 - Permission/Role Catalog 变化由聚合器生成确定性输入，再进入新的向前 migration；
 - 破坏性模型切换不保留旧字段、双写、双读或兼容 query；
 - 需要保留的外部数据必须另行批准离线导入方案，不进入 System Runtime；

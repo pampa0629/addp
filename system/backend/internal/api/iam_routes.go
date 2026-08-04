@@ -98,6 +98,7 @@ func RegisterIAMRoutes(
 	}
 
 	api.POST("/execution-authorizations/:id/engine-accesses", runtime.Authentication, runtime.ServiceCredential, tenantServiceContext, executionAuthorizationExecute, runtime.ExecutionAuthorizationHandler.AuthorizeEngineAccess)
+	api.GET("/notebook-session-authorizations/:id/engine-descriptors", runtime.Authentication, runtime.ServiceCredential, tenantServiceContext, developClient, notebookCatalogExecute, runtime.NotebookSessionAuthorizationHandler.ListEngineDescriptors)
 	api.POST("/notebook-session-authorizations/:id/catalog/children", runtime.Authentication, runtime.ServiceCredential, tenantServiceContext, developClient, notebookCatalogExecute, runtime.NotebookSessionAuthorizationHandler.ListCatalogChildren)
 	api.POST("/notebook-session-authorizations/:id/execution-engine-accesses", runtime.Authentication, runtime.ServiceCredential, tenantServiceContext, developClient, notebookCatalogExecute, runtime.NotebookSessionAuthorizationHandler.DeriveExecutionEngineAccess)
 	api.POST("/notebook-session-authorizations/:id/revocations", runtime.Authentication, runtime.ServiceCredential, tenantServiceContext, developClient, notebookCatalogExecute, runtime.NotebookSessionAuthorizationHandler.Revoke)

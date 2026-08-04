@@ -3,35 +3,50 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENGINE_DIR="${ROOT_DIR}/engines/supermap-workflow"
-VENDOR_DIR="${ENGINE_DIR}/vendor"
+LICENSE_DIR="${ENGINE_DIR}/vendor/license"
+SDK_PATH="${SUPERMAP_CPP_SDK_PATH:-}"
 IMAGE="${SUPERMAP_WORKFLOW_BASE_IMAGE:-addp-supermap-workflow-base:local}"
 PLATFORM="${SUPERMAP_WORKFLOW_PLATFORM:-linux/arm64}"
-BUILD_IMAGE="${SUPERMAP_WORKFLOW_BUILD_IMAGE:-192.168.106.71/datacenter/runtime-notebook-python:v3.0.0-aarch64}"
+BUILD_IMAGE="${SUPERMAP_WORKFLOW_BUILD_IMAGE:-ubuntu:24.04}"
 
-require_dir() {
-  if [ ! -d "$1" ] || [ -z "$(find "$1" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
-    echo "❌ 缺少 SuperMap 本地依赖目录或目录为空: $1" >&2
+require_file() {
+  if [ ! -f "$1" ]; then
+    echo "❌ 缺少 SuperMap C++ SDK 文件: $1" >&2
     exit 1
   fi
 }
 
-require_dir "${VENDOR_DIR}/objectsjava"
-require_dir "${VENDOR_DIR}/gpa-libs"
-require_dir "${VENDOR_DIR}/license"
+if [ -z "${SDK_PATH}" ] || [ ! -d "${SDK_PATH}" ]; then
+  echo "❌ SUPERMAP_CPP_SDK_PATH 必须指向完整 SuperMap iObjects C++ SDK 母版" >&2
+  exit 1
+fi
+if ! find "${LICENSE_DIR}" -maxdepth 1 -type f -name '*.lic12' -print -quit | grep -q .; then
+  echo "❌ ${LICENSE_DIR} 中缺少独立许可文件 (*.lic12)" >&2
+  exit 1
+fi
 
-echo "🏗️  构建 SuperMap Workflow 基础镜像: ${IMAGE}"
+require_file "${SDK_PATH}/include/Engine/UGDataSource.h"
+require_file "${SDK_PATH}/include/private/CacheBuilder/UGOSGBCacheBuilder.h"
+require_file "${SDK_PATH}/bin/bin/libSuEngine.so"
+require_file "${SDK_PATH}/bin/bin/libSuCacheBuilder.so"
+require_file "${SDK_PATH}/bin/bin/libSuTileStorage.so"
+require_file "${SDK_PATH}/bin/bin/libSuBase3D.so"
+
+echo "🏗️  使用完整只读 C++ SDK 构建 SuperMap Workflow 基础镜像: ${IMAGE}"
 docker build \
   --no-cache \
   --platform "${PLATFORM}" \
   --build-arg "BASE_IMAGE=${BUILD_IMAGE}" \
-  --build-context "objectsjava=${VENDOR_DIR}/objectsjava" \
-  --build-context "gpa_libs=${VENDOR_DIR}/gpa-libs" \
-  --build-context "license=${VENDOR_DIR}/license" \
+  --build-context "supermap_sdk=${SDK_PATH}" \
+  --build-context "license=${LICENSE_DIR}" \
   -f "${ENGINE_DIR}/Dockerfile.base" \
   -t "${IMAGE}" \
   "${ENGINE_DIR}"
 
 docker run --rm --platform "${PLATFORM}" "${IMAGE}" sh -lc \
-  'javac -version && test -d "$SUPERMAP_OBJECTSJAVA_BIN" && test -d "$SUPERMAP_GPA_LIB_DIR"'
+  'test -f "$SUPERMAP_CPP_SDK_ROOT/include/Engine/UGDataSource.h" \
+    && test -f "$SUPERMAP_CPP_SDK_ROOT/include/private/CacheBuilder/UGOSGBCacheBuilder.h" \
+    && test -f "$SUPERMAP_CPP_SDK_ROOT/bin/bin/libSuEngine.so" \
+    && find "$SUPERMAP_CPP_SDK_ROOT/bin/bin" -maxdepth 1 -type f -name "*.lic12" -print -quit | grep -q .'
 
-echo "✅ SuperMap Workflow 基础镜像构建完成: ${IMAGE}"
+echo "✅ SuperMap Workflow C++ 基础镜像构建完成: ${IMAGE}"

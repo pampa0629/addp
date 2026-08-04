@@ -83,6 +83,12 @@ export const taskAPI = {
   // 字段映射写入任务 config.transforms[]，不再提供独立 mappings API。
 }
 
+export const fieldDefinitionRecommendationAPI = {
+  create(data) {
+    return client.post('/transfer/field-definition-recommendations', data)
+  }
+}
+
 // 执行记录 API
 export const executionAPI = {
   // 获取执行记录列表

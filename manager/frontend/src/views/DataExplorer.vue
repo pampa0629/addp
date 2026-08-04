@@ -91,7 +91,7 @@ const treeRef = ref(null)
 // 控制搜索显示：资源树搜索只用于数据探查页内的资源定位
 const showSearch = ref(true)
 
-const itemTypes = new Set(['table', 'view', 'collection', 'graph', 'file', 'object'])
+const itemTypes = new Set(['table', 'view', 'collection', 'graph', 'topic', 'file', 'object'])
 const nodeTypes = new Set(['schema', 'database', 'bucket', 'prefix', 'directory', 'root', 'dir', 'server', 'service'])
 const hasLocatorIdentity = (loc) => !!(loc?.itemId || loc?.nodeId)
 

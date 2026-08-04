@@ -992,6 +992,7 @@
       "spatial": "空间",
       "dataTable": "数据表",
       "graphOverview": "图概览",
+      "eventStreamTopic": "消息主题",
       "graphSample": "样本",
       "graphSampleStats": "当前样本：{nodes} 个节点 / {relationships} 条关系",
       "graphFilteredSampleStats": "已筛选样本：展示 {nodes} 个节点 / {relationships} 条关系，共 {total} 条",
@@ -1651,6 +1652,7 @@
       "table": "表",
       "view": "视图",
       "collection": "集合",
+      "topic": "消息主题",
       "graph": "图",
       "file": "文件",
       "object": "对象"

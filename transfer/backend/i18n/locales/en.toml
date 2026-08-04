@@ -87,3 +87,12 @@ other = "Dead-letter record not found."
 
 [transfer.dead_letter.internal_error]
 other = "Failed to query dead-letter records."
+
+[transfer.field_recommendation.invalid]
+other = "The field definition recommendation request is invalid"
+
+[transfer.field_recommendation.unsupported]
+other = "The current source or target does not support automatic field definition recommendations"
+
+[transfer.field_recommendation.unavailable]
+other = "Automatic field definition recommendations are temporarily unavailable"

@@ -2,8 +2,10 @@ package router
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/addp/gateway/internal/proxy"
@@ -79,5 +81,52 @@ func TestModuleRouteReturnsServiceUnavailableWithoutStaticFallback(t *testing.T)
 	}
 	if len(discovery.calls) != 1 || discovery.calls[0] != "manager" {
 		t.Fatalf("module discovery calls = %v, want [manager]", discovery.calls)
+	}
+}
+
+func TestQueryServiceRouteProxiesCanonicalPostOnly(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var upstreamMethod, upstreamPath, upstreamBody string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamMethod = r.Method
+		upstreamPath = r.URL.Path
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read upstream body: %v", err)
+		}
+		upstreamBody = string(body)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+
+	discovery := &fakeModuleProxyLookup{proxies: map[string]*proxy.ServiceProxy{
+		"service": proxy.NewServiceProxy(upstream.URL),
+	}}
+	r := gin.New()
+	registerQueryServiceRoute(r, registeredModuleHandler("service", discovery))
+	gateway := httptest.NewServer(r)
+	defer gateway.Close()
+
+	body := `{"page":{"limit":10}}`
+	response, err := http.Post(gateway.URL+"/api/query/f2/query", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST query route: %v", err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("POST status = %d, want %d", response.StatusCode, http.StatusNoContent)
+	}
+	if upstreamMethod != http.MethodPost || upstreamPath != "/api/query/f2/query" || upstreamBody != body {
+		t.Fatalf("upstream request = %s %s body=%q", upstreamMethod, upstreamPath, upstreamBody)
+	}
+
+	legacyResponse, err := http.Get(gateway.URL + "/api/query/f2")
+	if err != nil {
+		t.Fatalf("GET legacy query route: %v", err)
+	}
+	legacyResponse.Body.Close()
+	if legacyResponse.StatusCode != http.StatusNotFound {
+		t.Fatalf("legacy GET status = %d, want %d", legacyResponse.StatusCode, http.StatusNotFound)
 	}
 }

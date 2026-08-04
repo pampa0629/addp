@@ -64,6 +64,21 @@ func (r *notebookSessionControlPlaneRecorder) ListChildren(
 	return []commonClient.EngineCatalogEntry{{Name: "public"}}, nil
 }
 
+func (r *notebookSessionControlPlaneRecorder) ListEngineDescriptors(
+	_ context.Context,
+	_ uint,
+	_ string,
+	_ string,
+) ([]commonModels.EngineRuntimeDescriptor, error) {
+	if r.engine == nil {
+		return []commonModels.EngineRuntimeDescriptor{}, nil
+	}
+	return []commonModels.EngineRuntimeDescriptor{{
+		ID: r.engine.ID, Name: r.engine.Name, EngineType: r.engine.EngineType,
+		LifecycleState: r.engine.LifecycleState, Capabilities: r.engine.Capabilities,
+	}}, nil
+}
+
 func (r *notebookSessionControlPlaneRecorder) Revoke(
 	_ context.Context,
 	tenantID uint,
@@ -127,35 +142,38 @@ func (s *notebookTestReadSession) Close(ctx context.Context) error {
 	return nil
 }
 
-type notebookTestTableReadPlugin struct {
-	session *notebookTestReadSession
-	options plugin.TableReadSessionOptions
+type notebookTestQueryPlugin struct {
+	request plugin.QueryRequest
+	result  *plugin.QueryResult
 }
 
-func (p *notebookTestTableReadPlugin) Type() string         { return "postgresql" }
-func (p *notebookTestTableReadPlugin) DisplayName() string  { return "Notebook Test PostgreSQL" }
-func (p *notebookTestTableReadPlugin) EngineOrigin() string { return "general" }
-func (p *notebookTestTableReadPlugin) TestConnection(context.Context, plugin.ConnectionInfo) error {
+func (p *notebookTestQueryPlugin) Type() string         { return "postgresql" }
+func (p *notebookTestQueryPlugin) DisplayName() string  { return "Notebook Test PostgreSQL" }
+func (p *notebookTestQueryPlugin) EngineOrigin() string { return "general" }
+func (p *notebookTestQueryPlugin) TestConnection(context.Context, plugin.ConnectionInfo) error {
 	return nil
 }
-func (p *notebookTestTableReadPlugin) ValidateConnectionInfo(plugin.ConnectionInfo) error { return nil }
-func (p *notebookTestTableReadPlugin) DefaultPort() int                                   { return 5432 }
-func (p *notebookTestTableReadPlugin) RequiredFields() []string                           { return nil }
-func (p *notebookTestTableReadPlugin) SensitiveFields() []string                          { return nil }
-func (p *notebookTestTableReadPlugin) Capabilities() plugin.EngineCapabilities {
+func (p *notebookTestQueryPlugin) ValidateConnectionInfo(plugin.ConnectionInfo) error { return nil }
+func (p *notebookTestQueryPlugin) DefaultPort() int                                   { return 5432 }
+func (p *notebookTestQueryPlugin) RequiredFields() []string                           { return nil }
+func (p *notebookTestQueryPlugin) SensitiveFields() []string                          { return nil }
+func (p *notebookTestQueryPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.EngineCapabilities{}
 }
-func (p *notebookTestTableReadPlugin) StoreSemantics() plugin.StoreSemantics {
-	return plugin.StoreSemantics{}
+func (p *notebookTestQueryPlugin) QueryLanguages() []string { return []string{"sql"} }
+func (p *notebookTestQueryPlugin) GenerateSampleQuery(context.Context, plugin.ConnectionInfo, plugin.SampleQueryOptions) (string, string) {
+	return "", "sql"
 }
-func (p *notebookTestTableReadPlugin) OpenTableReadSession(
-	_ context.Context,
-	_ plugin.ConnectionInfo,
-	_ plugin.CatalogPath,
-	options plugin.TableReadSessionOptions,
-) (plugin.TableReadSession, error) {
-	p.options = options
-	return p.session, nil
+func (p *notebookTestQueryPlugin) ExecuteRuntimeQuery(_ context.Context, _ plugin.ConnectionInfo, request plugin.QueryRequest) (*plugin.QueryResult, error) {
+	p.request = request
+	return p.result, nil
+}
+func (p *notebookTestQueryPlugin) SQLDialect() string { return "postgresql" }
+func (p *notebookTestQueryPlugin) ExecuteSQL(context.Context, plugin.ConnectionInfo, string, plugin.QueryOptions) (*plugin.QueryResult, error) {
+	return p.result, nil
+}
+func (p *notebookTestQueryPlugin) SupportsParameterizedQueries() bool {
+	return true
 }
 
 func (r *notebookSessionControlPlaneRecorder) ValidateExecutionEngineAccess(
@@ -367,14 +385,18 @@ func TestNotebookSessionCloseCancelsActiveReadAndUsesBoundedCursorClose(t *testi
 	}
 }
 
-func TestNotebookSessionQueryRejectsNonReadSQL(t *testing.T) {
+func TestNotebookSessionQueryRejectsMissingLanguageOrQuery(t *testing.T) {
 	service := &NotebookSessionService{}
-	for _, query := range []string{"DELETE FROM public.roads", "SELECT 1; SELECT 2"} {
+	for _, request := range []NotebookQueryRequest{
+		{EngineID: 21, Query: "SELECT 1", MaxRows: 10, Timeout: 30 * time.Second},
+		{EngineID: 21, Language: "sql", Query: "", MaxRows: 10, Timeout: 30 * time.Second},
+	} {
 		err := service.StreamQuery(context.Background(), "session", "token", NotebookQueryRequest{
-			EngineID: 21, Query: query, MaxRows: 10, Timeout: 30 * time.Second,
+			EngineID: request.EngineID, Language: request.Language, Query: request.Query,
+			MaxRows: request.MaxRows, Timeout: request.Timeout,
 		}, &bytes.Buffer{}, nil)
 		if !errors.Is(err, ErrNotebookQueryInvalid) {
-			t.Fatalf("query %q error = %v, want invalid query", query, err)
+			t.Fatalf("request %#v error = %v, want invalid query", request, err)
 		}
 	}
 }
@@ -386,14 +408,12 @@ func TestNotebookSessionQueryAppliesServerMaxRows(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 	kernelToken := storedKernelTokenForTest(t, service.items[public.ID])
-	readSession := &notebookTestReadSession{
-		fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt}},
-		rows: []map[string]interface{}{
+	provider := &notebookTestQueryPlugin{result: &plugin.QueryResult{
+		Columns: []string{"id"},
+		Rows: []map[string]interface{}{
 			{"id": int64(1)}, {"id": int64(2)}, {"id": int64(3)}, {"id": int64(4)},
 		},
-		closeCalled: make(chan struct{}),
-	}
-	provider := &notebookTestTableReadPlugin{session: readSession}
+	}}
 	previous, previousErr := plugin.Get("postgresql")
 	plugin.Register(provider)
 	t.Cleanup(func() {
@@ -408,7 +428,7 @@ func TestNotebookSessionQueryAppliesServerMaxRows(t *testing.T) {
 	}
 	var destination bytes.Buffer
 	err = service.StreamQuery(context.Background(), public.ID, kernelToken, NotebookQueryRequest{
-		EngineID: 21, Query: "SELECT id FROM public.roads", Params: []interface{}{},
+		EngineID: 21, Language: "sql", Query: "SELECT id FROM public.roads", Params: []interface{}{},
 		MaxRows: 3, Timeout: 30 * time.Second,
 	}, &destination, nil)
 	if err != nil {
@@ -418,13 +438,8 @@ func TestNotebookSessionQueryAppliesServerMaxRows(t *testing.T) {
 	if len(ids) != 3 || ids[2] != 3 {
 		t.Fatalf("bounded query ids = %#v", ids)
 	}
-	if provider.options.Query != "SELECT * FROM (SELECT id FROM public.roads) AS addp_page LIMIT 3" {
-		t.Fatalf("bounded query = %q", provider.options.Query)
-	}
-	select {
-	case <-readSession.closeCalled:
-	default:
-		t.Fatal("query cursor was not closed")
+	if provider.request.Language != "sql" || provider.request.Options.Limit != 3 || !provider.request.Options.ReadOnly {
+		t.Fatalf("query request = %#v", provider.request)
 	}
 }
 

@@ -95,11 +95,11 @@ func (p *Neo4jPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.C
 }
 
 func (p *Neo4jPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
-	return p.executeQuery(ctx, connInfo, req.Query, req.Options.ReadOnly)
+	return p.executeQuery(ctx, connInfo, req.Query, req.Options)
 }
 
 func (p *Neo4jPlugin) ExecuteGraphQuery(ctx context.Context, connInfo plugin.ConnectionInfo, cypher string, opts plugin.QueryOptions) (*plugin.GraphQueryResult, error) {
-	return p.executeGraphQuery(ctx, connInfo, cypher)
+	return p.executeGraphQuery(ctx, connInfo, cypher, opts)
 }
 
 func (p *Neo4jPlugin) SampleGraph(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.GraphSampleOptions) (*plugin.GraphData, error) {
@@ -115,8 +115,7 @@ func (p *Neo4jPlugin) SampleGraph(ctx context.Context, connInfo plugin.Connectio
 		limit = 50
 	}
 	query := sampleGraphQuery(opts.Filter, limit)
-	result, err := p.executeGraphQuery(ctx, sampleConn,
-		query)
+	result, err := p.executeGraphQuery(ctx, sampleConn, query, plugin.QueryOptions{ReadOnly: true, Limit: limit})
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +125,7 @@ func (p *Neo4jPlugin) SampleGraph(ctx context.Context, connInfo plugin.Connectio
 	if isFilteredGraphSample(opts.Filter) {
 		return &plugin.GraphData{}, nil
 	}
-	result, err = p.executeGraphQuery(ctx, sampleConn, sampleGraphNodeFallbackQuery(limit))
+	result, err = p.executeGraphQuery(ctx, sampleConn, sampleGraphNodeFallbackQuery(limit), plugin.QueryOptions{ReadOnly: true, Limit: limit})
 	if err != nil {
 		return nil, err
 	}
@@ -605,17 +604,22 @@ func (p *Neo4jPlugin) countRelationshipType(ctx context.Context, session neo4jdr
 }
 
 // executeGraphQuery 执行 Cypher 查询并提取图数据。
-func (p *Neo4jPlugin) executeGraphQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string) (*plugin.GraphQueryResult, error) {
+func (p *Neo4jPlugin) executeGraphQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string, opts plugin.QueryOptions) (*plugin.GraphQueryResult, error) {
 	driver, err := p.createDriver(ctx, connInfo)
 	if err != nil {
 		return nil, err
 	}
 	defer driver.Close(ctx) //nolint:errcheck
 
+	isWrite := isCypherWriteQuery(query)
+	if opts.ReadOnly && isWrite {
+		return nil, fmt.Errorf("只读 Cypher 不允许写操作")
+	}
 	routing := neo4jdriver.ExecuteQueryWithReadersRouting()
-	if isCypherWriteQuery(query) {
+	if isWrite {
 		routing = neo4jdriver.ExecuteQueryWithWritersRouting()
 	}
+	query = boundedCypherQuery(query, opts.Limit)
 
 	result, err := neo4jdriver.ExecuteQuery(
 		ctx,
@@ -763,7 +767,7 @@ func (p *Neo4jPlugin) generateSampleQuery(ctx context.Context, connInfo plugin.C
 
 // query 为 Cypher 字符串，如 MATCH (n:Person) RETURN n.name, n.age LIMIT 10
 // 写操作（CREATE/MERGE/DELETE/SET/REMOVE/DROP）自动使用写路由，其余使用读路由
-func (p *Neo4jPlugin) executeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string, readOnly bool) (*plugin.QueryResult, error) {
+func (p *Neo4jPlugin) executeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
 	driver, err := p.createDriver(ctx, connInfo)
 	if err != nil {
 		return nil, err
@@ -771,13 +775,14 @@ func (p *Neo4jPlugin) executeQuery(ctx context.Context, connInfo plugin.Connecti
 	defer driver.Close(ctx) //nolint:errcheck
 
 	isWrite := isCypherWriteQuery(query)
-	if readOnly && isWrite {
+	if opts.ReadOnly && isWrite {
 		return nil, fmt.Errorf("只读 Cypher 不允许写操作")
 	}
 	routing := neo4jdriver.ExecuteQueryWithReadersRouting()
 	if isWrite {
 		routing = neo4jdriver.ExecuteQueryWithWritersRouting()
 	}
+	query = boundedCypherQuery(query, opts.Limit)
 
 	result, err := neo4jdriver.ExecuteQuery(
 		ctx,
@@ -817,6 +822,14 @@ func (p *Neo4jPlugin) executeQuery(ctx context.Context, connInfo plugin.Connecti
 	}
 
 	return &plugin.QueryResult{Columns: columns, Rows: rows}, nil
+}
+
+func boundedCypherQuery(query string, limit int) string {
+	query = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(query), ";"))
+	if limit <= 0 {
+		return query
+	}
+	return fmt.Sprintf("CALL { %s } RETURN * LIMIT %d", query, limit)
 }
 
 // isCypherWriteQuery 判断 Cypher 是否包含写操作关键字

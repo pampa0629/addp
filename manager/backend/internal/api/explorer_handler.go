@@ -51,7 +51,7 @@ func bearerToken(c *gin.Context) string {
 // Preview 数据预览
 // GET /api/explorer/preview?locator=addp://engine/1/path/public/users?type=table&page=1&page_size=20
 // @Summary 数据预览 | Data preview
-// @Description 根据资源定位符预览数据内容，支持表格、文件等多种格式 | Preview data content by resource locator, supports tables, files, and more
+// @Description 根据资源定位符预览数据内容，支持表格、消息主题、文件等多种资源 | Preview data content by resource locator, including tables, message topics, files, and more
 // @Tags Manager
 // @Produce json
 // @Param locator query string true "资源定位符URI | Resource locator URI"

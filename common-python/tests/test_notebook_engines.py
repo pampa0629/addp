@@ -29,6 +29,28 @@ def postgresql_descriptor(engine_id=21):
     }
 
 
+def native_descriptor(engine_type, root_term, levels, engine_id=21):
+    return {
+        "id": engine_id,
+        "name": engine_type,
+        "engine_type": engine_type,
+        "capabilities": {
+            "engine_type": engine_type,
+            "storage": {
+                "catalog": {"supported": True, "real_time": True},
+                "catalog_model": {
+                    "path_version": "catalog.path/v1",
+                    "root_term": root_term,
+                    "levels": [
+                        {"term": term, "role": role}
+                        for term, role in levels
+                    ],
+                },
+            },
+        },
+    }
+
+
 def catalog_entry(engine_id, name, term, kind, role, segments):
     return {
         "name": name,
@@ -65,6 +87,18 @@ def notebook_session(monkeypatch):
     monkeypatch.setenv("ADDP_NOTEBOOK_CATALOG_API_ENDPOINT", catalog_endpoint)
     monkeypatch.setenv("ADDP_NOTEBOOK_TABLE_SCAN_API_ENDPOINT", table_scan_endpoint)
     monkeypatch.setenv("ADDP_NOTEBOOK_QUERY_API_ENDPOINT", query_endpoint)
+    endpoint_base = (
+        "http://develop:8185/api/v1/develop/notebook-kernel-sessions/"
+        "00000000-0000-0000-0000-000000000001"
+    )
+    for env_name, suffix in {
+        "ADDP_NOTEBOOK_RECORD_SCAN_API_ENDPOINT": "record-scans",
+        "ADDP_NOTEBOOK_GRAPH_SAMPLE_API_ENDPOINT": "graph-samples",
+        "ADDP_NOTEBOOK_GRAPH_QUERY_API_ENDPOINT": "graph-queries",
+        "ADDP_NOTEBOOK_CONTENT_READ_API_ENDPOINT": "content-reads",
+        "ADDP_NOTEBOOK_CHANGE_STREAM_API_ENDPOINT": "change-streams",
+    }.items():
+        monkeypatch.setenv(env_name, f"{endpoint_base}/{suffix}")
     monkeypatch.setenv("ADDP_NOTEBOOK_OWNER_CAPABILITY_TOKEN", "addp_nkc_kernel-secret")
     return descriptor_endpoint, catalog_endpoint
 
@@ -221,6 +255,76 @@ def test_client_uses_exact_engine_type_registration(monkeypatch, notebook_sessio
     monkeypatch.setattr(engines, "list", lambda **_kwargs: [{"id": 7, "engine_type": "postgres"}])
     with pytest.raises(engines.NotebookCatalogUnsupportedError):
         engines.client(7)
+
+
+@pytest.mark.parametrize(
+    ("engine_type", "root_term", "levels", "client_type"),
+    [
+        ("mysql", "server", (("database", "branch"), ("table", "leaf")), engines.MySQLEngine),
+        ("doris", "server", (("database", "branch"), ("table", "leaf")), engines.DorisEngine),
+        ("clickhouse", "server", (("database", "branch"), ("table", "leaf")), engines.ClickHouseEngine),
+        ("spark", "server", (("database", "branch"), ("table", "leaf")), engines.SparkSQLEngine),
+        ("mongodb", "server", (("database", "branch"), ("collection", "leaf")), engines.MongoDBEngine),
+        ("neo4j", "server", (("database", "branch"), ("graph", "leaf")), engines.Neo4jEngine),
+        ("minio", "service", (("bucket", "branch"), ("prefix", "branch"), ("object", "leaf")), engines.MinIOEngine),
+        ("s3", "service", (("bucket", "branch"), ("prefix", "branch"), ("object", "leaf")), engines.S3Engine),
+        ("nfs", "root", (("directory", "branch"), ("file", "leaf")), engines.NFSEngine),
+        ("kafka", "service", (("topic", "leaf"),), engines.KafkaEngine),
+    ],
+)
+def test_client_registers_every_native_catalog_engine(
+    monkeypatch, notebook_session, engine_type, root_term, levels, client_type
+):
+    descriptor = native_descriptor(engine_type, root_term, levels)
+    monkeypatch.setattr(engines, "list", lambda **_kwargs: [descriptor])
+    assert isinstance(engines.client(21), client_type)
+
+
+def test_mysql_facade_navigates_database_and_table(monkeypatch, notebook_session):
+    descriptor_endpoint, catalog_endpoint = notebook_session
+    descriptor = native_descriptor(
+        "mysql", "server", (("database", "branch"), ("table", "leaf")), engine_id=3
+    )
+    root_segments = [{"term": "server", "kind": "server", "name": ""}]
+    database_segments = [
+        *root_segments,
+        {"term": "database", "kind": "namespace", "name": "business"},
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            assert str(request.url) == descriptor_endpoint
+            return httpx.Response(200, json=[descriptor])
+        assert str(request.url) == catalog_endpoint
+        segments = json.loads(request.content)["path"]["segments"]
+        if not segments:
+            return httpx.Response(200, json={"nodes": [
+                catalog_entry(3, "", "server", "server", "branch", root_segments)
+            ]})
+        if segments == root_segments:
+            return httpx.Response(200, json={"nodes": [
+                catalog_entry(3, "business", "database", "namespace", "branch", database_segments)
+            ]})
+        if segments == database_segments:
+            return httpx.Response(200, json={"nodes": [
+                catalog_entry(
+                    3, "orders", "table", "table", "leaf",
+                    [*database_segments, {"term": "table", "kind": "table", "name": "orders"}],
+                )
+            ]})
+        raise AssertionError(segments)
+
+    monkeypatch.setattr(engines, "_transport", httpx.MockTransport(handler))
+    mysql = engines.client(3)
+    assert [database.name for database in mysql.databases()] == ["business"]
+    assert [table.name for table in mysql.tables(database="business")] == ["orders"]
+    assert mysql.table(database="business", name="orders").database == "business"
+
+
+def test_duckdb_runtime_is_not_a_native_data_engine(monkeypatch, notebook_session):
+    monkeypatch.setattr(engines, "list", lambda **_kwargs: [{"id": 18, "engine_type": "duckdb"}])
+    with pytest.raises(engines.NotebookCatalogUnsupportedError):
+        engines.client(18)
 
 
 def test_client_rejects_incompatible_postgresql_catalog_model(monkeypatch, notebook_session):
@@ -412,6 +516,7 @@ def test_postgresql_sql_uses_bounded_query_endpoint(monkeypatch, notebook_sessio
     assert result["id"].tolist() == [1, 2]
     assert observed == {
         "engine_id": 21,
+        "language": "sql",
         "query": "SELECT * FROM public.roads WHERE id > $1",
         "params": [100],
         "max_rows": 1000,
@@ -424,3 +529,203 @@ def test_postgresql_sql_requires_integer_timeout(timeout, notebook_session):
     pg = engines.PostgreSQLEngine(engine_id=21, descriptor=postgresql_descriptor(), timeout=10)
     with pytest.raises(engines.NotebookDataRequestError):
         pg.sql("SELECT 1", max_rows=1, timeout=timeout)
+
+
+def test_database_tabular_engine_uses_shared_scan_and_native_sql(monkeypatch, notebook_session):
+    observed = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed.append((str(request.url), json.loads(request.content)))
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "application/vnd.apache.arrow.stream"},
+            content=arrow_stream_bytes(),
+        )
+
+    monkeypatch.setattr(engines, "_transport", httpx.MockTransport(handler))
+    mysql = engines.MySQLEngine(
+        engine_id=3,
+        descriptor=native_descriptor(
+            "mysql", "server", (("database", "branch"), ("table", "leaf")), engine_id=3
+        ),
+        timeout=10,
+    )
+    table = engines.DatabaseTable(
+        name="orders",
+        database="business",
+        kind="table",
+        _client=mysql,
+        _path={"version": "catalog.path/v1", "engine_id": 3, "segments": [{}]},
+    )
+    assert list(table.scan(batch_size=256))[0].num_rows == 2
+    assert mysql.sql("SELECT id FROM business.orders", max_rows=10, timeout=20)["id"].tolist() == [1, 2]
+    assert observed[0][1]["batch_size"] == 256
+    assert observed[1][1]["language"] == "sql"
+
+
+def test_mongodb_collection_scan_restores_dynamic_documents(monkeypatch, notebook_session):
+    import pyarrow as pa
+
+    sink = pa.BufferOutputStream()
+    schema = pa.schema([("document", pa.string())])
+    with pa.ipc.new_stream(sink, schema) as writer:
+        writer.write_batch(
+            pa.record_batch(
+                [[json.dumps({"_id": "a", "value": 1}), json.dumps({"_id": "b", "extra": True})]],
+                schema=schema,
+            )
+        )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == os.environ["ADDP_NOTEBOOK_RECORD_SCAN_API_ENDPOINT"]
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "application/vnd.apache.arrow.stream"},
+            content=sink.getvalue().to_pybytes(),
+        )
+
+    monkeypatch.setattr(engines, "_transport", httpx.MockTransport(handler))
+    mongodb = engines.MongoDBEngine(
+        engine_id=5,
+        descriptor=native_descriptor(
+            "mongodb", "server", (("database", "branch"), ("collection", "leaf")), engine_id=5
+        ),
+        timeout=10,
+    )
+    collection = engines.MongoDBCollection(
+        name="events", database="business", kind="collection", _client=mongodb,
+        _path={"version": "catalog.path/v1", "engine_id": 5, "segments": [{}]},
+    )
+    assert list(collection.scan(batch_size=2)) == [
+        {"_id": "a", "value": 1},
+        {"_id": "b", "extra": True},
+    ]
+
+
+def test_neo4j_native_graph_methods_preserve_graph_json(monkeypatch, notebook_session):
+    observed = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed.append((str(request.url), json.loads(request.content)))
+        if str(request.url).endswith("/graph-samples"):
+            return httpx.Response(200, json={"nodes": [], "relationships": []})
+        return httpx.Response(
+            200,
+            json={
+                "columns": ["n"],
+                "rows": [{"n": {"element_id": "1"}}],
+                "graph_data": {
+                    "nodes": [
+                        {"element_id": "1", "labels": ["Person"], "properties": {}}
+                    ],
+                    "relationships": [],
+                },
+            },
+        )
+
+    monkeypatch.setattr(engines, "_transport", httpx.MockTransport(handler))
+    neo4j = engines.Neo4jEngine(
+        engine_id=6,
+        descriptor=native_descriptor(
+            "neo4j", "server", (("database", "branch"), ("graph", "leaf")), engine_id=6
+        ),
+        timeout=10,
+    )
+    graph = engines.Neo4jGraph(
+        name="graph", database="neo4j", kind="graph", _client=neo4j,
+        _path={"version": "catalog.path/v1", "engine_id": 6, "segments": [{}]},
+    )
+    assert graph.sample(limit=10) == {"nodes": [], "relationships": []}
+    result = neo4j.cypher("MATCH (n) RETURN n", max_rows=20, timeout=30)
+    assert result["graph_data"]["nodes"][0]["element_id"] == "1"
+    assert observed[0][1]["limit"] == 10
+    assert observed[1][1]["max_rows"] == 20
+
+
+def test_object_content_open_and_range_own_stream_lifecycle(monkeypatch, notebook_session):
+    observed = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed.append(json.loads(request.content))
+        return httpx.Response(
+            200, headers={"Content-Type": "application/octet-stream"}, content=b"abcdef"
+        )
+
+    monkeypatch.setattr(engines, "_transport", httpx.MockTransport(handler))
+    minio = engines.MinIOEngine(
+        engine_id=8,
+        descriptor=native_descriptor(
+            "minio", "service",
+            (("bucket", "branch"), ("prefix", "branch"), ("object", "leaf")),
+            engine_id=8,
+        ),
+        timeout=10,
+    )
+    resource = engines.ObjectStorageObject(
+        name="data.bin", bucket="raw", prefix="", kind="object", _client=minio,
+        _path={"version": "catalog.path/v1", "engine_id": 8, "segments": [{}]},
+    )
+    with resource.open() as stream:
+        assert stream.read() == b"abcdef"
+    assert resource.read_range(offset=2, length=3) == b"abcdef"
+    assert "range" not in observed[0]
+    assert observed[1]["range"] == {"offset": 2, "length": 3}
+
+
+def test_object_content_open_maps_connect_timeout(monkeypatch, notebook_session):
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectTimeout("connect timed out", request=request)
+
+    monkeypatch.setattr(engines, "_transport", httpx.MockTransport(handler))
+    minio = engines.MinIOEngine(
+        engine_id=8,
+        descriptor=native_descriptor(
+            "minio", "service",
+            (("bucket", "branch"), ("prefix", "branch"), ("object", "leaf")),
+            engine_id=8,
+        ),
+        timeout=10,
+    )
+    resource = engines.ObjectStorageObject(
+        name="data.bin", bucket="datasets", prefix="", kind="object", _client=minio,
+        _path={"version": "catalog.path/v1", "engine_id": 8, "segments": [{}]},
+    )
+
+    with pytest.raises(engines.NotebookDataTimeoutError):
+        resource.open()
+
+
+def test_kafka_stream_restores_binary_record_fields(monkeypatch, notebook_session):
+    payload = {
+        "topic": "events", "partition": "0", "offset": 7,
+        "key": "aw==", "value": "dg==",
+        "headers": [{"key": "trace", "value": "aA=="}],
+        "position": {"values": {"next_offset": "8"}},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert body["initial_position"] == "earliest"
+        assert body["positions"] == {"0": 4}
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "application/x-ndjson"},
+            content=(json.dumps(payload) + "\n").encode(),
+        )
+
+    monkeypatch.setattr(engines, "_transport", httpx.MockTransport(handler))
+    kafka = engines.KafkaEngine(
+        engine_id=9,
+        descriptor=native_descriptor("kafka", "service", (("topic", "leaf"),), engine_id=9),
+        timeout=10,
+    )
+    topic = engines.KafkaTopic(
+        name="events", kind="topic", _client=kafka,
+        _path={"version": "catalog.path/v1", "engine_id": 9, "segments": [{}]},
+    )
+    stream = topic.stream(initial_position="earliest", positions={0: 4})
+    record = next(stream)
+    stream.close()
+    assert record["key"] == b"k"
+    assert record["value"] == b"v"
+    assert record["headers"][0]["value"] == b"h"

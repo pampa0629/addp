@@ -115,7 +115,12 @@ class InteractiveSessionManager:
                 owner_api_endpoint=values["owner_api_endpoint"],
                 owner_catalog_api_endpoint=values["owner_catalog_api_endpoint"],
                 owner_table_scan_api_endpoint=values["owner_table_scan_api_endpoint"],
+                owner_record_scan_api_endpoint=values["owner_record_scan_api_endpoint"],
                 owner_query_api_endpoint=values["owner_query_api_endpoint"],
+                owner_graph_sample_api_endpoint=values["owner_graph_sample_api_endpoint"],
+                owner_graph_query_api_endpoint=values["owner_graph_query_api_endpoint"],
+                owner_content_read_api_endpoint=values["owner_content_read_api_endpoint"],
+                owner_change_stream_api_endpoint=values["owner_change_stream_api_endpoint"],
                 owner_capability_token=values["owner_capability_token"],
             )
             self._wait_until_ready(endpoint, values["base_path"], runtime_token, process)
@@ -265,51 +270,35 @@ class InteractiveSessionManager:
             or owner_url.fragment
         ):
             raise SessionValidationError("owner_api_endpoint is invalid")
-        owner_catalog_api_endpoint = data.get("owner_catalog_api_endpoint")
-        if not isinstance(owner_catalog_api_endpoint, str):
-            raise SessionValidationError("owner_catalog_api_endpoint is invalid")
-        owner_table_scan_api_endpoint = data.get("owner_table_scan_api_endpoint")
-        if not isinstance(owner_table_scan_api_endpoint, str):
-            raise SessionValidationError("owner_table_scan_api_endpoint is invalid")
-        owner_query_api_endpoint = data.get("owner_query_api_endpoint")
-        if not isinstance(owner_query_api_endpoint, str):
-            raise SessionValidationError("owner_query_api_endpoint is invalid")
-        owner_query_url = urlsplit(owner_query_api_endpoint)
-        expected_query_path = f"/api/v1/develop/notebook-kernel-sessions/{session_id}/queries"
-        if (
-            owner_query_url.scheme not in {"http", "https"}
-            or owner_query_url.netloc != owner_url.netloc
-            or owner_query_url.username is not None
-            or owner_query_url.password is not None
-            or owner_query_url.path != expected_query_path
-            or owner_query_url.query
-            or owner_query_url.fragment
-        ):
-            raise SessionValidationError("owner_query_api_endpoint is invalid")
-        owner_table_scan_url = urlsplit(owner_table_scan_api_endpoint)
-        expected_table_scan_path = f"/api/v1/develop/notebook-kernel-sessions/{session_id}/table-scans"
-        if (
-            owner_table_scan_url.scheme not in {"http", "https"}
-            or owner_table_scan_url.netloc != owner_url.netloc
-            or owner_table_scan_url.username is not None
-            or owner_table_scan_url.password is not None
-            or owner_table_scan_url.path != expected_table_scan_path
-            or owner_table_scan_url.query
-            or owner_table_scan_url.fragment
-        ):
-            raise SessionValidationError("owner_table_scan_api_endpoint is invalid")
-        owner_catalog_url = urlsplit(owner_catalog_api_endpoint)
-        expected_catalog_path = f"/api/v1/develop/notebook-kernel-sessions/{session_id}/catalog/children"
-        if (
-            owner_catalog_url.scheme not in {"http", "https"}
-            or owner_catalog_url.netloc != owner_url.netloc
-            or owner_catalog_url.username is not None
-            or owner_catalog_url.password is not None
-            or owner_catalog_url.path != expected_catalog_path
-            or owner_catalog_url.query
-            or owner_catalog_url.fragment
-        ):
-            raise SessionValidationError("owner_catalog_api_endpoint is invalid")
+        endpoint_suffixes = {
+            "owner_catalog_api_endpoint": "catalog/children",
+            "owner_table_scan_api_endpoint": "table-scans",
+            "owner_record_scan_api_endpoint": "record-scans",
+            "owner_query_api_endpoint": "queries",
+            "owner_graph_sample_api_endpoint": "graph-samples",
+            "owner_graph_query_api_endpoint": "graph-queries",
+            "owner_content_read_api_endpoint": "content-reads",
+            "owner_change_stream_api_endpoint": "change-streams",
+        }
+        owner_endpoints = {}
+        for field, suffix in endpoint_suffixes.items():
+            endpoint = data.get(field)
+            if not isinstance(endpoint, str):
+                raise SessionValidationError(f"{field} is invalid")
+            endpoint_url = urlsplit(endpoint)
+            expected_path = f"/api/v1/develop/notebook-kernel-sessions/{session_id}/{suffix}"
+            if (
+                endpoint_url.scheme not in {"http", "https"}
+                or endpoint_url.scheme != owner_url.scheme
+                or endpoint_url.netloc != owner_url.netloc
+                or endpoint_url.username is not None
+                or endpoint_url.password is not None
+                or endpoint_url.path != expected_path
+                or endpoint_url.query
+                or endpoint_url.fragment
+            ):
+                raise SessionValidationError(f"{field} is invalid")
+            owner_endpoints[field] = endpoint
         owner_capability_token = data.get("owner_capability_token")
         if not isinstance(owner_capability_token, str) or re.fullmatch(
             r"addp_nkc_[A-Za-z0-9_-]{43}", owner_capability_token
@@ -323,9 +312,7 @@ class InteractiveSessionManager:
             "base_path": base_path,
             "ttl_seconds": min(ttl_seconds, self._max_ttl_seconds),
             "owner_api_endpoint": owner_api_endpoint,
-            "owner_catalog_api_endpoint": owner_catalog_api_endpoint,
-            "owner_table_scan_api_endpoint": owner_table_scan_api_endpoint,
-            "owner_query_api_endpoint": owner_query_api_endpoint,
+            **owner_endpoints,
             "owner_capability_token": owner_capability_token,
         }
 
@@ -344,7 +331,12 @@ class InteractiveSessionManager:
         owner_api_endpoint,
         owner_catalog_api_endpoint,
         owner_table_scan_api_endpoint,
+        owner_record_scan_api_endpoint,
         owner_query_api_endpoint,
+        owner_graph_sample_api_endpoint,
+        owner_graph_query_api_endpoint,
+        owner_content_read_api_endpoint,
+        owner_change_stream_api_endpoint,
         owner_capability_token,
     ):
         command = [
@@ -375,7 +367,12 @@ class InteractiveSessionManager:
         environment["ADDP_NOTEBOOK_OWNER_API_ENDPOINT"] = owner_api_endpoint
         environment["ADDP_NOTEBOOK_CATALOG_API_ENDPOINT"] = owner_catalog_api_endpoint
         environment["ADDP_NOTEBOOK_TABLE_SCAN_API_ENDPOINT"] = owner_table_scan_api_endpoint
+        environment["ADDP_NOTEBOOK_RECORD_SCAN_API_ENDPOINT"] = owner_record_scan_api_endpoint
         environment["ADDP_NOTEBOOK_QUERY_API_ENDPOINT"] = owner_query_api_endpoint
+        environment["ADDP_NOTEBOOK_GRAPH_SAMPLE_API_ENDPOINT"] = owner_graph_sample_api_endpoint
+        environment["ADDP_NOTEBOOK_GRAPH_QUERY_API_ENDPOINT"] = owner_graph_query_api_endpoint
+        environment["ADDP_NOTEBOOK_CONTENT_READ_API_ENDPOINT"] = owner_content_read_api_endpoint
+        environment["ADDP_NOTEBOOK_CHANGE_STREAM_API_ENDPOINT"] = owner_change_stream_api_endpoint
         environment["ADDP_NOTEBOOK_OWNER_CAPABILITY_TOKEN"] = owner_capability_token
         return subprocess.Popen(
             command,

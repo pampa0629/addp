@@ -77,15 +77,16 @@ type notebookTableScanRequest struct {
 
 type notebookQueryRequest struct {
 	EngineID uint          `json:"engine_id"`
+	Language string        `json:"language"`
 	Query    string        `json:"query"`
 	Params   []interface{} `json:"params,omitempty"`
 	MaxRows  int64         `json:"max_rows"`
 	Timeout  int64         `json:"timeout"`
 }
 
-// StreamSessionQuery executes one bounded PostgreSQL read query as Arrow IPC.
+// StreamSessionQuery executes one bounded native read query as Arrow IPC.
 // @Summary 执行 Notebook 有界只读查询 | Execute a bounded Notebook read query
-// @Description 查询必须是只读单语句并携带显式 max_rows 与 timeout；参数使用 PostgreSQL $1 形式。 | The query must be one read-only statement with explicit max_rows and timeout; parameters use PostgreSQL $1 syntax.
+// @Description language 必须与引擎 QueryRuntimeProvider 声明一致；查询必须携带显式 max_rows 与 timeout。 | Language must match the engine QueryRuntimeProvider declaration; the query requires explicit max_rows and timeout.
 // @Tags Notebook
 // @Accept json
 // @Produce application/vnd.apache.arrow.stream
@@ -108,7 +109,7 @@ func (h *NotebookHandler) StreamSessionQuery(c *gin.Context) {
 		return
 	}
 	var request notebookQueryRequest
-	if err := c.ShouldBindJSON(&request); err != nil || request.EngineID == 0 || request.MaxRows <= 0 ||
+	if err := c.ShouldBindJSON(&request); err != nil || request.EngineID == 0 || strings.TrimSpace(request.Language) == "" || request.MaxRows <= 0 ||
 		request.MaxRows > 1_000_000 || request.Timeout <= 0 || request.Timeout > 300 {
 		respondDevelopCatalogError(c, http.StatusBadRequest, "query_request_invalid", developi18n.MsgNotebookCatalogRequestInvalid)
 		return
@@ -116,7 +117,7 @@ func (h *NotebookHandler) StreamSessionQuery(c *gin.Context) {
 	ready := false
 	err := h.notebookSessionService.StreamQuery(c.Request.Context(), c.Param("session_id"), token,
 		service.NotebookQueryRequest{
-			EngineID: request.EngineID, Query: request.Query, Params: request.Params,
+			EngineID: request.EngineID, Language: request.Language, Query: request.Query, Params: request.Params,
 			MaxRows: request.MaxRows, Timeout: time.Duration(request.Timeout) * time.Second,
 		}, c.Writer, func() {
 			ready = true
@@ -136,7 +137,7 @@ func (h *NotebookHandler) StreamSessionQuery(c *gin.Context) {
 		respondDevelopCatalogError(c, http.StatusBadRequest, "query_request_invalid", developi18n.MsgNotebookCatalogRequestInvalid)
 		return
 	}
-	if errors.Is(err, service.ErrNotebookTableScanUnsupported) {
+	if errors.Is(err, service.ErrNotebookQueryUnsupported) {
 		respondDevelopCatalogError(c, http.StatusUnprocessableEntity, "query_unsupported", developi18n.MsgNotebookCatalogUnsupported)
 		return
 	}
@@ -325,13 +326,13 @@ func respondDevelopCatalogError(c *gin.Context, status int, code, messageID stri
 	c.JSON(status, gin.H{"error": commoni18n.T(c, messageID), "error_code": code})
 }
 
-// ListSessionEngineDescriptors 返回当前 Notebook Kernel 可发现的查询引擎。
-// @Summary 获取 Notebook Kernel 可用查询引擎 | List query engines available to a Notebook Kernel
-// @Description 仅接受 Develop 注入当前隔离 Kernel 的短期 Notebook Kernel Capability Bearer；不接受用户或服务 Token。 | Only accepts the short-lived Notebook Kernel Capability Bearer injected by Develop into the isolated Kernel; user and service tokens are not accepted.
+// ListSessionEngineDescriptors 返回当前 Notebook Kernel 可访问的数据引擎。
+// @Summary 获取 Notebook Kernel 可用数据引擎 | List data engines available to a Notebook Kernel
+// @Description 仅接受 Develop 注入当前隔离 Kernel 的短期 Notebook Kernel Capability Bearer；Develop 使用 Session Authorization 调用 System 完成授权复核和数据引擎发现。 | Only accepts the short-lived Notebook Kernel Capability Bearer injected by Develop into the isolated Kernel; Develop uses the Session Authorization to let System review authorization and discover data engines.
 // @Tags Notebook
 // @Produce json
 // @Param session_id path string true "Notebook 会话 ID | Notebook session ID"
-// @Success 200 {array} models.EngineRuntimeDescriptor "脱敏查询引擎描述列表 | Masked query engine descriptor list"
+// @Success 200 {array} models.EngineRuntimeDescriptor "脱敏数据引擎描述列表 | Masked data engine descriptor list"
 // @Failure 401 {object} map[string]string "会话能力无效或已过期 | Session capability is invalid or expired"
 // @Failure 502 {object} map[string]string "查询引擎发现失败 | Query engine discovery failed"
 // @x-addp-auth-mode "authenticated"

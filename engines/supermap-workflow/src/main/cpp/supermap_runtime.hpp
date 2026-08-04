@@ -89,6 +89,51 @@ class ExecutionContext final {
       const std::shared_ptr<DatasourceRef>& output_datasource,
       const std::string& output_dataset_name,
       bool overwrite);
+  std::shared_ptr<DatasetRef> feature_envelope(
+      const std::shared_ptr<DatasetRef>& input_dataset,
+      const std::shared_ptr<DatasourceRef>& output_datasource,
+      const std::string& output_dataset_name,
+      bool overwrite);
+  std::shared_ptr<DatasetRef> inner_point_dataset(
+      const std::shared_ptr<DatasetRef>& input_dataset,
+      const std::shared_ptr<DatasourceRef>& output_datasource,
+      const std::string& output_dataset_name,
+      bool overwrite);
+  std::shared_ptr<DatasetRef> buffer_dataset(
+      const std::shared_ptr<DatasetRef>& input_dataset,
+      const std::shared_ptr<DatasourceRef>& output_datasource,
+      const std::string& output_dataset_name,
+      double distance,
+      const std::string& radius_unit,
+      const std::string& end_type,
+      int semicircle_segments,
+      bool dissolve,
+      bool keep_attributes,
+      bool overwrite);
+  std::shared_ptr<DatasetRef> spatial_filter_dataset(
+      const std::shared_ptr<DatasetRef>& input_dataset,
+      const std::shared_ptr<DatasetRef>& filter_dataset,
+      const std::shared_ptr<DatasourceRef>& output_datasource,
+      const std::string& output_dataset_name,
+      const std::string& relation,
+      bool overwrite);
+  std::shared_ptr<DatasetRef> dissolve_dataset(
+      const std::shared_ptr<DatasetRef>& input_dataset,
+      const std::shared_ptr<DatasourceRef>& output_datasource,
+      const std::string& output_dataset_name,
+      const std::vector<std::string>& field_names,
+      const std::string& dissolve_type,
+      double tolerance,
+      bool save_all_fields,
+      bool overwrite);
+  std::shared_ptr<DatasetRef> overlay_datasets(
+      const std::string& operator_id,
+      const std::shared_ptr<DatasetRef>& input_dataset,
+      const std::shared_ptr<DatasetRef>& overlay_dataset,
+      const std::shared_ptr<DatasourceRef>& output_datasource,
+      const std::string& output_dataset_name,
+      double tolerance,
+      bool overwrite);
   Json query_dataset(
       const std::shared_ptr<DatasetRef>& dataset, const std::string& attribute_filter);
 

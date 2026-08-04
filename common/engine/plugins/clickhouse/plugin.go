@@ -60,6 +60,7 @@ func (p *ClickHousePlugin) Capabilities() plugin.EngineCapabilities {
 		Write:             true,
 		BulkWrite:         true,
 		BatchWrite:        true,
+		TableReadSession:  true,
 		TableWriteSession: true,
 		TableWritePrepare: true,
 		Delete:            true,

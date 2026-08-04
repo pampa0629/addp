@@ -3561,6 +3561,52 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.notebook_session_authorization.execute
+  /notebook-session-authorizations/{id}/engine-descriptors:
+    get:
+      description: 仅返回 active 且声明实时 CatalogModel 的数据引擎；授权复核与引擎发现在同一请求完成 | Only active
+        data engines declaring a live CatalogModel are returned; authorization review
+        and engine discovery complete in one request
+      parameters:
+      - description: Notebook 会话授权 ID | Notebook session authorization ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Notebook 会话 ID | Notebook session ID
+        in: query
+        name: session_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_system_internal_models.EngineRuntimeDescriptor'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 使用 Notebook 会话授权列出可访问数据引擎 | List accessible data engines with Notebook
+        session authorization
+      tags:
+      - Notebook 会话授权 | Notebook Session Authorization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.notebook_session_authorization.execute
   /notebook-session-authorizations/{id}/execution-engine-accesses:
     post:
       consumes:

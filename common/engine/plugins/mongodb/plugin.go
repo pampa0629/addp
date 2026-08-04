@@ -98,35 +98,7 @@ func (p *MongoDBPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin
 }
 
 func (p *MongoDBPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
-	return p.executeQuery(ctx, connInfo, req.Query, req.Options.ReadOnly)
-}
-
-func (p *MongoDBPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
-	query := opts.Query
-	if query == "" {
-		businessPath := plugin.CatalogPathWithoutRoot(path)
-		if len(businessPath.Segments) < 2 {
-			return nil, fmt.Errorf("MongoDB batch read requires collection catalog path or query")
-		}
-		collection := businessPath.Segments[len(businessPath.Segments)-1].Name
-		if collection == "" {
-			return nil, fmt.Errorf("MongoDB batch read requires collection catalog path or query")
-		}
-		limit := opts.Limit
-		if limit <= 0 {
-			limit = 1000
-		}
-		query = fmt.Sprintf(`{"find": "%s", "filter": {}, "limit": %d}`, collection, limit)
-	}
-	result, err := p.ExecuteRuntimeQuery(ctx, connInfo, plugin.QueryRequest{
-		Language: "mql",
-		Query:    query,
-		Options:  plugin.QueryOptions{Limit: opts.Limit},
-	})
-	if err != nil {
-		return nil, err
-	}
-	return plugin.QueryResultToBatchData(result, opts.Offset), nil
+	return p.executeQuery(ctx, connInfo, req.Query, req.Options)
 }
 
 // ValidateConnectionInfo 验证连接信息
@@ -213,7 +185,7 @@ func (p *MongoDBPlugin) generateSampleQuery(ctx context.Context, connInfo plugin
 
 // query 为 JSON 命令字符串，支持 find/aggregate/count/distinct，其他命令走 RunCommand 通用路径
 // 示例：{"find":"users","filter":{"age":{"$gt":18}},"limit":10}
-func (p *MongoDBPlugin) executeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string, readOnly bool) (*plugin.QueryResult, error) {
+func (p *MongoDBPlugin) executeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string, queryOptions plugin.QueryOptions) (*plugin.QueryResult, error) {
 	// 解析 JSON 命令
 	var cmd map[string]interface{}
 	if err := json.Unmarshal([]byte(query), &cmd); err != nil {
@@ -233,13 +205,17 @@ func (p *MongoDBPlugin) executeQuery(ctx context.Context, connInfo plugin.Connec
 	// 根据命令类型分发执行
 	var docs []bson.M
 
+	limit := queryOptions.Limit
+	if limit <= 0 {
+		limit = 1000
+	}
 	if collName, ok := getStringKey(cmd, "find"); ok {
-		docs, err = p.execFind(ctx, db, collName, cmd)
+		docs, err = p.execFind(ctx, db, collName, cmd, limit)
 	} else if collName, ok := getStringKey(cmd, "aggregate"); ok {
-		if readOnly && mongoAggregateHasWriteStage(cmd["pipeline"]) {
+		if queryOptions.ReadOnly && mongoAggregateHasWriteStage(cmd["pipeline"]) {
 			return nil, fmt.Errorf("只读 MQL 不允许 $out 或 $merge 聚合阶段")
 		}
-		docs, err = p.execAggregate(ctx, db, collName, cmd)
+		docs, err = p.execAggregate(ctx, db, collName, cmd, limit)
 	} else if collName, ok := getStringKey(cmd, "count"); ok {
 		count, countErr := p.execCount(ctx, db, collName, cmd)
 		if countErr != nil {
@@ -250,7 +226,7 @@ func (p *MongoDBPlugin) executeQuery(ctx context.Context, connInfo plugin.Connec
 			Rows:    []map[string]interface{}{{"count": count}},
 		}, nil
 	} else if collName, ok := getStringKey(cmd, "distinct"); ok {
-		values, distinctErr := p.execDistinct(ctx, db, collName, cmd)
+		values, distinctErr := p.execDistinct(ctx, db, collName, cmd, limit)
 		if distinctErr != nil {
 			return nil, distinctErr
 		}
@@ -260,7 +236,7 @@ func (p *MongoDBPlugin) executeQuery(ctx context.Context, connInfo plugin.Connec
 		}
 		return &plugin.QueryResult{Columns: []string{"value"}, Rows: rows}, nil
 	} else {
-		if readOnly {
+		if queryOptions.ReadOnly {
 			return nil, fmt.Errorf("只读 MQL 仅支持 find、aggregate、count 和 distinct")
 		}
 		// 通用 RunCommand 路径
@@ -293,15 +269,15 @@ func mongoAggregateHasWriteStage(value interface{}) bool {
 }
 
 // execFind 执行 find 命令
-func (p *MongoDBPlugin) execFind(ctx context.Context, db *mongo.Database, collName string, cmd map[string]interface{}) ([]bson.M, error) {
+func (p *MongoDBPlugin) execFind(ctx context.Context, db *mongo.Database, collName string, cmd map[string]interface{}, maxRows int) ([]bson.M, error) {
 	coll := db.Collection(collName)
 
 	findOptions := options.Find()
 
 	// 默认 limit 防止结果集过大
-	limit := int64(1000)
+	limit := int64(maxRows)
 	if l, ok := cmd["limit"]; ok {
-		if lf, ok := toInt64(l); ok {
+		if lf, ok := toInt64(l); ok && lf > 0 && lf < limit {
 			limit = lf
 		}
 	}
@@ -346,7 +322,7 @@ func (p *MongoDBPlugin) execFind(ctx context.Context, db *mongo.Database, collNa
 }
 
 // execAggregate 执行 aggregate 命令
-func (p *MongoDBPlugin) execAggregate(ctx context.Context, db *mongo.Database, collName string, cmd map[string]interface{}) ([]bson.M, error) {
+func (p *MongoDBPlugin) execAggregate(ctx context.Context, db *mongo.Database, collName string, cmd map[string]interface{}, maxRows int) ([]bson.M, error) {
 	coll := db.Collection(collName)
 
 	var pipeline []interface{}
@@ -355,6 +331,7 @@ func (p *MongoDBPlugin) execAggregate(ctx context.Context, db *mongo.Database, c
 			pipeline = plArr
 		}
 	}
+	pipeline = append(pipeline, bson.M{"$limit": maxRows})
 
 	cursor, err := coll.Aggregate(ctx, pipeline)
 	if err != nil {
@@ -388,7 +365,7 @@ func (p *MongoDBPlugin) execCount(ctx context.Context, db *mongo.Database, collN
 }
 
 // execDistinct 执行 distinct 命令，返回去重值列表
-func (p *MongoDBPlugin) execDistinct(ctx context.Context, db *mongo.Database, collName string, cmd map[string]interface{}) ([]interface{}, error) {
+func (p *MongoDBPlugin) execDistinct(ctx context.Context, db *mongo.Database, collName string, cmd map[string]interface{}, maxRows int) ([]interface{}, error) {
 	coll := db.Collection(collName)
 
 	field, _ := getStringKey(cmd, "key")
@@ -403,9 +380,26 @@ func (p *MongoDBPlugin) execDistinct(ctx context.Context, db *mongo.Database, co
 		}
 	}
 
-	values, err := coll.Distinct(ctx, field, filter)
+	pipeline := mongo.Pipeline{
+		bson.D{{Key: "$match", Value: filter}},
+		bson.D{{Key: "$group", Value: bson.D{{Key: "_id", Value: "$" + field}}}},
+		bson.D{{Key: "$limit", Value: maxRows}},
+	}
+	cursor, err := coll.Aggregate(ctx, pipeline)
 	if err != nil {
 		return nil, fmt.Errorf("执行 distinct 失败：%w", err)
+	}
+	defer cursor.Close(ctx) //nolint:errcheck
+	values := make([]interface{}, 0, maxRows)
+	for cursor.Next(ctx) {
+		var row bson.M
+		if err := cursor.Decode(&row); err != nil {
+			return nil, fmt.Errorf("读取 distinct 结果失败：%w", err)
+		}
+		values = append(values, convertBSONValue(row["_id"]))
+	}
+	if err := cursor.Err(); err != nil {
+		return nil, fmt.Errorf("读取 distinct 结果失败：%w", err)
 	}
 	return values, nil
 }

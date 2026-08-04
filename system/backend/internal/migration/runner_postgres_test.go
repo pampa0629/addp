@@ -177,8 +177,8 @@ func TestMetaServicePrincipalForwardMigrationAgainstPostgres(t *testing.T) {
 	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
 		t.Fatalf("read Manager catalog migration version: %v", err)
 	}
-	if version != 37 || dirty {
-		t.Fatalf("latest migration state = (%d, %t), want (37, false)", version, dirty)
+	if version != 38 || dirty {
+		t.Fatalf("latest migration state = (%d, %t), want (38, false)", version, dirty)
 	}
 	var authorizationVersionAfter int64
 	if err := db.QueryRow(`SELECT authorization_version FROM system.principals WHERE id = $1`, administratorID).Scan(&authorizationVersionAfter); err != nil {
@@ -625,6 +625,250 @@ func seedInitializedMigrationTenant(t *testing.T, db *sql.DB, code, name string)
 	return administratorID, tenantID
 }
 
+func TestNotebookSessionAuthorizationRepairAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset Notebook authorization repair schemas: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	_, through36 := migrationFilesBeforeAndThrough(t, "000036_iam_service_query_sample.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through36, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 36: %v", err)
+	}
+	if _, err := db.Exec(`
+		CREATE TABLE system.notebook_catalog_authorizations (
+		    id uuid PRIMARY KEY,
+		    session_id uuid NOT NULL UNIQUE,
+		    task_id bigint NOT NULL CHECK (task_id > 0),
+		    actor_principal_id bigint NOT NULL REFERENCES system.principals(id),
+		    tenant_id bigint NOT NULL REFERENCES system.tenants(id),
+		    tenant_membership_id bigint NOT NULL REFERENCES system.tenant_memberships(id),
+		    token_family_id bigint NOT NULL REFERENCES system.refresh_token_families(id),
+		    issued_authorization_version bigint NOT NULL CHECK (issued_authorization_version > 0),
+		    audience text NOT NULL CHECK (audience = 'develop'),
+		    operation text NOT NULL CHECK (operation = 'catalog.list_children'),
+		    expires_at timestamptz NOT NULL,
+		    revoked_at timestamptz,
+		    revoked_reason text,
+		    created_at timestamptz NOT NULL DEFAULT now(),
+		    CHECK (expires_at > created_at),
+		    CHECK (expires_at <= created_at + interval '1 hour'),
+		    CHECK (
+		        (revoked_at IS NULL AND revoked_reason IS NULL)
+		        OR (revoked_at IS NOT NULL AND revoked_reason IS NOT NULL AND btrim(revoked_reason) <> '')
+		    ),
+		    CHECK (revoked_at IS NULL OR revoked_at >= created_at)
+		);
+		CREATE INDEX idx_notebook_catalog_authorizations_actor_active
+		    ON system.notebook_catalog_authorizations (actor_principal_id, tenant_id, expires_at)
+		    WHERE revoked_at IS NULL;
+		CREATE INDEX idx_notebook_catalog_authorizations_membership_active
+		    ON system.notebook_catalog_authorizations (tenant_membership_id, expires_at)
+		    WHERE revoked_at IS NULL;
+		CREATE INDEX idx_notebook_catalog_authorizations_family_active
+		    ON system.notebook_catalog_authorizations (token_family_id, expires_at)
+		    WHERE revoked_at IS NULL;
+		CREATE INDEX idx_notebook_catalog_authorizations_expiry_active
+		    ON system.notebook_catalog_authorizations (expires_at, id)
+		    WHERE revoked_at IS NULL;
+		INSERT INTO system.permissions (
+		    permission_key, owner_module, action, risk_level, delegable,
+		    allowed_scope_types, tenant_customizable, name_i18n_key,
+		    description_i18n_key, status
+		) VALUES (
+		    'system.notebook_catalog_authorization.execute', 'system', 'execute', 'low', false,
+		    ARRAY['tenant']::text[], false,
+		    'permissions.system.notebook_catalog_authorization.execute.name',
+		    'permissions.system.notebook_catalog_authorization.execute.description', 'active'
+		);
+		INSERT INTO system.role_permissions (
+		    role_id, permission_id, source_type, created_by_principal_id
+		)
+		SELECT role.id, permission.id, 'product', NULL
+		FROM system.roles role
+		JOIN system.permissions permission
+		  ON permission.permission_key = 'system.notebook_catalog_authorization.execute'
+		WHERE role.tenant_id IS NULL
+		  AND role.role_key = 'tenant.develop_runtime'
+		  AND role.role_type = 'tenant_builtin'
+		  AND role.status = 'active';
+		UPDATE system.schema_migrations SET version = 37, dirty = false;
+	`); err != nil {
+		t.Fatalf("create historical migration 37 schema: %v", err)
+	}
+
+	if err := NewRunner(dsn).Run(ctx); err != nil {
+		t.Fatalf("apply Notebook Session authorization repair migration 38: %v", err)
+	}
+
+	var version, checksumCount, canonicalPermissionCount, legacyActivePermissionCount, legacyDisabledPermissionCount int
+	var canonicalRoleBindingCount, legacyRoleBindingCount, canonicalTriggerCount int
+	var dirty, canonicalTable, legacyTable, sourceColumn, sourceConstraint bool
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("read repaired migration version: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT to_regclass('system.notebook_session_authorizations') IS NOT NULL,
+		       to_regclass('system.notebook_catalog_authorizations') IS NOT NULL,
+		       EXISTS (
+		           SELECT 1 FROM information_schema.columns
+		           WHERE table_schema = 'system'
+		             AND table_name = 'execution_authorizations'
+		             AND column_name = 'source_notebook_session_authorization_id'
+		       ),
+		       EXISTS (
+		           SELECT 1 FROM pg_constraint
+		           WHERE conrelid = 'system.execution_authorizations'::regclass
+		             AND conname = 'execution_authorizations_notebook_session_source_check'
+		       )
+	`).Scan(&canonicalTable, &legacyTable, &sourceColumn, &sourceConstraint); err != nil {
+		t.Fatalf("inspect repaired Notebook Session authorization schema: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM pg_trigger
+		WHERE tgrelid = 'system.notebook_session_authorizations'::regclass
+		  AND NOT tgisinternal
+	`).Scan(&canonicalTriggerCount); err != nil {
+		t.Fatalf("count repaired Notebook Session authorization triggers: %v", err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM system.schema_migration_checksums`).Scan(&checksumCount); err != nil {
+		t.Fatalf("count migration checksums: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*) FILTER (WHERE permission_key = 'system.notebook_session_authorization.execute'),
+		       count(*) FILTER (
+		           WHERE permission_key = 'system.notebook_catalog_authorization.execute' AND status = 'active'
+		       ),
+		       count(*) FILTER (
+		           WHERE permission_key = 'system.notebook_catalog_authorization.execute' AND status = 'disabled'
+		       )
+		FROM system.permissions
+	`).Scan(&canonicalPermissionCount, &legacyActivePermissionCount, &legacyDisabledPermissionCount); err != nil {
+		t.Fatalf("inspect repaired Notebook authorization permissions: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*) FILTER (
+		           WHERE role.role_key = 'tenant.develop_runtime'
+		             AND permission.permission_key = 'system.notebook_session_authorization.execute'
+		       ),
+		       count(*) FILTER (
+		           WHERE permission.permission_key = 'system.notebook_catalog_authorization.execute'
+		       )
+		FROM system.role_permissions role_permission
+		JOIN system.roles role ON role.id = role_permission.role_id
+		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+	`).Scan(&canonicalRoleBindingCount, &legacyRoleBindingCount); err != nil {
+		t.Fatalf("inspect repaired Notebook authorization role bindings: %v", err)
+	}
+	if version != 38 || dirty || !canonicalTable || legacyTable || !sourceColumn ||
+		!sourceConstraint || canonicalTriggerCount != 4 || checksumCount != 38 ||
+		canonicalPermissionCount != 1 || legacyActivePermissionCount != 0 || legacyDisabledPermissionCount != 1 ||
+		canonicalRoleBindingCount != 1 || legacyRoleBindingCount != 0 {
+		t.Fatalf(
+			"repair state version=(%d,%t) tables=(%t,%t) source=(%t,%t) triggers=%d checksums=%d permissions=(%d,%d,%d) role_bindings=(%d,%d)",
+			version, dirty, canonicalTable, legacyTable, sourceColumn, sourceConstraint,
+			canonicalTriggerCount, checksumCount, canonicalPermissionCount, legacyActivePermissionCount, legacyDisabledPermissionCount,
+			canonicalRoleBindingCount, legacyRoleBindingCount,
+		)
+	}
+}
+
+func TestNotebookSessionAuthorizationRepairCreatesMissingSchemaAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset missing Notebook authorization schemas: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	_, through36 := migrationFilesBeforeAndThrough(t, "000036_iam_service_query_sample.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through36, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 36: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE system.schema_migrations SET version = 37, dirty = false`); err != nil {
+		t.Fatalf("record migration 37 without its schema: %v", err)
+	}
+
+	if err := NewRunner(dsn).Run(ctx); err != nil {
+		t.Fatalf("repair missing Notebook Session authorization schema: %v", err)
+	}
+
+	var version, triggerCount, checksumCount, roleBindingCount int
+	var dirty, canonicalTable, sourceColumn, sourceConstraint bool
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("read repaired migration version: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT to_regclass('system.notebook_session_authorizations') IS NOT NULL,
+		       EXISTS (
+		           SELECT 1 FROM information_schema.columns
+		           WHERE table_schema = 'system'
+		             AND table_name = 'execution_authorizations'
+		             AND column_name = 'source_notebook_session_authorization_id'
+		       ),
+		       EXISTS (
+		           SELECT 1 FROM pg_constraint
+		           WHERE conrelid = 'system.execution_authorizations'::regclass
+		             AND conname = 'execution_authorizations_notebook_session_source_check'
+		       )
+	`).Scan(&canonicalTable, &sourceColumn, &sourceConstraint); err != nil {
+		t.Fatalf("inspect created Notebook Session authorization schema: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM pg_trigger
+		WHERE tgrelid = 'system.notebook_session_authorizations'::regclass
+		  AND NOT tgisinternal
+	`).Scan(&triggerCount); err != nil {
+		t.Fatalf("count created Notebook Session authorization triggers: %v", err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM system.schema_migration_checksums`).Scan(&checksumCount); err != nil {
+		t.Fatalf("count migration checksums: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions role_permission
+		JOIN system.roles role ON role.id = role_permission.role_id
+		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+		WHERE role.role_key = 'tenant.develop_runtime'
+		  AND permission.permission_key = 'system.notebook_session_authorization.execute'
+		  AND permission.status = 'active'
+	`).Scan(&roleBindingCount); err != nil {
+		t.Fatalf("count created Notebook authorization role binding: %v", err)
+	}
+	if version != 38 || dirty || !canonicalTable || !sourceColumn || !sourceConstraint ||
+		triggerCount != 4 || checksumCount != 38 || roleBindingCount != 1 {
+		t.Fatalf(
+			"missing-schema repair state version=(%d,%t) table=%t source=(%t,%t) triggers=%d checksums=%d role_binding=%d",
+			version, dirty, canonicalTable, sourceColumn, sourceConstraint,
+			triggerCount, checksumCount, roleBindingCount,
+		)
+	}
+}
+
 func TestRunnerAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
@@ -641,7 +885,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 		t.Fatalf("reset test schema: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	runner := NewRunner(dsn)
 	if err := runner.Run(ctx); err != nil {
@@ -656,8 +900,8 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
 		t.Fatalf("read migration version: %v", err)
 	}
-	if version != 37 || dirty {
-		t.Fatalf("migration state = (%d, %t), want (37, false)", version, dirty)
+	if version != 38 || dirty {
+		t.Fatalf("migration state = (%d, %t), want (38, false)", version, dirty)
 	}
 
 	assertIAMCatalogSeed(t, db)
@@ -689,13 +933,20 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	assertRoleKeyNamespace(t, db)
 	assertForeignKeyColumnsIndexed(t, db)
 
+	_, tampered := migrationFilesBeforeAndThrough(t, "000038_iam_notebook_session_authorization_repair.up.sql")
+	tamperedMigration := tampered["sql/000037_iam_notebook_session_authorization.up.sql"]
+	tamperedMigration.Data = append(append([]byte(nil), tamperedMigration.Data...), []byte("\n-- rewritten\n")...)
+	if err := (&Runner{DSN: dsn, FS: tampered, Root: DefaultMigrationsRoot}).Run(ctx); err == nil || !strings.Contains(err.Error(), "does not match embedded file") {
+		t.Fatalf("Run() checksum error = %v, want immutable migration rejection", err)
+	}
+
 	if _, err := db.Exec(`UPDATE system.schema_migrations SET dirty = true`); err != nil {
 		t.Fatalf("mark migration dirty: %v", err)
 	}
 	if err := runner.Run(ctx); err == nil || !strings.Contains(err.Error(), "is dirty") {
 		t.Fatalf("Run() error = %v, want dirty-state rejection", err)
 	}
-	if _, err := db.Exec(`UPDATE system.schema_migrations SET version = 38, dirty = false`); err != nil {
+	if _, err := db.Exec(`UPDATE system.schema_migrations SET version = 39, dirty = false`); err != nil {
 		t.Fatalf("set newer migration version: %v", err)
 	}
 	if err := runner.Run(ctx); err == nil || !strings.Contains(err.Error(), "newer than embedded") {

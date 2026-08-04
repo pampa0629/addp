@@ -74,6 +74,39 @@ func TestStorageAgainstPostgres(t *testing.T) {
 		}
 	})
 
+	t.Run("family creation uses database transaction time", func(t *testing.T) {
+		databaseTimestamp, err := storage.databaseNow(ctx)
+		if err != nil {
+			t.Fatalf("read database time: %v", err)
+		}
+		originalNow := storage.now
+		storage.now = func() time.Time { return databaseTimestamp.Add(-time.Second) }
+		defer func() { storage.now = originalNow }()
+
+		session := approvedTestSession(principalID, membershipID, authorizationVersion, databaseTimestamp)
+		session.AuthenticatedAt = databaseTimestamp
+		session.SetExpiresAt(fosite.AccessToken, databaseTimestamp.Add(15*time.Minute))
+		session.SetExpiresAt(fosite.RefreshToken, databaseTimestamp.Add(time.Hour))
+		requestID := uuid.New()
+		request := &fosite.Request{
+			ID:                requestID.String(),
+			RequestedAt:       databaseTimestamp,
+			Client:            client,
+			RequestedScope:    fosite.Arguments{"addp.api"},
+			GrantedScope:      fosite.Arguments{"addp.api"},
+			RequestedAudience: fosite.Arguments{"addp.api"},
+			GrantedAudience:   fosite.Arguments{"addp.api"},
+			Session:           session,
+		}
+		family, err := storage.createOAuthFamily(ctx, iam.NewRepository(db), requestID, request)
+		if err != nil {
+			t.Fatalf("createOAuthFamily() error = %v", err)
+		}
+		if family.CreatedAt.Before(family.AuthenticatedAt) {
+			t.Fatalf("family created_at %s is before authenticated_at %s", family.CreatedAt, family.AuthenticatedAt)
+		}
+	})
+
 	t.Run("authorization code PKCE and refresh replay", func(t *testing.T) {
 		requestID := uuid.New()
 		insertApprovedAuthorizationRequest(

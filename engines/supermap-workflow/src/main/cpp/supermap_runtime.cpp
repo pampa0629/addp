@@ -2,17 +2,28 @@
 
 #include "Engine/UGDataSourceManager.h"
 #include "Engine/UGDataset.h"
+#include "Engine/UGDatasetVectorInfo.h"
 #include "Engine/UGQueryDef.h"
 #include "Element/OgdcFieldInfo.h"
+#include "Geometry/UGFeature.h"
+#include "Geometry/UGGeoPoint.h"
 #include "Geometry/UGGeometry.h"
 #include "Projection/UGRefTranslator.h"
 #include "Toolkit/UGErrorObj.h"
+#include "Generalization/UGFeatureEnvelope.h"
+#include "Generalization/UGUpdateAttribute.h"
+#include "Overlay/UGOverlayAnalyst.h"
+#include "Overlay/UGTopoDissolve.h"
+#include "Proximity/UGBufferAnalyst.h"
+#include "TopoBase/UGTopoClosest.h"
 
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
 #include <memory>
+#include <set>
 #include <stdexcept>
+#include <vector>
 
 namespace addp::supermap {
 namespace {
@@ -158,6 +169,12 @@ UGC::UGQueryDef static_query(const std::string& attribute_filter) {
   return query;
 }
 
+std::string last_error_detail() {
+  const auto error = UGC::UGErrorObj::GetInstance().GetLast(false);
+  return "error_id=" + std::to_string(error.m_nID) + "; message=" +
+      to_utf8(error.m_strMessage);
+}
+
 UGC::EmGeoTransMethod coordinate_transform_method(std::string value) {
   std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
     return character == '-' ? '_' : static_cast<char>(std::tolower(character));
@@ -197,6 +214,121 @@ UGC::EmGeoTransMethod coordinate_transform_method(std::string value) {
     return UGC::MTH_WGS84TOGCJ02;
   }
   throw std::invalid_argument("unsupported coordinate transform method: " + value);
+}
+
+UGC::UGint buffer_radius_unit(std::string value) {
+  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
+    return static_cast<char>(std::tolower(character));
+  });
+  if (value.empty() || value == "meter" || value == "meters" || value == "m") {
+    return AU_METER;
+  }
+  if (value == "millimeter" || value == "millimeters" || value == "mm") {
+    return AU_MILIMETER;
+  }
+  if (value == "centimeter" || value == "centimeters" || value == "cm") {
+    return AU_CENTIMETER;
+  }
+  if (value == "kilometer" || value == "kilometers" || value == "km") {
+    return AU_KILOMETER;
+  }
+  if (value == "inch" || value == "in") {
+    return AU_INCH;
+  }
+  if (value == "foot" || value == "feet" || value == "ft") {
+    return AU_FOOT;
+  }
+  if (value == "mile" || value == "mi") {
+    return AU_MILE;
+  }
+  throw std::invalid_argument("unsupported buffer radius_unit: " + value);
+}
+
+UGC::UGint buffer_end_type(std::string value) {
+  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
+    return static_cast<char>(std::tolower(character));
+  });
+  if (value.empty() || value == "round") {
+    return UGC::UGBufferParam::UGROUND;
+  }
+  if (value == "flat") {
+    return UGC::UGBufferParam::UGFLAT;
+  }
+  throw std::invalid_argument("unsupported buffer end_type: " + value);
+}
+
+UGC::UGUpdateAttribute::enumRelType spatial_relation_type(std::string value) {
+  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
+    return character == '-' ? '_' : static_cast<char>(std::tolower(character));
+  });
+  if (value == "intersect" || value == "intersects") {
+    return UGC::UGUpdateAttribute::RelIntersect;
+  }
+  if (value == "contain" || value == "contains") {
+    return UGC::UGUpdateAttribute::RelContain;
+  }
+  if (value == "within") {
+    return UGC::UGUpdateAttribute::RelWithin;
+  }
+  if (value == "closest") {
+    return UGC::UGUpdateAttribute::RelClosest;
+  }
+  throw std::invalid_argument("unsupported spatial relation: " + value);
+}
+
+struct RecordsetGeometries {
+  UGArray<UGC::UGGeometry*> raw;
+  std::vector<std::unique_ptr<UGC::UGGeometry>> owned;
+  std::vector<UGC::UGint> record_ids;
+};
+
+RecordsetGeometries read_recordset_geometries(
+    const UGC::UGRecordsetPtr& recordset, const std::string& label) {
+  RecordsetGeometries result;
+  recordset->MoveFirst();
+  while (!recordset->IsEOF()) {
+    UGC::UGGeometry* geometry = nullptr;
+    if (!recordset->GetGeometry(geometry) || geometry == nullptr) {
+      throw std::runtime_error("failed to read " + label + " geometry");
+    }
+    result.record_ids.push_back(recordset->GetID());
+    result.raw.Add(geometry);
+    result.owned.emplace_back(geometry);
+    recordset->MoveNext();
+  }
+  return result;
+}
+
+UGC::UGTopoDissolve::UGDissolveType dissolve_mode(std::string value) {
+  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
+    return character == '-' ? '_' : static_cast<char>(std::tolower(character));
+  });
+  if (value.empty() || value == "multipart" || value == "multi_part") {
+    return UGC::UGTopoDissolve::SmDTMultiPart;
+  }
+  if (value == "single") {
+    return UGC::UGTopoDissolve::SmDTSingle;
+  }
+  if (value == "only_multipart" || value == "only_multi_part") {
+    return UGC::UGTopoDissolve::SmDTOnlyMultiPart;
+  }
+  throw std::invalid_argument("unsupported dissolve_type: " + value);
+}
+
+UGC::UGOverlayAnalyst::UGOverlayMode overlay_mode(const std::string& operator_id) {
+  if (operator_id == "overlay.clip") {
+    return UGC::UGOverlayAnalyst::UGClip;
+  }
+  if (operator_id == "overlay.erase") {
+    return UGC::UGOverlayAnalyst::UGErase;
+  }
+  if (operator_id == "overlay.intersect") {
+    return UGC::UGOverlayAnalyst::UGIntersect;
+  }
+  if (operator_id == "overlay.union") {
+    return UGC::UGOverlayAnalyst::UGUnion;
+  }
+  throw std::invalid_argument("unsupported overlay operator: " + operator_id);
 }
 
 }  // namespace
@@ -405,6 +537,10 @@ std::shared_ptr<DatasetRef> ExecutionContext::select_dataset(
   if (vector == nullptr) {
     throw std::invalid_argument("dataset is not a DatasetVector: " + name);
   }
+  if (!vector->IsOpen() && !vector->Open()) {
+    throw std::runtime_error(
+        "failed to open DatasetVector: " + name + "; " + last_error_detail());
+  }
   return std::make_shared<DatasetRef>(DatasetRef{datasource, vector});
 }
 
@@ -473,6 +609,13 @@ std::shared_ptr<DatasetRef> ExecutionContext::project_dataset(
       }
       recordset->MoveNext();
     }
+    if (!result->ComputeBounds()) {
+      throw std::runtime_error("failed to recompute projected bounds: " + output_dataset_name);
+    }
+    if (!result->UpdateSpatialIndex()) {
+      throw std::runtime_error(
+          "failed to rebuild projected spatial index: " + output_dataset_name);
+    }
     if (!result->SetPrjCoordSys(target_projection)) {
       throw std::runtime_error("failed to set target projection: " + output_dataset_name);
     }
@@ -494,7 +637,7 @@ std::shared_ptr<DatasetRef> ExecutionContext::filter_dataset(
   prepare_output_dataset(output_datasource->datasource, output_dataset_name, overwrite);
   const UGC::UGRecordsetPtr recordset = dataset->dataset->Query(static_query(attribute_filter));
   if (recordset == nullptr) {
-    throw std::runtime_error("dataset query returned null recordset");
+    throw std::runtime_error("dataset query returned null recordset; " + last_error_detail());
   }
   const UGC::UGDatasetVectorPtr result = output_datasource->datasource->RecordsetToDataset(
       recordset, to_ug_string(output_dataset_name));
@@ -525,12 +668,346 @@ std::shared_ptr<DatasetRef> ExecutionContext::merge_datasets(
   return result;
 }
 
+std::shared_ptr<DatasetRef> ExecutionContext::feature_envelope(
+    const std::shared_ptr<DatasetRef>& input_dataset,
+    const std::shared_ptr<DatasourceRef>& output_datasource,
+    const std::string& output_dataset_name,
+    bool overwrite) {
+  prepare_output_dataset(output_datasource->datasource, output_dataset_name, overwrite);
+  const UGC::UGDatasetVectorPtr result = UGC::UGFeatureEnvelope::FeatureEnvolope(
+      input_dataset->dataset,
+      to_ug_string(output_dataset_name),
+      output_datasource->datasource,
+      true);
+  if (result == nullptr) {
+    throw std::runtime_error(
+        "UGFeatureEnvelope::FeatureEnvolope returned null: " + output_dataset_name + "; " +
+        last_error_detail());
+  }
+  if (!result->IsOpen() && !result->Open()) {
+    throw std::runtime_error(
+        "failed to open feature envelope result: " + output_dataset_name + "; " +
+        last_error_detail());
+  }
+  return std::make_shared<DatasetRef>(DatasetRef{output_datasource, result});
+}
+
+std::shared_ptr<DatasetRef> ExecutionContext::inner_point_dataset(
+    const std::shared_ptr<DatasetRef>& input_dataset,
+    const std::shared_ptr<DatasourceRef>& output_datasource,
+    const std::string& output_dataset_name,
+    bool overwrite) {
+  if (input_dataset->dataset->GetType() != UGC::UGDataset::Region) {
+    throw std::invalid_argument("vector.inner_point requires a Region input dataset");
+  }
+
+  prepare_output_dataset(output_datasource->datasource, output_dataset_name, overwrite);
+  UGC::UGDatasetVectorInfo info;
+  info.m_strName = to_ug_string(output_dataset_name);
+  info.m_nType = UGC::UGDataset::Point;
+  UGC::UGDatasetVectorPtr result = output_datasource->datasource->CreateDatasetVector(
+      info, input_dataset->dataset->GetPrjCoordSys());
+  if (result == nullptr) {
+    throw std::runtime_error(
+        "failed to create inner point output dataset: " + output_dataset_name + "; " +
+        last_error_detail());
+  }
+
+  try {
+    UGC::UGFieldInfos user_fields;
+    if (!input_dataset->dataset->GetFieldInfos(user_fields, true)) {
+      throw std::runtime_error("failed to read inner point source fields");
+    }
+    const UGC::UGint user_field_count = static_cast<UGC::UGint>(user_fields.GetSize());
+    for (UGC::UGint index = 0; index < user_field_count; ++index) {
+      const UGC::UGFieldInfo field = user_fields[index];
+      UGC::UGFieldInfo existing;
+      if (result->GetFieldInfo(field.m_strName, existing)) {
+        continue;
+      }
+      if (!result->CreateField(field)) {
+        throw std::runtime_error(
+            "failed to create inner point output field: " + to_utf8(field.m_strName) + "; " +
+            last_error_detail());
+      }
+    }
+
+    const UGC::UGRecordsetPtr source = input_dataset->dataset->Query(static_query(""));
+    if (source == nullptr) {
+      throw std::runtime_error("failed to query inner point source dataset");
+    }
+    source->MoveFirst();
+    while (!source->IsEOF()) {
+      std::unique_ptr<UGC::UGFeature> feature(source->GetFeature());
+      if (feature == nullptr || feature->GetGeometry() == nullptr) {
+        throw std::runtime_error("failed to read inner point source feature");
+      }
+      const UGC::UGPoint2D point = feature->GetGeometry()->GetInnerPoint();
+      auto* point_geometry = new UGC::UGGeoPoint();
+      if (!point_geometry->Make(point)) {
+        delete point_geometry;
+        throw std::runtime_error("failed to create inner point geometry");
+      }
+      feature->SetGeometry(point_geometry);
+      feature->SetAutoReleaseGeometry(true);
+      feature->SetID(0);
+      if (!result->AddFeature(feature.get())) {
+        throw std::runtime_error(
+            "failed to append inner point feature: " + output_dataset_name + "; " +
+            last_error_detail());
+      }
+      source->MoveNext();
+    }
+    if (!result->ComputeBounds()) {
+      throw std::runtime_error(
+          "failed to compute inner point bounds: " + output_dataset_name);
+    }
+    if (!result->UpdateSpatialIndex()) {
+      throw std::runtime_error(
+          "failed to rebuild inner point spatial index: " + output_dataset_name);
+    }
+  } catch (...) {
+    result.reset();
+    output_datasource->datasource->DeleteDataset(to_ug_string(output_dataset_name));
+    throw;
+  }
+  return std::make_shared<DatasetRef>(DatasetRef{output_datasource, result});
+}
+
+std::shared_ptr<DatasetRef> ExecutionContext::buffer_dataset(
+    const std::shared_ptr<DatasetRef>& input_dataset,
+    const std::shared_ptr<DatasourceRef>& output_datasource,
+    const std::string& output_dataset_name,
+    double distance,
+    const std::string& radius_unit,
+    const std::string& end_type,
+    int semicircle_segments,
+    bool dissolve,
+    bool keep_attributes,
+    bool overwrite) {
+  prepare_output_dataset(output_datasource->datasource, output_dataset_name, overwrite);
+  UGC::UGDatasetVectorInfo info;
+  info.m_strName = to_ug_string(output_dataset_name);
+  info.m_nType = UGC::UGDataset::Region;
+  UGC::UGDatasetVectorPtr result = output_datasource->datasource->CreateDatasetVector(
+      info, input_dataset->dataset->GetPrjCoordSys());
+  if (result == nullptr) {
+    throw std::runtime_error("failed to create buffer output dataset: " + output_dataset_name);
+  }
+
+  try {
+    UGC::UGBufferParam parameter;
+    parameter.m_dBufferRadius = distance;
+    parameter.m_nSideType = UGC::UGBufferParam::NONESIDE;
+    parameter.m_nEndType = buffer_end_type(end_type);
+    parameter.m_nSemicircleSegments = semicircle_segments;
+    parameter.m_bUnionRegion = dissolve;
+    parameter.m_bSaveFieldInfo = keep_attributes;
+    parameter.m_nRaidusUnit = buffer_radius_unit(radius_unit);
+    UGC::UGBufferAnalyst analyst;
+    if (!analyst.CreateBuffer(input_dataset->dataset, parameter, result)) {
+      throw std::runtime_error(
+          "UGBufferAnalyst::CreateBuffer returned false: " + output_dataset_name + "; " +
+          last_error_detail());
+    }
+    if (!result->IsOpen() && !result->Open()) {
+      throw std::runtime_error("failed to open buffer output dataset: " + output_dataset_name);
+    }
+  } catch (...) {
+    result.reset();
+    output_datasource->datasource->DeleteDataset(to_ug_string(output_dataset_name));
+    throw;
+  }
+  return std::make_shared<DatasetRef>(DatasetRef{output_datasource, result});
+}
+
+std::shared_ptr<DatasetRef> ExecutionContext::spatial_filter_dataset(
+    const std::shared_ptr<DatasetRef>& input_dataset,
+    const std::shared_ptr<DatasetRef>& filter_dataset,
+    const std::shared_ptr<DatasourceRef>& output_datasource,
+    const std::string& output_dataset_name,
+    const std::string& relation,
+    bool overwrite) {
+  prepare_output_dataset(output_datasource->datasource, output_dataset_name, overwrite);
+  const UGC::UGRecordsetPtr input_recordset =
+      input_dataset->dataset->Query(static_query(""));
+  const UGC::UGRecordsetPtr filter_recordset =
+      filter_dataset->dataset->Query(static_query(""));
+  if (input_recordset == nullptr || filter_recordset == nullptr) {
+    throw std::runtime_error(
+        "failed to query spatial filter inputs: " + output_dataset_name + "; " +
+        last_error_detail());
+  }
+
+  UGC::UGQueryDef matched_query;
+  matched_query.m_nType = UGC::UGQueryDef::IDs;
+  matched_query.m_nCursorType = UGC::UGQueryDef::OpenStatic;
+  const auto relation_type = spatial_relation_type(relation);
+  if (relation_type == UGC::UGUpdateAttribute::RelClosest) {
+    RecordsetGeometries input_geometries =
+        read_recordset_geometries(input_recordset, "spatial filter input");
+    RecordsetGeometries filter_geometries =
+        read_recordset_geometries(filter_recordset, "spatial filter reference");
+    if (!filter_geometries.raw.IsEmpty()) {
+      std::set<UGC::UGTopoClosest::ClosestResult> closest_results;
+      UGC::UGTopoClosest::FindClosest(
+          filter_geometries.raw,
+          filter_dataset->dataset->GetBounds(),
+          input_geometries.raw,
+          input_dataset->dataset->GetBounds(),
+          -1.0,
+          input_dataset->dataset->GetToleranceNodeSnap(),
+          closest_results);
+      for (const auto& result : closest_results) {
+        if (result.geoIndex < 0 ||
+            static_cast<std::size_t>(result.geoIndex) >= input_geometries.record_ids.size()) {
+          throw std::runtime_error("closest relation returned an invalid input geometry index");
+        }
+        if (!result.closestIndexes.empty()) {
+          matched_query.m_IDs.Add(input_geometries.record_ids[result.geoIndex]);
+        }
+      }
+    }
+  } else {
+    UGC::UGUpdateAttribute relation_query;
+    relation_query.SetTagRecordset(input_recordset);
+    relation_query.SetSrcRecordset(filter_recordset);
+    relation_query.SetRelType(relation_type);
+    relation_query.SetTolerance(input_dataset->dataset->GetToleranceNodeSnap());
+    relation_query.SetBorderIsInside(true);
+    relation_query.SetShowProgress(false);
+
+    UGArray<UGC::UGint> input_ids;
+    UGArray<UGC::UGint> filter_ids;
+    UGArray<UGC::UGint> filter_id_counts;
+    if (!relation_query.GetIDsByGeoRelation(input_ids, filter_ids, filter_id_counts)) {
+      throw std::runtime_error(
+          "UGUpdateAttribute::GetIDsByGeoRelation returned false: " +
+          output_dataset_name + "; " + last_error_detail());
+    }
+    if (input_ids.GetSize() != filter_id_counts.GetSize()) {
+      throw std::runtime_error("spatial relation result arrays have inconsistent sizes");
+    }
+    for (std::size_t index = 0; index < input_ids.GetSize(); ++index) {
+      if (filter_id_counts[index] > 0) {
+        matched_query.m_IDs.Add(input_ids[index]);
+      }
+    }
+  }
+  const UGC::UGRecordsetPtr matched_recordset = input_dataset->dataset->Query(matched_query);
+  if (matched_recordset == nullptr) {
+    throw std::runtime_error(
+        "failed to query matching spatial filter IDs: " + output_dataset_name + "; " +
+        last_error_detail());
+  }
+  const UGC::UGDatasetVectorPtr result = output_datasource->datasource->RecordsetToDataset(
+      matched_recordset, to_ug_string(output_dataset_name));
+  if (result == nullptr) {
+    throw std::runtime_error(
+        "RecordsetToDataset returned null: " + output_dataset_name + "; " +
+        last_error_detail());
+  }
+  if (!result->SetPrjCoordSys(input_dataset->dataset->GetPrjCoordSys())) {
+    throw std::runtime_error("failed to inherit output projection: " + output_dataset_name);
+  }
+  return std::make_shared<DatasetRef>(DatasetRef{output_datasource, result});
+}
+
+std::shared_ptr<DatasetRef> ExecutionContext::dissolve_dataset(
+    const std::shared_ptr<DatasetRef>& input_dataset,
+    const std::shared_ptr<DatasourceRef>& output_datasource,
+    const std::string& output_dataset_name,
+    const std::vector<std::string>& field_names,
+    const std::string& dissolve_type,
+    double tolerance,
+    bool save_all_fields,
+    bool overwrite) {
+  prepare_output_dataset(output_datasource->datasource, output_dataset_name, overwrite);
+  UGC::UGDatasetVectorInfo info;
+  info.m_strName = to_ug_string(output_dataset_name);
+  info.m_nType = input_dataset->dataset->GetType();
+  UGC::UGDatasetVectorPtr result = output_datasource->datasource->CreateDatasetVector(
+      info, input_dataset->dataset->GetPrjCoordSys());
+  if (result == nullptr) {
+    throw std::runtime_error("failed to create dissolve output dataset: " + output_dataset_name);
+  }
+
+  try {
+    UGC::UGTopoDissolve::DissolveInformation parameter;
+    parameter.bTopoIniProcess = true;
+    parameter.nDissolveType = dissolve_mode(dissolve_type);
+    parameter.dTolerance = tolerance;
+    parameter.bSaveAllField = save_all_fields;
+    for (const std::string& field_name : field_names) {
+      parameter.arrFieldName.Add(to_ug_string(field_name));
+    }
+    if (!UGC::UGTopoDissolve::Dissolve(input_dataset->dataset, result, parameter, false)) {
+      throw std::runtime_error(
+          "UGTopoDissolve::Dissolve returned false: " + output_dataset_name + "; " +
+          last_error_detail());
+    }
+    if (!result->IsOpen() && !result->Open()) {
+      throw std::runtime_error("failed to open dissolve output dataset: " + output_dataset_name);
+    }
+  } catch (...) {
+    result.reset();
+    output_datasource->datasource->DeleteDataset(to_ug_string(output_dataset_name));
+    throw;
+  }
+  return std::make_shared<DatasetRef>(DatasetRef{output_datasource, result});
+}
+
+std::shared_ptr<DatasetRef> ExecutionContext::overlay_datasets(
+    const std::string& operator_id,
+    const std::shared_ptr<DatasetRef>& input_dataset,
+    const std::shared_ptr<DatasetRef>& overlay_dataset,
+    const std::shared_ptr<DatasourceRef>& output_datasource,
+    const std::string& output_dataset_name,
+    double tolerance,
+    bool overwrite) {
+  prepare_output_dataset(output_datasource->datasource, output_dataset_name, overwrite);
+  UGC::UGDatasetVectorInfo info;
+  info.m_strName = to_ug_string(output_dataset_name);
+  info.m_nType = input_dataset->dataset->GetType();
+  UGC::UGDatasetVectorPtr result = output_datasource->datasource->CreateDatasetVector(
+      info, input_dataset->dataset->GetPrjCoordSys());
+  if (result == nullptr) {
+    throw std::runtime_error("failed to create overlay output dataset: " + output_dataset_name);
+  }
+
+  try {
+    UGC::UGOverlayAnalyst analyst;
+    analyst.SetInterval(tolerance);
+    if (!analyst.Overlay(
+            input_dataset->dataset,
+            overlay_dataset->dataset,
+            result,
+            overlay_mode(operator_id),
+            true)) {
+      throw std::runtime_error(
+          "UGOverlayAnalyst::Overlay returned false: " + output_dataset_name + "; " +
+          last_error_detail());
+    }
+    if (!result->IsOpen() && !result->Open()) {
+      throw std::runtime_error("failed to open overlay output dataset: " + output_dataset_name);
+    }
+  } catch (...) {
+    result.reset();
+    output_datasource->datasource->DeleteDataset(to_ug_string(output_dataset_name));
+    throw;
+  }
+  return std::make_shared<DatasetRef>(DatasetRef{output_datasource, result});
+}
+
 Json ExecutionContext::query_dataset(
     const std::shared_ptr<DatasetRef>& dataset, const std::string& attribute_filter) {
   UGC::UGint record_count = dataset->dataset->GetObjectCount();
   if (!attribute_filter.empty()) {
     const UGC::UGRecordsetPtr recordset = dataset->dataset->Query(static_query(attribute_filter));
-    record_count = recordset == nullptr ? 0 : recordset->GetRecordCount();
+    if (recordset == nullptr) {
+      throw std::runtime_error("dataset query returned null recordset; " + last_error_detail());
+    }
+    record_count = recordset->GetRecordCount();
   }
   return {
       {"kind", "supermap_query_result"},

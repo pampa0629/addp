@@ -374,6 +374,76 @@ const docTemplate = `{
                 ]
             }
         },
+        "/field-definition-recommendations": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "全量扫描指定源 DECIMAL 字段的实际值，为新建 MySQL 目标表返回不会截断当前源数据的最小 precision 和 scale。| Fully scans the selected source DECIMAL fields and returns the minimum precision and scale that preserve all current source values in a new MySQL target table.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "字段定义 | Field Definitions"
+                ],
+                "summary": "推荐目标字段定义 | Recommend target field definitions",
+                "parameters": [
+                    {
+                        "description": "推荐请求 | Recommendation request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_service.FieldDefinitionRecommendationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "推荐结果 | Recommendation result",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_service.FieldDefinitionRecommendationResult"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "源或目标不支持分析 | Source or target does not support analysis",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "分析服务不可用 | Analysis unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "transfer.task.create"
+                ]
+            }
+        },
         "/ping": {
             "get": {
                 "produces": [
@@ -2802,6 +2872,68 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "task_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_service.DecimalFieldRecommendation": {
+            "type": "object",
+            "properties": {
+                "fits_target": {
+                    "type": "boolean"
+                },
+                "non_null_count": {
+                    "type": "integer"
+                },
+                "precision": {
+                    "type": "integer"
+                },
+                "scale": {
+                    "type": "integer"
+                },
+                "source_field": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_service.FieldDefinitionRecommendationRequest": {
+            "type": "object",
+            "required": [
+                "source_fields",
+                "source_locator",
+                "target_engine_type"
+            ],
+            "properties": {
+                "source_fields": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "source_locator": {
+                    "type": "string"
+                },
+                "target_engine_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_service.FieldDefinitionRecommendationResult": {
+            "type": "object",
+            "properties": {
+                "basis": {
+                    "type": "string"
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_transfer_internal_service.DecimalFieldRecommendation"
+                    }
+                },
+                "rows_scanned": {
+                    "type": "integer"
+                },
+                "target_engine_type": {
                     "type": "string"
                 }
             }

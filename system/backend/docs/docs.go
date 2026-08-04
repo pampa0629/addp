@@ -2143,6 +2143,72 @@ const docTemplate = `{
                 ]
             }
         },
+        "/notebook-session-authorizations/{id}/engine-descriptors": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅返回 active 且声明实时 CatalogModel 的数据引擎；授权复核与引擎发现在同一请求完成 | Only active data engines declaring a live CatalogModel are returned; authorization review and engine discovery complete in one request",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Notebook 会话授权 | Notebook Session Authorization"
+                ],
+                "summary": "使用 Notebook 会话授权列出可访问数据引擎 | List accessible data engines with Notebook session authorization",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Notebook 会话授权 ID | Notebook session authorization ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Notebook 会话 ID | Notebook session ID",
+                        "name": "session_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_system_internal_models.EngineRuntimeDescriptor"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.notebook_session_authorization.execute"
+                ]
+            }
+        },
         "/notebook-session-authorizations/{id}/execution-engine-accesses": {
             "post": {
                 "security": [
