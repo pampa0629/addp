@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,6 +11,9 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	engineplugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/postgresql"
+	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
 	commonModels "github.com/addp/common/models"
 )
 
@@ -132,6 +136,84 @@ func TestEngineServiceDoesNotFallbackToOtherTenantOrExpiredConnectionCache(t *te
 	if engineRequests != 1 {
 		t.Fatalf("engine requests = %d, want 1", engineRequests)
 	}
+}
+
+func TestEngineServiceResolvesBoundSuperMapSDXPostgreSQLScanProvider(t *testing.T) {
+	const tenantID = uint(7)
+	const runtimeID = uint(42)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/system/oauth/token":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"access_token": "addp_at_meta_7", "token_type": "bearer", "expires_in": 300, "scope": "addp.api",
+			})
+		case "/api/v1/system/runtime/engine-descriptors/42":
+			if r.Header.Get("Authorization") != "Bearer addp_at_meta_7" {
+				t.Errorf("Authorization = %q", r.Header.Get("Authorization"))
+			}
+			_ = json.NewEncoder(w).Encode(commonModels.EngineRuntimeDescriptor{
+				ID: runtimeID, Name: "SuperMap Workflow", EngineType: "supermap_workflow",
+				LifecycleState:  commonModels.EngineLifecycleActive,
+				RuntimeEndpoint: &commonModels.EngineRuntimeEndpoint{Protocol: "http", Host: "supermap-workflow", Port: 8103},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	capabilities := (&postgresql.PostgreSQLPlugin{}).Capabilities()
+	engineplugin.SetSpatialWorkspacesExtension(&capabilities, []engineplugin.SpatialWorkspaceFact{{
+		Ecosystem:            "supermap",
+		Kind:                 engineplugin.SpatialWorkspaceSuperMapSDXPostgreSQL,
+		State:                engineplugin.SpatialWorkspaceStateEnabled,
+		RuntimeEngineType:    "supermap_workflow",
+		BoundRuntimeEngineID: uintPointer(runtimeID),
+	}})
+	capabilitiesJSON, err := json.Marshal(capabilities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encodedCapabilities := commonModels.JSONString(capabilitiesJSON)
+	resource := &commonModels.Engine{
+		ID: 9, TenantID: uintPointer(tenantID), EngineType: "postgresql",
+		Capabilities: &encodedCapabilities,
+	}
+
+	engineService := newEngineServiceAuthTestClient(t, server)
+	resolved, err := engineService.ResolveScanPlugin(context.Background(), resource, tenantID)
+	if err != nil {
+		t.Fatalf("ResolveScanPlugin() error = %v", err)
+	}
+	if _, ok := resolved.(*supermapworkflow.SDXPostgreSQLTableProvider); !ok {
+		t.Fatalf("ResolveScanPlugin() = %T, want SDXPostgreSQLTableProvider", resolved)
+	}
+}
+
+func TestEngineServiceKeepsPostgreSQLProviderForOtherSpatialWorkspaces(t *testing.T) {
+	capabilities := (&postgresql.PostgreSQLPlugin{}).Capabilities()
+	engineplugin.SetSpatialWorkspacesExtension(&capabilities, []engineplugin.SpatialWorkspaceFact{{
+		Ecosystem: "supermap", Kind: engineplugin.SpatialWorkspaceSuperMapSDXPostGIS,
+		State: engineplugin.SpatialWorkspaceStateDetected,
+	}})
+	capabilitiesJSON, err := json.Marshal(capabilities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encodedCapabilities := commonModels.JSONString(capabilitiesJSON)
+	resolved, err := (&EngineService{}).ResolveScanPlugin(context.Background(), &commonModels.Engine{
+		ID: 9, EngineType: "postgresql", Capabilities: &encodedCapabilities,
+	}, 7)
+	if err != nil {
+		t.Fatalf("ResolveScanPlugin() error = %v", err)
+	}
+	if _, ok := resolved.(*postgresql.PostgreSQLPlugin); !ok {
+		t.Fatalf("ResolveScanPlugin() = %T, want PostgreSQLPlugin", resolved)
+	}
+}
+
+func uintPointer(value uint) *uint {
+	return &value
 }
 
 func newEngineServiceAuthTestClient(t *testing.T, server *httptest.Server) *EngineService {

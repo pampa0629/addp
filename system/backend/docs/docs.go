@@ -1799,7 +1799,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "通过已绑定的 SuperMap 工作流运行时对已有 PostgreSQL/PostGIS 引擎执行高危启用动作，初始化 SuperMap SDX+ 空间工作区。| Trigger the bound SuperMap workflow runtime to perform the high-risk enable action for an existing PostgreSQL/PostGIS engine and initialize the SuperMap SDX+ spatial workspace.",
+                "description": "通过已绑定的 SuperMap 工作流运行时对 PostgreSQL 引擎执行高危启用动作，并根据 kind 初始化 SuperMap SDX+ for PostGIS 或 SuperMap SDX+ for PostgreSQL 空间工作区。| Trigger the bound SuperMap workflow runtime to initialize the SuperMap SDX+ for PostGIS or SuperMap SDX+ for PostgreSQL workspace selected by kind on a PostgreSQL engine.",
                 "consumes": [
                     "application/json"
                 ],

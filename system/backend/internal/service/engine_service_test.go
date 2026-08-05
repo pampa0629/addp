@@ -359,7 +359,7 @@ func TestEnrichInstanceCapabilitiesBindsFirstAvailableSuperMapWorkflowEngine(t *
 		engineplugin.EngineExtensionSpatialWorkspaces: []engineplugin.SpatialWorkspaceFact{
 			{
 				Ecosystem:         "supermap",
-				Kind:              "sdx+",
+				Kind:              engineplugin.SpatialWorkspaceSuperMapSDXPostgreSQL,
 				State:             engineplugin.SpatialWorkspaceStateNotDetected,
 				BackendEngineType: "postgresql",
 				RuntimeEngineType: "supermap_workflow",
@@ -460,7 +460,7 @@ func TestEnableSpatialWorkspaceInvokesBoundSuperMapWorkflowRuntime(t *testing.T)
 						"engine_type":     "supermap_workflow",
 						"category":        "数据源",
 						"category_path":   []string{"数据源"},
-						"description":     "对已有 PostgreSQL/PostGIS 数据库执行 SuperMap SDX+ 初始化。",
+						"description":     "对已有 PostGIS 数据库执行 SuperMap SDX+ for PostGIS 初始化。",
 						"execution_modes": []string{"direct"},
 						"effects":         []string{"ddl"},
 						"parameters": []map[string]interface{}{
@@ -482,7 +482,7 @@ func TestEnableSpatialWorkspaceInvokesBoundSuperMapWorkflowRuntime(t *testing.T)
 				"status":       "success",
 				"execution_id": "invoke-1",
 				"workspace": map[string]interface{}{
-					"kind":    "sdx+",
+					"kind":    engineplugin.SpatialWorkspaceSuperMapSDXPostGIS,
 					"enabled": true,
 				},
 			})
@@ -526,7 +526,7 @@ func TestEnableSpatialWorkspaceInvokesBoundSuperMapWorkflowRuntime(t *testing.T)
 			engineplugin.EngineExtensionSpatialWorkspaces: []engineplugin.SpatialWorkspaceFact{
 				{
 					Ecosystem:         "supermap",
-					Kind:              "sdx+",
+					Kind:              engineplugin.SpatialWorkspaceSuperMapSDXPostGIS,
 					State:             engineplugin.SpatialWorkspaceStateNotDetected,
 					BackendEngineType: "postgresql",
 					RuntimeEngineType: "supermap_workflow",
@@ -552,7 +552,13 @@ func TestEnableSpatialWorkspaceInvokesBoundSuperMapWorkflowRuntime(t *testing.T)
 		t.Fatalf("create target engine: %v", err)
 	}
 
-	updated, err := service.EnableSpatialWorkspace(context.Background(), targetEngine.ID, "supermap", "sdx+", tenantID)
+	updated, err := service.EnableSpatialWorkspace(
+		context.Background(),
+		targetEngine.ID,
+		"supermap",
+		engineplugin.SpatialWorkspaceSuperMapSDXPostGIS,
+		tenantID,
+	)
 	if err != nil {
 		t.Fatalf("EnableSpatialWorkspace: %v", err)
 	}

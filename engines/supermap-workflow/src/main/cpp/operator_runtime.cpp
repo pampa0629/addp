@@ -164,11 +164,36 @@ std::string normalize_resource_host(std::string host) {
   return alias == nullptr || std::string(alias).empty() ? host : std::string(alias);
 }
 
+int object_port(const Json& object, const std::string& object_name) {
+  const auto value = object.find("port");
+  if (value == object.end() || value->is_null()) {
+    return 5432;
+  }
+  if (!value->is_number_integer()) {
+    throw std::invalid_argument(object_name + ".port must be an integer");
+  }
+  const int port = value->get<int>();
+  if (port <= 0 || port > 65535) {
+    throw std::invalid_argument(object_name + ".port is invalid");
+  }
+  return port;
+}
+
 std::string postgis_server(const Json& connection_info) {
   const std::string host = normalize_resource_host(
       object_string(connection_info, "connection_info", "host", true));
-  const std::string port = object_string(connection_info, "connection_info", "port", false);
-  return port.empty() ? host : host + ":" + port;
+  return host + ":" + std::to_string(object_port(connection_info, "connection_info"));
+}
+
+ResolvedParams direct_params(const Json& params) {
+  if (!params.is_object()) {
+    throw std::invalid_argument("params must be an object");
+  }
+  ResolvedParams result;
+  for (const auto& [name, value] : params.items()) {
+    result.emplace(name, value);
+  }
+  return result;
 }
 
 std::string default_postgis_alias(const ResolvedParams& params) {
@@ -250,7 +275,7 @@ ResolvedParams resolve_params(
 std::string storage_for(const std::string& operator_id) {
   static const std::set<std::string> datasource_storage = {
       "dataset.project",        "dataset.save",          "datasource.create",
-      "datasource.enable_postgis", "datasource.open",       "datasource.open_postgis",
+      "datasource.open",        "datasource.open_postgis", "datasource.open_postgresql",
       "osgb_scene_to_s3m",     "overlay.clip",          "overlay.erase",
       "overlay.intersect",     "overlay.union",         "vector.buffer",
       "vector.dissolve",       "vector.feature_envelope", "vector.filter",
@@ -284,7 +309,50 @@ OperatorRuntime::OperatorRuntime(addp::workflow::OperatorCatalog catalog)
   direct_handlers_.emplace("cad.inspect", inspect_cad);
   direct_handlers_.emplace("cad.render_preview", render_cad_preview);
   direct_handlers_.emplace("datasource.upgrade_udbx", upgrade_udbx);
+  direct_handlers_.emplace(
+      "datasource.enable_postgis",
+      [](const Json& raw_params) -> Json {
+        const ResolvedParams params = direct_params(raw_params);
+        const Json connection_info = required_object(params, "connection_info");
+        ExecutionContext context;
+        return context.enable_postgis(
+            postgis_server(connection_info),
+            object_string(connection_info, "connection_info", "database", true),
+            object_string(connection_info, "connection_info", "user", true),
+            object_string(connection_info, "connection_info", "password", false),
+            optional_string(params, "alias", "supermap_sdx_postgis"))->summary();
+      });
+  direct_handlers_.emplace(
+      "datasource.enable_postgresql",
+      [](const Json& raw_params) -> Json {
+        const ResolvedParams params = direct_params(raw_params);
+        const Json connection_info = required_object(params, "connection_info");
+        ExecutionContext context;
+        return context.enable_postgresql(
+            postgis_server(connection_info),
+            object_string(connection_info, "connection_info", "database", true),
+            object_string(connection_info, "connection_info", "user", true),
+            object_string(connection_info, "connection_info", "password", false),
+            optional_string(params, "alias", "supermap_sdx_postgresql"))->summary();
+      });
   direct_handlers_.emplace("osgb_scene_to_s3m", convert_osgb_scene_to_s3m);
+  for (const std::string operator_id : {
+           "table.delete",
+           "table.read_open",
+           "table.read_batch",
+           "table.read_close",
+           "table.write_prepare",
+           "table.write_open",
+           "table.write_batch",
+           "table.write_close",
+           "table.write_abort",
+       }) {
+    direct_handlers_.emplace(
+        operator_id,
+        [this, operator_id](const Json& params) -> Json {
+          return table_sessions_.invoke(operator_id, params);
+        });
+  }
   handlers_.emplace(
       "osgb_scene_to_s3m",
       [](const ResolvedParams& params, ExecutionContext&) -> RuntimeValue {
@@ -314,15 +382,18 @@ OperatorRuntime::OperatorRuntime(addp::workflow::OperatorCatalog catalog)
             optional_bool(params, "read_only", true));
       });
   handlers_.emplace(
-      "datasource.enable_postgis",
+      "datasource.open_postgresql",
       [](const ResolvedParams& params, ExecutionContext& context) -> RuntimeValue {
         const Json connection_info = required_object(params, "connection_info");
-        return context.enable_postgis(
+        return context.open_postgresql(
             postgis_server(connection_info),
             object_string(connection_info, "connection_info", "database", true),
             object_string(connection_info, "connection_info", "user", true),
             object_string(connection_info, "connection_info", "password", false),
-            optional_string(params, "alias", "supermap_sdx"));
+            optional_string(params, "schema", ""),
+            optional_string(params, "table", ""),
+            optional_string(params, "alias", "supermap_sdx_postgresql"),
+            optional_bool(params, "read_only", true));
       });
   handlers_.emplace(
       "datasource.create",

@@ -55,6 +55,8 @@ std::string engine_type_name(UGC::UGEngineType type) {
       return "UDBX";
     case UGC::UGEngineType::PostgreSQLGis:
       return "PGGIS";
+    case UGC::UGEngineType::PostgreSQL:
+      return "PostgreSQL";
     case UGC::UGEngineType::VectorFile:
       return "VectorFile";
     default:
@@ -525,7 +527,53 @@ std::shared_ptr<DatasourceRef> ExecutionContext::enable_postgis(
       user,
       password,
       "",
-      alias.empty() ? "supermap_sdx" : alias,
+      alias.empty() ? "supermap_sdx_postgis" : alias,
+      false,
+      true);
+}
+
+std::shared_ptr<DatasourceRef> ExecutionContext::open_postgresql(
+    const std::string& server,
+    const std::string& database,
+    const std::string& user,
+    const std::string& password,
+    const std::string& schema,
+    const std::string& table,
+    const std::string& alias,
+    bool read_only) {
+  auto datasource = connect(
+      UGC::UGEngineType::PostgreSQL,
+      "postgresql://" + server + "/" + database,
+      server,
+      database,
+      user,
+      password,
+      schema,
+      alias.empty() ? "supermap_sdx_postgresql" : alias,
+      read_only,
+      false);
+  if (!table.empty() && datasource->datasource->GetDataset(to_ug_string(table)) == nullptr) {
+    throw std::invalid_argument(
+        "SuperMap SDX+ for PostgreSQL dataset not found: " + schema + "." + table);
+  }
+  return datasource;
+}
+
+std::shared_ptr<DatasourceRef> ExecutionContext::enable_postgresql(
+    const std::string& server,
+    const std::string& database,
+    const std::string& user,
+    const std::string& password,
+    const std::string& alias) {
+  return connect(
+      UGC::UGEngineType::PostgreSQL,
+      "postgresql://" + server + "/" + database,
+      server,
+      database,
+      user,
+      password,
+      "",
+      alias.empty() ? "supermap_sdx_postgresql" : alias,
       false,
       true);
 }

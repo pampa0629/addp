@@ -22,8 +22,19 @@ engine.capabilities/v1
 - `compute.query`、`compute.workflow`、`compute.script` 是计算能力事实源，取代旧版 `dev_modes` 字符串数组；开发界面可以由这些能力派生，但不得再把 `dev_modes` 作为能力声明事实源。
 - 没有明确模块消费价值的字段不进入核心声明；后续有真实调用方时再扩展。
 - `extensions` 只承载引擎特有补充信息，不得替代核心字段。
-- `extensions.spatial_workspaces` 只承载数据库实例中可识别的厂商空间工作区事实，如 SuperMap `sdx+` 或 ArcGIS `sde`；这一层用于 System 自动探测和高危启用收口，不是核心 Provider 能力。
+- `extensions.spatial_workspaces` 只承载数据库实例中可识别的厂商空间工作区事实，如 SuperMap `sdx_postgis`、`sdx_postgresql` 或 ArcGIS `sde`；这一层用于 System 自动探测、高危启用和实例级 Provider 选择，不得把两个实现不同的 SuperMap 产品合并为 `sdx+`。
 - `extensions.spatial_workspaces[].can_enable` 只表示实例在当前条件下具备被显性启用的可能性；是否真的执行启用动作，由 System 的高危操作入口统一触发，不由前端或业务模块直接改写能力 JSON。
+
+SuperMap workspace kind 固定如下：
+
+| `ecosystem/kind` | 前置条件 | geometry 存储 | ADDP table Provider |
+| --- | --- | --- | --- |
+| `supermap/sdx_postgis` | PostgreSQL 已启用 PostGIS | PostGIS geometry | PostgreSQL/PostGIS 原生 Provider |
+| `supermap/sdx_postgresql` | PostgreSQL 未启用 PostGIS，且实例不得存在 `sdx_postgis` | SuperMap 私有 geometry | 绑定的 `supermap_workflow` 通过 SDK 读写，边界编码为 EWKB |
+
+同一 PostgreSQL 实例最多只能检测或启用其中一种 SuperMap workspace。检测到任一 kind 后，另一 kind 必须为不可启用；不得通过兼容分支允许二者并存。
+
+`supermap/sdx_postgresql` 的 `bound_runtime_engine_id` 是 Transfer table session 与 Meta catalog facts 的唯一运行时绑定。两个模块都必须通过 System 的租户内 Runtime Descriptor 精确解析该 ID；绑定缺失、Runtime 不可见、非 active 或 `engine_type` 不是 `supermap_workflow` 时必须明确失败，不得改选同类型的其他 Runtime，也不得回退到 PostgreSQL 私有 Blob 读写。
 
 能力详情页不得直接平铺原始 JSON 字段。System 后端应生成 `capabilities_view` 供前端渲染；完整 JSON 仅作为技术查看入口保留。
 

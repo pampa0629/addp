@@ -3,7 +3,7 @@ import {
   Upload, Box, DataAnalysis, Grid, CircleCheck, Edit, Link, Operation, DataLine,
   List, Timer, Connection, Search, Document, Share, DataBoard, Odometer,
   TrendCharts, SortDown, FolderOpened, Warning, Monitor, Notebook,
-  Files, Tickets, Key, Refresh, Lock,
+  Files, Tickets, Key, Refresh, Lock, SetUp,
   MapLocation,
 } from '@element-plus/icons-vue'
 import { splitConsoleRoute } from '../utils/consoleNavigation'
@@ -12,7 +12,6 @@ import { splitConsoleRoute } from '../utils/consoleNavigation'
 // label 值为 i18n key，渲染时通过 t(group.label) 翻译
 
 export const MODULE_GROUPS = [
-	{ key: 'configuration', label: 'console.groups.configuration', icon: Setting, modules: ['configuration'], isConfiguration: true },
   { key: 'data-prepare', label: 'console.groups.dataPrepare', icon: Coin,         modules: ['transfer', 'meta', 'manager'] },
   { key: 'data-govern',  label: 'console.groups.dataGovern',  icon: Reading,      modules: ['standard', 'modeling', 'quality'] },
   { key: 'dev-monitor',  label: 'console.groups.devMonitor',  icon: Tools,        modules: ['develop', 'service', 'orchestrator', 'monitor'] },
@@ -161,7 +160,6 @@ export const PAGE_MAPS = {
 // ─── 模块默认路由（navigateToModule 使用）───────────────────────────────────
 
 export const DEFAULT_ROUTES = {
-	configuration: '/configuration',
   system:       '/system/iam',
   manager:      '/manager/data-explorer',
   meta:         '/meta/scan',
@@ -184,9 +182,6 @@ export const DEFAULT_ROUTES = {
 
 // ─── 侧边栏菜单配置（label 值为 i18n key，渲染时通过 t(label) 翻译）─────────
 export const SIDEBAR_MENUS = {
-	configuration: {
-		label: 'console.configuration.title', icon: Setting, flat: true, index: '/configuration',
-	},
   transfer: {
     label: 'console.menus.transfer.label', icon: Upload,
     items: [
@@ -333,6 +328,7 @@ export const SIDEBAR_MENUS = {
         index: '/system/iam', icon: Lock, label: 'console.menus.system.iam',
       },
       { index: '/system/engines',      icon: Connection, label: 'console.menus.system.engines', permissions: ['system.engine.read'] },
+      { index: '/configuration',       icon: SetUp,      label: 'console.configuration.title' },
       { index: '/system/applications', icon: Key,        label: 'console.menus.system.applications', permissions: ['system.application.read'] },
       { index: '/system/cleanup',      icon: Refresh,    label: 'console.menus.system.cleanup', permissions: ['system.cleanup.read'] },
     ],

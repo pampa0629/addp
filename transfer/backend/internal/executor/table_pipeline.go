@@ -672,6 +672,7 @@ type nativeTableBatchTarget struct {
 	prepareOptions       engineplugin.TableWriteOptions
 	writeOptions         engineplugin.BatchWriteOptions
 	resumeMarker         *resume.Marker
+	replace              bool
 }
 
 func (t *nativeTableBatchTarget) Open(ctx context.Context, tableInfo *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (TableBatchWriter, error) {
@@ -690,6 +691,7 @@ func (t *nativeTableBatchTarget) Open(ctx context.Context, tableInfo *datatype.T
 			Fields:       fields,
 			SpatialInfo:  spatialInfo,
 			ResumeMarker: cloneResumeMarker(t.resumeMarker),
+			Replace:      t.replace,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("open native table write session: %w", err)
@@ -795,10 +797,15 @@ func (w *nativeTableSessionBatchWriter) Close(ctx context.Context) error {
 	if w.closed {
 		return nil
 	}
-	w.closed = true
 	if err := w.session.Close(ctx); err != nil {
+		abortErr := w.session.Abort(ctx)
+		w.closed = true
+		if abortErr != nil {
+			return fmt.Errorf("close native table write session: %w; abort after close failure: %v", err, abortErr)
+		}
 		return fmt.Errorf("close native table write session: %w", err)
 	}
+	w.closed = true
 	return nil
 }
 

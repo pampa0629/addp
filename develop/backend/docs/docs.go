@@ -214,7 +214,7 @@ const docTemplate = `{
                 "tags": [
                     "Query"
                 ],
-                "summary": "获取样例查询 | Get sample query",
+                "summary": "获取查询模板 | Get query template",
                 "parameters": [
                     {
                         "type": "integer",
@@ -222,6 +222,12 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "标准资源定位符，指定后生成该数据项的查询模板 | Standard resource locator; when provided, generate a query template for that data item",
+                        "name": "locator",
+                        "in": "query"
                     }
                 ],
                 "responses": {

@@ -161,12 +161,8 @@ func (s *DatabaseRuntime) resolveTableRowCount(ctx context.Context, resource *co
 		return tableInfo.RowCount
 	}
 	path := plugin.TabularItemPath(resource.ID, scanCatalog.namespaceTerm, schemaName, tableInfo.Name)
-	count, err := plugin.CountCatalogItemRows(ctx, &plugin.Engine{
-		ID:             resource.ID,
-		EngineType:     resource.EngineType,
-		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
-	}, path)
-	if err != nil {
+	facts, err := scanCatalog.factsProvider.DescribeCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), path, plugin.CatalogFactsOptions{IncludeStatistics: true})
+	if err != nil || facts == nil {
 		s.log.Debug("表行数精确查询失败，保留 catalog 统计值",
 			"engine_id", resource.ID,
 			"schema", schemaName,
@@ -175,7 +171,11 @@ func (s *DatabaseRuntime) resolveTableRowCount(ctx context.Context, resource *co
 		)
 		return tableInfo.RowCount
 	}
-	return &count
+	described := plugin.CatalogFactsTableInfo(facts)
+	if described == nil || described.RowCount == nil || *described.RowCount < 0 {
+		return tableInfo.RowCount
+	}
+	return described.RowCount
 }
 
 // deleteRemovedTables 软删除已移除的表。

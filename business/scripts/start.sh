@@ -3,13 +3,14 @@
 # 业务库启动脚本
 #
 # 功能: 检查配置、检测架构、启动服务、验证健康、安装 PostGIS
-# 服务: PostgreSQL (必选), MinIO (必选), ClickHouse (可选), MongoDB (可选), Doris (可选), Spark (可选), Neo4j (可选), MySQL (可选), Redpanda (可选), NFS (可选)
+# 服务: PostgreSQL/PostGIS、SuperMap SDX+ for PostgreSQL 专用 PostgreSQL、MinIO 及其他可选业务引擎
 # 特性: 幂等执行（可重复运行，已运行的服务会跳过）
 #
 # 使用方法:
 #   bash scripts/start.sh                    # 默认启动 PostgreSQL + MinIO
 #   bash scripts/start.sh -all               # 启动所有服务
 #   bash scripts/start.sh -postgres          # 只启动 PostgreSQL
+#   bash scripts/start.sh -supermap-postgresql # 只启动 SuperMap SDX+ for PostgreSQL 专用实例
 #   bash scripts/start.sh -minio             # 只启动 MinIO
 #   bash scripts/start.sh -clickhouse        # 只启动 ClickHouse
 #   bash scripts/start.sh -mongodb           # 只启动 MongoDB
@@ -37,6 +38,7 @@ NC='\033[0m'
 
 # 解析启动参数
 ENABLE_PG=false
+ENABLE_SUPERMAP_PG=false
 ENABLE_MINIO=false
 ENABLE_CLICKHOUSE=false
 ENABLE_MONGODB=false
@@ -53,6 +55,7 @@ for arg in "$@"; do
     case $arg in
         -all)
             ENABLE_PG=true
+            ENABLE_SUPERMAP_PG=true
             ENABLE_MINIO=true
             ENABLE_CLICKHOUSE=true
             ENABLE_MONGODB=true
@@ -65,6 +68,9 @@ for arg in "$@"; do
             ;;
         -postgres)
             ENABLE_PG=true
+            ;;
+        -supermap-postgresql)
+            ENABLE_SUPERMAP_PG=true
             ;;
         -minio)
             ENABLE_MINIO=true
@@ -98,6 +104,7 @@ for arg in "$@"; do
             echo "  bash scripts/start.sh                       # 默认启动 PostgreSQL + MinIO"
             echo "  bash scripts/start.sh -all                  # 启动所有服务"
             echo "  bash scripts/start.sh -postgres             # 只启动 PostgreSQL"
+            echo "  bash scripts/start.sh -supermap-postgresql  # 只启动 SuperMap SDX+ for PostgreSQL 专用实例"
             echo "  bash scripts/start.sh -minio                # 只启动 MinIO"
             echo "  bash scripts/start.sh -clickhouse           # 只启动 ClickHouse"
             echo "  bash scripts/start.sh -mongodb              # 只启动 MongoDB"
@@ -134,6 +141,11 @@ if [ "$ENABLE_PG" = true ]; then
     echo -e "  PostgreSQL: ✓"
 else
     echo -e "  PostgreSQL: ✗ (使用 -postgres 启用)"
+fi
+if [ "$ENABLE_SUPERMAP_PG" = true ]; then
+    echo -e "  SuperMap SDX+ for PostgreSQL: ✓"
+else
+    echo -e "  SuperMap SDX+ for PostgreSQL: ✗ (使用 -supermap-postgresql 启用)"
 fi
 if [ "$ENABLE_MINIO" = true ]; then
     echo -e "  MinIO: ✓"
@@ -221,6 +233,7 @@ echo ""
 
 # 4. 检查端口占用（幂等）
 PG_PORT=${POSTGRES_PORT:-5433}
+SUPERMAP_PG_PORT=${SUPERMAP_POSTGRESQL_PORT:-5434}
 MINIO_API=${MINIO_API_PORT:-9002}
 MINIO_CONSOLE=${MINIO_CONSOLE_PORT:-9003}
 CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-9000}
@@ -249,6 +262,7 @@ check_port_used_by_self() {
 echo -e "${YELLOW}检查端口...${NC}"
 PORTS_TO_CHECK=""
 [ "$ENABLE_PG" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $PG_PORT"
+[ "$ENABLE_SUPERMAP_PG" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $SUPERMAP_PG_PORT"
 [ "$ENABLE_MINIO" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $MINIO_API $MINIO_CONSOLE"
 [ "$ENABLE_CLICKHOUSE" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $CLICKHOUSE_PORT $CLICKHOUSE_HTTP_PORT"
 [ "$ENABLE_MONGODB" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $MONGO_PORT"
@@ -261,6 +275,7 @@ PORTS_TO_CHECK=""
 for port in $PORTS_TO_CHECK; do
     if lsof -nP -i ":${port}" >/dev/null 2>&1; then
         if check_port_used_by_self $port "business-postgres" || \
+           check_port_used_by_self $port "business-supermap-postgresql" || \
            check_port_used_by_self $port "business-minio" || \
            check_port_used_by_self $port "business-clickhouse" || \
            check_port_used_by_self $port "business-mongodb" || \
@@ -287,6 +302,16 @@ if [ "$ENABLE_PG" = true ]; then
     else
         docker compose up -d postgres
         echo -e "${GREEN}✓ PostgreSQL 已启动${NC}"
+    fi
+fi
+
+# SuperMap SDX+ for PostgreSQL 专用实例
+if [ "$ENABLE_SUPERMAP_PG" = true ]; then
+    if docker ps --filter "name=business-supermap-postgresql" --format '{{.Status}}' | grep -q "Up"; then
+        echo -e "${GREEN}✓ SuperMap PostgreSQL 已运行，跳过启动${NC}"
+    else
+        docker compose up -d supermap-postgresql
+        echo -e "${GREEN}✓ SuperMap PostgreSQL 已启动${NC}"
     fi
 fi
 
@@ -463,6 +488,31 @@ if [ "$ENABLE_PG" = true ]; then
     done
 fi
 
+if [ "$ENABLE_SUPERMAP_PG" = true ]; then
+    SUPERMAP_PG_READY=false
+    for i in {1..30}; do
+        if docker exec business-supermap-postgresql pg_isready \
+            -U "${SUPERMAP_POSTGRESQL_USER:-supermap}" \
+            -d "${SUPERMAP_POSTGRESQL_DB:-supermap}" >/dev/null 2>&1; then
+            echo -e "${GREEN}✓ SuperMap PostgreSQL 就绪${NC}"
+            SUPERMAP_PG_READY=true
+            break
+        fi
+        sleep 1
+    done
+    if [ "$SUPERMAP_PG_READY" != true ]; then
+        echo -e "${RED}✗ SuperMap PostgreSQL 未在 30 秒内就绪${NC}"
+        exit 1
+    fi
+    if docker exec business-supermap-postgresql psql \
+        -U "${SUPERMAP_POSTGRESQL_USER:-supermap}" \
+        -d "${SUPERMAP_POSTGRESQL_DB:-supermap}" -tAc \
+        "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname='postgis');" | grep -qx 't'; then
+        echo -e "${RED}✗ SuperMap SDX+ for PostgreSQL 专用实例禁止安装 PostGIS${NC}"
+        exit 1
+    fi
+fi
+
 if [ "$ENABLE_MINIO" = true ]; then
     for i in {1..30}; do
         if curl -sf http://localhost:${MINIO_API}/minio/health/live >/dev/null 2>&1; then
@@ -632,6 +682,9 @@ echo ""
 # 动态显示已启动的服务访问信息
 if [ "$ENABLE_PG" = true ]; then
     echo -e "PostgreSQL: localhost:${PG_PORT}"
+fi
+if [ "$ENABLE_SUPERMAP_PG" = true ]; then
+    echo -e "SuperMap SDX+ for PostgreSQL: localhost:${SUPERMAP_PG_PORT}"
 fi
 if [ "$ENABLE_MINIO" = true ]; then
     echo -e "MinIO API: http://localhost:${MINIO_API}"

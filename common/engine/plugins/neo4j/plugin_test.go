@@ -8,6 +8,21 @@ import (
 	"github.com/addp/common/engine/plugin"
 )
 
+func TestNeo4jDatabaseFromCatalogPath(t *testing.T) {
+	database, ok := neo4jDatabaseFromCatalogPath(plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: 9,
+		Segments: []plugin.CatalogSegment{
+			{Term: plugin.CatalogTermServer, Kind: plugin.CatalogTermServer},
+			{Term: plugin.CatalogTermDatabase, Kind: plugin.CatalogKindNamespace, Name: "business"},
+			{Term: plugin.CatalogTermGraph, Kind: plugin.CatalogKindGraph, Name: plugin.CatalogKindGraph},
+		},
+	})
+	if !ok || database != "business" {
+		t.Fatalf("neo4jDatabaseFromCatalogPath() = (%q, %t)", database, ok)
+	}
+}
+
 func TestGraphEndpointShapeNameUsesStableLabelSetName(t *testing.T) {
 	labels := []string{"Employee", "Person"}
 

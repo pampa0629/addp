@@ -140,7 +140,6 @@
       }
     },
     "groups": {
-	  "configuration": "配置管理",
       "dataPrepare": "数据准备",
       "dataGovern": "数据治理",
       "devMonitor": "开发与监控",

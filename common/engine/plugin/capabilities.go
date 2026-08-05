@@ -6,7 +6,9 @@ const (
 	CapabilitiesSchemaVersion = "engine.capabilities/v1"
 	CatalogPathVersion        = "catalog.path/v1"
 
-	EngineExtensionSpatialWorkspaces = "spatial_workspaces"
+	EngineExtensionSpatialWorkspaces      = "spatial_workspaces"
+	SpatialWorkspaceSuperMapSDXPostGIS    = "sdx_postgis"
+	SpatialWorkspaceSuperMapSDXPostgreSQL = "sdx_postgresql"
 
 	SpatialWorkspaceStateNotDetected      = "not_detected"
 	SpatialWorkspaceStateDetected         = "detected"
@@ -30,9 +32,8 @@ type EngineCapabilities struct {
 }
 
 // SpatialWorkspaceFact describes a vendor/ecosystem-specific spatial workspace
-// detected inside a general storage engine instance, such as SuperMap SDX+ or
-// ArcGIS SDE on PostgreSQL. It lives under capabilities.extensions because it
-// is an instance fact, not a core ADDP provider capability.
+// detected inside a general storage engine instance, such as one concrete
+// SuperMap spatial workspace implementation or ArcGIS SDE on PostgreSQL.
 type SpatialWorkspaceFact struct {
 	Ecosystem            string                 `json:"ecosystem"`
 	Kind                 string                 `json:"kind"`

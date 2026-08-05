@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	commoni18n "github.com/addp/common/middleware/i18n"
+	"github.com/addp/common/resourcetree"
 	developi18n "github.com/addp/develop/backend/i18n"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
@@ -31,11 +32,12 @@ type TestConnectionRequest struct {
 	EngineID uint `json:"engine_id" binding:"required"`
 }
 
-// GetSampleQuery 获取引擎的可执行样例查询（切换引擎时自动填充编辑器）
-// @Summary 获取样例查询 | Get sample query
+// GetSampleQuery 获取引擎的可执行查询模板（切换引擎或选择数据资源时填充编辑器）
+// @Summary 获取查询模板 | Get query template
 // @Tags Query
 // @Produce json
 // @Param id path int true "引擎ID | Engine ID"
+// @Param locator query string false "标准资源定位符，指定后生成该数据项的查询模板 | Standard resource locator; when provided, generate a query template for that data item"
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{} "需要登录 | Authentication required"
@@ -55,6 +57,17 @@ func (h *QueryHandler) GetSampleQuery(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的引擎ID"})
 		return
 	}
+	var locator *resourcetree.ResourceLocator
+	if locatorValue := strings.TrimSpace(c.Query("locator")); locatorValue != "" {
+		locator, err = resourcetree.ParseURI(locatorValue)
+		if err != nil || locator.EngineID != uint(engineID) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":      commoni18n.T(c, developi18n.MsgQueryTemplateResourceInvalid),
+				"error_code": "query_template_resource_invalid",
+			})
+			return
+		}
+	}
 
 	userAccessToken, err := requestUserAccessToken(c)
 	if err != nil {
@@ -65,11 +78,19 @@ func (h *QueryHandler) GetSampleQuery(c *gin.Context) {
 	}
 	tenantID := tenantIDValue(c)
 	if h.federated != nil && h.federated.IsRuntime(c.Request.Context(), tenantID, uint(engineID)) {
+		if locator != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":      commoni18n.T(c, developi18n.MsgQueryTemplateResourceInvalid),
+				"error_code": "query_template_resource_invalid",
+			})
+			return
+		}
 		h.getFederatedSampleQuery(c, tenantID, uint(engineID), userAccessToken)
 		return
 	}
 	query, language, err := h.sqlEngine.GenerateAuthorizedSampleQuery(
 		c.Request.Context(), tenantID, userAccessToken, uuid.New(), uint(engineID),
+		locator,
 	)
 	if err != nil {
 		if h.writeExecutionAuthorizationError(c, err) {
@@ -78,6 +99,13 @@ func (h *QueryHandler) GetSampleQuery(c *gin.Context) {
 		if errors.Is(err, service.ErrSampleQueryUnavailable) {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{
 				"error": commoni18n.T(c, developi18n.MsgSampleQueryUnavailable), "error_code": "sample_query_unavailable",
+			})
+			return
+		}
+		if errors.Is(err, service.ErrSampleQueryResourceInvalid) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":      commoni18n.T(c, developi18n.MsgQueryTemplateResourceInvalid),
+				"error_code": "query_template_resource_invalid",
 			})
 			return
 		}

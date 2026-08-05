@@ -111,6 +111,72 @@ func containsString(values []string, want string) bool {
 	return false
 }
 
+func TestSuperMapSDXPostgreSQLTableProviderUsesExactBoundRuntime(t *testing.T) {
+	var listCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		listCalls.Add(1)
+		if r.URL.Path != "/api/v1/internal/engines" || r.URL.Query().Get("tenant_id") != "7" {
+			t.Fatalf("request = %s?%s, want tenant-scoped internal engine list", r.URL.Path, r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{"id":11,"engine_type":"supermap_workflow","lifecycle_state":"active","connection_info":{"host":"runtime-a","port":8103},"capabilities":{"schema_version":"engine.capabilities/v1","engine_type":"supermap_workflow","engine_family":"workflow","compute":{"workflow":{"supported":true,"runtime_api":"addp.workflow/v1","dynamic_operators":true}}}},
+			{"id":22,"engine_type":"supermap_workflow","lifecycle_state":"active","connection_info":{"host":"runtime-b","port":8103},"capabilities":{"schema_version":"engine.capabilities/v1","engine_type":"supermap_workflow","engine_family":"workflow","compute":{"workflow":{"supported":true,"runtime_api":"addp.workflow/v1","dynamic_operators":true}}}}
+		]`))
+	}))
+	defer server.Close()
+
+	service := &ExecutionEngineService{systemClient: commonClient.NewSystemClientWithInternalKey(server.URL, "internal-key")}
+	plainBinding := planner.EngineBinding{Type: "postgresql"}
+	if provider, err := service.superMapSDXPostgreSQLTableProvider(context.Background(), 7, plainBinding); err != nil || provider != nil {
+		t.Fatalf("plain PostgreSQL provider = %#v, error = %v, want nil", provider, err)
+	}
+	postGISBinding := superMapWorkspaceBinding(engineplugin.SpatialWorkspaceSuperMapSDXPostGIS, 22)
+	if provider, err := service.superMapSDXPostgreSQLTableProvider(context.Background(), 7, postGISBinding); err != nil || provider != nil {
+		t.Fatalf("SuperMap SDX+ for PostGIS provider = %#v, error = %v, want nil", provider, err)
+	}
+	if got := listCalls.Load(); got != 0 {
+		t.Fatalf("runtime list calls = %d before SuperMap SDX+ for PostgreSQL binding, want 0", got)
+	}
+
+	provider, err := service.superMapSDXPostgreSQLTableProvider(
+		context.Background(),
+		7,
+		superMapWorkspaceBinding(engineplugin.SpatialWorkspaceSuperMapSDXPostgreSQL, 22),
+	)
+	if err != nil || provider == nil {
+		t.Fatalf("bound provider = %#v, error = %v", provider, err)
+	}
+	if got := listCalls.Load(); got != 1 {
+		t.Fatalf("runtime list calls = %d, want 1", got)
+	}
+
+	_, err = service.superMapSDXPostgreSQLTableProvider(
+		context.Background(),
+		7,
+		superMapWorkspaceBinding(engineplugin.SpatialWorkspaceSuperMapSDXPostgreSQL, 33),
+	)
+	if err == nil {
+		t.Fatal("missing exact bound runtime returned no error")
+	}
+}
+
+func superMapWorkspaceBinding(kind string, boundRuntimeID uint) planner.EngineBinding {
+	capabilities := &engineplugin.EngineCapabilities{
+		SchemaVersion: engineplugin.CapabilitiesSchemaVersion,
+		EngineType:    "postgresql",
+		EngineFamily:  "tabular",
+	}
+	engineplugin.SetSpatialWorkspacesExtension(capabilities, []engineplugin.SpatialWorkspaceFact{{
+		Ecosystem:            "supermap",
+		Kind:                 kind,
+		State:                engineplugin.SpatialWorkspaceStateDetected,
+		RuntimeEngineType:    "supermap_workflow",
+		BoundRuntimeEngineID: &boundRuntimeID,
+	}})
+	return planner.EngineBinding{Type: "postgresql", Capabilities: capabilities}
+}
+
 func TestTableTargetRefGroupsUsesSingleEncodedTargetPath(t *testing.T) {
 	t.Parallel()
 

@@ -140,7 +140,6 @@
       }
     },
     "groups": {
-	  "configuration": "Configuration",
       "dataPrepare": "Data Preparation",
       "dataGovern": "Data Governance",
       "devMonitor": "Dev & Monitor",

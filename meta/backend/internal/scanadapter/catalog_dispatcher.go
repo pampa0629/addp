@@ -14,7 +14,7 @@ import (
 )
 
 type namespaceScanner interface {
-	ScanNamespace(ctx context.Context, resource *commonModels.Engine, tenantID, engineID uint, namespaceName string, scanDepth string, force bool) (int, int, int, error)
+	ScanNamespace(ctx context.Context, enginePlugin plugin.EnginePlugin, resource *commonModels.Engine, tenantID, engineID uint, namespaceName string, scanDepth string, force bool) (int, int, int, error)
 }
 
 type branchScanner interface {
@@ -71,9 +71,13 @@ func (d *CatalogDispatcher) Dispatch(req scanflow.DispatchRequest) (scanflow.Dis
 	if req.Resource == nil {
 		return scanflow.DispatchResult{}, fmt.Errorf("scan resource is nil")
 	}
-	enginePlugin, err := plugin.Get(req.Resource.EngineType)
-	if err != nil {
-		return scanflow.DispatchResult{}, fmt.Errorf("unsupported engine type: %s", req.Resource.EngineType)
+	enginePlugin := req.EnginePlugin
+	if enginePlugin == nil {
+		var err error
+		enginePlugin, err = plugin.Get(req.Resource.EngineType)
+		if err != nil {
+			return scanflow.DispatchResult{}, fmt.Errorf("unsupported engine type: %s", req.Resource.EngineType)
+		}
 	}
 
 	plan, ok := scanflow.CatalogScanPlanForPlugin(enginePlugin)

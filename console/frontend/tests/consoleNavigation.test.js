@@ -56,6 +56,19 @@ describe('Console navigation bridge', () => {
     expect(iframeSource).toContain(':key="iframeKey || iframeUrl"')
   })
 
+  it('places configuration management under the System navigation group', () => {
+    const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
+    expect(configSource).not.toContain("key: 'configuration'")
+    expect(configSource).not.toContain("configuration: '/configuration'")
+    expect(configSource).toContain("index: '/configuration',       icon: SetUp")
+
+    const portalSource = readFileSync(new URL('../src/views/Portal.vue', import.meta.url), 'utf8')
+    expect(portalSource).not.toContain('group.isConfiguration')
+    expect(portalSource).toContain("if (module === 'configuration')")
+    expect(portalSource).toContain("activeGroup.value = 'system'")
+    expect(portalSource).toContain("sidebarModules.value = ['system']")
+  })
+
   it('builds a Console route from one module-local fullPath', () => {
     expect(buildConsoleModuleRoute('develop', '/workflow?action=edit&id=544'))
       .toBe('/develop/workflow?action=edit&id=544')

@@ -1,6 +1,7 @@
 package scanflow
 
 import (
+	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 )
@@ -14,6 +15,7 @@ const (
 
 type DispatchRequest struct {
 	Resource     *commonModels.Engine
+	EnginePlugin plugin.EnginePlugin
 	TenantID     uint
 	CatalogPaths []string
 	RefGroups    []models.ScanRefGroup

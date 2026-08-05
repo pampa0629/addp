@@ -14,6 +14,7 @@ type executableSampleQueryProvider struct {
 	language    string
 	result      *plugin.QueryResult
 	executeErr  error
+	sampleOpts  *plugin.SampleQueryOptions
 	executedReq *plugin.QueryRequest
 }
 
@@ -47,7 +48,8 @@ func (p *executableSampleQueryProvider) Capabilities() plugin.EngineCapabilities
 
 func (p *executableSampleQueryProvider) QueryLanguages() []string { return []string{"mql"} }
 
-func (p *executableSampleQueryProvider) GenerateSampleQuery(context.Context, plugin.ConnectionInfo, plugin.SampleQueryOptions) (string, string) {
+func (p *executableSampleQueryProvider) GenerateSampleQuery(_ context.Context, _ plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
+	p.sampleOpts = &opts
 	return p.query, p.language
 }
 
@@ -92,7 +94,7 @@ func TestGenerateExecutableSampleQueryRequiresSuccessfulNonEmptyExecution(t *tes
 
 			query, language, err := generateExecutableSampleQuery(context.Background(), &commonModels.Engine{
 				ID: 42, EngineType: provider.Type(), ConnectionInfo: map[string]interface{}{"endpoint": "test"},
-			})
+			}, nil)
 			if provider.executedReq == nil {
 				t.Fatal("generated sample query was not executed")
 			}
@@ -113,5 +115,37 @@ func TestGenerateExecutableSampleQueryRequiresSuccessfulNonEmptyExecution(t *tes
 				t.Fatalf("generateExecutableSampleQuery() = (%q, %q, %v), want unavailable", query, language, err)
 			}
 		})
+	}
+}
+
+func TestGenerateExecutableSampleQueryUsesSelectedCatalogPath(t *testing.T) {
+	selectedPath := plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: 42,
+		Segments: []plugin.CatalogSegment{
+			{Term: plugin.CatalogTermServer, Kind: plugin.CatalogTermServer},
+			{Term: plugin.CatalogTermDatabase, Kind: plugin.CatalogKindNamespace, Name: "business"},
+			{Term: plugin.CatalogTermCollection, Kind: plugin.CatalogKindCollection, Name: "orders"},
+		},
+	}
+	provider := &executableSampleQueryProvider{
+		query:    `{"find":"orders","filter":{},"limit":10}`,
+		language: "mql",
+		result:   &plugin.QueryResult{Rows: []map[string]interface{}{{"id": 1}}},
+	}
+	plugin.Register(provider)
+	t.Cleanup(func() { plugin.Unregister(provider.Type()) })
+
+	query, language, err := generateExecutableSampleQuery(context.Background(), &commonModels.Engine{
+		ID: 42, EngineType: provider.Type(), ConnectionInfo: map[string]interface{}{"endpoint": "test"},
+	}, &selectedPath)
+	if err != nil || query != provider.query || language != provider.language {
+		t.Fatalf("generateExecutableSampleQuery() = (%q, %q, %v)", query, language, err)
+	}
+	if provider.sampleOpts == nil || provider.sampleOpts.Path.StringPath() != "business/orders" {
+		t.Fatalf("sample options = %#v", provider.sampleOpts)
+	}
+	if provider.executedReq == nil || !provider.executedReq.Options.ReadOnly {
+		t.Fatalf("executed request = %#v", provider.executedReq)
 	}
 }

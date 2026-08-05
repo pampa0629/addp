@@ -15,7 +15,7 @@ coordinator.invalidate()
 assert.equal(coordinator.isCurrent(dorisRequest, 'engine:17'), false)
 
 const switchTargetSource = queryEditor.slice(
-  queryEditor.indexOf('const onQueryTargetChange = async'),
+  queryEditor.indexOf('async function requestQueryTargetChange'),
   queryEditor.indexOf('const executeQuery = async')
 )
 const executeQuerySource = queryEditor.slice(
@@ -23,10 +23,24 @@ const executeQuerySource = queryEditor.slice(
   queryEditor.indexOf('const formatQuery =')
 )
 
-assert.doesNotMatch(switchTargetSource, /queryContent\.value = ''/)
-assert.match(switchTargetSource, /if \(!queryContent\.value\.trim\(\)\)/)
+assert.match(queryEditor, /:model-value="selectedQueryTarget"/)
+assert.match(queryEditor, /@change="requestQueryTargetChange"/)
+assert.match(queryEditor, /:disabled="executing \|\| loadingSampleQuery \|\| switchingQueryTarget \|\| savingForEngineSwitch"/)
+assert.match(switchTargetSource, /queryEngineSwitchDialogVisible\.value = true/)
+assert.match(switchTargetSource, /await applyQueryTargetSwitch\(targetValue\)/)
+assert.match(queryEditor, /async function applyQueryTargetSwitch/)
+assert.match(queryEditor, /queryContent\.value = ''/)
+assert.match(queryEditor, /await loadSampleQuery\(\{ replace: true \}\)/)
+assert.match(queryEditor, /bypassUnsavedRouteConfirm\.value = true/)
+assert.match(queryEditor, /if \(bypassUnsavedRouteConfirm\.value\) return true/)
+assert.match(queryEditor, /develop\.query\.clearAndSwitch/)
+assert.match(queryEditor, /develop\.query\.saveAndClear/)
+assert.match(queryEditor, /mode="item"/)
+assert.match(queryEditor, /generateQueryTemplate/)
+assert.doesNotMatch(queryEditor, /insertCatalogPath/)
+assert.doesNotMatch(queryEditor, /insertResourcePath/)
 assert.match(executeQuerySource, /if \(loadingSampleQuery\.value \|\| executing\.value\) return/)
-assert.match(queryEditor, /sampleRequests\.isCurrent\(request, selectedQueryTarget\.value\)/)
+assert.match(queryEditor, /sampleRequests\.isCurrent\(request, `\$\{selectedQueryTarget\.value\}:\$\{locator\}`\)/)
 assert.match(queryEditor, /createExecution\(\{/)
 assert.match(queryEditor, /editorRef\.value\?\.getSelection\(\)/)
 assert.match(queryEditor, /v-loading="loadingSampleQuery"/)

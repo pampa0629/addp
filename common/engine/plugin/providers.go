@@ -580,6 +580,7 @@ type TableWriteSessionOptions struct {
 	Fields       []datatype.FieldInfo
 	SpatialInfo  *datatype.SpatialInfo
 	ResumeMarker *resume.Marker
+	Replace      bool
 }
 
 type TableWriteOptions struct {

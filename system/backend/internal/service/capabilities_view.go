@@ -424,8 +424,10 @@ func spatialWorkspaceLabelKey(workspace map[string]interface{}) string {
 	ecosystem := strings.ToLower(strings.TrimSpace(stringValue(workspace["ecosystem"])))
 	kind := strings.ToLower(strings.TrimSpace(stringValue(workspace["kind"])))
 	switch ecosystem + "/" + kind {
-	case "supermap/sdx+":
-		return capabilityValueKey("extensions", "supermap_sdx")
+	case "supermap/sdx_postgis":
+		return capabilityValueKey("extensions", "supermap_sdx_postgis")
+	case "supermap/sdx_postgresql":
+		return capabilityValueKey("extensions", "supermap_sdx_postgresql")
 	case "arcgis/sde":
 		return capabilityValueKey("extensions", "arcgis_sde")
 	default:

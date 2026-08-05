@@ -239,6 +239,8 @@ func (e EndpointSpec) endpointEngineLocator() (*resourcetree.ResourceLocator, er
 type TableTransferBuildResult struct {
 	SourceEngineType string
 	TargetEngineType string
+	SourceEngine     EngineBinding
+	TargetEngine     EngineBinding
 	Plan             executor.TableTransferPlan
 }
 
@@ -321,6 +323,12 @@ func BuildTableTransferPlan(spec TableExportTaskSpec, resolver EngineResolver) (
 	if err != nil {
 		return nil, err
 	}
+	if _, ok := SuperMapSDXPostgreSQLWorkspace(sourceEngine); ok {
+		// Generic PostgreSQL catalog facts see the private geometry column as
+		// bytea. The bound SuperMap SDK read session is authoritative instead.
+		sourcePlan.TableInfo = nil
+		sourcePlan.SpatialInfo = nil
+	}
 	targetPlan, err := buildTableTargetPlan(spec.Target, targetEngine)
 	if err != nil {
 		return nil, err
@@ -342,6 +350,8 @@ func BuildTableTransferPlan(spec TableExportTaskSpec, resolver EngineResolver) (
 	return &TableTransferBuildResult{
 		SourceEngineType: sourceType,
 		TargetEngineType: targetType,
+		SourceEngine:     sourceEngine,
+		TargetEngine:     targetEngine,
 		Plan: executor.TableTransferPlan{
 			Source:     sourcePlan,
 			Target:     targetPlan,
@@ -349,6 +359,28 @@ func BuildTableTransferPlan(spec TableExportTaskSpec, resolver EngineResolver) (
 			BatchSize:  spec.BatchSize,
 		},
 	}, nil
+}
+
+func SuperMapSDXPostgreSQLWorkspace(binding EngineBinding) (engineplugin.SpatialWorkspaceFact, bool) {
+	capabilities := effectiveEngineCapabilities(binding)
+	if capabilities == nil {
+		return engineplugin.SpatialWorkspaceFact{}, false
+	}
+	workspaces, err := engineplugin.SpatialWorkspacesFromExtensions(capabilities.Extensions)
+	if err != nil {
+		return engineplugin.SpatialWorkspaceFact{}, false
+	}
+	for _, workspace := range workspaces {
+		if !strings.EqualFold(strings.TrimSpace(workspace.Ecosystem), "supermap") ||
+			!strings.EqualFold(strings.TrimSpace(workspace.Kind), engineplugin.SpatialWorkspaceSuperMapSDXPostgreSQL) {
+			continue
+		}
+		state := strings.ToLower(strings.TrimSpace(workspace.State))
+		if state == engineplugin.SpatialWorkspaceStateDetected || state == engineplugin.SpatialWorkspaceStateEnabled {
+			return workspace, true
+		}
+	}
+	return engineplugin.SpatialWorkspaceFact{}, false
 }
 
 func applySourceGeometryEncodingForTarget(sourcePlan *executor.TableSourcePlan, targetPlan executor.TableTargetPlan, sourceEngine EngineBinding, targetEngine EngineBinding) error {

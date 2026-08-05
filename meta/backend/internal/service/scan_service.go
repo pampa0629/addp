@@ -123,6 +123,10 @@ func (s *ScanService) ScanEngineWithOptions(opts scanflow.Options) (*models.Scan
 		return nil, err
 	}
 	effectiveTenantID := tenantIDForResource(resource, tenantID)
+	enginePlugin, err := s.engineService.ResolveScanPlugin(context.Background(), resource, effectiveTenantID)
+	if err != nil {
+		return nil, err
+	}
 
 	opts.EngineID = engineID
 	scope, err := s.ResolveScanScope(effectiveTenantID, opts)
@@ -148,7 +152,7 @@ func (s *ScanService) ScanEngineWithOptions(opts scanflow.Options) (*models.Scan
 		if reporter != nil {
 			reporter.Message("正在刷新数据项元数据")
 		}
-		result, refreshErr := s.runtimes.ItemRefresh.RefreshKnownItemByID(context.Background(), resource, effectiveTenantID, opts.ItemID)
+		result, refreshErr := s.runtimes.ItemRefresh.RefreshKnownItemByIDWithPlugin(context.Background(), enginePlugin, resource, effectiveTenantID, opts.ItemID)
 		if refreshErr != nil {
 			if reporter != nil {
 				reporter.Message(fmt.Sprintf("扫描失败: %v", refreshErr))
@@ -171,6 +175,7 @@ func (s *ScanService) ScanEngineWithOptions(opts scanflow.Options) (*models.Scan
 
 	result, err := s.catalogDispatcher.Dispatch(scanflow.DispatchRequest{
 		Resource:     resource,
+		EnginePlugin: enginePlugin,
 		TenantID:     effectiveTenantID,
 		CatalogPaths: scope.CatalogPaths,
 		RefGroups:    scope.RefGroups,

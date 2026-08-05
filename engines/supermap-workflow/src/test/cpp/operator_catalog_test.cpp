@@ -28,14 +28,25 @@ int main(int argc, char** argv) {
       "dataset.select",
       "datasource.create",
       "datasource.enable_postgis",
+      "datasource.enable_postgresql",
       "datasource.open",
       "datasource.open_postgis",
+      "datasource.open_postgresql",
       "datasource.upgrade_udbx",
       "osgb_scene_to_s3m",
       "overlay.clip",
       "overlay.erase",
       "overlay.intersect",
       "overlay.union",
+      "table.delete",
+      "table.read_batch",
+      "table.read_close",
+      "table.read_open",
+      "table.write_abort",
+      "table.write_batch",
+      "table.write_close",
+      "table.write_open",
+      "table.write_prepare",
       "vector.buffer",
       "vector.dissolve",
       "vector.feature_envelope",
@@ -50,10 +61,11 @@ int main(int argc, char** argv) {
   for (const auto& descriptor : catalog.descriptors()) {
     actual.insert(descriptor.at("id").get<std::string>());
   }
-  require(actual == expected, "catalog keeps all 24 C++ runtime operators");
+  require(actual == expected, "catalog keeps all 35 C++ runtime operators");
   require(catalog.default_output_port("datasource.open") == "datasource", "default port");
   require(catalog.supports_mode("osgb_scene_to_s3m", "workflow"), "S3M workflow mode");
   require(catalog.supports_mode("osgb_scene_to_s3m", "direct"), "S3M direct mode");
   require(!catalog.supports_mode("cad.inspect", "workflow"), "CAD inspect is direct-only");
+  require(!catalog.supports_mode("table.read_open", "workflow"), "table sessions are direct-only");
   return 0;
 }

@@ -43,6 +43,16 @@ func (r *ItemRefreshRuntime) RefreshKnownItemByID(
 	tenantID uint,
 	itemID uint,
 ) (scanprocessor.Result, error) {
+	return r.RefreshKnownItemByIDWithPlugin(ctx, nil, resource, tenantID, itemID)
+}
+
+func (r *ItemRefreshRuntime) RefreshKnownItemByIDWithPlugin(
+	ctx context.Context,
+	p plugin.EnginePlugin,
+	resource *commonModels.Engine,
+	tenantID uint,
+	itemID uint,
+) (scanprocessor.Result, error) {
 	if itemID == 0 {
 		return scanprocessor.Result{}, fmt.Errorf("item_id is required")
 	}
@@ -57,7 +67,7 @@ func (r *ItemRefreshRuntime) RefreshKnownItemByID(
 	if err != nil {
 		return scanprocessor.Result{}, fmt.Errorf("item parent node not found: %w", err)
 	}
-	return r.RefreshKnownItem(ctx, resource, tenantID, *item, *parentNode)
+	return r.RefreshKnownItemWithPlugin(ctx, p, resource, tenantID, *item, *parentNode)
 }
 
 func (r *ItemRefreshRuntime) RefreshKnownItem(
@@ -67,9 +77,23 @@ func (r *ItemRefreshRuntime) RefreshKnownItem(
 	item models.MetaItem,
 	parentNode models.MetaNode,
 ) (scanprocessor.Result, error) {
-	p, err := plugin.Get(resource.EngineType)
-	if err != nil {
-		return scanprocessor.Result{}, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
+	return r.RefreshKnownItemWithPlugin(ctx, nil, resource, tenantID, item, parentNode)
+}
+
+func (r *ItemRefreshRuntime) RefreshKnownItemWithPlugin(
+	ctx context.Context,
+	p plugin.EnginePlugin,
+	resource *commonModels.Engine,
+	tenantID uint,
+	item models.MetaItem,
+	parentNode models.MetaNode,
+) (scanprocessor.Result, error) {
+	if p == nil {
+		var err error
+		p, err = plugin.Get(resource.EngineType)
+		if err != nil {
+			return scanprocessor.Result{}, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
+		}
 	}
 	if result, handled, err := r.refreshKnownCatalogFactsItem(ctx, resource, tenantID, p, item, parentNode); handled || err != nil {
 		return result, err

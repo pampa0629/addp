@@ -132,7 +132,7 @@ func TestBuildCapabilitiesViewFormatsSpatialWorkspaces(t *testing.T) {
 		engineplugin.EngineExtensionSpatialWorkspaces: []engineplugin.SpatialWorkspaceFact{
 			{
 				Ecosystem:            "supermap",
-				Kind:                 "sdx+",
+				Kind:                 engineplugin.SpatialWorkspaceSuperMapSDXPostGIS,
 				State:                engineplugin.SpatialWorkspaceStateNotDetected,
 				BackendEngineType:    "postgresql",
 				RuntimeEngineType:    "supermap_workflow",
@@ -168,18 +168,18 @@ func TestBuildCapabilitiesViewFormatsSpatialWorkspaces(t *testing.T) {
 	if view == nil {
 		t.Fatal("BuildCapabilitiesView returned nil")
 	}
-	item := findCapabilityItem(view, "extensions", "spatial_workspace_supermap_sdx_0")
+	item := findCapabilityItem(view, "extensions", "spatial_workspace_supermap_sdxPostgis_0")
 	if item == nil {
 		t.Fatalf("spatial workspace item not found in view: %#v", view.Sections)
 	}
 	if item.Status != capabilityStatusNotInstalled {
 		t.Fatalf("spatial workspace status = %q, want %q", item.Status, capabilityStatusNotInstalled)
 	}
-	if item.LabelKey != "system.engine.capabilityView.extensions.supermapSdx" {
+	if item.LabelKey != "system.engine.capabilityView.extensions.supermapSdxPostgis" {
 		t.Fatalf("supermap label key = %q", item.LabelKey)
 	}
 	assertCapabilityTag(t, *item, "ecosystem_supermap")
-	assertCapabilityTag(t, *item, "kind_sdx")
+	assertCapabilityTag(t, *item, "kind_sdxPostgis")
 	assertCapabilityTag(t, *item, "state_notDetected")
 	assertCapabilityTag(t, *item, "runtime_engine_type")
 	assertCapabilityTag(t, *item, "bound_runtime_engine_id")

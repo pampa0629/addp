@@ -45,6 +45,7 @@ const (
 	MsgConnectionTestSuccess             = "develop.query.connection_test_success"
 	MsgConnectionTestFailed              = "develop.query.connection_test_failed"
 	MsgSampleQueryUnavailable            = "develop.query.sample_query_unavailable"
+	MsgQueryTemplateResourceInvalid      = "develop.query.template_resource_invalid"
 	MsgNotebookExecutionForbidden        = "develop.notebook.execution_permission_denied"
 	MsgNotebookEngineListFailed          = "develop.notebook.engine_list_failed"
 	MsgNotebookEngineRequired            = "develop.notebook.engine_required"

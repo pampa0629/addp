@@ -468,15 +468,26 @@
         "runtimeOffline": "服务不可用：{error}"
       },
       "spatialWorkspace": {
-        "title": "SuperMap SDX+ for PostGIS",
-        "supermapWarning": "该操作会通过 SuperMap 工作流引擎在当前 PostgreSQL/PostGIS 数据库中注册 SuperMap SDX+，可能创建 SuperMap 系统表。",
         "runtime": "运行时 ID：{id}",
         "risk": "风险：{level}",
-        "enableSuperMap": "注册 SuperMap SDX+ for PostGIS",
-        "confirmTitle": "确认注册 SuperMap SDX+ for PostGIS",
-        "confirmMessage": "该操作可能在当前 PostgreSQL 数据库中创建 SuperMap SDX+ 系统表。确认继续？",
-        "enableSuccess": "SuperMap SDX+ for PostGIS 注册完成",
-        "unavailable": "当前数据库暂不能注册 SuperMap SDX+ for PostGIS"
+        "postgis": {
+          "title": "SuperMap SDX+ for PostGIS",
+          "warning": "该操作会通过 SuperMap 工作流引擎在当前 PostgreSQL/PostGIS 数据库中注册 SuperMap SDX+ for PostGIS，并可能创建 SuperMap 系统表。",
+          "enable": "注册 SuperMap SDX+ for PostGIS",
+          "confirmTitle": "确认注册 SuperMap SDX+ for PostGIS",
+          "confirmMessage": "该操作可能在当前 PostgreSQL/PostGIS 数据库中创建 SuperMap 系统表。确认继续？",
+          "enableSuccess": "SuperMap SDX+ for PostGIS 注册完成",
+          "unavailable": "当前数据库暂不能注册 SuperMap SDX+ for PostGIS"
+        },
+        "postgresql": {
+          "title": "SuperMap SDX+ for PostgreSQL",
+          "warning": "该操作会通过 SuperMap 工作流引擎在当前原生 PostgreSQL 数据库中创建 SuperMap SDX+ for PostgreSQL 工作区；该实例不得安装 PostGIS。",
+          "enable": "注册 SuperMap SDX+ for PostgreSQL",
+          "confirmTitle": "确认注册 SuperMap SDX+ for PostgreSQL",
+          "confirmMessage": "该操作会由 SuperMap SDK 创建系统表，且该实例之后不得与 SuperMap SDX+ for PostGIS 并存。确认继续？",
+          "enableSuccess": "SuperMap SDX+ for PostgreSQL 注册完成",
+          "unavailable": "当前数据库暂不能注册 SuperMap SDX+ for PostgreSQL"
+        }
       },
       "msg": {
         "loadFailed": "加载引擎列表失败",
@@ -619,11 +630,12 @@
           "postgisTigerGeocoder": "PostGIS Tiger Geocoder",
           "supermap": "SuperMap",
           "arcgis": "ArcGIS",
-          "sdx": "SDX+",
+          "sdxPostgis": "SuperMap SDX+ for PostGIS",
+          "sdxPostgresql": "SuperMap SDX+ for PostgreSQL",
           "sde": "SDE",
           "detected": "已检测",
           "enabled": "已启用",
-          "notDetected": "尚未注册 SDX+",
+          "notDetected": "未检测",
           "unavailable": "不可用",
           "permissionDenied": "权限不足",
           "low": "低",
@@ -654,7 +666,8 @@
           "postgisTopology": "PostGIS 拓扑扩展",
           "postgisTigerGeocoder": "PostGIS Tiger 地理编码",
           "spatialWorkspace": "空间工作区",
-          "supermapSdx": "SuperMap SDX+ for PostGIS",
+          "supermapSdxPostgis": "SuperMap SDX+ for PostGIS",
+          "supermapSdxPostgresql": "SuperMap SDX+ for PostgreSQL",
           "arcgisSde": "ArcGIS SDE for PostgreSQL",
           "postgresqlExtraExtensions": "其他已安装扩展",
           "pgvector": "pgvector 向量扩展"

@@ -108,40 +108,42 @@
             {{ formatTime(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column :label="t('develop.taskManagement.colActions')" width="260" fixed="right">
+        <el-table-column :label="t('develop.taskManagement.colActions')" width="320" fixed="right">
           <template #default="{ row }">
-            <el-button
-              type="primary"
-              size="small"
-              @click="handleExecute(row)"
-            >
-              <el-icon><VideoPlay /></el-icon>
-              {{ t('develop.taskManagement.execute') }}
-            </el-button>
-            <el-button
-              type="default"
-              size="small"
-              @click="handleEdit(row)"
-            >
-              <el-icon><Edit /></el-icon>
-              {{ t('develop.taskManagement.edit') }}
-            </el-button>
-            <el-button
-              type="info"
-              size="small"
-              @click="handleView(row)"
-            >
-              <el-icon><View /></el-icon>
-              {{ t('develop.taskManagement.detail') }}
-            </el-button>
-            <el-button
-              type="danger"
-              size="small"
-              @click="handleDelete(row)"
-            >
-              <el-icon><Delete /></el-icon>
-              {{ t('develop.taskManagement.delete') }}
-            </el-button>
+            <div class="task-actions">
+              <el-button
+                type="primary"
+                size="small"
+                @click="handleExecute(row)"
+              >
+                <el-icon><VideoPlay /></el-icon>
+                {{ t('develop.taskManagement.execute') }}
+              </el-button>
+              <el-button
+                type="default"
+                size="small"
+                @click="handleEdit(row)"
+              >
+                <el-icon><Edit /></el-icon>
+                {{ t('develop.taskManagement.edit') }}
+              </el-button>
+              <el-button
+                type="info"
+                size="small"
+                @click="handleView(row)"
+              >
+                <el-icon><View /></el-icon>
+                {{ t('develop.taskManagement.detail') }}
+              </el-button>
+              <el-button
+                type="danger"
+                size="small"
+                @click="handleDelete(row)"
+              >
+                <el-icon><Delete /></el-icon>
+                {{ t('develop.taskManagement.delete') }}
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -478,5 +480,12 @@ onMounted(async () => {
 .text-muted {
   color: var(--addp-text-tertiary);
   font-style: italic;
+}
+
+.task-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 </style>

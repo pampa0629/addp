@@ -1537,6 +1537,11 @@ paths:
         name: id
         required: true
         type: integer
+      - description: 标准资源定位符，指定后生成该数据项的查询模板 | Standard resource locator; when provided,
+          generate a query template for that data item
+        in: query
+        name: locator
+        type: string
       produces:
       - application/json
       responses:
@@ -1582,7 +1587,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 获取样例查询 | Get sample query
+      summary: 获取查询模板 | Get query template
       tags:
       - Query
       x-addp-auth-mode: permission

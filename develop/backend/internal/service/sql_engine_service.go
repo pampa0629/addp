@@ -9,7 +9,9 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
+	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/google/uuid"
 )
@@ -19,6 +21,7 @@ var (
 	ErrSQLExecutionUnclassifiable        = errors.New("SQL 效果无法可靠判定")
 	ErrSQLConnectionTestFailed           = errors.New("数据源连接测试失败")
 	ErrSampleQueryUnavailable            = dbbridge.ErrSampleQueryUnavailable
+	ErrSampleQueryResourceInvalid        = errors.New("查询模板资源定位符无效")
 )
 
 // SQLEngineService executes SQL only through a User-derived Execution
@@ -400,7 +403,14 @@ func (s *SQLEngineService) GenerateAuthorizedSampleQuery(
 	userAccessToken string,
 	executionID uuid.UUID,
 	engineID uint,
+	locator *resourcetree.ResourceLocator,
 ) (string, string, error) {
+	var selectedPath *plugin.CatalogPath
+	if locator != nil {
+		if locator.EngineID != engineID {
+			return "", "", fmt.Errorf("%w: 引擎 ID 不匹配", ErrSampleQueryResourceInvalid)
+		}
+	}
 	authorization, err := s.IssueReadExecutionAuthorization(
 		ctx, tenantID, userAccessToken, executionID, []uint{engineID}, 10,
 	)
@@ -411,13 +421,28 @@ func (s *SQLEngineService) GenerateAuthorizedSampleQuery(
 	if err != nil {
 		return "", "", err
 	}
-	return generateExecutableSampleQuery(ctx, engine)
+	if locator != nil {
+		model, modelErr := dbbridge.CatalogModel(engine.EngineType)
+		if modelErr != nil {
+			return "", "", fmt.Errorf("%w: %v", ErrSampleQueryResourceInvalid, modelErr)
+		}
+		path, pathErr := resourcetree.ProviderCatalogPathFromLocator(model, locator)
+		if pathErr != nil || len(path.Segments) < 2 {
+			if pathErr == nil {
+				pathErr = fmt.Errorf("资源不是可查询数据项")
+			}
+			return "", "", fmt.Errorf("%w: %v", ErrSampleQueryResourceInvalid, pathErr)
+		}
+		selectedPath = &path
+	}
+	return generateExecutableSampleQuery(ctx, engine, selectedPath)
 }
 
-func generateExecutableSampleQuery(ctx context.Context, engine *commonModels.Engine) (string, string, error) {
+func generateExecutableSampleQuery(ctx context.Context, engine *commonModels.Engine, selectedPath *plugin.CatalogPath) (string, string, error) {
 	return dbbridge.GenerateExecutableSampleQuery(ctx, engine, "", dbbridge.ExecutableSampleQueryOptions{
 		QueryLimit:      10,
 		ValidationLimit: 10,
+		Path:            selectedPath,
 	})
 }
 

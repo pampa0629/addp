@@ -23,7 +23,9 @@ test('uses an engine-selected kernel for upload and the saved engine for executi
 
   await page.goto(`/notebook?id=${NOTEBOOK_ID}`)
   await expect(page.getByText('scripts2', { exact: true }).first()).toBeVisible()
-  await expect(page.getByRole('row', { name: 'Notebook 引擎 Jupyter Engine', exact: true })).toBeVisible()
+  const runtimeSummary = page.locator('.notebook-runtime-summary')
+  await expect(runtimeSummary.getByRole('cell', { name: 'Notebook 引擎', exact: true })).toBeVisible()
+  await expect(runtimeSummary.getByRole('cell', { name: 'Jupyter Engine', exact: true })).toBeVisible()
 
   await page.locator('.detail-toolbar .el-button--primary').click()
   const executeDialog = page.getByRole('dialog', { name: '执行 Notebook', exact: true })
@@ -34,7 +36,7 @@ test('uses an engine-selected kernel for upload and the saved engine for executi
   await expect(executeDialog.getByPlaceholder(/请输入 JSON 格式的参数/)).toBeVisible()
   await executeDialog.getByRole('button', { name: '取消', exact: true }).click()
 
-  await page.locator('.sidebar-header .el-button--primary').click()
+  await page.getByRole('button', { name: '上传', exact: true }).click()
   const uploadDialog = page.getByRole('dialog', { name: '上传 Notebook', exact: true })
   await expect(uploadDialog).toBeVisible()
   await expect(uploadDialog.getByRole('combobox')).toHaveCount(2)
@@ -61,8 +63,9 @@ test('rebinds the original Notebook task for future executions', async ({ page }
   await dialog.getByRole('button', { name: '确认更换', exact: true }).click()
 
   await expect(dialog).toBeHidden()
-  await expect(page.getByRole('row', { name: 'Notebook 引擎 Alternate Jupyter', exact: true })).toBeVisible()
-  await expect(page.getByRole('row', { name: 'Kernel python312', exact: true })).toBeVisible()
+  const runtimeSummary = page.locator('.notebook-runtime-summary')
+  await expect(runtimeSummary.getByRole('cell', { name: 'Alternate Jupyter', exact: true })).toBeVisible()
+  await expect(runtimeSummary.getByRole('cell', { name: 'python312', exact: true })).toBeVisible()
   expect(bindingRequests).toEqual([{ engine_id: 11, kernel: 'python312' }])
   expect(new URL(page.url()).searchParams.get('id')).toBe(String(NOTEBOOK_ID))
 })
@@ -71,7 +74,8 @@ test('keeps execution disabled but allows rebinding when the saved engine is una
   await installMockBackend(page, { boundEngineID: 8 })
   await page.goto(`/notebook?id=${NOTEBOOK_ID}`)
 
-  await expect(page.getByRole('row', { name: 'Notebook 引擎 已失效的引擎 #8', exact: true })).toBeVisible()
+  const runtimeSummary = page.locator('.notebook-runtime-summary')
+  await expect(runtimeSummary.getByRole('cell', { name: '已失效的引擎 #8', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '执行', exact: true })).toBeDisabled()
   const changeEngine = page.getByRole('button', { name: '更换引擎', exact: true })
   await expect(changeEngine).toBeEnabled()
@@ -105,7 +109,7 @@ test.describe('responsive notebook dialogs', () => {
     await bindingDialog.getByRole('button', { name: '取消', exact: true }).click()
     await expect(bindingDialog).not.toBeVisible()
 
-    await page.locator('.sidebar-header .el-button--primary').click()
+    await page.getByRole('button', { name: '上传', exact: true }).click()
     const uploadDialog = page.getByRole('dialog', { name: '上传 Notebook', exact: true })
     const uploadSurface = visibleDialogSurface(page)
     await expectDialogWithinViewport(page, uploadSurface)

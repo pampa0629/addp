@@ -57,11 +57,9 @@ func NewDatabaseRuntime(db *gorm.DB, log *slog.Logger, repo *metaRepo.ScanReposi
 //   - scanDepth: 扫描深度 ("quick"快速扫描 | "deep"深度扫描)
 //
 // 返回：(schema数量, 表数量, 字段数量, error)
-func (s *DatabaseRuntime) ScanNamespace(ctx context.Context, resource *commonModels.Engine, tenantID, engineID uint, namespaceName string, scanDepth string, force bool) (int, int, int, error) {
-	// 1. 获取插件
-	p, err := plugin.Get(resource.EngineType)
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
+func (s *DatabaseRuntime) ScanNamespace(ctx context.Context, p plugin.EnginePlugin, resource *commonModels.Engine, tenantID, engineID uint, namespaceName string, scanDepth string, force bool) (int, int, int, error) {
+	if p == nil {
+		return 0, 0, 0, fmt.Errorf("engine plugin is required for %s", resource.EngineType)
 	}
 
 	catalogProvider, ok := p.(plugin.CatalogProvider)

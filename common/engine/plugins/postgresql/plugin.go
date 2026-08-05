@@ -443,7 +443,7 @@ func (p *PostgreSQLPlugin) hasSuperMapSDXSystemTables(ctx context.Context, db *g
 		  AND lower(table_name) IN (` + superMapSDXSystemTableSQLList() + `)
 	`).Scan(&count).Error
 	if err != nil {
-		return false, fmt.Errorf("failed to detect SuperMap SDX+ system tables: %w", err)
+		return false, fmt.Errorf("failed to detect SuperMap spatial workspace system tables: %w", err)
 	}
 	return count >= superMapSDXSystemTableThreshold, nil
 }

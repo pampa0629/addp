@@ -209,47 +209,54 @@ func applyPostgresInstanceCapabilities(base plugin.EngineCapabilities, facts pos
 		}
 	}
 
-	if postgisReady || facts.SuperMapSystemTableCount > 0 || facts.ArcGISSdeSchemaCount > 0 || facts.ArcGISSdeTableCount > 0 {
-		extensions[plugin.EngineExtensionSpatialWorkspaces] = []plugin.SpatialWorkspaceFact{
-			{
-				Ecosystem:         "supermap",
-				Kind:              "sdx+",
-				State:             spatialWorkspaceState(postgisReady, facts.SuperMapSystemTableCount, superMapSDXSystemTableThreshold),
-				BackendEngineType: "postgresql",
-				RuntimeEngineType: "supermap_workflow",
-				CanEnable:         postgisReady && facts.SuperMapSystemTableCount < superMapSDXSystemTableThreshold,
-				RiskLevel:         plugin.SpatialWorkspaceRiskHigh,
-				Evidence: map[string]interface{}{
-					"postgis_ready":               postgisReady,
-					"supermap_system_table_count": facts.SuperMapSystemTableCount,
-				},
-			},
-			{
-				Ecosystem:         "arcgis",
-				Kind:              "sde",
-				State:             spatialWorkspaceState(false, facts.ArcGISSdeSchemaCount+facts.ArcGISSdeTableCount, 1),
-				BackendEngineType: "postgresql",
-				CanEnable:         false,
-				RiskLevel:         plugin.SpatialWorkspaceRiskHigh,
-				Evidence: map[string]interface{}{
-					"sde_schema_count": facts.ArcGISSdeSchemaCount,
-					"sde_table_count":  facts.ArcGISSdeTableCount,
-				},
-			},
-		}
+	workspaceKind := plugin.SpatialWorkspaceSuperMapSDXPostgreSQL
+	if postgisReady {
+		workspaceKind = plugin.SpatialWorkspaceSuperMapSDXPostGIS
 	}
+	workspaceDetected := facts.SuperMapSystemTableCount >= superMapSDXSystemTableThreshold
+	workspaceState := plugin.SpatialWorkspaceStateNotDetected
+	if workspaceDetected {
+		workspaceState = plugin.SpatialWorkspaceStateDetected
+	}
+	workspaces := []plugin.SpatialWorkspaceFact{
+		{
+			Ecosystem:         "supermap",
+			Kind:              workspaceKind,
+			State:             workspaceState,
+			BackendEngineType: "postgresql",
+			RuntimeEngineType: "supermap_workflow",
+			CanEnable:         !workspaceDetected,
+			RiskLevel:         plugin.SpatialWorkspaceRiskHigh,
+			Evidence: map[string]interface{}{
+				"postgis_ready":               postgisReady,
+				"supermap_system_table_count": facts.SuperMapSystemTableCount,
+			},
+		},
+	}
+	if facts.ArcGISSdeSchemaCount > 0 || facts.ArcGISSdeTableCount > 0 {
+		workspaces = append(workspaces, plugin.SpatialWorkspaceFact{
+			Ecosystem:         "arcgis",
+			Kind:              "sde",
+			State:             spatialWorkspaceState(false, facts.ArcGISSdeSchemaCount+facts.ArcGISSdeTableCount, 1),
+			BackendEngineType: "postgresql",
+			CanEnable:         false,
+			RiskLevel:         plugin.SpatialWorkspaceRiskHigh,
+			Evidence: map[string]interface{}{
+				"sde_schema_count": facts.ArcGISSdeSchemaCount,
+				"sde_table_count":  facts.ArcGISSdeTableCount,
+			},
+		})
+	}
+	extensions[plugin.EngineExtensionSpatialWorkspaces] = workspaces
 
 	base.Extensions = extensions
 
 	return base
 }
 
-func spatialWorkspaceState(postgisReady bool, evidenceCount int, threshold int) string {
+func spatialWorkspaceState(_ bool, evidenceCount int, threshold int) string {
 	if evidenceCount >= threshold {
 		return plugin.SpatialWorkspaceStateDetected
-	}
-	if !postgisReady {
-		return plugin.SpatialWorkspaceStateUnavailable
 	}
 	return plugin.SpatialWorkspaceStateNotDetected
 }

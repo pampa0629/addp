@@ -48,7 +48,7 @@ func (d *CatalogDispatcher) dispatchTabularScan(ctx context.Context, enginePlugi
 			continue
 		}
 
-		namespaces, items, fields, err := d.namespaceScan.ScanNamespace(ctx, req.Resource, req.TenantID, req.Resource.ID, rootBranchEntry.Name, req.ScanDepth, req.Force)
+		namespaces, items, fields, err := d.namespaceScan.ScanNamespace(ctx, enginePlugin, req.Resource, req.TenantID, req.Resource.ID, rootBranchEntry.Name, req.ScanDepth, req.Force)
 		if err != nil {
 			d.log.Warn("namespace 扫描失败",
 				"engine_id", req.Resource.ID,
@@ -154,7 +154,7 @@ func (d *CatalogDispatcher) scanResourceNamespaces(
 				defer d.clearLock(ctx, lockAcquired, namespaceLock, "清除命名空间级锁失败", "namespace", namespace)
 			}
 
-			schemas, tables, fields, err := d.namespaceScan.ScanNamespace(ctx, resource, tenantID, resourceID, namespace, scanDepth, force)
+			schemas, tables, fields, err := d.namespaceScan.ScanNamespace(ctx, enginePlugin, resource, tenantID, resourceID, namespace, scanDepth, force)
 			if err != nil {
 				d.log.Warn("命名空间扫描失败",
 					"engine_id", resourceID,

@@ -16,6 +16,22 @@ const ENGINE = {
   }
 }
 
+const MONGO_ENGINE = {
+  id: 12,
+  name: 'MongoDB Demo',
+  engine_type: 'mongodb',
+  capabilities: {
+    compute: {
+      query: {
+        supported: true,
+        languages: ['mql'],
+        default_language: 'mql',
+        result_kinds: ['table']
+      }
+    }
+  }
+}
+
 const EXECUTION_ID = '11111111-1111-4111-8111-111111111111'
 
 test('renders the desktop workbench and a bounded table result without overlap', async ({ page }) => {
@@ -48,15 +64,15 @@ test('renders the desktop workbench and a bounded table result without overlap',
 test.describe('narrow query workbench', () => {
   test.use({ viewport: { width: 760, height: 700 } })
 
-  test('moves Catalog into a drawer and keeps execution context in graph mode', async ({ page }) => {
+  test('moves data resources into a drawer and keeps execution context in graph mode', async ({ page }) => {
     await installMockBackend(page, { resultKind: 'graph' })
     await page.goto('/sql')
 
     await expect(page.locator('.catalog-panel')).toHaveCount(0)
-    const catalogButton = page.getByRole('button', { name: 'Catalog', exact: true })
+    const catalogButton = page.getByRole('button', { name: '数据资源', exact: true })
     await expect(catalogButton).toHaveCount(1)
     await catalogButton.click()
-    const drawer = page.getByRole('dialog', { name: 'Catalog', exact: true })
+    const drawer = page.getByRole('dialog', { name: '数据资源', exact: true })
     await expect(drawer).toBeVisible()
     await expect(drawer.getByRole('treeitem', { name: ENGINE.name, exact: true })).toBeVisible()
     await drawer.getByRole('button', { name: 'Close this dialog', exact: true }).click()
@@ -73,7 +89,33 @@ test.describe('narrow query workbench', () => {
   })
 })
 
-async function installMockBackend(page, { resultKind }) {
+test('generates a query template for the selected data item and confirms engine switches', async ({ page }) => {
+  const sampleRequests = []
+  await installMockBackend(page, { resultKind: 'table', engines: [ENGINE, MONGO_ENGINE] })
+  page.on('request', request => {
+    if (request.url().includes('/sample-query')) sampleRequests.push(new URL(request.url()))
+  })
+  await page.goto('/sql')
+
+  const resourceTree = page.locator('.catalog-panel')
+  await resourceTree.getByRole('treeitem', { name: ENGINE.name, exact: true }).click()
+  const publicNode = resourceTree.getByRole('treeitem', { name: 'public', exact: true })
+  await publicNode.locator('.el-tree-node__expand-icon').click()
+  await resourceTree.getByRole('treeitem', { name: 'customers', exact: true }).click()
+  await resourceTree.getByRole('button', { name: '生成查询模板', exact: true }).click()
+  await page.getByRole('button', { name: '替换', exact: true }).click()
+  await expect.poll(() => sampleRequests.at(-1)?.searchParams.get('locator')).toContain('addp://engine/11/path/public/customers')
+
+  await page.locator('.engine-select').click()
+  await page.getByRole('option', { name: /MongoDB Demo/ }).click()
+  const switchDialog = page.getByRole('dialog', { name: '切换查询引擎', exact: true })
+  await expect(switchDialog).toBeVisible()
+  await switchDialog.getByRole('button', { name: '清空并切换', exact: true }).click()
+  await expect(page.getByText('MQL', { exact: true })).toBeVisible()
+  await expect.poll(() => sampleRequests.at(-1)?.pathname).toBe(`/api/v1/develop/engines/${MONGO_ENGINE.id}/sample-query`)
+})
+
+async function installMockBackend(page, { resultKind, engines = [ENGINE] }) {
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   await page.route('**/api/v1/**', async route => {
     const request = route.request()
@@ -86,13 +128,28 @@ async function installMockBackend(page, { resultKind }) {
       return fulfillJSON(route, { id: 1, username: 'develop-e2e' })
     }
     if (path === '/api/v1/develop/engines') {
-      return fulfillJSON(route, [ENGINE])
+      return fulfillJSON(route, engines)
     }
-    if (path === `/api/v1/develop/engines/${ENGINE.id}/sample-query`) {
-      return fulfillJSON(route, { query: 'SELECT id, name FROM public.customers', language: 'sql' })
+    if (path.endsWith('/sample-query')) {
+      const requestURL = new URL(request.url())
+      if (requestURL.searchParams.has('locator')) {
+        return fulfillJSON(route, { query: 'SELECT id, name FROM public.customers LIMIT 10', language: 'sql' })
+      }
+      const engineID = Number(path.split('/')[5])
+      const engine = engines.find(item => item.id === engineID) || ENGINE
+      return fulfillJSON(route, engine.id === MONGO_ENGINE.id
+        ? { query: '{"find":"orders","filter":{},"limit":10}', language: 'mql' }
+        : { query: 'SELECT id, name FROM public.customers', language: 'sql' })
     }
     if (path === `/api/v1/meta/resource-tree/${ENGINE.id}`) {
       return fulfillJSON(route, resourceTree())
+    }
+    if (path === `/api/v1/meta/resource-tree/${ENGINE.id}/node`) {
+      const locator = new URL(request.url()).searchParams.get('locator') || ''
+      if (locator.includes('/path/public?type=schema')) {
+        return fulfillJSON(route, { children: resourceTree().children[0].children })
+      }
+      return fulfillJSON(route, { children: resourceTree().children })
     }
     if (path === '/api/v1/develop/executions' && request.method() === 'POST') {
       return fulfillJSON(route, { execution_id: EXECUTION_ID })

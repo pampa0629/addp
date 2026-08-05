@@ -3,6 +3,7 @@
 #
 # 包含服务:
 # - postgres: 业务数据库（PostGIS 支持空间数据）
+# - supermap-postgresql: SuperMap SDX+ for PostgreSQL 专用数据库（不安装 PostGIS）
 # - minio: 业务对象存储（用户文件）
 # - doris-fe: Apache Doris Frontend（OLAP 分析引擎）
 # - clickhouse: ClickHouse（高性能列式存储 OLAP）
@@ -47,6 +48,40 @@ services:
       - "${POSTGRES_PORT:-5433}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-business}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - business-network
+    restart: unless-stopped
+
+  # SuperMap SDX+ for PostgreSQL 必须与 SuperMap SDX+ for PostGIS 使用独立实例。
+  # 此实例保持原生 PostgreSQL；SuperMap 系统表只能由 supermap_workflow 初始化。
+  supermap-postgresql:
+    image: ${SUPERMAP_POSTGRESQL_IMAGE:-postgres:15}
+    container_name: business-supermap-postgresql
+    shm_size: 2g
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
+      - -c
+      - timezone=Asia/Shanghai
+    environment:
+      POSTGRES_USER: ${SUPERMAP_POSTGRESQL_USER:-supermap}
+      POSTGRES_PASSWORD: ${SUPERMAP_POSTGRESQL_PASSWORD:-supermap_password}
+      POSTGRES_DB: ${SUPERMAP_POSTGRESQL_DB:-supermap}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - supermap_postgresql_data:/var/lib/postgresql/data
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro,cached
+      - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro,cached
+    ports:
+      - "${SUPERMAP_POSTGRESQL_PORT:-5434}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SUPERMAP_POSTGRESQL_USER:-supermap} -d ${SUPERMAP_POSTGRESQL_DB:-supermap}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -386,6 +421,7 @@ services:
 
 volumes:
   postgres_data:
+  supermap_postgresql_data:
   minio_data:
   mysql_data:
     driver: local

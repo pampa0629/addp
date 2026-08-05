@@ -94,7 +94,23 @@ func (p *MongoDBPlugin) QueryLanguages() []string {
 }
 
 func (p *MongoDBPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
+	if database, collection, ok := mongoCollectionFromCatalogPath(opts.Path); ok {
+		if database != plugin.GetString(connInfo, "database") {
+			return "", "mql"
+		}
+		collectionJSON, _ := json.Marshal(collection)
+		return fmt.Sprintf(`{"find":%s,"filter":{},"limit":10}`, collectionJSON), "mql"
+	}
 	return p.generateSampleQuery(ctx, connInfo)
+}
+
+func mongoCollectionFromCatalogPath(path plugin.CatalogPath) (string, string, bool) {
+	segments := plugin.CatalogPathWithoutRoot(path).Segments
+	if len(segments) != 2 || segments[0].Term != plugin.CatalogTermDatabase ||
+		segments[1].Term != plugin.CatalogTermCollection || segments[0].Name == "" || segments[1].Name == "" {
+		return "", "", false
+	}
+	return segments[0].Name, segments[1].Name, true
 }
 
 func (p *MongoDBPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {

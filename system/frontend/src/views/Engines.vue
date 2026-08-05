@@ -202,7 +202,7 @@
             <el-collapse-item name="supermap">
               <template #title>
                 <span class="spatial-workspace-title">
-                  {{ t('system.engine.spatialWorkspace.title') }}
+                  {{ t(`${spatialWorkspaceProductKey}.title`) }}
                   <el-tag size="small" effect="plain" :type="spatialWorkspaceStateTagType">
                     {{ spatialWorkspaceStateText }}
                   </el-tag>
@@ -211,7 +211,7 @@
 
               <el-alert
                 class="spatial-workspace-alert"
-                :title="t('system.engine.spatialWorkspace.supermapWarning')"
+                :title="t(`${spatialWorkspaceProductKey}.warning`)"
                 type="warning"
                 show-icon
                 :closable="false"
@@ -220,7 +220,7 @@
               <div class="spatial-workspace-body">
                 <div class="spatial-workspace-meta">
                   <el-tag size="small" effect="plain">SuperMap</el-tag>
-                  <el-tag size="small" effect="plain">SDX+</el-tag>
+                  <el-tag size="small" effect="plain">{{ t(`${spatialWorkspaceProductKey}.title`) }}</el-tag>
                   <el-tag
                     v-if="currentSuperMapWorkspace?.bound_runtime_engine_id"
                     size="small"
@@ -244,7 +244,7 @@
                   :disabled="!canEnableSuperMapWorkspace"
                   @click="enableSuperMapSpatialWorkspace"
                 >
-                  {{ t('system.engine.spatialWorkspace.enableSuperMap') }}
+                  {{ t(`${spatialWorkspaceProductKey}.enable`) }}
                 </el-button>
               </div>
             </el-collapse-item>
@@ -965,6 +965,12 @@ const currentSuperMapWorkspace = computed(() => {
   return findSuperMapSpatialWorkspace(editingEngine.value)
 })
 
+const spatialWorkspaceProductKey = computed(() => {
+  return currentSuperMapWorkspace.value?.kind === 'sdx_postgresql'
+    ? 'system.engine.spatialWorkspace.postgresql'
+    : 'system.engine.spatialWorkspace.postgis'
+})
+
 const showSpatialWorkspacePanel = computed(() => {
   const workspace = currentSuperMapWorkspace.value
   return Boolean(
@@ -1053,7 +1059,7 @@ const spatialWorkspacesFromEngine = (engine) => {
 const findSuperMapSpatialWorkspace = (engine) => {
   return spatialWorkspacesFromEngine(engine).find(workspace => (
     String(workspace?.ecosystem || '').toLowerCase() === 'supermap' &&
-    String(workspace?.kind || '').toLowerCase() === 'sdx+'
+    ['sdx_postgis', 'sdx_postgresql'].includes(String(workspace?.kind || '').toLowerCase())
   )) || null
 }
 
@@ -1492,16 +1498,16 @@ const editEngine = async (row) => {
 const enableSuperMapSpatialWorkspace = async () => {
   const workspace = currentSuperMapWorkspace.value
   if (!canEnableSuperMapWorkspace.value || !workspace) {
-    ElMessage.warning(t('system.engine.spatialWorkspace.unavailable'))
+    ElMessage.warning(t(`${spatialWorkspaceProductKey.value}.unavailable`))
     return
   }
 
   try {
     await ElMessageBox.confirm(
-      t('system.engine.spatialWorkspace.confirmMessage'),
-      t('system.engine.spatialWorkspace.confirmTitle'),
+      t(`${spatialWorkspaceProductKey.value}.confirmMessage`),
+      t(`${spatialWorkspaceProductKey.value}.confirmTitle`),
       {
-        confirmButtonText: t('system.engine.spatialWorkspace.enableSuperMap'),
+        confirmButtonText: t(`${spatialWorkspaceProductKey.value}.enable`),
         cancelButtonText: t('system.engine.actions.cancel'),
         type: 'error'
       }
@@ -1517,7 +1523,7 @@ const enableSuperMapSpatialWorkspace = async () => {
     if (updatedEngine) {
       editingEngine.value = updatedEngine
     }
-    ElMessage.success(t('system.engine.spatialWorkspace.enableSuccess'))
+    ElMessage.success(t(`${spatialWorkspaceProductKey.value}.enableSuccess`))
     await loadEngines()
   } catch (error) {
     ElMessage.error(error.response?.data?.error || error.message || t('system.engine.msg.opFailed'))

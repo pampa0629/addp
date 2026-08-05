@@ -47,11 +47,11 @@ func TestApplyPostgresInstanceCapabilitiesKeepsSpatialCapabilitiesWhenPostGISIsR
 	if err != nil {
 		t.Fatalf("SpatialWorkspacesFromExtensions error = %v", err)
 	}
-	if len(workspaces) != 2 {
-		t.Fatalf("spatial workspaces = %#v, want supermap and arcgis facts", workspaces)
+	if len(workspaces) != 1 {
+		t.Fatalf("spatial workspaces = %#v, want one SuperMap workspace fact", workspaces)
 	}
 	supermap := workspaces[0]
-	if supermap.Ecosystem != "supermap" || supermap.Kind != "sdx+" {
+	if supermap.Ecosystem != "supermap" || supermap.Kind != plugin.SpatialWorkspaceSuperMapSDXPostGIS {
 		t.Fatalf("supermap workspace fact = %#v", supermap)
 	}
 	if supermap.State != plugin.SpatialWorkspaceStateNotDetected {
@@ -85,8 +85,11 @@ func TestApplyPostgresInstanceCapabilitiesDetectsSpatialWorkspaceSignatures(t *t
 	if workspaces[0].State != plugin.SpatialWorkspaceStateDetected {
 		t.Fatalf("supermap state = %q, want detected", workspaces[0].State)
 	}
+	if workspaces[0].Kind != plugin.SpatialWorkspaceSuperMapSDXPostgreSQL {
+		t.Fatalf("supermap kind = %q, want %q", workspaces[0].Kind, plugin.SpatialWorkspaceSuperMapSDXPostgreSQL)
+	}
 	if workspaces[0].CanEnable {
-		t.Fatalf("supermap can_enable = true, want false when sdx+ is already detected")
+		t.Fatalf("supermap can_enable = true, want false when SuperMap SDX+ for PostgreSQL is already detected")
 	}
 	if workspaces[1].Ecosystem != "arcgis" || workspaces[1].Kind != "sde" || workspaces[1].State != plugin.SpatialWorkspaceStateDetected {
 		t.Fatalf("arcgis workspace fact = %#v, want detected SDE", workspaces[1])

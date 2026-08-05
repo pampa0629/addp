@@ -2,6 +2,7 @@
 
 #include "operator_catalog.hpp"
 #include "supermap_runtime.hpp"
+#include "table_session_runtime.hpp"
 
 #include <functional>
 #include <string>
@@ -28,6 +29,7 @@ class OperatorRuntime final {
   addp::workflow::OperatorCatalog catalog_;
   std::unordered_map<std::string, OperatorHandler> handlers_;
   std::unordered_map<std::string, DirectOperatorHandler> direct_handlers_;
+  mutable TableSessionRuntime table_sessions_;
 };
 
 }  // namespace addp::supermap

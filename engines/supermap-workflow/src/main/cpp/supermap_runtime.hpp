@@ -63,6 +63,21 @@ class ExecutionContext final {
       const std::string& user,
       const std::string& password,
       const std::string& alias);
+  std::shared_ptr<DatasourceRef> open_postgresql(
+      const std::string& server,
+      const std::string& database,
+      const std::string& user,
+      const std::string& password,
+      const std::string& schema,
+      const std::string& table,
+      const std::string& alias,
+      bool read_only);
+  std::shared_ptr<DatasourceRef> enable_postgresql(
+      const std::string& server,
+      const std::string& database,
+      const std::string& user,
+      const std::string& password,
+      const std::string& alias);
   std::shared_ptr<DatasetRef> select_dataset(
       const std::shared_ptr<DatasourceRef>& datasource, const std::string& name);
   std::shared_ptr<DatasetRef> save_dataset(

@@ -186,6 +186,37 @@ func TestGetSampleQueryUsesAuthorizedEngineAndRejectsUnavailableCatalog(t *testi
 	}
 }
 
+func TestGetSampleQueryRejectsInvalidResourceLocatorBeforeAuthorization(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls++ }))
+	defer server.Close()
+
+	response := sampleQueryRequestForTest(
+		newAuthorizedQueryHandlerForTest(server.URL),
+		"/engines/12/sample-query?locator="+url.QueryEscape("not-a-resource-locator"),
+	)
+	if response.Code != http.StatusBadRequest || calls != 0 ||
+		!bytes.Contains(response.Body.Bytes(), []byte(`"error_code":"query_template_resource_invalid"`)) {
+		t.Fatalf("status = %d, calls = %d, body = %s", response.Code, calls, response.Body.String())
+	}
+}
+
+func TestGetSampleQueryRejectsResourceLocatorFromAnotherEngineBeforeAuthorization(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls++ }))
+	defer server.Close()
+
+	locator := "addp://engine/13/path/business/orders?type=collection&item_id=9"
+	response := sampleQueryRequestForTest(
+		newAuthorizedQueryHandlerForTest(server.URL),
+		"/engines/12/sample-query?locator="+url.QueryEscape(locator),
+	)
+	if response.Code != http.StatusBadRequest || calls != 0 ||
+		!bytes.Contains(response.Body.Bytes(), []byte(`"error_code":"query_template_resource_invalid"`)) {
+		t.Fatalf("status = %d, calls = %d, body = %s", response.Code, calls, response.Body.String())
+	}
+}
+
 func newAuthorizedQueryHandlerForTest(systemURL string) *QueryHandler {
 	systemService := commonClient.NewSystemServiceClient(
 		systemURL, staticDevelopServiceTokens("addp_at_service"), nil,
@@ -208,6 +239,20 @@ func testConnectionRequestForTest(handler *QueryHandler, token string) *httptest
 	if token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	return response
+}
+
+func sampleQueryRequestForTest(handler *QueryHandler, target string) *httptest.ResponseRecorder {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/engines/:id/sample-query", func(c *gin.Context) {
+		setTenantAuthContextForTest(c, 7, 1)
+		handler.GetSampleQuery(c)
+	})
+	request := httptest.NewRequest(http.MethodGet, target, nil)
+	request.Header.Set("Authorization", "Bearer addp_at_user")
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	return response

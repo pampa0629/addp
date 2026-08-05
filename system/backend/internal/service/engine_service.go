@@ -1613,7 +1613,9 @@ func (s *EngineService) enrichInstanceCapabilities(engine *models.Engine, capabi
 		if strings.ToLower(strings.TrimSpace(ws.Ecosystem)) != "supermap" {
 			continue
 		}
-		if strings.ToLower(strings.TrimSpace(ws.Kind)) != "sdx+" {
+		kind := strings.ToLower(strings.TrimSpace(ws.Kind))
+		if kind != engineplugin.SpatialWorkspaceSuperMapSDXPostGIS &&
+			kind != engineplugin.SpatialWorkspaceSuperMapSDXPostgreSQL {
 			continue
 		}
 		if strings.ToLower(strings.TrimSpace(ws.RuntimeEngineType)) != "supermap_workflow" {
@@ -1626,6 +1628,14 @@ func (s *EngineService) enrichInstanceCapabilities(engine *models.Engine, capabi
 		}
 		if hasRuntime {
 			ws.BoundRuntimeEngineID = &boundRuntimeID
+		}
+		if kind == engineplugin.SpatialWorkspaceSuperMapSDXPostgreSQL &&
+			ws.State == engineplugin.SpatialWorkspaceStateDetected && hasRuntime &&
+			caps.Storage != nil && caps.Storage.Store != nil {
+			caps.Storage.Store.TableSpatialEncoding = &engineplugin.NativeTableSpatialEncodingCapability{
+				GeometryReadEncodings:  []string{"ewkb"},
+				GeometryWriteEncodings: []string{"ewkb"},
+			}
 		}
 		changed = true
 		break
@@ -1707,7 +1717,17 @@ func (s *EngineService) EnableSpatialWorkspace(ctx context.Context, id uint, eco
 		return nil, fmt.Errorf("解密连接信息失败: %w", err)
 	}
 
-	invokeResult, err := dbbridge.InvokeOperator(ctx, runtimeEngine, "datasource.enable_postgis", engineplugin.OperatorInvokeRequest{
+	operatorName := ""
+	switch strings.ToLower(strings.TrimSpace(target.Kind)) {
+	case engineplugin.SpatialWorkspaceSuperMapSDXPostGIS:
+		operatorName = "datasource.enable_postgis"
+	case engineplugin.SpatialWorkspaceSuperMapSDXPostgreSQL:
+		operatorName = "datasource.enable_postgresql"
+	default:
+		return nil, ErrSpatialWorkspaceNotFound
+	}
+
+	invokeResult, err := dbbridge.InvokeOperator(ctx, runtimeEngine, operatorName, engineplugin.OperatorInvokeRequest{
 		Params: map[string]interface{}{
 			"connection_info": decryptedConnInfo,
 			"alias":           engine.Name,

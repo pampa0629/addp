@@ -138,6 +138,14 @@
             </el-button>
           </div>
         </div>
+        <el-descriptions class="notebook-runtime-summary" :column="2" border size="small">
+          <el-descriptions-item :label="t('develop.notebook.engine')">
+            {{ notebookEngineLabel(currentNotebook) }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('develop.notebook.kernel')">
+            {{ currentNotebook.content?.kernel || '-' }}
+          </el-descriptions-item>
+        </el-descriptions>
         <div class="notebook-workspace" v-loading="sessionLoading">
           <iframe
             v-if="notebookSession"
@@ -1164,6 +1172,11 @@ onBeforeUnmount(() => {
   min-height: 0;
   overflow: hidden;
   background: var(--addp-bg-primary);
+}
+
+.notebook-runtime-summary {
+  margin: 12px 16px 0;
+  flex-shrink: 0;
 }
 
 .notebook-frame {

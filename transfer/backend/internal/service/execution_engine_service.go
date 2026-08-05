@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/dbbridge"
 	engineplugin "github.com/addp/common/engine/plugin"
+	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
@@ -339,6 +340,11 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 		s.updateExecutionError(task, executionID, wrapped)
 		return wrapped
 	}
+	if err := s.configureInstanceTableProviders(ctx, task.TenantID, buildResult, tableExecutor); err != nil {
+		wrapped := fmt.Errorf("configure instance table providers: %w", err)
+		s.updateExecutionError(task, executionID, wrapped)
+		return wrapped
+	}
 	if hasSpatialReprojectTransform(buildResult.Plan.Transforms) {
 		workflowEngine, workflowOperator, err := s.selectDirectWorkflowRuntime(ctx, task.TenantID, "vector_reproject")
 		if err != nil {
@@ -374,6 +380,88 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 		s.logger.Warn("failed to update task after successful table transfer", "error", err, "task_id", task.ID)
 	}
 	return nil
+}
+
+func (s *ExecutionEngineService) configureInstanceTableProviders(
+	ctx context.Context,
+	tenantID uint,
+	build *planner.TableTransferBuildResult,
+	tableExecutor *executor.TableTransferExecutor,
+) error {
+	if build == nil || tableExecutor == nil {
+		return fmt.Errorf("table transfer build result and executor are required")
+	}
+	sourceProvider, err := s.superMapSDXPostgreSQLTableProvider(ctx, tenantID, build.SourceEngine)
+	if err != nil {
+		return fmt.Errorf("resolve source SuperMap table provider: %w", err)
+	}
+	if sourceProvider != nil {
+		tableExecutor.SourceNativeReader = nil
+		tableExecutor.SourceTableSessionProvider = sourceProvider
+	}
+	targetProvider, err := s.superMapSDXPostgreSQLTableProvider(ctx, tenantID, build.TargetEngine)
+	if err != nil {
+		return fmt.Errorf("resolve target SuperMap table provider: %w", err)
+	}
+	if targetProvider != nil {
+		tableExecutor.TargetDeleteProvider = targetProvider
+		tableExecutor.TargetNativePreparer = targetProvider
+		tableExecutor.TargetNativeWriter = nil
+		tableExecutor.TargetTableSessionProvider = targetProvider
+	}
+	return nil
+}
+
+func (s *ExecutionEngineService) superMapSDXPostgreSQLTableProvider(
+	ctx context.Context,
+	tenantID uint,
+	binding planner.EngineBinding,
+) (*supermapworkflow.SDXPostgreSQLTableProvider, error) {
+	workspace, ok := planner.SuperMapSDXPostgreSQLWorkspace(binding)
+	if !ok {
+		return nil, nil
+	}
+	if workspace.BoundRuntimeEngineID == nil || *workspace.BoundRuntimeEngineID == 0 {
+		return nil, fmt.Errorf("SuperMap SDX+ for PostgreSQL workspace has no bound workflow runtime")
+	}
+	if s.systemClient == nil {
+		return nil, fmt.Errorf("system client is required to resolve the bound SuperMap workflow runtime")
+	}
+	runtimes, err := s.systemClient.ListWorkflowEngines(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("list workflow runtimes: %w", err)
+	}
+	boundRuntimeID := *workspace.BoundRuntimeEngineID
+	for index := range runtimes {
+		runtime := &runtimes[index]
+		if runtime.ID != boundRuntimeID {
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(runtime.EngineType), "supermap_workflow") {
+			return nil, fmt.Errorf("bound runtime %d has engine_type %q, want supermap_workflow", runtime.ID, runtime.EngineType)
+		}
+		registered, err := engineplugin.Get("supermap_workflow")
+		if err != nil {
+			return nil, err
+		}
+		workflowRuntime, ok := registered.(engineplugin.WorkflowRuntimeProvider)
+		if !ok {
+			return nil, fmt.Errorf("supermap_workflow does not implement WorkflowRuntimeProvider")
+		}
+		return supermapworkflow.NewSDXPostgreSQLTableProvider(
+			workflowRuntime,
+			toPluginConnectionInfo(runtime.ConnectionInfo),
+		)
+	}
+	return nil, fmt.Errorf("bound SuperMap workflow runtime %d is not active or visible to tenant %d", boundRuntimeID, tenantID)
+}
+
+func toPluginConnectionInfo(value commonModels.ConnectionInfo) engineplugin.ConnectionInfo {
+	result := make(engineplugin.ConnectionInfo, len(value))
+	for key, item := range value {
+		result[key] = item
+	}
+	return result
 }
 
 func (s *ExecutionEngineService) selectDirectWorkflowRuntime(ctx context.Context, tenantID uint, operatorName string) (commonModels.Engine, commonModels.OperatorDescriptor, error) {

@@ -6,6 +6,7 @@
 
 **包含服务**：
 - **PostgreSQL (PostGIS)**：业务数据库，端口 5433
+- **SuperMap SDX+ for PostgreSQL**：独立原生 PostgreSQL 实例，端口 5434；不安装 PostGIS
 - **MinIO**：业务对象存储，端口 9002-9003
 - **ClickHouse** 🆕：高性能列式存储 OLAP，端口 9000, 8123
 - **MongoDB** 🆕：文档型 NoSQL 数据库，端口 27017
@@ -49,6 +50,9 @@ bash scripts/start.sh -all
 
 # 只启动 ClickHouse
 bash scripts/start.sh -clickhouse
+
+# 只启动 SuperMap SDX+ for PostgreSQL 专用实例
+bash scripts/start.sh -supermap-postgresql
 
 # 只启动 MongoDB
 bash scripts/start.sh -mongodb
@@ -110,6 +114,7 @@ business/
 | 组件 | ADDP 系统库 | Business 业务库 |
 |------|------------|----------------|
 | PostgreSQL | 端口 5432 | 端口 5433 |
+| SuperMap SDX+ for PostgreSQL | - | 独立实例，端口 5434 |
 | MinIO | 端口 9000-9001 | 端口 9002-9003 |
 | ClickHouse | - | 端口 9000, 8123 |
 | MongoDB | - | 端口 27017 |
@@ -135,6 +140,8 @@ bash scripts/start.sh
 
 **功能**：检查配置、检测架构、启动服务、验证健康状态、安装 PostGIS
 **特性**：幂等执行（可重复运行）
+
+`-supermap-postgresql` 启动的 `business-supermap-postgresql` 使用独立 volume 和原生 PostgreSQL 15 镜像。启动脚本会拒绝已安装 PostGIS 的实例；SuperMap `sm*` 系统表只能在 System 中通过 `SuperMap SDX+ for PostgreSQL` 高危启用入口，由 `supermap_workflow` 的 SDK 算子创建。
 
 启用 MySQL 时，脚本还会在数据库 ready 后执行 `mysql/init-cdc.sh`。该脚本每次都创建或更新 `${MYSQL_CDC_USER:-addp_cdc}@%`，并将权限收敛为 Debezium 所需的最小权限集，因此已有数据卷也会生效。连接 MySQL CDC Engine 时使用 `.env` 中的 `MYSQL_CDC_USER` 和 `MYSQL_CDC_PASSWORD`，不要使用 root。
 
@@ -179,6 +186,7 @@ bash spark/init-test-data.sh
 
 ```bash
 docker-compose logs -f postgres    # PostgreSQL 日志
+docker-compose logs -f supermap-postgresql # SuperMap SDX+ for PostgreSQL 专用实例日志
 docker-compose logs -f minio       # MinIO 日志
 docker-compose logs -f clickhouse  # ClickHouse 日志
 docker-compose logs -f mongodb     # MongoDB 日志

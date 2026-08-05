@@ -5,12 +5,15 @@ import {
 } from './devTask'
 
 /**
- * 获取引擎的样例查询（切换引擎时自动填充编辑器）
+ * 获取引擎的查询模板（切换引擎或选择数据资源时填充编辑器）
  * @param {number} engineId - 引擎ID
+ * @param {string} locator - 可选标准资源定位符
  * @returns {{ query: string, language: string }}
  */
-export const getSampleQuery = (engineId) => {
-  return client.get(`/develop/engines/${engineId}/sample-query`)
+export const getSampleQuery = (engineId, locator = '') => {
+  return client.get(`/develop/engines/${engineId}/sample-query`, {
+    params: locator ? { locator } : undefined
+  })
 }
 
 /**

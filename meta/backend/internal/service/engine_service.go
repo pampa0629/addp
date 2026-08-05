@@ -5,10 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	engineplugin "github.com/addp/common/engine/plugin"
+	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/utils"
@@ -112,6 +115,77 @@ func (s *EngineService) GetResourceByID(engineID, tenantID uint) (*commonModels.
 // GetEngine implements the engine lookup used by resource-tree and CAD paths.
 func (s *EngineService) GetEngine(engineID, tenantID uint) (*commonModels.Engine, error) {
 	return s.GetResourceByID(engineID, tenantID)
+}
+
+// ResolveScanPlugin returns the instance-scoped provider used for one scan.
+// General PostgreSQL remains the catalog owner; an enabled SuperMap SDX+ for PostgreSQL
+// workspace replaces its sdx table facts with the bound SuperMap SDK provider.
+func (s *EngineService) ResolveScanPlugin(ctx context.Context, resource *commonModels.Engine, tenantID uint) (engineplugin.EnginePlugin, error) {
+	if resource == nil {
+		return nil, errors.New("engine resource is required")
+	}
+	registered, err := engineplugin.Get(resource.EngineType)
+	if err != nil {
+		return nil, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
+	}
+	workspace, ok, err := superMapSDXPostgreSQLWorkspaceFromEngine(resource)
+	if err != nil {
+		return nil, fmt.Errorf("parse engine %d SuperMap workspace: %w", resource.ID, err)
+	}
+	if !ok {
+		return registered, nil
+	}
+	if workspace.BoundRuntimeEngineID == nil || *workspace.BoundRuntimeEngineID == 0 {
+		return nil, fmt.Errorf("SuperMap SDX+ for PostgreSQL workspace on engine %d has no bound workflow runtime", resource.ID)
+	}
+	if s == nil || s.systemClient == nil {
+		return nil, errors.New("System service client is required to resolve the bound SuperMap workflow runtime")
+	}
+	descriptor, err := s.systemClient.WithTenantID(tenantID).GetEngineRuntimeDescriptor(ctx, *workspace.BoundRuntimeEngineID)
+	if err != nil {
+		return nil, fmt.Errorf("get bound SuperMap workflow runtime %d: %w", *workspace.BoundRuntimeEngineID, err)
+	}
+	if descriptor == nil || descriptor.ID != *workspace.BoundRuntimeEngineID || descriptor.LifecycleState != commonModels.EngineLifecycleActive {
+		return nil, fmt.Errorf("bound SuperMap workflow runtime %d is not active or visible to tenant %d", *workspace.BoundRuntimeEngineID, tenantID)
+	}
+	if !strings.EqualFold(strings.TrimSpace(descriptor.EngineType), "supermap_workflow") {
+		return nil, fmt.Errorf("bound runtime %d has engine_type %q, want supermap_workflow", descriptor.ID, descriptor.EngineType)
+	}
+	runtimePlugin, err := engineplugin.Get("supermap_workflow")
+	if err != nil {
+		return nil, err
+	}
+	workflowRuntime, ok := runtimePlugin.(engineplugin.WorkflowRuntimeProvider)
+	if !ok {
+		return nil, errors.New("supermap_workflow does not implement WorkflowRuntimeProvider")
+	}
+	runtimeEngine := descriptor.AsEngine()
+	return supermapworkflow.NewSDXPostgreSQLTableProvider(workflowRuntime, engineplugin.ConnectionInfo(runtimeEngine.ConnectionInfo))
+}
+
+func superMapSDXPostgreSQLWorkspaceFromEngine(resource *commonModels.Engine) (engineplugin.SpatialWorkspaceFact, bool, error) {
+	if resource == nil || !strings.EqualFold(strings.TrimSpace(resource.EngineType), "postgresql") || resource.Capabilities == nil || *resource.Capabilities == "" {
+		return engineplugin.SpatialWorkspaceFact{}, false, nil
+	}
+	capabilities, err := engineplugin.ParseEngineCapabilities(string(*resource.Capabilities))
+	if err != nil {
+		return engineplugin.SpatialWorkspaceFact{}, false, err
+	}
+	workspaces, err := engineplugin.SpatialWorkspacesFromExtensions(capabilities.Extensions)
+	if err != nil {
+		return engineplugin.SpatialWorkspaceFact{}, false, err
+	}
+	for _, workspace := range workspaces {
+		if !strings.EqualFold(strings.TrimSpace(workspace.Ecosystem), "supermap") ||
+			!strings.EqualFold(strings.TrimSpace(workspace.Kind), engineplugin.SpatialWorkspaceSuperMapSDXPostgreSQL) {
+			continue
+		}
+		state := strings.ToLower(strings.TrimSpace(workspace.State))
+		if state == engineplugin.SpatialWorkspaceStateDetected || state == engineplugin.SpatialWorkspaceStateEnabled {
+			return workspace, true, nil
+		}
+	}
+	return engineplugin.SpatialWorkspaceFact{}, false, nil
 }
 
 // GetEnginesWithStats returns tenant engines with Meta scan statistics.

@@ -37,6 +37,7 @@ if(SUPERMAP_SDK_ROOT)
     src/main/cpp/runtime_access.cpp
     src/main/cpp/s3m_runtime.cpp
     src/main/cpp/supermap_runtime.cpp
+    src/main/cpp/table_session_runtime.cpp
     src/main/cpp/udbx_runtime.cpp
   )
   target_include_directories(addp_supermap_runtime PUBLIC src/main/cpp)
@@ -65,6 +66,7 @@ if(SUPERMAP_SDK_ROOT)
       SuElement
       SuGeneralization
       SuGeometry
+      SuGeometryConverter
       SuGraphicsQT
       SuGraphics
       SuDrawing
@@ -72,6 +74,7 @@ if(SUPERMAP_SDK_ROOT)
       SuOverlay
       SuProximity
       SuProjection
+      SuStream
       SuToolkit
       SuTopoBase
       SuTileStorage

@@ -468,15 +468,26 @@
         "runtimeOffline": "Service unavailable: {error}"
       },
       "spatialWorkspace": {
-        "title": "SuperMap SDX+ for PostGIS",
-        "supermapWarning": "This action uses the SuperMap workflow engine to register SuperMap SDX+ in the current PostgreSQL/PostGIS database and may create SuperMap system tables.",
         "runtime": "Runtime ID: {id}",
         "risk": "Risk: {level}",
-        "enableSuperMap": "Register SuperMap SDX+ for PostGIS",
-        "confirmTitle": "Register SuperMap SDX+ for PostGIS",
-        "confirmMessage": "This action may create SuperMap SDX+ system tables in the current PostgreSQL database. Continue?",
-        "enableSuccess": "SuperMap SDX+ for PostGIS registered",
-        "unavailable": "The current database cannot register SuperMap SDX+ for PostGIS yet."
+        "postgis": {
+          "title": "SuperMap SDX+ for PostGIS",
+          "warning": "This action uses the SuperMap workflow engine to register SuperMap SDX+ for PostGIS in the current PostgreSQL/PostGIS database and may create SuperMap system tables.",
+          "enable": "Register SuperMap SDX+ for PostGIS",
+          "confirmTitle": "Register SuperMap SDX+ for PostGIS",
+          "confirmMessage": "This action may create SuperMap system tables in the current PostgreSQL/PostGIS database. Continue?",
+          "enableSuccess": "SuperMap SDX+ for PostGIS registered",
+          "unavailable": "The current database cannot register SuperMap SDX+ for PostGIS yet."
+        },
+        "postgresql": {
+          "title": "SuperMap SDX+ for PostgreSQL",
+          "warning": "This action uses the SuperMap workflow engine to create a SuperMap SDX+ for PostgreSQL workspace in the current native PostgreSQL database. PostGIS must not be installed in this instance.",
+          "enable": "Register SuperMap SDX+ for PostgreSQL",
+          "confirmTitle": "Register SuperMap SDX+ for PostgreSQL",
+          "confirmMessage": "The SuperMap SDK will create system tables, and this instance must not coexist with SuperMap SDX+ for PostGIS. Continue?",
+          "enableSuccess": "SuperMap SDX+ for PostgreSQL registered",
+          "unavailable": "The current database cannot register SuperMap SDX+ for PostgreSQL yet."
+        }
       },
       "msg": {
         "loadFailed": "Failed to load engine list",
@@ -619,11 +630,12 @@
           "postgisTigerGeocoder": "PostGIS Tiger Geocoder",
           "supermap": "SuperMap",
           "arcgis": "ArcGIS",
-          "sdx": "SDX+",
+          "sdxPostgis": "SuperMap SDX+ for PostGIS",
+          "sdxPostgresql": "SuperMap SDX+ for PostgreSQL",
           "sde": "SDE",
           "detected": "Detected",
           "enabled": "Enabled",
-          "notDetected": "SDX+ not registered",
+          "notDetected": "Not detected",
           "unavailable": "Unavailable",
           "permissionDenied": "Permission denied",
           "low": "Low",
@@ -654,7 +666,8 @@
           "postgisTopology": "PostGIS topology extension",
           "postgisTigerGeocoder": "PostGIS Tiger geocoder",
           "spatialWorkspace": "Spatial workspace",
-          "supermapSdx": "SuperMap SDX+ for PostGIS",
+          "supermapSdxPostgis": "SuperMap SDX+ for PostGIS",
+          "supermapSdxPostgresql": "SuperMap SDX+ for PostgreSQL",
           "arcgisSde": "ArcGIS SDE for PostgreSQL",
           "postgresqlExtraExtensions": "Other installed extensions",
           "pgvector": "pgvector vector extension"

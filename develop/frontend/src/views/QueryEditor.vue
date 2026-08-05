@@ -5,17 +5,19 @@
         <el-button
           v-if="isCompact"
           circle
-          :aria-label="t('develop.query.catalog')"
+          :aria-label="t('develop.query.dataResources')"
           @click="catalogDrawerVisible = true"
         >
           <el-icon><Menu /></el-icon>
         </el-button>
         <h2>{{ currentTaskName || t('develop.query.title') }}</h2>
         <el-select
-          v-model="selectedQueryTarget"
+          ref="queryEngineSelectRef"
+          :model-value="selectedQueryTarget"
           class="engine-select"
           :placeholder="t('develop.query.selectDataSource')"
-          @change="onQueryTargetChange"
+          :disabled="executing || loadingSampleQuery || switchingQueryTarget || savingForEngineSwitch"
+          @change="requestQueryTargetChange"
         >
           <el-option
             v-if="selectedEngineUnavailable"
@@ -43,20 +45,20 @@
           <el-button
             circle
             :loading="testingConnection"
-            :disabled="!selectedTarget"
+            :disabled="!selectedTarget || switchingQueryTarget || savingForEngineSwitch"
             :aria-label="t('develop.query.testConnection')"
             @click="handleTestConnection"
           >
             <el-icon><Connection /></el-icon>
           </el-button>
         </el-tooltip>
-        <el-tooltip :content="t('develop.query.loadSample')">
+        <el-tooltip :content="t('develop.query.generateQueryTemplate')">
           <el-button
             circle
             :loading="loadingSampleQuery"
-            :disabled="!selectedTarget || executing"
-            :aria-label="t('develop.query.loadSample')"
-            @click="loadSampleQuery({ replace: false })"
+            :disabled="!selectedTarget || !catalogSelection?.identity?.locator || executing || switchingQueryTarget"
+            :aria-label="t('develop.query.generateQueryTemplate')"
+            @click="generateQueryTemplate"
           >
             <el-icon><DocumentCopy /></el-icon>
           </el-button>
@@ -64,7 +66,7 @@
         <el-tooltip :content="t('develop.query.format')">
           <el-button
             circle
-            :disabled="!formatterLanguage || !queryContent || executing"
+            :disabled="!formatterLanguage || !queryContent || executing || switchingQueryTarget || savingForEngineSwitch"
             :aria-label="t('develop.query.format')"
             @click="formatQuery"
           >
@@ -72,7 +74,7 @@
           </el-button>
         </el-tooltip>
         <el-button
-          :disabled="!selectedTarget || !queryContent.trim() || executing"
+          :disabled="!selectedTarget || !queryContent.trim() || executing || switchingQueryTarget || savingForEngineSwitch"
           @click="handlePersistQueryTask"
         >
           <el-icon><FolderAdd /></el-icon>
@@ -81,7 +83,7 @@
         <el-button
           type="primary"
           :loading="executing"
-          :disabled="loadingSampleQuery || !selectedTarget || !queryContent.trim()"
+          :disabled="loadingSampleQuery || !selectedTarget || !queryContent.trim() || switchingQueryTarget || savingForEngineSwitch"
           @click="executeQuery"
         >
           <el-icon><VideoPlay /></el-icon>
@@ -93,14 +95,14 @@
     <main class="workbench-body">
       <aside v-if="!isCompact" class="catalog-panel" :style="{ width: `${catalogWidth}px` }">
         <div class="catalog-heading">
-          <span>{{ t('develop.query.catalog') }}</span>
-          <el-tooltip :content="t('develop.query.insertResourcePath')">
+          <span>{{ t('develop.query.dataResources') }}</span>
+          <el-tooltip :content="t('develop.query.generateQueryTemplate')">
             <el-button
               circle
               size="small"
-              :disabled="!catalogSelection?.display?.path"
-              :aria-label="t('develop.query.insertResourcePath')"
-              @click="insertCatalogPath"
+              :disabled="!catalogSelection?.identity?.locator || executing || switchingQueryTarget"
+              :aria-label="t('develop.query.generateQueryTemplate')"
+              @click="generateQueryTemplate"
             >
               <el-icon><Position /></el-icon>
             </el-button>
@@ -115,7 +117,7 @@
           :show-selection-summary="false"
           :show-count="false"
           :title="''"
-          mode="any"
+          mode="item"
           tree-height="100%"
           @select="rememberCatalogSelection"
         />
@@ -194,18 +196,18 @@
     <el-drawer
       v-if="isCompact"
       v-model="catalogDrawerVisible"
-      :title="t('develop.query.catalog')"
+      :title="t('develop.query.dataResources')"
       direction="ltr"
       size="min(88vw, 380px)"
     >
       <div class="drawer-catalog-actions">
         <el-button
           type="primary"
-          :disabled="!catalogSelection?.display?.path"
-          @click="insertCatalogPath"
+          :disabled="!catalogSelection?.identity?.locator || executing || switchingQueryTarget"
+          @click="generateQueryTemplate"
         >
           <el-icon><Position /></el-icon>
-          {{ t('develop.query.insertResourcePath') }}
+          {{ t('develop.query.generateQueryTemplate') }}
         </el-button>
       </div>
       <ResourceTreePicker
@@ -216,16 +218,45 @@
         :show-selection-summary="false"
         :show-count="false"
         :title="''"
-        mode="any"
+        mode="item"
         tree-height="calc(100vh - 150px)"
         @select="rememberCatalogSelection"
       />
     </el-drawer>
 
+    <el-dialog
+      v-model="queryEngineSwitchDialogVisible"
+      class="addp-dialog"
+      :title="t('develop.query.engineSwitchTitle')"
+      width="min(520px, calc(100vw - 24px))"
+      :close-on-click-modal="false"
+      :close-on-press-escape="!switchingQueryTarget && !savingForEngineSwitch"
+      :show-close="!switchingQueryTarget && !savingForEngineSwitch"
+    >
+      <el-alert
+        :title="t('develop.query.engineSwitchMessage', { name: pendingQueryTargetInfo?.name || '-' })"
+        type="warning"
+        :closable="false"
+        show-icon
+      />
+      <template #footer>
+        <el-button :disabled="switchingQueryTarget || savingForEngineSwitch" @click="cancelQueryTargetChange">
+          {{ t('develop.query.cancel') }}
+        </el-button>
+        <el-button type="danger" plain :loading="switchingQueryTarget" :disabled="savingForEngineSwitch" @click="clearAndSwitchQueryTarget">
+          {{ t('develop.query.clearAndSwitch') }}
+        </el-button>
+        <el-button type="primary" :loading="savingForEngineSwitch" :disabled="switchingQueryTarget" @click="saveAndSwitchQueryTarget">
+          {{ t('develop.query.saveAndClear') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
     <SaveQueryDialog
       v-model="showSaveDialog"
       :engine-id="selectedEngineId"
       :sql="queryContent"
+      @update:model-value="handleSaveDialogVisibility"
       @saved="handleSaveTask"
     />
     <StatusAnnouncer :message="announcement" />
@@ -285,7 +316,6 @@ const currentTaskId = ref(null)
 const currentTaskName = ref('')
 const currentTask = ref(null)
 const selectedQueryTarget = ref('')
-const appliedQueryTarget = ref('')
 const engines = ref([])
 const queryContent = ref('')
 const currentQueryLanguage = ref('')
@@ -296,6 +326,12 @@ const loadingSampleQuery = ref(false)
 const editorRef = ref(null)
 const selectedText = ref('')
 const showSaveDialog = ref(false)
+const queryEngineSelectRef = ref(null)
+const queryEngineSwitchDialogVisible = ref(false)
+const pendingQueryTarget = ref('')
+const switchingQueryTarget = ref(false)
+const savingForEngineSwitch = ref(false)
+const saveForEngineSwitch = ref(false)
 const resultViewMode = ref('table')
 const catalogSelection = ref(null)
 const catalogCompletions = ref([])
@@ -304,6 +340,7 @@ const isCompact = ref(false)
 const announcement = ref('')
 const savedSnapshot = ref('')
 const queryTaskRouteReady = ref(false)
+const bypassUnsavedRouteConfirm = ref(false)
 const sampleRequests = createLatestRequestCoordinator()
 let executionRequestSequence = 0
 let mediaQuery = null
@@ -329,6 +366,9 @@ const queryTargets = computed(() => engines.value.map(engine => ({
   engine
 })))
 const selectedTarget = computed(() => queryTargets.value.find(target => target.value === selectedQueryTarget.value) || null)
+const pendingQueryTargetInfo = computed(() => (
+  queryTargets.value.find(target => target.value === pendingQueryTarget.value) || null
+))
 const selectedEngineId = computed(() => {
   if (selectedTarget.value) return selectedTarget.value.engine.id
   const match = String(selectedQueryTarget.value).match(/^engine:(\d+)$/)
@@ -359,7 +399,6 @@ const loadEngines = async () => {
     engines.value = Array.isArray(response) ? response : []
     if (!selectedQueryTarget.value && queryTargets.value.length) {
       selectedQueryTarget.value = queryTargets.value[0].value
-      appliedQueryTarget.value = selectedQueryTarget.value
     }
   } catch (error) {
     engines.value = []
@@ -380,7 +419,7 @@ const handleTestConnection = async () => {
   }
 }
 
-const loadSampleQuery = async ({ replace = false } = {}) => {
+const loadSampleQuery = async ({ replace = false, locator = '' } = {}) => {
   if (!selectedTarget.value || loadingSampleQuery.value) return
   if (queryContent.value.trim() && !replace) {
     try {
@@ -398,41 +437,101 @@ const loadSampleQuery = async ({ replace = false } = {}) => {
       return
     }
   }
-  const request = sampleRequests.begin(selectedQueryTarget.value)
+  const request = sampleRequests.begin(`${selectedQueryTarget.value}:${locator}`)
   loadingSampleQuery.value = true
   try {
-    const sample = await getSampleQuery(selectedEngineId.value)
-    if (!sampleRequests.isCurrent(request, selectedQueryTarget.value)) return
+    const sample = await getSampleQuery(selectedEngineId.value, locator)
+    if (!sampleRequests.isCurrent(request, `${selectedQueryTarget.value}:${locator}`)) return
     queryContent.value = sample.query
     currentQueryLanguage.value = String(sample.language || selectedCapability.value.defaultLanguage).toLowerCase()
     clearResult()
-    announcement.value = t('develop.query.sampleLoaded')
+    announcement.value = t(locator ? 'develop.query.queryTemplateGenerated' : 'develop.query.sampleLoaded')
   } catch (error) {
-    if (sampleRequests.isCurrent(request, selectedQueryTarget.value)) {
+    if (sampleRequests.isCurrent(request, `${selectedQueryTarget.value}:${locator}`)) {
       ElMessage.error(error.response?.data?.error || error.message)
     }
   } finally {
-    if (sampleRequests.isCurrent(request, selectedQueryTarget.value)) {
+    if (sampleRequests.isCurrent(request, `${selectedQueryTarget.value}:${locator}`)) {
       loadingSampleQuery.value = false
     }
   }
 }
 
-const onQueryTargetChange = async (targetValue) => {
+async function requestQueryTargetChange(targetValue) {
+  queryEngineSelectRef.value?.blur()
+  if (executing.value || loadingSampleQuery.value || switchingQueryTarget.value || savingForEngineSwitch.value) return
   const target = queryTargets.value.find(item => item.value === targetValue)
-  if (!target) {
-    selectedQueryTarget.value = appliedQueryTarget.value
+  if (!target || targetValue === selectedQueryTarget.value) return
+  if (!queryContent.value.trim()) {
+    await applyQueryTargetSwitch(targetValue)
     return
   }
-  appliedQueryTarget.value = targetValue
-  catalogSelection.value = null
-  clearResult()
-  const capability = queryCapabilityForEngine(target.engine)
-  if (!capability.languages.includes(currentQueryLanguage.value)) {
-    currentQueryLanguage.value = capability.defaultLanguage
+  pendingQueryTarget.value = targetValue
+  queryEngineSwitchDialogVisible.value = true
+}
+
+function cancelQueryTargetChange() {
+  if (switchingQueryTarget.value || savingForEngineSwitch.value) return
+  queryEngineSwitchDialogVisible.value = false
+  pendingQueryTarget.value = ''
+}
+
+async function clearAndSwitchQueryTarget() {
+  if (switchingQueryTarget.value || savingForEngineSwitch.value || !pendingQueryTarget.value) return
+  await applyQueryTargetSwitch(pendingQueryTarget.value)
+}
+
+async function saveAndSwitchQueryTarget() {
+  if (switchingQueryTarget.value || savingForEngineSwitch.value || !pendingQueryTarget.value) return
+  if (!currentTaskId.value) {
+    saveForEngineSwitch.value = true
+    queryEngineSwitchDialogVisible.value = false
+    showSaveDialog.value = true
+    return
   }
-  if (!queryContent.value.trim()) {
+  savingForEngineSwitch.value = true
+  try {
+    if (await persistCurrentQueryTask()) {
+      await applyQueryTargetSwitch(pendingQueryTarget.value, { saved: true })
+    }
+  } finally {
+    savingForEngineSwitch.value = false
+  }
+}
+
+async function applyQueryTargetSwitch(targetValue, { saved = false } = {}) {
+  const target = queryTargets.value.find(item => item.value === targetValue)
+  if (!target) return
+  switchingQueryTarget.value = true
+  queryEngineSwitchDialogVisible.value = false
+  pendingQueryTarget.value = ''
+  executionRequestSequence += 1
+  sampleRequests.invalidate()
+  selectedQueryTarget.value = targetValue
+  catalogSelection.value = null
+  queryContent.value = ''
+  currentQueryLanguage.value = queryCapabilityForEngine(target.engine).defaultLanguage
+  clearResult()
+  currentTaskId.value = null
+  currentTaskName.value = ''
+  currentTask.value = null
+  try {
+    applyingQueryTaskRoute = true
+    bypassUnsavedRouteConfirm.value = true
+    try {
+      await navigateDevelopTaskEditor(router, 'query', '', { history: 'replace' })
+    } finally {
+      bypassUnsavedRouteConfirm.value = false
+    }
     await loadSampleQuery({ replace: true })
+    markSaved()
+    ElMessage.success(t(
+      saved ? 'develop.query.saveAndSwitchSuccess' : 'develop.query.engineSwitchSuccess',
+      { name: target.name }
+    ))
+  } finally {
+    applyingQueryTaskRoute = false
+    switchingQueryTarget.value = false
   }
 }
 
@@ -526,12 +625,11 @@ const rememberCatalogSelection = (selection) => {
   catalogCompletions.value = [next, ...catalogCompletions.value.filter(item => item.insertText !== path)].slice(0, 100)
 }
 
-const insertCatalogPath = () => {
-  const path = catalogSelection.value?.display?.path
-  if (!path) return
-  editorRef.value?.insertText(path)
+const generateQueryTemplate = async () => {
+  const locator = catalogSelection.value?.identity?.locator || ''
+  if (!locator) return
   catalogDrawerVisible.value = false
-  announcement.value = t('develop.query.resourcePathInserted')
+  await loadSampleQuery({ locator })
 }
 
 const handleSaveTask = async (taskData) => {
@@ -544,8 +642,23 @@ const handleSaveTask = async (taskData) => {
     await navigateDevelopTaskEditor(router, 'query', task.id, { history: 'replace' })
     ElMessage.success(t('develop.query.saveTaskSuccess'))
     showSaveDialog.value = false
+    if (saveForEngineSwitch.value && pendingQueryTarget.value) {
+      const targetValue = pendingQueryTarget.value
+      saveForEngineSwitch.value = false
+      await applyQueryTargetSwitch(targetValue, { saved: true })
+    }
   } catch (error) {
+    saveForEngineSwitch.value = false
+    pendingQueryTarget.value = ''
     ElMessage.error(t('develop.query.saveTaskFailed') + (error.response?.data?.error || error.message))
+  }
+}
+
+const handleSaveDialogVisibility = (visible) => {
+  showSaveDialog.value = visible
+  if (!visible && saveForEngineSwitch.value) {
+    saveForEngineSwitch.value = false
+    pendingQueryTarget.value = ''
   }
 }
 
@@ -554,6 +667,11 @@ const handlePersistQueryTask = async () => {
     showSaveDialog.value = true
     return
   }
+  await persistCurrentQueryTask()
+}
+
+const persistCurrentQueryTask = async () => {
+  if (!currentTaskId.value) return false
   try {
     const task = currentTask.value || {}
     const updated = await updateQueryTask(currentTaskId.value, {
@@ -570,8 +688,10 @@ const handlePersistQueryTask = async () => {
     currentTaskName.value = updated.name
     markSaved()
     ElMessage.success(t('develop.query.updateTaskSuccess'))
+    return true
   } catch (error) {
     ElMessage.error(t('develop.query.updateTaskFailed') + (error.response?.data?.error || error.message))
+    return false
   }
 }
 
@@ -584,7 +704,6 @@ const loadTask = async (taskId) => {
   currentQueryLanguage.value = String(task.content?.query_type || '').toLowerCase()
   const engineID = task.execution_config?.engine_id
   selectedQueryTarget.value = engineID ? `engine:${engineID}` : ''
-  appliedQueryTarget.value = selectedQueryTarget.value
   catalogSelection.value = null
   clearResult()
   if (!queryContent.value) ElMessage.warning(t('develop.query.taskNoSql'))
@@ -598,7 +717,6 @@ const resetQueryEditorForCreate = async () => {
   clearResult()
   if (!selectedTarget.value && queryTargets.value.length) {
     selectedQueryTarget.value = queryTargets.value[0].value
-    appliedQueryTarget.value = selectedQueryTarget.value
   }
   currentQueryLanguage.value = selectedCapability.value.defaultLanguage
   if (selectedTarget.value) await loadSampleQuery({ replace: true })
@@ -624,6 +742,7 @@ async function applyQueryTaskRoute() {
 }
 
 const confirmUnsavedRouteChange = async () => {
+  if (bypassUnsavedRouteConfirm.value) return true
   if (!isDirty.value) return true
   try {
     await ElMessageBox.confirm(

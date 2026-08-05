@@ -330,10 +330,6 @@ const handleEngineScanPolicyBridge = async (payload = {}) => {
 }
 
 const handleGroupClick = (group) => {
-	if (group.isConfiguration) {
-		router.push('/configuration')
-		return
-	}
   if (group.isPortal) {
     openPortal()
     return
@@ -385,8 +381,8 @@ function syncRouteToPortal(fullPath) {
   const page = queryPart ? `${pagePath}?${queryPart}` : pagePath
   currentModule.value = module
 	if (module === 'configuration') {
-		activeGroup.value = 'configuration'
-		sidebarModules.value = ['configuration']
+		activeGroup.value = 'system'
+		sidebarModules.value = ['system']
 		iframeUrl.value = ''
 		return
 	}

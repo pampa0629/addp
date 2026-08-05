@@ -883,10 +883,15 @@ var ErrSampleQueryUnavailable = errors.New("当前引擎没有可生成样例查
 type ExecutableSampleQueryOptions struct {
 	QueryLimit      int
 	ValidationLimit int
+	Path            *plugin.CatalogPath
 }
 
 // GenerateSampleQuery 从当前引擎的实时 Catalog 生成一个可直接执行的样例查询。
 func GenerateSampleQuery(ctx context.Context, engine *models.Engine, queryLimit int) (query string, language string, err error) {
+	return generateSampleQueryWithPath(ctx, engine, queryLimit, nil)
+}
+
+func generateSampleQueryWithPath(ctx context.Context, engine *models.Engine, queryLimit int, selectedPath *plugin.CatalogPath) (query string, language string, err error) {
 	if engine == nil {
 		return "", "", fmt.Errorf("%w: 引擎不能为空", ErrSampleQueryUnavailable)
 	}
@@ -900,6 +905,17 @@ func GenerateSampleQuery(ctx context.Context, engine *models.Engine, queryLimit 
 		return "", "", fmt.Errorf("%w: %v", ErrSampleQueryUnavailable, err)
 	}
 	connInfo := plugin.ConnectionInfo(engine.ConnectionInfo)
+	if selectedPath != nil {
+		qp, ok := p.(plugin.QueryRuntimeProvider)
+		if !ok {
+			return "", "", fmt.Errorf("%w: 引擎未提供查询运行时", ErrSampleQueryUnavailable)
+		}
+		q, language := qp.GenerateSampleQuery(sampleCtx, connInfo, plugin.SampleQueryOptions{Path: *selectedPath})
+		if strings.TrimSpace(q) == "" || strings.TrimSpace(language) == "" {
+			return "", "", ErrSampleQueryUnavailable
+		}
+		return q, language, nil
+	}
 
 	if _, ok := p.(plugin.SQLQueryRuntimeProvider); ok {
 		cp, ok := p.(plugin.CatalogProvider)
@@ -932,7 +948,7 @@ func GenerateExecutableSampleQuery(
 	requiredLanguage string,
 	options ExecutableSampleQueryOptions,
 ) (string, string, error) {
-	query, language, err := GenerateSampleQuery(ctx, engine, options.QueryLimit)
+	query, language, err := generateSampleQueryWithPath(ctx, engine, options.QueryLimit, options.Path)
 	if err != nil {
 		return "", "", err
 	}

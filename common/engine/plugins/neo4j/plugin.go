@@ -91,7 +91,22 @@ func (p *Neo4jPlugin) QueryLanguages() []string {
 }
 
 func (p *Neo4jPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
+	if database, ok := neo4jDatabaseFromCatalogPath(opts.Path); ok {
+		if database != getDatabase(connInfo) {
+			return "", "cypher"
+		}
+		return sampleGraphNodeFallbackQuery(10), "cypher"
+	}
 	return p.generateSampleQuery(ctx, connInfo)
+}
+
+func neo4jDatabaseFromCatalogPath(path plugin.CatalogPath) (string, bool) {
+	segments := plugin.CatalogPathWithoutRoot(path).Segments
+	if len(segments) != 2 || segments[0].Term != plugin.CatalogTermDatabase ||
+		segments[1].Term != plugin.CatalogTermGraph || segments[0].Name == "" {
+		return "", false
+	}
+	return segments[0].Name, true
 }
 
 func (p *Neo4jPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {

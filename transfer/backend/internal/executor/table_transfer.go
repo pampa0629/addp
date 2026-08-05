@@ -197,8 +197,8 @@ func (e *TableTransferExecutor) Execute(ctx context.Context, plan TableTransferP
 func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSource, error) {
 	switch plan.Kind {
 	case TableEndpointNative:
-		if e.SourceNativeReader == nil {
-			return nil, fmt.Errorf("native table source requires batch reader")
+		if e.SourceNativeReader == nil && e.SourceTableSessionProvider == nil {
+			return nil, fmt.Errorf("native table source requires batch reader or table read session")
 		}
 		return &nativeTableBatchSource{
 			reader:               e.SourceNativeReader,
@@ -281,8 +281,8 @@ func (e *TableTransferExecutor) openTarget(plan TableTargetPlan) (TableBatchTarg
 			resumeMarker:        plan.ResumeMarker,
 		}, nil
 	case TableEndpointNative:
-		if e.TargetNativeWriter == nil {
-			return nil, fmt.Errorf("native table target requires batch writer")
+		if e.TargetNativeWriter == nil && e.TargetTableSessionProvider == nil {
+			return nil, fmt.Errorf("native table target requires batch writer or table write session")
 		}
 		if e.TargetNativePreparer == nil {
 			return nil, fmt.Errorf("target engine does not implement table write prepare")
@@ -297,6 +297,7 @@ func (e *TableTransferExecutor) openTarget(plan TableTargetPlan) (TableBatchTarg
 			prepareOptions:       plan.TablePrepare,
 			writeOptions:         plan.TableWrite,
 			resumeMarker:         plan.ResumeMarker,
+			replace:              plan.DeleteBeforeWrite,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported table target kind %q", plan.Kind)

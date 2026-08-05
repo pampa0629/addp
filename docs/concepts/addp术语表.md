@@ -186,6 +186,8 @@
 | workflow_def | 工作流定义 | ADDP 工作流运行时协议中的 DAG 定义结构。 | 由 ADDP 前端和后端消费；不得直接等同于某个引擎的私有 DAG JSON。 |
 | SuperMap iObjects C++ | SuperMap iObjects C++ | SuperMap 提供的 C++ 数据访问、空间分析、CAD 渲染和三维转换 SDK。 | 作为 `supermap_workflow` 的运行时内部依赖，不直接暴露给 ADDP 前端；完整 SDK 母版不进入 ADDP 仓库或最终运行镜像。 |
 | supermap_workflow | SuperMap 工作流运行时 | ADDP 工作流运行时类型，对外实现 `addp.workflow/v1`，对内使用 SuperMap iObjects C++ API 和类型化内存句柄执行 DAG。 | 第一阶段只支持普通 DAG，不实现条件、循环或子工作流；实现与部署见 `engines/supermap-workflow/README.md`。 |
+| SuperMap SDX+ for PostGIS | SuperMap SDX+ for PostGIS | 基于 PostgreSQL/PostGIS geometry 的 SuperMap 空间工作区，稳定 workspace 身份为 `supermap/sdx_postgis`。 | geometry 使用 PostGIS 原生编码；与 SuperMap SDX+ for PostgreSQL 不得存在于同一 PostgreSQL 实例。 |
+| SuperMap SDX+ for PostgreSQL | SuperMap SDX+ for PostgreSQL | 基于 PostgreSQL、由 SuperMap 私有 geometry 编码承载的空间工作区，稳定 workspace 身份为 `supermap/sdx_postgresql`。 | 表结构、记录数、Bounds 和空间索引由 SuperMap iObjects C++ SDK 维护；不得把私有 geometry Blob 暴露给 Transfer 或 Common Spatial。 |
 
 ## 智能体能力与交互
 

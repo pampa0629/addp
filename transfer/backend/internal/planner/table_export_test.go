@@ -1201,6 +1201,79 @@ func TestBuildTableTransferPlanForNativeTableToNativeTable(t *testing.T) {
 	}
 }
 
+func TestBuildTableTransferPlanUsesSDKSchemaForSDXPostgreSQLSource(t *testing.T) {
+	spec := TableExportTaskSpec{
+		Runtime: RuntimeSpec{Boundary: runtimeBoundaryBounded},
+		Load:    LoadSpec{Mode: loadModeSnapshot},
+		Source: EndpointSpec{
+			Locator:        tableLocator(1, "sdx", "roads"),
+			DataType:       dataTypeTable,
+			Representation: representationNative,
+			Attributes: tableSourceAttributes("single", "table", "sdx/roads", nil, []map[string]interface{}{
+				{"name": "id", "type": "bigint", "nullable": false},
+				{"name": "smgeometry", "type": "bytes", "native_type": "bytea", "nullable": true},
+			}, nil),
+		},
+		Target: EndpointSpec{
+			ParentLocator:  schemaLocator(2, "public"),
+			Name:           "roads_copy",
+			DataType:       dataTypeTable,
+			Representation: representationNative,
+			Policy:         map[string]interface{}{"apply_mode": "replace"},
+		},
+	}
+	boundRuntimeID := uint(41)
+	sourceCapabilities := nativeTableSourceBinding("postgresql").Capabilities
+	engineplugin.SetSpatialWorkspacesExtension(sourceCapabilities, []engineplugin.SpatialWorkspaceFact{{
+		Ecosystem:            "supermap",
+		Kind:                 engineplugin.SpatialWorkspaceSuperMapSDXPostgreSQL,
+		State:                engineplugin.SpatialWorkspaceStateDetected,
+		RuntimeEngineType:    "supermap_workflow",
+		BoundRuntimeEngineID: &boundRuntimeID,
+	}})
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "postgresql", Capabilities: sourceCapabilities},
+		2: nativeTableTargetBinding("postgresql"),
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if result.Plan.Source.TableInfo != nil || result.Plan.Source.SpatialInfo != nil {
+		t.Fatalf("source schema = %#v / %#v, want SDK session to provide authoritative schema", result.Plan.Source.TableInfo, result.Plan.Source.SpatialInfo)
+	}
+	if result.SourceEngine.Capabilities != sourceCapabilities {
+		t.Fatal("source engine binding was not retained for instance provider selection")
+	}
+}
+
+func TestSuperMapSDXPostgreSQLWorkspaceRejectsOtherPostgreSQLWorkspaces(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		workspaces []engineplugin.SpatialWorkspaceFact
+	}{
+		{name: "plain postgresql"},
+		{name: "sdx for postgis", workspaces: []engineplugin.SpatialWorkspaceFact{{
+			Ecosystem: "supermap",
+			Kind:      engineplugin.SpatialWorkspaceSuperMapSDXPostGIS,
+			State:     engineplugin.SpatialWorkspaceStateDetected,
+		}}},
+		{name: "not detected sdx for postgresql", workspaces: []engineplugin.SpatialWorkspaceFact{{
+			Ecosystem: "supermap",
+			Kind:      engineplugin.SpatialWorkspaceSuperMapSDXPostgreSQL,
+			State:     engineplugin.SpatialWorkspaceStateNotDetected,
+		}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			capabilities := nativeTableSourceBinding("postgresql").Capabilities
+			engineplugin.SetSpatialWorkspacesExtension(capabilities, test.workspaces)
+			if workspace, ok := SuperMapSDXPostgreSQLWorkspace(EngineBinding{Type: "postgresql", Capabilities: capabilities}); ok {
+				t.Fatalf("workspace = %#v, want no SuperMap SDX+ for PostgreSQL provider", workspace)
+			}
+		})
+	}
+}
+
 func TestBuildTableTransferPlanRejectsNonTableFormat(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
 	spec.Target.Format = format.FormatPDF

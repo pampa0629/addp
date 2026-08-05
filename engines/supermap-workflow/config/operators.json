@@ -564,14 +564,14 @@
     {
       "id": "datasource.enable_postgis",
       "name": "datasource.enable_postgis",
-      "display_name": "启用 PostGIS 空间工作区",
+      "display_name": "启用 SuperMap SDX+ for PostGIS 空间工作区",
       "engine_type": "supermap_workflow",
       "category": "数据源",
       "category_path": [
         "数据源"
       ],
-      "description": "对已有 PostgreSQL/PostGIS 数据库执行 SuperMap SDX+ 初始化，可能创建 SuperMap 系统表。",
-      "brief_description": "启用 PostGIS 空间工作区",
+      "description": "对已有 PostGIS 数据库执行 SuperMap SDX+ for PostGIS 初始化，可能创建 SuperMap 系统表。",
+      "brief_description": "启用 SuperMap SDX+ for PostGIS",
       "execution_modes": [
         "direct"
       ],
@@ -598,7 +598,49 @@
         {
           "name": "workspace",
           "type": "supermap.spatial_workspace",
-          "description": "SuperMap SDX+ 空间工作区摘要。",
+          "description": "SuperMap SDX+ for PostGIS 空间工作区摘要。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "datasource.enable_postgresql",
+      "name": "datasource.enable_postgresql",
+      "display_name": "启用 SuperMap SDX+ for PostgreSQL 空间工作区",
+      "engine_type": "supermap_workflow",
+      "category": "数据源",
+      "category_path": [
+        "数据源"
+      ],
+      "description": "对未安装 PostGIS 的原生 PostgreSQL 数据库执行 SuperMap SDX+ for PostgreSQL 初始化。",
+      "brief_description": "启用 SuperMap SDX+ for PostgreSQL",
+      "execution_modes": [
+        "direct"
+      ],
+      "effects": [
+        "ddl"
+      ],
+      "parameters": [
+        {
+          "name": "connection_info",
+          "type": "object",
+          "param_type": "param",
+          "required": true,
+          "description": "运行时派生连接信息。"
+        },
+        {
+          "name": "alias",
+          "type": "string",
+          "param_type": "param",
+          "required": false,
+          "description": "数据源别名。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "workspace",
+          "type": "supermap.spatial_workspace",
+          "description": "SuperMap SDX+ for PostgreSQL 空间工作区摘要。",
           "is_default": true
         }
       ]
@@ -1309,14 +1351,77 @@
     {
       "id": "datasource.open_postgis",
       "name": "datasource.open_postgis",
-      "display_name": "打开 PostGIS 数据源",
+      "display_name": "打开 SuperMap SDX+ for PostGIS 数据源",
       "engine_type": "supermap_workflow",
       "category": "数据源",
       "category_path": [
         "数据源"
       ],
-      "description": "打开已由 Develop 派生连接信息的已有 PostGIS 空间表所在数据源，不创建 SuperMap 系统表。",
-      "brief_description": "打开 PostGIS 数据源",
+      "description": "打开已由 Develop 派生连接信息的 SuperMap SDX+ for PostGIS 数据源，不创建 SuperMap 系统表。",
+      "brief_description": "打开 SuperMap SDX+ for PostGIS 数据源",
+      "execution_modes": [
+        "workflow"
+      ],
+      "effects": [
+        "read"
+      ],
+      "parameters": [
+        {
+          "name": "connection_info",
+          "type": "object",
+          "param_type": "param",
+          "required": true,
+          "description": "运行时派生连接信息。"
+        },
+        {
+          "name": "schema",
+          "type": "string",
+          "param_type": "param",
+          "required": false,
+          "description": "运行时派生 schema。"
+        },
+        {
+          "name": "table",
+          "type": "string",
+          "param_type": "param",
+          "required": false,
+          "description": "运行时派生表名。"
+        },
+        {
+          "name": "alias",
+          "type": "string",
+          "param_type": "param",
+          "required": false,
+          "description": "数据源别名。"
+        },
+        {
+          "name": "read_only",
+          "type": "boolean",
+          "param_type": "param",
+          "required": false,
+          "description": "是否只读打开，默认 true。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "datasource",
+          "type": "supermap.datasource",
+          "description": "运行时 Datasource 引用。",
+          "is_default": true
+        }
+      ]
+    },
+    {
+      "id": "datasource.open_postgresql",
+      "name": "datasource.open_postgresql",
+      "display_name": "打开 SuperMap SDX+ for PostgreSQL 数据源",
+      "engine_type": "supermap_workflow",
+      "category": "数据源",
+      "category_path": [
+        "数据源"
+      ],
+      "description": "打开已有 SuperMap SDX+ for PostgreSQL 数据源，不创建或回退到 PostGIS 工作区。",
+      "brief_description": "打开 SuperMap SDX+ for PostgreSQL 数据源",
       "execution_modes": [
         "workflow"
       ],
@@ -1403,7 +1508,190 @@
           "is_default": true
         }
       ]
+    },
+    {
+      "id": "table.delete",
+      "name": "table.delete",
+      "display_name": "删除 SuperMap 空间表",
+      "engine_type": "supermap_workflow",
+      "category": "内部表传输",
+      "category_path": ["内部表传输"],
+      "description": "删除 Transfer 指定的 SuperMap 空间表。",
+      "brief_description": "删除空间表",
+      "execution_modes": ["direct"],
+      "effects": ["ddl"],
+      "parameters": [
+        {"name": "connection_info", "type": "object", "param_type": "param", "required": true, "description": "运行时派生连接信息。"},
+        {"name": "schema", "type": "string", "param_type": "param", "required": true, "description": "目标 schema。"},
+        {"name": "table", "type": "string", "param_type": "param", "required": true, "description": "目标表名。"}
+      ],
+      "output_ports": [
+        {"name": "result", "type": "object", "description": "删除结果。", "is_default": true}
+      ]
+    },
+    {
+      "id": "table.read_open",
+      "name": "table.read_open",
+      "display_name": "打开 SuperMap 表读取会话",
+      "engine_type": "supermap_workflow",
+      "category": "内部表传输",
+      "category_path": ["内部表传输"],
+      "description": "打开 Transfer 使用的 SuperMap 空间表连续读取会话。",
+      "brief_description": "打开表读取会话",
+      "execution_modes": ["direct"],
+      "effects": ["read"],
+      "parameters": [
+        {"name": "protocol", "type": "string", "param_type": "param", "required": true, "description": "表批次协议。"},
+        {"name": "connection_info", "type": "object", "param_type": "param", "required": true, "description": "运行时派生连接信息。"},
+        {"name": "schema", "type": "string", "param_type": "param", "required": true, "description": "源 schema。"},
+        {"name": "table", "type": "string", "param_type": "param", "required": true, "description": "源表名。"},
+        {"name": "query", "type": "string", "param_type": "param", "required": false, "description": "可选属性过滤条件。"}
+      ],
+      "output_ports": [
+        {"name": "session", "type": "object", "description": "读取会话及表结构。", "is_default": true}
+      ]
+    },
+    {
+      "id": "table.read_batch",
+      "name": "table.read_batch",
+      "display_name": "读取 SuperMap 表批次",
+      "engine_type": "supermap_workflow",
+      "category": "内部表传输",
+      "category_path": ["内部表传输"],
+      "description": "从已打开的 SuperMap 表会话读取一个 EWKB 批次。",
+      "brief_description": "读取表批次",
+      "execution_modes": ["direct"],
+      "effects": ["read"],
+      "parameters": [
+        {"name": "protocol", "type": "string", "param_type": "param", "required": true, "description": "表批次协议。"},
+        {"name": "session_id", "type": "string", "param_type": "param", "required": true, "description": "读取会话标识。"},
+        {"name": "limit", "type": "integer", "param_type": "param", "required": true, "description": "最大批次行数。"}
+      ],
+      "output_ports": [
+        {"name": "batch", "type": "object", "description": "表数据批次。", "is_default": true}
+      ]
+    },
+    {
+      "id": "table.read_close",
+      "name": "table.read_close",
+      "display_name": "关闭 SuperMap 表读取会话",
+      "engine_type": "supermap_workflow",
+      "category": "内部表传输",
+      "category_path": ["内部表传输"],
+      "description": "关闭 Transfer 使用的 SuperMap 表读取会话。",
+      "brief_description": "关闭表读取会话",
+      "execution_modes": ["direct"],
+      "effects": ["read"],
+      "parameters": [
+        {"name": "session_id", "type": "string", "param_type": "param", "required": true, "description": "读取会话标识。"}
+      ],
+      "output_ports": [
+        {"name": "result", "type": "object", "description": "关闭结果。", "is_default": true}
+      ]
+    },
+    {
+      "id": "table.write_prepare",
+      "name": "table.write_prepare",
+      "display_name": "准备 SuperMap 空间表",
+      "engine_type": "supermap_workflow",
+      "category": "内部表传输",
+      "category_path": ["内部表传输"],
+      "description": "使用 SuperMap SDK 创建空间表及字段。",
+      "brief_description": "准备空间表",
+      "execution_modes": ["direct"],
+      "effects": ["ddl"],
+      "parameters": [
+        {"name": "protocol", "type": "string", "param_type": "param", "required": true, "description": "表批次协议。"},
+        {"name": "connection_info", "type": "object", "param_type": "param", "required": true, "description": "运行时派生连接信息。"},
+        {"name": "schema", "type": "string", "param_type": "param", "required": true, "description": "目标 schema。"},
+        {"name": "table", "type": "string", "param_type": "param", "required": true, "description": "目标表名。"},
+        {"name": "fields", "type": "array", "param_type": "param", "required": true, "description": "目标字段定义。"},
+        {"name": "spatial", "type": "object", "param_type": "param", "required": true, "description": "目标空间信息。"}
+      ],
+      "output_ports": [
+        {"name": "result", "type": "object", "description": "表准备结果。", "is_default": true}
+      ]
+    },
+    {
+      "id": "table.write_open",
+      "name": "table.write_open",
+      "display_name": "打开 SuperMap 表写入会话",
+      "engine_type": "supermap_workflow",
+      "category": "内部表传输",
+      "category_path": ["内部表传输"],
+      "description": "打开 Transfer 使用的 SuperMap 空间表连续写入会话。",
+      "brief_description": "打开表写入会话",
+      "execution_modes": ["direct"],
+      "effects": ["write"],
+      "parameters": [
+        {"name": "protocol", "type": "string", "param_type": "param", "required": true, "description": "表批次协议。"},
+        {"name": "connection_info", "type": "object", "param_type": "param", "required": true, "description": "运行时派生连接信息。"},
+        {"name": "schema", "type": "string", "param_type": "param", "required": true, "description": "目标 schema。"},
+        {"name": "table", "type": "string", "param_type": "param", "required": true, "description": "目标表名。"},
+        {"name": "fields", "type": "array", "param_type": "param", "required": true, "description": "目标字段定义。"},
+        {"name": "spatial", "type": "object", "param_type": "param", "required": true, "description": "目标空间信息。"},
+        {"name": "replace", "type": "boolean", "param_type": "param", "required": false, "description": "失败中止时是否删除目标表。"}
+      ],
+      "output_ports": [
+        {"name": "session", "type": "object", "description": "写入会话。", "is_default": true}
+      ]
+    },
+    {
+      "id": "table.write_batch",
+      "name": "table.write_batch",
+      "display_name": "写入 SuperMap 表批次",
+      "engine_type": "supermap_workflow",
+      "category": "内部表传输",
+      "category_path": ["内部表传输"],
+      "description": "将一个 EWKB 表批次写入 SuperMap 空间表。",
+      "brief_description": "写入表批次",
+      "execution_modes": ["direct"],
+      "effects": ["write"],
+      "parameters": [
+        {"name": "protocol", "type": "string", "param_type": "param", "required": true, "description": "表批次协议。"},
+        {"name": "session_id", "type": "string", "param_type": "param", "required": true, "description": "写入会话标识。"},
+        {"name": "batch", "type": "object", "param_type": "param", "required": true, "description": "表数据批次。"}
+      ],
+      "output_ports": [
+        {"name": "result", "type": "object", "description": "批次写入结果。", "is_default": true}
+      ]
+    },
+    {
+      "id": "table.write_close",
+      "name": "table.write_close",
+      "display_name": "完成 SuperMap 表写入",
+      "engine_type": "supermap_workflow",
+      "category": "内部表传输",
+      "category_path": ["内部表传输"],
+      "description": "计算范围、建立空间索引、刷新记录数并校验写入结果。",
+      "brief_description": "完成表写入",
+      "execution_modes": ["direct"],
+      "effects": ["write"],
+      "parameters": [
+        {"name": "session_id", "type": "string", "param_type": "param", "required": true, "description": "写入会话标识。"}
+      ],
+      "output_ports": [
+        {"name": "result", "type": "object", "description": "完成及完整性校验结果。", "is_default": true}
+      ]
+    },
+    {
+      "id": "table.write_abort",
+      "name": "table.write_abort",
+      "display_name": "中止 SuperMap 表写入",
+      "engine_type": "supermap_workflow",
+      "category": "内部表传输",
+      "category_path": ["内部表传输"],
+      "description": "中止写入会话，并按写入策略清理不完整目标。",
+      "brief_description": "中止表写入",
+      "execution_modes": ["direct"],
+      "effects": ["write", "ddl"],
+      "parameters": [
+        {"name": "session_id", "type": "string", "param_type": "param", "required": true, "description": "写入会话标识。"}
+      ],
+      "output_ports": [
+        {"name": "result", "type": "object", "description": "中止及清理结果。", "is_default": true}
+      ]
     }
   ],
-  "count": 24
+  "count": 35
 }

@@ -17,6 +17,7 @@ PostgreSQL、Redis、MinIO 和 Meilisearch 当前来源于 `docker-compose.infra
 ## Business (业务库)
 
 - PostgreSQL: `5433`
+- SuperMap SDX+ for PostgreSQL 专用 PostgreSQL: `5434`
 - MinIO API: `9002`
 - MinIO Console: `9003`
 - Neo4j Browser: `7474`
@@ -30,6 +31,7 @@ PostgreSQL、Redis、MinIO 和 Meilisearch 当前来源于 `docker-compose.infra
 
 ```bash
 BUSINESS_POSTGRES_PORT=5433
+SUPERMAP_POSTGRESQL_PORT=5434
 BUSINESS_MINIO_API_PORT=9002
 BUSINESS_MINIO_CONSOLE_PORT=9003
 NEO4J_HTTP_PORT=7474
@@ -45,6 +47,7 @@ BUSINESS_KAFKA_PORT=29092
 - **System MinIO 使用 19000/19001**，Business 侧不得占用这两个端口。
 - **Business MinIO 使用 9002/9003**，System 侧不得占用这两个端口。
 - System PostgreSQL 使用 15432；Business PostgreSQL 使用 5433。
+- SuperMap SDX+ for PostgreSQL 专用实例使用 5434，且不得安装 PostGIS 或与 5433 的 SuperMap SDX+ for PostGIS 工作区共用数据卷。
 - Infra Kafka 使用 19092；Business Kafka 使用 29092。两者必须是独立集群，Business Kafka 才能注册为 System Engine。
 
 脚本约束：

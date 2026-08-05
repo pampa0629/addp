@@ -10,9 +10,9 @@
 
 **位置**: [develop/frontend/src/views/QueryEditor.vue](develop/frontend/src/views/QueryEditor.vue)
 
-工作台固定采用左侧 Catalog、右侧编辑器与结果上下分栏，小屏将 Catalog 收入抽屉：
+工作台固定采用左侧数据资源、右侧编辑器与结果上下分栏，小屏将数据资源收入抽屉：
 
-- Catalog 直接消费 Meta resource-tree，并固定到当前选择的查询 Engine。
+- 数据资源直接消费 Meta resource-tree，并固定到当前选择的查询 Engine。
 - 查询语言和结果形态来自 Engine capability，不按引擎类型硬编码。
 - 执行时优先使用 Monaco 当前选区，没有选区时执行全文。
 - 即时查询创建统一 execution，并在当前页面轮询结果和提供统一监控入口。
@@ -42,11 +42,11 @@
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/api/v1/develop/engines` | 获取 System 中具备 query 能力的真实引擎实例 |
-| GET | `/api/v1/develop/engines/{id}/sample-query` | 通过只读 Execution Authorization 获取该引擎的可执行样例查询 |
+| GET | `/api/v1/develop/engines/{id}/sample-query` | 通过只读 Execution Authorization 获取该引擎的可执行查询模板；可传 `locator` 为指定数据项生成模板 |
 
 DuckDB 联邦查询计算引擎是 System 注册的内置 Engine，前端从 `/develop/engines` 获取其真实 ID，不创建 `id=0`、`engine_id=null` 或其他虚拟选项。
 
-普通引擎样例查询会在执行期消费目标 Engine 的受控访问，从实时 Catalog 选择确认有数据的真实 leaf；Catalog 发现失败或没有可查询数据时返回明确错误，不返回版本查询、`SELECT 1`、占位集合名或其他静态兜底。
+普通引擎查询模板会在执行期消费目标 Engine 的受控访问，从实时资源目录选择确认有数据的真实 leaf；指定 `locator` 时，Provider 必须针对该数据项生成模板并完成只读验证。资源发现失败或没有可查询数据时返回明确错误，不返回版本查询、`SELECT 1`、占位集合名或其他静态兜底。
 
 DuckDB 执行前从 SQL 中解析已注册的 Source Engine 引用，为本次 execution 签发一次只读 Execution Authorization；独立 DuckDB Runtime 逐个消费连接后挂载。任务定义和执行记录不保存 Source Engine ID 列表、连接信息或 User Access Token。
 
@@ -221,7 +221,7 @@ CREATE TABLE common.task_executions (
 
 1. 访问查询工作台
 2. 选择具备 query capability 的 Engine
-3. 通过 Catalog 插入资源路径并编写查询
+3. 选择数据资源并生成查询模板
 4. 点击"保存为任务"按钮
 5. 填写任务信息:
    - 任务名称(唯一标识)
@@ -277,7 +277,7 @@ CREATE TABLE common.task_executions (
 
 - **Handler 层**:
   - `execution_handler.go` 创建和查询统一 execution
-  - `query_handler.go` 只负责查询目标连接测试和真实样例查询
+  - `query_handler.go` 只负责查询目标连接测试和真实查询模板
   - 查询任务定义统一由 DevTaskService 管理
 
 - **Service 层**:
@@ -307,4 +307,4 @@ CREATE TABLE common.task_executions (
 
 ## 总结
 
-查询工作台将 Catalog 浏览、能力驱动编辑、统一 execution、受限结果预览和可选任务保存收敛为一条路径。即时查询与已保存任务共享执行记录和监控体系，任务只在 `/develop/tasks` 统一管理。
+查询工作台将数据资源浏览、能力驱动编辑、统一 execution、受限结果预览和可选任务保存收敛为一条路径。即时查询与已保存任务共享执行记录和监控体系，任务只在 `/develop/tasks` 统一管理。
