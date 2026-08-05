@@ -1,5 +1,3 @@
-import hmac
-
 import httpx
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -96,6 +94,22 @@ def require_tenant_permissions(*required_permissions: str):
     return dependency
 
 
+def require_permissions(*required_permissions: str):
+    async def dependency(
+        credentials: HTTPAuthorizationCredentials = Depends(_bearer_auth),
+        accept_language: str | None = Header(default=None, alias="Accept-Language"),
+    ) -> AuthorizationContext:
+        context = await require_user(credentials, accept_language)
+        if not allows_permissions(context, tuple(required_permissions)):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=_message(accept_language, "权限不足", "Insufficient permission"),
+            )
+        return context
+
+    return dependency
+
+
 def require_tool_user(audience: str, scope: str, *required_permissions: str):
     async def dependency(
         credentials: HTTPAuthorizationCredentials = Depends(_bearer_auth),
@@ -119,26 +133,24 @@ def require_tool_user(audience: str, scope: str, *required_permissions: str):
     return dependency
 
 
-async def require_internal_api_key(
-    internal_api_key: str | None = Header(default=None, alias="X-Internal-API-Key"),
-    accept_language: str | None = Header(default=None, alias="Accept-Language"),
-) -> None:
-    configured_key = settings.internal_api_key
-    if not configured_key:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=_message(
-                accept_language,
-                "内部认证未配置",
-                "Internal authentication is not configured",
-            ),
-        )
-    if not internal_api_key or not hmac.compare_digest(internal_api_key, configured_key):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=_message(
-                accept_language,
-                "内部 API Key 无效",
-                "Internal API key is invalid",
-            ),
-        )
+def require_tenant_service(client_id: str, *required_permissions: str):
+    async def dependency(
+        credentials: HTTPAuthorizationCredentials = Depends(_bearer_auth),
+        accept_language: str | None = Header(default=None, alias="Accept-Language"),
+    ) -> AuthorizationContext:
+        context = await _resolve_user(credentials, accept_language)
+        if (
+            context.principal_type != "service_principal"
+            or context.token_type != "service_access_token"
+            or context.client_id != client_id
+            or context.context_type != "tenant"
+            or context.tenant_id is None
+            or not allows_permissions(context, tuple(required_permissions))
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=_message(accept_language, "服务令牌权限不足", "Service token has insufficient permission"),
+            )
+        return context
+
+    return dependency

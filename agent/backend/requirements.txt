@@ -8,9 +8,8 @@ pydantic>=2.11.2,<3.0.0
 pydantic-settings==2.6.1
 python-multipart==0.0.17
 langchain==0.3.7
-langchain-openai==0.2.9
 ag-ui-protocol==0.1.19
 PyYAML==6.0.3
 
 # ADDP Common 模块
--e ../../common-python
+-e ../../common-python[inference-langchain]

@@ -1,5 +1,8 @@
 import client from './client'
 
+// 创建 ad-hoc execution
+export const createExecution = (payload) => client.post('/develop/executions', payload)
+
 // 执行历史列表
 export const listExecutions = (params) => client.get('/develop/executions', { params })
 

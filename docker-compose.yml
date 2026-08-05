@@ -43,10 +43,14 @@ services:
       - CONSOLE_URL=${CONSOLE_URL:-http://localhost:5170}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-127.0.0.1,::1}
+      - AGENT_SERVICE_CLIENT_SECRET=${AGENT_SERVICE_CLIENT_SECRET}
       - ASSET_SERVICE_CLIENT_SECRET=${ASSET_SERVICE_CLIENT_SECRET}
+      - COPILOT_SERVICE_CLIENT_SECRET=${COPILOT_SERVICE_CLIENT_SECRET}
       - DEVELOP_SERVICE_CLIENT_SECRET=${DEVELOP_SERVICE_CLIENT_SECRET}
       - DUCKDB_SERVICE_CLIENT_SECRET=${DUCKDB_SERVICE_CLIENT_SECRET}
       - DUCKDB_RUNTIME_URL=http://duckdb-engine:8104
+      - GRAPH_SERVICE_CLIENT_SECRET=${GRAPH_SERVICE_CLIENT_SECRET}
+      - INFERENCE_SERVICE_CLIENT_SECRET=${INFERENCE_SERVICE_CLIENT_SECRET}
       - MANAGER_SERVICE_CLIENT_SECRET=${MANAGER_SERVICE_CLIENT_SECRET}
       - META_SERVICE_CLIENT_SECRET=${META_SERVICE_CLIENT_SECRET}
       - MONITOR_SERVICE_CLIENT_SECRET=${MONITOR_SERVICE_CLIENT_SECRET}
@@ -76,6 +80,7 @@ services:
       - ORCHESTRATOR_URL=http://orchestrator-backend:8084
       - DEVELOP_URL=http://develop-backend:8185
       - PYTHON_WORKFLOW_URL=http://python-workflow-engine:8099
+      - INFERENCE_URL=http://inference-backend:8191
       - GIN_MODE=release
     ports:
       - "8180:8180"
@@ -117,6 +122,7 @@ services:
       - SYSTEM_URL=http://system-backend:8180
       - META_URL=http://meta-backend:8082
       - MANAGER_SERVICE_CLIENT_SECRET=${MANAGER_SERVICE_CLIENT_SECRET}
+      - INFERENCE_URL=http://inference-backend:8191
       - TRANSFER_URL=http://transfer-backend:8083
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -129,7 +135,6 @@ services:
       - MEILISEARCH_URL=http://meilisearch:7700
       - MEILISEARCH_MASTER_KEY=${MEILISEARCH_MASTER_KEY:-}
       - MEILISEARCH_ASSET_INDEX=${MEILISEARCH_ASSET_INDEX:-assets}
-      - MANAGER_EMBEDDING_SERVICE_API_KEY=${MANAGER_EMBEDDING_SERVICE_API_KEY:-}
       - RASTER_MOSAIC_GENERATION_TIMEOUT=${RASTER_MOSAIC_GENERATION_TIMEOUT:-2h}
       - QUICK_VIEW_DIRECT_FLATGEOBUF_MAX_ROWS=${QUICK_VIEW_DIRECT_FLATGEOBUF_MAX_ROWS:-2000}
       - QUICK_VIEW_REALTIME_TILE_TIMEOUT_MS=${QUICK_VIEW_REALTIME_TILE_TIMEOUT_MS:-5000}
@@ -141,6 +146,8 @@ services:
       - addp-network
     depends_on:
       system-backend:
+        condition: service_started
+      inference-backend:
         condition: service_started
     restart: unless-stopped
     healthcheck:
@@ -547,6 +554,7 @@ services:
     environment:
       - SERVICE_HOST=develop-backend
       - DEVELOP_BACKEND_PORT=8185
+      - QUERY_RESULT_LIMIT=${QUERY_RESULT_LIMIT:-500}
       - ENV=production
       - SYSTEM_URL=http://system-backend:8180
       - DEVELOP_URL=http://develop-backend:8185
@@ -784,24 +792,22 @@ services:
       - MANAGER_URL=http://manager-backend:8081
       - META_URL=http://meta-backend:8082
       - DEVELOP_URL=http://develop-backend:8185
-      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - INFERENCE_URL=http://inference-backend:8191
+      - COPILOT_SERVICE_CLIENT_SECRET=${COPILOT_SERVICE_CLIENT_SECRET}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB:-addp}
       - DB_SCHEMA=copilot
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      # LLM 配置
-      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - CLAUDE_API_KEY=${CLAUDE_API_KEY:-}
     ports:
       - "8087:8087"
     networks:
       - addp-network
     depends_on:
       system-backend:
+        condition: service_started
+      inference-backend:
         condition: service_started
     restart: unless-stopped
     healthcheck:
@@ -1023,6 +1029,7 @@ services:
       - SYSTEM_URL=http://system-backend:8180
       - MODEL_URL=http://model-backend:8181
       - COPILOT_URL=http://copilot-backend:8087
+      - GRAPH_SERVICE_CLIENT_SECRET=${GRAPH_SERVICE_CLIENT_SECRET}
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -1052,6 +1059,50 @@ services:
       timeout: 5s
       retries: 30
       start_period: 60s
+
+  # ==================== Inference 模块 ====================
+
+  inference-backend:
+    image: ${REGISTRY:-localhost:5001}/addp-inference-backend:${IMAGE_TAG:-latest}
+    container_name: inference-backend
+    environment:
+      - SERVICE_HOST=inference-backend
+      - INFERENCE_BACKEND_PORT=8191
+      - SYSTEM_URL=http://system-backend:8180
+      - INFERENCE_SERVICE_CLIENT_SECRET=${INFERENCE_SERVICE_CLIENT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
+      - DB_SCHEMA=inference
+      - GIN_MODE=release
+    ports:
+      - "8191:8191"
+    networks:
+      - addp-network
+    depends_on:
+      system-backend:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8191'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  inference-frontend:
+    image: ${REGISTRY:-localhost:5001}/addp-inference-frontend:${IMAGE_TAG:-latest}
+    container_name: inference-frontend
+    ports:
+      - "8119:80"
+    networks:
+      - addp-network
+    depends_on:
+      - inference-backend
+    restart: unless-stopped
 
   graph-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-graph-frontend:${IMAGE_TAG:-latest}
@@ -1083,7 +1134,8 @@ services:
       - DEVELOP_URL=http://develop-backend:8185
       - COPILOT_URL=http://copilot-backend:8087
       - GRAPH_URL=http://graph-backend:8186
-      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - INFERENCE_URL=http://inference-backend:8191
+      - AGENT_SERVICE_CLIENT_SECRET=${AGENT_SERVICE_CLIENT_SECRET}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -1093,10 +1145,6 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - REDIS_DB=0
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
     ports:
       - "8190:8190"
     networks:
@@ -1107,6 +1155,8 @@ services:
       copilot-backend:
         condition: service_started
       graph-backend:
+        condition: service_started
+      inference-backend:
         condition: service_started
     restart: unless-stopped
     healthcheck:
@@ -1408,6 +1458,7 @@ services:
       - system-frontend
       - agent-frontend
       - graph-frontend
+      - inference-frontend
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1/health"]

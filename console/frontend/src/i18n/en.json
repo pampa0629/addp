@@ -124,6 +124,7 @@
         "agent": "Agent - AI Agent",
         "copilot": "Copilot - AI Assistant",
         "graph": "Graph - Knowledge Graph",
+        "inference": "Inference - AI Inference",
         "develop": "Develop - Data Development",
         "manager": "Manager - Data Management",
         "meta": "Meta - Metadata",
@@ -162,6 +163,31 @@
 	  "unavailable": "Module unavailable",
 	  "empty": "No configuration is available in the current context",
 	  "loadFailed": "Failed to load configuration entries",
+	  "reload": "Reload",
+	  "back": "Back to configuration entries",
+	  "save": "Save",
+	  "saveSuccess": "Configuration saved",
+	  "saveFailed": "Failed to save configuration",
+	  "versionConflict": "The configuration changed elsewhere and has been reloaded",
+	  "ai": {
+		"scenario": "Inference scenario",
+		"modelProfile": "Model Profile",
+		"source": "Source",
+		"version": "Version",
+		"inherited": "Inherited platform default",
+		"currentScope": "Current scope",
+		"notConfigured": "Not configured",
+		"agent": { "title": "Agent inference scenarios" },
+		"copilot": { "title": "Copilot inference scenarios" },
+		"scenarios": {
+		  "reasoning": "Planning and tool calling",
+		  "general-chat": "General chat summary",
+		  "nl2sql": "Natural language to SQL",
+		  "nl2dag": "Natural language to workflow",
+		  "navigation_guide": "Platform navigation guidance",
+		  "knowledge_graph_extraction": "Knowledge graph extraction"
+		}
+	  },
 	  "scopes": {
 		"platform_only": "Platform",
 		"platform_default_with_tenant_override": "Platform default and tenant override",
@@ -228,6 +254,10 @@
       "graph": {
         "label": "Knowledge Graph",
         "desc": "Ontology modeling, graph construction, graph exploration"
+      },
+      "inference": {
+        "label": "AI Inference",
+        "desc": "Providers, model deployments, and capability profiles"
       }
     },
     "menus": {
@@ -331,6 +361,10 @@
         "graphs": "Graphs",
         "analysis": "Graph Analysis",
         "knowledgeService": "Knowledge Service"
+      },
+      "inference": {
+        "label": "AI Inference",
+        "models": "Models and Providers"
       },
       "system": {
         "label": "System",

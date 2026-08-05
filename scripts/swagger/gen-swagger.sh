@@ -14,7 +14,7 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${ROOT_DIR}"
 
 # 所有支持发布检查 API 文档的后端模块
-GO_MODULES=(system manager meta transfer orchestrator develop service monitor standard model quality portal graph asset)
+GO_MODULES=(system manager meta transfer orchestrator develop service monitor standard model quality portal graph asset inference)
 FASTAPI_MODULES=(agent copilot)
 ALL_MODULES=("${GO_MODULES[@]}" "${FASTAPI_MODULES[@]}")
 

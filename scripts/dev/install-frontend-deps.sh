@@ -20,6 +20,7 @@ MODULES=(
   "service/frontend"
   "console/frontend"
   "monitor/frontend"
+  "inference/frontend"
 )
 
 # 先清理 common-frontend

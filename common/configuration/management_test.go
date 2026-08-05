@@ -20,6 +20,11 @@ func TestValidateManagementDeclaration(t *testing.T) {
 	if err := ValidateManagementDeclaration("manager", declaration); err == nil {
 		t.Fatal("ValidateManagementDeclaration() error = nil, want owner mismatch")
 	}
+	declaration.Entries[0].OwnerModule = "manager"
+	declaration.Entries[0].FrontendRoute = "/configuration/manager/embedding"
+	if err := ValidateManagementDeclaration("manager", declaration); err != nil {
+		t.Fatalf("ValidateManagementDeclaration() Console route error = %v", err)
+	}
 }
 
 func TestEntryVisibleInContext(t *testing.T) {

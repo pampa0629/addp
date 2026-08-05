@@ -1,0 +1,71 @@
+{
+  "inference": {
+    "login": {
+      "title": "ADDP Inference",
+      "username": "Username",
+      "password": "Password",
+      "usernameRequired": "Enter username",
+      "passwordRequired": "Enter password",
+      "submit": "Sign in",
+      "failed": "Sign in failed"
+    },
+    "settings": { "title": "AI Inference Resources" },
+    "common": {
+      "name": "Name",
+      "scope": "Scope",
+      "status": "Status",
+      "version": "Version",
+      "actions": "Actions",
+      "edit": "Edit",
+      "delete": "Delete",
+      "save": "Save",
+      "cancel": "Cancel",
+      "refresh": "Refresh",
+      "saved": "Saved",
+      "deleted": "Deleted",
+      "failed": "Operation failed",
+      "confirmTitle": "Confirm"
+    },
+    "scope": { "platform": "Platform", "tenant": "Tenant" },
+    "status": { "active": "Active", "disabled": "Disabled" },
+    "provider": {
+      "title": "Provider Connection",
+      "create": "New Provider",
+      "edit": "Edit Provider",
+      "adapter": "Adapter",
+      "endpoint": "Endpoint",
+      "credential": "Credential",
+      "configured": "Configured v{version}",
+      "notConfigured": "Not configured",
+      "setCredential": "Set credential",
+      "deleteCredential": "Delete credential",
+      "credentialDialog": "Set Provider Credential",
+      "newCredential": "New credential",
+      "credentialRequired": "Enter a credential",
+      "allowAllTenants": "Allow all tenants",
+      "allowedTenantIds": "Allowed tenant IDs",
+      "deleteConfirm": "Delete this Provider?",
+      "deleteCredentialConfirm": "Delete this Provider credential?"
+    },
+    "deployment": {
+      "title": "Model Deployment",
+      "create": "New Deployment",
+      "edit": "Edit Deployment",
+      "provider": "Provider",
+      "upstreamModel": "Upstream model",
+      "operations": "Operations",
+      "modalities": "Modalities",
+      "dimension": "Vector dimension",
+      "probe": "Probe",
+      "probeSuccess": "Probe succeeded with upstream status {status}",
+      "deleteConfirm": "Delete this Deployment?"
+    },
+    "profile": {
+      "title": "Model Profile",
+      "create": "New Profile",
+      "edit": "Edit Profile",
+      "code": "Capability code",
+      "deployment": "Deployment"
+    }
+  }
+}

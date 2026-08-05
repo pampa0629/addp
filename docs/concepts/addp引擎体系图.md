@@ -13,6 +13,7 @@
 | Capability | 插件返回的结构化能力声明，版本为 `engine.capabilities/v1`。 |
 | Catalog | 引擎中的真实目录层级，如 schema/table、bucket/object、database/graph。 |
 | Item | 可被描述、预览、读取或写入的叶子数据项。 |
+| AI Inference Runtime | 对 ADDP 调用方提供统一 `addp.inference/v1` 数据面的计算 Runtime；Provider、模型和凭据是 Runtime 内部强类型资源。 |
 
 ### Engine Instance 身份与生命周期
 
@@ -25,6 +26,7 @@
 - 删除后重新注册产生新的 Engine Instance。旧任务不会按名称或连接信息自动迁移；用户必须在 owner 模块显式选择目标 Engine，由 owner 校验能力并原子改写其私有绑定。ResourceLocator 重绑定保留 path/type，清除旧 Meta `node_id/item_id`。
 - 用户登记的 Engine Instance 归当前 Tenant，不归登记人。`created_by` 只记录审计来源，不能成为后续读取、写入、DDL 或执行授权依据。
 - `tenant_id=NULL` 只允许平台共享的内置计算 Runtime；共享 Runtime 只提供计算能力，不因此获得任意 Tenant 数据权限。
+- `inference_runtime` Engine Instance 绑定一个确定的 Inference Runtime 服务端点，而不是一个在线厂商账号或模型端点。Provider Connection、Model Deployment 和 Model Profile 归 Inference owner，不进入 `system.engines`。
 
 ### 实时 Catalog、元数据快照和数据预览的边界
 
@@ -315,6 +317,7 @@ pg.sql("SELECT * FROM public.farmland WHERE id > $1", params=[100], max_rows=100
 | 消息流 | Kafka（common 插件与 Transfer keyed JSON -> PostgreSQL/MySQL continuous v1 已实现，Console Wizard 已开放该单一路线） |
 | 工作流运行时 | GeoPython Workflow / Spark Workflow、自动启动服务但手动注册的 Math Workflow 参考实现、Model3D Workflow、PointCloud Workflow、SuperMap Workflow，及用户自研扩展工作流运行时 |
 | 脚本/Notebook | Jupyter |
+| AI 推理运行时 | ADDP Inference Runtime（统一承载在线厂商连接与内网模型服务） |
 
 ---
 
@@ -336,3 +339,6 @@ pg.sql("SELECT * FROM public.farmland WHERE id > $1", params=[100], max_rows=100
 - Kafka topic 通过 `service -> topic` Catalog 暴露；partition 只作为 ChangeStreamReader assignment、position 和 diagnostics，不进入资源树。
 - 业务 Kafka 是 System Engine；Infra Kafka 来自 ADDP 部署配置，不注册 Engine Instance，但复用相同 Kafka client/reader 底层实现。
 - SQL metadata 复用只允许在事实来源和语义一致的引擎家族内发生，例如 MySQL/Doris 共享 `information_schema` helper；PostgreSQL、ClickHouse、Spark SQL 等差异较大的实现保留在各自插件内。
+- AI 调用统一走 `InferenceRuntimeProvider` 和 `addp.inference/v1`。调用方不得直连 OpenAI、DashScope、Ollama 或其他厂商协议，也不得读取厂商 API Key。
+- `compute.inference` 只声明 Runtime 支持的统一操作和输入模态，不保存动态 Provider、Deployment 或 Profile 列表；动态资源由 Inference 控制面查询。
+- Inference Runtime Instance 按网络区域、安全域、GPU 集群、故障域或 SLA 拆分，不按厂商、账号或模型拆分。第一版一个 Model Profile 只绑定一个 Deployment，禁止隐藏 fallback。

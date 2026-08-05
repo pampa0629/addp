@@ -1,20 +1,16 @@
-import os
 from typing import Optional
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(case_sensitive=True, extra="ignore")
+
     # Agent 模块配置
     AGENT_BACKEND_PORT: int = 8190
     AGENT_DB_SCHEMA: str = "agent"
 
-    # LLM 配置（复用 .env 中的全局配置）
-    DEFAULT_LLM_PROVIDER: str = "dashscope"
-    DEFAULT_LLM_MODEL: str = "qwen-max"
-    DASHSCOPE_API_KEY: Optional[str] = None
-
-    # 可选的其他 LLM
-    OPENAI_API_KEY: Optional[str] = None
-    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
+    # Inference Runtime 服务调用
+    INFERENCE_URL: str = "http://localhost:8191"
+    AGENT_SERVICE_CLIENT_SECRET: str = ""
 
     # 服务 host 和端口（从 .env 读取）
     SERVICE_HOST: str = "localhost"
@@ -31,7 +27,6 @@ class Settings(BaseSettings):
     def get_system_url(self) -> str:
         return self.SYSTEM_URL or f"http://{self.SERVICE_HOST}:{self.SYSTEM_BACKEND_PORT}"
 
-    INTERNAL_API_KEY: str = ""
     # PostgreSQL 配置（与 .env 的 POSTGRES_* 变量对应）
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 15432
@@ -44,9 +39,5 @@ class Settings(BaseSettings):
     REDIS_PORT: int = 16379
     REDIS_PASSWORD: str = ""
     REDIS_DB: int = 0
-
-    class Config:
-        case_sensitive = True
-        extra = "ignore"
 
 settings = Settings()

@@ -222,9 +222,10 @@ type NativeTableSpatialEncodingCapability struct {
 }
 
 type ComputeCapabilities struct {
-	Query    *QueryCapability    `json:"query,omitempty"`
-	Workflow *WorkflowCapability `json:"workflow,omitempty"`
-	Script   *ScriptCapability   `json:"script,omitempty"`
+	Query     *QueryCapability     `json:"query,omitempty"`
+	Workflow  *WorkflowCapability  `json:"workflow,omitempty"`
+	Script    *ScriptCapability    `json:"script,omitempty"`
+	Inference *InferenceCapability `json:"inference,omitempty"`
 }
 
 type QueryCapability struct {
@@ -257,6 +258,14 @@ type ScriptCapability struct {
 	Modes       []string `json:"modes"`
 	Languages   []string `json:"languages,omitempty"`
 	Interactive bool     `json:"interactive,omitempty"`
+}
+
+type InferenceCapability struct {
+	Supported  bool     `json:"supported"`
+	RuntimeAPI string   `json:"runtime_api"`
+	Operations []string `json:"operations"`
+	Modalities []string `json:"modalities,omitempty"`
+	Streaming  bool     `json:"streaming,omitempty"`
 }
 
 func MarshalEngineCapabilities(capabilities EngineCapabilities) (string, error) {

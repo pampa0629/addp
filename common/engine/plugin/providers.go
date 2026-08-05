@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/addp/common/datatype"
+	commoninference "github.com/addp/common/inference"
 	"github.com/addp/common/resume"
 )
 
@@ -358,6 +359,13 @@ type ScriptRuntimeProvider interface {
 	EnginePlugin
 	RuntimeEndpoint(ctx context.Context, connInfo ConnectionInfo) (string, error)
 	OpenSession(ctx context.Context, connInfo ConnectionInfo, req ScriptSessionRequest) (*ScriptSession, error)
+}
+
+type InferenceRuntimeProvider interface {
+	EnginePlugin
+	Chat(ctx context.Context, connInfo ConnectionInfo, req commoninference.ChatRequest) (*commoninference.ChatResponse, error)
+	Embed(ctx context.Context, connInfo ConnectionInfo, req commoninference.EmbeddingRequest) (*commoninference.EmbeddingResponse, error)
+	Rerank(ctx context.Context, connInfo ConnectionInfo, req commoninference.RerankRequest) (*commoninference.RerankResponse, error)
 }
 
 type CatalogPath struct {

@@ -9,6 +9,7 @@ from langchain.tools import BaseTool
 
 from addp_common.client import DevelopClient
 from config import settings
+from services.inference_service import CopilotInferenceService
 
 
 class EngineTool(BaseTool):
@@ -31,8 +32,8 @@ class EngineTool(BaseTool):
         try:
             async with DevelopClient(
                 base_url=settings.get_develop_url(),
-                internal_api_key=settings.internal_api_key,
                 tenant_id=tenant_id,
+                service_token_source=CopilotInferenceService.token_source(),
             ) as client:
                 engines = await client.list_engines()
                 print(f"[EngineTool] ✅ 成功获取 {len(engines)} 个引擎")
@@ -89,8 +90,8 @@ class OperatorDiscoveryTool(BaseTool):
         try:
             async with DevelopClient(
                 base_url=settings.get_develop_url(),
-                internal_api_key=settings.internal_api_key,
                 tenant_id=tenant_id,
+                service_token_source=CopilotInferenceService.token_source(),
             ) as client:
                 operators = await client.list_operators(workflow_engine_id)
                 print(f"[OperatorDiscoveryTool] ✅ 从 API 获取到 {len(operators)} 个算子（工作流引擎 ID: {workflow_engine_id}）")
@@ -139,8 +140,8 @@ class OperatorDetailTool(BaseTool):
         try:
             async with DevelopClient(
                 base_url=settings.get_develop_url(),
-                internal_api_key=settings.internal_api_key,
                 tenant_id=tenant_id,
+                service_token_source=CopilotInferenceService.token_source(),
             ) as client:
                 operator = await client.get_operator(operator_name, workflow_engine_id)
                 if operator:

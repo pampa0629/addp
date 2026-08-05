@@ -175,8 +175,6 @@ func SetupRouter(
 			),
 			queryHandler.GetSampleQuery,
 		)
-		api.POST("/execute", permission(developauthorization.PermissionDevelopTaskExecute), queryHandler.ExecuteQuery)
-
 		// ========== Notebook 开发 ==========
 		api.GET("/notebook-engines", permission(developauthorization.PermissionDevelopNotebookRead), notebookHandler.ListNotebookEngines)
 		api.GET("/notebook-engines/:id/kernels", permission(developauthorization.PermissionDevelopNotebookRead), notebookHandler.ListKernels)

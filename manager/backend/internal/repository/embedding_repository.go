@@ -42,7 +42,7 @@ type EmbeddingListFilter struct {
 func (r *EmbeddingRepository) GetByItemFingerprint(ctx context.Context, tenantID uint, itemFingerprint string) (*models.Embedding, error) {
 	var emb models.Embedding
 	err := r.db.WithContext(ctx).
-		Select("id", "tenant_id", "item_fingerprint", "item_id", "engine_id", "locator", "source_version", "model", "dimension", "status", "status_reason", "error_message", "last_execution_id", "vectorized_at", "created_at", "updated_at").
+		Select("id", "tenant_id", "item_fingerprint", "item_id", "engine_id", "locator", "source_version", "model_profile_id", "profile_version", "deployment_id", "dimension", "status", "status_reason", "error_message", "last_execution_id", "vectorized_at", "created_at", "updated_at").
 		Where("tenant_id = ? AND item_fingerprint = ?", tenantID, itemFingerprint).
 		First(&emb).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -54,7 +54,7 @@ func (r *EmbeddingRepository) GetByItemFingerprint(ctx context.Context, tenantID
 func (r *EmbeddingRepository) GetByItemID(ctx context.Context, tenantID uint, itemID uint) (*models.Embedding, error) {
 	var emb models.Embedding
 	err := r.db.WithContext(ctx).
-		Select("id", "tenant_id", "item_fingerprint", "item_id", "engine_id", "locator", "source_version", "model", "dimension", "status", "status_reason", "error_message", "last_execution_id", "vectorized_at", "created_at", "updated_at").
+		Select("id", "tenant_id", "item_fingerprint", "item_id", "engine_id", "locator", "source_version", "model_profile_id", "profile_version", "deployment_id", "dimension", "status", "status_reason", "error_message", "last_execution_id", "vectorized_at", "created_at", "updated_at").
 		Where("tenant_id = ? AND item_id = ?", tenantID, itemID).
 		First(&emb).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -89,15 +89,17 @@ func (r *EmbeddingRepository) UpsertEmbeddingState(ctx context.Context, embeddin
 
 	sql := fmt.Sprintf(`
 		INSERT INTO manager.embeddings
-			(tenant_id, item_fingerprint, item_id, engine_id, locator, source_version, embedding, model, dimension, status, status_reason, error_message, last_execution_id, vectorized_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, %s, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			(tenant_id, item_fingerprint, item_id, engine_id, locator, source_version, embedding, model_profile_id, profile_version, deployment_id, dimension, status, status_reason, error_message, last_execution_id, vectorized_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, %s, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (tenant_id, item_fingerprint) DO UPDATE
 		SET item_id = EXCLUDED.item_id,
 		    engine_id = EXCLUDED.engine_id,
 		    locator = EXCLUDED.locator,
 		    source_version = EXCLUDED.source_version,
 		    embedding = EXCLUDED.embedding,
-		    model = EXCLUDED.model,
+		    model_profile_id = EXCLUDED.model_profile_id,
+		    profile_version = EXCLUDED.profile_version,
+		    deployment_id = EXCLUDED.deployment_id,
 		    dimension = EXCLUDED.dimension,
 		    status = EXCLUDED.status,
 		    status_reason = EXCLUDED.status_reason,
@@ -114,7 +116,9 @@ func (r *EmbeddingRepository) UpsertEmbeddingState(ctx context.Context, embeddin
 		embedding.EngineID,
 		embedding.Locator,
 		embedding.SourceVersion,
-		embedding.Model,
+		embedding.ModelProfileID,
+		embedding.ProfileVersion,
+		embedding.DeploymentID,
 		embedding.Dimension,
 		embedding.Status,
 		emptyToNil(embedding.StatusReason),
@@ -126,22 +130,22 @@ func (r *EmbeddingRepository) UpsertEmbeddingState(ctx context.Context, embeddin
 	).Error
 }
 
-func (r *EmbeddingRepository) QueryReadySimilar(ctx context.Context, tenantID uint, queryVector []float32, model string, dimension int, topK int, maxDistance float64) ([]EmbeddingSimilarityResult, error) {
+func (r *EmbeddingRepository) QueryReadySimilar(ctx context.Context, tenantID uint, queryVector []float32, modelProfileID string, profileVersion int64, dimension int, topK int, maxDistance float64) ([]EmbeddingSimilarityResult, error) {
 	if tenantID == 0 {
 		return nil, errors.New("tenant_id is required")
 	}
 	if len(queryVector) == 0 {
 		return nil, errors.New("query vector is required")
 	}
-	if strings.TrimSpace(model) == "" || dimension <= 0 {
-		return nil, errors.New("model and dimension are required")
+	if strings.TrimSpace(modelProfileID) == "" || profileVersion <= 0 || dimension <= 0 {
+		return nil, errors.New("model profile, profile version and dimension are required")
 	}
 	if topK <= 0 {
 		topK = 10
 	}
 
 	vector := vectorToString(queryVector)
-	args := []any{tenantID, models.EmbeddingStatusReady, model, dimension}
+	args := []any{tenantID, models.EmbeddingStatusReady, modelProfileID, profileVersion, dimension}
 	distanceClause := ""
 	if maxDistance > 0 {
 		distanceClause = " AND embedding OPERATOR(manager.<=>) ?::manager.vector <= ?"
@@ -150,11 +154,11 @@ func (r *EmbeddingRepository) QueryReadySimilar(ctx context.Context, tenantID ui
 	args = append(args, vector, topK)
 
 	querySQL := fmt.Sprintf(`
-		SELECT id, tenant_id, item_fingerprint, item_id, engine_id, locator, source_version, model, dimension,
+		SELECT id, tenant_id, item_fingerprint, item_id, engine_id, locator, source_version, model_profile_id, profile_version, deployment_id, dimension,
 		       status, status_reason, error_message, last_execution_id, vectorized_at, created_at, updated_at,
 		       embedding OPERATOR(manager.<=>) ?::manager.vector AS distance
 		FROM manager.embeddings
-		WHERE tenant_id = ? AND status = ? AND model = ? AND dimension = ? AND embedding IS NOT NULL%s
+		WHERE tenant_id = ? AND status = ? AND model_profile_id = ? AND profile_version = ? AND dimension = ? AND embedding IS NOT NULL%s
 		ORDER BY embedding OPERATOR(manager.<=>) ?::manager.vector
 		LIMIT ?
 	`, distanceClause)
@@ -180,7 +184,9 @@ func (r *EmbeddingRepository) QueryReadySimilar(ctx context.Context, tenantID ui
 			&emb.EngineID,
 			&emb.Locator,
 			&emb.SourceVersion,
-			&emb.Model,
+			&emb.ModelProfileID,
+			&emb.ProfileVersion,
+			&emb.DeploymentID,
 			&emb.Dimension,
 			&emb.Status,
 			&statusReason,
@@ -239,7 +245,7 @@ func (r *EmbeddingRepository) ListEmbeddings(ctx context.Context, filter Embeddi
 
 	var items []*models.Embedding
 	err := query.
-		Select("id", "tenant_id", "item_fingerprint", "item_id", "engine_id", "locator", "source_version", "model", "dimension", "status", "status_reason", "error_message", "last_execution_id", "vectorized_at", "created_at", "updated_at").
+		Select("id", "tenant_id", "item_fingerprint", "item_id", "engine_id", "locator", "source_version", "model_profile_id", "profile_version", "deployment_id", "dimension", "status", "status_reason", "error_message", "last_execution_id", "vectorized_at", "created_at", "updated_at").
 		Order("updated_at DESC").
 		Offset((filter.Page - 1) * filter.PageSize).
 		Limit(filter.PageSize).
@@ -254,7 +260,7 @@ func (r *EmbeddingRepository) DeleteEmbedding(ctx context.Context, tenantID uint
 func (r *EmbeddingRepository) ListAllEmbeddings(ctx context.Context, tenantID uint) ([]*models.Embedding, error) {
 	var embeddings []*models.Embedding
 	err := r.db.WithContext(ctx).
-		Select("id", "tenant_id", "item_fingerprint", "item_id", "engine_id", "locator", "source_version", "model", "dimension", "status", "status_reason", "error_message", "last_execution_id", "vectorized_at", "created_at", "updated_at").
+		Select("id", "tenant_id", "item_fingerprint", "item_id", "engine_id", "locator", "source_version", "model_profile_id", "profile_version", "deployment_id", "dimension", "status", "status_reason", "error_message", "last_execution_id", "vectorized_at", "created_at", "updated_at").
 		Where("tenant_id = ?", tenantID).
 		Order("updated_at DESC, id DESC").
 		Find(&embeddings).Error

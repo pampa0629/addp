@@ -122,7 +122,7 @@ class EntityExtractionChain:
             llm_output = result.get("text", "") if isinstance(result, dict) else str(result)
 
             try:
-                output = self.fixing_parser.parse(llm_output)
+                output = await self.fixing_parser.aparse(llm_output)
             except Exception:
                 output = self.output_parser.parse(llm_output)
 
@@ -133,4 +133,4 @@ class EntityExtractionChain:
         except Exception as e:
             print(f"[EntityExtractionChain] ❌ 抽取失败: {type(e).__name__}: {e}")
             traceback.print_exc()
-            return []
+            raise

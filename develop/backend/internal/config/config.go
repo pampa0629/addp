@@ -34,6 +34,7 @@ type Config struct {
 	// SQL 执行配置
 	DefaultQueryTimeout int // 默认查询超时(秒)
 	MaxQueryTimeout     int // 最大查询超时(秒)
+	QueryResultLimit    int // execution 结果预览最大行数
 
 	// Redis 配置（资源回收 request/result）
 	RedisHost     string
@@ -74,6 +75,7 @@ func Load() *Config {
 		// SQL 执行配置
 		DefaultQueryTimeout: getEnvAsInt("DEFAULT_QUERY_TIMEOUT", 30), // 30秒
 		MaxQueryTimeout:     getEnvAsInt("MAX_QUERY_TIMEOUT", 300),    // 5分钟
+		QueryResultLimit:    getPositiveEnvAsInt("QUERY_RESULT_LIMIT", 500),
 
 		// Redis 配置
 		RedisHost:     getEnv("REDIS_HOST", "localhost"),
@@ -110,6 +112,14 @@ func getEnvAsInt(key string, defaultValue int) int {
 		}
 	}
 	return defaultValue
+}
+
+func getPositiveEnvAsInt(key string, defaultValue int) int {
+	value := getEnvAsInt(key, defaultValue)
+	if value <= 0 {
+		return defaultValue
+	}
+	return value
 }
 
 // loadEncryptionKey 加载加密密钥 (32字节 AES-256)

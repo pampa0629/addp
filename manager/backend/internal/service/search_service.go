@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/addp/common/embedding"
+	commonInference "github.com/addp/common/inference"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/resourcetree"
@@ -36,6 +36,8 @@ type HybridSearchService struct {
 	vectorRepo            *repository.EmbeddingRepository
 	vectorTopK            int
 	configurationProvider *EmbeddingConfigurationProvider
+	bindingService        *InferenceScenarioBindingService
+	inferenceClient       InferenceEmbeddingClient
 }
 
 // SearchDocument 表示检索结果中的单个文档（混合检索的统一格式）
@@ -81,7 +83,7 @@ type VectorDocument struct {
 	EngineID       uint                   `json:"engine_id,omitempty"`
 	Score          float64                `json:"score"`
 	Distance       float64                `json:"distance"`
-	Model          string                 `json:"model"`
+	ModelProfileID string                 `json:"model_profile_id"`
 	Title          string                 `json:"title,omitempty"`
 	FileName       string                 `json:"file_name,omitempty"`
 	EngineName     string                 `json:"engine_name,omitempty"`
@@ -103,7 +105,7 @@ type SearchResult struct {
 }
 
 // NewHybridSearchService 构建混合检索服务（全文检索 + 向量检索）
-func NewHybridSearchService(cfg *config.Config, vectorRepo *repository.EmbeddingRepository, configurationProvider *EmbeddingConfigurationProvider) (*HybridSearchService, error) {
+func NewHybridSearchService(cfg *config.Config, vectorRepo *repository.EmbeddingRepository, configurationProvider *EmbeddingConfigurationProvider, bindingService *InferenceScenarioBindingService, inferenceClient InferenceEmbeddingClient) (*HybridSearchService, error) {
 	svc := &HybridSearchService{
 		assetIndex:            strings.TrimSpace(cfg.MeilisearchAssetIndex),
 		enabled:               strings.TrimSpace(cfg.MeilisearchURL) != "",
@@ -111,6 +113,8 @@ func NewHybridSearchService(cfg *config.Config, vectorRepo *repository.Embedding
 		vectorRepo:            vectorRepo,
 		vectorTopK:            10,
 		configurationProvider: configurationProvider,
+		bindingService:        bindingService,
+		inferenceClient:       inferenceClient,
 	}
 
 	if !svc.enabled {
@@ -278,7 +282,7 @@ func (s *HybridSearchService) SearchDocuments(
 	}
 
 	// 向量检索
-	if s.vectorRepo != nil && s.configurationProvider != nil && strings.TrimSpace(s.configurationProvider.Current().BaseURL) != "" {
+	if s.vectorRepo != nil && s.configurationProvider != nil && s.bindingService != nil && s.inferenceClient != nil {
 		vectorHits, err := s.vectorSearch(ctx, tenantID, query)
 		if err != nil {
 			s.log.Warn("向量检索失败，已忽略", "error", err)
@@ -323,7 +327,7 @@ func (s *HybridSearchService) SearchDocuments(
 }
 
 func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, query string) ([]VectorDocument, error) {
-	if s.vectorRepo == nil || s.configurationProvider == nil {
+	if s.vectorRepo == nil || s.configurationProvider == nil || s.bindingService == nil || s.inferenceClient == nil {
 		return nil, nil
 	}
 	if tenantID == nil || *tenantID == 0 {
@@ -332,63 +336,37 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, 
 	}
 
 	runtime := s.configurationProvider.Current()
-	if strings.TrimSpace(runtime.BaseURL) == "" {
-		return nil, nil
+	binding, err := s.bindingService.Resolve(ctx, *tenantID)
+	if err != nil {
+		return nil, err
 	}
-	timeout := runtime.Timeout
-	if timeout <= 0 {
-		timeout = 15 * time.Second
-	}
-
-	embedCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	textModel := runtime.Model
-	input := []embedding.TextInput{{
-		ID:       "query",
-		Text:     query,
-		Language: "",
-		Metadata: map[string]string{
-			"source": "manager_search",
-			"model":  textModel,
-		},
-	}}
-
-	embedder, err := embedding.NewHTTPEmbeddingClient(embedding.ServiceConfig{
-		BaseURL: runtime.BaseURL,
-		APIKey:  runtime.APIKey,
-		Timeout: runtime.Timeout,
-		Models: map[embedding.Modality]string{
-			embedding.ModalityText:     runtime.Model,
-			embedding.ModalityDocument: runtime.Model,
-		},
+	profile, err := s.inferenceClient.ResolveProfile(ctx, commonInference.ResolveProfileRequest{
+		SchemaVersion: commonInference.SchemaVersion, TenantID: *tenantID,
+		ModelProfileID: binding.ModelProfileID, Operation: commonInference.OperationEmbedding, Modality: commonInference.ModalityText,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("create query embedder: %w", err)
+		return nil, fmt.Errorf("resolve query embedding profile: %w", err)
 	}
-	embedResult, err := embedder.EmbedText(embedCtx, input)
+	if profile.Dimension != runtime.Dimension {
+		return nil, fmt.Errorf("model profile dimension %d does not match manager vector dimension %d", profile.Dimension, runtime.Dimension)
+	}
+	embedResult, err := s.inferenceClient.Embed(ctx, commonInference.EmbeddingRequest{
+		SchemaVersion: commonInference.SchemaVersion, TenantID: *tenantID,
+		ModelProfileID: binding.ModelProfileID,
+		Inputs:         []commonInference.EmbeddingInput{{Modality: commonInference.ModalityText, Text: query}},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("embed query text: %w", err)
 	}
-	if embedResult == nil || len(embedResult.Embeddings) == 0 {
+	if embedResult == nil || len(embedResult.Vectors) != 1 || len(embedResult.Vectors[0]) == 0 {
 		return nil, nil
 	}
-
-	queryEmbedding := embedResult.Embeddings[0]
-	queryVector := queryEmbedding.Vector
-	if len(queryVector) == 0 {
-		return nil, nil
-	}
-
-	model := strings.TrimSpace(queryEmbedding.Model)
-	if model == "" {
-		model = textModel
-	}
+	queryVector := embedResult.Vectors[0]
 	dimension := len(queryVector)
 	if dimension == 0 {
 		dimension = runtime.Dimension
 	}
-	if model == "" || dimension <= 0 {
+	if dimension <= 0 {
 		return nil, nil
 	}
 
@@ -400,10 +378,7 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, 
 		"max_distance", runtime.MaxDistance,
 	)
 
-	queryCtx, cancelQuery := context.WithTimeout(ctx, timeout)
-	defer cancelQuery()
-
-	results, err := s.vectorRepo.QueryReadySimilar(queryCtx, *tenantID, queryVector, model, dimension, s.vectorTopK, runtime.MaxDistance)
+	results, err := s.vectorRepo.QueryReadySimilar(ctx, *tenantID, queryVector, binding.ModelProfileID, embedResult.ProfileVersion, dimension, s.vectorTopK, runtime.MaxDistance)
 	if err != nil {
 		return nil, fmt.Errorf("query embedding results: %w", err)
 	}
@@ -415,16 +390,16 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, 
 		}
 		emb := item.Embedding
 		doc := VectorDocument{
-			DocumentID: emb.ItemFingerprint,
-			AssetID:    emb.Locator,
-			Locator:    emb.Locator,
-			TenantID:   emb.TenantID,
-			EngineID:   emb.EngineID,
-			Model:      emb.Model,
-			Distance:   item.Distance,
-			Score:      similarityFromDistance(item.Distance),
-			FileName:   locatorLastSegment(emb.Locator),
-			Name:       locatorLastSegment(emb.Locator),
+			DocumentID:     emb.ItemFingerprint,
+			AssetID:        emb.Locator,
+			Locator:        emb.Locator,
+			TenantID:       emb.TenantID,
+			EngineID:       emb.EngineID,
+			ModelProfileID: emb.ModelProfileID,
+			Distance:       item.Distance,
+			Score:          similarityFromDistance(item.Distance),
+			FileName:       locatorLastSegment(emb.Locator),
+			Name:           locatorLastSegment(emb.Locator),
 		}
 		vectorDocs = append(vectorDocs, doc)
 	}
@@ -444,10 +419,10 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, 
 	for idx := 0; idx < len(vectorDocs) && idx < 3; idx++ {
 		doc := vectorDocs[idx]
 		preview = append(preview, map[string]any{
-			"document_id": doc.DocumentID,
-			"model":       doc.Model,
-			"distance":    doc.Distance,
-			"file_name":   doc.FileName,
+			"document_id":      doc.DocumentID,
+			"model_profile_id": doc.ModelProfileID,
+			"distance":         doc.Distance,
+			"file_name":        doc.FileName,
 		})
 	}
 

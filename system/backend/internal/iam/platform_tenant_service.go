@@ -199,7 +199,7 @@ func (s *PlatformTenantService) initializeTenantTx(ctx context.Context, tx *Repo
 	if err != nil {
 		return err
 	}
-	if len(serviceBindings) != len(builtinServiceClientIDs) {
+	if len(serviceBindings) != len(builtinTenantRuntimeServiceClientIDs) {
 		return fmt.Errorf("%w: built-in service runtime bindings are incomplete", commonapi.ErrConflict)
 	}
 	for _, binding := range serviceBindings {

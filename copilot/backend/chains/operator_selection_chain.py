@@ -185,7 +185,7 @@ class OperatorSelectionChain:
 
             # 使用 fixing_parser 自动修复并解析
             try:
-                output = self.fixing_parser.parse(llm_output)
+                output = await self.fixing_parser.aparse(llm_output)
             except Exception as e:
                 print(f"[OperatorSelectionChain] ⚠️ 解析失败，尝试普通 parser: {e}")
                 output = self.output_parser.parse(llm_output)

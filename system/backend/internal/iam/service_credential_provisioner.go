@@ -12,9 +12,30 @@ import (
 )
 
 var builtinServiceClientIDs = []string{
+	"addp-agent",
 	"addp-asset",
+	"addp-copilot",
 	"addp-develop",
 	"addp-duckdb",
+	"addp-graph",
+	"addp-manager",
+	"addp-inference",
+	"addp-meta",
+	"addp-monitor",
+	"addp-orchestrator",
+	"addp-portal",
+	"addp-quality",
+	"addp-service",
+	"addp-transfer",
+}
+
+var builtinTenantRuntimeServiceClientIDs = []string{
+	"addp-agent",
+	"addp-asset",
+	"addp-copilot",
+	"addp-develop",
+	"addp-duckdb",
+	"addp-graph",
 	"addp-manager",
 	"addp-meta",
 	"addp-monitor",

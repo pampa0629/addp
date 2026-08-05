@@ -11,7 +11,9 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/repository"
@@ -247,5 +249,65 @@ func TestWorkflowProducedTargetScanOptionsUseTargetsForTableTargets(t *testing.T
 	}
 	if len(opts.RefGroups) != 0 {
 		t.Fatalf("table target should not use ref_groups: %#v", opts.RefGroups)
+	}
+}
+
+func TestQueryResultAppliesPreviewLimitAndTruncation(t *testing.T) {
+	executor := &DevExecutor{queryResultLimit: 2}
+	result, errorMessage, rowsAffected := executor.queryResult(
+		[]string{"id"},
+		[]map[string]interface{}{{"id": 1}, {"id": 2}, {"id": 3}},
+		3,
+		SQLExecutionEffectRead,
+		"table",
+		nil,
+	)
+	if errorMessage != "" || rowsAffected == nil || *rowsAffected != 2 {
+		t.Fatalf("error = %q, rowsAffected = %v", errorMessage, rowsAffected)
+	}
+	if result["rows_count"] != 2 || result["result_limit"] != 2 || result["truncated"] != true {
+		t.Fatalf("result limit metadata = %#v", result)
+	}
+	summary, ok := result["summary"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("summary = %#v", result["summary"])
+	}
+	rows, ok := summary["preview_rows"].([]map[string]interface{})
+	if !ok || len(rows) != 2 {
+		t.Fatalf("preview_rows = %#v", summary["preview_rows"])
+	}
+}
+
+func TestGraphResultCapabilityAndPreviewLimit(t *testing.T) {
+	capabilitiesJSON, err := plugin.MarshalEngineCapabilities(plugin.NewGraphCapabilities("neo4j"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	capabilities := commonModels.JSONString(capabilitiesJSON)
+	engine := &commonModels.Engine{Capabilities: &capabilities}
+	if !engineSupportsQueryResultKind(engine, "graph") {
+		t.Fatal("graph capability was not detected")
+	}
+
+	graph, truncated := truncateGraphData(&plugin.GraphData{
+		Nodes: []plugin.GraphNode{
+			{ElementId: "1"}, {ElementId: "2"}, {ElementId: "3"},
+		},
+		Relationships: []plugin.GraphRelationship{
+			{ElementId: "r1", StartNodeId: "1", EndNodeId: "2"},
+			{ElementId: "r2", StartNodeId: "2", EndNodeId: "3"},
+		},
+	}, 2)
+	if !truncated || len(graph.Nodes) != 2 || len(graph.Relationships) != 1 {
+		t.Fatalf("graph = %#v, truncated = %v", graph, truncated)
+	}
+}
+
+func TestExecutionStatusForQueryTimeout(t *testing.T) {
+	if got := executionStatusForError("查询执行失败: context deadline exceeded"); got != commonExecution.ExecutionStatusTimeout {
+		t.Fatalf("status = %q, want timeout", got)
+	}
+	if got := executionStatusForError("查询执行失败: connection refused"); got != commonExecution.ExecutionStatusFailed {
+		t.Fatalf("status = %q, want failed", got)
 	}
 }

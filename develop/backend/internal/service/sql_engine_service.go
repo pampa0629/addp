@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	commonClient "github.com/addp/common/client"
@@ -58,69 +57,6 @@ type IssuedSQLExecutionAuthorization struct {
 	ActorTenantMembershipID    int64
 	IssuedAuthorizationVersion int64
 	ExpiresAt                  time.Time
-}
-
-func (s *SQLEngineService) ExecuteAuthorizedSQL(
-	ctx context.Context,
-	tenantID uint,
-	userAccessToken string,
-	executionID uuid.UUID,
-	engineID uint,
-	sqlContent string,
-	timeout int,
-) (*SQLResult, error) {
-	if s == nil || s.cfg == nil || s.systemService == nil || s.executionAuthorizations == nil ||
-		tenantID == 0 || engineID == 0 || executionID == uuid.Nil {
-		return nil, fmt.Errorf("SQL 执行服务未正确初始化")
-	}
-	authorization, err := s.IssueSQLExecutionAuthorization(
-		ctx, tenantID, userAccessToken, executionID, engineID, sqlContent, timeout,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return s.ExecuteIssuedSQLAuthorization(
-		ctx, tenantID, executionID, engineID, sqlContent, timeout, authorization,
-	)
-}
-
-func (s *SQLEngineService) ExecuteAuthorizedQuery(
-	ctx context.Context,
-	tenantID uint,
-	userAccessToken string,
-	executionID uuid.UUID,
-	engineID uint,
-	language string,
-	query string,
-	timeout int,
-) (*SQLResult, error) {
-	language = strings.ToLower(strings.TrimSpace(language))
-	if language == "sql" {
-		return s.ExecuteAuthorizedSQL(ctx, tenantID, userAccessToken, executionID, engineID, query, timeout)
-	}
-	authorization, err := s.IssueReadExecutionAuthorization(
-		ctx, tenantID, userAccessToken, executionID, []uint{engineID}, timeout,
-	)
-	if err != nil {
-		return nil, err
-	}
-	engine, err := s.executionEngine(ctx, tenantID, executionID, engineID, authorization)
-	if err != nil {
-		return nil, err
-	}
-	execCtx, cancel := context.WithTimeout(ctx, time.Duration(s.normalizedTimeout(timeout))*time.Second)
-	defer cancel()
-	queryResult, err := dbbridge.ExecuteReadOnlyRuntimeQuery(execCtx, engine, language, query)
-	if err != nil {
-		return nil, err
-	}
-	rows := queryResult.Rows
-	if rows == nil {
-		rows = []map[string]interface{}{}
-	}
-	return &SQLResult{
-		Columns: queryResult.Columns, Rows: rows, RowsAffected: int64(len(rows)), Effect: SQLExecutionEffectRead,
-	}, nil
 }
 
 func (s *SQLEngineService) IssueSQLExecutionAuthorization(
@@ -365,6 +301,7 @@ func (s *SQLEngineService) ExecuteIssuedSQLAuthorization(
 	engineID uint,
 	sqlContent string,
 	timeout int,
+	limit int,
 	authorization *IssuedSQLExecutionAuthorization,
 ) (*SQLResult, error) {
 	timeout = s.normalizedTimeout(timeout)
@@ -379,7 +316,7 @@ func (s *SQLEngineService) ExecuteIssuedSQLAuthorization(
 	execCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 	if authorization.Effect == SQLExecutionEffectRead {
-		queryResult, err := dbbridge.ExecuteReadOnlyQuery(execCtx, engine, sqlContent)
+		queryResult, err := dbbridge.ExecuteReadOnlyQuery(execCtx, engine, sqlContent, limit)
 		if err != nil {
 			return nil, err
 		}

@@ -7,11 +7,13 @@ from typing import Optional, List, Dict
 
 from addp_common.auth import AuthorizationContext
 from authorization_permissions_generated import COPILOT_SQL_EXECUTE
+from database import get_db
 from dependencies.auth import require_tenant_permissions
 from services.sql_service import sql_service
 # TODO: Copilot 暂时不需要保存对话历史，注释掉以避免数据库依赖
 # from services.memory_service import memory_service
 from services.metadata_matcher import metadata_matcher
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 
@@ -56,6 +58,7 @@ class SQLGenerationResponse(BaseModel):
 async def generate_sql(
     request: SQLGenerationRequest,
     user: AuthorizationContext = Depends(require_tenant_permissions(COPILOT_SQL_EXECUTE)),
+    db: Session = Depends(get_db),
 ):
     """
     生成 SQL 语句
@@ -81,7 +84,8 @@ async def generate_sql(
             query=request.query,
             datasources=match_result.candidates,
             memory=None,  # 不使用对话历史
-            tenant_id=user.tenant_id
+            tenant_id=user.tenant_id,
+            db=db,
         )
 
         # 4. 保存对话历史

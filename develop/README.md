@@ -1,6 +1,6 @@
 # Develop 开发工作台
 
-> ADDP 平台的开发工作台，提供 SQL 查询、算子工作流和 Notebook 任务管理
+> ADDP 平台的开发工作台，提供 capability 驱动查询、算子工作流和 Notebook 任务管理
 
 ## 📖 文档说明
 
@@ -9,7 +9,7 @@
 
 ## 🎯 核心功能
 
-- **SQL 工作台**: Monaco Editor + 多数据库支持（PostgreSQL、MySQL 等）
+- **查询工作台**: Meta Catalog + Monaco Editor + 表格/图结果预览
 - **GIS 工作流**: 可视化编辑和执行空间计算工作流（21个 GeoPython Workflow 算子）
 - **Notebook 任务**: 上传、执行、下载和显式重绑定 Notebook 引擎，并查看统一执行历史
 - **算子管理**: 聚合工作流运行时动态算子，供工作流编辑器使用
@@ -39,7 +39,8 @@ docker compose up -d develop-backend develop-frontend jupyter-engine
 ## 📡 主要 API 端点
 
 ```
-SQL执行:     POST /api/v1/develop/execute
+即时查询:    POST /api/v1/develop/executions
+执行详情:    GET /api/v1/develop/executions/{execution_id}
 任务定义:    GET/POST /api/v1/develop/task-definitions
 存储引擎绑定: GET /api/v1/develop/task-definitions/{id}/storage-engine-bindings
 存储引擎重绑定: PUT /api/v1/develop/task-definitions/{id}/storage-engine-bindings/{source_engine_id}
@@ -63,9 +64,9 @@ Notebook运行绑定: PUT /api/v1/develop/notebooks/{id}/runtime-binding
 
 ## 🐛 常见问题
 
-### SQL 执行超时怎么办？
+### 查询执行超时怎么办？
 
-提高 `timeout` 参数（默认 30 秒，最长 5 分钟）或优化 SQL 查询。详见 [CLAUDE.md#场景1：执行SQL查询](./CLAUDE.md#场景-1执行-sql-查询)
+提高 `timeout` 参数（默认 30 秒，最长 5 分钟）或优化查询。结果预览行数由 `QUERY_RESULT_LIMIT` 控制。详见 [CLAUDE.md#场景1：执行SQL查询](./CLAUDE.md#场景-1执行-sql-查询)
 
 ### 工作流执行失败？
 

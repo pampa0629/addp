@@ -11,6 +11,27 @@ from .develop import DevelopClient
 from .manager import ManagerClient
 from .graph import GraphClient
 from .copilot import CopilotClient
+from .inference import (
+    ChatResponse,
+    EmbeddingInput,
+    EmbeddingResponse,
+    InferenceClient,
+    InferenceError,
+    Message,
+    ResponseSchema,
+    RerankDocument,
+    RerankResponse,
+    ResolveProfileResponse,
+    ToolCall,
+    ToolDefinition,
+)
+from .service_token import OAuthServiceTokenSource, ServiceTokenError
+from .module_registry import (
+    ConfigurationManagementDeclaration,
+    ConfigurationManagementEntry,
+    ModuleRegistration,
+    ModuleRegistryClient,
+)
 
 __all__ = [
     "BaseClient",
@@ -20,4 +41,22 @@ __all__ = [
     "ManagerClient",
     "GraphClient",
     "CopilotClient",
+    "OAuthServiceTokenSource",
+    "ServiceTokenError",
+    "InferenceClient",
+    "InferenceError",
+    "Message",
+    "ToolCall",
+    "ToolDefinition",
+    "ResponseSchema",
+    "ChatResponse",
+    "EmbeddingInput",
+    "EmbeddingResponse",
+    "RerankDocument",
+    "RerankResponse",
+    "ResolveProfileResponse",
+    "ConfigurationManagementDeclaration",
+    "ConfigurationManagementEntry",
+    "ModuleRegistration",
+    "ModuleRegistryClient",
 ]

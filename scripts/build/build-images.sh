@@ -877,6 +877,7 @@ main() {
         "asset-backend:asset/backend"
         "portal-backend:portal/backend"
         "graph-backend:graph/backend"
+        "inference-backend:inference/backend"
         "python-workflow-engine:engines/python-workflow"
         "raster-mosaic-runtime:manager/raster-mosaic-runtime"
         "model3d-workflow-engine:engines/model3d-workflow"
@@ -904,6 +905,7 @@ main() {
         "asset-frontend:asset/frontend"
         "portal-frontend:portal/frontend"
         "graph-frontend:graph/frontend"
+        "inference-frontend:inference/frontend"
         "nginx:nginx"
     )
 

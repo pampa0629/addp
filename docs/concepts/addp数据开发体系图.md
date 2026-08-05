@@ -30,7 +30,7 @@ graph TB
     Workflow --> WorkflowUI[工作流编辑器<br/>算子拖拽/DAG 可视化]
     Notebook --> NotebookUI[Notebook 编辑器<br/>Jupyter 界面]
 
-    QueryUI --> QueryEngine[支持引擎:<br/>PostgreSQL, MySQL<br/>Doris, ClickHouse<br/>MongoDB, Spark SQL]
+    QueryUI --> QueryEngine[支持引擎:<br/>由 compute.query<br/>能力声明决定]
 
     WorkflowUI --> WorkflowEngine[支持引擎:<br/>GeoPython Workflow<br/>Spark Workflow]
 
@@ -53,12 +53,12 @@ graph TB
 |------|-----------------|---------------------|--------------|
 | **能力字段** | `compute.query.supported` | `compute.workflow.supported` | `compute.script.supported` |
 | **界面** | 查询工作台 | 工作流编辑器 | Notebook 编辑器 |
-| **编辑器** | Monaco (SQL/MQL) | 算子拖拽 + DAG 可视化 | Jupyter Notebook |
-| **执行方式** | SQL/MQL 执行 | DAG 工作流执行 | Cell 逐个执行 |
+| **编辑器** | Monaco（语言由 capability 声明） | 算子拖拽 + DAG 可视化 | Jupyter Notebook |
+| **执行方式** | ad-hoc 或已保存 query execution | DAG 工作流执行 | Cell 逐个执行 |
 | **适用场景** | 数据查询、统计分析 | 数据处理、空间分析 | 交互式探索、变量传递 |
 | **支持引擎** | 可查询通用引擎 | 工作流运行时 | Jupyter 脚本运行时 |
-| **结果展示** | 表格视图、导出 CSV | GeoDataFrame、可视化 | 文本、图表、地图 |
-| **保存形式** | SQL 文本 + 历史记录 | DAG JSON + 执行记录 | .ipynb 文件 |
+| **结果展示** | capability 驱动的表格/图视图、导出 CSV | GeoDataFrame、可视化 | 文本、图表、地图 |
+| **保存形式** | 可选 `query` 任务定义 + 统一 execution | DAG JSON + 执行记录 | .ipynb 文件 |
 
 ---
 
@@ -66,23 +66,17 @@ graph TB
 
 ### 查询开发概述
 
-**查询开发** 支持 SQL、MQL 等查询语言的编辑、执行和结果展示。
+**查询开发** 面向声明 `capabilities.compute.query.supported=true` 的 Engine Instance，查询语言、默认语言和结果形态分别来自 `languages`、`default_language` 和 `result_kinds`，Develop 不按 `engine_type` 维护私有映射。
 
 ```mermaid
 graph LR
-    User[用户] --> Editor[查询编辑器<br/>Monaco Editor]
-    Editor --> SQL[SQL 查询]
-    Editor --> MQL[MQL 查询]
-
-    SQL --> PG[PostgreSQL]
-    SQL --> MySQL[MySQL]
-    SQL --> Doris[Doris]
-    SQL --> CH[ClickHouse]
-    SQL --> Spark[Spark SQL]
-
-    MQL --> Mongo[MongoDB]
-
-    PG & MySQL & Doris & CH & Spark & Mongo --> Result[结果展示<br/>表格视图/导出CSV]
+    User[用户] --> Catalog[Meta 资源树<br/>当前 Engine Catalog]
+    Catalog --> Editor[查询工作台<br/>Monaco Editor]
+    Editor --> CreateExecution[POST /develop/executions<br/>task_type=query]
+    CreateExecution --> Unified[common.task_executions<br/>source_task_id 为空]
+    Unified --> Runtime[Execution Authorization<br/>Query Runtime Provider]
+    Runtime --> Result[受限结果预览<br/>表格或图视图]
+    Result --> Monitor[统一执行详情]
 
     classDef user fill:#69db7c,stroke:#2f9e44
     classDef editor fill:#e1f5ff,stroke:#01579b
@@ -91,19 +85,21 @@ graph LR
     classDef result fill:#f3e5f5,stroke:#4a148c
 
     class User user
-    class Editor editor
-    class SQL,MQL query
-    class PG,MySQL,Doris,CH,Spark,Mongo engine
-    class Result result
+    class Catalog,Editor editor
+    class CreateExecution,Unified query
+    class Runtime engine
+    class Result,Monitor result
 ```
 
 ### 查询开发特性
 
-- **语法高亮**: 支持 SQL/MQL 语法高亮
-- **自动补全**: 表名、字段名自动补全
-- **格式化**: SQL 代码格式化
-- **执行历史**: 保存 SQL 和结果,可回溯
-- **结果导出**: 表格视图、导出 CSV
+- **Catalog 浏览**：左侧直接消费 Meta resource-tree，展示当前 Engine 的原生路径，不新增 Develop 私有 Catalog API。
+- **能力驱动编辑**：语言、高亮、格式化可用性和图结果入口来自 Engine query capability。
+- **选区执行**：优先执行 Monaco 当前选区，没有选区时执行全文。
+- **统一执行**：即时查询和已保存任务都创建 `common.task_executions`；即时查询使用 `task_type=query`、`source_task_id=null`。
+- **结果预览**：服务端统一限制返回规模，并记录 `result_limit`、`truncated`、`result_kind` 和 execution ID。
+- **防丢失**：未保存内容在离开页面或加载其他任务前必须确认。
+- **任务收敛**：查询任务在 `/develop/tasks` 统一管理，不保留独立查询任务列表。
 
 ---
 

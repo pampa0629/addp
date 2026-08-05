@@ -24,6 +24,7 @@ class MainAgentResumeTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch("agents.main_agent._get_skill_registry", return_value={"workflow-analysis": _Skill()}),
             patch("agents.main_agent._route_node", route),
+            patch("agents.main_agent.get_llm", return_value=object()),
             patch("agents.main_agent.AgentFactory.run", side_effect=fake_factory_run),
         ):
             events = [

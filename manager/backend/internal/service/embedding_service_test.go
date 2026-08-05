@@ -7,6 +7,7 @@ import (
 
 	"github.com/addp/common/embedding"
 	enginePlugin "github.com/addp/common/engine/plugin"
+	commonInference "github.com/addp/common/inference"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
@@ -24,8 +25,10 @@ func TestEmbeddingStateForCurrentItemDerivesOutdatedReasons(t *testing.T) {
 		DataUpdatedAt: &now,
 		SizeBytes:     &size,
 	}
-	runtime := EffectiveEmbeddingConfiguration{Model: "text-model-v2", Dimension: 1024}
+	runtime := EffectiveEmbeddingConfiguration{Dimension: 1024}
 	svc := &EmbeddingService{configurationProvider: NewEmbeddingConfigurationProvider(runtime)}
+	profileID := "11111111-1111-1111-1111-111111111111"
+	deploymentID := "22222222-2222-2222-2222-222222222222"
 
 	currentSourceVersion := sourceVersionForItem(commonModels.GenerateItemFingerprint(item.EngineID, item.FullName), item)
 
@@ -38,10 +41,12 @@ func TestEmbeddingStateForCurrentItemDerivesOutdatedReasons(t *testing.T) {
 		{
 			name: "source changed",
 			state: &models.Embedding{
-				Status:        models.EmbeddingStatusReady,
-				SourceVersion: "old-source",
-				Model:         "text-model-v2",
-				Dimension:     1024,
+				Status:         models.EmbeddingStatusReady,
+				SourceVersion:  "old-source",
+				ModelProfileID: profileID,
+				ProfileVersion: 2,
+				DeploymentID:   deploymentID,
+				Dimension:      1024,
 			},
 			wantStatus: models.EmbeddingStatusOutdated,
 			wantReason: models.EmbeddingReasonSourceChanged,
@@ -49,10 +54,12 @@ func TestEmbeddingStateForCurrentItemDerivesOutdatedReasons(t *testing.T) {
 		{
 			name: "model changed",
 			state: &models.Embedding{
-				Status:        models.EmbeddingStatusReady,
-				SourceVersion: currentSourceVersion,
-				Model:         "text-model-v1",
-				Dimension:     1024,
+				Status:         models.EmbeddingStatusReady,
+				SourceVersion:  currentSourceVersion,
+				ModelProfileID: "33333333-3333-3333-3333-333333333333",
+				ProfileVersion: 2,
+				DeploymentID:   deploymentID,
+				Dimension:      1024,
 			},
 			wantStatus: models.EmbeddingStatusOutdated,
 			wantReason: models.EmbeddingReasonModelChanged,
@@ -60,10 +67,12 @@ func TestEmbeddingStateForCurrentItemDerivesOutdatedReasons(t *testing.T) {
 		{
 			name: "dimension changed",
 			state: &models.Embedding{
-				Status:        models.EmbeddingStatusReady,
-				SourceVersion: currentSourceVersion,
-				Model:         "text-model-v2",
-				Dimension:     768,
+				Status:         models.EmbeddingStatusReady,
+				SourceVersion:  currentSourceVersion,
+				ModelProfileID: profileID,
+				ProfileVersion: 2,
+				DeploymentID:   deploymentID,
+				Dimension:      768,
 			},
 			wantStatus: models.EmbeddingStatusOutdated,
 			wantReason: models.EmbeddingReasonDimensionChanged,
@@ -71,10 +80,12 @@ func TestEmbeddingStateForCurrentItemDerivesOutdatedReasons(t *testing.T) {
 		{
 			name: "ready and current",
 			state: &models.Embedding{
-				Status:        models.EmbeddingStatusReady,
-				SourceVersion: currentSourceVersion,
-				Model:         "text-model-v2",
-				Dimension:     1024,
+				Status:         models.EmbeddingStatusReady,
+				SourceVersion:  currentSourceVersion,
+				ModelProfileID: profileID,
+				ProfileVersion: 2,
+				DeploymentID:   deploymentID,
+				Dimension:      1024,
 			},
 			wantStatus: models.EmbeddingStatusReady,
 			wantReason: "",
@@ -93,7 +104,7 @@ func TestEmbeddingStateForCurrentItemDerivesOutdatedReasons(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			originalStatus := tt.state.Status
-			got := svc.embeddingStateForCurrentItem(item, tt.state)
+			got := svc.embeddingStateForCurrentItem(item, tt.state, profileID, 2, deploymentID)
 			if got.Status != tt.wantStatus || got.StatusReason != tt.wantReason {
 				t.Fatalf("state = %s/%s, want %s/%s", got.Status, got.StatusReason, tt.wantStatus, tt.wantReason)
 			}
@@ -107,7 +118,7 @@ func TestEmbeddingStateForCurrentItemDerivesOutdatedReasons(t *testing.T) {
 func TestProcessItemSkipsCurrentReadyStateBeforeReadingSource(t *testing.T) {
 	db := newEmbeddingServiceTestDB(t)
 	repo := repository.NewEmbeddingRepository(db)
-	runtime := EffectiveEmbeddingConfiguration{Model: "text-model", Dimension: 3, MaxFileSizeMB: 10}
+	runtime := EffectiveEmbeddingConfiguration{Dimension: 3, MaxFileSizeMB: 10}
 	svc := &EmbeddingService{
 		vectorRepo:            repo,
 		configurationProvider: NewEmbeddingConfigurationProvider(runtime),
@@ -130,8 +141,8 @@ func TestProcessItemSkipsCurrentReadyStateBeforeReadingSource(t *testing.T) {
 	now := time.Now()
 	if err := db.Exec(`
 		INSERT INTO manager.embeddings
-			(tenant_id, item_fingerprint, item_id, engine_id, locator, source_version, embedding, model, dimension, status, status_reason, last_execution_id, vectorized_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			(tenant_id, item_fingerprint, item_id, engine_id, locator, source_version, embedding, model_profile_id, profile_version, deployment_id, dimension, status, status_reason, last_execution_id, vectorized_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		1,
 		itemFingerprint,
@@ -140,7 +151,9 @@ func TestProcessItemSkipsCurrentReadyStateBeforeReadingSource(t *testing.T) {
 		"addp://engine/3/path/bucket/current.txt?type=object&item_id=7",
 		sourceVersion,
 		"[0.1,0.2,0.3]",
-		"text-model",
+		"11111111-1111-1111-1111-111111111111",
+		2,
+		"22222222-2222-2222-2222-222222222222",
 		3,
 		models.EmbeddingStatusReady,
 		models.EmbeddingReasonReady,
@@ -152,7 +165,12 @@ func TestProcessItemSkipsCurrentReadyStateBeforeReadingSource(t *testing.T) {
 		t.Fatalf("seed embedding state: %v", err)
 	}
 
-	outcome := svc.processItem(context.Background(), 1, item, &EmbeddingExecutionContext{ExecutionID: "exec-repeat", TenantID: 1, StartedAt: time.Now(), Runtime: runtime, client: failingEmbeddingClient{t: t}})
+	outcome := svc.processItem(context.Background(), 1, item, &EmbeddingExecutionContext{
+		ExecutionID: "exec-repeat", TenantID: 1, StartedAt: time.Now(), Runtime: runtime,
+		Binding: ResolvedInferenceScenarioBinding{ModelProfileID: "11111111-1111-1111-1111-111111111111"},
+		Profile: commonInference.ResolveProfileResponse{ProfileVersion: 2, DeploymentID: "22222222-2222-2222-2222-222222222222"},
+		client:  failingEmbeddingClient{t: t},
+	})
 	if outcome != "ready_skipped" {
 		t.Fatalf("processItem outcome = %q, want ready_skipped", outcome)
 	}
@@ -259,7 +277,9 @@ func newEmbeddingServiceTestDB(t *testing.T) *gorm.DB {
 		locator TEXT NOT NULL,
 		source_version TEXT NOT NULL,
 		embedding TEXT,
-		model TEXT NOT NULL,
+		model_profile_id TEXT NOT NULL,
+		profile_version INTEGER NOT NULL,
+		deployment_id TEXT NOT NULL,
 		dimension INTEGER NOT NULL,
 		status TEXT NOT NULL,
 		status_reason TEXT,
@@ -279,27 +299,12 @@ type failingEmbeddingClient struct {
 	t *testing.T
 }
 
-func (c failingEmbeddingClient) EmbedText(context.Context, []embedding.TextInput) (*embedding.BatchResult, error) {
-	c.t.Fatalf("EmbedText should not be called for current ready embedding")
+func (c failingEmbeddingClient) ResolveProfile(context.Context, commonInference.ResolveProfileRequest) (*commonInference.ResolveProfileResponse, error) {
+	c.t.Fatalf("ResolveProfile should not be called for current ready embedding")
 	return nil, nil
 }
 
-func (c failingEmbeddingClient) EmbedDocument(context.Context, []embedding.DocumentInput) (*embedding.BatchResult, error) {
-	c.t.Fatalf("EmbedDocument should not be called for current ready embedding")
-	return nil, nil
-}
-
-func (c failingEmbeddingClient) EmbedImage(context.Context, []embedding.ImageInput) (*embedding.BatchResult, error) {
-	c.t.Fatalf("EmbedImage should not be called for current ready embedding")
-	return nil, nil
-}
-
-func (c failingEmbeddingClient) EmbedAudio(context.Context, []embedding.AudioInput) (*embedding.BatchResult, error) {
-	c.t.Fatalf("EmbedAudio should not be called for current ready embedding")
-	return nil, nil
-}
-
-func (c failingEmbeddingClient) EmbedVideo(context.Context, []embedding.VideoInput) (*embedding.BatchResult, error) {
-	c.t.Fatalf("EmbedVideo should not be called for current ready embedding")
+func (c failingEmbeddingClient) Embed(context.Context, commonInference.EmbeddingRequest) (*commonInference.EmbeddingResponse, error) {
+	c.t.Fatalf("Embed should not be called for current ready embedding")
 	return nil, nil
 }

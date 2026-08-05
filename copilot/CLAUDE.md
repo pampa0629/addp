@@ -4,19 +4,19 @@
 
 ## 模块概述
 
-**Copilot 模块**是 ADDP 平台的 AI 辅助模块，基于大语言模型（LLM）提供智能对话能力，支持自然语言转 SQL 和自然语言转工作流。
+**Copilot 模块**是 ADDP 平台的领域 AI 辅助模块，嵌入具体业务页面，支持自然语言转 SQL、自然语言转工作流、导航建议和图谱抽取。
 
 技术栈：
 - **后端**：Python 3.11+ + FastAPI + SQLAlchemy + PostgreSQL
-- **AI 框架**：LangChain + 多 LLM 支持（OpenAI、Claude、Ollama、DashScope）
+- **AI 框架**：LangChain 领域 Pipeline + ADDP Inference Runtime
 - **部署**：Docker + Docker Compose
 - **端口**：后端默认 `8087`（环境变量 `COPILOT_BACKEND_PORT` 或运行时 `PORT`）
 
 核心功能：
 - **SQL 生成**：用户输入自然语言，AI 生成 SQL 查询
 - **工作流生成**：用户描述需求，AI 生成 GIS 工作流 DAG
-- **对话记忆**：支持多轮对话，理解上下文
-- **多 LLM 支持**：支持多种 AI 模型，租户可自定义
+- **领域上下文**：由功能页面提供受限、已验证的业务事实
+- **场景绑定**：按 Tenant 显式绑定 > 平台默认绑定解析 Model Profile
 
 ## 数据库文档
 
@@ -27,7 +27,7 @@
 | 数据库表结构查询 | 对应单表文档 | 字段定义、索引、约束 |
 | 表之间关系 | 数据库架构.md | 外键、关联、数据流 |
 | API端点详情 | 对应单表文档 | API、接口、请求响应 |
-| LLM 配置管理 | llm_configs表 | AI模型、API Key、配置 |
+| 推理场景绑定 | inference_scenario_bindings表 | Model Profile、平台默认、租户覆盖 |
 | 对话历史管理 | conversations表、messages表 | 对话、消息、上下文 |
 
 ### 架构说明
@@ -40,7 +40,7 @@
 
 - [conversations表](docs/tables/conversations表.md) - 对话会话表，管理对话上下文
 - [messages表](docs/tables/messages表.md) - 对话消息表，存储对话内容
-- [llm_configs表](docs/tables/llm_configs表.md) - LLM配置表，管理AI模型
+- [inference_scenario_bindings表](docs/tables/inference_scenario_bindings表.md) - Copilot 场景与 Model Profile 的绑定
 
 **重要**：修改表结构或 API 时，必须同步更新对应的单表文档。
 
@@ -55,7 +55,7 @@ cd copilot/backend
 # 安装依赖
 pip install -r requirements.txt
 
-# 数据库和 LLM API Key 统一配置在仓库根目录 .env
+# 数据库和 Inference Runtime 服务身份统一配置在仓库根目录 .env
 cd ../..
 bash scripts/dev/start.sh -copilot
 
@@ -104,7 +104,7 @@ copilot/
 │   ├── models/              # SQLAlchemy 模型
 │   │   ├── conversation.py  # 对话会话模型
 │   │   ├── message.py       # 消息模型
-│   │   └── llm_config.py    # LLM配置模型
+│   │   └── inference_scenario_binding.py # 推理场景绑定
 │   ├── api/                 # API 路由
 │   │   ├── sql_agent_api.py      # SQL 生成 API
 │   │   ├── workflow_agent_api.py # 工作流生成 API
@@ -128,6 +128,8 @@ Copilot 是以下首批 Permission 的唯一 owner：
 
 - `copilot.sql.execute`
 - `copilot.workflow.execute`
+- `copilot.configuration.read`
+- `copilot.configuration.update`
 
 机器可读事实源是 [authorization/permissions.yaml](authorization/permissions.yaml)。该 Manifest 由 `common/authorization` 在构建/发布期统一发现、校验和聚合，Copilot 服务启动时的 Module Registry 注册和心跳只描述服务可用性，不向 System 动态注册 Permission。
 
@@ -137,7 +139,7 @@ Copilot Permission 只授予“生成候选结果”，不授予候选 SQL、Wor
 
 - `/sql/generate` 从 System AuthContext 取得 Principal 和 Tenant，请求体禁止 `tenant_id/user_id`，目标 Permission 为 `copilot.sql.execute`。
 - `/workflow/generate` 使用 `workflow.draft.generate` Tool Scope，并唯一映射到可委托的 `copilot.workflow.execute`。
-- `/kg-build/extract` 只是 Graph 后端的内部单 chunk 调用，使用 `X-Internal-API-Key`，不消费 User Permission。由于当前没有真实用户级图谱候选生成入口，未发布的 `copilot.knowledge_graph.execute` 已从 Manifest 和 `tenant.ai_user` 删除。
+- `/kg-build/extract` 只接受 Graph 的 Tenant Service Access Token，请求和令牌 Tenant 必须一致，不消费 User Permission。
 - `/navigate/guide` 只要求已认证 User，不读取客户端提交的身份，也不借用其他业务 Permission。
 
 ## 核心功能实现
@@ -147,7 +149,7 @@ Copilot Permission 只授予“生成候选结果”，不授予候选 SQL、Wor
 1. **接收用户请求**：自然语言查询 + 租户信息
 2. **匹配数据源**：调用 Meta 模块查询匹配的表
 3. **加载对话历史**：获取最近 N 条消息作为上下文
-4. **调用 LLM**：传递上下文 + 数据源信息 + 用户查询
+4. **调用 Inference Runtime**：使用 `nl2sql` 场景解析得到的 Model Profile
 5. **生成 SQL**：LLM 返回 SQL 语句和解释
 6. **保存消息**：存储用户消息和助手回复
 7. **返回结果**：SQL + 候选数据源 + conversation_id
@@ -159,7 +161,7 @@ Copilot Permission 只授予“生成候选结果”，不授予候选 SQL、Wor
 3. **两阶段生成**（Copilot 不重复搜索或猜测资源）：
    - 第一阶段：理解需求，规划步骤
    - 第二阶段：生成具体的 DAG 定义
-4. **验证工作流**：检查步骤完整性和依赖关系
+4. **发现并验证算子**：Copilot 使用 `addp-copilot` Tenant Service Access Token 调用 Develop 的引擎实例和 Public Operator Spec 接口，不转发入口 Delegated Token，不使用 Internal API Key
 5. **保存消息**：存储工作流定义到 metadata
 6. **返回结果**：workflow DAG + 解释 + conversation_id
 
@@ -192,14 +194,9 @@ POSTGRES_USER=addp
 POSTGRES_PASSWORD=addp_password
 POSTGRES_DB=addp
 
-# LLM 配置（默认）
-DEFAULT_LLM_PROVIDER=openai
-DEFAULT_LLM_MODEL=gpt-4-turbo
-OPENAI_API_KEY=sk-xxxxx
-OPENAI_BASE_URL=https://api.openai.com/v1
-
-# 加密密钥（与 System 模块共享）
-ENCRYPTION_KEY=your-base64-encoded-32-byte-key
+# Inference Runtime 与 Copilot Service Principal
+INFERENCE_URL=http://localhost:8191
+COPILOT_SERVICE_CLIENT_SECRET=replace-with-unique-copilot-secret-32bytes
 
 # 服务配置
 PORT=8087
@@ -210,8 +207,10 @@ DEBUG=true
 
 - **对话隔离**：所有对话按 `tenant_id` 隔离
 - **用户隔离**：普通用户只能访问自己的对话
-- **LLM 配置**：租户可配置自己的 LLM（API Key、模型等）
-- **配置优先级**：租户配置 > 全局配置 > 系统默认
+- **推理场景绑定**：Copilot 只保存 Model Profile ID，不保存 Provider、endpoint、上游模型或 API Key
+- **配置优先级**：Tenant 显式场景绑定 > 平台默认场景绑定 > 明确未配置错误
+- **推理服务身份**：Copilot 使用 `addp-copilot` Client Credentials 获取 Tenant Service Access Token
+- **Develop 算子读取**：复用同一 `addp-copilot` Tenant Service Access Token，`tenant.copilot_runtime` 只额外持有 `develop.task.read`
 
 ## 相关文档
 

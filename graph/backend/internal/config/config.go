@@ -12,10 +12,11 @@ type Config struct {
 	Port     string
 	DBSchema string
 
-	SystemServiceURL  string
-	InternalAPIKey    string
-	ModelServiceURL   string
-	CopilotServiceURL string
+	SystemServiceURL    string
+	InternalAPIKey      string
+	ModelServiceURL     string
+	CopilotServiceURL   string
+	ServiceClientSecret string
 
 	// Redis 配置（资源回收 request/result）
 	RedisHost     string
@@ -34,19 +35,20 @@ func Load() *Config {
 	minioCfg := commonConfig.LoadBuiltinMinIOConfig()
 
 	cfg := &Config{
-		Port:              commonConfig.GetEnv("GRAPH_BACKEND_PORT", "8186"),
-		DBSchema:          "graph",
-		SystemServiceURL:  systemURL,
-		InternalAPIKey:    commonConfig.GetEnv("INTERNAL_API_KEY", ""),
-		ModelServiceURL:   commonConfig.GetEnv("MODEL_URL", "http://localhost:8181"),
-		CopilotServiceURL: commonConfig.GetEnv("COPILOT_URL", "http://localhost:8087"),
-		RedisHost:         commonConfig.GetEnv("REDIS_HOST", "localhost"),
-		RedisPort:         commonConfig.GetEnv("REDIS_PORT", "16379"),
-		RedisPassword:     commonConfig.GetEnv("REDIS_PASSWORD", ""),
-		RedisDB:           commonConfig.GetEnvInt("REDIS_DB", 0),
-		MinioEndpoint:     minioCfg.Endpoint,
-		MinioAccessKey:    minioCfg.AccessKey,
-		MinioSecretKey:    minioCfg.SecretKey,
+		Port:                commonConfig.GetEnv("GRAPH_BACKEND_PORT", "8186"),
+		DBSchema:            "graph",
+		SystemServiceURL:    systemURL,
+		InternalAPIKey:      commonConfig.GetEnv("INTERNAL_API_KEY", ""),
+		ModelServiceURL:     commonConfig.GetEnv("MODEL_URL", "http://localhost:8181"),
+		CopilotServiceURL:   commonConfig.GetEnv("COPILOT_URL", "http://localhost:8087"),
+		ServiceClientSecret: commonConfig.GetEnv("GRAPH_SERVICE_CLIENT_SECRET", ""),
+		RedisHost:           commonConfig.GetEnv("REDIS_HOST", "localhost"),
+		RedisPort:           commonConfig.GetEnv("REDIS_PORT", "16379"),
+		RedisPassword:       commonConfig.GetEnv("REDIS_PASSWORD", ""),
+		RedisDB:             commonConfig.GetEnvInt("REDIS_DB", 0),
+		MinioEndpoint:       minioCfg.Endpoint,
+		MinioAccessKey:      minioCfg.AccessKey,
+		MinioSecretKey:      minioCfg.SecretKey,
 	}
 
 	cfg.BaseConfig.SystemServiceURL = systemURL

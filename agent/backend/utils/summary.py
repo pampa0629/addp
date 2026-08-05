@@ -50,12 +50,13 @@ async def maybe_update_summary(session_id: int) -> None:
             if target_watermark is None:
                 return
             existing_summary = session.summary or "（无）"
+            tenant_id = int(session.tenant_id)
 
         history = "\n".join(
             f"{'用户' if message.role == 'user' else '助手'}: {message.content}"
             for message in new_older_messages
         )
-        response = await get_llm(streaming=False).ainvoke(
+        response = await get_llm(tenant_id, "general-chat").ainvoke(
             [HumanMessage(content=_COMPRESS_PROMPT.format(existing_summary=existing_summary, history=history))]
         )
         summary = str(response.content or "").strip()[:SUMMARY_CHAR_LIMIT]

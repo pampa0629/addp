@@ -34,6 +34,7 @@ graph TB
         DevelopFE[Develop Frontend<br/>:5178]
         ServiceFE[Service Frontend<br/>:5179]
         MonitorFE[Monitor Frontend<br/>:5179]
+        InferenceFE[Inference Frontend<br/>:5188]
     end
 
     subgraph "网关层"
@@ -49,6 +50,7 @@ graph TB
         Develop[Develop Backend<br/>数据开发<br/>:8185]
         Service[Service Backend<br/>数据服务<br/>:8086]
         Monitor[Monitor Backend<br/>执行监控<br/>:8100]
+        Inference[Inference Backend<br/>统一 AI 推理<br/>:8191]
     end
 
     subgraph "Worker运行时"
@@ -87,6 +89,7 @@ graph TB
     DevelopFE -.-> Console
     ServiceFE -.-> Console
     MonitorFE -.-> Console
+    InferenceFE -.-> Console
 
     Gateway --> System
     Gateway --> Manager
@@ -96,6 +99,7 @@ graph TB
     Gateway --> Develop
     Gateway --> Service
     Gateway --> Monitor
+    Gateway --> Inference
 
     System --> Common
     Manager --> Common
@@ -105,6 +109,7 @@ graph TB
     Develop --> Common
     Service --> Common
     Monitor --> Common
+    Inference --> Common
 
     SystemFE --> CommonFE
     ManagerFE --> CommonFE
@@ -113,6 +118,7 @@ graph TB
     OrchestratorFE --> CommonFE
     DevelopFE --> CommonFE
     ServiceFE --> CommonFE
+    InferenceFE --> CommonFE
 
     Common --> PostgreSQL
     Common --> Redis
@@ -141,9 +147,9 @@ graph TB
     classDef engine fill:#fff9c4,stroke:#f57f17
     classDef infra fill:#fce4ec,stroke:#880e4f
 
-    class Console,SystemFE,ManagerFE,MetaFE,TransferFE,OrchestratorFE,DevelopFE,ServiceFE,MonitorFE frontend
+    class Console,SystemFE,ManagerFE,MetaFE,TransferFE,OrchestratorFE,DevelopFE,ServiceFE,MonitorFE,InferenceFE frontend
     class Gateway gateway
-    class System,Manager,Meta,Transfer,Orchestrator,Develop,Service,Monitor backend
+    class System,Manager,Meta,Transfer,Orchestrator,Develop,Service,Monitor,Inference backend
     class TransferBoundedWorker,TransferContinuousWorker,MetaWorker worker
     class Common,CommonFE shared
     class PyWorkflow,SparkWorkflow,CustomWorkflow,Jupyter engine
@@ -182,6 +188,7 @@ graph TB
 | **Develop** | 数据开发:查询执行、工作流、Notebook 开发 | 8185 / 8185 | Go, Gin, Monaco Editor |
 | **Service** | 数据服务:服务发布(空间OGC标准与非空间)、外部服务注册 | 8086 / 8086 | Go, Gin, OGC 标准 |
 | **Monitor** | 执行监控:统一监控所有模块的任务执行记录、统计分析 | 8100 / 8100 | Go, Gin, PostgreSQL |
+| **Inference** | 统一 AI 推理：Provider Connection、Model Deployment、Model Profile、加密凭据和推理数据面 | 8191 / 8191 | Go, Gin, GORM |
 | **Copilot** | AI 辅助助手：SQL 智能生成、工作流智能生成 | 8087 / 8087 | Python, FastAPI, LangChain |
 
 
@@ -464,6 +471,30 @@ flowchart LR
 Platform Realm 只展示平台配置入口，Tenant Context 只展示当前 Tenant 配置入口。owner API 必须执行最终上下文和 Permission 校验；System 的通用平台配置 Permission 不能绕过业务模块自己的配置 Permission。
 
 部署配置、普通运行配置、Secret、资源实体和任务快照的详细边界见 [ADDP 配置规范](../spec/addp配置介绍.md)。
+
+### AI 推理职责
+
+AI 推理采用“System 登记 Runtime、Inference 拥有推理资源、业务模块拥有场景绑定、Console 聚合入口”的单一路径。在线厂商账号和内网模型端点不会各自成为 System Engine Instance。
+
+```mermaid
+flowchart LR
+    System["System\nInference Runtime Engine Instance"] -->|"Runtime Descriptor"| Caller["Agent / Copilot / Manager"]
+    Caller -->|"addp.inference/v1"| Runtime["Inference Runtime"]
+    Runtime --> Provider["Provider Connection"]
+    Provider --> Deployment["Model Deployment"]
+    Profile["Model Profile"] --> Deployment
+    CallerStore[("Scenario Binding\nowner 私有表")] --> Profile
+    Console["Console 管理入口"] --> Runtime
+```
+
+| 组件 | 拥有的事实 | 明确不拥有 |
+| --- | --- | --- |
+| System | Runtime Engine Instance、IAM、Permission、模块生命周期 | Provider 列表、模型列表、API Key、场景默认值 |
+| Inference | Provider Connection、Model Deployment、Model Profile、加密凭据、统一推理协议与调用审计 | Agent/Copilot/Manager 的业务 Pipeline 和场景绑定 |
+| Agent / Copilot / Manager | 本模块 Scenario Binding、业务上下文和 Pipeline | 厂商协议适配、上游 API Key |
+| Console | Inference 管理页面的统一入口 | 推理资源和密钥事实 |
+
+Runtime Instance 默认是平台级共享计算能力，但不因此获得任意 Tenant 业务权限。Provider Connection 可以是平台级或 Tenant 级；平台 Provider 必须显式授权全部或指定 Tenant，Tenant Provider 只能被所属 Tenant 使用。调用方按“Tenant 显式场景绑定 > 平台默认场景绑定 > 明确未配置错误”解析，不做任意模型自动优先或隐藏 fallback。详细契约见 [ADDP AI 推理接口规范](../spec/addp%20AI推理接口规范.md)。
 
 ---
 

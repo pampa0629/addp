@@ -13,21 +13,25 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 316 {
-		t.Fatalf("descriptor count = %d, want 316", len(descriptors))
+	if len(descriptors) != 335 {
+		t.Fatalf("descriptor count = %d, want 335", len(descriptors))
 	}
-	if descriptors[0].Key != "agent.run.cancel" || descriptors[len(descriptors)-1].Key != "transfer.task.update" {
+	if descriptors[0].Key != "agent.configuration.read" || descriptors[len(descriptors)-1].Key != "transfer.task.update" {
 		t.Fatalf("descriptor boundary keys = %q, %q", descriptors[0].Key, descriptors[len(descriptors)-1].Key)
 	}
 
 	roles := report.Roles
-	if len(roles) != 32 {
-		t.Fatalf("role count = %d, want 32", len(roles))
+	if len(roles) != 39 {
+		t.Fatalf("role count = %d, want 39", len(roles))
 	}
-	if roles[0].Key != "platform.asset_runtime" || roles[len(roles)-1].Key != "tenant.transfer_runtime" {
+	if roles[0].Key != "platform.agent_runtime" || roles[len(roles)-1].Key != "tenant.transfer_runtime" {
 		t.Fatalf("role boundary keys = %q, %q", roles[0].Key, roles[len(roles)-1].Key)
 	}
+	assertRepositoryRolePermissions(t, roles, "platform.inference_runtime", []string{"system.runtime_registry.update"})
+	assertRepositoryRolePermissions(t, roles, "tenant.agent_runtime", []string{"inference.runtime.execute"})
+	assertRepositoryRolePermissions(t, roles, "tenant.copilot_runtime", []string{"inference.runtime.execute"})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.manager_runtime", []string{"service_principal"})
+	assertRepositoryRolePermissions(t, roles, "tenant.manager_runtime", []string{"inference.runtime.execute", "meta.catalog.read", "meta.scan_task.execute"})
 	assertRepositoryRolePrincipalTypes(t, roles, "platform.manager_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "platform.manager_runtime", []string{
 		"system.runtime_registry.update",

@@ -99,6 +99,7 @@ func (s *FederatedQueryService) ExecuteQuery(
 	authorizationID int64,
 	query string,
 	timeout int,
+	limit int,
 	sourceEngineIDs []uint,
 ) (*FederatedQueryResult, error) {
 	descriptor, provider, err := s.runtime(ctx, tenantID, runtimeEngineID)
@@ -111,6 +112,9 @@ func (s *FederatedQueryService) ExecuteQuery(
 	if timeout <= 0 {
 		timeout = 30
 	}
+	if limit <= 0 {
+		limit = 1
+	}
 	callerToken, err := s.systemClient.TenantServiceAccessToken(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("获取 Develop Runtime 凭据失败: %w", err)
@@ -119,7 +123,7 @@ func (s *FederatedQueryService) ExecuteQuery(
 	result, err := provider.ExecuteFederatedQuery(ctx, plugin.ConnectionInfo(descriptor.AsEngine().ConnectionInfo), plugin.FederatedQueryRequest{
 		ExecutionID: executionID.String(), ExecutionAuthorizationID: fmt.Sprintf("%d", authorizationID),
 		SourceEngineIDs: append([]uint(nil), sourceEngineIDs...), Query: query, Language: "sql",
-		Options:           plugin.QueryOptions{Limit: 10000, Timeout: time.Duration(timeout) * time.Second, ReadOnly: true},
+		Options:           plugin.QueryOptions{Limit: limit, Timeout: time.Duration(timeout) * time.Second, ReadOnly: true},
 		CallerAccessToken: callerToken,
 	})
 	if err != nil {

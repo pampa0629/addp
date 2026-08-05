@@ -696,6 +696,99 @@
         "title": "ImageInputContent",
         "type": "object"
       },
+      "InferenceScenarioBindingResponse": {
+        "properties": {
+          "effective": {
+            "default": false,
+            "title": "Effective",
+            "type": "boolean"
+          },
+          "model_profile_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Profile Id"
+          },
+          "scenario_code": {
+            "title": "Scenario Code",
+            "type": "string"
+          },
+          "scope_type": {
+            "title": "Scope Type",
+            "type": "string"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "default": 0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scenario_code",
+          "scope_type"
+        ],
+        "title": "InferenceScenarioBindingResponse",
+        "type": "object"
+      },
+      "InferenceScenarioBindingUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "model_profile_id": {
+            "title": "Model Profile Id",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "model_profile_id"
+        ],
+        "title": "InferenceScenarioBindingUpdate",
+        "type": "object"
+      },
       "InputContentDataSource": {
         "additionalProperties": true,
         "description": "Inline base64-encoded source.",
@@ -1873,6 +1966,113 @@
         "x-addp-auth-mode": "permission",
         "x-addp-required-permissions": [
           "agent.session.read"
+        ]
+      }
+    },
+    "/api/v1/agent/settings/inference-bindings/{scenario_code}": {
+      "get": {
+        "operationId": "get_inference_scenario_binding_api_v1_agent_settings_inference_bindings__scenario_code__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_code",
+            "required": true,
+            "schema": {
+              "title": "Scenario Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InferenceScenarioBindingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "获取 Agent 推理场景绑定 | Get Agent Inference Scenario Binding",
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [
+          "agent.configuration.read"
+        ]
+      },
+      "put": {
+        "operationId": "update_inference_scenario_binding_api_v1_agent_settings_inference_bindings__scenario_code__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_code",
+            "required": true,
+            "schema": {
+              "title": "Scenario Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InferenceScenarioBindingUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InferenceScenarioBindingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "版本冲突 | Version conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "更新 Agent 推理场景绑定 | Update Agent Inference Scenario Binding",
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [
+          "agent.configuration.update"
         ]
       }
     },

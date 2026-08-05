@@ -3,14 +3,17 @@
 
 接收用户意图，返回平台模块/页面的导航建议
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict
 from typing import Optional, List
 import json
 
 from addp_common.auth import AuthorizationContext
-from dependencies.auth import require_user
-from services.llm_service import llm_service
+from database import get_db
+from dependencies.auth import require_tenant_user
+from langchain_core.messages import HumanMessage, SystemMessage
+from services.inference_service import CopilotInferenceService
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 
@@ -127,7 +130,8 @@ class NavigateResponse(BaseModel):
 )
 async def navigate_guide(
     request: NavigateRequest,
-    _user: AuthorizationContext = Depends(require_user),
+    user: AuthorizationContext = Depends(require_tenant_user),
+    db: Session = Depends(get_db),
 ):
     """
     根据用户意图返回平台导航建议
@@ -135,12 +139,18 @@ async def navigate_guide(
     接收自然语言描述，返回相关模块/页面的链接列表
     """
     try:
-        llm = llm_service.get_llm()
+        llm = CopilotInferenceService.chat_model(
+            db,
+            tenant_id=user.tenant_id,
+            scenario_code="navigation_guide",
+            temperature=0.3,
+            max_output_tokens=500,
+        )
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": request.query}
+            SystemMessage(content=SYSTEM_PROMPT),
+            HumanMessage(content=request.query),
         ]
-        raw = llm.invoke(messages, temperature=0.3, max_tokens=500)
+        raw = await llm.ainvoke(messages)
 
         # 解析 JSON
         # LangChain ChatModel 返回 AIMessage 对象，需要提取 content
@@ -157,7 +167,7 @@ async def navigate_guide(
 
     except Exception as e:
         print(f"[NavigateAPI] 导航引导失败: {e}")
-        return NavigateResponse(
-            text="抱歉，暂时无法处理您的请求，请直接浏览左侧菜单。",
-            actions=[]
-        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"导航推理失败: {str(e)}",
+        ) from e

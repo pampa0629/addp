@@ -5,15 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 	"time"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
+	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/taskprovider"
+	commonUtils "github.com/addp/common/utils"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/repository"
 	"github.com/google/uuid"
@@ -31,12 +34,13 @@ type DevExecutor struct {
 	sqlEngine                *SQLEngineService
 	federatedQuery           federatedQueryExecutor
 	notebookExecutionService *NotebookExecutionService
+	queryResultLimit         int
 }
 
 type federatedQueryExecutor interface {
 	IsRuntime(ctx context.Context, tenantID, engineID uint) bool
 	ReferencedEngineIDs(ctx context.Context, tenantID, runtimeEngineID uint, query string) ([]uint, error)
-	ExecuteQuery(ctx context.Context, tenantID, runtimeEngineID uint, executionID uuid.UUID, authorizationID int64, query string, timeout int, sourceEngineIDs []uint) (*FederatedQueryResult, error)
+	ExecuteQuery(ctx context.Context, tenantID, runtimeEngineID uint, executionID uuid.UUID, authorizationID int64, query string, timeout int, limit int, sourceEngineIDs []uint) (*FederatedQueryResult, error)
 }
 
 type preparedContentExecution struct {
@@ -63,6 +67,7 @@ func NewDevExecutor(
 	sqlEngine *SQLEngineService,
 	federatedQuery federatedQueryExecutor,
 	notebookExecutionService *NotebookExecutionService,
+	queryResultLimit int,
 ) *DevExecutor {
 	return &DevExecutor{
 		devTaskRepo:              devTaskRepo,
@@ -73,6 +78,7 @@ func NewDevExecutor(
 		sqlEngine:                sqlEngine,
 		federatedQuery:           federatedQuery,
 		notebookExecutionService: notebookExecutionService,
+		queryResultLimit:         queryResultLimit,
 	}
 }
 
@@ -469,12 +475,7 @@ func (e *DevExecutor) executeAsync(
 	completedAt := time.Now()
 
 	// 确定最终状态
-	var status string
-	if errorMessage != "" {
-		status = commonExecution.ExecutionStatusFailed
-	} else {
-		status = commonExecution.ExecutionStatusSuccess
-	}
+	status := executionStatusForError(errorMessage)
 	log.Printf("🟢 [DevExecutor] 准备更新执行记录: execution_id=%s status=%s", executionID, status)
 
 	// 更新执行记录
@@ -719,7 +720,7 @@ func (e *DevExecutor) executeQuery(ctx context.Context, devTask *models.DevTask,
 
 // executeSQL 执行SQL
 func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, executionID string, tenantID int, authorization *IssuedSQLExecutionAuthorization) (commonModels.JSONMap, string, *int64) {
-	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 30, "执行SQL")
+	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 30, "执行查询")
 	sqlContent, ok := devTask.Content["query"].(string)
 	parsedExecutionID, err := uuid.Parse(executionID)
 	if !ok || err != nil {
@@ -730,24 +731,20 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 			return nil, "联邦查询服务或 Execution Authorization 未初始化", nil
 		}
 		runtimeEngineID := devTask.GetEngineID()
+		if runtimeEngineID == nil {
+			return nil, "联邦查询 Runtime Engine 无效", nil
+		}
 		federatedResult, executeErr := e.federatedQuery.ExecuteQuery(
 			ctx, uint(tenantID), *runtimeEngineID, parsedExecutionID, authorization.AuthorizationID,
-			sqlContent, devTask.Timeout, authorization.EngineIDs,
+			sqlContent, devTask.Timeout, e.queryFetchLimit(), authorization.EngineIDs,
 		)
 		if executeErr != nil {
 			return nil, fmt.Sprintf("联邦查询执行失败: %v", executeErr), nil
 		}
-		previewRows := federatedResult.Rows
-		if len(previewRows) > 10 {
-			previewRows = previewRows[:10]
-		}
-		rowsAffected := int64(federatedResult.RowCount)
-		return commonModels.JSONMap{
-			"columns": federatedResult.Columns, "rows_affected": rowsAffected, "effect": SQLExecutionEffectRead,
-			"summary": map[string]interface{}{
-				"total_rows": federatedResult.RowCount, "column_count": len(federatedResult.Columns), "preview_rows": previewRows,
-			},
-		}, "", &rowsAffected
+		return e.queryResult(
+			federatedResult.Columns, federatedResult.Rows, int64(federatedResult.RowCount),
+			SQLExecutionEffectRead, "table", nil,
+		)
 	}
 	if authorization == nil {
 		return nil, "异步 SQL 执行缺少 Execution Authorization", nil
@@ -759,36 +756,165 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 	var result *SQLResult
 	if devTask.GetQueryType() == "sql" {
 		result, err = e.sqlEngine.ExecuteIssuedSQLAuthorization(
-			ctx, uint(tenantID), parsedExecutionID, *engineID, sqlContent, devTask.Timeout, authorization,
+			ctx, uint(tenantID), parsedExecutionID, *engineID, sqlContent, devTask.Timeout, e.queryFetchLimit(), authorization,
 		)
 	} else {
 		engine, accessErr := e.sqlEngine.executionEngine(ctx, uint(tenantID), parsedExecutionID, *engineID, authorization)
 		if accessErr != nil {
 			return nil, fmt.Sprintf("查询执行授权失败: %v", accessErr), nil
 		}
-		queryResult, queryErr := dbbridge.ExecuteReadOnlyRuntimeQuery(ctx, engine, devTask.GetQueryType(), sqlContent)
+		queryTimeout := devTask.Timeout
+		if queryTimeout <= 0 {
+			queryTimeout = 30
+		}
+		execCtx, cancel := context.WithTimeout(ctx, time.Duration(queryTimeout)*time.Second)
+		defer cancel()
+		var graphData *plugin.GraphData
+		var queryResult *plugin.QueryResult
+		var queryErr error
+		if engineSupportsQueryResultKind(engine, "graph") {
+			graphResult, graphErr := dbbridge.ExecuteReadOnlyGraphQuery(
+				execCtx, engine, devTask.GetQueryType(), sqlContent, e.queryFetchLimit(),
+			)
+			queryErr = graphErr
+			if graphResult != nil {
+				queryResult = &graphResult.QueryResult
+				graphData = graphResult.GraphData
+			}
+		} else {
+			queryResult, queryErr = dbbridge.ExecuteReadOnlyRuntimeQuery(
+				execCtx, engine, devTask.GetQueryType(), sqlContent, e.queryFetchLimit(),
+			)
+		}
+		if queryErr == nil && queryResult == nil {
+			queryErr = fmt.Errorf("查询运行时返回空结果")
+		}
 		if queryErr != nil {
 			err = queryErr
 		} else {
+			resultKind := "table"
+			if graphData != nil {
+				resultKind = "graph"
+			}
 			result = &SQLResult{
 				Columns: queryResult.Columns, Rows: queryResult.Rows, RowsAffected: int64(len(queryResult.Rows)), Effect: SQLExecutionEffectRead,
+			}
+			if err == nil {
+				return e.queryResult(result.Columns, result.Rows, result.RowsAffected, result.Effect, resultKind, graphData)
 			}
 		}
 	}
 	if err != nil {
-		return nil, fmt.Sprintf("SQL执行失败: %v", err), nil
+		return nil, fmt.Sprintf("查询执行失败: %v", err), nil
 	}
-	previewRows := result.Rows
-	if len(previewRows) > 10 {
-		previewRows = previewRows[:10]
+	return e.queryResult(result.Columns, result.Rows, result.RowsAffected, result.Effect, "table", nil)
+}
+
+func (e *DevExecutor) queryResultLimitValue() int {
+	if e != nil && e.queryResultLimit > 0 {
+		return e.queryResultLimit
 	}
-	rowsAffected := result.RowsAffected
-	return commonModels.JSONMap{
-		"columns": result.Columns, "rows_affected": rowsAffected, "effect": result.Effect,
+	return 500
+}
+
+func (e *DevExecutor) queryFetchLimit() int {
+	return e.queryResultLimitValue() + 1
+}
+
+func (e *DevExecutor) queryResult(
+	columns []string,
+	rows []map[string]interface{},
+	rowsAffected int64,
+	effect SQLExecutionEffect,
+	resultKind string,
+	graphData *plugin.GraphData,
+) (commonModels.JSONMap, string, *int64) {
+	limit := e.queryResultLimitValue()
+	if rows == nil {
+		rows = []map[string]interface{}{}
+	}
+	if columns == nil {
+		columns = []string{}
+	}
+	truncated := len(rows) > limit
+	if truncated {
+		rows = rows[:limit]
+	}
+	graphData, graphTruncated := truncateGraphData(graphData, limit)
+	truncated = truncated || graphTruncated
+	if effect == SQLExecutionEffectRead {
+		rowsAffected = int64(len(rows))
+	}
+	result := commonModels.JSONMap{
+		"columns":       columns,
+		"rows_count":    len(rows),
+		"rows_affected": rowsAffected,
+		"effect":        effect,
+		"result_kind":   resultKind,
+		"result_limit":  limit,
+		"truncated":     truncated,
 		"summary": map[string]interface{}{
-			"total_rows": len(result.Rows), "column_count": len(result.Columns), "preview_rows": previewRows,
+			"column_count": len(columns),
+			"preview_rows": rows,
 		},
-	}, "", &rowsAffected
+	}
+	if graphData != nil {
+		result["graph_data"] = graphData
+	}
+	return result, "", &rowsAffected
+}
+
+func executionStatusForError(errorMessage string) string {
+	if errorMessage == "" {
+		return commonExecution.ExecutionStatusSuccess
+	}
+	if strings.Contains(strings.ToLower(errorMessage), context.DeadlineExceeded.Error()) {
+		return commonExecution.ExecutionStatusTimeout
+	}
+	return commonExecution.ExecutionStatusFailed
+}
+
+func engineSupportsQueryResultKind(engine *commonModels.Engine, kind string) bool {
+	if engine == nil {
+		return false
+	}
+	capabilities, err := commonUtils.ParseCapabilities(engine.Capabilities)
+	if err != nil || capabilities.Compute == nil || capabilities.Compute.Query == nil {
+		return false
+	}
+	return slices.Contains(capabilities.Compute.Query.ResultKinds, kind)
+}
+
+func truncateGraphData(data *plugin.GraphData, limit int) (*plugin.GraphData, bool) {
+	if data == nil || limit <= 0 {
+		return data, false
+	}
+	truncated := len(data.Nodes) > limit || len(data.Relationships) > limit
+	nodes := data.Nodes
+	if len(nodes) > limit {
+		nodes = nodes[:limit]
+	}
+	nodeIDs := make(map[string]struct{}, len(nodes))
+	for _, node := range nodes {
+		nodeIDs[node.ElementId] = struct{}{}
+	}
+	relationships := make([]plugin.GraphRelationship, 0, min(len(data.Relationships), limit))
+	for _, relationship := range data.Relationships {
+		if len(relationships) == limit {
+			truncated = true
+			break
+		}
+		if _, ok := nodeIDs[relationship.StartNodeId]; !ok {
+			truncated = true
+			continue
+		}
+		if _, ok := nodeIDs[relationship.EndNodeId]; !ok {
+			truncated = true
+			continue
+		}
+		relationships = append(relationships, relationship)
+	}
+	return &plugin.GraphData{Nodes: nodes, Relationships: relationships}, truncated
 }
 
 // executeScript 执行脚本任务。当前脚本开发由 Jupyter Notebook runtime 承载。

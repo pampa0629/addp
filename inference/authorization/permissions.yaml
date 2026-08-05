@@ -1,0 +1,116 @@
+schema_version: addp.permission_manifest/v1
+owner_module: inference
+manifest_version: 1
+permissions:
+  - key: inference.deployment.create
+    allowed_scope_types: [platform, tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.inference.deployment.create.name
+    description_i18n_key: permissions.inference.deployment.create.description
+  - key: inference.deployment.delete
+    allowed_scope_types: [platform, tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.inference.deployment.delete.name
+    description_i18n_key: permissions.inference.deployment.delete.description
+  - key: inference.deployment.execute
+    allowed_scope_types: [platform, tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.inference.deployment.execute.name
+    description_i18n_key: permissions.inference.deployment.execute.description
+  - key: inference.deployment.read
+    allowed_scope_types: [platform, tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.inference.deployment.read.name
+    description_i18n_key: permissions.inference.deployment.read.description
+  - key: inference.deployment.update
+    allowed_scope_types: [platform, tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.inference.deployment.update.name
+    description_i18n_key: permissions.inference.deployment.update.description
+  - key: inference.profile.create
+    allowed_scope_types: [platform, tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.inference.profile.create.name
+    description_i18n_key: permissions.inference.profile.create.description
+  - key: inference.profile.read
+    allowed_scope_types: [platform, tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.inference.profile.read.name
+    description_i18n_key: permissions.inference.profile.read.description
+  - key: inference.profile.update
+    allowed_scope_types: [platform, tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.inference.profile.update.name
+    description_i18n_key: permissions.inference.profile.update.description
+  - key: inference.provider.create
+    allowed_scope_types: [platform, tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.inference.provider.create.name
+    description_i18n_key: permissions.inference.provider.create.description
+  - key: inference.provider.delete
+    allowed_scope_types: [platform, tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.inference.provider.delete.name
+    description_i18n_key: permissions.inference.provider.delete.description
+  - key: inference.provider.read
+    allowed_scope_types: [platform, tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.inference.provider.read.name
+    description_i18n_key: permissions.inference.provider.read.description
+  - key: inference.provider.update
+    allowed_scope_types: [platform, tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.inference.provider.update.name
+    description_i18n_key: permissions.inference.provider.update.description
+  - key: inference.provider_credential.update
+    allowed_scope_types: [platform, tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.inference.provider_credential.update.name
+    description_i18n_key: permissions.inference.provider_credential.update.description
+  - key: inference.runtime.execute
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.inference.runtime.execute.name
+    description_i18n_key: permissions.inference.runtime.execute.description

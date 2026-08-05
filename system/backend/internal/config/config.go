@@ -60,6 +60,7 @@ type Config struct {
 	OrchestratorServiceURL string
 	DevelopServiceURL      string
 	DuckDBRuntimeURL       string
+	InferenceRuntimeURL    string
 
 	// CORS 配置
 	AllowedOrigins []string // CORS 白名单
@@ -130,10 +131,14 @@ func Load() *Config {
 		ConsoleURL:                  strings.TrimSuffix(getEnv("CONSOLE_URL", "http://localhost:5170"), "/"),
 		ProjectName:                 getEnv("PROJECT_NAME", "全域数据平台"),
 		ServiceClientSecrets: map[string]string{
+			"addp-agent":        getEnv("AGENT_SERVICE_CLIENT_SECRET", ""),
 			"addp-asset":        getEnv("ASSET_SERVICE_CLIENT_SECRET", ""),
+			"addp-copilot":      getEnv("COPILOT_SERVICE_CLIENT_SECRET", ""),
 			"addp-develop":      getEnv("DEVELOP_SERVICE_CLIENT_SECRET", ""),
 			"addp-duckdb":       getEnv("DUCKDB_SERVICE_CLIENT_SECRET", ""),
+			"addp-graph":        getEnv("GRAPH_SERVICE_CLIENT_SECRET", ""),
 			"addp-manager":      getEnv("MANAGER_SERVICE_CLIENT_SECRET", ""),
+			"addp-inference":    getEnv("INFERENCE_SERVICE_CLIENT_SECRET", ""),
 			"addp-meta":         getEnv("META_SERVICE_CLIENT_SECRET", ""),
 			"addp-monitor":      getEnv("MONITOR_SERVICE_CLIENT_SECRET", ""),
 			"addp-orchestrator": getEnv("ORCHESTRATOR_SERVICE_CLIENT_SECRET", ""),
@@ -179,6 +184,7 @@ func Load() *Config {
 		OrchestratorServiceURL: getEnv("ORCHESTRATOR_URL", "http://localhost:8084"),
 		DevelopServiceURL:      getEnv("DEVELOP_URL", "http://localhost:8185"),
 		DuckDBRuntimeURL:       getEnv("DUCKDB_RUNTIME_URL", "http://localhost:8104"),
+		InferenceRuntimeURL:    getEnv("INFERENCE_URL", "http://localhost:8191"),
 
 		// CORS 配置
 		AllowedOrigins: allowedOrigins,

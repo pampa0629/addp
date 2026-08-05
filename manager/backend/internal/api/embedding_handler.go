@@ -163,12 +163,14 @@ func (h *EmbeddingHandler) GetItemEmbedding(c *gin.Context) {
 	}
 	if state != nil {
 		resp["embedding"] = gin.H{
-			"result_id":     state.ID,
-			"status":        state.Status,
-			"status_reason": state.StatusReason,
-			"model":         state.Model,
-			"dimension":     state.Dimension,
-			"vectorized_at": state.VectorizedAt,
+			"result_id":        state.ID,
+			"status":           state.Status,
+			"status_reason":    state.StatusReason,
+			"model_profile_id": state.ModelProfileID,
+			"profile_version":  state.ProfileVersion,
+			"deployment_id":    state.DeploymentID,
+			"dimension":        state.Dimension,
+			"vectorized_at":    state.VectorizedAt,
 		}
 	}
 	c.JSON(http.StatusOK, resp)

@@ -36,7 +36,7 @@
           router
           class="sidebar-menu"
         >
-          <el-menu-item index="/query">
+          <el-menu-item index="/sql">
             <el-icon><Document /></el-icon>
             <span>{{ t('develop.nav.queryEditor') }}</span>
           </el-menu-item>
@@ -44,11 +44,6 @@
           <el-menu-item index="/notebook">
             <el-icon><Notebook /></el-icon>
             <span>{{ t('develop.nav.notebook') }}</span>
-          </el-menu-item>
-
-          <el-menu-item index="/sql-tasks">
-            <el-icon><FolderOpened /></el-icon>
-            <span>{{ t('develop.nav.queryTasks') }}</span>
           </el-menu-item>
 
           <el-menu-item index="/workflow">
@@ -86,7 +81,6 @@ import {
   SwitchButton,
   Document,
   Notebook,
-  FolderOpened,
   Connection,
   List,
   Monitor

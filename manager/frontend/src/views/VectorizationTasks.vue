@@ -354,8 +354,11 @@
         <el-descriptions-item :label="t('manager.vectorization.resourcePath')" :span="2">
           {{ targetResourcePath(selectedTask) }}
         </el-descriptions-item>
-        <el-descriptions-item :label="t('manager.vectorization.model')">
-          {{ selectedTask.config?.embedding?.model || '-' }}
+        <el-descriptions-item :label="t('manager.vectorization.modelProfile')">
+          {{ selectedTask.config?.embedding?.model_profile_id || '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('manager.vectorization.profileVersion')">
+          {{ selectedTask.config?.embedding?.profile_version || '-' }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('manager.vectorization.dimension')">
           {{ selectedTask.config?.embedding?.dimension || '-' }}

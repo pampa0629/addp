@@ -642,6 +642,8 @@ Develop 的算子发现 API 是工作流编排视角，只返回 `execution_mode
 
 Copilot 等上层智能生成链路也必须沿用同一实例 ID 契约：生成工作流时只接收 `workflow_engine_id`，不得要求前端额外提交 `engine_type` 作为生成上下文或算子发现条件。工作流引擎类型只能由 Develop/System 后端按实例 ID 查询得到，不能成为 API 输入侧的第二事实源。
 
+Copilot 工作流生成入口只接受 audience 为 `copilot`、scope 为 `workflow.draft.generate` 的 Delegated Access Token；该令牌只用于约束用户发起的 Copilot Tool 请求，不得转发给 Develop。Copilot 在同一 Tenant Context 中读取工作流引擎列表和 Public Operator Spec 时，必须使用 `addp-copilot` Confidential OAuth Client 获取的 Tenant Service Access Token，并且只发送 Bearer。`tenant.copilot_runtime` 只授予该链路所需的 `develop.task.read` 和推理执行权限，不授予工作流保存、修改或执行权限；调用不得发送 `X-Internal-API-Key` 或 `X-Tenant-ID`。
+
 ### 4.3 引擎注册
 
 工作流运行时注册后才成为 ADDP 可用运行时。生产内置运行时可以在启动时向 System Backend 自注册；参考示例运行时可以只作为扩展规范样例存在，由用户在 System 引擎管理中按扩展引擎手动注册。

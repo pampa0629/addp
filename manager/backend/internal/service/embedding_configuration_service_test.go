@@ -22,7 +22,7 @@ func TestEmbeddingConfigurationDefaultsAndVersionedUpdate(t *testing.T) {
 	if err := db.AutoMigrate(&models.EmbeddingConfiguration{}); err != nil {
 		t.Fatal(err)
 	}
-	service := NewEmbeddingConfigurationService(repository.NewEmbeddingConfigurationRepository(db), "deployment-secret")
+	service := NewEmbeddingConfigurationService(repository.NewEmbeddingConfigurationRepository(db))
 	if err := service.Initialize(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -31,13 +31,12 @@ func TestEmbeddingConfigurationDefaultsAndVersionedUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if defaults.Persisted || defaults.Version != 0 || defaults.Dimension != models.EmbeddingVectorDimension || !defaults.APIKeyConfigured {
+	if defaults.Persisted || defaults.Version != 0 || defaults.Dimension != models.EmbeddingVectorDimension {
 		t.Fatalf("defaults = %#v", defaults)
 	}
 
 	input := UpdateEmbeddingConfigurationInput{
-		Version: 0, BaseURL: "https://embedding.example.com", Model: "qwen3-vl-embedding",
-		TimeoutSeconds: 20, MaxDistance: 0.7, MaxFileSizeMB: 20, BatchConcurrency: 4,
+		Version: 0, MaxDistance: 0.7, MaxFileSizeMB: 20, BatchConcurrency: 4,
 	}
 	updated, err := service.Update(context.Background(), input, 42)
 	if err != nil {

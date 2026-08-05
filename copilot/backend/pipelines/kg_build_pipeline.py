@@ -26,10 +26,9 @@ class KGBuildPipeline:
     - 易于水平扩展：可以并行处理多个 chunk 请求
     """
 
-    def __init__(self, llm=None):
+    def __init__(self, llm):
         if llm is None:
-            from services.llm_service import llm_service
-            llm = llm_service.get_llm()
+            raise ValueError("knowledge graph extraction requires an Inference ChatModel")
         self.llm = llm
         self.entity_chain = EntityExtractionChain(llm)
         self.relation_chain = RelationExtractionChain(llm)

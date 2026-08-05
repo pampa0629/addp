@@ -178,7 +178,6 @@ import {
   generateColor,
   getDAGIncomingEdgeModels,
   getDAGUpstreamCandidates,
-  linkPointPort,
   useDAGClipboard,
   useDAGCore,
   useDAGHistory,
@@ -188,9 +187,23 @@ import {
   useLoopDetection,
   validateDAGConnection
 } from '@addp/common-frontend/dag'
-import modulesApi from '../api/modules'
 import taskProvidersAPI from '../api/taskProviders'
 import { activeTaskCapabilityMetadata } from '../utils/taskCapabilityMetadata'
+import {
+  arePortTypesCompatible,
+  clearParameterBinding,
+  executionInputPorts,
+  executionOutputPorts,
+  outputTemplate,
+  parameterBindings,
+  setParameterBinding
+} from '../utils/orchestrationPorts'
+import {
+  ORCHESTRATION_NODE_TYPE,
+  orchestrationAnchor,
+  orchestrationPort,
+  registerOrchestrationEditorNode
+} from './orchestrationEditorNode'
 
 const { t } = useI18n()
 
@@ -219,6 +232,8 @@ let nodeCopyCounter = 0
 let addedNodeCounter = 0
 let syncingNodeDraft = false
 let syncingDependencies = false
+let stepsLoadGeneration = 0
+const taskRuntimeMetadataRequests = new Map()
 const canvasColors = resolveCanvasColors()
 
 // 使用 composables
@@ -228,45 +243,22 @@ const { graph, initGraph, loadData } = useDAGCore(container, {
       'drag-canvas',
       'zoom-canvas',
       createDAGDragNodeBehavior(),
-      'click-select',
+      { type: 'click-select', selectEdge: true },
       createDAGDirectEdgeBehavior({
-        resolveSource: event => linkPointPort(event, 'right'),
-        resolveTarget: event => linkPointPort(event, 'left'),
-        canConnect: canCreateDependency,
-        buildEdgeConfig: ({ targetPort }) => ({
-          sourceAnchor: 1,
-          targetAnchor: targetPort ? 0 : undefined
-        }),
+        resolveSource: event => orchestrationPort(event, 'output'),
+        resolveTarget: event => orchestrationPort(event, 'input'),
+        canConnect: canCreateConnection,
+        buildEdgeConfig: buildConnectionEdgeConfig,
         onRejected: handleConnectionRejected
       })
     ]
   },
   defaultNode: {
-    type: 'rect',
-    size: [120, 50],
-    anchorPoints: [[0, 0.5], [1, 0.5]],
-    style: {
-      fill: canvasColors.node,
-      stroke: canvasColors.primary,
-      lineWidth: 2,
-      radius: 4
-    },
-    labelCfg: {
-      style: {
-        fill: canvasColors.onPrimary,
-        fontSize: 13
-      }
-    },
-    linkPoints: {
-      top: false,
-      right: true,
-      bottom: false,
-      left: true,
-      size: 10,
-      lineWidth: 2,
-      fill: canvasColors.background,
-      stroke: canvasColors.primary
-    }
+    type: ORCHESTRATION_NODE_TYPE
+  },
+  defaultEdge: {
+    type: 'polyline',
+    style: parameterEdgeStyle()
   }
 })
 
@@ -325,11 +317,10 @@ const currentUpstreamOutputs = computed(() => {
   return currentDependencyIds.value.flatMap(stepId => {
     const node = graph.value.findById(stepId)?.getModel?.()
     if (!node) return []
-    const contract = executionContractIndex.value.get(taskContextIndexKey(node.provider, node.taskType, node.taskId))
-    return flattenOutputSchema(contract?.output_schema).map(output => ({
+    return (node.outputPorts || []).map(output => ({
       ...output,
       label: `${node.name || node.label || node.id} / ${output.label}`,
-      template: `{{${node.id}.outputs.${output.path.join('.')}}}`
+      template: outputTemplate(node.id, output.path)
     }))
   })
 })
@@ -345,21 +336,27 @@ watch(
   { flush: 'sync' }
 )
 
-watch(() => props.initialSteps, steps => {
+watch(() => props.initialSteps, async steps => {
   if (!graph.value || stepsSignature(steps) === lastStepsSignature.value) return
-  loadSteps(steps)
+  await loadStepsWithRuntimeMetadata(steps)
 }, { deep: true })
 
 onMounted(async () => {
+  registerOrchestrationEditorNode()
   initGraph()
   initSelectionListener()
-  loadTaskProviderRuntimeMetadata()
+  await loadTaskProviderRuntimeMetadata()
 
   // 双击节点事件
   graph.value.on('node:dblclick', handleNodeClick)
 
   // 边创建后的处理
   graph.value.on('aftercreateedge', ({ edge }) => {
+    const model = edge?.getModel?.()
+    if (model?.edgeKind === 'parameter') {
+      removeControlEdges(model.source, model.target)
+      applyParameterEdgeBinding(model)
+    }
     recordHistory()
     ElMessage.success(t('orchestrator.dagEditor.edgeCreated'))
     emitSteps()
@@ -373,7 +370,7 @@ onMounted(async () => {
   graph.value.on('canvas:dragend', emitLayout)
   graph.value.on('wheelzoom', emitLayout)
 
-  loadSteps(props.initialSteps)
+  await loadStepsWithRuntimeMetadata(props.initialSteps)
 })
 
 function handleNodeClick(evt) {
@@ -393,11 +390,11 @@ function applyCurrentNodeDraft(parameters = currentNode.value?.parameters || {})
   if (syncingNodeDraft || !drawerVisible.value || !graph.value || !currentNode.value?.id) return
 
   currentNode.value.parameters = parameters
-  graph.value.updateItem(currentNode.value.id, {
+  updateNodeParameters(currentNode.value.id, parameters, {
     ...currentNode.value,
-    label: currentNode.value.name || currentNode.value.provider || currentNode.value.id,
-    parameters
+    label: currentNode.value.name || currentNode.value.provider || currentNode.value.id
   })
+  syncParameterEdges(currentNode.value.id, parameters)
   recordHistory({ mergeKey: `node-draft:${currentNode.value.id}` })
   emitSteps()
 }
@@ -420,8 +417,9 @@ function dependencyOptionLabel(node) {
 function syncCurrentDependencies(changedTargetId = currentNode.value?.id, force = false) {
   if (!force && changedTargetId !== currentNode.value?.id) return
   syncingDependencies = true
-  currentDependencyIds.value = getDAGIncomingEdgeModels(graph.value, currentNode.value?.id)
-    .map(edge => edge.source)
+  currentDependencyIds.value = [...new Set(
+    getDAGIncomingEdgeModels(graph.value, currentNode.value?.id).map(edge => edge.source)
+  )]
   syncingDependencies = false
 }
 
@@ -432,9 +430,18 @@ function applyCurrentDependencies(sourceIds) {
   const currentEdges = getDAGIncomingEdgeModels(graph.value, targetId)
   const currentSourceIds = new Set(currentEdges.map(edge => edge.source))
   const additions = nextSourceIds.filter(sourceId => !currentSourceIds.has(sourceId))
+  const removals = [...currentSourceIds].filter(sourceId => !nextSourceIds.includes(sourceId))
+
+  if (removals.some(sourceId => currentEdges.some(edge => (
+    edge.source === sourceId && edge.edgeKind === 'parameter'
+  )))) {
+    ElMessage.warning(t('orchestrator.dagEditor.removeParameterConnectionFirst'))
+    syncCurrentDependencies(targetId, true)
+    return
+  }
 
   for (const sourceId of additions) {
-    const result = canCreateDependency({ sourceId, targetId })
+    const result = canCreateControlDependency({ sourceId, targetId })
     if (result !== true) {
       handleConnectionRejected({ reason: result })
       syncCurrentDependencies(targetId, true)
@@ -445,17 +452,14 @@ function applyCurrentDependencies(sourceIds) {
   const nextSourceIdSet = new Set(nextSourceIds)
   graph.value.getEdges().forEach(edge => {
     const model = edge.getModel()
-    if (model.target === targetId && !nextSourceIdSet.has(model.source)) {
+    if (model.target === targetId && model.edgeKind === 'control' && !nextSourceIdSet.has(model.source)) {
       graph.value.removeItem(edge, false)
     }
   })
   additions.forEach(sourceId => {
-    graph.value.addItem('edge', {
-      source: sourceId,
-      target: targetId,
-      sourceAnchor: 1,
-      targetAnchor: 0
-    }, false)
+    const source = graph.value.findById(sourceId)?.getModel?.()
+    const target = graph.value.findById(targetId)?.getModel?.()
+    if (source && target) graph.value.addItem('edge', controlEdgeConfig(source, target), false)
   })
   graph.value.paint()
   syncCurrentDependencies(targetId, true)
@@ -465,7 +469,7 @@ function applyCurrentDependencies(sourceIds) {
   ElMessage.success(t('orchestrator.dagEditor.dependenciesUpdated'))
 }
 
-function canCreateDependency({ sourceId, targetId }) {
+function canCreateControlDependency({ sourceId, targetId }) {
   return validateDAGConnection({
     graph: graph.value,
     sourceId,
@@ -474,17 +478,217 @@ function canCreateDependency({ sourceId, targetId }) {
   })
 }
 
+function canCreateConnection(context) {
+  const { sourceId, targetId, sourcePort, targetPort } = context
+  if (sourcePort?.kind !== targetPort?.kind) return 'incompatible'
+  if (sourcePort.kind === 'control') return canCreateControlDependency({ sourceId, targetId })
+
+  const sourceModel = context.sourceItem?.getModel?.()
+  const targetModel = context.targetItem?.getModel?.()
+  const output = sourceModel?.outputPorts?.find(port => port.name === sourcePort.name)
+  const input = targetModel?.inputPorts?.find(port => port.name === targetPort.name)
+  if (!arePortTypesCompatible(output, input)) return 'incompatible'
+
+  return validateDAGConnection({
+    graph: graph.value,
+    sourceId,
+    targetId,
+    hasLoop,
+    isDuplicate: model => (
+      model.edgeKind === 'parameter' &&
+      model.target === targetId &&
+      model.targetInput === input.name
+    )
+  })
+}
+
+function buildConnectionEdgeConfig({ sourceItem, targetItem, sourcePort, targetPort }) {
+  const source = sourceItem?.getModel?.() || {}
+  const target = targetItem?.getModel?.() || {}
+  if (sourcePort?.kind === 'control') {
+    return {
+      edgeKind: 'control',
+      sourceAnchor: orchestrationAnchor(source, 'output', 'control'),
+      targetAnchor: targetPort ? orchestrationAnchor(target, 'input', 'control') : undefined,
+      style: controlEdgeStyle()
+    }
+  }
+  return {
+    edgeKind: 'parameter',
+    sourceOutput: sourcePort?.name,
+    targetInput: targetPort?.name,
+    sourceAnchor: orchestrationAnchor(source, 'output', 'parameter', sourcePort?.name),
+    targetAnchor: targetPort
+      ? orchestrationAnchor(target, 'input', 'parameter', targetPort.name)
+      : undefined,
+    style: parameterEdgeStyle()
+  }
+}
+
+function controlEdgeConfig(source, target) {
+  return {
+    source: source.id,
+    target: target.id,
+    edgeKind: 'control',
+    sourceAnchor: orchestrationAnchor(source, 'output', 'control'),
+    targetAnchor: orchestrationAnchor(target, 'input', 'control'),
+    style: controlEdgeStyle()
+  }
+}
+
+function parameterEdgeConfig(source, target, output, input) {
+  return {
+    source: source.id,
+    target: target.id,
+    edgeKind: 'parameter',
+    sourceOutput: output.name,
+    targetInput: input.name,
+    sourceAnchor: orchestrationAnchor(source, 'output', 'parameter', output.name),
+    targetAnchor: orchestrationAnchor(target, 'input', 'parameter', input.name),
+    style: parameterEdgeStyle()
+  }
+}
+
+function controlEdgeStyle() {
+  return {
+    stroke: canvasColors.warning,
+    lineWidth: 1.5,
+    lineDash: [6, 4],
+    endArrow: edgeEndArrow(canvasColors.warning)
+  }
+}
+
+function parameterEdgeStyle() {
+  return {
+    stroke: canvasColors.primary,
+    lineWidth: 1.8,
+    endArrow: edgeEndArrow(canvasColors.primary)
+  }
+}
+
+function edgeEndArrow(color) {
+  return {
+    path: 'M 0,0 L 9,4 L 9,-4 Z',
+    fill: color,
+    stroke: color,
+    d: -10
+  }
+}
+
+function applyParameterEdgeBinding(edge) {
+  const source = graph.value.findById(edge.source)?.getModel?.()
+  const targetItem = graph.value.findById(edge.target)
+  const target = targetItem?.getModel?.()
+  const output = source?.outputPorts?.find(port => port.name === edge.sourceOutput)
+  const input = target?.inputPorts?.find(port => port.name === edge.targetInput)
+  if (!source || !target || !output || !input) return
+  const parameters = setParameterBinding(
+    target.parameters,
+    input,
+    outputTemplate(source.id, output.path)
+  )
+  updateNodeParameters(targetItem, parameters)
+  syncCurrentNodeParameters(target.id, parameters)
+}
+
+function clearParameterEdgeBinding(edge) {
+  const targetItem = graph.value.findById(edge.target)
+  const target = targetItem?.getModel?.()
+  const input = target?.inputPorts?.find(port => port.name === edge.targetInput)
+  if (!target || !input) return
+  const parameters = clearParameterBinding(target.parameters, input)
+  updateNodeParameters(targetItem, parameters)
+  syncCurrentNodeParameters(target.id, parameters)
+}
+
+function updateNodeParameters(itemOrId, parameters, config = {}) {
+  const item = typeof itemOrId === 'string' ? graph.value?.findById(itemOrId) : itemOrId
+  const model = item?.getModel?.()
+  if (!model) return
+
+  model.parameters = parameters
+  graph.value.updateItem(item, { ...config, parameters })
+}
+
+function syncCurrentNodeParameters(nodeId, parameters) {
+  if (currentNode.value?.id !== nodeId) return
+  withNodeDraftSync(() => {
+    currentNode.value = { ...currentNode.value, parameters }
+  })
+}
+
+function removeControlEdges(sourceId, targetId) {
+  graph.value.getEdges().forEach(edge => {
+    const model = edge.getModel()
+    if (model.source === sourceId && model.target === targetId && model.edgeKind === 'control') {
+      graph.value.removeItem(edge, false)
+    }
+  })
+}
+
+function syncParameterEdges(targetId, parameters) {
+  const target = graph.value.findById(targetId)?.getModel?.()
+  if (!target) return
+  const desired = parameterBindings(parameters, target.inputPorts).flatMap(binding => {
+    const source = graph.value.findById(binding.stepId)?.getModel?.()
+    const output = source?.outputPorts?.find(port => (
+      port.path.join('.') === binding.outputPath.join('.')
+    ))
+    return source && output ? [{ source, output, input: binding.inputPort }] : []
+  })
+  const desiredKeys = new Set(desired.map(binding => parameterEdgeKey(
+    binding.source.id,
+    targetId,
+    binding.output.name,
+    binding.input.name
+  )))
+
+  graph.value.getEdges().forEach(edge => {
+    const model = edge.getModel()
+    if (model.target !== targetId || model.edgeKind !== 'parameter') return
+    const key = parameterEdgeKey(model.source, model.target, model.sourceOutput, model.targetInput)
+    if (!desiredKeys.has(key)) graph.value.removeItem(edge, false)
+  })
+  const existingKeys = new Set(graph.value.getEdges().map(edge => {
+    const model = edge.getModel()
+    return parameterEdgeKey(model.source, model.target, model.sourceOutput, model.targetInput)
+  }))
+  desired.forEach(binding => {
+    const key = parameterEdgeKey(binding.source.id, targetId, binding.output.name, binding.input.name)
+    if (existingKeys.has(key)) return
+    removeControlEdges(binding.source.id, targetId)
+    graph.value.addItem('edge', parameterEdgeConfig(binding.source, target, binding.output, binding.input), false)
+  })
+  graph.value.paint()
+  syncCurrentDependencies(targetId)
+}
+
+function parameterEdgeKey(source, target, output, input) {
+  return `${source || ''}:${target || ''}:${output || ''}:${input || ''}`
+}
+
 function handleConnectionRejected({ reason }) {
   if (reason === 'loop') {
     ElMessage.warning(t('orchestrator.dagEditor.loopDetected'))
   } else if (reason === 'duplicate') {
     ElMessage.warning(t('orchestrator.dagEditor.edgeAlreadyExists'))
+  } else if (reason === 'incompatible') {
+    ElMessage.warning(t('orchestrator.dagEditor.incompatiblePorts'))
   }
 }
 
 function handleDelete() {
   const selectedModel = selectedItem.value?.getModel?.()
   const itemType = selectedItem.value?.getType?.()
+  if (itemType === 'edge' && selectedModel?.edgeKind === 'parameter') {
+    clearParameterEdgeBinding(selectedModel)
+  }
+  if (itemType === 'node') {
+    graph.value.getEdges()
+      .map(edge => edge.getModel())
+      .filter(edge => edge.source === selectedModel?.id && edge.edgeKind === 'parameter')
+      .forEach(clearParameterEdgeBinding)
+  }
   if (deleteSelected()) {
     ElMessage.success(itemType === 'edge' ? t('orchestrator.dagEditor.edgeDeleted') : t('orchestrator.dagEditor.nodeDeleted'))
     recordHistory()
@@ -523,7 +727,7 @@ async function handleClear() {
   }
 }
 
-function handleDrop(event) {
+async function handleDrop(event) {
   event.preventDefault()
 
   try {
@@ -532,19 +736,21 @@ function handleDrop(event) {
 
     const nodeData = JSON.parse(data)
     const point = graph.value.getPointByClient(event.clientX, event.clientY)
-    addTask(nodeData, point)
+    await addTask(nodeData, point)
   } catch (error) {
     console.error('拖放失败:', error)
     ElMessage.error(t('orchestrator.dagEditor.addNodeFailed', { error: error.message }))
   }
 }
 
-function addTask(nodeData, point = null) {
+async function addTask(nodeData, point = null) {
   try {
     if (!graph.value || !nodeData) return null
+    await ensureTaskRuntimeMetadata(nodeData.provider, nodeData.taskType, nodeData.taskId)
     const targetPoint = point || viewportCenterPoint()
     const colorKey = nodeData.provider || 'unknown'
     const color = generateColor(colorKey)
+    const ports = executionPortsForTask(nodeData.provider, nodeData.taskType, nodeData.taskId)
     addedNodeCounter += 1
     const id = `${colorKey}-${Date.now()}-${addedNodeCounter}`
 
@@ -559,14 +765,12 @@ function addTask(nodeData, point = null) {
       editUrl: nodeData.editUrl || resolveTaskTypeEditUrl(nodeData.provider, nodeData.taskType),
       parameters: nodeData.parameters || {},
       timeout: 300,
+      type: ORCHESTRATION_NODE_TYPE,
+      inputPorts: ports.inputs,
+      outputPorts: ports.outputs,
+      providerColor: color,
       x: targetPoint.x,
-      y: targetPoint.y,
-      stateStyles: selectedNodeStateStyles(color),
-      style: {
-        fill: color,
-        stroke: canvasColors.primary,
-        lineWidth: 2
-      }
+      y: targetPoint.y
     }
 
     const item = graph.value.addItem('node', nodeModel)
@@ -620,7 +824,7 @@ function convertToSteps(graphData) {
 
   graphData.edges.forEach(edge => {
     const step = nodeMap.get(edge.target)
-    if (step) {
+    if (step && !step.depends_on.includes(edge.source)) {
       step.depends_on.push(edge.source)
     }
   })
@@ -637,6 +841,7 @@ function loadSteps(steps) {
   steps.forEach((step) => {
     const colorKey = step.provider || 'unknown'
     const color = generateColor(colorKey)
+    const ports = executionPortsForTask(step.provider, step.task_type, step.task_id)
 
     nodes.push({
       id: step.id,
@@ -649,17 +854,33 @@ function loadSteps(steps) {
       editUrl: resolveTaskTypeEditUrl(step.provider, step.task_type),
       parameters: step.parameters,
       timeout: step.timeout,
-      stateStyles: selectedNodeStateStyles(color),
-      style: {
-        fill: color
-      }
+      type: ORCHESTRATION_NODE_TYPE,
+      inputPorts: ports.inputs,
+      outputPorts: ports.outputs,
+      providerColor: color
     })
 
+  })
+
+  const nodeMap = new Map(nodes.map(node => [node.id, node]))
+  steps.forEach(step => {
+    const target = nodeMap.get(step.id)
+    if (!target) return
+    const bindings = parameterBindings(step.parameters, target.inputPorts)
+    const parameterSources = new Set()
+    bindings.forEach(binding => {
+      if (!step.depends_on?.includes(binding.stepId)) return
+      const source = nodeMap.get(binding.stepId)
+      const output = source?.outputPorts?.find(port => (
+        port.path.join('.') === binding.outputPath.join('.')
+      ))
+      if (!source || !output) return
+      parameterSources.add(source.id)
+      edges.push(parameterEdgeConfig(source, target, output, binding.inputPort))
+    })
     step.depends_on?.forEach(depId => {
-      edges.push({
-        source: depId,
-        target: step.id
-      })
+      const source = nodeMap.get(depId)
+      if (source && !parameterSources.has(depId)) edges.push(controlEdgeConfig(source, target))
     })
   })
 
@@ -697,11 +918,22 @@ function handlePaste() {
     ElMessage.warning(t('orchestrator.dagEditor.noNodeToPaste'))
     return
   }
+  clearCopiedParameterBindings(item)
   selectGraphItem(item)
   recordHistory()
   emitSteps()
   emitLayout()
   ElMessage.success(t('orchestrator.dagEditor.nodePasted'))
+}
+
+function clearCopiedParameterBindings(item) {
+  const model = item?.getModel?.()
+  if (!model) return
+  let parameters = model.parameters || {}
+  parameterBindings(parameters, model.inputPorts).forEach(binding => {
+    parameters = clearParameterBinding(parameters, binding.inputPort)
+  })
+  updateNodeParameters(item, parameters)
 }
 
 function handleDuplicate() {
@@ -795,25 +1027,10 @@ function resolveCanvasColors() {
   return {
     node: color('--addp-module-orchestrator'),
     primary: color('--el-color-primary'),
+    warning: color('--el-color-warning'),
     danger: color('--el-color-danger'),
     onPrimary: color('--el-color-white'),
     background: color('--addp-bg-primary')
-  }
-}
-
-function selectedNodeStateStyles(fill) {
-  return {
-    selected: {
-      fill,
-      stroke: canvasColors.danger,
-      lineWidth: 3,
-      shadowColor: canvasColors.danger,
-      shadowBlur: 6,
-      'text-shape': {
-        fill: canvasColors.onPrimary,
-        fontWeight: 600
-      }
-    }
   }
 }
 
@@ -839,10 +1056,6 @@ async function loadTaskProviderRuntimeMetadata() {
   try {
     const providers = await taskProvidersAPI.list()
     const editUrlIndex = new Map()
-    const contextIndex = new Map()
-    const contractIndex = new Map()
-
-    const taskListRequests = []
     providers.forEach(provider => {
       const moduleName = provider.module_name
       const capabilities = parseCapabilities(provider.capabilities)
@@ -852,46 +1065,69 @@ async function loadTaskProviderRuntimeMetadata() {
           if (item.editUrl) {
             editUrlIndex.set(taskTypeIndexKey(moduleName, item.type), item.editUrl)
           }
-          taskListRequests.push(
-            modulesApi.listTasksByModule(moduleName, { task_type: item.type })
-              .then(async data => {
-                const tasks = Array.isArray(data?.items) ? data.items : []
-                await Promise.all(tasks.map(async task => {
-                  const taskType = task.task_type
-                  if (!hasValue(task?.id) || !hasValue(taskType)) return
-                  const key = taskContextIndexKey(moduleName, taskType, task.id)
-                  contextIndex.set(key, {
-                    graphId: task.graph_id || null
-                  })
-                  const detail = await taskProvidersAPI.getTaskDetail(moduleName, taskType, task.id)
-                  if (detail?.execution_contract) contractIndex.set(key, detail.execution_contract)
-                }))
-              })
-              .catch(error => {
-                console.error(`加载任务上下文失败: ${moduleName}/${item.type}`, error)
-              })
-          )
         })
     })
-
-    await Promise.all(taskListRequests)
     taskTypeEditUrlIndex.value = editUrlIndex
-    taskContextIndex.value = contextIndex
-    executionContractIndex.value = contractIndex
   } catch (error) {
     console.error('加载任务提供者运行态元数据失败:', error)
   }
 }
 
-function flattenOutputSchema(schema, path = [], labels = []) {
-  if (!schema || typeof schema !== 'object') return []
-  const properties = schema.properties && typeof schema.properties === 'object' ? schema.properties : null
-  if (!properties || Object.keys(properties).length === 0) {
-    return path.length > 0 ? [{ path, type: schema.type, label: labels.join(' / ') || path.join('.') }] : []
+async function loadStepsWithRuntimeMetadata(steps) {
+  const generation = ++stepsLoadGeneration
+  await ensureTaskRuntimeMetadataForSteps(steps)
+  if (generation !== stepsLoadGeneration) return
+  loadSteps(steps)
+}
+
+async function ensureTaskRuntimeMetadataForSteps(steps) {
+  const tasks = new Map()
+  ;(steps || []).forEach(step => {
+    const provider = step?.provider
+    const taskType = step?.task_type
+    const taskId = step?.task_id
+    if (!hasValue(provider) || !hasValue(taskType) || !hasValue(taskId)) return
+    tasks.set(taskContextIndexKey(provider, taskType, taskId), { provider, taskType, taskId })
+  })
+  const results = await Promise.allSettled(
+    [...tasks.values()].map(task => ensureTaskRuntimeMetadata(task.provider, task.taskType, task.taskId))
+  )
+  const failures = results.filter(result => result.status === 'rejected')
+  if (failures.length > 0) {
+    failures.forEach(result => console.error('加载任务执行契约失败:', result.reason))
+    ElMessage.error(t('orchestrator.dagEditor.executionContractUnavailable'))
   }
-  return Object.entries(properties).flatMap(([name, child]) => (
-    flattenOutputSchema(child, [...path, name], [...labels, child.title || name])
-  ))
+}
+
+async function ensureTaskRuntimeMetadata(provider, taskType, taskId) {
+  if (!hasValue(provider) || !hasValue(taskType) || !hasValue(taskId)) {
+    throw new Error('task runtime metadata context is incomplete')
+  }
+  const key = taskContextIndexKey(provider, taskType, taskId)
+  if (executionContractIndex.value.has(key)) return
+  if (taskRuntimeMetadataRequests.has(key)) return taskRuntimeMetadataRequests.get(key)
+
+  const request = taskProvidersAPI.getTaskDetail(provider, taskType, taskId)
+    .then(detail => {
+      if (!detail?.execution_contract) {
+        throw new Error(`execution_contract is unavailable for ${provider}/${taskType}/${taskId}`)
+      }
+      taskContextIndex.value = new Map(taskContextIndex.value).set(key, {
+        graphId: detail.graph_id || null
+      })
+      executionContractIndex.value = new Map(executionContractIndex.value).set(key, detail.execution_contract)
+    })
+    .finally(() => taskRuntimeMetadataRequests.delete(key))
+  taskRuntimeMetadataRequests.set(key, request)
+  return request
+}
+
+function executionPortsForTask(provider, taskType, taskId) {
+  const contract = executionContractIndex.value.get(taskContextIndexKey(provider, taskType, taskId))
+  return {
+    inputs: executionInputPorts(contract),
+    outputs: executionOutputPorts(contract)
+  }
 }
 
 function resolveTaskTypeEditUrl(provider, taskType) {

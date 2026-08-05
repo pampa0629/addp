@@ -170,7 +170,7 @@ def _build_routing_system_prompt(session_summary: Optional[str] = None) -> str:
 - 不要假装执行了任何数据操作"""
 
 
-async def _route_node(state: AgentState) -> AgentState:
+async def _route_node(state: AgentState, llm: Any) -> AgentState:
     """
     路由节点：单次 LLM 调用（结构化输出），上下文感知。
     同时完成：意图识别 + 技能路由 + 直接回复（无技能时）。
@@ -192,18 +192,11 @@ async def _route_node(state: AgentState) -> AgentState:
             lc_messages.append(AIMessage(content=m["content"]))
     lc_messages.append(HumanMessage(content=user_message))
 
-    llm = get_llm(streaming=False)
-    try:
-        llm_with_structure = llm.with_structured_output(RouteDecision)
-        decision: RouteDecision = await llm_with_structure.ainvoke(lc_messages)
-        skill_name = decision.skill if (decision.skill and decision.skill in registry) else None
-        direct_reply = decision.direct_reply if not skill_name else None
-        logger.info("[ROUTE] skill=%s has_direct_reply=%s", skill_name, bool(direct_reply))
-    except Exception as e:
-        logger.warning("[ROUTE] 结构化输出失败，回退到直接回复: %s", e)
-        fallback = await llm.ainvoke(lc_messages)
-        skill_name = None
-        direct_reply = fallback.content
+    llm_with_structure = llm.with_structured_output(RouteDecision)
+    decision: RouteDecision = await llm_with_structure.ainvoke(lc_messages)
+    skill_name = decision.skill if (decision.skill and decision.skill in registry) else None
+    direct_reply = decision.direct_reply if not skill_name else None
+    logger.info("[ROUTE] skill=%s has_direct_reply=%s", skill_name, bool(direct_reply))
 
     return {**state, "routed_skill": skill_name, "direct_reply": direct_reply}
 
@@ -274,6 +267,7 @@ async def stream_agent_response(
     }
 
     registry = _get_skill_registry()
+    reasoning_llm = get_llm(tenant_id, "reasoning")
     if forced_skill_name:
         if forced_skill_name not in registry:
             raise ValueError(f"AgentRun 记录的 Skill 不存在: {forced_skill_name}")
@@ -281,7 +275,7 @@ async def stream_agent_response(
         logger.info("[ROUTE] resume 使用 AgentRun 已记录 Skill: %s", forced_skill_name)
     else:
         # 路由节点（单次 LLM 调用，上下文感知）
-        state = await _route_node(state)
+        state = await _route_node(state, reasoning_llm)
 
     if state["routed_skill"]:
         # 技能执行路径：AgentFactory 动态构建领域 Agent
@@ -306,6 +300,7 @@ async def stream_agent_response(
             skill_body=skill_meta.load_body(),
             allowed_tool_names=skill_meta.tools,
             max_iterations=skill_meta.max_iterations,
+            llm=reasoning_llm,
         ):
             yield event
     else:

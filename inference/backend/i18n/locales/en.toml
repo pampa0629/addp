@@ -1,0 +1,26 @@
+[inference.error.request_invalid]
+other = "Invalid inference request"
+
+[inference.error.scope_forbidden]
+other = "The current principal or tenant cannot use this inference resource"
+
+[inference.error.model_profile_not_found]
+other = "Model profile not found or not visible"
+
+[inference.error.resource_in_use]
+other = "The resource is still referenced by downstream resources"
+
+[inference.error.model_profile_unavailable]
+other = "The model profile or one of its dependencies is unavailable"
+
+[inference.error.operation_unsupported]
+other = "The model does not support the requested operation or modality"
+
+[inference.error.upstream_unavailable]
+other = "The upstream inference service is temporarily unavailable"
+
+[inference.error.timeout]
+other = "The inference request timed out"
+
+[inference.error.upstream_failed]
+other = "The upstream inference request failed"

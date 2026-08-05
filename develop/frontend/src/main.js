@@ -9,6 +9,7 @@ import '../../../common-frontend/basic/src/styles/theme.css'
 import { createAddpI18n } from '../../../common-frontend/basic/src/composables/useAddpI18n'
 import zhCnMessages from './i18n/zh-cn.json'
 import enMessages from './i18n/en.json'
+import { graphMessagesEn, graphMessagesZhCn } from '@addp/common-frontend/graph'
 // 按需引入实际使用的图标
 import {
   ArrowLeft, CircleCloseFilled, Close, Connection, CopyDocument, Delete,
@@ -35,8 +36,19 @@ for (const [key, component] of Object.entries(icons)) {
   app.component(key, component)
 }
 
+const mergeGraphMessages = (moduleMessages, sharedMessages) => ({
+  ...moduleMessages,
+  graph: {
+    ...sharedMessages.graph,
+    ...moduleMessages.graph
+  }
+})
+
 const { i18n, init: initI18n } = createAddpI18n({
-  moduleMessages: { 'zh-cn': zhCnMessages, 'en': enMessages },
+  moduleMessages: {
+    'zh-cn': mergeGraphMessages(zhCnMessages, graphMessagesZhCn),
+    'en': mergeGraphMessages(enMessages, graphMessagesEn)
+  },
   listenToConsole: true,
 })
 

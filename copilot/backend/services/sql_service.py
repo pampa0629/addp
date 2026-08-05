@@ -4,8 +4,9 @@ SQL 生成服务：基于 LangChain 的 SQL 生成
 from typing import List, Dict, Optional
 import re
 from langchain_core.messages import HumanMessage, SystemMessage
+from sqlalchemy.orm import Session
 
-from services.llm_service import llm_service
+from services.inference_service import CopilotInferenceService
 
 
 class SQLService:
@@ -18,7 +19,6 @@ class SQLService:
     """
 
     def __init__(self):
-        self.llm_service = llm_service
         self.system_prompt = """你是一个专业的 SQL 查询生成助手。
 根据用户的自然语言需求和提供的数据源信息，生成标准的 SQL 查询语句。
 
@@ -33,7 +33,8 @@ class SQLService:
         query: str,
         datasources: List[Dict],
         memory=None,
-        tenant_id: int = 1
+        tenant_id: int = 1,
+        db: Session | None = None,
     ) -> Dict:
         """
         生成 SQL
@@ -47,7 +48,15 @@ class SQLService:
         Returns:
             包含 sql 和 explanation 的字典
         """
-        llm = self.llm_service.get_llm(tenant_id=tenant_id)
+        if db is None:
+            raise ValueError("database session is required to resolve the nl2sql scenario")
+        llm = CopilotInferenceService.chat_model(
+            db,
+            tenant_id=tenant_id,
+            scenario_code="nl2sql",
+            temperature=0.2,
+            max_output_tokens=2000,
+        )
         context = self._build_context(datasources)
 
         messages = [

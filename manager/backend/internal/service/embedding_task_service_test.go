@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -180,7 +179,7 @@ func TestEmbeddingTaskSchedulerClaimsDueTaskAndCreatesScheduledExecution(t *test
 	}
 }
 
-func TestEmbeddingTaskSchedulerRecordsFailedExecutionForOutdatedEmbeddingConfig(t *testing.T) {
+func TestEmbeddingTaskSchedulerRecordsFailedExecutionWhenInferenceRuntimeUnavailable(t *testing.T) {
 	db := newEmbeddingTaskServiceTestDB(t)
 	embeddingRepo := repository.NewEmbeddingRepository(db)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
@@ -212,8 +211,8 @@ func TestEmbeddingTaskSchedulerRecordsFailedExecutionForOutdatedEmbeddingConfig(
 	if exec.Status != commonExecution.ExecutionStatusFailed {
 		t.Fatalf("status = %s, want failed", exec.Status)
 	}
-	if message, _ := exec.ErrorDetails["message"].(string); !strings.Contains(message, "config.embedding.model") {
-		t.Fatalf("error_details.message = %#v, want embedding model mismatch", exec.ErrorDetails["message"])
+	if message, _ := exec.ErrorDetails["message"].(string); message != models.EmbeddingReasonEmbeddingServiceNil {
+		t.Fatalf("error_details.message = %#v, want embedding service unavailable", exec.ErrorDetails["message"])
 	}
 
 	refreshed, err := embeddingRepo.GetEmbeddingTask(context.Background(), task.ID, task.TenantID)
@@ -231,7 +230,7 @@ func TestEmbeddingTaskSchedulerRecordsFailedExecutionForOutdatedEmbeddingConfig(
 	}
 }
 
-func TestEmbeddingTaskDefinitionRequiresCurrentEmbeddingConfig(t *testing.T) {
+func TestEmbeddingTaskDefinitionRemovesLegacyModelFields(t *testing.T) {
 	db := newEmbeddingTaskServiceTestDB(t)
 	embeddingRepo := repository.NewEmbeddingRepository(db)
 	provider := testEmbeddingConfigurationProvider("current-model", 768, 10)
@@ -242,17 +241,12 @@ func TestEmbeddingTaskDefinitionRequiresCurrentEmbeddingConfig(t *testing.T) {
 		"model":     "other-model",
 		"dimension": 768,
 	}
-	if err := taskSvc.Create(context.Background(), task); err == nil || !strings.Contains(err.Error(), "config.embedding.model") {
-		t.Fatalf("Create error = %v, want model mismatch error", err)
+	if err := taskSvc.Create(context.Background(), task); err != nil {
+		t.Fatalf("Create error = %v", err)
 	}
-
-	task = newEmbeddingTaskDefinition()
-	task.Config["embedding"] = commonModels.JSONMap{
-		"model":     "current-model",
-		"dimension": 512,
-	}
-	if err := taskSvc.Create(context.Background(), task); err == nil || !strings.Contains(err.Error(), "config.embedding.dimension") {
-		t.Fatalf("Create error = %v, want dimension mismatch error", err)
+	embeddingCfg, ok := asJSONMap(task.Config["embedding"])
+	if !ok || embeddingCfg["model"] != nil || intFromConfig(embeddingCfg["dimension"]) != 768 {
+		t.Fatalf("config.embedding = %#v, want legacy model removed and dimension normalized", task.Config["embedding"])
 	}
 
 	task = newEmbeddingTaskDefinition()
@@ -260,12 +254,12 @@ func TestEmbeddingTaskDefinitionRequiresCurrentEmbeddingConfig(t *testing.T) {
 	if err := taskSvc.Create(context.Background(), task); err != nil {
 		t.Fatalf("Create with omitted embedding config: %v", err)
 	}
-	embeddingCfg, ok := asJSONMap(task.Config["embedding"])
+	embeddingCfg, ok = asJSONMap(task.Config["embedding"])
 	if !ok {
 		t.Fatalf("config.embedding = %#v, want JSONMap", task.Config["embedding"])
 	}
-	if embeddingCfg["model"] != "current-model" || intFromConfig(embeddingCfg["dimension"]) != 768 {
-		t.Fatalf("config.embedding = %#v, want current model/dimension", embeddingCfg)
+	if embeddingCfg["model"] != nil || intFromConfig(embeddingCfg["dimension"]) != 768 {
+		t.Fatalf("config.embedding = %#v, want dimension-only test snapshot", embeddingCfg)
 	}
 }
 
@@ -292,7 +286,7 @@ func TestEmbeddingTaskDefinitionSupportsItemScope(t *testing.T) {
 	if err := taskSvc.Create(context.Background(), task); err != nil {
 		t.Fatalf("Create item-scope task: %v", err)
 	}
-	_, req, err := taskSvc.embeddingTaskExecutionConfig(task)
+	_, req, err := taskSvc.embeddingTaskExecutionConfig(context.Background(), task)
 	if err != nil {
 		t.Fatalf("embeddingTaskExecutionConfig: %v", err)
 	}
@@ -443,9 +437,6 @@ func waitForEmbeddingTaskExecution(t *testing.T, repo *commonExecution.TaskExecu
 
 func testEmbeddingConfigurationProvider(model string, dimension, maxFileSizeMB int) *EmbeddingConfigurationProvider {
 	return NewEmbeddingConfigurationProvider(EffectiveEmbeddingConfiguration{
-		BaseURL:          "http://embedding.test",
-		Model:            model,
-		Timeout:          15 * time.Second,
 		Dimension:        dimension,
 		MaxDistance:      0.78,
 		MaxFileSizeMB:    maxFileSizeMB,

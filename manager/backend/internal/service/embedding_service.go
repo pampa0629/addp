@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"github.com/addp/common/embedding"
 	enginePlugin "github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
+	commonInference "github.com/addp/common/inference"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/models"
@@ -28,9 +30,10 @@ type EmbeddingService struct {
 	vectorRepo            *repository.EmbeddingRepository
 	systemClient          *commonClient.SystemClient
 	metaClient            *commonClient.MetaClient
-	embeddingClient       embedding.MultiModalEmbedder
+	inferenceClient       InferenceEmbeddingClient
 	taskExecRepo          *commonExecution.TaskExecutionRepository
 	configurationProvider *EmbeddingConfigurationProvider
+	bindingService        *InferenceScenarioBindingService
 	log                   *slog.Logger
 }
 
@@ -38,20 +41,24 @@ func NewEmbeddingService(
 	vectorRepo *repository.EmbeddingRepository,
 	systemClient *commonClient.SystemClient,
 	metaClient *commonClient.MetaClient,
+	inferenceClient InferenceEmbeddingClient,
 	taskExecRepo *commonExecution.TaskExecutionRepository,
 	configurationProvider *EmbeddingConfigurationProvider,
+	bindingService *InferenceScenarioBindingService,
 	log *slog.Logger,
 ) (*EmbeddingService, error) {
-	if configurationProvider == nil {
-		return nil, errors.New("embedding configuration provider is required")
+	if configurationProvider == nil || bindingService == nil || inferenceClient == nil {
+		return nil, errors.New("embedding configuration, inference binding and inference client are required")
 	}
 
 	return &EmbeddingService{
 		vectorRepo:            vectorRepo,
 		systemClient:          systemClient,
 		metaClient:            metaClient,
+		inferenceClient:       inferenceClient,
 		taskExecRepo:          taskExecRepo,
 		configurationProvider: configurationProvider,
+		bindingService:        bindingService,
 		log:                   log,
 	}, nil
 }
@@ -92,7 +99,14 @@ type EmbeddingExecutionContext struct {
 	StartedAt   time.Time
 	Config      commonModels.JSONMap
 	Runtime     EffectiveEmbeddingConfiguration
-	client      embedding.MultiModalEmbedder
+	Binding     ResolvedInferenceScenarioBinding
+	Profile     commonInference.ResolveProfileResponse
+	client      InferenceEmbeddingClient
+}
+
+type InferenceEmbeddingClient interface {
+	ResolveProfile(context.Context, commonInference.ResolveProfileRequest) (*commonInference.ResolveProfileResponse, error)
+	Embed(context.Context, commonInference.EmbeddingRequest) (*commonInference.EmbeddingResponse, error)
 }
 
 type EmbeddingExecutionStats struct {
@@ -122,9 +136,14 @@ func (s *EmbeddingService) CreateAdhocExecution(ctx context.Context, tenantID, u
 	if err != nil {
 		return nil, err
 	}
-	runtime, client, err := s.runtimeSnapshot()
+	runtime, binding, profile, err := s.runtimeSnapshot(ctx, tenantID)
 	if err != nil {
 		return nil, err
+	}
+	executionConfig["embedding"] = commonModels.JSONMap{
+		"model_profile_id": binding.ModelProfileID, "profile_version": profile.ProfileVersion,
+		"deployment_id": profile.DeploymentID, "dimension": profile.Dimension,
+		"binding_version": binding.BindingVersion,
 	}
 
 	executionID := uuid.NewString()
@@ -153,7 +172,9 @@ func (s *EmbeddingService) CreateAdhocExecution(ctx context.Context, tenantID, u
 			StartedAt:   now,
 			Config:      executionConfig,
 			Runtime:     runtime,
-			client:      client,
+			Binding:     binding,
+			Profile:     *profile,
+			client:      s.inferenceClient,
 		})
 		status := commonExecution.ExecutionStatusSuccess
 		var errDetails commonModels.JSONMap
@@ -175,7 +196,7 @@ func (s *EmbeddingService) RunEmbeddingExecution(ctx context.Context, tenantID u
 		return nil, errors.New("meta client is not available")
 	}
 	if execCtx == nil || execCtx.client == nil {
-		runtime, client, err := s.runtimeSnapshot()
+		runtime, binding, profile, err := s.runtimeSnapshot(ctx, tenantID)
 		if err != nil {
 			return nil, err
 		}
@@ -183,7 +204,9 @@ func (s *EmbeddingService) RunEmbeddingExecution(ctx context.Context, tenantID u
 			execCtx = &EmbeddingExecutionContext{}
 		}
 		execCtx.Runtime = runtime
-		execCtx.client = client
+		execCtx.Binding = binding
+		execCtx.Profile = *profile
+		execCtx.client = s.inferenceClient
 	}
 	stats := &EmbeddingExecutionStats{}
 	items, err := s.resolveExecutionItems(ctx, tenantID, req)
@@ -245,7 +268,14 @@ func (s *EmbeddingService) GetItemEmbeddingState(ctx context.Context, tenantID, 
 	if err != nil {
 		return nil, itemFingerprint, err
 	}
-	return s.embeddingStateForCurrentItem(*item, state), itemFingerprint, nil
+	if state == nil || state.Status != models.EmbeddingStatusReady {
+		return state, itemFingerprint, nil
+	}
+	_, binding, profile, err := s.runtimeSnapshot(ctx, tenantID)
+	if err != nil {
+		return nil, itemFingerprint, err
+	}
+	return s.embeddingStateForCurrentItem(*item, state, binding.ModelProfileID, profile.ProfileVersion, profile.DeploymentID), itemFingerprint, nil
 }
 
 func (s *EmbeddingService) ListEmbeddings(ctx context.Context, filter repository.EmbeddingListFilter) ([]*models.Embedding, int64, error) {
@@ -323,10 +353,9 @@ func (s *EmbeddingService) collectNodeItems(ctx context.Context, client *commonC
 func (s *EmbeddingService) processItem(ctx context.Context, tenantID uint, item commonModels.MetaItem, execCtx *EmbeddingExecutionContext) string {
 	itemFingerprint := commonModels.GenerateItemFingerprint(item.EngineID, item.FullName)
 	sourceVersion := sourceVersionForItem(itemFingerprint, item)
-	modelName := strings.TrimSpace(execCtx.Runtime.Model)
-	if modelName == "" {
-		modelName = s.currentEmbeddingModel()
-	}
+	modelProfileID := execCtx.Binding.ModelProfileID
+	profileVersion := execCtx.Profile.ProfileVersion
+	deploymentID := execCtx.Profile.DeploymentID
 	dimension := execCtx.Runtime.Dimension
 	if dimension <= 0 {
 		dimension = s.currentEmbeddingDimension()
@@ -342,32 +371,33 @@ func (s *EmbeddingService) processItem(ctx context.Context, tenantID uint, item 
 		return "failed"
 	}
 	if existing != nil && existing.Status == models.EmbeddingStatusReady &&
-		existing.SourceVersion == sourceVersion && existing.Model == modelName && existing.Dimension == dimension {
+		existing.SourceVersion == sourceVersion && existing.ModelProfileID == modelProfileID &&
+		existing.ProfileVersion == profileVersion && existing.DeploymentID == deploymentID && existing.Dimension == dimension {
 		return "ready_skipped"
 	}
 
 	resolved, err := s.resolveItemForEmbedding(ctx, item, maxFileSizeMBFromExecutionContext(execCtx, execCtx.Runtime.MaxFileSizeMB))
 	if err != nil {
 		if errors.Is(err, errUnsupportedItem) {
-			s.upsertNonReadyState(ctx, tenantID, item, itemFingerprint, sourceVersion, modelName, dimension, models.EmbeddingStatusUnsupported, models.EmbeddingReasonFormatUnsupported, err.Error(), lastExecutionID)
+			s.upsertNonReadyState(ctx, tenantID, item, itemFingerprint, sourceVersion, modelProfileID, profileVersion, deploymentID, dimension, models.EmbeddingStatusUnsupported, models.EmbeddingReasonFormatUnsupported, err.Error(), lastExecutionID)
 			return "unsupported"
 		}
 		if errors.Is(err, errMissingSource) {
-			s.upsertNonReadyState(ctx, tenantID, item, itemFingerprint, sourceVersion, modelName, dimension, models.EmbeddingStatusMissingSource, models.EmbeddingReasonSourceMissing, err.Error(), lastExecutionID)
+			s.upsertNonReadyState(ctx, tenantID, item, itemFingerprint, sourceVersion, modelProfileID, profileVersion, deploymentID, dimension, models.EmbeddingStatusMissingSource, models.EmbeddingReasonSourceMissing, err.Error(), lastExecutionID)
 			return "missing_source"
 		}
-		s.upsertNonReadyState(ctx, tenantID, item, itemFingerprint, sourceVersion, modelName, dimension, models.EmbeddingStatusFailed, models.EmbeddingReasonReadFailed, err.Error(), lastExecutionID)
+		s.upsertNonReadyState(ctx, tenantID, item, itemFingerprint, sourceVersion, modelProfileID, profileVersion, deploymentID, dimension, models.EmbeddingStatusFailed, models.EmbeddingReasonReadFailed, err.Error(), lastExecutionID)
 		return "failed"
 	}
 
-	vector, model, err := s.embedResolvedContent(ctx, resolved, execCtx.client)
+	response, err := s.embedResolvedContent(ctx, tenantID, modelProfileID, resolved, execCtx.client)
 	if err != nil {
-		s.upsertNonReadyState(ctx, tenantID, item, itemFingerprint, sourceVersion, modelName, dimension, models.EmbeddingStatusFailed, models.EmbeddingReasonEmbeddingFailed, err.Error(), lastExecutionID)
+		s.upsertNonReadyState(ctx, tenantID, item, itemFingerprint, sourceVersion, modelProfileID, profileVersion, deploymentID, dimension, models.EmbeddingStatusFailed, models.EmbeddingReasonEmbeddingFailed, err.Error(), lastExecutionID)
 		return "failed"
 	}
-	if strings.TrimSpace(model) == "" {
-		model = modelName
-	}
+	vector := response.Vectors[0]
+	profileVersion = response.ProfileVersion
+	deploymentID = response.DeploymentID
 	if len(vector) > 0 {
 		dimension = len(vector)
 	}
@@ -381,7 +411,9 @@ func (s *EmbeddingService) processItem(ctx context.Context, tenantID uint, item 
 		Locator:         s.itemLocator(ctx, item),
 		SourceVersion:   sourceVersion,
 		Embedding:       vector,
-		Model:           model,
+		ModelProfileID:  modelProfileID,
+		ProfileVersion:  profileVersion,
+		DeploymentID:    deploymentID,
 		Dimension:       dimension,
 		Status:          models.EmbeddingStatusReady,
 		StatusReason:    models.EmbeddingReasonReady,
@@ -479,43 +511,35 @@ func maxFileSizeMBFromExecutionContext(execCtx *EmbeddingExecutionContext, defau
 	return defaultValue
 }
 
-func (s *EmbeddingService) embedResolvedContent(ctx context.Context, input *resolvedEmbeddingInput, client embedding.MultiModalEmbedder) ([]float32, string, error) {
+func (s *EmbeddingService) embedResolvedContent(ctx context.Context, tenantID uint, modelProfileID string, input *resolvedEmbeddingInput, client InferenceEmbeddingClient) (*commonInference.EmbeddingResponse, error) {
 	if input == nil {
-		return nil, "", errors.New("embedding input is nil")
+		return nil, errors.New("embedding input is nil")
 	}
 	if client == nil {
-		return nil, "", errors.New(models.EmbeddingReasonEmbeddingServiceNil)
+		return nil, errors.New(models.EmbeddingReasonEmbeddingServiceNil)
 	}
-	var result *embedding.BatchResult
-	var err error
+	requestInput := commonInference.EmbeddingInput{}
 	switch input.Modality {
 	case embedding.ModalityImage:
-		result, err = client.EmbedImage(ctx, []embedding.ImageInput{{
-			ID:       input.ID,
-			Data:     input.Data,
-			MIMEType: input.ContentType,
-		}})
+		requestInput = commonInference.EmbeddingInput{Modality: commonInference.ModalityImage, Data: base64.StdEncoding.EncodeToString(input.Data), MIMEType: input.ContentType}
 	case embedding.ModalityVideo:
-		result, err = client.EmbedVideo(ctx, []embedding.VideoInput{{
-			ID:       input.ID,
-			Data:     input.Data,
-			MIMEType: input.ContentType,
-		}})
+		return nil, fmt.Errorf("unsupported modality: %s", input.Modality)
 	case embedding.ModalityText, embedding.ModalityDocument:
-		result, err = client.EmbedText(ctx, []embedding.TextInput{{
-			ID:   input.ID,
-			Text: input.Text,
-		}})
+		requestInput = commonInference.EmbeddingInput{Modality: commonInference.ModalityText, Text: input.Text}
 	default:
-		return nil, "", fmt.Errorf("unsupported modality: %s", input.Modality)
+		return nil, fmt.Errorf("unsupported modality: %s", input.Modality)
 	}
+	result, err := client.Embed(ctx, commonInference.EmbeddingRequest{
+		SchemaVersion: commonInference.SchemaVersion, TenantID: tenantID,
+		ModelProfileID: modelProfileID, Inputs: []commonInference.EmbeddingInput{requestInput},
+	})
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	if result == nil || len(result.Embeddings) == 0 || len(result.Embeddings[0].Vector) == 0 {
-		return nil, "", errors.New("embedding result is empty")
+	if result == nil || len(result.Vectors) != 1 || len(result.Vectors[0]) == 0 {
+		return nil, errors.New("embedding result is empty")
 	}
-	return result.Embeddings[0].Vector, result.Embeddings[0].Model, nil
+	return result, nil
 }
 
 type ObjectStorageInfo struct {
@@ -614,7 +638,7 @@ func storageInfoFromCatalogFacts(item commonModels.MetaItem, facts *enginePlugin
 	return info
 }
 
-func (s *EmbeddingService) upsertNonReadyState(ctx context.Context, tenantID uint, item commonModels.MetaItem, itemFingerprint, sourceVersion, model string, dimension int, status, reason, message, lastExecutionID string) {
+func (s *EmbeddingService) upsertNonReadyState(ctx context.Context, tenantID uint, item commonModels.MetaItem, itemFingerprint, sourceVersion, modelProfileID string, profileVersion int64, deploymentID string, dimension int, status, reason, message, lastExecutionID string) {
 	state := &models.Embedding{
 		TenantID:        tenantID,
 		ItemFingerprint: itemFingerprint,
@@ -622,7 +646,9 @@ func (s *EmbeddingService) upsertNonReadyState(ctx context.Context, tenantID uin
 		EngineID:        item.EngineID,
 		Locator:         s.itemLocator(ctx, item),
 		SourceVersion:   sourceVersion,
-		Model:           model,
+		ModelProfileID:  modelProfileID,
+		ProfileVersion:  profileVersion,
+		DeploymentID:    deploymentID,
 		Dimension:       dimension,
 		Status:          status,
 		StatusReason:    reason,
@@ -675,11 +701,6 @@ func (s *EmbeddingService) buildExecutionConfig(ctx context.Context, tenantID ui
 		"filters": commonModels.JSONMap{
 			"max_file_size_mb": s.configurationProvider.Current().MaxFileSizeMB,
 		},
-		"embedding": commonModels.JSONMap{
-			"model":                 s.currentEmbeddingModel(),
-			"dimension":             s.currentEmbeddingDimension(),
-			"configuration_version": s.configurationProvider.Current().Version,
-		},
 	}, nil
 }
 
@@ -697,13 +718,6 @@ func (s *EmbeddingService) itemLocator(ctx context.Context, item commonModels.Me
 	return loc.ToURI()
 }
 
-func (s *EmbeddingService) currentEmbeddingModel() string {
-	if s == nil || s.configurationProvider == nil {
-		return ""
-	}
-	return strings.TrimSpace(s.configurationProvider.Current().Model)
-}
-
 func (s *EmbeddingService) currentEmbeddingDimension() int {
 	if s == nil || s.configurationProvider == nil || s.configurationProvider.Current().Dimension <= 0 {
 		return 2560
@@ -711,25 +725,29 @@ func (s *EmbeddingService) currentEmbeddingDimension() int {
 	return s.configurationProvider.Current().Dimension
 }
 
-func (s *EmbeddingService) runtimeSnapshot() (EffectiveEmbeddingConfiguration, embedding.MultiModalEmbedder, error) {
+func (s *EmbeddingService) runtimeSnapshot(ctx context.Context, tenantID uint) (EffectiveEmbeddingConfiguration, ResolvedInferenceScenarioBinding, *commonInference.ResolveProfileResponse, error) {
+	if s == nil || s.configurationProvider == nil || s.bindingService == nil || s.inferenceClient == nil {
+		return EffectiveEmbeddingConfiguration{}, ResolvedInferenceScenarioBinding{}, nil, errors.New("embedding inference runtime is not available")
+	}
 	runtime := s.configurationProvider.Current()
-	if strings.TrimSpace(runtime.BaseURL) == "" {
-		return runtime, nil, errors.New("embedding service base URL is not configured")
-	}
-	models := map[embedding.Modality]string{
-		embedding.ModalityText: runtime.Model, embedding.ModalityDocument: runtime.Model,
-		embedding.ModalityImage: runtime.Model, embedding.ModalityVideo: runtime.Model,
-	}
-	client, err := embedding.NewHTTPEmbeddingClient(embedding.ServiceConfig{
-		BaseURL: runtime.BaseURL, APIKey: runtime.APIKey, Timeout: runtime.Timeout, Models: models,
-	}, embedding.WithLogger(s.log))
+	binding, err := s.bindingService.Resolve(ctx, tenantID)
 	if err != nil {
-		return runtime, nil, fmt.Errorf("create embedding client: %w", err)
+		return runtime, binding, nil, err
 	}
-	return runtime, client, nil
+	profile, err := s.inferenceClient.ResolveProfile(ctx, commonInference.ResolveProfileRequest{
+		SchemaVersion: commonInference.SchemaVersion, TenantID: tenantID,
+		ModelProfileID: binding.ModelProfileID, Operation: commonInference.OperationEmbedding, Modality: commonInference.ModalityText,
+	})
+	if err != nil {
+		return runtime, binding, nil, err
+	}
+	if profile.Dimension != runtime.Dimension {
+		return runtime, binding, nil, fmt.Errorf("model profile dimension %d does not match manager vector dimension %d", profile.Dimension, runtime.Dimension)
+	}
+	return runtime, binding, profile, nil
 }
 
-func (s *EmbeddingService) embeddingStateForCurrentItem(item commonModels.MetaItem, state *models.Embedding) *models.Embedding {
+func (s *EmbeddingService) embeddingStateForCurrentItem(item commonModels.MetaItem, state *models.Embedding, modelProfileID string, profileVersion int64, deploymentID string) *models.Embedding {
 	if state == nil {
 		return nil
 	}
@@ -742,7 +760,7 @@ func (s *EmbeddingService) embeddingStateForCurrentItem(item commonModels.MetaIt
 	switch {
 	case state.SourceVersion != currentSourceVersion:
 		statusReason = models.EmbeddingReasonSourceChanged
-	case strings.TrimSpace(s.currentEmbeddingModel()) != "" && state.Model != s.currentEmbeddingModel():
+	case state.ModelProfileID != modelProfileID || state.ProfileVersion != profileVersion || state.DeploymentID != deploymentID:
 		statusReason = models.EmbeddingReasonModelChanged
 	case s.currentEmbeddingDimension() > 0 && state.Dimension != s.currentEmbeddingDimension():
 		statusReason = models.EmbeddingReasonDimensionChanged

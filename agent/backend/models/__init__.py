@@ -1,4 +1,4 @@
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
 
@@ -9,6 +9,7 @@ from .run import AgentRun
 from .run_step import AgentRunStep
 from .run_event import AgentRunEvent
 from .interaction import Interaction
+from .inference_scenario_binding import InferenceScenarioBinding
 
 __all__ = [
     "Base",
@@ -19,4 +20,5 @@ __all__ = [
     "AgentRunStep",
     "AgentRunEvent",
     "Interaction",
+    "InferenceScenarioBinding",
 ]

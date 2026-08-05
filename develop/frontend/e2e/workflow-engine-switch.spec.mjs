@@ -71,6 +71,7 @@ test.describe('responsive workflow dialogs', () => {
     const resourceDialog = page.getByRole('dialog', { name: '选择数据源', exact: true })
     await expect(resourceDialog.getByText(RESOURCE_ENGINE.name, { exact: true })).toBeVisible()
     await expect(resourceDialog.locator('.el-tag__content')).toContainText(RESOURCE_ENGINE.name)
+    await expect(resourceDialog.getByText('public', { exact: true })).toBeVisible()
     await expect(resourceDialog.getByRole('button', { name: '确定', exact: true })).toBeEnabled()
     await expect(page.locator('.el-message')).toHaveCount(0)
     const resourceSurface = visibleDialogSurface(page)
@@ -105,7 +106,7 @@ test('keeps dialog and canvas keyboard focus predictable', async ({ page }) => {
   const executeTrigger = primaryExecuteButton(page)
   await executeTrigger.click()
   const executeDialog = page.getByRole('dialog', { name: '执行工作流', exact: true })
-  await expect(executeDialog.getByRole('textbox', { name: '执行参数', exact: true })).toBeFocused()
+  await expect(executeDialog.getByRole('radio', { name: '工作流配置', exact: true })).toBeFocused()
   await page.keyboard.press('Escape')
   await expect(executeDialog).not.toBeVisible()
   await expect(executeTrigger).toBeFocused()
@@ -171,6 +172,42 @@ test('highlights, selects, and deletes a workflow edge', async ({ page }) => {
   expect(target.depends_on).toEqual([])
 })
 
+test('renders a visible gap where workflow edges cross', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('theme-mode', 'dark'))
+  await installMockBackend(page, {
+    includeInputConnections: true,
+    includeCrossingEdges: true
+  })
+  await openSavedWorkflow(page)
+
+  const edgeRendering = await page.locator('#workflow-dag-container').evaluate(element => {
+    const graph = element.__vueParentComponent?.setupState?.graph
+    const edges = graph?.getEdges?.() || []
+    const beforePaths = edges.map(edge => JSON.stringify(edge.getKeyShape().attr('path')))
+
+    graph.updateItem('operator_a_1', { x: 300, y: 120 })
+    graph.refreshPositions()
+
+    return edges.map((edge, index) => {
+      const casing = edge.getContainer().find(shape => shape.get('name') === 'workflow-edge-casing')
+      const keyPath = JSON.stringify(edge.getKeyShape().attr('path'))
+      return {
+        casingStyle: casing?.attr?.() || null,
+        casingPath: JSON.stringify(casing?.attr?.('path')),
+        keyPath,
+        pathChanged: keyPath !== beforePaths[index]
+      }
+    })
+  })
+  expect(edgeRendering).toHaveLength(2)
+  expect(edgeRendering.every(edge => (
+    edge.casingStyle?.lineWidth === 6 &&
+    edge.casingStyle?.stroke &&
+    edge.casingPath === edge.keyPath
+  ))).toBe(true)
+  expect(edgeRendering.some(edge => edge.pathChanged)).toBe(true)
+})
+
 test('edits port bindings from the parameter panel and persists every input reference', async ({ page }) => {
   const backend = await installMockBackend(page, { includeInputConnections: true })
   await openSavedWorkflow(page)
@@ -212,7 +249,7 @@ test('clear and switch detaches the saved task without updating it', async ({ pa
   await expect(engineSwitchDialog(page)).not.toBeVisible()
   await expect(selectedEngine(page)).toContainText(ENGINE_B.name)
   await expect(primarySaveButton(page)).toBeDisabled()
-  await expect(page).toHaveURL(/\/workflow$/)
+  await expect(page).toHaveURL(/\/workflow\?action=create$/)
   expect(backend.updates).toHaveLength(0)
   expect(backend.creates).toHaveLength(0)
 
@@ -370,14 +407,13 @@ test('locks the execute dialog while submission is pending', async ({ page }) =>
   await primaryExecuteButton(page).click()
   const dialog = page.getByRole('dialog', { name: '执行工作流', exact: true })
   await expect(dialog).toBeVisible()
-  const inputs = dialog.getByRole('textbox', { name: '执行参数', exact: true })
-  await inputs.fill('{"threshold": 10}')
+  const input = await configureThresholdOverride(dialog, 10)
   const cancelButton = dialog.getByRole('button', { name: '取消', exact: true })
   const confirmButton = dialog.getByRole('button', { name: '执行', exact: true })
 
   await confirmButton.click()
   await expect.poll(() => backend.executions.length).toBe(1)
-  await expect(inputs).toBeDisabled()
+  await expect(input).toBeDisabled()
   await expect(cancelButton).toBeDisabled()
   await expect(confirmButton).toBeDisabled()
   await expect(confirmButton).toHaveClass(/is-loading/)
@@ -386,7 +422,7 @@ test('locks the execute dialog while submission is pending', async ({ page }) =>
 
   await page.keyboard.press('Escape')
   await expect(dialog).toBeVisible()
-  expect(backend.executions).toEqual([{ threshold: 10 }])
+  expect(backend.executions).toEqual([{ parameters: { threshold: 10 } }])
 
   backend.releaseExecution()
 
@@ -400,18 +436,17 @@ test('keeps execution inputs available after submission fails', async ({ page })
 
   await primaryExecuteButton(page).click()
   const dialog = page.getByRole('dialog', { name: '执行工作流', exact: true })
-  const inputs = dialog.getByRole('textbox', { name: '执行参数', exact: true })
-  await inputs.fill('{"threshold": 10}')
+  const input = await configureThresholdOverride(dialog, 10)
   await dialog.getByRole('button', { name: '执行', exact: true }).click()
 
   await expect(page.locator('.el-message').filter({ hasText: 'Runtime unavailable' })).toBeVisible()
   await expect(dialog).toBeVisible()
-  await expect(inputs).toBeEnabled()
-  await expect(inputs).toHaveValue('{"threshold": 10}')
+  await expect(input).toBeEnabled()
+  await expect(input).toHaveValue('10')
   await expect(dialog.getByRole('button', { name: '取消', exact: true })).toBeEnabled()
   await expect(dialog.getByRole('button', { name: '执行', exact: true })).toBeEnabled()
   await expect(dialog.locator('.el-dialog__headerbtn')).toHaveCount(1)
-  expect(backend.executions).toEqual([{ threshold: 10 }])
+  expect(backend.executions).toEqual([{ parameters: { threshold: 10 } }])
 })
 
 test('locks the save dialog while creation is pending', async ({ page }) => {
@@ -480,14 +515,14 @@ test('saves a new workflow before opening and submitting execution', async ({ pa
 
   const executeDialog = page.getByRole('dialog', { name: '执行工作流', exact: true })
   await expect(executeDialog).toBeVisible()
-  await expect(page).toHaveURL(/\/workflow\?id=99$/)
+  await expect(page).toHaveURL(/\/workflow\?action=edit&id=99$/)
   expect(backend.creates).toHaveLength(1)
   expect(backend.creates[0].name).toBe('Executable workflow')
   await executeDialog.getByRole('button', { name: '执行', exact: true }).click()
 
   await expect(executeDialog).not.toBeVisible()
   expect(backend.executionTaskIds).toEqual([99])
-  expect(backend.executions).toEqual([{}])
+  expect(backend.executions).toEqual([{ parameters: {} }])
   expect(backend.validationRequests).toBe(1)
 
   await page.reload()
@@ -526,14 +561,14 @@ test('locks the editor while AI generation replaces the workflow', async ({ page
 })
 
 async function openSavedWorkflow(page) {
-  await page.goto(`/workflow?id=${SAVED_TASK_ID}`)
+  await page.goto(`/workflow?action=edit&id=${SAVED_TASK_ID}`)
   await expect(page.getByRole('heading', { name: 'Saved workflow', exact: true })).toBeVisible()
   await expect(selectedEngine(page)).toContainText(ENGINE_A.name)
   await expect(primarySaveButton(page)).toBeEnabled()
 }
 
 async function openNewWorkflow(page) {
-  await page.goto('/workflow')
+  await page.goto('/workflow?action=create')
   await expect(page.getByRole('heading', { name: '未命名工作流', exact: true })).toBeVisible()
   await expect(selectedEngine(page)).toContainText(ENGINE_A.name)
 }
@@ -568,6 +603,14 @@ function primaryExecuteButton(page) {
   return page.locator('.primary-actions').getByRole('button', { name: '执行', exact: true })
 }
 
+async function configureThresholdOverride(dialog, value) {
+  const field = dialog.locator('.parameter-field').filter({ hasText: '阈值' })
+  await field.getByText('执行时指定', { exact: true }).click()
+  const input = field.getByRole('spinbutton')
+  await input.fill(String(value))
+  return input
+}
+
 function engineSwitchDialog(page) {
   return page.getByRole('dialog', { name: '切换工作流引擎', exact: true })
 }
@@ -587,7 +630,8 @@ async function installMockBackend(page, {
   deferGeneration = false,
   includeResourcePicker = false,
   includeInputConnections = false,
-  includeConnectedEdge = false
+  includeConnectedEdge = false,
+  includeCrossingEdges = false
 } = {}) {
   const updates = []
   const creates = []
@@ -615,7 +659,12 @@ async function installMockBackend(page, {
   const generationGate = deferGeneration
     ? new Promise(resolve => { releaseGeneration = resolve })
     : null
-  const task = createSavedTask(includeResourcePicker, includeInputConnections, includeConnectedEdge)
+  const task = createSavedTask(
+    includeResourcePicker,
+    includeInputConnections,
+    includeConnectedEdge,
+    includeCrossingEdges
+  )
   const operatorAParameters = [
     { name: 'source', type: 'string', required: false, description: 'Source input' }
   ]
@@ -699,6 +748,42 @@ async function installMockBackend(page, {
         }]
       })
     }
+    if (path === `/api/v1/meta/resource-tree/${RESOURCE_ENGINE.id}/node`) {
+      const locator = url.searchParams.get('locator')
+      if (locator === `addp://engine/${RESOURCE_ENGINE.id}/path?type=database`) {
+        return fulfillJSON(route, {
+          id: locator,
+          locator,
+          label: RESOURCE_ENGINE.name,
+          type: 'database',
+          children: [{
+            id: `addp://engine/${RESOURCE_ENGINE.id}/path/public?type=schema`,
+            locator: `addp://engine/${RESOURCE_ENGINE.id}/path/public?type=schema`,
+            label: 'public',
+            type: 'schema',
+            hasChildren: true,
+            children: []
+          }]
+        })
+      }
+      if (locator === `addp://engine/${RESOURCE_ENGINE.id}/path/public?type=schema`) {
+        return fulfillJSON(route, {
+          id: locator,
+          locator,
+          label: 'public',
+          type: 'schema',
+          children: [{
+            id: RESOURCE_LOCATOR,
+            locator: RESOURCE_LOCATOR,
+            label: 'roads',
+            type: 'table',
+            hasChildren: false,
+            children: []
+          }]
+        })
+      }
+      return fulfillJSON(route, {})
+    }
     if (path === `/api/v1/meta/resource-tree/${RESOURCE_ENGINE.id}/ancestors`) {
       return fulfillJSON(route, {
         engine_id: RESOURCE_ENGINE.id,
@@ -758,7 +843,11 @@ async function installMockBackend(page, {
       return fulfillJSON(route, task)
     }
     if (path === '/api/v1/develop/task-definitions/99' && method === 'GET') {
-      return fulfillJSON(route, { ...creates[creates.length - 1], id: 99 })
+      return fulfillJSON(route, {
+        ...creates[creates.length - 1],
+        id: 99,
+        execution_contract: createExecutionContract()
+      })
     }
     if (path === `/api/v1/develop/task-definitions/${SAVED_TASK_ID}` && method === 'PUT') {
       const payload = request.postDataJSON()
@@ -809,7 +898,8 @@ async function installMockBackend(page, {
 function createSavedTask(
   includeResourcePicker = false,
   includeInputConnections = false,
-  includeConnectedEdge = false
+  includeConnectedEdge = false,
+  includeCrossingEdges = false
 ) {
   const tasks = [{
     id: 'operator_a_1',
@@ -817,14 +907,29 @@ function createSavedTask(
     params: includeResourcePicker ? { source_locator: RESOURCE_LOCATOR } : {},
     depends_on: []
   }]
+  if (includeCrossingEdges) {
+    tasks.push({
+      id: 'operator_a_2',
+      operator: 'operator_a',
+      params: {},
+      depends_on: []
+    })
+  }
   if (includeInputConnections) {
     tasks.push({
       id: 'operator_input_1',
       operator: 'operator_input',
-      params: includeConnectedEdge
+      params: includeCrossingEdges
+        ? {
+            left_value: { $ref: 'operator_a_2' },
+            right_value: { $ref: 'operator_a_1' }
+          }
+        : includeConnectedEdge
         ? { left_value: { $ref: 'operator_a_1' } }
         : {},
-      depends_on: includeConnectedEdge ? ['operator_a_1'] : []
+      depends_on: includeCrossingEdges
+        ? ['operator_a_1', 'operator_a_2']
+        : includeConnectedEdge ? ['operator_a_1'] : []
     })
   }
   return {
@@ -843,15 +948,41 @@ function createSavedTask(
       type: 'workflow',
       engine_id: ENGINE_A.id
     },
+    execution_contract: createExecutionContract(),
     editor_layout: {
       nodes: {
-        operator_a_1: { x: 260, y: 180 },
+        operator_a_1: includeCrossingEdges ? { x: 250, y: 80 } : { x: 260, y: 180 },
+        ...(includeCrossingEdges ? { operator_a_2: { x: 330, y: 520 } } : {}),
         ...(includeInputConnections
-          ? { operator_input_1: { x: includeConnectedEdge ? 650 : 520, y: 180 } }
+          ? {
+              operator_input_1: includeCrossingEdges
+                ? { x: 720, y: 300 }
+                : { x: includeConnectedEdge ? 650 : 520, y: 180 }
+            }
           : {})
       },
       viewport: { zoom: 1, translate_x: 0, translate_y: 0 }
     }
+  }
+}
+
+function createExecutionContract() {
+  return {
+    input_schema: {
+      type: 'object',
+      title: '执行参数',
+      properties: {
+        threshold: {
+          type: 'integer',
+          title: '阈值',
+          description: '本次执行使用的阈值'
+        }
+      },
+      additionalProperties: false
+    },
+    input_defaults: { threshold: 5 },
+    input_ui_schema: { threshold: { order: 0 } },
+    output_schema: { type: 'object', properties: {}, additionalProperties: false }
   }
 }
 

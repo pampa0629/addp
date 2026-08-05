@@ -5219,6 +5219,83 @@ const docTemplate = `{
                 ]
             }
         },
+        "/settings/inference-binding": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "配置管理 | Configuration Management"
+                ],
+                "summary": "获取 Manager 推理场景绑定 | Get Manager inference scenario binding",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.InferenceScenarioBindingResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.configuration.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "配置管理 | Configuration Management"
+                ],
+                "summary": "更新 Manager 推理场景绑定 | Update Manager inference scenario binding",
+                "parameters": [
+                    {
+                        "description": "Inference scenario binding",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.UpdateInferenceScenarioBindingInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.InferenceScenarioBindingResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.configuration.update"
+                ]
+            }
+        },
         "/storage-assets/{engine_id}/{storage_ref}": {
             "get": {
                 "security": [
@@ -7837,12 +7914,6 @@ const docTemplate = `{
         "github_com_addp_manager_internal_service.EmbeddingConfigurationResponse": {
             "type": "object",
             "properties": {
-                "api_key_configured": {
-                    "type": "boolean"
-                },
-                "base_url": {
-                    "type": "string"
-                },
                 "batch_concurrency": {
                     "type": "integer"
                 },
@@ -7855,14 +7926,8 @@ const docTemplate = `{
                 "max_file_size_mb": {
                     "type": "integer"
                 },
-                "model": {
-                    "type": "string"
-                },
                 "persisted": {
                     "type": "boolean"
-                },
-                "timeout_seconds": {
-                    "type": "integer"
                 },
                 "updated_at": {
                     "type": "string"
@@ -8010,6 +8075,35 @@ const docTemplate = `{
                 },
                 "upload_uuid": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.InferenceScenarioBindingResponse": {
+            "type": "object",
+            "properties": {
+                "effective": {
+                    "type": "boolean"
+                },
+                "model_profile_id": {
+                    "type": "string"
+                },
+                "scenario_code": {
+                    "type": "string"
+                },
+                "scope_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -8781,17 +8875,11 @@ const docTemplate = `{
         "github_com_addp_manager_internal_service.UpdateEmbeddingConfigurationInput": {
             "type": "object",
             "required": [
-                "base_url",
                 "batch_concurrency",
                 "max_distance",
-                "max_file_size_mb",
-                "model",
-                "timeout_seconds"
+                "max_file_size_mb"
             ],
             "properties": {
-                "base_url": {
-                    "type": "string"
-                },
                 "batch_concurrency": {
                     "type": "integer"
                 },
@@ -8801,11 +8889,19 @@ const docTemplate = `{
                 "max_file_size_mb": {
                     "type": "integer"
                 },
-                "model": {
-                    "type": "string"
-                },
-                "timeout_seconds": {
+                "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.UpdateInferenceScenarioBindingInput": {
+            "type": "object",
+            "required": [
+                "model_profile_id"
+            ],
+            "properties": {
+                "model_profile_id": {
+                    "type": "string"
                 },
                 "version": {
                     "type": "integer"
@@ -8880,7 +8976,7 @@ const docTemplate = `{
                     "type": "object",
                     "additionalProperties": true
                 },
-                "model": {
+                "model_profile_id": {
                     "type": "string"
                 },
                 "name": {

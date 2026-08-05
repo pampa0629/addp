@@ -462,6 +462,7 @@
       :close-on-click-modal="!executing"
       :close-on-press-escape="!executing"
       :show-close="!executing"
+      @opened="focusExecutionParameters"
       @closed="restoreExecuteTriggerFocus"
     >
       <div class="execution-summary">
@@ -471,12 +472,14 @@
       <div v-loading="executionContractLoading">
         <ExecutionParameterForm
           v-if="executionContract"
+          ref="executionParameterFormRef"
           v-model="executionParameters"
           :contract="executionContract"
+          :disabled="executing"
         />
       </div>
       <template #footer>
-        <el-button :disabled="executing" @click="executeDialogVisible = false">
+        <el-button ref="executeCancelButtonRef" :disabled="executing" @click="executeDialogVisible = false">
           {{ t('develop.workflow.cancel') }}
         </el-button>
         <el-button
@@ -632,6 +635,8 @@ const engineSwitchCancelRef = ref(null)
 const saveNameInputRef = ref(null)
 const jsonCloseButtonRef = ref(null)
 const executeTriggerButtonRef = ref(null)
+const executionParameterFormRef = ref(null)
+const executeCancelButtonRef = ref(null)
 const workflowData = ref({ tasks: [] })
 const editorLayout = ref({})
 const selectedNode = ref(null)
@@ -1116,6 +1121,12 @@ function restoreExecuteTriggerFocus() {
   nextTick(() => focusElement(executeTriggerButtonRef.value))
 }
 
+async function focusExecutionParameters() {
+  await nextTick()
+  if (executionParameterFormRef.value?.focus?.()) return
+  focusElement(executeCancelButtonRef.value)
+}
+
 function focusJsonClose() {
   focusElement(jsonCloseButtonRef.value)
 }
@@ -1246,6 +1257,7 @@ async function openExecuteDialog() {
   try {
     const task = await getDevTask(currentTaskId.value)
     executionContract.value = task.execution_contract
+    await focusExecutionParameters()
   } catch (error) {
     executeDialogVisible.value = false
     ElMessage.error(t('develop.workflow.executeFailed') + (error.response?.data?.error || error.message))

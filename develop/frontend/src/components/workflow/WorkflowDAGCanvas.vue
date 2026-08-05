@@ -116,6 +116,10 @@ import {
   resourceBindingTargetExtension
 } from '@/utils/workflowResourceBindings'
 import {
+  WORKFLOW_EDGE_TYPE,
+  registerWorkflowEditorEdge
+} from './workflowEditorEdge'
+import {
   operatorInputPorts,
   operatorOutputPorts,
   registerWorkflowEditorNode
@@ -172,7 +176,7 @@ const { graph, initGraph } = useDAGCore(container, {
     type: 'develop-workflow-node'
   },
   defaultEdge: {
-    type: 'polyline',
+    type: WORKFLOW_EDGE_TYPE,
     style: edgeStyle
   },
   nodeStateStyles: {
@@ -245,6 +249,10 @@ const navigationAnnouncement = computed(() => {
 
 onMounted(() => {
   registerWorkflowEditorNode()
+  registerWorkflowEditorEdge({
+    stroke: cssColor('--addp-bg-secondary'),
+    lineWidth: 6
+  })
   initGraph()
   if (!graph.value) return
 
@@ -341,7 +349,7 @@ function buildEdgeConfig({ sourceItem, targetItem, sourcePort, targetPort }) {
     targetParam: targetPort?.name,
     sourceAnchor: sourceIndex >= 0 ? (sourceModel.inputPorts?.length || 0) + sourceIndex : undefined,
     targetAnchor: targetIndex >= 0 ? targetIndex : undefined,
-    type: 'polyline',
+    type: WORKFLOW_EDGE_TYPE,
     label: sourcePort?.name && sourcePort.name !== 'default' ? sourcePort.name : '',
     style: edgeStyle
   }
@@ -521,7 +529,7 @@ function buildLoadedEdge(sourceId, targetId, sourceNode, targetNode, binding) {
     targetParam: binding?.parameterName,
     sourceAnchor: sourceIndex >= 0 ? (sourceNode?.inputPorts?.length || 0) + sourceIndex : undefined,
     targetAnchor: targetIndex >= 0 ? targetIndex : undefined,
-    type: 'polyline',
+    type: WORKFLOW_EDGE_TYPE,
     label: sourcePort !== 'default' ? sourcePort : '',
     style: edgeStyle
   }

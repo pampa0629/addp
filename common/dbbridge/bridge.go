@@ -943,7 +943,7 @@ func GenerateExecutableSampleQuery(
 	if options.ValidationLimit > 0 && strings.EqualFold(language, "sql") {
 		validationQuery = sqldialect.PaginateQuerySQL(query, options.ValidationLimit, 0)
 	}
-	result, err := ExecuteReadOnlyRuntimeQuery(ctx, engine, language, validationQuery)
+	result, err := ExecuteReadOnlyRuntimeQuery(ctx, engine, language, validationQuery, 0)
 	if err != nil {
 		return "", "", fmt.Errorf("%w: 样例查询执行失败: %v", ErrSampleQueryUnavailable, err)
 	}
@@ -1094,7 +1094,7 @@ func SupportsReadOnlySQLExecution(engineType string) bool {
 // ExecuteReadOnlyQuery executes one SQL query in a database-enforced read-only
 // transaction. It is the only dbbridge path for User executions classified as
 // read.
-func ExecuteReadOnlyQuery(ctx context.Context, engine *models.Engine, query string) (*plugin.QueryResult, error) {
+func ExecuteReadOnlyQuery(ctx context.Context, engine *models.Engine, query string, limit int) (*plugin.QueryResult, error) {
 	if engine == nil || !SupportsReadOnlySQLExecution(engine.EngineType) {
 		return nil, fmt.Errorf("引擎不支持受控只读 SQL 执行")
 	}
@@ -1108,8 +1108,11 @@ func ExecuteReadOnlyQuery(ctx context.Context, engine *models.Engine, query stri
 			return nil, fmt.Errorf("%s 引擎未提供 SQL 查询运行时", engine.EngineType)
 		}
 		return sqlRuntime.ExecuteSQL(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), query, plugin.QueryOptions{
-			EngineID: engine.ID, EngineType: engine.EngineType, ReadOnly: true,
+			EngineID: engine.ID, EngineType: engine.EngineType, Limit: limit, ReadOnly: true,
 		})
+	}
+	if limit > 0 {
+		query = sqldialect.PaginateQuerySQL(query, limit, 0)
 	}
 	db, err := GetOrCreatePool(engine, DefaultPoolConfig())
 	if err != nil {
@@ -1147,7 +1150,7 @@ func ExecuteReadOnlyQuery(ctx context.Context, engine *models.Engine, query stri
 
 // ExecuteReadOnlyRuntimeQuery executes a non-SQL query through the engine's
 // native QueryRuntimeProvider. The provider must enforce QueryOptions.ReadOnly.
-func ExecuteReadOnlyRuntimeQuery(ctx context.Context, engine *models.Engine, language, query string) (*plugin.QueryResult, error) {
+func ExecuteReadOnlyRuntimeQuery(ctx context.Context, engine *models.Engine, language, query string, limit int) (*plugin.QueryResult, error) {
 	if engine == nil {
 		return nil, fmt.Errorf("引擎不能为空")
 	}
@@ -1167,8 +1170,35 @@ func ExecuteReadOnlyRuntimeQuery(ctx context.Context, engine *models.Engine, lan
 		Language: language,
 		Query:    query,
 		Options: plugin.QueryOptions{
-			EngineID: engine.ID, EngineType: engine.EngineType, ReadOnly: true,
+			EngineID: engine.ID, EngineType: engine.EngineType, Limit: limit, ReadOnly: true,
 		},
+	})
+}
+
+// ExecuteReadOnlyGraphQuery executes a native graph query through the same
+// read-only and bounded result contract as other ad-hoc queries.
+func ExecuteReadOnlyGraphQuery(ctx context.Context, engine *models.Engine, language, query string, limit int) (*plugin.GraphQueryResult, error) {
+	if engine == nil {
+		return nil, fmt.Errorf("引擎不能为空")
+	}
+	p, err := plugin.Get(engine.EngineType)
+	if err != nil {
+		return nil, err
+	}
+	queryProvider, ok := p.(plugin.QueryRuntimeProvider)
+	if !ok {
+		return nil, fmt.Errorf("引擎不支持普通查询运行时")
+	}
+	language = strings.ToLower(strings.TrimSpace(language))
+	if language == "" || !slices.Contains(queryProvider.QueryLanguages(), language) {
+		return nil, fmt.Errorf("引擎不支持查询语言: %s", language)
+	}
+	graphProvider, ok := p.(plugin.GraphQueryProvider)
+	if !ok {
+		return nil, fmt.Errorf("引擎未提供图查询运行时")
+	}
+	return graphProvider.ExecuteGraphQuery(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), query, plugin.QueryOptions{
+		EngineID: engine.ID, EngineType: engine.EngineType, Limit: limit, ReadOnly: true,
 	})
 }
 

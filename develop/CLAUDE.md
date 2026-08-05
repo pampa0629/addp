@@ -4,7 +4,7 @@
 
 Develop 模块是 ADDP 平台的**开发工作台**，负责以下核心功能：
 
-1. **SQL 查询执行** - 支持在线 SQL 查询，连接多种数据库（PostgreSQL、MySQL、MongoDB 等）
+1. **查询开发** - 按 Engine capability 支持 SQL、MQL、Cypher 等在线查询
 2. **GIS 工作流管理** - 可视化编辑和执行空间数据工作流（基于 GeoPython Workflow 运行时）
 3. **Jupyter Notebook 集成** - 支持 Python 数据分析和机器学习
 4. **算子发现** - 聚合工作流运行时的动态算子（GeoPython Workflow、Spark Workflow 等）
@@ -18,12 +18,12 @@ Develop 模块是 ADDP 平台的**开发工作台**，负责以下核心功能�
 前端请求（SQL/工作流/Notebook）
   ↓
 DevExecutor（统一执行器）
-  ├─ SQL 执行 → SQLEngineService / FederatedQueryService
+  ├─ 查询执行 → SQLEngineService / FederatedQueryService / GraphQueryProvider
   │  ├─ 普通查询通过 System 获取单引擎执行期连接
   │  ├─ 普通 SQL 使用 common/dbbridge 执行查询
   │  ├─ DuckDB 联邦查询按 execution_config.engine_id 解析真实 Runtime Engine
   │  ├─ 独立 DuckDB Runtime 消费授权并取得各 Source Engine 连接
-  │  └─ 返回查询结果
+  │  └─ 返回服务端受限的表格或图结果预览
   ├─ 工作流执行 → WorkflowEngineService
   │  ├─ 解析工作流 JSON（DAG 结构）
   │  ├─ 调用 GeoPython Workflow 运行时（21 个空间算子）
@@ -65,6 +65,8 @@ Develop 作为一个 TaskProvider 注册到 System，声明 `query`、`workflow`
 ### 前端任务路由
 
 Develop 任务编辑器遵守 `docs/spec/addp前端路由与可恢复状态规范.md`。Console URL 必须能够恢复当前 `dev_tasks.id`，canonical 路由固定为 `/develop/{sql|workflow|notebook}?action={create|edit}&id={id}`：创建动作不带 `id`，编辑动作只使用 `id`。`/develop/tasks` 只表示任务列表，`taskId` 旧参数不得保留。
+
+查询工作台固定使用左侧 Meta Catalog、右侧编辑器与结果上下分栏。Catalog 直接消费 Meta resource-tree，只展示当前查询 Engine 的原生路径；查询语言、默认语言和结果类型从 `capabilities.compute.query` 读取。即时查询只调用 `POST /api/v1/develop/executions` 创建 `task_type=query`、`source_task_id=null` 的 execution，再按 execution ID 回查结果；不保留 `/develop/execute`。查询任务统一在 `/develop/tasks` 管理，不保留 `/develop/sql-tasks`。
 
 执行列表 `/develop/executions` 的稳定筛选和分页状态使用 `dev_type`、`status`、`trigger_type`、`source_task_id`、`start_date`、`end_date`、`page`、`page_size` query；默认页码和默认每页数量从 URL 省略，未知或无效参数必须通过 `replace` 清理。
 
@@ -160,11 +162,13 @@ Develop 是 `develop.task.*` 和 `develop.notebook.*` 的 Permission owner；定
 curl -H "Authorization: Bearer <token>" \
   "http://localhost:8185/api/v1/develop/engines"
 
-# 1. 通过 API 执行普通引擎查询
-curl -X POST http://localhost:8185/api/v1/develop/execute \
+# 1. 创建 ad-hoc 查询 execution
+curl -X POST http://localhost:8185/api/v1/develop/executions \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
+    "dev_type": "query",
+    "trigger_type": "manual",
     "content": {
       "query_type": "sql",
       "query": "<sample-query 返回的 query>"
@@ -175,11 +179,13 @@ curl -X POST http://localhost:8185/api/v1/develop/execute \
     "timeout": 30
   }'
 
-# DuckDB 联邦查询使用同一执行入口和真实 Runtime Engine ID
-curl -X POST http://localhost:8185/api/v1/develop/execute \
+# DuckDB 联邦查询使用同一 execution 入口和真实 Runtime Engine ID
+curl -X POST http://localhost:8185/api/v1/develop/executions \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
+    "dev_type": "query",
+    "trigger_type": "manual",
     "content": {
       "query_type": "sql",
       "query": "SELECT * FROM <source_engine>.<schema>.<table> LIMIT 10"
@@ -190,8 +196,9 @@ curl -X POST http://localhost:8185/api/v1/develop/execute \
     "timeout": 30
   }'
 
-# 2. 查看执行结果
-# 返回 JSON: { "columns": [...], "rows": [...], "execution_id": 123 }
+# 2. 创建响应返回 execution_id；按 ID 回查状态和受限结果预览
+curl -H "Authorization: Bearer <token>" \
+  "http://localhost:8185/api/v1/develop/executions/<execution_id>"
 
 # 3. 查看执行历史
 curl -H "Authorization: Bearer <token>" \

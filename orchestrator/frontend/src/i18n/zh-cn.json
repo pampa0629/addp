@@ -227,6 +227,8 @@
       },
       "loopDetected": "不能创建环形依赖",
       "edgeAlreadyExists": "该依赖关系已存在",
+      "incompatiblePorts": "输入输出类型不兼容",
+      "removeParameterConnectionFirst": "该前置步骤仍在提供参数，请先删除参数连线",
       "edgeCreated": "已建立依赖关系",
       "edgeDeleted": "连线已删除",
       "nodeDeleted": "节点已删除",

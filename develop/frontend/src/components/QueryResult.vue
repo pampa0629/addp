@@ -1,104 +1,151 @@
 <template>
-  <div class="sql-result-container">
-    <!-- 结果信息栏 -->
-    <div class="result-info" v-if="result">
-      <el-tag v-if="result.success" type="success">
-        <el-icon><SuccessFilled /></el-icon>
-        {{ t('develop.queryResult.success') }}
-      </el-tag>
-      <el-tag v-else type="danger">
-        <el-icon><CircleCloseFilled /></el-icon>
-        {{ t('develop.queryResult.failed') }}
+  <div class="query-result">
+    <div v-if="result" class="result-summary">
+      <el-tag :type="statusType" effect="plain" size="small">
+        <el-icon><component :is="statusIcon" /></el-icon>
+        {{ statusLabel }}
       </el-tag>
 
-      <span class="info-item" v-if="result.rows_count !== undefined">
-        {{ t('develop.queryResult.rowsCount') }}: <strong>{{ result.rows_count }}</strong>
+      <span v-if="result.rows_count !== undefined" class="summary-item">
+        {{ t('develop.queryResult.rowsCount') }} <strong>{{ result.rows_count }}</strong>
       </span>
-      <span class="info-item" v-if="result.rows_affected !== undefined">
-        {{ t('develop.queryResult.rowsAffected') }}: <strong>{{ result.rows_affected }}</strong>
+      <span v-if="result.rows_affected !== undefined" class="summary-item">
+        {{ t('develop.queryResult.rowsAffected') }} <strong>{{ result.rows_affected }}</strong>
       </span>
-      <span class="info-item" v-if="result.execution_time_ms">
-        {{ t('develop.queryResult.executionTime') }}: <strong>{{ result.execution_time_ms }}ms</strong>
+      <span v-if="result.execution_time_ms !== undefined" class="summary-item">
+        {{ t('develop.queryResult.executionTime') }} <strong>{{ result.execution_time_ms }}ms</strong>
       </span>
 
-      <el-button
-        v-if="result.rows && result.rows.length > 0"
-        type="primary"
-        size="small"
-        @click="exportCSV"
-        style="margin-left: auto;"
-      >
-        <el-icon><Download /></el-icon>
-        {{ t('develop.queryResult.exportCsv') }}
-      </el-button>
+      <div class="summary-actions">
+        <el-tooltip v-if="result.execution_id" :content="t('develop.queryResult.executionDetail')">
+          <el-button circle size="small" :aria-label="t('develop.queryResult.executionDetail')" @click="openExecution">
+            <el-icon><View /></el-icon>
+          </el-button>
+        </el-tooltip>
+        <el-tooltip v-if="hasRows" :content="t('develop.queryResult.exportCsv')">
+          <el-button circle size="small" type="primary" :aria-label="t('develop.queryResult.exportCsv')" @click="exportCSV">
+            <el-icon><Download /></el-icon>
+          </el-button>
+        </el-tooltip>
+      </div>
     </div>
 
-    <!-- 错误信息 -->
+    <el-progress
+      v-if="isRunning"
+      class="execution-progress"
+      :percentage="result.progress || 0"
+      :indeterminate="!result.progress"
+      :duration="2"
+    />
+
     <el-alert
-      v-if="result && !result.success && result.error"
+      v-if="result?.truncated"
+      class="result-alert"
+      type="warning"
+      :title="t('develop.queryResult.truncated', { limit: result.result_limit })"
+      :closable="false"
+      show-icon
+    />
+
+    <el-alert
+      v-if="result && result.success === false && result.error"
+      class="result-alert"
       type="error"
       :title="result.error"
       :closable="false"
       show-icon
     />
 
-    <!-- 结果表格 -->
-    <el-table
-      v-if="result && result.rows && result.rows.length > 0"
-      :data="result.rows"
-      stripe
-      border
-      style="width: 100%"
-      :default-sort="{ prop: result.columns[0], order: 'ascending' }"
-    >
-      <el-table-column
-        v-for="col in result.columns"
-        :key="col"
-        :prop="col"
-        :label="col"
-        :sortable="true"
-        :show-overflow-tooltip="true"
-        min-width="120"
-      >
-        <template #default="{ row }">
-          <span :class="getValueClass(row[col])">
-            {{ formatValue(row[col]) }}
-          </span>
+    <div v-if="customContent" class="custom-result-content">
+      <slot />
+    </div>
+
+    <div v-else-if="hasRows" class="result-grid">
+      <el-auto-resizer>
+        <template #default="{ height, width }">
+          <el-table-v2
+            :columns="tableColumns"
+            :data="result.rows"
+            :width="width"
+            :height="height"
+            fixed
+          />
         </template>
-      </el-table-column>
-    </el-table>
+      </el-auto-resizer>
+    </div>
 
-    <!-- 空状态 -->
     <el-empty
-      v-if="!result"
+      v-else-if="!result"
       :description="t('develop.queryResult.emptyHint')"
-      :image-size="120"
+      :image-size="96"
+    />
+    <el-empty
+      v-else-if="isRunning"
+      :description="t('develop.query.executing')"
+      :image-size="72"
+    />
+    <el-empty
+      v-else-if="result.success"
+      :description="t('develop.queryResult.noData')"
+      :image-size="72"
     />
 
-    <el-empty
-      v-else-if="result.success && (!result.rows || result.rows.length === 0)"
-      :description="t('develop.queryResult.noData')"
-      :image-size="100"
-    />
+    <el-dialog v-model="jsonVisible" title="JSON" width="min(680px, calc(100vw - 24px))" class="addp-dialog">
+      <pre class="json-value">{{ jsonValue }}</pre>
+      <template #footer>
+        <el-button @click="copyText(jsonValue)">
+          <el-icon><CopyDocument /></el-icon>
+          {{ t('develop.queryResult.copy') }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { defineProps } from 'vue'
+import { computed, h, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { SuccessFilled, CircleCloseFilled, Download } from '@element-plus/icons-vue'
+import {
+  CircleCloseFilled,
+  CopyDocument,
+  Download,
+  Loading,
+  SuccessFilled,
+  View
+} from '@element-plus/icons-vue'
+import { openMonitorExecution } from '@addp/common-frontend'
+import { buildQueryResultCSV } from '@/utils/queryWorkbench.mjs'
 
 const { t } = useI18n()
-
 const props = defineProps({
   result: {
     type: Object,
     default: null
+  },
+  customContent: {
+    type: Boolean,
+    default: false
   }
 })
 
-// 格式化值显示
+const jsonVisible = ref(false)
+const jsonValue = ref('')
+const isRunning = computed(() => ['pending', 'running'].includes(props.result?.status))
+const hasRows = computed(() => Array.isArray(props.result?.rows) && props.result.rows.length > 0)
+const statusType = computed(() => {
+  if (isRunning.value) return 'primary'
+  return props.result?.success ? 'success' : 'danger'
+})
+const statusIcon = computed(() => {
+  if (isRunning.value) return Loading
+  return props.result?.success ? SuccessFilled : CircleCloseFilled
+})
+const statusLabel = computed(() => {
+  if (isRunning.value) return t('develop.queryResult.running')
+  return props.result?.success ? t('develop.queryResult.success') : t('develop.queryResult.failed')
+})
+
 const formatValue = (value) => {
   if (value === null) return 'NULL'
   if (value === undefined) return ''
@@ -106,44 +153,57 @@ const formatValue = (value) => {
   return String(value)
 }
 
-// 获取值的样式类
-const getValueClass = (value) => {
-  if (value === null) return 'null-value'
-  if (typeof value === 'number') return 'number-value'
-  if (typeof value === 'boolean') return 'boolean-value'
-  return ''
+const openJSON = (value) => {
+  if (value === null || typeof value !== 'object') return
+  jsonValue.value = JSON.stringify(value, null, 2)
+  jsonVisible.value = true
 }
 
-// 导出为 CSV
+const copyText = async (value) => {
+  try {
+    await navigator.clipboard.writeText(String(value ?? ''))
+    ElMessage.success(t('develop.queryResult.copySuccess'))
+  } catch (error) {
+    ElMessage.error(t('develop.queryResult.copyFailed') + error.message)
+  }
+}
+
+const tableColumns = computed(() => (props.result?.columns || []).map(column => ({
+  key: column,
+  dataKey: column,
+  title: column,
+  width: Math.max(140, Math.min(320, String(column).length * 12 + 72)),
+  cellRenderer: ({ cellData }) => h('span', {
+    class: ['result-cell', {
+      'is-null': cellData === null,
+      'is-number': typeof cellData === 'number',
+      'is-object': cellData !== null && typeof cellData === 'object'
+    }],
+    title: formatValue(cellData),
+    tabindex: 0,
+    onClick: () => openJSON(cellData),
+    onDblclick: () => copyText(formatValue(cellData)),
+    onKeydown: event => {
+      if (event.key === 'Enter') openJSON(cellData)
+    }
+  }, formatValue(cellData))
+})))
+
+const openExecution = () => openMonitorExecution(props.result.execution_id)
+
 const exportCSV = () => {
-  if (!props.result?.rows || !props.result?.columns) {
+  if (!hasRows.value) {
     ElMessage.warning(t('develop.queryResult.noExportData'))
     return
   }
-
   try {
-    // 创建 CSV 内容
-    const headers = props.result.columns.join(',')
-    const rows = props.result.rows.map(row => {
-      return props.result.columns.map(col => {
-        const value = row[col]
-        if (value === null) return 'NULL'
-        // 转义包含逗号的值
-        const strValue = String(value)
-        return strValue.includes(',') ? `"${strValue}"` : strValue
-      }).join(',')
-    })
-
-    const csv = [headers, ...rows].join('\n')
-
-    // 下载文件
+    const csv = buildQueryResultCSV(props.result.columns, props.result.rows)
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
     link.download = `query_result_${Date.now()}.csv`
     link.click()
     URL.revokeObjectURL(link.href)
-
     ElMessage.success(t('develop.queryResult.exportSuccess'))
   } catch (error) {
     ElMessage.error(t('develop.queryResult.exportFailed') + error.message)
@@ -152,55 +212,99 @@ const exportCSV = () => {
 </script>
 
 <style scoped>
-.sql-result-container {
+.query-result {
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--addp-bg-primary);
-  border-radius: 4px;
 }
 
-.result-info {
+.result-summary {
+  min-height: 44px;
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 12px 16px;
-  background: var(--addp-bg-secondary);
+  gap: 14px;
+  padding: 6px 12px;
   border-bottom: 1px solid var(--addp-border-color);
+  flex-wrap: wrap;
 }
 
-.info-item {
-  font-size: 14px;
+.summary-item {
   color: var(--addp-text-secondary);
+  font-size: 13px;
 }
 
-.info-item strong {
-  color: var(--addp-text-primary);
+.summary-item strong {
   margin-left: 4px;
+  color: var(--addp-text-primary);
 }
 
-.null-value {
+.summary-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.execution-progress {
+  width: 100%;
+}
+
+.result-alert {
+  margin: 8px 12px 0;
+}
+
+.result-grid {
+  flex: 1;
+  min-height: 160px;
+  padding: 8px 12px 12px;
+}
+
+.custom-result-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+:deep(.result-cell) {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--addp-text-primary);
+  cursor: default;
+}
+
+:deep(.result-cell.is-null) {
   color: var(--addp-text-tertiary);
   font-style: italic;
 }
 
-.number-value {
+:deep(.result-cell.is-number) {
   color: var(--el-color-primary);
-  font-weight: 500;
 }
 
-.boolean-value {
+:deep(.result-cell.is-object) {
+  cursor: pointer;
   color: var(--el-color-success);
-  font-weight: 500;
 }
 
-.el-table {
+.json-value {
+  max-height: 60vh;
+  margin: 0;
+  padding: 12px;
   overflow: auto;
+  background: var(--addp-bg-secondary);
+  color: var(--addp-text-primary);
+  border: 1px solid var(--addp-border-color);
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .el-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 48px 0;
+  flex: 1;
+  min-height: 0;
 }
 </style>

@@ -1,47 +1,66 @@
 """
 ADDP Copilot - FastAPI 应用入口
 """
+import asyncio
 from contextlib import asynccontextmanager
+from addp_common.client import (
+    ConfigurationManagementDeclaration,
+    ConfigurationManagementEntry,
+    ModuleRegistration,
+    ModuleRegistryClient,
+)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
 from config import settings
 
-# 在模块级别初始化数据库（同步执行，避免异步延迟）
-# TODO: Copilot 暂时不需要数据库，注释掉以加快启动速度（避免 60 秒延迟）
-# from database import Base, engine
-# from models import conversation, message, llm_config  # noqa: F401
-# Base.metadata.create_all(bind=engine)
-
-
 # 应用生命周期管理
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用启动/关闭时的生命周期管理"""
-    # 启动时：注册模块到 System
-    print("🚀 Copilot Backend 启动中...")
+    from database import init_db
+    from services.inference_service import CopilotInferenceService
 
-    from services.module_registry import register_module_on_startup
+    print("Copilot Backend 启动中...")
+    await init_db()
+    CopilotInferenceService.initialize()
 
-    # 注册模块（非阻塞，失败不影响启动）
     public_base_url = f"http://{settings.service_host}:{settings.port}"
-    registry = await register_module_on_startup(
+    registry_client = ModuleRegistryClient(settings.get_system_url(), CopilotInferenceService.token_source())
+    registration = ModuleRegistration(
         module_name="copilot",
         module_url=public_base_url,
         route_prefix="/copilot",
-        health_check_url=f"{public_base_url}/health"
+        health_check_url=f"{public_base_url}/health",
+        metadata={"module": "copilot", "language": "python"},
+        configuration_management=ConfigurationManagementDeclaration(entries=[
+            ConfigurationManagementEntry(
+                id="copilot.inference_bindings",
+                owner_module="copilot",
+                scope_types=["platform_default_with_tenant_override"],
+                frontend_route="/configuration/copilot/inference",
+                read_permission="copilot.configuration.read",
+                update_permission="copilot.configuration.update",
+            ),
+        ]),
     )
+    registry_task = asyncio.create_task(registry_client.run(registration))
 
-    print("✅ Copilot Backend 启动完成")
+    print("Copilot Backend 启动完成")
 
     yield  # 应用运行中
 
     # 关闭时：停止心跳
     print("🛑 Copilot Backend 关闭中...")
-    if registry:
-        registry.stop_heartbeat()
-    print("✅ Copilot Backend 已关闭")
+    registry_task.cancel()
+    try:
+        await registry_task
+    except asyncio.CancelledError:
+        pass
+    await registry_client.close()
+    await CopilotInferenceService.close()
+    print("Copilot Backend 已关闭")
 
 
 # 创建 FastAPI 应用
@@ -64,12 +83,17 @@ app.add_middleware(
 )
 
 # 注册路由
-from api import workflow_router, sql_router, navigate_router  # noqa: E402
+from api import inference_scenario_binding_router, navigate_router, sql_router, workflow_router  # noqa: E402
 from api.kg_extract_api import router as kg_extract_router  # noqa: E402
 app.include_router(workflow_router, prefix=_API_PREFIX, tags=["工作流智能体 | Workflow Agent"])
 app.include_router(sql_router, prefix=_API_PREFIX, tags=["SQL 智能体 | SQL Agent"])
 app.include_router(kg_extract_router, prefix=_API_PREFIX, tags=["图谱构建 | KG Build"])
 app.include_router(navigate_router, prefix=_API_PREFIX, tags=["导航引导 | Navigation Guide"])
+app.include_router(
+    inference_scenario_binding_router,
+    prefix=_API_PREFIX,
+    tags=["配置管理 | Configuration Management"],
+)
 
 
 def custom_openapi():

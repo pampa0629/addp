@@ -29,6 +29,7 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 		&models.SearchHistory{},
 		&models.EmbeddingTask{}, // 向量化任务定义表
 		&models.EmbeddingConfiguration{},
+		&models.InferenceScenarioBinding{},
 		&models.ExportSession{},
 	)
 	if err != nil {
@@ -37,6 +38,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 
 	if err := ensureEmbeddingArtifactStateSchema(db, models.EmbeddingVectorDimension); err != nil {
 		return nil, fmt.Errorf("failed to ensure embedding artifact state schema: %w", err)
+	}
+	if err := ensureEmbeddingConfigurationSchema(db); err != nil {
+		return nil, fmt.Errorf("failed to ensure embedding configuration schema: %w", err)
 	}
 	if err := ensureEmbeddingTaskDefinitionSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure embedding task definition schema: %w", err)
@@ -1088,21 +1092,17 @@ func ensureEmbeddingArtifactStateSchema(db *gorm.DB, vectorDimension int) error 
 		FROM information_schema.columns
 		WHERE table_schema = 'manager'
 		  AND table_name = 'embeddings'
-		  AND column_name IN ('fingerprint', 'modality', 'bucket', 'path', 'name')
+		  AND column_name IN ('fingerprint', 'modality', 'bucket', 'path', 'name', 'model')
 	`).Scan(&legacyCount).Error; err != nil {
 		return err
 	}
 
-	var hasItemFingerprint bool
+	var requiredColumnCount int64
 	if err := db.Raw(`
-		SELECT EXISTS (
-			SELECT 1
-			FROM information_schema.columns
-			WHERE table_schema = 'manager'
-			  AND table_name = 'embeddings'
-			  AND column_name = 'item_fingerprint'
-		)
-	`).Scan(&hasItemFingerprint).Error; err != nil {
+		SELECT COUNT(*) FROM information_schema.columns
+		WHERE table_schema = 'manager' AND table_name = 'embeddings'
+		  AND column_name IN ('item_fingerprint', 'model_profile_id', 'profile_version', 'deployment_id')
+	`).Scan(&requiredColumnCount).Error; err != nil {
 		return err
 	}
 
@@ -1122,7 +1122,7 @@ func ensureEmbeddingArtifactStateSchema(db *gorm.DB, vectorDimension int) error 
 	}
 	hasExpectedVectorDimension := embeddingTypmod == vectorDimension
 
-	if legacyCount > 0 || !hasItemFingerprint || !hasExpectedVectorDimension {
+	if legacyCount > 0 || requiredColumnCount != 4 || !hasExpectedVectorDimension {
 		if err := db.Exec(`DROP TABLE IF EXISTS manager.embeddings`).Error; err != nil {
 			return err
 		}
@@ -1131,6 +1131,35 @@ func ensureEmbeddingArtifactStateSchema(db *gorm.DB, vectorDimension int) error 
 		}
 	}
 	return db.AutoMigrate(&models.Embedding{})
+}
+
+func ensureEmbeddingConfigurationSchema(db *gorm.DB) error {
+	var legacyCount int64
+	if err := db.Raw(`
+		SELECT COUNT(*) FROM information_schema.columns
+		WHERE table_schema = 'manager' AND table_name = 'embedding_configuration'
+		  AND column_name IN ('base_url', 'model', 'timeout_seconds')
+	`).Scan(&legacyCount).Error; err != nil {
+		return err
+	}
+	if legacyCount > 0 {
+		if err := db.Exec(`DROP TABLE manager.embedding_configuration`).Error; err != nil {
+			return err
+		}
+	}
+	if err := db.AutoMigrate(&models.EmbeddingConfiguration{}, &models.InferenceScenarioBinding{}); err != nil {
+		return err
+	}
+	statements := []string{
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_manager_inference_binding_platform ON manager.inference_scenario_bindings (scenario_code) WHERE scope_type = 'platform' AND tenant_id IS NULL`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_manager_inference_binding_tenant ON manager.inference_scenario_bindings (scenario_code, tenant_id) WHERE scope_type = 'tenant' AND tenant_id IS NOT NULL`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func ensureEmbeddingTaskDefinitionSchema(db *gorm.DB) error {

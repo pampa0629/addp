@@ -67,3 +67,18 @@ def require_permissions(*required_permissions: str):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="权限不足")
 
     return dependency
+
+
+def require_context_permissions(*required_permissions: str):
+    async def dependency(request: Request) -> None:
+        context = request.state.authorization_context
+        if context.context_type not in {"platform", "tenant"}:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="不支持的授权上下文")
+        if context.context_type == "tenant" and context.tenant_id is None:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant 上下文无效")
+        if context.token_type == "delegated_access_token":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="委托令牌不能访问该接口")
+        if not allows_permissions(context, tuple(required_permissions)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="权限不足")
+
+    return dependency

@@ -113,9 +113,11 @@ make ports-validate
 | **Portal Frontend**   | **5185** | **8115**    | **数据门户 UI**            |
 | Copilot Backend       | 8087     | 8087        | AI 助手 (工作流/SQL生成)   |
 | **Agent Backend**     | **8190** | **8190**    | **Agent AI 对话助手后端**  |
-| **Agent Frontend**    | **5186** | **8116**    | **Agent 对话界面 UI**      |
+| **Agent Frontend**    | **5186** | **8117**    | **Agent 对话界面 UI**      |
 | **Graph Backend**     | **8186** | **8186**    | **知识图谱本体建模、图谱管理** |
-| **Graph Frontend**    | **5187** | **8117**    | **知识图谱 UI**            |
+| **Graph Frontend**    | **5187** | **8118**    | **知识图谱 UI**            |
+| **Inference Backend** | **8191** | **8191**    | **统一 AI 推理控制面与数据面** |
+| **Inference Frontend** | **5188** | **8119**   | **Provider、模型和 Profile 管理 UI** |
 | Math Workflow Engine  | 8089     | 8089        | 数学计算工作流参考实现（自动启动服务、手动注册） |
 | Jupyter API Server    | 8097     | 8097        | Jupyter 执行引擎 API       |
 | Spark Workflow Engine | 8098     | 8098        | Spark 分布式工作流引擎     |
@@ -152,6 +154,7 @@ make ports-validate
   - **8182: Quality（数据质量）**
   - **8183: Asset（数据资产管理）**
   - **8184: Portal（数据消费者门户）**
+  - **8191: Inference（统一 AI 推理）**
 - **引擎服务**：808x-809x 系列
   - 8089: Math Workflow Engine（参考实现，自动启动服务、手动注册）
   - 8097: Jupyter API Server
@@ -178,6 +181,9 @@ make ports-validate
   - **5183: Quality**
   - **5184: Asset**
   - **5185: Portal**
+  - **5186: Agent**
+  - **5187: Graph**
+  - **5188: Inference**
 
 ### 前端 Docker 端口规则
 - **核心模块**：809x 系列（8090-8096）
@@ -195,6 +201,10 @@ make ports-validate
   - **8113: Quality（811x 系列）**
   - **8114: Asset**
   - **8115: Portal**
+  - **8116: Monitor**
+  - **8117: Agent**
+  - **8118: Graph**
+  - **8119: Inference**
 
 ## Standard 和 Model 模块配置要求
 

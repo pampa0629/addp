@@ -227,6 +227,8 @@
       },
       "loopDetected": "Cannot create circular dependency",
       "edgeAlreadyExists": "This dependency already exists",
+      "incompatiblePorts": "The input and output types are incompatible",
+      "removeParameterConnectionFirst": "This predecessor still provides parameters. Remove its parameter connections first",
       "edgeCreated": "Dependency created",
       "edgeDeleted": "Edge deleted",
       "nodeDeleted": "Node deleted",

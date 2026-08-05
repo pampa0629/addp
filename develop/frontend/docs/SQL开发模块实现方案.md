@@ -1,6 +1,6 @@
 # SQL 编辑器模块实现方案
 
-> 历史方案说明：本文保留早期 SQL 编辑器设计思路。当前持久化任务主路径已收敛到 `develop.dev_tasks`，查询内容使用 `content.query` / `content.query_type`，所有查询目标统一使用 System 真实 `execution_config.engine_id`；DuckDB 是独立内置联邦查询计算引擎。本文中 `develop.scripts`、`sql_content`、`/api/develop/scripts` 等旧草案不作为现行实现依据。
+> 历史方案说明：本文保留早期 SQL 编辑器设计思路。当前持久化任务主路径已收敛到 `develop.dev_tasks`，查询内容使用 `content.query` / `content.query_type`，所有查询目标统一使用 System 真实 `execution_config.engine_id`；DuckDB 是独立内置联邦查询计算引擎。即时查询统一使用 `/api/v1/develop/executions`，本文中 `develop.scripts`、`sql_content`、`/api/develop/execute`、`/api/develop/scripts` 等旧草案不作为现行实现依据。
 
 ## 一、需求分析
 
@@ -455,12 +455,14 @@ CREATE INDEX idx_scripts_status ON develop.scripts(status);
 #### SQL 开发执行 API
 
 ```
-POST /api/develop/execute
+POST /api/v1/develop/executions
 Content-Type: application/json
 Authorization: Bearer <token>
 
 Request:
 {
+  "dev_type": "query",
+  "trigger_type": "manual",
   "content": {
     "query_type": "sql",
     "query": "SELECT * FROM users LIMIT 10"
@@ -473,14 +475,14 @@ Request:
 
 Response:
 {
-  "columns": ["id", "name", "email"],
-  "rows": [
-    {"id": 1, "name": "Alice", "email": "alice@example.com"},
-    {"id": 2, "name": "Bob", "email": "bob@example.com"}
-  ],
-  "execution_time_ms": 45,
-  "rows_count": 2
+  "message": "执行已启动",
+  "execution_id": "<uuid>"
 }
+
+GET /api/v1/develop/executions/{execution_id}
+
+成功后从 `metadata.result.summary.preview_rows` 读取受限预览，并消费
+`rows_count`、`result_limit`、`truncated`、`result_kind` 和可选 `graph_data`。
 ```
 
 #### 脚本管理 API

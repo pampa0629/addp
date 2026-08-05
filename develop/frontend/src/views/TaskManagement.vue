@@ -51,9 +51,9 @@
           clearable
           style="width: 120px;"
         >
-          <el-option :label="t('develop.queryTasks.statusActive')" value="active" />
-          <el-option :label="t('develop.queryTasks.statusInactive')" value="inactive" />
-          <el-option :label="t('develop.queryTasks.statusArchived')" value="archived" />
+          <el-option :label="t('develop.taskManagement.statusActive')" value="active" />
+          <el-option :label="t('develop.taskManagement.statusInactive')" value="inactive" />
+          <el-option :label="t('develop.taskManagement.statusArchived')" value="archived" />
         </el-select>
       </div>
     </div>
@@ -300,9 +300,9 @@ const getTypeColor = (type) => {
 
 const getStatusLabel = (status) => {
   const labels = {
-    active: t('develop.queryTasks.statusActive'),
-    inactive: t('develop.queryTasks.statusInactive'),
-    archived: t('develop.queryTasks.statusArchived')
+    active: t('develop.taskManagement.statusActive'),
+    inactive: t('develop.taskManagement.statusInactive'),
+    archived: t('develop.taskManagement.statusArchived')
   }
   return labels[status] || status
 }

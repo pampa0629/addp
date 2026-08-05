@@ -18,6 +18,14 @@ def test_agent_openapi_declares_authorization_contracts():
         ("get", "/api/v1/agent/runs/{agent_run_id}/events"): ("permission", ["agent.run.read"]),
         ("post", "/api/v1/agent/runs/{agent_run_id}/cancel"): ("permission", ["agent.run.cancel"]),
         ("post", "/api/v1/agent/runs/{agent_run_id}/retry"): ("permission", ["agent.run.execute"]),
+        ("get", "/api/v1/agent/settings/inference-bindings/{scenario_code}"): (
+            "permission",
+            ["agent.configuration.read"],
+        ),
+        ("put", "/api/v1/agent/settings/inference-bindings/{scenario_code}"): (
+            "permission",
+            ["agent.configuration.update"],
+        ),
     }
     for (method, path), (mode, permissions) in expected.items():
         operation = paths[path][method]

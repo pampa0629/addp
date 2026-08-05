@@ -1,0 +1,71 @@
+{
+  "inference": {
+    "login": {
+      "title": "ADDP 推理管理",
+      "username": "用户名",
+      "password": "密码",
+      "usernameRequired": "请输入用户名",
+      "passwordRequired": "请输入密码",
+      "submit": "登录",
+      "failed": "登录失败"
+    },
+    "settings": { "title": "AI 推理资源" },
+    "common": {
+      "name": "名称",
+      "scope": "范围",
+      "status": "状态",
+      "version": "版本",
+      "actions": "操作",
+      "edit": "编辑",
+      "delete": "删除",
+      "save": "保存",
+      "cancel": "取消",
+      "refresh": "刷新",
+      "saved": "保存成功",
+      "deleted": "删除成功",
+      "failed": "操作失败",
+      "confirmTitle": "确认操作"
+    },
+    "scope": { "platform": "平台", "tenant": "租户" },
+    "status": { "active": "启用", "disabled": "禁用" },
+    "provider": {
+      "title": "Provider Connection",
+      "create": "新建 Provider",
+      "edit": "编辑 Provider",
+      "adapter": "适配器",
+      "endpoint": "端点",
+      "credential": "凭据",
+      "configured": "已配置 v{version}",
+      "notConfigured": "未配置",
+      "setCredential": "设置凭据",
+      "deleteCredential": "删除凭据",
+      "credentialDialog": "设置 Provider 凭据",
+      "newCredential": "新凭据",
+      "credentialRequired": "请输入凭据",
+      "allowAllTenants": "允许所有租户",
+      "allowedTenantIds": "允许的租户 ID",
+      "deleteConfirm": "确认删除这个 Provider？",
+      "deleteCredentialConfirm": "确认删除这个 Provider 的凭据？"
+    },
+    "deployment": {
+      "title": "Model Deployment",
+      "create": "新建 Deployment",
+      "edit": "编辑 Deployment",
+      "provider": "Provider",
+      "upstreamModel": "上游模型",
+      "operations": "操作能力",
+      "modalities": "模态",
+      "dimension": "向量维度",
+      "probe": "探测",
+      "probeSuccess": "探测成功，上游状态码 {status}",
+      "deleteConfirm": "确认删除这个 Deployment？"
+    },
+    "profile": {
+      "title": "Model Profile",
+      "create": "新建 Profile",
+      "edit": "编辑 Profile",
+      "code": "能力编码",
+      "deployment": "Deployment"
+    }
+  }
+}

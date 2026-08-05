@@ -1,0 +1,26 @@
+[inference.error.request_invalid]
+other = "推理请求参数无效"
+
+[inference.error.scope_forbidden]
+other = "当前身份或租户无权使用该推理资源"
+
+[inference.error.model_profile_not_found]
+other = "模型 Profile 不存在或不可见"
+
+[inference.error.resource_in_use]
+other = "资源仍被下游资源引用"
+
+[inference.error.model_profile_unavailable]
+other = "模型 Profile 或其依赖当前不可用"
+
+[inference.error.operation_unsupported]
+other = "模型不支持请求的推理操作或模态"
+
+[inference.error.upstream_unavailable]
+other = "上游推理服务暂时不可用"
+
+[inference.error.timeout]
+other = "推理请求超时"
+
+[inference.error.upstream_failed]
+other = "上游推理服务调用失败"

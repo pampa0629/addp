@@ -14,22 +14,21 @@ assert.equal(coordinator.isCurrent(dorisRequest, 'engine:17'), true)
 coordinator.invalidate()
 assert.equal(coordinator.isCurrent(dorisRequest, 'engine:17'), false)
 
-const applyQueryTargetSource = queryEditor.slice(
-  queryEditor.indexOf('const applyQueryTarget = async'),
-  queryEditor.indexOf('// 保存任务')
+const switchTargetSource = queryEditor.slice(
+  queryEditor.indexOf('const onQueryTargetChange = async'),
+  queryEditor.indexOf('const executeQuery = async')
 )
 const executeQuerySource = queryEditor.slice(
   queryEditor.indexOf('const executeQuery = async'),
-  queryEditor.indexOf('// 格式化 SQL')
+  queryEditor.indexOf('const formatQuery =')
 )
 
-assert.ok(
-  applyQueryTargetSource.indexOf("queryContent.value = ''") < applyQueryTargetSource.indexOf('await get'),
-  '切换查询目标后必须在请求样例前清空上一个目标的查询内容'
-)
-assert.match(executeQuerySource, /if \(loadingSampleQuery\.value\) return/)
-assert.match(applyQueryTargetSource, /sampleRequests\.isCurrent\(request, selectedQueryTarget\.value\)/)
-assert.match(queryEditor, /:disabled="loadingSampleQuery \|\| !selectedQueryTarget \|\| !queryContent"/)
+assert.doesNotMatch(switchTargetSource, /queryContent\.value = ''/)
+assert.match(switchTargetSource, /if \(!queryContent\.value\.trim\(\)\)/)
+assert.match(executeQuerySource, /if \(loadingSampleQuery\.value \|\| executing\.value\) return/)
+assert.match(queryEditor, /sampleRequests\.isCurrent\(request, selectedQueryTarget\.value\)/)
+assert.match(queryEditor, /createExecution\(\{/)
+assert.match(queryEditor, /editorRef\.value\?\.getSelection\(\)/)
 assert.match(queryEditor, /v-loading="loadingSampleQuery"/)
 assert.match(queryEditor, /:aria-busy="loadingSampleQuery"/)
 

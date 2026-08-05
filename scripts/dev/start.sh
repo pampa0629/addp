@@ -17,6 +17,7 @@ show_usage() {
   echo "  -monitor      启动 Monitor 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -copilot      启动 Copilot 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + Develop)"
   echo "  -agent        启动 Agent 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
+  echo "  -inference    启动 Inference 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -standard     启动 Standard 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -model        启动 Model 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + Standard)"
   echo "  -quality      启动 Quality 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + Standard)"
@@ -101,7 +102,7 @@ ensure_model3d_node_dependencies() {
 
 # 自动生成服务 URL（基于 SERVICE_HOST + XXX_BACKEND_PORT）
 generate_service_urls() {
-    local services=(system manager meta transfer orchestrator develop service copilot monitor standard model quality asset portal agent graph)
+    local services=(system manager meta transfer orchestrator develop service copilot monitor standard model quality asset portal agent graph inference)
     for svc in "${services[@]}"; do
         local port_var="$(echo ${svc} | tr '[:lower:]' '[:upper:]')_BACKEND_PORT"
         local url_var="$(echo ${svc} | tr '[:lower:]' '[:upper:]')_URL"
@@ -239,7 +240,7 @@ for arg in "$@"; do
     -h|--help)
       show_usage
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-agent|-standard|-model|-quality|-asset|-portal|-graph|-python-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-supermap-workflow|-spark-workflow|-jupyter|-duckdb|-gateway|-console)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-agent|-inference|-standard|-model|-quality|-asset|-portal|-graph|-python-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-supermap-workflow|-spark-workflow|-jupyter|-duckdb|-gateway|-console)
       SELECTED_MODULE="${arg#-}"
       START_ALL=false
       ;;
@@ -273,6 +274,8 @@ START_MONITOR_FRONTEND=false
 START_COPILOT_BACKEND=false
 START_AGENT_BACKEND=false
 START_AGENT_FRONTEND=false
+START_INFERENCE_BACKEND=false
+START_INFERENCE_FRONTEND=false
 START_STANDARD_BACKEND=false
 START_STANDARD_FRONTEND=false
 START_MODEL_BACKEND=false
@@ -329,6 +332,8 @@ if [ "$START_ALL" = true ]; then
   START_COPILOT_BACKEND=true
   START_AGENT_BACKEND=true
   START_AGENT_FRONTEND=true
+  START_INFERENCE_BACKEND=true
+  START_INFERENCE_FRONTEND=true
   START_STANDARD_BACKEND=true
   START_STANDARD_FRONTEND=true
   START_MODEL_BACKEND=true
@@ -360,6 +365,7 @@ else
     manager)
       START_MANAGER_BACKEND=true
       START_MANAGER_FRONTEND=true
+      START_INFERENCE_BACKEND=true
       START_TRANSFER_BACKEND=true
       START_TRANSFER_BOUNDED_WORKER=true
       START_TRANSFER_CONTINUOUS_WORKER=true
@@ -403,10 +409,16 @@ else
       START_JUPYTER=true
       START_DUCKDB=true
       START_COPILOT_BACKEND=true
+      START_INFERENCE_BACKEND=true
       ;;
     agent)
       START_AGENT_BACKEND=true
       START_AGENT_FRONTEND=true
+      START_INFERENCE_BACKEND=true
+      ;;
+    inference)
+      START_INFERENCE_BACKEND=true
+      START_INFERENCE_FRONTEND=true
       ;;
     standard)
       START_STANDARD_BACKEND=true
@@ -470,6 +482,7 @@ else
       START_SERVICE_BACKEND=true
       START_MONITOR_BACKEND=true
       START_COPILOT_BACKEND=true
+      START_INFERENCE_BACKEND=true
       START_STANDARD_BACKEND=true
       START_MODEL_BACKEND=true
       START_PYTHON_WORKFLOW=true
@@ -498,6 +511,8 @@ else
       START_MONITOR_BACKEND=true
       START_MONITOR_FRONTEND=true
       START_COPILOT_BACKEND=true
+      START_INFERENCE_BACKEND=true
+      START_INFERENCE_FRONTEND=true
       START_STANDARD_BACKEND=true
       START_STANDARD_FRONTEND=true
       START_MODEL_BACKEND=true
@@ -777,6 +792,7 @@ QUALITY_FE_PORT=${QUALITY_FE_PORT:-5183}
 ASSET_FE_PORT=${ASSET_FE_PORT:-5184}
 PORTAL_FE_PORT=${PORTAL_FE_PORT:-5185}
 AGENT_FE_PORT=${AGENT_FE_PORT:-5186}
+INFERENCE_FE_PORT=${INFERENCE_FE_PORT:-5188}
 
 # 0. 检查 Go 模块依赖
 echo -e "${YELLOW}Step 0: 检查 Go 模块依赖${NC}"
@@ -877,7 +893,7 @@ fi
 
 # 3. 并行启动所有后端服务 + Workers (System 已就绪)
 # 跳过检查：如果没有任何后端模块需要启动
-if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_DUCKDB" = true ]; then
+if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ] || [ "$START_DUCKDB" = true ]; then
   echo -e "${YELLOW}Step 3/5: 并行启动后端服务和选定 Worker${NC}"
 
   # ============================================================
@@ -958,6 +974,11 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     BUILD_PIDS+=($!)
   fi
 
+  if [ "$START_INFERENCE_BACKEND" = true ]; then
+    build_service "inference" "inference/backend" &
+    BUILD_PIDS+=($!)
+  fi
+
   # 并行编译 Workers(仅编译需要启动的)
   if [ "$START_META_WORKER" = true ]; then
     build_worker "meta" "meta/backend" &
@@ -987,7 +1008,7 @@ fi
 # ============================================================
 # Phase 2: 并行启动所有 Backend 服务
 # ============================================================
-if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ]; then
+if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ]; then
   echo "  [2/3] 并行启动 Backends..."
 
   # 启动 Manager Backend（带检查）
@@ -1133,6 +1154,16 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     fi
   fi
 
+  if [ "$START_INFERENCE_BACKEND" = true ]; then
+    if check_service_running "inference" "${INFERENCE_BACKEND_PORT:-8191}"; then
+      .dev-bins/addp-inference > logs/inference-backend.log 2> logs/inference-backend-stderr.log &
+      INFERENCE_PID=$!
+      echo $INFERENCE_PID > .dev-pids/inference.pid
+    else
+      INFERENCE_PID=$(cat .dev-pids/inference.pid 2>/dev/null)
+    fi
+  fi
+
   # 并行启动 Workers
   if [ "$START_META_WORKER" = true ]; then
     if check_service_running "meta-worker" ""; then
@@ -1235,7 +1266,7 @@ fi
 # ============================================================
 # Phase 3: 并行等待所有 Backends 健康检查
 # ============================================================
-if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ]; then
+if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ]; then
   echo "  [3/3] 并行健康检查..."
 
   HEALTH_CHECK_PIDS=()
@@ -1350,6 +1381,22 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
           echo -e "${RED}✗ Service Backend 启动超时${NC}"
           echo "查看日志: tail -f logs/service-backend.log"
+          exit 1
+        fi
+      done
+    ) &
+    HEALTH_CHECK_PIDS+=($!)
+  fi
+
+  if [ "$START_INFERENCE_BACKEND" = true ]; then
+    (
+      WAIT_COUNT=0
+      until curl -f "http://localhost:${INFERENCE_BACKEND_PORT:-8191}/health" > /dev/null 2>&1; do
+        sleep 1
+        WAIT_COUNT=$((WAIT_COUNT + 1))
+        if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+          echo -e "${RED}✗ Inference Backend 启动超时${NC}"
+          echo "查看日志: tail -f logs/inference-backend-stderr.log"
           exit 1
         fi
       done
@@ -2528,6 +2575,10 @@ if [ "$START_CONSOLE" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$STA
     FRONTEND_CONFIGS+=("graph:5187:graph/frontend")
   fi
 
+  if [ "$START_INFERENCE_FRONTEND" = true ]; then
+    FRONTEND_CONFIGS+=("inference:${INFERENCE_FE_PORT}:inference/frontend")
+  fi
+
   echo "并发启动所有前端..."
 
   # 存储 PIDs（使用临时文件）
@@ -2675,6 +2726,7 @@ echo "  Monitor Backend:      $MONITOR_PID"
 echo "  Standard Backend:     $STANDARD_PID"
 echo "  Model Backend:        $MODEL_PID"
 echo "  Quality Backend:      $QUALITY_PID"
+echo "  Inference Backend:    $INFERENCE_PID"
 echo "  Gateway:              $GATEWAY_PID"
 echo ""
 echo "Workers PID:"
@@ -2697,6 +2749,7 @@ echo "  Monitor:  logs/monitor-backend.log"
 echo "  Standard: logs/standard-backend.log"
 echo "  Model:    logs/model-backend.log"
 echo "  Quality:  logs/quality-backend.log"
+echo "  Inference: logs/inference-backend.log"
 echo "  GeoPython Workflow Engine: logs/python-workflow-engine.log"
 echo "  Math Workflow Engine: logs/math-workflow-engine.log (显式 -math-workflow 启动时)"
 echo "  Model3D Workflow Engine: logs/model3d-workflow-engine.log"

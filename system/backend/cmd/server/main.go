@@ -114,17 +114,22 @@ func main() {
 		engineRepo := repository.NewEngineRepository(db)
 		registryService := service.NewRegistryService(engineRepo)
 		registrationContext, cancelRegistration := context.WithTimeout(context.Background(), 10*time.Second)
-		_, err := registryService.RegisterBuiltinRuntime(
-			registrationContext,
-			"duckdb",
-			cfg.DuckDBRuntimeURL,
-			"ADDP 内置联邦只读查询 Runtime",
-		)
-		cancelRegistration()
-		if err != nil {
-			logger.L().Error("注册内置 DuckDB Runtime 失败", "error", err)
-			os.Exit(1)
+		builtinRuntimes := []struct {
+			engineType  string
+			endpoint    string
+			description string
+		}{
+			{engineType: "duckdb", endpoint: cfg.DuckDBRuntimeURL, description: "ADDP 内置联邦只读查询 Runtime"},
+			{engineType: "inference_runtime", endpoint: cfg.InferenceRuntimeURL, description: "ADDP 内置统一 AI 推理 Runtime"},
 		}
+		for _, runtime := range builtinRuntimes {
+			if _, err := registryService.RegisterBuiltinRuntime(registrationContext, runtime.engineType, runtime.endpoint, runtime.description); err != nil {
+				cancelRegistration()
+				logger.L().Error("注册内置 Runtime 失败", "engine_type", runtime.engineType, "error", err)
+				os.Exit(1)
+			}
+		}
+		cancelRegistration()
 		engineService := service.NewEngineService(engineRepo, cfg.EncryptionKey, nil)
 		if err := engineService.RefreshAllEngineCapabilities(); err != nil {
 			logger.L().Error("刷新引擎能力声明失败", "error", err)

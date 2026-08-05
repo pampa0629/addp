@@ -64,21 +64,9 @@ class Settings(BaseSettings):
     def get_develop_url(self) -> str:
         return self.develop_url or f"http://{self.service_host}:{self.develop_backend_port}"
 
-    # LLM 默认配置
-    default_llm_provider: str = "dashscope"
-    default_llm_model: str = "qwen-max"
-    dashscope_model: str = "qwen-max"
-    dashscope_api_key: Optional[str] = None
-    openai_api_key: Optional[str] = None
-    claude_api_key: Optional[str] = None
-    ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "qwen2.5:7b"
-
-    # 开发环境选项
-    disable_ssl_verify: bool = False  # 禁用 SSL 验证（仅用于开发环境）
-
-    # 加密密钥
-    encryption_key: str = "default-encryption-key-change-in-production"
+    # Inference Runtime 服务调用
+    inference_url: str = "http://localhost:8191"
+    copilot_service_client_secret: str = ""
 
     # Copilot 功能配置
     copilot_enable_streaming: bool = True
@@ -86,9 +74,6 @@ class Settings(BaseSettings):
     copilot_rate_limit: int = 10
     copilot_score_threshold: float = 0.15
     copilot_max_candidates: int = 10
-
-    # 内部 API Key (用于服务间调用)
-    internal_api_key: Optional[str] = None
 
 # 全局配置实例
 settings = Settings()

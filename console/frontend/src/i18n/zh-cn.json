@@ -124,6 +124,7 @@
         "agent": "Agent - AI智能体",
         "copilot": "Copilot - AI助手",
         "graph": "Graph - 知识图谱",
+        "inference": "Inference - AI推理",
         "develop": "Develop - 数据开发",
         "manager": "Manager - 数据管理",
         "meta": "Meta - 元数据",
@@ -162,6 +163,31 @@
 	  "unavailable": "模块不可用",
 	  "empty": "当前上下文没有可维护的配置",
 	  "loadFailed": "加载配置管理入口失败",
+	  "reload": "重新加载",
+	  "back": "返回配置入口",
+	  "save": "保存",
+	  "saveSuccess": "配置已保存",
+	  "saveFailed": "保存配置失败",
+	  "versionConflict": "配置已被其他操作修改，当前内容已重新加载",
+	  "ai": {
+		"scenario": "推理场景",
+		"modelProfile": "Model Profile",
+		"source": "配置来源",
+		"version": "版本",
+		"inherited": "继承平台默认",
+		"currentScope": "当前范围",
+		"notConfigured": "未配置",
+		"agent": { "title": "Agent 推理场景" },
+		"copilot": { "title": "Copilot 推理场景" },
+		"scenarios": {
+		  "reasoning": "规划与工具调用",
+		  "general-chat": "通用对话摘要",
+		  "nl2sql": "自然语言生成 SQL",
+		  "nl2dag": "自然语言生成工作流",
+		  "navigation_guide": "平台导航引导",
+		  "knowledge_graph_extraction": "知识图谱抽取"
+		}
+	  },
 	  "scopes": {
 		"platform_only": "平台",
 		"platform_default_with_tenant_override": "平台默认与租户覆盖",
@@ -228,6 +254,10 @@
       "graph": {
         "label": "知识图谱",
         "desc": "本体建模、知识图谱构建、图谱探索"
+      },
+      "inference": {
+        "label": "AI 推理",
+        "desc": "Provider、模型部署和能力档案"
       }
     },
     "menus": {
@@ -331,6 +361,10 @@
         "graphs": "知识图谱",
         "analysis": "图算法分析",
         "knowledgeService": "知识服务"
+      },
+      "inference": {
+        "label": "AI 推理",
+        "models": "模型与 Provider"
       },
       "system": {
         "label": "系统管理",

@@ -1,7 +1,31 @@
 schema_version: addp.permission_manifest/v1
 owner_module: copilot
-manifest_version: 2
+manifest_version: 3
 permissions:
+  - key: copilot.configuration.read
+    allowed_scope_types: [platform, tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.copilot.configuration.read.name
+    description_i18n_key: permissions.copilot.configuration.read.description
+  - key: copilot.configuration.update
+    allowed_scope_types: [platform, tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.copilot.configuration.update.name
+    description_i18n_key: permissions.copilot.configuration.update.description
+  - key: copilot.knowledge_graph.execute
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.copilot.knowledge_graph.execute.name
+    description_i18n_key: permissions.copilot.knowledge_graph.execute.description
   - key: copilot.sql.execute
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium

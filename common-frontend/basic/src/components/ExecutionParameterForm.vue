@@ -1,11 +1,16 @@
 <template>
-  <div class="execution-parameter-form">
+  <div ref="formRoot" class="execution-parameter-form">
     <section v-for="group in groups" :key="group.name" class="parameter-group">
       <h4>{{ group.title }}</h4>
       <div v-for="field in group.fields" :key="field.name" class="parameter-field">
         <div class="field-header">
           <span>{{ field.title }}</span>
-          <el-radio-group :model-value="parameterMode(field)" size="small" @change="mode => setParameterMode(field, mode)">
+          <el-radio-group
+            :model-value="parameterMode(field)"
+            :disabled="disabled"
+            size="small"
+            @change="mode => setParameterMode(field, mode)"
+          >
             <el-radio-button value="workflow">{{ t('common.executionParameters.workflowConfiguration') }}</el-radio-button>
             <el-radio-button value="override">{{ t('common.executionParameters.executionOverride') }}</el-radio-button>
             <el-radio-button v-if="allowUpstream" value="upstream">{{ t('common.executionParameters.upstream') }}</el-radio-button>
@@ -29,6 +34,7 @@
         <el-select
           v-else-if="parameterMode(field) === 'upstream'"
           :model-value="upstreamValue(field)"
+          :disabled="disabled"
           :placeholder="t('common.executionParameters.selectOutput')"
           @change="value => setUpstreamValue(field, value)"
         >
@@ -44,10 +50,11 @@
           <div class="resource-value">
             <el-input
               :model-value="resourceDisplayText(field, getPath(overrides, field.path))"
+              :disabled="disabled"
               readonly
               :placeholder="t('common.executionParameters.noResource')"
             />
-            <el-button type="primary" plain @click="openResourcePicker(field)">
+            <el-button type="primary" plain :disabled="disabled" @click="openResourcePicker(field)">
               {{ t('common.executionParameters.selectResource') }}
             </el-button>
           </div>
@@ -60,7 +67,7 @@
             <template v-if="isGeometryChild(field, child)">
               <el-select
                 :model-value="getPath(overrides, child.path)"
-                :disabled="geometryColumnOptions(field, getPath(overrides, field.path)).length <= 1"
+                :disabled="disabled || geometryColumnOptions(field, getPath(overrides, field.path)).length <= 1"
                 :placeholder="t('common.executionParameters.geometryNotDetected')"
                 @update:model-value="value => updatePath(child.path, value)"
               >
@@ -83,6 +90,7 @@
               v-else
               :schema="child.schema"
               :model-value="getPath(overrides, child.path)"
+              :disabled="disabled"
               @update:model-value="value => updatePath(child.path, value)"
             />
           </div>
@@ -92,6 +100,7 @@
           v-else
           :schema="field.schema"
           :model-value="getPath(overrides, field.path)"
+          :disabled="disabled"
           @update:model-value="value => updatePath(field.path, value)"
         />
         <p v-if="field.schema.description" class="field-description">{{ field.schema.description }}</p>
@@ -130,11 +139,13 @@ import { geometryColumnFactsFromSelection } from '../utils/resourceSelection.js'
 const props = defineProps({
   contract: { type: Object, required: true },
   modelValue: { type: Object, default: () => ({}) },
+  disabled: { type: Boolean, default: false },
   allowUpstream: { type: Boolean, default: false },
   upstreamOutputs: { type: Array, default: () => [] }
 })
 const emit = defineEmits(['update:modelValue'])
 const { t, te } = useI18n()
+const formRoot = ref(null)
 const pickerVisible = ref(false)
 const activePicker = ref(null)
 const pickerSelection = ref(null)
@@ -143,67 +154,86 @@ const engineCatalogLoading = ref(false)
 const geometryColumnsByField = ref({})
 let engineCatalogRequestSeq = 0
 
+function focus() {
+  const target = formRoot.value?.querySelector(
+    'input:not([disabled]):not([tabindex="-1"]), button:not([disabled]):not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])'
+  )
+  target?.focus()
+  return Boolean(target)
+}
+
+defineExpose({ focus })
+
 const SchemaExecutionInput = defineComponent({
   name: 'SchemaExecutionInput',
-  props: { schema: { type: Object, required: true }, modelValue: { default: null } },
+  props: {
+    schema: { type: Object, required: true },
+    modelValue: { default: null },
+    disabled: { type: Boolean, default: false }
+  },
   emits: ['update:modelValue'],
   setup(inputProps, { emit: inputEmit }) {
     return () => {
       const schema = inputProps.schema || {}
-	  if (schema.type === 'object') {
-		const properties = schema.properties || {}
-		const current = inputProps.modelValue && typeof inputProps.modelValue === 'object' && !Array.isArray(inputProps.modelValue)
-		  ? inputProps.modelValue
-		  : {}
-		return h('div', { class: 'structured-object' }, Object.entries(properties).map(([name, childSchema]) =>
-		  h('div', { class: 'structured-field', key: name }, [
-			h('label', childSchema.title || name),
-			h(SchemaExecutionInput, {
-			  schema: childSchema,
-			  modelValue: current[name],
-			  'onUpdate:modelValue': value => inputEmit('update:modelValue', { ...current, [name]: value })
-			})
-		  ])
-		))
-	  }
-	  if (schema.type === 'array') {
-		const current = Array.isArray(inputProps.modelValue) ? inputProps.modelValue : []
-		const itemSchema = schema.items || { type: 'string' }
-		const rows = current.map((value, index) => h('div', { class: 'array-row', key: index }, [
-		  h(SchemaExecutionInput, {
-			schema: itemSchema,
-			modelValue: value,
-			'onUpdate:modelValue': nextValue => {
-			  const next = [...current]
-			  next[index] = nextValue
-			  inputEmit('update:modelValue', next)
-			}
-		  }),
-		  h(resolveComponent('el-button'), {
-			icon: Delete,
-			circle: true,
-			title: t('common.executionParameters.removeItem'),
-			'onClick': () => inputEmit('update:modelValue', current.filter((_, itemIndex) => itemIndex !== index))
-		  })
-		]))
-		rows.push(h(resolveComponent('el-button'), {
-		  icon: Plus,
-		  plain: true,
-		  disabled: Number.isFinite(schema.maxItems) && current.length >= schema.maxItems,
-		  'onClick': () => inputEmit('update:modelValue', [...current, emptyValue(itemSchema)])
-		}, () => t('common.executionParameters.addItem')))
-		return h('div', { class: 'array-input' }, rows)
-	  }
+      if (schema.type === 'object') {
+        const properties = schema.properties || {}
+        const current = inputProps.modelValue && typeof inputProps.modelValue === 'object' && !Array.isArray(inputProps.modelValue)
+          ? inputProps.modelValue
+          : {}
+        return h('div', { class: 'structured-object' }, Object.entries(properties).map(([name, childSchema]) =>
+          h('div', { class: 'structured-field', key: name }, [
+            h('label', childSchema.title || name),
+            h(SchemaExecutionInput, {
+              schema: childSchema,
+              modelValue: current[name],
+              disabled: inputProps.disabled,
+              'onUpdate:modelValue': value => inputEmit('update:modelValue', { ...current, [name]: value })
+            })
+          ])
+        ))
+      }
+      if (schema.type === 'array') {
+        const current = Array.isArray(inputProps.modelValue) ? inputProps.modelValue : []
+        const itemSchema = schema.items || { type: 'string' }
+        const rows = current.map((value, index) => h('div', { class: 'array-row', key: index }, [
+          h(SchemaExecutionInput, {
+            schema: itemSchema,
+            modelValue: value,
+            disabled: inputProps.disabled,
+            'onUpdate:modelValue': nextValue => {
+              const next = [...current]
+              next[index] = nextValue
+              inputEmit('update:modelValue', next)
+            }
+          }),
+          h(resolveComponent('el-button'), {
+            icon: Delete,
+            circle: true,
+            disabled: inputProps.disabled,
+            title: t('common.executionParameters.removeItem'),
+            'onClick': () => inputEmit('update:modelValue', current.filter((_, itemIndex) => itemIndex !== index))
+          })
+        ]))
+        rows.push(h(resolveComponent('el-button'), {
+          icon: Plus,
+          plain: true,
+          disabled: inputProps.disabled || (Number.isFinite(schema.maxItems) && current.length >= schema.maxItems),
+          'onClick': () => inputEmit('update:modelValue', [...current, emptyValue(itemSchema)])
+        }, () => t('common.executionParameters.addItem')))
+        return h('div', { class: 'array-input' }, rows)
+      }
       if (Array.isArray(schema.enum)) {
         return h(resolveComponent('el-select'), {
           modelValue: inputProps.modelValue,
           clearable: true,
+          disabled: inputProps.disabled,
           'onUpdate:modelValue': value => inputEmit('update:modelValue', value)
         }, () => schema.enum.map(value => h(resolveComponent('el-option'), { label: String(value), value })))
       }
       if (schema.type === 'boolean') {
         return h(resolveComponent('el-switch'), {
           modelValue: Boolean(inputProps.modelValue),
+          disabled: inputProps.disabled,
           'onUpdate:modelValue': value => inputEmit('update:modelValue', value)
         })
       }
@@ -214,11 +244,13 @@ const SchemaExecutionInput = defineComponent({
           max: schema.maximum,
           step: schema.type === 'integer' ? 1 : 0.1,
           precision: schema.type === 'integer' ? 0 : undefined,
+          disabled: inputProps.disabled,
           'onUpdate:modelValue': value => inputEmit('update:modelValue', value)
         })
       }
       return h(resolveComponent('el-input'), {
         modelValue: inputProps.modelValue == null ? '' : inputProps.modelValue,
+        disabled: inputProps.disabled,
         'onUpdate:modelValue': value => inputEmit('update:modelValue', value)
       })
     }

@@ -24,8 +24,8 @@ func NewEngineHandler(systemClient *commonClient.SystemServiceClient) *EngineHan
 	}
 }
 
-// ListEngines 获取数据源列表（供 SQL 编辑器使用）
-// @Summary 获取可用于 SQL 查询的数据源列表 | List data sources available for SQL queries
+// ListEngines 获取查询工作台可用的引擎列表。
+// @Summary 获取查询工作台引擎列表 | List engines available to the query workbench
 // @Tags Engines
 // @Produce json
 // @Success 200 {array} models.EngineRuntimeDescriptor "引擎运行时描述列表 | Engine runtime descriptor list"
@@ -35,7 +35,7 @@ func NewEngineHandler(systemClient *commonClient.SystemServiceClient) *EngineHan
 func (h *EngineHandler) ListEngines(c *gin.Context) {
 	tenantID := tenantIDValue(c)
 
-	// 从 System 模块获取所有支持 SQL 查询的引擎
+	// 从 System 模块获取所有声明 compute.query 能力的引擎。
 	engines, err := h.systemClient.WithTenantID(tenantID).ListEngineRuntimeDescriptors(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{

@@ -12,8 +12,107 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 41 {
-		t.Fatalf("LatestVersion = %d, want 41", catalog.LatestVersion)
+	if catalog.LatestVersion != 46 {
+		t.Fatalf("LatestVersion = %d, want 46", catalog.LatestVersion)
+	}
+}
+
+func TestCopilotDevelopCatalogMigrationPublishesRuntimeAuthorization(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000046_iam_copilot_develop_catalog.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 46: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'tenant.copilot_runtime'",
+		"'develop.task.read'",
+		"INSERT INTO system.role_permissions",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 46 missing %q", fragment)
+		}
+	}
+}
+
+func TestManagerInferenceBindingMigrationPublishesTenantAuthorization(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000045_iam_manager_inference_binding.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 45: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'manager.configuration.read'",
+		"'manager.configuration.update'",
+		"ARRAY['platform', 'tenant']::text[]",
+		"role.role_key = 'tenant.administrator'",
+		"INSERT INTO system.role_permissions",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 45 missing %q", fragment)
+		}
+	}
+}
+
+func TestAgentInferenceBindingMigrationPublishesConfigurationAuthorization(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000044_iam_agent_inference_bindings.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 44: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'agent.configuration.read'",
+		"'agent.configuration.update'",
+		"'platform.system_administrator'",
+		"'tenant.administrator'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 44 missing %q", fragment)
+		}
+	}
+}
+
+func TestCopilotInferenceBindingMigrationPublishesGraphServiceAuthorization(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000043_iam_copilot_inference_bindings.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 43: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'copilot.configuration.read'",
+		"'copilot.configuration.update'",
+		"'copilot.knowledge_graph.execute'",
+		"'platform.graph_runtime'",
+		"'tenant.graph_runtime'",
+		"'addp-graph'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 43 missing %q", fragment)
+		}
+	}
+}
+
+func TestInferenceRuntimeMigrationPublishesPermissionsRolesAndPrincipals(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000042_iam_inference_runtime.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 42: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'inference.runtime.execute'",
+		"'inference.deployment.execute'",
+		"'inference.provider_credential.update'",
+		"'platform.inference_runtime'",
+		"'tenant.agent_runtime'",
+		"'tenant.copilot_runtime'",
+		"'tenant.manager_runtime', 'inference.runtime.execute'",
+		"'addp-agent'",
+		"'addp-copilot'",
+		"'addp-inference'",
+		"permission.permission_key <> 'inference.runtime.execute'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 42 missing %q", fragment)
+		}
 	}
 }
 

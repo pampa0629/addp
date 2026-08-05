@@ -31,6 +31,7 @@ func TestAllPluginsRegistered(t *testing.T) {
 		"pointcloud_workflow",
 		"postgresql",
 		"geopython_workflow",
+		"inference_runtime",
 		"s3",
 		"spark",
 		"spark_workflow",
@@ -58,8 +59,8 @@ func TestAllPluginsRegistered(t *testing.T) {
 func TestGetAllPlugins(t *testing.T) {
 	plugins := plugin.GetAll()
 
-	if len(plugins) != 19 {
-		t.Errorf("Expected 19 plugins, got %d", len(plugins))
+	if len(plugins) != 20 {
+		t.Errorf("Expected 20 plugins, got %d", len(plugins))
 	}
 
 	// 验证每个插件的基本信息
@@ -74,6 +75,7 @@ func TestGetAllPlugins(t *testing.T) {
 		{"clickhouse", "ClickHouse"},
 		{"duckdb", "DuckDB 联邦查询 Runtime"},
 		{"jupyter", "Jupyter Engine"},
+		{"inference_runtime", "ADDP AI Inference Runtime"},
 		{"kafka", "Apache Kafka"},
 		{"math_workflow", "Math Workflow"},
 		{"model3d_workflow", "Model3D Workflow"},
@@ -273,26 +275,28 @@ func TestBuiltinPluginCapabilityMatrix(t *testing.T) {
 		query           bool
 		workflow        bool
 		script          bool
+		inference       bool
 		graphQuery      bool
 		workflowRuntime string
 		scriptModes     []string
 		scriptLanguages []string
 	}{
-		"clickhouse":       {origin: "general", family: "tabular", storage: true, query: true},
-		"doris":            {origin: "general", family: "tabular", storage: true, query: true},
-		"kafka":            {origin: "general", family: "event_stream", storage: true},
-		"mongodb":          {origin: "general", family: "dynamic_schema", storage: true, query: true},
-		"mysql":            {origin: "general", family: "tabular", storage: true, query: true},
-		"neo4j":            {origin: "general", family: "graph", storage: true, query: true, graphQuery: true},
-		"postgresql":       {origin: "general", family: "tabular", storage: true, query: true},
-		"spark":            {origin: "general", family: "tabular", storage: true, query: true},
-		"minio":            {origin: "general", family: "object", storage: true},
-		"nfs":              {origin: "general", family: "file", storage: true},
-		"s3":               {origin: "general", family: "object", storage: true},
-		"duckdb":           {origin: "extension", family: "query_runtime", query: true},
-		"jupyter":          {origin: "extension", family: "script", script: true, scriptModes: []string{"notebook"}, scriptLanguages: []string{"python"}},
-		"math_workflow":    {origin: "extension", family: "workflow", workflow: true, workflowRuntime: "addp.workflow/v1"},
-		"model3d_workflow": {origin: "extension", family: "workflow", workflow: true, workflowRuntime: "addp.workflow/v1"},
+		"clickhouse":        {origin: "general", family: "tabular", storage: true, query: true},
+		"doris":             {origin: "general", family: "tabular", storage: true, query: true},
+		"kafka":             {origin: "general", family: "event_stream", storage: true},
+		"mongodb":           {origin: "general", family: "dynamic_schema", storage: true, query: true},
+		"mysql":             {origin: "general", family: "tabular", storage: true, query: true},
+		"neo4j":             {origin: "general", family: "graph", storage: true, query: true, graphQuery: true},
+		"postgresql":        {origin: "general", family: "tabular", storage: true, query: true},
+		"spark":             {origin: "general", family: "tabular", storage: true, query: true},
+		"minio":             {origin: "general", family: "object", storage: true},
+		"nfs":               {origin: "general", family: "file", storage: true},
+		"s3":                {origin: "general", family: "object", storage: true},
+		"duckdb":            {origin: "extension", family: "query_runtime", query: true},
+		"jupyter":           {origin: "extension", family: "script", script: true, scriptModes: []string{"notebook"}, scriptLanguages: []string{"python"}},
+		"inference_runtime": {origin: "extension", family: "inference", inference: true},
+		"math_workflow":     {origin: "extension", family: "workflow", workflow: true, workflowRuntime: "addp.workflow/v1"},
+		"model3d_workflow":  {origin: "extension", family: "workflow", workflow: true, workflowRuntime: "addp.workflow/v1"},
 		"pointcloud_workflow": {
 			origin:          "extension",
 			family:          "workflow",
@@ -339,6 +343,9 @@ func TestBuiltinPluginCapabilityMatrix(t *testing.T) {
 			if hasScript(caps) != expected.script {
 				t.Fatalf("script support = %v, want %v", hasScript(caps), expected.script)
 			}
+			if hasInference(caps) != expected.inference {
+				t.Fatalf("inference support = %v, want %v", hasInference(caps), expected.inference)
+			}
 			if expected.graphQuery && !contains(caps.Compute.Query.ResultKinds, "graph") {
 				t.Fatalf("graph plugin must declare graph query result kind")
 			}
@@ -357,6 +364,10 @@ func TestBuiltinPluginCapabilityMatrix(t *testing.T) {
 			}
 		})
 	}
+}
+
+func hasInference(caps plugin.EngineCapabilities) bool {
+	return caps.Compute != nil && caps.Compute.Inference != nil && caps.Compute.Inference.Supported
 }
 
 func TestExtensionRuntimeRegistrationOmitsCapabilities(t *testing.T) {

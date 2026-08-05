@@ -361,3 +361,17 @@ func NewScriptCapabilities(engineType string, modes, languages []string, interac
 		},
 	}
 }
+
+func NewInferenceCapabilities(engineType string, operations, modalities []string, streaming bool) EngineCapabilities {
+	return EngineCapabilities{
+		SchemaVersion: CapabilitiesSchemaVersion,
+		EngineType:    engineType,
+		EngineFamily:  "inference",
+		Compute: &ComputeCapabilities{Inference: &InferenceCapability{
+			Supported: true, RuntimeAPI: "addp.inference/v1",
+			Operations: append([]string(nil), operations...),
+			Modalities: append([]string(nil), modalities...),
+			Streaming:  streaming,
+		}},
+	}
+}

@@ -1,6 +1,14 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 30
+manifest_version: 34
 roles:
+  - key: platform.agent_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.agent_runtime.name
+    description_i18n_key: roles.platform.agent_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.runtime_registry.update
   - key: platform.asset_runtime
     role_type: platform_builtin
     name_i18n_key: roles.platform.asset_runtime.name
@@ -19,10 +27,34 @@ roles:
       - audit.event.export
       - audit.event.read
       - iam.platform_identity_change.read
+  - key: platform.copilot_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.copilot_runtime.name
+    description_i18n_key: roles.platform.copilot_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.runtime_registry.update
   - key: platform.develop_runtime
     role_type: platform_builtin
     name_i18n_key: roles.platform.develop_runtime.name
     description_i18n_key: roles.platform.develop_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.runtime_registry.update
+  - key: platform.graph_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.graph_runtime.name
+    description_i18n_key: roles.platform.graph_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.runtime_registry.update
+  - key: platform.inference_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.inference_runtime.name
+    description_i18n_key: roles.platform.inference_runtime.description
     allowed_scope_types: [platform]
     allowed_principal_types: [service_principal]
     permissions:
@@ -84,9 +116,26 @@ roles:
     allowed_scope_types: [platform]
     allowed_principal_types: [user]
     permissions:
+      - agent.configuration.read
+      - agent.configuration.update
+      - copilot.configuration.read
+      - copilot.configuration.update
       - iam.platform_identity_change.approve
       - iam.platform_identity_change.read
       - iam.platform_identity_change.reject
+      - inference.deployment.create
+      - inference.deployment.delete
+      - inference.deployment.execute
+      - inference.deployment.read
+      - inference.deployment.update
+      - inference.profile.create
+      - inference.profile.read
+      - inference.profile.update
+      - inference.provider.create
+      - inference.provider.delete
+      - inference.provider.read
+      - inference.provider.update
+      - inference.provider_credential.update
       - manager.configuration.read
       - manager.configuration.update
       - platform.tenant.close
@@ -103,6 +152,10 @@ roles:
     allowed_scope_types: [tenant]
     allowed_principal_types: [user]
     permissions:
+      - agent.configuration.read
+      - agent.configuration.update
+      - copilot.configuration.read
+      - copilot.configuration.update
       - iam.tenant_invitation.create
       - iam.tenant_invitation.read
       - iam.tenant_invitation.revoke
@@ -118,6 +171,29 @@ roles:
       - iam.tenant_role_assignment.create
       - iam.tenant_role_assignment.read
       - iam.tenant_role_assignment.revoke
+      - inference.deployment.create
+      - inference.deployment.delete
+      - inference.deployment.execute
+      - inference.deployment.read
+      - inference.deployment.update
+      - inference.profile.create
+      - inference.profile.read
+      - inference.profile.update
+      - inference.provider.create
+      - inference.provider.delete
+      - inference.provider.read
+      - inference.provider.update
+      - inference.provider_credential.update
+      - manager.configuration.read
+      - manager.configuration.update
+  - key: tenant.agent_runtime
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.agent_runtime.name
+    description_i18n_key: roles.tenant.agent_runtime.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - inference.runtime.execute
   - key: tenant.ai_user
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.ai_user.name
@@ -198,6 +274,15 @@ roles:
       - audit.tenant_event.read
       - monitor.execution.read
       - monitor.statistics.read
+  - key: tenant.copilot_runtime
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.copilot_runtime.name
+    description_i18n_key: roles.tenant.copilot_runtime.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - develop.task.read
+      - inference.runtime.execute
   - key: tenant.data_engineer
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.data_engineer.name
@@ -382,6 +467,14 @@ roles:
       - graph.review.read
       - graph.review.reject
       - graph.review.update
+  - key: tenant.graph_runtime
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.graph_runtime.name
+    description_i18n_key: roles.tenant.graph_runtime.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - copilot.knowledge_graph.execute
   - key: tenant.infrastructure_administrator
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.infrastructure_administrator.name
@@ -411,6 +504,7 @@ roles:
     allowed_scope_types: [tenant]
     allowed_principal_types: [service_principal]
     permissions:
+      - inference.runtime.execute
       - meta.catalog.read
       - meta.scan_task.execute
   - key: tenant.meta_runtime

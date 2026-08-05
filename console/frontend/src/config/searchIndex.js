@@ -65,6 +65,7 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.graph.knowledgeService',  module: 'graph', route: '/graph/knowledge-service', keywords: ['知识服务', 'knowledge service'] },
   // 智能体
   { labelKey: 'console.menus.agent.label', module: 'agent', route: '/agent', keywords: ['智能体', 'AI', '对话', '助手', 'agent', 'chat', 'assistant'] },
+  { labelKey: 'console.menus.inference.models', module: 'inference', route: '/inference/settings/models', keywords: ['AI', '推理', '模型', 'Provider', 'Deployment', 'Profile', 'inference', 'model'] },
   // 系统管理
   { labelKey: 'console.menus.system.iam',          module: 'system', route: '/system/iam',          keywords: ['安全设置', '身份验证器', '用户', '租户', '权限', '审计', 'IAM', 'identity', 'access', 'account', 'security', 'authenticator'] },
   { labelKey: 'console.menus.system.engines',      module: 'system', route: '/system/engines',      keywords: ['引擎管理', '数据引擎', '引擎配置', 'engine', 'database'] },

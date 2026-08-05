@@ -183,7 +183,7 @@ const docTemplate = `{
                 "tags": [
                     "Engines"
                 ],
-                "summary": "获取可用于 SQL 查询的数据源列表 | List data sources available for SQL queries",
+                "summary": "获取查询工作台引擎列表 | List engines available to the query workbench",
                 "responses": {
                     "200": {
                         "description": "引擎运行时描述列表 | Engine runtime descriptor list",
@@ -286,49 +286,6 @@ const docTemplate = `{
                 "x-addp-required-permissions": [
                     "develop.task.execute",
                     "develop.data_read.execute"
-                ]
-            }
-        },
-        "/execute": {
-            "post": {
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Query"
-                ],
-                "summary": "执行查询语句 | Execute query statement",
-                "parameters": [
-                    {
-                        "description": "查询请求 | Query request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.ExecuteQueryRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "查询结果 | Query result",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.ExecuteQueryResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-conditional-permissions": [
-                    "develop.data_read.execute",
-                    "develop.data_write.execute",
-                    "develop.data_ddl.execute",
-                    "develop.data_external_effect.execute"
-                ],
-                "x-addp-required-permissions": [
-                    "develop.task.execute"
                 ]
             }
         },
@@ -4256,21 +4213,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_develop_backend_internal_service.SQLExecutionEffect": {
-            "type": "string",
-            "enum": [
-                "read",
-                "write",
-                "ddl",
-                "external_effect"
-            ],
-            "x-enum-varnames": [
-                "Read",
-                "Write",
-                "DDL",
-                "ExternalEffect"
-            ]
-        },
         "github_com_addp_develop_backend_internal_service.WorkflowValidationIssue": {
             "type": "object",
             "properties": {
@@ -4304,60 +4246,6 @@ const docTemplate = `{
                     }
                 },
                 "workflow_engine_id": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api.ExecuteQueryRequest": {
-            "type": "object",
-            "required": [
-                "content",
-                "execution_config"
-            ],
-            "properties": {
-                "content": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "execution_config": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "timeout": {
-                    "description": "超时时间（秒）",
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api.ExecuteQueryResponse": {
-            "type": "object",
-            "properties": {
-                "columns": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "effect": {
-                    "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.SQLExecutionEffect"
-                },
-                "execution_id": {
-                    "type": "string"
-                },
-                "execution_time_ms": {
-                    "type": "integer"
-                },
-                "rows": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": true
-                    }
-                },
-                "rows_affected": {
-                    "type": "integer"
-                },
-                "rows_count": {
                     "type": "integer"
                 }
             }

@@ -69,20 +69,45 @@ def test_tenant_permission_dependency_requires_role_permission(monkeypatch):
     assert exc_info.value.detail == "Insufficient permission"
 
 
-def test_internal_api_key_dependency(monkeypatch):
-    monkeypatch.setattr(auth.settings, "internal_api_key", "shared-secret")
-    assert asyncio.run(auth.require_internal_api_key("shared-secret", "zh-cn")) is None
+def test_tenant_service_dependency_requires_bound_client_and_permission(monkeypatch):
+    dependency = auth.require_tenant_service("addp-graph", "copilot.knowledge_graph.execute")
 
-    with pytest.raises(HTTPException) as invalid:
-        asyncio.run(auth.require_internal_api_key("wrong", "en"))
-    assert invalid.value.status_code == 401
-    assert invalid.value.detail == "Internal API key is invalid"
+    async def allowed(*_args, **_kwargs):
+        return AuthorizationContext(
+            principal_id=11,
+            principal_type="service_principal",
+            token_type="service_access_token",
+            client_id="addp-graph",
+            context_type="tenant",
+            tenant_id=7,
+            tenant_membership_id=9,
+            role_assignments=(
+                RoleAssignment(4, "tenant.graph_runtime", "tenant", ("copilot.knowledge_graph.execute",)),
+            ),
+        )
 
-    monkeypatch.setattr(auth.settings, "internal_api_key", None)
-    with pytest.raises(HTTPException) as unavailable:
-        asyncio.run(auth.require_internal_api_key("shared-secret", "en"))
-    assert unavailable.value.status_code == 503
-    assert unavailable.value.detail == "Internal authentication is not configured"
+    monkeypatch.setattr(auth, "_resolve_user", allowed)
+    assert asyncio.run(dependency(None, "en")).tenant_id == 7
+
+    async def wrong_client(*_args, **_kwargs):
+        return AuthorizationContext(
+            principal_id=12,
+            principal_type="service_principal",
+            token_type="service_access_token",
+            client_id="addp-copilot",
+            context_type="tenant",
+            tenant_id=7,
+            tenant_membership_id=10,
+            role_assignments=(
+                RoleAssignment(5, "tenant.copilot_runtime", "tenant", ("copilot.knowledge_graph.execute",)),
+            ),
+        )
+
+    monkeypatch.setattr(auth, "_resolve_user", wrong_client)
+    with pytest.raises(HTTPException) as denied:
+        asyncio.run(dependency(None, "en"))
+    assert denied.value.status_code == 403
+    assert denied.value.detail == "Service token has insufficient permission"
 
 
 def test_copilot_openapi_declares_authorization_contracts():
@@ -99,9 +124,17 @@ def test_copilot_openapi_declares_authorization_contracts():
     assert paths["/workflow/generate"]["post"]["x-addp-required-permissions"] == [
         "copilot.workflow.execute"
     ]
-    assert paths["/kg-build/extract"]["post"]["x-addp-auth-mode"] == "internal"
-    assert "x-addp-required-permissions" not in paths["/kg-build/extract"]["post"]
+    assert paths["/kg-build/extract"]["post"]["x-addp-auth-mode"] == "permission"
+    assert paths["/kg-build/extract"]["post"]["x-addp-required-permissions"] == [
+        "copilot.knowledge_graph.execute"
+    ]
     assert paths["/navigate/guide"]["post"]["x-addp-auth-mode"] == "authenticated"
+    assert paths["/settings/inference-bindings/{scenario_code}"]["get"]["x-addp-required-permissions"] == [
+        "copilot.configuration.read"
+    ]
+    assert paths["/settings/inference-bindings/{scenario_code}"]["put"]["x-addp-required-permissions"] == [
+        "copilot.configuration.update"
+    ]
     assert paths["/health"]["get"]["x-addp-auth-mode"] == "public"
     assert paths["/"]["get"]["x-addp-auth-mode"] == "public"
 

@@ -4,21 +4,33 @@ KG 图谱构建 API
 """
 from fastapi import APIRouter, Depends, HTTPException
 
-from dependencies.auth import require_internal_api_key
+from addp_common.auth import AuthorizationContext
+from authorization_permissions_generated import COPILOT_KNOWLEDGE_GRAPH_EXECUTE
+from database import get_db
+from dependencies.auth import require_tenant_service
 from models.kg_models import KGExtractRequest, KGExtractResponse
 from pipelines.kg_build_pipeline import KGBuildPipeline
+from services.inference_service import CopilotInferenceService
+from sqlalchemy.orm import Session
 
 router = APIRouter()
+require_graph_service = require_tenant_service("addp-graph", COPILOT_KNOWLEDGE_GRAPH_EXECUTE)
 
 
 @router.post(
     "/kg-build/extract",
     response_model=KGExtractResponse,
     summary="抽取实体关系 | Extract From Chunk",
-    dependencies=[Depends(require_internal_api_key)],
-    openapi_extra={"x-addp-auth-mode": "internal"},
+    openapi_extra={
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [COPILOT_KNOWLEDGE_GRAPH_EXECUTE],
+    },
 )
-async def extract_from_chunk(request: KGExtractRequest):
+async def extract_from_chunk(
+    request: KGExtractRequest,
+    service_context: AuthorizationContext = Depends(require_graph_service),
+    db: Session = Depends(get_db),
+):
     """
     从单个文本 chunk 抽取实体和关系
 
@@ -33,7 +45,14 @@ async def extract_from_chunk(request: KGExtractRequest):
         raise HTTPException(status_code=400, detail="ontology.entity_types 不能为空")
 
     try:
-        pipeline = KGBuildPipeline()
+        llm = CopilotInferenceService.chat_model(
+            db,
+            tenant_id=service_context.tenant_id,
+            scenario_code="knowledge_graph_extraction",
+            temperature=0.1,
+            max_output_tokens=4000,
+        )
+        pipeline = KGBuildPipeline(llm)
         return await pipeline.run(request)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"抽取失败: {str(e)}")

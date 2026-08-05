@@ -16,6 +16,7 @@ var stablePermissionOwnerModules = []string{
 	"copilot",
 	"develop",
 	"graph",
+	"inference",
 	"manager",
 	"meta",
 	"model",

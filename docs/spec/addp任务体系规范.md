@@ -518,9 +518,11 @@ Develop 的任务类型按开发方式划分为 `query`、`workflow`、`script`�
 
 Develop 的 `develop.dev_tasks.content` 必须使用规范字段：`query` 使用 `content.query` 和 `content.query_type`，执行目标统一写入 `execution_config.engine_id` 并指向 System 中具备 query 能力的真实 Engine；DuckDB 联邦查询绑定平台内置 DuckDB Runtime Engine，不使用独立模式字段或虚拟 Engine。`workflow` 使用 `content.workflow_definition` 和可选 `content.inputs`，执行目标只写 `execution_config.engine_id` 指向具体工作流运行时实例，不写 `execution_config.engine_type`，运行时类型必须由后端按该实例 ID 从 System 查询；`script` 的 Notebook 形态使用 `content.notebook_path`。Develop 的 ad-hoc 临时执行同样必须提交 `execution_config`，不得使用顶层 `engine_id` 表达查询目标。`/develop/engines` 统一返回 System 中具备 query 能力的真实 Engine Instance，不提供 Develop 私有查询模式或 `id=0` 虚拟 Engine。不得再新增或消费 `content.sql`、`content.workflow_def`、`content.input_data`、`execution_config.data_source_id` 等旧字段。
 
+查询工作台的即时执行固定使用 `POST /api/v1/develop/executions` 创建 ad-hoc execution，写入 `module=develop`、`task_type=query`、`source=develop`、`source_task_id=null`，并在 `execution_config` 保存 `content`、目标 `engine_id`、语言和 timeout 快照。前端通过 `GET /api/v1/develop/executions/{execution_id}` 回查状态和结果。不得保留直接执行并同步返回结果的 `/develop/execute` 或其他旁路。查询结果只能保存受限预览，并明确记录 `result_limit`、`truncated` 和 capability 驱动的 `result_kind`；完整无界结果不得写入 execution metadata。
+
 Develop 启动归一化和数据库迁移只允许删除上述旧字段，不得把 `content.sql`、`content.workflow_def`、顶层 `content.nodes/content.edges` 或 `content.input_data` 搬迁为规范字段；仍含旧字段的历史任务应按规范重新创建或由人工一次性处理。
 
-Develop 的 `create_url` / `edit_url` 必须指向具体开发方式的专属页面：`query` 指向查询工作台，`workflow` 指向工作流编辑器，`script` 指向脚本开发当前承载页面。`/develop/tasks` 只是任务定义集散页和列表页，不得作为 TaskProvider 的创建或编辑目标。
+Develop 的 `create_url` / `edit_url` 必须指向具体开发方式的专属页面：`query` 指向查询工作台，`workflow` 指向工作流编辑器，`script` 指向脚本开发当前承载页面。`/develop/tasks` 是唯一任务定义列表；不得再建立 `/develop/sql-tasks` 等按开发方式拆分的平行任务列表。`/develop/tasks` 不得作为 TaskProvider 的创建或编辑目标。
 
 ## TaskProvider 规范
 
@@ -721,7 +723,7 @@ TaskProvider 注册时必须使用 `task.capabilities/v2` schema，并声明稳�
 5. provider 顶层私有扩展字段必须使用 `x_` 前缀，例如 `x_owner_features`；未加 `x_` 前缀的未知顶层字段必须被 System 注册入口拒绝，避免与未来标准字段冲突。`task_capabilities[]` 内部只允许本文列出的标准字段，不允许私有扩展字段；任务类型级扩展需要先修订 capabilities 规范。
 6. `definition_schema` 必须声明为 JSON 对象 schema，最小值为 `{ "type": "object" }`。System 注册入口以及任务详情契约校验必须复用平台可理解的 JSON Schema 子集：允许 `type`、`title`、`description`、`properties`、`required`、`enum`、`default`、`additionalProperties`、`items`、`minimum`、`maximum`、`minLength`、`maxLength`、`minItems`、`maxItems`、`format`；不得使用 `$ref`、`oneOf`、`anyOf`、`allOf`、`not` 等复杂组合或远程引用。
 7. `task_capabilities[]` 不得出现 `execution_schema`、`output_schema` 或 UI schema。owner 必须在每个任务详情的 `execution_contract` 返回精确 `input_schema`、`input_defaults`、`input_ui_schema` 和 `output_schema`，并在执行入口再次按最新契约校验。
-8. Orchestrator Step 参数编辑必须以具体任务详情的 `execution_contract` 为唯一能力来源。闭合对象中声明的标量字段渲染为结构化控件，资源引用按 `input_ui_schema` 渲染资源选择器；每个输入可选择使用“工作流配置”、在当前 Step 中“执行时指定”或引用显式依赖的“上游输出”。“工作流配置”表示不提交覆盖字段，执行时读取 owner 任务定义中已保存的当前值；“执行时指定”表示 Step 保存显式覆盖值，但不改写 owner 任务定义。资源参数摘要必须展示引擎实例名称、按引擎原生风格格式化的资源路径和本地化资源类型，不得展示 Engine ID 或 `addp://` locator；展示事实不得写回执行参数。资源选择结果已经声明 geometry 字段时，单字段必须自动选中，多字段只能从识别结果中选择，不得要求用户自由输入字段名。闭合空对象不显示参数编辑；不得按 provider 或 task type 硬编码表单能力，也不得保留整份任意 JSON 作为旁路。
+8. Orchestrator Step 参数编辑必须以具体任务详情的 `execution_contract` 为唯一能力来源。闭合对象中声明的标量字段渲染为结构化控件，资源引用按 `input_ui_schema` 渲染资源选择器；每个输入可选择使用“工作流配置”、在当前 Step 中“执行时指定”或引用显式依赖的“上游输出”。“工作流配置”表示不提交覆盖字段，执行时读取 owner 任务定义中已保存的当前值；“执行时指定”表示 Step 保存显式覆盖值，但不改写 owner 任务定义。编排画布必须按 `input_schema + input_ui_schema` 生成逻辑输入端口，按 `output_schema` 生成稳定输出端口；资源对象只生成一个逻辑端口，不得把 locator 或自动派生的 geometry 字段拆成用户端口。连接输出端口与输入端口时必须校验类型和环路，原子地写入上游输出绑定并补充 `depends_on`；参数表单和画布连线必须双向同步。资源参数摘要必须展示引擎实例名称、按引擎原生风格格式化的资源路径和本地化资源类型，不得展示 Engine ID 或 `addp://` locator；展示事实不得写回执行参数。资源选择结果已经声明 geometry 字段时，单字段必须自动选中，多字段只能从识别结果中选择，不得要求用户自由输入字段名。闭合空对象不显示参数编辑；不得按 provider 或 task type 硬编码表单能力，也不得保留整份任意 JSON 作为旁路。
 9. `supports_inline_execution` 在 `task.capabilities/v2` 中必须为 `false`。内联执行需要新的 endpoint、执行配置 schema 和 Orchestrator Step 模型，必须作为后续专题设计，不得只通过 capabilities 布尔值打开。
 10. `supports_cancel` 与 `task_cancel_endpoint` 必须双向一致：任一任务类型声明 `supports_cancel=true` 时 provider 必须注册标准取消 endpoint；没有任务类型支持取消时 provider 不得注册 `task_cancel_endpoint`。模块内部已有取消 API 不等于 TaskProvider 标准取消能力。
 11. Orchestrator 可以缓存 TaskProvider capabilities，但必须能从 System 刷新。
@@ -771,9 +773,10 @@ Step v1 只允许以下字段：
 9. Step 的 `depends_on` 表示当前步骤依赖的前置步骤，也是上游输出绑定允许读取的显式数据依赖范围；执行器必须先执行依赖步骤，再执行当前步骤。缺失依赖、循环依赖、隐式输出依赖或自引用必须导致编排保存或执行失败，不得静默跳过。
 10. 上游输出绑定只支持内部序列化 `{{step_id.outputs.declared.path}}`；路径必须由来源任务的 `output_schema` 声明并与目标 `input_schema` 类型兼容，不支持局部字符串插值，也不做隐式类型转换。运行时路径解析不到值时，当前 Step 必须失败。
 11. v1 不支持并行执行、分支或条件、Step 级重试策略、人工确认步骤，也不得通过 `condition`、`retry`、`approval`、`parallel`、`branch` 或其他私有 Step 字段提前打开这些控制流能力。后续如需要，必须作为 Orchestrator 执行模型 v2 专题设计，明确状态机、失败语义、资源隔离、审计、UI 表达和迁移边界。
-12. Monitor 回跳任务定义时应使用 TaskProvider capabilities 中对应 `task_type.edit_url`，不得硬编码 `module + task_type` 映射。
-13. Orchestrator Create/Update 必须使用严格 JSON 解码并拒绝未知字段；Step 结构、DAG、模板依赖、TaskProvider 引用、编排递归引用和调度表达式校验必须返回稳定的结构化领域错误，由同一 Handler 校验路径按 `Accept-Language` 映射为 `{error}` 响应，不得直接暴露 Go、JSON、Cron 或 Repository 的原始英文错误。
-14. 编排定义和执行记录是 Tenant 资源。用户 HTTP 请求必须使用 System AuthContext 的 `tenant` 会话模式和唯一当前 Tenant；服务间调用必须使用调用模块自己的 Confidential OAuth Client，通过 Client Credentials 获取 Tenant Service Access Token，并只发送 Bearer。`platform` 模式、客户端 query/body/header `tenant_id` 和缺失 Tenant 上下文均不得解释为默认 Tenant 或全 Tenant 访问。Create/Update 请求只允许用户可编辑字段，Get/Update/Delete/Execute 和执行查询必须在 Repository 或统一执行仓储中同时限定资源 ID 与 Tenant ID；跨 Tenant 访问统一表现为资源不存在。
+12. 一个 Step 可以依赖多个上游 Step，只有全部直接依赖成功后才进入可执行状态；一个 Step 也可以被多个下游 Step 依赖。参数连线隐含执行依赖，同一任务对存在参数连线时不得再保存或显示重复的纯控制连线；同一任务对的多条参数连线共享一个去重后的 `depends_on` 项。纯控制连线和参数连线必须共同参与环路检测。一个输入最多绑定一个上游输出，一个输出允许连接多个下游输入。
+13. Monitor 回跳任务定义时应使用 TaskProvider capabilities 中对应 `task_type.edit_url`，不得硬编码 `module + task_type` 映射。
+14. Orchestrator Create/Update 必须使用严格 JSON 解码并拒绝未知字段；Step 结构、DAG、模板依赖、TaskProvider 引用、编排递归引用和调度表达式校验必须返回稳定的结构化领域错误，由同一 Handler 校验路径按 `Accept-Language` 映射为 `{error}` 响应，不得直接暴露 Go、JSON、Cron 或 Repository 的原始英文错误。
+15. 编排定义和执行记录是 Tenant 资源。用户 HTTP 请求必须使用 System AuthContext 的 `tenant` 会话模式和唯一当前 Tenant；服务间调用必须使用调用模块自己的 Confidential OAuth Client，通过 Client Credentials 获取 Tenant Service Access Token，并只发送 Bearer。`platform` 模式、客户端 query/body/header `tenant_id` 和缺失 Tenant 上下文均不得解释为默认 Tenant 或全 Tenant 访问。Create/Update 请求只允许用户可编辑字段，Get/Update/Delete/Execute 和执行查询必须在 Repository 或统一执行仓储中同时限定资源 ID 与 Tenant ID；跨 Tenant 访问统一表现为资源不存在。
 
 ### 编排调度与子任务自身调度
 

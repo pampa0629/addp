@@ -13,6 +13,7 @@ import (
 	"time"
 
 	commonAPI "github.com/addp/common/api"
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/contentio"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
@@ -31,17 +32,17 @@ var ErrBuildRuntimeNotOwned = fmt.Errorf("%w: graph build runtime is not owned b
 
 // BuildService 图谱构建业务逻辑
 type BuildService struct {
-	buildRepo         *repository.BuildRepository
-	ontologyRepo      *repository.OntologyRepository
-	ontologySvc       *OntologyService
-	graphRepo         *repository.KnowledgeGraphRepository
-	taskExecutionRepo *commonExecution.TaskExecutionRepository
-	neo4jSvc          *Neo4jService
-	materialReader    contentio.Reader
-	materialWriter    contentio.Writer
-	copilotURL        string
-	internalAPIKey    string
-	httpClient        *http.Client
+	buildRepo          *repository.BuildRepository
+	ontologyRepo       *repository.OntologyRepository
+	ontologySvc        *OntologyService
+	graphRepo          *repository.KnowledgeGraphRepository
+	taskExecutionRepo  *commonExecution.TaskExecutionRepository
+	neo4jSvc           *Neo4jService
+	materialReader     contentio.Reader
+	materialWriter     contentio.Writer
+	copilotURL         string
+	serviceTokenSource commonClient.ServiceTokenProvider
+	httpClient         *http.Client
 
 	// 取消令牌（graphID+taskID → cancel func）
 	cancelMu sync.Mutex
@@ -63,21 +64,21 @@ func NewBuildService(
 	materialReader contentio.Reader,
 	materialWriter contentio.Writer,
 	copilotURL string,
-	internalAPIKey string,
+	serviceTokenSource commonClient.ServiceTokenProvider,
 ) *BuildService {
 	return &BuildService{
-		buildRepo:         buildRepo,
-		ontologyRepo:      ontologyRepo,
-		ontologySvc:       ontologySvc,
-		graphRepo:         graphRepo,
-		taskExecutionRepo: taskExecutionRepo,
-		neo4jSvc:          neo4jSvc,
-		materialReader:    materialReader,
-		materialWriter:    materialWriter,
-		copilotURL:        copilotURL,
-		internalAPIKey:    internalAPIKey,
-		httpClient:        &http.Client{Timeout: 120 * time.Second},
-		cancels:           make(map[string]*activeBuildRun),
+		buildRepo:          buildRepo,
+		ontologyRepo:       ontologyRepo,
+		ontologySvc:        ontologySvc,
+		graphRepo:          graphRepo,
+		taskExecutionRepo:  taskExecutionRepo,
+		neo4jSvc:           neo4jSvc,
+		materialReader:     materialReader,
+		materialWriter:     materialWriter,
+		copilotURL:         copilotURL,
+		serviceTokenSource: serviceTokenSource,
+		httpClient:         &http.Client{Timeout: 120 * time.Second},
+		cancels:            make(map[string]*activeBuildRun),
 	}
 }
 
@@ -506,7 +507,7 @@ func (s *BuildService) processMaterial(ctx context.Context, task *models.BuildTa
 		default:
 		}
 
-		result, err := s.callCopilotExtract(ctx, chunks[i], docContext, ontology, task.ConfidenceThreshold)
+		result, err := s.callCopilotExtract(ctx, tenantID, chunks[i], docContext, ontology, task.ConfidenceThreshold)
 		if err != nil {
 			mat.ProcessedChunks = i
 			mat.ErrorMessage = err.Error()
@@ -840,38 +841,54 @@ type extractedRelation struct {
 	SourceText   string                 `json:"source_text"`
 }
 
-func (s *BuildService) callCopilotExtract(ctx context.Context, text, docContext string, ontology *ontologySchemaDTO, threshold float64) (*copilotExtractResponse, error) {
+func (s *BuildService) callCopilotExtract(ctx context.Context, tenantID uint, text, docContext string, ontology *ontologySchemaDTO, threshold float64) (*copilotExtractResponse, error) {
 	req := copilotExtractRequest{
 		Text:                text,
 		DocContext:          docContext,
 		Ontology:            ontology,
 		ConfidenceThreshold: threshold,
 	}
+	if s.serviceTokenSource == nil {
+		return nil, fmt.Errorf("Copilot Service Token Provider 未初始化")
+	}
 	body, _ := json.Marshal(req)
+	for attempt := 0; attempt < 2; attempt++ {
+		token, err := s.serviceTokenSource.Token(ctx, tenantID)
+		if err != nil {
+			return nil, fmt.Errorf("获取 Copilot Service Access Token 失败: %w", err)
+		}
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, s.copilotURL+copilotExtractPath, bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("Authorization", "Bearer "+token)
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", s.copilotURL+copilotExtractPath, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
+		resp, err := s.httpClient.Do(httpReq)
+		if err != nil {
+			return nil, fmt.Errorf("Copilot 请求失败: %w", err)
+		}
+		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
+			_ = resp.Body.Close()
+			if invalidator, ok := s.serviceTokenSource.(commonClient.ServiceTokenInvalidator); ok {
+				invalidator.InvalidateToken(tenantID, token)
+				continue
+			}
+		}
+		if resp.StatusCode != http.StatusOK {
+			respBody, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("Copilot 返回错误 %d: %s", resp.StatusCode, string(respBody))
+		}
+		var result copilotExtractResponse
+		err = json.NewDecoder(resp.Body).Decode(&result)
+		_ = resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("解析 Copilot 响应失败: %w", err)
+		}
+		return &result, nil
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("X-Internal-API-Key", s.internalAPIKey)
-
-	resp, err := s.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("Copilot 请求失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("Copilot 返回错误 %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	var result copilotExtractResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("解析 Copilot 响应失败: %w", err)
-	}
-	return &result, nil
+	return nil, fmt.Errorf("Copilot Service Access Token 被拒绝")
 }
 
 // ============ 本体 Schema DTO ============

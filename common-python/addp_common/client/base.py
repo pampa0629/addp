@@ -1,12 +1,11 @@
-"""
-ADDP 基础 HTTP 客户端
+"""ADDP 基础 HTTP 客户端。"""
+from __future__ import annotations
 
-支持两种认证方式:
-- internal_api_key: 服务间调用 (X-Internal-API-Key)
-- user_token: 用户访问令牌 (Authorization: Bearer)
-"""
 import httpx
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
+
+if TYPE_CHECKING:
+    from .service_token import OAuthServiceTokenSource
 
 
 class BaseClient:
@@ -18,6 +17,7 @@ class BaseClient:
         internal_api_key: Optional[str] = None,
         user_token: Optional[str] = None,
         tenant_id: Optional[int] = None,
+        service_token_source: OAuthServiceTokenSource | None = None,
         timeout: float = 30.0,
     ):
         """
@@ -25,11 +25,20 @@ class BaseClient:
 
         Args:
             base_url: 服务地址,如 http://localhost:8180
-            internal_api_key: 内部 API Key (服务间调用)
+            internal_api_key: 仅供尚未迁移的内部 Runtime 路径使用
             user_token: 用户访问令牌 (用户请求)
+            service_token_source: 模块 Service Principal 的 OAuth Token Source
             timeout: 请求超时时间(秒)
         """
+        if service_token_source is not None:
+            if internal_api_key or user_token:
+                raise ValueError("service token authentication cannot be combined with other credentials")
+            if not isinstance(tenant_id, int) or isinstance(tenant_id, bool) or tenant_id <= 0:
+                raise ValueError("tenant service client requires a tenant ID")
+
         self.base_url = base_url.rstrip("/")
+        self._service_token_source = service_token_source
+        self._tenant_id = tenant_id
         headers = {"Content-Type": "application/json"}
 
         if internal_api_key:
@@ -48,27 +57,42 @@ class BaseClient:
 
     async def get(self, path: str, params: Optional[Dict] = None) -> Any:
         """GET 请求"""
-        resp = await self._client.get(path, params=params)
+        resp = await self._request("GET", path, params=params)
         resp.raise_for_status()
         return resp.json()
 
     async def post(self, path: str, json: Optional[Dict] = None, **kwargs) -> Any:
         """POST 请求"""
-        resp = await self._client.post(path, json=json, **kwargs)
+        resp = await self._request("POST", path, json=json, **kwargs)
         resp.raise_for_status()
         return resp.json()
 
     async def put(self, path: str, json: Optional[Dict] = None) -> Any:
         """PUT 请求"""
-        resp = await self._client.put(path, json=json)
+        resp = await self._request("PUT", path, json=json)
         resp.raise_for_status()
         return resp.json()
 
     async def delete(self, path: str) -> Any:
         """DELETE 请求"""
-        resp = await self._client.delete(path)
+        resp = await self._request("DELETE", path)
         resp.raise_for_status()
         return resp.json()
+
+    async def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
+        if self._service_token_source is None:
+            return await self._client.request(method, path, **kwargs)
+
+        for attempt in range(2):
+            token = await self._service_token_source.token(self._tenant_id)
+            request_kwargs = dict(kwargs)
+            headers = dict(request_kwargs.pop("headers", {}) or {})
+            headers["Authorization"] = f"Bearer {token}"
+            response = await self._client.request(method, path, headers=headers, **request_kwargs)
+            if response.status_code != 401 or attempt == 1:
+                return response
+            self._service_token_source.invalidate(self._tenant_id, token)
+        raise RuntimeError("tenant service request did not produce a response")
 
     async def close(self):
         """关闭客户端连接"""

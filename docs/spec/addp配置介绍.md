@@ -63,7 +63,7 @@ Tenant 显式值 > 平台显式默认值 > owner 配置定义默认值
 1. 模块 Service Principal 只能发布与自身 owner 一致的入口，重复发布按稳定 entry id 幂等更新。
 2. 声明不得携带配置键、默认值、当前值、Secret 或模块私有表结构。
 3. System 只校验和登记通用契约，不能解释配置字段、代替 owner 校验或成为其他模块配置的 fallback。
-4. Console 按当前 AuthContext、Permission 和模块状态聚合入口；具体页面由 owner 模块前端提供，具体 API 由 owner 模块后端提供。
+4. Console 按当前 AuthContext、Permission 和模块状态聚合入口；具体页面可以由 owner 模块前端提供，也可以由 Console 在 `/configuration/{owner}/...` 下提供跨 owner 的组合视图，但配置 API、字段校验和配置事实始终属于 owner 模块。
 5. owner API 必须再次执行 Platform/Tenant Context 和 Permission 校验，不能信任 Console 是否展示了入口。
 6. 模块下线时，Console 将入口显示为不可用；System 不代管该模块的配置值。
 
@@ -71,7 +71,7 @@ Tenant 显式值 > 平台显式默认值 > owner 配置定义默认值
 flowchart LR
     Owner["Owner 模块"] -->|"发布管理入口能力"| Registry["System 模块目录"]
     Registry -->|"入口、范围、权限、状态"| Console["Console 配置管理"]
-    Console -->|"加载模块前端路由"| OwnerUI["Owner 配置页面"]
+    Console -->|"加载 owner 页面或 Console 组合视图"| OwnerUI["配置页面"]
     OwnerUI -->|"读写配置"| OwnerAPI["Owner 配置 API"]
     OwnerAPI --> OwnerStore["Owner 配置事实"]
     OwnerAPI --> Auth["System AuthContext"]
@@ -105,6 +105,13 @@ IAM 环境密钥边界：
 - `OAUTH_USER_CODE_PEPPER`、`IAM_MFA_ENCRYPTION_KEY` 和每个内置模块独立的 `*_SERVICE_CLIENT_SECRET` 是生产环境必需的 IAM Secret。
 - `OAUTH_PREVIOUS_USER_CODE_PEPPER` 只能在受控轮换窗口临时设置，轮换完成后必须删除。
 - `ENCRYPTION_KEY` 用于引擎连接信息等平台数据加密，不是 Token 签名密钥，不得与上述 IAM Secret 复用。
+
+AI 推理密钥边界：
+
+- 在线厂商 API Key 或内网模型服务凭据属于 Inference owner 的 Provider Connection credential，不再由 Agent、Copilot、Manager 的环境变量注入。
+- Inference 使用部署级 `ENCRYPTION_KEY` 加密凭据；该 Key 仍由部署系统注入，不进入数据库或配置页面。
+- 凭据设置和轮换使用专用操作，普通 Provider 更新 API 不接受 credential 字段。
+- 任何读取 API 只返回 `configured` 和单调递增 `version`，不得返回明文、掩码值、末尾字符或可复用密钥引用。
 
 ### System IAM 安全策略
 
@@ -184,28 +191,23 @@ leaf COG 生成并发不通过全局环境变量固定，而是在任务 `config
 
 ### Manager 向量化配置
 
-Manager 向量化当前阶段只允许一个平台启用中的多模态向量模型和一个向量维度，不按 text/image/video 建立平行模型配置。该配置是 `platform_only`，事实 owner 为 Manager，Platform System Administrator 通过 Manager 配置页面和 API 维护；Tenant 当前不能选择或覆盖模型。
+Manager 向量化的模型提供能力统一来自 Inference Runtime。Manager 只保存 `manager.embedding` Scenario Binding、向量检索策略、成本限制和 execution 快照，不保存模型服务 Base URL、上游模型标识或 API Key。
 
 | 字段 | 归属与规则 |
 | --- | --- |
-| 向量服务 Base URL | Manager 平台普通运行配置。 |
-| 模型标识 | Manager 平台普通运行配置；同维度切换模型后，既有 ready 结果统一视为 `outdated`。 |
+| Model Profile / Deployment 绑定 | Manager Scenario Binding；平台默认可被 Tenant 显式绑定覆盖。 |
 | 请求 timeout | Manager 平台普通运行配置。 |
 | 向量检索最大距离 | Manager 平台检索默认策略；当前不开放 Tenant 覆盖。 |
 | 最大文件大小 | Manager 平台成本与资源限制；当前不开放 Tenant 覆盖。 |
 | 批处理并发数 | Manager 平台运行资源策略。 |
 | 向量维度 | 模型输出与 pgvector 列结构的只读约束，不是普通可编辑配置。不同维度切换必须走数据库迁移和全量重建。 |
-| 向量服务 API Key | 部署 Secret，只能通过受控环境或 Secret Manager 注入；普通配置 API 只可返回是否已配置，不能返回值。 |
+| Provider credential | Inference 专用加密凭据；Manager API、表和 execution 均不得持有。 |
 
-Manager 配置定义提供默认值；显式平台值保存到 Manager 自己的持久化配置中。除 API Key 外，上述普通运行字段不再从 `MANAGER_*` 环境变量读取，也不保留环境变量 fallback。Manager 必须先连接自身持久化存储，再读取有效配置；读取或校验失败时启动失败或禁用向量化能力，不能静默切换到另一套值。
+Manager 配置定义提供业务策略默认值；显式平台值和 Tenant 覆盖保存在 Manager 自己的持久化配置中，不从环境变量回退。Manager 必须先解析当前场景绑定，再调用 `addp.inference/v1`；未配置、无授权或能力不匹配时返回明确错误，不能直连其他模型服务。
 
-任务定义中的 `config.embedding.model` / `config.embedding.dimension` 和 execution 的 `execution_config` 是实际使用配置的快照。平台配置变化只影响后续创建或显式更新的任务及后续 execution，不能改写历史执行事实。
+任务定义和 execution 中的 `model_profile_id/profile_version/deployment_id/dimension/binding_version` 是实际使用配置的快照。场景绑定变化只影响后续创建或显式更新的任务及后续 execution，不能改写历史执行事实。
 
-当前仅保留以下部署 Secret：
-
-```bash
-MANAGER_EMBEDDING_SERVICE_API_KEY=
-```
+`MANAGER_EMBEDDING_SERVICE_API_KEY` 不再存在。Provider credential 只在 Inference owner 中保存和解密。
 
 ### Transfer continuous 运行观测配置
 
@@ -399,6 +401,8 @@ PUBLIC_API_URL=http://localhost:8000
 CONSOLE_URL=http://localhost:5170
 # Develop 自身的模块间可达地址；Notebook Runtime 使用它回调会话限定的只读能力接口。
 DEVELOP_URL=http://localhost:8185
+# Develop 查询 execution 保存的最大预览行数；实际读取多一行用于判断 truncated。
+QUERY_RESULT_LIMIT=500
 # System 用此控制面地址注册唯一内置 DuckDB Federated Query Runtime；容器环境使用 duckdb-engine:8104。
 DUCKDB_RUNTIME_URL=http://localhost:8104
 # DuckDB Runtime 请求期只加载此目录中的扩展，扩展由开发启动或镜像构建阶段预先准备。

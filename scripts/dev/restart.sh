@@ -3,7 +3,7 @@ set -e
 
 # 使用说明
 show_usage() {
-  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-monitor] [-gateway] [-model] [-quality] [-asset] [-portal] [-python-workflow] [-math-workflow] [-model3d-workflow] [-pointcloud-workflow] [-supermap-workflow] [-copilot] [-agent] [-spark-workflow] [-jupyter] [-duckdb]"
+  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-monitor] [-gateway] [-model] [-quality] [-asset] [-portal] [-inference] [-python-workflow] [-math-workflow] [-model3d-workflow] [-pointcloud-workflow] [-supermap-workflow] [-copilot] [-agent] [-spark-workflow] [-jupyter] [-duckdb]"
   echo ""
   echo "选项:"
   echo "  无参数        只重启服务,自动检测 common 模块变化并增量编译受影响的模块"
@@ -19,10 +19,11 @@ show_usage() {
   echo "  -gateway     强制重新编译 Gateway 模块"
   echo "  -standard    强制重新编译 Standard 模块"
   echo "  -model       强制重新编译 Model 模块"
-  echo "  -quality     强制重新编译 Quality 模块
-  -asset       强制重新编译 Asset 模块
-  -portal      强制重新编译 Portal 模块
-  -graph       强制重新编译 Graph 模块"
+  echo "  -quality     强制重新编译 Quality 模块"
+  echo "  -asset       强制重新编译 Asset 模块"
+  echo "  -portal      强制重新编译 Portal 模块"
+  echo "  -graph       强制重新编译 Graph 模块"
+  echo "  -inference   强制重新编译 Inference 模块"
   echo "  -python-workflow   重启 GeoPython Workflow Engine (Python 服务)"
   echo "  -math-workflow     重启 Math Workflow Engine (Python 服务)"
   echo "  -model3d-workflow  重启 Model3D Workflow Engine (Python 服务)"
@@ -74,7 +75,7 @@ export SUPERMAP_WORKFLOW_PORT="${SUPERMAP_WORKFLOW_PORT:-8103}"
 
 # 自动生成服务 URL（与 start.sh 保持一致）
 generate_service_urls() {
-    local services=(system manager meta transfer orchestrator develop service copilot monitor standard model quality asset portal agent)
+    local services=(system manager meta transfer orchestrator develop service copilot monitor standard model quality asset portal agent inference)
     for svc in "${services[@]}"; do
         local port_var="$(echo ${svc} | tr '[:lower:]' '[:upper:]')_BACKEND_PORT"
         local url_var="$(echo ${svc} | tr '[:lower:]' '[:upper:]')_SERVICE_URL"
@@ -91,7 +92,7 @@ generate_service_urls() {
 
 generate_service_urls
 
-SWAGGER_MODULES=(system manager meta transfer orchestrator develop service monitor standard model quality portal graph)
+SWAGGER_MODULES=(system manager meta transfer orchestrator develop service monitor standard model quality portal graph inference)
 
 is_swagger_module() {
   local module="$1"
@@ -131,7 +132,7 @@ for arg in "$@"; do
     -all)
       FORCE_BUILD_ALL=true
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-gateway|-standard|-model|-quality|-asset|-portal|-graph|-python-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-supermap-workflow|-copilot|-agent|-spark-workflow|-jupyter|-duckdb)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-gateway|-standard|-model|-quality|-asset|-portal|-graph|-inference|-python-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-supermap-workflow|-copilot|-agent|-spark-workflow|-jupyter|-duckdb)
       module="${arg#-}"  # 移除前导的 -
       FORCE_BUILD_MODULES+=("$module")
       ;;

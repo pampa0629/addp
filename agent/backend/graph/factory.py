@@ -101,6 +101,7 @@ class AgentFactory:
         skill_body: str,
         allowed_tool_names: List[str],
         max_iterations: int = 5,
+        llm: Any | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """
         动态构建并执行领域 Agent（ReAct 循环）。
@@ -142,7 +143,8 @@ class AgentFactory:
         if missing:
             logger.warning("[FACTORY:%s] 白名单中的工具未找到: %s", skill_name, missing)
 
-        llm_with_tools = get_llm(streaming=False).bind_tools(tools)
+        reasoning_llm = llm or get_llm(task_context["tenant_id"], "reasoning")
+        llm_with_tools = reasoning_llm.bind_tools(tools)
 
         # 领域 Agent 的独立消息栈（用完即销毁，不污染主 Agent 历史）
         lc_messages = [
@@ -372,10 +374,7 @@ class AgentFactory:
         if final_response is not None and final_response.content:
             yield text_event(str(final_response.content))
         else:
-            # 超出迭代次数，流式重新生成最终回复
-            logger.info("[FACTORY:%s] 超出迭代次数，流式重新生成", skill_name)
-            result_text = ""
-            async for chunk in get_llm(streaming=True).astream(lc_messages):
-                if chunk.content:
-                    result_text += chunk.content
-                    yield text_event(str(chunk.content))
+            logger.info("[FACTORY:%s] 超出迭代次数，生成最终回复", skill_name)
+            response = await reasoning_llm.ainvoke(lc_messages)
+            if response.content:
+                yield text_event(str(response.content))

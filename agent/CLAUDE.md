@@ -68,6 +68,8 @@ cd agent/frontend && npm test && npm run build
 | GET | /api/v1/agent/runs/:id/events?after=:sequence | 按 sequence 回放安全 AG-UI 事件（SSE） |
 | POST | /api/v1/agent/runs/:id/cancel | 取消 Agent Runtime 和 pending Interaction |
 | POST | /api/v1/agent/runs/:id/retry | 重试失败 AgentRun（AG-UI SSE） |
+| GET | /api/v1/agent/settings/inference-bindings/:scenario_code | 读取 Agent 推理场景绑定 |
+| PUT | /api/v1/agent/settings/inference-bindings/:scenario_code | 更新 Agent 推理场景绑定 |
 
 ## IAM Permission 所有权
 
@@ -75,6 +77,7 @@ Agent 是以下 Permission 的唯一 owner：
 
 - `agent.session.*`
 - `agent.run.*`
+- `agent.configuration.*`
 
 机器可读事实源是 [authorization/permissions.yaml](authorization/permissions.yaml)。该 Manifest 由 `common/authorization` 在构建/发布期统一发现、校验和聚合，Agent 服务启动时的 Module Registry 注册和心跳只描述服务可用性，不向 System 动态注册 Permission。
 
@@ -98,6 +101,7 @@ agent.run_steps   -- Tool / Runtime 步骤审计、紧凑事实投影与错误�
 agent.run_events  -- 可按 sequence 安全回放的 AG-UI 事件投影
 agent.interactions -- 服务端持久澄清与 owner approval 投影
 agent.skill_usage -- Skill 使用统计
+agent.inference_scenario_bindings -- Agent 场景到 Inference Model Profile 的平台默认和 Tenant 覆盖
 ```
 
 阶段 5 的 Agent 评测场景唯一目录为仓库根 `evals/agent-scenarios/`，统一使用 `addp.agent-scenario/v1`。离线门禁通过脚本化 Runtime 决策和受控 owner 响应消费真实结构化事件，不调用真实 LLM；定向在线层消费同一契约，凭据和环境私有 ID 不进入 fixture。
@@ -149,6 +153,9 @@ python evals/agent-scenarios/gate.py --output /tmp/addp-agent-evaluation-gate.js
 - `run_steps.output_summary` 只保存状态、计数、类型和结果字节数等受限摘要；即使 Tool 结果被截断为非 JSON，也不得回退保存原文前缀。可复用 owner 事实写入 `run_steps.facts` 和 run checkpoint。
 - Runtime 上下文从最新消息向前分配：最近 20 条、单条 6000 字符、消息总计 24000 字符、历史摘要 2000 字符。摘要以 `sessions.summary_message_id` 增量推进，不重复压缩全部历史。
 - `runs.metrics` 只保存可由 step/event 验证的结构指标，`runs.context_metrics` 只保存预算事实；Provider 没有返回时不估算 token usage。
+- Agent 只通过 ADDP Inference Runtime 调用模型。`reasoning` 场景用于路由、Tool Calling 和 ReAct，`general-chat` 用于会话摘要；同一 AgentRun 内的 reasoning Profile 首次解析后固定复用。
+- 场景按“Tenant 显式绑定 > 平台默认绑定 > inference_scenario_not_configured”解析，不回退环境变量、任意 Profile 或另一个场景。
+- Agent 不保存或读取 Provider、endpoint、上游模型名和 API Key；这些事实只属于 Inference。
 - 错误归因使用 `error_source=client|runtime|tool|owner|protocol`、稳定 `error_code` 和最多 1000 字符的受限 `error_message`；不保留 `error_type` 兼容字段。
 - ResultRef 由 Tool Manifest 声明驱动；当前 execution 引用只保存 `schema + owner_module + kind + execution:<id>`，不得复制 owner execution 状态或结果。locator 候选没有单一结果身份时不得创建 ResultRef。
 - Workflow DAG 只能在 `workflow.validate` 返回 `valid=true` 后生成 A2UI Presentation；draft 未校验或校验失败均不得展示为可用 DAG。
@@ -175,11 +182,9 @@ python evals/agent-scenarios/gate.py --output /tmp/addp-agent-evaluation-gate.js
 在根 `.env` 文件中配置：
 
 ```env
-# LLM 配置
-LLM_PROVIDER=openai    # openai | anthropic
-LLM_API_KEY=sk-...
-LLM_MODEL=gpt-4o
-LLM_BASE_URL=          # 可选，用于自定义 API 端点
+# Inference Runtime 与 Agent Service Principal
+INFERENCE_URL=http://localhost:8191
+AGENT_SERVICE_CLIENT_SECRET=replace-with-unique-agent-secret-32bytes
 
 # Agent 端口
 AGENT_BACKEND_PORT=8190

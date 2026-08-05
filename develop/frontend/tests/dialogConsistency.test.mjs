@@ -17,9 +17,8 @@ async function collectVueSources(directory) {
   return sources
 }
 
-const [notebook, queryTasks, taskManagement, approvalDetail, saveQueryDialog, zhCnSource, enSource, sharedTheme, styleGuide] = await Promise.all([
+const [notebook, taskManagement, approvalDetail, saveQueryDialog, zhCnSource, enSource, sharedTheme, styleGuide] = await Promise.all([
   readFile(new URL('../src/views/NotebookEditor.vue', import.meta.url), 'utf8'),
-  readFile(new URL('../src/views/QueryTasks.vue', import.meta.url), 'utf8'),
   readFile(new URL('../src/views/TaskManagement.vue', import.meta.url), 'utf8'),
   readFile(new URL('../src/views/ApprovalDetail.vue', import.meta.url), 'utf8'),
   readFile(new URL('../src/components/SaveQueryDialog.vue', import.meta.url), 'utf8'),
@@ -54,16 +53,12 @@ assert.equal((taskManagement.match(/class="addp-dialog"/g) || []).length, 1)
 assert.equal((taskManagement.match(/label-position="top"/g) || []).length, 1)
 assert.doesNotMatch(taskManagement, /width="(?:500px|600px)"/)
 
-for (const source of [notebook, queryTasks, taskManagement]) {
+for (const source of [notebook, taskManagement]) {
   assert.match(source, /customClass: 'addp-message-box'/)
   assert.match(source, /confirmButtonClass: 'el-button--danger'/)
   assert.match(source, /confirmButtonText:/)
   assert.match(source, /cancelButtonText:/)
 }
-
-assert.doesNotMatch(queryTasks, /<el-dialog/)
-assert.doesNotMatch(queryTasks, /<SaveQueryDialog/)
-assert.match(queryTasks, /navigateDevelopTaskEditor\(router, 'query', task\.id\)/)
 
 assert.match(saveQueryDialog, /class="addp-dialog"/)
 assert.match(saveQueryDialog, /width="min\(600px, calc\(100vw - 24px\)\)"/)
@@ -75,12 +70,8 @@ assert.match(saveQueryDialog, /tags: Array\.isArray\(initialValue\.tags\)/)
 assert.match(approvalDetail, /customClass: 'addp-message-box'/)
 assert.match(approvalDetail, /decision === 'rejected'[\s\S]*confirmButtonClass: 'el-button--danger'/)
 
-assert.equal(zhCn.develop.queryTasks.deleteConfirmAction, '删除')
-assert.equal(en.develop.queryTasks.deleteConfirmAction, 'Delete')
 assert.equal(zhCn.develop.notebook.deleteConfirmAction, '删除')
 assert.equal(en.develop.notebook.deleteConfirmAction, 'Delete')
-assert.equal(zhCn.develop.queryTasks.confirm, undefined)
-assert.equal(en.develop.queryTasks.confirm, undefined)
 assert.equal(zhCn.develop.notebook.confirm, undefined)
 assert.equal(en.develop.notebook.confirm, undefined)
 

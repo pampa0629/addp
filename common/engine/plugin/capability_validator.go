@@ -229,6 +229,19 @@ func validateComputeCapabilities(p EnginePlugin, compute *ComputeCapabilities) e
 			return fmt.Errorf("%s declares interactive script support without notebook mode", p.Type())
 		}
 	}
+	if compute.Inference != nil && compute.Inference.Supported {
+		if _, ok := p.(InferenceRuntimeProvider); !ok {
+			return fmt.Errorf("%s declares inference support but does not implement InferenceRuntimeProvider", p.Type())
+		}
+		if compute.Inference.RuntimeAPI != "addp.inference/v1" || len(compute.Inference.Operations) == 0 {
+			return fmt.Errorf("%s declares invalid inference runtime capability", p.Type())
+		}
+		for _, operation := range compute.Inference.Operations {
+			if operation != "chat" && operation != "embedding" && operation != "rerank" {
+				return fmt.Errorf("%s declares unsupported inference operation %q", p.Type(), operation)
+			}
+		}
+	}
 	return nil
 }
 
@@ -280,6 +293,11 @@ func validateProviderCapabilities(p EnginePlugin, caps EngineCapabilities) error
 	if _, ok := p.(ScriptRuntimeProvider); ok {
 		if caps.Compute == nil || caps.Compute.Script == nil || !caps.Compute.Script.Supported {
 			return fmt.Errorf("%s implements ScriptRuntimeProvider but does not declare script support", p.Type())
+		}
+	}
+	if _, ok := p.(InferenceRuntimeProvider); ok {
+		if caps.Compute == nil || caps.Compute.Inference == nil || !caps.Compute.Inference.Supported {
+			return fmt.Errorf("%s implements InferenceRuntimeProvider but does not declare inference support", p.Type())
 		}
 	}
 	return nil

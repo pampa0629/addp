@@ -139,6 +139,7 @@ if [ "$SKIP_PUSH" = false ]; then
         "orchestrator-backend"
         "develop-backend"
         "service-backend"
+        "inference-backend"
         "python-workflow-engine"
         "model3d-workflow-engine"
         "pointcloud-workflow-engine"
@@ -154,6 +155,7 @@ if [ "$SKIP_PUSH" = false ]; then
         "transfer-frontend"
         "orchestrator-frontend"
         "develop-frontend"
+        "inference-frontend"
     )
     
     failed_pushes=()

@@ -80,6 +80,7 @@ docker compose -f docker-compose.yml up -d \
   develop-backend \
   service-backend \
   copilot-backend \
+  inference-backend \
   monitor-backend \
   standard-backend \
   graph-backend \
@@ -114,6 +115,7 @@ services=(
   "standard-backend:8110"
   "graph-backend:8186"
   "agent-backend:8190"
+  "inference-backend:8191"
   "model-backend:8181"
   "quality-backend:8182"
   "asset-backend:8183"
@@ -168,6 +170,7 @@ docker compose -f docker-compose.yml up -d \
   standard-frontend \
   graph-frontend \
   agent-frontend \
+  inference-frontend \
   model-frontend \
   quality-frontend \
   asset-frontend \
@@ -253,6 +256,9 @@ echo -e "  - Quality Frontend:     http://localhost:8113"
 echo -e "  - Asset Frontend:       http://localhost:8114"
 echo -e "  - Portal Frontend:      http://localhost:8115"
 echo -e "  - Monitor Frontend:     http://localhost:8116"
+echo -e "  - Agent Frontend:       http://localhost:8117"
+echo -e "  - Graph Frontend:       http://localhost:8118"
+echo -e "  - Inference Frontend:   http://localhost:8119"
 
 echo ""
 echo -e "${YELLOW}常用命令:${NC}"

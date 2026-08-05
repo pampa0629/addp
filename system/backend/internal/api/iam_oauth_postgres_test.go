@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -143,7 +144,11 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 		t.Fatalf("service AuthContext = %#v", authContext)
 	}
 	if len(authContext.Authorization.RoleAssignments) != 1 || authContext.Authorization.RoleAssignments[0].RoleKey != "tenant.manager_runtime" ||
-		len(authContext.Authorization.RoleAssignments[0].Permissions) != 2 {
+		!slices.Equal(authContext.Authorization.RoleAssignments[0].Permissions, []string{
+			"inference.runtime.execute",
+			"meta.catalog.read",
+			"meta.scan_task.execute",
+		}) {
 		t.Fatalf("service authorization = %#v", authContext.Authorization)
 	}
 	var refreshTokenCount int64
@@ -379,10 +384,14 @@ func performIAMOAuthClientCredentialsFormRequest(t *testing.T, router http.Handl
 
 func testBuiltinServiceClientSecrets(prefix string) map[string]string {
 	return map[string]string{
+		"addp-agent":        prefix + "-agent-0123456789abcdef0123456789abcdef",
 		"addp-asset":        prefix + "-asset-0123456789abcdef0123456789abcdef",
+		"addp-copilot":      prefix + "-copilot-0123456789abcdef0123456789abcdef",
 		"addp-develop":      prefix + "-develop-0123456789abcdef0123456789abcdef",
 		"addp-duckdb":       prefix + "-duckdb-0123456789abcdef0123456789abcdef",
+		"addp-graph":        prefix + "-graph-0123456789abcdef0123456789abcdef",
 		"addp-manager":      prefix + "-manager-0123456789abcdef0123456789abcdef",
+		"addp-inference":    prefix + "-inference-0123456789abcdef0123456789abcdef",
 		"addp-meta":         prefix + "-meta-0123456789abcdef0123456789abcdef",
 		"addp-monitor":      prefix + "-monitor-0123456789abcdef0123456789abcdef",
 		"addp-orchestrator": prefix + "-orchestrator-0123456789abcdef0123456789abcdef",

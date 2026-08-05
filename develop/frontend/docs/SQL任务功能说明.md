@@ -1,36 +1,34 @@
-# SQL 任务功能说明
+# 查询工作台与查询任务功能说明
 
 ## 概述
 
-SQL 开发模块支持将 SQL 查询保存为可重用任务。当前 Develop 不具备 owner scheduler / `next_run_at` due claim 闭环，因此 SQL 查询任务只支持手动执行，不提供自身定时调度配置。
+查询工作台按 Engine 的 `capabilities.compute.query` 支持 SQL、MQL、Cypher 等查询语言。用户可以直接执行临时查询，也可以保存为可重用的 `query` 任务。当前 Develop 不具备 owner scheduler / `next_run_at` due claim 闭环，因此查询任务只支持手动执行，不提供自身定时调度配置。
 
 ## 功能特性
 
-### 1. SQL 编辑器增强
+### 1. 查询工作台
 
 **位置**: [develop/frontend/src/views/QueryEditor.vue](develop/frontend/src/views/QueryEditor.vue)
 
-新增功能:
-- **保存为任务按钮**: 在工具栏添加"保存为任务"按钮
-- 可将当前编辑的 SQL 保存为可重用的任务
-- 支持配置任务名称、描述、标签、超时时间等
+工作台固定采用左侧 Catalog、右侧编辑器与结果上下分栏，小屏将 Catalog 收入抽屉：
 
-### 2. SQL 任务管理
+- Catalog 直接消费 Meta resource-tree，并固定到当前选择的查询 Engine。
+- 查询语言和结果形态来自 Engine capability，不按引擎类型硬编码。
+- 执行时优先使用 Monaco 当前选区，没有选区时执行全文。
+- 即时查询创建统一 execution，并在当前页面轮询结果和提供统一监控入口。
+- 服务端限制结果预览规模，前端显示截断状态并只导出当前预览。
+- 未保存内容在离开页面或加载其他任务前进行防丢失确认。
+- 当前查询可保存为任务，支持名称、描述、标签和超时时间。
 
-**位置**: [develop/frontend/src/views/QueryTasks.vue](develop/frontend/src/views/QueryTasks.vue)
+### 2. 查询任务管理
 
-功能列表:
-- **任务列表**: 查看所有已保存的 SQL 任务
-- **搜索过滤**: 按名称、描述、状态筛选
-- **快速执行**: 一键执行任务
-- **任务编辑**: 修改任务配置
-- **任务删除**: 删除不需要的任务
+所有 Develop 任务统一在 `/develop/tasks` 管理。查询任务通过 `dev_type=query` 筛选、编辑、执行和删除；不保留 `/develop/sql-tasks` 或独立查询任务页面。
 
 ### 3. 任务元数据
 
 每个 SQL 任务包含以下信息:
 - **基本信息**: 名称、显示名称、描述
-- **SQL 内容**: 完整的 SQL 语句
+- **查询内容**: 完整查询语句和真实 `query_type`
 - **执行目标**: 普通查询和 DuckDB 联邦查询都使用 System 中真实 Engine 的 `engine_id`
 - **执行配置**: 超时时间(默认 300 秒)
 - **标签**: 多个标签用于分类
@@ -52,7 +50,18 @@ DuckDB 联邦查询计算引擎是 System 注册的内置 Engine，前端从 `/d
 
 DuckDB 执行前从 SQL 中解析已注册的 Source Engine 引用，为本次 execution 签发一次只读 Execution Authorization；独立 DuckDB Runtime 逐个消费连接后挂载。任务定义和执行记录不保存 Source Engine ID 列表、连接信息或 User Access Token。
 
-### SQL 任务管理 API
+### 即时查询执行 API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/v1/develop/executions` | 创建 `dev_type=query` 的 ad-hoc execution |
+| GET | `/api/v1/develop/executions/{execution_id}` | 回查状态、错误和受限结果预览 |
+
+即时查询 execution 使用 `module=develop`、`task_type=query`、`source_task_id=null`。请求在 `execution_config` 中保存查询内容、真实 Engine ID 和 timeout 快照。查询工作台不调用同步返回结果的 `/develop/execute`。
+
+成功结果位于 `metadata.result`，至少包含 `columns`、`rows_count`、`rows_affected`、`effect`、`result_kind`、`result_limit`、`truncated` 和 `summary.preview_rows`；图查询可以附带 `graph_data`。结果预览上限由服务端 `QUERY_RESULT_LIMIT` 控制，默认 500 行。
+
+### 查询任务管理 API
 
 **基础路径**: `/api/v1/develop/task-definitions`
 
@@ -106,7 +115,7 @@ DuckDB 联邦查询任务的 `execution_config.engine_id` 保存真实 DuckDB Ru
 
 任务可以通过以下方式执行:
 
-1. **手动执行**: 在任务管理页面点击"执行"按钮
+1. **手动执行**: 在统一任务管理页面点击"执行"按钮
 2. **API 调用**: 通过 `POST /api/v1/develop/task-definitions/{id}/execute` 执行
 
 执行结果会记录在 `common.task_executions` 表中,包含:
@@ -195,24 +204,24 @@ CREATE TABLE common.task_executions (
 ## 访问方式
 
 ### 独立访问
-- SQL 编辑器: http://localhost:5178/sql
-- SQL 任务: http://localhost:5178/sql-tasks
+- 查询工作台: http://localhost:5178/sql
+- 统一任务管理: http://localhost:5178/tasks
 
 ### Console 嵌入访问
-- SQL 编辑器: http://localhost:5170 (通过控制台导航访问)
-- SQL 任务: http://localhost:5170 (通过控制台导航访问)
+- 查询工作台: http://localhost:5170/develop/sql
+- 统一任务管理: http://localhost:5170/develop/tasks
 
 ### 生产环境 (通过 Gateway)
-- SQL 编辑器: http://localhost:8000/develop/ → SQL 编辑器
-- SQL 任务: http://localhost:8000/develop/ → SQL 任务
+- 查询工作台: http://localhost:8000/develop/ → `/sql`
+- 统一任务管理: http://localhost:8000/develop/ → `/tasks`
 
 ## 使用流程
 
-### 1. 创建 SQL 任务
+### 1. 创建查询任务
 
-1. 访问 SQL 编辑器页面
-2. 选择数据源
-3. 编写 SQL 语句
+1. 访问查询工作台
+2. 选择具备 query capability 的 Engine
+3. 通过 Catalog 插入资源路径并编写查询
 4. 点击"保存为任务"按钮
 5. 填写任务信息:
    - 任务名称(唯一标识)
@@ -224,7 +233,7 @@ CREATE TABLE common.task_executions (
 
 ### 2. 管理任务
 
-1. 访问 SQL 任务页面
+1. 访问统一任务管理页面
 2. 查看所有已保存的任务
 3. 使用搜索和筛选功能定位任务
 4. 操作任务:
@@ -234,7 +243,7 @@ CREATE TABLE common.task_executions (
 
 ### 3. 查看执行结果
 
-1. 执行任务后,系统返回执行 ID
+1. 即时查询或任务执行后，系统返回 execution ID
 2. 访问"执行监控"页面查看执行状态
 3. 点击执行记录查看详细结果:
    - 查询结果数据
@@ -245,10 +254,11 @@ CREATE TABLE common.task_executions (
 ## 注意事项
 
 1. **任务名称唯一性**: 同一租户下任务名称不能重复
-2. **超时时间**: 默认 300 秒,最大不超过配置的 `MaxQueryTimeout`
+2. **超时时间**: 默认 300 秒，最大不超过配置的 `MaxQueryTimeout`
 3. **调度能力**: 当前 Develop 不声明自身定时调度能力；如后续需要，必须先补 owner scheduler / `next_run_at` due claim 闭环。
 4. **资源权限**: 用户只能访问所属租户的资源和任务
-5. **SQL 安全**: 建议对 SQL 内容进行审核,避免危险操作
+5. **执行授权**: SQL 效果分类、非 SQL 只读边界和 Execution Authorization 由后端强制执行
+6. **结果限制**: `QUERY_RESULT_LIMIT` 只控制 execution 预览，不代表查询数据总量
 
 ## 后续扩展
 
@@ -265,9 +275,10 @@ CREATE TABLE common.task_executions (
 
 ### 后端架构
 
-- **Handler 层**: [develop/backend/internal/api/sql_handler.go](develop/backend/internal/api/sql_handler.go)
-  - 查询执行相关 API
-  - SQL 任务定义统一由 DevTaskService 管理
+- **Handler 层**:
+  - `execution_handler.go` 创建和查询统一 execution
+  - `query_handler.go` 只负责查询目标连接测试和真实样例查询
+  - 查询任务定义统一由 DevTaskService 管理
 
 - **Service 层**:
   - [develop/backend/internal/service/dev_task_service.go](develop/backend/internal/service/dev_task_service.go) - 任务 CRUD
@@ -282,23 +293,18 @@ CREATE TABLE common.task_executions (
 
 - **页面组件**:
   - `QueryEditor.vue` - 查询编辑器
-  - `QueryTasks.vue` - 查询任务管理
+  - `TaskManagement.vue` - query/workflow/script 统一任务管理
 
 - **对话框组件**:
   - `SaveQueryDialog.vue` - 保存查询任务对话框
 
 - **API 客户端**:
-  - [develop/frontend/src/api/query.js](develop/frontend/src/api/query.js) - 查询与查询任务 API
+  - `develop/frontend/src/api/query.js` - 查询发现、连接测试和任务保存 API
+  - `develop/frontend/src/api/execution.js` - ad-hoc execution 创建与状态回查
 
 - **依赖包**:
   - `dayjs` - 时间格式化
 
 ## 总结
 
-SQL 任务功能为 ADDP 平台的 SQL 开发模块提供了任务管理能力,使用户能够:
-
-✅ 保存常用的 SQL 查询为可重用任务
-✅ 统一管理所有 SQL 任务
-✅ 追踪任务执行历史和结果
-
-该功能已完全集成到现有的 Develop 模块架构中,遵循 ADDP 的统一设计模式。
+查询工作台将 Catalog 浏览、能力驱动编辑、统一 execution、受限结果预览和可选任务保存收敛为一条路径。即时查询与已保存任务共享执行记录和监控体系，任务只在 `/develop/tasks` 统一管理。

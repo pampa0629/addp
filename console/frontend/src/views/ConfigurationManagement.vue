@@ -2,13 +2,18 @@
   <section class="configuration-management">
     <header class="page-header">
       <div>
-        <h1>{{ t('console.configuration.title') }}</h1>
+        <div class="title-line">
+          <el-button v-if="selectedOwner" :icon="ArrowLeft" text circle :title="t('console.configuration.back')" @click="goBack" />
+          <h1>{{ t('console.configuration.title') }}</h1>
+        </div>
         <p>{{ contextLabel }}</p>
       </div>
       <el-button :icon="Refresh" circle :loading="loading" @click="loadEntries" />
     </header>
 
-    <el-table v-loading="loading" :data="entries" class="entries-table" :row-class-name="entryRowClass" @row-click="openEntry">
+    <InferenceBindingsConfiguration v-if="selectedOwner" :key="selectedOwner" :owner="selectedOwner" />
+
+    <el-table v-else v-loading="loading" :data="entries" class="entries-table" :row-class-name="entryRowClass" @row-click="openEntry">
       <el-table-column prop="owner_module" :label="t('console.configuration.owner')" min-width="150" />
       <el-table-column prop="id" :label="t('console.configuration.entry')" min-width="240" />
       <el-table-column :label="t('console.configuration.scope')" min-width="220">
@@ -41,16 +46,23 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { ArrowRight, Refresh } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../store/auth'
 import { listConfigurationManagementEntries } from '../api/configurationManagement'
+import InferenceBindingsConfiguration from '../components/configuration/InferenceBindingsConfiguration.vue'
+import { useRoute } from 'vue-router'
 
 const { t } = useI18n()
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const loading = ref(false)
 const entries = ref([])
+const selectedOwner = computed(() => {
+  const parts = route.path.split('/').filter(Boolean)
+  return parts[0] === 'configuration' && ['agent', 'copilot'].includes(parts[1]) ? parts[1] : ''
+})
 
 const contextLabel = computed(() => authStore.authContext?.context?.type === 'tenant'
   ? t('console.configuration.tenantContext')
@@ -76,11 +88,17 @@ function openEntry(entry) {
   if (entry?.available && entry?.frontend_route) router.push(entry.frontend_route)
 }
 
+function goBack() {
+  router.push('/configuration')
+}
+
 function entryRowClass({ row }) {
   return row.available ? 'entry-row--available' : 'entry-row--unavailable'
 }
 
-onMounted(loadEntries)
+onMounted(() => {
+  if (!selectedOwner.value) loadEntries()
+})
 </script>
 
 <style scoped>
@@ -105,6 +123,8 @@ onMounted(loadEntries)
   font-weight: 600;
   letter-spacing: 0;
 }
+.title-line { display: flex; align-items: center; gap: 6px; }
+.title-line h1 { margin-bottom: 0; }
 
 .page-header p {
   margin: 0;

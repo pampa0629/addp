@@ -25,6 +25,7 @@ GO_MODULES=(
     "develop/backend"
     "service/backend"
     "monitor/backend"
+    "inference/backend"
     "gateway"
 )
 

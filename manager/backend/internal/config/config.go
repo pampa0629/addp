@@ -16,17 +16,13 @@ type Config struct {
 	DBSchema            string
 	PreviewPluginDir    string
 	MetaServiceURL      string
+	InferenceServiceURL string
 	ServiceClientSecret string
 
 	// Meilisearch 配置
 	MeilisearchURL        string
 	MeilisearchMasterKey  string
 	MeilisearchAssetIndex string
-
-	// Manager 向量化配置（按需触发）
-	EmbeddingService struct {
-		APIKey string
-	}
 
 	VectorConfig struct {
 		Dimension int // 固定向量维度，仅供数据库结构初始化
@@ -118,6 +114,7 @@ func Load() *Config {
 		DBSchema:            commonConfig.GetEnv("DB_SCHEMA", "manager"),
 		PreviewPluginDir:    defaultPluginDir,
 		MetaServiceURL:      metaURL,
+		InferenceServiceURL: commonConfig.GetEnv("INFERENCE_URL", "http://localhost:8191"),
 		ServiceClientSecret: commonConfig.GetEnv("MANAGER_SERVICE_CLIENT_SECRET", ""),
 	}
 
@@ -131,8 +128,6 @@ func Load() *Config {
 	// Bootstrap 部署配置只从根 env / 进程环境读取。
 	commonConfig.LoadDeploymentConfig(&cfg.BaseConfig)
 
-	// API Key 是部署 Secret；其余向量化配置由 Manager 自有配置表管理。
-	cfg.EmbeddingService.APIKey = commonConfig.GetEnv("MANAGER_EMBEDDING_SERVICE_API_KEY", "")
 	cfg.VectorConfig.Dimension = 2560
 
 	// Redis 配置

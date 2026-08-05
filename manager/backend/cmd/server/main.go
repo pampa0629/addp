@@ -80,6 +80,7 @@ func main() {
 	metadataRepo := repository.NewMetadataRepository(db)
 	embeddingRepo := repository.NewEmbeddingRepository(db)
 	embeddingConfigurationRepo := repository.NewEmbeddingConfigurationRepository(db)
+	inferenceScenarioBindingRepo := repository.NewInferenceScenarioBindingRepository(db)
 	tileCacheRepo := repository.NewTileCacheRepository(db)
 	vectorMaterializedViewRepo := repository.NewVectorMaterializedViewRepository(db)
 	rasterCOGRepo := repository.NewRasterCOGRepository(db)
@@ -94,12 +95,13 @@ func main() {
 	dataProfileRepo := repository.NewDataProfileRepository(db)
 	dataProfileExecutionRepo := repository.NewDataProfileExecutionRepository(db)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
-	embeddingConfigurationService := service.NewEmbeddingConfigurationService(embeddingConfigurationRepo, cfg.EmbeddingService.APIKey)
+	embeddingConfigurationService := service.NewEmbeddingConfigurationService(embeddingConfigurationRepo)
 	if err := embeddingConfigurationService.Initialize(context.Background()); err != nil {
 		logger.L().Error("Manager 向量化配置初始化失败", "error", err)
 		os.Exit(1)
 	}
 	embeddingConfigurationProvider := embeddingConfigurationService.Provider()
+	inferenceScenarioBindingService := service.NewInferenceScenarioBindingService(inferenceScenarioBindingRepo)
 	logger.L().Info("Manager repositories 初始化完成")
 
 	logger.L().Info("Manager 配置加载完成",
@@ -151,6 +153,11 @@ func main() {
 		os.Exit(1)
 	}
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, serviceTokenSource)
+	inferenceClient, err := commonClient.NewInferenceClient(cfg.InferenceServiceURL, serviceTokenSource, nil)
+	if err != nil {
+		logger.L().Error("InferenceClient 初始化失败", "error", err)
+		os.Exit(1)
+	}
 	logger.L().Info("MetaClient 已初始化", "meta_url", cfg.MetaServiceURL)
 
 	contentRegistry := objectcontent.NewObjectContentRegistry()
@@ -172,7 +179,7 @@ func main() {
 	// 初始化 services（注意：Manager 不负责引擎管理，引擎信息通过 SystemClient 获取）
 	searchHistoryService := service.NewSearchHistoryService(searchHistoryRepo)
 	metadataService := service.NewMetadataService(metadataRepo, systemClient, metaClient, previewRegistry, contentRegistry)
-	searchService, err := service.NewHybridSearchService(cfg, embeddingRepo, embeddingConfigurationProvider)
+	searchService, err := service.NewHybridSearchService(cfg, embeddingRepo, embeddingConfigurationProvider, inferenceScenarioBindingService, inferenceClient)
 	if err != nil {
 		logger.L().Error("初始化混合检索服务失败", "error", err)
 		os.Exit(1)
@@ -213,13 +220,12 @@ func main() {
 	})
 
 	// 初始化向量化服务（Manager 模块的按需向量化）
-	embeddingService, err := service.NewEmbeddingService(embeddingRepo, systemClient, metaClient, taskExecRepo, embeddingConfigurationProvider, logger.L())
+	embeddingService, err := service.NewEmbeddingService(embeddingRepo, systemClient, metaClient, inferenceClient, taskExecRepo, embeddingConfigurationProvider, inferenceScenarioBindingService, logger.L())
 	if err != nil {
-		logger.L().Warn("向量化服务初始化失败（功能将不可用）", "error", err)
-		embeddingService = nil // 设置为 nil，允许服务继续启动
-	} else {
-		logger.L().Info("向量化服务已初始化（支持单对象、目录、Bucket 三级向量化）")
+		logger.L().Error("向量化服务初始化失败", "error", err)
+		os.Exit(1)
 	}
+	logger.L().Info("向量化服务已初始化（推理由 Inference Runtime 提供）")
 
 	// 初始化任务定义服务
 	embeddingTaskSvc := service.NewEmbeddingTaskService(embeddingRepo, embeddingService, taskExecRepo, embeddingConfigurationProvider)
@@ -359,7 +365,7 @@ func main() {
 	model3DTilesHandler := api.NewModel3DTilesHandler(model3DTilesRepo, minioClient, minioBucket)
 	logger.L().Info("数据导入服务已初始化", "transfer_url", cfg.TransferServiceURL)
 
-	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, cadPreviewHandler, model3DTilesHandler, dataProfileHandler)
+	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, cadPreviewHandler, model3DTilesHandler, dataProfileHandler)
 
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("manager")
@@ -475,7 +481,7 @@ func main() {
 				SchemaVersion: commonconfiguration.ManagementSchemaVersion,
 				Entries: []commonconfiguration.ManagementEntry{{
 					ID: "manager.embedding", OwnerModule: "manager",
-					ScopeTypes:       []string{commonconfiguration.ScopePlatformOnly},
+					ScopeTypes:       []string{commonconfiguration.ScopePlatformDefaultWithTenantOverride},
 					FrontendRoute:    "/manager/settings/embedding",
 					ReadPermission:   managerauthorization.PermissionManagerConfigurationRead,
 					UpdatePermission: managerauthorization.PermissionManagerConfigurationUpdate,

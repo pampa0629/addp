@@ -48,6 +48,7 @@ export default defineConfig({
       '/module-health/agent':       { target: 'http://localhost:8190', rewrite: () => '/health', changeOrigin: true },
       '/module-health/copilot':     { target: 'http://localhost:8087', rewrite: () => '/health', changeOrigin: true },
       '/module-health/graph':       { target: 'http://localhost:8186', rewrite: () => '/health', changeOrigin: true },
+      '/module-health/inference':   { target: 'http://localhost:8191', rewrite: () => '/health', changeOrigin: true },
       // Swagger spec 代理（避免 swagger-viewer.html 跨域 fetch）
       '/swagger-spec/system':       { target: 'http://localhost:8180', rewrite: () => '/swagger/doc.json', changeOrigin: true },
       '/swagger-spec/manager':      { target: 'http://localhost:8081', rewrite: () => '/swagger/doc.json', changeOrigin: true },
@@ -64,6 +65,7 @@ export default defineConfig({
       '/swagger-spec/agent':        { target: 'http://localhost:8190', rewrite: () => '/openapi.json', changeOrigin: true },
       '/swagger-spec/copilot':      { target: 'http://localhost:8087', rewrite: () => '/openapi.json', changeOrigin: true },
       '/swagger-spec/graph':        { target: 'http://localhost:8186', rewrite: () => '/swagger/doc.json', changeOrigin: true },
+      '/swagger-spec/inference':    { target: 'http://localhost:8191', rewrite: () => '/swagger/doc.json', changeOrigin: true },
     }
   },
   build: {

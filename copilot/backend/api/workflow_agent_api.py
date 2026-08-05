@@ -8,11 +8,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, Dict, Any
 
 from pipelines.workflow_pipeline import WorkflowPipeline
-from services.llm_service import llm_service
+from services.inference_service import CopilotInferenceService
 from addp_common.auth import AuthorizationContext
 from authorization_permissions_generated import COPILOT_WORKFLOW_EXECUTE
 from dependencies.auth import require_tool_user
 from models.workflow_models import WorkflowResourceFact
+from database import get_db
+from sqlalchemy.orm import Session
 
 # TODO: Copilot 暂时不需要保存对话历史，注释掉以避免数据库依赖
 # from services.memory_service import memory_service
@@ -24,22 +26,16 @@ require_workflow_draft_tool = require_tool_user(
     COPILOT_WORKFLOW_EXECUTE,
 )
 
-# 全局 Pipeline 实例（延迟初始化）
-_workflow_pipeline: Optional[WorkflowPipeline] = None
 
-
-def get_workflow_pipeline() -> WorkflowPipeline:
-    """获取或创建 WorkflowPipeline 实例"""
-    global _workflow_pipeline
-
-    if _workflow_pipeline is None:
-        print("[API] 初始化 WorkflowPipeline...")
-        llm = llm_service.get_llm()
-        _workflow_pipeline = WorkflowPipeline(llm=llm)
-        print("[API] ✅ WorkflowPipeline 初始化完成")
-
-    return _workflow_pipeline
-
+def get_workflow_pipeline(db: Session, tenant_id: int) -> WorkflowPipeline:
+    llm = CopilotInferenceService.chat_model(
+        db,
+        tenant_id=tenant_id,
+        scenario_code="nl2dag",
+        temperature=0.2,
+        max_output_tokens=4000,
+    )
+    return WorkflowPipeline(llm=llm)
 
 class WorkflowGenerationRequest(BaseModel):
     """工作流生成请求"""
@@ -87,6 +83,7 @@ class WorkflowGenerationResponse(BaseModel):
 async def generate_workflow(
     request: WorkflowGenerationRequest,
     user: AuthorizationContext = Depends(require_workflow_draft_tool),
+    db: Session = Depends(get_db),
 ):
     """
     生成工作流（基于 WorkflowPipeline）
@@ -109,8 +106,7 @@ async def generate_workflow(
     print(f"{'='*80}\n")
 
     try:
-        # 获取 Pipeline 实例
-        pipeline = get_workflow_pipeline()
+        pipeline = get_workflow_pipeline(db, user.tenant_id)
 
         # 调用 Pipeline 生成工作流
         print(f"[API] 调用 WorkflowPipeline...")

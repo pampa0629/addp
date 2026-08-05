@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import httpx
 import uvicorn
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +12,14 @@ from middleware.auth import auth_middleware
 from api.sessions import router as sessions_router
 from api.chat import router as chat_router
 from api.runs import router as runs_router
+from api.inference_scenario_bindings import router as inference_scenario_bindings_router
+from utils.llm import AgentInferenceService
+from addp_common.client import (
+    ConfigurationManagementDeclaration,
+    ConfigurationManagementEntry,
+    ModuleRegistration,
+    ModuleRegistryClient,
+)
 
 # 最先初始化日志（在其他模块 import 之前）
 setup_logging()
@@ -59,6 +66,11 @@ app.include_router(
     prefix=_API_PREFIX,
     dependencies=[Depends(_bearer_auth)],
 )
+app.include_router(
+    inference_scenario_bindings_router,
+    prefix=_API_PREFIX,
+    dependencies=[Depends(_bearer_auth)],
+)
 
 
 @app.get(
@@ -70,84 +82,54 @@ async def health():
     return {"status": "ok", "module": "agent"}
 
 
-async def _register_module():
-    """向 System 模块注册，并保持心跳；注册失败会在心跳阶段自动重试"""
-    if not settings.INTERNAL_API_KEY:
-        logger.warning("INTERNAL_API_KEY 未配置，跳过模块注册")
-        return
+_registry_client: ModuleRegistryClient | None = None
+_registry_task: asyncio.Task | None = None
 
-    headers = {
-        "X-Internal-API-Key": settings.INTERNAL_API_KEY,
-        "Content-Type": "application/json",
-    }
+
+def _module_registration() -> ModuleRegistration:
     service_url = f"http://{settings.SERVICE_HOST}:{settings.AGENT_BACKEND_PORT}"
-    register_url = f"{settings.get_system_url()}/api/v1/internal/modules/register"
-    heartbeat_url = f"{settings.get_system_url()}/api/v1/internal/modules/heartbeat"
-    register_payload = {
-        "module_name": "agent",
-        "module_url": service_url,
-        "route_prefix": "/agent",
-        "health_check_url": f"{service_url}/health",
-        "metadata": {"module": "agent", "language": "python"},
-    }
-
-    # 禁用系统代理，避免 httpx 自动拾取 macOS 网络代理导致内部请求失败
-    _no_proxy_transport = httpx.AsyncHTTPTransport()
-
-    async def _try_register() -> bool:
-        """尝试注册一次，成功返回 True"""
-        try:
-            async with httpx.AsyncClient(timeout=5.0, transport=_no_proxy_transport) as client:
-                resp = await client.post(register_url, headers=headers, json=register_payload)
-                if resp.status_code < 300:
-                    logger.info("✅ Agent 模块注册成功: %s", service_url)
-                    return True
-                logger.warning("⚠️  Agent 模块注册失败: %s", resp.text)
-        except Exception as e:
-            logger.warning("⚠️  Agent 模块注册失败: %s", e)
-        return False
-
-    # 初始注册，最多重试 3 次
-    registered = False
-    for attempt in range(1, 4):
-        if await _try_register():
-            registered = True
-            break
-        logger.warning("  (尝试 %d/3)", attempt)
-        await asyncio.sleep(attempt * 5)
-
-    # 心跳循环：连续失败时自动重新注册
-    consecutive_failures = 0
-    while True:
-        await asyncio.sleep(10)
-        try:
-            async with httpx.AsyncClient(timeout=5.0, transport=_no_proxy_transport) as client:
-                resp = await client.post(heartbeat_url, headers=headers, json={"module_name": "agent"})
-                if resp.status_code < 300:
-                    consecutive_failures = 0
-                    if not registered:
-                        logger.info("✅ Agent 心跳恢复正常")
-                        registered = True
-                else:
-                    consecutive_failures += 1
-        except Exception as e:
-            consecutive_failures += 1
-            logger.debug("Agent 心跳失败: %s", e)
-
-        # 连续失败 3 次，尝试重新注册
-        if consecutive_failures >= 3:
-            logger.warning("⚠️  心跳连续失败 %d 次，尝试重新注册...", consecutive_failures)
-            if await _try_register():
-                registered = True
-                consecutive_failures = 0
-            else:
-                await asyncio.sleep(20)
+    return ModuleRegistration(
+        module_name="agent",
+        module_url=service_url,
+        route_prefix="/agent",
+        health_check_url=f"{service_url}/health",
+        metadata={"module": "agent", "language": "python"},
+        configuration_management=ConfigurationManagementDeclaration(entries=[
+            ConfigurationManagementEntry(
+                id="agent.inference_bindings",
+                owner_module="agent",
+                scope_types=["platform_default_with_tenant_override"],
+                frontend_route="/configuration/agent/inference",
+                read_permission="agent.configuration.read",
+                update_permission="agent.configuration.update",
+            ),
+        ]),
+    )
 
 
 @app.on_event("startup")
 async def startup():
+    global _registry_client, _registry_task
     await init_db()
-    asyncio.create_task(_register_module())
+    AgentInferenceService.initialize()
+    _registry_client = ModuleRegistryClient(settings.get_system_url(), AgentInferenceService.token_source())
+    _registry_task = asyncio.create_task(_registry_client.run(_module_registration()))
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    global _registry_client, _registry_task
+    if _registry_task is not None:
+        _registry_task.cancel()
+        try:
+            await _registry_task
+        except asyncio.CancelledError:
+            pass
+    if _registry_client is not None:
+        await _registry_client.close()
+    _registry_task = None
+    _registry_client = None
+    await AgentInferenceService.close()
 
 
 if __name__ == "__main__":

@@ -82,9 +82,10 @@ type BaseConfig struct {
 	DBPassword string
 
 	// 通用配置
-	SystemServiceURL string
-	EncryptionKey    []byte
-	InternalAPIKey   string
+	SystemServiceURL    string
+	InferenceRuntimeURL string
+	EncryptionKey       []byte
+	InternalAPIKey      string
 
 	// 地图服务配置
 	AMapKey            string
@@ -108,6 +109,7 @@ func LoadDeploymentConfig(target *BaseConfig) {
 
 	target.EncryptionKey = LoadEncryptionKey()
 	target.InternalAPIKey = GetEnv("INTERNAL_API_KEY", "")
+	target.InferenceRuntimeURL = GetEnv("INFERENCE_URL", "http://localhost:8191")
 	target.AMapKey = GetEnv("AMAP_KEY", "")
 	target.AMapSecurityJsCode = GetEnv("AMAP_SECURITY_KEY", "")
 	target.TDTKey = GetEnv("TDT_KEY", "")

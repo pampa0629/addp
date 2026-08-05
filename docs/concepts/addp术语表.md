@@ -210,6 +210,18 @@
 | A2UI | Agent 到用户界面协议 | 通过版本化 Catalog 和声明式组件消息描述 Agent 界面的表现协议。 | 只允许客户端预注册组件和函数；负责 Presentation，不替代 ResultRef、Interaction、权限或服务端校验。 |
 | A2UI Surface | A2UI 界面单元 | A2UI 中由组件树、数据模型和 action 组成的独立渲染单元。 | 通过 `surface_id` 引用；完整组件树不应作为大段 Tool Result 进入 LLM 上下文。 |
 
+## AI 推理
+
+| 英文术语 | 中文术语 | 定义 | 备注 |
+|---|---|---|---|
+| AI Inference Runtime | AI 推理运行时 | 对 ADDP 调用方提供统一 `addp.inference/v1` 数据面的推理服务。 | Runtime 按网络区域、安全域、GPU 集群、故障域或 SLA 增长，不按模型厂商、账号或模型数量增长。 |
+| AI Inference Runtime Engine Instance | AI 推理运行时引擎实例 | System 中登记一个确定 AI Inference Runtime 端点的 Engine Instance。 | `engine_type=inference_runtime`；默认平台级，只登记 Runtime 端点、生命周期和 `compute.inference` 能力，不保存上游 Provider、模型或 API Key。 |
+| Provider Connection | 模型提供方连接 | Inference owner 保存的一个确定在线厂商账号端点或内网推理服务端点。 | 是强类型资源，不是普通键值配置；可为平台级或 Tenant 级，凭据使用专用加密字段。 |
+| Model Deployment | 模型部署 | Provider Connection 下一个可调用的具体模型或部署单元。 | 保存上游模型标识、能力、限制和状态；继承 Provider 的范围，不在 System 中展开为 Engine Instance。 |
+| Model Profile | 模型档案 | 面向调用方的稳定逻辑能力名称及其当前明确 Model Deployment 绑定。 | 例如 `general-chat`、`reasoning`、`nl2dag`、`text-embedding`、`multimodal-embedding`、`rerank`；第一版只绑定一个 Deployment，不包含隐藏 fallback。 |
+| Scenario Binding | 场景绑定 | 业务 owner 将本模块的稳定 AI 场景显式绑定到 Model Profile 或特定 Model Deployment 的事实。 | 归 Agent、Copilot、Manager 等调用模块保存；有效值按 Tenant 显式绑定、平台默认绑定、明确未配置错误解析。 |
+| inference credential | 推理凭据 | Provider Connection 用于访问上游模型服务的 API Key 或等价认证材料。 | 由 Inference 使用部署级 `ENCRYPTION_KEY` 加密；API 只返回 `configured` 和 `version`，不返回明文、掩码或可复用引用。 |
+
 ## 身份与授权
 
 | 英文术语 | 中文术语 | 定义 | 备注 |
@@ -262,7 +274,7 @@
 | tenant configuration | 租户配置 | 在单一 Tenant Context 中管理、只对当前 Tenant 生效的普通运行配置。 | 必须绑定 AuthContext 中的 `tenant_id`；平台管理员不能在 Platform Realm 中直接读取或修改。 |
 | configuration definition | 配置定义 | owner 模块对稳定配置 key、范围、类型、默认值、校验、敏感级别、Permission 和生效方式的声明。 | 代码默认值属于定义，不是与持久化值并行的第二事实源。 |
 | effective configuration | 有效配置 | owner 按配置定义和范围规则解析后，供当前请求、任务创建或 execution 快照消费的唯一配置值。 | Tenant 可覆盖场景固定按 Tenant 显式值、平台显式默认值、定义默认值解析；不得追加环境变量 fallback。 |
-| configuration management entry | 配置管理入口 | owner 模块通过 `addp.configuration-management/v1` 向 System 模块目录发布的配置管理 UI 能力。 | 只包含 entry id、owner、scope、前端路由和 Permission；不包含配置键、当前值、Secret 或私有表结构。 |
+| configuration management entry | 配置管理入口 | owner 模块通过 `addp.configuration-management/v1` 向 System 模块目录发布的配置管理 UI 能力。 | 只包含 entry id、owner、scope、owner 页面或 `/configuration/{owner}/...` Console 组合路由和 Permission；不包含配置键、当前值、Secret 或私有表结构。 |
 | configuration snapshot | 配置快照 | 任务或 execution 在确定行为时固化的完整有效配置及版本。 | 平台或 Tenant 默认值后续变化不能改写历史快照；运行中的 execution 不热切换配置。 |
 
 ## Cleanup 与生命周期

@@ -10,7 +10,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${ROOT_DIR}"
 
-GO_MODULES=(system manager meta transfer orchestrator develop service monitor standard model quality portal graph asset)
+GO_MODULES=(system manager meta transfer orchestrator develop service monitor standard model quality portal graph asset inference)
 FASTAPI_MODULES=(agent copilot)
 ALL_MODULES=("${GO_MODULES[@]}" "${FASTAPI_MODULES[@]}")
 
@@ -147,6 +147,8 @@ def swaggerize(path: str) -> str:
 def should_exclude(path: str) -> bool:
     path = clean_path(path)
     lowered = path.lower()
+    if module == "inference" and lowered.startswith("/api/v1/inference/internal/"):
+        return False
     excluded_prefixes = (
         "/",
         "/health",

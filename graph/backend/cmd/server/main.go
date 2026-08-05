@@ -92,7 +92,17 @@ func main() {
 	neo4jSvc := service.NewNeo4jService(graphRepo, ontologyRepo, systemClient)
 	knowledgeSvc := service.NewKnowledgeService(neo4jSvc, ontologyRepo, graphRepo)
 	schemaInferenceSvc := service.NewSchemaInferenceService(graphRepo, ontologyRepo, neo4jSvc, ontologySvc, systemClient)
-	buildSvc := service.NewBuildService(buildRepo, ontologyRepo, ontologySvc, graphRepo, taskExecutionRepo, neo4jSvc, materialReader, materialWriter, cfg.CopilotServiceURL, cfg.InternalAPIKey)
+	graphTokenSource, err := commonClient.NewOAuthServiceTokenSource(
+		cfg.SystemServiceURL,
+		"addp-graph",
+		cfg.ServiceClientSecret,
+		nil,
+	)
+	if err != nil {
+		logger.Error("Graph Service Token Provider 初始化失败", "error", err)
+		os.Exit(1)
+	}
+	buildSvc := service.NewBuildService(buildRepo, ontologyRepo, ontologySvc, graphRepo, taskExecutionRepo, neo4jSvc, materialReader, materialWriter, cfg.CopilotServiceURL, graphTokenSource)
 	analysisSvc := service.NewAnalysisService(graphRepo, ontologyRepo, systemClient, neo4jSvc)
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
 	if err := cleanupSvc.Start(context.Background()); err != nil {

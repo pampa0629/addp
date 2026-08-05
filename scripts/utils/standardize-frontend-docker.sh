@@ -47,6 +47,7 @@ FRONTENDS=(
     "transfer/frontend"
     "orchestrator/frontend"
     "develop/frontend"
+    "inference/frontend"
 )
 
 # Track issues

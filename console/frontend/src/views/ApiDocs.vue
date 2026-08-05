@@ -152,6 +152,13 @@ const modules = computed(() => [
     healthUrl: isDev ? '/module-health/graph' : null,
   },
   {
+    name: 'inference',
+    label: t('console.apiDocs.modules.inference'),
+    port: ':8191',
+    swaggerUrl: isDev ? viewer('/swagger-spec/inference') : viewer('/inference/swagger/doc.json'),
+    healthUrl: isDev ? '/module-health/inference' : null,
+  },
+  {
     name: 'develop',
     label: t('console.apiDocs.modules.develop'),
     port: ':8185',

@@ -20,6 +20,9 @@ dependencies = [
 addp = "addp_common.cli:main"
 
 [project.optional-dependencies]
+inference-langchain = [
+    "langchain-core>=0.3.0,<0.4.0",
+]
 dev = [
 	"pandas>=2.2.0",
 	"pyarrow>=18.0.0",

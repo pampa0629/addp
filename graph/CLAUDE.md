@@ -22,7 +22,7 @@ Graph 模块是 ADDP 平台的**知识图谱领域模块**，覆盖知识图谱�
 | 多图谱支持 | 每个图谱对应一个 Neo4j database（engine+database 绑定） |
 | 本体存储 | PostgreSQL（graph schema），与图谱数据分离 |
 | 本体版本 | 支持多本体模型并行维护，含版本快照管理 |
-| LLM 图谱构建 | 调用 Copilot 模块（KG extraction chains），不在 graph 内实现 LLM |
+| AI 图谱构建 | Graph 使用 `addp-graph` Tenant Service Access Token 调用 Copilot `knowledge_graph_extraction` 场景；Graph 不直连 Inference 或厂商模型 |
 | Agent 集成 | Agent 消费 Knowledge Service API（Graph RAG） |
 | 图算法 | 优先 Cypher 封装常用算法，探测 Neo4j GDS 可用性后升级 |
 | 图可视化 | G6（蚂蚁开源） |
@@ -177,6 +177,8 @@ Graph 是以下 Permission 的唯一 owner：
 - Review 列表/数量使用 `graph.review.read`，通过、拒绝和修改分别使用 `graph.review.approve/reject/update`；批量路由必须按请求 action 校验对应 Permission。
 
 `delegable` 当前统一保守为 `false`，待 Graph Knowledge Service、Agent Tool 和 OAuth Scope 映射阶段逐项评审，不在首批目录中默认开放委托。
+
+Graph 调用 Copilot 图谱抽取时必须从当前构建任务取得 `tenant_id`，通过 `GRAPH_SERVICE_CLIENT_SECRET` 换取短期 Tenant Service Access Token。不得发送共享 `X-Internal-API-Key`、客户端自报 Tenant Header 或厂商模型凭据。
 
 ### 图谱构建 execution 语义
 

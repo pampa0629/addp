@@ -36,9 +36,6 @@ func TestEmbeddingConfigurationRoutesReturnConflictForStaleVersion(t *testing.T)
 	router := newEmbeddingConfigurationTestRouter(t, setPlatformEmbeddingConfigurationAuthContextForTest)
 	payload := `{
 		"version":0,
-		"base_url":"https://embedding.example.com",
-		"model":"qwen3-vl-embedding",
-		"timeout_seconds":20,
 		"max_distance":0.7,
 		"max_file_size_mb":20,
 		"batch_concurrency":4
@@ -74,7 +71,7 @@ func newEmbeddingConfigurationTestRouter(t *testing.T, setAuthContext func(*gin.
 	if err := db.AutoMigrate(&models.EmbeddingConfiguration{}); err != nil {
 		t.Fatal(err)
 	}
-	configurationService := service.NewEmbeddingConfigurationService(repository.NewEmbeddingConfigurationRepository(db), "deployment-secret")
+	configurationService := service.NewEmbeddingConfigurationService(repository.NewEmbeddingConfigurationRepository(db))
 	if err := configurationService.Initialize(context.Background()); err != nil {
 		t.Fatal(err)
 	}

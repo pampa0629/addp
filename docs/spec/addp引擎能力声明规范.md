@@ -295,6 +295,7 @@ type ComputeCapabilities struct {
     Query    *QueryCapability    `json:"query,omitempty"`
     Workflow *WorkflowCapability `json:"workflow,omitempty"`
     Script   *ScriptCapability   `json:"script,omitempty"`
+    Inference *InferenceCapability `json:"inference,omitempty"`
 }
 ```
 
@@ -308,6 +309,7 @@ Develop 等上层模块如仍需面向用户的开发入口，应从 `compute` �
 | 工作流编辑器 | `compute.workflow.supported=true` |
 | Notebook 无头执行 | `compute.script.supported=true`，并结合 `compute.script.modes` |
 | Notebook 交互编辑 | 在 Notebook 模式基础上还要求 `compute.script.interactive=true` |
+| AI 推理调用 | `compute.inference.supported=true` |
 
 这些派生名称可作为前端路由或展示文案使用，但不得反向写回为 `dev_modes` 字段。
 
@@ -391,6 +393,28 @@ type ScriptCapability struct {
 | `interactive` | 是否支持由 owner 模块创建、代理和关闭短期隔离交互会话；不得仅因存在共享 Lab 入口而声明。 |
 | `languages` | 支持的语言，如 `python`。 |
 
+### 4.4 InferenceCapability
+
+```go
+type InferenceCapability struct {
+    Supported  bool     `json:"supported"`
+    RuntimeAPI string   `json:"runtime_api"`
+    Operations []string `json:"operations"`
+    Modalities []string `json:"modalities,omitempty"`
+    Streaming  bool     `json:"streaming,omitempty"`
+}
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `supported` | 是否可作为统一 AI 推理运行时。 |
+| `runtime_api` | 固定为当前实现的 `addp.inference/v1`。 |
+| `operations` | Runtime 真正支持的标准操作，取值为 `chat`、`embedding`、`rerank` 的子集。 |
+| `modalities` | Runtime 可接收的输入模态，取值为 `text`、`image` 的子集。 |
+| `streaming` | `chat` 是否支持标准流式响应。 |
+
+该能力只表达 Runtime 数据面，不展开动态 Provider Connection、Model Deployment 或 Model Profile。System 保存或刷新 `inference_runtime` Engine Instance 时只探测 `/health` 和 Runtime capability；模型列表及凭据由 Inference owner 控制面管理。声明该能力的插件必须实现 `InferenceRuntimeProvider`，调用方不得根据厂商名称选择私有客户端。
+
 ---
 
 ## 五、能力展示模型
@@ -448,7 +472,8 @@ type CapabilitiesView struct {
 - 声明 `compute.query.supported=true` 的插件必须实现 `QueryRuntimeProvider` 或 `FederatedQueryRuntimeProvider`。声明 `compute.query.federation.supported=true` 时必须实现 `FederatedQueryRuntimeProvider`，且 `runtime_api` 非空。
 - 声明 `compute.workflow.supported=true` 的插件必须实现 `WorkflowRuntimeProvider`。若 `dynamic_operators=true`，则其 `ListOperators()` 必须可调用，并返回符合工作流计算引擎接口规范的算子描述。
 - 声明 `compute.script.supported=true` 的插件必须实现 `ScriptRuntimeProvider`。
-- 反向也必须成立：插件实现 `CatalogModelProvider`、`CatalogProvider`、`CatalogFactsProvider`、`DynamicSchemaSamplingProvider`、具体 Store Provider、`ChangeStreamReaderProvider`、`QueryRuntimeProvider`、`FederatedQueryRuntimeProvider`、`GraphQueryProvider`、`WorkflowRuntimeProvider` 或 `ScriptRuntimeProvider` 时，`Capabilities()` 必须声明对应能力。`StoreProvider` 本身只是 marker，不单独触发能力声明；以具体读写 Provider 为准。
+- 声明 `compute.inference.supported=true` 的插件必须实现 `InferenceRuntimeProvider`，且 `runtime_api="addp.inference/v1"`、`operations` 非空。
+- 反向也必须成立：插件实现 `CatalogModelProvider`、`CatalogProvider`、`CatalogFactsProvider`、`DynamicSchemaSamplingProvider`、具体 Store Provider、`ChangeStreamReaderProvider`、`QueryRuntimeProvider`、`FederatedQueryRuntimeProvider`、`GraphQueryProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider` 或 `InferenceRuntimeProvider` 时，`Capabilities()` 必须声明对应能力。`StoreProvider` 本身只是 marker，不单独触发能力声明；以具体读写 Provider 为准。
 - capabilities 由插件返回结构体，System 统一序列化为 JSONB。插件 `Capabilities()` 是 Provider 能力模板，不得做实例连接或运行时探测。
 - 已注册插件引擎的落库能力事实源是插件 `Capabilities()` 与可选实例能力解析结果。普通 Engine API、内部自注册接口和 Registry 能力注册接口收到插件引擎提交的 `capabilities` 时都必须忽略，并改用插件模板和实例解析结果生成落库声明。内置扩展引擎自注册 payload 不提交 `capabilities`；自注册脚本不得额外声明 `workflow_runtime`、`script_runtime` 等平行运行时能力。
 - 旧 capabilities 结构不再兼容，发现旧结构可直接刷新或清空。

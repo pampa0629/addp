@@ -16,7 +16,7 @@ const (
 
 	EmbeddingReasonReady               = "ready"
 	EmbeddingReasonSourceChanged       = "source_changed"
-	EmbeddingReasonModelChanged        = "model_changed"
+	EmbeddingReasonModelChanged        = "model_profile_changed"
 	EmbeddingReasonDimensionChanged    = "dimension_changed"
 	EmbeddingReasonFileTooLarge        = "file_too_large"
 	EmbeddingReasonFormatUnsupported   = "format_unsupported"
@@ -37,7 +37,9 @@ type Embedding struct {
 	Locator         string     `gorm:"type:text;not null" json:"locator"`
 	SourceVersion   string     `gorm:"size:255;not null" json:"source_version"`
 	Embedding       []float32  `gorm:"type:manager.vector(2560)" json:"-"`
-	Model           string     `gorm:"size:100;not null;index:idx_embeddings_ready_query" json:"model"`
+	ModelProfileID  string     `gorm:"type:uuid;not null;index:idx_embeddings_ready_query" json:"model_profile_id"`
+	ProfileVersion  int64      `gorm:"not null;index:idx_embeddings_ready_query" json:"profile_version"`
+	DeploymentID    string     `gorm:"type:uuid;not null" json:"deployment_id"`
 	Dimension       int        `gorm:"not null;index:idx_embeddings_ready_query" json:"dimension"`
 	Status          string     `gorm:"size:32;not null;index:idx_embeddings_status;index:idx_embeddings_ready_query;check:ck_embeddings_status,status IN ('ready','outdated','failed','unsupported','missing_source')" json:"status"`
 	StatusReason    string     `gorm:"size:64" json:"status_reason,omitempty"`

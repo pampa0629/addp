@@ -23,6 +23,8 @@
 
 `common-python/addp_common/tools` 提供 `addp.tool-manifest/v1`、Manifest 校验和 ToolExecutor。Python SDK 是唯一 HTTP Client 实现；`addp` CLI、ADDP Agent LangChain Tool Provider 和后续 MCP Adapter 只能调用 ToolExecutor，不得各自维护 HTTP 路径、认证或业务判断。ToolExecutor 在每次 Tool 调用边界向 System 换取绑定 owner audience、稳定 Tool Scope、AgentRun 和 ToolCall 的短期 Delegated Access Token，原始 User Access Token 不进入 owner Client。服务身份访问 owner API 时使用独立 Service Principal 的短期 Service Access Token；调用方只发送 Bearer，不发送 Internal API Key 或客户端自报的 Tenant Header。
 
+`common-python/addp_common/client.BaseClient` 为 Python owner Client 提供 Tenant Service Access Token 请求主路：调用方显式传入 `OAuthServiceTokenSource + tenant_id`，Client 在每次请求前取得短期 Bearer；若因授权版本变化首次收到 401，只精确失效被拒绝 Token、重新取 Token 并重放一次。非 401 不重试，不得回退到 Internal API Key、User Token 或 Tenant Header。
+
 ### 资源树与 locator 共享边界
 
 资源树和 ResourceLocator 是平台级公共契约，但它们分为三层职责：

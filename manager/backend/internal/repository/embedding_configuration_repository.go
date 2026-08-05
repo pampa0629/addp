@@ -51,8 +51,7 @@ func (r *EmbeddingConfigurationRepository) Save(ctx context.Context, value *mode
 		result := tx.Model(&models.EmbeddingConfiguration{}).
 			Where("id = 1 AND version = ?", expectedVersion).
 			Updates(map[string]interface{}{
-				"version": value.Version, "base_url": value.BaseURL, "model": value.Model,
-				"timeout_seconds": value.TimeoutSeconds, "max_distance": value.MaxDistance,
+				"version": value.Version, "max_distance": value.MaxDistance,
 				"max_file_size_mb": value.MaxFileSizeMB, "batch_concurrency": value.BatchConcurrency,
 				"updated_by": value.UpdatedBy,
 			})

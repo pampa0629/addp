@@ -1017,18 +1017,6 @@ definitions:
         description: 算子类型 (scan/transfer/spatial等)
         type: string
     type: object
-  github_com_addp_develop_backend_internal_service.SQLExecutionEffect:
-    enum:
-    - read
-    - write
-    - ddl
-    - external_effect
-    type: string
-    x-enum-varnames:
-    - Read
-    - Write
-    - DDL
-    - ExternalEffect
   github_com_addp_develop_backend_internal_service.WorkflowValidationIssue:
     properties:
       code:
@@ -1051,43 +1039,6 @@ definitions:
           $ref: '#/definitions/github_com_addp_develop_backend_internal_service.WorkflowValidationIssue'
         type: array
       workflow_engine_id:
-        type: integer
-    type: object
-  internal_api.ExecuteQueryRequest:
-    properties:
-      content:
-        additionalProperties: true
-        type: object
-      execution_config:
-        additionalProperties: true
-        type: object
-      timeout:
-        description: 超时时间（秒）
-        type: integer
-    required:
-    - content
-    - execution_config
-    type: object
-  internal_api.ExecuteQueryResponse:
-    properties:
-      columns:
-        items:
-          type: string
-        type: array
-      effect:
-        $ref: '#/definitions/github_com_addp_develop_backend_internal_service.SQLExecutionEffect'
-      execution_id:
-        type: string
-      execution_time_ms:
-        type: integer
-      rows:
-        items:
-          additionalProperties: true
-          type: object
-        type: array
-      rows_affected:
-        type: integer
-      rows_count:
         type: integer
     type: object
   internal_api.ListKernelsResponse:
@@ -1572,7 +1523,7 @@ paths:
             items:
               $ref: '#/definitions/models.EngineRuntimeDescriptor'
             type: array
-      summary: 获取可用于 SQL 查询的数据源列表 | List data sources available for SQL queries
+      summary: 获取查询工作台引擎列表 | List engines available to the query workbench
       tags:
       - Engines
       x-addp-auth-mode: permission
@@ -1638,35 +1589,6 @@ paths:
       x-addp-required-permissions:
       - develop.task.execute
       - develop.data_read.execute
-  /execute:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: 查询请求 | Query request
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/internal_api.ExecuteQueryRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 查询结果 | Query result
-          schema:
-            $ref: '#/definitions/internal_api.ExecuteQueryResponse'
-      summary: 执行查询语句 | Execute query statement
-      tags:
-      - Query
-      x-addp-auth-mode: permission
-      x-addp-conditional-permissions:
-      - develop.data_read.execute
-      - develop.data_write.execute
-      - develop.data_ddl.execute
-      - develop.data_external_effect.execute
-      x-addp-required-permissions:
-      - develop.task.execute
   /executions:
     get:
       parameters:

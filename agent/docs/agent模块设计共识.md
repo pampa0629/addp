@@ -55,6 +55,7 @@ AgentRun 使用唯一语义恢复路线：
 3. 创建澄清或 owner approval 投影时，Interaction 通过 `agent_run_id` 关联 AgentRun，run 状态进入 `waiting`。
 4. 用户回答澄清后，选中的 owner 事实写入 `checkpoint.confirmed`；用户检查审批时，Agent 使用原始 User Access Token 查询 owner，只有 owner 返回 `approved|consumed` 才完成 Interaction；两种情况都恢复同一个 AgentRun。
 5. Runtime 使用预算化会话历史、增量摘要、Skill 和 AgentCheckpoint 重建模型调用，不序列化 LangChain 内部对象、隐藏推理或完整 Tool 大结果；Tool 结果即使被截断为非 JSON，审计摘要也只记录类型与字节数，不保存原文前缀。
+6. 所有模型调用经 Inference Runtime；Agent 只拥有 `reasoning`、`general-chat` Scenario Binding，同一 AgentRun 固定 reasoning Profile 快照，不拥有 Provider、Deployment 或 credential。
 6. 最终进入 `completed`、`failed` 或 `cancelled`。
 
 AG-UI 请求中的 `runId` 是协议调用标识；AgentRun 是服务端逻辑运行身份。一次 AgentRun 可以经历初始调用和若干次 resume 调用，恢复身份以 Interaction 的 `agent_run_id` 为准。

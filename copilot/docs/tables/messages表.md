@@ -331,9 +331,9 @@ WHERE c.tenant_id = 1;
 - 监控对话长度
 - 优化 Prompt 设计
 
-**计算方式**：
-- 使用 tiktoken 库计算（OpenAI 模型）
-- 或使用模型提供的 usage 信息
+**统计来源**：
+- 只使用 ADDP Inference Runtime 返回的 usage 信息。
+- Provider 未返回 usage 时不做本地估算。
 
 ### 8.3 消息顺序
 
@@ -357,6 +357,6 @@ WHERE c.tenant_id = 1;
 ## 九、相关文档
 
 - [conversations 表](./conversations表.md) - 对话会话表，消息所属对话
-- [llm_configs 表](./llm_configs表.md) - LLM 配置表，管理 AI 模型
+- [inference_scenario_bindings 表](./inference_scenario_bindings表.md) - Copilot 推理场景绑定
 - [数据库架构](../数据库架构.md) - Copilot 模块整体架构
 - [Copilot 模块说明](../CLAUDE.md) - 模块整体架构和设计理念

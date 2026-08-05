@@ -94,7 +94,7 @@
             <div v-if="execution?.status === 'success' && executionResult">
               <!-- 查询结果: 使用 QueryResult 组件 -->
               <div v-if="execution.task_type === 'query'">
-                <QueryResult :result="formatSQLResult(executionResult)" />
+                <QueryResult :result="formatSQLResult()" />
               </div>
 
               <!-- 工作流结果: 使用表格展示任务列表 -->
@@ -212,6 +212,7 @@ import {
 import QueryResult from '@/components/QueryResult.vue'
 import { navigateDevelopRoute } from '@/utils/developNavigation'
 import { resolveExecutionDetailRouteState } from '@/utils/executionDetailRouteState'
+import { queryResultFromExecution } from '@/utils/queryWorkbench.mjs'
 
 const route = useRoute()
 const router = useRouter()
@@ -358,17 +359,7 @@ const formatTime = (time) => {
   return new Date(time).toLocaleString('zh-CN')
 }
 
-const formatSQLResult = (result) => {
-  // 将后端结果格式转换为 QueryResult 组件需要的格式
-  return {
-    success: true,
-    columns: result.columns || [],
-    rows: result.rows || [],
-    rows_count: result.rows_count,
-    rows_affected: result.rows_affected,
-    execution_time_ms: result.execution_time_ms
-  }
-}
+const formatSQLResult = () => queryResultFromExecution(execution.value)
 
 // 操作函数
 const handleBack = () => {

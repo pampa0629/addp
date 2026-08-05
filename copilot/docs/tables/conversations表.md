@@ -449,6 +449,6 @@ curl -X POST http://localhost:8087/api/v1/copilot/workflow/generate \
 ## 九、相关文档
 
 - [messages 表](./messages表.md) - 对话消息表,存储具体对话内容
-- [llm_configs 表](./llm_configs表.md) - LLM 配置表,管理 AI 模型配置
+- [inference_scenario_bindings 表](./inference_scenario_bindings表.md) - Copilot 推理场景绑定
 - [数据库架构](../数据库架构.md) - Copilot 模块整体架构
 - [Copilot 模块说明](../CLAUDE.md) - 模块整体架构和设计理念

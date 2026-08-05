@@ -43,13 +43,33 @@ const props = defineProps({
   readOnly: {
     type: Boolean,
     default: false
+  },
+  completions: {
+    type: Array,
+    default: () => []
   }
 })
 
-const emit = defineEmits(['update:modelValue', 'execute'])
+const emit = defineEmits(['update:modelValue', 'execute', 'selection-change'])
 
 const editorContainer = ref(null)
 let editor = null
+let completionProvider = null
+
+const registerCompletionProvider = () => {
+  completionProvider?.dispose()
+  const language = props.language || 'plaintext'
+  completionProvider = monaco.languages.registerCompletionItemProvider(language, {
+    provideCompletionItems: () => ({
+      suggestions: props.completions.map(item => ({
+        label: item.label || item.insertText,
+        insertText: item.insertText,
+        detail: item.detail || '',
+        kind: monaco.languages.CompletionItemKind.Reference
+      }))
+    })
+  })
+}
 
 onMounted(() => {
   // 注册 SQL 语言（如果尚未注册）
@@ -139,6 +159,18 @@ onMounted(() => {
     })
   }
 
+  if (!monaco.languages.getLanguages().find(lang => lang.id === 'cypher')) {
+    monaco.languages.register({ id: 'cypher' })
+    monaco.languages.setLanguageConfiguration('cypher', {
+      comments: { lineComment: '//' },
+      brackets: [['(', ')'], ['[', ']'], ['{', '}']],
+      autoClosingPairs: [
+        { open: '(', close: ')' }, { open: '[', close: ']' }, { open: '{', close: '}' },
+        { open: "'", close: "'" }, { open: '"', close: '"' }
+      ]
+    })
+  }
+
   // 创建编辑器
   editor = monaco.editor.create(editorContainer.value, {
     value: props.modelValue,
@@ -160,16 +192,24 @@ onMounted(() => {
     emit('update:modelValue', editor.getValue())
   })
 
+  editor.onDidChangeCursorSelection(() => {
+    const selection = editor.getSelection()
+    emit('selection-change', editor.getModel()?.getValueInRange(selection) || '')
+  })
+
   // 添加执行快捷键 (Ctrl+Enter 或 Cmd+Enter)
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
     emit('execute')
   })
+
+  registerCompletionProvider()
 })
 
 onUnmounted(() => {
   if (editor) {
     editor.dispose()
   }
+  completionProvider?.dispose()
 })
 
 // 监听外部 value 变化
@@ -179,11 +219,24 @@ watch(() => props.modelValue, (newValue) => {
   }
 })
 
+watch(() => props.language, (language) => {
+  if (editor?.getModel()) {
+    monaco.editor.setModelLanguage(editor.getModel(), language || 'plaintext')
+    registerCompletionProvider()
+  }
+})
+
 // 暴露方法给父组件
 defineExpose({
   focus: () => editor?.focus(),
   getValue: () => editor?.getValue(),
   setValue: (value) => editor?.setValue(value),
+  insertText: (value) => {
+    if (!editor || !value) return
+    const selection = editor.getSelection()
+    editor.executeEdits('catalog', [{ range: selection, text: value, forceMoveMarkers: true }])
+    editor.focus()
+  },
   getSelection: () => {
     const selection = editor?.getSelection()
     return editor?.getModel()?.getValueInRange(selection) || ''

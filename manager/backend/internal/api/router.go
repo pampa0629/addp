@@ -34,6 +34,7 @@ func SetupRouter(
 	redisClient *redis.Client,
 	embeddingService *service.EmbeddingService,
 	embeddingConfigurationService *service.EmbeddingConfigurationService,
+	inferenceScenarioBindingService *service.InferenceScenarioBindingService,
 	spatialPreviewService *service.SpatialPreviewService,
 	rasterCOGRepo *repository.RasterCOGRepository,
 	taskProviderHandler *TaskProviderHandler,
@@ -95,6 +96,13 @@ func SetupRouter(
 		handler := NewEmbeddingConfigurationHandler(embeddingConfigurationService)
 		platform.GET("/settings/embedding", auth.MustNewPermissionGuard(managerauthorization.PermissionManagerConfigurationRead), handler.Get)
 		platform.PUT("/settings/embedding", auth.MustNewPermissionGuard(managerauthorization.PermissionManagerConfigurationUpdate), handler.Update)
+	}
+	if inferenceScenarioBindingService != nil {
+		bindingHandler := NewInferenceScenarioBindingHandler(inferenceScenarioBindingService)
+		settings := router.Group("/api/v1/manager")
+		settings.Use(auth.MustNewMiddleware(auth.MiddlewareConfig{SystemURL: cfg.SystemServiceURL}))
+		settings.GET("/settings/inference-binding", auth.MustNewPermissionGuard(managerauthorization.PermissionManagerConfigurationRead), bindingHandler.Get)
+		settings.PUT("/settings/inference-binding", auth.MustNewPermissionGuard(managerauthorization.PermissionManagerConfigurationUpdate), bindingHandler.Update)
 	}
 
 	// API 路由组

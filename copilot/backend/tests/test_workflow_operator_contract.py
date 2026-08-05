@@ -112,7 +112,7 @@ class FailingPipeline:
 async def _assert_workflow_api_returns_non_2xx_with_upstream_reason(monkeypatch):
     from addp_common.auth import AuthorizationContext
 
-    monkeypatch.setattr(workflow_api, "get_workflow_pipeline", lambda: FailingPipeline())
+    monkeypatch.setattr(workflow_api, "get_workflow_pipeline", lambda *_args: FailingPipeline())
     request = workflow_api.WorkflowGenerationRequest(
         query="load roads",
         workflow_engine_id=20,

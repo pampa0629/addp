@@ -223,6 +223,7 @@ SERVICES=(
     "asset-backend:asset/backend"
     "portal-backend:portal/backend"
     "graph-backend:graph/backend"
+    "inference-backend:inference/backend"
     "gateway:gateway"
 )
 failed=()

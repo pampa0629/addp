@@ -69,6 +69,7 @@ export const MODULE_URLS = {
   asset:        _url(5184, 'asset'),
   agent:        _url(5186, 'agent'),
   graph:        _url(5187, 'graph'),
+  inference:    _url(5188, 'inference'),
 }
 
 export const PORTAL_URL = window.location.origin
@@ -150,6 +151,10 @@ export const PAGE_MAPS = {
     'knowledge-service': 'knowledge-service',
     '':                  'ontologies',
   },
+  inference: {
+    'settings/models': 'settings/models',
+    '': 'settings/models',
+  },
   // system 和 agent 无需映射，page 直接透传
 }
 
@@ -171,6 +176,7 @@ export const DEFAULT_ROUTES = {
   asset:        '/asset/assets',
   agent:        '/agent',
   graph:        '/graph/ontologies',
+  inference:    '/inference/settings/models',
 }
 
 // ─── 侧边栏菜单配置（数据驱动渲染，替代 300 行硬编码 template）──────────────

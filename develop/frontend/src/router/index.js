@@ -19,7 +19,6 @@ const routes = [
       {
         path: 'sql',
         name: 'QueryEditor',
-        alias: 'query',
         component: () => import('../views/QueryEditor.vue'),
         meta: { requiresAuth: true, title: '查询编辑器' }
       },
@@ -28,12 +27,6 @@ const routes = [
         name: 'NotebookEditor',
         component: () => import('../views/NotebookEditor.vue'),
         meta: { requiresAuth: true, title: 'Notebook 开发' }
-      },
-      {
-        path: 'sql-tasks',
-        name: 'QueryTasks',
-        component: () => import('../views/QueryTasks.vue'),
-        meta: { requiresAuth: true, title: '查询任务' }
       },
       {
         path: 'workflow',
@@ -80,12 +73,12 @@ import { createAuthGuard } from '@common-ui'
 // 路径规范化函数：处理 /develop/ 前缀
 const normalizeRedirect = fullPath => {
   if (!fullPath) {
-    return '/query'  // 默认重定向到 SQL 编辑器
+    return '/sql'
   }
 
   // 处理根路径重定向
   if (fullPath === '/develop' || fullPath === '/develop/') {
-    return '/query'
+    return '/sql'
   }
 
   // 移除模块前缀（如果存在）

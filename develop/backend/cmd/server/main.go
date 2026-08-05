@@ -117,7 +117,7 @@ func main() {
 	log.Printf("✅ OperatorDiscoveryService 初始化完成")
 
 	// 8. DevExecutor 统一执行器（执行前复用正式工作流校验）
-	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, operatorDiscovery, metaClient, sqlEngine, federatedQueryService, notebookExecutionService)
+	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, operatorDiscovery, metaClient, sqlEngine, federatedQueryService, notebookExecutionService, cfg.QueryResultLimit)
 	log.Printf("✅ DevExecutor 初始化完成（使用统一执行表）")
 	toolApprovalService := service.NewToolApprovalService(db, devExecutor)
 

@@ -1,0 +1,16 @@
+FROM localhost:5001/debian-slim:latest
+
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata && rm -rf /var/lib/apt/lists/*
+
+ARG BUILD_ARCH=amd64
+ARG BUILD_TYPE=release
+ARG GOOS=linux
+
+WORKDIR /app
+
+COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/inference ./server
+RUN chmod +x ./server
+
+EXPOSE 8191
+
+CMD ["./server"]
