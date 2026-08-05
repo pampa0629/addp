@@ -168,6 +168,8 @@ full_name 使用引擎原生术语：
 - PostgreSQL：`<schema>.<table>`
 - MySQL / Doris / ClickHouse：`<database>.<table>`
 
+前端资源摘要和选择结果必须沿用所属引擎的原生路径风格：关系型数据库、MongoDB 和 Neo4j 的层级名称使用 `.`，对象存储和文件系统使用 `/`；Kafka topic 保留原名。`ResourceLocator` 的 `/path/` 仅是平台内部 URI 编码，不是用户可见路径格式。资源摘要同时展示引擎实例名称，不能以 Engine ID 或 locator 代替。
+
 | 节点/数据项类型 | full_name 示例 | 说明 |
 |--------------|--------------|------|
 | PostgreSQL schema 节点 | `public` | PostgreSQL schema 名 |

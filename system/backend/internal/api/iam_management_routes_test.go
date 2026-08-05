@@ -15,7 +15,7 @@ func TestRegisterIAMManagementRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtime, err := NewIAMRuntime(db, testIAMRuntimeConfig())
+	runtime, err := NewIAMRuntime(db, testIAMRuntimeConfig(), testIAMSecurityPolicy())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,6 +38,7 @@ func TestRegisterIAMManagementRoutes(t *testing.T) {
 		"GET /api/v1/system/platform/audit/events/trends",
 		"GET /api/v1/system/platform/identity_changes",
 		"GET /api/v1/system/platform/identity_changes/:id",
+		"GET /api/v1/system/platform/security_policy",
 		"GET /api/v1/system/platform/tenant_administrator_candidates",
 		"GET /api/v1/system/platform/tenants",
 		"GET /api/v1/system/platform/tenants/:id",
@@ -77,6 +78,7 @@ func TestRegisterIAMManagementRoutes(t *testing.T) {
 		"POST /api/v1/system/tenant/roles",
 		"DELETE /api/v1/system/tenant/roles/:id",
 		"PUT /api/v1/system/platform/tenants/:id",
+		"PUT /api/v1/system/platform/security_policy",
 		"PUT /api/v1/system/platform/users/:id",
 		"PUT /api/v1/system/tenant/memberships/:id",
 		"PUT /api/v1/system/tenant/roles/:id",

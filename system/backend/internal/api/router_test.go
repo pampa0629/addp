@@ -3,6 +3,7 @@ package api
 import (
 	"testing"
 
+	"github.com/addp/system/internal/iam"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -12,10 +13,18 @@ func TestSetupRouterUsesOnlyTargetIAMSurface(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS system").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&iam.SecurityPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	policy := iam.DefaultSecurityPolicy()
+	if err := db.Create(&policy).Error; err != nil {
+		t.Fatal(err)
+	}
 	cfg := testIAMRuntimeConfig()
 	cfg.InternalAPIKey = "internal-test-key"
-	cfg.OAuthPublicRateLimitPerMinute = 60
-	cfg.OAuthUserRateLimitPerMinute = 30
 	router := SetupRouter(db, cfg)
 	routes := make(map[string]struct{})
 	for _, route := range router.Routes() {
@@ -24,6 +33,7 @@ func TestSetupRouterUsesOnlyTargetIAMSurface(t *testing.T) {
 	for _, required := range []string{
 		"POST /api/v1/system/login",
 		"GET /api/v1/system/platform/tenants",
+		"GET /api/v1/system/platform/security_policy",
 		"GET /api/v1/system/tenant/invitations",
 		"POST /api/v1/system/tenant/invitations/registrations",
 		"GET /api/v1/system/engines",

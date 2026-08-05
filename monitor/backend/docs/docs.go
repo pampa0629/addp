@@ -3101,7 +3101,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "capabilities": {
-                    "description": "能力描述（JSON 格式，含 task.capabilities/v1、task_capabilities 等）",
+                    "description": "能力描述（JSON 格式，含 task.capabilities/v2、task_capabilities 等）",
                     "type": "string"
                 },
                 "created_at": {

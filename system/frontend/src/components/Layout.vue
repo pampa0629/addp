@@ -56,6 +56,10 @@
               <el-icon><Lock /></el-icon>
               <span>{{ t('system.layout.iam') }}</span>
             </el-menu-item>
+            <el-menu-item v-if="authStore.hasPermission('iam.security_policy.read')" index="/settings/security-policy">
+              <el-icon><Lock /></el-icon>
+              <span>{{ t('system.layout.securityPolicy') }}</span>
+            </el-menu-item>
             <el-menu-item v-if="authStore.hasPermission('system.engine.read')" index="/engines">
               <el-icon><Connection /></el-icon>
               <span>{{ t('system.layout.engineMgmt') }}</span>

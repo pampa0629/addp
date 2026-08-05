@@ -12,29 +12,22 @@ NC='\033[0m' # No Color
 echo "=== ADDP Quick View MVT Tile API 测试工具 ==="
 echo ""
 
-# 1. 登录获取 token
-echo "📝 步骤 1: 登录获取 token..."
-read -p "用户名 [zuhu1]: " USERNAME
-USERNAME=${USERNAME:-zuhu1}
-
-read -sp "密码: " PASSWORD
+# 1. 读取当前 opaque User Access Token。
+echo "📝 步骤 1: 校验当前 User Access Token..."
+read -r -s -p "User Access Token: " TOKEN
 echo ""
-PASSWORD=${PASSWORD:-xx123zzm}
-
-RESPONSE=$(curl -s http://localhost:8180/api/v1/system/login \
-  -H "Content-Type: application/json" \
-  -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}")
-
-TOKEN=$(echo "$RESPONSE" | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
-
 if [ -z "$TOKEN" ]; then
-  echo -e "${RED}❌ 登录失败:${NC}"
-  echo "$RESPONSE"
+  echo -e "${RED}❌ User Access Token 不得为空${NC}"
   exit 1
 fi
 
-echo -e "${GREEN}✅ Token 获取成功${NC}"
-echo "Token: ${TOKEN:0:50}..."
+if ! curl -sf http://localhost:8180/api/v1/system/auth/context \
+  -H "Authorization: Bearer $TOKEN" >/dev/null; then
+  echo -e "${RED}❌ User Access Token 无效或已过期${NC}"
+  exit 1
+fi
+
+echo -e "${GREEN}✅ AuthContext 校验成功${NC}"
 echo ""
 
 # 2. 测试瓦片请求

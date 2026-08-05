@@ -3,422 +3,182 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/orchestrator/internal/models"
 )
 
-func TestValidateStepTaskReferencesAcceptsDeclaredTaskType(t *testing.T) {
-	registry := taskProviderRegistryForTest(map[string]*commonModels.TaskProvider{
-		"meta": taskProviderForTest("meta", taskCapabilitiesForTest("scan", false, `{"type":"object","additionalProperties":false}`)),
+func TestValidateStepTaskReferencesUsesConcreteTaskExecutionContract(t *testing.T) {
+	registry := taskProviderRegistryForTest(t, map[uint]string{
+		1: executionContractJSON(`{"type":"object","properties":{"limit":{"type":"integer"}},"additionalProperties":false}`),
 	})
-
-	err := registry.ValidateStepTaskReferences(context.Background(), models.Steps{{
-		ID: "scan", Name: "Scan", Provider: "meta", TaskType: "scan", TaskID: 1,
-	}})
-
-	if err != nil {
-		t.Fatalf("ValidateStepTaskReferences() error = %v, want nil", err)
-	}
-}
-
-func TestValidateStepTaskReferencesRejectsParametersDisallowedByExecutionSchema(t *testing.T) {
-	registry := taskProviderRegistryForTest(map[string]*commonModels.TaskProvider{
-		"meta": taskProviderForTest("meta", taskCapabilitiesForTest("scan", false, `{"type":"object","additionalProperties":false}`)),
-	})
-
-	err := registry.ValidateStepTaskReferences(context.Background(), models.Steps{{
-		ID: "scan", Name: "Scan", Provider: "meta", TaskType: "scan", TaskID: 1,
-		Parameters: map[string]interface{}{"force": true},
-	}})
-
-	if err == nil {
-		t.Fatal("expected disallowed parameters to be rejected")
-	}
-	if !strings.Contains(err.Error(), "parameters.force is not allowed") {
-		t.Fatalf("error = %q, want parameters.force is not allowed", err.Error())
-	}
-	var stepErr *StepTaskValidationError
-	if !errors.As(err, &stepErr) {
-		t.Fatalf("error = %T %v, want *StepTaskValidationError", err, err)
-	}
-	if stepErr.Code != StepTaskParametersInvalid || stepErr.StepIndex != 0 || stepErr.Provider != "meta" || stepErr.TaskType != "scan" {
-		t.Fatalf("step validation error = %#v", stepErr)
-	}
-}
-
-func TestValidateStepTaskReferencesAcceptsDeclaredExecutionSchemaParameters(t *testing.T) {
-	registry := taskProviderRegistryForTest(map[string]*commonModels.TaskProvider{
-		"develop": taskProviderForTest("develop", taskCapabilitiesForTest("query", false, `{"type":"object","properties":{"limit":{"type":"integer"}},"additionalProperties":false}`)),
-	})
-
-	err := registry.ValidateStepTaskReferences(context.Background(), models.Steps{{
-		ID: "query", Name: "Query", Provider: "develop", TaskType: "query", TaskID: 1,
+	err := registry.ValidateStepTaskReferences(context.Background(), 7, models.Steps{{
+		ID: "query", Name: "Query", Provider: "develop", TaskType: "workflow", TaskID: 1,
 		Parameters: map[string]interface{}{"limit": 100},
 	}})
-
 	if err != nil {
-		t.Fatalf("ValidateStepTaskReferences() error = %v, want nil", err)
+		t.Fatalf("ValidateStepTaskReferences() error = %v", err)
 	}
 }
 
-func TestValidateStepTaskReferencesAllowsTemplatesAndRejectsInvalidConstants(t *testing.T) {
-	executionSchema := `{
-		"type":"object",
-		"properties":{
-			"mode":{"type":"string","enum":["basic","deep"]},
-			"limit":{"type":"integer","minimum":1,"maximum":1000}
-		},
-		"required":["mode"],
-		"additionalProperties":false
-	}`
-	registry := taskProviderRegistryForTest(map[string]*commonModels.TaskProvider{
-		"develop": taskProviderForTest("develop", taskCapabilitiesForTest("query", false, executionSchema)),
+func TestValidateStepTaskReferencesRejectsParameterOutsideConcreteContract(t *testing.T) {
+	registry := taskProviderRegistryForTest(t, map[uint]string{
+		1: executionContractJSON(`{"type":"object","additionalProperties":false}`),
 	})
-
-	err := registry.ValidateStepTaskReferences(context.Background(), models.Steps{{
-		ID: "query", Name: "Query", Provider: "develop", TaskType: "query", TaskID: 1,
-		Parameters: map[string]interface{}{"mode": "{{scan.mode}}", "limit": "{{scan.limit}}"},
+	err := registry.ValidateStepTaskReferences(context.Background(), 7, models.Steps{{
+		ID: "query", Name: "Query", Provider: "develop", TaskType: "workflow", TaskID: 1,
+		Parameters: map[string]interface{}{"force": true},
 	}})
+	if err == nil || !strings.Contains(err.Error(), "parameters.force is not allowed") {
+		t.Fatalf("error = %v, want force rejection", err)
+	}
+	var stepErr *StepTaskValidationError
+	if !errors.As(err, &stepErr) || stepErr.Code != StepTaskParametersInvalid || stepErr.StepIndex != 0 {
+		t.Fatalf("step error = %#v", stepErr)
+	}
+}
+
+func TestValidateStepTaskReferencesSeparatesContractsForSameTaskType(t *testing.T) {
+	registry := taskProviderRegistryForTest(t, map[uint]string{
+		1: executionContractJSON(`{"type":"object","properties":{"limit":{"type":"integer"}},"additionalProperties":false}`),
+		2: executionContractJSON(`{"type":"object","properties":{"distance":{"type":"number"}},"additionalProperties":false}`),
+	})
+	err := registry.ValidateStepTaskReferences(context.Background(), 7, models.Steps{
+		{ID: "first", Name: "First", Provider: "develop", TaskType: "workflow", TaskID: 1, Parameters: map[string]interface{}{"limit": 10}},
+		{ID: "second", Name: "Second", Provider: "develop", TaskType: "workflow", TaskID: 2, Parameters: map[string]interface{}{"limit": 10}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "steps[1]") || !strings.Contains(err.Error(), "parameters.limit") {
+		t.Fatalf("error = %v, want task 2 contract rejection", err)
+	}
+}
+
+func TestValidateStepTaskReferencesAcceptsOnlyDeclaredTypeCompatibleOutputs(t *testing.T) {
+	registry := taskProviderRegistryForTest(t, map[uint]string{
+		1: `{
+			"input_schema":{"type":"object","additionalProperties":false},
+			"input_defaults":{},"input_ui_schema":{},
+			"output_schema":{"type":"object","properties":{"save_3":{"type":"object","properties":{"resource":{"type":"object","properties":{"locator":{"type":"string"}},"additionalProperties":false}},"additionalProperties":false}},"additionalProperties":false}
+		}`,
+		2: executionContractJSON(`{"type":"object","properties":{"load_1":{"type":"object","properties":{"source_resource":{"type":"object","properties":{"locator":{"type":"string"}},"additionalProperties":false}},"additionalProperties":false}},"additionalProperties":false}`),
+	})
+	steps := models.Steps{
+		{ID: "produce", Name: "Produce", Provider: "develop", TaskType: "workflow", TaskID: 1},
+		{ID: "consume", Name: "Consume", Provider: "develop", TaskType: "workflow", TaskID: 2, DependsOn: []string{"produce"}, Parameters: map[string]interface{}{
+			"load_1": map[string]interface{}{
+				"source_resource": map[string]interface{}{"locator": "{{produce.outputs.save_3.resource.locator}}"},
+			},
+		}},
+	}
+	if err := registry.ValidateStepTaskReferences(context.Background(), 7, steps); err != nil {
+		t.Fatalf("declared output binding error = %v", err)
+	}
+
+	steps[1].Parameters["load_1"].(map[string]interface{})["source_resource"].(map[string]interface{})["locator"] = "{{produce.metadata.result.produced_targets.0.locator}}"
+	err := registry.ValidateStepTaskReferences(context.Background(), 7, steps)
+	if err == nil || !strings.Contains(err.Error(), "declared output") {
+		t.Fatalf("arbitrary output path error = %v", err)
+	}
+}
+
+func TestGetTaskExecutionContractRequiresValidTaskDetailContract(t *testing.T) {
+	registry := taskProviderRegistryForTest(t, map[uint]string{
+		1: `{"input_schema":{"type":"object"}}`,
+	})
+	provider, err := registry.GetProvider(context.Background(), "develop")
 	if err != nil {
-		t.Fatalf("template parameters validation error = %v, want nil", err)
+		t.Fatal(err)
 	}
-
-	tests := []struct {
-		name       string
-		parameters map[string]interface{}
-		want       string
-	}{
-		{name: "required", parameters: map[string]interface{}{}, want: "parameters.mode is required"},
-		{name: "enum", parameters: map[string]interface{}{"mode": "wide"}, want: "parameters.mode must be one of"},
-		{name: "type", parameters: map[string]interface{}{"mode": "basic", "limit": "100"}, want: "parameters.limit must be integer"},
-		{name: "range", parameters: map[string]interface{}{"mode": "basic", "limit": 1001}, want: "parameters.limit must be less than or equal to 1000"},
-	}
-	for _, testCase := range tests {
-		t.Run(testCase.name, func(t *testing.T) {
-			err := registry.ValidateStepTaskReferences(context.Background(), models.Steps{{
-				ID: "query", Name: "Query", Provider: "develop", TaskType: "query", TaskID: 1,
-				Parameters: testCase.parameters,
-			}})
-			if err == nil || !strings.Contains(err.Error(), testCase.want) {
-				t.Fatalf("error = %v, want containing %q", err, testCase.want)
-			}
-		})
+	_, err = registry.GetTaskExecutionContract(context.Background(), provider, "workflow", 1, 7)
+	if err == nil || !strings.Contains(err.Error(), "execution_contract") {
+		t.Fatalf("error = %v, want invalid execution_contract", err)
 	}
 }
 
-func TestValidateStepTaskReferencesAcceptsExistingResultOverwriteAndRejectsLegacyConfirmation(t *testing.T) {
-	executionSchema := `{"type":"object","properties":{"existing_result_action":{"type":"string","enum":["overwrite"]}},"additionalProperties":false}`
-	registry := taskProviderRegistryForTest(map[string]*commonModels.TaskProvider{
-		"manager": taskProviderForTest("manager", taskCapabilitiesForTest("vector_tile_cache_generation", false, executionSchema)),
-	})
-
-	err := registry.ValidateStepTaskReferences(context.Background(), models.Steps{{
-		ID: "tile", Name: "Tile", Provider: "manager", TaskType: "vector_tile_cache_generation", TaskID: 1,
-		Parameters: map[string]interface{}{"existing_result_action": "overwrite"},
-	}})
-	if err != nil {
-		t.Fatalf("overwrite step validation error = %v, want nil", err)
-	}
-
-	err = registry.ValidateStepTaskReferences(context.Background(), models.Steps{{
-		ID: "tile", Name: "Tile", Provider: "manager", TaskType: "vector_tile_cache_generation", TaskID: 1,
-		Parameters: map[string]interface{}{"confirm_existing_result": true},
-	}})
-	if err == nil || !strings.Contains(err.Error(), "parameters.confirm_existing_result is not allowed") {
-		t.Fatalf("legacy confirmation validation error = %v", err)
-	}
-}
-
-func TestValidateStepTaskReferencesValidatesParametersForRepeatedTaskType(t *testing.T) {
-	registry := taskProviderRegistryForTest(map[string]*commonModels.TaskProvider{
-		"meta": taskProviderForTest("meta", taskCapabilitiesForTest("scan", false, `{"type":"object","additionalProperties":false}`)),
-	})
-
-	err := registry.ValidateStepTaskReferences(context.Background(), models.Steps{
-		{ID: "scan_a", Name: "Scan A", Provider: "meta", TaskType: "scan", TaskID: 1},
-		{
-			ID: "scan_b", Name: "Scan B", Provider: "meta", TaskType: "scan", TaskID: 2,
-			Parameters: map[string]interface{}{"force": true},
-		},
-	})
-
-	if err == nil {
-		t.Fatal("expected second step parameters to be rejected")
-	}
-	if !strings.Contains(err.Error(), "steps[1]") || !strings.Contains(err.Error(), "parameters.force is not allowed") {
-		t.Fatalf("error = %q, want steps[1] parameters.force rejection", err.Error())
-	}
-}
-
-func TestValidateStepTaskReferencesRejectsUndeclaredTaskType(t *testing.T) {
-	registry := taskProviderRegistryForTest(map[string]*commonModels.TaskProvider{
-		"manager": taskProviderForTest("manager", taskCapabilitiesForTest("vector_tile_cache_generation", false, `{"type":"object","additionalProperties":false}`)),
-	})
-
-	err := registry.ValidateStepTaskReferences(context.Background(), models.Steps{{
-		ID: "embedding", Name: "Embedding", Provider: "manager", TaskType: "embedding", TaskID: 1,
-	}})
-
-	if err == nil {
-		t.Fatal("expected undeclared task_type to be rejected")
-	}
-	if !strings.Contains(err.Error(), "not declared") {
-		t.Fatalf("error = %q, want not declared", err.Error())
-	}
-}
-
-func TestValidateStepTaskReferencesRejectsDeprecatedTaskType(t *testing.T) {
-	registry := taskProviderRegistryForTest(map[string]*commonModels.TaskProvider{
-		"develop": taskProviderForTest("develop", taskCapabilitiesForTest("workflow", true, `{"type":"object","additionalProperties":false}`)),
-	})
-
-	err := registry.ValidateStepTaskReferences(context.Background(), models.Steps{{
+func TestValidateStepTaskReferencesRejectsUndeclaredAndDeprecatedTaskTypesBeforeDetailCall(t *testing.T) {
+	registry := taskProviderRegistryForTest(t, map[uint]string{})
+	provider := registry.providers["develop"]
+	provider.Capabilities = capabilityJSONForTest("query", false)
+	err := registry.ValidateStepTaskReferences(context.Background(), 7, models.Steps{{
 		ID: "workflow", Name: "Workflow", Provider: "develop", TaskType: "workflow", TaskID: 1,
 	}})
-
-	if err == nil {
-		t.Fatal("expected deprecated task_type to be rejected")
+	if err == nil || !strings.Contains(err.Error(), "not declared") {
+		t.Fatalf("undeclared error = %v", err)
 	}
-	if !strings.Contains(err.Error(), "deprecated") {
-		t.Fatalf("error = %q, want deprecated", err.Error())
-	}
-}
 
-func TestValidateStepTaskReferencesRejectsInvalidCapabilities(t *testing.T) {
-	registry := taskProviderRegistryForTest(map[string]*commonModels.TaskProvider{
-		"meta": taskProviderForTest("meta", `{"schema_version":"legacy"}`),
-	})
-
-	err := registry.ValidateStepTaskReferences(context.Background(), models.Steps{{
-		ID: "scan", Name: "Scan", Provider: "meta", TaskType: "scan", TaskID: 1,
+	provider.Capabilities = capabilityJSONForTest("workflow", true)
+	err = registry.ValidateStepTaskReferences(context.Background(), 7, models.Steps{{
+		ID: "workflow", Name: "Workflow", Provider: "develop", TaskType: "workflow", TaskID: 1,
 	}})
-
-	if err == nil {
-		t.Fatal("expected invalid capabilities to be rejected")
-	}
-	if !strings.Contains(err.Error(), "capabilities invalid") {
-		t.Fatalf("error = %q, want capabilities invalid", err.Error())
+	if err == nil || !strings.Contains(err.Error(), "deprecated") {
+		t.Fatalf("deprecated error = %v", err)
 	}
 }
 
-func TestValidateStepTaskReferencesRejectsMissingExecutionSchema(t *testing.T) {
-	registry := taskProviderRegistryForTest(map[string]*commonModels.TaskProvider{
-		"meta": taskProviderForTest("meta", `{
-			"schema_version":"task.capabilities/v1",
-			"task_capabilities":[{
-				"type":"scan",
-				"display_name":"scan",
-				"description":"scan task",
-				"definition_schema":{"type":"object"},
-				"supports_schedule":false,
-				"supports_cancel":false,
-				"supports_inline_execution":false,
-				"create_url":"/meta/scan",
-				"edit_url":"/meta/scan?task_id=:id",
-				"deprecated":false
-			}]
-		}`),
-	})
-
-	err := registry.ValidateStepTaskReferences(context.Background(), models.Steps{{
-		ID: "scan", Name: "Scan", Provider: "meta", TaskType: "scan", TaskID: 1,
-	}})
-
-	if err == nil {
-		t.Fatal("expected missing execution_schema to be rejected")
+func taskProviderRegistryForTest(t *testing.T, contracts map[uint]string) *TaskProviderRegistry {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("Authorization") != "Bearer tenant-token" {
+			http.Error(response, "missing token", http.StatusUnauthorized)
+			return
+		}
+		var taskID uint
+		if _, err := fmt.Sscanf(request.URL.Path, "/tasks/workflow/%d", &taskID); err != nil {
+			http.NotFound(response, request)
+			return
+		}
+		contract, exists := contracts[taskID]
+		if !exists {
+			http.NotFound(response, request)
+			return
+		}
+		response.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(response, `{"id":%d,"task_type":"workflow","execution_contract":%s}`, taskID, contract)
+	}))
+	t.Cleanup(server.Close)
+	tokenSource := registrationServiceTokens("tenant-token")
+	systemClient := commonClient.NewSystemServiceClient(server.URL, tokenSource, server.Client())
+	provider := &commonModels.TaskProvider{
+		ModuleName: "develop", BaseURL: server.URL, TaskDetailEndpoint: "/tasks/{task_type}/{id}",
+		Capabilities: capabilityJSONForTest("workflow", false), IsEnabled: true,
 	}
-	if !strings.Contains(err.Error(), "execution_schema is required") {
-		t.Fatalf("error = %q, want execution_schema is required", err.Error())
-	}
-}
-
-func TestValidateStepTaskReferencesRejectsDuplicateTaskType(t *testing.T) {
-	registry := taskProviderRegistryForTest(map[string]*commonModels.TaskProvider{
-		"meta": taskProviderForTest("meta", `{
-			"schema_version":"task.capabilities/v1",
-			"task_capabilities":[
-				{
-					"type":"scan",
-					"display_name":"scan",
-					"description":"scan task",
-					"definition_schema":{"type":"object"},
-					"execution_schema":{"type":"object"},
-					"supports_schedule":false,
-					"supports_cancel":false,
-					"supports_inline_execution":false,
-					"create_url":"/meta/scan",
-					"edit_url":"/meta/scan?task_id=:id",
-					"deprecated":false
-				},
-				{
-					"type":"scan",
-					"display_name":"scan",
-					"description":"scan task",
-					"definition_schema":{"type":"object"},
-					"execution_schema":{"type":"object"},
-					"supports_schedule":false,
-					"supports_cancel":false,
-					"supports_inline_execution":false,
-					"create_url":"/meta/scan",
-					"edit_url":"/meta/scan?task_id=:id",
-					"deprecated":false
-				}
-			]
-		}`),
-	})
-
-	err := registry.ValidateStepTaskReferences(context.Background(), models.Steps{{
-		ID: "scan", Name: "Scan", Provider: "meta", TaskType: "scan", TaskID: 1,
-	}})
-
-	if err == nil {
-		t.Fatal("expected duplicate task_type to be rejected")
-	}
-	if !strings.Contains(err.Error(), `duplicate task_type "scan"`) {
-		t.Fatalf("error = %q, want duplicate task_type", err.Error())
-	}
-}
-
-func TestValidateStepTaskReferencesRejectsInvalidTaskTypeName(t *testing.T) {
-	registry := taskProviderRegistryForTest(map[string]*commonModels.TaskProvider{
-		"meta": taskProviderForTest("meta", `{
-			"schema_version":"task.capabilities/v1",
-			"task_capabilities":[{
-				"type":"Scan",
-				"display_name":"scan",
-				"description":"scan task",
-				"definition_schema":{"type":"object"},
-				"execution_schema":{"type":"object"},
-				"supports_schedule":false,
-				"supports_cancel":false,
-				"supports_inline_execution":false,
-				"create_url":"/meta/scan",
-				"edit_url":"/meta/scan?task_id=:id",
-				"deprecated":false
-			}]
-		}`),
-	})
-
-	err := registry.ValidateStepTaskReferences(context.Background(), models.Steps{{
-		ID: "scan", Name: "Scan", Provider: "meta", TaskType: "scan", TaskID: 1,
-	}})
-
-	if err == nil {
-		t.Fatal("expected invalid task_type name to be rejected")
-	}
-	if !strings.Contains(err.Error(), "type must match") {
-		t.Fatalf("error = %q, want type must match", err.Error())
-	}
-}
-
-func TestValidateStepTaskReferencesRejectsDeprecatedNonBoolean(t *testing.T) {
-	registry := taskProviderRegistryForTest(map[string]*commonModels.TaskProvider{
-		"meta": taskProviderForTest("meta", `{
-			"schema_version":"task.capabilities/v1",
-			"task_capabilities":[{
-				"type":"scan",
-				"display_name":"scan",
-				"description":"scan task",
-				"definition_schema":{"type":"object"},
-				"execution_schema":{"type":"object"},
-				"supports_schedule":false,
-				"supports_cancel":false,
-				"supports_inline_execution":false,
-				"create_url":"/meta/scan",
-				"edit_url":"/meta/scan?task_id=:id",
-				"deprecated":"false"
-			}]
-		}`),
-	})
-
-	err := registry.ValidateStepTaskReferences(context.Background(), models.Steps{{
-		ID: "scan", Name: "Scan", Provider: "meta", TaskType: "scan", TaskID: 1,
-	}})
-
-	if err == nil {
-		t.Fatal("expected non-boolean deprecated to be rejected")
-	}
-	if !strings.Contains(err.Error(), "deprecated must be boolean") {
-		t.Fatalf("error = %q, want deprecated must be boolean", err.Error())
-	}
-}
-
-func TestValidateStepTaskReferencesRejectsExecutionSchemaTypeNotObject(t *testing.T) {
-	registry := taskProviderRegistryForTest(map[string]*commonModels.TaskProvider{
-		"meta": taskProviderForTest("meta", `{
-			"schema_version":"task.capabilities/v1",
-			"task_capabilities":[{
-				"type":"scan",
-				"display_name":"scan",
-				"description":"scan task",
-				"definition_schema":{"type":"object"},
-				"execution_schema":{"type":"array"},
-				"supports_schedule":false,
-				"supports_cancel":false,
-				"supports_inline_execution":false,
-				"create_url":"/meta/scan",
-				"edit_url":"/meta/scan?task_id=:id",
-				"deprecated":false
-			}]
-		}`),
-	})
-
-	err := registry.ValidateStepTaskReferences(context.Background(), models.Steps{{
-		ID: "scan", Name: "Scan", Provider: "meta", TaskType: "scan", TaskID: 1,
-	}})
-
-	if err == nil {
-		t.Fatal("expected execution_schema.type != object to be rejected")
-	}
-	if !strings.Contains(err.Error(), "execution_schema.type must be object") {
-		t.Fatalf("error = %q, want execution_schema.type must be object", err.Error())
-	}
-}
-
-func taskProviderRegistryForTest(providers map[string]*commonModels.TaskProvider) *TaskProviderRegistry {
 	return &TaskProviderRegistry{
-		providers:   providers,
-		cacheTTL:    time.Hour,
-		lastRefresh: time.Now(),
+		systemClient: systemClient,
+		providers: map[string]*commonModels.TaskProvider{
+			"develop": provider,
+		},
+		cacheTTL: time.Hour, lastRefresh: time.Now(), httpClient: server.Client(),
 	}
 }
 
-func taskProviderForTest(moduleName string, capabilities string) *commonModels.TaskProvider {
-	capabilitiesJSON := commonModels.JSONString(capabilities)
-	return &commonModels.TaskProvider{
-		ModuleName:   moduleName,
-		BaseURL:      "http://example.invalid",
-		Capabilities: &capabilitiesJSON,
-		IsEnabled:    true,
-	}
-}
-
-func taskCapabilitiesForTest(taskType string, deprecated bool, executionSchema string) string {
-	return `{
-		"schema_version":"task.capabilities/v1",
+func capabilityJSONForTest(taskType string, deprecated bool) *commonModels.JSONString {
+	raw := commonModels.JSONString(fmt.Sprintf(`{
+		"schema_version":"task.capabilities/v2",
 		"task_capabilities":[{
-			"type":"` + taskType + `",
-			"display_name":"` + taskType + `",
-			"description":"` + taskType + ` task",
+			"type":%q,"display_name":%q,"description":"task",
 			"definition_schema":{"type":"object"},
-			"execution_schema":` + executionSchema + `,
-			"supports_schedule":false,
-			"supports_cancel":false,
-			"supports_inline_execution":false,
-			"create_url":"/` + taskType + `/tasks",
-			"edit_url":"/` + taskType + `/tasks?task_id=:id",
-			"deprecated":` + boolJSON(deprecated) + `
+			"supports_schedule":false,"supports_cancel":false,"supports_inline_execution":false,
+			"create_url":"/tasks/create","edit_url":"/tasks/edit?id=:id","deprecated":%t
 		}]
+	}`, taskType, taskType, deprecated))
+	return &raw
+}
+
+func executionContractJSON(inputSchema string) string {
+	return `{
+		"input_schema":` + inputSchema + `,
+		"input_defaults":{},
+		"input_ui_schema":{},
+		"output_schema":{"type":"object","additionalProperties":false}
 	}`
 }
 
-func boolJSON(value bool) string {
-	if value {
-		return "true"
-	}
-	return "false"
+func taskCapabilitiesForTest(taskType string, deprecated bool, _ string) string {
+	return string(*capabilityJSONForTest(taskType, deprecated))
 }

@@ -434,13 +434,17 @@ func TestEnableSpatialWorkspaceInvokesBoundSuperMapWorkflowRuntime(t *testing.T)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"status": "healthy",
 				"dependencies": map[string]interface{}{
-					"objectsjava": map[string]interface{}{
+					"iobjects_cpp": map[string]interface{}{
 						"available": true,
-						"path":      "/opt/supermap/objectsjava/bin_linux_arm64",
+						"path":      "/opt/supermap/bin/bin",
 					},
-					"gpa_libs": map[string]interface{}{
+					"freetype": map[string]interface{}{
 						"available": true,
-						"path":      "/opt/supermap/gpa/libs",
+						"path":      "/lib/aarch64-linux-gnu",
+					},
+					"nfs": map[string]interface{}{
+						"available": true,
+						"path":      "/usr/sbin",
 					},
 				},
 			})

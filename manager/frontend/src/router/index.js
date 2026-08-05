@@ -18,6 +18,12 @@ const routes = [
         redirect: 'data-explorer'
       },
       {
+		path: 'settings/embedding',
+		name: 'EmbeddingConfiguration',
+		component: () => import('../views/EmbeddingConfiguration.vue'),
+		meta: { requiresAuth: true, title: '向量化配置-addp' }
+	  },
+	  {
         path: 'data-explorer',
         name: 'DataExplorer',
         component: () => import('../views/DataExplorer.vue'),

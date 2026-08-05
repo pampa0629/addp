@@ -151,7 +151,7 @@
 **核心能力**：
 - 跨模块任务编排（Meta 扫描 → Transfer 传输 → Manager 预览）
 - DAG 拓扑排序，检测循环依赖
-- 参数模板化（`{{stepID.field}}` 引用前序任务结果）
+- 执行参数来源（任务默认值、Step 固定值、直接依赖步骤声明的稳定输出）
 - 定时调度（Cron 表达式配置）
 - 任务依赖管理（depends_on）
 - 能力注册中心（发现各模块提供的任务）
@@ -365,7 +365,7 @@
 - **SystemClient**：与 System 模块通信（ListEngines、GetEngine）
 - **Resource 模型**：共享数据模型（用户、引擎、任务等）
 - **Engine connection_info**：共享引擎连接信息模型；DSN 仅由需要底层 driver 的数据库类插件按需构建
-- **配置加载器**：集中式配置加载，支持回退（`common/config/loader.go`）
+- **部署配置加载器**：读取进程环境和根 `.env` 中的部署配置；不得从 System 获取 owner 普通运行配置或建立 fallback（`common/config/loader.go`）
 - **工具函数**：AuthContext、加密、日志、类型转换等；业务模块不解析用户 Token
 
 **模块路径**：`common/`
@@ -430,7 +430,7 @@ import { TablePreview, GeoJsonPreview } from '@common-ui-map'
 - [ADDP 模块架构图](addp模块架构图.md) - 模块架构 Mermaid 图
 - [ADDP 开发原则](../spec/addp开发原则.md) - 开发指导原则
 - [ADDP 部署和开发步骤](../guide/addp部署和开发步骤.md) - 快速启动指南
-- [ADDP 配置介绍](../spec/addp配置介绍.md) - 环境变量和配置中心
+- [ADDP 配置规范](../spec/addp配置介绍.md) - 配置分层、管理能力和环境变量
 - [ADDP 端口分配](../spec/addp端口分配.md) - 完整端口列表
 - [ADDP 技术栈规约](../spec/addp技术栈规约.md) - Go 和前端依赖版本规范
 - [ADDP 共享模块介绍](../concepts/addp共享模块介绍.md) - common 和 common-frontend 详细说明

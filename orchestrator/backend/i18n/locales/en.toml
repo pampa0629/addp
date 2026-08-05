@@ -119,7 +119,22 @@ other = "Task type {{.TaskType}} referenced by step {{.StepNumber}} is not decla
 other = "Task type {{.TaskType}} referenced by step {{.StepNumber}} is deprecated"
 
 [orchestrator.error.step_parameter_schema_invalid]
-other = "The task type capability declaration referenced by step {{.StepNumber}} is invalid"
+other = "The concrete task execution contract for step {{.StepNumber}} is invalid"
+
+[orchestrator.error.output_binding_invalid_format]
+other = "Execution parameter {{.Path}} for step {{.StepNumber}} is not a valid upstream output binding"
+
+[orchestrator.error.output_binding_unknown_step]
+other = "Execution parameter {{.Path}} for step {{.StepNumber}} references unknown upstream step {{.SourceStep}}"
+
+[orchestrator.error.output_binding_undeclared]
+other = "Execution parameter {{.Path}} for step {{.StepNumber}} references output {{.OutputPath}} not declared by upstream step {{.SourceStep}}"
+
+[orchestrator.error.output_binding_unknown_target]
+other = "The target task for step {{.StepNumber}} does not declare execution parameter {{.Path}}"
+
+[orchestrator.error.output_binding_type_mismatch]
+other = "Execution parameter {{.Path}} for step {{.StepNumber}} cannot bind a {{.SourceType}} output to a {{.TargetType}} input"
 
 [orchestrator.error.step_parameter_invalid]
 other = "Execution parameters for step {{.StepNumber}} are invalid"

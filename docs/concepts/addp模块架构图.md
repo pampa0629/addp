@@ -419,6 +419,54 @@ graph TB
 
 ---
 
+## 配置管理职责
+
+ADDP 的配置管理采用“Console 集中呈现、System 集中治理、owner 模块自治”的结构。配置项的平台级或 Tenant 级范围与配置语义的 owner 是两个独立维度；System 不因为提供模块目录和 IAM 就成为所有配置的事实源。
+
+```mermaid
+flowchart LR
+    subgraph Owner["Owner 模块"]
+        Manifest["配置管理入口声明"]
+        OwnerFE["模块配置页面"]
+        OwnerAPI["模块配置 API"]
+        OwnerStore[("模块配置事实")]
+        Manifest --> OwnerFE
+        OwnerFE --> OwnerAPI
+        OwnerAPI --> OwnerStore
+    end
+
+    subgraph System["System"]
+        Registry["模块目录"]
+        IAM["AuthContext / Permission"]
+        Audit["统一审计"]
+    end
+
+    subgraph Console["Console"]
+        Hub["平台配置 / Tenant 配置入口"]
+    end
+
+    Manifest -->|"addp.configuration-management/v1"| Registry
+    Registry -->|"入口、范围、权限、状态"| Hub
+    Hub -->|"加载 owner 前端路由"| OwnerFE
+    OwnerAPI --> IAM
+    OwnerAPI --> Audit
+```
+
+| 组件 | 职责 | 明确不负责 |
+| --- | --- | --- |
+| Console | 按当前 AuthContext、Permission 和模块状态聚合配置入口，加载 owner 模块页面 | 保存配置值、解释业务字段、代替后端授权 |
+| System | 登记版本化配置管理入口能力，提供 IAM、Permission、统一审计及 System-owned 配置 | 保存其他模块配置值、理解业务字段、在模块下线时代管配置 |
+| owner 模块 | 定义、校验、保存、应用并审计本模块的普通运行配置 | 把部署配置或 Secret 混入普通配置表 |
+| 部署系统 | 提供端口、数据库、基础设施地址和 Secret 等 Bootstrap 输入 | 作为 owner 普通运行配置的 fallback |
+
+模块启动后可以随模块注册发布自己的配置管理入口。System 只接受 owner 与当前 Service Principal 一致的声明，并按稳定 entry id 幂等更新；声明不携带具体配置定义和值。Console 只负责统一入口和上下文分区，配置页面及 API 保持模块独立运行能力。
+
+Platform Realm 只展示平台配置入口，Tenant Context 只展示当前 Tenant 配置入口。owner API 必须执行最终上下文和 Permission 校验；System 的通用平台配置 Permission 不能绕过业务模块自己的配置 Permission。
+
+部署配置、普通运行配置、Secret、资源实体和任务快照的详细边界见 [ADDP 配置规范](../spec/addp配置介绍.md)。
+
+---
+
 ## Gateway 路由机制
 
 Gateway 作为 ADDP 的统一入口，负责请求路由和转发。ADDP 采用 **动态模块注册 + 动态路由发现** 机制，支持模块的自动上线/下线和故障转移。
@@ -681,7 +729,7 @@ graph TB
 | **spark_workflow** | 工作流运行时 | 数据量 > 100 万行 | 大规模数据处理，空间与非空间算子；执行时绑定 `engine_type=spark` 的通用引擎资源 |
 | **model3d_workflow** | 工作流运行时 | 三维模型、BIM 和 3DGS 快显 | GLB、3D Tiles、KSplat 等领域转换算子 |
 | **pointcloud_workflow** | 工作流运行时 | 点云快显 | LAS / LAZ / E57 / PCD / XYZ 到 COPC 转换算子 |
-| **supermap_workflow** | 工作流运行时 | 超图数据格式与空间分析 | SuperMap iObjects Java / SPS 算子和 DAG 内存对象传递 |
+| **supermap_workflow** | 工作流运行时 | 超图数据格式与空间分析 | SuperMap iObjects C++ 算子和 DAG 类型化内存句柄传递 |
 | **math_workflow** | 工作流运行时参考实现 | 学习与扩展规范示例 | 基础数学算子；开发环境自动启动服务，手动注册后可用 |
 | **jupyter** | 脚本运行时 | Notebook 开发 | Python Notebook，变量传递 |
 

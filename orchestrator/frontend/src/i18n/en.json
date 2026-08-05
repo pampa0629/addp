@@ -216,6 +216,7 @@
       "parametersJsonPlaceholder": "Enter a JSON object",
       "parameterSelectPlaceholder": "Select",
       "noExecutionParameters": "This task has no execution parameters",
+	  "executionContractUnavailable": "The execution parameter contract is unavailable. Refresh and try again",
       "booleanTrue": "Yes",
       "booleanFalse": "No",
       "parameterFields": {

@@ -3,7 +3,9 @@ package models
 import (
 	"database/sql/driver"
 	"encoding/json"
+
 	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 )
 
 // ExecutionResult 执行结果（支持任意 JSON 结构）
@@ -68,7 +70,8 @@ type ListExecutionsRequest struct {
 // ExecutionWithDevTask 执行记录和开发任务关联
 type ExecutionWithDevTask struct {
 	*commonExecution.TaskExecution
-	DevTask *DevTask `json:"dev_task,omitempty"`
+	DevTask *DevTask             `json:"dev_task,omitempty"`
+	Outputs commonModels.JSONMap `json:"outputs,omitempty"`
 }
 
 // ListExecutionsResponse 执行列表响应

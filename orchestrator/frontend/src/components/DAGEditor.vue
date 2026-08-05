@@ -131,82 +131,21 @@
           </el-select>
         </el-form-item>
 
-        <template v-if="parameterEditorMode === 'structured'">
-          <el-divider content-position="left">{{ t('orchestrator.dagEditor.parametersLabel') }}</el-divider>
-          <el-form-item
-            v-for="field in parameterFields"
-            :key="field.name"
-            :label="parameterFieldLabel(field)"
-            :required="field.required"
-          >
-            <el-select
-              v-if="Array.isArray(field.schema.enum)"
-              v-model="structuredParameters[field.name]"
-              clearable
-              :placeholder="t('orchestrator.dagEditor.parameterSelectPlaceholder')"
-            >
-              <el-option
-                v-for="option in field.schema.enum"
-                :key="String(option)"
-                :label="parameterValueLabel(option)"
-                :value="option"
-              />
-            </el-select>
-            <el-select
-              v-else-if="field.schema.type === 'boolean' && !usesBooleanSwitch(field)"
-              v-model="structuredParameters[field.name]"
-              clearable
-              :placeholder="t('orchestrator.dagEditor.parameterSelectPlaceholder')"
-            >
-              <el-option :label="t('orchestrator.dagEditor.booleanTrue')" :value="true" />
-              <el-option :label="t('orchestrator.dagEditor.booleanFalse')" :value="false" />
-            </el-select>
-            <el-switch
-              v-else-if="field.schema.type === 'boolean'"
-              v-model="structuredParameters[field.name]"
-              :active-text="t('orchestrator.dagEditor.booleanTrue')"
-              :inactive-text="t('orchestrator.dagEditor.booleanFalse')"
-            />
-            <el-input-number
-              v-else-if="field.schema.type === 'integer' || field.schema.type === 'number'"
-              v-model="structuredParameters[field.name]"
-              :min="field.schema.minimum"
-              :max="field.schema.maximum"
-              :step="field.schema.type === 'integer' ? 1 : 0.1"
-              :precision="field.schema.type === 'integer' ? 0 : undefined"
-              controls-position="right"
-            />
-            <el-input
-              v-else
-              v-model="structuredParameters[field.name]"
-              :minlength="field.schema.minLength"
-              :maxlength="field.schema.maxLength"
-              :show-word-limit="field.schema.maxLength !== undefined"
-            />
-            <div v-if="field.schema.description" class="parameter-description">
-              {{ field.schema.description }}
-            </div>
-          </el-form-item>
-        </template>
-
-        <el-form-item
-          v-else-if="parameterEditorMode === 'json'"
-          :label="t('orchestrator.dagEditor.parametersJsonLabel')"
-          :error="jsonDraftError"
-        >
-          <el-input
-            type="textarea"
-            v-model="parametersStr"
-            :rows="8"
-            :placeholder="t('orchestrator.dagEditor.parametersJsonPlaceholder')"
-          ></el-input>
-        </el-form-item>
-
-        <el-empty
+        <el-divider content-position="left">{{ t('orchestrator.dagEditor.parametersLabel') }}</el-divider>
+        <ExecutionParameterForm
+          v-if="currentExecutionContract"
+          :model-value="currentNode.parameters || {}"
+          :contract="currentExecutionContract"
+          :upstream-outputs="currentUpstreamOutputs"
+          allow-upstream
+          @update:model-value="applyCurrentNodeDraft"
+        />
+        <el-alert
           v-else
-          :description="t('orchestrator.dagEditor.noExecutionParameters')"
-          :image-size="48"
-          class="empty-parameters"
+          type="warning"
+          :closable="false"
+          :title="t('orchestrator.dagEditor.executionContractUnavailable')"
+          show-icon
         />
       </el-form>
     </el-drawer>
@@ -231,7 +170,7 @@ import {
   ZoomIn,
   ZoomOut
 } from '@element-plus/icons-vue'
-import { buildTaskOwnerUrl, StatusAnnouncer } from '@addp/common-frontend'
+import { buildTaskOwnerUrl, ExecutionParameterForm, StatusAnnouncer } from '@addp/common-frontend'
 import {
   createDAGKeyboardHandler,
   createDAGDirectEdgeBehavior,
@@ -251,15 +190,9 @@ import {
 } from '@addp/common-frontend/dag'
 import modulesApi from '../api/modules'
 import taskProvidersAPI from '../api/taskProviders'
-import {
-  activeTaskCapabilityMetadata,
-  createParameterDraft,
-  executionParameterMode,
-  executionSchemaFields,
-  serializeParameterDraft
-} from '../utils/executionSchemaForm'
+import { activeTaskCapabilityMetadata } from '../utils/taskCapabilityMetadata'
 
-const { t, te } = useI18n()
+const { t } = useI18n()
 
 const props = defineProps({
   initialSteps: {
@@ -278,13 +211,9 @@ const container = ref(null)
 const drawerVisible = ref(false)
 const currentNode = ref({})
 const currentDependencyIds = ref([])
-const parametersStr = ref('')
-const structuredParameters = ref({})
-const parameterEditorMode = ref('json')
-const jsonDraftError = ref('')
 const taskTypeEditUrlIndex = ref(new Map())
 const taskContextIndex = ref(new Map())
-const executionSchemaIndex = ref(new Map())
+const executionContractIndex = ref(new Map())
 const lastStepsSignature = ref('')
 let nodeCopyCounter = 0
 let addedNodeCounter = 0
@@ -388,47 +317,33 @@ const ownerTaskButtonTooltip = computed(() => {
   }
   return t('orchestrator.dagEditor.ownerTaskContextMissing')
 })
-const currentExecutionSchema = computed(() => {
-  return executionSchemaIndex.value.get(taskTypeIndexKey(currentNode.value?.provider, currentNode.value?.taskType)) || null
+const currentExecutionContract = computed(() => executionContractIndex.value.get(
+  taskContextIndexKey(currentNode.value?.provider, currentNode.value?.taskType, currentNode.value?.taskId)
+) || null)
+const currentUpstreamOutputs = computed(() => {
+  if (!graph.value || !currentNode.value?.id) return []
+  return currentDependencyIds.value.flatMap(stepId => {
+    const node = graph.value.findById(stepId)?.getModel?.()
+    if (!node) return []
+    const contract = executionContractIndex.value.get(taskContextIndexKey(node.provider, node.taskType, node.taskId))
+    return flattenOutputSchema(contract?.output_schema).map(output => ({
+      ...output,
+      label: `${node.name || node.label || node.id} / ${output.label}`,
+      template: `{{${node.id}.outputs.${output.path.join('.')}}}`
+    }))
+  })
 })
-const parameterFields = computed(() => executionSchemaFields(currentExecutionSchema.value))
 const currentDependencyCandidates = computed(() => getDAGUpstreamCandidates({
   graph: graph.value,
   targetId: currentNode.value?.id,
   hasLoop
 }))
 
-watch(currentExecutionSchema, () => {
-  if (drawerVisible.value) {
-    syncParameterEditors(currentNode.value?.parameters || {})
-  }
-})
-
 watch(
   () => [currentNode.value?.name, currentNode.value?.timeout],
   () => applyCurrentNodeDraft(currentNode.value?.parameters || {}),
   { flush: 'sync' }
 )
-
-watch(structuredParameters, draft => {
-  if (parameterEditorMode.value !== 'structured') return
-  applyCurrentNodeDraft(serializeParameterDraft(currentExecutionSchema.value, draft))
-}, { deep: true, flush: 'sync' })
-
-watch(parametersStr, value => {
-  if (syncingNodeDraft || !drawerVisible.value || parameterEditorMode.value !== 'json') return
-  try {
-    const parameters = JSON.parse(value || '{}')
-    if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) {
-      jsonDraftError.value = t('orchestrator.dagEditor.jsonObjectError')
-      return
-    }
-    jsonDraftError.value = ''
-    applyCurrentNodeDraft(parameters)
-  } catch {
-    jsonDraftError.value = t('orchestrator.dagEditor.jsonError')
-  }
-}, { flush: 'sync' })
 
 watch(() => props.initialSteps, steps => {
   if (!graph.value || stepsSignature(steps) === lastStepsSignature.value) return
@@ -470,7 +385,6 @@ function handleNodeClick(evt) {
       editUrl: resolveNodeEditUrl(model)
     }
     syncCurrentDependencies(model.id, true)
-    syncParameterEditors(model.parameters || {})
     drawerVisible.value = true
   })
 }
@@ -488,15 +402,6 @@ function applyCurrentNodeDraft(parameters = currentNode.value?.parameters || {})
   emitSteps()
 }
 
-function syncParameterEditors(parameters) {
-  withNodeDraftSync(() => {
-    parameterEditorMode.value = executionParameterMode(currentExecutionSchema.value, parameters || {})
-    parametersStr.value = JSON.stringify(parameters || {}, null, 2)
-    structuredParameters.value = createParameterDraft(currentExecutionSchema.value, parameters || {})
-    jsonDraftError.value = ''
-  })
-}
-
 function withNodeDraftSync(callback) {
   const wasSyncing = syncingNodeDraft
   syncingNodeDraft = true
@@ -505,21 +410,6 @@ function withNodeDraftSync(callback) {
   } finally {
     syncingNodeDraft = wasSyncing
   }
-}
-
-function parameterFieldLabel(field) {
-  const localeKey = `orchestrator.dagEditor.parameterFields.${field.name}`
-  if (te(localeKey)) return t(localeKey)
-  return field.schema.title || field.name
-}
-
-function parameterValueLabel(value) {
-  const localeKey = `orchestrator.dagEditor.parameterValues.${String(value)}`
-  return te(localeKey) ? t(localeKey) : String(value)
-}
-
-function usesBooleanSwitch(field) {
-  return field.required || Object.prototype.hasOwnProperty.call(field.schema, 'default')
 }
 
 function dependencyOptionLabel(node) {
@@ -950,7 +840,7 @@ async function loadTaskProviderRuntimeMetadata() {
     const providers = await taskProvidersAPI.list()
     const editUrlIndex = new Map()
     const contextIndex = new Map()
-    const schemaIndex = new Map()
+    const contractIndex = new Map()
 
     const taskListRequests = []
     providers.forEach(provider => {
@@ -962,18 +852,20 @@ async function loadTaskProviderRuntimeMetadata() {
           if (item.editUrl) {
             editUrlIndex.set(taskTypeIndexKey(moduleName, item.type), item.editUrl)
           }
-          schemaIndex.set(taskTypeIndexKey(moduleName, item.type), item.executionSchema)
           taskListRequests.push(
             modulesApi.listTasksByModule(moduleName, { task_type: item.type })
-              .then(data => {
+              .then(async data => {
                 const tasks = Array.isArray(data?.items) ? data.items : []
-                tasks.forEach(task => {
+                await Promise.all(tasks.map(async task => {
                   const taskType = task.task_type
                   if (!hasValue(task?.id) || !hasValue(taskType)) return
-                  contextIndex.set(taskContextIndexKey(moduleName, taskType, task.id), {
+                  const key = taskContextIndexKey(moduleName, taskType, task.id)
+                  contextIndex.set(key, {
                     graphId: task.graph_id || null
                   })
-                })
+                  const detail = await taskProvidersAPI.getTaskDetail(moduleName, taskType, task.id)
+                  if (detail?.execution_contract) contractIndex.set(key, detail.execution_contract)
+                }))
               })
               .catch(error => {
                 console.error(`加载任务上下文失败: ${moduleName}/${item.type}`, error)
@@ -985,10 +877,21 @@ async function loadTaskProviderRuntimeMetadata() {
     await Promise.all(taskListRequests)
     taskTypeEditUrlIndex.value = editUrlIndex
     taskContextIndex.value = contextIndex
-    executionSchemaIndex.value = schemaIndex
+    executionContractIndex.value = contractIndex
   } catch (error) {
     console.error('加载任务提供者运行态元数据失败:', error)
   }
+}
+
+function flattenOutputSchema(schema, path = [], labels = []) {
+  if (!schema || typeof schema !== 'object') return []
+  const properties = schema.properties && typeof schema.properties === 'object' ? schema.properties : null
+  if (!properties || Object.keys(properties).length === 0) {
+    return path.length > 0 ? [{ path, type: schema.type, label: labels.join(' / ') || path.join('.') }] : []
+  }
+  return Object.entries(properties).flatMap(([name, child]) => (
+    flattenOutputSchema(child, [...path, name], [...labels, child.title || name])
+  ))
 }
 
 function resolveTaskTypeEditUrl(provider, taskType) {

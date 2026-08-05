@@ -7,6 +7,7 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	commonConfig "github.com/addp/common/config"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/utils"
 	_ "github.com/addp/monitor/i18n"
@@ -28,6 +29,8 @@ import (
 // @name Authorization
 
 func main() {
+	commonConfig.LoadEnv()
+
 	// 加载配置
 	cfg, err := config.LoadConfig()
 	if err != nil {

@@ -349,7 +349,7 @@ bash scripts/prod/stop.sh --remove
   - 等待就绪（调用 wait-infra.sh）
   ↓
 [2/5] System Backend (8180)
-  - 配置中心、认证服务
+  - IAM、模块目录与 System-owned 配置
   - 等待健康检查通过
   ↓
 [3/5] 业务后端服务

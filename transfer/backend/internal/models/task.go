@@ -5,6 +5,7 @@ import (
 	"time"
 
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/taskprovider"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -97,27 +98,28 @@ type JSONMap = commonModels.JSONMap
 
 // TransferTask 传输任务定义
 type TransferTask struct {
-	ID                             uint                      `gorm:"primaryKey" json:"id"`
-	ApplyIdentity                  string                    `gorm:"type:uuid;not null;uniqueIndex" json:"-"`
-	TenantID                       uint                      `gorm:"not null;index" json:"tenant_id"`
-	Name                           string                    `gorm:"type:varchar(255);not null" json:"name"`
-	Description                    string                    `gorm:"type:text" json:"description"`
-	TaskType                       string                    `gorm:"type:varchar(20);not null;default:'sync';index" json:"task_type"` // Transfer 当前统一任务类型，固定为 sync
-	Config                         JSONMap                   `gorm:"type:jsonb;not null" json:"config"`                               // Reader-Transform-Writer 管道配置
-	Schedule                       string                    `gorm:"type:varchar(100)" json:"schedule"`                               // Cron 表达式
-	BatchSize                      int                       `gorm:"default:1000" json:"batch_size"`
-	Enabled                        bool                      `gorm:"default:false;index" json:"enabled"`
-	AutoScanMetadata               bool                      `json:"auto_scan_metadata"`
-	InitialMetadataScanStatus      InitialMetadataScanStatus `gorm:"type:varchar(20);not null;default:'';check:chk_transfer_initial_meta_scan_status,initial_metadata_scan_status IN ('','running','success','failed')" json:"-"`
-	InitialMetadataScanClaimToken  string                    `gorm:"type:varchar(36);not null;default:'';check:chk_transfer_initial_meta_scan_claim,(initial_metadata_scan_status = 'running' AND initial_metadata_scan_claim_token <> '' AND initial_metadata_scan_lease_until IS NOT NULL) OR (initial_metadata_scan_status <> 'running' AND initial_metadata_scan_claim_token = '' AND initial_metadata_scan_lease_until IS NULL)" json:"-"`
-	InitialMetadataScanLeaseUntil  *time.Time                `json:"-"`
-	InitialMetadataScanAttempt     uint64                    `gorm:"not null;default:0;check:chk_transfer_initial_meta_scan_attempt,initial_metadata_scan_attempt >= 0" json:"-"`
-	InitialMetadataScanExecutionID string                    `gorm:"type:varchar(36);not null;default:''" json:"-"`
-	InitialMetadataScanError       string                    `gorm:"type:text;not null;default:''" json:"-"`
-	Status                         TaskStatus                `gorm:"type:varchar(20);default:'idle';index" json:"status"`
-	DesiredState                   TaskDesiredState          `gorm:"type:varchar(20);not null;default:'stopped';index" json:"desired_state"`
-	Progress                       float64                   `gorm:"type:numeric(5,2);default:0" json:"progress"`
-	CreatedBy                      *uint                     `json:"created_by,omitempty"`
+	ID                             uint                           `gorm:"primaryKey" json:"id"`
+	ExecutionContract              taskprovider.ExecutionContract `gorm:"-" json:"execution_contract"`
+	ApplyIdentity                  string                         `gorm:"type:uuid;not null;uniqueIndex" json:"-"`
+	TenantID                       uint                           `gorm:"not null;index" json:"tenant_id"`
+	Name                           string                         `gorm:"type:varchar(255);not null" json:"name"`
+	Description                    string                         `gorm:"type:text" json:"description"`
+	TaskType                       string                         `gorm:"type:varchar(20);not null;default:'sync';index" json:"task_type"` // Transfer 当前统一任务类型，固定为 sync
+	Config                         JSONMap                        `gorm:"type:jsonb;not null" json:"config"`                               // Reader-Transform-Writer 管道配置
+	Schedule                       string                         `gorm:"type:varchar(100)" json:"schedule"`                               // Cron 表达式
+	BatchSize                      int                            `gorm:"default:1000" json:"batch_size"`
+	Enabled                        bool                           `gorm:"default:false;index" json:"enabled"`
+	AutoScanMetadata               bool                           `json:"auto_scan_metadata"`
+	InitialMetadataScanStatus      InitialMetadataScanStatus      `gorm:"type:varchar(20);not null;default:'';check:chk_transfer_initial_meta_scan_status,initial_metadata_scan_status IN ('','running','success','failed')" json:"-"`
+	InitialMetadataScanClaimToken  string                         `gorm:"type:varchar(36);not null;default:'';check:chk_transfer_initial_meta_scan_claim,(initial_metadata_scan_status = 'running' AND initial_metadata_scan_claim_token <> '' AND initial_metadata_scan_lease_until IS NOT NULL) OR (initial_metadata_scan_status <> 'running' AND initial_metadata_scan_claim_token = '' AND initial_metadata_scan_lease_until IS NULL)" json:"-"`
+	InitialMetadataScanLeaseUntil  *time.Time                     `json:"-"`
+	InitialMetadataScanAttempt     uint64                         `gorm:"not null;default:0;check:chk_transfer_initial_meta_scan_attempt,initial_metadata_scan_attempt >= 0" json:"-"`
+	InitialMetadataScanExecutionID string                         `gorm:"type:varchar(36);not null;default:''" json:"-"`
+	InitialMetadataScanError       string                         `gorm:"type:text;not null;default:''" json:"-"`
+	Status                         TaskStatus                     `gorm:"type:varchar(20);default:'idle';index" json:"status"`
+	DesiredState                   TaskDesiredState               `gorm:"type:varchar(20);not null;default:'stopped';index" json:"desired_state"`
+	Progress                       float64                        `gorm:"type:numeric(5,2);default:0" json:"progress"`
+	CreatedBy                      *uint                          `json:"created_by,omitempty"`
 	// BaseTask 基类字段
 	LastExecutionID     *string         `gorm:"size:36" json:"last_execution_id,omitempty"`
 	LastExecutionStatus *string         `gorm:"size:20" json:"last_execution_status,omitempty"`

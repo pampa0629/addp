@@ -51,6 +51,7 @@ Policy OK. No changes required.
 - 默认注册地址为 `business-postgres:5432` 和 `business-minio:9000`，不要改成 `localhost`。
 - 如果检测到 `business_business-network`，脚本会把正在运行的 ADDP 容器接入该网络。
 - 同名引擎已存在时，默认会更新连接信息；如需跳过更新，可设置 `REGISTER_BUSINESS_UPDATE_EXISTING=false`。
+- 脚本不接收用户名、密码或环境变量 Token；运行时在隐藏的交互式提示中输入当前 User Access Token。
 
 **命令**:
 ```bash
@@ -272,18 +273,14 @@ export GOPROXY=https://goproxy.cn,direct
 
 ### 问题 3: test-tile-api.sh 无法运行
 
-**原因**: Backend 服务未启动或 token 过期
+**原因**: Backend 服务未启动或 User Access Token 过期
 
 **解决**:
 ```bash
 # 1. 启动服务
 ./scripts/dev/start.sh
 
-# 2. 获取新的 token
-curl -X POST http://localhost:8180/api/v1/system/login \
-  -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "123456"}'
-
-# 3. 使用新 token 运行测试
+# 2. 在 Console 完成登录和 Context 选择，再运行脚本
+# 3. 在隐藏提示中输入当前 User Access Token
 ./scripts/utils/test-tile-api.sh
 ```

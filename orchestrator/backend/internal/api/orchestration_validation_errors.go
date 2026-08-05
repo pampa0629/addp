@@ -36,7 +36,7 @@ func (h *OrchestrationHandler) validateOrchestrationDefinition(c *gin.Context, r
 		respondOrchestrationValidationError(c, err)
 		return false
 	}
-	if err := h.taskProviderRegistry.ValidateStepTaskReferences(c.Request.Context(), req.Steps); err != nil {
+	if err := h.taskProviderRegistry.ValidateStepTaskReferences(c.Request.Context(), req.TenantID, req.Steps); err != nil {
 		respondOrchestrationValidationError(c, err)
 		return false
 	}
@@ -168,6 +168,26 @@ func localizeStepTaskValidationError(c *gin.Context, stepErr *service.StepTaskVa
 }
 
 func localizeParameterValidationError(c *gin.Context, stepErr *service.StepTaskValidationError, data map[string]interface{}) string {
+	var bindingErr *service.OutputBindingValidationError
+	if errors.As(stepErr.Cause, &bindingErr) {
+		data["Path"] = bindingErr.ParameterPath
+		data["SourceStep"] = bindingErr.StepID
+		data["OutputPath"] = bindingErr.OutputPath
+		data["SourceType"] = localizedParameterType(c, bindingErr.SourceType)
+		data["TargetType"] = localizedParameterType(c, bindingErr.TargetType)
+		switch bindingErr.Code {
+		case service.OutputBindingInvalidFormat:
+			return commoni18n.TWithData(c, orchestratori18n.MsgOutputBindingInvalidFormat, data)
+		case service.OutputBindingUnknownStep:
+			return commoni18n.TWithData(c, orchestratori18n.MsgOutputBindingUnknownStep, data)
+		case service.OutputBindingUndeclared:
+			return commoni18n.TWithData(c, orchestratori18n.MsgOutputBindingUndeclared, data)
+		case service.OutputBindingUnknownTarget:
+			return commoni18n.TWithData(c, orchestratori18n.MsgOutputBindingUnknownTarget, data)
+		case service.OutputBindingTypeMismatch:
+			return commoni18n.TWithData(c, orchestratori18n.MsgOutputBindingTypeMismatch, data)
+		}
+	}
 	var parameterErr *taskprovider.ParameterValidationError
 	if !errors.As(stepErr.Cause, &parameterErr) {
 		return commoni18n.TWithData(c, orchestratori18n.MsgStepParameterInvalid, data)

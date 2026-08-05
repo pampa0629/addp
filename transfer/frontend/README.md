@@ -108,14 +108,9 @@ transfer/frontend/
 └── nginx.conf              # Nginx 配置
 ```
 
-## 环境变量
+## API 访问
 
-创建 `.env.local` 文件：
-
-```bash
-# API 基础 URL
-VITE_API_BASE_URL=http://localhost:8083/api
-```
+前端通过共享 API Client 使用统一 `/api/v1` 路径，不维护模块级 `.env` 或 `.env.local`。开发和部署参数统一由仓库根 `.env` 与标准启动脚本注入。
 
 ## 主要页面
 

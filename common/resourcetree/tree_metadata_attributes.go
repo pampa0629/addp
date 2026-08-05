@@ -70,8 +70,21 @@ func spatialSummaryForTreeMetadata(attrs map[string]interface{}) map[string]inte
 	}
 	geometryColumn := info.PrimaryGeometryName()
 	summary := map[string]interface{}{}
+	geometryColumns := make([]string, 0, len(info.GeometryColumns))
+	seenGeometryColumns := map[string]bool{}
+	for _, column := range info.GeometryColumns {
+		name := strings.TrimSpace(column.Name)
+		if name == "" || seenGeometryColumns[name] {
+			continue
+		}
+		seenGeometryColumns[name] = true
+		geometryColumns = append(geometryColumns, name)
+	}
+	if len(geometryColumns) > 0 {
+		summary["geometry_columns"] = geometryColumns
+	}
 	if geometryColumn != "" {
-		summary["geometry"] = geometryColumn
+		summary["primary_geometry_column"] = geometryColumn
 	}
 	for _, column := range info.GeometryColumns {
 		if geometryColumn == "" || strings.EqualFold(column.Name, geometryColumn) {

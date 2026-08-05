@@ -28,13 +28,14 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	db, err := commonRepo.InitDatabase(dbConfig,
 		&models.SearchHistory{},
 		&models.EmbeddingTask{}, // 向量化任务定义表
+		&models.EmbeddingConfiguration{},
 		&models.ExportSession{},
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := ensureEmbeddingArtifactStateSchema(db, cfg.VectorConfig.Dimension); err != nil {
+	if err := ensureEmbeddingArtifactStateSchema(db, models.EmbeddingVectorDimension); err != nil {
 		return nil, fmt.Errorf("failed to ensure embedding artifact state schema: %w", err)
 	}
 	if err := ensureEmbeddingTaskDefinitionSchema(db); err != nil {

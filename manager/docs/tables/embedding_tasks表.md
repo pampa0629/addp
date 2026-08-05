@@ -52,7 +52,8 @@
   },
   "embedding": {
     "model": "qwen3-vl-embedding",
-    "dimension": 2560
+    "dimension": 2560,
+    "configuration_version": 1
   }
 }
 ```
@@ -62,7 +63,7 @@
 1. 持久化任务范围以 node 或等价范围为主。
 2. 单 item 向量化优先走资源树一次性 execution。
 3. `filters` 不能替代 item 级可向量化判断；执行时仍逐 item 判断格式、大小、内容可读性和模型能力。
-4. 当前阶段 `embedding.model` 和 `embedding.dimension` 必须与 Manager 当前启用配置一致。
+4. 当前阶段 `embedding.model`、`embedding.dimension` 和 `embedding.configuration_version` 是任务配置快照，执行时必须与 Manager 当前启用配置一致。
 
 ## 四、TaskProvider 入口
 

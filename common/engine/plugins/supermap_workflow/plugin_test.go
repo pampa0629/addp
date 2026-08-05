@@ -10,7 +10,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 )
 
-func TestSuperMapWorkflowTestConnectionRequiresObjectsJava(t *testing.T) {
+func TestSuperMapWorkflowTestConnectionRequiresIObjectsCPP(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/health" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -19,8 +19,9 @@ func TestSuperMapWorkflowTestConnectionRequiresObjectsJava(t *testing.T) {
 		_, _ = w.Write([]byte(`{
 			"status": "degraded",
 			"dependencies": {
-				"objectsjava": {"available": false, "path": "/opt/supermap/objectsjava/bin_linux_arm64"},
-				"gpa_libs": {"available": true, "path": "/opt/supermap/gpa/libs"}
+				"iobjects_cpp": {"available": false, "path": "/opt/supermap/bin/bin", "missing": ["libSuEngine.so"]},
+				"freetype": {"available": true, "path": "/lib/aarch64-linux-gnu"},
+				"nfs": {"available": true, "path": "/usr/sbin"}
 			}
 		}`))
 	}))
@@ -28,21 +29,22 @@ func TestSuperMapWorkflowTestConnectionRequiresObjectsJava(t *testing.T) {
 
 	err := (&SuperMapWorkflowPlugin{}).TestConnection(context.Background(), connInfoForTestServer(t, server.URL))
 	if err == nil {
-		t.Fatal("TestConnection succeeded without objectsjava binding, want error")
+		t.Fatal("TestConnection succeeded without iObjects C++ runtime, want error")
 	}
-	if !strings.Contains(err.Error(), "objectsjava runtime is not bound") {
-		t.Fatalf("error = %q, want objectsjava binding failure", err)
+	if !strings.Contains(err.Error(), "iObjects C++ runtime is not available") {
+		t.Fatalf("error = %q, want iObjects C++ runtime failure", err)
 	}
 }
 
-func TestSuperMapWorkflowTestConnectionRequiresGPALibs(t *testing.T) {
+func TestSuperMapWorkflowTestConnectionRequiresFreeType(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"status": "degraded",
 			"dependencies": {
-				"objectsjava": {"available": true, "path": "/opt/supermap/objectsjava/bin_linux_arm64"},
-				"gpa_libs": {"available": false, "details": "missing gpa-sps-core jar"}
+				"iobjects_cpp": {"available": true, "path": "/opt/supermap/bin/bin"},
+				"freetype": {"available": false, "path": "/lib/aarch64-linux-gnu", "missing": ["libfreetype.so.6"]},
+				"nfs": {"available": true, "path": "/usr/sbin"}
 			}
 		}`))
 	}))
@@ -50,10 +52,33 @@ func TestSuperMapWorkflowTestConnectionRequiresGPALibs(t *testing.T) {
 
 	err := (&SuperMapWorkflowPlugin{}).TestConnection(context.Background(), connInfoForTestServer(t, server.URL))
 	if err == nil {
-		t.Fatal("TestConnection succeeded without GPA/SPS libs binding, want error")
+		t.Fatal("TestConnection succeeded without FreeType runtime, want error")
 	}
-	if !strings.Contains(err.Error(), "GPA/SPS libs are not bound") {
-		t.Fatalf("error = %q, want GPA/SPS binding failure", err)
+	if !strings.Contains(err.Error(), "FreeType runtime is not available") {
+		t.Fatalf("error = %q, want FreeType runtime failure", err)
+	}
+}
+
+func TestSuperMapWorkflowTestConnectionRequiresNFSClient(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"status": "degraded",
+			"dependencies": {
+				"iobjects_cpp": {"available": true, "path": "/opt/supermap/bin/bin"},
+				"freetype": {"available": true, "path": "/lib/aarch64-linux-gnu"},
+				"nfs": {"available": false, "path": "/usr/sbin", "missing": ["mount.nfs"]}
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	err := (&SuperMapWorkflowPlugin{}).TestConnection(context.Background(), connInfoForTestServer(t, server.URL))
+	if err == nil {
+		t.Fatal("TestConnection succeeded without NFS client runtime, want error")
+	}
+	if !strings.Contains(err.Error(), "NFS client runtime is not available") {
+		t.Fatalf("error = %q, want NFS client runtime failure", err)
 	}
 }
 
@@ -63,8 +88,9 @@ func TestSuperMapWorkflowTestConnectionAcceptsBoundRuntime(t *testing.T) {
 		_, _ = w.Write([]byte(`{
 			"status": "healthy",
 			"dependencies": {
-				"objectsjava": {"available": true, "path": "/opt/supermap/objectsjava/bin_linux_arm64"},
-				"gpa_libs": {"available": true, "path": "/opt/supermap/gpa/libs"}
+				"iobjects_cpp": {"available": true, "path": "/opt/supermap/bin/bin"},
+				"freetype": {"available": true, "path": "/lib/aarch64-linux-gnu"},
+				"nfs": {"available": true, "path": "/usr/sbin"}
 			}
 		}`))
 	}))

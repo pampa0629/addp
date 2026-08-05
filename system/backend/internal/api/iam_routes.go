@@ -3,7 +3,6 @@ package api
 import (
 	"errors"
 
-	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/middleware"
 	"github.com/gin-gonic/gin"
 	redisv9 "github.com/redis/go-redis/v9"
@@ -15,9 +14,8 @@ func RegisterIAMRoutes(
 	api *gin.RouterGroup,
 	runtime *IAMRuntime,
 	redisClient redisv9.Scripter,
-	cfg *config.Config,
 ) error {
-	if api == nil || runtime == nil || cfg == nil ||
+	if api == nil || runtime == nil ||
 		runtime.AuthHandler == nil || runtime.OAuthHandler == nil ||
 		runtime.DelegationHandler == nil || runtime.ExecutionAuthorizationHandler == nil ||
 		runtime.NotebookSessionAuthorizationHandler == nil ||
@@ -63,11 +61,11 @@ func RegisterIAMRoutes(
 
 	publicRateLimit := middleware.OAuthPublicRateLimitMiddleware(
 		redisClient,
-		int64(cfg.OAuthPublicRateLimitPerMinute),
+		int64(runtime.SecurityPolicy.OAuthPublicRateLimitPerMinute),
 	)
 	userRateLimit := middleware.OAuthUserRateLimitMiddleware(
 		redisClient,
-		int64(cfg.OAuthUserRateLimitPerMinute),
+		int64(runtime.SecurityPolicy.OAuthUserRateLimitPerMinute),
 	)
 	api.Use(runtime.OAuthFailureAudit)
 

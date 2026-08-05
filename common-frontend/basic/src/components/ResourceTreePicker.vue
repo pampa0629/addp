@@ -45,7 +45,7 @@
           >
             <span class="search-result-main">
               <span class="search-result-label">{{ result.node.label }}</span>
-              <span class="search-result-path">{{ searchResultPath(result.node) }}</span>
+              <span class="search-result-path">{{ searchResultPath(result.node, result.engine) }}</span>
             </span>
             <span class="search-result-engine">{{ result.engine?.name || result.engineName }}</span>
           </button>
@@ -100,7 +100,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
-import { parseLocatorSafe } from '../types/resourceLocator.js'
+import { formatLocatorDisplayPath, parseLocatorSafe } from '../types/resourceLocator.js'
 import { getEngineFamily } from '../utils/engineDisplay.js'
 import {
   addExpandedKey,
@@ -113,9 +113,9 @@ import {
   getResourceTreeAncestors,
   getResourceTreeNode,
   listResourceTreeEngines,
-  searchResourceTree,
-  selectionFromResourceTreeNode
+  searchResourceTree
 } from '../api/resourceTree.js'
+import { selectionFromResourceTreeNode } from '../utils/resourceSelection.js'
 import ResourceTree from './ResourceTree.vue'
 
 const props = defineProps({
@@ -560,10 +560,10 @@ const searchTargetEngines = () => {
   return selectedEngines.value.length > 0 ? selectedEngines.value : engines.value
 }
 
-const searchResultPath = (node) => {
+const searchResultPath = (node, engine) => {
   const parsed = parseLocatorSafe(node?.locator || node?.id || '')
   if (parsed.path?.length) {
-    return parsed.path.join(' / ')
+    return formatLocatorDisplayPath(node?.locator || node?.id || '', { engineType: engine?.engine_type })
   }
   return node?.metadata?.full_name || ''
 }

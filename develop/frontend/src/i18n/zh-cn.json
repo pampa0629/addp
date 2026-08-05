@@ -212,7 +212,7 @@
       "saveFailed": "保存失败: ",
       "savingStatus": "正在保存工作流",
       "executeDialogTitle": "执行工作流",
-      "taskCount": "工作流任务数",
+      "operatorCount": "算子数量",
       "execParams": "执行参数",
       "invalidJson": "执行参数必须是有效的 JSON",
       "executeSubmitted": "工作流已提交执行",

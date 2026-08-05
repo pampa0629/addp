@@ -1192,6 +1192,46 @@
                 ]
             }
         },
+        "/configuration-management/entries": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "配置管理 | Configuration Management"
+                ],
+                "summary": "查询当前上下文可见的配置管理入口 | List visible configuration management entries",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_system_internal_models.ConfigurationManagementEntryView"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "self"
+            }
+        },
         "/engines": {
             "get": {
                 "security": [
@@ -3101,6 +3141,117 @@
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "iam.platform_identity_change.reject"
+                ]
+            }
+        },
+        "/platform/security_policy": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "IAM 安全策略 | IAM Security Policy"
+                ],
+                "summary": "查询 IAM 安全策略 | Get IAM security policy",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMSecurityPolicyResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.security_policy.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "保存新策略版本；策略在 System 受控重启后生效 | Saves a new policy version that takes effect after a controlled System restart",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "IAM 安全策略 | IAM Security Policy"
+                ],
+                "summary": "更新 IAM 安全策略 | Update IAM security policy",
+                "parameters": [
+                    {
+                        "description": "IAM 安全策略 | IAM security policy",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMUpdateSecurityPolicyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMSecurityPolicyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.security_policy.update"
                 ]
             }
         },
@@ -6152,6 +6303,46 @@
                 }
             }
         },
+        "configuration.ManagementDeclaration": {
+            "type": "object",
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/configuration.ManagementEntry"
+                    }
+                },
+                "schema_version": {
+                    "type": "string"
+                }
+            }
+        },
+        "configuration.ManagementEntry": {
+            "type": "object",
+            "properties": {
+                "frontend_route": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "owner_module": {
+                    "type": "string"
+                },
+                "read_permission": {
+                    "type": "string"
+                },
+                "scope_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "update_permission": {
+                    "type": "string"
+                }
+            }
+        },
         "datatype.FieldInfo": {
             "type": "object",
             "properties": {
@@ -6938,6 +7129,38 @@
                 }
             }
         },
+        "github_com_addp_system_internal_models.ConfigurationManagementEntryView": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "boolean"
+                },
+                "frontend_route": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "module_status": {
+                    "type": "string"
+                },
+                "owner_module": {
+                    "type": "string"
+                },
+                "read_permission": {
+                    "type": "string"
+                },
+                "scope_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "update_permission": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_system_internal_models.ConnectionInfo": {
             "type": "object",
             "additionalProperties": true
@@ -7332,6 +7555,9 @@
                 "route_prefix"
             ],
             "properties": {
+                "configuration_management": {
+                    "$ref": "#/definitions/configuration.ManagementDeclaration"
+                },
                 "health_check_url": {
                     "type": "string"
                 },
@@ -7387,7 +7613,7 @@
                     "type": "string"
                 },
                 "capabilities": {
-                    "description": "能力描述（JSON 格式，含 task.capabilities/v1、task_capabilities 等）",
+                    "description": "能力描述（JSON 格式，含 task.capabilities/v2、task_capabilities 等）",
                     "type": "string"
                 },
                 "created_at": {
@@ -8653,6 +8879,59 @@
                 }
             }
         },
+        "internal_api.IAMSecurityPolicyResponse": {
+            "type": "object",
+            "properties": {
+                "access_token_ttl_minutes": {
+                    "type": "integer"
+                },
+                "applied_version": {
+                    "type": "integer"
+                },
+                "delegated_access_token_ttl_minutes": {
+                    "type": "integer"
+                },
+                "enrollment_ticket_ttl_minutes": {
+                    "type": "integer"
+                },
+                "oauth_authorization_code_ttl_minutes": {
+                    "type": "integer"
+                },
+                "oauth_device_code_ttl_minutes": {
+                    "type": "integer"
+                },
+                "oauth_device_poll_interval_seconds": {
+                    "type": "integer"
+                },
+                "oauth_public_rate_limit_per_minute": {
+                    "type": "integer"
+                },
+                "oauth_user_rate_limit_per_minute": {
+                    "type": "integer"
+                },
+                "pending_restart": {
+                    "type": "boolean"
+                },
+                "refresh_token_ttl_days": {
+                    "type": "integer"
+                },
+                "resource_access_ticket_ttl_minutes": {
+                    "type": "integer"
+                },
+                "tenant_invitation_ttl_hours": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by_principal_id": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.IAMTaskAuthorizationSubjectRequest": {
             "type": "object",
             "properties": {
@@ -9022,6 +9301,47 @@
                 },
                 "primary_email": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMUpdateSecurityPolicyRequest": {
+            "type": "object",
+            "properties": {
+                "access_token_ttl_minutes": {
+                    "type": "integer"
+                },
+                "delegated_access_token_ttl_minutes": {
+                    "type": "integer"
+                },
+                "enrollment_ticket_ttl_minutes": {
+                    "type": "integer"
+                },
+                "oauth_authorization_code_ttl_minutes": {
+                    "type": "integer"
+                },
+                "oauth_device_code_ttl_minutes": {
+                    "type": "integer"
+                },
+                "oauth_device_poll_interval_seconds": {
+                    "type": "integer"
+                },
+                "oauth_public_rate_limit_per_minute": {
+                    "type": "integer"
+                },
+                "oauth_user_rate_limit_per_minute": {
+                    "type": "integer"
+                },
+                "refresh_token_ttl_days": {
+                    "type": "integer"
+                },
+                "resource_access_ticket_ttl_minutes": {
+                    "type": "integer"
+                },
+                "tenant_invitation_ttl_hours": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },

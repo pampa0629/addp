@@ -8,6 +8,7 @@ import (
 	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
+	"github.com/addp/common/taskprovider"
 	"github.com/addp/graph/internal/models"
 	"github.com/addp/graph/internal/service"
 	"github.com/gin-gonic/gin"
@@ -36,15 +37,16 @@ type graphTaskProviderExecuteResponse struct {
 }
 
 type graphTaskListItem struct {
-	ID          uint   `json:"id"`
-	TenantID    uint   `json:"tenant_id"`
-	GraphID     uint   `json:"graph_id"`
-	TaskType    string `json:"task_type"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	Enabled     bool   `json:"enabled"`
-	Status      string `json:"status,omitempty"`
-	ExecutionID string `json:"last_execution_id,omitempty"`
+	ID                uint                           `json:"id"`
+	TenantID          uint                           `json:"tenant_id"`
+	GraphID           uint                           `json:"graph_id"`
+	TaskType          string                         `json:"task_type"`
+	Name              string                         `json:"name"`
+	Description       string                         `json:"description,omitempty"`
+	Enabled           bool                           `json:"enabled"`
+	Status            string                         `json:"status,omitempty"`
+	ExecutionID       string                         `json:"last_execution_id,omitempty"`
+	ExecutionContract taskprovider.ExecutionContract `json:"execution_contract"`
 }
 
 type graphTaskListResponse struct {
@@ -229,14 +231,15 @@ func (h *TaskProviderHandler) GetProviderExecution(c *gin.Context) {
 
 func graphTaskProviderListItem(task models.BuildTask) graphTaskListItem {
 	return graphTaskListItem{
-		ID:          task.ID,
-		TenantID:    task.TenantID,
-		GraphID:     task.GraphID,
-		TaskType:    commonExecution.TaskTypeKGBuild,
-		Name:        task.Name,
-		Description: task.Description,
-		Enabled:     task.Status != models.BuildStatusRunning && !(task.Status == models.BuildStatusPending && task.ExecutionID != ""),
-		Status:      task.Status,
-		ExecutionID: task.ExecutionID,
+		ID:                task.ID,
+		TenantID:          task.TenantID,
+		GraphID:           task.GraphID,
+		TaskType:          commonExecution.TaskTypeKGBuild,
+		Name:              task.Name,
+		Description:       task.Description,
+		Enabled:           task.Status != models.BuildStatusRunning && !(task.Status == models.BuildStatusPending && task.ExecutionID != ""),
+		Status:            task.Status,
+		ExecutionID:       task.ExecutionID,
+		ExecutionContract: taskprovider.EmptyExecutionContract(),
 	}
 }

@@ -82,7 +82,7 @@ func main() {
 
 	// 创建 SystemClient（用于执行引擎）
 	var systemClient *commonClient.SystemClient
-	if cfg.EnableIntegration && cfg.SystemServiceURL != "" {
+	if cfg.SystemServiceURL != "" {
 		if cfg.InternalAPIKey != "" {
 			systemClient = commonClient.NewSystemClientWithInternalKey(
 				cfg.SystemServiceURL,
@@ -95,18 +95,15 @@ func main() {
 	}
 
 	// 创建 MetaClient（用于元数据扫描）
-	var metaClient *commonClient.MetaClient
-	if cfg.EnableIntegration && cfg.MetaServiceURL != "" {
-		if cfg.ServiceClientSecret == "" {
-			log.Fatal("服务集成已启用，但 TRANSFER_SERVICE_CLIENT_SECRET 未配置")
-		}
-		tokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-transfer", cfg.ServiceClientSecret, nil)
-		if err != nil {
-			log.Fatalf("Service Token Source 初始化失败: %v", err)
-		}
-		metaClient = commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
-		log.Printf("✅ MetaClient initialized: %s", cfg.MetaServiceURL)
+	if cfg.MetaServiceURL == "" || cfg.ServiceClientSecret == "" {
+		log.Fatal("META_URL 和 TRANSFER_SERVICE_CLIENT_SECRET 必须配置")
 	}
+	tokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-transfer", cfg.ServiceClientSecret, nil)
+	if err != nil {
+		log.Fatalf("Service Token Source 初始化失败: %v", err)
+	}
+	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
+	log.Printf("✅ MetaClient initialized: %s", cfg.MetaServiceURL)
 
 	// 初始化 Service 层
 	// 1. 创建 ExecutionEngineService (负责任务执行)

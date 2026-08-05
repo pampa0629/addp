@@ -206,10 +206,11 @@ import {
   listResourceTreeEngines,
   getResourceTree,
   getResourceTreeNode,
-  getResourceTreeAncestors,
-  selectionFromResourceTreeNode
+  getResourceTreeAncestors
 } from '@addp/common-frontend'
 ```
+
+`ResourceTreePicker` 的 selection 统一包含 `display.engine_name`、`display.engine_type`、按引擎原生风格格式化的 `display.path`，以及 `resource.spatial.geometry_columns` 和 `resource.spatial.primary_geometry_column`。`identity.locator` 用于提交和持久化，`display` 只用于界面展示；geometry 字段必须从 `resource.spatial` 自动回填，不得读取 `raw` 私有结构或让用户自由输入未识别字段名。
 
 ### 预览组件
 

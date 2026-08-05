@@ -8,7 +8,6 @@ import (
 	"github.com/addp/common/embedding"
 	enginePlugin "github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 	"gorm.io/driver/sqlite"
@@ -25,10 +24,8 @@ func TestEmbeddingStateForCurrentItemDerivesOutdatedReasons(t *testing.T) {
 		DataUpdatedAt: &now,
 		SizeBytes:     &size,
 	}
-	cfg := &config.Config{}
-	cfg.EmbeddingService.Models = map[string]string{"text": "text-model-v2"}
-	cfg.VectorConfig.Dimension = 1024
-	svc := &EmbeddingService{cfg: cfg}
+	runtime := EffectiveEmbeddingConfiguration{Model: "text-model-v2", Dimension: 1024}
+	svc := &EmbeddingService{configurationProvider: NewEmbeddingConfigurationProvider(runtime)}
 
 	currentSourceVersion := sourceVersionForItem(commonModels.GenerateItemFingerprint(item.EngineID, item.FullName), item)
 
@@ -110,13 +107,10 @@ func TestEmbeddingStateForCurrentItemDerivesOutdatedReasons(t *testing.T) {
 func TestProcessItemSkipsCurrentReadyStateBeforeReadingSource(t *testing.T) {
 	db := newEmbeddingServiceTestDB(t)
 	repo := repository.NewEmbeddingRepository(db)
-	cfg := &config.Config{}
-	cfg.EmbeddingService.Models = map[string]string{"text": "text-model"}
-	cfg.VectorConfig.Dimension = 3
+	runtime := EffectiveEmbeddingConfiguration{Model: "text-model", Dimension: 3, MaxFileSizeMB: 10}
 	svc := &EmbeddingService{
-		vectorRepo:      repo,
-		embeddingClient: failingEmbeddingClient{t: t},
-		cfg:             cfg,
+		vectorRepo:            repo,
+		configurationProvider: NewEmbeddingConfigurationProvider(runtime),
 	}
 
 	updatedAt := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
@@ -158,7 +152,7 @@ func TestProcessItemSkipsCurrentReadyStateBeforeReadingSource(t *testing.T) {
 		t.Fatalf("seed embedding state: %v", err)
 	}
 
-	outcome := svc.processItem(context.Background(), 1, item, &EmbeddingExecutionContext{ExecutionID: "exec-repeat", TenantID: 1, StartedAt: time.Now()})
+	outcome := svc.processItem(context.Background(), 1, item, &EmbeddingExecutionContext{ExecutionID: "exec-repeat", TenantID: 1, StartedAt: time.Now(), Runtime: runtime, client: failingEmbeddingClient{t: t}})
 	if outcome != "ready_skipped" {
 		t.Fatalf("processItem outcome = %q, want ready_skipped", outcome)
 	}

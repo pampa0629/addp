@@ -1,11 +1,6 @@
 package config
 
-import (
-	"log"
-	"os"
-
-	"github.com/joho/godotenv"
-)
+import commonConfig "github.com/addp/common/config"
 
 // Config Orchestrator 配置
 type Config struct {
@@ -20,7 +15,7 @@ type Config struct {
 	DBSchema   string
 
 	// System 服务配置（用于能力注册中心）
-	SystemServiceURL string
+	SystemServiceURL    string
 	ServiceClientSecret string
 
 	// Redis 配置
@@ -31,33 +26,21 @@ type Config struct {
 
 // LoadConfig 加载配置
 func LoadConfig() *Config {
-	// 加载 .env 文件 (从项目根目录加载)
-	if err := godotenv.Load("../../../../.env"); err != nil {
-		log.Println("未找到 .env 文件，使用环境变量")
-	}
-
 	return &Config{
-		ServerPort: getEnv("ORCHESTRATOR_BACKEND_PORT", "8084"),
+		ServerPort: commonConfig.GetEnv("ORCHESTRATOR_BACKEND_PORT", "8084"),
 
-		DBHost:     getEnv("POSTGRES_HOST", "localhost"),
-		DBPort:     getEnv("POSTGRES_PORT", "5432"),
-		DBUser:     getEnv("POSTGRES_USER", "addp"),
-		DBPassword: getEnv("POSTGRES_PASSWORD", "addp_password"),
-		DBName:     getEnv("POSTGRES_DB", "addp"),
+		DBHost:     commonConfig.GetEnv("POSTGRES_HOST", "localhost"),
+		DBPort:     commonConfig.GetEnv("POSTGRES_PORT", "15432"),
+		DBUser:     commonConfig.GetEnv("POSTGRES_USER", "addp"),
+		DBPassword: commonConfig.GetEnv("POSTGRES_PASSWORD", "addp_password"),
+		DBName:     commonConfig.GetEnv("POSTGRES_DB", "addp"),
 		DBSchema:   "orchestrator",
 
-		SystemServiceURL: getEnv("SYSTEM_URL", "http://localhost:8180"),
-		ServiceClientSecret: getEnv("ORCHESTRATOR_SERVICE_CLIENT_SECRET", ""),
+		SystemServiceURL:    commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
+		ServiceClientSecret: commonConfig.GetEnv("ORCHESTRATOR_SERVICE_CLIENT_SECRET", ""),
 
-		RedisHost:     getEnv("REDIS_HOST", "localhost"),
-		RedisPort:     getEnv("REDIS_PORT", "6379"),
-		RedisPassword: getEnv("REDIS_PASSWORD", ""),
+		RedisHost:     commonConfig.GetEnv("REDIS_HOST", "localhost"),
+		RedisPort:     commonConfig.GetEnv("REDIS_PORT", "16379"),
+		RedisPassword: commonConfig.GetEnv("REDIS_PASSWORD", ""),
 	}
-}
-
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
 }

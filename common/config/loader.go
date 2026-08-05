@@ -2,10 +2,7 @@ package config
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -75,27 +72,9 @@ func discoverProjectRoot() string {
 	return ""
 }
 
-// SharedConfig 从 System 服务获取的共享配置
-type SharedConfig struct {
-	EncryptionKey  string `json:"encryption_key"`
-	InternalAPIKey string `json:"internal_api_key"`
-	Database       struct {
-		Host     string `json:"host"`
-		Port     string `json:"port"`
-		User     string `json:"user"`
-		Password string `json:"password"`
-		Name     string `json:"name"`
-	} `json:"database"`
-	Map struct {
-		AMapKey            string `json:"amap_key"`
-		AMapSecurityJsCode string `json:"amap_security_js_code"`
-		TDTKey             string `json:"tdt_key"`
-	} `json:"map"`
-}
-
 // BaseConfig 所有模块共享的基础配置字段
 type BaseConfig struct {
-	// 从 System 获取的共享配置
+	// 部署数据库配置
 	DBHost     string
 	DBPort     string
 	DBName     string
@@ -103,10 +82,9 @@ type BaseConfig struct {
 	DBPassword string
 
 	// 通用配置
-	SystemServiceURL  string
-	EnableIntegration bool
-	EncryptionKey     []byte
-	InternalAPIKey    string
+	SystemServiceURL string
+	EncryptionKey    []byte
+	InternalAPIKey   string
 
 	// 地图服务配置
 	AMapKey            string
@@ -120,77 +98,13 @@ type BaseConfig struct {
 	LogFile      string
 }
 
-// LoadSharedConfig 从 System 服务获取共享配置
-func LoadSharedConfig(systemURL string, target *BaseConfig) error {
-	url := fmt.Sprintf("%s/api/v1/internal/config", systemURL)
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// 可选：添加内部 API Key
-	if apiKey := os.Getenv("INTERNAL_API_KEY"); apiKey != "" {
-		req.Header.Set("X-Internal-API-Key", apiKey)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to connect to System service: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, body)
-	}
-
-	var shared SharedConfig
-	if err := json.NewDecoder(resp.Body).Decode(&shared); err != nil {
-		return fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	// 应用共享配置
-	target.DBHost = shared.Database.Host
-	target.DBPort = shared.Database.Port
-	target.DBUser = shared.Database.User
-	target.DBPassword = shared.Database.Password
-	target.DBName = shared.Database.Name
-	target.InternalAPIKey = shared.InternalAPIKey
-	target.AMapKey = shared.Map.AMapKey
-	target.AMapSecurityJsCode = shared.Map.AMapSecurityJsCode
-	target.TDTKey = shared.Map.TDTKey
-
-	// 解析加密密钥
-	if shared.EncryptionKey != "" {
-		key, err := base64.StdEncoding.DecodeString(shared.EncryptionKey)
-		if err == nil && len(key) == 32 {
-			target.EncryptionKey = key
-		}
-	}
-
-	// 如果没有从 System 获取到加密密钥，使用本地加载
-	if target.EncryptionKey == nil {
-		target.EncryptionKey = LoadEncryptionKey()
-	}
-
-	target.LogLevel = GetEnv("LOG_LEVEL", defaultString(target.LogLevel, "info"))
-	target.LogFormat = GetEnv("LOG_FORMAT", defaultString(target.LogFormat, "json"))
-	target.LogAddSource = GetEnvBool("LOG_ADD_SOURCE", target.LogAddSource)
-	target.LogFile = GetEnv("LOG_FILE", target.LogFile)
-
-	return nil
-}
-
-// LoadLocalConfig 从本地环境变量加载配置（降级方案）
-func LoadLocalConfig(target *BaseConfig) {
-	// 优先使用 POSTGRES_* 变量（.env 中的标准变量），fallback 到 DB_* 变量
-	target.DBHost = GetEnv("POSTGRES_HOST", GetEnv("DB_HOST", "localhost"))
-	target.DBPort = GetEnv("POSTGRES_PORT", GetEnv("DB_PORT", "15432"))
-	target.DBUser = GetEnv("POSTGRES_USER", GetEnv("DB_USER", "addp"))
-	target.DBPassword = GetEnv("POSTGRES_PASSWORD", GetEnv("DB_PASSWORD", "addp_password"))
-	target.DBName = GetEnv("POSTGRES_DB", GetEnv("DB_NAME", "addp"))
+// LoadDeploymentConfig loads process bootstrap configuration from the root env.
+func LoadDeploymentConfig(target *BaseConfig) {
+	target.DBHost = GetEnv("POSTGRES_HOST", "localhost")
+	target.DBPort = GetEnv("POSTGRES_PORT", "15432")
+	target.DBUser = GetEnv("POSTGRES_USER", "addp")
+	target.DBPassword = GetEnv("POSTGRES_PASSWORD", "addp_password")
+	target.DBName = GetEnv("POSTGRES_DB", "addp")
 
 	target.EncryptionKey = LoadEncryptionKey()
 	target.InternalAPIKey = GetEnv("INTERNAL_API_KEY", "")

@@ -216,6 +216,7 @@
       "parametersJsonPlaceholder": "请输入 JSON 对象",
       "parameterSelectPlaceholder": "请选择",
       "noExecutionParameters": "该任务没有执行参数",
+	  "executionContractUnavailable": "该任务的执行参数契约不可用，请刷新后重试",
       "booleanTrue": "是",
       "booleanFalse": "否",
       "parameterFields": {

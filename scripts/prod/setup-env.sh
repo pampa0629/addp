@@ -4,7 +4,8 @@
 # 功能:
 #   1. 检查 .env 文件是否存在
 #   2. 若不存在，从 .env.example 复制并自动生成安全随机密钥
-#   3. 替换所有需要修改的占位密钥
+#   3. 生成当前 IAM、基础设施和模块 OAuth Client 所需的独立 Secret
+#   4. 已有 .env 时只校验，不静默轮换持久化数据依赖的密钥
 #
 # 用法: bash scripts/prod/setup-env.sh
 
@@ -13,59 +14,121 @@ YELLOW='\033[0;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-# 生成随机密钥（32字节十六进制）
+if ! command -v openssl > /dev/null 2>&1; then
+  echo -e "${RED}错误: 生产环境初始化需要 openssl${NC}"
+  exit 1
+fi
+
+# 生成 32 字节随机值，以十六进制保存。
 gen_secret() {
-  # 优先用 openssl，其次用 /dev/urandom
-  if command -v openssl > /dev/null 2>&1; then
-    openssl rand -hex 32
-  else
-    cat /dev/urandom | tr -dc 'a-f0-9' | head -c 64
-  fi
+  openssl rand -hex 32
 }
 
-# 生成随机密码（字母数字，16位）
+# 生成仅含字母数字的 24 位随机密码。
 gen_password() {
-  if command -v openssl > /dev/null 2>&1; then
-    openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 16
-  else
-    cat /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 16
-  fi
+  openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 24
 }
 
-# 生成 Base64 编码的 32 字节密钥（用于 ENCRYPTION_KEY，AES-256）
+# 生成 Base64 编码的 32 字节密钥。
 gen_b64_key() {
-  if command -v openssl > /dev/null 2>&1; then
-    openssl rand -base64 32
-  else
-    cat /dev/urandom | head -c 32 | base64
-  fi
+  openssl rand -base64 32
 }
 
 ENV_FILE=".env"
 EXAMPLE_FILE=".env.example"
 
-if [ -f "$ENV_FILE" ]; then
-  updated=false
+SERVICE_SECRET_KEYS=(
+  ASSET_SERVICE_CLIENT_SECRET
+  DEVELOP_SERVICE_CLIENT_SECRET
+  DUCKDB_SERVICE_CLIENT_SECRET
+  MANAGER_SERVICE_CLIENT_SECRET
+  META_SERVICE_CLIENT_SECRET
+  MONITOR_SERVICE_CLIENT_SECRET
+  ORCHESTRATOR_SERVICE_CLIENT_SECRET
+  PORTAL_SERVICE_CLIENT_SECRET
+  QUALITY_SERVICE_CLIENT_SECRET
+  SERVICE_SERVICE_CLIENT_SECRET
+  TRANSFER_SERVICE_CLIENT_SECRET
+)
 
-  ensure_env() {
-    local key="$1"
-    local value="$2"
+env_value() {
+  local key="$1"
+  sed -n "s/^${key}=//p" "$ENV_FILE" | tail -n 1
+}
 
-    if grep -q "^${key}=" "$ENV_FILE"; then
-      return
-    fi
+require_secret() {
+  local key="$1"
+  local value
+  value="$(env_value "$key")"
+  case "$value" in
+    ""|*change-in-production*|*replace-with-*|*WILL_BE_GENERATED*|dev-internal-key*|\
+    addp_password|addp_redis|minioadmin|your-master-key-change-in-production|\
+    addp_kafka_admin|addp_kafka_connect|addp_kafka_transfer)
+      echo -e "${RED}错误: ${key} 未配置有效的生产 Secret${NC}"
+      return 1
+      ;;
+  esac
+}
 
-    printf '\n%s=%s\n' "$key" "$value" >> "$ENV_FILE"
-    updated=true
-  }
-
-  ensure_env "ENCRYPTION_KEY" "$(gen_b64_key)"
-
-  if [ "$updated" = true ]; then
-    echo -e "${GREEN}✓ .env 文件已存在，已补齐缺失的安全密钥${NC}"
-  else
-    echo -e "${GREEN}✓ .env 文件已存在，跳过初始化${NC}"
+require_b64_key() {
+  local key="$1"
+  local value decoded_size
+  value="$(env_value "$key")"
+  decoded_size="$(printf '%s' "$value" | openssl base64 -d -A 2>/dev/null | wc -c | tr -d ' ')"
+  if [ "$decoded_size" != "32" ]; then
+    echo -e "${RED}错误: ${key} 必须是 Base64 编码的 32 字节密钥${NC}"
+    return 1
   fi
+}
+
+validate_production_env() {
+  if [ "$(env_value ENV)" != "production" ]; then
+    echo -e "${RED}错误: 生产启动要求 ENV=production${NC}"
+    return 1
+  fi
+
+  local key value previous
+  for key in \
+    POSTGRES_PASSWORD REDIS_PASSWORD MINIO_ROOT_PASSWORD MEILISEARCH_MASTER_KEY \
+    INTERNAL_API_KEY INFRA_KAFKA_ADMIN_PASSWORD INFRA_KAFKA_CONNECT_PASSWORD \
+    INFRA_KAFKA_TRANSFER_PASSWORD; do
+    require_secret "$key" || return 1
+  done
+
+  for key in ENCRYPTION_KEY OAUTH_USER_CODE_PEPPER IAM_MFA_ENCRYPTION_KEY; do
+    require_secret "$key" || return 1
+    require_b64_key "$key" || return 1
+  done
+
+  local seen_secrets=()
+  for key in "${SERVICE_SECRET_KEYS[@]}"; do
+    require_secret "$key" || return 1
+    value="$(env_value "$key")"
+    if [ "${#value}" -lt 32 ] || [ "${#value}" -gt 72 ]; then
+      echo -e "${RED}错误: ${key} 长度必须为 32-72 字节${NC}"
+      return 1
+    fi
+    for previous in "${seen_secrets[@]}"; do
+      if [ "$value" = "$previous" ]; then
+        echo -e "${RED}错误: 模块 OAuth Client Secret 不得复用${NC}"
+        return 1
+      fi
+    done
+    seen_secrets+=("$value")
+  done
+}
+
+replace_env() {
+  local key="$1"
+  local value="$2"
+  sed -i.bak "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
+  rm -f "${ENV_FILE}.bak"
+}
+
+if [ -f "$ENV_FILE" ]; then
+  validate_production_env
+  chmod 600 "$ENV_FILE"
+  echo -e "${GREEN}✓ 已有 .env 通过生产配置校验，未修改任何 Secret${NC}"
   exit 0
 fi
 
@@ -87,32 +150,27 @@ fi
 echo -e "${YELLOW}未找到 .env 文件，正在从 .env.example 自动生成...${NC}"
 
 cp "$EXAMPLE_FILE" "$ENV_FILE"
+chmod 600 "$ENV_FILE"
 
-# 生成各密钥
-POSTGRES_PASS=$(gen_password)
-REDIS_PASS=$(gen_password)
-MINIO_PASS=$(gen_password)
-JWT=$(gen_secret)
-MEILI_KEY=$(gen_secret)
-ENCRYPTION_KEY=$(gen_b64_key)
+replace_env ENV production
+replace_env POSTGRES_PASSWORD "$(gen_password)"
+replace_env REDIS_PASSWORD "$(gen_password)"
+replace_env MINIO_ROOT_PASSWORD "$(gen_password)"
+replace_env MEILISEARCH_MASTER_KEY "$(gen_secret)"
+replace_env INTERNAL_API_KEY "$(gen_secret)"
+replace_env ENCRYPTION_KEY "$(gen_b64_key)"
+replace_env OAUTH_USER_CODE_PEPPER "$(gen_b64_key)"
+replace_env IAM_MFA_ENCRYPTION_KEY "$(gen_b64_key)"
+replace_env INFRA_KAFKA_ADMIN_PASSWORD "$(gen_secret)"
+replace_env INFRA_KAFKA_CONNECT_PASSWORD "$(gen_secret)"
+replace_env INFRA_KAFKA_TRANSFER_PASSWORD "$(gen_secret)"
 
-# 替换占位值（使用 | 作为分隔符避免 / 冲突）
-sed -i.bak \
-  -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${POSTGRES_PASS}|" \
-  -e "s|^REDIS_PASSWORD=.*|REDIS_PASSWORD=${REDIS_PASS}|" \
-  -e "s|^MINIO_ROOT_PASSWORD=.*|MINIO_ROOT_PASSWORD=${MINIO_PASS}|" \
-  -e "s|^JWT_SECRET=.*|JWT_SECRET=${JWT}|" \
-  -e "s|^MEILISEARCH_MASTER_KEY=.*|MEILISEARCH_MASTER_KEY=${MEILI_KEY}|" \
-  -e "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${ENCRYPTION_KEY}|" \
-  "$ENV_FILE"
+for key in "${SERVICE_SECRET_KEYS[@]}"; do
+  replace_env "$key" "$(gen_secret)"
+done
 
-rm -f "${ENV_FILE}.bak"
+validate_production_env
 
 echo -e "${GREEN}✓ .env 已生成，密钥已自动随机化${NC}"
-echo -e "${YELLOW}  POSTGRES_PASSWORD: ${POSTGRES_PASS}${NC}"
-echo -e "${YELLOW}  REDIS_PASSWORD:    ${REDIS_PASS}${NC}"
-echo -e "${YELLOW}  MINIO_PASSWORD:    ${MINIO_PASS}${NC}"
-echo -e "${YELLOW}  ENCRYPTION_KEY:    (已生成，见 .env)${NC}"
-echo -e "${YELLOW}  JWT_SECRET:        (已生成，见 .env)${NC}"
-echo -e "${YELLOW}  MEILISEARCH_KEY:   (已生成，见 .env)${NC}"
-echo -e "${YELLOW}如需自定义，请编辑 .env 后重新运行 start.sh${NC}"
+echo -e "${YELLOW}所有 Secret 仅保存在 .env，未输出到终端。${NC}"
+echo -e "${YELLOW}启动前请复核公共 URL、反向代理网段与 Business Engine 连接信息。${NC}"

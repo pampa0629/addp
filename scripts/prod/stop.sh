@@ -23,14 +23,13 @@ echo -e "${BLUE}ADDP Production Stop${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
-if [ ! -f ".env.prod" ]; then
-    echo -e "${YELLOW}Warning: .env.prod not found${NC}"
-    echo "Stopping services without env file..."
-    docker compose -f docker-compose.yml down
-else
-    echo -e "${YELLOW}Stopping ADDP services...${NC}"
-    docker compose -f docker-compose.yml --env-file .env.prod down
+if [ ! -f ".env" ]; then
+    echo -e "${RED}错误: 根目录 .env 不存在${NC}"
+    exit 1
 fi
+
+echo -e "${YELLOW}Stopping ADDP services...${NC}"
+docker compose -f docker-compose.yml --env-file .env down
 
 echo ""
 echo -e "${GREEN}✓ ADDP services stopped${NC}"

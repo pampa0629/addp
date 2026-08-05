@@ -56,9 +56,8 @@ func LoadConfig() *Config {
 
 	// Meta 不再调用使用 Internal API Key 的共享配置接口。部署配置来自
 	// 环境，System 业务事实只通过 Service Access Token 读取。
-	commonConfig.LoadLocalConfig(&cfg.BaseConfig)
+	commonConfig.LoadDeploymentConfig(&cfg.BaseConfig)
 	cfg.SystemServiceURL = systemURL
-	cfg.EnableIntegration = commonConfig.GetEnvBool("ENABLE_SERVICE_INTEGRATION", true)
 
 	cfg.MeilisearchURL = resolveMeilisearchURL()
 	cfg.MeilisearchMasterKey = commonConfig.GetEnv("MEILISEARCH_MASTER_KEY", "")

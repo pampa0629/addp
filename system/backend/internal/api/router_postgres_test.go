@@ -61,8 +61,6 @@ func TestTargetSystemCompositionAgainstPostgres(t *testing.T) {
 
 	cfg := testIAMRuntimeConfig()
 	cfg.InternalAPIKey = "target-internal-key"
-	cfg.OAuthPublicRateLimitPerMinute = 60
-	cfg.OAuthUserRateLimitPerMinute = 30
 	router := SetupRouter(db, cfg)
 	payload := []byte(`{
 		"event_name":"http.request.completed",

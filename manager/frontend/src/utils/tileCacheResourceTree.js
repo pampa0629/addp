@@ -144,11 +144,11 @@ export function tableSelectionFromResourceNode(node, parseLocator) {
 export function geometryColumnsFromNode(node) {
   const spatial = node?.metadata?.spatial || {}
   const columns = []
-  if (spatial.geometry) columns.push(spatial.geometry)
   if (Array.isArray(spatial.geometry_columns)) {
     columns.push(...spatial.geometry_columns)
   }
-  return columns.map((column) => String(column || '').trim()).filter(Boolean)
+  if (spatial.primary_geometry_column) columns.unshift(spatial.primary_geometry_column)
+  return [...new Set(columns.map((column) => String(column || '').trim()).filter(Boolean))]
 }
 
 export function locatorEngineID(locator, parseLocator) {

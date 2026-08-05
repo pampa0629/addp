@@ -31,7 +31,7 @@
           <el-form-item
             v-for="param in inputParameters"
             :key="param.name"
-            :label="param.name"
+            :label="param.display_name || param.name"
             class="input-connection-field"
           >
             <el-select
@@ -81,7 +81,7 @@
                   :data-param-name="param.name"
                   :aria-invalid="resourceValidationMessages(param).length || highlightedParamName === param.name ? 'true' : undefined"
                 >
-                  <h4 class="subsection-title">{{ param.name || t('develop.operatorParams.dataSourceSelect') }}</h4>
+                  <h4 class="subsection-title">{{ param.display_name || param.name || t('develop.operatorParams.dataSourceSelect') }}</h4>
                   <p v-if="param.description" class="subsection-description">
                     {{ param.description }}
                   </p>
@@ -159,7 +159,7 @@
               <!-- 常规参数渲染 -->
               <el-form-item
                 v-else
-                :label="param.name"
+                :label="param.display_name || param.name"
                 :required="param.required"
                 class="param-field"
                 :class="{ 'is-validation-target': highlightedParamName === param.name }"
@@ -169,7 +169,7 @@
               >
                 <template #label>
                   <div class="param-label">
-                    <span>{{ param.name }}</span>
+                    <span>{{ param.display_name || param.name }}</span>
                     <el-tooltip v-if="param.description" placement="top">
                       <template #content>{{ param.description }}</template>
                       <el-icon class="help-icon"><QuestionFilled /></el-icon>
@@ -250,14 +250,13 @@ import { ref, watch, computed, nextTick, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { QuestionFilled, InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { parseLocatorSafe, ResourceTreePicker } from '@addp/common-frontend'
+import { geometryColumnFactsFromSelection, parseLocatorSafe, ResourceTreePicker } from '@addp/common-frontend'
 import { isWorkflowInputParameter } from '@/utils/workflowInputBindings'
 import { validationMessagesForParams } from '@/utils/workflowValidationIssues'
 import {
   applyResourceBindingSelection,
   clearResourceBindingSelection,
   collectResourceBindingParams,
-  geometryColumnFactsFromSelection,
   getResourceBinding,
   isResourceDataTypeSupported,
   isResourceFormatSupported,
@@ -312,7 +311,7 @@ const resourcePickerDialogVisible = ref(false)
 const resourcePickerDialogParam = ref(null)
 const resourcePickerDraftSelection = ref(null)
 const resourcePickerDialogTitle = computed(() => {
-  const name = resourcePickerDialogParam.value?.name
+  const name = resourcePickerDialogParam.value?.display_name || resourcePickerDialogParam.value?.name
   return name
     ? t('develop.operatorParams.resourceDialogTitle', { name })
     : t('develop.operatorParams.dataSourceSelect')
@@ -488,7 +487,7 @@ const getPlaceholder = (param) => {
   if (param.default !== undefined && param.default !== null) {
     return t('develop.operatorParams.defaultValue', { value: param.default })
   }
-  return t('develop.operatorParams.inputPlaceholder', { name: param.name })
+  return t('develop.operatorParams.inputPlaceholder', { name: param.display_name || param.name })
 }
 
 // 参数变更处理(级联清空逻辑)

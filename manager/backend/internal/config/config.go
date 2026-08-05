@@ -2,7 +2,6 @@ package config
 
 import (
 	"log"
-	"strconv"
 	"strings"
 	"time"
 
@@ -13,12 +12,11 @@ type Config struct {
 	commonConfig.BaseConfig
 
 	// Manager 模块特有配置
-	Port                  string
-	DBSchema              string
-	PreviewPluginDir      string
-	MetaServiceURL        string
-	EnableMetaIntegration bool
-	ServiceClientSecret   string
+	Port                string
+	DBSchema            string
+	PreviewPluginDir    string
+	MetaServiceURL      string
+	ServiceClientSecret string
 
 	// Meilisearch 配置
 	MeilisearchURL        string
@@ -27,17 +25,11 @@ type Config struct {
 
 	// Manager 向量化配置（按需触发）
 	EmbeddingService struct {
-		BaseURL string
-		APIKey  string
-		Timeout time.Duration
-		Models  map[string]string // text, image, video
+		APIKey string
 	}
 
 	VectorConfig struct {
-		Dimension        int     // 向量维度
-		MaxDistance      float64 // 搜索相似度阈值（余弦距离）
-		MaxFileSizeMB    int     // 向量化最大文件大小
-		BatchConcurrency int     // 批量向量化并发数
+		Dimension int // 固定向量维度，仅供数据库结构初始化
 	}
 
 	// Redis 配置（用于资源变更事件同步）
@@ -122,12 +114,11 @@ func Load() *Config {
 	defaultPluginDir := strings.Join(pluginDirs, ",")
 
 	cfg := &Config{
-		Port:                  commonConfig.GetEnv("MANAGER_BACKEND_PORT", "8081"),
-		DBSchema:              commonConfig.GetEnv("DB_SCHEMA", "manager"),
-		PreviewPluginDir:      defaultPluginDir,
-		MetaServiceURL:        metaURL,
-		EnableMetaIntegration: commonConfig.GetEnvBool("ENABLE_META_INTEGRATION", true),
-		ServiceClientSecret:   commonConfig.GetEnv("MANAGER_SERVICE_CLIENT_SECRET", ""),
+		Port:                commonConfig.GetEnv("MANAGER_BACKEND_PORT", "8081"),
+		DBSchema:            commonConfig.GetEnv("DB_SCHEMA", "manager"),
+		PreviewPluginDir:    defaultPluginDir,
+		MetaServiceURL:      metaURL,
+		ServiceClientSecret: commonConfig.GetEnv("MANAGER_SERVICE_CLIENT_SECRET", ""),
 	}
 
 	cfg.MeilisearchURL = resolveMeilisearchURL()
@@ -136,46 +127,13 @@ func Load() *Config {
 
 	// 设置 BaseConfig 字段
 	cfg.SystemServiceURL = systemURL
-	cfg.EnableIntegration = commonConfig.GetEnvBool("ENABLE_SERVICE_INTEGRATION", true)
 
-	// 从 System 获取共享配置
-	if cfg.EnableIntegration {
-		log.Println("🔄 Attempting to load shared config from System service...")
-		if err := commonConfig.LoadSharedConfig(systemURL, &cfg.BaseConfig); err != nil {
-			log.Printf("⚠️  Warning: Failed to load shared config from System: %v", err)
-			log.Printf("⚠️  Falling back to local environment variables...")
-			commonConfig.LoadLocalConfig(&cfg.BaseConfig)
-		} else {
-			log.Println("✅ Successfully loaded shared config from System service")
-		}
-	} else {
-		log.Println("ℹ️  Service integration disabled, using local config")
-		commonConfig.LoadLocalConfig(&cfg.BaseConfig)
-	}
+	// Bootstrap 部署配置只从根 env / 进程环境读取。
+	commonConfig.LoadDeploymentConfig(&cfg.BaseConfig)
 
-	// 加载 Manager 向量化配置（按需触发）
-	cfg.EmbeddingService.BaseURL = commonConfig.GetEnv("MANAGER_EMBEDDING_SERVICE_BASE_URL", "")
+	// API Key 是部署 Secret；其余向量化配置由 Manager 自有配置表管理。
 	cfg.EmbeddingService.APIKey = commonConfig.GetEnv("MANAGER_EMBEDDING_SERVICE_API_KEY", "")
-	cfg.EmbeddingService.Timeout = commonConfig.GetEnvDuration("MANAGER_EMBEDDING_SERVICE_TIMEOUT", "15s")
-	embeddingModel := commonConfig.GetEnv("MANAGER_EMBEDDING_MODEL", "qwen3-vl-embedding")
-	cfg.EmbeddingService.Models = map[string]string{
-		"text":  embeddingModel,
-		"image": embeddingModel,
-		"video": embeddingModel,
-	}
-
-	cfg.VectorConfig.Dimension = commonConfig.GetEnvInt("MANAGER_VECTOR_DIMENSION", 2560)
-
-	// 解析 MaxDistance（浮点数）
-	maxDistanceStr := commonConfig.GetEnv("MANAGER_VECTOR_SEARCH_MAX_DISTANCE", "0.78")
-	if maxDistance, err := strconv.ParseFloat(maxDistanceStr, 64); err == nil && maxDistance > 0 {
-		cfg.VectorConfig.MaxDistance = maxDistance
-	} else {
-		cfg.VectorConfig.MaxDistance = 0.78
-	}
-
-	cfg.VectorConfig.MaxFileSizeMB = commonConfig.GetEnvInt("MANAGER_VECTOR_MAX_FILE_SIZE_MB", 10)
-	cfg.VectorConfig.BatchConcurrency = commonConfig.GetEnvInt("MANAGER_VECTOR_BATCH_CONCURRENCY", 5)
+	cfg.VectorConfig.Dimension = 2560
 
 	// Redis 配置
 	cfg.RedisHost = commonConfig.GetEnv("REDIS_HOST", "localhost")

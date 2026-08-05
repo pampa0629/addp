@@ -6,9 +6,9 @@
 
 - [client/system.go](common/client/system.go) - SystemClient 用于与 System 模块通信
 - [models/engine.go](common/models/engine.go) - 共享的 Engine 模型和 `connection_info` 结构
-- [config/loader.go](common/config/loader.go) - 集中式配置加载,带回退
+- [config/loader.go](common/config/loader.go) - 部署环境配置读取；目标实现不得保留 System shared config 或环境变量 fallback 双轨
 - `common/jsonmap` - decoded JSON map 的通用读取工具,不承载 `meta_item.attributes` 业务规范
-- `common/taskprovider` - `task.capabilities/v1`、标准任务列表响应和 `execution_schema` 参数实例校验；校验失败返回包含稳定 rule、path 和约束值的结构化错误，Orchestrator 保存阶段可允许完整模板字符串，模板解析后必须严格复验
+- `common/taskprovider` - `task.capabilities/v2`、标准任务列表响应、任务级 `execution_contract` 和执行输入实例校验；校验失败返回包含稳定 rule、path 和约束值的结构化错误。任务类型能力不再保存静态 `execution_schema`，Orchestrator 必须从具体任务详情取得精确输入/输出契约
 - `common/middleware/ratelimit` - Redis 原子固定窗口限流能力，供认证等多实例安全边界复用；Redis 不可用时由调用方定义失败关闭响应，不提供进程内存回退路径
 - `common/contentio` - 基于 Go `io` 的内容定位与读写抽象，负责 `Ref`、`Reader`、`Writer`、`Lister`、`RangeReader` 和 `Stat`
 - `common/format` - 通用文件格式、FormatDescriptor、格式信息、format plugin、info provider、content reader 和 writer/provider

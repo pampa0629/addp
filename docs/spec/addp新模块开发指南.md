@@ -135,19 +135,9 @@
            InternalAPIKey: os.Getenv("INTERNAL_API_KEY"),
        }
 
-       // 从 System 服务加载共享配置（带降级到本地环境变量）
-       enableIntegration := commonConfig.GetEnvBool("ENABLE_SERVICE_INTEGRATION", true)
-       if err := commonConfig.LoadServiceConfiguration(commonConfig.ServiceConfigLoader{
-           SystemServiceURL:      cfg.SystemURL,
-           EnableIntegration:     enableIntegration,
-           InternalAPIKey:        cfg.InternalAPIKey,
-           BaseConfigDestination: &cfg.BaseConfig,
-       }); err != nil {
-           return nil, fmt.Errorf("failed to load service configuration: %w", err)
-       }
+       commonConfig.LoadDeploymentConfig(&cfg.BaseConfig)
 
        cfg.BaseConfig.SystemServiceURL = cfg.SystemURL
-       cfg.BaseConfig.EnableIntegration = enableIntegration
 
        return cfg, nil
    }
@@ -170,15 +160,15 @@
    - ✅ 使用 `commonConfig.LoadEnv()` 自动发现项目根目录的 .env 文件
    - ✅ 继承 `commonConfig.BaseConfig` 复用通用配置字段
    - ✅ 使用 `commonConfig.GetEnv()` 等辅助函数获取环境变量
-   - ✅ 支持从 System 服务获取数据库、加密和内部调用等共享配置
+   - ✅ Bootstrap 部署配置只从根 `.env` 或进程环境读取
    - ✅ DSN 包含 `search_path` 参数实现 schema 隔离
    - ❌ 禁止硬编码 `godotenv.Load("../../.env")`
    - ❌ 禁止重复定义 BaseConfig 中已有的字段
 
-   **配置降级策略**:
-   1. 优先从 System 服务获取数据库、加密和内部调用等共享配置
-   2. 如果 System 服务不可用，降级到本地环境变量
-   3. 如果环境变量不存在，使用代码中的默认值
+   **配置来源**:
+   1. 端口、数据库连接、基础设施地址和 Secret 从根 `.env` 或进程环境读取
+   2. owner 普通运行配置从 owner 自己的持久化配置读取
+   3. 不允许从 System 共享配置 API 获取 Secret，也不允许环境变量 fallback 双轨
 
 4. **认证**:
 

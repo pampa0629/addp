@@ -17,7 +17,7 @@ func TestRegisterIAMMigratedBusinessRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtime, err := NewIAMRuntime(db, testIAMRuntimeConfig())
+	runtime, err := NewIAMRuntime(db, testIAMRuntimeConfig(), testIAMSecurityPolicy())
 	if err != nil {
 		t.Fatal(err)
 	}

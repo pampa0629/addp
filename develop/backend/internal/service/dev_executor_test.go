@@ -219,6 +219,20 @@ func TestWorkflowProducedTargetScanOptionsUseRefGroupsForFileTargets(t *testing.
 	}
 }
 
+func TestWorkflowExecutionOutputsAreAddressedByTaskID(t *testing.T) {
+	outputs := workflowExecutionOutputs([]WorkflowProducedTarget{
+		{TaskID: "save_3", Type: "table", Locator: "addp://engine/7/path/public/roads_buffered?type=table"},
+	})
+	taskOutput, ok := outputs["save_3"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("outputs = %#v, want save_3 object", outputs)
+	}
+	resource, ok := taskOutput["resource"].(map[string]interface{})
+	if !ok || resource["type"] != "table" || resource["locator"] == "" {
+		t.Fatalf("resource output = %#v", taskOutput["resource"])
+	}
+}
+
 func TestWorkflowProducedTargetScanOptionsUseTargetsForTableTargets(t *testing.T) {
 	locator := "addp://engine/8/path/public/result?type=table"
 	opts := workflowProducedTargetScanOptions(WorkflowProducedTarget{

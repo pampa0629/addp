@@ -2644,6 +2644,9 @@ const docTemplate = `{
                 "engine_id": {
                     "type": "integer"
                 },
+                "execution_contract": {
+                    "$ref": "#/definitions/taskprovider.ExecutionContract"
+                },
                 "id": {
                     "type": "integer"
                 },
@@ -3188,6 +3191,27 @@ const docTemplate = `{
                 "typeLabel": {
                     "description": "类型的 i18n key，如 \"engine.term.schema\"（前端查 i18n 字典展示）",
                     "type": "string"
+                }
+            }
+        },
+        "taskprovider.ExecutionContract": {
+            "type": "object",
+            "properties": {
+                "input_defaults": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "input_schema": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "input_ui_schema": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "output_schema": {
+                    "type": "object",
+                    "additionalProperties": true
                 }
             }
         }

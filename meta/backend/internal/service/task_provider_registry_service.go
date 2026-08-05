@@ -24,12 +24,11 @@ func (s *TaskProviderRegistryService) Register(ctx context.Context) error {
 		return errors.New("System service client is required")
 	}
 	capabilities := map[string]interface{}{
-		"schema_version": "task.capabilities/v1",
+		"schema_version": "task.capabilities/v2",
 		"task_capabilities": []map[string]interface{}{
 			{
 				"type": "scan", "display_name": "元数据扫描", "description": "执行 Meta ScanTask",
 				"definition_schema": map[string]interface{}{"type": "object"},
-				"execution_schema":  map[string]interface{}{"type": "object", "additionalProperties": false},
 				"supports_schedule": true, "supports_cancel": false, "supports_inline_execution": false,
 				"create_url": "/meta/scan", "edit_url": "/meta/scan?task_id=:id", "deprecated": false,
 			},

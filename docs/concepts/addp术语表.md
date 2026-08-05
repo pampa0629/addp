@@ -171,6 +171,9 @@
 | Runtime Engine | 运行时引擎 | System 中代表独立计算 Runtime 物理端点的 Engine Instance。 | Develop 任务和 Service 定义绑定 Runtime Engine；它不等于查询涉及的 Source Engine，也不因此获得 Source Engine 数据权限。 |
 | Source Engine | 数据源引擎 | 一次查询、工作流或服务执行实际读取或写入数据的 Engine Instance。 | Source Engine 必须逐个进入 Execution Authorization；不能用 Runtime Engine ID 替代或隐式扩大数据源范围。 |
 | Public Operator Spec | 公开算子规范 | 面向用户、前端、AI 和 Develop 任务定义的算子公开契约，声明公开参数、资源选择方式和校验规则。 | 资源身份使用 `locator` 或 `target_parent_locator + target_name`；不得暴露 `connection_info` 等内部连接参数。 |
+| execution input contract | 执行输入契约 | 某个具体任务定义允许调用方在单次 execution 中覆盖的公开输入 Schema、默认值和 UI 语义。 | 保存的任务定义必须始终可直接执行；未提交的输入使用任务保存值，提交值只影响本次 execution。工作流中未被内部连线占用的可序列化 Public Operator 参数默认进入该契约。 |
+| execution output contract | 执行输出契约 | 某个具体任务定义对外承诺的、可被 Orchestrator 后续 Step 引用的稳定执行结果 Schema。 | 只允许声明可跨任务边界传递的持久结果或稳定引用，例如 ResourceLocator；不得暴露 DataFrame、GeoDataFrame 或运行时私有内存句柄。 |
+| execution parameter override | 执行参数覆盖 | 调用方按执行输入契约为某一次 execution 提交的部分参数值。 | 未提交字段保留任务默认值；覆盖不得修改任务定义，不得改变 DAG 结构，也不得绕过最终资源校验和 Execution Authorization。 |
 | Develop Adapter Spec | Develop 适配规范 | Develop Backend 按工作流引擎类型和算子 ID 选择的显式执行前转换契约，声明公开资源参数如何派生为运行时参数。 | 负责查询 System Engine Instance、派生 `connection_info/schema/table/path` 并移除公开资源参数；不得按参数名隐式触发。 |
 | Runtime Operator Spec | 运行时算子规范 | Workflow Runtime 实际执行算子时消费的内部契约，只声明运行时真实需要的参数、输入输出端口和执行行为。 | 不解析 ADDP `ResourceLocator`，不承载资源树 UI 配置；`connection_info/schema/table/path` 属于适配层到运行时的内部参数。 |
 | Workflow Access Plan | 工作流访问计划 | Develop、Manager 等调用方把已解析的存储资源转换为 Workflow Runtime 可执行读写计划的内部契约。 | 当前版本为 `addp.workflow.access-plan/v1`；只在执行期携带 `mounted_path` 或 `object_store` 访问参数，不作为用户任务定义、资源身份或长期事实源。 |
@@ -181,10 +184,8 @@
 | Notebook Interactive Session | Notebook 交互会话 | Develop 为一个 Tenant、User、Notebook Task 和 Script Engine 临时创建的隔离 JupyterLab 会话。 | 由已鉴权 API 创建，浏览器只访问 Develop 同源代理；会话关闭、过期或 Develop 重启后失效，Runtime 在清理前把 Notebook 保存回 owner 路径。它不是共享 Lab，也不是任务执行记录。 |
 | Notebook Native Engine Facade | Notebook 原生引擎门面 | `common-python` 面向 Notebook 使用者提供、按具体 Engine 原生术语组织的只读 Python 客户端。 | 例如 PostgreSQL 的 `schemas()` / `tables(schema=...)`、MongoDB 的 `databases()` / `collections(database=...)`。它只把用户表达编译为统一 Catalog 请求，不新增引擎专用后端契约，不模拟完整原生驱动。 |
 | workflow_def | 工作流定义 | ADDP 工作流运行时协议中的 DAG 定义结构。 | 由 ADDP 前端和后端消费；不得直接等同于某个引擎的私有 DAG JSON。 |
-| SuperMap SPS | SuperMap SPS | SuperMap GPA / 处理自动化模型的 Java 扩展与执行框架。 | 当前按 `sps-core`、`IWorkflow`、`IProcess`、`IDataItem`、`WorkflowExecutor` 等已验证能力使用；不在 ADDP 文档中硬展开 SPS 缩写。 |
-| SPS Process | SPS 处理节点 | SuperMap SPS 工作流中的可执行节点，实现或等价实现 SPS `IProcess`，声明 input / output 并由 `WorkflowExecutor` 调度。 | 在 `supermap_workflow` runtime 内部使用；不是独立 OS 进程、独立 HTTP 服务或独立容器。 |
-| SuperMap Algorithm | SuperMap 算法 | SuperMap iObjects Java / native / iObjectSpy 等实际完成空间分析、数据处理或格式转换的底层能力。 | 通常由 SPS Process 的 `execute()` 调用；不直接暴露给 ADDP 前端。 |
-| supermap_workflow | SuperMap 工作流运行时 | ADDP 工作流运行时类型，对外实现 `addp.workflow/v1`，对内使用 Java SuperMap SPS 执行 DAG。 | 设计与验证记录见 `docs/next/SuperMap工作流运行时设计.md`。 |
+| SuperMap iObjects C++ | SuperMap iObjects C++ | SuperMap 提供的 C++ 数据访问、空间分析、CAD 渲染和三维转换 SDK。 | 作为 `supermap_workflow` 的运行时内部依赖，不直接暴露给 ADDP 前端；完整 SDK 母版不进入 ADDP 仓库或最终运行镜像。 |
+| supermap_workflow | SuperMap 工作流运行时 | ADDP 工作流运行时类型，对外实现 `addp.workflow/v1`，对内使用 SuperMap iObjects C++ API 和类型化内存句柄执行 DAG。 | 第一阶段只支持普通 DAG，不实现条件、循环或子工作流；实现与部署见 `engines/supermap-workflow/README.md`。 |
 
 ## 智能体能力与交互
 
@@ -250,6 +251,19 @@
 | Notebook Table Scan | Notebook 表扫描 | Notebook Native Engine Facade 对一个已由实时 Catalog 解析的表发起的流式只读执行。 | 每次扫描使用独立 execution、服务端 Cursor 和 Arrow IPC 流；返回扫描开始时的一致快照，不设隐式总行数上限，当前不支持断点续读。 |
 | Delegated Access Token | 受委托访问令牌 | System 为 Agent 代表当前用户调用特定 owner 能力签发的短期、限 audience 和 Scope 令牌。 | 不改变原用户和租户；可绑定 AgentRun / ToolCall 用于审计。 |
 | Runtime Service Principal | 运行时服务主体 | Develop、DuckDB Runtime、Workflow Runtime、Jupyter 等工作负载用于 Client Credentials 和控制面识别的 Service Principal。 | 只证明机器身份并消费与自身 audience 匹配的 Execution Authorization 或 Notebook Session Authorization；不继承发起用户、服务创建人、引擎创建人或 Tenant 全量数据权限。 |
+
+## 配置管理
+
+| 英文术语 | 中文术语 | 定义 | 备注 |
+|---|---|---|---|
+| deployment configuration | 部署配置 | 模块连接自身持久化存储之前就必须可用的进程、网络和基础设施参数。 | 由根 `.env`、容器 environment 或部署系统注入；不是平台或 Tenant 普通运行配置。 |
+| secret | 密钥配置 | 密码、API Key、Token pepper、加密密钥等不得以明文进入普通配置存储、响应、日志或审计详情的敏感材料。 | 由 Secret Manager、受控环境注入或专用加密凭据实体管理；只可暴露是否设置、版本或引用。 |
+| platform configuration | 平台配置 | 在 Platform Realm 中管理、对整个 ADDP 部署或某个 owner 模块统一生效的普通运行配置。 | 平台级不等于 System-owned；配置语义、校验、存储和生效仍归 owner 模块。 |
+| tenant configuration | 租户配置 | 在单一 Tenant Context 中管理、只对当前 Tenant 生效的普通运行配置。 | 必须绑定 AuthContext 中的 `tenant_id`；平台管理员不能在 Platform Realm 中直接读取或修改。 |
+| configuration definition | 配置定义 | owner 模块对稳定配置 key、范围、类型、默认值、校验、敏感级别、Permission 和生效方式的声明。 | 代码默认值属于定义，不是与持久化值并行的第二事实源。 |
+| effective configuration | 有效配置 | owner 按配置定义和范围规则解析后，供当前请求、任务创建或 execution 快照消费的唯一配置值。 | Tenant 可覆盖场景固定按 Tenant 显式值、平台显式默认值、定义默认值解析；不得追加环境变量 fallback。 |
+| configuration management entry | 配置管理入口 | owner 模块通过 `addp.configuration-management/v1` 向 System 模块目录发布的配置管理 UI 能力。 | 只包含 entry id、owner、scope、前端路由和 Permission；不包含配置键、当前值、Secret 或私有表结构。 |
+| configuration snapshot | 配置快照 | 任务或 execution 在确定行为时固化的完整有效配置及版本。 | 平台或 Tenant 默认值后续变化不能改写历史快照；运行中的 execution 不热切换配置。 |
 
 ## Cleanup 与生命周期
 

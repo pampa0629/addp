@@ -22,7 +22,6 @@ engines/spark-workflow/
 ├── operators/              # 算子实现与 Pydantic 元数据定义
 ├── operator_metadata.py    # 公开算子元数据出口 (供前端使用)
 ├── requirements.txt        # Python 依赖
-├── .env.example            # 环境变量模板
 ├── start.sh                # 启动脚本
 └── README.md               # 本文件
 ```
@@ -84,18 +83,12 @@ pip install -r requirements.txt
 
 ### 2. 配置环境变量
 
-```bash
-# 复制环境变量模板
-cp .env.example .env
-
-# 编辑 .env 文件
-vi .env
-```
+开发环境统一使用 ADDP 仓库根目录 `.env`；`start.sh` 会自动加载该文件，不再创建或读取引擎目录内的 `.env`。
 
 关键配置项:
 - `SYSTEM_URL`: System Backend URL (默认 http://localhost:8180)
 - `SPARK_MODE`: local (开发) 或 remote (生产)
-- `PORT`: Flask API Server 端口 (默认 8098)
+- `SPARK_WORKFLOW_PORT`: Flask API Server 端口 (默认 8098)
 
 ### 3. 启动服务
 

@@ -1,73 +1,136 @@
-### 配置中心模式
-**System 作为单一真实来源**:
+# ADDP 配置规范
 
-平台实现了集中式配置管理模式,其中 **System 模块充当所有其他模块的配置中心**。
+## 核心决策
 
-**集中化的内容**:
+ADDP 的配置按事实来源和生命周期分层管理，不建立由 System 保存所有模块键值的中央配置表，也不允许同一个配置项同时存在数据库值、System 下发值和环境变量 fallback。
 
-1. **授权上下文**: opaque 用户 Token 由 System `/api/v1/system/auth/context` 解析，业务模块不解析 Token
-2. **系统数据库**: PostgreSQL 连接信息 - 系统数据的单一来源
-3. **业务引擎**: System 的 `engines` 表中管理的引擎 - 所有数据源配置
-4. **加密密钥**: `ENCRYPTION_KEY` - 跨服务的一致加密
+- Console 集中呈现配置管理入口，不保存配置值或解释业务字段。
+- System 负责模块配置管理能力登记、AuthContext、Permission、统一审计及 System 自己拥有的配置，不理解其他模块的配置语义。
+- 每个 owner 模块定义、校验、保存并应用自己的普通运行配置；平台级不等于 System-owned。
+- 端口、数据库连接、基础设施地址和进程启动前必须可用的参数属于部署配置。
+- 密钥、密码和 Token pepper 属于 Secret，不进入普通配置表和配置能力声明。
+- 资源连接、任务定义和用户偏好保留各自的强类型实体，不降格为通用配置键值。
 
-**配置加载流程**:
+## 配置分类与事实来源
 
-```
-模块启动
-   ↓
-尝试从 System 获取配置 (/internal/config)
-   ↓
-   ├─ 成功 ✅
-   │  └─ 使用 System 配置 (DB 连接、加密和内部调用配置)
-   │
-   └─ 失败 ⚠️
-      └─ 回退到本地 .env 配置
-```
+| 类别 | 典型内容 | 事实来源 | 维护者 |
+| --- | --- | --- | --- |
+| 部署配置 | 端口、数据库、Redis、MinIO、Kafka、模块间地址、启动开关 | 根 `.env`、容器 environment 或部署系统 | 部署运维人员 |
+| Secret | 数据库密码、Service Client Secret、API Key、pepper、加密密钥 | Secret Manager 或受控环境注入 | 部署运维或安全人员 |
+| 平台普通运行配置 | 模块运行策略、全局限额、重试和保留策略 | 对应 owner 模块的持久化配置 | Platform System Administrator |
+| 平台安全配置 | 认证、MFA、平台 IdP 和安全策略 | System IAM | Platform Security Administrator |
+| Tenant 核心治理配置 | Tenant IAM、组织和治理策略 | System | 当前 Tenant 的治理角色 |
+| Tenant 模块业务配置 | 当前 Tenant 的模块策略和默认值 | 对应 owner 模块，必须绑定 `tenant_id` | 获得该模块配置 Permission 的 Tenant 角色 |
+| 资源配置 | Engine、Webhook destination、Application 等 | 对应强类型资源实体 | 资源管理角色 |
+| 任务与 execution 配置 | 任务定义和本次执行所需参数 | owner 任务定义及 `execution_config` 快照 | 任务维护者或执行发起者 |
+| 用户偏好 | 语言、视图和个人默认选择 | 用户偏好实体 | 当前用户 |
 
-**优势**:
+代码默认值属于配置定义，不是可以与持久化值并行修改的第二事实源。没有显式持久化值时可以使用 owner 在配置定义中声明的默认值；一旦持久化，读取路径只能使用该值。
 
-- ✅ **单一真实来源**: 修改数据库密码一次,重启服务即可应用
-- ✅ **安全性**: 敏感配置集中管理和加密
-- ✅ **灵活性**: 支持集成和独立部署模式
-- ✅ **可维护性**: 减少配置重复,更易于审计
+## 配置范围与有效值
 
-**SystemClient 使用**:
+普通运行配置必须明确声明一种范围策略：
 
-所有模块使用 `SystemClient` 从 System 获取业务数据库配置:
+| 范围策略 | 规则 |
+| --- | --- |
+| `platform_only` | 只存在平台统一值，Tenant 不得覆盖。 |
+| `platform_default_with_tenant_override` | 平台提供默认值，Tenant 可以在 owner 声明的约束内覆盖。 |
+| `tenant_only` | 只在当前 Tenant Context 中存在，不读取平台运行值。 |
 
-```go
-import (
-    commonClient "github.com/addp/common/client"
-)
+`platform_default_with_tenant_override` 的有效值只按以下顺序解析：
 
-// 使用当前请求的短期 User Access Token 创建客户端
-client := commonClient.NewSystemClient(systemURL, userAccessToken)
-
-// 列出所有引擎
-engines, err := client.ListEngines("postgresql")
-
-// 获取特定引擎
-engine, err := client.GetEngine(engineID)
-
-// 使用 engine.ConnectionInfo 作为连接信息事实源
-// 需要底层 driver DSN 的数据库类引擎，由对应 engine plugin 的 DSNProvider.BuildDSN() 构建
-connInfo := engine.ConnectionInfo
+```text
+Tenant 显式值 > 平台显式默认值 > owner 配置定义默认值
 ```
 
-**模块 .env 文件**:
+解析链到此结束，不再回退到 System 内部配置 API、根 `.env` 或模块私有 `.env`。Platform Realm 与 Tenant Context 互斥；平台管理员不能通过平台配置入口修改或读取 Tenant 业务配置，Tenant 请求中的 `tenant_id` 必须来自 AuthContext，不能由客户端自报。
 
-每个模块只需配置模块特定的设置:
+每个普通运行配置定义至少声明：
 
-```bash
-# Manager/Meta/Transfer .env
-PORT=8081                          # 模块特定端口
-DB_SCHEMA=manager                  # 模块特定 schema
-SYSTEM_URL=http://localhost:8180
-ENABLE_SERVICE_INTEGRATION=true    # 启用配置中心
+- 稳定 key、owner module 和配置范围；
+- 数据类型、默认值、校验规则和可见说明；
+- 是否敏感以及 API、日志和审计中的脱敏规则；
+- 读取和修改 Permission；
+- 生效方式：热更新、模块重启、任务快照或受控迁移；
+- 变更后的影响评估、审计事件和必要的重建动作。
 
-# 共享配置 (DB 连接、加密和内部调用配置) 从 System 获取
-# 回退配置已注释 (仅在集成禁用时使用)
+## 配置管理能力声明
+
+各模块通过版本化的 `addp.configuration-management/v1` 契约向 System 发布配置管理入口。该声明是模块目录能力，不是配置定义或配置值，至少包含稳定 entry id、owner module、支持的 scope types、模块前端路由以及读写 Permission。
+
+约束如下：
+
+1. 模块 Service Principal 只能发布与自身 owner 一致的入口，重复发布按稳定 entry id 幂等更新。
+2. 声明不得携带配置键、默认值、当前值、Secret 或模块私有表结构。
+3. System 只校验和登记通用契约，不能解释配置字段、代替 owner 校验或成为其他模块配置的 fallback。
+4. Console 按当前 AuthContext、Permission 和模块状态聚合入口；具体页面由 owner 模块前端提供，具体 API 由 owner 模块后端提供。
+5. owner API 必须再次执行 Platform/Tenant Context 和 Permission 校验，不能信任 Console 是否展示了入口。
+6. 模块下线时，Console 将入口显示为不可用；System 不代管该模块的配置值。
+
+```mermaid
+flowchart LR
+    Owner["Owner 模块"] -->|"发布管理入口能力"| Registry["System 模块目录"]
+    Registry -->|"入口、范围、权限、状态"| Console["Console 配置管理"]
+    Console -->|"加载模块前端路由"| OwnerUI["Owner 配置页面"]
+    OwnerUI -->|"读写配置"| OwnerAPI["Owner 配置 API"]
+    OwnerAPI --> OwnerStore["Owner 配置事实"]
+    OwnerAPI --> Auth["System AuthContext"]
+    OwnerAPI --> Audit["统一审计"]
 ```
+
+System 的 `platform.configuration.read/update` 只允许管理 System-owned 的普通平台配置，不能成为跨 owner 的万能权限。业务模块必须声明自己的平台或 Tenant 配置 Permission，并执行最终授权。
+
+## 生效与变更规则
+
+- `hot_reload`：保存成功后由 owner 原子发布新版本，新请求使用新值，运行中的 execution 保持原快照。
+- `restart_required`：保存后记录待生效版本和原因，由平台运维按受控流程重启模块；不得伪装成已经生效。
+- `execution_snapshot`：任务创建、更新或执行时固化完整有效配置，后续平台或 Tenant 默认值变化不能静默改变历史 execution。
+- `migration_required`：涉及数据库结构、索引、加密材料或产物格式时，只能进入显式迁移流程，普通配置 API 必须拒绝直接修改。
+
+配置变更必须记录 owner、scope、配置版本、操作者、结果和脱敏后的差异。Secret 只能记录是否设置、版本或引用，不能进入响应、日志、审计详情或管理能力声明。
+
+## 根目录环境配置唯一路径
+
+- 根目录 `.env.example` 是 ADDP 开发与部署环境变量的唯一模板。
+- 实际配置统一使用根目录 `.env`；生产环境也不使用 `.env.prod` 或其他平行文件。
+- 模块进程可以接收容器或启动脚本显式注入的模块配置，但不再维护独立的长期 `.env` 路径。
+- 模块代码不得硬编码 `../../.env` 等相对路径，也不得加载 `.env.local` 形成覆盖层；标准启动脚本负责把根 `.env` 注入进程环境。
+- `.env` 和任何 Secret 不得提交到 Git；模板中只保留开发默认值、空值或明确的占位值。
+- 只有模块连接 owner 持久化存储之前就必须知道的配置才能保留在环境变量中；普通运行配置不得因为读取失败退回环境变量。
+
+IAM 环境密钥边界：
+
+- ADDP 只签发随机 opaque Token，不签发或解析用户 JWT，因此禁止配置 `JWT_SECRET`。
+- 三员账号只能通过离线 IAM Bootstrap 建立；Bootstrap Secret、三员密码、TOTP Secret 和验证码均不得进入环境变量。
+- `OAUTH_USER_CODE_PEPPER`、`IAM_MFA_ENCRYPTION_KEY` 和每个内置模块独立的 `*_SERVICE_CLIENT_SECRET` 是生产环境必需的 IAM Secret。
+- `OAUTH_PREVIOUS_USER_CODE_PEPPER` 只能在受控轮换窗口临时设置，轮换完成后必须删除。
+- `ENCRYPTION_KEY` 用于引擎连接信息等平台数据加密，不是 Token 签名密钥，不得与上述 IAM Secret 复用。
+
+### System IAM 安全策略
+
+System IAM 安全策略是 `platform_only` 的 System-owned 平台安全配置，由 Platform Security Administrator 使用 `iam.security_policy.read/update` 维护。Platform System Administrator 不继承该职责，Tenant Context 不得读取或修改。
+
+当前策略只包含以下普通运行字段：
+
+| 字段 | 单位 | 约束 |
+| --- | --- | --- |
+| Access Token TTL | 分钟 | `1-60` |
+| Delegated Access Token TTL | 分钟 | `1-2` |
+| Browser Resource Access Ticket TTL | 分钟 | `1-60`，且不得大于 Access Token TTL |
+| Refresh Token Family TTL | 天 | `1-365` |
+| OAuth Authorization Code TTL | 分钟 | `1-5` |
+| OAuth Device Code TTL | 分钟 | `5-30` |
+| OAuth Device Poll Interval | 秒 | `5-60` |
+| Tenant Invitation TTL | 小时 | `1-720` |
+| Enrollment Ticket TTL | 分钟 | `1-30` |
+| OAuth public rate limit | 次/分钟 | `1-10000` |
+| OAuth authenticated-user rate limit | 次/分钟 | `1-10000` |
+
+策略保存到 `system.iam_security_policy` 单例表，以 `version` 做乐观并发控制，并记录 `applied_version`。IAM Runtime 在启动时只读取一次当前持久化版本并把它标记为已应用；更新 API 保存新版本后必须返回 `pending_restart=true`，直到 System 受控重启后才生效。该策略不热更新，不从根 `.env`、模块私有 env 或代码外部参数回退。
+
+策略更新必须与 `iam.security_policy.updated` 审计事件在同一事务提交。审计只记录版本和普通数值字段差异，不记录 Token、Pepper、MFA Secret、Service Client Secret 或任何其他密钥材料。
+
+模块通过 System 获取 AuthContext、Engine Instance 和其他 System-owned 业务事实，不通过 System 获取本模块进程数据库密码、加密密钥或普通运行配置。业务数据源连接信息继续以 System `engines` 强类型资源为事实源；这不等于 System 是所有配置的事实源。
 
 ### Manager 导入中转对象存储
 
@@ -90,10 +153,14 @@ Manager 上传导入文件时写入 ADDP infra MinIO 的 `manager` bucket，并�
 相关环境变量：
 
 ```bash
-MINIO_SYSTEM_ENDPOINT=localhost:19000
-MINIO_SYSTEM_ACCESS_KEY=minioadmin
-MINIO_SYSTEM_SECRET_KEY=minioadmin
+MINIO_API_PORT=19000
+MINIO_ROOT_USER=minioadmin
+MINIO_ROOT_PASSWORD=minioadmin
 ```
+
+宿主机开发时由 `MINIO_API_PORT` 组成 `localhost:<port>`；容器部署由 Compose 显式注入
+`MINIO_ENDPOINT=minio:9000`。模块不得读取 `MINIO_SYSTEM_*`、`MINIO_ACCESS_KEY` 或
+`MINIO_SECRET_KEY` 等平行别名。
 
 规则：
 
@@ -117,17 +184,27 @@ leaf COG 生成并发不通过全局环境变量固定，而是在任务 `config
 
 ### Manager 向量化配置
 
-Manager 向量化当前阶段只允许一个启用中的向量模型和一个向量维度。任务定义中的 `config.embedding.model` / `config.embedding.dimension` 是当前配置快照，创建或更新任务时必须与以下环境变量一致；不再按 text/image/video 分别配置模型。
+Manager 向量化当前阶段只允许一个平台启用中的多模态向量模型和一个向量维度，不按 text/image/video 建立平行模型配置。该配置是 `platform_only`，事实 owner 为 Manager，Platform System Administrator 通过 Manager 配置页面和 API 维护；Tenant 当前不能选择或覆盖模型。
+
+| 字段 | 归属与规则 |
+| --- | --- |
+| 向量服务 Base URL | Manager 平台普通运行配置。 |
+| 模型标识 | Manager 平台普通运行配置；同维度切换模型后，既有 ready 结果统一视为 `outdated`。 |
+| 请求 timeout | Manager 平台普通运行配置。 |
+| 向量检索最大距离 | Manager 平台检索默认策略；当前不开放 Tenant 覆盖。 |
+| 最大文件大小 | Manager 平台成本与资源限制；当前不开放 Tenant 覆盖。 |
+| 批处理并发数 | Manager 平台运行资源策略。 |
+| 向量维度 | 模型输出与 pgvector 列结构的只读约束，不是普通可编辑配置。不同维度切换必须走数据库迁移和全量重建。 |
+| 向量服务 API Key | 部署 Secret，只能通过受控环境或 Secret Manager 注入；普通配置 API 只可返回是否已配置，不能返回值。 |
+
+Manager 配置定义提供默认值；显式平台值保存到 Manager 自己的持久化配置中。除 API Key 外，上述普通运行字段不再从 `MANAGER_*` 环境变量读取，也不保留环境变量 fallback。Manager 必须先连接自身持久化存储，再读取有效配置；读取或校验失败时启动失败或禁用向量化能力，不能静默切换到另一套值。
+
+任务定义中的 `config.embedding.model` / `config.embedding.dimension` 和 execution 的 `execution_config` 是实际使用配置的快照。平台配置变化只影响后续创建或显式更新的任务及后续 execution，不能改写历史执行事实。
+
+当前仅保留以下部署 Secret：
 
 ```bash
-MANAGER_EMBEDDING_SERVICE_BASE_URL=
 MANAGER_EMBEDDING_SERVICE_API_KEY=
-MANAGER_EMBEDDING_SERVICE_TIMEOUT=15s
-MANAGER_EMBEDDING_MODEL=qwen3-vl-embedding
-MANAGER_VECTOR_DIMENSION=2560
-MANAGER_VECTOR_SEARCH_MAX_DISTANCE=0.78
-MANAGER_VECTOR_MAX_FILE_SIZE_MB=10
-MANAGER_VECTOR_BATCH_CONCURRENCY=5
 ```
 
 ### Transfer continuous 运行观测配置
@@ -298,32 +375,25 @@ QUICK_VIEW_REALTIME_TILE_TIMEOUT_MS=5000
 QUICK_VIEW_REALTIME_TILE_RETRY_AFTER_SEC=60
 ```
 
-## 配置
+## 环境变量参考
 
-### 环境变量
+### 根目录 `.env`
 
-根目录 `.env` 文件 (从 `.env.example` 复制):
+根目录 `.env` 文件从唯一模板 `.env.example` 生成。不得另建 `.env.prod`、模块级 `.env` 或其他平行配置路径。
+
+生产环境通过 `bash scripts/prod/setup-env.sh` 从同一模板初始化 `.env` 并生成独立 Secret；已有 `.env` 时脚本不得静默替换持久化数据依赖的密钥。
+
+关键配置如下：
 
 ```bash
-# System OAuth 用户令牌生命周期
-ACCESS_TOKEN_EXPIRE_MINUTES=15
-DELEGATED_ACCESS_TOKEN_EXPIRE_MINUTES=2
-RESOURCE_ACCESS_TICKET_EXPIRE_MINUTES=15
-REFRESH_TOKEN_EXPIRE_DAYS=30
-OAUTH_CODE_EXPIRE_MINUTES=5
-OAUTH_DEVICE_EXPIRE_MINUTES=10
-OAUTH_DEVICE_INTERVAL_SECONDS=5
-# Tenant Invitation 默认 7 天有效；Enrollment Ticket 固定短期、一次性消费。
-TENANT_INVITATION_EXPIRE_HOURS=168
-ENROLLMENT_TICKET_EXPIRE_MINUTES=5
 # Base64 编码的独立 32 字节 User Code HMAC pepper；生产环境必须显式设置。
 OAUTH_USER_CODE_PEPPER=
 # 仅在一次受控轮换窗口内设置；窗口结束后删除，不能保留无限历史链。
-OAUTH_PREVIOUS_USER_CODE_PEPPER=
+# OAUTH_PREVIOUS_USER_CODE_PEPPER=
 # Base64 编码的独立 32 字节 MFA Credential 加密密钥；不得与 ENCRYPTION_KEY 复用。
 IAM_MFA_ENCRYPTION_KEY=
-OAUTH_PUBLIC_RATE_LIMIT_PER_MINUTE=60
-OAUTH_USER_RATE_LIMIT_PER_MINUTE=30
+# Base64 编码的 32 字节平台数据加密密钥；不是 Token 签名密钥。
+ENCRYPTION_KEY=
 # 浏览器、CLI 和外部客户端可访问的 Gateway 公共 API 根地址；OAuth 响应不得使用模块间 SYSTEM_URL。
 PUBLIC_API_URL=http://localhost:8000
 CONSOLE_URL=http://localhost:5170
@@ -384,13 +454,6 @@ BUSINESS_MINIO_ENDPOINT=business-minio:9000
 BUSINESS_MINIO_ACCESS_KEY=minioadmin
 BUSINESS_MINIO_SECRET_KEY=minioadmin
 
-# 服务集成
-ENABLE_SERVICE_INTEGRATION=true  # 启用跨服务调用
-
-# 审计日志归档
-AUDIT_LOG_RETENTION_DAYS=90
-AUDIT_LOG_ARCHIVE_ENABLED=false
-AUDIT_LOG_ARCHIVE_CRON="0 2 * * *"
 ```
 
 ### 端口分配
@@ -440,4 +503,4 @@ Bootstrap 使用离线 `iam-bootstrap prepare/apply` 两阶段命令；已完成
 
 System 不提供公开 `/register`。平台 IAM 管理使用 `/platform/*`，Tenant IAM 管理使用 `/tenant/*`，当前用户自服务使用 `/users/me`，OAuth 2.0 使用 `/oauth/*`。完整端点与权限元数据以 System Swagger 为准。
 
-**另请参阅**: 本文即为当前配置中心与环境变量说明入口。
+**另请参阅**: 本文即为当前配置分层、管理能力与环境变量规范入口。

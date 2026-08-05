@@ -48,20 +48,10 @@ func LoadConfig() (*Config, error) {
 		StandardURL: commonConfig.GetEnv("STANDARD_URL", "http://localhost:8110"),
 	}
 
-	// 从 System 服务加载共享配置（带降级）
-	enableIntegration := commonConfig.GetEnvBool("ENABLE_SERVICE_INTEGRATION", true)
-	if err := commonConfig.LoadServiceConfiguration(commonConfig.ServiceConfigLoader{
-		SystemServiceURL:      cfg.SystemURL,
-		EnableIntegration:     enableIntegration,
-		InternalAPIKey:        cfg.InternalAPIKey,
-		BaseConfigDestination: &cfg.BaseConfig,
-	}); err != nil {
-		return nil, fmt.Errorf("failed to load service configuration: %w", err)
-	}
+	commonConfig.LoadDeploymentConfig(&cfg.BaseConfig)
 
 	// 设置 System 服务 URL
 	cfg.BaseConfig.SystemServiceURL = cfg.SystemURL
-	cfg.BaseConfig.EnableIntegration = enableIntegration
 
 	return cfg, nil
 }

@@ -230,7 +230,7 @@ ADDP 不创建默认全权管理员、默认租户或共享弱密码账号。首
 - **[scripts/README.md](scripts/README.md)** - Scripts 脚本使用指南
 - **[docs/](docs/)** - 详细技术文档
   - [addp部署和开发步骤.md](docs/guide/addp部署和开发步骤.md) - 部署与开发启动指南
-  - [addp配置介绍.md](docs/spec/addp配置介绍.md) - 配置中心与环境变量说明
+  - [addp配置介绍.md](docs/spec/addp配置介绍.md) - 配置分层、管理能力与环境变量规范
 
 ### 🤝 贡献
 

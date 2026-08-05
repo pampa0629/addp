@@ -30,21 +30,22 @@ type OperatorDescriptor struct {
 
 // ParameterDescriptor 参数描述
 type ParameterDescriptor struct {
-	Name        string                         `json:"name"`                 // 参数名
-	Type        string                         `json:"type"`                 // 类型 (string/integer/float/boolean/array/object)
-	ParamType   string                         `json:"param_type,omitempty"` // 参数角色 (input/output/param/ui)
-	Required    bool                           `json:"required"`             // 是否必填
-	Default     interface{}                    `json:"default,omitempty"`    // 默认值
-	Description string                         `json:"description"`          // 参数说明
-	Enum        []string                       `json:"enum,omitempty"`       // 枚举值 (用于下拉选择)
-	Min         *float64                       `json:"min,omitempty"`        // 最小值 (数值类型)
-	Max         *float64                       `json:"max,omitempty"`        // 最大值 (数值类型)
-	Pattern     string                         `json:"pattern,omitempty"`    // 正则校验 (字符串类型)
-	ItemType    string                         `json:"item_type,omitempty"`  // 数组元素类型
-	Properties  map[string]ParameterDescriptor `json:"properties,omitempty"` // 对象属性定义
-	DependsOn   string                         `json:"depends_on,omitempty"` // 依赖的参数名 (动态显示)
-	ShowWhen    map[string]interface{}         `json:"show_when,omitempty"`  // 显示条件 (格式: {param_name: value_or_list})
-	Notes       string                         `json:"notes,omitempty"`      // 注意事项/额外说明
-	UIType      string                         `json:"ui_type,omitempty"`    // UI 组件类型 (resource_tree_picker 等)
-	UIConfig    map[string]interface{}         `json:"ui_config,omitempty"`  // UI 组件配置参数
+	Name        string                         `json:"name"`                   // 稳定参数名
+	DisplayName string                         `json:"display_name,omitempty"` // 用户可见名称
+	Type        string                         `json:"type"`                   // 类型 (string/integer/float/boolean/array/object)
+	ParamType   string                         `json:"param_type,omitempty"`   // 参数角色 (input/output/param/ui)
+	Required    bool                           `json:"required"`               // 是否必填
+	Default     interface{}                    `json:"default,omitempty"`      // 默认值
+	Description string                         `json:"description"`            // 参数说明
+	Enum        []string                       `json:"enum,omitempty"`         // 枚举值 (用于下拉选择)
+	Min         *float64                       `json:"min,omitempty"`          // 最小值 (数值类型)
+	Max         *float64                       `json:"max,omitempty"`          // 最大值 (数值类型)
+	Pattern     string                         `json:"pattern,omitempty"`      // 正则校验 (字符串类型)
+	ItemType    string                         `json:"item_type,omitempty"`    // 数组元素类型
+	Properties  map[string]ParameterDescriptor `json:"properties,omitempty"`   // 对象属性定义
+	DependsOn   string                         `json:"depends_on,omitempty"`   // 依赖的参数名 (动态显示)
+	ShowWhen    map[string]interface{}         `json:"show_when,omitempty"`    // 显示条件 (格式: {param_name: value_or_list})
+	Notes       string                         `json:"notes,omitempty"`        // 注意事项/额外说明
+	UIType      string                         `json:"ui_type,omitempty"`      // UI 组件类型 (resource_tree_picker 等)
+	UIConfig    map[string]interface{}         `json:"ui_config,omitempty"`    // UI 组件配置参数
 }

@@ -1,0 +1,126 @@
+<template>
+  <section class="configuration-management">
+    <header class="page-header">
+      <div>
+        <h1>{{ t('console.configuration.title') }}</h1>
+        <p>{{ contextLabel }}</p>
+      </div>
+      <el-button :icon="Refresh" circle :loading="loading" @click="loadEntries" />
+    </header>
+
+    <el-table v-loading="loading" :data="entries" class="entries-table" :row-class-name="entryRowClass" @row-click="openEntry">
+      <el-table-column prop="owner_module" :label="t('console.configuration.owner')" min-width="150" />
+      <el-table-column prop="id" :label="t('console.configuration.entry')" min-width="240" />
+      <el-table-column :label="t('console.configuration.scope')" min-width="220">
+        <template #default="{ row }">
+          <el-tag v-for="scope in row.scope_types" :key="scope" effect="plain">
+            {{ scopeLabel(scope) }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column :label="t('console.configuration.status')" width="120">
+        <template #default="{ row }">
+          <el-tag :type="row.available ? 'success' : 'info'" effect="plain">
+            {{ row.available ? t('console.configuration.available') : t('console.configuration.unavailable') }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column width="72" align="right">
+        <template #default="{ row }">
+          <el-button :icon="ArrowRight" text circle :disabled="!row.available" @click.stop="openEntry(row)" />
+        </template>
+      </el-table-column>
+      <template #empty>
+        <el-empty :description="t('console.configuration.empty')" />
+      </template>
+    </el-table>
+  </section>
+</template>
+
+<script setup>
+import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
+import { ArrowRight, Refresh } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { useAuthStore } from '../store/auth'
+import { listConfigurationManagementEntries } from '../api/configurationManagement'
+
+const { t } = useI18n()
+const router = useRouter()
+const authStore = useAuthStore()
+const loading = ref(false)
+const entries = ref([])
+
+const contextLabel = computed(() => authStore.authContext?.context?.type === 'tenant'
+  ? t('console.configuration.tenantContext')
+  : t('console.configuration.platformContext'))
+
+function scopeLabel(scope) {
+  return t(`console.configuration.scopes.${scope}`)
+}
+
+async function loadEntries() {
+  loading.value = true
+  try {
+    entries.value = await listConfigurationManagementEntries()
+  } catch (error) {
+    entries.value = []
+    ElMessage.error(t('console.configuration.loadFailed'))
+  } finally {
+    loading.value = false
+  }
+}
+
+function openEntry(entry) {
+  if (entry?.available && entry?.frontend_route) router.push(entry.frontend_route)
+}
+
+function entryRowClass({ row }) {
+  return row.available ? 'entry-row--available' : 'entry-row--unavailable'
+}
+
+onMounted(loadEntries)
+</script>
+
+<style scoped>
+.configuration-management {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  padding: 28px 32px;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.page-header h1 {
+  margin: 0 0 6px;
+  color: var(--addp-text-primary);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.page-header p {
+  margin: 0;
+  color: var(--addp-text-secondary);
+  font-size: 14px;
+}
+
+.entries-table { width: 100%; }
+.entries-table :deep(.entry-row--available) { cursor: pointer; }
+.entries-table :deep(.entry-row--unavailable) { color: var(--addp-text-secondary); }
+
+.entries-table .el-tag + .el-tag {
+  margin-left: 8px;
+}
+
+@media (max-width: 760px) {
+  .configuration-management { padding: 20px 16px; }
+}
+</style>

@@ -69,7 +69,6 @@ func main() {
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 
 	logger.L().Info("Service 配置加载完成",
-		"enable_integration", cfg.EnableIntegration,
 		"internal_api_key_set", cfg.InternalAPIKey != "",
 	)
 
@@ -82,29 +81,23 @@ func main() {
 
 	// 初始化 System 客户端
 	var systemClient *commonClient.SystemClient
-	if cfg.EnableIntegration && cfg.InternalAPIKey != "" {
+	if cfg.InternalAPIKey != "" {
 		systemClient = commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
 	}
 
 	// 初始化 Meta 客户端
-	var metaClient *commonClient.MetaClient
-	var systemServiceClient *commonClient.SystemServiceClient
-	if cfg.EnableIntegration {
-		if cfg.ServiceClientSecret == "" || cfg.MetaServiceURL == "" || cfg.SystemServiceURL == "" {
-			logger.L().Error("服务集成已启用，但 Meta Service Client Credential 或服务 URL 未配置")
-			os.Exit(1)
-		}
-		tokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-service", cfg.ServiceClientSecret, nil)
-		if err != nil {
-			logger.L().Error("Service Token Source 初始化失败", "error", err)
-			os.Exit(1)
-		}
-		systemServiceClient = commonClient.NewSystemServiceClient(cfg.SystemServiceURL, tokenSource, nil)
-		metaClient = commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
-		logger.L().Info("MetaClient 已初始化", "meta_url", cfg.MetaServiceURL)
-	} else {
-		logger.L().Info("服务集成未启用")
+	if cfg.ServiceClientSecret == "" || cfg.MetaServiceURL == "" || cfg.SystemServiceURL == "" {
+		logger.L().Error("Service Client Credential、Meta URL 和 System URL 必须配置")
+		os.Exit(1)
 	}
+	tokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-service", cfg.ServiceClientSecret, nil)
+	if err != nil {
+		logger.L().Error("Service Token Source 初始化失败", "error", err)
+		os.Exit(1)
+	}
+	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, tokenSource, nil)
+	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
+	logger.L().Info("MetaClient 已初始化", "meta_url", cfg.MetaServiceURL)
 
 	// 构建服务基础URL用于查询服务
 	// 使用 Gateway URL 作为对外服务端点的基础地址

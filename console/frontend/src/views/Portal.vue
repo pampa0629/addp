@@ -40,6 +40,10 @@
           @navigate="handleMenuSelect"
         />
 
+		<ConfigurationManagement
+		  v-else-if="currentModule === 'configuration'"
+		/>
+
         <PortalIframe
           v-else
           :iframe-url="iframeUrl"
@@ -139,6 +143,7 @@ import { navigateGuide } from '../api/copilot'
 import { createManualScanRun, deleteEngineScanTask, getScanTasks, upsertEngineScanTask } from '../api/meta'
 import PortalIframe from '../components/portal/PortalIframe.vue'
 import ApiDocs from './ApiDocs.vue'
+import ConfigurationManagement from './ConfigurationManagement.vue'
 import { consoleRouteModule, isSynchronizedIframeRoute, splitConsoleRoute } from '../utils/consoleNavigation'
 
 const router = useRouter()
@@ -325,6 +330,10 @@ const handleEngineScanPolicyBridge = async (payload = {}) => {
 }
 
 const handleGroupClick = (group) => {
+	if (group.isConfiguration) {
+		router.push('/configuration')
+		return
+	}
   if (group.isPortal) {
     openPortal()
     return
@@ -375,6 +384,12 @@ function syncRouteToPortal(fullPath) {
   const pagePath = parts.slice(1).join('/')
   const page = queryPart ? `${pagePath}?${queryPart}` : pagePath
   currentModule.value = module
+	if (module === 'configuration') {
+		activeGroup.value = 'configuration'
+		sidebarModules.value = ['configuration']
+		iframeUrl.value = ''
+		return
+	}
 
   // 同步 activeGroup 和 sidebarModules（搜索/最近访问跳转时也需要）
   const group = MODULE_GROUPS.find(g => g.modules.includes(module))

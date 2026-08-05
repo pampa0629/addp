@@ -24,6 +24,10 @@ type ExecutionHandler struct {
 	approvalService *service.ToolApprovalService
 }
 
+type executeDevTaskRequest struct {
+	Parameters map[string]interface{} `json:"parameters"`
+}
+
 // NewExecutionHandler 创建执行记录处理器
 func NewExecutionHandler(devExecutor *service.DevExecutor, approvalService *service.ToolApprovalService) *ExecutionHandler {
 	return &ExecutionHandler{
@@ -38,8 +42,9 @@ func NewExecutionHandler(devExecutor *service.DevExecutor, approvalService *serv
 // @Accept json
 // @Produce json
 // @Param id path int true "开发任务 ID | Development task ID"
-// @Param body body map[string]interface{} false "执行参数（可选）| Execution parameters (optional)"
-// @Success 200 {object} map[string]string "执行已启动 | Execution started"
+// @Param body body executeDevTaskRequest false "本次执行参数覆盖（可选）| Execution parameter overrides (optional)"
+// @Success 202 {object} map[string]string "执行已启动 | Execution started"
+// @Failure 400 {object} map[string]interface{} "请求或执行参数无效 | Invalid request or execution parameters"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.execute"]
 // @x-addp-conditional-permissions ["develop.data_read.execute","develop.data_write.execute","develop.data_ddl.execute","develop.data_external_effect.execute","develop.notebook.execute"]
@@ -47,7 +52,7 @@ func NewExecutionHandler(devExecutor *service.DevExecutor, approvalService *serv
 func (h *ExecutionHandler) ExecuteDevTask(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgInvalidTaskID)})
 		return
 	}
 
@@ -67,35 +72,34 @@ func (h *ExecutionHandler) ExecuteDevTask(c *gin.Context) {
 		return
 	}
 
-	// 尝试解析参数（可选）
-	var params map[string]interface{}
-	_ = c.ShouldBindJSON(&params)
-
-	var executionID string
-	if params != nil && len(params) > 0 {
-		// 参数化执行
-		executionID, err = h.devExecutor.ExecuteWithParams(
-			c.Request.Context(),
-			uint(id),
-			params,
-			tenantID,
-			userID,
-			userAccessToken,
-		)
-	} else {
-		// 常规执行
-		executionID, err = h.devExecutor.ExecuteDevTask(c.Request.Context(), uint(id), tenantID, userID, userAccessToken, "manual")
+	var req executeDevTaskRequest
+	if err := commonAPI.BindOptionalJSONStrict(c, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionParametersInvalid), "error_code": "invalid_execution_parameters"})
+		return
 	}
+	executionID, err := h.devExecutor.ExecuteWithParams(
+		c.Request.Context(),
+		uint(id),
+		req.Parameters,
+		tenantID,
+		userID,
+		userAccessToken,
+	)
 
 	if err != nil {
 		if writeExecutionAuthorizationError(c, err) {
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		var parameterError *service.ExecutionParametersError
+		if errors.As(err, &parameterError) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionParametersInvalid), "error_code": "invalid_execution_parameters"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionStartFailed), "error_code": "execution_start_failed"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	c.JSON(http.StatusAccepted, gin.H{
 		"message":      commoni18n.T(c, developi18n.MsgExecutionStarted),
 		"execution_id": executionID,
 	})

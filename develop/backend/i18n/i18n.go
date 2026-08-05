@@ -12,6 +12,9 @@ var localeFS embed.FS
 // Develop 模块消息 key 常量
 const (
 	MsgExecutionStarted                  = "develop.execution.started"
+	MsgExecutionParametersInvalid        = "develop.execution.parameters_invalid"
+	MsgExecutionContractUnavailable      = "develop.execution.contract_unavailable"
+	MsgExecutionStartFailed              = "develop.execution.start_failed"
 	MsgRetryStarted                      = "develop.execution.retry_started"
 	MsgParamExecStarted                  = "develop.execution.param_exec_started"
 	MsgLogsNotReady                      = "develop.execution.logs_not_ready"

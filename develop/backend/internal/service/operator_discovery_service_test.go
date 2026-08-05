@@ -80,7 +80,7 @@ func TestOperatorDiscoveryReturnsWorkflowCapableOperatorsOnly(t *testing.T) {
 	for _, parameter := range operators[0].PublicParameters {
 		publicNames[parameter.Name] = true
 	}
-	for _, name := range []string{"数据源", "locator"} {
+	for _, name := range []string{"source_resource", "locator"} {
 		if !publicNames[name] {
 			t.Fatalf("load public parameters = %+v, missing %s", operators[0].PublicParameters, name)
 		}
@@ -98,12 +98,15 @@ func TestOperatorDiscoveryReturnsWorkflowCapableOperatorsOnly(t *testing.T) {
 	if len(operators[0].Parameters) != 4 {
 		t.Fatalf("runtime parameters should remain intact for runtime contract: %+v", operators[0].Parameters)
 	}
-	assertResourceBinding(t, operators[0].PublicParameters, "数据源", map[string]interface{}{
+	assertResourceBinding(t, operators[0].PublicParameters, "source_resource", map[string]interface{}{
 		"mode":                  "existing",
 		"locator_param":         "locator",
 		"geometry_column_param": "geom_column",
 	})
-	loadPicker := parameterByName(t, operators[0].PublicParameters, "数据源")
+	loadPicker := parameterByName(t, operators[0].PublicParameters, "source_resource")
+	if loadPicker.DisplayName != "数据源" {
+		t.Fatalf("load display_name = %q, want 数据源", loadPicker.DisplayName)
+	}
 	formats, ok := loadPicker.UIConfig["file_formats"].([]string)
 	if !ok || len(formats) == 0 {
 		t.Fatalf("load file_formats = %#v, want non-empty string list", loadPicker.UIConfig["file_formats"])
@@ -129,7 +132,7 @@ func TestOperatorDiscoveryPublishesTargetResourceBinding(t *testing.T) {
 	if len(publicOperators) != 1 {
 		t.Fatalf("operators len = %d, want 1", len(publicOperators))
 	}
-	assertResourceBinding(t, publicOperators[0].PublicParameters, "保存目标", map[string]interface{}{
+	assertResourceBinding(t, publicOperators[0].PublicParameters, "target_resource", map[string]interface{}{
 		"mode":                 "target",
 		"parent_locator_param": "target_parent_locator",
 		"name_param":           "target_name",
@@ -157,7 +160,10 @@ func TestSparkSaveResourceBindingUsesRuntimeOverwriteMode(t *testing.T) {
 		},
 	}})
 
-	picker := parameterByName(t, operators[0].PublicParameters, "保存目标")
+	picker := parameterByName(t, operators[0].PublicParameters, "target_resource")
+	if picker.DisplayName != "保存目标" {
+		t.Fatalf("save display_name = %q, want 保存目标", picker.DisplayName)
+	}
 	binding := picker.UIConfig["resource_binding"].(map[string]interface{})
 	defaults := binding["default_params"].(map[string]interface{})
 	if defaults["mode"] != "overwrite" {
@@ -178,7 +184,10 @@ func TestOperatorDiscoveryPublishesSuperMapUdbxNFSTargetOnly(t *testing.T) {
 	if len(publicOperators) != 1 {
 		t.Fatalf("operators len = %d, want 1", len(publicOperators))
 	}
-	picker := parameterByName(t, publicOperators[0].PublicParameters, "UDBX 保存目录")
+	picker := parameterByName(t, publicOperators[0].PublicParameters, "target_resource")
+	if picker.DisplayName != "UDBX 保存目录" {
+		t.Fatalf("target display_name = %q, want UDBX 保存目录", picker.DisplayName)
+	}
 	families, ok := picker.UIConfig["engine_families"].([]string)
 	if !ok || len(families) != 1 || families[0] != "file" {
 		t.Fatalf("engine_families = %#v, want file only", picker.UIConfig["engine_families"])

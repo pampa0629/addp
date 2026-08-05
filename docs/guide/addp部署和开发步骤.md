@@ -62,13 +62,14 @@ bash scripts/dev/restart.sh -transfer
 
 单模块开发时，脚本会统一启动公共依赖：System Backend、Meta Backend、Meta Worker、Gateway 和 Console。Meta 用于资源树、元数据扫描和跨模块通用元数据能力。模块自身如有额外依赖，例如 Manager 依赖 Transfer、Model3D Workflow Engine 和 PointCloud Workflow Engine，Develop 依赖 Python/Math/Spark Workflow Engine 和 Jupyter，会在此基础上继续启动。
 
-SuperMap Workflow Engine 使用本地两层镜像。首次安装时，把私有 SuperMap iObjects Java、GPA/SPS libs 和许可分别放入 `engines/supermap-workflow/vendor/objectsjava`、`vendor/gpa-libs`、`vendor/license`，然后构建稳定基础镜像：
+SuperMap Workflow Engine 使用本地两层镜像。首次安装时，保留完整 SuperMap iObjects C++ SDK 母版，把许可放入 Git 忽略的 `engines/supermap-workflow/vendor/license`，并通过 `SUPERMAP_CPP_SDK_PATH` 显式构建稳定基础镜像：
 
 ```bash
-bash scripts/build/build-supermap-workflow-base.sh
+SUPERMAP_CPP_SDK_PATH=/path/to/supermap-iobjectscpp-12.1.0-linux-arm64-all \
+  bash scripts/build/build-supermap-workflow-base.sh
 ```
 
-之后全量启动、`restart.sh -all` 和局部重启都会计算当前 ADDP Java 源码、运行脚本、Dockerfile、基础镜像和目标平台的构建指纹；输入未变化时直接复用现有代码镜像，输入变化或镜像不存在时才重新运行 `javac` 和镜像构建。单独验证超图算子时使用：
+之后全量启动、`restart.sh -all` 和局部重启都会计算当前 ADDP C++ 源码、CMake、运行脚本、Dockerfile、基础镜像和目标平台的构建指纹；输入未变化时直接复用现有代码镜像，输入变化或镜像不存在时才重新编译并测试 C++ Runtime。单独验证超图算子时使用：
 
 ```bash
 bash scripts/dev/start.sh -supermap-workflow

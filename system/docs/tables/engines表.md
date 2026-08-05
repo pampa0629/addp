@@ -113,7 +113,7 @@
 - 内置 Notebook 运行时示例：`jupyter`
 - 用户也可以按 ADDP 扩展引擎规范实现自研 `engine_type`，例如 `acme_geo_workflow`
 
-**注册入口**：System 前端“注册扩展引擎”表单用于手动注册 `addp.workflow/v1` 工作流运行时。表单会按 `engine_type` 生成默认 `engine.capabilities/v1`，支持填入 SuperMap Workflow 和 Math Workflow 示例值，并提供“检查服务”只读探测：System 后端会访问 `/health` 和 `/api/operators`，确认运行时服务可达且算子 `engine_type` 与注册值一致。内置插件类型保存时以插件能力声明为准，前端提交的默认 capabilities 不作为最终事实源。Math Workflow 在开发环境中可自动启动服务，但不会自动写入本表；SuperMap Workflow 需要先按 `engines/supermap-workflow/README.md` 绑定 SuperMap SDK、GPA/SPS libs 和许可并启动运行时。
+**注册入口**：System 前端“注册扩展引擎”表单用于手动注册 `addp.workflow/v1` 工作流运行时。表单会按 `engine_type` 生成默认 `engine.capabilities/v1`，支持填入 SuperMap Workflow 和 Math Workflow 示例值，并提供“检查服务”只读探测：System 后端会访问 `/health` 和 `/api/operators`，确认运行时服务可达且算子 `engine_type` 与注册值一致。内置插件类型保存时以插件能力声明为准，前端提交的默认 capabilities 不作为最终事实源。Math Workflow 在开发环境中可自动启动服务，但不会自动写入本表；SuperMap Workflow 需要先按 `engines/supermap-workflow/README.md` 构建 iObjects C++ 基础镜像、注入许可并启动运行时。
 
 **示例**：
 ```json

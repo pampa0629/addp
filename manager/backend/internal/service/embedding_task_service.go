@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/embedding"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	commonScheduler "github.com/addp/common/scheduler"
 
-	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 	"github.com/google/uuid"
@@ -27,12 +27,10 @@ var (
 // EmbeddingTaskService 向量化任务定义管理服务
 // 管理 EmbeddingTask 任务定义（CRUD），执行时写入 common.task_executions
 type EmbeddingTaskService struct {
-	embeddingRepo    *repository.EmbeddingRepository
-	embeddingService *EmbeddingService
-	taskExecRepo     *commonExecution.TaskExecutionRepository
-	currentModel     string
-	currentDimension int
-	currentMaxFileMB int
+	embeddingRepo         *repository.EmbeddingRepository
+	embeddingService      *EmbeddingService
+	taskExecRepo          *commonExecution.TaskExecutionRepository
+	configurationProvider *EmbeddingConfigurationProvider
 }
 
 // NewEmbeddingTaskService 创建服务
@@ -40,24 +38,13 @@ func NewEmbeddingTaskService(
 	embeddingRepo *repository.EmbeddingRepository,
 	embeddingService *EmbeddingService,
 	taskExecRepo *commonExecution.TaskExecutionRepository,
-	cfg *config.Config,
+	configurationProvider *EmbeddingConfigurationProvider,
 ) *EmbeddingTaskService {
 	svc := &EmbeddingTaskService{
-		embeddingRepo:    embeddingRepo,
-		embeddingService: embeddingService,
-		taskExecRepo:     taskExecRepo,
-	}
-	if cfg != nil {
-		cfgSvc := &EmbeddingService{cfg: cfg}
-		svc.currentModel = cfgSvc.currentEmbeddingModel()
-		svc.currentDimension = cfgSvc.currentEmbeddingDimension()
-		svc.currentMaxFileMB = cfg.VectorConfig.MaxFileSizeMB
-	} else if embeddingService != nil {
-		svc.currentModel = embeddingService.currentEmbeddingModel()
-		svc.currentDimension = embeddingService.currentEmbeddingDimension()
-		if embeddingService.cfg != nil {
-			svc.currentMaxFileMB = embeddingService.cfg.VectorConfig.MaxFileSizeMB
-		}
+		embeddingRepo:         embeddingRepo,
+		embeddingService:      embeddingService,
+		taskExecRepo:          taskExecRepo,
+		configurationProvider: configurationProvider,
 	}
 	return svc
 }
@@ -124,6 +111,17 @@ func (s *EmbeddingTaskService) Execute(ctx context.Context, taskID uint, tenantI
 		}
 		return executionID, nil
 	}
+	var runtime EffectiveEmbeddingConfiguration
+	var client embedding.MultiModalEmbedder
+	if s.embeddingService != nil {
+		runtime, client, err = s.embeddingService.runtimeSnapshot()
+		if err != nil {
+			if createErr := s.createFailedEmbeddingTaskExecution(ctx, task, executionID, normalizedTriggerType, normalizedSource, parentExecutionID, now, err); createErr != nil {
+				return "", createErr
+			}
+			return executionID, nil
+		}
+	}
 
 	exec := &commonExecution.TaskExecution{
 		ExecutionID:       executionID,
@@ -167,6 +165,8 @@ func (s *EmbeddingTaskService) Execute(ctx context.Context, taskID uint, tenantI
 			TenantID:    int(tenantID),
 			StartedAt:   now,
 			Config:      executionConfig,
+			Runtime:     runtime,
+			client:      client,
 		})
 
 		status := commonExecution.ExecutionStatusSuccess
@@ -316,17 +316,22 @@ func (s *EmbeddingTaskService) normalizeEmbeddingTaskConfig(task *models.Embeddi
 	if !ok {
 		embeddingCfg = commonModels.JSONMap{}
 	}
-	if s != nil && strings.TrimSpace(s.currentModel) != "" {
-		if configured := stringFromConfig(embeddingCfg["model"]); configured != "" && configured != s.currentModel {
-			return fmt.Errorf("embedding task config.embedding.model must match current manager embedding model %q", s.currentModel)
-		}
-		embeddingCfg["model"] = s.currentModel
+	var current EffectiveEmbeddingConfiguration
+	if s != nil && s.configurationProvider != nil {
+		current = s.configurationProvider.Current()
 	}
-	if s != nil && s.currentDimension > 0 {
-		if configured := intFromConfig(embeddingCfg["dimension"]); configured > 0 && configured != s.currentDimension {
-			return fmt.Errorf("embedding task config.embedding.dimension must match current manager embedding dimension %d", s.currentDimension)
+	if strings.TrimSpace(current.Model) != "" {
+		if configured := stringFromConfig(embeddingCfg["model"]); configured != "" && configured != current.Model {
+			return fmt.Errorf("embedding task config.embedding.model must match current manager embedding model %q", current.Model)
 		}
-		embeddingCfg["dimension"] = s.currentDimension
+		embeddingCfg["model"] = current.Model
+		embeddingCfg["configuration_version"] = current.Version
+	}
+	if current.Dimension > 0 {
+		if configured := intFromConfig(embeddingCfg["dimension"]); configured > 0 && configured != current.Dimension {
+			return fmt.Errorf("embedding task config.embedding.dimension must match current manager embedding dimension %d", current.Dimension)
+		}
+		embeddingCfg["dimension"] = current.Dimension
 	}
 	if len(embeddingCfg) > 0 {
 		task.Config["embedding"] = embeddingCfg
@@ -335,8 +340,8 @@ func (s *EmbeddingTaskService) normalizeEmbeddingTaskConfig(task *models.Embeddi
 	if !ok {
 		filters = commonModels.JSONMap{}
 	}
-	if s != nil && s.currentMaxFileMB > 0 && intFromConfig(filters["max_file_size_mb"]) <= 0 {
-		filters["max_file_size_mb"] = s.currentMaxFileMB
+	if current.MaxFileSizeMB > 0 && intFromConfig(filters["max_file_size_mb"]) <= 0 {
+		filters["max_file_size_mb"] = current.MaxFileSizeMB
 	}
 	if len(filters) > 0 {
 		task.Config["filters"] = filters

@@ -508,7 +508,7 @@ Manager 已有结果动作统一适用于 `vector_tile_cache_generation`、`vect
 
 上述八类 Manager 受管当前结果任务当前统一声明 `supports_schedule=false`，Manager 不为它们启动 owner scheduler；这不限制 Orchestrator 定时 Pipeline 调用。需要周期性刷新时，由用户在 Orchestrator Step 参数中显式配置 `existing_result_action=overwrite`，Orchestrator 每次调用原样提交。`embedding` 的独立逐 item 调度语义不在此限制内。
 
-`raster_mosaic_generation` 与 `vector_tile_set_generation` 的结果是用户业务存储中的派生 data item，Manager 不拥有其生命周期，因此不使用当前结果覆盖确认；重跑按任务配置和目标数据集自身的幂等/恢复规则执行。`embedding` 的批量结果更新具有逐 item 跳过、过期重建等独立语义，也不使用本确认参数。这三者的 `execution_schema` 必须保持闭合空对象并拒绝非空 `parameters`。
+`raster_mosaic_generation` 与 `vector_tile_set_generation` 的结果是用户业务存储中的派生 data item，Manager 不拥有其生命周期，因此不使用当前结果覆盖确认；重跑按任务配置和目标数据集自身的幂等/恢复规则执行。`embedding` 的批量结果更新具有逐 item 跳过、过期重建等独立语义，也不使用本确认参数。这三者的具体任务详情必须返回空的闭合 `execution_contract.input_schema`，执行入口必须拒绝非空 `parameters`。
 
 Manager 中矢量物化视图、瓦片缓存、COG、GLB、KSplat 等派生产物的 `ready`、`generating`、`stale`、`failed` 等状态属于 artifact state，不是统一 execution status。PreviewState 只保存预览偏好和交互视角，不保存 execution 状态。Manager 的即时向量化内存轮询状态虽不持久化为任务定义，但属于 execution-like 状态，成功态也必须使用 `success`，不得使用 `completed`。
 
@@ -579,7 +579,30 @@ TaskProvider 任务列表是跨模块编排专用契约，不适用通用业务�
 }
 ```
 
-`GET /tasks/{task_type}/{id}` 直接返回 owner 模块的任务定义摘要对象。对象必须包含 `id`、`task_type`、`name`、`status` 等可供 Orchestrator 和 Monitor 展示的稳定字段；多任务类型 provider 可以按 `task_type` 返回不同任务定义 DTO，但不得再包一层 `data`。`enabled`、`schedule`、`next_run_at` 只允许在该 task type 明确声明并实现 `supports_schedule=true` 的 owner 调度闭环时出现；不支持调度的 TaskProvider 不得暴露这些调度活状态字段。
+`GET /tasks/{task_type}/{id}` 直接返回 owner 模块的任务定义摘要对象。对象必须包含 `id`、`task_type`、`name`、`status` 和该具体任务的 `execution_contract`；多任务类型 provider 可以按 `task_type` 返回不同任务定义 DTO，但不得再包一层 `data`。`enabled`、`schedule`、`next_run_at` 只允许在该 task type 明确声明并实现 `supports_schedule=true` 的 owner 调度闭环时出现；不支持调度的 TaskProvider 不得暴露这些调度活状态字段。
+
+`execution_contract` 是具体任务可执行输入和稳定输出的唯一事实源：
+
+```json
+{
+  "execution_contract": {
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "input_defaults": {},
+    "input_ui_schema": {},
+    "output_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  }
+}
+```
+
+不支持执行输入覆盖或没有稳定输出的任务仍必须返回对应的闭合空对象。`input_defaults` 只提供任务当前保存的工作流配置，不能使缺少必填定义参数的任务变成可保存任务；任务定义本身必须始终完整且可直接执行。`input_ui_schema` 只描述 `input_schema.properties` 中已声明字段的控件语义，不得增加输入字段或覆盖服务端 Schema 约束。需要稳定展示顺序时，字段和分组必须在对应 UI Schema 节点声明从 `0` 开始的 `order`；消费者必须按 `order` 排序，不能依赖 JSON 对象属性顺序。算子工作流的分组顺序使用稳定 DAG 拓扑顺序：上游算子在前，同层并行算子按任务定义 `tasks[]` 的保存顺序排列；分组内字段按公开参数声明顺序排列，不依赖画布坐标。`format=resource-locator` 的值在契约和请求中仍使用标准 ResourceLocator，但用户界面只能展示解析后的资源路径、名称和本地化类型，不得直接显示 `addp://` URI、Engine ID、`node_id` 或 `item_id`；无法解析时统一显示“已配置资源”，不得回退为原始内部值。
 
 `GET /executions/{execution_id}` 直接返回统一 execution 对象，`execution_id` 必须是 `common.task_executions.execution_id`。
 
@@ -614,11 +637,11 @@ HTTP 状态码表达错误类型，响应体不得重复携带 `status=error`。
 
 1. `trigger_type` 只能是 `manual` / `scheduled`。
 2. `source` 表示触发来源。
-3. `parameters` 是本次执行覆盖或模板化参数，不得直接改写任务定义。
-4. Orchestrator 参数模板只支持完整字符串引用，格式为 `{{step_id.field.path}}` 或 `{{step_id}}`，不支持在普通字符串中做局部插值。
-5. 参数模板引用的 `step_id` 必须存在，并且必须在当前 Step 的 `depends_on` 中显式声明；保存编排时必须拒绝未知引用、隐式数据依赖和自引用。
-6. 参数模板解析只返回被引用输出的原始值，不做隐式类型转换。运行时如果引用步骤没有结果、字段路径不存在，或路径试图进入非对象值，当前 Step 必须失败，不得把缺失值静默改为 `null` 继续执行。
-7. provider 不支持参数覆盖时必须明确拒绝，不得静默忽略。
+3. `parameters` 是符合具体任务 `execution_contract.input_schema` 的本次执行覆盖，只影响当前 execution，不得直接改写任务定义；未提交字段使用任务保存值。
+4. Orchestrator 的上游输出绑定只支持完整字符串的内部序列化 `{{step_id.outputs.declared.path}}`；用户只能从 UI 列出的已声明稳定输出中选择，不得手写任意结果路径，也不支持局部字符串插值。
+5. 输出绑定引用的 `step_id` 必须存在，并且必须在当前 Step 的 `depends_on` 中显式声明；保存和执行编排时都必须拒绝未知引用、隐式数据依赖、自引用、未在来源任务 `output_schema` 声明的路径和不兼容的目标参数类型。
+6. 输出绑定解析只返回被引用输出的原始值，不做隐式类型转换。运行时如果引用步骤没有结果、字段路径不存在，或路径试图进入非对象值，当前 Step 必须失败，不得把缺失值静默改为 `null` 继续执行。
+7. provider 必须按执行时重新读取的具体任务输入契约严格校验解析后的参数；未知字段、类型错误或不支持覆盖时必须明确拒绝，不得静默忽略。
 
 执行成功受理时 HTTP 状态码必须为 `202 Accepted`，响应体必须返回本次执行的统一 `execution_id`。标准最小响应为：
 
@@ -653,18 +676,17 @@ HTTP 状态码表达错误类型，响应体不得重复携带 `status=error`。
 
 ### capabilities.task_capabilities
 
-TaskProvider 注册时必须使用 `task.capabilities/v1` schema，并声明稳定的 `task_capabilities[]` 任务类型能力数组：
+TaskProvider 注册时必须使用 `task.capabilities/v2` schema，并声明稳定的 `task_capabilities[]` 任务类型能力数组：
 
 ```json
 {
-  "schema_version": "task.capabilities/v1",
+  "schema_version": "task.capabilities/v2",
   "task_capabilities": [
     {
       "type": "scan",
       "display_name": "扫描任务",
       "description": "执行元数据扫描",
       "definition_schema": { "type": "object" },
-      "execution_schema": { "type": "object" },
       "supports_schedule": true,
       "supports_cancel": false,
       "supports_inline_execution": false,
@@ -684,39 +706,38 @@ TaskProvider 注册时必须使用 `task.capabilities/v1` schema，并声明稳�
 | `display_name` | 展示名称 |
 | `description` | 任务类型说明 |
 | `definition_schema` | 任务定义公开摘要 JSON Schema，不用于 Orchestrator 创建、编辑或渲染完整 owner 任务定义；当前必须是对象 schema |
-| `execution_schema` | 执行参数 JSON Schema，用于本次执行参数覆盖；当前必须是对象 schema |
 | `supports_schedule` | 该任务类型是否支持定时 |
 | `supports_cancel` | 该任务类型是否支持真实取消；不能中断执行体时必须为 `false` |
-| `supports_inline_execution` | v1 保留字段；当前必须为 `false`，不支持无持久任务定义的一次性执行 |
+| `supports_inline_execution` | v2 保留字段；当前必须为 `false`，不支持无持久任务定义的一次性执行 |
 | `create_url` / `edit_url` | owner 模块创建入口与任务定义入口；优先使用 Console 模块路由，例如 `/develop/sql?action=create` |
 | `deprecated` | 是否废弃 |
 
 约束：
 
-1. `schema_version` 必须为 `task.capabilities/v1`。
+1. `schema_version` 必须为 `task.capabilities/v2`。
 2. `create_url` 和 `edit_url` 属于具体 `task_type`，不得放在 provider 顶层。
 3. System 注册入口必须校验 capabilities schema，不符合规范的 provider 不得注册成功。
 4. `task_type` 是 provider 对外契约，不能随 UI 文案变化；不得使用大写、短横线、空格或本地化文本。
 5. provider 顶层私有扩展字段必须使用 `x_` 前缀，例如 `x_owner_features`；未加 `x_` 前缀的未知顶层字段必须被 System 注册入口拒绝，避免与未来标准字段冲突。`task_capabilities[]` 内部只允许本文列出的标准字段，不允许私有扩展字段；任务类型级扩展需要先修订 capabilities 规范。
-6. `definition_schema` 和 `execution_schema` 当前必须声明为 JSON 对象 schema，最小值为 `{ "type": "object" }`。System 注册入口必须校验平台 v1 可理解的 JSON Schema 子集：允许 `type`、`title`、`description`、`properties`、`required`、`enum`、`default`、`additionalProperties`、`items`、`minimum`、`maximum`、`minLength`、`maxLength`、`minItems`、`maxItems`、`format`；不得使用 `$ref`、`oneOf`、`anyOf`、`allOf`、`not` 等复杂组合或远程引用。字段级 schema 可逐步细化，但 Orchestrator 不得自行猜测 owner 私有定义。
-7. 不支持执行参数覆盖的 provider，应在对应 `task_type.execution_schema` 声明 `{ "type": "object", "additionalProperties": false }`，并在执行入口拒绝非空 `parameters`，不得静默忽略。
-8. Orchestrator Step 参数编辑必须以 `execution_schema` 为唯一能力来源。闭合对象中声明的标量 `properties` 应渲染为结构化控件，`enum` 渲染为选择控件；闭合空对象显示无执行参数；开放对象、对象/数组等复杂字段，以及无法由结构化控件无损表达的模板值，统一使用对象 JSON 编辑。三种模式互斥，不得同时维护两份可提交参数，也不得按 `provider` 或 `task_type` 硬编码表单能力。
-9. `supports_inline_execution` 在 `task.capabilities/v1` 中必须为 `false`。内联执行需要新的 endpoint、执行配置 schema 和 Orchestrator Step 模型，必须作为后续专题设计，不得只通过 capabilities 布尔值打开。
+6. `definition_schema` 必须声明为 JSON 对象 schema，最小值为 `{ "type": "object" }`。System 注册入口以及任务详情契约校验必须复用平台可理解的 JSON Schema 子集：允许 `type`、`title`、`description`、`properties`、`required`、`enum`、`default`、`additionalProperties`、`items`、`minimum`、`maximum`、`minLength`、`maxLength`、`minItems`、`maxItems`、`format`；不得使用 `$ref`、`oneOf`、`anyOf`、`allOf`、`not` 等复杂组合或远程引用。
+7. `task_capabilities[]` 不得出现 `execution_schema`、`output_schema` 或 UI schema。owner 必须在每个任务详情的 `execution_contract` 返回精确 `input_schema`、`input_defaults`、`input_ui_schema` 和 `output_schema`，并在执行入口再次按最新契约校验。
+8. Orchestrator Step 参数编辑必须以具体任务详情的 `execution_contract` 为唯一能力来源。闭合对象中声明的标量字段渲染为结构化控件，资源引用按 `input_ui_schema` 渲染资源选择器；每个输入可选择使用“工作流配置”、在当前 Step 中“执行时指定”或引用显式依赖的“上游输出”。“工作流配置”表示不提交覆盖字段，执行时读取 owner 任务定义中已保存的当前值；“执行时指定”表示 Step 保存显式覆盖值，但不改写 owner 任务定义。资源参数摘要必须展示引擎实例名称、按引擎原生风格格式化的资源路径和本地化资源类型，不得展示 Engine ID 或 `addp://` locator；展示事实不得写回执行参数。资源选择结果已经声明 geometry 字段时，单字段必须自动选中，多字段只能从识别结果中选择，不得要求用户自由输入字段名。闭合空对象不显示参数编辑；不得按 provider 或 task type 硬编码表单能力，也不得保留整份任意 JSON 作为旁路。
+9. `supports_inline_execution` 在 `task.capabilities/v2` 中必须为 `false`。内联执行需要新的 endpoint、执行配置 schema 和 Orchestrator Step 模型，必须作为后续专题设计，不得只通过 capabilities 布尔值打开。
 10. `supports_cancel` 与 `task_cancel_endpoint` 必须双向一致：任一任务类型声明 `supports_cancel=true` 时 provider 必须注册标准取消 endpoint；没有任务类型支持取消时 provider 不得注册 `task_cancel_endpoint`。模块内部已有取消 API 不等于 TaskProvider 标准取消能力。
 11. Orchestrator 可以缓存 TaskProvider capabilities，但必须能从 System 刷新。
 12. `create_url` / `edit_url` 应使用 Console 路由形式，可包含模块内深层路径和 query，例如 `/transfer/tasks/:id/edit`、`/develop/workflow?action=edit&id=:id`、`/graph/graphs/:graph_id/build/tasks/:id`；前端负责替换 `:id` / `{id}` / `:task_id` / `{task_id}` / `:graph_id` / `{graph_id}`。地址栏同步、canonical 参数和浏览器历史必须同时遵守 `docs/spec/addp前端路由与可恢复状态规范.md`。
-13. 模块新增或删除任务类型时，必须更新自身 capabilities、文档和 Swagger。
+13. 模块新增或删除任务类型时，必须更新自身 capabilities、文档和 Swagger；修改任务级输入/输出契约时必须同步任务详情和执行入口测试。
 14. `deprecated=true` 的 task type 不再作为可用任务类型处理。Orchestrator 保存和执行编排时都必须拒绝引用 deprecated task type；ADDP 当前不为废弃任务类型保留兼容迁移路径。历史 execution 查询只按既有 execution 记录展示，不要求 owner 继续提供可编辑任务定义入口。
-15. `edit_url` 是 TaskProvider v1 的任务定义入口字段，不承诺任务定义一定可修改。来源驱动且定义不可变的任务必须在该 URL 展示带稳定任务 ID 的只读定义；不得把结果筛选页、无任务身份的模块首页或 Data Explorer 通用入口冒充任务定义入口。
+15. `edit_url` 是 `task.capabilities/v2` 的任务定义入口字段，不承诺任务定义一定可修改。来源驱动且定义不可变的任务必须在该 URL 展示带稳定任务 ID 的只读定义；不得把结果筛选页、无任务身份的模块首页或 Data Explorer 通用入口冒充任务定义入口。
 16. 来源驱动任务的 `create_url` 可以指向 owner 的来源选择页，由用户选择源对象后通过 owner 领域动作派生任务定义。此类任务不得同时保留允许调用方直接提交私有任务配置的第二套创建或更新 API。
 
-`common/taskprovider` 是 TaskProvider 契约的公共解析和校验边界，负责校验 `task.capabilities/v1`、标准任务列表响应 `{items,total,page,page_size}` 和 `execution_schema` 参数实例。System 注册入口、Monitor provider health、Orchestrator 编排保存和执行前校验必须复用该公共能力，不得在各模块重复维护一套 capabilities、任务发现响应或 schema 实例校验逻辑。owner 模块负责生成自身 capabilities 并实现标准 endpoint；`common/taskprovider` 不访问 System 注册表，不调用 owner 模块，也不处理执行调度。
+`common/taskprovider` 是 TaskProvider 契约的公共解析和校验边界，负责校验 `task.capabilities/v2`、标准任务列表响应 `{items,total,page,page_size}`、任务级 `execution_contract` 和输入参数实例。System 注册入口、Monitor provider health、Orchestrator 编排保存和执行前校验必须复用该公共能力，不得在各模块重复维护一套 capabilities、任务发现响应或 schema 实例校验逻辑。owner 模块负责生成自身 capabilities、为每个任务生成精确契约并实现标准 endpoint；`common/taskprovider` 不访问 System 注册表，不调用 owner 模块，也不处理执行调度。
 
 当前不应默认打开任何模块的 `supports_cancel=true`。标准取消能力必须先在专题中确认 worker 中断、资源清理、状态一致落库、重复取消幂等和可观测诊断等前置条件，再单独更新对应模块能力声明。
 
 API-only 阶段的新增任务类型仍必须注册稳定的 `create_url` / `edit_url`，但这两个 URL 可以先指向 owner 模块已确定的后续 Console 承载路由；专题文档必须明确该阶段尚未实现前端创建/编辑 UI。Orchestrator 和 Monitor 不得仅凭 URL 存在推断 owner 模块已经提供可用 UI。
 
-后续如需 `task.capabilities/v2`，必须先单独修订本文，再实现代码。v2 可能讨论 UI schema、inline execution、更完整 JSON Schema、标准取消、capabilities 漂移详情和批量编排健康检查；不得在 v1 中通过私有字段、兼容分支或布尔开关提前打开这些能力。
+后续如需 `task.capabilities/v3`，必须先单独修订本文，再实现代码。v3 可以讨论 inline execution、更完整 JSON Schema、标准取消、capabilities 漂移详情和批量编排健康检查；不得在 v2 中通过私有字段、兼容分支或布尔开关提前打开这些能力。
 
 ## Orchestrator 规范
 
@@ -733,7 +754,7 @@ Step v1 只允许以下字段：
 | `provider` | TaskProvider 模块名 |
 | `task_type` | provider 声明的任务类型 |
 | `task_id` | owner 模块内的任务定义 ID |
-| `parameters` | 本次执行参数覆盖或模板化参数 |
+| `parameters` | 本次执行时指定的覆盖值或上游声明输出绑定；未出现的字段使用 owner 任务定义中已保存的工作流配置 |
 | `depends_on` | 显式控制依赖和数据依赖 |
 | `timeout` | Step 执行超时时间，单位秒 |
 
@@ -745,10 +766,10 @@ Step v1 只允许以下字段：
 4. 编排触发下游任务时，`trigger_type` 只能是 `manual` 或 `scheduled`。
 5. Orchestration 自身执行记录 `module=orchestrator`、`task_type=orchestration`。
 6. Orchestrator 子步骤 execution 必须写 `parent_execution_id`。
-7. 保存和执行编排时，Orchestrator 必须校验 `provider + task_type` 已由 capabilities 声明且未 deprecated，并按 `execution_schema` 校验 Step `parameters` 的 `required`、类型、`enum`、额外字段、长度、数量和数值范围。保存阶段允许参数值是完整模板字符串；执行阶段必须在模板解析后使用真实值再次严格校验，再调用 owner。schema 实例校验错误必须保留稳定 rule、参数 path 和约束值，由 Orchestrator Service 包装 Step 上下文，HTTP 层按 `Accept-Language` 映射为用户可读消息，不得直接把公共校验器的英文诊断作为 API 文案。该平台校验不替代 owner 执行入口的最终领域校验。
+7. 保存和执行编排时，Orchestrator 必须校验 `provider + task_type` 已由 capabilities 声明且未 deprecated，并从具体任务详情取得 `execution_contract`，按其 `input_schema` 校验 Step `parameters` 的 `required`、类型、`enum`、额外字段、长度、数量和数值范围。保存阶段仅允许完整的声明输出绑定作为延迟值；执行阶段必须重新取得最新契约、校验输出路径与输入类型，在绑定解析后使用真实值再次严格校验，再调用 owner。schema 实例校验错误必须保留稳定 rule、参数 path 和约束值，由 Orchestrator Service 包装 Step 上下文，HTTP 层按 `Accept-Language` 映射为用户可读消息，不得直接把公共校验器的英文诊断作为 API 文案。该平台校验不替代 owner 执行入口的最终领域校验。
 8. Orchestrator 可以把已保存的编排定义作为 `orchestration` 任务暴露给任务库，但保存编排时必须校验编排定义之间的引用图，不得直接引用自身，也不得通过多层 `orchestrator/orchestration` 引用形成递归执行。
-9. Step 的 `depends_on` 表示当前步骤依赖的前置步骤，也是参数模板允许读取的显式数据依赖范围；执行器必须先执行依赖步骤，再执行当前步骤。缺失依赖、循环依赖、模板隐式依赖或模板自引用必须导致编排保存或执行失败，不得静默跳过。
-10. 参数模板只支持完整字符串引用，格式为 `{{step_id.field.path}}` 或 `{{step_id}}`；不支持局部字符串插值，也不做隐式类型转换。运行时模板路径解析不到值时，当前 Step 必须失败。
+9. Step 的 `depends_on` 表示当前步骤依赖的前置步骤，也是上游输出绑定允许读取的显式数据依赖范围；执行器必须先执行依赖步骤，再执行当前步骤。缺失依赖、循环依赖、隐式输出依赖或自引用必须导致编排保存或执行失败，不得静默跳过。
+10. 上游输出绑定只支持内部序列化 `{{step_id.outputs.declared.path}}`；路径必须由来源任务的 `output_schema` 声明并与目标 `input_schema` 类型兼容，不支持局部字符串插值，也不做隐式类型转换。运行时路径解析不到值时，当前 Step 必须失败。
 11. v1 不支持并行执行、分支或条件、Step 级重试策略、人工确认步骤，也不得通过 `condition`、`retry`、`approval`、`parallel`、`branch` 或其他私有 Step 字段提前打开这些控制流能力。后续如需要，必须作为 Orchestrator 执行模型 v2 专题设计，明确状态机、失败语义、资源隔离、审计、UI 表达和迁移边界。
 12. Monitor 回跳任务定义时应使用 TaskProvider capabilities 中对应 `task_type.edit_url`，不得硬编码 `module + task_type` 映射。
 13. Orchestrator Create/Update 必须使用严格 JSON 解码并拒绝未知字段；Step 结构、DAG、模板依赖、TaskProvider 引用、编排递归引用和调度表达式校验必须返回稳定的结构化领域错误，由同一 Handler 校验路径按 `Accept-Language` 映射为 `{error}` 响应，不得直接暴露 Go、JSON、Cron 或 Repository 的原始英文错误。
@@ -834,7 +855,7 @@ provider health 至少检查以下内容：
 | 检查项 | 来源 | 说明 |
 | --- | --- | --- |
 | registration | System `task_providers` | provider 是否启用并具备基础 endpoint。 |
-| capabilities | System `task_providers.capabilities` | JSON 是否可解析、`schema_version` 是否为 `task.capabilities/v1`、`task_capabilities[]` 是否非空。 |
+| capabilities | System `task_providers.capabilities` | JSON 是否可解析、`schema_version` 是否为 `task.capabilities/v2`、`task_capabilities[]` 是否非空。 |
 | module_health | `provider.base_url + /health` | 模块进程是否可访问。 |
 | task_discovery | `provider.base_url + task_list_endpoint + ?task_type=` | 每个未 deprecated task type 的标准任务发现 endpoint 是否可访问，且响应体必须是标准任务列表对象，包含 `items`、`total`、`page`、`page_size`。 |
 
@@ -884,5 +905,5 @@ ad-hoc-only execution 不要求存在任务定义或声明 TaskProvider capabili
 ## 与相关文档的关系
 
 - Meta 扫描任务细节见 [元数据扫描机制规范](addp元数据扫描机制规范.md)。
-- Transfer 稳定任务语义以本文和 [Transfer 模块基本概念及配置说明](../../transfer/docs/transfer-基本概念及配置说明.md) 为准；[Transfer 任务语义与同步模式设计](../next/transfer任务语义与同步模式设计.md) 保留设计演进记录和仍未进入当前实现的后续路线。
+- Transfer 稳定任务语义以本文、[Transfer 任务语义与同步模式](../../transfer/docs/transfer-任务语义与同步模式.md) 和 [Transfer 模块基本概念及配置说明](../../transfer/docs/transfer-基本概念及配置说明.md) 为准；尚未实现的能力统一记录在 [Transfer 后续能力清单](../next/transfer后续能力清单.md)。
 - Manager 派生产物任务内部语义后续以 Manager 专题为准。

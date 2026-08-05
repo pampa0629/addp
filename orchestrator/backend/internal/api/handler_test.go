@@ -35,15 +35,28 @@ func (token apiServiceTokens) PlatformToken(context.Context) (string, error) {
 
 func TestCreateLocalizesExecutionSchemaValidationError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	provider := taskProviderForAPITest("meta", "http://owner.invalid")
+	owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":1,
+			"task_type":"scan",
+			"execution_contract":{
+				"input_schema":{"type":"object","properties":{"limit":{"type":"integer"}},"additionalProperties":false},
+				"input_defaults":{},
+				"input_ui_schema":{},
+				"output_schema":{"type":"object","additionalProperties":false}
+			}
+		}`))
+	}))
+	defer owner.Close()
+	provider := taskProviderForAPITest("meta", owner.URL)
 	capabilities := commonModels.JSONString(`{
-		"schema_version":"task.capabilities/v1",
+		"schema_version":"task.capabilities/v2",
 		"task_capabilities":[{
 			"type":"scan",
 			"display_name":"scan",
 			"description":"scan task",
 			"definition_schema":{"type":"object"},
-			"execution_schema":{"type":"object","properties":{"limit":{"type":"integer"}},"additionalProperties":false},
 			"supports_schedule":false,
 			"supports_cancel":false,
 			"supports_inline_execution":false,
@@ -185,6 +198,34 @@ func TestLocalizeReferenceAndScheduleValidationErrors(t *testing.T) {
 				t.Fatalf("message = %q, want %q", rec.Body.String(), testCase.want)
 			}
 		})
+	}
+}
+
+func TestLocalizeOutputBindingValidationError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(commoni18n.I18nMiddleware())
+	router.GET("/", func(c *gin.Context) {
+		err := &service.StepTaskValidationError{
+			Code:      service.StepTaskParametersInvalid,
+			StepIndex: 1,
+			Cause: &service.OutputBindingValidationError{
+				Code:          service.OutputBindingUndeclared,
+				ParameterPath: "load_1.source_resource.locator",
+				StepID:        "produce",
+				OutputPath:    "save_3.resource.locator",
+			},
+		}
+		c.String(http.StatusOK, localizeOrchestrationValidationError(c, err))
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Accept-Language", "zh-CN")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	want := "第 2 个步骤的参数 load_1.source_resource.locator 引用了上游步骤 produce 未声明的输出 save_3.resource.locator"
+	if rec.Body.String() != want {
+		t.Fatalf("message = %q, want %q", rec.Body.String(), want)
 	}
 }
 
@@ -701,13 +742,12 @@ func newTaskProviderRegistryForAPITest(system *httptest.Server) *service.TaskPro
 
 func taskProviderForAPITest(moduleName, baseURL string) *commonModels.TaskProvider {
 	capabilities := commonModels.JSONString(`{
-		"schema_version":"task.capabilities/v1",
+		"schema_version":"task.capabilities/v2",
 		"task_capabilities":[{
 			"type":"scan",
 			"display_name":"scan",
 			"description":"scan task",
 			"definition_schema":{"type":"object"},
-			"execution_schema":{"type":"object","additionalProperties":false},
 			"supports_schedule":false,
 			"supports_cancel":false,
 			"supports_inline_execution":false,

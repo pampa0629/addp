@@ -59,7 +59,7 @@ func TestWorkflowStorageEngineBindingHandlers(t *testing.T) {
 		repository.NewDevTaskRepository(db),
 		commonClient.NewSystemServiceClient(systemServer.URL, tokens, systemServer.Client()),
 	)
-	handler := NewDevTaskHandler(taskService)
+	handler := NewDevTaskHandler(taskService, nil)
 	router := workflowStorageBindingTestRouter(handler)
 
 	listResponse := httptest.NewRecorder()

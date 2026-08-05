@@ -121,7 +121,15 @@ OAuth Client、Authorization Request、PKCE、Authorization Code、Device Author
 
 OIDC 表字段是未来协议启用所需的受控预留，不表示 OIDC 已对外启用。
 
-## 九、迁移 Runner
+## 九、IAM 安全策略
+
+`iam_security_policy` 是 System IAM 的平台级单例安全策略，保存 Token、OAuth Device Flow、Tenant Invitation、Enrollment Ticket 和 OAuth 限流的普通数值策略。该表不保存 Pepper、MFA 加密密钥、Service Client Secret 或其他 Secret。
+
+策略使用 `version` 做乐观并发控制，使用 `applied_version` 表达当前 IAM Runtime 已装配的版本。System 启动时读取并校验唯一记录，然后将该版本标记为已应用；运行期间更新只产生新的待重启版本，不修改已装配 Runtime，也不读取环境变量 fallback。
+
+策略更新和 `iam.security_policy.updated` 安全审计必须在同一事务提交。只有 Platform Context 中持有 `iam.security_policy.read/update` 的 User 可以访问，由 `platform.security_administrator` 承担该职责。
+
+## 十、迁移 Runner
 
 System 启动顺序固定为：
 
@@ -137,7 +145,7 @@ System 启动顺序固定为：
 
 已执行 migration 的摘要记录在 `system.schema_migration_checksums`；该表只由 Migration Runner 维护，不是手工修改版本或跳过迁移的通道。当前版本由 `system/backend/internal/migration/sql` 和 `internal/migration/catalog_test.go` 共同约束；本文不固定抄写版本号。
 
-## 十、迁移演进
+## 十一、迁移演进
 
 - 只增加新的 `NNNNNN_name.up.sql`，不修改已发布 migration；
 - 已执行 migration 的版本号、文件名和内容摘要必须保持不变；概念收敛或方案重做也必须使用新版本向前迁移；
@@ -146,7 +154,7 @@ System 启动顺序固定为：
 - 需要保留的外部数据必须另行批准离线导入方案，不进入 System Runtime；
 - migration 内不得访问 Redis、HTTP、外部 IdP、密钥服务或其他模块数据库。
 
-## 十一、验证
+## 十二、验证
 
 非数据库单元测试：
 

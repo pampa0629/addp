@@ -249,10 +249,11 @@ cat logs/gateway.log | grep "Rate limit exceeded"
 
 **排查步骤**：
 
-1. **检查 System Token 和 Refresh Cookie 配置**
+1. **检查 System IAM 安全策略**
    ```bash
-   grep -E 'ACCESS_TOKEN_EXPIRE_MINUTES|REFRESH_TOKEN_EXPIRE_DAYS' .env
-   # 业务模块不配置或解析用户 Token 密钥
+   curl -H 'Authorization: Bearer <platform-security-admin-access-token>' \
+     http://localhost:8180/api/v1/system/platform/security_policy
+   # Token 生命周期来自 System IAM 持久化安全策略；业务模块不配置或解析用户 Token 密钥。
    ```
 
 2. **检查 AuthContext 解析是否正常**

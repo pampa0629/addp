@@ -265,7 +265,6 @@ check_tasks.last_run_at、last_execution_id、last_execution_status
 | `STANDARD_URL` | `http://localhost:8110` | Standard 模块地址 |
 | `META_URL` | `http://localhost:8082` | Meta 模块地址 |
 | `INTERNAL_API_KEY` | - | 内部服务调用密钥 |
-| `ENABLE_SERVICE_INTEGRATION` | `true` | 是否启用跨模块服务集成 |
 | `REDIS_HOST` / `REDIS_PORT` | - | Redis 连接配置（用于认证缓存） |
 
 ## IAM Permission 所有权

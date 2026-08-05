@@ -1,48 +1,60 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/taskprovider"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
+type taskProviderRegistryTokenSource struct{}
+
+func (taskProviderRegistryTokenSource) Token(context.Context, uint) (string, error) {
+	return "tenant-token", nil
+}
+
+func (taskProviderRegistryTokenSource) PlatformToken(context.Context) (string, error) {
+	return "platform-token", nil
+}
+
 type taskProviderTaskCapability struct {
-	Type                    string                 `json:"type"`
-	SupportsSchedule        bool                   `json:"supports_schedule"`
-	SupportsCancel          bool                   `json:"supports_cancel"`
-	SupportsInlineExecution bool                   `json:"supports_inline_execution"`
-	CreateURL               string                 `json:"create_url"`
-	EditURL                 string                 `json:"edit_url"`
-	Deprecated              bool                   `json:"deprecated"`
-	ExecutionSchema         map[string]interface{} `json:"execution_schema"`
+	Type                    string `json:"type"`
+	SupportsSchedule        bool   `json:"supports_schedule"`
+	SupportsCancel          bool   `json:"supports_cancel"`
+	SupportsInlineExecution bool   `json:"supports_inline_execution"`
+	CreateURL               string `json:"create_url"`
+	EditURL                 string `json:"edit_url"`
+	Deprecated              bool   `json:"deprecated"`
 }
 
 func TestTaskProviderRegistryVectorMaterializedViewCapability(t *testing.T) {
 	var captured TaskProviderRegistration
 	var capturedPath string
-	var capturedInternalAPIKey string
+	var capturedAuthorization string
 	var decodeErr error
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedPath = r.URL.Path
-		capturedInternalAPIKey = r.Header.Get("X-Internal-API-Key")
+		capturedAuthorization = r.Header.Get("Authorization")
 		decodeErr = json.NewDecoder(r.Body).Decode(&captured)
 		w.WriteHeader(http.StatusCreated)
 	}))
 	defer server.Close()
 
-	registry := NewTaskProviderRegistryService(server.URL, "test-internal-key", "http://manager.internal")
-	if err := registry.Register(); err != nil {
+	systemClient := commonClient.NewSystemServiceClient(server.URL, taskProviderRegistryTokenSource{}, server.Client())
+	registry := NewTaskProviderRegistryService(systemClient, "http://manager.internal")
+	if err := registry.Register(context.Background()); err != nil {
 		t.Fatalf("register task provider: %v", err)
 	}
 
-	if capturedPath != "/api/v1/internal/task-providers/register" {
-		t.Fatalf("path = %s, want internal task provider register path", capturedPath)
+	if capturedPath != "/api/v1/system/runtime/task-providers" {
+		t.Fatalf("path = %s, want Service Principal task provider register path", capturedPath)
 	}
-	if capturedInternalAPIKey != "test-internal-key" {
-		t.Fatalf("internal api key = %q, want test-internal-key", capturedInternalAPIKey)
+	if capturedAuthorization != "Bearer platform-token" {
+		t.Fatalf("authorization = %q, want platform service token", capturedAuthorization)
 	}
 	if decodeErr != nil {
 		t.Fatalf("decode registration: %v", decodeErr)
@@ -59,7 +71,7 @@ func TestTaskProviderRegistryVectorMaterializedViewCapability(t *testing.T) {
 	if captured.Capabilities == nil {
 		t.Fatal("capabilities is nil")
 	}
-	if _, err := taskprovider.ParseCapabilities(*captured.Capabilities); err != nil {
+	if _, err := taskprovider.ParseCapabilities(string(*captured.Capabilities)); err != nil {
 		t.Fatalf("capabilities contract invalid: %v; capabilities=%s", err, *captured.Capabilities)
 	}
 
@@ -70,8 +82,8 @@ func TestTaskProviderRegistryVectorMaterializedViewCapability(t *testing.T) {
 	if err := json.Unmarshal([]byte(*captured.Capabilities), &capabilities); err != nil {
 		t.Fatalf("decode capabilities: %v; capabilities=%s", err, *captured.Capabilities)
 	}
-	if capabilities.SchemaVersion != "task.capabilities/v1" {
-		t.Fatalf("schema_version = %q, want task.capabilities/v1", capabilities.SchemaVersion)
+	if capabilities.SchemaVersion != "task.capabilities/v2" {
+		t.Fatalf("schema_version = %q, want task.capabilities/v2", capabilities.SchemaVersion)
 	}
 
 	tileCache := taskProviderCapabilityByType(t, capabilities.TaskCapabilities, "vector_tile_cache_generation")
@@ -156,25 +168,6 @@ func TestTaskProviderRegistryVectorMaterializedViewCapability(t *testing.T) {
 		}
 	}
 
-	for _, taskType := range []string{
-		"vector_tile_cache_generation", "vector_materialized_view_generation", "raster_cog_generation",
-		"model_3d_glb_generation", "model3d_tiles_generation", "gaussian_splat_ksplat_generation",
-		"point_cloud_copc_generation", "cad_preview_generation",
-	} {
-		capability := taskProviderCapabilityByType(t, capabilities.TaskCapabilities, taskType)
-		properties, _ := capability.ExecutionSchema["properties"].(map[string]interface{})
-		action, _ := properties["existing_result_action"].(map[string]interface{})
-		enum, _ := action["enum"].([]interface{})
-		if action["type"] != "string" || len(enum) != 1 || enum[0] != "overwrite" || capability.ExecutionSchema["additionalProperties"] != false {
-			t.Fatalf("%s execution_schema = %#v", taskType, capability.ExecutionSchema)
-		}
-	}
-	for _, taskType := range []string{"vector_tile_set_generation", "raster_mosaic_generation", "embedding"} {
-		capability := taskProviderCapabilityByType(t, capabilities.TaskCapabilities, taskType)
-		if _, exists := capability.ExecutionSchema["properties"]; exists || capability.ExecutionSchema["additionalProperties"] != false {
-			t.Fatalf("%s execution_schema = %#v, want empty closed object", taskType, capability.ExecutionSchema)
-		}
-	}
 }
 
 func taskProviderCapabilityByType(t *testing.T, taskCapabilities []taskProviderTaskCapability, taskType string) taskProviderTaskCapability {

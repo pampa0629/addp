@@ -5,7 +5,6 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/addp/system/internal/config"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -18,9 +17,7 @@ func TestRegisterIAMRoutesExposesOnlyTargetIAMSurface(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := testIAMRuntimeConfig()
-	cfg.OAuthPublicRateLimitPerMinute = 60
-	cfg.OAuthUserRateLimitPerMinute = 30
-	runtime, err := NewIAMRuntime(db, cfg)
+	runtime, err := NewIAMRuntime(db, cfg, testIAMSecurityPolicy())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +26,7 @@ func TestRegisterIAMRoutesExposesOnlyTargetIAMSurface(t *testing.T) {
 	runtime.TaskAuthorizationSubjectHandler = &IAMTaskAuthorizationSubjectHandler{}
 	router := gin.New()
 	api := router.Group("/api/v1/system")
-	if err := RegisterIAMRoutes(api, runtime, nil, cfg); err != nil {
+	if err := RegisterIAMRoutes(api, runtime, nil); err != nil {
 		t.Fatalf("RegisterIAMRoutes() error = %v", err)
 	}
 
@@ -99,8 +96,7 @@ func TestRegisterIAMRoutesExposesOnlyTargetIAMSurface(t *testing.T) {
 func TestRegisterIAMRoutesRejectsIncompleteComposition(t *testing.T) {
 	router := gin.New()
 	api := router.Group("/api/v1/system")
-	cfg := &config.Config{OAuthPublicRateLimitPerMinute: 60, OAuthUserRateLimitPerMinute: 30}
-	if err := RegisterIAMRoutes(api, nil, nil, cfg); err == nil {
+	if err := RegisterIAMRoutes(api, nil, nil); err == nil {
 		t.Fatal("RegisterIAMRoutes() accepted nil runtime")
 	}
 }

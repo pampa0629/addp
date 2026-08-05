@@ -81,7 +81,6 @@ backend/
 │   │   ├── module_registry_handler.go # 模块注册与发现
 │   │   ├── task_provider_handler.go   # 任务提供者注册
 │   │   ├── registry_handler.go        # 引擎能力注册与发现
-│   │   ├── config_handler.go          # 共享配置（内部 API）
 │   │   └── internal_handler.go        # API Key 验证（内部 API）
 │   ├── config/         # 配置管理
 │   ├── middleware/     # 中间件（认证、日志等）
@@ -184,6 +183,7 @@ frontend/src/
 | delegated_access_tokens | system | Agent Tool 短期受委托访问令牌 Hash 与审计绑定 |
 | notebook_session_authorizations | system | Notebook Session 绑定的用户派生短期只读 Catalog 授权事实 |
 | resource_access_tickets | system | Owner Path 浏览器资源票据 Hash |
+| iam_security_policy | system | System IAM 平台安全策略及已应用版本 |
 | module_registry | (public) | 模块注册表，供 Gateway 动态路由 |
 | task_providers | (public) | 任务提供者表，供 Orchestrator 调用 |
 
@@ -198,6 +198,7 @@ frontend/src/
 - [resource_access_tickets表](docs/tables/resource_access_tickets表.md) - 浏览器原生资源访问票据
 - [delegated_access_tokens表](docs/tables/delegated_access_tokens表.md) - Agent Tool 短期受委托访问令牌
 - [notebook_session_authorizations表](docs/tables/notebook_session_authorizations表.md) - Notebook Session 会话授权事实
+- [iam_security_policy表](docs/tables/iam_security_policy表.md) - IAM 平台安全策略与重启生效版本
 
 **重要**:修改表结构或 API 时,必须同步更新对应的单表文档。
 
@@ -249,7 +250,8 @@ frontend/src/
 
 **module_registry 表**（public schema）:
 - 模块注册表，供 Gateway 动态路由查询
-- 字段: `id`, `module_name`, `module_url`, `route_prefix`, `health_check_url`, `status`, `last_heartbeat`, `metadata`
+- 字段: `id`, `module_name`, `module_url`, `route_prefix`, `health_check_url`, `status`, `last_heartbeat`, `metadata`, `configuration_management`
+- `configuration_management` 只保存版本化配置管理入口声明（owner、scope、前端路由和读写 Permission），不保存模块配置键、配置值或 Secret
 
 **task_providers 表**（public schema）:
 - 任务提供者注册，供 Orchestrator 查询和调用
@@ -399,9 +401,6 @@ Engine Runtime Descriptor 不包含 `connection_info`。只有工作流或脚本
 ### 待迁移内部 API（受限遗留面）
 
 `/api/v1/internal` 仅保留给尚未迁移的系统级运维调用方，不是新服务间认证主路径，也不能表达 Tenant Context。Meta 不得使用这些接口；新增或迁移调用方必须使用独立 Service Principal、Client Credentials 和 `/api/v1/system` Bearer 路由。
-
-**配置**:
-- `GET /api/v1/internal/config` - 获取共享配置
 
 **引擎**:
 - `GET /api/v1/internal/engines` - 列出所有引擎（内部使用）

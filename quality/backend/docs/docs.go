@@ -919,6 +919,9 @@ const docTemplate = `{
                 "enabled": {
                     "type": "boolean"
                 },
+                "execution_contract": {
+                    "$ref": "#/definitions/taskprovider.ExecutionContract"
+                },
                 "id": {
                     "type": "integer"
                 },
@@ -962,6 +965,27 @@ const docTemplate = `{
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "taskprovider.ExecutionContract": {
+            "type": "object",
+            "properties": {
+                "input_defaults": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "input_schema": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "input_ui_schema": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "output_schema": {
+                    "type": "object",
+                    "additionalProperties": true
                 }
             }
         }

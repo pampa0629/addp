@@ -122,7 +122,7 @@ make ports-validate
 | GeoPython Workflow Engine     | 8099     | 8099        | 空间计算引擎 (Python)      |
 | Model3D Workflow Engine    | 8101     | 8101        | 三维模型转换工作流引擎     |
 | PointCloud Workflow Engine | 8102     | 8102        | 点云处理工作流引擎         |
-| SuperMap Workflow Engine   | 8103     | 8103        | 超图 SPS 工作流引擎        |
+| SuperMap Workflow Engine   | 8103     | 8103        | 超图 iObjects C++ 空间计算工作流引擎 |
 | DuckDB Query Runtime       | 8104     | 8104        | 联邦只读查询计算引擎       |
 | PostgreSQL (System)   | 15432    | 15432       | ADDP 系统元数据            |
 | Redis                 | 16379    | 16379       | 缓存和队列                 |

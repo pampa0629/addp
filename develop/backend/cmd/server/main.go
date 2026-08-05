@@ -128,7 +128,7 @@ func main() {
 	defer cleanupService.Stop()
 
 	// ========== Handler 层 ==========
-	devTaskHandler := api.NewDevTaskHandler(devTaskService)
+	devTaskHandler := api.NewDevTaskHandler(devTaskService, operatorDiscovery)
 	executionHandler := api.NewExecutionHandler(devExecutor, toolApprovalService)
 	toolApprovalHandler := api.NewToolApprovalHandler(toolApprovalService)
 	operatorHandler := api.NewOperatorHandler(operatorDiscovery)

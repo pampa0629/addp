@@ -780,6 +780,24 @@ Python 实现的 Workflow Runtime 应共享 `common-python` 中的协议执行�
 
 资源选择后需要绑定标准元数据事实时，也必须由 `resource_binding` 显式声明目标参数。例如 `geometry_column_param` 表示从所选 item 的 `capabilities.spatial.geometry_columns[]` 读取可用几何列：单列自动选择；多列默认第一列并允许用户改选；无几何列时不得显示手工文本输入框。前端不得猜测 `geom`、`geometry` 等固定字段名。
 
+### 4.5 工作流任务执行输入与输出
+
+保存成功的 Develop 工作流必须包含完整、可直接执行的公开参数；执行输入只允许对本次 execution 覆盖保存值，不能用于补齐不完整任务。工作流任务的执行输入契约由 Develop 根据当前 `workflow_definition`、目标 Workflow Runtime 的 Public Operator Spec 和 Develop Adapter Spec 动态生成，不在任务内容中复制保存第二份 Schema 或默认值。
+
+执行输入自动包含每个节点中未被内部数据连线占用、可序列化且可完整校验的 Public Operator 参数：
+
+- 标量、枚举和普通对象参数按 `task_id -> public_parameter` 分组暴露。
+- 已由 `{ "$ref": "<task_id>" }` 提供的输入参数不允许外部覆盖。
+- `operator`、`id`、`depends_on`、工作流运行引擎绑定等结构事实不属于执行输入。
+- `connection_info`、`engine_id`、`schema/table/path`、Workflow Access Plan 和 Adapter 派生参数不允许进入执行输入。
+- 没有提交覆盖值时始终使用 `workflow_definition` 中保存的值；覆盖值只写入本次 execution 快照，不回写任务定义。
+
+资源选择参数必须作为一个逻辑参数组进入执行契约。读取资源至少包含 `locator`，可按 `resource_binding` 同时包含 `geometry_column` 等用户需要确认的关联事实；目标资源使用 `parent_locator + name`，并可包含公开 `write_mode`。执行时更换资源后必须重新读取资源事实、刷新关联字段并重新校验，不得沿用旧资源的几何列、类型或格式事实。
+
+跨任务输出只允许声明可持久定位、可序列化且能在任务边界外重新解析的稳定结果，例如保存算子生成的 ResourceLocator。DataFrame、GeoDataFrame、Spark DataFrame、SuperMap 内存句柄和其他 Runtime 私有对象只能通过当前工作流内部连线传递，不得进入 TaskProvider 输出契约。每个可编排输出必须使用稳定输出名而不是数组下标；Develop execution 结果应按产生节点返回命名输出，并继续保留 `produced_targets` 作为产物摘要。
+
+Orchestrator 为每个执行输入只允许三种互斥来源：使用任务保存值、设置 Step 固定覆盖值、引用显式 `depends_on` 上游 Step 的已声明稳定输出。不得继续让用户手写未校验的结果路径或把整个上游原始响应作为下游输入。
+
 同一算子能够读取多类资源时，应使用一个资源选择参数并由 locator 对应的资源事实决定运行时访问方式，不得要求用户预先选择 `source_type`。文件格式应优先由所选资源的格式事实或路径扩展名确定；支持格式列表属于资源选择器过滤条件，不应作为必选算子参数。内存对象输入应通过算子输入端口传递，不得在资源加载算子中另设 `geojson` 等旁路参数。
 
 同一算子能够写入表格或文件目标时，也应使用一个目标父资源选择参数，由父 locator 类型决定 Adapter 派生 `schema/table` 或 `path`，不得要求用户预先选择 `target_type`。文件输出格式由目标名称扩展名确定，不应再公开独立 `format` 参数。

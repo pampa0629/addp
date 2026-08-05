@@ -92,7 +92,7 @@ openssl rand -base64 32
 - **[OAuth 与 Fosite 实现说明](./docs/OAuth与Fosite实现说明.md)** - OAuth 协议引擎、Provider 和 Storage 边界
 - **[权限与角色发布规范](../docs/spec/addp权限与角色发布规范.md)** - Permission、Role、Manifest 和发布门禁
 - **[../docs/spec/addp技术栈规约.md](../docs/spec/addp技术栈规约.md)** - 技术栈和依赖版本
-- **[../docs/spec/addp配置介绍.md](../docs/spec/addp配置介绍.md)** - 配置中心说明
+- **[../docs/spec/addp配置介绍.md](../docs/spec/addp配置介绍.md)** - 配置分层与管理能力规范
 
 ---
 

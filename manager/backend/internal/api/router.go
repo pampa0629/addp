@@ -33,6 +33,7 @@ func SetupRouter(
 	cacheManager *service.CacheManager,
 	redisClient *redis.Client,
 	embeddingService *service.EmbeddingService,
+	embeddingConfigurationService *service.EmbeddingConfigurationService,
 	spatialPreviewService *service.SpatialPreviewService,
 	rasterCOGRepo *repository.RasterCOGRepository,
 	taskProviderHandler *TaskProviderHandler,
@@ -80,6 +81,20 @@ func SetupRouter(
 		if taskProviderHandler != nil {
 			internal.POST("/executions/:execution_id/events", taskProviderHandler.RecordManagerExecutionProgressEvent)
 		}
+	}
+
+	platform := router.Group("/api/v1/manager")
+	platform.Use(
+		auth.MustNewMiddleware(auth.MiddlewareConfig{SystemURL: cfg.SystemServiceURL}),
+		auth.MustNewContextGuard("platform"),
+	)
+	if systemClient != nil {
+		platform.Use(audit.AuditMiddleware("manager", systemClient))
+	}
+	if embeddingConfigurationService != nil {
+		handler := NewEmbeddingConfigurationHandler(embeddingConfigurationService)
+		platform.GET("/settings/embedding", auth.MustNewPermissionGuard(managerauthorization.PermissionManagerConfigurationRead), handler.Get)
+		platform.PUT("/settings/embedding", auth.MustNewPermissionGuard(managerauthorization.PermissionManagerConfigurationUpdate), handler.Update)
 	}
 
 	// API 路由组

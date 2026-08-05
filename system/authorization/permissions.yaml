@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: system
-manifest_version: 12
+manifest_version: 13
 permissions:
   - key: audit.event.export
     allowed_scope_types: [platform]
@@ -367,7 +367,7 @@ permissions:
     risk_level: low
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.security_policy.read.name
     description_i18n_key: permissions.iam.security_policy.read.description
   - key: iam.security_policy.update
@@ -375,7 +375,7 @@ permissions:
     risk_level: medium
     tenant_customizable: false
     delegable: false
-    status: disabled
+    status: active
     name_i18n_key: permissions.iam.security_policy.update.name
     description_i18n_key: permissions.iam.security_policy.update.description
   - key: iam.session.read

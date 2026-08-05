@@ -189,13 +189,12 @@ func TestCheckAllProviderHealthReportsUnknownCapabilityFields(t *testing.T) {
 	defer server.Close()
 
 	caps := models.JSONString(`{
-		"schema_version":"task.capabilities/v1",
+		"schema_version":"task.capabilities/v2",
 		"task_capabilities":[{
 			"type":"scan",
 			"display_name":"scan",
 			"description":"scan task",
 			"definition_schema":{"type":"object"},
-			"execution_schema":{"type":"object"},
 			"supports_schedule":false,
 			"supports_cancel":false,
 			"supports_inline_execution":false,
@@ -238,13 +237,12 @@ func TestCheckAllProviderHealthReportsNonBooleanDeprecated(t *testing.T) {
 	defer server.Close()
 
 	caps := models.JSONString(`{
-		"schema_version":"task.capabilities/v1",
+		"schema_version":"task.capabilities/v2",
 		"task_capabilities":[{
 			"type":"scan",
 			"display_name":"scan",
 			"description":"scan task",
 			"definition_schema":{"type":"object"},
-			"execution_schema":{"type":"object"},
 			"supports_schedule":false,
 			"supports_cancel":false,
 			"supports_inline_execution":false,
@@ -292,7 +290,7 @@ func (f fakeTaskProviderLister) ListTaskProviders() ([]*models.TaskProvider, err
 }
 
 func monitorTaskCapabilitiesForTest(items ...string) string {
-	return `{"schema_version":"task.capabilities/v1","task_capabilities":[` + strings.Join(items, ",") + `]}`
+	return `{"schema_version":"task.capabilities/v2","task_capabilities":[` + strings.Join(items, ",") + `]}`
 }
 
 func monitorTaskCapabilityForTest(taskType string, deprecated bool) string {
@@ -305,7 +303,6 @@ func monitorTaskCapabilityForTest(taskType string, deprecated bool) string {
 		"display_name":"` + taskType + `",
 		"description":"` + taskType + ` task",
 		"definition_schema":{"type":"object"},
-		"execution_schema":{"type":"object"},
 		"supports_schedule":false,
 		"supports_cancel":false,
 		"supports_inline_execution":false,

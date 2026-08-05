@@ -27,7 +27,7 @@ show_usage() {
   echo "  -math-workflow      启动 Math Workflow Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -model3d-workflow   启动 Model3D Workflow Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -pointcloud-workflow 启动 PointCloud Workflow Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
-  echo "  -supermap-workflow  启动 SuperMap Workflow Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console，需配置 SDK 挂载路径)"
+  echo "  -supermap-workflow  启动 SuperMap Workflow Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console，需先构建 C++ 基础镜像)"
   echo "  -spark-workflow     启动 Spark 工作流引擎 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -jupyter      启动 Jupyter Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -duckdb       启动 DuckDB Federated Query Runtime (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
@@ -66,13 +66,6 @@ mkdir -p logs
 if [ -f ".env" ]; then
     set -a
     source .env
-    set +a
-fi
-
-# 加载 .env.local 配置覆盖（优先级更高）
-if [ -f ".env.local" ]; then
-    set -a
-    source .env.local
     set +a
 fi
 

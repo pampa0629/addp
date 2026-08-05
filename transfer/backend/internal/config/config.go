@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"math"
 	"os"
 	"strconv"
@@ -201,27 +200,8 @@ func Load() *Config {
 
 	// 设置 BaseConfig 字段
 	cfg.SystemServiceURL = systemURL
-	cfg.EnableIntegration = commonConfig.GetEnvBool("ENABLE_SERVICE_INTEGRATION", true)
 
-	// 从 System 获取共享配置
-	if cfg.EnableIntegration {
-		log.Println("🔄 Attempting to load shared config from System service...")
-		if err := commonConfig.LoadSharedConfig(systemURL, &cfg.BaseConfig); err != nil {
-			log.Printf("⚠️  Warning: Failed to load shared config from System: %v", err)
-			log.Printf("⚠️  Falling back to local environment variables...")
-			commonConfig.LoadLocalConfig(&cfg.BaseConfig)
-		} else {
-			log.Println("✅ Successfully loaded shared config from System service")
-		}
-	} else {
-		log.Println("ℹ️  Service integration disabled, using local config")
-		commonConfig.LoadLocalConfig(&cfg.BaseConfig)
-	}
-
-	// 如果本地未配置 InternalAPIKey，尝试从 BaseConfig 获取
-	if cfg.InternalAPIKey == "" {
-		cfg.InternalAPIKey = cfg.BaseConfig.InternalAPIKey
-	}
+	commonConfig.LoadDeploymentConfig(&cfg.BaseConfig)
 
 	return cfg
 }

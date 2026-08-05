@@ -54,10 +54,8 @@ func main() {
 
 	// 加载配置
 	cfg := config.Load()
-	if cfg.EnableIntegration {
-		if _, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-transfer", cfg.ServiceClientSecret, nil); err != nil {
-			log.Fatalf("Service Token Source 配置无效: %v", err)
-		}
+	if _, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-transfer", cfg.ServiceClientSecret, nil); err != nil {
+		log.Fatalf("Service Token Source 配置无效: %v", err)
 	}
 
 	// 初始化结构化日志

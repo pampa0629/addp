@@ -13,6 +13,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/taskprovider"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/repository"
 	"github.com/google/uuid"
@@ -84,87 +85,18 @@ func (e *DevExecutor) ExecuteDevTask(
 	userAccessToken string,
 	triggerType string,
 ) (string, error) {
-	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
-	if err != nil {
-		return "", err
-	}
-	// 获取开发任务
-	devTask, err := e.devTaskRepo.FindByID(devTaskID, tenantID)
-	if err != nil {
-		return "", fmt.Errorf("开发任务不存在")
-	}
-
-	// 验证状态
-	if devTask.Status != "active" {
-		return "", fmt.Errorf("开发任务状态为 %s，无法执行", devTask.Status)
-	}
-	if devTask.DevType == commonExecution.TaskTypeWorkflow {
-		if err := e.validateWorkflowBeforeExecution(ctx, devTask.Content, devTask.ExecutionConfig, tenantID); err != nil {
-			return "", err
-		}
-	}
-
-	// 生成执行ID
-	executionID := uuid.New().String()
-	sqlAuthorization, err := e.prepareSQLExecutionAuthorization(
-		ctx, devTask, tenantID, userAccessToken, executionID,
+	return e.ExecuteWithParamsWithContext(
+		ctx,
+		devTaskID,
+		map[string]interface{}{},
+		tenantID,
+		userID,
+		userAccessToken,
+		triggerType,
+		commonExecution.ModuleDevelop,
+		nil,
+		"",
 	)
-	if err != nil {
-		return "", err
-	}
-	workflowAuthorization, err := e.prepareWorkflowExecutionAuthorization(
-		ctx, devTask, tenantID, userAccessToken, executionID,
-	)
-	if err != nil {
-		return "", err
-	}
-
-	// 提取输入参数
-	var inputs commonModels.JSONMap
-	if devTask.Content != nil {
-		if inputData, ok := devTask.Content["inputs"].(map[string]interface{}); ok {
-			inputs = inputData
-		}
-	}
-
-	// 创建统一执行记录
-	now := time.Now()
-	var triggeredBy *int
-	if userID > 0 {
-		userIDInt := int(userID)
-		triggeredBy = &userIDInt
-	}
-
-	execution := &commonExecution.TaskExecution{
-		TenantID:        int(tenantID),
-		ExecutionID:     executionID,
-		Module:          commonExecution.ModuleDevelop,
-		TaskType:        devTask.DevType, // "query"/"workflow"/"script"
-		Source:          commonExecution.ModuleDevelop,
-		SourceTaskID:    commonExecution.NewSourceTaskIDFromUint(devTaskID),
-		SourceTaskName:  &devTask.Name,
-		Status:          commonExecution.ExecutionStatusPending,
-		Progress:        0,
-		TriggerType:     normalizedTriggerType,
-		TriggeredBy:     triggeredBy,
-		ExecutionConfig: devTaskExecutionRecordConfig(devTask, inputs),
-		CreatedAt:       now,
-		UpdatedAt:       now,
-	}
-	applySQLExecutionAuthorizationFacts(execution, sqlAuthorization)
-	applyWorkflowExecutionAuthorizationFacts(execution, workflowAuthorization)
-
-	if err := e.taskExecutionRepo.Create(ctx, execution); err != nil {
-		return "", fmt.Errorf("failed to create execution record: %w", err)
-	}
-
-	log.Printf("🚀 [DevExecutor] 开始执行 execution_id=%s source_task_id=%d type=%s trigger=%s",
-		executionID, devTaskID, devTask.DevType, normalizedTriggerType)
-
-	// 异步执行任务
-	go e.executeAsync(execution.ID, executionID, devTask, int(tenantID), sqlAuthorization, workflowAuthorization)
-
-	return executionID, nil
 }
 
 // ExecuteContent 执行临时内容（不关联开发任务）
@@ -698,11 +630,28 @@ func (e *DevExecutor) executeWorkflow(
 	}
 	if len(resp.ProducedTargets) > 0 {
 		result["produced_targets"] = resp.ProducedTargets
+		result["outputs"] = workflowExecutionOutputs(resp.ProducedTargets)
 		result["meta_scan_runs"] = e.createWorkflowProducedTargetScanRuns(ctx, uint(tenantID), resp.ProducedTargets)
 	}
 
 	log.Printf("🔵 [DevExecutor] executeWorkflow 结束: execution_id=%s", executionID)
 	return result, ""
+}
+
+func workflowExecutionOutputs(targets []WorkflowProducedTarget) commonModels.JSONMap {
+	outputs := commonModels.JSONMap{}
+	for _, target := range targets {
+		if strings.TrimSpace(target.TaskID) == "" {
+			continue
+		}
+		outputs[target.TaskID] = map[string]interface{}{
+			"resource": map[string]interface{}{
+				"locator": target.Locator,
+				"type":    target.Type,
+			},
+		}
+	}
+	return outputs
 }
 
 func (e *DevExecutor) createWorkflowProducedTargetScanRuns(
@@ -887,6 +836,7 @@ func (e *DevExecutor) GetExecution(executionID string, tenantID uint) (*models.E
 
 	result := &models.ExecutionWithDevTask{
 		TaskExecution: execution,
+		Outputs:       executionOutputs(execution.Metadata),
 	}
 
 	// 加载关联的开发任务
@@ -900,6 +850,12 @@ func (e *DevExecutor) GetExecution(executionID string, tenantID uint) (*models.E
 	}
 
 	return result, nil
+}
+
+func executionOutputs(metadata commonModels.JSONMap) commonModels.JSONMap {
+	result, _ := metadata["result"].(map[string]interface{})
+	outputs, _ := result["outputs"].(map[string]interface{})
+	return commonModels.JSONMap(outputs)
 }
 
 func (e *DevExecutor) GetDevTaskType(taskID, tenantID uint) (string, error) {
@@ -1132,7 +1088,7 @@ func (e *DevExecutor) ExecuteWithParamsWithContext(
 	}
 
 	log.Printf("🚀 [DevExecutor] 参数化执行已创建 execution_id=%s task_id=%d params=%v",
-		executionID, itemID, executionInputs["parameters"])
+		executionID, itemID, executionInputs["submitted_parameters"])
 
 	// 异步执行任务
 	go e.executeAsync(
@@ -1163,25 +1119,52 @@ func (e *DevExecutor) prepareParameterizedDevTask(
 		return nil, fmt.Errorf("开发任务状态为 %s，无法执行", devTask.Status)
 	}
 
-	contentMap := map[string]interface{}{}
-	if devTask.Content != nil {
-		contentMap = devTask.Content
+	resolvedContent, err := cloneWorkflowContent(devTask.Content)
+	if err != nil {
+		return nil, fmt.Errorf("复制开发任务内容失败: %w", err)
 	}
-	defaultParams := map[string]interface{}{}
-	if values, ok := contentMap["default_parameters"].(map[string]interface{}); ok {
-		defaultParams = values
+	effectiveParameters := map[string]interface{}{}
+	inputs := commonModels.JSONMap{
+		"submitted_parameters": params,
 	}
-	mergedParams := deepMerge(defaultParams, params)
-	if schema, ok := contentMap["parameter_schema"].(map[string]interface{}); ok {
-		if err := validateParameters(schema, mergedParams); err != nil {
-			return nil, fmt.Errorf("parameter validation failed: %w", err)
+	if devTask.DevType == commonExecution.TaskTypeWorkflow {
+		workflowDefinition, ok := resolvedContent["workflow_definition"].(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("工作流定义无效")
 		}
+		workflowEngineID := workflowEngineIDFromExecutionConfig(devTask.ExecutionConfig)
+		if workflowEngineID == 0 {
+			return nil, fmt.Errorf("工作流执行必须提供 execution_config.engine_id")
+		}
+		if e.operatorDiscovery == nil {
+			return nil, fmt.Errorf("工作流参数契约服务不可用")
+		}
+		resolved, resolveErr := e.operatorDiscovery.resolveWorkflowExecutionParameters(
+			ctx,
+			workflowEngineID,
+			workflowDefinition,
+			params,
+			tenantID,
+		)
+		if resolveErr != nil {
+			return nil, &ExecutionParametersError{Cause: resolveErr}
+		}
+		resolvedContent["workflow_definition"] = resolved.Workflow
+		effectiveParameters = resolved.EffectiveParameters
+		inputs["workflow_definition"] = resolved.Workflow
+		inputs["execution_contract"] = resolved.Contract
+	} else {
+		emptyContract := taskprovider.EmptyExecutionContract()
+		if err := taskprovider.ValidateExecutionParameters(
+			emptyContract.InputSchema,
+			params,
+			taskprovider.ParameterValidationOptions{},
+		); err != nil {
+			return nil, &ExecutionParametersError{Cause: err}
+		}
+		inputs["execution_contract"] = emptyContract
 	}
-	resolvedContent, ok := resolveTemplates(contentMap, mergedParams).(map[string]interface{})
-	if !ok {
-		resolvedContent = map[string]interface{}{}
-	}
-	resolvedContent["parameters"] = mergedParams
+	inputs["effective_parameters"] = effectiveParameters
 	task := &models.DevTask{
 		ID: devTask.ID, DevType: devTask.DevType, Content: resolvedContent,
 		Timeout: devTask.Timeout, TenantID: tenantID, Status: devTask.Status,
@@ -1192,7 +1175,6 @@ func (e *DevExecutor) prepareParameterizedDevTask(
 			return nil, err
 		}
 	}
-	inputs := commonModels.JSONMap{"parameters": mergedParams}
 	return &preparedParameterizedDevTask{template: devTask, task: task, inputs: inputs}, nil
 }
 
@@ -1344,159 +1326,4 @@ func devTaskExecutionRecordConfig(devTask *models.DevTask, inputs commonModels.J
 		config["engine_id"] = devTask.GetEngineID()
 	}
 	return config
-}
-
-// ==================== 辅助函数 ====================
-
-// resolveTemplates 递归解析模板变量 {{path.to.value}}
-func resolveTemplates(data interface{}, params map[string]interface{}) interface{} {
-	switch v := data.(type) {
-	case string:
-		if len(v) > 4 && v[:2] == "{{" && v[len(v)-2:] == "}}" {
-			path := v[2 : len(v)-2]
-			return getNestedValue(params, path)
-		}
-		return v
-	case map[string]interface{}:
-		result := make(map[string]interface{})
-		for key, val := range v {
-			result[key] = resolveTemplates(val, params)
-		}
-		return result
-	case []interface{}:
-		result := make([]interface{}, len(v))
-		for i, val := range v {
-			result[i] = resolveTemplates(val, params)
-		}
-		return result
-	default:
-		return v
-	}
-}
-
-func getNestedValue(data map[string]interface{}, path string) interface{} {
-	parts := splitPath(path)
-	current := data
-	for i, part := range parts {
-		if i == len(parts)-1 {
-			return current[part]
-		}
-		if next, ok := current[part].(map[string]interface{}); ok {
-			current = next
-		} else {
-			return nil
-		}
-	}
-	return nil
-}
-
-func splitPath(path string) []string {
-	var parts []string
-	var current string
-	for _, char := range path {
-		if char == '.' {
-			if current != "" {
-				parts = append(parts, current)
-				current = ""
-			}
-		} else {
-			current += string(char)
-		}
-	}
-	if current != "" {
-		parts = append(parts, current)
-	}
-	return parts
-}
-
-func deepMerge(base, override map[string]interface{}) map[string]interface{} {
-	result := make(map[string]interface{})
-	for k, v := range base {
-		result[k] = v
-	}
-	for k, v := range override {
-		if vm, ok := v.(map[string]interface{}); ok {
-			if bv, exists := result[k]; exists {
-				if bvm, ok := bv.(map[string]interface{}); ok {
-					result[k] = deepMerge(bvm, vm)
-					continue
-				}
-			}
-		}
-		result[k] = v
-	}
-	return result
-}
-
-func validateParameters(schema map[string]interface{}, params map[string]interface{}) error {
-	for fieldName, fieldSchemaInterface := range schema {
-		fieldSchema, ok := fieldSchemaInterface.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		if required, ok := fieldSchema["required"].(bool); ok && required {
-			if _, exists := params[fieldName]; !exists {
-				return fmt.Errorf("required parameter missing: %s", fieldName)
-			}
-		}
-
-		if params[fieldName] != nil {
-			expectedType, ok := fieldSchema["type"].(string)
-			if ok {
-				actualValue := params[fieldName]
-				if !validateType(actualValue, expectedType) {
-					return fmt.Errorf("parameter %s has wrong type: expected %s", fieldName, expectedType)
-				}
-			}
-		}
-
-		if enumValues, ok := fieldSchema["enum"].([]interface{}); ok && len(enumValues) > 0 {
-			if paramValue := params[fieldName]; paramValue != nil {
-				found := false
-				for _, enumVal := range enumValues {
-					if paramValue == enumVal {
-						found = true
-						break
-					}
-				}
-				if !found {
-					return fmt.Errorf("parameter %s must be one of: %v", fieldName, enumValues)
-				}
-			}
-		}
-	}
-	return nil
-}
-
-func validateType(value interface{}, expectedType string) bool {
-	switch expectedType {
-	case "string":
-		_, ok := value.(string)
-		return ok
-	case "number", "int":
-		switch value.(type) {
-		case int, int32, int64, float32, float64:
-			return true
-		default:
-			return false
-		}
-	case "bool", "boolean":
-		_, ok := value.(bool)
-		return ok
-	case "object":
-		_, ok := value.(map[string]interface{})
-		return ok
-	case "array":
-		_, ok := value.([]interface{})
-		return ok
-	case "DataLocation":
-		if m, ok := value.(map[string]interface{}); ok {
-			_, hasSourceType := m["source_type"]
-			return hasSourceType
-		}
-		return false
-	default:
-		return true
-	}
 }

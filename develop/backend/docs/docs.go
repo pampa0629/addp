@@ -2106,7 +2106,13 @@ const docTemplate = `{
                     "200": {
                         "description": "开发任务详情 | Development task details",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskSwagger"
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskDetailSwagger"
+                        }
+                    },
+                    "500": {
+                        "description": "执行契约不可用 | Execution contract unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
                         }
                     }
                 },
@@ -2209,23 +2215,29 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "执行参数（可选）| Execution parameters (optional)",
+                        "description": "本次执行参数覆盖（可选）| Execution parameter overrides (optional)",
                         "name": "body",
                         "in": "body",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/internal_api.executeDevTaskRequest"
                         }
                     }
                 ],
                 "responses": {
-                    "200": {
+                    "202": {
                         "description": "执行已启动 | Execution started",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        }
+                    },
+                    "400": {
+                        "description": "请求或执行参数无效 | Invalid request or execution parameters",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     }
                 },
@@ -3244,6 +3256,102 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_develop_backend_internal_models.DevTaskDetailSwagger": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContentSwagger"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-06-24T12:00:00Z"
+                },
+                "created_by": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "description": {
+                    "type": "string",
+                    "example": "示例工作流"
+                },
+                "dev_type": {
+                    "type": "string",
+                    "enum": [
+                        "query",
+                        "workflow",
+                        "script"
+                    ],
+                    "example": "workflow"
+                },
+                "display_name": {
+                    "type": "string",
+                    "example": "城市缓冲区工作流"
+                },
+                "editor_layout": {
+                    "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DAGEditorLayoutSwagger"
+                },
+                "execution_config": {
+                    "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskExecutionConfigSwagger"
+                },
+                "execution_contract": {
+                    "$ref": "#/definitions/taskprovider.ExecutionContract"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "last_execution_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "last_execution_status": {
+                    "type": "string",
+                    "example": "success"
+                },
+                "last_run_at": {
+                    "type": "string",
+                    "example": "2026-06-24T12:00:00Z"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "city_buffer_workflow"
+                },
+                "parameters": {
+                    "type": "object"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "inactive",
+                        "archived"
+                    ],
+                    "example": "active"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "tenant_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "timeout": {
+                    "type": "integer",
+                    "example": 300
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-06-24T12:00:00Z"
+                },
+                "updated_by": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
         "github_com_addp_develop_backend_internal_models.DevTaskExecutionConfigSwagger": {
             "type": "object",
             "properties": {
@@ -3454,6 +3562,9 @@ const docTemplate = `{
                     "type": "string",
                     "example": "develop"
                 },
+                "outputs": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
                 "parent_execution_id": {
                     "type": "string",
                     "example": "parent-execution-id"
@@ -3656,6 +3767,9 @@ const docTemplate = `{
                 },
                 "execution_config": {
                     "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskExecutionConfigSwagger"
+                },
+                "execution_contract": {
+                    "$ref": "#/definitions/taskprovider.ExecutionContract"
                 },
                 "id": {
                     "type": "integer",
@@ -4295,6 +4409,15 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.executeDevTaskRequest": {
+            "type": "object",
+            "properties": {
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
         "internal_api.notebookByteRange": {
             "type": "object",
             "properties": {
@@ -4531,6 +4654,10 @@ const docTemplate = `{
                 }
             }
         },
+        "models.JSONMap": {
+            "type": "object",
+            "additionalProperties": true
+        },
         "models.OutputPortDescriptor": {
             "type": "object",
             "properties": {
@@ -4566,6 +4693,10 @@ const docTemplate = `{
                     "description": "参数说明",
                     "type": "string"
                 },
+                "display_name": {
+                    "description": "用户可见名称",
+                    "type": "string"
+                },
                 "enum": {
                     "description": "枚举值 (用于下拉选择)",
                     "type": "array",
@@ -4586,7 +4717,7 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "name": {
-                    "description": "参数名",
+                    "description": "稳定参数名",
                     "type": "string"
                 },
                 "notes": {
@@ -4731,6 +4862,27 @@ const docTemplate = `{
                 },
                 "type": {
                     "type": "string"
+                }
+            }
+        },
+        "taskprovider.ExecutionContract": {
+            "type": "object",
+            "properties": {
+                "input_defaults": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "input_schema": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "input_ui_schema": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "output_schema": {
+                    "type": "object",
+                    "additionalProperties": true
                 }
             }
         }

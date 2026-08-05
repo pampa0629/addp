@@ -4,7 +4,6 @@ import "testing"
 
 func TestLoadDefaultsCopilotServiceURLToStandardPort(t *testing.T) {
 	t.Setenv("COPILOT_URL", "")
-	t.Setenv("ENABLE_SERVICE_INTEGRATION", "false")
 
 	cfg := Load()
 	if cfg.CopilotServiceURL != "http://localhost:8087" {

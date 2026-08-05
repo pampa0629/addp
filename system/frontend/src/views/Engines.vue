@@ -739,8 +739,6 @@ const extensionForm = ref({
 
 const mathWorkflowExample = {
   engine_type: 'math_workflow',
-  name: 'Math Workflow 示例引擎',
-  description: '符合 addp.workflow/v1 的数学工作流示例运行时',
   protocol: 'http',
   host: 'localhost',
   port: 8089
@@ -748,8 +746,6 @@ const mathWorkflowExample = {
 
 const superMapWorkflowExample = {
   engine_type: 'supermap_workflow',
-  name: 'SuperMap 工作流引擎',
-  description: '面向超图 iObjects Java / SPS 的工作流运行时',
   protocol: 'http',
   host: 'localhost',
   port: 8103
@@ -1294,14 +1290,22 @@ const showAddExtensionDialog = () => {
 }
 
 const fillMathWorkflowExample = () => {
-  extensionForm.value = { ...mathWorkflowExample }
+  extensionForm.value = {
+    ...mathWorkflowExample,
+    name: t('system.engine.extensionForm.mathExampleName'),
+    description: t('system.engine.extensionForm.mathExampleDescription')
+  }
   extensionCapabilitiesText.value = ''
   extensionProbeResult.value = ''
   resetExtensionRuntimeStatus()
 }
 
 const fillSuperMapWorkflowExample = () => {
-  extensionForm.value = { ...superMapWorkflowExample }
+  extensionForm.value = {
+    ...superMapWorkflowExample,
+    name: t('system.engine.extensionForm.superMapExampleName'),
+    description: t('system.engine.extensionForm.superMapExampleDescription')
+  }
   extensionCapabilitiesText.value = ''
   extensionProbeResult.value = ''
   resetExtensionRuntimeStatus()

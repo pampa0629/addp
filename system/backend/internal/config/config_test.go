@@ -28,17 +28,9 @@ func TestLoadDefaultsDevelopServiceURLToStandardPort(t *testing.T) {
 }
 
 func TestLoadOAuthSecurityDefaults(t *testing.T) {
-	t.Setenv("OAUTH_PUBLIC_RATE_LIMIT_PER_MINUTE", "")
-	t.Setenv("OAUTH_USER_RATE_LIMIT_PER_MINUTE", "")
 	t.Setenv("TRUSTED_PROXIES", "")
 
 	cfg := Load()
-	if cfg.OAuthPublicRateLimitPerMinute != 60 || cfg.OAuthUserRateLimitPerMinute != 30 {
-		t.Fatalf("OAuth limits = %d/%d", cfg.OAuthPublicRateLimitPerMinute, cfg.OAuthUserRateLimitPerMinute)
-	}
-	if cfg.TenantInvitationExpireHours != 168 || cfg.EnrollmentTicketExpireMinutes != 5 {
-		t.Fatalf("invitation expiration defaults = %d/%d", cfg.TenantInvitationExpireHours, cfg.EnrollmentTicketExpireMinutes)
-	}
 	if len(cfg.TrustedProxies) != 2 || cfg.TrustedProxies[0] != "127.0.0.1" || cfg.TrustedProxies[1] != "::1" {
 		t.Fatalf("trusted proxies = %#v", cfg.TrustedProxies)
 	}

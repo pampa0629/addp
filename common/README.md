@@ -48,7 +48,7 @@ decoded JSON map 的通用读取工具，用于读取嵌套 section、字符串�
 后续如果确实新增 `common` schema 共享表，应按领域新增 `common/<domain>` 包，并在领域包内提供模型、仓储和 `EnsureStore`；只有当 `common` schema 独立成远程 Common 服务时，才新增对应 `common/client`。
 
 ### taskprovider
-TaskProvider 标准契约的纯解析和校验能力，包括 `task.capabilities/v1` capabilities 与标准任务列表响应 `{items,total,page,page_size}`。
+TaskProvider 标准契约的纯解析和校验能力，包括 `task.capabilities/v2`、具体任务 `execution_contract`、执行参数实例校验与标准任务列表响应 `{items,total,page,page_size}`。
 
 `taskprovider` 不访问 System 注册表，不调用 owner 模块，不处理执行调度；System、Monitor、Orchestrator 等模块只复用它判断跨模块契约是否符合规范。
 

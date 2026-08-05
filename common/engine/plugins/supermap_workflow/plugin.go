@@ -11,7 +11,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 )
 
-// SuperMapWorkflowPlugin exposes the SuperMap iObjects Java / SPS runtime
+// SuperMapWorkflowPlugin exposes the SuperMap iObjects C++ runtime
 // through the unified ADDP workflow provider contract.
 type SuperMapWorkflowPlugin struct{}
 
@@ -110,28 +110,35 @@ func (p *SuperMapWorkflowPlugin) TestConnection(ctx context.Context, connInfo pl
 	if err := json.Unmarshal(body, &health); err != nil {
 		return fmt.Errorf("failed to decode SuperMap Workflow health response: %w", err)
 	}
-	if err := requireSuperMapDependency("objectsjava", health.Dependencies.ObjectsJava); err != nil {
+	if err := requireSuperMapDependency("iobjects_cpp", health.Dependencies.IObjectsCPP); err != nil {
 		return err
 	}
-	if err := requireSuperMapDependency("gpa_libs", health.Dependencies.GPALibs); err != nil {
+	if err := requireSuperMapDependency("freetype", health.Dependencies.FreeType); err != nil {
 		return err
+	}
+	if err := requireSuperMapDependency("nfs", health.Dependencies.NFS); err != nil {
+		return err
+	}
+	if health.Status != "healthy" {
+		return fmt.Errorf("supermap workflow runtime is not healthy: %s", health.Status)
 	}
 	return nil
 }
 
 type superMapHealthResponse struct {
 	Status       string `json:"status"`
-	Ready        *bool  `json:"ready"`
 	Dependencies struct {
-		ObjectsJava superMapDependency `json:"objectsjava"`
-		GPALibs     superMapDependency `json:"gpa_libs"`
+		IObjectsCPP superMapDependency `json:"iobjects_cpp"`
+		FreeType    superMapDependency `json:"freetype"`
+		NFS         superMapDependency `json:"nfs"`
 	} `json:"dependencies"`
 }
 
 type superMapDependency struct {
-	Available bool   `json:"available"`
-	Path      string `json:"path"`
-	Details   string `json:"details"`
+	Available bool     `json:"available"`
+	Path      string   `json:"path"`
+	Details   string   `json:"details"`
+	Missing   []string `json:"missing"`
 }
 
 func requireSuperMapDependency(name string, dep superMapDependency) error {
@@ -140,13 +147,19 @@ func requireSuperMapDependency(name string, dep superMapDependency) error {
 	}
 	details := dep.Details
 	if details == "" {
-		details = dep.Path
+		if len(dep.Missing) > 0 {
+			details = fmt.Sprintf("missing %v in %s", dep.Missing, dep.Path)
+		} else {
+			details = dep.Path
+		}
 	}
 	switch name {
-	case "objectsjava":
-		return fmt.Errorf("supermap objectsjava runtime is not bound to the engine runtime: %s", details)
-	case "gpa_libs":
-		return fmt.Errorf("supermap GPA/SPS libs are not bound to the engine runtime: %s", details)
+	case "iobjects_cpp":
+		return fmt.Errorf("supermap iObjects C++ runtime is not available: %s", details)
+	case "freetype":
+		return fmt.Errorf("system FreeType runtime is not available: %s", details)
+	case "nfs":
+		return fmt.Errorf("NFS client runtime is not available: %s", details)
 	default:
 		return fmt.Errorf("supermap dependency %s is not available: %s", name, details)
 	}

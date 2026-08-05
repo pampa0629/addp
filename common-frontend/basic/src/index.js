@@ -8,6 +8,7 @@ export { default as ResourceTree } from './components/ResourceTree.vue'
 export { default as ResourceTreePicker } from './components/ResourceTreePicker.vue'
 export { default as AuthLoginFlow } from './components/AuthLoginFlow.vue'
 export { default as StatusAnnouncer } from './components/StatusAnnouncer.vue'
+export { default as ExecutionParameterForm } from './components/ExecutionParameterForm.vue'
 
 // Schedule Components
 export { default as ScheduleConfig } from './components/ScheduleConfig.vue'
@@ -22,6 +23,7 @@ export * from './utils/consoleBridge'
 export * from './utils/taskOwnerUrl'
 export * from './utils/moduleRouteNavigation'
 export * from './utils/recoverableRouteState'
+export * from './utils/resourceSelection'
 export * from './utils/continuousExecution'
 export * from './utils/focus'
 export * from './utils/latestRequest'
@@ -42,8 +44,7 @@ export {
   getResourceTreeNode,
   listResourceTreeEngines,
   refreshResourceTreeNode,
-  searchResourceTree,
-  selectionFromResourceTreeNode
+  searchResourceTree
 } from './api/resourceTree'
 
 // Composables - Authentication

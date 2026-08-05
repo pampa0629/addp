@@ -866,9 +866,9 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "任务详情，按 task_type 返回矢量瓦片缓存、矢量物化视图、栅格 COG 生成或向量化任务详情 | Task detail by task_type",
+                        "description": "任务详情与具体任务执行契约；任务类型专有字段位于同一顶层 | Task detail and concrete execution contract; task-type-specific fields remain at the same top level",
                         "schema": {
-                            "type": "object"
+                            "$ref": "#/definitions/internal_api.TaskProviderTaskDetailResponse"
                         }
                     },
                     "400": {
@@ -5142,6 +5142,83 @@ const docTemplate = `{
                 "x-addp-auth-mode": "self"
             }
         },
+        "/settings/embedding": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "配置管理 | Configuration Management"
+                ],
+                "summary": "获取平台向量化配置 | Get platform embedding configuration",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.EmbeddingConfigurationResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.configuration.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "配置管理 | Configuration Management"
+                ],
+                "summary": "更新平台向量化配置 | Update platform embedding configuration",
+                "parameters": [
+                    {
+                        "description": "向量化配置 | Embedding configuration",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.UpdateEmbeddingConfigurationInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.EmbeddingConfigurationResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.configuration.update"
+                ]
+            }
+        },
         "/storage-assets/{engine_id}/{storage_ref}": {
             "get": {
                 "security": [
@@ -5370,9 +5447,9 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "任务详情，按 task_type 返回矢量瓦片缓存、矢量物化视图、栅格 COG 生成或向量化任务详情 | Task detail by task_type",
+                        "description": "任务详情与具体任务执行契约；任务类型专有字段位于同一顶层 | Task detail and concrete execution contract; task-type-specific fields remain at the same top level",
                         "schema": {
-                            "type": "object"
+                            "$ref": "#/definitions/internal_api.TaskProviderTaskDetailResponse"
                         }
                     },
                     "400": {
@@ -7757,6 +7834,47 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_manager_internal_service.EmbeddingConfigurationResponse": {
+            "type": "object",
+            "properties": {
+                "api_key_configured": {
+                    "type": "boolean"
+                },
+                "base_url": {
+                    "type": "string"
+                },
+                "batch_concurrency": {
+                    "type": "integer"
+                },
+                "dimension": {
+                    "type": "integer"
+                },
+                "max_distance": {
+                    "type": "number"
+                },
+                "max_file_size_mb": {
+                    "type": "integer"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "persisted": {
+                    "type": "boolean"
+                },
+                "timeout_seconds": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_manager_internal_service.EmbeddingExecutionRequest": {
             "type": "object",
             "properties": {
@@ -8657,6 +8775,40 @@ const docTemplate = `{
                 },
                 "reason": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.UpdateEmbeddingConfigurationInput": {
+            "type": "object",
+            "required": [
+                "base_url",
+                "batch_concurrency",
+                "max_distance",
+                "max_file_size_mb",
+                "model",
+                "timeout_seconds"
+            ],
+            "properties": {
+                "base_url": {
+                    "type": "string"
+                },
+                "batch_concurrency": {
+                    "type": "integer"
+                },
+                "max_distance": {
+                    "type": "number"
+                },
+                "max_file_size_mb": {
+                    "type": "integer"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "timeout_seconds": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -9911,6 +10063,26 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.TaskProviderTaskDetailResponse": {
+            "type": "object",
+            "properties": {
+                "execution_contract": {
+                    "$ref": "#/definitions/taskprovider.ExecutionContract"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.TileCacheTaskRequest": {
             "type": "object",
             "properties": {
@@ -10177,6 +10349,27 @@ const docTemplate = `{
                 },
                 "table": {
                     "type": "string"
+                }
+            }
+        },
+        "taskprovider.ExecutionContract": {
+            "type": "object",
+            "properties": {
+                "input_defaults": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "input_schema": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "input_ui_schema": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "output_schema": {
+                    "type": "object",
+                    "additionalProperties": true
                 }
             }
         }

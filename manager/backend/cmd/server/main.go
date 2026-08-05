@@ -13,10 +13,12 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
+	commonconfiguration "github.com/addp/common/configuration"
 	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/utils"
 	"github.com/addp/manager/internal/api"
+	managerauthorization "github.com/addp/manager/internal/authorization"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/mvt"
 	"github.com/addp/manager/internal/objectcontent"
@@ -77,6 +79,7 @@ func main() {
 	searchHistoryRepo := repository.NewSearchHistoryRepository(db)
 	metadataRepo := repository.NewMetadataRepository(db)
 	embeddingRepo := repository.NewEmbeddingRepository(db)
+	embeddingConfigurationRepo := repository.NewEmbeddingConfigurationRepository(db)
 	tileCacheRepo := repository.NewTileCacheRepository(db)
 	vectorMaterializedViewRepo := repository.NewVectorMaterializedViewRepository(db)
 	rasterCOGRepo := repository.NewRasterCOGRepository(db)
@@ -91,11 +94,15 @@ func main() {
 	dataProfileRepo := repository.NewDataProfileRepository(db)
 	dataProfileExecutionRepo := repository.NewDataProfileExecutionRepository(db)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	embeddingConfigurationService := service.NewEmbeddingConfigurationService(embeddingConfigurationRepo, cfg.EmbeddingService.APIKey)
+	if err := embeddingConfigurationService.Initialize(context.Background()); err != nil {
+		logger.L().Error("Manager 向量化配置初始化失败", "error", err)
+		os.Exit(1)
+	}
+	embeddingConfigurationProvider := embeddingConfigurationService.Provider()
 	logger.L().Info("Manager repositories 初始化完成")
 
 	logger.L().Info("Manager 配置加载完成",
-		"enable_integration", cfg.EnableIntegration,
-		"enable_meta_integration", cfg.EnableMetaIntegration,
 		"internal_api_key_set", cfg.InternalAPIKey != "",
 		"meta_service_url", cfg.MetaServiceURL,
 	)
@@ -129,28 +136,22 @@ func main() {
 
 	// 初始化 System 客户端（用于拉取解密的资源连接信息）
 	var systemClient *commonClient.SystemClient
-	if cfg.EnableIntegration && cfg.InternalAPIKey != "" {
+	if cfg.InternalAPIKey != "" {
 		systemClient = commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
 	}
 
 	// 初始化 Meta 客户端（用于查询元数据）
-	var metaClient *commonClient.MetaClient
-	if cfg.EnableMetaIntegration {
-		if cfg.ServiceClientSecret == "" || cfg.MetaServiceURL == "" || cfg.SystemServiceURL == "" {
-			logger.L().Error("Meta 集成已启用，但 Service Client Credential 或服务 URL 未配置")
-			os.Exit(1)
-		}
-		tokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-manager", cfg.ServiceClientSecret, nil)
-		if err != nil {
-			logger.L().Error("Service Token Source 初始化失败", "error", err)
-			os.Exit(1)
-		}
-		metaClient = commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
-		logger.L().Info("MetaClient 已初始化",
-			"meta_url", cfg.MetaServiceURL)
-	} else {
-		logger.L().Info("Meta 集成未启用")
+	if cfg.ServiceClientSecret == "" || cfg.SystemServiceURL == "" || cfg.MetaServiceURL == "" {
+		logger.L().Error("Manager Service Client Credential、System URL 和 Meta URL 必须配置")
+		os.Exit(1)
 	}
+	serviceTokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-manager", cfg.ServiceClientSecret, nil)
+	if err != nil {
+		logger.L().Error("Service Token Source 初始化失败", "error", err)
+		os.Exit(1)
+	}
+	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, serviceTokenSource)
+	logger.L().Info("MetaClient 已初始化", "meta_url", cfg.MetaServiceURL)
 
 	contentRegistry := objectcontent.NewObjectContentRegistry()
 	pluginDirs := preview.ParsePluginDirSpec(cfg.PreviewPluginDir)
@@ -171,7 +172,7 @@ func main() {
 	// 初始化 services（注意：Manager 不负责引擎管理，引擎信息通过 SystemClient 获取）
 	searchHistoryService := service.NewSearchHistoryService(searchHistoryRepo)
 	metadataService := service.NewMetadataService(metadataRepo, systemClient, metaClient, previewRegistry, contentRegistry)
-	searchService, err := service.NewHybridSearchService(cfg, embeddingRepo)
+	searchService, err := service.NewHybridSearchService(cfg, embeddingRepo, embeddingConfigurationProvider)
 	if err != nil {
 		logger.L().Error("初始化混合检索服务失败", "error", err)
 		os.Exit(1)
@@ -182,16 +183,6 @@ func main() {
 	// ✅ 传入连接池配置，实时生成瓦片使用较小的连接数（默认5，避免峰值压力）
 	mvtService := service.NewMVTService(metadataRepo, systemClient, 5)
 	mvtService.SetVectorMaterializedViewRepository(vectorMaterializedViewRepo)
-	spatialPreviewService := service.NewSpatialPreviewService(redisClient)
-	unifiedMVTService := service.NewUnifiedMVTService(
-		spatialPreviewService,
-		mvtService,
-		metadataRepo,
-	)
-	unifiedMVTService.SetRealtimeTileTimeout(time.Duration(cfg.TileCache.RealtimeTileTimeoutMS) * time.Millisecond)
-	unifiedMVTService.SetRealtimeTileRetryAfter(time.Duration(cfg.TileCache.RealtimeTileRetryAfterSec) * time.Second)
-	logger.L().Info("统一 MVT 服务已初始化（RESTful API + 三层缓存穿透架构）")
-
 	// 初始化 MinIO 客户端（用于瓦片存储和删除）
 	minioClient, err := minio.New(cfg.MinioEndpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.MinioAccessKey, cfg.MinioSecretKey, ""),
@@ -203,6 +194,15 @@ func main() {
 
 	// MinIO Bucket 名称（瓦片缓存结果默认写入 manager bucket）
 	minioBucket := "manager"
+	spatialPreviewService := service.NewSpatialPreviewService(redisClient, minioClient)
+	unifiedMVTService := service.NewUnifiedMVTService(
+		spatialPreviewService,
+		mvtService,
+		metadataRepo,
+	)
+	unifiedMVTService.SetRealtimeTileTimeout(time.Duration(cfg.TileCache.RealtimeTileTimeoutMS) * time.Millisecond)
+	unifiedMVTService.SetRealtimeTileRetryAfter(time.Duration(cfg.TileCache.RealtimeTileRetryAfterSec) * time.Second)
+	logger.L().Info("统一 MVT 服务已初始化（RESTful API + 三层缓存穿透架构）")
 
 	// 初始化快显状态服务（依赖数据库与 Meta 空间元数据）
 	quickViewService := service.NewQuickViewService(db, metaClient)
@@ -213,7 +213,7 @@ func main() {
 	})
 
 	// 初始化向量化服务（Manager 模块的按需向量化）
-	embeddingService, err := service.NewEmbeddingService(embeddingRepo, systemClient, metaClient, taskExecRepo, cfg, logger.L())
+	embeddingService, err := service.NewEmbeddingService(embeddingRepo, systemClient, metaClient, taskExecRepo, embeddingConfigurationProvider, logger.L())
 	if err != nil {
 		logger.L().Warn("向量化服务初始化失败（功能将不可用）", "error", err)
 		embeddingService = nil // 设置为 nil，允许服务继续启动
@@ -222,7 +222,7 @@ func main() {
 	}
 
 	// 初始化任务定义服务
-	embeddingTaskSvc := service.NewEmbeddingTaskService(embeddingRepo, embeddingService, taskExecRepo, cfg)
+	embeddingTaskSvc := service.NewEmbeddingTaskService(embeddingRepo, embeddingService, taskExecRepo, embeddingConfigurationProvider)
 	tileCacheTaskSvc := service.NewTileCacheTaskService(tileCacheRepo, taskExecRepo)
 	vectorMaterializedViewTaskSvc := service.NewVectorMaterializedViewTaskService(vectorMaterializedViewRepo, taskExecRepo)
 	rasterCOGTaskSvc := service.NewRasterCOGTaskService(rasterCOGRepo)
@@ -359,7 +359,7 @@ func main() {
 	model3DTilesHandler := api.NewModel3DTilesHandler(model3DTilesRepo, minioClient, minioBucket)
 	logger.L().Info("数据导入服务已初始化", "transfer_url", cfg.TransferServiceURL)
 
-	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, cadPreviewHandler, model3DTilesHandler, dataProfileHandler)
+	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, cadPreviewHandler, model3DTilesHandler, dataProfileHandler)
 
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("manager")
@@ -457,24 +457,37 @@ func main() {
 	}
 
 	// ========== 服务注册（注册到 System service_registry）==========
-	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
-		registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-		registryClient.RegisterAndHeartbeatWithMetadata("manager", serviceURL, "/manager", map[string]interface{}{
-			"module": "manager",
-			"capabilities": map[string]interface{}{
-				"cleanup_executor": map[string]interface{}{
-					"enabled": true,
-					"causes":  []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted},
+	var systemServiceClient *commonClient.SystemServiceClient
+	if serviceTokenSource != nil {
+		systemServiceClient = commonClient.NewSystemServiceClient(cfg.SystemServiceURL, serviceTokenSource, nil)
+		systemServiceClient.RegisterAndHeartbeat(context.Background(), &commonClient.ModuleRegistrationRequest{
+			ModuleName: "manager", ModuleURL: serviceURL, RoutePrefix: "/manager",
+			HealthCheckURL: serviceURL + "/health",
+			Metadata: map[string]interface{}{
+				"capabilities": map[string]interface{}{
+					"cleanup_executor": map[string]interface{}{
+						"enabled": true,
+						"causes":  []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted},
+					},
 				},
+			},
+			ConfigurationManagement: &commonconfiguration.ManagementDeclaration{
+				SchemaVersion: commonconfiguration.ManagementSchemaVersion,
+				Entries: []commonconfiguration.ManagementEntry{{
+					ID: "manager.embedding", OwnerModule: "manager",
+					ScopeTypes:       []string{commonconfiguration.ScopePlatformOnly},
+					FrontendRoute:    "/manager/settings/embedding",
+					ReadPermission:   managerauthorization.PermissionManagerConfigurationRead,
+					UpdatePermission: managerauthorization.PermissionManagerConfigurationUpdate,
+				}},
 			},
 		})
 	}
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
-	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
+	if systemServiceClient != nil {
 		taskProviderRegistry := service.NewTaskProviderRegistryService(
-			cfg.SystemServiceURL,
-			cfg.InternalAPIKey,
+			systemServiceClient,
 			serviceURL,
 		)
 
@@ -483,7 +496,7 @@ func main() {
 			time.Sleep(2 * time.Second) // 等待服务完全启动
 			maxRetries := 5
 			for attempt := 1; attempt <= maxRetries; attempt++ {
-				if err := taskProviderRegistry.Register(); err != nil {
+				if err := taskProviderRegistry.Register(context.Background()); err != nil {
 					logger.L().Warn("任务提供者注册失败",
 						"attempt", fmt.Sprintf("%d/%d", attempt, maxRetries),
 						"error", err)

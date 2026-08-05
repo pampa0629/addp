@@ -18,11 +18,7 @@ if [ -f "$ROOT_DIR/.env" ]; then
     export $(grep -v '^#' "$ROOT_DIR/.env" | xargs)
 fi
 
-# 创建本地 .env (如果不存在)
-if [ ! -f "$ENGINE_DIR/.env" ]; then
-    echo "📝 [Spark Engine] 创建 .env 文件..."
-    cp "$ENGINE_DIR/.env.example" "$ENGINE_DIR/.env"
-fi
+export PORT="${SPARK_WORKFLOW_PORT:-${PORT:-8098}}"
 
 # 激活虚拟环境 (如果存在)
 if [ -d "$ENGINE_DIR/venv" ]; then

@@ -147,10 +147,13 @@ func TestTaskProviderTaskDetailUsesDirectObjectShape(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
 	}
 	var resp struct {
-		ID       uint   `json:"id"`
-		TaskType string `json:"task_type"`
-		Status   string `json:"status"`
-		Data     any    `json:"data"`
+		ID                uint   `json:"id"`
+		TaskType          string `json:"task_type"`
+		Status            string `json:"status"`
+		Data              any    `json:"data"`
+		ExecutionContract struct {
+			InputSchema map[string]interface{} `json:"input_schema"`
+		} `json:"execution_contract"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v; body=%s", err, w.Body.String())
@@ -160,6 +163,10 @@ func TestTaskProviderTaskDetailUsesDirectObjectShape(t *testing.T) {
 	}
 	if resp.Status != "" || resp.Data != nil {
 		t.Fatalf("response wraps standard task detail, status=%q data=%#v body=%s", resp.Status, resp.Data, w.Body.String())
+	}
+	properties, _ := resp.ExecutionContract.InputSchema["properties"].(map[string]interface{})
+	if _, ok := properties["existing_result_action"]; !ok {
+		t.Fatalf("execution_contract does not expose existing_result_action: %s", w.Body.String())
 	}
 }
 

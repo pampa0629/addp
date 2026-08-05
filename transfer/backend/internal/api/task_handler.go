@@ -10,6 +10,7 @@ import (
 	"github.com/addp/common/logger"
 	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
+	"github.com/addp/common/taskprovider"
 	transferI18n "github.com/addp/transfer/i18n"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
@@ -93,6 +94,9 @@ func (h *TaskHandler) GetTask(c *gin.Context) {
 		return
 	}
 
+	if strings.TrimSpace(c.Param("task_type")) == commonExecution.TaskTypeSync {
+		task.ExecutionContract = taskprovider.EmptyExecutionContract()
+	}
 	c.JSON(http.StatusOK, task)
 }
 

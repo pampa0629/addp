@@ -256,9 +256,6 @@ func validateScopes(owner, key string, scopes []string) error {
 		if rank <= previousRank {
 			return fmt.Errorf("key %q allowed_scope_types must be unique and ordered", key)
 		}
-		if owner != "system" && scope == "platform" {
-			return fmt.Errorf("non-system owner %q cannot declare platform scope for key %q", owner, key)
-		}
 		previousRank = rank
 	}
 	return nil

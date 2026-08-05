@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { catalogRootTypeForEngine } from '@addp/common-frontend'
 import {
   createResourceRootNode,
+  geometryColumnsFromNode,
   mergeAncestorChainIntoResourceTree,
   tableSelectionFromResourceNode
 } from '../../src/utils/tileCacheResourceTree'
@@ -98,5 +99,16 @@ describe('tileCacheResourceTree', () => {
       schema: 'public',
       table: 'roads'
     })
+  })
+
+  it('reads geometry choices from the canonical resource-tree spatial summary', () => {
+    expect(geometryColumnsFromNode({
+      metadata: {
+        spatial: {
+          geometry_columns: ['center', 'shape'],
+          primary_geometry_column: 'shape'
+        }
+      }
+    })).toEqual(['shape', 'center'])
   })
 })

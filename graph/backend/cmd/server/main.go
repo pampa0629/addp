@@ -136,7 +136,7 @@ func main() {
 		})
 	}
 
-	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
+	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
 		taskProviderRegistry := service.NewTaskProviderRegistryService(
 			cfg.SystemServiceURL,
 			cfg.InternalAPIKey,

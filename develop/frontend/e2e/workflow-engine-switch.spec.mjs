@@ -138,6 +138,39 @@ test('keeps dialog and canvas keyboard focus predictable', async ({ page }) => {
   await expect(page.locator('.right-panel')).toBeVisible()
 })
 
+test('highlights, selects, and deletes a workflow edge', async ({ page }) => {
+  const backend = await installMockBackend(page, {
+    includeInputConnections: true,
+    includeConnectedEdge: true
+  })
+  await openSavedWorkflow(page)
+
+  const canvas = page.locator('#workflow-dag-container canvas')
+  const beforeHover = await canvas.screenshot()
+  const canvasBox = await requiredBoundingBox(canvas)
+  const deleteButton = page.getByRole('button', { name: '删除选中项', exact: true })
+  const edgePoint = {
+    x: canvasBox.x + 400,
+    y: canvasBox.y + 195
+  }
+
+  await expect(deleteButton).toBeDisabled()
+  await page.mouse.move(edgePoint.x, edgePoint.y)
+  await expect.poll(async () => !(await canvas.screenshot()).equals(beforeHover)).toBe(true)
+
+  await page.mouse.click(edgePoint.x, edgePoint.y)
+  await expect(deleteButton).toBeEnabled()
+  await page.keyboard.press('Delete')
+  await expect(deleteButton).toBeDisabled()
+
+  await primarySaveButton(page).click()
+  await expect.poll(() => backend.updates.length).toBe(1)
+  const target = backend.updates[0].payload.content.workflow_definition.tasks
+    .find(task => task.id === 'operator_input_1')
+  expect(target.params).toEqual({})
+  expect(target.depends_on).toEqual([])
+})
+
 test('edits port bindings from the parameter panel and persists every input reference', async ({ page }) => {
   const backend = await installMockBackend(page, { includeInputConnections: true })
   await openSavedWorkflow(page)
@@ -553,7 +586,8 @@ async function installMockBackend(page, {
   createError = '',
   deferGeneration = false,
   includeResourcePicker = false,
-  includeInputConnections = false
+  includeInputConnections = false,
+  includeConnectedEdge = false
 } = {}) {
   const updates = []
   const creates = []
@@ -581,7 +615,7 @@ async function installMockBackend(page, {
   const generationGate = deferGeneration
     ? new Promise(resolve => { releaseGeneration = resolve })
     : null
-  const task = createSavedTask(includeResourcePicker, includeInputConnections)
+  const task = createSavedTask(includeResourcePicker, includeInputConnections, includeConnectedEdge)
   const operatorAParameters = [
     { name: 'source', type: 'string', required: false, description: 'Source input' }
   ]
@@ -772,7 +806,11 @@ async function installMockBackend(page, {
   }
 }
 
-function createSavedTask(includeResourcePicker = false, includeInputConnections = false) {
+function createSavedTask(
+  includeResourcePicker = false,
+  includeInputConnections = false,
+  includeConnectedEdge = false
+) {
   const tasks = [{
     id: 'operator_a_1',
     operator: 'operator_a',
@@ -783,8 +821,10 @@ function createSavedTask(includeResourcePicker = false, includeInputConnections 
     tasks.push({
       id: 'operator_input_1',
       operator: 'operator_input',
-      params: {},
-      depends_on: []
+      params: includeConnectedEdge
+        ? { left_value: { $ref: 'operator_a_1' } }
+        : {},
+      depends_on: includeConnectedEdge ? ['operator_a_1'] : []
     })
   }
   return {
@@ -806,7 +846,9 @@ function createSavedTask(includeResourcePicker = false, includeInputConnections 
     editor_layout: {
       nodes: {
         operator_a_1: { x: 260, y: 180 },
-        ...(includeInputConnections ? { operator_input_1: { x: 520, y: 180 } } : {})
+        ...(includeInputConnections
+          ? { operator_input_1: { x: includeConnectedEdge ? 650 : 520, y: 180 } }
+          : {})
       },
       viewport: { zoom: 1, translate_x: 0, translate_y: 0 }
     }

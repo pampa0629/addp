@@ -38,8 +38,10 @@ test('DAG editor uses shared direct connection and viewport controls', async () 
   assert.match(source, /defineExpose\(\{\s*addTask,/)
   assert.match(source, /function applyCurrentNodeDraft\(parameters/)
   assert.match(source, /recordHistory\(\{ mergeKey: `node-draft:\$\{currentNode\.value\.id\}` \}\)/)
-  assert.match(source, /watch\(structuredParameters/)
-  assert.match(source, /watch\(parametersStr/)
+  assert.match(source, /<ExecutionParameterForm/)
+  assert.match(source, /:contract="currentExecutionContract"/)
+  assert.match(source, /:upstream-outputs="currentUpstreamOutputs"/)
+  assert.doesNotMatch(source, /parametersJsonLabel|parametersStr/)
   assert.match(source, /emit\('update:layout', captureLayout\(\)\)/)
   const viewportHandlers = source.slice(
     source.indexOf('function handleZoomIn()'),

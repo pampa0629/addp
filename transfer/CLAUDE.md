@@ -38,6 +38,7 @@ transfer/
 ├── docs/
 │   ├── 数据库架构.md
 │   ├── transfer-基本概念及配置说明.md
+│   ├── transfer-任务语义与同步模式.md
 │   └── tables/
 └── frontend/src/
     ├── views/                 # TaskList、TaskWizard、ExecutionList、TaskDetail
@@ -117,6 +118,7 @@ curl http://localhost:8083/health
 
 - `transfer/docs/数据库架构.md`
 - `transfer/docs/transfer-基本概念及配置说明.md`
+- `transfer/docs/transfer-任务语义与同步模式.md`
 - `transfer/docs/design.md`
 - `transfer/docs/transfer转换器架构分析.md`
 - `transfer/docs/transfer高性能分析.md`

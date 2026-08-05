@@ -51,6 +51,10 @@
             <el-icon><List /></el-icon>
             <span>{{ t('manager.layout.vectorizationTasks') }}</span>
           </el-menu-item>
+		  <el-menu-item v-if="authStore.hasAnyPermission(['manager.configuration.read'])" index="/settings/embedding">
+			<el-icon><Setting /></el-icon>
+			<span>{{ t('manager.layout.embeddingConfiguration') }}</span>
+		  </el-menu-item>
           <el-sub-menu index="/spatial-quick-view">
             <template #title>
               <el-icon><MapLocation /></el-icon>
@@ -132,7 +136,8 @@ import {
   Picture,
   MapLocation,
   Box,
-  Aim
+  Aim,
+  Setting
 } from '@element-plus/icons-vue'
 
 const route = useRoute()

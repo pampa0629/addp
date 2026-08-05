@@ -388,8 +388,12 @@ func TestBuildFromMetadataTreeAttachesItems(t *testing.T) {
 	if !ok {
 		t.Fatalf("item spatial metadata = %#v, want map", item.Metadata["spatial"])
 	}
-	if spatial["geometry"] != "geom" || spatial["geometry_type"] != "Polygon" || spatial["srid"] != 4326 {
-		t.Fatalf("item spatial metadata = %#v, want geom Polygon SRID 4326", spatial)
+	if spatial["primary_geometry_column"] != "geom" || spatial["geometry_type"] != "Polygon" || spatial["srid"] != 4326 {
+		t.Fatalf("item spatial metadata = %#v, want primary geom Polygon SRID 4326", spatial)
+	}
+	geometryColumns, ok := spatial["geometry_columns"].([]string)
+	if !ok || len(geometryColumns) != 1 || geometryColumns[0] != "geom" {
+		t.Fatalf("item spatial geometry_columns = %#v, want [geom]", spatial["geometry_columns"])
 	}
 }
 

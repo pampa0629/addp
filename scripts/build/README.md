@@ -275,23 +275,24 @@ docker push harbor.example.com:5001/addp-system-backend:v1.2.0
 
 ## build-supermap-workflow-base.sh
 
-**用途**: 构建稳定的 SuperMap Workflow 本地基础镜像。基础镜像只包含 Java 17 JDK、SuperMap iObjects Java、GPA/SPS libs、许可和系统依赖，不包含 ADDP Java runtime 代码。
+**用途**: 使用完整 SuperMap iObjects C++ SDK 母版构建稳定基础镜像。基础镜像包含完整 SDK、许可、C++ 构建工具和系统依赖，不包含 ADDP Runtime 源码；完整 SDK 用于日常编译和未来扩展算子，最终运行镜像会另行裁剪。
 
-私有依赖固定放在 Git 忽略的 `engines/supermap-workflow/vendor/objectsjava`、`vendor/gpa-libs` 和 `vendor/license`。日常代码镜像构建通过 `.dockerignore` 排除整个 `vendor/`，不会反复发送数 GB 构建上下文。
+完整 SDK 母版保存在仓库外，并通过 `SUPERMAP_CPP_SDK_PATH` 显式传入；许可固定放在 Git 忽略的 `engines/supermap-workflow/vendor/license`。日常代码镜像构建通过 `.dockerignore` 排除整个 `vendor/`，不会把许可或完整 SDK 放入普通构建上下文。
 
 ### 使用方法
 
 ```bash
-bash scripts/build/build-supermap-workflow-base.sh
+SUPERMAP_CPP_SDK_PATH=/path/to/supermap-iobjectscpp-12.1.0-linux-arm64-all \
+  bash scripts/build/build-supermap-workflow-base.sh
 ```
 
-基础镜像只在首次安装或 SuperMap/GPA/SPS 组件升级时重建。日常 Java 开发统一执行：
+基础镜像只在首次安装、SuperMap C++ SDK 或许可升级时重建。日常 C++ 开发统一执行：
 
 ```bash
 bash scripts/dev/restart.sh -supermap-workflow
 ```
 
-局部重启和 `restart.sh -all` 都会基于基础镜像无缓存构建轻量代码镜像，在构建阶段重新执行 `javac`，然后替换运行容器。
+局部重启和 `restart.sh -all` 会根据 C++ 源码、CMake、Dockerfile、基础镜像 ID 和目标平台计算构建指纹。输入变化时在多阶段镜像中重新编译并测试 C++ Runtime，然后替换运行容器；输入未变化时复用现有代码镜像。
 
 ---
 

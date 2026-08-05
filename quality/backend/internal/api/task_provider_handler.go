@@ -7,6 +7,7 @@ import (
 
 	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/taskprovider"
 	"github.com/addp/quality/internal/models"
 	"github.com/addp/quality/internal/service"
 	"github.com/gin-gonic/gin"
@@ -23,16 +24,17 @@ func NewTaskProviderHandler(checkTaskSvc *service.CheckTaskService, executor *se
 }
 
 type taskProviderTaskListItem struct {
-	ID                  int64  `json:"id"`
-	TenantID            int64  `json:"tenant_id"`
-	TaskType            string `json:"task_type"`
-	Name                string `json:"name"`
-	Description         string `json:"description,omitempty"`
-	Enabled             bool   `json:"enabled"`
-	LastRunAt           string `json:"last_run_at,omitempty"`
-	NextRunAt           string `json:"next_run_at,omitempty"`
-	LastExecutionID     string `json:"last_execution_id,omitempty"`
-	LastExecutionStatus string `json:"last_execution_status,omitempty"`
+	ID                  int64                          `json:"id"`
+	TenantID            int64                          `json:"tenant_id"`
+	TaskType            string                         `json:"task_type"`
+	Name                string                         `json:"name"`
+	Description         string                         `json:"description,omitempty"`
+	Enabled             bool                           `json:"enabled"`
+	LastRunAt           string                         `json:"last_run_at,omitempty"`
+	NextRunAt           string                         `json:"next_run_at,omitempty"`
+	LastExecutionID     string                         `json:"last_execution_id,omitempty"`
+	LastExecutionStatus string                         `json:"last_execution_status,omitempty"`
+	ExecutionContract   taskprovider.ExecutionContract `json:"execution_contract"`
 }
 
 type taskProviderTaskListResponse struct {
@@ -203,12 +205,13 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 
 func qualityTaskListItem(task models.CheckTask) taskProviderTaskListItem {
 	item := taskProviderTaskListItem{
-		ID:          task.ID,
-		TenantID:    task.TenantID,
-		TaskType:    commonExecution.TaskTypeQualityCheck,
-		Name:        task.Name,
-		Description: task.Description,
-		Enabled:     task.Enabled,
+		ID:                task.ID,
+		TenantID:          task.TenantID,
+		TaskType:          commonExecution.TaskTypeQualityCheck,
+		Name:              task.Name,
+		Description:       task.Description,
+		Enabled:           task.Enabled,
+		ExecutionContract: taskprovider.EmptyExecutionContract(),
 	}
 	if task.LastRunAt != nil {
 		item.LastRunAt = task.LastRunAt.Format("2006-01-02T15:04:05Z07:00")

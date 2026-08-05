@@ -134,6 +134,8 @@ definitions:
         type: string
       enabled:
         type: boolean
+      execution_contract:
+        $ref: '#/definitions/taskprovider.ExecutionContract'
       id:
         type: integer
       last_execution_id:
@@ -210,6 +212,21 @@ definitions:
     type: object
   models.JSONMap:
     additionalProperties: true
+    type: object
+  taskprovider.ExecutionContract:
+    properties:
+      input_defaults:
+        additionalProperties: true
+        type: object
+      input_schema:
+        additionalProperties: true
+        type: object
+      input_ui_schema:
+        additionalProperties: true
+        type: object
+      output_schema:
+        additionalProperties: true
+        type: object
     type: object
 host: localhost:8084
 info:
@@ -546,6 +563,48 @@ paths:
       summary: 列出任务提供者 | List task providers
       tags:
       - Orchestrator
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - orchestrator.workflow.read
+  /task-providers/{module_name}/tasks/{task_type}/{id}:
+    get:
+      parameters:
+      - description: 任务提供者模块名 | Task provider module name
+        in: path
+        name: module_name
+        required: true
+        type: string
+      - description: 任务类型 | Task type
+        in: path
+        name: task_type
+        required: true
+        type: string
+      - description: 任务 ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 任务详情及 execution_contract | Task detail and execution_contract
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 参数无效 | Invalid parameters
+          schema:
+            $ref: '#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse'
+        "502":
+          description: 任务提供者不可用 | Task provider unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取具体 TaskProvider 任务详情 | Get concrete TaskProvider task detail
+      tags:
+      - TaskProvider
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - orchestrator.workflow.read

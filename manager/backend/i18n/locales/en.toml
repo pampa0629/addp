@@ -189,3 +189,12 @@ other = "Failed to create the data profiling execution"
 
 [manager.model3d_tiles.result_deleted]
 other = "Model3d tiles quick view result deleted"
+
+[manager.error.embedding_configuration_load_failed]
+other = "Failed to load the embedding configuration"
+
+[manager.error.embedding_configuration_update_failed]
+other = "Failed to update the embedding configuration"
+
+[manager.error.embedding_configuration_version_conflict]
+other = "The embedding configuration was updated by another actor"

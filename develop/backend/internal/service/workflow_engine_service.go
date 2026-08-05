@@ -106,6 +106,7 @@ type WorkflowResponse struct {
 }
 
 type WorkflowProducedTarget struct {
+	TaskID   string   `json:"task_id"`
 	EngineID uint     `json:"engine_id"`
 	Type     string   `json:"type"`
 	Path     []string `json:"path"`
@@ -516,6 +517,10 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 		if operatorID == "" {
 			return nil, nil, fmt.Errorf("任务 %d 缺少 operator", i)
 		}
+		taskID := strings.TrimSpace(stringParam(task, "id"))
+		if taskID == "" {
+			return nil, nil, fmt.Errorf("任务 %d 缺少 id", i)
+		}
 
 		paramsInterface, ok := task["params"]
 		if !ok {
@@ -541,14 +546,14 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 			if err != nil {
 				return nil, nil, fmt.Errorf("任务 %d 工作流访问计划派生失败: %w", i, err)
 			}
-			producedTargets = append(producedTargets, targets...)
+			producedTargets = append(producedTargets, workflowTargetsForTask(taskID, targets)...)
 			continue
 		}
 		targets, err := deriveWorkflowResourceParams(params, adapterSpec)
 		if err != nil {
 			return nil, nil, fmt.Errorf("任务 %d 资源参数派生失败: %w", i, err)
 		}
-		producedTargets = append(producedTargets, targets...)
+		producedTargets = append(producedTargets, workflowTargetsForTask(taskID, targets)...)
 
 		derivedResource, _ := params["__workflow_resource_derived"].(bool)
 
@@ -615,6 +620,13 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 	}
 
 	return result, producedTargets, nil
+}
+
+func workflowTargetsForTask(taskID string, targets []WorkflowProducedTarget) []WorkflowProducedTarget {
+	for index := range targets {
+		targets[index].TaskID = taskID
+	}
+	return targets
 }
 
 func (s *WorkflowEngineService) deriveWorkflowAccessPlan(

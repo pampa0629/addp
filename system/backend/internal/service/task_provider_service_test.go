@@ -8,10 +8,8 @@ import (
 	"github.com/addp/system/internal/models"
 )
 
-func TestValidateTaskProviderAcceptsTaskCapabilitiesV1(t *testing.T) {
-	provider := validTaskProviderForTest(validTaskCapabilitiesForTest())
-
-	if err := validateTaskProvider(provider); err != nil {
+func TestValidateTaskProviderAcceptsTaskCapabilitiesV2(t *testing.T) {
+	if err := validateTaskProvider(validTaskProviderForTest(validTaskCapabilitiesForTest())); err != nil {
 		t.Fatalf("validateTaskProvider() error = %v, want nil", err)
 	}
 }
@@ -29,255 +27,60 @@ func TestValidateTaskProviderAcceptsTopLevelPrivateExtension(t *testing.T) {
 	}
 }
 
+func TestValidateTaskProviderRejectsLegacyCapabilitiesVersion(t *testing.T) {
+	provider := validTaskProviderForTest(strings.Replace(
+		validTaskCapabilitiesForTest(),
+		`task.capabilities/v2`,
+		`task.capabilities/v1`,
+		1,
+	))
+
+	assertTaskProviderValidationError(t, validateTaskProvider(provider), "task.capabilities/v2")
+}
+
+func TestValidateTaskProviderRejectsExecutionSchemaInTypeCapability(t *testing.T) {
+	provider := validTaskProviderForTest(strings.Replace(
+		validTaskCapabilitiesForTest(),
+		`"definition_schema":{"type":"object"}`,
+		`"definition_schema":{"type":"object"},"execution_schema":{"type":"object"}`,
+		1,
+	))
+
+	assertTaskProviderValidationError(t, validateTaskProvider(provider), "execution_schema is not allowed")
+}
+
 func TestValidateTaskProviderRejectsUnknownTopLevelField(t *testing.T) {
 	provider := validTaskProviderForTest(strings.Replace(
 		validTaskCapabilitiesForTest(),
 		`"task_capabilities":[{`,
-		`"owner_features":{"supports_preview":true},"task_capabilities":[{`,
+		`"owner_features":{},"task_capabilities":[{`,
 		1,
 	))
 
 	assertTaskProviderValidationError(t, validateTaskProvider(provider), "x_ private extension")
 }
 
-func TestValidateTaskProviderRejectsMissingSchemaVersion(t *testing.T) {
-	provider := validTaskProviderForTest(`{
-		"task_capabilities":[{
-			"type":"scan",
-			"display_name":"扫描任务",
-			"description":"执行元数据扫描",
-			"definition_schema":{"type":"object"},
-			"execution_schema":{"type":"object"},
-			"supports_schedule":true,
-			"supports_cancel":false,
-			"supports_inline_execution":false,
-			"create_url":"/meta/scan",
-			"edit_url":"/meta/scan?task_id=:id",
-			"deprecated":false
-		}]
-	}`)
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "capabilities.schema_version")
-}
-
-func TestValidateTaskProviderRejectsMissingTaskCapabilities(t *testing.T) {
-	provider := validTaskProviderForTest(`{"schema_version":"task.capabilities/v1"}`)
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "capabilities.task_capabilities")
-}
-
-func TestValidateTaskProviderRejectsMissingTaskCapabilitySchema(t *testing.T) {
-	provider := validTaskProviderForTest(`{
-		"schema_version":"task.capabilities/v1",
-		"task_capabilities":[{
-			"type":"scan",
-			"display_name":"扫描任务",
-			"description":"执行元数据扫描",
-			"definition_schema":{"type":"object"},
-			"supports_schedule":true,
-			"supports_cancel":false,
-			"supports_inline_execution":false,
-			"create_url":"/meta/scan",
-			"edit_url":"/meta/scan?task_id=:id",
-			"deprecated":false
-		}]
-	}`)
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "execution_schema")
-}
-
-func TestValidateTaskProviderRejectsUnknownTaskCapabilityField(t *testing.T) {
-	provider := validTaskProviderForTest(strings.Replace(
-		validTaskCapabilitiesForTest(),
-		`"deprecated":false`,
-		`"deprecated":false,"owner_runtime":"custom"`,
-		1,
-	))
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "owner_runtime is not allowed")
-}
-
-func TestValidateTaskProviderRejectsInvalidTaskTypeName(t *testing.T) {
-	provider := validTaskProviderForTest(strings.Replace(
-		validTaskCapabilitiesForTest(),
-		`"type":"scan"`,
-		`"type":"Scan-Task"`,
-		1,
-	))
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "must match")
-}
-
-func TestValidateTaskProviderRejectsNonObjectTaskTypeSchema(t *testing.T) {
-	provider := validTaskProviderForTest(strings.Replace(
-		validTaskCapabilitiesForTest(),
-		`"execution_schema":{"type":"object"}`,
-		`"execution_schema":[]`,
-		1,
-	))
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "execution_schema must be an object schema")
-}
-
-func TestValidateTaskProviderRejectsNonObjectSchemaType(t *testing.T) {
-	provider := validTaskProviderForTest(strings.Replace(
-		validTaskCapabilitiesForTest(),
-		`"definition_schema":{"type":"object"}`,
-		`"definition_schema":{"type":"array"}`,
-		1,
-	))
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "definition_schema.type must be object")
-}
-
-func TestValidateTaskProviderAcceptsSupportedTaskTypeSchemaSubset(t *testing.T) {
-	provider := validTaskProviderForTest(`{
-		"schema_version":"task.capabilities/v1",
-		"task_capabilities":[{
-			"type":"scan",
-			"display_name":"扫描任务",
-			"description":"执行元数据扫描",
-			"definition_schema":{
-				"type":"object",
-				"title":"扫描任务定义",
-				"description":"Meta 扫描任务公开字段摘要",
-				"properties":{
-					"name":{"type":"string","title":"任务名称","minLength":1,"maxLength":128},
-					"scan_depth":{"type":"string","enum":["basic","deep"],"default":"basic"},
-					"targets":{
-						"type":"array",
-						"items":{"type":"string"},
-						"minItems":1
-					}
-				},
-				"required":["name"],
-				"additionalProperties":true
-			},
-			"execution_schema":{
-				"type":"object",
-				"properties":{
-					"force":{"type":"boolean","default":false},
-					"sample_size":{"type":"integer","minimum":1,"maximum":1000}
-				},
-				"additionalProperties":false
-			},
-			"supports_schedule":true,
-			"supports_cancel":false,
-			"supports_inline_execution":false,
-			"create_url":"/meta/scan",
-			"edit_url":"/meta/scan?task_id=:id",
-			"deprecated":false
-		}]
-	}`)
-
-	if err := validateTaskProvider(provider); err != nil {
-		t.Fatalf("validateTaskProvider() error = %v, want nil", err)
+func TestValidateTaskProviderRejectsInvalidDefinitionSchema(t *testing.T) {
+	tests := []struct {
+		name        string
+		old         string
+		replacement string
+		want        string
+	}{
+		{name: "non object", old: `"definition_schema":{"type":"object"}`, replacement: `"definition_schema":{"type":"array"}`, want: "definition_schema.type must be object"},
+		{name: "unsupported keyword", old: `"definition_schema":{"type":"object"}`, replacement: `"definition_schema":{"type":"object","oneOf":[{"type":"object"}]}`, want: "oneOf is not supported"},
+		{name: "unknown keyword", old: `"definition_schema":{"type":"object"}`, replacement: `"definition_schema":{"type":"object","patternProperties":{}}`, want: "patternProperties is not allowed"},
+		{name: "invalid property", old: `"definition_schema":{"type":"object"}`, replacement: `"definition_schema":{"type":"object","properties":{"name":"string"}}`, want: "properties.name must be object schema"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider := validTaskProviderForTest(strings.Replace(validTaskCapabilitiesForTest(), tt.old, tt.replacement, 1))
+			assertTaskProviderValidationError(t, validateTaskProvider(provider), tt.want)
+		})
 	}
 }
 
-func TestValidateTaskProviderAcceptsDevelopStyleOpenExecutionSchema(t *testing.T) {
-	provider := validTaskProviderForTest(`{
-		"schema_version":"task.capabilities/v1",
-		"task_capabilities":[{
-			"type":"workflow",
-			"display_name":"工作流任务",
-			"description":"执行 Develop 工作流任务",
-			"definition_schema":{
-				"type":"object",
-				"title":"Develop 任务定义公开摘要",
-				"properties":{
-					"name":{"type":"string","title":"任务名称"},
-					"task_type":{"type":"string","enum":["workflow"],"default":"workflow"},
-					"content":{
-						"type":"object",
-						"properties":{
-							"workflow_definition":{"type":"object","additionalProperties":true},
-							"inputs":{"type":"object","additionalProperties":true}
-						},
-						"required":["workflow_definition"],
-						"additionalProperties":true
-					},
-					"execution_config":{"type":"object","additionalProperties":true}
-				},
-				"required":["name","task_type"],
-				"additionalProperties":true
-			},
-			"execution_schema":{
-				"type":"object",
-				"title":"Develop 执行参数",
-				"description":"由具体任务定义中的 parameter_schema/default_parameters 决定",
-				"additionalProperties":true
-			},
-			"supports_schedule":false,
-			"supports_cancel":false,
-			"supports_inline_execution":false,
-			"create_url":"/develop/workflow?action=create",
-			"edit_url":"/develop/workflow?action=edit&id=:id",
-			"deprecated":false
-		}]
-	}`)
-
-	if err := validateTaskProvider(provider); err != nil {
-		t.Fatalf("validateTaskProvider() error = %v, want nil", err)
-	}
-}
-
-func TestValidateTaskProviderRejectsUnsupportedTaskTypeSchemaKeywords(t *testing.T) {
-	provider := validTaskProviderForTest(strings.Replace(
-		validTaskCapabilitiesForTest(),
-		`"execution_schema":{"type":"object"}`,
-		`"execution_schema":{"type":"object","oneOf":[{"type":"object"}]}`,
-		1,
-	))
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "oneOf is not supported")
-}
-
-func TestValidateTaskProviderRejectsUnknownTaskTypeSchemaKeywords(t *testing.T) {
-	provider := validTaskProviderForTest(strings.Replace(
-		validTaskCapabilitiesForTest(),
-		`"execution_schema":{"type":"object"}`,
-		`"execution_schema":{"type":"object","patternProperties":{}}`,
-		1,
-	))
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "patternProperties is not allowed")
-}
-
-func TestValidateTaskProviderRejectsUnsupportedTaskTypeSchemaType(t *testing.T) {
-	provider := validTaskProviderForTest(strings.Replace(
-		validTaskCapabilitiesForTest(),
-		`"execution_schema":{"type":"object"}`,
-		`"execution_schema":{"type":"object","properties":{"payload":{"type":"function"}}}`,
-		1,
-	))
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), `type "function" is not supported`)
-}
-
-func TestValidateTaskProviderRejectsInvalidTaskTypeSchemaRequired(t *testing.T) {
-	provider := validTaskProviderForTest(strings.Replace(
-		validTaskCapabilitiesForTest(),
-		`"definition_schema":{"type":"object"}`,
-		`"definition_schema":{"type":"object","required":["name","name"]}`,
-		1,
-	))
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), `required contains duplicate field "name"`)
-}
-
-func TestValidateTaskProviderRejectsInvalidTaskTypeSchemaProperties(t *testing.T) {
-	provider := validTaskProviderForTest(strings.Replace(
-		validTaskCapabilitiesForTest(),
-		`"definition_schema":{"type":"object"}`,
-		`"definition_schema":{"type":"object","properties":{"name":"string"}}`,
-		1,
-	))
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "properties.name must be object schema")
-}
-
-func TestValidateTaskProviderRejectsInlineExecutionInV1(t *testing.T) {
+func TestValidateTaskProviderRejectsInlineExecution(t *testing.T) {
 	provider := validTaskProviderForTest(strings.Replace(
 		validTaskCapabilitiesForTest(),
 		`"supports_inline_execution":false`,
@@ -288,196 +91,44 @@ func TestValidateTaskProviderRejectsInlineExecutionInV1(t *testing.T) {
 	assertTaskProviderValidationError(t, validateTaskProvider(provider), "supports_inline_execution must be false")
 }
 
-func TestValidateTaskProviderRejectsMissingTaskTypeCreateURL(t *testing.T) {
-	provider := validTaskProviderForTest(`{
-		"schema_version":"task.capabilities/v1",
-		"task_capabilities":[{
-			"type":"scan",
-			"display_name":"扫描任务",
-			"description":"执行元数据扫描",
-			"definition_schema":{"type":"object"},
-			"execution_schema":{"type":"object"},
-			"supports_schedule":true,
-			"supports_cancel":false,
-			"supports_inline_execution":false,
-			"edit_url":"/meta/scan?task_id=:id",
-			"deprecated":false
-		}]
-	}`)
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "create_url")
-}
-
-func TestValidateTaskProviderRejectsDuplicateTaskType(t *testing.T) {
-	provider := validTaskProviderForTest(`{
-		"schema_version":"task.capabilities/v1",
-		"task_capabilities":[
-			{
-				"type":"scan",
-				"display_name":"扫描任务",
-				"description":"执行元数据扫描",
-				"definition_schema":{"type":"object"},
-				"execution_schema":{"type":"object"},
-				"supports_schedule":true,
-				"supports_cancel":false,
-				"supports_inline_execution":false,
-				"create_url":"/meta/scan",
-				"edit_url":"/meta/scan?task_id=:id",
-				"deprecated":false
-			},
-			{
-				"type":"scan",
-				"display_name":"扫描任务",
-				"description":"执行元数据扫描",
-				"definition_schema":{"type":"object"},
-				"execution_schema":{"type":"object"},
-				"supports_schedule":true,
-				"supports_cancel":false,
-				"supports_inline_execution":false,
-				"create_url":"/meta/scan",
-				"edit_url":"/meta/scan?task_id=:id",
-				"deprecated":false
-			}
-		]
-	}`)
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "duplicate task_type")
-}
-
-func TestValidateTaskProviderRejectsAbsoluteTaskTypeURL(t *testing.T) {
-	provider := validTaskProviderForTest(`{
-		"schema_version":"task.capabilities/v1",
-		"task_capabilities":[{
-			"type":"scan",
-			"display_name":"扫描任务",
-			"description":"执行元数据扫描",
-			"definition_schema":{"type":"object"},
-			"execution_schema":{"type":"object"},
-			"supports_schedule":true,
-			"supports_cancel":false,
-			"supports_inline_execution":false,
-			"create_url":"http://localhost:5175/scan",
-			"edit_url":"/meta/scan?task_id=:id",
-			"deprecated":false
-		}]
-	}`)
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "Console route")
-}
-
-func TestValidateTaskProviderRejectsProtocolRelativeTaskTypeURL(t *testing.T) {
-	provider := validTaskProviderForTest(`{
-		"schema_version":"task.capabilities/v1",
-		"task_capabilities":[{
-			"type":"scan",
-			"display_name":"扫描任务",
-			"description":"执行元数据扫描",
-			"definition_schema":{"type":"object"},
-			"execution_schema":{"type":"object"},
-			"supports_schedule":true,
-			"supports_cancel":false,
-			"supports_inline_execution":false,
-			"create_url":"/meta/scan",
-			"edit_url":"//localhost:5175/meta/scan?task_id=:id",
-			"deprecated":false
-		}]
-	}`)
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "Console route")
-}
-
-func TestValidateTaskProviderRejectsLegacyProviderTasksEndpoint(t *testing.T) {
-	provider := validTaskProviderForTest(validTaskCapabilitiesForTest())
-	provider.TaskDetailEndpoint = "/api/v1/transfer/provider/tasks/{task_type}/{id}"
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "not /provider/tasks")
-}
-
-func TestValidateTaskProviderRejectsDetailEndpointWithoutTaskType(t *testing.T) {
-	provider := validTaskProviderForTest(validTaskCapabilitiesForTest())
-	provider.TaskDetailEndpoint = "/api/v1/meta/tasks/{id}"
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "{task_type}")
-}
-
-func TestValidateTaskProviderRejectsGinStyleTaskEndpointPlaceholders(t *testing.T) {
-	provider := validTaskProviderForTest(validTaskCapabilitiesForTest())
-	provider.TaskDetailEndpoint = "/api/v1/meta/tasks/:task_type/:id"
-	provider.TaskExecuteEndpoint = "/api/v1/meta/tasks/:task_type/:id/execute"
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "{task_type}")
-}
-
-func TestValidateTaskProviderRejectsStatusEndpointWithoutExecutionID(t *testing.T) {
-	provider := validTaskProviderForTest(validTaskCapabilitiesForTest())
-	provider.TaskStatusEndpoint = "/api/v1/meta/scan/runs/{id}"
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "{execution_id}")
-}
-
-func TestValidateTaskProviderRejectsGinStyleExecutionEndpointPlaceholder(t *testing.T) {
-	provider := validTaskProviderForTest(validTaskCapabilitiesForTest())
-	provider.TaskStatusEndpoint = "/api/v1/meta/executions/:execution_id"
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "{execution_id}")
-}
-
-func TestValidateTaskProviderRejectsNonStandardStatusEndpoint(t *testing.T) {
-	provider := validTaskProviderForTest(validTaskCapabilitiesForTest())
-	provider.TaskStatusEndpoint = "/api/v1/meta/scan/runs/{execution_id}"
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "/executions/{execution_id}")
-}
-
-func TestValidateTaskProviderRejectsNonStandardExecuteEndpoint(t *testing.T) {
-	provider := validTaskProviderForTest(validTaskCapabilitiesForTest())
-	provider.TaskExecuteEndpoint = "/api/v1/meta/tasks/{task_type}/{id}/run"
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "/tasks/{task_type}/{id}/execute")
-}
-
-func TestValidateTaskProviderRejectsCancelableTaskWithoutCancelEndpoint(t *testing.T) {
-	provider := validTaskProviderForTest(strings.Replace(
-		validTaskCapabilitiesForTest(),
-		`"supports_cancel":false`,
-		`"supports_cancel":true`,
-		1,
-	))
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "task_cancel_endpoint")
-}
-
-func TestValidateTaskProviderAcceptsCancelableTaskWithCancelEndpoint(t *testing.T) {
-	provider := validTaskProviderForTest(strings.Replace(
-		validTaskCapabilitiesForTest(),
-		`"supports_cancel":false`,
-		`"supports_cancel":true`,
-		1,
-	))
-	provider.TaskCancelEndpoint = "/api/v1/meta/executions/{execution_id}/cancel"
-
-	if err := validateTaskProvider(provider); err != nil {
-		t.Fatalf("validateTaskProvider() error = %v, want nil", err)
+func TestValidateTaskProviderRejectsInvalidStandardEndpoints(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*models.TaskProvider)
+		want   string
+	}{
+		{name: "legacy detail", mutate: func(p *models.TaskProvider) { p.TaskDetailEndpoint = "/api/v1/meta/provider/tasks/{task_type}/{id}" }, want: "not /provider/tasks"},
+		{name: "missing task type", mutate: func(p *models.TaskProvider) { p.TaskDetailEndpoint = "/api/v1/meta/tasks/{id}" }, want: "{task_type}"},
+		{name: "gin placeholder", mutate: func(p *models.TaskProvider) { p.TaskExecuteEndpoint = "/api/v1/meta/tasks/:task_type/:id/execute" }, want: "{task_type}"},
+		{name: "nonstandard execute", mutate: func(p *models.TaskProvider) { p.TaskExecuteEndpoint = "/api/v1/meta/tasks/{task_type}/{id}/run" }, want: "/tasks/{task_type}/{id}/execute"},
+		{name: "nonstandard status", mutate: func(p *models.TaskProvider) { p.TaskStatusEndpoint = "/api/v1/meta/runs/{execution_id}" }, want: "/executions/{execution_id}"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider := validTaskProviderForTest(validTaskCapabilitiesForTest())
+			tt.mutate(provider)
+			assertTaskProviderValidationError(t, validateTaskProvider(provider), tt.want)
+		})
 	}
 }
 
-func TestValidateTaskProviderRejectsCancelEndpointWithoutCancelableTask(t *testing.T) {
-	provider := validTaskProviderForTest(validTaskCapabilitiesForTest())
-	provider.TaskCancelEndpoint = "/api/v1/meta/executions/{execution_id}/cancel"
-
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "must be empty")
-}
-
-func TestValidateTaskProviderRejectsNonStandardCancelEndpoint(t *testing.T) {
-	provider := validTaskProviderForTest(strings.Replace(
+func TestValidateTaskProviderRequiresCancelEndpointOnlyForCancelableTypes(t *testing.T) {
+	cancelable := validTaskProviderForTest(strings.Replace(
 		validTaskCapabilitiesForTest(),
 		`"supports_cancel":false`,
 		`"supports_cancel":true`,
 		1,
 	))
-	provider.TaskCancelEndpoint = "/api/v1/meta/scan/runs/{execution_id}/cancel"
+	assertTaskProviderValidationError(t, validateTaskProvider(cancelable), "task_cancel_endpoint")
 
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "/executions/{execution_id}/cancel")
+	cancelable.TaskCancelEndpoint = "/api/v1/meta/executions/{execution_id}/cancel"
+	if err := validateTaskProvider(cancelable); err != nil {
+		t.Fatalf("validateTaskProvider() error = %v, want nil", err)
+	}
+
+	nonCancelable := validTaskProviderForTest(validTaskCapabilitiesForTest())
+	nonCancelable.TaskCancelEndpoint = "/api/v1/meta/executions/{execution_id}/cancel"
+	assertTaskProviderValidationError(t, validateTaskProvider(nonCancelable), "must be empty")
 }
 
 func validTaskProviderForTest(capabilities string) *models.TaskProvider {
@@ -498,13 +149,12 @@ func validTaskProviderForTest(capabilities string) *models.TaskProvider {
 
 func validTaskCapabilitiesForTest() string {
 	return `{
-		"schema_version":"task.capabilities/v1",
+		"schema_version":"task.capabilities/v2",
 		"task_capabilities":[{
 			"type":"scan",
 			"display_name":"扫描任务",
 			"description":"执行元数据扫描",
 			"definition_schema":{"type":"object"},
-			"execution_schema":{"type":"object"},
 			"supports_schedule":true,
 			"supports_cancel":false,
 			"supports_inline_execution":false,

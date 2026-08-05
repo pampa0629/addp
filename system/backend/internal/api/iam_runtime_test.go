@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/addp/system/internal/config"
+	"github.com/addp/system/internal/iam"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -15,7 +16,7 @@ func TestNewIAMRuntimeComposesTargetServicesAndFosite(t *testing.T) {
 		t.Fatalf("open test database: %v", err)
 	}
 	cfg := testIAMRuntimeConfig()
-	runtime, err := NewIAMRuntime(db, cfg)
+	runtime, err := NewIAMRuntime(db, cfg, testIAMSecurityPolicy())
 	if err != nil {
 		t.Fatalf("NewIAMRuntime() error = %v", err)
 	}
@@ -56,35 +57,36 @@ func TestNewIAMRuntimeRejectsInvalidProductionComposition(t *testing.T) {
 		t.Fatalf("open test database: %v", err)
 	}
 	for _, mutate := range []func(*config.Config){
-		func(cfg *config.Config) { cfg.AuthorizationCodeMinutes = 6 },
 		func(cfg *config.Config) { cfg.PublicAPIURL = "/api" },
 		func(cfg *config.Config) { cfg.ConsoleURL = "/console" },
 		func(cfg *config.Config) { cfg.OAuthUserCodePepper = nil },
-		func(cfg *config.Config) { cfg.DelegatedAccessTokenExpireMinutes = 3 },
 	} {
 		cfg := testIAMRuntimeConfig()
 		mutate(cfg)
-		if _, err := NewIAMRuntime(db, cfg); err == nil {
+		if _, err := NewIAMRuntime(db, cfg, testIAMSecurityPolicy()); err == nil {
 			t.Fatalf("NewIAMRuntime() accepted invalid config: %#v", cfg)
+		}
+	}
+	for _, mutate := range []func(*iam.SecurityPolicy){
+		func(policy *iam.SecurityPolicy) { policy.OAuthAuthorizationCodeTTLMinutes = 6 },
+		func(policy *iam.SecurityPolicy) { policy.DelegatedAccessTokenTTLMinutes = 3 },
+	} {
+		policy := testIAMSecurityPolicy()
+		mutate(&policy)
+		if _, err := NewIAMRuntime(db, testIAMRuntimeConfig(), policy); err == nil {
+			t.Fatalf("NewIAMRuntime() accepted invalid security policy: %#v", policy)
 		}
 	}
 }
 
 func testIAMRuntimeConfig() *config.Config {
 	return &config.Config{
-		Env:                               "development",
-		AccessTokenExpireMinutes:          15,
-		DelegatedAccessTokenExpireMinutes: 2,
-		ResourceAccessTicketExpireMinutes: 15,
-		TenantInvitationExpireHours:       168,
-		EnrollmentTicketExpireMinutes:     5,
-		RefreshTokenExpireDays:            30,
-		AuthorizationCodeMinutes:          5,
-		DeviceCodeExpireMinutes:           10,
-		DevicePollIntervalSecs:            5,
-		OAuthUserCodePepper:               []byte("0123456789abcdef0123456789abcdef"),
-		IAMMFAEncryptionKey:               []byte("abcdef0123456789abcdef0123456789"),
-		PublicAPIURL:                      "http://localhost:8000",
-		ConsoleURL:                        "http://localhost:5170",
+		Env:                 "development",
+		OAuthUserCodePepper: []byte("0123456789abcdef0123456789abcdef"),
+		IAMMFAEncryptionKey: []byte("abcdef0123456789abcdef0123456789"),
+		PublicAPIURL:        "http://localhost:8000",
+		ConsoleURL:          "http://localhost:5170",
 	}
 }
+
+func testIAMSecurityPolicy() iam.SecurityPolicy { return iam.DefaultSecurityPolicy() }

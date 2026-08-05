@@ -9,7 +9,6 @@ from typing import Optional
 class Settings(BaseSettings):
     """应用配置"""
     model_config = SettingsConfigDict(
-        env_file="../../.env",
         case_sensitive=False,
         extra="ignore",
         populate_by_name=True,

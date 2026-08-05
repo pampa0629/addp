@@ -14,7 +14,6 @@ type taskProviderTaskCapability struct {
 	DisplayName             string                 `json:"display_name"`
 	Description             string                 `json:"description"`
 	DefinitionSchema        map[string]interface{} `json:"definition_schema"`
-	ExecutionSchema         map[string]interface{} `json:"execution_schema"`
 	SupportsSchedule        bool                   `json:"supports_schedule"`
 	SupportsCancel          bool                   `json:"supports_cancel"`
 	SupportsInlineExecution bool                   `json:"supports_inline_execution"`
@@ -80,8 +79,8 @@ func TestTaskProviderRegistryRegistersStandardTransferContract(t *testing.T) {
 	if err := json.Unmarshal([]byte(*captured.Capabilities), &capabilities); err != nil {
 		t.Fatalf("decode capabilities: %v; capabilities=%s", err, *captured.Capabilities)
 	}
-	if capabilities.SchemaVersion != "task.capabilities/v1" {
-		t.Fatalf("schema_version = %q, want task.capabilities/v1", capabilities.SchemaVersion)
+	if capabilities.SchemaVersion != "task.capabilities/v2" {
+		t.Fatalf("schema_version = %q, want task.capabilities/v2", capabilities.SchemaVersion)
 	}
 	if len(capabilities.TaskCapabilities) != 1 {
 		t.Fatalf("task_capabilities = %#v, want one entry", capabilities.TaskCapabilities)
@@ -103,7 +102,7 @@ func TestTaskProviderRegistryRegistersStandardTransferContract(t *testing.T) {
 	if sync.SupportsCancel || sync.SupportsInlineExecution || sync.Deprecated {
 		t.Fatalf("sync flags = %#v, want cancel/inline/deprecated false", sync)
 	}
-	if sync.DefinitionSchema["type"] != "object" || sync.ExecutionSchema["type"] != "object" {
-		t.Fatalf("sync schemas must be object schemas: %#v", sync)
+	if sync.DefinitionSchema["type"] != "object" {
+		t.Fatalf("sync definition_schema must be an object schema: %#v", sync)
 	}
 }

@@ -32,14 +32,13 @@ func (s *TaskProviderRegistryService) Register(ctx context.Context) error {
 	}
 	// 能力描述（供 Orchestrator 查询）
 	capabilities := map[string]interface{}{
-		"schema_version": "task.capabilities/v1",
+		"schema_version": "task.capabilities/v2",
 		"task_capabilities": []map[string]interface{}{
 			{
 				"type":                      "query",
 				"display_name":              "查询任务",
 				"description":               "执行 SQL 查询开发任务",
 				"definition_schema":         queryTaskDefinitionSchema(),
-				"execution_schema":          developExecutionSchema(),
 				"supports_schedule":         false,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
@@ -52,7 +51,6 @@ func (s *TaskProviderRegistryService) Register(ctx context.Context) error {
 				"display_name":              "工作流任务",
 				"description":               "执行 Develop 工作流任务",
 				"definition_schema":         workflowTaskDefinitionSchema(),
-				"execution_schema":          developExecutionSchema(),
 				"supports_schedule":         false,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
@@ -65,7 +63,6 @@ func (s *TaskProviderRegistryService) Register(ctx context.Context) error {
 				"display_name":              "脚本任务",
 				"description":               "执行脚本开发任务；当前由 Jupyter Notebook runtime 承载",
 				"definition_schema":         scriptTaskDefinitionSchema(),
-				"execution_schema":          developExecutionSchema(),
 				"supports_schedule":         false,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
@@ -241,13 +238,4 @@ func scriptTaskDefinitionSchema() map[string]interface{} {
 		},
 		[]interface{}{},
 	)
-}
-
-func developExecutionSchema() map[string]interface{} {
-	return map[string]interface{}{
-		"type":                 "object",
-		"title":                "Develop 执行参数",
-		"description":          "Develop 执行参数由具体任务定义中的 parameter_schema/default_parameters 决定；本 schema 只声明 parameters 是开放对象，执行时会写入 execution_config.inputs。",
-		"additionalProperties": true,
-	}
 }

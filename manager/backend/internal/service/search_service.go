@@ -29,17 +29,13 @@ const (
 
 // HybridSearchService 提供混合检索能力（全文检索 + 向量语义检索）
 type HybridSearchService struct {
-	client            *meilisearch.Client
-	assetIndex        string
-	enabled           bool
-	log               *slog.Logger
-	vectorRepo        *repository.EmbeddingRepository
-	textEmbedder      embedding.TextEmbedder
-	models            map[embedding.Modality]string
-	vectorDimension   int
-	embeddingTimeout  time.Duration
-	vectorTopK        int
-	vectorMaxDistance float64
+	client                *meilisearch.Client
+	assetIndex            string
+	enabled               bool
+	log                   *slog.Logger
+	vectorRepo            *repository.EmbeddingRepository
+	vectorTopK            int
+	configurationProvider *EmbeddingConfigurationProvider
 }
 
 // SearchDocument 表示检索结果中的单个文档（混合检索的统一格式）
@@ -107,29 +103,14 @@ type SearchResult struct {
 }
 
 // NewHybridSearchService 构建混合检索服务（全文检索 + 向量检索）
-func NewHybridSearchService(cfg *config.Config, vectorRepo *repository.EmbeddingRepository) (*HybridSearchService, error) {
+func NewHybridSearchService(cfg *config.Config, vectorRepo *repository.EmbeddingRepository, configurationProvider *EmbeddingConfigurationProvider) (*HybridSearchService, error) {
 	svc := &HybridSearchService{
-		assetIndex: strings.TrimSpace(cfg.MeilisearchAssetIndex),
-		enabled:    strings.TrimSpace(cfg.MeilisearchURL) != "",
-		log:        logger.With("component", "manager_hybrid_search"),
-		vectorRepo: vectorRepo,
-		models: map[embedding.Modality]string{
-			embedding.ModalityText:     cfg.EmbeddingService.Models["text"],
-			embedding.ModalityDocument: cfg.EmbeddingService.Models["text"],
-			embedding.ModalityImage:    cfg.EmbeddingService.Models["image"],
-			embedding.ModalityAudio:    cfg.EmbeddingService.Models["text"], // 暂用 text 模型
-			embedding.ModalityVideo:    cfg.EmbeddingService.Models["video"],
-		},
-		vectorDimension:   cfg.VectorConfig.Dimension,
-		embeddingTimeout:  cfg.EmbeddingService.Timeout,
-		vectorTopK:        10,
-		vectorMaxDistance: cfg.VectorConfig.MaxDistance,
-	}
-	if svc.embeddingTimeout <= 0 {
-		svc.embeddingTimeout = 15 * time.Second
-	}
-	if svc.vectorMaxDistance <= 0 {
-		svc.vectorMaxDistance = 0.78
+		assetIndex:            strings.TrimSpace(cfg.MeilisearchAssetIndex),
+		enabled:               strings.TrimSpace(cfg.MeilisearchURL) != "",
+		log:                   logger.With("component", "manager_hybrid_search"),
+		vectorRepo:            vectorRepo,
+		vectorTopK:            10,
+		configurationProvider: configurationProvider,
 	}
 
 	if !svc.enabled {
@@ -154,59 +135,7 @@ func NewHybridSearchService(cfg *config.Config, vectorRepo *repository.Embedding
 		"url", cfg.MeilisearchURL,
 	)
 
-	if strings.TrimSpace(cfg.EmbeddingService.BaseURL) != "" && vectorRepo != nil {
-		if err := svc.initVectorComponents(cfg); err != nil {
-			svc.log.Warn("向量检索初始化失败", "error", err)
-		}
-	} else {
-		svc.log.Info("未配置向量化服务，向量检索保持禁用状态")
-	}
 	return svc, nil
-}
-
-func (s *HybridSearchService) initVectorComponents(cfg *config.Config) error {
-	textModel := strings.TrimSpace(s.models[embedding.ModalityText])
-	if textModel == "" {
-		textModel = "bge-large-zh"
-	}
-	docModel := strings.TrimSpace(s.models[embedding.ModalityDocument])
-	if docModel == "" {
-		docModel = textModel
-	}
-
-	models := map[embedding.Modality]string{
-		embedding.ModalityText:     textModel,
-		embedding.ModalityDocument: docModel,
-	}
-	if img := strings.TrimSpace(s.models[embedding.ModalityImage]); img != "" {
-		models[embedding.ModalityImage] = img
-	}
-	if audio := strings.TrimSpace(s.models[embedding.ModalityAudio]); audio != "" {
-		models[embedding.ModalityAudio] = audio
-	}
-	if video := strings.TrimSpace(s.models[embedding.ModalityVideo]); video != "" {
-		models[embedding.ModalityVideo] = video
-	}
-
-	client, err := embedding.NewHTTPEmbeddingClient(embedding.ServiceConfig{
-		BaseURL: cfg.EmbeddingService.BaseURL,
-		APIKey:  cfg.EmbeddingService.APIKey,
-		Timeout: s.embeddingTimeout,
-		Models:  models,
-	})
-	if err != nil {
-		return fmt.Errorf("init embedding client: %w", err)
-	}
-
-	s.textEmbedder = client
-	s.models = models
-	s.log.Info("向量检索能力已启用",
-		"vector_schema", "manager",
-		"vector_table", "embeddings",
-		"text_model", textModel,
-		"dimension", s.vectorDimension,
-	)
-	return nil
 }
 
 // initIndexes 初始化 Meilisearch 索引配置
@@ -349,7 +278,7 @@ func (s *HybridSearchService) SearchDocuments(
 	}
 
 	// 向量检索
-	if s.vectorRepo != nil && s.textEmbedder != nil {
+	if s.vectorRepo != nil && s.configurationProvider != nil && strings.TrimSpace(s.configurationProvider.Current().BaseURL) != "" {
 		vectorHits, err := s.vectorSearch(ctx, tenantID, query)
 		if err != nil {
 			s.log.Warn("向量检索失败，已忽略", "error", err)
@@ -394,7 +323,7 @@ func (s *HybridSearchService) SearchDocuments(
 }
 
 func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, query string) ([]VectorDocument, error) {
-	if s.vectorRepo == nil || s.textEmbedder == nil {
+	if s.vectorRepo == nil || s.configurationProvider == nil {
 		return nil, nil
 	}
 	if tenantID == nil || *tenantID == 0 {
@@ -402,7 +331,11 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, 
 		return nil, nil
 	}
 
-	timeout := s.embeddingTimeout
+	runtime := s.configurationProvider.Current()
+	if strings.TrimSpace(runtime.BaseURL) == "" {
+		return nil, nil
+	}
+	timeout := runtime.Timeout
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
@@ -410,7 +343,7 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, 
 	embedCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	textModel := s.models[embedding.ModalityText]
+	textModel := runtime.Model
 	input := []embedding.TextInput{{
 		ID:       "query",
 		Text:     query,
@@ -421,7 +354,19 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, 
 		},
 	}}
 
-	embedResult, err := s.textEmbedder.EmbedText(embedCtx, input)
+	embedder, err := embedding.NewHTTPEmbeddingClient(embedding.ServiceConfig{
+		BaseURL: runtime.BaseURL,
+		APIKey:  runtime.APIKey,
+		Timeout: runtime.Timeout,
+		Models: map[embedding.Modality]string{
+			embedding.ModalityText:     runtime.Model,
+			embedding.ModalityDocument: runtime.Model,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create query embedder: %w", err)
+	}
+	embedResult, err := embedder.EmbedText(embedCtx, input)
 	if err != nil {
 		return nil, fmt.Errorf("embed query text: %w", err)
 	}
@@ -437,14 +382,11 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, 
 
 	model := strings.TrimSpace(queryEmbedding.Model)
 	if model == "" {
-		model = strings.TrimSpace(s.models[embedding.ModalityDocument])
-	}
-	if model == "" {
 		model = textModel
 	}
 	dimension := len(queryVector)
 	if dimension == 0 {
-		dimension = s.vectorDimension
+		dimension = runtime.Dimension
 	}
 	if model == "" || dimension <= 0 {
 		return nil, nil
@@ -455,13 +397,13 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, 
 		"tenant_id", tenantVal,
 		"query", query,
 		"top_k", s.vectorTopK,
-		"max_distance", s.vectorMaxDistance,
+		"max_distance", runtime.MaxDistance,
 	)
 
 	queryCtx, cancelQuery := context.WithTimeout(ctx, timeout)
 	defer cancelQuery()
 
-	results, err := s.vectorRepo.QueryReadySimilar(queryCtx, *tenantID, queryVector, model, dimension, s.vectorTopK, s.vectorMaxDistance)
+	results, err := s.vectorRepo.QueryReadySimilar(queryCtx, *tenantID, queryVector, model, dimension, s.vectorTopK, runtime.MaxDistance)
 	if err != nil {
 		return nil, fmt.Errorf("query embedding results: %w", err)
 	}

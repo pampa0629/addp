@@ -28,6 +28,7 @@ type IAMRuntime struct {
 	PlatformUserService                 *iam.PlatformUserService
 	AuditQueryService                   *iam.AuditQueryService
 	PrivilegedIdentityChangeService     *iam.PrivilegedIdentityChangeService
+	SecurityPolicyService               *iam.SecurityPolicyService
 	ContextSelectionService             *iam.ContextSelectionService
 	BrowserLoginService                 *iam.BrowserLoginService
 	AuthContextService                  *iam.AuthContextService
@@ -58,6 +59,8 @@ type IAMRuntime struct {
 	InternalAuditHandler                *IAMInternalAuditHandler
 	AuditHandler                        *IAMAuditHandler
 	PrivilegedIdentityChangeHandler     *IAMPrivilegedIdentityChangeHandler
+	SecurityPolicyHandler               *IAMSecurityPolicyHandler
+	SecurityPolicy                      iam.SecurityPolicy
 
 	Authentication       gin.HandlerFunc
 	FirstPartyCredential gin.HandlerFunc
@@ -67,24 +70,25 @@ type IAMRuntime struct {
 	OAuthFailureAudit    gin.HandlerFunc
 }
 
-func NewIAMRuntime(db *gorm.DB, cfg *config.Config) (*IAMRuntime, error) {
+func NewIAMRuntime(db *gorm.DB, cfg *config.Config, securityPolicy iam.SecurityPolicy) (*IAMRuntime, error) {
 	if db == nil || cfg == nil {
 		return nil, fmt.Errorf("IAM Runtime 数据库和配置不能为空")
 	}
-	accessTokenTTL := time.Duration(cfg.AccessTokenExpireMinutes) * time.Minute
-	refreshTokenTTL := time.Duration(cfg.RefreshTokenExpireDays) * 24 * time.Hour
-	authorizationCodeTTL := time.Duration(cfg.AuthorizationCodeMinutes) * time.Minute
-	deviceCodeTTL := time.Duration(cfg.DeviceCodeExpireMinutes) * time.Minute
-	devicePollingInterval := time.Duration(cfg.DevicePollIntervalSecs) * time.Second
-	delegatedAccessTokenTTL := time.Duration(cfg.DelegatedAccessTokenExpireMinutes) * time.Minute
-	resourceTicketTTL := time.Duration(cfg.ResourceAccessTicketExpireMinutes) * time.Minute
-	invitationTTL := time.Duration(cfg.TenantInvitationExpireHours) * time.Hour
-	enrollmentTicketTTL := time.Duration(cfg.EnrollmentTicketExpireMinutes) * time.Minute
-	if authorizationCodeTTL > 5*time.Minute {
-		return nil, fmt.Errorf("OAUTH_CODE_EXPIRE_MINUTES 不能超过 5 分钟")
+	if err := iam.ValidateSecurityPolicy(securityPolicy); err != nil {
+		return nil, fmt.Errorf("IAM 安全策略无效: %w", err)
 	}
+	accessTokenTTL := time.Duration(securityPolicy.AccessTokenTTLMinutes) * time.Minute
+	refreshTokenTTL := time.Duration(securityPolicy.RefreshTokenTTLDays) * 24 * time.Hour
+	authorizationCodeTTL := time.Duration(securityPolicy.OAuthAuthorizationCodeTTLMinutes) * time.Minute
+	deviceCodeTTL := time.Duration(securityPolicy.OAuthDeviceCodeTTLMinutes) * time.Minute
+	devicePollingInterval := time.Duration(securityPolicy.OAuthDevicePollIntervalSeconds) * time.Second
+	delegatedAccessTokenTTL := time.Duration(securityPolicy.DelegatedAccessTokenTTLMinutes) * time.Minute
+	resourceTicketTTL := time.Duration(securityPolicy.ResourceAccessTicketTTLMinutes) * time.Minute
+	invitationTTL := time.Duration(securityPolicy.TenantInvitationTTLHours) * time.Hour
+	enrollmentTicketTTL := time.Duration(securityPolicy.EnrollmentTicketTTLMinutes) * time.Minute
 
 	repository := iam.NewRepository(db)
+	securityPolicyService := iam.NewSecurityPolicyService(repository)
 	tokenFamilyService, err := iam.NewTokenFamilyService(repository, iam.BrowserSessionConfig{
 		AccessTokenTTL:          accessTokenTTL,
 		RefreshTokenFamilyTTL:   refreshTokenTTL,
@@ -270,6 +274,10 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config) (*IAMRuntime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("装配 IAM Privileged Identity Change Handler: %w", err)
 	}
+	securityPolicyHandler, err := NewIAMSecurityPolicyHandler(securityPolicyService)
+	if err != nil {
+		return nil, fmt.Errorf("装配 IAM Security Policy Handler: %w", err)
+	}
 
 	authentication, err := middleware.NewIAMAuthenticationMiddleware(authContextService)
 	if err != nil {
@@ -317,6 +325,8 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config) (*IAMRuntime, error) {
 		PlatformUserService:                 platformUserService,
 		AuditQueryService:                   auditQueryService,
 		PrivilegedIdentityChangeService:     privilegedIdentityChangeService,
+		SecurityPolicyService:               securityPolicyService,
+		SecurityPolicy:                      securityPolicy,
 		ContextSelectionService:             contextSelectionService,
 		BrowserLoginService:                 browserLoginService,
 		AuthContextService:                  authContextService,
@@ -343,6 +353,7 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config) (*IAMRuntime, error) {
 		InternalAuditHandler:                internalAuditHandler,
 		AuditHandler:                        auditHandler,
 		PrivilegedIdentityChangeHandler:     privilegedIdentityChangeHandler,
+		SecurityPolicyHandler:               securityPolicyHandler,
 		Authentication:                      authentication,
 		FirstPartyCredential:                firstPartyCredential,
 		UserAccessCredential:                userAccessCredential,

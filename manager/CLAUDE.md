@@ -21,6 +21,7 @@ Manager 模块负责数据探查、数据预览、表格数据剖析、混合检
 - `manager.point_cloud_copc_tasks`：点云 COPC 快显任务定义，TaskProvider `task_type=point_cloud_copc_generation`，源必须是 `format=las|laz|e57|pcd|xyz` 的 point_cloud item。
 - `manager.cad_previews`：二维 DWG / DXF 的受管栅格瓦片预览结果，记录 manifest、thumbnail、瓦片范围和 Manager infra MinIO 引用。
 - `manager.cad_preview_tasks`：CAD 栅格预览任务定义，TaskProvider `task_type=cad_preview_generation`，源必须是 `data_type=cad + format=dwg|dxf + layout=single`。
+- `manager.embedding_configuration`：Manager 平台向量化普通运行配置单例；API Key 不入表，继续由部署 Secret 注入。
 - `manager.model3d_tiles`：分块三维模型瓦片快显结果，`target_format=3d_tiles|s3m`；同一源 item 的两种格式分别登记为独立结果并写入 Manager infra MinIO。
 - `manager.model3d_tiles_tasks`：分块三维模型瓦片任务定义，TaskProvider `task_type=model3d_tiles_generation`；当前源为 `format=osgb_scene + layout=whole`。
 - `vector_tile_cache_generation` 与 `vector_tile_set_generation` 统一由 Manager Backend 编排，并按源能力选择执行路径：PostgreSQL/PostGIS 空间表复用 `common/spatial` 和 `ST_AsMVT` 原生 SQL 生成 PMTiles；MySQL 等不具备原生 MVT 输出、但具备标准 EWKB 表读取能力的数据库空间表，由 Manager 通过 `TableReadSessionProvider` 流式物化受控临时 FlatGeobuf，再调用 GeoPython Workflow `vector_to_pmtiles` direct operator；NFS、MinIO/S3 文件或对象转换成受控 GDAL 访问计划后调用同一 operator。每类源只有一条执行路径，最终只生成 PMTiles v3，不保留松散 MVT 目录；临时 FlatGeobuf 由本次 execution 管理并清理。
@@ -76,6 +77,7 @@ manager/
 - 分块三维模型瓦片：`GET /model3d_tiles` 查询 Manager 受管结果，`GET /model3d_tiles/:id/assets/*asset_path` 返回 ready 3D Tiles / S3M 目录资源；生成入口统一由 Quick View action 驱动，独立管理页只负责任务、结果、监控与预览入口。
 - 任务提供者：`GET /tasks`、`GET /tasks/:task_type/:id`、`POST /tasks/:task_type/:id/execute`、`GET /executions/:execution_id`。
 - 数据进出与向量化：`POST /uploads`、`POST /imports`、`POST /exports`、`GET /exports/:id/file`、`POST /embedding_executions`、`GET /embeddings`、`GET /items/:item_id/embedding`。
+- 平台配置管理：`GET /settings/embedding`、`PUT /settings/embedding`；只接受 Platform Context 和 `manager.configuration.read/update`。
 
 ## 开发规则
 
@@ -163,6 +165,7 @@ curl http://localhost:8081/health
 - `manager/docs/tables/vector_tile_cache_tasks表.md`
 - `manager/docs/tables/embeddings表.md`
 - `manager/docs/tables/embedding_tasks表.md`
+- `manager/docs/tables/embedding_configuration表.md`
 - `manager/docs/tables/search_history表.md`
 - `common-frontend/CLAUDE.md`
 - `meta/CLAUDE.md`

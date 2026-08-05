@@ -35,8 +35,6 @@ fi
 
 # 配置参数
 SYSTEM_API_URL="${SYSTEM_URL:-http://localhost:8180}"
-ADMIN_USERNAME="${DEFAULT_ADMIN_USERNAME:-admin}"
-ADMIN_PASSWORD="${DEFAULT_ADMIN_PASSWORD:-123456}"
 
 # Business PostgreSQL 配置
 # 注意：脚本在宿主机上检查连通性，但连接信息会保存到 ADDP，
@@ -121,29 +119,25 @@ echo -e "${GREEN}✓ Business MinIO 可用${NC}"
 connect_addp_to_business_network
 
 echo ""
-echo -e "${YELLOW}▶ 登录 ADDP 系统（用户: ${ADMIN_USERNAME}）...${NC}"
+if [ ! -t 0 ]; then
+  echo -e "${RED}✗ 必须在交互式终端中输入当前 User Access Token${NC}"
+  exit 1
+fi
+read -r -s -p "请输入具有 System Engine 管理权限的当前 User Access Token: " TOKEN
+echo ""
 
-# 登录获取 token
-LOGIN_RESPONSE=$(curl -s -X POST "${SYSTEM_API_URL}/api/v1/system/login" \
-  -H 'Content-Type: application/json' \
-  -d "{\"username\":\"${ADMIN_USERNAME}\",\"password\":\"${ADMIN_PASSWORD}\"}")
-
-# 检查是否触发速率限制
-if echo "$LOGIN_RESPONSE" | grep -q "Limit exceeded"; then
-  echo -e "${RED}✗ 登录失败：触发速率限制${NC}"
-  echo -e "${YELLOW}  请等待几分钟后再试，或检查 system/backend 的速率限制配置${NC}"
+if [ -z "$TOKEN" ]; then
+  echo -e "${RED}✗ User Access Token 不得为空${NC}"
   exit 1
 fi
 
-TOKEN=$(echo "$LOGIN_RESPONSE" | jq -r '.access_token // .token // empty' 2>/dev/null)
-
-if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
-  echo -e "${RED}✗ 登录失败${NC}"
-  echo "响应: $LOGIN_RESPONSE"
+if ! curl -sf "${SYSTEM_API_URL}/api/v1/system/auth/context" \
+  -H "Authorization: Bearer ${TOKEN}" >/dev/null; then
+  echo -e "${RED}✗ User Access Token 无效或已过期${NC}"
   exit 1
 fi
 
-echo -e "${GREEN}✓ 登录成功${NC}"
+echo -e "${GREEN}✓ AuthContext 校验成功${NC}"
 
 # 注册引擎函数
 register_engine() {

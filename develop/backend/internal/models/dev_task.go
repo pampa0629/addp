@@ -7,6 +7,7 @@ import (
 	"time"
 
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/taskprovider"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
@@ -44,31 +45,34 @@ type DevTask struct {
 	LastExecutionID     *string    `gorm:"size:36" json:"last_execution_id,omitempty"`                        // UUID，软引用 common.task_executions.execution_id
 	LastExecutionStatus string     `gorm:"size:50" json:"last_execution_status,omitempty"`
 	LastRunAt           *time.Time `json:"last_run_at,omitempty"`
+
+	ExecutionContract *taskprovider.ExecutionContract `gorm:"-" json:"execution_contract,omitempty"`
 }
 
 // ProviderDevTask 是 Develop 通过 TaskProvider API 暴露的标准任务定义。
 // DevTask 内部使用 dev_type，TaskProvider 契约对外必须使用 task_type。
 type ProviderDevTask struct {
-	ID                  uint                 `json:"id"`
-	TenantID            uint                 `json:"tenant_id"`
-	Name                string               `json:"name"`
-	DisplayName         string               `json:"display_name,omitempty"`
-	TaskType            string               `json:"task_type"`
-	Content             DevTaskContent       `json:"content,omitempty"`
-	ExecutionConfig     DevTaskContent       `json:"execution_config,omitempty"`
-	EditorLayout        commonModels.JSONMap `json:"editor_layout"`
-	Parameters          DevTaskContent       `json:"parameters,omitempty"`
-	Timeout             int                  `json:"timeout"`
-	Description         string               `json:"description,omitempty"`
-	Tags                pq.StringArray       `json:"tags,omitempty"`
-	CreatedBy           *uint                `json:"created_by,omitempty"`
-	UpdatedBy           *uint                `json:"updated_by,omitempty"`
-	CreatedAt           time.Time            `json:"created_at"`
-	UpdatedAt           time.Time            `json:"updated_at"`
-	Status              string               `json:"status"`
-	LastExecutionID     *string              `json:"last_execution_id,omitempty"`
-	LastExecutionStatus string               `json:"last_execution_status,omitempty"`
-	LastRunAt           *time.Time           `json:"last_run_at,omitempty"`
+	ID                  uint                            `json:"id"`
+	TenantID            uint                            `json:"tenant_id"`
+	Name                string                          `json:"name"`
+	DisplayName         string                          `json:"display_name,omitempty"`
+	TaskType            string                          `json:"task_type"`
+	Content             DevTaskContent                  `json:"content,omitempty"`
+	ExecutionConfig     DevTaskContent                  `json:"execution_config,omitempty"`
+	EditorLayout        commonModels.JSONMap            `json:"editor_layout"`
+	Parameters          DevTaskContent                  `json:"parameters,omitempty"`
+	Timeout             int                             `json:"timeout"`
+	Description         string                          `json:"description,omitempty"`
+	Tags                pq.StringArray                  `json:"tags,omitempty"`
+	CreatedBy           *uint                           `json:"created_by,omitempty"`
+	UpdatedBy           *uint                           `json:"updated_by,omitempty"`
+	CreatedAt           time.Time                       `json:"created_at"`
+	UpdatedAt           time.Time                       `json:"updated_at"`
+	Status              string                          `json:"status"`
+	LastExecutionID     *string                         `json:"last_execution_id,omitempty"`
+	LastExecutionStatus string                          `json:"last_execution_status,omitempty"`
+	LastRunAt           *time.Time                      `json:"last_run_at,omitempty"`
+	ExecutionContract   *taskprovider.ExecutionContract `json:"execution_contract,omitempty"`
 }
 
 // ListProviderDevTasksResponse 是 TaskProvider 标准任务列表响应。
@@ -79,7 +83,7 @@ type ListProviderDevTasksResponse struct {
 	PageSize int               `json:"page_size"`
 }
 
-func NewProviderDevTask(item DevTask) ProviderDevTask {
+func NewProviderDevTask(item DevTask, contract *taskprovider.ExecutionContract) ProviderDevTask {
 	return ProviderDevTask{
 		ID:                  item.ID,
 		TenantID:            item.TenantID,
@@ -101,13 +105,14 @@ func NewProviderDevTask(item DevTask) ProviderDevTask {
 		LastExecutionID:     item.LastExecutionID,
 		LastExecutionStatus: item.LastExecutionStatus,
 		LastRunAt:           item.LastRunAt,
+		ExecutionContract:   contract,
 	}
 }
 
 func NewProviderDevTasks(items []DevTask) []ProviderDevTask {
 	result := make([]ProviderDevTask, 0, len(items))
 	for _, item := range items {
-		result = append(result, NewProviderDevTask(item))
+		result = append(result, NewProviderDevTask(item, nil))
 	}
 	return result
 }

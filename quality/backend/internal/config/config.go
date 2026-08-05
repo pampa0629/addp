@@ -44,18 +44,9 @@ func LoadConfig() (*Config, error) {
 		ServiceClientSecret: os.Getenv("QUALITY_SERVICE_CLIENT_SECRET"),
 	}
 
-	enableIntegration := commonConfig.GetEnvBool("ENABLE_SERVICE_INTEGRATION", true)
-	if err := commonConfig.LoadServiceConfiguration(commonConfig.ServiceConfigLoader{
-		SystemServiceURL:      cfg.SystemURL,
-		EnableIntegration:     enableIntegration,
-		InternalAPIKey:        cfg.InternalAPIKey,
-		BaseConfigDestination: &cfg.BaseConfig,
-	}); err != nil {
-		return nil, fmt.Errorf("failed to load service configuration: %w", err)
-	}
+	commonConfig.LoadDeploymentConfig(&cfg.BaseConfig)
 
 	cfg.BaseConfig.SystemServiceURL = cfg.SystemURL
-	cfg.BaseConfig.EnableIntegration = enableIntegration
 
 	return cfg, nil
 }

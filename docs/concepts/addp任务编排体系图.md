@@ -10,7 +10,7 @@
 2. [任务库机制](#任务库机制)
 3. [任务编排流 vs 算子工作流](#任务编排流-vs-算子工作流)
 4. [编排 DAG 示例](#编排-dag-示例)
-5. [依赖管理与参数模板化](#依赖管理与参数模板化)
+5. [依赖管理与输出绑定](#依赖管理与输出绑定)
 6. [调度方式](#调度方式)
 
 ---
@@ -22,7 +22,7 @@
 **核心特点**:
 - **节点粒度**: 粗粒度业务任务 (扫描元数据、Transfer 任务、生成瓦片)
 - **DAG 层级**: 任务级别的有向无环图
-- **数据传递**: 参数模板 `{{step_id.field.path}}` 或 `{{step_id}}` 引用显式依赖步骤的结果
+- **数据传递**: 从显式依赖步骤声明的稳定 `outputs` 中选择值，内部保存为 `{{step_id.outputs.declared.path}}`
 - **执行方式**: 通过 TaskProvider 调用各模块已存在的任务定义 (Meta、Transfer、Develop、Manager、Quality、Graph、Orchestrator 等)
 - **适用场景**: 跨模块数据流水线、定时 ETL 作业
 
@@ -107,7 +107,7 @@ graph TB
 
 **步骤 4: 执行调用**
 - Orchestrator 通过 TaskProvider 标准接口调用对应模块的任务
-- 编排步骤只能引用 owner 模块已保存的任务定义；参数模板只作为本次执行参数覆盖传入,不创建或改写 owner 任务定义
+- 编排步骤只能引用 owner 模块已保存的任务定义；固定值和上游输出绑定只作为本次执行参数覆盖传入，不创建或改写 owner 任务定义
 
 ### 任务示例
 
@@ -158,7 +158,7 @@ graph TB
         TaskNode2 --> TaskNode3
 
         TaskWF --> TaskEngine[执行方式:<br/>TaskProvider API调用]
-        TaskWF --> TaskData["数据传递:<br/>参数模板<br/>{{step_id.field.path}}"]
+        TaskWF --> TaskData["数据传递:<br/>声明输出绑定<br/>{{step_id.outputs.path}}"]
     end
 
     classDef operator fill:#e1f5ff,stroke:#01579b
@@ -175,7 +175,7 @@ graph TB
 | **节点粒度** | 细粒度算子 (buffer, centroid) | 粗粒度业务任务 (扫描元数据, Transfer 任务) |
 | **DAG 层级** | 算子级别 DAG | 任务级别 DAG |
 | **执行引擎/方式** | 已注册 Workflow Runtime，例如 GeoPython Workflow、Spark Workflow、SuperMap Workflow | 跨模块 TaskProvider API 调用 |
-| **数据传递** | 运行时内部对象或参数引用；例如 Python GeoDataFrame、SuperMap SPS `IDataItem` | 已保存任务执行时可使用参数模板 `{{step_id.field.path}}` 或 `{{step_id}}` 传递本次执行参数 |
+| **数据传递** | 运行时内部对象或参数引用；例如 Python GeoDataFrame、SuperMap C++ 类型化内存句柄 | 仅传递任务契约声明的持久稳定输出，例如 ResourceLocator；UI 从上游输出中选择 |
 | **适用场景** | 空间数据分析、地理计算 | 跨模块数据流水线、ETL 作业 |
 | **存储表** | `develop.dev_tasks` | `orchestrator.orchestrations` |
 | **执行记录** | `common.task_executions`（`module=develop`） | `common.task_executions`（`module=orchestrator`） |
@@ -192,9 +192,9 @@ Orchestrator 可以调用 Develop 模块已经创建好的工作流任务作为�
       "id": "extract_data",
       "name": "提取数据",
       "provider": "develop",
-      "task_type": "query",
+      "task_type": "workflow",
       "task_id": 101,
-      "parameters": {"engine_id": 1, "sql": "SELECT * FROM cities"}
+	  "parameters": {}
     },
     {
       "id": "spatial_analysis",
@@ -202,10 +202,13 @@ Orchestrator 可以调用 Develop 模块已经创建好的工作流任务作为�
       "provider": "develop",
       "task_type": "workflow",
       "task_id": 102,
-      "parameters": {
-        "workflow_name": "city_buffer_analysis",
-        "input_table": "{{extract_data.result_table}}"
-      }
+	  "parameters": {
+		"load_1": {
+		  "source_resource": {
+			"locator": "{{extract_data.outputs.save_3.resource.locator}}"
+		  }
+		}
+	  }
     },
     {
       "id": "run_transfer_task",
@@ -229,7 +232,7 @@ Orchestrator 可以调用 Develop 模块已经创建好的工作流任务作为�
 flowchart TD
     Start([开始]) --> ScanMeta[扫描元数据<br/>Meta.scan<br/>task_id=11]
     ScanMeta --> ImportData[Transfer任务<br/>Transfer.sync<br/>task_id=21]
-    ImportData --> ExecuteWorkflow[执行工作流<br/>Develop.workflow<br/>参数: input={{ImportData.target_table}}]
+    ImportData --> ExecuteWorkflow[执行工作流<br/>Develop.workflow<br/>输入绑定上游 ResourceLocator]
     ExecuteWorkflow --> GenerateTileCache[生成瓦片缓存<br/>Manager.vector_tile_cache_generation<br/>task_id=31]
     GenerateTileCache --> End([结束])
 
@@ -277,10 +280,13 @@ flowchart TD
       "provider": "develop",
       "task_type": "workflow",
       "task_id": 22,
-      "parameters": {
-        "workflow_name": "buffer_analysis",
-        "input_table": "{{import_data.target_table}}"
-      },
+	  "parameters": {
+		"load_1": {
+		  "source_resource": {
+			"locator": "{{import_data.outputs.resource.locator}}"
+		  }
+		}
+	  },
       "depends_on": ["import_data"],
       "timeout": 900
     },
@@ -301,7 +307,7 @@ flowchart TD
 
 ---
 
-## 依赖管理与参数模板化
+## 依赖管理与输出绑定
 
 ### 依赖管理 (DAG 拓扑排序)
 
@@ -329,9 +335,9 @@ graph LR
 - **缺失依赖检测**: `depends_on` 引用不存在的步骤时直接失败
 - **拓扑排序**: 按依赖顺序执行；当前主干不承诺并行执行
 
-### 参数模板化
+### 上游输出绑定
 
-参数模板只支持完整字符串引用，格式为 `{{step_id.field.path}}` 或 `{{step_id}}`。模板引用的 `step_id` 必须存在，并且必须在当前 Step 的 `depends_on` 中显式声明；不支持在普通字符串中做局部插值，也不支持数组索引语法:
+用户从直接依赖步骤的已声明稳定输出中选择目标参数来源。内部只使用完整字符串 `{{step_id.outputs.declared.path}}` 保存绑定关系；`step_id` 必须存在且在当前 Step 的 `depends_on` 中显式声明。任意结果字段、整个步骤结果、局部字符串插值和数组索引均不支持：
 
 ```mermaid
 sequenceDiagram
@@ -340,17 +346,18 @@ sequenceDiagram
     participant Step2 as Step 2: import_data
 
     Orchestrator->>Step1: 1. 执行扫描元数据
-    Step1-->>Orchestrator: 2. 返回结果<br/>{table_name: "cities", row_count: 1000}
-    Orchestrator->>Orchestrator: 3. 解析参数模板<br/>table: "{{scan_metadata.table_name}}"<br/>→ table: "cities"
-    Orchestrator->>Step2: 4. 执行导入数据<br/>参数: {table: "cities"}
-    Step2-->>Orchestrator: 5. 返回结果<br/>{target_table: "public.cities_imported"}
+	Step1-->>Orchestrator: 2. 返回声明输出<br/>{outputs: {resource: {locator: "addp://..."}}}
+	Orchestrator->>Orchestrator: 3. 解析输出绑定<br/>locator: "{{scan_metadata.outputs.resource.locator}}"
+	Orchestrator->>Step2: 4. 执行下游任务<br/>parameters 只包含本次覆盖
+	Step2-->>Orchestrator: 5. 返回执行状态和自身声明输出
 ```
 
-**模板语法**:
-- 简单字段引用: `{{step1.result}}`
-- 嵌套字段引用: `{{step1.result.nested.field}}`
-- 整个步骤结果引用: `{{step1}}`
-- 模板解析返回被引用输出的原始值，不做隐式类型转换。运行时如果引用步骤没有结果、字段路径不存在，或路径试图进入非对象值，当前 Step 必须失败。
+**绑定规则**:
+
+- 允许：`{{step1.outputs.save_3.resource.locator}}`
+- 禁止：`{{step1}}`、`{{step1.result}}`、`{{step1.metadata.result}}`
+- 来源路径必须由来源任务 `output_schema` 声明，目标路径必须由目标任务 `input_schema` 声明，且类型兼容。
+- 绑定解析返回原始值，不做隐式类型转换；结果或路径不存在时当前 Step 必须失败。
 
 ---
 

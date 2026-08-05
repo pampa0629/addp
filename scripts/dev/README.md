@@ -80,7 +80,7 @@ bash scripts/dev/modtidy.sh
 
 **功能**: 启动完整开发环境
 
-指定单个模块启动时，脚本仍会统一启动公共依赖：System Backend、Meta Backend、Meta Worker、Gateway 和 Console。模块自己的前端和额外依赖在此基础上按需启动，例如 `-manager` 会额外启动 Transfer Backend / Worker、Model3D Workflow Engine 和 PointCloud Workflow Engine，`-develop` 会额外启动 Python/Math/Spark Workflow Engine 和 Jupyter。全量启动会启动 SuperMap Workflow Engine；单独验证超图算子时也可以通过 `-supermap-workflow` 显式启动。SuperMap Workflow Engine 依赖外部 SuperMap SDK / GPA libs 和许可文件，`INTERNAL_API_KEY` 可用时会自动注册到 System。
+指定单个模块启动时，脚本仍会统一启动公共依赖：System Backend、Meta Backend、Meta Worker、Gateway 和 Console。模块自己的前端和额外依赖在此基础上按需启动，例如 `-manager` 会额外启动 Transfer Backend / Worker、Model3D Workflow Engine 和 PointCloud Workflow Engine，`-develop` 会额外启动 Python/Math/Spark Workflow Engine 和 Jupyter。全量启动会启动 SuperMap Workflow Engine；单独验证超图算子时也可以通过 `-supermap-workflow` 显式启动。SuperMap Workflow Engine 依赖预先构建的 iObjects C++ 基础镜像和许可，`INTERNAL_API_KEY` 可用时会自动注册到 System。
 
 **执行步骤**:
 1. **Step 0**: Go 依赖检查(`go mod tidy`,可跳过)
@@ -155,7 +155,7 @@ bash scripts/dev/restart.sh -copilot
 bash scripts/dev/restart.sh -agent
 ```
 
-SuperMap Workflow 首次使用或升级私有组件时运行 `bash scripts/build/build-supermap-workflow-base.sh` 构建稳定基础镜像。之后 `restart.sh -supermap-workflow` 和 `restart.sh -all` 每次都会重新编译当前 Java 源码并替换 8103 容器，不需要 rebuild 开关，也不挂载宿主机源码或 SDK 目录。
+SuperMap Workflow 首次使用或升级 iObjects C++ SDK、许可时，通过 `SUPERMAP_CPP_SDK_PATH` 指向完整 SDK 母版并运行 `bash scripts/build/build-supermap-workflow-base.sh` 构建稳定基础镜像。之后 `restart.sh -supermap-workflow` 和 `restart.sh -all` 根据构建指纹决定是否重新编译当前 C++ 源码并替换 8103 容器，不需要 rebuild 开关，也不挂载宿主机源码或 SDK 目录。
 
 **使用场景**:
 - 修改代码后需要重启
@@ -217,7 +217,7 @@ bash scripts/dev/keepalive.sh restart -all
 ```
 基础设施(PostgreSQL, Redis, MinIO, Meilisearch)
   ↓
-System Backend (8180) - 配置中心,认证服务
+System Backend (8180) - IAM、模块目录与 System-owned 配置
   ↓
 Manager Backend (8081) + Meta Backend (8082) (并行启动)
   ↓
@@ -234,7 +234,7 @@ Gateway (8000) - API 路由
 
 **关键依赖**:
 - 所有后端服务依赖**基础设施**
-- Manager/Meta/Transfer 依赖 **System**(配置中心)
+- Manager/Meta/Transfer 通过 **System** 获取 AuthContext、Engine 和模块目录等 System-owned 事实；各模块普通运行配置不从 System 加载
 - Gateway 依赖**所有后端服务**
 - 前端服务依赖**对应后端服务**
 

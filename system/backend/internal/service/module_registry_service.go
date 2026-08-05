@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	commonconfiguration "github.com/addp/common/configuration"
 	"github.com/addp/common/logger"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
@@ -26,6 +27,9 @@ func (s *ModuleRegistryService) Register(req *models.ModuleRegistrationRequest) 
 	// 验证请求参数
 	if req.ModuleName == "" || req.ModuleURL == "" || req.RoutePrefix == "" {
 		return fmt.Errorf("module_name, module_url and route_prefix are required")
+	}
+	if err := commonconfiguration.ValidateManagementDeclaration(req.ModuleName, req.ConfigurationManagement); err != nil {
+		return err
 	}
 
 	// 调用repository注册模块
@@ -89,6 +93,41 @@ func (s *ModuleRegistryService) ListActiveModules() ([]*models.ModuleInfo, error
 	return result, nil
 }
 
+func (s *ModuleRegistryService) ListConfigurationManagementEntries(contextType string, permissions map[string]struct{}) ([]models.ConfigurationManagementEntryView, error) {
+	modules, err := s.repo.ListModules()
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]models.ConfigurationManagementEntryView, 0)
+	for index := range modules {
+		module := &modules[index]
+		if len(module.ConfigurationManagement) == 0 {
+			continue
+		}
+		var declaration commonconfiguration.ManagementDeclaration
+		if err := json.Unmarshal(module.ConfigurationManagement, &declaration); err != nil {
+			return nil, fmt.Errorf("decode configuration management declaration for %s: %w", module.ModuleName, err)
+		}
+		if err := commonconfiguration.ValidateManagementDeclaration(module.ModuleName, &declaration); err != nil {
+			return nil, err
+		}
+		for _, entry := range declaration.Entries {
+			if !commonconfiguration.EntryVisibleInContext(entry, contextType) {
+				continue
+			}
+			if _, allowed := permissions[entry.ReadPermission]; !allowed {
+				continue
+			}
+			entries = append(entries, models.ConfigurationManagementEntryView{
+				ManagementEntry: entry,
+				ModuleStatus:    module.Status,
+				Available:       module.Status == "up",
+			})
+		}
+	}
+	return entries, nil
+}
+
 // DeleteModule 删除模块注册
 func (s *ModuleRegistryService) DeleteModule(moduleName string) error {
 	if err := s.repo.DeleteModule(moduleName); err != nil {
@@ -126,17 +165,25 @@ func (s *ModuleRegistryService) convertToModuleInfo(module *models.ModuleRegistr
 	if module.Metadata != nil {
 		_ = json.Unmarshal(module.Metadata, &metadata)
 	}
+	var configurationManagement *commonconfiguration.ManagementDeclaration
+	if len(module.ConfigurationManagement) > 0 {
+		var declaration commonconfiguration.ManagementDeclaration
+		if json.Unmarshal(module.ConfigurationManagement, &declaration) == nil {
+			configurationManagement = &declaration
+		}
+	}
 
 	return &models.ModuleInfo{
-		ID:             module.ID,
-		ModuleName:     module.ModuleName,
-		ModuleURL:      module.ModuleURL,
-		RoutePrefix:    module.RoutePrefix,
-		HealthCheckURL: module.HealthCheckURL,
-		Status:         module.Status,
-		LastHeartbeat:  module.LastHeartbeat,
-		Metadata:       metadata,
-		CreatedAt:      module.CreatedAt,
-		UpdatedAt:      module.UpdatedAt,
+		ID:                      module.ID,
+		ModuleName:              module.ModuleName,
+		ModuleURL:               module.ModuleURL,
+		RoutePrefix:             module.RoutePrefix,
+		HealthCheckURL:          module.HealthCheckURL,
+		Status:                  module.Status,
+		LastHeartbeat:           module.LastHeartbeat,
+		Metadata:                metadata,
+		ConfigurationManagement: configurationManagement,
+		CreatedAt:               module.CreatedAt,
+		UpdatedAt:               module.UpdatedAt,
 	}
 }

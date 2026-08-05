@@ -282,6 +282,8 @@ definitions:
         type: boolean
       engine_id:
         type: integer
+      execution_contract:
+        $ref: '#/definitions/taskprovider.ExecutionContract'
       id:
         type: integer
       last_execution_id:
@@ -649,6 +651,21 @@ definitions:
       typeLabel:
         description: 类型的 i18n key，如 "engine.term.schema"（前端查 i18n 字典展示）
         type: string
+    type: object
+  taskprovider.ExecutionContract:
+    properties:
+      input_defaults:
+        additionalProperties: true
+        type: object
+      input_schema:
+        additionalProperties: true
+        type: object
+      input_ui_schema:
+        additionalProperties: true
+        type: object
+      output_schema:
+        additionalProperties: true
+        type: object
     type: object
 host: localhost:8082
 info:

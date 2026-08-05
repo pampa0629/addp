@@ -13,6 +13,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/taskprovider"
 	"github.com/addp/orchestrator/internal/models"
 	"github.com/addp/orchestrator/internal/repository"
 )
@@ -64,6 +65,9 @@ func (e *Executor) executeSync(ctx context.Context, executionID uint) error {
 	orch, err := e.orchRepo.GetByIDAndTenant(orchestrationID, uint(execution.TenantID))
 	if err != nil {
 		return err
+	}
+	if err := e.taskProviderRegistry.ValidateStepTaskReferences(ctx, uint(execution.TenantID), orch.Steps); err != nil {
+		return e.markFailed(ctx, executionID, fmt.Errorf("编排执行契约校验失败: %w", err))
 	}
 
 	// 标记开始
@@ -148,7 +152,22 @@ func (e *Executor) executeWithTaskProvider(ctx context.Context, step *models.Ste
 		result.Duration = time.Since(start).Milliseconds()
 		return result, fmt.Errorf("%s", result.Error)
 	}
-	if err := validateProviderStepExecutable(provider, step, resolvedParams); err != nil {
+	if err := validateProviderTaskCapability(provider, step); err != nil {
+		result.Status = "failed"
+		result.Error = err.Error()
+		result.EndedAt = time.Now()
+		result.Duration = time.Since(start).Milliseconds()
+		return result, fmt.Errorf("%s", result.Error)
+	}
+	contract, err := e.taskProviderRegistry.GetTaskExecutionContract(ctx, provider, step.TaskType, step.TaskID, uint(tenantID))
+	if err != nil {
+		result.Status = "failed"
+		result.Error = fmt.Sprintf("获取任务执行契约失败: %v", err)
+		result.EndedAt = time.Now()
+		result.Duration = time.Since(start).Milliseconds()
+		return result, fmt.Errorf("%s", result.Error)
+	}
+	if err := validateProviderStepExecutable(provider, step, contract, resolvedParams); err != nil {
 		result.Status = "failed"
 		result.Error = err.Error()
 		result.EndedAt = time.Now()
@@ -268,7 +287,7 @@ func (e *Executor) executeWithTaskProvider(ctx context.Context, step *models.Ste
 	return result, nil
 }
 
-func validateProviderStepExecutable(provider *commonModels.TaskProvider, step *models.Step, resolvedParams map[string]interface{}) error {
+func validateProviderTaskCapability(provider *commonModels.TaskProvider, step *models.Step) error {
 	taskTypeCapability, err := providerTaskCapability(provider, step.TaskType)
 	if err != nil {
 		return fmt.Errorf("provider %q capabilities invalid: %w", step.Provider, err)
@@ -279,9 +298,16 @@ func validateProviderStepExecutable(provider *commonModels.TaskProvider, step *m
 	if taskTypeCapability.Deprecated {
 		return fmt.Errorf("task_type %q of provider %q is deprecated", step.TaskType, step.Provider)
 	}
+	return nil
+}
+
+func validateProviderStepExecutable(provider *commonModels.TaskProvider, step *models.Step, contract *taskprovider.ExecutionContract, resolvedParams map[string]interface{}) error {
+	if err := validateProviderTaskCapability(provider, step); err != nil {
+		return err
+	}
 	stepForValidation := *step
 	stepForValidation.Parameters = resolvedParams
-	return validateStepParametersByExecutionSchema(stepForValidation, taskTypeCapability.ExecutionSchema, false)
+	return validateStepParametersByExecutionContract(stepForValidation, contract, false)
 }
 
 func extractProviderExecutionID(respData map[string]interface{}) string {
@@ -381,7 +407,7 @@ func replaceTaskProviderEndpoint(endpoint string, taskType string, taskID string
 	).Replace(endpoint)
 }
 
-// resolveTemplateReferences 解析参数中的模板引用（支持 {{stepID.field1.field2}} 语法）。
+// resolveTemplateReferences resolves declared stable outputs into this execution's parameters.
 func (e *Executor) resolveTemplateReferences(params map[string]interface{}, stepResults models.StepResults) (map[string]interface{}, error) {
 	resolved := make(map[string]interface{})
 
@@ -396,7 +422,7 @@ func (e *Executor) resolveTemplateReferences(params map[string]interface{}, step
 	return resolved, nil
 }
 
-// resolveValue 递归解析单个值（支持嵌套结构）
+// resolveValue recursively resolves output bindings in nested parameter structures.
 func (e *Executor) resolveValue(value interface{}, stepResults models.StepResults) (interface{}, error) {
 	switch v := value.(type) {
 	case string:
@@ -426,7 +452,7 @@ func (e *Executor) resolveValue(value interface{}, stepResults models.StepResult
 	}
 }
 
-// resolveStringTemplate 解析字符串模板（支持 {{stepID.field1.field2}} 格式）
+// resolveStringTemplate resolves the internal {{step_id.outputs.path}} serialization.
 func (e *Executor) resolveStringTemplate(template string, stepResults models.StepResults) (interface{}, error) {
 	trimmed := strings.TrimSpace(template)
 	if !strings.HasPrefix(trimmed, "{{") || !strings.HasSuffix(trimmed, "}}") {
@@ -435,18 +461,14 @@ func (e *Executor) resolveStringTemplate(template string, stepResults models.Ste
 
 	path := strings.TrimSpace(trimmed[2 : len(trimmed)-2])
 	parts := splitPath(path)
-	if len(parts) < 1 {
-		return nil, fmt.Errorf("template path is empty")
+	if len(parts) < 3 || parts[1] != "outputs" {
+		return nil, fmt.Errorf("template must reference a declared output as {{step_id.outputs.path}}")
 	}
 
 	stepID := parts[0]
 	result, exists := stepResults[stepID]
 	if !exists {
 		return nil, fmt.Errorf("referenced step %q has no result", stepID)
-	}
-
-	if len(parts) == 1 {
-		return result.Result, nil
 	}
 
 	var data interface{} = result.Result

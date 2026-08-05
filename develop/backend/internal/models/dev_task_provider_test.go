@@ -6,6 +6,7 @@ import (
 	"time"
 
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/taskprovider"
 )
 
 func TestProviderDevTaskUsesTaskTypeContract(t *testing.T) {
@@ -27,7 +28,7 @@ func TestProviderDevTaskUsesTaskTypeContract(t *testing.T) {
 		UpdatedAt: now,
 	}
 
-	providerTask := NewProviderDevTask(item)
+	providerTask := NewProviderDevTask(item, nil)
 	if providerTask.TaskType != "workflow" {
 		t.Fatalf("TaskType = %q, want workflow", providerTask.TaskType)
 	}
@@ -60,5 +61,34 @@ func TestProviderDevTaskUsesTaskTypeContract(t *testing.T) {
 	}
 	if _, ok := decoded["next_run_at"]; ok {
 		t.Fatalf("provider task JSON must not expose next_run_at while supports_schedule=false: %s", payload)
+	}
+}
+
+func TestDevTaskDetailSerializesExecutionContractOnlyWhenResolved(t *testing.T) {
+	item := DevTask{ID: 12, DevType: "workflow"}
+	payload, err := json.Marshal(item)
+	if err != nil {
+		t.Fatalf("marshal unresolved task: %v", err)
+	}
+	var unresolved map[string]interface{}
+	if err := json.Unmarshal(payload, &unresolved); err != nil {
+		t.Fatalf("unmarshal unresolved task: %v", err)
+	}
+	if _, exists := unresolved["execution_contract"]; exists {
+		t.Fatalf("unresolved task must omit execution_contract: %s", payload)
+	}
+
+	contract := taskprovider.EmptyExecutionContract()
+	item.ExecutionContract = &contract
+	payload, err = json.Marshal(item)
+	if err != nil {
+		t.Fatalf("marshal resolved task: %v", err)
+	}
+	var resolved map[string]interface{}
+	if err := json.Unmarshal(payload, &resolved); err != nil {
+		t.Fatalf("unmarshal resolved task: %v", err)
+	}
+	if _, exists := resolved["execution_contract"]; !exists {
+		t.Fatalf("resolved task must include execution_contract: %s", payload)
 	}
 }

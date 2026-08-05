@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	commonconfiguration "github.com/addp/common/configuration"
+
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/models"
@@ -690,25 +692,27 @@ func (c *SystemClient) CreateAuditLog(log *models.AuditLogCreateRequest) error {
 
 // ModuleRegistrationRequest 模块注册请求
 type ModuleRegistrationRequest struct {
-	ModuleName     string                 `json:"module_name"`
-	ModuleURL      string                 `json:"module_url"`
-	RoutePrefix    string                 `json:"route_prefix"`
-	HealthCheckURL string                 `json:"health_check_url,omitempty"`
-	Metadata       map[string]interface{} `json:"metadata,omitempty"`
+	ModuleName              string                                     `json:"module_name"`
+	ModuleURL               string                                     `json:"module_url"`
+	RoutePrefix             string                                     `json:"route_prefix"`
+	HealthCheckURL          string                                     `json:"health_check_url,omitempty"`
+	Metadata                map[string]interface{}                     `json:"metadata,omitempty"`
+	ConfigurationManagement *commonconfiguration.ManagementDeclaration `json:"configuration_management,omitempty"`
 }
 
 // ModuleInfo 模块信息
 type ModuleInfo struct {
-	ID             uint                   `json:"id"`
-	ModuleName     string                 `json:"module_name"`
-	ModuleURL      string                 `json:"module_url"`
-	RoutePrefix    string                 `json:"route_prefix"`
-	HealthCheckURL string                 `json:"health_check_url"`
-	Status         string                 `json:"status"`
-	LastHeartbeat  time.Time              `json:"last_heartbeat"`
-	Metadata       map[string]interface{} `json:"metadata"`
-	CreatedAt      time.Time              `json:"created_at"`
-	UpdatedAt      time.Time              `json:"updated_at"`
+	ID                      uint                                       `json:"id"`
+	ModuleName              string                                     `json:"module_name"`
+	ModuleURL               string                                     `json:"module_url"`
+	RoutePrefix             string                                     `json:"route_prefix"`
+	HealthCheckURL          string                                     `json:"health_check_url"`
+	Status                  string                                     `json:"status"`
+	LastHeartbeat           time.Time                                  `json:"last_heartbeat"`
+	Metadata                map[string]interface{}                     `json:"metadata"`
+	ConfigurationManagement *commonconfiguration.ManagementDeclaration `json:"configuration_management,omitempty"`
+	CreatedAt               time.Time                                  `json:"created_at"`
+	UpdatedAt               time.Time                                  `json:"updated_at"`
 }
 
 // RegisterModule 注册模块

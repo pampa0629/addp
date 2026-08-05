@@ -55,15 +55,12 @@ cd copilot/backend
 # 安装依赖
 pip install -r requirements.txt
 
-# 配置环境变量
-cp .env.example .env
-# 编辑 .env，配置数据库和 LLM API Key
-
-# 推荐通过项目脚本启动
+# 数据库和 LLM API Key 统一配置在仓库根目录 .env
 cd ../..
 bash scripts/dev/start.sh -copilot
 
 # 或在 copilot/backend 内本地调试
+cd copilot/backend
 PORT=8087 ./venv/bin/python main.py
 ```
 

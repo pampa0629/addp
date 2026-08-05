@@ -642,6 +642,7 @@ type OperatorDescriptor struct {
 
 type ParameterDescriptor struct {
 	Name        string                         `json:"name"`
+	DisplayName string                         `json:"display_name,omitempty"`
 	Type        string                         `json:"type"`
 	ParamType   string                         `json:"param_type,omitempty"`
 	Required    bool                           `json:"required"`

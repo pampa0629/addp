@@ -183,18 +183,25 @@ func (c *SystemServiceClient) RegisterAndHeartbeatWithMetadata(
 	moduleName, moduleURL, routePrefix string,
 	metadata map[string]interface{},
 ) {
+	c.RegisterAndHeartbeat(ctx, &ModuleRegistrationRequest{
+		ModuleName: moduleName, ModuleURL: moduleURL, RoutePrefix: routePrefix,
+		HealthCheckURL: moduleURL + "/health", Metadata: metadata,
+	})
+}
+
+func (c *SystemServiceClient) RegisterAndHeartbeat(ctx context.Context, request *ModuleRegistrationRequest) {
 	go func() {
-		registrationMetadata := map[string]interface{}{"module": moduleName}
-		for key, value := range metadata {
-			registrationMetadata[key] = value
+		if request == nil {
+			return
 		}
-		request := &ModuleRegistrationRequest{
-			ModuleName: moduleName, ModuleURL: moduleURL, RoutePrefix: routePrefix,
-			HealthCheckURL: moduleURL + "/health", Metadata: registrationMetadata,
+		registration := *request
+		registration.Metadata = map[string]interface{}{"module": registration.ModuleName}
+		for key, value := range request.Metadata {
+			registration.Metadata[key] = value
 		}
 		register := func() bool {
-			if err := c.RegisterModule(ctx, request); err != nil {
-				log.Printf("%s module registration failed: %v", moduleName, err)
+			if err := c.RegisterModule(ctx, &registration); err != nil {
+				log.Printf("%s module registration failed: %v", registration.ModuleName, err)
 				return false
 			}
 			return true
@@ -220,9 +227,9 @@ func (c *SystemServiceClient) RegisterAndHeartbeatWithMetadata(
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := c.SendModuleHeartbeat(ctx, moduleName); err != nil {
+				if err := c.SendModuleHeartbeat(ctx, registration.ModuleName); err != nil {
 					consecutiveFailures++
-					log.Printf("%s module heartbeat failed: %v", moduleName, err)
+					log.Printf("%s module heartbeat failed: %v", registration.ModuleName, err)
 				} else {
 					registered = true
 					consecutiveFailures = 0

@@ -532,6 +532,40 @@ func (h *OrchestrationHandler) ListTaskProviders(c *gin.Context) {
 	c.JSON(http.StatusOK, providers)
 }
 
+// GetTaskProviderTaskDetail 代理读取具体 TaskProvider 任务详情及其执行契约。
+// @Summary 获取具体 TaskProvider 任务详情 | Get concrete TaskProvider task detail
+// @Tags TaskProvider
+// @Produce json
+// @Param module_name path string true "任务提供者模块名 | Task provider module name"
+// @Param task_type path string true "任务类型 | Task type"
+// @Param id path int true "任务 ID | Task ID"
+// @Success 200 {object} map[string]interface{} "任务详情及 execution_contract | Task detail and execution_contract"
+// @Failure 400 {object} models.ErrorResponse "参数无效 | Invalid parameters"
+// @Failure 502 {object} models.ErrorResponse "任务提供者不可用 | Task provider unavailable"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["orchestrator.workflow.read"]
+// @Router /task-providers/{module_name}/tasks/{task_type}/{id} [get]
+// @Security BearerAuth
+func (h *OrchestrationHandler) GetTaskProviderTaskDetail(c *gin.Context) {
+	taskID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil || taskID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id"})
+		return
+	}
+	tenantID, ok := requireTenantID(c)
+	if !ok {
+		return
+	}
+	detail, err := h.taskProviderRegistry.GetTaskDetail(
+		c.Request.Context(), c.Param("module_name"), c.Param("task_type"), uint(taskID), tenantID,
+	)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, detail)
+}
+
 // ListModuleTasks 列出指定模块的任务（动态调用）
 // @Summary 列出模块任务 | List module tasks
 // @Description 动态调用目标模块任务列表接口并标准化返回格式；module_name=orchestrator 时返回本模块已保存的编排任务。| Proxy and normalize module task list; when module_name=orchestrator, return saved orchestration tasks.

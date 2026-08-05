@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestValidateExecutionParametersAcceptsV1SchemaSubset(t *testing.T) {
+func TestValidateExecutionParametersAcceptsContractSchemaSubset(t *testing.T) {
 	schema := executionParameterSchemaForTest()
 	parameters := map[string]interface{}{
 		"mode":   "deep",

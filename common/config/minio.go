@@ -16,8 +16,8 @@ func LoadBuiltinMinIOConfig() BuiltinMinIOConfig {
 	defaultEndpoint := fmt.Sprintf("localhost:%s", minioPort)
 	return BuiltinMinIOConfig{
 		Endpoint:  GetEnv("MINIO_ENDPOINT", defaultEndpoint),
-		AccessKey: GetEnv("MINIO_ROOT_USER", GetEnv("MINIO_ACCESS_KEY", "minioadmin")),
-		SecretKey: GetEnv("MINIO_ROOT_PASSWORD", GetEnv("MINIO_SECRET_KEY", "minioadmin")),
+		AccessKey: GetEnv("MINIO_ROOT_USER", "minioadmin"),
+		SecretKey: GetEnv("MINIO_ROOT_PASSWORD", "minioadmin"),
 		UseSSL:    GetEnvBool("MINIO_USE_SSL", false),
 	}
 }

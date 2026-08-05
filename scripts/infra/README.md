@@ -789,7 +789,7 @@ MINIO_CONSOLE_PORT=19011
 - [CLAUDE.md](../../CLAUDE.md) - 项目整体架构说明
 - [docker-compose.infra.yml](../../docker-compose.infra.yml) - 基础设施容器配置
 - [.env.example](../../.env.example) - 环境变量配置模板
-- [docs/spec/addp配置介绍.md](../../docs/spec/addp配置介绍.md) - 配置中心使用指南
+- [docs/spec/addp配置介绍.md](../../docs/spec/addp配置介绍.md) - 配置分层与管理能力规范
 - [scripts/infra/README.md](README.md) - 基础设施启动、检测和排障说明
 
 ## 更新日志

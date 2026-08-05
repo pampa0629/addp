@@ -139,6 +139,7 @@
       }
     },
     "groups": {
+	  "configuration": "Configuration",
       "dataPrepare": "Data Preparation",
       "dataGovern": "Data Governance",
       "devMonitor": "Dev & Monitor",
@@ -149,6 +150,24 @@
       "apiDocs": "API Docs",
       "system": "System"
     },
+	"configuration": {
+	  "title": "Configuration",
+	  "platformContext": "Platform configuration",
+	  "tenantContext": "Tenant configuration",
+	  "owner": "Owner module",
+	  "entry": "Entry",
+	  "scope": "Scope",
+	  "status": "Status",
+	  "available": "Available",
+	  "unavailable": "Module unavailable",
+	  "empty": "No configuration is available in the current context",
+	  "loadFailed": "Failed to load configuration entries",
+	  "scopes": {
+		"platform_only": "Platform",
+		"platform_default_with_tenant_override": "Platform default and tenant override",
+		"tenant_only": "Tenant"
+	  }
+	},
     "modules": {
       "portal": {
         "label": "Data Portal",

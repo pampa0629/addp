@@ -136,9 +136,9 @@ func conversionAdapterSpec(
 		sourceUI["data_types"] = sourceDataTypes
 	}
 	public := []commonModels.ParameterDescriptor{
-		resourcePickerParameter("数据源", "选择已有的"+sourceLabel+"数据项。", nil, sourceUI),
+		resourcePickerParameter("source_resource", "数据源", "选择已有的"+sourceLabel+"数据项。", nil, sourceUI),
 		resourceIdentityParameter("locator", "源数据项 ResourceLocator"),
-		resourcePickerParameter("输出位置", "选择业务存储中的目标目录、Bucket 或 Prefix。", nil, map[string]interface{}{
+		resourcePickerParameter("target_resource", "输出位置", "选择业务存储中的目标目录、Bucket 或 Prefix。", nil, map[string]interface{}{
 			"api_base_url":                 "/api/v1/meta",
 			"engine_families":              []string{"file", "object"},
 			"selectable_parent_node_types": []string{"root", "directory", "dir", "bucket", "prefix"},
@@ -177,6 +177,7 @@ func workflowSuperMapOpenPostgisAdapterSpec() workflowOperatorAdapterSpec {
 		OperatorID: "datasource.open_postgis",
 		PublicParameters: []commonModels.ParameterDescriptor{
 			resourcePickerParameter(
+				"source_resource",
 				"数据源",
 				"选择已有 PostGIS 空间表。",
 				nil,
@@ -197,6 +198,7 @@ func workflowSuperMapOpenPostgisAdapterSpec() workflowOperatorAdapterSpec {
 			),
 			resourceIdentityParameter("locator", "源表 ResourceLocator"),
 			resourcePickerParameter(
+				"target_resource",
 				"输出位置",
 				"选择已注册为 SuperMap SDX+ 的 PostGIS Schema 或数据库。",
 				map[string]interface{}{"read_only": false},
@@ -237,6 +239,7 @@ func workflowSuperMapCreateUdbxAdapterSpec() workflowOperatorAdapterSpec {
 		OperatorID: "datasource.create",
 		PublicParameters: []commonModels.ParameterDescriptor{
 			resourcePickerParameter(
+				"target_resource",
 				"UDBX 保存目录",
 				"选择 NFS 目录保存 UDBX 成果文件。",
 				nil,
@@ -269,6 +272,7 @@ func workflowPythonSaveAdapterSpec() workflowOperatorAdapterSpec {
 		OperatorID: "save",
 		PublicParameters: []commonModels.ParameterDescriptor{
 			resourcePickerParameter(
+				"target_resource",
 				"保存目标",
 				"选择目标 Schema、数据库、目录、Bucket 或 Prefix。",
 				nil,
@@ -300,6 +304,7 @@ func workflowPythonLoadAdapterSpec() workflowOperatorAdapterSpec {
 		OperatorID: "load",
 		PublicParameters: []commonModels.ParameterDescriptor{
 			resourcePickerParameter(
+				"source_resource",
 				"数据源",
 				"选择已有数据库表、文件或对象。",
 				nil,
@@ -329,13 +334,14 @@ func workflowLoadAdapterSpec(operatorID string) workflowOperatorAdapterSpec {
 		OperatorID: operatorID,
 		PublicParameters: []commonModels.ParameterDescriptor{
 			resourcePickerParameter(
+				"source_resource",
 				"数据源",
-				"选择已有数据库表。",
-				map[string]interface{}{"source_type": "table"},
+				"选择已有数据库表、文件或对象。",
+				nil,
 				map[string]interface{}{
 					"api_base_url":              "/api/v1/meta",
-					"engine_families":           []string{"tabular", "dynamic_schema"},
-					"selectable_node_types":     []string{"table", "collection"},
+					"engine_families":           []string{"tabular", "dynamic_schema", "file", "object"},
+					"selectable_node_types":     []string{"table", "collection", "file", "object"},
 					"enable_geometry_detection": true,
 					"require_geometry":          false,
 					"resource_binding": map[string]interface{}{
@@ -343,25 +349,7 @@ func workflowLoadAdapterSpec(operatorID string) workflowOperatorAdapterSpec {
 						"locator_param": "locator",
 						"type_param":    "source_type",
 						"type_values": map[string]interface{}{
-							"table": "table", "collection": "table",
-						},
-					},
-				},
-			),
-			resourcePickerParameter(
-				"文件",
-				"选择已有文件或对象。",
-				map[string]interface{}{"source_type": "file"},
-				map[string]interface{}{
-					"api_base_url":          "/api/v1/meta",
-					"engine_families":       []string{"file", "object"},
-					"selectable_node_types": []string{"file", "object"},
-					"resource_binding": map[string]interface{}{
-						"mode":          "existing",
-						"locator_param": "locator",
-						"type_param":    "source_type",
-						"type_values": map[string]interface{}{
-							"file": "file", "object": "file",
+							"table": "table", "collection": "table", "file": "file", "object": "file",
 						},
 					},
 				},
@@ -380,13 +368,14 @@ func workflowSaveAdapterSpec(operatorID string) workflowOperatorAdapterSpec {
 		OperatorID: operatorID,
 		PublicParameters: []commonModels.ParameterDescriptor{
 			resourcePickerParameter(
+				"target_resource",
 				"保存目标",
-				"选择目标 Schema 或数据库。",
-				map[string]interface{}{"target_type": "table"},
+				"选择目标 Schema、数据库、目录、Bucket 或 Prefix。",
+				nil,
 				map[string]interface{}{
 					"api_base_url":                 "/api/v1/meta",
-					"engine_families":              []string{"tabular", "dynamic_schema"},
-					"selectable_parent_node_types": []string{"schema", "database"},
+					"engine_families":              []string{"tabular", "dynamic_schema", "file", "object"},
+					"selectable_parent_node_types": []string{"schema", "database", "root", "directory", "dir", "bucket", "prefix"},
 					"allow_create_table":           true,
 					"resource_binding": map[string]interface{}{
 						"mode":                 "target",
@@ -394,27 +383,7 @@ func workflowSaveAdapterSpec(operatorID string) workflowOperatorAdapterSpec {
 						"name_param":           "target_name",
 						"type_param":           "target_type",
 						"type_values": map[string]interface{}{
-							"schema": "table", "database": "table",
-						},
-						"default_params": map[string]interface{}{"mode": "overwrite"},
-					},
-				},
-			),
-			resourcePickerParameter(
-				"文件目标",
-				"选择目标目录、Bucket 或 Prefix。",
-				map[string]interface{}{"target_type": "file"},
-				map[string]interface{}{
-					"api_base_url":                 "/api/v1/meta",
-					"engine_families":              []string{"file", "object"},
-					"selectable_parent_node_types": []string{"root", "directory", "dir", "bucket", "prefix"},
-					"resource_binding": map[string]interface{}{
-						"mode":                 "target",
-						"parent_locator_param": "target_parent_locator",
-						"name_param":           "target_name",
-						"type_param":           "target_type",
-						"type_values": map[string]interface{}{
-							"root": "file", "directory": "file", "dir": "file", "bucket": "file", "prefix": "file",
+							"schema": "table", "database": "table", "root": "file", "directory": "file", "dir": "file", "bucket": "file", "prefix": "file",
 						},
 						"default_params": map[string]interface{}{"mode": "overwrite"},
 					},
@@ -431,9 +400,10 @@ func workflowSaveAdapterSpec(operatorID string) workflowOperatorAdapterSpec {
 	}
 }
 
-func resourcePickerParameter(name, description string, showWhen map[string]interface{}, uiConfig map[string]interface{}) commonModels.ParameterDescriptor {
+func resourcePickerParameter(name, displayName, description string, showWhen map[string]interface{}, uiConfig map[string]interface{}) commonModels.ParameterDescriptor {
 	return commonModels.ParameterDescriptor{
 		Name:        name,
+		DisplayName: displayName,
 		Type:        "ui",
 		ParamType:   "ui",
 		Description: description,

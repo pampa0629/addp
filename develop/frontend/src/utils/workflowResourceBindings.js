@@ -41,18 +41,6 @@ export function resourceBindingGeometryColumnParam(parameter) {
   return getResourceBinding(parameter)?.geometry_column_param || ''
 }
 
-export function geometryColumnFactsFromSelection(selection) {
-  const spatial = selection?.raw?.node?.metadata?.capabilities?.spatial || {}
-  const columns = (spatial.geometry_columns || [])
-    .map(column => typeof column === 'string' ? column : column?.name)
-    .filter(Boolean)
-  const uniqueColumns = [...new Set(columns)]
-  return {
-    columns: uniqueColumns,
-    selected: uniqueColumns[0] || ''
-  }
-}
-
 export function resourceBindingInitialLocator(parameter, formData) {
   const binding = getResourceBinding(parameter)
   if (!binding) return ''

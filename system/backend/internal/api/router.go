@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -40,7 +41,14 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		logger.L().Warn("Redis 未配置，资源变更事件通知功能将被禁用")
 	}
 
-	runtime, err := NewIAMRuntime(db, cfg)
+	securityPolicyService := iam.NewSecurityPolicyService(iam.NewRepository(db))
+	securityPolicyContext, cancelSecurityPolicy := context.WithTimeout(context.Background(), 10*time.Second)
+	securityPolicy, err := securityPolicyService.LoadAndMarkApplied(securityPolicyContext)
+	cancelSecurityPolicy()
+	if err != nil {
+		panic(fmt.Errorf("加载 IAM 安全策略失败: %w", err))
+	}
+	runtime, err := NewIAMRuntime(db, cfg, *securityPolicy)
 	if err != nil {
 		panic(fmt.Errorf("装配目标 IAM Runtime 失败: %w", err))
 	}
@@ -103,7 +111,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	api := router.Group("/api/v1/system")
-	if err := RegisterIAMRoutes(api, runtime, redisClient, cfg); err != nil {
+	if err := RegisterIAMRoutes(api, runtime, redisClient); err != nil {
 		panic(fmt.Errorf("注册 IAM 路由失败: %w", err))
 	}
 	if err := RegisterIAMManagementRoutes(api, runtime); err != nil {
@@ -127,12 +135,13 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	); err != nil {
 		panic(fmt.Errorf("注册 IAM Service Runtime 路由失败: %w", err))
 	}
+	configurationManagement := api.Group("/configuration-management")
+	configurationManagement.Use(runtime.Authentication, runtime.UserAccessCredential)
+	configurationManagement.GET("/entries", NewModuleRegistryHandler(moduleRegistryService).ListConfigurationManagementEntries)
 
 	internal := router.Group("/api/v1/internal")
 	internal.Use(middleware.InternalAPIMiddleware(cfg))
 	{
-		internal.GET("/config", NewConfigHandler(cfg).GetSharedConfig)
-
 		engineHandler := NewEngineHandler(engineService)
 		internal.GET("/engines", engineHandler.ListInternal)
 		internal.GET("/engines/:id", engineHandler.GetByIDInternal)

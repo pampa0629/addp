@@ -98,7 +98,7 @@ curl -X POST http://localhost:8086/api/service/registry/services/:id/health \
 
 - **[CLAUDE.md](./CLAUDE.md)** - 完整技术文档（架构、开发工作流、场景示例）
 - **[../docs/spec/addp技术栈规约.md](../docs/spec/addp技术栈规约.md)** - 技术栈和依赖版本
-- **[../docs/spec/addp配置介绍.md](../docs/spec/addp配置介绍.md)** - 配置中心说明
+- **[../docs/spec/addp配置介绍.md](../docs/spec/addp配置介绍.md)** - 配置分层与管理能力规范
 - **[system/CLAUDE.md](../system/CLAUDE.md)** - System 模块（获取数据库连接信息）
 
 ---

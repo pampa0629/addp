@@ -80,7 +80,7 @@ func TestTaskProviderRegistryRegistersStandardDevelopContract(t *testing.T) {
 	}
 
 	caps := decodeCapabilitiesForTest(t, payload.Capabilities)
-	if caps["schema_version"] != "task.capabilities/v1" {
+	if caps["schema_version"] != "task.capabilities/v2" {
 		t.Fatalf("schema_version = %v", caps["schema_version"])
 	}
 	taskCapabilities, ok := caps["task_capabilities"].([]interface{})
@@ -116,8 +116,8 @@ func TestTaskProviderRegistryRegistersStandardDevelopContract(t *testing.T) {
 		if !isObjectSchema(taskType["definition_schema"]) {
 			t.Fatalf("%s definition_schema must be object schema", typeName)
 		}
-		if !isObjectSchema(taskType["execution_schema"]) {
-			t.Fatalf("%s execution_schema must be object schema", typeName)
+		if _, exists := taskType["execution_schema"]; exists {
+			t.Fatalf("%s execution_schema must be task-specific and absent from capabilities", typeName)
 		}
 	}
 	for typeName := range expectedURLs {

@@ -73,6 +73,12 @@ NFS 正式调用时，`connection_info.engine_type` 必须为 `nfs`，`path` 必
 
 SuperMap Workflow 只保留一条本地开发路线：稳定基础镜像承载完整 C++ SDK 和系统依赖，代码镜像在构建阶段编译 ADDP C++ 源码。不得恢复 Java/GPA 回退、胖镜像/瘦镜像判断、源码 bind mount、运行时编译或 `SUPERMAP_WORKFLOW_REBUILD` 等并行路径。
 
+### 许可边界
+
+当前开发与验证环境接受 `supermap_any_2026.lic12` 试用许可。该许可可被 iObjects C++ Runtime 正常识别，CAD、二维空间分析和 OSGB Scene 转 S3M 均可执行；CAD 地图渲染出现 `SuperMap Trial Use` 水印属于预期行为，不视为运行异常，也不增加正式许可与试用许可双轨判断。
+
+Runtime 启动时会验证 iObjects C++ Core 许可可用，`/health` 只表达当前许可足以启动和执行已验证算子，不承诺无试用水印。现有试用许可有效期截至 2026-12-31；到期前应更新 `vendor/license` 中的受控许可并重建完整基础镜像，不能只替换已经构建完成的代码镜像。
+
 本地目录固定为：
 
 ```text

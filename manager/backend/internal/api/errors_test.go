@@ -67,6 +67,9 @@ func TestManagerErrorMessagesRegistered(t *testing.T) {
 		manageri18n.MsgDeleteModel3DTilesFailed,
 		manageri18n.MsgModel3DTilesResultDeleted,
 		manageri18n.MsgExistingResultActionRequired,
+		manageri18n.MsgEmbeddingConfigurationLoadFailed,
+		manageri18n.MsgEmbeddingConfigurationUpdateFailed,
+		manageri18n.MsgEmbeddingConfigurationVersionConflict,
 	}
 
 	for _, messageID := range messageIDs {

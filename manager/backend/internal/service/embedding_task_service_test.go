@@ -10,7 +10,6 @@ import (
 
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 	"gorm.io/driver/sqlite"
@@ -21,13 +20,14 @@ func TestEmbeddingTaskExecuteReusesSingleExecution(t *testing.T) {
 	db := newEmbeddingTaskServiceTestDB(t)
 	embeddingRepo := repository.NewEmbeddingRepository(db)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	provider := testEmbeddingConfigurationProvider("qwen3-vl-embedding", 2560, 10)
 	embeddingSvc := &EmbeddingService{
-		vectorRepo:   embeddingRepo,
-		taskExecRepo: taskExecRepo,
-		cfg:          &config.Config{},
-		log:          slog.New(slog.NewTextHandler(os.Stdout, nil)),
+		vectorRepo:            embeddingRepo,
+		taskExecRepo:          taskExecRepo,
+		configurationProvider: provider,
+		log:                   slog.New(slog.NewTextHandler(os.Stdout, nil)),
 	}
-	taskSvc := NewEmbeddingTaskService(embeddingRepo, embeddingSvc, taskExecRepo, nil)
+	taskSvc := NewEmbeddingTaskService(embeddingRepo, embeddingSvc, taskExecRepo, provider)
 
 	task := &models.EmbeddingTask{
 		TenantID: 7,
@@ -184,10 +184,8 @@ func TestEmbeddingTaskSchedulerRecordsFailedExecutionForOutdatedEmbeddingConfig(
 	db := newEmbeddingTaskServiceTestDB(t)
 	embeddingRepo := repository.NewEmbeddingRepository(db)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
-	cfg := &config.Config{}
-	cfg.EmbeddingService.Models = map[string]string{"text": "current-model"}
-	cfg.VectorConfig.Dimension = 768
-	taskSvc := NewEmbeddingTaskService(embeddingRepo, nil, taskExecRepo, cfg)
+	provider := testEmbeddingConfigurationProvider("current-model", 768, 10)
+	taskSvc := NewEmbeddingTaskService(embeddingRepo, nil, taskExecRepo, provider)
 	scheduler := NewEmbeddingTaskScheduler(taskSvc)
 
 	task := newEmbeddingTaskDefinition()
@@ -236,10 +234,8 @@ func TestEmbeddingTaskSchedulerRecordsFailedExecutionForOutdatedEmbeddingConfig(
 func TestEmbeddingTaskDefinitionRequiresCurrentEmbeddingConfig(t *testing.T) {
 	db := newEmbeddingTaskServiceTestDB(t)
 	embeddingRepo := repository.NewEmbeddingRepository(db)
-	cfg := &config.Config{}
-	cfg.EmbeddingService.Models = map[string]string{"text": "current-model"}
-	cfg.VectorConfig.Dimension = 768
-	taskSvc := NewEmbeddingTaskService(embeddingRepo, nil, nil, cfg)
+	provider := testEmbeddingConfigurationProvider("current-model", 768, 10)
+	taskSvc := NewEmbeddingTaskService(embeddingRepo, nil, nil, provider)
 
 	task := newEmbeddingTaskDefinition()
 	task.Config["embedding"] = commonModels.JSONMap{
@@ -276,11 +272,8 @@ func TestEmbeddingTaskDefinitionRequiresCurrentEmbeddingConfig(t *testing.T) {
 func TestEmbeddingTaskDefinitionSupportsItemScope(t *testing.T) {
 	db := newEmbeddingTaskServiceTestDB(t)
 	embeddingRepo := repository.NewEmbeddingRepository(db)
-	cfg := &config.Config{}
-	cfg.EmbeddingService.Models = map[string]string{"text": "qwen3-vl-embedding"}
-	cfg.VectorConfig.Dimension = 2560
-	cfg.VectorConfig.MaxFileSizeMB = 10
-	taskSvc := NewEmbeddingTaskService(embeddingRepo, nil, nil, cfg)
+	provider := testEmbeddingConfigurationProvider("qwen3-vl-embedding", 2560, 10)
+	taskSvc := NewEmbeddingTaskService(embeddingRepo, nil, nil, provider)
 
 	task := &models.EmbeddingTask{
 		TenantID: 7,
@@ -446,4 +439,16 @@ func waitForEmbeddingTaskExecution(t *testing.T, repo *commonExecution.TaskExecu
 	}
 	t.Fatalf("execution status still %s after wait", exec.Status)
 	return nil
+}
+
+func testEmbeddingConfigurationProvider(model string, dimension, maxFileSizeMB int) *EmbeddingConfigurationProvider {
+	return NewEmbeddingConfigurationProvider(EffectiveEmbeddingConfiguration{
+		BaseURL:          "http://embedding.test",
+		Model:            model,
+		Timeout:          15 * time.Second,
+		Dimension:        dimension,
+		MaxDistance:      0.78,
+		MaxFileSizeMB:    maxFileSizeMB,
+		BatchConcurrency: 1,
+	})
 }

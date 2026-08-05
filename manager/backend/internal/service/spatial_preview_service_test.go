@@ -6,7 +6,7 @@ import (
 )
 
 func TestSpatialPreviewInvalidatesTileCacheRuntimeCacheByResultID(t *testing.T) {
-	svc := NewSpatialPreviewService(nil)
+	svc := NewSpatialPreviewService(nil, nil)
 	tenantID := uint(1)
 	targetKey := svc.buildCacheKey(tenantID, "vector_tile_cache:2", 6, 51, 27)
 	otherResultKey := svc.buildCacheKey(tenantID, "vector_tile_cache:3", 6, 51, 27)

@@ -49,7 +49,7 @@ Orchestrator 是 `orchestrator.workflow.*` 的 Permission owner；定义只存�
 
 - 编排步骤必须形成 DAG，执行前要校验循环依赖。
 - 新编排优先使用 System 注册的 TaskProvider 能力，避免硬编码模块 URL。
-- 参数模板只能引用前序依赖步骤的输出，相关说明见 `orchestrator/docs/参数化模板说明.md`。
+- 上游输出绑定只能从直接依赖步骤声明的稳定输出中选择，相关说明见 `orchestrator/docs/参数化模板说明.md`。
 - Orchestrator 只负责调度和状态聚合，不在本模块实现 Meta 扫描、Transfer 传输或 Manager 瓦片生成的业务细节。
 - 编排定义和执行记录是租户资源。HTTP Handler 只能使用 System AuthContext 中的非零 `tenant_id`，Repository 的 Get/Update/Delete 和 Execution 查询必须带租户条件；Platform Context、Service Bearer 缺少 Tenant Context 或其他缺失 Tenant 的调用不得回退到租户 1、query 参数或全租户访问。
 - 修改 API 后同步 Swagger：`bash scripts/swagger/gen-swagger.sh orchestrator` 和 `bash scripts/swagger/check-route-coverage.sh orchestrator`。

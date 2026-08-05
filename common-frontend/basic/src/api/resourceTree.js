@@ -1,6 +1,5 @@
 import axios from 'axios'
 import { getAccessToken } from '../auth/authSession.js'
-import { parseLocator } from '../types/resourceLocator.js'
 import { getEngineFamily } from '../utils/engineDisplay.js'
 
 const createAuthenticatedAxios = () => {
@@ -76,38 +75,4 @@ export async function refreshResourceTreeNode(apiBaseUrl, engineId, locator) {
     params: { locator }
   })
   return unwrap(response)
-}
-
-export function selectionFromResourceTreeNode(node, engine = null) {
-  if (!node?.locator) {
-    return null
-  }
-  const parsed = parseLocator(node.locator)
-  const metadata = node.metadata || {}
-  return {
-    identity: {
-      locator: node.locator,
-      engine_id: parsed.engineId,
-      node_id: parsed.nodeId || metadata.node_id,
-      item_id: parsed.itemId || metadata.item_id
-    },
-    display: {
-      label: node.label,
-      path: parsed.path.join(' / '),
-      type: node.type,
-      engine_name: engine?.name || metadata.engine_name,
-      engine_type: engine?.engine_type || metadata.engine_type
-    },
-    resource: {
-      kind: parsed.itemId ? 'item' : 'node',
-      type: node.type,
-      data_type: metadata.data_type,
-      format: metadata.format,
-      representation: metadata.representation
-    },
-    raw: {
-      engine,
-      node
-    }
-  }
 }

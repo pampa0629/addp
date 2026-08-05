@@ -289,9 +289,9 @@ if [ "$FAILED" -eq 0 ]; then
     echo -e "${GREEN}✓ All images loaded successfully!${NC}"
     echo ""
     echo -e "${YELLOW}Next steps:${NC}"
-    echo "1. Configure environment: cp .env.example .env.prod && vim .env.prod"
+    echo "1. Configure environment: bash scripts/prod/setup-env.sh && vim .env"
     echo "2. Start infrastructure: bash scripts/infra/up.sh"
-    echo "3. Start services: docker compose -f docker-compose.yml --env-file .env.prod up -d"
+    echo "3. Start services: docker compose -f docker-compose.yml --env-file .env up -d"
     exit 0
 else
     echo -e "${RED}✗ Some images failed to load${NC}"
@@ -401,15 +401,10 @@ Failed: 0
 ### 3. Configure Environment
 
 ```bash
-cp .env.example .env.prod
-vim .env.prod
+bash scripts/prod/setup-env.sh
+vim .env
 
-# MUST configure:
-# - JWT_SECRET (generate with: openssl rand -base64 32)
-# - ENCRYPTION_KEY (generate with: openssl rand -base64 32)
-# - POSTGRES_PASSWORD
-# - REDIS_PASSWORD
-# - MINIO_ROOT_PASSWORD
+# Review public URLs, trusted proxies and Business Engine connection settings.
 ```
 
 ### 4. Start Infrastructure
@@ -425,7 +420,7 @@ bash scripts/infra/up.sh
 
 ```bash
 # Start all ADDP services
-docker compose -f docker-compose.yml --env-file .env.prod up -d
+docker compose -f docker-compose.yml --env-file .env up -d
 ```
 
 ### 6. Verify Deployment
@@ -505,7 +500,7 @@ docker compose -f docker-compose.yml down
 ./load-images.sh
 
 # 4. Restart services
-docker compose -f docker-compose.yml --env-file .env.prod up -d
+docker compose -f docker-compose.yml --env-file .env up -d
 ```
 
 ## Architecture
@@ -574,15 +569,10 @@ scp addp-deploy-registry-*.tar.gz user@server:~/
 
 \`\`\`bash
 cd ~/addp-deploy
-cp .env.example .env.prod
-vim .env.prod
+bash scripts/prod/setup-env.sh
+vim .env
 
-# MUST configure:
-# - JWT_SECRET
-# - ENCRYPTION_KEY
-# - POSTGRES_PASSWORD
-# - REDIS_PASSWORD
-# - MINIO_ROOT_PASSWORD
+# Review public URLs, trusted proxies and Business Engine connection settings.
 \`\`\`
 
 ### 3. Configure Registry Access (If Private)
@@ -613,7 +603,7 @@ docker compose -f docker-compose.yml pull
 bash scripts/infra/up.sh
 
 # Start application services
-docker compose -f docker-compose.yml --env-file .env.prod up -d
+docker compose -f docker-compose.yml --env-file .env up -d
 \`\`\`
 
 ### 6. Verify Deployment
@@ -771,7 +761,7 @@ transfer_to_server() {
     else
         echo "3. Pull images: docker compose -f docker-compose.yml pull"
     fi
-    echo "5. Start services: docker compose -f docker-compose.yml --env-file .env.prod up -d"
+    echo "5. Start services: docker compose -f docker-compose.yml --env-file .env up -d"
 }
 
 # Main execution

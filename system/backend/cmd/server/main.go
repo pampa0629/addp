@@ -9,10 +9,12 @@ import (
 	"time"
 
 	commonConfig "github.com/addp/common/config"
+	commonconfiguration "github.com/addp/common/configuration"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/utils"
 	"github.com/addp/system/internal/api"
+	systemauthorization "github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/migration"
@@ -175,6 +177,16 @@ func main() {
 			HealthCheckURL: serviceURL + "/health",
 			Metadata: map[string]interface{}{
 				"module": "system",
+			},
+			ConfigurationManagement: &commonconfiguration.ManagementDeclaration{
+				SchemaVersion: commonconfiguration.ManagementSchemaVersion,
+				Entries: []commonconfiguration.ManagementEntry{{
+					ID: "system.iam_security_policy", OwnerModule: "system",
+					ScopeTypes:       []string{commonconfiguration.ScopePlatformOnly},
+					FrontendRoute:    "/system/settings/security-policy",
+					ReadPermission:   systemauthorization.PermissionIamSecurityPolicyRead,
+					UpdatePermission: systemauthorization.PermissionIamSecurityPolicyUpdate,
+				}},
 			},
 		}
 

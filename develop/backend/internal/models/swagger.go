@@ -1,5 +1,10 @@
 package models
 
+import (
+	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/taskprovider"
+)
+
 // ErrorResponse 错误响应
 type ErrorResponse struct {
 	Code    int    `json:"code" example:"400"`
@@ -162,10 +167,17 @@ type DevTaskSwagger struct {
 	LastRunAt           string                        `json:"last_run_at,omitempty" example:"2026-06-24T12:00:00Z"`
 }
 
+// DevTaskDetailSwagger 开发任务详情，包含本次执行可覆盖的任务级参数契约。
+type DevTaskDetailSwagger struct {
+	DevTaskSwagger
+	ExecutionContract taskprovider.ExecutionContract `json:"execution_contract"`
+}
+
 // ProviderDevTaskSwagger TaskProvider 标准开发任务 Swagger 响应摘要。
 type ProviderDevTaskSwagger struct {
 	DevTaskSwagger
-	TaskType string `json:"task_type" enums:"query,workflow,script" example:"workflow"`
+	TaskType          string                         `json:"task_type" enums:"query,workflow,script" example:"workflow"`
+	ExecutionContract taskprovider.ExecutionContract `json:"execution_contract"`
 }
 
 // ListDevTasksSwaggerResponse 开发任务列表 Swagger 响应。
@@ -240,7 +252,8 @@ type TaskExecutionSwagger struct {
 // ExecutionWithDevTaskSwagger 执行记录和开发任务关联 Swagger 响应。
 type ExecutionWithDevTaskSwagger struct {
 	TaskExecutionSwagger
-	DevTask *DevTaskSwagger `json:"dev_task,omitempty"`
+	DevTask *DevTaskSwagger      `json:"dev_task,omitempty"`
+	Outputs commonModels.JSONMap `json:"outputs,omitempty"`
 }
 
 // ListExecutionsSwaggerResponse 执行列表 Swagger 响应。

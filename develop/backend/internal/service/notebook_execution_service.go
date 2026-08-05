@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"time"
 
+	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/logger"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/minio/minio-go/v7"
@@ -28,26 +28,12 @@ func NewNotebookExecutionService(jupyterService *JupyterService) (*NotebookExecu
 	if jupyterService == nil {
 		return nil, fmt.Errorf("Jupyter service is required")
 	}
-	// 从环境变量读取 MinIO 配置
-	minioEndpoint := os.Getenv("MINIO_ENDPOINT")
-	if minioEndpoint == "" {
-		minioEndpoint = "localhost:19000" // 默认值
-	}
-
-	minioAccessKey := os.Getenv("MINIO_ROOT_USER")
-	if minioAccessKey == "" {
-		minioAccessKey = "minioadmin"
-	}
-
-	minioSecretKey := os.Getenv("MINIO_ROOT_PASSWORD")
-	if minioSecretKey == "" {
-		minioSecretKey = "minioadmin"
-	}
+	minioCfg := commonConfig.LoadBuiltinMinIOConfig()
 
 	// 初始化 MinIO 客户端
-	minioClient, err := minio.New(minioEndpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(minioAccessKey, minioSecretKey, ""),
-		Secure: false, // 开发环境不使用 SSL
+	minioClient, err := minio.New(minioCfg.Endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(minioCfg.AccessKey, minioCfg.SecretKey, ""),
+		Secure: minioCfg.UseSSL,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize MinIO client: %w", err)

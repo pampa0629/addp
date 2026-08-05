@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"net/mail"
 	"net/url"
 	"os"
@@ -11,7 +10,6 @@ import (
 	"time"
 
 	commonConfig "github.com/addp/common/config"
-	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -63,11 +61,6 @@ type Config struct {
 
 // LoadConfig 加载配置
 func LoadConfig() (*Config, error) {
-	// 加载 .env 文件（从项目根目录）
-	if err := godotenv.Load("../../.env"); err != nil {
-		log.Printf("Warning: .env file not found: %v", err)
-	}
-
 	// Redis DB 转换
 	redisDB := 0
 	if redisDBStr := os.Getenv("REDIS_DB"); redisDBStr != "" {

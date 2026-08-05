@@ -85,10 +85,6 @@ func TestValidatePermissionManifestRejectsInvalidContracts(t *testing.T) {
 		{name: "risk", mutate: func(m *PermissionManifest) { m.Permissions[0].RiskLevel = "severe" }},
 		{name: "status", mutate: func(m *PermissionManifest) { m.Permissions[0].Status = "removed" }},
 		{name: "scopes", mutate: func(m *PermissionManifest) { m.Permissions[0].AllowedScopeTypes = []string{"department", "tenant"} }},
-		{name: "platform scope", mutate: func(m *PermissionManifest) {
-			m.Permissions[0].AllowedScopeTypes = []string{"platform"}
-			m.Permissions[0].TenantCustomizable = false
-		}},
 		{name: "customizable", mutate: func(m *PermissionManifest) {
 			m.Permissions[0].AllowedScopeTypes = []string{"platform"}
 			m.OwnerModule = "system"

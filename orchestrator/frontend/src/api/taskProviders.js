@@ -15,12 +15,16 @@ export default {
    *     module_name: "meta",
    *     display_name: "元数据",
    *     base_url: "http://localhost:8082",
-   *     capabilities: {"schema_version":"task.capabilities/v1","task_capabilities":[]}
+   *     capabilities: {"schema_version":"task.capabilities/v2","task_capabilities":[]}
    *   }
    * ]
    */
   async list() {
     const data = await client.get('/orchestrator/task-providers')
     return data
+  },
+
+  async getTaskDetail(moduleName, taskType, taskId) {
+    return client.get(`/orchestrator/task-providers/${encodeURIComponent(moduleName)}/tasks/${encodeURIComponent(taskType)}/${taskId}`)
   }
 }

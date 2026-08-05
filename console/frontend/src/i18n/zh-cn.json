@@ -139,6 +139,7 @@
       }
     },
     "groups": {
+	  "configuration": "配置管理",
       "dataPrepare": "数据准备",
       "dataGovern": "数据治理",
       "devMonitor": "开发与监控",
@@ -149,6 +150,24 @@
       "apiDocs": "API 文档",
       "system": "系统管理"
     },
+	"configuration": {
+	  "title": "配置管理",
+	  "platformContext": "平台配置",
+	  "tenantContext": "租户配置",
+	  "owner": "所属模块",
+	  "entry": "配置入口",
+	  "scope": "适用范围",
+	  "status": "状态",
+	  "available": "可用",
+	  "unavailable": "模块不可用",
+	  "empty": "当前上下文没有可维护的配置",
+	  "loadFailed": "加载配置管理入口失败",
+	  "scopes": {
+		"platform_only": "平台",
+		"platform_default_with_tenant_override": "平台默认与租户覆盖",
+		"tenant_only": "租户"
+	  }
+	},
     "modules": {
       "portal": {
         "label": "数据门户",

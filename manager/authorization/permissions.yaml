@@ -1,7 +1,23 @@
 schema_version: addp.permission_manifest/v1
 owner_module: manager
-manifest_version: 4
+manifest_version: 5
 permissions:
+  - key: manager.configuration.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.manager.configuration.read.name
+    description_i18n_key: permissions.manager.configuration.read.description
+  - key: manager.configuration.update
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.manager.configuration.update.name
+    description_i18n_key: permissions.manager.configuration.update.description
   - key: manager.content.read
     allowed_scope_types: [tenant, department, project_group]
     risk_level: low

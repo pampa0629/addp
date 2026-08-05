@@ -75,6 +75,9 @@ const (
 	MsgDataProfileQueryFailed       = "manager.error.data_profile_query_failed"
 	MsgDataProfileCreateFailed      = "manager.error.data_profile_create_failed"
 	MsgModel3DTilesResultDeleted    = "manager.model3d_tiles.result_deleted"
+	MsgEmbeddingConfigurationLoadFailed = "manager.error.embedding_configuration_load_failed"
+	MsgEmbeddingConfigurationUpdateFailed = "manager.error.embedding_configuration_update_failed"
+	MsgEmbeddingConfigurationVersionConflict = "manager.error.embedding_configuration_version_conflict"
 )
 
 func init() {

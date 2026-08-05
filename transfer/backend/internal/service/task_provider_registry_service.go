@@ -45,14 +45,13 @@ type TaskProviderRegistration struct {
 func (s *TaskProviderRegistryService) Register() error {
 	// 构造能力描述（含前端集成 URL）
 	capabilities := map[string]interface{}{
-		"schema_version": "task.capabilities/v1",
+		"schema_version": "task.capabilities/v2",
 		"task_capabilities": []map[string]interface{}{
 			{
 				"type":                      "sync",
 				"display_name":              "数据同步",
 				"description":               "执行 Transfer 同步任务定义",
 				"definition_schema":         map[string]interface{}{"type": "object"},
-				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
 				"supports_schedule":         true,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,

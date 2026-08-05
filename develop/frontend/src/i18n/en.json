@@ -209,7 +209,7 @@
       "saveFailed": "Save failed: ",
       "savingStatus": "Saving workflow",
       "executeDialogTitle": "Execute Workflow",
-      "taskCount": "Workflow task count",
+      "operatorCount": "Operator count",
       "execParams": "Execution parameters",
       "invalidJson": "Execution parameters must be valid JSON",
       "executeSubmitted": "Workflow submitted for execution",

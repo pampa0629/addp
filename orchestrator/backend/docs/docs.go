@@ -513,6 +513,70 @@ const docTemplate = `{
                 ]
             }
         },
+        "/task-providers/{module_name}/tasks/{task_type}/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "TaskProvider"
+                ],
+                "summary": "获取具体 TaskProvider 任务详情 | Get concrete TaskProvider task detail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务提供者模块名 | Task provider module name",
+                        "name": "module_name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "任务类型 | Task type",
+                        "name": "task_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "任务 ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务详情及 execution_contract | Task detail and execution_contract",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "参数无效 | Invalid parameters",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "任务提供者不可用 | Task provider unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "orchestrator.workflow.read"
+                ]
+            }
+        },
         "/tasks": {
             "get": {
                 "security": [
@@ -950,6 +1014,9 @@ const docTemplate = `{
                 "enabled": {
                     "type": "boolean"
                 },
+                "execution_contract": {
+                    "$ref": "#/definitions/taskprovider.ExecutionContract"
+                },
                 "id": {
                     "type": "integer"
                 },
@@ -1061,6 +1128,27 @@ const docTemplate = `{
         "models.JSONMap": {
             "type": "object",
             "additionalProperties": true
+        },
+        "taskprovider.ExecutionContract": {
+            "type": "object",
+            "properties": {
+                "input_defaults": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "input_schema": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "input_ui_schema": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "output_schema": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
         }
     },
     "securityDefinitions": {

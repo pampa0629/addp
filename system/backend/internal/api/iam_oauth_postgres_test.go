@@ -101,7 +101,7 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 		}
 	}
 
-	runtime, err := NewIAMRuntime(db, testIAMRuntimeConfig())
+	runtime, err := NewIAMRuntime(db, testIAMRuntimeConfig(), testIAMSecurityPolicy())
 	if err != nil {
 		t.Fatalf("NewIAMRuntime() error = %v", err)
 	}
@@ -412,7 +412,7 @@ func TestIAMOAuthHandlerDeviceTokenRevocationAgainstPostgres(t *testing.T) {
 		t.Fatalf("apply IAM migrations: %v", err)
 	}
 
-	runtime, err := NewIAMRuntime(db, testIAMRuntimeConfig())
+	runtime, err := NewIAMRuntime(db, testIAMRuntimeConfig(), testIAMSecurityPolicy())
 	if err != nil {
 		t.Fatalf("NewIAMRuntime() error = %v", err)
 	}

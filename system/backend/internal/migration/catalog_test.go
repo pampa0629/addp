@@ -12,8 +12,68 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 38 {
-		t.Fatalf("LatestVersion = %d, want 38", catalog.LatestVersion)
+	if catalog.LatestVersion != 41 {
+		t.Fatalf("LatestVersion = %d, want 41", catalog.LatestVersion)
+	}
+}
+
+func TestIAMSecurityPolicyMigrationPublishesPolicyAndAuthorization(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000041_iam_security_policy.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 41: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"CREATE TABLE system.iam_security_policy",
+		"CREATE INDEX idx_iam_security_policy_updated_by_principal_id",
+		"applied_version bigint NOT NULL",
+		"'iam.security_policy.read'",
+		"'iam.security_policy.update'",
+		"role.role_key = 'platform.security_administrator'",
+		"INSERT INTO system.role_permissions",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 41 missing %q", fragment)
+		}
+	}
+}
+
+func TestManagerPlatformRuntimeMigrationPublishesRoleAndAssignment(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000040_iam_manager_platform_runtime.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 40: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'platform.manager_runtime'",
+		"ARRAY['platform']::text[]",
+		"ARRAY['service_principal']::text[]",
+		"permission.permission_key = 'system.runtime_registry.update'",
+		"service_principal.name = 'addp-manager'",
+		"INSERT INTO system.role_assignments",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 40 missing %q", fragment)
+		}
+	}
+}
+
+func TestManagerPlatformConfigurationAuthorizationMigrationPublishesPermissionAndRoleBinding(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000039_manager_platform_configuration_authorization.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 39: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'manager.configuration.read', 'manager', 'read'",
+		"'manager.configuration.update', 'manager', 'update'",
+		"ARRAY['platform']::text[]",
+		"role.role_key = 'platform.system_administrator'",
+		"INSERT INTO system.role_permissions",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 39 missing %q", fragment)
+		}
 	}
 }
 

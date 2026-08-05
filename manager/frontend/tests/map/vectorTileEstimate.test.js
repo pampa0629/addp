@@ -67,7 +67,7 @@ describe('vectorTileEstimate', () => {
   it('only exposes vector tile generation for spatial table items', () => {
     const spatialTable = {
       locator: 'addp://engine/1/table/public/roads?item_id=9',
-      metadata: { data_type: 'table', spatial: { geometry: 'shape', srid: 4326 } }
+      metadata: { data_type: 'table', spatial: { geometry_columns: ['shape'], primary_geometry_column: 'shape', srid: 4326 } }
     }
     expect(isVectorTileSourceItem(spatialTable)).toBe(true)
     expect(isVectorTileSourceItem({ ...spatialTable, metadata: { data_type: 'media', spatial: { srid: 4326 } } })).toBe(false)

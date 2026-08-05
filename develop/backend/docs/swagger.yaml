@@ -308,6 +308,76 @@ definitions:
       workflow_definition:
         $ref: '#/definitions/github_com_addp_develop_backend_internal_models.WorkflowDefinitionSwagger'
     type: object
+  github_com_addp_develop_backend_internal_models.DevTaskDetailSwagger:
+    properties:
+      content:
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContentSwagger'
+      created_at:
+        example: "2026-06-24T12:00:00Z"
+        type: string
+      created_by:
+        example: 1
+        type: integer
+      description:
+        example: 示例工作流
+        type: string
+      dev_type:
+        enum:
+        - query
+        - workflow
+        - script
+        example: workflow
+        type: string
+      display_name:
+        example: 城市缓冲区工作流
+        type: string
+      editor_layout:
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DAGEditorLayoutSwagger'
+      execution_config:
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskExecutionConfigSwagger'
+      execution_contract:
+        $ref: '#/definitions/taskprovider.ExecutionContract'
+      id:
+        example: 1
+        type: integer
+      last_execution_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      last_execution_status:
+        example: success
+        type: string
+      last_run_at:
+        example: "2026-06-24T12:00:00Z"
+        type: string
+      name:
+        example: city_buffer_workflow
+        type: string
+      parameters:
+        type: object
+      status:
+        enum:
+        - active
+        - inactive
+        - archived
+        example: active
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+      tenant_id:
+        example: 1
+        type: integer
+      timeout:
+        example: 300
+        type: integer
+      updated_at:
+        example: "2026-06-24T12:00:00Z"
+        type: string
+      updated_by:
+        example: 1
+        type: integer
+    type: object
   github_com_addp_develop_backend_internal_models.DevTaskExecutionConfigSwagger:
     properties:
       engine_id:
@@ -457,6 +527,8 @@ definitions:
       module:
         example: develop
         type: string
+      outputs:
+        $ref: '#/definitions/models.JSONMap'
       parent_execution_id:
         example: parent-execution-id
         type: string
@@ -605,6 +677,8 @@ definitions:
         $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DAGEditorLayoutSwagger'
       execution_config:
         $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskExecutionConfigSwagger'
+      execution_contract:
+        $ref: '#/definitions/taskprovider.ExecutionContract'
       id:
         example: 1
         type: integer
@@ -1047,6 +1121,12 @@ definitions:
     - workflow_definition
     - workflow_engine_id
     type: object
+  internal_api.executeDevTaskRequest:
+    properties:
+      parameters:
+        additionalProperties: true
+        type: object
+    type: object
   internal_api.notebookByteRange:
     properties:
       length:
@@ -1201,6 +1281,9 @@ definitions:
       protocol:
         type: string
     type: object
+  models.JSONMap:
+    additionalProperties: true
+    type: object
   models.OutputPortDescriptor:
     properties:
       description:
@@ -1226,6 +1309,9 @@ definitions:
       description:
         description: 参数说明
         type: string
+      display_name:
+        description: 用户可见名称
+        type: string
       enum:
         description: 枚举值 (用于下拉选择)
         items:
@@ -1241,7 +1327,7 @@ definitions:
         description: 最小值 (数值类型)
         type: number
       name:
-        description: 参数名
+        description: 稳定参数名
         type: string
       notes:
         description: 注意事项/额外说明
@@ -1342,6 +1428,21 @@ definitions:
         type: string
       type:
         type: string
+    type: object
+  taskprovider.ExecutionContract:
+    properties:
+      input_defaults:
+        additionalProperties: true
+        type: object
+      input_schema:
+        additionalProperties: true
+        type: object
+      input_ui_schema:
+        additionalProperties: true
+        type: object
+      output_schema:
+        additionalProperties: true
+        type: object
     type: object
 host: localhost:8185
 info:
@@ -2772,7 +2873,11 @@ paths:
         "200":
           description: 开发任务详情 | Development task details
           schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskSwagger'
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskDetailSwagger'
+        "500":
+          description: 执行契约不可用 | Execution contract unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
       summary: 获取开发任务详情 | Get development task details
       tags:
       - DevTask
@@ -2817,20 +2922,24 @@ paths:
         name: id
         required: true
         type: integer
-      - description: 执行参数（可选）| Execution parameters (optional)
+      - description: 本次执行参数覆盖（可选）| Execution parameter overrides (optional)
         in: body
         name: body
         schema:
-          additionalProperties: true
-          type: object
+          $ref: '#/definitions/internal_api.executeDevTaskRequest'
       produces:
       - application/json
       responses:
-        "200":
+        "202":
           description: 执行已启动 | Execution started
           schema:
             additionalProperties:
               type: string
+            type: object
+        "400":
+          description: 请求或执行参数无效 | Invalid request or execution parameters
+          schema:
+            additionalProperties: true
             type: object
       summary: 执行开发任务 | Execute development task
       tags:

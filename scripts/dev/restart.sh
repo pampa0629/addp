@@ -27,7 +27,7 @@ show_usage() {
   echo "  -math-workflow     重启 Math Workflow Engine (Python 服务)"
   echo "  -model3d-workflow  重启 Model3D Workflow Engine (Python 服务)"
   echo "  -pointcloud-workflow 重启 PointCloud Workflow Engine (Docker runtime)"
-  echo "  -supermap-workflow 重启 SuperMap Workflow Engine (Docker runtime，需配置 SDK 挂载路径)"
+  echo "  -supermap-workflow 重启 SuperMap Workflow Engine (C++ Docker runtime，需先构建基础镜像)"
   echo "  -copilot     重启 Copilot Backend (Python 服务)"
   echo "  -agent       重启 Agent Backend (Python 服务)"
   echo "  -spark-workflow 重启 Spark 工作流 Engine (Python 服务)"
@@ -68,12 +68,6 @@ if [ -f ".env" ]; then
     source .env
     set +a
 fi
-if [ -f ".env.local" ]; then
-    set -a
-    source .env.local
-    set +a
-fi
-
 export MODEL3D_WORKFLOW_PORT="${MODEL3D_WORKFLOW_PORT:-8101}"
 export POINTCLOUD_WORKFLOW_PORT="${POINTCLOUD_WORKFLOW_PORT:-8102}"
 export SUPERMAP_WORKFLOW_PORT="${SUPERMAP_WORKFLOW_PORT:-8103}"

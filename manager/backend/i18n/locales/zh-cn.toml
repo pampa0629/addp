@@ -189,3 +189,12 @@ other = "创建数据剖析执行失败"
 
 [manager.model3d_tiles.result_deleted]
 other = "三维瓦片快显结果已删除"
+
+[manager.error.embedding_configuration_load_failed]
+other = "加载向量化配置失败"
+
+[manager.error.embedding_configuration_update_failed]
+other = "更新向量化配置失败"
+
+[manager.error.embedding_configuration_version_conflict]
+other = "向量化配置已被其他操作者更新"

@@ -722,6 +722,7 @@ func toModelParameters(parameters []plugin.ParameterDescriptor) []models.Paramet
 	for _, param := range parameters {
 		result = append(result, models.ParameterDescriptor{
 			Name:        param.Name,
+			DisplayName: param.DisplayName,
 			Type:        param.Type,
 			ParamType:   param.ParamType,
 			Required:    param.Required,
@@ -751,6 +752,7 @@ func toModelParameterMap(parameters map[string]plugin.ParameterDescriptor) map[s
 	for name, param := range parameters {
 		result[name] = models.ParameterDescriptor{
 			Name:        param.Name,
+			DisplayName: param.DisplayName,
 			Type:        param.Type,
 			ParamType:   param.ParamType,
 			Required:    param.Required,

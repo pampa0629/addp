@@ -66,8 +66,8 @@ func TestTaskProviderRegistryRegistersStandardQualityContract(t *testing.T) {
 	if err := json.Unmarshal([]byte(*captured.Capabilities), &capabilities); err != nil {
 		t.Fatalf("decode capabilities: %v; capabilities=%s", err, *captured.Capabilities)
 	}
-	if capabilities.SchemaVersion != "task.capabilities/v1" {
-		t.Fatalf("schema_version = %q, want task.capabilities/v1", capabilities.SchemaVersion)
+	if capabilities.SchemaVersion != "task.capabilities/v2" {
+		t.Fatalf("schema_version = %q, want task.capabilities/v2", capabilities.SchemaVersion)
 	}
 	if len(capabilities.TaskCapabilities) != 1 {
 		t.Fatalf("task_capabilities = %#v, want one entry", capabilities.TaskCapabilities)

@@ -98,6 +98,7 @@ func SetupRouter(
 
 		// 任务提供者发现（动态从 System 获取）
 		api.GET("/task-providers", permission(orchestratorauthorization.PermissionOrchestratorWorkflowRead), handler.ListTaskProviders)
+		api.GET("/task-providers/:module_name/tasks/:task_type/:id", permission(orchestratorauthorization.PermissionOrchestratorWorkflowRead), handler.GetTaskProviderTaskDetail)
 
 		// 模块任务列表 (用于拖拽复用，动态调用)
 		api.GET("/tasks", permission(orchestratorauthorization.PermissionOrchestratorWorkflowRead), handler.ListModuleTasks)

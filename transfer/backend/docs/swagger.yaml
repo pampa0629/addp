@@ -650,6 +650,8 @@ definitions:
         $ref: '#/definitions/github_com_addp_transfer_internal_models.TaskDesiredState'
       enabled:
         type: boolean
+      execution_contract:
+        $ref: '#/definitions/taskprovider.ExecutionContract'
       id:
         type: integer
       last_execution_id:
@@ -902,6 +904,21 @@ definitions:
         type: string
       write:
         type: boolean
+    type: object
+  taskprovider.ExecutionContract:
+    properties:
+      input_defaults:
+        additionalProperties: true
+        type: object
+      input_schema:
+        additionalProperties: true
+        type: object
+      input_ui_schema:
+        additionalProperties: true
+        type: object
+      output_schema:
+        additionalProperties: true
+        type: object
     type: object
 host: localhost:8083
 info:

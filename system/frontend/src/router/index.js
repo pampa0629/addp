@@ -29,6 +29,16 @@ const routes = [
         }
       },
       {
+        path: 'settings/security-policy',
+        name: 'SecurityPolicy',
+        component: () => import('../views/SecurityPolicy.vue'),
+        meta: {
+          requiresAuth: true,
+          title: 'IAM 安全策略-addp',
+          requiredPermissions: ['iam.security_policy.read']
+        }
+      },
+      {
         path: 'engines',
         name: 'Engines',
         component: () => import('../views/Engines.vue'),

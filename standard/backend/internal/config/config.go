@@ -47,29 +47,17 @@ func LoadConfig() (*Config, error) {
 
 		SystemURL:      commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
 		InternalAPIKey: os.Getenv("INTERNAL_API_KEY"),
-
-		MinioAccessKey: commonConfig.GetEnv("MINIO_SYSTEM_ACCESS_KEY", commonConfig.GetEnv("MINIO_ROOT_USER", commonConfig.GetEnv("MINIO_ACCESS_KEY", "minioadmin"))),
-		MinioSecretKey: commonConfig.GetEnv("MINIO_SYSTEM_SECRET_KEY", commonConfig.GetEnv("MINIO_ROOT_PASSWORD", commonConfig.GetEnv("MINIO_SECRET_KEY", "minioadmin"))),
-		MinioUseSSL:    commonConfig.GetEnvBool("MINIO_USE_SSL", false),
 	}
-	minioPort := commonConfig.GetEnv("MINIO_API_PORT", "9000")
-	defaultEndpoint := fmt.Sprintf("localhost:%s", minioPort)
-	cfg.MinioEndpoint = commonConfig.GetEnv("MINIO_SYSTEM_ENDPOINT", commonConfig.GetEnv("MINIO_ENDPOINT", defaultEndpoint))
+	minioCfg := commonConfig.LoadBuiltinMinIOConfig()
+	cfg.MinioEndpoint = minioCfg.Endpoint
+	cfg.MinioAccessKey = minioCfg.AccessKey
+	cfg.MinioSecretKey = minioCfg.SecretKey
+	cfg.MinioUseSSL = minioCfg.UseSSL
 
-	// 从 System 服务加载共享配置（带降级）
-	enableIntegration := commonConfig.GetEnvBool("ENABLE_SERVICE_INTEGRATION", true)
-	if err := commonConfig.LoadServiceConfiguration(commonConfig.ServiceConfigLoader{
-		SystemServiceURL:      cfg.SystemURL,
-		EnableIntegration:     enableIntegration,
-		InternalAPIKey:        cfg.InternalAPIKey,
-		BaseConfigDestination: &cfg.BaseConfig,
-	}); err != nil {
-		return nil, fmt.Errorf("failed to load service configuration: %w", err)
-	}
+	commonConfig.LoadDeploymentConfig(&cfg.BaseConfig)
 
 	// 设置 System 服务 URL
 	cfg.BaseConfig.SystemServiceURL = cfg.SystemURL
-	cfg.BaseConfig.EnableIntegration = enableIntegration
 
 	return cfg, nil
 }

@@ -28,14 +28,13 @@ func (s *TaskProviderRegistrationService) Register(ctx context.Context) error {
 		return fmt.Errorf("System Service Client is required")
 	}
 	capabilities := map[string]interface{}{
-		"schema_version": "task.capabilities/v1",
+		"schema_version": "task.capabilities/v2",
 		"task_capabilities": []map[string]interface{}{
 			{
 				"type":                      "orchestration",
 				"display_name":              "任务编排",
 				"description":               "执行已保存的 Orchestrator 编排定义",
 				"definition_schema":         map[string]interface{}{"type": "object"},
-				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
 				"supports_schedule":         true,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,

@@ -297,7 +297,7 @@ func MigrateTaskProviders(db *gorm.DB) error {
 	`).Scan(&colCount)
 
 	if colCount > 0 {
-		// 2. 删除旧列。任务创建/编辑入口必须由 task.capabilities/v1 的 task_capabilities[] 声明。
+		// 2. 删除旧列。任务创建/编辑入口必须由 task.capabilities/v2 的 task_capabilities[] 声明。
 		if err := db.Exec(`
 			ALTER TABLE system.task_providers
 			DROP COLUMN IF EXISTS create_task_url,

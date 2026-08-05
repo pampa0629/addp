@@ -13,7 +13,7 @@ func TestNormalizeCADInspectionMapsProviderFacts(t *testing.T) {
 		},
 		"interpretation": map[string]interface{}{
 			"dataset_count": 4, "interpreted_record_count": 99,
-			"provider": "supermap_iobjects_java", "provider_version": "12.1",
+			"provider": "supermap_iobjects_cpp", "provider_version": "12.1",
 			"normalized_geometry": true, "geometry_traversed": false, "scan_complete": true,
 		},
 	}, "dwg", 1024)

@@ -2,11 +2,13 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
 	commonExecution "github.com/addp/common/execution"
 	commoni18n "github.com/addp/common/middleware/i18n"
+	"github.com/addp/common/taskprovider"
 	developi18n "github.com/addp/develop/backend/i18n"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/service"
@@ -15,13 +17,15 @@ import (
 
 // DevTaskHandler 开发任务API处理器
 type DevTaskHandler struct {
-	devTaskService *service.DevTaskService
+	devTaskService    *service.DevTaskService
+	operatorDiscovery *service.OperatorDiscoveryService
 }
 
 // NewDevTaskHandler 创建开发任务处理器
-func NewDevTaskHandler(devTaskService *service.DevTaskService) *DevTaskHandler {
+func NewDevTaskHandler(devTaskService *service.DevTaskService, operatorDiscovery *service.OperatorDiscoveryService) *DevTaskHandler {
 	return &DevTaskHandler{
-		devTaskService: devTaskService,
+		devTaskService:    devTaskService,
+		operatorDiscovery: operatorDiscovery,
 	}
 }
 
@@ -95,7 +99,8 @@ func (h *DevTaskHandler) UpdateDevTask(c *gin.Context) {
 // @Tags DevTask
 // @Produce json
 // @Param id path int true "开发任务ID | Development task ID"
-// @Success 200 {object} models.DevTaskSwagger "开发任务详情 | Development task details"
+// @Success 200 {object} models.DevTaskDetailSwagger "开发任务详情 | Development task details"
+// @Failure 500 {object} models.ErrorResponse "执行契约不可用 | Execution contract unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.read"]
 // @Router /task-definitions/{id} [get]
@@ -113,6 +118,12 @@ func (h *DevTaskHandler) GetDevTask(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
+	contract, err := h.executionContract(c, item, tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionContractUnavailable), "error_code": "execution_contract_unavailable"})
+		return
+	}
+	item.ExecutionContract = contract
 
 	c.JSON(http.StatusOK, item)
 }
@@ -254,7 +265,28 @@ func (h *DevTaskHandler) ProviderGetDevTask(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, models.NewProviderDevTask(*item))
+	contract, err := h.executionContract(c, item, tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionContractUnavailable), "error_code": "execution_contract_unavailable"})
+		return
+	}
+	c.JSON(http.StatusOK, models.NewProviderDevTask(*item, contract))
+}
+
+func (h *DevTaskHandler) executionContract(c *gin.Context, item *models.DevTask, tenantID uint) (*taskprovider.ExecutionContract, error) {
+	empty := taskprovider.EmptyExecutionContract()
+	if item == nil || item.DevType != commonExecution.TaskTypeWorkflow {
+		return &empty, nil
+	}
+	if h.operatorDiscovery == nil {
+		return nil, fmt.Errorf("operator discovery is unavailable")
+	}
+	engineID := item.GetEngineID()
+	workflow, ok := item.Content["workflow_definition"].(map[string]interface{})
+	if engineID == nil || !ok {
+		return nil, fmt.Errorf("workflow execution contract is unavailable")
+	}
+	return h.operatorDiscovery.WorkflowExecutionContractForTenant(c.Request.Context(), *engineID, workflow, tenantID)
 }
 
 func isDevelopTaskType(taskType string) bool {

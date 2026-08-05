@@ -1,11 +1,6 @@
 package config
 
-import (
-	"fmt"
-	"log"
-
-	commonConfig "github.com/addp/common/config"
-)
+import commonConfig "github.com/addp/common/config"
 
 type Config struct {
 	commonConfig.BaseConfig
@@ -55,22 +50,8 @@ func Load() *Config {
 
 	// 设置 BaseConfig 字段
 	cfg.SystemServiceURL = systemURL
-	cfg.EnableIntegration = commonConfig.GetEnvBool("ENABLE_SERVICE_INTEGRATION", true)
 
-	// 从 System 获取共享配置
-	if cfg.EnableIntegration {
-		log.Println("🔄 Attempting to load shared config from System service...")
-		if err := commonConfig.LoadSharedConfig(systemURL, &cfg.BaseConfig); err != nil {
-			log.Printf("⚠️  Warning: Failed to load shared config from System: %v", err)
-			log.Printf("⚠️  Falling back to local environment variables...")
-			commonConfig.LoadLocalConfig(&cfg.BaseConfig)
-		} else {
-			log.Println("✅ Successfully loaded shared config from System service")
-		}
-	} else {
-		log.Println("ℹ️  Service integration disabled, using local config")
-		commonConfig.LoadLocalConfig(&cfg.BaseConfig)
-	}
+	commonConfig.LoadDeploymentConfig(&cfg.BaseConfig)
 
 	// Redis 配置
 	cfg.RedisHost = commonConfig.GetEnv("REDIS_HOST", "localhost")
@@ -78,14 +59,11 @@ func Load() *Config {
 	cfg.RedisPassword = commonConfig.GetEnv("REDIS_PASSWORD", "")
 	cfg.RedisDB = commonConfig.GetEnvInt("REDIS_DB", 0)
 
-	// MinIO 配置（用于瓦片存储）
-	// 注意：Service 模块使用系统 infra MinIO，端口从 MINIO_API_PORT 读取
-	minioPort := commonConfig.GetEnv("MINIO_API_PORT", "9000")
-	defaultEndpoint := fmt.Sprintf("localhost:%s", minioPort)
-	cfg.MinioEndpoint = commonConfig.GetEnv("MINIO_SYSTEM_ENDPOINT", commonConfig.GetEnv("MINIO_ENDPOINT", defaultEndpoint))
-	cfg.MinioAccessKey = commonConfig.GetEnv("MINIO_SYSTEM_ACCESS_KEY", commonConfig.GetEnv("MINIO_ROOT_USER", commonConfig.GetEnv("MINIO_ACCESS_KEY", "minioadmin")))
-	cfg.MinioSecretKey = commonConfig.GetEnv("MINIO_SYSTEM_SECRET_KEY", commonConfig.GetEnv("MINIO_ROOT_PASSWORD", commonConfig.GetEnv("MINIO_SECRET_KEY", "minioadmin")))
-	cfg.MinioUseSSL = commonConfig.GetEnvBool("MINIO_USE_SSL", false)
+	minioCfg := commonConfig.LoadBuiltinMinIOConfig()
+	cfg.MinioEndpoint = minioCfg.Endpoint
+	cfg.MinioAccessKey = minioCfg.AccessKey
+	cfg.MinioSecretKey = minioCfg.SecretKey
+	cfg.MinioUseSSL = minioCfg.UseSSL
 
 	// 定时任务配置
 	cfg.HealthCheckCron = commonConfig.GetEnv("SERVICE_HEALTH_CHECK_CRON", "0 * * * *")         // 默认每小时

@@ -155,7 +155,10 @@ const { graph, initGraph } = useDAGCore(container, {
       'drag-canvas',
       'zoom-canvas',
       createDAGDragNodeBehavior(),
-      'click-select',
+      {
+        type: 'click-select',
+        selectEdge: true
+      },
       createDAGDirectEdgeBehavior({
         resolveSource: resolveOutputPort,
         resolveTarget: resolveInputPort,
@@ -183,9 +186,13 @@ const { graph, initGraph } = useDAGCore(container, {
     }
   },
   edgeStateStyles: {
+    hover: {
+      stroke: cssColor('--el-color-primary'),
+      lineWidth: 3.5
+    },
     selected: {
       stroke: cssColor('--el-color-primary'),
-      lineWidth: 2.5
+      lineWidth: 3.5
     }
   }
 })
@@ -244,7 +251,9 @@ onMounted(() => {
   initSelectionListener()
   graph.value.on('node:click', handleNodeClick)
   graph.value.on('canvas:click', clearNodeSelection)
-  graph.value.on('edge:click', () => emit('node-click', null))
+  graph.value.on('edge:click', handleEdgeClick)
+  graph.value.on('edge:mouseenter', handleEdgeMouseEnter)
+  graph.value.on('edge:mouseleave', handleEdgeMouseLeave)
   graph.value.on('aftercreateedge', ({ edge }) => {
     recordHistory()
     emitWorkflow()
@@ -357,6 +366,23 @@ function handleNodeClick(event) {
 function clearNodeSelection() {
   inspectedNodeId.value = ''
   emit('node-click', null)
+}
+
+function handleEdgeClick(event) {
+  event.item?.toFront?.()
+  clearNodeSelection()
+}
+
+function handleEdgeMouseEnter(event) {
+  if (!event.item) return
+  event.item.toFront()
+  graph.value?.setItemState?.(event.item, 'hover', true)
+}
+
+function handleEdgeMouseLeave(event) {
+  if (!event.item) return
+  graph.value?.setItemState?.(event.item, 'hover', false)
+  if (!event.item.hasState?.('selected')) event.item.toBack?.()
 }
 
 function handleDelete() {
@@ -942,6 +968,7 @@ function resolveEdgeStyle() {
   return {
     stroke,
     lineWidth: 1.5,
+    lineAppendWidth: 10,
     radius: 8,
     endArrow: {
       path: 'M 0,0 L 10,4 L 10,-4 Z',

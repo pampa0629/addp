@@ -516,7 +516,7 @@ function createTaskLibraryFixture() {
       module_name: 'develop',
       display_name: '开发中心',
       capabilities: {
-        schema_version: 'task.capabilities/v1',
+        schema_version: 'task.capabilities/v2',
         task_capabilities: [
           { type: 'query', display_name: 'SQL 查询' },
           { type: 'notebook', display_name: 'Notebook' }

@@ -10,6 +10,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/taskprovider"
 	"github.com/addp/orchestrator/internal/models"
 	"github.com/stretchr/testify/assert"
 )
@@ -23,16 +24,18 @@ func TestResolveTemplateReferences(t *testing.T) {
 		"sql_extract": {
 			Status: "success",
 			Result: map[string]interface{}{
-				"result_table": "temp_table_123",
-				"row_count":    100,
-				"geojson": map[string]interface{}{
-					"type": "FeatureCollection",
-					"features": []interface{}{
-						map[string]interface{}{
-							"type": "Feature",
-							"geometry": map[string]interface{}{
-								"type":        "Point",
-								"coordinates": []interface{}{116.404, 39.915},
+				"outputs": map[string]interface{}{
+					"result_table": "temp_table_123",
+					"row_count":    100,
+					"geojson": map[string]interface{}{
+						"type": "FeatureCollection",
+						"features": []interface{}{
+							map[string]interface{}{
+								"type": "Feature",
+								"geometry": map[string]interface{}{
+									"type":        "Point",
+									"coordinates": []interface{}{116.404, 39.915},
+								},
 							},
 						},
 					},
@@ -42,15 +45,16 @@ func TestResolveTemplateReferences(t *testing.T) {
 		"spatial_analysis": {
 			Status: "success",
 			Result: map[string]interface{}{
-				"execution_id": "exec-456",
-				"geojson": map[string]interface{}{
-					"type": "FeatureCollection",
-					"features": []interface{}{
-						map[string]interface{}{
-							"type": "Feature",
-							"geometry": map[string]interface{}{
-								"type":        "Polygon",
-								"coordinates": []interface{}{},
+				"outputs": map[string]interface{}{
+					"geojson": map[string]interface{}{
+						"type": "FeatureCollection",
+						"features": []interface{}{
+							map[string]interface{}{
+								"type": "Feature",
+								"geometry": map[string]interface{}{
+									"type":        "Polygon",
+									"coordinates": []interface{}{},
+								},
 							},
 						},
 					},
@@ -67,7 +71,7 @@ func TestResolveTemplateReferences(t *testing.T) {
 		{
 			name: "Simple field reference",
 			params: map[string]interface{}{
-				"table_name": "{{sql_extract.result_table}}",
+				"table_name": "{{sql_extract.outputs.result_table}}",
 			},
 			expected: map[string]interface{}{
 				"table_name": "temp_table_123",
@@ -76,7 +80,7 @@ func TestResolveTemplateReferences(t *testing.T) {
 		{
 			name: "Nested field reference",
 			params: map[string]interface{}{
-				"input_geojson": "{{sql_extract.geojson}}",
+				"input_geojson": "{{sql_extract.outputs.geojson}}",
 			},
 			expected: map[string]interface{}{
 				"input_geojson": map[string]interface{}{
@@ -96,9 +100,9 @@ func TestResolveTemplateReferences(t *testing.T) {
 		{
 			name: "Multiple references",
 			params: map[string]interface{}{
-				"source_table":   "{{sql_extract.result_table}}",
-				"result_geojson": "{{spatial_analysis.geojson}}",
-				"row_count":      "{{sql_extract.row_count}}",
+				"source_table":   "{{sql_extract.outputs.result_table}}",
+				"result_geojson": "{{spatial_analysis.outputs.geojson}}",
+				"row_count":      "{{sql_extract.outputs.row_count}}",
 			},
 			expected: map[string]interface{}{
 				"source_table": "temp_table_123",
@@ -120,7 +124,7 @@ func TestResolveTemplateReferences(t *testing.T) {
 		{
 			name: "Mixed with static values",
 			params: map[string]interface{}{
-				"dynamic_table": "{{sql_extract.result_table}}",
+				"dynamic_table": "{{sql_extract.outputs.result_table}}",
 				"static_value":  "fixed_string",
 				"numeric_value": 42,
 			},
@@ -134,9 +138,9 @@ func TestResolveTemplateReferences(t *testing.T) {
 			name: "Nested map with references",
 			params: map[string]interface{}{
 				"config": map[string]interface{}{
-					"table":  "{{sql_extract.result_table}}",
+					"table":  "{{sql_extract.outputs.result_table}}",
 					"format": "geojson",
-					"data":   "{{sql_extract.geojson}}",
+					"data":   "{{sql_extract.outputs.geojson}}",
 				},
 			},
 			expected: map[string]interface{}{
@@ -162,7 +166,7 @@ func TestResolveTemplateReferences(t *testing.T) {
 			name: "Array with references",
 			params: map[string]interface{}{
 				"tables": []interface{}{
-					"{{sql_extract.result_table}}",
+					"{{sql_extract.outputs.result_table}}",
 					"static_table",
 				},
 			},
@@ -190,7 +194,7 @@ func TestResolveTemplateReferencesRejectsMissingPath(t *testing.T) {
 		"sql_extract": {
 			Status: "success",
 			Result: map[string]interface{}{
-				"result_table": "temp_table_123",
+				"outputs": map[string]interface{}{"result_table": "temp_table_123"},
 			},
 		},
 	}
@@ -203,25 +207,25 @@ func TestResolveTemplateReferencesRejectsMissingPath(t *testing.T) {
 		{
 			name: "Non-existent step reference",
 			params: map[string]interface{}{
-				"value": "{{nonexistent_step.field}}",
+				"value": "{{nonexistent_step.outputs.field}}",
 			},
 			wantErrMsg: `referenced step "nonexistent_step" has no result`,
 		},
 		{
 			name: "Non-existent field reference",
 			params: map[string]interface{}{
-				"value": "{{sql_extract.nonexistent_field}}",
+				"value": "{{sql_extract.outputs.nonexistent_field}}",
 			},
-			wantErrMsg: `path "sql_extract.nonexistent_field" is missing`,
+			wantErrMsg: `path "sql_extract.outputs.nonexistent_field" is missing`,
 		},
 		{
 			name: "Nested missing field reference",
 			params: map[string]interface{}{
 				"config": map[string]interface{}{
-					"value": "{{sql_extract.missing}}",
+					"value": "{{sql_extract.outputs.missing}}",
 				},
 			},
-			wantErrMsg: `parameters.config: value: path "sql_extract.missing" is missing`,
+			wantErrMsg: `parameters.config: value: path "sql_extract.outputs.missing" is missing`,
 		},
 	}
 
@@ -271,8 +275,9 @@ func TestExecuteWithTaskProviderUsesTenantServiceBearer(t *testing.T) {
 					Capabilities:        jsonStringPtr(taskCapabilitiesForTest("check", false, `{"type":"object","additionalProperties":false}`)),
 				},
 			},
-			cacheTTL:    time.Hour,
-			lastRefresh: time.Now(),
+			cacheTTL:              time.Hour,
+			lastRefresh:           time.Now(),
+			loadExecutionContract: executionContractLoaderForTest(`{"type":"object","additionalProperties":false}`),
 		},
 		serviceTokens: commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
 			return "addp_at_orchestrator", nil
@@ -333,8 +338,9 @@ func TestExecuteWithTaskProviderForwardsScheduledExistingResultActionWithoutOwne
 					)),
 				},
 			},
-			cacheTTL:    time.Hour,
-			lastRefresh: time.Now(),
+			cacheTTL:              time.Hour,
+			lastRefresh:           time.Now(),
+			loadExecutionContract: executionContractLoaderForTest(`{"type":"object","properties":{"existing_result_action":{"type":"string","enum":["overwrite"]}},"additionalProperties":false}`),
 		},
 		serviceTokens: commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
 			return "addp_at_orchestrator", nil
@@ -381,8 +387,9 @@ func TestExecuteWithTaskProviderRejectsDeprecatedTaskTypeBeforeHTTPCall(t *testi
 					Capabilities:        jsonStringPtr(taskCapabilitiesForTest("workflow", true, `{"type":"object","additionalProperties":false}`)),
 				},
 			},
-			cacheTTL:    time.Hour,
-			lastRefresh: time.Now(),
+			cacheTTL:              time.Hour,
+			lastRefresh:           time.Now(),
+			loadExecutionContract: executionContractLoaderForTest(`{"type":"object","additionalProperties":false}`),
 		},
 	}
 
@@ -421,8 +428,9 @@ func TestExecuteWithTaskProviderRejectsDisallowedParametersBeforeHTTPCall(t *tes
 					Capabilities:        jsonStringPtr(taskCapabilitiesForTest("scan", false, `{"type":"object","additionalProperties":false}`)),
 				},
 			},
-			cacheTTL:    time.Hour,
-			lastRefresh: time.Now(),
+			cacheTTL:              time.Hour,
+			lastRefresh:           time.Now(),
+			loadExecutionContract: executionContractLoaderForTest(`{"type":"object","additionalProperties":false}`),
 		},
 	}
 
@@ -453,7 +461,6 @@ func TestExecuteWithTaskProviderStrictlyValidatesResolvedParametersBeforeHTTPCal
 	executionSchema := `{
 		"type":"object",
 		"properties":{"limit":{"type":"integer","minimum":1,"maximum":1000}},
-		"required":["limit"],
 		"additionalProperties":false
 	}`
 	executor := &Executor{
@@ -467,8 +474,9 @@ func TestExecuteWithTaskProviderStrictlyValidatesResolvedParametersBeforeHTTPCal
 					Capabilities:        jsonStringPtr(taskCapabilitiesForTest("query", false, executionSchema)),
 				},
 			},
-			cacheTTL:    time.Hour,
-			lastRefresh: time.Now(),
+			cacheTTL:              time.Hour,
+			lastRefresh:           time.Now(),
+			loadExecutionContract: executionContractLoaderForTest(executionSchema),
 		},
 	}
 
@@ -486,6 +494,21 @@ func TestExecuteWithTaskProviderStrictlyValidatesResolvedParametersBeforeHTTPCal
 	assert.Contains(t, err.Error(), "parameters.limit must be integer")
 	assert.Equal(t, "failed", result.Status)
 	assert.False(t, called)
+}
+
+func executionContractLoaderForTest(inputSchemaJSON string) func(context.Context, *commonModels.TaskProvider, string, uint, uint) (*taskprovider.ExecutionContract, error) {
+	return func(context.Context, *commonModels.TaskProvider, string, uint, uint) (*taskprovider.ExecutionContract, error) {
+		var inputSchema map[string]interface{}
+		if err := json.Unmarshal([]byte(inputSchemaJSON), &inputSchema); err != nil {
+			return nil, err
+		}
+		return taskprovider.ParseExecutionContract(map[string]interface{}{
+			"input_schema":    inputSchema,
+			"input_defaults":  map[string]interface{}{},
+			"input_ui_schema": map[string]interface{}{},
+			"output_schema":   taskprovider.ClosedObjectSchema(),
+		})
+	}
 }
 
 func TestExtractProviderExecutionID(t *testing.T) {
@@ -586,9 +609,11 @@ func TestResolveStringTemplate(t *testing.T) {
 		"step1": {
 			Status: "success",
 			Result: map[string]interface{}{
-				"table": "my_table",
-				"nested": map[string]interface{}{
-					"value": 123,
+				"outputs": map[string]interface{}{
+					"table": "my_table",
+					"nested": map[string]interface{}{
+						"value": 123,
+					},
 				},
 			},
 		},
@@ -602,12 +627,12 @@ func TestResolveStringTemplate(t *testing.T) {
 	}{
 		{
 			name:     "Valid template",
-			template: "{{step1.table}}",
+			template: "{{step1.outputs.table}}",
 			expected: "my_table",
 		},
 		{
 			name:     "Nested template",
-			template: "{{step1.nested.value}}",
+			template: "{{step1.outputs.nested.value}}",
 			expected: 123,
 		},
 		{
@@ -621,14 +646,19 @@ func TestResolveStringTemplate(t *testing.T) {
 			expected: "{{incomplete",
 		},
 		{
+			name:     "Legacy arbitrary result path",
+			template: "{{step1.table}}",
+			wantErr:  "must reference a declared output",
+		},
+		{
 			name:     "Non-existent step",
-			template: "{{nonexistent.field}}",
+			template: "{{nonexistent.outputs.field}}",
 			wantErr:  `referenced step "nonexistent" has no result`,
 		},
 		{
 			name:     "Empty template",
 			template: "{{}}",
-			wantErr:  "template path is empty",
+			wantErr:  "must reference a declared output",
 		},
 	}
 

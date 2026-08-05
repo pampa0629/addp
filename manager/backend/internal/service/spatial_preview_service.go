@@ -16,7 +16,6 @@ import (
 	rastercogref "github.com/addp/manager/internal/cog"
 	"github.com/addp/manager/internal/tilecache"
 	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -131,7 +130,7 @@ func (c *lruCache) Size() int {
 
 // NewSpatialPreviewService 创建空间预览服务（带多层缓存）
 // redisClient 可选，如果为 nil 则跳过 Redis 缓存层
-func NewSpatialPreviewService(redisClient *redis.Client) *SpatialPreviewService {
+func NewSpatialPreviewService(redisClient *redis.Client, minioClient *minio.Client) *SpatialPreviewService {
 	// 内存 LRU 配置（默认 8192 条目，5分钟 TTL）
 	lruSize := 8192
 	memTTL := 5 * time.Minute
@@ -150,6 +149,7 @@ func NewSpatialPreviewService(redisClient *redis.Client) *SpatialPreviewService 
 	}
 
 	svc := &SpatialPreviewService{
+		minioClient: minioClient,
 		bucket:      "manager",
 		redisClient: redisClient,
 		redisTTL:    24 * time.Hour, // Redis 缓存 24 小时
@@ -392,44 +392,5 @@ func (s *SpatialPreviewService) ensureMinIOClient(ctx context.Context) error {
 	if s.minioClient != nil {
 		return nil
 	}
-
-	// MVT 瓦片存储在系统 MinIO（不是业务 MinIO）
-	endpoint := os.Getenv("MINIO_SYSTEM_ENDPOINT")
-	if endpoint == "" {
-		// 动态读取 MinIO API 端口，与 config.go 保持一致
-		minioPort := os.Getenv("MINIO_API_PORT")
-		if minioPort == "" {
-			minioPort = "9000"
-		}
-		endpoint = fmt.Sprintf("localhost:%s", minioPort)
-	}
-
-	accessKey := os.Getenv("MINIO_SYSTEM_ACCESS_KEY")
-	if accessKey == "" {
-		accessKey = os.Getenv("MINIO_ROOT_USER") // 回退到系统 MinIO 配置
-		if accessKey == "" {
-			accessKey = "minioadmin"
-		}
-	}
-
-	secretKey := os.Getenv("MINIO_SYSTEM_SECRET_KEY")
-	if secretKey == "" {
-		secretKey = os.Getenv("MINIO_ROOT_PASSWORD") // 回退到系统 MinIO 配置
-		if secretKey == "" {
-			secretKey = "minioadmin"
-		}
-	}
-
-	// 初始化 MinIO 客户端
-	client, err := minio.New(endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure: false, // 开发环境使用 HTTP
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create MinIO client: %w", err)
-	}
-
-	s.minioClient = client
-	logger.L().Info("MinIO client initialized for spatial preview", "endpoint", endpoint)
-	return nil
+	return errors.New("infra MinIO client is not configured")
 }

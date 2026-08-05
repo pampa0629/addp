@@ -12,28 +12,17 @@ import (
 )
 
 type Config struct {
-	Env                               string
-	ServerAddr                        string
-	DatabaseURL                       string
-	EncryptionKey                     []byte
-	AccessTokenExpireMinutes          int
-	DelegatedAccessTokenExpireMinutes int
-	ResourceAccessTicketExpireMinutes int
-	TenantInvitationExpireHours       int
-	EnrollmentTicketExpireMinutes     int
-	RefreshTokenExpireDays            int
-	AuthorizationCodeMinutes          int
-	DeviceCodeExpireMinutes           int
-	DevicePollIntervalSecs            int
-	OAuthUserCodePepper               []byte
-	OAuthPreviousUserCodePepper       []byte
-	IAMMFAEncryptionKey               []byte
-	OAuthPublicRateLimitPerMinute     int
-	OAuthUserRateLimitPerMinute       int
-	PublicAPIURL                      string
-	ConsoleURL                        string
-	ProjectName                       string
-	ServiceClientSecrets              map[string]string
+	Env                         string
+	ServerAddr                  string
+	DatabaseURL                 string
+	EncryptionKey               []byte
+	OAuthUserCodePepper         []byte
+	OAuthPreviousUserCodePepper []byte
+	IAMMFAEncryptionKey         []byte
+	PublicAPIURL                string
+	ConsoleURL                  string
+	ProjectName                 string
+	ServiceClientSecrets        map[string]string
 
 	// PostgreSQL 配置（用于其他模块）
 	PostgresHost     string
@@ -71,11 +60,6 @@ type Config struct {
 	OrchestratorServiceURL string
 	DevelopServiceURL      string
 	DuckDBRuntimeURL       string
-
-	// 审计日志归档配置
-	AuditLogRetentionDays  int    // 审计日志数据库保留天数
-	AuditLogArchiveEnabled bool   // 是否启用审计日志归档
-	AuditLogArchiveCron    string // 审计日志归档任务 cron 表达式
 
 	// CORS 配置
 	AllowedOrigins []string // CORS 白名单
@@ -135,27 +119,16 @@ func Load() *Config {
 	serverAddr := ":" + port
 
 	return &Config{
-		Env:                               env,
-		ServerAddr:                        serverAddr,
-		DatabaseURL:                       "", // PostgreSQL 不使用此字段
-		EncryptionKey:                     encryptionKey,
-		AccessTokenExpireMinutes:          getEnvAsPositiveInt("ACCESS_TOKEN_EXPIRE_MINUTES", 15),
-		DelegatedAccessTokenExpireMinutes: getEnvAsPositiveInt("DELEGATED_ACCESS_TOKEN_EXPIRE_MINUTES", 2),
-		ResourceAccessTicketExpireMinutes: getEnvAsPositiveInt("RESOURCE_ACCESS_TICKET_EXPIRE_MINUTES", 15),
-		TenantInvitationExpireHours:       getEnvAsPositiveInt("TENANT_INVITATION_EXPIRE_HOURS", 168),
-		EnrollmentTicketExpireMinutes:     getEnvAsPositiveInt("ENROLLMENT_TICKET_EXPIRE_MINUTES", 5),
-		RefreshTokenExpireDays:            getEnvAsPositiveInt("REFRESH_TOKEN_EXPIRE_DAYS", 30),
-		AuthorizationCodeMinutes:          getEnvAsPositiveInt("OAUTH_CODE_EXPIRE_MINUTES", 5),
-		DeviceCodeExpireMinutes:           getEnvAsPositiveInt("OAUTH_DEVICE_EXPIRE_MINUTES", 10),
-		DevicePollIntervalSecs:            getEnvAsPositiveInt("OAUTH_DEVICE_INTERVAL_SECONDS", 5),
-		OAuthUserCodePepper:               loadOAuthUserCodePepper(env, "OAUTH_USER_CODE_PEPPER", true),
-		OAuthPreviousUserCodePepper:       loadOAuthUserCodePepper(env, "OAUTH_PREVIOUS_USER_CODE_PEPPER", false),
-		IAMMFAEncryptionKey:               loadIAMMFAEncryptionKey(env),
-		OAuthPublicRateLimitPerMinute:     getEnvAsPositiveInt("OAUTH_PUBLIC_RATE_LIMIT_PER_MINUTE", 60),
-		OAuthUserRateLimitPerMinute:       getEnvAsPositiveInt("OAUTH_USER_RATE_LIMIT_PER_MINUTE", 30),
-		PublicAPIURL:                      strings.TrimSuffix(getEnv("PUBLIC_API_URL", "http://localhost:8000"), "/"),
-		ConsoleURL:                        strings.TrimSuffix(getEnv("CONSOLE_URL", "http://localhost:5170"), "/"),
-		ProjectName:                       getEnv("PROJECT_NAME", "全域数据平台"),
+		Env:                         env,
+		ServerAddr:                  serverAddr,
+		DatabaseURL:                 "", // PostgreSQL 不使用此字段
+		EncryptionKey:               encryptionKey,
+		OAuthUserCodePepper:         loadOAuthUserCodePepper(env, "OAUTH_USER_CODE_PEPPER", true),
+		OAuthPreviousUserCodePepper: loadOAuthUserCodePepper(env, "OAUTH_PREVIOUS_USER_CODE_PEPPER", false),
+		IAMMFAEncryptionKey:         loadIAMMFAEncryptionKey(env),
+		PublicAPIURL:                strings.TrimSuffix(getEnv("PUBLIC_API_URL", "http://localhost:8000"), "/"),
+		ConsoleURL:                  strings.TrimSuffix(getEnv("CONSOLE_URL", "http://localhost:5170"), "/"),
+		ProjectName:                 getEnv("PROJECT_NAME", "全域数据平台"),
 		ServiceClientSecrets: map[string]string{
 			"addp-asset":        getEnv("ASSET_SERVICE_CLIENT_SECRET", ""),
 			"addp-develop":      getEnv("DEVELOP_SERVICE_CLIENT_SECRET", ""),
@@ -207,11 +180,6 @@ func Load() *Config {
 		DevelopServiceURL:      getEnv("DEVELOP_URL", "http://localhost:8185"),
 		DuckDBRuntimeURL:       getEnv("DUCKDB_RUNTIME_URL", "http://localhost:8104"),
 
-		// 审计日志归档配置
-		AuditLogRetentionDays:  getEnvAsPositiveInt("AUDIT_LOG_RETENTION_DAYS", 90), // 默认保留90天
-		AuditLogArchiveEnabled: getEnvAsBool("AUDIT_LOG_ARCHIVE_ENABLED", false),    // 默认不启用归档
-		AuditLogArchiveCron:    getEnv("AUDIT_LOG_ARCHIVE_CRON", "0 2 * * *"),       // 每天凌晨2点执行
-
 		// CORS 配置
 		AllowedOrigins: allowedOrigins,
 		TrustedProxies: trustedProxies,
@@ -258,22 +226,12 @@ func getEnvAsInt(key string, defaultValue int) int {
 	return defaultValue
 }
 
-func getEnvAsPositiveInt(key string, defaultValue int) int {
-	value := getEnvAsInt(key, defaultValue)
-	if value < 1 {
-		log.Printf("WARNING: %s must be greater than 0, using default value %d", key, defaultValue)
-		return defaultValue
-	}
-	return value
-}
-
 func getInfraMinIOEndpoint() string {
 	if endpoint := getEnv("MINIO_ENDPOINT", ""); endpoint != "" {
 		return endpoint
 	}
-	host := getEnv("MINIO_HOST", "localhost")
 	port := getEnv("MINIO_API_PORT", "19000")
-	return host + ":" + port
+	return "localhost:" + port
 }
 
 // loadEncryptionKey 加载加密密钥 (32字节 AES-256)

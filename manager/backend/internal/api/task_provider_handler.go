@@ -13,6 +13,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/taskprovider"
 	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
@@ -102,6 +103,17 @@ type TaskListResponse struct {
 	Total    int64          `json:"total"`
 	Page     int            `json:"page"`
 	PageSize int            `json:"page_size"`
+}
+
+// TaskProviderTaskDetailResponse documents the fields shared by every Manager
+// TaskProvider detail response. Owner-specific task fields remain at the same
+// top level in the actual response.
+type TaskProviderTaskDetailResponse struct {
+	ID                uint                           `json:"id"`
+	TenantID          uint                           `json:"tenant_id"`
+	TaskType          string                         `json:"task_type"`
+	Name              string                         `json:"name"`
+	ExecutionContract taskprovider.ExecutionContract `json:"execution_contract"`
 }
 
 // EmbeddingTaskRequest 是私有向量化任务 CRUD 的显式契约。
@@ -945,7 +957,7 @@ func (h *TaskProviderHandler) ListEmbeddingTasks(c *gin.Context) {
 // @Produce json
 // @Param task_type path string true "任务类型：vector_tile_cache_generation|vector_tile_set_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type"
 // @Param id path int true "任务ID | Task ID"
-// @Success 200 {object} object "任务详情，按 task_type 返回矢量瓦片缓存、矢量物化视图、栅格 COG 生成或向量化任务详情 | Task detail by task_type"
+// @Success 200 {object} TaskProviderTaskDetailResponse "任务详情与具体任务执行契约；任务类型专有字段位于同一顶层 | Task detail and concrete execution contract; task-type-specific fields remain at the same top level"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
 // @x-addp-auth-mode "permission"
@@ -976,7 +988,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return
 		}
-		c.JSON(http.StatusOK, tileCacheTaskResponse(task))
+		respondManagerTaskDetail(c, taskType, tileCacheTaskResponse(task))
 	case commonExecution.TaskTypeVectorTileSetGeneration:
 		task, err := h.vectorTileSetTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -987,7 +999,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return
 		}
-		c.JSON(http.StatusOK, task)
+		respondManagerTaskDetail(c, taskType, task)
 	case commonExecution.TaskTypeVectorMaterializedViewGeneration:
 		task, err := h.vectorMaterializedViewTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -998,7 +1010,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return
 		}
-		c.JSON(http.StatusOK, vectorMaterializedViewTaskResponse(task))
+		respondManagerTaskDetail(c, taskType, vectorMaterializedViewTaskResponse(task))
 	case commonExecution.TaskTypeRasterCOGGeneration:
 		task, err := h.rasterCOGTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -1009,7 +1021,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return
 		}
-		c.JSON(http.StatusOK, rasterCOGTaskResponse(task))
+		respondManagerTaskDetail(c, taskType, rasterCOGTaskResponse(task))
 	case commonExecution.TaskTypeRasterMosaicGeneration:
 		task, err := h.rasterMosaicTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -1020,7 +1032,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return
 		}
-		c.JSON(http.StatusOK, rasterMosaicTaskResponse(task))
+		respondManagerTaskDetail(c, taskType, rasterMosaicTaskResponse(task))
 	case commonExecution.TaskTypeModel3DTilesGeneration:
 		task, err := h.model3DTilesTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -1031,7 +1043,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return
 		}
-		c.JSON(http.StatusOK, model3DTilesTaskResponse(task))
+		respondManagerTaskDetail(c, taskType, model3DTilesTaskResponse(task))
 	case commonExecution.TaskTypeModel3DGLBGeneration:
 		task, err := h.model3DGLBTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -1042,7 +1054,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return
 		}
-		c.JSON(http.StatusOK, model3DGLBTaskResponse(task))
+		respondManagerTaskDetail(c, taskType, model3DGLBTaskResponse(task))
 	case commonExecution.TaskTypeGaussianSplatKSplatGeneration:
 		task, err := h.gaussianSplatKSplatTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -1053,7 +1065,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return
 		}
-		c.JSON(http.StatusOK, gaussianSplatKSplatTaskResponse(task))
+		respondManagerTaskDetail(c, taskType, gaussianSplatKSplatTaskResponse(task))
 	case commonExecution.TaskTypePointCloudCOPCGeneration:
 		task, err := h.pointCloudCOPCTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -1064,7 +1076,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return
 		}
-		c.JSON(http.StatusOK, pointCloudCOPCTaskResponse(task))
+		respondManagerTaskDetail(c, taskType, pointCloudCOPCTaskResponse(task))
 	case commonExecution.TaskTypeCADPreviewGeneration:
 		task, err := h.cadPreviewTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -1075,7 +1087,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return
 		}
-		c.JSON(http.StatusOK, cadPreviewTaskResponse(task))
+		respondManagerTaskDetail(c, taskType, cadPreviewTaskResponse(task))
 	case commonExecution.TaskTypeEmbedding:
 		task, err := h.embeddingTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -1086,10 +1098,45 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return
 		}
-		c.JSON(http.StatusOK, embeddingTaskResponse(task))
+		respondManagerTaskDetail(c, taskType, embeddingTaskResponse(task))
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的任务类型: " + taskType})
 	}
+}
+
+func respondManagerTaskDetail(c *gin.Context, taskType string, task interface{}) {
+	encoded, err := json.Marshal(task)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "任务详情序列化失败"})
+		return
+	}
+	result := map[string]interface{}{}
+	if err := json.Unmarshal(encoded, &result); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "任务详情序列化失败"})
+		return
+	}
+	result["execution_contract"] = managerTaskExecutionContract(taskType)
+	c.JSON(http.StatusOK, result)
+}
+
+func managerTaskExecutionContract(taskType string) taskprovider.ExecutionContract {
+	contract := taskprovider.EmptyExecutionContract()
+	if !managerTaskRequiresExistingResultAction(taskType) {
+		return contract
+	}
+	contract.InputSchema = map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"existing_result_action": map[string]interface{}{
+				"type": "string", "title": "已有结果处理", "enum": []interface{}{existingResultActionOverwrite},
+			},
+		},
+		"additionalProperties": false,
+	}
+	contract.InputUISchema = map[string]interface{}{
+		"existing_result_action": map[string]interface{}{"control": "select"},
+	}
+	return contract
 }
 
 // GetTileCacheTask GET /api/v1/manager/vector_tile_cache_tasks/:id

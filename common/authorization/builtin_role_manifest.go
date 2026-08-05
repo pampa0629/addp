@@ -150,9 +150,6 @@ func ResolveBuiltinRoles(manifest BuiltinRoleManifest, permissions []PermissionD
 			if permission.Status != "active" {
 				return nil, fmt.Errorf("role %q references non-active permission %q", role.Key, permissionKey)
 			}
-			if role.RoleType == "platform_builtin" && permission.OwnerModule != "system" {
-				return nil, fmt.Errorf("platform role %q cannot reference permission %q owned by %q", role.Key, permissionKey, permission.OwnerModule)
-			}
 			for _, scope := range role.AllowedScopeTypes {
 				if !contains(permission.AllowedScopeTypes, scope) {
 					return nil, fmt.Errorf("role %q scope %q is not allowed by permission %q", role.Key, scope, permissionKey)

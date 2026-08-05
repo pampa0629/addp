@@ -13,7 +13,7 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime) erro
 		runtime.TenantMembershipHandler == nil || runtime.AuditHandler == nil ||
 		runtime.TenantInvitationHandler == nil ||
 		runtime.TenantRoleHandler == nil ||
-		runtime.PrivilegedIdentityChangeHandler == nil {
+		runtime.PrivilegedIdentityChangeHandler == nil || runtime.SecurityPolicyHandler == nil {
 		return errors.New("IAM 管理路由依赖不完整")
 	}
 	platformContext, err := middleware.NewIAMContextGuard("platform")
@@ -57,10 +57,20 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime) erro
 	if err != nil {
 		return err
 	}
+	securityPolicyRead, err := permission("iam.security_policy.read")
+	if err != nil {
+		return err
+	}
+	securityPolicyUpdate, err := permission("iam.security_policy.update")
+	if err != nil {
+		return err
+	}
 
 	platform := api.Group("/platform")
 	platform.Use(runtime.Authentication, runtime.FirstPartyCredential, platformContext)
 	{
+		platform.GET("/security_policy", securityPolicyRead, runtime.SecurityPolicyHandler.Get)
+		platform.PUT("/security_policy", securityPolicyUpdate, runtime.SecurityPolicyHandler.Update)
 		platform.GET("/tenant_administrator_candidates", platformTenantPermissions["platform.tenant.create"], runtime.PlatformTenantHandler.ListAdministratorCandidates)
 		tenants := platform.Group("/tenants")
 		{

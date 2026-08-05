@@ -32,16 +32,25 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 		}
 		metadata = data
 	}
+	var configurationManagement datatypes.JSON
+	if req.ConfigurationManagement != nil {
+		data, err := json.Marshal(req.ConfigurationManagement)
+		if err != nil {
+			return err
+		}
+		configurationManagement = data
+	}
 
 	// 使用 UPSERT 逻辑：如果存在则更新，否则创建
 	module := models.ModuleRegistry{
-		ModuleName:     req.ModuleName,
-		ModuleURL:      req.ModuleURL,
-		RoutePrefix:    req.RoutePrefix,
-		HealthCheckURL: req.HealthCheckURL,
-		Status:         "up",
-		LastHeartbeat:  time.Now(),
-		Metadata:       metadata,
+		ModuleName:              req.ModuleName,
+		ModuleURL:               req.ModuleURL,
+		RoutePrefix:             req.RoutePrefix,
+		HealthCheckURL:          req.HealthCheckURL,
+		Status:                  "up",
+		LastHeartbeat:           time.Now(),
+		Metadata:                metadata,
+		ConfigurationManagement: configurationManagement,
 	}
 
 	// 按 module_name 查找现有记录
@@ -57,12 +66,13 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 
 	// 更新现有记录
 	return r.db.Model(&existing).Updates(map[string]interface{}{
-		"module_url":       req.ModuleURL,
-		"route_prefix":     req.RoutePrefix,
-		"health_check_url": req.HealthCheckURL,
-		"status":           "up",
-		"last_heartbeat":   time.Now(),
-		"metadata":         metadata,
+		"module_url":               req.ModuleURL,
+		"route_prefix":             req.RoutePrefix,
+		"health_check_url":         req.HealthCheckURL,
+		"status":                   "up",
+		"last_heartbeat":           time.Now(),
+		"metadata":                 metadata,
+		"configuration_management": configurationManagement,
 	}).Error
 }
 

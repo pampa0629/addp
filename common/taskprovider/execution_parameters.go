@@ -44,9 +44,9 @@ type ParameterValidationError struct {
 func (e *ParameterValidationError) Error() string {
 	switch e.Rule {
 	case ParameterRuleSchemaRequired:
-		return "execution_schema is required"
+		return "input_schema is required"
 	case ParameterRuleSchemaType:
-		return "execution_schema.type must be object"
+		return "input_schema.type must be object"
 	case ParameterRuleRequired:
 		return fmt.Sprintf("%s is required", e.Path)
 	case ParameterRuleEnum:
@@ -55,7 +55,7 @@ func (e *ParameterValidationError) Error() string {
 	case ParameterRuleType:
 		return fmt.Sprintf("%s must be %s", e.Path, e.Expected)
 	case ParameterRuleAdditionalProperty:
-		return fmt.Sprintf("%s is not allowed by execution_schema", e.Path)
+		return fmt.Sprintf("%s is not allowed by input_schema", e.Path)
 	case ParameterRuleMinimum:
 		return fmt.Sprintf("%s must be greater than or equal to %v", e.Path, e.Limit)
 	case ParameterRuleMaximum:
@@ -79,14 +79,15 @@ type ParameterValidationOptions struct {
 	AllowTemplateStrings bool
 }
 
-// ValidateExecutionParameters validates parameters against the task.capabilities/v1
-// execution_schema subset. Owner modules still perform final domain validation.
+// ValidateExecutionParameters validates one execution's parameter overrides
+// against a concrete task's execution contract. Owner modules still perform
+// final domain validation.
 func ValidateExecutionParameters(schema map[string]interface{}, parameters map[string]interface{}, options ParameterValidationOptions) error {
 	if schema == nil {
-		return &ParameterValidationError{Rule: ParameterRuleSchemaRequired, Path: "execution_schema"}
+		return &ParameterValidationError{Rule: ParameterRuleSchemaRequired, Path: "input_schema"}
 	}
 	if schemaType, _ := schema["type"].(string); schemaType != "object" {
-		return &ParameterValidationError{Rule: ParameterRuleSchemaType, Path: "execution_schema.type", Expected: "object"}
+		return &ParameterValidationError{Rule: ParameterRuleSchemaType, Path: "input_schema.type", Expected: "object"}
 	}
 	if parameters == nil {
 		parameters = map[string]interface{}{}

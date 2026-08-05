@@ -10,12 +10,6 @@ if [ -f ".env" ]; then
   source .env
   set +a
 fi
-if [ -f ".env.local" ]; then
-  set -a
-  source .env.local
-  set +a
-fi
-
 port="${SUPERMAP_WORKFLOW_PORT:-8103}"
 base_image="${SUPERMAP_WORKFLOW_BASE_IMAGE:-addp-supermap-workflow-base:local}"
 image="${SUPERMAP_WORKFLOW_IMAGE:-addp-supermap-workflow-engine:dev}"

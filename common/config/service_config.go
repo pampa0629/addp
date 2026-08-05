@@ -7,32 +7,6 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// ServiceConfigLoader defines the interface for loading service configuration
-type ServiceConfigLoader struct {
-	SystemServiceURL      string
-	EnableIntegration     bool
-	InternalAPIKey        string
-	BaseConfigDestination *BaseConfig
-}
-
-// LoadServiceConfiguration loads configuration with fallback from System service to local env
-func LoadServiceConfiguration(cfg ServiceConfigLoader) error {
-	if cfg.EnableIntegration && cfg.SystemServiceURL != "" {
-		log.Println("🔄 Attempting to load shared config from System service...")
-		if err := LoadSharedConfig(cfg.SystemServiceURL, cfg.BaseConfigDestination); err != nil {
-			log.Printf("⚠️  Warning: Failed to load shared config from System: %v", err)
-			log.Printf("⚠️  Falling back to local environment variables...")
-			LoadLocalConfig(cfg.BaseConfigDestination)
-		} else {
-			log.Println("✅ Successfully loaded shared config from System service")
-		}
-	} else {
-		log.Println("ℹ️  Service integration disabled, using local config")
-		LoadLocalConfig(cfg.BaseConfigDestination)
-	}
-	return nil
-}
-
 // RedisConfig holds Redis connection configuration
 type RedisConfig struct {
 	Host     string

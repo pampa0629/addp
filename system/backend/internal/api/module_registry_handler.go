@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 
+	commonauthmiddleware "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	sysi18n "github.com/addp/system/i18n"
 	"github.com/addp/system/internal/models"
@@ -145,6 +146,36 @@ func (h *ModuleRegistryHandler) ListModules(c *gin.Context) {
 		"modules": modules,
 		"count":   len(modules),
 	})
+}
+
+// ListConfigurationManagementEntries godoc
+// @Summary      查询当前上下文可见的配置管理入口 | List visible configuration management entries
+// @Tags         配置管理 | Configuration Management
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200 {array} models.ConfigurationManagementEntryView
+// @Failure      401 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "self"
+// @Router       /configuration-management/entries [get]
+func (h *ModuleRegistryHandler) ListConfigurationManagementEntries(c *gin.Context) {
+	authContext, exists := commonauthmiddleware.AuthContextFromGin(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+	permissions := make(map[string]struct{})
+	for _, assignment := range authContext.Authorization.RoleAssignments {
+		for _, permission := range assignment.Permissions {
+			permissions[permission] = struct{}{}
+		}
+	}
+	entries, err := h.service.ListConfigurationManagementEntries(authContext.Context.Type, permissions)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, entries)
 }
 
 // GetModule 查询单个模块

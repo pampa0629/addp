@@ -279,19 +279,27 @@ export function getFullName(locator) {
 /**
  * 格式化 ResourceLocator 的 UI 展示路径。
  *
- * native 表按 schema.table 展示，其他资源按路径层级展示。
+ * 按所属引擎的原生风格展示资源路径；关系型、动态 schema 与图数据库使用点号，
+ * 对象存储和文件系统使用斜杠。
  *
  * @param {string} uri - ResourceLocator URI 字符串
- * @param {string} representation - 资源表示形态
+ * @param {Object} options - 引擎和目标资源展示事实
  * @returns {string} 展示路径
  */
-export function formatLocatorDisplayPath(uri, representation = '') {
+export function formatLocatorDisplayPath(uri, options = {}) {
   const locator = parseLocatorSafe(uri)
-  if (!locator.path || locator.path.length === 0) return ''
-  if (String(representation || '').toLowerCase() === 'native' && String(locator.type || '').toLowerCase() === ResourceType.TABLE) {
-    return locator.path.slice(-2).join('.')
-  }
-  return locator.path.join('/')
+  const path = [...(locator.path || []), ...(options.appendedPath || [])].filter(segment => String(segment).trim() !== '')
+  if (path.length === 0) return ''
+  const engineType = String(options.engineType || '').trim().toLowerCase()
+  const resourceType = String(options.resourceType || locator.type || '').trim().toLowerCase()
+  const slashEngines = new Set(['minio', 's3', 'nfs', 'nas'])
+  const dotEngines = new Set(['postgresql', 'mysql', 'doris', 'clickhouse', 'spark_sql', 'mongodb', 'neo4j'])
+  const separator = slashEngines.has(engineType)
+    ? '/'
+    : dotEngines.has(engineType) || [ResourceType.TABLE, ResourceType.COLLECTION, ResourceType.GRAPH].includes(resourceType)
+      ? '.'
+      : '/'
+  return path.join(separator)
 }
 
 /**

@@ -27,7 +27,6 @@ type registrationTaskCapability struct {
 	DisplayName             string                 `json:"display_name"`
 	Description             string                 `json:"description"`
 	DefinitionSchema        map[string]interface{} `json:"definition_schema"`
-	ExecutionSchema         map[string]interface{} `json:"execution_schema"`
 	SupportsSchedule        bool                   `json:"supports_schedule"`
 	SupportsCancel          bool                   `json:"supports_cancel"`
 	SupportsInlineExecution bool                   `json:"supports_inline_execution"`
@@ -93,8 +92,8 @@ func TestTaskProviderRegistrationRegistersStandardOrchestratorContract(t *testin
 	if err := json.Unmarshal([]byte(*captured.Capabilities), &capabilities); err != nil {
 		t.Fatalf("decode capabilities: %v; capabilities=%s", err, *captured.Capabilities)
 	}
-	if capabilities.SchemaVersion != "task.capabilities/v1" {
-		t.Fatalf("schema_version = %q, want task.capabilities/v1", capabilities.SchemaVersion)
+	if capabilities.SchemaVersion != "task.capabilities/v2" {
+		t.Fatalf("schema_version = %q, want task.capabilities/v2", capabilities.SchemaVersion)
 	}
 	if len(capabilities.TaskCapabilities) != 1 {
 		t.Fatalf("task_capabilities = %#v, want one entry", capabilities.TaskCapabilities)
@@ -112,7 +111,7 @@ func TestTaskProviderRegistrationRegistersStandardOrchestratorContract(t *testin
 	if orchestration.SupportsCancel || orchestration.SupportsInlineExecution || orchestration.Deprecated {
 		t.Fatalf("orchestration flags = %#v, want cancel/inline/deprecated false", orchestration)
 	}
-	if orchestration.DefinitionSchema["type"] != "object" || orchestration.ExecutionSchema["type"] != "object" {
-		t.Fatalf("orchestration schemas must be object schemas: %#v", orchestration)
+	if orchestration.DefinitionSchema["type"] != "object" {
+		t.Fatalf("orchestration definition schema must be an object schema: %#v", orchestration)
 	}
 }

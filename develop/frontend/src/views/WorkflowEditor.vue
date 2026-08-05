@@ -458,27 +458,33 @@
       v-model="executeDialogVisible"
       class="addp-dialog"
       :title="t('develop.workflow.executeDialogTitle')"
-      width="min(500px, calc(100vw - 24px))"
+      width="min(760px, calc(100vw - 24px))"
       :close-on-click-modal="!executing"
       :close-on-press-escape="!executing"
       :show-close="!executing"
-      @opened="focusExecuteInputs"
       @closed="restoreExecuteTriggerFocus"
     >
       <div class="execution-summary">
-        <span>{{ t('develop.workflow.taskCount') }}</span>
+        <span>{{ t('develop.workflow.operatorCount') }}</span>
         <strong>{{ workflowData?.tasks?.length || 0 }}</strong>
       </div>
-      <el-form class="workflow-dialog-form" label-position="top" :disabled="executing">
-        <el-form-item :label="t('develop.workflow.execParams')">
-          <el-input ref="executeInputsRef" v-model="executeInputs" type="textarea" :rows="5" placeholder='{"key": "value"}' />
-        </el-form-item>
-      </el-form>
+      <div v-loading="executionContractLoading">
+        <ExecutionParameterForm
+          v-if="executionContract"
+          v-model="executionParameters"
+          :contract="executionContract"
+        />
+      </div>
       <template #footer>
         <el-button :disabled="executing" @click="executeDialogVisible = false">
           {{ t('develop.workflow.cancel') }}
         </el-button>
-        <el-button type="primary" :loading="executing" :disabled="executing" @click="confirmExecute">
+        <el-button
+          type="primary"
+          :loading="executing"
+          :disabled="executing || executionContractLoading || !executionContract"
+          @click="confirmExecute"
+        >
           {{ t('develop.workflow.execute') }}
         </el-button>
       </template>
@@ -601,7 +607,7 @@ import {
   developTaskIDFromRoute
 } from '@/utils/developTaskRoute'
 import { navigateDevelopTaskEditor } from '@/utils/developNavigation'
-import { focusElement, openMonitorExecution, StatusAnnouncer } from '@addp/common-frontend'
+import { ExecutionParameterForm, focusElement, openMonitorExecution, StatusAnnouncer } from '@addp/common-frontend'
 
 const route = useRoute()
 const router = useRouter()
@@ -624,7 +630,6 @@ const moreActionsButtonRef = ref(null)
 const rebindTargetSelectRef = ref(null)
 const engineSwitchCancelRef = ref(null)
 const saveNameInputRef = ref(null)
-const executeInputsRef = ref(null)
 const jsonCloseButtonRef = ref(null)
 const executeTriggerButtonRef = ref(null)
 const workflowData = ref({ tasks: [] })
@@ -656,7 +661,9 @@ const rebindingStorageEngine = ref(false)
 let storageBindingRevision = 0
 
 const executeDialogVisible = ref(false)
-const executeInputs = ref('{}')
+const executionContract = ref(null)
+const executionContractLoading = ref(false)
+const executionParameters = ref({})
 const preparingExecution = ref(false)
 const executing = ref(false)
 const jsonDialogVisible = ref(false)
@@ -1105,10 +1112,6 @@ function focusSaveName() {
   focusElement(saveNameInputRef.value)
 }
 
-function focusExecuteInputs() {
-  focusElement(executeInputsRef.value)
-}
-
 function restoreExecuteTriggerFocus() {
   nextTick(() => focusElement(executeTriggerButtonRef.value))
 }
@@ -1229,31 +1232,34 @@ async function handleExecute() {
       }
     }
     if (!guardStorageBindingsExecutable()) return
-    openExecuteDialog()
+    await openExecuteDialog()
   } finally {
     preparingExecution.value = false
   }
 }
 
-function openExecuteDialog() {
-  executeInputs.value = '{}'
+async function openExecuteDialog() {
+  executionContractLoading.value = true
+	executionContract.value = null
+  executionParameters.value = {}
   executeDialogVisible.value = true
+  try {
+    const task = await getDevTask(currentTaskId.value)
+    executionContract.value = task.execution_contract
+  } catch (error) {
+    executeDialogVisible.value = false
+    ElMessage.error(t('develop.workflow.executeFailed') + (error.response?.data?.error || error.message))
+  } finally {
+    executionContractLoading.value = false
+  }
 }
 
 async function confirmExecute() {
   if (executing.value) return
-  let inputs
-  try {
-    inputs = JSON.parse(executeInputs.value)
-    if (!inputs || typeof inputs !== 'object' || Array.isArray(inputs)) throw new Error()
-  } catch {
-    ElMessage.warning(t('develop.workflow.invalidJson'))
-    return
-  }
 
   executing.value = true
   try {
-    const execution = await executeWorkflowTask(currentTaskId.value, inputs)
+    const execution = await executeWorkflowTask(currentTaskId.value, executionParameters.value)
     executeDialogVisible.value = false
     ElMessage.success(t('develop.workflow.executeSubmitted'))
     await openMonitorExecution(execution.execution_id)

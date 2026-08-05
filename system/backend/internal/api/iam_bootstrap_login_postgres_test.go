@@ -43,9 +43,7 @@ func TestBootstrapBrowserLoginAgainstPostgres(t *testing.T) {
 	}
 
 	cfg := testIAMRuntimeConfig()
-	cfg.OAuthPublicRateLimitPerMinute = 60
-	cfg.OAuthUserRateLimitPerMinute = 30
-	runtime, err := NewIAMRuntime(db, cfg)
+	runtime, err := NewIAMRuntime(db, cfg, testIAMSecurityPolicy())
 	if err != nil {
 		t.Fatalf("create IAM runtime: %v", err)
 	}
@@ -95,7 +93,7 @@ func TestBootstrapBrowserLoginAgainstPostgres(t *testing.T) {
 	router := gin.New()
 	router.Use(i18nmiddleware.I18nMiddleware())
 	apiGroup := router.Group("/api/v1/system")
-	if err := RegisterIAMRoutes(apiGroup, runtime, redisClient, cfg); err != nil {
+	if err := RegisterIAMRoutes(apiGroup, runtime, redisClient); err != nil {
 		t.Fatalf("register IAM routes: %v", err)
 	}
 	authorizationRequest, err := runtime.ConsentBridge.CreateAuthorizationRequest(

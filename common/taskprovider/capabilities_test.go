@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestParseCapabilitiesAcceptsTaskCapabilitiesV1(t *testing.T) {
+func TestParseCapabilitiesAcceptsTaskCapabilitiesV2(t *testing.T) {
 	caps, err := ParseCapabilities(validCapabilitiesForTest())
 	if err != nil {
 		t.Fatalf("ParseCapabilities() error = %v, want nil", err)
@@ -60,7 +60,6 @@ func TestParseCapabilitiesRejectsDuplicateTaskType(t *testing.T) {
 			"display_name":"扫描任务",
 			"description":"执行元数据扫描",
 			"definition_schema":{"type":"object"},
-			"execution_schema":{"type":"object"},
 			"supports_schedule":true,
 			"supports_cancel":false,
 			"supports_inline_execution":false,
@@ -74,7 +73,7 @@ func TestParseCapabilitiesRejectsDuplicateTaskType(t *testing.T) {
 }
 
 func TestParseCapabilitiesRejectsUnsupportedSchemaKeyword(t *testing.T) {
-	raw := strings.Replace(validCapabilitiesForTest(), `"execution_schema":{"type":"object"}`, `"execution_schema":{"type":"object","oneOf":[{"type":"object"}]}`, 1)
+	raw := strings.Replace(validCapabilitiesForTest(), `"definition_schema":{"type":"object"}`, `"definition_schema":{"type":"object","oneOf":[{"type":"object"}]}`, 1)
 	assertCapabilitiesError(t, raw, "oneOf is not supported")
 }
 
@@ -83,17 +82,12 @@ func TestParseCapabilitiesRejectsMissingBooleanField(t *testing.T) {
 	assertCapabilitiesError(t, raw, "supports_cancel must be boolean")
 }
 
-func TestParseCapabilitiesRejectsNonObjectExecutionSchema(t *testing.T) {
-	raw := strings.Replace(validCapabilitiesForTest(), `"execution_schema":{"type":"object"}`, `"execution_schema":{"type":"array"}`, 1)
-	assertCapabilitiesError(t, raw, "execution_schema.type must be object")
-}
-
 func TestParseCapabilitiesRejectsNonConsoleRouteURL(t *testing.T) {
 	raw := strings.Replace(validCapabilitiesForTest(), `"create_url":"/meta/scan"`, `"create_url":"https://example.invalid/meta/scan"`, 1)
 	assertCapabilitiesError(t, raw, "create_url must be a Console route starting with /")
 }
 
-func TestParseCapabilitiesRejectsInlineExecutionInV1(t *testing.T) {
+func TestParseCapabilitiesRejectsInlineExecutionInV2(t *testing.T) {
 	raw := strings.Replace(validCapabilitiesForTest(), `"supports_inline_execution":false`, `"supports_inline_execution":true`, 1)
 	assertCapabilitiesError(t, raw, "supports_inline_execution must be false")
 }
@@ -122,13 +116,12 @@ func assertCapabilitiesError(t *testing.T, raw string, want string) {
 
 func validCapabilitiesForTest() string {
 	return `{
-		"schema_version":"task.capabilities/v1",
+		"schema_version":"task.capabilities/v2",
 		"task_capabilities":[{
 			"type":"scan",
 			"display_name":"扫描任务",
 			"description":"执行元数据扫描",
 			"definition_schema":{"type":"object"},
-			"execution_schema":{"type":"object"},
 			"supports_schedule":true,
 			"supports_cancel":false,
 			"supports_inline_execution":false,

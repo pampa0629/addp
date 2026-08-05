@@ -33,18 +33,17 @@ python api_server.py
 ### 方式 2: Docker 部署（推荐）
 
 ```bash
-# 1. 创建 .env 文件
-cp .env.example .env
-# 编辑 .env 文件，按需设置 PORT / LOG_LEVEL
+# 从 ADDP 仓库根目录启动，统一读取根 .env
+cd ../..
 
-# 2. 确保 addp-network 网络存在
+# 确保 addp-network 网络存在
 docker network create addp-network 2>/dev/null || true
 
-# 3. 启动引擎
-docker-compose up -d
+# 启动引擎
+docker compose -f engines/math-workflow/docker-compose.yml up -d
 
-# 4. 查看日志
-docker-compose logs -f
+# 查看日志
+docker compose -f engines/math-workflow/docker-compose.yml logs -f
 ```
 
 ### 验证运行
@@ -210,7 +209,6 @@ engines/math-workflow/
 ├── requirements.txt         # Python 依赖
 ├── Dockerfile               # Docker 镜像定义
 ├── docker-compose.yml       # 容器编排配置
-├── .env.example             # 环境变量模板
 └── README.md                # 本文件
 ```
 

@@ -210,3 +210,11 @@ other = "Storage engine discovery is temporarily unavailable. Try again later"
 
 [develop.workflow.storage_binding_update_failed]
 other = "Failed to update the workflow storage engine binding"
+[develop.execution.parameters_invalid]
+other = "Execution parameters are invalid; check the values overridden for this run"
+
+[develop.execution.contract_unavailable]
+other = "The execution parameter contract for this task is temporarily unavailable"
+
+[develop.execution.start_failed]
+other = "Failed to start task execution"

@@ -32,8 +32,6 @@ class Settings(BaseSettings):
         return self.SYSTEM_URL or f"http://{self.SERVICE_HOST}:{self.SYSTEM_BACKEND_PORT}"
 
     INTERNAL_API_KEY: str = ""
-    ENABLE_SERVICE_INTEGRATION: bool = True
-
     # PostgreSQL 配置（与 .env 的 POSTGRES_* 变量对应）
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 15432
@@ -48,7 +46,6 @@ class Settings(BaseSettings):
     REDIS_DB: int = 0
 
     class Config:
-        env_file = "../../.env"
         case_sensitive = True
         extra = "ignore"
 

@@ -28,7 +28,9 @@ export const rebindWorkflowStorageEngine = (id, sourceEngineId, targetEngineId) 
 export const deleteDevTask = (id) => client.delete(`/develop/task-definitions/${id}`)
 
 // 执行开发任务
-export const executeDevTask = (id, inputs) => client.post(`/develop/task-definitions/${id}/execute`, inputs)
+export const executeDevTask = (id, parameters = {}) => (
+  client.post(`/develop/task-definitions/${id}/execute`, { parameters })
+)
 
 // 获取可用资源列表
 export const listEngines = (params) => client.get('/develop/engines', { params })

@@ -22,7 +22,7 @@ System 在第一方 Web 登录和每次 Web Refresh Token 轮换事务中，为�
 
 1. 第一方登录创建 Refresh Token Family、Access Token 和每个 Owner 的 Resource Access Ticket。
 2. Web Refresh 在同一事务内撤销旧票据并创建新票据。
-3. 票据有效期不超过 `RESOURCE_ACCESS_TICKET_EXPIRE_MINUTES`、当前 Access Token 和 Family 的剩余有效期。
+3. 票据有效期不超过当前 IAM 安全策略中的 Resource Access Ticket TTL、当前 Access Token 和 Family 的剩余有效期。
 4. 退出、Refresh Token 轮换、重用或 Family 撤销时，所有关联票据同步撤销；第一阶段不缓存 Resource Ticket AuthContext。
 5. OAuth Authorization Code、Device Flow 和 OAuth Refresh Token 不创建浏览器资源票据。
 

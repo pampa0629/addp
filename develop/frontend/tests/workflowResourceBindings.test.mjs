@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 
 const source = await readFile(resolve('src/utils/workflowResourceBindings.js'), 'utf8')
 const mod = await import(`data:text/javascript;charset=utf-8,${encodeURIComponent(source)}`)
+const { geometryColumnFactsFromSelection } = await import('../../../common-frontend/basic/src/utils/resourceSelection.js')
 
 const sourcePicker = {
   ui_config: {
@@ -40,24 +41,22 @@ assert.equal(mod.isResourceDataTypeSupported(pointCloudPicker, { metadata: { dat
 assert.equal(mod.resourceBindingTargetExtension(pointCloudPicker), '.copc.laz')
 assert.equal(mod.resourceBindingTargetNameKind(pointCloudPicker), 'file')
 assert.deepEqual(
-  mod.geometryColumnFactsFromSelection({
+  geometryColumnFactsFromSelection({
+    resource: {
+      spatial: {
+        primary_geometry_column: 'shape_secondary',
+        geometry_columns: ['shape', 'shape_secondary']
+      }
+    },
     raw: {
       node: {
         metadata: {
-          capabilities: {
-            spatial: {
-              primary_geometry_column: 'shape_secondary',
-              geometry_columns: [
-                { name: 'shape' },
-                { name: 'shape_secondary' }
-              ]
-            }
-          }
+          spatial: { geometry: 'ignored_private_shape' }
         }
       }
     }
   }),
-  { columns: ['shape', 'shape_secondary'], selected: 'shape' }
+  { columns: ['shape', 'shape_secondary'], selected: 'shape_secondary' }
 )
 assert.equal(mod.resourceBindingInitialLocator(sourcePicker, { source_locator: 'source' }), 'source')
 assert.equal(mod.resourceBindingGeometryColumnParam(sourcePicker), 'geometry_field')

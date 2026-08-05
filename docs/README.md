@@ -106,13 +106,13 @@
 
 ## SuperMap 工作流运行时主题
 
-处理 SuperMap 数据格式、空间算法、SPS / GPA、`supermap_workflow` 工作流运行时、SuperMap 算子接入或后续血缘设计时，建议按以下顺序阅读：
+处理 SuperMap 数据格式、空间算法、`supermap_workflow` 工作流运行时、SuperMap 算子接入或后续血缘设计时，建议按以下顺序阅读：
 
-1. [术语表](concepts/addp术语表.md)：确认 ADDP Operator、Workflow Runtime、SuperMap SPS、SPS Process、SuperMap Algorithm 和 `supermap_workflow` 的术语边界。
+1. [术语表](concepts/addp术语表.md)：确认 ADDP Operator、Workflow Runtime、SuperMap iObjects C++ 和 `supermap_workflow` 的术语边界。
 2. [引擎体系图](concepts/addp引擎体系图.md)：确认 `EnginePlugin + WorkflowRuntimeProvider + HTTP runtime` 的模块边界。
 3. [ADDP 工作流计算引擎接口规范](spec/addp工作流计算引擎接口规范.md)：确认工作流运行时必须实现的统一 HTTP 协议。
-4. [SuperMap 工作流运行时设计](next/SuperMap工作流运行时设计.md)：查看 `supermap_workflow` 的 SPS 主路径、内存对象传递、算子适配和血缘事件设计。
-5. [工作流运行时结果产物与血缘专题](next/工作流运行时结果产物与血缘专题.md)：处理 runtime 结果产物、`produced_assets`、`consumed_assets`、统一执行记录和血缘采集边界时阅读。
+4. [SuperMap Workflow Engine README](../engines/supermap-workflow/README.md)：查看 C++ Runtime、算子、镜像构建、SDK 母版、裁剪结果和验证方式。
+5. [工作流运行时结果产物与血缘专题](next/工作流运行时结果产物与血缘专题.md)：处理 Runtime 节点事件、调用方输入资源事实、`produced_targets`、统一执行记录和血缘采集边界时阅读。
 6. [Meta 模块血缘扩展设计](plan/meta模块血缘扩展设计.md)：处理 SuperMap runtime 血缘事件落库和资产级血缘关系时阅读。
 
 ## 三维模型、倾斜摄影与点云主题
@@ -152,7 +152,8 @@
 2. [任务编排体系图](concepts/addp任务编排体系图.md)：理解任务级 DAG 和跨模块编排概念。
 3. [监控与执行体系图](concepts/addp监控与执行体系图.md)：理解 Monitor 与 `common.task_executions` 的关系。
 4. [元数据扫描机制规范](spec/addp元数据扫描机制规范.md)：处理 Meta ScanTask 与 execution 时阅读。
-5. [Transfer 任务语义与同步模式设计](next/transfer任务语义与同步模式设计.md)：处理 Transfer 全量、增量、实时、取消、重试、进度或日志语义时阅读。
+5. [Transfer 任务语义与同步模式](../transfer/docs/transfer-任务语义与同步模式.md)：处理 Transfer 全量、增量、持续同步、状态、重试、进度或日志语义时阅读。
+6. [Transfer 后续能力清单](next/transfer后续能力清单.md)：评估尚未实现的同步模式或运行时能力时阅读。
 
 ## 资源回收与生命周期主题
 

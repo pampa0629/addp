@@ -210,3 +210,11 @@ other = "存储引擎发现服务暂时不可用，请稍后重试"
 
 [develop.workflow.storage_binding_update_failed]
 other = "更新工作流存储引擎绑定失败"
+[develop.execution.parameters_invalid]
+other = "执行参数无效，请检查本次覆盖值"
+
+[develop.execution.contract_unavailable]
+other = "当前任务的执行参数契约暂时不可用"
+
+[develop.execution.start_failed]
+other = "启动任务执行失败"

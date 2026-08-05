@@ -27,13 +27,12 @@ func TestTaskProviderRegisterRejectsUnknownTopLevelFields(t *testing.T) {
 		"task_status_endpoint":"/api/v1/meta/executions/{execution_id}",
 		"create_task_url":"/meta/scan",
 		"capabilities":{
-			"schema_version":"task.capabilities/v1",
+			"schema_version":"task.capabilities/v2",
 			"task_capabilities":[{
 				"type":"scan",
 				"display_name":"扫描任务",
 				"description":"执行元数据扫描",
 				"definition_schema":{"type":"object"},
-				"execution_schema":{"type":"object"},
 				"supports_schedule":true,
 				"supports_cancel":false,
 				"supports_inline_execution":false,

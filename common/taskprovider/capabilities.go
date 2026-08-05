@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-const CapabilitiesSchemaVersion = "task.capabilities/v1"
+const CapabilitiesSchemaVersion = "task.capabilities/v2"
 
 var taskTypePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
@@ -21,7 +21,6 @@ var allowedTaskCapabilityFields = map[string]struct{}{
 	"display_name":              {},
 	"description":               {},
 	"definition_schema":         {},
-	"execution_schema":          {},
 	"supports_schedule":         {},
 	"supports_cancel":           {},
 	"supports_inline_execution": {},
@@ -86,7 +85,6 @@ type TaskCapability struct {
 	DisplayName             string
 	Description             string
 	DefinitionSchema        map[string]interface{}
-	ExecutionSchema         map[string]interface{}
 	SupportsSchedule        bool
 	SupportsCancel          bool
 	SupportsInlineExecution bool
@@ -178,7 +176,7 @@ func parseTaskCapability(raw interface{}, index int) (TaskCapability, error) {
 	}
 	for key := range capability {
 		if _, allowed := allowedTaskCapabilityFields[key]; !allowed {
-			return TaskCapability{}, validationError("capabilities.task_capabilities[%d].%s is not allowed in task.capabilities/v1", index, key)
+			return TaskCapability{}, validationError("capabilities.task_capabilities[%d].%s is not allowed in task.capabilities/v2", index, key)
 		}
 	}
 
@@ -218,10 +216,6 @@ func parseTaskCapability(raw interface{}, index int) (TaskCapability, error) {
 	if err != nil {
 		return TaskCapability{}, err
 	}
-	executionSchema, err := requiredObjectSchema(capability, "execution_schema", index)
-	if err != nil {
-		return TaskCapability{}, err
-	}
 	for _, field := range []string{"supports_schedule", "supports_cancel", "supports_inline_execution", "deprecated"} {
 		if _, ok := capability[field].(bool); !ok {
 			return TaskCapability{}, validationError("capabilities.task_capabilities[%d].%s must be boolean", index, field)
@@ -229,7 +223,7 @@ func parseTaskCapability(raw interface{}, index int) (TaskCapability, error) {
 	}
 	supportsInlineExecution, _ := capability["supports_inline_execution"].(bool)
 	if supportsInlineExecution {
-		return TaskCapability{}, validationError("capabilities.task_capabilities[%d].supports_inline_execution must be false in task.capabilities/v1", index)
+		return TaskCapability{}, validationError("capabilities.task_capabilities[%d].supports_inline_execution must be false in task.capabilities/v2", index)
 	}
 	supportsSchedule, _ := capability["supports_schedule"].(bool)
 	supportsCancel, _ := capability["supports_cancel"].(bool)
@@ -239,7 +233,6 @@ func parseTaskCapability(raw interface{}, index int) (TaskCapability, error) {
 		DisplayName:             displayName,
 		Description:             description,
 		DefinitionSchema:        definitionSchema,
-		ExecutionSchema:         executionSchema,
 		SupportsSchedule:        supportsSchedule,
 		SupportsCancel:          supportsCancel,
 		SupportsInlineExecution: supportsInlineExecution,
@@ -270,10 +263,10 @@ func requiredObjectSchema(capability map[string]interface{}, field string, index
 func validateJSONSchema(schema map[string]interface{}, path string) error {
 	for key, value := range schema {
 		if _, unsupported := unsupportedJSONSchemaKeywords[key]; unsupported {
-			return validationError("%s.%s is not supported in task.capabilities/v1", path, key)
+			return validationError("%s.%s is not supported in task.capabilities/v2", path, key)
 		}
 		if _, allowed := allowedJSONSchemaKeywords[key]; !allowed {
-			return validationError("%s.%s is not allowed in task.capabilities/v1", path, key)
+			return validationError("%s.%s is not allowed in task.capabilities/v2", path, key)
 		}
 		switch key {
 		case "type":
@@ -282,7 +275,7 @@ func validateJSONSchema(schema map[string]interface{}, path string) error {
 				return validationError("%s.type must be string", path)
 			}
 			if _, allowed := allowedJSONSchemaTypes[typeName]; !allowed {
-				return validationError("%s.type %q is not supported in task.capabilities/v1", path, typeName)
+				return validationError("%s.type %q is not supported in task.capabilities/v2", path, typeName)
 			}
 		case "title", "description", "format":
 			if _, ok := value.(string); !ok {

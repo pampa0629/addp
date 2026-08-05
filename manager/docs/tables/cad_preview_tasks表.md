@@ -67,7 +67,7 @@ GET  /api/v1/manager/executions/{execution_id}
 
 ## 五、相关文档
 
-- [CAD 数据支持设计](../../../docs/next/addp-CAD数据支持设计.md)
+- [CAD 后续路线](../../../docs/next/addp-CAD数据支持设计.md)
 - [数据预览语义协议](../数据预览语义协议.md)
 - [cad_previews 表结构说明](./cad_previews表.md)
 - [数据库架构](../数据库架构.md)

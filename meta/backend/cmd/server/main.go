@@ -178,40 +178,36 @@ func main() {
 	serviceURL := utils.BuildServiceURL(serviceHost, port)
 
 	// ========== 模块注册（注册到 System service_registry）==========
-	if cfg.EnableIntegration {
-		systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "meta", serviceURL, "/meta", map[string]interface{}{
-			"module": "meta",
-			"capabilities": map[string]interface{}{
-				"cleanup_executor": map[string]interface{}{
-					"enabled": true,
-					"causes":  []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted},
-				},
+	systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "meta", serviceURL, "/meta", map[string]interface{}{
+		"module": "meta",
+		"capabilities": map[string]interface{}{
+			"cleanup_executor": map[string]interface{}{
+				"enabled": true,
+				"causes":  []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted},
 			},
-		})
-	}
+		},
+	})
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
-	if cfg.EnableIntegration {
-		taskProviderRegistry := service.NewTaskProviderRegistryService(systemClient, serviceURL)
+	taskProviderRegistry := service.NewTaskProviderRegistryService(systemClient, serviceURL)
 
-		// 后台异步注册（不阻塞启动，支持重试）
-		go func() {
-			time.Sleep(2 * time.Second) // 等待服务完全启动
-			maxRetries := 5
-			for attempt := 1; attempt <= maxRetries; attempt++ {
-				if err := taskProviderRegistry.Register(runtimeContext); err != nil {
-					logger.L().Warn("任务提供者注册失败",
-						"attempt", fmt.Sprintf("%d/%d", attempt, maxRetries),
-						"error", err)
-					time.Sleep(time.Duration(attempt*2) * time.Second) // 指数退避
-					continue
-				}
-				logger.L().Info("✅ Meta 模块已注册到 task_providers")
-				return
+	// 后台异步注册（不阻塞启动，支持重试）
+	go func() {
+		time.Sleep(2 * time.Second) // 等待服务完全启动
+		maxRetries := 5
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			if err := taskProviderRegistry.Register(runtimeContext); err != nil {
+				logger.L().Warn("任务提供者注册失败",
+					"attempt", fmt.Sprintf("%d/%d", attempt, maxRetries),
+					"error", err)
+				time.Sleep(time.Duration(attempt*2) * time.Second) // 指数退避
+				continue
 			}
-			logger.L().Error("任务提供者注册失败（已达最大重试次数）", "max_retries", maxRetries)
-		}()
-	}
+			logger.L().Info("✅ Meta 模块已注册到 task_providers")
+			return
+		}
+		logger.L().Error("任务提供者注册失败（已达最大重试次数）", "max_retries", maxRetries)
+	}()
 
 	// 启动服务器
 	addr := fmt.Sprintf(":%s", cfg.ServerPort)

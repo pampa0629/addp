@@ -50,13 +50,12 @@ const behaviorDefinition = mod.createDAGDirectEdgeBehavior({
 const behavior = { graph }
 
 assert.deepEqual(behaviorDefinition.getEvents(), {
-  'node:mousedown': 'onPortMouseDown',
-  mousemove: 'onPortMouseMove',
-  'node:mouseup': 'onPortMouseUp',
-  mouseup: 'onPortMouseUp',
-  mouseleave: 'onPortMouseLeave'
+  'node:dragstart': 'onPortDragStart',
+  drag: 'onPortDrag',
+  'node:drop': 'onPortDrop',
+  dragend: 'onPortDragEnd'
 })
-behaviorDefinition.onPortMouseDown.call(behavior, outputEvent)
+behaviorDefinition.onPortDragStart.call(behavior, outputEvent)
 assert.equal(edgeCapture, false)
 assert.deepEqual(edgeModel, {
   source: 'source',
@@ -64,14 +63,21 @@ assert.deepEqual(edgeModel, {
   sourcePort: 'default',
   targetParam: undefined
 })
-behaviorDefinition.onPortMouseMove.call(behavior, { x: 25, y: 35 })
+behaviorDefinition.onPortDrag.call(behavior, { x: 25, y: 35 })
 assert.deepEqual(edgeModel.target, { x: 25, y: 35 })
-behaviorDefinition.onPortMouseUp.call(behavior, inputEvent)
+behaviorDefinition.onPortDrop.call(behavior, inputEvent)
 assert.equal(edgeCapture, true)
 assert.equal(edgeModel.target, 'target')
 assert.equal(edgeModel.sourcePort, 'default')
 assert.equal(edgeModel.targetParam, 'input_df')
 assert.deepEqual(emittedEvents.map(event => event.name), ['beforecreateedge', 'aftercreateedge'])
+behaviorDefinition.onPortDragEnd.call(behavior)
+assert.equal(edgeModel.target, 'target')
+
+behaviorDefinition.onPortDragStart.call(behavior, outputEvent)
+behaviorDefinition.onPortDrag.call(behavior, { x: 40, y: 50 })
+behaviorDefinition.onPortDragEnd.call(behavior)
+assert.equal(edgeModel, null)
 assert.equal(mod.isDAGPortEvent(outputEvent), true)
 assert.equal(mod.isDAGPortEvent({ shape: { cfg: { name: 'node-body' } } }), false)
 

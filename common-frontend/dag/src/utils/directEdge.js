@@ -47,14 +47,13 @@ export function createDAGDirectEdgeBehavior({
     type: 'create-edge',
     getEvents() {
       return {
-        'node:mousedown': 'onPortMouseDown',
-        mousemove: 'onPortMouseMove',
-        'node:mouseup': 'onPortMouseUp',
-        mouseup: 'onPortMouseUp',
-        mouseleave: 'onPortMouseLeave'
+        'node:dragstart': 'onPortDragStart',
+        drag: 'onPortDrag',
+        'node:drop': 'onPortDrop',
+        dragend: 'onPortDragEnd'
       }
     },
-    onPortMouseDown(event) {
+    onPortDragStart(event) {
       const source = resolveSource(event)
       if (!source) return
 
@@ -71,11 +70,11 @@ export function createDAGDirectEdgeBehavior({
       }, false)
       this.__addpEdge?.getKeyShape?.()?.set?.('capture', false)
     },
-    onPortMouseMove(event) {
+    onPortDrag(event) {
       if (!this.__addpEdge) return
       this.graph.updateItem(this.__addpEdge, { target: eventPoint(event) }, false)
     },
-    onPortMouseUp(event) {
+    onPortDrop(event) {
       if (!this.__addpEdge) return
       const target = resolveTarget(event)
       if (!target) {
@@ -106,7 +105,7 @@ export function createDAGDirectEdgeBehavior({
       clearTemporaryEdgeState(this)
       this.graph.emit('aftercreateedge', { edge })
     },
-    onPortMouseLeave() {
+    onPortDragEnd() {
       cancelTemporaryEdge(this)
     }
   }

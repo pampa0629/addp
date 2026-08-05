@@ -3,12 +3,20 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import enMessages from '../src/i18n/en.json' with { type: 'json' }
 import zhCnMessages from '../src/i18n/zh-cn.json' with { type: 'json' }
+import {
+  sortEntriesByOrder,
+  summarizeExecutionResource
+} from '../../../common-frontend/basic/src/utils/executionParameterPresentation.js'
 
 const editor = await readFile(resolve('src/views/WorkflowEditor.vue'), 'utf8')
 const paramsPanel = await readFile(resolve('src/components/workflow/OperatorParamsPanel.vue'), 'utf8')
 const operatorPalette = await readFile(resolve('src/components/workflow/OperatorPalette.vue'), 'utf8')
 const sharedTheme = await readFile(resolve('../../common-frontend/basic/src/styles/theme.css'), 'utf8')
 const statusAnnouncer = await readFile(resolve('../../common-frontend/basic/src/components/StatusAnnouncer.vue'), 'utf8')
+const executionParameterForm = await readFile(resolve('../../common-frontend/basic/src/components/ExecutionParameterForm.vue'), 'utf8')
+const executionParameterPresentation = await readFile(resolve('../../common-frontend/basic/src/utils/executionParameterPresentation.js'), 'utf8')
+const commonZhCnMessages = JSON.parse(await readFile(resolve('../../common-frontend/basic/src/i18n/zh-cn.json'), 'utf8'))
+const commonEnMessages = JSON.parse(await readFile(resolve('../../common-frontend/basic/src/i18n/en.json'), 'utf8'))
 const operatorItemSource = operatorPalette.slice(
   operatorPalette.indexOf('<div\n              v-for="operator in category.operators"'),
   operatorPalette.indexOf('</el-collapse-item>')
@@ -16,7 +24,7 @@ const operatorItemSource = operatorPalette.slice(
 const operatorItemOpening = operatorItemSource.slice(0, operatorItemSource.indexOf('>') + 1)
 const executeDialogSource = editor.slice(
   editor.indexOf('<el-dialog\n      v-model="executeDialogVisible"'),
-  editor.indexOf('<el-dialog v-model="jsonDialogVisible"')
+  editor.indexOf('<el-dialog\n      v-model="jsonDialogVisible"')
 )
 const saveDialogSource = editor.slice(
   editor.indexOf('<el-dialog\n      v-model="saveDialogVisible"'),
@@ -50,9 +58,10 @@ assert.match(editor, /:loading="executionButtonLoading"/)
 assert.match(executeDialogSource, /:close-on-click-modal="!executing"/)
 assert.match(executeDialogSource, /:close-on-press-escape="!executing"/)
 assert.match(executeDialogSource, /:show-close="!executing"/)
-assert.match(executeDialogSource, /<el-form class="workflow-dialog-form" label-position="top" :disabled="executing">/)
+assert.match(executeDialogSource, /<ExecutionParameterForm[\s\S]*v-model="executionParameters"[\s\S]*:contract="executionContract"/)
+assert.doesNotMatch(executeDialogSource, /type="textarea"/)
 assert.match(executeDialogSource, /<el-button :disabled="executing" @click="executeDialogVisible = false">/)
-assert.match(executeDialogSource, /:loading="executing" :disabled="executing" @click="confirmExecute"/)
+assert.match(executeDialogSource, /:loading="executing"[\s\S]*:disabled="executing \|\| executionContractLoading \|\| !executionContract"[\s\S]*@click="confirmExecute"/)
 assert.match(saveDialogSource, /:close-on-click-modal="!saving"/)
 assert.match(saveDialogSource, /:close-on-press-escape="!saving"/)
 assert.match(saveDialogSource, /:show-close="!saving"/)
@@ -62,9 +71,63 @@ assert.match(saveDialogSource, /:loading="saving" :disabled="saving" @click="con
 assert.doesNotMatch(editor, /width="500px"/)
 assert.equal((editor.match(/class="addp-dialog"/g) || []).length, 5)
 assert.match(saveDialogSource, /label-position="top"/)
-assert.match(executeDialogSource, /label-position="top"/)
 assert.match(executeDialogSource, /class="execution-summary"/)
+assert.match(executeDialogSource, /develop\.workflow\.operatorCount/)
+assert.doesNotMatch(executeDialogSource, /develop\.workflow\.taskCount/)
 assert.doesNotMatch(executeDialogSource, /<el-input :model-value="workflowData\?\.tasks\?\.length \|\| 0" disabled/)
+assert.match(executionParameterPresentation, /parseLocatorSafe/)
+assert.match(executionParameterPresentation, /formatLocatorDisplayPath/)
+assert.match(executionParameterForm, /resourceSummary/)
+assert.match(executionParameterForm, /sortEntriesByOrder/)
+assert.doesNotMatch(executionParameterForm, /executionParameters\.default/)
+assert.doesNotMatch(executionParameterForm, /executionParameters\.fixed/)
+assert.equal(commonZhCnMessages.common.executionParameters.workflowConfiguration, '工作流配置')
+assert.equal(commonZhCnMessages.common.executionParameters.executionOverride, '执行时指定')
+assert.equal(commonEnMessages.common.executionParameters.workflowConfiguration, 'Workflow configuration')
+assert.equal(commonEnMessages.common.executionParameters.executionOverride, 'Execution override')
+assert.equal(commonZhCnMessages.common.executionParameters.geometryDetected, '已从资源元数据自动识别')
+assert.equal(commonEnMessages.common.executionParameters.geometryDetected, 'Detected automatically from resource metadata')
+assert.deepEqual(
+  sortEntriesByOrder(
+    { save: {}, load: {}, buffer: {} },
+    { save: { order: 2 }, load: { order: 0 }, buffer: { order: 1 } }
+  ).map(([name]) => name),
+  ['load', 'buffer', 'save']
+)
+assert.deepEqual(
+  summarizeExecutionResource(
+    { ui: { resource_binding: { mode: 'existing' } } },
+    { locator: 'addp://engine/2/path/public/farmland?type=table&item_id=51572' },
+    { 2: { name: '业务 PostgreSQL', engine_type: 'postgresql' } }
+  ),
+  { status: 'resolved', engineId: 2, engineName: '业务 PostgreSQL', name: 'public.farmland', type: 'table' }
+)
+assert.deepEqual(
+  summarizeExecutionResource(
+    { ui: { resource_binding: { mode: 'target', type_values: { schema: 'table' } } } },
+    { parent_locator: 'addp://engine/2/path/public?type=schema&node_id=265', name: 'farmland_buffer' },
+    { 2: { name: '业务 PostgreSQL', engine_type: 'postgresql' } }
+  ),
+  { status: 'resolved', engineId: 2, engineName: '业务 PostgreSQL', name: 'public.farmland_buffer', type: 'table' }
+)
+assert.deepEqual(
+  summarizeExecutionResource(
+    { ui: { resource_binding: { mode: 'target', type_values: { bucket: 'file' } } } },
+    { parent_locator: 'addp://engine/3/path/results/analysis?type=bucket', name: 'buffer.gpkg' },
+    { 3: { name: '成果 MinIO', engine_type: 'minio' } }
+  ),
+  { status: 'resolved', engineId: 3, engineName: '成果 MinIO', name: 'results/analysis/buffer.gpkg', type: 'file' }
+)
+assert.deepEqual(
+  summarizeExecutionResource(
+    { ui: { resource_binding: { mode: 'existing' } } },
+    { locator: 'addp://invalid/internal-value' }
+  ),
+  { status: 'configured', engineId: 0, engineName: '', name: '', type: '' }
+)
+assert.match(executionParameterForm, /geometryColumnOptions/)
+assert.match(executionParameterForm, /listResourceTreeEngines/)
+assert.doesNotMatch(executionParameterForm, /resource-child[\s\S]{0,400}<SchemaExecutionInput[\s\S]{0,300}geometry_column/)
 assert.ok(engineSwitchDialogSource.indexOf('@click="clearAndSwitchEngine"') < engineSwitchDialogSource.indexOf('@click="saveAndSwitchEngine"'))
 assert.match(resourcePickerDialogSource, /class="addp-dialog workflow-resource-picker-dialog"/)
 assert.match(resourcePickerDialogSource, /resourcePickerDialogTitle/)
@@ -95,7 +158,7 @@ assert.doesNotMatch(editor, /const engineLocked = computed/)
 assert.match(editor, /await updateWorkflowTask\(currentTaskId\.value/)
 assert.match(editor, /if \(workflow\.tasks\.length === 0\) editorLayout\.value = \{\}/)
 assert.match(editor, /if \(workflowData\.value\.tasks\.length === 0\) return/)
-assert.match(editor, /await executeWorkflowTask\(currentTaskId\.value, inputs\)/)
+assert.match(editor, /await executeWorkflowTask\(currentTaskId\.value, executionParameters\.value\)/)
 assert.match(editor, /validateWorkflowDefinition\(/)
 assert.match(editor, /getClientValidationIssues\(\)/)
 assert.match(editor, /class="header-validation"/)
@@ -153,8 +216,12 @@ assert.match(handleExecuteSource, /preparingExecution\.value = true/)
 assert.match(handleExecuteSource, /finally \{\s+preparingExecution\.value = false/)
 assert.match(handleExecuteSource, /await validateCurrentWorkflow\(\)[\s\S]*await saveCurrentTask\(\)[\s\S]*openExecuteDialog\(\)/)
 assert.match(handleExecuteSource, /guardStorageBindingsExecutable\(\)/)
+assert.match(editor, /const task = await getDevTask\(currentTaskId\.value\)/)
+assert.doesNotMatch(editor, /getProviderDevTask/)
+assert.match(editor, /executionContract\.value = task\.execution_contract/)
+assert.match(editor, /executionParameters\.value = \{\}/)
 assert.match(confirmExecuteSource, /if \(executing\.value\) return/)
-assert.match(confirmExecuteSource, /await executeWorkflowTask\(currentTaskId\.value, inputs\)/)
+assert.match(confirmExecuteSource, /await executeWorkflowTask\(currentTaskId\.value, executionParameters\.value\)/)
 assert.match(confirmSaveSource, /setTaskRouteQuery\(currentTaskId\.value\)/)
 assert.match(editor, /async function setTaskRouteQuery\(taskId\)/)
 assert.match(editor, /developTaskIDFromRoute\(route\)/)

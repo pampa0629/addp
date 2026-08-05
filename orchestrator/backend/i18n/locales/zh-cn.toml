@@ -119,7 +119,22 @@ other = "第 {{.StepNumber}} 个步骤引用的任务类型 {{.TaskType}} 未由
 other = "第 {{.StepNumber}} 个步骤引用的任务类型 {{.TaskType}} 已停用"
 
 [orchestrator.error.step_parameter_schema_invalid]
-other = "第 {{.StepNumber}} 个步骤引用的任务类型能力声明无效"
+other = "第 {{.StepNumber}} 个步骤的具体任务执行契约无效"
+
+[orchestrator.error.output_binding_invalid_format]
+other = "第 {{.StepNumber}} 个步骤的参数 {{.Path}} 不是有效的上游输出绑定"
+
+[orchestrator.error.output_binding_unknown_step]
+other = "第 {{.StepNumber}} 个步骤的参数 {{.Path}} 引用了不存在的上游步骤 {{.SourceStep}}"
+
+[orchestrator.error.output_binding_undeclared]
+other = "第 {{.StepNumber}} 个步骤的参数 {{.Path}} 引用了上游步骤 {{.SourceStep}} 未声明的输出 {{.OutputPath}}"
+
+[orchestrator.error.output_binding_unknown_target]
+other = "第 {{.StepNumber}} 个步骤的目标任务未声明参数 {{.Path}}"
+
+[orchestrator.error.output_binding_type_mismatch]
+other = "第 {{.StepNumber}} 个步骤的参数 {{.Path}} 不能把{{.SourceType}}输出绑定到{{.TargetType}}输入"
 
 [orchestrator.error.step_parameter_invalid]
 other = "第 {{.StepNumber}} 个步骤的执行参数无效"

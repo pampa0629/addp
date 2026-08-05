@@ -21,11 +21,10 @@ type Config struct {
 	DBSchema         string // develop schema
 
 	// System 服务配置（用于获取资源配置和认证）
-	SystemServiceURL         string
-	DevelopServiceURL        string
-	EnableServiceIntegration bool
-	EncryptionKey            []byte
-	ServiceClientSecret      string
+	SystemServiceURL    string
+	DevelopServiceURL   string
+	EncryptionKey       []byte
+	ServiceClientSecret string
 
 	// 其他模块服务配置（用于算子发现）
 	MetaServiceURL     string
@@ -62,11 +61,10 @@ func Load() *Config {
 		DBSchema:         "develop",
 
 		// System 服务集成
-		SystemServiceURL:         getEnv("SYSTEM_URL", "http://localhost:8180"),
-		DevelopServiceURL:        getEnv("DEVELOP_URL", "http://localhost:8185"),
-		EnableServiceIntegration: getEnvAsBool("ENABLE_SERVICE_INTEGRATION", true),
-		EncryptionKey:            encryptionKey,
-		ServiceClientSecret:      getEnv("DEVELOP_SERVICE_CLIENT_SECRET", ""),
+		SystemServiceURL:    getEnv("SYSTEM_URL", "http://localhost:8180"),
+		DevelopServiceURL:   getEnv("DEVELOP_URL", "http://localhost:8185"),
+		EncryptionKey:       encryptionKey,
+		ServiceClientSecret: getEnv("DEVELOP_SERVICE_CLIENT_SECRET", ""),
 
 		// 其他模块服务配置
 		MetaServiceURL:     getEnv("META_URL", "http://localhost:8082"),
