@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/queryparams"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -44,7 +45,7 @@ func (p *MongoDBPlugin) DefaultPort() int {
 
 // RequiredFields 返回必填字段列表
 func (p *MongoDBPlugin) RequiredFields() []string {
-	return []string{"host", "database"}
+	return []string{"host"}
 }
 
 // SensitiveFields 返回敏感字段列表
@@ -53,7 +54,7 @@ func (p *MongoDBPlugin) SensitiveFields() []string {
 }
 
 func (p *MongoDBPlugin) ConnectionIdentityFields() []string {
-	return []string{"host", "port", "database"}
+	return []string{"host", "port", "user", "auth_source"}
 }
 
 func (p *MongoDBPlugin) Capabilities() plugin.EngineCapabilities {
@@ -94,10 +95,7 @@ func (p *MongoDBPlugin) QueryLanguages() []string {
 }
 
 func (p *MongoDBPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
-	if database, collection, ok := mongoCollectionFromCatalogPath(opts.Path); ok {
-		if database != plugin.GetString(connInfo, "database") {
-			return "", "mql"
-		}
+	if _, collection, ok := mongoCollectionFromCatalogPath(opts.Path); ok {
 		collectionJSON, _ := json.Marshal(collection)
 		return fmt.Sprintf(`{"find":%s,"filter":{},"limit":10}`, collectionJSON), "mql"
 	}
@@ -114,7 +112,26 @@ func mongoCollectionFromCatalogPath(path plugin.CatalogPath) (string, string, bo
 }
 
 func (p *MongoDBPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
+	if database, _, ok := mongoCollectionFromCatalogPath(valueOrEmptyPath(req.TargetPath)); ok {
+		connInfo = cloneConnectionInfo(connInfo)
+		connInfo["database"] = database
+	}
 	return p.executeQuery(ctx, connInfo, req.Query, req.Options)
+}
+
+func valueOrEmptyPath(path *plugin.CatalogPath) plugin.CatalogPath {
+	if path == nil {
+		return plugin.CatalogPath{}
+	}
+	return *path
+}
+
+func cloneConnectionInfo(connInfo plugin.ConnectionInfo) plugin.ConnectionInfo {
+	cloned := make(plugin.ConnectionInfo, len(connInfo))
+	for key, value := range connInfo {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 // ValidateConnectionInfo 验证连接信息
@@ -150,7 +167,7 @@ func (p *MongoDBPlugin) TestConnection(ctx context.Context, connInfo plugin.Conn
 	defer cancel()
 
 	// 用 listDatabases 而不是 ping，因为 ping 不需要认证，无法验证凭据
-	if _, err := client.ListDatabaseNames(testCtx, bson.M{}); err != nil {
+	if _, err := client.ListDatabases(testCtx, bson.M{}, options.ListDatabases().SetNameOnly(true).SetAuthorizedDatabases(true)); err != nil {
 		return fmt.Errorf("failed to authenticate with MongoDB: %w", err)
 	}
 
@@ -202,6 +219,11 @@ func (p *MongoDBPlugin) generateSampleQuery(ctx context.Context, connInfo plugin
 // query 为 JSON 命令字符串，支持 find/aggregate/count/distinct，其他命令走 RunCommand 通用路径
 // 示例：{"find":"users","filter":{"age":{"$gt":18}},"limit":10}
 func (p *MongoDBPlugin) executeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string, queryOptions plugin.QueryOptions) (*plugin.QueryResult, error) {
+	boundQuery, err := queryparams.BindMQL(query, queryOptions.Parameters)
+	if err != nil {
+		return nil, fmt.Errorf("绑定 MQL 查询参数失败：%w", err)
+	}
+	query = boundQuery
 	// 解析 JSON 命令
 	var cmd map[string]interface{}
 	if err := json.Unmarshal([]byte(query), &cmd); err != nil {

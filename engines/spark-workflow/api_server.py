@@ -511,6 +511,18 @@ def register_to_system():
             "port": port
             # host 由 System 自动填充
         },
+        "capabilities": {
+            "schema_version": "engine.capabilities/v1",
+            "engine_type": "spark_workflow",
+            "engine_family": "workflow",
+            "compute": {
+                "workflow": {
+                    "supported": True,
+                    "runtime_api": "addp.workflow/v1",
+                    "dynamic_operators": True
+                }
+            }
+        },
         "is_builtin": True  # 内置引擎，对所有租户可见
     }
 

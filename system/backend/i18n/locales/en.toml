@@ -76,11 +76,17 @@ other = "An authenticator is already enabled for this account"
 [system.auth.totp_enrollment_required]
 other = "Enable an authenticator for this account first"
 
+[system.auth.mfa_reset_not_available]
+other = "This user does not have an authenticator that can be reset"
+
 [system.auth.invalid_mfa_verification]
 other = "The verification code is invalid, expired, or the session state has changed"
 
 [system.iam.role_assignment_already_exists]
 other = "This member already has the role in this scope; no duplicate assignment is needed."
+
+[system.iam.role_assignment_principal_type_not_allowed]
+other = "The role cannot be assigned to this member type."
 
 [system.log.not_found]
 other = "Log not found"

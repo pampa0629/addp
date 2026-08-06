@@ -23,10 +23,11 @@
       </el-table-column>
       <el-table-column prop="authorization_version" :label="t('system.iam.users.authVersion')" width="130" />
       <el-table-column :label="t('system.iam.common.updatedAt')" width="180"><template #default="{ row }">{{ formatDate(row.updated_at) }}</template></el-table-column>
-      <el-table-column :label="t('system.iam.common.actions')" width="360" fixed="right">
+      <el-table-column :label="t('system.iam.common.actions')" width="440" fixed="right">
         <template #default="{ row }">
           <el-button v-if="can('iam.user.update') && row.status !== 'deactivated'" link type="primary" :icon="Edit" @click="openEdit(row)">{{ t('system.iam.common.edit') }}</el-button>
           <el-button v-if="canResetPassword(row)" link type="primary" :icon="Key" @click="openPasswordReset(row)">{{ t('system.iam.users.resetPassword') }}</el-button>
+          <el-button v-if="canResetMFA(row)" link type="warning" :icon="Iphone" @click="openMFAReset(row)">{{ t('system.iam.users.resetMFA') }}</el-button>
           <el-button v-if="can('iam.user.suspend') && row.status === 'active'" link type="warning" :icon="VideoPause" @click="openLifecycle(row, 'suspend')">{{ t('system.iam.common.suspend') }}</el-button>
           <el-button v-if="can('iam.user.reactivate') && row.status === 'suspended'" link type="success" :icon="RefreshLeft" @click="openLifecycle(row, 'reactivate')">{{ t('system.iam.common.reactivate') }}</el-button>
         </template>
@@ -68,6 +69,21 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="mfaResetVisible" :title="t('system.iam.users.resetMFA')" width="520px">
+      <el-form ref="mfaResetFormRef" :model="mfaReset" :rules="mfaResetRules" label-position="top">
+        <el-form-item :label="t('system.iam.users.account')">
+          <el-input :model-value="`${mfaReset.row?.display_name || ''} / ${mfaReset.row?.local_account?.username || ''}`" disabled />
+        </el-form-item>
+        <el-form-item :label="t('system.iam.common.reason')" prop="reason">
+          <el-input v-model="mfaReset.reason" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="mfaResetVisible = false">{{ t('system.iam.common.cancel') }}</el-button>
+        <el-button type="warning" :loading="submitting" @click="submitMFAReset">{{ t('system.iam.users.resetMFA') }}</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="lifecycleVisible" :title="t(`system.iam.common.${lifecycle.action}`)" width="520px">
       <el-form label-position="top">
         <el-form-item :label="t('system.iam.common.reason')" required><el-input v-model="lifecycle.reason" type="textarea" :rows="3" /></el-form-item>
@@ -81,7 +97,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Edit, Key, Plus, Refresh, RefreshLeft, Search, VideoPause } from '@element-plus/icons-vue'
+import { Edit, Iphone, Key, Plus, Refresh, RefreshLeft, Search, VideoPause } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
@@ -104,6 +120,9 @@ const form = reactive({ display_name: '', primary_email: '', locale: 'zh-cn', us
 const passwordResetVisible = ref(false)
 const passwordResetFormRef = ref()
 const passwordReset = reactive({ row: null, new_password: '', confirm_password: '', reason: '' })
+const mfaResetVisible = ref(false)
+const mfaResetFormRef = ref()
+const mfaReset = reactive({ row: null, reason: '' })
 const lifecycleVisible = ref(false)
 const lifecycle = reactive({ row: null, action: 'suspend', reason: '', change_request_id: '' })
 const rules = computed(() => ({
@@ -122,6 +141,9 @@ const passwordResetRules = computed(() => ({
       trigger: ['blur', 'change']
     }
   ],
+  reason: [{ required: true, message: t('system.iam.validation.required'), trigger: 'blur' }]
+}))
+const mfaResetRules = computed(() => ({
   reason: [{ required: true, message: t('system.iam.validation.required'), trigger: 'blur' }]
 }))
 
@@ -148,6 +170,9 @@ function openEdit(row) {
 function canResetPassword(row) {
   return can('iam.local_account.reset') && row.local_account?.password_reset_allowed === true
 }
+function canResetMFA(row) {
+  return can('iam.mfa_credential.reset') && row.local_account?.mfa_reset_allowed === true
+}
 function openPasswordReset(row) {
   Object.assign(passwordReset, { row, new_password: '', confirm_password: '', reason: '' })
   passwordResetVisible.value = true
@@ -165,6 +190,24 @@ async function submitPasswordReset() {
     await load()
   } catch (error) {
     if (error !== false) ElMessage.error(error.response?.data?.error || t('system.iam.users.passwordResetFailed'))
+  } finally {
+    submitting.value = false
+  }
+}
+function openMFAReset(row) {
+  Object.assign(mfaReset, { row, reason: '' })
+  mfaResetVisible.value = true
+}
+async function submitMFAReset() {
+  await mfaResetFormRef.value?.validate()
+  submitting.value = true
+  try {
+    await iamAPI.platformUsers.resetMFA(mfaReset.row.id, { reason: mfaReset.reason.trim() })
+    ElMessage.success(t('system.iam.users.mfaResetSuccess'))
+    mfaResetVisible.value = false
+    await load()
+  } catch (error) {
+    if (error !== false) ElMessage.error(error.response?.data?.error || t('system.iam.users.mfaResetFailed'))
   } finally {
     submitting.value = false
   }

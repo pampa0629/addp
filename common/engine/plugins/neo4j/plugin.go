@@ -9,6 +9,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/queryparams"
 	neo4jdriver "github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
@@ -91,10 +92,7 @@ func (p *Neo4jPlugin) QueryLanguages() []string {
 }
 
 func (p *Neo4jPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
-	if database, ok := neo4jDatabaseFromCatalogPath(opts.Path); ok {
-		if database != getDatabase(connInfo) {
-			return "", "cypher"
-		}
+	if _, ok := neo4jDatabaseFromCatalogPath(opts.Path); ok {
 		return sampleGraphNodeFallbackQuery(10), "cypher"
 	}
 	return p.generateSampleQuery(ctx, connInfo)
@@ -110,11 +108,27 @@ func neo4jDatabaseFromCatalogPath(path plugin.CatalogPath) (string, bool) {
 }
 
 func (p *Neo4jPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
+	if req.TargetPath != nil {
+		if database, ok := neo4jDatabaseFromCatalogPath(*req.TargetPath); ok {
+			connInfo = cloneConnectionInfo(connInfo)
+			connInfo["database"] = database
+		}
+	}
 	return p.executeQuery(ctx, connInfo, req.Query, req.Options)
 }
 
 func (p *Neo4jPlugin) ExecuteGraphQuery(ctx context.Context, connInfo plugin.ConnectionInfo, cypher string, opts plugin.QueryOptions) (*plugin.GraphQueryResult, error) {
 	return p.executeGraphQuery(ctx, connInfo, cypher, opts)
+}
+
+func (p *Neo4jPlugin) ExecuteGraphQueryAtPath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, cypher string, opts plugin.QueryOptions) (*plugin.GraphQueryResult, error) {
+	database, ok := neo4jDatabaseFromCatalogPath(path)
+	if !ok {
+		return nil, fmt.Errorf("无效的 Neo4j 查询目标路径")
+	}
+	sampleConn := cloneConnectionInfo(connInfo)
+	sampleConn["database"] = database
+	return p.executeGraphQuery(ctx, sampleConn, cypher, opts)
 }
 
 func (p *Neo4jPlugin) SampleGraph(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.GraphSampleOptions) (*plugin.GraphData, error) {
@@ -620,6 +634,9 @@ func (p *Neo4jPlugin) countRelationshipType(ctx context.Context, session neo4jdr
 
 // executeGraphQuery 执行 Cypher 查询并提取图数据。
 func (p *Neo4jPlugin) executeGraphQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string, opts plugin.QueryOptions) (*plugin.GraphQueryResult, error) {
+	if err := queryparams.ValidateCypher(query, opts.Parameters); err != nil {
+		return nil, fmt.Errorf("绑定 Cypher 查询参数失败：%w", err)
+	}
 	driver, err := p.createDriver(ctx, connInfo)
 	if err != nil {
 		return nil, err
@@ -640,7 +657,7 @@ func (p *Neo4jPlugin) executeGraphQuery(ctx context.Context, connInfo plugin.Con
 		ctx,
 		driver,
 		query,
-		nil,
+		opts.Parameters,
 		neo4jdriver.EagerResultTransformer,
 		neo4jdriver.ExecuteQueryWithDatabase(getDatabase(connInfo)),
 		routing,
@@ -783,6 +800,9 @@ func (p *Neo4jPlugin) generateSampleQuery(ctx context.Context, connInfo plugin.C
 // query 为 Cypher 字符串，如 MATCH (n:Person) RETURN n.name, n.age LIMIT 10
 // 写操作（CREATE/MERGE/DELETE/SET/REMOVE/DROP）自动使用写路由，其余使用读路由
 func (p *Neo4jPlugin) executeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
+	if err := queryparams.ValidateCypher(query, opts.Parameters); err != nil {
+		return nil, fmt.Errorf("绑定 Cypher 查询参数失败：%w", err)
+	}
 	driver, err := p.createDriver(ctx, connInfo)
 	if err != nil {
 		return nil, err
@@ -803,7 +823,7 @@ func (p *Neo4jPlugin) executeQuery(ctx context.Context, connInfo plugin.Connecti
 		ctx,
 		driver,
 		query,
-		nil,
+		opts.Parameters,
 		neo4jdriver.EagerResultTransformer,
 		neo4jdriver.ExecuteQueryWithDatabase(getDatabase(connInfo)),
 		routing,

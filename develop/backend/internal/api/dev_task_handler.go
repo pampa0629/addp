@@ -36,6 +36,7 @@ func NewDevTaskHandler(devTaskService *service.DevTaskService, operatorDiscovery
 // @Produce json
 // @Param body body models.CreateDevTaskSwaggerRequest true "创建请求 | Create request"
 // @Success 200 {object} models.DevTaskSwagger "已创建的开发任务 | Created development task"
+// @Failure 400 {object} models.ErrorResponse "请求或查询参数定义无效 | Invalid request or query parameter definitions"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.create"]
 // @Router /task-definitions [post]
@@ -51,6 +52,11 @@ func (h *DevTaskHandler) CreateDevTask(c *gin.Context) {
 
 	item, err := h.devTaskService.CreateDevTask(&req, tenantID, userID)
 	if err != nil {
+		var parameterDefinitionsError *service.QueryParameterDefinitionsError
+		if errors.As(err, &parameterDefinitionsError) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgQueryParameterDefinitionsInvalid), "error_code": "invalid_query_parameter_definitions"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -66,6 +72,7 @@ func (h *DevTaskHandler) CreateDevTask(c *gin.Context) {
 // @Param id path int true "开发任务 ID | Development task ID"
 // @Param body body models.UpdateDevTaskSwaggerRequest true "更新请求 | Update request"
 // @Success 200 {object} models.DevTaskSwagger "已更新的开发任务 | Updated development task"
+// @Failure 400 {object} models.ErrorResponse "请求或查询参数定义无效 | Invalid request or query parameter definitions"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.update"]
 // @Router /task-definitions/{id} [put]
@@ -87,6 +94,11 @@ func (h *DevTaskHandler) UpdateDevTask(c *gin.Context) {
 
 	item, err := h.devTaskService.UpdateDevTask(uint(id), &req, tenantID, userID)
 	if err != nil {
+		var parameterDefinitionsError *service.QueryParameterDefinitionsError
+		if errors.As(err, &parameterDefinitionsError) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgQueryParameterDefinitionsInvalid), "error_code": "invalid_query_parameter_definitions"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -275,7 +287,13 @@ func (h *DevTaskHandler) ProviderGetDevTask(c *gin.Context) {
 
 func (h *DevTaskHandler) executionContract(c *gin.Context, item *models.DevTask, tenantID uint) (*taskprovider.ExecutionContract, error) {
 	empty := taskprovider.EmptyExecutionContract()
-	if item == nil || item.DevType != commonExecution.TaskTypeWorkflow {
+	if item == nil {
+		return &empty, nil
+	}
+	if item.DevType == commonExecution.TaskTypeQuery {
+		return service.BuildQueryExecutionContract(item.Content)
+	}
+	if item.DevType != commonExecution.TaskTypeWorkflow {
 		return &empty, nil
 	}
 	if h.operatorDiscovery == nil {

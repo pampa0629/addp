@@ -5,7 +5,7 @@ import {
 } from './devTask'
 
 /**
- * 获取引擎的查询模板（切换引擎或选择数据资源时填充编辑器）
+ * 为所选数据资源获取查询模板
  * @param {number} engineId - 引擎ID
  * @param {string} locator - 可选标准资源定位符
  * @returns {{ query: string, language: string }}
@@ -55,7 +55,9 @@ const toQueryDevTaskPayload = (taskData, includeDevType = true) => {
     display_name: taskData.display_name,
     content: {
       query: taskData.query,
-      query_type: queryType
+      query_type: queryType,
+      target_locator: taskData.target_locator || undefined,
+      query_parameters: Array.isArray(taskData.query_parameters) ? taskData.query_parameters : []
     },
     execution_config: { engine_id: taskData.engine_id },
     timeout: taskData.timeout,

@@ -52,7 +52,7 @@ func TestSDXPostgreSQLTableProviderReadAndWriteSessions(t *testing.T) {
 	defer server.Close()
 
 	runtimeConn := runtimeConnectionInfo(t, server.URL)
-	provider, err := NewSDXPostgreSQLTableProvider(&SuperMapWorkflowPlugin{}, runtimeConn)
+	provider, err := NewSDXPostgreSQLTableProvider(plugin.NewHTTPWorkflowRuntimeProvider("supermap_workflow", "SuperMap Workflow"), runtimeConn)
 	if err != nil {
 		t.Fatalf("NewSDXPostgreSQLTableProvider() error = %v", err)
 	}
@@ -137,7 +137,7 @@ func TestSDXPostgreSQLTableProviderDescribesSDKCatalogFacts(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider, err := NewSDXPostgreSQLTableProvider(&SuperMapWorkflowPlugin{}, runtimeConnectionInfo(t, server.URL))
+	provider, err := NewSDXPostgreSQLTableProvider(plugin.NewHTTPWorkflowRuntimeProvider("supermap_workflow", "SuperMap Workflow"), runtimeConnectionInfo(t, server.URL))
 	if err != nil {
 		t.Fatalf("NewSDXPostgreSQLTableProvider() error = %v", err)
 	}
@@ -188,7 +188,7 @@ func TestSDXPostgreSQLWriteSessionCanAbortAfterCloseFailure(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider, err := NewSDXPostgreSQLTableProvider(&SuperMapWorkflowPlugin{}, runtimeConnectionInfo(t, server.URL))
+	provider, err := NewSDXPostgreSQLTableProvider(plugin.NewHTTPWorkflowRuntimeProvider("supermap_workflow", "SuperMap Workflow"), runtimeConnectionInfo(t, server.URL))
 	if err != nil {
 		t.Fatalf("NewSDXPostgreSQLTableProvider() error = %v", err)
 	}

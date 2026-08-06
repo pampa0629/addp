@@ -41,8 +41,8 @@ type EnginePlugin interface {
 - `EngineOrigin()` 表达引擎来源，取值为 `general` 或 `extension`；它不是能力判断字段，上层功能判断必须基于 capabilities。
 - `connection_info` 是所有引擎连接信息的统一事实源，保持 key-value map；字段 key 使用稳定英文机器名，不承载 i18n。
 - `RequiredFields()`、`SensitiveFields()`、`ValidateConnectionInfo()` 和 `TestConnection()` 共同构成 System 引擎管理层的统一连接信息能力。
-- System 管理的内置插件必须额外实现 `ConnectionIdentityProvider.ConnectionIdentityFields()`，返回决定 Engine Instance 物理端点身份的非敏感字段。数据库插件通常声明 `host`、`port`、`database`；对象存储声明 `endpoint`；NFS 声明 `server`、`export_path`；HTTP 工作流运行时声明 `protocol`、`host`、`port`。
-- System 创建 Engine Instance 后会冻结身份字段。更新请求改变任一身份字段时返回 HTTP 409，用户必须创建新的 Engine Instance。默认端口和默认数据库应按插件语义归一化后比较，不能把省略默认值和显式默认值误判为不同端点。
+- System 管理的内置插件必须额外实现 `ConnectionIdentityProvider.ConnectionIdentityFields()`，返回决定 Engine Instance 身份的非敏感字段。MongoDB 的身份是服务端点 `host`、`port` 与认证主体 `user`、`auth_source`；`database` 只是可选的工作台初始数据库，不是身份或权限边界。其他数据库插件按自身协议声明端点字段；对象存储声明 `endpoint`；NFS 声明 `server`、`export_path`。
+- System 创建 Engine Instance 后会冻结身份字段。更新请求改变任一身份字段时返回 HTTP 409，用户必须创建新的 Engine Instance；密码等敏感凭据允许原地轮换。默认端口按插件语义归一化后比较，不能把省略默认值和显式默认值误判为不同端点。
 - 自研且未编译进当前进程的 extension engine 使用标准 HTTP 运行时身份字段 `protocol + host + port`，不得通过任意非敏感字段猜测身份。
 - `TestConnection()` 必须执行需要认证的最小只读真实操作，不能只做网络连通检查，也不得创建、更新、删除外部资源。
 - `Capabilities()` 必须返回结构化 `engine.capabilities/v1` 能力模板。该方法不得连接具体实例，不做运行时探测，只表达插件和 Provider 实现的能力上限。
@@ -72,6 +72,10 @@ type InstanceCapabilitiesResolver interface {
 | `common/engine/plugins/builtin/all` | general + extension 全量内置插件 | 集成测试、诊断工具、需要完整注册表的进程 |
 
 上层模块不应散落 blank import 具体引擎插件包。新增内置引擎插件时，应按插件自己的 `EngineOrigin()` 加入对应聚合包；功能开关和路由判断仍必须基于 `Capabilities()`，不能基于聚合包或 origin 推断能力。
+
+实现 `addp.workflow/v1` 的 Workflow Runtime 不按 `engine_type` 建立重复内置插件。它们通过 System Engine Instance 注册 capabilities 和 Runtime endpoint，Common Engine 使用唯一的 `HTTPWorkflowRuntimeProvider` 适配协议。`common/engine/plugins/builtin/extension` 只加载确实具有非通用控制面或 Provider 语义的内置 Runtime Plugin，不作为工作流运行时类型白名单。
+
+领域专用 Provider 可以保留，例如 SuperMap SDX+ for PostgreSQL table session Provider。此类 Provider 负责 ADDP 数据类型与领域协议之间的映射，但必须消费绑定 Runtime Engine Instance 的通用 `WorkflowRuntimeProvider`，不得再按固定 `engine_type` 获取一个编译期 Workflow Plugin。
 
 ### DSNProvider
 
@@ -187,7 +191,7 @@ SQL catalog facts provider 差异矩阵：
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | PostgreSQL | schema | `information_schema.schemata/tables/columns` + `pg_class` + `pg_stat_user_tables` | `BASE TABLE` -> `table`，`VIEW` -> `view`，其他 `table_type` 转小写下划线 | `information_schema.columns`，主键来自约束表，注释来自 `col_description` | 列表使用 `pg_class.reltuples` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count`，不主动 `ANALYZE` | `pg_catalog`、`information_schema`、`pg_toast`、`pg_temp_*`、`pg_toast_*`；当实例检测到 SuperMap `sdx_postgis` 或 `sdx_postgresql` 时过滤 `sm*` 系统 leaf | 暂留插件内；PostgreSQL 原生 catalog 语义较强，不与 MySQL/Doris 合并 |
 
-`supermap/sdx_postgresql` 的目录结构仍由 PostgreSQL Provider 枚举，但 `sdx` 业务表的详细 `CatalogFacts` 必须由实例绑定的 `supermap_workflow` Provider 通过 SDK 返回。私有 `SmGeometry bytea` 不得作为普通 bytes 字段进入 Meta；Provider 对外统一返回虚拟 `SmGeometry` geometry 字段、EWKB 行编码、精确记录数和 SDK 空间事实。Meta 必须按实例 capability 中唯一的 `bound_runtime_engine_id` 注入该 Provider；普通 PostgreSQL 和 `supermap/sdx_postgis` 不得进入这条路径。
+`supermap/sdx_postgresql` 的目录结构仍由 PostgreSQL Provider 枚举，但 `sdx` 业务表的详细 `CatalogFacts` 必须由实例绑定的兼容 Workflow Runtime 通过 SDK 返回。私有 `SmGeometry bytea` 不得作为普通 bytes 字段进入 Meta；领域 Table Session Provider 对外统一返回虚拟 `SmGeometry` geometry 字段、EWKB 行编码、精确记录数和 SDK 空间事实。Meta 必须按实例 capability 中唯一的 `bound_runtime_engine_id` 解析 Runtime Descriptor，并校验所需 direct 算子后注入该 Provider；普通 PostgreSQL 和 `supermap/sdx_postgis` 不得进入这条路径。
 | MySQL | database | `information_schema.schemata/tables/columns/statistics/st_spatial_reference_systems` | `BASE TABLE` -> `table`，`VIEW` -> `view`，其他 `table_type` 转小写下划线 | `information_schema.columns`，主键来自 `column_key`，注释来自 `column_comment`；geometry 类型、SRID、nullable、CRS 和空间索引由 MySQL 插件自身补充为 `SpatialInfo` | 列表将 `information_schema.tables.table_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count`；空间 extent 不通过全表聚合推断 | `information_schema`、`mysql`、`performance_schema`、`sys` | 普通表事实与 Doris 共享 `MySQLCompatibleCatalogFactsDialect`；MySQL 空间事实和行值编码保留在 MySQL 插件内；可启用表级 `Native.engine` |
 | Doris | database | MySQL 兼容 `information_schema.schemata/tables/columns` | 同 MySQL 兼容逻辑 | 同 MySQL 兼容逻辑，注释能力按引擎实际返回 | 列表将 `information_schema.tables.table_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count` | MySQL 系统库 + `__internal_schema` | 与 MySQL 共享 `MySQLCompatibleCatalogFactsDialect`；`Native.engine` 待确认 `information_schema.tables.engine` 稳定性后再启用 |
 | ClickHouse | database | `system.databases`、`system.tables`、`system.columns` | `MaterializedView` -> `materialized_view`，`View`/其他包含 `View` 的 engine -> `view`，其他 -> `table` | `system.columns`，nullable 从类型字符串推断，`DEFAULT` / `MATERIALIZED` / `ALIAS` 映射到通用默认值和生成列字段，当前不表达主键 | 列表将 `system.tables.total_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count` | `system`、`information_schema`、`INFORMATION_SCHEMA` | 暂留插件内；ClickHouse `system.*` 语义独立 |
@@ -407,6 +411,8 @@ type FederatedQueryRequest struct {
 
 `QueryOptions.Args` 是驱动参数绑定值，Runtime 不得把它插值回 SQL 文本。`QueryOptions.Describe=true` 表示只返回查询输出结构，不读取业务结果行；联邦 Runtime 必须在完成授权、挂载和对象表改写后使用引擎原生 describe 能力执行，不能通过实际扫描整份结果推断字段。`Describe` 不是独立查询路由，也不能绕过只读校验、Execution Authorization 或资源限制。
 
+`QueryOptions.Parameters` 是普通查询的命名类型化参数值，仅当 `capabilities.compute.query.parameters` 对当前语言声明支持时允许非空。SQL Provider 把 `:name` 编译为方言占位符并写入 `Args` 后调用数据库驱动；Cypher Provider 把 Map 直接交给 Neo4j Driver；MongoDB Provider 先解析 JSON，再把仅包含 `{\"$param\":\"name\"}` 的值节点替换为原始类型值。Provider 必须校验查询引用和参数集合完全一致，禁止字符串插值、字面量格式化和动态标识符替换。
+
 `QueryOptions.Spatial=true` 表示本次查询计划需要 Runtime 的空间类型或空间函数。DuckDB Runtime 必须在锁定该次独立会话配置前，从随 Runtime 打包的扩展目录显式加载 `spatial`；不得扫描 SQL 文本猜测空间依赖，也不得在请求处理阶段联网安装或自动加载扩展。调用方应根据已发布的空间元数据或明确的执行上下文设置该选项；用于检测任意联邦 SQL 输出结构或探测可执行样例时可以保守启用。
 
 `runtimeConn` 只包含 Runtime Engine 的 `protocol/host/port`。`CallerAccessToken` 只用于当前同步服务间请求的 Bearer 认证，必须使用 `json:"-"`，不得进入请求体、任务定义、执行记录或日志。Runtime 使用自己的 Service Principal 消费 `ExecutionAuthorizationID`，不能要求调用方提供 Source Engine `connection_info`。
@@ -421,6 +427,8 @@ type FederatedQueryRequest struct {
 查询语言差异由 `QueryRequest.Language` 与 `capabilities.compute.query.languages` 表达，不按数据库类别新增查询入口。`QueryRuntimeProvider` 是普通查询主路径，适用于 SQL、MQL、Cypher 表格结果、OpenSearch DSL、Mango Query 等能返回 `QueryResult` 的查询。
 
 `GenerateSampleQuery()` 只负责把调用方通过 `SampleQueryOptions.Path` 传入的真实 Catalog leaf 转换为该引擎语言的查询模板。调用方必须先通过实时 Catalog 发现并确认该 leaf 当前有数据；联邦查询还必须使用当前用户派生的只读执行授权真实探测候选，不能把可能过期的 Meta 条目直接当作可执行样例。Provider 不得在缺少可查询 leaf、对象已失效、发现失败或连接失败时返回版本查询、`SELECT 1`、占位集合名或其他静态兜底。没有真实数据样例时必须让调用方得到明确的“样例不可用”错误。
+
+`QueryRequest.TargetPath` 是普通查询的目标 Catalog 路径。调用方在选择具体数据库、集合、图等资源后必须沿模板生成、验证、即时执行和任务重载链路传递同一目标路径；Provider 不得用连接信息中的默认数据库替代显式目标。MongoDB 的目录只返回当前认证主体通过原生 roles 获得授权的数据库和集合，ADDP 不另存一份可访问数据库列表。
 
 当 `QueryRequest.Options.ReadOnly=true` 时，Provider 必须使用数据库只读事务、只读路由、只读命令白名单或其他等价的运行时约束执行查询。不得忽略该字段后使用普通高权限连接执行；无法建立可靠只读边界的 Provider 必须显式拒绝。
 
@@ -473,7 +481,7 @@ type ScriptRuntimeProvider interface {
 | MinIO / S3 | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `ContentReadableProvider` + `RangeReadableProvider` + `ContentWritableProvider` + `ResourceDeleteProvider` |
 | NFS | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `ContentReadableProvider` + `RangeReadableProvider` + `ContentWritableProvider` + `ResourceDeleteProvider` |
 | Kafka | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `ChangeStreamReaderProvider` |
-| Python / Spark / Math Workflow | `EnginePlugin` + `WorkflowRuntimeProvider` |
+| 任意 `addp.workflow/v1` Runtime | System Engine Instance + Common 通用 `HTTPWorkflowRuntimeProvider`；不按 Runtime `engine_type` 编译独立插件 |
 | DuckDB | `EnginePlugin` + `FederatedQueryRuntimeProvider` |
 | Jupyter | `EnginePlugin` + `ScriptRuntimeProvider`，并声明 `compute.script.interactive=true` |
 

@@ -76,11 +76,17 @@ other = "当前账号已启用身份验证器"
 [system.auth.totp_enrollment_required]
 other = "请先为当前账号启用身份验证器"
 
+[system.auth.mfa_reset_not_available]
+other = "当前用户没有可重置的身份验证器"
+
 [system.auth.invalid_mfa_verification]
 other = "验证码无效、已过期或会话状态已变化"
 
 [system.iam.role_assignment_already_exists]
 other = "该成员已在此授权范围拥有该角色，无需重复分配。"
+
+[system.iam.role_assignment_principal_type_not_allowed]
+other = "该角色不能分配给此类型的成员。"
 
 [system.log.not_found]
 other = "日志不存在"

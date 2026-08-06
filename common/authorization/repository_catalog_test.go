@@ -30,7 +30,7 @@ func TestRepositoryAuthorizationCatalogReportIsDeterministic(t *testing.T) {
 	if !reflect.DeepEqual(owners, wantOwners) {
 		t.Fatalf("manifest owners = %v, want %v", owners, wantOwners)
 	}
-	if report.BuiltinRoleManifest.ManifestVersion != 34 ||
+	if report.BuiltinRoleManifest.ManifestVersion != 35 ||
 		report.BuiltinRoleManifest.Path != "system/authorization/builtin_roles.yaml" {
 		t.Fatalf("builtin role manifest reference = %#v", report.BuiltinRoleManifest)
 	}

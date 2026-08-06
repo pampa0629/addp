@@ -169,16 +169,12 @@ func (s *RegistryService) prepareRegistrationCapabilities(req *models.Capability
 	}
 	req.EngineType = engineType
 
-	if req.IsBuiltin {
+	if req.Capabilities == nil {
 		capabilitiesJSON, err := dbbridge.GenerateCapabilities(engineType)
 		if err != nil {
-			return nil, invalidCapabilityRegistrationError("failed to generate builtin capabilities for %s: %v", engineType, err)
+			return nil, invalidCapabilityRegistrationError("capabilities is required for engine type %s: %v", engineType, err)
 		}
 		return &capabilitiesJSON, nil
-	}
-
-	if req.Capabilities == nil {
-		return nil, invalidCapabilityRegistrationError("capabilities is required")
 	}
 
 	if req.Capabilities.SchemaVersion != plugin.CapabilitiesSchemaVersion {

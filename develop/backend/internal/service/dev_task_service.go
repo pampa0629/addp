@@ -562,6 +562,14 @@ func validateDevTaskContent(devType string, content map[string]interface{}) erro
 		default:
 			return fmt.Errorf("不支持的查询类型: %s", queryType)
 		}
+		if locator, ok := content["target_locator"].(string); ok && strings.TrimSpace(locator) != "" {
+			if _, err := resourcetree.ParseURI(locator); err != nil {
+				return fmt.Errorf("content.target_locator 无效: %v", err)
+			}
+		}
+		if _, err := BuildQueryExecutionContract(content); err != nil {
+			return err
+		}
 	case commonExecution.TaskTypeWorkflow:
 		workflowDef, ok := content["workflow_definition"].(map[string]interface{})
 		if !ok {
@@ -736,6 +744,15 @@ func validateDevTaskExecutionConfig(devType string, content map[string]interface
 	engineID := devTaskExecutionConfigEngineID(executionConfig)
 	if engineID == nil {
 		return fmt.Errorf("查询任务必须提供 execution_config.engine_id")
+	}
+	if locatorValue, ok := content["target_locator"].(string); ok && strings.TrimSpace(locatorValue) != "" {
+		locator, err := resourcetree.ParseURI(strings.TrimSpace(locatorValue))
+		if err != nil {
+			return fmt.Errorf("content.target_locator 无效: %v", err)
+		}
+		if locator.EngineID != *engineID {
+			return fmt.Errorf("content.target_locator 的引擎 ID 必须与 execution_config.engine_id 一致")
+		}
 	}
 	_ = queryType
 	return nil

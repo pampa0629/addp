@@ -16,7 +16,8 @@ func TestCreateExecutionRequestUsesExecutionConfigContract(t *testing.T) {
 		ExecutionConfig: map[string]interface{}{
 			"engine_id": 7,
 		},
-		Timeout: 30,
+		Parameters: map[string]interface{}{"status": "active"},
+		Timeout:    30,
 	}
 
 	payload, err := json.Marshal(req)
@@ -37,5 +38,9 @@ func TestCreateExecutionRequestUsesExecutionConfigContract(t *testing.T) {
 	}
 	if config["engine_id"] != float64(7) {
 		t.Fatalf("execution_config.engine_id = %#v, want 7", config["engine_id"])
+	}
+	parameters, ok := decoded["parameters"].(map[string]interface{})
+	if !ok || parameters["status"] != "active" {
+		t.Fatalf("parameters missing or invalid: %s", payload)
 	}
 }

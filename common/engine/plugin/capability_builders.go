@@ -48,6 +48,7 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 				ResultKinds:     []string{"table", "scalar"},
 				SupportsExplain: opts.SupportsExplain,
 				SupportsCancel:  opts.SupportsCancel,
+				Parameters:      queryParameterCapability(opts.SupportsParameters, "sql"),
 			},
 		},
 	}
@@ -99,6 +100,7 @@ type TabularCapabilityOptions struct {
 	SpatialFacts                          bool
 	SupportsExplain                       bool
 	SupportsCancel                        bool
+	SupportsParameters                    bool
 	DefaultLanguage                       string
 	Description                           string
 	WriterConnector                       string
@@ -200,6 +202,7 @@ func NewDynamicSchemaCapabilities(engineType string) EngineCapabilities {
 				Languages:       []string{"mql"},
 				DefaultLanguage: "mql",
 				ResultKinds:     []string{"document", "table"},
+				Parameters:      queryParameterCapability(true, "mql"),
 			},
 		},
 	}
@@ -229,8 +232,20 @@ func NewGraphCapabilities(engineType string) EngineCapabilities {
 				Languages:       []string{"cypher"},
 				DefaultLanguage: "cypher",
 				ResultKinds:     []string{"graph", "table"},
+				Parameters:      queryParameterCapability(true, "cypher"),
 			},
 		},
+	}
+}
+
+func queryParameterCapability(supported bool, language string) *QueryParameterCapability {
+	if !supported {
+		return nil
+	}
+	return &QueryParameterCapability{
+		Supported: true,
+		Languages: []string{language},
+		Types:     []string{"string", "integer", "number", "boolean"},
 	}
 }
 

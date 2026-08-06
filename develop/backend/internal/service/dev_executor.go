@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/resourcetree"
 
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/taskprovider"
@@ -111,6 +112,7 @@ func (e *DevExecutor) ExecuteContent(
 	devType string,
 	content map[string]interface{},
 	executionConfig map[string]interface{},
+	parameters map[string]interface{},
 	tenantID uint,
 	userID uint,
 	userAccessToken string,
@@ -122,6 +124,7 @@ func (e *DevExecutor) ExecuteContent(
 		devType,
 		content,
 		executionConfig,
+		parameters,
 		tenantID,
 		userID,
 		userAccessToken,
@@ -143,6 +146,7 @@ func (e *DevExecutor) prepareContentExecution(
 	devType string,
 	content map[string]interface{},
 	executionConfig map[string]interface{},
+	parameters map[string]interface{},
 	tenantID uint,
 	userID uint,
 	userAccessToken string,
@@ -163,6 +167,9 @@ func (e *DevExecutor) prepareContentExecution(
 	if executionConfig == nil {
 		return nil, fmt.Errorf("临时执行必须提供 execution_config")
 	}
+	if parameters == nil {
+		parameters = map[string]interface{}{}
+	}
 	if err := validateDevTaskContent(devType, content); err != nil {
 		return nil, err
 	}
@@ -181,13 +188,32 @@ func (e *DevExecutor) prepareContentExecution(
 	// 生成执行ID
 	executionID := uuid.New().String()
 
-	// 提取输入参数
-	var inputs commonModels.JSONMap
-	if content != nil {
+	inputs := commonModels.JSONMap{"submitted_parameters": parameters}
+	var effectiveParameters map[string]interface{}
+	var executionContract *taskprovider.ExecutionContract
+	if devType == commonExecution.TaskTypeQuery {
+		contract, effective, resolveErr := resolveQueryExecutionParameters(content, parameters)
+		if resolveErr != nil {
+			return nil, &ExecutionParametersError{Cause: resolveErr}
+		}
+		executionContract = contract
+		effectiveParameters = effective
+	} else {
+		emptyContract := taskprovider.EmptyExecutionContract()
+		if err := taskprovider.ValidateExecutionParameters(
+			emptyContract.InputSchema,
+			parameters,
+			taskprovider.ParameterValidationOptions{},
+		); err != nil {
+			return nil, &ExecutionParametersError{Cause: err}
+		}
+		executionContract = &emptyContract
 		if inputData, ok := content["inputs"].(map[string]interface{}); ok {
-			inputs = inputData
+			inputs["content_inputs"] = inputData
 		}
 	}
+	inputs["execution_contract"] = executionContract
+	inputs["effective_parameters"] = effectiveParameters
 
 	// 创建统一执行记录
 	now := time.Now()
@@ -221,10 +247,11 @@ func (e *DevExecutor) prepareContentExecution(
 
 	// 构造临时 DevTask
 	tempItem := &models.DevTask{
-		DevType:         devType,
-		Content:         content,
-		Timeout:         timeout,
-		ExecutionConfig: models.DevTaskContent(executionConfig),
+		DevType:           devType,
+		Content:           content,
+		Timeout:           timeout,
+		ExecutionConfig:   models.DevTaskContent(executionConfig),
+		RuntimeParameters: effectiveParameters,
 	}
 	sqlAuthorization, err := e.prepareSQLExecutionAuthorization(
 		ctx, tempItem, tenantID, userAccessToken, executionID,
@@ -727,6 +754,9 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 		return nil, "异步 SQL 执行上下文无效", nil
 	}
 	if e.isFederatedQuery(ctx, devTask, uint(tenantID)) {
+		if devTask.RuntimeParameters != nil {
+			return nil, "联邦查询 Runtime 不支持查询参数", nil
+		}
 		if e.federatedQuery == nil || authorization == nil {
 			return nil, "联邦查询服务或 Execution Authorization 未初始化", nil
 		}
@@ -756,12 +786,15 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 	var result *SQLResult
 	if devTask.GetQueryType() == "sql" {
 		result, err = e.sqlEngine.ExecuteIssuedSQLAuthorization(
-			ctx, uint(tenantID), parsedExecutionID, *engineID, sqlContent, devTask.Timeout, e.queryFetchLimit(), authorization,
+			ctx, uint(tenantID), parsedExecutionID, *engineID, sqlContent, devTask.RuntimeParameters, devTask.Timeout, e.queryFetchLimit(), authorization,
 		)
 	} else {
 		engine, accessErr := e.sqlEngine.executionEngine(ctx, uint(tenantID), parsedExecutionID, *engineID, authorization)
 		if accessErr != nil {
 			return nil, fmt.Sprintf("查询执行授权失败: %v", accessErr), nil
+		}
+		if supportErr := requireQueryParameterCapability(engine, devTask.GetQueryType(), devTask.RuntimeParameters); supportErr != nil {
+			return nil, supportErr.Error(), nil
 		}
 		queryTimeout := devTask.Timeout
 		if queryTimeout <= 0 {
@@ -772,9 +805,28 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 		var graphData *plugin.GraphData
 		var queryResult *plugin.QueryResult
 		var queryErr error
+		var targetPath *plugin.CatalogPath
+		if locatorURI := devTask.GetTargetLocator(); locatorURI != "" {
+			locator, locatorErr := resourcetree.ParseURI(locatorURI)
+			if locatorErr != nil || locator.EngineID != *engineID {
+				if locatorErr == nil {
+					locatorErr = fmt.Errorf("资源定位符引擎 ID 不匹配")
+				}
+				return nil, fmt.Sprintf("查询目标无效: %v", locatorErr), nil
+			}
+			model, modelErr := dbbridge.CatalogModel(engine.EngineType)
+			if modelErr != nil {
+				return nil, fmt.Sprintf("查询目标无效: %v", modelErr), nil
+			}
+			path, pathErr := resourcetree.ProviderCatalogPathFromLocator(model, locator)
+			if pathErr != nil {
+				return nil, fmt.Sprintf("查询目标无效: %v", pathErr), nil
+			}
+			targetPath = &path
+		}
 		if engineSupportsQueryResultKind(engine, "graph") {
-			graphResult, graphErr := dbbridge.ExecuteReadOnlyGraphQuery(
-				execCtx, engine, devTask.GetQueryType(), sqlContent, e.queryFetchLimit(),
+			graphResult, graphErr := dbbridge.ExecuteReadOnlyGraphQueryWithPath(
+				execCtx, engine, devTask.GetQueryType(), sqlContent, devTask.RuntimeParameters, e.queryFetchLimit(), targetPath,
 			)
 			queryErr = graphErr
 			if graphResult != nil {
@@ -782,8 +834,8 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 				graphData = graphResult.GraphData
 			}
 		} else {
-			queryResult, queryErr = dbbridge.ExecuteReadOnlyRuntimeQuery(
-				execCtx, engine, devTask.GetQueryType(), sqlContent, e.queryFetchLimit(),
+			queryResult, queryErr = dbbridge.ExecuteReadOnlyRuntimeQueryWithPath(
+				execCtx, engine, devTask.GetQueryType(), sqlContent, devTask.RuntimeParameters, e.queryFetchLimit(), targetPath,
 			)
 		}
 		if queryErr == nil && queryResult == nil {
@@ -883,6 +935,19 @@ func engineSupportsQueryResultKind(engine *commonModels.Engine, kind string) boo
 		return false
 	}
 	return slices.Contains(capabilities.Compute.Query.ResultKinds, kind)
+}
+
+func requireQueryParameterCapability(engine *commonModels.Engine, language string, parameters map[string]interface{}) error {
+	if parameters == nil {
+		return nil
+	}
+	capabilities, err := commonUtils.ParseCapabilities(engine.Capabilities)
+	if err != nil || capabilities == nil || capabilities.Compute == nil || capabilities.Compute.Query == nil ||
+		capabilities.Compute.Query.Parameters == nil || !capabilities.Compute.Query.Parameters.Supported ||
+		!slices.Contains(capabilities.Compute.Query.Parameters.Languages, language) {
+		return fmt.Errorf("当前引擎不支持 %s 查询参数", language)
+	}
+	return nil
 }
 
 func truncateGraphData(data *plugin.GraphData, limit int) (*plugin.GraphData, bool) {
@@ -1249,7 +1314,7 @@ func (e *DevExecutor) prepareParameterizedDevTask(
 	if err != nil {
 		return nil, fmt.Errorf("复制开发任务内容失败: %w", err)
 	}
-	effectiveParameters := map[string]interface{}{}
+	var effectiveParameters map[string]interface{}
 	inputs := commonModels.JSONMap{
 		"submitted_parameters": params,
 	}
@@ -1279,6 +1344,13 @@ func (e *DevExecutor) prepareParameterizedDevTask(
 		effectiveParameters = resolved.EffectiveParameters
 		inputs["workflow_definition"] = resolved.Workflow
 		inputs["execution_contract"] = resolved.Contract
+	} else if devTask.DevType == commonExecution.TaskTypeQuery {
+		contract, effective, resolveErr := resolveQueryExecutionParameters(resolvedContent, params)
+		if resolveErr != nil {
+			return nil, &ExecutionParametersError{Cause: resolveErr}
+		}
+		effectiveParameters = effective
+		inputs["execution_contract"] = contract
 	} else {
 		emptyContract := taskprovider.EmptyExecutionContract()
 		if err := taskprovider.ValidateExecutionParameters(
@@ -1294,7 +1366,8 @@ func (e *DevExecutor) prepareParameterizedDevTask(
 	task := &models.DevTask{
 		ID: devTask.ID, DevType: devTask.DevType, Content: resolvedContent,
 		Timeout: devTask.Timeout, TenantID: tenantID, Status: devTask.Status,
-		ExecutionConfig: devTask.ExecutionConfig,
+		ExecutionConfig:   devTask.ExecutionConfig,
+		RuntimeParameters: effectiveParameters,
 	}
 	if task.DevType == commonExecution.TaskTypeWorkflow {
 		if err := e.validateWorkflowBeforeExecution(ctx, task.Content, task.ExecutionConfig, tenantID); err != nil {

@@ -239,8 +239,8 @@
       <el-form-item :label="t('storageEngine.port')" prop="connection_info.port">
         <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" />
       </el-form-item>
-      <el-form-item :label="t('storageEngine.database')" prop="connection_info.database">
-        <el-input v-model="formState.connection_info.database" placeholder="business" />
+      <el-form-item :label="t('storageEngine.defaultDatabase')">
+        <el-input v-model="formState.connection_info.database" :placeholder="t('storageEngine.defaultDatabasePlaceholder')" />
       </el-form-item>
       <el-form-item :label="t('storageEngine.username') + ' (' + t('common.optional') + ')'">
         <el-input v-model="formState.connection_info.user" />
@@ -970,7 +970,6 @@ const computedRules = computed(() => {
       name: rules.name,
       'connection_info.host': rules['connection_info.host'],
       'connection_info.port': rules['connection_info.port'],
-      'connection_info.database': rules['connection_info.database']
     }
   }
 

@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 34
+manifest_version: 35
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -100,6 +100,7 @@ roles:
     allowed_principal_types: [user]
     permissions:
       - iam.local_account.reset
+      - iam.mfa_credential.reset
       - iam.platform_identity_change.create
       - iam.platform_identity_change.read
       - iam.security_policy.read
@@ -507,6 +508,7 @@ roles:
       - inference.runtime.execute
       - meta.catalog.read
       - meta.scan_task.execute
+      - system.engine_descriptor.read
   - key: tenant.meta_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.meta_runtime.name
@@ -516,6 +518,7 @@ roles:
     permissions:
       - audit.tenant_event.create
       - system.engine.read
+      - system.engine_descriptor.read
   - key: tenant.monitor_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.monitor_runtime.name
@@ -614,3 +617,4 @@ roles:
       - meta.catalog.read
       - meta.inspect.execute
       - meta.scan_task.execute
+      - system.engine_descriptor.read

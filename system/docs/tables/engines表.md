@@ -41,10 +41,11 @@
 
 **注意**：
 - 历史 `unique_identifier`、`extension_api_config` 和 `health_check_config` 字段已废弃，并由 System 启动迁移删除。
-- 工作流和脚本运行时通过 `common/engine` Provider 调用，System 不保存运行时端点配置
+- 工作流和脚本运行时通过 System Engine Instance 保存稳定身份、capabilities 和非敏感 `protocol/host/port`；业务模块只通过 Runtime Descriptor 获取端点投影并调用 `common/engine` Provider。
 - API 响应中的 `capabilities_view` 是 System 后端根据 `capabilities` 派生的展示模型，定义在 `common/models` 供各模块客户端复用；它不是 `system.engines` 表字段，也不写入数据库。
+- `capabilities.compute.query.parameters` 声明查询值参数能力：`supported` 表示是否支持，`languages` 限定可参数化的查询语言，`types` 固定声明可绑定的标量类型；Develop 查询工作台只能按该声明开放参数定义和执行覆盖。
 - `capabilities.extensions.spatial_workspaces` 用于承载数据库实例中可识别的厂商空间工作区事实，例如 SuperMap `sdx_postgis`、`sdx_postgresql` 或 ArcGIS `sde`；System 应自动探测并在详情页展示，高危启用入口和实例级 Provider 选择应基于这一事实自动收口。
-- System 提供显性的高危操作入口 `POST /api/v1/system/engines/{id}/spatial-workspaces/{ecosystem}/{kind}/enable`。`supermap/sdx_postgis` 与 `supermap/sdx_postgresql` 分别调用绑定 `supermap_workflow` 的 direct-only 启用算子，同一 PostgreSQL 实例不得并存或互相回退。
+- System 提供显性的高危操作入口 `POST /api/v1/system/engines/{id}/spatial-workspaces/{ecosystem}/{kind}/enable`。`supermap/sdx_postgis` 与 `supermap/sdx_postgresql` 分别按 direct-only 启用算子发现并绑定兼容 Workflow Runtime，不按固定 `engine_type` 选择；同一 PostgreSQL 实例不得并存或互相回退。
 
 ### 2.3 连接状态缓存字段
 

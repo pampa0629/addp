@@ -48,6 +48,86 @@ type ProbeResponse struct {
 	StatusCode           int    `json:"status_code"`
 }
 
+type DiscoveredModel struct {
+	ID      string `json:"id"`
+	OwnedBy string `json:"owned_by,omitempty"`
+}
+
+type ModelDiscoveryResponse struct {
+	ProviderConnectionID string            `json:"provider_connection_id"`
+	Models               []DiscoveredModel `json:"models"`
+}
+
+func (s *Runtime) DiscoverModels(ctx context.Context, actor Actor, providerID string) (*ModelDiscoveryResponse, error) {
+	if err := validateActor(actor); err != nil {
+		return nil, err
+	}
+	provider, err := s.store.GetProvider(ctx, strings.TrimSpace(providerID), false)
+	if repository.IsNotFound(err) || (err == nil && !canManageProvider(actor, provider)) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if provider.AdapterType != AdapterOpenAICompatible {
+		return nil, ErrUnsupported
+	}
+	endpoint, err := joinEndpoint(provider.Endpoint, "models")
+	if err != nil {
+		return nil, ErrInvalidRequest
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, ErrInvalidRequest
+	}
+	if provider.CredentialCiphertext != "" {
+		credential, decryptErr := commonutils.Decrypt(provider.CredentialCiphertext, s.encryptionKey)
+		if decryptErr != nil {
+			return nil, fmt.Errorf("decrypt provider credential: %w", decryptErr)
+		}
+		request.Header.Set("Authorization", "Bearer "+credential)
+	}
+	response, err := s.client.Do(request)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, ErrTimeout
+		}
+		return nil, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
+	}
+	defer response.Body.Close()
+	payload, err := io.ReadAll(io.LimitReader(response.Body, 4<<20))
+	if err != nil {
+		return nil, ErrUpstreamFailed
+	}
+	if response.StatusCode >= 500 {
+		return nil, ErrUpstreamUnavailable
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, ErrUpstreamFailed
+	}
+	var upstream struct {
+		Data []struct {
+			ID      string `json:"id"`
+			OwnedBy string `json:"owned_by"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(payload, &upstream); err != nil {
+		return nil, ErrUpstreamFailed
+	}
+	seen := make(map[string]bool, len(upstream.Data))
+	models := make([]DiscoveredModel, 0, len(upstream.Data))
+	for _, item := range upstream.Data {
+		id := strings.TrimSpace(item.ID)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		models = append(models, DiscoveredModel{ID: id, OwnedBy: strings.TrimSpace(item.OwnedBy)})
+	}
+	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
+	return &ModelDiscoveryResponse{ProviderConnectionID: provider.ID, Models: models}, nil
+}
+
 func (s *Runtime) ResolveProfile(ctx context.Context, req commoninference.ResolveProfileRequest) (*commoninference.ResolveProfileResponse, error) {
 	if req.SchemaVersion != commoninference.SchemaVersion || req.TenantID == 0 ||
 		strings.TrimSpace(req.ModelProfileID) == "" || strings.TrimSpace(req.Operation) == "" || strings.TrimSpace(req.Modality) == "" {

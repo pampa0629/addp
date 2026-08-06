@@ -6,7 +6,7 @@
 **最后更新**: 2026-07-12
 **适用引擎**: Math Workflow、GeoPython Workflow、Spark Workflow、Model3D Workflow、PointCloud Workflow、SuperMap Workflow
 
-本文档定义 ADDP 工作流运行时的 `addp.workflow/v1` HTTP 协议。该协议由 Common Engine 的 `WorkflowRuntimeProvider` 消费；工作流引擎仍必须先通过 `EnginePlugin` 和 `engine.capabilities/v1` 纳入 System 统一引擎体系。
+本文档定义 ADDP 工作流运行时的 `addp.workflow/v1` HTTP 协议。该协议由 Common Engine 的通用 HTTP `WorkflowRuntimeProvider` 消费；工作流运行时通过 System Engine Instance 和 `engine.capabilities/v1` 纳入统一引擎体系，不要求把每个运行时的 `engine_type` 编译成 Common Engine Plugin。
 
 ---
 
@@ -624,10 +624,10 @@ GET /api/v1/develop/workflow-engines/{workflow_engine_id}/operators
 engine := systemClient.GetEngineByID(workflowEngineID)
 assert engine.IsActive && SupportsComputeEntrypoint(engine, "workflow")
 
-// 4. Common Engine 按该实例的 engine_type 取得 WorkflowRuntimeProvider
-provider := commonEngine.GetWorkflowRuntimeProvider(engine.EngineType)
+// 4. Common Engine 校验实例 capabilities 后创建通用 HTTP WorkflowRuntimeProvider
+provider := commonEngine.GetWorkflowRuntimeProvider(engine)
 
-// 5. Provider 按 addp.workflow/v1 HTTP 协议调用该运行时实例的 GET /api/operators
+// 5. Provider 使用该实例 Runtime Descriptor 中的 endpoint，按 addp.workflow/v1 调用 GET /api/operators
 operators := provider.ListOperators(ctx, engine.ConnectionInfo)
 
 // 6. 执行工作流时，Develop 仍使用工作流引擎实例 ID 作为 execution_config.engine_id
@@ -648,11 +648,13 @@ Copilot 工作流生成入口只接受 audience 为 `copilot`、scope 为 `workf
 
 工作流运行时注册后才成为 ADDP 可用运行时。生产内置运行时可以在启动时向 System Backend 自注册；参考示例运行时可以只作为扩展规范样例存在，由用户在 System 引擎管理中按扩展引擎手动注册。
 
+所有注册方式最终都必须形成同一种 System Engine Instance：实例保存稳定 `engine_type`、`engine.capabilities/v1` 和确定的 `protocol/host/port`。业务模块通过 Tenant Service Access Token 读取 System Runtime Descriptor；不得读取 `/api/v1/internal/engines`、转发用户 Token、发送 Internal API Key，或根据运行时名称和固定端口拼接 endpoint。Common Engine 根据实例 capabilities 选择唯一的通用 HTTP Provider，不维护 GeoPython、Spark、Math、Model3D、PointCloud、SuperMap 等按 `engine_type` 重复实现的 Workflow Plugin。
+
 GeoPython Workflow / Spark Workflow 等生产内置运行时的注册由所属模块使用独立 Service Principal 和 Confidential OAuth Client 完成：先以 `context_type=platform` 通过 Client Credentials Grant 获取短期 Platform Service Access Token，再调用 System 唯一的公开注册 API，并且只发送 `Authorization: Bearer <service_access_token>`。不得调用 `/api/v1/internal/**`，不得发送 `X-Internal-API-Key` 或 `X-Tenant-ID`。需要外部 SDK 或许可绑定的运行时（例如 SuperMap Workflow）也可以启动后由 System 扩展引擎表单手动注册。
 
 Math Workflow 是 `addp.workflow/v1` 参考实现，可以随 ADDP 开发环境启动服务，但不随启动自动注册。需要使用时，在 System 引擎管理中选择“注册扩展引擎”，填入 `engine_type=math_workflow`、默认端口 `8089`，可先通过表单“检查服务”确认 `/health` 与 `/api/operators` 可达，再测试连接并保存。
 
-内置扩展引擎和用户自研扩展引擎在 System 中待遇一致：业务模块不得假设 `geopython_workflow`、`spark_workflow`、`math_workflow`、`model3d_workflow`、`pointcloud_workflow` 等内置工作流引擎一定存在；只有已注册、启用且声明 `compute.workflow.supported=true` 的 Engine Instance 才能被发现和调用。生产内置工作流引擎自注册 payload 可以不提交 `capabilities`，由 System 按内置声明生成 `engine.capabilities/v1`；用户自研扩展引擎和参考示例引擎必须提交或由注册表单生成符合 `engine.capabilities/v1` 的 workflow 能力声明。算子列表、参数、分类、执行模式和输出端口通过 `GET /api/operators` 动态获取，不写入能力声明。
+默认部署运行时和用户自研扩展运行时在 System 中待遇一致：业务模块不得假设 `geopython_workflow`、`spark_workflow`、`math_workflow`、`model3d_workflow`、`pointcloud_workflow` 等工作流引擎一定存在；只有已注册、启用且声明 `compute.workflow.supported=true` 的 Engine Instance 才能被发现和调用。所有实现 `addp.workflow/v1` 的运行时都必须在自注册 payload 中提交或由手动注册表单生成完整 `engine.capabilities/v1`；System 校验并保存该声明，不按 `engine_type` 生成内置能力。算子列表、参数、分类、执行模式和输出端口通过 `GET /api/operators` 动态获取，不写入能力声明。
 
 System 在保存声明 `compute.workflow.supported=true` 且 `compute.workflow.runtime_api="addp.workflow/v1"` 的手动注册扩展运行时前，必须执行一次只读协议探测：
 
@@ -690,13 +692,15 @@ OSGB Scene 的 Manager 分块瓦片任务统一使用 `model3d_tiles_generation`
 
 PointCloud Workflow 是点云处理专用运行时，`engine_type=pointcloud_workflow`，默认端口 `8102`。`las_to_copc`、`laz_to_copc`、`e57_to_copc`、`pcd_to_copc` 和 `xyz_to_copc` 同时支持 workflow 与 direct。PDAL 是运行时内部依赖；运行时未绑定 PDAL 时 `/health` 返回 `degraded` 且不自注册。源和目标由调用方按 `addp.workflow.access-plan/v1` 派生；PointCloud Runtime 不解析 ADDP locator。对象存储源由运行时按 `object_store` 访问参数生成受控读取方式，COPC 始终先写入 `POINTCLOUD_WORK_DIR` / `CPL_TMPDIR`，再按目标访问参数发布。Manager direct 结果仍是 infra 快显 artifact；Develop workflow 结果是用户选择的业务 COPC 数据项。源已经是 COPC 时直接读取，不进入转换算子。
 
-SuperMap Workflow 是超图数据格式和空间算法专用运行时，`engine_type=supermap_workflow`，默认端口 `8103`。运行时由 C++ 实现，对外提供 `addp.workflow/v1`，对内绑定 SuperMap iObjects C++ SDK 和许可文件。运行时必须独立校验 `workflow_def`，按 `depends_on` 做稳定拓扑排序，并在单次执行上下文中串行执行 DAG；第一阶段不实现条件、循环或子工作流。节点间通过 C++ 类型化内存句柄传递 Datasource、DatasetVector 等对象，只有用户显式保存数据集或跨 HTTP 边界返回结果摘要时才落盘。当前真实算子覆盖 datasource open/open_postgis/open_postgresql/create/enable_postgis/enable_postgresql、dataset select/info/project/save、vector filter/spatial_filter/buffer/dissolve/merge/feature_envelope/inner_point/query、table bounded batch read/write、overlay intersect/clip/erase/union、OSGB scene 转 S3M，以及 CAD inspect/render preview。`datasource.enable_postgis`、`datasource.enable_postgresql`、`datasource.upgrade_udbx`、`table.read_*`、`table.write_*`、`cad.inspect` 和 `cad.render_preview` 是 direct-only 算子，不进入 Develop 工作流画布，`osgb_scene_to_s3m` 同时支持 workflow 与 direct。
+SuperMap Workflow 是超图数据格式和空间算法专用运行时，官方实现使用 `engine_type=supermap_workflow`、默认端口 `8103`。运行时由 C++ 实现，对外提供 `addp.workflow/v1`，对内绑定 SuperMap iObjects C++ SDK 和许可文件。运行时必须独立校验 `workflow_def`，按 `depends_on` 做稳定拓扑排序，并在单次执行上下文中串行执行 DAG；第一阶段不实现条件、循环或子工作流。节点间通过 C++ 类型化内存句柄传递 Datasource、DatasetVector 等对象，只有用户显式保存数据集或跨 HTTP 边界返回结果摘要时才落盘。当前真实算子覆盖 datasource open/open_postgis/open_postgresql/create/enable_postgis/enable_postgresql、dataset select/info/project/save、vector filter/spatial_filter/buffer/dissolve/merge/feature_envelope/inner_point/query、table bounded batch read/write、overlay intersect/clip/erase/union、OSGB scene 转 S3M，以及 CAD inspect/render preview。`datasource.enable_postgis`、`datasource.enable_postgresql`、`datasource.upgrade_udbx`、`table.read_*`、`table.write_*`、`cad.inspect` 和 `cad.render_preview` 是 direct-only 算子，不进入 Develop 工作流画布，`osgb_scene_to_s3m` 同时支持 workflow 与 direct。
 
 SuperMap table direct session 使用唯一线协议 `supermap.table-batch/v1`：请求和响应承载统一 `BatchData` JSON，二进制字段按 JSON 标准 base64 编码，geometry 字段固定承载 EWKB。当前不声明 Arrow IPC；运行时不得接受第二种批编码并静默回退。若性能验证确认 HTTP JSON 编解码成为主要瓶颈，必须先修订本规范并引入 ABI 隔离的单一替代编码，再删除本协议实现。
 
 `datasource.enable_postgis` 只初始化 `supermap/sdx_postgis`；`datasource.enable_postgresql` 只初始化 `supermap/sdx_postgresql`。System 必须依据目标 PostgreSQL 实例的 PostGIS 事实选择其中一个算子，同一实例不得启用两者。`datasource.open_postgis` 使用 `UGEngineType::PostgreSQLGis`，只打开已有 PostGIS 空间表所在数据源，不得调用 create；`datasource.open_postgresql` 使用 `UGEngineType::PostgreSQL`，只打开已有 SuperMap SDX+ for PostgreSQL 工作区。两个 open 算子和两个 enable 算子不得互相回退。
 
 Transfer 对 `supermap/sdx_postgresql` 的 bounded table 读写必须通过运行时 direct table session 算子完成。跨 HTTP 边界固定使用 `supermap.table-batch/v1` JSON 承载 ADDP `BatchData`，geometry 值固定为 base64 EWKB，字段名由 `SpatialInfo.primary_geometry_column` 和 `geometry_columns` 指定，不得假定为 `geom`。读取由 SDK Recordset 分块导出为 JSON/EWKB；写入由 SDK 将 EWKB 解码到分块 `UGMemRecordset` 后调用 `DatasetVector.Append`。写会话成功关闭前必须调用 `ComputeBounds()` 和 `UpdateSpatialIndex()`，关闭并重开 Dataset 后校验 `GetObjectCount()`、Bounds 非空语义与空间索引非 dirty；任一步失败都必须使 Transfer execution 失败。SuperMap 私有 geometry Blob 不得进入 Transfer、Common Spatial、BatchData 或任务 JSON。
+
+PostgreSQL Engine Instance 的 SuperMap 空间工作区只保存 `bound_runtime_engine_id`，不保存或校验 `runtime_engine_type`。System、Meta 和 Transfer 必须通过该 ID 获取同 Tenant 可见的 Runtime Descriptor，校验实例处于 active 状态、声明 `addp.workflow/v1`，并通过同一实例的 `/api/operators` 校验所需 direct 算子。官方 `supermap_workflow` 和用户独立部署的兼容 Runtime 在此路径上待遇一致；任何调用方不得用 `engine_type=supermap_workflow` 代替绑定关系和算子能力校验。
 
 `datasource.upgrade_udbx` 对已有 UDBX 执行原位 schema 升级：运行时先以 SQLite 只读检查 SuperMap 系统表和 `SmRegister` 关键字段，再以可写方式打开数据源，由当前 iObjects C++ SDK 完成官方 schema 迁移，关闭后重新检查并返回 `changed`、`schema_current` 和 `dataset_count`。该算子必须保持幂等；调用方负责权限确认、升级前备份和审计，不得在普通读取链路中隐式触发。ADDP `locator` 只属于 Develop/UI 的资源选择契约，调用方在调用 runtime 前必须把它派生为 `connection_info`、`schema` 和 `table` 并移除，SuperMap runtime 不解析 ADDP locator。完整 SuperMap C++ SDK 作为外部只读母版保存，不进入 ADDP 代码仓库或最终运行镜像；基础镜像从显式指定的母版构建。许可作为受控制品单独注入。运行时未绑定 SDK runtime 或许可时 `/health` 应返回不可用依赖，System 连接测试必须失败并提示具体缺失项。
 

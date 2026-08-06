@@ -15,7 +15,12 @@
 
     <el-table v-else v-loading="loading" :data="entries" class="entries-table" :row-class-name="entryRowClass" @row-click="openEntry">
       <el-table-column prop="owner_module" :label="t('console.configuration.owner')" min-width="150" />
-      <el-table-column prop="id" :label="t('console.configuration.entry')" min-width="240" />
+      <el-table-column :label="t('console.configuration.entry')" min-width="240">
+        <template #default="{ row }">
+          <div class="entry-name">{{ entryLabel(row) }}</div>
+          <code>{{ row.id }}</code>
+        </template>
+      </el-table-column>
       <el-table-column :label="t('console.configuration.scope')" min-width="220">
         <template #default="{ row }">
           <el-tag v-for="scope in row.scope_types" :key="scope" effect="plain">
@@ -45,13 +50,12 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, ArrowRight, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../store/auth'
 import { listConfigurationManagementEntries } from '../api/configurationManagement'
 import InferenceBindingsConfiguration from '../components/configuration/InferenceBindingsConfiguration.vue'
-import { useRoute } from 'vue-router'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -59,6 +63,12 @@ const route = useRoute()
 const authStore = useAuthStore()
 const loading = ref(false)
 const entries = ref([])
+const ENTRY_LABEL_KEYS = {
+  'inference.models': 'console.configuration.entries.inferenceModels',
+  'manager.embedding': 'console.configuration.entries.managerEmbedding',
+  'copilot.inference_bindings': 'console.configuration.entries.copilotInferenceBindings',
+  'agent.inference_bindings': 'console.configuration.entries.agentInferenceBindings'
+}
 const selectedOwner = computed(() => {
   const parts = route.path.split('/').filter(Boolean)
   return parts[0] === 'configuration' && ['agent', 'copilot'].includes(parts[1]) ? parts[1] : ''
@@ -70,6 +80,11 @@ const contextLabel = computed(() => authStore.authContext?.context?.type === 'te
 
 function scopeLabel(scope) {
   return t(`console.configuration.scopes.${scope}`)
+}
+
+function entryLabel(entry) {
+  const key = ENTRY_LABEL_KEYS[entry.id]
+  return key ? t(key) : entry.id
 }
 
 async function loadEntries() {
@@ -133,6 +148,8 @@ onMounted(() => {
 }
 
 .entries-table { width: 100%; }
+.entry-name { color: var(--addp-text-primary); font-weight: 500; }
+.entries-table code { color: var(--addp-text-tertiary); font-size: 12px; }
 .entries-table :deep(.entry-row--available) { cursor: pointer; }
 .entries-table :deep(.entry-row--unavailable) { color: var(--addp-text-secondary); }
 

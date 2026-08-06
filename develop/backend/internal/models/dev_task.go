@@ -47,6 +47,15 @@ type DevTask struct {
 	LastRunAt           *time.Time `json:"last_run_at,omitempty"`
 
 	ExecutionContract *taskprovider.ExecutionContract `gorm:"-" json:"execution_contract,omitempty"`
+	RuntimeParameters map[string]interface{}          `gorm:"-" json:"-"`
+}
+
+type QueryParameterDefinition struct {
+	Name        string      `json:"name"`
+	Type        string      `json:"type"`
+	Default     interface{} `json:"default"`
+	Title       string      `json:"title,omitempty"`
+	Description string      `json:"description,omitempty"`
 }
 
 // ProviderDevTask 是 Develop 通过 TaskProvider API 暴露的标准任务定义。
@@ -145,6 +154,16 @@ func (d *DevTask) GetQueryType() string {
 	if d.Content != nil {
 		if qt, ok := d.Content["query_type"].(string); ok {
 			return strings.ToLower(strings.TrimSpace(qt))
+		}
+	}
+	return ""
+}
+
+// GetTargetLocator returns the canonical catalog locator bound to a query task.
+func (d *DevTask) GetTargetLocator() string {
+	if d != nil && d.Content != nil {
+		if locator, ok := d.Content["target_locator"].(string); ok {
+			return strings.TrimSpace(locator)
 		}
 	}
 	return ""

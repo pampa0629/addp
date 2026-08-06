@@ -568,11 +568,19 @@ func respondIAMError(c *gin.Context, err error) {
 		messageID = sysi18n.MsgRoleAssignmentAlreadyExists
 		code := "role_assignment_already_exists"
 		errorCode = &code
+	case errors.Is(err, iam.ErrTenantRoleAssignmentPrincipalTypeNotAllowed):
+		status = http.StatusConflict
+		messageID = sysi18n.MsgRoleAssignmentPrincipalTypeNotAllowed
+		code := "role_assignment_principal_type_not_allowed"
+		errorCode = &code
 	case errors.Is(err, iam.ErrStepUpRequired):
 		status = http.StatusForbidden
 		messageID = sysi18n.MsgStepUpRequired
 		code := "step_up_required"
 		errorCode = &code
+	case errors.Is(err, iam.ErrMFAResetNotAvailable):
+		status = http.StatusConflict
+		messageID = sysi18n.MsgMFAResetNotAvailable
 	case errors.Is(err, commonapi.ErrBadRequest):
 		messageID = commoni18n.MsgInvalidParams
 	case errors.Is(err, commonapi.ErrUnauthorized):

@@ -22,8 +22,11 @@ func (p *MongoDBPlugin) listDatabases(ctx context.Context, connInfo plugin.Conne
 	}
 	defer client.Disconnect(ctx) //nolint:errcheck
 
-	// 列出所有数据库
-	databases, err := client.ListDatabases(ctx, bson.M{})
+	// MongoDB 返回当前认证主体被授权访问的数据库，不能把服务器上的
+	// 其他数据库泄露到 ADDP Catalog。
+	databases, err := client.ListDatabases(ctx, bson.M{}, options.ListDatabases().
+		SetNameOnly(true).
+		SetAuthorizedDatabases(true))
 	if err != nil {
 		return nil, fmt.Errorf("failed to list databases: %w", err)
 	}

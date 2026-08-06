@@ -213,6 +213,18 @@ def register_to_system() -> bool:
             "protocol": protocol,
             "port": port,
         },
+        "capabilities": {
+            "schema_version": "engine.capabilities/v1",
+            "engine_type": "model3d_workflow",
+            "engine_family": "workflow",
+            "compute": {
+                "workflow": {
+                    "supported": True,
+                    "runtime_api": "addp.workflow/v1",
+                    "dynamic_operators": True,
+                }
+            },
+        },
         "is_builtin": True,
     }
 

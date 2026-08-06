@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
 import {
+  buildQueryExecutionContract,
   buildQueryResultCSV,
   formatterLanguageForQuery,
   monacoLanguageForQuery,
   queryCapabilityForEngine,
+  queryParameterReference,
   queryResultFromExecution
 } from '../src/utils/queryWorkbench.mjs'
 
@@ -14,7 +16,12 @@ const capability = queryCapabilityForEngine({
         supported: true,
         languages: ['Cypher', 'cypher'],
         default_language: 'cypher',
-        result_kinds: ['graph', 'table']
+        result_kinds: ['graph', 'table'],
+        parameters: {
+          supported: true,
+          languages: ['cypher'],
+          types: ['string', 'integer', 'number', 'boolean']
+        }
       }
     }
   })
@@ -22,8 +29,23 @@ const capability = queryCapabilityForEngine({
 assert.deepEqual(capability, {
   languages: ['cypher'],
   defaultLanguage: 'cypher',
-  resultKinds: ['graph', 'table']
+  resultKinds: ['graph', 'table'],
+  parameters: {
+    supported: true,
+    languages: ['cypher'],
+    types: ['string', 'integer', 'number', 'boolean']
+  }
 })
+assert.equal(queryParameterReference('sql', 'status'), ':status')
+assert.equal(queryParameterReference('cypher', 'status'), '$status')
+assert.equal(queryParameterReference('mql', 'status'), '{"$param":"status"}')
+const parameterContract = buildQueryExecutionContract([
+  { name: 'status', type: 'string', default: 'active', title: 'Status' },
+  { name: 'limit', type: 'integer', default: 10 }
+])
+assert.equal(parameterContract.input_schema.properties.status.type, 'string')
+assert.equal(parameterContract.input_defaults.limit, 10)
+assert.equal(parameterContract.input_ui_schema.status.order, 0)
 assert.equal(monacoLanguageForQuery('mql'), 'json')
 assert.equal(monacoLanguageForQuery('cypher'), 'cypher')
 assert.equal(formatterLanguageForQuery('sql'), 'sql')

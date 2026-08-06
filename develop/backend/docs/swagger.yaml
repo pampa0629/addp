@@ -221,6 +221,8 @@ definitions:
         type: string
       execution_config:
         $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskExecutionConfigSwagger'
+      parameters:
+        type: object
       request_fingerprint:
         example: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
         type: string
@@ -298,12 +300,19 @@ definitions:
       query:
         example: SELECT * FROM cities
         type: string
+      query_parameters:
+        items:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.QueryParameterSwagger'
+        type: array
       query_type:
         enum:
         - sql
         - mql
         - cypher
         example: sql
+        type: string
+      target_locator:
+        example: addp://engine/11/path/Outdoor/Persons?type=collection&item_id=51657
         type: string
       workflow_definition:
         $ref: '#/definitions/github_com_addp_develop_backend_internal_models.WorkflowDefinitionSwagger'
@@ -459,11 +468,11 @@ definitions:
     type: object
   github_com_addp_develop_backend_internal_models.ErrorResponse:
     properties:
-      code:
-        example: 400
-        type: integer
-      message:
+      error:
         example: 请求参数错误
+        type: string
+      error_code:
+        example: invalid_query_parameter_definitions
         type: string
     type: object
   github_com_addp_develop_backend_internal_models.ExecutionStartedResponse:
@@ -726,6 +735,29 @@ definitions:
       updated_by:
         example: 1
         type: integer
+    type: object
+  github_com_addp_develop_backend_internal_models.QueryParameterSwagger:
+    properties:
+      default:
+        example: Beijing
+        type: string
+      description:
+        example: 用于筛选目标城市
+        type: string
+      name:
+        example: city_name
+        type: string
+      title:
+        example: 城市名称
+        type: string
+      type:
+        enum:
+        - string
+        - integer
+        - number
+        - boolean
+        example: string
+        type: string
     type: object
   github_com_addp_develop_backend_internal_models.RebindWorkflowStorageEngineSwaggerRequest:
     properties:
@@ -1571,7 +1603,8 @@ paths:
             additionalProperties: true
             type: object
         "422":
-          description: 当前业务库没有可用真实样例 | No real sample data is available
+          description: 所选数据项为空或当前业务库没有可用真实样例 | The selected data item is empty or
+            no real sample data is available
           schema:
             additionalProperties: true
             type: object
@@ -2760,6 +2793,10 @@ paths:
           description: 已创建的开发任务 | Created development task
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskSwagger'
+        "400":
+          description: 请求或查询参数定义无效 | Invalid request or query parameter definitions
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
       summary: 创建开发任务 | Create development task
       tags:
       - DevTask
@@ -2833,6 +2870,10 @@ paths:
           description: 已更新的开发任务 | Updated development task
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskSwagger'
+        "400":
+          description: 请求或查询参数定义无效 | Invalid request or query parameter definitions
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
       summary: 更新开发任务 | Update development task
       tags:
       - DevTask

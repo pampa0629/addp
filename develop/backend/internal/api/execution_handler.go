@@ -90,6 +90,11 @@ func (h *ExecutionHandler) ExecuteDevTask(c *gin.Context) {
 		if writeExecutionAuthorizationError(c, err) {
 			return
 		}
+		var parameterDefinitionsError *service.QueryParameterDefinitionsError
+		if errors.As(err, &parameterDefinitionsError) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgQueryParameterDefinitionsInvalid), "error_code": "invalid_query_parameter_definitions"})
+			return
+		}
 		var parameterError *service.ExecutionParametersError
 		if errors.As(err, &parameterError) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionParametersInvalid), "error_code": "invalid_execution_parameters"})
@@ -155,7 +160,7 @@ func (h *ExecutionHandler) ExecuteContent(c *gin.Context) {
 			})
 			return
 		}
-		if req.DevType != "" || req.TriggerType != "" || req.Content != nil || req.ExecutionConfig != nil || req.Timeout != 0 {
+		if req.DevType != "" || req.TriggerType != "" || req.Content != nil || req.ExecutionConfig != nil || req.Parameters != nil || req.Timeout != 0 {
 			writeToolApprovalError(c, serviceError("approval_invalid_request", "恢复 workflow.run 只允许 approval_id 和 request_fingerprint"))
 			return
 		}
@@ -200,6 +205,7 @@ func (h *ExecutionHandler) ExecuteContent(c *gin.Context) {
 		req.DevType,
 		req.Content,
 		req.ExecutionConfig,
+		req.Parameters,
 		tenantID,
 		userID,
 		userAccessToken,
@@ -208,6 +214,16 @@ func (h *ExecutionHandler) ExecuteContent(c *gin.Context) {
 	)
 	if err != nil {
 		if writeExecutionAuthorizationError(c, err) {
+			return
+		}
+		var parameterDefinitionsError *service.QueryParameterDefinitionsError
+		if errors.As(err, &parameterDefinitionsError) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgQueryParameterDefinitionsInvalid), "error_code": "invalid_query_parameter_definitions"})
+			return
+		}
+		var parameterError *service.ExecutionParametersError
+		if errors.As(err, &parameterError) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionParametersInvalid), "error_code": "invalid_execution_parameters"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

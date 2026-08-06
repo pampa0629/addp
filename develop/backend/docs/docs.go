@@ -267,7 +267,7 @@ const docTemplate = `{
                         }
                     },
                     "422": {
-                        "description": "当前业务库没有可用真实样例 | No real sample data is available",
+                        "description": "所选数据项为空或当前业务库没有可用真实样例 | The selected data item is empty or no real sample data is available",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2012,6 +2012,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskSwagger"
                         }
+                    },
+                    "400": {
+                        "description": "请求或查询参数定义无效 | Invalid request or query parameter definitions",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -2118,6 +2124,12 @@ const docTemplate = `{
                         "description": "已更新的开发任务 | Updated development task",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskSwagger"
+                        }
+                    },
+                    "400": {
+                        "description": "请求或查询参数定义无效 | Invalid request or query parameter definitions",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
                         }
                     }
                 },
@@ -3096,6 +3108,9 @@ const docTemplate = `{
                 "execution_config": {
                     "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskExecutionConfigSwagger"
                 },
+                "parameters": {
+                    "type": "object"
+                },
                 "request_fingerprint": {
                     "type": "string",
                     "example": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -3205,6 +3220,12 @@ const docTemplate = `{
                     "type": "string",
                     "example": "SELECT * FROM cities"
                 },
+                "query_parameters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.QueryParameterSwagger"
+                    }
+                },
                 "query_type": {
                     "type": "string",
                     "enum": [
@@ -3213,6 +3234,10 @@ const docTemplate = `{
                         "cypher"
                     ],
                     "example": "sql"
+                },
+                "target_locator": {
+                    "type": "string",
+                    "example": "addp://engine/11/path/Outdoor/Persons?type=collection\u0026item_id=51657"
                 },
                 "workflow_definition": {
                     "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.WorkflowDefinitionSwagger"
@@ -3427,13 +3452,13 @@ const docTemplate = `{
         "github_com_addp_develop_backend_internal_models.ErrorResponse": {
             "type": "object",
             "properties": {
-                "code": {
-                    "type": "integer",
-                    "example": 400
-                },
-                "message": {
+                "error": {
                     "type": "string",
                     "example": "请求参数错误"
+                },
+                "error_code": {
+                    "type": "string",
+                    "example": "invalid_query_parameter_definitions"
                 }
             }
         },
@@ -3796,6 +3821,37 @@ const docTemplate = `{
                 "updated_by": {
                     "type": "integer",
                     "example": 1
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.QueryParameterSwagger": {
+            "type": "object",
+            "properties": {
+                "default": {
+                    "type": "string",
+                    "example": "Beijing"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "用于筛选目标城市"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "city_name"
+                },
+                "title": {
+                    "type": "string",
+                    "example": "城市名称"
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "string",
+                        "integer",
+                        "number",
+                        "boolean"
+                    ],
+                    "example": "string"
                 }
             }
         },

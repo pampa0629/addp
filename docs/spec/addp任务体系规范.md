@@ -606,6 +606,8 @@ TaskProvider 任务列表是跨模块编排专用契约，不适用通用业务�
 
 不支持执行输入覆盖或没有稳定输出的任务仍必须返回对应的闭合空对象。`input_defaults` 只提供任务当前保存的工作流配置，不能使缺少必填定义参数的任务变成可保存任务；任务定义本身必须始终完整且可直接执行。`input_ui_schema` 只描述 `input_schema.properties` 中已声明字段的控件语义，不得增加输入字段或覆盖服务端 Schema 约束。需要稳定展示顺序时，字段和分组必须在对应 UI Schema 节点声明从 `0` 开始的 `order`；消费者必须按 `order` 排序，不能依赖 JSON 对象属性顺序。算子工作流的分组顺序使用稳定 DAG 拓扑顺序：上游算子在前，同层并行算子按任务定义 `tasks[]` 的保存顺序排列；分组内字段按公开参数声明顺序排列，不依赖画布坐标。`format=resource-locator` 的值在契约和请求中仍使用标准 ResourceLocator，但用户界面只能展示解析后的资源路径、名称和本地化类型，不得直接显示 `addp://` URI、Engine ID、`node_id` 或 `item_id`；无法解析时统一显示“已配置资源”，不得回退为原始内部值。
 
+Develop 查询任务的 `content.query_parameters[]` 是查询参数定义事实源，每项固定包含 `name`、`type`、`default`，可选包含 `title`、`description`。参数名必须唯一且真实出现在当前查询语言的参数位置中；查询中的全部参数位置也必须有对应定义。`query_parameters[]` 的保存顺序决定 `input_ui_schema.<name>.order`，四种首期类型固定为 `string`、`integer`、`number`、`boolean`。查询任务详情必须从该定义派生非空 `execution_contract`；未定义查询参数时返回闭合空契约。即时查询在 `POST /api/v1/develop/executions` 顶层提交同语义的 `parameters` 覆盖，不能把执行值写回 `content.query_parameters` 或查询文本。
+
 `GET /executions/{execution_id}` 直接返回统一 execution 对象，`execution_id` 必须是 `common.task_executions.execution_id`。
 
 Owner 模块若需要保存下游运行时或外部系统返回的本地执行 ID，不得在 execution 结果摘要中再次使用 `execution_id` 字段，以免和统一执行 ID 形成双事实源。字段应按来源命名，例如 Develop 工作流运行时返回的本地执行 ID 保存为 `runtime_execution_id`，而不是覆盖或并列一个新的 `execution_id`。
@@ -644,6 +646,8 @@ HTTP 状态码表达错误类型，响应体不得重复携带 `status=error`。
 5. 输出绑定引用的 `step_id` 必须存在，并且必须在当前 Step 的 `depends_on` 中显式声明；保存和执行编排时都必须拒绝未知引用、隐式数据依赖、自引用、未在来源任务 `output_schema` 声明的路径和不兼容的目标参数类型。
 6. 输出绑定解析只返回被引用输出的原始值，不做隐式类型转换。运行时如果引用步骤没有结果、字段路径不存在，或路径试图进入非对象值，当前 Step 必须失败，不得把缺失值静默改为 `null` 继续执行。
 7. provider 必须按执行时重新读取的具体任务输入契约严格校验解析后的参数；未知字段、类型错误或不支持覆盖时必须明确拒绝，不得静默忽略。
+8. 查询参数只允许绑定值。表名、集合名、字段名、排序方向、关键字和任意查询片段必须保留在任务查询定义中，不得通过参数动态替换。
+9. 查询参数绑定必须由声明对应能力的 Query Runtime Provider 使用数据库驱动、原生参数 Map 或解析后的结构化对象完成；禁止 `strings.Replace`、模板插值或先格式化为查询字面量再执行。
 
 执行成功受理时 HTTP 状态码必须为 `202 Accepted`，响应体必须返回本次执行的统一 `execution_id`。标准最小响应为：
 

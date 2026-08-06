@@ -219,6 +219,54 @@ func TestRuntimeChatPreservesBasePathAndDoesNotFallback(t *testing.T) {
 	}
 }
 
+func TestDiscoverModelsUsesProviderCredentialAndPreservesBasePath(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/models" {
+			t.Errorf("unexpected discovery request: %s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer discovery-secret" {
+			t.Errorf("unexpected authorization header")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"model-b","owned_by":"vendor"},{"id":"model-a"},{"id":"model-b"}]}`))
+	}))
+	defer upstream.Close()
+
+	ctx := context.Background()
+	store := newTestStore(t)
+	control := NewControlPlane(store, testEncryptionKey)
+	platform := Actor{ContextType: models.ScopePlatform, PrincipalID: 41}
+	provider, err := control.CreateProvider(ctx, platform, ProviderInput{Name: "discover", ScopeType: models.ScopePlatform, AdapterType: AdapterOpenAICompatible, Endpoint: upstream.URL + "/v1", AllowAllTenants: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := control.SetCredential(ctx, platform, provider.ID, "discovery-secret"); err != nil {
+		t.Fatal(err)
+	}
+
+	response, err := NewRuntime(store, testEncryptionKey).DiscoverModels(ctx, platform, provider.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.ProviderConnectionID != provider.ID || len(response.Models) != 2 || response.Models[0].ID != "model-a" || response.Models[1].ID != "model-b" {
+		t.Fatalf("unexpected discovery response: %+v", response)
+	}
+}
+
+func TestDiscoverModelsRejectsNonOpenAIAdapter(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	control := NewControlPlane(store, testEncryptionKey)
+	platform := Actor{ContextType: models.ScopePlatform, PrincipalID: 51}
+	provider, err := control.CreateProvider(ctx, platform, ProviderInput{Name: "multimodal", ScopeType: models.ScopePlatform, AdapterType: AdapterDashScopeMultimodal, Endpoint: "https://example.test/embedding", AllowAllTenants: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewRuntime(store, testEncryptionKey).DiscoverModels(ctx, platform, provider.ID); err != ErrUnsupported {
+		t.Fatalf("discover error = %v, want %v", err, ErrUnsupported)
+	}
+}
+
 func TestInvalidStatusIsRejected(t *testing.T) {
 	_, err := normalizeStatus("enabled")
 	if err == nil {

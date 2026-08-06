@@ -67,15 +67,16 @@ func (p *DorisPlugin) ConnectionIdentityFields() []string {
 
 func (p *DorisPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), "database", plugin.TabularCapabilityOptions{
-		Write:             true,
-		BulkWrite:         true,
-		BatchWrite:        true,
-		TableReadSession:  true,
-		TableWriteSession: true,
-		TableWritePrepare: true,
-		Delete:            true,
-		SupportsExplain:   true,
-		WriterConnector:   "doris_insert",
+		Write:              true,
+		BulkWrite:          true,
+		BatchWrite:         true,
+		TableReadSession:   true,
+		TableWriteSession:  true,
+		TableWritePrepare:  true,
+		Delete:             true,
+		SupportsExplain:    true,
+		SupportsParameters: true,
+		WriterConnector:    "doris_insert",
 	})
 }
 

@@ -7,8 +7,8 @@ import (
 
 // ErrorResponse 错误响应
 type ErrorResponse struct {
-	Code    int    `json:"code" example:"400"`
-	Message string `json:"message" example:"请求参数错误"`
+	Error     string `json:"error" example:"请求参数错误"`
+	ErrorCode string `json:"error_code,omitempty" example:"invalid_query_parameter_definitions"`
 }
 
 // SuccessResponse 成功响应
@@ -23,10 +23,21 @@ type SuccessResponse struct {
 type DevTaskContentSwagger struct {
 	Query              string                     `json:"query,omitempty" example:"SELECT * FROM cities"`
 	QueryType          string                     `json:"query_type,omitempty" enums:"sql,mql,cypher" example:"sql"`
+	TargetLocator      string                     `json:"target_locator,omitempty" example:"addp://engine/11/path/Outdoor/Persons?type=collection&item_id=51657"`
+	QueryParameters    []QueryParameterSwagger    `json:"query_parameters,omitempty"`
 	WorkflowDefinition *WorkflowDefinitionSwagger `json:"workflow_definition,omitempty"`
 	Inputs             map[string]interface{}     `json:"inputs,omitempty" swaggertype:"object"`
 	NotebookPath       string                     `json:"notebook_path,omitempty" example:"demo.ipynb"`
 	Parameters         map[string]interface{}     `json:"parameters,omitempty" swaggertype:"object"`
+}
+
+// QueryParameterSwagger 查询值参数定义；default 的 JSON 标量类型必须与 type 一致。
+type QueryParameterSwagger struct {
+	Name        string      `json:"name" example:"city_name"`
+	Type        string      `json:"type" enums:"string,integer,number,boolean" example:"string"`
+	Default     interface{} `json:"default" swaggertype:"primitive,string" example:"Beijing"`
+	Title       string      `json:"title,omitempty" example:"城市名称"`
+	Description string      `json:"description,omitempty" example:"用于筛选目标城市"`
 }
 
 // WorkflowDefinitionSwagger addp.workflow/v1 工作流定义。
@@ -270,6 +281,7 @@ type CreateExecutionSwaggerRequest struct {
 	TriggerType        string                        `json:"trigger_type,omitempty" enums:"manual,scheduled" example:"manual"`
 	Content            DevTaskContentSwagger         `json:"content,omitempty"`
 	ExecutionConfig    DevTaskExecutionConfigSwagger `json:"execution_config,omitempty"`
+	Parameters         map[string]interface{}        `json:"parameters,omitempty" swaggertype:"object"`
 	Timeout            int                           `json:"timeout,omitempty" example:"300"`
 	ApprovalID         string                        `json:"approval_id,omitempty" format:"uuid"`
 	RequestFingerprint string                        `json:"request_fingerprint,omitempty" example:"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"`

@@ -21,6 +21,7 @@ type ManagedUser struct {
 	Username                 *string
 	LocalAccountStatus       *LocalAccountStatus
 	HasEffectivePlatformRole bool
+	TOTPEnrolled             bool
 	CreatedAt                time.Time
 	UpdatedAt                time.Time
 }
@@ -207,6 +208,13 @@ func (r *Repository) ListManagedUsers(
 			  AND (assignment.valid_until IS NULL OR assignment.valid_until > now())
 			  AND role.status = 'active'
 		) AS has_effective_platform_role,
+		EXISTS (
+			SELECT 1
+			FROM system.mfa_credentials credential
+			WHERE credential.user_id = principal.id
+			  AND credential.method = 'totp'
+			  AND credential.status = 'active'
+		) AS totp_enrolled,
 		user_profile.created_at,
 		user_profile.updated_at
 	`).Order("principal.id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Scan(&users).Error
@@ -241,6 +249,13 @@ func (r *Repository) GetManagedUser(ctx context.Context, userID int64) (*Managed
 				  AND (assignment.valid_until IS NULL OR assignment.valid_until > now())
 				  AND role.status = 'active'
 			) AS has_effective_platform_role,
+			EXISTS (
+				SELECT 1
+				FROM system.mfa_credentials credential
+				WHERE credential.user_id = principal.id
+				  AND credential.method = 'totp'
+				  AND credential.status = 'active'
+			) AS totp_enrolled,
 			user_profile.created_at,
 			user_profile.updated_at
 		`).

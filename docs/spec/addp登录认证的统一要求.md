@@ -240,6 +240,14 @@ POST /api/v1/system/auth/context-switches
 
 step-up 成功响应复用唯一 Browser Access Token 响应结构，服务端同时替换 HttpOnly Refresh Cookie。前端必须原地接收新 Access Token、刷新 AuthContext 并继续被中断的操作，不得要求用户退出后重新登录。AAL2 的 `step_up_expires_at` 不得晚于替换 Family 的固定最终期限；过期后需要再次 step-up，但不主动注销仍可用于低风险操作的 Tenant Session。
 
+### 4.5 普通 User 的受控 TOTP 重置
+
+普通 User 遗失认证器或 TOTP Secret 且无法完成登录前 Challenge 时，由 Platform Context 中持有 `iam.mfa_credential.reset` 的平台安全管理员执行唯一受控重置。请求必须提供非空原因，目标必须是有效 User、具有 active 或 locked 的 Local Account、具有唯一 active TOTP Credential，且不能持有任何当前有效 Platform Role。平台三员不得使用该接口，继续只允许本人维护凭据或通过离线三员整体恢复处理灾难场景。
+
+重置必须在一个事务内按 Principal -> Local Account -> MFA Credential 的顺序加锁，废止旧 Credential、推进 Principal `authorization_version`、撤销全部有效 Token Family、消费未完成的 MFA Challenge、MFA Enrollment 和 Context Selection Ticket，并写入 `iam.mfa.credential_reset` 高风险审计。审计可以记录目标 Principal、原因、授权版本和受影响事实数量，但不得记录旧/新 TOTP Secret、验证码、密文或 nonce。API 只返回重置时间、授权版本和受影响数量，不签发会话，也不修改密码、Tenant Membership 或 Role Assignment。
+
+重置后目标 User 使用现有密码重新登录；由于不再存在 active TOTP Credential，登录只建立 AAL1 认证事实。目标 User 必须立即通过“安全设置”中的现有自助登记路径扫描并验证新的 TOTP，完成后由现有登记事务替换为 `password + totp / aal2` Token Family。不得为重置建立第二套登记端点、临时默认 Secret、数据库直接更新或旧密钥 fallback。
+
 切换事务必须：锁定当前 Browser Family，复核目标 Context 和授权版本，撤销旧 Family 及派生 Resource Access Ticket，创建新 Family 和新票据，写入旧 / 新 Context 审计，最后返回新内存 Access Token。目标 Context 必须与当前 Context 不同；新 Family 继承原 Family 的认证事实和固定最终 `expires_at`，切换不得重新起算 30 天期限。事务失败时旧 Family 保持有效。切换成功后通过 `addp-auth-session` 广播 `context_changed`；其他标签页和 iframe 必须清空旧 Context 的业务缓存并采用新 Token。
 
 refresh 与 context switch 同时针对同一 Family 时，按 `Principal -> 目标 Membership / Tenant（切换到 Tenant 时）-> Family -> Refresh Token -> Access Token -> Resource Ticket` 的共同相对锁序，只能一个事务完成状态转换。等待锁后发现 Access Token、Refresh Token 或 Family 已被另一事务转换的请求返回可重试冲突或统一未授权，不得创建第二个 Family、不得把正常竞争误记为 Refresh Token 重用。

@@ -56,11 +56,21 @@
           <el-button
             circle
             :loading="loadingSampleQuery"
-            :disabled="!selectedTarget || !catalogSelection?.identity?.locator || executing || switchingQueryTarget"
+            :disabled="!selectedTarget || executing || switchingQueryTarget || savingForEngineSwitch"
             :aria-label="t('develop.query.generateQueryTemplate')"
             @click="generateQueryTemplate"
           >
-            <el-icon><DocumentCopy /></el-icon>
+            <el-icon><DocumentAdd /></el-icon>
+          </el-button>
+        </el-tooltip>
+        <el-tooltip :content="queryParametersSupported ? t('develop.query.queryParameters') : t('develop.query.queryParametersUnsupported')">
+          <el-button
+            circle
+            :disabled="!queryParametersSupported || executing || switchingQueryTarget || savingForEngineSwitch"
+            :aria-label="t('develop.query.queryParameters')"
+            @click="parameterDrawerVisible = true"
+          >
+            <el-icon><Key /></el-icon>
           </el-button>
         </el-tooltip>
         <el-tooltip :content="t('develop.query.format')">
@@ -100,11 +110,11 @@
             <el-button
               circle
               size="small"
-              :disabled="!catalogSelection?.identity?.locator || executing || switchingQueryTarget"
+              :disabled="!selectedTarget || loadingSampleQuery || executing || switchingQueryTarget || savingForEngineSwitch"
               :aria-label="t('develop.query.generateQueryTemplate')"
               @click="generateQueryTemplate"
             >
-              <el-icon><Position /></el-icon>
+              <el-icon><DocumentAdd /></el-icon>
             </el-button>
           </el-tooltip>
         </div>
@@ -113,6 +123,7 @@
           v-model="catalogSelection"
           class="catalog-tree"
           :engine-id="selectedEngineId"
+          :initial-locator="initialCatalogLocator"
           :show-engine-selector="false"
           :show-selection-summary="false"
           :show-count="false"
@@ -120,6 +131,7 @@
           mode="item"
           tree-height="100%"
           @select="rememberCatalogSelection"
+          @node-dblclick="insertCatalogItemAtCursor"
         />
         <el-empty v-else :description="t('develop.query.selectDataSourceFirst')" :image-size="64" />
       </aside>
@@ -203,10 +215,10 @@
       <div class="drawer-catalog-actions">
         <el-button
           type="primary"
-          :disabled="!catalogSelection?.identity?.locator || executing || switchingQueryTarget"
+          :disabled="!selectedTarget || loadingSampleQuery || executing || switchingQueryTarget || savingForEngineSwitch"
           @click="generateQueryTemplate"
         >
-          <el-icon><Position /></el-icon>
+          <el-icon><DocumentAdd /></el-icon>
           {{ t('develop.query.generateQueryTemplate') }}
         </el-button>
       </div>
@@ -214,6 +226,7 @@
         v-if="selectedEngineId"
         v-model="catalogSelection"
         :engine-id="selectedEngineId"
+        :initial-locator="initialCatalogLocator"
         :show-engine-selector="false"
         :show-selection-summary="false"
         :show-count="false"
@@ -221,8 +234,111 @@
         mode="item"
         tree-height="calc(100vh - 150px)"
         @select="rememberCatalogSelection"
+        @node-dblclick="insertCatalogItemAtCursor"
       />
     </el-drawer>
+
+    <el-drawer
+      v-model="parameterDrawerVisible"
+      :title="t('develop.query.queryParameters')"
+      direction="rtl"
+      size="min(92vw, 560px)"
+      :close-on-click-modal="false"
+    >
+      <div class="parameter-toolbar">
+        <el-button type="primary" plain :disabled="!queryParametersSupported" @click="addQueryParameter">
+          <el-icon><Plus /></el-icon>
+          {{ t('develop.query.addQueryParameter') }}
+        </el-button>
+      </div>
+      <div class="parameter-list">
+        <div v-for="(parameter, index) in queryParameters" :key="parameter.id" class="parameter-item">
+          <div class="parameter-item-heading">
+            <strong>{{ parameter.name || t('develop.query.unnamedParameter') }}</strong>
+            <div class="parameter-item-actions">
+              <el-tooltip :content="t('develop.query.insertParameterReference')">
+                <el-button
+                  circle
+                  size="small"
+                  :disabled="!parameter.name"
+                  :aria-label="t('develop.query.insertParameterReference')"
+                  @click="insertQueryParameterReference(parameter)"
+                >
+                  <el-icon><Position /></el-icon>
+                </el-button>
+              </el-tooltip>
+              <el-tooltip :content="t('develop.query.removeQueryParameter')">
+                <el-button
+                  circle
+                  size="small"
+                  type="danger"
+                  plain
+                  :aria-label="t('develop.query.removeQueryParameter')"
+                  @click="removeQueryParameter(index)"
+                >
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </el-tooltip>
+            </div>
+          </div>
+          <div class="parameter-grid">
+            <el-form-item :label="t('develop.query.parameterName')" :error="queryParameterNameError(parameter, index)">
+              <el-input v-model="parameter.name" maxlength="64" />
+            </el-form-item>
+            <el-form-item :label="t('develop.query.parameterType')">
+              <el-select v-model="parameter.type" @change="resetQueryParameterDefault(parameter)">
+                <el-option
+                  v-for="type in queryParameterTypes"
+                  :key="type"
+                  :label="t(`develop.query.parameterTypes.${type}`)"
+                  :value="type"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item :label="t('develop.query.parameterDefault')">
+              <el-switch v-if="parameter.type === 'boolean'" v-model="parameter.default" />
+              <el-input-number
+                v-else-if="parameter.type === 'integer' || parameter.type === 'number'"
+                v-model="parameter.default"
+                :precision="parameter.type === 'integer' ? 0 : undefined"
+                :step="parameter.type === 'integer' ? 1 : 0.1"
+                controls-position="right"
+              />
+              <el-input v-else v-model="parameter.default" />
+            </el-form-item>
+            <el-form-item :label="t('develop.query.parameterTitle')">
+              <el-input v-model="parameter.title" maxlength="100" />
+            </el-form-item>
+            <el-form-item class="parameter-description" :label="t('develop.query.parameterDescription')">
+              <el-input v-model="parameter.description" type="textarea" :rows="2" maxlength="300" />
+            </el-form-item>
+          </div>
+        </div>
+        <el-empty v-if="queryParameters.length === 0" :description="t('develop.query.noQueryParameters')" :image-size="56" />
+      </div>
+    </el-drawer>
+
+    <el-dialog
+      v-model="executionParameterDialogVisible"
+      class="addp-dialog"
+      :title="t('develop.query.executionParameters')"
+      width="min(680px, calc(100vw - 24px))"
+      :close-on-click-modal="false"
+    >
+      <ExecutionParameterForm
+        ref="executionParameterFormRef"
+        v-model="executionParameterOverrides"
+        :contract="queryExecutionContract"
+        :disabled="executing"
+      />
+      <template #footer>
+        <el-button :disabled="executing" @click="executionParameterDialogVisible = false">{{ t('develop.query.cancel') }}</el-button>
+        <el-button type="primary" :loading="executing" @click="submitQuery(executionParameterOverrides)">
+          <el-icon><VideoPlay /></el-icon>
+          {{ t('develop.query.execute') }}
+        </el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog
       v-model="queryEngineSwitchDialogVisible"
@@ -271,19 +387,24 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Close,
   Connection,
-  DocumentCopy,
+  DocumentAdd,
+  Delete,
   Edit,
   FolderAdd,
+  Key,
   List,
   MagicStick,
   Menu,
+  Plus,
   Position,
   VideoPlay
 } from '@element-plus/icons-vue'
 import { format } from 'sql-formatter'
 import {
   ResourceTreePicker,
+  ExecutionParameterForm,
   StatusAnnouncer,
+  parseLocator,
   useResizable
 } from '@common-ui'
 import { GraphResultView } from '@addp/common-frontend/graph'
@@ -302,8 +423,10 @@ import { navigateDevelopTaskEditor } from '@/utils/developNavigation'
 import { createLatestRequestCoordinator } from '@common-ui'
 import {
   formatterLanguageForQuery,
+  buildQueryExecutionContract,
   isTerminalExecutionStatus,
   monacoLanguageForQuery,
+  queryParameterReference,
   queryCapabilityForEngine,
   queryResultFromExecution
 } from '@/utils/queryWorkbench.mjs'
@@ -334,8 +457,15 @@ const savingForEngineSwitch = ref(false)
 const saveForEngineSwitch = ref(false)
 const resultViewMode = ref('table')
 const catalogSelection = ref(null)
+const targetLocator = ref('')
+const initialCatalogLocator = ref('')
 const catalogCompletions = ref([])
 const catalogDrawerVisible = ref(false)
+const parameterDrawerVisible = ref(false)
+const queryParameters = ref([])
+const executionParameterDialogVisible = ref(false)
+const executionParameterOverrides = ref({})
+const executionParameterFormRef = ref(null)
 const isCompact = ref(false)
 const announcement = ref('')
 const savedSnapshot = ref('')
@@ -376,6 +506,12 @@ const selectedEngineId = computed(() => {
 })
 const selectedEngineUnavailable = computed(() => Boolean(selectedQueryTarget.value && !selectedTarget.value))
 const selectedCapability = computed(() => queryCapabilityForEngine(selectedTarget.value?.engine))
+const queryParametersSupported = computed(() => Boolean(
+  selectedCapability.value.parameters?.supported &&
+  selectedCapability.value.parameters.languages.includes(currentQueryLanguage.value)
+))
+const queryParameterTypes = computed(() => selectedCapability.value.parameters?.types || [])
+const queryExecutionContract = computed(() => buildQueryExecutionContract(queryParameters.value))
 const monacoLanguage = computed(() => monacoLanguageForQuery(currentQueryLanguage.value))
 const formatterLanguage = computed(() => formatterLanguageForQuery(currentQueryLanguage.value))
 const hasGraphData = computed(() => {
@@ -385,7 +521,9 @@ const hasGraphData = computed(() => {
 const currentSnapshot = computed(() => JSON.stringify({
   engine_id: selectedEngineId.value,
   language: currentQueryLanguage.value,
-  query: queryContent.value
+  query: queryContent.value,
+  target_locator: catalogSelection.value?.identity?.locator || targetLocator.value || '',
+  query_parameters: queryParameters.value.map(queryParameterPayload)
 }))
 const isDirty = computed(() => queryTaskRouteReady.value && savedSnapshot.value !== currentSnapshot.value)
 
@@ -421,7 +559,7 @@ const handleTestConnection = async () => {
 
 const loadSampleQuery = async ({ replace = false, locator = '' } = {}) => {
   if (!selectedTarget.value || loadingSampleQuery.value) return
-  if (queryContent.value.trim() && !replace) {
+  if ((queryContent.value.trim() || queryParameters.value.length > 0) && !replace) {
     try {
       await ElMessageBox.confirm(
         t('develop.query.replaceSampleConfirm'),
@@ -443,6 +581,9 @@ const loadSampleQuery = async ({ replace = false, locator = '' } = {}) => {
     const sample = await getSampleQuery(selectedEngineId.value, locator)
     if (!sampleRequests.isCurrent(request, `${selectedQueryTarget.value}:${locator}`)) return
     queryContent.value = sample.query
+    queryParameters.value = []
+    executionParameterOverrides.value = {}
+    if (locator) targetLocator.value = locator
     currentQueryLanguage.value = String(sample.language || selectedCapability.value.defaultLanguage).toLowerCase()
     clearResult()
     announcement.value = t(locator ? 'develop.query.queryTemplateGenerated' : 'develop.query.sampleLoaded')
@@ -462,7 +603,7 @@ async function requestQueryTargetChange(targetValue) {
   if (executing.value || loadingSampleQuery.value || switchingQueryTarget.value || savingForEngineSwitch.value) return
   const target = queryTargets.value.find(item => item.value === targetValue)
   if (!target || targetValue === selectedQueryTarget.value) return
-  if (!queryContent.value.trim()) {
+  if ((!queryContent.value.trim() && queryParameters.value.length === 0) || !isDirty.value) {
     await applyQueryTargetSwitch(targetValue)
     return
   }
@@ -509,7 +650,12 @@ async function applyQueryTargetSwitch(targetValue, { saved = false } = {}) {
   sampleRequests.invalidate()
   selectedQueryTarget.value = targetValue
   catalogSelection.value = null
+  targetLocator.value = ''
+  initialCatalogLocator.value = ''
   queryContent.value = ''
+  queryParameters.value = []
+  executionParameterOverrides.value = {}
+  parameterDrawerVisible.value = false
   currentQueryLanguage.value = queryCapabilityForEngine(target.engine).defaultLanguage
   clearResult()
   currentTaskId.value = null
@@ -523,7 +669,6 @@ async function applyQueryTargetSwitch(targetValue, { saved = false } = {}) {
     } finally {
       bypassUnsavedRouteConfirm.value = false
     }
-    await loadSampleQuery({ replace: true })
     markSaved()
     ElMessage.success(t(
       saved ? 'develop.query.saveAndSwitchSuccess' : 'develop.query.engineSwitchSuccess',
@@ -533,6 +678,59 @@ async function applyQueryTargetSwitch(targetValue, { saved = false } = {}) {
     applyingQueryTaskRoute = false
     switchingQueryTarget.value = false
   }
+}
+
+const queryParameterPayload = parameter => ({
+  name: String(parameter?.name || '').trim(),
+  type: parameter?.type,
+  default: parameter?.default,
+  ...(String(parameter?.title || '').trim() ? { title: String(parameter.title).trim() } : {}),
+  ...(String(parameter?.description || '').trim() ? { description: String(parameter.description).trim() } : {})
+})
+
+const queryParameterNameError = (parameter, index) => {
+  const name = String(parameter?.name || '').trim()
+  if (!name) return t('develop.query.parameterNameRequired')
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return t('develop.query.parameterNameInvalid')
+  if (queryParameters.value.some((item, itemIndex) => itemIndex !== index && String(item.name || '').trim() === name)) {
+    return t('develop.query.parameterNameDuplicate')
+  }
+  return ''
+}
+
+const hasValidQueryParameters = () => queryParameters.value.every((parameter, index) => !queryParameterNameError(parameter, index))
+
+const defaultValueForQueryParameterType = type => {
+  if (type === 'boolean') return false
+  if (type === 'integer' || type === 'number') return 0
+  return ''
+}
+
+const addQueryParameter = () => {
+  const type = queryParameterTypes.value[0] || 'string'
+  queryParameters.value.push({
+    id: `${Date.now()}-${queryParameters.value.length}`,
+    name: '',
+    type,
+    default: defaultValueForQueryParameterType(type),
+    title: '',
+    description: ''
+  })
+}
+
+const removeQueryParameter = index => {
+  queryParameters.value.splice(index, 1)
+}
+
+const resetQueryParameterDefault = parameter => {
+  parameter.default = defaultValueForQueryParameterType(parameter.type)
+}
+
+const insertQueryParameterReference = parameter => {
+  const reference = queryParameterReference(currentQueryLanguage.value, parameter.name)
+  if (!reference) return
+  editorRef.value?.insertText(reference)
+  parameterDrawerVisible.value = false
 }
 
 const executeQuery = async () => {
@@ -548,15 +746,42 @@ const executeQuery = async () => {
     return
   }
 
+  if (!hasValidQueryParameters()) {
+    parameterDrawerVisible.value = true
+    ElMessage.warning(t('develop.query.queryParametersInvalid'))
+    return
+  }
+  if (queryParameters.value.length > 0) {
+    executionParameterOverrides.value = {}
+    executionParameterDialogVisible.value = true
+    window.setTimeout(() => executionParameterFormRef.value?.focus(), 0)
+    return
+  }
+  await submitQuery({})
+}
+
+const submitQuery = async (parameters = {}) => {
+  if (loadingSampleQuery.value || executing.value) return
+  const selected = editorRef.value?.getSelection()?.trim() || ''
+  const query = selected || queryContent.value.trim()
+  if (!selectedTarget.value || !query) return
+
   const requestSequence = ++executionRequestSequence
   executing.value = true
+  executionParameterDialogVisible.value = false
   resultViewMode.value = 'table'
   try {
     const started = await createExecution({
       dev_type: 'query',
       trigger_type: 'manual',
-      content: { query, query_type: currentQueryLanguage.value },
+      content: {
+        query,
+        query_type: currentQueryLanguage.value,
+        target_locator: catalogSelection.value?.identity?.locator || targetLocator.value || undefined,
+        query_parameters: queryParameters.value.map(queryParameterPayload)
+      },
       execution_config: { engine_id: selectedEngineId.value },
+      parameters,
       timeout: 120
     })
     if (!started?.execution_id) throw new Error(t('develop.query.executionIdMissing'))
@@ -617,6 +842,7 @@ const clearResult = () => {
 const rememberCatalogSelection = (selection) => {
   const path = selection?.display?.path
   if (!path) return
+  if (selection?.identity?.locator) targetLocator.value = selection.identity.locator
   const next = {
     label: selection.display.label || path,
     insertText: path,
@@ -625,16 +851,64 @@ const rememberCatalogSelection = (selection) => {
   catalogCompletions.value = [next, ...catalogCompletions.value.filter(item => item.insertText !== path)].slice(0, 100)
 }
 
+const quoteQueryIdentifier = (value, quote) => {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  return `${quote}${text.replaceAll(quote, `${quote}${quote}`)}${quote}`
+}
+
+const queryTextForCatalogSelection = (selection) => {
+  const locator = selection?.identity?.locator
+  if (!locator) return ''
+  let parsed
+  try {
+    parsed = parseLocator(locator)
+  } catch {
+    return selection.display?.path || ''
+  }
+  const segments = Array.isArray(parsed.path) ? parsed.path.filter(Boolean) : []
+  if (segments.length === 0) return ''
+  const engineType = String(selectedTarget.value?.engine?.engine_type || '').toLowerCase()
+  if (engineType === 'mongodb' || selection.resource?.type === 'collection') {
+    return JSON.stringify(segments.at(-1))
+  }
+  if (engineType === 'neo4j' || selection.resource?.type === 'graph') {
+    return quoteQueryIdentifier(segments.at(-1), '`')
+  }
+  const quote = engineType === 'mysql' ? '`' : '"'
+  return segments.map(segment => quoteQueryIdentifier(segment, quote)).join('.')
+}
+
+const insertCatalogItemAtCursor = (selection) => {
+  const text = queryTextForCatalogSelection(selection)
+  if (!text) return
+  rememberCatalogSelection(selection)
+  editorRef.value?.insertText(text)
+}
+
 const generateQueryTemplate = async () => {
   const locator = catalogSelection.value?.identity?.locator || ''
-  if (!locator) return
+  if (!locator) {
+    ElMessage.warning(t('develop.query.selectResourceForQueryTemplate'))
+    return
+  }
   catalogDrawerVisible.value = false
   await loadSampleQuery({ locator })
 }
 
 const handleSaveTask = async (taskData) => {
+  if (!hasValidQueryParameters()) {
+    parameterDrawerVisible.value = true
+    ElMessage.warning(t('develop.query.queryParametersInvalid'))
+    return
+  }
   try {
-    const task = await saveQueryTask({ ...taskData, query_type: currentQueryLanguage.value })
+    const task = await saveQueryTask({
+      ...taskData,
+      query_type: currentQueryLanguage.value,
+      target_locator: catalogSelection.value?.identity?.locator || targetLocator.value || '',
+      query_parameters: queryParameters.value.map(queryParameterPayload)
+    })
     currentTaskId.value = task.id
     currentTaskName.value = task.name
     currentTask.value = task
@@ -663,6 +937,11 @@ const handleSaveDialogVisibility = (visible) => {
 }
 
 const handlePersistQueryTask = async () => {
+  if (!hasValidQueryParameters()) {
+    parameterDrawerVisible.value = true
+    ElMessage.warning(t('develop.query.queryParametersInvalid'))
+    return
+  }
   if (!currentTaskId.value) {
     showSaveDialog.value = true
     return
@@ -672,6 +951,11 @@ const handlePersistQueryTask = async () => {
 
 const persistCurrentQueryTask = async () => {
   if (!currentTaskId.value) return false
+  if (!hasValidQueryParameters()) {
+    parameterDrawerVisible.value = true
+    ElMessage.warning(t('develop.query.queryParametersInvalid'))
+    return false
+  }
   try {
     const task = currentTask.value || {}
     const updated = await updateQueryTask(currentTaskId.value, {
@@ -680,6 +964,8 @@ const persistCurrentQueryTask = async () => {
       engine_id: selectedEngineId.value,
       query: queryContent.value,
       query_type: currentQueryLanguage.value,
+      target_locator: catalogSelection.value?.identity?.locator || targetLocator.value || '',
+      query_parameters: queryParameters.value.map(queryParameterPayload),
       description: task.description,
       tags: task.tags || [],
       timeout: task.timeout
@@ -701,9 +987,20 @@ const loadTask = async (taskId) => {
   currentTaskName.value = task.name
   currentTask.value = task
   queryContent.value = task.content?.query || ''
+  queryParameters.value = (Array.isArray(task.content?.query_parameters) ? task.content.query_parameters : []).map((parameter, index) => ({
+    id: `saved-${index}-${parameter.name}`,
+    name: parameter.name || '',
+    type: parameter.type || 'string',
+    default: parameter.default,
+    title: parameter.title || '',
+    description: parameter.description || ''
+  }))
+  executionParameterOverrides.value = {}
   currentQueryLanguage.value = String(task.content?.query_type || '').toLowerCase()
   const engineID = task.execution_config?.engine_id
   selectedQueryTarget.value = engineID ? `engine:${engineID}` : ''
+  targetLocator.value = task.content?.target_locator || ''
+  initialCatalogLocator.value = targetLocator.value
   catalogSelection.value = null
   clearResult()
   if (!queryContent.value) ElMessage.warning(t('develop.query.taskNoSql'))
@@ -714,12 +1011,15 @@ const resetQueryEditorForCreate = async () => {
   currentTaskName.value = ''
   currentTask.value = null
   queryContent.value = ''
+  queryParameters.value = []
+  executionParameterOverrides.value = {}
+  targetLocator.value = ''
+  initialCatalogLocator.value = ''
   clearResult()
   if (!selectedTarget.value && queryTargets.value.length) {
     selectedQueryTarget.value = queryTargets.value[0].value
   }
   currentQueryLanguage.value = selectedCapability.value.defaultLanguage
-  if (selectedTarget.value) await loadSampleQuery({ replace: true })
 }
 
 async function applyQueryTaskRoute() {
@@ -977,6 +1277,63 @@ onBeforeUnmount(() => {
   margin-bottom: 8px;
 }
 
+.parameter-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.parameter-list {
+  display: grid;
+  gap: 12px;
+}
+
+.parameter-item {
+  padding: 12px;
+  border: 1px solid var(--addp-border-color);
+  border-radius: 6px;
+  background: var(--addp-bg-secondary);
+}
+
+.parameter-item-heading,
+.parameter-item-actions {
+  display: flex;
+  align-items: center;
+}
+
+.parameter-item-heading {
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.parameter-item-heading strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.parameter-item-actions {
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.parameter-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0 12px;
+}
+
+.parameter-description {
+  grid-column: 1 / -1;
+}
+
+.parameter-grid :deep(.el-select),
+.parameter-grid :deep(.el-input-number) {
+  width: 100%;
+}
+
 @media (max-width: 1120px) {
   .workbench-toolbar {
     align-items: flex-start;
@@ -1014,6 +1371,14 @@ onBeforeUnmount(() => {
 
   .editor-panel {
     max-height: min(52vh, calc(100% - 180px));
+  }
+
+  .parameter-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .parameter-description {
+    grid-column: auto;
   }
 }
 </style>

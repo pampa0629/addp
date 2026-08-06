@@ -168,6 +168,12 @@
 	  "saveSuccess": "Configuration saved",
 	  "saveFailed": "Failed to save configuration",
 	  "versionConflict": "The configuration changed elsewhere and has been reloaded",
+	  "entries": {
+		"inferenceModels": "AI Model Services",
+		"managerEmbedding": "Manager Multimodal Embedding",
+		"copilotInferenceBindings": "Copilot Inference Scenarios",
+		"agentInferenceBindings": "Agent Inference Scenarios"
+	  },
 	  "ai": {
 		"scenario": "Inference scenario",
 		"modelProfile": "Model Profile",
@@ -363,7 +369,7 @@
       },
       "inference": {
         "label": "AI Inference",
-        "models": "Models and Providers"
+        "models": "AI Model Services"
       },
       "system": {
         "label": "System",

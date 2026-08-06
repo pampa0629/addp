@@ -21,21 +21,15 @@ func TestAllPluginsRegistered(t *testing.T) {
 		"duckdb",
 		"jupyter",
 		"kafka",
-		"math_workflow",
-		"model3d_workflow",
 		"minio",
 		"mongodb",
 		"mysql",
 		"neo4j",
 		"nfs",
-		"pointcloud_workflow",
 		"postgresql",
-		"geopython_workflow",
 		"inference_runtime",
 		"s3",
 		"spark",
-		"spark_workflow",
-		"supermap_workflow",
 	}
 
 	registeredTypes := plugin.List()
@@ -59,8 +53,8 @@ func TestAllPluginsRegistered(t *testing.T) {
 func TestGetAllPlugins(t *testing.T) {
 	plugins := plugin.GetAll()
 
-	if len(plugins) != 20 {
-		t.Errorf("Expected 20 plugins, got %d", len(plugins))
+	if len(plugins) != 14 {
+		t.Errorf("Expected 14 plugins, got %d", len(plugins))
 	}
 
 	// 验证每个插件的基本信息
@@ -77,17 +71,11 @@ func TestGetAllPlugins(t *testing.T) {
 		{"jupyter", "Jupyter Engine"},
 		{"inference_runtime", "ADDP AI Inference Runtime"},
 		{"kafka", "Apache Kafka"},
-		{"math_workflow", "Math Workflow"},
-		{"model3d_workflow", "Model3D Workflow"},
-		{"pointcloud_workflow", "PointCloud Workflow"},
 		{"mongodb", "MongoDB"},
 		{"neo4j", "Neo4j"},
 		{"nfs", "NFS 文件系统"},
 		{"minio", "MinIO"},
-		{"geopython_workflow", "GeoPython 工作流引擎"},
 		{"s3", "Amazon S3"},
-		{"spark_workflow", "Spark Workflow"},
-		{"supermap_workflow", "SuperMap Workflow"},
 	}
 
 	for _, tc := range testCases {
@@ -121,12 +109,6 @@ func TestPluginCapabilities(t *testing.T) {
 		{"nfs", "general"},
 		{"neo4j", "general"},
 		{"duckdb", "extension"},
-		{"geopython_workflow", "extension"},
-		{"spark_workflow", "extension"},
-		{"math_workflow", "extension"},
-		{"model3d_workflow", "extension"},
-		{"pointcloud_workflow", "extension"},
-		{"supermap_workflow", "extension"},
 		{"jupyter", "extension"},
 	}
 
@@ -171,12 +153,6 @@ func TestPluginDefaultPorts(t *testing.T) {
 		{"nfs", 2049},
 		{"neo4j", 7687},
 		{"duckdb", 8104},
-		{"geopython_workflow", 8099},
-		{"spark_workflow", 8098},
-		{"math_workflow", 8089},
-		{"model3d_workflow", 8101},
-		{"pointcloud_workflow", 8102},
-		{"supermap_workflow", 8103},
 		{"jupyter", 8097},
 	}
 
@@ -211,12 +187,6 @@ func TestPluginRequiredFields(t *testing.T) {
 		{"nfs", "server"},
 		{"neo4j", "password"},
 		{"duckdb", "host"},
-		{"geopython_workflow", "host"},
-		{"spark_workflow", "port"},
-		{"math_workflow", "host"},
-		{"model3d_workflow", "host"},
-		{"pointcloud_workflow", "host"},
-		{"supermap_workflow", "host"},
 		{"jupyter", "port"},
 	}
 
@@ -295,22 +265,6 @@ func TestBuiltinPluginCapabilityMatrix(t *testing.T) {
 		"duckdb":            {origin: "extension", family: "query_runtime", query: true},
 		"jupyter":           {origin: "extension", family: "script", script: true, scriptModes: []string{"notebook"}, scriptLanguages: []string{"python"}},
 		"inference_runtime": {origin: "extension", family: "inference", inference: true},
-		"math_workflow":     {origin: "extension", family: "workflow", workflow: true, workflowRuntime: "addp.workflow/v1"},
-		"model3d_workflow":  {origin: "extension", family: "workflow", workflow: true, workflowRuntime: "addp.workflow/v1"},
-		"pointcloud_workflow": {
-			origin:          "extension",
-			family:          "workflow",
-			workflow:        true,
-			workflowRuntime: "addp.workflow/v1",
-		},
-		"geopython_workflow": {origin: "extension", family: "workflow", workflow: true, workflowRuntime: "addp.workflow/v1"},
-		"spark_workflow":     {origin: "extension", family: "workflow", workflow: true, workflowRuntime: "addp.workflow/v1"},
-		"supermap_workflow": {
-			origin:          "extension",
-			family:          "workflow",
-			workflow:        true,
-			workflowRuntime: "addp.workflow/v1",
-		},
 	}
 
 	allPlugins := plugin.GetAll()
@@ -370,7 +324,7 @@ func hasInference(caps plugin.EngineCapabilities) bool {
 	return caps.Compute != nil && caps.Compute.Inference != nil && caps.Compute.Inference.Supported
 }
 
-func TestExtensionRuntimeRegistrationOmitsCapabilities(t *testing.T) {
+func TestWorkflowRuntimeRegistrationIncludesCapabilities(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("failed to locate test file")
@@ -378,55 +332,69 @@ func TestExtensionRuntimeRegistrationOmitsCapabilities(t *testing.T) {
 	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "../../.."))
 
 	testCases := []struct {
-		name      string
-		path      string
-		required  []string
-		forbidden []string
+		name     string
+		path     string
+		required []string
 	}{
 		{
 			name: "geopython_workflow",
 			path: "engines/python-workflow/api_server.py",
 			required: []string{
 				`"engine_type": "geopython_workflow"`,
+				`"schema_version": "engine.capabilities/v1"`,
+				`"runtime_api": "addp.workflow/v1"`,
 				`"is_builtin": True`,
 			},
-			forbidden: []string{`"capabilities"`, `"schema_version"`, `"engine_family"`, `"compute"`, `"extensions"`, `"workflow_runtime"`},
 		},
 		{
 			name: "spark_workflow",
 			path: "engines/spark-workflow/api_server.py",
 			required: []string{
 				`"engine_type": "spark_workflow"`,
+				`"schema_version": "engine.capabilities/v1"`,
+				`"runtime_api": "addp.workflow/v1"`,
 				`"is_builtin": True`,
 			},
-			forbidden: []string{`"capabilities"`, `"schema_version"`, `"engine_family"`, `"compute"`, `"extensions"`, `"workflow_runtime"`},
 		},
 		{
 			name: "math_workflow",
 			path: "engines/math-workflow/api_server.py",
 			required: []string{
 				`"engine_type": "math_workflow"`,
+				`"schema_version": "engine.capabilities/v1"`,
+				`"runtime_api": "addp.workflow/v1"`,
 				`"is_builtin": True`,
 			},
-			forbidden: []string{`"capabilities"`, `"schema_version"`, `"engine_family"`, `"compute"`, `"extensions"`, `"workflow_runtime"`},
 		},
 		{
 			name: "model3d_workflow",
 			path: "engines/model3d-workflow/api_server.py",
 			required: []string{
 				`"engine_type": "model3d_workflow"`,
+				`"schema_version": "engine.capabilities/v1"`,
+				`"runtime_api": "addp.workflow/v1"`,
 				`"is_builtin": True`,
 			},
-			forbidden: []string{`"capabilities"`, `"schema_version"`, `"engine_family"`, `"compute"`, `"extensions"`, `"workflow_runtime"`},
 		},
 		{
 			name: "pointcloud_workflow",
 			path: "engines/pointcloud-workflow/api_server.py",
 			required: []string{
 				`"engine_type": "pointcloud_workflow"`,
+				`"schema_version": "engine.capabilities/v1"`,
+				`"runtime_api": "addp.workflow/v1"`,
 				`"is_builtin": True`,
 			},
-			forbidden: []string{`"capabilities"`, `"schema_version"`, `"engine_family"`, `"compute"`, `"extensions"`, `"workflow_runtime"`},
+		},
+		{
+			name: "supermap_workflow",
+			path: "scripts/dev/supermap-workflow.sh",
+			required: []string{
+				`\"engine_type\":\"supermap_workflow\"`,
+				`\"schema_version\":\"engine.capabilities/v1\"`,
+				`\"runtime_api\":\"addp.workflow/v1\"`,
+				`\"is_builtin\":true`,
+			},
 		},
 	}
 
@@ -440,11 +408,6 @@ func TestExtensionRuntimeRegistrationOmitsCapabilities(t *testing.T) {
 			for _, fragment := range tc.required {
 				if !strings.Contains(content, fragment) {
 					t.Fatalf("%s missing canonical capability fragment %s", tc.path, fragment)
-				}
-			}
-			for _, fragment := range tc.forbidden {
-				if strings.Contains(content, fragment) {
-					t.Fatalf("%s contains forbidden capability fragment %s", tc.path, fragment)
 				}
 			}
 		})

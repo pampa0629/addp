@@ -69,6 +69,14 @@ describe('IAM management API contract', () => {
     expect(client.post).toHaveBeenCalledWith('/system/platform/users/4/reset-password', request)
   })
 
+  it('resets an ordinary user authenticator through the governed platform path', () => {
+    const request = { reason: 'user lost authenticator' }
+
+    iamAPI.platformUsers.resetMFA('4', request)
+
+    expect(client.post).toHaveBeenCalledWith('/system/platform/users/4/reset-mfa', request)
+  })
+
   it('uses the single authenticated MFA enrollment and step-up path', () => {
     iamAPI.mfa.status()
     iamAPI.mfa.beginEnrollment('current-password')

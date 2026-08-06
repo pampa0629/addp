@@ -91,7 +91,7 @@ func TestIntegrationSuperMapReplaceAbortDeletesTargetAfterCloseFailure(t *testin
 	}
 
 	provider, err := supermapworkflow.NewSDXPostgreSQLTableProvider(
-		&supermapworkflow.SuperMapWorkflowPlugin{},
+		plugin.NewHTTPWorkflowRuntimeProvider("supermap_workflow", "SuperMap Workflow"),
 		plugin.ConnectionInfo{"protocol": proxyURL.Scheme, "host": proxyURL.Hostname(), "port": proxyPort},
 	)
 	if err != nil {
@@ -151,6 +151,185 @@ func TestIntegrationSuperMapReplaceAbortDeletesTargetAfterCloseFailure(t *testin
 	}
 }
 
+func TestIntegrationSuperMapCapacity(t *testing.T) {
+	if os.Getenv("ADDP_SUPERMAP_CAPACITY") != "1" {
+		t.Skip("set ADDP_SUPERMAP_CAPACITY=1 to run SuperMap capacity integration test")
+	}
+
+	rowCount := integrationEnvInt(t, "ADDP_TEST_SUPERMAP_CAPACITY_ROWS", 20000)
+	batchSize := integrationEnvInt(t, "ADDP_TEST_SUPERMAP_CAPACITY_BATCH_SIZE", 1000)
+	testCases := []struct {
+		name               string
+		geometryType       string
+		geometryExpression string
+	}{
+		{
+			name:         "polygon",
+			geometryType: "Polygon",
+			geometryExpression: `ST_MakeEnvelope(
+				116.0 + (g % 1000) * 0.0001,
+				39.0 + (g / 1000) * 0.0001,
+				116.00004 + (g % 1000) * 0.0001,
+				39.00004 + (g / 1000) * 0.0001,
+				4326
+			)::geometry(Polygon, 4326)`,
+		},
+		{
+			name:         "multipolygon",
+			geometryType: "MultiPolygon",
+			geometryExpression: `ST_Multi(ST_Collect(
+				ST_MakeEnvelope(
+					116.0 + (g % 1000) * 0.0001,
+					39.0 + (g / 1000) * 0.0001,
+					116.00003 + (g % 1000) * 0.0001,
+					39.00003 + (g / 1000) * 0.0001,
+					4326
+				),
+				ST_MakeEnvelope(
+					116.00005 + (g % 1000) * 0.0001,
+					39.00005 + (g / 1000) * 0.0001,
+					116.00008 + (g % 1000) * 0.0001,
+					39.00008 + (g / 1000) * 0.0001,
+					4326
+				)
+			))::geometry(MultiPolygon, 4326)`,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			runSuperMapCapacityRoundTrip(t, testCase.geometryType, testCase.geometryExpression, rowCount, batchSize)
+		})
+	}
+}
+
+func runSuperMapCapacityRoundTrip(t *testing.T, geometryType, geometryExpression string, rowCount, batchSize int) {
+	t.Helper()
+	ctx := context.Background()
+	pg := &postgresql.PostgreSQLPlugin{}
+	postGISConn := superMapIntegrationPostGISConnInfo(t)
+	postGISDB := openSuperMapIntegrationPostgres(t, ctx, pg, postGISConn)
+	superMapDBConn := superMapIntegrationDatabaseConnInfo(t)
+	superMapDB := openSuperMapIntegrationPostgres(t, ctx, pg, superMapIntegrationHostDatabaseConnInfo(t))
+
+	runtime := plugin.NewHTTPWorkflowRuntimeProvider("supermap_workflow", "SuperMap Workflow")
+	superMapProvider, err := supermapworkflow.NewSDXPostgreSQLTableProvider(runtime, superMapIntegrationRuntimeConnInfo(t))
+	if err != nil {
+		t.Fatalf("create SuperMap table provider: %v", err)
+	}
+
+	suffix := fmt.Sprintf("capacity_%s_%d", strings.ToLower(geometryType), time.Now().UnixNano())
+	schema := "transfer_supermap_" + suffix
+	sourceTable := "postgis_source"
+	superMapTable := "addp_transfer_" + suffix
+	roundTripTable := "postgis_roundtrip"
+	superMapPath := tableCatalogPath("sdx", superMapTable)
+
+	if _, err := postGISDB.ExecContext(ctx, `CREATE SCHEMA `+quoteIntegrationIdentifier(schema)); err != nil {
+		t.Fatalf("create PostGIS capacity schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = postGISDB.ExecContext(context.Background(), `DROP SCHEMA IF EXISTS `+quoteIntegrationIdentifier(schema)+` CASCADE`)
+		_ = superMapProvider.DeleteResource(context.Background(), superMapDBConn, superMapPath)
+	})
+
+	createSourceSQL := fmt.Sprintf(
+		`CREATE TABLE %s.%s (id integer PRIMARY KEY, name text NOT NULL, shape geometry(%s,4326) NOT NULL)`,
+		quoteIntegrationIdentifier(schema),
+		quoteIntegrationIdentifier(sourceTable),
+		geometryType,
+	)
+	if _, err := postGISDB.ExecContext(ctx, createSourceSQL); err != nil {
+		t.Fatalf("create PostGIS capacity source table: %v", err)
+	}
+	insertSourceSQL := fmt.Sprintf(
+		`INSERT INTO %s.%s (id, name, shape)
+		 SELECT g, 'feature-' || g, %s
+		 FROM generate_series(1, $1) AS g`,
+		quoteIntegrationIdentifier(schema),
+		quoteIntegrationIdentifier(sourceTable),
+		geometryExpression,
+	)
+	if _, err := postGISDB.ExecContext(ctx, insertSourceSQL, rowCount); err != nil {
+		t.Fatalf("generate %d PostGIS capacity rows: %v", rowCount, err)
+	}
+
+	postGISToSuperMap := &TableTransferExecutor{
+		SourceNativeReader:         pg,
+		SourceTableSessionProvider: pg,
+		TargetDeleteProvider:       superMapProvider,
+		TargetNativePreparer:       superMapProvider,
+		TargetTableSessionProvider: superMapProvider,
+	}
+	toSuperMapStartedAt := time.Now()
+	toSuperMapMetrics, err := postGISToSuperMap.Execute(ctx, TableTransferPlan{
+		Source: TableSourcePlan{
+			Kind:     TableEndpointNative,
+			ConnInfo: postGISConn,
+			Path:     tableCatalogPath(schema, sourceTable),
+			ReadOptions: map[string]interface{}{
+				plugin.TableReadHintGeometryEncoding: string(format.GeometryEncodingEWKB),
+				plugin.TableReadHintGeometryField:    "shape",
+			},
+		},
+		Target: TableTargetPlan{
+			Kind:              TableEndpointNative,
+			ConnInfo:          superMapDBConn,
+			Path:              superMapPath,
+			DeleteBeforeWrite: true,
+			TableWrite:        plugin.BatchWriteOptions{Method: "copy"},
+		},
+		BatchSize: batchSize,
+	})
+	if err != nil {
+		t.Fatalf("execute %s capacity transfer to SuperMap: %v", geometryType, err)
+	}
+	toSuperMapElapsed := time.Since(toSuperMapStartedAt)
+	assertIntegrationMetrics(t, toSuperMapMetrics, int64(rowCount))
+	assertSuperMapPhysicalTable(t, ctx, superMapDB, superMapTable, int64(rowCount))
+
+	superMapToPostGIS := &TableTransferExecutor{
+		SourceTableSessionProvider: superMapProvider,
+		TargetDeleteProvider:       pg,
+		TargetNativePreparer:       pg,
+		TargetNativeWriter:         pg,
+		TargetTableSessionProvider: pg,
+	}
+	toPostGISStartedAt := time.Now()
+	toPostGISMetrics, err := superMapToPostGIS.Execute(ctx, TableTransferPlan{
+		Source: TableSourcePlan{
+			Kind:     TableEndpointNative,
+			ConnInfo: superMapDBConn,
+			Path:     superMapPath,
+		},
+		Target: TableTargetPlan{
+			Kind:              TableEndpointNative,
+			ConnInfo:          postGISConn,
+			Path:              tableCatalogPath(schema, roundTripTable),
+			DeleteBeforeWrite: true,
+			TableWrite:        plugin.BatchWriteOptions{Method: "copy"},
+		},
+		BatchSize: batchSize,
+	})
+	if err != nil {
+		t.Fatalf("execute %s capacity transfer to PostGIS: %v", geometryType, err)
+	}
+	toPostGISElapsed := time.Since(toPostGISStartedAt)
+	assertIntegrationMetrics(t, toPostGISMetrics, int64(rowCount))
+	assertPostGISRoundTrip(t, ctx, postGISDB, schema, roundTripTable, geometryType, int64(rowCount))
+
+	t.Logf(
+		"%s rows=%d batch=%d PostGIS->SuperMap=%s (%.0f rows/s) SuperMap->PostGIS=%s (%.0f rows/s)",
+		geometryType,
+		rowCount,
+		batchSize,
+		toSuperMapElapsed.Round(time.Millisecond),
+		float64(rowCount)/toSuperMapElapsed.Seconds(),
+		toPostGISElapsed.Round(time.Millisecond),
+		float64(rowCount)/toPostGISElapsed.Seconds(),
+	)
+}
+
 func runSuperMapTransferRoundTrip(t *testing.T, geometryType string, geometries []string) {
 	t.Helper()
 	ctx := context.Background()
@@ -160,7 +339,7 @@ func runSuperMapTransferRoundTrip(t *testing.T, geometryType string, geometries 
 	superMapDBConn := superMapIntegrationDatabaseConnInfo(t)
 	superMapDB := openSuperMapIntegrationPostgres(t, ctx, pg, superMapIntegrationHostDatabaseConnInfo(t))
 
-	runtime := &supermapworkflow.SuperMapWorkflowPlugin{}
+	runtime := plugin.NewHTTPWorkflowRuntimeProvider("supermap_workflow", "SuperMap Workflow")
 	superMapProvider, err := supermapworkflow.NewSDXPostgreSQLTableProvider(runtime, superMapIntegrationRuntimeConnInfo(t))
 	if err != nil {
 		t.Fatalf("create SuperMap table provider: %v", err)

@@ -152,6 +152,8 @@ func main() {
 		logger.L().Error("Service Token Source 初始化失败", "error", err)
 		os.Exit(1)
 	}
+	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, serviceTokenSource, nil)
+	workflowRuntimeLister := service.NewWorkflowRuntimeEngineLister(systemServiceClient)
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, serviceTokenSource)
 	inferenceClient, err := commonClient.NewInferenceClient(cfg.InferenceServiceURL, serviceTokenSource, nil)
 	if err != nil {
@@ -213,7 +215,7 @@ func main() {
 
 	// 初始化快显状态服务（依赖数据库与 Meta 空间元数据）
 	quickViewService := service.NewQuickViewService(db, metaClient)
-	quickViewService.SetWorkflowEngineLister(systemClient)
+	quickViewService.SetWorkflowEngineLister(workflowRuntimeLister)
 	quickViewService.SetCapabilityOptions(service.QuickViewCapabilityOptions{
 		DirectFlatGeobufMaxRows: cfg.TileCache.DirectFlatGeobufMaxRows,
 		RealtimeTileTimeoutMS:   cfg.TileCache.RealtimeTileTimeoutMS,
@@ -270,7 +272,7 @@ func main() {
 		)
 		rasterCOGTaskSvc.SetExecutor(service.NewManagerRasterCOGExecutor(
 			systemClient,
-			systemClient,
+			workflowRuntimeLister,
 			minioClient,
 			cfg.MinioEndpoint,
 			cfg.MinioAccessKey,
@@ -373,14 +375,14 @@ func main() {
 	if systemClient != nil {
 		rasterMosaicTaskSvc.SetExecutor(service.NewManagerRasterMosaicExecutor(
 			systemClient,
-			systemClient,
+			workflowRuntimeLister,
 			serviceURL,
 			cfg.InternalAPIKey,
 			cfg.RasterMosaicGeneration.Timeout,
 		))
 		model3DTilesTaskSvc.SetExecutor(service.NewManagerModel3DTilesExecutor(
 			systemClient,
-			systemClient,
+			workflowRuntimeLister,
 			minioClient,
 			cfg.MinioEndpoint,
 			cfg.MinioAccessKey,
@@ -391,7 +393,7 @@ func main() {
 		))
 		model3DGLBTaskSvc.SetExecutor(service.NewManagerModel3DGLBExecutor(
 			systemClient,
-			systemClient,
+			workflowRuntimeLister,
 			minioClient,
 			cfg.MinioEndpoint,
 			cfg.MinioAccessKey,
@@ -402,7 +404,7 @@ func main() {
 		))
 		gaussianSplatKSplatTaskSvc.SetExecutor(service.NewManagerGaussianSplatKSplatExecutor(
 			systemClient,
-			systemClient,
+			workflowRuntimeLister,
 			minioClient,
 			cfg.MinioEndpoint,
 			cfg.MinioAccessKey,
@@ -413,7 +415,7 @@ func main() {
 		))
 		pointCloudCOPCTaskSvc.SetExecutor(service.NewManagerPointCloudCOPCExecutor(
 			systemClient,
-			systemClient,
+			workflowRuntimeLister,
 			minioClient,
 			serviceURL,
 			cfg.InternalAPIKey,
@@ -426,7 +428,7 @@ func main() {
 		))
 		cadPreviewTaskSvc.SetExecutor(service.NewManagerCADPreviewExecutor(
 			systemClient,
-			systemClient,
+			workflowRuntimeLister,
 			minioClient,
 			cfg.MinioEndpoint,
 			cfg.MinioAccessKey,
@@ -437,7 +439,7 @@ func main() {
 		))
 		tileCacheTaskSvc.SetWorkflowTileGenerator(service.NewManagerVectorTileCacheWorkflowExecutor(
 			systemClient,
-			systemClient,
+			workflowRuntimeLister,
 			minioClient,
 			serviceURL,
 			cfg.InternalAPIKey,
@@ -449,7 +451,7 @@ func main() {
 			cfg.RasterMosaicGeneration.Timeout,
 		))
 		vectorTileSetExecutor := service.NewManagerVectorTileSetExecutor(
-			systemClient, systemClient, minioClient, serviceURL, cfg.InternalAPIKey, cfg.RasterMosaicGeneration.Timeout,
+			systemClient, workflowRuntimeLister, minioClient, serviceURL, cfg.InternalAPIKey, cfg.RasterMosaicGeneration.Timeout,
 		)
 		vectorTileSetExecutor.SetTemporarySourceStorage(
 			cfg.MinioEndpoint, cfg.MinioAccessKey, cfg.MinioSecretKey, cfg.MinioUseSSL, minioBucket,
@@ -463,9 +465,7 @@ func main() {
 	}
 
 	// ========== 服务注册（注册到 System service_registry）==========
-	var systemServiceClient *commonClient.SystemServiceClient
-	if serviceTokenSource != nil {
-		systemServiceClient = commonClient.NewSystemServiceClient(cfg.SystemServiceURL, serviceTokenSource, nil)
+	if systemServiceClient != nil {
 		systemServiceClient.RegisterAndHeartbeat(context.Background(), &commonClient.ModuleRegistrationRequest{
 			ModuleName: "manager", ModuleURL: serviceURL, RoutePrefix: "/manager",
 			HealthCheckURL: serviceURL + "/health",

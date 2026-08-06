@@ -10,7 +10,12 @@ const ENGINE = {
         supported: true,
         languages: ['sql'],
         default_language: 'sql',
-        result_kinds: ['table', 'graph']
+        result_kinds: ['table', 'graph'],
+        parameters: {
+          supported: true,
+          languages: ['sql'],
+          types: ['string', 'integer', 'number', 'boolean']
+        }
       }
     }
   }
@@ -26,7 +31,12 @@ const MONGO_ENGINE = {
         supported: true,
         languages: ['mql'],
         default_language: 'mql',
-        result_kinds: ['table']
+        result_kinds: ['table'],
+        parameters: {
+          supported: true,
+          languages: ['mql'],
+          types: ['string', 'integer', 'number', 'boolean']
+        }
       }
     }
   }
@@ -49,6 +59,12 @@ test('renders the desktop workbench and a bounded table result without overlap',
   expect(catalogBox.x + catalogBox.width).toBeLessThanOrEqual(querySurfaceBox.x)
   expect(editorBox.y + editorBox.height).toBeLessThanOrEqual(resultBox.y)
   expect(workbenchBox.y + workbenchBox.height).toBeLessThanOrEqual(800)
+
+  const resourceTree = page.locator('.catalog-panel')
+  await resourceTree.getByRole('treeitem', { name: ENGINE.name, exact: true }).click()
+  await resourceTree.getByRole('treeitem', { name: 'public', exact: true }).locator('.el-tree-node__expand-icon').click()
+  await resourceTree.getByRole('treeitem', { name: 'customers', exact: true }).click()
+  await resourceTree.getByRole('button', { name: '生成查询模板', exact: true }).click()
 
   const executeButton = page.getByRole('button', { name: '执行', exact: true })
   await expect(executeButton).toBeEnabled()
@@ -75,7 +91,10 @@ test.describe('narrow query workbench', () => {
     const drawer = page.getByRole('dialog', { name: '数据资源', exact: true })
     await expect(drawer).toBeVisible()
     await expect(drawer.getByRole('treeitem', { name: ENGINE.name, exact: true })).toBeVisible()
-    await drawer.getByRole('button', { name: 'Close this dialog', exact: true }).click()
+    await drawer.getByRole('treeitem', { name: ENGINE.name, exact: true }).click()
+    await drawer.getByRole('treeitem', { name: 'public', exact: true }).locator('.el-tree-node__expand-icon').click()
+    await drawer.getByRole('treeitem', { name: 'customers', exact: true }).click()
+    await drawer.getByRole('button', { name: '生成查询模板', exact: true }).click()
 
     await page.getByRole('button', { name: '执行', exact: true }).click()
     await expect(page.getByText('节点: 2', { exact: true })).toBeVisible()
@@ -103,19 +122,63 @@ test('generates a query template for the selected data item and confirms engine 
   await publicNode.locator('.el-tree-node__expand-icon').click()
   await resourceTree.getByRole('treeitem', { name: 'customers', exact: true }).click()
   await resourceTree.getByRole('button', { name: '生成查询模板', exact: true }).click()
-  await page.getByRole('button', { name: '替换', exact: true }).click()
   await expect.poll(() => sampleRequests.at(-1)?.searchParams.get('locator')).toContain('addp://engine/11/path/public/customers')
 
   await page.locator('.engine-select').click()
   await page.getByRole('option', { name: /MongoDB Demo/ }).click()
-  const switchDialog = page.getByRole('dialog', { name: '切换查询引擎', exact: true })
-  await expect(switchDialog).toBeVisible()
-  await switchDialog.getByRole('button', { name: '清空并切换', exact: true }).click()
+  await page.getByRole('dialog', { name: '切换查询引擎', exact: true }).getByRole('button', { name: '清空并切换', exact: true }).click()
   await expect(page.getByText('MQL', { exact: true })).toBeVisible()
-  await expect.poll(() => sampleRequests.at(-1)?.pathname).toBe(`/api/v1/develop/engines/${MONGO_ENGINE.id}/sample-query`)
+  await expect(page.getByText('SELECT * FROM', { exact: false })).toHaveCount(0)
+  const toolbarTemplateButton = page.locator('.toolbar-actions').getByRole('button', { name: '生成查询模板', exact: true })
+  await expect(toolbarTemplateButton).toBeEnabled()
+  await toolbarTemplateButton.click()
+  await expect(page.getByText('请先选择一个可查询的数据项', { exact: true })).toBeVisible()
+  await expect.poll(() => sampleRequests.at(-1)?.searchParams.get('locator')).toContain('addp://engine/11/path/public/customers')
 })
 
-async function installMockBackend(page, { resultKind, engines = [ENGINE] }) {
+test('defines a query parameter, inserts its reference, and submits an execution override', async ({ page }) => {
+  const executionRequests = []
+  await installMockBackend(page, { resultKind: 'table', executionRequests })
+  await page.goto('/sql')
+
+  const resourceTree = page.locator('.catalog-panel')
+  await resourceTree.getByRole('treeitem', { name: ENGINE.name, exact: true }).click()
+  await resourceTree.getByRole('treeitem', { name: 'public', exact: true }).locator('.el-tree-node__expand-icon').click()
+  await resourceTree.getByRole('treeitem', { name: 'customers', exact: true }).click()
+  await resourceTree.getByRole('button', { name: '生成查询模板', exact: true }).click()
+
+  const parameterButton = page.locator('.toolbar-actions').getByRole('button', { name: '查询参数', exact: true })
+  await expect(parameterButton).toBeEnabled()
+  await parameterButton.click()
+
+  const parameterDrawer = page.getByRole('dialog', { name: '查询参数', exact: true })
+  await parameterDrawer.getByRole('button', { name: '添加参数', exact: true }).click()
+  await parameterDrawer.getByLabel('参数名', { exact: true }).fill('nickname')
+  await parameterDrawer.getByLabel('默认值', { exact: true }).fill('Ada')
+  await parameterDrawer.getByLabel('显示名称', { exact: true }).fill('昵称')
+  await parameterDrawer.getByRole('button', { name: '插入参数引用', exact: true }).click()
+
+  await expect(page.locator('.monaco-editor .view-lines')).toContainText(':nickname')
+  await page.getByRole('button', { name: '执行', exact: true }).click()
+
+  const executionDialog = page.getByRole('dialog', { name: '本次执行参数', exact: true })
+  await executionDialog.getByText('昵称', { exact: true }).locator('..').getByText('执行时指定', { exact: true }).click()
+  await executionDialog.getByRole('textbox').fill('Grace')
+  await executionDialog.getByRole('button', { name: '执行', exact: true }).click()
+
+  await expect.poll(() => executionRequests.length).toBe(1)
+  expect(executionRequests[0].content.query).toContain(':nickname')
+  expect(executionRequests[0].content.query_parameters).toEqual([{
+    name: 'nickname',
+    type: 'string',
+    default: 'Ada',
+    title: '昵称'
+  }])
+  expect(executionRequests[0].parameters).toEqual({ nickname: 'Grace' })
+  await expect(page.getByText('Ada', { exact: true })).toBeVisible()
+})
+
+async function installMockBackend(page, { resultKind, engines = [ENGINE], executionRequests = [] }) {
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   await page.route('**/api/v1/**', async route => {
     const request = route.request()
@@ -152,6 +215,7 @@ async function installMockBackend(page, { resultKind, engines = [ENGINE] }) {
       return fulfillJSON(route, { children: resourceTree().children })
     }
     if (path === '/api/v1/develop/executions' && request.method() === 'POST') {
+      executionRequests.push(request.postDataJSON())
       return fulfillJSON(route, { execution_id: EXECUTION_ID })
     }
     if (path === `/api/v1/develop/executions/${EXECUTION_ID}`) {

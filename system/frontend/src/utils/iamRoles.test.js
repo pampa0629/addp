@@ -33,9 +33,10 @@ describe('IAM tenant role presentation', () => {
 
   it('filters by scope and sorts exact assignments behind selectable roles', () => {
     const roles = [
-      { id: '1', role_key: 'tenant.viewer', allowed_scope_types: ['tenant', 'department'] },
-      { id: '2', role_key: 'tenant.engineer', allowed_scope_types: ['tenant'] },
-      { id: '3', role_key: 'tenant.department_lead', allowed_scope_types: ['department'] }
+      { id: '1', role_key: 'tenant.viewer', allowed_principal_types: ['user'], allowed_scope_types: ['tenant', 'department'] },
+      { id: '2', role_key: 'tenant.engineer', allowed_principal_types: ['user'], allowed_scope_types: ['tenant'] },
+      { id: '3', role_key: 'tenant.department_lead', allowed_principal_types: ['user'], allowed_scope_types: ['department'] },
+      { id: '4', role_key: 'tenant.asset_runtime', allowed_principal_types: ['service_principal'], allowed_scope_types: ['tenant'] }
     ]
     const assignments = [
       { role_id: '1', status: 'active', scope_type: 'tenant', department_id: null, project_group_id: null },
@@ -43,18 +44,22 @@ describe('IAM tenant role presentation', () => {
     ]
 
     expect(buildTenantRoleOptions(roles, assignments, {
-      scopeType: 'tenant', departmentId: '', projectGroupId: ''
+      principalType: 'user', scopeType: 'tenant', departmentId: '', projectGroupId: ''
     }).map(({ role_key, assigned, assignedElsewhere }) => ({ role_key, assigned, assignedElsewhere }))).toEqual([
       { role_key: 'tenant.engineer', assigned: false, assignedElsewhere: false },
       { role_key: 'tenant.viewer', assigned: true, assignedElsewhere: false }
     ])
 
     expect(buildTenantRoleOptions(roles, assignments, {
-      scopeType: 'department', departmentId: '9', projectGroupId: ''
+      principalType: 'user', scopeType: 'department', departmentId: '9', projectGroupId: ''
     }).map(({ role_key, assigned, assignedElsewhere }) => ({ role_key, assigned, assignedElsewhere }))).toEqual([
       { role_key: 'tenant.department_lead', assigned: false, assignedElsewhere: true },
       { role_key: 'tenant.viewer', assigned: false, assignedElsewhere: true }
     ])
+
+    expect(buildTenantRoleOptions(roles, assignments, {
+      principalType: 'service_principal', scopeType: 'tenant', departmentId: '', projectGroupId: ''
+    }).map((role) => role.role_key)).toEqual(['tenant.asset_runtime'])
   })
 
   it('formats assignment scopes without constructing invalid i18n keys', () => {

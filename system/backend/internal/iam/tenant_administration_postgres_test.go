@@ -157,6 +157,19 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	}); !errors.Is(err, commonapi.ErrConflict) {
 		t.Fatalf("create custom role with built-in role key error = %v, want conflict", err)
 	}
+	assetRuntimeRole := findTenantRoleByKey(t, roles, "tenant.asset_runtime")
+	if _, err := roleService.CreateAssignment(ctx, CreateTenantRoleAssignmentInput{
+		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleID: assetRuntimeRole.ID,
+		ScopeType: "tenant", Reason: "invalid runtime role assignment", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
+	}); !errors.Is(err, ErrTenantRoleAssignmentPrincipalTypeNotAllowed) || !errors.Is(err, commonapi.ErrConflict) {
+		t.Fatalf("assign runtime role to user error = %v, want principal type conflict", err)
+	}
+	var invalidRuntimeAssignmentCount int64
+	if err := db.Model(&RoleAssignment{}).
+		Where("principal_id = ? AND role_id = ?", infrastructureAdministrator.ID, assetRuntimeRole.ID).
+		Count(&invalidRuntimeAssignmentCount).Error; err != nil || invalidRuntimeAssignmentCount != 0 {
+		t.Fatalf("invalid runtime role assignments = %d, err=%v", invalidRuntimeAssignmentCount, err)
+	}
 	infrastructureRole := findTenantRoleByKey(t, roles, "tenant.infrastructure_administrator")
 	assigned, err := roleService.CreateAssignment(ctx, CreateTenantRoleAssignmentInput{
 		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleID: infrastructureRole.ID,

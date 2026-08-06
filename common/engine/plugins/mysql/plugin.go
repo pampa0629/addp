@@ -94,11 +94,12 @@ func (p *MySQLPlugin) Capabilities() plugin.EngineCapabilities {
 			ReadTransform:          true,
 			NativeSpatialFunctions: true,
 		},
-		Delete:          true,
-		SpatialFacts:    true,
-		SupportsExplain: true,
-		SupportsCancel:  true,
-		WriterConnector: "mysql_insert",
+		Delete:             true,
+		SpatialFacts:       true,
+		SupportsExplain:    true,
+		SupportsCancel:     true,
+		SupportsParameters: true,
+		WriterConnector:    "mysql_insert",
 	})
 }
 

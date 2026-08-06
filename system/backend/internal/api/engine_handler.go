@@ -872,12 +872,9 @@ func (h *EngineHandler) RegisterEngineInternal(c *gin.Context) {
 
 	fmt.Printf("[RegisterEngine] 📥 收到引擎注册请求: type=%s, name=%s\n", req.EngineType, req.Name)
 
-	if err := h.engineService.ValidateSystemEngineType(req.EngineType); err != nil {
+	if err := h.engineService.ValidateSystemEngineRegistration(req.EngineType, req.Capabilities); err != nil {
 		commonapi.RespondError(c, http.StatusBadRequest, err.Error())
 		return
-	}
-	if req.IsBuiltin {
-		req.Capabilities = nil
 	}
 
 	// 1. 自动填充 host（从请求来源 IP，规范化回环地址）

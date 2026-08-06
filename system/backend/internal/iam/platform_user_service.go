@@ -12,7 +12,10 @@ import (
 	passwordutils "github.com/addp/system/pkg/utils"
 )
 
-var ErrPrivilegedChangeRequestRequired = errors.New("privileged change request required")
+var (
+	ErrPrivilegedChangeRequestRequired = errors.New("privileged change request required")
+	ErrMFAResetNotAvailable            = fmt.Errorf("%w: active TOTP credential is required", commonapi.ErrConflict)
+)
 
 type CreateManagedLocalUserInput struct {
 	Username     string
@@ -56,6 +59,21 @@ type ManagedLocalAccountPasswordResetResult struct {
 	ConsumedMFAChallengeCount  int64
 	ConsumedContextTicketCount int64
 	ChangedAt                  time.Time
+}
+
+type ResetManagedMFACredentialInput struct {
+	UserID int64
+	Reason string
+	Audit  AuditMetadata
+}
+
+type ManagedMFACredentialResetResult struct {
+	AuthorizationVersion       int64
+	RevokedFamilyCount         int64
+	ConsumedMFAChallengeCount  int64
+	ConsumedMFAEnrollmentCount int64
+	ConsumedContextTicketCount int64
+	ResetAt                    time.Time
 }
 
 type PlatformUserService struct {
@@ -256,6 +274,106 @@ func (s *PlatformUserService) ResetLocalAccountPassword(
 			AuthorizationVersion: authorizationVersion, RevokedFamilyCount: revokedFamilyCount,
 			ConsumedMFAChallengeCount:  consumedMFAChallengeCount,
 			ConsumedContextTicketCount: consumedContextTicketCount, ChangedAt: changedAt,
+		}
+		return nil
+	})
+	return reset, err
+}
+
+func (s *PlatformUserService) ResetMFACredential(
+	ctx context.Context,
+	input ResetManagedMFACredentialInput,
+) (*ManagedMFACredentialResetResult, error) {
+	if err := s.validateUserID(input.UserID); err != nil {
+		return nil, err
+	}
+	reason := strings.TrimSpace(input.Reason)
+	if reason == "" {
+		return nil, fmt.Errorf("%w: reason is required", commonapi.ErrBadRequest)
+	}
+
+	resetAt := s.now().UTC()
+	var reset *ManagedMFACredentialResetResult
+	err := s.repository.Transaction(ctx, func(tx *Repository) error {
+		principal, err := tx.LockPrincipal(ctx, input.UserID)
+		if err != nil {
+			return err
+		}
+		if principal.PrincipalType != PrincipalTypeUser {
+			return commonapi.ErrNotFound
+		}
+		if principal.Status != PrincipalStatusActive {
+			return fmt.Errorf("%w: user is not active", commonapi.ErrConflict)
+		}
+		governed, err := tx.HasEffectivePlatformRole(ctx, principal.ID, resetAt)
+		if err != nil {
+			return err
+		}
+		if governed {
+			return fmt.Errorf("%w: platform role holder credentials cannot be reset", commonapi.ErrConflict)
+		}
+		account, err := tx.LockLocalAccountByUserID(ctx, principal.ID)
+		if err != nil {
+			return err
+		}
+		if account.Status != LocalAccountStatusActive && account.Status != LocalAccountStatusLocked {
+			return fmt.Errorf("%w: local account cannot be used for MFA reenrollment", commonapi.ErrConflict)
+		}
+		credential, err := tx.LockActiveMFACredential(ctx, principal.ID)
+		if err != nil {
+			if errors.Is(err, commonapi.ErrNotFound) {
+				return ErrMFAResetNotAvailable
+			}
+			return err
+		}
+		if err := tx.DisableMFACredential(ctx, credential.ID); err != nil {
+			return err
+		}
+		authorizationVersion, err := tx.IncrementPrincipalAuthorizationVersion(ctx, principal.ID)
+		if err != nil {
+			return err
+		}
+		revokedFamilyCount, err := tx.RevokeActiveTokenFamilies(
+			ctx, principal.ID, resetAt, "mfa_credential_reset",
+		)
+		if err != nil {
+			return err
+		}
+		consumedMFAChallengeCount, err := tx.ConsumePendingMFAChallenges(ctx, principal.ID, resetAt)
+		if err != nil {
+			return err
+		}
+		consumedMFAEnrollmentCount, err := tx.ConsumePendingMFAEnrollments(ctx, principal.ID, resetAt)
+		if err != nil {
+			return err
+		}
+		consumedContextTicketCount, err := tx.ConsumeActiveContextSelectionTickets(ctx, principal.ID, resetAt)
+		if err != nil {
+			return err
+		}
+		if err := NewAuditWriter(tx).Write(ctx, AuditEvent{
+			Metadata: input.Audit, EventName: "iam.mfa.credential_reset",
+			Result: AuditResultSucceeded, RiskLevel: AuditRiskHigh, ModuleName: "system",
+			EntityType: "mfa_credential", EntityID: strconv.FormatInt(credential.ID, 10),
+			Details: map[string]any{
+				"target_principal_id":           principal.ID,
+				"reason":                        reason,
+				"authorization_version":         authorizationVersion,
+				"revoked_family_count":          revokedFamilyCount,
+				"consumed_mfa_challenge_count":  consumedMFAChallengeCount,
+				"consumed_mfa_enrollment_count": consumedMFAEnrollmentCount,
+				"consumed_context_ticket_count": consumedContextTicketCount,
+			},
+		}); err != nil {
+			return err
+		}
+		reset = &ManagedMFACredentialResetResult{
+			AuthorizationVersion:       authorizationVersion,
+			RevokedFamilyCount:         revokedFamilyCount,
+			ConsumedMFAChallengeCount:  consumedMFAChallengeCount,
+			ConsumedMFAEnrollmentCount: consumedMFAEnrollmentCount,
+			ConsumedContextTicketCount: consumedContextTicketCount,
+			ResetAt:                    resetAt,
 		}
 		return nil
 	})

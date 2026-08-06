@@ -119,11 +119,12 @@ func (p *PostgreSQLPlugin) Capabilities() plugin.EngineCapabilities {
 			plugin.TableChangeOperationDelete,
 			plugin.TableChangeOperationSkip,
 		},
-		Delete:          true,
-		SpatialFacts:    true,
-		SupportsExplain: true,
-		SupportsCancel:  true,
-		WriterConnector: "postgres_copy",
+		Delete:             true,
+		SpatialFacts:       true,
+		SupportsExplain:    true,
+		SupportsCancel:     true,
+		SupportsParameters: true,
+		WriterConnector:    "postgres_copy",
 	})
 }
 

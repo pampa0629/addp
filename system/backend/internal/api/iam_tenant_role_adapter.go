@@ -344,7 +344,7 @@ func parseOptionalIAMQueryID(c *gin.Context, name string) (*int64, error) {
 // @Security     BearerAuth
 // @Param        request body IAMCreateTenantRoleAssignmentRequest true "角色分配 | Role assignment"
 // @Success      201 {object} IAMTenantRoleAssignmentResponse
-// @Failure      409 {object} IAMErrorResponse "同一成员、角色和授权范围已存在 | The membership already has the role in the requested scope"
+// @Failure      409 {object} IAMErrorResponse "角色分配冲突：重复分配或主体类型不兼容 | Role assignment conflict: duplicate assignment or incompatible principal type"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["iam.tenant_role_assignment.create"]
 // @Router       /tenant/role_assignments [post]

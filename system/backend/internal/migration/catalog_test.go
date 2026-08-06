@@ -12,8 +12,64 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 46 {
-		t.Fatalf("LatestVersion = %d, want 46", catalog.LatestVersion)
+	if catalog.LatestVersion != 49 {
+		t.Fatalf("LatestVersion = %d, want 49", catalog.LatestVersion)
+	}
+}
+
+func TestQueryParameterCapabilitiesMigrationBackfillsSupportedEngines(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000049_query_parameter_capabilities.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 49: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'{compute,query,parameters}'",
+		"engine_type IN ('postgresql', 'mysql', 'doris', 'clickhouse', 'mongodb', 'neo4j')",
+		`"languages":["sql"]`,
+		`"languages":["mql"]`,
+		`"languages":["cypher"]`,
+		`"types":["string","integer","number","boolean"]`,
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 49 missing %q", fragment)
+		}
+	}
+}
+
+func TestRuntimeEngineDescriptorConsumersMigrationPublishesAuthorization(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000048_iam_runtime_engine_descriptor_consumers.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 48: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'tenant.manager_runtime'",
+		"'tenant.meta_runtime'",
+		"'tenant.transfer_runtime'",
+		"'system.engine_descriptor.read'",
+		"INSERT INTO system.role_permissions",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 48 missing %q", fragment)
+		}
+	}
+}
+
+func TestManagedUserMFAResetMigrationPublishesSecurityAdministratorAuthorization(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000047_iam_managed_user_mfa_reset.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 47: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'iam.mfa_credential.reset'",
+		"'platform.security_administrator'",
+		"INSERT INTO system.role_permissions",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 47 missing %q", fragment)
+		}
 	}
 }
 

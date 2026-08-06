@@ -66,6 +66,7 @@ func TestRegisterIAMManagementRoutes(t *testing.T) {
 		"POST /api/v1/system/platform/tenants/:id/suspend",
 		"POST /api/v1/system/platform/users",
 		"POST /api/v1/system/platform/users/:id/reset-password",
+		"POST /api/v1/system/platform/users/:id/reset-mfa",
 		"POST /api/v1/system/platform/users/:id/reactivate",
 		"POST /api/v1/system/platform/users/:id/suspend",
 		"POST /api/v1/system/tenant/memberships/:id/close",

@@ -41,6 +41,7 @@ export const iamAPI = {
     create: (data) => client.post('/system/platform/users', data),
     update: (id, data) => client.put(`/system/platform/users/${id}`, data),
     resetPassword: (id, data) => client.post(`/system/platform/users/${id}/reset-password`, data),
+    resetMFA: (id, data) => client.post(`/system/platform/users/${id}/reset-mfa`, data),
     suspend: (id, data) => client.post(`/system/platform/users/${id}/suspend`, data),
     reactivate: (id, data) => client.post(`/system/platform/users/${id}/reactivate`, data)
   },

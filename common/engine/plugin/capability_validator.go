@@ -215,6 +215,9 @@ func validateComputeCapabilities(p EnginePlugin, compute *ComputeCapabilities) e
 				return fmt.Errorf("%s declares graph query result kinds but does not implement GraphQueryProvider", p.Type())
 			}
 		}
+		if err := validateQueryParameterCapability(p.Type(), compute.Query); err != nil {
+			return err
+		}
 	}
 	if compute.Workflow != nil && compute.Workflow.Supported {
 		if _, ok := p.(WorkflowRuntimeProvider); !ok {
@@ -241,6 +244,42 @@ func validateComputeCapabilities(p EnginePlugin, compute *ComputeCapabilities) e
 				return fmt.Errorf("%s declares unsupported inference operation %q", p.Type(), operation)
 			}
 		}
+	}
+	return nil
+}
+
+func validateQueryParameterCapability(engineType string, query *QueryCapability) error {
+	if query == nil || query.Parameters == nil {
+		return nil
+	}
+	parameters := query.Parameters
+	if !parameters.Supported {
+		return fmt.Errorf("%s declares query parameters without supported=true", engineType)
+	}
+	if len(parameters.Languages) == 0 || len(parameters.Types) == 0 {
+		return fmt.Errorf("%s declares query parameters without languages or types", engineType)
+	}
+	seenLanguages := map[string]bool{}
+	for _, language := range parameters.Languages {
+		if language == "" || !Contains(query.Languages, language) {
+			return fmt.Errorf("%s declares query parameters for unsupported language %q", engineType, language)
+		}
+		if seenLanguages[language] {
+			return fmt.Errorf("%s declares duplicate query parameter language %q", engineType, language)
+		}
+		seenLanguages[language] = true
+	}
+	seenTypes := map[string]bool{}
+	for _, parameterType := range parameters.Types {
+		switch parameterType {
+		case "string", "integer", "number", "boolean":
+		default:
+			return fmt.Errorf("%s declares unsupported query parameter type %q", engineType, parameterType)
+		}
+		if seenTypes[parameterType] {
+			return fmt.Errorf("%s declares duplicate query parameter type %q", engineType, parameterType)
+		}
+		seenTypes[parameterType] = true
 	}
 	return nil
 }

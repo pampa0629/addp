@@ -85,7 +85,10 @@ function assignmentMatchesScope(assignment, selection) {
 export function buildTenantRoleOptions(roles, assignments, selection) {
   const activeAssignments = (assignments || []).filter((assignment) => assignment.status === 'active')
   return (roles || [])
-    .filter((role) => (role.allowed_scope_types || []).includes(selection.scopeType))
+    .filter((role) =>
+      (role.allowed_principal_types || []).includes(selection.principalType) &&
+      (role.allowed_scope_types || []).includes(selection.scopeType)
+    )
     .map((role) => {
       const roleAssignments = activeAssignments.filter((assignment) => assignment.role_id === role.id)
       const assigned = roleAssignments.some((assignment) => assignmentMatchesScope(assignment, selection))

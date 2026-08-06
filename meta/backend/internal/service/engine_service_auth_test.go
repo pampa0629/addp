@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -141,6 +143,26 @@ func TestEngineServiceDoesNotFallbackToOtherTenantOrExpiredConnectionCache(t *te
 func TestEngineServiceResolvesBoundSuperMapSDXPostgreSQLScanProvider(t *testing.T) {
 	const tenantID = uint(7)
 	const runtimeID = uint(42)
+	runtimeEngineType := "tenant_supermap_runtime"
+	runtimeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/operators" {
+			http.NotFound(w, r)
+			return
+		}
+		operators := make([]map[string]interface{}, 0)
+		for _, name := range supermapworkflow.RequiredTableReadOperators() {
+			operators = append(operators, testEngineServiceWorkflowOperator(runtimeEngineType, name))
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"operators": operators})
+	}))
+	defer runtimeServer.Close()
+	runtimeEndpoint := testEngineServiceRuntimeEndpoint(t, runtimeServer.URL)
+	runtimeCapabilities := engineplugin.NewWorkflowCapabilities(runtimeEngineType, engineplugin.WorkflowRuntimeAPIAddpV1)
+	runtimeCapabilitiesJSON, err := engineplugin.MarshalEngineCapabilities(runtimeCapabilities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encodedRuntimeCapabilities := commonModels.JSONString(runtimeCapabilitiesJSON)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/system/oauth/token":
@@ -152,9 +174,10 @@ func TestEngineServiceResolvesBoundSuperMapSDXPostgreSQLScanProvider(t *testing.
 				t.Errorf("Authorization = %q", r.Header.Get("Authorization"))
 			}
 			_ = json.NewEncoder(w).Encode(commonModels.EngineRuntimeDescriptor{
-				ID: runtimeID, Name: "SuperMap Workflow", EngineType: "supermap_workflow",
+				ID: runtimeID, Name: "Tenant SuperMap Runtime", EngineType: runtimeEngineType,
 				LifecycleState:  commonModels.EngineLifecycleActive,
-				RuntimeEndpoint: &commonModels.EngineRuntimeEndpoint{Protocol: "http", Host: "supermap-workflow", Port: 8103},
+				Capabilities:    &encodedRuntimeCapabilities,
+				RuntimeEndpoint: runtimeEndpoint,
 			})
 		default:
 			http.NotFound(w, r)
@@ -167,7 +190,6 @@ func TestEngineServiceResolvesBoundSuperMapSDXPostgreSQLScanProvider(t *testing.
 		Ecosystem:            "supermap",
 		Kind:                 engineplugin.SpatialWorkspaceSuperMapSDXPostgreSQL,
 		State:                engineplugin.SpatialWorkspaceStateEnabled,
-		RuntimeEngineType:    "supermap_workflow",
 		BoundRuntimeEngineID: uintPointer(runtimeID),
 	}})
 	capabilitiesJSON, err := json.Marshal(capabilities)
@@ -187,6 +209,33 @@ func TestEngineServiceResolvesBoundSuperMapSDXPostgreSQLScanProvider(t *testing.
 	}
 	if _, ok := resolved.(*supermapworkflow.SDXPostgreSQLTableProvider); !ok {
 		t.Fatalf("ResolveScanPlugin() = %T, want SDXPostgreSQLTableProvider", resolved)
+	}
+}
+
+func testEngineServiceWorkflowOperator(engineType, name string) map[string]interface{} {
+	return map[string]interface{}{
+		"id": name, "name": name, "display_name": name, "engine_type": engineType,
+		"category": "table", "category_path": []string{"table"}, "description": name,
+		"execution_modes": []string{"direct"}, "parameters": []interface{}{},
+		"output_ports": []map[string]interface{}{{"name": "result", "data_type": "object", "default": true}},
+		"effects": []string{"read"},
+	}
+}
+
+func testEngineServiceRuntimeEndpoint(t *testing.T, rawURL string) *commonModels.EngineRuntimeEndpoint {
+	t.Helper()
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &commonModels.EngineRuntimeEndpoint{
+		Protocol: parsed.Scheme,
+		Host:     parsed.Hostname(),
+		Port:     port,
 	}
 }
 

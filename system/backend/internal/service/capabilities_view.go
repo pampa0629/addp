@@ -259,6 +259,10 @@ func buildComputeSection(caps *engineplugin.EngineCapabilities) *models.Capabili
 		if query.SupportsCancel {
 			item.Tags = append(item.Tags, capabilityValueTag("cancel", "system.engine.capabilityView.values.cancel"))
 		}
+		if query.Parameters != nil && query.Parameters.Supported {
+			item.Tags = append(item.Tags, capabilityValueTag("query_parameters", "system.engine.capabilityView.values.queryParameters"))
+			item.Tags = append(item.Tags, valueTags("parameter_type", query.Parameters.Types)...)
+		}
 		section.Items = append(section.Items, item)
 	}
 
@@ -379,13 +383,6 @@ func spatialWorkspaceItems(value interface{}) []models.CapabilityViewItem {
 				ID:       "backend_engine_type",
 				LabelKey: capabilityValueKey("values", "backend_engine_type"),
 				Value:    backend,
-			})
-		}
-		if runtimeType := stringValue(workspace["runtime_engine_type"]); runtimeType != "" {
-			item.Tags = append(item.Tags, models.CapabilityViewTag{
-				ID:       "runtime_engine_type",
-				LabelKey: capabilityValueKey("values", "runtime_engine_type"),
-				Value:    runtimeType,
 			})
 		}
 		if boundID := primitiveString(workspace["bound_runtime_engine_id"]); boundID != "" && boundID != "0" {

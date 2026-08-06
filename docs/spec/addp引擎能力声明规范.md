@@ -30,11 +30,11 @@ SuperMap workspace kind 固定如下：
 | `ecosystem/kind` | 前置条件 | geometry 存储 | ADDP table Provider |
 | --- | --- | --- | --- |
 | `supermap/sdx_postgis` | PostgreSQL 已启用 PostGIS | PostGIS geometry | PostgreSQL/PostGIS 原生 Provider |
-| `supermap/sdx_postgresql` | PostgreSQL 未启用 PostGIS，且实例不得存在 `sdx_postgis` | SuperMap 私有 geometry | 绑定的 `supermap_workflow` 通过 SDK 读写，边界编码为 EWKB |
+| `supermap/sdx_postgresql` | PostgreSQL 未启用 PostGIS，且实例不得存在 `sdx_postgis` | SuperMap 私有 geometry | `bound_runtime_engine_id` 指向的兼容 Workflow Runtime 通过 SDK 读写，边界编码为 EWKB |
 
 同一 PostgreSQL 实例最多只能检测或启用其中一种 SuperMap workspace。检测到任一 kind 后，另一 kind 必须为不可启用；不得通过兼容分支允许二者并存。
 
-`supermap/sdx_postgresql` 的 `bound_runtime_engine_id` 是 Transfer table session 与 Meta catalog facts 的唯一运行时绑定。两个模块都必须通过 System 的租户内 Runtime Descriptor 精确解析该 ID；绑定缺失、Runtime 不可见、非 active 或 `engine_type` 不是 `supermap_workflow` 时必须明确失败，不得改选同类型的其他 Runtime，也不得回退到 PostgreSQL 私有 Blob 读写。
+`supermap/sdx_postgresql` 的 `bound_runtime_engine_id` 是 Transfer table session 与 Meta catalog facts 的唯一运行时绑定。两个模块都必须通过 System 的租户内 Runtime Descriptor 精确解析该 ID；绑定缺失、Runtime 不可见、非 active、未声明 `addp.workflow/v1` 或未提供所需 direct 算子时必须明确失败，不得改选其他 Runtime，也不得回退到 PostgreSQL 私有 Blob 读写。
 
 能力详情页不得直接平铺原始 JSON 字段。System 后端应生成 `capabilities_view` 供前端渲染；完整 JSON 仅作为技术查看入口保留。
 
@@ -335,7 +335,14 @@ type QueryCapability struct {
     ReadOnly        bool     `json:"read_only,omitempty"`
     SupportsExplain bool     `json:"supports_explain,omitempty"`
     SupportsCancel  bool     `json:"supports_cancel,omitempty"`
+    Parameters      *QueryParameterCapability `json:"parameters,omitempty"`
     Federation      *QueryFederationCapability `json:"federation,omitempty"`
+}
+
+type QueryParameterCapability struct {
+    Supported bool     `json:"supported"`
+    Languages []string `json:"languages"`
+    Types     []string `json:"types"`
 }
 
 type QueryFederationCapability struct {
@@ -355,7 +362,10 @@ type QueryFederationCapability struct {
 | `read_only` | 运行时是否只允许只读查询。 |
 | `supports_explain` | 是否支持查询计划 / 性能诊断。 |
 | `supports_cancel` | 是否支持取消运行中的查询。 |
+| `parameters` | 可选的类型化查询参数能力；声明后必须由 Provider 原生安全绑定。 |
 | `federation` | 可选的多数据源联邦查询能力；声明后必须实现 `FederatedQueryRuntimeProvider`。 |
+
+`parameters.languages` 只列出当前 Provider 已实现参数绑定的查询语言，`parameters.types` 第一版只允许 `string`、`integer`、`number`、`boolean`。查询工作台只能在当前语言位于该列表时开放参数定义。SQL 的用户输入语法统一为 `:name`，Provider 必须编译为当前驱动占位符并通过 `QueryOptions.Args` 绑定；Cypher 使用 `$name` 并通过原生参数 Map 执行；MQL 使用 `{\"$param\":\"name\"}` 结构化参数节点，在 JSON 解析后替换为类型化值。参数能力不得通过字符串替换实现，也不得用于动态标识符或查询片段。
 
 DuckDB Runtime 第一阶段声明 `runtime_api="addp.query-runtime/v1"`、`source_engine_types=["postgresql","mysql","minio","s3"]`、`object_formats=["parquet"]`。能力只声明当前真正实现并验证过的连接器；Doris、ClickHouse、Spark SQL、MongoDB、Neo4j、Kafka 等不能仅因 ADDP 已支持该 Engine 类型就自动列入。
 
@@ -382,6 +392,8 @@ type WorkflowCapability struct {
 | `supported_operator_mode` | 支持的算子运行模式。 |
 
 工作流引擎的静态能力声明只回答“是否具备统一工作流运行时，以及使用哪个 runtime API”。算子列表、算子参数、分类、输入输出端口等动态能力，不写入 `capabilities`，必须通过 `WorkflowRuntimeProvider.ListOperators()` 获取；当前 `addp.workflow/v1` 对应的标准 HTTP 入口为 `GET /api/operators`。工作流执行通过 `WorkflowRuntimeProvider.ExecuteWorkflow()`，对应标准 HTTP 入口为 `POST /api/workflow`。执行期绑定的外部运行时资源（例如 `spark_workflow` 绑定某个 Spark 资源 ID）属于执行请求参数，不属于能力声明。
+
+`spatial_workspaces` 中需要 Workflow Runtime 支撑的领域工作区只保存 `bound_runtime_engine_id`。工作区不得保存 `runtime_engine_type` 作为能力判断或运行时白名单；调用方必须读取绑定实例的 Runtime Descriptor，并以 `compute.workflow.runtime_api` 和动态 direct 算子目录完成校验。
 
 `dynamic_operators=true` 表示调用方可以通过 Provider 动态发现算子。它不是“已有算子列表”的缓存，也不是某个模块对该引擎的适配状态。
 
@@ -481,12 +493,13 @@ type CapabilitiesView struct {
 - 声明 `storage.store.table_write_session=true` 的插件必须实现 `TableWriteSessionProvider`。
 - 声明 `storage.store.table_write_prepare=true` 的插件必须实现 `TableWritePreparer`。
 - 声明 `compute.query.supported=true` 的插件必须实现 `QueryRuntimeProvider` 或 `FederatedQueryRuntimeProvider`。声明 `compute.query.federation.supported=true` 时必须实现 `FederatedQueryRuntimeProvider`，且 `runtime_api` 非空。
-- 声明 `compute.workflow.supported=true` 的插件必须实现 `WorkflowRuntimeProvider`。若 `dynamic_operators=true`，则其 `ListOperators()` 必须可调用，并返回符合工作流计算引擎接口规范的算子描述。
+- 声明 `compute.query.parameters.supported=true` 的插件必须对 `parameters.languages` 中每种语言实现类型化参数绑定，并拒绝缺失、未知或未使用参数；不得只声明 UI 能力而把参数插值交给调用方。
+- 声明 `compute.workflow.supported=true` 的编译期插件必须实现 `WorkflowRuntimeProvider`。通过 System 注册的 `addp.workflow/v1` 外部运行时不要求独立编译期插件，由 Common 唯一的 `HTTPWorkflowRuntimeProvider` 消费；System 必须在注册时校验 capabilities 并完成协议探测。
 - 声明 `compute.script.supported=true` 的插件必须实现 `ScriptRuntimeProvider`。
 - 声明 `compute.inference.supported=true` 的插件必须实现 `InferenceRuntimeProvider`，且 `runtime_api="addp.inference/v1"`、`operations` 非空。
 - 反向也必须成立：插件实现 `CatalogModelProvider`、`CatalogProvider`、`CatalogFactsProvider`、`DynamicSchemaSamplingProvider`、具体 Store Provider、`ChangeStreamReaderProvider`、`QueryRuntimeProvider`、`FederatedQueryRuntimeProvider`、`GraphQueryProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider` 或 `InferenceRuntimeProvider` 时，`Capabilities()` 必须声明对应能力。`StoreProvider` 本身只是 marker，不单独触发能力声明；以具体读写 Provider 为准。
 - capabilities 由插件返回结构体，System 统一序列化为 JSONB。插件 `Capabilities()` 是 Provider 能力模板，不得做实例连接或运行时探测。
-- 已注册插件引擎的落库能力事实源是插件 `Capabilities()` 与可选实例能力解析结果。普通 Engine API、内部自注册接口和 Registry 能力注册接口收到插件引擎提交的 `capabilities` 时都必须忽略，并改用插件模板和实例解析结果生成落库声明。内置扩展引擎自注册 payload 不提交 `capabilities`；自注册脚本不得额外声明 `workflow_runtime`、`script_runtime` 等平行运行时能力。
+- 已注册编译期插件引擎的落库能力事实源是插件 `Capabilities()` 与可选实例能力解析结果。普通 Engine API、内部自注册接口和 Registry 能力注册接口收到此类插件引擎提交的 `capabilities` 时都必须忽略，并改用插件模板和实例解析结果生成落库声明。未编译独立插件的 `addp.workflow/v1` Runtime 无论是否属于 ADDP 默认部署，都必须在自注册或手动注册时提交完整 `engine.capabilities/v1`；System 校验并保存该声明，不能按 `engine_type` 生成内置能力。自注册脚本不得额外声明 `workflow_runtime`、`script_runtime` 等平行运行时能力。
 - 旧 capabilities 结构不再兼容，发现旧结构可直接刷新或清空。
 
 ---

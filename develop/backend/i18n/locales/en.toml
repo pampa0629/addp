@@ -58,6 +58,9 @@ other = "Could not connect to the data source. Check the engine status and conne
 [develop.query.sample_query_unavailable]
 other = "No real data is available in the current business database for a sample query."
 
+[develop.query.sample_query_resource_empty]
+other = "The selected data item contains no real data for a query template."
+
 [develop.query.template_resource_invalid]
 other = "The selected resource is not a queryable data item for the current engine."
 
@@ -221,3 +224,6 @@ other = "The execution parameter contract for this task is temporarily unavailab
 
 [develop.execution.start_failed]
 other = "Failed to start task execution"
+
+[develop.query.parameter_definitions_invalid]
+other = "Query parameter definitions are invalid; check names, types, defaults, and references in the query"

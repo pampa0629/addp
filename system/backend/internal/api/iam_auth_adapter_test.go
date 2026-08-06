@@ -78,6 +78,36 @@ func TestIAMAuthHandlerContract(t *testing.T) {
 		}
 	})
 
+	t.Run("role assignment principal type conflict is localized with a stable domain error", func(t *testing.T) {
+		for _, test := range []struct {
+			name     string
+			language string
+			message  string
+		}{
+			{name: "zh-cn", language: "zh-cn", message: "该角色不能分配给此类型的成员。"},
+			{name: "en", language: "en", message: "The role cannot be assigned to this member type."},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				router := gin.New()
+				router.Use(i18nmiddleware.I18nMiddleware())
+				router.GET("/conflict", func(c *gin.Context) {
+					respondIAMError(c, iam.ErrTenantRoleAssignmentPrincipalTypeNotAllowed)
+				})
+				request := httptest.NewRequest(http.MethodGet, "/conflict", nil)
+				request.Header.Set("Accept-Language", test.language)
+				recorder := httptest.NewRecorder()
+				router.ServeHTTP(recorder, request)
+
+				var response IAMErrorResponse
+				decodeIAMResponse(t, recorder, &response)
+				if recorder.Code != http.StatusConflict || response.ErrorCode == nil ||
+					*response.ErrorCode != "role_assignment_principal_type_not_allowed" || response.Error != test.message {
+					t.Fatalf("role assignment principal type conflict status=%d response=%#v", recorder.Code, response)
+				}
+			})
+		}
+	})
+
 	t.Run("multi-context login returns only a selection challenge", func(t *testing.T) {
 		membershipID := int64(22)
 		tenantID := int64(11)

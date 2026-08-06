@@ -1228,7 +1228,6 @@ func TestBuildTableTransferPlanUsesSDKSchemaForSDXPostgreSQLSource(t *testing.T)
 		Ecosystem:            "supermap",
 		Kind:                 engineplugin.SpatialWorkspaceSuperMapSDXPostgreSQL,
 		State:                engineplugin.SpatialWorkspaceStateDetected,
-		RuntimeEngineType:    "supermap_workflow",
 		BoundRuntimeEngineID: &boundRuntimeID,
 	}})
 

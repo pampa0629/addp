@@ -31,6 +31,7 @@ type ExecutionEngineService struct {
 	syncStateRepo    *repository.SyncStateRepository
 	executionService *ExecutionService
 	systemClient     *commonClient.SystemClient
+	systemRuntime    *commonClient.SystemServiceClient
 	metaClient       *commonClient.MetaClient
 	replayRuntime    BoundedReplayRuntime
 	cfg              *config.Config
@@ -42,6 +43,7 @@ func NewExecutionEngineService(
 	syncStateRepo *repository.SyncStateRepository,
 	executionService *ExecutionService,
 	systemClient *commonClient.SystemClient,
+	systemRuntime *commonClient.SystemServiceClient,
 	metaClient *commonClient.MetaClient,
 ) *ExecutionEngineService {
 	return &ExecutionEngineService{
@@ -49,6 +51,7 @@ func NewExecutionEngineService(
 		syncStateRepo:    syncStateRepo,
 		executionService: executionService,
 		systemClient:     systemClient,
+		systemRuntime:    systemRuntime,
 		metaClient:       metaClient,
 		logger:           logger.With("component", "execution_engine_service"),
 	}
@@ -424,36 +427,29 @@ func (s *ExecutionEngineService) superMapSDXPostgreSQLTableProvider(
 	if workspace.BoundRuntimeEngineID == nil || *workspace.BoundRuntimeEngineID == 0 {
 		return nil, fmt.Errorf("SuperMap SDX+ for PostgreSQL workspace has no bound workflow runtime")
 	}
-	if s.systemClient == nil {
+	if s.systemRuntime == nil {
 		return nil, fmt.Errorf("system client is required to resolve the bound SuperMap workflow runtime")
 	}
-	runtimes, err := s.systemClient.ListWorkflowEngines(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("list workflow runtimes: %w", err)
-	}
 	boundRuntimeID := *workspace.BoundRuntimeEngineID
-	for index := range runtimes {
-		runtime := &runtimes[index]
-		if runtime.ID != boundRuntimeID {
-			continue
-		}
-		if !strings.EqualFold(strings.TrimSpace(runtime.EngineType), "supermap_workflow") {
-			return nil, fmt.Errorf("bound runtime %d has engine_type %q, want supermap_workflow", runtime.ID, runtime.EngineType)
-		}
-		registered, err := engineplugin.Get("supermap_workflow")
-		if err != nil {
-			return nil, err
-		}
-		workflowRuntime, ok := registered.(engineplugin.WorkflowRuntimeProvider)
-		if !ok {
-			return nil, fmt.Errorf("supermap_workflow does not implement WorkflowRuntimeProvider")
-		}
-		return supermapworkflow.NewSDXPostgreSQLTableProvider(
-			workflowRuntime,
-			toPluginConnectionInfo(runtime.ConnectionInfo),
-		)
+	descriptor, err := s.systemRuntime.WithTenantID(tenantID).GetEngineRuntimeDescriptor(ctx, boundRuntimeID)
+	if err != nil {
+		return nil, fmt.Errorf("get bound workflow runtime %d: %w", boundRuntimeID, err)
 	}
-	return nil, fmt.Errorf("bound SuperMap workflow runtime %d is not active or visible to tenant %d", boundRuntimeID, tenantID)
+	if descriptor == nil || descriptor.ID != boundRuntimeID || descriptor.LifecycleState != commonModels.EngineLifecycleActive {
+		return nil, fmt.Errorf("bound workflow runtime %d is not active or visible to tenant %d", boundRuntimeID, tenantID)
+	}
+	runtimeEngine := descriptor.AsEngine()
+	workflowRuntime, err := dbbridge.WorkflowRuntimeProviderForEngine(runtimeEngine)
+	if err != nil {
+		return nil, err
+	}
+	if err := dbbridge.RequireDirectWorkflowOperators(ctx, runtimeEngine, supermapworkflow.RequiredTableOperators()...); err != nil {
+		return nil, fmt.Errorf("bound runtime %d does not provide SuperMap table operators: %w", boundRuntimeID, err)
+	}
+	return supermapworkflow.NewSDXPostgreSQLTableProvider(
+		workflowRuntime,
+		toPluginConnectionInfo(runtimeEngine.ConnectionInfo),
+	)
 }
 
 func toPluginConnectionInfo(value commonModels.ConnectionInfo) engineplugin.ConnectionInfo {
@@ -465,12 +461,18 @@ func toPluginConnectionInfo(value commonModels.ConnectionInfo) engineplugin.Conn
 }
 
 func (s *ExecutionEngineService) selectDirectWorkflowRuntime(ctx context.Context, tenantID uint, operatorName string) (commonModels.Engine, commonModels.OperatorDescriptor, error) {
-	if s.systemClient == nil {
+	if s.systemRuntime == nil {
 		return commonModels.Engine{}, commonModels.OperatorDescriptor{}, fmt.Errorf("system client is required to resolve workflow runtime")
 	}
-	engines, err := s.systemClient.ListWorkflowEngines(tenantID)
+	descriptors, err := s.systemRuntime.WithTenantID(tenantID).ListEngineRuntimeDescriptors(ctx)
 	if err != nil {
-		return commonModels.Engine{}, commonModels.OperatorDescriptor{}, fmt.Errorf("list workflow engines: %w", err)
+		return commonModels.Engine{}, commonModels.OperatorDescriptor{}, fmt.Errorf("list workflow runtime descriptors: %w", err)
+	}
+	engines := make([]commonModels.Engine, 0, len(descriptors))
+	for index := range descriptors {
+		if engine := descriptors[index].AsEngine(); engine != nil {
+			engines = append(engines, *engine)
+		}
 	}
 	return dbbridge.ResolveDirectWorkflowOperator(ctx, engines, dbbridge.DirectWorkflowOperatorSelector{
 		OperatorName: operatorName,

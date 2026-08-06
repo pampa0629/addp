@@ -32,7 +32,7 @@ type TestConnectionRequest struct {
 	EngineID uint `json:"engine_id" binding:"required"`
 }
 
-// GetSampleQuery 获取引擎的可执行查询模板（切换引擎或选择数据资源时填充编辑器）
+// GetSampleQuery 获取所选数据资源的可执行查询模板
 // @Summary 获取查询模板 | Get query template
 // @Tags Query
 // @Produce json
@@ -43,7 +43,7 @@ type TestConnectionRequest struct {
 // @Failure 401 {object} map[string]interface{} "需要登录 | Authentication required"
 // @Failure 403 {object} map[string]interface{} "无执行或数据读取权限 | Execution or data-read permission denied"
 // @Failure 409 {object} map[string]interface{} "授权状态冲突 | Authorization conflict"
-// @Failure 422 {object} map[string]interface{} "当前业务库没有可用真实样例 | No real sample data is available"
+// @Failure 422 {object} map[string]interface{} "所选数据项为空或当前业务库没有可用真实样例 | The selected data item is empty or no real sample data is available"
 // @Failure 500 {object} map[string]interface{}
 // @Failure 503 {object} map[string]interface{} "授权服务不可用 | Authorization service unavailable"
 // @x-addp-auth-mode "permission"
@@ -94,6 +94,12 @@ func (h *QueryHandler) GetSampleQuery(c *gin.Context) {
 	)
 	if err != nil {
 		if h.writeExecutionAuthorizationError(c, err) {
+			return
+		}
+		if errors.Is(err, service.ErrSampleQueryResourceEmpty) {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{
+				"error": commoni18n.T(c, developi18n.MsgSampleQueryResourceEmpty), "error_code": "sample_query_resource_empty",
+			})
 			return
 		}
 		if errors.Is(err, service.ErrSampleQueryUnavailable) {

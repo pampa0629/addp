@@ -13,6 +13,7 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/models"
+	"github.com/addp/common/queryparams"
 	"github.com/addp/common/sqldialect"
 	"github.com/beltran/gohive"
 	"gorm.io/gorm"
@@ -35,7 +36,7 @@ func TestConnection(ctx context.Context, engine *models.Engine) error {
 		return plugin.TestConnection(ctx, toPluginEngine(engine))
 	}
 	if supportsADDPWorkflowRuntime(engine) {
-		workflowProvider, err := workflowRuntimeProvider(engine)
+		workflowProvider, err := WorkflowRuntimeProviderForEngine(engine)
 		if err != nil {
 			return err
 		}
@@ -47,7 +48,7 @@ func TestConnection(ctx context.Context, engine *models.Engine) error {
 // ProbeWorkflowRuntimeContract validates the addp.workflow/v1 control-plane
 // contract exposed by a workflow runtime before it is saved or used.
 func ProbeWorkflowRuntimeContract(ctx context.Context, engine *models.Engine) (int, error) {
-	workflowProvider, err := workflowRuntimeProvider(engine)
+	workflowProvider, err := WorkflowRuntimeProviderForEngine(engine)
 	if err != nil {
 		return 0, err
 	}
@@ -179,7 +180,7 @@ func toPluginEngine(engine *models.Engine) *plugin.Engine {
 
 // ListWorkflowOperators 通过工作流运行时 Provider 动态发现算子。
 func ListWorkflowOperators(ctx context.Context, engine *models.Engine) ([]models.OperatorDescriptor, error) {
-	workflowProvider, err := workflowRuntimeProvider(engine)
+	workflowProvider, err := WorkflowRuntimeProviderForEngine(engine)
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +194,7 @@ func ListWorkflowOperators(ctx context.Context, engine *models.Engine) ([]models
 
 // ExecuteWorkflow 通过工作流运行时 Provider 执行工作流。
 func ExecuteWorkflow(ctx context.Context, engine *models.Engine, req plugin.WorkflowExecuteRequest) (*plugin.WorkflowExecuteResult, error) {
-	workflowProvider, err := workflowRuntimeProvider(engine)
+	workflowProvider, err := WorkflowRuntimeProviderForEngine(engine)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +214,7 @@ func ExecuteWorkflow(ctx context.Context, engine *models.Engine, req plugin.Work
 
 // InvokeOperator 通过工作流运行时 Provider direct 调用单个算子。
 func InvokeOperator(ctx context.Context, engine *models.Engine, operatorName string, req plugin.OperatorInvokeRequest) (*plugin.OperatorInvokeResult, error) {
-	workflowProvider, err := workflowRuntimeProvider(engine)
+	workflowProvider, err := WorkflowRuntimeProviderForEngine(engine)
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +234,7 @@ func InvokeOperator(ctx context.Context, engine *models.Engine, operatorName str
 
 // GetWorkflowExecutionStatus 通过工作流运行时 Provider 查询运行时本地执行状态。
 func GetWorkflowExecutionStatus(ctx context.Context, engine *models.Engine, executionID string) (*plugin.WorkflowExecutionStatus, error) {
-	workflowProvider, err := workflowRuntimeProvider(engine)
+	workflowProvider, err := WorkflowRuntimeProviderForEngine(engine)
 	if err != nil {
 		return nil, err
 	}
@@ -310,9 +311,15 @@ func ResolveDirectWorkflowOperator(ctx context.Context, engines []models.Engine,
 	return models.Engine{}, models.OperatorDescriptor{}, fmt.Errorf("%s", message)
 }
 
-func workflowRuntimeProvider(engine *models.Engine) (plugin.WorkflowRuntimeProvider, error) {
+// WorkflowRuntimeProviderForEngine resolves the provider from one registered
+// Engine Instance. Standard addp.workflow/v1 runtimes use the generic HTTP
+// provider and do not require a compiled plugin for their engine_type.
+func WorkflowRuntimeProviderForEngine(engine *models.Engine) (plugin.WorkflowRuntimeProvider, error) {
 	if engine == nil {
 		return nil, fmt.Errorf("workflow engine cannot be nil")
+	}
+	if supportsADDPWorkflowRuntime(engine) {
+		return plugin.NewHTTPWorkflowRuntimeProvider(engine.EngineType, engine.Name), nil
 	}
 	p, pluginErr := plugin.Get(engine.EngineType)
 	if pluginErr == nil {
@@ -320,13 +327,29 @@ func workflowRuntimeProvider(engine *models.Engine) (plugin.WorkflowRuntimeProvi
 			return workflowProvider, nil
 		}
 	}
-	if supportsADDPWorkflowRuntime(engine) {
-		return plugin.NewHTTPWorkflowRuntimeProvider(engine.EngineType, engine.Name), nil
-	}
 	if pluginErr != nil {
 		return nil, pluginErr
 	}
 	return nil, fmt.Errorf("plugin %s does not implement WorkflowRuntimeProvider", engine.EngineType)
+}
+
+// RequireDirectWorkflowOperators verifies that one runtime exposes every
+// required operator and that each operator explicitly supports direct mode.
+func RequireDirectWorkflowOperators(ctx context.Context, engine *models.Engine, operatorNames ...string) error {
+	operators, err := ListWorkflowOperators(ctx, engine)
+	if err != nil {
+		return err
+	}
+	for _, operatorName := range operatorNames {
+		operatorName = strings.TrimSpace(operatorName)
+		if operatorName == "" {
+			return fmt.Errorf("direct workflow operator name is required")
+		}
+		if err := ensureDirectOperator(operators, operatorName); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func scriptRuntimeProvider(engine *models.Engine) (plugin.ScriptRuntimeProvider, error) {
@@ -875,7 +898,10 @@ func SupportsDirectQuery(engineType string) bool {
 	return false
 }
 
-var ErrSampleQueryUnavailable = errors.New("当前引擎没有可生成样例查询的真实数据")
+var (
+	ErrSampleQueryUnavailable   = errors.New("当前引擎没有可生成样例查询的真实数据")
+	ErrSampleQueryResourceEmpty = errors.New("所选资源没有可生成查询模板的真实数据")
+)
 
 // ExecutableSampleQueryOptions separates the query returned to the caller from
 // the bounded query used to validate it. QueryLimit only applies to generated
@@ -959,11 +985,14 @@ func GenerateExecutableSampleQuery(
 	if options.ValidationLimit > 0 && strings.EqualFold(language, "sql") {
 		validationQuery = sqldialect.PaginateQuerySQL(query, options.ValidationLimit, 0)
 	}
-	result, err := ExecuteReadOnlyRuntimeQuery(ctx, engine, language, validationQuery, 0)
+	result, err := ExecuteReadOnlyRuntimeQueryWithPath(ctx, engine, language, validationQuery, nil, 0, options.Path)
 	if err != nil {
 		return "", "", fmt.Errorf("%w: 样例查询执行失败: %v", ErrSampleQueryUnavailable, err)
 	}
 	if result == nil || len(result.Rows) == 0 {
+		if options.Path != nil {
+			return "", "", fmt.Errorf("%w: 样例查询没有返回数据", ErrSampleQueryResourceEmpty)
+		}
 		return "", "", fmt.Errorf("%w: 样例查询没有返回数据", ErrSampleQueryUnavailable)
 	}
 	return query, language, nil
@@ -1110,9 +1139,14 @@ func SupportsReadOnlySQLExecution(engineType string) bool {
 // ExecuteReadOnlyQuery executes one SQL query in a database-enforced read-only
 // transaction. It is the only dbbridge path for User executions classified as
 // read.
-func ExecuteReadOnlyQuery(ctx context.Context, engine *models.Engine, query string, limit int) (*plugin.QueryResult, error) {
+func ExecuteReadOnlyQuery(ctx context.Context, engine *models.Engine, query string, parameters map[string]interface{}, limit int) (*plugin.QueryResult, error) {
 	if engine == nil || !SupportsReadOnlySQLExecution(engine.EngineType) {
 		return nil, fmt.Errorf("引擎不支持受控只读 SQL 执行")
+	}
+	if strings.EqualFold(engine.EngineType, "spark") {
+		if parameters != nil {
+			return nil, fmt.Errorf("Spark SQL 查询运行时不支持命名参数")
+		}
 	}
 	if strings.EqualFold(engine.EngineType, "spark") || strings.EqualFold(engine.EngineType, "doris") {
 		p, err := plugin.Get(engine.EngineType)
@@ -1124,9 +1158,14 @@ func ExecuteReadOnlyQuery(ctx context.Context, engine *models.Engine, query stri
 			return nil, fmt.Errorf("%s 引擎未提供 SQL 查询运行时", engine.EngineType)
 		}
 		return sqlRuntime.ExecuteSQL(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), query, plugin.QueryOptions{
-			EngineID: engine.ID, EngineType: engine.EngineType, Limit: limit, ReadOnly: true,
+			EngineID: engine.ID, EngineType: engine.EngineType, Limit: limit, ReadOnly: true, Parameters: parameters,
 		})
 	}
+	boundQuery, args, err := bindSQLExecutionParameters(engine.EngineType, query, parameters)
+	if err != nil {
+		return nil, err
+	}
+	query = boundQuery
 	if limit > 0 {
 		query = sqldialect.PaginateQuerySQL(query, limit, 0)
 	}
@@ -1149,7 +1188,7 @@ func ExecuteReadOnlyQuery(ctx context.Context, engine *models.Engine, query stri
 		}
 	}()
 
-	rows, err := tx.QueryContext(ctx, query)
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1166,7 +1205,13 @@ func ExecuteReadOnlyQuery(ctx context.Context, engine *models.Engine, query stri
 
 // ExecuteReadOnlyRuntimeQuery executes a non-SQL query through the engine's
 // native QueryRuntimeProvider. The provider must enforce QueryOptions.ReadOnly.
-func ExecuteReadOnlyRuntimeQuery(ctx context.Context, engine *models.Engine, language, query string, limit int) (*plugin.QueryResult, error) {
+func ExecuteReadOnlyRuntimeQuery(ctx context.Context, engine *models.Engine, language, query string, parameters map[string]interface{}, limit int) (*plugin.QueryResult, error) {
+	return ExecuteReadOnlyRuntimeQueryWithPath(ctx, engine, language, query, parameters, limit, nil)
+}
+
+// ExecuteReadOnlyRuntimeQueryWithPath executes a native read-only query against
+// the concrete catalog path selected by the caller.
+func ExecuteReadOnlyRuntimeQueryWithPath(ctx context.Context, engine *models.Engine, language, query string, parameters map[string]interface{}, limit int, targetPath *plugin.CatalogPath) (*plugin.QueryResult, error) {
 	if engine == nil {
 		return nil, fmt.Errorf("引擎不能为空")
 	}
@@ -1183,17 +1228,22 @@ func ExecuteReadOnlyRuntimeQuery(ctx context.Context, engine *models.Engine, lan
 		return nil, fmt.Errorf("引擎不支持查询语言: %s", language)
 	}
 	return qp.ExecuteRuntimeQuery(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.QueryRequest{
-		Language: language,
-		Query:    query,
+		Language:   language,
+		Query:      query,
+		TargetPath: targetPath,
 		Options: plugin.QueryOptions{
-			EngineID: engine.ID, EngineType: engine.EngineType, Limit: limit, ReadOnly: true,
+			EngineID: engine.ID, EngineType: engine.EngineType, Limit: limit, ReadOnly: true, Parameters: parameters,
 		},
 	})
 }
 
 // ExecuteReadOnlyGraphQuery executes a native graph query through the same
 // read-only and bounded result contract as other ad-hoc queries.
-func ExecuteReadOnlyGraphQuery(ctx context.Context, engine *models.Engine, language, query string, limit int) (*plugin.GraphQueryResult, error) {
+func ExecuteReadOnlyGraphQuery(ctx context.Context, engine *models.Engine, language, query string, parameters map[string]interface{}, limit int) (*plugin.GraphQueryResult, error) {
+	return ExecuteReadOnlyGraphQueryWithPath(ctx, engine, language, query, parameters, limit, nil)
+}
+
+func ExecuteReadOnlyGraphQueryWithPath(ctx context.Context, engine *models.Engine, language, query string, parameters map[string]interface{}, limit int, targetPath *plugin.CatalogPath) (*plugin.GraphQueryResult, error) {
 	if engine == nil {
 		return nil, fmt.Errorf("引擎不能为空")
 	}
@@ -1213,23 +1263,48 @@ func ExecuteReadOnlyGraphQuery(ctx context.Context, engine *models.Engine, langu
 	if !ok {
 		return nil, fmt.Errorf("引擎未提供图查询运行时")
 	}
+	if targetPathProvider, ok := p.(plugin.PathAwareGraphQueryProvider); ok && targetPath != nil {
+		return targetPathProvider.ExecuteGraphQueryAtPath(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), *targetPath, query, plugin.QueryOptions{
+			EngineID: engine.ID, EngineType: engine.EngineType, Limit: limit, ReadOnly: true, Parameters: parameters,
+		})
+	}
 	return graphProvider.ExecuteGraphQuery(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), query, plugin.QueryOptions{
-		EngineID: engine.ID, EngineType: engine.EngineType, Limit: limit, ReadOnly: true,
+		EngineID: engine.ID, EngineType: engine.EngineType, Limit: limit, ReadOnly: true, Parameters: parameters,
 	})
 }
 
 // ExecuteStatement executes one non-read SQL statement and returns affected
 // rows. The caller must classify and authorize the statement effect first.
-func ExecuteStatement(ctx context.Context, engine *models.Engine, query string) (int64, error) {
+func ExecuteStatement(ctx context.Context, engine *models.Engine, query string, parameters map[string]interface{}) (int64, error) {
+	query, args, err := bindSQLExecutionParameters(engine.EngineType, query, parameters)
+	if err != nil {
+		return 0, err
+	}
 	db, err := GetOrCreatePool(engine, DefaultPoolConfig())
 	if err != nil {
 		return 0, fmt.Errorf("获取连接池失败：%w", err)
 	}
-	result := db.WithContext(ctx).Exec(query)
+	result := db.WithContext(ctx).Exec(query, args...)
 	if result.Error != nil {
 		return 0, result.Error
 	}
 	return result.RowsAffected, nil
+}
+
+func bindSQLExecutionParameters(engineType, query string, parameters map[string]interface{}) (string, []interface{}, error) {
+	if parameters == nil {
+		return query, nil, nil
+	}
+	style := queryparams.SQLPlaceholderQuestion
+	switch strings.ToLower(strings.TrimSpace(engineType)) {
+	case "postgres", "postgresql", "postgis":
+		style = queryparams.SQLPlaceholderDollar
+	}
+	bound, args, err := queryparams.BindSQL(query, parameters, style)
+	if err != nil {
+		return "", nil, fmt.Errorf("绑定 SQL 查询参数失败: %w", err)
+	}
+	return bound, args, nil
 }
 
 // executeSQLQuery 标准 SQL 引擎执行（PostgreSQL/MySQL/Doris/ClickHouse），使用 GORM 连接池

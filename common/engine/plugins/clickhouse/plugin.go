@@ -57,15 +57,16 @@ func (p *ClickHousePlugin) ConnectionIdentityFields() []string {
 
 func (p *ClickHousePlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), "database", plugin.TabularCapabilityOptions{
-		Write:             true,
-		BulkWrite:         true,
-		BatchWrite:        true,
-		TableReadSession:  true,
-		TableWriteSession: true,
-		TableWritePrepare: true,
-		Delete:            true,
-		SupportsExplain:   true,
-		WriterConnector:   "clickhouse_insert",
+		Write:              true,
+		BulkWrite:          true,
+		BatchWrite:         true,
+		TableReadSession:   true,
+		TableWriteSession:  true,
+		TableWritePrepare:  true,
+		Delete:             true,
+		SupportsExplain:    true,
+		SupportsParameters: true,
+		WriterConnector:    "clickhouse_insert",
 	})
 }
 

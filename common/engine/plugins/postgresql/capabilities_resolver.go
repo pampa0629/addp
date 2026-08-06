@@ -224,7 +224,6 @@ func applyPostgresInstanceCapabilities(base plugin.EngineCapabilities, facts pos
 			Kind:              workspaceKind,
 			State:             workspaceState,
 			BackendEngineType: "postgresql",
-			RuntimeEngineType: "supermap_workflow",
 			CanEnable:         !workspaceDetected,
 			RiskLevel:         plugin.SpatialWorkspaceRiskHigh,
 			Evidence: map[string]interface{}{

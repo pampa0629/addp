@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/addp/common/engine/plugin"
-	_ "github.com/addp/common/engine/plugins/spark_workflow"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/google/uuid"
@@ -610,6 +609,7 @@ func TestExecuteWorkflowSendsCanonicalSparkHTTPRuntimeRequest(t *testing.T) {
 		91: {
 			ID: 91, Name: "test-spark-workflow", EngineType: "spark_workflow", LifecycleState: "active",
 			ConnectionInfo: runtime.connectionInfo,
+			Capabilities:   workflowRuntimeCapabilitiesForTest(t, "spark_workflow"),
 		},
 		34: testEngine(34, "spark", true),
 	})
@@ -633,6 +633,16 @@ func TestExecuteWorkflowSendsCanonicalSparkHTTPRuntimeRequest(t *testing.T) {
 		t.Fatalf("top-level engine_id = %#v, want 34: %#v", runtime.captured["engine_id"], runtime.captured)
 	}
 	assertCanonicalWorkflowRuntimeAuthorization(t, runtime.captured)
+}
+
+func workflowRuntimeCapabilitiesForTest(t *testing.T, engineType string) *commonModels.JSONString {
+	t.Helper()
+	payload, err := plugin.MarshalEngineCapabilities(plugin.NewWorkflowCapabilities(engineType, plugin.WorkflowRuntimeAPIAddpV1))
+	if err != nil {
+		t.Fatalf("marshal workflow capabilities: %v", err)
+	}
+	value := commonModels.JSONString(payload)
+	return &value
 }
 
 func TestExecuteWorkflowOmitsTopLevelEngineIDForNonSparkHTTPRuntime(t *testing.T) {

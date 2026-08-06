@@ -109,7 +109,11 @@ Refresh 采用轮换和重用检测。并发 Refresh、logout、context switch�
 
 平台安全管理员只能为不持有有效 Platform Role 的普通 User 执行受控重置。事务必须替换 Password Hash、清除临时锁定、推进授权版本、撤销全部 Token Family、终止未消费 Ticket/Challenge，并写入高风险审计。
 
-### 7.3 三员灾难恢复
+### 7.3 普通 User MFA 重置
+
+平台安全管理员只能为不持有有效 Platform Role、具有可用 Local Account 和唯一 active TOTP Credential 的普通 User 执行受控 MFA 重置。事务必须废止旧 Credential、推进授权版本、撤销全部 Token Family、终止未消费 Ticket/Challenge/Enrollment，并写入高风险审计；不得恢复或返回旧 TOTP Secret，也不得修改密码、Membership 或 Role Assignment。目标 User 随后通过唯一的当前用户 TOTP 自助登记路径建立新 Credential。
+
+### 7.4 三员灾难恢复
 
 三员凭据全部不可用时，只允许离线 `iam-recovery prepare/apply`。恢复不删除或重建 Bootstrap 状态，不通过 SQL 直接替换 Hash，不开放 HTTP API。
 

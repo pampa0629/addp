@@ -14,14 +14,58 @@ function parseCapabilities(value) {
 export function queryCapabilityForEngine(engine) {
   const query = parseCapabilities(engine?.capabilities)?.compute?.query
   if (!query?.supported) {
-    return { languages: [], defaultLanguage: '', resultKinds: [] }
+    return { languages: [], defaultLanguage: '', resultKinds: [], parameters: null }
   }
   const languages = Array.from(new Set((query.languages || []).map(value => String(value).trim().toLowerCase()).filter(Boolean)))
   const declaredDefault = String(query.default_language || '').trim().toLowerCase()
   return {
     languages,
     defaultLanguage: languages.includes(declaredDefault) ? declaredDefault : (languages[0] || ''),
-    resultKinds: Array.from(new Set((query.result_kinds || []).map(value => String(value).trim().toLowerCase()).filter(Boolean)))
+    resultKinds: Array.from(new Set((query.result_kinds || []).map(value => String(value).trim().toLowerCase()).filter(Boolean))),
+    parameters: normalizeQueryParameterCapability(query.parameters, languages)
+  }
+}
+
+function normalizeQueryParameterCapability(value, queryLanguages) {
+  if (!value?.supported) return null
+  const languages = Array.from(new Set((value.languages || []).map(item => String(item).trim().toLowerCase()).filter(Boolean)))
+  const types = Array.from(new Set((value.types || []).map(item => String(item).trim().toLowerCase()).filter(Boolean)))
+  if (languages.length === 0 || types.length === 0 || languages.some(language => !queryLanguages.includes(language))) return null
+  return { supported: true, languages, types }
+}
+
+export function queryParameterReference(language, name) {
+  const normalizedLanguage = String(language || '').trim().toLowerCase()
+  const normalizedName = String(name || '').trim()
+  if (!normalizedName) return ''
+  if (normalizedLanguage === 'sql') return `:${normalizedName}`
+  if (normalizedLanguage === 'cypher') return `$${normalizedName}`
+  if (normalizedLanguage === 'mql') return JSON.stringify({ $param: normalizedName })
+  return ''
+}
+
+export function buildQueryExecutionContract(definitions = []) {
+  const properties = {}
+  const inputDefaults = {}
+  const inputUISchema = {}
+  definitions.forEach((definition, index) => {
+    const name = String(definition?.name || '').trim()
+    if (!name) return
+    properties[name] = {
+      type: definition.type,
+      ...(definition.title ? { title: definition.title } : {}),
+      ...(definition.description ? { description: definition.description } : {})
+    }
+    inputDefaults[name] = definition.default
+    inputUISchema[name] = { order: index }
+  })
+  return {
+    input_schema: { type: 'object', additionalProperties: false, properties },
+    input_defaults: inputDefaults,
+    input_ui_schema: inputUISchema,
+    output_schema: { type: 'object', additionalProperties: false, properties: {} },
+    output_defaults: {},
+    output_ui_schema: {}
   }
 }
 

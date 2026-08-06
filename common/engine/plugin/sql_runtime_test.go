@@ -69,6 +69,44 @@ func TestReadSQLBatchPassesBoundParameters(t *testing.T) {
 	}
 }
 
+func TestBindSQLRuntimeParametersUsesDialectPlaceholderStyle(t *testing.T) {
+	tests := []struct {
+		dialect string
+		wantSQL string
+	}{
+		{dialect: "postgres", wantSQL: "SELECT * FROM members WHERE status = $1 AND score > $2"},
+		{dialect: "mysql", wantSQL: "SELECT * FROM members WHERE status = ? AND score > ?"},
+		{dialect: "clickhouse", wantSQL: "SELECT * FROM members WHERE status = ? AND score > ?"},
+	}
+	for _, test := range tests {
+		t.Run(test.dialect, func(t *testing.T) {
+			bound, args, err := bindSQLRuntimeParameters(test.dialect,
+				"SELECT * FROM members WHERE status = :status AND score > :score",
+				QueryOptions{Parameters: map[string]interface{}{"status": "active", "score": 10}},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if bound != test.wantSQL {
+				t.Fatalf("bound SQL = %q, want %q", bound, test.wantSQL)
+			}
+			if len(args) != 2 || args[0] != "active" || args[1] != 10 {
+				t.Fatalf("args = %#v", args)
+			}
+		})
+	}
+}
+
+func TestBindSQLRuntimeParametersRejectsMixedParameterModes(t *testing.T) {
+	_, _, err := bindSQLRuntimeParameters("postgres", "SELECT $1", QueryOptions{
+		Args:       []interface{}{1},
+		Parameters: map[string]interface{}{"value": 1},
+	})
+	if err == nil {
+		t.Fatal("expected mixed positional and named parameters to fail")
+	}
+}
+
 func TestReadSQLBatchUsesOffsetForTablePath(t *testing.T) {
 	provider := &fakeSQLRuntimeProvider{}
 	path := CatalogPath{

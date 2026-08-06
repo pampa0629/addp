@@ -525,50 +525,6 @@ func (c *SystemClient) ListCatalogChildrenWithToken(engineID uint, req EngineCat
 	return result.Nodes, nil
 }
 
-// ================ 工作流引擎相关方法（新增） ================
-
-// ListWorkflowEngines 获取支持 workflow 的计算引擎
-func (c *SystemClient) ListWorkflowEngines(tenantID uint) ([]models.Engine, error) {
-	values := neturl.Values{}
-	if tenantID > 0 {
-		values.Set("tenant_id", fmt.Sprintf("%d", tenantID))
-	}
-	endpoint := withQuery(fmt.Sprintf("%s/api/v1/internal/engines", c.baseURL), values)
-
-	req, err := http.NewRequest("GET", endpoint, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	c.addAuth(req)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("system api returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var engines []models.Engine
-	if err := json.NewDecoder(resp.Body).Decode(&engines); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	// 过滤出具备 compute.workflow 能力的引擎。
-	filtered := make([]models.Engine, 0)
-	for _, r := range engines {
-		if r.LifecycleState == models.EngineLifecycleActive && commonutils.SupportsComputeEntrypoint(&r, "workflow") {
-			filtered = append(filtered, r)
-		}
-	}
-	return filtered, nil
-}
-
 // ListSparkRuntimes 获取所有 Apache Spark 通用引擎资源
 func (c *SystemClient) ListSparkRuntimes(tenantID uint) ([]models.Engine, error) {
 	values := neturl.Values{}

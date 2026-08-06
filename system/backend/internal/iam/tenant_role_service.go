@@ -22,6 +22,11 @@ var ErrTenantRoleAssignmentAlreadyExists = fmt.Errorf(
 	commonapi.ErrConflict,
 )
 
+var ErrTenantRoleAssignmentPrincipalTypeNotAllowed = fmt.Errorf(
+	"%w: tenant role cannot be assigned to the target principal type",
+	commonapi.ErrConflict,
+)
+
 type TenantRoleAssignmentFilter struct {
 	MembershipID   *int64
 	Status         *string
@@ -279,7 +284,8 @@ func (s *TenantRoleService) CreateAssignment(ctx context.Context, input CreateTe
 		if membership.TenantID != input.TenantID || membership.Status != TenantMembershipStatusActive || (membership.ExpiresAt != nil && !membership.ExpiresAt.After(now)) {
 			return commonapi.ErrForbidden
 		}
-		if _, err := tx.LockPrincipal(ctx, membership.PrincipalID); err != nil {
+		targetPrincipal, err := tx.LockPrincipal(ctx, membership.PrincipalID)
+		if err != nil {
 			return err
 		}
 		roles, err := tx.ListTenantRoles(ctx, input.TenantID)
@@ -295,6 +301,9 @@ func (s *TenantRoleService) CreateAssignment(ctx context.Context, input CreateTe
 		}
 		if role == nil {
 			return commonapi.ErrNotFound
+		}
+		if !containsString(role.AllowedPrincipalTypes, string(targetPrincipal.PrincipalType)) {
+			return ErrTenantRoleAssignmentPrincipalTypeNotAllowed
 		}
 		if !containsString(role.AllowedScopeTypes, input.ScopeType) {
 			return commonapi.ErrForbidden

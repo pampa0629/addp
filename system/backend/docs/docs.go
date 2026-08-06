@@ -3979,6 +3979,80 @@ const docTemplate = `{
                 ]
             }
         },
+        "/platform/users/{id}/reset-mfa": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "废止不持有有效平台角色的普通用户旧 TOTP，并撤销其全部既有认证会话；用户随后必须自助登记新 TOTP | Disable the old TOTP for an ordinary user without an effective platform role and revoke all existing authentication sessions; the user must then enroll a new TOTP",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台用户 | Platform Users"
+                ],
+                "summary": "重置普通用户身份验证器 | Reset ordinary user authenticator",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "用户 ID | User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "重置原因 | Reset reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMResetManagedMFARequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMManagedMFAResetResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.mfa_credential.reset"
+                ]
+            }
+        },
         "/platform/users/{id}/reset-password": {
             "post": {
                 "security": [
@@ -5746,7 +5820,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "同一成员、角色和授权范围已存在 | The membership already has the role in the requested scope",
+                        "description": "角色分配冲突：重复分配或主体类型不兼容 | Role assignment conflict: duplicate assignment or incompatible principal type",
                         "schema": {
                             "$ref": "#/definitions/internal_api.IAMErrorResponse"
                         }
@@ -8543,11 +8617,17 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "mfa_reset_allowed": {
+                    "type": "boolean"
+                },
                 "password_reset_allowed": {
                     "type": "boolean"
                 },
                 "status": {
                     "$ref": "#/definitions/github_com_addp_system_internal_iam.LocalAccountStatus"
+                },
+                "totp_enrolled": {
+                    "type": "boolean"
                 },
                 "username": {
                     "type": "string"
@@ -8618,6 +8698,29 @@ const docTemplate = `{
                 },
                 "consumed_mfa_challenge_count": {
                     "type": "integer"
+                },
+                "revoked_family_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.IAMManagedMFAResetResponse": {
+            "type": "object",
+            "properties": {
+                "authorization_version": {
+                    "type": "string"
+                },
+                "consumed_context_ticket_count": {
+                    "type": "integer"
+                },
+                "consumed_mfa_challenge_count": {
+                    "type": "integer"
+                },
+                "consumed_mfa_enrollment_count": {
+                    "type": "integer"
+                },
+                "reset_at": {
+                    "type": "string"
                 },
                 "revoked_family_count": {
                     "type": "integer"
@@ -8857,6 +8960,14 @@ const docTemplate = `{
                 "new_password": {
                     "type": "string"
                 },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMResetManagedMFARequest": {
+            "type": "object",
+            "properties": {
                 "reason": {
                     "type": "string"
                 }

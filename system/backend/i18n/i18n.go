@@ -30,8 +30,10 @@ const (
 	MsgPasswordUnchanged                     = "system.auth.password_unchanged"
 	MsgTOTPAlreadyEnrolled                   = "system.auth.totp_already_enrolled"
 	MsgTOTPEnrollmentRequired                = "system.auth.totp_enrollment_required"
+	MsgMFAResetNotAvailable                  = "system.auth.mfa_reset_not_available"
 	MsgInvalidMFAVerification                = "system.auth.invalid_mfa_verification"
 	MsgRoleAssignmentAlreadyExists           = "system.iam.role_assignment_already_exists"
+	MsgRoleAssignmentPrincipalTypeNotAllowed = "system.iam.role_assignment_principal_type_not_allowed"
 
 	MsgLogNotFound          = "system.log.not_found"
 	MsgExportFailed         = "system.log.export_failed"

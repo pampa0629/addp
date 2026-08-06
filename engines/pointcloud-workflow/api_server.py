@@ -217,6 +217,18 @@ def register_to_system() -> bool:
         "name": "PointCloud 工作流引擎",
         "description": "点云持久化转换工作流运行时，LAS / LAZ / E57 / PCD / XYZ 转 COPC 算子同时支持 workflow 与受控 direct 调用",
         "connection_info": connection_info,
+        "capabilities": {
+            "schema_version": "engine.capabilities/v1",
+            "engine_type": "pointcloud_workflow",
+            "engine_family": "workflow",
+            "compute": {
+                "workflow": {
+                    "supported": True,
+                    "runtime_api": "addp.workflow/v1",
+                    "dynamic_operators": True,
+                }
+            },
+        },
         "is_builtin": True,
     }
     headers = {

@@ -2,6 +2,7 @@ package neo4j
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/addp/common/datatype"
@@ -103,5 +104,13 @@ func TestBoundedCypherQueryAppliesOuterLimit(t *testing.T) {
 	}
 	if got := boundedCypherQuery("MATCH (n) RETURN n;", 0); got != "MATCH (n) RETURN n" {
 		t.Fatalf("boundedCypherQuery(unbounded) = %q", got)
+	}
+}
+
+func TestNeo4jQueryRejectsMissingParameterBeforeConnecting(t *testing.T) {
+	provider := &Neo4jPlugin{}
+	_, err := provider.executeQuery(t.Context(), plugin.ConnectionInfo{}, `MATCH (n) WHERE n.name = $name RETURN n`, plugin.QueryOptions{})
+	if err == nil || !strings.Contains(err.Error(), `query parameter "name" is not provided`) {
+		t.Fatalf("executeQuery() error = %v, want missing parameter error", err)
 	}
 }

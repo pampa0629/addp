@@ -62,6 +62,8 @@ type IAMLocalAccountManagementResponse struct {
 	Username             string                 `json:"username"`
 	Status               iam.LocalAccountStatus `json:"status"`
 	PasswordResetAllowed bool                   `json:"password_reset_allowed"`
+	TOTPEnrolled         bool                   `json:"totp_enrolled"`
+	MFAResetAllowed      bool                   `json:"mfa_reset_allowed"`
 }
 
 type IAMManagedUserResponse struct {
@@ -108,6 +110,19 @@ type IAMManagedLocalAccountPasswordResetResponse struct {
 	ConsumedMFAChallengeCount  int64     `json:"consumed_mfa_challenge_count"`
 	ConsumedContextTicketCount int64     `json:"consumed_context_ticket_count"`
 	ChangedAt                  time.Time `json:"changed_at"`
+}
+
+type IAMResetManagedMFARequest struct {
+	Reason string `json:"reason"`
+}
+
+type IAMManagedMFAResetResponse struct {
+	AuthorizationVersion       string    `json:"authorization_version"`
+	RevokedFamilyCount         int64     `json:"revoked_family_count"`
+	ConsumedMFAChallengeCount  int64     `json:"consumed_mfa_challenge_count"`
+	ConsumedMFAEnrollmentCount int64     `json:"consumed_mfa_enrollment_count"`
+	ConsumedContextTicketCount int64     `json:"consumed_context_ticket_count"`
+	ResetAt                    time.Time `json:"reset_at"`
 }
 
 type IAMManagedUserStatusResponse struct {
@@ -421,6 +436,7 @@ type iamPlatformUserService interface {
 	Create(context.Context, iam.CreateManagedLocalUserInput) (*iam.ManagedUser, error)
 	Update(context.Context, iam.UpdateManagedUserInput) (*iam.ManagedUser, error)
 	ResetLocalAccountPassword(context.Context, iam.ResetManagedLocalAccountPasswordInput) (*iam.ManagedLocalAccountPasswordResetResult, error)
+	ResetMFACredential(context.Context, iam.ResetManagedMFACredentialInput) (*iam.ManagedMFACredentialResetResult, error)
 	Suspend(context.Context, iam.ChangeManagedUserStatusInput) (*iam.ManagedUserStatusChangeResult, error)
 	Reactivate(context.Context, iam.ChangeManagedUserStatusInput) (*iam.ManagedUserStatusChangeResult, error)
 }
@@ -604,6 +620,55 @@ func (h *IAMPlatformUserHandler) ResetLocalAccountPassword(c *gin.Context) {
 	})
 }
 
+// ResetMFACredential godoc
+// @Summary      重置普通用户身份验证器 | Reset ordinary user authenticator
+// @Description  废止不持有有效平台角色的普通用户旧 TOTP，并撤销其全部既有认证会话；用户随后必须自助登记新 TOTP | Disable the old TOTP for an ordinary user without an effective platform role and revoke all existing authentication sessions; the user must then enroll a new TOTP
+// @Tags         平台用户 | Platform Users
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "用户 ID | User ID"
+// @Param        request body IAMResetManagedMFARequest true "重置原因 | Reset reason"
+// @Success      200 {object} IAMManagedMFAResetResponse
+// @Failure      400 {object} IAMErrorResponse
+// @Failure      403 {object} IAMErrorResponse
+// @Failure      404 {object} IAMErrorResponse
+// @Failure      409 {object} IAMErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["iam.mfa_credential.reset"]
+// @Router       /platform/users/{id}/reset-mfa [post]
+func (h *IAMPlatformUserHandler) ResetMFACredential(c *gin.Context) {
+	userID, err := parseIAMDecimalID(c.Param("id"))
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	var request IAMResetManagedMFARequest
+	if err := commonapi.BindOptionalJSONStrict(c, &request); err != nil {
+		respondIAMError(c, fmt.Errorf("%w: invalid MFA credential reset request", commonapi.ErrBadRequest))
+		return
+	}
+	result, err := h.service.ResetMFACredential(
+		c.Request.Context(),
+		iam.ResetManagedMFACredentialInput{
+			UserID: userID, Reason: request.Reason,
+			Audit: iamAuditMetadataWithStatus(c, http.StatusOK),
+		},
+	)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, IAMManagedMFAResetResponse{
+		AuthorizationVersion:       strconv.FormatInt(result.AuthorizationVersion, 10),
+		RevokedFamilyCount:         result.RevokedFamilyCount,
+		ConsumedMFAChallengeCount:  result.ConsumedMFAChallengeCount,
+		ConsumedMFAEnrollmentCount: result.ConsumedMFAEnrollmentCount,
+		ConsumedContextTicketCount: result.ConsumedContextTicketCount,
+		ResetAt:                    result.ResetAt.UTC(),
+	})
+}
+
 // Suspend godoc
 // @Summary      暂停平台用户 | Suspend platform user
 // @Tags         平台用户 | Platform Users
@@ -695,6 +760,11 @@ func mapIAMManagedUser(user iam.ManagedUser) IAMManagedUserResponse {
 				(*user.LocalAccountStatus == iam.LocalAccountStatusActive ||
 					*user.LocalAccountStatus == iam.LocalAccountStatusLocked) &&
 				!user.HasEffectivePlatformRole,
+			TOTPEnrolled: user.TOTPEnrolled,
+			MFAResetAllowed: user.Status == iam.PrincipalStatusActive &&
+				(*user.LocalAccountStatus == iam.LocalAccountStatusActive ||
+					*user.LocalAccountStatus == iam.LocalAccountStatusLocked) &&
+				!user.HasEffectivePlatformRole && user.TOTPEnrolled,
 		}
 	}
 	return response

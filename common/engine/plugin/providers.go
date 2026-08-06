@@ -346,6 +346,13 @@ type GraphQueryProvider interface {
 	ExecuteGraphQuery(ctx context.Context, connInfo ConnectionInfo, cypher string, opts QueryOptions) (*GraphQueryResult, error)
 }
 
+// PathAwareGraphQueryProvider executes a graph query against the selected
+// catalog database when the engine exposes more than one graph namespace.
+type PathAwareGraphQueryProvider interface {
+	GraphQueryProvider
+	ExecuteGraphQueryAtPath(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, cypher string, opts QueryOptions) (*GraphQueryResult, error)
+}
+
 type WorkflowRuntimeProvider interface {
 	EnginePlugin
 	RuntimeEndpoint(ctx context.Context, connInfo ConnectionInfo) (string, error)
@@ -604,7 +611,10 @@ type QueryRequest struct {
 	EngineID uint
 	Language string
 	Query    string
-	Options  QueryOptions
+	// TargetPath identifies the catalog resource used by this query. Runtime
+	// providers must use it to select the concrete namespace when applicable.
+	TargetPath *CatalogPath
+	Options    QueryOptions
 }
 
 type FederatedQueryRequest struct {
@@ -619,15 +629,16 @@ type FederatedQueryRequest struct {
 }
 
 type QueryOptions struct {
-	EngineID   uint          `json:"engine_id,omitempty"`
-	EngineType string        `json:"engine_type,omitempty"`
-	Limit      int           `json:"limit,omitempty"`
-	Offset     int           `json:"offset,omitempty"`
-	Timeout    time.Duration `json:"timeout,omitempty"`
-	ReadOnly   bool          `json:"read_only"`
-	Args       []interface{} `json:"args,omitempty"`
-	Describe   bool          `json:"describe,omitempty"`
-	Spatial    bool          `json:"spatial,omitempty"`
+	EngineID   uint                   `json:"engine_id,omitempty"`
+	EngineType string                 `json:"engine_type,omitempty"`
+	Limit      int                    `json:"limit,omitempty"`
+	Offset     int                    `json:"offset,omitempty"`
+	Timeout    time.Duration          `json:"timeout,omitempty"`
+	ReadOnly   bool                   `json:"read_only"`
+	Args       []interface{}          `json:"args,omitempty"`
+	Parameters map[string]interface{} `json:"parameters,omitempty"`
+	Describe   bool                   `json:"describe,omitempty"`
+	Spatial    bool                   `json:"spatial,omitempty"`
 }
 
 type OperatorDescriptor struct {

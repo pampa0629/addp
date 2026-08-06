@@ -99,7 +99,7 @@ func TestRegisterEngineInternalRejectsPhysicalEndpointChange(t *testing.T) {
 	request := httptest.NewRequest(
 		http.MethodPost,
 		"/api/v1/internal/engines/register",
-		bytes.NewBufferString(`{"engine_type":"geopython_workflow","name":"GeoPython Runtime","connection_info":{"protocol":"http","port":8080},"is_builtin":true}`),
+		bytes.NewBufferString(`{"engine_type":"geopython_workflow","name":"GeoPython Runtime","connection_info":{"protocol":"http","port":8080},"capabilities":{"schema_version":"engine.capabilities/v1","engine_type":"geopython_workflow","engine_family":"workflow","compute":{"workflow":{"supported":true,"runtime_api":"addp.workflow/v1","dynamic_operators":true}}},"is_builtin":true}`),
 	)
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
@@ -114,5 +114,50 @@ func TestRegisterEngineInternalRejectsPhysicalEndpointChange(t *testing.T) {
 	}
 	if stored.ConnectionInfo["host"] != "runtime.internal" {
 		t.Fatalf("stored host = %#v, want unchanged runtime.internal", stored.ConnectionInfo["host"])
+	}
+}
+
+func TestRegisterEngineInternalKeepsSubmittedCapabilitiesForBuiltinCustomRuntime(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&models.Engine{}); err != nil {
+		t.Fatalf("auto migrate engine: %v", err)
+	}
+
+	repo := repository.NewEngineRepository(db)
+	router := gin.New()
+	handler := NewEngineHandler(service.NewEngineService(repo, nil, nil))
+	router.POST("/api/v1/internal/engines/register", handler.RegisterEngineInternal)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/internal/engines/register",
+		bytes.NewBufferString(`{
+			"engine_type":"tenant_workflow_runtime",
+			"name":"Tenant Workflow Runtime",
+			"connection_info":{"protocol":"http","port":18103},
+			"capabilities":{
+				"schema_version":"engine.capabilities/v1",
+				"engine_type":"tenant_workflow_runtime",
+				"engine_family":"workflow",
+				"compute":{"workflow":{"supported":true,"runtime_api":"addp.workflow/v1","dynamic_operators":true}}
+			},
+			"is_builtin":true
+		}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("register status = %d body=%s, want 202", response.Code, response.Body.String())
+	}
+
+	stored, err := repo.GetByEngineTypeAndTenant("tenant_workflow_runtime", nil)
+	if err != nil {
+		t.Fatalf("get registered runtime: %v", err)
+	}
+	if stored.Capabilities == nil || !bytes.Contains([]byte(*stored.Capabilities), []byte(`"runtime_api":"addp.workflow/v1"`)) {
+		t.Fatalf("stored capabilities = %v, want submitted workflow declaration", stored.Capabilities)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dbbridge"
 	engineplugin "github.com/addp/common/engine/plugin"
 	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
 	"github.com/addp/common/logger"
@@ -148,18 +149,14 @@ func (s *EngineService) ResolveScanPlugin(ctx context.Context, resource *commonM
 	if descriptor == nil || descriptor.ID != *workspace.BoundRuntimeEngineID || descriptor.LifecycleState != commonModels.EngineLifecycleActive {
 		return nil, fmt.Errorf("bound SuperMap workflow runtime %d is not active or visible to tenant %d", *workspace.BoundRuntimeEngineID, tenantID)
 	}
-	if !strings.EqualFold(strings.TrimSpace(descriptor.EngineType), "supermap_workflow") {
-		return nil, fmt.Errorf("bound runtime %d has engine_type %q, want supermap_workflow", descriptor.ID, descriptor.EngineType)
-	}
-	runtimePlugin, err := engineplugin.Get("supermap_workflow")
+	runtimeEngine := descriptor.AsEngine()
+	workflowRuntime, err := dbbridge.WorkflowRuntimeProviderForEngine(runtimeEngine)
 	if err != nil {
 		return nil, err
 	}
-	workflowRuntime, ok := runtimePlugin.(engineplugin.WorkflowRuntimeProvider)
-	if !ok {
-		return nil, errors.New("supermap_workflow does not implement WorkflowRuntimeProvider")
+	if err := dbbridge.RequireDirectWorkflowOperators(ctx, runtimeEngine, supermapworkflow.RequiredTableReadOperators()...); err != nil {
+		return nil, fmt.Errorf("bound runtime %d does not provide SuperMap table read operators: %w", descriptor.ID, err)
 	}
-	runtimeEngine := descriptor.AsEngine()
 	return supermapworkflow.NewSDXPostgreSQLTableProvider(workflowRuntime, engineplugin.ConnectionInfo(runtimeEngine.ConnectionInfo))
 }
 

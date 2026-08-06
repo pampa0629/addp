@@ -39,6 +39,31 @@ func TestBuildCapabilitiesViewIncludesTableSpatialEncoding(t *testing.T) {
 	assertCapabilityTag(t, *item, "native_spatial_functions")
 }
 
+func TestBuildCapabilitiesViewIncludesQueryParameters(t *testing.T) {
+	caps := engineplugin.NewTabularCapabilities("postgresql", "schema", engineplugin.TabularCapabilityOptions{
+		SupportsParameters: true,
+	})
+	payload, err := engineplugin.MarshalEngineCapabilities(caps)
+	if err != nil {
+		t.Fatalf("MarshalEngineCapabilities failed: %v", err)
+	}
+	jsonValue := systemModels.JSONString(payload)
+
+	view := BuildCapabilitiesView(&jsonValue, "postgresql")
+	if view == nil {
+		t.Fatal("BuildCapabilitiesView returned nil")
+	}
+	item := findCapabilityItem(view, "compute", "query")
+	if item == nil {
+		t.Fatalf("query item not found in view: %#v", view.Sections)
+	}
+	assertCapabilityTag(t, *item, "query_parameters")
+	assertCapabilityTag(t, *item, "parameter_type_string")
+	assertCapabilityTag(t, *item, "parameter_type_integer")
+	assertCapabilityTag(t, *item, "parameter_type_number")
+	assertCapabilityTag(t, *item, "parameter_type_boolean")
+}
+
 func TestBuildCapabilitiesViewFormatsPostgreSQLExtensions(t *testing.T) {
 	caps := engineplugin.NewTabularCapabilities("postgresql", "schema", engineplugin.TabularCapabilityOptions{})
 	caps.Extensions = map[string]interface{}{
@@ -135,7 +160,6 @@ func TestBuildCapabilitiesViewFormatsSpatialWorkspaces(t *testing.T) {
 				Kind:                 engineplugin.SpatialWorkspaceSuperMapSDXPostGIS,
 				State:                engineplugin.SpatialWorkspaceStateNotDetected,
 				BackendEngineType:    "postgresql",
-				RuntimeEngineType:    "supermap_workflow",
 				BoundRuntimeEngineID: &boundRuntimeID,
 				CanEnable:            true,
 				RiskLevel:            engineplugin.SpatialWorkspaceRiskHigh,
@@ -181,7 +205,6 @@ func TestBuildCapabilitiesViewFormatsSpatialWorkspaces(t *testing.T) {
 	assertCapabilityTag(t, *item, "ecosystem_supermap")
 	assertCapabilityTag(t, *item, "kind_sdxPostgis")
 	assertCapabilityTag(t, *item, "state_notDetected")
-	assertCapabilityTag(t, *item, "runtime_engine_type")
 	assertCapabilityTag(t, *item, "bound_runtime_engine_id")
 	assertCapabilityTag(t, *item, "risk_level_high")
 	assertCapabilityTag(t, *item, "can_enable")

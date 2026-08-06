@@ -37,6 +37,21 @@ func (h *Handler) Capabilities(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"schema_version": commoninference.SchemaVersion, "operations": []string{"chat", "embedding", "rerank"}, "modalities": []string{"text", "image"}, "streaming": false})
 }
 
+// ListProviderTemplates godoc
+// @Summary 查询模型服务模板 | List provider templates
+// @Tags Inference Provider
+// @Produce json
+// @Success 200 {array} service.ProviderTemplate
+// @Failure 401 {object} commoninference.ErrorResponse
+// @Failure 403 {object} commoninference.ErrorResponse
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["inference.provider.read"]
+// @Router /provider-templates [get]
+func (h *Handler) ListProviderTemplates(c *gin.Context) {
+	c.JSON(http.StatusOK, service.ListProviderTemplates())
+}
+
 // ListProviders godoc
 // @Summary 查询 Provider Connection | List provider connections
 // @Tags Inference Provider
@@ -172,6 +187,24 @@ func (h *Handler) SetCredential(c *gin.Context) {
 // @Router /provider-connections/{id}/credential [delete]
 func (h *Handler) DeleteCredential(c *gin.Context) {
 	value, err := h.control.DeleteCredential(c.Request.Context(), actor(c), c.Param("id"))
+	respond(c, value, err)
+}
+
+// DiscoverModels godoc
+// @Summary 发现 Provider 可用模型 | Discover provider models
+// @Tags Inference Provider
+// @Produce json
+// @Param id path string true "Provider ID"
+// @Success 200 {object} service.ModelDiscoveryResponse
+// @Failure 404 {object} commoninference.ErrorResponse
+// @Failure 422 {object} commoninference.ErrorResponse
+// @Failure 502 {object} commoninference.ErrorResponse
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["inference.provider.read","inference.deployment.execute"]
+// @Router /provider-connections/{id}/discover-models [post]
+func (h *Handler) DiscoverModels(c *gin.Context) {
+	value, err := h.runtime.DiscoverModels(c.Request.Context(), actor(c), c.Param("id"))
 	respond(c, value, err)
 }
 

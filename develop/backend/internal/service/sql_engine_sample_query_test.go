@@ -148,4 +148,36 @@ func TestGenerateExecutableSampleQueryUsesSelectedCatalogPath(t *testing.T) {
 	if provider.executedReq == nil || !provider.executedReq.Options.ReadOnly {
 		t.Fatalf("executed request = %#v", provider.executedReq)
 	}
+	if provider.executedReq.TargetPath == nil || provider.executedReq.TargetPath.StringPath() != "business/orders" {
+		t.Fatalf("executed target path = %#v", provider.executedReq.TargetPath)
+	}
+}
+
+func TestGenerateExecutableSampleQueryReportsSelectedResourceEmpty(t *testing.T) {
+	selectedPath := plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: 42,
+		Segments: []plugin.CatalogSegment{
+			{Term: plugin.CatalogTermServer, Kind: plugin.CatalogTermServer},
+			{Term: plugin.CatalogTermDatabase, Kind: plugin.CatalogKindNamespace, Name: "business"},
+			{Term: plugin.CatalogTermCollection, Kind: plugin.CatalogKindCollection, Name: "empty_orders"},
+		},
+	}
+	provider := &executableSampleQueryProvider{
+		query:    `{"find":"empty_orders","filter":{},"limit":10}`,
+		language: "mql",
+		result:   &plugin.QueryResult{Rows: []map[string]interface{}{}},
+	}
+	plugin.Register(provider)
+	t.Cleanup(func() { plugin.Unregister(provider.Type()) })
+
+	query, language, err := generateExecutableSampleQuery(context.Background(), &commonModels.Engine{
+		ID: 42, EngineType: provider.Type(), ConnectionInfo: map[string]interface{}{"endpoint": "test"},
+	}, &selectedPath)
+	if !errors.Is(err, ErrSampleQueryResourceEmpty) || query != "" || language != "" {
+		t.Fatalf("generateExecutableSampleQuery() = (%q, %q, %v), want selected resource empty", query, language, err)
+	}
+	if errors.Is(err, ErrSampleQueryUnavailable) {
+		t.Fatalf("selected resource empty must not collapse into generic unavailable: %v", err)
+	}
 }

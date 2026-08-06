@@ -21,6 +21,7 @@ var (
 	ErrSQLExecutionUnclassifiable        = errors.New("SQL 效果无法可靠判定")
 	ErrSQLConnectionTestFailed           = errors.New("数据源连接测试失败")
 	ErrSampleQueryUnavailable            = dbbridge.ErrSampleQueryUnavailable
+	ErrSampleQueryResourceEmpty          = dbbridge.ErrSampleQueryResourceEmpty
 	ErrSampleQueryResourceInvalid        = errors.New("查询模板资源定位符无效")
 )
 
@@ -303,6 +304,7 @@ func (s *SQLEngineService) ExecuteIssuedSQLAuthorization(
 	executionID uuid.UUID,
 	engineID uint,
 	sqlContent string,
+	parameters map[string]interface{},
 	timeout int,
 	limit int,
 	authorization *IssuedSQLExecutionAuthorization,
@@ -312,6 +314,9 @@ func (s *SQLEngineService) ExecuteIssuedSQLAuthorization(
 	if err != nil {
 		return nil, err
 	}
+	if err := requireQueryParameterCapability(engine, "sql", parameters); err != nil {
+		return nil, err
+	}
 	if !dbbridge.SupportsReadOnlySQLExecution(engine.EngineType) {
 		return nil, ErrControlledSQLExecutionUnsupported
 	}
@@ -319,7 +324,7 @@ func (s *SQLEngineService) ExecuteIssuedSQLAuthorization(
 	execCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 	if authorization.Effect == SQLExecutionEffectRead {
-		queryResult, err := dbbridge.ExecuteReadOnlyQuery(execCtx, engine, sqlContent, limit)
+		queryResult, err := dbbridge.ExecuteReadOnlyQuery(execCtx, engine, sqlContent, parameters, limit)
 		if err != nil {
 			return nil, err
 		}
@@ -332,7 +337,7 @@ func (s *SQLEngineService) ExecuteIssuedSQLAuthorization(
 		}, nil
 	}
 
-	rowsAffected, err := dbbridge.ExecuteStatement(execCtx, engine, sqlContent)
+	rowsAffected, err := dbbridge.ExecuteStatement(execCtx, engine, sqlContent, parameters)
 	if err != nil {
 		return nil, err
 	}

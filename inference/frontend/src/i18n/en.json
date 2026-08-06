@@ -9,7 +9,7 @@
       "submit": "Sign in",
       "failed": "Sign in failed"
     },
-    "settings": { "title": "AI Inference Resources" },
+    "settings": { "title": "AI Model Services" },
     "common": {
       "name": "Name",
       "scope": "Scope",
@@ -20,6 +20,9 @@
       "delete": "Delete",
       "save": "Save",
       "cancel": "Cancel",
+      "close": "Close",
+      "previous": "Previous",
+      "next": "Next",
       "refresh": "Refresh",
       "saved": "Saved",
       "deleted": "Deleted",
@@ -28,6 +31,61 @@
     },
     "scope": { "platform": "Platform", "tenant": "Tenant" },
     "status": { "active": "Active", "disabled": "Disabled" },
+    "services": {
+      "title": "Model Services",
+      "empty": "No model service has been connected",
+      "models": "Enabled models",
+      "profiles": "Model profiles",
+      "addModel": "Add model",
+      "advanced": "Advanced settings",
+      "advancedScope": "Manage Provider Connections, Model Deployments, and Model Profiles directly"
+    },
+    "templates": {
+      "documentation": "Open official documentation",
+      "categories": { "cloud": "Cloud services", "local": "Local runtimes", "custom": "Custom" },
+      "items": {
+        "openai": { "name": "OpenAI", "description": "Use the official OpenAI API and discover models available to the account." },
+        "dashscope-compatible": { "name": "Alibaba Cloud Model Studio", "description": "Connect chat models through the DashScope OpenAI-compatible API." },
+        "dashscope-multimodal": { "name": "DashScope Multimodal Embedding", "description": "Connect the multimodal embedding API with qwen3-vl-embedding preconfigured." },
+        "deepseek": { "name": "DeepSeek", "description": "Use the DeepSeek OpenAI-compatible API and discover available models." },
+        "siliconflow": { "name": "SiliconFlow", "description": "Use the SiliconFlow OpenAI-compatible API for multiple model families." },
+        "openrouter": { "name": "OpenRouter", "description": "Access multiple online model providers through one OpenAI-compatible API." },
+        "ollama": { "name": "Ollama", "description": "Connect the Ollama OpenAI-compatible endpoint and discover local models." },
+        "vllm": { "name": "vLLM", "description": "Connect a vLLM OpenAI Compatible Server." },
+        "lm-studio": { "name": "LM Studio", "description": "Connect a local LM Studio OpenAI-compatible server." },
+        "xinference": { "name": "Xinference", "description": "Connect a Xinference OpenAI-compatible server." },
+        "custom-openai-compatible": { "name": "Custom OpenAI Compatible", "description": "Enter an OpenAI-compatible base URL for another provider or private runtime." }
+      }
+    },
+    "onboarding": {
+      "title": "Connect Model Service",
+      "addModelsTitle": "Add Models",
+      "open": "Connect model service",
+      "steps": { "template": "Service", "connection": "Connection", "models": "Models", "complete": "Complete" },
+      "mobileStep": "Step {current} of 4 · {title}",
+      "localEndpointNotice": "The endpoint must be reachable from the Inference service. The browser machine's localhost may not be reachable.",
+      "connectionRequired": "Enter a service name and endpoint",
+      "connect": "Connect and discover models",
+      "discoverySuccess": "Connected and discovered {count} models",
+      "discoveryManual": "The service did not return a model list. Select a suggested model or enter an upstream model identifier.",
+      "discoveryFailed": "Model discovery failed: {error}. You can continue with a manual model identifier.",
+      "purpose": "Model purpose",
+      "addModel": "Add to enabled models",
+      "modelRequired": "Enter a model identifier and a valid model profile code",
+      "dimensionRequired": "Embedding models require a valid dimension",
+      "duplicateModel": "The model identifier or model profile code is duplicated",
+      "profileExists": "Model profile code {code} already exists. Choose another code or update it in advanced settings.",
+      "finish": "Create models and profiles",
+      "completeTitle": "Model service connected",
+      "completeSubtitle": "You can now assign Model Profiles to Manager, Copilot, and Agent scenarios in Configuration Management.",
+      "presets": {
+        "chat_default": "Default chat",
+        "chat_reasoning": "Reasoning and tool calling",
+        "text_embedding": "Text embedding",
+        "multimodal_embedding_2560": "Multimodal embedding (2560 dimensions)",
+        "rerank": "Text reranking"
+      }
+    },
     "provider": {
       "title": "Provider Connection",
       "create": "New Provider",
@@ -40,10 +98,12 @@
       "setCredential": "Set credential",
       "deleteCredential": "Delete credential",
       "credentialDialog": "Set Provider Credential",
-      "newCredential": "New credential",
-      "credentialRequired": "Enter a credential",
+      "newCredential": "API key or access credential",
+      "credentialRequired": "Enter an API key or access credential",
       "allowAllTenants": "Allow all tenants",
       "allowedTenantIds": "Allowed tenant IDs",
+      "allowedTenantIdsPlaceholder": "For example: 1,2,3",
+      "allowedTenantIdsRequired": "Enter at least one allowed tenant ID",
       "deleteConfirm": "Delete this Provider?",
       "deleteCredentialConfirm": "Delete this Provider credential?"
     },
@@ -64,7 +124,7 @@
       "title": "Model Profile",
       "create": "New Profile",
       "edit": "Edit Profile",
-      "code": "Capability code",
+      "code": "Model profile code",
       "deployment": "Deployment"
     }
   }

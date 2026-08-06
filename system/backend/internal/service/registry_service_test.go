@@ -47,7 +47,7 @@ func TestRegisterBuiltinRuntimeCreatesThenUpdatesSameEngine(t *testing.T) {
 	}
 }
 
-func TestPrepareRegistrationCapabilitiesUsesPluginSchemaForBuiltin(t *testing.T) {
+func TestPrepareRegistrationCapabilitiesKeepsSubmittedSchemaForBuiltinExternalRuntime(t *testing.T) {
 	service := NewRegistryService(&repository.EngineRepository{})
 	submitted := &engineplugin.EngineCapabilities{
 		SchemaVersion: engineplugin.CapabilitiesSchemaVersion,
@@ -79,8 +79,8 @@ func TestPrepareRegistrationCapabilitiesUsesPluginSchemaForBuiltin(t *testing.T)
 	if req.EngineType != "geopython_workflow" {
 		t.Fatalf("engine_type was not canonicalized: %q", req.EngineType)
 	}
-	if capabilities.Extensions != nil {
-		t.Fatalf("builtin registry capabilities should come from plugin schema without submitted extensions: %#v", capabilities.Extensions)
+	if capabilities.Extensions == nil || capabilities.Extensions["runtime"] != true {
+		t.Fatalf("builtin external runtime capabilities were not preserved: %#v", capabilities.Extensions)
 	}
 }
 

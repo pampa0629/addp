@@ -54,9 +54,11 @@ func main() {
 
 	// 加载配置
 	cfg := config.Load()
-	if _, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-transfer", cfg.ServiceClientSecret, nil); err != nil {
+	serviceTokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-transfer", cfg.ServiceClientSecret, nil)
+	if err != nil {
 		log.Fatalf("Service Token Source 配置无效: %v", err)
 	}
+	systemRuntimeClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, serviceTokenSource, nil)
 
 	// 初始化结构化日志
 	logLevel := os.Getenv("LOG_LEVEL")
@@ -131,6 +133,7 @@ func main() {
 		transferRepo.NewSyncStateRepository(db),
 		executionService,
 		systemClient,
+		systemRuntimeClient,
 		nil,
 	)
 	executionEngineService.SetConfig(cfg)

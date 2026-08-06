@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/queryparams"
 	"github.com/addp/common/sqldialect"
 	"github.com/addp/common/sqleffect"
 	"gorm.io/gorm"
@@ -19,6 +20,14 @@ import (
 func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin ConnectionPoolPlugin, connInfo ConnectionInfo, sql string, opts QueryOptions) (*QueryResult, error) {
 	if poolPlugin == nil {
 		return nil, fmt.Errorf("connection pool plugin cannot be nil")
+	}
+	boundSQL, boundArgs, err := bindSQLRuntimeParameters(poolPlugin.GetDialect(), sql, opts)
+	if err != nil {
+		return nil, err
+	}
+	if opts.Parameters != nil {
+		sql = boundSQL
+		opts.Args = boundArgs
 	}
 	if opts.ReadOnly {
 		if err := sqleffect.RequireReadOnly(sql); err != nil {
@@ -94,6 +103,29 @@ func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin ConnectionPool
 	}
 
 	return &QueryResult{Columns: columns, Rows: resultRows}, nil
+}
+
+func bindSQLRuntimeParameters(dialect, sql string, opts QueryOptions) (string, []interface{}, error) {
+	if opts.Parameters != nil && len(opts.Args) > 0 {
+		return "", nil, fmt.Errorf("query options cannot contain both named parameters and positional args")
+	}
+	if opts.Parameters == nil {
+		return sql, opts.Args, nil
+	}
+	boundSQL, boundArgs, err := queryparams.BindSQL(sql, opts.Parameters, sqlPlaceholderStyle(dialect))
+	if err != nil {
+		return "", nil, fmt.Errorf("bind SQL query parameters: %w", err)
+	}
+	return boundSQL, boundArgs, nil
+}
+
+func sqlPlaceholderStyle(engineType string) queryparams.SQLPlaceholderStyle {
+	switch strings.ToLower(strings.TrimSpace(engineType)) {
+	case "postgres", "postgresql", "postgis":
+		return queryparams.SQLPlaceholderDollar
+	default:
+		return queryparams.SQLPlaceholderQuestion
+	}
 }
 
 // ReadSQLBatch adapts SQLQueryRuntimeProvider to BatchReadableProvider.

@@ -349,6 +349,18 @@ def manual_register_to_system():
             "protocol": protocol,
             "port": port
         },
+        "capabilities": {
+            "schema_version": "engine.capabilities/v1",
+            "engine_type": "math_workflow",
+            "engine_family": "workflow",
+            "compute": {
+                "workflow": {
+                    "supported": True,
+                    "runtime_api": "addp.workflow/v1",
+                    "dynamic_operators": True
+                }
+            }
+        },
         "is_builtin": True
     }
 

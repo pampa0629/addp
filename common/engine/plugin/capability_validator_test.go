@@ -265,3 +265,66 @@ func spatialEncodingCapabilities(engineType string, spatial *NativeTableSpatialE
 		},
 	}
 }
+
+type queryParameterCapabilityPlugin struct {
+	MockPlugin
+	caps EngineCapabilities
+}
+
+func (p *queryParameterCapabilityPlugin) Capabilities() EngineCapabilities { return p.caps }
+func (p *queryParameterCapabilityPlugin) QueryLanguages() []string         { return []string{"sql"} }
+func (p *queryParameterCapabilityPlugin) GenerateSampleQuery(context.Context, ConnectionInfo, SampleQueryOptions) (string, string) {
+	return "", "sql"
+}
+func (p *queryParameterCapabilityPlugin) ExecuteRuntimeQuery(context.Context, ConnectionInfo, QueryRequest) (*QueryResult, error) {
+	return &QueryResult{}, nil
+}
+
+func TestValidatePluginCapabilitiesAcceptsQueryParameters(t *testing.T) {
+	plugin := &queryParameterCapabilityPlugin{
+		MockPlugin: MockPlugin{TypeValue: "parameterized_query"},
+		caps: EngineCapabilities{
+			SchemaVersion: CapabilitiesSchemaVersion,
+			EngineType:    "parameterized_query",
+			EngineFamily:  "test",
+			Compute: &ComputeCapabilities{Query: &QueryCapability{
+				Supported: true,
+				Languages: []string{"sql"},
+				Parameters: &QueryParameterCapability{
+					Supported: true,
+					Languages: []string{"sql"},
+					Types:     []string{"string", "integer", "number", "boolean"},
+				},
+			}},
+		},
+	}
+
+	if err := ValidatePluginCapabilities(plugin); err != nil {
+		t.Fatalf("ValidatePluginCapabilities() error = %v", err)
+	}
+}
+
+func TestValidatePluginCapabilitiesRejectsInvalidQueryParameters(t *testing.T) {
+	plugin := &queryParameterCapabilityPlugin{
+		MockPlugin: MockPlugin{TypeValue: "invalid_parameterized_query"},
+		caps: EngineCapabilities{
+			SchemaVersion: CapabilitiesSchemaVersion,
+			EngineType:    "invalid_parameterized_query",
+			EngineFamily:  "test",
+			Compute: &ComputeCapabilities{Query: &QueryCapability{
+				Supported: true,
+				Languages: []string{"sql"},
+				Parameters: &QueryParameterCapability{
+					Supported: true,
+					Languages: []string{"cypher"},
+					Types:     []string{"object"},
+				},
+			}},
+		},
+	}
+
+	err := ValidatePluginCapabilities(plugin)
+	if err == nil || !strings.Contains(err.Error(), "unsupported language") {
+		t.Fatalf("ValidatePluginCapabilities() error = %v, want unsupported language error", err)
+	}
+}

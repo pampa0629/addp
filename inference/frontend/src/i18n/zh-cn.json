@@ -9,7 +9,7 @@
       "submit": "登录",
       "failed": "登录失败"
     },
-    "settings": { "title": "AI 推理资源" },
+    "settings": { "title": "AI 模型服务" },
     "common": {
       "name": "名称",
       "scope": "范围",
@@ -20,6 +20,9 @@
       "delete": "删除",
       "save": "保存",
       "cancel": "取消",
+      "close": "关闭",
+      "previous": "上一步",
+      "next": "下一步",
       "refresh": "刷新",
       "saved": "保存成功",
       "deleted": "删除成功",
@@ -28,6 +31,61 @@
     },
     "scope": { "platform": "平台", "tenant": "租户" },
     "status": { "active": "启用", "disabled": "禁用" },
+    "services": {
+      "title": "模型服务",
+      "empty": "尚未接入模型服务",
+      "models": "已启用模型",
+      "profiles": "模型方案",
+      "addModel": "添加模型",
+      "advanced": "高级设置",
+      "advancedScope": "直接管理 Provider Connection、Model Deployment 和 Model Profile"
+    },
+    "templates": {
+      "documentation": "查看正式文档",
+      "categories": { "cloud": "在线服务", "local": "本地部署", "custom": "自定义" },
+      "items": {
+        "openai": { "name": "OpenAI", "description": "OpenAI 官方 API，自动发现当前账号可用模型。" },
+        "dashscope-compatible": { "name": "阿里云百炼", "description": "通过 DashScope OpenAI 兼容接口接入对话模型。" },
+        "dashscope-multimodal": { "name": "百炼图文向量化", "description": "接入 DashScope 多模态向量接口，预置 qwen3-vl-embedding。" },
+        "deepseek": { "name": "DeepSeek", "description": "DeepSeek OpenAI 兼容 API，自动发现可用模型。" },
+        "siliconflow": { "name": "硅基流动", "description": "SiliconFlow OpenAI 兼容 API，适合统一接入多种模型。" },
+        "openrouter": { "name": "OpenRouter", "description": "通过统一 OpenAI 兼容接口使用多个在线模型提供方。" },
+        "ollama": { "name": "Ollama", "description": "连接 Ollama 的 OpenAI 兼容接口并发现本地模型。" },
+        "vllm": { "name": "vLLM", "description": "连接 vLLM OpenAI Compatible Server。" },
+        "lm-studio": { "name": "LM Studio", "description": "连接 LM Studio 本地 OpenAI 兼容服务。" },
+        "xinference": { "name": "Xinference", "description": "连接 Xinference OpenAI 兼容服务。" },
+        "custom-openai-compatible": { "name": "自定义 OpenAI Compatible", "description": "填写自建或其他厂商的 OpenAI 兼容 Base URL。" }
+      }
+    },
+    "onboarding": {
+      "title": "接入模型服务",
+      "addModelsTitle": "添加模型",
+      "open": "接入模型服务",
+      "steps": { "template": "选择服务", "connection": "连接配置", "models": "启用模型", "complete": "完成" },
+      "mobileStep": "第 {current}/4 步 · {title}",
+      "localEndpointNotice": "这里的地址必须能从 Inference 服务端访问；浏览器所在机器的 localhost 不一定可用。",
+      "connectionRequired": "请填写服务名称和 Endpoint",
+      "connect": "连接并发现模型",
+      "discoverySuccess": "连接成功，发现 {count} 个模型",
+      "discoveryManual": "该服务未返回模型列表，请从建议模型中选择或手工输入模型标识",
+      "discoveryFailed": "模型发现失败：{error}。可以继续手工填写模型标识。",
+      "purpose": "模型用途",
+      "addModel": "加入启用列表",
+      "modelRequired": "请填写模型标识和合法的模型方案编码",
+      "dimensionRequired": "向量模型必须填写有效维度",
+      "duplicateModel": "模型标识或模型方案编码重复",
+      "profileExists": "模型方案编码 {code} 已存在，请使用其他编码或在高级设置中调整",
+      "finish": "创建模型和方案",
+      "completeTitle": "模型服务已接入",
+      "completeSubtitle": "接下来可在配置管理中把 Model Profile 分配给 Manager、Copilot 和 Agent 场景。",
+      "presets": {
+        "chat_default": "默认对话",
+        "chat_reasoning": "复杂推理与工具调用",
+        "text_embedding": "文本向量化",
+        "multimodal_embedding_2560": "图文向量化（2560 维）",
+        "rerank": "文本重排"
+      }
+    },
     "provider": {
       "title": "Provider Connection",
       "create": "新建 Provider",
@@ -40,10 +98,12 @@
       "setCredential": "设置凭据",
       "deleteCredential": "删除凭据",
       "credentialDialog": "设置 Provider 凭据",
-      "newCredential": "新凭据",
-      "credentialRequired": "请输入凭据",
+      "newCredential": "API Key 或访问凭据",
+      "credentialRequired": "请输入 API Key 或访问凭据",
       "allowAllTenants": "允许所有租户",
       "allowedTenantIds": "允许的租户 ID",
+      "allowedTenantIdsPlaceholder": "例如：1,2,3",
+      "allowedTenantIdsRequired": "请至少填写一个允许的租户 ID",
       "deleteConfirm": "确认删除这个 Provider？",
       "deleteCredentialConfirm": "确认删除这个 Provider 的凭据？"
     },
@@ -64,7 +124,7 @@
       "title": "Model Profile",
       "create": "新建 Profile",
       "edit": "编辑 Profile",
-      "code": "能力编码",
+      "code": "模型方案编码",
       "deployment": "Deployment"
     }
   }

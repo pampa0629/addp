@@ -43,6 +43,7 @@ type approvalExecution interface {
 		string,
 		map[string]interface{},
 		map[string]interface{},
+		map[string]interface{},
 		uint,
 		uint,
 		string,
@@ -86,6 +87,7 @@ func (service *ToolApprovalService) CreateWorkflowRunApproval(
 		req.DevType,
 		req.Content,
 		req.ExecutionConfig,
+		req.Parameters,
 		reqTenantID(authContext),
 		authContextUserID(authContext),
 		"",
@@ -243,6 +245,7 @@ func (service *ToolApprovalService) ConsumeWorkflowRunApproval(
 		req.DevType,
 		req.Content,
 		req.ExecutionConfig,
+		req.Parameters,
 		snapshot.TenantID,
 		snapshot.UserID,
 		"",
@@ -316,6 +319,9 @@ func normalizeInitialWorkflowRunRequest(req *models.CreateExecutionRequest) erro
 	}
 	if req.Content == nil || req.ExecutionConfig == nil {
 		return approvalError("approval_invalid_request", "workflow.run 必须提供 content 和 execution_config")
+	}
+	if req.Parameters != nil {
+		return approvalError("approval_invalid_request", "委托 workflow.run 不接受查询参数")
 	}
 	if req.Timeout <= 0 {
 		req.Timeout = 300

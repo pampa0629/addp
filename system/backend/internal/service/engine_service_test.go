@@ -269,7 +269,7 @@ func TestShouldRefreshCapabilitiesRefreshesEmptyOrLegacySchema(t *testing.T) {
 	}
 }
 
-func TestPrepareEngineCapabilitiesUsesPluginSchemaForBuiltinEngine(t *testing.T) {
+func TestPrepareEngineCapabilitiesKeepsSubmittedSchemaForBuiltinExternalRuntime(t *testing.T) {
 	service := NewEngineService(&repository.EngineRepository{}, nil, nil)
 	submitted := toJSONStringPtr(`{
 		"schema_version":"engine.capabilities/v1",
@@ -294,8 +294,8 @@ func TestPrepareEngineCapabilitiesUsesPluginSchemaForBuiltinEngine(t *testing.T)
 	if capabilities.EngineType != "geopython_workflow" || capabilities.EngineFamily != "workflow" {
 		t.Fatalf("unexpected capabilities identity: %#v", capabilities)
 	}
-	if capabilities.Extensions != nil {
-		t.Fatalf("builtin capabilities should come from plugin schema without runtime-submitted extensions: %#v", capabilities.Extensions)
+	if capabilities.Extensions == nil || capabilities.Extensions["vendor"] == nil {
+		t.Fatalf("builtin external runtime capabilities were not preserved: %#v", capabilities.Extensions)
 	}
 }
 
@@ -321,7 +321,7 @@ func TestPrepareEngineCapabilitiesKeepsStructuredCapabilitiesForNonBuiltinEngine
 	}
 }
 
-func TestEnrichInstanceCapabilitiesBindsFirstAvailableSuperMapWorkflowEngine(t *testing.T) {
+func TestEnrichInstanceCapabilitiesBindsRuntimeProvidingRequiredDirectOperator(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -333,22 +333,40 @@ func TestEnrichInstanceCapabilitiesBindsFirstAvailableSuperMapWorkflowEngine(t *
 	repo := repository.NewEngineRepository(db)
 	service := NewEngineService(repo, nil, nil)
 	tenantID := uint(1)
+	firstServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"operators": []map[string]interface{}{
+				systemTestWorkflowOperator("tenant_runtime_a", "unrelated.operator", []string{"direct"}),
+			},
+		})
+	}))
+	defer firstServer.Close()
+	secondServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"operators": []map[string]interface{}{
+				systemTestWorkflowOperator("tenant_runtime_b", "datasource.enable_postgresql", []string{"direct"}),
+			},
+		})
+	}))
+	defer secondServer.Close()
 	firstRuntime := &models.Engine{
-		Name:           "SuperMap Runtime A",
-		EngineType:     "supermap_workflow",
+		Name:           "Tenant Runtime A",
+		EngineType:     "tenant_runtime_a",
 		TenantID:       &tenantID,
 		LifecycleState: models.EngineLifecycleActive,
-		ConnectionInfo: models.ConnectionInfo{},
+		ConnectionInfo: models.ConnectionInfo(systemTestWorkflowConnectionInfo(t, firstServer.URL)),
+		Capabilities:   systemTestWorkflowCapabilities(t, "tenant_runtime_a"),
 	}
 	if err := repo.Create(firstRuntime); err != nil {
 		t.Fatalf("create first runtime: %v", err)
 	}
 	secondRuntime := &models.Engine{
-		Name:           "SuperMap Runtime B",
-		EngineType:     "supermap_workflow",
+		Name:           "Tenant Runtime B",
+		EngineType:     "tenant_runtime_b",
 		TenantID:       &tenantID,
 		LifecycleState: models.EngineLifecycleActive,
-		ConnectionInfo: models.ConnectionInfo{},
+		ConnectionInfo: models.ConnectionInfo(systemTestWorkflowConnectionInfo(t, secondServer.URL)),
+		Capabilities:   systemTestWorkflowCapabilities(t, "tenant_runtime_b"),
 	}
 	if err := repo.Create(secondRuntime); err != nil {
 		t.Fatalf("create second runtime: %v", err)
@@ -362,7 +380,6 @@ func TestEnrichInstanceCapabilitiesBindsFirstAvailableSuperMapWorkflowEngine(t *
 				Kind:              engineplugin.SpatialWorkspaceSuperMapSDXPostgreSQL,
 				State:             engineplugin.SpatialWorkspaceStateNotDetected,
 				BackendEngineType: "postgresql",
-				RuntimeEngineType: "supermap_workflow",
 				CanEnable:         true,
 				RiskLevel:         engineplugin.SpatialWorkspaceRiskHigh,
 			},
@@ -388,8 +405,8 @@ func TestEnrichInstanceCapabilitiesBindsFirstAvailableSuperMapWorkflowEngine(t *
 	if len(workspaces) != 1 {
 		t.Fatalf("spatial workspaces = %#v, want 1", workspaces)
 	}
-	if workspaces[0].BoundRuntimeEngineID == nil || *workspaces[0].BoundRuntimeEngineID != firstRuntime.ID {
-		t.Fatalf("bound runtime engine id = %#v, want first runtime id %d", workspaces[0].BoundRuntimeEngineID, firstRuntime.ID)
+	if workspaces[0].BoundRuntimeEngineID == nil || *workspaces[0].BoundRuntimeEngineID != secondRuntime.ID {
+		t.Fatalf("bound runtime engine id = %#v, want capable runtime id %d", workspaces[0].BoundRuntimeEngineID, secondRuntime.ID)
 	}
 	if !workspaces[0].CanEnable {
 		t.Fatalf("can_enable = false, want true when runtime exists and workspace is not detected")
@@ -423,54 +440,17 @@ func TestEnableSpatialWorkspaceInvokesBoundSuperMapWorkflowRuntime(t *testing.T)
 		t.Fatalf("auto migrate models: %v", err)
 	}
 
-	var healthCalls int
 	var listCalls int
 	var invokeCalls int
 	var invokePayload map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/health":
-			healthCalls++
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"status": "healthy",
-				"dependencies": map[string]interface{}{
-					"iobjects_cpp": map[string]interface{}{
-						"available": true,
-						"path":      "/opt/supermap/bin/bin",
-					},
-					"freetype": map[string]interface{}{
-						"available": true,
-						"path":      "/lib/aarch64-linux-gnu",
-					},
-					"nfs": map[string]interface{}{
-						"available": true,
-						"path":      "/usr/sbin",
-					},
-				},
-			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/operators":
 			listCalls++
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"status": "success",
 				"operators": []map[string]interface{}{
-					{
-						"id":              "datasource.enable_postgis",
-						"name":            "datasource.enable_postgis",
-						"display_name":    "启用 PostGIS 空间工作区",
-						"engine_type":     "supermap_workflow",
-						"category":        "数据源",
-						"category_path":   []string{"数据源"},
-						"description":     "对已有 PostGIS 数据库执行 SuperMap SDX+ for PostGIS 初始化。",
-						"execution_modes": []string{"direct"},
-						"effects":         []string{"ddl"},
-						"parameters": []map[string]interface{}{
-							{"name": "connection_info", "type": "object", "param_type": "param", "required": true},
-							{"name": "alias", "type": "string", "param_type": "param", "required": false},
-						},
-						"output_ports": []map[string]interface{}{
-							{"name": "workspace", "type": "supermap.spatial_workspace", "is_default": true},
-						},
-					},
+					systemTestWorkflowOperator("tenant_supermap_runtime", "datasource.enable_postgis", []string{"direct"}),
 				},
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/operators/datasource.enable_postgis/invoke":
@@ -499,10 +479,11 @@ func TestEnableSpatialWorkspaceInvokesBoundSuperMapWorkflowRuntime(t *testing.T)
 	runtimeURL := systemTestWorkflowConnectionInfo(t, server.URL)
 	runtimeEngine := &models.Engine{
 		Name:           "SuperMap Runtime",
-		EngineType:     "supermap_workflow",
+		EngineType:     "tenant_supermap_runtime",
 		TenantID:       &tenantID,
 		LifecycleState: models.EngineLifecycleActive,
 		ConnectionInfo: models.ConnectionInfo(runtimeURL),
+		Capabilities:   systemTestWorkflowCapabilities(t, "tenant_supermap_runtime"),
 	}
 	if err := engineRepo.Create(runtimeEngine); err != nil {
 		t.Fatalf("create runtime engine: %v", err)
@@ -525,13 +506,13 @@ func TestEnableSpatialWorkspaceInvokesBoundSuperMapWorkflowRuntime(t *testing.T)
 		Extensions: map[string]interface{}{
 			engineplugin.EngineExtensionSpatialWorkspaces: []engineplugin.SpatialWorkspaceFact{
 				{
-					Ecosystem:         "supermap",
-					Kind:              engineplugin.SpatialWorkspaceSuperMapSDXPostGIS,
-					State:             engineplugin.SpatialWorkspaceStateNotDetected,
-					BackendEngineType: "postgresql",
-					RuntimeEngineType: "supermap_workflow",
-					CanEnable:         true,
-					RiskLevel:         engineplugin.SpatialWorkspaceRiskHigh,
+					Ecosystem:            "supermap",
+					Kind:                 engineplugin.SpatialWorkspaceSuperMapSDXPostGIS,
+					State:                engineplugin.SpatialWorkspaceStateNotDetected,
+					BackendEngineType:    "postgresql",
+					BoundRuntimeEngineID: &runtimeEngine.ID,
+					CanEnable:            true,
+					RiskLevel:            engineplugin.SpatialWorkspaceRiskHigh,
 				},
 			},
 		},
@@ -565,8 +546,8 @@ func TestEnableSpatialWorkspaceInvokesBoundSuperMapWorkflowRuntime(t *testing.T)
 	if updated == nil || updated.ID != targetEngine.ID {
 		t.Fatalf("updated engine = %#v, want target engine %d", updated, targetEngine.ID)
 	}
-	if healthCalls != 1 || listCalls != 1 || invokeCalls != 1 {
-		t.Fatalf("runtime calls = health:%d list:%d invoke:%d, want 1/1/1", healthCalls, listCalls, invokeCalls)
+	if listCalls != 1 || invokeCalls != 1 {
+		t.Fatalf("runtime calls = list:%d invoke:%d, want 1/1", listCalls, invokeCalls)
 	}
 	if invokePayload == nil {
 		t.Fatal("invoke payload not captured")
@@ -605,6 +586,32 @@ func systemTestWorkflowConnectionInfo(t *testing.T, rawURL string) map[string]in
 		"protocol": parsed.Scheme,
 		"host":     host,
 		"port":     port,
+	}
+}
+
+func systemTestWorkflowCapabilities(t *testing.T, engineType string) *models.JSONString {
+	t.Helper()
+	payload, err := engineplugin.MarshalEngineCapabilities(engineplugin.NewWorkflowCapabilities(engineType, engineplugin.WorkflowRuntimeAPIAddpV1))
+	if err != nil {
+		t.Fatalf("marshal workflow capabilities: %v", err)
+	}
+	return toJSONStringPtr(payload)
+}
+
+func systemTestWorkflowOperator(engineType, name string, modes []string) map[string]interface{} {
+	return map[string]interface{}{
+		"id":              name,
+		"name":            name,
+		"display_name":    name,
+		"engine_type":     engineType,
+		"type":            "table",
+		"category":        "SuperMap",
+		"category_path":   []string{"SuperMap"},
+		"description":     "SuperMap direct operator",
+		"parameters":      []map[string]interface{}{},
+		"output_ports":    []map[string]interface{}{},
+		"execution_modes": modes,
+		"effects":         []string{"ddl"},
 	}
 }
 
@@ -827,6 +834,29 @@ func TestValidateConnectionIdentityUnchangedForPostgreSQL(t *testing.T) {
 				t.Fatalf("validateConnectionIdentityUnchanged() error = %v", err)
 			}
 		})
+	}
+}
+
+func TestMongoConnectionIdentityUsesAuthenticationPrincipal(t *testing.T) {
+	service := &EngineService{}
+	original := models.ConnectionInfo{
+		"host": "mongo.internal", "port": 27017, "user": "reader",
+		"auth_source": "", "database": "business", "password": "old",
+	}
+
+	passwordRotation := models.ConnectionInfo{
+		"host": "mongo.internal", "port": 27017, "user": "reader",
+		"auth_source": "admin", "database": "Outdoor", "password": "new",
+	}
+	if err := service.validateConnectionIdentityUnchanged("mongodb", original, passwordRotation); err != nil {
+		t.Fatalf("default database and password must be mutable: %v", err)
+	}
+
+	changedUser := models.ConnectionInfo{
+		"host": "mongo.internal", "port": 27017, "user": "writer", "auth_source": "admin",
+	}
+	if err := service.validateConnectionIdentityUnchanged("mongodb", original, changedUser); !errors.Is(err, ErrEngineIdentityImmutable) {
+		t.Fatalf("changing MongoDB user must change identity, got %v", err)
 	}
 }
 

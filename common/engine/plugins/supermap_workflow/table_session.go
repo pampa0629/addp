@@ -26,6 +26,26 @@ const (
 	operatorTableWriteAbort   = "table.write_abort"
 )
 
+func RequiredTableReadOperators() []string {
+	return []string{operatorTableReadOpen, operatorTableReadBatch, operatorTableReadClose}
+}
+
+func RequiredTableWriteOperators() []string {
+	return []string{
+		operatorTableDelete,
+		operatorTableWritePrepare,
+		operatorTableWriteOpen,
+		operatorTableWriteBatch,
+		operatorTableWriteClose,
+		operatorTableWriteAbort,
+	}
+}
+
+func RequiredTableOperators() []string {
+	operators := RequiredTableReadOperators()
+	return append(operators, RequiredTableWriteOperators()...)
+}
+
 // SDXPostgreSQLTableProvider adapts one PostgreSQL Engine Instance to its bound
 // SuperMap Workflow runtime. It is instance-scoped and is never registered as a
 // separate database engine type.

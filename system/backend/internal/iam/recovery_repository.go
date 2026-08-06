@@ -187,6 +187,17 @@ func (r *Repository) ConsumePendingMFAChallenges(
 	return result.RowsAffected, wrapRepositoryError(result.Error)
 }
 
+func (r *Repository) ConsumePendingMFAEnrollments(
+	ctx context.Context,
+	principalID int64,
+	consumedAt time.Time,
+) (int64, error) {
+	result := r.db.WithContext(ctx).Model(&MFAEnrollment{}).
+		Where("principal_id = ? AND consumed_at IS NULL", principalID).
+		Update("consumed_at", consumedAt)
+	return result.RowsAffected, wrapRepositoryError(result.Error)
+}
+
 func (r *Repository) ConsumeActiveContextSelectionTickets(
 	ctx context.Context,
 	principalID int64,

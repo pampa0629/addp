@@ -9,7 +9,7 @@
 | 概念 | 含义 |
 | --- | --- |
 | Engine Instance | System 中的一条引擎实例，保存租户、名称、类型、连接配置、能力声明、生命周期和连接状态；一条记录只绑定一个确定的物理端点。 |
-| Engine Plugin | `common/engine/plugins/<engine_type>` 下的插件实现，负责连接、校验、测试和能力暴露。 |
+| Engine Plugin | `common/engine/plugins/<engine_type>` 下的内置引擎适配实现，负责非通用的连接、校验、测试和能力暴露；实现标准 Workflow Runtime 协议的外部运行时不要求编译期 Plugin。 |
 | Capability | 插件返回的结构化能力声明，版本为 `engine.capabilities/v1`。 |
 | Catalog | 引擎中的真实目录层级，如 schema/table、bucket/object、database/graph。 |
 | Item | 可被描述、预览、读取或写入的叶子数据项。 |
@@ -18,7 +18,7 @@
 ### Engine Instance 身份与生命周期
 
 - `engine_id` 是 Engine Instance 的平台身份，不是可重定向到任意物理引擎的连接槽位。
-- 插件通过 `ConnectionIdentityFields()` 声明物理端点身份字段。PostgreSQL 一类数据库通常使用 `host + port + database`，对象存储通常使用 `endpoint`，NFS 使用 `server + export_path`。
+- 插件通过 `ConnectionIdentityFields()` 声明 Engine Instance 身份字段。PostgreSQL 一类数据库通常使用 `host + port + database`；MongoDB 使用 `host + port + user + auth_source`，其中 `database` 仅是可选初始数据库；对象存储通常使用 `endpoint`，NFS 使用 `server + export_path`。
 - 名称、描述、凭据和非身份连接参数可以原地更新；任何身份字段变化都必须创建新的 Engine Instance，不得保留原 ID 并改指向另一物理端点。
 - 删除后重新注册始终产生新的自增 ID。平台不根据相似连接信息自动关联新旧 Engine Instance，也不迁移旧 locator、fingerprint 或 owner 状态。
 - 生命周期统一为 `active`、`disabled`、`deleting`。只有 `active` 进入业务消费列表。删除前先在原生命周期执行只读影响评估；用户确认后才进入 `deleting`，冻结新绑定和新执行并保留连接配置供权威复扫和 cleanup 使用。参与模块不可用、存在运行任务或复扫影响变化时删除必须暂停；cleanup 完成后才物理删除 System 记录和凭据。
@@ -41,6 +41,7 @@ ADDP 中容易混淆的三个概念需要明确区分：
 边界原则：
 
 - System 负责引擎控制面和实时 catalog 发现，对外提供 `POST /api/v1/system/engines/:id/catalog/children`。
+- MongoDB 实时 Catalog 只展示当前认证主体经原生 roles 授权的数据库和集合；ADDP 的 Tenant/Engine 使用授权控制“谁能使用该 Engine Instance”，不复制或覆盖 MongoDB 内部数据库权限。
 - Meta 负责扫描任务、元数据落库、元数据快照查询和索引事件，不再提供新的实时浏览公共接口。
 - Manager 负责数据管理体验和数据预览；展示已纳管资产时消费 Meta 快照，读取真实内容时走 Manager 后端预览能力。
 
@@ -192,6 +193,8 @@ classDiagram
 | Develop | 根据 `capabilities.compute` 选择查询、工作流或 Notebook 引擎。 |
 | Service | 使用 query runtime 和 Meta item/spatial 元数据发布数据服务。 |
 | Transfer | bounded table/content 路径消费 batch/session/content Provider；continuous source 消费 `ChangeStreamReaderProvider`，从同一 reader 获取分区 earliest/latest position 用于 lag/retention 诊断，由 Transfer adapter 归一化 ChangeEvent 并组合目标 Provider。 |
+
+Workflow Runtime 的发现以 System Engine Instance 和 Runtime Descriptor 为唯一控制面路径。Common 使用一个通用 HTTP `WorkflowRuntimeProvider` 消费所有声明 `compute.workflow.runtime_api=addp.workflow/v1` 的实例；GeoPython、Spark、Math、Model3D、PointCloud、SuperMap 和用户自研 Runtime 不分别维护重复协议插件。SuperMap SDX+ for PostgreSQL 等领域能力仍保留专用 table/session Provider，但 Provider 只依赖工作区绑定 Runtime ID、Runtime Descriptor 和必需 direct 算子，不依赖固定运行时 `engine_type`。
 
 ### DuckDB 联邦查询 Runtime 边界
 

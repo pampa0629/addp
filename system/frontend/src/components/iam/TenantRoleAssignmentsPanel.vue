@@ -116,12 +116,17 @@ const total = ref(0)
 const dialogVisible = ref(false)
 const formRef = ref()
 const form = reactive({ membershipId: '', roleId: '', scopeType: 'tenant', departmentId: '', projectGroupId: '', validUntil: null, reason: '' })
+const selectedMember = computed(() => members.value.find((member) => member.id === form.membershipId))
 const selectedRole = computed(() => roles.value.find((role) => role.id === form.roleId))
-const availableScopeTypes = computed(() => ['tenant', 'department', 'project_group'].filter((scope) => roles.value.some((role) => (role.allowed_scope_types || []).includes(scope))))
-const roleSelectionReady = computed(() => Boolean(form.membershipId && form.scopeType &&
+const compatibleRoles = computed(() => roles.value.filter((role) =>
+  (role.allowed_principal_types || []).includes(selectedMember.value?.principal_type)
+))
+const availableScopeTypes = computed(() => ['tenant', 'department', 'project_group'].filter((scope) => compatibleRoles.value.some((role) => (role.allowed_scope_types || []).includes(scope))))
+const roleSelectionReady = computed(() => Boolean(selectedMember.value?.principal_type && form.scopeType &&
   (form.scopeType !== 'department' || form.departmentId.trim()) &&
   (form.scopeType !== 'project_group' || form.projectGroupId.trim())))
 const roleOptions = computed(() => roleSelectionReady.value ? buildTenantRoleOptions(roles.value, memberAssignments.value, {
+  principalType: selectedMember.value.principal_type,
   scopeType: form.scopeType,
   departmentId: form.departmentId,
   projectGroupId: form.projectGroupId

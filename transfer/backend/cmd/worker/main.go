@@ -103,6 +103,7 @@ func main() {
 		log.Fatalf("Service Token Source 初始化失败: %v", err)
 	}
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
+	systemRuntimeClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, tokenSource, nil)
 	log.Printf("✅ MetaClient initialized: %s", cfg.MetaServiceURL)
 
 	// 初始化 Service 层
@@ -112,6 +113,7 @@ func main() {
 		repository.NewSyncStateRepository(db),
 		executionService,
 		systemClient,
+		systemRuntimeClient,
 		metaClient,
 	)
 	executionEngineService.SetConfig(cfg)

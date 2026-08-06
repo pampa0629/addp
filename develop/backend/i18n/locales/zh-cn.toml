@@ -58,6 +58,9 @@ other = "无法连接到数据源，请检查引擎状态和连接配置"
 [develop.query.sample_query_unavailable]
 other = "当前业务库中没有可生成样例的真实数据"
 
+[develop.query.sample_query_resource_empty]
+other = "所选数据项没有可用于生成查询模板的真实数据"
+
 [develop.query.template_resource_invalid]
 other = "所选资源不是当前引擎的可查询数据项"
 
@@ -221,3 +224,6 @@ other = "当前任务的执行参数契约暂时不可用"
 
 [develop.execution.start_failed]
 other = "启动任务执行失败"
+
+[develop.query.parameter_definitions_invalid]
+other = "查询参数定义无效，请检查参数名、类型、默认值和查询中的参数引用"

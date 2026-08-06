@@ -47,6 +47,21 @@ func TestValidateDevTaskExecutionConfigAcceptsQueryEngineID(t *testing.T) {
 	}
 }
 
+func TestValidateDevTaskExecutionConfigRequiresTargetLocatorEngineMatch(t *testing.T) {
+	err := validateDevTaskExecutionConfig(
+		commonExecution.TaskTypeQuery,
+		map[string]interface{}{
+			"query":          `{"find":"Persons","filter":{}}`,
+			"query_type":     "mql",
+			"target_locator": "addp://engine/11/path/Outdoor/Persons?type=collection",
+		},
+		map[string]interface{}{"engine_id": 12},
+	)
+	if err == nil || !strings.Contains(err.Error(), "必须与 execution_config.engine_id 一致") {
+		t.Fatalf("expected target locator engine mismatch, got %v", err)
+	}
+}
+
 func TestValidateDevTaskExecutionConfigRejectsMissingQueryEngineID(t *testing.T) {
 	err := validateDevTaskExecutionConfig(
 		commonExecution.TaskTypeQuery,

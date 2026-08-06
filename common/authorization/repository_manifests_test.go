@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 335 {
-		t.Fatalf("descriptor count = %d, want 335", len(descriptors))
+	if len(descriptors) != 336 {
+		t.Fatalf("descriptor count = %d, want 336", len(descriptors))
 	}
 	if descriptors[0].Key != "agent.configuration.read" || descriptors[len(descriptors)-1].Key != "transfer.task.update" {
 		t.Fatalf("descriptor boundary keys = %q, %q", descriptors[0].Key, descriptors[len(descriptors)-1].Key)
@@ -29,9 +29,25 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	}
 	assertRepositoryRolePermissions(t, roles, "platform.inference_runtime", []string{"system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "tenant.agent_runtime", []string{"inference.runtime.execute"})
-	assertRepositoryRolePermissions(t, roles, "tenant.copilot_runtime", []string{"inference.runtime.execute"})
+	assertRepositoryRolePermissions(t, roles, "tenant.copilot_runtime", []string{"develop.task.read", "inference.runtime.execute"})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.manager_runtime", []string{"service_principal"})
-	assertRepositoryRolePermissions(t, roles, "tenant.manager_runtime", []string{"inference.runtime.execute", "meta.catalog.read", "meta.scan_task.execute"})
+	assertRepositoryRolePermissions(t, roles, "tenant.manager_runtime", []string{
+		"inference.runtime.execute",
+		"meta.catalog.read",
+		"meta.scan_task.execute",
+		"system.engine_descriptor.read",
+	})
+	assertRepositoryRolePermissions(t, roles, "tenant.meta_runtime", []string{
+		"audit.tenant_event.create",
+		"system.engine.read",
+		"system.engine_descriptor.read",
+	})
+	assertRepositoryRolePermissions(t, roles, "tenant.transfer_runtime", []string{
+		"meta.catalog.read",
+		"meta.inspect.execute",
+		"meta.scan_task.execute",
+		"system.engine_descriptor.read",
+	})
 	assertRepositoryRolePrincipalTypes(t, roles, "platform.manager_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "platform.manager_runtime", []string{
 		"system.runtime_registry.update",

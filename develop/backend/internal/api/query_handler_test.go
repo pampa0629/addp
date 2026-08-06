@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -12,11 +13,39 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/engine/plugin"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
 )
+
+type emptyQueryTemplatePlugin struct{}
+
+func (p *emptyQueryTemplatePlugin) Type() string         { return "develop_empty_query_template_test" }
+func (p *emptyQueryTemplatePlugin) DisplayName() string  { return "Empty Query Template Test" }
+func (p *emptyQueryTemplatePlugin) EngineOrigin() string { return "general" }
+func (p *emptyQueryTemplatePlugin) TestConnection(context.Context, plugin.ConnectionInfo) error {
+	return nil
+}
+func (p *emptyQueryTemplatePlugin) ValidateConnectionInfo(plugin.ConnectionInfo) error { return nil }
+func (p *emptyQueryTemplatePlugin) DefaultPort() int                                   { return 0 }
+func (p *emptyQueryTemplatePlugin) RequiredFields() []string                           { return nil }
+func (p *emptyQueryTemplatePlugin) SensitiveFields() []string                          { return nil }
+func (p *emptyQueryTemplatePlugin) Capabilities() plugin.EngineCapabilities {
+	return plugin.EngineCapabilities{}
+}
+func (p *emptyQueryTemplatePlugin) CatalogModel() plugin.CatalogModelSpec {
+	return plugin.DynamicSchemaCatalogModel()
+}
+func (p *emptyQueryTemplatePlugin) QueryLanguages() []string { return []string{"mql"} }
+func (p *emptyQueryTemplatePlugin) GenerateSampleQuery(_ context.Context, _ plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
+	return `{"find":"` + opts.Path.Segments[len(opts.Path.Segments)-1].Name + `","filter":{},"limit":10}`, "mql"
+}
+func (p *emptyQueryTemplatePlugin) ExecuteRuntimeQuery(context.Context, plugin.ConnectionInfo, plugin.QueryRequest) (*plugin.QueryResult, error) {
+	return &plugin.QueryResult{Rows: []map[string]interface{}{}}, nil
+}
 
 func TestConnectionUsesUserDerivedReadAuthorizationAndServiceTokenConsumption(t *testing.T) {
 	runtimeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
@@ -183,6 +212,71 @@ func TestGetSampleQueryUsesAuthorizedEngineAndRejectsUnavailableCatalog(t *testi
 	}
 	if body["error_code"] != "sample_query_unavailable" || body["query"] != "" {
 		t.Fatalf("sample response = %#v", body)
+	}
+}
+
+func TestGetSampleQueryReportsSelectedResourceEmptyInRequestedLanguage(t *testing.T) {
+	provider := &emptyQueryTemplatePlugin{}
+	plugin.Register(provider)
+	t.Cleanup(func() { plugin.Unregister(provider.Type()) })
+
+	var issuedExecutionID string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/v1/system/auth/execution-authorizations":
+			var payload commonClient.IssueExecutionAuthorizationRequest
+			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			issuedExecutionID = payload.ExecutionID
+			_ = json.NewEncoder(w).Encode(commonClient.IssuedExecutionAuthorization{
+				ID: "77", ExecutionID: issuedExecutionID, Audience: "develop",
+				EngineIDs: []string{"12"}, Effects: []string{"read"}, ExpiresAt: time.Now().Add(time.Minute),
+				ActorPrincipalID: "1", TenantID: "7", TenantMembershipID: "9", IssuedAuthorizationVersion: "3",
+			})
+		case "/api/v1/system/execution-authorizations/77/engine-accesses":
+			_ = json.NewEncoder(w).Encode(commonClient.ExecutionEngineAccess{
+				AuthorizationID: "77", ExecutionID: issuedExecutionID,
+				Audience: "develop", EngineID: "12", Effects: []string{"read"}, ExpiresAt: time.Now().Add(time.Minute),
+				Engine: &models.Engine{ID: 12, EngineType: provider.Type(), ConnectionInfo: models.ConnectionInfo{}},
+			})
+		default:
+			t.Fatalf("unexpected System path: %s", request.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	tests := []struct {
+		language string
+		message  string
+	}{
+		{language: "zh-cn", message: "所选数据项没有可用于生成查询模板的真实数据"},
+		{language: "en", message: "The selected data item contains no real data for a query template."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.language, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			router := gin.New()
+			router.Use(commoni18n.I18nMiddleware())
+			router.GET("/engines/:id/sample-query", func(c *gin.Context) {
+				setTenantAuthContextForTest(c, 7, 1)
+				newAuthorizedQueryHandlerForTest(server.URL).GetSampleQuery(c)
+			})
+			locator := "addp://engine/12/path/business/empty_orders?type=collection&item_id=9"
+			request := httptest.NewRequest(http.MethodGet, "/engines/12/sample-query?locator="+url.QueryEscape(locator), nil)
+			request.Header.Set("Authorization", "Bearer addp_at_user")
+			request.Header.Set("Accept-Language", tt.language)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+
+			var body map[string]string
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if response.Code != http.StatusUnprocessableEntity || body["error_code"] != "sample_query_resource_empty" || body["error"] != tt.message {
+				t.Fatalf("status = %d, body = %#v", response.Code, body)
+			}
+		})
 	}
 }
 

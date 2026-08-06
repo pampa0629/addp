@@ -34,6 +34,22 @@ definitions:
     - provider_connection_id
     - upstream_model
     type: object
+  github_com_addp_inference_internal_service.DiscoveredModel:
+    properties:
+      id:
+        type: string
+      owned_by:
+        type: string
+    type: object
+  github_com_addp_inference_internal_service.ModelDiscoveryResponse:
+    properties:
+      models:
+        items:
+          $ref: '#/definitions/github_com_addp_inference_internal_service.DiscoveredModel'
+        type: array
+      provider_connection_id:
+        type: string
+    type: object
   github_com_addp_inference_internal_service.ProbeResponse:
     properties:
       adapter_type:
@@ -89,6 +105,29 @@ definitions:
     - name
     - scope_type
     type: object
+  github_com_addp_inference_internal_service.ProviderTemplate:
+    properties:
+      adapter_type:
+        type: string
+      category:
+        type: string
+      code:
+        type: string
+      credential_mode:
+        type: string
+      default_endpoint:
+        type: string
+      documentation_url:
+        type: string
+      endpoint_editable:
+        type: boolean
+      model_discovery:
+        type: string
+      suggested_models:
+        items:
+          $ref: '#/definitions/github_com_addp_inference_internal_service.SuggestedModel'
+        type: array
+    type: object
   github_com_addp_inference_internal_service.ProviderView:
     properties:
       adapter_type:
@@ -121,6 +160,25 @@ definitions:
         type: string
       updated_by:
         type: integer
+    type: object
+  github_com_addp_inference_internal_service.SuggestedModel:
+    properties:
+      capability_preset:
+        type: string
+      dimension:
+        type: integer
+      modalities:
+        items:
+          type: string
+        type: array
+      operations:
+        items:
+          type: string
+        type: array
+      profile_code:
+        type: string
+      upstream_model:
+        type: string
     type: object
   inference.ChatRequest:
     properties:
@@ -982,6 +1040,69 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - inference.provider_credential.update
+  /provider-connections/{id}/discover-models:
+    post:
+      parameters:
+      - description: Provider ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_inference_internal_service.ModelDiscoveryResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/inference.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/inference.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/inference.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 发现 Provider 可用模型 | Discover provider models
+      tags:
+      - Inference Provider
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - inference.provider.read
+      - inference.deployment.execute
+  /provider-templates:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_inference_internal_service.ProviderTemplate'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/inference.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/inference.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询模型服务模板 | List provider templates
+      tags:
+      - Inference Provider
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - inference.provider.read
 securityDefinitions:
   BearerAuth:
     in: header

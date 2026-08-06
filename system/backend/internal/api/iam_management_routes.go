@@ -36,7 +36,7 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime) erro
 		return err
 	}
 	platformUserPermissions, err := permissionGuards(permission, []string{
-		"iam.local_account.reset", "iam.user.create", "iam.user.read",
+		"iam.local_account.reset", "iam.mfa_credential.reset", "iam.user.create", "iam.user.read",
 		"iam.user.reactivate", "iam.user.suspend", "iam.user.update",
 	})
 	if err != nil {
@@ -90,6 +90,7 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime) erro
 			users.GET("/:id", platformUserPermissions["iam.user.read"], runtime.PlatformUserHandler.Get)
 			users.PUT("/:id", platformUserPermissions["iam.user.update"], runtime.PlatformUserHandler.Update)
 			users.POST("/:id/reset-password", platformUserPermissions["iam.local_account.reset"], runtime.PlatformUserHandler.ResetLocalAccountPassword)
+			users.POST("/:id/reset-mfa", platformUserPermissions["iam.mfa_credential.reset"], runtime.PlatformUserHandler.ResetMFACredential)
 			users.POST("/:id/suspend", platformUserPermissions["iam.user.suspend"], runtime.PlatformUserHandler.Suspend)
 			users.POST("/:id/reactivate", platformUserPermissions["iam.user.reactivate"], runtime.PlatformUserHandler.Reactivate)
 		}

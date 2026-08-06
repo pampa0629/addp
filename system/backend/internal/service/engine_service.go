@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/addp/common/dbbridge"
 	engineplugin "github.com/addp/common/engine/plugin"
+	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
 	"github.com/addp/common/events"
 	commonutils "github.com/addp/common/utils"
 	"github.com/addp/system/internal/models"
@@ -1049,6 +1051,12 @@ func normalizedConnectionIdentityValue(field string, connInfo models.ConnectionI
 			return value
 		}
 		return strings.TrimRight(value, "/")
+	case "auth_source":
+		value := strings.TrimSpace(engineplugin.GetString(engineplugin.ConnectionInfo(connInfo), field))
+		if value == "" && plugin != nil && plugin.Type() == "mongodb" {
+			return "admin"
+		}
+		return value
 	default:
 		return strings.TrimSpace(engineplugin.GetString(engineplugin.ConnectionInfo(connInfo), field))
 	}
@@ -1297,6 +1305,10 @@ func (s *EngineService) validateSystemEngineType(engineType string, capabilities
 
 func (s *EngineService) ValidateSystemEngineType(engineType string) error {
 	return s.validateSystemEngineType(engineType, nil)
+}
+
+func (s *EngineService) ValidateSystemEngineRegistration(engineType string, capabilities *models.JSONString) error {
+	return s.validateSystemEngineType(engineType, capabilities)
 }
 
 // RefreshAllEngineCapabilities 将空能力、旧能力声明或内置引擎能力刷新为当前实例能力结构。
@@ -1606,7 +1618,6 @@ func (s *EngineService) enrichInstanceCapabilities(engine *models.Engine, capabi
 		return capabilitiesJSON, nil
 	}
 
-	boundRuntimeID, hasRuntime := s.firstAvailableWorkflowEngine(engine.TenantID, "supermap_workflow")
 	changed := false
 	for i := range workspaces {
 		ws := &workspaces[i]
@@ -1618,23 +1629,29 @@ func (s *EngineService) enrichInstanceCapabilities(engine *models.Engine, capabi
 			kind != engineplugin.SpatialWorkspaceSuperMapSDXPostgreSQL {
 			continue
 		}
-		if strings.ToLower(strings.TrimSpace(ws.RuntimeEngineType)) != "supermap_workflow" {
-			continue
-		}
+		ws.BoundRuntimeEngineID = nil
 		if ws.State == engineplugin.SpatialWorkspaceStateDetected {
 			ws.CanEnable = false
+			if kind == engineplugin.SpatialWorkspaceSuperMapSDXPostgreSQL {
+				if runtimeEngine, ok := s.firstAvailableDirectWorkflowRuntime(context.Background(), engine.TenantID, supermapworkflow.RequiredTableOperators()...); ok {
+					ws.BoundRuntimeEngineID = &runtimeEngine.ID
+					if caps.Storage != nil && caps.Storage.Store != nil {
+						caps.Storage.Store.TableSpatialEncoding = &engineplugin.NativeTableSpatialEncodingCapability{
+							GeometryReadEncodings:  []string{"ewkb"},
+							GeometryWriteEncodings: []string{"ewkb"},
+						}
+					}
+				}
+			}
 		} else {
+			operatorName, ok := spatialWorkspaceEnableOperator(kind)
+			if !ok {
+				continue
+			}
+			runtimeEngine, hasRuntime := s.firstAvailableDirectWorkflowRuntime(context.Background(), engine.TenantID, operatorName)
 			ws.CanEnable = ws.CanEnable && hasRuntime
-		}
-		if hasRuntime {
-			ws.BoundRuntimeEngineID = &boundRuntimeID
-		}
-		if kind == engineplugin.SpatialWorkspaceSuperMapSDXPostgreSQL &&
-			ws.State == engineplugin.SpatialWorkspaceStateDetected && hasRuntime &&
-			caps.Storage != nil && caps.Storage.Store != nil {
-			caps.Storage.Store.TableSpatialEncoding = &engineplugin.NativeTableSpatialEncodingCapability{
-				GeometryReadEncodings:  []string{"ewkb"},
-				GeometryWriteEncodings: []string{"ewkb"},
+			if hasRuntime {
+				ws.BoundRuntimeEngineID = &runtimeEngine.ID
 			}
 		}
 		changed = true
@@ -1689,42 +1706,26 @@ func (s *EngineService) EnableSpatialWorkspace(ctx context.Context, id uint, eco
 	if !target.CanEnable || strings.EqualFold(strings.TrimSpace(target.State), engineplugin.SpatialWorkspaceStateDetected) {
 		return nil, errors.New("当前空间工作区暂不可启用")
 	}
-	runtimeID, hasRuntime := uint(0), false
-	if target.BoundRuntimeEngineID != nil && *target.BoundRuntimeEngineID > 0 {
-		runtimeID = *target.BoundRuntimeEngineID
-		hasRuntime = true
-	} else if boundRuntimeID, ok := s.firstAvailableWorkflowEngine(engine.TenantID, "supermap_workflow"); ok {
-		runtimeID = boundRuntimeID
-		hasRuntime = true
-	}
-	if !hasRuntime {
-		return nil, errors.New("没有可用的 supermap_workflow 运行时")
+	operatorName, ok := spatialWorkspaceEnableOperator(target.Kind)
+	if !ok {
+		return nil, ErrSpatialWorkspaceNotFound
 	}
 
-	runtimeEngine, err := s.repo.GetByID(runtimeID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("绑定的 supermap_workflow 运行时不存在")
+	var runtimeEngine *models.Engine
+	if target.BoundRuntimeEngineID != nil && *target.BoundRuntimeEngineID > 0 {
+		runtimeEngine, err = s.workflowRuntimeByIDForTenant(*target.BoundRuntimeEngineID, tenantID)
+		if err != nil {
+			return nil, err
 		}
-		return nil, err
-	}
-	if strings.ToLower(strings.TrimSpace(runtimeEngine.EngineType)) != "supermap_workflow" {
-		return nil, errors.New("绑定的运行时不是 supermap_workflow")
+	} else if discovered, found := s.firstAvailableDirectWorkflowRuntime(ctx, engine.TenantID, operatorName); found {
+		runtimeEngine = discovered
+	} else {
+		return nil, fmt.Errorf("没有提供 direct 算子 %s 的可用工作流运行时", operatorName)
 	}
 
 	decryptedConnInfo, err := s.decryptStoredConnectionInfo(engine.EngineType, engine.ConnectionInfo)
 	if err != nil {
 		return nil, fmt.Errorf("解密连接信息失败: %w", err)
-	}
-
-	operatorName := ""
-	switch strings.ToLower(strings.TrimSpace(target.Kind)) {
-	case engineplugin.SpatialWorkspaceSuperMapSDXPostGIS:
-		operatorName = "datasource.enable_postgis"
-	case engineplugin.SpatialWorkspaceSuperMapSDXPostgreSQL:
-		operatorName = "datasource.enable_postgresql"
-	default:
-		return nil, ErrSpatialWorkspaceNotFound
 	}
 
 	invokeResult, err := dbbridge.InvokeOperator(ctx, runtimeEngine, operatorName, engineplugin.OperatorInvokeRequest{
@@ -1759,9 +1760,20 @@ func spatialWorkspaceMatches(workspace engineplugin.SpatialWorkspaceFact, ecosys
 		strings.EqualFold(strings.TrimSpace(workspace.Kind), kind)
 }
 
-func (s *EngineService) firstAvailableWorkflowEngine(tenantID *uint, engineType string) (uint, bool) {
+func spatialWorkspaceEnableOperator(kind string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case engineplugin.SpatialWorkspaceSuperMapSDXPostGIS:
+		return "datasource.enable_postgis", true
+	case engineplugin.SpatialWorkspaceSuperMapSDXPostgreSQL:
+		return "datasource.enable_postgresql", true
+	default:
+		return "", false
+	}
+}
+
+func (s *EngineService) firstAvailableDirectWorkflowRuntime(ctx context.Context, tenantID *uint, operatorNames ...string) (*models.Engine, bool) {
 	if s.repo == nil {
-		return 0, false
+		return nil, false
 	}
 
 	var (
@@ -1769,14 +1781,74 @@ func (s *EngineService) firstAvailableWorkflowEngine(tenantID *uint, engineType 
 		err     error
 	)
 	if tenantID != nil {
-		engines, _, err = s.repo.ListByTenant(*tenantID, 0, 1000, engineType)
+		engines, _, err = s.repo.ListByTenant(*tenantID, 0, 1000, "")
 	} else {
-		engines, _, err = s.repo.List(0, 1000, engineType)
+		engines, _, err = s.repo.List(0, 1000, "")
 	}
 	if err != nil || len(engines) == 0 {
-		return 0, false
+		return nil, false
 	}
-	return engines[0].ID, true
+	sort.SliceStable(engines, func(i, j int) bool {
+		if engines[i].IsBuiltin != engines[j].IsBuiltin {
+			return !engines[i].IsBuiltin
+		}
+		return engines[i].ID < engines[j].ID
+	})
+	for i := range engines {
+		candidate, err := s.workflowRuntimeProbeEngine(&engines[i])
+		if err != nil {
+			continue
+		}
+		if err := dbbridge.RequireDirectWorkflowOperators(ctx, candidate, operatorNames...); err == nil {
+			return candidate, true
+		}
+	}
+	return nil, false
+}
+
+func (s *EngineService) workflowRuntimeByIDForTenant(id, tenantID uint) (*models.Engine, error) {
+	runtimeEngine, err := s.repo.GetByID(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("绑定的工作流运行时不存在")
+		}
+		return nil, err
+	}
+	if runtimeEngine.LifecycleState != models.EngineLifecycleActive {
+		return nil, errors.New("绑定的工作流运行时未启用")
+	}
+	if err := s.authorizeResourceAccess(runtimeEngine, tenantID); err != nil {
+		return nil, errors.New("绑定的工作流运行时对当前租户不可见")
+	}
+	probeEngine, err := s.workflowRuntimeProbeEngine(runtimeEngine)
+	if err != nil {
+		return nil, fmt.Errorf("绑定的引擎不是有效的 addp.workflow/v1 运行时: %w", err)
+	}
+	return probeEngine, nil
+}
+
+func (s *EngineService) workflowRuntimeProbeEngine(engine *models.Engine) (*models.Engine, error) {
+	if engine == nil || engine.Capabilities == nil || strings.TrimSpace(string(*engine.Capabilities)) == "" {
+		return nil, errors.New("缺少工作流能力声明")
+	}
+	capabilities, err := engineplugin.ParseEngineCapabilities(string(*engine.Capabilities))
+	if err != nil {
+		return nil, err
+	}
+	if capabilities.Compute == nil || capabilities.Compute.Workflow == nil ||
+		!capabilities.Compute.Workflow.Supported ||
+		capabilities.Compute.Workflow.RuntimeAPI != engineplugin.WorkflowRuntimeAPIAddpV1 {
+		return nil, errors.New("未声明 addp.workflow/v1 工作流能力")
+	}
+	probeEngine := *engine
+	probeEngine.ConnectionInfo, err = s.decryptStoredConnectionInfo(engine.EngineType, engine.ConnectionInfo)
+	if err != nil {
+		return nil, fmt.Errorf("解密运行时连接信息失败: %w", err)
+	}
+	if _, err := dbbridge.WorkflowRuntimeProviderForEngine(&probeEngine); err != nil {
+		return nil, err
+	}
+	return &probeEngine, nil
 }
 
 func (s *EngineService) usesPluginCapabilities(engineType string) bool {

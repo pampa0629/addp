@@ -39,7 +39,6 @@ type SpatialWorkspaceFact struct {
 	Kind                 string                 `json:"kind"`
 	State                string                 `json:"state"`
 	BackendEngineType    string                 `json:"backend_engine_type,omitempty"`
-	RuntimeEngineType    string                 `json:"runtime_engine_type,omitempty"`
 	BoundRuntimeEngineID *uint                  `json:"bound_runtime_engine_id,omitempty"`
 	CanEnable            bool                   `json:"can_enable,omitempty"`
 	RiskLevel            string                 `json:"risk_level,omitempty"`
@@ -237,7 +236,14 @@ type QueryCapability struct {
 	ReadOnly        bool                       `json:"read_only,omitempty"`
 	SupportsExplain bool                       `json:"supports_explain,omitempty"`
 	SupportsCancel  bool                       `json:"supports_cancel,omitempty"`
+	Parameters      *QueryParameterCapability  `json:"parameters,omitempty"`
 	Federation      *QueryFederationCapability `json:"federation,omitempty"`
+}
+
+type QueryParameterCapability struct {
+	Supported bool     `json:"supported"`
+	Languages []string `json:"languages"`
+	Types     []string `json:"types"`
 }
 
 type QueryFederationCapability struct {

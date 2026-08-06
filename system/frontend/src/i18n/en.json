@@ -127,6 +127,9 @@
         "passwordMismatch": "The passwords do not match",
         "passwordResetFailed": "Password reset failed",
         "passwordResetSuccess": "Password reset and existing sessions revoked",
+        "mfaResetFailed": "Authenticator reset failed",
+        "mfaResetSuccess": "Authenticator reset and existing sessions revoked",
+        "resetMFA": "Reset Authenticator",
         "resetPassword": "Reset Password",
         "username": "Username"
       },
@@ -644,6 +647,7 @@
           "readOnly": "Read-only",
           "queryPlan": "Query plan",
           "cancel": "Cancelable",
+          "queryParameters": "Query parameters",
           "dynamicOperators": "Dynamic operators",
           "reader": "Reader",
           "writer": "Writer",
@@ -682,6 +686,12 @@
         "resultKind": {
           "table": "Table",
           "scalar": "Scalar"
+        },
+        "parameterType": {
+          "string": "Text",
+          "integer": "Integer",
+          "number": "Number",
+          "boolean": "Boolean"
         },
         "geometryReadEncoding": {
           "ewkb": "EWKB",

@@ -129,7 +129,7 @@ if [ -n "${INTERNAL_API_KEY:-}" ]; then
   http_code="$(curl -sS -o "${response_file}" -w '%{http_code}' \
     -H "X-Internal-API-Key: ${INTERNAL_API_KEY}" \
     -H "Content-Type: application/json" \
-    -d "{\"engine_type\":\"supermap_workflow\",\"name\":\"SuperMap 工作流引擎\",\"description\":\"面向超图 iObjects C++ 的工作流运行时\",\"connection_info\":{\"protocol\":\"http\",\"port\":${port}},\"is_builtin\":true}" \
+    -d "{\"engine_type\":\"supermap_workflow\",\"name\":\"SuperMap 工作流引擎\",\"description\":\"面向超图 iObjects C++ 的工作流运行时\",\"connection_info\":{\"protocol\":\"http\",\"port\":${port}},\"capabilities\":{\"schema_version\":\"engine.capabilities/v1\",\"engine_type\":\"supermap_workflow\",\"engine_family\":\"workflow\",\"compute\":{\"workflow\":{\"supported\":true,\"runtime_api\":\"addp.workflow/v1\",\"dynamic_operators\":true}}},\"is_builtin\":true}" \
     "${system_url%/}/api/v1/internal/engines/register" || true)"
   if [ "${http_code}" = "200" ] || [ "${http_code}" = "202" ]; then
     echo "  ✓ SuperMap Workflow Engine 已注册到 System"

@@ -27,6 +27,7 @@ func (executor *fakeApprovalExecutor) prepareContentExecution(
 	devType string,
 	content map[string]interface{},
 	executionConfig map[string]interface{},
+	_ map[string]interface{},
 	tenantID uint,
 	userID uint,
 	_ string,

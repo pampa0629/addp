@@ -1004,6 +1004,105 @@
                     "inference.provider_credential.update"
                 ]
             }
+        },
+        "/provider-connections/{id}/discover-models": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Inference Provider"
+                ],
+                "summary": "发现 Provider 可用模型 | Discover provider models",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Provider ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_inference_internal_service.ModelDiscoveryResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/inference.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/inference.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/inference.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "inference.provider.read",
+                    "inference.deployment.execute"
+                ]
+            }
+        },
+        "/provider-templates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Inference Provider"
+                ],
+                "summary": "查询模型服务模板 | List provider templates",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_inference_internal_service.ProviderTemplate"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/inference.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/inference.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "inference.provider.read"
+                ]
+            }
         }
     },
     "definitions": {
@@ -1053,6 +1152,31 @@
                     "type": "string"
                 },
                 "upstream_model": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_inference_internal_service.DiscoveredModel": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "owned_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_inference_internal_service.ModelDiscoveryResponse": {
+            "type": "object",
+            "properties": {
+                "models": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_inference_internal_service.DiscoveredModel"
+                    }
+                },
+                "provider_connection_id": {
                     "type": "string"
                 }
             }
@@ -1138,6 +1262,41 @@
                 }
             }
         },
+        "github_com_addp_inference_internal_service.ProviderTemplate": {
+            "type": "object",
+            "properties": {
+                "adapter_type": {
+                    "type": "string"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "credential_mode": {
+                    "type": "string"
+                },
+                "default_endpoint": {
+                    "type": "string"
+                },
+                "documentation_url": {
+                    "type": "string"
+                },
+                "endpoint_editable": {
+                    "type": "boolean"
+                },
+                "model_discovery": {
+                    "type": "string"
+                },
+                "suggested_models": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_inference_internal_service.SuggestedModel"
+                    }
+                }
+            }
+        },
         "github_com_addp_inference_internal_service.ProviderView": {
             "type": "object",
             "properties": {
@@ -1185,6 +1344,35 @@
                 },
                 "updated_by": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_inference_internal_service.SuggestedModel": {
+            "type": "object",
+            "properties": {
+                "capability_preset": {
+                    "type": "string"
+                },
+                "dimension": {
+                    "type": "integer"
+                },
+                "modalities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "operations": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "profile_code": {
+                    "type": "string"
+                },
+                "upstream_model": {
+                    "type": "string"
                 }
             }
         },

@@ -5,15 +5,19 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
+	"strconv"
 	"sync/atomic"
 	"testing"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/contentio"
 	engineplugin "github.com/addp/common/engine/plugin"
+	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
@@ -27,6 +31,16 @@ func newExecutionTestMetaClient(baseURL string) *commonClient.MetaClient {
 	return commonClient.NewMetaClient(baseURL, commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
 		return "test-token", nil
 	}))
+}
+
+type executionTestTokenSource struct{}
+
+func (executionTestTokenSource) Token(context.Context, uint) (string, error) {
+	return "test-token", nil
+}
+
+func (executionTestTokenSource) PlatformToken(context.Context) (string, error) {
+	return "platform-test-token", nil
 }
 
 func TestNativeTargetCatalogPathsIgnoresEncodedObjectTarget(t *testing.T) {
@@ -112,21 +126,53 @@ func containsString(values []string, want string) bool {
 }
 
 func TestSuperMapSDXPostgreSQLTableProviderUsesExactBoundRuntime(t *testing.T) {
-	var listCalls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		listCalls.Add(1)
-		if r.URL.Path != "/api/v1/internal/engines" || r.URL.Query().Get("tenant_id") != "7" {
-			t.Fatalf("request = %s?%s, want tenant-scoped internal engine list", r.URL.Path, r.URL.RawQuery)
+	const runtimeEngineType = "tenant_supermap_runtime"
+	var operatorCalls atomic.Int32
+	runtimeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		operatorCalls.Add(1)
+		if r.Method != http.MethodGet || r.URL.Path != "/api/operators" {
+			t.Fatalf("runtime request = %s %s, want GET /api/operators", r.Method, r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`[
-			{"id":11,"engine_type":"supermap_workflow","lifecycle_state":"active","connection_info":{"host":"runtime-a","port":8103},"capabilities":{"schema_version":"engine.capabilities/v1","engine_type":"supermap_workflow","engine_family":"workflow","compute":{"workflow":{"supported":true,"runtime_api":"addp.workflow/v1","dynamic_operators":true}}}},
-			{"id":22,"engine_type":"supermap_workflow","lifecycle_state":"active","connection_info":{"host":"runtime-b","port":8103},"capabilities":{"schema_version":"engine.capabilities/v1","engine_type":"supermap_workflow","engine_family":"workflow","compute":{"workflow":{"supported":true,"runtime_api":"addp.workflow/v1","dynamic_operators":true}}}}
-		]`))
+		operators := make([]map[string]interface{}, 0, len(supermapworkflow.RequiredTableOperators()))
+		for _, name := range supermapworkflow.RequiredTableOperators() {
+			operators = append(operators, executionTestWorkflowOperator(runtimeEngineType, name))
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"operators": operators})
 	}))
-	defer server.Close()
+	defer runtimeServer.Close()
 
-	service := &ExecutionEngineService{systemClient: commonClient.NewSystemClientWithInternalKey(server.URL, "internal-key")}
+	runtimeEndpoint := executionTestRuntimeEndpoint(t, runtimeServer.URL)
+	runtimeCapabilities := executionTestWorkflowCapabilities(t, runtimeEngineType)
+	var descriptorCalls atomic.Int32
+	systemServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		descriptorCalls.Add(1)
+		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Fatalf("Authorization = %q, want Bearer test-token", got)
+		}
+		if r.Method != http.MethodGet {
+			t.Fatalf("system request method = %s, want GET", r.Method)
+		}
+		if r.URL.Path != "/api/v1/system/runtime/engine-descriptors/22" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(commonModels.EngineRuntimeDescriptor{
+			ID:              22,
+			Name:            "Tenant SuperMap Runtime",
+			EngineType:      runtimeEngineType,
+			EngineOrigin:    "extension",
+			LifecycleState:  commonModels.EngineLifecycleActive,
+			Capabilities:    runtimeCapabilities,
+			RuntimeEndpoint: runtimeEndpoint,
+		})
+	}))
+	defer systemServer.Close()
+
+	service := &ExecutionEngineService{
+		systemRuntime: commonClient.NewSystemServiceClient(systemServer.URL, executionTestTokenSource{}, systemServer.Client()),
+	}
 	plainBinding := planner.EngineBinding{Type: "postgresql"}
 	if provider, err := service.superMapSDXPostgreSQLTableProvider(context.Background(), 7, plainBinding); err != nil || provider != nil {
 		t.Fatalf("plain PostgreSQL provider = %#v, error = %v, want nil", provider, err)
@@ -135,8 +181,8 @@ func TestSuperMapSDXPostgreSQLTableProviderUsesExactBoundRuntime(t *testing.T) {
 	if provider, err := service.superMapSDXPostgreSQLTableProvider(context.Background(), 7, postGISBinding); err != nil || provider != nil {
 		t.Fatalf("SuperMap SDX+ for PostGIS provider = %#v, error = %v, want nil", provider, err)
 	}
-	if got := listCalls.Load(); got != 0 {
-		t.Fatalf("runtime list calls = %d before SuperMap SDX+ for PostgreSQL binding, want 0", got)
+	if got := descriptorCalls.Load(); got != 0 {
+		t.Fatalf("runtime descriptor calls = %d before SuperMap SDX+ for PostgreSQL binding, want 0", got)
 	}
 
 	provider, err := service.superMapSDXPostgreSQLTableProvider(
@@ -147,8 +193,11 @@ func TestSuperMapSDXPostgreSQLTableProviderUsesExactBoundRuntime(t *testing.T) {
 	if err != nil || provider == nil {
 		t.Fatalf("bound provider = %#v, error = %v", provider, err)
 	}
-	if got := listCalls.Load(); got != 1 {
-		t.Fatalf("runtime list calls = %d, want 1", got)
+	if got := descriptorCalls.Load(); got != 1 {
+		t.Fatalf("runtime descriptor calls = %d, want 1", got)
+	}
+	if got := operatorCalls.Load(); got != 1 {
+		t.Fatalf("runtime operator calls = %d, want 1", got)
 	}
 
 	_, err = service.superMapSDXPostgreSQLTableProvider(
@@ -161,6 +210,50 @@ func TestSuperMapSDXPostgreSQLTableProviderUsesExactBoundRuntime(t *testing.T) {
 	}
 }
 
+func executionTestWorkflowOperator(engineType, name string) map[string]interface{} {
+	return map[string]interface{}{
+		"id":              name,
+		"name":            name,
+		"display_name":    name,
+		"engine_type":     engineType,
+		"type":            "table",
+		"category":        "SuperMap Table",
+		"category_path":   []string{"SuperMap Table"},
+		"description":     "SuperMap table operator",
+		"parameters":      []map[string]interface{}{},
+		"output_ports":    []map[string]interface{}{},
+		"execution_modes": []string{"direct"},
+		"effects":         []string{"read", "write"},
+	}
+}
+
+func executionTestWorkflowCapabilities(t *testing.T, engineType string) *commonModels.JSONString {
+	t.Helper()
+	payload, err := engineplugin.MarshalEngineCapabilities(engineplugin.NewWorkflowCapabilities(engineType, engineplugin.WorkflowRuntimeAPIAddpV1))
+	if err != nil {
+		t.Fatalf("marshal workflow capabilities: %v", err)
+	}
+	value := commonModels.JSONString(payload)
+	return &value
+}
+
+func executionTestRuntimeEndpoint(t *testing.T, rawURL string) *commonModels.EngineRuntimeEndpoint {
+	t.Helper()
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parse runtime URL: %v", err)
+	}
+	host, portText, err := net.SplitHostPort(parsed.Host)
+	if err != nil {
+		t.Fatalf("split runtime host: %v", err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		t.Fatalf("parse runtime port: %v", err)
+	}
+	return &commonModels.EngineRuntimeEndpoint{Protocol: parsed.Scheme, Host: host, Port: port}
+}
+
 func superMapWorkspaceBinding(kind string, boundRuntimeID uint) planner.EngineBinding {
 	capabilities := &engineplugin.EngineCapabilities{
 		SchemaVersion: engineplugin.CapabilitiesSchemaVersion,
@@ -171,7 +264,6 @@ func superMapWorkspaceBinding(kind string, boundRuntimeID uint) planner.EngineBi
 		Ecosystem:            "supermap",
 		Kind:                 kind,
 		State:                engineplugin.SpatialWorkspaceStateDetected,
-		RuntimeEngineType:    "supermap_workflow",
 		BoundRuntimeEngineID: &boundRuntimeID,
 	}})
 	return planner.EngineBinding{Type: "postgresql", Capabilities: capabilities}

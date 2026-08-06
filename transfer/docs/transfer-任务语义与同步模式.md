@@ -26,7 +26,7 @@ Transfer 负责：
 
 具体引擎的 catalog、native table 读写和 change stream 读取属于 `common/engine` Provider；encoded 格式读写属于 `common/format` Provider。Transfer 组合这些能力，不按具体源目标组合建立专用通道。
 
-SuperMap 空间表也遵守同一边界。`supermap/sdx_postgis` 继续使用 PostgreSQL/PostGIS 原生 Provider；`supermap/sdx_postgresql` 的 bounded table 读取和写入由绑定的 `supermap_workflow` Provider 执行 SDK direct table session。两种方向都使用统一 `BatchData` 业务模型；当前 `supermap.table-batch/v1` HTTP 线协议固定为 JSON，geometry 值是 EWKB 字节并按 JSON 标准 base64 编码。Transfer 和 Common Spatial 不解析或生成 SuperMap 私有 geometry Blob，也不建立 PostGIS→SuperMap、ArcGIS SDE→SuperMap 等引擎组合通道。
+SuperMap 空间表也遵守同一边界。`supermap/sdx_postgis` 继续使用 PostgreSQL/PostGIS 原生 Provider；`supermap/sdx_postgresql` 的 bounded table 读取和写入由 `bound_runtime_engine_id` 指向的兼容 Workflow Runtime 执行 SDK direct table session。Transfer 通过 Tenant Service Token 读取 Runtime Descriptor，并校验 `addp.workflow/v1` 与完整表读写 direct 算子，不按固定 `engine_type` 选择 Runtime。两种方向都使用统一 `BatchData` 业务模型；当前 `supermap.table-batch/v1` HTTP 线协议固定为 JSON，geometry 值是 EWKB 字节并按 JSON 标准 base64 编码。Transfer 和 Common Spatial 不解析或生成 SuperMap 私有 geometry Blob，也不建立 PostGIS→SuperMap、ArcGIS SDE→SuperMap 等引擎组合通道。
 
 `supermap/sdx_postgresql` 写会话提交不是“最后一批数据已发送”。运行时只有在 SDK `DatasetVector.Append` 完成全部批次，随后完成 `ComputeBounds()`、`UpdateSpatialIndex()`，并关闭重开校验记录数、Bounds 和索引状态后，才能向 Transfer 返回成功。首期只进入 bounded snapshot 支持矩阵；continuous/CDC 必须另行定义目标幂等和位置提交语义。
 

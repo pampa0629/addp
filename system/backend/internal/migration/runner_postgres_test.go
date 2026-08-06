@@ -177,8 +177,8 @@ func TestMetaServicePrincipalForwardMigrationAgainstPostgres(t *testing.T) {
 	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
 		t.Fatalf("read Manager catalog migration version: %v", err)
 	}
-	if version != 46 || dirty {
-		t.Fatalf("latest migration state = (%d, %t), want (46, false)", version, dirty)
+	if version != 49 || dirty {
+		t.Fatalf("latest migration state = (%d, %t), want (49, false)", version, dirty)
 	}
 	var authorizationVersionAfter int64
 	if err := db.QueryRow(`SELECT authorization_version FROM system.principals WHERE id = $1`, administratorID).Scan(&authorizationVersionAfter); err != nil {
@@ -773,8 +773,8 @@ func TestNotebookSessionAuthorizationRepairAgainstPostgres(t *testing.T) {
 	`).Scan(&canonicalRoleBindingCount, &legacyRoleBindingCount); err != nil {
 		t.Fatalf("inspect repaired Notebook authorization role bindings: %v", err)
 	}
-	if version != 46 || dirty || !canonicalTable || legacyTable || !sourceColumn ||
-		!sourceConstraint || canonicalTriggerCount != 4 || checksumCount != 46 ||
+	if version != 49 || dirty || !canonicalTable || legacyTable || !sourceColumn ||
+		!sourceConstraint || canonicalTriggerCount != 4 || checksumCount != 49 ||
 		canonicalPermissionCount != 1 || legacyActivePermissionCount != 0 || legacyDisabledPermissionCount != 1 ||
 		canonicalRoleBindingCount != 1 || legacyRoleBindingCount != 0 {
 		t.Fatalf(
@@ -859,8 +859,8 @@ func TestNotebookSessionAuthorizationRepairCreatesMissingSchemaAgainstPostgres(t
 	`).Scan(&roleBindingCount); err != nil {
 		t.Fatalf("count created Notebook authorization role binding: %v", err)
 	}
-	if version != 46 || dirty || !canonicalTable || !sourceColumn || !sourceConstraint ||
-		triggerCount != 4 || checksumCount != 46 || roleBindingCount != 1 {
+	if version != 49 || dirty || !canonicalTable || !sourceColumn || !sourceConstraint ||
+		triggerCount != 4 || checksumCount != 49 || roleBindingCount != 1 {
 		t.Fatalf(
 			"missing-schema repair state version=(%d,%t) table=%t source=(%t,%t) triggers=%d checksums=%d role_binding=%d",
 			version, dirty, canonicalTable, sourceColumn, sourceConstraint,
@@ -900,8 +900,8 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
 		t.Fatalf("read migration version: %v", err)
 	}
-	if version != 46 || dirty {
-		t.Fatalf("migration state = (%d, %t), want (46, false)", version, dirty)
+	if version != 49 || dirty {
+		t.Fatalf("migration state = (%d, %t), want (49, false)", version, dirty)
 	}
 
 	assertIAMCatalogSeed(t, db)
@@ -933,7 +933,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	assertRoleKeyNamespace(t, db)
 	assertForeignKeyColumnsIndexed(t, db)
 
-	_, tampered := migrationFilesBeforeAndThrough(t, "000046_iam_copilot_develop_catalog.up.sql")
+	_, tampered := migrationFilesBeforeAndThrough(t, "000047_iam_managed_user_mfa_reset.up.sql")
 	tamperedMigration := tampered["sql/000037_iam_notebook_session_authorization.up.sql"]
 	tamperedMigration.Data = append(append([]byte(nil), tamperedMigration.Data...), []byte("\n-- rewritten\n")...)
 	if err := (&Runner{DSN: dsn, FS: tampered, Root: DefaultMigrationsRoot}).Run(ctx); err == nil || !strings.Contains(err.Error(), "does not match embedded file") {
@@ -946,7 +946,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	if err := runner.Run(ctx); err == nil || !strings.Contains(err.Error(), "is dirty") {
 		t.Fatalf("Run() error = %v, want dirty-state rejection", err)
 	}
-	if _, err := db.Exec(`UPDATE system.schema_migrations SET version = 47, dirty = false`); err != nil {
+	if _, err := db.Exec(`UPDATE system.schema_migrations SET version = 50, dirty = false`); err != nil {
 		t.Fatalf("set newer migration version: %v", err)
 	}
 	if err := runner.Run(ctx); err == nil || !strings.Contains(err.Error(), "newer than embedded") {
@@ -1262,8 +1262,18 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 	if principalCount != 15 || clientCount != 15 || roleCount != 14 || permissionCount != 32 {
 		t.Fatalf("service runtime catalog principals=%d clients=%d roles=%d permissions=%d", principalCount, clientCount, roleCount, permissionCount)
 	}
-	var metaTenantPermissions, developTenantPermissions, copilotTenantPermissions string
+	var managerTenantPermissions, metaTenantPermissions, transferTenantPermissions string
+	var developTenantPermissions, copilotTenantPermissions string
 	var managerPlatformPermissions, metaPlatformPermissions, developPlatformPermissions string
+	if err := db.QueryRow(`
+		SELECT string_agg(permission.permission_key, ',' ORDER BY permission.permission_key)
+		FROM system.roles role
+		JOIN system.role_permissions role_permission ON role_permission.role_id = role.id
+		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+		WHERE role.role_key = 'tenant.manager_runtime'
+	`).Scan(&managerTenantPermissions); err != nil {
+		t.Fatalf("read tenant.manager_runtime permissions: %v", err)
+	}
 	if err := db.QueryRow(`
 		SELECT string_agg(permission.permission_key, ',' ORDER BY permission.permission_key)
 		FROM system.roles role
@@ -1272,6 +1282,15 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 		WHERE role.role_key = 'tenant.meta_runtime'
 	`).Scan(&metaTenantPermissions); err != nil {
 		t.Fatalf("read tenant.meta_runtime permissions: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT string_agg(permission.permission_key, ',' ORDER BY permission.permission_key)
+		FROM system.roles role
+		JOIN system.role_permissions role_permission ON role_permission.role_id = role.id
+		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+		WHERE role.role_key = 'tenant.transfer_runtime'
+	`).Scan(&transferTenantPermissions); err != nil {
+		t.Fatalf("read tenant.transfer_runtime permissions: %v", err)
 	}
 	if err := db.QueryRow(`
 		SELECT string_agg(permission.permission_key, ',' ORDER BY permission.permission_key)
@@ -1318,14 +1337,16 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&managerPlatformPermissions); err != nil {
 		t.Fatalf("read platform.manager_runtime permissions: %v", err)
 	}
-	if metaTenantPermissions != "audit.tenant_event.create,system.engine.read" ||
+	if managerTenantPermissions != "inference.runtime.execute,meta.catalog.read,meta.scan_task.execute,system.engine_descriptor.read" ||
+		metaTenantPermissions != "audit.tenant_event.create,system.engine.read,system.engine_descriptor.read" ||
+		transferTenantPermissions != "meta.catalog.read,meta.inspect.execute,meta.scan_task.execute,system.engine_descriptor.read" ||
 		developTenantPermissions != "meta.catalog.read,meta.scan_task.execute,system.engine_descriptor.read,system.execution_authorization.execute,system.notebook_session_authorization.execute" ||
 		copilotTenantPermissions != "develop.task.read,inference.runtime.execute" ||
 		metaPlatformPermissions != "system.runtime_registry.update" ||
 		developPlatformPermissions != "system.runtime_registry.update" ||
 		managerPlatformPermissions != "system.runtime_registry.update" {
-		t.Fatalf("runtime permissions meta_tenant=%q develop_tenant=%q copilot_tenant=%q meta_platform=%q develop_platform=%q manager_platform=%q",
-			metaTenantPermissions, developTenantPermissions, copilotTenantPermissions, metaPlatformPermissions, developPlatformPermissions, managerPlatformPermissions)
+		t.Fatalf("runtime permissions manager_tenant=%q meta_tenant=%q transfer_tenant=%q develop_tenant=%q copilot_tenant=%q meta_platform=%q develop_platform=%q manager_platform=%q",
+			managerTenantPermissions, metaTenantPermissions, transferTenantPermissions, developTenantPermissions, copilotTenantPermissions, metaPlatformPermissions, developPlatformPermissions, managerPlatformPermissions)
 	}
 
 	var developPlatformAssignmentCount, managerPlatformAssignmentCount int
@@ -1702,8 +1723,8 @@ func assertAuthorizationCatalogRetirement(t *testing.T, db *sql.DB) {
 	`).Scan(&activePermissionCount, &disabledPermissionCount); err != nil {
 		t.Fatalf("read retired Permission counts: %v", err)
 	}
-	if activePermissionCount != 268 || disabledPermissionCount != 67 {
-		t.Fatalf("Permission status counts = active:%d disabled:%d, want 268 and 67", activePermissionCount, disabledPermissionCount)
+	if activePermissionCount != 269 || disabledPermissionCount != 67 {
+		t.Fatalf("Permission status counts = active:%d disabled:%d, want 269 and 67", activePermissionCount, disabledPermissionCount)
 	}
 
 	var disabledRoles string
@@ -2259,9 +2280,9 @@ func assertAuditContextConstraints(t *testing.T, db *sql.DB) {
 func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	t.Helper()
 
-	assertTableCount(t, db, "system.permissions", 335)
+	assertTableCount(t, db, "system.permissions", 336)
 	assertTableCount(t, db, "system.roles", 43)
-	assertTableCount(t, db, "system.role_permissions", 342)
+	assertTableCount(t, db, "system.role_permissions", 343)
 	assertTableCount(t, db, "system.role_conflicts", 3)
 	assertTableCount(t, db, "system.oauth_clients", 16)
 	assertTableCount(t, db, "system.principals", 15)
@@ -2273,8 +2294,8 @@ func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	if err := db.QueryRow(`SELECT count(DISTINCT owner_module), count(*) FILTER (WHERE owner_module = 'system') FROM system.permissions`).Scan(&ownerCount, &systemPermissionCount); err != nil {
 		t.Fatalf("read seeded Permission owners: %v", err)
 	}
-	if ownerCount != 16 || systemPermissionCount != 115 {
-		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 16 and 115", ownerCount, systemPermissionCount)
+	if ownerCount != 16 || systemPermissionCount != 116 {
+		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 16 and 116", ownerCount, systemPermissionCount)
 	}
 
 	var invalidRoleCount int

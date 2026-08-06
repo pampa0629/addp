@@ -78,6 +78,31 @@ erDiagram
 
 `adapter_type` 第一阶段允许 `openai_compatible` 和 `dashscope_multimodal`。DashScope compatible mode、OpenAI、vLLM、Ollama 的 OpenAI-compatible endpoint 通过前者接入；DashScope 多模态向量接口因使用 `input.contents` 而通过后者接入。适配器由 Provider 创建时显式选择，不根据 endpoint 或模型名称猜测协议；只有协议语义确实不同且无法由标准字段表达时才新增适配器类型。
 
+### 2.1 Provider Template 与快速接入
+
+Provider Template 是 Inference owner 维护的只读接入目录，用于降低 Provider、Deployment 和 Profile 的首次配置成本。模板可以预置：
+
+- 在线厂商或本地推理运行时的稳定模板 code 和分类。
+- `adapter_type`、默认 Endpoint、Endpoint 是否允许修改。
+- 凭据是必需还是可选，以及模型发现方式。
+- 可验证的建议模型、操作能力、输入模态和向量维度。
+- 对应厂商或运行时的正式文档地址。
+
+Provider Template 不是新的持久化运行时资源，不保存 API Key，不参与 Tenant 可见性判断，也不能作为推理请求的引用目标。快速接入必须把用户确认后的结果写入唯一正式资源路径：
+
+```text
+Provider Template
+  -> Provider Connection
+  -> Model Deployment
+  -> Model Profile
+```
+
+默认管理界面可以把上述创建过程组织为一个向导，并把三类正式资源放入高级设置，但不得在数据库中建立一套与 Provider、Deployment、Profile 并行的“简化配置”。模板目录由 Inference API 提供，Console 只负责呈现；System 仍只登记配置入口、权限和审计。
+
+OpenAI-compatible 模型发现统一由 Inference 服务端使用 Provider Connection 的 Endpoint 和加密凭据调用标准 `/models` 接口。浏览器不得直接访问厂商 Endpoint 或接触已保存凭据。发现结果只表示上游当前列出的模型标识，不能仅根据模型名称推断 Chat、Embedding、Rerank、Tool Calling、输入模态或向量维度；这些能力必须来自模板声明、管理员确认或实际能力探测。
+
+本地运行时模板中的主机地址必须从 Inference Runtime 所在网络环境可达。浏览器所在机器的 `localhost` 不自动等于 Inference Runtime 的 `localhost`，快速接入必须允许管理员修正 Endpoint 并由服务端执行检测。
+
 ## 三、范围和授权
 
 Provider Connection 的 `scope_type` 固定为 `platform` 或 `tenant`：
@@ -124,6 +149,8 @@ Provider credential 使用部署级 `ENCRYPTION_KEY` 进行认证加密。数据
 | `GET/POST /provider-connections` | 列表或创建当前 Realm 可管理的 Provider。 |
 | `GET/PUT/DELETE /provider-connections/{id}` | 读取、更新或删除 Provider 普通字段。 |
 | `PUT/DELETE /provider-connections/{id}/credential` | 设置、轮换或删除加密凭据。 |
+| `GET /provider-templates` | 查询 Inference 内置的只读模型服务接入模板。 |
+| `POST /provider-connections/{id}/discover-models` | 使用该 Provider 的服务端 Endpoint 和加密凭据发现 OpenAI-compatible 模型。 |
 | `GET/POST /model-deployments` | 列表或创建 Deployment。 |
 | `GET/PUT/DELETE /model-deployments/{id}` | 读取、更新或删除 Deployment。 |
 | `POST /model-deployments/{id}/probe` | 显式执行无副作用可达性和能力探测。 |

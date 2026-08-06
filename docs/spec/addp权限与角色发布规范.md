@@ -110,6 +110,8 @@ Role 只组合现有 Permission，不产生新 Permission，也不表达资源�
 
 平台三员 Role 只允许 User Principal，必须互斥，不存在全权合并角色。Runtime Role 只允许 Service Principal，不得授予 User。具体 `allowed_principal_types`、`allowed_scope_types` 和 Permission 集合以 `system/authorization/builtin_roles.yaml` 为准。
 
+普通 User 的本地密码和 MFA Credential 重置分别使用 `iam.local_account.reset` 与 `iam.mfa_credential.reset`，只授予 Platform Security Administrator。两者都不得作用于任何有效 Platform Role 持有人；平台三员凭据整体失效时只允许离线灾难恢复，不能扩大普通用户重置 Permission 绕过三员治理。
+
 Tenant 自定义 Role：
 
 1. 只能选择 `allowed_role_types` 包含 `tenant_custom` 的 active Permission；
@@ -132,6 +134,10 @@ Platform Context 只投影 Platform Assignment，不携带 Tenant、Department �
 Department 与 Project Group Scope 使 Permission 成为候选能力，不自动授予所有资源。owner 必须继续结合资源归属、Scope Binding、Grant、Policy、Explicit Deny 和资源状态完成最终判断。
 
 多个有效 Assignment 的 Allow Permission 可以合并；显式 Deny 属于 owner 资源策略，不编码为反向 Permission。OAuth Scope 只能进一步缩小候选 Permission，不能扩大 Role Assignment。
+
+Role Assignment 的写入服务必须在持久化前校验目标 Principal 的类型是否包含在 Role 的 `allowed_principal_types` 中，不得把数据库约束错误作为正常业务校验路径。主体类型与 Role 不兼容时返回 `409 Conflict` 和稳定 `error_code=role_assignment_principal_type_not_allowed`。
+
+管理界面的 Role 选择器必须使用 Membership 的 `principal_type` 和 Role 的 `allowed_principal_types` 进行结构化过滤，只展示对目标 Principal 可分配的 Role。不得根据 Role Key 后缀、展示名称或其他字符串约定识别 Runtime Role。
 
 ## 七、HTTP 与 Tool 授权声明
 

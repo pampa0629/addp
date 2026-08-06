@@ -70,9 +70,14 @@
         :height="treeHeight"
         card-shadow="never"
         @node-click="handleNodeClick"
+        @node-dblclick="handleNodeDblclick"
       >
         <template #node="{ data }">
-          <span class="picker-node" :class="{ 'is-disabled': !isSelectableTreeNode(data) }">
+          <span
+            class="picker-node"
+            :class="{ 'is-disabled': !isSelectableTreeNode(data) }"
+            @dblclick.stop="handleNodeDblclick(data)"
+          >
             <span class="picker-node-label">{{ data.label }}</span>
             <el-tag v-if="showDisabledLabel && disabledLabel && !isSelectableTreeNode(data)" size="small" type="info">
               {{ disabledLabel }}
@@ -231,6 +236,7 @@ const emit = defineEmits([
   'select',
   'engine-change',
   'node-click',
+  'node-dblclick',
   'error'
 ])
 
@@ -423,6 +429,18 @@ const handleNodeClick = (node) => {
     return
   }
   selectNode(node, engine)
+}
+
+const handleNodeDblclick = (node) => {
+  const engine = engineForNode(node)
+  if (!isSelectableNode(node, engine)) return
+  const selection = selectionFromResourceTreeNode(node, engine)
+  if (!selection) return
+  currentSelection.value = selection
+  currentNodeKey.value = node.id
+  emit('update:modelValue', selection)
+  emit('select', selection)
+  emit('node-dblclick', selection)
 }
 
 const handleSearchResultClick = async (result) => {

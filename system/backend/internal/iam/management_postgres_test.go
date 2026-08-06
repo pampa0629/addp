@@ -2,6 +2,7 @@ package iam
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -84,6 +85,32 @@ func TestIAMManagementServicesAgainstPostgres(t *testing.T) {
 	}
 	assertIAMServiceAuditCount(t, db, "iam.local_account.password_reset", AuditResultSucceeded, 1)
 
+	createManagementMFACredential(t, ctx, repository, createdUser.ID)
+	projectedWithMFA, err := userService.Get(ctx, createdUser.ID)
+	if err != nil || !projectedWithMFA.TOTPEnrolled {
+		t.Fatalf("managed user MFA projection = %#v err=%v", projectedWithMFA, err)
+	}
+	currentTime = currentTime.Add(time.Second)
+	mfaReset, err := userService.ResetMFACredential(ctx, ResetManagedMFACredentialInput{
+		UserID: createdUser.ID, Reason: "user lost authenticator", Audit: platformAudit,
+	})
+	if err != nil || mfaReset.RevokedFamilyCount != 0 ||
+		mfaReset.AuthorizationVersion <= passwordReset.AuthorizationVersion {
+		t.Fatalf("managed MFA credential reset = %#v err=%v", mfaReset, err)
+	}
+	if active, err := repository.HasActiveMFACredential(ctx, createdUser.ID); err != nil || active {
+		t.Fatalf("active MFA after reset = %t err=%v", active, err)
+	}
+	if _, err := userService.ResetMFACredential(ctx, ResetManagedMFACredentialInput{
+		UserID: createdUser.ID, Reason: "duplicate reset", Audit: platformAudit,
+	}); !errors.Is(err, ErrMFAResetNotAvailable) {
+		t.Fatalf("duplicate MFA reset error = %v", err)
+	}
+	if _, err := identityService.AuthenticateLocalAccount(ctx, "managed-user", "managed-password-reset", loginAudit); err != nil {
+		t.Fatalf("MFA reset changed local password: %v", err)
+	}
+	assertIAMServiceAuditCount(t, db, "iam.mfa.credential_reset", AuditResultSucceeded, 1)
+
 	rollbackUser, err := userService.Create(ctx, CreateManagedLocalUserInput{
 		Username: "password-rollback", Password: "password-before-rollback",
 		DisplayName: "Password Rollback", Audit: platformAudit,
@@ -107,6 +134,15 @@ func TestIAMManagementServicesAgainstPostgres(t *testing.T) {
 	if !passwordutils.CheckPassword("password-before-rollback", rollbackAccount.PasswordHash) ||
 		passwordutils.CheckPassword("password-after-rollback", rollbackAccount.PasswordHash) {
 		t.Fatal("password reset was not rolled back with rejected audit")
+	}
+	createManagementMFACredential(t, ctx, repository, rollbackUser.ID)
+	if _, err := userService.ResetMFACredential(ctx, ResetManagedMFACredentialInput{
+		UserID: rollbackUser.ID, Reason: "force audit failure", Audit: invalidAudit,
+	}); err == nil {
+		t.Fatal("MFA reset with invalid audit metadata unexpectedly succeeded")
+	}
+	if active, err := repository.HasActiveMFACredential(ctx, rollbackUser.ID); err != nil || !active {
+		t.Fatalf("MFA reset was not rolled back: active=%t err=%v", active, err)
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -143,6 +179,15 @@ func TestIAMManagementServicesAgainstPostgres(t *testing.T) {
 		Audit: requesterAudit,
 	}); err == nil {
 		t.Fatal("platform role holder password reset unexpectedly succeeded")
+	}
+	createManagementMFACredential(t, ctx, repository, target.PrincipalID)
+	if _, err := userService.ResetMFACredential(ctx, ResetManagedMFACredentialInput{
+		UserID: target.PrincipalID, Reason: "must use administrator recovery", Audit: requesterAudit,
+	}); err == nil {
+		t.Fatal("platform role holder MFA reset unexpectedly succeeded")
+	}
+	if active, err := repository.HasActiveMFACredential(ctx, target.PrincipalID); err != nil || !active {
+		t.Fatalf("platform role holder MFA changed: active=%t err=%v", active, err)
 	}
 	targetAccount, err := repository.GetLocalAccountByUserID(ctx, target.PrincipalID)
 	if err != nil || !passwordutils.CheckPassword("governed-password", targetAccount.PasswordHash) {
@@ -353,4 +398,27 @@ func createGovernedManagementUser(
 		t.Fatalf("assign governed role %s: %v", roleKey, err)
 	}
 	return created
+}
+
+func createManagementMFACredential(
+	t *testing.T,
+	ctx context.Context,
+	repository *Repository,
+	userID int64,
+) {
+	t.Helper()
+	cipher, err := NewMFACredentialCipher([]byte("0123456789abcdef0123456789abcdef"))
+	if err != nil {
+		t.Fatalf("create management MFA cipher: %v", err)
+	}
+	ciphertext, nonce, keyVersion, err := cipher.EncryptTOTPSecret(userID, "JBSWY3DPEHPK3PXP")
+	if err != nil {
+		t.Fatalf("encrypt management MFA credential: %v", err)
+	}
+	if err := repository.CreateMFACredential(ctx, &MFACredential{
+		UserID: userID, Method: "totp", Status: MFACredentialStatusActive,
+		SecretCiphertext: ciphertext, SecretNonce: nonce, KeyVersion: keyVersion,
+	}); err != nil {
+		t.Fatalf("create management MFA credential: %v", err)
+	}
 }

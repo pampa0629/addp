@@ -25,6 +25,7 @@ func SetupRouter(cfg *config.Config, handler *Handler) *gin.Engine {
 	permission := func(keys ...string) gin.HandlerFunc { return commonauth.MustNewPermissionGuard(keys...) }
 	control := router.Group("/api/v1/inference")
 	control.Use(authMiddleware)
+	control.GET("/provider-templates", permission(inferenceauthorization.PermissionInferenceProviderRead), handler.ListProviderTemplates)
 	providers := control.Group("/provider-connections")
 	providers.GET("", permission(inferenceauthorization.PermissionInferenceProviderRead), handler.ListProviders)
 	providers.POST("", permission(inferenceauthorization.PermissionInferenceProviderCreate), handler.CreateProvider)
@@ -33,6 +34,7 @@ func SetupRouter(cfg *config.Config, handler *Handler) *gin.Engine {
 	providers.DELETE("/:id", permission(inferenceauthorization.PermissionInferenceProviderDelete), handler.DeleteProvider)
 	providers.PUT("/:id/credential", permission(inferenceauthorization.PermissionInferenceProviderCredentialUpdate), handler.SetCredential)
 	providers.DELETE("/:id/credential", permission(inferenceauthorization.PermissionInferenceProviderCredentialUpdate), handler.DeleteCredential)
+	providers.POST("/:id/discover-models", permission(inferenceauthorization.PermissionInferenceProviderRead, inferenceauthorization.PermissionInferenceDeploymentExecute), handler.DiscoverModels)
 	deployments := control.Group("/model-deployments")
 	deployments.GET("", permission(inferenceauthorization.PermissionInferenceDeploymentRead), handler.ListDeployments)
 	deployments.POST("", permission(inferenceauthorization.PermissionInferenceDeploymentCreate), handler.CreateDeployment)

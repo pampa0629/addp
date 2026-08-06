@@ -167,7 +167,8 @@
       v-model="executeDialogVisible"
       class="addp-dialog"
       :title="t('develop.taskManagement.executeDialogTitle')"
-      width="min(500px, calc(100vw - 24px))"
+      width="min(680px, calc(100vw - 24px))"
+      :close-on-click-modal="false"
     >
       <el-form label-position="top">
         <el-form-item :label="t('develop.taskManagement.fieldName')">
@@ -178,14 +179,12 @@
             {{ getTypeLabel(currentTask?.dev_type) }}
           </el-tag>
         </el-form-item>
-        <el-form-item :label="t('develop.taskManagement.execParams')">
-          <el-input
-            v-model="executeInputs"
-            type="textarea"
-            :rows="5"
-            placeholder='{"key": "value"}'
-          />
-        </el-form-item>
+        <ExecutionParameterForm
+          v-if="currentTask?.execution_contract"
+          v-model="executeOverrides"
+          :contract="currentTask.execution_contract"
+          :disabled="executing"
+        />
       </el-form>
       <template #footer>
         <el-button @click="executeDialogVisible = false">{{ t('develop.taskManagement.cancel') }}</el-button>
@@ -218,11 +217,12 @@ import {
 } from '@element-plus/icons-vue'
 import {
   listDevTasks,
+  getDevTask,
   deleteDevTask,
   executeDevTask,
   listEngines
 } from '@/api/devTask'
-import { openMonitorExecution } from '@addp/common-frontend'
+import { ExecutionParameterForm, openMonitorExecution } from '@addp/common-frontend'
 import { navigateDevelopTaskEditor } from '@/utils/developNavigation'
 
 const router = useRouter()
@@ -252,7 +252,7 @@ const pagination = reactive({
 // 执行对话框
 const executeDialogVisible = ref(false)
 const currentTask = ref(null)
-const executeInputs = ref('{}')
+const executeOverrides = ref({})
 const executing = ref(false)
 
 // 加载任务列表
@@ -350,10 +350,14 @@ const handleCreate = (devType) => openTaskEditor(devType)
 const handleEdit = (row) => openTaskEditor(row.dev_type, row.id)
 const handleView = (row) => openTaskEditor(row.dev_type, row.id)
 
-const handleExecute = (row) => {
-  currentTask.value = row
-  executeInputs.value = '{}'
-  executeDialogVisible.value = true
+const handleExecute = async (row) => {
+  try {
+    currentTask.value = await getDevTask(row.id)
+    executeOverrides.value = {}
+    executeDialogVisible.value = true
+  } catch (error) {
+    ElMessage.error(t('develop.taskManagement.loadExecutionContractFailed') + (error.response?.data?.error || error.message))
+  }
 }
 
 const confirmExecute = async () => {
@@ -361,15 +365,7 @@ const confirmExecute = async () => {
 
   try {
     executing.value = true
-    let inputs = {}
-    try {
-      inputs = JSON.parse(executeInputs.value)
-    } catch {
-      ElMessage.warning(t('develop.taskManagement.invalidJson'))
-      return
-    }
-
-    const execution = await executeDevTask(currentTask.value.id, inputs)
+    const execution = await executeDevTask(currentTask.value.id, executeOverrides.value)
     ElMessage.success(t('develop.taskManagement.executeSubmitted'))
     executeDialogVisible.value = false
     loadTasks() // 刷新列表
