@@ -12,15 +12,18 @@
 #include "GeometryConverter/UGGeometryOGC.h"
 #include "Stream/UGMemoryStream.h"
 #include "Toolkit/UGErrorObj.h"
+#include "Projection/UGPrjToolkits.h"
 
 #include <algorithm>
 #include <atomic>
 #include <cctype>
 #include <cstdint>
+#include <iomanip>
 #include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <sstream>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -215,6 +218,47 @@ std::string base64_encode(const unsigned char* data, std::size_t size) {
     result.push_back(index + 2 < size ? alphabet[value & 0x3fU] : '=');
   }
   return result;
+}
+
+std::string stable_crs_id(const std::string& definition) {
+  std::uint64_t hash = 1469598103934665603ULL;
+  for (unsigned char character : definition) {
+    hash ^= character;
+    hash *= 1099511628211ULL;
+  }
+  std::ostringstream stream;
+  stream << "ADDP:CRS:" << std::hex << std::setfill('0') << std::setw(16) << hash;
+  return stream.str();
+}
+
+Json spatial_projection_facts(const UGC::UGPrjCoordSys& projection) {
+  const int epsg = projection.GetEPSGCode();
+  UGC::UGWKT wkt;
+  std::string definition;
+  std::string encoding;
+  if ((projection >> wkt) && !wkt.wkt.IsEmpty()) {
+    definition = to_utf8(wkt.wkt);
+    encoding = "wkt";
+  } else {
+    const auto proj4 = projection.GetPrjParams().GetPrjParamString();
+    if (!proj4.IsEmpty()) {
+      definition = to_utf8(proj4);
+      encoding = "proj4";
+    }
+  }
+  if (definition.empty()) {
+    return Json::object();
+  }
+  const std::string id = epsg > 0 ? "EPSG:" + std::to_string(epsg) : stable_crs_id(definition);
+  return {
+      {"crs_ref", id},
+      {"crs_definitions", Json::array({{
+          {"id", id},
+          {"definition_encoding", encoding},
+          {"definition", definition},
+          {"source", "supermap_runtime_sdk"},
+      }})},
+  };
 }
 
 std::vector<unsigned char> base64_decode(const std::string& value) {
@@ -642,7 +686,8 @@ class TableSessionRuntime::Impl final {
         {"nullable", true},
     });
 
-    const int srid = session.opened.dataset->dataset->GetPrjCoordSys().GetEPSGCode();
+    const UGC::UGPrjCoordSys& projection = session.opened.dataset->dataset->GetPrjCoordSys();
+    const int srid = projection.GetEPSGCode();
     Json geometry_column = {
         {"name", session.geometry_field},
         {"geometry_type", geometry_type_for_dataset(session.opened.dataset->dataset->GetType())},
@@ -659,7 +704,15 @@ class TableSessionRuntime::Impl final {
     };
     if (srid > 0) {
       session.spatial["srid"] = srid;
-      session.spatial["crs_ref"] = "EPSG:" + std::to_string(srid);
+    }
+    const Json projectionFacts = spatial_projection_facts(projection);
+    if (!projectionFacts.empty()) {
+      if (projectionFacts.contains("crs_ref")) {
+        session.spatial["crs_ref"] = projectionFacts["crs_ref"];
+      }
+      if (projectionFacts.contains("crs_definitions")) {
+        session.spatial["crs_definitions"] = projectionFacts["crs_definitions"];
+      }
     }
 
     UGC::UGQueryDef query;

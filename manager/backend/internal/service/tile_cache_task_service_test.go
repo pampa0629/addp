@@ -201,7 +201,9 @@ func TestMySQLTableTileCacheGenerationUsesFlatGeobufWorkflow(t *testing.T) {
 	}}
 	svc.SetTileGenerator(native, 4)
 	svc.SetWorkflowTileGenerator(workflow)
-	svc.SetSourceEngineTypeResolver(func(context.Context, uint) (string, error) { return "mysql", nil })
+	svc.SetSourceEngineResolver(func(context.Context, uint) (*commonModels.Engine, error) {
+		return &commonModels.Engine{EngineType: "mysql"}, nil
+	})
 	svc.SetSourceVersionResolver(func(context.Context, uint, tileCacheTaskTargetIdentity) (string, error) {
 		return strings.Repeat("d", 64), nil
 	})

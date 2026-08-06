@@ -23,7 +23,10 @@ var ErrNoPreviewProvider = errors.New("no preview provider registered for reques
 
 // PreviewRequest 包含生成预览所需的上下文信息。
 type PreviewRequest struct {
-	Engine          *models.Engine
+	Engine *models.Engine
+	// EnginePlugin is resolved for this concrete Engine Instance. Database
+	// previews must use it instead of looking up a plugin by engine type.
+	EnginePlugin    plugin.EnginePlugin
 	Schema          string
 	Table           string
 	Page            int

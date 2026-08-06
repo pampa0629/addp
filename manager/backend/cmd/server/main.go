@@ -175,7 +175,7 @@ func main() {
 	preview.LoadPreviewPlugins(previewRegistry, metadataRepo, metaClient, contentRegistry, buildPluginDirSpec(pluginDirs))
 	preview.ConfigureCADPreviewRepository(previewRegistry, cadPreviewRepo)
 	logger.L().Info("数据预览: 已激活预览插件", "providers", previewRegistry.Providers())
-	profilePreviewResolver := preview.NewPreviewResolver(previewRegistry, systemClient, metaClient)
+	profilePreviewResolver := preview.NewPreviewResolver(previewRegistry, systemClient, metaClient, systemServiceClient)
 	dataProfileSampler := service.NewPreviewDataProfileSampleProvider(profilePreviewResolver, metaClient)
 	dataProfileService := service.NewDataProfileService(dataProfileRepo, dataProfileExecutionRepo, dataProfileSampler)
 	dataProfileHandler := api.NewDataProfileHandler(dataProfileService)
@@ -267,12 +267,8 @@ func main() {
 	cadPreviewTaskSvc.SetCleaner(service.NewMinIOCADPreviewCleaner(minioClient, minioBucket))
 	var postGISTileGenerator *mvt.PMTilesGenerator
 	if systemClient != nil {
-		tileCacheTaskSvc.SetSourceEngineTypeResolver(func(ctx context.Context, engineID uint) (string, error) {
-			engine, err := systemClient.GetEngine(engineID)
-			if err != nil {
-				return "", err
-			}
-			return engine.EngineType, nil
+		tileCacheTaskSvc.SetSourceEngineResolver(func(ctx context.Context, engineID uint) (*commonModels.Engine, error) {
+			return systemClient.GetEngine(engineID)
 		})
 		postGISTileGenerator = mvt.NewPMTilesGenerator(mvt.NewTileGenerator(systemClient, cfg.TileCache.MaxDBConns))
 		tileCacheTaskSvc.SetTileGenerator(
@@ -376,7 +372,7 @@ func main() {
 	model3DTilesHandler := api.NewModel3DTilesHandler(model3DTilesRepo, minioClient, minioBucket)
 	logger.L().Info("数据导入服务已初始化", "transfer_url", cfg.TransferServiceURL)
 
-	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, quickViewPolicyService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, cadPreviewHandler, model3DTilesHandler, dataProfileHandler)
+	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, systemServiceClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, quickViewPolicyService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, cadPreviewHandler, model3DTilesHandler, dataProfileHandler)
 
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("manager")
@@ -488,16 +484,11 @@ func main() {
 			},
 			ConfigurationManagement: &commonconfiguration.ManagementDeclaration{
 				SchemaVersion: commonconfiguration.ManagementSchemaVersion,
-				Entries: []commonconfiguration.ManagementEntry{
-					{
-						ID: "manager.embedding", OwnerModule: "manager",
-						ScopeTypes: []string{commonconfiguration.ScopePlatformDefaultWithTenantOverride}, FrontendRoute: "/manager/settings/embedding",
-						ReadPermission: managerauthorization.PermissionManagerConfigurationRead, UpdatePermission: managerauthorization.PermissionManagerConfigurationUpdate,
-					}, {
-						ID: "manager.quick_view_policy", OwnerModule: "manager", ScopeTypes: []string{commonconfiguration.ScopePlatformOnly}, FrontendRoute: "/configuration/manager/quick-view-policy",
-						ReadPermission: managerauthorization.PermissionManagerConfigurationRead, UpdatePermission: managerauthorization.PermissionManagerConfigurationUpdate,
-					},
-				},
+				Entries: []commonconfiguration.ManagementEntry{{
+					ID: "manager.configuration", OwnerModule: "manager",
+					ScopeTypes: []string{commonconfiguration.ScopePlatformDefaultWithTenantOverride}, FrontendRoute: "/manager/settings/embedding",
+					ReadPermission: managerauthorization.PermissionManagerConfigurationRead, UpdatePermission: managerauthorization.PermissionManagerConfigurationUpdate,
+				}},
 			},
 		})
 	}

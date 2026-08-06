@@ -140,7 +140,8 @@
       "fieldNotObserved": "Query succeeded but returned no data. Field \"{field}\" was not observed in sampled documents; check the field path or sample coverage.",
       "collectionEmpty": "Query succeeded but returned no data. The selected collection contains no documents to match.",
       "filterNotMatched": "Query succeeded but returned no data. The queried fields were observed in samples, but the filter matched no documents.",
-      "diagnosticUnavailable": "Query succeeded but returned no data. The collection structure could not be inspected; check filters, field paths, and parameter values."
+      "diagnosticUnavailable": "Query succeeded but returned no data. The collection structure could not be inspected; check filters, field paths, and parameter values.",
+      "mongodbDatabaseRequired": "The MongoDB query has no database context. Select a database or configure a default database in the engine registration."
     },
     "saveQueryDialog": {
       "title": "Save as Query Task",

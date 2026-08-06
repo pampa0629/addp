@@ -9,6 +9,7 @@
 #include "Geometry/UGGeoPoint.h"
 #include "Geometry/UGGeometry.h"
 #include "Projection/UGRefTranslator.h"
+#include "Projection/UGPrjToolkits.h"
 #include "Toolkit/UGErrorObj.h"
 #include "Generalization/UGFeatureEnvelope.h"
 #include "Generalization/UGUpdateAttribute.h"
@@ -19,8 +20,11 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <iomanip>
+#include <sstream>
 #include <set>
 #include <stdexcept>
 #include <vector>
@@ -140,6 +144,60 @@ std::string unit_name(UGC::UGint unit) {
     default:
       return std::to_string(unit);
   }
+}
+
+std::string stable_crs_id(const std::string& definition) {
+  // FNV-1a provides a deterministic local identity when the SDK has no EPSG
+  // code. The definition itself remains the authoritative CRS fact.
+  std::uint64_t hash = 1469598103934665603ULL;
+  for (unsigned char character : definition) {
+    hash ^= character;
+    hash *= 1099511628211ULL;
+  }
+  std::ostringstream stream;
+  stream << "ADDP:CRS:" << std::hex << std::setfill('0') << std::setw(16) << hash;
+  return stream.str();
+}
+
+Json projection_facts(const UGC::UGPrjCoordSys& projection) {
+  const int epsg = projection.GetEPSGCode();
+  Json facts = {
+      {"defined", static_cast<bool>(projection.IsValid())},
+      {"name", to_utf8(projection.GetName())},
+      {"epsg", epsg},
+      {"type", projection_type_name(projection.GetTypeID())},
+      {"coord_unit", unit_name(projection.GetUnit())},
+      {"distance_unit", unit_name(projection.GetDistUnit())},
+  };
+
+  UGC::UGWKT wkt;
+  std::string definition;
+  std::string encoding;
+  if ((projection >> wkt) && !wkt.wkt.IsEmpty()) {
+    definition = to_utf8(wkt.wkt);
+    encoding = "wkt";
+  } else {
+    const auto proj4 = projection.GetPrjParams().GetPrjParamString();
+    if (!proj4.IsEmpty()) {
+      definition = to_utf8(proj4);
+      encoding = "proj4";
+    }
+  }
+  if (!definition.empty()) {
+    const std::string id = epsg > 0 ? "EPSG:" + std::to_string(epsg) : stable_crs_id(definition);
+    facts["crs_ref"] = id;
+    facts["crs_definitions"] = Json::array({{
+        {"id", id},
+        {"definition_encoding", encoding},
+        {"definition", definition},
+        {"source", "supermap_runtime_sdk"},
+    }});
+  }
+  const auto xml = projection.ToXML();
+  if (!xml.IsEmpty()) {
+    facts["supermap_xml"] = to_utf8(xml);
+  }
+  return facts;
 }
 
 std::string effective_alias(const std::string& path, const std::string& alias) {
@@ -422,15 +480,7 @@ Json dataset_info(const std::shared_ptr<DatasetRef>& dataset) {
       {"record_count", dataset->dataset->GetObjectCount()},
       {"field_count", field_count},
       {"bounds", std::move(bounds_json)},
-      {"prj_coord_sys",
-       {
-           {"defined", static_cast<bool>(projection.IsValid())},
-           {"name", to_utf8(projection.GetName())},
-           {"epsg", projection.GetEPSGCode()},
-           {"type", projection_type_name(projection.GetTypeID())},
-           {"coord_unit", unit_name(projection.GetUnit())},
-           {"distance_unit", unit_name(projection.GetDistUnit())},
-       }},
+      {"prj_coord_sys", projection_facts(projection)},
       {"fields", std::move(fields)},
   };
 }

@@ -9,7 +9,9 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dataprofile"
+	"github.com/addp/common/engine/instanceprovider"
 	"github.com/addp/common/engine/plugin"
+	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
@@ -29,9 +31,10 @@ var ErrEngineAccessDenied = errors.New("engine not accessible for current tenant
 //
 // 注意：重命名自 PreviewOrchestrator，避免与 Orchestrator 模块混淆
 type PreviewResolver struct {
-	registry     *PreviewRegistry
-	systemClient *commonClient.SystemClient
-	metaClient   *commonClient.MetaClient
+	registry      *PreviewRegistry
+	systemClient  *commonClient.SystemClient
+	metaClient    *commonClient.MetaClient
+	runtimeClient instanceprovider.RuntimeDescriptorClient
 }
 
 // NewPreviewResolver 创建预览解析器
@@ -39,15 +42,21 @@ func NewPreviewResolver(
 	registry *PreviewRegistry,
 	systemClient *commonClient.SystemClient,
 	metaClient *commonClient.MetaClient,
+	runtimeClients ...instanceprovider.RuntimeDescriptorClient,
 ) *PreviewResolver {
 	if registry == nil {
 		registry = NewPreviewRegistry()
 	}
 
+	var runtimeClient instanceprovider.RuntimeDescriptorClient
+	if len(runtimeClients) > 0 {
+		runtimeClient = runtimeClients[0]
+	}
 	return &PreviewResolver{
-		registry:     registry,
-		systemClient: systemClient,
-		metaClient:   metaClient,
+		registry:      registry,
+		systemClient:  systemClient,
+		metaClient:    metaClient,
+		runtimeClient: runtimeClient,
 	}
 }
 
@@ -117,7 +126,7 @@ func (r *PreviewResolver) Preview(ctx context.Context, req *PreviewResolverReque
 	}
 
 	// 3. 转换为Provider 执行请求
-	providerReq, err := r.buildProviderRequest(req)
+	providerReq, err := r.buildProviderRequest(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -418,7 +427,7 @@ func (r *PreviewResolver) DetectPreviewType(loc *resourcetree.ResourceLocator, e
 	if loc != nil {
 		req.ItemType = strings.ToLower(strings.TrimSpace(string(loc.Type)))
 	}
-	providerReq, err := r.buildProviderRequest(req)
+	providerReq, err := r.buildProviderRequest(context.Background(), req)
 	if err != nil {
 		return "unsupported"
 	}
@@ -434,7 +443,7 @@ func (r *PreviewResolver) DetectPreviewType(loc *resourcetree.ResourceLocator, e
 // 内部辅助方法
 
 // buildProviderRequest 根据 Resolver 请求构造 PreviewProvider 执行请求
-func (r *PreviewResolver) buildProviderRequest(req *PreviewResolverRequest) (*PreviewRequest, error) {
+func (r *PreviewResolver) buildProviderRequest(ctx context.Context, req *PreviewResolverRequest) (*PreviewRequest, error) {
 	schema := ""
 	table := ""
 	providerPath := plugin.CatalogPath{}
@@ -480,9 +489,12 @@ func (r *PreviewResolver) buildProviderRequest(req *PreviewResolverRequest) (*Pr
 		pageSize = req.Pagination.PageSize
 	}
 
-	plug, err := plugin.Get(req.Engine.EngineType)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	plug, err := instanceprovider.Resolve(ctx, r.runtimeClient, req.Engine, supermapworkflow.RequiredTableReadOperators()...)
 	if err != nil {
-		return nil, fmt.Errorf("unsupported engine type: %s", req.Engine.EngineType)
+		return nil, err
 	}
 	modelProvider, ok := plug.(plugin.CatalogModelProvider)
 	if !ok {
@@ -509,6 +521,7 @@ func (r *PreviewResolver) buildProviderRequest(req *PreviewResolverRequest) (*Pr
 
 	return &PreviewRequest{
 		Engine:          managerEngine,
+		EnginePlugin:    plug,
 		Schema:          schema,
 		Table:           table,
 		Page:            page,

@@ -157,7 +157,7 @@ func main() {
 			ModuleName: "develop", ModuleURL: serviceURL, RoutePrefix: "/develop", HealthCheckURL: serviceURL + "/health",
 			Metadata: map[string]interface{}{"capabilities": map[string]interface{}{"cleanup_executor": map[string]interface{}{"enabled": true, "causes": []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted}}}},
 			ConfigurationManagement: &commonconfiguration.ManagementDeclaration{SchemaVersion: commonconfiguration.ManagementSchemaVersion, Entries: []commonconfiguration.ManagementEntry{{
-				ID: "develop.query_policy", OwnerModule: "develop", ScopeTypes: []string{commonconfiguration.ScopePlatformDefaultWithTenantOverride}, FrontendRoute: "/configuration/develop/query-policy",
+				ID: "develop.configuration", OwnerModule: "develop", ScopeTypes: []string{commonconfiguration.ScopePlatformDefaultWithTenantOverride}, FrontendRoute: "/configuration/develop",
 				ReadPermission: developauthorization.PermissionDevelopConfigurationRead, UpdatePermission: developauthorization.PermissionDevelopConfigurationUpdate,
 			}}},
 		})

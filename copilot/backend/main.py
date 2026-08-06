@@ -42,18 +42,10 @@ async def lifespan(app: FastAPI):
         metadata={"module": "copilot", "language": "python"},
         configuration_management=ConfigurationManagementDeclaration(entries=[
             ConfigurationManagementEntry(
-                id="copilot.inference_bindings",
+                id="copilot.configuration",
                 owner_module="copilot",
                 scope_types=["platform_default_with_tenant_override"],
-                frontend_route="/configuration/copilot/inference",
-                read_permission="copilot.configuration.read",
-                update_permission="copilot.configuration.update",
-            ),
-            ConfigurationManagementEntry(
-                id="copilot.matching_policy",
-                owner_module="copilot",
-                scope_types=["platform_default_with_tenant_override"],
-                frontend_route="/configuration/copilot/matching-policy",
+                frontend_route="/configuration/copilot",
                 read_permission="copilot.configuration.read",
                 update_permission="copilot.configuration.update",
             ),

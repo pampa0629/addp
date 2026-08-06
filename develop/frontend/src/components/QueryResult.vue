@@ -57,10 +57,10 @@
     />
 
     <el-alert
-      v-if="result && result.success === false && result.error"
+      v-if="result && result.success === false && errorMessage"
       class="result-alert"
       type="error"
-      :title="result.error"
+      :title="errorMessage"
       :closable="false"
       show-icon
     />
@@ -124,7 +124,7 @@ import {
   View
 } from '@element-plus/icons-vue'
 import { openMonitorExecution } from '@addp/common-frontend'
-import { buildQueryResultCSV } from '@/utils/queryWorkbench.mjs'
+import { buildQueryResultCSV, queryErrorMessage } from '@/utils/queryWorkbench.mjs'
 
 const { t } = useI18n()
 const props = defineProps({
@@ -157,6 +157,7 @@ const statusLabel = computed(() => {
   if (props.result?.success && Number(props.result?.rows_count || 0) === 0) return t('develop.queryResult.successNoData')
   return props.result?.success ? t('develop.queryResult.success') : t('develop.queryResult.failed')
 })
+const errorMessage = computed(() => queryErrorMessage(props.result?.error_code, props.result?.error, t))
 const noDataHint = computed(() => {
   const diagnostic = props.result?.diagnostics?.[0]
   if (diagnostic?.code === 'query_zero_result') {

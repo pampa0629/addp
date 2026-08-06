@@ -37,7 +37,7 @@ func (s *QueryPolicyService) ResolveRuntime(ctx context.Context, tenantID uint) 
 	if platform == nil {
 		platform = defaultQueryPolicyModel("platform", nil)
 	}
-	defaultTimeout := platform.DefaultQueryTimeout
+	defaultTimeout = platform.DefaultQueryTimeout
 	if tenantID > 0 {
 		if tenant, tenantErr := s.repo.Get(ctx, "tenant", &tenantID); tenantErr != nil {
 			return 0, 0, 0, tenantErr

@@ -23,3 +23,11 @@ export function listInferenceProfiles() {
 export function listInferenceDeployments() {
   return client.get('/inference/model-deployments', { params: { page: 1, page_size: 100 } })
 }
+
+export function getQuickViewPolicy() {
+  return client.get('/manager/settings/quick-view-policy')
+}
+
+export function updateQuickViewPolicy(payload) {
+  return client.put('/manager/settings/quick-view-policy', payload)
+}

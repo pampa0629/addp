@@ -65,8 +65,9 @@ func ValidateManagementDeclaration(owner string, declaration *ManagementDeclarat
 			return fmt.Errorf("configuration management entry %q: %w", entry.ID, err)
 		}
 		ownerRoute := "/" + owner + "/"
-		consoleRoute := "/configuration/" + owner + "/"
-		if (!strings.HasPrefix(entry.FrontendRoute, ownerRoute) && !strings.HasPrefix(entry.FrontendRoute, consoleRoute)) || strings.Contains(entry.FrontendRoute, "?") || strings.Contains(entry.FrontendRoute, "#") {
+		consoleRoute := "/configuration/" + owner
+		isConsoleRoute := entry.FrontendRoute == consoleRoute || strings.HasPrefix(entry.FrontendRoute, consoleRoute+"/")
+		if (!strings.HasPrefix(entry.FrontendRoute, ownerRoute) && !isConsoleRoute) || strings.Contains(entry.FrontendRoute, "?") || strings.Contains(entry.FrontendRoute, "#") {
 			return fmt.Errorf("configuration management entry %q frontend_route must be an absolute %s owner route or %s Console route", entry.ID, ownerRoute, consoleRoute)
 		}
 		if err := commonauth.ValidatePermissionKey(entry.ReadPermission); err != nil {

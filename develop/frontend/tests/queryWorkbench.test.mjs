@@ -6,6 +6,7 @@ import {
   monacoLanguageForQuery,
   queryCapabilityForEngine,
   queryParameterReference,
+  queryErrorMessage,
   queryResultFromExecution
 } from '../src/utils/queryWorkbench.mjs'
 
@@ -50,6 +51,10 @@ assert.equal(monacoLanguageForQuery('mql'), 'json')
 assert.equal(monacoLanguageForQuery('cypher'), 'cypher')
 assert.equal(formatterLanguageForQuery('sql'), 'sql')
 assert.equal(formatterLanguageForQuery('cypher'), '')
+assert.equal(
+  queryErrorMessage('mongodb_database_required', 'raw provider error', key => key),
+  'develop.queryResult.mongodbDatabaseRequired'
+)
 
 const result = queryResultFromExecution({
   execution_id: 'execution-1',

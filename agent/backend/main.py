@@ -96,10 +96,10 @@ def _module_registration() -> ModuleRegistration:
         metadata={"module": "agent", "language": "python"},
         configuration_management=ConfigurationManagementDeclaration(entries=[
             ConfigurationManagementEntry(
-                id="agent.inference_bindings",
+                id="agent.configuration",
                 owner_module="agent",
                 scope_types=["platform_default_with_tenant_override"],
-                frontend_route="/configuration/agent/inference",
+                frontend_route="/configuration/agent",
                 read_permission="agent.configuration.read",
                 update_permission="agent.configuration.update",
             ),

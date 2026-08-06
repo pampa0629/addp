@@ -253,8 +253,16 @@ export function queryResultFromExecution(execution) {
     truncated: result.truncated === true,
     diagnostics: Array.isArray(result.diagnostics) ? result.diagnostics : [],
     graph_data: result.graph_data || null,
+    error_code: success ? '' : (execution?.error_details?.error_code || ''),
     error: success ? '' : (execution?.error_details?.message || execution?.error_details?.error || '')
   }
+}
+
+export function queryErrorMessage(errorCode, fallback, translate) {
+  if (errorCode === 'mongodb_database_required' && typeof translate === 'function') {
+    return translate('develop.queryResult.mongodbDatabaseRequired')
+  }
+  return fallback || ''
 }
 
 export function csvCell(value) {

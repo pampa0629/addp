@@ -118,7 +118,8 @@
           :show-selection-summary="false"
           :show-count="false"
           :title="''"
-          mode="item"
+          mode="any"
+          :selectable-filter="isQueryCatalogSelectionAllowed"
           tree-height="100%"
           @select="rememberCatalogSelection"
           @node-dblclick="insertCatalogItemAtCursor"
@@ -340,7 +341,8 @@
         :show-selection-summary="false"
         :show-count="false"
         :title="''"
-        mode="item"
+        mode="any"
+        :selectable-filter="isQueryCatalogSelectionAllowed"
         tree-height="calc(100vh - 150px)"
         @select="rememberCatalogSelection"
         @node-dblclick="insertCatalogItemAtCursor"
@@ -981,6 +983,15 @@ const rememberCatalogSelection = (selection) => {
     detail: selection.display.type || ''
   }
   catalogCompletions.value = [next, ...catalogCompletions.value.filter(item => item.insertText !== path)].slice(0, 100)
+}
+
+const isQueryCatalogSelectionAllowed = (node, { engine, locator } = {}) => {
+  if (!locator?.engineId) return false
+  const engineType = String(engine?.engine_type || selectedTarget.value?.engine?.engine_type || '').toLowerCase()
+  if (engineType === 'mongodb') {
+    return locator.type === 'database' || Boolean(locator.itemId)
+  }
+  return Boolean(locator.itemId)
 }
 
 const quoteQueryIdentifier = (value, quote) => {

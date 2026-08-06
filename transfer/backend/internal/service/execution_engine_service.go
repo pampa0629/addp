@@ -11,6 +11,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/dbbridge"
+	"github.com/addp/common/engine/instanceprovider"
 	engineplugin "github.com/addp/common/engine/plugin"
 	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
 	commonExecution "github.com/addp/common/execution"
@@ -420,44 +421,36 @@ func (s *ExecutionEngineService) superMapSDXPostgreSQLTableProvider(
 	tenantID uint,
 	binding planner.EngineBinding,
 ) (*supermapworkflow.SDXPostgreSQLTableProvider, error) {
-	workspace, ok := planner.SuperMapSDXPostgreSQLWorkspace(binding)
+	_, ok := planner.SuperMapSDXPostgreSQLWorkspace(binding)
 	if !ok {
 		return nil, nil
-	}
-	if workspace.BoundRuntimeEngineID == nil || *workspace.BoundRuntimeEngineID == 0 {
-		return nil, fmt.Errorf("SuperMap SDX+ for PostgreSQL workspace has no bound workflow runtime")
 	}
 	if s.systemRuntime == nil {
 		return nil, fmt.Errorf("system client is required to resolve the bound SuperMap workflow runtime")
 	}
-	boundRuntimeID := *workspace.BoundRuntimeEngineID
-	descriptor, err := s.systemRuntime.WithTenantID(tenantID).GetEngineRuntimeDescriptor(ctx, boundRuntimeID)
-	if err != nil {
-		return nil, fmt.Errorf("get bound workflow runtime %d: %w", boundRuntimeID, err)
+	engine := &commonModels.Engine{
+		ID:             binding.EngineID,
+		EngineType:     binding.Type,
+		Capabilities:   nil,
+		ConnectionInfo: commonModels.ConnectionInfo(binding.ConnInfo),
 	}
-	if descriptor == nil || descriptor.ID != boundRuntimeID || descriptor.LifecycleState != commonModels.EngineLifecycleActive {
-		return nil, fmt.Errorf("bound workflow runtime %d is not active or visible to tenant %d", boundRuntimeID, tenantID)
+	if binding.Capabilities != nil {
+		payload, err := engineplugin.MarshalEngineCapabilities(*binding.Capabilities)
+		if err != nil {
+			return nil, fmt.Errorf("serialize engine capabilities: %w", err)
+		}
+		jsonPayload := commonModels.JSONString(payload)
+		engine.Capabilities = &jsonPayload
 	}
-	runtimeEngine := descriptor.AsEngine()
-	workflowRuntime, err := dbbridge.WorkflowRuntimeProviderForEngine(runtimeEngine)
+	resolved, err := instanceprovider.Resolve(ctx, s.systemRuntime.WithTenantID(tenantID), engine, supermapworkflow.RequiredTableOperators()...)
 	if err != nil {
 		return nil, err
 	}
-	if err := dbbridge.RequireDirectWorkflowOperators(ctx, runtimeEngine, supermapworkflow.RequiredTableOperators()...); err != nil {
-		return nil, fmt.Errorf("bound runtime %d does not provide SuperMap table operators: %w", boundRuntimeID, err)
+	provider, ok := resolved.(*supermapworkflow.SDXPostgreSQLTableProvider)
+	if !ok {
+		return nil, fmt.Errorf("engine %d SuperMap workspace resolved to %T", binding.EngineID, resolved)
 	}
-	return supermapworkflow.NewSDXPostgreSQLTableProvider(
-		workflowRuntime,
-		toPluginConnectionInfo(runtimeEngine.ConnectionInfo),
-	)
-}
-
-func toPluginConnectionInfo(value commonModels.ConnectionInfo) engineplugin.ConnectionInfo {
-	result := make(engineplugin.ConnectionInfo, len(value))
-	for key, item := range value {
-		result[key] = item
-	}
-	return result
+	return provider, nil
 }
 
 func (s *ExecutionEngineService) selectDirectWorkflowRuntime(ctx context.Context, tenantID uint, operatorName string) (commonModels.Engine, commonModels.OperatorDescriptor, error) {

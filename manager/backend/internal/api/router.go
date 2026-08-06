@@ -29,6 +29,7 @@ func SetupRouter(
 	quickViewService *service.QuickViewService,
 	metadataRepo *repository.MetadataRepository,
 	systemClient *commonClient.SystemClient,
+	systemServiceClient *commonClient.SystemServiceClient,
 	metaClient *commonClient.MetaClient,
 	cacheManager *service.CacheManager,
 	redisClient *redis.Client,
@@ -342,7 +343,7 @@ func SetupRouter(
 
 		// 数据探查 API（Manager 核心功能，直接挂在 /api/v1/manager 下）
 		previewRegistry := metadataService.PreviewRegistry()
-		previewResolver := preview.NewPreviewResolver(previewRegistry, systemClient, metaClient)
+		previewResolver := preview.NewPreviewResolver(previewRegistry, systemClient, metaClient, systemServiceClient)
 		explorerService := service.NewExplorerService(systemClient, metaClient, previewResolver)
 		explorerHandler := NewExplorerHandler(explorerService, previewResolver, metadataService)
 		metadataHandler := NewMetadataHandler(metadataService)

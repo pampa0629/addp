@@ -12,6 +12,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
+	"github.com/addp/common/engine/instanceprovider"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/objectstore"
 	commonModels "github.com/addp/common/models"
@@ -97,6 +98,9 @@ func (e *ManagerVectorTileSetExecutor) GenerateVectorTileSet(ctx context.Context
 		sourceEngine, err := e.systemClient.GetEngine(req.Config.Source.EngineID)
 		if err != nil {
 			return nil, fmt.Errorf("get vector tile set source engine: %w", err)
+		}
+		if instanceprovider.IsSuperMapSDXPostgreSQL(sourceEngine) {
+			return nil, errors.New("SuperMap SDX+ for PostgreSQL does not support MVT vector tile set generation")
 		}
 		switch {
 		case spatial.IsPostGISEngine(sourceEngine.EngineType):

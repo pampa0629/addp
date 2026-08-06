@@ -542,7 +542,7 @@ func TestBuildProviderRequestUsesPartitionedPhysicalPath(t *testing.T) {
 		PhysicalPath: "bucket/table.parquet",
 	}
 
-	providerReq, err := resolver.buildProviderRequest(req)
+	providerReq, err := resolver.buildProviderRequest(context.Background(), req)
 	if err != nil {
 		t.Fatalf("buildProviderRequest() error = %v", err)
 	}
@@ -567,7 +567,7 @@ func TestBuildProviderRequestKeepsChildName(t *testing.T) {
 		ChildName: "Cities",
 	}
 
-	providerReq, err := resolver.buildProviderRequest(req)
+	providerReq, err := resolver.buildProviderRequest(context.Background(), req)
 	if err != nil {
 		t.Fatalf("buildProviderRequest() error = %v", err)
 	}

@@ -40,13 +40,14 @@ func (p *DatabaseTablePreviewProvider) Name() string {
 func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
 	const maxRows = 2000
 
-	plug, err := plugin.Get(req.Engine.EngineType)
-	if err != nil {
-		return nil, fmt.Errorf("unsupported engine type: %s", req.Engine.EngineType)
+	plug := req.EnginePlugin
+	if plug == nil {
+		return nil, fmt.Errorf("resolved engine provider is required for database table preview")
 	}
 	batchReader, ok := plug.(plugin.BatchReadableProvider)
-	if !ok {
-		return nil, fmt.Errorf("engine %s does not implement BatchReadableProvider", req.Engine.EngineType)
+	sessionReader, hasSession := plug.(plugin.TableReadSessionProvider)
+	if !ok && !hasSession {
+		return nil, fmt.Errorf("engine %s does not implement a table read provider", req.Engine.EngineType)
 	}
 	catalogFactsProvider, _ := plug.(plugin.CatalogFactsProvider)
 	connInfo := plugin.ConnectionInfo(req.Engine.ConnectionInfo)
@@ -146,7 +147,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	limit := pageSize
 
 	// 6. 执行分页查询
-	rows, err := p.queryData(ctx, batchReader, connInfo, req.ProviderPath, req.Engine.EngineType, req.Schema, tableName, offset, limit, columns, req.DataScope)
+	rows, err := p.queryData(ctx, batchReader, sessionReader, connInfo, req.ProviderPath, req.Engine.EngineType, req.Schema, tableName, offset, limit, columns, req.DataScope)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query data: %w", err)
 	}
@@ -182,6 +183,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 func (p *DatabaseTablePreviewProvider) queryData(
 	ctx context.Context,
 	batchReader plugin.BatchReadableProvider,
+	sessionReader plugin.TableReadSessionProvider,
 	connInfo plugin.ConnectionInfo,
 	providerPath plugin.CatalogPath,
 	engineType, schema, table string,
@@ -189,6 +191,21 @@ func (p *DatabaseTablePreviewProvider) queryData(
 	columns []datatype.FieldInfo,
 	dataScope dataprofile.DataScope,
 ) ([]map[string]interface{}, error) {
+	if batchReader == nil {
+		if req := strings.TrimSpace(string(dataScope.Kind)); req != "" && req != "all" {
+			return nil, fmt.Errorf("table preview conditions are not supported by the resolved table provider")
+		}
+		session, err := sessionReader.OpenTableReadSession(ctx, connInfo, providerPath, plugin.TableReadSessionOptions{
+			Hints: map[string]interface{}{
+				plugin.TableReadHintGeometryEncoding: "ewkb",
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		defer session.Close(ctx)
+		return readSessionPage(ctx, session, offset, limit)
+	}
 	dialect := sqldialect.ForEngine(engineType)
 	whereClause, args, err := profilefilter.SQL(dataScope, dialect, "")
 	if err != nil {
@@ -230,6 +247,44 @@ func (p *DatabaseTablePreviewProvider) queryData(
 		return nil, err
 	}
 	return result.Rows, nil
+}
+
+func readSessionPage(ctx context.Context, session plugin.TableReadSession, offset, limit int) ([]map[string]interface{}, error) {
+	if session == nil {
+		return nil, fmt.Errorf("table read session is required")
+	}
+	if limit <= 0 {
+		return []map[string]interface{}{}, nil
+	}
+	rows := make([]map[string]interface{}, 0, limit)
+	discard := offset
+	for len(rows) < limit {
+		batch, err := session.ReadBatch(ctx, maxReadBatch(limit, 256))
+		if err != nil {
+			return nil, err
+		}
+		if batch == nil || len(batch.Rows) == 0 {
+			break
+		}
+		for _, row := range batch.Rows {
+			if discard > 0 {
+				discard--
+				continue
+			}
+			rows = append(rows, row)
+			if len(rows) == limit {
+				break
+			}
+		}
+	}
+	return rows, nil
+}
+
+func maxReadBatch(left, right int) int {
+	if left > right {
+		return left
+	}
+	return right
 }
 
 const (

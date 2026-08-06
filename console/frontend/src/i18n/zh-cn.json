@@ -169,14 +169,13 @@
 	  "saveFailed": "保存配置失败",
 	  "versionConflict": "配置已被其他操作修改，当前内容已重新加载",
 	  "entries": {
-		"inferenceModels": "AI 模型服务",
-		"managerEmbedding": "Manager 图文向量化",
-		"copilotInferenceBindings": "Copilot 推理场景",
-		"agentInferenceBindings": "Agent 推理场景",
-		"developQueryPolicy": "Develop 查询策略",
-		"managerQuickViewPolicy": "Manager 快显策略",
-		"copilotMatchingPolicy": "Copilot 匹配策略"
+		"agentConfiguration": "Agent 配置",
+		"copilotConfiguration": "Copilot 配置",
+		"developConfiguration": "Develop 配置",
+		"inferenceConfiguration": "Inference 配置",
+		"managerConfiguration": "Manager 配置"
 	  },
+	  "tabs": { "inference": "推理场景", "matchingPolicy": "匹配策略", "queryPolicy": "查询策略" },
 	  "modules": { "system": { "name": "系统管理" }, "develop": { "name": "数据开发" }, "manager": { "name": "数据管理" }, "copilot": { "name": "AI 助手" }, "agent": { "name": "AI 智能体" }, "inference": { "name": "AI 模型服务" } },
 	  "policies": {
 		"develop": { "title": "查询策略", "defaultQueryTimeout": "默认查询超时（秒）", "maxQueryTimeout": "最大查询超时（秒）", "queryResultLimit": "结果预览上限（行）" },

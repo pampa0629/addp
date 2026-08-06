@@ -6,7 +6,7 @@ func TestValidateManagementDeclaration(t *testing.T) {
 	declaration := &ManagementDeclaration{
 		SchemaVersion: ManagementSchemaVersion,
 		Entries: []ManagementEntry{{
-			ID: "manager.embedding", OwnerModule: "manager",
+			ID: "manager.configuration", OwnerModule: "manager",
 			ScopeTypes:       []string{ScopePlatformOnly},
 			FrontendRoute:    "/manager/settings/embedding",
 			ReadPermission:   "manager.configuration.read",
@@ -21,9 +21,13 @@ func TestValidateManagementDeclaration(t *testing.T) {
 		t.Fatal("ValidateManagementDeclaration() error = nil, want owner mismatch")
 	}
 	declaration.Entries[0].OwnerModule = "manager"
-	declaration.Entries[0].FrontendRoute = "/configuration/manager/embedding"
+	declaration.Entries[0].FrontendRoute = "/configuration/manager"
 	if err := ValidateManagementDeclaration("manager", declaration); err != nil {
 		t.Fatalf("ValidateManagementDeclaration() Console route error = %v", err)
+	}
+	declaration.Entries[0].FrontendRoute = "/configuration/manager/embedding"
+	if err := ValidateManagementDeclaration("manager", declaration); err != nil {
+		t.Fatalf("ValidateManagementDeclaration() nested Console route error = %v", err)
 	}
 }
 

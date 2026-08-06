@@ -14,6 +14,7 @@ import (
 
 	commonAPI "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/engine/instanceprovider"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
@@ -54,7 +55,7 @@ type TileCacheTaskService struct {
 	quickViewSvc                *QuickViewService
 	metaClient                  *commonClient.MetaClient
 	sourceVersionResolver       func(context.Context, uint, tileCacheTaskTargetIdentity) (string, error)
-	sourceEngineTypeResolver    func(context.Context, uint) (string, error)
+	sourceEngineResolver        func(context.Context, uint) (*commonModels.Engine, error)
 	tileGenerator               TileCacheGenerator
 	workflowTileGenerator       WorkflowTileCacheGenerator
 	tileTargetResolver          RealtimeTileTargetResolver
@@ -127,8 +128,8 @@ func (s *TileCacheTaskService) SetSourceVersionResolver(resolver func(context.Co
 	s.sourceVersionResolver = resolver
 }
 
-func (s *TileCacheTaskService) SetSourceEngineTypeResolver(resolver func(context.Context, uint) (string, error)) {
-	s.sourceEngineTypeResolver = resolver
+func (s *TileCacheTaskService) SetSourceEngineResolver(resolver func(context.Context, uint) (*commonModels.Engine, error)) {
+	s.sourceEngineResolver = resolver
 }
 
 func (s *TileCacheTaskService) SetTileGenerator(generator TileCacheGenerator, defaultConcurrency int) {
@@ -781,11 +782,18 @@ func (s *TileCacheTaskService) prepareExecutionTileCache(ctx context.Context, ta
 	table := identity.Table
 	tableSource := identity.SourceKind == string(resourcetree.TypeTable)
 	workflowTableSource := false
-	if tableSource && s.sourceEngineTypeResolver != nil {
-		engineType, err := s.sourceEngineTypeResolver(ctx, identity.EngineID)
+	if tableSource && s.sourceEngineResolver != nil {
+		sourceEngine, err := s.sourceEngineResolver(ctx, identity.EngineID)
 		if err != nil {
-			return nil, execCfg, mvt.QuickViewConfig{}, nil, false, fmt.Errorf("resolve tile cache source engine type: %w", err)
+			return nil, execCfg, mvt.QuickViewConfig{}, nil, false, fmt.Errorf("resolve tile cache source engine: %w", err)
 		}
+		if sourceEngine == nil {
+			return nil, execCfg, mvt.QuickViewConfig{}, nil, false, errors.New("tile cache source engine is required")
+		}
+		if instanceprovider.IsSuperMapSDXPostgreSQL(sourceEngine) {
+			return nil, execCfg, mvt.QuickViewConfig{}, nil, false, errors.New("SuperMap SDX+ for PostgreSQL does not support MVT vector tile cache generation")
+		}
+		engineType := sourceEngine.EngineType
 		switch {
 		case strings.EqualFold(strings.TrimSpace(engineType), "mysql"):
 			workflowTableSource = true

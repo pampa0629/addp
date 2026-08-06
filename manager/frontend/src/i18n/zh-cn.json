@@ -34,6 +34,7 @@
 	  "title": "向量化配置",
 	  "profileSection": "推理场景绑定",
 	  "policySection": "运行策略",
+	  "tabs": { "embedding": "向量化", "quickViewPolicy": "快显策略" },
 	  "modelProfile": "Inference Model Profile",
 	  "dimension": "向量维度",
 	  "maxDistance": "最大余弦距离",
@@ -51,6 +52,19 @@
 	  "saveSuccess": "向量化配置已保存",
 	  "saveFailed": "保存向量化配置失败",
 	  "versionConflict": "配置已被其他操作者更新，已重新加载"
+	},
+	"quickViewPolicy": {
+	  "title": "快显策略",
+	  "description": "管理 Manager 快显运行时的容量和超时边界。",
+	  "flatgeobufRows": "FlatGeobuf 行数上限",
+	  "mvtTimeout": "动态 MVT 超时预算（毫秒）",
+	  "retryAfter": "重试等待时间（秒）",
+	  "reload": "重新加载",
+	  "save": "保存策略",
+	  "loadFailed": "加载快显策略失败",
+	  "saveSuccess": "快显策略已保存",
+	  "saveFailed": "保存快显策略失败",
+	  "versionConflict": "快显策略已被其他操作者更新，已重新加载"
 	},
 	"vectorTileSet": {
 	  "title": "矢量瓦片任务",

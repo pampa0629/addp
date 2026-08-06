@@ -8,8 +8,10 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/instanceprovider"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/logger"
+	commonModels "github.com/addp/common/models"
 	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
@@ -117,7 +119,7 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 		managerError(c, http.StatusForbidden, manageri18n.MsgEngineAccessDenied)
 		return
 	}
-	feature, err := readSpatialFeature(c, engine.EngineType, engine.ID, plugin.ConnectionInfo(engine.ConnectionInfo), schema, table, geomCol, primaryKey, featureIDStr)
+	feature, err := readSpatialFeature(c, engine, plugin.ConnectionInfo(engine.ConnectionInfo), schema, table, geomCol, primaryKey, featureIDStr)
 	if err != nil {
 		logger.L().Warn("读取要素中心点失败", "error", err, "engine_id", engineID, "schema", schema, "table", table)
 		managerError(c, http.StatusInternalServerError, manageri18n.MsgQueryFailed)
@@ -223,7 +225,7 @@ func (h *FeatureHandler) GetFeatureGeometry(c *gin.Context) {
 		managerError(c, http.StatusForbidden, manageri18n.MsgEngineAccessDenied)
 		return
 	}
-	feature, err := readSpatialFeature(c, engine.EngineType, engine.ID, plugin.ConnectionInfo(engine.ConnectionInfo), schema, table, geomCol, primaryKey, featureIDStr)
+	feature, err := readSpatialFeature(c, engine, plugin.ConnectionInfo(engine.ConnectionInfo), schema, table, geomCol, primaryKey, featureIDStr)
 	if err != nil {
 		logger.L().Warn("读取要素几何失败", "error", err, "engine_id", engineID, "schema", schema, "table", table)
 		managerError(c, http.StatusInternalServerError, manageri18n.MsgQueryFailed)
@@ -261,7 +263,14 @@ func (h *FeatureHandler) GetFeatureGeometry(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-func readSpatialFeature(c *gin.Context, engineType string, engineID uint, connInfo plugin.ConnectionInfo, schema, table, geometryField, identityField, identityValue string) (*plugin.SpatialFeatureData, error) {
+func readSpatialFeature(c *gin.Context, engine *commonModels.Engine, connInfo plugin.ConnectionInfo, schema, table, geometryField, identityField, identityValue string) (*plugin.SpatialFeatureData, error) {
+	if instanceprovider.IsSuperMapSDXPostgreSQL(engine) {
+		return nil, fmt.Errorf("SuperMap SDX+ for PostgreSQL feature endpoint is not supported until a provider feature-read session is implemented")
+	}
+	if engine == nil {
+		return nil, fmt.Errorf("engine is required")
+	}
+	engineType := engine.EngineType
 	plug, err := plugin.Get(engineType)
 	if err != nil {
 		return nil, err
@@ -278,7 +287,7 @@ func readSpatialFeature(c *gin.Context, engineType string, engineID uint, connIn
 	if !ok || strings.TrimSpace(branch.Term) == "" {
 		return nil, fmt.Errorf("engine %s catalog model has no business namespace", engineType)
 	}
-	return provider.ReadSpatialFeature(c.Request.Context(), connInfo, plugin.TabularItemPath(engineID, branch.Term, schema, table), plugin.SpatialFeatureReadOptions{
+	return provider.ReadSpatialFeature(c.Request.Context(), connInfo, plugin.TabularItemPath(engine.ID, branch.Term, schema, table), plugin.SpatialFeatureReadOptions{
 		GeometryField: geometryField,
 		IdentityField: identityField,
 		IdentityValue: identityValue,

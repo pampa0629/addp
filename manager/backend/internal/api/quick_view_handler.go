@@ -643,6 +643,11 @@ func (h *QuickViewHandler) attachRenderableExtent(ctx context.Context, tenantID 
 
 func (h *QuickViewHandler) attachRealtimeTileTarget(ctx context.Context, tenantID *uint, source *service.QuickViewSource) {
 	target, err := h.resolveRealtimeTileTarget(ctx, tenantID, *source)
+	if errors.Is(err, service.ErrSuperMapSDXPostgreSQLMVTUnsupported) {
+		source.CanTile = false
+		source.RealtimeTileTarget = nil
+		return
+	}
 	if err != nil || target == nil {
 		return
 	}

@@ -72,7 +72,7 @@ func TestDatabaseGeometryColumnsUsesCommonSpatialFactsForMySQL(t *testing.T) {
 func TestDatabasePreviewMySQLUsesCatalogReadWithGeoJSONHint(t *testing.T) {
 	reader := &recordingDatabasePreviewPlugin{engineType: "mysql"}
 	provider := &DatabaseTablePreviewProvider{}
-	_, err := provider.queryData(context.Background(), reader, nil, plugin.CatalogPath{}, "mysql", "business", "store_locations", 20, 10, nil, dataprofile.DataScope{})
+	_, err := provider.queryData(context.Background(), reader, nil, plugin.ConnectionInfo{}, plugin.CatalogPath{}, "mysql", "business", "store_locations", 20, 10, nil, dataprofile.DataScope{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,6 +153,7 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 			ID:         7,
 			EngineType: enginePlugin.Type(),
 		},
+		EnginePlugin: enginePlugin,
 		Schema:   "public",
 		Table:    "public.dltb",
 		Page:     3,
@@ -220,7 +221,7 @@ func TestDatabaseTablePreviewProviderBindsProfileConditionsBeforePaging(t *testi
 	reader := &recordingDatabasePreviewPlugin{engineType: "postgresql", batchData: &plugin.BatchData{}}
 	provider := &DatabaseTablePreviewProvider{}
 	_, err := provider.queryData(
-		context.Background(), reader, nil,
+		context.Background(), reader, nil, plugin.ConnectionInfo{},
 		plugin.TabularItemPath(7, plugin.CatalogTermSchema, "public", "orders"),
 		"postgresql", "public", "orders", 0, 500,
 		[]datatype.FieldInfo{{Name: "status", Type: datatype.FieldTypeString}},
@@ -276,6 +277,7 @@ func TestDatabaseTablePreviewProviderPreviewFallsBackToCatalogFactsRowCount(t *t
 			ID:         8,
 			EngineType: enginePlugin.Type(),
 		},
+		EnginePlugin: enginePlugin,
 		Schema:   "public",
 		Table:    "public.people",
 		Page:     1,
@@ -337,6 +339,7 @@ func TestDatabaseTablePreviewProviderAllowsQuickViewPageSize(t *testing.T) {
 			ID:         8,
 			EngineType: enginePlugin.Type(),
 		},
+		EnginePlugin: enginePlugin,
 		Schema:   "public",
 		Table:    "public.farmland",
 		Page:     1,

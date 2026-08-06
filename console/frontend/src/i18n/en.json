@@ -169,14 +169,13 @@
 	  "saveFailed": "Failed to save configuration",
 	  "versionConflict": "The configuration changed elsewhere and has been reloaded",
 	  "entries": {
-		"inferenceModels": "AI Model Services",
-		"managerEmbedding": "Manager Multimodal Embedding",
-		"copilotInferenceBindings": "Copilot Inference Scenarios",
-		"agentInferenceBindings": "Agent Inference Scenarios",
-		"developQueryPolicy": "Develop Query Policy",
-		"managerQuickViewPolicy": "Manager Quick View Policy",
-		"copilotMatchingPolicy": "Copilot Matching Policy"
+		"agentConfiguration": "Agent Configuration",
+		"copilotConfiguration": "Copilot Configuration",
+		"developConfiguration": "Develop Configuration",
+		"inferenceConfiguration": "Inference Configuration",
+		"managerConfiguration": "Manager Configuration"
 	  },
+	  "tabs": { "inference": "Inference Scenarios", "matchingPolicy": "Matching Policy", "queryPolicy": "Query Policy" },
 	  "modules": { "system": { "name": "System Management" }, "develop": { "name": "Data Development" }, "manager": { "name": "Data Management" }, "copilot": { "name": "AI Assistant" }, "agent": { "name": "AI Agent" }, "inference": { "name": "AI Model Services" } },
 	  "policies": {
 		"develop": { "title": "Query policy", "defaultQueryTimeout": "Default query timeout (seconds)", "maxQueryTimeout": "Maximum query timeout (seconds)", "queryResultLimit": "Result preview limit (rows)" },

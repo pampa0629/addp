@@ -56,7 +56,7 @@ Tenant 显式值 > 平台显式默认值 > owner 配置定义默认值
 
 ## 配置管理能力声明
 
-各模块通过版本化的 `addp.configuration-management/v1` 契约向 System 发布配置管理入口。该声明是模块目录能力，不是配置定义或配置值，至少包含稳定 entry id、owner module、支持的 scope types、模块前端路由以及读写 Permission。
+各模块通过版本化的 `addp.configuration-management/v1` 契约向 System 发布配置管理入口。该声明是模块目录能力，不是配置定义或配置值，至少包含稳定 entry id、owner module、支持的 scope types、模块前端路由以及读写 Permission。一级配置管理入口按模块聚合：一个模块发布一个稳定的模块级入口；同一模块的多个配置域由该模块页面在内部使用 Tab、分组或其他二级导航组织。
 
 约束如下：
 
@@ -64,6 +64,7 @@ Tenant 显式值 > 平台显式默认值 > owner 配置定义默认值
 2. 声明不得携带配置键、默认值、当前值、Secret 或模块私有表结构。
 3. System 只校验和登记通用契约，不能解释配置字段、代替 owner 校验或成为其他模块配置的 fallback。
 4. Console 按当前 AuthContext、Permission 和模块状态聚合入口；具体页面可以由 owner 模块前端提供，也可以由 Console 在 `/configuration/{owner}/...` 下提供跨 owner 的组合视图，但配置 API、字段校验和配置事实始终属于 owner 模块。
+   Console 一级列表只展示模块级入口，不按具体配置域拆分菜单；模块内部的二级导航由 owner 页面负责。
 5. owner API 必须再次执行 Platform/Tenant Context 和 Permission 校验，不能信任 Console 是否展示了入口。
 6. 模块下线时，Console 将入口显示为不可用；System 不代管该模块的配置值。
 
@@ -512,12 +513,12 @@ System 不提供公开 `/register`。平台 IAM 管理使用 `/platform/*`，Ten
 
 配置管理页面只承载模块自己拥有、可以在运行时安全生效的策略。System 只保存模块注册的入口声明，不保存业务配置键和值。
 
-当前新增的策略入口：
+当前模块级入口下的运行策略：
 
-| 配置入口 | 所有者 | 平台级字段 | 租户级字段 |
-| --- | --- | --- | --- |
-| `develop.query_policy` | Develop | 最大查询超时、结果预览上限 | 默认查询超时 |
-| `manager.quick_view_policy` | Manager | FlatGeobuf 行数上限、动态 MVT 超时预算、重试等待时间 | 暂无 |
-| `copilot.matching_policy` | Copilot | 匹配阈值、候选数量上限 | 匹配阈值、候选数量上限 |
+| 模块级入口 | 所有者 | 内部配置域 | 平台级字段 | 租户级字段 |
+| --- | --- | --- | --- | --- |
+| `develop.configuration` | Develop | `query_policy` | 最大查询超时、结果预览上限 | 默认查询超时 |
+| `manager.configuration` | Manager | `embedding`、`quick_view_policy` | 向量化策略、FlatGeobuf 行数上限、动态 MVT 超时预算、重试等待时间 | 向量化模型绑定及租户覆盖 |
+| `copilot.configuration` | Copilot | `inference_bindings`、`matching_policy` | 匹配阈值、候选数量上限 | 推理场景绑定、匹配阈值、候选数量上限 |
 
 模块数据库保存配置事实并使用版本号进行并发更新；密钥类字段必须使用专用加密凭据，不通过普通键值配置返回。

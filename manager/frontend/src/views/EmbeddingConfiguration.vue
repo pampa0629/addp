@@ -11,6 +11,8 @@
       <el-button :icon="Refresh" circle :loading="loading" :title="t('manager.embeddingConfiguration.reload')" @click="load" />
     </header>
 
+    <el-tabs v-model="activeTab" class="configuration-tabs">
+      <el-tab-pane :label="t('manager.embeddingConfiguration.tabs.embedding')" name="embedding">
     <el-form ref="formRef" v-loading="loading" :model="form" :rules="rules" label-position="top">
       <section class="form-section">
         <h2>{{ t('manager.embeddingConfiguration.profileSection') }}</h2>
@@ -52,6 +54,11 @@
         </el-button>
       </footer>
     </el-form>
+      </el-tab-pane>
+      <el-tab-pane v-if="isPlatform" :label="t('manager.embeddingConfiguration.tabs.quickViewPolicy')" name="quick-view-policy">
+        <QuickViewPolicyConfiguration />
+      </el-tab-pane>
+    </el-tabs>
   </main>
 </template>
 
@@ -69,12 +76,14 @@ import {
   updateEmbeddingConfiguration,
   updateInferenceBinding
 } from '../api/embeddingConfiguration'
+import QuickViewPolicyConfiguration from '../components/QuickViewPolicyConfiguration.vue'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
 const formRef = ref(null)
 const loading = ref(false)
 const saving = ref(false)
+const activeTab = ref('embedding')
 const profiles = ref([])
 const deployments = ref([])
 const binding = reactive({ version: 0, scopeType: '', effective: false })

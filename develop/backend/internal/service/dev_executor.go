@@ -481,6 +481,7 @@ func (e *DevExecutor) executeAsync(
 
 	var result commonModels.JSONMap
 	var errorMessage string
+	var errorCode string
 	var rowsAffected *int64
 
 	// 根据类型分发到不同引擎
@@ -489,7 +490,7 @@ func (e *DevExecutor) executeAsync(
 	case "workflow":
 		result, errorMessage = e.executeWorkflow(ctx, devTask, executionID, tenantID, workflowAuthorization)
 	case "query":
-		result, errorMessage, rowsAffected = e.executeQuery(ctx, devTask, executionID, tenantID, sqlAuthorization)
+		result, errorMessage, rowsAffected, errorCode = e.executeQuery(ctx, devTask, executionID, tenantID, sqlAuthorization)
 	case "script":
 		result, errorMessage = e.executeScript(ctx, devTask, executionID, tenantID)
 	default:
@@ -537,6 +538,10 @@ func (e *DevExecutor) executeAsync(
 	if errorMessage != "" {
 		execution.ErrorDetails = commonModels.JSONMap{
 			"message": errorMessage,
+		}
+		if errorCode != "" {
+			execution.ErrorDetails["error_code"] = errorCode
+			execution.ErrorDetails["details"] = errorMessage
 		}
 	}
 
@@ -733,7 +738,7 @@ func workflowProducedTargetScanOptions(target WorkflowProducedTarget) commonClie
 }
 
 // executeQuery 执行查询（根据query_type路由）
-func (e *DevExecutor) executeQuery(ctx context.Context, devTask *models.DevTask, executionID string, tenantID int, authorization *IssuedSQLExecutionAuthorization) (commonModels.JSONMap, string, *int64) {
+func (e *DevExecutor) executeQuery(ctx context.Context, devTask *models.DevTask, executionID string, tenantID int, authorization *IssuedSQLExecutionAuthorization) (commonModels.JSONMap, string, *int64, string) {
 	queryType := devTask.GetQueryType()
 
 	// 根据 query_type 路由到不同执行器
@@ -741,47 +746,48 @@ func (e *DevExecutor) executeQuery(ctx context.Context, devTask *models.DevTask,
 	case "sql", "mql", "cypher":
 		return e.executeSQL(ctx, devTask, executionID, tenantID, authorization)
 	default:
-		return nil, fmt.Sprintf("不支持的查询类型: %s", queryType), nil
+		return nil, fmt.Sprintf("不支持的查询类型: %s", queryType), nil, ""
 	}
 }
 
 // executeSQL 执行SQL
-func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, executionID string, tenantID int, authorization *IssuedSQLExecutionAuthorization) (commonModels.JSONMap, string, *int64) {
+func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, executionID string, tenantID int, authorization *IssuedSQLExecutionAuthorization) (commonModels.JSONMap, string, *int64, string) {
 	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 30, "执行查询")
 	sqlContent, ok := devTask.Content["query"].(string)
 	parsedExecutionID, err := uuid.Parse(executionID)
 	if !ok || err != nil {
-		return nil, "异步 SQL 执行上下文无效", nil
+		return nil, "异步 SQL 执行上下文无效", nil, ""
 	}
 	if e.isFederatedQuery(ctx, devTask, uint(tenantID)) {
 		if devTask.RuntimeParameters != nil {
-			return nil, "联邦查询 Runtime 不支持查询参数", nil
+			return nil, "联邦查询 Runtime 不支持查询参数", nil, ""
 		}
 		if e.federatedQuery == nil || authorization == nil {
-			return nil, "联邦查询服务或 Execution Authorization 未初始化", nil
+			return nil, "联邦查询服务或 Execution Authorization 未初始化", nil, ""
 		}
 		runtimeEngineID := devTask.GetEngineID()
 		if runtimeEngineID == nil {
-			return nil, "联邦查询 Runtime Engine 无效", nil
+			return nil, "联邦查询 Runtime Engine 无效", nil, ""
 		}
 		federatedResult, executeErr := e.federatedQuery.ExecuteQuery(
 			ctx, uint(tenantID), *runtimeEngineID, parsedExecutionID, authorization.AuthorizationID,
 			sqlContent, devTask.Timeout, e.queryFetchLimit(), authorization.EngineIDs,
 		)
 		if executeErr != nil {
-			return nil, fmt.Sprintf("联邦查询执行失败: %v", executeErr), nil
+			return nil, fmt.Sprintf("联邦查询执行失败: %v", executeErr), nil, ""
 		}
-		return e.queryResult(
+		response, message, affected := e.queryResult(
 			federatedResult.Columns, federatedResult.Rows, int64(federatedResult.RowCount),
 			SQLExecutionEffectRead, "table", nil,
 		)
+		return response, message, affected, ""
 	}
 	if authorization == nil {
-		return nil, "异步 SQL 执行缺少 Execution Authorization", nil
+		return nil, "异步 SQL 执行缺少 Execution Authorization", nil, ""
 	}
 	engineID := devTask.GetEngineID()
 	if engineID == nil {
-		return nil, "异步 SQL 执行上下文无效", nil
+		return nil, "异步 SQL 执行上下文无效", nil, ""
 	}
 	var result *SQLResult
 	if devTask.GetQueryType() == "sql" {
@@ -791,10 +797,10 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 	} else {
 		engine, accessErr := e.sqlEngine.executionEngine(ctx, uint(tenantID), parsedExecutionID, *engineID, authorization)
 		if accessErr != nil {
-			return nil, fmt.Sprintf("查询执行授权失败: %v", accessErr), nil
+			return nil, fmt.Sprintf("查询执行授权失败: %v", accessErr), nil, ""
 		}
 		if supportErr := requireQueryParameterCapability(engine, devTask.GetQueryType(), devTask.RuntimeParameters); supportErr != nil {
-			return nil, supportErr.Error(), nil
+			return nil, supportErr.Error(), nil, ""
 		}
 		queryTimeout := devTask.Timeout
 		if queryTimeout <= 0 {
@@ -812,15 +818,15 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 				if locatorErr == nil {
 					locatorErr = fmt.Errorf("资源定位符引擎 ID 不匹配")
 				}
-				return nil, fmt.Sprintf("查询目标无效: %v", locatorErr), nil
+				return nil, fmt.Sprintf("查询目标无效: %v", locatorErr), nil, ""
 			}
 			model, modelErr := dbbridge.CatalogModel(engine.EngineType)
 			if modelErr != nil {
-				return nil, fmt.Sprintf("查询目标无效: %v", modelErr), nil
+				return nil, fmt.Sprintf("查询目标无效: %v", modelErr), nil, ""
 			}
 			path, pathErr := resourcetree.ProviderCatalogPathFromLocator(model, locator)
 			if pathErr != nil {
-				return nil, fmt.Sprintf("查询目标无效: %v", pathErr), nil
+				return nil, fmt.Sprintf("查询目标无效: %v", pathErr), nil, ""
 			}
 			targetPath = &path
 		}
@@ -856,14 +862,19 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 				if devTask.GetQueryType() == "mql" && len(result.Rows) == 0 {
 					response["diagnostics"] = mongoZeroResultDiagnostics(execCtx, engine, sqlContent, targetPath)
 				}
-				return response, message, affected
+				return response, message, affected, ""
 			}
 		}
 	}
 	if err != nil {
-		return nil, fmt.Sprintf("查询执行失败: %v", err), nil
+		return nil, fmt.Sprintf("查询执行失败: %v", err), nil, queryErrorCode(err)
 	}
-	return e.queryResult(result.Columns, result.Rows, result.RowsAffected, result.Effect, "table", nil)
+	response, message, affected := e.queryResult(result.Columns, result.Rows, result.RowsAffected, result.Effect, "table", nil)
+	return response, message, affected, ""
+}
+
+func queryErrorCode(err error) string {
+	return string(plugin.QueryErrorCodeOf(err))
 }
 
 // mongoZeroResultDiagnostics adds non-blocking guidance for the common case where

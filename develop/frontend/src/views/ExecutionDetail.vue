@@ -212,7 +212,7 @@ import {
 import QueryResult from '@/components/QueryResult.vue'
 import { navigateDevelopRoute } from '@/utils/developNavigation'
 import { resolveExecutionDetailRouteState } from '@/utils/executionDetailRouteState'
-import { queryResultFromExecution } from '@/utils/queryWorkbench.mjs'
+import { queryErrorMessage, queryResultFromExecution } from '@/utils/queryWorkbench.mjs'
 
 const route = useRoute()
 const router = useRouter()
@@ -226,10 +226,10 @@ let routeDataReady = false
 
 const executionResult = computed(() => execution.value?.metadata?.result || null)
 const executionInputs = computed(() => execution.value?.execution_config?.inputs || {})
-const executionErrorMessage = computed(() => (
-  execution.value?.error_details?.message ||
-  execution.value?.error_details?.error ||
-  ''
+const executionErrorMessage = computed(() => queryErrorMessage(
+  execution.value?.error_details?.error_code,
+  execution.value?.error_details?.message || execution.value?.error_details?.error || '',
+  t
 ))
 
 let refreshTimer = null

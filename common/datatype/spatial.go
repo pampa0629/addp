@@ -19,6 +19,7 @@ const (
 	CRSDefinitionSourceSidecarPRJ           = "sidecar_prj"
 	CRSDefinitionSourceGeoPackageSRS        = "geopackage_srs"
 	CRSDefinitionSourceGeoTIFFTags          = "geotiff_tags"
+	CRSDefinitionSourceSuperMapRuntimeSDK   = "supermap_runtime_sdk"
 )
 
 // SpatialInfo describes spatial facts that cut across data types.

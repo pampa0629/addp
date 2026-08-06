@@ -11,10 +11,9 @@
       <el-button :icon="Refresh" circle :loading="loading" @click="loadEntries" />
     </header>
 
-    <InferenceBindingsConfiguration v-if="selectedConfiguration === 'inference'" :key="route.path" :owner="selectedOwner" />
-    <PolicyConfiguration v-else-if="selectedConfiguration === 'policy'" :key="route.path" :owner="selectedOwner" />
+    <ModuleConfiguration v-if="selectedOwner" :key="selectedOwner" :owner="selectedOwner" />
 
-    <el-table v-else v-loading="loading" :data="entries" class="entries-table" :row-class-name="entryRowClass" @row-click="openEntry">
+    <el-table v-else v-loading="loading" :data="moduleEntries" class="entries-table" :row-class-name="entryRowClass" @row-click="openEntry">
       <el-table-column :label="t('console.configuration.owner')" min-width="150">
         <template #default="{ row }"><div class="entry-owner"><span>{{ t(`console.configuration.modules.${row.owner_module}.name`) }}</span><code>{{ row.owner_module }}</code></div></template>
       </el-table-column>
@@ -58,8 +57,7 @@ import { ArrowLeft, ArrowRight, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../store/auth'
 import { listConfigurationManagementEntries } from '../api/configurationManagement'
-import InferenceBindingsConfiguration from '../components/configuration/InferenceBindingsConfiguration.vue'
-import PolicyConfiguration from '../components/configuration/PolicyConfiguration.vue'
+import ModuleConfiguration from '../components/configuration/ModuleConfiguration.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -67,24 +65,39 @@ const route = useRoute()
 const authStore = useAuthStore()
 const loading = ref(false)
 const entries = ref([])
-const ENTRY_LABEL_KEYS = {
-  'inference.models': 'console.configuration.entries.inferenceModels',
-  'manager.embedding': 'console.configuration.entries.managerEmbedding',
-  'copilot.inference_bindings': 'console.configuration.entries.copilotInferenceBindings',
-  'agent.inference_bindings': 'console.configuration.entries.agentInferenceBindings',
-  'develop.query_policy': 'console.configuration.entries.developQueryPolicy',
-  'manager.quick_view_policy': 'console.configuration.entries.managerQuickViewPolicy',
-  'copilot.matching_policy': 'console.configuration.entries.copilotMatchingPolicy'
+const CONSOLE_MODULE_ROUTES = {
+  agent: '/configuration/agent',
+  copilot: '/configuration/copilot',
+  develop: '/configuration/develop'
 }
+const ENTRY_LABEL_KEYS = {
+  'agent.configuration': 'console.configuration.entries.agentConfiguration',
+  'copilot.configuration': 'console.configuration.entries.copilotConfiguration',
+  'develop.configuration': 'console.configuration.entries.developConfiguration',
+  'inference.configuration': 'console.configuration.entries.inferenceConfiguration',
+  'manager.configuration': 'console.configuration.entries.managerConfiguration'
+}
+const moduleEntries = computed(() => {
+  const modules = new Map()
+  for (const entry of entries.value) {
+    const existing = modules.get(entry.owner_module)
+    if (!existing) {
+      modules.set(entry.owner_module, {
+        ...entry,
+        id: `${entry.owner_module}.configuration`,
+        frontend_route: CONSOLE_MODULE_ROUTES[entry.owner_module] || entry.frontend_route,
+        scope_types: [...entry.scope_types]
+      })
+      continue
+    }
+    existing.scope_types = [...new Set([...existing.scope_types, ...entry.scope_types])]
+    existing.available = existing.available || entry.available
+  }
+  return [...modules.values()]
+})
 const selectedOwner = computed(() => {
   const parts = route.path.split('/').filter(Boolean)
-  return parts[0] === 'configuration' && ['agent', 'copilot', 'develop', 'manager'].includes(parts[1]) ? parts[1] : ''
-})
-const selectedConfiguration = computed(() => {
-  if (!selectedOwner.value) return ''
-  if (route.path.endsWith('/inference')) return 'inference'
-  if (route.path.endsWith('-policy')) return 'policy'
-  return ''
+  return parts[0] === 'configuration' && ['agent', 'copilot', 'develop'].includes(parts[1]) ? parts[1] : ''
 })
 
 const contextLabel = computed(() => authStore.authContext?.context?.type === 'tenant'

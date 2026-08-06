@@ -283,7 +283,7 @@
 | tenant configuration | 租户配置 | 在单一 Tenant Context 中管理、只对当前 Tenant 生效的普通运行配置。 | 必须绑定 AuthContext 中的 `tenant_id`；平台管理员不能在 Platform Realm 中直接读取或修改。 |
 | configuration definition | 配置定义 | owner 模块对稳定配置 key、范围、类型、默认值、校验、敏感级别、Permission 和生效方式的声明。 | 代码默认值属于定义，不是与持久化值并行的第二事实源。 |
 | effective configuration | 有效配置 | owner 按配置定义和范围规则解析后，供当前请求、任务创建或 execution 快照消费的唯一配置值。 | Tenant 可覆盖场景固定按 Tenant 显式值、平台显式默认值、定义默认值解析；不得追加环境变量 fallback。 |
-| configuration management entry | 配置管理入口 | owner 模块通过 `addp.configuration-management/v1` 向 System 模块目录发布的配置管理 UI 能力。 | 只包含 entry id、owner、scope、owner 页面或 `/configuration/{owner}/...` Console 组合路由和 Permission；不包含配置键、当前值、Secret 或私有表结构。 |
+| configuration management entry | 配置管理入口 | owner 模块通过 `addp.configuration-management/v1` 向 System 模块目录发布的模块级配置管理 UI 能力。 | 每个模块一个一级入口；模块内部的多个配置域由 Tab 或分组组织。只包含 entry id、owner、scope、owner 页面或 `/configuration/{owner}/...` Console 组合路由和 Permission；不包含配置键、当前值、Secret 或私有表结构。 |
 | configuration snapshot | 配置快照 | 任务或 execution 在确定行为时固化的完整有效配置及版本。 | 平台或 Tenant 默认值后续变化不能改写历史快照；运行中的 execution 不热切换配置。 |
 
 ## Cleanup 与生命周期

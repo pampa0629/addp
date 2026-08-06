@@ -3,16 +3,20 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/engine/instanceprovider"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/mvt"
 	"github.com/addp/manager/internal/repository"
 )
+
+var ErrSuperMapSDXPostgreSQLMVTUnsupported = errors.New("SuperMap SDX+ for PostgreSQL does not provide database MVT")
 
 // MVTService generates Mapbox Vector Tiles (MVT) from PostGIS tables for preview.
 // ✅ 重构：复用 mvt.TileGenerator，消除重复代码
@@ -54,6 +58,9 @@ func (s *MVTService) tenantIDForEngine(engineID uint, tenantID *uint) (uint, err
 	res, err := s.systemClient.GetEngine(engineID)
 	if err != nil {
 		return 0, err
+	}
+	if instanceprovider.IsSuperMapSDXPostgreSQL(res) {
+		return 0, ErrSuperMapSDXPostgreSQLMVTUnsupported
 	}
 
 	managerEngine := convertResource(res)

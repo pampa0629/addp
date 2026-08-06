@@ -111,8 +111,16 @@ func mongoCollectionFromCatalogPath(path plugin.CatalogPath) (string, string, bo
 	return segments[0].Name, segments[1].Name, true
 }
 
+func mongoDatabaseFromCatalogPath(path plugin.CatalogPath) (string, bool) {
+	segments := plugin.CatalogPathWithoutRoot(path).Segments
+	if len(segments) == 0 || segments[0].Term != plugin.CatalogTermDatabase || segments[0].Name == "" {
+		return "", false
+	}
+	return segments[0].Name, true
+}
+
 func (p *MongoDBPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
-	if database, _, ok := mongoCollectionFromCatalogPath(valueOrEmptyPath(req.TargetPath)); ok {
+	if database, ok := mongoDatabaseFromCatalogPath(valueOrEmptyPath(req.TargetPath)); ok {
 		connInfo = cloneConnectionInfo(connInfo)
 		connInfo["database"] = database
 	}
@@ -230,6 +238,14 @@ func (p *MongoDBPlugin) executeQuery(ctx context.Context, connInfo plugin.Connec
 		return nil, fmt.Errorf("无效的 MQL 格式，请输入 JSON 命令对象，示例：{\"find\":\"collection\",\"filter\":{},\"limit\":10}：%w", err)
 	}
 
+	database := plugin.GetString(connInfo, "database")
+	if database == "" {
+		return nil, plugin.NewQueryError(
+			plugin.QueryErrorCodeMongoDBDatabaseRequired,
+			fmt.Errorf("MongoDB query requires a database selected in the resource path or configured on the engine"),
+		)
+	}
+
 	// 建立连接
 	client, err := p.createClient(ctx, connInfo)
 	if err != nil {
@@ -237,7 +253,6 @@ func (p *MongoDBPlugin) executeQuery(ctx context.Context, connInfo plugin.Connec
 	}
 	defer client.Disconnect(ctx) //nolint:errcheck
 
-	database := plugin.GetString(connInfo, "database")
 	db := client.Database(database)
 
 	// 根据命令类型分发执行

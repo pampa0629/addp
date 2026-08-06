@@ -37,7 +37,7 @@ func (r *PreviewResolver) OpenFlatGeobufFeatureReaderFromURI(
 	if req.Metadata == nil {
 		return nil, ErrPreviewRequiresScannedMeta
 	}
-	providerReq, err := r.buildProviderRequest(req)
+	providerReq, err := r.buildProviderRequest(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -119,9 +119,9 @@ func openFileFlatGeobufFeatureReader(ctx context.Context, req *PreviewRequest, r
 }
 
 func openDatabaseFlatGeobufFeatureReader(ctx context.Context, req *PreviewRequest, requestedGeometryColumn string, rowLimit int) (*FlatGeobufFeatureReaderResult, error) {
-	plug, err := plugin.Get(req.Engine.EngineType)
-	if err != nil {
-		return nil, fmt.Errorf("unsupported engine type: %s", req.Engine.EngineType)
+	plug := req.EnginePlugin
+	if plug == nil {
+		return nil, fmt.Errorf("engine provider is not resolved for %s", req.Engine.EngineType)
 	}
 	sessionProvider, ok := plug.(plugin.TableReadSessionProvider)
 	if !ok {

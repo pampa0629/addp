@@ -75,7 +75,7 @@ type InstanceCapabilitiesResolver interface {
 
 实现 `addp.workflow/v1` 的 Workflow Runtime 不按 `engine_type` 建立重复内置插件。它们通过 System Engine Instance 注册 capabilities 和 Runtime endpoint，Common Engine 使用唯一的 `HTTPWorkflowRuntimeProvider` 适配协议。`common/engine/plugins/builtin/extension` 只加载确实具有非通用控制面或 Provider 语义的内置 Runtime Plugin，不作为工作流运行时类型白名单。
 
-领域专用 Provider 可以保留，例如 SuperMap SDX+ for PostgreSQL table session Provider。此类 Provider 负责 ADDP 数据类型与领域协议之间的映射，但必须消费绑定 Runtime Engine Instance 的通用 `WorkflowRuntimeProvider`，不得再按固定 `engine_type` 获取一个编译期 Workflow Plugin。
+领域专用 Provider 可以保留，例如 SuperMap SDX+ for PostgreSQL table session Provider。此类 Provider 负责 ADDP 数据类型与领域协议之间的映射，但必须消费绑定 Runtime Engine Instance 的通用 `WorkflowRuntimeProvider`，不得再按固定 `engine_type` 获取一个编译期 Workflow Plugin。跨模块调用必须先按具体 Engine Instance 的 `extensions.spatial_workspaces[].bound_runtime_engine_id` 解析 Provider，再消费其 `CatalogModelProvider`、`CatalogFactsProvider` 和 table session 能力；不得按 `engine_type=postgresql` 直接进入 PostGIS SQL 路径。SuperMap SDX+ for PostgreSQL 的私有 geometry 只能在绑定 Runtime 内转换为 EWKB，`common/spatial`、Manager 和 Transfer 不解析其数据库 Blob。
 
 ### DSNProvider
 
