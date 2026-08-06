@@ -16,6 +16,7 @@ import (
 	commonconfiguration "github.com/addp/common/configuration"
 	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/utils"
 	"github.com/addp/manager/internal/api"
 	managerauthorization "github.com/addp/manager/internal/authorization"
