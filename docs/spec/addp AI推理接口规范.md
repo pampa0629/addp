@@ -43,6 +43,8 @@ erDiagram
         string upstream_model
         string[] operations
         string[] modalities
+        string chat_max_output_tokens_parameter
+        string chat_temperature_mode
         string status
     }
     MODEL_PROFILE {
@@ -77,6 +79,10 @@ erDiagram
 | Provider credential | Inference | 专用加密字段，不进入普通配置、响应、日志或审计详情。 |
 
 `adapter_type` 第一阶段允许 `openai_compatible` 和 `dashscope_multimodal`。DashScope compatible mode、OpenAI、vLLM、Ollama 的 OpenAI-compatible endpoint 通过前者接入；DashScope 多模态向量接口因使用 `input.contents` 而通过后者接入。适配器由 Provider 创建时显式选择，不根据 endpoint 或模型名称猜测协议；只有协议语义确实不同且无法由标准字段表达时才新增适配器类型。
+
+OpenAI-compatible Chat 的最大输出 token 参数由 Model Deployment 的 `chat_max_output_tokens_parameter` 显式声明，当前只允许 `max_tokens` 和 `max_completion_tokens`。Inference Runtime 把统一契约中的 `max_output_tokens` 单次映射到该字段指定的上游参数；不得按模型名称、Endpoint 或响应文案猜测，不得在失败后改用另一个参数重试。非 Chat Deployment 仍保存该字段，以便后续启用 Chat 时配置事实完整。
+
+Chat 的温度参数由 Model Deployment 的 `chat_temperature_mode` 显式声明，当前只允许 `configurable` 和 `default_only`。`configurable` 才向上游发送调用方提供的 `temperature`；`default_only` 使用上游默认值且不得发送该字段。Inference Runtime 不根据模型名称猜测，也不因上游拒绝后重试另一种请求。
 
 ### 2.1 Provider Template 与快速接入
 
@@ -151,8 +157,8 @@ Provider credential 使用部署级 `ENCRYPTION_KEY` 进行认证加密。数据
 | `PUT/DELETE /provider-connections/{id}/credential` | 设置、轮换或删除加密凭据。 |
 | `GET /provider-templates` | 查询 Inference 内置的只读模型服务接入模板。 |
 | `POST /provider-connections/{id}/discover-models` | 使用该 Provider 的服务端 Endpoint 和加密凭据发现 OpenAI-compatible 模型。 |
-| `GET/POST /model-deployments` | 列表或创建 Deployment。 |
-| `GET/PUT/DELETE /model-deployments/{id}` | 读取、更新或删除 Deployment。 |
+| `GET/POST /model-deployments` | 列表或创建 Deployment；Chat 参数能力必须通过 `chat_max_output_tokens_parameter` 和 `chat_temperature_mode` 显式声明。 |
+| `GET/PUT/DELETE /model-deployments/{id}` | 读取、更新或删除 Deployment，包括显式的 Chat 参数能力映射。 |
 | `POST /model-deployments/{id}/probe` | 显式执行无副作用可达性和能力探测。 |
 | `GET/POST /model-profiles` | 列表或创建 Profile。 |
 | `GET/PUT /model-profiles/{id}` | 读取或更新 Profile；已创建 Profile 只允许禁用，不物理删除。 |

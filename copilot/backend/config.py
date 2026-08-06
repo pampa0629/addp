@@ -72,8 +72,6 @@ class Settings(BaseSettings):
     copilot_enable_streaming: bool = True
     copilot_max_tokens_per_day: int = 100000
     copilot_rate_limit: int = 10
-    copilot_score_threshold: float = 0.15
-    copilot_max_candidates: int = 10
 
 # 全局配置实例
 settings = Settings()

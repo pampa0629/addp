@@ -1133,6 +1133,12 @@ const docTemplate = `{
                 "upstream_model"
             ],
             "properties": {
+                "chat_max_output_tokens_parameter": {
+                    "type": "string"
+                },
+                "chat_temperature_mode": {
+                    "type": "string"
+                },
                 "dimension": {
                     "type": "integer"
                 },
@@ -1357,6 +1363,12 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "capability_preset": {
+                    "type": "string"
+                },
+                "chat_max_output_tokens_parameter": {
+                    "type": "string"
+                },
+                "chat_temperature_mode": {
                     "type": "string"
                 },
                 "dimension": {

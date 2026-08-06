@@ -72,6 +72,24 @@ func ensureSchemaConstraints(db *gorm.DB) error {
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_inference_platform_profile_code ON inference.model_profiles (code) WHERE scope_type = 'platform' AND tenant_id IS NULL`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_inference_tenant_profile_code ON inference.model_profiles (tenant_id, code) WHERE scope_type = 'tenant' AND tenant_id IS NOT NULL`,
 		`CREATE INDEX IF NOT EXISTS idx_inference_profiles_resolution ON inference.model_profiles (scope_type, tenant_id, status)`,
+		`DO $$ BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM pg_constraint WHERE conname = 'ck_inference_deployment_chat_max_output_tokens_parameter'
+			) THEN
+				ALTER TABLE inference.model_deployments
+				ADD CONSTRAINT ck_inference_deployment_chat_max_output_tokens_parameter
+				CHECK (chat_max_output_tokens_parameter IN ('max_tokens', 'max_completion_tokens'));
+			END IF;
+		END $$`,
+		`DO $$ BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM pg_constraint WHERE conname = 'ck_inference_deployment_chat_temperature_mode'
+			) THEN
+				ALTER TABLE inference.model_deployments
+				ADD CONSTRAINT ck_inference_deployment_chat_temperature_mode
+				CHECK (chat_temperature_mode IN ('configurable', 'default_only'));
+			END IF;
+		END $$`,
 	}
 	for _, statement := range statements {
 		if err := db.Exec(statement).Error; err != nil {

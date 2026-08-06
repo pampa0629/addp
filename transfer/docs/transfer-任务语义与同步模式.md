@@ -30,6 +30,8 @@ SuperMap 空间表也遵守同一边界。`supermap/sdx_postgis` 继续使用 Po
 
 `supermap/sdx_postgresql` 写会话提交不是“最后一批数据已发送”。运行时只有在 SDK `DatasetVector.Append` 完成全部批次，随后完成 `ComputeBounds()`、`UpdateSpatialIndex()`，并关闭重开校验记录数、Bounds 和索引状态后，才能向 Transfer 返回成功。首期只进入 bounded snapshot 支持矩阵；continuous/CDC 必须另行定义目标幂等和位置提交语义。
 
+SuperMap iObjects 字段模型不提供 decimal/numeric 原生字段；Transfer 写入 `supermap/sdx_postgresql` 时将统一 decimal 映射为 64 位 Double，源端以字符串返回的 decimal 值在 Runtime 中转换为 Double。需要保持任意精度的任务必须先显式映射为字符串字段，不能把该路径视为 decimal 无损传输。
+
 ## 二、正交语义维度
 
 Transfer 任务不能只用“全量、增量、实时”描述。稳定配置由以下正交维度组成。

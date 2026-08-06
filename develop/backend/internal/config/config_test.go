@@ -20,14 +20,9 @@ func TestLoadDefaultsDevelopServiceURLToStandardPort(t *testing.T) {
 	}
 }
 
-func TestLoadQueryResultLimit(t *testing.T) {
-	t.Setenv("QUERY_RESULT_LIMIT", "750")
-	if got := Load().QueryResultLimit; got != 750 {
-		t.Fatalf("QueryResultLimit = %d, want 750", got)
-	}
-
-	t.Setenv("QUERY_RESULT_LIMIT", "0")
-	if got := Load().QueryResultLimit; got != 500 {
-		t.Fatalf("QueryResultLimit = %d, want default 500", got)
+func TestLoadQueryPolicyDefaults(t *testing.T) {
+	cfg := Load()
+	if cfg.DefaultQueryTimeout != 30 || cfg.MaxQueryTimeout != 300 || cfg.QueryResultLimit != 500 {
+		t.Fatalf("unexpected query policy defaults: %#v", cfg)
 	}
 }

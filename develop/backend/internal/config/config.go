@@ -73,9 +73,9 @@ func Load() *Config {
 		ManagerServiceURL:  getEnv("MANAGER_URL", "http://localhost:8081"),
 
 		// SQL 执行配置
-		DefaultQueryTimeout: getEnvAsInt("DEFAULT_QUERY_TIMEOUT", 30), // 30秒
-		MaxQueryTimeout:     getEnvAsInt("MAX_QUERY_TIMEOUT", 300),    // 5分钟
-		QueryResultLimit:    getPositiveEnvAsInt("QUERY_RESULT_LIMIT", 500),
+		DefaultQueryTimeout: 30,
+		MaxQueryTimeout:     300,
+		QueryResultLimit:    500,
 
 		// Redis 配置
 		RedisHost:     getEnv("REDIS_HOST", "localhost"),
@@ -112,14 +112,6 @@ func getEnvAsInt(key string, defaultValue int) int {
 		}
 	}
 	return defaultValue
-}
-
-func getPositiveEnvAsInt(key string, defaultValue int) int {
-	value := getEnvAsInt(key, defaultValue)
-	if value <= 0 {
-		return defaultValue
-	}
-	return value
 }
 
 // loadEncryptionKey 加载加密密钥 (32字节 AES-256)

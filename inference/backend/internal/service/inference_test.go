@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,7 +32,7 @@ func newTestStore(t *testing.T) *repository.Store {
 	statements := []string{
 		`CREATE TABLE inference.provider_connections (id TEXT PRIMARY KEY, name TEXT NOT NULL, scope_type TEXT NOT NULL, tenant_id INTEGER, adapter_type TEXT NOT NULL, endpoint TEXT NOT NULL, allow_all_tenants INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL, credential_ciphertext TEXT, credential_version INTEGER NOT NULL DEFAULT 0, created_by INTEGER NOT NULL, updated_by INTEGER NOT NULL, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE inference.provider_tenant_grants (provider_connection_id TEXT NOT NULL, tenant_id INTEGER NOT NULL, created_at DATETIME, PRIMARY KEY (provider_connection_id, tenant_id))`,
-		`CREATE TABLE inference.model_deployments (id TEXT PRIMARY KEY, provider_connection_id TEXT NOT NULL, name TEXT NOT NULL, upstream_model TEXT NOT NULL, operations JSON NOT NULL, modalities JSON NOT NULL, dimension INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL, created_by INTEGER NOT NULL, updated_by INTEGER NOT NULL, created_at DATETIME, updated_at DATETIME)`,
+		`CREATE TABLE inference.model_deployments (id TEXT PRIMARY KEY, provider_connection_id TEXT NOT NULL, name TEXT NOT NULL, upstream_model TEXT NOT NULL, operations JSON NOT NULL, modalities JSON NOT NULL, dimension INTEGER NOT NULL DEFAULT 0, chat_max_output_tokens_parameter TEXT NOT NULL DEFAULT 'max_tokens', chat_temperature_mode TEXT NOT NULL DEFAULT 'configurable', status TEXT NOT NULL, created_by INTEGER NOT NULL, updated_by INTEGER NOT NULL, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE inference.model_profiles (id TEXT PRIMARY KEY, name TEXT NOT NULL, code TEXT NOT NULL, scope_type TEXT NOT NULL, tenant_id INTEGER, model_deployment_id TEXT NOT NULL, status TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, created_by INTEGER NOT NULL, updated_by INTEGER NOT NULL, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE inference.credential_audits (id TEXT PRIMARY KEY, provider_connection_id TEXT NOT NULL, old_version INTEGER NOT NULL, new_version INTEGER NOT NULL, action TEXT NOT NULL, principal_id INTEGER NOT NULL, created_at DATETIME)`,
 	}
@@ -185,6 +186,19 @@ func TestRuntimeChatPreservesBasePathAndDoesNotFallback(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer runtime-secret" {
 			t.Errorf("unexpected authorization header")
 		}
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body[ChatMaxOutputTokensParameterMaxCompletionTokens] != float64(64) {
+			t.Errorf("max_completion_tokens = %#v, want 64", body[ChatMaxOutputTokensParameterMaxCompletionTokens])
+		}
+		if _, exists := body[ChatMaxOutputTokensParameterMaxTokens]; exists {
+			t.Error("runtime sent both chat max output token parameters")
+		}
+		if _, exists := body["temperature"]; exists {
+			t.Error("runtime sent temperature for a default-only deployment")
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"}}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}`))
 	}))
@@ -201,7 +215,7 @@ func TestRuntimeChatPreservesBasePathAndDoesNotFallback(t *testing.T) {
 	if _, err := control.SetCredential(ctx, platform, provider.ID, "runtime-secret"); err != nil {
 		t.Fatal(err)
 	}
-	deployment, err := control.CreateDeployment(ctx, platform, DeploymentInput{ProviderConnectionID: provider.ID, Name: "chat", UpstreamModel: "model-a", Operations: []string{"chat"}, Modalities: []string{"text"}})
+	deployment, err := control.CreateDeployment(ctx, platform, DeploymentInput{ProviderConnectionID: provider.ID, Name: "chat", UpstreamModel: "model-a", Operations: []string{"chat"}, Modalities: []string{"text"}, ChatMaxOutputTokensParameter: ChatMaxOutputTokensParameterMaxCompletionTokens, ChatTemperatureMode: ChatTemperatureModeDefaultOnly})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +224,8 @@ func TestRuntimeChatPreservesBasePathAndDoesNotFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime := NewRuntime(store, testEncryptionKey)
-	response, err := runtime.Chat(ctx, commoninference.ChatRequest{SchemaVersion: commoninference.SchemaVersion, TenantID: 8, ModelProfileID: profile.ID, Messages: []commoninference.Message{{Role: "user", Content: "hello"}}})
+	temperature := 0.3
+	response, err := runtime.Chat(ctx, commoninference.ChatRequest{SchemaVersion: commoninference.SchemaVersion, TenantID: 8, ModelProfileID: profile.ID, Messages: []commoninference.Message{{Role: "user", Content: "hello"}}, Temperature: &temperature, MaxOutputTokens: 64})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,5 +286,48 @@ func TestInvalidStatusIsRejected(t *testing.T) {
 	_, err := normalizeStatus("enabled")
 	if err == nil {
 		t.Fatal("unknown status must be rejected")
+	}
+}
+
+func TestDeploymentChatMaxOutputTokensParameterIsExplicitAndValidated(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	control := NewControlPlane(store, testEncryptionKey)
+	platform := Actor{ContextType: models.ScopePlatform, PrincipalID: 61}
+	provider, err := control.CreateProvider(ctx, platform, ProviderInput{
+		Name: "chat-provider", ScopeType: models.ScopePlatform, AdapterType: AdapterOpenAICompatible,
+		Endpoint: "https://example.test/v1", AllowAllTenants: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deployment, err := control.CreateDeployment(ctx, platform, DeploymentInput{
+		ProviderConnectionID: provider.ID, Name: "chat", UpstreamModel: "model-a",
+		Operations: []string{"chat"}, Modalities: []string{"text"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deployment.ChatMaxOutputTokensParameter != ChatMaxOutputTokensParameterMaxTokens {
+		t.Fatalf("default chat max output tokens parameter = %q", deployment.ChatMaxOutputTokensParameter)
+	}
+
+	_, err = control.UpdateDeployment(ctx, platform, deployment.ID, DeploymentInput{
+		ProviderConnectionID: provider.ID, Name: "chat", UpstreamModel: "model-a",
+		Operations: []string{"chat"}, Modalities: []string{"text"},
+		ChatMaxOutputTokensParameter: "unsupported_parameter",
+	})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("invalid chat max output tokens parameter error = %v, want %v", err, ErrInvalidRequest)
+	}
+
+	_, err = control.UpdateDeployment(ctx, platform, deployment.ID, DeploymentInput{
+		ProviderConnectionID: provider.ID, Name: "chat", UpstreamModel: "model-a",
+		Operations: []string{"chat"}, Modalities: []string{"text"},
+		ChatTemperatureMode: "unsupported_mode",
+	})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("invalid chat temperature mode error = %v, want %v", err, ErrInvalidRequest)
 	}
 }

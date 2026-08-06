@@ -11,10 +11,13 @@
       <el-button :icon="Refresh" circle :loading="loading" @click="loadEntries" />
     </header>
 
-    <InferenceBindingsConfiguration v-if="selectedOwner" :key="selectedOwner" :owner="selectedOwner" />
+    <InferenceBindingsConfiguration v-if="selectedConfiguration === 'inference'" :key="route.path" :owner="selectedOwner" />
+    <PolicyConfiguration v-else-if="selectedConfiguration === 'policy'" :key="route.path" :owner="selectedOwner" />
 
     <el-table v-else v-loading="loading" :data="entries" class="entries-table" :row-class-name="entryRowClass" @row-click="openEntry">
-      <el-table-column prop="owner_module" :label="t('console.configuration.owner')" min-width="150" />
+      <el-table-column :label="t('console.configuration.owner')" min-width="150">
+        <template #default="{ row }"><div class="entry-owner"><span>{{ t(`console.configuration.modules.${row.owner_module}.name`) }}</span><code>{{ row.owner_module }}</code></div></template>
+      </el-table-column>
       <el-table-column :label="t('console.configuration.entry')" min-width="240">
         <template #default="{ row }">
           <div class="entry-name">{{ entryLabel(row) }}</div>
@@ -56,6 +59,7 @@ import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../store/auth'
 import { listConfigurationManagementEntries } from '../api/configurationManagement'
 import InferenceBindingsConfiguration from '../components/configuration/InferenceBindingsConfiguration.vue'
+import PolicyConfiguration from '../components/configuration/PolicyConfiguration.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -67,11 +71,20 @@ const ENTRY_LABEL_KEYS = {
   'inference.models': 'console.configuration.entries.inferenceModels',
   'manager.embedding': 'console.configuration.entries.managerEmbedding',
   'copilot.inference_bindings': 'console.configuration.entries.copilotInferenceBindings',
-  'agent.inference_bindings': 'console.configuration.entries.agentInferenceBindings'
+  'agent.inference_bindings': 'console.configuration.entries.agentInferenceBindings',
+  'develop.query_policy': 'console.configuration.entries.developQueryPolicy',
+  'manager.quick_view_policy': 'console.configuration.entries.managerQuickViewPolicy',
+  'copilot.matching_policy': 'console.configuration.entries.copilotMatchingPolicy'
 }
 const selectedOwner = computed(() => {
   const parts = route.path.split('/').filter(Boolean)
-  return parts[0] === 'configuration' && ['agent', 'copilot'].includes(parts[1]) ? parts[1] : ''
+  return parts[0] === 'configuration' && ['agent', 'copilot', 'develop', 'manager'].includes(parts[1]) ? parts[1] : ''
+})
+const selectedConfiguration = computed(() => {
+  if (!selectedOwner.value) return ''
+  if (route.path.endsWith('/inference')) return 'inference'
+  if (route.path.endsWith('-policy')) return 'policy'
+  return ''
 })
 
 const contextLabel = computed(() => authStore.authContext?.context?.type === 'tenant'
@@ -149,6 +162,8 @@ onMounted(() => {
 
 .entries-table { width: 100%; }
 .entry-name { color: var(--addp-text-primary); font-weight: 500; }
+.entry-owner { display: flex; flex-direction: column; gap: 2px; }
+.entry-owner code { color: var(--addp-text-tertiary); font-size: 12px; }
 .entries-table code { color: var(--addp-text-tertiary); font-size: 12px; }
 .entries-table :deep(.entry-row--available) { cursor: pointer; }
 .entries-table :deep(.entry-row--unavailable) { color: var(--addp-text-secondary); }

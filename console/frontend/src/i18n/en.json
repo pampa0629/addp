@@ -172,7 +172,16 @@
 		"inferenceModels": "AI Model Services",
 		"managerEmbedding": "Manager Multimodal Embedding",
 		"copilotInferenceBindings": "Copilot Inference Scenarios",
-		"agentInferenceBindings": "Agent Inference Scenarios"
+		"agentInferenceBindings": "Agent Inference Scenarios",
+		"developQueryPolicy": "Develop Query Policy",
+		"managerQuickViewPolicy": "Manager Quick View Policy",
+		"copilotMatchingPolicy": "Copilot Matching Policy"
+	  },
+	  "modules": { "system": { "name": "System Management" }, "develop": { "name": "Data Development" }, "manager": { "name": "Data Management" }, "copilot": { "name": "AI Assistant" }, "agent": { "name": "AI Agent" }, "inference": { "name": "AI Model Services" } },
+	  "policies": {
+		"develop": { "title": "Query policy", "defaultQueryTimeout": "Default query timeout (seconds)", "maxQueryTimeout": "Maximum query timeout (seconds)", "queryResultLimit": "Result preview limit (rows)" },
+		"manager": { "title": "Quick-view policy", "flatgeobufRows": "FlatGeobuf row limit", "mvtTimeout": "Dynamic MVT timeout budget (milliseconds)", "retryAfter": "Retry-after delay (seconds)" },
+		"copilot": { "title": "Matching policy", "scoreThreshold": "Matching threshold", "maxCandidates": "Candidate limit" }
 	  },
 	  "ai": {
 		"scenario": "Inference scenario",

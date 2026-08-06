@@ -13,12 +13,14 @@ const (
 )
 
 type SuggestedModel struct {
-	UpstreamModel    string   `json:"upstream_model"`
-	Operations       []string `json:"operations"`
-	Modalities       []string `json:"modalities"`
-	Dimension        int      `json:"dimension,omitempty"`
-	ProfileCode      string   `json:"profile_code"`
-	CapabilityPreset string   `json:"capability_preset"`
+	UpstreamModel                string   `json:"upstream_model"`
+	Operations                   []string `json:"operations"`
+	Modalities                   []string `json:"modalities"`
+	Dimension                    int      `json:"dimension,omitempty"`
+	ProfileCode                  string   `json:"profile_code"`
+	CapabilityPreset             string   `json:"capability_preset"`
+	ChatMaxOutputTokensParameter string   `json:"chat_max_output_tokens_parameter,omitempty"`
+	ChatTemperatureMode          string   `json:"chat_temperature_mode,omitempty"`
 }
 
 type ProviderTemplate struct {

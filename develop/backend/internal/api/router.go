@@ -32,6 +32,7 @@ func SetupRouter(
 	notebookHandler *NotebookHandler,
 	devTaskService interface{}, // 添加 devTaskService 参数
 	systemClient *commonClient.SystemServiceClient, // 用于审计日志
+	queryPolicyHandlers ...*QueryPolicyHandler,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -54,6 +55,16 @@ func SetupRouter(
 
 	taskListHandler := NewTaskListHandler(devTaskService.(*service.DevTaskService))
 	assetDiscHandler := newAssetDiscoverableHandler(db)
+	var queryPolicyHandler *QueryPolicyHandler
+	if len(queryPolicyHandlers) > 0 {
+		queryPolicyHandler = queryPolicyHandlers[0]
+	}
+	if queryPolicyHandler != nil {
+		settings := router.Group("/api/v1/develop")
+		settings.Use(commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: cfg.SystemServiceURL}))
+		settings.GET("/settings/query-policy", commonAuth.MustNewPermissionGuard(developauthorization.PermissionDevelopConfigurationRead), queryPolicyHandler.Get)
+		settings.PUT("/settings/query-policy", commonAuth.MustNewPermissionGuard(developauthorization.PermissionDevelopConfigurationUpdate), queryPolicyHandler.Update)
+	}
 
 	// Kernel Capability 只允许访问独立的只读引擎发现端点。
 	router.GET("/api/v1/develop/notebook-kernel-sessions/:session_id/engine-descriptors", notebookHandler.ListSessionEngineDescriptors)

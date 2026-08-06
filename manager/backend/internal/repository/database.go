@@ -30,6 +30,7 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 		&models.EmbeddingTask{}, // 向量化任务定义表
 		&models.EmbeddingConfiguration{},
 		&models.InferenceScenarioBinding{},
+		&models.QuickViewPolicy{},
 		&models.ExportSession{},
 	)
 	if err != nil {

@@ -5289,6 +5289,83 @@
                 ]
             }
         },
+        "/settings/quick-view-policy": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "配置管理 | Configuration Management"
+                ],
+                "summary": "获取快显策略 | Get quick-view policy",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewPolicyResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.configuration.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "配置管理 | Configuration Management"
+                ],
+                "summary": "更新快显策略 | Update quick-view policy",
+                "parameters": [
+                    {
+                        "description": "快显策略 | Quick-view policy",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.UpdateQuickViewPolicyInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewPolicyResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.configuration.update"
+                ]
+            }
+        },
         "/storage-assets/{engine_id}/{storage_ref}": {
             "get": {
                 "security": [
@@ -8426,6 +8503,23 @@
                 }
             }
         },
+        "github_com_addp_manager_internal_service.QuickViewPolicyResponse": {
+            "type": "object",
+            "properties": {
+                "direct_flatgeobuf_max_rows": {
+                    "type": "integer"
+                },
+                "realtime_tile_retry_after_sec": {
+                    "type": "integer"
+                },
+                "realtime_tile_timeout_ms": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_manager_internal_service.QuickViewRasterInfo": {
             "type": "object",
             "properties": {
@@ -8895,6 +8989,28 @@
             "properties": {
                 "model_profile_id": {
                     "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.UpdateQuickViewPolicyInput": {
+            "type": "object",
+            "required": [
+                "direct_flatgeobuf_max_rows",
+                "realtime_tile_retry_after_sec",
+                "realtime_tile_timeout_ms"
+            ],
+            "properties": {
+                "direct_flatgeobuf_max_rows": {
+                    "type": "integer"
+                },
+                "realtime_tile_retry_after_sec": {
+                    "type": "integer"
+                },
+                "realtime_tile_timeout_ms": {
+                    "type": "integer"
                 },
                 "version": {
                     "type": "integer"

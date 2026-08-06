@@ -1,5 +1,7 @@
 #include "runtime_access.hpp"
 
+#include "resource_host.hpp"
+
 #include "Base3D/UGTinyxml.h"
 
 #include <curl/curl.h>
@@ -56,14 +58,6 @@ std::string connection_string(
         "connection_info." + field + " must be a non-empty string");
   }
   return value->get<std::string>();
-}
-
-std::string normalize_resource_host(const std::string& host) {
-  if (host != "localhost" && host != "127.0.0.1" && host != "::1") {
-    return host;
-  }
-  const char* alias = std::getenv("SUPERMAP_RESOURCE_LOCALHOST_ALIAS");
-  return alias == nullptr || std::string(alias).empty() ? host : std::string(alias);
 }
 
 bool connection_bool(const Json& connection_info, const std::string& field, bool fallback) {

@@ -218,6 +218,10 @@
 
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
+| configuration owner | 配置所有者 | 对某项运行策略的语义、存储和生效负责的业务模块。 | System 只登记配置管理入口，不理解业务配置项。 |
+| query policy | 查询策略 | Develop 对查询超时和结果预览规模的强类型运行约束。 | 平台定义上限，租户可以覆盖默认查询超时。 |
+| quick view policy | 快显策略 | Manager 对空间数据预览中间结果规模、超时和重试的运行约束。 | 归 Manager 所有，当前为平台级。 |
+| matching policy | 匹配策略 | Copilot 元数据候选匹配的阈值和候选数量约束。 | 平台提供默认值，租户可覆盖。 |
 | AI Inference Runtime | AI 推理运行时 | 对 ADDP 调用方提供统一 `addp.inference/v1` 数据面的推理服务。 | Runtime 按网络区域、安全域、GPU 集群、故障域或 SLA 增长，不按模型厂商、账号或模型数量增长。 |
 | AI Inference Runtime Engine Instance | AI 推理运行时引擎实例 | System 中登记一个确定 AI Inference Runtime 端点的 Engine Instance。 | `engine_type=inference_runtime`；默认平台级，只登记 Runtime 端点、生命周期和 `compute.inference` 能力，不保存上游 Provider、模型或 API Key。 |
 | Provider Template | 模型服务模板 | Inference owner 提供的只读接入模板，预置在线厂商或本地推理运行时的协议适配器、默认 Endpoint、凭据要求、模型发现方式和建议模型。 | 只用于创建 Provider Connection、Model Deployment 和 Model Profile，不是新的运行时资源，不持有凭据，也不参与推理解析。 |

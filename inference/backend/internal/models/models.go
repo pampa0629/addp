@@ -41,18 +41,20 @@ type ProviderTenantGrant struct {
 func (ProviderTenantGrant) TableName() string { return "inference.provider_tenant_grants" }
 
 type ModelDeployment struct {
-	ID                   string         `gorm:"type:uuid;primaryKey" json:"id"`
-	ProviderConnectionID string         `gorm:"type:uuid;not null;index" json:"provider_connection_id"`
-	Name                 string         `gorm:"size:120;not null" json:"name"`
-	UpstreamModel        string         `gorm:"size:255;not null" json:"upstream_model"`
-	Operations           datatypes.JSON `gorm:"type:jsonb;not null" json:"operations"`
-	Modalities           datatypes.JSON `gorm:"type:jsonb;not null" json:"modalities"`
-	Dimension            int            `gorm:"not null;default:0" json:"dimension,omitempty"`
-	Status               string         `gorm:"size:16;not null;default:active" json:"status"`
-	CreatedBy            uint           `gorm:"not null" json:"created_by"`
-	UpdatedBy            uint           `gorm:"not null" json:"updated_by"`
-	CreatedAt            time.Time      `json:"created_at"`
-	UpdatedAt            time.Time      `json:"updated_at"`
+	ID                           string         `gorm:"type:uuid;primaryKey" json:"id"`
+	ProviderConnectionID         string         `gorm:"type:uuid;not null;index" json:"provider_connection_id"`
+	Name                         string         `gorm:"size:120;not null" json:"name"`
+	UpstreamModel                string         `gorm:"size:255;not null" json:"upstream_model"`
+	Operations                   datatypes.JSON `gorm:"type:jsonb;not null" json:"operations"`
+	Modalities                   datatypes.JSON `gorm:"type:jsonb;not null" json:"modalities"`
+	Dimension                    int            `gorm:"not null;default:0" json:"dimension,omitempty"`
+	ChatMaxOutputTokensParameter string         `gorm:"size:32;not null;default:max_tokens" json:"chat_max_output_tokens_parameter"`
+	ChatTemperatureMode          string         `gorm:"size:32;not null;default:configurable" json:"chat_temperature_mode"`
+	Status                       string         `gorm:"size:16;not null;default:active" json:"status"`
+	CreatedBy                    uint           `gorm:"not null" json:"created_by"`
+	UpdatedBy                    uint           `gorm:"not null" json:"updated_by"`
+	CreatedAt                    time.Time      `json:"created_at"`
+	UpdatedAt                    time.Time      `json:"updated_at"`
 }
 
 func (ModelDeployment) TableName() string { return "inference.model_deployments" }

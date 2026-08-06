@@ -31,6 +31,9 @@ export const CAPABILITY_PRESETS = {
   }
 }
 
+export const CHAT_MAX_OUTPUT_TOKENS_PARAMETERS = ['max_tokens', 'max_completion_tokens']
+export const CHAT_TEMPERATURE_MODES = ['configurable', 'default_only']
+
 export function capabilityPreset(code) {
   return CAPABILITY_PRESETS[code] || CAPABILITY_PRESETS.chat_default
 }
@@ -41,7 +44,9 @@ export function createModelDraft(presetCode = 'chat_default') {
     upstreamModel: '',
     preset: presetCode,
     dimension: preset.dimension,
-    profileCode: preset.profileCode
+    profileCode: preset.profileCode,
+    chatMaxOutputTokensParameter: CHAT_MAX_OUTPUT_TOKENS_PARAMETERS[0],
+    chatTemperatureMode: CHAT_TEMPERATURE_MODES[0]
   }
 }
 

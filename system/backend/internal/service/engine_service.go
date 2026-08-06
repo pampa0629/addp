@@ -1479,7 +1479,72 @@ func (s *EngineService) updateConnectionStatus(engineID uint, status, message st
 	engine.CheckMessage = message
 
 	// 保存更新
-	return s.repo.Update(engine)
+	if err := s.repo.Update(engine); err != nil {
+		return err
+	}
+
+	if !strings.EqualFold(strings.TrimSpace(status), "online") {
+		return nil
+	}
+	if _, err := s.workflowRuntimeProbeEngine(engine); err != nil {
+		return nil
+	}
+	return s.reconcileSpatialWorkspaceRuntimeBindings(context.Background())
+}
+
+// reconcileSpatialWorkspaceRuntimeBindings 在 Workflow Runtime 可用后重算依赖它的空间工作区绑定。
+// 它只基于已持久化的实例能力做协调，不重新连接所有存储引擎做实例能力探测。
+func (s *EngineService) reconcileSpatialWorkspaceRuntimeBindings(ctx context.Context) error {
+	if s.repo == nil {
+		return nil
+	}
+
+	engines, err := s.repo.ListAll()
+	if err != nil {
+		return fmt.Errorf("列出引擎实例失败: %w", err)
+	}
+	for i := range engines {
+		engine := &engines[i]
+		if engine.LifecycleState != models.EngineLifecycleActive || engine.Capabilities == nil || strings.TrimSpace(string(*engine.Capabilities)) == "" {
+			continue
+		}
+
+		current := string(*engine.Capabilities)
+		enriched, err := s.enrichInstanceCapabilities(engine, current)
+		if err != nil {
+			return fmt.Errorf("协调引擎 %d 空间工作区绑定失败: %w", engine.ID, err)
+		}
+		if capabilitiesJSONEqual(current, enriched) {
+			continue
+		}
+
+		capabilitiesJSON := toJSONStringPtr(enriched)
+		if err := s.validateCapabilitiesForEngine(engine.EngineType, capabilitiesJSON); err != nil {
+			return fmt.Errorf("协调引擎 %d 能力声明失败: %w", engine.ID, err)
+		}
+		engine.Capabilities = capabilitiesJSON
+		if err := s.repo.Update(engine); err != nil {
+			return fmt.Errorf("保存引擎 %d 空间工作区绑定失败: %w", engine.ID, err)
+		}
+		if s.eventPublisher != nil {
+			_ = s.eventPublisher.PublishEngineChange(ctx, engine.ID, events.ActionUpdate)
+		}
+	}
+	return nil
+}
+
+func capabilitiesJSONEqual(left, right string) bool {
+	if left == right {
+		return true
+	}
+	leftCapabilities, leftErr := engineplugin.ParseEngineCapabilities(left)
+	rightCapabilities, rightErr := engineplugin.ParseEngineCapabilities(right)
+	if leftErr != nil || rightErr != nil || leftCapabilities == nil || rightCapabilities == nil {
+		return false
+	}
+	leftCanonical, leftErr := engineplugin.MarshalEngineCapabilities(*leftCapabilities)
+	rightCanonical, rightErr := engineplugin.MarshalEngineCapabilities(*rightCapabilities)
+	return leftErr == nil && rightErr == nil && leftCanonical == rightCanonical
 }
 
 // RecordConnectionStatus 记录 System 自身连接检测得到的资源连接状态。

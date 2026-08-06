@@ -2714,6 +2714,57 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - develop.notebook.create
+  /settings/query-policy:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取查询策略 | Get query policy
+      tags:
+      - 配置管理 | Configuration Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - develop.configuration.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 查询策略 | Query policy
+        in: body
+        name: request
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新查询策略 | Update query policy
+      tags:
+      - 配置管理 | Configuration Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - develop.configuration.update
   /spark-runtimes:
     get:
       produces:

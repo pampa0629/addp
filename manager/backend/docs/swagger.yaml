@@ -1202,6 +1202,17 @@ definitions:
       unavailable_reason:
         type: string
     type: object
+  github_com_addp_manager_internal_service.QuickViewPolicyResponse:
+    properties:
+      direct_flatgeobuf_max_rows:
+        type: integer
+      realtime_tile_retry_after_sec:
+        type: integer
+      realtime_tile_timeout_ms:
+        type: integer
+      version:
+        type: integer
+    type: object
   github_com_addp_manager_internal_service.QuickViewRasterInfo:
     properties:
       band_count:
@@ -1517,6 +1528,21 @@ definitions:
         type: integer
     required:
     - model_profile_id
+    type: object
+  github_com_addp_manager_internal_service.UpdateQuickViewPolicyInput:
+    properties:
+      direct_flatgeobuf_max_rows:
+        type: integer
+      realtime_tile_retry_after_sec:
+        type: integer
+      realtime_tile_timeout_ms:
+        type: integer
+      version:
+        type: integer
+    required:
+    - direct_flatgeobuf_max_rows
+    - realtime_tile_retry_after_sec
+    - realtime_tile_timeout_ms
     type: object
   github_com_addp_manager_internal_service.UploadResult:
     properties:
@@ -6117,6 +6143,54 @@ paths:
       security:
       - BearerAuth: []
       summary: 更新 Manager 推理场景绑定 | Update Manager inference scenario binding
+      tags:
+      - 配置管理 | Configuration Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.configuration.update
+  /settings/quick-view-policy:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_manager_internal_service.QuickViewPolicyResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取快显策略 | Get quick-view policy
+      tags:
+      - 配置管理 | Configuration Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.configuration.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 快显策略 | Quick-view policy
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_manager_internal_service.UpdateQuickViewPolicyInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_manager_internal_service.QuickViewPolicyResponse'
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新快显策略 | Update quick-view policy
       tags:
       - 配置管理 | Configuration Management
       x-addp-auth-mode: permission

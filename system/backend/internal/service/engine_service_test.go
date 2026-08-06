@@ -15,6 +15,7 @@ import (
 	"time"
 
 	engineplugin "github.com/addp/common/engine/plugin"
+	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
 	"github.com/addp/common/events"
 	commonutils "github.com/addp/common/utils"
 	"github.com/addp/system/internal/models"
@@ -410,6 +411,93 @@ func TestEnrichInstanceCapabilitiesBindsRuntimeProvidingRequiredDirectOperator(t
 	}
 	if !workspaces[0].CanEnable {
 		t.Fatalf("can_enable = false, want true when runtime exists and workspace is not detected")
+	}
+}
+
+func TestWorkflowRuntimeOnlineReconcilesExistingSpatialWorkspaceBinding(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&models.Engine{}); err != nil {
+		t.Fatalf("auto migrate engine: %v", err)
+	}
+
+	runtimeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/operators" {
+			http.NotFound(w, r)
+			return
+		}
+		operators := make([]map[string]interface{}, 0, len(supermapworkflow.RequiredTableOperators()))
+		for _, operatorName := range supermapworkflow.RequiredTableOperators() {
+			operators = append(operators, systemTestWorkflowOperator("supermap_workflow", operatorName, []string{"direct"}))
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"operators": operators})
+	}))
+	defer runtimeServer.Close()
+
+	repo := repository.NewEngineRepository(db)
+	service := NewEngineService(repo, nil, nil)
+	tenantID := uint(1)
+	runtimeEngine := &models.Engine{
+		Name:             "SuperMap Workflow Runtime",
+		EngineType:       "supermap_workflow",
+		IsBuiltin:        true,
+		LifecycleState:   models.EngineLifecycleActive,
+		ConnectionStatus: "unknown",
+		ConnectionInfo:   models.ConnectionInfo(systemTestWorkflowConnectionInfo(t, runtimeServer.URL)),
+		Capabilities:     systemTestWorkflowCapabilities(t, "supermap_workflow"),
+	}
+	if err := repo.Create(runtimeEngine); err != nil {
+		t.Fatalf("create runtime engine: %v", err)
+	}
+
+	spatialCapabilities := engineplugin.NewTabularCapabilities("postgresql", "schema", engineplugin.TabularCapabilityOptions{})
+	spatialCapabilities.Extensions = map[string]interface{}{
+		engineplugin.EngineExtensionSpatialWorkspaces: []engineplugin.SpatialWorkspaceFact{
+			{
+				Ecosystem:         "supermap",
+				Kind:              engineplugin.SpatialWorkspaceSuperMapSDXPostgreSQL,
+				State:             engineplugin.SpatialWorkspaceStateDetected,
+				BackendEngineType: "postgresql",
+				RiskLevel:         engineplugin.SpatialWorkspaceRiskHigh,
+			},
+		},
+	}
+	spatialPayload, err := engineplugin.MarshalEngineCapabilities(spatialCapabilities)
+	if err != nil {
+		t.Fatalf("marshal spatial capabilities: %v", err)
+	}
+	spatialEngine := &models.Engine{
+		Name:             "SuperMap SDX+ for PostgreSQL",
+		EngineType:       "postgresql",
+		TenantID:         &tenantID,
+		LifecycleState:   models.EngineLifecycleActive,
+		ConnectionStatus: "online",
+		Capabilities:     toJSONStringPtr(spatialPayload),
+	}
+	if err := repo.Create(spatialEngine); err != nil {
+		t.Fatalf("create spatial engine: %v", err)
+	}
+
+	if err := service.RecordConnectionStatus(runtimeEngine.ID, "online", "连接正常"); err != nil {
+		t.Fatalf("RecordConnectionStatus: %v", err)
+	}
+
+	updated, err := repo.GetByID(spatialEngine.ID)
+	if err != nil {
+		t.Fatalf("load spatial engine: %v", err)
+	}
+	parsed, err := engineplugin.ParseEngineCapabilities(string(*updated.Capabilities))
+	if err != nil {
+		t.Fatalf("parse spatial capabilities: %v", err)
+	}
+	workspaces, err := engineplugin.SpatialWorkspacesFromExtensions(parsed.Extensions)
+	if err != nil {
+		t.Fatalf("read spatial workspaces: %v", err)
+	}
+	if len(workspaces) != 1 || workspaces[0].BoundRuntimeEngineID == nil || *workspaces[0].BoundRuntimeEngineID != runtimeEngine.ID {
+		t.Fatalf("bound runtime = %#v, want runtime engine %d", workspaces, runtimeEngine.ID)
 	}
 }
 

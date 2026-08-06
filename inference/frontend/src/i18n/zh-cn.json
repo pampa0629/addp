@@ -115,6 +115,8 @@
       "upstreamModel": "上游模型",
       "operations": "操作能力",
       "modalities": "模态",
+      "chatMaxOutputTokensParameter": "对话最大输出参数",
+      "chatTemperatureMode": "对话温度参数",
       "dimension": "向量维度",
       "probe": "探测",
       "probeSuccess": "探测成功，上游状态码 {status}",

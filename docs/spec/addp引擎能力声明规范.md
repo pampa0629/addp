@@ -395,6 +395,8 @@ type WorkflowCapability struct {
 
 `spatial_workspaces` 中需要 Workflow Runtime 支撑的领域工作区只保存 `bound_runtime_engine_id`。工作区不得保存 `runtime_engine_type` 作为能力判断或运行时白名单；调用方必须读取绑定实例的 Runtime Descriptor，并以 `compute.workflow.runtime_api` 和动态 direct 算子目录完成校验。
 
+Workflow Runtime 的注册与健康状态是工作区绑定的控制面事件。兼容 Runtime 进入 `online` 后，System 必须立即重新协调当前 active Engine Instance 的 `spatial_workspaces`，使用同一 Runtime 的动态 direct 算子目录计算并持久化 `bound_runtime_engine_id`。该协调不得依赖 System 与 Runtime 的启动顺序，也不得要求用户重建存储引擎、手工改写 capabilities 或通过业务扫描触发绑定。
+
 `dynamic_operators=true` 表示调用方可以通过 Provider 动态发现算子。它不是“已有算子列表”的缓存，也不是某个模块对该引擎的适配状态。
 
 当手动注册的扩展运行时声明 `compute.workflow.supported=true` 且 `runtime_api="addp.workflow/v1"` 时，System 保存前必须按该协议做只读探测：`GET /health` 验证运行时可达，`GET /api/operators` 验证算子列表结构，并校验返回算子的 `engine_type` 与注册的引擎类型一致。该探测由能力声明触发，不得依赖 `geopython_workflow`、`spark_workflow`、`math_workflow` 等具体内置类型名称；Math Workflow 参考实现也走同一路径。

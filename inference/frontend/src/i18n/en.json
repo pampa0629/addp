@@ -115,6 +115,8 @@
       "upstreamModel": "Upstream model",
       "operations": "Operations",
       "modalities": "Modalities",
+      "chatMaxOutputTokensParameter": "Chat max output parameter",
+      "chatTemperatureMode": "Chat temperature parameter",
       "dimension": "Vector dimension",
       "probe": "Probe",
       "probeSuccess": "Probe succeeded with upstream status {status}",

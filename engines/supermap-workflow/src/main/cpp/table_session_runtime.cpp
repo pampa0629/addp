@@ -1,5 +1,6 @@
 #include "table_session_runtime.hpp"
 
+#include "resource_host.hpp"
 #include "supermap_runtime.hpp"
 
 #include "Base/OgdcVariant.h"
@@ -156,7 +157,8 @@ int connection_port(const Json& connection_info) {
 
 TableConnection parse_connection(const Json& params) {
   const Json& connection_info = required_object(params, "connection_info");
-  const std::string host = connection_string(connection_info, "host", true);
+  const std::string host = normalize_resource_host(
+      connection_string(connection_info, "host", true));
   const int port = connection_port(connection_info);
   if (port <= 0 || port > 65535) {
     throw std::invalid_argument("connection_info.port is invalid");
@@ -307,6 +309,10 @@ OGDC::OgdcFieldInfo::FieldType supermap_field_type(const std::string& type) {
   if (normalized == "double") {
     return OGDC::OgdcFieldInfo::Double;
   }
+  if (normalized == "decimal") {
+    // SuperMap has no decimal field; use its native 64-bit floating-point field.
+    return OGDC::OgdcFieldInfo::Double;
+  }
   if (normalized == "string" || normalized == "uuid") {
     return OGDC::OgdcFieldInfo::NText;
   }
@@ -444,10 +450,18 @@ UGC::UGVariant json_to_variant(
       }
       return UGC::UGVariant(static_cast<UGC::UGfloat>(value.get<double>()));
     case OGDC::OgdcFieldInfo::Double:
-      if (!value.is_number()) {
-        throw std::invalid_argument("double field value must be numeric");
+      if (value.is_number()) {
+        return UGC::UGVariant(static_cast<UGC::UGdouble>(value.get<double>()));
       }
-      return UGC::UGVariant(static_cast<UGC::UGdouble>(value.get<double>()));
+      if (value.is_string()) {
+        std::size_t parsed = 0;
+        const double converted = std::stod(value.get<std::string>(), &parsed);
+        if (parsed != value.get<std::string>().size()) {
+          throw std::invalid_argument("double field value must be numeric");
+        }
+        return UGC::UGVariant(static_cast<UGC::UGdouble>(converted));
+      }
+      throw std::invalid_argument("double field value must be numeric");
     case OGDC::OgdcFieldInfo::Binary:
     case OGDC::OgdcFieldInfo::LongBinary: {
       if (!value.is_string()) {

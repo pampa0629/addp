@@ -63,16 +63,6 @@
             <el-icon><DocumentAdd /></el-icon>
           </el-button>
         </el-tooltip>
-        <el-tooltip :content="queryParametersSupported ? t('develop.query.queryParameters') : t('develop.query.queryParametersUnsupported')">
-          <el-button
-            circle
-            :disabled="!queryParametersSupported || executing || switchingQueryTarget || savingForEngineSwitch"
-            :aria-label="t('develop.query.queryParameters')"
-            @click="parameterDrawerVisible = true"
-          >
-            <el-icon><Key /></el-icon>
-          </el-button>
-        </el-tooltip>
         <el-tooltip :content="t('develop.query.format')">
           <el-button
             circle
@@ -150,7 +140,19 @@
         <div class="editor-panel" :style="{ height: `${editorHeight}px` }">
           <div class="panel-heading">
             <span><el-icon><Edit /></el-icon>{{ t('develop.query.editorTitle') }}</span>
-            <span v-if="isDirty" class="dirty-indicator">{{ t('develop.query.unsaved') }}</span>
+            <div class="editor-heading-actions">
+              <span v-if="isDirty" class="dirty-indicator">{{ t('develop.query.unsaved') }}</span>
+              <el-button
+                text
+                size="small"
+                :type="hasUnresolvedParameters ? 'warning' : 'default'"
+                :disabled="!queryParametersSupported || executing || switchingQueryTarget || savingForEngineSwitch"
+                @click="parameterDrawerVisible = !parameterDrawerVisible"
+              >
+                <el-icon><Key /></el-icon>
+                {{ t('develop.query.queryParameters') }}<span v-if="queryParameters.length"> ({{ queryParameters.length }})</span>
+              </el-button>
+            </div>
           </div>
           <div v-loading="loadingSampleQuery" class="editor-content" :aria-busy="loadingSampleQuery">
             <MonacoEditor
@@ -203,6 +205,113 @@
           </div>
         </div>
       </section>
+
+      <component
+        :is="isCompact ? 'el-drawer' : 'aside'"
+        v-if="parameterDrawerVisible"
+        v-model="parameterDrawerVisible"
+        class="parameter-panel"
+        :class="{ 'parameter-panel-dock': !isCompact }"
+        :title="t('develop.query.queryParameters')"
+        direction="rtl"
+        size="min(92vw, 560px)"
+        :modal="isCompact"
+        :close-on-click-modal="false"
+      >
+        <div v-if="!isCompact" class="parameter-panel-heading">
+          <span><el-icon><Key /></el-icon>{{ t('develop.query.queryParameters') }}</span>
+          <el-button circle text size="small" :aria-label="t('develop.query.closeQueryParameters')" @click="parameterDrawerVisible = false">
+            <el-icon><Close /></el-icon>
+          </el-button>
+        </div>
+        <el-alert
+          v-if="hasUnresolvedParameters || hasUnusedParameters"
+          class="parameter-sync-alert"
+          type="warning"
+          :title="parameterSyncMessage"
+          :closable="false"
+          show-icon
+        />
+        <div class="parameter-toolbar">
+          <el-button plain :disabled="!queryParametersSupported || !queryContent.trim()" @click="extractQueryParameters">
+            <el-icon><MagicStick /></el-icon>
+            {{ t('develop.query.extractQueryParameters') }}
+          </el-button>
+          <el-button plain :disabled="!queryParametersSupported || !selectedText" @click="parameterizeSelectedText">
+            <el-icon><Edit /></el-icon>
+            {{ t('develop.query.parameterizeSelection') }}
+          </el-button>
+          <el-button type="primary" plain :disabled="!queryParametersSupported" @click="addQueryParameter">
+            <el-icon><Plus /></el-icon>
+            {{ t('develop.query.addQueryParameter') }}
+          </el-button>
+        </div>
+        <div class="parameter-list">
+          <div v-for="(parameter, index) in queryParameters" :key="parameter.id" class="parameter-item">
+            <div class="parameter-item-heading">
+              <strong>{{ parameter.name || t('develop.query.unnamedParameter') }}</strong>
+              <div class="parameter-item-actions">
+                <el-tooltip :content="t('develop.query.insertParameterReference')">
+                  <el-button
+                    circle
+                    size="small"
+                    :disabled="!parameter.name"
+                    :aria-label="t('develop.query.insertParameterReference')"
+                    @click="insertQueryParameterReference(parameter)"
+                  >
+                    <el-icon><Position /></el-icon>
+                  </el-button>
+                </el-tooltip>
+                <el-tooltip :content="t('develop.query.removeQueryParameter')">
+                  <el-button
+                    circle
+                    size="small"
+                    type="danger"
+                    plain
+                    :aria-label="t('develop.query.removeQueryParameter')"
+                    @click="removeQueryParameter(index)"
+                  >
+                    <el-icon><Delete /></el-icon>
+                  </el-button>
+                </el-tooltip>
+              </div>
+            </div>
+            <div class="parameter-grid">
+              <el-form-item :label="t('develop.query.parameterName')" :error="queryParameterNameError(parameter, index)">
+                <el-input v-model="parameter.name" maxlength="64" />
+              </el-form-item>
+              <el-form-item :label="t('develop.query.parameterType')">
+                <el-select v-model="parameter.type" @change="resetQueryParameterDefault(parameter)">
+                  <el-option
+                    v-for="type in queryParameterTypes"
+                    :key="type"
+                    :label="t(`develop.query.parameterTypes.${type}`)"
+                    :value="type"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="t('develop.query.parameterDefault')" :error="queryParameterDefaultError(parameter)">
+                <el-switch v-if="parameter.type === 'boolean'" v-model="parameter.default" />
+                <el-input-number
+                  v-else-if="parameter.type === 'integer' || parameter.type === 'number'"
+                  v-model="parameter.default"
+                  :precision="parameter.type === 'integer' ? 0 : undefined"
+                  :step="parameter.type === 'integer' ? 1 : 0.1"
+                  controls-position="right"
+                />
+                <el-input v-else v-model="parameter.default" />
+              </el-form-item>
+              <el-form-item :label="t('develop.query.parameterTitle')">
+                <el-input v-model="parameter.title" maxlength="100" />
+              </el-form-item>
+              <el-form-item class="parameter-description" :label="t('develop.query.parameterDescription')">
+                <el-input v-model="parameter.description" type="textarea" :rows="2" maxlength="300" />
+              </el-form-item>
+            </div>
+          </div>
+          <el-empty v-if="queryParameters.length === 0" :description="t('develop.query.noQueryParameters')" :image-size="56" />
+        </div>
+      </component>
     </main>
 
     <el-drawer
@@ -236,86 +345,6 @@
         @select="rememberCatalogSelection"
         @node-dblclick="insertCatalogItemAtCursor"
       />
-    </el-drawer>
-
-    <el-drawer
-      v-model="parameterDrawerVisible"
-      :title="t('develop.query.queryParameters')"
-      direction="rtl"
-      size="min(92vw, 560px)"
-      :close-on-click-modal="false"
-    >
-      <div class="parameter-toolbar">
-        <el-button type="primary" plain :disabled="!queryParametersSupported" @click="addQueryParameter">
-          <el-icon><Plus /></el-icon>
-          {{ t('develop.query.addQueryParameter') }}
-        </el-button>
-      </div>
-      <div class="parameter-list">
-        <div v-for="(parameter, index) in queryParameters" :key="parameter.id" class="parameter-item">
-          <div class="parameter-item-heading">
-            <strong>{{ parameter.name || t('develop.query.unnamedParameter') }}</strong>
-            <div class="parameter-item-actions">
-              <el-tooltip :content="t('develop.query.insertParameterReference')">
-                <el-button
-                  circle
-                  size="small"
-                  :disabled="!parameter.name"
-                  :aria-label="t('develop.query.insertParameterReference')"
-                  @click="insertQueryParameterReference(parameter)"
-                >
-                  <el-icon><Position /></el-icon>
-                </el-button>
-              </el-tooltip>
-              <el-tooltip :content="t('develop.query.removeQueryParameter')">
-                <el-button
-                  circle
-                  size="small"
-                  type="danger"
-                  plain
-                  :aria-label="t('develop.query.removeQueryParameter')"
-                  @click="removeQueryParameter(index)"
-                >
-                  <el-icon><Delete /></el-icon>
-                </el-button>
-              </el-tooltip>
-            </div>
-          </div>
-          <div class="parameter-grid">
-            <el-form-item :label="t('develop.query.parameterName')" :error="queryParameterNameError(parameter, index)">
-              <el-input v-model="parameter.name" maxlength="64" />
-            </el-form-item>
-            <el-form-item :label="t('develop.query.parameterType')">
-              <el-select v-model="parameter.type" @change="resetQueryParameterDefault(parameter)">
-                <el-option
-                  v-for="type in queryParameterTypes"
-                  :key="type"
-                  :label="t(`develop.query.parameterTypes.${type}`)"
-                  :value="type"
-                />
-              </el-select>
-            </el-form-item>
-            <el-form-item :label="t('develop.query.parameterDefault')">
-              <el-switch v-if="parameter.type === 'boolean'" v-model="parameter.default" />
-              <el-input-number
-                v-else-if="parameter.type === 'integer' || parameter.type === 'number'"
-                v-model="parameter.default"
-                :precision="parameter.type === 'integer' ? 0 : undefined"
-                :step="parameter.type === 'integer' ? 1 : 0.1"
-                controls-position="right"
-              />
-              <el-input v-else v-model="parameter.default" />
-            </el-form-item>
-            <el-form-item :label="t('develop.query.parameterTitle')">
-              <el-input v-model="parameter.title" maxlength="100" />
-            </el-form-item>
-            <el-form-item class="parameter-description" :label="t('develop.query.parameterDescription')">
-              <el-input v-model="parameter.description" type="textarea" :rows="2" maxlength="300" />
-            </el-form-item>
-          </div>
-        </div>
-        <el-empty v-if="queryParameters.length === 0" :description="t('develop.query.noQueryParameters')" :image-size="56" />
-      </div>
     </el-drawer>
 
     <el-dialog
@@ -428,7 +457,9 @@ import {
   monacoLanguageForQuery,
   queryParameterReference,
   queryCapabilityForEngine,
-  queryResultFromExecution
+  queryResultFromExecution,
+  extractQueryParameterReferences,
+  parameterizeSelection
 } from '@/utils/queryWorkbench.mjs'
 
 const route = useRoute()
@@ -512,6 +543,15 @@ const queryParametersSupported = computed(() => Boolean(
 ))
 const queryParameterTypes = computed(() => selectedCapability.value.parameters?.types || [])
 const queryExecutionContract = computed(() => buildQueryExecutionContract(queryParameters.value))
+const referencedParameterNames = computed(() => extractQueryParameterReferences(currentQueryLanguage.value, queryContent.value))
+const definedParameterNames = computed(() => queryParameters.value.map(parameter => String(parameter?.name || '').trim()).filter(Boolean))
+const hasUnresolvedParameters = computed(() => referencedParameterNames.value.some(name => !definedParameterNames.value.includes(name)))
+const hasUnusedParameters = computed(() => definedParameterNames.value.some(name => !referencedParameterNames.value.includes(name)))
+const parameterSyncMessage = computed(() => {
+  if (hasUnresolvedParameters.value && hasUnusedParameters.value) return t('develop.query.parameterSyncBoth')
+  if (hasUnresolvedParameters.value) return t('develop.query.parameterSyncMissing')
+  return t('develop.query.parameterSyncUnused')
+})
 const monacoLanguage = computed(() => monacoLanguageForQuery(currentQueryLanguage.value))
 const formatterLanguage = computed(() => formatterLanguageForQuery(currentQueryLanguage.value))
 const hasGraphData = computed(() => {
@@ -698,7 +738,16 @@ const queryParameterNameError = (parameter, index) => {
   return ''
 }
 
-const hasValidQueryParameters = () => queryParameters.value.every((parameter, index) => !queryParameterNameError(parameter, index))
+const queryParameterDefaultError = parameter => {
+  if (parameter?.type === 'string' && !String(parameter?.default ?? '').trim()) {
+    return t('develop.query.parameterDefaultRequired')
+  }
+  return ''
+}
+
+const hasValidQueryParameters = () => queryParameters.value.every((parameter, index) => (
+  !queryParameterNameError(parameter, index) && !queryParameterDefaultError(parameter)
+))
 
 const defaultValueForQueryParameterType = type => {
   if (type === 'boolean') return false
@@ -716,6 +765,84 @@ const addQueryParameter = () => {
     title: '',
     description: ''
   })
+}
+
+const nextQueryParameterName = (base = 'parameter') => {
+  const normalizedBase = String(base || 'parameter').replace(/[^A-Za-z0-9_]/g, '_').replace(/^[^A-Za-z_]+/, '') || 'parameter'
+  const used = new Set(definedParameterNames.value)
+  if (!used.has(normalizedBase)) return normalizedBase
+  let index = 2
+  while (used.has(`${normalizedBase}_${index}`)) index += 1
+  return `${normalizedBase}_${index}`
+}
+
+const parameterizeSelectedText = async () => {
+  if (!queryParametersSupported.value || !selectedText.value) return
+  const suggested = nextQueryParameterName('value')
+  const parsed = parameterizeSelection(currentQueryLanguage.value, selectedText.value, suggested)
+  if (!parsed) {
+    ElMessage.warning(t('develop.query.parameterizeSelectionInvalid'))
+    return
+  }
+  try {
+    const { value: requestedName } = await ElMessageBox.prompt(
+      t('develop.query.parameterNamePrompt'),
+      t('develop.query.parameterizeSelectionTitle'),
+      {
+        inputValue: suggested,
+        confirmButtonText: t('develop.query.confirm'),
+        cancelButtonText: t('develop.query.cancel'),
+        inputPattern: /^[A-Za-z_][A-Za-z0-9_]*$/,
+        inputErrorMessage: t('develop.query.parameterNameInvalid'),
+        customClass: 'addp-message-box'
+      }
+    )
+    const name = String(requestedName || '').trim()
+    if (!name || definedParameterNames.value.includes(name)) {
+      ElMessage.warning(t('develop.query.parameterNameDuplicate'))
+      return
+    }
+    const parameter = parameterizeSelection(currentQueryLanguage.value, selectedText.value, name)
+    if (!parameter) return
+    editorRef.value?.insertText(parameter.reference)
+    queryParameters.value.push({
+      id: `${Date.now()}-${queryParameters.value.length}`,
+      name,
+      type: parameter.type,
+      default: parameter.default,
+      title: '',
+      description: ''
+    })
+    parameterDrawerVisible.value = true
+    ElMessage.success(t('develop.query.parameterizeSelectionSuccess'))
+  } catch {
+    // 用户取消参数命名时保持编辑器原内容不变。
+  }
+}
+
+const extractQueryParameters = () => {
+  const references = referencedParameterNames.value
+  if (references.length === 0) {
+    ElMessage.info(t('develop.query.noParameterReferences'))
+    return
+  }
+  const existing = new Map(queryParameters.value.map(parameter => [String(parameter?.name || '').trim(), parameter]))
+  references.forEach(name => {
+    if (existing.has(name)) return
+    const type = queryParameterTypes.value.includes('string') ? 'string' : (queryParameterTypes.value[0] || 'string')
+    const parameter = {
+      id: `${Date.now()}-${queryParameters.value.length}`,
+      name,
+      type,
+      default: defaultValueForQueryParameterType(type),
+      title: '',
+      description: ''
+    }
+    queryParameters.value.push(parameter)
+    existing.set(name, parameter)
+  })
+  parameterDrawerVisible.value = true
+  ElMessage.success(t('develop.query.extractQueryParametersSuccess', { count: references.length }))
 }
 
 const removeQueryParameter = index => {
@@ -799,7 +926,12 @@ const submitQuery = async (parameters = {}) => {
       if (isTerminalExecutionStatus(execution.status)) {
         if (execution.status === 'success') {
           ElMessage.success(t('develop.query.executeSuccess'))
-          announcement.value = t('develop.query.executeSuccess')
+          if (executionResult.value.rows_count === 0) {
+            ElMessage.warning(t('develop.query.executeSuccessNoRows'))
+            announcement.value = t('develop.query.executeSuccessNoRows')
+          } else {
+            announcement.value = t('develop.query.executeSuccess')
+          }
         } else {
           ElMessage.error(t('develop.query.executeFailed'))
           announcement.value = executionResult.value.error || t('develop.query.executeFailed')
@@ -1188,6 +1320,13 @@ onBeforeUnmount(() => {
   gap: 7px;
 }
 
+.editor-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .catalog-tree {
   flex: 1;
   min-height: 0;
@@ -1214,6 +1353,37 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.parameter-panel-dock {
+  flex: 0 0 360px;
+  min-width: 320px;
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--addp-border-color);
+  background: var(--addp-bg-primary);
+}
+
+.parameter-panel-heading {
+  height: 40px;
+  flex: 0 0 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--addp-border-color);
+  color: var(--addp-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.parameter-panel-heading > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }
 
 .editor-panel,
@@ -1280,12 +1450,22 @@ onBeforeUnmount(() => {
 .parameter-toolbar {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
   margin-bottom: 12px;
+}
+
+.parameter-sync-alert {
+  margin: 12px 12px 0;
 }
 
 .parameter-list {
   display: grid;
   gap: 12px;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 12px 16px;
 }
 
 .parameter-item {
@@ -1379,6 +1559,10 @@ onBeforeUnmount(() => {
 
   .parameter-description {
     grid-column: auto;
+  }
+
+  .parameter-panel-dock {
+    display: none;
   }
 }
 </style>

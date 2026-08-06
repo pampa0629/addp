@@ -508,3 +508,16 @@ Bootstrap 使用离线 `iam-bootstrap prepare/apply` 两阶段命令；已完成
 System 不提供公开 `/register`。平台 IAM 管理使用 `/platform/*`，Tenant IAM 管理使用 `/tenant/*`，当前用户自服务使用 `/users/me`，OAuth 2.0 使用 `/oauth/*`。完整端点与权限元数据以 System Swagger 为准。
 
 **另请参阅**: 本文即为当前配置分层、管理能力与环境变量规范入口。
+## 模块拥有的运行策略
+
+配置管理页面只承载模块自己拥有、可以在运行时安全生效的策略。System 只保存模块注册的入口声明，不保存业务配置键和值。
+
+当前新增的策略入口：
+
+| 配置入口 | 所有者 | 平台级字段 | 租户级字段 |
+| --- | --- | --- | --- |
+| `develop.query_policy` | Develop | 最大查询超时、结果预览上限 | 默认查询超时 |
+| `manager.quick_view_policy` | Manager | FlatGeobuf 行数上限、动态 MVT 超时预算、重试等待时间 | 暂无 |
+| `copilot.matching_policy` | Copilot | 匹配阈值、候选数量上限 | 匹配阈值、候选数量上限 |
+
+模块数据库保存配置事实并使用版本号进行并发更新；密钥类字段必须使用专用加密凭据，不通过普通键值配置返回。

@@ -44,6 +44,156 @@ export function queryParameterReference(language, name) {
   return ''
 }
 
+function isIdentifierStart(char) {
+  return /[A-Za-z_]/.test(char || '')
+}
+
+function isIdentifierPart(char) {
+  return /[A-Za-z0-9_]/.test(char || '')
+}
+
+function collectTextParameterReferences(query, prefix, { slashLineComments = false } = {}) {
+  const references = []
+  const seen = new Set()
+  const text = String(query || '')
+  for (let index = 0; index < text.length;) {
+    const current = text[index]
+    if (current === "'" || current === '"' || current === '`') {
+      const quote = current
+      index += 1
+      while (index < text.length) {
+        if (text[index] === '\\') {
+          index += 2
+          continue
+        }
+        if (text[index] === quote) {
+          if (text[index + 1] === quote) {
+            index += 2
+            continue
+          }
+          index += 1
+          break
+        }
+        index += 1
+      }
+      continue
+    }
+    if (current === '-' && text[index + 1] === '-') {
+      const end = text.indexOf('\n', index + 2)
+      index = end < 0 ? text.length : end + 1
+      continue
+    }
+    if (slashLineComments && current === '/' && text[index + 1] === '/') {
+      const end = text.indexOf('\n', index + 2)
+      index = end < 0 ? text.length : end + 1
+      continue
+    }
+    if (current === '/' && text[index + 1] === '*') {
+      const end = text.indexOf('*/', index + 2)
+      index = end < 0 ? text.length : end + 2
+      continue
+    }
+    if (current === prefix && isIdentifierStart(text[index + 1])) {
+      let end = index + 2
+      while (end < text.length && isIdentifierPart(text[end])) end += 1
+      const name = text.slice(index + 1, end)
+      if (!seen.has(name)) {
+        seen.add(name)
+        references.push(name)
+      }
+      index = end
+      continue
+    }
+    index += 1
+  }
+  return references
+}
+
+export function extractQueryParameterReferences(language, query) {
+  const normalizedLanguage = String(language || '').trim().toLowerCase()
+  if (normalizedLanguage === 'mql') {
+    try {
+      const value = JSON.parse(String(query || ''))
+      const references = []
+      const seen = new Set()
+      const visit = current => {
+        if (Array.isArray(current)) {
+          current.forEach(visit)
+          return
+        }
+        if (!current || typeof current !== 'object') return
+        if (Object.prototype.hasOwnProperty.call(current, '$param')) {
+          const name = String(current.$param || '').trim()
+          if (name && !seen.has(name)) {
+            seen.add(name)
+            references.push(name)
+          }
+          return
+        }
+        Object.values(current).forEach(visit)
+      }
+      visit(value)
+      return references
+    } catch {
+      return []
+    }
+  }
+  if (normalizedLanguage === 'sql') return collectTextParameterReferences(query, ':')
+  if (normalizedLanguage === 'cypher') return collectTextParameterReferences(query, '$', { slashLineComments: true })
+  return []
+}
+
+function inferScalarParameter(value) {
+  if (typeof value === 'string') return { type: 'string', default: value }
+  if (typeof value === 'boolean') return { type: 'boolean', default: value }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Number.isInteger(value)
+      ? { type: 'integer', default: value }
+      : { type: 'number', default: value }
+  }
+  return null
+}
+
+export function parameterizeSelection(language, selection, name) {
+  const normalizedLanguage = String(language || '').trim().toLowerCase()
+  const selected = String(selection || '').trim()
+  const parameterName = String(name || '').trim()
+  if (!selected || !parameterName) return null
+
+  if (normalizedLanguage === 'mql') {
+    let value
+    try {
+      value = JSON.parse(selected)
+    } catch {
+      return null
+    }
+    const scalar = inferScalarParameter(value)
+    if (!scalar) return null
+    return { reference: JSON.stringify({ $param: parameterName }), ...scalar }
+  }
+
+  let value
+  if ((normalizedLanguage === 'sql' && selected.startsWith("'") && selected.endsWith("'")) ||
+      (normalizedLanguage === 'cypher' && ((selected.startsWith("'") && selected.endsWith("'")) || (selected.startsWith('"') && selected.endsWith('"'))))) {
+    const quote = selected[0]
+    value = selected.slice(1, -1)
+      .replaceAll(`${quote}${quote}`, quote)
+      .replaceAll('\\\\', '\\')
+  } else if (/^[+-]?\d+$/.test(selected)) {
+    value = Number(selected)
+  } else if (/^[+-]?(?:\d+\.\d*|\d*\.\d+)(?:[eE][+-]?\d+)?$/.test(selected)) {
+    value = Number(selected)
+  } else if (/^(true|false)$/i.test(selected)) {
+    value = selected.toLowerCase() === 'true'
+  } else {
+    return null
+  }
+  const scalar = inferScalarParameter(value)
+  if (!scalar) return null
+  const reference = queryParameterReference(normalizedLanguage, parameterName)
+  return reference ? { reference, ...scalar } : null
+}
+
 export function buildQueryExecutionContract(definitions = []) {
   const properties = {}
   const inputDefaults = {}
@@ -101,6 +251,7 @@ export function queryResultFromExecution(execution) {
     result_kind: result.result_kind || 'table',
     result_limit: result.result_limit,
     truncated: result.truncated === true,
+    diagnostics: Array.isArray(result.diagnostics) ? result.diagnostics : [],
     graph_data: result.graph_data || null,
     error: success ? '' : (execution?.error_details?.message || execution?.error_details?.error || '')
   }

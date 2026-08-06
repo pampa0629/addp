@@ -35,6 +35,7 @@ func SetupRouter(
 	embeddingService *service.EmbeddingService,
 	embeddingConfigurationService *service.EmbeddingConfigurationService,
 	inferenceScenarioBindingService *service.InferenceScenarioBindingService,
+	quickViewPolicyService *service.QuickViewPolicyService,
 	spatialPreviewService *service.SpatialPreviewService,
 	rasterCOGRepo *repository.RasterCOGRepository,
 	taskProviderHandler *TaskProviderHandler,
@@ -96,6 +97,11 @@ func SetupRouter(
 		handler := NewEmbeddingConfigurationHandler(embeddingConfigurationService)
 		platform.GET("/settings/embedding", auth.MustNewPermissionGuard(managerauthorization.PermissionManagerConfigurationRead), handler.Get)
 		platform.PUT("/settings/embedding", auth.MustNewPermissionGuard(managerauthorization.PermissionManagerConfigurationUpdate), handler.Update)
+	}
+	if quickViewPolicyService != nil {
+		handler := NewQuickViewPolicyHandler(quickViewPolicyService)
+		platform.GET("/settings/quick-view-policy", auth.MustNewPermissionGuard(managerauthorization.PermissionManagerConfigurationRead), handler.Get)
+		platform.PUT("/settings/quick-view-policy", auth.MustNewPermissionGuard(managerauthorization.PermissionManagerConfigurationUpdate), handler.Update)
 	}
 	if inferenceScenarioBindingService != nil {
 		bindingHandler := NewInferenceScenarioBindingHandler(inferenceScenarioBindingService)

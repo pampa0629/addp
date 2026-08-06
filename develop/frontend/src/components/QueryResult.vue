@@ -48,6 +48,15 @@
     />
 
     <el-alert
+      v-if="result && result.success && result.rows_count === 0"
+      class="result-alert"
+      type="warning"
+      :title="noDataHint"
+      :closable="false"
+      show-icon
+    />
+
+    <el-alert
       v-if="result && result.success === false && result.error"
       class="result-alert"
       type="error"
@@ -135,15 +144,36 @@ const isRunning = computed(() => ['pending', 'running'].includes(props.result?.s
 const hasRows = computed(() => Array.isArray(props.result?.rows) && props.result.rows.length > 0)
 const statusType = computed(() => {
   if (isRunning.value) return 'primary'
+  if (props.result?.success && Number(props.result?.rows_count || 0) === 0) return 'warning'
   return props.result?.success ? 'success' : 'danger'
 })
 const statusIcon = computed(() => {
   if (isRunning.value) return Loading
+  if (props.result?.success && Number(props.result?.rows_count || 0) === 0) return View
   return props.result?.success ? SuccessFilled : CircleCloseFilled
 })
 const statusLabel = computed(() => {
   if (isRunning.value) return t('develop.queryResult.running')
+  if (props.result?.success && Number(props.result?.rows_count || 0) === 0) return t('develop.queryResult.successNoData')
   return props.result?.success ? t('develop.queryResult.success') : t('develop.queryResult.failed')
+})
+const noDataHint = computed(() => {
+  const diagnostic = props.result?.diagnostics?.[0]
+  if (diagnostic?.code === 'query_zero_result') {
+    if (diagnostic.reason === 'field_case_mismatch' && diagnostic.field && diagnostic.suggested_field) {
+      return t('develop.queryResult.fieldCaseMismatch', {
+        field: diagnostic.field,
+        suggested: diagnostic.suggested_field
+      })
+    }
+    if (diagnostic.reason === 'field_not_observed' && diagnostic.field) {
+      return t('develop.queryResult.fieldNotObserved', { field: diagnostic.field })
+    }
+    if (diagnostic.reason === 'collection_empty') return t('develop.queryResult.collectionEmpty')
+    if (diagnostic.reason === 'filter_not_matched') return t('develop.queryResult.filterNotMatched')
+    if (diagnostic.reason === 'diagnostic_unavailable') return t('develop.queryResult.diagnosticUnavailable')
+  }
+  return diagnostic?.message || t('develop.queryResult.noDataHint')
 })
 
 const formatValue = (value) => {

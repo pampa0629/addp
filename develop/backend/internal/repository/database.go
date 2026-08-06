@@ -44,6 +44,7 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err := db.AutoMigrate(
 		&models.DevTask{},      // 开发任务（query、workflow、script）
 		&models.ToolApproval{}, // 委托 workflow.run 审批事实
+		&models.QueryPolicy{},  // Develop 查询策略
 	); err != nil {
 		return nil, fmt.Errorf("failed to auto migrate: %w", err)
 	}

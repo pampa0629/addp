@@ -172,7 +172,16 @@
 		"inferenceModels": "AI 模型服务",
 		"managerEmbedding": "Manager 图文向量化",
 		"copilotInferenceBindings": "Copilot 推理场景",
-		"agentInferenceBindings": "Agent 推理场景"
+		"agentInferenceBindings": "Agent 推理场景",
+		"developQueryPolicy": "Develop 查询策略",
+		"managerQuickViewPolicy": "Manager 快显策略",
+		"copilotMatchingPolicy": "Copilot 匹配策略"
+	  },
+	  "modules": { "system": { "name": "系统管理" }, "develop": { "name": "数据开发" }, "manager": { "name": "数据管理" }, "copilot": { "name": "AI 助手" }, "agent": { "name": "AI 智能体" }, "inference": { "name": "AI 模型服务" } },
+	  "policies": {
+		"develop": { "title": "查询策略", "defaultQueryTimeout": "默认查询超时（秒）", "maxQueryTimeout": "最大查询超时（秒）", "queryResultLimit": "结果预览上限（行）" },
+		"manager": { "title": "快显策略", "flatgeobufRows": "FlatGeobuf 行数上限", "mvtTimeout": "动态 MVT 超时预算（毫秒）", "retryAfter": "重试等待时间（秒）" },
+		"copilot": { "title": "匹配策略", "scoreThreshold": "匹配阈值", "maxCandidates": "候选数量上限" }
 	  },
 	  "ai": {
 		"scenario": "推理场景",

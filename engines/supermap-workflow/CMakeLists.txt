@@ -134,6 +134,11 @@ if(BUILD_TESTING)
     COMMAND operator-catalog-test "${CMAKE_CURRENT_SOURCE_DIR}/config/operators.json"
   )
 
+  add_executable(resource-host-test src/test/cpp/resource_host_test.cpp)
+  target_link_libraries(resource-host-test PRIVATE addp_workflow_core)
+  target_compile_options(resource-host-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  add_test(NAME resource-host-test COMMAND resource-host-test)
+
   if(SUPERMAP_SDK_ROOT)
     add_executable(supermap-runtime-test-driver src/test/cpp/runtime_test_driver.cpp)
     target_link_libraries(supermap-runtime-test-driver PRIVATE addp_supermap_runtime)

@@ -1,5 +1,6 @@
 #include "operator_runtime.hpp"
 #include "cad_runtime.hpp"
+#include "resource_host.hpp"
 #include "runtime_access.hpp"
 #include "s3m_runtime.hpp"
 #include "udbx_runtime.hpp"
@@ -150,18 +151,6 @@ std::string object_string(
     throw std::invalid_argument(object_name + "." + field + " must be a non-empty string");
   }
   return value->get<std::string>();
-}
-
-std::string normalize_resource_host(std::string host) {
-  std::string normalized = host;
-  std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](unsigned char c) {
-    return static_cast<char>(std::tolower(c));
-  });
-  if (normalized != "localhost" && normalized != "127.0.0.1" && normalized != "::1") {
-    return host;
-  }
-  const char* alias = std::getenv("SUPERMAP_RESOURCE_LOCALHOST_ALIAS");
-  return alias == nullptr || std::string(alias).empty() ? host : std::string(alias);
 }
 
 int object_port(const Json& object, const std::string& object_name) {

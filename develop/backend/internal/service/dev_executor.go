@@ -852,7 +852,11 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 				Columns: queryResult.Columns, Rows: queryResult.Rows, RowsAffected: int64(len(queryResult.Rows)), Effect: SQLExecutionEffectRead,
 			}
 			if err == nil {
-				return e.queryResult(result.Columns, result.Rows, result.RowsAffected, result.Effect, resultKind, graphData)
+				response, message, affected := e.queryResult(result.Columns, result.Rows, result.RowsAffected, result.Effect, resultKind, graphData)
+				if devTask.GetQueryType() == "mql" && len(result.Rows) == 0 {
+					response["diagnostics"] = mongoZeroResultDiagnostics(execCtx, engine, sqlContent, targetPath)
+				}
+				return response, message, affected
 			}
 		}
 	}
@@ -860,6 +864,105 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 		return nil, fmt.Sprintf("查询执行失败: %v", err), nil
 	}
 	return e.queryResult(result.Columns, result.Rows, result.RowsAffected, result.Effect, "table", nil)
+}
+
+// mongoZeroResultDiagnostics adds non-blocking guidance for the common case where
+// MongoDB accepts a filter but returns no documents because a field name's case
+// does not match the sampled collection schema. It deliberately remains a
+// warning: dynamic schemas may be incomplete and zero rows can be legitimate.
+func mongoZeroResultDiagnostics(ctx context.Context, engine *commonModels.Engine, query string, targetPath *plugin.CatalogPath) []map[string]interface{} {
+	if engine == nil || !strings.EqualFold(engine.EngineType, "mongodb") || targetPath == nil {
+		return []map[string]interface{}{{"code": "query_zero_result", "reason": "diagnostic_unavailable"}}
+	}
+	enginePlugin, err := plugin.Get(engine.EngineType)
+	if err != nil {
+		return []map[string]interface{}{{"code": "query_zero_result", "reason": "diagnostic_unavailable"}}
+	}
+	sampler, ok := enginePlugin.(plugin.DynamicSchemaSamplingProvider)
+	if !ok {
+		return []map[string]interface{}{{"code": "query_zero_result", "reason": "diagnostic_unavailable"}}
+	}
+	facts, err := sampler.SampleDynamicSchema(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), *targetPath, plugin.CatalogFactsOptions{SampleSize: 100})
+	if err != nil || facts == nil || facts.Table == nil {
+		return []map[string]interface{}{{"code": "query_zero_result", "reason": "diagnostic_unavailable"}}
+	}
+	if facts.Table.EstimatedRowCount != nil && *facts.Table.EstimatedRowCount == 0 {
+		return []map[string]interface{}{{"code": "query_zero_result", "reason": "collection_empty"}}
+	}
+	requested := mqlFieldNames(query)
+	fields := facts.Table.FieldNames()
+	for _, name := range requested {
+		for _, field := range fields {
+			if strings.EqualFold(name, field) && name != field {
+				return []map[string]interface{}{{
+					"code": "query_zero_result", "reason": "field_case_mismatch", "field": name, "suggested_field": field,
+				}}
+			}
+		}
+		if !containsString(fields, name) {
+			return []map[string]interface{}{{"code": "query_zero_result", "reason": "field_not_observed", "field": name}}
+		}
+	}
+	return []map[string]interface{}{{"code": "query_zero_result", "reason": "filter_not_matched"}}
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func mqlFieldNames(query string) []string {
+	var command map[string]interface{}
+	if err := json.Unmarshal([]byte(query), &command); err != nil {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	result := make([]string, 0)
+	var collectPredicateFields func(interface{})
+	collectPredicateFields = func(current interface{}) {
+		switch typed := current.(type) {
+		case []interface{}:
+			for _, item := range typed {
+				collectPredicateFields(item)
+			}
+		case map[string]interface{}:
+			for key, child := range typed {
+				if strings.HasPrefix(key, "$") {
+					if key == "$and" || key == "$or" || key == "$nor" {
+						collectPredicateFields(child)
+					}
+					continue
+				}
+				field := strings.SplitN(key, ".", 2)[0]
+				if field != "" {
+					if _, exists := seen[field]; !exists {
+						seen[field] = struct{}{}
+						result = append(result, field)
+					}
+				}
+			}
+		}
+	}
+	if filter, ok := command["filter"]; ok {
+		collectPredicateFields(filter)
+	}
+	if queryFilter, ok := command["query"]; ok {
+		collectPredicateFields(queryFilter)
+	}
+	if pipeline, ok := command["pipeline"].([]interface{}); ok {
+		for _, stage := range pipeline {
+			if stageMap, ok := stage.(map[string]interface{}); ok {
+				if match, ok := stageMap["$match"]; ok {
+					collectPredicateFields(match)
+				}
+			}
+		}
+	}
+	return result
 }
 
 func (e *DevExecutor) queryResultLimitValue() int {

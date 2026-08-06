@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CHAT_MAX_OUTPUT_TOKENS_PARAMETERS,
+  CHAT_TEMPERATURE_MODES,
   applyPreset,
   createModelDraft,
   isValidProfileCode,
@@ -13,8 +15,12 @@ describe('model onboarding helpers', () => {
     expect(draft).toMatchObject({
       preset: 'multimodal_embedding_2560',
       dimension: 2560,
-      profileCode: 'multimodal-embedding'
+      profileCode: 'multimodal-embedding',
+      chatMaxOutputTokensParameter: 'max_tokens',
+      chatTemperatureMode: 'configurable'
     })
+    expect(CHAT_MAX_OUTPUT_TOKENS_PARAMETERS).toEqual(['max_tokens', 'max_completion_tokens'])
+    expect(CHAT_TEMPERATURE_MODES).toEqual(['configurable', 'default_only'])
   })
 
   it('normalizes tenant allowlists', () => {

@@ -361,6 +361,79 @@
         "title": "KGExtractResponse",
         "type": "object"
       },
+      "MatchingPolicyResponse": {
+        "properties": {
+          "inherited": {
+            "default": false,
+            "title": "Inherited",
+            "type": "boolean"
+          },
+          "max_candidates": {
+            "title": "Max Candidates",
+            "type": "integer"
+          },
+          "scope_type": {
+            "title": "Scope Type",
+            "type": "string"
+          },
+          "score_threshold": {
+            "title": "Score Threshold",
+            "type": "number"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scope_type",
+          "score_threshold",
+          "max_candidates",
+          "version"
+        ],
+        "title": "MatchingPolicyResponse",
+        "type": "object"
+      },
+      "MatchingPolicyUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "max_candidates": {
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Max Candidates",
+            "type": "integer"
+          },
+          "score_threshold": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "title": "Score Threshold",
+            "type": "number"
+          },
+          "version": {
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "score_threshold",
+          "max_candidates"
+        ],
+        "title": "MatchingPolicyUpdate",
+        "type": "object"
+      },
       "NavigateAction": {
         "properties": {
           "label": {
@@ -1227,6 +1300,130 @@
           }
         ],
         "summary": "更新 Copilot 推理场景绑定 | Update Copilot Inference Scenario Binding",
+        "tags": [
+          "配置管理 | Configuration Management"
+        ],
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [
+          "copilot.configuration.update"
+        ]
+      }
+    },
+    "/settings/matching-policy": {
+      "get": {
+        "operationId": "get_matching_policy_api_v1_copilot_settings_matching_policy_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Accept-Language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Accept-Language"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchingPolicyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get Matching Policy",
+        "tags": [
+          "配置管理 | Configuration Management"
+        ],
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [
+          "copilot.configuration.read"
+        ]
+      },
+      "put": {
+        "operationId": "update_matching_policy_api_v1_copilot_settings_matching_policy_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Accept-Language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Accept-Language"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MatchingPolicyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchingPolicyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Update Matching Policy",
         "tags": [
           "配置管理 | Configuration Management"
         ],

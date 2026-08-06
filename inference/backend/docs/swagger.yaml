@@ -9,6 +9,10 @@ definitions:
     type: object
   github_com_addp_inference_internal_service.DeploymentInput:
     properties:
+      chat_max_output_tokens_parameter:
+        type: string
+      chat_temperature_mode:
+        type: string
       dimension:
         type: integer
       modalities:
@@ -164,6 +168,10 @@ definitions:
   github_com_addp_inference_internal_service.SuggestedModel:
     properties:
       capability_preset:
+        type: string
+      chat_max_output_tokens_parameter:
+        type: string
+      chat_temperature_mode:
         type: string
       dimension:
         type: integer

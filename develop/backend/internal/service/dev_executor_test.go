@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -275,6 +276,16 @@ func TestQueryResultAppliesPreviewLimitAndTruncation(t *testing.T) {
 	rows, ok := summary["preview_rows"].([]map[string]interface{})
 	if !ok || len(rows) != 2 {
 		t.Fatalf("preview_rows = %#v", summary["preview_rows"])
+	}
+}
+
+func TestMQLFieldNamesFindsTopLevelFieldsInsideFilters(t *testing.T) {
+	fields := mqlFieldNames(`{"find":"Outdoors","filter":{"members":{"$elemMatch":{"entryInfo.status":"领队"}}},"limit":10}`)
+	if !slices.Contains(fields, "members") {
+		t.Fatalf("fields = %#v, want members", fields)
+	}
+	if slices.Contains(fields, "find") || slices.Contains(fields, "filter") || slices.Contains(fields, "limit") {
+		t.Fatalf("command keys leaked into fields = %#v", fields)
 	}
 }
 

@@ -24,7 +24,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 # 在模块级别导入所有模型（避免在异步函数中导入导致的延迟）
-from models import conversation, inference_scenario_binding, message  # noqa: E402,F401
+from models import conversation, inference_scenario_binding, message, matching_policy  # noqa: E402,F401
 
 
 async def init_db():

@@ -81,6 +81,7 @@ func main() {
 	embeddingRepo := repository.NewEmbeddingRepository(db)
 	embeddingConfigurationRepo := repository.NewEmbeddingConfigurationRepository(db)
 	inferenceScenarioBindingRepo := repository.NewInferenceScenarioBindingRepository(db)
+	quickViewPolicyRepo := repository.NewQuickViewPolicyRepository(db)
 	tileCacheRepo := repository.NewTileCacheRepository(db)
 	vectorMaterializedViewRepo := repository.NewVectorMaterializedViewRepository(db)
 	rasterCOGRepo := repository.NewRasterCOGRepository(db)
@@ -102,6 +103,7 @@ func main() {
 	}
 	embeddingConfigurationProvider := embeddingConfigurationService.Provider()
 	inferenceScenarioBindingService := service.NewInferenceScenarioBindingService(inferenceScenarioBindingRepo)
+	quickViewPolicyService := service.NewQuickViewPolicyService(quickViewPolicyRepo)
 	logger.L().Info("Manager repositories 初始化完成")
 
 	logger.L().Info("Manager 配置加载完成",
@@ -204,21 +206,28 @@ func main() {
 	// MinIO Bucket 名称（瓦片缓存结果默认写入 manager bucket）
 	minioBucket := "manager"
 	spatialPreviewService := service.NewSpatialPreviewService(redisClient, minioClient)
+	quickViewPolicy, policyErr := quickViewPolicyService.Get(context.Background())
+	if policyErr != nil {
+		logger.L().Error("读取快显策略失败", "error", policyErr)
+		os.Exit(1)
+	}
 	unifiedMVTService := service.NewUnifiedMVTService(
 		spatialPreviewService,
 		mvtService,
 		metadataRepo,
 	)
-	unifiedMVTService.SetRealtimeTileTimeout(time.Duration(cfg.TileCache.RealtimeTileTimeoutMS) * time.Millisecond)
-	unifiedMVTService.SetRealtimeTileRetryAfter(time.Duration(cfg.TileCache.RealtimeTileRetryAfterSec) * time.Second)
+	unifiedMVTService.SetRealtimeTileTimeout(time.Duration(quickViewPolicy.RealtimeTileTimeoutMS) * time.Millisecond)
+	unifiedMVTService.SetRealtimeTileRetryAfter(time.Duration(quickViewPolicy.RealtimeTileRetryAfterSec) * time.Second)
 	logger.L().Info("统一 MVT 服务已初始化（RESTful API + 三层缓存穿透架构）")
 
 	// 初始化快显状态服务（依赖数据库与 Meta 空间元数据）
 	quickViewService := service.NewQuickViewService(db, metaClient)
 	quickViewService.SetWorkflowEngineLister(workflowRuntimeLister)
-	quickViewService.SetCapabilityOptions(service.QuickViewCapabilityOptions{
-		DirectFlatGeobufMaxRows: cfg.TileCache.DirectFlatGeobufMaxRows,
-		RealtimeTileTimeoutMS:   cfg.TileCache.RealtimeTileTimeoutMS,
+	quickViewService.SetCapabilityOptions(service.QuickViewCapabilityOptions{DirectFlatGeobufMaxRows: quickViewPolicy.DirectFlatGeobufMaxRows, RealtimeTileTimeoutMS: quickViewPolicy.RealtimeTileTimeoutMS})
+	quickViewPolicyService.SetApplier(func(value service.QuickViewPolicyResponse) {
+		unifiedMVTService.SetRealtimeTileTimeout(time.Duration(value.RealtimeTileTimeoutMS) * time.Millisecond)
+		unifiedMVTService.SetRealtimeTileRetryAfter(time.Duration(value.RealtimeTileRetryAfterSec) * time.Second)
+		quickViewService.SetCapabilityOptions(service.QuickViewCapabilityOptions{DirectFlatGeobufMaxRows: value.DirectFlatGeobufMaxRows, RealtimeTileTimeoutMS: value.RealtimeTileTimeoutMS})
 	})
 
 	// 初始化向量化服务（Manager 模块的按需向量化）
@@ -367,7 +376,7 @@ func main() {
 	model3DTilesHandler := api.NewModel3DTilesHandler(model3DTilesRepo, minioClient, minioBucket)
 	logger.L().Info("数据导入服务已初始化", "transfer_url", cfg.TransferServiceURL)
 
-	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, cadPreviewHandler, model3DTilesHandler, dataProfileHandler)
+	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, quickViewPolicyService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, cadPreviewHandler, model3DTilesHandler, dataProfileHandler)
 
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("manager")
@@ -479,13 +488,16 @@ func main() {
 			},
 			ConfigurationManagement: &commonconfiguration.ManagementDeclaration{
 				SchemaVersion: commonconfiguration.ManagementSchemaVersion,
-				Entries: []commonconfiguration.ManagementEntry{{
-					ID: "manager.embedding", OwnerModule: "manager",
-					ScopeTypes:       []string{commonconfiguration.ScopePlatformDefaultWithTenantOverride},
-					FrontendRoute:    "/manager/settings/embedding",
-					ReadPermission:   managerauthorization.PermissionManagerConfigurationRead,
-					UpdatePermission: managerauthorization.PermissionManagerConfigurationUpdate,
-				}},
+				Entries: []commonconfiguration.ManagementEntry{
+					{
+						ID: "manager.embedding", OwnerModule: "manager",
+						ScopeTypes: []string{commonconfiguration.ScopePlatformDefaultWithTenantOverride}, FrontendRoute: "/manager/settings/embedding",
+						ReadPermission: managerauthorization.PermissionManagerConfigurationRead, UpdatePermission: managerauthorization.PermissionManagerConfigurationUpdate,
+					}, {
+						ID: "manager.quick_view_policy", OwnerModule: "manager", ScopeTypes: []string{commonconfiguration.ScopePlatformOnly}, FrontendRoute: "/configuration/manager/quick-view-policy",
+						ReadPermission: managerauthorization.PermissionManagerConfigurationRead, UpdatePermission: managerauthorization.PermissionManagerConfigurationUpdate,
+					},
+				},
 			},
 		})
 	}

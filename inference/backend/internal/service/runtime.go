@@ -187,11 +187,23 @@ func (s *Runtime) Chat(ctx context.Context, req commoninference.ChatRequest) (*c
 		}
 		body["response_format"] = responseFormat
 	}
-	if req.Temperature != nil {
-		body["temperature"] = *req.Temperature
+	switch resolved.deployment.ChatTemperatureMode {
+	case ChatTemperatureModeConfigurable:
+		if req.Temperature != nil {
+			body["temperature"] = *req.Temperature
+		}
+	case ChatTemperatureModeDefaultOnly:
+		// The upstream owns the only supported temperature value.
+	default:
+		return nil, ErrProfileUnavailable
 	}
 	if req.MaxOutputTokens > 0 {
-		body["max_tokens"] = req.MaxOutputTokens
+		switch resolved.deployment.ChatMaxOutputTokensParameter {
+		case ChatMaxOutputTokensParameterMaxTokens, ChatMaxOutputTokensParameterMaxCompletionTokens:
+			body[resolved.deployment.ChatMaxOutputTokensParameter] = req.MaxOutputTokens
+		default:
+			return nil, ErrProfileUnavailable
+		}
 	}
 	var upstream struct {
 		Choices []struct {

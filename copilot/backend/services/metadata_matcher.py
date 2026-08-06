@@ -23,8 +23,15 @@ class MetadataMatcherService:
         self.system_api_url = settings.get_system_url()
         # 禁用系统代理，直接访问本地服务
         self.client = httpx.AsyncClient(timeout=30.0, trust_env=False)
-        self.score_threshold = settings.copilot_score_threshold  # 0.15
-        self.max_candidates = settings.copilot_max_candidates  # 10
+        self.score_threshold = 0.15
+        self.max_candidates = 10
+        self._tenant_policies: Dict[int, tuple[float, int]] = {}
+
+    def update_policy(self, score_threshold: float, max_candidates: int, tenant_id: Optional[int] = None):
+        if tenant_id is None:
+            self.score_threshold, self.max_candidates = score_threshold, max_candidates
+        else:
+            self._tenant_policies[tenant_id] = (score_threshold, max_candidates)
 
     async def match_datasources(
         self,
@@ -43,6 +50,7 @@ class MetadataMatcherService:
         Returns:
             MatchResult 匹配结果
         """
+        score_threshold, max_candidates = self._tenant_policies.get(tenant_id, (self.score_threshold, self.max_candidates))
         # 1. 查询元数据
         if engine_id:
             candidates = await self._get_engine_metadata(engine_id, tenant_id)
@@ -69,19 +77,19 @@ class MetadataMatcherService:
 
         score_diff = scored_candidates[0]["score"] - scored_candidates[1]["score"]
 
-        if score_diff >= self.score_threshold:
+        if score_diff >= score_threshold:
             # 得分差距大，自动选择
             return MatchResult(
                 auto_selected=True,
                 selected=scored_candidates[0],
-                candidates=scored_candidates[:self.max_candidates]
+                candidates=scored_candidates[:max_candidates]
             )
         else:
             # 得分差距小，展示候选列表
             return MatchResult(
                 auto_selected=False,
                 selected=None,
-                candidates=scored_candidates[:self.max_candidates]
+                candidates=scored_candidates[:max_candidates]
             )
 
     async def _search_metadata(self, query: str, tenant_id: int) -> List[Dict]:

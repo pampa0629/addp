@@ -13,10 +13,12 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
+	commonconfiguration "github.com/addp/common/configuration"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/events"
 	"github.com/addp/common/utils"
 	"github.com/addp/develop/backend/internal/api"
+	developauthorization "github.com/addp/develop/backend/internal/authorization"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/repository"
 	"github.com/addp/develop/backend/internal/service"
@@ -56,6 +58,8 @@ func main() {
 
 	// ========== Repository 层 ==========
 	devTaskRepo := repository.NewDevTaskRepository(db)
+	queryPolicyRepo := repository.NewQueryPolicyRepository(db)
+	queryPolicyService := service.NewQueryPolicyService(queryPolicyRepo)
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db) // 统一执行记录仓库
 	log.Printf("✅ Repository 层初始化完成（使用统一执行表）")
 
@@ -89,7 +93,7 @@ func main() {
 	log.Printf("✅ WorkflowEngineService 初始化完成")
 
 	// 2. SQL引擎服务
-	sqlEngine := service.NewSQLEngineService(cfg, systemServiceClient, executionAuthorizationClient)
+	sqlEngine := service.NewSQLEngineService(cfg, systemServiceClient, executionAuthorizationClient, queryPolicyService)
 	log.Printf("✅ SQLEngineService 初始化完成")
 
 	// 3. Jupyter引擎服务
@@ -139,7 +143,8 @@ func main() {
 	log.Printf("✅ Handler 层初始化完成")
 
 	// ========== 设置路由 ==========
-	router := api.SetupRouter(cfg, db, devTaskHandler, executionHandler, toolApprovalHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, devTaskService, systemServiceClient)
+	queryPolicyHandler := api.NewQueryPolicyHandler(queryPolicyService)
+	router := api.SetupRouter(cfg, db, devTaskHandler, executionHandler, toolApprovalHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, devTaskService, systemServiceClient, queryPolicyHandler)
 	log.Printf("✅ 路由设置完成")
 
 	serviceHost := utils.GetServiceHost()
@@ -148,14 +153,13 @@ func main() {
 
 	// ========== 模块注册（注册到 System service_registry）==========
 	if cfg.SystemServiceURL != "" {
-		systemServiceClient.RegisterAndHeartbeatWithMetadata(context.Background(), "develop", serviceURL, "/develop", map[string]interface{}{
-			"module": "develop",
-			"capabilities": map[string]interface{}{
-				"cleanup_executor": map[string]interface{}{
-					"enabled": true,
-					"causes":  []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted},
-				},
-			},
+		systemServiceClient.RegisterAndHeartbeat(context.Background(), &commonClient.ModuleRegistrationRequest{
+			ModuleName: "develop", ModuleURL: serviceURL, RoutePrefix: "/develop", HealthCheckURL: serviceURL + "/health",
+			Metadata: map[string]interface{}{"capabilities": map[string]interface{}{"cleanup_executor": map[string]interface{}{"enabled": true, "causes": []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted}}}},
+			ConfigurationManagement: &commonconfiguration.ManagementDeclaration{SchemaVersion: commonconfiguration.ManagementSchemaVersion, Entries: []commonconfiguration.ManagementEntry{{
+				ID: "develop.query_policy", OwnerModule: "develop", ScopeTypes: []string{commonconfiguration.ScopePlatformDefaultWithTenantOverride}, FrontendRoute: "/configuration/develop/query-policy",
+				ReadPermission: developauthorization.PermissionDevelopConfigurationRead, UpdatePermission: developauthorization.PermissionDevelopConfigurationUpdate,
+			}}},
 		})
 	}
 
