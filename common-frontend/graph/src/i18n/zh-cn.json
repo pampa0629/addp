@@ -14,5 +14,11 @@
     "displayName": "显示名",
     "propList": "属性列表",
     "unique": "唯一"
+  },
+  "lineage": {
+    "noData": "暂无血缘数据",
+    "nodes": "节点",
+    "edges": "关系",
+    "fitView": "适应窗口"
   }
 }

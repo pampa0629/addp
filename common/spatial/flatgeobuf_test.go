@@ -161,7 +161,8 @@ func TestWriteFlatGeobufWritesEWKBFeatures(t *testing.T) {
 			Geometry: ewkbValue,
 			Properties: map[string]interface{}{
 				"name":   "Beijing",
-				"rank":   int64(1),
+				// JSON-backed workflow batches decode integer JSON numbers as float64.
+				"rank":   float64(1),
 				"area":   "43854.25",
 				"active": true,
 			},

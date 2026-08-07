@@ -11,11 +11,14 @@ var localeFS embed.FS
 
 // Meta 模块消息 key 常量
 const (
-	MsgCacheCleared    = "meta.cache.cleared"
-	MsgCacheClearedAll = "meta.cache.cleared_all"
-	MsgCacheRefreshed  = "meta.cache.refreshed"
-	MsgCacheFailed     = "meta.cache.failed"
-	MsgCacheCleared1   = "meta.cache.cleared_engine"
+	MsgCacheCleared           = "meta.cache.cleared"
+	MsgCacheClearedAll        = "meta.cache.cleared_all"
+	MsgCacheRefreshed         = "meta.cache.refreshed"
+	MsgCacheFailed            = "meta.cache.failed"
+	MsgCacheCleared1          = "meta.cache.cleared_engine"
+	MsgLineageInvalidQuery    = "meta.lineage.invalid_query"
+	MsgLineageSubjectNotFound = "meta.lineage.subject_not_found"
+	MsgLineageQueryFailed     = "meta.lineage.query_failed"
 )
 
 func init() {

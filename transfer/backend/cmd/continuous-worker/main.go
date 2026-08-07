@@ -18,8 +18,10 @@ import (
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/continuous"
 	"github.com/addp/transfer/internal/deadletter"
+	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
 	"github.com/addp/transfer/internal/repository"
+	"github.com/addp/transfer/internal/service"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -28,13 +30,16 @@ func main() {
 	commonConfig.LoadEnv()
 	cfg := config.Load()
 	logger.Init(logger.Options{Level: envOr("LOG_LEVEL", "info"), Format: "json", FilePath: filepath.Join("logs", "transfer-continuous-worker.log"), AddSource: true, RedirectStdLog: true})
-	if err := cfg.ValidateContinuousRuntime(); err != nil {
-		log.Fatalf("continuous worker 配置无效: %v", err)
-	}
-
 	db, err := connectDatabase(cfg)
 	if err != nil {
 		log.Fatalf("continuous worker 连接 Infra PostgreSQL 失败: %v", err)
+	}
+	continuousPolicyService := service.NewContinuousPolicyService(repository.NewContinuousPolicyRepository(db))
+	if err := continuousPolicyService.Apply(context.Background(), cfg); err != nil {
+		log.Fatalf("continuous worker 加载持续同步策略失败: %v", err)
+	}
+	if err := cfg.ValidateContinuousRuntime(); err != nil {
+		log.Fatalf("continuous worker 配置无效: %v", err)
 	}
 	if cfg.SystemServiceURL == "" || cfg.InternalAPIKey == "" {
 		log.Fatal("continuous worker 需要 SYSTEM_URL 和 INTERNAL_API_KEY 解析业务 Kafka/PostgreSQL Engine")
@@ -141,10 +146,17 @@ func main() {
 }
 
 func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
-	return commonRepo.InitDatabase(commonRepo.DatabaseConfig{
+	db, err := commonRepo.InitDatabase(commonRepo.DatabaseConfig{
 		Host: cfg.DBHost, Port: cfg.DBPort, User: cfg.DBUser, Password: cfg.DBPassword,
 		DBName: cfg.DBName, Schema: cfg.DBSchema, SSLMode: "disable",
 	})
+	if err != nil {
+		return nil, err
+	}
+	if err := db.AutoMigrate(&models.ContinuousPolicy{}); err != nil {
+		return nil, err
+	}
+	return db, nil
 }
 
 func envOr(key, fallback string) string {

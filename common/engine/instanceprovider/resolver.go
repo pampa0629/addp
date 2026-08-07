@@ -18,11 +18,10 @@ type RuntimeDescriptorClient interface {
 	GetEngineRuntimeDescriptor(context.Context, uint) (*models.EngineRuntimeDescriptor, error)
 }
 
-// Resolve returns the provider for one concrete Engine Instance. A PostgreSQL
-// instance with an enabled SuperMap SDX+ for PostgreSQL workspace is resolved
-// to its bound SuperMap runtime; all other instances use their registered
-// engine plugin. The returned provider is the only provider callers should use
-// for catalog, facts, and table access for that instance.
+// Resolve returns the composite provider for one concrete Engine Instance. A
+// PostgreSQL instance with SuperMap SDX+ for PostgreSQL keeps PostgreSQL as its
+// catalog owner and routes only sdx business tables through the bound runtime.
+// All other table paths continue to use the registered PostgreSQL provider.
 func Resolve(ctx context.Context, runtimeClient RuntimeDescriptorClient, engine *models.Engine, requiredOperators ...string) (plugin.EnginePlugin, error) {
 	if engine == nil {
 		return nil, errors.New("engine resource is required")
@@ -71,6 +70,21 @@ func Resolve(ctx context.Context, runtimeClient RuntimeDescriptorClient, engine 
 func IsSuperMapSDXPostgreSQL(engine *models.Engine) bool {
 	_, ok, err := superMapSDXPostgreSQLWorkspace(engine)
 	return err == nil && ok
+}
+
+// IsSuperMapSDXPostgreSQLTable reports whether one concrete table belongs to
+// the SDX+ for PostgreSQL workspace. Engine capability alone is insufficient
+// because the same PostgreSQL instance may also contain ordinary and PostGIS
+// tables.
+func IsSuperMapSDXPostgreSQLTable(engine *models.Engine, schema, table string) bool {
+	if strings.TrimSpace(table) == "" {
+		return false
+	}
+	if !IsSuperMapSDXPostgreSQL(engine) {
+		return false
+	}
+	path := plugin.TabularItemPath(engine.ID, plugin.CatalogTermSchema, schema, table)
+	return supermapworkflow.IsSDXPostgreSQLTablePath(path)
 }
 
 func superMapSDXPostgreSQLWorkspace(engine *models.Engine) (plugin.SpatialWorkspaceFact, bool, error) {

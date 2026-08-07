@@ -277,12 +277,13 @@ type ListExecutionsSwaggerResponse struct {
 
 // CreateExecutionSwaggerRequest 创建临时执行 Swagger 请求体。
 type CreateExecutionSwaggerRequest struct {
-	DevType            string                        `json:"dev_type,omitempty" enums:"query,workflow,script" example:"workflow"`
-	TriggerType        string                        `json:"trigger_type,omitempty" enums:"manual,scheduled" example:"manual"`
-	Content            DevTaskContentSwagger         `json:"content,omitempty"`
-	ExecutionConfig    DevTaskExecutionConfigSwagger `json:"execution_config,omitempty"`
-	Parameters         map[string]interface{}        `json:"parameters,omitempty" swaggertype:"object"`
-	Timeout            int                           `json:"timeout,omitempty" example:"300"`
-	ApprovalID         string                        `json:"approval_id,omitempty" format:"uuid"`
-	RequestFingerprint string                        `json:"request_fingerprint,omitempty" example:"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"`
+	DevType                string                        `json:"dev_type,omitempty" enums:"query,workflow,script" example:"workflow"`
+	TriggerType            string                        `json:"trigger_type,omitempty" enums:"manual,scheduled" example:"manual"`
+	Content                DevTaskContentSwagger         `json:"content,omitempty"`
+	ExecutionConfig        DevTaskExecutionConfigSwagger `json:"execution_config,omitempty"`
+	Parameters             map[string]interface{}        `json:"parameters,omitempty" swaggertype:"object"`
+	Timeout                int                           `json:"timeout,omitempty" example:"300"`
+	QueryConfirmationToken string                        `json:"query_confirmation_token,omitempty" example:"signed-short-lived-token"`
+	ApprovalID             string                        `json:"approval_id,omitempty" format:"uuid"`
+	RequestFingerprint     string                        `json:"request_fingerprint,omitempty" example:"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"`
 }

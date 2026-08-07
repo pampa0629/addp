@@ -24,6 +24,10 @@ export const testConnection = (engineId) => {
   return client.get(`/develop/test/${engineId}`)
 }
 
+export const preflightQuery = (payload) => {
+  return client.post('/develop/query-preflight', payload)
+}
+
 /**
  * 获取健康状态
  */

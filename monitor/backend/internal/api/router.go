@@ -23,6 +23,8 @@ func SetupRouter(
 	alertRuleService *service.AlertRuleService,
 	webhookService *service.WebhookService,
 	emailService *service.EmailService,
+	runtimePolicyService *service.RuntimePolicyService,
+	smtpRelayService *service.SMTPRelayService,
 	systemURL string,
 	redisClient *redis.Client,
 	systemClient *commonClient.SystemClient,
@@ -60,6 +62,26 @@ func SetupRouter(
 
 	// API 路由组
 	api := router.Group("/api/v1/monitor")
+	platform := api.Group("")
+	platform.Use(
+		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: systemURL}),
+		commonAuth.MustNewContextGuard("platform"),
+	)
+	if systemClient != nil {
+		platform.Use(audit.AuditMiddleware("monitor", systemClient))
+	}
+	if runtimePolicyService != nil {
+		handler := NewRuntimePolicyHandler(runtimePolicyService)
+		platform.GET("/settings/runtime-policy", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorConfigurationRead), handler.Get)
+		platform.PUT("/settings/runtime-policy", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorConfigurationUpdate), handler.Update)
+	}
+	if smtpRelayService != nil {
+		handler := NewSMTPRelayHandler(smtpRelayService)
+		platform.GET("/settings/smtp-relay", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorConfigurationRead), handler.Get)
+		platform.PUT("/settings/smtp-relay", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorConfigurationUpdate), handler.Update)
+		platform.PUT("/settings/smtp-relay/credential", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorConfigurationUpdate), handler.SetCredential)
+		platform.DELETE("/settings/smtp-relay/credential", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorConfigurationUpdate), handler.DeleteCredential)
+	}
 
 	api.Use(
 		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: systemURL}),

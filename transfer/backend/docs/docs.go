@@ -467,6 +467,83 @@ const docTemplate = `{
                 "x-addp-auth-mode": "public"
             }
         },
+        "/settings/continuous-policy": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "配置管理 | Configuration Management"
+                ],
+                "summary": "获取持续同步策略 | Get continuous transfer policy",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_service.ContinuousPolicyResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "transfer.configuration.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "配置管理 | Configuration Management"
+                ],
+                "summary": "更新持续同步策略 | Update continuous transfer policy",
+                "parameters": [
+                    {
+                        "description": "持续同步策略 | Continuous transfer policy",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_service.UpdateContinuousPolicyInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_service.ContinuousPolicyResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "transfer.configuration.update"
+                ]
+            }
+        },
         "/system-engines": {
             "get": {
                 "security": [
@@ -2018,13 +2095,6 @@ const docTemplate = `{
                 "ExecutionStatusRunning": "运行中",
                 "ExecutionStatusSuccess": "成功"
             },
-            "x-enum-descriptions": [
-                "待执行",
-                "运行中",
-                "成功",
-                "失败",
-                "已取消"
-            ],
             "x-enum-varnames": [
                 "ExecutionStatusPending",
                 "ExecutionStatusRunning",
@@ -2471,11 +2541,6 @@ const docTemplate = `{
                 "TaskStatusIdle": "空闲（未执行或执行完成）",
                 "TaskStatusRunning": "执行中"
             },
-            "x-enum-descriptions": [
-                "空闲（未执行或执行完成）",
-                "执行中",
-                "运行被 schema change 阻塞，禁止直接启动或恢复"
-            ],
             "x-enum-varnames": [
                 "TaskStatusIdle",
                 "TaskStatusRunning",
@@ -2879,6 +2944,44 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_transfer_internal_service.ContinuousPolicyResponse": {
+            "type": "object",
+            "properties": {
+                "checkpoint_stale_after_seconds": {
+                    "type": "integer"
+                },
+                "diagnostics_interval_seconds": {
+                    "type": "integer"
+                },
+                "pending_restart": {
+                    "type": "boolean"
+                },
+                "recovery_circuit_open_seconds": {
+                    "type": "integer"
+                },
+                "recovery_initial_backoff_seconds": {
+                    "type": "integer"
+                },
+                "recovery_max_backoff_seconds": {
+                    "type": "integer"
+                },
+                "recovery_max_consecutive_failures": {
+                    "type": "integer"
+                },
+                "recovery_stability_window_seconds": {
+                    "type": "integer"
+                },
+                "retention_critical_horizon_seconds": {
+                    "type": "integer"
+                },
+                "retention_degraded_horizon_seconds": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_transfer_internal_service.DecimalFieldRecommendation": {
             "type": "object",
             "properties": {
@@ -2938,6 +3041,52 @@ const docTemplate = `{
                 },
                 "target_engine_type": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_service.UpdateContinuousPolicyInput": {
+            "type": "object",
+            "required": [
+                "checkpoint_stale_after_seconds",
+                "diagnostics_interval_seconds",
+                "recovery_circuit_open_seconds",
+                "recovery_initial_backoff_seconds",
+                "recovery_max_backoff_seconds",
+                "recovery_max_consecutive_failures",
+                "recovery_stability_window_seconds",
+                "retention_critical_horizon_seconds",
+                "retention_degraded_horizon_seconds"
+            ],
+            "properties": {
+                "checkpoint_stale_after_seconds": {
+                    "type": "integer"
+                },
+                "diagnostics_interval_seconds": {
+                    "type": "integer"
+                },
+                "recovery_circuit_open_seconds": {
+                    "type": "integer"
+                },
+                "recovery_initial_backoff_seconds": {
+                    "type": "integer"
+                },
+                "recovery_max_backoff_seconds": {
+                    "type": "integer"
+                },
+                "recovery_max_consecutive_failures": {
+                    "type": "integer"
+                },
+                "recovery_stability_window_seconds": {
+                    "type": "integer"
+                },
+                "retention_critical_horizon_seconds": {
+                    "type": "integer"
+                },
+                "retention_degraded_horizon_seconds": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },

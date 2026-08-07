@@ -18,6 +18,8 @@ func EnsureMonitorStore(db *gorm.DB) error {
 		&monitorModels.WebhookDelivery{},
 		&monitorModels.EmailDestination{},
 		&monitorModels.EmailDelivery{},
+		&monitorModels.RuntimePolicy{},
+		&monitorModels.SMTPRelay{},
 	); err != nil {
 		return err
 	}

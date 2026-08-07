@@ -20,7 +20,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineService, scanService *service.ScanService, taskService *service.ScanTaskService, executionService *service.ScanExecutionService, redisClient *redis.Client, systemClient *commonClient.SystemServiceClient) *gin.Engine {
+func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineService, scanService *service.ScanService, taskService *service.ScanTaskService, executionService *service.ScanExecutionService, redisClient *redis.Client, systemClient *commonClient.SystemServiceClient, lineageServices ...*service.LineageService) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(i18nmiddleware.I18nMiddleware())
@@ -36,10 +36,14 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 	}
 
 	metadataQueryService := service.NewMetadataQueryService(db)
+	lineageService := service.NewLineageService(db)
+	if len(lineageServices) > 0 && lineageServices[0] != nil {
+		lineageService = lineageServices[0]
+	}
 	inspectService := service.NewInspectService(cfg)
 
 	// 创建Handler
-	handler := NewHandler(engineService, scanService, taskService, executionService, metadataQueryService, inspectService)
+	handler := NewHandler(engineService, scanService, taskService, executionService, metadataQueryService, inspectService, lineageService)
 	assetDiscHandler := newAssetDiscoverableHandler(db)
 
 	// 健康检查
@@ -119,6 +123,8 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 
 		// 统计接口
 		api.GET("/stats", permission(metaauthorization.PermissionMetaCatalogRead), handler.GetStats)
+		api.GET("/lineage/graph", permission(metaauthorization.PermissionMetaLineageRead), handler.GetLineageGraph)
+		api.POST("/lineage/services", auth.MustNewServiceClientGuard("addp-service"), permission(metaauthorization.PermissionMetaLineageCreate), handler.RecordServicePublication)
 	}
 
 	return router

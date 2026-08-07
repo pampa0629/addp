@@ -1,8 +1,10 @@
 # Meta 模块血缘扩展设计
 
+> **历史方案（非现行）**：本文保留早期调研和讨论背景。现行唯一路线以 [ADDP 数据血缘能力规范](../spec/addp数据血缘能力规范.md) 为准。本文中的 `lineage_nodes` / `lineage_edges`、多套 upstream/downstream/path API、Orchestrator 事件钩子、独立图数据库迁移设想和 Meta 前端独立实现均不作为当前实现依据；实现前应按正式规范重写为 Meta 关系投影、统一 `lineage_facts` collector 和共享 `LineageViewer`。
+
 **版本**: v1.0
 **创建日期**: 2026-02-18
-**依赖文档**: [数据治理模块群规划](./数据治理模块群规划.md)
+**依赖文档**: [数据治理模块群规划](./数据治理模块群规划.md)（历史背景）
 
 ---
 

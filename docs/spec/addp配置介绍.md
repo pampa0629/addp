@@ -181,12 +181,11 @@ MINIO_ROOT_PASSWORD=minioadmin
 栅格 mosaic 生成是离线任务，Manager 通过 GeoPython Workflow 的 `build_raster_mosaic` 算子执行 GDAL 处理。该调用不同于在线瓦片渲染，允许更长的执行预算：
 
 ```bash
-# 栅格 mosaic 生成算子调用超时。默认 2 小时。
-RASTER_MOSAIC_GENERATION_TIMEOUT=2h
-
 # 容器版 GeoPython Workflow 的 gunicorn worker 超时。默认 7200 秒。
 PYTHON_WORKFLOW_GUNICORN_TIMEOUT=7200
 ```
+
+栅格 mosaic 生成超时已迁移为 Manager 配置页面中“快显策略”Tab 的平台普通运行配置，作为后续 execution 的默认预算；GeoPython 容器的 `PYTHON_WORKFLOW_GUNICORN_TIMEOUT` 仍由部署环境维护。
 
 leaf COG 生成并发不通过全局环境变量固定，而是在任务 `config.cog` 中归一化为明确值。默认策略按运行机器 CPU 预算计算：逻辑 CPU 小于 8 时 `leaf_concurrency=1`，8 到 15 时为 `2`，16 到 31 时为 `4`，32 及以上时为 `6`，上限 `8`；单个 leaf COG 的 GDAL `num_threads` 默认按 `逻辑 CPU / (leaf_concurrency * 2)` 计算并限制在 `1` 到 `4`。当前 18 逻辑 CPU 开发机默认得到 `leaf_concurrency=4`、`num_threads=2`。`cog.leaf_retry_attempts` 默认 `2`，上限 `5`，用于单个 leaf COG 生成或校验的瞬时失败重试。`detached` 模式重跑时会复用目标数据集中已经存在且内容级 COG 校验通过的 leaf，因此超时或中断后的恢复通过再次执行同一任务继续完成未生成部分，而不是从头覆盖全部 leaf。
 
@@ -212,28 +211,13 @@ Manager 配置定义提供业务策略默认值；显式平台值和 Tenant 覆�
 
 ### Transfer continuous 运行观测配置
 
+以下运行策略迁移到 Transfer owner 的平台配置中，配置页面按“持续同步策略”分组维护；保存后的版本对新建或重新启动的 continuous runtime 生效。Infra Kafka 连接、topic 保留容量和 DLQ reconciler 的采样细节仍属于部署配置。
+
 Transfer continuous worker 自己采集业务 Kafka或内部 CDC topic 的分区 earliest/latest position，并把 lag 和 retention 恢复窗口写入统一 execution metadata。Monitor 只读取该 metadata，不直连 Kafka。PostgreSQL CDC consumer 使用 Infra Kafka 独立 `transfer` principal，读取 `INFRA_KAFKA_BOOTSTRAP_SERVERS`、`INFRA_KAFKA_TRANSFER_PASSWORD`、`INFRA_KAFKA_SECURITY_PROTOCOL` 和相同 TLS 配置；这些部署字段不进入 System Engine 或任务 JSON。
 
+Transfer 配置页面的“连续任务策略”Tab 维护 diagnostics、retention、checkpoint 和 recovery 字段；这些字段不再通过环境变量注入。以下仍属于部署治理的 DLQ 采样配置：
+
 ```bash
-# 分区位置与 retention 观测采样间隔，默认 15 秒。
-TRANSFER_CONTINUOUS_DIAGNOSTICS_INTERVAL=15s
-
-# 估算剩余恢复时间不大于该值时进入 degraded，默认 6 小时。
-TRANSFER_CONTINUOUS_RETENTION_DEGRADED_HORIZON=6h
-
-# 估算剩余恢复时间不大于该值时进入 critical，默认 1 小时。
-TRANSFER_CONTINUOUS_RETENTION_CRITICAL_HORIZON=1h
-
-# 存在 source lag 且真实 position commit 超过该时长未推进时，checkpoint health 进入 degraded，默认 5 分钟。
-TRANSFER_CONTINUOUS_CHECKPOINT_STALE_AFTER=5m
-
-# 自动恢复首次退避、最大退避、最大连续失败次数、circuit 冷却时间和稳定运行阈值。
-TRANSFER_CONTINUOUS_RECOVERY_INITIAL_BACKOFF=1s
-TRANSFER_CONTINUOUS_RECOVERY_MAX_BACKOFF=1m
-TRANSFER_CONTINUOUS_RECOVERY_MAX_CONSECUTIVE_FAILURES=5
-TRANSFER_CONTINUOUS_RECOVERY_CIRCUIT_OPEN_DURATION=5m
-TRANSFER_CONTINUOUS_RECOVERY_STABILITY_WINDOW=5m
-
 # DLQ payload availability 低频核验。仅属于 Transfer 部署治理，不进入任务 JSON。
 TRANSFER_DLQ_RECONCILE_INTERVAL=1m
 TRANSFER_DLQ_RECONCILE_BATCH_SIZE=100
@@ -245,7 +229,17 @@ critical 阈值必须小于 degraded 阈值；checkpoint 停滞阈值必须大�
 
 DLQ reconciler 的 interval、timeout、batch size 和 fetch bytes 必须为正；batch size 最大 1000，fetch bytes 不得超过 Kafka 客户端的 `int32` 上限。reconciler 只核验 Infra Kafka 精确 payload reference 并以 CAS 收敛 `payload_available`，不读取业务 Kafka、不提交消费位点，也不把原始 payload 写入日志或 API。
 
-Monitor 每隔以下时间评估最新 active execution 的公共 metadata，将观测信号物化为告警事件。该配置属于 Monitor 部署策略，不进入任务 JSON；Monitor 不因此读取 Transfer 私有表或业务 Kafka。
+Monitor 每隔以下时间评估最新 active execution 的公共 metadata，将观测信号物化为告警事件。该配置不进入任务 JSON；Monitor 不因此读取 Transfer 私有表或业务 Kafka。
+
+配置管理迁移后，Monitor 的告警评估、Webhook/邮件投递超时、最大尝试次数和退避策略属于 Monitor-owned `platform_only` 普通运行配置。Webhook 私网访问开关、Console 外部地址仍属于部署安全边界。
+
+SMTP Relay 作为 Monitor-owned 平台强类型资源管理：地址、端口、TLS 模式和发件身份是普通字段，用户名和密码使用专用加密凭据字段，读取 API 只返回 `configured/version`。
+
+Service 的健康检查与元数据刷新计划属于 Service-owned `platform_only` 普通运行配置，保存后按受控重启生效。
+
+Manager 的在线底图供应商作为 Manager-owned 强类型资源管理。平台可提供默认资源，Tenant 可以在允许的范围内覆盖；高德、天地图浏览器 Key 属于客户端可见凭据，不将其当作服务器 Secret，但管理 API 仍只返回配置状态，运行时端点按授权返回浏览器确需的公开 Key。
+
+以下变量没有形成实际运行路径，禁止继续暴露在配置页面：`COPILOT_ENABLE_STREAMING`、`COPILOT_MAX_TOKENS_PER_DAY`、`COPILOT_RATE_LIMIT`、`DISABLE_SSL_VERIFY`、`WORKER_COUNT`、`TASK_QUEUE_NAME`、`MAX_RETRIES`。Meta 与 Transfer 的 worker 并发和重试等待使用模块独立的部署参数，不再共享 `CONCURRENT_TASKS`、`RETRY_DELAY`。
 
 ```bash
 MONITOR_ALERT_EVALUATION_INTERVAL=15s
@@ -267,27 +261,13 @@ MONITOR_WEBHOOK_ALLOW_PRIVATE_NETWORKS=false
 # Webhook payload 内告警详情链接使用的 Console 外部地址。
 MONITOR_CONSOLE_BASE_URL=http://localhost:5170
 
-# 邮件 outbox dispatcher 的轮询、SMTP 超时、领取租约和重试策略。
-MONITOR_EMAIL_DISPATCH_INTERVAL=2s
-MONITOR_EMAIL_SMTP_TIMEOUT=15s
-MONITOR_EMAIL_LEASE_DURATION=30s
-MONITOR_EMAIL_MAX_ATTEMPTS=8
-MONITOR_EMAIL_RETRY_INITIAL_BACKOFF=5s
-MONITOR_EMAIL_RETRY_MAX_BACKOFF=5m
-
-# 平台统一 SMTP Relay。host 为空时邮件 dispatcher 不启动。
-MONITOR_EMAIL_SMTP_HOST=
-MONITOR_EMAIL_SMTP_PORT=587
-MONITOR_EMAIL_SMTP_USERNAME=
-MONITOR_EMAIL_SMTP_PASSWORD=
-MONITOR_EMAIL_SMTP_TLS_MODE=starttls
-MONITOR_EMAIL_FROM_ADDRESS=
-MONITOR_EMAIL_FROM_NAME=ADDP Monitor
+# 邮件投递策略和 SMTP Relay 已迁移到 Monitor 配置管理页。
+# 凭据只通过专用凭据接口写入 Monitor-owned 加密字段。
 ```
 
 Webhook destination 的 HMAC secret 使用平台统一 `ENCRYPTION_KEY` 做 AES-256-GCM 加密，不新增 Monitor 私有加密密钥。dispatcher 配置属于部署策略，不进入任务定义或普通用户请求；`MONITOR_WEBHOOK_ALLOW_PRIVATE_NETWORKS` 只能由部署者设置，API 不提供绕过开关。
 
-邮件第一版只允许 `MONITOR_EMAIL_SMTP_TLS_MODE=starttls|tls`，不支持明文或机会式降级，也不根据端口猜测 TLS 模式。配置 username 时必须同时配置 password，反之亦然；配置 host 时必须配置合法的 from address。SMTP host 为空时 Monitor 仍可管理邮件目标，但不会启动邮件 dispatcher，既有 `pending` outbox 会在部署者补齐配置并重启后继续投递。SMTP 凭据只存在部署环境，不进入 System Engine、任务 JSON、租户 API 或投递审计。
+邮件第一版只允许 `starttls|tls`，不支持明文或机会式降级，也不根据端口猜测 TLS 模式。SMTP Relay 由平台管理员在 Monitor 配置页维护；host 为空或 Relay 未启用时邮件 dispatcher 不启动，既有 `pending` outbox 会在补齐配置并重启后继续投递。SMTP 密码只存在 Monitor-owned 加密字段，读取接口只返回 `configured/version`，不进入 System Engine、任务 JSON、租户 API 或投递审计。
 
 ### Infra Kafka、Kafka Connect 与 Capture Supervisor 配置（工作包 3B/3C 已实现）
 
@@ -367,16 +347,9 @@ BUSINESS_KAFKA_READER_PASSWORD=change-in-production
 
 Manager 快显中的动态 MVT 是交互式预览能力，单瓦片查询必须受响应时间预算保护。以下配置同时影响能力接口返回的 `realtime_tile.timeout_budget_ms`、动态 MVT 查询的实际超时控制，以及超时响应头中的诊断信息。
 
-```bash
-# 中小数据量直接 FlatGeobuf 快显推荐阈值。PG 空间表超过该阈值仍可使用动态 MVT。
-QUICK_VIEW_DIRECT_FLATGEOBUF_MAX_ROWS=2000
+Manager 配置页面的“快显策略”Tab 维护 FlatGeobuf 行数上限、动态 MVT 超时预算、重试等待时间和栅格 mosaic 生成超时；这些字段不再通过环境变量注入。
 
-# 动态 MVT 单瓦片交互超时预算，单位毫秒。
-QUICK_VIEW_REALTIME_TILE_TIMEOUT_MS=5000
-
-# 动态 MVT 在 ready 3857 目标路径下仍超时时，前端可按 TTL 重试的建议间隔，单位秒。
-QUICK_VIEW_REALTIME_TILE_RETRY_AFTER_SEC=60
-```
+MVT 进程内 LRU 的容量和条目 TTL 是按部署机器内存预算确定的进程级实现参数，使用代码默认值（8192 条目、5 分钟），不作为平台或租户业务配置，也不从未登记的环境变量读取。
 
 ## 环境变量参考
 

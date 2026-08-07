@@ -1246,6 +1246,47 @@ func TestBuildTableTransferPlanUsesSDKSchemaForSDXPostgreSQLSource(t *testing.T)
 	}
 }
 
+func TestBuildTableTransferPlanKeepsMetaFactsForOrdinaryTableInSDXPostgreSQLEngine(t *testing.T) {
+	spec := TableExportTaskSpec{
+		Runtime: RuntimeSpec{Boundary: runtimeBoundaryBounded},
+		Load:    LoadSpec{Mode: loadModeSnapshot},
+		Source: EndpointSpec{
+			Locator:        tableLocator(1, "public", "roads"),
+			DataType:       dataTypeTable,
+			Representation: representationNative,
+			Attributes: tableSourceAttributes("single", "table", "public/roads", nil, []map[string]interface{}{
+				{"name": "id", "type": "bigint", "nullable": false},
+			}, nil),
+		},
+		Target: EndpointSpec{
+			ParentLocator:  schemaLocator(2, "public"),
+			Name:           "roads_copy",
+			DataType:       dataTypeTable,
+			Representation: representationNative,
+			Policy:         map[string]interface{}{"apply_mode": "replace"},
+		},
+	}
+	boundRuntimeID := uint(41)
+	sourceCapabilities := nativeTableSourceBinding("postgresql").Capabilities
+	engineplugin.SetSpatialWorkspacesExtension(sourceCapabilities, []engineplugin.SpatialWorkspaceFact{{
+		Ecosystem:            "supermap",
+		Kind:                 engineplugin.SpatialWorkspaceSuperMapSDXPostgreSQL,
+		State:                engineplugin.SpatialWorkspaceStateDetected,
+		BoundRuntimeEngineID: &boundRuntimeID,
+	}})
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "postgresql", Capabilities: sourceCapabilities},
+		2: nativeTableTargetBinding("postgresql"),
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if result.Plan.Source.TableInfo == nil {
+		t.Fatal("ordinary table TableInfo was cleared, want Meta facts preserved")
+	}
+}
+
 func TestSuperMapSDXPostgreSQLWorkspaceRejectsOtherPostgreSQLWorkspaces(t *testing.T) {
 	for _, test := range []struct {
 		name       string

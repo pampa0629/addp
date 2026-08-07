@@ -36,6 +36,16 @@
       "editorTitle": "查询编辑器",
       "resultTitle": "执行结果",
       "dataResources": "数据资源",
+      "fieldCompletion": "字段",
+      "queryDiagnostics": "语句诊断",
+      "diagnosticQueryEmpty": "查询语句为空",
+      "diagnosticTargetMissing": "尚未选择具体数据资源，字段检查范围有限",
+      "diagnosticParameterUndefined": "参数“{name}”尚未在参数面板中定义",
+      "diagnosticFieldUnknown": "字段“{field}”未在当前资源字段中找到",
+      "diagnosticFieldCaseMismatch": "字段“{field}”可能大小写不正确，建议使用“{suggested}”",
+      "diagnosticFieldRequiresQuote": "字段“{field}”可能是保留字或包含特殊格式，请使用“{suggested}”引用",
+      "applyDiagnosticFix": "修正",
+      "showCompletions": "显示补全",
       "generateQueryTemplate": "生成查询模板",
       "queryParameters": "查询参数",
       "queryParametersUnsupported": "当前引擎不支持查询参数",
@@ -114,7 +124,20 @@
       "updateTaskFailed": "更新失败: ",
       "loadTaskFailed": "加载任务失败: ",
       "taskLoaded": "已加载 查询任务: {name}",
-      "taskNoSql": "该任务没有 SQL 内容"
+      "taskNoSql": "该任务没有 SQL 内容",
+      "queryPermissionDenied": "当前账号没有执行该类数据操作的权限",
+      "highRiskQueryTitle": "确认高风险查询",
+      "highRiskQueryMessage": "当前语句属于{effect}操作，执行后可能修改或删除数据。请确认继续。",
+      "confirmHighRisk": "确认执行",
+      "warningTargetUnknown": "无法从语句中可靠识别目标对象",
+      "warningTargetRequired": "高风险语句必须选择一个目标资源",
+      "warningMissingWhere": "语句没有 WHERE 条件，可能影响全部数据",
+      "effect": {
+        "read": "只读",
+        "write": "写入",
+        "ddl": "结构变更",
+        "external_effect": "外部副作用"
+      }
     },
     "queryResult": {
       "success": "执行成功",
@@ -141,7 +164,8 @@
       "collectionEmpty": "查询成功但没有返回数据。当前集合没有可供匹配的文档。",
       "filterNotMatched": "查询成功但没有返回数据。查询字段已在样本中发现，但当前筛选条件没有命中文档。",
       "diagnosticUnavailable": "查询成功但没有返回数据。暂时无法读取集合结构，请检查筛选条件、字段路径和参数值。",
-      "mongodbDatabaseRequired": "MongoDB 查询缺少数据库。请先选择一个数据库，或在引擎注册信息中配置默认数据库。"
+      "mongodbDatabaseRequired": "MongoDB 查询缺少数据库。请先选择一个数据库，或在引擎注册信息中配置默认数据库。",
+      "postgresqlUndefinedColumn": "PostgreSQL 字段“{field}”不存在；如果实际字段包含大写字母或特殊格式，请使用双引号引用字段名。"
     },
     "saveQueryDialog": {
       "title": "保存为 查询任务",

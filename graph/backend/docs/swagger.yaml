@@ -151,7 +151,6 @@ definitions:
     properties:
       by_label:
         additionalProperties:
-          format: int64
           type: integer
         description: 按标签分组的节点数
         type: object

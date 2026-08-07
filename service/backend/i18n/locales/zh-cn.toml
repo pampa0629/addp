@@ -60,3 +60,12 @@ other = "查询结果格式化失败"
 
 [service.err.invalid_feature_id]
 other = "要素 ID 无效或已过期"
+
+[service.configuration.load_failed]
+other = "加载服务运行策略失败"
+[service.configuration.invalid]
+other = "服务运行策略无效"
+[service.configuration.authentication_required]
+other = "需要身份认证"
+[service.configuration.version_conflict]
+other = "服务运行策略已被其他管理员更新"

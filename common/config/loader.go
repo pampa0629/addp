@@ -87,11 +87,6 @@ type BaseConfig struct {
 	EncryptionKey       []byte
 	InternalAPIKey      string
 
-	// 地图服务配置
-	AMapKey            string
-	AMapSecurityJsCode string
-	TDTKey             string
-
 	// 日志配置
 	LogLevel     string
 	LogFormat    string
@@ -110,10 +105,6 @@ func LoadDeploymentConfig(target *BaseConfig) {
 	target.EncryptionKey = LoadEncryptionKey()
 	target.InternalAPIKey = GetEnv("INTERNAL_API_KEY", "")
 	target.InferenceRuntimeURL = GetEnv("INFERENCE_URL", "http://localhost:8191")
-	target.AMapKey = GetEnv("AMAP_KEY", "")
-	target.AMapSecurityJsCode = GetEnv("AMAP_SECURITY_KEY", "")
-	target.TDTKey = GetEnv("TDT_KEY", "")
-
 	target.LogLevel = GetEnv("LOG_LEVEL", "info")
 	target.LogFormat = GetEnv("LOG_FORMAT", "json")
 	target.LogAddSource = GetEnvBool("LOG_ADD_SOURCE", false)

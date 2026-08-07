@@ -22,6 +22,7 @@ import (
 func SetupRouter(
 	taskService *service.TaskService,
 	executionService *service.ExecutionService,
+	continuousPolicyService *service.ContinuousPolicyService,
 	systemURL string,
 	metaURL string,
 	redisClient *redis.Client,
@@ -48,6 +49,19 @@ func SetupRouter(
 
 	// API 路由组
 	api := router.Group("/api/v1/transfer")
+	platform := api.Group("")
+	platform.Use(
+		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: systemURL}),
+		commonAuth.MustNewContextGuard("platform"),
+	)
+	if systemClient != nil {
+		platform.Use(audit.AuditMiddleware("transfer", systemClient))
+	}
+	if continuousPolicyService != nil {
+		handler := NewContinuousPolicyHandler(continuousPolicyService)
+		platform.GET("/settings/continuous-policy", commonAuth.MustNewPermissionGuard(transferauthorization.PermissionTransferConfigurationRead), handler.Get)
+		platform.PUT("/settings/continuous-policy", commonAuth.MustNewPermissionGuard(transferauthorization.PermissionTransferConfigurationUpdate), handler.Update)
+	}
 
 	// 公开接口（无需认证）
 	public := api.Group("")

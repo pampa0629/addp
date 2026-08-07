@@ -83,6 +83,7 @@ func main() {
 	embeddingConfigurationRepo := repository.NewEmbeddingConfigurationRepository(db)
 	inferenceScenarioBindingRepo := repository.NewInferenceScenarioBindingRepository(db)
 	quickViewPolicyRepo := repository.NewQuickViewPolicyRepository(db)
+	baseMapProviderRepo := repository.NewBaseMapProviderRepository(db)
 	tileCacheRepo := repository.NewTileCacheRepository(db)
 	vectorMaterializedViewRepo := repository.NewVectorMaterializedViewRepository(db)
 	rasterCOGRepo := repository.NewRasterCOGRepository(db)
@@ -105,6 +106,7 @@ func main() {
 	embeddingConfigurationProvider := embeddingConfigurationService.Provider()
 	inferenceScenarioBindingService := service.NewInferenceScenarioBindingService(inferenceScenarioBindingRepo)
 	quickViewPolicyService := service.NewQuickViewPolicyService(quickViewPolicyRepo)
+	baseMapProviderService := service.NewBaseMapProviderService(baseMapProviderRepo)
 	logger.L().Info("Manager repositories 初始化完成")
 
 	logger.L().Info("Manager 配置加载完成",
@@ -212,6 +214,9 @@ func main() {
 		logger.L().Error("读取快显策略失败", "error", policyErr)
 		os.Exit(1)
 	}
+	if quickViewPolicy.RasterMosaicGenerationTimeoutSec > 0 {
+		cfg.RasterMosaicGeneration.Timeout = time.Duration(quickViewPolicy.RasterMosaicGenerationTimeoutSec) * time.Second
+	}
 	unifiedMVTService := service.NewUnifiedMVTService(
 		spatialPreviewService,
 		mvtService,
@@ -229,6 +234,9 @@ func main() {
 		unifiedMVTService.SetRealtimeTileTimeout(time.Duration(value.RealtimeTileTimeoutMS) * time.Millisecond)
 		unifiedMVTService.SetRealtimeTileRetryAfter(time.Duration(value.RealtimeTileRetryAfterSec) * time.Second)
 		quickViewService.SetCapabilityOptions(service.QuickViewCapabilityOptions{DirectFlatGeobufMaxRows: value.DirectFlatGeobufMaxRows, RealtimeTileTimeoutMS: value.RealtimeTileTimeoutMS})
+		if value.RasterMosaicGenerationTimeoutSec > 0 {
+			cfg.RasterMosaicGeneration.Timeout = time.Duration(value.RasterMosaicGenerationTimeoutSec) * time.Second
+		}
 	})
 
 	// 初始化向量化服务（Manager 模块的按需向量化）
@@ -373,7 +381,7 @@ func main() {
 	model3DTilesHandler := api.NewModel3DTilesHandler(model3DTilesRepo, minioClient, minioBucket)
 	logger.L().Info("数据导入服务已初始化", "transfer_url", cfg.TransferServiceURL)
 
-	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, systemServiceClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, quickViewPolicyService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, cadPreviewHandler, model3DTilesHandler, dataProfileHandler)
+	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, systemServiceClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, quickViewPolicyService, baseMapProviderService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, cadPreviewHandler, model3DTilesHandler, dataProfileHandler)
 
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("manager")
@@ -487,7 +495,7 @@ func main() {
 				SchemaVersion: commonconfiguration.ManagementSchemaVersion,
 				Entries: []commonconfiguration.ManagementEntry{{
 					ID: "manager.configuration", OwnerModule: "manager",
-					ScopeTypes: []string{commonconfiguration.ScopePlatformDefaultWithTenantOverride}, FrontendRoute: "/manager/settings/embedding",
+					ScopeTypes: []string{commonconfiguration.ScopePlatformDefaultWithTenantOverride}, FrontendRoute: "/configuration/manager",
 					ReadPermission: managerauthorization.PermissionManagerConfigurationRead, UpdatePermission: managerauthorization.PermissionManagerConfigurationUpdate,
 				}},
 			},

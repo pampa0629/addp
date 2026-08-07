@@ -15,6 +15,12 @@
           v-else-if="tab.kind === 'policy' && activeTab === tab.name"
           :owner="owner"
         />
+        <SMTPRelayConfiguration
+          v-else-if="tab.kind === 'smtp' && activeTab === tab.name"
+        />
+        <BaseMapConfiguration
+          v-else-if="tab.kind === 'map' && activeTab === tab.name"
+        />
       </el-tab-pane>
     </el-tabs>
   </section>
@@ -25,6 +31,8 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import InferenceBindingsConfiguration from './InferenceBindingsConfiguration.vue'
 import PolicyConfiguration from './PolicyConfiguration.vue'
+import SMTPRelayConfiguration from './SMTPRelayConfiguration.vue'
+import BaseMapConfiguration from './BaseMapConfiguration.vue'
 
 const props = defineProps({ owner: { type: String, required: true } })
 const { t } = useI18n()
@@ -34,7 +42,17 @@ const tabsByOwner = {
     { name: 'inference', kind: 'inference', label: 'console.configuration.tabs.inference' },
     { name: 'matching-policy', kind: 'policy', label: 'console.configuration.tabs.matchingPolicy' }
   ],
-  develop: [{ name: 'query-policy', kind: 'policy', label: 'console.configuration.tabs.queryPolicy' }]
+  develop: [{ name: 'query-policy', kind: 'policy', label: 'console.configuration.tabs.queryPolicy' }],
+  manager: [
+    { name: 'quick-view-policy', kind: 'policy', label: 'console.configuration.tabs.quickViewPolicy' },
+    { name: 'base-map', kind: 'map', label: 'console.configuration.tabs.baseMap' }
+  ],
+  transfer: [{ name: 'continuous-policy', kind: 'policy', label: 'console.configuration.tabs.continuousPolicy' }],
+  monitor: [
+    { name: 'runtime-policy', kind: 'policy', label: 'console.configuration.tabs.runtimePolicy' },
+    { name: 'smtp-relay', kind: 'smtp', label: 'console.configuration.tabs.smtpRelay' }
+  ],
+  service: [{ name: 'runtime-policy', kind: 'policy', label: 'console.configuration.tabs.runtimePolicy' }]
 }
 const owner = computed(() => props.owner)
 const tabs = computed(() => tabsByOwner[owner.value] || [])

@@ -8,6 +8,7 @@
 
 - 什么是任务定义。
 - 什么是执行记录。
+- 执行结果如何携带统一的 `lineage_facts`。
 - `common.task_executions` 如何统一记录 execution。
 - TaskProvider 如何声明一个模块可提供的任务类型。
 - Orchestrator 如何引用和触发跨模块任务。
@@ -34,6 +35,7 @@
 8. Orchestrator 只编排任务能力，不拥有业务任务定义。
 9. Monitor 只聚合观察，不成为任务 owner。
 10. ad-hoc-only execution type 可以写入统一执行记录，但在没有持久任务定义前不得注册为 TaskProvider 能力或进入 Orchestrator 任务选择。
+11. 真实读写 owner 必须在 execution 结果中写入版本化 `lineage_facts`；Meta 负责消费并维护血缘关系，Orchestrator 不重复生成资源血缘。
 
 ## 核心对象
 
@@ -129,6 +131,18 @@
 | `started_at` | timestamp | 开始时间 |
 | `completed_at` | timestamp | 完成时间 |
 | `execution_time_ms` | bigint | 执行耗时 |
+
+### `lineage_facts` 执行结果契约
+
+当一次 execution 实际读取、写入或发布了可治理的数据资源时，真实读写 owner 必须在 `metadata` 的结果结构中写入 `lineage_facts`。该字段使用版本化结构，统一记录 `inputs`、`outputs`、`operations`、运行时执行引用和 Meta scan 引用；资源身份使用标准 ResourceLocator，并在可用时携带 item fingerprint。完整字段和关系语义见 [数据血缘能力规范](addp数据血缘能力规范.md) 中的“统一执行事实”。
+
+约束如下：
+
+1. Runtime 只返回节点、端口和运行摘要，不构造 ADDP locator、Meta item 或 Asset 身份。
+2. owner 负责把实际资源绑定、`produced_targets`、写入模式和成功提交事实写入 `lineage_facts`；失败或取消不能伪造成功关系。
+3. Meta collector 以 `lineage_facts` 为输入，解析并保存关系证据和当前投影；它不解析各模块私有 metadata，也不反向抓取 Runtime 状态。
+4. Orchestrator 只通过 `parent_execution_id` 提供父子执行上下文，不重复生成 data item 之间的关系。
+5. `lineage_facts` 不得包含连接凭据、Token、临时挂载路径或完整大对象。
 
 约束：
 

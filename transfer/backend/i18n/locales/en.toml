@@ -96,3 +96,11 @@ other = "The current source or target does not support automatic field definitio
 
 [transfer.field_recommendation.unavailable]
 other = "Automatic field definition recommendations are temporarily unavailable"
+[transfer.configuration.load_failed]
+other = "Failed to load continuous task configuration"
+[transfer.configuration.invalid]
+other = "Invalid continuous task configuration"
+[transfer.configuration.authentication_required]
+other = "Authentication is required"
+[transfer.configuration.version_conflict]
+other = "Continuous task configuration was updated by another administrator"

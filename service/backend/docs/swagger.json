@@ -2342,6 +2342,83 @@
                 ]
             }
         },
+        "/settings/runtime-policy": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "配置管理 | Configuration Management"
+                ],
+                "summary": "获取服务运行策略 | Get service runtime policy",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_service.RuntimePolicyResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.configuration.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "配置管理 | Configuration Management"
+                ],
+                "summary": "更新服务运行策略 | Update service runtime policy",
+                "parameters": [
+                    {
+                        "description": "服务运行策略 | Service runtime policy",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_service.UpdateRuntimePolicyInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_service.RuntimePolicyResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.configuration.update"
+                ]
+            }
+        },
         "/sql/output-contract": {
             "post": {
                 "security": [
@@ -3017,8 +3094,7 @@
                     "type": "string"
                 },
                 "sizeBytes": {
-                    "type": "integer",
-                    "format": "int64"
+                    "type": "integer"
                 },
                 "storageBucket": {
                     "type": "string"
@@ -4619,6 +4695,41 @@
                 },
                 "title": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_service.RuntimePolicyResponse": {
+            "type": "object",
+            "properties": {
+                "health_check_cron": {
+                    "type": "string"
+                },
+                "metadata_refresh_cron": {
+                    "type": "string"
+                },
+                "pending_restart": {
+                    "type": "boolean"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_service_internal_service.UpdateRuntimePolicyInput": {
+            "type": "object",
+            "required": [
+                "health_check_cron",
+                "metadata_refresh_cron"
+            ],
+            "properties": {
+                "health_check_cron": {
+                    "type": "string"
+                },
+                "metadata_refresh_cron": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },

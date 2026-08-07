@@ -1715,12 +1715,16 @@ func (s *EngineService) enrichInstanceCapabilities(engine *models.Engine, capabi
 			}
 			runtimeEngine, hasRuntime := s.firstAvailableDirectWorkflowRuntime(context.Background(), engine.TenantID, operatorName)
 			ws.CanEnable = ws.CanEnable && hasRuntime
-			if hasRuntime {
+			// SDX+ for PostGIS reuses PostgreSQL/PostGIS table access. Its
+			// workflow runtime is only needed for the explicit enable action,
+			// so do not persist a runtime binding. SDX+ for PostgreSQL owns a
+			// private geometry encoding and must retain the exact runtime used
+			// by Meta and Transfer table sessions.
+			if hasRuntime && kind == engineplugin.SpatialWorkspaceSuperMapSDXPostgreSQL {
 				ws.BoundRuntimeEngineID = &runtimeEngine.ID
 			}
 		}
 		changed = true
-		break
 	}
 
 	if !changed {

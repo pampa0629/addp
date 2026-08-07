@@ -96,3 +96,12 @@ other = "当前源或目标不支持字段定义自动推荐"
 
 [transfer.field_recommendation.unavailable]
 other = "字段定义自动推荐暂时不可用"
+
+[transfer.configuration.load_failed]
+other = "加载持续任务配置失败"
+[transfer.configuration.invalid]
+other = "持续任务配置无效"
+[transfer.configuration.authentication_required]
+other = "需要身份认证"
+[transfer.configuration.version_conflict]
+other = "持续任务配置已被其他管理员更新"

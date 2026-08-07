@@ -790,7 +790,7 @@ func (s *TileCacheTaskService) prepareExecutionTileCache(ctx context.Context, ta
 		if sourceEngine == nil {
 			return nil, execCfg, mvt.QuickViewConfig{}, nil, false, errors.New("tile cache source engine is required")
 		}
-		if instanceprovider.IsSuperMapSDXPostgreSQL(sourceEngine) {
+		if instanceprovider.IsSuperMapSDXPostgreSQLTable(sourceEngine, schema, table) {
 			return nil, execCfg, mvt.QuickViewConfig{}, nil, false, errors.New("SuperMap SDX+ for PostgreSQL does not support MVT vector tile cache generation")
 		}
 		engineType := sourceEngine.EngineType

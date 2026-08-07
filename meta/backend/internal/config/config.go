@@ -13,8 +13,6 @@ type Config struct {
 	ServerPort          string
 	DBSchema            string
 	ServiceClientSecret string
-	DeepScanTimeout     string
-	DeepScanBatchSize   int
 
 	// Meilisearch 配置
 	MeilisearchURL        string
@@ -29,7 +27,6 @@ type Config struct {
 
 	// Worker 配置
 	ConcurrentTasks int
-	MaxRetries      int
 	RetryDelay      time.Duration
 
 	// 平台内置 MinIO（用于 no-persist inspect 等内部读取）
@@ -50,8 +47,6 @@ func LoadConfig() *Config {
 		ServerPort:          commonConfig.GetEnv("META_BACKEND_PORT", "8082"),
 		DBSchema:            commonConfig.GetEnv("DB_SCHEMA", "meta"),
 		ServiceClientSecret: commonConfig.GetEnv("META_SERVICE_CLIENT_SECRET", ""),
-		DeepScanTimeout:     commonConfig.GetEnv("DEEP_SCAN_TIMEOUT", "30m"),
-		DeepScanBatchSize:   commonConfig.GetEnvInt("DEEP_SCAN_BATCH_SIZE", 10),
 	}
 
 	// Meta 不再调用使用 Internal API Key 的共享配置接口。部署配置来自
@@ -70,9 +65,8 @@ func LoadConfig() *Config {
 	cfg.RedisDB = commonConfig.GetEnvInt("REDIS_DB", 0)
 
 	// Worker 配置
-	cfg.ConcurrentTasks = commonConfig.GetEnvInt("CONCURRENT_TASKS", 10)
-	cfg.MaxRetries = commonConfig.GetEnvInt("MAX_RETRIES", 3)
-	cfg.RetryDelay = commonConfig.GetEnvDuration("RETRY_DELAY", "30s")
+	cfg.ConcurrentTasks = commonConfig.GetEnvInt("META_WORKER_CONCURRENCY", 10)
+	cfg.RetryDelay = commonConfig.GetEnvDuration("META_WORKER_RETRY_DELAY", "30s")
 
 	minioCfg := commonConfig.LoadBuiltinMinIOConfig()
 	cfg.BuiltinMinioEndpoint = minioCfg.Endpoint

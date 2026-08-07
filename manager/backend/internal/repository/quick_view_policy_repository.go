@@ -42,7 +42,7 @@ func (r *QuickViewPolicyRepository) Save(ctx context.Context, value *models.Quic
 			return ErrQuickViewPolicyVersionConflict
 		}
 		value.ID, value.Version = 1, current.Version+1
-		result := tx.Model(&models.QuickViewPolicy{}).Where("id = 1 AND version = ?", expected).Updates(map[string]interface{}{"version": value.Version, "direct_flatgeobuf_max_rows": value.DirectFlatGeobufMaxRows, "realtime_tile_timeout_ms": value.RealtimeTileTimeoutMS, "realtime_tile_retry_after_sec": value.RealtimeTileRetryAfterSec, "updated_by": value.UpdatedBy})
+		result := tx.Model(&models.QuickViewPolicy{}).Where("id = 1 AND version = ?", expected).Updates(map[string]interface{}{"version": value.Version, "direct_flatgeobuf_max_rows": value.DirectFlatGeobufMaxRows, "realtime_tile_timeout_ms": value.RealtimeTileTimeoutMS, "realtime_tile_retry_after_sec": value.RealtimeTileRetryAfterSec, "raster_mosaic_generation_timeout_sec": value.RasterMosaicGenerationTimeoutSec, "updated_by": value.UpdatedBy})
 		if result.Error != nil {
 			return result.Error
 		}

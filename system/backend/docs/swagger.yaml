@@ -4097,7 +4097,6 @@ paths:
               page_size:
                 type: integer
               total:
-                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -4238,7 +4237,6 @@ paths:
               page_size:
                 type: integer
               total:
-                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -4494,7 +4492,6 @@ paths:
               page_size:
                 type: integer
               total:
-                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -4767,7 +4764,6 @@ paths:
               page_size:
                 type: integer
               total:
-                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -5464,7 +5460,6 @@ paths:
               page_size:
                 type: integer
               total:
-                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -5661,7 +5656,6 @@ paths:
               page_size:
                 type: integer
               total:
-                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -5847,7 +5841,6 @@ paths:
               page_size:
                 type: integer
               total:
-                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -6054,7 +6047,6 @@ paths:
               page_size:
                 type: integer
               total:
-                format: int64
                 type: integer
               total_pages:
                 type: integer

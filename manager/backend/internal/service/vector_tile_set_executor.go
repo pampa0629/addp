@@ -99,7 +99,7 @@ func (e *ManagerVectorTileSetExecutor) GenerateVectorTileSet(ctx context.Context
 		if err != nil {
 			return nil, fmt.Errorf("get vector tile set source engine: %w", err)
 		}
-		if instanceprovider.IsSuperMapSDXPostgreSQL(sourceEngine) {
+		if instanceprovider.IsSuperMapSDXPostgreSQLTable(sourceEngine, req.Config.Source.Schema, req.Config.Source.Table) {
 			return nil, errors.New("SuperMap SDX+ for PostgreSQL does not support MVT vector tile set generation")
 		}
 		switch {

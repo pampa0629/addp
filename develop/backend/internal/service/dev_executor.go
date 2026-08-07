@@ -118,8 +118,9 @@ func (e *DevExecutor) ExecuteContent(
 	userAccessToken string,
 	triggerType string,
 	timeout int,
+	queryConfirmationToken string,
 ) (string, error) {
-	prepared, err := e.prepareContentExecution(
+	prepared, err := e.prepareContentExecutionWithConfirmation(
 		ctx,
 		devType,
 		content,
@@ -130,6 +131,7 @@ func (e *DevExecutor) ExecuteContent(
 		userAccessToken,
 		triggerType,
 		timeout,
+		queryConfirmationToken,
 	)
 	if err != nil {
 		return "", err
@@ -152,6 +154,22 @@ func (e *DevExecutor) prepareContentExecution(
 	userAccessToken string,
 	triggerType string,
 	timeout int,
+) (*preparedContentExecution, error) {
+	return e.prepareContentExecutionWithConfirmation(ctx, devType, content, executionConfig, parameters, tenantID, userID, userAccessToken, triggerType, timeout, "")
+}
+
+func (e *DevExecutor) prepareContentExecutionWithConfirmation(
+	ctx context.Context,
+	devType string,
+	content map[string]interface{},
+	executionConfig map[string]interface{},
+	parameters map[string]interface{},
+	tenantID uint,
+	userID uint,
+	userAccessToken string,
+	triggerType string,
+	timeout int,
+	queryConfirmationToken string,
 ) (*preparedContentExecution, error) {
 	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
 	if err != nil {
@@ -252,6 +270,25 @@ func (e *DevExecutor) prepareContentExecution(
 		Timeout:           timeout,
 		ExecutionConfig:   models.DevTaskContent(executionConfig),
 		RuntimeParameters: effectiveParameters,
+	}
+	if devType == commonExecution.TaskTypeQuery && tempItem.GetQueryType() == "sql" {
+		engineID := tempItem.GetEngineID()
+		queryText, _ := content["query"].(string)
+		targetLocator, _ := content["target_locator"].(string)
+		analysis, analysisErr := AnalyzeQuery("sql", queryText)
+		if analysisErr != nil {
+			return nil, analysisErr
+		}
+		if analysis.RequiresConfirmation {
+			if engineID == nil || *engineID == 0 {
+				return nil, &QueryConfirmationError{Message: "高风险查询缺少执行引擎"}
+			}
+			if err := e.sqlEngine.VerifyQueryConfirmationToken(
+				queryConfirmationToken, tenantID, userID, *engineID, targetLocator, analysis.Fingerprint, analysis.Effect,
+			); err != nil {
+				return nil, &QueryConfirmationError{Message: err.Error()}
+			}
+		}
 	}
 	sqlAuthorization, err := e.prepareSQLExecutionAuthorization(
 		ctx, tempItem, tenantID, userAccessToken, executionID,
@@ -533,6 +570,11 @@ func (e *DevExecutor) executeAsync(
 			metadata["result_size_bytes"] = int64(len(resultBytes))
 		}
 	}
+	if status == commonExecution.ExecutionStatusSuccess {
+		if facts := developLineageFacts(devTask, result); facts != nil {
+			metadata["lineage_facts"] = facts
+		}
+	}
 	execution.Metadata = metadata
 
 	if errorMessage != "" {
@@ -685,6 +727,53 @@ func workflowExecutionOutputs(targets []WorkflowProducedTarget) commonModels.JSO
 		}
 	}
 	return outputs
+}
+
+func developLineageFacts(devTask *models.DevTask, result commonModels.JSONMap) *commonExecution.LineageFacts {
+	if devTask == nil {
+		return nil
+	}
+	inputs := collectLineageRefs(devTask.Content["inputs"], "input")
+	outputs := collectLineageRefs(result["outputs"], "output")
+	if targetLocator := devTask.GetTargetLocator(); strings.TrimSpace(targetLocator) != "" {
+		outputs = append(outputs, commonExecution.LineageResourceRef{Port: "output", Locator: targetLocator})
+	}
+	if len(outputs) == 0 || len(inputs) == 0 {
+		return nil
+	}
+	return &commonExecution.LineageFacts{
+		SchemaVersion: commonExecution.LineageFactsSchemaVersion,
+		Inputs:        inputs, Outputs: outputs,
+		Operations: []commonExecution.LineageOperation{{Kind: "derive", Operator: "develop", InputPorts: []string{"input"}, OutputPorts: []string{"output"}}},
+	}
+}
+
+func collectLineageRefs(value interface{}, port string) []commonExecution.LineageResourceRef {
+	refs := make([]commonExecution.LineageResourceRef, 0)
+	var visit func(interface{})
+	visit = func(current interface{}) {
+		switch typed := current.(type) {
+		case []interface{}:
+			for _, item := range typed {
+				visit(item)
+			}
+		case map[string]interface{}:
+			locator, _ := typed["locator"].(string)
+			if strings.TrimSpace(locator) != "" {
+				ref := commonExecution.LineageResourceRef{Port: port, Locator: locator}
+				if rawID, ok := typed["item_id"].(float64); ok && rawID > 0 {
+					id := uint(rawID)
+					ref.ItemID = &id
+				}
+				refs = append(refs, ref)
+			}
+			for _, item := range typed {
+				visit(item)
+			}
+		}
+	}
+	visit(value)
+	return refs
 }
 
 func (e *DevExecutor) createWorkflowProducedTargetScanRuns(

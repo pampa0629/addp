@@ -139,6 +139,8 @@ roles:
       - inference.provider_credential.update
       - manager.configuration.read
       - manager.configuration.update
+      - monitor.configuration.read
+      - monitor.configuration.update
       - platform.tenant.close
       - platform.tenant.create
       - platform.tenant.initialize
@@ -146,6 +148,10 @@ roles:
       - platform.tenant.restore
       - platform.tenant.suspend
       - platform.tenant.update
+      - service.configuration.read
+      - service.configuration.update
+      - transfer.configuration.read
+      - transfer.configuration.update
   - key: tenant.administrator
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.administrator.name
@@ -339,6 +345,7 @@ roles:
       - manager.search.execute
       - meta.catalog.read
       - meta.inspect.execute
+      - meta.lineage.read
       - meta.scan_task.create
       - meta.scan_task.delete
       - meta.scan_task.execute
@@ -356,6 +363,7 @@ roles:
       - manager.data_item.read
       - manager.search.execute
       - meta.catalog.read
+      - meta.lineage.read
   - key: tenant.develop_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.develop_runtime.name
@@ -375,6 +383,7 @@ roles:
     allowed_scope_types: [tenant, department, project_group]
     allowed_principal_types: [user]
     permissions:
+      - meta.lineage.read
       - model.entity.approve
       - model.entity.create
       - model.entity.delete
@@ -605,6 +614,7 @@ roles:
     allowed_principal_types: [service_principal]
     permissions:
       - meta.catalog.read
+      - meta.lineage.create
       - system.engine_descriptor.read
       - system.execution_authorization.execute
   - key: tenant.transfer_runtime

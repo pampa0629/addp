@@ -29,10 +29,10 @@ SuperMap workspace kind 固定如下：
 
 | `ecosystem/kind` | 前置条件 | geometry 存储 | ADDP table Provider |
 | --- | --- | --- | --- |
-| `supermap/sdx_postgis` | PostgreSQL 已启用 PostGIS | PostGIS geometry | PostgreSQL/PostGIS 原生 Provider |
-| `supermap/sdx_postgresql` | PostgreSQL 未启用 PostGIS，且实例不得存在 `sdx_postgis` | SuperMap 私有 geometry | `bound_runtime_engine_id` 指向的兼容 Workflow Runtime 通过 SDK 读写，边界编码为 EWKB |
+| `supermap/sdx_postgis` | PostgreSQL 已启用 PostGIS，且实例未启用 `sdx_postgresql` | PostGIS geometry | PostgreSQL/PostGIS 原生 Provider，SuperMap 生命周期操作可附加 Workspace Controller |
+| `supermap/sdx_postgresql` | PostgreSQL 可与 PostGIS 扩展共存，实例不得启用 `sdx_postgis` | SuperMap 私有 geometry，默认业务 schema 为 `sdx` | `bound_runtime_engine_id` 指向的兼容 Workflow Runtime 通过 SDK 读写，边界编码为 EWKB |
 
-同一 PostgreSQL 实例最多只能检测或启用其中一种 SuperMap workspace。检测到任一 kind 后，另一 kind 必须为不可启用；不得通过兼容分支允许二者并存。
+同一 PostgreSQL 实例最多只能检测或启用其中一种 SuperMap workspace。PostGIS 扩展本身可以与任一 SuperMap workspace 共存；只有 `sdx_postgis` 与 `sdx_postgresql` 两种 SuperMap workspace 互斥。检测到任一 kind 后，另一 kind 必须为不可启用；不得通过兼容分支允许二者并存。
 
 `supermap/sdx_postgresql` 的 `bound_runtime_engine_id` 是 Transfer table session 与 Meta catalog facts 的唯一运行时绑定。两个模块都必须通过 System 的租户内 Runtime Descriptor 精确解析该 ID；绑定缺失、Runtime 不可见、非 active、未声明 `addp.workflow/v1` 或未提供所需 direct 算子时必须明确失败，不得改选其他 Runtime，也不得回退到 PostgreSQL 私有 Blob 读写。
 
@@ -393,9 +393,9 @@ type WorkflowCapability struct {
 
 工作流引擎的静态能力声明只回答“是否具备统一工作流运行时，以及使用哪个 runtime API”。算子列表、算子参数、分类、输入输出端口等动态能力，不写入 `capabilities`，必须通过 `WorkflowRuntimeProvider.ListOperators()` 获取；当前 `addp.workflow/v1` 对应的标准 HTTP 入口为 `GET /api/operators`。工作流执行通过 `WorkflowRuntimeProvider.ExecuteWorkflow()`，对应标准 HTTP 入口为 `POST /api/workflow`。执行期绑定的外部运行时资源（例如 `spark_workflow` 绑定某个 Spark 资源 ID）属于执行请求参数，不属于能力声明。
 
-`spatial_workspaces` 中需要 Workflow Runtime 支撑的领域工作区只保存 `bound_runtime_engine_id`。工作区不得保存 `runtime_engine_type` 作为能力判断或运行时白名单；调用方必须读取绑定实例的 Runtime Descriptor，并以 `compute.workflow.runtime_api` 和动态 direct 算子目录完成校验。
+`spatial_workspaces` 中需要持续通过 Workflow Runtime 读写数据的领域工作区只保存 `bound_runtime_engine_id`；当前仅 `sdx_postgresql` 属于此类。`sdx_postgis` 的 Runtime 只服务于显式启用动作，不参与表读写路由，因此不保存持久绑定。工作区不得保存 `runtime_engine_type` 作为能力判断或运行时白名单；调用方必须读取绑定实例的 Runtime Descriptor，并以 `compute.workflow.runtime_api` 和动态 direct 算子目录完成校验。
 
-Workflow Runtime 的注册与健康状态是工作区绑定的控制面事件。兼容 Runtime 进入 `online` 后，System 必须立即重新协调当前 active Engine Instance 的 `spatial_workspaces`，使用同一 Runtime 的动态 direct 算子目录计算并持久化 `bound_runtime_engine_id`。该协调不得依赖 System 与 Runtime 的启动顺序，也不得要求用户重建存储引擎、手工改写 capabilities 或通过业务扫描触发绑定。
+Workflow Runtime 的注册与健康状态是工作区绑定的控制面事件。兼容 Runtime 进入 `online` 后，System 必须立即重新协调当前 active Engine Instance 中声明为持续 Runtime 依赖的工作区（当前为 `sdx_postgresql`），使用同一 Runtime 的动态 direct 算子目录计算并持久化 `bound_runtime_engine_id`。`sdx_postgis` 仅在显式启用动作中临时发现 Runtime。该协调不得依赖 System 与 Runtime 的启动顺序，也不得要求用户重建存储引擎、手工改写 capabilities 或通过业务扫描触发绑定。
 
 `dynamic_operators=true` 表示调用方可以通过 Provider 动态发现算子。它不是“已有算子列表”的缓存，也不是某个模块对该引擎的适配状态。
 

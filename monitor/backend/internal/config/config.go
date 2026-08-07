@@ -2,11 +2,9 @@ package config
 
 import (
 	"fmt"
-	"net/mail"
 	"net/url"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	commonConfig "github.com/addp/common/config"
@@ -71,43 +69,12 @@ func LoadConfig() (*Config, error) {
 		}
 	}
 	alertEvaluationInterval := 15 * time.Second
-	if value := os.Getenv("MONITOR_ALERT_EVALUATION_INTERVAL"); value != "" {
-		parsed, err := time.ParseDuration(value)
-		if err != nil || parsed <= 0 {
-			return nil, fmt.Errorf("invalid MONITOR_ALERT_EVALUATION_INTERVAL")
-		}
-		alertEvaluationInterval = parsed
-	}
-	webhookDispatchInterval, err := durationEnv("MONITOR_WEBHOOK_DISPATCH_INTERVAL", 2*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	webhookHTTPTimeout, err := durationEnv("MONITOR_WEBHOOK_HTTP_TIMEOUT", 10*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	webhookLeaseDuration, err := durationEnv("MONITOR_WEBHOOK_LEASE_DURATION", 30*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	if webhookLeaseDuration <= webhookHTTPTimeout {
-		return nil, fmt.Errorf("MONITOR_WEBHOOK_LEASE_DURATION must be greater than MONITOR_WEBHOOK_HTTP_TIMEOUT")
-	}
-	webhookRetryInitial, err := durationEnv("MONITOR_WEBHOOK_RETRY_INITIAL_BACKOFF", 5*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	webhookRetryMax, err := durationEnv("MONITOR_WEBHOOK_RETRY_MAX_BACKOFF", 5*time.Minute)
-	if err != nil {
-		return nil, err
-	}
-	if webhookRetryInitial > webhookRetryMax {
-		return nil, fmt.Errorf("MONITOR_WEBHOOK_RETRY_INITIAL_BACKOFF must not exceed MONITOR_WEBHOOK_RETRY_MAX_BACKOFF")
-	}
-	webhookMaxAttempts, err := positiveIntEnv("MONITOR_WEBHOOK_MAX_ATTEMPTS", 8)
-	if err != nil {
-		return nil, err
-	}
+	webhookDispatchInterval := 2 * time.Second
+	webhookHTTPTimeout := 10 * time.Second
+	webhookLeaseDuration := 30 * time.Second
+	webhookRetryInitial := 5 * time.Second
+	webhookRetryMax := 5 * time.Minute
+	webhookMaxAttempts := 8
 	webhookAllowPrivate, err := boolEnv("MONITOR_WEBHOOK_ALLOW_PRIVATE_NETWORKS", false)
 	if err != nil {
 		return nil, err
@@ -117,57 +84,12 @@ func LoadConfig() (*Config, error) {
 	if err != nil || parsedConsoleURL.Host == "" || (parsedConsoleURL.Scheme != "http" && parsedConsoleURL.Scheme != "https") {
 		return nil, fmt.Errorf("invalid MONITOR_CONSOLE_BASE_URL")
 	}
-	emailDispatchInterval, err := durationEnv("MONITOR_EMAIL_DISPATCH_INTERVAL", 2*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	emailSMTPTimeout, err := durationEnv("MONITOR_EMAIL_SMTP_TIMEOUT", 15*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	emailLeaseDuration, err := durationEnv("MONITOR_EMAIL_LEASE_DURATION", 30*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	if emailLeaseDuration <= emailSMTPTimeout {
-		return nil, fmt.Errorf("MONITOR_EMAIL_LEASE_DURATION must be greater than MONITOR_EMAIL_SMTP_TIMEOUT")
-	}
-	emailRetryInitial, err := durationEnv("MONITOR_EMAIL_RETRY_INITIAL_BACKOFF", 5*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	emailRetryMax, err := durationEnv("MONITOR_EMAIL_RETRY_MAX_BACKOFF", 5*time.Minute)
-	if err != nil {
-		return nil, err
-	}
-	if emailRetryInitial > emailRetryMax {
-		return nil, fmt.Errorf("MONITOR_EMAIL_RETRY_INITIAL_BACKOFF must not exceed MONITOR_EMAIL_RETRY_MAX_BACKOFF")
-	}
-	emailMaxAttempts, err := positiveIntEnv("MONITOR_EMAIL_MAX_ATTEMPTS", 8)
-	if err != nil {
-		return nil, err
-	}
-	emailSMTPPort, err := positiveIntEnv("MONITOR_EMAIL_SMTP_PORT", 587)
-	if err != nil || emailSMTPPort > 65535 {
-		return nil, fmt.Errorf("invalid MONITOR_EMAIL_SMTP_PORT")
-	}
-	emailSMTPHost := strings.TrimSpace(os.Getenv("MONITOR_EMAIL_SMTP_HOST"))
-	emailSMTPUsername := os.Getenv("MONITOR_EMAIL_SMTP_USERNAME")
-	emailSMTPPassword := os.Getenv("MONITOR_EMAIL_SMTP_PASSWORD")
-	if (emailSMTPUsername == "") != (emailSMTPPassword == "") {
-		return nil, fmt.Errorf("MONITOR_EMAIL_SMTP_USERNAME and MONITOR_EMAIL_SMTP_PASSWORD must be configured together")
-	}
-	emailSMTPTLSMode := getEnvOrDefault("MONITOR_EMAIL_SMTP_TLS_MODE", "starttls")
-	if emailSMTPTLSMode != "starttls" && emailSMTPTLSMode != "tls" {
-		return nil, fmt.Errorf("MONITOR_EMAIL_SMTP_TLS_MODE must be starttls or tls")
-	}
-	emailFromAddress := strings.TrimSpace(os.Getenv("MONITOR_EMAIL_FROM_ADDRESS"))
-	if emailSMTPHost != "" {
-		address, parseErr := mail.ParseAddress(emailFromAddress)
-		if parseErr != nil || address.Name != "" || address.Address != emailFromAddress {
-			return nil, fmt.Errorf("invalid MONITOR_EMAIL_FROM_ADDRESS")
-		}
-	}
+	emailDispatchInterval := 2 * time.Second
+	emailSMTPTimeout := 15 * time.Second
+	emailLeaseDuration := 30 * time.Second
+	emailRetryInitial := 5 * time.Second
+	emailRetryMax := 5 * time.Minute
+	emailMaxAttempts := 8
 
 	cfg := &Config{
 		ServerPort: getEnvOrDefault("MONITOR_BACKEND_PORT", "8100"),
@@ -203,13 +125,10 @@ func LoadConfig() (*Config, error) {
 		EmailMaxAttempts:        emailMaxAttempts,
 		EmailRetryInitial:       emailRetryInitial,
 		EmailRetryMax:           emailRetryMax,
-		EmailSMTPHost:           emailSMTPHost,
-		EmailSMTPPort:           emailSMTPPort,
-		EmailSMTPUsername:       emailSMTPUsername,
-		EmailSMTPPassword:       emailSMTPPassword,
-		EmailSMTPTLSMode:        emailSMTPTLSMode,
-		EmailFromAddress:        emailFromAddress,
-		EmailFromName:           getEnvOrDefault("MONITOR_EMAIL_FROM_NAME", "ADDP Monitor"),
+		EmailSMTPHost:           "",
+		EmailSMTPPort:           587,
+		EmailSMTPTLSMode:        "starttls",
+		EmailFromName:           "ADDP Monitor",
 	}
 
 	return cfg, nil
@@ -217,30 +136,6 @@ func LoadConfig() (*Config, error) {
 
 func (c *Config) EmailSMTPConfigured() bool {
 	return c.EmailSMTPHost != ""
-}
-
-func durationEnv(key string, defaultValue time.Duration) (time.Duration, error) {
-	value := os.Getenv(key)
-	if value == "" {
-		return defaultValue, nil
-	}
-	parsed, err := time.ParseDuration(value)
-	if err != nil || parsed <= 0 {
-		return 0, fmt.Errorf("invalid %s", key)
-	}
-	return parsed, nil
-}
-
-func positiveIntEnv(key string, defaultValue int) (int, error) {
-	value := os.Getenv(key)
-	if value == "" {
-		return defaultValue, nil
-	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil || parsed <= 0 {
-		return 0, fmt.Errorf("invalid %s", key)
-	}
-	return parsed, nil
 }
 
 func boolEnv(key string, defaultValue bool) (bool, error) {

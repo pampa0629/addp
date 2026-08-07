@@ -59,10 +59,6 @@ func (s *MVTService) tenantIDForEngine(engineID uint, tenantID *uint) (uint, err
 	if err != nil {
 		return 0, err
 	}
-	if instanceprovider.IsSuperMapSDXPostgreSQL(res) {
-		return 0, ErrSuperMapSDXPostgreSQLMVTUnsupported
-	}
-
 	managerEngine := convertResource(res)
 	if !resourceAccessible(managerEngine, tenantID) {
 		return 0, ErrEngineAccessDenied
@@ -77,12 +73,29 @@ func (s *MVTService) tenantIDForEngine(engineID uint, tenantID *uint) (uint, err
 	return 1, nil
 }
 
+func (s *MVTService) rejectSuperMapSDXPostgreSQLTable(engineID uint, schema, table string) error {
+	if s == nil || s.systemClient == nil {
+		return ErrEngineAccessDenied
+	}
+	engine, err := s.systemClient.GetEngine(engineID)
+	if err != nil {
+		return err
+	}
+	if instanceprovider.IsSuperMapSDXPostgreSQLTable(engine, schema, table) {
+		return ErrSuperMapSDXPostgreSQLMVTUnsupported
+	}
+	return nil
+}
+
 func (s *MVTService) GetSpatialExtentWGS84(
 	ctx context.Context,
 	tenantID *uint,
 	resourceID uint,
 	schema, table, geomCol string,
 ) ([]float64, error) {
+	if err := s.rejectSuperMapSDXPostgreSQLTable(resourceID, schema, table); err != nil {
+		return nil, err
+	}
 	tid, err := s.tenantIDForEngine(resourceID, tenantID)
 	if err != nil {
 		return nil, err
@@ -157,6 +170,9 @@ func (s *MVTService) ResolveRealtimeTileTarget(
 	schema, table, geomCol string,
 	sourceSRID int,
 ) (*RealtimeTileTarget, error) {
+	if err := s.rejectSuperMapSDXPostgreSQLTable(resourceID, schema, table); err != nil {
+		return nil, err
+	}
 	tid, err := s.tenantIDForEngine(resourceID, tenantID)
 	if err != nil {
 		return nil, err
@@ -442,6 +458,9 @@ func (s *MVTService) GetTile(
 	z, x, y int,
 	srid int,
 ) ([]byte, error) {
+	if err := s.rejectSuperMapSDXPostgreSQLTable(resourceID, schema, table); err != nil {
+		return nil, err
+	}
 	// 1. 验证租户权限，并解析瓦片生成使用的租户 ID。
 	tid, err := s.tenantIDForEngine(resourceID, tenantID)
 	if err != nil {

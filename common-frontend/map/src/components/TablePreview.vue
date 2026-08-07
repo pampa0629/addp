@@ -157,6 +157,7 @@ import { useMapConfig } from '../composables/useMapConfig'
 import { useResizable } from '../composables/useResizable'
 import MapContainer from './map/MapContainer.vue'
 import WKT from 'ol/format/WKT'
+import WKB from 'ol/format/WKB'
 import GeoJSON from 'ol/format/GeoJSON'
 import {
   crsSuppressionStatus,
@@ -167,6 +168,7 @@ import {
 const { t } = useI18n()
 
 const wktFormat = new WKT()
+const wkbFormat = new WKB()
 const geojsonFormat = new GeoJSON()
 const DEFAULT_MAP_HEIGHT = 360
 const MIN_MAP_HEIGHT = 240
@@ -192,6 +194,26 @@ const isValidGeoJSONGeometry = (geom) => {
     return Array.isArray(geom.geometries)
   }
   return geom.coordinates !== undefined
+}
+
+const isBase64Binary = (value) => {
+  const normalized = value.trim()
+  return normalized.length > 0 && normalized.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(normalized)
+}
+
+const parseBase64EWKB = (value) => {
+  if (!isBase64Binary(value) || typeof globalThis.atob !== 'function') return null
+  try {
+    const binary = globalThis.atob(value.trim())
+    const bytes = new Uint8Array(binary.length)
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index)
+    }
+    const geometry = wkbFormat.readGeometry(bytes.buffer)
+    return geojsonFormat.writeGeometryObject(geometry)
+  } catch {
+    return null
+  }
 }
 
 const parseGeometry = (rawGeometry) => {
@@ -221,9 +243,13 @@ const parseGeometry = (rawGeometry) => {
     return geojsonFormat.writeGeometryObject(olGeom)
   }
 
-  const parsed = JSON.parse(rawGeometry)
-  if (isValidGeoJSONGeometry(parsed)) return parsed
-  if (parsed?.type === 'Feature' && isValidGeoJSONGeometry(parsed.geometry)) return parsed.geometry
+  try {
+    const parsed = JSON.parse(rawGeometry)
+    if (isValidGeoJSONGeometry(parsed)) return parsed
+    if (parsed?.type === 'Feature' && isValidGeoJSONGeometry(parsed.geometry)) return parsed.geometry
+  } catch {
+    return parseBase64EWKB(rawGeometry)
+  }
   return null
 }
 

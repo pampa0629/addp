@@ -18,6 +18,22 @@ permissions:
     status: active
     name_i18n_key: permissions.meta.inspect.execute.name
     description_i18n_key: permissions.meta.inspect.execute.description
+  - key: meta.lineage.create
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.meta.lineage.create.name
+    description_i18n_key: permissions.meta.lineage.create.description
+  - key: meta.lineage.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: true
+    status: active
+    name_i18n_key: permissions.meta.lineage.read.name
+    description_i18n_key: permissions.meta.lineage.read.description
   - key: meta.scan_task.create
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium

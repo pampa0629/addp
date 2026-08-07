@@ -173,15 +173,22 @@
 		"copilotConfiguration": "Copilot Configuration",
 		"developConfiguration": "Develop Configuration",
 		"inferenceConfiguration": "Inference Configuration",
-		"managerConfiguration": "Manager Configuration"
+		"managerConfiguration": "Manager Configuration",
+		"transferConfiguration": "Transfer Configuration",
+		"monitorConfiguration": "Monitor Configuration",
+		"serviceConfiguration": "Service Configuration"
 	  },
-	  "tabs": { "inference": "Inference Scenarios", "matchingPolicy": "Matching Policy", "queryPolicy": "Query Policy" },
-	  "modules": { "system": { "name": "System Management" }, "develop": { "name": "Data Development" }, "manager": { "name": "Data Management" }, "copilot": { "name": "AI Assistant" }, "agent": { "name": "AI Agent" }, "inference": { "name": "AI Model Services" } },
+	  "tabs": { "inference": "Inference Scenarios", "matchingPolicy": "Matching Policy", "queryPolicy": "Query Policy", "quickViewPolicy": "Quick-view policy", "baseMap": "Basemap services", "continuousPolicy": "Continuous task policy", "runtimePolicy": "Runtime policy", "smtpRelay": "SMTP delivery" },
+	  "modules": { "system": { "name": "System Management" }, "develop": { "name": "Data Development" }, "manager": { "name": "Data Management" }, "copilot": { "name": "AI Assistant" }, "agent": { "name": "AI Agent" }, "inference": { "name": "AI Model Services" }, "transfer": { "name": "Data Transfer" }, "monitor": { "name": "Execution Monitor" }, "service": { "name": "Data Services" } },
 	  "policies": {
 		"develop": { "title": "Query policy", "defaultQueryTimeout": "Default query timeout (seconds)", "maxQueryTimeout": "Maximum query timeout (seconds)", "queryResultLimit": "Result preview limit (rows)" },
-		"manager": { "title": "Quick-view policy", "flatgeobufRows": "FlatGeobuf row limit", "mvtTimeout": "Dynamic MVT timeout budget (milliseconds)", "retryAfter": "Retry-after delay (seconds)" },
+		"manager": { "title": "Quick-view policy", "flatgeobufRows": "FlatGeobuf row limit", "mvtTimeout": "Dynamic MVT timeout budget (milliseconds)", "retryAfter": "Retry-after delay (seconds)", "rasterMosaicTimeout": "Raster mosaic generation timeout (seconds)" },
+		"transfer": { "title": "Continuous task policy", "diagnosticsInterval": "Diagnostics interval (seconds)", "retentionDegraded": "Degraded retention horizon (seconds)", "retentionCritical": "Critical retention horizon (seconds)", "checkpointStale": "Checkpoint stale threshold (seconds)", "recoveryInitial": "Initial recovery backoff (seconds)", "recoveryMax": "Maximum recovery backoff (seconds)", "maxFailures": "Maximum consecutive failures", "circuitOpen": "Circuit open duration (seconds)", "stabilityWindow": "Stability window (seconds)" },
+		"monitor": { "title": "Monitor runtime policy", "alertInterval": "Alert evaluation interval (seconds)", "webhookInterval": "Webhook dispatch interval (seconds)", "webhookTimeout": "Webhook request timeout (seconds)", "webhookLease": "Webhook lease (seconds)", "webhookAttempts": "Webhook maximum attempts", "webhookRetryInitial": "Webhook initial backoff (seconds)", "webhookRetryMax": "Webhook maximum backoff (seconds)", "emailInterval": "Email dispatch interval (seconds)", "emailTimeout": "SMTP request timeout (seconds)", "emailLease": "Email lease (seconds)", "emailAttempts": "Email maximum attempts", "emailRetryInitial": "Email initial backoff (seconds)", "emailRetryMax": "Email maximum backoff (seconds)" },
+		"service": { "title": "Scheduler policy", "healthCheckCron": "Health-check Cron", "metadataRefreshCron": "Metadata-refresh Cron" },
 		"copilot": { "title": "Matching policy", "scoreThreshold": "Matching threshold", "maxCandidates": "Candidate limit" }
 	  },
+	  "resources": { "configured": "Configured", "notConfigured": "Not configured", "smtpRelay": { "title": "SMTP Relay", "enabled": "Enable delivery", "host": "Server host", "port": "Port", "tlsMode": "TLS mode", "fromAddress": "From address", "fromName": "From name", "username": "Username", "credential": "Password", "replaceCredential": "Leave blank to keep the current credential", "enterCredential": "Enter SMTP password" }, "baseMap": { "title": "Online basemap services", "provider": "Provider", "enabled": "Enabled", "order": "Order", "key": "Access key", "securityJsCode": "Security code", "enterKey": "Enter key", "enterSecurityJsCode": "Enter AMap security code" } },
 	  "ai": {
 		"scenario": "Inference scenario",
 		"modelProfile": "Model Profile",

@@ -68,14 +68,20 @@ const entries = ref([])
 const CONSOLE_MODULE_ROUTES = {
   agent: '/configuration/agent',
   copilot: '/configuration/copilot',
-  develop: '/configuration/develop'
+  develop: '/configuration/develop',
+  transfer: '/configuration/transfer',
+  monitor: '/configuration/monitor',
+  service: '/configuration/service'
 }
 const ENTRY_LABEL_KEYS = {
   'agent.configuration': 'console.configuration.entries.agentConfiguration',
   'copilot.configuration': 'console.configuration.entries.copilotConfiguration',
   'develop.configuration': 'console.configuration.entries.developConfiguration',
   'inference.configuration': 'console.configuration.entries.inferenceConfiguration',
-  'manager.configuration': 'console.configuration.entries.managerConfiguration'
+  'manager.configuration': 'console.configuration.entries.managerConfiguration',
+  'transfer.configuration': 'console.configuration.entries.transferConfiguration',
+  'monitor.configuration': 'console.configuration.entries.monitorConfiguration',
+  'service.configuration': 'console.configuration.entries.serviceConfiguration'
 }
 const moduleEntries = computed(() => {
   const modules = new Map()
@@ -97,7 +103,7 @@ const moduleEntries = computed(() => {
 })
 const selectedOwner = computed(() => {
   const parts = route.path.split('/').filter(Boolean)
-  return parts[0] === 'configuration' && ['agent', 'copilot', 'develop'].includes(parts[1]) ? parts[1] : ''
+  return parts[0] === 'configuration' && ['agent', 'copilot', 'develop', 'manager', 'transfer', 'monitor', 'service'].includes(parts[1]) ? parts[1] : ''
 })
 
 const contextLabel = computed(() => authStore.authContext?.context?.type === 'tenant'

@@ -32,6 +32,7 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 		&models.InferenceScenarioBinding{},
 		&models.QuickViewPolicy{},
 		&models.ExportSession{},
+		&models.BaseMapProvider{},
 	)
 	if err != nil {
 		return nil, err
@@ -45,6 +46,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	}
 	if err := ensureEmbeddingTaskDefinitionSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure embedding task definition schema: %w", err)
+	}
+	if err := ensureBaseMapProviderSchema(db); err != nil {
+		return nil, fmt.Errorf("failed to ensure base map provider schema: %w", err)
 	}
 	if err := dropLegacyQuickViewTables(db); err != nil {
 		return nil, fmt.Errorf("failed to drop legacy quick view tables: %w", err)
@@ -102,6 +106,11 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	db.Exec(fmt.Sprintf("SET search_path TO %s", cfg.DBSchema))
 
 	return db, nil
+}
+
+func ensureBaseMapProviderSchema(db *gorm.DB) error {
+	return db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_manager_base_map_scope_provider
+		ON manager.base_map_providers (scope_type, COALESCE(tenant_id, 0), provider)`).Error
 }
 
 func ensureDataProfileSchema(db *gorm.DB) error {

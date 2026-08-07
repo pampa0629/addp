@@ -37,6 +37,7 @@ func SetupRouter(
 	embeddingConfigurationService *service.EmbeddingConfigurationService,
 	inferenceScenarioBindingService *service.InferenceScenarioBindingService,
 	quickViewPolicyService *service.QuickViewPolicyService,
+	baseMapProviderService *service.BaseMapProviderService,
 	spatialPreviewService *service.SpatialPreviewService,
 	rasterCOGRepo *repository.RasterCOGRepository,
 	taskProviderHandler *TaskProviderHandler,
@@ -110,6 +111,13 @@ func SetupRouter(
 		settings.Use(auth.MustNewMiddleware(auth.MiddlewareConfig{SystemURL: cfg.SystemServiceURL}))
 		settings.GET("/settings/inference-binding", auth.MustNewPermissionGuard(managerauthorization.PermissionManagerConfigurationRead), bindingHandler.Get)
 		settings.PUT("/settings/inference-binding", auth.MustNewPermissionGuard(managerauthorization.PermissionManagerConfigurationUpdate), bindingHandler.Update)
+	}
+	if baseMapProviderService != nil {
+		handler := NewBaseMapProviderHandler(baseMapProviderService)
+		settings := router.Group("/api/v1/manager")
+		settings.Use(auth.MustNewMiddleware(auth.MiddlewareConfig{SystemURL: cfg.SystemServiceURL}))
+		settings.GET("/settings/base-map/providers", auth.MustNewPermissionGuard(managerauthorization.PermissionManagerConfigurationRead), handler.List)
+		settings.PUT("/settings/base-map/providers", auth.MustNewPermissionGuard(managerauthorization.PermissionManagerConfigurationUpdate), handler.Update)
 	}
 
 	// API 路由组
@@ -329,7 +337,7 @@ func SetupRouter(
 
 		configGroup := api.Group("/config")
 		{
-			configHandler := NewConfigHandler(cfg)
+			configHandler := NewConfigHandler(baseMapProviderService)
 			configGroup.GET("/map", configHandler.GetMapConfig)
 		}
 

@@ -31,10 +31,11 @@ var ErrEngineAccessDenied = errors.New("engine not accessible for current tenant
 //
 // 注意：重命名自 PreviewOrchestrator，避免与 Orchestrator 模块混淆
 type PreviewResolver struct {
-	registry      *PreviewRegistry
-	systemClient  *commonClient.SystemClient
-	metaClient    *commonClient.MetaClient
-	runtimeClient instanceprovider.RuntimeDescriptorClient
+	registry             *PreviewRegistry
+	systemClient         *commonClient.SystemClient
+	metaClient           *commonClient.MetaClient
+	runtimeClient        instanceprovider.RuntimeDescriptorClient
+	runtimeClientFactory func(uint) instanceprovider.RuntimeDescriptorClient
 }
 
 // NewPreviewResolver 创建预览解析器
@@ -52,12 +53,28 @@ func NewPreviewResolver(
 	if len(runtimeClients) > 0 {
 		runtimeClient = runtimeClients[0]
 	}
-	return &PreviewResolver{
+	resolver := &PreviewResolver{
 		registry:      registry,
 		systemClient:  systemClient,
 		metaClient:    metaClient,
 		runtimeClient: runtimeClient,
 	}
+	if systemRuntime, ok := runtimeClient.(*commonClient.SystemServiceClient); ok {
+		resolver.runtimeClientFactory = func(tenantID uint) instanceprovider.RuntimeDescriptorClient {
+			return systemRuntime.WithTenantID(tenantID)
+		}
+	}
+	return resolver
+}
+
+func (r *PreviewResolver) runtimeDescriptorClientForTenant(tenantID *uint) instanceprovider.RuntimeDescriptorClient {
+	if r == nil {
+		return nil
+	}
+	if r.runtimeClient == nil || tenantID == nil || *tenantID == 0 || r.runtimeClientFactory == nil {
+		return r.runtimeClient
+	}
+	return r.runtimeClientFactory(*tenantID)
 }
 
 // PreviewRequest 新的预览请求（基于 ResourceLocator）
@@ -492,7 +509,7 @@ func (r *PreviewResolver) buildProviderRequest(ctx context.Context, req *Preview
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	plug, err := instanceprovider.Resolve(ctx, r.runtimeClient, req.Engine, supermapworkflow.RequiredTableReadOperators()...)
+	plug, err := instanceprovider.Resolve(ctx, r.runtimeDescriptorClientForTenant(req.TenantID), req.Engine, supermapworkflow.RequiredTableReadOperators()...)
 	if err != nil {
 		return nil, err
 	}

@@ -48,6 +48,7 @@ const (
 	MsgSampleQueryResourceEmpty          = "develop.query.sample_query_resource_empty"
 	MsgQueryTemplateResourceInvalid      = "develop.query.template_resource_invalid"
 	MsgQueryParameterDefinitionsInvalid  = "develop.query.parameter_definitions_invalid"
+	MsgQueryConfirmationRequired         = "develop.query.confirmation_required"
 	MsgNotebookExecutionForbidden        = "develop.notebook.execution_permission_denied"
 	MsgNotebookEngineListFailed          = "develop.notebook.engine_list_failed"
 	MsgNotebookEngineRequired            = "develop.notebook.engine_required"

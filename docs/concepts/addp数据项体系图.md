@@ -89,6 +89,8 @@ node 的职责是组织资源树，服务浏览、扫描和定位。node 不是 
 - 传输。
 - 血缘和资产治理。
 
+血缘以 `data item` 为主要主体，关系事实由 Meta 维护。已发布的数据服务不是 data item，而是独立的 `published service` 主体；服务依赖以 `data item --serve--> published service` 表达。字段默认只是 data item 的 schema 内容，不单独登记为数据项，字段级血缘通过带 schema snapshot 的 `field ref` 逐步扩展。
+
 data item 的身份由 `meta_item` 表字段承载，例如 `id`、`tenant_id`、`engine_id`、`node_id`、`item_type`、`name`、`full_name`、`fingerprint`。这些身份字段不应重复写入 attributes。
 
 `item_type` 是 data item 在所属引擎 catalog / 路径模型中的稳定叶子术语，不是内容语义类型。例如 MinIO / S3 的叶子是 `object`，NFS / 本地文件系统的叶子是 `file`，MongoDB 的叶子是 `collection`，Neo4j 的叶子是 `graph`。同一个 CSV 在对象存储中应是 `item_type=object`，在文件系统中应是 `item_type=file`；它们的表格语义由 `attributes.item.data_type=table` 表达。
@@ -157,6 +159,15 @@ engine capability
 | `transfer` | 基于 data item、engine capability、内容 I/O 抽象和 format 能力规划读写 | 重复推断字段类型、重复识别 related refs、绕过统一能力硬编码格式 |
 | `asset` / `search` | 消费标准 attributes 做资产治理、索引和检索 | 自行识别 data item 或重写格式解析规则 |
 | frontend | 基于后端 DTO 展示内容和交互 | 决定 data item 边界、直接访问 engine、复刻后端格式解析规则 |
+
+血缘职责单独遵循以下边界：
+
+| 模块 / 层级 | 负责 | 不负责 |
+|---|---|---|
+| `meta` | 接收 owner 的执行 / 发布事实，解析 locator 和 fingerprint，保存关系证据、当前投影并提供查询 API | 反向猜测未被 ADDP 观察到的外部数据流转，或替 owner 生成执行事实 |
+| `transfer` / `develop` / `manager` / `graph` | 对真实读写并形成持久结果的执行写入 `lineage_facts` | 直接维护 Meta 血缘表或复制关系查询逻辑 |
+| `service` | 为每个发布版本提供 source dependency 快照和发布事实 | 把 `dependency_hash` 当作具体血缘边，或把服务伪装成 data item |
+| `common-frontend/graph` | 提供可嵌入的 `LineageViewer` 和标准化 DTO | 决定权限、业务路由或节点点击后的宿主行为 |
 
 ## 事实源归属
 

@@ -166,7 +166,6 @@ func main() {
 		cfg.DBUser, cfg.DBHost, cfg.DBPort, cfg.DBName, cfg.DBSchema)
 	log.Printf("📮 Redis: %s", redisAddr)
 	log.Printf("🔧 并发数: %d", cfg.ConcurrentTasks)
-	log.Printf("🔄 重试次数: %d", cfg.MaxRetries)
 	log.Printf("⏱️  重试延迟: %v", cfg.RetryDelay)
 
 	// 优雅关闭

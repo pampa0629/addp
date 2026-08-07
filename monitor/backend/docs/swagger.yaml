@@ -409,6 +409,136 @@ definitions:
       task_type:
         type: string
     type: object
+  github_com_addp_monitor_internal_service.RuntimePolicyResponse:
+    properties:
+      alert_evaluation_interval_seconds:
+        type: integer
+      email_dispatch_interval_seconds:
+        type: integer
+      email_lease_duration_seconds:
+        type: integer
+      email_max_attempts:
+        type: integer
+      email_retry_initial_backoff_seconds:
+        type: integer
+      email_retry_max_backoff_seconds:
+        type: integer
+      email_smtp_timeout_seconds:
+        type: integer
+      pending_restart:
+        type: boolean
+      version:
+        type: integer
+      webhook_dispatch_interval_seconds:
+        type: integer
+      webhook_http_timeout_seconds:
+        type: integer
+      webhook_lease_duration_seconds:
+        type: integer
+      webhook_max_attempts:
+        type: integer
+      webhook_retry_initial_backoff_seconds:
+        type: integer
+      webhook_retry_max_backoff_seconds:
+        type: integer
+    type: object
+  github_com_addp_monitor_internal_service.SMTPRelayCredentialStatus:
+    properties:
+      configured:
+        type: boolean
+      version:
+        type: integer
+    type: object
+  github_com_addp_monitor_internal_service.SMTPRelayResponse:
+    properties:
+      credential:
+        $ref: '#/definitions/github_com_addp_monitor_internal_service.SMTPRelayCredentialStatus'
+      enabled:
+        type: boolean
+      from_address:
+        type: string
+      from_name:
+        type: string
+      host:
+        type: string
+      pending_restart:
+        type: boolean
+      port:
+        type: integer
+      tls_mode:
+        type: string
+      username:
+        type: string
+      version:
+        type: integer
+    type: object
+  github_com_addp_monitor_internal_service.UpdateRuntimePolicyInput:
+    properties:
+      alert_evaluation_interval_seconds:
+        type: integer
+      email_dispatch_interval_seconds:
+        type: integer
+      email_lease_duration_seconds:
+        type: integer
+      email_max_attempts:
+        type: integer
+      email_retry_initial_backoff_seconds:
+        type: integer
+      email_retry_max_backoff_seconds:
+        type: integer
+      email_smtp_timeout_seconds:
+        type: integer
+      version:
+        type: integer
+      webhook_dispatch_interval_seconds:
+        type: integer
+      webhook_http_timeout_seconds:
+        type: integer
+      webhook_lease_duration_seconds:
+        type: integer
+      webhook_max_attempts:
+        type: integer
+      webhook_retry_initial_backoff_seconds:
+        type: integer
+      webhook_retry_max_backoff_seconds:
+        type: integer
+    required:
+    - alert_evaluation_interval_seconds
+    - email_dispatch_interval_seconds
+    - email_lease_duration_seconds
+    - email_max_attempts
+    - email_retry_initial_backoff_seconds
+    - email_retry_max_backoff_seconds
+    - email_smtp_timeout_seconds
+    - webhook_dispatch_interval_seconds
+    - webhook_http_timeout_seconds
+    - webhook_lease_duration_seconds
+    - webhook_max_attempts
+    - webhook_retry_initial_backoff_seconds
+    - webhook_retry_max_backoff_seconds
+    type: object
+  github_com_addp_monitor_internal_service.UpdateSMTPRelayInput:
+    properties:
+      enabled:
+        type: boolean
+      from_address:
+        type: string
+      from_name:
+        type: string
+      host:
+        type: string
+      port:
+        type: integer
+      tls_mode:
+        type: string
+      username:
+        type: string
+      version:
+        type: integer
+    required:
+    - port
+    - tls_mode
+    type: object
   github_com_addp_monitor_internal_service.WebhookTestResult:
     properties:
       delivery_id:
@@ -853,6 +983,13 @@ definitions:
       message:
         example: Webhook 目标已删除
         type: string
+    type: object
+  internal_api.smtpRelayCredentialRequest:
+    properties:
+      credential:
+        type: string
+    required:
+    - credential
     type: object
   models.JSONMap:
     additionalProperties: true
@@ -1777,6 +1914,144 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - monitor.health.read
+  /settings/runtime-policy:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.RuntimePolicyResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取监控运行策略 | Get monitor runtime policy
+      tags:
+      - 配置管理 | Configuration Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.configuration.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 监控运行策略 | Monitor runtime policy
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.UpdateRuntimePolicyInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.RuntimePolicyResponse'
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新监控运行策略 | Update monitor runtime policy
+      tags:
+      - 配置管理 | Configuration Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.configuration.update
+  /settings/smtp-relay:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.SMTPRelayResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取 SMTP Relay | Get SMTP relay
+      tags:
+      - 配置管理 | Configuration Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.configuration.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: SMTP Relay
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.UpdateSMTPRelayInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.SMTPRelayResponse'
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新 SMTP Relay | Update SMTP relay
+      tags:
+      - 配置管理 | Configuration Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.configuration.update
+  /settings/smtp-relay/credential:
+    delete:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.SMTPRelayCredentialStatus'
+      security:
+      - BearerAuth: []
+      summary: 删除 SMTP 凭据 | Delete SMTP credential
+      tags:
+      - 配置管理 | Configuration Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.configuration.update
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: SMTP credential
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.smtpRelayCredentialRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.SMTPRelayCredentialStatus'
+      security:
+      - BearerAuth: []
+      summary: 设置 SMTP 凭据 | Set SMTP credential
+      tags:
+      - 配置管理 | Configuration Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.configuration.update
   /task-providers:
     get:
       produces:

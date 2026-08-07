@@ -93,3 +93,18 @@ other = "邮件通知操作失败"
 
 [monitor.health.module_not_found]
 other = "模块不存在"
+
+[monitor.configuration.load_failed]
+other = "加载监控运行策略失败"
+[monitor.configuration.invalid]
+other = "监控运行策略无效"
+[monitor.configuration.authentication_required]
+other = "需要身份认证"
+[monitor.configuration.version_conflict]
+other = "监控运行策略已被其他管理员更新"
+[monitor.smtp_relay.load_failed]
+other = "加载 SMTP Relay 失败"
+[monitor.smtp_relay.invalid]
+other = "SMTP Relay 配置无效"
+[monitor.smtp_relay.credential_required]
+other = "SMTP 凭据不能为空"

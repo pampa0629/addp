@@ -42,25 +42,33 @@ func TestLoadConfigEmailDefaultsWithoutSMTP(t *testing.T) {
 	}
 }
 
-func TestLoadConfigRejectsWebhookLeaseShorterThanHTTPTimeout(t *testing.T) {
+func TestLoadConfigIgnoresMigratedRuntimePolicyEnvironment(t *testing.T) {
 	setMonitorConfigEnvironment(t)
 	t.Setenv("MONITOR_WEBHOOK_HTTP_TIMEOUT", "30s")
 	t.Setenv("MONITOR_WEBHOOK_LEASE_DURATION", "10s")
-	if _, err := LoadConfig(); err == nil {
-		t.Fatal("invalid webhook lease was accepted")
+	config, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.WebhookHTTPTimeout != 10*time.Second || config.WebhookLeaseDuration != 30*time.Second {
+		t.Fatalf("migrated environment changed config: %s/%s", config.WebhookHTTPTimeout, config.WebhookLeaseDuration)
 	}
 }
 
-func TestLoadConfigRejectsInvertedWebhookBackoff(t *testing.T) {
+func TestLoadConfigIgnoresMigratedRetryEnvironment(t *testing.T) {
 	setMonitorConfigEnvironment(t)
 	t.Setenv("MONITOR_WEBHOOK_RETRY_INITIAL_BACKOFF", "2m")
 	t.Setenv("MONITOR_WEBHOOK_RETRY_MAX_BACKOFF", "1m")
-	if _, err := LoadConfig(); err == nil {
-		t.Fatal("inverted webhook backoff was accepted")
+	config, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.WebhookRetryInitial != 5*time.Second || config.WebhookRetryMax != 5*time.Minute {
+		t.Fatalf("migrated environment changed retry config: %s/%s", config.WebhookRetryInitial, config.WebhookRetryMax)
 	}
 }
 
-func TestLoadConfigValidatesEmailSMTPSettings(t *testing.T) {
+func TestLoadConfigDoesNotReadSMTPRelayEnvironment(t *testing.T) {
 	setMonitorConfigEnvironment(t)
 	t.Setenv("MONITOR_EMAIL_SMTP_HOST", "smtp.example.com")
 	t.Setenv("MONITOR_EMAIL_FROM_ADDRESS", "monitor@example.com")
@@ -71,31 +79,26 @@ func TestLoadConfigValidatesEmailSMTPSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !config.EmailSMTPConfigured() || config.EmailSMTPTLSMode != "tls" {
+	if config.EmailSMTPConfigured() || config.EmailSMTPPort != 587 || config.EmailSMTPTLSMode != "starttls" {
 		t.Fatalf("email config = %#v", config)
 	}
 }
 
-func TestLoadConfigRejectsPartialEmailAuthentication(t *testing.T) {
+func TestLoadConfigDoesNotReadPartialSMTPEnvironment(t *testing.T) {
 	setMonitorConfigEnvironment(t)
 	t.Setenv("MONITOR_EMAIL_SMTP_USERNAME", "monitor")
-	if _, err := LoadConfig(); err == nil {
-		t.Fatal("partial SMTP authentication was accepted")
+	config, err := LoadConfig()
+	if err != nil || config.EmailSMTPUsername != "" || config.EmailSMTPPassword != "" {
+		t.Fatalf("SMTP environment was read: config=%#v err=%v", config, err)
 	}
 }
 
-func TestLoadConfigRejectsInvalidEmailLeaseAndTLSMode(t *testing.T) {
-	setMonitorConfigEnvironment(t)
-	t.Setenv("MONITOR_EMAIL_SMTP_TIMEOUT", "30s")
-	t.Setenv("MONITOR_EMAIL_LEASE_DURATION", "10s")
-	if _, err := LoadConfig(); err == nil {
-		t.Fatal("email lease shorter than SMTP timeout was accepted")
-	}
-
+func TestLoadConfigDoesNotReadSMTPRelayTLSMode(t *testing.T) {
 	setMonitorConfigEnvironment(t)
 	t.Setenv("MONITOR_EMAIL_SMTP_TLS_MODE", "opportunistic")
-	if _, err := LoadConfig(); err == nil {
-		t.Fatal("unsupported SMTP TLS mode was accepted")
+	config, err := LoadConfig()
+	if err != nil || config.EmailSMTPTLSMode != "starttls" {
+		t.Fatalf("SMTP TLS environment was read: config=%#v err=%v", config, err)
 	}
 }
 

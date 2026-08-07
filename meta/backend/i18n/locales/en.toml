@@ -12,3 +12,18 @@ other = "Resource cache refreshed"
 
 [meta.cache.failed]
 other = "Failed to refresh cache: {{.Err}}"
+
+[meta.lineage.invalid_query]
+other = "Invalid lineage query parameters"
+
+[meta.lineage.subject_not_found]
+other = "Lineage subject not found"
+
+[meta.lineage.query_failed]
+other = "Lineage query failed"
+
+[permissions.meta.lineage.create.name]
+other = "Write lineage"
+
+[permissions.meta.lineage.create.description]
+other = "Record service publication lineage facts"

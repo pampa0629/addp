@@ -1,7 +1,23 @@
 schema_version: addp.permission_manifest/v1
 owner_module: transfer
-manifest_version: 2
+manifest_version: 3
 permissions:
+  - key: transfer.configuration.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.transfer.configuration.read.name
+    description_i18n_key: permissions.transfer.configuration.read.description
+  - key: transfer.configuration.update
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.transfer.configuration.update.name
+    description_i18n_key: permissions.transfer.configuration.update.description
   - key: transfer.task.cancel
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium

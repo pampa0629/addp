@@ -71,3 +71,28 @@ func TestResolveRejectsInactiveBoundRuntime(t *testing.T) {
 		t.Fatal("Resolve() error = nil, want inactive bound runtime rejection")
 	}
 }
+
+func TestIsSuperMapSDXPostgreSQLTableScopesWorkspaceToSDXSchema(t *testing.T) {
+	boundRuntimeID := uint(42)
+	capabilities := plugin.EngineCapabilities{
+		SchemaVersion: plugin.CapabilitiesSchemaVersion,
+		EngineType:    "postgresql",
+		Extensions: map[string]interface{}{
+			plugin.EngineExtensionSpatialWorkspaces: []plugin.SpatialWorkspaceFact{{
+				Ecosystem: "supermap", Kind: plugin.SpatialWorkspaceSuperMapSDXPostgreSQL,
+				State: plugin.SpatialWorkspaceStateEnabled, BoundRuntimeEngineID: &boundRuntimeID,
+			}},
+		},
+	}
+	payload, err := plugin.MarshalEngineCapabilities(capabilities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := &models.Engine{ID: 10, EngineType: "postgresql", Capabilities: (*models.JSONString)(&payload)}
+	if IsSuperMapSDXPostgreSQLTable(engine, "public", "roads") {
+		t.Fatal("public table must remain on the PostgreSQL/PostGIS provider")
+	}
+	if !IsSuperMapSDXPostgreSQLTable(engine, "sdx", "roads") {
+		t.Fatal("sdx table should use the SuperMap SDX+ for PostgreSQL provider")
+	}
+}

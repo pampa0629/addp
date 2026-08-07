@@ -265,7 +265,6 @@ definitions:
       vectors:
         items:
           items:
-            format: float32
             type: number
           type: array
         type: array
@@ -859,7 +858,6 @@ paths:
               page_size:
                 type: integer
               total:
-                format: int64
                 type: integer
               total_pages:
                 type: integer

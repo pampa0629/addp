@@ -591,6 +591,14 @@ func TestAttachSourceMetaAttributesLoadsMetaItem(t *testing.T) {
 	}
 }
 
+func TestTargetLineageLocatorBuildsCreatedTableIdentity(t *testing.T) {
+	got := targetLineageLocator("addp://engine/3/path/public?type=schema", "orders")
+	want := "addp://engine/3/path/public/orders?type=table"
+	if got != want {
+		t.Fatalf("targetLineageLocator() = %q, want %q", got, want)
+	}
+}
+
 func TestAttachSourceMetaAttributesRejectsEngineMismatch(t *testing.T) {
 	t.Parallel()
 

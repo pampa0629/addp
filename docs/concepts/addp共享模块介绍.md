@@ -76,7 +76,13 @@ connInfo := engine.ConnectionInfo
 
 `common-frontend` 模块提供共享的 Vue 3 组件、工具和类型定义,供跨模块的前端复用。
 
-**架构**: 分为两个子模块以避免不必要的依赖:
+### 血缘查看器边界
+
+`common-frontend/graph` 是血缘查看器的唯一共享实现位置，提供 `LineageViewer`、血缘 DTO 标准化和宿主注入的 lineage API client / composable。查看器消费 Meta 的血缘查询 API，不保存血缘事实，也不自行拼接 ResourceLocator。
+
+Manager、Service、Asset、Portal 等宿主页面可以直接嵌入同一个查看器。宿主负责权限上下文、业务路由和节点点击后的跳转目标；不要求先跳转到 Manager 的独立页面。`basic/` 不承载图谱逻辑，避免基础组件引入 G6 等图依赖。
+
+**架构**: 按依赖边界划分子模块:
 
 ```
 common-frontend/
@@ -88,11 +94,18 @@ common-frontend/
 │       ├── types/       - FieldType, FormatType, EngineType
 │       └── index.js
 │
-└── map/            # 地图相关组件 (需要 ol 和 @amap/amap-jsapi-loader)
+├── map/            # 地图相关组件 (需要 ol 和 @amap/amap-jsapi-loader)
+│   └── src/
+│       ├── components/  - MapContainer, GeoJsonPreview, TablePreview
+│       ├── composables/ - useMapConfig, useGaodeMap, useOpenLayersMap
+│       └── utils/       - 地理工具, 格式化器
+│
+└── graph/          # 图和血缘查看器（使用 G6）
     └── src/
-        ├── components/  - MapContainer, GeoJsonPreview, TablePreview
-        ├── composables/ - useMapConfig, useGaodeMap, useOpenLayersMap
-        └── utils/       - 地理工具, 格式化器
+        ├── components/  - LineageViewer 等图组件
+        ├── composables/ - lineage API 注入与查询状态
+        ├── types/       - 血缘 DTO 和节点 / 边类型
+        └── index.js
 ```
 
 **使用模式**:

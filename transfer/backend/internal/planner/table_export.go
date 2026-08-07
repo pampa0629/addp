@@ -323,9 +323,11 @@ func BuildTableTransferPlan(spec TableExportTaskSpec, resolver EngineResolver) (
 	if err != nil {
 		return nil, err
 	}
-	if _, ok := SuperMapSDXPostgreSQLWorkspace(sourceEngine); ok {
+	if _, ok := SuperMapSDXPostgreSQLWorkspace(sourceEngine); ok && isSuperMapSDXPostgreSQLTablePath(sourcePlan.Path) {
 		// Generic PostgreSQL catalog facts see the private geometry column as
-		// bytea. The bound SuperMap SDK read session is authoritative instead.
+		// bytea. Only the concrete SDX+ for PostgreSQL table is authoritative
+		// through the bound SuperMap SDK read session; ordinary/PostGIS tables
+		// in the same PostgreSQL instance keep their Meta facts.
 		sourcePlan.TableInfo = nil
 		sourcePlan.SpatialInfo = nil
 	}
@@ -381,6 +383,16 @@ func SuperMapSDXPostgreSQLWorkspace(binding EngineBinding) (engineplugin.Spatial
 		}
 	}
 	return engineplugin.SpatialWorkspaceFact{}, false
+}
+
+func isSuperMapSDXPostgreSQLTablePath(path engineplugin.CatalogPath) bool {
+	parts := make([]string, 0, len(path.Segments))
+	for _, segment := range path.Segments {
+		if name := strings.TrimSpace(segment.Name); name != "" {
+			parts = append(parts, name)
+		}
+	}
+	return len(parts) >= 2 && strings.EqualFold(parts[len(parts)-2], "sdx")
 }
 
 func applySourceGeometryEncodingForTarget(sourcePlan *executor.TableSourcePlan, targetPlan executor.TableTargetPlan, sourceEngine EngineBinding, targetEngine EngineBinding) error {

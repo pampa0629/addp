@@ -93,3 +93,17 @@ other = "Email notification operation failed"
 
 [monitor.health.module_not_found]
 other = "Module not found"
+[monitor.configuration.load_failed]
+other = "Failed to load monitor runtime policy"
+[monitor.configuration.invalid]
+other = "Invalid monitor runtime policy"
+[monitor.configuration.authentication_required]
+other = "Authentication is required"
+[monitor.configuration.version_conflict]
+other = "Monitor runtime policy was updated by another administrator"
+[monitor.smtp_relay.load_failed]
+other = "Failed to load SMTP relay"
+[monitor.smtp_relay.invalid]
+other = "Invalid SMTP relay configuration"
+[monitor.smtp_relay.credential_required]
+other = "SMTP credential is required"

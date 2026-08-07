@@ -8,9 +8,12 @@ import (
 	"strconv"
 	"strings"
 
+	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/common/resourcetree"
 	developi18n "github.com/addp/develop/backend/i18n"
+	developauthorization "github.com/addp/develop/backend/internal/authorization"
+	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -20,6 +23,90 @@ import (
 type QueryHandler struct {
 	sqlEngine *service.SQLEngineService
 	federated *service.FederatedQueryService
+}
+
+// PreflightQuery 分析查询语句并返回执行前的权限与风险事实。
+// @Summary 查询执行预检 | Preflight a query
+// @Tags Query
+// @Accept json
+// @Produce json
+// @Param body body models.QueryPreflightRequest true "查询预检请求 | Query preflight request"
+// @Success 200 {object} models.QueryPreflightResponse "预检结果 | Preflight result"
+// @Failure 400 {object} models.ErrorResponse "查询语句无效 | Invalid query"
+// @Failure 401 {object} models.ErrorResponse "需要登录 | Authentication required"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.execute"]
+// @Router /query-preflight [post]
+// @Security BearerAuth
+func (h *QueryHandler) PreflightQuery(c *gin.Context) {
+	var req models.QueryPreflightRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "error_code": "invalid_query_preflight_request"})
+		return
+	}
+	if locator := strings.TrimSpace(req.TargetLocator); locator != "" {
+		parsed, parseErr := resourcetree.ParseURI(locator)
+		if parseErr != nil || parsed.EngineID != req.EngineID {
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgQueryTemplateResourceInvalid), "error_code": "query_target_invalid"})
+			return
+		}
+	}
+	queryType := strings.ToLower(strings.TrimSpace(req.QueryType))
+	if queryType == "" {
+		queryType = "sql"
+	}
+	analysis, err := service.AnalyzeQuery(queryType, req.Query)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": commoni18n.T(c, developi18n.MsgSQLClassificationFailed), "error_code": "query_effect_unclassifiable", "details": err.Error(),
+		})
+		return
+	}
+
+	permissionKey := developauthorization.PermissionDevelopDataReadExecute
+	switch service.SQLExecutionEffect(analysis.Effect) {
+	case service.SQLExecutionEffectWrite:
+		permissionKey = developauthorization.PermissionDevelopDataWriteExecute
+	case service.SQLExecutionEffectDDL:
+		permissionKey = developauthorization.PermissionDevelopDataDdlExecute
+	case service.SQLExecutionEffectExternalEffect:
+		permissionKey = developauthorization.PermissionDevelopDataExternalEffectExecute
+	}
+	allowed := commonAuth.HasRolePermission(c, permissionKey)
+	if analysis.ClassificationConfidence == "unknown" && service.SQLExecutionEffect(analysis.Effect) != service.SQLExecutionEffectRead && strings.TrimSpace(req.TargetLocator) == "" {
+		allowed = false
+	}
+	response := models.QueryPreflightResponse{
+		Allowed:                  allowed,
+		Effect:                   analysis.Effect,
+		Statement:                analysis.Statement,
+		ClassificationConfidence: analysis.ClassificationConfidence,
+		TargetObjects:            analysis.TargetObjects,
+		TargetLocator:            strings.TrimSpace(req.TargetLocator),
+		Warnings:                 analysis.Warnings,
+		Fingerprint:              analysis.Fingerprint,
+		RiskLevel:                analysis.RiskLevel,
+		RequiresConfirmation:     analysis.RequiresConfirmation,
+		RequiredPermission:       permissionKey,
+	}
+	if !allowed {
+		response.Warnings = append(response.Warnings, commoni18n.T(c, developi18n.MsgExecutionEffectForbidden))
+		if analysis.ClassificationConfidence == "unknown" && service.SQLExecutionEffect(analysis.Effect) != service.SQLExecutionEffectRead && strings.TrimSpace(req.TargetLocator) == "" {
+			response.Warnings = append(response.Warnings, "target_required")
+		}
+	}
+	if allowed && analysis.RequiresConfirmation {
+		token, expiresAt, tokenErr := h.sqlEngine.IssueQueryConfirmationToken(
+			tenantIDValue(c), userIDValue(c), req.EngineID, req.TargetLocator, analysis.Fingerprint, analysis.Effect,
+		)
+		if tokenErr != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionAuthorizationUnavailable), "error_code": "query_confirmation_unavailable"})
+			return
+		}
+		response.ConfirmationToken = token
+		response.ConfirmationExpiresAt = &expiresAt
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 // NewQueryHandler 创建 查询处理器

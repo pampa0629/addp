@@ -371,6 +371,9 @@ else
       START_TRANSFER_CONTINUOUS_WORKER=true
       START_MODEL3D_WORKFLOW=true
       START_POINTCLOUD_WORKFLOW=true
+      # Manager 预览/Transfer 读取 SuperMap SDX+ for PostgreSQL
+      # 时必须通过绑定的 SuperMap Workflow Runtime 访问私有 geometry。
+      START_SUPERMAP_WORKFLOW=true
       ;;
     meta)
       START_META_FRONTEND=true

@@ -94,6 +94,10 @@ console.log(FormatType.SHAPEFILE) // "shapefile"
 
 ## 组件列表
 
+### 数据血缘组件
+
+`@addp/common-frontend/graph` 提供 `LineageViewer`、`createLineageApi` 和 `normalizeLineageGraph`，消费 Meta `GET /api/v1/meta/lineage/graph` 返回的 `{ nodes, edges }`，可在 Service、Manager、Asset 页面内嵌展示。请求函数由宿主注入，组件不处理 Token。
+
 ### ResourceLocator 定位符系统
 
 统一的资源定位符 URI 系统，支持跨存储引擎的资源标识。

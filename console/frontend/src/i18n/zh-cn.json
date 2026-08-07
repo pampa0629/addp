@@ -173,15 +173,22 @@
 		"copilotConfiguration": "Copilot 配置",
 		"developConfiguration": "Develop 配置",
 		"inferenceConfiguration": "Inference 配置",
-		"managerConfiguration": "Manager 配置"
+		"managerConfiguration": "Manager 配置",
+		"transferConfiguration": "Transfer 配置",
+		"monitorConfiguration": "Monitor 配置",
+		"serviceConfiguration": "Service 配置"
 	  },
-	  "tabs": { "inference": "推理场景", "matchingPolicy": "匹配策略", "queryPolicy": "查询策略" },
-	  "modules": { "system": { "name": "系统管理" }, "develop": { "name": "数据开发" }, "manager": { "name": "数据管理" }, "copilot": { "name": "AI 助手" }, "agent": { "name": "AI 智能体" }, "inference": { "name": "AI 模型服务" } },
+	  "tabs": { "inference": "推理场景", "matchingPolicy": "匹配策略", "queryPolicy": "查询策略", "quickViewPolicy": "快显策略", "baseMap": "底图服务", "continuousPolicy": "连续任务策略", "runtimePolicy": "运行策略", "smtpRelay": "SMTP 投递" },
+	  "modules": { "system": { "name": "系统管理" }, "develop": { "name": "数据开发" }, "manager": { "name": "数据管理" }, "copilot": { "name": "AI 助手" }, "agent": { "name": "AI 智能体" }, "inference": { "name": "AI 模型服务" }, "transfer": { "name": "数据传输" }, "monitor": { "name": "执行监控" }, "service": { "name": "数据服务" } },
 	  "policies": {
 		"develop": { "title": "查询策略", "defaultQueryTimeout": "默认查询超时（秒）", "maxQueryTimeout": "最大查询超时（秒）", "queryResultLimit": "结果预览上限（行）" },
-		"manager": { "title": "快显策略", "flatgeobufRows": "FlatGeobuf 行数上限", "mvtTimeout": "动态 MVT 超时预算（毫秒）", "retryAfter": "重试等待时间（秒）" },
+		"manager": { "title": "快显策略", "flatgeobufRows": "FlatGeobuf 行数上限", "mvtTimeout": "动态 MVT 超时预算（毫秒）", "retryAfter": "重试等待时间（秒）", "rasterMosaicTimeout": "栅格镶嵌生成超时（秒）" },
+		"transfer": { "title": "持续任务策略", "diagnosticsInterval": "诊断间隔（秒）", "retentionDegraded": "降级保留周期（秒）", "retentionCritical": "严重保留周期（秒）", "checkpointStale": "检查点失效阈值（秒）", "recoveryInitial": "恢复初始退避（秒）", "recoveryMax": "恢复最大退避（秒）", "maxFailures": "最大连续失败次数", "circuitOpen": "熔断开启时间（秒）", "stabilityWindow": "稳定窗口（秒）" },
+		"monitor": { "title": "监控运行策略", "alertInterval": "告警评估间隔（秒）", "webhookInterval": "Webhook 投递间隔（秒）", "webhookTimeout": "Webhook 请求超时（秒）", "webhookLease": "Webhook 租约（秒）", "webhookAttempts": "Webhook 最大尝试次数", "webhookRetryInitial": "Webhook 初始退避（秒）", "webhookRetryMax": "Webhook 最大退避（秒）", "emailInterval": "邮件投递间隔（秒）", "emailTimeout": "SMTP 请求超时（秒）", "emailLease": "邮件租约（秒）", "emailAttempts": "邮件最大尝试次数", "emailRetryInitial": "邮件初始退避（秒）", "emailRetryMax": "邮件最大退避（秒）" },
+		"service": { "title": "调度策略", "healthCheckCron": "健康检查 Cron", "metadataRefreshCron": "元数据刷新 Cron" },
 		"copilot": { "title": "匹配策略", "scoreThreshold": "匹配阈值", "maxCandidates": "候选数量上限" }
 	  },
+	  "resources": { "configured": "已配置", "notConfigured": "未配置", "smtpRelay": { "title": "SMTP Relay", "enabled": "启用投递", "host": "服务器地址", "port": "端口", "tlsMode": "TLS 模式", "fromAddress": "发件地址", "fromName": "发件名称", "username": "用户名", "credential": "密码", "replaceCredential": "留空表示保持当前凭据", "enterCredential": "输入 SMTP 密码" }, "baseMap": { "title": "在线底图服务", "provider": "服务商", "enabled": "启用", "order": "顺序", "key": "访问 Key", "securityJsCode": "安全代码", "enterKey": "输入 Key", "enterSecurityJsCode": "输入高德安全代码" } },
 	  "ai": {
 		"scenario": "推理场景",
 		"modelProfile": "Model Profile",

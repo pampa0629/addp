@@ -45,6 +45,7 @@
 - [数据类型和格式体系图](concepts/addp数据类型和格式体系图.md)
 - [元数据扫描机制规范](spec/addp元数据扫描机制规范.md)
 - [任务体系规范](spec/addp任务体系规范.md)
+- [数据血缘能力规范](spec/addp数据血缘能力规范.md)
 - [资源回收（Cleanup）体系规范](spec/addp-cleanup体系规范.md)
 - [数据类型与文件格式扩展指南](spec/addp数据类型与文件格式扩展指南.md)
 - [数据项探测器规范](spec/addp数据项探测器规范.md)
@@ -114,8 +115,20 @@ AI 模型接入、在线厂商账号、内网模型服务、模型档案、场�
 2. [引擎体系图](concepts/addp引擎体系图.md)：确认 `EnginePlugin + WorkflowRuntimeProvider + HTTP runtime` 的模块边界。
 3. [ADDP 工作流计算引擎接口规范](spec/addp工作流计算引擎接口规范.md)：确认工作流运行时必须实现的统一 HTTP 协议。
 4. [SuperMap Workflow Engine README](../engines/supermap-workflow/README.md)：查看 C++ Runtime、算子、镜像构建、SDK 母版、裁剪结果和验证方式。
-5. [工作流运行时结果产物与血缘专题](next/工作流运行时结果产物与血缘专题.md)：处理 Runtime 节点事件、调用方输入资源事实、`produced_targets`、统一执行记录和血缘采集边界时阅读。
-6. [Meta 模块血缘扩展设计](plan/meta模块血缘扩展设计.md)：处理 SuperMap runtime 血缘事件落库和资产级血缘关系时阅读。
+5. [数据血缘能力规范](spec/addp数据血缘能力规范.md)：确认统一执行事实、关系类型、Meta collector 和服务依赖边界。
+6. [工作流运行时结果产物与血缘专题](next/工作流运行时结果产物与血缘专题.md)：处理 Runtime 节点事件、调用方输入资源事实、`produced_targets` 和实现待办时阅读。
+7. [Meta 模块血缘扩展设计](plan/meta模块血缘扩展设计.md)：仅供历史背景参考，现行路线以正式血缘规范为准。
+
+## 数据血缘与服务依赖主题
+
+处理数据项上游 / 下游关系、执行事实、字段级血缘、已发布服务依赖或血缘查看器时，建议按以下顺序阅读：
+
+1. [数据血缘能力规范](spec/addp数据血缘能力规范.md)：确认唯一存储路线、Meta 归属、采集边界、时态和 API。
+2. [术语表](concepts/addp术语表.md)：确认 lineage、lineage facts、published service、service dependency 和 field ref。
+3. [数据项体系图](concepts/addp数据项体系图.md)：确认 data item 身份、字段边界和模块职责。
+4. [任务体系规范](spec/addp任务体系规范.md)：确认 `common.task_executions` 与 `lineage_facts` 的执行结果契约。
+5. [数据服务体系图](concepts/addp数据服务体系图.md)：确认服务发布版本和 source dependency 事实。
+6. [共享模块介绍](concepts/addp共享模块介绍.md)：确认 `common-frontend/graph` 的 `LineageViewer` 嵌入边界。
 
 ## 三维模型、倾斜摄影与点云主题
 

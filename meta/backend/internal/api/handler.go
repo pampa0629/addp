@@ -18,6 +18,7 @@ type Handler struct {
 	taskService          *service.ScanTaskService
 	executionService     *service.ScanExecutionService
 	metadataQueryService *service.MetadataQueryService
+	lineageService       *service.LineageService
 	resourceTreeService  *service.ResourceTreeService
 	inspectService       *service.InspectService
 }
@@ -29,13 +30,19 @@ func NewHandler(
 	executionService *service.ScanExecutionService,
 	metadataQueryService *service.MetadataQueryService,
 	inspectService *service.InspectService,
+	lineageServices ...*service.LineageService,
 ) *Handler {
+	var lineageService *service.LineageService
+	if len(lineageServices) > 0 {
+		lineageService = lineageServices[0]
+	}
 	return &Handler{
 		engineService:        engineService,
 		scanService:          scanService,
 		taskService:          taskService,
 		executionService:     executionService,
 		metadataQueryService: metadataQueryService,
+		lineageService:       lineageService,
 		resourceTreeService:  service.NewResourceTreeService(engineService, metadataQueryService),
 		inspectService:       inspectService,
 	}

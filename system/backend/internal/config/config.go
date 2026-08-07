@@ -34,11 +34,6 @@ type Config struct {
 	// 内部 API Key（用于服务间调用）
 	InternalAPIKey string
 
-	// 地图服务配置
-	AMapKey         string
-	AMapSecurityKey string
-	TDTKey          string
-
 	// Redis 配置（用于事件通知）
 	RedisHost     string
 	RedisPort     string
@@ -157,11 +152,6 @@ func Load() *Config {
 
 		// 内部 API Key（可选，用于服务间调用安全）
 		InternalAPIKey: internalAPIKey,
-
-		// 地图服务配置（默认使用提供的高德开放平台 Key）
-		AMapKey:         getEnv("AMAP_KEY", "7babce80a669a0fac7a8c4c951f7c952"),
-		AMapSecurityKey: getEnv("AMAP_SECURITY_KEY", "5784bbf4bbcffc8815cb44db32439b7d"),
-		TDTKey:          getEnv("TDT_KEY", "fa4585302823605b16464e5838dafdcd"),
 
 		// Redis 配置
 		RedisHost:     getEnv("REDIS_HOST", "localhost"),

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -134,19 +133,6 @@ func NewSpatialPreviewService(redisClient *redis.Client, minioClient *minio.Clie
 	// 内存 LRU 配置（默认 8192 条目，5分钟 TTL）
 	lruSize := 8192
 	memTTL := 5 * time.Minute
-
-	// 从环境变量读取配置（可选）
-	if sizeStr := os.Getenv("MVT_CACHE_MEMORY_SIZE"); sizeStr != "" {
-		var size int
-		if _, err := fmt.Sscanf(sizeStr, "%d", &size); err == nil && size > 0 {
-			lruSize = size
-		}
-	}
-	if ttlStr := os.Getenv("MVT_CACHE_MEMORY_TTL"); ttlStr != "" {
-		if d, err := time.ParseDuration(ttlStr); err == nil && d > 0 {
-			memTTL = d
-		}
-	}
 
 	svc := &SpatialPreviewService{
 		minioClient: minioClient,

@@ -199,19 +199,23 @@
             v-model="spatialWorkspaceCollapse"
             class="spatial-workspace-collapse"
           >
-            <el-collapse-item name="supermap">
+            <el-collapse-item
+              v-for="workspace in superMapWorkspaces"
+              :key="workspaceKey(workspace)"
+              :name="workspaceKey(workspace)"
+            >
               <template #title>
                 <span class="spatial-workspace-title">
-                  {{ t(`${spatialWorkspaceProductKey}.title`) }}
-                  <el-tag size="small" effect="plain" :type="spatialWorkspaceStateTagType">
-                    {{ spatialWorkspaceStateText }}
+                  {{ t(`${workspaceProductKey(workspace)}.title`) }}
+                  <el-tag size="small" effect="plain" :type="spatialWorkspaceStateTagType(workspace)">
+                    {{ spatialWorkspaceStateText(workspace) }}
                   </el-tag>
                 </span>
               </template>
 
               <el-alert
                 class="spatial-workspace-alert"
-                :title="t(`${spatialWorkspaceProductKey}.warning`)"
+                :title="t(`${workspaceProductKey(workspace)}.warning`)"
                 type="warning"
                 show-icon
                 :closable="false"
@@ -220,31 +224,31 @@
               <div class="spatial-workspace-body">
                 <div class="spatial-workspace-meta">
                   <el-tag size="small" effect="plain">SuperMap</el-tag>
-                  <el-tag size="small" effect="plain">{{ t(`${spatialWorkspaceProductKey}.title`) }}</el-tag>
+                  <el-tag size="small" effect="plain">{{ t(`${workspaceProductKey(workspace)}.title`) }}</el-tag>
                   <el-tag
-                    v-if="currentSuperMapWorkspace?.bound_runtime_engine_id"
+                    v-if="workspace?.bound_runtime_engine_id"
                     size="small"
                     effect="plain"
                   >
-                    {{ t('system.engine.spatialWorkspace.runtime', { id: currentSuperMapWorkspace.bound_runtime_engine_id }) }}
+                    {{ t('system.engine.spatialWorkspace.runtime', { id: workspace.bound_runtime_engine_id }) }}
                   </el-tag>
                   <el-tag
-                    v-if="currentSuperMapWorkspace?.risk_level"
+                    v-if="workspace?.risk_level"
                     size="small"
                     effect="plain"
                     type="warning"
                   >
-                    {{ t('system.engine.spatialWorkspace.risk', { level: spatialWorkspaceRiskText }) }}
+                    {{ t('system.engine.spatialWorkspace.risk', { level: spatialWorkspaceRiskText(workspace) }) }}
                   </el-tag>
                 </div>
 
                 <el-button
                   type="danger"
                   :loading="enablingSpatialWorkspace"
-                  :disabled="!canEnableSuperMapWorkspace"
-                  @click="enableSuperMapSpatialWorkspace"
+                  :disabled="!canEnableSuperMapWorkspace(workspace)"
+                  @click="enableSuperMapSpatialWorkspace(workspace)"
                 >
-                  {{ t(`${spatialWorkspaceProductKey}.enable`) }}
+                  {{ t(`${workspaceProductKey(workspace)}.enable`) }}
                 </el-button>
               </div>
             </el-collapse-item>
@@ -961,46 +965,45 @@ const hasSelectedCapabilitiesView = computed(() => {
   return view.summary.length > 0 || view.sections.length > 0 || view.json_view.length > 0
 })
 
-const currentSuperMapWorkspace = computed(() => {
-  return findSuperMapSpatialWorkspace(editingEngine.value)
-})
-
-const spatialWorkspaceProductKey = computed(() => {
-  return currentSuperMapWorkspace.value?.kind === 'sdx_postgresql'
-    ? 'system.engine.spatialWorkspace.postgresql'
-    : 'system.engine.spatialWorkspace.postgis'
-})
+const superMapWorkspaces = computed(() => findSuperMapSpatialWorkspaces(editingEngine.value))
 
 const showSpatialWorkspacePanel = computed(() => {
-  const workspace = currentSuperMapWorkspace.value
   return Boolean(
     isEdit.value &&
     form.value.engine_type === 'postgresql' &&
-    workspace?.bound_runtime_engine_id
+    superMapWorkspaces.value.length > 0
   )
 })
 
-const canEnableSuperMapWorkspace = computed(() => {
-  const workspace = currentSuperMapWorkspace.value
-  return Boolean(workspace?.can_enable && workspace?.bound_runtime_engine_id)
-})
+const workspaceProductKey = (workspace) => {
+  return String(workspace?.kind || '').toLowerCase() === 'sdx_postgresql'
+    ? 'system.engine.spatialWorkspace.postgresql'
+    : 'system.engine.spatialWorkspace.postgis'
+}
 
-const spatialWorkspaceStateText = computed(() => {
-  const state = currentSuperMapWorkspace.value?.state || 'unknown'
+const workspaceKey = (workspace) => `supermap-${String(workspace?.kind || 'unknown').toLowerCase()}`
+
+const canEnableSuperMapWorkspace = (workspace) => {
+  const kind = String(workspace?.kind || '').toLowerCase()
+  return Boolean(workspace?.can_enable && (kind === 'sdx_postgis' || workspace?.bound_runtime_engine_id))
+}
+
+const spatialWorkspaceStateText = (workspace) => {
+  const state = workspace?.state || 'unknown'
   return translateCapabilityKey(`system.engine.capabilityView.values.${capabilityKeySegment(state)}`, state)
-})
+}
 
-const spatialWorkspaceRiskText = computed(() => {
-  const risk = currentSuperMapWorkspace.value?.risk_level || 'unknown'
+const spatialWorkspaceRiskText = (workspace) => {
+  const risk = workspace?.risk_level || 'unknown'
   return translateCapabilityKey(`system.engine.capabilityView.values.${capabilityKeySegment(risk)}`, risk)
-})
+}
 
-const spatialWorkspaceStateTagType = computed(() => {
-  const state = String(currentSuperMapWorkspace.value?.state || '').toLowerCase()
+const spatialWorkspaceStateTagType = (workspace) => {
+  const state = String(workspace?.state || '').toLowerCase()
   if (state === 'detected' || state === 'enabled') return 'success'
   if (state === 'not_detected') return 'warning'
   return 'warning'
-})
+}
 
 // 对连接配置字段进行排序显示
 const sortedConnectionInfo = computed(() => {
@@ -1056,11 +1059,11 @@ const spatialWorkspacesFromEngine = (engine) => {
   return Array.isArray(workspaces) ? workspaces : []
 }
 
-const findSuperMapSpatialWorkspace = (engine) => {
-  return spatialWorkspacesFromEngine(engine).find(workspace => (
+const findSuperMapSpatialWorkspaces = (engine) => {
+  return spatialWorkspacesFromEngine(engine).filter(workspace => (
     String(workspace?.ecosystem || '').toLowerCase() === 'supermap' &&
     ['sdx_postgis', 'sdx_postgresql'].includes(String(workspace?.kind || '').toLowerCase())
-  )) || null
+  ))
 }
 
 const getCapabilitySummaryTags = (engine) => {
@@ -1495,19 +1498,18 @@ const editEngine = async (row) => {
   dialogVisible.value = true
 }
 
-const enableSuperMapSpatialWorkspace = async () => {
-  const workspace = currentSuperMapWorkspace.value
-  if (!canEnableSuperMapWorkspace.value || !workspace) {
-    ElMessage.warning(t(`${spatialWorkspaceProductKey.value}.unavailable`))
+const enableSuperMapSpatialWorkspace = async (workspace) => {
+  if (!canEnableSuperMapWorkspace(workspace)) {
+    ElMessage.warning(t(`${workspaceProductKey(workspace)}.unavailable`))
     return
   }
 
   try {
     await ElMessageBox.confirm(
-      t(`${spatialWorkspaceProductKey.value}.confirmMessage`),
-      t(`${spatialWorkspaceProductKey.value}.confirmTitle`),
+      t(`${workspaceProductKey(workspace)}.confirmMessage`),
+      t(`${workspaceProductKey(workspace)}.confirmTitle`),
       {
-        confirmButtonText: t(`${spatialWorkspaceProductKey.value}.enable`),
+        confirmButtonText: t(`${workspaceProductKey(workspace)}.enable`),
         cancelButtonText: t('system.engine.actions.cancel'),
         type: 'error'
       }
@@ -1523,7 +1525,7 @@ const enableSuperMapSpatialWorkspace = async () => {
     if (updatedEngine) {
       editingEngine.value = updatedEngine
     }
-    ElMessage.success(t(`${spatialWorkspaceProductKey.value}.enableSuccess`))
+    ElMessage.success(t(`${workspaceProductKey(workspace)}.enableSuccess`))
     await loadEngines()
   } catch (error) {
     ElMessage.error(error.response?.data?.error || error.message || t('system.engine.msg.opFailed'))

@@ -10,6 +10,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
+	commonconfiguration "github.com/addp/common/configuration"
 	_ "github.com/addp/common/engine/plugins/builtin/general"
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
@@ -17,6 +18,7 @@ import (
 	commonScheduler "github.com/addp/common/scheduler"
 	"github.com/addp/common/utils"
 	"github.com/addp/service/internal/api"
+	serviceauthorization "github.com/addp/service/internal/authorization"
 	"github.com/addp/service/internal/config"
 	"github.com/addp/service/internal/repository"
 	serviceInternal "github.com/addp/service/internal/service"
@@ -66,6 +68,11 @@ func main() {
 	registeredServiceRepo := repository.NewRegisteredServiceRepository(db)
 	tileServiceRepo := repository.NewTileServiceRepository(db)
 	graphQueryServiceRepo := repository.NewGraphQueryServiceRepository(db)
+	runtimePolicyService := serviceInternal.NewRuntimePolicyService(repository.NewRuntimePolicyRepository(db))
+	if err := runtimePolicyService.Apply(context.Background(), cfg); err != nil {
+		logger.L().Error("服务运行策略加载失败", "error", err)
+		os.Exit(1)
+	}
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 
 	logger.L().Info("Service 配置加载完成",
@@ -161,20 +168,25 @@ func main() {
 	graphQueryHandler := api.NewGraphQueryHandler(graphQueryServiceService, graphQueryExecutor)
 
 	// 设置路由（传递 systemClient 用于审计日志）
-	router := api.SetupRouter(cfg, db, dataServiceHandler, queryServiceHandler, ogcFeaturesHandler, registeredServiceHandler, tileServiceHandler, tileEndpointHandler, wmtsHandler, ogcTilesHandler, resourceCapabilityHandler, serviceEndpointHandler, graphQueryHandler, systemClient)
+	router := api.SetupRouter(cfg, db, dataServiceHandler, queryServiceHandler, ogcFeaturesHandler, registeredServiceHandler, tileServiceHandler, tileEndpointHandler, wmtsHandler, ogcTilesHandler, resourceCapabilityHandler, serviceEndpointHandler, graphQueryHandler, systemClient, runtimePolicyService)
 
 	// ========== 模块注册（注册到 System service_registry）==========
-	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
+	if cfg.SystemServiceURL != "" {
 		serviceHost := utils.GetServiceHost()
 		port := utils.GetModulePort("service")
 		serviceURL := utils.BuildServiceURL(serviceHost, port)
-		registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-		registryClient.RegisterAndHeartbeatWithMetadata("service", serviceURL, "/service", map[string]interface{}{
-			"module": "service",
-			"capabilities": map[string]interface{}{
-				"cleanup_executor": map[string]interface{}{
-					"enabled": true,
-					"causes":  []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted},
+		systemServiceClient.RegisterAndHeartbeat(context.Background(), &commonClient.ModuleRegistrationRequest{ModuleName: "service", ModuleURL: serviceURL, RoutePrefix: "/service", HealthCheckURL: serviceURL + "/health",
+			ConfigurationManagement: &commonconfiguration.ManagementDeclaration{SchemaVersion: commonconfiguration.ManagementSchemaVersion, Entries: []commonconfiguration.ManagementEntry{{
+				ID: "service.configuration", OwnerModule: "service", ScopeTypes: []string{commonconfiguration.ScopePlatformOnly}, FrontendRoute: "/configuration/service",
+				ReadPermission: serviceauthorization.PermissionServiceConfigurationRead, UpdatePermission: serviceauthorization.PermissionServiceConfigurationUpdate,
+			}}},
+			Metadata: map[string]interface{}{
+				"module": "service",
+				"capabilities": map[string]interface{}{
+					"cleanup_executor": map[string]interface{}{
+						"enabled": true,
+						"causes":  []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted},
+					},
 				},
 			},
 		})

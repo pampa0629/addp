@@ -31,6 +31,10 @@ const (
 	MsgFieldRecommendationInvalid     = "transfer.field_recommendation.invalid"
 	MsgFieldRecommendationUnsupported = "transfer.field_recommendation.unsupported"
 	MsgFieldRecommendationUnavailable = "transfer.field_recommendation.unavailable"
+	MsgConfigurationLoadFailed        = "transfer.configuration.load_failed"
+	MsgConfigurationInvalid           = "transfer.configuration.invalid"
+	MsgConfigurationAuthentication    = "transfer.configuration.authentication_required"
+	MsgConfigurationConflict          = "transfer.configuration.version_conflict"
 )
 
 func init() {

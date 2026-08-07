@@ -43,6 +43,13 @@ const (
 	MsgEmailSenderUnavailable      = "monitor.email.sender_unavailable"
 	MsgEmailTestFailed             = "monitor.email.test_failed"
 	MsgEmailOperationFailed        = "monitor.email.operation_failed"
+	MsgConfigurationLoadFailed     = "monitor.configuration.load_failed"
+	MsgConfigurationInvalid        = "monitor.configuration.invalid"
+	MsgConfigurationAuthentication = "monitor.configuration.authentication_required"
+	MsgConfigurationConflict       = "monitor.configuration.version_conflict"
+	MsgSMTPRelayLoadFailed         = "monitor.smtp_relay.load_failed"
+	MsgSMTPRelayInvalid            = "monitor.smtp_relay.invalid"
+	MsgSMTPRelayCredentialRequired = "monitor.smtp_relay.credential_required"
 )
 
 func init() {

@@ -24,10 +24,7 @@ type Config struct {
 	RedisHost                          string
 	RedisPort                          string
 	RedisPassword                      string
-	WorkerCount                        int
-	MaxRetries                         int
 	RetryDelay                         time.Duration
-	TaskQueueName                      string
 	ConcurrentTasks                    int
 	ContinuousWorkerInstanceID         string
 	ContinuousWorkerCapacity           int
@@ -134,11 +131,8 @@ func Load() *Config {
 		RedisHost:                          commonConfig.GetEnv("REDIS_HOST", "localhost"),
 		RedisPort:                          commonConfig.GetEnv("REDIS_PORT", "6379"),
 		RedisPassword:                      commonConfig.GetEnv("REDIS_PASSWORD", ""),
-		WorkerCount:                        commonConfig.GetEnvInt("WORKER_COUNT", 5),
-		MaxRetries:                         commonConfig.GetEnvInt("MAX_RETRIES", 3),
-		RetryDelay:                         commonConfig.GetEnvDuration("RETRY_DELAY", "30s"),
-		TaskQueueName:                      commonConfig.GetEnv("TASK_QUEUE_NAME", "transfer:tasks"),
-		ConcurrentTasks:                    commonConfig.GetEnvInt("CONCURRENT_TASKS", 10),
+		RetryDelay:                         commonConfig.GetEnvDuration("TRANSFER_WORKER_RETRY_DELAY", "30s"),
+		ConcurrentTasks:                    commonConfig.GetEnvInt("TRANSFER_WORKER_CONCURRENCY", 10),
 		ContinuousWorkerInstanceID:         commonConfig.GetEnv("TRANSFER_CONTINUOUS_WORKER_INSTANCE_ID", ""),
 		ContinuousWorkerCapacity:           commonConfig.GetEnvInt("TRANSFER_CONTINUOUS_WORKER_CAPACITY", 4),
 		ContinuousLeaseDuration:            commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_LEASE_DURATION", "30s"),
@@ -146,15 +140,15 @@ func Load() *Config {
 		ContinuousClaimInterval:            commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_CLAIM_INTERVAL", "2s"),
 		ContinuousPollTimeout:              commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_POLL_TIMEOUT", "5s"),
 		ContinuousFetchMaxBytes:            commonConfig.GetEnvInt("TRANSFER_CONTINUOUS_FETCH_MAX_BYTES", 52428800),
-		ContinuousDiagnosticsInterval:      commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_DIAGNOSTICS_INTERVAL", "15s"),
-		ContinuousRetentionDegradedHorizon: commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_RETENTION_DEGRADED_HORIZON", "6h"),
-		ContinuousRetentionCriticalHorizon: commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_RETENTION_CRITICAL_HORIZON", "1h"),
-		ContinuousCheckpointStaleAfter:     commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_CHECKPOINT_STALE_AFTER", "5m"),
-		ContinuousRecoveryInitialBackoff:   commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_RECOVERY_INITIAL_BACKOFF", "1s"),
-		ContinuousRecoveryMaxBackoff:       commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_RECOVERY_MAX_BACKOFF", "1m"),
-		ContinuousRecoveryMaxFailures:      commonConfig.GetEnvInt("TRANSFER_CONTINUOUS_RECOVERY_MAX_CONSECUTIVE_FAILURES", 5),
-		ContinuousRecoveryCircuitOpenTime:  commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_RECOVERY_CIRCUIT_OPEN_DURATION", "5m"),
-		ContinuousRecoveryStabilityWindow:  commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_RECOVERY_STABILITY_WINDOW", "5m"),
+		ContinuousDiagnosticsInterval:      15 * time.Second,
+		ContinuousRetentionDegradedHorizon: 6 * time.Hour,
+		ContinuousRetentionCriticalHorizon: time.Hour,
+		ContinuousCheckpointStaleAfter:     5 * time.Minute,
+		ContinuousRecoveryInitialBackoff:   time.Second,
+		ContinuousRecoveryMaxBackoff:       time.Minute,
+		ContinuousRecoveryMaxFailures:      5,
+		ContinuousRecoveryCircuitOpenTime:  5 * time.Minute,
+		ContinuousRecoveryStabilityWindow:  5 * time.Minute,
 		InfraKafkaBootstrapServers:         commonConfig.GetEnv("INFRA_KAFKA_BOOTSTRAP_SERVERS", "localhost:19092"),
 		InfraKafkaAdminUsername:            commonConfig.GetEnv("INFRA_KAFKA_ADMIN_USERNAME", "admin"),
 		InfraKafkaAdminPassword:            commonConfig.GetEnv("INFRA_KAFKA_ADMIN_PASSWORD", "addp_kafka_admin"),

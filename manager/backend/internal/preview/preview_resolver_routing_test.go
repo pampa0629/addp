@@ -2,6 +2,7 @@ package preview
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,6 +21,19 @@ import (
 
 type namedPreviewProvider struct {
 	name string
+}
+
+type previewRuntimeTokenSource struct{}
+
+func (previewRuntimeTokenSource) Token(_ context.Context, tenantID uint) (string, error) {
+	if tenantID != 7 {
+		return "", fmt.Errorf("unexpected tenant id %d", tenantID)
+	}
+	return "tenant-runtime-token", nil
+}
+
+func (previewRuntimeTokenSource) PlatformToken(context.Context) (string, error) {
+	return "platform-runtime-token", nil
 }
 
 func (p namedPreviewProvider) Name() string { return p.name }
@@ -164,6 +178,31 @@ func TestPreviewFromURIWithBasicItemDoesNotSubmitDeepScanRun(t *testing.T) {
 	}
 	if result.Metadata == nil || result.Metadata.ScannedDepth != "basic" {
 		t.Fatalf("metadata scanned depth = %#v, want basic", result.Metadata)
+	}
+}
+
+func TestPreviewResolverScopesRuntimeDescriptorClientByTenant(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer tenant-runtime-token" {
+			t.Fatalf("runtime descriptor authorization = %q, want tenant token", got)
+		}
+		if r.URL.Path != "/api/v1/system/runtime/engine-descriptors/9" {
+			t.Fatalf("runtime descriptor path = %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":9,"lifecycle_state":"active"}`))
+	}))
+	defer server.Close()
+
+	runtime := client.NewSystemServiceClient(server.URL, previewRuntimeTokenSource{}, server.Client())
+	resolver := NewPreviewResolver(NewPreviewRegistry(), nil, nil, runtime)
+	tenantID := uint(7)
+	scoped := resolver.runtimeDescriptorClientForTenant(&tenantID)
+	if scoped == nil {
+		t.Fatal("scoped runtime descriptor client is nil")
+	}
+	if _, err := scoped.GetEngineRuntimeDescriptor(context.Background(), 9); err != nil {
+		t.Fatalf("scoped runtime descriptor request failed: %v", err)
 	}
 }
 

@@ -16,7 +16,9 @@ import (
 	"github.com/addp/common/engine/plugin"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/common/models"
+	developauthorization "github.com/addp/develop/backend/internal/authorization"
 	"github.com/addp/develop/backend/internal/config"
+	developmodels "github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -122,6 +124,34 @@ func TestConnectionUsesUserDerivedReadAuthorizationAndServiceTokenConsumption(t 
 	response := testConnectionRequestForTest(newAuthorizedQueryHandlerForTest(systemServer.URL), "addp_at_user")
 	if response.Code != http.StatusOK || issuedExecutionID == "" {
 		t.Fatalf("status = %d, execution = %q, body = %s", response.Code, issuedExecutionID, response.Body.String())
+	}
+}
+
+func TestPreflightQueryReturnsPermissionAndConfirmationFacts(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	queryHandler := NewQueryHandler(
+		service.NewSQLEngineService(&config.Config{EncryptionKey: []byte("preflight-test-key")}, nil, nil),
+		nil,
+	)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/develop/query-preflight", bytes.NewBufferString(`{"query_type":"sql","query":"DROP TABLE activities","engine_id":12,"target_locator":"addp://engine/12/path/activities?type=table"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(response)
+	context.Request = request
+	setTenantAuthContextWithPermissionsForTest(context, 7, 1, []string{
+		developauthorization.PermissionDevelopDataDdlExecute,
+	})
+
+	queryHandler.PreflightQuery(context)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	var body developmodels.QueryPreflightResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if !body.Allowed || body.Effect != "ddl" || !body.RequiresConfirmation || body.ConfirmationToken == "" || len(body.TargetObjects) != 1 {
+		t.Fatalf("preflight = %#v", body)
 	}
 }
 

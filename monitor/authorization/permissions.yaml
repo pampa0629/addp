@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: monitor
-manifest_version: 3
+manifest_version: 4
 permissions:
   - key: monitor.alert_incident.read
     allowed_scope_types: [tenant]
@@ -50,6 +50,22 @@ permissions:
     status: active
     name_i18n_key: permissions.monitor.alert_rule.update.name
     description_i18n_key: permissions.monitor.alert_rule.update.description
+  - key: monitor.configuration.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.configuration.read.name
+    description_i18n_key: permissions.monitor.configuration.read.description
+  - key: monitor.configuration.update
+    allowed_scope_types: [platform]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.monitor.configuration.update.name
+    description_i18n_key: permissions.monitor.configuration.update.description
   - key: monitor.execution.cancel
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium

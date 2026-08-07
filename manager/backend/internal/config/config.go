@@ -63,15 +63,6 @@ type ExportCleanupConfig struct {
 
 // TileCacheConfig 瓦片缓存生成相关配置
 type TileCacheConfig struct {
-	// 每瓦片目标记录数（用于计算 maxZoom）
-	TargetRecordsPerTile int
-
-	// 缓存策略阈值
-	MinDurationForCacheMS int // 生成耗时阈值（毫秒）
-	MinSizeForCacheKB     int // 瓦片大小阈值（KB）
-
-	// 生成配置
-	MaxZoom     int // 全局最大 zoom 层级
 	Concurrency int // 并发协程数
 	MaxDBConns  int // 数据库最大连接数（默认等于 Concurrency）
 
@@ -157,12 +148,8 @@ func Load() *Config {
 	}
 
 	cfg.TileCache = TileCacheConfig{
-		TargetRecordsPerTile:  commonConfig.GetEnvInt("TILE_CACHE_TARGET_RECORDS", 3000),
-		MinDurationForCacheMS: commonConfig.GetEnvInt("TILE_CACHE_MIN_DURATION_MS", 100),
-		MinSizeForCacheKB:     commonConfig.GetEnvInt("TILE_CACHE_MIN_SIZE_KB", 50),
-		MaxZoom:               commonConfig.GetEnvInt("TILE_CACHE_MAX_ZOOM", 18),
-		Concurrency:           concurrency,
-		MaxDBConns:            maxDBConns,
+		Concurrency: concurrency,
+		MaxDBConns:  maxDBConns,
 	}
 	cfg.RasterMosaicRuntime = RasterMosaicRuntimeConfig{
 		BaseURL:     commonConfig.GetEnv("RASTER_MOSAIC_RUNTIME_URL", "http://127.0.0.1:8291"),
@@ -171,7 +158,7 @@ func Load() *Config {
 		TileSize:    commonConfig.GetEnvInt("RASTER_MOSAIC_TILE_SIZE", 256),
 	}
 	cfg.RasterMosaicGeneration = RasterMosaicGenerationConfig{
-		Timeout: commonConfig.GetEnvDuration("RASTER_MOSAIC_GENERATION_TIMEOUT", "2h"),
+		Timeout: 2 * time.Hour,
 	}
 	if cfg.RasterMosaicRuntime.TileSize != 512 {
 		cfg.RasterMosaicRuntime.TileSize = 256
@@ -180,8 +167,6 @@ func Load() *Config {
 	log.Printf("📋 Manager Config: 瓦片缓存生成配置")
 	log.Printf("   TILE_CACHE_CONCURRENCY (并发数): %d", cfg.TileCache.Concurrency)
 	log.Printf("   TILE_CACHE_MAX_DB_CONNS (数据库连接池): %d", cfg.TileCache.MaxDBConns)
-	log.Printf("   TILE_CACHE_MAX_ZOOM: %d", cfg.TileCache.MaxZoom)
-	log.Printf("   TILE_CACHE_TARGET_RECORDS: %d", cfg.TileCache.TargetRecordsPerTile)
 
 	return cfg
 }

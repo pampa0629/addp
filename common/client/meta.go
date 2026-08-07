@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -70,6 +71,20 @@ type MetaScanRef struct {
 	Primary  bool   `json:"primary,omitempty"`
 }
 
+type MetaLineageServiceDependency struct {
+	SourceItemID     uint                   `json:"source_item_id"`
+	DependencyKind   string                 `json:"dependency_kind"`
+	Granularity      string                 `json:"granularity,omitempty"`
+	DependencyFields map[string]interface{} `json:"dependency_fields,omitempty"`
+}
+
+type MetaLineageServicePublication struct {
+	ServiceID         uint                           `json:"service_id"`
+	PublishedRevision string                         `json:"published_revision"`
+	DependencyHash    string                         `json:"dependency_hash,omitempty"`
+	Dependencies      []MetaLineageServiceDependency `json:"dependencies"`
+}
+
 func normalizeManualMetaTriggerType(triggerType string) (string, error) {
 	normalized := strings.ToLower(strings.TrimSpace(triggerType))
 	if normalized == "" || normalized == commonExecution.TriggerTypeManual {
@@ -114,6 +129,32 @@ func (c *MetaClient) WithTenantID(tenantID uint) *MetaClient {
 		baseURL: c.baseURL, httpClient: c.httpClient,
 		serviceTokenSource: c.serviceTokenSource, tenantID: &tenantID,
 	}
+}
+
+// RecordServicePublication records a published Service revision in Meta lineage.
+func (c *MetaClient) RecordServicePublication(ctx context.Context, publication MetaLineageServicePublication) error {
+	if c == nil || c.baseURL == "" || c.tenantID == nil || *c.tenantID == 0 {
+		return errors.New("Meta lineage publication requires a tenant context")
+	}
+	body, err := json.Marshal(publication)
+	if err != nil {
+		return fmt.Errorf("marshal Meta lineage publication: %w", err)
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/meta/lineage/services", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create Meta lineage publication request: %w", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := c.do(request)
+	if err != nil {
+		return fmt.Errorf("send Meta lineage publication request: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		payload, _ := io.ReadAll(io.LimitReader(response.Body, 8192))
+		return fmt.Errorf("Meta lineage publication returned status %d: %s", response.StatusCode, strings.TrimSpace(string(payload)))
+	}
+	return nil
 }
 
 func (c *MetaClient) GetItemByIDForTenant(tenantID, itemID uint) (*models.MetaItem, error) {

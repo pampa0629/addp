@@ -16,9 +16,9 @@ import Stroke from 'ol/style/Stroke'
 import CircleStyle from 'ol/style/Circle'
 import { createHighlightStyle } from '../utils/mapStyles'
 import { formatFeatureProperties } from '../utils/mapFormatters'
+import { createOSMBaseLayer } from '../config/mapLayers'
 
 const DEFAULT_CENTER = [104.0668, 30.5728]
-const DEFAULT_TDT_KEY = import.meta.env.VITE_TDT_KEY || ''
 
 const pointStyle = new Style({
   image: new CircleStyle({
@@ -106,6 +106,11 @@ export function useOpenLayersMap(config, options = {}) {
   }
 
   const createBaseLayers = (baseType, key) => {
+    if (baseType === 'osm') {
+      const baseLayer = createOSMBaseLayer({ maxZoom: 19 })
+      baseLayer.setZIndex(0)
+      return { baseLayer, labelLayer: null }
+    }
     if (!['tiandituVector', 'tiandituImage'].includes(baseType)) {
       return { baseLayer: null, labelLayer: null }
     }
@@ -132,12 +137,12 @@ export function useOpenLayersMap(config, options = {}) {
 
   const initMap = (container, baseType, initOptions = {}) => {
     const featuresOnly = initOptions.featuresOnly === true
-    if (!featuresOnly && !['tiandituVector', 'tiandituImage'].includes(baseType)) {
+    if (!featuresOnly && !['osm', 'tiandituVector', 'tiandituImage'].includes(baseType)) {
       return null
     }
 
-    const tdtKey = config.tdtKey || DEFAULT_TDT_KEY
-    if (!featuresOnly && !tdtKey) {
+    const tdtKey = config.tdtKey || ''
+    if (!featuresOnly && ['tiandituVector', 'tiandituImage'].includes(baseType) && !tdtKey) {
       ElMessage.warning('未配置天地图 Key，无法加载天地图底图')
       return null
     }

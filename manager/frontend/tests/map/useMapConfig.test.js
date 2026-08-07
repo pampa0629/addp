@@ -45,4 +45,33 @@ describe('map config profiles', () => {
       coordinate_policy: 'gcj02'
     })
   })
+
+  it('falls back to OpenStreetMap when no keyed service is configured', async () => {
+    setMapConfigAPI({
+      getMapConfig: async () => ({
+        data: {
+          amap_key: '',
+          amap_security_js_code: '',
+          tdt_key: ''
+        }
+      })
+    })
+    const { baseMapOptions, defaultBaseMapType, getBaseMapProfile, loadMapConfig } = useMapConfig()
+
+    await loadMapConfig()
+
+    expect(defaultBaseMapType.value).toBe('osm')
+    expect(baseMapOptions.value).toEqual([
+      {
+        label: 'OpenStreetMap',
+        value: 'osm',
+        profile: getBaseMapProfile('osm')
+      }
+    ])
+    expect(getBaseMapProfile('osm')).toMatchObject({
+      provider: 'osm',
+      view_crs: 'EPSG:3857',
+      coordinate_policy: 'wgs84'
+    })
+  })
 })

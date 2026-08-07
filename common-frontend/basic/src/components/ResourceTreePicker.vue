@@ -70,6 +70,7 @@
         :height="treeHeight"
         card-shadow="never"
         @node-click="handleNodeClick"
+        @node-expand="handleNodeExpand"
         @node-dblclick="handleNodeDblclick"
       >
         <template #node="{ data }">
@@ -236,6 +237,7 @@ const emit = defineEmits([
   'select',
   'engine-change',
   'node-click',
+  'node-expand',
   'node-dblclick',
   'error'
 ])
@@ -429,6 +431,10 @@ const handleNodeClick = (node) => {
     return
   }
   selectNode(node, engine)
+}
+
+const handleNodeExpand = (node) => {
+  emit('node-expand', node)
 }
 
 const handleNodeDblclick = (node) => {

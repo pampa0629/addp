@@ -2730,8 +2730,7 @@
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer",
-                                    "format": "int64"
+                                    "type": "integer"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -2955,8 +2954,7 @@
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer",
-                                    "format": "int64"
+                                    "type": "integer"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -3354,8 +3352,7 @@
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer",
-                                    "format": "int64"
+                                    "type": "integer"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -3783,8 +3780,7 @@
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer",
-                                    "format": "int64"
+                                    "type": "integer"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -4839,8 +4835,7 @@
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer",
-                                    "format": "int64"
+                                    "type": "integer"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -5148,8 +5143,7 @@
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer",
-                                    "format": "int64"
+                                    "type": "integer"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -5439,8 +5433,7 @@
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer",
-                                    "format": "int64"
+                                    "type": "integer"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -5763,8 +5756,7 @@
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer",
-                                    "format": "int64"
+                                    "type": "integer"
                                 },
                                 "total_pages": {
                                     "type": "integer"

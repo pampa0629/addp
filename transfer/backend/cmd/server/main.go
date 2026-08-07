@@ -10,6 +10,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
+	commonconfiguration "github.com/addp/common/configuration"
 	_ "github.com/addp/common/engine/plugins/builtin/general"
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
@@ -18,6 +19,7 @@ import (
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/common/utils"
 	"github.com/addp/transfer/internal/api"
+	transferauthorization "github.com/addp/transfer/internal/authorization"
 	"github.com/addp/transfer/internal/capture"
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/continuous"
@@ -90,6 +92,10 @@ func main() {
 	db, err := connectDatabase(cfg)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	continuousPolicyService := service.NewContinuousPolicyService(transferRepo.NewContinuousPolicyRepository(db))
+	if err := continuousPolicyService.Apply(context.Background(), cfg); err != nil {
+		log.Fatalf("Failed to load continuous policy: %v", err)
 	}
 
 	// 初始化 Repository 层
@@ -214,23 +220,29 @@ func main() {
 	defer cleanupService.Stop()
 
 	// 设置路由
-	router := api.SetupRouter(taskService, executionService, cfg.SystemServiceURL, cfg.MetaServiceURL, redisClient, systemClient)
+	router := api.SetupRouter(taskService, executionService, continuousPolicyService, cfg.SystemServiceURL, cfg.MetaServiceURL, redisClient, systemClient)
 
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("transfer")
 	serviceURL := utils.BuildServiceURL(serviceHost, port)
 
 	// ========== 模块注册（注册到 System service_registry）==========
-	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
-		registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-		registryClient.RegisterAndHeartbeatWithMetadata("transfer", serviceURL, "/transfer", map[string]interface{}{
-			"module": "transfer",
-			"capabilities": map[string]interface{}{
-				"cleanup_executor": map[string]interface{}{
-					"enabled": true,
-					"causes":  []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted},
+	if systemRuntimeClient != nil {
+		systemRuntimeClient.RegisterAndHeartbeat(context.Background(), &commonClient.ModuleRegistrationRequest{
+			ModuleName: "transfer", ModuleURL: serviceURL, RoutePrefix: "/transfer", HealthCheckURL: serviceURL + "/health",
+			Metadata: map[string]interface{}{
+				"module": "transfer",
+				"capabilities": map[string]interface{}{
+					"cleanup_executor": map[string]interface{}{
+						"enabled": true,
+						"causes":  []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted},
+					},
 				},
 			},
+			ConfigurationManagement: &commonconfiguration.ManagementDeclaration{SchemaVersion: commonconfiguration.ManagementSchemaVersion, Entries: []commonconfiguration.ManagementEntry{{
+				ID: "transfer.configuration", OwnerModule: "transfer", ScopeTypes: []string{commonconfiguration.ScopePlatformOnly}, FrontendRoute: "/configuration/transfer",
+				ReadPermission: transferauthorization.PermissionTransferConfigurationRead, UpdatePermission: transferauthorization.PermissionTransferConfigurationUpdate,
+			}}},
 		})
 	}
 
@@ -311,5 +323,6 @@ func transferSchemaModels() []interface{} {
 		&models.MySQLCaptureResource{},
 		&models.SchemaChangeRequest{},
 		&models.DeadLetter{},
+		&models.ContinuousPolicy{},
 	}
 }

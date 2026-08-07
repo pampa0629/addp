@@ -76,3 +76,25 @@ export async function detectTableMetadata(apiBaseUrl, params = {}) {
     }
   }
 }
+
+/**
+ * 获取数据项字段，用于查询编辑器等需要字段级补全的场景。
+ * 只接受 Meta 资源身份，不根据引擎、Schema、表名自行拼接查询。
+ *
+ * @param {string} apiBaseUrl API 基础 URL
+ * @param {{ locator?: string, item_id?: number, itemId?: number }} params 资源身份参数
+ * @returns {Promise<Array<{name: string, type?: object|string, native_type?: string, comment?: string}>>}
+ */
+export async function getResourceFields(apiBaseUrl, params = {}) {
+  if (!apiBaseUrl.includes('/meta')) {
+    throw new Error('getResourceFields only supports Meta API')
+  }
+  const parsed = params.locator ? parseLocator(params.locator) : null
+  const itemId = params.item_id || params.itemId || parsed?.itemId
+  if (!itemId) {
+    throw new Error('item_id or locator with item_id is required for Meta field lookup')
+  }
+  const response = await authenticatedAxios.get(`${apiBaseUrl}/items/${itemId}/fields`)
+  const data = response.data?.data || response.data
+  return Array.isArray(data) ? data : []
+}

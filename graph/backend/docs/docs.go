@@ -3547,8 +3547,7 @@ const docTemplate = `{
                     "description": "按标签分组的节点数",
                     "type": "object",
                     "additionalProperties": {
-                        "type": "integer",
-                        "format": "int64"
+                        "type": "integer"
                     }
                 },
                 "node_count": {

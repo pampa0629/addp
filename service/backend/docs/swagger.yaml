@@ -19,7 +19,6 @@ definitions:
       scopePath:
         type: string
       sizeBytes:
-        format: int64
         type: integer
       storageBucket:
         type: string
@@ -1141,6 +1140,29 @@ definitions:
         type: string
       title:
         type: string
+    type: object
+  github_com_addp_service_internal_service.RuntimePolicyResponse:
+    properties:
+      health_check_cron:
+        type: string
+      metadata_refresh_cron:
+        type: string
+      pending_restart:
+        type: boolean
+      version:
+        type: integer
+    type: object
+  github_com_addp_service_internal_service.UpdateRuntimePolicyInput:
+    properties:
+      health_check_cron:
+        type: string
+      metadata_refresh_cron:
+        type: string
+      version:
+        type: integer
+    required:
+    - health_check_cron
+    - metadata_refresh_cron
     type: object
   internal_api.Capabilities:
     properties:
@@ -2874,6 +2896,54 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - service.external_registration.update
+  /settings/runtime-policy:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_service.RuntimePolicyResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取服务运行策略 | Get service runtime policy
+      tags:
+      - 配置管理 | Configuration Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - service.configuration.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 服务运行策略 | Service runtime policy
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_service_internal_service.UpdateRuntimePolicyInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_service.RuntimePolicyResponse'
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新服务运行策略 | Update service runtime policy
+      tags:
+      - 配置管理 | Configuration Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - service.configuration.update
   /sql/output-contract:
     post:
       consumes:

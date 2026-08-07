@@ -1353,6 +1353,228 @@
                 ]
             }
         },
+        "/settings/runtime-policy": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "配置管理 | Configuration Management"
+                ],
+                "summary": "获取监控运行策略 | Get monitor runtime policy",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.RuntimePolicyResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.configuration.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "配置管理 | Configuration Management"
+                ],
+                "summary": "更新监控运行策略 | Update monitor runtime policy",
+                "parameters": [
+                    {
+                        "description": "监控运行策略 | Monitor runtime policy",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.UpdateRuntimePolicyInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.RuntimePolicyResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.configuration.update"
+                ]
+            }
+        },
+        "/settings/smtp-relay": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "配置管理 | Configuration Management"
+                ],
+                "summary": "获取 SMTP Relay | Get SMTP relay",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.SMTPRelayResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.configuration.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "配置管理 | Configuration Management"
+                ],
+                "summary": "更新 SMTP Relay | Update SMTP relay",
+                "parameters": [
+                    {
+                        "description": "SMTP Relay",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.UpdateSMTPRelayInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.SMTPRelayResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.configuration.update"
+                ]
+            }
+        },
+        "/settings/smtp-relay/credential": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "配置管理 | Configuration Management"
+                ],
+                "summary": "设置 SMTP 凭据 | Set SMTP credential",
+                "parameters": [
+                    {
+                        "description": "SMTP credential",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.smtpRelayCredentialRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.SMTPRelayCredentialStatus"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.configuration.update"
+                ]
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "配置管理 | Configuration Management"
+                ],
+                "summary": "删除 SMTP 凭据 | Delete SMTP credential",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.SMTPRelayCredentialStatus"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.configuration.update"
+                ]
+            }
+        },
         "/task-providers": {
             "get": {
                 "security": [
@@ -2430,6 +2652,197 @@
                 }
             }
         },
+        "github_com_addp_monitor_internal_service.RuntimePolicyResponse": {
+            "type": "object",
+            "properties": {
+                "alert_evaluation_interval_seconds": {
+                    "type": "integer"
+                },
+                "email_dispatch_interval_seconds": {
+                    "type": "integer"
+                },
+                "email_lease_duration_seconds": {
+                    "type": "integer"
+                },
+                "email_max_attempts": {
+                    "type": "integer"
+                },
+                "email_retry_initial_backoff_seconds": {
+                    "type": "integer"
+                },
+                "email_retry_max_backoff_seconds": {
+                    "type": "integer"
+                },
+                "email_smtp_timeout_seconds": {
+                    "type": "integer"
+                },
+                "pending_restart": {
+                    "type": "boolean"
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "webhook_dispatch_interval_seconds": {
+                    "type": "integer"
+                },
+                "webhook_http_timeout_seconds": {
+                    "type": "integer"
+                },
+                "webhook_lease_duration_seconds": {
+                    "type": "integer"
+                },
+                "webhook_max_attempts": {
+                    "type": "integer"
+                },
+                "webhook_retry_initial_backoff_seconds": {
+                    "type": "integer"
+                },
+                "webhook_retry_max_backoff_seconds": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.SMTPRelayCredentialStatus": {
+            "type": "object",
+            "properties": {
+                "configured": {
+                    "type": "boolean"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.SMTPRelayResponse": {
+            "type": "object",
+            "properties": {
+                "credential": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_service.SMTPRelayCredentialStatus"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "from_address": {
+                    "type": "string"
+                },
+                "from_name": {
+                    "type": "string"
+                },
+                "host": {
+                    "type": "string"
+                },
+                "pending_restart": {
+                    "type": "boolean"
+                },
+                "port": {
+                    "type": "integer"
+                },
+                "tls_mode": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.UpdateRuntimePolicyInput": {
+            "type": "object",
+            "required": [
+                "alert_evaluation_interval_seconds",
+                "email_dispatch_interval_seconds",
+                "email_lease_duration_seconds",
+                "email_max_attempts",
+                "email_retry_initial_backoff_seconds",
+                "email_retry_max_backoff_seconds",
+                "email_smtp_timeout_seconds",
+                "webhook_dispatch_interval_seconds",
+                "webhook_http_timeout_seconds",
+                "webhook_lease_duration_seconds",
+                "webhook_max_attempts",
+                "webhook_retry_initial_backoff_seconds",
+                "webhook_retry_max_backoff_seconds"
+            ],
+            "properties": {
+                "alert_evaluation_interval_seconds": {
+                    "type": "integer"
+                },
+                "email_dispatch_interval_seconds": {
+                    "type": "integer"
+                },
+                "email_lease_duration_seconds": {
+                    "type": "integer"
+                },
+                "email_max_attempts": {
+                    "type": "integer"
+                },
+                "email_retry_initial_backoff_seconds": {
+                    "type": "integer"
+                },
+                "email_retry_max_backoff_seconds": {
+                    "type": "integer"
+                },
+                "email_smtp_timeout_seconds": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "webhook_dispatch_interval_seconds": {
+                    "type": "integer"
+                },
+                "webhook_http_timeout_seconds": {
+                    "type": "integer"
+                },
+                "webhook_lease_duration_seconds": {
+                    "type": "integer"
+                },
+                "webhook_max_attempts": {
+                    "type": "integer"
+                },
+                "webhook_retry_initial_backoff_seconds": {
+                    "type": "integer"
+                },
+                "webhook_retry_max_backoff_seconds": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.UpdateSMTPRelayInput": {
+            "type": "object",
+            "required": [
+                "port",
+                "tls_mode"
+            ],
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "from_address": {
+                    "type": "string"
+                },
+                "from_name": {
+                    "type": "string"
+                },
+                "host": {
+                    "type": "string"
+                },
+                "port": {
+                    "type": "integer"
+                },
+                "tls_mode": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_monitor_internal_service.WebhookTestResult": {
             "type": "object",
             "properties": {
@@ -3079,6 +3492,17 @@
                 "message": {
                     "type": "string",
                     "example": "Webhook 目标已删除"
+                }
+            }
+        },
+        "internal_api.smtpRelayCredentialRequest": {
+            "type": "object",
+            "required": [
+                "credential"
+            ],
+            "properties": {
+                "credential": {
+                    "type": "string"
                 }
             }
         },

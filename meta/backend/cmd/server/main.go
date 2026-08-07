@@ -129,6 +129,10 @@ func main() {
 
 	taskService := service.NewScanTaskService(db)
 	executionService := service.NewScanExecutionService(db, scanService, engineService, redisClient)
+	lineageService := service.NewLineageService(db)
+	lineageContext, cancelLineage := context.WithCancel(context.Background())
+	defer cancelLineage()
+	go lineageService.RunCollector(lineageContext, time.Minute)
 
 	scheduler := service.NewScanTaskScheduler(taskService, executionService)
 	if taskQueue != nil {
@@ -171,7 +175,7 @@ func main() {
 	defer engineSyncService.Stop()
 
 	// 设置路由
-	router := api.SetupRouter(cfg, db, engineService, scanService, taskService, executionService, redisClient, systemClient)
+	router := api.SetupRouter(cfg, db, engineService, scanService, taskService, executionService, redisClient, systemClient, lineageService)
 
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("meta")

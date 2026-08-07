@@ -14,5 +14,11 @@
     "displayName": "Display Name",
     "propList": "Property List",
     "unique": "Unique"
+  },
+  "lineage": {
+    "noData": "No lineage data",
+    "nodes": "Nodes",
+    "edges": "Edges",
+    "fitView": "Fit View"
   }
 }

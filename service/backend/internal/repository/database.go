@@ -51,6 +51,7 @@ func AutoMigrate(db *gorm.DB) error {
 		// 瓦片服务
 		&models.TileService{},
 		&models.TileServiceLayer{},
+		&models.RuntimePolicy{},
 	}
 
 	for _, model := range migrateModels {

@@ -12,3 +12,18 @@ other = "资源缓存已刷新"
 
 [meta.cache.failed]
 other = "刷新缓存失败: {{.Err}}"
+
+[meta.lineage.invalid_query]
+other = "血缘查询参数无效"
+
+[meta.lineage.subject_not_found]
+other = "血缘主体不存在"
+
+[meta.lineage.query_failed]
+other = "血缘查询失败"
+
+[permissions.meta.lineage.create.name]
+other = "写入数据血缘"
+
+[permissions.meta.lineage.create.description]
+other = "记录数据服务发布产生的血缘事实"

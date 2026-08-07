@@ -264,7 +264,7 @@ func (h *FeatureHandler) GetFeatureGeometry(c *gin.Context) {
 }
 
 func readSpatialFeature(c *gin.Context, engine *commonModels.Engine, connInfo plugin.ConnectionInfo, schema, table, geometryField, identityField, identityValue string) (*plugin.SpatialFeatureData, error) {
-	if instanceprovider.IsSuperMapSDXPostgreSQL(engine) {
+	if instanceprovider.IsSuperMapSDXPostgreSQLTable(engine, schema, table) {
 		return nil, fmt.Errorf("SuperMap SDX+ for PostgreSQL feature endpoint is not supported until a provider feature-read session is implemented")
 	}
 	if engine == nil {

@@ -6,6 +6,8 @@ package authorization
 const (
 	PermissionMetaCatalogRead     = "meta.catalog.read"
 	PermissionMetaInspectExecute  = "meta.inspect.execute"
+	PermissionMetaLineageCreate   = "meta.lineage.create"
+	PermissionMetaLineageRead     = "meta.lineage.read"
 	PermissionMetaScanTaskCreate  = "meta.scan_task.create"
 	PermissionMetaScanTaskDelete  = "meta.scan_task.delete"
 	PermissionMetaScanTaskExecute = "meta.scan_task.execute"
@@ -16,6 +18,8 @@ const (
 var permissionKeys = [...]string{
 	"meta.catalog.read",
 	"meta.inspect.execute",
+	"meta.lineage.create",
+	"meta.lineage.read",
 	"meta.scan_task.create",
 	"meta.scan_task.delete",
 	"meta.scan_task.execute",

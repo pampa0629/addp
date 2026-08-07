@@ -27,6 +27,7 @@ type postgresInstanceCapabilityFacts struct {
 	HasSTTransform           bool
 	HasVectorType            bool
 	SuperMapSystemTableCount int
+	SuperMapSDXSchemaCount   int
 	ArcGISSdeSchemaCount     int
 	ArcGISSdeTableCount      int
 }
@@ -112,7 +113,24 @@ func queryPostgresInstanceCapabilityFacts(ctx context.Context, db *sql.DB) (post
 		return facts, fmt.Errorf("iterate postgresql available extensions: %w", err)
 	}
 
-	if err := db.QueryRowContext(ctx, `
+	if err := db.QueryRowContext(ctx, postgresCapabilityFactsQuery()).Scan(
+		&facts.HasPostGISVersion,
+		&facts.HasSTExtent,
+		&facts.HasSTTransform,
+		&facts.HasVectorType,
+		&facts.SuperMapSystemTableCount,
+		&facts.SuperMapSDXSchemaCount,
+		&facts.ArcGISSdeSchemaCount,
+		&facts.ArcGISSdeTableCount,
+	); err != nil {
+		return facts, fmt.Errorf("query postgresql extension functions: %w", err)
+	}
+
+	return facts, nil
+}
+
+func postgresCapabilityFactsQuery() string {
+	return `
 		SELECT
 			EXISTS(SELECT 1 FROM pg_proc WHERE proname = 'postgis_version'),
 			EXISTS(SELECT 1 FROM pg_proc WHERE proname = 'st_extent'),
@@ -122,7 +140,12 @@ func queryPostgresInstanceCapabilityFacts(ctx context.Context, db *sql.DB) (post
 				SELECT COUNT(*)
 				FROM information_schema.tables
 				WHERE table_schema NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
-				  AND lower(table_name) IN (`+superMapSDXSystemTableSQLList()+`)
+				  AND lower(table_name) IN (` + superMapSDXSystemTableSQLList() + `)
+			), 0),
+			COALESCE((
+				SELECT COUNT(*)
+				FROM information_schema.schemata
+				WHERE lower(schema_name) = 'sdx'
 			), 0),
 			COALESCE((
 				SELECT COUNT(*)
@@ -143,19 +166,7 @@ func queryPostgresInstanceCapabilityFacts(ctx context.Context, db *sql.DB) (post
 						'gdb_itemrelationships'
 				   )
 			), 0)
-		`).Scan(
-		&facts.HasPostGISVersion,
-		&facts.HasSTExtent,
-		&facts.HasSTTransform,
-		&facts.HasVectorType,
-		&facts.SuperMapSystemTableCount,
-		&facts.ArcGISSdeSchemaCount,
-		&facts.ArcGISSdeTableCount,
-	); err != nil {
-		return facts, fmt.Errorf("query postgresql extension functions: %w", err)
-	}
-
-	return facts, nil
+	`
 }
 
 func applyPostgresInstanceCapabilities(base plugin.EngineCapabilities, facts postgresInstanceCapabilityFacts) plugin.EngineCapabilities {
@@ -209,28 +220,46 @@ func applyPostgresInstanceCapabilities(base plugin.EngineCapabilities, facts pos
 		}
 	}
 
-	workspaceKind := plugin.SpatialWorkspaceSuperMapSDXPostgreSQL
-	if postgisReady {
-		workspaceKind = plugin.SpatialWorkspaceSuperMapSDXPostGIS
-	}
 	workspaceDetected := facts.SuperMapSystemTableCount >= superMapSDXSystemTableThreshold
-	workspaceState := plugin.SpatialWorkspaceStateNotDetected
-	if workspaceDetected {
-		workspaceState = plugin.SpatialWorkspaceStateDetected
+	// PostGIS being installed is only a prerequisite; it does not identify
+	// SuperMap SDX+ for PostGIS. SDX+ for PostgreSQL uses the reserved sdx
+	// schema, while SDX+ for PostGIS uses PostGIS geometry without that schema.
+	sdxPostgreSQLDetected := workspaceDetected && (facts.SuperMapSDXSchemaCount > 0 || !postgisReady)
+	sdxPostGISDetected := workspaceDetected && !sdxPostgreSQLDetected && postgisReady
+	workspaceEvidence := map[string]interface{}{
+		"postgis_ready":               postgisReady,
+		"supermap_system_table_count": facts.SuperMapSystemTableCount,
+		"sdx_schema_count":            facts.SuperMapSDXSchemaCount,
 	}
 	workspaces := []plugin.SpatialWorkspaceFact{
 		{
 			Ecosystem:         "supermap",
-			Kind:              workspaceKind,
-			State:             workspaceState,
+			Kind:              plugin.SpatialWorkspaceSuperMapSDXPostGIS,
+			State:             plugin.SpatialWorkspaceStateNotDetected,
+			BackendEngineType: "postgresql",
+			CanEnable:         postgisReady && !workspaceDetected,
+			RiskLevel:         plugin.SpatialWorkspaceRiskHigh,
+			Evidence:          cloneCapabilityEvidence(workspaceEvidence),
+		},
+		{
+			Ecosystem:         "supermap",
+			Kind:              plugin.SpatialWorkspaceSuperMapSDXPostgreSQL,
+			State:             plugin.SpatialWorkspaceStateNotDetected,
 			BackendEngineType: "postgresql",
 			CanEnable:         !workspaceDetected,
 			RiskLevel:         plugin.SpatialWorkspaceRiskHigh,
-			Evidence: map[string]interface{}{
-				"postgis_ready":               postgisReady,
-				"supermap_system_table_count": facts.SuperMapSystemTableCount,
-			},
+			Evidence:          cloneCapabilityEvidence(workspaceEvidence),
 		},
+	}
+	if sdxPostGISDetected {
+		workspaces[0].State = plugin.SpatialWorkspaceStateDetected
+		workspaces[1].State = plugin.SpatialWorkspaceStateUnavailable
+		workspaces[1].CanEnable = false
+	} else if sdxPostgreSQLDetected {
+		workspaces[0].State = plugin.SpatialWorkspaceStateUnavailable
+		workspaces[0].CanEnable = false
+		workspaces[1].State = plugin.SpatialWorkspaceStateDetected
+		workspaces[1].CanEnable = false
 	}
 	if facts.ArcGISSdeSchemaCount > 0 || facts.ArcGISSdeTableCount > 0 {
 		workspaces = append(workspaces, plugin.SpatialWorkspaceFact{
@@ -258,6 +287,17 @@ func spatialWorkspaceState(_ bool, evidenceCount int, threshold int) string {
 		return plugin.SpatialWorkspaceStateDetected
 	}
 	return plugin.SpatialWorkspaceStateNotDetected
+}
+
+func cloneCapabilityEvidence(values map[string]interface{}) map[string]interface{} {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]interface{}, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func extensionAvailable(facts postgresInstanceCapabilityFacts, name string) bool {

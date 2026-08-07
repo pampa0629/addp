@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -200,6 +201,9 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 	// 10. 保存到数据库
 	if err := s.repo.Create(service); err != nil {
 		return nil, fmt.Errorf("create service failed: %w", err)
+	}
+	if err := s.recordLineagePublication(service); err != nil {
+		return nil, fmt.Errorf("record service lineage publication failed: %w", err)
 	}
 
 	// 11. 重新加载服务（获取完整数据）
@@ -888,6 +892,9 @@ func (s *QueryServiceService) RefreshSourceSnapshot(id, tenantID uint) (*models.
 	if err != nil {
 		return nil, fmt.Errorf("get refreshed service failed: %w", err)
 	}
+	if err := s.recordLineagePublication(updated); err != nil {
+		return nil, fmt.Errorf("record refreshed service lineage publication failed: %w", err)
+	}
 	return s.convertToDTO(updated), nil
 }
 
@@ -915,6 +922,24 @@ func dependencyHashOf(snapshot *models.QueryServiceDependencySnapshot) string {
 		return ""
 	}
 	return snapshot.DependencyHash
+}
+
+func (s *QueryServiceService) recordLineagePublication(service *models.QueryService) error {
+	if s == nil || s.metaClient == nil || service == nil {
+		return nil
+	}
+	snapshot := service.SourceSnapshot()
+	if snapshot == nil || snapshot.Source == nil || snapshot.Source.ItemID == 0 {
+		return nil
+	}
+	revision := snapshot.DependencyHash
+	if strings.TrimSpace(revision) == "" {
+		return nil
+	}
+	return s.metaClient.WithTenantID(service.TenantID).RecordServicePublication(context.Background(), client.MetaLineageServicePublication{
+		ServiceID: service.ID, PublishedRevision: revision, DependencyHash: snapshot.DependencyHash,
+		Dependencies: []client.MetaLineageServiceDependency{{SourceItemID: snapshot.Source.ItemID, DependencyKind: service.ConfigType, Granularity: "item"}},
+	})
 }
 
 // convertToDTO 将服务模型转换为 DTO

@@ -121,6 +121,8 @@
           mode="any"
           :selectable-filter="isQueryCatalogSelectionAllowed"
           tree-height="100%"
+          @node-click="rememberCatalogNode"
+          @node-expand="rememberCatalogNode"
           @select="rememberCatalogSelection"
           @node-dblclick="insertCatalogItemAtCursor"
         />
@@ -143,6 +145,23 @@
             <span><el-icon><Edit /></el-icon>{{ t('develop.query.editorTitle') }}</span>
             <div class="editor-heading-actions">
               <span v-if="isDirty" class="dirty-indicator">{{ t('develop.query.unsaved') }}</span>
+              <el-tag
+                v-if="queryAnalysis"
+                size="small"
+                effect="plain"
+                :type="queryAnalysis.allowed ? (queryAnalysis.risk_level === 'high' ? 'warning' : 'success') : 'danger'"
+              >
+                {{ t(`develop.query.effect.${queryAnalysis.effect}`) }}
+              </el-tag>
+              <el-button
+                text
+                size="small"
+                :disabled="executing || loadingSampleQuery || switchingQueryTarget || savingForEngineSwitch"
+                @click="triggerCompletion"
+              >
+                <el-icon><List /></el-icon>
+                {{ t('develop.query.showCompletions') }}
+              </el-button>
               <el-button
                 text
                 size="small"
@@ -156,11 +175,34 @@
             </div>
           </div>
           <div v-loading="loadingSampleQuery" class="editor-content" :aria-busy="loadingSampleQuery">
+            <el-alert
+              v-if="queryDiagnostics.length"
+              class="query-diagnostic-alert"
+              :type="hasBlockingDiagnostics ? 'error' : 'warning'"
+              :title="t('develop.query.queryDiagnostics')"
+              :closable="false"
+              show-icon
+            >
+              <ul class="query-diagnostic-list">
+                <li v-for="(diagnostic, index) in queryDiagnostics" :key="`${diagnostic.code}-${diagnostic.name || diagnostic.field || index}`">
+                  <span>{{ queryDiagnosticMessage(diagnostic) }}</span>
+                  <el-button
+                    v-if="diagnostic.replacement && Number.isInteger(diagnostic.start) && Number.isInteger(diagnostic.end)"
+                    link
+                    type="primary"
+                    size="small"
+                    @click="applyQueryDiagnosticFix(diagnostic)"
+                  >
+                    {{ t('develop.query.applyDiagnosticFix') }}
+                  </el-button>
+                </li>
+              </ul>
+            </el-alert>
             <MonacoEditor
               ref="editorRef"
               v-model="queryContent"
               :language="monacoLanguage"
-              :completions="catalogCompletions"
+              :completions="completionSuggestions"
               theme="vs-dark"
               @execute="executeQuery"
               @selection-change="selectedText = $event"
@@ -344,6 +386,8 @@
         mode="any"
         :selectable-filter="isQueryCatalogSelectionAllowed"
         tree-height="calc(100vh - 150px)"
+        @node-click="rememberCatalogNode"
+        @node-expand="rememberCatalogNode"
         @select="rememberCatalogSelection"
         @node-dblclick="insertCatalogItemAtCursor"
       />
@@ -435,6 +479,9 @@ import {
   ResourceTreePicker,
   ExecutionParameterForm,
   StatusAnnouncer,
+  getResourceFields,
+  getResourceTreeNode,
+  formatLocatorDisplayPath,
   parseLocator,
   useResizable
 } from '@common-ui'
@@ -442,7 +489,7 @@ import { GraphResultView } from '@addp/common-frontend/graph'
 import MonacoEditor from '../components/MonacoEditor.vue'
 import QueryResult from '../components/QueryResult.vue'
 import SaveQueryDialog from '../components/SaveQueryDialog.vue'
-import { getSampleQuery, saveQueryTask, testConnection, updateQueryTask } from '../api/query.js'
+import { getSampleQuery, preflightQuery, saveQueryTask, testConnection, updateQueryTask } from '../api/query.js'
 import { createExecution, getExecution } from '../api/execution.js'
 import { listEngines } from '../api/engines.js'
 import { getDevTask } from '../api/devTask.js'
@@ -461,7 +508,8 @@ import {
   queryCapabilityForEngine,
   queryResultFromExecution,
   extractQueryParameterReferences,
-  parameterizeSelection
+  parameterizeSelection,
+  diagnoseQuery
 } from '@/utils/queryWorkbench.mjs'
 
 const route = useRoute()
@@ -493,6 +541,8 @@ const catalogSelection = ref(null)
 const targetLocator = ref('')
 const initialCatalogLocator = ref('')
 const catalogCompletions = ref([])
+const fieldCompletions = ref([])
+const queryAnalysis = ref(null)
 const catalogDrawerVisible = ref(false)
 const parameterDrawerVisible = ref(false)
 const queryParameters = ref([])
@@ -505,7 +555,10 @@ const savedSnapshot = ref('')
 const queryTaskRouteReady = ref(false)
 const bypassUnsavedRouteConfirm = ref(false)
 const sampleRequests = createLatestRequestCoordinator()
+const fieldCompletionCache = new Map()
 let executionRequestSequence = 0
+let fieldRequestSequence = 0
+let catalogRequestSequence = 0
 let mediaQuery = null
 let compactMediaListener = null
 let applyingQueryTaskRoute = false
@@ -528,6 +581,11 @@ const queryTargets = computed(() => engines.value.map(engine => ({
   typeLabel: engine.engine_type,
   engine
 })))
+
+const completionSuggestions = computed(() => [
+  ...fieldCompletions.value,
+  ...catalogCompletions.value.filter(item => !fieldCompletions.value.some(field => field.insertText === item.insertText))
+])
 const selectedTarget = computed(() => queryTargets.value.find(target => target.value === selectedQueryTarget.value) || null)
 const pendingQueryTargetInfo = computed(() => (
   queryTargets.value.find(target => target.value === pendingQueryTarget.value) || null
@@ -554,6 +612,34 @@ const parameterSyncMessage = computed(() => {
   if (hasUnresolvedParameters.value) return t('develop.query.parameterSyncMissing')
   return t('develop.query.parameterSyncUnused')
 })
+const queryDiagnostics = computed(() => {
+  if (!queryContent.value.trim()) return []
+  return diagnoseQuery({
+    language: currentQueryLanguage.value,
+    engineType: selectedTarget.value?.engine?.engine_type,
+    query: queryContent.value,
+    fields: fieldCompletions.value,
+    targetLocator: catalogSelection.value?.identity?.locator || targetLocator.value,
+    referencedParameters: referencedParameterNames.value,
+    definedParameters: definedParameterNames.value
+  })
+})
+const hasBlockingDiagnostics = computed(() => queryDiagnostics.value.some(item => item.severity === 'error'))
+const queryDiagnosticMessage = diagnostic => {
+  const key = {
+    query_empty: 'develop.query.diagnosticQueryEmpty',
+    target_missing: 'develop.query.diagnosticTargetMissing',
+    parameter_undefined: 'develop.query.diagnosticParameterUndefined',
+    field_unknown: 'develop.query.diagnosticFieldUnknown',
+    field_case_mismatch: 'develop.query.diagnosticFieldCaseMismatch',
+    field_requires_quote: 'develop.query.diagnosticFieldRequiresQuote'
+  }[diagnostic.code]
+  return key ? t(key, diagnostic) : diagnostic.code
+}
+const triggerCompletion = () => editorRef.value?.triggerSuggest()
+const applyQueryDiagnosticFix = diagnostic => {
+  editorRef.value?.replaceOffsetRange(diagnostic.start, diagnostic.end, diagnostic.replacement)
+}
 const monacoLanguage = computed(() => monacoLanguageForQuery(currentQueryLanguage.value))
 const formatterLanguage = computed(() => formatterLanguageForQuery(currentQueryLanguage.value))
 const hasGraphData = computed(() => {
@@ -692,6 +778,8 @@ async function applyQueryTargetSwitch(targetValue, { saved = false } = {}) {
   sampleRequests.invalidate()
   selectedQueryTarget.value = targetValue
   catalogSelection.value = null
+  fieldRequestSequence += 1
+  fieldCompletions.value = []
   targetLocator.value = ''
   initialCatalogLocator.value = ''
   queryContent.value = ''
@@ -900,6 +988,41 @@ const submitQuery = async (parameters = {}) => {
   executionParameterDialogVisible.value = false
   resultViewMode.value = 'table'
   try {
+    const preflight = await preflightQuery({
+      query_type: currentQueryLanguage.value,
+      query,
+      engine_id: selectedEngineId.value,
+      target_locator: catalogSelection.value?.identity?.locator || targetLocator.value || undefined
+    })
+    if (requestSequence !== executionRequestSequence) return
+    queryAnalysis.value = preflight
+    if (!preflight.allowed) {
+      ElMessage.error(t('develop.query.queryPermissionDenied'))
+      announcement.value = t('develop.query.queryPermissionDenied')
+      return
+    }
+    let queryConfirmationToken = ''
+    if (preflight.requires_confirmation) {
+      const warning = Array.isArray(preflight.warnings) && preflight.warnings.length
+        ? `\n${preflight.warnings.map(queryWarningMessage).join('\n')}`
+        : ''
+      try {
+        await ElMessageBox.confirm(
+          `${t('develop.query.highRiskQueryMessage', { effect: t(`develop.query.effect.${preflight.effect}`) })}${warning}`,
+          t('develop.query.highRiskQueryTitle'),
+          {
+            confirmButtonText: t('develop.query.confirmHighRisk'),
+            cancelButtonText: t('develop.query.cancel'),
+            confirmButtonClass: 'el-button--danger',
+            type: 'warning',
+            customClass: 'addp-message-box'
+          }
+        )
+      } catch {
+        return
+      }
+      queryConfirmationToken = preflight.confirmation_token || ''
+    }
     const started = await createExecution({
       dev_type: 'query',
       trigger_type: 'manual',
@@ -911,6 +1034,7 @@ const submitQuery = async (parameters = {}) => {
       },
       execution_config: { engine_id: selectedEngineId.value },
       parameters,
+      query_confirmation_token: queryConfirmationToken || undefined,
       timeout: 120
     })
     if (!started?.execution_id) throw new Error(t('develop.query.executionIdMissing'))
@@ -973,16 +1097,142 @@ const clearResult = () => {
   resultViewMode.value = 'table'
 }
 
-const rememberCatalogSelection = (selection) => {
+const queryWarningMessage = warning => ({
+  target_unknown: t('develop.query.warningTargetUnknown'),
+  target_required: t('develop.query.warningTargetRequired'),
+  missing_where: t('develop.query.warningMissingWhere')
+}[warning] || warning)
+
+const fieldInsertionText = fieldName => {
+  const text = String(fieldName || '').trim()
+  if (!text) return ''
+  const language = String(currentQueryLanguage.value || '').toLowerCase()
+  if (language === 'mql') return text
+  if (language === 'cypher') return quoteQueryIdentifier(text, '`')
+  const engineType = String(selectedTarget.value?.engine?.engine_type || '').toLowerCase()
+  return quoteQueryIdentifier(text, engineType === 'mysql' ? '`' : '"')
+}
+
+const loadFieldCompletions = async selection => {
+  const requestSequence = ++fieldRequestSequence
+  fieldCompletions.value = []
+  const locator = selection?.identity?.locator || ''
+  if (!locator) return
+  let parsed
+  try {
+    parsed = parseLocator(locator)
+  } catch {
+    return
+  }
+  const itemId = selection?.identity?.item_id || parsed.itemId
+  if (!itemId) return
+
+  const cacheKey = `${parsed.engineId}:${itemId}`
+  const cached = fieldCompletionCache.get(cacheKey)
+  if (cached && cached.expiresAt > Date.now()) {
+    fieldCompletions.value = cached.items.map(item => ({ ...item, insertText: fieldInsertionText(item.label) }))
+    return
+  }
+  try {
+    const fields = await getResourceFields('/api/v1/meta', { item_id: itemId })
+    if (requestSequence !== fieldRequestSequence) return
+    const items = fields
+      .map(field => {
+        const name = String(field?.name || '').trim()
+        if (!name) return null
+        const type = typeof field?.type === 'string' ? field.type : field?.type?.name || field?.native_type || ''
+        return {
+          label: name,
+          insertText: fieldInsertionText(name),
+          detail: [type, field?.comment].filter(Boolean).join(' · ') || t('develop.query.fieldCompletion'),
+          kind: 'field'
+        }
+      })
+      .filter(Boolean)
+    fieldCompletionCache.set(cacheKey, { items, expiresAt: Date.now() + 60_000 })
+    fieldCompletions.value = items
+  } catch {
+    // 字段元数据不可用时保留关键字和资源候选，不能阻断查询编辑。
+  }
+}
+
+const rememberCatalogSelection = async (selection) => {
   const path = selection?.display?.path
   if (!path) return
   if (selection?.identity?.locator) targetLocator.value = selection.identity.locator
   const next = {
     label: selection.display.label || path,
     insertText: path,
+    contextInsertText: queryTextForCatalogSegment(selection),
     detail: selection.display.type || ''
   }
   catalogCompletions.value = [next, ...catalogCompletions.value.filter(item => item.insertText !== path)].slice(0, 100)
+  await loadFieldCompletions(selection)
+}
+
+const queryTextForCatalogSegment = (selection) => {
+  const locator = selection?.identity?.locator
+  if (!locator) return ''
+  let parsed
+  try {
+    parsed = parseLocator(locator)
+  } catch {
+    return ''
+  }
+  const segment = parsed.path?.at(-1)
+  if (!segment) return ''
+  const engineType = String(selection.display?.engine_type || selectedTarget.value?.engine?.engine_type || '').toLowerCase()
+  if (engineType === 'mongodb') return JSON.stringify(segment)
+  if (engineType === 'neo4j' || selection.resource?.type === 'graph') return quoteQueryIdentifier(segment, '`')
+  return quoteQueryIdentifier(segment, engineType === 'mysql' ? '`' : '"')
+}
+
+const rememberCatalogNode = async node => {
+  const locator = node?.locator || ''
+  if (!locator) return
+  let parsed
+  try {
+    parsed = parseLocator(locator)
+  } catch {
+    return
+  }
+  if (!parsed.nodeId) return
+  const requestSequence = ++catalogRequestSequence
+  try {
+    const result = await getResourceTreeNode('/api/v1/meta', parsed.engineId, locator)
+    if (requestSequence !== catalogRequestSequence) return
+    const engine = selectedTarget.value?.engine
+    const engineType = String(engine?.engine_type || '').toLowerCase()
+    const children = (result?.children || [])
+      .map(child => {
+        const childLocator = child?.locator || ''
+        let childParsed
+        try {
+          childParsed = parseLocator(childLocator)
+        } catch {
+          return null
+        }
+        if (!isQueryCatalogSelectionAllowed(child, { engine, locator: childParsed })) return null
+        return {
+          label: child.label || childParsed.path?.at(-1) || childLocator,
+          insertText: formatLocatorDisplayPath(childLocator, { engineType }),
+          contextInsertText: queryTextForCatalogSegment({
+            identity: { locator: childLocator },
+            display: { engine_type: engineType },
+            resource: { type: child.type }
+          }),
+          detail: child.type || '',
+          kind: 'resource'
+        }
+      })
+      .filter(Boolean)
+    catalogCompletions.value = [
+      ...children,
+      ...catalogCompletions.value.filter(existing => !children.some(child => child.insertText === existing.insertText))
+    ].slice(0, 100)
+  } catch {
+    // 节点子资源不可用时保留已有候选，不阻断编辑器。
+  }
 }
 
 const isQueryCatalogSelectionAllowed = (node, { engine, locator } = {}) => {
@@ -1145,6 +1395,8 @@ const loadTask = async (taskId) => {
   targetLocator.value = task.content?.target_locator || ''
   initialCatalogLocator.value = targetLocator.value
   catalogSelection.value = null
+  fieldRequestSequence += 1
+  fieldCompletions.value = []
   clearResult()
   if (!queryContent.value) ElMessage.warning(t('develop.query.taskNoSql'))
 }
@@ -1158,6 +1410,9 @@ const resetQueryEditorForCreate = async () => {
   executionParameterOverrides.value = {}
   targetLocator.value = ''
   initialCatalogLocator.value = ''
+  catalogSelection.value = null
+  fieldRequestSequence += 1
+  fieldCompletions.value = []
   clearResult()
   if (!selectedTarget.value && queryTargets.value.length) {
     selectedQueryTarget.value = queryTargets.value[0].value
@@ -1230,6 +1485,17 @@ onMounted(async () => {
 
 watch(() => route.fullPath, () => {
   if (queryTaskRouteReady.value) applyQueryTaskRoute()
+})
+
+watch([queryContent, currentQueryLanguage, selectedEngineId, targetLocator], () => {
+  queryAnalysis.value = null
+})
+
+watch(currentQueryLanguage, () => {
+  fieldCompletions.value = fieldCompletions.value.map(item => ({
+    ...item,
+    insertText: fieldInsertionText(item.label)
+  }))
 })
 
 onBeforeUnmount(() => {
@@ -1425,9 +1691,35 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
+.editor-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-content :deep(.monaco-editor-container) {
+  flex: 1;
+  min-height: 0;
+}
+
 .dirty-indicator {
   color: var(--el-color-warning);
   font-weight: 500;
+}
+
+.query-diagnostic-alert {
+  flex: 0 0 auto;
+  margin: 8px 12px 0;
+}
+
+.query-diagnostic-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.query-diagnostic-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .resize-handle {

@@ -122,12 +122,6 @@ definitions:
       ExecutionStatusPending: 待执行
       ExecutionStatusRunning: 运行中
       ExecutionStatusSuccess: 成功
-    x-enum-descriptions:
-    - 待执行
-    - 运行中
-    - 成功
-    - 失败
-    - 已取消
     x-enum-varnames:
     - ExecutionStatusPending
     - ExecutionStatusRunning
@@ -436,10 +430,6 @@ definitions:
       TaskStatusBlocked: 运行被 schema change 阻塞，禁止直接启动或恢复
       TaskStatusIdle: 空闲（未执行或执行完成）
       TaskStatusRunning: 执行中
-    x-enum-descriptions:
-    - 空闲（未执行或执行完成）
-    - 执行中
-    - 运行被 schema change 阻塞，禁止直接启动或恢复
     x-enum-varnames:
     - TaskStatusIdle
     - TaskStatusRunning
@@ -718,6 +708,31 @@ definitions:
       task_type:
         type: string
     type: object
+  github_com_addp_transfer_internal_service.ContinuousPolicyResponse:
+    properties:
+      checkpoint_stale_after_seconds:
+        type: integer
+      diagnostics_interval_seconds:
+        type: integer
+      pending_restart:
+        type: boolean
+      recovery_circuit_open_seconds:
+        type: integer
+      recovery_initial_backoff_seconds:
+        type: integer
+      recovery_max_backoff_seconds:
+        type: integer
+      recovery_max_consecutive_failures:
+        type: integer
+      recovery_stability_window_seconds:
+        type: integer
+      retention_critical_horizon_seconds:
+        type: integer
+      retention_degraded_horizon_seconds:
+        type: integer
+      version:
+        type: integer
+    type: object
   github_com_addp_transfer_internal_service.DecimalFieldRecommendation:
     properties:
       fits_target:
@@ -758,6 +773,39 @@ definitions:
         type: integer
       target_engine_type:
         type: string
+    type: object
+  github_com_addp_transfer_internal_service.UpdateContinuousPolicyInput:
+    properties:
+      checkpoint_stale_after_seconds:
+        type: integer
+      diagnostics_interval_seconds:
+        type: integer
+      recovery_circuit_open_seconds:
+        type: integer
+      recovery_initial_backoff_seconds:
+        type: integer
+      recovery_max_backoff_seconds:
+        type: integer
+      recovery_max_consecutive_failures:
+        type: integer
+      recovery_stability_window_seconds:
+        type: integer
+      retention_critical_horizon_seconds:
+        type: integer
+      retention_degraded_horizon_seconds:
+        type: integer
+      version:
+        type: integer
+    required:
+    - checkpoint_stale_after_seconds
+    - diagnostics_interval_seconds
+    - recovery_circuit_open_seconds
+    - recovery_initial_backoff_seconds
+    - recovery_max_backoff_seconds
+    - recovery_max_consecutive_failures
+    - recovery_stability_window_seconds
+    - retention_critical_horizon_seconds
+    - retention_degraded_horizon_seconds
     type: object
   gorm.DeletedAt:
     properties:
@@ -1224,6 +1272,54 @@ paths:
       tags:
       - Transfer
       x-addp-auth-mode: public
+  /settings/continuous-policy:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_transfer_internal_service.ContinuousPolicyResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取持续同步策略 | Get continuous transfer policy
+      tags:
+      - 配置管理 | Configuration Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.configuration.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 持续同步策略 | Continuous transfer policy
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_transfer_internal_service.UpdateContinuousPolicyInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_transfer_internal_service.ContinuousPolicyResponse'
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新持续同步策略 | Update continuous transfer policy
+      tags:
+      - 配置管理 | Configuration Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.configuration.update
   /system-engines:
     get:
       description: 返回当前租户可见且启用的 System 引擎，用于 Transfer 任务选择 | Returns active System

@@ -450,7 +450,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Manager"
+                    "配置管理 | Configuration Management"
                 ],
                 "summary": "获取地图服务配置 | Get map service configuration",
                 "responses": {
@@ -5142,6 +5142,84 @@ const docTemplate = `{
                 "x-addp-auth-mode": "self"
             }
         },
+        "/settings/base-map/providers": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "配置管理 | Configuration Management"
+                ],
+                "summary": "列出底图服务配置 | List basemap provider configuration",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.configuration.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "配置管理 | Configuration Management"
+                ],
+                "summary": "更新底图服务配置 | Update basemap provider configuration",
+                "parameters": [
+                    {
+                        "description": "底图服务配置 | Basemap provider configuration",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.UpdateBaseMapProviderInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.BaseMapProviderResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.configuration.update"
+                ]
+            }
+        },
         "/settings/embedding": {
             "get": {
                 "security": [
@@ -7875,6 +7953,38 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_manager_internal_service.BaseMapProviderResponse": {
+            "type": "object",
+            "properties": {
+                "amap_key_configured": {
+                    "type": "boolean"
+                },
+                "amap_security_js_code_configured": {
+                    "type": "boolean"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "scope_type": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "tdt_key_configured": {
+                    "type": "boolean"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_manager_internal_service.DataProfileCurrentResponse": {
             "type": "object",
             "properties": {
@@ -8516,6 +8626,9 @@ const docTemplate = `{
                 "direct_flatgeobuf_max_rows": {
                     "type": "integer"
                 },
+                "raster_mosaic_generation_timeout_seconds": {
+                    "type": "integer"
+                },
                 "realtime_tile_retry_after_sec": {
                     "type": "integer"
                 },
@@ -8966,6 +9079,35 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_manager_internal_service.UpdateBaseMapProviderInput": {
+            "type": "object",
+            "required": [
+                "provider"
+            ],
+            "properties": {
+                "amap_key": {
+                    "type": "string"
+                },
+                "amap_security_js_code": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "tdt_key": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_manager_internal_service.UpdateEmbeddingConfigurationInput": {
             "type": "object",
             "required": [
@@ -9006,11 +9148,15 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "direct_flatgeobuf_max_rows",
+                "raster_mosaic_generation_timeout_seconds",
                 "realtime_tile_retry_after_sec",
                 "realtime_tile_timeout_ms"
             ],
             "properties": {
                 "direct_flatgeobuf_max_rows": {
+                    "type": "integer"
+                },
+                "raster_mosaic_generation_timeout_seconds": {
                     "type": "integer"
                 },
                 "realtime_tile_retry_after_sec": {

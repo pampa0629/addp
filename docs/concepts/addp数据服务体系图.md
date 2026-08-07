@@ -61,6 +61,8 @@ graph TB
 
 查询服务将内部数据源或固定查询发布为稳定、受治理的数据 API。表、固定 SQL 和联邦 SQL 只表达来源与执行绑定；REST Query、OGC API Features 和 WFS 是同一个不可变发布版本的协议投影，共用结构化查询内核，不各自构造 SQL。
 
+每次通过验证并对外生效的版本都是一个 `published service` 血缘主体，身份为 `service_id + published_revision`。它不是 data item；其来源依赖由 Service 在发布时冻结并向 Meta 提供，血缘关系表示为 `data item --serve--> published service`。因此服务页面可以直接查询与展示血缘，不要求用户跳转到 Manager。
+
 ### 配置模式
 
 查询服务支持两种互斥的配置模式：
@@ -94,6 +96,9 @@ graph LR
 - 普通服务执行只读取已发布快照，不在每次请求时调用 Meta。只有显式检查或刷新动作才重新读取源事实并比较差异。
 - 快照结构直接复用 `common/datatype` 现有模型，不新增与 `SpatialInfo`、`TableInfo` 重复的空间或表结构实体。
 - `dependency_hash` 只覆盖查询执行和输出契约事实，不包含 `row_count`、大小、扫描时间、数据更新时间、空间范围和空间索引状态，避免数据量变化被误判为结构契约变化。
+- `dependency_hash` 只是依赖快照的版本摘要，不是具体血缘边；具体边必须来自已解析的 source item 列表和发布事实。
+- 表模式直接使用 source snapshot 中的 item fingerprint；SQL / 联邦 SQL 只有在得到明确 source item 列表时才能建立服务依赖，无法解析时保留“不完整依赖”状态，不伪造血缘边。
+- 静态瓦片服务若由预生成 PMTiles 提供，应表达为“原始数据 `derive` 到 PMTiles data item，再由 PMTiles item `serve` 到服务”，不能把临时瓦片缓存路径当成源数据。
 - 历史记录不保留兼容路径：无法通过 locator 定位同租户且具有 fingerprint 的 Meta item 的表模式服务，以及无法还原对象表依赖的旧 DuckDB 联邦 SQL 服务，在快照迁移时直接删除并由用户重新创建。
 
 空间信息统一保存为标准 `SpatialInfo` payload，例如 `geometry_columns`、`primary_geometry_column`、`crs_ref`、`crs_definitions` 和原生 CRS 下的 `extent`，不再保存 Service 私有的 `column/srid/types` 简化结构。

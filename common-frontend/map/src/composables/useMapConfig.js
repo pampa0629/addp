@@ -1,13 +1,17 @@
 import { ref, computed, onMounted } from 'vue'
 import defaultConfigAPI from '../api/config'
 
-const DEFAULT_AMAP_KEY = import.meta.env.VITE_AMAP_KEY || ''
-const DEFAULT_AMAP_SECURITY = import.meta.env.VITE_AMAP_SECURITY || ''
-const DEFAULT_TDT_KEY = import.meta.env.VITE_TDT_KEY || ''
-
 const GAODE_BASE_MAP_VALUE = 'amapVector'
 
 const BASE_MAP_PROFILES = {
+  osm: {
+    provider: 'osm',
+    tile_matrix_set: 'xyz',
+    view_crs: 'EPSG:3857',
+    coordinate_policy: 'wgs84',
+    attribution: '© OpenStreetMap contributors',
+    network_policy: 'online'
+  },
   tiandituVector: {
     provider: 'tianditu',
     tile_matrix_set: 'tianditu_w',
@@ -120,20 +124,14 @@ export function useMapConfig() {
       console.warn('加载地图配置失败，使用默认配置', error)
     }
 
-    // 使用环境变量作为后备
-    if (!amapKey && DEFAULT_AMAP_KEY) {
-      amapKey = DEFAULT_AMAP_KEY
-      if (!securityJsCode && DEFAULT_AMAP_SECURITY) {
-        securityJsCode = DEFAULT_AMAP_SECURITY
-      }
-    }
-
-    if (!tdtKey && DEFAULT_TDT_KEY) {
-      tdtKey = DEFAULT_TDT_KEY
-    }
-
     applyTiandituConfig(tdtKey)
     applyGaodeConfig(amapKey, securityJsCode)
+
+    // OpenStreetMap does not require an application key and keeps local preview
+    // usable when no managed online map service has been configured.
+    if (baseMapOptions.value.length === 0) {
+      ensureBaseMapOption('osm', 'OpenStreetMap')
+    }
 
     isConfigLoaded = true
   }

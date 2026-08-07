@@ -11,6 +11,7 @@ import (
 	_ "github.com/addp/service/i18n"
 	serviceauthorization "github.com/addp/service/internal/authorization"
 	"github.com/addp/service/internal/config"
+	"github.com/addp/service/internal/service"
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -32,6 +33,7 @@ func SetupRouter(
 	serviceEndpointHandler *ServiceEndpointHandler,
 	graphQueryHandler *GraphQueryHandler,
 	systemClient *commonClient.SystemClient,
+	runtimePolicyService *service.RuntimePolicyService,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -83,6 +85,16 @@ func SetupRouter(
 
 	// 管理 API 只接受 canonical Bearer Tenant AuthContext。
 	api := router.Group("/api/v1/service")
+	platform := api.Group("")
+	platform.Use(
+		authMiddleware.MustNewMiddleware(authMiddleware.MiddlewareConfig{SystemURL: cfg.SystemServiceURL}),
+		authMiddleware.MustNewContextGuard("platform"),
+	)
+	if runtimePolicyService != nil {
+		handler := NewRuntimePolicyHandler(runtimePolicyService)
+		platform.GET("/settings/runtime-policy", authMiddleware.MustNewPermissionGuard(serviceauthorization.PermissionServiceConfigurationRead), handler.Get)
+		platform.PUT("/settings/runtime-policy", authMiddleware.MustNewPermissionGuard(serviceauthorization.PermissionServiceConfigurationUpdate), handler.Update)
+	}
 	api.Use(
 		authMiddleware.MustNewMiddleware(authMiddleware.MiddlewareConfig{SystemURL: cfg.SystemServiceURL}),
 		authMiddleware.MustNewContextGuard("tenant"),

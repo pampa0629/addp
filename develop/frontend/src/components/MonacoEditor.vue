@@ -5,6 +5,8 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
+// standalone API 不会自动加载建议控制器；显式注册后才能通过公开 contribution API 唤起补全。
+import 'monaco-editor/esm/vs/editor/contrib/suggest/browser/suggestController.js'
 
 // 配置 Monaco Editor worker 路径
 if (typeof window !== 'undefined') {
@@ -56,19 +58,77 @@ const editorContainer = ref(null)
 let editor = null
 let completionProvider = null
 
+const triggerSuggest = () => {
+  if (!editor) return
+  editor.focus()
+  const controller = editor.getContribution('editor.contrib.suggestController')
+  if (controller?.triggerSuggest) {
+    controller.triggerSuggest()
+  }
+}
+
+const isSQLQualifiedTableContext = (model, position) => {
+  if (String(props.language || '').toLowerCase() !== 'sql') return false
+  const prefix = model.getValueInRange({
+    startLineNumber: 1,
+    startColumn: 1,
+    endLineNumber: position.lineNumber,
+    endColumn: position.column
+  })
+  return /\b(?:FROM|JOIN|UPDATE|INTO|TABLE)\s+(?:["`]?[^\s."`]+["`]?\.)+$/i.test(prefix)
+}
+
 const registerCompletionProvider = () => {
   completionProvider?.dispose()
   const language = props.language || 'plaintext'
   completionProvider = monaco.languages.registerCompletionItemProvider(language, {
-    provideCompletionItems: () => ({
-      suggestions: props.completions.map(item => ({
-        label: item.label || item.insertText,
-        insertText: item.insertText,
-        detail: item.detail || '',
-        kind: monaco.languages.CompletionItemKind.Reference
+    triggerCharacters: ['.', '`', '"', '$'],
+    provideCompletionItems: (model, position) => {
+      const word = model.getWordUntilPosition(position)
+      const range = {
+        startLineNumber: position.lineNumber,
+        endLineNumber: position.lineNumber,
+        startColumn: word.startColumn,
+        endColumn: word.endColumn
+      }
+      const qualifiedTableContext = isSQLQualifiedTableContext(model, position)
+      const keywordSuggestions = languageCompletionItems(language).map(item => ({
+        ...item,
+        sortText: qualifiedTableContext ? '9' : '1'
       }))
-    })
+      const resourceSuggestions = props.completions.map(item => ({
+        label: item.label || item.insertText,
+        insertText: qualifiedTableContext && item.contextInsertText
+          ? item.contextInsertText
+          : item.insertText,
+        detail: item.detail || '',
+        kind: item.kind === 'field'
+          ? monaco.languages.CompletionItemKind.Field
+          : monaco.languages.CompletionItemKind.Reference,
+        sortText: item.kind === 'field'
+          ? (qualifiedTableContext ? '1' : '0')
+          : (qualifiedTableContext ? '0' : '2'),
+        range
+      }))
+      return { suggestions: [...keywordSuggestions, ...resourceSuggestions] }
+    }
   })
+}
+
+function languageCompletionItems(language) {
+  const normalized = String(language || '').toLowerCase()
+  const groups = {
+    sql: ['SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN', 'ON', 'AS', 'AND', 'OR', 'NOT', 'IN', 'EXISTS', 'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'OFFSET', 'DISTINCT', 'INSERT INTO', 'UPDATE', 'DELETE FROM', 'CREATE TABLE', 'ALTER TABLE', 'DROP TABLE'],
+    mql: ['$match', '$project', '$group', '$sort', '$limit', '$unwind', '$lookup', 'find', 'aggregate', 'countDocuments'],
+    cypher: ['MATCH', 'OPTIONAL MATCH', 'WHERE', 'RETURN', 'WITH', 'UNWIND', 'CREATE', 'MERGE', 'SET', 'DELETE', 'ORDER BY', 'LIMIT', 'SKIP']
+  }
+  return (groups[normalized] || []).map(value => ({
+    label: value,
+    insertText: value,
+    detail: normalized.toUpperCase(),
+    kind: monaco.languages.CompletionItemKind.Keyword,
+    sortText: '0'
+  }))
 }
 
 onMounted(() => {
@@ -171,6 +231,30 @@ onMounted(() => {
     })
   }
 
+  if (!monaco.languages.getLanguages().find(lang => lang.id === 'mql')) {
+    monaco.languages.register({ id: 'mql' })
+    monaco.languages.setLanguageConfiguration('mql', {
+      brackets: [['{', '}'], ['[', ']']],
+      autoClosingPairs: [
+        { open: '{', close: '}' },
+        { open: '[', close: ']' },
+        { open: '"', close: '"' }
+      ]
+    })
+    monaco.languages.setMonarchTokensProvider('mql', {
+      tokenizer: {
+        root: [
+          [/[{}\[\]]/, '@brackets'],
+          [/[,:]/, 'delimiter'],
+          [/-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/, 'number'],
+          [/\b(?:true|false|null)\b/, 'keyword'],
+          [/"(?:\\.|[^"\\])*"(?=\s*:)/, 'key'],
+          [/"(?:\\.|[^"\\])*"/, 'string']
+        ]
+      }
+    })
+  }
+
   // 创建编辑器
   editor = monaco.editor.create(editorContainer.value, {
     value: props.modelValue,
@@ -188,8 +272,11 @@ onMounted(() => {
   })
 
   // 监听内容变化
-  editor.onDidChangeModelContent(() => {
+  editor.onDidChangeModelContent((event) => {
     emit('update:modelValue', editor.getValue())
+    if (event.changes.some(change => /[.$`"]$/.test(change.text || ''))) {
+      window.setTimeout(triggerSuggest, 0)
+    }
   })
 
   editor.onDidChangeCursorSelection(() => {
@@ -229,6 +316,19 @@ watch(() => props.language, (language) => {
 // 暴露方法给父组件
 defineExpose({
   focus: () => editor?.focus(),
+  triggerSuggest,
+  replaceOffsetRange: (start, end, value) => {
+    const model = editor?.getModel()
+    if (!editor || !model || !Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start) return
+    const range = new monaco.Range(
+      model.getPositionAt(start).lineNumber,
+      model.getPositionAt(start).column,
+      model.getPositionAt(end).lineNumber,
+      model.getPositionAt(end).column
+    )
+    editor.executeEdits('query-diagnostic', [{ range, text: value, forceMoveMarkers: true }])
+    editor.focus()
+  },
   getValue: () => editor?.getValue(),
   setValue: (value) => editor?.setValue(value),
   insertText: (value) => {

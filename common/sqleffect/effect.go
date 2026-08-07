@@ -1,6 +1,7 @@
 package sqleffect
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"strings"
 	"unicode"
@@ -14,6 +15,19 @@ const (
 	DDL            Effect = "ddl"
 	ExternalEffect Effect = "external_effect"
 )
+
+// Analysis describes the safety-relevant facts that can be derived from one
+// SQL statement. It intentionally reports uncertainty instead of widening a
+// permission decision when the statement cannot be understood reliably.
+type Analysis struct {
+	Effect                   Effect   `json:"effect"`
+	Statement                string   `json:"statement"`
+	ClassificationConfidence string   `json:"classification_confidence"`
+	TargetObjects            []string `json:"target_objects,omitempty"`
+	Warnings                 []string `json:"warnings,omitempty"`
+	Fingerprint              string   `json:"fingerprint"`
+	RequiresConfirmation     bool     `json:"requires_confirmation"`
+}
 
 type token struct {
 	word  string
@@ -32,35 +46,64 @@ var keywords = map[string]Effect{
 // Classify returns the effect of exactly one SQL statement. Unsupported or
 // malformed syntax is rejected instead of being treated as read-only.
 func Classify(sql string) (Effect, error) {
-	tokens, err := tokenize(sql)
+	analysis, err := Analyze(sql)
 	if err != nil {
 		return "", err
 	}
+	return analysis.Effect, nil
+}
+
+// Analyze classifies exactly one SQL statement and extracts conservative
+// execution-safety facts for preflight and audit displays.
+func Analyze(sql string) (Analysis, error) {
+	tokens, err := tokenize(sql)
+	if err != nil {
+		return Analysis{}, err
+	}
 	if len(tokens) == 0 {
-		return "", fmt.Errorf("SQL 语句不能为空")
+		return Analysis{}, fmt.Errorf("SQL 语句不能为空")
 	}
 
 	statementIndex, err := primaryStatementIndex(tokens)
 	if err != nil {
-		return "", err
+		return Analysis{}, err
 	}
 	statement := tokens[statementIndex].word
 	if statement == "EXPLAIN" {
 		statementIndex, err = explainedStatementIndex(tokens, statementIndex+1)
 		if err != nil {
-			return "", err
+			return Analysis{}, err
 		}
 		statement = tokens[statementIndex].word
 	}
 
 	effect, exists := keywords[statement]
 	if !exists {
-		return "", fmt.Errorf("不支持或无法可靠判定 SQL 效果: %s", statement)
+		return Analysis{}, fmt.Errorf("不支持或无法可靠判定 SQL 效果: %s", statement)
 	}
 	if statement == "SELECT" {
-		return classifySelect(tokens[statementIndex:]), nil
+		effect = classifySelect(tokens[statementIndex:])
 	}
-	return effect, nil
+
+	analysis := Analysis{
+		Effect:                   effect,
+		Statement:                statement,
+		ClassificationConfidence: "high",
+		TargetObjects:            extractTargetObjects(tokens, statementIndex, statement),
+		Fingerprint:              fingerprint(sql),
+	}
+	if len(analysis.TargetObjects) == 0 {
+		analysis.ClassificationConfidence = "unknown"
+		analysis.Warnings = append(analysis.Warnings, "target_unknown")
+	}
+	if (statement == "DELETE" || statement == "UPDATE") && !hasTopLevelWord(tokens[statementIndex:], "WHERE") {
+		analysis.Warnings = append(analysis.Warnings, "missing_where")
+		analysis.RequiresConfirmation = true
+	}
+	if effect == Write || effect == DDL || effect == ExternalEffect {
+		analysis.RequiresConfirmation = true
+	}
+	return analysis, nil
 }
 
 func RequireReadOnly(sql string) error {
@@ -134,6 +177,68 @@ func classifySelect(tokens []token) Effect {
 		}
 	}
 	return Read
+}
+
+func hasTopLevelWord(tokens []token, word string) bool {
+	for _, item := range tokens {
+		if item.depth == 0 && item.word == word {
+			return true
+		}
+	}
+	return false
+}
+
+func extractTargetObjects(tokens []token, statementIndex int, statement string) []string {
+	markers := map[string][]string{
+		"SELECT":   {"FROM", "JOIN", "INTO", "UPDATE"},
+		"INSERT":   {"INTO"},
+		"UPDATE":   {"UPDATE"},
+		"DELETE":   {"FROM"},
+		"MERGE":    {"INTO", "USING"},
+		"CREATE":   {"TABLE", "VIEW", "INDEX", "DATABASE", "SCHEMA"},
+		"ALTER":    {"TABLE", "VIEW", "INDEX", "DATABASE", "SCHEMA"},
+		"DROP":     {"TABLE", "VIEW", "INDEX", "DATABASE", "SCHEMA"},
+		"TRUNCATE": {"TABLE"},
+	}
+	allowed := make(map[string]struct{}, len(markers[statement]))
+	for _, marker := range markers[statement] {
+		allowed[marker] = struct{}{}
+	}
+	seen := make(map[string]struct{})
+	var targets []string
+	for index := statementIndex + 1; index < len(tokens); index++ {
+		if tokens[index].depth != 0 {
+			continue
+		}
+		if _, ok := allowed[tokens[index].word]; !ok {
+			continue
+		}
+		candidateIndex := index + 1
+		for candidateIndex < len(tokens) && tokens[candidateIndex].depth == 0 {
+			switch tokens[candidateIndex].word {
+			case "ONLY", "IF", "NOT", "EXISTS", "CONCURRENTLY":
+				candidateIndex++
+				continue
+			}
+			break
+		}
+		if candidateIndex >= len(tokens) || tokens[candidateIndex].depth != 0 {
+			continue
+		}
+		candidate := tokens[candidateIndex].word
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		targets = append(targets, candidate)
+	}
+	return targets
+}
+
+func fingerprint(sql string) string {
+	normalized := strings.Join(strings.Fields(strings.TrimSpace(sql)), " ")
+	digest := sha256.Sum256([]byte(normalized))
+	return fmt.Sprintf("%x", digest[:])
 }
 
 func firstTopLevelToken(tokens []token, start int) int {

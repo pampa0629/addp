@@ -66,8 +66,8 @@ func Load() *Config {
 	cfg.MinioUseSSL = minioCfg.UseSSL
 
 	// 定时任务配置
-	cfg.HealthCheckCron = commonConfig.GetEnv("SERVICE_HEALTH_CHECK_CRON", "0 * * * *")         // 默认每小时
-	cfg.MetadataRefreshCron = commonConfig.GetEnv("SERVICE_METADATA_REFRESH_CRON", "0 2 * * *") // 默认每天凌晨2点
+	cfg.HealthCheckCron = "0 * * * *"
+	cfg.MetadataRefreshCron = "0 2 * * *"
 
 	return cfg
 }

@@ -1892,6 +1892,60 @@ const docTemplate = `{
                 ]
             }
         },
+        "/query-preflight": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Query"
+                ],
+                "summary": "查询执行预检 | Preflight a query",
+                "parameters": [
+                    {
+                        "description": "查询预检请求 | Query preflight request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.QueryPreflightRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "预检结果 | Preflight result",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.QueryPreflightResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "查询语句无效 | Invalid query",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "需要登录 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.execute"
+                ]
+            }
+        },
         "/settings/query-policy": {
             "get": {
                 "security": [
@@ -2121,8 +2175,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
-                                "type": "integer",
-                                "format": "int64"
+                                "type": "integer"
                             }
                         }
                     }
@@ -3191,6 +3244,10 @@ const docTemplate = `{
                 "parameters": {
                     "type": "object"
                 },
+                "query_confirmation_token": {
+                    "type": "string",
+                    "example": "signed-short-lived-token"
+                },
                 "request_fingerprint": {
                     "type": "string",
                     "example": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -3935,6 +3992,82 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_develop_backend_internal_models.QueryPreflightRequest": {
+            "type": "object",
+            "required": [
+                "engine_id",
+                "query"
+            ],
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "query": {
+                    "type": "string"
+                },
+                "query_type": {
+                    "type": "string",
+                    "enum": [
+                        "sql",
+                        "mql",
+                        "cypher"
+                    ]
+                },
+                "target_locator": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.QueryPreflightResponse": {
+            "type": "object",
+            "properties": {
+                "allowed": {
+                    "type": "boolean"
+                },
+                "classification_confidence": {
+                    "type": "string"
+                },
+                "confirmation_expires_at": {
+                    "type": "string"
+                },
+                "confirmation_token": {
+                    "type": "string"
+                },
+                "effect": {
+                    "type": "string"
+                },
+                "fingerprint": {
+                    "type": "string"
+                },
+                "required_permission": {
+                    "type": "string"
+                },
+                "requires_confirmation": {
+                    "type": "boolean"
+                },
+                "risk_level": {
+                    "type": "string"
+                },
+                "statement": {
+                    "type": "string"
+                },
+                "target_locator": {
+                    "type": "string"
+                },
+                "target_objects": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "github_com_addp_develop_backend_internal_models.RebindWorkflowStorageEngineSwaggerRequest": {
             "type": "object",
             "required": [
@@ -4494,8 +4627,7 @@ const docTemplate = `{
                 "positions": {
                     "type": "object",
                     "additionalProperties": {
-                        "type": "integer",
-                        "format": "int64"
+                        "type": "integer"
                     }
                 }
             }

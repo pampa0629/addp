@@ -35,7 +35,7 @@ export * from './types/tree'
 // resourceLocator 已经通过 types/index 导出，无需重复
 
 // Resource capability APIs
-export { detectTableMetadata } from './api/resourceCapability'
+export { detectTableMetadata, getResourceFields } from './api/resourceCapability'
 
 // Resource Tree API
 export {

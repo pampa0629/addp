@@ -211,6 +211,7 @@ func (h *ExecutionHandler) ExecuteContent(c *gin.Context) {
 		userAccessToken,
 		req.TriggerType,
 		req.Timeout,
+		req.QueryConfirmationToken,
 	)
 	if err != nil {
 		if writeExecutionAuthorizationError(c, err) {
@@ -224,6 +225,11 @@ func (h *ExecutionHandler) ExecuteContent(c *gin.Context) {
 		var parameterError *service.ExecutionParametersError
 		if errors.As(err, &parameterError) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionParametersInvalid), "error_code": "invalid_execution_parameters"})
+			return
+		}
+		var confirmationError *service.QueryConfirmationError
+		if errors.As(err, &confirmationError) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgQueryConfirmationRequired), "error_code": "query_confirmation_required"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

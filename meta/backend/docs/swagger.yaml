@@ -163,6 +163,79 @@ definitions:
   github_com_addp_meta_internal_models.JSONMap:
     additionalProperties: true
     type: object
+  github_com_addp_meta_internal_models.LineageEdge:
+    properties:
+      evidence:
+        additionalProperties: true
+        type: object
+      granularity:
+        type: string
+      last_observed_at:
+        type: string
+      relation_kind:
+        type: string
+      source:
+        $ref: '#/definitions/github_com_addp_meta_internal_models.LineageNode'
+      status:
+        type: string
+      target:
+        $ref: '#/definitions/github_com_addp_meta_internal_models.LineageNode'
+    type: object
+  github_com_addp_meta_internal_models.LineageErrorResponse:
+    properties:
+      error:
+        type: string
+      error_code:
+        type: string
+    type: object
+  github_com_addp_meta_internal_models.LineageGraphResponse:
+    properties:
+      as_of:
+        type: string
+      edges:
+        items:
+          $ref: '#/definitions/github_com_addp_meta_internal_models.LineageEdge'
+        type: array
+      nodes:
+        items:
+          $ref: '#/definitions/github_com_addp_meta_internal_models.LineageNode'
+        type: array
+      subject:
+        $ref: '#/definitions/github_com_addp_meta_internal_models.LineageNode'
+      truncated:
+        type: boolean
+    type: object
+  github_com_addp_meta_internal_models.LineageNode:
+    properties:
+      full_name:
+        type: string
+      item_fingerprint:
+        type: string
+      item_id:
+        type: integer
+      item_type:
+        type: string
+      kind:
+        type: string
+      name:
+        type: string
+      published_revision:
+        type: string
+      service_id:
+        type: integer
+    type: object
+  github_com_addp_meta_internal_models.LineageServiceDependencyInput:
+    properties:
+      dependency_fields:
+        additionalProperties: true
+        type: object
+      dependency_kind:
+        type: string
+      granularity:
+        type: string
+      source_item_id:
+        type: integer
+    type: object
   github_com_addp_meta_internal_models.ListProviderScanTasksResponse:
     properties:
       items:
@@ -313,6 +386,19 @@ definitions:
       updated_at:
         type: string
       updated_by:
+        type: integer
+    type: object
+  github_com_addp_meta_internal_models.RecordServicePublicationRequest:
+    properties:
+      dependencies:
+        items:
+          $ref: '#/definitions/github_com_addp_meta_internal_models.LineageServiceDependencyInput'
+        type: array
+      dependency_hash:
+        type: string
+      published_revision:
+        type: string
+      service_id:
         type: integer
     type: object
   github_com_addp_meta_internal_models.ResourceTreeAncestorsResponse:
@@ -1106,6 +1192,106 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - meta.catalog.read
+  /lineage/graph:
+    get:
+      description: 按数据项或已发布服务版本查询当前血缘关系 | Query current lineage for a data item or
+        published service revision
+      parameters:
+      - description: '主体类型：data_item 或 published_service | Subject kind: data_item
+          or published_service'
+        in: query
+        name: subject_kind
+        required: true
+        type: string
+      - description: 数据项 ID，subject_kind=data_item 时必填 | Item ID, required for data_item
+        in: query
+        name: item_id
+        type: integer
+      - description: 服务 ID，subject_kind=published_service 时必填 | Service ID, required
+          for published_service
+        in: query
+        name: service_id
+        type: integer
+      - description: 服务发布版本，subject_kind=published_service 时必填 | Published revision,
+          required for published_service
+        in: query
+        name: revision
+        type: string
+      - default: both
+        description: '方向：upstream、downstream 或 both | Direction: upstream, downstream
+          or both'
+        in: query
+        name: direction
+        type: string
+      - default: 3
+        description: 展开深度，范围 0-20 | Traversal depth, 0-20
+        in: query
+        name: depth
+        type: integer
+      - default: 100
+        description: 节点和边上限，范围 1-500 | Node and edge limit, 1-500
+        in: query
+        name: limit
+        type: integer
+      - description: 历史观察时间（RFC3339） | Historical observation time (RFC3339)
+        in: query
+        name: as_of
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 血缘图 | Lineage graph
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.LineageGraphResponse'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.LineageErrorResponse'
+        "404":
+          description: 主体不存在 | Subject not found
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.LineageErrorResponse'
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.LineageErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询数据血缘图 | Get lineage graph
+      tags:
+      - Meta Lineage
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.lineage.read
+  /lineage/services:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 服务发布血缘事实 | Service publication lineage
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_meta_internal_models.RecordServicePublicationRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.LineageErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 记录服务发布血缘事实 | Record service publication lineage
+      tags:
+      - Meta Lineage
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.lineage.create
   /nodes/{node_id}:
     get:
       description: 按节点 ID 获取元数据节点详情 | Get metadata node detail by ID

@@ -132,7 +132,7 @@ func (p *SDXPostgreSQLTableProvider) ResolvePath(ctx context.Context, connInfo p
 }
 
 func (p *SDXPostgreSQLTableProvider) DescribeCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
-	if !isSuperMapSDXTablePath(path) {
+	if !IsSDXPostgreSQLTablePath(path) {
 		return p.postgresql.DescribeCatalogFacts(ctx, connInfo, path, opts)
 	}
 	params, err := p.tableParams(connInfo, path)
@@ -192,6 +192,9 @@ func (p *SDXPostgreSQLTableProvider) DescribeCatalogFacts(ctx context.Context, c
 }
 
 func (p *SDXPostgreSQLTableProvider) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) error {
+	if !IsSDXPostgreSQLTablePath(path) {
+		return p.postgresql.DeleteResource(ctx, connInfo, path)
+	}
 	params, err := p.tableParams(connInfo, path)
 	if err != nil {
 		return err
@@ -201,6 +204,9 @@ func (p *SDXPostgreSQLTableProvider) DeleteResource(ctx context.Context, connInf
 }
 
 func (p *SDXPostgreSQLTableProvider) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableWriteOptions) error {
+	if !IsSDXPostgreSQLTablePath(path) {
+		return p.postgresql.PrepareTableWrite(ctx, connInfo, path, opts)
+	}
 	params, err := p.tableParams(connInfo, path)
 	if err != nil {
 		return err
@@ -213,6 +219,9 @@ func (p *SDXPostgreSQLTableProvider) PrepareTableWrite(ctx context.Context, conn
 }
 
 func (p *SDXPostgreSQLTableProvider) OpenTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
+	if !IsSDXPostgreSQLTablePath(path) {
+		return p.postgresql.OpenTableReadSession(ctx, connInfo, path, opts)
+	}
 	if opts.ResumeMarker != nil {
 		return nil, fmt.Errorf("SuperMap table read session does not support resume markers")
 	}
@@ -235,6 +244,9 @@ func (p *SDXPostgreSQLTableProvider) OpenTableReadSession(ctx context.Context, c
 }
 
 func (p *SDXPostgreSQLTableProvider) OpenTableWriteSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableWriteSessionOptions) (plugin.TableWriteSession, error) {
+	if !IsSDXPostgreSQLTablePath(path) {
+		return p.postgresql.OpenTableWriteSession(ctx, connInfo, path, opts)
+	}
 	if opts.ResumeMarker != nil {
 		return nil, fmt.Errorf("SuperMap table write session does not support resume markers")
 	}
@@ -381,7 +393,10 @@ func superMapTablePath(path plugin.CatalogPath) (string, string, error) {
 	return schema, parts[len(parts)-1], nil
 }
 
-func isSuperMapSDXTablePath(path plugin.CatalogPath) bool {
+// IsSDXPostgreSQLTablePath reports whether a catalog path points at the
+// default SuperMap SDX+ for PostgreSQL business schema. The caller must still
+// resolve the engine instance capability before using this predicate.
+func IsSDXPostgreSQLTablePath(path plugin.CatalogPath) bool {
 	parts := make([]string, 0, len(path.Segments))
 	for _, segment := range path.Segments {
 		if name := strings.TrimSpace(segment.Name); name != "" {

@@ -62,6 +62,13 @@
 | item fingerprint | 数据项指纹 | 由 `engine_id + full_name` 计算的稳定 data item 身份。 | 同一数据项内容变化时指纹不变；不是内容哈希，也不是源版本。`item_id` 只是当前 Meta 行引用。 |
 | source version | 源版本 | 表达某个稳定数据项的当前内容版本事实。 | 可由 `content_hash`、`data_updated_at`、`last_modified_at` 或格式专用版本事实组成；用于判断派生结果是否过期，不替代 item fingerprint。 |
 | dependency snapshot | 依赖快照 | 业务定义在创建或显式刷新时，从上游当前事实中选择其执行和对外契约真正依赖的部分并冻结保存。 | 不是完整 Meta item 副本。Meta 提供源事实和源时间；业务模块记录采集时间并对依赖投影计算 hash。差异用于提示重新发布，不自动改变既有业务契约。 |
+| lineage | 数据血缘 | 数据项之间的来源、派生和服务依赖关系的关系视图。 | 归 Meta 管理关系事实和查询投影；不是新的数据资产实体或独立图数据库。完整边界见 [数据血缘能力规范](../spec/addp数据血缘能力规范.md)。 |
+| lineage observation | 血缘关系证据 | Meta 根据执行事实或服务发布事实解析出的不可变关系证据。 | 保存来源快照、采集方式、执行 / 发布引用和时间；证据清理后仍可审计。 |
+| lineage projection | 血缘当前投影 | 从关系证据维护的当前有效上游、下游和服务依赖关系。 | 支持 replace、append、upsert 等写入语义和时态查询；不是事实源。 |
+| lineage facts | 血缘执行事实 | 真实读写 owner 在统一 execution 结果中写入的版本化输入、输出和操作事实。 | 使用 ResourceLocator 和 item fingerprint；Runtime 不构造 ADDP 资源身份。 |
+| published service | 已发布服务版本 | Service 一次通过验证并对外生效的不可变服务发布主体。 | 身份为 `service_id + published_revision`；不是 data item，但可作为血缘图主体。 |
+| service dependency | 服务依赖 | 已发布服务读取、发布或暴露某个 data item 的来源事实。 | 在血缘中表现为 `data item --serve--> published service`；`dependency_hash` 只是快照版本摘要，不是具体血缘边。 |
+| field ref | 字段引用 | 绑定到 data item 及其 schema snapshot 的字段级引用。 | 作为字段级血缘预留主体；字段默认不是独立 data item。 |
 | output contract snapshot | 输出契约快照 | 对没有单一 Meta item 身份的查询或计算结果，保存其已检测输出字段、主键、空间信息等契约事实。 | SQL 查询服务使用该快照；查询结果未物化并经 Meta 扫描前，不创建或伪造 Meta item。 |
 | query service | 查询服务 | Service 将一个受治理的数据源或固定查询发布为稳定数据 API 的业务定义。 | 表、固定 SQL 和联邦 SQL 是来源表达；REST Query、OGC API Features、WFS 是协议投影，不是不同的查询执行路径。 |
 | query service revision | 查询服务发布版本 | 查询服务一次通过验证并发布的不可变执行与输出契约。 | 包含来源绑定、输出契约、稳定排序键、查询策略、资源限制、执行绑定和依赖快照；修改定义必须产生新版本并原子切换，不原地改变已发布契约。 |

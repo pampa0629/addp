@@ -36,6 +36,16 @@
       "editorTitle": "Query Editor",
       "resultTitle": "Execution Result",
       "dataResources": "Data Resources",
+      "fieldCompletion": "Field",
+      "queryDiagnostics": "Query diagnostics",
+      "diagnosticQueryEmpty": "The query is empty",
+      "diagnosticTargetMissing": "No specific data resource is selected; field checks are limited",
+      "diagnosticParameterUndefined": "Parameter \"{name}\" is not defined in the parameter panel",
+      "diagnosticFieldUnknown": "Field \"{field}\" was not found in the current resource fields",
+      "diagnosticFieldCaseMismatch": "Field \"{field}\" may have the wrong case; use \"{suggested}\"",
+      "diagnosticFieldRequiresQuote": "Field \"{field}\" may be a reserved word or use a non-standard format; quote it as \"{suggested}\"",
+      "applyDiagnosticFix": "Fix",
+      "showCompletions": "Show completions",
       "generateQueryTemplate": "Generate Query Template",
       "queryParameters": "Query Parameters",
       "queryParametersUnsupported": "The current engine does not support query parameters",
@@ -114,7 +124,20 @@
       "updateTaskFailed": "Update failed: ",
       "loadTaskFailed": "Failed to load task: ",
       "taskLoaded": "Loaded query task: {name}",
-      "taskNoSql": "This task has no SQL content"
+      "taskNoSql": "This task has no SQL content",
+      "queryPermissionDenied": "Your account is not allowed to perform this type of data operation",
+      "highRiskQueryTitle": "Confirm high-risk query",
+      "highRiskQueryMessage": "This statement is a {effect} operation and may modify or delete data. Confirm to continue.",
+      "confirmHighRisk": "Confirm execution",
+      "warningTargetUnknown": "The target object could not be identified reliably from the statement",
+      "warningTargetRequired": "A high-risk statement must have a selected target resource",
+      "warningMissingWhere": "The statement has no WHERE condition and may affect all data",
+      "effect": {
+        "read": "read-only",
+        "write": "write",
+        "ddl": "schema change",
+        "external_effect": "external-effect"
+      }
     },
     "queryResult": {
       "success": "Execution successful",
@@ -141,7 +164,8 @@
       "collectionEmpty": "Query succeeded but returned no data. The selected collection contains no documents to match.",
       "filterNotMatched": "Query succeeded but returned no data. The queried fields were observed in samples, but the filter matched no documents.",
       "diagnosticUnavailable": "Query succeeded but returned no data. The collection structure could not be inspected; check filters, field paths, and parameter values.",
-      "mongodbDatabaseRequired": "The MongoDB query has no database context. Select a database or configure a default database in the engine registration."
+      "mongodbDatabaseRequired": "The MongoDB query has no database context. Select a database or configure a default database in the engine registration.",
+      "postgresqlUndefinedColumn": "PostgreSQL field \"{field}\" does not exist. If the actual field contains uppercase letters or a non-standard format, quote its name with double quotes."
     },
     "saveQueryDialog": {
       "title": "Save as Query Task",

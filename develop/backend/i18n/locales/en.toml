@@ -64,6 +64,9 @@ other = "The selected data item contains no real data for a query template."
 [develop.query.template_resource_invalid]
 other = "The selected resource is not a queryable data item for the current engine."
 
+[develop.query.confirmation_required]
+other = "This query is high risk. Preflight and confirm it before execution."
+
 [develop.notebook.execution_permission_denied]
 other = "Your account is not allowed to execute notebooks."
 

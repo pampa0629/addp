@@ -170,6 +170,11 @@ func SetupRouter(
 		api.GET("/spark-runtimes", permission(developauthorization.PermissionDevelopTaskRead), engineHandler.ListSparkRuntimes)
 
 		// ========== 查询开发 ==========
+		api.POST(
+			"/query-preflight",
+			permission(developauthorization.PermissionDevelopTaskExecute),
+			queryHandler.PreflightQuery,
+		)
 		api.GET(
 			"/test/:id",
 			permission(

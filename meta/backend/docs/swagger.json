@@ -655,6 +655,152 @@
                 ]
             }
         },
+        "/lineage/graph": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按数据项或已发布服务版本查询当前血缘关系 | Query current lineage for a data item or published service revision",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Lineage"
+                ],
+                "summary": "查询数据血缘图 | Get lineage graph",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "主体类型：data_item 或 published_service | Subject kind: data_item or published_service",
+                        "name": "subject_kind",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "数据项 ID，subject_kind=data_item 时必填 | Item ID, required for data_item",
+                        "name": "item_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "服务 ID，subject_kind=published_service 时必填 | Service ID, required for published_service",
+                        "name": "service_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "服务发布版本，subject_kind=published_service 时必填 | Published revision, required for published_service",
+                        "name": "revision",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "both",
+                        "description": "方向：upstream、downstream 或 both | Direction: upstream, downstream or both",
+                        "name": "direction",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 3,
+                        "description": "展开深度，范围 0-20 | Traversal depth, 0-20",
+                        "name": "depth",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "节点和边上限，范围 1-500 | Node and edge limit, 1-500",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "历史观察时间（RFC3339） | Historical observation time (RFC3339)",
+                        "name": "as_of",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "血缘图 | Lineage graph",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.LineageGraphResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.LineageErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "主体不存在 | Subject not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.LineageErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.LineageErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.lineage.read"
+                ]
+            }
+        },
+        "/lineage/services": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Lineage"
+                ],
+                "summary": "记录服务发布血缘事实 | Record service publication lineage",
+                "parameters": [
+                    {
+                        "description": "服务发布血缘事实 | Service publication lineage",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.RecordServicePublicationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.LineageErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.lineage.create"
+                ]
+            }
+        },
         "/nodes/by-catalog-path": {
             "get": {
                 "security": [
@@ -2457,6 +2603,117 @@
             "type": "object",
             "additionalProperties": true
         },
+        "github_com_addp_meta_internal_models.LineageEdge": {
+            "type": "object",
+            "properties": {
+                "evidence": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "granularity": {
+                    "type": "string"
+                },
+                "last_observed_at": {
+                    "type": "string"
+                },
+                "relation_kind": {
+                    "type": "string"
+                },
+                "source": {
+                    "$ref": "#/definitions/github_com_addp_meta_internal_models.LineageNode"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/github_com_addp_meta_internal_models.LineageNode"
+                }
+            }
+        },
+        "github_com_addp_meta_internal_models.LineageErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "error_code": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_meta_internal_models.LineageGraphResponse": {
+            "type": "object",
+            "properties": {
+                "as_of": {
+                    "type": "string"
+                },
+                "edges": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_meta_internal_models.LineageEdge"
+                    }
+                },
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_meta_internal_models.LineageNode"
+                    }
+                },
+                "subject": {
+                    "$ref": "#/definitions/github_com_addp_meta_internal_models.LineageNode"
+                },
+                "truncated": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_addp_meta_internal_models.LineageNode": {
+            "type": "object",
+            "properties": {
+                "full_name": {
+                    "type": "string"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_id": {
+                    "type": "integer"
+                },
+                "item_type": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "published_revision": {
+                    "type": "string"
+                },
+                "service_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_meta_internal_models.LineageServiceDependencyInput": {
+            "type": "object",
+            "properties": {
+                "dependency_fields": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "dependency_kind": {
+                    "type": "string"
+                },
+                "granularity": {
+                    "type": "string"
+                },
+                "source_item_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_meta_internal_models.ListProviderScanTasksResponse": {
             "type": "object",
             "properties": {
@@ -2683,6 +2940,26 @@
                     "type": "string"
                 },
                 "updated_by": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_meta_internal_models.RecordServicePublicationRequest": {
+            "type": "object",
+            "properties": {
+                "dependencies": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_meta_internal_models.LineageServiceDependencyInput"
+                    }
+                },
+                "dependency_hash": {
+                    "type": "string"
+                },
+                "published_revision": {
+                    "type": "string"
+                },
+                "service_id": {
                     "type": "integer"
                 }
             }

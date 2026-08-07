@@ -95,7 +95,7 @@ const mapRenderer = computed(() => {
   if (props.baseMapType === GAODE_BASE_MAP_VALUE) {
     return GaodeMapRenderer
   }
-  if (['tiandituVector', 'tiandituImage'].includes(props.baseMapType)) {
+  if (['osm', 'tiandituVector', 'tiandituImage'].includes(props.baseMapType)) {
     return OpenLayersRenderer
   }
   return null

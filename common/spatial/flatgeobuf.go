@@ -568,6 +568,14 @@ func int64Value(value interface{}) (int64, error) {
 			return 0, fmt.Errorf("uint64 value overflows int64")
 		}
 		return int64(typed), nil
+	case float64:
+		if math.IsNaN(typed) || math.IsInf(typed, 0) || math.Trunc(typed) != typed {
+			return 0, fmt.Errorf("float64 value is not an integer")
+		}
+		if typed < float64(math.MinInt64) || typed >= -float64(math.MinInt64) {
+			return 0, fmt.Errorf("float64 value overflows int64")
+		}
+		return int64(typed), nil
 	case json.Number:
 		value, err := typed.Int64()
 		if err != nil {

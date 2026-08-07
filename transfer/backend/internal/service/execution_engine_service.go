@@ -209,6 +209,9 @@ func (s *ExecutionEngineService) executeWatermarkIncrementalTask(ctx context.Con
 	if task.AutoScanMetadata && metrics.RecordsWritten > 0 {
 		s.triggerMetadataScan(task, executionID, spec, build.Plan.Target, nil)
 	}
+	if err := s.writeTransferLineageFacts(ctx, task, executionID, spec.Source.Locator, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy); err != nil {
+		s.logger.Warn("failed to persist transfer lineage facts", "error", err, "execution_id", executionID)
+	}
 	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
 		return err
 	}
@@ -511,6 +514,9 @@ func (s *ExecutionEngineService) executeCommonRawCopyTask(ctx context.Context, t
 	if task.AutoScanMetadata {
 		s.triggerRawCopyMetadataScan(task, executionID, spec, buildResult.Plan.Target)
 	}
+	if err := s.writeTransferLineageFacts(ctx, task, executionID, spec.Source.Locator, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy); err != nil {
+		s.logger.Warn("failed to persist raw copy lineage facts", "error", err, "execution_id", executionID)
+	}
 	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
 		s.logger.Warn("failed to finish execution", "error", err)
 	}
@@ -521,6 +527,66 @@ func (s *ExecutionEngineService) executeCommonRawCopyTask(ctx context.Context, t
 		s.logger.Warn("failed to update task after successful raw copy", "error", err, "task_id", task.ID)
 	}
 	return nil
+}
+
+func (s *ExecutionEngineService) writeTransferLineageFacts(ctx context.Context, task *models.TransferTask, executionID uint, sourceLocator, targetLocator, targetParentLocator, targetName string, targetPolicy map[string]interface{}) error {
+	if s == nil || s.executionService == nil || task == nil {
+		return nil
+	}
+	input := commonExecution.LineageResourceRef{Port: "source", Locator: strings.TrimSpace(sourceLocator)}
+	if locator, err := resourcetree.ParseURI(input.Locator); err == nil && locator.ItemID != nil {
+		input.ItemID = locator.ItemID
+	}
+	outputLocator := strings.TrimSpace(targetLocator)
+	if outputLocator == "" {
+		outputLocator = targetLineageLocator(targetParentLocator, targetName)
+	}
+	output := commonExecution.LineageResourceRef{Port: "target", Locator: outputLocator}
+	if locator, err := resourcetree.ParseURI(output.Locator); err == nil && locator.ItemID != nil {
+		output.ItemID = locator.ItemID
+	}
+	writeMode := ""
+	if targetPolicy != nil {
+		if value, ok := targetPolicy["apply_mode"].(string); ok {
+			writeMode = strings.ToLower(strings.TrimSpace(value))
+		}
+	}
+	output.WriteMode = writeMode
+	facts := commonExecution.LineageFacts{
+		SchemaVersion:      commonExecution.LineageFactsSchemaVersion,
+		Inputs:             []commonExecution.LineageResourceRef{input},
+		Outputs:            []commonExecution.LineageResourceRef{output},
+		Operations:         []commonExecution.LineageOperation{{Kind: "derive", Operator: "transfer", InputPorts: []string{"source"}, OutputPorts: []string{"target"}}},
+		RuntimeExecutionID: executionIDString(s, ctx, executionID),
+	}
+	return s.executionService.UpdateExecution(ctx, executionID, map[string]interface{}{"metadata": map[string]interface{}{"lineage_facts": facts}})
+}
+
+func targetLineageLocator(parentURI, name string) string {
+	parent, err := resourcetree.ParseURI(strings.TrimSpace(parentURI))
+	if err != nil || parent == nil || parent.EngineID == 0 || strings.TrimSpace(name) == "" {
+		return ""
+	}
+	path := append(append([]string(nil), parent.Path...), strings.TrimSpace(name))
+	resourceType := resourcetree.TypeObject
+	switch parent.Type {
+	case resourcetree.TypeSchema, resourcetree.TypeDatabase:
+		resourceType = resourcetree.TypeTable
+	case resourcetree.TypeDirectory, resourcetree.TypeDir, resourcetree.TypeRoot:
+		resourceType = resourcetree.TypeFile
+	}
+	return (&resourcetree.ResourceLocator{EngineID: parent.EngineID, Path: path, Type: resourceType}).ToURI()
+}
+
+func executionIDString(s *ExecutionEngineService, ctx context.Context, id uint) string {
+	if s == nil || s.executionService == nil {
+		return ""
+	}
+	execution, err := s.executionService.taskExecutionRepo.GetByID(ctx, int64(id), 0)
+	if err != nil || execution == nil {
+		return ""
+	}
+	return execution.ExecutionID
 }
 
 func (s *ExecutionEngineService) updateExecutionError(task *models.TransferTask, executionID uint, execErr error) {

@@ -60,3 +60,12 @@ other = "Failed to format query result"
 
 [service.err.invalid_feature_id]
 other = "Feature ID is invalid or expired"
+
+[service.configuration.load_failed]
+other = "Failed to load service runtime policy"
+[service.configuration.invalid]
+other = "Invalid service runtime policy"
+[service.configuration.authentication_required]
+other = "Authentication is required"
+[service.configuration.version_conflict]
+other = "Service runtime policy was updated by another administrator"

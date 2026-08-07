@@ -8,11 +8,14 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
+	commonconfiguration "github.com/addp/common/configuration"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/utils"
 	_ "github.com/addp/monitor/i18n"
 	"github.com/addp/monitor/internal/api"
+	monitorauthorization "github.com/addp/monitor/internal/authorization"
 	"github.com/addp/monitor/internal/config"
+	"github.com/addp/monitor/internal/repository"
 	"github.com/addp/monitor/internal/service"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -50,6 +53,14 @@ func main() {
 	if err := service.EnsureMonitorStore(db); err != nil {
 		log.Fatalf("Failed to ensure monitor store: %v", err)
 	}
+	runtimePolicyService := service.NewRuntimePolicyService(repository.NewRuntimePolicyRepository(db))
+	if err := runtimePolicyService.Apply(context.Background(), cfg); err != nil {
+		log.Fatalf("Failed to load monitor runtime policy: %v", err)
+	}
+	smtpRelayService := service.NewSMTPRelayService(repository.NewSMTPRelayRepository(db), cfg.EncryptionKey)
+	if err := smtpRelayService.Apply(context.Background(), cfg); err != nil {
+		log.Fatalf("Failed to load monitor SMTP relay: %v", err)
+	}
 
 	// 连接 Redis
 	var redisClient *redis.Client
@@ -67,6 +78,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Service Token Source 初始化失败: %v", err)
 	}
+	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemURL, serviceTokenSource, nil)
 
 	// 创建 Repository
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
@@ -111,6 +123,8 @@ func main() {
 		alertRuleService,
 		webhookService,
 		emailService,
+		runtimePolicyService,
+		smtpRelayService,
 		cfg.SystemURL,
 		redisClient,
 		systemClient,
@@ -139,7 +153,7 @@ func main() {
 		)
 		go emailDispatcher.Run(context.Background())
 	} else {
-		log.Printf("Email dispatcher disabled: MONITOR_EMAIL_SMTP_HOST is not configured")
+		log.Printf("Email dispatcher disabled: SMTP relay is not configured")
 	}
 
 	// 启动服务
@@ -157,7 +171,14 @@ func main() {
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("monitor")
 	serviceURL := utils.BuildServiceURL(serviceHost, port)
-	systemClient.RegisterAndHeartbeat("monitor", serviceURL, "/monitor")
+	systemServiceClient.RegisterAndHeartbeat(context.Background(), &commonClient.ModuleRegistrationRequest{
+		ModuleName: "monitor", ModuleURL: serviceURL, RoutePrefix: "/monitor", HealthCheckURL: serviceURL + "/health",
+		Metadata: map[string]interface{}{"module": "monitor"},
+		ConfigurationManagement: &commonconfiguration.ManagementDeclaration{SchemaVersion: commonconfiguration.ManagementSchemaVersion, Entries: []commonconfiguration.ManagementEntry{{
+			ID: "monitor.configuration", OwnerModule: "monitor", ScopeTypes: []string{commonconfiguration.ScopePlatformOnly}, FrontendRoute: "/configuration/monitor",
+			ReadPermission: monitorauthorization.PermissionMonitorConfigurationRead, UpdatePermission: monitorauthorization.PermissionMonitorConfigurationUpdate,
+		}}},
+	})
 
 	// 阻塞主 goroutine
 	select {}

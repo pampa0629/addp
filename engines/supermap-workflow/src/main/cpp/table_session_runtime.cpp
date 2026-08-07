@@ -197,6 +197,33 @@ std::string normalize_token(std::string value) {
   return value;
 }
 
+bool same_postgresql_identifier(const std::string& left, const std::string& right) {
+  if (left.size() != right.size()) {
+    return false;
+  }
+  for (std::size_t index = 0; index < left.size(); ++index) {
+    const auto left_character = static_cast<unsigned char>(left[index]);
+    const auto right_character = static_cast<unsigned char>(right[index]);
+    if (std::tolower(left_character) != std::tolower(right_character)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+const Json* find_row_value(const Json& row, const std::string& field_name) {
+  const auto exact = row.find(field_name);
+  if (exact != row.end()) {
+    return &exact.value();
+  }
+  for (auto field = row.begin(); field != row.end(); ++field) {
+    if (same_postgresql_identifier(field.key(), field_name)) {
+      return &field.value();
+    }
+  }
+  return nullptr;
+}
+
 bool reserved_supermap_field(const std::string& name) {
   return name.size() >= 2 && std::tolower(static_cast<unsigned char>(name[0])) == 's' &&
       std::tolower(static_cast<unsigned char>(name[1])) == 'm';
@@ -924,8 +951,8 @@ class TableSessionRuntime::Impl final {
         throw std::invalid_argument("SuperMap batch row must be an object");
       }
       std::unique_ptr<UGC::UGGeometry> geometry;
-      const auto geometry_value = row.find(session.geometry_field);
-      if (geometry_value != row.end() && !geometry_value->is_null()) {
+      const Json* geometry_value = find_row_value(row, session.geometry_field);
+      if (geometry_value != nullptr && !geometry_value->is_null()) {
         if (!geometry_value->is_string()) {
           throw std::invalid_argument("SuperMap geometry value must be base64 EWKB text");
         }
@@ -965,8 +992,8 @@ class TableSessionRuntime::Impl final {
           continue;
         }
         const std::string name = to_utf8(field.m_strName);
-        const auto value = row.find(name);
-        if (value == row.end()) {
+        const Json* value = find_row_value(row, name);
+        if (value == nullptr) {
           continue;
         }
         const UGC::UGVariant variant = json_to_variant(*value, field.m_nType);
