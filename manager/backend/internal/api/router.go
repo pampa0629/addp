@@ -79,21 +79,13 @@ func SetupRouter(
 		})
 	})
 
-	internal := router.Group("/api/v1/manager/internal")
-	internal.Use(managerInternalAPIKeyMiddleware(cfg))
-	{
-		if taskProviderHandler != nil {
-			internal.POST("/executions/:execution_id/events", taskProviderHandler.RecordManagerExecutionProgressEvent)
-		}
-	}
-
 	platform := router.Group("/api/v1/manager")
 	platform.Use(
 		auth.MustNewMiddleware(auth.MiddlewareConfig{SystemURL: cfg.SystemServiceURL}),
 		auth.MustNewContextGuard("platform"),
 	)
 	if systemClient != nil {
-		platform.Use(audit.AuditMiddleware("manager", systemClient))
+		platform.Use(audit.ServiceAuditMiddleware("manager", systemServiceClient))
 	}
 	if embeddingConfigurationService != nil {
 		handler := NewEmbeddingConfigurationHandler(embeddingConfigurationService)
@@ -149,9 +141,12 @@ func SetupRouter(
 	}
 	// 审计日志中间件（记录到 System 模块）
 	if systemClient != nil {
-		api.Use(audit.AuditMiddleware("manager", systemClient))
+		api.Use(audit.ServiceAuditMiddleware("manager", systemServiceClient))
 	}
 	{
+		if taskProviderHandler != nil {
+			api.POST("/executions/:execution_id/events", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), taskProviderHandler.RecordManagerExecutionProgressEvent)
+		}
 		if dataProfileHandler != nil {
 			api.GET("/data-profiles/current", permission(managerauthorization.PermissionManagerDataItemRead), dataProfileHandler.GetCurrent)
 			api.POST("/data-profile-executions", permission(managerauthorization.PermissionManagerDataProfileExecute), dataProfileHandler.CreateExecution)

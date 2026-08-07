@@ -17,6 +17,7 @@ import { createAddpI18n } from '../../../common-frontend/basic/src/composables/u
 import zhCnMessages from './i18n/zh-cn.json'
 import enMessages from './i18n/en.json'
 import { mapMessagesEn, mapMessagesZhCn, setMapConfigAPI } from '@common-ui-map'
+import { graphMessagesEn, graphMessagesZhCn } from '@common-ui-graph'
 import configAPI from '@/api/config'
 
 setMapConfigAPI(configAPI)
@@ -32,8 +33,8 @@ for (const [key, component] of Object.entries(icons)) {
 
 const { i18n, init: initI18n } = createAddpI18n({
   moduleMessages: {
-    'zh-cn': { ...zhCnMessages, ...mapMessagesZhCn },
-    'en': { ...enMessages, ...mapMessagesEn }
+    'zh-cn': { ...zhCnMessages, ...mapMessagesZhCn, ...graphMessagesZhCn },
+    'en': { ...enMessages, ...mapMessagesEn, ...graphMessagesEn }
   },
   listenToConsole: true,
 })

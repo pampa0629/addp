@@ -1,28 +1,27 @@
 package service
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
-	"time"
+
+	commonClient "github.com/addp/common/client"
+	commonModels "github.com/addp/common/models"
 )
 
 // TaskProviderRegistryService 任务提供者注册服务
 // 将 Transfer 模块注册到 System 的 task_providers 表
 type TaskProviderRegistryService struct {
-	systemURL      string
-	internalAPIKey string
-	transferURL    string
+	systemClient *commonClient.SystemServiceClient
+	transferURL  string
 }
 
 // NewTaskProviderRegistryService 创建任务提供者注册服务
-func NewTaskProviderRegistryService(systemURL, internalAPIKey, transferURL string) *TaskProviderRegistryService {
+func NewTaskProviderRegistryService(systemClient *commonClient.SystemServiceClient, transferURL string) *TaskProviderRegistryService {
 	return &TaskProviderRegistryService{
-		systemURL:      systemURL,
-		internalAPIKey: internalAPIKey,
-		transferURL:    transferURL,
+		systemClient: systemClient,
+		transferURL:  transferURL,
 	}
 }
 
@@ -42,7 +41,7 @@ type TaskProviderRegistration struct {
 }
 
 // Register 注册 Transfer 模块为任务提供者
-func (s *TaskProviderRegistryService) Register() error {
+func (s *TaskProviderRegistryService) Register(ctx context.Context) error {
 	// 构造能力描述（含前端集成 URL）
 	capabilities := map[string]interface{}{
 		"schema_version": "task.capabilities/v2",
@@ -92,37 +91,27 @@ func (s *TaskProviderRegistryService) Register() error {
 		IsEnabled: true,
 	}
 
-	return s.sendRegistration(&registration)
+	return s.sendRegistration(ctx, &registration)
 }
 
 // sendRegistration 发送注册请求到 System task_providers API
-func (s *TaskProviderRegistryService) sendRegistration(req *TaskProviderRegistration) error {
-	bodyJSON, err := json.Marshal(req)
-	if err != nil {
-		return fmt.Errorf("failed to marshal registration: %w", err)
+func (s *TaskProviderRegistryService) sendRegistration(ctx context.Context, req *TaskProviderRegistration) error {
+	if s == nil || s.systemClient == nil || req == nil {
+		return fmt.Errorf("System Service Client and registration are required")
 	}
-
-	// 注册到 task_providers Internal API（使用 Internal API Key 认证）
-	httpReq, err := http.NewRequest("POST", s.systemURL+"/api/v1/internal/task-providers/register", bytes.NewReader(bodyJSON))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+	var capabilities *commonModels.JSONString
+	if req.Capabilities != nil {
+		value := commonModels.JSONString(*req.Capabilities)
+		capabilities = &value
 	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("X-Internal-API-Key", s.internalAPIKey)
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		// 读取响应 body 以获取详细错误信息
-		var errBody map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&errBody)
-		return fmt.Errorf("registration failed with status %d: %v", resp.StatusCode, errBody)
+	if err := s.systemClient.RegisterTaskProvider(ctx, &commonModels.TaskProvider{
+		ModuleName: req.ModuleName, DisplayName: req.DisplayName, Description: req.Description,
+		BaseURL: req.BaseURL, TaskListEndpoint: req.TaskListEndpoint,
+		TaskDetailEndpoint: req.TaskDetailEndpoint, TaskExecuteEndpoint: req.TaskExecuteEndpoint,
+		TaskStatusEndpoint: req.TaskStatusEndpoint, TaskCancelEndpoint: req.TaskCancelEndpoint,
+		Capabilities: capabilities, IsEnabled: req.IsEnabled,
+	}); err != nil {
+		return err
 	}
 
 	log.Printf("✅ Transfer 模块已成功注册到 task_providers (module_name: transfer)")

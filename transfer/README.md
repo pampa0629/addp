@@ -119,7 +119,7 @@ continuous 当前有两类实现路径：业务 Kafka keyed JSON record -> Postg
 
 `GET /executions/:execution_id` 是 TaskProvider 标准执行详情入口，按统一 `common.task_executions.execution_id` 查询。重试、进度和日志入口也按 `execution_id` 定位执行记录。私有 task-definition `stop` 只控制 continuous runtime；bounded worker 仍不支持真实中断，因此 TaskProvider 保持 `supports_cancel=false`，不注册标准 execution cancel endpoint。
 
-continuous worker 是独立进程角色 `cmd/continuous-worker`，用 Infra PostgreSQL 管理任务状态，通过 System Engine Resolver 连接业务 Engine；CDC 内部 Kafka 使用部署配置和独立 `transfer` principal，不注册为 System Engine。除 continuous runtime 配置外，CDC consumer 还使用 `INFRA_KAFKA_BOOTSTRAP_SERVERS`、`INFRA_KAFKA_TRANSFER_PASSWORD`、`INFRA_KAFKA_SECURITY_PROTOCOL` 和 TLS 配置。worker 仍要求 `SYSTEM_URL` 与 `INTERNAL_API_KEY` 可用。
+continuous worker 是独立进程角色 `cmd/continuous-worker`，用 Infra PostgreSQL 管理任务状态，通过 System Engine Resolver 连接业务 Engine；CDC 内部 Kafka 使用部署配置和独立 `transfer` principal，不注册为 System Engine。除 continuous runtime 配置外，CDC consumer 还使用 `INFRA_KAFKA_BOOTSTRAP_SERVERS`、`INFRA_KAFKA_TRANSFER_PASSWORD`、`INFRA_KAFKA_SECURITY_PROTOCOL` 和 TLS 配置。worker 要求 `SYSTEM_URL` 与 `TRANSFER_SERVICE_CLIENT_SECRET` 可用，并按任务 Tenant 获取短期 Service Access Token。
 
 Orchestrator v1 的 TaskProvider 注册使用唯一标准 `/tasks` 路由；带 `task_type=sync` 的标准发现请求由服务端强制只返回 bounded task，因此不会发现 continuous task。Console 不带 `task_type` 查询全部任务，并可显式使用 `runtime_boundary` 过滤。即使调用方持有 continuous task ID，标准 Provider execute 入口也会拒绝执行；不保留 `/provider-tasks` 私有旁路。
 

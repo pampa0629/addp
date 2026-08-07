@@ -9,9 +9,8 @@ from .base import BaseClient
 class GraphClient(BaseClient):
     """Graph 模块 HTTP Client"""
 
-    def __init__(self, base_url: str, user_token: Optional[str] = None,
-                 internal_api_key: Optional[str] = None):
-        super().__init__(base_url, internal_api_key=internal_api_key, user_token=user_token)
+    def __init__(self, base_url: str, user_token: Optional[str] = None):
+        super().__init__(base_url, user_token=user_token)
 
     async def list_graphs(self) -> list:
         """列出所有知识图谱"""

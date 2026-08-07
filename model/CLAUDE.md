@@ -287,7 +287,7 @@ draft → approved → materialized
    bash scripts/dev/restart.sh -model
    ```
 
-3. **跨模块验证**: Service 层通过 `cfg.StandardURL` 和 `cfg.InternalAPIKey` 调用 Standard API。如果 Standard 服务未启动，相关创建操作会失败。
+3. **跨模块验证**: Service 层通过 `cfg.StandardURL` 和 `addp-model` Tenant Service Access Token 调用 Standard API。如果 Standard 服务未启动，相关创建操作会失败。
 
 4. **代理路由位置**: 代理到 Standard 的路由配置在 `router.go` 末尾，通过 `proxyToStandard()` 函数实现。
 

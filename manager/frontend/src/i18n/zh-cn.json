@@ -997,6 +997,8 @@
       "countText": "共 {count} 个",
       "refresh": "深度扫描",
       "refreshItem": "刷新数据项",
+      "lineageTab": "血缘",
+      "lineageLoadFailed": "加载数据项血缘失败",
       "vectorize": "向量化",
       "vectorized": "已向量化",
       "batchVectorize": "批量向量化",

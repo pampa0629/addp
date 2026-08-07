@@ -70,7 +70,9 @@ func TestExecutionEngineRunsReplayWithoutUpdatingOwnerTask(t *testing.T) {
 	runtime := &fakeBoundedReplayRuntime{}
 	engineService := NewExecutionEngineService(
 		repository.NewTaskRepository(db), nil, executionService,
-		commonClient.NewSystemClientWithInternalKey(server.URL, "internal-key"), nil, nil,
+		commonClient.NewSystemClient(server.URL, commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+			return "addp_at_transfer_service_token", nil
+		})), nil, nil,
 	)
 	engineService.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	engineService.SetReplayRuntime(runtime)

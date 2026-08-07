@@ -15,12 +15,13 @@ logger = logging.getLogger(__name__)
 # SQL 算子 (2个)
 # ========================================
 
-def sql(engine_id: int, query: str) -> DataFrame:
+def sql(engine_id: int, tenant_id: int, query: str) -> DataFrame:
     """
     自由SQL查询算子
 
     Args:
         engine_id: Spark引擎ID
+        tenant_id: Runtime 已验证的租户上下文
         query: SQL查询语句
 
     Returns:
@@ -35,7 +36,7 @@ def sql(engine_id: int, query: str) -> DataFrame:
     from spark_connector import get_spark_connector
 
     connector = get_spark_connector()
-    spark = connector.get_or_create_session(engine_id)
+    spark = connector.get_or_create_session(engine_id, tenant_id)
 
     df_result = spark.sql(query)
 

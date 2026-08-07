@@ -357,16 +357,6 @@ func TestWorkflowRuntimeRegistrationIncludesCapabilities(t *testing.T) {
 			},
 		},
 		{
-			name: "math_workflow",
-			path: "engines/math-workflow/api_server.py",
-			required: []string{
-				`"engine_type": "math_workflow"`,
-				`"schema_version": "engine.capabilities/v1"`,
-				`"runtime_api": "addp.workflow/v1"`,
-				`"is_builtin": True`,
-			},
-		},
-		{
 			name: "model3d_workflow",
 			path: "engines/model3d-workflow/api_server.py",
 			required: []string{
@@ -384,16 +374,6 @@ func TestWorkflowRuntimeRegistrationIncludesCapabilities(t *testing.T) {
 				`"schema_version": "engine.capabilities/v1"`,
 				`"runtime_api": "addp.workflow/v1"`,
 				`"is_builtin": True`,
-			},
-		},
-		{
-			name: "supermap_workflow",
-			path: "scripts/dev/supermap-workflow.sh",
-			required: []string{
-				`\"engine_type\":\"supermap_workflow\"`,
-				`\"schema_version\":\"engine.capabilities/v1\"`,
-				`\"runtime_api\":\"addp.workflow/v1\"`,
-				`\"is_builtin\":true`,
 			},
 		},
 	}

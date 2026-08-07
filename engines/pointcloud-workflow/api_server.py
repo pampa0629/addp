@@ -8,8 +8,6 @@ import time
 import uuid
 from datetime import datetime
 from typing import Any
-from urllib import error as urlerror
-from urllib import request as urlrequest
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -195,13 +193,15 @@ def get_execution_status(execution_id: str):
 
 
 def register_to_system() -> bool:
+    from addp_common.client import register_runtime_engine
+
     converter = converter_status()
     if not converter.get("available"):
         logger.warning("skip pointcloud_workflow registration because PDAL is not bound: %s", converter.get("details"))
         return False
 
     system_url = os.getenv("SYSTEM_URL", "http://localhost:8180")
-    api_key = os.getenv("INTERNAL_API_KEY", "")
+    client_secret = os.getenv("POINTCLOUD_WORKFLOW_SERVICE_CLIENT_SECRET", "")
     port = int(os.getenv("PORT", 8102))
     protocol = os.getenv("PROTOCOL", "http")
     runtime_host = os.getenv("RUNTIME_HOST", "").strip()
@@ -231,25 +231,14 @@ def register_to_system() -> bool:
         },
         "is_builtin": True,
     }
-    headers = {
-        "Content-Type": "application/json",
-        "X-Internal-API-Key": api_key,
-    }
-    request_body = json.dumps(payload).encode("utf-8")
-    register_url = f"{system_url}/api/v1/internal/engines/register"
-    req = urlrequest.Request(register_url, data=request_body, headers=headers, method="POST")
     try:
-        with urlrequest.urlopen(req, timeout=10) as response:
-            body = response.read().decode("utf-8", errors="replace")
-            status_code = response.status
+        status_code, body = register_runtime_engine(
+            system_url, "addp-pointcloud", client_secret, payload
+        )
         if status_code == 202:
             logger.info("pointcloud_workflow registered to System")
             return True
         logger.warning("failed to register pointcloud_workflow: %s - %s", status_code, body)
-        return False
-    except urlerror.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        logger.warning("failed to register pointcloud_workflow: %s - %s", exc.code, body)
         return False
     except Exception as exc:
         logger.warning("failed to register pointcloud_workflow: %s", exc)

@@ -376,7 +376,7 @@ func (s *EmbeddingService) processItem(ctx context.Context, tenantID uint, item 
 		return "ready_skipped"
 	}
 
-	resolved, err := s.resolveItemForEmbedding(ctx, item, maxFileSizeMBFromExecutionContext(execCtx, execCtx.Runtime.MaxFileSizeMB))
+	resolved, err := s.resolveItemForEmbedding(ctx, tenantID, item, maxFileSizeMBFromExecutionContext(execCtx, execCtx.Runtime.MaxFileSizeMB))
 	if err != nil {
 		if errors.Is(err, errUnsupportedItem) {
 			s.upsertNonReadyState(ctx, tenantID, item, itemFingerprint, sourceVersion, modelProfileID, profileVersion, deploymentID, dimension, models.EmbeddingStatusUnsupported, models.EmbeddingReasonFormatUnsupported, err.Error(), lastExecutionID)
@@ -408,7 +408,7 @@ func (s *EmbeddingService) processItem(ctx context.Context, tenantID uint, item 
 		ItemFingerprint: itemFingerprint,
 		ItemID:          item.ID,
 		EngineID:        item.EngineID,
-		Locator:         s.itemLocator(ctx, item),
+		Locator:         s.itemLocator(ctx, tenantID, item),
 		SourceVersion:   sourceVersion,
 		Embedding:       vector,
 		ModelProfileID:  modelProfileID,
@@ -465,10 +465,10 @@ var vectorizableObjectExtensions = map[string]embedding.Modality{
 	".xlsx":     embedding.ModalityDocument,
 }
 
-func (s *EmbeddingService) resolveItemForEmbedding(ctx context.Context, item commonModels.MetaItem, maxFileSizeMB int) (*resolvedEmbeddingInput, error) {
+func (s *EmbeddingService) resolveItemForEmbedding(ctx context.Context, tenantID uint, item commonModels.MetaItem, maxFileSizeMB int) (*resolvedEmbeddingInput, error) {
 	switch strings.ToLower(strings.TrimSpace(item.ItemType)) {
 	case string(resourcetree.TypeObject), string(resourcetree.TypeFile):
-		info, data, err := s.readStorageLeafContent(ctx, item)
+		info, data, err := s.readStorageLeafContent(ctx, tenantID, item)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", errMissingSource, err)
 		}
@@ -549,11 +549,11 @@ type ObjectStorageInfo struct {
 	LastModified time.Time
 }
 
-func (s *EmbeddingService) readStorageLeafContent(ctx context.Context, item commonModels.MetaItem) (*ObjectStorageInfo, []byte, error) {
+func (s *EmbeddingService) readStorageLeafContent(ctx context.Context, tenantID uint, item commonModels.MetaItem) (*ObjectStorageInfo, []byte, error) {
 	if s.systemClient == nil {
 		return nil, nil, errors.New("system client not available")
 	}
-	engine, err := s.systemClient.GetEngine(item.EngineID)
+	engine, err := s.systemClient.GetEngineForTenant(ctx, tenantID, item.EngineID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -644,7 +644,7 @@ func (s *EmbeddingService) upsertNonReadyState(ctx context.Context, tenantID uin
 		ItemFingerprint: itemFingerprint,
 		ItemID:          item.ID,
 		EngineID:        item.EngineID,
-		Locator:         s.itemLocator(ctx, item),
+		Locator:         s.itemLocator(ctx, tenantID, item),
 		SourceVersion:   sourceVersion,
 		ModelProfileID:  modelProfileID,
 		ProfileVersion:  profileVersion,
@@ -683,7 +683,7 @@ func (s *EmbeddingService) buildExecutionConfig(ctx context.Context, tenantID ui
 		target["engine_id"] = item.EngineID
 		target["item_id"] = item.ID
 		target["item_fingerprint"] = itemFingerprint
-		target["locator"] = s.itemLocator(ctx, *item)
+		target["locator"] = s.itemLocator(ctx, tenantID, *item)
 	} else {
 		if req.Target.NodeID == 0 {
 			return nil, errors.New("scope=node requires target.node_id")
@@ -704,10 +704,10 @@ func (s *EmbeddingService) buildExecutionConfig(ctx context.Context, tenantID ui
 	}, nil
 }
 
-func (s *EmbeddingService) itemLocator(ctx context.Context, item commonModels.MetaItem) string {
+func (s *EmbeddingService) itemLocator(ctx context.Context, tenantID uint, item commonModels.MetaItem) string {
 	engineType := ""
 	if s.systemClient != nil {
-		if engine, err := s.systemClient.GetEngine(item.EngineID); err == nil && engine != nil {
+		if engine, err := s.systemClient.GetEngineForTenant(ctx, tenantID, item.EngineID); err == nil && engine != nil {
 			engineType = engine.EngineType
 		}
 	}

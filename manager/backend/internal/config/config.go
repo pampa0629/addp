@@ -69,10 +69,9 @@ type TileCacheConfig struct {
 }
 
 type RasterMosaicRuntimeConfig struct {
-	BaseURL     string
-	InternalKey string
-	Timeout     time.Duration
-	TileSize    int
+	BaseURL  string
+	Timeout  time.Duration
+	TileSize int
 }
 
 type RasterMosaicGenerationConfig struct {
@@ -152,10 +151,9 @@ func Load() *Config {
 		MaxDBConns:  maxDBConns,
 	}
 	cfg.RasterMosaicRuntime = RasterMosaicRuntimeConfig{
-		BaseURL:     commonConfig.GetEnv("RASTER_MOSAIC_RUNTIME_URL", "http://127.0.0.1:8291"),
-		InternalKey: commonConfig.GetEnv("RASTER_MOSAIC_RUNTIME_INTERNAL_KEY", cfg.InternalAPIKey),
-		Timeout:     commonConfig.GetEnvDuration("RASTER_MOSAIC_RUNTIME_TIMEOUT", "15s"),
-		TileSize:    commonConfig.GetEnvInt("RASTER_MOSAIC_TILE_SIZE", 256),
+		BaseURL:  commonConfig.GetEnv("RASTER_MOSAIC_RUNTIME_URL", "http://127.0.0.1:8291"),
+		Timeout:  commonConfig.GetEnvDuration("RASTER_MOSAIC_RUNTIME_TIMEOUT", "15s"),
+		TileSize: commonConfig.GetEnvInt("RASTER_MOSAIC_TILE_SIZE", 256),
 	}
 	cfg.RasterMosaicGeneration = RasterMosaicGenerationConfig{
 		Timeout: 2 * time.Hour,

@@ -697,6 +697,7 @@ type WorkflowExecuteRequest struct {
 }
 
 type WorkflowRuntimeContext struct {
+	TenantID              uint                           `json:"tenant_id"`
 	ExecutionAuthorization WorkflowExecutionAuthorization `json:"execution_authorization"`
 }
 

@@ -22,6 +22,10 @@ func (c fakeUploadSystemClient) GetEngine(engineID uint) (*commonModels.Engine, 
 	return c.engine, nil
 }
 
+func (c fakeUploadSystemClient) GetEngineForTenant(_ context.Context, _ uint, _ uint) (*commonModels.Engine, error) {
+	return c.engine, nil
+}
+
 type fakeUploadMetaClient struct {
 	tenantID *uint
 	opts     commonClient.MetaScanOptions

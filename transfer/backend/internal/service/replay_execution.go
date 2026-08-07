@@ -50,6 +50,7 @@ type replayExecutionSpec struct {
 
 func (s *ExecutionEngineService) PrepareReplayExecution(
 	ctx context.Context,
+	tenantID uint,
 	taskConfig map[string]interface{},
 	request ReplayExecutionRequest,
 	executionApplyIdentity string,
@@ -64,7 +65,8 @@ func (s *ExecutionEngineService) PrepareReplayExecution(
 	if err != nil {
 		return nil, fmt.Errorf("%w: owner task is not a business Kafka continuous task: %v", ErrInvalidReplayRequest, err)
 	}
-	plan, err := planner.BuildReplayContinuousPlan(spec, request.Target, planner.NewSystemEngineResolver(s.systemClient))
+	resolver := planner.BindEngineResolver(planner.NewSystemEngineResolver(s.systemClient), tenantID)
+	plan, err := planner.BuildReplayContinuousPlan(spec, request.Target, resolver)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidReplayRequest, err)
 	}
@@ -113,7 +115,8 @@ func (s *ExecutionEngineService) executeBoundedReplay(ctx context.Context, task 
 	if err != nil {
 		return s.failReplayExecution(executionID, fmt.Errorf("parse bounded replay owner task snapshot: %w", err))
 	}
-	plan, err := planner.BuildReplayContinuousPlan(spec, config.Replay.Target, planner.NewSystemEngineResolver(s.systemClient))
+	resolver := planner.BindEngineResolver(planner.NewSystemEngineResolver(s.systemClient), task.TenantID)
+	plan, err := planner.BuildReplayContinuousPlan(spec, config.Replay.Target, resolver)
 	if err != nil {
 		return s.failReplayExecution(executionID, fmt.Errorf("build bounded replay plan: %w", err))
 	}

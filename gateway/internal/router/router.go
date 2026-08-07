@@ -34,7 +34,12 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	redisClient := initRedis(cfg)
 
 	// 初始化 System 客户端
-	systemClient := client.NewSystemClient(cfg.SystemServiceURL, cfg.InternalAPIKey)
+	serviceTokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-gateway", cfg.ServiceClientSecret, nil)
+	if err != nil {
+		log.Fatalf("Gateway Service Token Source 初始化失败: %v", err)
+	}
+	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, serviceTokenSource, nil)
+	systemClient := client.NewSystemClient(systemServiceClient)
 
 	// 初始化本地缓存（5分钟 TTL）
 	localCache := cache.NewLocalCache(5 * time.Minute)
@@ -44,8 +49,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	rateLimiterMiddleware := middleware.NewRateLimiterMiddleware(redisClient)
 	accessLoggerMiddleware := middleware.NewAccessLoggerMiddleware(db)
 
-	registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-	moduleDiscovery := internal.NewModuleDiscovery(registryClient)
+	moduleDiscovery := internal.NewModuleDiscovery(systemClient)
 	if err := moduleDiscovery.Start(cfg.ModuleRefreshInterval); err != nil {
 		log.Printf("模块注册表初次加载失败，将按刷新间隔继续重试: %v", err)
 	}

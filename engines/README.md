@@ -131,7 +131,7 @@ GET /health
 
 ## 能力声明
 
-引擎能力统一使用 `engine.capabilities/v1` 结构，由 common engine 插件的 `Capabilities()` 方法声明。内置运行时启动自注册时只提交身份和连接信息，System 按 `engine_type` 使用插件 `Capabilities()` 生成落库能力声明。
+引擎能力统一使用 `engine.capabilities/v1` 结构。Common engine 插件由 `Capabilities()` 声明能力模板；非插件内置 Workflow Runtime 在启动注册时提交与 `engine_type` 一致的标准能力声明。
 
 能力只表达引擎自身 native / provider 能力，例如 `compute.workflow`、`compute.script`、`storage.catalog`、`storage.store`。不要在引擎能力中维护 Transfer、Preview、Develop 等模块对引擎的适配列表。
 
@@ -141,7 +141,9 @@ GET /health
 
 工作流运行时必须先注册到 System 资源中心，才会成为 ADDP 可发现和可调用的引擎实例。生产内置运行时可以在启动时自注册；参考实现和用户自研扩展运行时可以在 System 引擎管理中手动注册。
 
-**生产内置运行时自注册端点**: `POST http://system-backend:8180/api/v1/internal/engines/register`
+**生产内置运行时自注册端点**: `POST http://system-backend:8180/api/v1/system/runtime/engines`
+
+Runtime 使用自身 Confidential OAuth Client 获取 Platform Service Access Token，并只发送 `Authorization: Bearer <platform_service_access_token>`。
 
 **注册数据格式**:
 ```json

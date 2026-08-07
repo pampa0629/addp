@@ -102,7 +102,8 @@ func (r *DatabasePlanResolver) ResolveForCleanup(_ context.Context, task *models
 	if err != nil {
 		return nil, err
 	}
-	source, err := r.engines.ResolveEngine(sourceRef)
+	resolver := planner.BindEngineResolver(r.engines, task.TenantID)
+	source, err := resolver.ResolveEngine(sourceRef)
 	if err != nil {
 		return nil, fmt.Errorf("resolve database CDC source engine for cleanup: %w", err)
 	}
@@ -140,7 +141,8 @@ func (r *DatabasePlanResolver) resolveBindings(task *models.TransferTask) (*Capt
 	if err != nil {
 		return nil, err
 	}
-	bindings, err := planner.ResolveDatabaseCDCBindings(spec, r.engines)
+	resolver := planner.BindEngineResolver(r.engines, task.TenantID)
+	bindings, err := planner.ResolveDatabaseCDCBindings(spec, resolver)
 	if err != nil {
 		return nil, err
 	}

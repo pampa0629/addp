@@ -683,6 +683,9 @@ func assertCanonicalWorkflowRuntimeAuthorization(t *testing.T, captured map[stri
 	if !ok {
 		t.Fatalf("runtime context missing: %#v", captured)
 	}
+	if runtimeContext["tenant_id"] != float64(7) {
+		t.Fatalf("runtime tenant_id = %#v, want 7", runtimeContext["tenant_id"])
+	}
 	authorization, ok := runtimeContext["execution_authorization"].(map[string]interface{})
 	if !ok || authorization["id"] != float64(1) {
 		t.Fatalf("runtime execution authorization missing: %#v", captured)

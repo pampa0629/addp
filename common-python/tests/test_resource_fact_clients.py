@@ -5,7 +5,7 @@ from addp_common.client.meta import MetaClient
 
 
 async def _assert_manager_search_unwraps_canonical_data(monkeypatch):
-    client = ManagerClient(base_url="http://manager", internal_api_key="test")
+    client = ManagerClient(base_url="http://manager")
 
     async def fake_get(path, params=None):
         assert path == "/api/v1/manager/search"
@@ -26,7 +26,7 @@ def test_manager_search_unwraps_canonical_data(monkeypatch):
 
 
 async def _assert_meta_client_reads_resource_ancestors(monkeypatch):
-    client = MetaClient(base_url="http://meta", internal_api_key="test")
+    client = MetaClient(base_url="http://meta")
 
     async def fake_get(path, params=None):
         assert path == "/api/v1/meta/resource-tree/8/ancestors"

@@ -33,7 +33,7 @@ APIKeyAuthMiddleware.Handler()
    ├─ Hit → 写入本地缓存 → 返回结果
    └─ Miss ↓
    ↓
-4. 调用 System API（/api/v1/internal/api-keys/validate）
+4. 使用 Gateway Platform Service Access Token 调用 System API（`/api/v1/system/runtime/api-keys/validate`）
    ↓
 5. 反向传播：写入 Redis → 写入本地缓存
    ↓
@@ -152,7 +152,7 @@ gateway/
 **步骤**：
 
 1. Analytics 后端暴露 `/api/v1/analytics/**`。
-2. 模块启动后调用 System `/api/v1/internal/modules/register`，并持续发送心跳。
+2. 模块使用自身 Platform Service Access Token 调用 System `/api/v1/system/runtime/modules`，并通过 `/runtime/modules/heartbeat` 持续发送心跳。
 3. Gateway 下一次刷新注册表后自动获得该模块代理；无需增加 URL 配置或修改路由代码。
 4. **更新文档**：
    - [docs/gateway架构说明.md](docs/gateway架构说明.md) - 路由规则表
@@ -187,8 +187,8 @@ gateway/
 
 4. **测试 System API**：
    ```bash
-   curl -H "X-Internal-API-Key: your-internal-key" \
-     "http://localhost:8180/internal/api-keys/validate?key_hash=计算的hash值"
+   curl -H "Authorization: Bearer ${GATEWAY_PLATFORM_SERVICE_ACCESS_TOKEN}" \
+     "http://localhost:8180/api/v1/system/runtime/api-keys/validate?key_hash=计算的hash值"
    ```
 
 5. **清理缓存重试**（如果怀疑缓存问题）：
@@ -264,9 +264,9 @@ gateway/
 ## 🔗 依赖的其他模块
 
 ### System 模块
-- **API**: `/api/v1/internal/api-keys/validate` - API Key 验证
-- **API**: `/api/v1/internal/modules` - 模块发现
-- **认证**: `X-Internal-API-Key` 头部
+- **API**: `/api/v1/system/runtime/api-keys/validate` - API Key 验证
+- **API**: `/api/v1/system/runtime/modules` - 模块发现
+- **认证**: `Authorization: Bearer <platform_service_access_token>`
 - **用途**: 提供 System bootstrap、验证外部 API Key，并作为模块注册表权威
 
 ### Redis（addp-infra-redis）

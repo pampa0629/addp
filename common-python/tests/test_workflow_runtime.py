@@ -76,7 +76,7 @@ def test_execution_authorization_covers_dag_effects():
     effects = validate_execution_authorization(
         workflow,
         operator_effects={"load": ["read"], "save": ["write"]},
-        runtime={"execution_authorization": {"id": 71, "effects": ["read", "write"]}},
+        runtime={"tenant_id": 7, "execution_authorization": {"id": 71, "effects": ["read", "write"]}},
     )
     assert effects == ["read", "write"]
 
@@ -89,5 +89,17 @@ def test_execution_authorization_rejects_missing_effect():
         validate_execution_authorization(
             workflow,
             operator_effects={"save": ["write"]},
+            runtime={"tenant_id": 7, "execution_authorization": {"id": 71, "effects": ["read"]}},
+        )
+
+
+def test_execution_authorization_rejects_missing_tenant_context():
+    workflow = {
+        "tasks": [{"id": "load", "operator": "load", "params": {}, "depends_on": []}]
+    }
+    with pytest.raises(WorkflowValidationError, match="runtime.tenant_id"):
+        validate_execution_authorization(
+            workflow,
+            operator_effects={"load": ["read"]},
             runtime={"execution_authorization": {"id": 71, "effects": ["read"]}},
         )

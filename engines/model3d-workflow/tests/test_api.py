@@ -14,7 +14,10 @@ for parent in Path(__file__).resolve().parents:
 from workflow_operator_contract import assert_operator_metadata_contract
 
 
-WRITE_RUNTIME = {"execution_authorization": {"id": 71, "effects": ["read", "write"]}}
+WRITE_RUNTIME = {
+    "tenant_id": 7,
+    "execution_authorization": {"id": 71, "effects": ["read", "write"]},
+}
 
 
 @pytest.fixture
@@ -82,7 +85,7 @@ def test_workflow_endpoint_rejects_insufficient_execution_authorization(client):
         "workflow_def": {"tasks": [
             {"id": "convert", "operator": "osgb_to_glb", "params": {}, "depends_on": []}
         ]},
-        "runtime": {"execution_authorization": {"id": 71, "effects": ["read"]}},
+        "runtime": {"tenant_id": 7, "execution_authorization": {"id": 71, "effects": ["read"]}},
     })
 
     assert response.status_code == 400
@@ -172,54 +175,44 @@ def test_converter_unavailable_response(client, tmp_path, monkeypatch):
 
 
 def test_register_to_system_posts_model3d_workflow_payload(monkeypatch):
-    import json
-
+    import addp_common.client
     import api_server
 
     calls = []
 
-    class FakeResponseContext:
-        status = 202
+    def fake_register_runtime_engine(system_url, client_id, client_secret, payload):
+        calls.append((system_url, client_id, client_secret, payload))
+        return 202, '{"engine_id":1}'
 
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, traceback):
-            return False
-
-        def read(self):
-            return b'{"engine_id":1}'
-
-    def fake_urlopen(request, timeout):
-        calls.append(
-            {
-                "url": request.full_url,
-                "json": json.loads(request.data.decode("utf-8")),
-                "headers": dict(request.header_items()),
-                "timeout": timeout,
-            }
-        )
-        return FakeResponseContext()
-
-    monkeypatch.setattr(api_server.urlrequest, "urlopen", fake_urlopen)
+    monkeypatch.setattr(addp_common.client, "register_runtime_engine", fake_register_runtime_engine)
     monkeypatch.setenv("SYSTEM_URL", "http://system:8180")
-    monkeypatch.setenv("INTERNAL_API_KEY", "internal-key")
+    monkeypatch.setenv("MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET", "model3d-secret")
     monkeypatch.setenv("PORT", "8101")
     monkeypatch.setenv("MODEL3D_CONVERTER_BIN", sys.executable)
     monkeypatch.setenv("MODEL3D_IFC_CONVERTER_BIN", sys.executable)
 
     assert api_server.register_to_system() is True
-    assert calls == [
+    assert calls == [(
+        "http://system:8180",
+        "addp-model3d",
+        "model3d-secret",
         {
-            "url": "http://system:8180/api/v1/internal/engines/register",
-            "json": {
                 "engine_type": "model3d_workflow",
                 "name": "Model3D 工作流引擎",
                 "description": "三维模型与 Gaussian Splat 持久化转换工作流运行时，算子同时支持 workflow 与受控 direct 调用",
                 "connection_info": {"protocol": "http", "port": 8101},
+                "capabilities": {
+                    "schema_version": "engine.capabilities/v1",
+                    "engine_type": "model3d_workflow",
+                    "engine_family": "workflow",
+                    "compute": {
+                        "workflow": {
+                            "supported": True,
+                            "runtime_api": "addp.workflow/v1",
+                            "dynamic_operators": True,
+                        }
+                    },
+                },
                 "is_builtin": True,
             },
-            "headers": {"Content-type": "application/json", "X-internal-api-key": "internal-key"},
-            "timeout": 10,
-        }
-    ]
+    )]

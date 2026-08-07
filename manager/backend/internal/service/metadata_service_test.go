@@ -200,7 +200,8 @@ func TestResolveStorageDownloadPlanUsesSingleStorageRef(t *testing.T) {
 	svc := &MetadataService{
 		systemClient: testSystemClient(t, 9, "nfs", nil),
 	}
-	plan, err := svc.ResolveStorageDownloadPlan(t.Context(), 9, "raw/test.parquet", nil)
+	tenantID := uint(11)
+	plan, err := svc.ResolveStorageDownloadPlan(t.Context(), 9, "raw/test.parquet", &tenantID)
 	if err != nil {
 		t.Fatalf("ResolveStorageDownloadPlan() error = %v", err)
 	}
@@ -218,7 +219,8 @@ func TestResolveStorageDownloadPlanRejectsKnownMultiFormatWithoutMetaItem(t *tes
 	svc := &MetadataService{
 		systemClient: testSystemClient(t, 9, "nfs", nil),
 	}
-	_, err := svc.ResolveStorageDownloadPlan(t.Context(), 9, "shp/farmland.shp", nil)
+	tenantID := uint(11)
+	_, err := svc.ResolveStorageDownloadPlan(t.Context(), 9, "shp/farmland.shp", &tenantID)
 	if !errors.Is(err, ErrDownloadNotSupported) {
 		t.Fatalf("ResolveStorageDownloadPlan() error = %v, want ErrDownloadNotSupported", err)
 	}
@@ -521,7 +523,7 @@ func testSystemClient(t *testing.T, engineID uint, engineType string, connInfo m
 		_ = json.NewEncoder(w).Encode(payload)
 	}))
 	t.Cleanup(server.Close)
-	return client.NewSystemClient(server.URL, "test-token")
+	return newTestSystemClient(server.URL)
 }
 
 func testMetaItemClient(t *testing.T, itemJSON string) *client.MetaClient {
@@ -626,14 +628,8 @@ func setupExplorerService(t *testing.T) (*ExplorerService, func()) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/v1/system/engines":
-			tenantID := r.URL.Query().Get("tenant_id")
+			tenantID := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer tenant-")
 			switch tenantID {
-			case "":
-				fmt.Fprintf(w, `[
-					{"id":1,"name":"tenant-one-db","engine_type":"postgresql","connection_info":{},"tenant_id":1,"lifecycle_state":"active","capabilities":%q},
-					{"id":2,"name":"tenant-two-db","engine_type":"postgresql","connection_info":{},"tenant_id":2,"lifecycle_state":"active","capabilities":%q},
-					{"id":3,"name":"global-db","engine_type":"postgresql","connection_info":{},"lifecycle_state":"active","capabilities":%q}
-				]`, capabilities, capabilities, capabilities)
 			case "1":
 				fmt.Fprintf(w, `[{"id":1,"name":"tenant-one-db","engine_type":"postgresql","connection_info":{},"tenant_id":1,"lifecycle_state":"active","capabilities":%q}]`, capabilities)
 			case "2":
@@ -650,21 +646,14 @@ func setupExplorerService(t *testing.T) (*ExplorerService, func()) {
 		}
 	}))
 
-	return NewExplorerService(client.NewSystemClient(server.URL, "test-token"), nil, nil), server.Close
+	return NewExplorerService(client.NewSystemClient(server.URL, client.ServiceTokenProviderFunc(func(_ context.Context, tenantID uint) (string, error) {
+		return fmt.Sprintf("tenant-%d", tenantID), nil
+	})), nil, nil), server.Close
 }
 
 func TestExplorerEngineListTenantFiltering(t *testing.T) {
 	service, cleanup := setupExplorerService(t)
 	defer cleanup()
-
-	// 无租户上下文（超级管理员）应看到所有激活资源（含租户为空）
-	resourcesAll, err := service.GetEngineList(nil)
-	if err != nil {
-		t.Fatalf("GetEngineList(nil) returned error: %v", err)
-	}
-	if got, want := len(resourcesAll), 3; got != want {
-		t.Fatalf("GetEngineList(nil) length = %d, want %d", got, want)
-	}
 
 	tenantOne := uint(1)
 	resourcesTenantOne, err := service.GetEngineList(&tenantOne)

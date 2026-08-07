@@ -37,6 +37,48 @@ import shapely
 from operators.io_operators import load, save
 
 
+def test_progress_reporter_uses_tenant_service_access_token(monkeypatch):
+    calls = []
+
+    class FakeTokenSource:
+        def __init__(self, system_url, client_id, client_secret):
+            assert system_url == "http://system:8180"
+            assert client_id == "addp-geopython"
+            assert client_secret == "geopython-secret"
+
+        def token(self, tenant_id):
+            assert tenant_id == 7
+            return "addp_at_geopython"
+
+        def invalidate(self, tenant_id, token):
+            raise AssertionError("successful request must not invalidate token")
+
+    class FakeResponse:
+        status_code = 202
+
+    def fake_post(endpoint, json, headers, timeout):
+        calls.append((endpoint, json, headers, timeout))
+        return FakeResponse()
+
+    monkeypatch.setattr(raster_operators, "SyncOAuthServiceTokenSource", FakeTokenSource)
+    monkeypatch.setattr(raster_operators.requests, "post", fake_post)
+    monkeypatch.setenv("SYSTEM_URL", "http://system:8180")
+    monkeypatch.setenv("GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET", "geopython-secret")
+
+    emit = raster_operators._progress_reporter({
+        "endpoint": "http://manager:8081/api/v1/manager/executions/exec-1/events",
+        "tenant_id": 7,
+    })
+    emit({"phase": "convert", "event": "started"})
+
+    assert calls == [(
+        "http://manager:8081/api/v1/manager/executions/exec-1/events",
+        {"phase": "convert", "event": "started"},
+        {"Authorization": "Bearer addp_at_geopython"},
+        5,
+    )]
+
+
 def test_io_metadata_exposes_runtime_contract_only():
     operators = {operator["name"]: operator for operator in list_operators()}
 

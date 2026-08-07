@@ -15,52 +15,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// AuditMiddleware appends structured request events to System. Domain security
-// facts remain the responsibility of the owning service transaction.
-func AuditMiddleware(moduleName string, systemClient *client.SystemClient) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		startedAt := time.Now()
-		requestID := requestidmiddleware.FromGinContext(c)
-		if requestID == "" {
-			requestID = uuid.NewString()
-			c.Set("request_id", requestID)
-		}
-		c.Next()
-		if c.Request.Method == http.MethodGet || systemClient == nil {
-			return
-		}
-
-		method := c.Request.Method
-		path := c.Request.URL.Path
-		status := c.Writer.Status()
-		ipAddress := c.ClientIP()
-		userAgent := c.Request.UserAgent()
-		result, risk := requestOutcome(status)
-		request := &models.AuditLogCreateRequest{
-			EventName: "http.request.completed", Result: result, RiskLevel: risk, ModuleName: moduleName,
-			HTTPMethod: &method, ResourcePath: &path, HTTPStatus: &status, RequestID: &requestID,
-			IPAddress: &ipAddress, UserAgent: &userAgent,
-			EntityType: "http_request", EntityID: requestID,
-			Details: map[string]any{"duration_ms": time.Since(startedAt).Milliseconds()},
-		}
-		if entity := ParseEntityFromPath(method, path); entity != nil {
-			request.EntityType, request.EntityID = entity.Type, entity.ID
-		}
-		if authContext, exists := sharedauth.AuthContextFromGin(c); exists {
-			principalID, principalType := authContext.Principal.ID, authContext.Principal.Type
-			contextType := authContext.Context.Type
-			request.PrincipalID, request.PrincipalType, request.ContextType = &principalID, &principalType, &contextType
-			request.TenantID = authContext.Context.TenantID
-		}
-
-		go func(logData *models.AuditLogCreateRequest) {
-			if err := systemClient.CreateAuditLog(logData); err != nil {
-				log.Printf("[%s] failed to append audit event %s: %v", moduleName, requestID, err)
-			}
-		}(request)
-	}
-}
-
 // ServiceAuditMiddleware appends tenant request audit events with the caller's
 // service identity. System derives Principal and Tenant facts from the Service
 // Access Token and ignores identity fields supplied by this middleware.

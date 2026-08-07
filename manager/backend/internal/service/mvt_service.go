@@ -54,8 +54,11 @@ func (s *MVTService) tenantIDForEngine(engineID uint, tenantID *uint) (uint, err
 	if s.systemClient == nil {
 		return 0, ErrEngineAccessDenied
 	}
+	if tenantID == nil || *tenantID == 0 {
+		return 0, ErrEngineAccessDenied
+	}
 
-	res, err := s.systemClient.GetEngine(engineID)
+	res, err := s.systemClient.GetEngineForTenant(context.Background(), *tenantID, engineID)
 	if err != nil {
 		return 0, err
 	}
@@ -73,11 +76,14 @@ func (s *MVTService) tenantIDForEngine(engineID uint, tenantID *uint) (uint, err
 	return 1, nil
 }
 
-func (s *MVTService) rejectSuperMapSDXPostgreSQLTable(engineID uint, schema, table string) error {
+func (s *MVTService) rejectSuperMapSDXPostgreSQLTable(tenantID *uint, engineID uint, schema, table string) error {
 	if s == nil || s.systemClient == nil {
 		return ErrEngineAccessDenied
 	}
-	engine, err := s.systemClient.GetEngine(engineID)
+	if tenantID == nil || *tenantID == 0 {
+		return ErrEngineAccessDenied
+	}
+	engine, err := s.systemClient.GetEngineForTenant(context.Background(), *tenantID, engineID)
 	if err != nil {
 		return err
 	}
@@ -93,7 +99,7 @@ func (s *MVTService) GetSpatialExtentWGS84(
 	resourceID uint,
 	schema, table, geomCol string,
 ) ([]float64, error) {
-	if err := s.rejectSuperMapSDXPostgreSQLTable(resourceID, schema, table); err != nil {
+	if err := s.rejectSuperMapSDXPostgreSQLTable(tenantID, resourceID, schema, table); err != nil {
 		return nil, err
 	}
 	tid, err := s.tenantIDForEngine(resourceID, tenantID)
@@ -170,7 +176,7 @@ func (s *MVTService) ResolveRealtimeTileTarget(
 	schema, table, geomCol string,
 	sourceSRID int,
 ) (*RealtimeTileTarget, error) {
-	if err := s.rejectSuperMapSDXPostgreSQLTable(resourceID, schema, table); err != nil {
+	if err := s.rejectSuperMapSDXPostgreSQLTable(tenantID, resourceID, schema, table); err != nil {
 		return nil, err
 	}
 	tid, err := s.tenantIDForEngine(resourceID, tenantID)
@@ -458,7 +464,7 @@ func (s *MVTService) GetTile(
 	z, x, y int,
 	srid int,
 ) ([]byte, error) {
-	if err := s.rejectSuperMapSDXPostgreSQLTable(resourceID, schema, table); err != nil {
+	if err := s.rejectSuperMapSDXPostgreSQLTable(tenantID, resourceID, schema, table); err != nil {
 		return nil, err
 	}
 	// 1. 验证租户权限，并解析瓦片生成使用的租户 ID。

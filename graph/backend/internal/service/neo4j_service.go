@@ -32,13 +32,13 @@ const (
 type Neo4jService struct {
 	graphRepo    *repository.KnowledgeGraphRepository
 	ontologyRepo *repository.OntologyRepository
-	systemClient *commonClient.SystemClient
+	systemClient *commonClient.SystemServiceClient
 }
 
 func NewNeo4jService(
 	graphRepo *repository.KnowledgeGraphRepository,
 	ontologyRepo *repository.OntologyRepository,
-	systemClient *commonClient.SystemClient,
+	systemClient *commonClient.SystemServiceClient,
 ) *Neo4jService {
 	return &Neo4jService{
 		graphRepo:    graphRepo,
@@ -53,7 +53,7 @@ func (s *Neo4jService) getGraphAndEngine(graphID, tenantID uint) (*models.Knowle
 	if err != nil {
 		return nil, nil, fmt.Errorf("knowledge graph not found: %w", err)
 	}
-	engine, err := s.systemClient.GetEngine(kg.EngineID)
+	engine, err := s.systemClient.WithTenantID(tenantID).GetEngine(context.Background(), kg.EngineID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get engine (id=%d): %w", kg.EngineID, err)
 	}

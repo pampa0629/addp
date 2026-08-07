@@ -129,5 +129,5 @@ func serviceEndpointTestRouter(t *testing.T, db *gorm.DB, systemURL string) http
 	endpointHandler := NewServiceEndpointHandler(querySvc, registeredSvc, tileSvc)
 	cfg := &config.Config{}
 	cfg.SystemServiceURL = systemURL
-	return SetupRouter(cfg, db, nil, nil, nil, nil, nil, nil, nil, nil, nil, endpointHandler, nil, nil, nil)
+	return SetupRouter(cfg, db, nil, nil, nil, nil, nil, nil, nil, nil, nil, endpointHandler, nil, nil, nil, nil)
 }

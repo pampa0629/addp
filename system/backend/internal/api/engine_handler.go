@@ -5,13 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	commonapi "github.com/addp/common/api"
 	engineplugin "github.com/addp/common/engine/plugin"
 	commoni18n "github.com/addp/common/middleware/i18n"
-	commonutils "github.com/addp/common/utils"
 	sysi18n "github.com/addp/system/i18n"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/service"
@@ -623,139 +621,6 @@ func (h *EngineHandler) probeWorkflowRuntimeBeforeSave(req *models.EngineCreateR
 	return err
 }
 
-type internalResourceCreateRequest struct {
-	models.EngineCreateRequest
-	TenantID  *uint `json:"tenant_id"`
-	CreatedBy *uint `json:"created_by"`
-}
-
-type internalResourceUpdateRequest struct {
-	models.EngineUpdateRequest
-	TenantID uint `json:"tenant_id" binding:"required"`
-}
-
-// CreateInternal 内部服务创建资源
-func (h *EngineHandler) CreateInternal(c *gin.Context) {
-	var req internalResourceCreateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	var tenantID uint
-	if req.TenantID != nil {
-		tenantID = *req.TenantID
-	}
-
-	engine, err := h.engineService.CreateInternal(&req.EngineCreateRequest, tenantID, req.CreatedBy)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusCreated, toEngineResponse(engine))
-}
-
-// UpdateInternal 供内部服务更新租户引擎资源。
-func (h *EngineHandler) UpdateInternal(c *gin.Context) {
-	id, err := commonapi.BindIDParam(c, "id")
-	if err != nil {
-		return
-	}
-
-	var req internalResourceUpdateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		commonapi.RespondError(c, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	engine, err := h.engineService.Update(id, req.TenantID, &req.EngineUpdateRequest)
-	if err != nil {
-		h.respondWithResourceError(c, err)
-		return
-	}
-
-	commonapi.RespondSuccess(c, toEngineResponse(engine))
-}
-
-// ============ 内部 API（服务间调用）============
-
-// ListInternal 内部资源列表查询（无需用户认证，用于服务间调用）
-func (h *EngineHandler) ListInternal(c *gin.Context) {
-	engineType := c.Query("engine_type")
-	tenantID := c.Query("tenant_id") // 可选，按租户过滤
-
-	// 新增：能力过滤参数
-	storageType := c.Query("storage_type") // 可选：如 "tabular,object"
-
-	// 内部调用返回所有资源（或按 tenant_id 过滤）
-	var tenantIDUint uint
-	if tenantID != "" {
-		id, err := strconv.ParseUint(tenantID, 10, 32)
-		if err == nil {
-			tenantIDUint = uint(id)
-		}
-	}
-
-	// 如果指定了 capability 过滤条件，使用新的过滤方法
-	if storageType != "" {
-		filter := commonutils.CapabilityFilter{
-			StorageTypes: parseCommaSeparated(storageType),
-		}
-
-		engines, err := h.engineService.ListInternalWithCapability(tenantIDUint, filter)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-
-		c.JSON(http.StatusOK, toEngineResponses(engines))
-		return
-	}
-
-	engines, err := h.engineService.ListInternal(engineType, tenantIDUint)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, toEngineResponses(engines))
-}
-
-// parseCommaSeparated 解析逗号分隔的字符串
-func parseCommaSeparated(s string) []string {
-	if s == "" {
-		return nil
-	}
-
-	parts := strings.Split(s, ",")
-	result := make([]string, 0, len(parts))
-	for _, part := range parts {
-		trimmed := strings.TrimSpace(part)
-		if trimmed != "" {
-			result = append(result, trimmed)
-		}
-	}
-
-	return result
-}
-
-// GetByIDInternal 内部资源详情查询（无需用户认证，用于服务间调用）
-func (h *EngineHandler) GetByIDInternal(c *gin.Context) {
-	id, err := commonapi.BindIDParam(c, "id")
-	if err != nil {
-		return
-	}
-
-	engine, err := h.engineService.GetByIDInternal(id)
-	if err != nil {
-		commonapi.RespondError(c, http.StatusNotFound, "资源不存在")
-		return
-	}
-
-	commonapi.RespondSuccess(c, toEngineResponse(engine))
-}
-
 func toEngineResponses(engines []models.Engine) []engineResponse {
 	responses := make([]engineResponse, 0, len(engines))
 	for i := range engines {
@@ -829,29 +694,8 @@ func (h *EngineHandler) ListCatalogChildren(c *gin.Context) {
 	commonapi.RespondSuccess(c, models.CatalogListChildrenResponse{Nodes: nodes})
 }
 
-// TriggerConnectionCheckInternal 触发连接检测（内部API，异步）
-// POST /api/v1/internal/engines/:id/check-connection
-// 用于其他模块在连接失败时通知System刷新状态
-// 立即返回202 Accepted，实际检测在后台执行
-func (h *EngineHandler) TriggerConnectionCheckInternal(c *gin.Context) {
-	id, err := commonapi.BindIDParam(c, "id")
-	if err != nil {
-		return
-	}
-
-	// 异步检测，立即返回
-	if err := h.engineService.AsyncCheckConnection(id); err != nil {
-		commonapi.RespondError(c, http.StatusNotFound, err.Error())
-		return
-	}
-
-	c.JSON(http.StatusAccepted, gin.H{
-		"message": "连接检测已启动，稍后刷新获取最新状态",
-	})
-}
-
-// RegisterEngineRequest 引擎自注册请求
-type RegisterEngineRequest struct {
+// RuntimeEngineRegistrationRequest 是内置工作流 Runtime 的平台注册请求。
+type RuntimeEngineRegistrationRequest struct {
 	EngineType     string                 `json:"engine_type" binding:"required"`
 	Name           string                 `json:"name" binding:"required"`
 	Description    string                 `json:"description"`
@@ -860,11 +704,24 @@ type RegisterEngineRequest struct {
 	IsBuiltin      bool                   `json:"is_builtin"` // 是否为内置引擎（对所有租户可见）
 }
 
-// RegisterEngineInternal 内部API：引擎自注册（创建或更新引擎记录并触发连接检查）
-// POST /api/v1/internal/engines/register
-// 用于工作流引擎启动时自动注册并触发连接检查
-func (h *EngineHandler) RegisterEngineInternal(c *gin.Context) {
-	var req RegisterEngineRequest
+// RegisterRuntimeEngine godoc
+// @Summary      注册内置工作流 Runtime | Register built-in workflow runtime
+// @Description  平台 Service Principal 创建或更新与自身身份对应的内置 Runtime，并异步触发连接检查 | A platform service principal creates or updates its owned built-in runtime and asynchronously starts a connection check
+// @Tags         运行时注册 | Runtime Registry
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body RuntimeEngineRegistrationRequest true "Runtime 注册信息 | Runtime registration"
+// @Success      202 {object} object{success=bool,message=string,engine_id=int,engine_type=string}
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      401 {object} models.ErrorResponse
+// @Failure      403 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.runtime_registry.update"]
+// @Router       /runtime/engines [post]
+func (h *EngineHandler) RegisterRuntimeEngine(c *gin.Context) {
+	var req RuntimeEngineRegistrationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		commonapi.RespondError(c, http.StatusBadRequest, err.Error())
 		return

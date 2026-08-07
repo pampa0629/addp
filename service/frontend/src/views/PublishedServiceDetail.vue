@@ -68,6 +68,21 @@
       </el-descriptions>
     </el-card>
 
+    <!-- 数据血缘卡片 -->
+    <el-card :header="t('service.published.lineageTitle')" style="margin-bottom: 20px">
+      <div v-loading="lineageLoading" class="lineage-panel">
+        <el-alert
+          v-if="lineageError"
+          :title="lineageError"
+          type="error"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 12px"
+        />
+        <LineageViewer :graph="lineageGraph" :height="380" />
+      </div>
+    </el-card>
+
     <!-- 数据源信息卡片 -->
     <el-card :header="t('service.published.dataSourceTitle')" style="margin-bottom: 20px">
       <el-descriptions :column="2" border>
@@ -197,8 +212,10 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Link } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import publishedServiceAPI from '../api/publishedService'
+import client from '../api/client'
 import { copyToClipboard } from '../utils/serviceHelper'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
+import { LineageViewer, createLineageApi, normalizeLineageGraph } from '@common-ui-graph'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -206,6 +223,11 @@ const router = useRouter()
 
 const loading = ref(false)
 const service = ref(null)
+const lineageLoading = ref(false)
+const lineageError = ref('')
+const lineageGraph = ref(normalizeLineageGraph())
+// 模块 client 已将 /api/v1 作为 baseURL，这里只提供模块路径前缀。
+const lineageApi = createLineageApi({ request: client, baseUrl: '/meta' })
 
 // 计算几何信息
 const spatialInfo = computed(() => service.value?.data_config?.source_snapshot?.spatial || null)
@@ -252,12 +274,38 @@ const getProtocolVersion = (protocol) => {
   return config.version
 }
 
+const loadLineage = async (serviceData) => {
+  lineageError.value = ''
+  lineageGraph.value = normalizeLineageGraph()
+  const revision = String(serviceData?.data_config?.source_snapshot?.dependency_hash || '').trim()
+  const serviceId = Number(serviceData?.id || route.params.id || 0)
+  if (!serviceId || !revision) return
+
+  lineageLoading.value = true
+  try {
+    const response = await lineageApi.getGraph({
+      subject_kind: 'published_service',
+      service_id: serviceId,
+      revision,
+      direction: 'upstream',
+      depth: 3,
+      limit: 100
+    })
+    lineageGraph.value = normalizeLineageGraph(response)
+  } catch (error) {
+    lineageError.value = t('service.published.lineageLoadFailed')
+  } finally {
+    lineageLoading.value = false
+  }
+}
+
 // 加载服务详情
 const loadService = async () => {
   loading.value = true
   try {
     const data = await publishedServiceAPI.getService(route.params.id)
     service.value = data
+    await loadLineage(data)
   } catch (error) {
     ElMessage.error(t('service.common.loadFailed') + ': ' + (error.message || t('service.common.unknownError')))
   } finally {
@@ -317,6 +365,10 @@ onMounted(() => {
 <style scoped>
 .published-service-detail {
   padding: 20px;
+}
+
+.lineage-panel {
+  min-height: 300px;
 }
 
 .page-header {

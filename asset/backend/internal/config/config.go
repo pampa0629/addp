@@ -60,7 +60,6 @@ func LoadConfig() (*Config, error) {
 
 	commonConfig.LoadDeploymentConfig(&cfg.BaseConfig)
 	cfg.BaseConfig.SystemServiceURL = cfg.SystemURL
-	cfg.BaseConfig.InternalAPIKey = ""
 
 	return cfg, nil
 }

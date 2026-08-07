@@ -178,6 +178,37 @@ func (c *SystemServiceClient) GetTaskProvider(ctx context.Context, moduleName st
 	return &provider, nil
 }
 
+func (c *SystemServiceClient) ListModules(ctx context.Context) ([]*ModuleInfo, error) {
+	var response struct {
+		Modules []*ModuleInfo `json:"modules"`
+	}
+	if err := c.doPlatformJSON(ctx, http.MethodGet, "/api/v1/system/runtime/modules", nil, &response); err != nil {
+		return nil, err
+	}
+	return response.Modules, nil
+}
+
+type APIKeyValidationResponse struct {
+	Valid              bool       `json:"valid"`
+	AppID              uint       `json:"app_id"`
+	AppName            string     `json:"app_name"`
+	AllowedServices    []string   `json:"allowed_services"`
+	RateLimitPerMinute int        `json:"rate_limit_per_minute"`
+	ExpiresAt          *time.Time `json:"expires_at"`
+}
+
+func (c *SystemServiceClient) ValidateAPIKey(ctx context.Context, keyHash string) (*APIKeyValidationResponse, error) {
+	if strings.TrimSpace(keyHash) == "" {
+		return nil, errors.New("API key hash is required")
+	}
+	var response APIKeyValidationResponse
+	path := "/api/v1/system/runtime/api-keys/validate?key_hash=" + url.QueryEscape(keyHash)
+	if err := c.doPlatformJSON(ctx, http.MethodGet, path, nil, &response); err != nil {
+		return nil, err
+	}
+	return &response, nil
+}
+
 func (c *SystemServiceClient) RegisterAndHeartbeatWithMetadata(
 	ctx context.Context,
 	moduleName, moduleURL, routePrefix string,

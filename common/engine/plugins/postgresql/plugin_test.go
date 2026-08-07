@@ -35,6 +35,8 @@ func TestFilterPostgreSQLSystemTablesRequiresDetectedSuperMapSDX(t *testing.T) {
 		{Name: "roads"},
 		{Name: "smdatasourceinfo"},
 		{Name: "SMFIELDINFO"},
+		{Name: "smdynamicindex"},
+		{Name: "SMTILEINDEX"},
 		{Name: "sm_business_table"},
 	}
 

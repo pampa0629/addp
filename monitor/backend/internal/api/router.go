@@ -27,7 +27,7 @@ func SetupRouter(
 	smtpRelayService *service.SMTPRelayService,
 	systemURL string,
 	redisClient *redis.Client,
-	systemClient *commonClient.SystemClient,
+	systemClient *commonClient.SystemServiceClient,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -68,7 +68,7 @@ func SetupRouter(
 		commonAuth.MustNewContextGuard("platform"),
 	)
 	if systemClient != nil {
-		platform.Use(audit.AuditMiddleware("monitor", systemClient))
+		platform.Use(audit.ServiceAuditMiddleware("monitor", systemClient))
 	}
 	if runtimePolicyService != nil {
 		handler := NewRuntimePolicyHandler(runtimePolicyService)
@@ -91,7 +91,7 @@ func SetupRouter(
 		return commonAuth.MustNewPermissionGuard(keys...)
 	}
 	if systemClient != nil {
-		api.Use(audit.AuditMiddleware("monitor", systemClient))
+		api.Use(audit.ServiceAuditMiddleware("monitor", systemClient))
 	}
 
 	{

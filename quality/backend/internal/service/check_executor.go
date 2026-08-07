@@ -19,7 +19,7 @@ import (
 
 // CheckExecutor 执行质量检查任务
 type CheckExecutor struct {
-	systemClient  *commonClient.SystemClient
+	systemClient  *commonClient.SystemServiceClient
 	ruleAppRepo   *repository.RuleApplicationRepository
 	checkTaskRepo *repository.CheckTaskRepository
 	issueRepo     *repository.IssueRepository
@@ -27,7 +27,7 @@ type CheckExecutor struct {
 }
 
 func NewCheckExecutor(
-	systemClient *commonClient.SystemClient,
+	systemClient *commonClient.SystemServiceClient,
 	ruleAppRepo *repository.RuleApplicationRepository,
 	checkTaskRepo *repository.CheckTaskRepository,
 	issueRepo *repository.IssueRepository,
@@ -180,7 +180,7 @@ func executionResultMetadata(result *ExecutionResult) commonModels.JSONMap {
 
 func (e *CheckExecutor) doCheck(ctx context.Context, task *models.CheckTask) (*ExecutionResult, []models.Issue, error) {
 	// 获取引擎配置
-	engine, err := e.systemClient.GetEngine(uint(task.EngineID))
+	engine, err := e.systemClient.WithTenantID(uint(task.TenantID)).GetEngine(ctx, uint(task.EngineID))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get engine: %w", err)
 	}

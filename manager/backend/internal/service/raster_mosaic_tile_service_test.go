@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
 )
 
@@ -28,6 +29,10 @@ type fakeRasterMosaicSystemClient struct {
 }
 
 func (f fakeRasterMosaicSystemClient) GetEngine(engineID uint) (*commonModels.Engine, error) {
+	return f.GetEngineForTenant(context.Background(), 0, engineID)
+}
+
+func (f fakeRasterMosaicSystemClient) GetEngineForTenant(_ context.Context, _ uint, engineID uint) (*commonModels.Engine, error) {
 	if f.engine == nil || f.engine.ID != engineID {
 		return nil, nil
 	}
@@ -185,17 +190,26 @@ func TestHTTPRasterMosaicRuntimeClientReadsTileSourceHeader(t *testing.T) {
 		if r.URL.Path != "/internal/raster-mosaic/render-tile" {
 			t.Fatalf("runtime path = %q", r.URL.Path)
 		}
+		if got := r.Header.Get("Authorization"); got != "Bearer addp_at_test_service_token" {
+			t.Fatalf("authorization header = %q", got)
+		}
+		if r.Header.Get("X-Internal-API-Key") != "" || r.Header.Get("X-Tenant-ID") != "" {
+			t.Fatal("runtime request contained legacy authentication headers")
+		}
 		w.Header().Set("Content-Type", "image/webp")
 		w.Header().Set("X-ADDP-Mosaic-Tile-Source", "leaf")
 		_, _ = w.Write([]byte("tile"))
 	}))
 	defer server.Close()
 
-	client := NewHTTPRasterMosaicRuntimeClient(server.URL, "", 0)
+	client := NewHTTPRasterMosaicRuntimeClient(server.URL, commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+		return "addp_at_test_service_token", nil
+	}), 0)
 	tile, err := client.RenderTile(context.Background(), RasterMosaicRuntimeRenderRequest{
-		Dataset: RasterMosaicRuntimeDataset{DatasetRootURI: "/data/mosaic", OverviewRef: "overviews/overview.cog.tif"},
-		Tile:    RasterMosaicRuntimeTileReq{Z: 1, X: 0, Y: 0, TileSize: 256},
-		Render:  RasterMosaicRuntimeOptions{Format: "webp"},
+		TenantID: 7,
+		Dataset:  RasterMosaicRuntimeDataset{DatasetRootURI: "/data/mosaic", OverviewRef: "overviews/overview.cog.tif"},
+		Tile:     RasterMosaicRuntimeTileReq{Z: 1, X: 0, Y: 0, TileSize: 256},
+		Render:   RasterMosaicRuntimeOptions{Format: "webp"},
 	})
 	if err != nil {
 		t.Fatalf("RenderTile() error = %v", err)

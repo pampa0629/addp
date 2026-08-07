@@ -298,8 +298,8 @@ cat logs/gateway.log | grep "Rate limit exceeded"
    ```bash
    # Gateway 只静态配置 System；其他模块地址来自 System 注册表
    grep SYSTEM_URL .env
-   curl -H "X-Internal-API-Key: ${INTERNAL_API_KEY}" \
-     http://localhost:8180/api/v1/internal/modules
+   curl -H "Authorization: Bearer ${GATEWAY_PLATFORM_SERVICE_ACCESS_TOKEN}" \
+     http://localhost:8180/api/v1/system/runtime/modules
    ```
 
 3. **检查网络连接**

@@ -2,27 +2,17 @@ package service
 
 import (
 	"fmt"
-	"strings"
-
-	commonClient "github.com/addp/common/client"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/repository"
+	"strings"
 )
 
 type LogicalTableService struct {
-	repo           *repository.LogicalTableRepository
-	standardClient *commonClient.StandardClient
+	repo *repository.LogicalTableRepository
 }
 
-func NewLogicalTableService(repo *repository.LogicalTableRepository, standardURL, internalKey string) *LogicalTableService {
-	var standardClient *commonClient.StandardClient
-	if standardURL != "" {
-		standardClient = commonClient.NewStandardClientWithInternalKey(standardURL, internalKey)
-	}
-	return &LogicalTableService{
-		repo:           repo,
-		standardClient: standardClient,
-	}
+func NewLogicalTableService(repo *repository.LogicalTableRepository) *LogicalTableService {
+	return &LogicalTableService{repo: repo}
 }
 
 func (s *LogicalTableService) CreateLogicalTable(req *models.CreateLogicalTableRequest, tenantID, userID int64) (*models.LogicalTable, error) {

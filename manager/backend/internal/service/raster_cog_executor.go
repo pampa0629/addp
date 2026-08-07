@@ -205,7 +205,7 @@ func rasterCOGAssignSRS(raster RasterCOGRasterConfig) string {
 }
 
 func (e *ManagerRasterCOGExecutor) prepareSourceURI(ctx context.Context, tenantID, engineID uint, fullName string) (string, commonModels.JSONMap, error) {
-	engine, err := e.systemClient.GetEngine(engineID)
+	engine, err := e.systemClient.GetEngineForTenant(ctx, tenantID, engineID)
 	if err != nil {
 		return "", nil, fmt.Errorf("get source engine: %w", err)
 	}

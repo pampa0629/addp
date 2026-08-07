@@ -252,7 +252,7 @@ Gateway 只保留一条模块路由主路径：System 使用配置中的 `SYSTEM
 
 ```
 1. 模块启动
-   - 调用 System API: POST /api/v1/internal/modules/register
+   - 使用模块自身 Platform Service Access Token 调用 System API: POST /api/v1/system/runtime/modules
    - 传入：module_name, module_url, route_prefix, health_check_url
    ↓
 2. System 模块写入 module_registry 表（幂等操作）
@@ -261,7 +261,7 @@ Gateway 只保留一条模块路由主路径：System 使用配置中的 `SYSTEM
    - 初始状态设为 'up'
    ↓
 3. 模块定期发送心跳
-   - 调用 System API: POST /api/v1/internal/modules/heartbeat
+   - 调用 System API: POST /api/v1/system/runtime/modules/heartbeat
    - System 更新 last_heartbeat 字段
    ↓
 4. System 定时任务（每 30 秒）检查超时模块
@@ -277,7 +277,7 @@ Gateway 只保留一条模块路由主路径：System 使用配置中的 `SYSTEM
    - 创建其他模块使用的 ModuleDiscovery 实例
    ↓
 2. 初始化模块列表
-   - 调用 System API: GET /api/v1/internal/modules?status=up
+   - 使用 Gateway Platform Service Access Token 调用 System API: GET /api/v1/system/runtime/modules?status=up
    - 获取所有活跃模块（status='up'）
    ↓
 3. 构建动态路由映射

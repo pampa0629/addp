@@ -1253,7 +1253,7 @@ PY
     fi
     if [ "$RASTER_MOSAIC_RUNTIME_CAN_START" = true ]; then
       PORT="$RASTER_MOSAIC_RUNTIME_PORT" \
-      RASTER_MOSAIC_RUNTIME_INTERNAL_KEY="${RASTER_MOSAIC_RUNTIME_INTERNAL_KEY:-$INTERNAL_API_KEY}" \
+      SYSTEM_URL="${SYSTEM_URL:-http://localhost:${SYSTEM_BACKEND_PORT:-8180}}" \
         "$RASTER_MOSAIC_RUNTIME_VENV/bin/python" "$RASTER_MOSAIC_RUNTIME_DIR/app.py" \
         > logs/raster-mosaic-runtime.log 2> logs/raster-mosaic-runtime-stderr.log &
       RASTER_MOSAIC_RUNTIME_PID=$!
@@ -1590,7 +1590,7 @@ if check_service_running "python-workflow-engine" "$PYTHON_WORKFLOW_PORT"; then
   # 设置环境变量
   export PORT=$PYTHON_WORKFLOW_PORT
   # SYSTEM_URL 已由 generate_service_urls() 自动生成
-  export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
+  export GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET=${GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET:-""}
   export POSTGRES_HOST=localhost
   export POSTGRES_PORT=15432
   export POSTGRES_USER=addp
@@ -1791,7 +1791,7 @@ start_model3d_workflow_engine_process() {
   cd engines/model3d-workflow
 
   export PORT=$MODEL3D_WORKFLOW_PORT
-  export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
+  export MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET=${MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET:-""}
 
   ./venv/bin/python api_server.py > ../../logs/model3d-workflow-engine.log 2> ../../logs/model3d-workflow-engine-stderr.log &
   MODEL3D_WORKFLOW_PID=$!
@@ -1926,7 +1926,7 @@ start_pointcloud_workflow_engine_process() {
       -p "${POINTCLOUD_WORKFLOW_PORT}:8102" \
       -e PORT=8102 \
       -e SYSTEM_URL="http://host.docker.internal:${system_port}" \
-      -e INTERNAL_API_KEY="${INTERNAL_API_KEY:-}" \
+      -e POINTCLOUD_WORKFLOW_SERVICE_CLIENT_SECRET="${POINTCLOUD_WORKFLOW_SERVICE_CLIENT_SECRET:-}" \
       -e POINTCLOUD_PDAL_BIN=/opt/conda/bin/pdal \
       -e POINTCLOUD_WORK_DIR=/work/pointcloud \
       -e CPL_TMPDIR=/work/pointcloud \
@@ -2136,7 +2136,7 @@ if check_service_running "spark-workflow-engine" "$SPARK_WORKFLOW_PORT"; then
   # 设置环境变量
   export PORT=$SPARK_WORKFLOW_PORT
   # SYSTEM_URL 已由 generate_service_urls() 自动生成
-  export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
+  export SPARK_WORKFLOW_SERVICE_CLIENT_SECRET=${SPARK_WORKFLOW_SERVICE_CLIENT_SECRET:-""}
   export SPARK_WORKFLOW_SHARED_HOST="${SPARK_WORKFLOW_SHARED_HOST:-$(detect_spark_workflow_shared_host)}"
 
   # 直接使用虚拟环境的 Python（无需 activate）

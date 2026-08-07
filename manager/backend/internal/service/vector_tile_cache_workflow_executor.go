@@ -30,7 +30,6 @@ type ManagerVectorTileCacheWorkflowExecutor struct {
 	workflowEngines workflowEngineLister
 	objectStore     vectorTileCacheObjectStore
 	managerBaseURL  string
-	internalAPIKey  string
 	minioEndpoint   string
 	minioAccessKey  string
 	minioSecretKey  string
@@ -44,7 +43,6 @@ func NewManagerVectorTileCacheWorkflowExecutor(
 	workflowEngines workflowEngineLister,
 	objectStore vectorTileCacheObjectStore,
 	managerBaseURL string,
-	internalAPIKey string,
 	minioEndpoint string,
 	minioAccessKey string,
 	minioSecretKey string,
@@ -60,7 +58,6 @@ func NewManagerVectorTileCacheWorkflowExecutor(
 		workflowEngines: workflowEngines,
 		objectStore:     objectStore,
 		managerBaseURL:  strings.TrimRight(strings.TrimSpace(managerBaseURL), "/"),
-		internalAPIKey:  strings.TrimSpace(internalAPIKey),
 		minioEndpoint:   strings.TrimSpace(minioEndpoint),
 		minioAccessKey:  minioAccessKey,
 		minioSecretKey:  minioSecretKey,
@@ -141,10 +138,9 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) GenerateVectorTileCache(ctx con
 					"gdal_env":    targetEnv,
 				},
 				"progress_callback": commonModels.JSONMap{
-					"endpoint":         e.managerBaseURL + "/api/v1/manager/internal/executions/" + strings.TrimSpace(req.ExecutionID) + "/events",
-					"tenant_id":        req.Task.TenantID,
-					"execution_id":     strings.TrimSpace(req.ExecutionID),
-					"internal_api_key": e.internalAPIKey,
+					"endpoint":     e.managerBaseURL + "/api/v1/manager/executions/" + strings.TrimSpace(req.ExecutionID) + "/events",
+					"tenant_id":    req.Task.TenantID,
+					"execution_id": strings.TrimSpace(req.ExecutionID),
 				},
 			},
 			"tile":    tile,
@@ -184,7 +180,7 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) GenerateVectorTileCache(ctx con
 }
 
 func (e *ManagerVectorTileCacheWorkflowExecutor) prepareSourceURI(ctx context.Context, tenantID uint, identity tileCacheTaskTargetIdentity) (string, commonModels.JSONMap, commonModels.JSONMap, error) {
-	engine, err := e.systemClient.GetEngine(identity.EngineID)
+	engine, err := e.systemClient.GetEngineForTenant(ctx, tenantID, identity.EngineID)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("get source engine: %w", err)
 	}

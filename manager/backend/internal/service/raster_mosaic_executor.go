@@ -19,7 +19,6 @@ type ManagerRasterMosaicExecutor struct {
 	systemClient    *commonClient.SystemClient
 	workflowEngines workflowEngineLister
 	managerBaseURL  string
-	internalAPIKey  string
 	invokeTimeout   time.Duration
 }
 
@@ -27,7 +26,6 @@ func NewManagerRasterMosaicExecutor(
 	systemClient *commonClient.SystemClient,
 	workflowEngines workflowEngineLister,
 	managerBaseURL string,
-	internalAPIKey string,
 	invokeTimeout time.Duration,
 ) *ManagerRasterMosaicExecutor {
 	if invokeTimeout <= 0 {
@@ -37,7 +35,6 @@ func NewManagerRasterMosaicExecutor(
 		systemClient:    systemClient,
 		workflowEngines: workflowEngines,
 		managerBaseURL:  strings.TrimRight(strings.TrimSpace(managerBaseURL), "/"),
-		internalAPIKey:  strings.TrimSpace(internalAPIKey),
 		invokeTimeout:   invokeTimeout,
 	}
 }
@@ -183,10 +180,9 @@ func (e *ManagerRasterMosaicExecutor) buildAccessPlan(ctx context.Context, tenan
 			},
 		},
 		"progress_callback": commonModels.JSONMap{
-			"endpoint":         e.managerBaseURL + "/api/v1/manager/internal/executions/" + strings.TrimSpace(executionID) + "/events",
-			"tenant_id":        tenantID,
-			"execution_id":     strings.TrimSpace(executionID),
-			"internal_api_key": e.internalAPIKey,
+			"endpoint":     e.managerBaseURL + "/api/v1/manager/executions/" + strings.TrimSpace(executionID) + "/events",
+			"tenant_id":    tenantID,
+			"execution_id": strings.TrimSpace(executionID),
 		},
 	}, nil
 }
@@ -195,7 +191,7 @@ func (e *ManagerRasterMosaicExecutor) getRasterMosaicEngine(ctx context.Context,
 	if engineID == 0 {
 		return nil, errors.New("engine_id is required")
 	}
-	engine, err := e.systemClient.GetEngine(engineID)
+	engine, err := e.systemClient.GetEngineForTenant(ctx, tenantID, engineID)
 	if err != nil {
 		return nil, err
 	}

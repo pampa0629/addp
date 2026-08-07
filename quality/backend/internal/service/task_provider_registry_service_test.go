@@ -1,8 +1,11 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 
+	commonClient "github.com/addp/common/client"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/taskprovider"
 	"net/http"
 	"net/http/httptest"
@@ -19,24 +22,36 @@ type taskProviderTaskCapability struct {
 	Deprecated              bool   `json:"deprecated"`
 }
 
+type taskProviderTestTokenSource struct{}
+
+func (taskProviderTestTokenSource) Token(context.Context, uint) (string, error) {
+	return "tenant-token", nil
+}
+func (taskProviderTestTokenSource) PlatformToken(context.Context) (string, error) {
+	return "platform-token", nil
+}
+
 func TestTaskProviderRegistryRegistersStandardQualityContract(t *testing.T) {
 	var captured TaskProviderRegistration
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/internal/task-providers/register" {
-			t.Fatalf("path = %s, want /api/v1/internal/task-providers/register", r.URL.Path)
+		if r.URL.Path != "/api/v1/system/runtime/task-providers" {
+			t.Fatalf("path = %s, want OAuth runtime task provider route", r.URL.Path)
 		}
-		if got := r.Header.Get("X-Internal-API-Key"); got != "internal-key" {
-			t.Fatalf("X-Internal-API-Key = %q, want internal-key", got)
+		if got := r.Header.Get("Authorization"); got != "Bearer platform-token" {
+			t.Fatalf("Authorization = %q", got)
 		}
-		if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+		var payload commonModels.TaskProvider
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode payload: %v", err)
 		}
+		captured = taskProviderRegistrationForTest(payload)
 		w.WriteHeader(http.StatusCreated)
 	}))
 	defer server.Close()
 
-	registry := NewTaskProviderRegistryService(server.URL, "internal-key", "http://quality.internal")
-	if err := registry.Register(); err != nil {
+	client := commonClient.NewSystemServiceClient(server.URL, taskProviderTestTokenSource{}, server.Client())
+	registry := NewTaskProviderRegistryService(client, "http://quality.internal")
+	if err := registry.Register(context.Background()); err != nil {
 		t.Fatalf("Register() error = %v", err)
 	}
 
@@ -78,5 +93,20 @@ func TestTaskProviderRegistryRegistersStandardQualityContract(t *testing.T) {
 	}
 	if capability.SupportsSchedule || capability.SupportsCancel || capability.SupportsInlineExecution || capability.Deprecated {
 		t.Fatalf("check flags = %#v, want all false", capability)
+	}
+}
+
+func taskProviderRegistrationForTest(payload commonModels.TaskProvider) TaskProviderRegistration {
+	var capabilities *string
+	if payload.Capabilities != nil {
+		value := string(*payload.Capabilities)
+		capabilities = &value
+	}
+	return TaskProviderRegistration{
+		ModuleName: payload.ModuleName, DisplayName: payload.DisplayName, Description: payload.Description,
+		BaseURL: payload.BaseURL, TaskListEndpoint: payload.TaskListEndpoint,
+		TaskDetailEndpoint: payload.TaskDetailEndpoint, TaskExecuteEndpoint: payload.TaskExecuteEndpoint,
+		TaskStatusEndpoint: payload.TaskStatusEndpoint, TaskCancelEndpoint: payload.TaskCancelEndpoint,
+		Capabilities: capabilities, IsEnabled: payload.IsEnabled,
 	}
 }

@@ -21,8 +21,8 @@ type Config struct {
 	RedisDB       int
 
 	// System 模块配置
-	SystemURL      string
-	InternalAPIKey string
+	SystemURL           string
+	ServiceClientSecret string
 
 	// MinIO 配置
 	MinioEndpoint  string
@@ -45,8 +45,8 @@ func LoadConfig() (*Config, error) {
 		RedisPassword: os.Getenv("REDIS_PASSWORD"),
 		RedisDB:       commonConfig.GetEnvInt("REDIS_DB", 0),
 
-		SystemURL:      commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
-		InternalAPIKey: os.Getenv("INTERNAL_API_KEY"),
+		SystemURL:           commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
+		ServiceClientSecret: os.Getenv("STANDARD_SERVICE_CLIENT_SECRET"),
 	}
 	minioCfg := commonConfig.LoadBuiltinMinIOConfig()
 	cfg.MinioEndpoint = minioCfg.Endpoint

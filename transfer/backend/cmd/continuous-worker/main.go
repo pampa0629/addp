@@ -41,8 +41,8 @@ func main() {
 	if err := cfg.ValidateContinuousRuntime(); err != nil {
 		log.Fatalf("continuous worker 配置无效: %v", err)
 	}
-	if cfg.SystemServiceURL == "" || cfg.InternalAPIKey == "" {
-		log.Fatal("continuous worker 需要 SYSTEM_URL 和 INTERNAL_API_KEY 解析业务 Kafka/PostgreSQL Engine")
+	if cfg.SystemServiceURL == "" {
+		log.Fatal("continuous worker 需要 SYSTEM_URL 解析业务 Kafka/PostgreSQL Engine")
 	}
 	owner := cfg.ContinuousWorkerInstanceID
 	if owner == "" {
@@ -92,7 +92,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("continuous worker DLQ availability reconciler 配置无效: %v", err)
 	}
-	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
 	if cfg.MetaServiceURL == "" || cfg.ServiceClientSecret == "" {
 		log.Fatal("continuous worker 需要 META_URL 和 TRANSFER_SERVICE_CLIENT_SECRET 提交目标元数据扫描")
 	}
@@ -101,6 +100,7 @@ func main() {
 		log.Fatalf("continuous worker Service Token Source 初始化失败: %v", err)
 	}
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
+	systemClient := commonClient.NewSystemClient(cfg.SystemServiceURL, tokenSource)
 	metadataScanner := &continuous.TargetMetadataScanner{
 		Store: leaseRepo, Client: metaClient, ClaimTTL: cfg.MetaScanClaimTTL,
 		Logger: logger.With("component", "continuous_target_metadata_scan"),

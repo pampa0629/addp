@@ -27,6 +27,7 @@ func SetupRouter(
 	metaURL string,
 	redisClient *redis.Client,
 	systemClient *commonClient.SystemClient,
+	systemServiceClient *commonClient.SystemServiceClient,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -55,7 +56,7 @@ func SetupRouter(
 		commonAuth.MustNewContextGuard("platform"),
 	)
 	if systemClient != nil {
-		platform.Use(audit.AuditMiddleware("transfer", systemClient))
+		platform.Use(audit.ServiceAuditMiddleware("transfer", systemServiceClient))
 	}
 	if continuousPolicyService != nil {
 		handler := NewContinuousPolicyHandler(continuousPolicyService)
@@ -80,7 +81,7 @@ func SetupRouter(
 	}
 	// 审计日志中间件（记录到 System 模块）
 	if systemClient != nil {
-		protected.Use(audit.AuditMiddleware("transfer", systemClient))
+		protected.Use(audit.ServiceAuditMiddleware("transfer", systemServiceClient))
 	}
 
 	// 创建 Handlers

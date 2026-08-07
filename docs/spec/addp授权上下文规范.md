@@ -188,7 +188,7 @@ Platform Service Role，不允许 Service Principal 持有或借用平台三员 
 
 ## 八、禁止事项
 
-- 外部 Agent 使用 `INTERNAL_API_KEY`；
+- 外部 Agent 使用共享服务密钥或模块 OAuth Client Secret 直接调用 owner API；
 - 在 CLI、Agent 或 owner 模块内保存 `JWT_SECRET`；
 - 客户端提交 Principal、User、Tenant、Membership、Role 或 `user_type` 并被服务端信任；
 - 用 API Key、OAuth Scope 或平台角色模拟 Tenant 业务授权；

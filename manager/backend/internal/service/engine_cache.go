@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -23,7 +24,7 @@ type engineCacheEntry struct {
 // EngineCacheService 引擎缓存服务
 type EngineCacheService struct {
 	systemURL       string
-	internalClient  *commonClient.SystemClient
+	serviceClient   *commonClient.SystemClient
 	cacheMu         sync.RWMutex
 	engineCache     map[uint]*engineCacheEntry
 	cacheTTL        time.Duration // 缓存生存时间，默认 3 分钟
@@ -32,7 +33,7 @@ type EngineCacheService struct {
 }
 
 // NewEngineCacheService 创建引擎缓存服务
-func NewEngineCacheService(systemURL, internalKey string, redisClient *redis.Client) *EngineCacheService {
+func NewEngineCacheService(systemURL string, tokenSource commonClient.ServiceTokenProvider, redisClient *redis.Client) *EngineCacheService {
 	// 默认从环境变量读取
 	if systemURL == "" {
 		systemURL = os.Getenv("SYSTEM_URL")
@@ -40,10 +41,6 @@ func NewEngineCacheService(systemURL, internalKey string, redisClient *redis.Cli
 			systemURL = "http://localhost:8180"
 		}
 	}
-	if internalKey == "" {
-		internalKey = os.Getenv("INTERNAL_API_KEY")
-	}
-
 	service := &EngineCacheService{
 		systemURL:   systemURL,
 		engineCache: make(map[uint]*engineCacheEntry),
@@ -51,9 +48,7 @@ func NewEngineCacheService(systemURL, internalKey string, redisClient *redis.Cli
 		log:         logger.With("component", "engine_cache_service"),
 	}
 
-	if internalKey != "" {
-		service.internalClient = commonClient.NewSystemClientWithInternalKey(systemURL, internalKey)
-	}
+	service.serviceClient = commonClient.NewSystemClient(systemURL, tokenSource)
 
 	// 初始化 Redis 事件订阅器
 	if redisClient != nil {
@@ -78,7 +73,7 @@ func NewEngineCacheService(systemURL, internalKey string, redisClient *redis.Cli
 
 // GetEngine 获取引擎（带缓存）
 func (s *EngineCacheService) GetEngine(engineID uint) (*commonModels.Engine, error) {
-	if s.internalClient == nil {
+	if s.serviceClient == nil {
 		return nil, fmt.Errorf("internal client not configured")
 	}
 
@@ -98,18 +93,18 @@ func (s *EngineCacheService) GetEngine(engineID uint) (*commonModels.Engine, err
 	}
 
 	// 缓存未命中或已过期，从 System API 获取
-	engine, err := s.internalClient.GetEngine(engineID)
+	return nil, fmt.Errorf("engine cache lookup requires tenant context")
+}
+
+func (s *EngineCacheService) GetEngineForTenant(ctx context.Context, tenantID, engineID uint) (*commonModels.Engine, error) {
+	if s == nil || s.serviceClient == nil {
+		return nil, fmt.Errorf("system client not configured")
+	}
+	engine, err := s.serviceClient.GetEngineForTenant(ctx, tenantID, engineID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get engine from System API: %w", err)
 	}
-
-	// 更新缓存
 	s.cacheEngine(engine)
-	s.log.Info("通过内部 API 获取引擎连接信息成功",
-		"engine_id", engineID,
-		"engine_type", engine.EngineType,
-	)
-
 	return engine, nil
 }
 

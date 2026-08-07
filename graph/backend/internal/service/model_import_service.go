@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/graph/internal/models"
 	"github.com/addp/graph/internal/repository"
@@ -55,11 +56,11 @@ type ModelRelationPreview struct {
 
 // GetImportPreview 获取从 Model 导入的预览数据
 func (s *ModelImportService) GetImportPreview(tenantID uint) (*ModelImportPreview, error) {
-	entities, err := s.modelClient.ListEntities(tenantID)
+	entities, err := s.modelClient.WithTenantID(tenantID).ListEntities(context.Background())
 	if err != nil {
 		return nil, err
 	}
-	relations, err := s.modelClient.ListEntityRelations(tenantID)
+	relations, err := s.modelClient.WithTenantID(tenantID).ListEntityRelations(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +77,7 @@ func (s *ModelImportService) GetImportPreview(tenantID uint) (*ModelImportPrevie
 
 	for _, e := range entities {
 		// 获取属性（需单独请求含属性的详情）
-		detailed, err := s.modelClient.GetEntityWithAttributes(tenantID, e.ID)
+		detailed, err := s.modelClient.WithTenantID(tenantID).GetEntityWithAttributes(context.Background(), e.ID)
 		if err != nil || detailed == nil {
 			detailed = &e
 		}

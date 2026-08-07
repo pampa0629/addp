@@ -5,7 +5,7 @@ Spark Connector - 动态连接到用户注册的Spark集群
 
 import os
 import logging
-from typing import Dict, Optional
+from typing import Dict, Tuple
 from pyspark.sql import SparkSession
 from system_client import get_engine
 
@@ -26,33 +26,37 @@ class SparkConnector:
     """
 
     def __init__(self):
-        self.sessions: Dict[int, SparkSession] = {}  # {engine_id: SparkSession}
+        self.sessions: Dict[Tuple[int, int], SparkSession] = {}
 
-    def get_engine_from_system(self, engine_id: int) -> dict:
+    def get_engine_from_system(self, engine_id: int, tenant_id: int) -> dict:
         """从System Backend获取资源信息"""
         try:
-            return get_engine(engine_id)
+            return get_engine(engine_id, tenant_id)
         except Exception as e:
             logger.error(f"Failed to fetch engine {engine_id} from System: {e}")
             raise
 
-    def get_or_create_session(self, engine_id: int) -> SparkSession:
+    def get_or_create_session(self, engine_id: int, tenant_id: int) -> SparkSession:
         """
         获取或创建SparkSession
 
         Args:
             engine_id: system.engines 中的资源ID
 
+            tenant_id: System 验证后的租户上下文
+
         Returns:
             SparkSession 实例
         """
-        # 如果已存在,直接返回
-        if engine_id in self.sessions:
-            logger.info(f"Reusing existing SparkSession for engine {engine_id}")
-            return self.sessions[engine_id]
+        if not isinstance(tenant_id, int) or isinstance(tenant_id, bool) or tenant_id <= 0:
+            raise ValueError("tenant_id must be a positive integer")
+        session_key = (tenant_id, engine_id)
+        if session_key in self.sessions:
+            logger.info(f"Reusing SparkSession for tenant {tenant_id}, engine {engine_id}")
+            return self.sessions[session_key]
 
         # 获取资源配置
-        engine = self.get_engine_from_system(engine_id)
+        engine = self.get_engine_from_system(engine_id, tenant_id)
         conn_info = engine['connection_info']
 
         logger.info(f"Creating new SparkSession for engine {engine_id}: {conn_info['host']}:{conn_info['port']}")
@@ -104,20 +108,21 @@ class SparkConnector:
             logger.warning(f"Failed to register Sedona functions: {e}")
 
         # 缓存会话
-        self.sessions[engine_id] = spark
+        self.sessions[session_key] = spark
         return spark
 
-    def close_session(self, engine_id: int):
+    def close_session(self, tenant_id: int, engine_id: int):
         """关闭指定资源的SparkSession"""
-        if engine_id in self.sessions:
-            self.sessions[engine_id].stop()
-            del self.sessions[engine_id]
+        session_key = (tenant_id, engine_id)
+        if session_key in self.sessions:
+            self.sessions[session_key].stop()
+            del self.sessions[session_key]
             logger.info(f"Closed SparkSession for engine {engine_id}")
 
     def close_all_sessions(self):
         """关闭所有SparkSession"""
-        for engine_id in list(self.sessions.keys()):
-            self.close_session(engine_id)
+        for tenant_id, engine_id in list(self.sessions.keys()):
+            self.close_session(tenant_id, engine_id)
 
 
 # 全局单例

@@ -515,7 +515,7 @@ graph TB
 
     subgraph "2. System 模块注册中心"
         SystemReg --> RegTable[(module_registry 表<br/>存储模块URL和状态)]
-        RegTable --> RegAPI[注册 API<br/>/api/v1/internal/modules/*]
+        RegTable --> RegAPI[注册 API<br/>/api/v1/system/runtime/modules/*]
     end
 
     subgraph "3. Gateway 动态发现"
@@ -612,7 +612,7 @@ MODULE_REFRESH_INTERVAL=30s                  # 模块列表刷新间隔
 
 # System 模块配置（用于获取注册信息）
 SYSTEM_URL=http://system-backend:8180
-INTERNAL_API_KEY=your_internal_api_key_here  # 服务间调用认证
+GATEWAY_SERVICE_CLIENT_SECRET=your_gateway_service_client_secret
 
 # Fallback 硬编码路由（模块发现失败时使用）
 MANAGER_URL=http://manager-backend:8081
@@ -626,7 +626,7 @@ META_URL=http://meta-backend:8082
 # 启用与 System 集成
 ENABLE_INTEGRATION=true
 SYSTEM_URL=http://system-backend:8180
-INTERNAL_API_KEY=your_internal_api_key_here
+MODULE_SERVICE_CLIENT_SECRET=your_module_service_client_secret
 ```
 
 ### 关键文件位置
@@ -645,7 +645,7 @@ INTERNAL_API_KEY=your_internal_api_key_here
 - ✅ **故障自动恢复**：模块重启后自动重新注册为 `up` 状态
 - ✅ **健康监控**：通过心跳机制实时监控模块状态
 - ✅ **双层防护**：动态路由失败时自动 Fallback 到硬编码路由
-- ✅ **可观测性**：所有模块状态实时可查（`GET /api/v1/internal/modules`）
+- ✅ **可观测性**：Gateway 使用 Platform Service Access Token 查询模块状态（`GET /api/v1/system/runtime/modules`）
 
 ---
 

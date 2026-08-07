@@ -130,7 +130,7 @@ func TestPreviewFromURIWithBasicItemDoesNotSubmitDeepScanRun(t *testing.T) {
 	scanRunCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/v1/internal/engines/26":
+		case "/api/v1/system/engines/26":
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"id":26,"tenant_id":1,"name":"preview","engine_type":"preview-routing-model","connection_info":{},"lifecycle_state":"active"}`))
 		case "/api/v1/meta/items/1831":
@@ -149,7 +149,9 @@ func TestPreviewFromURIWithBasicItemDoesNotSubmitDeepScanRun(t *testing.T) {
 	registry.Register(namedPreviewProvider{name: "builtin:database-table"})
 	resolver := NewPreviewResolver(
 		registry,
-		client.NewSystemClientWithInternalKey(server.URL, "internal-key"),
+		client.NewSystemClient(server.URL, client.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+			return "addp_at_test_service_token", nil
+		})),
 		client.NewMetaClient(server.URL, client.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
 			return "test-token", nil
 		})),

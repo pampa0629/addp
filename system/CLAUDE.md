@@ -315,7 +315,7 @@ frontend/src/
 
 3. **API Key 安全** (system.api_keys)
    - 存储：仅存 SHA256 hash，明文仅在创建时返回一次
-   - 验证：`GET /api/v1/internal/api-keys/validate` 供 Gateway 调用
+   - 验证：`GET /api/v1/system/runtime/api-keys/validate` 只供持有 `system.api_key.read` 的 Gateway Platform Service Principal 调用
 
 ### 访问控制
 
@@ -367,12 +367,16 @@ frontend/src/
 ### Service Runtime（Service Access Token + 精确 Permission）
 - `POST /api/v1/system/runtime/modules` - Platform Service Principal 注册自身模块；
 - `POST /api/v1/system/runtime/modules/heartbeat` - Platform Service Principal 更新自身心跳；
+- `GET /api/v1/system/runtime/modules` - Gateway Platform Service Principal 查询模块注册表；
+- `GET /api/v1/system/runtime/modules/:module_name` - Gateway Platform Service Principal 查询模块详情；
 - `POST /api/v1/system/runtime/task-providers` - Platform Service Principal 发布自身 TaskProvider；
+- `POST /api/v1/system/runtime/engines` - Workflow Runtime Platform Service Principal 注册自身内置 Runtime；
+- `GET /api/v1/system/runtime/api-keys/validate` - Gateway Platform Service Principal 验证外部 API Key Hash；
 - `GET /api/v1/system/runtime/engine-descriptors` - Tenant Service Principal 列出当前 Tenant 可见的脱敏 Engine Runtime Descriptor；
 - `GET /api/v1/system/runtime/engine-descriptors/:id` - Tenant Service Principal 读取当前 Tenant 可见的单个脱敏 Engine Runtime Descriptor；
 - `POST /api/v1/system/tenant/audit/events` - Tenant Service Principal 追加当前 Tenant 审计事件。
 
-Module Name 必须与 OAuth Client `addp-<module>` 一致；Principal、Context 和 Tenant 只从 AuthContext 获取。Meta 统一使用上述服务路由，不得调用对应 `/api/v1/internal` 接口。
+Module Name 必须与 OAuth Client `addp-<module>` 一致；Principal、Context 和 Tenant 只从 AuthContext 获取。所有服务间调用统一使用上述 Bearer 路由。
 
 Engine Runtime Descriptor 不包含 `connection_info`。只有工作流或脚本 Runtime 可投影非密密的 `protocol/host/port`；数据引擎连接信息必须继续通过 Execution Authorization 或已明确授权的详情路由获取。
 
@@ -397,38 +401,3 @@ Engine Runtime Descriptor 不包含 `connection_info`。只有工作流或脚本
 - IAM 使用 `/iam?tab=...` 恢复当前权限上下文下可用的稳定 Tab；默认 Tab 省略，无权限或无效 Tab 规范化为默认值。
 - 引擎详情唯一使用 `/engines/:id`，详情稳定子视图使用 `tab=connection|capabilities`，默认基础信息省略。
 - 审计入口使用 IAM 的 `platform-audit` 或 `tenant-audit` Tab，并支持 `module_name`、`entity_type`、`entity_id` 稳定筛选；资源回收不再跳转不存在的 `Logs` route。
-
-### 待迁移内部 API（受限遗留面）
-
-`/api/v1/internal` 仅保留给尚未迁移的系统级运维调用方，不是新服务间认证主路径，也不能表达 Tenant Context。Meta 不得使用这些接口；新增或迁移调用方必须使用独立 Service Principal、Client Credentials 和 `/api/v1/system` Bearer 路由。
-
-**引擎**:
-- `GET /api/v1/internal/engines` - 列出所有引擎（内部使用）
-- `GET /api/v1/internal/engines/:id` - 获取引擎详情（内部使用）
-- `POST /api/v1/internal/engines` - 创建引擎（内部使用）
-- `POST /api/v1/internal/engines/register` - 引擎自注册
-- `POST /api/v1/internal/engines/:id/check-connection` - 触发异步连接检测
-
-**能力注册**:
-- `POST /api/v1/internal/registry/capabilities` - 注册引擎能力
-- `GET /api/v1/internal/registry/capabilities` - 列出所有能力
-- `GET /api/v1/internal/registry/compute-engines` - 列出具备 compute 能力的引擎
-
-**任务提供者**:
-- `POST /api/v1/internal/task-providers/register` - 模块注册为任务提供者
-- `GET /api/v1/internal/task-providers` - 列出所有任务提供者
-- `GET /api/v1/internal/task-providers/:module_name` - 获取指定模块信息
-
-**审计日志**:
-- `POST /api/v1/internal/audit-logs` - 其他模块写入审计日志
-
-**API Key 验证**:
-- `GET /api/v1/internal/api-keys/validate` - 验证 API Key（Gateway 调用）
-- `GET /api/v1/internal/api-keys/bulk` - 批量获取 API Key 信息
-
-**模块注册与发现**:
-- `POST /api/v1/internal/modules/register` - 模块注册
-- `POST /api/v1/internal/modules/heartbeat` - 心跳更新
-- `GET /api/v1/internal/modules` - 列出所有已注册模块
-- `GET /api/v1/internal/modules/:name` - 获取指定模块信息
-- `DELETE /api/v1/internal/modules/:name` - 注销模块

@@ -2268,6 +2268,50 @@ definitions:
       source_engine_id:
         type: integer
     type: object
+  internal_api.RasterMosaicProgressEventRequest:
+    properties:
+      current_file:
+        type: string
+      current_zoom:
+        type: integer
+      elapsed_seconds:
+        type: number
+      estimated_remaining_seconds:
+        type: number
+      event:
+        type: string
+      failed_files:
+        type: integer
+      file_progress:
+        type: integer
+      max_zoom:
+        type: integer
+      message:
+        type: string
+      metadata:
+        $ref: '#/definitions/github_com_addp_common_models.JSONMap'
+      overall_progress:
+        type: number
+      phase:
+        type: string
+      processed_files:
+        type: integer
+      progress_percent:
+        type: number
+      tiles_processed:
+        type: integer
+      tiles_total_estimate:
+        type: integer
+      total_files:
+        type: integer
+    type: object
+  internal_api.RasterMosaicProgressEventResponse:
+    properties:
+      execution_id:
+        type: string
+      status:
+        type: string
+    type: object
   internal_api.RasterMosaicTaskPlacementResponse:
     properties:
       mode:
@@ -3591,6 +3635,70 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - manager.derived_artifact.read
+  /executions/{execution_id}/events:
+    post:
+      consumes:
+      - application/json
+      description: Runtime 使用 Tenant Service Access Token 上报受管派生产物执行的进度事件；租户只从 AuthContext
+        获取 | A runtime reports managed derived-artifact progress with a tenant service
+        access token; tenant is read only from AuthContext
+      parameters:
+      - description: 执行 ID | Execution ID
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      - description: 进度事件 | Progress event
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.RasterMosaicProgressEventRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/internal_api.RasterMosaicProgressEventResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 记录 Manager 执行进度事件 | Record Manager execution progress event
+      tags:
+      - 任务执行 | Task Execution
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.create
   /exports:
     post:
       consumes:

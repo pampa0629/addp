@@ -185,7 +185,7 @@ func (e *ManagerGaussianSplatKSplatExecutor) prepareSource(ctx context.Context, 
 	if err != nil {
 		return workflowaccess.Source{}, nil, fmt.Errorf("parse gaussian splat KSplat source locator: %w", err)
 	}
-	engine, err := e.systemClient.GetEngine(source.SourceEngineID)
+	engine, err := e.systemClient.GetEngineForTenant(ctx, tenantID, source.SourceEngineID)
 	if err != nil {
 		return workflowaccess.Source{}, nil, fmt.Errorf("get source engine: %w", err)
 	}

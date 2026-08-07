@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gogama/flatgeobuf/flatgeobuf"
@@ -86,7 +85,7 @@ func TestMySQLTableFlatGeobufSourceIntegration(t *testing.T) {
 	defer systemServer.Close()
 	store := &recordingTemporaryFlatGeobufStore{exists: true}
 	executor := &ManagerVectorTileCacheWorkflowExecutor{
-		systemClient: commonClient.NewSystemClientWithInternalKey(systemServer.URL, "internal"),
+		systemClient: newTestSystemClient(systemServer.URL),
 		objectStore:  store, minioEndpoint: "http://minio:9000", minioAccessKey: "ak", minioSecretKey: "sk", defaultBucket: "manager",
 	}
 	identity := tileCacheTaskTargetIdentity{EngineID: 11, SourceKind: "table", Schema: database, Table: "features", FullName: database + ".features"}

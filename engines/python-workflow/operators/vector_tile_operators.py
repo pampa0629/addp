@@ -760,7 +760,7 @@ VECTOR_TO_PMTILES_METADATA = OperatorMetadata(
                     "gdal_env": {},
                 },
                 "progress_callback": {
-                    "endpoint": "http://manager:8081/api/v1/manager/internal/executions/{execution_id}/events",
+                    "endpoint": "http://manager:8081/api/v1/manager/executions/{execution_id}/events",
                     "tenant_id": 7,
                     "execution_id": "execution-uuid",
                 },

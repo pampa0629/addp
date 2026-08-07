@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
@@ -58,7 +57,7 @@ func TestManagerPointCloudCOPCExecutorInvokesDirectWorkflowAndPublishesArtifact(
 
 	systemServer := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/api/v1/internal/engines/26" {
+			if r.URL.Path != "/api/v1/system/engines/26" {
 				t.Fatalf("unexpected system path: %s", r.URL.Path)
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -73,7 +72,7 @@ func TestManagerPointCloudCOPCExecutorInvokesDirectWorkflowAndPublishesArtifact(
 	go func() { _ = systemServer.Serve(systemListener) }()
 
 	executor := NewManagerPointCloudCOPCExecutor(
-		commonClient.NewSystemClientWithInternalKey("http://"+systemListener.Addr().String(), "internal-key"),
+		newTestSystemClient("http://"+systemListener.Addr().String()),
 		recordingWorkflowLister{engines: []commonModels.Engine{{
 			ID:         99,
 			Name:       "Tenant PointCloud Workflow",
@@ -88,7 +87,6 @@ func TestManagerPointCloudCOPCExecutorInvokesDirectWorkflowAndPublishesArtifact(
 		}}},
 		&recordingPointCloudCOPCObjectStore{size: 24680},
 		"http://manager:8081",
-		"manager-internal-key",
 		"http://minio:9000",
 		"minioadmin",
 		"minioadmin",
@@ -158,10 +156,12 @@ func TestManagerPointCloudCOPCExecutorInvokesDirectWorkflowAndPublishesArtifact(
 	if targetPlanAccess["method"] != "object_store" || targetPlanAccess["bucket"] != "manager" || targetPlanAccess["object"] != "tenant_7/point-cloud-copc/fp/source.copc.laz" {
 		t.Fatalf("target access = %#v, want Manager infra MinIO target", targetPlanAccess)
 	}
-	if progress["endpoint"] != "http://manager:8081/api/v1/manager/internal/executions/point-cloud-exec-1/events" ||
-		progress["tenant_id"] != float64(7) || progress["execution_id"] != "point-cloud-exec-1" ||
-		progress["internal_api_key"] != "manager-internal-key" {
-		t.Fatalf("progress callback = %#v, want Manager internal execution event callback", progress)
+	if progress["endpoint"] != "http://manager:8081/api/v1/manager/executions/point-cloud-exec-1/events" ||
+		progress["tenant_id"] != float64(7) || progress["execution_id"] != "point-cloud-exec-1" {
+		t.Fatalf("progress callback = %#v, want Manager execution event callback", progress)
+	}
+	if _, exists := progress["internal_api_key"]; exists {
+		t.Fatalf("progress callback contains legacy internal_api_key: %#v", progress)
 	}
 	if targetPlanAccess["endpoint"] != "minio:9000" || targetPlanAccess["access_key"] != "minioadmin" || targetPlanAccess["secret_key"] != "minioadmin" {
 		t.Fatalf("target credentials not passed correctly: %#v", targetPlanAccess)
@@ -197,7 +197,7 @@ func TestManagerPointCloudCOPCExecutorRejectsOperatorWithoutDirectMode(t *testin
 
 	systemServer := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/api/v1/internal/engines/26" {
+			if r.URL.Path != "/api/v1/system/engines/26" {
 				t.Fatalf("unexpected system path: %s", r.URL.Path)
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -212,7 +212,7 @@ func TestManagerPointCloudCOPCExecutorRejectsOperatorWithoutDirectMode(t *testin
 	go func() { _ = systemServer.Serve(systemListener) }()
 
 	executor := NewManagerPointCloudCOPCExecutor(
-		commonClient.NewSystemClientWithInternalKey("http://"+systemListener.Addr().String(), "internal-key"),
+		newTestSystemClient("http://"+systemListener.Addr().String()),
 		recordingWorkflowLister{engines: []commonModels.Engine{{
 			ID:         99,
 			Name:       "Tenant PointCloud Workflow",
@@ -227,7 +227,6 @@ func TestManagerPointCloudCOPCExecutorRejectsOperatorWithoutDirectMode(t *testin
 		}}},
 		&recordingPointCloudCOPCObjectStore{size: 24680},
 		"http://manager:8081",
-		"manager-internal-key",
 		"http://minio:9000",
 		"minioadmin",
 		"minioadmin",

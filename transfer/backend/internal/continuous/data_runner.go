@@ -324,6 +324,7 @@ func (r *DataSessionRunner) mapPartitionRecords(
 }
 
 func (r *DataSessionRunner) buildPlan(ctx context.Context, claim repository.RuntimeLeaseClaim) (*planner.ContinuousPlan, error) {
+	resolver := planner.BindEngineResolver(r.Resolver, claim.Task.TenantID)
 	if planner.IsDatabaseCDCTaskConfig(claim.Task.Config) {
 		if r.Captures == nil {
 			return nil, fmt.Errorf("database CDC data runner requires capture resource store")
@@ -342,7 +343,7 @@ func (r *DataSessionRunner) buildPlan(ctx context.Context, claim repository.Runt
 		if err != nil {
 			return nil, fmt.Errorf("parse database CDC task: %w", err)
 		}
-		return planner.BuildDatabaseCDCContinuousPlan(spec, r.Resolver, planner.DatabaseCDCStreamBinding{
+		return planner.BuildDatabaseCDCContinuousPlan(spec, resolver, planner.DatabaseCDCStreamBinding{
 			Provider: string(resource.SourceType),
 			ConnInfo: r.InfraKafkaConnection, Path: internalKafkaTopicPath(resource.TopicName),
 			ConsumerGroup: resource.ConsumerGroup, SourceIdentity: resource.SourceIdentity,
@@ -354,7 +355,7 @@ func (r *DataSessionRunner) buildPlan(ctx context.Context, claim repository.Runt
 	if err != nil {
 		return nil, fmt.Errorf("parse continuous task: %w", err)
 	}
-	plan, err := planner.BuildContinuousPlan(spec, r.Resolver)
+	plan, err := planner.BuildContinuousPlan(spec, resolver)
 	if err != nil {
 		return nil, fmt.Errorf("build continuous plan: %w", err)
 	}

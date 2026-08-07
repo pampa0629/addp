@@ -61,6 +61,7 @@ func main() {
 		log.Fatalf("Service Token Source 配置无效: %v", err)
 	}
 	systemRuntimeClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, serviceTokenSource, nil)
+	systemClient := commonClient.NewSystemClient(cfg.SystemServiceURL, serviceTokenSource)
 
 	// 初始化结构化日志
 	logLevel := os.Getenv("LOG_LEVEL")
@@ -122,13 +123,6 @@ func main() {
 	// if err := connector.RegisterAllConnectors(registry); err != nil {
 	// 	log.Fatalf("Failed to register connectors: %v", err)
 	// }
-
-	// 初始化 System 客户端（用于审计日志、Engine 解析和服务间调用）
-	var systemClient *commonClient.SystemClient
-	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
-		systemClient = commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-		log.Printf("✅ SystemClient 已初始化: %s", cfg.SystemServiceURL)
-	}
 
 	// 初始化 Service 层。HTTP 进程需要 execution engine 解析 replay plan 和采集请求时 retention 快照，
 	// 实际 bounded 数据处理仍只由 worker 执行。
@@ -220,7 +214,7 @@ func main() {
 	defer cleanupService.Stop()
 
 	// 设置路由
-	router := api.SetupRouter(taskService, executionService, continuousPolicyService, cfg.SystemServiceURL, cfg.MetaServiceURL, redisClient, systemClient)
+	router := api.SetupRouter(taskService, executionService, continuousPolicyService, cfg.SystemServiceURL, cfg.MetaServiceURL, redisClient, systemClient, systemRuntimeClient)
 
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("transfer")
@@ -247,19 +241,15 @@ func main() {
 	}
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
-	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
-		taskProviderRegistry := service.NewTaskProviderRegistryService(
-			cfg.SystemServiceURL,
-			cfg.InternalAPIKey,
-			serviceURL,
-		)
+	if systemRuntimeClient != nil {
+		taskProviderRegistry := service.NewTaskProviderRegistryService(systemRuntimeClient, serviceURL)
 
 		// 后台异步注册（不阻塞启动，支持重试）
 		go func() {
 			time.Sleep(2 * time.Second) // 等待服务完全启动
 			maxRetries := 5
 			for attempt := 1; attempt <= maxRetries; attempt++ {
-				if err := taskProviderRegistry.Register(); err != nil {
+				if err := taskProviderRegistry.Register(context.Background()); err != nil {
 					log.Printf("⚠️  任务提供者注册失败 (尝试 %d/%d): %v", attempt, maxRetries, err)
 					time.Sleep(time.Duration(attempt*2) * time.Second) // 指数退避
 					continue

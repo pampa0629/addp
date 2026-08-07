@@ -88,10 +88,6 @@ func main() {
 	// 初始化 services
 	ontologySvc := service.NewOntologyService(ontologyRepo, entityTypeRepo, relationTypeRepo, versionRepo)
 	graphSvc := service.NewKnowledgeGraphService(graphRepo)
-	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-	neo4jSvc := service.NewNeo4jService(graphRepo, ontologyRepo, systemClient)
-	knowledgeSvc := service.NewKnowledgeService(neo4jSvc, ontologyRepo, graphRepo)
-	schemaInferenceSvc := service.NewSchemaInferenceService(graphRepo, ontologyRepo, neo4jSvc, ontologySvc, systemClient)
 	graphTokenSource, err := commonClient.NewOAuthServiceTokenSource(
 		cfg.SystemServiceURL,
 		"addp-graph",
@@ -102,8 +98,12 @@ func main() {
 		logger.Error("Graph Service Token Provider 初始化失败", "error", err)
 		os.Exit(1)
 	}
+	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, graphTokenSource, nil)
+	neo4jSvc := service.NewNeo4jService(graphRepo, ontologyRepo, systemServiceClient)
+	knowledgeSvc := service.NewKnowledgeService(neo4jSvc, ontologyRepo, graphRepo)
+	schemaInferenceSvc := service.NewSchemaInferenceService(graphRepo, ontologyRepo, neo4jSvc, ontologySvc, systemServiceClient)
 	buildSvc := service.NewBuildService(buildRepo, ontologyRepo, ontologySvc, graphRepo, taskExecutionRepo, neo4jSvc, materialReader, materialWriter, cfg.CopilotServiceURL, graphTokenSource)
-	analysisSvc := service.NewAnalysisService(graphRepo, ontologyRepo, systemClient, neo4jSvc)
+	analysisSvc := service.NewAnalysisService(graphRepo, ontologyRepo, systemServiceClient, neo4jSvc)
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
 	if err := cleanupSvc.Start(context.Background()); err != nil {
 		logger.Warn("Graph 资源回收执行方启动失败", "error", err)
@@ -112,8 +112,8 @@ func main() {
 
 	// 初始化 Model 导入服务（如果配置了 MODEL_URL）
 	var modelImportSvc *service.ModelImportService
-	if cfg.ModelServiceURL != "" && cfg.InternalAPIKey != "" {
-		modelClient := commonClient.NewModelClientWithInternalKey(cfg.ModelServiceURL, cfg.InternalAPIKey)
+	if cfg.ModelServiceURL != "" {
+		modelClient := commonClient.NewModelClient(cfg.ModelServiceURL, graphTokenSource, nil)
 		modelImportSvc = service.NewModelImportService(modelClient, ontologySvc, entityTypeRepo, relationTypeRepo)
 	}
 
@@ -133,9 +133,8 @@ func main() {
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("graph")
 	serviceURL := utils.BuildServiceURL(serviceHost, port)
-	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
-		registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-		registryClient.RegisterAndHeartbeatWithMetadata("graph", serviceURL, "/graph", map[string]interface{}{
+	if cfg.SystemServiceURL != "" {
+		systemServiceClient.RegisterAndHeartbeatWithMetadata(context.Background(), "graph", serviceURL, "/graph", map[string]interface{}{
 			"module": "graph",
 			"capabilities": map[string]interface{}{
 				"cleanup_executor": map[string]interface{}{
@@ -146,10 +145,9 @@ func main() {
 		})
 	}
 
-	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
+	if cfg.SystemServiceURL != "" {
 		taskProviderRegistry := service.NewTaskProviderRegistryService(
-			cfg.SystemServiceURL,
-			cfg.InternalAPIKey,
+			systemServiceClient,
 			serviceURL,
 		)
 
@@ -157,7 +155,7 @@ func main() {
 			time.Sleep(2 * time.Second)
 			maxRetries := 5
 			for attempt := 1; attempt <= maxRetries; attempt++ {
-				if err := taskProviderRegistry.Register(); err != nil {
+				if err := taskProviderRegistry.Register(context.Background()); err != nil {
 					logger.Warn("任务提供者注册失败",
 						"attempt", fmt.Sprintf("%d/%d", attempt, maxRetries),
 						"error", err)

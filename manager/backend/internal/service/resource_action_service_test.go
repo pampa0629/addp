@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -16,18 +17,23 @@ func (c fakeResourceActionSystemClient) GetEngine(engineID uint) (*commonModels.
 	return c.engines[engineID], nil
 }
 
+func (c fakeResourceActionSystemClient) GetEngineForTenant(_ context.Context, _ uint, engineID uint) (*commonModels.Engine, error) {
+	return c.engines[engineID], nil
+}
+
 func TestResourceActionsStorageNodeSupportsUploadOnly(t *testing.T) {
 	svc := NewResourceActionService(fakeResourceActionSystemClient{
 		engines: map[uint]*commonModels.Engine{
 			3: {
 				ID:             3,
+				TenantID:       uintPtr(7),
 				EngineType:     "minio",
 				LifecycleState: "active",
 			},
 		},
 	})
 
-	got, err := svc.GetResourceActions(t.Context(), "addp://engine/3/path/data/raw?type=prefix&node_id=20", nil)
+	got, err := svc.GetResourceActions(t.Context(), "addp://engine/3/path/data/raw?type=prefix&node_id=20", uintPtr(7))
 	if err != nil {
 		t.Fatalf("GetResourceActions() error = %v", err)
 	}
@@ -49,13 +55,14 @@ func TestResourceActionsStorageItemSupportsDownloadOnly(t *testing.T) {
 		engines: map[uint]*commonModels.Engine{
 			3: {
 				ID:             3,
+				TenantID:       uintPtr(7),
 				EngineType:     "minio",
 				LifecycleState: "active",
 			},
 		},
 	})
 
-	got, err := svc.GetResourceActions(t.Context(), "addp://engine/3/path/data/roads.shp?type=object&item_id=8", nil)
+	got, err := svc.GetResourceActions(t.Context(), "addp://engine/3/path/data/roads.shp?type=object&item_id=8", uintPtr(7))
 	if err != nil {
 		t.Fatalf("GetResourceActions() error = %v", err)
 	}
@@ -77,13 +84,14 @@ func TestResourceActionsDatabaseNodeSupportsImportOnly(t *testing.T) {
 		engines: map[uint]*commonModels.Engine{
 			8: {
 				ID:             8,
+				TenantID:       uintPtr(7),
 				EngineType:     "postgresql",
 				LifecycleState: "active",
 			},
 		},
 	})
 
-	got, err := svc.GetResourceActions(t.Context(), "addp://engine/8/path/public?type=schema&node_id=18", nil)
+	got, err := svc.GetResourceActions(t.Context(), "addp://engine/8/path/public?type=schema&node_id=18", uintPtr(7))
 	if err != nil {
 		t.Fatalf("GetResourceActions() error = %v", err)
 	}
@@ -108,13 +116,14 @@ func TestResourceActionsDatabaseItemSupportsExportOnly(t *testing.T) {
 		engines: map[uint]*commonModels.Engine{
 			8: {
 				ID:             8,
+				TenantID:       uintPtr(7),
 				EngineType:     "postgresql",
 				LifecycleState: "active",
 			},
 		},
 	})
 
-	got, err := svc.GetResourceActions(t.Context(), "addp://engine/8/path/public/roads?type=table&item_id=54", nil)
+	got, err := svc.GetResourceActions(t.Context(), "addp://engine/8/path/public/roads?type=table&item_id=54", uintPtr(7))
 	if err != nil {
 		t.Fatalf("GetResourceActions() error = %v", err)
 	}
@@ -170,6 +179,7 @@ func TestResourceActionsUsesStoredCapabilities(t *testing.T) {
 		engines: map[uint]*commonModels.Engine{
 			9: {
 				ID:             9,
+				TenantID:       uintPtr(7),
 				EngineType:     "custom_object",
 				LifecycleState: "active",
 				Capabilities:   &raw,
@@ -177,7 +187,7 @@ func TestResourceActionsUsesStoredCapabilities(t *testing.T) {
 		},
 	})
 
-	got, err := svc.GetResourceActions(t.Context(), "addp://engine/9/path/bucket?type=bucket&node_id=1", nil)
+	got, err := svc.GetResourceActions(t.Context(), "addp://engine/9/path/bucket?type=bucket&node_id=1", uintPtr(7))
 	if err != nil {
 		t.Fatalf("GetResourceActions() error = %v", err)
 	}

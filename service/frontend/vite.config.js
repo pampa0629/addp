@@ -9,10 +9,12 @@ export default defineConfig({
       '@': resolve(__dirname, 'src'),
       '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
       '@common-ui-map': resolve(__dirname, '../../common-frontend/map/src'),
+      '@common-ui-graph': resolve(__dirname, '../../common-frontend/graph/src'),
+      '@antv/g6': resolve(__dirname, 'node_modules/@antv/g6'),
       'proj4': resolve(__dirname, 'node_modules/proj4'),
       'vue-i18n': resolve(__dirname, 'node_modules/vue-i18n')
     },
-    dedupe: ['ol', 'proj4', 'vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios']
+  dedupe: ['ol', 'proj4', 'vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios', '@antv/g6']
   },
   optimizeDeps: {
     include: ['ol', 'proj4']

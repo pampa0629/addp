@@ -616,10 +616,10 @@ def register_to_system():
     """
     向 System Backend 自注册（创建或更新引擎记录）
     """
-    import requests
+    from addp_common.client import register_runtime_engine
 
     system_url = os.getenv('SYSTEM_URL', 'http://localhost:8180')
-    api_key = os.getenv('INTERNAL_API_KEY', '')
+    client_secret = os.getenv('GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET', '')
 
     # 读取自身配置
     port = int(os.getenv('PORT', 8099))
@@ -650,46 +650,19 @@ def register_to_system():
         "is_builtin": True  # 内置引擎，对所有租户可见
     }
 
-    headers = {
-        "Content-Type": "application/json",
-        "X-Internal-API-Key": api_key
-    }
-
     try:
-        logger.info(f"📤 发送注册请求到: {system_url}/api/v1/internal/engines/register")
+        logger.info(f"📤 发送注册请求到: {system_url}/api/v1/system/runtime/engines")
         logger.info(f"📦 Payload: {payload}")
-        logger.info(f"🔑 Headers: Content-Type={headers['Content-Type']}, API Key length={len(api_key)}")
-
-        # 禁用代理，直接连接到 System Backend（避免系统代理干扰）
-        proxies = {
-            'http': None,
-            'https': None
-        }
-
-        response = requests.post(
-            f"{system_url}/api/v1/internal/engines/register",
-            json=payload,
-            headers=headers,
-            proxies=proxies,
-            timeout=10
+        status_code, body = register_runtime_engine(
+            system_url, "addp-geopython", client_secret, payload
         )
-
-        logger.info(f"📥 收到响应: status={response.status_code}, body={response.text[:500]}")
-
-        if response.status_code == 202:
-            result = response.json()
-            engine_id = result.get('engine_id')
-            logger.info(f"✅ Successfully registered to System Backend (Engine ID: {engine_id})")
+        logger.info(f"📥 收到响应: status={status_code}, body={body[:500]}")
+        if status_code == 202:
+            logger.info("✅ Successfully registered to System Backend")
             return True
         else:
-            logger.warning(f"⚠️  Failed to register: {response.status_code} - {response.text}")
+            logger.warning(f"⚠️  Failed to register: {status_code} - {body}")
             return False
-
-    except requests.exceptions.RequestException as e:
-        logger.error(f"❌ 网络请求异常: {type(e).__name__}: {e}")
-        import traceback
-        logger.error(f"详细堆栈:\n{traceback.format_exc()}")
-        return False
     except Exception as e:
         logger.error(f"❌ 注册异常: {type(e).__name__}: {e}")
         import traceback

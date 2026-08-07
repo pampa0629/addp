@@ -549,29 +549,17 @@ $ curl http://localhost:8180/health
 
 #### 解决方案
 
-**在 Python 引擎的注册函数中禁用代理**
-
-修改文件：
-- `engines/python-workflow/api_server.py:590-601`
-- `engines/spark-workflow/api_server.py:382-393`
+生产内置 Workflow Runtime 统一调用 `common-python` 的 OAuth 注册助手。该助手先用 Runtime 自身 Confidential OAuth Client 获取 Platform Service Access Token，再以 Bearer 调用 System 注册接口；内部 `httpx.Client` 固定 `trust_env=False`，不会读取系统代理：
 
 ```python
-def register_to_system():
-    # ...
+from addp_common.client import register_runtime_engine
 
-    # 禁用代理，直接连接到 System Backend（避免系统代理干扰）
-    proxies = {
-        'http': None,
-        'https': None
-    }
-
-    response = requests.post(
-        f"{system_url}/api/v1/internal/engines/register",
-        json=payload,
-        headers=headers,
-        proxies=proxies,  # ← 添加这个参数
-        timeout=10
-    )
+status_code, body = register_runtime_engine(
+    system_url,
+    "addp-geopython",
+    service_client_secret,
+    payload,
+)
 ```
 
 #### 验证方法
@@ -606,16 +594,9 @@ def register_to_system():
    - 确保容器内部通信不经过代理
    - 使用 `NO_PROXY` 环境变量排除内部服务
 
-3. **通用 HTTP 客户端封装**（建议）
-   ```python
-   # 创建统一的内部服务调用客户端
-   def create_internal_client():
-       """创建用于内部服务调用的 HTTP 客户端（禁用代理）"""
-       return requests.Session()
-       session = requests.Session()
-       session.proxies = {'http': None, 'https': None}
-       return session
-   ```
+3. **统一客户端边界**
+   - Runtime 自注册必须复用 `addp_common.client.register_runtime_engine`。
+   - 不得在各 Runtime 中重新实现 Token 请求、代理绕过或注册 URL。
 
 #### 相关问题
 
@@ -770,85 +751,33 @@ python3 -m venv venv
 
 ---
 
-### 4. 工作流引擎注册失败 404（缺少 /api 前缀）
+### 4. 工作流 Runtime 注册失败 401/403
 
 #### 问题现象
 
-启动 Python/Math/Spark Workflow Engine 后，日志显示注册失败：
-
-```
-2026-01-27 16:13:57,196 - __main__ - INFO - 📤 发送注册请求到: http://localhost:8180/internal/engines/register
-2026-01-27 16:13:57,196 - urllib3.connectionpool - DEBUG - http://localhost:8180 "POST /internal/engines/register HTTP/1.1" 404 18
-2026-01-27 16:13:57,196 - __main__ - INFO - 📥 收到响应: status=404, body=404 page not found
-2026-01-27 16:13:57,196 - __main__ - WARNING - ⚠️  Failed to register: 404 - 404 page not found
-```
-
-引擎会重试 5 次，全部失败后放弃注册。
+启动 GeoPython、Spark、Model3D 或 PointCloud Workflow Runtime 后，日志显示 OAuth Token 请求或 Runtime 注册返回 401/403，System 中没有对应内置 Runtime。
 
 #### 问题根因
 
-**注册 API 路径缺少 `/api/v1` 前缀**
-
-- **错误路径**: `http://localhost:8180/internal/engines/register`
-- **正确路径**: `http://localhost:8180/api/v1/internal/engines/register`
-
-System Backend 的路由定义在 `system/backend/internal/api/engine_handler.go`：
-
-```go
-// POST /api/v1/internal/engines/register
-func RegisterEngine(c *gin.Context) {
-    // 引擎注册逻辑
-}
-```
-
-所有内部 API 都必须带 `/api/v1/internal` 前缀，这是 System Backend 的统一路由规范。
+Runtime 没有使用与自身 `engine_type` 一一绑定的 Platform Service Principal，或对应 `*_WORKFLOW_SERVICE_CLIENT_SECRET` 与 System provision 的 Confidential OAuth Client Secret 不一致。System 只接受短期 Platform Service Access Token，并校验 `system.runtime_registry.update` 与 Runtime 身份归属。
 
 #### 技术细节
 
-**受影响的引擎：**
+生产内置 Runtime 的固定 Client ID：
 
-1. **GeoPython Workflow Engine** (`engines/python-workflow/api_server.py`)
-2. **Spark Workflow Engine** (`engines/spark-workflow/api_server.py`)
+- GeoPython: `addp-geopython`
+- Spark: `addp-spark`
+- Model3D: `addp-model3d`
+- PointCloud: `addp-pointcloud`
 
-**说明**：Math Workflow 现在是扩展引擎规范参考实现。开发环境可自动启动 Math Workflow 服务，但它不会自动注册到 System；需要使用时，应在 System 引擎管理中按扩展引擎手动注册。
-
-**注册逻辑位置：**
-```python
-# engines/*/api_server.py
-def register_to_system():
-    response = requests.post(
-        f"{system_url}/internal/engines/register",  # ❌ 错误
-        json=payload,
-        headers=headers
-    )
-```
-
-**为什么引擎仍能正常运行：**
-- 注册失败不影响引擎的 API 服务（仍监听在 8099/8089/8098 端口）
-- 但 System 无法发现引擎，Develop 和 Orchestrator 模块无法调用
-- 用户在前端看不到可用的计算引擎
+Math Workflow 是协议参考实现，需要时通过 System 引擎管理按扩展引擎手动注册。
 
 #### 解决方案
 
-**修复所有引擎的注册 URL：**
-
-```python
-# 修改前
-response = requests.post(
-    f"{system_url}/internal/engines/register",
-    # ...
-)
-
-# 修改后
-response = requests.post(
-    f"{system_url}/api/v1/internal/engines/register",
-    # ...
-)
-```
-
-**修复的文件：**
-- [engines/python-workflow/api_server.py](../../engines/python-workflow/api_server.py)（第 593、604 行）
-- [engines/spark-workflow/api_server.py](../../engines/spark-workflow/api_server.py)（第 395 行）
+1. 确认 `.env` 中对应 Runtime Secret 非空且至少 32 字节。
+2. 确认 System migration 已 provision 对应 Service Principal、OAuth Client 和 Platform Runtime Role。
+3. Runtime 必须调用 `register_runtime_engine(system_url, client_id, client_secret, payload)`，不得自行拼接注册路由。
+4. 注册请求的 `engine_type` 必须与 Service Principal 固定归属一致。
 
 #### 验证修复
 
@@ -856,13 +785,11 @@ response = requests.post(
 # 重启工作流引擎
 bash scripts/dev/restart.sh -python-workflow
 
-# 检查注册日志（应该看到 202 成功状态）
+# 检查注册日志（应看到 202）
 tail -f logs/python-workflow-engine-stderr.log
 
 # 预期输出：
-# 📤 发送注册请求到: http://localhost:8180/api/v1/internal/engines/register
-# 📥 收到响应: status=202, body=...
-# ✅ Successfully registered to System Backend (Engine ID: xxx)
+# Successfully registered to System Backend
 ```
 
 **在 System 后端验证：**
@@ -877,10 +804,9 @@ curl -H "Authorization: Bearer YOUR_TOKEN" \
 
 #### 修复日期
 
-- **发现日期：** 2026-01-27
-- **修复版本：** v0.0.22+
-- **影响范围：** 所有工作流引擎（Python、Math、Spark）
-- **根本原因：** API 路由规范不一致
+- **迁移日期：** 2026-08-07
+- **影响范围：** 所有生产内置 Workflow Runtime
+- **根本原因：** 共享内部密钥无法表达 Platform/Tenant Context，也无法实施精确 Runtime 身份归属
 - **验证命令：** `bash scripts/dev/restart.sh && tail -f logs/*-workflow-engine-stderr.log`
 
 ---

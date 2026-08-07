@@ -36,7 +36,7 @@ var (
 type AnalysisService struct {
 	graphRepo    *repository.KnowledgeGraphRepository
 	ontologyRepo *repository.OntologyRepository
-	systemClient *commonClient.SystemClient
+	systemClient *commonClient.SystemServiceClient
 	neo4jSvc     *Neo4jService
 
 	// GDS 能力缓存（实例级）
@@ -59,7 +59,7 @@ type analysisNodeShapeFilter struct {
 func NewAnalysisService(
 	graphRepo *repository.KnowledgeGraphRepository,
 	ontologyRepo *repository.OntologyRepository,
-	systemClient *commonClient.SystemClient,
+	systemClient *commonClient.SystemServiceClient,
 	neo4jSvc *Neo4jService,
 ) *AnalysisService {
 	return &AnalysisService{
@@ -121,7 +121,7 @@ func (s *AnalysisService) getGraphAndEngine(graphID, tenantID uint) (*models.Kno
 	if err != nil {
 		return nil, nil, fmt.Errorf("knowledge graph not found: %w", err)
 	}
-	engine, err := s.systemClient.GetEngine(kg.EngineID)
+	engine, err := s.systemClient.WithTenantID(tenantID).GetEngine(context.Background(), kg.EngineID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get engine (id=%d): %w", kg.EngineID, err)
 	}

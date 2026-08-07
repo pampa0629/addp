@@ -51,7 +51,7 @@ type SchemaChangeInspector interface {
 
 type TaskExecutionEngine interface {
 	ExecuteTask(ctx context.Context, taskID, executionID uint) error
-	PrepareReplayExecution(ctx context.Context, taskConfig map[string]interface{}, request ReplayExecutionRequest, executionApplyIdentity string) (*ReplayExecutionPreparation, error)
+	PrepareReplayExecution(ctx context.Context, tenantID uint, taskConfig map[string]interface{}, request ReplayExecutionRequest, executionApplyIdentity string) (*ReplayExecutionPreparation, error)
 }
 
 // TaskService 任务服务
@@ -161,7 +161,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequ
 	if batchSize == 0 {
 		batchSize = 1000
 	}
-	if err := s.validateTaskConfig(ctx, req.Config, batchSize); err != nil {
+	if err := s.validateTaskConfig(ctx, tenantID, req.Config, batchSize); err != nil {
 		return nil, err
 	}
 	boundary, _ := planner.TaskRuntimeBoundary(req.Config)
@@ -281,7 +281,7 @@ func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *mo
 	if req.BatchSize != nil {
 		effectiveBatchSize = *req.BatchSize
 	}
-	if err := s.validateTaskConfig(ctx, effectiveConfig, effectiveBatchSize); err != nil {
+	if err := s.validateTaskConfig(ctx, tenantID, effectiveConfig, effectiveBatchSize); err != nil {
 		return nil, err
 	}
 	effectiveBoundary, _ := planner.TaskRuntimeBoundary(effectiveConfig)
@@ -371,7 +371,7 @@ func validateNewTaskConfig(config map[string]interface{}, batchSize int) error {
 	}
 }
 
-func (s *TaskService) validateTaskConfig(_ context.Context, config map[string]interface{}, batchSize int) error {
+func (s *TaskService) validateTaskConfig(_ context.Context, tenantID uint, config map[string]interface{}, batchSize int) error {
 	if err := validateNewTaskConfig(config, batchSize); err != nil {
 		return err
 	}
@@ -379,7 +379,8 @@ func (s *TaskService) validateTaskConfig(_ context.Context, config map[string]in
 	if err != nil {
 		return nil
 	}
-	if _, err := planner.ResolveDatabaseCDCBindings(spec, s.engineResolver); err != nil {
+	resolver := planner.BindEngineResolver(s.engineResolver, tenantID)
+	if _, err := planner.ResolveDatabaseCDCBindings(spec, resolver); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidTaskConfig, err)
 	}
 	return nil
@@ -479,7 +480,7 @@ func (s *TaskService) ReplayTask(ctx context.Context, id, tenantID, userID uint,
 	for applyIdentity == task.ApplyIdentity {
 		applyIdentity = uuid.NewString()
 	}
-	preparation, err := s.executionEngine.PrepareReplayExecution(ctx, task.Config, ReplayExecutionRequest{
+	preparation, err := s.executionEngine.PrepareReplayExecution(ctx, task.TenantID, task.Config, ReplayExecutionRequest{
 		Ranges: ranges,
 		Target: planner.ReplayTargetSpec{ParentLocator: req.Target.ParentLocator, Name: req.Target.Name},
 	}, applyIdentity)
@@ -536,7 +537,7 @@ func (s *TaskService) StartTaskWithContext(ctx context.Context, id, tenantID, us
 			return nil, repository.ErrCaptureTerminal
 		}
 	}
-	if err := s.validateTaskConfig(ctx, task.Config, task.BatchSize); err != nil {
+	if err := s.validateTaskConfig(ctx, tenantID, task.Config, task.BatchSize); err != nil {
 		return nil, err
 	}
 

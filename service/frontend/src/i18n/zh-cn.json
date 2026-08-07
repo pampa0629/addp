@@ -266,6 +266,8 @@
       "updateSuccess": "查询服务已更新",
       "submitFailed": "失败",
       "detailTitle": "服务信息",
+      "lineageTitle": "数据血缘",
+      "lineageLoadFailed": "加载服务血缘失败",
       "dataSourceTitle": "数据源配置",
       "endpointsTitle": "服务端点",
       "previewTitle": "数据预览",

@@ -31,9 +31,6 @@ type Config struct {
 	PostgresPassword string
 	PostgresDB       string
 
-	// 内部 API Key（用于服务间调用）
-	InternalAPIKey string
-
 	// Redis 配置（用于事件通知）
 	RedisHost     string
 	RedisPort     string
@@ -92,14 +89,6 @@ func Load() *Config {
 	// 加载加密密钥
 	encryptionKey := loadEncryptionKey()
 
-	// 加载内部 API Key
-	internalAPIKey := getEnv("INTERNAL_API_KEY", "")
-	if internalAPIKey != "" {
-		log.Printf("✅ INTERNAL_API_KEY loaded (length: %d)", len(internalAPIKey))
-	} else {
-		log.Println("⚠️  WARNING: INTERNAL_API_KEY is not set! Internal API endpoints will not be accessible.")
-	}
-
 	// 加载 CORS 白名单
 	allowedOriginsStr := getEnv("ALLOWED_ORIGINS", "http://localhost:5170,http://localhost:5173")
 	allowedOrigins := strings.Split(allowedOriginsStr, ",")
@@ -131,15 +120,22 @@ func Load() *Config {
 			"addp-copilot":      getEnv("COPILOT_SERVICE_CLIENT_SECRET", ""),
 			"addp-develop":      getEnv("DEVELOP_SERVICE_CLIENT_SECRET", ""),
 			"addp-duckdb":       getEnv("DUCKDB_SERVICE_CLIENT_SECRET", ""),
+			"addp-gateway":      getEnv("GATEWAY_SERVICE_CLIENT_SECRET", ""),
 			"addp-graph":        getEnv("GRAPH_SERVICE_CLIENT_SECRET", ""),
+			"addp-geopython":    getEnv("GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET", ""),
 			"addp-manager":      getEnv("MANAGER_SERVICE_CLIENT_SECRET", ""),
 			"addp-inference":    getEnv("INFERENCE_SERVICE_CLIENT_SECRET", ""),
 			"addp-meta":         getEnv("META_SERVICE_CLIENT_SECRET", ""),
+			"addp-model":        getEnv("MODEL_SERVICE_CLIENT_SECRET", ""),
+			"addp-model3d":      getEnv("MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET", ""),
 			"addp-monitor":      getEnv("MONITOR_SERVICE_CLIENT_SECRET", ""),
 			"addp-orchestrator": getEnv("ORCHESTRATOR_SERVICE_CLIENT_SECRET", ""),
 			"addp-portal":       getEnv("PORTAL_SERVICE_CLIENT_SECRET", ""),
 			"addp-quality":      getEnv("QUALITY_SERVICE_CLIENT_SECRET", ""),
+			"addp-pointcloud":   getEnv("POINTCLOUD_WORKFLOW_SERVICE_CLIENT_SECRET", ""),
 			"addp-service":      getEnv("SERVICE_SERVICE_CLIENT_SECRET", ""),
+			"addp-standard":     getEnv("STANDARD_SERVICE_CLIENT_SECRET", ""),
+			"addp-spark":        getEnv("SPARK_WORKFLOW_SERVICE_CLIENT_SECRET", ""),
 			"addp-transfer":     getEnv("TRANSFER_SERVICE_CLIENT_SECRET", ""),
 		},
 
@@ -149,9 +145,6 @@ func Load() *Config {
 		PostgresUser:     getEnv("POSTGRES_USER", "addp"),
 		PostgresPassword: getEnv("POSTGRES_PASSWORD", "addp_password"),
 		PostgresDB:       getEnv("POSTGRES_DB", "addp"),
-
-		// 内部 API Key（可选，用于服务间调用安全）
-		InternalAPIKey: internalAPIKey,
 
 		// Redis 配置
 		RedisHost:     getEnv("REDIS_HOST", "localhost"),

@@ -1,41 +1,23 @@
 package client
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
-	"io"
 	"net/http"
-	"time"
 )
 
-type StandardClient struct {
-	baseURL     string
-	httpClient  *http.Client
-	authToken   string
-	internalKey string
+// StandardClient is the Bearer-only client for tenant-owned Standard APIs.
+type StandardClient struct{ tenantHTTPClient }
+
+func NewStandardClient(baseURL string, tokenSource ServiceTokenProvider, httpClient *http.Client) *StandardClient {
+	return &StandardClient{tenantHTTPClient: newTenantHTTPClient(baseURL, tokenSource, httpClient)}
 }
 
-func NewStandardClient(baseURL string) *StandardClient {
-	return &StandardClient{
-		baseURL:    baseURL,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+func (c *StandardClient) WithTenantID(tenantID uint) *StandardClient {
+	if c == nil {
+		return nil
 	}
-}
-
-func NewStandardClientWithInternalKey(baseURL, internalKey string) *StandardClient {
-	return &StandardClient{
-		baseURL:     baseURL,
-		httpClient:  &http.Client{Timeout: 30 * time.Second},
-		internalKey: internalKey,
-	}
-}
-
-func (c *StandardClient) addAuth(req *http.Request) {
-	if c.internalKey != "" {
-		req.Header.Set("X-Internal-API-Key", c.internalKey)
-	} else if c.authToken != "" {
-		req.Header.Set("Authorization", "Bearer "+c.authToken)
-	}
+	return &StandardClient{tenantHTTPClient: c.tenantHTTPClient.withTenantID(tenantID)}
 }
 
 type ElementResponse struct {
@@ -48,109 +30,31 @@ type ElementResponse struct {
 	QualityRules map[string]interface{} `json:"quality_rules"`
 }
 
-// ValidateElement 验证数据元是否存在（用于跨模块引用验证）
-func (c *StandardClient) ValidateElement(elementID int64, tenantID int64) error {
-	url := fmt.Sprintf("%s/api/v1/standard/elements/%d", c.baseURL, elementID)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	c.addAuth(req)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Tenant-ID", fmt.Sprintf("%d", tenantID))
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("element_id %d not found", elementID)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("standard api returned status %d: %s", resp.StatusCode, string(body))
-	}
-
+func (c *StandardClient) ValidateElement(ctx context.Context, elementID int64) error {
 	var element ElementResponse
-	if err := json.NewDecoder(resp.Body).Decode(&element); err != nil {
-		return fmt.Errorf("failed to decode response: %w", err)
+	if err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/api/v1/standard/elements/%d", elementID), nil, &element); err != nil {
+		return fmt.Errorf("standard validate element: %w", err)
 	}
-
-	if element.TenantID != tenantID {
-		return fmt.Errorf("element_id %d belongs to tenant %d, not %d", elementID, element.TenantID, tenantID)
+	if c.tenantID == nil || element.TenantID != int64(*c.tenantID) {
+		return fmt.Errorf("element_id %d belongs to tenant %d, not current tenant", elementID, element.TenantID)
 	}
-
 	return nil
 }
 
-// GetElement 获取数据元详情
-func (c *StandardClient) GetElement(elementID int64, tenantID int64) (*ElementResponse, error) {
-	url := fmt.Sprintf("%s/api/v1/standard/elements/%d", c.baseURL, elementID)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	c.addAuth(req)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Tenant-ID", fmt.Sprintf("%d", tenantID))
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("standard api returned status %d: %s", resp.StatusCode, string(body))
-	}
-
+func (c *StandardClient) GetElement(ctx context.Context, elementID int64) (*ElementResponse, error) {
 	var element ElementResponse
-	if err := json.NewDecoder(resp.Body).Decode(&element); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	if err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/api/v1/standard/elements/%d", elementID), nil, &element); err != nil {
+		return nil, fmt.Errorf("standard get element: %w", err)
 	}
-
 	return &element, nil
 }
 
-// GetElementQualityRules 获取数据元的质量规则定义
-func (c *StandardClient) GetElementQualityRules(elementID int64, tenantID int64) (map[string]interface{}, error) {
-	url := fmt.Sprintf("%s/api/v1/standard/elements/%d/quality-rules", c.baseURL, elementID)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	c.addAuth(req)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Tenant-ID", fmt.Sprintf("%d", tenantID))
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("element_id %d not found", elementID)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("standard api returned status %d: %s", resp.StatusCode, string(body))
-	}
-
+func (c *StandardClient) GetElementQualityRules(ctx context.Context, elementID int64) (map[string]interface{}, error) {
 	var result struct {
 		Data map[string]interface{} `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	if err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/api/v1/standard/elements/%d/quality-rules", elementID), nil, &result); err != nil {
+		return nil, fmt.Errorf("standard get element quality rules: %w", err)
 	}
-
 	return result.Data, nil
 }

@@ -23,6 +23,7 @@ from time import perf_counter
 from typing import Any, Callable, Dict
 
 import requests
+from addp_common.client import SyncOAuthServiceTokenSource
 
 from addp_common.raster_mosaic import (
     MANIFEST_FILE_NAME,
@@ -493,18 +494,32 @@ def _progress_reporter(progress_plan: Dict[str, Any] | None) -> Callable[[Dict[s
         return lambda payload: None
     endpoint = str(progress_plan.get("endpoint") or "").strip()
     tenant_id = progress_plan.get("tenant_id")
-    api_key = str(progress_plan.get("internal_api_key") or "").strip()
-    if not endpoint:
+    if not endpoint or not isinstance(tenant_id, int) or isinstance(tenant_id, bool) or tenant_id <= 0:
         return lambda payload: None
+    token_source = SyncOAuthServiceTokenSource(
+        os.environ.get("SYSTEM_URL", "http://localhost:8180"),
+        "addp-geopython",
+        os.environ.get("GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET", ""),
+    )
 
     def emit(payload: Dict[str, Any]) -> None:
-        headers = {"Content-Type": "application/json"}
-        if api_key:
-            headers["X-Internal-API-Key"] = api_key
-        if tenant_id is not None:
-            headers["X-Tenant-ID"] = str(tenant_id)
         try:
-            requests.post(endpoint, json=payload, headers=headers, timeout=5)
+            token = token_source.token(tenant_id)
+            response = requests.post(
+                endpoint,
+                json=payload,
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=5,
+            )
+            if response.status_code == 401:
+                token_source.invalidate(tenant_id, token)
+                token = token_source.token(tenant_id)
+                requests.post(
+                    endpoint,
+                    json=payload,
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=5,
+                )
         except Exception as exc:
             logger.warning("上报 raster mosaic 进度失败: %s", exc)
 
@@ -1310,7 +1325,7 @@ BUILD_RASTER_MOSAIC_METADATA = OperatorMetadata(
 					"dataset_name": "raster_mosaic",
 				},
 				"progress_callback": {
-					"endpoint": "http://manager:8081/api/v1/manager/internal/executions/{execution_id}/events",
+					"endpoint": "http://manager:8081/api/v1/manager/executions/{execution_id}/events",
 					"tenant_id": 7,
 					"execution_id": "execution-uuid",
 				},

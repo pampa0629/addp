@@ -9,6 +9,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/middleware/auth"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -43,6 +44,25 @@ func (h *TaskProviderHandler) RecordRasterMosaicExecutionProgressEvent(c *gin.Co
 	h.RecordManagerExecutionProgressEvent(c)
 }
 
+// RecordManagerExecutionProgressEvent godoc
+// @Summary      记录 Manager 执行进度事件 | Record Manager execution progress event
+// @Description  Runtime 使用 Tenant Service Access Token 上报受管派生产物执行的进度事件；租户只从 AuthContext 获取 | A runtime reports managed derived-artifact progress with a tenant service access token; tenant is read only from AuthContext
+// @Tags         任务执行 | Task Execution
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        execution_id path string true "执行 ID | Execution ID"
+// @Param        request body RasterMosaicProgressEventRequest true "进度事件 | Progress event"
+// @Success      202 {object} RasterMosaicProgressEventResponse
+// @Failure      400 {object} map[string]interface{}
+// @Failure      401 {object} map[string]interface{}
+// @Failure      403 {object} map[string]interface{}
+// @Failure      404 {object} map[string]interface{}
+// @Failure      409 {object} map[string]interface{}
+// @Failure      500 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.create"]
+// @Router       /executions/{execution_id}/events [post]
 func (h *TaskProviderHandler) RecordManagerExecutionProgressEvent(c *gin.Context) {
 	if h == nil || h.taskExecRepo == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "task execution repository is unavailable"})
@@ -54,7 +74,7 @@ func (h *TaskProviderHandler) RecordManagerExecutionProgressEvent(c *gin.Context
 		return
 	}
 	executionID := c.Param("execution_id")
-	tenantID := managerInternalTenantID(c)
+	tenantID := auth.GetTenantID(c)
 	exec, err := h.taskExecRepo.GetByExecutionID(c.Request.Context(), executionID, int(tenantID))
 	if err != nil {
 		if errors.Is(err, commonapi.ErrNotFound) {

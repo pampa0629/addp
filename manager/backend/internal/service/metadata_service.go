@@ -126,12 +126,12 @@ func resourceAccessible(resource *models.Engine, tenantID *uint) bool {
 }
 
 // getResource 通过 System 服务获取解密后的资源信息
-func (s *MetadataService) getResource(engineID uint) (*models.Engine, error) {
+func (s *MetadataService) getResource(ctx context.Context, engineID uint, tenantID uint) (*models.Engine, error) {
 	if s.systemClient == nil {
 		return nil, fmt.Errorf("system client not available")
 	}
 
-	sysResource, err := s.systemClient.GetEngine(engineID)
+	sysResource, err := s.systemClient.GetEngineForTenant(ctx, tenantID, engineID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get engine from system: %w", err)
 	}
@@ -140,7 +140,10 @@ func (s *MetadataService) getResource(engineID uint) (*models.Engine, error) {
 }
 
 func (s *MetadataService) getResourceForTenant(engineID uint, tenantID *uint) (*models.Engine, error) {
-	resource, err := s.getResource(engineID)
+	if tenantID == nil || *tenantID == 0 {
+		return nil, ErrEngineAccessDenied
+	}
+	resource, err := s.getResource(context.Background(), engineID, *tenantID)
 	if err != nil {
 		return nil, err
 	}

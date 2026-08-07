@@ -185,19 +185,16 @@ func (s *Neo4jService) SyncConstraints(ctx context.Context, graphID int64,
 package client
 
 type ModelClient struct {
-    baseURL     string
-    httpClient  *http.Client
-    internalKey string
-    tenantID    *uint
+    tenantHTTPClient
 }
 
-func NewModelClient(baseURL, authToken string) *ModelClient { ... }
-func NewModelClientWithInternalKey(baseURL, internalKey string) *ModelClient { ... }
+func NewModelClient(baseURL string, tokenSource ServiceTokenProvider, httpClient *http.Client) *ModelClient { ... }
+func (c *ModelClient) WithTenantID(tenantID uint) *ModelClient { ... }
 
 // 核心方法（对应 model 模块 API）
-func (c *ModelClient) ListEntities(tenantID uint) ([]ModelEntity, error)
-func (c *ModelClient) GetEntity(id uint) (*ModelEntity, error)           // 含属性
-func (c *ModelClient) ListEntityRelations(tenantID uint) ([]ModelEntityRelation, error)
+func (c *ModelClient) ListEntities(ctx context.Context) ([]ModelEntity, error)
+func (c *ModelClient) GetEntityWithAttributes(ctx context.Context, id uint) (*ModelEntity, error)
+func (c *ModelClient) ListEntityRelations(ctx context.Context) ([]ModelEntityRelation, error)
 
 // DTO 定义
 type ModelEntity struct {
@@ -393,7 +390,7 @@ type ConstraintDefinition struct {
 
 1. **Neo4j 约束 DDL**：`CREATE CONSTRAINT` 为 DDL，需确认 `dbbridge.ExecuteGraphQuery` 是否支持 DDL 语句。如不支持，需在 Neo4jService 中增加直接通过 Neo4j Go driver 执行 DDL 的方法。
 
-2. **model.go 跨服务调用**：认证使用 `X-Internal-API-Key` 头（与现有 meta.go 模式完全一致），配置项通过 `MODEL_URL` + `INTERNAL_API_KEY`（已有环境变量，无需新增 key）。
+2. **model.go 跨服务调用**：Graph 使用 `GRAPH_SERVICE_CLIENT_SECRET` 获取当前任务 Tenant 的短期 Service Access Token，`ModelClient.WithTenantID` 固定租户后只发送 Bearer；不得代传 User Token 或让请求自报 Tenant。
 
 3. **Schema 推导性能**：大型图库的属性 key 提取可能耗时，设置 30s 超时，前端展示加载状态。优先尝试 APOC `apoc.meta.schema()`，检测不可用时降级为逐标签 Cypher 查询。
 

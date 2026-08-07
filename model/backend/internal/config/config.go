@@ -21,8 +21,8 @@ type Config struct {
 	RedisDB       int
 
 	// System 模块配置
-	SystemURL      string
-	InternalAPIKey string
+	SystemURL           string
+	ServiceClientSecret string
 
 	// Standard 模块配置（用于代理）
 	StandardURL string
@@ -42,8 +42,8 @@ func LoadConfig() (*Config, error) {
 		RedisPassword: os.Getenv("REDIS_PASSWORD"),
 		RedisDB:       commonConfig.GetEnvInt("REDIS_DB", 0),
 
-		SystemURL:      commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
-		InternalAPIKey: os.Getenv("INTERNAL_API_KEY"),
+		SystemURL:           commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
+		ServiceClientSecret: os.Getenv("MODEL_SERVICE_CLIENT_SECRET"),
 
 		StandardURL: commonConfig.GetEnv("STANDARD_URL", "http://localhost:8110"),
 	}

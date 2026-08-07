@@ -65,13 +65,13 @@ func main() {
 		})
 	}
 
-	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemURL, cfg.InternalAPIKey)
-	standardClient := commonClient.NewStandardClientWithInternalKey(cfg.StandardURL, cfg.InternalAPIKey)
 	serviceTokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemURL, "addp-quality", cfg.ServiceClientSecret, nil)
 	if err != nil {
 		log.Fatalf("Service Token Source 初始化失败: %v", err)
 	}
 	metaClient := commonClient.NewMetaClient(cfg.MetaURL, serviceTokenSource)
+	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemURL, serviceTokenSource, nil)
+	standardClient := commonClient.NewStandardClient(cfg.StandardURL, serviceTokenSource, nil)
 
 	// Repositories
 	ruleAppRepo := repository.NewRuleApplicationRepository(db)
@@ -81,7 +81,7 @@ func main() {
 	// Services
 	ruleEngineSvc := service.NewRuleEngineService(standardClient, metaClient, ruleAppRepo, checkTaskRepo)
 	checkTaskSvc := service.NewCheckTaskService(checkTaskRepo)
-	checkExecutor := service.NewCheckExecutor(systemClient, ruleAppRepo, checkTaskRepo, issueRepo)
+	checkExecutor := service.NewCheckExecutor(systemServiceClient, ruleAppRepo, checkTaskRepo, issueRepo)
 	issueSvc := service.NewIssueService(issueRepo)
 	cleanupService := service.NewCleanupService(db, redisClient, commonExecution.NewTaskExecutionRepository(db))
 	if err := cleanupService.Start(context.Background()); err != nil {
@@ -111,7 +111,7 @@ func main() {
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("quality")
 	serviceURL := utils.BuildServiceURL(serviceHost, port)
-	systemClient.RegisterAndHeartbeatWithMetadata("quality", serviceURL, "/quality", map[string]interface{}{
+	systemServiceClient.RegisterAndHeartbeatWithMetadata(context.Background(), "quality", serviceURL, "/quality", map[string]interface{}{
 		"module": "quality",
 		"capabilities": map[string]interface{}{
 			"cleanup_executor": map[string]interface{}{
@@ -121,10 +121,9 @@ func main() {
 		},
 	})
 
-	if cfg.SystemURL != "" && cfg.InternalAPIKey != "" {
+	if cfg.SystemURL != "" {
 		taskProviderRegistry := service.NewTaskProviderRegistryService(
-			cfg.SystemURL,
-			cfg.InternalAPIKey,
+			systemServiceClient,
 			serviceURL,
 		)
 
@@ -132,7 +131,7 @@ func main() {
 			time.Sleep(2 * time.Second)
 			maxRetries := 5
 			for attempt := 1; attempt <= maxRetries; attempt++ {
-				if err := taskProviderRegistry.Register(); err != nil {
+				if err := taskProviderRegistry.Register(context.Background()); err != nil {
 					log.Printf("⚠️  Quality 任务提供者注册失败 (%d/%d): %v", attempt, maxRetries, err)
 					time.Sleep(time.Duration(attempt*2) * time.Second)
 					continue

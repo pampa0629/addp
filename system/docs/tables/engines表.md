@@ -187,7 +187,7 @@
 **类型**：JSONB
 **作用**：声明引擎自身具备、且可由 ADDP 统一消费的 native / provider 能力。
 
-`system.engines.capabilities` 使用 `engine.capabilities/v1` 结构。已注册插件引擎的插件 `Capabilities()` 方法只提供 Provider 能力模板；System 服务启动、Engine API 创建或更新插件引擎时，会忽略调用方提交的插件引擎 `capabilities`，并按 `engine_type` 使用插件模板和可选实例能力解析结果生成落库能力。实例能力解析只允许做只读探测，例如检查数据库扩展、版本或函数是否可用。Registry 能力注册接口中，非插件引擎必须提交标准 `engine.capabilities/v1`；插件引擎即使提交 `capabilities` 也会被 System 忽略，并改用插件模板和实例解析结果生成落库能力。内置扩展引擎通过 `/api/v1/internal/engines/register` 自注册时不提交 `capabilities`。
+`system.engines.capabilities` 使用 `engine.capabilities/v1` 结构。已注册插件引擎的插件 `Capabilities()` 方法只提供 Provider 能力模板；System 服务启动、Engine API 创建或更新插件引擎时，会忽略调用方提交的插件引擎 `capabilities`，并按 `engine_type` 使用插件模板和可选实例能力解析结果生成落库能力。实例能力解析只允许做只读探测，例如检查数据库扩展、版本或函数是否可用。非插件扩展引擎必须提交标准 `engine.capabilities/v1`；生产内置 Workflow Runtime 使用自身 Platform Service Principal 调用 `/api/v1/system/runtime/engines`，提交与 `engine_type` 一致的标准能力声明。
 
 **边界**：
 - 该字段只表达引擎自身能力，例如 catalog、facts、store、change stream read、query、workflow、script。
@@ -499,11 +499,13 @@ User 返回脱敏连接信息。Meta 等显式平台自动任务可以按其专�
 
 用户登记的 Engine Instance 归 Tenant，不归 `created_by` 对应账号；`created_by` 只用于审计。平台共享的内置 Workflow/Jupyter Runtime 可以使用 `tenant_id=NULL`，但共享计算能力不产生 Tenant 数据权限。
 
-### 5.3 尚未迁移的平台内部能力接口
+### 5.3 Platform Workflow Runtime 注册
 
-#### 注册能力
+生产内置 Workflow Runtime 使用独立 Confidential OAuth Client，以 `context_type=platform` 获取短期 Platform Service Access Token，并调用唯一注册入口：
+
 ```
-POST /api/v1/internal/registry/capabilities
+POST /api/v1/system/runtime/engines
+Authorization: Bearer <platform_service_access_token>
 Content-Type: application/json
 
 {
@@ -531,17 +533,7 @@ Content-Type: application/json
 }
 ```
 
-**注意**：这是 Registry 能力注册接口。非插件引擎调用时必须提交标准 `engine.capabilities/v1`；插件引擎的能力事实源仍是插件 `Capabilities()`，System 会忽略请求体中的 `capabilities`。内置运行时启动自注册使用 `POST /api/v1/internal/engines/register`，只提交身份与连接信息，不提交 `capabilities`。
-
-#### 查询能力
-```
-GET /api/v1/internal/registry/capabilities?engine_type=acme_geo_workflow&lifecycle_state=active
-```
-
-#### 查询计算引擎
-```
-GET /api/v1/internal/registry/compute-engines
-```
+System 根据 Service Principal 与 `engine_type` 的固定归属校验注册请求，Tenant 和 Platform Context 均只取自 AuthContext。注册接口不接受共享密钥、User Token 代传或客户端 Tenant Header。
 
 ---
 
@@ -699,44 +691,14 @@ curl -X POST http://localhost:8180/api/v1/system/engines/1/test \
 }
 ```
 
-### 9.4 查询计算引擎（内部 API）
+### 9.4 查询 Workflow Runtime Descriptor
 
 ```bash
-curl http://localhost:8180/api/v1/internal/registry/compute-engines
+curl -H "Authorization: Bearer ${TENANT_SERVICE_ACCESS_TOKEN}" \
+  "http://localhost:8180/api/v1/system/runtime/engine-descriptors?engine_family=workflow&page=1&page_size=100"
 ```
 
-**响应示例**：
-```json
-{
-  "code": 200,
-  "data": [
-    {
-      "id": 2,
-      "name": "Acme Geo Workflow",
-      "engine_type": "acme_geo_workflow",
-      "connection_info": {
-        "protocol": "http",
-        "host": "localhost",
-        "port": 8099
-      },
-      "capabilities": {
-        "schema_version": "engine.capabilities/v1",
-        "engine_type": "acme_geo_workflow",
-        "engine_family": "workflow",
-        "compute": {
-          "workflow": {
-            "supported": true,
-            "runtime_api": "addp.workflow/v1",
-            "dynamic_operators": true
-          }
-        }
-      }
-    }
-  ]
-}
-```
-
-**注意**：运行时端点由 Provider 封装，API 响应不包含该信息。
+响应只包含当前 Tenant 可见的脱敏 Runtime Descriptor；调用模块通过 Common Engine Provider 消费，不能按固定端口拼接 Runtime endpoint。
 
 ---
 

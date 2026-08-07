@@ -155,7 +155,7 @@ type fakeReplayTaskExecutionEngine struct {
 
 func (e *fakeReplayTaskExecutionEngine) ExecuteTask(context.Context, uint, uint) error { return nil }
 
-func (e *fakeReplayTaskExecutionEngine) PrepareReplayExecution(_ context.Context, taskConfig map[string]interface{}, request ReplayExecutionRequest, executionApplyIdentity string) (*ReplayExecutionPreparation, error) {
+func (e *fakeReplayTaskExecutionEngine) PrepareReplayExecution(_ context.Context, _ uint, taskConfig map[string]interface{}, request ReplayExecutionRequest, executionApplyIdentity string) (*ReplayExecutionPreparation, error) {
 	e.applyIdentity = executionApplyIdentity
 	return &ReplayExecutionPreparation{
 		ExecutionConfig: models.JSONMap{

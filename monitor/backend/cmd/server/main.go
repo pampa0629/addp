@@ -10,6 +10,7 @@ import (
 	commonConfig "github.com/addp/common/config"
 	commonconfiguration "github.com/addp/common/configuration"
 	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/utils"
 	_ "github.com/addp/monitor/i18n"
 	"github.com/addp/monitor/internal/api"
@@ -22,6 +23,17 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
+
+// serviceTaskProviderLister adapts the System service client to the monitor
+// health and alert services without relying on a separate file in single-file
+// build invocations used by the development scripts.
+type serviceTaskProviderLister struct {
+	client *commonClient.SystemServiceClient
+}
+
+func (l serviceTaskProviderLister) ListTaskProviders() ([]*commonModels.TaskProvider, error) {
+	return l.client.ListTaskProviders(context.Background())
+}
 
 // @title           ADDP Monitor API
 // @version         1.0
@@ -72,13 +84,12 @@ func main() {
 		})
 	}
 
-	// 创建 System 客户端（用于健康检查）
-	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemURL, cfg.InternalAPIKey)
 	serviceTokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemURL, "addp-monitor", cfg.ServiceClientSecret, nil)
 	if err != nil {
 		log.Fatalf("Service Token Source 初始化失败: %v", err)
 	}
 	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemURL, serviceTokenSource, nil)
+	systemTaskProviderLister := serviceTaskProviderLister{client: systemServiceClient}
 
 	// 创建 Repository
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
@@ -86,7 +97,7 @@ func main() {
 	// 创建 Services
 	queryService := service.NewExecutionQueryService(taskExecutionRepo)
 	statisticsService := service.NewStatisticsService(taskExecutionRepo)
-	healthService := service.NewHealthCheckService(systemClient, serviceTokenSource)
+	healthService := service.NewHealthCheckService(systemTaskProviderLister, serviceTokenSource)
 	webhookSender := service.NewHTTPWebhookSender(cfg.WebhookHTTPTimeout, cfg.WebhookAllowPrivate)
 	webhookService := service.NewWebhookService(db, cfg.EncryptionKey, cfg.WebhookAllowPrivate, cfg.ConsoleBaseURL, webhookSender)
 	var emailSender service.EmailSender
@@ -103,7 +114,7 @@ func main() {
 	emailService := service.NewEmailService(db, cfg.ConsoleBaseURL, emailSender)
 	notificationService := service.NewNotificationService(webhookService, emailService)
 	alertService := service.NewAlertService(db, notificationService)
-	alertRuleService := service.NewAlertRuleService(db, alertService, systemClient)
+	alertRuleService := service.NewAlertRuleService(db, alertService, systemTaskProviderLister)
 	webhookDispatcher := service.NewWebhookDispatcher(
 		db,
 		webhookSender,
@@ -127,7 +138,7 @@ func main() {
 		smtpRelayService,
 		cfg.SystemURL,
 		redisClient,
-		systemClient,
+		systemServiceClient,
 	)
 
 	go func() {

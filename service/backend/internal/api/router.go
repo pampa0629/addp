@@ -33,6 +33,7 @@ func SetupRouter(
 	serviceEndpointHandler *ServiceEndpointHandler,
 	graphQueryHandler *GraphQueryHandler,
 	systemClient *commonClient.SystemClient,
+	systemServiceClient *commonClient.SystemServiceClient,
 	runtimePolicyService *service.RuntimePolicyService,
 ) *gin.Engine {
 	router := gin.Default()
@@ -119,7 +120,7 @@ func SetupRouter(
 
 		// 审计日志中间件（记录到 System 模块）
 		if systemClient != nil {
-			api.Use(audit.AuditMiddleware("service", systemClient))
+			api.Use(audit.ServiceAuditMiddleware("service", systemServiceClient))
 		}
 
 		// 查询服务管理 API

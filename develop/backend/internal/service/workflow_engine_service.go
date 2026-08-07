@@ -179,6 +179,7 @@ func (s *WorkflowEngineService) executeWorkflowWithResolver(
 		return nil, err
 	}
 	runtimeContext := &plugin.WorkflowRuntimeContext{
+		TenantID: tenantID,
 		ExecutionAuthorization: plugin.WorkflowExecutionAuthorization{
 			ID:      authorization.AuthorizationID,
 			Effects: append([]string(nil), authorization.Effects...),

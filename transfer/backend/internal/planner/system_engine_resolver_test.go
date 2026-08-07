@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -19,7 +20,7 @@ func TestSystemEngineResolverResolveEngine(t *testing.T) {
 		},
 	}
 
-	binding, err := NewSystemEngineResolver(client).ResolveEngine(EngineRef{ID: 7, Type: "postgresql"})
+	binding, err := BindEngineResolver(NewSystemEngineResolver(client), 3).ResolveEngine(EngineRef{ID: 7, Type: "postgresql"})
 	if err != nil {
 		t.Fatalf("ResolveEngine failed: %v", err)
 	}
@@ -38,7 +39,7 @@ func TestSystemEngineResolverRejectsTypeMismatch(t *testing.T) {
 		},
 	}
 
-	_, err := NewSystemEngineResolver(client).ResolveEngine(EngineRef{ID: 7, Type: "mysql"})
+	_, err := BindEngineResolver(NewSystemEngineResolver(client), 3).ResolveEngine(EngineRef{ID: 7, Type: "mysql"})
 	if err == nil {
 		t.Fatal("ResolveEngine succeeded, want type mismatch error")
 	}
@@ -54,7 +55,7 @@ func TestSystemEngineResolverRejectsInactiveEngine(t *testing.T) {
 		},
 	}
 
-	_, err := NewSystemEngineResolver(client).ResolveEngine(EngineRef{ID: 7})
+	_, err := BindEngineResolver(NewSystemEngineResolver(client), 3).ResolveEngine(EngineRef{ID: 7})
 	if err == nil {
 		t.Fatal("ResolveEngine succeeded, want inactive error")
 	}
@@ -67,6 +68,6 @@ type fakeSystemEngineClient struct {
 	engines map[uint]*commonmodels.Engine
 }
 
-func (c fakeSystemEngineClient) GetEngine(engineID uint) (*commonmodels.Engine, error) {
+func (c fakeSystemEngineClient) GetEngineForTenant(_ context.Context, _ uint, engineID uint) (*commonmodels.Engine, error) {
 	return c.engines[engineID], nil
 }

@@ -1450,6 +1450,98 @@
                 ]
             }
         },
+        "/executions/{execution_id}/events": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Runtime 使用 Tenant Service Access Token 上报受管派生产物执行的进度事件；租户只从 AuthContext 获取 | A runtime reports managed derived-artifact progress with a tenant service access token; tenant is read only from AuthContext",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "任务执行 | Task Execution"
+                ],
+                "summary": "记录 Manager 执行进度事件 | Record Manager execution progress event",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "执行 ID | Execution ID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "进度事件 | Progress event",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.RasterMosaicProgressEventRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.RasterMosaicProgressEventResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.create"
+                ]
+            }
+        },
         "/exports": {
             "post": {
                 "security": [
@@ -10194,6 +10286,73 @@
                 },
                 "source_engine_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api.RasterMosaicProgressEventRequest": {
+            "type": "object",
+            "properties": {
+                "current_file": {
+                    "type": "string"
+                },
+                "current_zoom": {
+                    "type": "integer"
+                },
+                "elapsed_seconds": {
+                    "type": "number"
+                },
+                "estimated_remaining_seconds": {
+                    "type": "number"
+                },
+                "event": {
+                    "type": "string"
+                },
+                "failed_files": {
+                    "type": "integer"
+                },
+                "file_progress": {
+                    "type": "integer"
+                },
+                "max_zoom": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "overall_progress": {
+                    "type": "number"
+                },
+                "phase": {
+                    "type": "string"
+                },
+                "processed_files": {
+                    "type": "integer"
+                },
+                "progress_percent": {
+                    "type": "number"
+                },
+                "tiles_processed": {
+                    "type": "integer"
+                },
+                "tiles_total_estimate": {
+                    "type": "integer"
+                },
+                "total_files": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.RasterMosaicProgressEventResponse": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
                 }
             }
         },

@@ -75,9 +75,7 @@ func main() {
 	}
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 
-	logger.L().Info("Service 配置加载完成",
-		"internal_api_key_set", cfg.InternalAPIKey != "",
-	)
+	logger.L().Info("Service 配置加载完成")
 
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:     fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort),
@@ -87,11 +85,6 @@ func main() {
 	defer redisClient.Close()
 
 	// 初始化 System 客户端
-	var systemClient *commonClient.SystemClient
-	if cfg.InternalAPIKey != "" {
-		systemClient = commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-	}
-
 	// 初始化 Meta 客户端
 	if cfg.ServiceClientSecret == "" || cfg.MetaServiceURL == "" || cfg.SystemServiceURL == "" {
 		logger.L().Error("Service Client Credential、Meta URL 和 System URL 必须配置")
@@ -103,6 +96,7 @@ func main() {
 		os.Exit(1)
 	}
 	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, tokenSource, nil)
+	systemClient := commonClient.NewSystemClient(cfg.SystemServiceURL, tokenSource)
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
 	logger.L().Info("MetaClient 已初始化", "meta_url", cfg.MetaServiceURL)
 
@@ -168,7 +162,7 @@ func main() {
 	graphQueryHandler := api.NewGraphQueryHandler(graphQueryServiceService, graphQueryExecutor)
 
 	// 设置路由（传递 systemClient 用于审计日志）
-	router := api.SetupRouter(cfg, db, dataServiceHandler, queryServiceHandler, ogcFeaturesHandler, registeredServiceHandler, tileServiceHandler, tileEndpointHandler, wmtsHandler, ogcTilesHandler, resourceCapabilityHandler, serviceEndpointHandler, graphQueryHandler, systemClient, runtimePolicyService)
+	router := api.SetupRouter(cfg, db, dataServiceHandler, queryServiceHandler, ogcFeaturesHandler, registeredServiceHandler, tileServiceHandler, tileEndpointHandler, wmtsHandler, ogcTilesHandler, resourceCapabilityHandler, serviceEndpointHandler, graphQueryHandler, systemClient, systemServiceClient, runtimePolicyService)
 
 	// ========== 模块注册（注册到 System service_registry）==========
 	if cfg.SystemServiceURL != "" {

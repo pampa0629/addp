@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/minio/minio-go/v7"
@@ -53,9 +52,9 @@ func TestManagerModel3DTilesExecutorStagesObjectStoreSourceAndPublishesTarget(t 
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			switch r.URL.Path {
-			case "/api/v1/internal/engines/26":
+			case "/api/v1/system/engines/26":
 				_, _ = w.Write([]byte(`{"id":26,"tenant_id":7,"name":"Source MinIO","engine_type":"minio","connection_info":{"endpoint":"http://source-minio:9000","access_key":"source-ak","secret_key":"source-sk","use_ssl":false},"lifecycle_state":"active"}`))
-			case "/api/v1/internal/engines/31":
+			case "/api/v1/system/engines/31":
 				_, _ = w.Write([]byte(`{"id":31,"tenant_id":7,"name":"Target MinIO","engine_type":"minio","connection_info":{"endpoint":"http://target-minio:9000","access_key":"target-ak","secret_key":"target-sk","use_ssl":false},"lifecycle_state":"active"}`))
 			default:
 				t.Fatalf("unexpected system path: %s", r.URL.Path)
@@ -70,7 +69,7 @@ func TestManagerModel3DTilesExecutorStagesObjectStoreSourceAndPublishesTarget(t 
 	go func() { _ = systemServer.Serve(systemListener) }()
 
 	executor := NewManagerModel3DTilesExecutor(
-		commonClient.NewSystemClientWithInternalKey("http://"+systemListener.Addr().String(), "internal-key"),
+		newTestSystemClient("http://"+systemListener.Addr().String()),
 		recordingWorkflowLister{engines: []commonModels.Engine{{
 			ID:         99,
 			Name:       "Tenant Model3D Workflow",
@@ -169,7 +168,7 @@ func TestManagerModel3DTilesExecutorRejectsIncompleteS3MArtifact(t *testing.T) {
 
 	systemServer := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if r.URL.Path != "/api/v1/internal/engines/26" {
+		if r.URL.Path != "/api/v1/system/engines/26" {
 			t.Fatalf("unexpected system path: %s", r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{"id":26,"tenant_id":7,"name":"Business NFS","engine_type":"nfs","connection_info":{"export_path":"/mnt/addp-nfs"},"lifecycle_state":"active"}`))
@@ -182,7 +181,7 @@ func TestManagerModel3DTilesExecutorRejectsIncompleteS3MArtifact(t *testing.T) {
 	go func() { _ = systemServer.Serve(systemListener) }()
 
 	executor := NewManagerModel3DTilesExecutor(
-		commonClient.NewSystemClientWithInternalKey("http://"+systemListener.Addr().String(), "internal-key"),
+		newTestSystemClient("http://"+systemListener.Addr().String()),
 		recordingWorkflowLister{engines: []commonModels.Engine{{
 			ID: 99, Name: "SuperMap Workflow", EngineType: testModel3DWorkflowEngineType,
 			ConnectionInfo: commonModels.ConnectionInfo{"protocol": "http", "host": "127.0.0.1", "port": workflowPort},
@@ -270,7 +269,7 @@ func TestManagerModel3DGLBExecutorPublishesGLBFromWorkflowRuntime(t *testing.T) 
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			switch r.URL.Path {
-			case "/api/v1/internal/engines/26":
+			case "/api/v1/system/engines/26":
 				_, _ = w.Write([]byte(`{"id":26,"tenant_id":7,"name":"Business NFS","engine_type":"nfs","connection_info":{"export_path":"/mnt/addp-nfs"},"lifecycle_state":"active"}`))
 			default:
 				t.Fatalf("unexpected system path: %s", r.URL.Path)
@@ -286,7 +285,7 @@ func TestManagerModel3DGLBExecutorPublishesGLBFromWorkflowRuntime(t *testing.T) 
 
 	objectStore := &recordingModel3DGLBObjectStore{statSize: 3}
 	executor := NewManagerModel3DGLBExecutor(
-		commonClient.NewSystemClientWithInternalKey("http://"+systemListener.Addr().String(), "internal-key"),
+		newTestSystemClient("http://"+systemListener.Addr().String()),
 		recordingWorkflowLister{engines: []commonModels.Engine{{
 			ID:         99,
 			Name:       "Tenant Model3D Workflow",
@@ -393,7 +392,7 @@ func TestManagerModel3DGLBExecutorDispatchesGLTFToGLBOperator(t *testing.T) {
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			switch r.URL.Path {
-			case "/api/v1/internal/engines/26":
+			case "/api/v1/system/engines/26":
 				_, _ = w.Write([]byte(`{"id":26,"tenant_id":7,"name":"Business NFS","engine_type":"nfs","connection_info":{"export_path":"/mnt/addp-nfs"},"lifecycle_state":"active"}`))
 			default:
 				t.Fatalf("unexpected system path: %s", r.URL.Path)
@@ -408,7 +407,7 @@ func TestManagerModel3DGLBExecutorDispatchesGLTFToGLBOperator(t *testing.T) {
 	go func() { _ = systemServer.Serve(systemListener) }()
 
 	executor := NewManagerModel3DGLBExecutor(
-		commonClient.NewSystemClientWithInternalKey("http://"+systemListener.Addr().String(), "internal-key"),
+		newTestSystemClient("http://"+systemListener.Addr().String()),
 		recordingWorkflowLister{engines: []commonModels.Engine{{
 			ID:         99,
 			Name:       "Tenant Model3D Workflow",

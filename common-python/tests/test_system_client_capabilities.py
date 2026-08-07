@@ -12,7 +12,7 @@ def test_list_engines_decodes_array_response():
 async def _test_list_engines_decodes_array_response():
     async def handler(request):
         assert request.url.path == "/api/v1/system/engines"
-        assert request.url.params["tenant_id"] == "7"
+        assert not request.url.params
         return httpx.Response(200, json=[{"id": 1, "name": "GeoPython Workflow"}])
 
     client = SystemClient("http://system")
@@ -22,7 +22,7 @@ async def _test_list_engines_decodes_array_response():
     )
 
     try:
-        engines = await client.list_engines(tenant_id=7)
+        engines = await client.list_engines()
     finally:
         await client.close()
 
@@ -52,47 +52,6 @@ async def _test_list_engines_rejects_invalid_response_shape():
             raise AssertionError("list_engines() should reject invalid response shape")
     finally:
         await client.close()
-
-
-def test_list_internal_engines_decodes_array_response():
-    asyncio.run(_test_list_internal_engines_decodes_array_response())
-
-
-def test_internal_client_sends_tenant_context_header():
-    asyncio.run(_test_internal_client_sends_tenant_context_header())
-
-
-async def _test_internal_client_sends_tenant_context_header():
-    client = SystemClient(
-        "http://system",
-        internal_api_key="internal-key",
-        tenant_id=7,
-    )
-    try:
-        assert client._client.headers["X-Internal-API-Key"] == "internal-key"
-        assert client._client.headers["X-Tenant-ID"] == "7"
-    finally:
-        await client.close()
-
-
-async def _test_list_internal_engines_decodes_array_response():
-    async def handler(request):
-        assert request.url.path == "/api/v1/internal/engines"
-        assert request.url.params["tenant_id"] == "3"
-        return httpx.Response(200, json=[{"id": 11, "name": "Spark Runtime"}])
-
-    client = SystemClient("http://system", internal_api_key="internal-key")
-    client._client = httpx.AsyncClient(
-        base_url="http://system",
-        transport=httpx.MockTransport(handler),
-    )
-
-    try:
-        engines = await client.list_internal_engines(tenant_id=3)
-    finally:
-        await client.close()
-
-    assert engines == [{"id": 11, "name": "Spark Runtime"}]
 
 
 def test_get_workflow_engines_filters_active_v1_workflow_engines():

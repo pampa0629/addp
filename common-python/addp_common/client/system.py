@@ -7,15 +7,9 @@ from .base import BaseClient
 class SystemClient(BaseClient):
     """System 模块 API 客户端 - 引擎管理、用户认证"""
 
-    async def list_engines(
-        self,
-        tenant_id: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
+    async def list_engines(self) -> List[Dict[str, Any]]:
         """获取引擎列表"""
-        params: Dict[str, Any] = {}
-        if tenant_id:
-            params["tenant_id"] = tenant_id
-        resp = await self.get("/api/v1/system/engines", params=params)
+        resp = await self.get("/api/v1/system/engines")
         if not isinstance(resp, list):
             raise ValueError("system engines response must be a list")
         return resp
@@ -48,14 +42,6 @@ class SystemClient(BaseClient):
         if not isinstance(response, dict) or not str(response.get("access_token") or "").startswith("addp_dat_"):
             raise ValueError("system delegation response must contain a delegated access token")
         return response
-
-    async def list_internal_engines(self, tenant_id: Optional[int] = None) -> List[Dict[str, Any]]:
-        """通过服务间接口获取引擎列表"""
-        params = {"tenant_id": tenant_id} if tenant_id else None
-        resp = await self.get("/api/v1/internal/engines", params=params)
-        if not isinstance(resp, list):
-            raise ValueError("internal engines response must be a list")
-        return resp
 
     async def get_engine(self, engine_id: int) -> Dict[str, Any]:
         """获取引擎详情"""

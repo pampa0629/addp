@@ -41,22 +41,36 @@ function nodeId(node) {
   return `item:${node.item_id}`
 }
 
+function themeColor(variableName) {
+  if (typeof window === 'undefined') return ''
+  const rootValue = getComputedStyle(document.documentElement).getPropertyValue(variableName).trim()
+  if (rootValue) return rootValue
+  return canvasRef.value ? getComputedStyle(canvasRef.value).getPropertyValue(variableName).trim() : ''
+}
+
 function graphData() {
   return {
     nodes: nodes.value.map(node => ({
       id: nodeId(node),
       label: String(node.name || node.full_name || node.published_revision || node.kind).slice(0, 28),
       _node: node,
-      style: { fill: node.kind === 'published_service' ? 'var(--el-color-warning)' : 'var(--el-color-primary)', stroke: 'var(--el-bg-color)', lineWidth: 2 },
-      labelCfg: { style: { fill: 'var(--el-text-color-primary)', fontSize: 11 } }
+      style: {
+        fill: themeColor(node.kind === 'published_service' ? '--el-color-warning' : '--el-color-primary'),
+        stroke: themeColor('--el-bg-color'),
+        lineWidth: 2
+      },
+      labelCfg: { style: { fill: themeColor('--el-text-color-primary'), fontSize: 11 } }
     })),
     edges: edges.value.map((edge, index) => ({
       id: `lineage-edge:${index}`,
       source: nodeId(edge.source),
       target: nodeId(edge.target),
       label: edge.relation_kind,
-      style: { stroke: 'var(--el-border-color)', endArrow: { path: G6.Arrow.triangle(8, 6, 0), fill: 'var(--el-border-color)' } },
-      labelCfg: { autoRotate: true, style: { fill: 'var(--el-text-color-secondary)', fontSize: 10 } }
+      style: {
+        stroke: themeColor('--el-border-color'),
+        endArrow: { path: G6.Arrow.triangle(8, 6, 0), fill: themeColor('--el-border-color') }
+      },
+      labelCfg: { autoRotate: true, style: { fill: themeColor('--el-text-color-secondary'), fontSize: 10 } }
     }))
   }
 }
@@ -83,14 +97,20 @@ async function renderGraph() {
   })
   graphInstance.on('node:click', event => { selectedNode.value = event.item.getModel()._node })
   graphInstance.on('canvas:click', () => { selectedNode.value = null })
+  graphInstance.on('afterlayout', fitView)
   graphInstance.data(graphData())
   graphInstance.render()
-  graphInstance.on('afterlayout', fitView)
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fitView)
+  else fitView()
 }
 
 onMounted(() => {
   renderGraph()
-  resizeObserver = new ResizeObserver(() => graphInstance?.changeSize(canvasRef.value.clientWidth, props.height))
+  resizeObserver = new ResizeObserver(() => {
+    if (!graphInstance || !canvasRef.value || canvasRef.value.clientWidth <= 0) return
+    graphInstance.changeSize(canvasRef.value.clientWidth, props.height)
+    fitView()
+  })
   if (canvasRef.value) resizeObserver.observe(canvasRef.value)
 })
 onUnmounted(() => { resizeObserver?.disconnect(); destroyGraph() })

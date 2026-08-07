@@ -123,24 +123,4 @@ if ! curl -fsS "http://localhost:${port}/health" 2>/dev/null | grep -q '"status"
   exit 1
 fi
 
-if [ -n "${INTERNAL_API_KEY:-}" ]; then
-  system_url="${SYSTEM_URL:-http://localhost:${SYSTEM_BACKEND_PORT:-8180}}"
-  response_file="$(mktemp)"
-  http_code="$(curl -sS -o "${response_file}" -w '%{http_code}' \
-    -H "X-Internal-API-Key: ${INTERNAL_API_KEY}" \
-    -H "Content-Type: application/json" \
-    -d "{\"engine_type\":\"supermap_workflow\",\"name\":\"SuperMap 工作流引擎\",\"description\":\"面向超图 iObjects C++ 的工作流运行时\",\"connection_info\":{\"protocol\":\"http\",\"port\":${port}},\"capabilities\":{\"schema_version\":\"engine.capabilities/v1\",\"engine_type\":\"supermap_workflow\",\"engine_family\":\"workflow\",\"compute\":{\"workflow\":{\"supported\":true,\"runtime_api\":\"addp.workflow/v1\",\"dynamic_operators\":true}}},\"is_builtin\":true}" \
-    "${system_url%/}/api/v1/internal/engines/register" || true)"
-  if [ "${http_code}" = "200" ] || [ "${http_code}" = "202" ]; then
-    echo "  ✓ SuperMap Workflow Engine 已注册到 System"
-  else
-    echo "  ⚠️  自动注册到 System 失败（HTTP ${http_code:-000}）"
-    head -c 200 "${response_file}" || true
-    echo
-  fi
-  rm -f "${response_file}"
-else
-  echo "  ⚠️  INTERNAL_API_KEY 未设置，跳过自动注册"
-fi
-
 echo "  ✓ SuperMap Workflow Engine 已使用当前源码启动"

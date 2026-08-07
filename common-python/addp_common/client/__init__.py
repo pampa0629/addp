@@ -25,13 +25,14 @@ from .inference import (
     ToolCall,
     ToolDefinition,
 )
-from .service_token import OAuthServiceTokenSource, ServiceTokenError
+from .service_token import OAuthServiceTokenSource, ServiceTokenError, SyncOAuthServiceTokenSource
 from .module_registry import (
     ConfigurationManagementDeclaration,
     ConfigurationManagementEntry,
     ModuleRegistration,
     ModuleRegistryClient,
 )
+from .runtime_registration import register_runtime_engine
 
 __all__ = [
     "BaseClient",
@@ -42,6 +43,7 @@ __all__ = [
     "GraphClient",
     "CopilotClient",
     "OAuthServiceTokenSource",
+    "SyncOAuthServiceTokenSource",
     "ServiceTokenError",
     "InferenceClient",
     "InferenceError",
@@ -59,4 +61,5 @@ __all__ = [
     "ConfigurationManagementEntry",
     "ModuleRegistration",
     "ModuleRegistryClient",
+    "register_runtime_engine",
 ]

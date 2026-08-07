@@ -21,8 +21,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	}
 
 	roles := report.Roles
-	if len(roles) != 39 {
-		t.Fatalf("role count = %d, want 39", len(roles))
+	if len(roles) != 54 {
+		t.Fatalf("role count = %d, want 54", len(roles))
 	}
 	if roles[0].Key != "platform.agent_runtime" || roles[len(roles)-1].Key != "tenant.transfer_runtime" {
 		t.Fatalf("role boundary keys = %q, %q", roles[0].Key, roles[len(roles)-1].Key)
@@ -35,6 +35,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"inference.runtime.execute",
 		"meta.catalog.read",
 		"meta.scan_task.execute",
+		"system.engine.read",
 		"system.engine_descriptor.read",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.meta_runtime", []string{
@@ -46,10 +47,53 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"meta.catalog.read",
 		"meta.inspect.execute",
 		"meta.scan_task.execute",
+		"system.engine.read",
 		"system.engine_descriptor.read",
+	})
+	assertRepositoryRolePermissions(t, roles, "tenant.graph_runtime", []string{
+		"copilot.knowledge_graph.execute",
+		"model.entity.read",
+		"model.entity_relation.read",
+		"system.engine.read",
+	})
+	assertRepositoryRolePermissions(t, roles, "tenant.geopython_runtime", []string{"manager.derived_artifact.create"})
+	assertRepositoryRolePermissions(t, roles, "tenant.model3d_runtime", []string{"manager.derived_artifact.create"})
+	assertRepositoryRolePermissions(t, roles, "tenant.pointcloud_runtime", []string{"manager.derived_artifact.create"})
+	assertRepositoryRolePermissions(t, roles, "tenant.spark_runtime", []string{"system.engine.read"})
+	assertRepositoryRolePermissions(t, roles, "tenant.monitor_runtime", []string{
+		"audit.tenant_event.create",
+		"meta.scan_task.read",
+	})
+	assertRepositoryRolePermissions(t, roles, "tenant.quality_runtime", []string{
+		"meta.catalog.read",
+		"standard.element.read",
+		"system.engine.read",
 	})
 	assertRepositoryRolePrincipalTypes(t, roles, "platform.manager_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "platform.manager_runtime", []string{
+		"system.runtime_registry.update",
+	})
+	assertRepositoryRolePermissions(t, roles, "platform.monitor_runtime", []string{
+		"system.runtime_registry.read",
+		"system.runtime_registry.update",
+	})
+	assertRepositoryRolePermissions(t, roles, "platform.gateway_runtime", []string{
+		"system.api_key.read",
+		"system.runtime_registry.read",
+	})
+	assertRepositoryRolePermissions(t, roles, "platform.model_runtime", []string{
+		"system.runtime_registry.update",
+	})
+	assertRepositoryRolePermissions(t, roles, "platform.quality_runtime", []string{
+		"system.runtime_registry.update",
+	})
+	assertRepositoryRolePermissions(t, roles, "platform.service_runtime", []string{
+		"system.runtime_registry.update",
+	})
+	assertRepositoryRolePermissions(t, roles, "platform.standard_runtime", []string{
+		"system.runtime_registry.update",
+	})
+	assertRepositoryRolePermissions(t, roles, "platform.transfer_runtime", []string{
 		"system.runtime_registry.update",
 	})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.asset_runtime", []string{"service_principal"})
@@ -166,6 +210,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "tenant.service_runtime", []string{
 		"meta.catalog.read",
 		"meta.lineage.create",
+		"system.engine.read",
 		"system.engine_descriptor.read",
 		"system.execution_authorization.execute",
 	})

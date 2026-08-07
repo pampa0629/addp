@@ -54,6 +54,7 @@ func TestHTTPExecuteWorkflowUsesCanonicalRequestShape(t *testing.T) {
 		},
 		EngineID: 34,
 		Runtime: &WorkflowRuntimeContext{
+			TenantID: 7,
 			ExecutionAuthorization: WorkflowExecutionAuthorization{
 				ID:      71,
 				Effects: []string{"read"},
@@ -78,6 +79,9 @@ func TestHTTPExecuteWorkflowUsesCanonicalRequestShape(t *testing.T) {
 	runtimeOptions, ok := got["runtime"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("runtime was not included as an object: %#v", got)
+	}
+	if runtimeOptions["tenant_id"] != float64(7) {
+		t.Fatalf("runtime tenant_id missing: %#v", runtimeOptions)
 	}
 	authorization, ok := runtimeOptions["execution_authorization"].(map[string]interface{})
 	if !ok || authorization["id"] != float64(71) {

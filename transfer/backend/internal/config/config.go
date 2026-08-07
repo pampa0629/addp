@@ -18,7 +18,6 @@ type Config struct {
 	// Transfer 模块特有配置
 	Port                               string
 	DBSchema                           string
-	InternalAPIKey                     string // 服务间调用的 API Key
 	MetaServiceURL                     string // Meta 服务地址
 	ServiceClientSecret                string
 	RedisHost                          string
@@ -125,7 +124,6 @@ func Load() *Config {
 	cfg := &Config{
 		Port:                               commonConfig.GetEnv("TRANSFER_BACKEND_PORT", "8083"),
 		DBSchema:                           commonConfig.GetEnv("DB_SCHEMA", "transfer"),
-		InternalAPIKey:                     commonConfig.GetEnv("INTERNAL_API_KEY", ""),
 		MetaServiceURL:                     metaURL,
 		ServiceClientSecret:                commonConfig.GetEnv("TRANSFER_SERVICE_CLIENT_SECRET", ""),
 		RedisHost:                          commonConfig.GetEnv("REDIS_HOST", "localhost"),

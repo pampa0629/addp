@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
@@ -283,7 +282,7 @@ func TestManagerRasterCOGExecutorPreparesGDALRuntimeAndInvokesPythonWorkflowOper
 
 	systemServer := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/api/v1/internal/engines/26" {
+			if r.URL.Path != "/api/v1/system/engines/26" {
 				t.Fatalf("unexpected system path: %s", r.URL.Path)
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -298,7 +297,7 @@ func TestManagerRasterCOGExecutorPreparesGDALRuntimeAndInvokesPythonWorkflowOper
 	go func() { _ = systemServer.Serve(systemListener) }()
 
 	executor := NewManagerRasterCOGExecutor(
-		commonClient.NewSystemClientWithInternalKey("http://"+systemListener.Addr().String(), "internal-key"),
+		newTestSystemClient("http://"+systemListener.Addr().String()),
 		recordingWorkflowLister{engines: []commonModels.Engine{{
 			ID:         99,
 			Name:       "Tenant Raster Workflow",
@@ -423,7 +422,7 @@ func TestManagerRasterCOGExecutorPreservesOperatorErrorDetails(t *testing.T) {
 
 	systemServer := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/api/v1/internal/engines/26" {
+			if r.URL.Path != "/api/v1/system/engines/26" {
 				t.Fatalf("unexpected system path: %s", r.URL.Path)
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -438,7 +437,7 @@ func TestManagerRasterCOGExecutorPreservesOperatorErrorDetails(t *testing.T) {
 	go func() { _ = systemServer.Serve(systemListener) }()
 
 	executor := NewManagerRasterCOGExecutor(
-		commonClient.NewSystemClientWithInternalKey("http://"+systemListener.Addr().String(), "internal-key"),
+		newTestSystemClient("http://"+systemListener.Addr().String()),
 		recordingWorkflowLister{engines: []commonModels.Engine{{
 			ID:         99,
 			Name:       "Tenant Raster Workflow",
@@ -509,7 +508,7 @@ func TestManagerRasterCOGExecutorRejectsOperatorWithoutDirectMode(t *testing.T) 
 
 	systemServer := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/api/v1/internal/engines/26" {
+			if r.URL.Path != "/api/v1/system/engines/26" {
 				t.Fatalf("unexpected system path: %s", r.URL.Path)
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -524,7 +523,7 @@ func TestManagerRasterCOGExecutorRejectsOperatorWithoutDirectMode(t *testing.T) 
 	go func() { _ = systemServer.Serve(systemListener) }()
 
 	executor := NewManagerRasterCOGExecutor(
-		commonClient.NewSystemClientWithInternalKey("http://"+systemListener.Addr().String(), "internal-key"),
+		newTestSystemClient("http://"+systemListener.Addr().String()),
 		recordingWorkflowLister{engines: []commonModels.Engine{{
 			ID:         99,
 			Name:       "Tenant Raster Workflow",

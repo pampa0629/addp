@@ -266,6 +266,8 @@
       "updateSuccess": "Query service updated",
       "submitFailed": "Failed",
       "detailTitle": "Service Information",
+      "lineageTitle": "Data Lineage",
+      "lineageLoadFailed": "Failed to load service lineage",
       "dataSourceTitle": "Data Source Configuration",
       "endpointsTitle": "Service Endpoints",
       "previewTitle": "Data Preview",

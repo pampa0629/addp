@@ -23,7 +23,7 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) prepareMySQLTableFlatGeobufSour
 	options commonModels.JSONMap,
 ) (string, commonModels.JSONMap, commonModels.JSONMap, func(context.Context) error, error) {
 	noopCleanup := func(context.Context) error { return nil }
-	engine, err := e.systemClient.GetEngine(identity.EngineID)
+	engine, err := e.systemClient.GetEngineForTenant(ctx, tenantID, identity.EngineID)
 	if err != nil {
 		return "", nil, nil, noopCleanup, fmt.Errorf("get MySQL source engine: %w", err)
 	}

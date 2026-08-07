@@ -163,7 +163,7 @@ func (e *ManagerModel3DGLBExecutor) prepareSource(ctx context.Context, tenantID 
 	if err != nil {
 		return workflowaccess.Source{}, nil, fmt.Errorf("parse model 3d GLB source locator: %w", err)
 	}
-	engine, err := e.systemClient.GetEngine(source.SourceEngineID)
+	engine, err := e.systemClient.GetEngineForTenant(ctx, tenantID, source.SourceEngineID)
 	if err != nil {
 		return workflowaccess.Source{}, nil, fmt.Errorf("get source engine: %w", err)
 	}

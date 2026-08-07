@@ -13,7 +13,6 @@ type Config struct {
 	DBSchema string
 
 	SystemServiceURL    string
-	InternalAPIKey      string
 	ModelServiceURL     string
 	CopilotServiceURL   string
 	ServiceClientSecret string
@@ -38,7 +37,6 @@ func Load() *Config {
 		Port:                commonConfig.GetEnv("GRAPH_BACKEND_PORT", "8186"),
 		DBSchema:            "graph",
 		SystemServiceURL:    systemURL,
-		InternalAPIKey:      commonConfig.GetEnv("INTERNAL_API_KEY", ""),
 		ModelServiceURL:     commonConfig.GetEnv("MODEL_URL", "http://localhost:8181"),
 		CopilotServiceURL:   commonConfig.GetEnv("COPILOT_URL", "http://localhost:8087"),
 		ServiceClientSecret: commonConfig.GetEnv("GRAPH_SERVICE_CLIENT_SECRET", ""),

@@ -2,7 +2,7 @@ import os
 
 from flask import Flask, jsonify, request, Response
 
-from runtime.auth import require_internal_key
+from runtime.auth import require_manager_service
 from runtime.overview_renderer import RasterMosaicRuntimeError, render_mosaic_tile
 
 
@@ -16,11 +16,16 @@ def health():
 
 @app.post("/internal/raster-mosaic/render-tile")
 def render_tile():
-    auth_error = require_internal_key(request, os.environ.get("RASTER_MOSAIC_RUNTIME_INTERNAL_KEY", ""))
+    payload = request.get_json(silent=True) or {}
+    tenant_id = payload.get("tenant_id")
+    auth_error = require_manager_service(
+        request,
+        os.environ.get("SYSTEM_URL", "http://localhost:8180"),
+        tenant_id if isinstance(tenant_id, int) and not isinstance(tenant_id, bool) else 0,
+    )
     if auth_error:
         return jsonify({"error": "unauthorized", "message": auth_error}), 401
 
-    payload = request.get_json(silent=True) or {}
     try:
         rendered = render_mosaic_tile(payload)
     except RasterMosaicRuntimeError as exc:

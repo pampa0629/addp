@@ -573,6 +573,23 @@ definitions:
       status:
         type: string
     type: object
+  github_com_addp_system_internal_models.APIKeyValidationResponse:
+    properties:
+      allowed_services:
+        items:
+          type: string
+        type: array
+      app_id:
+        type: integer
+      app_name:
+        type: string
+      expires_at:
+        type: string
+      rate_limit_per_minute:
+        type: integer
+      valid:
+        type: boolean
+    type: object
   github_com_addp_system_internal_models.Application:
     properties:
       allowed_services:
@@ -1023,6 +1040,32 @@ definitions:
         type: string
     required:
     - module_name
+    type: object
+  github_com_addp_system_internal_models.ModuleInfo:
+    properties:
+      configuration_management:
+        $ref: '#/definitions/configuration.ManagementDeclaration'
+      created_at:
+        type: string
+      health_check_url:
+        type: string
+      id:
+        type: integer
+      last_heartbeat:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      module_name:
+        type: string
+      module_url:
+        type: string
+      route_prefix:
+        type: string
+      status:
+        type: string
+      updated_at:
+        type: string
     type: object
   github_com_addp_system_internal_models.ModuleRegistrationRequest:
     properties:
@@ -2235,6 +2278,27 @@ definitions:
         type: string
       name:
         type: string
+    type: object
+  internal_api.RuntimeEngineRegistrationRequest:
+    properties:
+      capabilities:
+        type: string
+      connection_info:
+        additionalProperties: true
+        type: object
+      description:
+        type: string
+      engine_type:
+        type: string
+      is_builtin:
+        description: 是否为内置引擎（对所有租户可见）
+        type: boolean
+      name:
+        type: string
+    required:
+    - connection_info
+    - engine_type
+    - name
     type: object
   models.AuditLogCreateRequest:
     properties:
@@ -5029,6 +5093,48 @@ paths:
       tags:
       - 认证 | Authentication
       x-addp-auth-mode: public
+  /runtime/api-keys/validate:
+    get:
+      description: Gateway 平台 Service Principal 验证外部请求携带的 API Key Hash；服务间认证本身仍只使用
+        Bearer | The Gateway platform service principal validates an external API
+        key hash; service-to-service authentication itself remains Bearer-only
+      parameters:
+      - description: API Key Hash
+        in: query
+        name: key_hash
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.APIKeyValidationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 验证外部 API Key Hash | Validate external API key hash
+      tags:
+      - 应用 API Key | Application API Keys
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.api_key.read
   /runtime/engine-descriptors:
     get:
       description: 返回同 Tenant 可见的脱敏控制面投影；仅工作流/脚本运行时包含 protocol/host/port，数据引擎不返回 connection_info
@@ -5131,6 +5237,60 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.engine_descriptor.read
+  /runtime/engines:
+    post:
+      consumes:
+      - application/json
+      description: 平台 Service Principal 创建或更新与自身身份对应的内置 Runtime，并异步触发连接检查 | A platform
+        service principal creates or updates its owned built-in runtime and asynchronously
+        starts a connection check
+      parameters:
+      - description: Runtime 注册信息 | Runtime registration
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.RuntimeEngineRegistrationRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            properties:
+              engine_id:
+                type: integer
+              engine_type:
+                type: string
+              message:
+                type: string
+              success:
+                type: boolean
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 注册内置工作流 Runtime | Register built-in workflow runtime
+      tags:
+      - 运行时注册 | Runtime Registry
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.runtime_registry.update
   /runtime/execution-authorizations:
     post:
       consumes:
@@ -5224,6 +5384,49 @@ paths:
       x-addp-required-permissions:
       - system.execution_authorization.execute
   /runtime/modules:
+    get:
+      description: 平台 Service Principal 查询运行模块注册表，可按 status=up 过滤存活模块 | A platform
+        service principal lists runtime modules and may filter active modules with
+        status=up
+      parameters:
+      - description: 模块状态过滤 | Module status filter
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              count:
+                type: integer
+              modules:
+                items:
+                  $ref: '#/definitions/github_com_addp_system_internal_models.ModuleInfo'
+                type: array
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询平台注册模块 | List registered platform modules
+      tags:
+      - 运行时注册 | Runtime Registry
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.runtime_registry.read
     post:
       consumes:
       - application/json
@@ -5264,6 +5467,43 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.runtime_registry.update
+  /runtime/modules/{module_name}:
+    get:
+      description: 平台 Service Principal 按模块名查询运行模块注册信息 | A platform service principal
+        gets runtime module registration by module name
+      parameters:
+      - description: 模块名 | Module name
+        in: path
+        name: module_name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ModuleInfo'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询平台注册模块详情 | Get registered platform module
+      tags:
+      - 运行时注册 | Runtime Registry
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.runtime_registry.read
   /runtime/modules/heartbeat:
     post:
       consumes:

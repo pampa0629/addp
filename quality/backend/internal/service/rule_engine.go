@@ -47,7 +47,7 @@ func (s *RuleEngineService) GetRuleApplication(id, tenantID int64) (*models.Rule
 // CreateRuleApplication 手动创建规则应用（绑定数据元质量规则到字段）
 func (s *RuleEngineService) CreateRuleApplication(tenantID, userID int64, req *CreateRuleApplicationRequest) (*models.RuleApplication, error) {
 	// 从 Standard 获取数据元质量规则快照
-	rules, err := s.standardClient.GetElementQualityRules(req.ElementID, tenantID)
+	rules, err := s.standardClient.WithTenantID(uint(tenantID)).GetElementQualityRules(context.Background(), req.ElementID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get quality rules: %w", err)
 	}

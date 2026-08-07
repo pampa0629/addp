@@ -111,6 +111,17 @@ def serialize_workflow_value(value, preview_limit: int = 5):
     return serialize_json_value(value)
 
 
+def runtime_tenant_id(data):
+    """Return the tenant context derived by the owner module."""
+    runtime = data.get("runtime")
+    if not isinstance(runtime, dict):
+        raise ValueError("runtime.tenant_id 必须由调用方提供")
+    tenant_id = runtime.get("tenant_id")
+    if not isinstance(tenant_id, int) or isinstance(tenant_id, bool) or tenant_id <= 0:
+        raise ValueError("runtime.tenant_id 必须是正整数")
+    return tenant_id
+
+
 # ========================================
 # 健康检查
 # ========================================
@@ -276,12 +287,13 @@ def execute_workflow_endpoint():
             operator_effects=operators,
             runtime=data.get("runtime"),
         )
+        tenant_id = runtime_tenant_id(data)
 
         # 执行工作流
         execution_id = str(uuid.uuid4())
         logger.info(f"Executing workflow {execution_id} on Spark engine {engine_id}")
 
-        result = execute_workflow(engine_id, workflow_def, input_data)
+        result = execute_workflow(engine_id, tenant_id, workflow_def, input_data)
         execution_time = (time.time() - start) * 1000
         final_result = serialize_workflow_value(result.get('final_result'))
         all_results = serialize_workflow_value(result.get('all_results', {}))
@@ -405,6 +417,7 @@ def invoke_operator_endpoint(operator_name):
         data = request.get_json(silent=True) or {}
         engine_id = data.get('engine_id')
         params = data.get('params', {})
+        tenant_id = runtime_tenant_id(data)
 
         if not engine_id:
             response = error_response(
@@ -416,7 +429,7 @@ def invoke_operator_endpoint(operator_name):
 
         logger.info(f"Invoking operator {operator_name} directly on Spark engine {engine_id}")
 
-        result = execute_single_operator(engine_id, operator_name, params)
+        result = execute_single_operator(engine_id, tenant_id, operator_name, params)
         execution_time = (time.time() - start) * 1000
 
         if result['status'] == 'success':
@@ -492,10 +505,10 @@ def register_to_system():
     """
     向 System Backend 自注册（创建或更新引擎记录）
     """
-    import requests
+    from addp_common.client import register_runtime_engine
 
     system_url = os.getenv('SYSTEM_URL', 'http://localhost:8180')
-    api_key = os.getenv('INTERNAL_API_KEY', '')
+    client_secret = os.getenv('SPARK_WORKFLOW_SERVICE_CLIENT_SECRET', '')
 
     # 读取自身配置
     port = int(os.getenv('PORT', 8098))
@@ -526,33 +539,15 @@ def register_to_system():
         "is_builtin": True  # 内置引擎，对所有租户可见
     }
 
-    headers = {
-        "Content-Type": "application/json",
-        "X-Internal-API-Key": api_key
-    }
-
     try:
-        # 禁用代理，直接连接到 System Backend（避免系统代理干扰）
-        proxies = {
-            'http': None,
-            'https': None
-        }
-
-        response = requests.post(
-            f"{system_url}/api/v1/internal/engines/register",
-            json=payload,
-            headers=headers,
-            proxies=proxies,
-            timeout=10
+        status_code, body = register_runtime_engine(
+            system_url, "addp-spark", client_secret, payload
         )
-
-        if response.status_code == 202:
-            result = response.json()
-            engine_id = result.get('engine_id')
-            logger.info(f"✅ Successfully registered to System Backend (Engine ID: {engine_id})")
+        if status_code == 202:
+            logger.info("✅ Successfully registered to System Backend")
             return True
         else:
-            logger.warning(f"⚠️  Failed to register: {response.status_code} - {response.text}")
+            logger.warning(f"⚠️  Failed to register: {status_code} - {body}")
             return False
 
     except Exception as e:

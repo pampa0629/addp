@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 35
+manifest_version: 38
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -43,6 +43,23 @@ roles:
     allowed_principal_types: [service_principal]
     permissions:
       - system.runtime_registry.update
+  - key: platform.gateway_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.gateway_runtime.name
+    description_i18n_key: roles.platform.gateway_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.api_key.read
+      - system.runtime_registry.read
+  - key: platform.geopython_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.geopython_runtime.name
+    description_i18n_key: roles.platform.geopython_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.runtime_registry.update
   - key: platform.graph_runtime
     role_type: platform_builtin
     name_i18n_key: roles.platform.graph_runtime.name
@@ -75,6 +92,31 @@ roles:
     allowed_principal_types: [service_principal]
     permissions:
       - system.runtime_registry.update
+  - key: platform.model3d_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.model3d_runtime.name
+    description_i18n_key: roles.platform.model3d_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.runtime_registry.update
+  - key: platform.model_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.model_runtime.name
+    description_i18n_key: roles.platform.model_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.runtime_registry.update
+  - key: platform.monitor_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.monitor_runtime.name
+    description_i18n_key: roles.platform.monitor_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.runtime_registry.read
+      - system.runtime_registry.update
   - key: platform.orchestrator_runtime
     role_type: platform_builtin
     name_i18n_key: roles.platform.orchestrator_runtime.name
@@ -84,10 +126,26 @@ roles:
     permissions:
       - system.runtime_registry.read
       - system.runtime_registry.update
+  - key: platform.pointcloud_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.pointcloud_runtime.name
+    description_i18n_key: roles.platform.pointcloud_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.runtime_registry.update
   - key: platform.portal_runtime
     role_type: platform_builtin
     name_i18n_key: roles.platform.portal_runtime.name
     description_i18n_key: roles.platform.portal_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.runtime_registry.update
+  - key: platform.quality_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.quality_runtime.name
+    description_i18n_key: roles.platform.quality_runtime.description
     allowed_scope_types: [platform]
     allowed_principal_types: [service_principal]
     permissions:
@@ -110,6 +168,30 @@ roles:
       - iam.user.read
       - iam.user.suspend
       - iam.user.update
+  - key: platform.service_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.service_runtime.name
+    description_i18n_key: roles.platform.service_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.runtime_registry.update
+  - key: platform.spark_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.spark_runtime.name
+    description_i18n_key: roles.platform.spark_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.runtime_registry.update
+  - key: platform.standard_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.standard_runtime.name
+    description_i18n_key: roles.platform.standard_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.runtime_registry.update
   - key: platform.system_administrator
     role_type: platform_builtin
     name_i18n_key: roles.platform.system_administrator.name
@@ -152,6 +234,14 @@ roles:
       - service.configuration.update
       - transfer.configuration.read
       - transfer.configuration.update
+  - key: platform.transfer_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.transfer_runtime.name
+    description_i18n_key: roles.platform.transfer_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.runtime_registry.update
   - key: tenant.administrator
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.administrator.name
@@ -376,6 +466,14 @@ roles:
       - system.engine_descriptor.read
       - system.execution_authorization.execute
       - system.notebook_session_authorization.execute
+  - key: tenant.geopython_runtime
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.geopython_runtime.name
+    description_i18n_key: roles.tenant.geopython_runtime.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - manager.derived_artifact.create
   - key: tenant.governance_manager
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.governance_manager.name
@@ -485,6 +583,9 @@ roles:
     allowed_principal_types: [service_principal]
     permissions:
       - copilot.knowledge_graph.execute
+      - model.entity.read
+      - model.entity_relation.read
+      - system.engine.read
   - key: tenant.infrastructure_administrator
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.infrastructure_administrator.name
@@ -517,6 +618,7 @@ roles:
       - inference.runtime.execute
       - meta.catalog.read
       - meta.scan_task.execute
+      - system.engine.read
       - system.engine_descriptor.read
   - key: tenant.meta_runtime
     role_type: tenant_builtin
@@ -528,6 +630,14 @@ roles:
       - audit.tenant_event.create
       - system.engine.read
       - system.engine_descriptor.read
+  - key: tenant.model3d_runtime
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.model3d_runtime.name
+    description_i18n_key: roles.tenant.model3d_runtime.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - manager.derived_artifact.create
   - key: tenant.monitor_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.monitor_runtime.name
@@ -535,6 +645,7 @@ roles:
     allowed_scope_types: [tenant]
     allowed_principal_types: [service_principal]
     permissions:
+      - audit.tenant_event.create
       - meta.scan_task.read
   - key: tenant.monitoring_operator
     role_type: tenant_builtin
@@ -569,6 +680,14 @@ roles:
       - develop.task_provider.execute
       - develop.task_provider.read
       - system.task_authorization.execute
+  - key: tenant.pointcloud_runtime
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.pointcloud_runtime.name
+    description_i18n_key: roles.tenant.pointcloud_runtime.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - manager.derived_artifact.create
   - key: tenant.portal_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.portal_runtime.name
@@ -585,6 +704,8 @@ roles:
     allowed_principal_types: [service_principal]
     permissions:
       - meta.catalog.read
+      - standard.element.read
+      - system.engine.read
   - key: tenant.service_publisher
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.service_publisher.name
@@ -615,8 +736,17 @@ roles:
     permissions:
       - meta.catalog.read
       - meta.lineage.create
+      - system.engine.read
       - system.engine_descriptor.read
       - system.execution_authorization.execute
+  - key: tenant.spark_runtime
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.spark_runtime.name
+    description_i18n_key: roles.tenant.spark_runtime.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.engine.read
   - key: tenant.transfer_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.transfer_runtime.name
@@ -627,4 +757,5 @@ roles:
       - meta.catalog.read
       - meta.inspect.execute
       - meta.scan_task.execute
+      - system.engine.read
       - system.engine_descriptor.read

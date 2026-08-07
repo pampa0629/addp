@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/rastermosaic"
@@ -38,9 +39,10 @@ type RasterMosaicRuntime interface {
 }
 
 type RasterMosaicRuntimeRenderRequest struct {
-	Dataset RasterMosaicRuntimeDataset `json:"dataset"`
-	Tile    RasterMosaicRuntimeTileReq `json:"tile"`
-	Render  RasterMosaicRuntimeOptions `json:"render"`
+	TenantID uint                       `json:"tenant_id,omitempty"`
+	Dataset  RasterMosaicRuntimeDataset `json:"dataset"`
+	Tile     RasterMosaicRuntimeTileReq `json:"tile"`
+	Render   RasterMosaicRuntimeOptions `json:"render"`
 }
 
 type RasterMosaicRuntimeDataset struct {
@@ -76,17 +78,17 @@ type RasterMosaicRuntimeTile struct {
 
 type HTTPRasterMosaicRuntimeClient struct {
 	baseURL     string
-	internalKey string
+	tokenSource commonClient.ServiceTokenProvider
 	httpClient  *http.Client
 }
 
-func NewHTTPRasterMosaicRuntimeClient(baseURL, internalKey string, timeout time.Duration) *HTTPRasterMosaicRuntimeClient {
+func NewHTTPRasterMosaicRuntimeClient(baseURL string, tokenSource commonClient.ServiceTokenProvider, timeout time.Duration) *HTTPRasterMosaicRuntimeClient {
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
 	return &HTTPRasterMosaicRuntimeClient{
 		baseURL:     strings.TrimRight(strings.TrimSpace(baseURL), "/"),
-		internalKey: strings.TrimSpace(internalKey),
+		tokenSource: tokenSource,
 		httpClient:  &http.Client{Timeout: timeout},
 	}
 }
@@ -104,9 +106,14 @@ func (c *HTTPRasterMosaicRuntimeClient) RenderTile(ctx context.Context, req Rast
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	if c.internalKey != "" {
-		httpReq.Header.Set("X-Internal-API-Key", c.internalKey)
+	if c.tokenSource == nil || req.TenantID == 0 {
+		return nil, errors.New("raster mosaic runtime requires a tenant service token")
 	}
+	token, err := c.tokenSource.Token(ctx, req.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("get raster mosaic runtime token: %w", err)
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+token)
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrRasterMosaicRuntimeUnavailable, err)
@@ -191,7 +198,7 @@ func (s *RasterMosaicTileService) RenderTile(ctx context.Context, req RasterMosa
 	if err != nil {
 		return nil, err
 	}
-	engine, err := s.systemClient.GetEngine(item.EngineID)
+	engine, err := s.systemClient.GetEngineForTenant(ctx, *req.TenantID, item.EngineID)
 	if err != nil {
 		return nil, err
 	}
@@ -213,6 +220,7 @@ func (s *RasterMosaicTileService) RenderTile(ctx context.Context, req RasterMosa
 	format := normalizeRasterMosaicTileFormat(req.Format)
 	gamma := normalizeRasterMosaicGamma(req.Gamma)
 	return s.runtime.RenderTile(ctx, RasterMosaicRuntimeRenderRequest{
+		TenantID: *req.TenantID,
 		Dataset: RasterMosaicRuntimeDataset{
 			DatasetRootURI: datasetRootURI,
 			ManifestRef:    mosaicInfo.ManifestRef,

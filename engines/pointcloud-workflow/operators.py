@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 from urllib import request as urlrequest
 
 from addp_common.workflow_access import publish_target_file, require_access_plan, source_format as plan_source_format, stage_source_file, target_name
+from addp_common.client import SyncOAuthServiceTokenSource
 
 
 ENGINE_TYPE = "pointcloud_workflow"
@@ -436,17 +437,18 @@ class _ProgressReporter:
 
 def _post_progress(callback: dict[str, Any], payload: dict[str, Any]) -> None:
     endpoint = _text(callback.get("endpoint"))
-    if not endpoint:
+    tenant_id = callback.get("tenant_id")
+    if not endpoint or not isinstance(tenant_id, int) or isinstance(tenant_id, bool) or tenant_id <= 0:
         return
+    token_source = SyncOAuthServiceTokenSource(
+        os.environ.get("SYSTEM_URL", "http://localhost:8180"),
+        "addp-pointcloud",
+        os.environ.get("POINTCLOUD_WORKFLOW_SERVICE_CLIENT_SECRET", ""),
+    )
     body = json.dumps(payload).encode("utf-8")
     req = urlrequest.Request(endpoint, data=body, method="POST")
     req.add_header("Content-Type", "application/json")
-    internal_api_key = _text(callback.get("internal_api_key"))
-    if internal_api_key:
-        req.add_header("X-Internal-API-Key", internal_api_key)
-    tenant_id = _text(callback.get("tenant_id"))
-    if tenant_id:
-        req.add_header("X-Tenant-ID", tenant_id)
+    req.add_header("Authorization", f"Bearer {token_source.token(tenant_id)}")
     try:
         with urlrequest.urlopen(req, timeout=5) as response:
             response.read()

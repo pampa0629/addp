@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -10,26 +11,45 @@ import (
 )
 
 type SystemEngineGetter interface {
-	GetEngine(engineID uint) (*commonmodels.Engine, error)
+	GetEngineForTenant(ctx context.Context, tenantID, engineID uint) (*commonmodels.Engine, error)
 }
 
 type SystemEngineResolver struct {
-	client SystemEngineGetter
+	client   SystemEngineGetter
+	tenantID uint
 }
 
 func NewSystemEngineResolver(client SystemEngineGetter) *SystemEngineResolver {
 	return &SystemEngineResolver{client: client}
 }
 
+func (r *SystemEngineResolver) ForTenant(tenantID uint) EngineResolver {
+	if r == nil {
+		return (*SystemEngineResolver)(nil)
+	}
+	return &SystemEngineResolver{client: r.client, tenantID: tenantID}
+}
+
+type TenantBindableEngineResolver interface {
+	ForTenant(tenantID uint) EngineResolver
+}
+
+func BindEngineResolver(resolver EngineResolver, tenantID uint) EngineResolver {
+	if bindable, ok := resolver.(TenantBindableEngineResolver); ok {
+		return bindable.ForTenant(tenantID)
+	}
+	return resolver
+}
+
 func (r *SystemEngineResolver) ResolveEngine(ref EngineRef) (EngineBinding, error) {
-	if r == nil || r.client == nil {
+	if r == nil || r.client == nil || r.tenantID == 0 {
 		return EngineBinding{}, fmt.Errorf("system engine resolver requires client")
 	}
 	if ref.ID == 0 {
 		return EngineBinding{}, fmt.Errorf("engine id is required")
 	}
 
-	engine, err := r.client.GetEngine(ref.ID)
+	engine, err := r.client.GetEngineForTenant(context.Background(), r.tenantID, ref.ID)
 	if err != nil {
 		return EngineBinding{}, err
 	}

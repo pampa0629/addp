@@ -83,7 +83,13 @@ func main() {
 		defer redisClient.Close()
 	}
 
-	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemURL, cfg.InternalAPIKey)
+	serviceTokenSource, err := commonClient.NewOAuthServiceTokenSource(
+		cfg.SystemURL, "addp-standard", cfg.ServiceClientSecret, nil,
+	)
+	if err != nil {
+		log.Fatalf("Service Token Source 初始化失败: %v", err)
+	}
+	systemClient := commonClient.NewSystemServiceClient(cfg.SystemURL, serviceTokenSource, nil)
 
 	// 创建 Repositories
 	domainRepo := repository.NewDomainRepository(db)
@@ -154,7 +160,7 @@ func main() {
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("standard")
 	serviceURL := utils.BuildServiceURL(serviceHost, port)
-	systemClient.RegisterAndHeartbeatWithMetadata("standard", serviceURL, "/standard", map[string]interface{}{
+	systemClient.RegisterAndHeartbeatWithMetadata(context.Background(), "standard", serviceURL, "/standard", map[string]interface{}{
 		"module": "standard",
 		"capabilities": map[string]interface{}{
 			"cleanup_executor": map[string]interface{}{

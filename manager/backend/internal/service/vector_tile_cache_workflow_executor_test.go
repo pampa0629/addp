@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugins/objectstore"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
@@ -52,7 +51,7 @@ func TestManagerVectorTileCacheWorkflowExecutorUsesVSIS3ForObjectStoreSource(t *
 
 	systemServer := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/api/v1/internal/engines/9" {
+			if r.URL.Path != "/api/v1/system/engines/9" {
 				t.Fatalf("unexpected system path: %s", r.URL.Path)
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -67,7 +66,7 @@ func TestManagerVectorTileCacheWorkflowExecutorUsesVSIS3ForObjectStoreSource(t *
 	go func() { _ = systemServer.Serve(systemListener) }()
 
 	executor := NewManagerVectorTileCacheWorkflowExecutor(
-		commonClient.NewSystemClientWithInternalKey("http://"+systemListener.Addr().String(), "internal-key"),
+		newTestSystemClient("http://"+systemListener.Addr().String()),
 		recordingWorkflowLister{engines: []commonModels.Engine{{
 			ID:         99,
 			Name:       "Tenant Vector Workflow",
@@ -82,7 +81,6 @@ func TestManagerVectorTileCacheWorkflowExecutorUsesVSIS3ForObjectStoreSource(t *
 		}}},
 		&recordingVectorTileObjectStore{exists: true},
 		"http://manager:8081",
-		"manager-internal-key",
 		"http://minio:9000",
 		"manager-ak",
 		"manager-sk",
@@ -158,11 +156,13 @@ func TestManagerVectorTileCacheWorkflowExecutorUsesVSIS3ForObjectStoreSource(t *
 	if targetEnv["AWS_S3_ENDPOINT"] != "minio:9000" || targetEnv["AWS_ACCESS_KEY_ID"] != "manager-ak" || targetEnv["AWS_SECRET_ACCESS_KEY"] != "manager-sk" {
 		t.Fatalf("target gdal_env = %#v, want manager infra MinIO credentials", targetEnv)
 	}
-	if progress["endpoint"] != "http://manager:8081/api/v1/manager/internal/executions/mvt-exec-1/events" ||
+	if progress["endpoint"] != "http://manager:8081/api/v1/manager/executions/mvt-exec-1/events" ||
 		progress["tenant_id"] != float64(7) ||
-		progress["execution_id"] != "mvt-exec-1" ||
-		progress["internal_api_key"] != "manager-internal-key" {
+		progress["execution_id"] != "mvt-exec-1" {
 		t.Fatalf("progress callback = %#v, want Manager execution event callback", progress)
+	}
+	if _, exists := progress["internal_api_key"]; exists {
+		t.Fatalf("progress callback contains legacy internal_api_key: %#v", progress)
 	}
 	tile := capturedParams["tile"].(map[string]interface{})
 	if tile["source_srs"] != "EPSG:4549" {

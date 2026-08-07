@@ -220,7 +220,10 @@ func (r *PreviewResolver) ResolveRequestFromURIWithSelection(ctx context.Context
 		return nil, fmt.Errorf("system client not available")
 	}
 
-	engine, err := r.systemClient.GetEngine(loc.EngineID)
+	if tenantID == nil || *tenantID == 0 {
+		return nil, ErrEngineAccessDenied
+	}
+	engine, err := r.systemClient.GetEngineForTenant(ctx, *tenantID, loc.EngineID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get engine: %w", err)
 	}

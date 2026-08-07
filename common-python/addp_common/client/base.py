@@ -14,7 +14,6 @@ class BaseClient:
     def __init__(
         self,
         base_url: str,
-        internal_api_key: Optional[str] = None,
         user_token: Optional[str] = None,
         tenant_id: Optional[int] = None,
         service_token_source: OAuthServiceTokenSource | None = None,
@@ -25,13 +24,12 @@ class BaseClient:
 
         Args:
             base_url: 服务地址,如 http://localhost:8180
-            internal_api_key: 仅供尚未迁移的内部 Runtime 路径使用
             user_token: 用户访问令牌 (用户请求)
             service_token_source: 模块 Service Principal 的 OAuth Token Source
             timeout: 请求超时时间(秒)
         """
         if service_token_source is not None:
-            if internal_api_key or user_token:
+            if user_token:
                 raise ValueError("service token authentication cannot be combined with other credentials")
             if not isinstance(tenant_id, int) or isinstance(tenant_id, bool) or tenant_id <= 0:
                 raise ValueError("tenant service client requires a tenant ID")
@@ -41,11 +39,7 @@ class BaseClient:
         self._tenant_id = tenant_id
         headers = {"Content-Type": "application/json"}
 
-        if internal_api_key:
-            headers["X-Internal-API-Key"] = internal_api_key
-            if tenant_id is not None:
-                headers["X-Tenant-ID"] = str(tenant_id)
-        elif user_token:
+        if user_token:
             headers["Authorization"] = f"Bearer {user_token}"
 
         self._client = httpx.AsyncClient(

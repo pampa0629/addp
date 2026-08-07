@@ -107,7 +107,7 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 			s.updateExecutionError(task, executionID, wrapped)
 			return wrapped
 		}
-		resolver := planner.NewHybridEngineResolver(planner.NewSystemEngineResolver(s.systemClient), s.infraEngineResolver())
+		resolver := planner.NewHybridEngineResolver(planner.BindEngineResolver(planner.NewSystemEngineResolver(s.systemClient), task.TenantID), s.infraEngineResolver())
 		return s.executeCommonRawCopyTask(ctx, task, executionID, rawSpec, resolver)
 	}
 
@@ -123,7 +123,7 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 		return wrapped
 	}
 
-	resolver := planner.NewHybridEngineResolver(planner.NewSystemEngineResolver(s.systemClient), s.infraEngineResolver())
+	resolver := planner.NewHybridEngineResolver(planner.BindEngineResolver(planner.NewSystemEngineResolver(s.systemClient), task.TenantID), s.infraEngineResolver())
 	if planner.IsWatermarkIncrementalSpec(spec) {
 		return s.executeWatermarkIncrementalTask(ctx, task, executionID, spec, resolver)
 	}
@@ -376,6 +376,9 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 
 	if task.AutoScanMetadata {
 		s.triggerMetadataScan(task, executionID, spec, buildResult.Plan.Target, metrics.TargetRefs)
+	}
+	if err := s.writeTransferLineageFacts(ctx, task, executionID, spec.Source.Locator, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy); err != nil {
+		s.logger.Warn("failed to persist transfer lineage facts", "error", err, "execution_id", executionID)
 	}
 	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
 		s.logger.Warn("failed to finish execution", "error", err)

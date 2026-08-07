@@ -110,6 +110,16 @@ def test_progress_callback_is_separate_from_access_plan(tmp_path, monkeypatch):
     pdal.chmod(0o755)
     posted = []
 
+    class FakeTokenSource:
+        def __init__(self, system_url, client_id, client_secret):
+            assert system_url == "http://system:8180"
+            assert client_id == "addp-pointcloud"
+            assert client_secret == "pointcloud-secret"
+
+        def token(self, tenant_id):
+            assert tenant_id == 7
+            return "addp_at_pointcloud"
+
     class FakeHTTPResponse:
         def __enter__(self):
             return self
@@ -121,7 +131,11 @@ def test_progress_callback_is_separate_from_access_plan(tmp_path, monkeypatch):
             return b""
 
     def fake_urlopen(req, timeout):
-        posted.append(json.loads(req.data.decode("utf-8")))
+        posted.append({
+            "payload": json.loads(req.data.decode("utf-8")),
+            "headers": dict(req.header_items()),
+            "url": req.full_url,
+        })
         return FakeHTTPResponse()
 
     def fake_runner(command, timeout_seconds):
@@ -129,23 +143,31 @@ def test_progress_callback_is_separate_from_access_plan(tmp_path, monkeypatch):
         return CommandResult(returncode=0, stdout="translated")
 
     monkeypatch.setattr(operators.urlrequest, "urlopen", fake_urlopen)
+    monkeypatch.setattr(operators, "SyncOAuthServiceTokenSource", FakeTokenSource)
+    monkeypatch.setenv("SYSTEM_URL", "http://system:8180")
+    monkeypatch.setenv("POINTCLOUD_WORKFLOW_SERVICE_CLIENT_SECRET", "pointcloud-secret")
     invoke_operator(
         "las_to_copc",
         {
             "access_plan": mounted_plan(source, target, "las"),
             "progress_callback": {
-                "endpoint": "http://manager/api/v1/manager/internal/executions/exec-1/events",
+                "endpoint": "http://manager/api/v1/manager/executions/exec-1/events",
                 "tenant_id": 7,
                 "execution_id": "exec-1",
-                "internal_api_key": "secret",
             },
         },
         runner=fake_runner,
         env={"POINTCLOUD_PDAL_BIN": str(pdal)},
     )
-    assert [(item["phase"], item["event"]) for item in posted] == [
+    assert [(item["payload"]["phase"], item["payload"]["event"]) for item in posted] == [
         ("prepare", "started"), ("convert", "started"), ("publish", "started"), ("publish", "completed"),
     ]
+    assert {item["url"] for item in posted} == {
+        "http://manager/api/v1/manager/executions/exec-1/events"
+    }
+    assert all(item["headers"].get("Authorization") == "Bearer addp_at_pointcloud" for item in posted)
+    assert all("X-internal-api-key" not in item["headers"] for item in posted)
+    assert all("X-tenant-id" not in item["headers"] for item in posted)
 
 
 def test_container_runtime_rewrites_localhost_target_endpoint_before_publish(tmp_path, monkeypatch):

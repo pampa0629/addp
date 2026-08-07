@@ -110,7 +110,6 @@ func main() {
 	logger.L().Info("Manager repositories 初始化完成")
 
 	logger.L().Info("Manager 配置加载完成",
-		"internal_api_key_set", cfg.InternalAPIKey != "",
 		"meta_service_url", cfg.MetaServiceURL,
 	)
 
@@ -129,7 +128,7 @@ func main() {
 	}
 
 	// 初始化资源缓存服务（带 Redis 事件订阅）
-	engineCacheService := service.NewEngineCacheService(cfg.SystemServiceURL, cfg.InternalAPIKey, redisClient)
+	engineCacheService := service.NewEngineCacheService(cfg.SystemServiceURL, nil, redisClient)
 	_ = engineCacheService // TODO: 集成到 metadataService 中使用
 
 	// 初始化缓存管理器和扫描事件处理器（用于 Meta 扫描完成后自动刷新缓存）
@@ -142,11 +141,6 @@ func main() {
 	}
 
 	// 初始化 System 客户端（用于拉取解密的资源连接信息）
-	var systemClient *commonClient.SystemClient
-	if cfg.InternalAPIKey != "" {
-		systemClient = commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-	}
-
 	// 初始化 Meta 客户端（用于查询元数据）
 	if cfg.ServiceClientSecret == "" || cfg.SystemServiceURL == "" || cfg.MetaServiceURL == "" {
 		logger.L().Error("Manager Service Client Credential、System URL 和 Meta URL 必须配置")
@@ -158,6 +152,8 @@ func main() {
 		os.Exit(1)
 	}
 	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, serviceTokenSource, nil)
+	systemClient := commonClient.NewSystemClient(cfg.SystemServiceURL, serviceTokenSource)
+	engineCacheService = service.NewEngineCacheService(cfg.SystemServiceURL, serviceTokenSource, redisClient)
 	workflowRuntimeLister := service.NewWorkflowRuntimeEngineLister(systemServiceClient)
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, serviceTokenSource)
 	inferenceClient, err := commonClient.NewInferenceClient(cfg.InferenceServiceURL, serviceTokenSource, nil)
@@ -342,7 +338,7 @@ func main() {
 	logger.L().Info("快显状态与瓦片缓存任务服务已初始化")
 
 	// 初始化数据导入服务（Shapefile → business-postgres）
-	transferClient := commonClient.NewTransferClient(cfg.TransferServiceURL, cfg.InternalAPIKey)
+	transferClient := commonClient.NewTransferClient(cfg.TransferServiceURL, serviceTokenSource)
 	importService := service.NewImportService(
 		minioClient,
 		minioBucket,
@@ -364,7 +360,7 @@ func main() {
 	exportHandler := api.NewExportHandler(exportService)
 	rasterMosaicRuntimeClient := service.NewHTTPRasterMosaicRuntimeClient(
 		cfg.RasterMosaicRuntime.BaseURL,
-		cfg.RasterMosaicRuntime.InternalKey,
+		serviceTokenSource,
 		cfg.RasterMosaicRuntime.Timeout,
 	)
 	rasterMosaicTileService := service.NewRasterMosaicTileService(
@@ -391,7 +387,6 @@ func main() {
 			systemClient,
 			workflowRuntimeLister,
 			serviceURL,
-			cfg.InternalAPIKey,
 			cfg.RasterMosaicGeneration.Timeout,
 		))
 		model3DTilesTaskSvc.SetExecutor(service.NewManagerModel3DTilesExecutor(
@@ -432,7 +427,6 @@ func main() {
 			workflowRuntimeLister,
 			minioClient,
 			serviceURL,
-			cfg.InternalAPIKey,
 			cfg.MinioEndpoint,
 			cfg.MinioAccessKey,
 			cfg.MinioSecretKey,
@@ -456,7 +450,6 @@ func main() {
 			workflowRuntimeLister,
 			minioClient,
 			serviceURL,
-			cfg.InternalAPIKey,
 			cfg.MinioEndpoint,
 			cfg.MinioAccessKey,
 			cfg.MinioSecretKey,
@@ -465,7 +458,7 @@ func main() {
 			cfg.RasterMosaicGeneration.Timeout,
 		))
 		vectorTileSetExecutor := service.NewManagerVectorTileSetExecutor(
-			systemClient, workflowRuntimeLister, minioClient, serviceURL, cfg.InternalAPIKey, cfg.RasterMosaicGeneration.Timeout,
+			systemClient, workflowRuntimeLister, minioClient, serviceURL, cfg.RasterMosaicGeneration.Timeout,
 		)
 		vectorTileSetExecutor.SetTemporarySourceStorage(
 			cfg.MinioEndpoint, cfg.MinioAccessKey, cfg.MinioSecretKey, cfg.MinioUseSSL, minioBucket,

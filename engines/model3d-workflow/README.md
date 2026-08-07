@@ -67,7 +67,8 @@ OSG_LIBRARY_PATH=/opt/addp/model3d-workflow/bin/osgPlugins-3.6.5
 ```bash
 docker run --rm --platform linux/arm64 \
   -p 8101:8101 \
-  -e INTERNAL_API_KEY="${INTERNAL_API_KEY:-}" \
+  -e SYSTEM_URL="${SYSTEM_URL:-http://host.docker.internal:8180}" \
+  -e MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET="${MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET}" \
   -v /mnt/addp-nfs:/mnt/addp-nfs \
   addp/model3d-workflow:linux-arm64
 ```

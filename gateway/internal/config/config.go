@@ -25,7 +25,7 @@ type Config struct {
 	RedisDB       int
 
 	// Authentication
-	InternalAPIKey string
+	ServiceClientSecret string
 
 	ModuleRefreshInterval time.Duration
 }
@@ -55,8 +55,7 @@ func Load() *Config {
 		RedisPassword: getEnv("REDIS_PASSWORD", "addp_redis"),
 		RedisDB:       0, // Default DB
 
-		// Internal API Key for calling System module
-		InternalAPIKey: getEnv("INTERNAL_API_KEY", "change-this-in-production"),
+		ServiceClientSecret: getEnv("GATEWAY_SERVICE_CLIENT_SECRET", ""),
 
 		ModuleRefreshInterval: getEnvDuration("MODULE_REFRESH_INTERVAL", "30s"),
 	}

@@ -6,7 +6,10 @@ import api_server
 import pytest
 
 
-WRITE_RUNTIME = {"execution_authorization": {"id": 71, "effects": ["read", "write"]}}
+WRITE_RUNTIME = {
+    "tenant_id": 7,
+    "execution_authorization": {"id": 71, "effects": ["read", "write"]},
+}
 
 
 @pytest.fixture
@@ -65,7 +68,7 @@ def test_workflow_endpoint_rejects_insufficient_execution_authorization(client):
         "workflow_def": {"tasks": [
             {"id": "convert", "operator": "las_to_copc", "params": {}, "depends_on": []}
         ]},
-        "runtime": {"execution_authorization": {"id": 71, "effects": ["read"]}},
+        "runtime": {"tenant_id": 7, "execution_authorization": {"id": 71, "effects": ["read"]}},
     })
 
     assert response.status_code == 400

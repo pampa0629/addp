@@ -19,7 +19,10 @@ for parent in Path(__file__).resolve().parents:
 from workflow_operator_contract import assert_operator_metadata_contract
 
 
-AUTHORIZED_RUNTIME = {"execution_authorization": {"id": 71, "effects": ["read"]}}
+AUTHORIZED_RUNTIME = {
+    "tenant_id": 7,
+    "execution_authorization": {"id": 71, "effects": ["read"]},
+}
 
 
 @pytest.fixture

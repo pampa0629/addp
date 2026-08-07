@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
 	commonPMTiles "github.com/addp/common/pmtiles"
 	"github.com/addp/manager/internal/models"
@@ -74,9 +73,9 @@ func TestVectorTileSetExecutorUsesPostGISGeneratorWithoutWorkflow(t *testing.T) 
 	systemServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/api/v1/internal/engines/26":
+		case "/api/v1/system/engines/26":
 			_, _ = w.Write([]byte(`{"id":26,"tenant_id":7,"name":"Business NFS","engine_type":"nfs","connection_info":{"mount_path":"` + targetRoot + `"},"lifecycle_state":"active"}`))
-		case "/api/v1/internal/engines/11":
+		case "/api/v1/system/engines/11":
 			_, _ = w.Write([]byte(`{"id":11,"tenant_id":7,"name":"Business PostGIS","engine_type":"postgresql","connection_info":{},"lifecycle_state":"active"}`))
 		default:
 			t.Fatalf("unexpected system path: %s", r.URL.Path)
@@ -86,8 +85,8 @@ func TestVectorTileSetExecutorUsesPostGISGeneratorWithoutWorkflow(t *testing.T) 
 
 	workflowCalls := 0
 	executor := NewManagerVectorTileSetExecutor(
-		commonClient.NewSystemClientWithInternalKey(systemServer.URL, "internal-key"),
-		recordingWorkflowLister{onList: func() { workflowCalls++ }}, nil, "http://manager:8081", "internal-key", 0,
+		newTestSystemClient(systemServer.URL),
+		recordingWorkflowLister{onList: func() { workflowCalls++ }}, nil, "http://manager:8081", 0,
 	)
 	generator := &staticPostGISPMTilesGenerator{}
 	executor.SetPostGISGenerator(generator, 3)

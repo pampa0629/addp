@@ -129,7 +129,9 @@ func apiDownloadTestSystemClient(t *testing.T, engineID uint, engineType string)
 		})
 	}))
 	t.Cleanup(server.Close)
-	return client.NewSystemClient(server.URL, "test-token")
+	return client.NewSystemClient(server.URL, client.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+		return "addp_at_test_service_token", nil
+	}))
 }
 
 func apiDownloadTestMetaItemClient(t *testing.T, itemJSON string) *client.MetaClient {

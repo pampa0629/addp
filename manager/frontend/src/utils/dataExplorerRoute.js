@@ -1,7 +1,7 @@
 import { resolveCanonicalTabRouteState } from '@common-ui/utils/recoverableRouteState'
 
 export const DATA_EXPLORER_DEFAULT_TAB = 'preview'
-export const DATA_EXPLORER_TABS = new Set(['preview', 'profile', 'attributes'])
+export const DATA_EXPLORER_TABS = new Set(['preview', 'profile', 'attributes', 'lineage'])
 
 const queryValue = value => {
   const firstValue = Array.isArray(value) ? value[0] : value

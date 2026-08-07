@@ -98,7 +98,8 @@ def test_workflow_execute_request_requires_execution_authorization():
 
     assert {"workflow_def", "runtime"}.issubset(request["required"])
     assert runtime["additionalProperties"] is False
-    assert runtime["required"] == ["execution_authorization"]
+    assert runtime["required"] == ["tenant_id", "execution_authorization"]
+    assert runtime["properties"]["tenant_id"]["minimum"] == 1
     assert authorization["additionalProperties"] is False
     assert set(authorization["required"]) == {"id", "effects"}
     assert authorization["properties"]["id"]["minimum"] == 1

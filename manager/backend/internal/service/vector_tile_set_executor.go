@@ -26,18 +26,18 @@ import (
 )
 
 type ManagerVectorTileSetExecutor struct {
-	systemClient                   *commonClient.SystemClient
-	workflowEngines                workflowEngineLister
-	managerBaseURL, internalAPIKey string
-	invokeTimeout                  time.Duration
-	infraObjectStore               *minio.Client
-	infraEndpoint                  string
-	infraAccessKey                 string
-	infraSecretKey                 string
-	infraUseSSL                    bool
-	infraBucket                    string
-	nativeGenerator                PostGISPMTilesArchiveGenerator
-	nativeConcurrency              int
+	systemClient      *commonClient.SystemClient
+	workflowEngines   workflowEngineLister
+	managerBaseURL    string
+	invokeTimeout     time.Duration
+	infraObjectStore  *minio.Client
+	infraEndpoint     string
+	infraAccessKey    string
+	infraSecretKey    string
+	infraUseSSL       bool
+	infraBucket       string
+	nativeGenerator   PostGISPMTilesArchiveGenerator
+	nativeConcurrency int
 }
 
 func (e *ManagerVectorTileSetExecutor) SetTemporarySourceStorage(endpoint, accessKey, secretKey string, useSSL bool, bucket string) {
@@ -56,11 +56,11 @@ func (e *ManagerVectorTileSetExecutor) SetPostGISGenerator(generator PostGISPMTi
 	}
 }
 
-func NewManagerVectorTileSetExecutor(systemClient *commonClient.SystemClient, workflowEngines workflowEngineLister, infraObjectStore *minio.Client, managerBaseURL, internalAPIKey string, timeout time.Duration) *ManagerVectorTileSetExecutor {
+func NewManagerVectorTileSetExecutor(systemClient *commonClient.SystemClient, workflowEngines workflowEngineLister, infraObjectStore *minio.Client, managerBaseURL string, timeout time.Duration) *ManagerVectorTileSetExecutor {
 	if timeout <= 0 {
 		timeout = 2 * time.Hour
 	}
-	return &ManagerVectorTileSetExecutor{systemClient: systemClient, workflowEngines: workflowEngines, infraObjectStore: infraObjectStore, managerBaseURL: strings.TrimRight(managerBaseURL, "/"), internalAPIKey: strings.TrimSpace(internalAPIKey), invokeTimeout: timeout}
+	return &ManagerVectorTileSetExecutor{systemClient: systemClient, workflowEngines: workflowEngines, infraObjectStore: infraObjectStore, managerBaseURL: strings.TrimRight(managerBaseURL, "/"), invokeTimeout: timeout}
 }
 
 func (e *ManagerVectorTileSetExecutor) GenerateVectorTileSet(ctx context.Context, req VectorTileSetExecutionRequest) (*VectorTileSetExecutionResult, error) {
@@ -70,7 +70,7 @@ func (e *ManagerVectorTileSetExecutor) GenerateVectorTileSet(ctx context.Context
 	if err := validateVectorTileSetConfig(req.Config); err != nil {
 		return nil, err
 	}
-	targetEngine, err := e.systemClient.GetEngine(req.Config.TargetEngineID)
+	targetEngine, err := e.systemClient.GetEngineForTenant(ctx, req.Task.TenantID, req.Config.TargetEngineID)
 	if err != nil || !targetEngine.IsUsable() {
 		return nil, errors.New("target business engine is not active")
 	}
@@ -95,7 +95,7 @@ func (e *ManagerVectorTileSetExecutor) GenerateVectorTileSet(ctx context.Context
 		}}, nil
 	}
 	if req.Config.Source.SourceKind == string(resourcetree.TypeTable) {
-		sourceEngine, err := e.systemClient.GetEngine(req.Config.Source.EngineID)
+		sourceEngine, err := e.systemClient.GetEngineForTenant(ctx, req.Task.TenantID, req.Config.Source.EngineID)
 		if err != nil {
 			return nil, fmt.Errorf("get vector tile set source engine: %w", err)
 		}
@@ -158,7 +158,7 @@ func (e *ManagerVectorTileSetExecutor) invokeWorkflowVectorTileSet(ctx context.C
 		"access_plan": commonModels.JSONMap{
 			"source":            commonModels.JSONMap{"root_uri": sourceURI, "layer_name": sourceFacts["layer_name"], "gdal_env": sourceEnv, "metadata": sourceFacts},
 			"target":            commonModels.JSONMap{"archive_uri": targetURI, "gdal_env": targetEnv, "metadata": targetFacts},
-			"progress_callback": commonModels.JSONMap{"endpoint": e.managerBaseURL + "/api/v1/manager/internal/executions/" + req.ExecutionID + "/events", "tenant_id": req.Task.TenantID, "execution_id": req.ExecutionID, "internal_api_key": e.internalAPIKey},
+			"progress_callback": commonModels.JSONMap{"endpoint": e.managerBaseURL + "/api/v1/manager/executions/" + req.ExecutionID + "/events", "tenant_id": req.Task.TenantID, "execution_id": req.ExecutionID},
 		}, "tile": req.Config.Tile, "options": req.Config.Options,
 	}, Timeout: e.invokeTimeout})
 	if err != nil {

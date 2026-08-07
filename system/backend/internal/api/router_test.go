@@ -24,7 +24,6 @@ func TestSetupRouterUsesOnlyTargetIAMSurface(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := testIAMRuntimeConfig()
-	cfg.InternalAPIKey = "internal-test-key"
 	router := SetupRouter(db, cfg)
 	routes := make(map[string]struct{})
 	for _, route := range router.Routes() {
@@ -40,11 +39,10 @@ func TestSetupRouterUsesOnlyTargetIAMSurface(t *testing.T) {
 		"POST /api/v1/system/runtime/modules",
 		"POST /api/v1/system/runtime/modules/heartbeat",
 		"POST /api/v1/system/runtime/task-providers",
+		"POST /api/v1/system/runtime/engines",
 		"GET /api/v1/system/runtime/engine-descriptors",
 		"GET /api/v1/system/runtime/engine-descriptors/:id",
 		"POST /api/v1/system/tenant/audit/events",
-		"PUT /api/v1/internal/engines/:id",
-		"POST /api/v1/internal/audit-logs",
 	} {
 		if _, exists := routes[required]; !exists {
 			t.Fatalf("target route %q is missing", required)
@@ -56,6 +54,8 @@ func TestSetupRouterUsesOnlyTargetIAMSurface(t *testing.T) {
 		"GET /api/v1/system/tenants",
 		"GET /api/v1/system/logs",
 		"POST /api/v1/system/oauth/authorize",
+		"GET /api/v1/internal/engines",
+		"POST /api/v1/internal/audit-logs",
 	} {
 		if _, exists := routes[forbidden]; exists {
 			t.Fatalf("legacy route %q is still registered", forbidden)

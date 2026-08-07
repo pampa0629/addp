@@ -1218,11 +1218,12 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 	t.Helper()
 
 	var principalCount, clientCount, roleCount, permissionCount int
+	var platformRoleCount, platformRoleAssignmentCount int
 	if err := db.QueryRow(`
 		SELECT count(*)
 		FROM system.service_principals
 		WHERE owner_scope = 'platform'
-		  AND name IN ('addp-agent', 'addp-asset', 'addp-copilot', 'addp-develop', 'addp-duckdb', 'addp-graph', 'addp-inference', 'addp-manager', 'addp-meta', 'addp-monitor', 'addp-orchestrator', 'addp-portal', 'addp-quality', 'addp-service', 'addp-transfer')
+		  AND name IN ('addp-agent', 'addp-asset', 'addp-copilot', 'addp-develop', 'addp-duckdb', 'addp-gateway', 'addp-graph', 'addp-inference', 'addp-manager', 'addp-meta', 'addp-model', 'addp-monitor', 'addp-orchestrator', 'addp-portal', 'addp-quality', 'addp-service', 'addp-standard', 'addp-transfer')
 	`).Scan(&principalCount); err != nil {
 		t.Fatalf("count built-in service principals: %v", err)
 	}
@@ -1259,8 +1260,33 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&permissionCount); err != nil {
 		t.Fatalf("count built-in service runtime permissions: %v", err)
 	}
-	if principalCount != 15 || clientCount != 15 || roleCount != 14 || permissionCount != 32 {
-		t.Fatalf("service runtime catalog principals=%d clients=%d roles=%d permissions=%d", principalCount, clientCount, roleCount, permissionCount)
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.roles
+		WHERE role_key IN ('platform.gateway_runtime', 'platform.model_runtime', 'platform.monitor_runtime', 'platform.quality_runtime', 'platform.service_runtime', 'platform.standard_runtime', 'platform.transfer_runtime')
+		  AND role_type = 'platform_builtin'
+		  AND allowed_scope_types = ARRAY['platform']::text[]
+		  AND allowed_principal_types = ARRAY['service_principal']::text[]
+		  AND immutable
+	`).Scan(&platformRoleCount); err != nil {
+		t.Fatalf("count platform service runtime roles: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_assignments assignment
+		JOIN system.service_principals service_principal ON service_principal.id = assignment.principal_id
+		JOIN system.roles role ON role.id = assignment.role_id
+		WHERE service_principal.name IN ('addp-gateway', 'addp-model', 'addp-monitor', 'addp-quality', 'addp-service', 'addp-standard', 'addp-transfer')
+		  AND role.role_key IN ('platform.gateway_runtime', 'platform.model_runtime', 'platform.monitor_runtime', 'platform.quality_runtime', 'platform.service_runtime', 'platform.standard_runtime', 'platform.transfer_runtime')
+		  AND assignment.scope_type = 'platform'
+		  AND assignment.tenant_id IS NULL
+		  AND assignment.status = 'active'
+	`).Scan(&platformRoleAssignmentCount); err != nil {
+		t.Fatalf("count platform service runtime assignments: %v", err)
+	}
+	if principalCount != 18 || clientCount != 18 || roleCount != 14 || permissionCount != 41 ||
+		platformRoleCount != 7 || platformRoleAssignmentCount != 7 {
+		t.Fatalf("service runtime catalog principals=%d clients=%d roles=%d permissions=%d platform_roles=%d platform_assignments=%d", principalCount, clientCount, roleCount, permissionCount, platformRoleCount, platformRoleAssignmentCount)
 	}
 	var managerTenantPermissions, metaTenantPermissions, transferTenantPermissions string
 	var developTenantPermissions, copilotTenantPermissions string

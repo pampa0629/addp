@@ -4185,6 +4185,68 @@
                 "x-addp-auth-mode": "public"
             }
         },
+        "/runtime/api-keys/validate": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Gateway 平台 Service Principal 验证外部请求携带的 API Key Hash；服务间认证本身仍只使用 Bearer | The Gateway platform service principal validates an external API key hash; service-to-service authentication itself remains Bearer-only",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "应用 API Key | Application API Keys"
+                ],
+                "summary": "验证外部 API Key Hash | Validate external API key hash",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API Key Hash",
+                        "name": "key_hash",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.APIKeyValidationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.api_key.read"
+                ]
+            }
+        },
         "/runtime/engine-descriptors": {
             "get": {
                 "security": [
@@ -4333,6 +4395,87 @@
                 ]
             }
         },
+        "/runtime/engines": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "平台 Service Principal 创建或更新与自身身份对应的内置 Runtime，并异步触发连接检查 | A platform service principal creates or updates its owned built-in runtime and asynchronously starts a connection check",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "运行时注册 | Runtime Registry"
+                ],
+                "summary": "注册内置工作流 Runtime | Register built-in workflow runtime",
+                "parameters": [
+                    {
+                        "description": "Runtime 注册信息 | Runtime registration",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.RuntimeEngineRegistrationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "engine_id": {
+                                    "type": "integer"
+                                },
+                                "engine_type": {
+                                    "type": "string"
+                                },
+                                "message": {
+                                    "type": "string"
+                                },
+                                "success": {
+                                    "type": "boolean"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.runtime_registry.update"
+                ]
+            }
+        },
         "/runtime/execution-authorizations": {
             "post": {
                 "security": [
@@ -4468,6 +4611,70 @@
             }
         },
         "/runtime/modules": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "平台 Service Principal 查询运行模块注册表，可按 status=up 过滤存活模块 | A platform service principal lists runtime modules and may filter active modules with status=up",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "运行时注册 | Runtime Registry"
+                ],
+                "summary": "查询平台注册模块 | List registered platform modules",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "模块状态过滤 | Module status filter",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "count": {
+                                    "type": "integer"
+                                },
+                                "modules": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_addp_system_internal_models.ModuleInfo"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.runtime_registry.read"
+                ]
+            },
             "post": {
                 "security": [
                     {
@@ -4589,6 +4796,62 @@
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "system.runtime_registry.update"
+                ]
+            }
+        },
+        "/runtime/modules/{module_name}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "平台 Service Principal 按模块名查询运行模块注册信息 | A platform service principal gets runtime module registration by module name",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "运行时注册 | Runtime Registry"
+                ],
+                "summary": "查询平台注册模块详情 | Get registered platform module",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "模块名 | Module name",
+                        "name": "module_name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ModuleInfo"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.runtime_registry.read"
                 ]
             }
         },
@@ -6951,6 +7214,32 @@
                 }
             }
         },
+        "github_com_addp_system_internal_models.APIKeyValidationResponse": {
+            "type": "object",
+            "properties": {
+                "allowed_services": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "app_id": {
+                    "type": "integer"
+                },
+                "app_name": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "rate_limit_per_minute": {
+                    "type": "integer"
+                },
+                "valid": {
+                    "type": "boolean"
+                }
+            }
+        },
         "github_com_addp_system_internal_models.Application": {
             "type": "object",
             "properties": {
@@ -7609,6 +7898,45 @@
             ],
             "properties": {
                 "module_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.ModuleInfo": {
+            "type": "object",
+            "properties": {
+                "configuration_management": {
+                    "$ref": "#/definitions/configuration.ManagementDeclaration"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "health_check_url": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_heartbeat": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "module_name": {
+                    "type": "string"
+                },
+                "module_url": {
+                    "type": "string"
+                },
+                "route_prefix": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
                     "type": "string"
                 }
             }
@@ -9461,6 +9789,36 @@
             "properties": {
                 "description": {
                     "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.RuntimeEngineRegistrationRequest": {
+            "type": "object",
+            "required": [
+                "connection_info",
+                "engine_type",
+                "name"
+            ],
+            "properties": {
+                "capabilities": {
+                    "type": "string"
+                },
+                "connection_info": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "description": {
+                    "type": "string"
+                },
+                "engine_type": {
+                    "type": "string"
+                },
+                "is_builtin": {
+                    "description": "是否为内置引擎（对所有租户可见）",
+                    "type": "boolean"
                 },
                 "name": {
                     "type": "string"

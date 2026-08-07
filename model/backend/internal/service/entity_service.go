@@ -2,27 +2,18 @@ package service
 
 import (
 	"fmt"
-
-	commonClient "github.com/addp/common/client"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/repository"
 )
 
 type EntityService struct {
-	repo           *repository.EntityRepository
-	relationRepo   *repository.EntityRelationRepository
-	standardClient *commonClient.StandardClient
+	repo         *repository.EntityRepository
+	relationRepo *repository.EntityRelationRepository
 }
 
-func NewEntityService(repo *repository.EntityRepository, relationRepo *repository.EntityRelationRepository, standardURL, internalKey string) *EntityService {
-	var standardClient *commonClient.StandardClient
-	if standardURL != "" {
-		standardClient = commonClient.NewStandardClientWithInternalKey(standardURL, internalKey)
-	}
+func NewEntityService(repo *repository.EntityRepository, relationRepo *repository.EntityRelationRepository) *EntityService {
 	return &EntityService{
-		repo:           repo,
-		relationRepo:   relationRepo,
-		standardClient: standardClient,
+		repo: repo, relationRepo: relationRepo,
 	}
 }
 

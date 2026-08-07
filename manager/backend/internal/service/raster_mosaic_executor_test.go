@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 )
@@ -50,9 +49,9 @@ func TestManagerRasterMosaicExecutorSendsAccessPlanToPython(t *testing.T) {
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			switch r.URL.Path {
-			case "/api/v1/internal/engines/26":
+			case "/api/v1/system/engines/26":
 				_, _ = w.Write([]byte(`{"id":26,"tenant_id":7,"name":"Source MinIO","engine_type":"minio","connection_info":{"endpoint":"http://source-minio:9000","access_key":"source-ak","secret_key":"source-sk","use_ssl":false},"lifecycle_state":"active"}`))
-			case "/api/v1/internal/engines/31":
+			case "/api/v1/system/engines/31":
 				_, _ = w.Write([]byte(`{"id":31,"tenant_id":7,"name":"Target MinIO","engine_type":"minio","connection_info":{"endpoint":"http://target-minio:9000","access_key":"target-ak","secret_key":"target-sk","use_ssl":false},"lifecycle_state":"active"}`))
 			default:
 				t.Fatalf("unexpected system path: %s", r.URL.Path)
@@ -67,7 +66,7 @@ func TestManagerRasterMosaicExecutorSendsAccessPlanToPython(t *testing.T) {
 	go func() { _ = systemServer.Serve(systemListener) }()
 
 	executor := NewManagerRasterMosaicExecutor(
-		commonClient.NewSystemClientWithInternalKey("http://"+systemListener.Addr().String(), "internal-key"),
+		newTestSystemClient("http://"+systemListener.Addr().String()),
 		recordingWorkflowLister{engines: []commonModels.Engine{{
 			ID:         99,
 			Name:       "Tenant Raster Workflow",
@@ -81,7 +80,6 @@ func TestManagerRasterMosaicExecutorSendsAccessPlanToPython(t *testing.T) {
 			Capabilities:   testRasterWorkflowCapabilities(t, testRasterWorkflowEngineType),
 		}}},
 		"http://manager.internal",
-		"internal-key",
 		0,
 	)
 
@@ -142,7 +140,7 @@ func TestManagerRasterMosaicExecutorSendsAccessPlanToPython(t *testing.T) {
 	if sourceEnv["GDAL_DISABLE_READDIR_ON_OPEN"] != "EMPTY_DIR" || targetEnv["GDAL_DISABLE_READDIR_ON_OPEN"] != "EMPTY_DIR" {
 		t.Fatalf("gdal env should disable remote readdir: source=%#v target=%#v", sourceEnv, targetEnv)
 	}
-	if !strings.Contains(progress["endpoint"].(string), "/api/v1/manager/internal/executions/mosaic-exec-1/events") {
+	if !strings.Contains(progress["endpoint"].(string), "/api/v1/manager/executions/mosaic-exec-1/events") {
 		t.Fatalf("progress endpoint = %#v", progress["endpoint"])
 	}
 	if capturedParams["source"] != nil || capturedParams["target"] != nil {
@@ -165,7 +163,7 @@ func TestManagerRasterMosaicExecutorRejectsObjectStoreInPlace(t *testing.T) {
 	systemServer := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			if r.URL.Path != "/api/v1/internal/engines/26" {
+			if r.URL.Path != "/api/v1/system/engines/26" {
 				t.Fatalf("unexpected system path: %s", r.URL.Path)
 			}
 			_, _ = w.Write([]byte(`{"id":26,"tenant_id":7,"name":"Source MinIO","engine_type":"minio","connection_info":{"endpoint":"http://source-minio:9000","access_key":"source-ak","secret_key":"source-sk","use_ssl":false},"lifecycle_state":"active"}`))
@@ -179,12 +177,11 @@ func TestManagerRasterMosaicExecutorRejectsObjectStoreInPlace(t *testing.T) {
 	go func() { _ = systemServer.Serve(systemListener) }()
 
 	executor := NewManagerRasterMosaicExecutor(
-		commonClient.NewSystemClientWithInternalKey("http://"+systemListener.Addr().String(), "internal-key"),
+		newTestSystemClient("http://"+systemListener.Addr().String()),
 		recordingWorkflowLister{onList: func() {
 			workflowCalled = true
 		}},
 		"http://manager.internal",
-		"internal-key",
 		0,
 	)
 

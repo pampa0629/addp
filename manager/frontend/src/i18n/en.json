@@ -997,6 +997,8 @@
       "countText": "{count} items",
       "refresh": "Deep Scan",
       "refreshItem": "Refresh Item",
+      "lineageTab": "Lineage",
+      "lineageLoadFailed": "Failed to load item lineage",
       "vectorize": "Vectorize",
       "vectorized": "Vectorized",
       "batchVectorize": "Batch Vectorize",

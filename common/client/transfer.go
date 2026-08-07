@@ -2,11 +2,12 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"time"
 )
 
@@ -14,33 +15,30 @@ import (
 type TransferClient struct {
 	baseURL     string
 	httpClient  *http.Client
-	internalKey string
+	tokenSource ServiceTokenProvider
 }
 
 // NewTransferClient 创建 Transfer 客户端（服务间调用）
-func NewTransferClient(baseURL, internalKey string) *TransferClient {
+func NewTransferClient(baseURL string, tokenSource ServiceTokenProvider) *TransferClient {
 	return &TransferClient{
 		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		internalKey: internalKey,
+		tokenSource: tokenSource,
 	}
 }
 
-// addAuth 添加认证头
-func (c *TransferClient) addAuth(req *http.Request) {
-	if c.internalKey != "" {
-		req.Header.Set("X-Internal-API-Key", c.internalKey)
+func (c *TransferClient) addAuthWithTenant(req *http.Request, tenantID uint) error {
+	if c == nil || c.tokenSource == nil || tenantID == 0 {
+		return errors.New("Transfer request requires a tenant service token")
 	}
-}
-
-// addAuthWithTenant 添加认证头并附带租户 ID（服务间调用时需要传递租户上下文）
-func (c *TransferClient) addAuthWithTenant(req *http.Request, tenantID uint) {
-	c.addAuth(req)
-	if tenantID > 0 {
-		req.Header.Set("X-Tenant-ID", strconv.FormatUint(uint64(tenantID), 10))
+	token, err := c.tokenSource.Token(context.Background(), tenantID)
+	if err != nil {
+		return err
 	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	return nil
 }
 
 // CreateTransferTaskRequest 创建 Transfer 任务的请求（匹配 Transfer 模块的 CreateTaskRequest）
@@ -93,7 +91,9 @@ func (c *TransferClient) CreateTask(req *CreateTransferTaskRequest) (*TransferTa
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	c.addAuthWithTenant(httpReq, req.TenantID)
+	if err := c.addAuthWithTenant(httpReq, req.TenantID); err != nil {
+		return nil, err
+	}
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -128,7 +128,9 @@ func (c *TransferClient) TriggerTask(taskID, tenantID uint) (*TriggerTaskRespons
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	c.addAuthWithTenant(httpReq, tenantID)
+	if err := c.addAuthWithTenant(httpReq, tenantID); err != nil {
+		return nil, err
+	}
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -163,7 +165,9 @@ func (c *TransferClient) GetExecution(executionID string, tenantID uint) (*Trans
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	c.addAuthWithTenant(httpReq, tenantID)
+	if err := c.addAuthWithTenant(httpReq, tenantID); err != nil {
+		return nil, err
+	}
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {

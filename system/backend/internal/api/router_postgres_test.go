@@ -1,10 +1,7 @@
 package api
 
 import (
-	"bytes"
 	"context"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
@@ -60,33 +57,19 @@ func TestTargetSystemCompositionAgainstPostgres(t *testing.T) {
 	}
 
 	cfg := testIAMRuntimeConfig()
-	cfg.InternalAPIKey = "target-internal-key"
 	router := SetupRouter(db, cfg)
-	payload := []byte(`{
-		"event_name":"http.request.completed",
-		"result":"succeeded",
-		"risk_level":"medium",
-		"module_name":"manager",
-		"http_method":"POST",
-		"resource_path":"/api/v1/manager/items",
-		"http_status":201,
-		"request_id":"target-composition-audit",
-		"ip_address":"127.0.0.1",
-		"entity_type":"data_item",
-		"entity_id":"42",
-		"details":{"duration_ms":12}
-	}`)
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/internal/audit-logs", bytes.NewReader(payload))
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("X-Internal-API-Key", cfg.InternalAPIKey)
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, request)
-	if response.Code != http.StatusCreated {
-		t.Fatalf("internal audit status = %d body=%s", response.Code, response.Body.String())
+	routes := router.Routes()
+	var runtimeEngineRegistration bool
+	for _, route := range routes {
+		if route.Method == "POST" && route.Path == "/api/v1/system/runtime/engines" {
+			runtimeEngineRegistration = true
+		}
+		if route.Path == "/api/v1/internal/audit-logs" {
+			t.Fatalf("legacy internal audit route is still registered")
+		}
 	}
-	var auditCount int64
-	if err := db.Raw(`SELECT count(*) FROM system.audit_logs WHERE request_id = 'target-composition-audit'`).Scan(&auditCount).Error; err != nil || auditCount != 1 {
-		t.Fatalf("internal audit count = %d err=%v", auditCount, err)
+	if !runtimeEngineRegistration {
+		t.Fatal("Bearer runtime engine registration route is missing")
 	}
 }
 

@@ -208,7 +208,7 @@ func (e *ManagerModel3DTilesExecutor) getModel3DTilesEngine(ctx context.Context,
 	if engineID == 0 {
 		return nil, errors.New("engine_id is required")
 	}
-	engine, err := e.systemClient.GetEngine(engineID)
+	engine, err := e.systemClient.GetEngineForTenant(ctx, tenantID, engineID)
 	if err != nil {
 		return nil, err
 	}

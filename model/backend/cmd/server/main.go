@@ -74,8 +74,13 @@ func main() {
 		defer redisClient.Close()
 	}
 
-	// 创建 System 客户端
-	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemURL, cfg.InternalAPIKey)
+	serviceTokenSource, err := commonClient.NewOAuthServiceTokenSource(
+		cfg.SystemURL, "addp-model", cfg.ServiceClientSecret, nil,
+	)
+	if err != nil {
+		log.Fatalf("Service Token Source 初始化失败: %v", err)
+	}
+	systemClient := commonClient.NewSystemServiceClient(cfg.SystemURL, serviceTokenSource, nil)
 
 	// 创建 Repositories（仅 Model 相关）
 	entityRepo := repository.NewEntityRepository(db)
@@ -86,9 +91,9 @@ func main() {
 	tableRelationRepo := repository.NewTableRelationRepository(db)
 
 	// 创建 Services（仅 Model 相关，传入 standardURL 用于验证 element_id）
-	entitySvc := service.NewEntityService(entityRepo, entityRelationRepo, cfg.StandardURL, cfg.InternalAPIKey)
+	entitySvc := service.NewEntityService(entityRepo, entityRelationRepo)
 	entityRelationSvc := service.NewEntityRelationService(entityRelationRepo, entityRepo)
-	logicalTableSvc := service.NewLogicalTableService(logicalTableRepo, cfg.StandardURL, cfg.InternalAPIKey)
+	logicalTableSvc := service.NewLogicalTableService(logicalTableRepo)
 	dwLayerSvc := service.NewDWLayerService(dwLayerRepo)
 	factMetricSvc := service.NewFactMetricService(factMetricRepo, logicalTableRepo)
 	tableRelationSvc := service.NewTableRelationService(tableRelationRepo, logicalTableRepo)
@@ -127,7 +132,7 @@ func main() {
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("model")
 	serviceURL := utils.BuildServiceURL(serviceHost, port)
-	systemClient.RegisterAndHeartbeatWithMetadata("model", serviceURL, "/model", map[string]interface{}{
+	systemClient.RegisterAndHeartbeatWithMetadata(context.Background(), "model", serviceURL, "/model", map[string]interface{}{
 		"module": "model",
 		"capabilities": map[string]interface{}{
 			"cleanup_executor": map[string]interface{}{

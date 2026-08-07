@@ -1,26 +1,25 @@
 package service
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
-	"time"
+
+	commonClient "github.com/addp/common/client"
+	commonModels "github.com/addp/common/models"
 )
 
 // TaskProviderRegistryService 将 Quality 注册为任务提供者。
 type TaskProviderRegistryService struct {
-	systemURL      string
-	internalAPIKey string
-	qualityURL     string
+	systemClient *commonClient.SystemServiceClient
+	qualityURL   string
 }
 
-func NewTaskProviderRegistryService(systemURL, internalAPIKey, qualityURL string) *TaskProviderRegistryService {
+func NewTaskProviderRegistryService(systemClient *commonClient.SystemServiceClient, qualityURL string) *TaskProviderRegistryService {
 	return &TaskProviderRegistryService{
-		systemURL:      systemURL,
-		internalAPIKey: internalAPIKey,
-		qualityURL:     qualityURL,
+		systemClient: systemClient,
+		qualityURL:   qualityURL,
 	}
 }
 
@@ -38,7 +37,7 @@ type TaskProviderRegistration struct {
 	IsEnabled           bool    `json:"is_enabled"`
 }
 
-func (s *TaskProviderRegistryService) Register() error {
+func (s *TaskProviderRegistryService) Register(ctx context.Context) error {
 	capabilities := map[string]interface{}{
 		"schema_version": "task.capabilities/v2",
 		"task_capabilities": []map[string]interface{}{
@@ -78,33 +77,26 @@ func (s *TaskProviderRegistryService) Register() error {
 		IsEnabled:           true,
 	}
 
-	return s.sendRegistration(&registration)
+	return s.sendRegistration(ctx, &registration)
 }
 
-func (s *TaskProviderRegistryService) sendRegistration(req *TaskProviderRegistration) error {
-	bodyJSON, err := json.Marshal(req)
-	if err != nil {
-		return fmt.Errorf("failed to marshal registration: %w", err)
+func (s *TaskProviderRegistryService) sendRegistration(ctx context.Context, req *TaskProviderRegistration) error {
+	if s == nil || s.systemClient == nil || req == nil {
+		return fmt.Errorf("System Service Client and registration are required")
 	}
-
-	httpReq, err := http.NewRequest("POST", s.systemURL+"/api/v1/internal/task-providers/register", bytes.NewReader(bodyJSON))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+	var capabilities *commonModels.JSONString
+	if req.Capabilities != nil {
+		value := commonModels.JSONString(*req.Capabilities)
+		capabilities = &value
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("X-Internal-API-Key", s.internalAPIKey)
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		var errBody map[string]interface{}
-		_ = json.NewDecoder(resp.Body).Decode(&errBody)
-		return fmt.Errorf("registration failed with status %d: %v", resp.StatusCode, errBody)
+	if err := s.systemClient.RegisterTaskProvider(ctx, &commonModels.TaskProvider{
+		ModuleName: req.ModuleName, DisplayName: req.DisplayName, Description: req.Description,
+		BaseURL: req.BaseURL, TaskListEndpoint: req.TaskListEndpoint,
+		TaskDetailEndpoint: req.TaskDetailEndpoint, TaskExecuteEndpoint: req.TaskExecuteEndpoint,
+		TaskStatusEndpoint: req.TaskStatusEndpoint, TaskCancelEndpoint: req.TaskCancelEndpoint,
+		Capabilities: capabilities, IsEnabled: req.IsEnabled,
+	}); err != nil {
+		return err
 	}
 
 	log.Printf("✅ Quality 模块已成功注册到 task_providers (module_name: quality)")

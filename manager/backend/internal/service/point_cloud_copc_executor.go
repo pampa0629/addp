@@ -31,7 +31,6 @@ type ManagerPointCloudCOPCExecutor struct {
 	workflowEngines workflowEngineLister
 	objectStore     pointCloudCOPCObjectStore
 	managerBaseURL  string
-	internalAPIKey  string
 	minioEndpoint   string
 	minioAccessKey  string
 	minioSecretKey  string
@@ -45,7 +44,6 @@ func NewManagerPointCloudCOPCExecutor(
 	workflowEngines workflowEngineLister,
 	objectStore pointCloudCOPCObjectStore,
 	managerBaseURL string,
-	internalAPIKey string,
 	minioEndpoint string,
 	minioAccessKey string,
 	minioSecretKey string,
@@ -61,7 +59,6 @@ func NewManagerPointCloudCOPCExecutor(
 		workflowEngines: workflowEngines,
 		objectStore:     objectStore,
 		managerBaseURL:  strings.TrimRight(strings.TrimSpace(managerBaseURL), "/"),
-		internalAPIKey:  strings.TrimSpace(internalAPIKey),
 		minioEndpoint:   strings.TrimSpace(minioEndpoint),
 		minioAccessKey:  minioAccessKey,
 		minioSecretKey:  minioSecretKey,
@@ -123,10 +120,9 @@ func (e *ManagerPointCloudCOPCExecutor) BuildPointCloudCOPC(ctx context.Context,
 		Params: map[string]interface{}{
 			"access_plan": accessPlan.JSONMap(),
 			"progress_callback": commonModels.JSONMap{
-				"endpoint":         e.managerBaseURL + "/api/v1/manager/internal/executions/" + strings.TrimSpace(req.ExecutionID) + "/events",
-				"tenant_id":        req.Task.TenantID,
-				"execution_id":     strings.TrimSpace(req.ExecutionID),
-				"internal_api_key": e.internalAPIKey,
+				"endpoint":     e.managerBaseURL + "/api/v1/manager/executions/" + strings.TrimSpace(req.ExecutionID) + "/events",
+				"tenant_id":    req.Task.TenantID,
+				"execution_id": strings.TrimSpace(req.ExecutionID),
 			},
 			"options": req.Config.Options.Clone(),
 		},
@@ -202,7 +198,7 @@ func (e *ManagerPointCloudCOPCExecutor) prepareSourceAccess(ctx context.Context,
 	if err != nil {
 		return workflowaccess.Access{}, nil, fmt.Errorf("parse point cloud COPC source locator: %w", err)
 	}
-	engine, err := e.systemClient.GetEngine(source.SourceEngineID)
+	engine, err := e.systemClient.GetEngineForTenant(ctx, tenantID, source.SourceEngineID)
 	if err != nil {
 		return workflowaccess.Access{}, nil, fmt.Errorf("get source engine: %w", err)
 	}

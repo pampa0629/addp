@@ -69,6 +69,13 @@ func TestConnectionUsesUserDerivedReadAuthorizationAndServiceTokenConsumption(t 
 	if err != nil {
 		t.Fatal(err)
 	}
+	capabilitiesJSON, err := plugin.MarshalEngineCapabilities(
+		plugin.NewWorkflowCapabilities("math_workflow", plugin.WorkflowRuntimeAPIAddpV1),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capabilities := models.JSONString(capabilitiesJSON)
 
 	var issuedExecutionID string
 	systemServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
@@ -113,6 +120,7 @@ func TestConnectionUsesUserDerivedReadAuthorizationAndServiceTokenConsumption(t 
 				Engine: &models.Engine{
 					ID: 12, EngineType: "math_workflow",
 					ConnectionInfo: models.ConnectionInfo{"protocol": "http", "host": host, "port": port},
+					Capabilities:   &capabilities,
 				},
 			})
 		default:

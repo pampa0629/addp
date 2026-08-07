@@ -14,60 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestUpdateInternalUpdatesTenantEngineThroughService(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	if err := db.AutoMigrate(&models.Engine{}); err != nil {
-		t.Fatalf("auto migrate engine: %v", err)
-	}
-
-	tenantID := uint(1)
-	repo := repository.NewEngineRepository(db)
-	engine := &models.Engine{
-		Name:           "Business Spark",
-		EngineType:     "spark",
-		TenantID:       &tenantID,
-		LifecycleState: models.EngineLifecycleActive,
-		ConnectionInfo: models.ConnectionInfo{
-			"host":        "host.docker.internal",
-			"port":        11000,
-			"master_port": 7077,
-		},
-	}
-	if err := repo.Create(engine); err != nil {
-		t.Fatalf("create engine: %v", err)
-	}
-
-	router := gin.New()
-	handler := NewEngineHandler(service.NewEngineService(repo, nil, nil))
-	router.PUT("/api/v1/internal/engines/:id", handler.UpdateInternal)
-	request := httptest.NewRequest(
-		http.MethodPut,
-		"/api/v1/internal/engines/1",
-		bytes.NewBufferString(`{"tenant_id":1,"connection_info":{"host":"localhost"}}`),
-	)
-	request.Header.Set("Content-Type", "application/json")
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("update status = %d body=%s", response.Code, response.Body.String())
-	}
-
-	updated, err := repo.GetByID(engine.ID)
-	if err != nil {
-		t.Fatalf("get updated engine: %v", err)
-	}
-	if updated.ConnectionInfo["host"] != "localhost" {
-		t.Fatalf("updated host = %#v, want localhost", updated.ConnectionInfo["host"])
-	}
-	if updated.ConnectionInfo["master_port"] != float64(7077) && updated.ConnectionInfo["master_port"] != 7077 {
-		t.Fatalf("master_port was not preserved: %#v", updated.ConnectionInfo["master_port"])
-	}
-}
-
-func TestRegisterEngineInternalRejectsPhysicalEndpointChange(t *testing.T) {
+func TestRegisterRuntimeEngineRejectsPhysicalEndpointChange(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -95,10 +42,10 @@ func TestRegisterEngineInternalRejectsPhysicalEndpointChange(t *testing.T) {
 
 	router := gin.New()
 	handler := NewEngineHandler(service.NewEngineService(repo, nil, nil))
-	router.POST("/api/v1/internal/engines/register", handler.RegisterEngineInternal)
+	router.POST("/api/v1/system/runtime/engines", handler.RegisterRuntimeEngine)
 	request := httptest.NewRequest(
 		http.MethodPost,
-		"/api/v1/internal/engines/register",
+		"/api/v1/system/runtime/engines",
 		bytes.NewBufferString(`{"engine_type":"geopython_workflow","name":"GeoPython Runtime","connection_info":{"protocol":"http","port":8080},"capabilities":{"schema_version":"engine.capabilities/v1","engine_type":"geopython_workflow","engine_family":"workflow","compute":{"workflow":{"supported":true,"runtime_api":"addp.workflow/v1","dynamic_operators":true}}},"is_builtin":true}`),
 	)
 	request.Header.Set("Content-Type", "application/json")
@@ -117,7 +64,7 @@ func TestRegisterEngineInternalRejectsPhysicalEndpointChange(t *testing.T) {
 	}
 }
 
-func TestRegisterEngineInternalKeepsSubmittedCapabilitiesForBuiltinCustomRuntime(t *testing.T) {
+func TestRegisterRuntimeEngineKeepsSubmittedCapabilitiesForBuiltinCustomRuntime(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -129,10 +76,10 @@ func TestRegisterEngineInternalKeepsSubmittedCapabilitiesForBuiltinCustomRuntime
 	repo := repository.NewEngineRepository(db)
 	router := gin.New()
 	handler := NewEngineHandler(service.NewEngineService(repo, nil, nil))
-	router.POST("/api/v1/internal/engines/register", handler.RegisterEngineInternal)
+	router.POST("/api/v1/system/runtime/engines", handler.RegisterRuntimeEngine)
 	request := httptest.NewRequest(
 		http.MethodPost,
-		"/api/v1/internal/engines/register",
+		"/api/v1/system/runtime/engines",
 		bytes.NewBufferString(`{
 			"engine_type":"tenant_workflow_runtime",
 			"name":"Tenant Workflow Runtime",

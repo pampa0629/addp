@@ -27,6 +27,7 @@ var (
 
 type UploadSystemClient interface {
 	GetEngine(engineID uint) (*commonModels.Engine, error)
+	GetEngineForTenant(ctx context.Context, tenantID, engineID uint) (*commonModels.Engine, error)
 }
 
 type UploadMetaClient interface {
@@ -80,7 +81,7 @@ func (s *UploadService) UploadFiles(ctx context.Context, req *UploadRequest) (*U
 	if s == nil || s.systemClient == nil {
 		return nil, fmt.Errorf("system client is required")
 	}
-	engine, err := s.systemClient.GetEngine(loc.EngineID)
+	engine, err := s.systemClient.GetEngineForTenant(ctx, req.TenantID, loc.EngineID)
 	if err != nil {
 		return nil, err
 	}

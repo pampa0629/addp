@@ -33,6 +33,17 @@
       >
         {{ t('manager.explorer.attributesTab') }}
       </button>
+      <button
+        v-if="selectedItemId"
+        class="item-tab-button"
+        :class="{ active: activeTab === 'lineage' }"
+        type="button"
+        role="tab"
+        :aria-selected="activeTab === 'lineage'"
+        @click="openLineageTab"
+      >
+        {{ t('manager.explorer.lineageTab') }}
+      </button>
     </div>
 
     <div class="item-tab-content">
@@ -224,6 +235,24 @@
           </div>
         </div>
       </div>
+
+      <div
+        v-if="lineageVisited && selectedItemId"
+        v-show="activeTab === 'lineage'"
+        class="lineage-tab-pane"
+      >
+        <el-alert
+          v-if="lineageError"
+          :title="lineageError"
+          type="error"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 12px"
+        />
+        <div v-loading="lineageLoading" class="lineage-panel">
+          <LineageViewer :graph="lineageGraph" :height="420" />
+        </div>
+      </div>
     </div>
 
     <el-dialog
@@ -243,6 +272,9 @@ import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PreviewPanel from '@/components/explorer/PreviewPanel.vue'
 import { optionalCount, pickNestedCount } from '@/utils/metadataRowCount'
+import { parseLocator } from '@addp/common-frontend'
+import client from '@/api/client'
+import { LineageViewer, createLineageApi, normalizeLineageGraph } from '@addp/common-frontend/graph'
 
 const DataProfilePanel = defineAsyncComponent(() => import('@/components/explorer/DataProfilePanel.vue'))
 
@@ -287,6 +319,51 @@ const emit = defineEmits(['page-change', 'navigate', 'child-change', 'tab-change
 
 const profileVisited = ref(false)
 const jsonDialogVisible = ref(false)
+const lineageVisited = ref(false)
+const lineageLoading = ref(false)
+const lineageError = ref('')
+const lineageGraph = ref(normalizeLineageGraph())
+// 模块 client 已将 /api/v1 作为 baseURL，这里只提供模块路径前缀。
+const lineageApi = createLineageApi({ request: client, baseUrl: '/meta' })
+let lineageRequestSeq = 0
+
+const selectedItemId = computed(() => {
+  const locator = props.selectedNode?.locator || props.selectedNode?.id || ''
+  try {
+    return Number(parseLocator(locator)?.itemId || 0)
+  } catch {
+    return 0
+  }
+})
+
+const loadLineage = async () => {
+  const itemId = selectedItemId.value
+  const requestSeq = ++lineageRequestSeq
+  lineageError.value = ''
+  lineageGraph.value = normalizeLineageGraph()
+  if (!itemId || props.activeTab !== 'lineage') return
+  lineageLoading.value = true
+  try {
+    const response = await lineageApi.getGraph({
+      subject_kind: 'data_item',
+      item_id: itemId,
+      direction: 'both',
+      depth: 3,
+      limit: 100
+    })
+    if (requestSeq === lineageRequestSeq) lineageGraph.value = normalizeLineageGraph(response)
+  } catch (error) {
+    if (requestSeq === lineageRequestSeq) lineageError.value = t('manager.explorer.lineageLoadFailed')
+  } finally {
+    if (requestSeq === lineageRequestSeq) lineageLoading.value = false
+  }
+}
+
+const openLineageTab = () => {
+  lineageVisited.value = true
+  emit('tab-change', 'lineage')
+  loadLineage()
+}
 
 watch(() => [
   props.selectedNode?.locator,
@@ -326,7 +403,23 @@ watch(() => props.activeTab, (tab) => {
   if (tab === 'profile') {
     profileVisited.value = true
   }
+  if (tab === 'lineage') {
+    lineageVisited.value = true
+    loadLineage()
+  }
 }, { immediate: true })
+
+watch(() => props.selectedNode?.locator, () => {
+  lineageVisited.value = false
+  lineageRequestSeq += 1
+  lineageLoading.value = false
+  lineageError.value = ''
+  lineageGraph.value = normalizeLineageGraph()
+  if (props.activeTab === 'lineage') {
+    lineageVisited.value = true
+    loadLineage()
+  }
+})
 
 watch([
   () => props.loading,
@@ -1285,6 +1378,19 @@ const compareKeys = (a, b, order) => {
   min-height: 0;
   overflow: auto;
   background: var(--addp-bg-primary);
+}
+
+.lineage-tab-pane {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+  background: var(--addp-bg-primary);
+}
+
+.lineage-panel {
+  min-height: 300px;
 }
 
 .attributes-panel {

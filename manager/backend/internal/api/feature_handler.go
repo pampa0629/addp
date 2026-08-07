@@ -11,6 +11,7 @@ import (
 	"github.com/addp/common/engine/instanceprovider"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/logger"
+	commonAuth "github.com/addp/common/middleware/auth"
 	commonModels "github.com/addp/common/models"
 	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/repository"
@@ -109,7 +110,7 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 		return
 	}
 
-	engine, err := h.systemClient.GetEngine(uint(engineID))
+	engine, err := h.systemClient.GetEngineForTenant(c.Request.Context(), commonAuth.GetTenantID(c), uint(engineID))
 	if err != nil {
 		managerError(c, http.StatusNotFound, manageri18n.MsgEngineNotFound)
 		return
@@ -215,7 +216,7 @@ func (h *FeatureHandler) GetFeatureGeometry(c *gin.Context) {
 		return
 	}
 
-	engine, err := h.systemClient.GetEngine(uint(engineID))
+	engine, err := h.systemClient.GetEngineForTenant(c.Request.Context(), commonAuth.GetTenantID(c), uint(engineID))
 	if err != nil {
 		managerError(c, http.StatusNotFound, manageri18n.MsgEngineNotFound)
 		return

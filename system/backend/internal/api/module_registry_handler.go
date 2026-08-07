@@ -21,26 +21,6 @@ func NewModuleRegistryHandler(service *service.ModuleRegistryService) *ModuleReg
 	return &ModuleRegistryHandler{service: service}
 }
 
-// Register 模块注册(幂等)
-// POST /api/v1/internal/modules/register
-func (h *ModuleRegistryHandler) Register(c *gin.Context) {
-	var req models.ModuleRegistrationRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if err := h.service.Register(&req); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": commoni18n.T(c, sysi18n.MsgModuleRegistered),
-		"module":  req.ModuleName,
-	})
-}
-
 // RegisterService godoc
 // @Summary      注册当前运行模块 | Register current runtime module
 // @Description  平台 Service Principal 只能注册与自身 OAuth Client 对应的模块 | A platform service principal can only register the module matching its OAuth client
@@ -70,26 +50,6 @@ func (h *ModuleRegistryHandler) RegisterService(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgModuleRegistered), "module": req.ModuleName})
-}
-
-// Heartbeat 心跳更新
-// POST /api/v1/internal/modules/heartbeat
-func (h *ModuleRegistryHandler) Heartbeat(c *gin.Context) {
-	var req models.HeartbeatRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if err := h.service.SendHeartbeat(req.ModuleName); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": commoni18n.T(c, sysi18n.MsgModuleHeartbeat),
-		"module":  req.ModuleName,
-	})
 }
 
 // HeartbeatService godoc
@@ -122,30 +82,34 @@ func (h *ModuleRegistryHandler) HeartbeatService(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgModuleHeartbeat), "module": req.ModuleName})
 }
 
-// ListModules 查询模块列表
-// GET /api/v1/internal/modules
-func (h *ModuleRegistryHandler) ListModules(c *gin.Context) {
-	// 支持查询参数: ?status=up 只返回活跃模块
+// ListModulesService godoc
+// @Summary      查询平台注册模块 | List registered platform modules
+// @Description  平台 Service Principal 查询运行模块注册表，可按 status=up 过滤存活模块 | A platform service principal lists runtime modules and may filter active modules with status=up
+// @Tags         运行时注册 | Runtime Registry
+// @Produce      json
+// @Security     BearerAuth
+// @Param        status query string false "模块状态过滤 | Module status filter"
+// @Success      200 {object} object{modules=[]models.ModuleInfo,count=int}
+// @Failure      401 {object} models.ErrorResponse
+// @Failure      403 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.runtime_registry.read"]
+// @Router       /runtime/modules [get]
+func (h *ModuleRegistryHandler) ListModulesService(c *gin.Context) {
 	status := c.Query("status")
-
 	var modules []*models.ModuleInfo
 	var err error
-
 	if status == "up" {
 		modules, err = h.service.ListActiveModules()
 	} else {
 		modules, err = h.service.ListModules()
 	}
-
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"modules": modules,
-		"count":   len(modules),
-	})
+	c.JSON(http.StatusOK, gin.H{"modules": modules, "count": len(modules)})
 }
 
 // ListConfigurationManagementEntries godoc
@@ -178,32 +142,25 @@ func (h *ModuleRegistryHandler) ListConfigurationManagementEntries(c *gin.Contex
 	c.JSON(http.StatusOK, entries)
 }
 
-// GetModule 查询单个模块
-// GET /api/v1/internal/modules/:name
-func (h *ModuleRegistryHandler) GetModule(c *gin.Context) {
-	moduleName := c.Param("name")
-
-	module, err := h.service.GetModule(moduleName)
+// GetModuleService godoc
+// @Summary      查询平台注册模块详情 | Get registered platform module
+// @Description  平台 Service Principal 按模块名查询运行模块注册信息 | A platform service principal gets runtime module registration by module name
+// @Tags         运行时注册 | Runtime Registry
+// @Produce      json
+// @Security     BearerAuth
+// @Param        module_name path string true "模块名 | Module name"
+// @Success      200 {object} models.ModuleInfo
+// @Failure      401 {object} models.ErrorResponse
+// @Failure      403 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.runtime_registry.read"]
+// @Router       /runtime/modules/{module_name} [get]
+func (h *ModuleRegistryHandler) GetModuleService(c *gin.Context) {
+	module, err := h.service.GetModule(c.Param("module_name"))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, sysi18n.MsgModuleNotFound)})
 		return
 	}
-
 	c.JSON(http.StatusOK, module)
-}
-
-// DeleteModule 模块注销
-// DELETE /api/v1/internal/modules/:name
-func (h *ModuleRegistryHandler) DeleteModule(c *gin.Context) {
-	moduleName := c.Param("name")
-
-	if err := h.service.DeleteModule(moduleName); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": commoni18n.T(c, sysi18n.MsgModuleDeleted),
-		"module":  moduleName,
-	})
 }

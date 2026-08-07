@@ -110,8 +110,8 @@
        RedisDB       int
 
        // 其他模块 URL
-       SystemURL      string
-       InternalAPIKey string
+       SystemURL          string
+       ServiceClientSecret string
    }
 
    // LoadConfig 加载配置
@@ -131,8 +131,8 @@
            RedisPassword: os.Getenv("REDIS_PASSWORD"),
            RedisDB:       commonConfig.GetEnvInt("REDIS_DB", 0),
 
-           SystemURL:      commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
-           InternalAPIKey: os.Getenv("INTERNAL_API_KEY"),
+           SystemURL:           commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
+           ServiceClientSecret: os.Getenv("MODULE_SERVICE_CLIENT_SECRET"),
        }
 
        commonConfig.LoadDeploymentConfig(&cfg.BaseConfig)
@@ -837,40 +837,26 @@ func (c *Config) GetDatabaseDSN() string {
 **解决方案**:
 在 `cmd/server/main.go` 中添加模块注册逻辑：
 ```go
-// 创建 System 客户端
-systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemURL, cfg.InternalAPIKey)
+// 创建模块独立的 OAuth Service Token Source 和 System Service Client
+serviceTokenSource, err := commonClient.NewOAuthServiceTokenSource(
+    cfg.SystemURL, "addp-your-module", cfg.ServiceClientSecret, nil,
+)
+if err != nil {
+    log.Fatalf("Service Token Source 初始化失败: %v", err)
+}
+systemClient := commonClient.NewSystemServiceClient(cfg.SystemURL, serviceTokenSource, nil)
 
-// 启动模块注册和心跳
-go func() {
-    time.Sleep(2 * time.Second)  // 等待服务器启动
-
-    // 注册模块到 System
-    serviceURL := fmt.Sprintf("http://localhost:%s", cfg.Port)
-    registrationReq := &commonClient.ModuleRegistrationRequest{
-        ModuleName:     "your-module",
-        ModuleURL:      serviceURL,
-        RoutePrefix:    "/your-module",
-        HealthCheckURL: serviceURL + "/health",
-        Metadata: map[string]interface{}{
-            "module": "your-module",
-        },
-    }
-
-    if err := systemClient.RegisterModule(registrationReq); err != nil {
-        log.Printf("⚠️  模块注册失败: %v", err)
-    } else {
-        log.Printf("✅ 模块注册成功: %s", serviceURL)
-    }
-
-    // 启动心跳循环
-    ticker := time.NewTicker(10 * time.Second)
-    defer ticker.Stop()
-    for range ticker.C {
-        if err := systemClient.SendHeartbeat("your-module"); err != nil {
-            log.Printf("⚠️  心跳失败: %v", err)
-        }
-    }
-}()
+// 使用 Platform Service Access Token 注册模块并维持心跳
+serviceURL := fmt.Sprintf("http://localhost:%s", cfg.Port)
+systemClient.RegisterAndHeartbeat(context.Background(), &commonClient.ModuleRegistrationRequest{
+    ModuleName:     "your-module",
+    ModuleURL:      serviceURL,
+    RoutePrefix:    "/your-module",
+    HealthCheckURL: serviceURL + "/health",
+    Metadata: map[string]interface{}{
+        "module": "your-module",
+    },
+})
 ```
 
 ### 错误 7: 前端 API 路径包含重复的 /api 前缀

@@ -83,7 +83,6 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		panic(fmt.Errorf("装配 IAM Task Authorization Subject Handler 失败: %w", err))
 	}
 	runtime.TaskAuthorizationSubjectHandler = taskAuthorizationSubjectHandler
-	registryService := service.NewRegistryService(engineRepo)
 	appService := service.NewApplicationService(appRepo)
 	taskProviderService := service.NewTaskProviderService(db)
 	moduleRegistryService := service.NewModuleRegistryService(moduleRegistryRepo)
@@ -135,44 +134,19 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	); err != nil {
 		panic(fmt.Errorf("注册 IAM Service Runtime 路由失败: %w", err))
 	}
+	serviceInternalHandler := NewInternalHandler(appService)
+	platformContext, err := middleware.NewIAMServiceContextGuard("platform")
+	if err != nil {
+		panic(fmt.Errorf("创建 API Key 平台上下文守卫失败: %w", err))
+	}
+	apiKeyValidate, err := middleware.NewIAMPermissionGuard("system.api_key.read")
+	if err != nil {
+		panic(fmt.Errorf("创建 API Key 校验权限守卫失败: %w", err))
+	}
+	api.GET("/runtime/api-keys/validate", runtime.Authentication, runtime.ServiceCredential, platformContext, apiKeyValidate, serviceInternalHandler.ValidateAPIKeyService)
 	configurationManagement := api.Group("/configuration-management")
 	configurationManagement.Use(runtime.Authentication, runtime.UserAccessCredential)
 	configurationManagement.GET("/entries", NewModuleRegistryHandler(moduleRegistryService).ListConfigurationManagementEntries)
-
-	internal := router.Group("/api/v1/internal")
-	internal.Use(middleware.InternalAPIMiddleware(cfg))
-	{
-		engineHandler := NewEngineHandler(engineService)
-		internal.GET("/engines", engineHandler.ListInternal)
-		internal.GET("/engines/:id", engineHandler.GetByIDInternal)
-		internal.POST("/engines", engineHandler.CreateInternal)
-		internal.PUT("/engines/:id", engineHandler.UpdateInternal)
-		internal.POST("/engines/register", engineHandler.RegisterEngineInternal)
-		internal.POST("/engines/:id/check-connection", engineHandler.TriggerConnectionCheckInternal)
-
-		registry := internal.Group("/registry")
-		registryHandler := NewRegistryHandler(registryService, engineService)
-		registry.POST("/capabilities", registryHandler.RegisterCapability)
-		registry.GET("/capabilities", registryHandler.ListCapabilities)
-		registry.GET("/compute-engines", registryHandler.ListComputeEngines)
-
-		taskProviderHandler := NewTaskProviderHandler(taskProviderService)
-		internal.POST("/task-providers/register", taskProviderHandler.RegisterOrUpdate)
-		internal.GET("/task-providers", taskProviderHandler.List)
-		internal.GET("/task-providers/:module_name", taskProviderHandler.Get)
-		internal.POST("/audit-logs", runtime.InternalAuditHandler.Create)
-
-		internalHandler := NewInternalHandler(appService)
-		internal.GET("/api-keys/validate", internalHandler.ValidateAPIKey)
-		internal.GET("/api-keys/bulk", internalHandler.BulkGetAPIKeys)
-
-		moduleRegistryHandler := NewModuleRegistryHandler(moduleRegistryService)
-		internal.POST("/modules/register", moduleRegistryHandler.Register)
-		internal.POST("/modules/heartbeat", moduleRegistryHandler.Heartbeat)
-		internal.GET("/modules", moduleRegistryHandler.ListModules)
-		internal.GET("/modules/:name", moduleRegistryHandler.GetModule)
-		internal.DELETE("/modules/:name", moduleRegistryHandler.DeleteModule)
-	}
 
 	return router
 }

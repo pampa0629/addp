@@ -64,8 +64,7 @@ def test_tenant_service_client_rejects_ambiguous_credentials():
     with pytest.raises(ValueError, match="cannot be combined"):
         BaseClient(
             "http://owner",
-            internal_api_key="legacy",
+            user_token="addp_at_user_token",
             tenant_id=7,
             service_token_source=token_source,
         )
-

@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: system
-manifest_version: 14
+manifest_version: 15
 permissions:
   - key: audit.event.export
     allowed_scope_types: [platform]
@@ -771,7 +771,7 @@ permissions:
     name_i18n_key: permissions.system.api_key.create.name
     description_i18n_key: permissions.system.api_key.create.description
   - key: system.api_key.read
-    allowed_scope_types: [tenant]
+    allowed_scope_types: [platform, tenant]
     risk_level: low
     tenant_customizable: false
     delegable: false

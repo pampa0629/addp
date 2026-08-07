@@ -339,7 +339,7 @@ restart_python_workflow_service() {
     (
         cd engines/python-workflow
         export PORT="$port"
-        export INTERNAL_API_KEY="${INTERNAL_API_KEY:-}"
+        export GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET="${GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET:-}"
         export POSTGRES_HOST=localhost
         export POSTGRES_PORT=15432
         export POSTGRES_USER=addp
@@ -377,7 +377,7 @@ restart_model3d_workflow_service() {
     (
         cd engines/model3d-workflow
         export PORT="$port"
-        export INTERNAL_API_KEY="${INTERNAL_API_KEY:-}"
+        export MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET="${MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET:-}"
         start_background_process "." ".dev-pids/model3d-workflow-engine.pid" "logs/model3d-workflow-engine.log" "logs/model3d-workflow-engine-stderr.log" ./venv/bin/python api_server.py
     )
     wait_http_ready "Model3D Workflow Engine" "http://localhost:${port}/health"
@@ -458,7 +458,7 @@ restart_pointcloud_workflow_service() {
         -p "${port}:8102" \
         -e PORT=8102 \
         -e SYSTEM_URL="http://host.docker.internal:${system_port}" \
-        -e INTERNAL_API_KEY="${INTERNAL_API_KEY:-}" \
+        -e POINTCLOUD_WORKFLOW_SERVICE_CLIENT_SECRET="${POINTCLOUD_WORKFLOW_SERVICE_CLIENT_SECRET:-}" \
         -e POINTCLOUD_PDAL_BIN=/opt/conda/bin/pdal \
         -e POINTCLOUD_WORK_DIR=/work/pointcloud \
         -e CPL_TMPDIR=/work/pointcloud \
@@ -554,7 +554,7 @@ restart_spark_workflow_service() {
     (
         cd engines/spark-workflow
         export PORT="$port"
-        export INTERNAL_API_KEY="${INTERNAL_API_KEY:-}"
+        export SPARK_WORKFLOW_SERVICE_CLIENT_SECRET="${SPARK_WORKFLOW_SERVICE_CLIENT_SECRET:-}"
         export SPARK_WORKFLOW_SHARED_HOST="${SPARK_WORKFLOW_SHARED_HOST:-$(detect_spark_workflow_shared_host)}"
         start_background_process "." ".dev-pids/spark-workflow-engine.pid" "logs/spark-workflow-engine.log" "logs/spark-workflow-engine-stderr.log" ./venv/bin/python api_server.py
     )

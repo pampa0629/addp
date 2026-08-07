@@ -30,7 +30,6 @@ type Config struct {
 
 	// System 模块配置（用于健康检查）
 	SystemURL               string
-	InternalAPIKey          string
 	ServiceClientSecret     string
 	AlertEvaluationInterval time.Duration
 	EncryptionKey           []byte
@@ -107,7 +106,6 @@ func LoadConfig() (*Config, error) {
 		RedisDB:       redisDB,
 
 		SystemURL:               getEnvOrDefault("SYSTEM_URL", "http://localhost:8180"),
-		InternalAPIKey:          os.Getenv("INTERNAL_API_KEY"),
 		ServiceClientSecret:     os.Getenv("MONITOR_SERVICE_CLIENT_SECRET"),
 		AlertEvaluationInterval: alertEvaluationInterval,
 		EncryptionKey:           commonConfig.LoadEncryptionKey(),

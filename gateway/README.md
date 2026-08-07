@@ -82,8 +82,8 @@ REDIS_PORT=6379
 REDIS_PASSWORD=addp_redis
 REDIS_DB=0
 
-# 认证配置
-INTERNAL_API_KEY=your-internal-api-key
+# Gateway Platform Service Principal
+GATEWAY_SERVICE_CLIENT_SECRET=your-gateway-service-client-secret
 
 # 运行环境
 ENV=development  # development / production

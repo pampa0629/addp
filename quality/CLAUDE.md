@@ -264,7 +264,7 @@ check_tasks.last_run_at、last_execution_id、last_execution_status
 | `SYSTEM_URL` | `http://localhost:8180` | System 模块地址 |
 | `STANDARD_URL` | `http://localhost:8110` | Standard 模块地址 |
 | `META_URL` | `http://localhost:8082` | Meta 模块地址 |
-| `INTERNAL_API_KEY` | - | 内部服务调用密钥 |
+| `QUALITY_SERVICE_CLIENT_SECRET` | - | Quality Confidential OAuth Client Secret |
 | `REDIS_HOST` / `REDIS_PORT` | - | Redis 连接配置（用于认证缓存） |
 
 ## IAM Permission 所有权

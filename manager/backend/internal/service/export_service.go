@@ -141,7 +141,7 @@ func (s *ExportService) CreateExport(ctx context.Context, req *ExportRequest) (*
 	if s.minioClient == nil {
 		return nil, fmt.Errorf("infra minio client is required")
 	}
-	engine, err := s.systemClient.GetEngine(loc.EngineID)
+	engine, err := s.systemClient.GetEngineForTenant(ctx, req.TenantID, loc.EngineID)
 	if err != nil {
 		return nil, err
 	}

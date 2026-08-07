@@ -85,7 +85,6 @@ type BaseConfig struct {
 	SystemServiceURL    string
 	InferenceRuntimeURL string
 	EncryptionKey       []byte
-	InternalAPIKey      string
 
 	// 日志配置
 	LogLevel     string
@@ -103,7 +102,6 @@ func LoadDeploymentConfig(target *BaseConfig) {
 	target.DBName = GetEnv("POSTGRES_DB", "addp")
 
 	target.EncryptionKey = LoadEncryptionKey()
-	target.InternalAPIKey = GetEnv("INTERNAL_API_KEY", "")
 	target.InferenceRuntimeURL = GetEnv("INFERENCE_URL", "http://localhost:8191")
 	target.LogLevel = GetEnv("LOG_LEVEL", "info")
 	target.LogFormat = GetEnv("LOG_FORMAT", "json")

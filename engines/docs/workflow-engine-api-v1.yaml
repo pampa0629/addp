@@ -565,8 +565,14 @@ components:
       type: object
       additionalProperties: false
       required:
+        - tenant_id
         - execution_authorization
       properties:
+        tenant_id:
+          type: integer
+          minimum: 1
+          description: 由拥有执行入口的 ADDP 后端模块从已验证 AuthContext 派生的租户 ID；浏览器和外部客户端不得自报。
+          example: 7
         execution_authorization:
           $ref: '#/components/schemas/WorkflowExecutionAuthorization'
 

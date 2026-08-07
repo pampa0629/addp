@@ -80,20 +80,6 @@ func main() {
 	executionService := service.NewExecutionService(db, taskExecutionRepo)
 	executionService.SetTaskQueue(taskQueue)
 
-	// 创建 SystemClient（用于执行引擎）
-	var systemClient *commonClient.SystemClient
-	if cfg.SystemServiceURL != "" {
-		if cfg.InternalAPIKey != "" {
-			systemClient = commonClient.NewSystemClientWithInternalKey(
-				cfg.SystemServiceURL,
-				cfg.InternalAPIKey,
-			)
-			log.Printf("✅ SystemClient initialized with internal API key: %s", cfg.SystemServiceURL)
-		} else {
-			log.Printf("⚠️  SystemClient not initialized - no internal API key configured")
-		}
-	}
-
 	// 创建 MetaClient（用于元数据扫描）
 	if cfg.MetaServiceURL == "" || cfg.ServiceClientSecret == "" {
 		log.Fatal("META_URL 和 TRANSFER_SERVICE_CLIENT_SECRET 必须配置")
@@ -104,6 +90,7 @@ func main() {
 	}
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
 	systemRuntimeClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, tokenSource, nil)
+	systemClient := commonClient.NewSystemClient(cfg.SystemServiceURL, tokenSource)
 	log.Printf("✅ MetaClient initialized: %s", cfg.MetaServiceURL)
 
 	// 初始化 Service 层

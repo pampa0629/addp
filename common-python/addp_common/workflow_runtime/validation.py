@@ -74,7 +74,10 @@ def validate_execution_authorization(
 
     tasks = validate_workflow_def(workflow_def, operator_ids=operator_effects.keys())
     if not isinstance(runtime, dict):
-        raise WorkflowValidationError("runtime.execution_authorization 必须由调用方提供")
+        raise WorkflowValidationError("runtime 必须由调用方提供")
+    tenant_id = runtime.get("tenant_id")
+    if not isinstance(tenant_id, int) or isinstance(tenant_id, bool) or tenant_id <= 0:
+        raise WorkflowValidationError("runtime.tenant_id 必须是正整数")
     authorization = runtime.get("execution_authorization")
     if not isinstance(authorization, dict):
         raise WorkflowValidationError("runtime.execution_authorization 必须是对象")

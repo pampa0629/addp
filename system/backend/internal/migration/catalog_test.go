@@ -12,8 +12,67 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 53 {
-		t.Fatalf("LatestVersion = %d, want 53", catalog.LatestVersion)
+	if catalog.LatestVersion != 56 {
+		t.Fatalf("LatestVersion = %d, want 56", catalog.LatestVersion)
+	}
+}
+
+func TestWorkflowRuntimeServicePrincipalsMigration(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000056_iam_workflow_runtime_service_principals.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 56: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'addp-geopython'", "'addp-model3d'", "'addp-pointcloud'", "'addp-spark'",
+		"'system.runtime_registry.update'", "'manager.derived_artifact.create'",
+		"INSERT INTO system.tenant_memberships",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 56 missing %q", fragment)
+		}
+	}
+}
+
+func TestRemainingServiceRuntimesMigrationPublishesOAuthAuthorization(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000055_iam_remaining_service_runtimes.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 55: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'platform.gateway_runtime'",
+		"'platform.model_runtime'",
+		"'platform.quality_runtime'",
+		"'platform.standard_runtime'",
+		"'system.api_key.read'",
+		"ARRAY['platform', 'tenant']::text[]",
+		"'addp-gateway'",
+		"'addp-model'",
+		"'addp-standard'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 55 missing %q", fragment)
+		}
+	}
+}
+
+func TestPlatformRuntimeRolesMigrationPublishesOAuthRegistrationRoles(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000054_iam_platform_runtime_roles.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 54: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'platform.monitor_runtime', 'addp-monitor'",
+		"'platform.service_runtime', 'addp-service'",
+		"'platform.transfer_runtime', 'addp-transfer'",
+		"'system.runtime_registry.update'",
+		"INSERT INTO system.role_assignments",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 54 missing %q", fragment)
+		}
 	}
 }
 

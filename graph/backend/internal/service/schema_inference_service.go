@@ -18,7 +18,7 @@ type SchemaInferenceService struct {
 	ontologyRepo *repository.OntologyRepository
 	neo4jSvc     *Neo4jService
 	ontologySvc  *OntologyService
-	systemClient *commonClient.SystemClient
+	systemClient *commonClient.SystemServiceClient
 }
 
 func NewSchemaInferenceService(
@@ -26,7 +26,7 @@ func NewSchemaInferenceService(
 	ontologyRepo *repository.OntologyRepository,
 	neo4jSvc *Neo4jService,
 	ontologySvc *OntologyService,
-	systemClient *commonClient.SystemClient,
+	systemClient *commonClient.SystemServiceClient,
 ) *SchemaInferenceService {
 	return &SchemaInferenceService{
 		graphRepo:    graphRepo,
@@ -66,11 +66,17 @@ type SchemaInferencePreview struct {
 
 // ListNeo4jEngines 返回当前租户下所有 Neo4j 引擎
 func (s *SchemaInferenceService) ListNeo4jEngines(tenantID uint) ([]commonModels.Engine, error) {
-	engines, err := s.systemClient.ListEngines("neo4j", tenantID)
+	engines, err := s.systemClient.WithTenantID(tenantID).ListEngines(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("list neo4j engines: %w", err)
 	}
-	return engines, nil
+	filtered := make([]commonModels.Engine, 0, len(engines))
+	for _, engine := range engines {
+		if engine.EngineType == "neo4j" {
+			filtered = append(filtered, engine)
+		}
+	}
+	return filtered, nil
 }
 
 // InferSchema 从指定知识图谱推导 Schema（不写库，仅预览）
@@ -84,7 +90,7 @@ func (s *SchemaInferenceService) InferSchema(ctx context.Context, graphID, tenan
 
 // InferSchemaFromEngine 直接从 Neo4j 引擎推导 Schema（不依赖知识图谱）
 func (s *SchemaInferenceService) InferSchemaFromEngine(ctx context.Context, engineID, tenantID uint, ontologyID *uint) (*SchemaInferencePreview, error) {
-	engine, err := s.systemClient.GetEngine(engineID)
+	engine, err := s.systemClient.WithTenantID(tenantID).GetEngine(context.Background(), engineID)
 	if err != nil {
 		return nil, fmt.Errorf("get engine %d: %w", engineID, err)
 	}

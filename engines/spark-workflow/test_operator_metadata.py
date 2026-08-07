@@ -34,7 +34,7 @@ else:
     class _DataFrame:
         pass
 
-from workflow_engine import WorkflowInvalidError, validate_workflow_def
+from workflow_engine import SparkWorkflowEngine, WorkflowInvalidError, validate_workflow_def
 from spark_connector import SPARK_MAVEN_PACKAGES
 from api_server import serialize_json_value
 from operators.spatial_operators import buffer
@@ -42,6 +42,31 @@ import api_server
 
 
 class OperatorMetadataTest(unittest.TestCase):
+    def test_workflow_injects_runtime_engine_and_tenant_context(self):
+        captured = {}
+        engine = object.__new__(SparkWorkflowEngine)
+        engine.engine_id = 34
+        engine.tenant_id = 7
+        engine.results = {}
+        engine.tasks = {
+            "load_data": {
+                "operator": "load",
+                "params": {"source_type": "table", "engine_id": 999, "tenant_id": 999},
+                "depends_on": [],
+            }
+        }
+
+        def fake_operator(**params):
+            captured.update(params)
+            return "loaded"
+
+        with patch("workflow_engine.get_operator", return_value=fake_operator):
+            result = engine.execute_task("load_data")
+
+        self.assertEqual(result, {"result": "loaded"})
+        self.assertEqual(captured["engine_id"], 34)
+        self.assertEqual(captured["tenant_id"], 7)
+
     def test_runtime_values_fall_back_to_string_for_json_serialization(self):
         class Geometry:
             def __str__(self):

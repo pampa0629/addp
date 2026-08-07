@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 # I/O 算子 (5个)
 # ========================================
 
-def load(engine_id: int, **params) -> DataFrame:
+def load(engine_id: int, tenant_id: int, **params) -> DataFrame:
     """
     数据加载算子
 
@@ -27,6 +27,7 @@ def load(engine_id: int, **params) -> DataFrame:
 
     Args:
         engine_id: Spark引擎ID (从system.engines获取)
+        tenant_id: Runtime 已验证的租户上下文
         **params: 统一参数 (DataLocation格式)
             - source_type: "table" | "file" | "sql" | "catalog"
             - schema: 数据库schema (table类型)
@@ -56,7 +57,7 @@ def load(engine_id: int, **params) -> DataFrame:
 
     # 获取SparkSession
     connector = get_spark_connector()
-    spark = connector.get_or_create_session(engine_id)
+    spark = connector.get_or_create_session(engine_id, tenant_id)
 
     # 使用StorageAdapter加载
     df = StorageAdapter.load(spark, params)

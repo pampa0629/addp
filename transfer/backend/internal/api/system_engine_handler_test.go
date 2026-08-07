@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -16,13 +17,15 @@ import (
 func TestSystemEngineHandlerUsesCanonicalTenantContext(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	var upstreamTenantID string
+	var upstreamAuthorization string
+	var upstreamLegacyHeaders bool
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		if request.URL.Path != "/api/v1/internal/engines" {
+		if request.URL.Path != "/api/v1/system/engines" {
 			http.NotFound(w, request)
 			return
 		}
-		upstreamTenantID = request.URL.Query().Get("tenant_id")
+		upstreamAuthorization = request.Header.Get("Authorization")
+		upstreamLegacyHeaders = request.Header.Get("X-Internal-API-Key") != "" || request.Header.Get("X-Tenant-ID") != ""
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[{
 			"id": 41,
@@ -41,7 +44,12 @@ func TestSystemEngineHandlerUsesCanonicalTenantContext(t *testing.T) {
 	})
 	defer authContextServer.Close()
 
-	handler := NewSystemEngineHandler(commonClient.NewSystemClientWithInternalKey(upstream.URL, "test-internal-key"))
+	handler := NewSystemEngineHandler(commonClient.NewSystemClient(upstream.URL, commonClient.ServiceTokenProviderFunc(func(_ context.Context, tenantID uint) (string, error) {
+		if tenantID != 7 {
+			t.Fatalf("token tenant ID = %d, want 7", tenantID)
+		}
+		return "addp_at_transfer_service_token", nil
+	})))
 	router := gin.New()
 	router.Use(
 		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: authContextServer.URL}),
@@ -57,8 +65,8 @@ func TestSystemEngineHandlerUsesCanonicalTenantContext(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
-	if upstreamTenantID != "7" {
-		t.Fatalf("upstream tenant_id = %q, want 7", upstreamTenantID)
+	if upstreamAuthorization != "Bearer addp_at_transfer_service_token" || upstreamLegacyHeaders {
+		t.Fatalf("upstream authorization = %q legacy_headers=%v", upstreamAuthorization, upstreamLegacyHeaders)
 	}
 	var engines []commonModels.Engine
 	if err := json.Unmarshal(response.Body.Bytes(), &engines); err != nil {

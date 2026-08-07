@@ -48,7 +48,7 @@ func (e *ManagerCADPreviewExecutor) BuildCADPreview(ctx context.Context, req CAD
 	if err != nil {
 		return nil, fmt.Errorf("parse CAD source locator: %w", err)
 	}
-	sourceEngine, err := e.systemClient.GetEngine(req.Config.Source.SourceEngineID)
+	sourceEngine, err := e.systemClient.GetEngineForTenant(ctx, req.Task.TenantID, req.Config.Source.SourceEngineID)
 	if err != nil {
 		return nil, fmt.Errorf("get CAD source engine: %w", err)
 	}

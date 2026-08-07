@@ -150,7 +150,8 @@ func (s *TaskService) ApproveSchemaChange(ctx context.Context, taskID, tenantID,
 			request.ToRevision != request.FromRevision+1 || resource.Status == models.CaptureStatusStopped {
 			return ErrSchemaChangeApprovalConflict
 		}
-		continuousPlan, err := planner.BuildDatabaseCDCContinuousPlan(updatedSpec, s.engineResolver, planner.DatabaseCDCStreamBinding{
+		resolver := planner.BindEngineResolver(s.engineResolver, tenantID)
+		continuousPlan, err := planner.BuildDatabaseCDCContinuousPlan(updatedSpec, resolver, planner.DatabaseCDCStreamBinding{
 			Provider: string(resource.SourceType), ConsumerGroup: resource.ConsumerGroup,
 			SourceIdentity: resource.SourceIdentity, Database: resource.SourceDatabase,
 			Schema: resource.SourceSchema, Table: resource.SourceTable,

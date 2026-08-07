@@ -20,6 +20,7 @@ type ResourceActionService struct {
 
 type SystemClient interface {
 	GetEngine(engineID uint) (*commonModels.Engine, error)
+	GetEngineForTenant(ctx context.Context, tenantID, engineID uint) (*commonModels.Engine, error)
 }
 
 func NewResourceActionService(systemClient SystemClient) *ResourceActionService {
@@ -53,7 +54,10 @@ func (s *ResourceActionService) GetResourceActions(ctx context.Context, locatorU
 	if s == nil || s.systemClient == nil {
 		return nil, fmt.Errorf("system client is required")
 	}
-	engine, err := s.systemClient.GetEngine(loc.EngineID)
+	if tenantID == nil || *tenantID == 0 {
+		return nil, ErrEngineAccessDenied
+	}
+	engine, err := s.systemClient.GetEngineForTenant(ctx, *tenantID, loc.EngineID)
 	if err != nil {
 		return nil, err
 	}
