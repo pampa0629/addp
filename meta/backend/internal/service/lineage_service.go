@@ -18,11 +18,16 @@ import (
 )
 
 type LineageService struct {
-	db *gorm.DB
+	db            *gorm.DB
+	engineCatalog lineageEngineCatalog
 }
 
-func NewLineageService(db *gorm.DB) *LineageService {
-	return &LineageService{db: db}
+type lineageEngineCatalog interface {
+	GetEnginesByTenant(tenantID uint) ([]*commonModels.Engine, error)
+}
+
+func NewLineageService(db *gorm.DB, engineCatalog lineageEngineCatalog) *LineageService {
+	return &LineageService{db: db, engineCatalog: engineCatalog}
 }
 
 // RunCollector periodically consumes successful executions that declare lineage facts.
@@ -471,9 +476,17 @@ func (s *LineageService) GetGraph(ctx context.Context, tenantID uint, request mo
 			return response, err
 		}
 	}
+	engineNames, err := s.lineageEngineNames(tenantID, items)
+	if err != nil {
+		return response, err
+	}
 	nodesByID := make(map[uint]models.LineageNode, len(items))
 	for _, item := range items {
-		node := models.LineageNode{Kind: "data_item", ItemID: uintPtr(item.ID), ItemFingerprint: item.Fingerprint, ItemType: item.ItemType, Name: item.Name, FullName: item.FullName}
+		node := models.LineageNode{
+			Kind: "data_item", ItemID: uintPtr(item.ID), ItemFingerprint: item.Fingerprint,
+			EngineID: uintPtr(item.EngineID), EngineName: engineNames[item.EngineID],
+			ItemType: item.ItemType, Name: item.Name, FullName: item.FullName,
+		}
 		nodesByID[item.ID] = node
 		response.Nodes = append(response.Nodes, node)
 	}
@@ -485,6 +498,31 @@ func (s *LineageService) GetGraph(ctx context.Context, tenantID uint, request mo
 		response.Subject = subject
 	}
 	return s.populateGraphEdges(ctx, tenantID, request, ids, response, nodesByID)
+}
+
+func (s *LineageService) lineageEngineNames(tenantID uint, items []models.MetaItem) (map[uint]string, error) {
+	if len(items) == 0 {
+		return map[uint]string{}, nil
+	}
+	if s.engineCatalog == nil {
+		return nil, fmt.Errorf("lineage engine catalog is not configured")
+	}
+	engines, err := s.engineCatalog.GetEnginesByTenant(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("load lineage engines: %w", err)
+	}
+	names := make(map[uint]string, len(engines))
+	for _, engine := range engines {
+		if engine != nil {
+			names[engine.ID] = engine.Name
+		}
+	}
+	for _, item := range items {
+		if strings.TrimSpace(names[item.EngineID]) == "" {
+			return nil, fmt.Errorf("engine %d not found for lineage item %d", item.EngineID, item.ID)
+		}
+	}
+	return names, nil
 }
 
 func (s *LineageService) populateGraphEdges(ctx context.Context, tenantID uint, request models.LineageGraphRequest, ids []uint, response models.LineageGraphResponse, nodesByID map[uint]models.LineageNode) (models.LineageGraphResponse, error) {

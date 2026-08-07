@@ -129,7 +129,7 @@ func main() {
 
 	taskService := service.NewScanTaskService(db)
 	executionService := service.NewScanExecutionService(db, scanService, engineService, redisClient)
-	lineageService := service.NewLineageService(db)
+	lineageService := service.NewLineageService(db, engineService)
 	lineageContext, cancelLineage := context.WithCancel(context.Background())
 	defer cancelLineage()
 	go lineageService.RunCollector(lineageContext, time.Minute)

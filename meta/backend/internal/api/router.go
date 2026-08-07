@@ -36,7 +36,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 	}
 
 	metadataQueryService := service.NewMetadataQueryService(db)
-	lineageService := service.NewLineageService(db)
+	lineageService := service.NewLineageService(db, engineService)
 	if len(lineageServices) > 0 && lineageServices[0] != nil {
 		lineageService = lineageServices[0]
 	}

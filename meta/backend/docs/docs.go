@@ -2677,6 +2677,12 @@ const docTemplate = `{
         "github_com_addp_meta_internal_models.LineageNode": {
             "type": "object",
             "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "engine_name": {
+                    "type": "string"
+                },
                 "full_name": {
                     "type": "string"
                 },

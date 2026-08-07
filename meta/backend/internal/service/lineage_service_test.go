@@ -5,16 +5,26 @@ import (
 	"encoding/json"
 	"testing"
 
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metatest"
 	"github.com/addp/meta/internal/models"
 	"gorm.io/gorm"
 )
 
+type lineageTestEngineCatalog struct{}
+
+func (lineageTestEngineCatalog) GetEnginesByTenant(tenantID uint) ([]*commonModels.Engine, error) {
+	return []*commonModels.Engine{
+		{ID: 9, Name: "Source PostgreSQL"},
+		{ID: 10, Name: "Target PostgreSQL"},
+	}, nil
+}
+
 func TestLineageCollectorIsIdempotentAndBuildsGraph(t *testing.T) {
 	db := openLineageTestDB(t)
-	svc := NewLineageService(db)
-	source := createLineageItem(t, db, 7, "source", "fp-source")
-	target := createLineageItem(t, db, 7, "target", "fp-target")
+	svc := NewLineageService(db, lineageTestEngineCatalog{})
+	source := createLineageItemOnEngine(t, db, 7, 9, "source", "fp-source")
+	target := createLineageItemOnEngine(t, db, 7, 10, "target", "fp-target")
 	insertLineageExecution(t, db, "exec-1", 7, source.ID, target.ID, "replace")
 
 	first, err := svc.CollectExecution(context.Background(), 7, "exec-1")
@@ -41,14 +51,20 @@ func TestLineageCollectorIsIdempotentAndBuildsGraph(t *testing.T) {
 	if graph.Subject.ItemID == nil || *graph.Subject.ItemID != target.ID || len(graph.Edges) != 1 {
 		t.Fatalf("graph = %#v", graph)
 	}
+	if graph.Subject.EngineID == nil || *graph.Subject.EngineID != 10 || graph.Subject.EngineName != "Target PostgreSQL" {
+		t.Fatalf("subject engine = %#v", graph.Subject)
+	}
 	if graph.Edges[0].RelationKind != "derive" || graph.Edges[0].Source.ItemID == nil || *graph.Edges[0].Source.ItemID != source.ID {
 		t.Fatalf("edge = %#v", graph.Edges[0])
+	}
+	if graph.Edges[0].Source.EngineID == nil || *graph.Edges[0].Source.EngineID != 9 || graph.Edges[0].Source.EngineName != "Source PostgreSQL" {
+		t.Fatalf("source engine = %#v", graph.Edges[0].Source)
 	}
 }
 
 func TestLineageCollectorReplaceClosesPreviousInput(t *testing.T) {
 	db := openLineageTestDB(t)
-	svc := NewLineageService(db)
+	svc := NewLineageService(db, lineageTestEngineCatalog{})
 	oldSource := createLineageItem(t, db, 7, "old-source", "fp-old")
 	newSource := createLineageItem(t, db, 7, "new-source", "fp-new")
 	target := createLineageItem(t, db, 7, "target", "fp-target")
@@ -80,7 +96,7 @@ func TestLineageCollectorReplaceClosesPreviousInput(t *testing.T) {
 
 func TestRecordServicePublicationIsIdempotentAndReturnsEvidence(t *testing.T) {
 	db := openLineageTestDB(t)
-	svc := NewLineageService(db)
+	svc := NewLineageService(db, lineageTestEngineCatalog{})
 	source := createLineageItem(t, db, 7, "source", "fp-source")
 	request := models.RecordServicePublicationRequest{
 		ServiceID: 19, PublishedRevision: "revision-1", DependencyHash: "revision-1",
@@ -160,8 +176,12 @@ func openLineageTestDB(t *testing.T) *gorm.DB {
 }
 
 func createLineageItem(t *testing.T, db *gorm.DB, tenantID uint, name, fingerprint string) models.MetaItem {
+	return createLineageItemOnEngine(t, db, tenantID, 9, name, fingerprint)
+}
+
+func createLineageItemOnEngine(t *testing.T, db *gorm.DB, tenantID, engineID uint, name, fingerprint string) models.MetaItem {
 	t.Helper()
-	item := models.MetaItem{TenantID: tenantID, EngineID: 9, NodeID: 1, ItemType: "table", Name: name, FullName: "public." + name, Fingerprint: fingerprint}
+	item := models.MetaItem{TenantID: tenantID, EngineID: engineID, NodeID: 1, ItemType: "table", Name: name, FullName: "public." + name, Fingerprint: fingerprint}
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatalf("create item: %v", err)
 	}

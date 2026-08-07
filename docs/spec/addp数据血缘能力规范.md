@@ -259,7 +259,10 @@ GET /api/v1/meta/lineage/graph
   "subject": {
     "kind": "data_item",
     "item_id": 22,
-    "item_fingerprint": "..."
+    "item_fingerprint": "...",
+    "engine_id": 21,
+    "engine_name": "SuperMap SDX+ for PostgreSQL",
+    "full_name": "sdx.farmland"
   },
   "nodes": [],
   "edges": [],
@@ -268,7 +271,7 @@ GET /api/v1/meta/lineage/graph
 }
 ```
 
-节点可以包含 `data_item`、`published_service`、`execution` 和 `field_ref`，但资源身份和执行身份必须保持不同。边必须返回 relation kind、granularity、evidence summary 和时间状态。
+节点可以包含 `data_item`、`published_service`、`execution` 和 `field_ref`，但资源身份和执行身份必须保持不同。`data_item` 节点必须返回所属 `engine_id` 和 System 当前的 `engine_name`，用于在同名 schema / table、跨引擎派生等场景中明确资源边界；共享前端不得解析 locator 或调用其他模块补猜引擎名称。边必须返回 relation kind、granularity、evidence summary 和时间状态。
 
 该 API 必须执行 Tenant、Meta lineage read Permission 和 owner 资源可见性校验。不得因为用户能看到某个服务，就自动泄露该服务无权访问的上游数据项名称。
 

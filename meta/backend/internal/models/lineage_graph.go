@@ -44,6 +44,8 @@ type LineageNode struct {
 	Kind              string `json:"kind"`
 	ItemID            *uint  `json:"item_id,omitempty"`
 	ItemFingerprint   string `json:"item_fingerprint,omitempty"`
+	EngineID          *uint  `json:"engine_id,omitempty"`
+	EngineName        string `json:"engine_name,omitempty"`
 	ItemType          string `json:"item_type,omitempty"`
 	Name              string `json:"name,omitempty"`
 	FullName          string `json:"full_name,omitempty"`

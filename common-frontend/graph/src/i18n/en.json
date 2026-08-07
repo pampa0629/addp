@@ -17,8 +17,41 @@
   },
   "lineage": {
     "noData": "No lineage data",
-    "nodes": "Nodes",
-    "edges": "Edges",
-    "fitView": "Fit View"
+    "summary": "{nodes} nodes · {edges} relationships",
+    "graphLabel": "Data lineage graph",
+    "current": "Current",
+    "currentItem": "Current item",
+    "relatedItem": "Related item",
+    "relationship": "Lineage relationship",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "fitView": "Fit view",
+    "engine": "Engine",
+    "engineId": "Engine ID",
+    "engineIdentifier": "Engine #{id}",
+    "itemId": "Item ID",
+    "itemIdentifier": "Item #{id}",
+    "serviceId": "Service ID",
+    "fingerprint": "Fingerprint",
+    "revision": "Published revision",
+    "granularity": "Granularity",
+    "lastObservedAt": "Last observed",
+    "executionId": "Execution ID",
+    "types": {
+      "dataItem": "Data item",
+      "table": "Table",
+      "object": "Object",
+      "topic": "Topic",
+      "collection": "Collection",
+      "publishedService": "Data service"
+    },
+    "relations": {
+      "derive": "Derives",
+      "serve": "Service dependency"
+    },
+    "granularities": {
+      "item": "Item level",
+      "field": "Field level"
+    }
   }
 }

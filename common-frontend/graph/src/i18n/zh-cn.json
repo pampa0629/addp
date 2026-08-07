@@ -17,8 +17,41 @@
   },
   "lineage": {
     "noData": "暂无血缘数据",
-    "nodes": "节点",
-    "edges": "关系",
-    "fitView": "适应窗口"
+    "summary": "{nodes} 个节点 · {edges} 条关系",
+    "graphLabel": "数据血缘关系图",
+    "current": "当前",
+    "currentItem": "当前数据项",
+    "relatedItem": "关联数据项",
+    "relationship": "血缘关系",
+    "zoomIn": "放大",
+    "zoomOut": "缩小",
+    "fitView": "适应窗口",
+    "engine": "引擎",
+    "engineId": "引擎 ID",
+    "engineIdentifier": "引擎 #{id}",
+    "itemId": "数据项 ID",
+    "itemIdentifier": "Item #{id}",
+    "serviceId": "服务 ID",
+    "fingerprint": "指纹",
+    "revision": "发布版本",
+    "granularity": "粒度",
+    "lastObservedAt": "最近观测",
+    "executionId": "执行 ID",
+    "types": {
+      "dataItem": "数据项",
+      "table": "数据表",
+      "object": "对象",
+      "topic": "主题",
+      "collection": "集合",
+      "publishedService": "数据服务"
+    },
+    "relations": {
+      "derive": "派生",
+      "serve": "服务依赖"
+    },
+    "granularities": {
+      "item": "数据项级",
+      "field": "字段级"
+    }
   }
 }

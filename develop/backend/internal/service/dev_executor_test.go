@@ -23,14 +23,34 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestDevelopLineageFactsUsesWorkflowInputsAndOutputs(t *testing.T) {
-	task := &models.DevTask{Content: map[string]interface{}{
-		"inputs": map[string]interface{}{"source": map[string]interface{}{"locator": "addp://engine/1/path/public/source?type=table&item_id=11"}},
-	}}
-	result := commonModels.JSONMap{"outputs": map[string]interface{}{"step-1": map[string]interface{}{"resource": map[string]interface{}{"locator": "addp://engine/1/path/public/target?type=table"}}}}
+func TestDevelopLineageFactsUsesWorkflowDefinitionResourcesAndOutputs(t *testing.T) {
+	task := &models.DevTask{
+		DevType: commonExecution.TaskTypeWorkflow,
+		Content: map[string]interface{}{
+			"inputs": map[string]interface{}{},
+			"workflow_definition": map[string]interface{}{
+				"tasks": []interface{}{
+					map[string]interface{}{
+						"id":       "load_1",
+						"operator": "load",
+						"params": map[string]interface{}{
+							"locator": "addp://engine/1/path/public/source?type=table&item_id=11",
+						},
+					},
+				},
+			},
+		},
+	}
+	result := commonModels.JSONMap{"outputs": commonModels.JSONMap{"save_3": map[string]interface{}{"resource": map[string]interface{}{"locator": "addp://engine/1/path/public/target?type=table"}}}}
 	facts := developLineageFacts(task, result)
 	if facts == nil || len(facts.Inputs) != 1 || len(facts.Outputs) != 1 {
 		t.Fatalf("facts = %#v", facts)
+	}
+	if facts.Inputs[0].Locator != "addp://engine/1/path/public/source?type=table&item_id=11" {
+		t.Fatalf("input locator = %q", facts.Inputs[0].Locator)
+	}
+	if facts.Outputs[0].Locator != "addp://engine/1/path/public/target?type=table" {
+		t.Fatalf("output locator = %q", facts.Outputs[0].Locator)
 	}
 	if facts.SchemaVersion != commonExecution.LineageFactsSchemaVersion || facts.Operations[0].Operator != "develop" {
 		t.Fatalf("facts = %#v", facts)
