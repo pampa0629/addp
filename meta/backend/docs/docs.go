@@ -662,6 +662,62 @@ const docTemplate = `{
                 ]
             }
         },
+        "/lineage/executions/{execution_id}/collect": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "采集指定成功执行中已持久化的 lineage_facts；重复调用是幂等的 | Collect persisted lineage_facts from one successful execution; repeated calls are idempotent",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Lineage"
+                ],
+                "summary": "采集单次执行血缘 | Collect execution lineage",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "执行 ID | Execution ID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "采集结果 | Collection result",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.LineageCollectionResult"
+                        }
+                    },
+                    "400": {
+                        "description": "执行事实不可采集 | Execution facts cannot be collected",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.LineageErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "执行不存在 | Execution not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.LineageErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "采集失败 | Collection failed",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.LineageErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.lineage.create"
+                ]
+            }
+        },
         "/lineage/graph": {
             "get": {
                 "security": [
@@ -2609,6 +2665,17 @@ const docTemplate = `{
         "github_com_addp_meta_internal_models.JSONMap": {
             "type": "object",
             "additionalProperties": true
+        },
+        "github_com_addp_meta_internal_models.LineageCollectionResult": {
+            "type": "object",
+            "properties": {
+                "observed": {
+                    "type": "integer"
+                },
+                "skipped": {
+                    "type": "integer"
+                }
+            }
         },
         "github_com_addp_meta_internal_models.LineageEdge": {
             "type": "object",

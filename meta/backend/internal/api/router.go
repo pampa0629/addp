@@ -124,6 +124,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		// 统计接口
 		api.GET("/stats", permission(metaauthorization.PermissionMetaCatalogRead), handler.GetStats)
 		api.GET("/lineage/graph", permission(metaauthorization.PermissionMetaLineageRead), handler.GetLineageGraph)
+		api.POST("/lineage/executions/:execution_id/collect", auth.MustNewServiceClientGuard("addp-develop"), permission(metaauthorization.PermissionMetaLineageCreate), handler.CollectExecutionLineage)
 		api.POST("/lineage/services", auth.MustNewServiceClientGuard("addp-service"), permission(metaauthorization.PermissionMetaLineageCreate), handler.RecordServicePublication)
 	}
 

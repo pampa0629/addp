@@ -70,10 +70,7 @@ func (s *LineageService) CollectPendingExecutions(ctx context.Context, limit int
 	return collected, nil
 }
 
-type LineageCollectionResult struct {
-	Observed int `json:"observed"`
-	Skipped  int `json:"skipped"`
-}
+type LineageCollectionResult = models.LineageCollectionResult
 
 // CollectExecution consumes only successful executions with top-level metadata.lineage_facts.
 func (s *LineageService) CollectExecution(ctx context.Context, tenantID uint, executionID string) (LineageCollectionResult, error) {

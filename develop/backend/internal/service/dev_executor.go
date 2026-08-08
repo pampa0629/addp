@@ -570,9 +570,11 @@ func (e *DevExecutor) executeAsync(
 			metadata["result_size_bytes"] = int64(len(resultBytes))
 		}
 	}
+	lineageFactsWritten := false
 	if status == commonExecution.ExecutionStatusSuccess {
 		if facts := developLineageFacts(devTask, result); facts != nil {
 			metadata["lineage_facts"] = facts
+			lineageFactsWritten = true
 		}
 	}
 	execution.Metadata = metadata
@@ -593,6 +595,9 @@ func (e *DevExecutor) executeAsync(
 		return
 	}
 	log.Printf("🟢 [DevExecutor] Update 调用完成: execution_id=%s", executionID)
+	if lineageFactsWritten {
+		e.notifyExecutionLineage(ctx, uint(tenantID), executionID)
+	}
 
 	log.Printf("✅ [DevExecutor] 执行记录已更新: execution_id=%s status=%s progress=100", executionID, status)
 
@@ -719,12 +724,11 @@ func workflowExecutionOutputs(targets []WorkflowProducedTarget) commonModels.JSO
 		if strings.TrimSpace(target.TaskID) == "" {
 			continue
 		}
-		outputs[target.TaskID] = map[string]interface{}{
-			"resource": map[string]interface{}{
-				"locator": target.Locator,
-				"type":    target.Type,
-			},
+		resource := map[string]interface{}{"locator": target.Locator, "type": target.Type}
+		if target.WriteMode != "" {
+			resource["write_mode"] = target.WriteMode
 		}
+		outputs[target.TaskID] = map[string]interface{}{"resource": resource}
 	}
 	return outputs
 }
@@ -769,6 +773,9 @@ func collectLineageRefs(value interface{}, port string) []commonExecution.Lineag
 			locator, _ := typed["locator"].(string)
 			if strings.TrimSpace(locator) != "" {
 				ref := commonExecution.LineageResourceRef{Port: port, Locator: locator}
+				if writeMode, ok := typed["write_mode"].(string); ok {
+					ref.WriteMode = strings.TrimSpace(writeMode)
+				}
 				if rawID, ok := typed["item_id"].(float64); ok && rawID > 0 {
 					id := uint(rawID)
 					ref.ItemID = &id
@@ -782,6 +789,18 @@ func collectLineageRefs(value interface{}, port string) []commonExecution.Lineag
 	}
 	visit(value)
 	return refs
+}
+
+func (e *DevExecutor) notifyExecutionLineage(ctx context.Context, tenantID uint, executionID string) {
+	if e == nil || e.metaClient == nil || tenantID == 0 || strings.TrimSpace(executionID) == "" {
+		return
+	}
+	result, err := e.metaClient.WithTenantID(tenantID).CollectExecutionLineage(ctx, executionID)
+	if err != nil {
+		log.Printf("⚠️  [DevExecutor] Meta 血缘立即采集失败，等待周期 collector 重试 execution_id=%s err=%v", executionID, err)
+		return
+	}
+	log.Printf("✅ [DevExecutor] Meta 血缘采集完成 execution_id=%s observed=%d skipped=%d", executionID, result.Observed, result.Skipped)
 }
 
 func (e *DevExecutor) createWorkflowProducedTargetScanRuns(

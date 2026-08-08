@@ -163,6 +163,13 @@ definitions:
   github_com_addp_meta_internal_models.JSONMap:
     additionalProperties: true
     type: object
+  github_com_addp_meta_internal_models.LineageCollectionResult:
+    properties:
+      observed:
+        type: integer
+      skipped:
+        type: integer
+    type: object
   github_com_addp_meta_internal_models.LineageEdge:
     properties:
       evidence:
@@ -1196,6 +1203,43 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - meta.catalog.read
+  /lineage/executions/{execution_id}/collect:
+    post:
+      description: 采集指定成功执行中已持久化的 lineage_facts；重复调用是幂等的 | Collect persisted lineage_facts
+        from one successful execution; repeated calls are idempotent
+      parameters:
+      - description: 执行 ID | Execution ID
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 采集结果 | Collection result
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.LineageCollectionResult'
+        "400":
+          description: 执行事实不可采集 | Execution facts cannot be collected
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.LineageErrorResponse'
+        "404":
+          description: 执行不存在 | Execution not found
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.LineageErrorResponse'
+        "500":
+          description: 采集失败 | Collection failed
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.LineageErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 采集单次执行血缘 | Collect execution lineage
+      tags:
+      - Meta Lineage
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.lineage.create
   /lineage/graph:
     get:
       description: 按数据项或已发布服务版本查询当前血缘关系 | Query current lineage for a data item or

@@ -1,7 +1,7 @@
 # ADDP 数据血缘能力规范
 
 **状态**：正式规范（阶段 1 实现依据）  
-**更新时间**：2026-08-07  
+**更新时间**：2026-08-08
 **适用范围**：Meta、Transfer、Develop、Manager、Service、Asset、Graph、Orchestrator 及 `common` / `common-frontend`
 
 ## 一、定位与边界
@@ -210,7 +210,7 @@ Service 发布或变更一个版本时，必须向 Meta collector 提供等价�
 
 ```text
 owner execution/publication fact
-  -> Meta collector claim
+  -> owner immediately notifies Meta collector
   -> locator/fingerprint resolve
   -> Meta scan completion (if target is new)
   -> observation
@@ -218,6 +218,14 @@ owner execution/publication fact
 ```
 
 正式关系只在成功完成的持久化效果可确认后建立。部分提交、失败和取消必须由 owner 提供明确提交事实，否则只记录诊断，不建立成功关系。
+
+执行事实的采集触发遵循单一处理路径：
+
+1. owner 必须先把成功状态和 `lineage_facts` 原子地持久化到统一 execution，再通知 Meta 采集指定 execution。
+2. Develop 通过 `POST /api/v1/meta/lineage/executions/{execution_id}/collect` 通知；该入口只接受 `addp-develop` Service Principal 和 `meta.lineage.create` Permission。
+3. 立即通知与周期 collector 必须共同调用 `LineageService.CollectExecution`，不得分别实现两套解析或投影逻辑。
+4. 通知失败不得把已成功的数据执行改为失败；Meta 周期 collector 负责漏采和失败重试。
+5. Item 元数据刷新只更新资源元数据，不触发血缘采集；血缘事实的触发依据始终是 owner execution，而不是用户刷新行为。
 
 ## 六、粒度
 

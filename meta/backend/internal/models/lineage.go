@@ -2,6 +2,11 @@ package models
 
 import "time"
 
+type LineageCollectionResult struct {
+	Observed int `json:"observed"`
+	Skipped  int `json:"skipped"`
+}
+
 // LineageItemRelation 是 data item 到 data item 的当前关系投影。
 type LineageItemRelation struct {
 	ID                    uint       `gorm:"primaryKey" json:"id"`

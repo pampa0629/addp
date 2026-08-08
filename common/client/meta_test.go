@@ -17,6 +17,38 @@ func newTestMetaClient(baseURL string) *MetaClient {
 	}))
 }
 
+func TestMetaClientCollectExecutionLineageUsesDevelopServiceContract(t *testing.T) {
+	t.Parallel()
+
+	var gotMethod string
+	var gotPath string
+	var gotHeader string
+	var gotLegacyHeaders bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotHeader = r.Header.Get("Authorization")
+		gotLegacyHeaders = r.Header.Get("X-Internal-API-Key") != "" || r.Header.Get("X-Tenant-ID") != ""
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"observed":1,"skipped":2}`))
+	}))
+	defer server.Close()
+
+	result, err := newTestMetaClient(server.URL).WithTenantID(8).CollectExecutionLineage(context.Background(), "execution-1")
+	if err != nil {
+		t.Fatalf("CollectExecutionLineage() error = %v", err)
+	}
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/meta/lineage/executions/execution-1/collect" {
+		t.Fatalf("request = %s %s", gotMethod, gotPath)
+	}
+	if gotHeader != "Bearer test-token" || gotLegacyHeaders {
+		t.Fatalf("auth headers = authorization:%q legacy:%t", gotHeader, gotLegacyHeaders)
+	}
+	if result == nil || result.Observed != 1 || result.Skipped != 2 {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
 func TestMetaClientCreateManualScanRunUsesAsyncPath(t *testing.T) {
 	t.Parallel()
 

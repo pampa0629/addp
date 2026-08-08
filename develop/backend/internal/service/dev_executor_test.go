@@ -41,7 +41,7 @@ func TestDevelopLineageFactsUsesWorkflowDefinitionResourcesAndOutputs(t *testing
 			},
 		},
 	}
-	result := commonModels.JSONMap{"outputs": commonModels.JSONMap{"save_3": map[string]interface{}{"resource": map[string]interface{}{"locator": "addp://engine/1/path/public/target?type=table"}}}}
+	result := commonModels.JSONMap{"outputs": commonModels.JSONMap{"save_3": map[string]interface{}{"resource": map[string]interface{}{"locator": "addp://engine/1/path/public/target?type=table", "write_mode": "replace"}}}}
 	facts := developLineageFacts(task, result)
 	if facts == nil || len(facts.Inputs) != 1 || len(facts.Outputs) != 1 {
 		t.Fatalf("facts = %#v", facts)
@@ -51,6 +51,9 @@ func TestDevelopLineageFactsUsesWorkflowDefinitionResourcesAndOutputs(t *testing
 	}
 	if facts.Outputs[0].Locator != "addp://engine/1/path/public/target?type=table" {
 		t.Fatalf("output locator = %q", facts.Outputs[0].Locator)
+	}
+	if facts.Outputs[0].WriteMode != "replace" {
+		t.Fatalf("output write_mode = %q, want replace", facts.Outputs[0].WriteMode)
 	}
 	if facts.SchemaVersion != commonExecution.LineageFactsSchemaVersion || facts.Operations[0].Operator != "develop" {
 		t.Fatalf("facts = %#v", facts)
@@ -258,15 +261,71 @@ func TestWorkflowProducedTargetScanOptionsUseRefGroupsForFileTargets(t *testing.
 
 func TestWorkflowExecutionOutputsAreAddressedByTaskID(t *testing.T) {
 	outputs := workflowExecutionOutputs([]WorkflowProducedTarget{
-		{TaskID: "save_3", Type: "table", Locator: "addp://engine/7/path/public/roads_buffered?type=table"},
+		{TaskID: "save_3", Type: "table", Locator: "addp://engine/7/path/public/roads_buffered?type=table", WriteMode: "replace"},
 	})
 	taskOutput, ok := outputs["save_3"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("outputs = %#v, want save_3 object", outputs)
 	}
 	resource, ok := taskOutput["resource"].(map[string]interface{})
-	if !ok || resource["type"] != "table" || resource["locator"] == "" {
+	if !ok || resource["type"] != "table" || resource["locator"] == "" || resource["write_mode"] != "replace" {
 		t.Fatalf("resource output = %#v", taskOutput["resource"])
+	}
+}
+
+func TestWorkflowProducedTargetCarriesCanonicalWriteMode(t *testing.T) {
+	params := map[string]interface{}{
+		"target_parent_locator": "addp://engine/7/path/public?type=schema",
+		"target_name":           "roads_buffered",
+		"mode":                  "overwrite",
+	}
+	targets, err := deriveWorkflowResourceParams(params, workflowPythonSaveAdapterSpec())
+	if err != nil {
+		t.Fatalf("deriveWorkflowResourceParams() error = %v", err)
+	}
+	if len(targets) != 1 || targets[0].WriteMode != "replace" {
+		t.Fatalf("targets = %#v, want replace write mode", targets)
+	}
+}
+
+func TestNotifyExecutionLineageFailureDoesNotMutateSuccessfulExecution(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
+		t.Fatalf("attach common schema: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE common.task_executions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, execution_id TEXT NOT NULL UNIQUE,
+		module TEXT NOT NULL, task_type TEXT NOT NULL, source TEXT NOT NULL, status TEXT NOT NULL,
+		progress INTEGER, trigger_type TEXT NOT NULL, metadata JSON, created_at DATETIME, updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create task executions: %v", err)
+	}
+	executionID := uuid.New().String()
+	if err := db.Exec(`INSERT INTO common.task_executions
+		(tenant_id, execution_id, module, task_type, source, status, progress, trigger_type, metadata, created_at, updated_at)
+		VALUES (7, ?, 'develop', 'workflow', 'develop', 'success', 100, 'manual', '{"lineage_facts":{}}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, executionID).Error; err != nil {
+		t.Fatalf("insert execution: %v", err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"temporary failure"}`, http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	executor := &DevExecutor{
+		taskExecutionRepo: commonExecution.NewTaskExecutionRepository(db),
+		metaClient:        commonClient.NewMetaClient(server.URL, staticServiceTokenSource("addp_at_develop")),
+	}
+
+	executor.notifyExecutionLineage(context.Background(), 7, executionID)
+
+	execution, err := executor.taskExecutionRepo.GetByExecutionID(context.Background(), executionID, 7)
+	if err != nil {
+		t.Fatalf("load execution: %v", err)
+	}
+	if execution.Status != commonExecution.ExecutionStatusSuccess {
+		t.Fatalf("execution status = %q, want success", execution.Status)
 	}
 }
 

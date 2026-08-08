@@ -85,6 +85,11 @@ type MetaLineageServicePublication struct {
 	Dependencies      []MetaLineageServiceDependency `json:"dependencies"`
 }
 
+type MetaLineageCollectionResult struct {
+	Observed int `json:"observed"`
+	Skipped  int `json:"skipped"`
+}
+
 func normalizeManualMetaTriggerType(triggerType string) (string, error) {
 	normalized := strings.ToLower(strings.TrimSpace(triggerType))
 	if normalized == "" || normalized == commonExecution.TriggerTypeManual {
@@ -155,6 +160,36 @@ func (c *MetaClient) RecordServicePublication(ctx context.Context, publication M
 		return fmt.Errorf("Meta lineage publication returned status %d: %s", response.StatusCode, strings.TrimSpace(string(payload)))
 	}
 	return nil
+}
+
+// CollectExecutionLineage asks Meta to consume one persisted execution fact immediately.
+func (c *MetaClient) CollectExecutionLineage(ctx context.Context, executionID string) (*MetaLineageCollectionResult, error) {
+	if c == nil || c.baseURL == "" || c.tenantID == nil || *c.tenantID == 0 {
+		return nil, errors.New("Meta lineage collection requires a tenant context")
+	}
+	executionID = strings.TrimSpace(executionID)
+	if executionID == "" {
+		return nil, errors.New("Meta lineage collection requires an execution ID")
+	}
+	requestURL := c.baseURL + "/api/v1/meta/lineage/executions/" + url.PathEscape(executionID) + "/collect"
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create Meta lineage collection request: %w", err)
+	}
+	response, err := c.do(request)
+	if err != nil {
+		return nil, fmt.Errorf("send Meta lineage collection request: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		payload, _ := io.ReadAll(io.LimitReader(response.Body, 8192))
+		return nil, fmt.Errorf("Meta lineage collection returned status %d: %s", response.StatusCode, strings.TrimSpace(string(payload)))
+	}
+	var result MetaLineageCollectionResult
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode Meta lineage collection response: %w", err)
+	}
+	return &result, nil
 }
 
 func (c *MetaClient) GetItemByIDForTenant(tenantID, itemID uint) (*models.MetaItem, error) {

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -13,7 +14,44 @@ import (
 	metai18n "github.com/addp/meta/i18n"
 	"github.com/addp/meta/internal/models"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
+
+// CollectExecutionLineage immediately consumes one persisted execution lineage fact.
+// @Summary 采集单次执行血缘 | Collect execution lineage
+// @Description 采集指定成功执行中已持久化的 lineage_facts；重复调用是幂等的 | Collect persisted lineage_facts from one successful execution; repeated calls are idempotent
+// @Tags Meta Lineage
+// @Produce json
+// @Param execution_id path string true "执行 ID | Execution ID"
+// @Success 200 {object} models.LineageCollectionResult "采集结果 | Collection result"
+// @Failure 400 {object} models.LineageErrorResponse "执行事实不可采集 | Execution facts cannot be collected"
+// @Failure 404 {object} models.LineageErrorResponse "执行不存在 | Execution not found"
+// @Failure 500 {object} models.LineageErrorResponse "采集失败 | Collection failed"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.lineage.create"]
+// @Router /lineage/executions/{execution_id}/collect [post]
+// @Security BearerAuth
+func (h *Handler) CollectExecutionLineage(c *gin.Context) {
+	executionID := strings.TrimSpace(c.Param("execution_id"))
+	if executionID == "" {
+		c.JSON(http.StatusBadRequest, models.LineageErrorResponse{Error: commoni18n.T(c, metai18n.MsgLineageInvalidQuery), ErrorCode: "invalid_execution_id"})
+		return
+	}
+	result, err := h.lineageService.CollectExecution(c.Request.Context(), commonAuth.GetTenantID(c), executionID)
+	if err == nil {
+		c.JSON(http.StatusOK, result)
+		return
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusNotFound, models.LineageErrorResponse{Error: commoni18n.T(c, metai18n.MsgLineageSubjectNotFound), ErrorCode: "lineage_execution_not_found"})
+		return
+	}
+	if strings.Contains(err.Error(), "not successful") || strings.Contains(err.Error(), "lineage_facts") {
+		c.JSON(http.StatusBadRequest, models.LineageErrorResponse{Error: commoni18n.T(c, metai18n.MsgLineageInvalidQuery), ErrorCode: "invalid_execution_lineage"})
+		return
+	}
+	c.JSON(http.StatusInternalServerError, models.LineageErrorResponse{Error: commoni18n.T(c, metai18n.MsgLineageQueryFailed), ErrorCode: "lineage_collection_failed"})
+}
 
 // RecordServicePublication receives a publication snapshot from Service.
 // @Summary 记录服务发布血缘事实 | Record service publication lineage

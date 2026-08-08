@@ -106,11 +106,12 @@ type WorkflowResponse struct {
 }
 
 type WorkflowProducedTarget struct {
-	TaskID   string   `json:"task_id"`
-	EngineID uint     `json:"engine_id"`
-	Type     string   `json:"type"`
-	Path     []string `json:"path"`
-	Locator  string   `json:"locator"`
+	TaskID    string   `json:"task_id"`
+	EngineID  uint     `json:"engine_id"`
+	Type      string   `json:"type"`
+	Path      []string `json:"path"`
+	Locator   string   `json:"locator"`
+	WriteMode string   `json:"write_mode,omitempty"`
 }
 
 // ExecuteWorkflow 执行工作流（支持 JSONB 配置）
@@ -715,6 +716,7 @@ func (s *WorkflowEngineService) deriveWorkflowAccessPlan(
 	if err != nil {
 		return nil, fmt.Errorf("resolve target: %w", err)
 	}
+	writeMode := workflowLineageWriteMode(params)
 	plan, err := workflowaccess.New(source, target)
 	if err != nil {
 		return nil, err
@@ -741,6 +743,7 @@ func (s *WorkflowEngineService) deriveWorkflowAccessPlan(
 		resourceType = resourcetree.TypeObject
 	}
 	producedTarget := workflowProducedTarget(targetLocator.EngineID, resourceType, targetLocator.Path)
+	producedTarget.WriteMode = writeMode
 	return []WorkflowProducedTarget{producedTarget}, nil
 }
 
@@ -759,6 +762,7 @@ func requireTenantBusinessEngine(engine *commonModels.Engine, tenantID uint, lab
 
 func deriveWorkflowResourceParams(params map[string]interface{}, spec workflowOperatorAdapterSpec) ([]WorkflowProducedTarget, error) {
 	producedTargets := make([]WorkflowProducedTarget, 0)
+	writeMode := workflowLineageWriteMode(params)
 	for _, inputSpec := range spec.ResourceInputs {
 		locator := stringParam(params, inputSpec.PublicParam)
 		if locator == "" {
@@ -791,12 +795,34 @@ func deriveWorkflowResourceParams(params map[string]interface{}, spec workflowOp
 		if err != nil {
 			return nil, err
 		}
+		target.WriteMode = writeMode
 		producedTargets = append(producedTargets, target)
 		delete(params, outputSpec.ParentParam)
 		delete(params, outputSpec.NameParam)
 	}
 
 	return producedTargets, nil
+}
+
+func workflowLineageWriteMode(params map[string]interface{}) string {
+	raw := strings.ToLower(strings.TrimSpace(stringParam(params, "write_mode")))
+	if raw == "" {
+		raw = strings.ToLower(strings.TrimSpace(stringParam(params, "mode")))
+	}
+	switch raw {
+	case "overwrite":
+		return "replace"
+	case "create", "replace", "append", "upsert":
+		return raw
+	case "":
+		if overwrite, ok := params["overwrite"].(bool); ok {
+			if overwrite {
+				return "replace"
+			}
+			return "create"
+		}
+	}
+	return ""
 }
 
 func deriveWorkflowSourceParams(params map[string]interface{}, loc *resourcetree.ResourceLocator) error {
