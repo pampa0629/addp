@@ -2048,6 +2048,9 @@
                 "actor_tenant_membership_id": {
                     "type": "integer"
                 },
+                "attempt": {
+                    "type": "integer"
+                },
                 "authorization_effects": {
                     "type": "array",
                     "items": {
@@ -2106,6 +2109,9 @@
                     "type": "integer"
                 },
                 "issued_authorization_version": {
+                    "type": "integer"
+                },
+                "max_attempts": {
                     "type": "integer"
                 },
                 "metadata": {

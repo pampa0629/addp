@@ -52,7 +52,14 @@ func (r *EntityRelationRepository) Update(relation *models.EntityRelation) error
 
 // Delete 删除实体关系
 func (r *EntityRelationRepository) Delete(id, tenantID int64) error {
-	return r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.EntityRelation{}).Error
+	result := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.EntityRelation{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // DeleteByTenantID 删除租户的所有实体关系（用于Mermaid导入时清理）

@@ -2,6 +2,8 @@
 
 本文件为 Claude Code 在 `standard/` 目录下工作时提供指导。
 
+数据元 `quality_rules` 的结构和校验必须遵守 [ADDP 数据质量规范](../docs/spec/addp数据质量规范.md)。Standard 只拥有规则定义，不拥有物理字段应用、规则执行、评分或质量问题。
+
 ## 模块概述
 
 **Standard 模块** 是 ADDP 平台的数据标准和治理中心，负责：

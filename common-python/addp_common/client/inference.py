@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from typing import Literal
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
@@ -110,21 +111,21 @@ class InferenceError(RuntimeError):
 class InferenceClient:
     def __init__(
         self,
-        base_url: str,
+        system_url: str,
         token_source: OAuthServiceTokenSource,
         *,
         timeout: float = 120.0,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
-        base_url = base_url.strip().rstrip("/")
-        parsed = urlsplit(base_url)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.query or parsed.fragment:
-            raise ValueError("inference base URL must be an absolute HTTP(S) URL")
+        system_url = system_url.strip().rstrip("/")
+        parsed = urlsplit(system_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+            raise ValueError("inference client requires an absolute System HTTP(S) URL")
         if token_source is None:
             raise ValueError("inference client requires a service token source")
+        self._system_url = system_url
         self._token_source = token_source
         self._client = httpx.AsyncClient(
-            base_url=base_url,
             timeout=timeout,
             transport=transport,
             trust_env=False,
@@ -222,13 +223,19 @@ class InferenceClient:
         for attempt in range(2):
             token = await self._token_source.token(tenant_id)
             try:
+                runtime_url = await self._discover_runtime(token)
                 response = await self._client.post(
-                    path,
+                    runtime_url + path,
                     json=payload,
                     headers={"Authorization": f"Bearer {token}"},
                 )
+            except _RuntimeDiscoveryUnauthorized:
+                if attempt == 0:
+                    self._token_source.invalidate(tenant_id, token)
+                    continue
+                raise InferenceError("inference_runtime_unauthorized")
             except httpx.HTTPError as exc:
-                raise InferenceError("inference_unavailable") from exc
+                raise InferenceError("inference_runtime_unavailable") from exc
             if response.status_code != 401 or attempt == 1:
                 break
             self._token_source.invalidate(tenant_id, token)
@@ -241,6 +248,60 @@ class InferenceClient:
                 error_code, message = "inference_upstream_failed", ""
             raise InferenceError(str(error_code), str(message))
         return response.json()
+
+    async def _discover_runtime(self, token: str) -> str:
+        response = await self._client.get(
+            self._system_url + "/api/v1/system/runtime/engine-descriptors",
+            params={"engine_type": "inference_runtime", "page": 1, "page_size": 2},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        if response.status_code < 200 or response.status_code >= 300:
+            if response.status_code == 401:
+                raise _RuntimeDiscoveryUnauthorized()
+            raise InferenceError("inference_runtime_discovery_failed")
+        try:
+            payload = response.json()
+            descriptors = payload["data"]
+            total = payload["total"]
+        except (KeyError, TypeError, ValueError) as exc:
+            raise InferenceError("inference_runtime_discovery_invalid") from exc
+        if not isinstance(descriptors, list) or not isinstance(total, int) or isinstance(total, bool):
+            raise InferenceError("inference_runtime_discovery_invalid")
+        if total == 0:
+            raise InferenceError("inference_runtime_not_found")
+        if total != 1 or len(descriptors) != 1:
+            raise InferenceError("inference_runtime_ambiguous")
+        descriptor = descriptors[0]
+        if not isinstance(descriptor, dict):
+            raise InferenceError("inference_runtime_discovery_invalid")
+        if (
+            descriptor.get("engine_type") != "inference_runtime"
+            or descriptor.get("is_builtin") is not True
+            or descriptor.get("lifecycle_state") != "active"
+        ):
+            raise InferenceError("inference_runtime_not_found")
+        capabilities = descriptor.get("capabilities")
+        if isinstance(capabilities, str):
+            try:
+                capabilities = json.loads(capabilities)
+            except (TypeError, ValueError) as exc:
+                raise InferenceError("inference_runtime_discovery_invalid") from exc
+        if not isinstance(capabilities, dict):
+            raise InferenceError("inference_runtime_discovery_invalid")
+        inference_capability = ((capabilities.get("compute") or {}).get("inference") or {})
+        if capabilities.get("schema_version") != "engine.capabilities/v1" or inference_capability.get("supported") is not True or inference_capability.get("runtime_api") != SCHEMA_VERSION:
+            raise InferenceError("inference_runtime_not_found")
+        endpoint = descriptor.get("runtime_endpoint")
+        if not isinstance(endpoint, dict):
+            raise InferenceError("inference_runtime_discovery_invalid")
+        protocol = endpoint.get("protocol")
+        host = endpoint.get("host")
+        port = endpoint.get("port")
+        if protocol not in {"http", "https"} or not isinstance(host, str) or not host.strip() or not isinstance(port, int) or isinstance(port, bool) or not 0 < port <= 65535:
+            raise InferenceError("inference_runtime_discovery_invalid")
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        return urlunsplit((protocol, f"{host}:{port}", "", "", ""))
 
     @staticmethod
     def _tenant_id(value: int) -> int:
@@ -263,3 +324,7 @@ class InferenceClient:
 
     async def __aexit__(self, *_args: object) -> None:
         await self.close()
+
+
+class _RuntimeDiscoveryUnauthorized(Exception):
+    pass

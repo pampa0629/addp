@@ -886,9 +886,9 @@ query := fmt.Sprintf(`SELECT "%s" FROM "%s"."%s"`, geomColumn, schema, table)
 
 为防止未来出现类似问题，SQL 拼装能力按职责收口：
 
-- 跨 SQL 引擎的标识符引用、命名空间表名拼接、基础 SELECT / COUNT / 分页，统一使用 `common/sqldialect`。
+- 跨 SQL 引擎的标识符引用、命名空间表名拼接、基础 SELECT / COUNT / 分页，统一使用 `common/query`。
 - PostGIS 空间表达式、MVT、物化视图、GIST 索引等空间能力，统一使用 `common/spatial`。
-- 不再保留独立的 PostgreSQL 倾向 SQL 构建包，避免与 `sqldialect` / `spatial` 职责重叠。
+- 不再保留独立的 PostgreSQL 倾向 SQL 构建包，避免与 `query` / `spatial` 职责重叠。
 
 ### 验证步骤
 
@@ -936,13 +936,13 @@ query := fmt.Sprintf("SELECT %s FROM %s.%s", col, schema, table)
 query := fmt.Sprintf(`SELECT "%s" FROM "%s"."%s"`, col, schema, table)
 ```
 
-#### 2. 使用 sqldialect / spatial 工具
+#### 2. 使用 query / spatial 工具
 
 ```go
 // ✅ 通用表查询：使用跨引擎方言工具
-import "github.com/addp/common/sqldialect"
+import commonquery "github.com/addp/common/query"
 
-dialect := sqldialect.ForEngine(engineType)
+dialect := commonquery.ForEngine(engineType)
 query := dialect.SelectTableSQL(
     dialect.QuoteIdentifier(col),
     schema,
@@ -958,7 +958,7 @@ query := dialect.SelectTableSQL(
 whereClause := fmt.Sprintf("WHERE %s > 100", col)
 
 // ✅ 正确：按引擎方言引用标识符
-dialect := sqldialect.ForEngine(engineType)
+dialect := commonquery.ForEngine(engineType)
 whereClause := fmt.Sprintf("%s > 100", dialect.QuoteIdentifier(col))
 ```
 
@@ -975,7 +975,7 @@ whereClause := fmt.Sprintf("%s > 100", dialect.QuoteIdentifier(col))
 ### 相关文档
 
 - [数据库大小写处理规范](../spec/addp数据库大小写处理规范.md) - 完整的排查和修复计划
-- [common/sqldialect](../../common/sqldialect/) - 跨 SQL 引擎基础方言工具
+- [common/query](../../common/query/) - 查询参数、SQL 副作用分析和跨引擎 SQL 方言工具
 - [common/spatial](../../common/spatial/) - PostGIS 空间 SQL 表达式和空间能力
 - [PostgreSQL 标识符文档](https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS)
 
@@ -985,7 +985,7 @@ whereClause := fmt.Sprintf("%s > 100", dialect.QuoteIdentifier(col))
 - **修复版本：** v0.0.24+
 - **影响范围：** Manager MVT、Service OGC
 - **根本原因：** 动态 SQL 构建未使用双引号包裹标识符
-- **长期方案：** 按职责收口到 `common/sqldialect` 和 `common/spatial`
+- **长期方案：** 按职责收口到 `common/query` 和 `common/spatial`
 
 ### 经验教训
 

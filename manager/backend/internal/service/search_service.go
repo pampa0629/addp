@@ -216,6 +216,7 @@ func (s *HybridSearchService) Enabled() bool {
 func (s *HybridSearchService) SearchDocuments(
 	ctx context.Context,
 	tenantID *uint,
+	engineID *uint,
 	query string,
 	page int,
 	pageSize int,
@@ -242,10 +243,7 @@ func (s *HybridSearchService) SearchDocuments(
 	offset := (page - 1) * pageSize
 
 	// 构建过滤条件
-	var filter string
-	if tenantID != nil {
-		filter = fmt.Sprintf("tenant_id = %d", *tenantID)
-	}
+	filter := buildSearchFilter(tenantID, engineID)
 
 	// 构建搜索请求
 	searchReq := &meilisearch.SearchRequest{
@@ -283,7 +281,7 @@ func (s *HybridSearchService) SearchDocuments(
 
 	// 向量检索
 	if s.vectorRepo != nil && s.configurationProvider != nil && s.bindingService != nil && s.inferenceClient != nil {
-		vectorHits, err := s.vectorSearch(ctx, tenantID, query)
+		vectorHits, err := s.vectorSearch(ctx, tenantID, engineID, query)
 		if err != nil {
 			s.log.Warn("向量检索失败，已忽略", "error", err)
 		} else {
@@ -326,7 +324,7 @@ func (s *HybridSearchService) SearchDocuments(
 	return result, nil
 }
 
-func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, query string) ([]VectorDocument, error) {
+func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID, engineID *uint, query string) ([]VectorDocument, error) {
 	if s.vectorRepo == nil || s.configurationProvider == nil || s.bindingService == nil || s.inferenceClient == nil {
 		return nil, nil
 	}
@@ -378,7 +376,7 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, 
 		"max_distance", runtime.MaxDistance,
 	)
 
-	results, err := s.vectorRepo.QueryReadySimilar(ctx, *tenantID, queryVector, binding.ModelProfileID, embedResult.ProfileVersion, dimension, s.vectorTopK, runtime.MaxDistance)
+	results, err := s.vectorRepo.QueryReadySimilar(ctx, *tenantID, engineID, queryVector, binding.ModelProfileID, embedResult.ProfileVersion, dimension, s.vectorTopK, runtime.MaxDistance)
 	if err != nil {
 		return nil, fmt.Errorf("query embedding results: %w", err)
 	}
@@ -438,6 +436,17 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, 
 
 // Close 释放底层资源
 func (s *HybridSearchService) Close() {}
+
+func buildSearchFilter(tenantID, engineID *uint) string {
+	filters := make([]string, 0, 2)
+	if tenantID != nil && *tenantID > 0 {
+		filters = append(filters, fmt.Sprintf("tenant_id = %d", *tenantID))
+	}
+	if engineID != nil && *engineID > 0 {
+		filters = append(filters, fmt.Sprintf("engine_id = %d", *engineID))
+	}
+	return strings.Join(filters, " AND ")
+}
 
 func truncateQueryRunes(text string, limit int) string {
 	if limit <= 0 {

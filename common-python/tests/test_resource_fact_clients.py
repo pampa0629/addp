@@ -10,11 +10,12 @@ async def _assert_manager_search_unwraps_canonical_data(monkeypatch):
     async def fake_get(path, params=None):
         assert path == "/api/v1/manager/search"
         assert params["tenant_id"] == 3
+        assert params["engine_id"] == 8
         return {"data": {"total": 1, "results": [{"locator": "addp://fact"}]}}
 
     monkeypatch.setattr(client, "get", fake_get)
     try:
-        result = await client.search(q="roads", tenant_id=3, page=1, page_size=5)
+        result = await client.search(q="roads", engine_id=8, tenant_id=3, page=1, page_size=5)
     finally:
         await client.close()
 

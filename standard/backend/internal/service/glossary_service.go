@@ -7,13 +7,17 @@ import (
 
 type GlossaryService struct {
 	repo *repository.GlossaryRepository
+	refs *repository.TenantReferenceRepository
 }
 
-func NewGlossaryService(repo *repository.GlossaryRepository) *GlossaryService {
-	return &GlossaryService{repo: repo}
+func NewGlossaryService(repo *repository.GlossaryRepository, refs *repository.TenantReferenceRepository) *GlossaryService {
+	return &GlossaryService{repo: repo, refs: refs}
 }
 
 func (s *GlossaryService) CreateGlossary(req *models.CreateGlossaryRequest, tenantID, userID int64) (*models.Glossary, error) {
+	if err := s.refs.RequireDomain(tenantID, req.DomainID); err != nil {
+		return nil, err
+	}
 	glossary := &models.Glossary{
 		TenantID:   tenantID,
 		DomainID:   req.DomainID,
@@ -45,6 +49,9 @@ func (s *GlossaryService) ListGlossaries(tenantID int64, opts repository.ListGlo
 func (s *GlossaryService) UpdateGlossary(id, tenantID, userID int64, req *models.UpdateGlossaryRequest) (*models.Glossary, error) {
 	glossary, err := s.repo.GetByID(id, tenantID)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.refs.RequireDomain(tenantID, req.DomainID); err != nil {
 		return nil, err
 	}
 
@@ -84,15 +91,27 @@ func (s *GlossaryService) DeprecateGlossary(id, tenantID, userID int64) error {
 
 // GetMappedElements 获取术语关联的完整数据元列表
 func (s *GlossaryService) GetMappedElements(glossaryID, tenantID int64) ([]models.Element, error) {
+	if _, err := s.repo.GetByID(glossaryID, tenantID); err != nil {
+		return nil, err
+	}
 	return s.repo.GetMappedElements(glossaryID, tenantID)
 }
 
 // SetElementMappings 批量替换术语的数据元映射
 func (s *GlossaryService) SetElementMappings(glossaryID, tenantID int64, elementIDs []int64) error {
+	if _, err := s.repo.GetByID(glossaryID, tenantID); err != nil {
+		return err
+	}
+	if err := s.refs.RequireElements(tenantID, elementIDs); err != nil {
+		return err
+	}
 	return s.repo.SetElementMappings(glossaryID, tenantID, elementIDs)
 }
 
 // GetGlossariesByElement 根据数据元ID反查关联的术语列表
 func (s *GlossaryService) GetGlossariesByElement(elementID, tenantID int64) ([]models.Glossary, error) {
+	if err := s.refs.RequireElement(tenantID, elementID); err != nil {
+		return nil, err
+	}
 	return s.repo.GetGlossariesByElementID(elementID, tenantID)
 }

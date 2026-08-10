@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	commonPMTiles "github.com/addp/common/pmtiles"
+	commonPMTiles "github.com/addp/common/format/pmtiles"
 )
 
 type fakePMTilesTileSource struct {

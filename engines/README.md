@@ -1,6 +1,8 @@
 # ADDP 计算引擎开发指南
 
-本目录集中管理 ADDP 计算和 Notebook 运行时。GeoPython Workflow、Spark Workflow、DuckDB、Jupyter 是默认部署的内置运行时；Math Workflow 是 `addp.workflow/v1` 参考实现，用于示范扩展引擎规范；Model3D Workflow 是三维模型转换专用运行时；PointCloud Workflow 是点云处理运行时；SuperMap Workflow 是面向超图 iObjects C++ 的空间计算运行时。
+本目录集中管理不拥有 ADDP 业务配置事实的独立计算和 Notebook 运行时。GeoPython Workflow、Spark Workflow、DuckDB、Jupyter 是默认部署的内置运行时；Math Workflow 是 `addp.workflow/v1` 参考实现，用于示范扩展引擎规范；Model3D Workflow 是三维模型转换专用运行时；PointCloud Workflow 是点云处理运行时；SuperMap Workflow 是面向超图 iObjects C++ 的空间计算运行时。
+
+`engines/` 不是 `system.engines` 的源码镜像，也不是所有 Engine Type 的目录。数据库、对象存储等插件位于 `common/engine/plugins/`；Inference 因拥有 Provider Connection、Model Deployment、Model Profile、凭据、控制面 API 和前端，保留为根目录 `inference/` 业务模块，其数据面端点另以 `engine_type=inference_runtime` 登记到 System。只有未来将不拥有这些业务事实的独立推理执行面拆为单独服务时，才在本目录新增 `inference-runtime/`，且不得复制 Inference 控制面。
 
 ## 目录结构
 
@@ -161,9 +163,9 @@ Runtime 使用自身 Confidential OAuth Client 获取 Platform Service Access To
 
 Math Workflow 是参考实现，随 `scripts/dev/start.sh -all` / `-develop` 启动服务，但不会自动注册。需要使用时，在 System 引擎管理中使用扩展引擎注册表单填入示例值、测试连接并保存。
 
-## 新增引擎checklist
+## 新增独立 Runtime checklist
 
-创建新引擎时,请遵循以下步骤:
+创建不拥有业务配置事实的独立计算 Runtime 时，请遵循以下步骤：
 
 - [ ] 在`engines/`目录下创建引擎目录
 - [ ] 实现 `addp.workflow/v1` HTTP 协议（`/health`、`/api/operators`、`/api/workflow`、`/api/operators/{name}/invoke`、`/api/executions/{id}`）

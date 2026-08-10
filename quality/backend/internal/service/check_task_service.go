@@ -1,27 +1,43 @@
 package service
 
 import (
+	"context"
+	"fmt"
+	"strings"
+
+	commonAPI "github.com/addp/common/api"
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/quality/internal/models"
 	"github.com/addp/quality/internal/repository"
 )
 
 type CheckTaskService struct {
-	repo *repository.CheckTaskRepository
+	repo         *repository.CheckTaskRepository
+	systemClient *commonClient.SystemServiceClient
 }
 
-func NewCheckTaskService(repo *repository.CheckTaskRepository) *CheckTaskService {
-	return &CheckTaskService{repo: repo}
+func NewCheckTaskService(repo *repository.CheckTaskRepository, systemClient *commonClient.SystemServiceClient) *CheckTaskService {
+	return &CheckTaskService{repo: repo, systemClient: systemClient}
 }
 
-func (s *CheckTaskService) List(tenantID int64) ([]models.CheckTask, error) {
-	return s.repo.List(tenantID)
+func (s *CheckTaskService) List(tenantID int64, page, pageSize int) ([]models.CheckTask, int64, error) {
+	return s.repo.List(tenantID, page, pageSize)
 }
 
 func (s *CheckTaskService) Get(id, tenantID int64) (*models.CheckTask, error) {
 	return s.repo.Get(id, tenantID)
 }
 
-func (s *CheckTaskService) Create(tenantID, userID int64, req *CreateCheckTaskRequest) (*models.CheckTask, error) {
+func (s *CheckTaskService) Create(ctx context.Context, tenantID, userID int64, req *CreateCheckTaskRequest) (*models.CheckTask, error) {
+	if err := requirePostgreSQLEngine(ctx, s.systemClient, tenantID, req.EngineID); err != nil {
+		return nil, err
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	req.SchemaName = strings.TrimSpace(req.SchemaName)
+	req.TableName = strings.TrimSpace(req.TableName)
+	if req.Name == "" || req.SchemaName == "" || req.TableName == "" {
+		return nil, fmt.Errorf("%w: name, schema_name and table_name are required", commonAPI.ErrBadRequest)
+	}
 	task := &models.CheckTask{
 		TenantID:    tenantID,
 		Name:        req.Name,
@@ -32,27 +48,34 @@ func (s *CheckTaskService) Create(tenantID, userID int64, req *CreateCheckTaskRe
 		Enabled:     true,
 		CreatedBy:   userID,
 	}
+	if req.Enabled != nil {
+		task.Enabled = *req.Enabled
+	}
 	if err := s.repo.Create(task); err != nil {
 		return nil, err
 	}
 	return task, nil
 }
 
-func (s *CheckTaskService) Update(id, tenantID int64, req *UpdateCheckTaskRequest) (*models.CheckTask, error) {
+func (s *CheckTaskService) Update(ctx context.Context, id, tenantID, userID int64, req *UpdateCheckTaskRequest) (*models.CheckTask, error) {
 	task, err := s.repo.Get(id, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	if req.Name != "" {
-		task.Name = req.Name
+	if err := requirePostgreSQLEngine(ctx, s.systemClient, tenantID, req.EngineID); err != nil {
+		return nil, err
 	}
-	if req.Description != "" {
-		task.Description = req.Description
+	task.Name = strings.TrimSpace(req.Name)
+	task.Description = req.Description
+	task.EngineID = req.EngineID
+	task.SchemaName = strings.TrimSpace(req.SchemaName)
+	task.Table = strings.TrimSpace(req.TableName)
+	task.Enabled = req.Enabled
+	task.UpdatedBy = &userID
+	if task.Name == "" || task.SchemaName == "" || task.Table == "" {
+		return nil, fmt.Errorf("%w: name, schema_name and table_name are required", commonAPI.ErrBadRequest)
 	}
-	if req.Enabled != nil {
-		task.Enabled = *req.Enabled
-	}
-	if err := s.repo.Update(task); err != nil {
+	if err := s.repo.Replace(ctx, task); err != nil {
 		return nil, err
 	}
 	return task, nil
@@ -66,12 +89,16 @@ type CreateCheckTaskRequest struct {
 	Name        string `json:"name" binding:"required"`
 	Description string `json:"description"`
 	EngineID    int64  `json:"engine_id" binding:"required"`
-	SchemaName  string `json:"schema_name"`
-	TableName   string `json:"table_name"`
+	SchemaName  string `json:"schema_name" binding:"required"`
+	TableName   string `json:"table_name" binding:"required"`
+	Enabled     *bool  `json:"enabled"`
 }
 
 type UpdateCheckTaskRequest struct {
-	Name        string `json:"name"`
+	Name        string `json:"name" binding:"required"`
 	Description string `json:"description"`
-	Enabled     *bool  `json:"enabled"`
+	EngineID    int64  `json:"engine_id" binding:"required"`
+	SchemaName  string `json:"schema_name" binding:"required"`
+	TableName   string `json:"table_name" binding:"required"`
+	Enabled     bool   `json:"enabled"`
 }

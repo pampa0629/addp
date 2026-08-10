@@ -786,7 +786,7 @@ Develop Adapter Spec registry 为 Public Operator Spec 提供资源选择器 `ui
 5. 访问计划只在执行期存在，可以携带临时连接信息；用户任务定义只保存 `locator`、`target_parent_locator + target_name` 和公开业务参数。
 6. 调用方必须同时生成不含密钥的 audit plan，用于领域结果或统一执行记录；不得把运行时访问计划原文长期保存。
 7. Manager infra 目标和 Develop 业务目标分别在调用方领域边界内解析，再进入同一个访问计划构造器。Develop 的源和目标存储必须是当前租户的业务 Engine Instance，不得选择 `tenant_id=nil` 的平台 infra 存储；Manager 可按私有 artifact 生命周期显式构造 infra 目标。访问计划不表达 owner module、artifact/data item 归属或 Meta 扫描策略。
-8. Runtime 完成写入后只返回转换结果事实。Manager 负责登记私有 artifact；Develop 负责记录 `produced_targets` 并触发 Meta scan。
+8. Runtime 完成写入后只返回转换结果事实。Manager 负责登记私有 artifact；Develop 负责记录 `produced_targets`，在统一 execution 成功结果中写入 `lineage_facts`，随后立即通知 Meta 采集并提交 Meta scan。Meta scan 是异步的，目标 Item 尚未落库时由周期 collector 负责重试；用户 Item refresh 不承担血缘触发职责。
 9. 每个 Runtime Operator Spec 必须声明 `effects` 非空集合，值只允许 `read`、`write`、`ddl`、`external_effect`。纯计算且不访问外部资源的算子声明 `read`；写入持久化目标至少声明 `write`；修改 schema、database、table 或 Engine 原生结构声明 `ddl`；发送消息、网络投递或调用外部有副作用系统声明 `external_effect`。
 10. Develop 在执行前按整个 DAG 汇总效果，并结合源/目标 locator 和当前 User AuthContext 创建 Execution Authorization。客户端提交的效果、Runtime 返回值或 Engine 创建人均不能替代服务端汇总结果。
 11. Workflow Access Plan 只承载本次运行所需的临时访问参数；其允许效果不得超过 Execution Authorization。Runtime 收到计划后必须按算子声明再次拒绝越权效果，不得把连接信息、访问计划或 Token写入运行时状态、统一 execution 或用户任务定义。

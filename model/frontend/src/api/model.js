@@ -1,20 +1,47 @@
 // Model 模块 API（仅包含 Model 模块自己的功能）
 import client from './client'
+import { createAPIClient } from '@common-ui'
+import { useAuthStore } from '../store/auth'
 
-// ========== 业务域 API（通过后端代理到 Standard 模块）==========
-// 注意：这些 API 实际上由 Standard 模块提供，Model 后端仅做代理转发
-export const domainAPI = {
-  // 获取业务域列表（树形）
-  list() {
-    return client.get('/model/domains')
+const standardClient = createAPIClient(() => useAuthStore(), { moduleName: 'Standard' })
+
+const PAGE_SIZE = 100
+
+const listAll = async (apiClient, path, params = {}) => {
+  const items = []
+  for (let page = 1; ; page += 1) {
+    const response = await apiClient.get(path, {
+      params: { ...params, page, page_size: PAGE_SIZE }
+    })
+    const pageItems = Array.isArray(response) ? response : response.data
+    if (!Array.isArray(pageItems)) {
+      throw new TypeError(`Invalid list response from ${path}`)
+    }
+    items.push(...pageItems)
+    if (
+      pageItems.length < PAGE_SIZE ||
+      (!Array.isArray(response) && response.total != null && items.length >= response.total)
+    ) {
+      return items
+    }
   }
 }
 
-// ========== 数据元 API（通过后端代理到 Standard 模块）==========
+// ========== Standard 引用查询（直接调用 Standard 唯一 API）==========
+export const domainAPI = {
+  // 获取业务域列表（树形）
+  list() {
+    return standardClient.get('/standard/domains')
+  }
+}
+
 export const elementAPI = {
   // 获取数据元列表
   list(params) {
-    return client.get('/model/elements', { params })
+    return standardClient.get('/standard/elements', { params })
+  },
+  listAll(params) {
+    return listAll(standardClient, '/standard/elements', params)
   }
 }
 
@@ -48,6 +75,9 @@ export const entityAPI = {
   list(params) {
     return client.get('/model/entities', { params })
   },
+  listAll(params) {
+    return listAll(client, '/model/entities', params)
+  },
   // 创建业务实体
   create(data) {
     return client.post('/model/entities', data)
@@ -67,6 +97,9 @@ export const entityAPI = {
   // 审批通过
   approve(id) {
     return client.post(`/model/entities/${id}/approve`)
+  },
+  reopen(id) {
+    return client.post(`/model/entities/${id}/reopen`)
   },
   // 获取实体属性列表
   getAttributes(entityId) {
@@ -127,6 +160,15 @@ export const logicalTableAPI = {
   // 获取逻辑表列表
   list(params) {
     return client.get('/model/logical-tables', { params })
+  },
+  listAll(params) {
+    return listAll(client, '/model/logical-tables', params)
+  },
+  approve(id) {
+    return client.post(`/model/logical-tables/${id}/approve`)
+  },
+  reopen(id) {
+    return client.post(`/model/logical-tables/${id}/reopen`)
   },
   // 创建逻辑表
   create(data) {
@@ -190,19 +232,20 @@ export const logicalTableAPI = {
   }
 }
 
-// ========== 维度层级 API（通过后端代理到 Standard 模块）==========
 export const dimensionHierarchyAPI = {
   list(params) {
-    return client.get('/model/dimension-hierarchies', { params })
+    return standardClient.get('/standard/dimension-hierarchies', { params })
   },
   get(id) {
-    return client.get(`/model/dimension-hierarchies/${id}`)
+    return standardClient.get(`/standard/dimension-hierarchies/${id}`)
   }
 }
 
-// ========== Standard 指标 API（通过后端代理，用于搜索可关联的指标）==========
 export const standardMetricAPI = {
   list(params) {
-    return client.get('/model/standard-metrics', { params })
+    return standardClient.get('/standard/metrics', { params })
+  },
+  listAll(params) {
+    return listAll(standardClient, '/standard/metrics', params)
   }
 }

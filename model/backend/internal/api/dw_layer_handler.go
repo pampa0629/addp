@@ -33,7 +33,7 @@ func (h *DWLayerHandler) ListDWLayers(c *gin.Context) {
 
 	layers, err := h.svc.ListDWLayers(tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, layers)
@@ -53,14 +53,14 @@ func (h *DWLayerHandler) ListDWLayers(c *gin.Context) {
 func (h *DWLayerHandler) CreateDWLayer(c *gin.Context) {
 	var req models.CreateDWLayerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	layer, err := h.svc.CreateDWLayer(&req, tenantID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusCreated, layer)
@@ -79,14 +79,14 @@ func (h *DWLayerHandler) CreateDWLayer(c *gin.Context) {
 func (h *DWLayerHandler) GetDWLayer(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	layer, err := h.svc.GetDWLayer(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, modeli18n.MsgLayerNotFound)})
+		c.JSON(http.StatusNotFound, errorResponse(commoni18n.T(c, modeli18n.MsgLayerNotFound)))
 		return
 	}
 	c.JSON(http.StatusOK, layer)
@@ -107,20 +107,20 @@ func (h *DWLayerHandler) GetDWLayer(c *gin.Context) {
 func (h *DWLayerHandler) UpdateDWLayer(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 
 	var req models.UpdateDWLayerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	layer, err := h.svc.UpdateDWLayer(id, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, layer)
@@ -139,13 +139,13 @@ func (h *DWLayerHandler) UpdateDWLayer(c *gin.Context) {
 func (h *DWLayerHandler) DeleteDWLayer(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	if err := h.svc.DeleteDWLayer(id, tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})

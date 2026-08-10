@@ -169,6 +169,9 @@
           }
         },
         "result": "Execution Result",
+        "workflow_result": "Workflow Calculation Result",
+        "workflow_result_saved": "Saved to data engine",
+        "workflow_result_runtime_only": "This run only",
         "error": "Error Details",
         "open_task_definition": "Open task definition",
         "open_task_unavailable": "No task definition entry is available for this execution"

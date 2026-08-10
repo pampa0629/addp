@@ -5,10 +5,9 @@
 """
 from typing import Optional
 
-from langchain.chains import LLMChain
-from langchain.prompts import PromptTemplate
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.output_parsers import PydanticOutputParser
-from langchain_core.exceptions import OutputParserException
+from langchain_core.prompts import PromptTemplate
 
 from models.workflow_models import Workflow, ValidationResult
 from chains.workflow_validation_chain import WorkflowValidationChain
@@ -43,13 +42,6 @@ class WorkflowAutoFixer:
 
         # 创建修复 Prompt 模板
         self.fix_prompt_template = self._create_fix_prompt_template()
-
-        # 创建 LLMChain
-        self.fix_chain = LLMChain(
-            llm=self.llm,
-            prompt=self.fix_prompt_template,
-            verbose=True
-        )
 
     def _create_fix_prompt_template(self) -> PromptTemplate:
         """创建修复 Prompt 模板"""
@@ -124,27 +116,19 @@ class WorkflowAutoFixer:
         Returns:
             (修复后的工作流, 最终验证结果)
         """
-        print(f"[WorkflowAutoFixer] 开始自动修复工作流")
-        print(f"  错误数量: {len(validation_result.errors)}")
-        print(f"  警告数量: {len(validation_result.warnings)}")
-
         current_workflow = workflow
         current_validation = validation_result
 
-        for attempt in range(self.max_retries):
+        for _ in range(self.max_retries):
             # 如果已经验证通过，直接返回
             if current_validation.is_valid:
-                print(f"[WorkflowAutoFixer] ✅ 工作流已验证通过")
                 return current_workflow, current_validation
-
-            print(f"[WorkflowAutoFixer] 第 {attempt + 1}/{self.max_retries} 次修复尝试")
 
             # 调用 LLM 修复
             try:
                 fixed_workflow = await self._fix_once(current_workflow, current_validation)
 
                 # 重新验证
-                print(f"[WorkflowAutoFixer] 重新验证修复后的工作流")
                 new_validation = await self.validator.validate(
                     fixed_workflow,
                     workflow_engine_id=workflow_engine_id,
@@ -157,21 +141,11 @@ class WorkflowAutoFixer:
 
                 # 如果验证通过，提前返回
                 if new_validation.is_valid:
-                    print(f"[WorkflowAutoFixer] ✅ 修复成功！（第 {attempt + 1} 次尝试）")
                     return current_workflow, current_validation
 
-                # 如果错误数量减少，说明有进展
-                if len(new_validation.errors) < len(validation_result.errors):
-                    print(f"[WorkflowAutoFixer] 修复有进展：错误从 {len(validation_result.errors)} 减少到 {len(new_validation.errors)}")
-                else:
-                    print(f"[WorkflowAutoFixer] ⚠️ 修复未减少错误数量")
+            except Exception:
+                continue
 
-            except Exception as e:
-                print(f"[WorkflowAutoFixer] ❌ 第 {attempt + 1} 次修复失败: {type(e).__name__}: {e}")
-                # 继续尝试
-
-        # 所有尝试都失败
-        print(f"[WorkflowAutoFixer] ❌ 自动修复失败（{self.max_retries} 次尝试后仍有错误）")
         return current_workflow, current_validation
 
     async def _fix_once(
@@ -193,90 +167,22 @@ class WorkflowAutoFixer:
             ValueError: 如果修复失败
         """
         # 准备输入
-        workflow_json = workflow.json(indent=2, ensure_ascii=False)
+        workflow_json = workflow.model_dump_json(indent=2)
         errors_text = "\n".join(f"- {e}" for e in validation_result.errors)
         warnings_text = "\n".join(f"- {w}" for w in validation_result.warnings) if validation_result.warnings else "无"
         suggestions_text = "\n".join(f"- {s}" for s in validation_result.suggestions) if validation_result.suggestions else "无"
 
-        # 调用 LLM
-        result = await self.fix_chain.ainvoke({
-            "workflow_json": workflow_json,
-            "errors": errors_text,
-            "warnings": warnings_text,
-            "suggestions": suggestions_text
-        })
-
-        llm_output = result["text"]
-
-        # 解析输出
+        prompt = self.fix_prompt_template.format(
+            workflow_json=workflow_json,
+            errors=errors_text,
+            warnings=warnings_text,
+            suggestions=suggestions_text,
+        )
+        response = await self.llm.ainvoke([
+            SystemMessage(content="你是 ADDP 工作流修复器，只能返回符合给定契约的工作流。"),
+            HumanMessage(content=prompt),
+        ])
         try:
-            fixed_workflow = self.output_parser.parse(llm_output)
-            return fixed_workflow
-
-        except OutputParserException as e:
-            print(f"[WorkflowAutoFixer] ❌ 输出解析失败，尝试清理: {e}")
-
-            # 尝试清理输出
-            cleaned_output = self._clean_llm_output(llm_output)
-            if cleaned_output:
-                try:
-                    fixed_workflow = self.output_parser.parse(cleaned_output)
-                    return fixed_workflow
-                except Exception as retry_error:
-                    print(f"[WorkflowAutoFixer] ❌ 清理后仍然解析失败: {retry_error}")
-
-            raise ValueError(f"无法解析修复后的工作流 JSON: {e}")
-
-    def _clean_llm_output(self, output: str) -> str:
-        """
-        清理 LLM 输出（去除 markdown 代码块标记等）
-
-        Args:
-            output: LLM 原始输出
-
-        Returns:
-            清理后的 JSON 字符串
-        """
-        output = output.strip()
-
-        # 去除 markdown 代码块标记
-        if output.startswith("```json"):
-            output = output[7:]
-        elif output.startswith("```"):
-            output = output[3:]
-
-        if output.endswith("```"):
-            output = output[:-3]
-
-        return output.strip()
-
-
-# 便捷函数：自动修复工作流
-async def auto_fix_workflow(
-    workflow: Workflow,
-    validation_result: ValidationResult,
-    llm,
-    validator: WorkflowValidationChain,
-    max_retries: int = 2,
-    workflow_engine_id: Optional[int] = None
-) -> tuple[Workflow, ValidationResult]:
-    """
-    自动修复工作流（便捷函数）
-
-    Args:
-        workflow: 待修复的工作流
-        validation_result: 验证结果
-        llm: LLM 实例
-        validator: 验证器
-        max_retries: 最大重试次数
-        workflow_engine_id: 工作流引擎实例 ID
-
-    Returns:
-        (修复后的工作流, 最终验证结果)
-    """
-    fixer = WorkflowAutoFixer(llm, validator, max_retries)
-    return await fixer.auto_fix(
-        workflow,
-        validation_result,
-        workflow_engine_id=workflow_engine_id
-    )
+            return self.output_parser.parse(str(getattr(response, "content", response)))
+        except Exception as error:
+            raise ValueError("工作流修复结果不符合结构化契约") from error

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/addp/common/sqldialect"
+	commonquery "github.com/addp/common/query"
 	"gorm.io/gorm"
 )
 
@@ -246,7 +246,7 @@ func CountCatalogItemRows(ctx context.Context, resource *Engine, path CatalogPat
 }
 
 func countSQLForEngine(engineType, schema, table string) string {
-	return sqldialect.ForEngine(engineType).CountTableSQL(schema, table, "")
+	return commonquery.ForEngine(engineType).CountTableSQL(schema, table, "")
 }
 
 func int64Value(value interface{}) (int64, bool) {

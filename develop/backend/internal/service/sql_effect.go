@@ -1,16 +1,16 @@
 package service
 
-import "github.com/addp/common/sqleffect"
+import commonquery "github.com/addp/common/query"
 
-type SQLExecutionEffect = sqleffect.Effect
+type SQLExecutionEffect = commonquery.Effect
 
 const (
-	SQLExecutionEffectRead           = sqleffect.Read
-	SQLExecutionEffectWrite          = sqleffect.Write
-	SQLExecutionEffectDDL            = sqleffect.DDL
-	SQLExecutionEffectExternalEffect = sqleffect.ExternalEffect
+	SQLExecutionEffectRead           = commonquery.Read
+	SQLExecutionEffectWrite          = commonquery.Write
+	SQLExecutionEffectDDL            = commonquery.DDL
+	SQLExecutionEffectExternalEffect = commonquery.ExternalEffect
 )
 
 func ClassifySQLExecutionEffect(sql string) (SQLExecutionEffect, error) {
-	return sqleffect.Classify(sql)
+	return commonquery.Classify(sql)
 }

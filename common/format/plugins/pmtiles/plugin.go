@@ -8,7 +8,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
-	archive "github.com/addp/common/pmtiles"
+	archive "github.com/addp/common/format/pmtiles"
 )
 
 type Plugin struct{}

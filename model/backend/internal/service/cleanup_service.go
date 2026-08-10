@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/addp/common/events"
@@ -24,6 +25,7 @@ type CleanupService struct {
 	taskExecRepo *commonExecution.TaskExecutionRepository
 	log          *slog.Logger
 	stopCh       chan struct{}
+	stopOnce     sync.Once
 }
 
 type ModelCleanupStats struct {
@@ -65,7 +67,7 @@ func (s *CleanupService) Stop() {
 	if s == nil || s.stopCh == nil {
 		return
 	}
-	close(s.stopCh)
+	s.stopOnce.Do(func() { close(s.stopCh) })
 }
 
 func (s *CleanupService) consumeCleanupRequests(ctx context.Context) {
@@ -80,6 +82,18 @@ func (s *CleanupService) consumeCleanupRequests(ctx context.Context) {
 		case <-s.stopCh:
 			return
 		default:
+			// 接管因进程崩溃遗留的 pending 消息，避免清理请求永久停留在消费组中。
+			pending, _, claimErr := s.redis.XAutoClaim(ctx, &redis.XAutoClaimArgs{
+				Stream: events.EventCleanupRequest, Group: groupName, Consumer: consumerName,
+				MinIdle: time.Minute, Start: "-", Count: 1,
+			}).Result()
+			if claimErr == nil {
+				for _, message := range pending {
+					if s.handleCleanupRequest(ctx, message) {
+						_ = s.redis.XAck(ctx, events.EventCleanupRequest, groupName, message.ID).Err()
+					}
+				}
+			}
 			streams, err := s.redis.XReadGroup(ctx, &redis.XReadGroupArgs{
 				Group:    groupName,
 				Consumer: consumerName,
@@ -95,22 +109,23 @@ func (s *CleanupService) consumeCleanupRequests(ctx context.Context) {
 			}
 			for _, stream := range streams {
 				for _, message := range stream.Messages {
-					s.handleCleanupRequest(ctx, message)
-					_ = s.redis.XAck(ctx, events.EventCleanupRequest, groupName, message.ID).Err()
+					if s.handleCleanupRequest(ctx, message) {
+						_ = s.redis.XAck(ctx, events.EventCleanupRequest, groupName, message.ID).Err()
+					}
 				}
 			}
 		}
 	}
 }
 
-func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis.XMessage) {
+func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis.XMessage) bool {
 	event, err := events.ParseCleanupRequest(message.Values)
 	if err != nil {
 		s.log.Error("解析资源回收请求失败", "error", err, "message_id", message.ID)
-		return
+		return false
 	}
 	if !events.CleanupExpectedForModule(event.ExpectedModules, events.ModuleModel) {
-		return
+		return true
 	}
 
 	result := events.CleanupResultData{
@@ -141,7 +156,7 @@ func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis
 			result.Status = events.CleanupResultFailed
 			result.Errors = []string{err.Error()}
 			result.Summary = events.CleanupResultSummary{ErrorCount: 1, RiskLevel: "low"}
-			return
+			return false
 		}
 		result.Status = events.CleanupResultSuccess
 		result.Statistics = modelCleanupStatsToMap(stats)
@@ -152,7 +167,7 @@ func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis
 			result.Status = events.CleanupResultFailed
 			result.Errors = []string{err.Error()}
 			result.Summary = events.CleanupResultSummary{ErrorCount: 1, RiskLevel: "low"}
-			return
+			return false
 		}
 		if len(stats.Errors) > 0 {
 			result.Status = events.CleanupResultPartialSuccess
@@ -166,7 +181,9 @@ func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis
 		result.Status = events.CleanupResultFailed
 		result.Errors = []string{"unknown resource reclaim action: " + event.Action}
 		result.Summary = events.CleanupResultSummary{ErrorCount: 1, RiskLevel: "low"}
+		return false
 	}
+	return true
 }
 
 func (s *CleanupService) ScanReclaimCandidates(ctx context.Context, tenantID uint, cleanupContext map[string]interface{}) (*ModelCleanupStats, error) {
@@ -301,7 +318,7 @@ func (s *CleanupService) logicalCleanup(ctx context.Context, candidates modelCle
 }
 
 func (s *CleanupService) physicalCleanup(ctx context.Context, candidates modelCleanupCandidates, stats *ModelCleanupStats) {
-	for _, batch := range []struct {
+	batches := []struct {
 		model interface{}
 		ids   []int64
 		name  string
@@ -314,14 +331,22 @@ func (s *CleanupService) physicalCleanup(ctx context.Context, candidates modelCl
 		{model: &models.EntityAttribute{}, ids: entityAttributeIDs(candidates.entityAttributes), name: "entity attributes"},
 		{model: &models.Entity{}, ids: entityIDs(candidates.entities), name: "entities"},
 		{model: &models.DWLayer{}, ids: dwLayerIDs(candidates.dwLayers), name: "dw layers"},
-	} {
-		if len(batch.ids) == 0 {
-			continue
+	}
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, batch := range batches {
+			if len(batch.ids) == 0 {
+				continue
+			}
+			if err := tx.Unscoped().Delete(batch.model, batch.ids).Error; err != nil {
+				return fmt.Errorf("delete %s failed: %w", batch.name, err)
+			}
 		}
-		if err := s.db.WithContext(ctx).Unscoped().Delete(batch.model, batch.ids).Error; err != nil {
-			stats.Errors = append(stats.Errors, fmt.Sprintf("delete %s failed: %v", batch.name, err))
-			continue
-		}
+		return nil
+	}); err != nil {
+		stats.Errors = append(stats.Errors, err.Error())
+		return
+	}
+	for _, batch := range batches {
 		stats.DeletedRecords += len(batch.ids)
 	}
 }

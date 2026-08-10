@@ -310,6 +310,30 @@
           </el-table>
         </div>
 
+        <div v-if="hasWorkflowResultPreview" class="detail-section">
+          <div class="workflow-result-heading">
+            <h4>{{ t('monitor.execution.detail.workflow_result') }}</h4>
+            <el-tag :type="workflowResultPersisted ? 'success' : 'info'" effect="plain">
+              {{ workflowResultPersisted
+                ? t('monitor.execution.detail.workflow_result_saved')
+                : t('monitor.execution.detail.workflow_result_runtime_only') }}
+            </el-tag>
+          </div>
+          <div v-if="workflowResultScalar" class="workflow-result-scalar">
+            {{ formatWorkflowResultValue(workflowResultPreview) }}
+          </div>
+          <el-table v-else-if="workflowResultRows.length" :data="workflowResultRows" border stripe size="small">
+            <el-table-column
+              v-for="column in workflowResultColumns"
+              :key="column"
+              :prop="column"
+              :label="column"
+              min-width="140"
+            />
+          </el-table>
+          <pre v-else class="workflow-result-json">{{ workflowResultText }}</pre>
+        </div>
+
         <!-- 执行元数据 -->
         <div v-if="hasExecutionMetadata" class="detail-section">
           <h4>{{ t('monitor.execution.detail.metadata') }}</h4>
@@ -486,6 +510,28 @@ const hasExecutionMetadata = computed(() => Object.keys(currentExecutionMetadata
 const executionMetadataText = computed(() => JSON.stringify(currentExecutionMetadata.value, null, 2))
 
 const metadataSummaryItems = computed(() => buildMetadataSummaryItems(currentExecutionMetadata.value))
+const workflowResultPreview = computed(() => currentExecutionMetadata.value?.result?.final_result)
+const hasWorkflowResultPreview = computed(() => workflowResultPreview.value !== undefined && workflowResultPreview.value !== null)
+const workflowResultPersisted = computed(() => {
+  const result = currentExecutionMetadata.value?.result || {}
+  return Array.isArray(result.produced_targets) && result.produced_targets.length > 0 ||
+    result.outputs && Object.keys(result.outputs).length > 0
+})
+const workflowResultScalar = computed(() => (
+  workflowResultPreview.value === null || typeof workflowResultPreview.value !== 'object'
+))
+const workflowResultRows = computed(() => {
+  const result = workflowResultPreview.value
+  if (Array.isArray(result)) return result.filter(item => item && typeof item === 'object' && !Array.isArray(item))
+  if (result && typeof result === 'object') return [result]
+  return []
+})
+const workflowResultColumns = computed(() => {
+  const columns = new Set()
+  workflowResultRows.value.forEach(row => Object.keys(row).forEach(key => columns.add(key)))
+  return Array.from(columns)
+})
+const workflowResultText = computed(() => JSON.stringify(workflowResultPreview.value, null, 2))
 const continuousDiagnostics = computed(() => getContinuousDiagnostics(currentExecutionMetadata.value))
 const continuousPartitionRows = computed(() => buildContinuousPartitionRows(currentExecutionMetadata.value))
 const continuousSignals = computed(() => buildContinuousSignals(
@@ -632,6 +678,12 @@ function formatMetadataValue(value) {
   if (typeof value === 'number') return String(value)
   if (typeof value === 'string') return value
   return JSON.stringify(value)
+}
+
+function formatWorkflowResultValue(value) {
+  if (typeof value === 'number') return String(value)
+  if (typeof value === 'boolean') return formatBoolean(value)
+  return String(value)
 }
 
 function formatBoolean(value) {
@@ -1058,6 +1110,43 @@ watch(detailDialogVisible, async visible => {
 
 .detail-section {
   margin-top: 20px;
+}
+
+.workflow-result-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.workflow-result-heading h4 {
+  margin: 0;
+}
+
+.workflow-result-scalar {
+  padding: 18px 20px;
+  color: var(--addp-text-primary);
+  background: var(--addp-bg-secondary);
+  border: 1px solid var(--addp-border-color);
+  border-radius: 4px;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.workflow-result-json {
+  max-height: 360px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  color: var(--addp-text-primary);
+  background: var(--addp-bg-secondary);
+  border: 1px solid var(--addp-border-color);
+  border-radius: 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .metadata-summary {

@@ -9,13 +9,17 @@ import (
 
 type DomainService struct {
 	repo *repository.DomainRepository
+	refs *repository.TenantReferenceRepository
 }
 
-func NewDomainService(repo *repository.DomainRepository) *DomainService {
-	return &DomainService{repo: repo}
+func NewDomainService(repo *repository.DomainRepository, refs *repository.TenantReferenceRepository) *DomainService {
+	return &DomainService{repo: repo, refs: refs}
 }
 
 func (s *DomainService) CreateDomain(req *models.CreateDomainRequest, tenantID, userID int64) (*models.Domain, error) {
+	if err := s.refs.RequireDomain(tenantID, req.ParentID); err != nil {
+		return nil, err
+	}
 	// 检查 code 唯一性
 	exists, err := s.repo.ExistsByCode(req.Code, tenantID, 0)
 	if err != nil {
@@ -86,6 +90,9 @@ func (s *DomainService) UpdateDomain(id, tenantID, userID int64, req *models.Upd
 	if err != nil {
 		return nil, err
 	}
+	if err := s.validateParent(id, tenantID, req.ParentID); err != nil {
+		return nil, err
+	}
 
 	if req.Name != "" {
 		domain.Name = req.Name
@@ -100,6 +107,23 @@ func (s *DomainService) UpdateDomain(id, tenantID, userID int64, req *models.Upd
 		return nil, err
 	}
 	return domain, nil
+}
+
+func (s *DomainService) validateParent(id, tenantID int64, parentID *int64) error {
+	if err := s.refs.RequireDomain(tenantID, parentID); err != nil {
+		return err
+	}
+	for current := parentID; current != nil; {
+		if *current == id {
+			return fmt.Errorf("业务域父级不能是自身或其子级")
+		}
+		parent, err := s.repo.GetByID(*current, tenantID)
+		if err != nil {
+			return err
+		}
+		current = parent.ParentID
+	}
+	return nil
 }
 
 func (s *DomainService) DeleteDomain(id, tenantID int64) error {

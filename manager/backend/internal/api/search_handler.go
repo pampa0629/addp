@@ -30,6 +30,7 @@ func NewSearchHandler(searchService *service.HybridSearchService, historyService
 // @Tags Manager
 // @Produce json
 // @Param q query string true "搜索关键词 | Search query"
+// @Param engine_id query int false "限定引擎 ID | Restrict results to an engine ID"
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认10 | Page size, default 10"
 // @Success 200 {object} service.SearchResult "搜索结果，results[].locator 为跨引擎资源定位符 | Search results; results[].locator is the cross-engine resource locator"
@@ -53,9 +54,19 @@ func (h *SearchHandler) Search(c *gin.Context) {
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
+	var engineID *uint
+	if rawEngineID := strings.TrimSpace(c.Query("engine_id")); rawEngineID != "" {
+		parsed, err := strconv.ParseUint(rawEngineID, 10, 64)
+		if err != nil || parsed == 0 {
+			managerError(c, http.StatusBadRequest, manageri18n.MsgInvalidEngineIDParam)
+			return
+		}
+		value := uint(parsed)
+		engineID = &value
+	}
 
 	tenantID := tenantFilterIDFromContext(c)
-	result, err := h.searchService.SearchDocuments(c.Request.Context(), tenantID, query, page, pageSize)
+	result, err := h.searchService.SearchDocuments(c.Request.Context(), tenantID, engineID, query, page, pageSize)
 	if err != nil {
 		if errors.Is(err, service.ErrSearchDisabled) {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
@@ -77,6 +88,7 @@ func (h *SearchHandler) Search(c *gin.Context) {
 	// 调试日志
 	logger.L().Info("混合检索返回",
 		"query", query,
+		"engine_id", engineID,
 		"total", result.Total,
 		"results_count", len(result.Hits),
 		"page", result.Page,

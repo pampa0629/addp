@@ -16,11 +16,12 @@ const minioBucket = "standard"
 // DocumentService 标准文档服务
 type DocumentService struct {
 	repo        *repository.DocumentRepository
+	refs        *repository.TenantReferenceRepository
 	minioClient *minio.Client
 }
 
-func NewDocumentService(repo *repository.DocumentRepository, minioClient *minio.Client) *DocumentService {
-	svc := &DocumentService{repo: repo, minioClient: minioClient}
+func NewDocumentService(repo *repository.DocumentRepository, refs *repository.TenantReferenceRepository, minioClient *minio.Client) *DocumentService {
+	svc := &DocumentService{repo: repo, refs: refs, minioClient: minioClient}
 	if minioClient != nil {
 		ctx := context.Background()
 		exists, _ := minioClient.BucketExists(ctx, minioBucket)
@@ -40,11 +41,19 @@ func (s *DocumentService) GetDocument(id, tenantID int64) (*models.Document, err
 }
 
 func (s *DocumentService) CreateDocument(req *models.CreateDocumentRequest, tenantID, userID int64) (*models.Document, error) {
+	doc := newDocument(req, tenantID, userID)
+	if err := s.repo.Create(doc); err != nil {
+		return nil, err
+	}
+	return doc, nil
+}
+
+func newDocument(req *models.CreateDocumentRequest, tenantID, userID int64) *models.Document {
 	docType := req.DocType
 	if docType == "" {
 		docType = "reference"
 	}
-	doc := &models.Document{
+	return &models.Document{
 		TenantID:    tenantID,
 		Name:        req.Name,
 		DocType:     docType,
@@ -53,10 +62,6 @@ func (s *DocumentService) CreateDocument(req *models.CreateDocumentRequest, tena
 		Description: req.Description,
 		CreatedBy:   userID,
 	}
-	if err := s.repo.Create(doc); err != nil {
-		return nil, err
-	}
-	return doc, nil
 }
 
 func (s *DocumentService) UpdateDocument(id, tenantID, userID int64, req *models.UpdateDocumentRequest) (*models.Document, error) {
@@ -145,16 +150,19 @@ func (s *DocumentService) DownloadFile(docID, tenantID int64) (io.ReadCloser, st
 	return obj, doc.FileName, doc.FileSize, nil
 }
 
-func (s *DocumentService) GetMappings(docID int64) (map[string]interface{}, error) {
-	elements, err := s.repo.GetElementMappings(docID)
+func (s *DocumentService) GetMappings(docID, tenantID int64) (map[string]interface{}, error) {
+	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
+		return nil, err
+	}
+	elements, err := s.repo.GetElementMappings(docID, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	glossaries, err := s.repo.GetGlossaryMappings(docID)
+	glossaries, err := s.repo.GetGlossaryMappings(docID, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	metrics, err := s.repo.GetMetricMappings(docID)
+	metrics, err := s.repo.GetMetricMappings(docID, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -165,67 +173,82 @@ func (s *DocumentService) GetMappings(docID int64) (map[string]interface{}, erro
 	}, nil
 }
 
-func (s *DocumentService) SetMappings(docID int64, req *models.SetDocumentMappingsRequest) error {
+func (s *DocumentService) SetMappings(docID, tenantID int64, req *models.SetDocumentMappingsRequest) error {
+	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
+		return err
+	}
+	for _, validate := range []func() error{
+		func() error { return s.refs.RequireElements(tenantID, req.ElementIDs) },
+		func() error { return s.refs.RequireGlossaries(tenantID, req.GlossaryIDs) },
+		func() error { return s.refs.RequireMetrics(tenantID, req.MetricIDs) },
+	} {
+		if err := validate(); err != nil {
+			return err
+		}
+	}
 	locations := req.Locations
 	if locations == nil {
 		locations = map[string]string{}
 	}
-	if err := s.repo.SetElementMappings(docID, req.ElementIDs, locations); err != nil {
-		return err
-	}
-	if err := s.repo.SetGlossaryMappings(docID, req.GlossaryIDs, locations); err != nil {
-		return err
-	}
-	if err := s.repo.SetMetricMappings(docID, req.MetricIDs, locations); err != nil {
-		return err
-	}
-	return nil
+	return s.repo.SetMappings(docID, req.ElementIDs, req.GlossaryIDs, req.MetricIDs, locations)
 }
 
 // ===== 反向查询：按标准项列出关联文档 =====
 
 func (s *DocumentService) ListByElement(tenantID, elementID int64) ([]models.Document, error) {
+	if err := s.refs.RequireElement(tenantID, elementID); err != nil {
+		return nil, err
+	}
 	return s.repo.ListByElementID(tenantID, elementID)
 }
 
 func (s *DocumentService) ListByGlossary(tenantID, glossaryID int64) ([]models.Document, error) {
+	if err := s.refs.RequireGlossary(tenantID, glossaryID); err != nil {
+		return nil, err
+	}
 	return s.repo.ListByGlossaryID(tenantID, glossaryID)
 }
 
 func (s *DocumentService) ListByMetric(tenantID, metricID int64) ([]models.Document, error) {
+	if err := s.refs.RequireMetric(tenantID, &metricID); err != nil {
+		return nil, err
+	}
 	return s.repo.ListByMetricID(tenantID, metricID)
 }
 
 // ===== 创建文档并关联到标准项（原子操作） =====
 
 func (s *DocumentService) CreateAndLinkElement(req *models.CreateDocumentRequest, tenantID, userID, elementID int64) (*models.Document, error) {
-	doc, err := s.CreateDocument(req, tenantID, userID)
-	if err != nil {
+	if err := s.refs.RequireElement(tenantID, elementID); err != nil {
 		return nil, err
 	}
-	if err := s.repo.AddElementMapping(doc.ID, elementID); err != nil {
+	doc := newDocument(req, tenantID, userID)
+	mapping := &models.DocumentElementMapping{DocumentID: doc.ID, ElementID: elementID}
+	if err := s.repo.CreateWithMapping(doc, mapping); err != nil {
 		return nil, err
 	}
 	return doc, nil
 }
 
 func (s *DocumentService) CreateAndLinkGlossary(req *models.CreateDocumentRequest, tenantID, userID, glossaryID int64) (*models.Document, error) {
-	doc, err := s.CreateDocument(req, tenantID, userID)
-	if err != nil {
+	if err := s.refs.RequireGlossary(tenantID, glossaryID); err != nil {
 		return nil, err
 	}
-	if err := s.repo.AddGlossaryMapping(doc.ID, glossaryID); err != nil {
+	doc := newDocument(req, tenantID, userID)
+	mapping := &models.DocumentGlossaryMapping{DocumentID: doc.ID, GlossaryID: glossaryID}
+	if err := s.repo.CreateWithMapping(doc, mapping); err != nil {
 		return nil, err
 	}
 	return doc, nil
 }
 
 func (s *DocumentService) CreateAndLinkMetric(req *models.CreateDocumentRequest, tenantID, userID, metricID int64) (*models.Document, error) {
-	doc, err := s.CreateDocument(req, tenantID, userID)
-	if err != nil {
+	if err := s.refs.RequireMetric(tenantID, &metricID); err != nil {
 		return nil, err
 	}
-	if err := s.repo.AddMetricMapping(doc.ID, metricID); err != nil {
+	doc := newDocument(req, tenantID, userID)
+	mapping := &models.DocumentMetricMapping{DocumentID: doc.ID, MetricID: metricID}
+	if err := s.repo.CreateWithMapping(doc, mapping); err != nil {
 		return nil, err
 	}
 	return doc, nil
@@ -238,6 +261,9 @@ func (s *DocumentService) LinkDocToElement(docID, tenantID, elementID int64) err
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
 		return fmt.Errorf("文档不存在")
 	}
+	if err := s.refs.RequireElement(tenantID, elementID); err != nil {
+		return err
+	}
 	return s.repo.AddElementMapping(docID, elementID)
 }
 
@@ -245,12 +271,18 @@ func (s *DocumentService) LinkDocToGlossary(docID, tenantID, glossaryID int64) e
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
 		return fmt.Errorf("文档不存在")
 	}
+	if err := s.refs.RequireGlossary(tenantID, glossaryID); err != nil {
+		return err
+	}
 	return s.repo.AddGlossaryMapping(docID, glossaryID)
 }
 
 func (s *DocumentService) LinkDocToMetric(docID, tenantID, metricID int64) error {
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
 		return fmt.Errorf("文档不存在")
+	}
+	if err := s.refs.RequireMetric(tenantID, &metricID); err != nil {
+		return err
 	}
 	return s.repo.AddMetricMapping(docID, metricID)
 }
@@ -261,6 +293,9 @@ func (s *DocumentService) UnlinkDocFromElement(docID, tenantID, elementID int64)
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
 		return fmt.Errorf("文档不存在")
 	}
+	if err := s.refs.RequireElement(tenantID, elementID); err != nil {
+		return err
+	}
 	return s.repo.RemoveElementMapping(docID, elementID)
 }
 
@@ -268,12 +303,18 @@ func (s *DocumentService) UnlinkDocFromGlossary(docID, tenantID, glossaryID int6
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
 		return fmt.Errorf("文档不存在")
 	}
+	if err := s.refs.RequireGlossary(tenantID, glossaryID); err != nil {
+		return err
+	}
 	return s.repo.RemoveGlossaryMapping(docID, glossaryID)
 }
 
 func (s *DocumentService) UnlinkDocFromMetric(docID, tenantID, metricID int64) error {
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
 		return fmt.Errorf("文档不存在")
+	}
+	if err := s.refs.RequireMetric(tenantID, &metricID); err != nil {
+		return err
 	}
 	return s.repo.RemoveMetricMapping(docID, metricID)
 }

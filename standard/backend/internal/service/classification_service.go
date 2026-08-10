@@ -1,6 +1,8 @@
 package service
 
 import (
+	"fmt"
+
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 )
@@ -9,10 +11,11 @@ import (
 type ClassificationService struct {
 	repo        *repository.ClassificationRepository
 	gradingRepo *repository.GradingLevelRepository
+	refs        *repository.TenantReferenceRepository
 }
 
-func NewClassificationService(repo *repository.ClassificationRepository, gradingRepo *repository.GradingLevelRepository) *ClassificationService {
-	return &ClassificationService{repo: repo, gradingRepo: gradingRepo}
+func NewClassificationService(repo *repository.ClassificationRepository, gradingRepo *repository.GradingLevelRepository, refs *repository.TenantReferenceRepository) *ClassificationService {
+	return &ClassificationService{repo: repo, gradingRepo: gradingRepo, refs: refs}
 }
 
 func (s *ClassificationService) ListClassifications(tenantID int64) ([]models.Classification, error) {
@@ -24,6 +27,9 @@ func (s *ClassificationService) GetClassification(id, tenantID int64) (*models.C
 }
 
 func (s *ClassificationService) CreateClassification(req *models.CreateClassificationRequest, tenantID, userID int64) (*models.Classification, error) {
+	if err := s.refs.RequireClassification(tenantID, req.ParentID); err != nil {
+		return nil, err
+	}
 	c := &models.Classification{
 		TenantID:    tenantID,
 		Name:        req.Name,
@@ -44,6 +50,9 @@ func (s *ClassificationService) UpdateClassification(id, tenantID, userID int64,
 	if err != nil {
 		return nil, err
 	}
+	if err := s.validateParent(id, tenantID, req.ParentID); err != nil {
+		return nil, err
+	}
 	if req.Name != "" {
 		c.Name = req.Name
 	}
@@ -55,6 +64,23 @@ func (s *ClassificationService) UpdateClassification(id, tenantID, userID int64,
 		return nil, err
 	}
 	return c, nil
+}
+
+func (s *ClassificationService) validateParent(id, tenantID int64, parentID *int64) error {
+	if err := s.refs.RequireClassification(tenantID, parentID); err != nil {
+		return err
+	}
+	for current := parentID; current != nil; {
+		if *current == id {
+			return fmt.Errorf("数据分类父级不能是自身或其子级")
+		}
+		parent, err := s.repo.GetByID(*current, tenantID)
+		if err != nil {
+			return err
+		}
+		current = parent.ParentID
+	}
+	return nil
 }
 
 func (s *ClassificationService) DeleteClassification(id, tenantID int64) error {

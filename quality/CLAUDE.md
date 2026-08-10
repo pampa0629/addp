@@ -2,13 +2,21 @@
 
 本文件为 Claude Code 在 `quality/` 目录下工作时提供指导。
 
+## 必读规范
+
+- [ADDP 数据质量规范](../docs/spec/addp数据质量规范.md)：Quality 的规则契约、模块边界、PostgreSQL 方言、执行授权、评分、问题状态机和不支持范围的唯一标准。
+- [ADDP 任务体系规范](../docs/spec/addp任务体系规范.md)：统一 execution、TaskProvider 和持久执行生命周期。
+- 涉及 API、Swagger、认证或前端时，继续遵守仓库根目录 `AGENTS.md` 指向的对应规范。
+
+`docs/plan/` 中的早期数据治理规划只作背景参考，不得覆盖上述正式规范。
+
 ## 模块概述
 
 **Quality 模块** 是 ADDP 平台的数据质量管理中心，负责：
 
 - 规则应用管理（RuleApplication）：将 Standard 模块定义的数据元质量规则，映射到具体数据库的表字段
-- 检查任务管理（CheckTask）：定义和执行数据质量检查任务，可指定引擎、Schema、表的检查范围
-- 质量检查执行：通过 SQL 生成引擎将质量规则转换为 SQL 查询，异步执行并计算表级/字段级质量评分
+- 检查任务管理（CheckTask）：定义和执行确定 PostgreSQL 引擎、Schema、表范围的质量检查任务
+- 质量检查执行：通过持久 worker、安全 SQL 编译和 Execution Authorization 执行规则并计算表级/字段级质量评分
 - 问题工单管理（Issue）：对检查失败的规则自动生成问题工单，支持状态流转（待处理 → 已解决/已忽略）
 - 执行记录查询：读取 `common.task_executions` 查看历史执行记录及详细结果
 
@@ -46,7 +54,7 @@ quality/
 │       └── service/
 │           ├── rule_engine.go                # 规则加载与应用服务
 │           ├── check_task_service.go         # 检查任务 CRUD 服务
-│           ├── check_executor.go             # 质量检查执行引擎（异步）
+│           ├── check_executor.go             # 持久 worker、Execution Authorization、评分与 Issue 协调
 │           ├── sql_generator.go              # 规则→SQL 转换器（6 种规则类型）
 │           └── issue_service.go              # 问题工单服务
 └── frontend/
@@ -95,11 +103,10 @@ quality/
 | tenant_id | int64 | 租户 ID |
 | name / description | string | 任务名称 / 描述 |
 | engine_id | int64 | 目标引擎 ID |
-| schema_name | string | 可选：限定检查的 Schema |
-| table_name | string | 可选：限定检查的表（空则检查整个 Schema） |
+| schema_name | string | 必填：目标 Schema |
+| table_name | string | 必填：目标表 |
 | enabled | bool | 是否启用 |
 | last_run_at | timestamp? | 最近执行时间 |
-| next_run_at | timestamp? | 下一次计划执行时间（当前未启用调度，保持为空） |
 | last_execution_id | string | 最近一次 `common.task_executions.execution_id` |
 | last_execution_status | string | 最近一次执行状态 |
 | created_by / updated_by | int64 | 操作人 |
@@ -110,15 +117,18 @@ quality/
 |------|------|------|
 | id | int64 PK | 主键 |
 | tenant_id | int64 | 租户 ID |
-| execution_id | string | 关联的执行记录（`common.task_executions.execution_id`） |
-| rule_application_id | int64 | 关联的规则应用 |
-| rule_type | string | 规则类型（not_null/unique/format/length/value_range/allowed_values） |
+| execution_id / last_execution_id | string | 首次发现和最近观测到该问题的 execution |
+| rule_application_id | int64 | 关联规则应用；与 `tenant_id` 共同构成当前问题唯一身份 |
+| rule_type | string | 数据库存储字段；API JSON 字段名为 `type` |
+| severity / message | string | 规则严重级别和说明 |
 | column_name / table_name / schema_name | string | 问题字段定位 |
 | engine_id | int64 | 所属引擎 |
 | failed_count / total_count | int64 | 失败行数 / 总行数 |
 | pass_rate | float64 | 通过率（0-100） |
 | detail | JSONB | 详情（含错误信息等） |
 | status | string | `open` / `resolved` / `ignored` |
+| resolved_at / resolved_by / resolution_note | nullable | 人工或自动解决事实；人工处理必须提供说明 |
+| last_observed_at | timestamp? | 最近一次规则观测时间 |
 
 > **说明**: 执行记录不在 quality schema，写入 `common.task_executions`，module 标记为 `quality`，执行结果（质量评分、规则明细等）存储在 `metadata` JSONB 字段中。
 
@@ -177,51 +187,58 @@ GET    /health                                 # 服务健康检查
     ↓
 生成 execution_id（UUID）
     ↓
-在任务定义行锁保护下原子创建 common.task_executions（status: pending，started_at 为空）
+在任务定义行锁保护下创建 common.task_executions（status: pending），并冻结启用的 RuleApplication 快照到 execution_config
     ↓
-异步 goroutine 执行（doCheck）：
-    1. 原子推进 execution 与 check_tasks 最近执行摘要为 running，并写真实 started_at
-    2. 加载该任务关联的所有 rule_applications
-    3. 对每条规则调用 SQLGenerator 生成检查 SQL
-    4. 通过 dbbridge 获取目标引擎连接
-    5. 执行 SQL，计算 failedCount 和 totalCount
-    6. 汇总字段级评分和表级综合质量评分
-    7. 为失败规则创建 Issue 工单
+签发 Execution Authorization：手动执行使用 User Access Token，编排子执行从 parent execution 派生
     ↓
-在同一事务更新 common.task_executions 终态和
-check_tasks.last_run_at、last_execution_id、last_execution_status
+持久 worker 使用 FOR UPDATE SKIP LOCKED 领取已授权的 pending execution：
+    1. 写 running、started_at、attempt 和 worker lease，并在执行期间续租
+    2. 通过 System 的 ExecutionEngineAccess 获取授权后的 PostgreSQL 连接事实
+    3. 严格解析 execution_config 中的版本化规则快照
+    4. 通过 SQLGenerator 安全引用标识符、绑定所有规则参数并执行聚合检查
+    5. 计算规则、字段和表级评分；结果写入 execution.metadata
+    6. 以 tenant_id + rule_application_id 对 Issue 做幂等 reconcile
+    7. 校验 lease owner 后原子写 execution 终态和 CheckTask 最近执行摘要
+    ↓
+worker 崩溃后由 lease 恢复：未达 max_attempts 返回 pending，达到上限写 failed
 ```
 
 ### SQL 生成器（`sql_generator.go`）
 
 支持 6 种基础规则类型：
 
-| 规则类型 | 校验逻辑 | 失败 SQL 逻辑 |
-|----------|---------|-------------|
-| `not_null` | 非空检查 | `COUNT(*) - COUNT(column)` |
-| `unique` | 唯一性检查 | `COUNT(*) - COUNT(DISTINCT column)` |
-| `format` | 格式校验（正则） | `column IS NOT NULL AND column !~ 'pattern'` |
-| `length` | 长度范围 | `LENGTH(column) NOT BETWEEN min AND max` |
-| `value_range` | 数值范围 | `column NOT BETWEEN min AND max` |
-| `allowed_values` | 枚举值 | `column NOT IN (values)` |
+| 规则类型 | `params` | 语义 |
+|----------|----------|------|
+| `not_null` | `{}` | 值不得为 NULL |
+| `unique` | `{}` | 非 NULL 值不得重复 |
+| `format` | `pattern` | 非 NULL 文本匹配 PostgreSQL 正则 |
+| `length` | `min` / `max` 至少一个 | 非 NULL 文本长度位于闭区间 |
+| `value_range` | `min` / `max` 至少一个 | 非 NULL 数值位于闭区间 |
+| `allowed_values` | 非空 `values` | 非 NULL 值属于枚举集合 |
+
+规则文档唯一版本为 `addp.quality.rules/v1`。schema、table、column 只通过 PostgreSQL dialect 引用，正则、边界和枚举值只通过绑定参数进入 SQL；不得拼接自定义 SQL。
 
 ### 执行结果 JSON 结构
 
 ```json
 {
+  "schema_version": "addp.quality.execution-result/v1",
   "quality_score": 86.67,
   "total_rules": 15,
   "passed_rules": 13,
   "failed_rules": 2,
   "field_scores": [
-    { "column": "mobile_phone", "score": 95.5, "passed": 3, "failed": 1 }
+    { "column": "mobile_phone", "score": 95.5, "rule_count": 4 }
   ],
   "rule_details": [
     {
       "rule_application_id": 123,
-      "rule_type": "format",
+      "type": "format",
+      "severity": "error",
+      "message": "手机号格式不正确",
       "column": "mobile_phone",
       "table": "users",
+      "schema": "public",
       "pass_rate": 95.5,
       "failed_count": 450,
       "total_count": 10000,
@@ -244,17 +261,15 @@ check_tasks.last_run_at、last_execution_id、last_execution_status
 ## 模块依赖关系
 
 **依赖**:
-- **System 模块**: JWT 认证、引擎配置查询（`SYSTEM_URL`）
+- **System 模块**: 认证、PostgreSQL 引擎校验、Execution Authorization 和 ExecutionEngineAccess（`SYSTEM_URL`）
 - **Standard 模块**: 获取数据元的质量规则定义（`STANDARD_URL`）
-- **Common**: `common.task_executions`（统一执行记录）、`dbbridge`（数据库连接桥）
-- **Redis**: 认证缓存（`CachedSystemAuthMiddleware`，5 分钟 TTL）
+- **Common**: 规则契约、`common.task_executions`、查询方言和数据库连接桥
+- **Redis**: 租户/引擎删除时的资源回收事件
 
 **被依赖**:
 - **Monitor 模块**: 通过 `common.task_executions` 中 `module='quality'` 的记录统一监控质量检查执行情况
 
-**未来规划**:
-- **Meta 模块**: 元数据扫描完成后触发质量检查（事件驱动）
-- **Model 模块**: 质量评分反馈，完善数据模型的质量 SLA
+当前不支持事件触发、定时调度、取消、自定义 SQL、跨字段规则和自动映射；需要扩展时先修改正式数据质量规范。
 
 ## 配置项
 
@@ -263,7 +278,6 @@ check_tasks.last_run_at、last_execution_id、last_execution_status
 | `QUALITY_BACKEND_PORT` | `8182` | 后端服务端口 |
 | `SYSTEM_URL` | `http://localhost:8180` | System 模块地址 |
 | `STANDARD_URL` | `http://localhost:8110` | Standard 模块地址 |
-| `META_URL` | `http://localhost:8082` | Meta 模块地址 |
 | `QUALITY_SERVICE_CLIENT_SECRET` | - | Quality Confidential OAuth Client Secret |
 | `REDIS_HOST` / `REDIS_PORT` | - | Redis 连接配置（用于认证缓存） |
 
@@ -283,7 +297,7 @@ Quality 的执行历史是 `common.task_executions` 的跨模块统一投影，�
 
 ### 规则配置快照
 
-创建 RuleApplication 时，后端从 Standard 模块拉取该数据元的最新 `quality_rules`，以 JSONB 格式快照保存到 `rule_config` 字段。这样即使 Standard 中的规则后续变更，也不影响已有规则应用的检查行为，保证历史可追溯。
+创建 RuleApplication 时，后端从 Standard 拉取严格版本化的 `addp.quality.rules/v1` 文档，只保留启用规则并写入 `rule_config`。触发任务时再次把当前启用 RuleApplication 冻结到 execution 的 `execution_config`；worker 只消费 execution 快照，不回读实时配置。
 
 ### 问题工单状态流转
 
@@ -293,11 +307,11 @@ open（待处理）
     └─→ ignored（已忽略）：已知问题，暂不处理
 ```
 
-仅 `open` 状态的工单可以更新状态；`resolved` 和 `ignored` 状态不可互转。
+同一租户、同一 RuleApplication 始终只有一个当前问题。规则失败时创建或重开为 `open`，后续检查通过时自动变为 `resolved`。人工只能将 `open` 更新为 `resolved` 或 `ignored`，且必须提交处理说明；终态之间不可互转。
 
 ### 异步检查，立即返回
 
-`POST /check-tasks/:id/run` 立即返回 `execution_id`，实际检查在后台异步执行。前端可通过轮询 `GET /executions/:execution_id` 获取结果。
+`POST /check-tasks/:id/run` 在创建 pending execution 并成功附加 Execution Authorization 后返回 `execution_id`。持久 worker 随后领取执行；前端通过轮询 `GET /executions/:execution_id` 获取状态和 `metadata` 结果。HTTP 请求不启动业务 goroutine。
 
 ### 前端双模式布局
 
@@ -309,7 +323,7 @@ open（待处理）
 
 1. **新增功能**: `models` → `repository` → `service` → `handler` → `router.go`
 
-2. **数据库连接**: 检查执行时使用 `common/dbbridge` 获取目标引擎的动态连接，而非 Quality 自身的 PostgreSQL 连接
+2. **数据库连接**: worker 只能使用 System `ExecutionEngineAccess` 返回的授权引擎事实创建连接，不得直接读取引擎密钥或绕过 Execution Authorization
 
 3. **重启服务**:
    ```bash
@@ -322,9 +336,9 @@ open（待处理）
 
 4. **前端 API 统一入口**: 所有 API 调用集中在 [frontend/src/api/quality.js](frontend/src/api/quality.js)
 
-5. **规则类型扩展**: 新增规则类型需同步修改 `sql_generator.go` 中的 `GenerateCheckSQL()` 方法，以及前端的规则类型枚举和展示逻辑
+5. **规则类型扩展**: 先修改 `docs/spec/addp数据质量规范.md` 和 `common/dataquality`，再同步 Standard 编辑器、Quality SQL 编译器、Swagger 和测试；不得保留旧规则结构兼容分支
 
-6. **当前 MVP 状态**: 暂未实现定时调度（Cron）和事件触发，仅支持手动执行；趋势分析、报告导出等功能规划在 Phase 2
+6. **执行约束**: v1 仅支持 active PostgreSQL 引擎和手动触发；无规则、非法快照、SQL 错误、授权失败都必须进入 failed，不得以空结果成功
 
 ## 前端公开路由
 

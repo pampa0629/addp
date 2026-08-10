@@ -17,7 +17,6 @@ import (
 	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/common/utils"
 	"github.com/addp/manager/internal/api"
 	managerauthorization "github.com/addp/manager/internal/authorization"
 	"github.com/addp/manager/internal/config"
@@ -60,7 +59,7 @@ func main() {
 	})
 
 	// 检查端口是否可用
-	if err := utils.CheckPortAvailable(cfg.Port); err != nil {
+	if err := commonConfig.CheckPortAvailable(cfg.Port); err != nil {
 		logger.L().Error("端口检查失败", "error", err, "port", cfg.Port)
 		os.Exit(1)
 	}
@@ -156,7 +155,7 @@ func main() {
 	engineCacheService = service.NewEngineCacheService(cfg.SystemServiceURL, serviceTokenSource, redisClient)
 	workflowRuntimeLister := service.NewWorkflowRuntimeEngineLister(systemServiceClient)
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, serviceTokenSource)
-	inferenceClient, err := commonClient.NewInferenceClient(cfg.InferenceServiceURL, serviceTokenSource, nil)
+	inferenceClient, err := commonClient.NewInferenceClient(cfg.SystemServiceURL, serviceTokenSource, nil)
 	if err != nil {
 		logger.L().Error("InferenceClient 初始化失败", "error", err)
 		os.Exit(1)
@@ -379,9 +378,8 @@ func main() {
 
 	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, systemServiceClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, quickViewPolicyService, baseMapProviderService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, cadPreviewHandler, model3DTilesHandler, dataProfileHandler)
 
-	serviceHost := utils.GetServiceHost()
-	port := utils.GetModulePort("manager")
-	serviceURL := utils.BuildServiceURL(serviceHost, port)
+	serviceHost := commonConfig.GetServiceHost()
+	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
 	if systemClient != nil {
 		rasterMosaicTaskSvc.SetExecutor(service.NewManagerRasterMosaicExecutor(
 			systemClient,

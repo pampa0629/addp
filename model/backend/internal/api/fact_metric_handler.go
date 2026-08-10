@@ -32,14 +32,14 @@ func NewFactMetricHandler(svc *service.FactMetricService) *FactMetricHandler {
 func (h *FactMetricHandler) ListMetrics(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	mappings, err := h.svc.ListMetrics(tableID, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		c.JSON(http.StatusNotFound, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, mappings)
@@ -60,13 +60,13 @@ func (h *FactMetricHandler) ListMetrics(c *gin.Context) {
 func (h *FactMetricHandler) AddMetric(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 
 	var req models.CreateFactMetricMappingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 
@@ -75,7 +75,7 @@ func (h *FactMetricHandler) AddMetric(c *gin.Context) {
 
 	mapping, err := h.svc.AddMetric(tableID, tenantID, userID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusCreated, mapping)
@@ -95,18 +95,18 @@ func (h *FactMetricHandler) AddMetric(c *gin.Context) {
 func (h *FactMetricHandler) RemoveMetric(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 	mappingID, err := strconv.ParseInt(c.Param("mid"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidMappingID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidMappingID)))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	if err := h.svc.RemoveMetric(mappingID, tableID, tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "removed"})

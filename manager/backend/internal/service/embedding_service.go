@@ -15,7 +15,6 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
-	"github.com/addp/common/embedding"
 	enginePlugin "github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	commonInference "github.com/addp/common/inference"
@@ -430,12 +429,21 @@ func (s *EmbeddingService) processItem(ctx context.Context, tenantID uint, item 
 	return "rebuilt"
 }
 
+type embeddingModality string
+
+const (
+	embeddingModalityText     embeddingModality = "text"
+	embeddingModalityImage    embeddingModality = "image"
+	embeddingModalityVideo    embeddingModality = "video"
+	embeddingModalityDocument embeddingModality = "document"
+)
+
 type resolvedEmbeddingInput struct {
 	ID          string
 	Data        []byte
 	Text        string
 	ContentType string
-	Modality    embedding.Modality
+	Modality    embeddingModality
 }
 
 var (
@@ -443,26 +451,26 @@ var (
 	errMissingSource   = errors.New("missing source")
 )
 
-var vectorizableObjectExtensions = map[string]embedding.Modality{
-	".txt":      embedding.ModalityText,
-	".md":       embedding.ModalityText,
-	".markdown": embedding.ModalityText,
-	".csv":      embedding.ModalityText,
-	".json":     embedding.ModalityText,
-	".jsonl":    embedding.ModalityText,
-	".jpg":      embedding.ModalityImage,
-	".jpeg":     embedding.ModalityImage,
-	".png":      embedding.ModalityImage,
-	".gif":      embedding.ModalityImage,
-	".bmp":      embedding.ModalityImage,
-	".webp":     embedding.ModalityImage,
-	".pdf":      embedding.ModalityDocument,
-	".doc":      embedding.ModalityDocument,
-	".docx":     embedding.ModalityDocument,
-	".ppt":      embedding.ModalityDocument,
-	".pptx":     embedding.ModalityDocument,
-	".xls":      embedding.ModalityDocument,
-	".xlsx":     embedding.ModalityDocument,
+var vectorizableObjectExtensions = map[string]embeddingModality{
+	".txt":      embeddingModalityText,
+	".md":       embeddingModalityText,
+	".markdown": embeddingModalityText,
+	".csv":      embeddingModalityText,
+	".json":     embeddingModalityText,
+	".jsonl":    embeddingModalityText,
+	".jpg":      embeddingModalityImage,
+	".jpeg":     embeddingModalityImage,
+	".png":      embeddingModalityImage,
+	".gif":      embeddingModalityImage,
+	".bmp":      embeddingModalityImage,
+	".webp":     embeddingModalityImage,
+	".pdf":      embeddingModalityDocument,
+	".doc":      embeddingModalityDocument,
+	".docx":     embeddingModalityDocument,
+	".ppt":      embeddingModalityDocument,
+	".pptx":     embeddingModalityDocument,
+	".xls":      embeddingModalityDocument,
+	".xlsx":     embeddingModalityDocument,
 }
 
 func (s *EmbeddingService) resolveItemForEmbedding(ctx context.Context, tenantID uint, item commonModels.MetaItem, maxFileSizeMB int) (*resolvedEmbeddingInput, error) {
@@ -520,11 +528,11 @@ func (s *EmbeddingService) embedResolvedContent(ctx context.Context, tenantID ui
 	}
 	requestInput := commonInference.EmbeddingInput{}
 	switch input.Modality {
-	case embedding.ModalityImage:
+	case embeddingModalityImage:
 		requestInput = commonInference.EmbeddingInput{Modality: commonInference.ModalityImage, Data: base64.StdEncoding.EncodeToString(input.Data), MIMEType: input.ContentType}
-	case embedding.ModalityVideo:
+	case embeddingModalityVideo:
 		return nil, fmt.Errorf("unsupported modality: %s", input.Modality)
-	case embedding.ModalityText, embedding.ModalityDocument:
+	case embeddingModalityText, embeddingModalityDocument:
 		requestInput = commonInference.EmbeddingInput{Modality: commonInference.ModalityText, Text: input.Text}
 	default:
 		return nil, fmt.Errorf("unsupported modality: %s", input.Modality)
@@ -797,7 +805,7 @@ func (s *EmbeddingService) finishExecution(ctx context.Context, executionID stri
 	}
 }
 
-func (s *EmbeddingService) detectSupportedModality(contentType, objectKey string) (embedding.Modality, bool) {
+func (s *EmbeddingService) detectSupportedModality(contentType, objectKey string) (embeddingModality, bool) {
 	ext := strings.ToLower(filepath.Ext(objectKey))
 	if modality, ok := vectorizableObjectExtensions[ext]; ok {
 		return modality, true
@@ -808,16 +816,16 @@ func (s *EmbeddingService) detectSupportedModality(contentType, objectKey string
 
 	contentType = strings.ToLower(strings.TrimSpace(contentType))
 	if strings.HasPrefix(contentType, "image/") {
-		return embedding.ModalityImage, true
+		return embeddingModalityImage, true
 	}
 	if strings.HasPrefix(contentType, "video/") {
 		return "", false
 	}
 	if strings.HasPrefix(contentType, "text/") {
-		return embedding.ModalityText, true
+		return embeddingModalityText, true
 	}
 	if strings.Contains(contentType, "json") {
-		return embedding.ModalityText, true
+		return embeddingModalityText, true
 	}
 	return "", false
 }

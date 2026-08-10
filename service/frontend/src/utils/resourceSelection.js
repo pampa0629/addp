@@ -1,5 +1,5 @@
-export const QUERY_TABLE_ENGINE_TYPES = ['postgresql', 'mysql', 'doris', 'clickhouse', 'minio', 's3']
-export const NATIVE_TABLE_ENGINE_TYPES = ['postgresql', 'mysql', 'doris', 'clickhouse']
+export const QUERY_TABLE_ENGINE_TYPES = ['postgresql', 'oracle', 'mysql', 'doris', 'clickhouse', 'minio', 's3']
+export const NATIVE_TABLE_ENGINE_TYPES = ['postgresql', 'oracle', 'mysql', 'doris', 'clickhouse']
 export const OBJECT_TABLE_FORMATS = ['parquet']
 export const PMTILES_ENGINE_TYPES = ['s3', 'minio', 'nfs']
 

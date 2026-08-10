@@ -66,7 +66,10 @@ func main() {
 
 	// 初始化 Service 层
 	engineService := service.NewEngineService(db, systemClient)
-	scanService := service.NewScanService(db, engineService)
+	scanService, _, err := service.NewRuntimeScanService(db, engineService, cfg)
+	if err != nil {
+		log.Fatalf("扫描运行时初始化失败: %v", err)
+	}
 	executionService := service.NewScanExecutionService(db, scanService, engineService, redisClient)
 
 	// 创建任务队列（复用已有的 redisAddr）

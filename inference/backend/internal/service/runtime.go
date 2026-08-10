@@ -16,7 +16,7 @@ import (
 	"time"
 
 	commoninference "github.com/addp/common/inference"
-	commonutils "github.com/addp/common/utils"
+	commonsecurity "github.com/addp/common/security"
 	"github.com/addp/inference/internal/models"
 	"github.com/addp/inference/internal/repository"
 )
@@ -81,7 +81,7 @@ func (s *Runtime) DiscoverModels(ctx context.Context, actor Actor, providerID st
 		return nil, ErrInvalidRequest
 	}
 	if provider.CredentialCiphertext != "" {
-		credential, decryptErr := commonutils.Decrypt(provider.CredentialCiphertext, s.encryptionKey)
+		credential, decryptErr := commonsecurity.Decrypt(provider.CredentialCiphertext, s.encryptionKey)
 		if decryptErr != nil {
 			return nil, fmt.Errorf("decrypt provider credential: %w", decryptErr)
 		}
@@ -517,7 +517,7 @@ func (s *Runtime) Probe(ctx context.Context, actor Actor, deploymentID string) (
 		return nil, ErrInvalidRequest
 	}
 	if provider.CredentialCiphertext != "" {
-		credential, decryptErr := commonutils.Decrypt(provider.CredentialCiphertext, s.encryptionKey)
+		credential, decryptErr := commonsecurity.Decrypt(provider.CredentialCiphertext, s.encryptionKey)
 		if decryptErr != nil {
 			return nil, fmt.Errorf("decrypt provider credential: %w", decryptErr)
 		}
@@ -583,7 +583,7 @@ func (s *Runtime) resolve(ctx context.Context, tenantID uint, profileID, operati
 	}
 	credential := ""
 	if provider.CredentialCiphertext != "" {
-		credential, err = commonutils.Decrypt(provider.CredentialCiphertext, s.encryptionKey)
+		credential, err = commonsecurity.Decrypt(provider.CredentialCiphertext, s.encryptionKey)
 		if err != nil {
 			return nil, fmt.Errorf("decrypt provider credential: %w", err)
 		}

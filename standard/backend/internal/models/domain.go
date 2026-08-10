@@ -4,18 +4,18 @@ import "time"
 
 // Domain 业务域
 type Domain struct {
-	ID          int64      `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenantID    int64      `gorm:"not null;index" json:"tenant_id"`
-	Name        string     `gorm:"size:100;not null" json:"name"`
-	Code        string     `gorm:"size:50;not null" json:"code"`
-	Description string     `gorm:"type:text" json:"description"`
-	ParentID    *int64     `gorm:"index" json:"parent_id,omitempty"`
-	Icon        string     `gorm:"size:50" json:"icon"`
-	SortOrder   int        `gorm:"default:0" json:"sort_order"`
-	CreatedBy   int64      `gorm:"not null" json:"created_by"`
-	UpdatedBy   *int64     `json:"updated_by,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ID          int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	TenantID    int64     `gorm:"not null;index" json:"tenant_id"`
+	Name        string    `gorm:"size:100;not null" json:"name"`
+	Code        string    `gorm:"size:50;not null" json:"code"`
+	Description string    `gorm:"type:text" json:"description"`
+	ParentID    *int64    `gorm:"index" json:"parent_id,omitempty"`
+	Icon        string    `gorm:"size:50" json:"icon"`
+	SortOrder   int       `gorm:"default:0" json:"sort_order"`
+	CreatedBy   int64     `gorm:"not null" json:"created_by"`
+	UpdatedBy   *int64    `json:"updated_by,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 func (Domain) TableName() string {

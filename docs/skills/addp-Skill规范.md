@@ -34,9 +34,17 @@ skills/
 │   ├── scripts/
 │   └── assets/
 ├── data-discovery/
-│   └── SKILL.md
-└── data-preview/
-    └── SKILL.md
+│   ├── SKILL.md
+│   └── agents/addp.yaml
+├── query-generation/
+│   ├── SKILL.md
+│   └── agents/addp.yaml
+├── notebook-generation/
+│   ├── SKILL.md
+│   └── agents/addp.yaml
+└── transfer-generation/
+    ├── SKILL.md
+    └── agents/addp.yaml
 ```
 
 平台级 Skill 只位于根目录 `skills/`。原 `agent/backend/skills/` 已删除，不保留运行时私有 Skill 事实源。
@@ -61,6 +69,8 @@ Skill 的唯一入口，必须包含元数据、触发边界、执行步骤、�
 reference 不能复制正式规范全文。稳定平台概念仍以 `docs/concepts/` 和 `docs/spec/` 为事实源。
 
 `agents/` 保存宿主装配元数据。`openai.yaml` 服务 Codex 展示与触发，`addp.yaml` 只声明 ADDP Runtime 所需 Tool 和迭代上限；二者不得复制正文。
+
+`agents/addp.yaml` 可以声明 `required_skills` 组合其他 Skill 的方法正文。组合只影响 Runtime 注入的指导，不继承依赖 Skill 的 Tool 权限；每个 Skill 必须独立声明自己的最小 `required_tools` 白名单。
 
 ### 3.3 `scripts/`
 
@@ -101,6 +111,8 @@ description: 设计、校验和执行可复用的数据分析工作流；需要�
 
 ```yaml
 schema: addp.skill-runtime/v1
+required_skills:
+  - data-discovery
 required_tools:
   - data.search
   - data.preview
@@ -116,6 +128,7 @@ max_iterations: 8
 - `name` 全局唯一，与目录名一致。
 - `description` 同时说明能力和触发时机。
 - `agents/addp.yaml` 只保存 ADDP Runtime 装配信息，不复制 Skill 正文或 Tool Schema。
+- `required_skills` 只用于组合方法正文，必须引用仓库中存在的 Skill，不能形成循环依赖，也不继承依赖 Skill 的 Tool 权限。
 - `required_tools` 只引用 Tool Manifest 中的稳定名称。
 - 风险等级不写在 Skill 元数据中；风险属于具体 Tool 和本次操作。
 - 不在通用 front matter 中写 Agent Framework 私有工具名。
@@ -193,7 +206,8 @@ Skill 必须支持渐进式加载：
 - `data-discovery`；
 - `data-preview`；
 - `sql-analysis`；
-- `knowledge-graph-exploration`。
+- `knowledge-graph-exploration`；
+- `transfer-generation`。
 
 不合适示例：
 

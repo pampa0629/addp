@@ -273,6 +273,24 @@ func TestWorkflowExecutionOutputsAreAddressedByTaskID(t *testing.T) {
 	}
 }
 
+func TestWorkflowFinalResultForExecutionKeepsSmallStructuredResult(t *testing.T) {
+	result, ok := workflowFinalResultForExecution(`[{"area":42}]`)
+	if !ok {
+		t.Fatal("workflowFinalResultForExecution() ok = false, want true")
+	}
+	rows, ok := result.([]interface{})
+	if !ok || len(rows) != 1 || rows[0].(map[string]interface{})["area"] != float64(42) {
+		t.Fatalf("result = %#v, want one row with area 42", result)
+	}
+}
+
+func TestWorkflowFinalResultForExecutionSkipsLargeResult(t *testing.T) {
+	result, ok := workflowFinalResultForExecution(strings.Repeat("x", workflowExecutionResultPreviewLimitBytes+1))
+	if ok || result != nil {
+		t.Fatalf("workflowFinalResultForExecution() = (%#v, %v), want (nil, false)", result, ok)
+	}
+}
+
 func TestWorkflowProducedTargetCarriesCanonicalWriteMode(t *testing.T) {
 	params := map[string]interface{}{
 		"target_parent_locator": "addp://engine/7/path/public?type=schema",

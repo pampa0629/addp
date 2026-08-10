@@ -27,10 +27,10 @@ decoded JSON map 的通用读取工具，用于读取嵌套 section、字符串�
 
 `resourcetree` 中 attributes helper 只服务 `TreeNode.Metadata` 展示摘要，不作为通用 attributes 规范 API，也不写入持久 attributes。
 
-### sqldialect
-跨 SQL 引擎的轻量方言工具，用于标识符引用、命名空间表名拼接、基础 SELECT / COUNT 和 LIMIT / OFFSET 分页 SQL 生成。
+### query
+查询文本通用能力，包括 SQL / Cypher / MQL 参数绑定、SQL 副作用分析，以及跨 SQL 引擎的标识符引用、基础 SELECT / COUNT 和分页 SQL 生成。
 
-`sqldialect` 只承载通用 SQL 方言差异，不放入 PostGIS 等特定引擎扩展函数；PostGIS 空间表达式属于 `spatial`。
+`query` 不承载 catalog facts 探测或 PostGIS 等特定引擎扩展函数；PostGIS 空间表达式属于 `spatial`。
 
 ### spatial
 空间数据通用能力，包括 CRS、MVT、WKB、坐标转换和 PostGIS 空间 SQL 表达式。

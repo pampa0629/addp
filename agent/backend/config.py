@@ -8,8 +8,6 @@ class Settings(BaseSettings):
     AGENT_BACKEND_PORT: int = 8190
     AGENT_DB_SCHEMA: str = "agent"
 
-    # Inference Runtime 服务调用
-    INFERENCE_URL: str = "http://localhost:8191"
     AGENT_SERVICE_CLIENT_SECRET: str = ""
 
     # 服务 host 和端口（从 .env 读取）

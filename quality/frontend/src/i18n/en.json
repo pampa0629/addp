@@ -40,20 +40,23 @@
       "createTitle": "Add Rule Application",
       "elementPlaceholder": "Search data elements by keyword",
       "enginePlaceholder": "Select engine",
-      "schemaPlaceholder": "Optional, leave blank for default schema",
+      "schemaPlaceholder": "PostgreSQL schema",
       "tableNamePlaceholder": "Table name",
       "columnPlaceholder": "Column name",
       "cancel": "Cancel",
       "confirm": "Confirm",
       "elementRequired": "Please select a data element",
       "engineRequired": "Please select an engine",
+      "schemaRequired": "Please enter schema",
       "tableRequired": "Please enter table name",
       "columnRequired": "Please enter column name",
       "createSuccess": "Created successfully",
       "createFailed": "Create failed",
+      "loadFailed": "Failed to load rule applications",
       "deleteConfirm": "Confirm delete?",
       "deleteTitle": "Confirm",
-      "deleteSuccess": "Deleted"
+      "deleteSuccess": "Deleted",
+      "deleteFailed": "Delete failed"
     },
     "checkTask": {
       "title": "Check Tasks",
@@ -75,22 +78,29 @@
       "editTitle": "Edit Check Task",
       "name": "Task Name",
       "description": "Description",
-      "engineIdLabel": "Engine ID",
+      "engineIdLabel": "PostgreSQL Engine",
+      "enginePlaceholder": "Select a PostgreSQL engine",
       "schemaLabel": "Schema",
-      "schemaPlaceholder": "Optional",
+      "schemaPlaceholder": "PostgreSQL schema",
       "tableLabel": "Table",
-      "tablePlaceholder": "Optional, leave blank to check all tables",
+      "tablePlaceholder": "Table name",
       "cancel": "Cancel",
       "confirm": "Confirm",
+      "nameRequired": "Please enter a task name",
+      "engineRequired": "Please select a PostgreSQL engine",
+      "schemaRequired": "Please enter schema",
+      "tableRequired": "Please enter a table",
       "createSuccess": "Created successfully",
       "createFailed": "Create failed",
+      "loadFailed": "Failed to load check tasks",
       "updateSuccess": "Updated successfully",
       "updateFailed": "Update failed",
       "runSuccess": "Check started, execution ID: {id}",
       "runFailed": "Run failed",
       "deleteConfirm": "Confirm delete this task?",
       "deleteTitle": "Confirm",
-      "deleteSuccess": "Deleted"
+      "deleteSuccess": "Deleted",
+      "deleteFailed": "Delete failed"
     },
     "execution": {
       "title": "Executions",
@@ -113,6 +123,7 @@
       "failedRules": "Failed Rules",
       "ruleDetails": "Rule Details",
       "ruleType": "Rule Type",
+      "severity": "Severity",
       "column": "Column",
       "table": "Table",
       "passRate": "Pass Rate",
@@ -120,7 +131,8 @@
       "passed": "Passed",
       "failed": "Failed",
       "failedCount": "Failed Rows",
-      "errorMsg": "Error Message"
+      "totalCount": "Total Rows",
+      "loadFailed": "Failed to load execution"
     },
     "issue": {
       "title": "Issues",
@@ -141,7 +153,13 @@
       "markResolved": "Mark Resolved",
       "ignore": "Ignore",
       "updateSuccess": "Updated",
-      "updateFailed": "Update failed"
+      "updateFailed": "Update failed",
+      "loadFailed": "Failed to load issues",
+      "noteTitle": "Add resolution note",
+      "notePrompt": "Enter a resolution note",
+      "noteRequired": "Resolution note is required",
+      "confirm": "Confirm",
+      "cancel": "Cancel"
     }
   }
 }

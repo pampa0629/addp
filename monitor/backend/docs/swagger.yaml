@@ -9,6 +9,8 @@ definitions:
         type: integer
       actor_tenant_membership_id:
         type: integer
+      attempt:
+        type: integer
       authorization_effects:
         items:
           type: string
@@ -47,6 +49,8 @@ definitions:
       id:
         type: integer
       issued_authorization_version:
+        type: integer
+      max_attempts:
         type: integer
       metadata:
         allOf:

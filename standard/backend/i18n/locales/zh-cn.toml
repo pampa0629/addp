@@ -37,6 +37,9 @@ other = "无法打开文件"
 [standard.common.file_read_failed]
 other = "无法读取文件"
 
+[standard.common.operation_failed]
+other = "操作失败"
+
 [standard.domain.not_found]
 other = "业务域不存在"
 

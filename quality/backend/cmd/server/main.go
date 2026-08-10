@@ -7,9 +7,9 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
-	"github.com/addp/common/utils"
 	_ "github.com/addp/quality/i18n"
 	"github.com/addp/quality/internal/api"
 	"github.com/addp/quality/internal/config"
@@ -35,7 +35,7 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	db, err := gorm.Open(postgres.Open(cfg.GetDatabaseDSN()), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(cfg.GetDatabaseDSN()), &gorm.Config{TranslateError: true})
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -55,6 +55,9 @@ func main() {
 	); err != nil {
 		log.Fatalf("Failed to migrate database: %v", err)
 	}
+	if err := repository.EnsureSchema(db); err != nil {
+		log.Fatalf("Failed to enforce Quality database constraint: %v", err)
+	}
 
 	var redisClient *redis.Client
 	if cfg.RedisHost != "" {
@@ -69,9 +72,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("Service Token Source 初始化失败: %v", err)
 	}
-	metaClient := commonClient.NewMetaClient(cfg.MetaURL, serviceTokenSource)
 	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemURL, serviceTokenSource, nil)
 	standardClient := commonClient.NewStandardClient(cfg.StandardURL, serviceTokenSource, nil)
+	executionAuthorizationClient := commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemURL, nil)
 
 	// Repositories
 	ruleAppRepo := repository.NewRuleApplicationRepository(db)
@@ -79,9 +82,11 @@ func main() {
 	issueRepo := repository.NewIssueRepository(db)
 
 	// Services
-	ruleEngineSvc := service.NewRuleEngineService(standardClient, metaClient, ruleAppRepo, checkTaskRepo)
-	checkTaskSvc := service.NewCheckTaskService(checkTaskRepo)
-	checkExecutor := service.NewCheckExecutor(systemServiceClient, ruleAppRepo, checkTaskRepo, issueRepo)
+	ruleEngineSvc := service.NewRuleEngineService(standardClient, systemServiceClient, ruleAppRepo)
+	checkTaskSvc := service.NewCheckTaskService(checkTaskRepo, systemServiceClient)
+	checkExecutor := service.NewCheckExecutor(systemServiceClient, executionAuthorizationClient, checkTaskRepo, issueRepo)
+	checkExecutor.StartWorker(context.Background())
+	defer checkExecutor.StopWorker()
 	issueSvc := service.NewIssueService(issueRepo)
 	cleanupService := service.NewCleanupService(db, redisClient, commonExecution.NewTaskExecutionRepository(db))
 	if err := cleanupService.Start(context.Background()); err != nil {
@@ -108,9 +113,8 @@ func main() {
 		}
 	}()
 
-	serviceHost := utils.GetServiceHost()
-	port := utils.GetModulePort("quality")
-	serviceURL := utils.BuildServiceURL(serviceHost, port)
+	serviceHost := commonConfig.GetServiceHost()
+	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
 	systemServiceClient.RegisterAndHeartbeatWithMetadata(context.Background(), "quality", serviceURL, "/quality", map[string]interface{}{
 		"module": "quality",
 		"capabilities": map[string]interface{}{

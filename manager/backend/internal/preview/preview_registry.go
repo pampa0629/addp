@@ -6,8 +6,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/addp/common/dataprofile"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/manager/internal/dataprofile"
 	"github.com/addp/manager/internal/models"
 )
 

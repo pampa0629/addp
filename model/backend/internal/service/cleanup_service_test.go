@@ -50,6 +50,8 @@ func setupModelCleanupTestDB(t *testing.T) *gorm.DB {
 			entity_id INTEGER NOT NULL,
 			element_id INTEGER,
 			name TEXT NOT NULL,
+			column_name TEXT NOT NULL,
+			data_type TEXT NOT NULL,
 			is_pk BOOLEAN DEFAULT FALSE,
 			nullable BOOLEAN DEFAULT TRUE,
 			description TEXT,
@@ -228,7 +230,7 @@ func seedModelCleanupTenantState(t *testing.T, db *gorm.DB, tenantID int64) (int
 	if err := db.Create(&otherEntity).Error; err != nil {
 		t.Fatalf("create other entity: %v", err)
 	}
-	attr := models.EntityAttribute{EntityID: entity.ID, Name: "ID", IsPK: true}
+	attr := models.EntityAttribute{EntityID: entity.ID, Name: "ID", ColumnName: "id", DataType: "bigint", IsPK: true}
 	if err := db.Create(&attr).Error; err != nil {
 		t.Fatalf("create entity attribute: %v", err)
 	}
@@ -236,7 +238,7 @@ func seedModelCleanupTenantState(t *testing.T, db *gorm.DB, tenantID int64) (int
 	if err := db.Create(&entityRelation).Error; err != nil {
 		t.Fatalf("create entity relation: %v", err)
 	}
-	factTable := models.LogicalTable{TenantID: tenantID, Name: "Fact Order", Code: "fact_order", TableType: "fact", Status: "materialized", CreatedBy: 1}
+	factTable := models.LogicalTable{TenantID: tenantID, Name: "Fact Order", Code: "fact_order", TableType: "fact", Status: "approved", CreatedBy: 1}
 	if err := db.Create(&factTable).Error; err != nil {
 		t.Fatalf("create fact table: %v", err)
 	}

@@ -1,10 +1,6 @@
 package api
 
 import (
-	"io"
-	"net/http"
-	"time"
-
 	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	_ "github.com/addp/model/docs"
@@ -15,56 +11,6 @@ import (
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
-
-// proxyToStandard 创建一个代理处理器，将请求转发到 Standard 模块
-func proxyToStandard(standardURL, targetPath string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// 构建目标 URL
-		url := standardURL + targetPath
-		if c.Param("path") != "" {
-			url += c.Param("path")
-		}
-
-		// 创建新请求
-		req, err := http.NewRequest(c.Request.Method, url, c.Request.Body)
-		if err != nil {
-			c.JSON(500, gin.H{"error": "failed to create proxy request"})
-			return
-		}
-
-		// 复制请求头（包括 Authorization）
-		for key, values := range c.Request.Header {
-			for _, value := range values {
-				req.Header.Add(key, value)
-			}
-		}
-
-		// 复制查询参数
-		req.URL.RawQuery = c.Request.URL.RawQuery
-
-		// 发送请求
-		client := &http.Client{Timeout: 30 * time.Second}
-		resp, err := client.Do(req)
-		if err != nil {
-			c.JSON(502, gin.H{"error": "failed to proxy request to standard service"})
-			return
-		}
-		defer resp.Body.Close()
-
-		// 复制响应头
-		for key, values := range resp.Header {
-			for _, value := range values {
-				c.Writer.Header().Add(key, value)
-			}
-		}
-
-		// 设置状态码
-		c.Status(resp.StatusCode)
-
-		// 复制响应体
-		io.Copy(c.Writer, resp.Body)
-	}
-}
 
 // getTenantID 从 context 获取租户 ID
 func getTenantID(c *gin.Context) int64 {
@@ -85,7 +31,6 @@ func SetupRouter(
 	factMetricSvc *service.FactMetricService,
 	tableRelationSvc *service.TableRelationService,
 	systemURL string,
-	standardURL string,
 	redisClient *redis.Client,
 ) *gin.Engine {
 	router := gin.Default()
@@ -139,12 +84,18 @@ func SetupRouter(
 			entities.PUT("/:id", permission(modelauthorization.PermissionModelEntityUpdate), entityHandler.UpdateEntity)
 			entities.DELETE("/:id", permission(modelauthorization.PermissionModelEntityDelete), entityHandler.DeleteEntity)
 			entities.POST("/:id/approve", permission(modelauthorization.PermissionModelEntityApprove), entityHandler.ApproveEntity)
+			entities.POST("/:id/reopen", permission(modelauthorization.PermissionModelEntityUpdate), entityHandler.ReopenEntity)
 			entities.GET("/:id/attributes", permission(modelauthorization.PermissionModelEntityRead), entityHandler.GetAttributes)
 			entities.POST("/:id/attributes", permission(modelauthorization.PermissionModelEntityCreate), entityHandler.CreateAttribute)
 			entities.PUT("/:id/attributes/:aid", permission(modelauthorization.PermissionModelEntityUpdate), entityHandler.UpdateAttribute)
 			entities.DELETE("/:id/attributes/:aid", permission(modelauthorization.PermissionModelEntityDelete), entityHandler.DeleteAttribute)
 			// Mermaid 导入导出
-			entities.POST("/import-mermaid", permission(modelauthorization.PermissionModelEntityCreate, modelauthorization.PermissionModelEntityRelationCreate), entityHandler.ImportMermaid)
+			entities.POST("/import-mermaid", permission(
+				modelauthorization.PermissionModelEntityCreate,
+				modelauthorization.PermissionModelEntityDelete,
+				modelauthorization.PermissionModelEntityRelationCreate,
+				modelauthorization.PermissionModelEntityRelationDelete,
+			), entityHandler.ImportMermaid)
 			entities.GET("/export-mermaid", permission(modelauthorization.PermissionModelEntityRead, modelauthorization.PermissionModelEntityRelationRead), entityHandler.ExportMermaid)
 		}
 
@@ -166,6 +117,8 @@ func SetupRouter(
 			logicalTables.GET("/:id", permission(modelauthorization.PermissionModelLogicalModelRead), logicalTableHandler.GetLogicalTable)
 			logicalTables.PUT("/:id", permission(modelauthorization.PermissionModelLogicalModelUpdate), logicalTableHandler.UpdateLogicalTable)
 			logicalTables.DELETE("/:id", permission(modelauthorization.PermissionModelLogicalModelDelete), logicalTableHandler.DeleteLogicalTable)
+			logicalTables.POST("/:id/approve", permission(modelauthorization.PermissionModelLogicalModelUpdate), logicalTableHandler.ApproveLogicalTable)
+			logicalTables.POST("/:id/reopen", permission(modelauthorization.PermissionModelLogicalModelUpdate), logicalTableHandler.ReopenLogicalTable)
 			logicalTables.GET("/:id/fields", permission(modelauthorization.PermissionModelLogicalModelRead), logicalTableHandler.GetFields)
 			logicalTables.POST("/:id/fields", permission(modelauthorization.PermissionModelLogicalModelCreate), logicalTableHandler.CreateField)
 			logicalTables.PUT("/:id/fields/:fid", permission(modelauthorization.PermissionModelLogicalModelUpdate), logicalTableHandler.UpdateField)
@@ -191,30 +144,6 @@ func SetupRouter(
 			dwLayers.DELETE("/:id", permission(modelauthorization.PermissionModelDwLayerDelete), dwLayerHandler.DeleteDWLayer)
 		}
 
-		// 代理到 Standard 模块的路由
-		// 业务域
-		api.Any("/domains", proxyToStandard(standardURL, "/api/v1/standard/domains"))
-		api.Any("/domains/*path", proxyToStandard(standardURL, "/api/v1/standard/domains"))
-
-		// 业务术语
-		api.Any("/glossaries", proxyToStandard(standardURL, "/api/v1/standard/glossaries"))
-		api.Any("/glossaries/*path", proxyToStandard(standardURL, "/api/v1/standard/glossaries"))
-
-		// 数据元
-		api.Any("/elements", proxyToStandard(standardURL, "/api/v1/standard/elements"))
-		api.Any("/elements/*path", proxyToStandard(standardURL, "/api/v1/standard/elements"))
-
-		// 码值集
-		api.Any("/code-sets", proxyToStandard(standardURL, "/api/v1/standard/code-sets"))
-		api.Any("/code-sets/*path", proxyToStandard(standardURL, "/api/v1/standard/code-sets"))
-
-		// 维度层级（代理到 Standard 模块）
-		api.Any("/dimension-hierarchies", proxyToStandard(standardURL, "/api/v1/standard/dimension-hierarchies"))
-		api.Any("/dimension-hierarchies/*path", proxyToStandard(standardURL, "/api/v1/standard/dimension-hierarchies"))
-
-		// 指标（代理到 Standard 模块，用于搜索关联指标）
-		api.Any("/standard-metrics", proxyToStandard(standardURL, "/api/v1/standard/metrics"))
-		api.Any("/standard-metrics/*path", proxyToStandard(standardURL, "/api/v1/standard/metrics"))
 	}
 
 	// 健康检查（无认证）

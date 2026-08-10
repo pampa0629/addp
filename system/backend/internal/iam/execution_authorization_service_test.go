@@ -24,6 +24,20 @@ func TestNormalizeExecutionAuthorizationRequestCanonicalizesBoundary(t *testing.
 	}
 }
 
+func TestNormalizeExecutionAuthorizationRequestAcceptsQualityAudience(t *testing.T) {
+	executionID := uuid.MustParse("2bc80c2c-1ca7-479c-b6bb-b0d9d57ca226")
+	audience, engineIDs, effects, ttl, err := normalizeExecutionAuthorizationRequest(
+		"addp-quality", executionID, []int64{2}, []string{"read"}, time.Hour,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if audience != "addp-quality" || !reflect.DeepEqual(engineIDs, []int64{2}) ||
+		!reflect.DeepEqual(effects, []string{"read"}) || ttl != time.Hour {
+		t.Fatalf("normalized quality boundary audience=%q engines=%v effects=%v ttl=%v", audience, engineIDs, effects, ttl)
+	}
+}
+
 func TestNormalizeExecutionAuthorizationRequestRejectsUnknownOrDuplicateBoundary(t *testing.T) {
 	executionID := uuid.New()
 	testCases := []struct {
@@ -81,5 +95,24 @@ func TestContainsAllExecutionPermissionsAcceptsServiceReadSampleBoundary(t *test
 	}
 	if containsAllExecutionPermissions(rows[:1], "service", []string{"read"}) {
 		t.Fatal("service feature permission without data read permission was accepted")
+	}
+}
+
+func TestContainsAllExecutionPermissionsRequiresQualityExecuteAndDataRead(t *testing.T) {
+	rows := []RoleAssignmentPermissionProjection{
+		{PermissionKey: "quality.check_task.execute"},
+		{PermissionKey: executionEffectPermissions["read"]},
+	}
+	if !containsAllExecutionPermissions(rows, "addp-quality", []string{"read"}) {
+		t.Fatal("complete quality read boundary was rejected")
+	}
+	if containsAllExecutionPermissions(rows[:1], "addp-quality", []string{"read"}) {
+		t.Fatal("quality execute permission without data read was accepted")
+	}
+	if containsAllExecutionPermissions(rows[1:], "addp-quality", []string{"read"}) {
+		t.Fatal("data read permission without quality execute was accepted")
+	}
+	if containsAllExecutionPermissions(rows, "addp-quality", []string{"write"}) {
+		t.Fatal("quality audience accepted a non-read effect")
 	}
 }

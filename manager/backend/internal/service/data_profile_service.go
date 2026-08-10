@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/addp/common/dataprofile"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/manager/internal/dataprofile"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/profilefilter"
 	"github.com/google/uuid"

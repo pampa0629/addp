@@ -1023,6 +1023,78 @@ definitions:
       name:
         type: string
     type: object
+  github_com_addp_develop_backend_internal_service.NotebookCopilotCandidate:
+    properties:
+      candidate_id:
+        type: string
+      engine_id:
+        type: integer
+      engine_name:
+        type: string
+      engine_type:
+        type: string
+      kind:
+        type: string
+      name:
+        type: string
+      path:
+        $ref: '#/definitions/client.EngineCatalogPath'
+      path_names:
+        items:
+          type: string
+        type: array
+      recommendation_reason:
+        type: string
+      recommended:
+        type: boolean
+      role:
+        type: string
+      term:
+        type: string
+    type: object
+  github_com_addp_develop_backend_internal_service.NotebookCopilotRequest:
+    properties:
+      kernel:
+        type: string
+      query:
+        type: string
+      selections:
+        items:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_service.NotebookCopilotSelection'
+        type: array
+    type: object
+  github_com_addp_develop_backend_internal_service.NotebookCopilotResponse:
+    properties:
+      candidates:
+        items:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_service.NotebookCopilotCandidate'
+        type: array
+      clarification_reason:
+        type: string
+      code:
+        type: string
+      explanation:
+        type: string
+      message:
+        type: string
+      status:
+        type: string
+      warnings:
+        items:
+          type: string
+        type: array
+    type: object
+  github_com_addp_develop_backend_internal_service.NotebookCopilotSelection:
+    properties:
+      candidate_id:
+        type: string
+      engine_id:
+        type: integer
+      path:
+        $ref: '#/definitions/client.EngineCatalogPath'
+      role:
+        type: string
+    type: object
   github_com_addp_develop_backend_internal_service.NotebookSession:
     properties:
       expires_at:
@@ -1881,6 +1953,65 @@ paths:
       - Execution
       x-addp-auth-mode: permission
       x-addp-required-permissions:
+      - develop.task.read
+  /notebook-copilot-sessions/{session_id}/generate:
+    post:
+      consumes:
+      - application/json
+      description: 未提交 selections 时返回当前 Session 内的数据源候选；提交每个角色确认的 selection 后重新验证
+        Catalog 与字段事实并生成代码。只返回代码，不执行。 | Without selections, returns data-source candidates
+        inside the current Session. With one confirmed selection per role, revalidates
+        Catalog and field facts before generating code. Returns code without executing
+        it.
+      parameters:
+      - description: Notebook 会话 ID | Notebook session ID
+        in: path
+        name: session_id
+        required: true
+        type: string
+      - description: 自然语言与已确认数据源 | Natural language and confirmed data sources
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_service.NotebookCopilotRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_service.NotebookCopilotResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: Bad Gateway
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 生成 Notebook Python 单元 | Generate Notebook Python cell
+      tags:
+      - Notebook
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - develop.notebook.update
       - develop.task.read
   /notebook-engines:
     get:

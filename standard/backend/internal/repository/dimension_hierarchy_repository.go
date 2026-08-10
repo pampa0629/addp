@@ -58,9 +58,11 @@ func (r *DimensionHierarchyRepository) ExistsByCode(code string, tenantID int64,
 
 // --- 层级管理 ---
 
-func (r *DimensionHierarchyRepository) GetLevels(hierarchyID int64) ([]models.DimensionHierarchyLevel, error) {
+func (r *DimensionHierarchyRepository) GetLevels(hierarchyID, tenantID int64) ([]models.DimensionHierarchyLevel, error) {
 	var levels []models.DimensionHierarchyLevel
-	err := r.db.Where("hierarchy_id = ?", hierarchyID).
+	err := r.db.Model(&models.DimensionHierarchyLevel{}).
+		Joins("JOIN standard.dimension_hierarchies dh ON dh.id = standard.dimension_hierarchy_levels.hierarchy_id").
+		Where("standard.dimension_hierarchy_levels.hierarchy_id = ? AND dh.tenant_id = ?", hierarchyID, tenantID).
 		Order("sort_order ASC, level_num ASC").
 		Find(&levels).Error
 	return levels, err
@@ -70,9 +72,12 @@ func (r *DimensionHierarchyRepository) CreateLevel(level *models.DimensionHierar
 	return r.db.Create(level).Error
 }
 
-func (r *DimensionHierarchyRepository) GetLevelByID(levelID, hierarchyID int64) (*models.DimensionHierarchyLevel, error) {
+func (r *DimensionHierarchyRepository) GetLevelByID(levelID, hierarchyID, tenantID int64) (*models.DimensionHierarchyLevel, error) {
 	var level models.DimensionHierarchyLevel
-	err := r.db.Where("id = ? AND hierarchy_id = ?", levelID, hierarchyID).First(&level).Error
+	err := r.db.Model(&models.DimensionHierarchyLevel{}).
+		Joins("JOIN standard.dimension_hierarchies dh ON dh.id = standard.dimension_hierarchy_levels.hierarchy_id").
+		Where("standard.dimension_hierarchy_levels.id = ? AND standard.dimension_hierarchy_levels.hierarchy_id = ? AND dh.tenant_id = ?", levelID, hierarchyID, tenantID).
+		First(&level).Error
 	return &level, commonrepo.WrapDBError(err)
 }
 
@@ -80,7 +85,22 @@ func (r *DimensionHierarchyRepository) UpdateLevel(level *models.DimensionHierar
 	return r.db.Save(level).Error
 }
 
-func (r *DimensionHierarchyRepository) DeleteLevel(levelID, hierarchyID int64) error {
+func (r *DimensionHierarchyRepository) DeleteLevel(levelID, hierarchyID, tenantID int64) error {
+	if _, err := r.GetLevelByID(levelID, hierarchyID, tenantID); err != nil {
+		return err
+	}
 	return r.db.Where("id = ? AND hierarchy_id = ?", levelID, hierarchyID).
 		Delete(&models.DimensionHierarchyLevel{}).Error
+}
+
+func (r *DimensionHierarchyRepository) ExistsLevelNum(hierarchyID, tenantID int64, levelNum int, excludeID int64) (bool, error) {
+	var count int64
+	query := r.db.Model(&models.DimensionHierarchyLevel{}).
+		Joins("JOIN standard.dimension_hierarchies dh ON dh.id = standard.dimension_hierarchy_levels.hierarchy_id").
+		Where("standard.dimension_hierarchy_levels.hierarchy_id = ? AND dh.tenant_id = ? AND standard.dimension_hierarchy_levels.level_num = ?", hierarchyID, tenantID, levelNum)
+	if excludeID > 0 {
+		query = query.Where("standard.dimension_hierarchy_levels.id != ?", excludeID)
+	}
+	err := query.Count(&count).Error
+	return count > 0, err
 }

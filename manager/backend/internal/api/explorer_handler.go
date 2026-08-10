@@ -70,7 +70,7 @@ func bearerToken(c *gin.Context) string {
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["manager.content.read"]
+// @x-addp-required-permissions ["manager.data_item.read"]
 // @Router /preview [get]
 // @Security BearerAuth
 func (h *ExplorerHandler) Preview(c *gin.Context) {

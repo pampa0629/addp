@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/addp/common/authtest"
+	"github.com/addp/common/authorization/authtest"
 	"github.com/addp/service/internal/authorization"
 	"github.com/addp/service/internal/config"
 	"github.com/addp/service/internal/models"

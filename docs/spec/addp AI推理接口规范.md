@@ -10,7 +10,7 @@ addp.inference/v1
 
 ADDP 的 Agent、Copilot、Manager 和后续业务模块只调用 Inference Runtime，不直接集成在线厂商 SDK、OpenAI-compatible endpoint 或内网模型私有协议。Inference Runtime 负责 Provider 协议适配、凭据解密、模型调用和统一错误；业务调用方负责场景语义、上下文组装和结果消费。
 
-System 中只登记一个或少量 `engine_type=inference_runtime` 的 Engine Instance。Runtime Instance 按网络区域、安全域、GPU 集群、故障域或 SLA 拆分，不按厂商账号、上游 endpoint 或模型数量拆分。
+第一版 System 中只登记一个平台内置、`engine_type=inference_runtime` 的 Engine Instance。Agent、Copilot、Manager 等调用方按 `compute.inference` 从 System Runtime Descriptor 精确发现该实例，零个或多个候选都明确失败，不读取 `INFERENCE_URL`、固定端口或列表第一项。后续如需按网络区域、安全域、GPU 集群、故障域或 SLA 拆分多个 Runtime，必须先引入显式 Runtime Engine Instance 绑定和身份规则；不得按厂商账号、上游 endpoint 或模型数量拆分，也不得隐藏自动切换。
 
 第一版禁止：
 
@@ -201,11 +201,12 @@ Chat Tool Calling 使用厂商无关的结构：`tools[]` 只包含稳定 `name/
 
 ## 七、调用方边界
 
-- Copilot 保存 `nl2dag`、`nl2sql` 等领域 Scenario Binding，负责 prompt、领域上下文、结构化输出校验和修复 Pipeline。
+- Copilot 保存 `resource_resolution`、`query_generation`、`workflow_generation`、`notebook_generation`、`transfer_generation`、`navigation_guide` 和 `knowledge_graph_extraction` Scenario Binding，负责领域 prompt、领域上下文、结构化输出校验和有限业务重试。
+- Copilot 的 `resource_resolution` 是跨 Query、Workflow、Notebook、Transfer 复用的输入资源解析与确认场景；它只生成意图和候选确认结果，不生成 SQL、DAG、Notebook 代码或 Transfer 草稿。各领域生成场景只消费已确认的 `ResourceFact`，通过策略声明引擎范围、资源类型、数量和 Session 候选约束。
 - Agent 保存 `general-chat`、`reasoning` 等 Scenario Binding，负责多轮上下文、规划、Skill 和 Tool 调用。Agent 可以把 Copilot 领域能力作为高级 Tool，但普通推理不依赖 Copilot。
 - Manager 保存 `semantic_search_embedding` Scenario Binding、最大文件大小、并发、检索距离和向量维度迁移约束；向量请求统一调用 Inference。
 - 调用方数据库只保存 Profile/Deployment ID、解析版本和业务快照，不保存 endpoint、adapter type 或 credential。
-- Inference 不理解 NL2DAG、Agent Tool 或 Manager data item，不保存业务 prompt 模板或业务 Pipeline。
+- Inference 不理解领域资源、Agent Tool 或 Manager data item，不保存业务 prompt 模板或业务编排服务。
 
 ## 八、配置管理入口
 

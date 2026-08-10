@@ -205,6 +205,8 @@ onMounted(loadDomains)
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
   width: 100%;
   padding: 4px 0;
 }
@@ -213,6 +215,7 @@ onMounted(loadDomains)
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .node-icon {
@@ -231,5 +234,18 @@ onMounted(loadDomains)
 .node-actions {
   display: flex;
   gap: 4px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .tree-node {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .node-actions {
+    margin-left: auto;
+  }
 }
 </style>

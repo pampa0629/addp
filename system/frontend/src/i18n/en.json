@@ -303,8 +303,8 @@
         "id": "ID",
         "name": "Name",
         "type": "Type",
-        "connection": "Connection",
-        "status": "Status",
+        "connection": "Last Check",
+        "status": "Enabled State",
         "capabilities": "Capabilities",
         "category": "Origin",
         "builtin": "Registered/Built-in",
@@ -312,7 +312,7 @@
         "actions": "Actions"
       },
       "status": {
-        "active": "Active",
+        "active": "Enabled",
         "disabled": "Disabled",
         "deleting": "Cleaning up"
       },
@@ -325,12 +325,12 @@
         "registered": "Registered"
       },
       "connection": {
-        "online": "Online",
-        "offline": "Offline",
-        "unknown": "Unknown",
+        "online": "Healthy",
+        "offline": "Failed",
+        "unknown": "Not Checked",
         "checking": "Checking",
         "notChecked": "Not Checked",
-        "statusLine": "Status: {status}",
+        "statusLine": "Last check: {status}",
         "lastCheck": "Last check: {time}",
         "detail": "Detail: {msg}"
       },
@@ -376,7 +376,7 @@
           "engineType": "Engine Type",
           "category": "Origin",
           "registration": "Registration",
-          "status": "Status",
+          "status": "Enabled State",
           "deletionError": "Deletion failure",
           "createdAt": "Created At",
           "updatedAt": "Updated At",
@@ -437,6 +437,7 @@
         "editLockedHint": "Engine type cannot be changed in edit mode",
         "types": {
           "postgresql": "Enterprise relational database",
+          "oracle": "Oracle relational database",
           "mysql": "General-purpose relational database",
           "kafka": "Event streaming and messaging",
           "doris": "MPP analytical database",
@@ -1139,6 +1140,10 @@
         "name": "Tenant Auditor",
         "description": "Reads and exports tenant audit events with read-only execution and statistics access."
       },
+      "data_architect": {
+        "name": "Data Architect",
+        "description": "Manages tenant-wide business entities, entity relations, logical models, warehouse layers, naming conventions, and quality SLAs."
+      },
       "data_engineer": {
         "name": "Data Engineer",
         "description": "Manages transfer tasks, development tasks, notebooks, and workflows."
@@ -1157,7 +1162,7 @@
       },
       "governance_manager": {
         "name": "Governance Manager",
-        "description": "Manages standards, models, quality rules, check tasks, and quality issues."
+        "description": "Manages data standards, quality rules, check tasks, and quality issues."
       },
       "graph_engineer": {
         "name": "Graph Engineer",

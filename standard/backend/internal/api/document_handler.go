@@ -49,7 +49,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	}
 	docs, total, err := h.svc.ListDocuments(tenantID, opts)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	page := opts.Page
@@ -101,14 +101,14 @@ func (h *DocumentHandler) GetDocument(c *gin.Context) {
 func (h *DocumentHandler) CreateDocument(c *gin.Context) {
 	var req models.CreateDocumentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	tenantID := getTenantID(c)
 	userID := getUserID(c)
 	doc, err := h.svc.CreateDocument(&req, tenantID, userID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusCreated, doc)
@@ -130,14 +130,14 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 	}
 	var req models.UpdateDocumentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	tenantID := getTenantID(c)
 	userID := getUserID(c)
 	doc, err := h.svc.UpdateDocument(id, tenantID, userID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, doc)
@@ -159,7 +159,7 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 	}
 	tenantID := getTenantID(c)
 	if err := h.svc.DeleteDocument(id, tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
@@ -203,7 +203,7 @@ func (h *DocumentHandler) UploadFile(c *gin.Context) {
 
 	contentType := file.Header.Get("Content-Type")
 	if err := h.svc.UploadFile(id, tenantID, file.Filename, content, contentType); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -232,7 +232,7 @@ func (h *DocumentHandler) DownloadFile(c *gin.Context) {
 
 	reader, fileName, fileSize, err := h.svc.DownloadFile(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		respondError(c, http.StatusNotFound, err)
 		return
 	}
 	defer reader.Close()
@@ -260,9 +260,9 @@ func (h *DocumentHandler) GetMappings(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
-	mappings, err := h.svc.GetMappings(id)
+	mappings, err := h.svc.GetMappings(id, getTenantID(c))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, mappings)
@@ -284,11 +284,11 @@ func (h *DocumentHandler) SetMappings(c *gin.Context) {
 	}
 	var req models.SetDocumentMappingsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	if err := h.svc.SetMappings(id, &req); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := h.svc.SetMappings(id, getTenantID(c), &req); err != nil {
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgUpdateSuccess)})
@@ -312,7 +312,7 @@ func (h *DocumentHandler) ListDocsByElement(c *gin.Context) {
 	}
 	docs, err := h.svc.ListByElement(getTenantID(c), entityID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, docs)
@@ -334,7 +334,7 @@ func (h *DocumentHandler) ListDocsByGlossary(c *gin.Context) {
 	}
 	docs, err := h.svc.ListByGlossary(getTenantID(c), entityID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, docs)
@@ -356,7 +356,7 @@ func (h *DocumentHandler) ListDocsByMetric(c *gin.Context) {
 	}
 	docs, err := h.svc.ListByMetric(getTenantID(c), entityID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, docs)
@@ -380,12 +380,12 @@ func (h *DocumentHandler) CreateAndLinkElement(c *gin.Context) {
 	}
 	var req models.CreateDocumentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	doc, err := h.svc.CreateAndLinkElement(&req, getTenantID(c), getUserID(c), entityID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusCreated, doc)
@@ -407,12 +407,12 @@ func (h *DocumentHandler) CreateAndLinkGlossary(c *gin.Context) {
 	}
 	var req models.CreateDocumentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	doc, err := h.svc.CreateAndLinkGlossary(&req, getTenantID(c), getUserID(c), entityID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusCreated, doc)
@@ -434,12 +434,12 @@ func (h *DocumentHandler) CreateAndLinkMetric(c *gin.Context) {
 	}
 	var req models.CreateDocumentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	doc, err := h.svc.CreateAndLinkMetric(&req, getTenantID(c), getUserID(c), entityID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusCreated, doc)
@@ -469,7 +469,7 @@ func (h *DocumentHandler) LinkDocToElement(c *gin.Context) {
 		return
 	}
 	if err := h.svc.LinkDocToElement(body.DocID, getTenantID(c), entityID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgLinkSuccess)})
@@ -497,7 +497,7 @@ func (h *DocumentHandler) LinkDocToGlossary(c *gin.Context) {
 		return
 	}
 	if err := h.svc.LinkDocToGlossary(body.DocID, getTenantID(c), entityID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgLinkSuccess)})
@@ -525,7 +525,7 @@ func (h *DocumentHandler) LinkDocToMetric(c *gin.Context) {
 		return
 	}
 	if err := h.svc.LinkDocToMetric(body.DocID, getTenantID(c), entityID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgLinkSuccess)})
@@ -553,7 +553,7 @@ func (h *DocumentHandler) UnlinkDocFromElement(c *gin.Context) {
 		return
 	}
 	if err := h.svc.UnlinkDocFromElement(docID, getTenantID(c), entityID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgUnlinkSuccess)})
@@ -579,7 +579,7 @@ func (h *DocumentHandler) UnlinkDocFromGlossary(c *gin.Context) {
 		return
 	}
 	if err := h.svc.UnlinkDocFromGlossary(docID, getTenantID(c), entityID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgUnlinkSuccess)})
@@ -605,7 +605,7 @@ func (h *DocumentHandler) UnlinkDocFromMetric(c *gin.Context) {
 		return
 	}
 	if err := h.svc.UnlinkDocFromMetric(docID, getTenantID(c), entityID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgUnlinkSuccess)})

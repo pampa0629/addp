@@ -5,7 +5,6 @@ import (
 
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/logger"
-	"github.com/addp/common/utils"
 	"github.com/addp/gateway/internal/config"
 	"github.com/addp/gateway/internal/router"
 	"github.com/gin-gonic/gin"
@@ -20,7 +19,7 @@ func main() {
 	cfg := config.Load()
 
 	// 检查端口是否可用
-	if err := utils.CheckPortAvailable(cfg.Port); err != nil {
+	if err := commonConfig.CheckPortAvailable(cfg.Port); err != nil {
 		logger.L().Error("端口检查失败", "error", err, "port", cfg.Port)
 		os.Exit(1)
 	}

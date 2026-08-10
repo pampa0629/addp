@@ -29,12 +29,13 @@ type ModelEntity struct {
 }
 
 type ModelEntityAttribute struct {
-	ID        uint   `json:"id"`
-	Name      string `json:"name"`
-	DataType  string `json:"data_type"`
-	Nullable  bool   `json:"nullable"`
-	IsPK      bool   `json:"is_pk"`
-	SortOrder int    `json:"sort_order"`
+	ID         uint   `json:"id"`
+	Name       string `json:"name"`
+	ColumnName string `json:"column_name"`
+	DataType   string `json:"data_type"`
+	Nullable   bool   `json:"nullable"`
+	IsPK       bool   `json:"is_pk"`
+	SortOrder  int    `json:"sort_order"`
 }
 
 type ModelEntityRelation struct {
@@ -46,13 +47,22 @@ type ModelEntityRelation struct {
 }
 
 func (c *ModelClient) ListEntities(ctx context.Context) ([]ModelEntity, error) {
-	var response struct {
-		Data []ModelEntity `json:"data"`
+	var entities []ModelEntity
+	for page := 1; ; page++ {
+		var response struct {
+			Data     []ModelEntity `json:"data"`
+			Total    int           `json:"total"`
+			PageSize int           `json:"page_size"`
+		}
+		if err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/api/v1/model/entities?status=approved&page=%d&page_size=100", page), nil, &response); err != nil {
+			return nil, fmt.Errorf("model list entities: %w", err)
+		}
+		entities = append(entities, response.Data...)
+		if len(entities) >= response.Total || len(response.Data) == 0 || response.PageSize == 0 || len(response.Data) < response.PageSize {
+			break
+		}
 	}
-	if err := c.doJSON(ctx, http.MethodGet, "/api/v1/model/entities?page_size=1000", nil, &response); err != nil {
-		return nil, fmt.Errorf("model list entities: %w", err)
-	}
-	return response.Data, nil
+	return entities, nil
 }
 
 func (c *ModelClient) GetEntityWithAttributes(ctx context.Context, entityID uint) (*ModelEntity, error) {
@@ -61,9 +71,10 @@ func (c *ModelClient) GetEntityWithAttributes(ctx context.Context, entityID uint
 		return nil, fmt.Errorf("model get entity: %w", err)
 	}
 	var attrs []ModelEntityAttribute
-	if err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/api/v1/model/entities/%d/attributes", entityID), nil, &attrs); err == nil {
-		entity.Attributes = attrs
+	if err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/api/v1/model/entities/%d/attributes", entityID), nil, &attrs); err != nil {
+		return nil, fmt.Errorf("model get entity attributes: %w", err)
 	}
+	entity.Attributes = attrs
 	return &entity, nil
 }
 

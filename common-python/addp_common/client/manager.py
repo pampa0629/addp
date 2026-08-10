@@ -19,6 +19,7 @@ class ManagerClient(BaseClient):
     async def search(
         self,
         q: str,
+        engine_id: Optional[int] = None,
         tenant_id: Optional[int] = None,
         page: int = 1,
         page_size: int = 10,
@@ -31,6 +32,8 @@ class ManagerClient(BaseClient):
         }
         if tenant_id is not None:
             params["tenant_id"] = tenant_id
+        if engine_id is not None:
+            params["engine_id"] = engine_id
         response = await self.get("/api/v1/manager/search", params=params)
         data = response.get("data") if isinstance(response, dict) else None
         if not isinstance(data, dict):

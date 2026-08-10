@@ -26,6 +26,7 @@ type NotebookHandler struct {
 	notebookExecutionService     *service.NotebookExecutionService
 	devTaskService               *service.DevTaskService
 	notebookSessionService       *service.NotebookSessionService
+	notebookCopilotService       *service.NotebookCopilotService
 	listSessionEngineDescriptors func(context.Context, string, string) ([]commonModels.EngineRuntimeDescriptor, error)
 }
 
@@ -36,6 +37,7 @@ func NewNotebookHandler(
 	devTaskService *service.DevTaskService,
 	notebookCatalog service.NotebookSessionControlPlane,
 	developServiceURL string,
+	copilotServiceURL string,
 ) *NotebookHandler {
 	sessionService := service.NewNotebookSessionService(jupyterService, devTaskService, notebookCatalog, time.Hour, developServiceURL)
 	return &NotebookHandler{
@@ -43,6 +45,7 @@ func NewNotebookHandler(
 		notebookExecutionService:     notebookExecutionService,
 		devTaskService:               devTaskService,
 		notebookSessionService:       sessionService,
+		notebookCopilotService:       service.NewNotebookCopilotService(sessionService, copilotServiceURL, nil),
 		listSessionEngineDescriptors: sessionService.ListDataEngineDescriptors,
 	}
 }

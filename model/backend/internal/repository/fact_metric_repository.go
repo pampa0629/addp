@@ -38,6 +38,13 @@ func (r *FactMetricRepository) Exists(factTableID, metricID, tenantID int64) (bo
 
 // Delete 删除关联（按 ID）
 func (r *FactMetricRepository) Delete(id, factTableID, tenantID int64) error {
-	return r.db.Where("id = ? AND fact_table_id = ? AND tenant_id = ?", id, factTableID, tenantID).
-		Delete(&models.FactMetricMapping{}).Error
+	result := r.db.Where("id = ? AND fact_table_id = ? AND tenant_id = ?", id, factTableID, tenantID).
+		Delete(&models.FactMetricMapping{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }

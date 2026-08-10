@@ -46,6 +46,7 @@ var builtinTenantRuntimeServiceClientIDs = []string{
 	"addp-geopython",
 	"addp-manager",
 	"addp-meta",
+	"addp-model",
 	"addp-monitor",
 	"addp-model3d",
 	"addp-orchestrator",

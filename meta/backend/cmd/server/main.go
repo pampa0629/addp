@@ -10,11 +10,9 @@ import (
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
-	"github.com/addp/common/utils"
 	"github.com/addp/meta/internal/api"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/repository"
-	"github.com/addp/meta/internal/search"
 	"github.com/addp/meta/internal/service"
 	"github.com/addp/meta/internal/worker"
 	"github.com/redis/go-redis/v9"
@@ -50,7 +48,7 @@ func main() {
 	})
 
 	// 检查端口是否可用
-	if err := utils.CheckPortAvailable(cfg.ServerPort); err != nil {
+	if err := commonConfig.CheckPortAvailable(cfg.ServerPort); err != nil {
 		logger.L().Error("端口检查失败", "error", err, "port", cfg.ServerPort)
 		os.Exit(1)
 	}
@@ -109,15 +107,10 @@ func main() {
 	// 初始化服务
 	engineService := service.NewEngineService(db, systemClient)
 
-	searchIndexer, err := search.NewIndexer(cfg)
+	scanService, searchIndexer, err := service.NewRuntimeScanService(db, engineService, cfg)
 	if err != nil {
-		logger.L().Warn("搜索索引器初始化失败，搜索功能将被禁用", "error", err)
-		searchIndexer = nil // 继续运行，但不使用搜索索引
-	}
-	scanService := service.NewScanService(db, engineService)
-	scanService.SetConfig(cfg) // 注入配置
-	if searchIndexer != nil {
-		scanService.SetIndexer(searchIndexer)
+		logger.L().Error("扫描运行时初始化失败", "error", err)
+		os.Exit(1)
 	}
 
 	// 初始化扫描事件发布器（如果 Redis 可用）
@@ -177,9 +170,8 @@ func main() {
 	// 设置路由
 	router := api.SetupRouter(cfg, db, engineService, scanService, taskService, executionService, redisClient, systemClient, lineageService)
 
-	serviceHost := utils.GetServiceHost()
-	port := utils.GetModulePort("meta")
-	serviceURL := utils.BuildServiceURL(serviceHost, port)
+	serviceHost := commonConfig.GetServiceHost()
+	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.ServerPort)
 
 	// ========== 模块注册（注册到 System service_registry）==========
 	systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "meta", serviceURL, "/meta", map[string]interface{}{

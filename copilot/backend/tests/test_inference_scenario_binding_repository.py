@@ -17,7 +17,7 @@ def test_resolve_prefers_explicit_tenant_binding():
     tenant_binding = SimpleNamespace(scope_type="tenant", tenant_id=7)
     session = ScalarSequenceSession(tenant_binding)
 
-    resolved = InferenceScenarioBindingRepository(session).resolve(7, "nl2sql")
+    resolved = InferenceScenarioBindingRepository(session).resolve(7, "query_generation")
 
     assert resolved is tenant_binding
     assert session.calls == 1
@@ -27,7 +27,7 @@ def test_resolve_uses_platform_default_only_when_tenant_binding_is_absent():
     platform_binding = SimpleNamespace(scope_type="platform", tenant_id=None)
     session = ScalarSequenceSession(None, platform_binding)
 
-    resolved = InferenceScenarioBindingRepository(session).resolve(7, "nl2dag")
+    resolved = InferenceScenarioBindingRepository(session).resolve(7, "workflow_generation")
 
     assert resolved is platform_binding
     assert session.calls == 2

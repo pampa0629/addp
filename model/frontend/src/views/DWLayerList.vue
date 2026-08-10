@@ -6,17 +6,28 @@
         <el-tag type="info" size="small">{{ layers.length }} {{ t('model.dw_layer.layer_code') }}</el-tag>
       </div>
       <div class="header-actions">
-        <el-button @click="handleInitDefault" :loading="initializing">
+        <el-button v-if="can('model.dw_layer.create')" @click="handleInitDefault" :loading="initializing">
           {{ t('model.dw_layer.init_default') }}
         </el-button>
-        <el-button type="primary" @click="openDialog()">
+        <el-button v-if="can('model.dw_layer.create')" type="primary" @click="openDialog()">
           <el-icon><Plus /></el-icon>
           {{ t('model.dw_layer.new') }}
         </el-button>
       </div>
     </div>
 
-    <el-card shadow="never">
+    <el-alert
+      v-if="loadError"
+      class="load-error"
+      type="error"
+      :title="loadError"
+      show-icon
+      :closable="false"
+    >
+      <el-button link type="danger" @click="loadLayers">{{ t('model.common.retry') }}</el-button>
+    </el-alert>
+
+    <el-card v-else shadow="never">
       <el-table :data="layers" v-loading="loading" stripe>
         <el-table-column :label="t('model.dw_layer.layer_code')" prop="layer_code" width="120">
           <template #default="{ row }">
@@ -31,8 +42,8 @@
         <el-table-column :label="t('model.dw_layer.sort_order')" prop="sort_order" width="80" />
         <el-table-column :label="t('model.dw_layer.actions')" width="150" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openDialog(row)">{{ t('model.common.edit') }}</el-button>
-            <el-popconfirm
+            <el-button v-if="can('model.dw_layer.update')" link type="primary" @click="openDialog(row)">{{ t('model.common.edit') }}</el-button>
+            <el-popconfirm v-if="can('model.dw_layer.delete')"
               :title="t('model.dw_layer.delete_confirm')"
               @confirm="handleDelete(row.id)"
             >
@@ -91,12 +102,17 @@ import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { dwLayerAPI } from '../api/model'
 import { useI18n } from 'vue-i18n'
+import { useAuthStore } from '../store/auth'
+import { getModelErrorMessage } from '../utils/apiError'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
+const can = permission => authStore.hasPermission(permission)
 
 const loading = ref(false)
 const submitting = ref(false)
 const initializing = ref(false)
+const loadError = ref('')
 const layers = ref([])
 const dialogVisible = ref(false)
 const editingLayer = ref(null)
@@ -124,9 +140,19 @@ const layerTagType = (code) => {
 
 const loadLayers = async () => {
   loading.value = true
+  loadError.value = ''
+  if (!can('model.dw_layer.read')) {
+    layers.value = []
+    loadError.value = t('model.common.permission_denied')
+    loading.value = false
+    return
+  }
   try {
     const res = await dwLayerAPI.list()
     layers.value = res || []
+  } catch (err) {
+    layers.value = []
+    loadError.value = getModelErrorMessage(err, t, 'model.common.load_failed')
   } finally {
     loading.value = false
   }
@@ -173,8 +199,8 @@ const handleDelete = async (id) => {
     await dwLayerAPI.delete(id)
     ElMessage.success(t('model.common.delete_success'))
     loadLayers()
-  } catch {
-    ElMessage.error(t('model.common.delete_failed'))
+  } catch (err) {
+    ElMessage.error(getModelErrorMessage(err, t, 'model.common.delete_failed'))
   }
 }
 
@@ -228,5 +254,9 @@ onMounted(loadLayers)
 .header-actions {
   display: flex;
   gap: 8px;
+}
+
+.load-error {
+  margin-bottom: 16px;
 }
 </style>

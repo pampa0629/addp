@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	commonPMTiles "github.com/addp/common/pmtiles"
+	commonPMTiles "github.com/addp/common/format/pmtiles"
 	"github.com/addp/common/spatial"
 )
 

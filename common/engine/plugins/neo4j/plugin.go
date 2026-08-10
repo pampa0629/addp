@@ -9,7 +9,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/queryparams"
+	commonquery "github.com/addp/common/query"
 	neo4jdriver "github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
@@ -634,7 +634,7 @@ func (p *Neo4jPlugin) countRelationshipType(ctx context.Context, session neo4jdr
 
 // executeGraphQuery 执行 Cypher 查询并提取图数据。
 func (p *Neo4jPlugin) executeGraphQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string, opts plugin.QueryOptions) (*plugin.GraphQueryResult, error) {
-	if err := queryparams.ValidateCypher(query, opts.Parameters); err != nil {
+	if err := commonquery.ValidateCypher(query, opts.Parameters); err != nil {
 		return nil, fmt.Errorf("绑定 Cypher 查询参数失败：%w", err)
 	}
 	driver, err := p.createDriver(ctx, connInfo)
@@ -800,7 +800,7 @@ func (p *Neo4jPlugin) generateSampleQuery(ctx context.Context, connInfo plugin.C
 // query 为 Cypher 字符串，如 MATCH (n:Person) RETURN n.name, n.age LIMIT 10
 // 写操作（CREATE/MERGE/DELETE/SET/REMOVE/DROP）自动使用写路由，其余使用读路由
 func (p *Neo4jPlugin) executeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
-	if err := queryparams.ValidateCypher(query, opts.Parameters); err != nil {
+	if err := commonquery.ValidateCypher(query, opts.Parameters); err != nil {
 		return nil, fmt.Errorf("绑定 Cypher 查询参数失败：%w", err)
 	}
 	driver, err := p.createDriver(ctx, connInfo)

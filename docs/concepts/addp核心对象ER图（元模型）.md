@@ -17,6 +17,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 | -------- | ----------- | -------------------------------------------------------------- | ------------------------------------------------- |
 | 调度配置 | Schedule    | 定时触发能力（Cron 表达式），定义"何时执行"                    | Task 及所有派生任务均可具备                       |
 | 执行记录 | Execution   | 单次运行的状态/进度/耗时/错误，记录"执行了什么、结果如何"      | 所有 Task 派生对象执行后均写入 common.task_executions |
+| 数据血缘 | Lineage     | data item 之间的来源、派生和服务依赖关系视图；关系证据可回溯到 execution 或发布事实 | Meta 的 lineage_observations、lineage_item_relations、lineage_service_dependencies |
 | 数据指纹 | Fingerprint | 内容摘要（MD5/SHA），用于去重、变更检测、血缘追踪              | DataNode / DataItem / PreviewState / Embedding       |
 | 向量嵌入 | Embedding   | data item 的当前向量化结果状态与 pgvector 向量内容，支持语义检索 | DataItem（文件/对象/表）                          |
 | 审计日志 | AuditLog    | 所有操作的不可变轨迹（操作人/时间/HTTP方法/路径/状态码）       | 全局，由 System 集中记录                          |

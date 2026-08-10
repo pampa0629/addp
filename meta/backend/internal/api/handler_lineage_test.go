@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/addp/common/authtest"
+	"github.com/addp/common/authorization/authtest"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	metaauthorization "github.com/addp/meta/internal/authorization"

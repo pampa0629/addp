@@ -10,10 +10,11 @@ import (
 // DimensionHierarchyService 维度层级服务
 type DimensionHierarchyService struct {
 	repo *repository.DimensionHierarchyRepository
+	refs *repository.TenantReferenceRepository
 }
 
-func NewDimensionHierarchyService(repo *repository.DimensionHierarchyRepository) *DimensionHierarchyService {
-	return &DimensionHierarchyService{repo: repo}
+func NewDimensionHierarchyService(repo *repository.DimensionHierarchyRepository, refs *repository.TenantReferenceRepository) *DimensionHierarchyService {
+	return &DimensionHierarchyService{repo: repo, refs: refs}
 }
 
 func (s *DimensionHierarchyService) List(tenantID int64) ([]models.DimensionHierarchy, error) {
@@ -25,6 +26,9 @@ func (s *DimensionHierarchyService) GetByID(id, tenantID int64) (*models.Dimensi
 }
 
 func (s *DimensionHierarchyService) Create(req *models.CreateDimensionHierarchyRequest, tenantID, userID int64) (*models.DimensionHierarchy, error) {
+	if err := s.refs.RequireDomain(tenantID, req.DomainID); err != nil {
+		return nil, err
+	}
 	exists, err := s.repo.ExistsByCode(req.Code, tenantID, 0)
 	if err != nil {
 		return nil, err
@@ -52,6 +56,9 @@ func (s *DimensionHierarchyService) Update(id, tenantID, userID int64, req *mode
 	if err != nil {
 		return nil, err
 	}
+	if err := s.refs.RequireDomain(tenantID, req.DomainID); err != nil {
+		return nil, err
+	}
 	if req.Name != "" {
 		h.Name = req.Name
 	}
@@ -70,11 +77,26 @@ func (s *DimensionHierarchyService) Delete(id, tenantID int64) error {
 
 // --- 层级管理 ---
 
-func (s *DimensionHierarchyService) GetLevels(hierarchyID int64) ([]models.DimensionHierarchyLevel, error) {
-	return s.repo.GetLevels(hierarchyID)
+func (s *DimensionHierarchyService) GetLevels(hierarchyID, tenantID int64) ([]models.DimensionHierarchyLevel, error) {
+	return s.repo.GetLevels(hierarchyID, tenantID)
 }
 
-func (s *DimensionHierarchyService) CreateLevel(hierarchyID int64, req *models.UpsertHierarchyLevelRequest) (*models.DimensionHierarchyLevel, error) {
+func (s *DimensionHierarchyService) CreateLevel(hierarchyID, tenantID int64, req *models.UpsertHierarchyLevelRequest) (*models.DimensionHierarchyLevel, error) {
+	if _, err := s.repo.GetByID(hierarchyID, tenantID); err != nil {
+		return nil, err
+	}
+	if req.ElementID != nil {
+		if err := s.refs.RequireElement(tenantID, *req.ElementID); err != nil {
+			return nil, err
+		}
+	}
+	exists, err := s.repo.ExistsLevelNum(hierarchyID, tenantID, req.LevelNum, 0)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		return nil, fmt.Errorf("层级编号 %d 已存在", req.LevelNum)
+	}
 	level := &models.DimensionHierarchyLevel{
 		HierarchyID: hierarchyID,
 		LevelNum:    req.LevelNum,
@@ -89,10 +111,22 @@ func (s *DimensionHierarchyService) CreateLevel(hierarchyID int64, req *models.U
 	return level, nil
 }
 
-func (s *DimensionHierarchyService) UpdateLevel(levelID, hierarchyID int64, req *models.UpsertHierarchyLevelRequest) (*models.DimensionHierarchyLevel, error) {
-	level, err := s.repo.GetLevelByID(levelID, hierarchyID)
+func (s *DimensionHierarchyService) UpdateLevel(levelID, hierarchyID, tenantID int64, req *models.UpsertHierarchyLevelRequest) (*models.DimensionHierarchyLevel, error) {
+	level, err := s.repo.GetLevelByID(levelID, hierarchyID, tenantID)
 	if err != nil {
 		return nil, err
+	}
+	if req.ElementID != nil {
+		if err := s.refs.RequireElement(tenantID, *req.ElementID); err != nil {
+			return nil, err
+		}
+	}
+	exists, err := s.repo.ExistsLevelNum(hierarchyID, tenantID, req.LevelNum, levelID)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		return nil, fmt.Errorf("层级编号 %d 已存在", req.LevelNum)
 	}
 	if req.Name != "" {
 		level.Name = req.Name
@@ -109,6 +143,6 @@ func (s *DimensionHierarchyService) UpdateLevel(levelID, hierarchyID int64, req 
 	return level, nil
 }
 
-func (s *DimensionHierarchyService) DeleteLevel(levelID, hierarchyID int64) error {
-	return s.repo.DeleteLevel(levelID, hierarchyID)
+func (s *DimensionHierarchyService) DeleteLevel(levelID, hierarchyID, tenantID int64) error {
+	return s.repo.DeleteLevel(levelID, hierarchyID, tenantID)
 }

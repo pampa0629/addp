@@ -47,10 +47,10 @@ type Element struct {
 	DefaultValue     string      `gorm:"type:text" json:"default_value"`
 	Format           string      `gorm:"size:200" json:"format"`
 	ValueRange       JSONB       `gorm:"type:jsonb;serializer:json" json:"value_range"`
-	UnitID           *int64      `gorm:"index" json:"unit_id,omitempty"`            // 关联计量单位
-	SecurityLevel    string      `gorm:"size:10" json:"security_level"`              // L1/L2/L3/L4
-	ClassificationID *int64      `gorm:"index" json:"classification_id,omitempty"`  // 关联数据分类
-	CodeSetID        *int64      `gorm:"index" json:"code_set_id,omitempty"`         // 关联码值集
+	UnitID           *int64      `gorm:"index" json:"unit_id,omitempty"`           // 关联计量单位
+	SecurityLevel    string      `gorm:"size:10" json:"security_level"`            // L1/L2/L3/L4
+	ClassificationID *int64      `gorm:"index" json:"classification_id,omitempty"` // 关联数据分类
+	CodeSetID        *int64      `gorm:"index" json:"code_set_id,omitempty"`       // 关联码值集
 	Definition       string      `gorm:"type:text" json:"definition"`
 	ExampleValues    StringArray `gorm:"type:jsonb;serializer:json" json:"example_values"`
 	QualityRules     JSONB       `gorm:"type:jsonb;serializer:json" json:"quality_rules"` // 质量规则

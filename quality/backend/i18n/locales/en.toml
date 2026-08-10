@@ -27,3 +27,33 @@ other = "Failed to update issue status"
 
 [quality.issue.status_invalid]
 other = "Invalid issue status"
+
+[quality.request.invalid]
+other = "Invalid request parameters"
+
+[quality.request.conflict]
+other = "Resource state conflict; refresh and try again"
+
+[quality.internal.error]
+other = "Quality service is temporarily unavailable"
+
+[quality.rule_app.update_failed]
+other = "Failed to update rule application"
+
+[quality.check_task.create_failed]
+other = "Failed to create check task"
+
+[quality.check_task.update_failed]
+other = "Failed to update check task"
+
+[quality.execution.list_failed]
+other = "Failed to load execution records"
+
+[quality.execution.not_found]
+other = "Execution record not found"
+
+[quality.operation.deleted]
+other = "Deleted successfully"
+
+[quality.operation.updated]
+other = "Updated successfully"

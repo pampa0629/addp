@@ -15,7 +15,7 @@ import (
 	"github.com/addp/common/engine/contentadapter"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	"github.com/addp/common/rastermosaic"
+	"github.com/addp/common/format/rastermosaic"
 	"github.com/addp/meta/internal/metaattr"
 )
 

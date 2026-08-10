@@ -182,7 +182,7 @@ func NewIAMExecutionAuthorizationHandler(
 // @Failure      409 {object} IAMErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.execution_authorization.create"]
-// @x-addp-conditional-permissions ["develop.task.execute","develop.data_read.execute","develop.data_write.execute","develop.data_ddl.execute","develop.data_external_effect.execute","service.definition.create","service.data_read.execute"]
+// @x-addp-conditional-permissions ["develop.task.execute","develop.data_read.execute","develop.data_write.execute","develop.data_ddl.execute","develop.data_external_effect.execute","quality.check_task.execute","service.definition.create","service.data_read.execute"]
 // @Router       /auth/execution-authorizations [post]
 func (h *IAMExecutionAuthorizationHandler) Issue(c *gin.Context) {
 	var request IAMIssueExecutionAuthorizationRequest

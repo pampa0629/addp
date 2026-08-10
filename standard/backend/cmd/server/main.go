@@ -6,9 +6,9 @@ import (
 	"log"
 
 	commonClient "github.com/addp/common/client"
+	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
-	"github.com/addp/common/utils"
 	"github.com/addp/standard/internal/api"
 	"github.com/addp/standard/internal/config"
 	"github.com/addp/standard/internal/models"
@@ -104,6 +104,7 @@ func main() {
 	metricRepo := repository.NewMetricRepository(db)
 	documentRepo := repository.NewDocumentRepository(db)
 	dimHierarchyRepo := repository.NewDimensionHierarchyRepository(db)
+	tenantReferenceRepo := repository.NewTenantReferenceRepository(db)
 
 	// 初始化 MinIO 客户端（用于文档文件存储）
 	var minioClient *minio.Client
@@ -118,15 +119,15 @@ func main() {
 	}
 
 	// 创建 Services
-	domainSvc := service.NewDomainService(domainRepo)
-	glossarySvc := service.NewGlossaryService(glossaryRepo)
-	elementSvc := service.NewElementService(elementRepo)
+	domainSvc := service.NewDomainService(domainRepo, tenantReferenceRepo)
+	glossarySvc := service.NewGlossaryService(glossaryRepo, tenantReferenceRepo)
+	elementSvc := service.NewElementService(elementRepo, tenantReferenceRepo)
 	codeSetSvc := service.NewCodeSetService(codeSetRepo)
 	unitSvc := service.NewUnitService(mCatRepo, unitRepo)
-	classificationSvc := service.NewClassificationService(classificationRepo, gradingRepo)
-	metricSvc := service.NewMetricService(metricCatRepo, metricRepo)
-	documentSvc := service.NewDocumentService(documentRepo, minioClient)
-	dimHierarchySvc := service.NewDimensionHierarchyService(dimHierarchyRepo)
+	classificationSvc := service.NewClassificationService(classificationRepo, gradingRepo, tenantReferenceRepo)
+	metricSvc := service.NewMetricService(metricCatRepo, metricRepo, tenantReferenceRepo)
+	documentSvc := service.NewDocumentService(documentRepo, tenantReferenceRepo, minioClient)
+	dimHierarchySvc := service.NewDimensionHierarchyService(dimHierarchyRepo, tenantReferenceRepo)
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo, minioClient)
 	if err := cleanupSvc.Start(context.Background()); err != nil {
@@ -157,9 +158,8 @@ func main() {
 		}
 	}()
 
-	serviceHost := utils.GetServiceHost()
-	port := utils.GetModulePort("standard")
-	serviceURL := utils.BuildServiceURL(serviceHost, port)
+	serviceHost := commonConfig.GetServiceHost()
+	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
 	systemClient.RegisterAndHeartbeatWithMetadata(context.Background(), "standard", serviceURL, "/standard", map[string]interface{}{
 		"module": "standard",
 		"capabilities": map[string]interface{}{

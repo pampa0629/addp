@@ -39,6 +39,9 @@ class ToolExecutor:
             "data.preview": self._data_preview,
             "workflow.operators.list": self._workflow_operators_list,
             "workflow.draft.generate": self._workflow_draft_generate,
+            "query.draft.generate": self._query_draft_generate,
+            "notebook.draft.generate": self._notebook_draft_generate,
+            "transfer.draft.generate": self._transfer_draft_generate,
             "workflow.validate": self._workflow_validate,
             "workflow.run": self._workflow_run,
             "execution.get": self._execution_get,
@@ -161,7 +164,12 @@ class ToolExecutor:
 
     async def _data_search(self, arguments: dict[str, Any], delegated_token: str) -> Any:
         async with self._client(ManagerClient, delegated_token) as client:
-            return await client.search(q=arguments["query"], page=1, page_size=arguments.get("limit", 10))
+            return await client.search(
+                q=arguments["query"],
+                engine_id=arguments.get("engine_id"),
+                page=1,
+                page_size=arguments.get("limit", 10),
+            )
 
     async def _resource_ancestors_get(self, arguments: dict[str, Any], delegated_token: str) -> Any:
         async with self._client(MetaClient, delegated_token) as client:
@@ -190,6 +198,33 @@ class ToolExecutor:
                 query=arguments["query"],
                 workflow_engine_id=arguments["workflow_engine_id"],
                 resources=arguments["resources"],
+            )
+
+    async def _query_draft_generate(self, arguments: dict[str, Any], delegated_token: str) -> Any:
+        async with self._client(CopilotClient, delegated_token) as client:
+            return await client.generate_query(
+                query=arguments["query"],
+                engine_id=arguments["engine_id"],
+                query_language=arguments["query_language"],
+                resources=arguments["resources"],
+                engine_context=arguments["engine_context"],
+            )
+
+    async def _notebook_draft_generate(self, arguments: dict[str, Any], delegated_token: str) -> Any:
+        async with self._client(CopilotClient, delegated_token) as client:
+            return await client.generate_notebook(
+                query=arguments["query"],
+                kernel=arguments.get("kernel", "python3"),
+                candidates=arguments.get("candidates", []),
+                resources=arguments.get("resources", []),
+            )
+
+    async def _transfer_draft_generate(self, arguments: dict[str, Any], delegated_token: str) -> Any:
+        async with self._client(CopilotClient, delegated_token) as client:
+            return await client.generate_transfer(
+                query=arguments["query"],
+                resources=arguments.get("resources", []),
+                task=arguments.get("task"),
             )
 
     async def _workflow_validate(self, arguments: dict[str, Any], delegated_token: str) -> Any:

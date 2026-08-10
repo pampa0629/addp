@@ -7,20 +7,6 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class WorkflowResourceFact(BaseModel):
-    """由 owner Tool 验证后交给 Copilot 的工作流输入资源事实。"""
-
-    model_config = ConfigDict(extra="forbid")
-
-    role: str = Field(min_length=1, description="资源在本次分析中的稳定用途")
-    locator: str = Field(min_length=1, description="已验证的 ADDP ResourceLocator")
-    data_type: Optional[str] = Field(default=None, description="资源数据类型")
-    geometry_column: Optional[str] = Field(default=None, description="已验证的几何列")
-    geometry_type: Optional[str] = Field(default=None, description="已验证的几何类型")
-    crs: Optional[str] = Field(default=None, description="已验证的 CRS，例如 EPSG:32650")
-    fields: List[Dict[str, Any]] = Field(default_factory=list, description="受限字段名称和类型事实")
-
-
 class Task(BaseModel):
     """
     工作流任务

@@ -6,17 +6,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/addp/common/dataprofile"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/sqldialect"
+	commonquery "github.com/addp/common/query"
+	"github.com/addp/manager/internal/dataprofile"
 	"github.com/addp/manager/internal/models"
 )
 
 func TestDatabasePreviewPostgreSQLPrimaryKeyPageQueryUsesKeyCTEForDeepOffset(t *testing.T) {
 	t.Parallel()
 
-	dialect := sqldialect.ForEngine("postgresql")
+	dialect := commonquery.ForEngine("postgresql")
 	columns := []datatype.FieldInfo{
 		{Name: "SmID", NativeType: "bigint", PrimaryKey: true},
 		{Name: "SmGeometry", NativeType: "geometry(MultiPolygon,2360)"},
@@ -41,7 +41,7 @@ func TestDatabasePreviewPostgreSQLPrimaryKeyPageQueryUsesKeyCTEForDeepOffset(t *
 func TestDatabasePreviewPostgreSQLPrimaryKeyPageQueryOrdersFirstPage(t *testing.T) {
 	t.Parallel()
 
-	dialect := sqldialect.ForEngine("postgresql")
+	dialect := commonquery.ForEngine("postgresql")
 	columns := []datatype.FieldInfo{
 		{Name: "id", NativeType: "bigint", PrimaryKey: true},
 		{Name: "name", NativeType: "text"},
@@ -154,10 +154,10 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 			EngineType: enginePlugin.Type(),
 		},
 		EnginePlugin: enginePlugin,
-		Schema:   "public",
-		Table:    "public.dltb",
-		Page:     3,
-		PageSize: 2,
+		Schema:       "public",
+		Table:        "public.dltb",
+		Page:         3,
+		PageSize:     2,
 		ProviderPath: plugin.CatalogPath{
 			Version:  plugin.CatalogPathVersion,
 			EngineID: 7,
@@ -278,10 +278,10 @@ func TestDatabaseTablePreviewProviderPreviewFallsBackToCatalogFactsRowCount(t *t
 			EngineType: enginePlugin.Type(),
 		},
 		EnginePlugin: enginePlugin,
-		Schema:   "public",
-		Table:    "public.people",
-		Page:     1,
-		PageSize: 10,
+		Schema:       "public",
+		Table:        "public.people",
+		Page:         1,
+		PageSize:     10,
 		ProviderPath: plugin.CatalogPath{
 			Version:  plugin.CatalogPathVersion,
 			EngineID: 8,
@@ -340,10 +340,10 @@ func TestDatabaseTablePreviewProviderAllowsQuickViewPageSize(t *testing.T) {
 			EngineType: enginePlugin.Type(),
 		},
 		EnginePlugin: enginePlugin,
-		Schema:   "public",
-		Table:    "public.farmland",
-		Page:     1,
-		PageSize: 127,
+		Schema:       "public",
+		Table:        "public.farmland",
+		Page:         1,
+		PageSize:     127,
 		ProviderPath: plugin.CatalogPath{
 			Version:  plugin.CatalogPathVersion,
 			EngineID: 8,

@@ -1,5 +1,602 @@
 basePath: /api/v1/quality
 definitions:
+  execution.TaskExecution:
+    properties:
+      actor_principal_id:
+        description: |-
+          User-derived execution authorization facts. The raw User/Service tokens
+          and engine connection details are never persisted in task executions.
+        type: integer
+      actor_tenant_membership_id:
+        type: integer
+      attempt:
+        type: integer
+      authorization_effects:
+        items:
+          type: string
+        type: array
+      authorization_expires_at:
+        type: string
+      bytes_read:
+        description: Transfer 读取字节数
+        type: integer
+      bytes_written:
+        description: Transfer 写入字节数
+        type: integer
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      current_step:
+        description: 当前步骤（Orchestrator/Workflow）
+        type: string
+      error_details:
+        allOf:
+        - $ref: '#/definitions/models.JSONMap'
+        description: 错误详情（仅失败时有值）
+      execution_authorization_id:
+        type: integer
+      execution_config:
+        allOf:
+        - $ref: '#/definitions/models.JSONMap'
+        description: JSONB 字段
+      execution_id:
+        description: 执行标识
+        type: string
+      execution_time_ms:
+        description: 性能指标
+        type: integer
+      id:
+        type: integer
+      issued_authorization_version:
+        type: integer
+      max_attempts:
+        type: integer
+      metadata:
+        allOf:
+        - $ref: '#/definitions/models.JSONMap'
+        description: 模块特有扩展数据（结果、断点、步骤结果等）
+      module:
+        description: 模块标识
+        type: string
+      parent_execution_id:
+        description: 父执行（Orchestrator 子步骤追踪父编排）
+        type: string
+      progress:
+        description: 0-100
+        type: integer
+      records_read:
+        description: Transfer 读取记录数
+        type: integer
+      records_written:
+        description: Transfer 写入记录数
+        type: integer
+      rows_affected:
+        description: SQL 影响行数
+        type: integer
+      source:
+        description: 触发来源模块
+        type: string
+      source_task_id:
+        description: 关联原始任务
+        type: string
+      source_task_name:
+        description: 任务名称（冗余，便于查询）
+        type: string
+      started_at:
+        description: 时间戳
+        type: string
+      status:
+        description: 执行状态
+        type: string
+      task_type:
+        description: 稳定执行类型；可来自任务定义或 ad-hoc execution
+        type: string
+      tenant_id:
+        type: integer
+      trigger_type:
+        description: 触发信息
+        type: string
+      triggered_by:
+        description: 触发用户ID
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  github_com_addp_quality_internal_models.CheckTask:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      enabled:
+        type: boolean
+      engine_id:
+        description: 目标引擎
+        type: integer
+      id:
+        type: integer
+      last_execution_id:
+        type: string
+      last_execution_status:
+        type: string
+      last_run_at:
+        type: string
+      name:
+        type: string
+      schema_name:
+        type: string
+      table_name:
+        type: string
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+    type: object
+  github_com_addp_quality_internal_models.Issue:
+    properties:
+      column_name:
+        type: string
+      created_at:
+        type: string
+      detail:
+        items:
+          type: integer
+        type: array
+      engine_id:
+        type: integer
+      execution_id:
+        description: common.task_executions.execution_id
+        type: string
+      failed_count:
+        type: integer
+      id:
+        type: integer
+      last_execution_id:
+        type: string
+      last_observed_at:
+        type: string
+      message:
+        type: string
+      pass_rate:
+        type: number
+      resolution_note:
+        type: string
+      resolved_at:
+        type: string
+      resolved_by:
+        type: integer
+      rule_application_id:
+        type: integer
+      schema_name:
+        type: string
+      severity:
+        type: string
+      status:
+        description: open/resolved/ignored
+        type: string
+      table_name:
+        type: string
+      tenant_id:
+        type: integer
+      total_count:
+        type: integer
+      type:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_addp_quality_internal_models.RuleApplication:
+    properties:
+      column_name:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      element_id:
+        description: standard.elements.id
+        type: integer
+      enabled:
+        type: boolean
+      engine_id:
+        type: integer
+      id:
+        type: integer
+      rule_config:
+        description: 质量规则快照
+        items:
+          type: integer
+        type: array
+      schema_name:
+        type: string
+      table_name:
+        type: string
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+    type: object
+  github_com_addp_quality_internal_service.CreateCheckTaskRequest:
+    properties:
+      description:
+        type: string
+      enabled:
+        type: boolean
+      engine_id:
+        type: integer
+      name:
+        type: string
+      schema_name:
+        type: string
+      table_name:
+        type: string
+    required:
+    - engine_id
+    - name
+    - schema_name
+    - table_name
+    type: object
+  github_com_addp_quality_internal_service.CreateRuleApplicationRequest:
+    properties:
+      column_name:
+        type: string
+      element_id:
+        type: integer
+      engine_id:
+        type: integer
+      schema_name:
+        type: string
+      table_name:
+        type: string
+    required:
+    - column_name
+    - element_id
+    - engine_id
+    - schema_name
+    - table_name
+    type: object
+  github_com_addp_quality_internal_service.UpdateCheckTaskRequest:
+    properties:
+      description:
+        type: string
+      enabled:
+        type: boolean
+      engine_id:
+        type: integer
+      name:
+        type: string
+      schema_name:
+        type: string
+      table_name:
+        type: string
+    required:
+    - engine_id
+    - name
+    - schema_name
+    - table_name
+    type: object
+  github_com_addp_quality_internal_service.UpdateRuleApplicationRequest:
+    properties:
+      enabled:
+        type: boolean
+    type: object
+  internal_api.issueStatusRequest:
+    properties:
+      note:
+        example: 已修复源数据
+        type: string
+      status:
+        enum:
+        - resolved
+        - ignored
+        example: resolved
+        type: string
+    required:
+    - note
+    - status
+    type: object
+  internal_api.qualityCheckTaskListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_quality_internal_models.CheckTask'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  internal_api.qualityCheckTaskResponse:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      enabled:
+        type: boolean
+      engine_id:
+        description: 目标引擎
+        type: integer
+      id:
+        type: integer
+      last_execution_id:
+        type: string
+      last_execution_status:
+        type: string
+      last_run_at:
+        type: string
+      name:
+        type: string
+      schema_name:
+        type: string
+      table_name:
+        type: string
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+    type: object
+  internal_api.qualityErrorResponse:
+    properties:
+      error:
+        type: string
+      error_code:
+        type: string
+    type: object
+  internal_api.qualityExecutionListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/execution.TaskExecution'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  internal_api.qualityExecutionResponse:
+    properties:
+      actor_principal_id:
+        description: |-
+          User-derived execution authorization facts. The raw User/Service tokens
+          and engine connection details are never persisted in task executions.
+        type: integer
+      actor_tenant_membership_id:
+        type: integer
+      attempt:
+        type: integer
+      authorization_effects:
+        items:
+          type: string
+        type: array
+      authorization_expires_at:
+        type: string
+      bytes_read:
+        description: Transfer 读取字节数
+        type: integer
+      bytes_written:
+        description: Transfer 写入字节数
+        type: integer
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      current_step:
+        description: 当前步骤（Orchestrator/Workflow）
+        type: string
+      error_details:
+        allOf:
+        - $ref: '#/definitions/models.JSONMap'
+        description: 错误详情（仅失败时有值）
+      execution_authorization_id:
+        type: integer
+      execution_config:
+        allOf:
+        - $ref: '#/definitions/models.JSONMap'
+        description: JSONB 字段
+      execution_id:
+        description: 执行标识
+        type: string
+      execution_time_ms:
+        description: 性能指标
+        type: integer
+      id:
+        type: integer
+      issued_authorization_version:
+        type: integer
+      max_attempts:
+        type: integer
+      metadata:
+        allOf:
+        - $ref: '#/definitions/models.JSONMap'
+        description: 模块特有扩展数据（结果、断点、步骤结果等）
+      module:
+        description: 模块标识
+        type: string
+      parent_execution_id:
+        description: 父执行（Orchestrator 子步骤追踪父编排）
+        type: string
+      progress:
+        description: 0-100
+        type: integer
+      records_read:
+        description: Transfer 读取记录数
+        type: integer
+      records_written:
+        description: Transfer 写入记录数
+        type: integer
+      rows_affected:
+        description: SQL 影响行数
+        type: integer
+      source:
+        description: 触发来源模块
+        type: string
+      source_task_id:
+        description: 关联原始任务
+        type: string
+      source_task_name:
+        description: 任务名称（冗余，便于查询）
+        type: string
+      started_at:
+        description: 时间戳
+        type: string
+      status:
+        description: 执行状态
+        type: string
+      task_type:
+        description: 稳定执行类型；可来自任务定义或 ad-hoc execution
+        type: string
+      tenant_id:
+        type: integer
+      trigger_type:
+        description: 触发信息
+        type: string
+      triggered_by:
+        description: 触发用户ID
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  internal_api.qualityIssueListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_quality_internal_models.Issue'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  internal_api.qualityIssueResponse:
+    properties:
+      column_name:
+        type: string
+      created_at:
+        type: string
+      detail:
+        items:
+          type: integer
+        type: array
+      engine_id:
+        type: integer
+      execution_id:
+        description: common.task_executions.execution_id
+        type: string
+      failed_count:
+        type: integer
+      id:
+        type: integer
+      last_execution_id:
+        type: string
+      last_observed_at:
+        type: string
+      message:
+        type: string
+      pass_rate:
+        type: number
+      resolution_note:
+        type: string
+      resolved_at:
+        type: string
+      resolved_by:
+        type: integer
+      rule_application_id:
+        type: integer
+      schema_name:
+        type: string
+      severity:
+        type: string
+      status:
+        description: open/resolved/ignored
+        type: string
+      table_name:
+        type: string
+      tenant_id:
+        type: integer
+      total_count:
+        type: integer
+      type:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  internal_api.qualityMessageResponse:
+    properties:
+      message:
+        type: string
+    type: object
+  internal_api.qualityRuleApplicationListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_quality_internal_models.RuleApplication'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  internal_api.qualityRuleApplicationResponse:
+    properties:
+      column_name:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      element_id:
+        description: standard.elements.id
+        type: integer
+      enabled:
+        type: boolean
+      engine_id:
+        type: integer
+      id:
+        type: integer
+      rule_config:
+        description: 质量规则快照
+        items:
+          type: integer
+        type: array
+      schema_name:
+        type: string
+      table_name:
+        type: string
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+    type: object
   internal_api.qualityTaskProviderExecuteRequest:
     properties:
       parameters:
@@ -40,8 +637,6 @@ definitions:
         type: string
       name:
         type: string
-      next_run_at:
-        type: string
       task_type:
         type: string
       tenant_id:
@@ -59,6 +654,9 @@ definitions:
         type: integer
       total:
         type: integer
+    type: object
+  models.JSONMap:
+    additionalProperties: true
     type: object
   taskprovider.ExecutionContract:
     properties:
@@ -83,16 +681,29 @@ info:
 paths:
   /check-tasks:
     get:
+      parameters:
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量 | Page size
+        in: query
+        maximum: 100
+        name: page_size
+        type: integer
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            items:
-              additionalProperties: true
-              type: object
-            type: array
+            $ref: '#/definitions/internal_api.qualityCheckTaskListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
       summary: 获取检查任务列表 | List check tasks
@@ -110,16 +721,26 @@ paths:
         name: body
         required: true
         schema:
-          additionalProperties: true
-          type: object
+          $ref: '#/definitions/github_com_addp_quality_internal_service.CreateCheckTaskRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.qualityCheckTaskResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
       summary: 创建检查任务 | Create check task
@@ -142,9 +763,19 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/internal_api.qualityMessageResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
       summary: 删除检查任务 | Delete check task
@@ -166,8 +797,19 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.qualityCheckTaskResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
       summary: 获取检查任务详情 | Get check task detail
@@ -190,16 +832,30 @@ paths:
         name: body
         required: true
         schema:
-          additionalProperties: true
-          type: object
+          $ref: '#/definitions/github_com_addp_quality_internal_service.UpdateCheckTaskRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.qualityCheckTaskResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
       summary: 更新检查任务 | Update check task
@@ -222,15 +878,19 @@ paths:
         "202":
           description: Accepted
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/internal_api.qualityTaskProviderExecuteResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
         "409":
           description: 任务已有活动 execution | Task already has an active execution
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
       summary: 执行检查任务 | Run check task
@@ -241,14 +901,29 @@ paths:
       - quality.check_task.execute
   /executions:
     get:
+      parameters:
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量 | Page size
+        in: query
+        maximum: 100
+        name: page_size
+        type: integer
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.qualityExecutionListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
       summary: 获取执行记录列表 | List execution records
@@ -271,8 +946,15 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.qualityExecutionResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
       summary: 获取执行记录详情 | Get execution record detail
@@ -292,16 +974,32 @@ paths:
         in: query
         name: engine_id
         type: integer
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量 | Page size
+        in: query
+        maximum: 100
+        name: page_size
+        type: integer
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            items:
-              additionalProperties: true
-              type: object
-            type: array
+            $ref: '#/definitions/internal_api.qualityIssueListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
       summary: 获取问题工单列表 | List quality issues
@@ -324,8 +1022,19 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.qualityIssueResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
       summary: 获取问题工单详情 | Get issue detail
@@ -344,23 +1053,35 @@ paths:
         name: id
         required: true
         type: integer
-      - description: 状态信息 | Status info
+      - description: 状态信息（必须包含处理说明） | Status and required note
         in: body
         name: body
         required: true
         schema:
-          additionalProperties:
-            type: string
-          type: object
+          $ref: '#/definitions/internal_api.issueStatusRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/internal_api.qualityMessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
       summary: 更新问题工单状态 | Update issue status
@@ -384,16 +1105,32 @@ paths:
         in: query
         name: table_name
         type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量 | Page size
+        in: query
+        maximum: 100
+        name: page_size
+        type: integer
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            items:
-              additionalProperties: true
-              type: object
-            type: array
+            $ref: '#/definitions/internal_api.qualityRuleApplicationListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
       summary: 获取规则应用列表 | List rule applications
@@ -411,16 +1148,30 @@ paths:
         name: body
         required: true
         schema:
-          additionalProperties: true
-          type: object
+          $ref: '#/definitions/github_com_addp_quality_internal_service.CreateRuleApplicationRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.qualityRuleApplicationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
       summary: 创建规则应用 | Create rule application
@@ -443,9 +1194,15 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/internal_api.qualityMessageResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
       summary: 删除规则应用 | Delete rule application
@@ -467,8 +1224,19 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.qualityRuleApplicationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
       summary: 获取规则应用详情 | Get rule application detail
@@ -491,16 +1259,30 @@ paths:
         name: body
         required: true
         schema:
-          additionalProperties: true
-          type: object
+          $ref: '#/definitions/github_com_addp_quality_internal_service.UpdateRuleApplicationRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.qualityRuleApplicationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
       summary: 更新规则应用 | Update rule application
@@ -529,18 +1311,11 @@ paths:
         "400":
           description: 请求参数错误 | Bad request
           schema:
-            additionalProperties: true
-            type: object
-        "409":
-          description: 任务已有活动 execution | Task already has an active execution
-          schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
         "500":
           description: 服务器内部错误 | Internal server error
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
       summary: 列出 TaskProvider 质量检查任务 | List TaskProvider quality check tasks
@@ -575,13 +1350,11 @@ paths:
         "400":
           description: 请求参数错误 | Bad request
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
         "404":
           description: 任务不存在 | Task not found
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
       summary: 获取 TaskProvider 质量检查任务详情 | Get TaskProvider quality check task detail
@@ -623,13 +1396,19 @@ paths:
         "400":
           description: 请求参数错误 | Bad request
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "404":
+          description: 任务不存在 | Task not found
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "409":
+          description: 任务已有活动 execution | Task already has an active execution
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
         "500":
           description: 服务器内部错误 | Internal server error
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
       summary: 执行 TaskProvider 质量检查任务 | Execute TaskProvider quality check task

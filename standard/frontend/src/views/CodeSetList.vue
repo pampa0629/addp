@@ -68,7 +68,7 @@
           :total="pagination.total"
           :page-sizes="[20, 50, 100]"
           layout="total, sizes, prev, pager, next"
-          @change="loadCodeSets"
+          @change="handlePageChange"
         />
       </div>
     </el-card>
@@ -102,7 +102,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
@@ -110,6 +110,7 @@ import { codeSetAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 
 const router = useRouter()
+const route = useRoute()
 const { t } = useI18n()
 const loading = ref(false)
 const creating = ref(false)
@@ -117,8 +118,15 @@ const codeSets = ref([])
 const createDialogVisible = ref(false)
 const createFormRef = ref(null)
 
-const searchForm = reactive({ keyword: '', type: '' })
-const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const searchForm = reactive({
+  keyword: typeof route.query.keyword === 'string' ? route.query.keyword : '',
+  type: typeof route.query.type === 'string' ? route.query.type : ''
+})
+const pagination = reactive({
+  page: Number(route.query.page) > 0 ? Number(route.query.page) : 1,
+  pageSize: Number(route.query.page_size) > 0 ? Number(route.query.page_size) : 20,
+  total: 0
+})
 const createForm = reactive({ code: '', name: '', type: 'custom', description: '' })
 const createRules = computed(() => ({
   code: [{ required: true, message: t('standard.codeSet.codeRequired'), trigger: 'blur' }],
@@ -145,6 +153,21 @@ const loadCodeSets = async () => {
 
 const handleSearch = () => {
   pagination.page = 1
+  syncQuery()
+  loadCodeSets()
+}
+
+const syncQuery = () => {
+  const query = {}
+  if (searchForm.keyword) query.keyword = searchForm.keyword
+  if (searchForm.type) query.type = searchForm.type
+  if (pagination.page !== 1) query.page = String(pagination.page)
+  if (pagination.pageSize !== 20) query.page_size = String(pagination.pageSize)
+  navigateStandardRoute(router, { path: '/code-sets', query }, { history: 'replace' })
+}
+
+const handlePageChange = () => {
+  syncQuery()
   loadCodeSets()
 }
 
@@ -179,7 +202,7 @@ const handleDelete = async (id) => {
 }
 
 const goToDetail = (row) => {
-  navigateStandardRoute(router, `/code-sets/${row.id}`)
+  navigateStandardRoute(router, { path: `/code-sets/${row.id}`, query: route.query })
 }
 
 onMounted(() => {

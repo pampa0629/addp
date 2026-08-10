@@ -8,7 +8,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/sqldialect"
+	commonquery "github.com/addp/common/query"
 )
 
 func (p *DorisPlugin) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableWriteOptions) error {
@@ -346,6 +346,6 @@ func dorisTablePathParts(path plugin.CatalogPath) (string, string, error) {
 	return database, table, nil
 }
 
-func dorisDialect() sqldialect.Dialect {
-	return sqldialect.ForEngine("doris")
+func dorisDialect() commonquery.Dialect {
+	return commonquery.ForEngine("doris")
 }

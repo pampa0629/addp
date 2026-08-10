@@ -20,6 +20,7 @@ const (
 	defaultExecutionAuthorizationTTL              = 15 * time.Minute
 	maximumExecutionAuthorizationTTL              = time.Hour
 	developExecutionPermission                    = "develop.task.execute"
+	qualityExecutionPermission                    = "quality.check_task.execute"
 	serviceQuerySamplePermission                  = "service.definition.create"
 	serviceDataReadPermission                     = "service.data_read.execute"
 	executionAuthorizationSourceUser              = "user"
@@ -40,9 +41,10 @@ var executionEffectPermissions = map[string]string{
 }
 
 var executionAudienceClients = map[string]string{
-	"develop": "addp-develop",
-	"duckdb":  "addp-duckdb",
-	"service": "addp-service",
+	"addp-quality": "addp-quality",
+	"develop":      "addp-develop",
+	"duckdb":       "addp-duckdb",
+	"service":      "addp-service",
 }
 
 type IssueExecutionAuthorizationInput struct {
@@ -745,8 +747,18 @@ func containsAllExecutionPermissions(
 		_, canRead := available[serviceDataReadPermission]
 		return canCreate && canRead
 	}
+	containsQualityReadBoundary := func() bool {
+		if len(effects) != 1 || effects[0] != "read" {
+			return false
+		}
+		_, canExecute := available[qualityExecutionPermission]
+		_, canRead := available[executionEffectPermissions["read"]]
+		return canExecute && canRead
+	}
 
 	switch audience {
+	case "addp-quality":
+		return containsQualityReadBoundary()
 	case "develop":
 		return containsDevelopBoundary()
 	case "service":

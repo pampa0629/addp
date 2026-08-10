@@ -11,10 +11,10 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	engineselection "github.com/addp/common/engine/selection"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
-	commonUtils "github.com/addp/common/utils"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/repository"
 	"gorm.io/gorm"
@@ -434,7 +434,7 @@ func (s *DevTaskService) listStorageEngineDescriptors(ctx context.Context, tenan
 	candidates := make([]commonModels.EngineRuntimeDescriptor, 0, len(descriptors))
 	for index := range descriptors {
 		descriptor := &descriptors[index]
-		if descriptor.LifecycleState != commonModels.EngineLifecycleActive || !commonUtils.HasStorageCapability(descriptor.AsEngine()) {
+		if descriptor.LifecycleState != commonModels.EngineLifecycleActive || !engineselection.HasStorageCapability(descriptor.AsEngine()) {
 			continue
 		}
 		candidates = append(candidates, *descriptor)
@@ -452,7 +452,7 @@ func storageEngineSupportsResourceTypes(engine *commonModels.EngineRuntimeDescri
 	if engine == nil || engine.LifecycleState != commonModels.EngineLifecycleActive {
 		return false
 	}
-	capabilities, err := commonUtils.ParseCapabilities(engine.Capabilities)
+	capabilities, err := engineselection.ParseCapabilities(engine.Capabilities)
 	if err != nil || capabilities == nil || capabilities.Storage == nil || capabilities.Storage.CatalogModel == nil {
 		return false
 	}

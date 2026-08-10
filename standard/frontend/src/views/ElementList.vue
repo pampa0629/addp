@@ -13,17 +13,17 @@
             v-model="filters.keyword"
             :placeholder="$t('standard.element.searchPlaceholder')"
             clearable
-            @change="loadElements"
+            @change="handleFilterChange"
             :prefix-icon="Search"
           />
         </el-col>
         <el-col :span="6">
-          <el-select v-model="filters.domain_id" :placeholder="$t('standard.common.selectDomain')" clearable @change="loadElements">
+          <el-select v-model="filters.domain_id" :placeholder="$t('standard.common.selectDomain')" clearable @change="handleFilterChange">
             <el-option v-for="d in domainList" :key="d.id" :label="d.name" :value="d.id" />
           </el-select>
         </el-col>
         <el-col :span="6">
-          <el-select v-model="filters.status" :placeholder="$t('standard.common.selectStatus')" clearable @change="loadElements">
+          <el-select v-model="filters.status" :placeholder="$t('standard.common.selectStatus')" clearable @change="handleFilterChange">
             <el-option :label="$t('standard.common.draft')" value="draft" />
             <el-option :label="$t('standard.common.approved')" value="approved" />
             <el-option :label="$t('standard.common.deprecated')" value="deprecated" />
@@ -67,11 +67,13 @@
             <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="$t('standard.common.actions')" width="180" fixed="right">
+        <el-table-column :label="$t('standard.common.actions')" width="210" fixed="right">
           <template #default="{ row }">
+            <div class="table-actions">
             <el-button link type="primary" @click="goToDetail(row)">{{ $t('standard.common.detail') }}</el-button>
             <el-button link type="success" @click="handleApprove(row)" v-if="row.status === 'draft'">{{ $t('standard.common.approve') }}</el-button>
             <el-button link type="danger" @click="handleDelete(row)">{{ $t('standard.common.delete') }}</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -138,7 +140,7 @@
 
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Plus, Search, Checked } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -146,6 +148,7 @@ import { domainAPI, elementAPI, unitAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 
 const router = useRouter()
+const route = useRoute()
 const { t } = useI18n()
 const loading = ref(false)
 const submitting = ref(false)
@@ -168,11 +171,11 @@ const unitsByCategory = computed(() => {
 })
 
 const filters = reactive({
-  keyword: '',
-  domain_id: null,
-  status: '',
-  page: 1,
-  page_size: 20
+  keyword: typeof route.query.keyword === 'string' ? route.query.keyword : '',
+  domain_id: route.query.domain_id ? Number(route.query.domain_id) : null,
+  status: typeof route.query.status === 'string' ? route.query.status : '',
+  page: Number(route.query.page) > 0 ? Number(route.query.page) : 1,
+  page_size: Number(route.query.page_size) > 0 ? Number(route.query.page_size) : 20
 })
 
 const form = ref({
@@ -196,7 +199,7 @@ const statusType = (s) => ({ draft: 'info', approved: 'success', deprecated: 'wa
 const statusLabel = (s) => ({ draft: t('standard.common.draft'), approved: t('standard.common.approved'), deprecated: t('standard.common.deprecated') }[s] || s)
 
 const getRuleCount = (qr) => {
-  if (!qr || !qr.rules) return 0
+  if (!qr || qr.schema_version !== 'addp.quality.rules/v1' || !Array.isArray(qr.rules)) return 0
   return qr.rules.filter(r => r.enabled).length
 }
 
@@ -249,13 +252,33 @@ const loadElements = async () => {
   }
 }
 
+const syncQuery = () => {
+  const query = {}
+  if (filters.keyword) query.keyword = filters.keyword
+  if (filters.domain_id) query.domain_id = String(filters.domain_id)
+  if (filters.status) query.status = filters.status
+  if (filters.page !== 1) query.page = String(filters.page)
+  if (filters.page_size !== 20) query.page_size = String(filters.page_size)
+  navigateStandardRoute(router, { path: '/elements', query }, { history: 'replace' })
+}
+
+const handleFilterChange = () => {
+  filters.page = 1
+  syncQuery()
+  loadElements()
+}
+
 const handlePageChange = (page) => {
   filters.page = page
+  syncQuery()
   loadElements()
 }
 
 const goToDetail = (row) => {
-  navigateStandardRoute(router, `/elements/${row.id}`)
+  navigateStandardRoute(router, {
+    path: `/elements/${row.id}`,
+    query: route.query
+  })
 }
 
 const openCreateDialog = () => {
@@ -265,20 +288,22 @@ const openCreateDialog = () => {
 
 const handleSubmit = async () => {
   if (!formRef.value) return
-  await formRef.value.validate(async valid => {
-    if (!valid) return
-    submitting.value = true
-    try {
-      await elementAPI.create(form.value)
-      ElMessage.success(t('standard.common.createSuccess'))
-      dialogVisible.value = false
-      await loadElements()
-    } catch (e) {
-      ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
-    } finally {
-      submitting.value = false
-    }
-  })
+  try {
+    await formRef.value.validate()
+  } catch {
+    return
+  }
+  submitting.value = true
+  try {
+    await elementAPI.create(form.value)
+    ElMessage.success(t('standard.common.createSuccess'))
+    dialogVisible.value = false
+    await loadElements()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
+  } finally {
+    submitting.value = false
+  }
 }
 
 const handleApprove = async (row) => {
@@ -348,4 +373,6 @@ onMounted(async () => {
   display: flex;
   justify-content: flex-end;
 }
+
+.table-actions { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 </style>

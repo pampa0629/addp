@@ -9,7 +9,6 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	commonExecution "github.com/addp/common/execution"
-	"github.com/addp/common/utils"
 	_ "github.com/addp/orchestrator/i18n"
 	"github.com/addp/orchestrator/internal/api"
 	"github.com/addp/orchestrator/internal/config"
@@ -36,7 +35,7 @@ func main() {
 	cfg := config.LoadConfig()
 
 	// 检查端口是否可用
-	if err := utils.CheckPortAvailable(cfg.ServerPort); err != nil {
+	if err := commonConfig.CheckPortAvailable(cfg.ServerPort); err != nil {
 		log.Fatalf("❌ 端口检查失败: %v", err)
 	}
 	log.Printf("✅ 端口检查通过: %s", cfg.ServerPort)
@@ -114,9 +113,8 @@ func main() {
 		cfg.SystemServiceURL, redisClient, systemServiceClient, taskAuthorizationClient, serviceTokenSource,
 	)
 
-	serviceHost := utils.GetServiceHost()
-	port := utils.GetModulePort("orchestrator")
-	serviceURL := utils.BuildServiceURL(serviceHost, port)
+	serviceHost := commonConfig.GetServiceHost()
+	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.ServerPort)
 
 	// ========== 模块注册（注册到 System service_registry）==========
 	if cfg.SystemServiceURL != "" {

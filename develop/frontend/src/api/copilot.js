@@ -1,7 +1,7 @@
 import client from './client'
 
-export function generateSQLFromNL(data) {
-  return client.post('/copilot/sql/generate', data)
+export function generateQueryFromNL(data) {
+  return client.post('/copilot/query/generate', data)
 }
 
 export function generateWorkflowFromNL(data) {

@@ -9,24 +9,24 @@
 ```text
 common/
 ├── api/            # 统一响应、错误和 handler 辅助
-├── authorization/  # Permission/内置 Role Manifest Schema、仓库聚合 CLI、严格校验和共享授权契约
+├── authorization/  # Permission/内置 Role Manifest Schema、共享授权契约及 authtest
 ├── client/         # System、Meta、Asset、Service 等模块客户端
 ├── middleware/auth/ # System AuthContext 消费、Gin 上下文注入和租户隔离 helper
-├── config/         # .env 加载和服务配置
+├── config/         # .env、部署配置、服务地址、端口检查和时区
 ├── resourcetree/    # Meta catalog / item 事实到资源树视图的投影和路径定位纯转换
 ├── contentio/      # 基于 Go io 的内容 Ref、Reader、Writer、Lister、RangeReader
 ├── engine/contentadapter/ # engine provider 到 contentio 的适配
+├── engine/selection/ # Engine capabilities 解析和跨模块选择 helper
 ├── jsonmap/        # decoded JSON map 通用读取工具
 ├── execution/      # common.task_executions 统一执行记录模型、仓储和迁移入口
-├── format/         # 文件格式、类型信息、格式信息、parser / analyzer
+├── format/         # 文件格式、parser / analyzer 及 PMTiles、Raster Mosaic 子域实现
 ├── models/         # 通用模型、能力声明和跨模块 DTO / 值对象
 ├── taskprovider/   # TaskProvider capabilities v1 解析和契约校验
 ├── repository/     # 通用数据库初始化和基础仓储错误映射
 ├── scheduler/      # 统一 Cron 调度
 ├── spatial/        # CRS、MVT、WKB、空间转换、PostGIS 空间 SQL 表达式
-├── sqldialect/     # 跨 SQL 引擎的标识符引用、分页、基础 SELECT/COUNT
-├── duckdb/         # DuckDB 联邦查询能力
-└── utils/          # 加密、脱敏、端口、时区等工具
+├── query/          # 查询参数绑定、SQL 副作用分析和跨引擎 SQL 方言
+└── security/       # 跨模块 AES-256-GCM 敏感凭据加解密
 ```
 
 ## 开发规则
@@ -37,6 +37,7 @@ common/
 - `common/format` 只提供通用格式、type info / format info、parser / analyzer 能力；Meta item 识别、claims / exclusive、`meta_item.full_name` 决策和 attributes 落库构造属于 Meta 模块。
 - `common/contentio` 只表达内容定位和 I/O，不依赖 engine，不解析 format，不返回上层 DTO。
 - `common/engine/contentadapter` 负责把 engine content provider 适配为 `contentio.Reader` / `Writer`。
+- `common/engine/selection` 只按规范化 Engine capabilities 解析和筛选 Engine Instance，不定义 capabilities Schema，也不保存 Engine 事实。
 - `common/resourcetree` 负责把 Meta 已落库的 catalog / item 事实投影为跨模块资源树视图，并提供 `ResourceLocator` / provider `CatalogPath` 的纯转换能力。
 - `common/resourcetree` 不持有 System / Meta client，不主动读取远程服务，不处理租户权限、token、降级策略、扫描或内容读取。
 - `common/resourcetree` 中 attributes helper 只服务 `TreeNode.Metadata` 展示摘要，不作为通用 attributes 规范 API，也不写入持久 attributes。
@@ -48,7 +49,9 @@ common/
 - `common` schema 中的共享表应按领域归入 `common/<domain>`，由领域包提供模型、仓储和 `EnsureStore`；执行记录必须复用 `common/execution.TaskExecution`、`common/execution.TaskExecutionRepository` 和 `common/execution.EnsureStore`。
 - API 响应优先复用 `common/api`。
 - 用户 Bearer Token 统一调用 System `/api/v1/system/auth/context`；业务模块不通过 `/users/me` 验证 Token，不自行解析 JWT。
-- `common/sqldialect` 只承载跨 SQL 引擎的基础方言差异；PostGIS 等空间扩展能力归入 `common/spatial`。
+- `common/query` 承载查询参数绑定、SQL 副作用分析和跨 SQL 引擎的基础方言差异；PostGIS 等空间扩展能力归入 `common/spatial`。
+- `common/config` 承载部署配置读取和进程启动辅助；模块端口事实必须来自各模块已加载的配置，不维护第二张模块默认端口表。
+- `common/security` 只承载跨模块敏感凭据的 AES-256-GCM 加解密，不承载 IAM、Permission 或业务字段识别。
 - 空间能力不要默认几何字段名为 `geom`，应通过元数据或调用方参数传入。
 - 修改 `common/` 后通常需要 `./scripts/dev/restart.sh -all` 验证受影响模块。
 

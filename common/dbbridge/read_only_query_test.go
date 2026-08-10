@@ -13,6 +13,7 @@ func TestSupportsReadOnlySQLExecution(t *testing.T) {
 		{engineType: "postgresql", want: true},
 		{engineType: "PostgreSQL", want: true},
 		{engineType: "mysql", want: true},
+		{engineType: "oracle", want: true},
 		{engineType: "doris", want: true},
 		{engineType: "clickhouse", want: false},
 		{engineType: "spark", want: true},
@@ -33,6 +34,7 @@ func TestBindSQLExecutionParametersUsesNativeDriverPlaceholders(t *testing.T) {
 		wantQuery  string
 	}{
 		{engineType: "postgresql", wantQuery: "SELECT * FROM members WHERE status = $1 AND score > $2"},
+		{engineType: "oracle", wantQuery: "SELECT * FROM members WHERE status = :1 AND score > :2"},
 		{engineType: "mysql", wantQuery: "SELECT * FROM members WHERE status = ? AND score > ?"},
 		{engineType: "doris", wantQuery: "SELECT * FROM members WHERE status = ? AND score > ?"},
 	}

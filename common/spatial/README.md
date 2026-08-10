@@ -23,7 +23,7 @@ PostGIS 相关工具包括：
 - `DecodeGeometryValue(value, encoding, srid)` / `EncodeGeometryValue(geom, encoding, srid)` 标准 geometry row encoding 门面；`srid` 只写入或标注编码元数据，不执行 CRS transform
 - MVT、GeoJSON 分页、范围、SRID、物化视图和 GIST 索引 SQL 构造
 
-跨引擎 SQL 方言差异属于 `common/sqldialect`；PostGIS 这类空间扩展能力属于本包。
+跨引擎 SQL 方言差异属于 `common/query`；PostGIS 这类空间扩展能力属于本包。
 
 格式 native 几何类型不属于本包。例如 Shapefile 的 `shp.Shape` 到 `geom.T` / EWKB 的转换留在 `common/format/plugins/shapefile` 内部；GeoPackage geometry blob 到 EWKB 的转换留在 GeoPackage format plugin 内部。本包只接收通用 `geom.T` 或标准编码值。
 

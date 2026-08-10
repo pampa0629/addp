@@ -35,7 +35,14 @@ func (r *DWLayerRepository) Update(layer *models.DWLayer) error {
 }
 
 func (r *DWLayerRepository) Delete(id, tenantID int64) error {
-	return r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.DWLayer{}).Error
+	result := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.DWLayer{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (r *DWLayerRepository) ExistsByCode(code string, tenantID int64, excludeID int64) (bool, error) {
@@ -46,4 +53,10 @@ func (r *DWLayerRepository) ExistsByCode(code string, tenantID int64, excludeID 
 	}
 	err := query.Count(&count).Error
 	return count > 0, err
+}
+
+func (r *DWLayerRepository) CountLogicalTableReferences(layerCode string, tenantID int64) (int64, error) {
+	var count int64
+	err := r.db.Model(&models.LogicalTable{}).Where("tenant_id = ? AND layer = ?", tenantID, layerCode).Count(&count).Error
+	return count, err
 }

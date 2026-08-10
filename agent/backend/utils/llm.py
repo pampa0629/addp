@@ -64,7 +64,7 @@ class AgentInferenceService:
             "addp-agent",
             settings.AGENT_SERVICE_CLIENT_SECRET,
         )
-        cls._client = InferenceClient(settings.INFERENCE_URL, cls._token_source)
+        cls._client = InferenceClient(settings.get_system_url(), cls._token_source)
 
     @classmethod
     async def close(cls) -> None:

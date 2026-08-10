@@ -1,0 +1,4 @@
+interface:
+  display_name: "数据发现与确认"
+  short_description: "发现校验并确认任务所需的可信输入数据资源事实与身份"
+  default_prompt: "使用 $data-discovery 查找并确认完成任务所需的数据资源。"

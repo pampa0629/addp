@@ -8,12 +8,14 @@
 
 | 概念 | 含义 |
 | --- | --- |
-| Engine Instance | System 中的一条引擎实例，保存租户、名称、类型、连接配置、能力声明、生命周期和连接状态；一条记录只绑定一个确定的物理端点。 |
+| Engine Instance | System 中的一条引擎实例，保存租户、名称、类型、连接配置、能力声明、生命周期和连通性观测；一条记录只绑定一个确定的物理端点。 |
 | Engine Plugin | `common/engine/plugins/<engine_type>` 下的内置引擎适配实现，负责非通用的连接、校验、测试和能力暴露；实现标准 Workflow Runtime 协议的外部运行时不要求编译期 Plugin。 |
 | Capability | 插件返回的结构化能力声明，版本为 `engine.capabilities/v1`。 |
 | Catalog | 引擎中的真实目录层级，如 schema/table、bucket/object、database/graph。 |
 | Item | 可被描述、预览、读取或写入的叶子数据项。 |
 | AI Inference Runtime | 对 ADDP 调用方提供统一 `addp.inference/v1` 数据面的计算 Runtime；Provider、模型和凭据是 Runtime 内部强类型资源。 |
+
+`inference/` 是拥有 Provider Connection、Model Deployment、Model Profile、凭据和配置管理入口的业务 owner 模块，不是引擎插件目录。`common/engine/plugins/inference_runtime` 是 System 和调用方消费统一引擎契约的编译期插件，`system.engines` 中的 `inference_runtime` Engine Instance 只登记该模块数据面 Runtime 的确定端点。仓库目录、插件位置和 Engine Instance 登记是三个不同维度；不得因为 Runtime 被 System 登记就把整个 owner 模块移动到 `engines/`，也不得在 `engines/` 下复制第二套 Inference 控制面。
 
 ### Engine Instance 身份与生命周期
 
@@ -22,6 +24,7 @@
 - 名称、描述、凭据和非身份连接参数可以原地更新；任何身份字段变化都必须创建新的 Engine Instance，不得保留原 ID 并改指向另一物理端点。
 - 删除后重新注册始终产生新的自增 ID。平台不根据相似连接信息自动关联新旧 Engine Instance，也不迁移旧 locator、fingerprint 或 owner 状态。
 - 生命周期统一为 `active`、`disabled`、`deleting`。只有 `active` 进入业务消费列表。删除前先在原生命周期执行只读影响评估；用户确认后才进入 `deleting`，冻结新绑定和新执行并保留连接配置供权威复扫和 cleanup 使用。参与模块不可用、存在运行任务或复扫影响变化时删除必须暂停；cleanup 完成后才物理删除 System 记录和凭据。
+- 生命周期是平台管理意图，表示引擎实例是否允许进入正常业务选择；连通性观测是 System 最近一次检测的运行事实，两者独立维护。`active + offline` 表示实例仍被启用，但最近检测未通过，不表示生命周期已自动停用。
 - Engine 删除不物理删除用户创建的任务、服务或治理配置；owner 模块将其保留为可重绑定状态，或禁用并标记 `missing_engine`。Meta 快照、缓存和明确登记的派生产物可由各 owner cleanup executor 物理回收。
 - 删除后重新注册产生新的 Engine Instance。旧任务不会按名称或连接信息自动迁移；用户必须在 owner 模块显式选择目标 Engine，由 owner 校验能力并原子改写其私有绑定。ResourceLocator 重绑定保留 path/type，清除旧 Meta `node_id/item_id`。
 - 用户登记的 Engine Instance 归当前 Tenant，不归登记人。`created_by` 只记录审计来源，不能成为后续读取、写入、DDL 或执行授权依据。
@@ -40,7 +43,7 @@ ADDP 中容易混淆的三个概念需要明确区分：
 
 边界原则：
 
-- System 负责引擎控制面和实时 catalog 发现，对外提供 `POST /api/v1/system/engines/:id/catalog/children`。
+- System 负责引擎控制面、连通性检测和实时 catalog 发现，对外提供 `POST /api/v1/system/engines/:id/catalog/children`。连通性字段是最近一次检测缓存，不是长期持有的连接句柄。
 - MongoDB 实时 Catalog 只展示当前认证主体经原生 roles 授权的数据库和集合；ADDP 的 Tenant/Engine 使用授权控制“谁能使用该 Engine Instance”，不复制或覆盖 MongoDB 内部数据库权限。
 - Meta 负责扫描任务、元数据落库、元数据快照查询和索引事件，不再提供新的实时浏览公共接口。
 - Manager 负责数据管理体验和数据预览；展示已纳管资产时消费 Meta 快照，读取真实内容时走 Manager 后端预览能力。
@@ -337,11 +340,12 @@ pg.sql("SELECT * FROM public.farmland WHERE id > $1", params=[100], max_rows=100
 - 工作流算子发现和执行通过 `WorkflowRuntimeProvider`；算子列表、参数、端口等动态能力不写入 capabilities。
 - 交互式 SQL、Workflow 和 Jupyter 的数据访问权限来自本次执行发起者；已发布查询服务的权限来自其冻结的数据源绑定和公开/私有访问策略。调用方必须创建绑定 execution 的短期 Execution Authorization，再由 Runtime Service Principal 消费；Runtime 身份、服务创建人和 Engine 创建人都不是业务授权来源。
 - Runtime Service Principal 只负责机器认证、心跳、控制面注册和消费匹配 audience 的 Execution Authorization。除显式平台自动任务外，不授予通用 Tenant 数据权限或通用明文 Engine 读取权限。
-- Develop 等控制面调用方发现可用 Engine Instance 时只读取 Engine Runtime Descriptor。Descriptor 只暴露实例身份、能力和工作流/脚本运行时的 `protocol/host/port`；数据引擎明文连接只能在消费 Execution Authorization 时按单个 Engine 即时取得。
+- Develop、Agent、Copilot、Manager 等调用方发现可用 Runtime Engine Instance 时只读取 Engine Runtime Descriptor。Descriptor 只暴露实例身份、能力和工作流、脚本、联邦查询、AI 推理运行时的 `protocol/host/port`；数据引擎明文连接只能在消费 Execution Authorization 时按单个 Engine 即时取得。
 - Jupyter 必须由 Develop 创建受控计算会话，不向 Notebook 注入长期明文 Engine 连接，不直接返回共享 Lab 作为数据访问主路径。Notebook 只能获得按 Execution Authorization 收窄的临时访问能力。
 - Kafka topic 通过 `service -> topic` Catalog 暴露；partition 只作为 ChangeStreamReader assignment、position 和 diagnostics，不进入资源树。
 - 业务 Kafka 是 System Engine；Infra Kafka 来自 ADDP 部署配置，不注册 Engine Instance，但复用相同 Kafka client/reader 底层实现。
 - SQL metadata 复用只允许在事实来源和语义一致的引擎家族内发生，例如 MySQL/Doris 共享 `information_schema` helper；PostgreSQL、ClickHouse、Spark SQL 等差异较大的实现保留在各自插件内。
 - AI 调用统一走 `InferenceRuntimeProvider` 和 `addp.inference/v1`。调用方不得直连 OpenAI、DashScope、Ollama 或其他厂商协议，也不得读取厂商 API Key。
+- 第一版只允许一个 active、平台内置且声明 `compute.inference.supported=true` 的 Inference Runtime Engine Instance。调用方必须通过 System Runtime Descriptor 精确解析该实例；零个或多个候选都明确失败，不得使用模块环境变量、固定端口、列表第一项或隐藏 fallback 选择 Runtime。
 - `compute.inference` 只声明 Runtime 支持的统一操作和输入模态，不保存动态 Provider、Deployment 或 Profile 列表；动态资源由 Inference 控制面查询。
 - Inference Runtime Instance 按网络区域、安全域、GPU 集群、故障域或 SLA 拆分，不按厂商、账号或模型拆分。第一版一个 Model Profile 只绑定一个 Deployment，禁止隐藏 fallback。

@@ -66,6 +66,33 @@
       </el-form-item>
     </template>
 
+    <!-- Oracle Database -->
+    <template v-else-if="formState.engine_type === 'oracle'">
+      <el-form-item :label="t('storageEngine.host')" prop="connection_info.host">
+        <el-input v-model="formState.connection_info.host" placeholder="localhost" />
+      </el-form-item>
+      <el-form-item :label="t('storageEngine.port')" prop="connection_info.port">
+        <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" />
+      </el-form-item>
+      <el-form-item :label="t('storageEngine.serviceName')" prop="connection_info.service_name">
+        <el-input v-model="formState.connection_info.service_name" placeholder="FREEPDB1" />
+      </el-form-item>
+      <el-form-item :label="t('storageEngine.username')" prop="connection_info.user">
+        <el-input v-model="formState.connection_info.user" :placeholder="t('storageEngine.usernamePlaceholder')" />
+      </el-form-item>
+      <el-form-item :label="t('storageEngine.password')" prop="connection_info.password">
+        <el-input
+          v-model="formState.connection_info.password"
+          type="password"
+          :placeholder="t('storageEngine.passwordPlaceholder')"
+          show-password
+        />
+      </el-form-item>
+      <div v-if="hasStoredPassword" class="field-hint">
+        {{ t('storageEngine.passwordHint') }}
+      </div>
+    </template>
+
     <!-- Apache Doris -->
     <template v-else-if="formState.engine_type === 'doris'">
       <el-form-item :label="t('storageEngine.host')" prop="connection_info.host">
@@ -615,6 +642,14 @@ const ensureConnectionDefaults = (form) => {
       password: original.password ?? '',
       sslmode: original.sslmode ?? 'disable'
     }
+  } else if (form.engine_type === 'oracle') {
+    form.connection_info = {
+      host: original.host ?? 'localhost',
+      port: original.port ?? 1521,
+      service_name: original.service_name ?? 'FREEPDB1',
+      user: original.user ?? '',
+      password: original.password ?? ''
+    }
   } else if (form.engine_type === 'mysql') {
     form.connection_info = {
       host: original.host ?? 'localhost',
@@ -881,6 +916,7 @@ const computedRules = computed(() => {
     name: [{ required: true, message: t('storageEngine.valid.inputName'), trigger: 'blur' }],
     'connection_info.host': [{ required: true, message: t('storageEngine.valid.inputHost'), trigger: 'blur' }],
     'connection_info.port': [{ required: true, message: t('storageEngine.valid.inputPort'), trigger: 'change' }],
+    'connection_info.service_name': [{ required: true, message: t('storageEngine.valid.inputServiceName'), trigger: 'blur' }],
     'connection_info.database': [{ required: true, message: t('storageEngine.valid.inputDatabase'), trigger: 'blur' }],
     'connection_info.user': [{ required: true, message: t('storageEngine.valid.inputUsername'), trigger: 'blur' }],
     'connection_info.password': [{ required: true, message: t('storageEngine.valid.inputPassword'), trigger: 'blur' }],
@@ -909,6 +945,18 @@ const computedRules = computed(() => {
       name: rules.name,
       'connection_info.host': rules['connection_info.host'],
       'connection_info.port': rules['connection_info.port'],
+      'connection_info.user': rules['connection_info.user'],
+      'connection_info.password': rules['connection_info.password']
+    }
+  }
+
+  if (formState.engine_type === 'oracle') {
+    return {
+      engine_type: rules.engine_type,
+      name: rules.name,
+      'connection_info.host': rules['connection_info.host'],
+      'connection_info.port': rules['connection_info.port'],
+      'connection_info.service_name': rules['connection_info.service_name'],
       'connection_info.user': rules['connection_info.user'],
       'connection_info.password': rules['connection_info.password']
     }

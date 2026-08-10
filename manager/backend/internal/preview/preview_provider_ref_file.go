@@ -9,7 +9,7 @@ import (
 
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/format"
-	"github.com/addp/common/rastermosaic"
+	"github.com/addp/common/format/rastermosaic"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/objectcontent"
 )

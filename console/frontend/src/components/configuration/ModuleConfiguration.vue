@@ -38,10 +38,7 @@ const props = defineProps({ owner: { type: String, required: true } })
 const { t } = useI18n()
 const tabsByOwner = {
   agent: [{ name: 'inference', kind: 'inference', label: 'console.configuration.tabs.inference' }],
-  copilot: [
-    { name: 'inference', kind: 'inference', label: 'console.configuration.tabs.inference' },
-    { name: 'matching-policy', kind: 'policy', label: 'console.configuration.tabs.matchingPolicy' }
-  ],
+  copilot: [{ name: 'inference', kind: 'inference', label: 'console.configuration.tabs.inference' }],
   develop: [{ name: 'query-policy', kind: 'policy', label: 'console.configuration.tabs.queryPolicy' }],
   manager: [
     { name: 'quick-view-policy', kind: 'policy', label: 'console.configuration.tabs.quickViewPolicy' },

@@ -27,7 +27,6 @@ import (
 	"github.com/addp/common/engine/plugins/minio"
 	"github.com/addp/common/events"
 	commonLogger "github.com/addp/common/logger"
-	"github.com/addp/common/utils"
 	"github.com/addp/graph/internal/api"
 	"github.com/addp/graph/internal/config"
 	"github.com/addp/graph/internal/repository"
@@ -48,7 +47,7 @@ func main() {
 	logger := commonLogger.L()
 
 	// 端口检查
-	if err := utils.CheckPortAvailable(cfg.Port); err != nil {
+	if err := commonConfig.CheckPortAvailable(cfg.Port); err != nil {
 		logger.Error("端口检查失败", "error", err, "port", cfg.Port)
 		os.Exit(1)
 	}
@@ -130,9 +129,8 @@ func main() {
 	router := api.SetupRouter(cfg, ontologyHandler, graphHandler, browseHandler, buildHandler, taskProviderHandler, analysisHandler, serviceHandler)
 
 	// 模块注册
-	serviceHost := utils.GetServiceHost()
-	port := utils.GetModulePort("graph")
-	serviceURL := utils.BuildServiceURL(serviceHost, port)
+	serviceHost := commonConfig.GetServiceHost()
+	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
 	if cfg.SystemServiceURL != "" {
 		systemServiceClient.RegisterAndHeartbeatWithMetadata(context.Background(), "graph", serviceURL, "/graph", map[string]interface{}{
 			"module": "graph",

@@ -31,6 +31,25 @@ class InferenceClientTests(unittest.IsolatedAsyncioTestCase):
             })
 
         async def inference_handler(request):
+            if request.url.path == "/api/v1/system/runtime/engine-descriptors":
+                return httpx.Response(200, json={
+                    "data": [{
+                        "id": 9,
+                        "engine_type": "inference_runtime",
+                        "is_builtin": True,
+                        "lifecycle_state": "active",
+                        "capabilities": {
+                            "schema_version": "engine.capabilities/v1",
+                            "engine_type": "inference_runtime",
+                            "engine_family": "inference",
+                            "compute": {"inference": {"supported": True, "runtime_api": "addp.inference/v1", "operations": ["embedding"]}},
+                        },
+                        "runtime_endpoint": {"protocol": "http", "host": "inference", "port": 8191},
+                    }],
+                    "total": 1,
+                    "page": 1,
+                    "page_size": 2,
+                })
             self.assertEqual(request.url.path, "/api/v1/inference/internal/embeddings")
             self.assertEqual(request.headers["Authorization"], "Bearer addp_at_service-token")
             self.assertEqual(json.loads(request.content), {
@@ -55,7 +74,7 @@ class InferenceClientTests(unittest.IsolatedAsyncioTestCase):
             transport=httpx.MockTransport(system_handler),
         )
         client = InferenceClient(
-            "http://inference",
+            "http://system",
             token_source,
             transport=httpx.MockTransport(inference_handler),
         )
@@ -85,7 +104,7 @@ class InferenceClientTests(unittest.IsolatedAsyncioTestCase):
             "test-service-client-secret-32bytes",
             transport=httpx.MockTransport(lambda _request: httpx.Response(500)),
         )
-        client = InferenceClient("http://inference", token_source)
+        client = InferenceClient("http://system", token_source)
         try:
             with self.assertRaisesRegex(ValueError, "tenant ID"):
                 await client.chat(
@@ -113,6 +132,25 @@ class InferenceClientTests(unittest.IsolatedAsyncioTestCase):
 
         async def inference_handler(request):
             nonlocal inference_requests
+            if request.url.path == "/api/v1/system/runtime/engine-descriptors":
+                return httpx.Response(200, json={
+                    "data": [{
+                        "id": 9,
+                        "engine_type": "inference_runtime",
+                        "is_builtin": True,
+                        "lifecycle_state": "active",
+                        "capabilities": {
+                            "schema_version": "engine.capabilities/v1",
+                            "engine_type": "inference_runtime",
+                            "engine_family": "inference",
+                            "compute": {"inference": {"supported": True, "runtime_api": "addp.inference/v1", "operations": ["embedding"]}},
+                        },
+                        "runtime_endpoint": {"protocol": "http", "host": "inference", "port": 8191},
+                    }],
+                    "total": 1,
+                    "page": 1,
+                    "page_size": 2,
+                })
             inference_requests += 1
             if request.headers["Authorization"] == "Bearer addp_at_token-1":
                 return httpx.Response(401, json={"error_code": "unauthorized"})
@@ -131,7 +169,7 @@ class InferenceClientTests(unittest.IsolatedAsyncioTestCase):
             transport=httpx.MockTransport(system_handler),
         )
         client = InferenceClient(
-            "http://inference",
+            "http://system",
             token_source,
             transport=httpx.MockTransport(inference_handler),
         )

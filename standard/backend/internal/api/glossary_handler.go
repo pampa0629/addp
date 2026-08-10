@@ -36,7 +36,7 @@ func (h *GlossaryHandler) ListGlossaries(c *gin.Context) {
 		if elementID, err := strconv.ParseInt(elementIDStr, 10, 64); err == nil {
 			glossaries, err := h.svc.GetGlossariesByElement(elementID, tenantID)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				respondError(c, http.StatusInternalServerError, err)
 				return
 			}
 			c.JSON(http.StatusOK, glossaries)
@@ -66,7 +66,7 @@ func (h *GlossaryHandler) ListGlossaries(c *gin.Context) {
 
 	glossaries, total, err := h.svc.ListGlossaries(tenantID, opts)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	page := opts.Page
@@ -96,7 +96,7 @@ func (h *GlossaryHandler) ListGlossaries(c *gin.Context) {
 func (h *GlossaryHandler) CreateGlossary(c *gin.Context) {
 	var req models.CreateGlossaryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
@@ -105,7 +105,7 @@ func (h *GlossaryHandler) CreateGlossary(c *gin.Context) {
 
 	glossary, err := h.svc.CreateGlossary(&req, tenantID, userID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusCreated, glossary)
@@ -154,7 +154,7 @@ func (h *GlossaryHandler) UpdateGlossary(c *gin.Context) {
 
 	var req models.UpdateGlossaryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
@@ -163,7 +163,7 @@ func (h *GlossaryHandler) UpdateGlossary(c *gin.Context) {
 
 	glossary, err := h.svc.UpdateGlossary(id, tenantID, userID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, glossary)
@@ -187,7 +187,7 @@ func (h *GlossaryHandler) DeleteGlossary(c *gin.Context) {
 
 	tenantID := getTenantID(c)
 	if err := h.svc.DeleteGlossary(id, tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
@@ -213,7 +213,7 @@ func (h *GlossaryHandler) ApproveGlossary(c *gin.Context) {
 	userID := getUserID(c)
 
 	if err := h.svc.ApproveGlossary(id, tenantID, userID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgApproveSuccess)})
@@ -239,7 +239,7 @@ func (h *GlossaryHandler) DeprecateGlossary(c *gin.Context) {
 	userID := getUserID(c)
 
 	if err := h.svc.DeprecateGlossary(id, tenantID, userID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeprecateSuccess)})
@@ -264,7 +264,7 @@ func (h *GlossaryHandler) GetElementMappings(c *gin.Context) {
 	tenantID := getTenantID(c)
 	elements, err := h.svc.GetMappedElements(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, elements)
@@ -290,13 +290,13 @@ func (h *GlossaryHandler) SetElementMappings(c *gin.Context) {
 		ElementIDs []int64 `json:"element_ids"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
 	tenantID := getTenantID(c)
 	if err := h.svc.SetElementMappings(id, tenantID, req.ElementIDs); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgUpdateSuccess)})

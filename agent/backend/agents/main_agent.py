@@ -49,21 +49,38 @@ class SkillMeta:
         path: Path,
         tools: List[str],
         max_iterations: int,
+        required_skills: List[str] | None = None,
     ):
         self.name = name
         self.description = description
         self.path = path
         self.tools = tools                   # 工具白名单
         self.max_iterations = max_iterations  # ReAct 最大迭代次数
+        self.required_skills = required_skills or []  # 只组合方法正文，不继承工具权限
 
-    def load_body(self) -> str:
+    def load_body(self, registry: Dict[str, "SkillMeta"] | None = None, stack: tuple[str, ...] = ()) -> str:
         """按需读取 SKILL.md 正文（去掉 front matter，作为 system prompt）"""
+        if self.name in stack:
+            raise ValueError(f"Skill 依赖存在循环: {' -> '.join((*stack, self.name))}")
         content = self.path.read_text(encoding="utf-8").strip()
+        body = content
         if content.startswith("---"):
             parts = content.split("---", 2)
             if len(parts) >= 3:
-                return parts[2].strip()
-        return content
+                body = parts[2].strip()
+        if not self.required_skills:
+            return body
+        if registry is None:
+            raise ValueError(f"Skill {self.name} 需要 Runtime 注册表才能组合依赖 Skill")
+        dependency_bodies = []
+        for dependency in self.required_skills:
+            dependency_meta = registry.get(dependency)
+            if dependency_meta is None:
+                raise ValueError(f"Skill {self.name} 引用了不存在的依赖 Skill: {dependency}")
+            dependency_bodies.append(
+                f"## 共用方法：{dependency}\n\n{dependency_meta.load_body(registry, (*stack, self.name))}"
+            )
+        return "\n\n".join((*dependency_bodies, body))
 
 
 def _parse_front_matter(content: str) -> Dict[str, Any]:
@@ -113,7 +130,14 @@ def _load_skill_registry() -> Dict[str, SkillMeta]:
             path=skill_file,
             tools=required_tools,
             max_iterations=int(runtime.get("max_iterations", 5)),
+            required_skills=runtime.get("required_skills") or [],
         )
+    for name, skill in registry.items():
+        missing_skills = sorted(set(skill.required_skills) - set(registry))
+        if missing_skills:
+                raise ValueError(f"Skill {name} 引用了不存在的依赖 Skill: {missing_skills}")
+    for name in registry:
+        registry[name].load_body(registry)
     return registry
 
 
@@ -297,7 +321,7 @@ async def stream_agent_response(
 
         async for event in AgentFactory.run(
             task_context=task_context,
-            skill_body=skill_meta.load_body(),
+                skill_body=skill_meta.load_body(registry) if getattr(skill_meta, "required_skills", None) else skill_meta.load_body(),
             allowed_tool_names=skill_meta.tools,
             max_iterations=skill_meta.max_iterations,
             llm=reasoning_llm,

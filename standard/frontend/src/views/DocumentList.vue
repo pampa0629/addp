@@ -10,8 +10,8 @@
 
     <el-card>
       <div class="toolbar">
-        <el-input v-model="keyword" :placeholder="$t('standard.document.searchPlaceholder')" clearable @change="loadDocuments" style="width:280px" />
-        <el-select v-model="filterType" :placeholder="$t('standard.document.filterTypePlaceholder')" clearable @change="loadDocuments" style="width:140px">
+        <el-input v-model="keyword" :placeholder="$t('standard.document.searchPlaceholder')" clearable @change="handleFilterChange" style="width:280px" />
+        <el-select v-model="filterType" :placeholder="$t('standard.document.filterTypePlaceholder')" clearable @change="handleFilterChange" style="width:140px">
           <el-option :label="$t('standard.document.national')" value="national" />
           <el-option :label="$t('standard.document.industry')" value="industry" />
           <el-option :label="$t('standard.document.internal')" value="internal" />
@@ -39,10 +39,12 @@
         <el-table-column :label="$t('standard.document.entryTime')" width="110">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column :label="$t('standard.common.actions')" width="100" fixed="right">
+        <el-table-column :label="$t('standard.common.actions')" width="150" fixed="right">
           <template #default="{ row }">
+            <div class="table-actions">
             <el-button link size="small" type="primary" v-if="row.file_name" @click.stop="downloadFile(row)">{{ $t('standard.document.download') }}</el-button>
             <el-button link size="small" type="danger" @click.stop="deleteDocument(row)">{{ $t('standard.common.delete') }}</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -54,7 +56,7 @@
           :total="total"
           :page-sizes="[20, 50]"
           layout="total, sizes, prev, pager, next"
-          @change="loadDocuments"
+          @change="handlePageChange"
         />
       </div>
     </el-card>
@@ -155,20 +157,20 @@
         />
         <el-tabs>
           <el-tab-pane :label="$t('standard.document.relatedElements')" name="elements">
-            <el-tag v-for="m in mappings.elements" :key="m.element_id" size="small" style="margin:4px">
-              {{ $t('standard.document.elementRef', { id: m.element_id }) }}{{ m.reference_location ? '（' + m.reference_location + '）' : '' }}
+            <el-tag v-for="m in mappings.elements" :key="m.element_id" size="small" class="mapping-tag" @click="openRelated('elements', m.element_id)">
+              {{ m.name || $t('standard.document.elementRef', { id: m.element_id }) }}{{ m.reference_location ? ` (${m.reference_location})` : '' }}
             </el-tag>
             <el-empty v-if="!mappings.elements?.length" :description="$t('standard.document.noRelated')" :image-size="60" />
           </el-tab-pane>
           <el-tab-pane :label="$t('standard.document.relatedGlossaries')" name="glossaries">
-            <el-tag v-for="m in mappings.glossaries" :key="m.glossary_id" size="small" style="margin:4px">
-              {{ $t('standard.document.glossaryRef', { id: m.glossary_id }) }}
+            <el-tag v-for="m in mappings.glossaries" :key="m.glossary_id" size="small" class="mapping-tag" @click="openRelated('glossaries', m.glossary_id)">
+              {{ m.name || $t('standard.document.glossaryRef', { id: m.glossary_id }) }}
             </el-tag>
             <el-empty v-if="!mappings.glossaries?.length" :description="$t('standard.document.noRelated')" :image-size="60" />
           </el-tab-pane>
           <el-tab-pane :label="$t('standard.document.relatedMetrics')" name="metrics">
-            <el-tag v-for="m in mappings.metrics" :key="m.metric_id" size="small" style="margin:4px">
-              {{ $t('standard.document.metricRef', { id: m.metric_id }) }}
+            <el-tag v-for="m in mappings.metrics" :key="m.metric_id" size="small" class="mapping-tag" @click="openRelated('metrics', m.metric_id)">
+              {{ m.name || $t('standard.document.metricRef', { id: m.metric_id }) }}
             </el-tag>
             <el-empty v-if="!mappings.metrics?.length" :description="$t('standard.document.noRelated')" :image-size="60" />
           </el-tab-pane>
@@ -180,21 +182,26 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document } from '@element-plus/icons-vue'
 import { documentAPI } from '../api/standard'
+import { saveBlob } from '../utils/download'
+import { navigateStandardRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
+const router = useRouter()
+const route = useRoute()
 
 const documents = ref([])
 const loading = ref(false)
 const saving = ref(false)
-const page = ref(1)
-const pageSize = ref(20)
+const page = ref(Number(route.query.page) > 0 ? Number(route.query.page) : 1)
+const pageSize = ref(Number(route.query.page_size) > 0 ? Number(route.query.page_size) : 20)
 const total = ref(0)
-const keyword = ref('')
-const filterType = ref('')
+const keyword = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
+const filterType = ref(typeof route.query.doc_type === 'string' ? route.query.doc_type : '')
 
 const showCreateDialog = ref(false)
 const showDetail = ref(false)
@@ -247,6 +254,26 @@ const loadDocuments = async () => {
   }
 }
 
+const syncQuery = () => {
+  const query = {}
+  if (keyword.value) query.keyword = keyword.value
+  if (filterType.value) query.doc_type = filterType.value
+  if (page.value !== 1) query.page = String(page.value)
+  if (pageSize.value !== 20) query.page_size = String(pageSize.value)
+  navigateStandardRoute(router, { path: '/documents', query }, { history: 'replace' })
+}
+
+const handleFilterChange = () => {
+  page.value = 1
+  syncQuery()
+  loadDocuments()
+}
+
+const handlePageChange = () => {
+  syncQuery()
+  loadDocuments()
+}
+
 const createDocument = async () => {
   if (!form.value.name) {
     ElMessage.warning(t('standard.document.nameRequired'))
@@ -282,13 +309,16 @@ const openDetail = async (row) => {
   }
 }
 
-const downloadFile = (row) => {
-  const url = documentAPI.downloadUrl(row.id)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = row.file_name || 'document'
-  a.click()
+const downloadFile = async (row) => {
+  try {
+    const blob = await documentAPI.download(row.id)
+    saveBlob(blob, row.file_name || row.name)
+  } catch (e) {
+    ElMessage.error(e.response?.data?.error || t('standard.document.downloadFailed'))
+  }
 }
+
+const openRelated = (resource, id) => navigateStandardRoute(router, `/${resource}/${id}`)
 
 const uploadToExisting = async (doc, file) => {
   const fd = new FormData()
@@ -333,4 +363,6 @@ onMounted(loadDocuments)
 .file-section { display: flex; align-items: center; gap: 8px; padding: 8px 0; font-size: 13px; }
 .file-info { color: var(--el-text-color-regular); }
 .no-file-section { padding: 8px 0; }
+.mapping-tag { margin: 4px; cursor: pointer; }
+.table-actions { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 </style>

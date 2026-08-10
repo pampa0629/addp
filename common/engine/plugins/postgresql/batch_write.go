@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/sqldialect"
+	commonquery "github.com/addp/common/query"
 )
 
 const postgresDefaultInsertChunkSize = 1000
@@ -151,7 +151,7 @@ func effectivePostgresInsertChunkSize(columnCount, requested int) int {
 }
 
 func buildPostgresInsertSQL(schema, table string, columns []string, rows []map[string]interface{}, geometryColumns map[string]struct{}) (string, []interface{}) {
-	dialect := sqldialect.ForEngine("postgresql")
+	dialect := commonquery.ForEngine("postgresql")
 	quotedColumns := make([]string, 0, len(columns))
 	for _, column := range columns {
 		quotedColumns = append(quotedColumns, dialect.QuoteIdentifier(column))

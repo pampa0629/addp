@@ -14,7 +14,7 @@
       </el-table-column>
       <el-table-column :label="t('quality.execution.qualityScore')" width="120">
         <template #default="{ row }">
-          <span v-if="row.result?.quality_score != null">{{ row.result.quality_score.toFixed(1) }}%</span>
+          <span v-if="row.metadata?.schema_version === 'addp.quality.execution-result/v1'">{{ Number(row.metadata.quality_score).toFixed(1) }}%</span>
           <span v-else>-</span>
         </template>
       </el-table-column>
@@ -28,6 +28,16 @@
         </template>
       </el-table-column>
     </el-table>
+    <el-pagination
+      v-model:current-page="pagination.page"
+      v-model:page-size="pagination.page_size"
+      :page-sizes="[20, 50, 100]"
+      layout="total, sizes, prev, pager, next"
+      :total="pagination.total"
+      class="pagination"
+      @size-change="fetchList"
+      @current-change="fetchList"
+    />
   </div>
 </template>
 
@@ -36,6 +46,7 @@ import { ref, onMounted } from 'vue'
 import { executionAPI } from '../api/quality'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { navigateQualityRoute } from '../utils/moduleNavigation'
 
 const { t } = useI18n()
@@ -43,6 +54,7 @@ const router = useRouter()
 
 const list = ref([])
 const loading = ref(false)
+const pagination = ref({ page: 1, page_size: 20, total: 0 })
 
 const statusType = (status) => {
   const map = { success: 'success', failed: 'danger', running: 'warning', pending: 'info' }
@@ -56,8 +68,11 @@ const openExecution = (executionId) => {
 const fetchList = async () => {
   loading.value = true
   try {
-    const res = await executionAPI.list()
+    const res = await executionAPI.list({ page: pagination.value.page, page_size: pagination.value.page_size })
     list.value = res.data || []
+    pagination.value.total = res.total || 0
+  } catch (e) {
+    ElMessage.error(e.response?.data?.error || t('quality.execution.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -69,5 +84,9 @@ onMounted(fetchList)
 <style scoped>
 .page-header {
   margin-bottom: 16px;
+}
+.pagination {
+  margin-top: 16px;
+  justify-content: flex-end;
 }
 </style>

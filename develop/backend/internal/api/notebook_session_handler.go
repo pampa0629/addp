@@ -59,6 +59,12 @@ func (h *NotebookHandler) CreateSession(c *gin.Context) {
 		HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode,
 		Expires: session.ExpiresAt, MaxAge: max(1, int(time.Until(session.ExpiresAt).Seconds())),
 	})
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name: service.NotebookCopilotSessionCookieName, Value: secret,
+		Path:     "/api/v1/develop/notebook-copilot-sessions/" + session.ID + "/",
+		HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode,
+		Expires: session.ExpiresAt, MaxAge: max(1, int(time.Until(session.ExpiresAt).Seconds())),
+	})
 	c.JSON(http.StatusCreated, session)
 }
 
@@ -386,6 +392,10 @@ func (h *NotebookHandler) CloseSession(c *gin.Context) {
 	}
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name: service.NotebookSessionCookieName, Value: "", Path: "/api/v1/develop/notebook-sessions/" + uri.SessionID + "/",
+		HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1,
+	})
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name: service.NotebookCopilotSessionCookieName, Value: "", Path: "/api/v1/develop/notebook-copilot-sessions/" + uri.SessionID + "/",
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1,
 	})
 	c.Status(http.StatusNoContent)

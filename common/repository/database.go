@@ -8,8 +8,8 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/execution"
-	"github.com/addp/common/utils"
 )
 
 // DatabaseConfig holds database connection configuration
@@ -34,7 +34,7 @@ func InitDatabase(cfg DatabaseConfig, models ...interface{}) (*gorm.DB, error) {
 	dsn := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s TimeZone=%s",
 		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.DBName, cfg.SSLMode,
-		utils.GetTimezone(),
+		commonConfig.GetTimezone(),
 	)
 
 	// Add search_path if schema is specified

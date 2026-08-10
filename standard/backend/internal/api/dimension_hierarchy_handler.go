@@ -33,7 +33,7 @@ func (h *DimensionHierarchyHandler) List(c *gin.Context) {
 	tenantID := getTenantID(c)
 	list, err := h.svc.List(tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, list)
@@ -75,14 +75,14 @@ func (h *DimensionHierarchyHandler) Get(c *gin.Context) {
 func (h *DimensionHierarchyHandler) Create(c *gin.Context) {
 	var req models.CreateDimensionHierarchyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	tenantID := getTenantID(c)
 	userID := getUserID(c)
 	item, err := h.svc.Create(&req, tenantID, userID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusCreated, item)
@@ -105,14 +105,14 @@ func (h *DimensionHierarchyHandler) Update(c *gin.Context) {
 	}
 	var req models.UpdateDimensionHierarchyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	tenantID := getTenantID(c)
 	userID := getUserID(c)
 	item, err := h.svc.Update(id, tenantID, userID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, item)
@@ -135,7 +135,7 @@ func (h *DimensionHierarchyHandler) Delete(c *gin.Context) {
 	}
 	tenantID := getTenantID(c)
 	if err := h.svc.Delete(id, tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
@@ -158,9 +158,9 @@ func (h *DimensionHierarchyHandler) ListLevels(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
-	levels, err := h.svc.GetLevels(id)
+	levels, err := h.svc.GetLevels(id, getTenantID(c))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, levels)
@@ -183,12 +183,12 @@ func (h *DimensionHierarchyHandler) CreateLevel(c *gin.Context) {
 	}
 	var req models.UpsertHierarchyLevelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	level, err := h.svc.CreateLevel(id, &req)
+	level, err := h.svc.CreateLevel(id, getTenantID(c), &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusCreated, level)
@@ -216,12 +216,12 @@ func (h *DimensionHierarchyHandler) UpdateLevel(c *gin.Context) {
 	}
 	var req models.UpsertHierarchyLevelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	level, err := h.svc.UpdateLevel(lid, id, &req)
+	level, err := h.svc.UpdateLevel(lid, id, getTenantID(c), &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, level)
@@ -247,8 +247,8 @@ func (h *DimensionHierarchyHandler) DeleteLevel(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidLevelID)})
 		return
 	}
-	if err := h.svc.DeleteLevel(lid, id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := h.svc.DeleteLevel(lid, id, getTenantID(c)); err != nil {
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})

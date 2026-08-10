@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/addp/common/dataprofile"
+	"github.com/addp/manager/internal/dataprofile"
 	"github.com/addp/manager/internal/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

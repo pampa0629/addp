@@ -594,6 +594,45 @@ export function useTaskWizardState() {
     }
   }
 
+  function applyAssistantSource(candidate, engine = null) {
+    if (!candidate?.locator || !candidate?.engine_id) return
+    const parsed = parseTransferLocator(candidate.locator)
+    const representation = candidate.representation || (candidate.data_type === 'table' ? 'native' : 'encoded')
+    const format = candidate.format || ''
+    updateSource({
+      engineID: Number(candidate.engine_id),
+      engineType: engine?.engine_type || '',
+      capabilities: engine?.capabilities || null,
+      schema: parsed.path.length > 1 ? parsed.path[parsed.path.length - 2] : '',
+      table: parsed.path[parsed.path.length - 1] || '',
+      sourceType: normalizeEngineType(engine?.engine_type || ''),
+      dataType: candidate.data_type || 'table',
+      representation,
+      format,
+      locator: candidate.locator,
+      extra: {
+        sourceLabel: candidate.full_name || candidate.name || candidate.locator,
+        catalogPath: candidate.full_name || candidate.name || candidate.locator,
+        dataType: candidate.data_type || 'table',
+        representation,
+        format,
+        locator: candidate.locator,
+        sourceItem: {
+          item_id: parseTransferLocator(candidate.locator).itemID || undefined,
+          meta_id: parseTransferLocator(candidate.locator).itemID || undefined,
+          name: candidate.name,
+          full_name: candidate.full_name,
+          data_type: candidate.data_type || 'table',
+          representation,
+          format,
+          locator: candidate.locator,
+          attributes: {}
+        }
+      }
+    })
+    loadSourceFields(candidate.fields || [])
+  }
+
 	function setLoadMode(mode) {
 		if (isKafkaTopicSource(sourceEngineType.value, sourceLocator.value)) {
 			loadMode.value = 'incremental'
@@ -1305,6 +1344,7 @@ export function useTaskWizardState() {
     prevStep,
     goToStep,
     updateSource,
+    applyAssistantSource,
     updateFormatCapabilities,
     loadSourceFields,
     updateSourceItem,

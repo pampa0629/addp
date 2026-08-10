@@ -115,6 +115,7 @@ import {
   resourceBindingNameParam,
   resourceBindingTargetExtension
 } from '@/utils/workflowResourceBindings'
+import { workflowExternalParameterSummaries } from '@/utils/workflowParameterPresentation'
 import {
   WORKFLOW_EDGE_TYPE,
   registerWorkflowEditorEdge
@@ -141,6 +142,10 @@ const props = defineProps({
     default: () => []
   },
   initialLayout: {
+    type: Object,
+    default: () => ({})
+  },
+  resourceEnginesById: {
     type: Object,
     default: () => ({})
   }
@@ -297,6 +302,19 @@ watch(() => props.operators, () => {
 }, { deep: true })
 
 watch(() => props.validationIssues, applyValidationStates, { deep: true })
+
+watch(() => props.resourceEnginesById, () => {
+  if (!graph.value) return
+  graph.value.getNodes().forEach(node => {
+    const model = node.getModel()
+    graph.value.updateItem(node, {
+      ...model,
+      parameterSummaries: externalParameterSummaries(model.publicParameters, model.params)
+    })
+  })
+  graph.value.refreshPositions()
+  refreshInspectedNode(inspectedNodeId.value)
+}, { deep: true })
 
 function resolveOutputPort(event) {
   if (event?.shape?.cfg?.portType !== 'output') return null
@@ -504,14 +522,16 @@ function loadWorkflow(workflow) {
 function buildNodeModel(operator, id, point = null, params = null) {
   const inputPorts = operatorInputPorts(operator)
   const outputPorts = operatorOutputPorts(operator)
+  const nodeParams = params ? { ...params } : defaultOperatorParams(operator)
   return {
     id,
     type: 'develop-workflow-node',
     label: operator.display_name || operator.name,
     displayName: operator.display_name || operator.name,
     operator: operator.name,
-    params: params ? { ...params } : defaultOperatorParams(operator),
+    params: nodeParams,
     publicParameters: operator.public_parameters || [],
+    parameterSummaries: externalParameterSummaries(operator.public_parameters || [], nodeParams),
     inputPorts,
     outputPorts,
     ...(point ? { x: point.x, y: point.y } : {})
@@ -648,9 +668,12 @@ function updateNodeParams(nodeId, params, publicParameters = null) {
   if (!node) return
   const model = { ...node.getModel(), params: { ...params } }
   if (Array.isArray(publicParameters)) model.publicParameters = publicParameters
+  model.parameterSummaries = externalParameterSummaries(model.publicParameters, model.params)
   graph.value.updateItem(node, model)
+  graph.value.refreshPositions()
   recordHistory({ mergeKey: `params:${nodeId}` })
   emitWorkflow()
+  refreshInspectedNode(nodeId)
 }
 
 function updateInputConnection({ nodeId, targetParam, sourceId = '', sourcePort = 'default' }) {
@@ -850,6 +873,15 @@ function nodeViewModel(model) {
     inputConnections: inputConnectionsForNode(model.id),
     inputConnectionOptions: inputConnectionOptionsForNode(model)
   }
+}
+
+function externalParameterSummaries(parameters, params) {
+  return workflowExternalParameterSummaries(
+    parameters,
+    params,
+    props.resourceEnginesById,
+    { emptyLabel: t('develop.workflow.notConfigured') }
+  )
 }
 
 function inputConnectionsForNode(nodeId) {

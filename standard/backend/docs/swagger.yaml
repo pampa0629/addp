@@ -12,6 +12,41 @@ definitions:
         description: 在源模块中的唯一标识
         type: string
     type: object
+  dataquality.Parameters:
+    properties:
+      max:
+        type: string
+      min:
+        type: string
+      pattern:
+        type: string
+      values:
+        items:
+          type: string
+        type: array
+    type: object
+  dataquality.Rule:
+    properties:
+      enabled:
+        type: boolean
+      message:
+        type: string
+      params:
+        $ref: '#/definitions/dataquality.Parameters'
+      severity:
+        type: string
+      type:
+        type: string
+    type: object
+  github_com_addp_standard_internal_models.QualityRulesResponse:
+    properties:
+      rules:
+        items:
+          $ref: '#/definitions/dataquality.Rule'
+        type: array
+      schema_version:
+        type: string
+    type: object
 host: localhost:8110
 info:
   contact: {}
@@ -680,8 +715,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/github_com_addp_standard_internal_models.QualityRulesResponse'
       security:
       - BearerAuth: []
       summary: 获取数据元列表 | List data elements

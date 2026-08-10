@@ -35,7 +35,7 @@ func (h *MetricHandler) ListCategories(c *gin.Context) {
 	tenantID := getTenantID(c)
 	cats, err := h.svc.ListCategories(tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, cats)
@@ -52,14 +52,14 @@ func (h *MetricHandler) ListCategories(c *gin.Context) {
 func (h *MetricHandler) CreateCategory(c *gin.Context) {
 	var req models.CreateMetricCategoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	tenantID := getTenantID(c)
 	userID := getUserID(c)
 	cat, err := h.svc.CreateCategory(&req, tenantID, userID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusCreated, cat)
@@ -81,14 +81,14 @@ func (h *MetricHandler) UpdateCategory(c *gin.Context) {
 	}
 	var req models.UpdateMetricCategoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	tenantID := getTenantID(c)
 	userID := getUserID(c)
 	cat, err := h.svc.UpdateCategory(id, tenantID, userID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, cat)
@@ -110,7 +110,7 @@ func (h *MetricHandler) DeleteCategory(c *gin.Context) {
 	}
 	tenantID := getTenantID(c)
 	if err := h.svc.DeleteCategory(id, tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
@@ -150,7 +150,7 @@ func (h *MetricHandler) ListMetrics(c *gin.Context) {
 	}
 	metrics, total, err := h.svc.ListMetrics(tenantID, opts)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	page := opts.Page
@@ -189,8 +189,8 @@ func (h *MetricHandler) GetMetric(c *gin.Context) {
 		return
 	}
 
-	elements, _ := h.svc.GetElementMappings(id)
-	deps, _ := h.svc.GetDependencies(id)
+	elements, _ := h.svc.GetElementMappings(id, tenantID)
+	deps, _ := h.svc.GetDependencies(id, tenantID)
 
 	type MetricDetailResponse struct {
 		*models.Metric
@@ -215,14 +215,14 @@ func (h *MetricHandler) GetMetric(c *gin.Context) {
 func (h *MetricHandler) CreateMetric(c *gin.Context) {
 	var req models.CreateMetricRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	tenantID := getTenantID(c)
 	userID := getUserID(c)
 	metric, err := h.svc.CreateMetric(&req, tenantID, userID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusCreated, metric)
@@ -244,14 +244,14 @@ func (h *MetricHandler) UpdateMetric(c *gin.Context) {
 	}
 	var req models.UpdateMetricRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	tenantID := getTenantID(c)
 	userID := getUserID(c)
 	metric, err := h.svc.UpdateMetric(id, tenantID, userID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, metric)
@@ -273,7 +273,7 @@ func (h *MetricHandler) DeleteMetric(c *gin.Context) {
 	}
 	tenantID := getTenantID(c)
 	if err := h.svc.DeleteMetric(id, tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
@@ -296,7 +296,7 @@ func (h *MetricHandler) ApproveMetric(c *gin.Context) {
 	tenantID := getTenantID(c)
 	userID := getUserID(c)
 	if err := h.svc.ApproveMetric(id, tenantID, userID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgApproveSuccess)})
@@ -319,7 +319,7 @@ func (h *MetricHandler) DeprecateMetric(c *gin.Context) {
 	tenantID := getTenantID(c)
 	userID := getUserID(c)
 	if err := h.svc.DeprecateMetric(id, tenantID, userID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeprecateSuccess)})

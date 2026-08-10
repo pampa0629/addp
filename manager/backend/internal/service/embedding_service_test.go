@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/addp/common/embedding"
 	enginePlugin "github.com/addp/common/engine/plugin"
 	commonInference "github.com/addp/common/inference"
 	commonModels "github.com/addp/common/models"
@@ -190,14 +189,14 @@ func TestDetectSupportedModalityRequiresSupportedObjectFormat(t *testing.T) {
 		contentType string
 		objectKey   string
 		wantOK      bool
-		want        embedding.Modality
+		want        embeddingModality
 	}{
 		{
 			name:        "image extension supported even when content type is generic",
 			contentType: "application/octet-stream",
 			objectKey:   "bucket/photo.jpg",
 			wantOK:      true,
-			want:        embedding.ModalityImage,
+			want:        embeddingModalityImage,
 		},
 		{
 			name:        "plain text sidecar is not vectorized",
@@ -216,7 +215,7 @@ func TestDetectSupportedModalityRequiresSupportedObjectFormat(t *testing.T) {
 			contentType: "text/plain",
 			objectKey:   "bucket/test.csv",
 			wantOK:      true,
-			want:        embedding.ModalityText,
+			want:        embeddingModalityText,
 		},
 		{
 			name:        "unknown extension is not vectorized",

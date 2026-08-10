@@ -8,7 +8,7 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	pluginshared "github.com/addp/common/engine/plugins/shared"
-	"github.com/addp/common/sqldialect"
+	commonquery "github.com/addp/common/query"
 	"github.com/google/uuid"
 )
 
@@ -258,7 +258,7 @@ func deletePostgresRowsTx(ctx context.Context, tx *sql.Tx, schema, table string,
 	if len(rows) == 0 {
 		return nil
 	}
-	dialect := sqldialect.ForEngine("postgresql")
+	dialect := commonquery.ForEngine("postgresql")
 	quotedKeys := make([]string, 0, len(keys))
 	for _, key := range keys {
 		quotedKeys = append(quotedKeys, dialect.QuoteIdentifier(key))

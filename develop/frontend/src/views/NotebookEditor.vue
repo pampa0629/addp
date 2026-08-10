@@ -114,7 +114,18 @@
 
       <div v-else class="notebook-detail">
         <div class="detail-toolbar">
-          <span class="current-notebook-name">{{ currentNotebook.display_name || currentNotebook.name }}</span>
+          <div class="notebook-title">
+            <span class="current-notebook-name">{{ currentNotebook.display_name || currentNotebook.name }}</span>
+            <el-tooltip placement="bottom-start">
+              <template #content>
+                <div class="notebook-runtime-tip">
+                  <div>{{ t('develop.notebook.engine') }}: {{ notebookEngineLabel(currentNotebook) }}</div>
+                  <div>{{ t('develop.notebook.kernel') }}: {{ currentNotebook.content?.kernel || '-' }}</div>
+                </div>
+              </template>
+              <el-icon class="notebook-runtime-tip-icon" :aria-label="t('develop.notebook.runtimeSummary')"><InfoFilled /></el-icon>
+            </el-tooltip>
+          </div>
           <div class="toolbar-actions">
             <el-button size="small" :loading="sessionLoading" @click="openNotebookSession(currentNotebook, { force: true })">
               <el-icon><Refresh /></el-icon> {{ t('develop.notebook.reloadEditor') }}
@@ -138,17 +149,10 @@
             </el-button>
           </div>
         </div>
-        <el-descriptions class="notebook-runtime-summary" :column="2" border size="small">
-          <el-descriptions-item :label="t('develop.notebook.engine')">
-            {{ notebookEngineLabel(currentNotebook) }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('develop.notebook.kernel')">
-            {{ currentNotebook.content?.kernel || '-' }}
-          </el-descriptions-item>
-        </el-descriptions>
         <div class="notebook-workspace" v-loading="sessionLoading">
           <iframe
             v-if="notebookSession"
+            ref="notebookFrameRef"
             :key="notebookSession.id"
             class="notebook-frame"
             :src="notebookSession.url"
@@ -403,14 +407,127 @@
         <el-button type="primary" @click="confirmExecute" :loading="executing">{{ t('develop.notebook.confirmExecute') }}</el-button>
       </template>
     </el-dialog>
+
+    <div class="notebook-ai-fab-wrapper">
+      <transition name="notebook-ai-slide">
+        <div v-if="copilotVisible" class="notebook-ai-panel">
+          <div class="notebook-ai-panel-header">
+            <span class="notebook-ai-panel-title">{{ t('develop.notebook.copilotTitle') }}</span>
+            <el-button
+              circle
+              text
+              size="small"
+              :aria-label="t('develop.notebook.closeCopilot')"
+              :disabled="copilotLoading || copilotInserting"
+              @click="copilotVisible = false"
+            >
+              <el-icon><Close /></el-icon>
+            </el-button>
+          </div>
+          <div class="notebook-copilot-body" v-loading="copilotLoading">
+            <el-input
+              v-model="copilotQuery"
+              type="textarea"
+              :rows="4"
+              :placeholder="t('develop.notebook.copilotPlaceholder')"
+              :disabled="copilotLoading"
+            />
+
+            <div v-if="copilotCandidates.length" class="copilot-candidates">
+              <div v-for="role in copilotRoles" :key="role" class="copilot-role">
+                <div class="copilot-role-title">{{ role }}</div>
+                <el-radio-group v-model="copilotSelections[role]" class="copilot-radio-group">
+                  <el-radio
+                    v-for="candidate in candidatesForRole(role)"
+                    :key="candidate.candidate_id"
+                    :value="candidate.candidate_id"
+                    border
+                    class="copilot-candidate"
+                  >
+                    <span class="copilot-candidate-name">{{ candidate.name }}</span>
+                    <span class="copilot-candidate-path">
+                      {{ candidate.engine_name }} / {{ candidate.path_names.join(' / ') }}
+                    </span>
+                    <span v-if="candidate.recommended" class="copilot-recommended">
+                      {{ t('develop.notebook.copilotRecommended') }}
+                    </span>
+                    <span
+                      v-if="candidate.recommended && candidate.recommendation_reason"
+                      class="copilot-recommendation-reason"
+                    >
+                      {{ candidate.recommendation_reason }}
+                    </span>
+                  </el-radio>
+                </el-radio-group>
+              </div>
+            </div>
+
+            <el-alert
+              v-if="copilotMessage"
+              :title="copilotMessage"
+              :type="copilotCandidates.length ? 'info' : 'warning'"
+              :closable="false"
+              show-icon
+            />
+
+            <div v-if="copilotCode" class="copilot-code-section">
+              <div class="copilot-code-title">{{ t('develop.notebook.copilotCode') }}</div>
+              <el-input v-model="copilotCode" type="textarea" :rows="16" resize="vertical" />
+              <p v-if="copilotExplanation" class="copilot-explanation">{{ copilotExplanation }}</p>
+            </div>
+          </div>
+
+          <div class="copilot-footer">
+            <el-button :disabled="copilotLoading || copilotInserting" @click="copilotVisible = false">
+              {{ t('develop.notebook.cancel') }}
+            </el-button>
+            <el-button
+              v-if="!copilotCode"
+              type="primary"
+              :loading="copilotLoading"
+              :disabled="!copilotQuery.trim()"
+              @click="generateNotebookCell"
+            >
+              <el-icon><MagicStick /></el-icon>
+              {{ copilotCandidates.length ? t('develop.notebook.copilotGenerateCode') : t('develop.notebook.copilotFindData') }}
+            </el-button>
+            <el-button
+              v-else
+              type="primary"
+              :loading="copilotInserting"
+              :disabled="!copilotCode.trim()"
+              @click="insertCopilotCell"
+            >
+              <el-icon><Plus /></el-icon> {{ t('develop.notebook.copilotInsertCell') }}
+            </el-button>
+          </div>
+        </div>
+      </transition>
+      <el-tooltip
+        :content="t('develop.notebook.copilotTitle')"
+        placement="left"
+        :disabled="copilotVisible"
+      >
+        <el-button
+          class="notebook-ai-fab"
+          circle
+          type="primary"
+          :aria-label="t('develop.notebook.copilotTitle')"
+          :disabled="!currentNotebook || !notebookSession || copilotLoading"
+          @click="openNotebookCopilot"
+        >
+          <el-icon><MagicStick /></el-icon>
+        </el-button>
+      </el-tooltip>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, Refresh, Search, EditPen, VideoPlay, Clock, More, Download, Delete, Switch, Plus } from '@element-plus/icons-vue'
+import { Close, Upload, Refresh, Search, EditPen, VideoPlay, Clock, More, Download, Delete, Switch, Plus, MagicStick, InfoFilled } from '@element-plus/icons-vue'
 import { notebookAPI } from '@/api/notebook'
 import { deleteDevTask, executeDevTask, getDevTask } from '@/api/devTask'
 import { openMonitorExecution } from '@addp/common-frontend'
@@ -445,6 +562,17 @@ const kernelsLoading = ref(false)
 const notebookSession = ref(null)
 const sessionLoading = ref(false)
 const sessionError = ref('')
+const notebookFrameRef = ref(null)
+const copilotVisible = ref(false)
+const copilotLoading = ref(false)
+const copilotInserting = ref(false)
+const copilotQuery = ref('')
+const copilotCandidates = ref([])
+const copilotSelections = ref({})
+const copilotCode = ref('')
+const copilotExplanation = ref('')
+const copilotMessage = ref('')
+const copilotRoles = computed(() => [...new Set(copilotCandidates.value.map(candidate => candidate.role))])
 
 const createDialogVisible = ref(false)
 const creating = ref(false)
@@ -933,11 +1061,123 @@ const closeNotebookSession = async () => {
   const active = notebookSession.value
   notebookSession.value = null
   sessionError.value = ''
+  resetNotebookCopilot()
   if (!active) return
   try {
     await notebookAPI.closeSession(active.task_id, active.id)
   } catch (error) {
     if (error.response?.status !== 404) console.error('关闭 Notebook 会话失败:', error)
+  }
+}
+
+const resetNotebookCopilot = () => {
+  copilotLoading.value = false
+  copilotInserting.value = false
+  copilotQuery.value = ''
+  copilotCandidates.value = []
+  copilotSelections.value = {}
+  copilotCode.value = ''
+  copilotExplanation.value = ''
+  copilotMessage.value = ''
+}
+
+const openNotebookCopilot = () => {
+  if (!notebookSession.value) return
+  copilotVisible.value = true
+}
+
+const candidatesForRole = role => copilotCandidates.value.filter(candidate => candidate.role === role)
+
+const generateNotebookCell = async () => {
+  if (!notebookSession.value || !copilotQuery.value.trim()) return
+  const payload = {
+    query: copilotQuery.value.trim(),
+    kernel: currentNotebook.value?.content?.kernel || 'python3'
+  }
+  if (copilotCandidates.value.length) {
+    const missingRole = copilotRoles.value.find(role => !copilotSelections.value[role])
+    if (missingRole) {
+      ElMessage.warning(t('develop.notebook.copilotSelectEachRole'))
+      return
+    }
+    payload.selections = copilotRoles.value.map(role => {
+      const candidate = copilotCandidates.value.find(item => item.candidate_id === copilotSelections.value[role])
+      return {
+        candidate_id: candidate.candidate_id,
+        role,
+        engine_id: candidate.engine_id,
+        path: candidate.path
+      }
+    })
+  }
+
+  copilotLoading.value = true
+  try {
+    const response = await notebookAPI.generateSessionCell(notebookSession.value.id, payload)
+    copilotMessage.value = response.message || ''
+    if (response.status === 'need_confirmation') {
+      copilotCandidates.value = response.candidates || []
+      copilotSelections.value = {}
+      for (const role of [...new Set(copilotCandidates.value.map(candidate => candidate.role))]) {
+        const candidates = copilotCandidates.value.filter(candidate => candidate.role === role)
+        const recommended = candidates.find(candidate => candidate.recommended)
+        if (recommended) copilotSelections.value[role] = recommended.candidate_id
+      }
+      return
+    }
+    if (response.status === 'success') {
+      copilotCode.value = response.code || ''
+      copilotExplanation.value = response.explanation || ''
+      copilotCandidates.value = []
+      copilotMessage.value = ''
+      return
+    }
+    copilotCandidates.value = []
+  } catch (error) {
+    ElMessage.error(error.response?.data?.error || t('develop.notebook.copilotFailed'))
+  } finally {
+    copilotLoading.value = false
+  }
+}
+
+const postNotebookBridgeMessage = (message, timeoutMs = 8000) => new Promise((resolve, reject) => {
+  const frameWindow = notebookFrameRef.value?.contentWindow
+  if (!frameWindow) {
+    reject(new Error('Notebook frame is unavailable'))
+    return
+  }
+  const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  const timer = window.setTimeout(() => {
+    window.removeEventListener('message', handleResult)
+    reject(new Error('Notebook bridge timed out'))
+  }, timeoutMs)
+  const handleResult = event => {
+    if (event.origin !== window.location.origin || event.source !== frameWindow) return
+    if (event.data?.type !== 'addp:notebook:insert-cell:result' || event.data?.requestId !== requestId) return
+    window.clearTimeout(timer)
+    window.removeEventListener('message', handleResult)
+    if (event.data.ok) resolve()
+    else reject(new Error(event.data.error || 'Notebook bridge rejected the cell'))
+  }
+  window.addEventListener('message', handleResult)
+  frameWindow.postMessage({ ...message, requestId }, window.location.origin)
+})
+
+const insertCopilotCell = async () => {
+  if (!notebookSession.value || !copilotCode.value.trim()) return
+  copilotInserting.value = true
+  try {
+    await postNotebookBridgeMessage({
+      type: 'addp:notebook:insert-cell',
+      sessionId: notebookSession.value.id,
+      code: copilotCode.value
+    })
+    ElMessage.success(t('develop.notebook.copilotInserted'))
+    copilotVisible.value = false
+  } catch (error) {
+    ElMessage.error(t('develop.notebook.copilotInsertFailed'))
+  } finally {
+    copilotInserting.value = false
   }
 }
 
@@ -1157,9 +1397,27 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--addp-border-color);
 }
 
+.notebook-title {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+}
+
 .current-notebook-name {
   font-weight: 500;
   font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.notebook-runtime-tip-icon {
+  flex-shrink: 0;
+  color: var(--addp-text-tertiary);
+  cursor: help;
+}
+
+.notebook-runtime-tip {
+  line-height: 1.6;
 }
 
 .toolbar-actions {
@@ -1174,17 +1432,138 @@ onBeforeUnmount(() => {
   background: var(--addp-bg-primary);
 }
 
-.notebook-runtime-summary {
-  margin: 12px 16px 0;
-  flex-shrink: 0;
-}
-
 .notebook-frame {
   display: block;
   width: 100%;
   height: 100%;
   border: 0;
   background: var(--addp-bg-primary);
+}
+
+.notebook-ai-fab-wrapper {
+  position: fixed;
+  right: 22px;
+  bottom: 32px;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.notebook-ai-fab {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  box-shadow: var(--addp-shadow-hover);
+}
+
+.notebook-ai-panel {
+  width: min(520px, calc(100vw - 92px));
+  max-height: min(78vh, 760px);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+  background: var(--addp-bg-primary);
+  border: 1px solid var(--addp-border-color);
+  border-radius: 8px;
+  box-shadow: var(--addp-shadow-card);
+}
+
+.notebook-ai-panel-header,
+.copilot-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notebook-ai-panel-header {
+  justify-content: space-between;
+}
+
+.copilot-footer {
+  justify-content: flex-end;
+}
+
+.notebook-ai-panel-title {
+  color: var(--addp-text-primary);
+  font-weight: 600;
+}
+
+.notebook-ai-slide-enter-active,
+.notebook-ai-slide-leave-active {
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.notebook-ai-slide-enter-from,
+.notebook-ai-slide-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.notebook-copilot-body,
+.copilot-candidates,
+.copilot-role,
+.copilot-radio-group,
+.copilot-code-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.notebook-copilot-body {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.copilot-role-title,
+.copilot-code-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--addp-text-primary);
+}
+
+.copilot-candidate {
+  width: 100%;
+  height: auto;
+  min-height: 58px;
+  margin: 0 !important;
+  padding: 10px 12px;
+}
+
+.copilot-candidate :deep(.el-radio__label) {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  white-space: normal;
+}
+
+.copilot-candidate-name {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.copilot-candidate-path,
+.copilot-explanation {
+  margin: 0;
+  color: var(--addp-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.copilot-recommended {
+  color: var(--el-color-primary);
+  font-size: 12px;
+}
+
+.copilot-recommendation-reason {
+  color: var(--el-color-success);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .full-width { width: 100%; }

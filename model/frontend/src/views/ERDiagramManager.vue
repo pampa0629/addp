@@ -5,10 +5,10 @@
         <div class="card-header">
           <h2>{{ t('model.er_diagram.title') }}</h2>
           <div class="toolbar">
-            <el-button type="primary" @click="showImportDialog">
+            <el-button v-if="canImport" type="primary" @click="showImportDialog">
               <el-icon><Upload /></el-icon> {{ t('model.er_diagram.import_mermaid') }}
             </el-button>
-            <el-button @click="exportMermaid">
+            <el-button v-if="canExport" @click="exportMermaid">
               <el-icon><Download /></el-icon> {{ t('model.er_diagram.export_mermaid') }}
             </el-button>
             <el-button @click="refreshDiagram">
@@ -18,14 +18,25 @@
         </div>
       </template>
 
-      <div class="diagram-info">
+      <el-alert
+        v-if="loadError"
+        class="load-error"
+        type="error"
+        :title="loadError"
+        show-icon
+        :closable="false"
+      >
+        <el-button link type="danger" @click="refreshDiagram">{{ t('model.common.retry') }}</el-button>
+      </el-alert>
+
+      <div v-else class="diagram-info">
         <el-alert type="info" :closable="false">
           {{ t('model.er_diagram.entity_count', { count: entities.length, relations: relations.length }) }}
         </el-alert>
       </div>
 
       <!-- ER图渲染区域 -->
-      <div ref="diagramContainer" class="diagram-container" v-loading="diagramLoading">
+      <div v-if="!loadError" ref="diagramContainer" class="diagram-container" v-loading="diagramLoading">
         <pre class="mermaid">{{ globalMermaidCode }}</pre>
       </div>
     </el-card>
@@ -88,7 +99,7 @@
       <template #footer>
         <el-button @click="importDialogVisible = false">{{ t('model.common.cancel') }}</el-button>
         <el-button type="primary" @click="executeImport" :loading="importing">
-          {{ t('model.er_diagram.import_merge') }}
+          {{ t('model.er_diagram.import_replace') }}
         </el-button>
       </template>
     </el-dialog>
@@ -96,20 +107,35 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, Download, Refresh, UploadFilled } from '@element-plus/icons-vue'
 import mermaid from 'mermaid'
 import { entityAPI, entityRelationAPI } from '../api/model'
 import { useI18n } from 'vue-i18n'
+import { useAuthStore } from '../store/auth'
+import { getModelErrorMessage } from '../utils/apiError'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
+const hasPermissions = permissions => permissions.every(permission => authStore.hasPermission(permission))
+const canImport = computed(() => hasPermissions([
+  'model.entity.create',
+  'model.entity.delete',
+  'model.entity_relation.create',
+  'model.entity_relation.delete'
+]))
+const canExport = computed(() => hasPermissions([
+  'model.entity.read',
+  'model.entity_relation.read'
+]))
 
 const entities = ref([])
 const relations = ref([])
 const globalMermaidCode = ref('')
 const diagramContainer = ref(null)
 const diagramLoading = ref(false)
+const loadError = ref('')
 
 const importDialogVisible = ref(false)
 const importTab = ref('paste')
@@ -119,14 +145,22 @@ const importing = ref(false)
 // 加载数据并生成ER图
 const refreshDiagram = async () => {
   diagramLoading.value = true
+  loadError.value = ''
+  if (!canExport.value) {
+    entities.value = []
+    relations.value = []
+    loadError.value = t('model.common.permission_denied')
+    diagramLoading.value = false
+    return
+  }
   try {
     // 加载所有实体和关系
     const [entitiesRes, relationsRes] = await Promise.all([
-      entityAPI.list({ page_size: 1000 }),
+      entityAPI.listAll(),
       entityRelationAPI.list()
     ])
-    entities.value = entitiesRes.data || []
-    relations.value = relationsRes.data || []
+    entities.value = entitiesRes
+    relations.value = relationsRes || []
 
     // 生成Mermaid代码
     await generateGlobalMermaidCode()
@@ -136,7 +170,7 @@ const refreshDiagram = async () => {
     await renderMermaid()
   } catch (err) {
     console.error('加载ER图失败:', err)
-    ElMessage.error(t('model.er_diagram.load_failed'))
+    loadError.value = getModelErrorMessage(err, t, 'model.er_diagram.load_failed')
   } finally {
     diagramLoading.value = false
   }
@@ -153,11 +187,11 @@ const generateGlobalMermaidCode = async () => {
     // 查询属性
     try {
       const attrsRes = await entityAPI.getAttributes(entity.id)
-      const attributes = attrsRes.data || []
+      const attributes = attrsRes || []
       for (const attr of attributes) {
-        const type = 'string' // 默认类型
+        const type = attr.data_type || 'string'
         const pk = attr.is_pk ? ' PK' : ''
-        code += `    ${type} ${attr.name}${pk}\n`
+        code += `    ${type} ${attr.column_name}${pk}\n`
       }
     } catch (err) {
       console.error(`获取实体${entity.id}的属性失败:`, err)
@@ -266,20 +300,18 @@ const executeImport = async () => {
 
     // 调用后端API导入
     const result = await entityAPI.importMermaid({
-      mermaid_code: importMermaidCode.value,
-      mode: 'merge'
+      mermaid_code: importMermaidCode.value
     })
 
     ElMessage.success(t('model.er_diagram.import_success', {
-      created: result.data.created_entities,
-      updated: result.data.updated_entities,
-      relations: result.data.created_relations
+      created: result.created_entities,
+      relations: result.created_relations
     }))
     importDialogVisible.value = false
     refreshDiagram()
   } catch (error) {
     if (error !== 'cancel') {
-      const errorMsg = error.response?.data?.error || error.message || t('model.er_diagram.export_failed')
+      const errorMsg = getModelErrorMessage(error, t, 'model.common.op_failed')
       ElMessage.error(t('model.er_diagram.import_failed', { msg: errorMsg }))
     }
   } finally {
@@ -321,6 +353,10 @@ onMounted(() => {
 .toolbar {
   display: flex;
   gap: 10px;
+}
+
+.load-error {
+  margin-bottom: 20px;
 }
 
 .diagram-info {

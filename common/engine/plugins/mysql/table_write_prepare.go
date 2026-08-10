@@ -10,7 +10,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/mappers/mysql"
-	"github.com/addp/common/sqldialect"
+	commonquery "github.com/addp/common/query"
 )
 
 func (p *MySQLPlugin) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableWriteOptions) error {
@@ -492,6 +492,6 @@ func mysqlTablePathParts(path plugin.CatalogPath) (string, string, error) {
 	return database, table, nil
 }
 
-func mysqlDialect() sqldialect.Dialect {
-	return sqldialect.ForEngine("mysql")
+func mysqlDialect() commonquery.Dialect {
+	return commonquery.ForEngine("mysql")
 }

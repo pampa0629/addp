@@ -98,3 +98,25 @@ export async function getResourceFields(apiBaseUrl, params = {}) {
   const data = response.data?.data || response.data
   return Array.isArray(data) ? data : []
 }
+
+/**
+ * 按引擎和 catalog path 查询 Meta 数据项。
+ *
+ * @param {string} apiBaseUrl API 基础 URL
+ * @param {{ engine_id: number|string, catalog_path: string }} params 查询参数
+ * @returns {Promise<Object>}
+ */
+export async function getResourceItemByCatalogPath(apiBaseUrl, params = {}) {
+  if (!apiBaseUrl.includes('/meta')) {
+    throw new Error('getResourceItemByCatalogPath only supports Meta API')
+  }
+  const engineId = params.engine_id || params.engineId
+  const catalogPath = String(params.catalog_path || params.catalogPath || '').trim()
+  if (!engineId || !catalogPath) {
+    throw new Error('engine_id and catalog_path are required for Meta item lookup')
+  }
+  const response = await authenticatedAxios.get(`${apiBaseUrl}/items/by-catalog-path`, {
+    params: { engine_id: engineId, catalog_path: catalogPath }
+  })
+  return response.data?.data || response.data
+}

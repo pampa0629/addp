@@ -12,9 +12,9 @@ import (
 	"github.com/addp/common/engine/instanceprovider"
 	engineplugin "github.com/addp/common/engine/plugin"
 	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
+	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/common/utils"
 	"github.com/addp/meta/internal/models"
 	"gorm.io/gorm"
 )
@@ -60,7 +60,7 @@ func (s *EngineService) GetEnginesByTenant(tenantID uint) ([]*commonModels.Engin
 	for i := range resources {
 		resource := resources[i]
 		if !resource.IsUsable() || resource.TenantID == nil || *resource.TenantID != tenantID ||
-			!utils.HasStorageCapability(&resource) {
+			!engineselection.HasStorageCapability(&resource) {
 			continue
 		}
 		resourceCopy := resource

@@ -45,8 +45,12 @@ func TestCheckTaskExecutionLifecycleIsAtomic(t *testing.T) {
 	}
 
 	startedAt := createdAt.Add(time.Minute)
-	if err := repo.StartExecution(context.Background(), task.ID, task.TenantID, exec.ExecutionID, startedAt); err != nil {
-		t.Fatalf("StartExecution: %v", err)
+	if err := repo.AttachExecutionAuthorization(context.Background(), task.TenantID, exec.ExecutionID, map[string]interface{}{"execution_authorization_id": int64(1)}); err != nil {
+		t.Fatalf("AttachExecutionAuthorization: %v", err)
+	}
+	runningExecution, _, err := repo.ClaimPendingExecution(context.Background(), "worker-lifecycle", startedAt, 10*time.Minute)
+	if err != nil || runningExecution == nil {
+		t.Fatalf("ClaimPendingExecution: %v", err)
 	}
 	var runningTask models.CheckTask
 	if err := db.First(&runningTask, task.ID).Error; err != nil {
@@ -57,7 +61,7 @@ func TestCheckTaskExecutionLifecycleIsAtomic(t *testing.T) {
 	}
 
 	completedAt := startedAt.Add(2 * time.Minute)
-	if err := repo.CompleteExecution(context.Background(), task.ID, task.TenantID, exec.ExecutionID, map[string]interface{}{
+	if err := repo.CompleteExecutionWithLease(context.Background(), task.ID, task.TenantID, exec.ExecutionID, "worker-lifecycle", map[string]interface{}{
 		"status": commonExecution.ExecutionStatusSuccess, "completed_at": completedAt,
 		"execution_time_ms": completedAt.Sub(startedAt).Milliseconds(), "progress": 100,
 	}, completedAt); err != nil {
@@ -90,9 +94,9 @@ func TestCheckTaskStartRollsBackWhenOwnerSummaryCannotAdvance(t *testing.T) {
 		t.Fatalf("delete owner task: %v", err)
 	}
 
-	err := repo.StartExecution(context.Background(), task.ID, task.TenantID, exec.ExecutionID, createdAt.Add(time.Minute))
-	if !errors.Is(err, commonAPI.ErrConflict) {
-		t.Fatalf("StartExecution error = %v, want conflict", err)
+	_, _, err := repo.ClaimPendingExecution(context.Background(), "worker-rollback", createdAt.Add(time.Minute), time.Minute)
+	if err != nil {
+		t.Fatalf("ClaimPendingExecution error = %v", err)
 	}
 	var stored commonExecution.TaskExecution
 	if err := db.Where("execution_id = ?", exec.ExecutionID).First(&stored).Error; err != nil {
@@ -100,6 +104,130 @@ func TestCheckTaskStartRollsBackWhenOwnerSummaryCannotAdvance(t *testing.T) {
 	}
 	if stored.Status != commonExecution.ExecutionStatusPending || stored.StartedAt != nil {
 		t.Fatalf("execution changed despite owner rollback: status=%s started_at=%v", stored.Status, stored.StartedAt)
+	}
+}
+
+func TestClaimPendingExecutionRequiresAuthorizationAndLeaseOwner(t *testing.T) {
+	db := newCheckTaskRepositoryTestDB(t)
+	repo := NewCheckTaskRepository(db)
+	task := createCheckTaskRepositoryTestTask(t, db, 9)
+	createdAt := time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC)
+	exec := newQualityRepositoryTestExecution("quality-worker-claim", 9, createdAt)
+	if _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, exec); err != nil {
+		t.Fatalf("ClaimExecution: %v", err)
+	}
+
+	claimed, claimedTask, err := repo.ClaimPendingExecution(context.Background(), "worker-a", createdAt.Add(time.Minute), 10*time.Minute)
+	if err != nil {
+		t.Fatalf("ClaimPendingExecution without authorization: %v", err)
+	}
+	if claimed != nil || claimedTask != nil {
+		t.Fatalf("unauthorized execution was claimed: execution=%#v task=%#v", claimed, claimedTask)
+	}
+
+	if err := repo.AttachExecutionAuthorization(context.Background(), task.TenantID, exec.ExecutionID, map[string]interface{}{
+		"execution_authorization_id": int64(41),
+	}); err != nil {
+		t.Fatalf("AttachExecutionAuthorization: %v", err)
+	}
+	if err := repo.AttachExecutionAuthorization(context.Background(), task.TenantID, exec.ExecutionID, map[string]interface{}{
+		"execution_authorization_id": int64(99),
+	}); !errors.Is(err, commonAPI.ErrConflict) {
+		t.Fatalf("second AttachExecutionAuthorization error = %v, want conflict", err)
+	}
+	startedAt := createdAt.Add(2 * time.Minute)
+	claimed, claimedTask, err = repo.ClaimPendingExecution(context.Background(), "worker-a", startedAt, 10*time.Minute)
+	if err != nil {
+		t.Fatalf("ClaimPendingExecution: %v", err)
+	}
+	if claimed == nil || claimedTask == nil {
+		t.Fatal("authorized execution was not claimed")
+	}
+	if claimed.Status != commonExecution.ExecutionStatusRunning || claimed.Attempt != 1 || claimed.StartedAt == nil || !claimed.StartedAt.Equal(startedAt) {
+		t.Fatalf("claimed execution = %#v", claimed)
+	}
+	if claimed.LeaseOwner == nil || *claimed.LeaseOwner != "worker-a" || claimed.LeaseExpiresAt == nil || !claimed.LeaseExpiresAt.Equal(startedAt.Add(10*time.Minute)) {
+		t.Fatalf("claimed lease = owner %v expires %v", claimed.LeaseOwner, claimed.LeaseExpiresAt)
+	}
+	renewedUntil := startedAt.Add(20 * time.Minute)
+	if err := repo.RenewLease(context.Background(), exec.ExecutionID, task.TenantID, "worker-b", renewedUntil); !errors.Is(err, commonAPI.ErrConflict) {
+		t.Fatalf("wrong-owner RenewLease error = %v, want conflict", err)
+	}
+	if err := repo.RenewLease(context.Background(), exec.ExecutionID, task.TenantID, "worker-a", renewedUntil); err != nil {
+		t.Fatalf("RenewLease: %v", err)
+	}
+
+	completedAt := startedAt.Add(time.Minute)
+	fields := map[string]interface{}{
+		"status": commonExecution.ExecutionStatusSuccess, "progress": 100,
+		"execution_time_ms": completedAt.Sub(startedAt).Milliseconds(),
+	}
+	if err := repo.CompleteExecutionWithLease(context.Background(), task.ID, task.TenantID, exec.ExecutionID, "worker-b", fields, completedAt); !errors.Is(err, commonAPI.ErrConflict) {
+		t.Fatalf("wrong-owner completion error = %v, want conflict", err)
+	}
+	if err := repo.CompleteExecutionWithLease(context.Background(), task.ID, task.TenantID, exec.ExecutionID, "worker-a", fields, completedAt); err != nil {
+		t.Fatalf("CompleteExecutionWithLease: %v", err)
+	}
+	var stored commonExecution.TaskExecution
+	if err := db.Where("execution_id = ?", exec.ExecutionID).First(&stored).Error; err != nil {
+		t.Fatalf("load completed execution: %v", err)
+	}
+	if stored.Status != commonExecution.ExecutionStatusSuccess || stored.ExecutionTimeMs == nil || *stored.ExecutionTimeMs != 60000 || stored.LeaseOwner != nil || stored.LeaseExpiresAt != nil {
+		t.Fatalf("completed execution = %#v", stored)
+	}
+}
+
+func TestRecoverExpiredExecutionRetriesThenFailsAtAttemptLimit(t *testing.T) {
+	db := newCheckTaskRepositoryTestDB(t)
+	repo := NewCheckTaskRepository(db)
+	task := createCheckTaskRepositoryTestTask(t, db, 10)
+	createdAt := time.Date(2026, 7, 16, 11, 0, 0, 0, time.UTC)
+	exec := newQualityRepositoryTestExecution("quality-worker-recovery", 10, createdAt)
+	exec.MaxAttempts = 2
+	if _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, exec); err != nil {
+		t.Fatalf("ClaimExecution: %v", err)
+	}
+	if err := repo.AttachExecutionAuthorization(context.Background(), task.TenantID, exec.ExecutionID, map[string]interface{}{
+		"execution_authorization_id": int64(42),
+	}); err != nil {
+		t.Fatalf("AttachExecutionAuthorization: %v", err)
+	}
+
+	firstStart := createdAt.Add(time.Minute)
+	if claimed, _, err := repo.ClaimPendingExecution(context.Background(), "worker-a", firstStart, time.Minute); err != nil || claimed == nil {
+		t.Fatalf("first ClaimPendingExecution = %#v, %v", claimed, err)
+	}
+	if err := repo.RecoverExpiredExecutions(context.Background(), firstStart.Add(2*time.Minute)); err != nil {
+		t.Fatalf("first RecoverExpiredExecutions: %v", err)
+	}
+	var stored commonExecution.TaskExecution
+	if err := db.Where("execution_id = ?", exec.ExecutionID).First(&stored).Error; err != nil {
+		t.Fatalf("load retried execution: %v", err)
+	}
+	if stored.Status != commonExecution.ExecutionStatusPending || stored.Attempt != 1 || stored.LeaseOwner != nil || stored.LeaseExpiresAt != nil {
+		t.Fatalf("retried execution = %#v", stored)
+	}
+
+	secondStart := firstStart.Add(3 * time.Minute)
+	if claimed, _, err := repo.ClaimPendingExecution(context.Background(), "worker-b", secondStart, time.Minute); err != nil || claimed == nil || claimed.Attempt != 2 {
+		t.Fatalf("second ClaimPendingExecution = %#v, %v", claimed, err)
+	}
+	failedAt := secondStart.Add(2 * time.Minute)
+	if err := repo.RecoverExpiredExecutions(context.Background(), failedAt); err != nil {
+		t.Fatalf("second RecoverExpiredExecutions: %v", err)
+	}
+	if err := db.Where("execution_id = ?", exec.ExecutionID).First(&stored).Error; err != nil {
+		t.Fatalf("load failed execution: %v", err)
+	}
+	if stored.Status != commonExecution.ExecutionStatusFailed || stored.CompletedAt == nil || stored.ExecutionTimeMs == nil || stored.Attempt != 2 {
+		t.Fatalf("failed execution = %#v", stored)
+	}
+	var storedTask models.CheckTask
+	if err := db.First(&storedTask, task.ID).Error; err != nil {
+		t.Fatalf("load failed task: %v", err)
+	}
+	if storedTask.LastExecutionStatus != commonExecution.ExecutionStatusFailed {
+		t.Fatalf("task status = %s, want failed", storedTask.LastExecutionStatus)
 	}
 }
 
@@ -136,11 +264,27 @@ func newCheckTaskRepositoryTestDB(t *testing.T) *gorm.DB {
 		created_at DATETIME,
 		updated_at DATETIME,
 		last_run_at DATETIME,
-		next_run_at DATETIME,
 		last_execution_id TEXT,
 		last_execution_status TEXT
-	)`).Error; err != nil {
+		)`).Error; err != nil {
 		t.Fatalf("create quality check task test table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE quality.rule_applications (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		element_id INTEGER NOT NULL,
+		engine_id INTEGER NOT NULL,
+		schema_name TEXT,
+		table_name TEXT NOT NULL,
+		column_name TEXT NOT NULL,
+		rule_config JSON NOT NULL,
+		enabled BOOLEAN,
+		created_by INTEGER NOT NULL,
+		updated_by INTEGER,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create quality rule application test table: %v", err)
 	}
 	return db
 }
@@ -175,6 +319,10 @@ const qualityRepositoryExecutionTableSQL = `CREATE TABLE common.task_executions 
 	records_written INTEGER,
 	bytes_read INTEGER,
 	bytes_written INTEGER,
+	lease_owner TEXT,
+	lease_expires_at DATETIME,
+	attempt INTEGER NOT NULL DEFAULT 0,
+	max_attempts INTEGER NOT NULL DEFAULT 3,
 	started_at DATETIME,
 	completed_at DATETIME,
 	created_at DATETIME,

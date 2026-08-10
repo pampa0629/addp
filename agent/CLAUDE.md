@@ -182,8 +182,7 @@ python evals/agent-scenarios/gate.py --output /tmp/addp-agent-evaluation-gate.js
 在根 `.env` 文件中配置：
 
 ```env
-# Inference Runtime 与 Agent Service Principal
-INFERENCE_URL=http://localhost:8191
+# Agent Service Principal；Inference Runtime 由 System Runtime Descriptor 发现
 AGENT_SERVICE_CLIENT_SECRET=replace-with-unique-agent-secret-32bytes
 
 # Agent 端口

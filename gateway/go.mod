@@ -8,7 +8,7 @@ require (
 	github.com/redis/go-redis/v9 v9.17.2
 	golang.org/x/net v0.49.0
 	gorm.io/driver/postgres v1.6.0
-	gorm.io/gorm v1.30.0
+	gorm.io/gorm v1.31.2
 )
 
 replace github.com/addp/common => ../common

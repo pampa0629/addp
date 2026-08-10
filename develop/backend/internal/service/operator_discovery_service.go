@@ -6,8 +6,8 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
+	engineselection "github.com/addp/common/engine/selection"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/common/utils"
 )
 
 // OperatorDiscoveryService 工作流算子发现服务
@@ -73,7 +73,7 @@ func (s *OperatorDiscoveryService) getOperatorsByWorkflowEngineID(
 	if !engine.IsUsable() {
 		return nil, fmt.Errorf("工作流引擎未启用: %d", workflowEngineID)
 	}
-	if !utils.SupportsComputeEntrypoint(engine, "workflow") {
+	if !engineselection.SupportsComputeEntrypoint(engine, "workflow") {
 		return nil, fmt.Errorf("引擎 %d 不具备 compute.workflow 能力", workflowEngineID)
 	}
 

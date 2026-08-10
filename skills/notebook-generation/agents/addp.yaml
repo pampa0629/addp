@@ -1,0 +1,6 @@
+schema: addp.skill-runtime/v1
+required_skills:
+  - data-discovery
+required_tools:
+  - notebook.draft.generate
+max_iterations: 5

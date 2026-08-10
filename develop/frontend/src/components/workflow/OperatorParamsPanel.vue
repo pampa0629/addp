@@ -89,8 +89,20 @@
                   <div class="resource-selection-card">
                     <div class="resource-selection-content">
                       <span class="resource-selection-label">{{ t('develop.operatorParams.selectedResource') }}</span>
-                      <span class="resource-selection-value" :title="resourcePickerCurrentLocator(param)">
-                        {{ resourcePickerCurrentLabel(param) || t('develop.operatorParams.noResourceSelected') }}
+                      <span
+                        v-if="resourcePickerCurrentPresentation(param).configured"
+                        class="resource-selection-value"
+                        :title="resourcePickerCurrentPresentation(param).fullLabel"
+                      >
+                        <span class="resource-selection-name">
+                          {{ resourcePickerCurrentPresentation(param).path || resourcePickerCurrentPresentation(param).resourceName }}
+                        </span>
+                        <span class="resource-selection-context">
+                          {{ resourcePickerCurrentPresentation(param).engineName }}
+                        </span>
+                      </span>
+                      <span v-else class="resource-selection-value">
+                        {{ t('develop.operatorParams.noResourceSelected') }}
                       </span>
                     </div>
                     <el-button type="primary" plain @click="openResourcePicker(param)">
@@ -253,6 +265,7 @@ import { ElMessage } from 'element-plus'
 import { geometryColumnFactsFromSelection, parseLocatorSafe, ResourceTreePicker } from '@addp/common-frontend'
 import { isWorkflowInputParameter } from '@/utils/workflowInputBindings'
 import { validationMessagesForParams } from '@/utils/workflowValidationIssues'
+import { workflowResourcePresentation } from '@/utils/workflowParameterPresentation'
 import {
   applyResourceBindingSelection,
   clearResourceBindingSelection,
@@ -298,6 +311,10 @@ const props = defineProps({
   inputConnectionOptions: {
     type: Array,
     default: () => []
+  },
+  resourceEnginesById: {
+    type: Object,
+    default: () => ({})
   }
 })
 
@@ -561,7 +578,11 @@ const targetNamePlaceholder = (param) => {
 
 const resourcePickerCurrentLocator = (param) => resourcePickerInitialLocator(param)
 
-const resourcePickerCurrentLabel = (param) => resourceLabelFromLocator(resourcePickerCurrentLocator(param))
+const resourcePickerCurrentPresentation = (param) => workflowResourcePresentation(
+  param,
+  formData.value,
+  props.resourceEnginesById
+)
 
 const resourceGeometryColumns = (param) => {
   const detected = resourceGeometryColumnsByParam.value[param.name] || []
@@ -885,11 +906,25 @@ defineExpose({ focusParam })
 }
 
 .resource-selection-value {
-  overflow: hidden;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
   color: var(--addp-text-primary);
   font-size: 13px;
+}
+
+.resource-selection-name {
+  overflow: hidden;
+  font-weight: 600;
+  font-size: 15px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.resource-selection-context {
+  color: var(--addp-text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .subsection-title {

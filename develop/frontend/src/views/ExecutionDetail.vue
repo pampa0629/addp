@@ -97,33 +97,58 @@
                 <QueryResult :result="formatSQLResult()" />
               </div>
 
-              <!-- 工作流结果: 使用表格展示任务列表 -->
+              <!-- 工作流结果 -->
               <div v-else-if="execution.task_type === 'workflow'">
                 <div class="workflow-result">
-                  <h3>{{ t('develop.executionDetail.workflowResult') }}</h3>
+                  <div class="workflow-result-heading">
+                    <h3>{{ t('develop.executionDetail.workflowResult') }}</h3>
+                    <el-tag :type="workflowOutputRows.length ? 'success' : 'info'" effect="plain">
+                      {{ workflowOutputRows.length
+                        ? t('develop.executionDetail.outputPersisted')
+                        : t('develop.executionDetail.outputNotPersisted') }}
+                    </el-tag>
+                  </div>
                   <el-table
-                    v-if="executionResult.tasks && executionResult.tasks.length > 0"
-                    :data="executionResult.tasks"
+                    v-if="workflowOutputRows.length"
+                    :data="workflowOutputRows"
                     stripe
                     border
                   >
-                    <el-table-column prop="id" :label="t('develop.executionDetail.taskId')" width="150" />
-                    <el-table-column prop="operator" :label="t('develop.executionDetail.operator')" width="120" />
-                    <el-table-column :label="t('develop.executionDetail.taskStatus')" width="100">
+                    <el-table-column prop="taskId" :label="t('develop.executionDetail.outputOperator')" min-width="150">
                       <template #default="{ row }">
-                        <el-tag :type="getTaskStatusColor(row.status)">
-                          {{ row.status }}
-                        </el-tag>
+                        <div class="output-operator">
+                          <strong>{{ row.operatorLabel }}</strong>
+                          <span>{{ row.taskId }}</span>
+                        </div>
                       </template>
                     </el-table-column>
-                    <el-table-column prop="duration_ms" :label="t('develop.executionDetail.taskDuration')" width="100">
+                    <el-table-column prop="engineName" :label="t('develop.executionDetail.outputEngine')" min-width="150" />
+                    <el-table-column prop="path" :label="t('develop.executionDetail.outputResource')" min-width="240">
                       <template #default="{ row }">
-                        {{ formatDuration(row.duration_ms) }}
+                        <span class="output-resource" :title="row.path">{{ row.path }}</span>
                       </template>
                     </el-table-column>
-                    <el-table-column prop="output_path" :label="t('develop.executionDetail.outputPath')" min-width="200" />
+                    <el-table-column prop="writeModeLabel" :label="t('develop.executionDetail.writeMode')" width="110" />
                   </el-table>
-                  <el-empty v-else :description="t('develop.executionDetail.noTaskData')" />
+                  <el-alert
+                    v-else
+                    type="info"
+                    :title="workflowHasTransientResult
+                      ? t('develop.executionDetail.transientResultGenerated')
+                      : t('develop.executionDetail.noPersistentOutput')"
+                    :description="workflowHasTransientResult
+                      ? t('develop.executionDetail.transientResultDescription', { size: formatBytes(workflowResultSize) })
+                      : t('develop.executionDetail.noPersistentOutputDescription')"
+                    :closable="false"
+                    show-icon
+                  />
+                  <div v-if="hasWorkflowFinalResult" class="workflow-final-result">
+                    <div class="workflow-final-result-label">{{ t('develop.executionDetail.computedResult') }}</div>
+                    <div v-if="workflowFinalResultScalar" class="workflow-final-result-value">
+                      {{ formatWorkflowResultValue(workflowFinalResult) }}
+                    </div>
+                    <pre v-else class="workflow-final-result-json">{{ workflowFinalResultText }}</pre>
+                  </div>
                 </div>
               </div>
 
@@ -213,6 +238,7 @@ import QueryResult from '@/components/QueryResult.vue'
 import { navigateDevelopRoute } from '@/utils/developNavigation'
 import { resolveExecutionDetailRouteState } from '@/utils/executionDetailRouteState'
 import { queryErrorMessage, queryResultFromExecution } from '@/utils/queryWorkbench.mjs'
+import { formatLocatorDisplayPath, listResourceTreeEngines, parseLocatorSafe } from '@addp/common-frontend'
 
 const route = useRoute()
 const router = useRouter()
@@ -221,11 +247,65 @@ const { t } = useI18n()
 // 状态管理
 const execution = ref(null)
 const logs = ref([])
+const resourceEngines = ref([])
 const activeTab = ref(resolveExecutionDetailRouteState(route.query).tab)
 let routeDataReady = false
 
 const executionResult = computed(() => execution.value?.metadata?.result || null)
 const executionInputs = computed(() => execution.value?.execution_config?.inputs || {})
+const resourceEnginesById = computed(() => Object.fromEntries(
+  resourceEngines.value.map(engine => [String(engine.id), engine])
+))
+const workflowTasksById = computed(() => {
+  const definition = execution.value?.dev_task?.content?.workflow_definition
+    || execution.value?.execution_config?.content?.workflow_definition
+  const tasks = Array.isArray(definition?.tasks) ? definition.tasks : []
+  return Object.fromEntries(tasks.map(task => [String(task.id), task]))
+})
+const workflowOutputRows = computed(() => {
+  const result = executionResult.value || {}
+  const producedTargets = Array.isArray(result.produced_targets) ? result.produced_targets : []
+  const outputEntries = producedTargets.length
+    ? producedTargets.map(target => [target.task_id || target.taskId, {
+      resource: {
+        locator: target.locator,
+        type: target.type,
+        write_mode: target.write_mode
+      }
+    }])
+    : Object.entries(result.outputs || execution.value?.outputs || {})
+
+  return outputEntries.map(([taskId, output]) => {
+    const resource = output?.resource || output || {}
+    const locator = String(resource.locator || '')
+    let parsed = null
+    try {
+      parsed = locator ? parseLocatorSafe(locator) : null
+    } catch {
+      parsed = null
+    }
+    const engine = parsed ? resourceEnginesById.value[String(parsed.engineId)] : null
+    const task = workflowTasksById.value[String(taskId)] || {}
+    const path = parsed
+      ? formatLocatorDisplayPath(locator, { engineType: engine?.engine_type, resourceType: resource.type || parsed.type })
+      : String(resource.path || '')
+    return {
+      taskId: String(taskId || '-'),
+      operatorLabel: task.operator || String(taskId || '-'),
+      engineName: engine?.name || (parsed ? t('develop.executionDetail.engineFallback', { id: parsed.engineId }) : '-'),
+      path: path || '-',
+      writeModeLabel: formatWriteMode(resource.write_mode)
+    }
+  }).filter(row => row.path !== '-')
+})
+const workflowHasTransientResult = computed(() => Boolean(executionResult.value?.summary?.has_result))
+const workflowResultSize = computed(() => Number(executionResult.value?.summary?.result_size_bytes || 0))
+const workflowFinalResult = computed(() => executionResult.value?.final_result)
+const hasWorkflowFinalResult = computed(() => workflowFinalResult.value !== undefined && workflowFinalResult.value !== null)
+const workflowFinalResultScalar = computed(() => (
+  workflowFinalResult.value === null || typeof workflowFinalResult.value !== 'object'
+))
+const workflowFinalResultText = computed(() => JSON.stringify(workflowFinalResult.value, null, 2))
 const executionErrorMessage = computed(() => queryErrorMessage(
   execution.value?.error_details?.error_code,
   execution.value?.error_details?.message || execution.value?.error_details?.error || '',
@@ -267,6 +347,16 @@ const loadLogs = async () => {
     logs.value = data.logs || []
   } catch (error) {
     console.error('加载日志失败:', error)
+  }
+}
+
+const loadResourceEngines = async () => {
+  if (resourceEngines.value.length > 0) return
+  try {
+    resourceEngines.value = await listResourceTreeEngines('/api/v1/meta')
+  } catch (error) {
+    console.warn('加载资源引擎失败:', error)
+    resourceEngines.value = []
   }
 }
 
@@ -361,6 +451,28 @@ const formatTime = (time) => {
 
 const formatSQLResult = () => queryResultFromExecution(execution.value)
 
+const formatWriteMode = (mode) => {
+  const labels = {
+    replace: t('develop.executionDetail.writeModeReplace'),
+    append: t('develop.executionDetail.writeModeAppend'),
+    fail: t('develop.executionDetail.writeModeFail'),
+    create: t('develop.executionDetail.writeModeCreate')
+  }
+  return labels[String(mode || '').toLowerCase()] || String(mode || '-')
+}
+
+const formatBytes = (bytes) => {
+  if (!bytes) return '0 B'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+const formatWorkflowResultValue = (value) => {
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return String(value)
+}
+
 // 操作函数
 const handleBack = () => {
   navigateDevelopRoute(router, '/executions', { history: 'replace' })
@@ -452,6 +564,7 @@ watch(executionId, async () => {
 onMounted(async () => {
   await loadExecution()
   await loadLogs()
+  if (execution.value?.task_type === 'workflow') await loadResourceEngines()
   routeDataReady = true
   await restoreExecutionRoute()
   startAutoRefresh()
@@ -534,8 +647,68 @@ onUnmounted(() => {
 }
 
 .workflow-result h3 {
-  margin: 0 0 16px 0;
+  margin: 0;
   color: var(--addp-text-primary);
+}
+
+.workflow-result-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.output-operator {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.output-operator strong {
+  color: var(--addp-text-primary);
+  font-weight: 600;
+}
+
+.output-operator span,
+.output-resource {
+  color: var(--addp-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.workflow-final-result {
+  margin-top: 16px;
+}
+
+.workflow-final-result-label {
+  margin-bottom: 6px;
+  color: var(--addp-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.workflow-final-result-value {
+  padding: 14px 16px;
+  color: var(--addp-text-primary);
+  background: var(--addp-bg-secondary);
+  border: 1px solid var(--addp-border-color);
+  border-radius: 4px;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.workflow-final-result-json {
+  max-height: 320px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  color: var(--addp-text-primary);
+  background: var(--addp-bg-secondary);
+  border: 1px solid var(--addp-border-color);
+  border-radius: 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .log-item {

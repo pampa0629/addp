@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/addp/common/queryparams"
+	commonquery "github.com/addp/common/query"
 	"github.com/addp/common/taskprovider"
 	"github.com/addp/develop/backend/internal/models"
 )
@@ -45,7 +45,7 @@ func BuildQueryExecutionContract(content map[string]interface{}) (*taskprovider.
 	}
 	query, _ := content["query"].(string)
 	language, _ := content["query_type"].(string)
-	references, err := queryparams.References(language, query)
+	references, err := commonquery.References(language, query)
 	if err != nil {
 		return nil, &QueryParameterDefinitionsError{Cause: fmt.Errorf("查询参数引用无效: %w", err)}
 	}
@@ -53,7 +53,7 @@ func BuildQueryExecutionContract(content map[string]interface{}) (*taskprovider.
 	for _, definition := range definitions {
 		definitionValues[definition.Name] = definition.Default
 	}
-	if err := queryparams.ValidateDefinitions(references, definitionValues); err != nil {
+	if err := commonquery.ValidateDefinitions(references, definitionValues); err != nil {
 		return nil, &QueryParameterDefinitionsError{Cause: fmt.Errorf("查询参数定义与查询不一致: %w", err)}
 	}
 
@@ -151,7 +151,7 @@ func queryParameterDefinitions(content map[string]interface{}) ([]models.QueryPa
 		if err := decodeRequiredString(item, "name", &definition.Name); err != nil {
 			return nil, fmt.Errorf("content.query_parameters[%d].name %w", index, err)
 		}
-		if !queryparams.ValidName(definition.Name) {
+		if !commonquery.ValidName(definition.Name) {
 			return nil, fmt.Errorf("content.query_parameters[%d].name 必须是字母或下划线开头的标识符", index)
 		}
 		if _, duplicate := seen[definition.Name]; duplicate {

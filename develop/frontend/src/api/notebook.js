@@ -66,6 +66,10 @@ export const notebookAPI = {
     return client.delete(`/develop/notebooks/${id}/sessions/${sessionId}`)
   },
 
+  generateSessionCell(sessionId, payload) {
+    return client.post(`/develop/notebook-copilot-sessions/${sessionId}/generate`, payload)
+  },
+
   /**
    * 列出 Notebooks
    * @param {Object} params - 查询参数

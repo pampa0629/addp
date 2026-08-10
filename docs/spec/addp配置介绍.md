@@ -426,6 +426,14 @@ MINIO_ROOT_PASSWORD=minioadmin
 MINIO_API_PORT=19000
 MINIO_BUCKET=system
 
+# Oracle Free - Business 普通表测试源（业务容器内使用 business-oracle:1521）
+ORACLE_IMAGE=gvenzl/oracle-free:23-slim
+ORACLE_SYS_PASSWORD=oracle_sys_password
+ORACLE_APP_USER=business
+ORACLE_APP_PASSWORD=business_oracle_password
+ORACLE_SERVICE_NAME=FREEPDB1
+ORACLE_PORT=15210
+
 # MinIO - 业务数据 (部署在 business/docker-compose.yml)
 # 注意：Business 引擎连接信息由 ADDP 容器内服务使用，生产 Docker 部署请使用 business 网络服务名，不要写 localhost。
 BUSINESS_PG_HOST=business-postgres

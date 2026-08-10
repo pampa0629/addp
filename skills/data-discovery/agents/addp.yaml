@@ -1,0 +1,7 @@
+schema: addp.skill-runtime/v1
+required_skills: []
+required_tools:
+  - data.search
+  - resource.ancestors.get
+  - data.preview
+max_iterations: 6

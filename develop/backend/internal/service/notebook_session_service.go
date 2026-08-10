@@ -21,6 +21,7 @@ import (
 )
 
 const NotebookSessionCookieName = "addp_notebook_session"
+const NotebookCopilotSessionCookieName = "addp_notebook_copilot_session"
 const NotebookKernelCapabilityPrefix = "addp_nkc_"
 
 var (

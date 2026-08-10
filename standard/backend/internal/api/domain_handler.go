@@ -32,7 +32,7 @@ func (h *DomainHandler) ListDomains(c *gin.Context) {
 	tenantID := getTenantID(c)
 	tree, err := h.svc.ListDomainsAsTree(tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, tree)
@@ -50,7 +50,7 @@ func (h *DomainHandler) ListDomains(c *gin.Context) {
 func (h *DomainHandler) CreateDomain(c *gin.Context) {
 	var req models.CreateDomainRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
@@ -59,7 +59,7 @@ func (h *DomainHandler) CreateDomain(c *gin.Context) {
 
 	domain, err := h.svc.CreateDomain(&req, tenantID, userID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusCreated, domain)
@@ -108,7 +108,7 @@ func (h *DomainHandler) UpdateDomain(c *gin.Context) {
 
 	var req models.UpdateDomainRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
@@ -117,7 +117,7 @@ func (h *DomainHandler) UpdateDomain(c *gin.Context) {
 
 	domain, err := h.svc.UpdateDomain(id, tenantID, userID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, domain)
@@ -141,7 +141,7 @@ func (h *DomainHandler) DeleteDomain(c *gin.Context) {
 
 	tenantID := getTenantID(c)
 	if err := h.svc.DeleteDomain(id, tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})

@@ -49,6 +49,14 @@ BUSINESS_PG_USER="${POSTGRES_USER:-business}"
 BUSINESS_PG_PASSWORD="${POSTGRES_PASSWORD:-business_password}"
 BUSINESS_PG_DB="${POSTGRES_DB:-business}"
 
+# Business Oracle 配置
+BUSINESS_ORACLE_CHECK_PORT="${BUSINESS_ORACLE_CHECK_PORT:-${ORACLE_PORT:-15210}}"
+BUSINESS_ORACLE_HOST="${BUSINESS_ORACLE_HOST:-business-oracle}"
+BUSINESS_ORACLE_PORT="${BUSINESS_ORACLE_PORT:-1521}"
+BUSINESS_ORACLE_SERVICE_NAME="${ORACLE_SERVICE_NAME:-FREEPDB1}"
+BUSINESS_ORACLE_USER="${ORACLE_APP_USER:-business}"
+BUSINESS_ORACLE_PASSWORD="${ORACLE_APP_PASSWORD:-business_oracle_password}"
+
 # Business MinIO 配置
 BUSINESS_MINIO_CHECK_PORT="${BUSINESS_MINIO_CHECK_PORT:-${MINIO_API_PORT:-9002}}"
 BUSINESS_MINIO_ENDPOINT="${BUSINESS_MINIO_ENDPOINT:-business-minio:9000}"
@@ -101,6 +109,20 @@ elif ! PGPASSWORD="${BUSINESS_PG_PASSWORD}" psql -h "${BUSINESS_PG_CHECK_HOST}" 
   exit 1
 fi
 echo -e "${GREEN}✓ Business PostgreSQL 可用${NC}"
+
+# 检查 Business Oracle
+if docker ps --format '{{.Names}}' | grep -qx 'business-oracle'; then
+  if ! docker exec business-oracle healthcheck.sh >/dev/null 2>&1; then
+    echo -e "${RED}✗ Business Oracle 不可用${NC}"
+    echo -e "${YELLOW}  请先启动: cd business && bash scripts/start.sh -oracle${NC}"
+    exit 1
+  fi
+else
+  echo -e "${RED}✗ 未发现 Business Oracle 容器（宿主端口 ${BUSINESS_ORACLE_CHECK_PORT}）${NC}"
+  echo -e "${YELLOW}  请先启动: cd business && bash scripts/start.sh -oracle${NC}"
+  exit 1
+fi
+echo -e "${GREEN}✓ Business Oracle 可用${NC}"
 
 # 检查 Business MinIO
 if docker ps --format '{{.Names}}' | grep -qx 'business-minio'; then
@@ -231,6 +253,13 @@ register_engine \
   "{\"host\":\"${BUSINESS_PG_HOST}\",\"port\":${BUSINESS_PG_PORT},\"database\":\"${BUSINESS_PG_DB}\",\"username\":\"${BUSINESS_PG_USER}\",\"password\":\"${BUSINESS_PG_PASSWORD}\"}" \
   "业务数据库 - PostgreSQL (带 PostGIS 空间扩展)"
 
+# 注册 Business Oracle
+register_engine \
+  "Business Oracle" \
+  "oracle" \
+  "{\"host\":\"${BUSINESS_ORACLE_HOST}\",\"port\":${BUSINESS_ORACLE_PORT},\"service_name\":\"${BUSINESS_ORACLE_SERVICE_NAME}\",\"user\":\"${BUSINESS_ORACLE_USER}\",\"password\":\"${BUSINESS_ORACLE_PASSWORD}\"}" \
+  "业务数据库 - Oracle 普通表与只读快照"
+
 # 注册 Business MinIO
 register_engine \
   "Business MinIO" \
@@ -245,7 +274,8 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 echo "已注册的 Business 引擎："
 echo "  1. Business PostgreSQL (${BUSINESS_PG_HOST}:${BUSINESS_PG_PORT})"
-echo "  2. Business MinIO (${BUSINESS_MINIO_ENDPOINT})"
+echo "  2. Business Oracle (${BUSINESS_ORACLE_HOST}:${BUSINESS_ORACLE_PORT}/${BUSINESS_ORACLE_SERVICE_NAME})"
+echo "  3. Business MinIO (${BUSINESS_MINIO_ENDPOINT})"
 echo ""
 echo -e "${YELLOW}提示: 可以在「系统管理 -- 引擎管理」页面查看和管理引擎${NC}"
 echo ""

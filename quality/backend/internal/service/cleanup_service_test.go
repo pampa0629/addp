@@ -68,8 +68,8 @@ func TestQualityCleanupLogicalDisablesEngineBoundState(t *testing.T) {
 	if err := db.First(&updatedTask, task.ID).Error; err != nil {
 		t.Fatalf("load check task: %v", err)
 	}
-	if updatedTask.Enabled || updatedTask.NextRunAt != nil {
-		t.Fatalf("check task enabled=%v next_run_at=%v, want disabled and unscheduled", updatedTask.Enabled, updatedTask.NextRunAt)
+	if updatedTask.Enabled {
+		t.Fatalf("check task enabled=%v, want disabled", updatedTask.Enabled)
 	}
 	var updatedIssue models.Issue
 	if err := db.First(&updatedIssue, issue.ID).Error; err != nil {
@@ -170,7 +170,6 @@ func newQualityCleanupTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME,
 			last_run_at DATETIME,
-			next_run_at DATETIME,
 			last_execution_id TEXT,
 			last_execution_status TEXT
 		)`,
@@ -178,8 +177,11 @@ func newQualityCleanupTestDB(t *testing.T) *gorm.DB {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
 			execution_id TEXT NOT NULL,
+			last_execution_id TEXT NOT NULL DEFAULT '',
 			rule_application_id INTEGER NOT NULL,
 			rule_type TEXT NOT NULL,
+			severity TEXT NOT NULL DEFAULT 'error',
+			message TEXT,
 			column_name TEXT NOT NULL,
 			table_name TEXT NOT NULL,
 			schema_name TEXT,
@@ -189,6 +191,10 @@ func newQualityCleanupTestDB(t *testing.T) *gorm.DB {
 			pass_rate REAL NOT NULL,
 			detail JSON,
 			status TEXT NOT NULL,
+			resolved_at DATETIME,
+			resolved_by INTEGER,
+			resolution_note TEXT,
+			last_observed_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -210,7 +216,7 @@ func createQualityCleanupRuleApplication(t *testing.T, db *gorm.DB, tenantID int
 		SchemaName: "public",
 		Table:      name,
 		ColumnName: "value",
-		RuleConfig: json.RawMessage(`{"type":"not_null"}`),
+		RuleConfig: json.RawMessage(`{"schema_version":"addp.quality.rules/v1","rules":[]}`),
 		Enabled:    true,
 		CreatedBy:  1,
 	}

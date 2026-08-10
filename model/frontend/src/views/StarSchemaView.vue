@@ -4,7 +4,18 @@
       <span class="view-title">{{ t('model.star_schema.title') }}</span>
     </div>
 
-    <el-row :gutter="16" style="margin-top:12px">
+    <el-alert
+      v-if="loadError"
+      class="load-error"
+      type="error"
+      :title="loadError"
+      show-icon
+      :closable="false"
+    >
+      <el-button link type="danger" @click="reload">{{ t('model.common.retry') }}</el-button>
+    </el-alert>
+
+    <el-row v-else :gutter="16" style="margin-top:12px">
       <!-- 左侧：事实表选择器 -->
       <el-col :span="6">
         <el-card shadow="never" class="fact-list-card">
@@ -78,7 +89,7 @@
                 <template #header>
                   <div class="card-header-with-action">
                     <span class="card-title">{{ t('model.star_schema.dimension_relations') }}</span>
-                    <el-button type="primary" size="small" @click="openAddDimDialog">
+                    <el-button v-if="canEditSelectedTable" type="primary" size="small" @click="openAddDimDialog">
                       {{ t('model.star_schema.add_relation') }}
                     </el-button>
                   </div>
@@ -93,6 +104,7 @@
                   </div>
                   <div class="dim-item-actions">
                     <el-button
+                      v-if="canModifyDimensionRelation(rel)"
                       link
                       type="primary"
                       size="small"
@@ -153,7 +165,7 @@
             @change="onDimTableChange"
           >
             <el-option
-              v-for="dim in allDimensionTables"
+              v-for="dim in editableDimensionTables"
               :key="dim.id"
               :label="dim.name"
               :value="dim.id"
@@ -218,15 +230,19 @@ import mermaid from 'mermaid'
 import { logicalTableAPI, standardMetricAPI } from '../api/model'
 import { useI18n } from 'vue-i18n'
 import { navigateModelRoute } from '../utils/moduleNavigation'
+import { useAuthStore } from '../store/auth'
+import { getModelErrorMessage } from '../utils/apiError'
 
 const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 
 const loadingTables = ref(false)
 const loadingRelated = ref(false)
 const loadingMetrics = ref(false)
+const loadError = ref('')
 
 const factTables = ref([])
 const factTablesReady = ref(false)
@@ -250,6 +266,17 @@ const addDimForm = ref({
   target_field: null,
   relation_type: 'fk'
 })
+
+const canEditSelectedTable = computed(() =>
+  selectedTable.value?.status === 'draft' && authStore.hasPermission('model.logical_model.update')
+)
+const editableDimensionTables = computed(() =>
+  allDimensionTables.value.filter(table => table.status === 'draft')
+)
+const canModifyDimensionRelation = relation => {
+  if (!canEditSelectedTable.value) return false
+  return allDimensionTables.value.find(table => table.id === relation.target_table)?.status === 'draft'
+}
 
 const metricNameMap = computed(() => {
   const map = {}
@@ -322,9 +349,13 @@ const metricTypeLabel = (type) => {
 
 const loadFactTables = async () => {
   loadingTables.value = true
+  loadError.value = ''
   try {
-    const res = await logicalTableAPI.list({ table_type: 'fact', page_size: 200 })
-    factTables.value = res.data || []
+    const res = await logicalTableAPI.listAll({ table_type: 'fact' })
+    factTables.value = res
+  } catch (err) {
+    factTables.value = []
+    loadError.value = getModelErrorMessage(err, t, 'model.common.load_failed')
   } finally {
     loadingTables.value = false
     factTablesReady.value = true
@@ -333,9 +364,11 @@ const loadFactTables = async () => {
 
 const loadAllDimensionTables = async () => {
   try {
-    const res = await logicalTableAPI.list({ table_type: 'dimension', page_size: 200 })
-    allDimensionTables.value = res.data || []
-  } catch {}
+    const res = await logicalTableAPI.listAll({ table_type: 'dimension' })
+    allDimensionTables.value = res
+  } catch (err) {
+    loadError.value = getModelErrorMessage(err, t, 'model.common.load_failed')
+  }
 }
 
 let selectionVersion = 0
@@ -351,10 +384,10 @@ const clearSelection = () => {
   loadingMetrics.value = false
 }
 
-const loadSelectedTable = async (t) => {
+const loadSelectedTable = async (table) => {
   const requestVersion = ++selectionVersion
-  selectedTableId.value = t.id
-  selectedTable.value = t
+  selectedTableId.value = table.id
+  selectedTable.value = table
   tableFields.value = []
   dimensionRelations.value = []
   factMetrics.value = []
@@ -363,14 +396,18 @@ const loadSelectedTable = async (t) => {
   loadingMetrics.value = true
   try {
     const [fieldsRes, relationsRes, metricsRes] = await Promise.all([
-      logicalTableAPI.getFields(t.id),
-      logicalTableAPI.listDimensionRelations(t.id),
-      logicalTableAPI.listMetrics(t.id),
+      logicalTableAPI.getFields(table.id),
+      logicalTableAPI.listDimensionRelations(table.id),
+      logicalTableAPI.listMetrics(table.id),
     ])
     if (requestVersion !== selectionVersion) return
     tableFields.value = fieldsRes || []
     dimensionRelations.value = relationsRes || []
     factMetrics.value = metricsRes || []
+  } catch (err) {
+    if (requestVersion === selectionVersion) {
+      loadError.value = getModelErrorMessage(err, t, 'model.common.load_failed')
+    }
   } finally {
     if (requestVersion === selectionVersion) {
       loadingRelated.value = false
@@ -498,15 +535,30 @@ watch(mermaidCode, async () => {
 
 watch(() => route.query.table_id, syncSelectedTableFromRoute)
 
+const reload = async () => {
+  clearSelection()
+  loadError.value = ''
+  if (!authStore.hasPermission('model.logical_model.read')) {
+    loadError.value = t('model.common.permission_denied')
+    return
+  }
+  await loadFactTables()
+  if (loadError.value) return
+  await syncSelectedTableFromRoute()
+  if (loadError.value) return
+  await loadAllDimensionTables()
+  if (loadError.value) return
+  try {
+    const res = await standardMetricAPI.listAll()
+    allMetrics.value = res
+  } catch (err) {
+    loadError.value = getModelErrorMessage(err, t, 'model.common.load_failed')
+  }
+}
+
 onMounted(async () => {
   mermaid.initialize({ startOnLoad: false, theme: 'default' })
-  await loadFactTables()
-  await syncSelectedTableFromRoute()
-  loadAllDimensionTables()
-  try {
-    const res = await standardMetricAPI.list({ page_size: 500 })
-    allMetrics.value = res.data.data || res.data || []
-  } catch {}
+  await reload()
 })
 </script>
 
@@ -680,5 +732,9 @@ onMounted(async () => {
 
 .card-title {
   font-weight: 600;
+}
+
+.load-error {
+  margin-top: 12px;
 }
 </style>

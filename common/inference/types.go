@@ -50,6 +50,7 @@ type ResolveProfileRequest struct {
 	ModelProfileID string `json:"model_profile_id"`
 	Operation      string `json:"operation"`
 	Modality       string `json:"modality"`
+	CallerToken    string `json:"-"`
 }
 
 type ResolveProfileResponse struct {

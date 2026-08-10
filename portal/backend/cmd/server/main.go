@@ -6,7 +6,7 @@ import (
 	"log"
 
 	commonClient "github.com/addp/common/client"
-	"github.com/addp/common/utils"
+	commonConfig "github.com/addp/common/config"
 	"github.com/addp/portal/internal/api"
 	"github.com/addp/portal/internal/config"
 	"github.com/redis/go-redis/v9"
@@ -67,6 +67,6 @@ func main() {
 }
 
 func registerPortalModule(ctx context.Context, registrar portalModuleRegistrar, port string) {
-	serviceURL := utils.BuildServiceURL(utils.GetServiceHost(), port)
+	serviceURL := commonConfig.BuildServiceURL(commonConfig.GetServiceHost(), port)
 	registrar.RegisterAndHeartbeatWithMetadata(ctx, "portal", serviceURL, "/portal", nil)
 }

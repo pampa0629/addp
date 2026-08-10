@@ -130,7 +130,7 @@ func (r *EmbeddingRepository) UpsertEmbeddingState(ctx context.Context, embeddin
 	).Error
 }
 
-func (r *EmbeddingRepository) QueryReadySimilar(ctx context.Context, tenantID uint, queryVector []float32, modelProfileID string, profileVersion int64, dimension int, topK int, maxDistance float64) ([]EmbeddingSimilarityResult, error) {
+func (r *EmbeddingRepository) QueryReadySimilar(ctx context.Context, tenantID uint, engineID *uint, queryVector []float32, modelProfileID string, profileVersion int64, dimension int, topK int, maxDistance float64) ([]EmbeddingSimilarityResult, error) {
 	if tenantID == 0 {
 		return nil, errors.New("tenant_id is required")
 	}
@@ -146,6 +146,11 @@ func (r *EmbeddingRepository) QueryReadySimilar(ctx context.Context, tenantID ui
 
 	vector := vectorToString(queryVector)
 	args := []any{tenantID, models.EmbeddingStatusReady, modelProfileID, profileVersion, dimension}
+	engineClause := ""
+	if engineID != nil && *engineID > 0 {
+		engineClause = " AND engine_id = ?"
+		args = append(args, *engineID)
+	}
 	distanceClause := ""
 	if maxDistance > 0 {
 		distanceClause = " AND embedding OPERATOR(manager.<=>) ?::manager.vector <= ?"
@@ -158,10 +163,10 @@ func (r *EmbeddingRepository) QueryReadySimilar(ctx context.Context, tenantID ui
 		       status, status_reason, error_message, last_execution_id, vectorized_at, created_at, updated_at,
 		       embedding OPERATOR(manager.<=>) ?::manager.vector AS distance
 		FROM manager.embeddings
-		WHERE tenant_id = ? AND status = ? AND model_profile_id = ? AND profile_version = ? AND dimension = ? AND embedding IS NOT NULL%s
+		WHERE tenant_id = ? AND status = ? AND model_profile_id = ? AND profile_version = ? AND dimension = ?%s AND embedding IS NOT NULL%s
 		ORDER BY embedding OPERATOR(manager.<=>) ?::manager.vector
 		LIMIT ?
-	`, distanceClause)
+	`, engineClause, distanceClause)
 
 	queryArgs := append([]any{vector}, args...)
 	rows, err := r.db.WithContext(ctx).Raw(querySQL, queryArgs...).Rows()

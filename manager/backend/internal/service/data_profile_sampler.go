@@ -12,11 +12,11 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
-	"github.com/addp/common/dataprofile"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/manager/internal/dataprofile"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/preview"
 )

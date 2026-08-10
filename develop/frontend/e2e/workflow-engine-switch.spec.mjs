@@ -65,6 +65,36 @@ test.describe('responsive workflow dialogs', () => {
     await expect(issue).toHaveCount(1)
     await issue.click()
 
+    const resourceCard = page.locator('.resource-selection-card')
+    await expect(resourceCard).toContainText(RESOURCE_ENGINE.name)
+    await expect(resourceCard).toContainText('public.roads')
+
+    const nodePresentation = await page.locator('#workflow-dag-container').evaluate(element => {
+      const graph = element.__vueParentComponent?.setupState?.graph
+      const node = graph?.findById?.('operator_a_1')
+      const summaries = node?.getModel?.()?.parameterSummaries || []
+      const visibleSummaryText = (node?.getContainer?.()?.get?.('children') || [])
+        .filter(shape => String(shape.get('name') || '').startsWith('workflow-node-summary-'))
+        .map(shape => shape.attr('text'))
+        .filter(Boolean)
+      return { summaries, visibleSummaryText }
+    })
+    expect(nodePresentation.summaries).toEqual([
+      expect.objectContaining({ label: 'source', value: 'manual-source', kind: 'value' }),
+      expect.objectContaining({
+        label: '数据源',
+        engineName: RESOURCE_ENGINE.name,
+        resourceName: 'roads',
+        path: 'public.roads',
+        kind: 'resource'
+      })
+    ])
+    expect(nodePresentation.visibleSummaryText.join(' ')).toContain('manual-source')
+    expect(nodePresentation.visibleSummaryText[1]).toBe('public.roads')
+    expect(nodePresentation.visibleSummaryText.join(' ')).toContain(RESOURCE_ENGINE.name)
+    expect(nodePresentation.visibleSummaryText.join(' ')).toContain('public.roads')
+    expect(nodePresentation.visibleSummaryText.join(' ')).not.toContain('addp://')
+
     const selectResource = page.getByRole('button', { name: '更换资源', exact: true })
     await expect(selectResource).toBeVisible()
     await selectResource.click()
@@ -904,7 +934,9 @@ function createSavedTask(
   const tasks = [{
     id: 'operator_a_1',
     operator: 'operator_a',
-    params: includeResourcePicker ? { source_locator: RESOURCE_LOCATOR } : {},
+    params: includeResourcePicker
+      ? { source: 'manual-source', source_locator: RESOURCE_LOCATOR }
+      : {},
     depends_on: []
   }]
   if (includeCrossingEdges) {

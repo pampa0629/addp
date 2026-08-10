@@ -131,14 +131,13 @@
             <div v-for="(rule, index) in qualityRules" :key="index" class="rule-item">
               <div class="rule-header">
                 <el-checkbox v-model="rule.enabled">{{ $t('standard.element.ruleEnabled') }}</el-checkbox>
-                <el-select v-model="rule.type" size="small" style="width: 140px">
+                <el-select v-model="rule.type" size="small" style="width: 140px" @change="handleRuleTypeChange(rule)">
                   <el-option :label="$t('standard.element.ruleNotNull')" value="not_null" />
                   <el-option :label="$t('standard.element.ruleFormat')" value="format" />
                   <el-option :label="$t('standard.element.ruleLength')" value="length" />
                   <el-option :label="$t('standard.element.ruleUnique')" value="unique" />
                   <el-option :label="$t('standard.element.ruleValueRange')" value="value_range" />
-                  <el-option :label="$t('standard.element.ruleDataType')" value="data_type" />
-                  <el-option :label="$t('standard.element.ruleCustom')" value="custom" />
+                  <el-option :label="$t('standard.element.ruleAllowedValues')" value="allowed_values" />
                 </el-select>
                 <el-select v-model="rule.severity" size="small" style="width: 100px">
                   <el-option :label="$t('standard.element.severityError')" value="error" />
@@ -155,7 +154,7 @@
               />
               <div v-if="rule.type === 'format'" class="rule-params">
                 <el-input
-                  v-model="rule.params.regex"
+                  v-model="rule.params.pattern"
                   :placeholder="$t('standard.element.ruleFormatPlaceholder')"
                   size="small"
                 />
@@ -171,16 +170,6 @@
                 </el-row>
               </div>
               <div v-if="rule.type === 'value_range'" class="rule-params">
-                <el-select
-                  v-model="rule.params.enum"
-                  multiple
-                  filterable
-                  allow-create
-                  default-first-option
-                  :placeholder="$t('standard.element.ruleEnumPlaceholder')"
-                  size="small"
-                  style="width: 100%"
-                />
                 <el-row :gutter="10" style="margin-top: 8px">
                   <el-col :span="12">
                     <el-input-number v-model="rule.params.min" :placeholder="$t('standard.element.ruleMinPlaceholder')" size="small" style="width: 100%" />
@@ -190,13 +179,16 @@
                   </el-col>
                 </el-row>
               </div>
-              <div v-if="rule.type === 'custom'" class="rule-params">
-                <el-input
-                  v-model="rule.params.sql"
-                  type="textarea"
-                  :rows="3"
-                  :placeholder="$t('standard.element.ruleCustomSqlPlaceholder')"
+              <div v-if="rule.type === 'allowed_values'" class="rule-params">
+                <el-select
+                  v-model="rule.params.values"
+                  multiple
+                  filterable
+                  allow-create
+                  default-first-option
+                  :placeholder="$t('standard.element.ruleEnumPlaceholder')"
                   size="small"
+                  style="width: 100%"
                 />
               </div>
             </div>
@@ -253,7 +245,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft, CircleCheck, List } from '@element-plus/icons-vue'
@@ -296,12 +288,12 @@ const qualityRules = computed({
   get() {
     if (!element.value.quality_rules) return []
     const qr = element.value.quality_rules
-    if (qr.rules && Array.isArray(qr.rules)) return qr.rules
+    if (qr.schema_version === 'addp.quality.rules/v1' && Array.isArray(qr.rules)) return qr.rules
     return []
   },
   set(val) {
     if (!element.value.quality_rules) {
-      element.value.quality_rules = { rules: val }
+      element.value.quality_rules = { schema_version: 'addp.quality.rules/v1', rules: val }
     } else {
       element.value.quality_rules.rules = val
     }
@@ -324,7 +316,7 @@ const formatTime = (time) => {
   return new Date(time).toLocaleString()
 }
 
-const goBack = () => navigateStandardRoute(router, '/elements', { history: 'replace' })
+const goBack = () => navigateStandardRoute(router, { path: '/elements', query: route.query }, { history: 'replace' })
 
 const loadElement = async () => {
   loading.value = true
@@ -332,7 +324,9 @@ const loadElement = async () => {
     const res = await elementAPI.get(route.params.id)
     element.value = res || {}
     if (!element.value.quality_rules) {
-      element.value.quality_rules = { rules: [] }
+      element.value.quality_rules = { schema_version: 'addp.quality.rules/v1', rules: [] }
+    } else if (element.value.quality_rules.schema_version !== 'addp.quality.rules/v1' || !Array.isArray(element.value.quality_rules.rules)) {
+      throw new Error('invalid quality rules document')
     }
     if (element.value.code_set_id) {
       loadCodeItems(element.value.code_set_id)
@@ -426,6 +420,10 @@ const removeRule = (index) => {
   qualityRules.value = qualityRules.value.filter((_, i) => i !== index)
 }
 
+const handleRuleTypeChange = (rule) => {
+  rule.params = {}
+}
+
 const saveChanges = async () => {
   saving.value = true
   try {
@@ -450,10 +448,13 @@ const handleApprove = async () => {
   }
 }
 
-onMounted(() => {
+watch(() => route.params.id, () => {
   loadElement()
-  loadCodeSets()
   loadRelatedGlossaries()
+}, { immediate: true })
+
+onMounted(() => {
+  loadCodeSets()
   loadUnits()
   loadGradingLevels()
   loadClassifications()

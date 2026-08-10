@@ -186,6 +186,32 @@ class PostgreSQLTable:
             batches.append(batch)
         return pa.Table.from_batches(batches).to_pandas()
 
+    def to_geopandas(
+        self,
+        *,
+        memory_limit: str | int,
+        geometry_column: str,
+        crs: str,
+    ):
+        """使用已验证的 EWKB 几何列和 CRS 构造 GeoDataFrame。"""
+        geometry_column = _required_name(geometry_column, "geometry_column")
+        crs = _required_name(crs, "crs")
+        frame = self.to_pandas(memory_limit=memory_limit)
+        if geometry_column not in frame.columns:
+            raise NotebookDataRequestError(
+                f"geometry_column {geometry_column!r} 不存在于表扫描结果"
+            )
+        try:
+            import geopandas as gpd
+        except ImportError as exc:
+            raise NotebookDataUnsupportedError(
+                "当前 Notebook Kernel 未安装 GeoPandas"
+            ) from exc
+
+        geometry = gpd.GeoSeries.from_wkb(frame[geometry_column], crs=crs)
+        frame[geometry_column] = geometry
+        return gpd.GeoDataFrame(frame, geometry=geometry_column, crs=crs)
+
 
 @dataclass(frozen=True)
 class PostgreSQLSchema:

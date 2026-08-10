@@ -303,8 +303,8 @@
         "id": "ID",
         "name": "名称",
         "type": "类型",
-        "connection": "连接",
-        "status": "状态",
+        "connection": "最近检测",
+        "status": "启用状态",
         "capabilities": "能力",
         "category": "来源",
         "builtin": "注册/内置",
@@ -312,8 +312,8 @@
         "actions": "操作"
       },
       "status": {
-        "active": "激活",
-        "disabled": "禁用",
+        "active": "已启用",
+        "disabled": "已停用",
         "deleting": "清理中"
       },
       "category": {
@@ -325,12 +325,12 @@
         "registered": "注册"
       },
       "connection": {
-        "online": "在线",
-        "offline": "离线",
-        "unknown": "未知",
+        "online": "正常",
+        "offline": "失败",
+        "unknown": "未检测",
         "checking": "检测中",
         "notChecked": "未检测",
-        "statusLine": "状态: {status}",
+        "statusLine": "最近检测: {status}",
         "lastCheck": "最后检测: {time}",
         "detail": "详情: {msg}"
       },
@@ -376,7 +376,7 @@
           "engineType": "引擎类型",
           "category": "引擎来源",
           "registration": "注册方式",
-          "status": "激活状态",
+          "status": "启用状态",
           "deletionError": "删除失败原因",
           "createdAt": "创建时间",
           "updatedAt": "更新时间",
@@ -437,6 +437,7 @@
         "editLockedHint": "编辑状态下不允许切换引擎类型",
         "types": {
           "postgresql": "企业级关系数据库",
+          "oracle": "Oracle 关系数据库",
           "mysql": "通用关系数据库",
           "kafka": "事件流与消息系统",
           "doris": "MPP 分析型数据库",
@@ -1139,6 +1140,10 @@
         "name": "租户审计员",
         "description": "查看和导出租户审计事件，并只读查看执行与统计信息。"
       },
+      "data_architect": {
+        "name": "数据架构师",
+        "description": "管理租户级业务实体、实体关系、逻辑模型、数仓分层、命名规范和质量 SLA。"
+      },
       "data_engineer": {
         "name": "数据工程师",
         "description": "管理传输任务、开发任务、Notebook 和工作流。"
@@ -1157,7 +1162,7 @@
       },
       "governance_manager": {
         "name": "数据治理管理员",
-        "description": "管理标准、模型、质量规则、检查任务和质量问题。"
+        "description": "管理数据标准、质量规则、检查任务和质量问题。"
       },
       "graph_engineer": {
         "name": "图谱工程师",

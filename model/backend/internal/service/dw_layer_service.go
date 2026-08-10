@@ -73,5 +73,16 @@ func (s *DWLayerService) UpdateDWLayer(id, tenantID int64, req *models.UpdateDWL
 }
 
 func (s *DWLayerService) DeleteDWLayer(id, tenantID int64) error {
+	layer, err := s.repo.GetByID(id, tenantID)
+	if err != nil {
+		return err
+	}
+	count, err := s.repo.CountLogicalTableReferences(layer.LayerCode, tenantID)
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return fmt.Errorf("该分层仍被 %d 个逻辑表引用，不能删除", count)
+	}
 	return s.repo.Delete(id, tenantID)
 }

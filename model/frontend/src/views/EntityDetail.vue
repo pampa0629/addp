@@ -13,12 +13,15 @@
         </el-tag>
       </div>
       <div class="header-right">
-        <el-button type="primary" @click="handleSave" :loading="saving">{{ t('model.common.save') }}</el-button>
+        <el-button v-if="canEditEntity" type="primary" @click="handleSave" :loading="saving">{{ t('model.common.save') }}</el-button>
         <el-button
-          v-if="entity.status === 'draft'"
+          v-if="entity.status === 'draft' && can('model.entity.approve')"
           type="success"
           @click="handleApprove"
         >{{ t('model.entity.approve') }}</el-button>
+		<el-button v-if="entity.status === 'approved' && can('model.entity.update')" @click="handleReopen">
+		  {{ t('model.common.reopen') }}
+		</el-button>
       </div>
     </div>
 
@@ -57,7 +60,7 @@
       <!-- 属性列表标签页 -->
       <el-tab-pane :label="t('model.attribute.title')" name="attributes">
         <div class="tab-header">
-          <el-button type="primary" size="small" @click="openAttrDialog()">
+          <el-button v-if="canEditEntity && can('model.entity.create')" type="primary" size="small" @click="openAttrDialog()">
             <el-icon><Plus /></el-icon>
             {{ t('model.attribute.add') }}
           </el-button>
@@ -66,6 +69,8 @@
         <el-table :data="attributes" v-loading="attrLoading" stripe>
           <el-table-column :label="t('model.attribute.index')" type="index" width="60" />
           <el-table-column :label="t('model.attribute.name')" prop="name" min-width="140" />
+		  <el-table-column :label="t('model.attribute.column_name')" prop="column_name" min-width="140" />
+		  <el-table-column :label="t('model.attribute.data_type')" prop="data_type" width="110" />
           <el-table-column :label="t('model.attribute.element')" width="160">
             <template #default="{ row }">
               {{ getElementName(row.element_id) || '-' }}
@@ -87,8 +92,8 @@
           <el-table-column :label="t('model.attribute.description')" prop="description" show-overflow-tooltip />
           <el-table-column :label="t('model.attribute.actions')" width="130" fixed="right">
             <template #default="{ row }">
-              <el-button link type="primary" @click="openAttrDialog(row)">{{ t('model.common.edit') }}</el-button>
-              <el-popconfirm :title="t('model.attribute.delete_confirm')" @confirm="deleteAttr(row.id)">
+              <el-button v-if="canEditEntity" link type="primary" @click="openAttrDialog(row)">{{ t('model.common.edit') }}</el-button>
+              <el-popconfirm v-if="canEditEntity && can('model.entity.delete')" :title="t('model.attribute.delete_confirm')" @confirm="deleteAttr(row.id)">
                 <template #reference>
                   <el-button link type="danger">{{ t('model.common.delete') }}</el-button>
                 </template>
@@ -103,7 +108,7 @@
         <!-- 上半部分：关系管理 -->
         <div class="relations-management">
           <div class="tab-header">
-            <el-button type="primary" size="small" @click="openRelationDialog()">
+            <el-button v-if="canCreateRelation" type="primary" size="small" @click="openRelationDialog()">
               <el-icon><Plus /></el-icon>
               {{ t('model.relation.add') }}
             </el-button>
@@ -139,8 +144,8 @@
             <el-table-column :label="t('model.relation.description')" prop="description" show-overflow-tooltip />
             <el-table-column :label="t('model.relation.actions')" width="130" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" @click="openRelationDialog(row)">{{ t('model.common.edit') }}</el-button>
-                <el-popconfirm :title="t('model.relation.delete_confirm')" @confirm="deleteRelation(row.id)">
+                <el-button v-if="canModifyRelation(row, 'model.entity_relation.update')" link type="primary" @click="openRelationDialog(row)">{{ t('model.common.edit') }}</el-button>
+                <el-popconfirm v-if="canModifyRelation(row, 'model.entity_relation.delete')" :title="t('model.relation.delete_confirm')" @confirm="deleteRelation(row.id)">
                   <template #reference>
                     <el-button link type="danger">{{ t('model.common.delete') }}</el-button>
                   </template>
@@ -185,6 +190,14 @@
         <el-form-item :label="t('model.attribute.name')" prop="name">
           <el-input v-model="attrForm.name" :placeholder="t('model.attribute.name_placeholder')" />
         </el-form-item>
+		<el-form-item :label="t('model.attribute.column_name')" prop="column_name">
+		  <el-input v-model="attrForm.column_name" :placeholder="t('model.attribute.column_name_placeholder')" />
+		</el-form-item>
+		<el-form-item :label="t('model.attribute.data_type')" prop="data_type">
+		  <el-select v-model="attrForm.data_type" style="width:100%">
+			<el-option v-for="type in attributeDataTypes" :key="type" :label="type" :value="type" />
+		  </el-select>
+		</el-form-item>
         <el-form-item :label="t('model.attribute.element')">
           <el-select
             v-model="attrForm.element_id"
@@ -295,10 +308,13 @@ import { ArrowLeft, Plus, Refresh, DocumentCopy } from '@element-plus/icons-vue'
 import { entityAPI, entityRelationAPI, domainAPI, elementAPI } from '../api/model'
 import mermaid from 'mermaid'
 import { useI18n } from 'vue-i18n'
+import { useAuthStore } from '../store/auth'
 import { resolveCanonicalTabRouteState } from '@common-ui'
 import { navigateModelRoute } from '../utils/moduleNavigation'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
+const can = permission => authStore.hasPermission(permission)
 
 const route = useRoute()
 const router = useRouter()
@@ -327,6 +343,9 @@ const relationFormRef = ref(null)
 const mermaidContainer = ref(null)
 
 const entity = ref({})
+const entityIsDraft = computed(() => entity.value.status === 'draft')
+const canEditEntity = computed(() => entity.value.status === 'draft' && can('model.entity.update'))
+const canCreateRelation = computed(() => entityIsDraft.value && can('model.entity_relation.create'))
 const form = reactive({ name: '', domain_id: null, description: '' })
 const attributes = ref([])
 const relations = ref([])
@@ -335,9 +354,12 @@ const elements = ref([])
 const allEntities = ref([])
 const localMermaidCode = ref('erDiagram\n  ENTITY {\n  }\n')
 
-const attrForm = reactive({ name: '', element_id: null, is_pk: false, nullable: true, description: '' })
+const attributeDataTypes = ['string', 'int', 'bigint', 'float', 'decimal', 'date', 'datetime', 'bool', 'json', 'text', 'geometry']
+const attrForm = reactive({ name: '', column_name: '', data_type: 'string', element_id: null, is_pk: false, nullable: true, description: '' })
 const attrRules = {
-  name: [{ required: true, message: t('model.attribute.name_required'), trigger: 'blur' }]
+  name: [{ required: true, message: t('model.attribute.name_required'), trigger: 'blur' }],
+  column_name: [{ required: true, message: t('model.attribute.column_name_required'), trigger: 'blur' }],
+  data_type: [{ required: true, message: t('model.attribute.data_type_required'), trigger: 'change' }]
 }
 
 const relationForm = reactive({
@@ -353,7 +375,12 @@ const relationRules = {
 }
 
 // 排除当前实体的其他实体列表
-const otherEntities = computed(() => allEntities.value.filter(e => e.id !== entityId.value))
+const otherEntities = computed(() => allEntities.value.filter(e => e.id !== entityId.value && e.status === 'draft'))
+const canModifyRelation = (relation, permission) => {
+  if (!entityIsDraft.value || !can(permission)) return false
+  const otherEntity = allEntities.value.find(item => item.id === getTargetEntityId(relation))
+  return otherEntity?.status === 'draft'
+}
 
 const getElementName = (id) => elements.value.find(e => e.id === id)?.name
 const getEntityName = (id) => allEntities.value.find(e => e.id === id)?.name || `Entity#${id}`
@@ -449,18 +476,30 @@ const handleApprove = async () => {
   }
 }
 
+const handleReopen = async () => {
+  try {
+	await entityAPI.reopen(entityId.value)
+	ElMessage.success(t('model.common.reopen_success'))
+	loadEntity()
+  } catch (err) {
+	ElMessage.error(err.response?.data?.error || t('model.common.op_failed'))
+  }
+}
+
 const openAttrDialog = (attr = null) => {
   editingAttr.value = attr
   if (attr) {
     Object.assign(attrForm, {
       name: attr.name,
+	  column_name: attr.column_name,
+	  data_type: attr.data_type,
       element_id: attr.element_id || null,
       is_pk: attr.is_pk,
       nullable: attr.nullable,
       description: attr.description || ''
     })
   } else {
-    Object.assign(attrForm, { name: '', element_id: null, is_pk: false, nullable: true, description: '' })
+	Object.assign(attrForm, { name: '', column_name: '', data_type: 'string', element_id: null, is_pk: false, nullable: true, description: '' })
   }
   attrDialogVisible.value = true
 }
@@ -582,8 +621,8 @@ const refreshLocalDiagram = async () => {
         entityAPI.get(id),
         entityAPI.getAttributes(id)
       ]).then(([entityRes, attrsRes]) => ({
-        ...entityRes.data,
-        attributes: attrsRes.data || []
+		...entityRes,
+		attributes: attrsRes || []
       }))
     )
 
@@ -629,9 +668,9 @@ const refreshLocalDiagram = async () => {
 const generateEntityDefinition = (ent, attrs) => {
   let code = `  ${ent.code} {\n`
   attrs.forEach(attr => {
-    const type = 'string' // 默认类型
+	const type = attr.data_type
     const pk = attr.is_pk ? ' PK' : ''
-    code += `    ${type} ${attr.name}${pk}\n`
+	code += `    ${type} ${attr.column_name}${pk}\n`
   })
   code += `  }\n`
   return code
@@ -724,12 +763,12 @@ onMounted(async () => {
 
   const [domainsRes, elementsRes, entitiesRes] = await Promise.all([
     domainAPI.list(),
-    elementAPI.list({ page_size: 500 }),
-    entityAPI.list({ page_size: 1000 })
+    elementAPI.listAll(),
+    entityAPI.listAll()
   ])
-  domains.value = domainsRes.data || []
-  elements.value = elementsRes.data || []
-  allEntities.value = entitiesRes.data || []
+  domains.value = domainsRes || []
+  elements.value = elementsRes
+  allEntities.value = entitiesRes
   routeDataReady = true
 
   // 加载关系（如果tab是relations）

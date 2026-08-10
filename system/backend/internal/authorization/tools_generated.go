@@ -30,11 +30,29 @@ var toolAuthorizations = map[string]commonauth.ToolAuthorization{
 		RequiredScopes:      []string{"execution.get"},
 		RequiredPermissions: []string{"develop.task.read"},
 	},
+	"notebook.draft.generate": {
+		Name:                "notebook.draft.generate",
+		Owner:               "copilot",
+		RequiredScopes:      []string{"notebook.draft.generate"},
+		RequiredPermissions: []string{"copilot.notebook.execute"},
+	},
+	"query.draft.generate": {
+		Name:                "query.draft.generate",
+		Owner:               "copilot",
+		RequiredScopes:      []string{"query.draft.generate"},
+		RequiredPermissions: []string{"copilot.sql.execute"},
+	},
 	"resource.ancestors.get": {
 		Name:                "resource.ancestors.get",
 		Owner:               "meta",
 		RequiredScopes:      []string{"resource.ancestors.get"},
 		RequiredPermissions: []string{"meta.catalog.read"},
+	},
+	"transfer.draft.generate": {
+		Name:                "transfer.draft.generate",
+		Owner:               "copilot",
+		RequiredScopes:      []string{"transfer.draft.generate"},
+		RequiredPermissions: []string{"copilot.transfer.execute"},
 	},
 	"workflow.draft.generate": {
 		Name:                "workflow.draft.generate",

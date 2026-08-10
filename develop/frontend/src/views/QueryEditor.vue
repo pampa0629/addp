@@ -416,6 +416,74 @@
     </el-dialog>
 
     <el-dialog
+      v-model="queryResourceConfirmationVisible"
+      class="addp-dialog"
+      :title="t('develop.query.confirmInputResources')"
+      width="min(760px, calc(100vw - 24px))"
+      :close-on-click-modal="!generatingQuery"
+      :close-on-press-escape="!generatingQuery"
+      :show-close="!generatingQuery"
+    >
+      <div class="query-resource-context">
+        <el-tag size="small" effect="plain">{{ selectedTarget?.name }}</el-tag>
+        <el-tag size="small" effect="plain">{{ currentQueryLanguage.toUpperCase() }}</el-tag>
+      </div>
+      <div class="query-resource-candidate-list">
+        <section
+          v-for="group in queryResourceCandidateGroups"
+          :key="group.role"
+          class="query-resource-candidate-group"
+        >
+          <h3>{{ group.role }}</h3>
+          <el-radio-group
+            v-model="selectedQueryResourceCandidatesByRole[group.role]"
+            class="query-resource-candidate-options"
+          >
+            <el-radio
+              v-for="candidate in group.candidates"
+              :key="resourceCandidateKey(candidate)"
+              :value="resourceCandidateKey(candidate)"
+              :disabled="generatingQuery"
+              class="query-resource-candidate"
+            >
+              <span class="query-resource-candidate-content">
+                <span class="query-resource-candidate-heading">
+                  <span>{{ queryResourceCandidateName(candidate) }}</span>
+                  <el-tag v-if="candidate.recommended" size="small" type="success" effect="plain">
+                    {{ t('develop.query.recommendedResource') }}
+                  </el-tag>
+                </span>
+                <span class="query-resource-candidate-path">{{ candidate.locator }}</span>
+                <span v-if="queryResourceCandidateFacts(candidate)" class="query-resource-candidate-facts">
+                  {{ queryResourceCandidateFacts(candidate) }}
+                </span>
+                <span
+                  v-if="candidate.recommended && candidate.recommendation_reason"
+                  class="query-resource-candidate-reason"
+                >
+                  {{ candidate.recommendation_reason }}
+                </span>
+              </span>
+            </el-radio>
+          </el-radio-group>
+        </section>
+      </div>
+      <template #footer>
+        <el-button :disabled="generatingQuery" @click="queryResourceConfirmationVisible = false">
+          {{ t('develop.query.cancel') }}
+        </el-button>
+        <el-button
+          type="primary"
+          :loading="generatingQuery"
+          :disabled="generatingQuery || !queryResourceSelectionComplete"
+          @click="confirmQueryResourceCandidates"
+        >
+          {{ t('develop.query.confirmAndGenerate') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="queryEngineSwitchDialogVisible"
       class="addp-dialog"
       :title="t('develop.query.engineSwitchTitle')"
@@ -450,12 +518,73 @@
       @update:model-value="handleSaveDialogVisibility"
       @saved="handleSaveTask"
     />
+    <div class="query-ai-fab-wrapper">
+      <transition name="query-ai-slide">
+        <div v-if="queryAiOpen" class="query-ai-panel">
+          <div class="query-ai-panel-header">
+            <span>{{ t('develop.query.aiTitle') }}</span>
+            <el-button
+              circle
+              text
+              size="small"
+              :aria-label="t('develop.query.closeAiAssistant')"
+              :disabled="queryCopilotBusy"
+              @click="queryAiOpen = false"
+            >
+              <el-icon><Close /></el-icon>
+            </el-button>
+          </div>
+          <div class="query-ai-context">
+            <el-tag size="small" effect="plain">{{ selectedTarget?.name || t('develop.query.noEngineSelected') }}</el-tag>
+            <el-tag v-if="currentQueryLanguage" size="small" effect="plain">{{ currentQueryLanguage.toUpperCase() }}</el-tag>
+          </div>
+          <el-input
+            ref="queryAiInputRef"
+            v-model="queryAiPrompt"
+            type="textarea"
+            :rows="4"
+            :placeholder="t('develop.query.aiPlaceholder')"
+            :disabled="queryCopilotBusy"
+            class="query-ai-input"
+            @keydown.ctrl.enter="generateQueryWithCopilot"
+            @keydown.meta.enter="generateQueryWithCopilot"
+          />
+          <div v-if="selectedQueryResourceLabel" class="query-ai-selected-resource">
+            <span>{{ t('develop.query.selectedResource') }}</span>
+            <strong>{{ selectedQueryResourceLabel }}</strong>
+          </div>
+          <div class="query-ai-panel-footer">
+            <el-button
+              type="primary"
+              size="small"
+              :loading="generatingQuery"
+              :disabled="queryCopilotBusy || !selectedTarget"
+              @click="generateQueryWithCopilot"
+            >
+              {{ t('develop.query.generateQuery') }}
+            </el-button>
+          </div>
+        </div>
+      </transition>
+      <el-tooltip :content="t('develop.query.aiTitle')">
+        <el-button
+          class="query-ai-fab"
+          circle
+          type="primary"
+          :aria-label="t('develop.query.aiTitle')"
+          :disabled="queryCopilotBusy"
+          @click="toggleQueryAiPanel"
+        >
+          <el-icon><MagicStick /></el-icon>
+        </el-button>
+      </el-tooltip>
+    </div>
     <StatusAnnouncer :message="announcement" />
   </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -480,6 +609,7 @@ import {
   ExecutionParameterForm,
   StatusAnnouncer,
   getResourceFields,
+  getResourceItemByCatalogPath,
   getResourceTreeNode,
   formatLocatorDisplayPath,
   parseLocator,
@@ -493,6 +623,7 @@ import { getSampleQuery, preflightQuery, saveQueryTask, testConnection, updateQu
 import { createExecution, getExecution } from '../api/execution.js'
 import { listEngines } from '../api/engines.js'
 import { getDevTask } from '../api/devTask.js'
+import { generateQueryFromNL } from '../api/copilot.js'
 import {
   buildDevelopTaskEditorLocation,
   developTaskIDFromRoute
@@ -509,8 +640,18 @@ import {
   queryResultFromExecution,
   extractQueryParameterReferences,
   parameterizeSelection,
-  diagnoseQuery
+  diagnoseQuery,
+  parseSQLSources
 } from '@/utils/queryWorkbench.mjs'
+import { resolveQueryGenerationResult } from '@/utils/queryGenerationResult.mjs'
+import {
+  confirmedResources,
+  defaultResourceCandidatesByRole,
+  groupResourceCandidates,
+  hasSelectedResourceForEveryRole,
+  resourceCandidateKey,
+  resourceFact
+} from '@addp/common-frontend'
 
 const route = useRoute()
 const router = useRouter()
@@ -542,6 +683,7 @@ const targetLocator = ref('')
 const initialCatalogLocator = ref('')
 const catalogCompletions = ref([])
 const fieldCompletions = ref([])
+const fieldSourceContexts = ref([])
 const queryAnalysis = ref(null)
 const catalogDrawerVisible = ref(false)
 const parameterDrawerVisible = ref(false)
@@ -551,6 +693,13 @@ const executionParameterOverrides = ref({})
 const executionParameterFormRef = ref(null)
 const isCompact = ref(false)
 const announcement = ref('')
+const queryAiOpen = ref(false)
+const queryAiPrompt = ref('')
+const queryAiInputRef = ref(null)
+const generatingQuery = ref(false)
+const queryResourceConfirmationVisible = ref(false)
+const queryResourceCandidates = ref([])
+const selectedQueryResourceCandidatesByRole = ref({})
 const savedSnapshot = ref('')
 const queryTaskRouteReady = ref(false)
 const bypassUnsavedRouteConfirm = ref(false)
@@ -558,6 +707,8 @@ const sampleRequests = createLatestRequestCoordinator()
 const fieldCompletionCache = new Map()
 let executionRequestSequence = 0
 let fieldRequestSequence = 0
+let fieldSourcesRequestSequence = 0
+let fieldSourcesDebounce = null
 let catalogRequestSequence = 0
 let mediaQuery = null
 let compactMediaListener = null
@@ -596,6 +747,29 @@ const selectedEngineId = computed(() => {
   return match ? Number(match[1]) : null
 })
 const selectedEngineUnavailable = computed(() => Boolean(selectedQueryTarget.value && !selectedTarget.value))
+const queryCopilotBusy = computed(() => (
+  generatingQuery.value
+  || executing.value
+  || loadingSampleQuery.value
+  || switchingQueryTarget.value
+  || savingForEngineSwitch.value
+))
+const queryResourceCandidateGroups = computed(() => groupResourceCandidates(queryResourceCandidates.value))
+const queryResourceSelectionComplete = computed(() => hasSelectedResourceForEveryRole(
+  queryResourceCandidates.value,
+  selectedQueryResourceCandidatesByRole.value
+))
+const selectedQueryResourceLabel = computed(() => {
+  const selection = catalogSelection.value
+  if (selection?.display?.path) return selection.display.path
+  const locator = selection?.identity?.locator || targetLocator.value
+  if (!locator) return ''
+  try {
+    return parseLocator(locator).path?.join('.') || locator
+  } catch {
+    return locator
+  }
+})
 const selectedCapability = computed(() => queryCapabilityForEngine(selectedTarget.value?.engine))
 const queryParametersSupported = computed(() => Boolean(
   selectedCapability.value.parameters?.supported &&
@@ -619,6 +793,7 @@ const queryDiagnostics = computed(() => {
     engineType: selectedTarget.value?.engine?.engine_type,
     query: queryContent.value,
     fields: fieldCompletions.value,
+    fieldSources: currentQueryLanguage.value === 'sql' ? fieldSourceContexts.value : null,
     targetLocator: catalogSelection.value?.identity?.locator || targetLocator.value,
     referencedParameters: referencedParameterNames.value,
     definedParameters: definedParameterNames.value
@@ -779,13 +954,19 @@ async function applyQueryTargetSwitch(targetValue, { saved = false } = {}) {
   selectedQueryTarget.value = targetValue
   catalogSelection.value = null
   fieldRequestSequence += 1
+  fieldSourcesRequestSequence += 1
   fieldCompletions.value = []
+  fieldSourceContexts.value = []
   targetLocator.value = ''
   initialCatalogLocator.value = ''
   queryContent.value = ''
   queryParameters.value = []
   executionParameterOverrides.value = {}
   parameterDrawerVisible.value = false
+  queryAiOpen.value = false
+  queryResourceConfirmationVisible.value = false
+  queryResourceCandidates.value = []
+  selectedQueryResourceCandidatesByRole.value = {}
   currentQueryLanguage.value = queryCapabilityForEngine(target.engine).defaultLanguage
   clearResult()
   currentTaskId.value = null
@@ -1156,6 +1337,75 @@ const loadFieldCompletions = async selection => {
   }
 }
 
+const fieldNamesFromMetadata = fields => fields
+  .map(field => String(field?.name || '').trim())
+  .filter(Boolean)
+
+const fieldSourceFieldCache = new Map()
+const loadFieldsForItem = async itemId => {
+  const key = String(itemId || '')
+  if (!key) return []
+  if (fieldSourceFieldCache.has(key)) return fieldSourceFieldCache.get(key)
+  const fields = await getResourceFields('/api/v1/meta', { item_id: itemId })
+  const names = fieldNamesFromMetadata(fields)
+  fieldSourceFieldCache.set(key, names)
+  return names
+}
+
+const selectedItemIdForSource = source => {
+  const selection = catalogSelection.value
+  const locator = selection?.identity?.locator || targetLocator.value
+  if (!locator) return null
+  try {
+    const parsed = parseLocator(locator)
+    const selectedName = parsed.path.join('.').toLocaleLowerCase()
+    if (selectedName === source.name.toLocaleLowerCase()) return selection?.identity?.item_id || parsed.itemId || null
+  } catch {
+    return null
+  }
+  return null
+}
+
+const loadSQLFieldSources = async () => {
+  const requestSequence = ++fieldSourcesRequestSequence
+  if (currentQueryLanguage.value !== 'sql' || !selectedEngineId.value || !queryContent.value.trim()) {
+    fieldSourceContexts.value = []
+    return
+  }
+  const parsed = parseSQLSources(queryContent.value)
+  if (!parsed.sources.length) {
+    fieldSourceContexts.value = []
+    return
+  }
+  const contexts = await Promise.all(parsed.sources.map(async source => {
+    if (source.kind === 'cte') {
+      return { name: source.name, alias: source.alias, fields: source.fields, known: source.fields.length > 0 }
+    }
+    try {
+      let itemId = selectedItemIdForSource(source)
+      if (!itemId) {
+        const item = await getResourceItemByCatalogPath('/api/v1/meta', {
+          engine_id: selectedEngineId.value,
+          catalog_path: source.path.join('/')
+        })
+        itemId = item?.id || item?.item_id
+      }
+      const fields = await loadFieldsForItem(itemId)
+      return { name: source.name, alias: source.alias, fields, known: fields.length > 0 }
+    } catch {
+      return { name: source.name, alias: source.alias, fields: [], known: false }
+    }
+  }))
+  if (requestSequence === fieldSourcesRequestSequence) fieldSourceContexts.value = contexts
+}
+
+const sqlSourceSignature = computed(() => {
+  if (currentQueryLanguage.value !== 'sql') return ''
+  return parseSQLSources(queryContent.value).sources
+    .map(source => `${source.kind}:${source.name}:${source.alias}`)
+    .join('|')
+})
+
 const rememberCatalogSelection = async (selection) => {
   const path = selection?.display?.path
   if (!path) return
@@ -1289,6 +1539,124 @@ const generateQueryTemplate = async () => {
   await loadSampleQuery({ locator })
 }
 
+const toggleQueryAiPanel = async () => {
+  if (queryCopilotBusy.value) return
+  queryAiOpen.value = !queryAiOpen.value
+  if (queryAiOpen.value) {
+    await nextTick()
+    queryAiInputRef.value?.focus()
+  }
+}
+
+const collectSelectedQueryResources = () => {
+  const locator = catalogSelection.value?.identity?.locator || targetLocator.value || ''
+  if (!locator || !selectedEngineId.value) return []
+  let parsed
+  try {
+    parsed = parseLocator(locator)
+  } catch {
+    return []
+  }
+  if (parsed.engineId !== selectedEngineId.value) return []
+  const name = catalogSelection.value?.display?.label || parsed.path?.at(-1) || locator
+  return [resourceFact({
+    role: name,
+    name,
+    engine_id: selectedEngineId.value,
+    locator
+  })]
+}
+
+const generateQueryWithCopilot = async () => {
+  if (queryCopilotBusy.value) return
+  if (!queryAiPrompt.value.trim()) {
+    ElMessage.warning(t('develop.query.describeQuery'))
+    return
+  }
+  if (!selectedTarget.value || !selectedEngineId.value) {
+    ElMessage.warning(t('develop.query.selectDataSourceFirst'))
+    return
+  }
+  await submitQueryGeneration(collectSelectedQueryResources())
+}
+
+const submitQueryGeneration = async resources => {
+  generatingQuery.value = true
+  try {
+    const result = await generateQueryFromNL({
+      query: queryAiPrompt.value.trim(),
+      engine_id: selectedEngineId.value,
+      query_language: currentQueryLanguage.value,
+      resources
+    })
+    const resolved = resolveQueryGenerationResult(result)
+    if (resolved.clarificationKey) {
+      if (resolved.candidates.length) {
+        queryResourceCandidates.value = resolved.candidates
+        selectedQueryResourceCandidatesByRole.value = defaultResourceCandidatesByRole(resolved.candidates)
+        queryResourceConfirmationVisible.value = true
+        return false
+      }
+      ElMessage.warning(t(resolved.clarificationKey))
+      return false
+    }
+    if (queryContent.value.trim() && queryContent.value.trim() !== resolved.query) {
+      try {
+        await ElMessageBox.confirm(
+          t('develop.query.replaceGeneratedQueryConfirm'),
+          t('develop.query.replaceGeneratedQueryTitle'),
+          {
+            confirmButtonText: t('develop.query.replace'),
+            cancelButtonText: t('develop.query.cancel'),
+            type: 'warning',
+            customClass: 'addp-message-box'
+          }
+        )
+      } catch {
+        return false
+      }
+    }
+    queryContent.value = resolved.query
+    currentQueryLanguage.value = resolved.queryLanguage || currentQueryLanguage.value
+    queryParameters.value = []
+    executionParameterOverrides.value = {}
+    clearResult()
+    queryAiOpen.value = false
+    queryResourceConfirmationVisible.value = false
+    queryResourceCandidates.value = []
+    selectedQueryResourceCandidatesByRole.value = {}
+    announcement.value = t('develop.query.queryGenerated')
+    if (resolved.warnings.length) ElMessage.warning(resolved.warnings.join('；'))
+    else ElMessage.success(t('develop.query.queryGenerated'))
+    return true
+  } catch (error) {
+    const detail = error.response?.data?.detail || error.response?.data?.error || error.message
+    ElMessage.error(detail || t('develop.query.queryGenerationFailed'))
+    return false
+  } finally {
+    generatingQuery.value = false
+  }
+}
+
+const confirmQueryResourceCandidates = async () => {
+  const resources = confirmedResources(
+    queryResourceCandidates.value,
+    selectedQueryResourceCandidatesByRole.value
+  )
+  if (!resources.length) return
+  await submitQueryGeneration(resources)
+}
+
+const queryResourceCandidateName = candidate => (
+  candidate.full_name || candidate.name || candidate.locator
+)
+
+const queryResourceCandidateFacts = candidate => [
+  candidate.asset_type || candidate.data_type,
+  candidate.geometry_column,
+  candidate.crs
+].filter(Boolean).join(' · ')
+
 const handleSaveTask = async (taskData) => {
   if (!hasValidQueryParameters()) {
     parameterDrawerVisible.value = true
@@ -1396,7 +1764,9 @@ const loadTask = async (taskId) => {
   initialCatalogLocator.value = targetLocator.value
   catalogSelection.value = null
   fieldRequestSequence += 1
+  fieldSourcesRequestSequence += 1
   fieldCompletions.value = []
+  fieldSourceContexts.value = []
   clearResult()
   if (!queryContent.value) ElMessage.warning(t('develop.query.taskNoSql'))
 }
@@ -1412,8 +1782,13 @@ const resetQueryEditorForCreate = async () => {
   initialCatalogLocator.value = ''
   catalogSelection.value = null
   fieldRequestSequence += 1
+  fieldSourcesRequestSequence += 1
   fieldCompletions.value = []
+  fieldSourceContexts.value = []
   clearResult()
+  queryResourceConfirmationVisible.value = false
+  queryResourceCandidates.value = []
+  selectedQueryResourceCandidatesByRole.value = {}
   if (!selectedTarget.value && queryTargets.value.length) {
     selectedQueryTarget.value = queryTargets.value[0].value
   }
@@ -1498,9 +1873,18 @@ watch(currentQueryLanguage, () => {
   }))
 })
 
+watch([selectedEngineId, sqlSourceSignature, targetLocator], () => {
+  if (fieldSourcesDebounce) window.clearTimeout(fieldSourcesDebounce)
+  fieldSourcesDebounce = window.setTimeout(() => {
+    loadSQLFieldSources()
+  }, 250)
+})
+
 onBeforeUnmount(() => {
   executionRequestSequence += 1
   sampleRequests.invalidate()
+  fieldSourcesRequestSequence += 1
+  if (fieldSourcesDebounce) window.clearTimeout(fieldSourcesDebounce)
   window.removeEventListener('beforeunload', handleBeforeUnload)
   if (mediaQuery && compactMediaListener) {
     mediaQuery.removeEventListener('change', compactMediaListener)
@@ -1750,6 +2134,155 @@ onBeforeUnmount(() => {
   margin-bottom: 8px;
 }
 
+.query-resource-context,
+.query-ai-context,
+.query-resource-candidate-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.query-resource-context {
+  margin-bottom: 12px;
+}
+
+.query-resource-candidate-list {
+  display: grid;
+  gap: 14px;
+  max-height: min(52vh, 480px);
+  overflow: auto;
+}
+
+.query-resource-candidate-group {
+  padding: 10px 12px;
+  border: 1px solid var(--addp-border-color);
+  border-radius: 6px;
+  background: var(--addp-bg-secondary);
+}
+
+.query-resource-candidate-group h3 {
+  margin: 0 0 8px;
+  color: var(--addp-text-primary);
+  font-size: 13px;
+}
+
+.query-resource-candidate-options {
+  display: grid;
+  gap: 8px;
+}
+
+.query-resource-candidate {
+  width: 100%;
+  min-height: 58px;
+  margin: 0;
+  align-items: flex-start;
+}
+
+.query-resource-candidate :deep(.el-radio__label) {
+  min-width: 0;
+  flex: 1;
+  white-space: normal;
+}
+
+.query-resource-candidate-content {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.query-resource-candidate-heading {
+  justify-content: space-between;
+  min-width: 0;
+  color: var(--addp-text-primary);
+  font-weight: 600;
+}
+
+.query-resource-candidate-path,
+.query-resource-candidate-facts,
+.query-resource-candidate-reason {
+  color: var(--addp-text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.query-ai-fab-wrapper {
+  position: fixed;
+  right: 22px;
+  bottom: 32px;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.query-ai-fab {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  box-shadow: var(--addp-shadow-hover);
+}
+
+.query-ai-panel {
+  width: min(360px, calc(100vw - 92px));
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--addp-bg-primary);
+  border: 1px solid var(--addp-border-color);
+  border-radius: 8px;
+  box-shadow: var(--addp-shadow-card);
+}
+
+.query-ai-panel-header,
+.query-ai-panel-footer,
+.query-ai-selected-resource {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.query-ai-panel-header {
+  color: var(--addp-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.query-ai-selected-resource {
+  justify-content: flex-start;
+  min-width: 0;
+  color: var(--addp-text-secondary);
+  font-size: 12px;
+}
+
+.query-ai-selected-resource strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--addp-text-primary);
+}
+
+.query-ai-panel-footer {
+  justify-content: flex-end;
+}
+
+.query-ai-input :deep(.el-textarea__inner) {
+  resize: none;
+}
+
+.query-ai-slide-enter-active,
+.query-ai-slide-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.query-ai-slide-enter-from,
+.query-ai-slide-leave-to {
+  opacity: 0;
+  transform: translateX(12px);
+}
+
 .parameter-toolbar {
   display: flex;
   justify-content: flex-end;
@@ -1866,6 +2399,15 @@ onBeforeUnmount(() => {
 
   .parameter-panel-dock {
     display: none;
+  }
+
+  .query-ai-fab-wrapper {
+    right: 12px;
+    bottom: 18px;
+  }
+
+  .query-ai-panel {
+    width: min(320px, calc(100vw - 76px));
   }
 }
 </style>

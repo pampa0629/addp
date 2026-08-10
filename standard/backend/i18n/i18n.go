@@ -11,19 +11,20 @@ var localeFS embed.FS
 
 // 通用消息
 const (
-	MsgInvalidID     = "standard.common.invalid_id"
-	MsgInvalidParams = "standard.common.invalid_params"
-	MsgDeleteSuccess = "standard.common.delete_success"
-	MsgUpdateSuccess = "standard.common.update_success"
-	MsgApproveSuccess = "standard.common.approve_success"
+	MsgInvalidID        = "standard.common.invalid_id"
+	MsgInvalidParams    = "standard.common.invalid_params"
+	MsgDeleteSuccess    = "standard.common.delete_success"
+	MsgUpdateSuccess    = "standard.common.update_success"
+	MsgApproveSuccess   = "standard.common.approve_success"
 	MsgDeprecateSuccess = "standard.common.deprecate_success"
-	MsgLinkSuccess   = "standard.common.link_success"
-	MsgUnlinkSuccess = "standard.common.unlink_success"
-	MsgUploadSuccess = "standard.common.upload_success"
-	MsgDocIDRequired = "standard.common.doc_id_required"
-	MsgFileRequired  = "standard.common.file_required"
-	MsgFileOpenFailed = "standard.common.file_open_failed"
-	MsgFileReadFailed = "standard.common.file_read_failed"
+	MsgLinkSuccess      = "standard.common.link_success"
+	MsgUnlinkSuccess    = "standard.common.unlink_success"
+	MsgUploadSuccess    = "standard.common.upload_success"
+	MsgDocIDRequired    = "standard.common.doc_id_required"
+	MsgFileRequired     = "standard.common.file_required"
+	MsgFileOpenFailed   = "standard.common.file_open_failed"
+	MsgFileReadFailed   = "standard.common.file_read_failed"
+	MsgOperationFailed  = "standard.common.operation_failed"
 )
 
 // Domain

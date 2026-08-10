@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	commonPMTiles "github.com/addp/common/format/pmtiles"
 	commonModels "github.com/addp/common/models"
-	commonPMTiles "github.com/addp/common/pmtiles"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/mvt"
 )

@@ -17,6 +17,7 @@ PostgreSQL、Redis、MinIO 和 Meilisearch 当前来源于 `docker-compose.infra
 ## Business (业务库)
 
 - PostgreSQL: `5433`
+- Oracle Free: `15210`（容器端口 `1521`，service name `FREEPDB1`）
 - SuperMap SDX+ for PostgreSQL 专用 PostgreSQL: `5434`
 - MinIO API: `9002`
 - MinIO Console: `9003`
@@ -114,7 +115,7 @@ make ports-validate
 | **Asset Frontend**    | **5184** | **8114**    | **资产管理 UI**            |
 | **Portal Backend**    | **8184** | **8184**    | **数据消费者门户 BFF**      |
 | **Portal Frontend**   | **5185** | **8115**    | **数据门户 UI**            |
-| Copilot Backend       | 8087     | 8087        | AI 助手 (工作流/SQL生成)   |
+| Copilot Backend       | 8087     | 8087        | AI 助手 (查询/工作流/Notebook 生成) |
 | **Agent Backend**     | **8190** | **8190**    | **Agent AI 对话助手后端**  |
 | **Agent Frontend**    | **5186** | **8117**    | **Agent 对话界面 UI**      |
 | **Graph Backend**     | **8186** | **8186**    | **知识图谱本体建模、图谱管理** |
@@ -137,6 +138,7 @@ make ports-validate
 | Infra Kafka           | 19092    | 9092        | 内部 CDC 总线；不注册为 System Engine |
 | Kafka Connect REST    | 18083    | 8083        | Transfer capture supervisor 内部控制面，不经 Gateway 暴露 |
 | Business Kafka        | 29092    | 9092        | 业务 Topic；以 `engine_type=kafka` 注册为 System Engine |
+| Business Oracle       | 15210    | 1521        | Oracle Free 普通表测试源；以 `engine_type=oracle` 注册为 System Engine |
 
 ## 端口分配规则
 

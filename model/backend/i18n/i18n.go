@@ -15,17 +15,17 @@ const (
 	MsgInvalidID = "model.common.invalid_id"
 
 	// 实体
-	MsgEntityNotFound    = "model.entity.not_found"
-	MsgInvalidEntityID   = "model.entity.invalid_id"
-	MsgInvalidAttributeID = "model.entity.invalid_attribute_id"
+	MsgEntityNotFound       = "model.entity.not_found"
+	MsgInvalidEntityID      = "model.entity.invalid_id"
+	MsgInvalidAttributeID   = "model.entity.invalid_attribute_id"
 	MsgInvalidEntityIDQuery = "model.entity.invalid_entity_id_query"
 
 	// 实体关系
 	MsgRelationNotFound = "model.entity_relation.not_found"
 
 	// 逻辑表
-	MsgTableNotFound   = "model.logical_table.not_found"
-	MsgInvalidFieldID  = "model.logical_table.invalid_field_id"
+	MsgTableNotFound  = "model.logical_table.not_found"
+	MsgInvalidFieldID = "model.logical_table.invalid_field_id"
 
 	// 数仓分层
 	MsgLayerNotFound = "model.dw_layer.not_found"

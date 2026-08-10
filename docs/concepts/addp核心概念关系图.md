@@ -106,10 +106,16 @@ mindmap
       统一执行监控：Monitor 模块
       任务状态流转
       跨模块监控集成：common
-    数据服务
+      数据服务
       查询服务
       瓦片服务
       服务注册
+    数据血缘
+      lineage facts
+      关系证据与当前投影
+      published service 依赖
+      Meta graph API
+      common-frontend LineageViewer
     系统基础设施infra
       PostgreSQL
       Redis
@@ -261,7 +267,21 @@ mindmap
 
 ---
 
-### 10. [基础设施隔离](addp基础设施隔离图.md)
+### 10. [数据血缘](../spec/addp数据血缘能力规范.md)
+
+**数据项来源、派生、服务依赖和执行证据的统一关系视图**
+
+- 真实读写 owner 写入版本化 `lineage_facts`
+- Meta 保存关系证据和当前投影，PostgreSQL 关系表是第一阶段唯一事实源
+- 图查询统一使用 Meta lineage graph API
+- `common-frontend/graph` 提供可嵌入的 `LineageViewer`
+- 字段级血缘和 SQL 自动解析属于后续阶段
+
+📄 **[阅读完整规范 →](../spec/addp数据血缘能力规范.md)**
+
+---
+
+### 11. [基础设施隔离](addp基础设施隔离图.md)
 
 **基础设施架构,包括系统基础设施与业务数据库的隔离**
 
@@ -273,7 +293,7 @@ mindmap
 
 ---
 
-### 11. [认证与路由](addp登录认证的原理说明.md)
+### 12. [认证与路由](addp登录认证的原理说明.md)
 
 **Browser AuthSession、登录恢复、静默刷新和 Console iframe 认证机制**
 
@@ -320,6 +340,11 @@ mindmap
 - **[监控与执行体系图](addp监控与执行体系图.md)** - 统一执行监控、状态流转、跨模块监控
 - **[数据服务体系图](addp数据服务体系图.md)** - OGC 标准服务、查询服务 API
 
+### 治理与血缘
+
+- **[数据血缘能力规范](../spec/addp数据血缘能力规范.md)** - 统一 execution facts、Meta 关系投影、服务依赖和查看器边界
+- **[数据项体系图](addp数据项体系图.md)** - data item 身份、字段边界和血缘职责归属
+
 ---
 
 ## 核心概念关系总结
@@ -337,6 +362,10 @@ graph TB
 
     开发 --> 编排[任务编排]
     编排 --> 监控[统一监控]
+    开发 --> 血缘[数据血缘]
+    监控 --> 血缘
+    服务 --> 血缘
+    元数据 --> 血缘
 
     账号[账号与权限] --> 隔离[基础设施隔离]
     账号 --> 认证[认证与路由]

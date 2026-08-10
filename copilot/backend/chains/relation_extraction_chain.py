@@ -1,14 +1,11 @@
-"""
-关系抽取 Chain
-基于已识别实体，从单个文本 chunk 中抽取符合本体定义的关系
-"""
+"""Extract ontology-constrained relations between known chunk entities."""
 import json
-import traceback
+from pathlib import Path
 from typing import List
 
-from langchain.chains import LLMChain
-from langchain.output_parsers import PydanticOutputParser, OutputFixingParser
-from langchain.prompts import PromptTemplate
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.output_parsers import PydanticOutputParser
+from langchain_core.prompts import PromptTemplate
 
 from models.kg_models import RelationTypeInfo, ExtractedEntity, ExtractedRelation, RelationExtractionOutput
 
@@ -24,25 +21,12 @@ class RelationExtractionChain:
     def __init__(self, llm):
         self.llm = llm
         self.output_parser = PydanticOutputParser(pydantic_object=RelationExtractionOutput)
-        self.fixing_parser = OutputFixingParser.from_llm(
-            parser=self.output_parser,
-            llm=self.llm
-        )
         self.prompt_template = self._load_prompt_template()
-        self.chain = LLMChain(
-            llm=self.llm,
-            prompt=self.prompt_template,
-            verbose=False
-        )
 
     def _load_prompt_template(self) -> PromptTemplate:
-        try:
-            import os
-            prompt_path = os.path.join(os.path.dirname(__file__), "..", "prompts", "relation_extraction.txt")
-            with open(prompt_path, "r", encoding="utf-8") as f:
-                template = f.read()
-        except FileNotFoundError:
-            template = self._get_builtin_template()
+        template = (Path(__file__).parent.parent / "prompts" / "relation_extraction.txt").read_text(
+            encoding="utf-8"
+        )
 
         return PromptTemplate(
             template=template,
@@ -51,24 +35,6 @@ class RelationExtractionChain:
                 "format_instructions": self.output_parser.get_format_instructions()
             }
         )
-
-    def _get_builtin_template(self) -> str:
-        return """基于已识别实体，从以下文本中抽取符合本体定义的关系。
-
-## 文档上下文
-{doc_context}
-
-## 关系类型定义
-{relation_types_json}
-
-## 已识别实体
-{entities_json}
-
-## 文本
-{text}
-
-{format_instructions}
-"""
 
     def _format_relation_types(self, relation_types: List[RelationTypeInfo]) -> str:
         types_data = []
@@ -123,34 +89,20 @@ class RelationExtractionChain:
         relation_types_json = self._format_relation_types(relation_types)
         entities_json = self._format_entities(entities)
 
-        try:
-            result = await self.chain.ainvoke({
-                "text": text,
-                "doc_context": doc_context or "（无）",
-                "relation_types_json": relation_types_json,
-                "entities_json": entities_json,
-            })
-
-            llm_output = result.get("text", "") if isinstance(result, dict) else str(result)
-
-            try:
-                output = await self.fixing_parser.aparse(llm_output)
-            except Exception:
-                output = self.output_parser.parse(llm_output)
-
-            # 过滤引用了不存在 temp_id 的关系
-            valid_temp_ids = {e.temp_id for e in entities}
-            valid_relations = []
-            for rel in output.relations:
-                if rel.source_temp_id in valid_temp_ids and rel.target_temp_id in valid_temp_ids:
-                    valid_relations.append(rel)
-                else:
-                    print(f"[RelationExtractionChain] ⚠️ 跳过无效关系（temp_id 不存在）: {rel.source_temp_id} -> {rel.target_temp_id}")
-
-            print(f"[RelationExtractionChain] 抽取到 {len(valid_relations)} 条有效关系")
-            return valid_relations
-
-        except Exception as e:
-            print(f"[RelationExtractionChain] ❌ 抽取失败: {type(e).__name__}: {e}")
-            traceback.print_exc()
-            raise
+        prompt = self.prompt_template.format(
+            text=text,
+            doc_context=doc_context or "（无）",
+            relation_types_json=relation_types_json,
+            entities_json=entities_json,
+        )
+        response = await self.llm.ainvoke([
+            SystemMessage(content="你是 ADDP 知识图谱关系抽取器，只能引用输入中已存在的实体。"),
+            HumanMessage(content=prompt),
+        ])
+        output = self.output_parser.parse(str(getattr(response, "content", response)))
+        valid_temp_ids = {entity.temp_id for entity in entities}
+        return [
+            relation for relation in output.relations
+            if relation.source_temp_id in valid_temp_ids
+            and relation.target_temp_id in valid_temp_ids
+        ]

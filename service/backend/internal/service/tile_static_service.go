@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	enginePlugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format/pmtiles"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/common/pmtiles"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/service/internal/models"
 )

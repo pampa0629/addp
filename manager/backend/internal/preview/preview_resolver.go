@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	commonClient "github.com/addp/common/client"
-	"github.com/addp/common/dataprofile"
 	"github.com/addp/common/engine/instanceprovider"
 	"github.com/addp/common/engine/plugin"
 	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
@@ -16,6 +15,7 @@ import (
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
+	"github.com/addp/manager/internal/dataprofile"
 	"github.com/addp/manager/internal/models"
 )
 

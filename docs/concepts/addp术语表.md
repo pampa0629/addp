@@ -7,9 +7,11 @@
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | engine | 引擎 | ADDP 连接和访问外部数据系统的能力入口。 | 例如 PostgreSQL、MinIO、NFS、Neo4j。 |
+| Oracle Engine | Oracle 引擎 | 通过 `engine_type=oracle` 登记的 Oracle 数据库 Engine Instance；普通表 Catalog/查询/读取能力以 `service_name` 所指服务为连接边界，以 schema/table 为业务路径。 | 第一阶段只声明普通表只读能力；未来 Oracle CDC 和 ArcGIS SDE 逻辑变化源分别扩展，不因共用 Oracle 连接而合并为同一能力。 |
 | Engine Instance | 引擎实例 | System 中一条绑定到确定物理端点的引擎登记事实。 | `engine_id` 只标识该实例；物理端点身份不可原地改变，端点变化必须创建新的 Engine Instance。 |
 | Engine Runtime Descriptor | 引擎运行时描述 | System 面向受信 Runtime Service Principal 提供的脱敏 Engine Instance 控制面投影。 | 只包含实例身份、生命周期、能力声明和工作流/脚本运行时的 `protocol/host/port`；不包含数据引擎凭据、数据库连接参数或可直接读取业务数据的明文连接。 |
 | engine lifecycle state | 引擎生命周期状态 | Engine Instance 当前能否被正常消费或正在退出平台的状态。 | 统一使用 `active`、`disabled`、`deleting`；`deleting` 保留连接只用于删除前 cleanup，不进入正常业务选择。 |
+| engine connectivity observation | 引擎连通性观测 | System 对 Engine Instance 最近一次连接检测得到的运行时观测结果。 | 统一使用 `online`、`offline`、`unknown`、`checking`；它是带检测时间和消息的缓存，不改变生命周期，也不等同于持续保持的物理连接。 |
 | storage engine binding | 存储引擎绑定 | owner 任务或配置通过标准 ResourceLocator 对某个存储 Engine Instance 的显式引用集合。 | Engine 删除后绑定保持原 ID 并变为不可执行；重绑定由 owner 在用户确认后原子改写 Locator，不按名称或连接信息自动匹配。 |
 | external artifact abandonment | 外部产物放弃 | 当外部引擎不可达时，管理员明确接受平台不再删除某个 owner 已登记外部产物，并把后续处置交给外部系统管理员。 | 必须保留对象身份、最后错误、放弃时间和审计；不得伪装成物理删除成功。 |
 | node | 资源节点 | 引擎内用于组织资源树的节点。 | 例如目录、bucket、prefix、schema。node 不等同于 data item。 |
@@ -66,6 +68,7 @@
 | lineage observation | 血缘关系证据 | Meta 根据执行事实或服务发布事实解析出的不可变关系证据。 | 保存来源快照、采集方式、执行 / 发布引用和时间；证据清理后仍可审计。 |
 | lineage projection | 血缘当前投影 | 从关系证据维护的当前有效上游、下游和服务依赖关系。 | 支持 replace、append、upsert 等写入语义和时态查询；不是事实源。 |
 | lineage facts | 血缘执行事实 | 真实读写 owner 在统一 execution 结果中写入的版本化输入、输出和操作事实。 | 使用 ResourceLocator 和 item fingerprint；Runtime 不构造 ADDP 资源身份。 |
+| lineage collector | 血缘采集器 | Meta 消费 owner execution / publication fact，解析资源身份并写入关系证据和当前投影的单一路径。 | 立即通知与周期漏采 / 重试都调用同一个 `LineageService.CollectExecution`；不反向解析模块私有 metadata。 |
 | published service | 已发布服务版本 | Service 一次通过验证并对外生效的不可变服务发布主体。 | 身份为 `service_id + published_revision`；不是 data item，但可作为血缘图主体。 |
 | service dependency | 服务依赖 | 已发布服务读取、发布或暴露某个 data item 的来源事实。 | 在血缘中表现为 `data item --serve--> published service`；`dependency_hash` 只是快照版本摘要，不是具体血缘边。 |
 | field ref | 字段引用 | 绑定到 data item 及其 schema snapshot 的字段级引用。 | 作为字段级血缘预留主体；字段默认不是独立 data item。 |
@@ -111,6 +114,16 @@
 | conditional profiling | 条件剖析 | 先按结构化字段条件限定数据范围，再在命中行集合上采样并计算数据剖析结果。 | 归 Manager；不是预览页过滤，也不是 Develop SQL 查询。条件必须由 Provider 在采样前执行。 |
 | profile observation | 剖析观察 | 根据字段级统计派生的描述性数据特征提示。 | 例如高缺失、常量、高基数和分布偏斜；不是质量问题或质量评分。 |
 
+## 数据质量
+
+| 英文术语 | 中文术语 | 定义 | 备注 |
+|---|---|---|---|
+| quality rule | 质量规则 | Standard 数据元上使用版本化契约定义的、可复用的字段质量约束。 | 规则只描述语义，不绑定物理字段，也不包含自定义 SQL。 |
+| RuleApplication | 规则应用 | Quality 将一份数据元质量规则快照绑定到确定 Engine Instance、schema、table 和 column 的持久事实。 | Standard 规则变化不静默改写已有快照。 |
+| quality check | 质量检查 | Quality 在一次持久 execution 中对确定表的全部有效规则应用进行完整求值的过程。 | v1 只支持 PostgreSQL；任一规则执行错误时整次 execution 失败。 |
+| quality score | 质量分 | 一次成功质量检查中各规则通过率的算术平均。 | 不按 severity 或行数加权；无有效规则不能产生质量分。 |
+| quality issue | 质量问题 | 某条规则应用当前仍存在未通过事实的可治理状态。 | 稳定身份为 Tenant + RuleApplication；历史发生记录保留在 execution 结果中。 |
+
 ## 任务与执行
 
 | 英文术语 | 中文术语 | 定义 | 备注 |
@@ -136,6 +149,8 @@
 | load mode | 装载方式 | Transfer 从源端读取完整范围还是已提交位置之后的变化。 | 只允许 `snapshot` / `incremental`；它与触发方式和目标应用方式正交。 |
 | watermark | 水位游标 | 以源表中可稳定排序的业务字段识别 insert/update 变化的批增量位置。 | 必须使用 `(watermark_field, tie_breaker...)` 复合游标并冻结每次 bounded execution 的上界；普通 watermark 不发现物理删除，不等同于 CDC。 |
 | CDC | 数据库变更捕获 | 从数据库事务日志持续捕获已提交的 insert、update 和 delete，并按确定的初始化与恢复协议交给下游应用。 | CDC 不等于按 `updated_at` 轮询；PostgreSQL 第一版由 Debezium 读取 logical replication slot，经 Infra Kafka 交给 Transfer。 |
+| Oracle CDC | Oracle 数据库变更捕获 | 从 Oracle redo 中捕获普通关系表已提交变化，并按 Oracle capture generation 交给 Transfer 的 CDC 能力。 | 后续能力；必须单独定义版本、许可、LogMiner/捕获实现、RAC/CDB/PDB、LOB、长事务和恢复契约，不能由 Oracle 普通表读取能力自动推断。 |
+| ArcGIS SDE logical change source | ArcGIS SDE 逻辑变化源 | 按 ArcGIS enterprise geodatabase 的版本模型、业务事务和 delta table 语义识别的要素变化源。 | 后续能力；即使底层使用 Oracle，也不等同 Oracle redo 中的普通表 CDC，必须由独立 Provider/adapter 契约表达。 |
 | CDC bootstrap | CDC 初始化 | 在一个无空洞的日志衔接点上建立一致性初始快照，并继续消费快照期间和之后产生的日志变化。 | PostgreSQL 第一版固定使用 Debezium `initial` snapshot；Transfer 不自行拼接“先全量、后开 CDC”两条路径。 |
 | apply mode | 目标应用方式 | Transfer 将本次读取结果应用到目标的策略。 | 稳定取值为 `replace`、`append`、`upsert`、`upsert_delete`；目标 Provider 必须声明并真实实现对应能力。 |
 | sync state | 同步主状态 | Transfer 为增量任务保存的已提交源位置。 | 存储于 `transfer.sync_states`；与任务定义、execution checkpoint 分离，只能在目标提交成功后通过 CAS/fencing 推进。 |
@@ -228,14 +243,14 @@
 | configuration owner | 配置所有者 | 对某项运行策略的语义、存储和生效负责的业务模块。 | System 只登记配置管理入口，不理解业务配置项。 |
 | query policy | 查询策略 | Develop 对查询超时和结果预览规模的强类型运行约束。 | 平台定义上限，租户可以覆盖默认查询超时。 |
 | quick view policy | 快显策略 | Manager 对空间数据预览中间结果规模、超时和重试的运行约束。 | 归 Manager 所有，当前为平台级。 |
-| matching policy | 匹配策略 | Copilot 元数据候选匹配的阈值和候选数量约束。 | 平台提供默认值，租户可覆盖。 |
 | AI Inference Runtime | AI 推理运行时 | 对 ADDP 调用方提供统一 `addp.inference/v1` 数据面的推理服务。 | Runtime 按网络区域、安全域、GPU 集群、故障域或 SLA 增长，不按模型厂商、账号或模型数量增长。 |
 | AI Inference Runtime Engine Instance | AI 推理运行时引擎实例 | System 中登记一个确定 AI Inference Runtime 端点的 Engine Instance。 | `engine_type=inference_runtime`；默认平台级，只登记 Runtime 端点、生命周期和 `compute.inference` 能力，不保存上游 Provider、模型或 API Key。 |
 | Provider Template | 模型服务模板 | Inference owner 提供的只读接入模板，预置在线厂商或本地推理运行时的协议适配器、默认 Endpoint、凭据要求、模型发现方式和建议模型。 | 只用于创建 Provider Connection、Model Deployment 和 Model Profile，不是新的运行时资源，不持有凭据，也不参与推理解析。 |
 | Provider Connection | 模型提供方连接 | Inference owner 保存的一个确定在线厂商账号端点或内网推理服务端点。 | 是强类型资源，不是普通键值配置；可为平台级或 Tenant 级，凭据使用专用加密字段。 |
 | Model Deployment | 模型部署 | Provider Connection 下一个可调用的具体模型或部署单元。 | 保存上游模型标识、能力、限制和状态；继承 Provider 的范围，不在 System 中展开为 Engine Instance。 |
-| Model Profile | 模型档案 | 面向调用方的稳定逻辑能力名称及其当前明确 Model Deployment 绑定。 | 例如 `general-chat`、`reasoning`、`nl2dag`、`text-embedding`、`multimodal-embedding`、`rerank`；第一版只绑定一个 Deployment，不包含隐藏 fallback。 |
+| Model Profile | 模型档案 | 面向调用方的稳定逻辑能力名称及其当前明确 Model Deployment 绑定。 | 例如 `general-chat`、`reasoning`、`text-embedding`、`multimodal-embedding`、`rerank`；第一版只绑定一个 Deployment，不包含隐藏 fallback。 |
 | Scenario Binding | 场景绑定 | 业务 owner 将本模块的稳定 AI 场景显式绑定到 Model Profile 或特定 Model Deployment 的事实。 | 归 Agent、Copilot、Manager 等调用模块保存；有效值按 Tenant 显式绑定、平台默认绑定、明确未配置错误解析。 |
+| Input Resource Resolution | 输入资源解析与确认 | 将自然语言中的输入数据意图提取为候选资源，经过 owner 校验并形成可供领域生成器消费的 `ResourceFact` 的共享能力。 | 与 Query、Workflow、Notebook、Transfer 等领域生成场景正交；各场景通过策略声明引擎范围、资源类型、数量和 Session 候选边界，不重复实现发现与确认流程。 |
 | inference credential | 推理凭据 | Provider Connection 用于访问上游模型服务的 API Key 或等价认证材料。 | 由 Inference 使用部署级 `ENCRYPTION_KEY` 加密；API 只返回 `configured` 和 `version`，不返回明文、掩码或可复用引用。 |
 
 ## 身份与授权
@@ -254,6 +269,7 @@
 | Authentication Method | 认证方式 | 主体证明身份的方法，例如本地密码、Passkey、MFA、外部 IdP 或工作负载认证。 | CLI Authorization Code + PKCE 和 Device Flow 是登录交互通道，不是独立用户体系。 |
 | Permission | 权限 | ADDP 产品定义的稳定、最小功能动作。 | Tenant 可以组合 Permission 创建 Role，但不能创造任意 Permission 字符串。 |
 | Role | 角色 | Permission 的命名集合。 | Role 本身不表达业务资源实例；具体作用范围由 Role Assignment 和 owner Resource Grant / Policy 决定。 |
+| Data Architect | 数据架构师 | 负责维护 Tenant 全局数据架构与建模约束的内置业务角色。 | 当前使用 `tenant.data_architect`，只允许 Tenant Scope 和 User Principal，负责业务实体、实体关系、逻辑模型、数仓分层、命名规范与质量 SLA。 |
 | Role Assignment | 角色分配 | 将 Role 赋予 Principal，并声明 Platform、Tenant、Department 或 Project Group Scope 的授权事实。 | 不使用 `user_type` 同时表达身份类别和完整权限。 |
 | Department | 部门 | Tenant 内表达稳定组织归属的层级组织单元。 | 一个 User 可有一个主部门和多个附加部门；父子部门权限默认不继承。 |
 | Project Group | 项目组 | Tenant 内面向跨部门协作的成员集合。 | 严格属于单个 Tenant，第一阶段不嵌套，不改变成员的 Department 归属。 |

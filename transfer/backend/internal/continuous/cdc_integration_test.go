@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/addp/common/authtest"
+	"github.com/addp/common/authorization/authtest"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/kafka"
 	mysqlplugin "github.com/addp/common/engine/plugins/mysql"

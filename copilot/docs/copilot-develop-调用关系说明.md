@@ -2,7 +2,7 @@
 
 ## 概述
 
-Copilot 是一个**纯后端 API 服务**（Python FastAPI，端口 8087），没有独立前端。Develop 模块的工作流编辑器（`WorkflowEditor.vue`）内嵌了 AI 助手面板，用户在该面板中输入自然语言描述，前端将已选择的工作流引擎实例 ID 随请求发给 Copilot，由 Copilot 后端驱动 LLM 完成工作流 DAG JSON 的生成，再返回给前端渲染到画布。
+Copilot 是一个**纯后端 API 服务**（Python FastAPI，端口 8087），没有独立前端。Develop 的查询工作台、工作流编辑器和 Notebook 编辑器分别嵌入 AI 助手：查询工作台把当前 Query Engine、查询语言和已确认资源交给 Copilot 生成候选查询文本；工作流编辑器把工作流运行时和已确认资源交给 Copilot 生成 DAG；Notebook 编辑器把当前 Session Catalog 中用户确认的资源事实交给 Copilot 生成 Python/GeoPandas 单元。三种结果都只作为候选，保存、插入和执行继续归 Develop。
 
 ---
 
@@ -11,18 +11,44 @@ Copilot 是一个**纯后端 API 服务**（Python FastAPI，端口 8087），�
 | 层级 | 组件 | 职责 |
 |------|------|------|
 | **Develop 前端** | `WorkflowEditor.vue` | AI 助手面板 UI；用户输入自然语言、选择工作流引擎实例；接收并渲染生成的工作流 DAG |
+| **Develop 前端** | `QueryEditor.vue` | 查询 AI 助手；固定当前 Query Engine 与 capability 查询语言，确认该引擎内的数据资源并把候选查询回填 Monaco Editor |
+| **Develop 前端** | `NotebookEditor.vue` | Notebook AI 助手；只使用当前 Notebook Session Catalog，逐角色确认数据源后展示并插入 Python 单元 |
 | **Develop 前端** | `OperatorPalette.vue` | 算子面板；按工作流引擎实例加载可用算子列表供用户拖拽使用 |
 | **Develop 前端** | `api/copilot.js` | 封装对 Copilot 后端的 HTTP 调用 |
 | **Gateway** | `gateway:8000` | 统一路由入口；将 `/api/copilot/*` 反向代理到 Copilot 后端 |
 | **Develop 后端** | `operator_discovery_service.go` | 算子发现服务；按工作流引擎实例查询算子元数据；汇总入口仅用于调试/全局查看 |
-| **Copilot 后端** | `workflow_agent_api.py` | 工作流生成 API 端点；接收请求，调用 WorkflowPipeline |
-| **Copilot 后端** | `workflow_pipeline.py` | 5 阶段流水线编排器；协调数据源理解、算子筛选、生成、验证全流程 |
+| **Copilot 后端** | `workflow_agent_api.py` | 工作流生成 API 端点；缺少资源事实时先返回 owner 校验后的候选 |
+| **Copilot 后端** | `query_agent_api.py` | 查询生成 API 端点；只在请求的当前 Query Engine 内发现资源，确认后按引擎 capability 生成候选查询语言 |
+| **Develop 后端** | `notebook_copilot_service.go` | Notebook Session 候选粗筛、缺失角色补充检索、候选确认和 Catalog facts 重新校验 |
+| **Copilot 后端** | `notebook_agent_api.py`、`notebook_service.py` | Notebook 输入角色理解、候选语义排序和受控 Python/GeoPandas 单元生成；不执行代码、不做租户级搜索 |
+| **Copilot 后端** | `resource_intent_chain.py`、`resource_discovery.py`、`resource_recommendation_chain.py` | 查询与工作流共享的资源发现；提取独立输入意图并补充跨语言技术名，再复用 common-python ToolExecutor 执行 `data.search → resource.ancestors.get → data.preview`，最后由 LLM 对已验证候选排序并标记推荐项，不过滤仍然合理的候选 |
+| **Copilot 后端** | `workflow_pipeline.py` | 消费已确认资源事实，协调算子筛选、生成、验证全流程 |
 | **Copilot 后端** | `operator_selection_chain.py` | LLM Chain；从全量算子列表中筛选 3-8 个最相关算子 |
 | **Copilot 后端** | `workflow_generation_chain.py` | LLM Chain；根据选定算子的 Public Operator Spec 生成完整 DAG JSON |
 | **Copilot 后端** | `workflow_validation_chain.py` | 四层验证；结构、唯一性、依赖关系、参数合法性 |
 | **Copilot 后端** | `develop_tools.py` | LangChain Tools；封装对 Develop 后端算子 API 的调用（发现 + 详情） |
 | **工作流引擎** | `python-workflow` / `spark-workflow` / `math-workflow` | 暴露 `/api/operators` 端点；提供算子元数据（参数定义、输出定义、workflow_example） |
 | **LLM 服务** | 通义千问 / OpenAI / Claude / Ollama | 执行算子筛选、工作流生成、自动修复等推理任务 |
+
+## 查询工作台生成主流程
+
+1. Develop 前端提交自然语言、当前 `engine_id`、当前 `query_language` 和可选的 Catalog locator。
+2. Copilot 通过 `engine.list` 验证当前用户可访问该 Query Engine，并校验查询语言属于 `capabilities.compute.query.languages`。
+3. 已提交 locator 时执行 `resource.ancestors.get` 与 `data.preview`；未提交时提取独立输入角色，调用带当前 `engine_id` 的 `data.search` 粗筛，再校验 locator 和预览事实。
+4. 同一角色多候选时返回全部候选给用户单选；候选不得来自其他 Engine。
+5. 用户确认后，Copilot 仅根据当前引擎类型、查询语言、已验证路径、字段、几何列、CRS 和受限样本生成候选查询文本。不得硬编码 PostgreSQL、schema、geometry 字段或空间函数。
+6. 前端把候选文本写入 Monaco Editor，不自动执行。用户执行时继续进入 Develop preflight、效果授权、高风险确认与统一 execution API。
+
+Agent 使用根 `skills/query-generation` 和 `query.draft.generate` Tool 复用同一流程；ToolExecutor、SDK、资源事实解析和 Copilot WorkflowService 均来自 `common-python`/Copilot，不在 Agent 复制。
+
+## Notebook 编辑器生成主流程
+
+1. Develop 创建短期 Notebook Session，并以该 Session 的授权 Catalog 作为唯一数据范围。
+2. 首次请求只让 Copilot 提取独立输入角色及中英文检索词；Develop 在 Session Catalog 内粗筛。某个角色零召回时，Copilot 只为该角色补充一次未尝试的检索词，Develop 再次扫描同一 Catalog。
+3. Develop 将全部候选返回前端，LLM 只能排序和标记推荐项；多个候选必须由用户逐角色确认。
+4. 确认后 Develop 重新校验原生路径并读取字段、几何列、几何类型和 CRS，调用 `notebook.draft.generate`。
+5. Copilot 只生成通过 `addp_common.notebook.engines` 读取数据的 Pandas/GeoPandas Python 单元。空间表使用 `to_geopandas(...)`；不得生成 `engine.sql(...)`、旁路连接或硬编码字段/CRS。
+6. Develop 展示代码，用户确认后由同源 JupyterLab bridge 插入新单元，不自动执行。
 
 ---
 
@@ -34,7 +60,7 @@ sequenceDiagram
     participant FE as Develop前端<br/>WorkflowEditor.vue
     participant GW as Gateway<br/>:8000
     participant Copilot as Copilot后端<br/>:8087
-    participant Pipeline as WorkflowPipeline
+    participant WorkflowService
     participant DevBE as Develop后端<br/>:8084
     participant LLM as LLM服务
 
@@ -42,34 +68,52 @@ sequenceDiagram
     FE->>GW: 2. POST /api/v1/copilot/workflow/generate<br/>Bearer JWT + { query, workflow_engine_id, resources[] }
     GW->>Copilot: 3. 反向代理转发
     Copilot->>Copilot: 4. 通过 System 校验 JWT 并取得 tenant_id / user_id
-    Copilot->>Pipeline: 5. run(query, tenant_id, workflow_engine_id, resources[])
 
-    note over Pipeline: 阶段1：消费已验证资源事实
-    Pipeline->>Pipeline: 校验 resources[] 非空、空间资源 CRS 完整
+    alt 普通用户且 resources[] 为空
+        Copilot->>GW: 5. ToolExecutor 按原始词与跨语言技术名请求 data.search
+        GW->>Manager: 6. 搜索当前租户资源
+        Manager-->>GW: 返回 locator 候选
+        opt 某个输入角色首轮零召回
+            Copilot->>LLM: 提交缺失角色、已尝试检索词和零召回事实
+            LLM-->>Copilot: 返回未尝试的新技术名
+            Copilot->>GW: 只为缺失角色补充一次 data.search
+        end
+        Copilot->>GW: 7. ToolExecutor 请求 resource.ancestors.get 与 data.preview
+        GW->>Meta: 校验 locator 与祖先链
+        GW->>Manager: 获取受限字段、几何列和 CRS
+        Copilot->>LLM: 基于业务意图和已验证事实排序并推荐候选
+        Copilot-->>FE: 返回全部已验证候选，不生成 DAG
+        FE-->>User: 每个输入角色选择一个资源并确认
+        FE->>GW: 再次 POST，携带已确认 resources[]
+    end
+    Copilot->>WorkflowService: 8. run(query, tenant_id, workflow_engine_id, resources[])
 
-    note over Pipeline: 阶段2：算子筛选
-    Pipeline->>DevBE: 6. GET /api/v1/develop/workflow-engines/{workflow_engine_id}/operators<br/>获取该工作流引擎实例的全量算子列表（简要信息）
-    DevBE-->>Pipeline: 返回算子列表（name, brief, category）
-    Pipeline->>LLM: 7. 从全量算子中筛选 3-8 个相关算子
-    LLM-->>Pipeline: 返回选定算子名称列表
+    note over WorkflowService: 阶段1：消费已确认资源事实
+    WorkflowService->>WorkflowService: 校验 resources[] 非空、空间资源 CRS 完整
 
-    note over Pipeline: 阶段3：工作流生成
-    Pipeline->>DevBE: 8. 批量并发获取选定算子的详细信息<br/>GET /api/v1/develop/workflow-engines/{workflow_engine_id}/operators 后本地匹配
-    DevBE-->>Pipeline: 返回算子详情（parameters、public_parameters、output_ports）
-    Pipeline->>LLM: 9. 结合算子详情 + 数据源上下文<br/>生成工作流 DAG JSON
-    LLM-->>Pipeline: 返回工作流 JSON
+    note over WorkflowService: 阶段2：算子筛选
+    WorkflowService->>DevBE: 9. 通过 OperatorCatalogService 获取当前引擎算子目录
+    DevBE-->>WorkflowService: 返回算子列表（name, brief, category）
+    WorkflowService->>LLM: 10. 从全量算子中筛选 3-8 个相关算子
+    LLM-->>WorkflowService: 返回选定算子名称列表
 
-    note over Pipeline: 阶段4：验证 + 自动修复
-    Pipeline->>Pipeline: 10. 四层验证<br/>（结构/唯一性/依赖/参数）
+    note over WorkflowService: 阶段3：工作流生成
+    WorkflowService->>DevBE: 11. 通过 OperatorCatalogService 获取选定算子详情
+    DevBE-->>WorkflowService: 返回算子详情（parameters、public_parameters、output_ports）
+    WorkflowService->>LLM: 12. 结合算子详情 + 已确认资源事实<br/>生成工作流 DAG JSON
+    LLM-->>WorkflowService: 返回工作流 JSON
+
+    note over WorkflowService: 阶段4：验证 + 自动修复
+    WorkflowService->>WorkflowService: 13. 四层验证<br/>（结构/唯一性/依赖/参数）
     alt 验证失败
-        Pipeline->>LLM: 11. 自动修复（最多2次重试）
-        LLM-->>Pipeline: 返回修复后的工作流
+        WorkflowService->>LLM: 14. 自动修复（最多2次重试）
+        LLM-->>WorkflowService: 返回修复后的工作流
     end
 
-    Pipeline-->>Copilot: 返回 WorkflowGenerationResponse
+    WorkflowService-->>Copilot: 返回 WorkflowGenerationResponse
     Copilot-->>GW: { status, workflow, explanation, selected_operators, validation_result }
     GW-->>FE: 响应转发
-    FE->>FE: 12. 将 workflow.tasks 渲染到 DAG 画布
+    FE->>FE: 15. 将 workflow.tasks 渲染到 DAG 画布
     FE-->>User: 展示生成的工作流
 ```
 
@@ -97,12 +141,12 @@ sequenceDiagram
     FE->>FE: 渲染算子面板供用户拖拽使用
 
     note over Copilot,WorkflowEngine: 路径B：Copilot生成工作流时获取算子
-    Copilot->>DevBE: GET /api/v1/develop/workflow-engines/{workflow_engine_id}/operators<br/>（OperatorDiscoveryTool，5分钟TTL缓存）
+    Copilot->>DevBE: GET /api/v1/develop/workflow-engines/{workflow_engine_id}/operators<br/>（OperatorCatalogService，5分钟 TTL 缓存）
     DevBE->>DiscSvc: GetOperatorsByWorkflowEngineID(workflow_engine_id)
     DiscSvc-->>DevBE: 返回缓存中的算子列表（简要信息）
     DevBE-->>Copilot: 算子列表（name, brief_description, category）
 
-    Copilot->>Copilot: OperatorDetailTool 从同一工作流引擎实例的算子列表中匹配 operator_name
+    Copilot->>Copilot: OperatorCatalogService 从同一工作流引擎实例的算子目录读取 operator_name
     Copilot-->>Copilot: 算子详情（parameters, public_parameters, output_ports）
 ```
 
@@ -113,8 +157,8 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant API as workflow_agent_api.py
-    participant Pipeline as WorkflowPipeline
-    participant DS as DataSourceStage
+    participant Discovery as ResourceDiscovery
+    participant WorkflowService
     participant Sel as OperatorSelectionChain
     participant Gen as WorkflowGenerationChain
     participant Val as WorkflowValidationChain
@@ -122,63 +166,56 @@ sequenceDiagram
     participant DevTools as develop_tools.py
     participant LLM as LLM服务
 
-    API->>Pipeline: run(query, workflow_engine_id)
-
-    rect rgb(240,248,255)
-        note right of Pipeline: 阶段1 数据源理解
-        Pipeline->>DS: understand(query)
-        DS->>LLM: 提取数据源关键信息
-        LLM-->>DS: 数据源关键词
-        DS->>DevTools: EngineTool → 获取所有存储引擎
-        DevTools-->>DS: 引擎列表
-        DS->>DevTools: Manager 混合检索已有资源
-        DevTools-->>DS: 搜索结果（必须含真实 locator）
-        DS->>DevTools: Meta ancestors 校验 locator 并定位父节点
-        DevTools-->>DS: 当前资源 locator + 真实父节点 locator
-        DS-->>DS: 仅在唯一候选且置信度达标时构造 DataSourceContext
-        DS-->>Pipeline: DataSourceContext
-    end
+    API->>Discovery: resources[] 为空时 discover(query)
+    Discovery->>DevTools: ToolExecutor → data.search
+    DevTools-->>Discovery: locator 候选
+    Discovery->>DevTools: resource.ancestors.get + data.preview
+    DevTools-->>Discovery: 规范 locator、祖先链和受限预览事实
+    Discovery->>LLM: 对已验证粗筛候选做语义排序和推荐
+    LLM-->>Discovery: 返回候选集合中已有 locator 的顺序与推荐项
+    Discovery-->>API: 保留全部候选并附加推荐事实，等待前端确认
+    API->>WorkflowService: run(query, workflow_engine_id, resources[])
 
     rect rgb(240,255,240)
-        note right of Pipeline: 阶段2 算子筛选
-        Pipeline->>Sel: select(query, data_source, workflow_engine_id)
-        Sel->>DevTools: OperatorDiscoveryTool → 按 workflow_engine_id 获取算子列表
+        note right of WorkflowService: 阶段2 算子筛选
+        WorkflowService->>Sel: select(query, resources, workflow_engine_id)
+        Sel->>DevTools: OperatorCatalogService → 按 workflow_engine_id 获取算子列表
         DevTools-->>Sel: 算子列表（简要信息）
         Sel->>LLM: 从全量算子中筛选 3-8 个<br/>（附带分类和简介）
         LLM-->>Sel: 选定算子名称列表
-        Sel-->>Pipeline: ["load", "buffer", "save"] 等
+        Sel-->>WorkflowService: ["load", "buffer", "save"] 等
     end
 
     rect rgb(255,248,240)
-        note right of Pipeline: 阶段3 工作流生成
-        Pipeline->>Gen: generate(query, data_source, operators, workflow_engine_id)
-        Gen->>DevTools: OperatorDetailTool（并发批量）<br/>获取每个选定算子的详情
+        note right of WorkflowService: 阶段3 工作流生成
+        WorkflowService->>Gen: generate(query, resources, operators, workflow_engine_id)
+        Gen->>DevTools: OperatorCatalogService（并发批量）<br/>获取每个选定算子的详情
         DevTools-->>Gen: 算子详情（parameters, public_parameters, output_ports）
-        Gen->>LLM: 生成工作流 DAG<br/>（只使用 public_parameters 中的非 UI 参数）
+        Gen->>LLM: 生成工作流 DAG<br/>（只使用 public_parameters 中的非 UI 参数和已确认 locator）
         LLM-->>Gen: 工作流 JSON 字符串
         Gen->>Gen: 清理 markdown 标记、解析 JSON
-        Gen-->>Pipeline: Workflow 对象
+        Gen-->>WorkflowService: Workflow 对象
     end
 
     rect rgb(255,240,255)
-        note right of Pipeline: 阶段4 验证 + 自动修复
-        Pipeline->>Val: validate(workflow, operator_details)
+        note right of WorkflowService: 阶段4 验证 + 自动修复
+        WorkflowService->>Val: validate(workflow, operator_details)
         Val->>Val: 结构验证（tasks字段、必需字段）
         Val->>Val: 唯一性验证（task ID 唯一）
         Val->>Val: 依赖验证（Kahn 算法检测循环依赖）
         Val->>Val: 参数验证（算子存在性、必需参数、引用格式）
-        Val-->>Pipeline: ValidationResult
+        Val-->>WorkflowService: ValidationResult
 
         alt 验证失败 && 重试次数 < 2
-            Pipeline->>Fix: auto_fix(workflow, errors)
+            WorkflowService->>Fix: auto_fix(workflow, errors)
             Fix->>LLM: 根据错误提示修复工作流
             LLM-->>Fix: 修复后的工作流 JSON
-            Fix-->>Pipeline: 修复后的 Workflow
-            Pipeline->>Val: 重新验证
+            Fix-->>WorkflowService: 修复后的 Workflow
+            WorkflowService->>Val: 重新验证
         end
     end
 
-    Pipeline-->>API: WorkflowGenerationResponse<br/>{ status, workflow, explanation, selected_operators, validation_result }
+    WorkflowService-->>API: WorkflowGenerationResponse<br/>{ status, workflow, explanation, selected_operators, validation_result }
 ```
 
 ---
@@ -193,10 +230,10 @@ sequenceDiagram
 
 ### 引擎选择与运行时绑定
 
-Copilot 生成接口接收 `workflow_engine_id` 和 `resources[]`：
+Copilot 生成接口接收 `workflow_engine_id` 和可选的 `resources[]`：
 
 - `workflow_engine_id`：决定**使用哪个工作流引擎实例**发现算子、获取算子详情和验证工作流；不写入算子 params。工作流实际执行时由 Develop 的执行配置 `engine_id` 指向同一类工作流运行时实例
-- `resources[]`：调用方通过 owner Tool 验证的全部输入资源事实；Copilot 不再搜索或推断数据源
+- `resources[]`：调用方通过 owner Tool 验证的全部输入资源事实。Develop 普通用户首次请求为空时，Copilot 只负责通过共享 `ResourceResolutionService` 返回候选并等待前端确认；Agent 调用和确认后的请求必须直接携带该字段，WorkflowService 不重新搜索或推断数据源
 - Spark 工作流执行还需要在 `engine_specific.spark_cluster_id` 中绑定真实 `spark` 通用引擎；该 ID 只用于运行时连接 Spark 集群，不能和工作流运行时 `engine_id` 或数据源 locator 混用
 
 ### 参数传递路径
@@ -205,8 +242,8 @@ Copilot 生成接口接收 `workflow_engine_id` 和 `resources[]`：
 Develop前端（用户选择引擎）
   → POST /api/v1/copilot/workflow/generate（用户身份来自 Bearer JWT）
     { workflow_engine_id: 1, resources: [{ role, locator, geometry_column, crs }] }
-  → Copilot WorkflowPipeline
-    → OperatorDiscoveryTool: GET /api/v1/develop/workflow-engines/1/operators
+  → Copilot WorkflowService
+    → OperatorCatalogService: GET /api/v1/develop/workflow-engines/1/operators
     → 算子筛选 → 工作流生成（算子均来自该工作流引擎实例）
   → 返回工作流 JSON（包含算子名称，均为所选工作流引擎实例支持的算子）
   → Develop 执行时使用 execution_config.engine_id 指定工作流运行时实例
@@ -218,9 +255,9 @@ Develop前端（用户选择引擎）
 ### 数据源事实约定
 
 - Manager 混合检索只负责语义匹配，搜索结果的 `locator` 必须是由 Meta 事实建立的已有资源身份。
-- Copilot 必须使用 Meta `resource-tree/{engine_id}/ancestors` 校验搜索结果 locator，并从 ancestors 响应中取得创建目标所需的真实父节点 locator。
+- Copilot 的资源发现阶段先从需求提取独立输入数据意图；中文或其他自然语言资源名必须补充常用英文技术名，再对每个输入使用共享 `ToolExecutor` 依次调用 `data.search`、`resource.ancestors.get` 和 `data.preview`。某个角色首轮零召回时，只把该角色、已尝试检索词和零召回事实反馈给 LLM，过滤重复词后受限补充一次搜索；已召回角色不得重复发现。只有 ancestors 返回的 `target_locator` 与搜索 locator 一致、且预览返回受限字段/空间事实时，候选才进入 LLM 语义排序。LLM 只能对候选集合中已有的 locator 排序和标记推荐项，不得删除仍然合理的候选；歧义判断基于全部已验证候选。同一输入角色存在多个候选时，前端必须展示引擎、逻辑全名、locator、数据类型和空间事实，并要求用户选择一个；只有单一候选可以默认选中。
 - Copilot 不得根据 `engine_id + schema/table/bucket/path` 自行拼接 locator，也不得从已删除的 Develop catalog 查询路径推导资源身份。
-- 未找到候选、候选不唯一、置信度不足或 Meta 无法校验 locator 时，Pipeline 必须返回 `need_clarification`，不得继续调用工作流生成 LLM。
+- 未找到候选、候选不唯一、置信度不足或 Meta 无法校验 locator 时，ResourceResolutionService 必须返回 `need_clarification`，不得继续调用工作流生成 LLM。
 - 工作流生成后必须再校验资源事实：所有 `load.locator` 和 `save.target_parent_locator` 都必须来自本次已验证数据源上下文。LLM 新增任何未验证 locator 时统一返回 `need_clarification`，不进入自动修复。
 
 ---

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Transfer 草稿生成"
+  short_description: "确认源和目标后生成无副作用 Transfer 草稿"
+  default_prompt: "使用 $transfer-generation 根据我的需求确认数据源并生成 Transfer 任务草稿。"

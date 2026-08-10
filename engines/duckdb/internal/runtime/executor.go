@@ -12,7 +12,7 @@ import (
 	commonclient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	commonmodels "github.com/addp/common/models"
-	"github.com/addp/common/sqleffect"
+	commonquery "github.com/addp/common/query"
 	duckdb "github.com/addp/engines/duckdb/internal/duckdb"
 )
 
@@ -52,7 +52,7 @@ func (e *Executor) Execute(
 	if req.Language != "sql" || !req.Options.ReadOnly {
 		return nil, errors.New("DuckDB runtime only accepts read-only SQL")
 	}
-	if err := sqleffect.RequireReadOnly(req.Query); err != nil {
+	if err := commonquery.RequireReadOnly(req.Query); err != nil {
 		return nil, err
 	}
 	if len(req.SourceEngineIDs) == 0 {

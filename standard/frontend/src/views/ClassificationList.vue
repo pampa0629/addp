@@ -51,7 +51,7 @@
           <div v-loading="loadingGrading" class="grading-list">
             <div v-for="level in gradingLevels" :key="level.id" class="grading-item">
               <div class="grading-left">
-                <el-tag :style="{ backgroundColor: level.color, color: '#fff', borderColor: level.color }" size="default">
+                <el-tag :style="{ backgroundColor: level.color, color: 'var(--el-color-white)', borderColor: level.color }" size="default">
                   {{ level.level }}
                 </el-tag>
                 <div class="grading-info">

@@ -2,7 +2,7 @@
 # Business Database Startup Script
 # 业务库启动脚本
 #
-# 功能: 检查配置、检测架构、启动服务、验证健康、安装 PostGIS
+# 功能: 检查配置、检测架构、启动服务、验证健康、安装 PostGIS/初始化 Oracle 样例
 # 服务: PostgreSQL/PostGIS、SuperMap SDX+ for PostgreSQL 专用 PostgreSQL、MinIO 及其他可选业务引擎
 # 特性: 幂等执行（可重复运行，已运行的服务会跳过）
 #
@@ -10,6 +10,7 @@
 #   bash scripts/start.sh                    # 默认启动 PostgreSQL + MinIO
 #   bash scripts/start.sh -all               # 启动所有服务
 #   bash scripts/start.sh -postgres          # 只启动 PostgreSQL
+#   bash scripts/start.sh -oracle            # 只启动 Oracle Free
 #   bash scripts/start.sh -supermap-postgresql # 只启动 SuperMap SDX+ for PostgreSQL 专用实例
 #   bash scripts/start.sh -minio             # 只启动 MinIO
 #   bash scripts/start.sh -clickhouse        # 只启动 ClickHouse
@@ -38,6 +39,7 @@ NC='\033[0m'
 
 # 解析启动参数
 ENABLE_PG=false
+ENABLE_ORACLE=false
 ENABLE_SUPERMAP_PG=false
 ENABLE_MINIO=false
 ENABLE_CLICKHOUSE=false
@@ -55,6 +57,7 @@ for arg in "$@"; do
     case $arg in
         -all)
             ENABLE_PG=true
+            ENABLE_ORACLE=true
             ENABLE_SUPERMAP_PG=true
             ENABLE_MINIO=true
             ENABLE_CLICKHOUSE=true
@@ -68,6 +71,9 @@ for arg in "$@"; do
             ;;
         -postgres)
             ENABLE_PG=true
+            ;;
+        -oracle)
+            ENABLE_ORACLE=true
             ;;
         -supermap-postgresql)
             ENABLE_SUPERMAP_PG=true
@@ -104,6 +110,7 @@ for arg in "$@"; do
             echo "  bash scripts/start.sh                       # 默认启动 PostgreSQL + MinIO"
             echo "  bash scripts/start.sh -all                  # 启动所有服务"
             echo "  bash scripts/start.sh -postgres             # 只启动 PostgreSQL"
+            echo "  bash scripts/start.sh -oracle               # 只启动 Oracle Free"
             echo "  bash scripts/start.sh -supermap-postgresql  # 只启动 SuperMap SDX+ for PostgreSQL 专用实例"
             echo "  bash scripts/start.sh -minio                # 只启动 MinIO"
             echo "  bash scripts/start.sh -clickhouse           # 只启动 ClickHouse"
@@ -141,6 +148,11 @@ if [ "$ENABLE_PG" = true ]; then
     echo -e "  PostgreSQL: ✓"
 else
     echo -e "  PostgreSQL: ✗ (使用 -postgres 启用)"
+fi
+if [ "$ENABLE_ORACLE" = true ]; then
+    echo -e "  Oracle Free: ✓"
+else
+    echo -e "  Oracle Free: ✗ (使用 -oracle 启用)"
 fi
 if [ "$ENABLE_SUPERMAP_PG" = true ]; then
     echo -e "  SuperMap SDX+ for PostgreSQL: ✓"
@@ -233,6 +245,7 @@ echo ""
 
 # 4. 检查端口占用（幂等）
 PG_PORT=${POSTGRES_PORT:-5433}
+ORACLE_PORT_VAL=${ORACLE_PORT:-15210}
 SUPERMAP_PG_PORT=${SUPERMAP_POSTGRESQL_PORT:-5434}
 MINIO_API=${MINIO_API_PORT:-9002}
 MINIO_CONSOLE=${MINIO_CONSOLE_PORT:-9003}
@@ -262,6 +275,7 @@ check_port_used_by_self() {
 echo -e "${YELLOW}检查端口...${NC}"
 PORTS_TO_CHECK=""
 [ "$ENABLE_PG" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $PG_PORT"
+[ "$ENABLE_ORACLE" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $ORACLE_PORT_VAL"
 [ "$ENABLE_SUPERMAP_PG" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $SUPERMAP_PG_PORT"
 [ "$ENABLE_MINIO" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $MINIO_API $MINIO_CONSOLE"
 [ "$ENABLE_CLICKHOUSE" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $CLICKHOUSE_PORT $CLICKHOUSE_HTTP_PORT"
@@ -275,6 +289,7 @@ PORTS_TO_CHECK=""
 for port in $PORTS_TO_CHECK; do
     if lsof -nP -i ":${port}" >/dev/null 2>&1; then
         if check_port_used_by_self $port "business-postgres" || \
+           check_port_used_by_self $port "business-oracle" || \
            check_port_used_by_self $port "business-supermap-postgresql" || \
            check_port_used_by_self $port "business-minio" || \
            check_port_used_by_self $port "business-clickhouse" || \
@@ -302,6 +317,16 @@ if [ "$ENABLE_PG" = true ]; then
     else
         docker compose up -d postgres
         echo -e "${GREEN}✓ PostgreSQL 已启动${NC}"
+    fi
+fi
+
+# Oracle Free
+if [ "$ENABLE_ORACLE" = true ]; then
+    if docker ps --filter "name=business-oracle" --format '{{.Status}}' | grep -q "Up"; then
+        echo -e "${GREEN}✓ Oracle 已运行，跳过启动${NC}"
+    else
+        docker compose up -d oracle
+        echo -e "${GREEN}✓ Oracle 已启动${NC}"
     fi
 fi
 
@@ -486,6 +511,23 @@ if [ "$ENABLE_PG" = true ]; then
         fi
         sleep 1
     done
+fi
+
+if [ "$ENABLE_ORACLE" = true ]; then
+    ORACLE_READY=false
+    for i in {1..120}; do
+        if docker inspect --format '{{.State.Health.Status}}' business-oracle 2>/dev/null | grep -q '^healthy$'; then
+            echo -e "${GREEN}✓ Oracle 就绪${NC}"
+            ORACLE_READY=true
+            break
+        fi
+        sleep 2
+    done
+    if [ "$ORACLE_READY" != true ]; then
+        echo -e "${RED}✗ Oracle 未在 240 秒内就绪${NC}"
+        exit 1
+    fi
+    bash "${PROJECT_ROOT}/oracle/test-data.sh"
 fi
 
 if [ "$ENABLE_SUPERMAP_PG" = true ]; then
@@ -682,6 +724,9 @@ echo ""
 # 动态显示已启动的服务访问信息
 if [ "$ENABLE_PG" = true ]; then
     echo -e "PostgreSQL: localhost:${PG_PORT}"
+fi
+if [ "$ENABLE_ORACLE" = true ]; then
+    echo -e "Oracle: localhost:${ORACLE_PORT_VAL} (service: ${ORACLE_SERVICE_NAME:-FREEPDB1})"
 fi
 if [ "$ENABLE_SUPERMAP_PG" = true ]; then
     echo -e "SuperMap SDX+ for PostgreSQL: localhost:${SUPERMAP_PG_PORT}"

@@ -39,6 +39,7 @@
         "type": "object",
         "properties": {
           "query": {"type": "string", "minLength": 1},
+          "engine_id": {"type": "integer", "minimum": 1},
           "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 10}
         },
         "required": ["query"],
@@ -157,6 +158,103 @@
           }
         },
         "required": ["query", "workflow_engine_id", "resources"],
+        "additionalProperties": false
+      },
+      "output_schema": {"type": "object", "required": ["status"]}
+    },
+    {
+      "name": "query.draft.generate",
+      "version": "1.0.0",
+      "description": "根据当前查询引擎、查询语言和已验证资源事实生成候选查询文本，不执行查询。",
+      "owner": "copilot",
+      "risk": "propose",
+      "approval": {"mode": "none"},
+      "auth": {"type": "delegated_access_token", "audience": "copilot", "required_scopes": ["query.draft.generate"], "required_permissions": ["copilot.sql.execute"]},
+      "permission_enforced_by": "owner",
+      "audit": {"mode": "owner"},
+      "result_ref": {"mode": "none"},
+      "limits": {"max_bytes": 262144},
+      "errors": ["invalid_arguments", "delegation_rejected", "delegation_unavailable", "invalid_delegation_response", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "minLength": 1},
+          "engine_id": {"type": "integer", "minimum": 1},
+          "query_language": {"type": "string", "minLength": 1},
+          "engine_context": {"type": "object"},
+          "resources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role": {"type": "string", "minLength": 1},
+                "locator": {"type": "string", "minLength": 1},
+                "engine_id": {"type": "integer", "minimum": 1},
+                "data_type": {"type": ["string", "null"]},
+                "geometry_column": {"type": ["string", "null"]},
+                "geometry_type": {"type": ["string", "null"]},
+                "crs": {"type": ["string", "null"]},
+                "fields": {"type": "array", "items": {"type": "object"}, "maxItems": 200}
+              },
+              "required": ["role", "locator", "engine_id"],
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "maxItems": 20
+          }
+        },
+        "required": ["query", "engine_id", "query_language", "engine_context", "resources"],
+        "additionalProperties": false
+      },
+      "output_schema": {"type": "object", "required": ["status", "query_language"]}
+    },
+    {
+      "name": "notebook.draft.generate",
+      "version": "1.0.0",
+      "description": "根据 Notebook Session 已限定的 Catalog 候选或已验证资源事实生成候选 Python 单元，不执行代码。",
+      "owner": "copilot",
+      "risk": "propose",
+      "approval": {"mode": "none"},
+      "auth": {"type": "delegated_access_token", "audience": "copilot", "required_scopes": ["notebook.draft.generate"], "required_permissions": ["copilot.notebook.execute"]},
+      "permission_enforced_by": "owner",
+      "audit": {"mode": "owner"},
+      "result_ref": {"mode": "none"},
+      "limits": {"max_bytes": 524288},
+      "errors": ["invalid_arguments", "delegation_rejected", "delegation_unavailable", "invalid_delegation_response", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "minLength": 1},
+          "kernel": {"const": "python3", "default": "python3"},
+          "candidates": {"type": "array", "items": {"type": "object"}, "maxItems": 320},
+          "resources": {"type": "array", "items": {"type": "object"}, "maxItems": 8}
+        },
+        "required": ["query"],
+        "additionalProperties": false
+      },
+      "output_schema": {"type": "object", "required": ["status"]}
+    },
+    {
+      "name": "transfer.draft.generate",
+      "version": "1.0.0",
+      "description": "发现并确认单一源资源，在 Transfer 已确认目标和任务边界内生成不带副作用的任务草稿。",
+      "owner": "copilot",
+      "risk": "propose",
+      "approval": {"mode": "none"},
+      "auth": {"type": "delegated_access_token", "audience": "copilot", "required_scopes": ["transfer.draft.generate"], "required_permissions": ["copilot.transfer.execute"]},
+      "permission_enforced_by": "owner",
+      "audit": {"mode": "owner"},
+      "result_ref": {"mode": "none"},
+      "limits": {"max_bytes": 262144},
+      "errors": ["invalid_arguments", "delegation_rejected", "delegation_unavailable", "invalid_delegation_response", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "minLength": 1},
+          "resources": {"type": "array", "items": {"type": "object"}, "maxItems": 1},
+          "task": {"type": ["object", "null"]}
+        },
+        "required": ["query"],
         "additionalProperties": false
       },
       "output_schema": {"type": "object", "required": ["status"]}

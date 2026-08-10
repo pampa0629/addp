@@ -24,6 +24,7 @@ engine.capabilities/v1
 - `extensions` 只承载引擎特有补充信息，不得替代核心字段。
 - `extensions.spatial_workspaces` 只承载数据库实例中可识别的厂商空间工作区事实，如 SuperMap `sdx_postgis`、`sdx_postgresql` 或 ArcGIS `sde`；这一层用于 System 自动探测、高危启用和实例级 Provider 选择，不得把两个实现不同的 SuperMap 产品合并为 `sdx+`。
 - `extensions.spatial_workspaces[].can_enable` 只表示实例在当前条件下具备被显性启用的可能性；是否真的执行启用动作，由 System 的高危操作入口统一触发，不由前端或业务模块直接改写能力 JSON。
+- Oracle 第一阶段只声明普通 tabular 的 Catalog、Facts、SQL 参数查询、BatchRead 和 TableReadSession；不得因为底层数据库可产生 redo 或存在 ArcGIS SDE 表就声明 `change_stream_read`、空间 Provider 或 SDE 逻辑变化源。Oracle CDC 与 ArcGIS SDE 必须在未来分别定义独立 Provider、位置语义和能力声明。
 
 SuperMap workspace kind 固定如下：
 
@@ -59,8 +60,8 @@ type EngineCapabilities struct {
 | 字段 | 说明 | 保留要求 |
 | --- | --- | --- |
 | `schema_version` | 能力声明结构版本，必须为 `engine.capabilities/v1`。 | 必须保留。 |
-| `engine_type` | 插件类型，如 `postgresql`、`minio`、`neo4j`。 | 必须保留。 |
-| `engine_family` | 主引擎族，如 `tabular`、`dynamic_schema`、`graph`、`object`、`file`、`event_stream`、`workflow`、`script`。 | 必须保留，但只作为粗分类。 |
+| `engine_type` | 插件类型，如 `postgresql`、`minio`、`neo4j`、`inference_runtime`。 | 必须保留。 |
+| `engine_family` | 主引擎族，如 `tabular`、`dynamic_schema`、`graph`、`object`、`file`、`event_stream`、`workflow`、`script`、`inference`。 | 必须保留，但只作为粗分类。 |
 | `storage` | 存储、目录、元数据、内容访问能力。 | 具备存储能力的引擎必须声明。 |
 | `compute` | 查询、工作流、脚本运行能力。 | 具备计算能力的引擎必须声明。 |
 | `limits` | 跨能力通用限制，如预览大小、超时建议。 | 可选，有真实调用方时声明。 |
@@ -310,7 +311,7 @@ type ComputeCapabilities struct {
 }
 ```
 
-`compute` 表达引擎可被 ADDP 统一调用的计算运行时能力，而不是 UI 开发模式标签。旧版 `dev_modes` 只能回答“应该出现在哪个开发界面”，不能表达查询语言、运行协议、动态算子、脚本模式和对应 Provider，因此不再进入 `engine.capabilities/v1`。
+`compute` 表达引擎可被 ADDP 统一调用的计算运行时能力，而不是 UI 开发模式标签。旧版 `dev_modes` 只能回答“应该出现在哪个开发界面”，不能表达查询语言、运行协议、动态算子、脚本模式、AI 推理操作和对应 Provider，因此不再进入 `engine.capabilities/v1`。
 
 Develop 等上层模块如仍需面向用户的开发入口，应从 `compute` 能力派生：
 
@@ -439,6 +440,8 @@ type InferenceCapability struct {
 | `streaming` | `chat` 是否支持标准流式响应。 |
 
 该能力只表达 Runtime 数据面，不展开动态 Provider Connection、Model Deployment 或 Model Profile。System 保存或刷新 `inference_runtime` Engine Instance 时只探测 `/health` 和 Runtime capability；模型列表及凭据由 Inference owner 控制面管理。声明该能力的插件必须实现 `InferenceRuntimeProvider`，调用方不得根据厂商名称选择私有客户端。
+
+第一版 `inference_runtime` 固定为平台内置单实例。调用方通过 System Runtime Descriptor 发现唯一 active 且声明该能力的实例；零个或多个候选都必须明确失败。后续如需按网络区域、安全域、GPU 集群、故障域或 SLA 部署多个 Runtime，必须先增加显式 Runtime Engine Instance 绑定和实例身份规则，不能按列表顺序或健康状态自动切换。
 
 ---
 

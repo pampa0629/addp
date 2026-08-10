@@ -13,12 +13,12 @@
             v-model="filters.keyword"
             :placeholder="$t('standard.glossary.searchPlaceholder')"
             clearable
-            @change="loadGlossaries"
+            @change="handleFilterChange"
             :prefix-icon="Search"
           />
         </el-col>
         <el-col :span="6">
-          <el-select v-model="filters.domain_id" :placeholder="$t('standard.common.selectDomain')" clearable @change="loadGlossaries">
+          <el-select v-model="filters.domain_id" :placeholder="$t('standard.common.selectDomain')" clearable @change="handleFilterChange">
             <el-option
               v-for="domain in domainList"
               :key="domain.id"
@@ -28,7 +28,7 @@
           </el-select>
         </el-col>
         <el-col :span="6">
-          <el-select v-model="filters.status" :placeholder="$t('standard.common.selectStatus')" clearable @change="loadGlossaries">
+          <el-select v-model="filters.status" :placeholder="$t('standard.common.selectStatus')" clearable @change="handleFilterChange">
             <el-option :label="$t('standard.common.draft')" value="draft" />
             <el-option :label="$t('standard.common.approved')" value="approved" />
             <el-option :label="$t('standard.common.deprecated')" value="deprecated" />
@@ -131,8 +131,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { Plus, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
@@ -142,6 +142,7 @@ import { navigateStandardRoute } from '@/utils/moduleNavigation'
 const { t } = useI18n()
 
 const router = useRouter()
+const route = useRoute()
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -160,6 +161,33 @@ const filters = reactive({
   page: 1,
   page_size: 20
 })
+
+const validStatuses = new Set(['draft', 'approved', 'deprecated'])
+
+const parsePositiveInteger = (value, fallback) => {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
+}
+
+const applyRouteFilters = (query) => {
+  filters.keyword = typeof query.keyword === 'string' ? query.keyword : ''
+  filters.domain_id = parsePositiveInteger(query.domain_id, null)
+  filters.status = typeof query.status === 'string' && validStatuses.has(query.status) ? query.status : ''
+  filters.page = parsePositiveInteger(query.page, 1)
+  filters.page_size = parsePositiveInteger(query.page_size, 20)
+}
+
+const buildFilterQuery = () => {
+  const query = {}
+  if (filters.keyword) query.keyword = filters.keyword
+  if (filters.domain_id) query.domain_id = String(filters.domain_id)
+  if (filters.status) query.status = filters.status
+  if (filters.page > 1) query.page = String(filters.page)
+  if (filters.page_size !== 20) query.page_size = String(filters.page_size)
+  return query
+}
+
+const syncFilterRoute = () => navigateStandardRoute(router, { path: '/glossaries', query: buildFilterQuery() }, { history: 'replace' })
 
 const form = ref({
   name: '',
@@ -221,18 +249,25 @@ const loadGlossaries = async () => {
 
 const handlePageChange = (page) => {
   filters.page = page
+  syncFilterRoute()
+  loadGlossaries()
+}
+
+const handleFilterChange = () => {
+  filters.page = 1
+  syncFilterRoute()
   loadGlossaries()
 }
 
 const openCreateDialog = () => {
   editMode.value = false
   editingId.value = null
-  form.value = { name: '', alias: [], domain_id: null, definition: '', example: '', note: '', tags: [] }
+  form.value = { name: '', alias: [], domain_id: filters.domain_id, definition: '', example: '', note: '', tags: [] }
   dialogVisible.value = true
 }
 
 const goToDetail = (row) => {
-  navigateStandardRoute(router, `/glossaries/${row.id}`)
+  navigateStandardRoute(router, { path: `/glossaries/${row.id}`, query: buildFilterQuery() })
 }
 
 const openEditDialog = (row) => {
@@ -305,7 +340,18 @@ const handleDelete = async (row) => {
   }
 }
 
+watch(
+  () => route.query,
+  (query) => {
+    const previous = JSON.stringify(buildFilterQuery())
+    applyRouteFilters(query)
+    if (JSON.stringify(buildFilterQuery()) !== previous) loadGlossaries()
+  },
+  { deep: true }
+)
+
 onMounted(async () => {
+  applyRouteFilters(route.query)
   await loadDomains()
   await loadGlossaries()
 })

@@ -271,7 +271,7 @@ func mapModelAttributes(attrs []commonClient.ModelEntityAttribute) []models.Prop
 		}
 		dataType := mapDataType(a.DataType)
 		prop := models.PropertyDefinition{
-			Name:       a.Name,
+			Name:       a.ColumnName,
 			Label:      a.Name,
 			DataType:   dataType,
 			Required:   !a.Nullable,

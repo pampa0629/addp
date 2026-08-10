@@ -9,9 +9,9 @@
 
 ## 🎯 核心功能
 
-- **查询工作台**: 数据资源树 + Monaco Editor + 表格/图结果预览
-- **GIS 工作流**: 可视化编辑和执行空间计算工作流（21个 GeoPython Workflow 算子）
-- **Notebook 任务**: 上传、执行、下载和显式重绑定 Notebook 引擎，并查看统一执行历史
+- **查询工作台**: 数据资源树 + Monaco Editor + 表格/图结果预览；右下角 AI 助手按当前 Query Engine 生成候选查询语言
+- **GIS 工作流**: 可视化编辑和执行空间计算工作流（21个 GeoPython Workflow 算子）；右下角 AI 助手生成候选工作流
+- **Notebook 任务**: 上传、执行、下载和显式重绑定 Notebook 引擎，并查看统一执行历史；右下角 AI 助手确认 Session 数据源后生成 Python/GeoPandas 单元
 - **算子管理**: 聚合工作流运行时动态算子，供工作流编辑器使用
 - **执行历史**: 保存所有执行记录，支持历史回溯
 
@@ -52,7 +52,10 @@ Kernel发现: GET /api/v1/develop/notebook-engines/{engine_id}/kernels
 Notebook:   GET /api/v1/develop/notebooks
 Notebook上传: POST /api/v1/develop/notebooks/upload
 Notebook运行绑定: PUT /api/v1/develop/notebooks/{id}/runtime-binding
+Notebook Copilot: POST /api/v1/develop/notebook-copilot-sessions/{session_id}/generate
 ```
+
+Notebook、查询和工作流 Copilot 都只生成待确认的候选结果。Notebook Copilot 的数据源范围严格限定为当前交互 Session 可访问的实时 Catalog：首次请求先按业务角色列出候选，存在歧义时逐角色确认；确认后才读取字段、几何列和 CRS 等事实并生成代码。生成的 Notebook 单元只允许通过同源 JupyterLab bridge 插入，不自动执行。
 
 完整 API 文档请查看 [CLAUDE.md#常见开发场景](./CLAUDE.md#常见开发场景)
 

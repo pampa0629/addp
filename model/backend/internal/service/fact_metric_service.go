@@ -1,7 +1,10 @@
 package service
 
 import (
+	"context"
 	"fmt"
+
+	commonClient "github.com/addp/common/client"
 
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/repository"
@@ -10,6 +13,11 @@ import (
 type FactMetricService struct {
 	factMetricRepo *repository.FactMetricRepository
 	tableRepo      *repository.LogicalTableRepository
+	standard       *commonClient.StandardClient
+}
+
+func (s *FactMetricService) SetStandardClient(client *commonClient.StandardClient) {
+	s.standard = client
 }
 
 func NewFactMetricService(factMetricRepo *repository.FactMetricRepository, tableRepo *repository.LogicalTableRepository) *FactMetricService {
@@ -22,8 +30,12 @@ func NewFactMetricService(factMetricRepo *repository.FactMetricRepository, table
 // ListMetrics 获取事实表关联的指标列表
 func (s *FactMetricService) ListMetrics(factTableID, tenantID int64) ([]models.FactMetricMapping, error) {
 	// 验证事实表存在且属于该租户
-	if _, err := s.tableRepo.GetByID(factTableID, tenantID); err != nil {
+	table, err := s.tableRepo.GetByID(factTableID, tenantID)
+	if err != nil {
 		return nil, fmt.Errorf("逻辑表不存在")
+	}
+	if table.TableType != "fact" {
+		return nil, fmt.Errorf("只有事实表可以关联指标")
 	}
 	return s.factMetricRepo.ListByFactTable(factTableID, tenantID)
 }
@@ -31,8 +43,25 @@ func (s *FactMetricService) ListMetrics(factTableID, tenantID int64) ([]models.F
 // AddMetric 为事实表添加指标关联
 func (s *FactMetricService) AddMetric(factTableID, tenantID, userID int64, req *models.CreateFactMetricMappingRequest) (*models.FactMetricMapping, error) {
 	// 验证事实表存在且属于该租户
-	if _, err := s.tableRepo.GetByID(factTableID, tenantID); err != nil {
+	table, err := s.tableRepo.GetByID(factTableID, tenantID)
+	if err != nil {
 		return nil, fmt.Errorf("逻辑表不存在")
+	}
+	if table.TableType != "fact" {
+		return nil, fmt.Errorf("只有事实表可以关联指标")
+	}
+	if table.Status != "draft" {
+		return nil, fmt.Errorf("已审批事实表不能修改指标关联")
+	}
+	if s.standard != nil {
+		if err := s.standard.WithTenantID(uint(tenantID)).ValidateMetric(context.Background(), req.MetricID); err != nil {
+			return nil, err
+		}
+	}
+	if req.FieldID != nil {
+		if _, err := s.tableRepo.GetFieldByID(*req.FieldID, factTableID); err != nil {
+			return nil, fmt.Errorf("指标基础字段不存在")
+		}
 	}
 
 	// 防止重复关联
@@ -60,5 +89,15 @@ func (s *FactMetricService) AddMetric(factTableID, tenantID, userID int64, req *
 
 // RemoveMetric 移除事实表的指标关联
 func (s *FactMetricService) RemoveMetric(mappingID, factTableID, tenantID int64) error {
+	table, err := s.tableRepo.GetByID(factTableID, tenantID)
+	if err != nil {
+		return fmt.Errorf("逻辑表不存在")
+	}
+	if table.TableType != "fact" {
+		return fmt.Errorf("只有事实表可以关联指标")
+	}
+	if table.Status != "draft" {
+		return fmt.Errorf("已审批事实表不能修改指标关联")
+	}
 	return s.factMetricRepo.Delete(mappingID, factTableID, tenantID)
 }

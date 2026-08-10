@@ -4,6 +4,9 @@ import (
 	"net/http"
 	"strconv"
 
+	commonAPI "github.com/addp/common/api"
+	commoni18n "github.com/addp/common/middleware/i18n"
+	qualityi18n "github.com/addp/quality/i18n"
 	"github.com/addp/quality/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -21,7 +24,11 @@ func NewIssueHandler(svc *service.IssueService) *IssueHandler {
 // @Produce json
 // @Param status query string false "状态 | Status"
 // @Param engine_id query int false "引擎ID | Engine ID"
-// @Success 200 {array} map[string]interface{}
+// @Param page query int false "页码 | Page" default(1)
+// @Param page_size query int false "每页数量 | Page size" default(20) maximum(100)
+// @Success 200 {object} qualityIssueListResponse
+// @Failure 400 {object} qualityErrorResponse
+// @Failure 500 {object} qualityErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["quality.issue.read"]
 // @Router /issues [get]
@@ -29,21 +36,33 @@ func NewIssueHandler(svc *service.IssueService) *IssueHandler {
 func (h *IssueHandler) List(c *gin.Context) {
 	tenantID := getTenantID(c)
 	status := c.Query("status")
-	engineID, _ := strconv.ParseInt(c.Query("engine_id"), 10, 64)
-
-	items, err := h.svc.List(tenantID, status, engineID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if status != "" && status != "open" && status != "resolved" && status != "ignored" {
+		respondInvalidRequest(c, "")
 		return
 	}
-	c.JSON(http.StatusOK, items)
+	engineID, err := optionalPositiveID(c.Query("engine_id"))
+	if err != nil {
+		respondInvalidRequest(c, "")
+		return
+	}
+
+	page, pageSize := pageParams(c.Query("page"), c.Query("page_size"))
+	items, total, err := h.svc.List(tenantID, status, engineID, page, pageSize)
+	if err != nil {
+		respondQualityServiceError(c, err, "", qualityi18n.MsgInternal)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": items, "total": total, "page": page, "page_size": pageSize, "total_pages": totalPages(total, pageSize)})
 }
 
 // @Summary 获取问题工单详情 | Get issue detail
 // @Tags Issue
 // @Produce json
 // @Param id path int true "工单ID | Issue ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} qualityIssueResponse
+// @Failure 400 {object} qualityErrorResponse
+// @Failure 404 {object} qualityErrorResponse
+// @Failure 500 {object} qualityErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["quality.issue.read"]
 // @Router /issues/{id} [get]
@@ -52,12 +71,12 @@ func (h *IssueHandler) Get(c *gin.Context) {
 	tenantID := getTenantID(c)
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		respondInvalidRequest(c, "")
 		return
 	}
 	item, err := h.svc.Get(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		respondQualityServiceError(c, err, qualityi18n.MsgIssueNotFound, qualityi18n.MsgInternal)
 		return
 	}
 	c.JSON(http.StatusOK, item)
@@ -68,8 +87,12 @@ func (h *IssueHandler) Get(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param id path int true "工单ID | Issue ID"
-// @Param body body map[string]string true "状态信息 | Status info"
-// @Success 200 {object} map[string]string
+// @Param body body issueStatusRequest true "状态信息（必须包含处理说明） | Status and required note"
+// @Success 200 {object} qualityMessageResponse
+// @Failure 400 {object} qualityErrorResponse
+// @Failure 404 {object} qualityErrorResponse
+// @Failure 409 {object} qualityErrorResponse
+// @Failure 500 {object} qualityErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["quality.issue.update"]
 // @Router /issues/{id}/status [put]
@@ -78,19 +101,17 @@ func (h *IssueHandler) UpdateStatus(c *gin.Context) {
 	tenantID := getTenantID(c)
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		respondInvalidRequest(c, "")
 		return
 	}
-	var body struct {
-		Status string `json:"status" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	var body issueStatusRequest
+	if err := commonAPI.BindOptionalJSONStrict(c, &body); err != nil {
+		respondInvalidRequest(c, err.Error())
 		return
 	}
-	if err := h.svc.UpdateStatus(id, tenantID, body.Status); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := h.svc.UpdateStatus(c.Request.Context(), id, tenantID, getUserID(c), body.Status, body.Note); err != nil {
+		respondQualityServiceError(c, err, qualityi18n.MsgIssueNotFound, qualityi18n.MsgIssueUpdateFailed)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "updated"})
+	c.JSON(http.StatusOK, qualityMessageResponse{Message: commoni18n.T(c, qualityi18n.MsgUpdated)})
 }

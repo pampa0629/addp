@@ -3744,7 +3744,7 @@
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "manager.content.read"
+                    "manager.data_item.read"
                 ]
             }
         },
@@ -5055,6 +5055,12 @@
                         "name": "q",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "限定引擎 ID | Restrict results to an engine ID",
+                        "name": "engine_id",
+                        "in": "query"
                     },
                     {
                         "type": "integer",
@@ -6875,299 +6881,6 @@
         }
     },
     "definitions": {
-        "dataprofile.BooleanMetrics": {
-            "type": "object",
-            "properties": {
-                "false_count": {
-                    "type": "integer"
-                },
-                "true_count": {
-                    "type": "integer"
-                }
-            }
-        },
-        "dataprofile.DataScope": {
-            "type": "object",
-            "properties": {
-                "conditions": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/dataprofile.DataScopeCondition"
-                    }
-                },
-                "kind": {
-                    "type": "string"
-                },
-                "logic": {
-                    "type": "string"
-                }
-            }
-        },
-        "dataprofile.DataScopeCondition": {
-            "type": "object",
-            "properties": {
-                "field": {
-                    "type": "string"
-                },
-                "operator": {
-                    "type": "string"
-                },
-                "value": {},
-                "values": {
-                    "type": "array",
-                    "items": {}
-                }
-            }
-        },
-        "dataprofile.DistributionBucket": {
-            "type": "object",
-            "properties": {
-                "count": {
-                    "type": "integer"
-                },
-                "label": {
-                    "type": "string"
-                },
-                "max": {},
-                "min": {}
-            }
-        },
-        "dataprofile.FieldProfile": {
-            "type": "object",
-            "properties": {
-                "boolean": {
-                    "$ref": "#/definitions/dataprofile.BooleanMetrics"
-                },
-                "distinct_approximate": {
-                    "type": "boolean"
-                },
-                "distinct_count": {
-                    "type": "integer"
-                },
-                "distribution": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/dataprofile.DistributionBucket"
-                    }
-                },
-                "name": {
-                    "type": "string"
-                },
-                "native_type": {
-                    "type": "string"
-                },
-                "null_count": {
-                    "type": "integer"
-                },
-                "null_rate": {
-                    "type": "number"
-                },
-                "nullable": {
-                    "type": "boolean"
-                },
-                "numeric": {
-                    "$ref": "#/definitions/dataprofile.NumericMetrics"
-                },
-                "observations": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/dataprofile.Observation"
-                    }
-                },
-                "primary_key": {
-                    "type": "boolean"
-                },
-                "spatial": {
-                    "$ref": "#/definitions/dataprofile.SpatialMetrics"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "temporal": {
-                    "$ref": "#/definitions/dataprofile.TemporalMetrics"
-                },
-                "text": {
-                    "$ref": "#/definitions/dataprofile.TextMetrics"
-                },
-                "top_values": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/dataprofile.ValueCount"
-                    }
-                },
-                "type": {
-                    "$ref": "#/definitions/datatype.FieldType"
-                },
-                "unique_rate": {
-                    "type": "number"
-                },
-                "value_count": {
-                    "type": "integer"
-                }
-            }
-        },
-        "dataprofile.NumericMetrics": {
-            "type": "object",
-            "properties": {
-                "max": {
-                    "type": "number"
-                },
-                "mean": {
-                    "type": "number"
-                },
-                "median": {
-                    "type": "number"
-                },
-                "min": {
-                    "type": "number"
-                },
-                "negative_count": {
-                    "type": "integer"
-                },
-                "p25": {
-                    "type": "number"
-                },
-                "p75": {
-                    "type": "number"
-                },
-                "p95": {
-                    "type": "number"
-                },
-                "stddev": {
-                    "type": "number"
-                },
-                "zero_count": {
-                    "type": "integer"
-                }
-            }
-        },
-        "dataprofile.Observation": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "string"
-                },
-                "field": {
-                    "type": "string"
-                },
-                "severity": {
-                    "type": "string"
-                },
-                "value": {
-                    "type": "number"
-                }
-            }
-        },
-        "dataprofile.Profile": {
-            "type": "object",
-            "properties": {
-                "data_scope": {
-                    "$ref": "#/definitions/dataprofile.DataScope"
-                },
-                "field_count": {
-                    "type": "integer"
-                },
-                "fields": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/dataprofile.FieldProfile"
-                    }
-                },
-                "mode": {
-                    "type": "string"
-                },
-                "observations": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/dataprofile.Observation"
-                    }
-                },
-                "partial": {
-                    "type": "boolean"
-                },
-                "profiled_at": {
-                    "type": "string"
-                },
-                "row_count": {
-                    "type": "integer"
-                },
-                "row_count_exact": {
-                    "type": "boolean"
-                },
-                "rows_scanned": {
-                    "type": "integer"
-                },
-                "sample_method": {
-                    "type": "string"
-                },
-                "sample_size": {
-                    "type": "integer"
-                },
-                "schema_version": {
-                    "type": "string"
-                },
-                "truncated": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "dataprofile.SpatialMetrics": {
-            "type": "object",
-            "properties": {
-                "empty_geometry_count": {
-                    "type": "integer"
-                },
-                "invalid_geometry_count": {
-                    "type": "integer"
-                },
-                "valid_geometry_count": {
-                    "type": "integer"
-                }
-            }
-        },
-        "dataprofile.TemporalMetrics": {
-            "type": "object",
-            "properties": {
-                "max": {
-                    "type": "string"
-                },
-                "min": {
-                    "type": "string"
-                }
-            }
-        },
-        "dataprofile.TextMetrics": {
-            "type": "object",
-            "properties": {
-                "avg_length": {
-                    "type": "number"
-                },
-                "blank_count": {
-                    "type": "integer"
-                },
-                "empty_count": {
-                    "type": "integer"
-                },
-                "max_length": {
-                    "type": "integer"
-                },
-                "min_length": {
-                    "type": "integer"
-                }
-            }
-        },
-        "dataprofile.ValueCount": {
-            "type": "object",
-            "properties": {
-                "count": {
-                    "type": "integer"
-                },
-                "rate": {
-                    "type": "number"
-                },
-                "value": {}
-            }
-        },
         "datatype.Bounds3D": {
             "type": "object",
             "properties": {
@@ -7259,6 +6972,9 @@
                 "actor_tenant_membership_id": {
                     "type": "integer"
                 },
+                "attempt": {
+                    "type": "integer"
+                },
                 "authorization_effects": {
                     "type": "array",
                     "items": {
@@ -7317,6 +7033,9 @@
                     "type": "integer"
                 },
                 "issued_authorization_version": {
+                    "type": "integer"
+                },
+                "max_attempts": {
                     "type": "integer"
                 },
                 "metadata": {
@@ -7394,6 +7113,299 @@
         "github_com_addp_common_models.JSONMap": {
             "type": "object",
             "additionalProperties": true
+        },
+        "github_com_addp_manager_internal_dataprofile.BooleanMetrics": {
+            "type": "object",
+            "properties": {
+                "false_count": {
+                    "type": "integer"
+                },
+                "true_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_dataprofile.DataScope": {
+            "type": "object",
+            "properties": {
+                "conditions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_manager_internal_dataprofile.DataScopeCondition"
+                    }
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "logic": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_dataprofile.DataScopeCondition": {
+            "type": "object",
+            "properties": {
+                "field": {
+                    "type": "string"
+                },
+                "operator": {
+                    "type": "string"
+                },
+                "value": {},
+                "values": {
+                    "type": "array",
+                    "items": {}
+                }
+            }
+        },
+        "github_com_addp_manager_internal_dataprofile.DistributionBucket": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "max": {},
+                "min": {}
+            }
+        },
+        "github_com_addp_manager_internal_dataprofile.FieldProfile": {
+            "type": "object",
+            "properties": {
+                "boolean": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_dataprofile.BooleanMetrics"
+                },
+                "distinct_approximate": {
+                    "type": "boolean"
+                },
+                "distinct_count": {
+                    "type": "integer"
+                },
+                "distribution": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_manager_internal_dataprofile.DistributionBucket"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "native_type": {
+                    "type": "string"
+                },
+                "null_count": {
+                    "type": "integer"
+                },
+                "null_rate": {
+                    "type": "number"
+                },
+                "nullable": {
+                    "type": "boolean"
+                },
+                "numeric": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_dataprofile.NumericMetrics"
+                },
+                "observations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_manager_internal_dataprofile.Observation"
+                    }
+                },
+                "primary_key": {
+                    "type": "boolean"
+                },
+                "spatial": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_dataprofile.SpatialMetrics"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "temporal": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_dataprofile.TemporalMetrics"
+                },
+                "text": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_dataprofile.TextMetrics"
+                },
+                "top_values": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_manager_internal_dataprofile.ValueCount"
+                    }
+                },
+                "type": {
+                    "$ref": "#/definitions/datatype.FieldType"
+                },
+                "unique_rate": {
+                    "type": "number"
+                },
+                "value_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_dataprofile.NumericMetrics": {
+            "type": "object",
+            "properties": {
+                "max": {
+                    "type": "number"
+                },
+                "mean": {
+                    "type": "number"
+                },
+                "median": {
+                    "type": "number"
+                },
+                "min": {
+                    "type": "number"
+                },
+                "negative_count": {
+                    "type": "integer"
+                },
+                "p25": {
+                    "type": "number"
+                },
+                "p75": {
+                    "type": "number"
+                },
+                "p95": {
+                    "type": "number"
+                },
+                "stddev": {
+                    "type": "number"
+                },
+                "zero_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_dataprofile.Observation": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "field": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_dataprofile.Profile": {
+            "type": "object",
+            "properties": {
+                "data_scope": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_dataprofile.DataScope"
+                },
+                "field_count": {
+                    "type": "integer"
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_manager_internal_dataprofile.FieldProfile"
+                    }
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "observations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_manager_internal_dataprofile.Observation"
+                    }
+                },
+                "partial": {
+                    "type": "boolean"
+                },
+                "profiled_at": {
+                    "type": "string"
+                },
+                "row_count": {
+                    "type": "integer"
+                },
+                "row_count_exact": {
+                    "type": "boolean"
+                },
+                "rows_scanned": {
+                    "type": "integer"
+                },
+                "sample_method": {
+                    "type": "string"
+                },
+                "sample_size": {
+                    "type": "integer"
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "truncated": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_dataprofile.SpatialMetrics": {
+            "type": "object",
+            "properties": {
+                "empty_geometry_count": {
+                    "type": "integer"
+                },
+                "invalid_geometry_count": {
+                    "type": "integer"
+                },
+                "valid_geometry_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_dataprofile.TemporalMetrics": {
+            "type": "object",
+            "properties": {
+                "max": {
+                    "type": "string"
+                },
+                "min": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_dataprofile.TextMetrics": {
+            "type": "object",
+            "properties": {
+                "avg_length": {
+                    "type": "number"
+                },
+                "blank_count": {
+                    "type": "integer"
+                },
+                "empty_count": {
+                    "type": "integer"
+                },
+                "max_length": {
+                    "type": "integer"
+                },
+                "min_length": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_dataprofile.ValueCount": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "rate": {
+                    "type": "number"
+                },
+                "value": {}
+            }
         },
         "github_com_addp_manager_internal_models.CADPreview": {
             "type": "object",
@@ -8086,7 +8098,7 @@
                     "$ref": "#/definitions/github_com_addp_manager_internal_service.DataProfileExecutionView"
                 },
                 "profile": {
-                    "$ref": "#/definitions/dataprofile.Profile"
+                    "$ref": "#/definitions/github_com_addp_manager_internal_dataprofile.Profile"
                 },
                 "profile_config_hash": {
                     "type": "string"
@@ -8121,7 +8133,7 @@
                     "type": "string"
                 },
                 "data_scope": {
-                    "$ref": "#/definitions/dataprofile.DataScope"
+                    "$ref": "#/definitions/github_com_addp_manager_internal_dataprofile.DataScope"
                 },
                 "locator": {
                     "type": "string"
@@ -8141,7 +8153,7 @@
             "type": "object",
             "properties": {
                 "data_scope": {
-                    "$ref": "#/definitions/dataprofile.DataScope"
+                    "$ref": "#/definitions/github_com_addp_manager_internal_dataprofile.DataScope"
                 },
                 "execution": {
                     "$ref": "#/definitions/github_com_addp_manager_internal_service.DataProfileExecutionView"

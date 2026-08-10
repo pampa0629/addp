@@ -15,9 +15,9 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/resourcetree"
 
+	engineselection "github.com/addp/common/engine/selection"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/taskprovider"
-	commonUtils "github.com/addp/common/utils"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/repository"
 	"github.com/google/uuid"
@@ -702,6 +702,9 @@ func (e *DevExecutor) executeWorkflow(
 			"result_size_bytes": len(resp.FinalResult),
 		},
 	}
+	if finalResult, ok := workflowFinalResultForExecution(resp.FinalResult); ok {
+		result["final_result"] = finalResult
+	}
 	if resp.ExecutionTimeMs != nil {
 		result["execution_time_ms"] = *resp.ExecutionTimeMs
 	}
@@ -716,6 +719,23 @@ func (e *DevExecutor) executeWorkflow(
 
 	log.Printf("🔵 [DevExecutor] executeWorkflow 结束: execution_id=%s", executionID)
 	return result, ""
+}
+
+const workflowExecutionResultPreviewLimitBytes = 64 * 1024
+
+// workflowFinalResultForExecution keeps small, inspectable workflow results in the
+// execution record. Large results remain runtime-only and are represented by the
+// summary above so execution history does not become a data store.
+func workflowFinalResultForExecution(raw string) (interface{}, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || len([]byte(raw)) > workflowExecutionResultPreviewLimitBytes {
+		return nil, false
+	}
+	var decoded interface{}
+	if err := json.Unmarshal([]byte(raw), &decoded); err == nil {
+		return decoded, true
+	}
+	return raw, true
 }
 
 func workflowExecutionOutputs(targets []WorkflowProducedTarget) commonModels.JSONMap {
@@ -1160,7 +1180,7 @@ func engineSupportsQueryResultKind(engine *commonModels.Engine, kind string) boo
 	if engine == nil {
 		return false
 	}
-	capabilities, err := commonUtils.ParseCapabilities(engine.Capabilities)
+	capabilities, err := engineselection.ParseCapabilities(engine.Capabilities)
 	if err != nil || capabilities.Compute == nil || capabilities.Compute.Query == nil {
 		return false
 	}
@@ -1171,7 +1191,7 @@ func requireQueryParameterCapability(engine *commonModels.Engine, language strin
 	if parameters == nil {
 		return nil
 	}
-	capabilities, err := commonUtils.ParseCapabilities(engine.Capabilities)
+	capabilities, err := engineselection.ParseCapabilities(engine.Capabilities)
 	if err != nil || capabilities == nil || capabilities.Compute == nil || capabilities.Compute.Query == nil ||
 		capabilities.Compute.Query.Parameters == nil || !capabilities.Compute.Query.Parameters.Supported ||
 		!slices.Contains(capabilities.Compute.Query.Parameters.Languages, language) {

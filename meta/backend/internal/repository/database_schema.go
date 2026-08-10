@@ -3,8 +3,8 @@ package repository
 import (
 	"fmt"
 
+	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/logger"
-	"github.com/addp/common/utils"
 	"github.com/addp/meta/internal/config"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -18,7 +18,7 @@ func PrepareSchema(cfg *config.Config) error {
 
 	dsn := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=%s",
-		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName, utils.GetTimezone(),
+		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName, commonConfig.GetTimezone(),
 	)
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: gormLogger.Default.LogMode(gormLogger.Silent),

@@ -3,7 +3,7 @@ package api
 import (
 	"testing"
 
-	"github.com/addp/common/authtest"
+	"github.com/addp/common/authorization/authtest"
 	standardauthorization "github.com/addp/standard/internal/authorization"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"

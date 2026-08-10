@@ -588,6 +588,88 @@ const docTemplate = `{
                 ]
             }
         },
+        "/notebook-copilot-sessions/{session_id}/generate": {
+            "post": {
+                "description": "未提交 selections 时返回当前 Session 内的数据源候选；提交每个角色确认的 selection 后重新验证 Catalog 与字段事实并生成代码。只返回代码，不执行。 | Without selections, returns data-source candidates inside the current Session. With one confirmed selection per role, revalidates Catalog and field facts before generating code. Returns code without executing it.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Notebook"
+                ],
+                "summary": "生成 Notebook Python 单元 | Generate Notebook Python cell",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Notebook 会话 ID | Notebook session ID",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "自然语言与已确认数据源 | Natural language and confirmed data sources",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.NotebookCopilotRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.NotebookCopilotResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.notebook.update",
+                    "develop.task.read"
+                ]
+            }
+        },
         "/notebook-engines": {
             "get": {
                 "produces": [
@@ -4372,6 +4454,116 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_service.NotebookCopilotCandidate": {
+            "type": "object",
+            "properties": {
+                "candidate_id": {
+                    "type": "string"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "engine_name": {
+                    "type": "string"
+                },
+                "engine_type": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "$ref": "#/definitions/client.EngineCatalogPath"
+                },
+                "path_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "recommendation_reason": {
+                    "type": "string"
+                },
+                "recommended": {
+                    "type": "boolean"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "term": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_service.NotebookCopilotRequest": {
+            "type": "object",
+            "properties": {
+                "kernel": {
+                    "type": "string"
+                },
+                "query": {
+                    "type": "string"
+                },
+                "selections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.NotebookCopilotSelection"
+                    }
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_service.NotebookCopilotResponse": {
+            "type": "object",
+            "properties": {
+                "candidates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.NotebookCopilotCandidate"
+                    }
+                },
+                "clarification_reason": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "explanation": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_service.NotebookCopilotSelection": {
+            "type": "object",
+            "properties": {
+                "candidate_id": {
+                    "type": "string"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "path": {
+                    "$ref": "#/definitions/client.EngineCatalogPath"
+                },
+                "role": {
                     "type": "string"
                 }
             }

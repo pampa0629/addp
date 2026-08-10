@@ -15,7 +15,7 @@ import (
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/common/sqldialect"
+	commonquery "github.com/addp/common/query"
 	"github.com/addp/service/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -116,7 +116,7 @@ func directSourceSQL(queryService *models.QueryService, engineType string) (stri
 	if queryService.ConfigType != "table" || strings.TrimSpace(queryService.TargetTable) == "" {
 		return "", fmt.Errorf("query service table source is missing")
 	}
-	dialect := sqldialect.ForEngine(engineType)
+	dialect := commonquery.ForEngine(engineType)
 	table := dialect.QuoteIdentifier(queryService.TargetTable)
 	if strings.TrimSpace(queryService.SchemaName) != "" {
 		table = dialect.QuoteIdentifier(queryService.SchemaName) + "." + table

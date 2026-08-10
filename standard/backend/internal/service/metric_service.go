@@ -11,10 +11,11 @@ import (
 type MetricService struct {
 	catRepo    *repository.MetricCategoryRepository
 	metricRepo *repository.MetricRepository
+	refs       *repository.TenantReferenceRepository
 }
 
-func NewMetricService(catRepo *repository.MetricCategoryRepository, metricRepo *repository.MetricRepository) *MetricService {
-	return &MetricService{catRepo: catRepo, metricRepo: metricRepo}
+func NewMetricService(catRepo *repository.MetricCategoryRepository, metricRepo *repository.MetricRepository, refs *repository.TenantReferenceRepository) *MetricService {
+	return &MetricService{catRepo: catRepo, metricRepo: metricRepo, refs: refs}
 }
 
 // --- 指标目录 ---
@@ -24,6 +25,9 @@ func (s *MetricService) ListCategories(tenantID int64) ([]models.MetricCategory,
 }
 
 func (s *MetricService) CreateCategory(req *models.CreateMetricCategoryRequest, tenantID, userID int64) (*models.MetricCategory, error) {
+	if err := s.refs.RequireMetricCategory(tenantID, req.ParentID); err != nil {
+		return nil, err
+	}
 	c := &models.MetricCategory{
 		TenantID:    tenantID,
 		Name:        req.Name,
@@ -44,6 +48,9 @@ func (s *MetricService) UpdateCategory(id, tenantID, userID int64, req *models.U
 	if err != nil {
 		return nil, err
 	}
+	if err := s.validateCategoryParent(id, tenantID, req.ParentID); err != nil {
+		return nil, err
+	}
 	if req.Name != "" {
 		c.Name = req.Name
 	}
@@ -55,6 +62,23 @@ func (s *MetricService) UpdateCategory(id, tenantID, userID int64, req *models.U
 		return nil, err
 	}
 	return c, nil
+}
+
+func (s *MetricService) validateCategoryParent(id, tenantID int64, parentID *int64) error {
+	if err := s.refs.RequireMetricCategory(tenantID, parentID); err != nil {
+		return err
+	}
+	for current := parentID; current != nil; {
+		if *current == id {
+			return fmt.Errorf("指标分类父级不能是自身或其子级")
+		}
+		parent, err := s.catRepo.GetByID(*current, tenantID)
+		if err != nil {
+			return err
+		}
+		current = parent.ParentID
+	}
+	return nil
 }
 
 func (s *MetricService) DeleteCategory(id, tenantID int64) error {
@@ -72,6 +96,9 @@ func (s *MetricService) GetMetric(id, tenantID int64) (*models.Metric, error) {
 }
 
 func (s *MetricService) CreateMetric(req *models.CreateMetricRequest, tenantID, userID int64) (*models.Metric, error) {
+	if err := s.validateMetricReferences(tenantID, req.CategoryID, req.DomainID, req.UnitID, req.BaseMetricID, req.ElementIDs, req.DependencyIDs); err != nil {
+		return nil, err
+	}
 	// 检查 code 唯一性
 	exists, err := s.metricRepo.ExistsByCode(req.Code, tenantID, 0)
 	if err != nil {
@@ -99,22 +126,8 @@ func (s *MetricService) CreateMetric(req *models.CreateMetricRequest, tenantID, 
 		CreatedBy:        userID,
 	}
 
-	if err := s.metricRepo.Create(metric); err != nil {
+	if err := s.metricRepo.CreateWithRelations(metric, req.ElementIDs, req.DependencyIDs); err != nil {
 		return nil, err
-	}
-
-	// 设置关联数据元（原子指标）
-	if len(req.ElementIDs) > 0 {
-		if err := s.metricRepo.SetElementMappings(metric.ID, req.ElementIDs); err != nil {
-			return nil, err
-		}
-	}
-
-	// 设置依赖指标（复合指标）
-	if len(req.DependencyIDs) > 0 {
-		if err := s.metricRepo.SetDependencies(metric.ID, req.DependencyIDs); err != nil {
-			return nil, err
-		}
 	}
 
 	return metric, nil
@@ -124,6 +137,14 @@ func (s *MetricService) UpdateMetric(id, tenantID, userID int64, req *models.Upd
 	metric, err := s.metricRepo.GetByID(id, tenantID)
 	if err != nil {
 		return nil, err
+	}
+	if err := s.validateMetricReferences(tenantID, req.CategoryID, req.DomainID, req.UnitID, req.BaseMetricID, req.ElementIDs, req.DependencyIDs); err != nil {
+		return nil, err
+	}
+	for _, dependencyID := range req.DependencyIDs {
+		if dependencyID == id {
+			return nil, fmt.Errorf("指标不能依赖自身")
+		}
 	}
 
 	if req.Name != "" {
@@ -147,22 +168,8 @@ func (s *MetricService) UpdateMetric(id, tenantID, userID int64, req *models.Upd
 	}
 	metric.UpdatedBy = &userID
 
-	if err := s.metricRepo.Update(metric); err != nil {
+	if err := s.metricRepo.UpdateWithRelations(metric, req.ElementIDs, req.DependencyIDs); err != nil {
 		return nil, err
-	}
-
-	// 更新关联数据元
-	if req.ElementIDs != nil {
-		if err := s.metricRepo.SetElementMappings(metric.ID, req.ElementIDs); err != nil {
-			return nil, err
-		}
-	}
-
-	// 更新依赖指标
-	if req.DependencyIDs != nil {
-		if err := s.metricRepo.SetDependencies(metric.ID, req.DependencyIDs); err != nil {
-			return nil, err
-		}
 	}
 
 	return metric, nil
@@ -180,10 +187,26 @@ func (s *MetricService) DeprecateMetric(id, tenantID, userID int64) error {
 	return s.metricRepo.UpdateStatus(id, tenantID, "deprecated", userID)
 }
 
-func (s *MetricService) GetElementMappings(metricID int64) ([]models.MetricElementMapping, error) {
-	return s.metricRepo.GetElementMappings(metricID)
+func (s *MetricService) GetElementMappings(metricID, tenantID int64) ([]models.MetricElementMapping, error) {
+	return s.metricRepo.GetElementMappings(metricID, tenantID)
 }
 
-func (s *MetricService) GetDependencies(metricID int64) ([]models.MetricDependency, error) {
-	return s.metricRepo.GetDependencies(metricID)
+func (s *MetricService) GetDependencies(metricID, tenantID int64) ([]models.MetricDependency, error) {
+	return s.metricRepo.GetDependencies(metricID, tenantID)
+}
+
+func (s *MetricService) validateMetricReferences(tenantID int64, categoryID, domainID, unitID, baseMetricID *int64, elementIDs, dependencyIDs []int64) error {
+	for _, validate := range []func() error{
+		func() error { return s.refs.RequireMetricCategory(tenantID, categoryID) },
+		func() error { return s.refs.RequireDomain(tenantID, domainID) },
+		func() error { return s.refs.RequireUnit(tenantID, unitID) },
+		func() error { return s.refs.RequireMetric(tenantID, baseMetricID) },
+		func() error { return s.refs.RequireElements(tenantID, elementIDs) },
+		func() error { return s.refs.RequireMetrics(tenantID, dependencyIDs) },
+	} {
+		if err := validate(); err != nil {
+			return err
+		}
+	}
+	return nil
 }

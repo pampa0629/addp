@@ -122,7 +122,7 @@ func newNotebookBindingHandlerForTest(t *testing.T) (*NotebookHandler, *service.
 		tokens,
 	)
 	taskService := service.NewDevTaskService(repository.NewDevTaskRepository(db), nil)
-	return NewNotebookHandler(jupyterService, nil, taskService, nil, "http://localhost:8185"), taskService
+	return NewNotebookHandler(jupyterService, nil, taskService, nil, "http://localhost:8185", "http://localhost:8087"), taskService
 }
 
 func updateNotebookBindingRequestForTest(t *testing.T, handler *NotebookHandler, body string) *httptest.ResponseRecorder {

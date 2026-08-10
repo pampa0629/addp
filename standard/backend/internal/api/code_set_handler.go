@@ -38,7 +38,7 @@ func (h *CodeSetHandler) ListCodeSets(c *gin.Context) {
 
 	codeSets, total, err := h.codeSetService.ListCodeSets(tenantID, keyword, codeSetType, page, pageSize)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -69,13 +69,13 @@ func (h *CodeSetHandler) CreateCodeSet(c *gin.Context) {
 
 	var req models.CreateCodeSetRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
 	codeSet, err := h.codeSetService.CreateCodeSet(tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
@@ -97,7 +97,7 @@ func (h *CodeSetHandler) GetCodeSet(c *gin.Context) {
 
 	codeSet, err := h.codeSetService.GetCodeSet(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		respondError(c, http.StatusNotFound, err)
 		return
 	}
 
@@ -119,13 +119,13 @@ func (h *CodeSetHandler) UpdateCodeSet(c *gin.Context) {
 
 	var req models.UpdateCodeSetRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
 	codeSet, err := h.codeSetService.UpdateCodeSet(id, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
@@ -146,7 +146,7 @@ func (h *CodeSetHandler) DeleteCodeSet(c *gin.Context) {
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 
 	if err := h.codeSetService.DeleteCodeSet(id, tenantID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
@@ -168,7 +168,7 @@ func (h *CodeSetHandler) GetCodeItems(c *gin.Context) {
 
 	items, err := h.codeSetService.GetCodeItems(codeSetID, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		respondError(c, http.StatusNotFound, err)
 		return
 	}
 
@@ -190,13 +190,13 @@ func (h *CodeSetHandler) CreateCodeItem(c *gin.Context) {
 
 	var req models.CreateCodeItemRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
 	item, err := h.codeSetService.CreateCodeItem(codeSetID, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
@@ -219,13 +219,13 @@ func (h *CodeSetHandler) UpdateCodeItem(c *gin.Context) {
 
 	var req models.UpdateCodeItemRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
 	item, err := h.codeSetService.UpdateCodeItem(codeSetID, itemID, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
@@ -247,7 +247,7 @@ func (h *CodeSetHandler) DeleteCodeItem(c *gin.Context) {
 	itemID, _ := strconv.ParseInt(c.Param("iid"), 10, 64)
 
 	if err := h.codeSetService.DeleteCodeItem(codeSetID, itemID, tenantID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 

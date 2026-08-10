@@ -129,8 +129,13 @@ async function loadTaskDetail() {
 }
 
 async function loadTaskEngineDescriptors(task) {
-	const engines = await systemEnginesAPI.list()
+	const engines = await resolveEngines()
 	return taskEngineDescriptors(task, engines)
+}
+
+async function resolveEngines() {
+  const response = await systemEnginesAPI.list()
+  return response?.data || response || []
 }
 
 async function restoreSourceItemForEdit(task) {

@@ -9,7 +9,7 @@ import (
 
 	"github.com/addp/asset/internal/models"
 	assetservice "github.com/addp/asset/internal/service"
-	"github.com/addp/common/authtest"
+	"github.com/addp/common/authorization/authtest"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )

@@ -146,6 +146,7 @@
         />
       </div>
     </el-card>
+    <TransferAIAssistant @task-created="loadPageData" />
   </div>
 </template>
 
@@ -160,6 +161,7 @@ import { formatDate } from '@common-ui'
 import { formatSchedule, getTaskStatusLabel, getTaskStatusTagType } from '@/utils/formatters'
 import { buildCDCStopRequest, continuousStartDisabledReason, isCDCSchemaBlocked, isDatabaseCDCTask } from '@/utils/cdcTask.mjs'
 import { navigateTransferRoute } from '@/utils/moduleNavigation'
+import TransferAIAssistant from '@/components/TransferAIAssistant.vue'
 
 const router = useRouter()
 const { t } = useI18n()

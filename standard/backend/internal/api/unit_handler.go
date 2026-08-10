@@ -34,7 +34,7 @@ func (h *UnitHandler) ListCategories(c *gin.Context) {
 	tenantID := getTenantID(c)
 	cats, err := h.svc.ListCategories(tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, cats)
@@ -51,13 +51,13 @@ func (h *UnitHandler) ListCategories(c *gin.Context) {
 func (h *UnitHandler) CreateCategory(c *gin.Context) {
 	var req models.CreateMeasurementCategoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	tenantID := getTenantID(c)
 	cat, err := h.svc.CreateCategory(&req, tenantID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusCreated, cat)
@@ -79,13 +79,13 @@ func (h *UnitHandler) UpdateCategory(c *gin.Context) {
 	}
 	var req models.UpdateMeasurementCategoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	tenantID := getTenantID(c)
 	cat, err := h.svc.UpdateCategory(id, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, cat)
@@ -107,7 +107,7 @@ func (h *UnitHandler) DeleteCategory(c *gin.Context) {
 	}
 	tenantID := getTenantID(c)
 	if err := h.svc.DeleteCategory(id, tenantID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
@@ -133,7 +133,7 @@ func (h *UnitHandler) ListUnits(c *gin.Context) {
 	}
 	units, err := h.svc.ListUnits(tenantID, categoryID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, units)
@@ -173,13 +173,13 @@ func (h *UnitHandler) GetUnit(c *gin.Context) {
 func (h *UnitHandler) CreateUnit(c *gin.Context) {
 	var req models.CreateUnitRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	tenantID := getTenantID(c)
 	unit, err := h.svc.CreateUnit(&req, tenantID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusCreated, unit)
@@ -201,13 +201,13 @@ func (h *UnitHandler) UpdateUnit(c *gin.Context) {
 	}
 	var req models.UpdateUnitRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	tenantID := getTenantID(c)
 	unit, err := h.svc.UpdateUnit(id, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, unit)
@@ -229,7 +229,7 @@ func (h *UnitHandler) DeleteUnit(c *gin.Context) {
 	}
 	tenantID := getTenantID(c)
 	if err := h.svc.DeleteUnit(id, tenantID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})

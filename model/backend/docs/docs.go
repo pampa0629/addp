@@ -379,7 +379,9 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "model.entity.create",
-                    "model.entity_relation.create"
+                    "model.entity.delete",
+                    "model.entity_relation.create",
+                    "model.entity_relation.delete"
                 ]
             }
         },
@@ -726,6 +728,43 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "model.entity.delete"
+                ]
+            }
+        },
+        "/entities/{id}/reopen": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "重新打开实体 | Reopen entity",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "实体ID | Entity ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "重新打开成功 | Reopened successfully",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MessageResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.entity.update"
                 ]
             }
         },
@@ -1162,6 +1201,43 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "model.logical_model.delete"
+                ]
+            }
+        },
+        "/logical-tables/{id}/approve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "审批逻辑表 | Approve logical table",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "逻辑表ID | Logical table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "审批成功 | Approved successfully",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MessageResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.update"
                 ]
             }
         },
@@ -1650,6 +1726,43 @@ const docTemplate = `{
                     "model.logical_model.read"
                 ]
             }
+        },
+        "/logical-tables/{id}/reopen": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "重新打开逻辑表 | Reopen logical table",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "逻辑表ID | Logical table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "重新打开成功 | Reopened successfully",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MessageResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.update"
+                ]
+            }
         }
     },
     "definitions": {
@@ -1684,9 +1797,17 @@ const docTemplate = `{
         "github_com_addp_model_internal_models.CreateEntityAttributeRequest": {
             "type": "object",
             "required": [
+                "column_name",
+                "data_type",
                 "name"
             ],
             "properties": {
+                "column_name": {
+                    "type": "string"
+                },
+                "data_type": {
+                    "type": "string"
+                },
                 "description": {
                     "type": "string"
                 },
@@ -1899,9 +2020,15 @@ const docTemplate = `{
             "properties": {
                 "mermaid_code": {
                     "type": "string"
-                },
-                "mode": {
-                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.MessageResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "操作成功"
                 }
             }
         },
@@ -1929,6 +2056,12 @@ const docTemplate = `{
         "github_com_addp_model_internal_models.UpdateEntityAttributeRequest": {
             "type": "object",
             "properties": {
+                "column_name": {
+                    "type": "string"
+                },
+                "data_type": {
+                    "type": "string"
+                },
                 "description": {
                     "type": "string"
                 },

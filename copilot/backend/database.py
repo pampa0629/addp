@@ -24,7 +24,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 # 在模块级别导入所有模型（避免在异步函数中导入导致的延迟）
-from models import conversation, inference_scenario_binding, message, matching_policy  # noqa: E402,F401
+from models import inference_scenario_binding  # noqa: E402,F401
 
 
 async def init_db():
@@ -34,14 +34,13 @@ async def init_db():
 
     # 在线程池中执行同步数据库操作
     def _sync_create():
-        migration = Path(__file__).parent / "migrations" / "001_inference_scenario_bindings.sql"
         with engine.begin() as connection:
-            connection.execute(text(migration.read_text(encoding="utf-8")))
+            for migration in sorted((Path(__file__).parent / "migrations").glob("*.sql")):
+                connection.execute(text(migration.read_text(encoding="utf-8")))
         Base.metadata.create_all(bind=engine)
 
     await loop.run_in_executor(None, _sync_create)
 
-    print("Copilot database schema initialized", flush=True)
 
 
 def get_db():

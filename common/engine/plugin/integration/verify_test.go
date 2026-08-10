@@ -166,7 +166,7 @@ func TestObjectStoragePlugins(t *testing.T) {
 // TestPluginRegistry 验证插件注册功能
 func TestPluginRegistry(t *testing.T) {
 	// 验证已知插件已注册
-	expectedPlugins := []string{"postgresql", "mysql", "minio", "s3"}
+	expectedPlugins := []string{"postgresql", "oracle", "mysql", "minio", "s3"}
 
 	for _, dbType := range expectedPlugins {
 		if !plugin.Has(dbType) {

@@ -10,8 +10,8 @@ import (
 	"github.com/addp/common/client"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	commonquery "github.com/addp/common/query"
 	"github.com/addp/common/resourcetree"
-	"github.com/addp/common/sqleffect"
 	"github.com/addp/service/internal/models"
 	"github.com/addp/service/internal/repository"
 )
@@ -66,7 +66,7 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 		if req.SqlQuery == "" {
 			return nil, errors.New("sql_query is required for sql mode")
 		}
-		if err := sqleffect.RequireReadOnly(req.SqlQuery); err != nil {
+		if err := commonquery.RequireReadOnly(req.SqlQuery); err != nil {
 			return nil, fmt.Errorf("sql_query must be read-only: %w", err)
 		}
 		if req.OutputContract == nil || req.OutputContract.Table == nil || len(req.OutputContract.Table.Fields) == 0 {

@@ -72,7 +72,15 @@ const props = defineProps({
 
 const SCENARIOS = {
   agent: ['reasoning', 'general-chat'],
-  copilot: ['nl2sql', 'nl2dag', 'navigation_guide', 'knowledge_graph_extraction']
+  copilot: [
+    'resource_resolution',
+    'query_generation',
+    'workflow_generation',
+    'notebook_generation',
+    'transfer_generation',
+    'navigation_guide',
+    'knowledge_graph_extraction'
+  ]
 }
 
 const { t } = useI18n()

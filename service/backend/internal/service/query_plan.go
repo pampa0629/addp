@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/datatype"
-	"github.com/addp/common/sqldialect"
+	commonquery "github.com/addp/common/query"
 	"github.com/addp/service/internal/models"
 )
 
@@ -114,7 +114,7 @@ func compileQueryPlan(
 		cursorValues = payload.Values
 	}
 
-	dialect := sqldialect.ForEngine(engineType)
+	dialect := commonquery.ForEngine(engineType)
 	hidden := hiddenOrderFields(selected, orderBy)
 	selectFields := append(append([]string(nil), selected...), hidden...)
 	selectSQL := make([]string, 0, len(selectFields))
@@ -154,7 +154,8 @@ func compileQueryPlan(
 	builder.WriteString(strings.Join(selectSQL, ", "))
 	builder.WriteString(" FROM (")
 	builder.WriteString(inner)
-	builder.WriteString(") AS addp_source")
+	builder.WriteString(")")
+	builder.WriteString(dialect.SubqueryAlias("addp_source"))
 	if len(whereParts) > 0 {
 		builder.WriteString(" WHERE ")
 		builder.WriteString(strings.Join(whereParts, " AND "))
@@ -165,10 +166,10 @@ func compileQueryPlan(
 		orderParts[index] = "addp_source." + dialect.QuoteIdentifier(order.Field) + " " + strings.ToUpper(order.Direction)
 	}
 	builder.WriteString(strings.Join(orderParts, ", "))
-	builder.WriteString(fmt.Sprintf(" LIMIT %d", limit+1))
+	plannedSQL := dialect.AppendPaginationSQL(builder.String(), limit+1, 0)
 
 	return &compiledQueryPlan{
-		SQL: builder.String(), Args: args, Limit: limit,
+		SQL: plannedSQL, Args: args, Limit: limit,
 		SelectedFields: selected, HiddenFields: hidden, OrderBy: orderBy,
 		QueryHash: queryHash, ServiceVersion: version,
 	}, nil
@@ -321,7 +322,7 @@ func compileFilterNode(filter *models.QueryFilter, service *models.QueryService,
 	if !exists || !filterFieldAllowed(service, protocol, field.Name, strings.ToLower(strings.TrimSpace(filter.Op))) {
 		return "", fmt.Errorf("%w: field %s is not filterable", ErrInvalidStructuredQuery, filter.Field)
 	}
-	dialect := sqldialect.ForEngine(engineType)
+	dialect := commonquery.ForEngine(engineType)
 	column := "addp_source." + dialect.QuoteIdentifier(field.Name)
 	op := strings.ToLower(strings.TrimSpace(filter.Op))
 	switch op {
@@ -491,7 +492,7 @@ func supportsGeoJSONProjection(engineType string) bool {
 	}
 }
 
-func compileCursorPredicate(orderBy []models.QueryOrder, values []interface{}, fields map[string]datatype.FieldInfo, dialect sqldialect.Dialect, args *[]interface{}) (string, error) {
+func compileCursorPredicate(orderBy []models.QueryOrder, values []interface{}, fields map[string]datatype.FieldInfo, dialect commonquery.Dialect, args *[]interface{}) (string, error) {
 	parts := make([]string, len(orderBy))
 	for index, order := range orderBy {
 		field := fields[order.Field]

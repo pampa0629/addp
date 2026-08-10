@@ -94,6 +94,9 @@ Manifest 不保存第二套 HTTP 路径事实。ToolExecutor 通过 Python SDK �
 | `data.preview` | Manager | `manager.data_item.read` | read | none | locator | 256 KiB |
 | `workflow.operators.list` | Develop | `develop.task.read` | read | none | none | 512 KiB |
 | `workflow.draft.generate` | Copilot | `copilot.workflow.execute` | propose | none | none | 256 KiB |
+| `query.draft.generate` | Copilot | `copilot.sql.execute` | propose | none | none | 256 KiB |
+| `notebook.draft.generate` | Copilot | `copilot.notebook.execute` | propose | none | none | 512 KiB |
+| `transfer.draft.generate` | Copilot | `copilot.transfer.execute` | propose | none | none | 256 KiB |
 | `workflow.validate` | Develop | `develop.task.execute` | read | none | none | 128 KiB |
 | `workflow.run` | Develop | `develop.task.execute` | write | owner_policy | execution | 64 KiB |
 | `execution.get` | Develop | `develop.task.read` | read | none | execution | 128 KiB |

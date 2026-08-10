@@ -35,7 +35,7 @@ func (h *assetDiscoverableHandler) listDiscoverableAssets(c *gin.Context) {
 	var metrics []standardModels.Metric
 	if err := h.db.Where("tenant_id = ? AND status = 'approved'", tenantID).
 		Find(&metrics).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 

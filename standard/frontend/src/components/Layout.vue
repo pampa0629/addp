@@ -186,13 +186,14 @@ const handleCommand = (command) => {
 .content {
   background: var(--addp-bg-secondary) !important;
   overflow-y: auto;
+  padding: 0;
 }
 
 .content-only {
   width: 100%;
   height: auto;
   min-height: 0;
-  padding: 20px;
+  padding: 0;
   margin: 0;
   background: var(--addp-bg-secondary) !important;
   overflow: visible;

@@ -1,0 +1,4 @@
+interface:
+  display_name: "查询生成"
+  short_description: "在当前查询工作台引擎范围内发现资源并生成候选查询语言"
+  default_prompt: "根据自然语言需求，在当前查询引擎和已验证资源范围内生成候选查询。"

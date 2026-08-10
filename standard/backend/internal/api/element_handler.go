@@ -24,7 +24,7 @@ func NewElementHandler(svc *service.ElementService) *ElementHandler {
 // @Summary 获取数据元列表 | List data elements
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} models.QualityRulesResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.element.read"]
 // @Router /elements [get]
@@ -54,7 +54,7 @@ func (h *ElementHandler) ListElements(c *gin.Context) {
 
 	elements, total, err := h.svc.ListElements(tenantID, opts)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	page := opts.Page
@@ -84,7 +84,7 @@ func (h *ElementHandler) ListElements(c *gin.Context) {
 func (h *ElementHandler) CreateElement(c *gin.Context) {
 	var req models.CreateElementRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
@@ -93,7 +93,7 @@ func (h *ElementHandler) CreateElement(c *gin.Context) {
 
 	element, err := h.svc.CreateElement(&req, tenantID, userID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusCreated, element)
@@ -142,7 +142,7 @@ func (h *ElementHandler) UpdateElement(c *gin.Context) {
 
 	var req models.UpdateElementRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 
@@ -151,7 +151,7 @@ func (h *ElementHandler) UpdateElement(c *gin.Context) {
 
 	element, err := h.svc.UpdateElement(id, tenantID, userID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, element)
@@ -175,7 +175,7 @@ func (h *ElementHandler) DeleteElement(c *gin.Context) {
 
 	tenantID := getTenantID(c)
 	if err := h.svc.DeleteElement(id, tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
@@ -201,7 +201,7 @@ func (h *ElementHandler) ApproveElement(c *gin.Context) {
 	userID := getUserID(c)
 
 	if err := h.svc.ApproveElement(id, tenantID, userID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgApproveSuccess)})

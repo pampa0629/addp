@@ -26,6 +26,12 @@ class PlatformSkillToolTests(unittest.TestCase):
             ],
         )
         self.assertEqual(skill.max_iterations, 8)
+        self.assertEqual(skill.required_skills, ["data-discovery"])
+        self.assertIn("# 数据发现与确认", skill.load_body(registry))
+
+    def test_skill_dependencies_do_not_inherit_tool_permissions(self):
+        registry = _load_skill_registry()
+        self.assertEqual(registry["notebook-generation"].tools, ["notebook.draft.generate"])
 
     def test_langchain_adapter_uses_runtime_safe_names_and_manifest_schemas(self):
         tools = create_agent_tools("token", "run-1")

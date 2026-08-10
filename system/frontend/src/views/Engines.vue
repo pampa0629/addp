@@ -39,23 +39,26 @@
           </template>
         </el-table-column>
 
-        <!-- 连接状态（图标方式） -->
-        <el-table-column :label="t('system.engine.columns.connection')" width="100" align="center">
+        <!-- 最近连接检测 -->
+        <el-table-column :label="t('system.engine.columns.connection')" width="140" align="center">
           <template #default="{ row }">
             <el-tooltip
               :content="getConnectionTooltip(row)"
               placement="top"
             >
-              <span
-                class="connection-status-icon"
-                :class="getConnectionStatusClass(row.connection_status)"
-              ></span>
+              <span class="connection-status-cell">
+                <span
+                  class="connection-status-icon"
+                  :class="getConnectionStatusClass(row.connection_status)"
+                ></span>
+                <span class="connection-status-label">{{ getConnectionStatusLabel(row.connection_status) }}</span>
+              </span>
             </el-tooltip>
           </template>
         </el-table-column>
 
-        <!-- 激活状态 -->
-        <el-table-column :label="t('system.engine.columns.status')" width="100">
+        <!-- 启用状态 -->
+        <el-table-column :label="t('system.engine.columns.status')" width="110">
           <template #default="{ row }">
             <el-tooltip :disabled="!row.deletion_error" :content="row.deletion_error" placement="top">
               <el-tag :type="getLifecycleTagType(row.lifecycle_state)">
@@ -880,6 +883,12 @@ const storageEngineTypeOptions = computed(() => ([
     desc: t('system.engine.registerPanel.types.postgresql')
   },
   {
+    value: 'oracle',
+    icon: 'O',
+    label: 'Oracle Database',
+    desc: t('system.engine.registerPanel.types.oracle')
+  },
+  {
     value: 'mysql',
     icon: '🐬',
     label: 'MySQL',
@@ -1202,7 +1211,7 @@ const getCapabilityTagText = (tag) => {
   return translateCapabilityTagValue(tag) || humanizeCapabilityValue(tag.id)
 }
 
-// 获取连接状态标签
+// 获取最近检测结果标签
 const getConnectionStatusLabel = (status) => {
   const labelMap = {
     'online': t('system.engine.connection.online'),
@@ -1213,7 +1222,7 @@ const getConnectionStatusLabel = (status) => {
   return labelMap[status] || t('system.engine.connection.notChecked')
 }
 
-// 获取连接状态图标 CSS class
+// 获取最近检测结果图标 CSS class
 const getConnectionStatusClass = (status) => {
   const classMap = {
     'online': 'status-online',
@@ -1224,7 +1233,7 @@ const getConnectionStatusClass = (status) => {
   return classMap[status] || 'status-unknown'
 }
 
-// 获取连接状态提示信息
+// 获取最近检测结果提示信息
 const getConnectionTooltip = (row) => {
   if (!row.connection_status) return t('system.engine.connection.notChecked')
 
@@ -2336,7 +2345,7 @@ onUnmounted(() => {
   background-color: var(--addp-bg-primary) !important;
 }
 
-/* 连接状态图标样式 */
+/* 最近检测结果图标样式 */
 .connection-status-icon {
   display: inline-block;
   width: 12px;
@@ -2344,6 +2353,18 @@ onUnmounted(() => {
   border-radius: 50%;
   cursor: help;
   transition: all 0.3s;
+}
+
+.connection-status-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.connection-status-label {
+  color: var(--addp-text-secondary);
+  font-size: 12px;
 }
 
 .connection-status-icon:hover {

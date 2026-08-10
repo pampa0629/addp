@@ -3,6 +3,7 @@
 #
 # 包含服务:
 # - postgres: 业务数据库（PostGIS 支持空间数据）
+# - oracle: Oracle Free 23ai 业务数据库（普通表只读测试源）
 # - supermap-postgresql: SuperMap SDX+ for PostgreSQL 专用数据库（不安装 PostGIS）
 # - minio: 业务对象存储（用户文件）
 # - doris-fe: Apache Doris Frontend（OLAP 分析引擎）
@@ -51,6 +52,29 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - business-network
+    restart: unless-stopped
+
+  # Oracle Free 23ai；CDC 与 ArcGIS SDE 不在第一期业务容器中启用。
+  oracle:
+    image: ${ORACLE_IMAGE:-gvenzl/oracle-free:23-slim}
+    container_name: business-oracle
+    environment:
+      ORACLE_PASSWORD: ${ORACLE_SYS_PASSWORD:-oracle_sys_password}
+      APP_USER: ${ORACLE_APP_USER:-business}
+      APP_USER_PASSWORD: ${ORACLE_APP_PASSWORD:-business_oracle_password}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "${ORACLE_PORT:-15210}:1521"
+    volumes:
+      - oracle_data:/opt/oracle/oradata
+    healthcheck:
+      test: ["CMD-SHELL", "healthcheck.sh"]
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 120s
     networks:
       - business-network
     restart: unless-stopped
@@ -421,6 +445,7 @@ services:
 
 volumes:
   postgres_data:
+  oracle_data:
   supermap_postgresql_data:
   minio_data:
   mysql_data:

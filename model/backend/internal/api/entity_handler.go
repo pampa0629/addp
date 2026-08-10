@@ -56,10 +56,19 @@ func (h *EntityHandler) ListEntities(c *gin.Context) {
 			opts.PageSize = ps
 		}
 	}
+	if opts.Page <= 0 {
+		opts.Page = 1
+	}
+	if opts.PageSize <= 0 {
+		opts.PageSize = 20
+	}
+	if opts.PageSize > 100 {
+		opts.PageSize = 100
+	}
 
 	entities, total, err := h.svc.ListEntities(tenantID, opts)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
 		return
 	}
 	totalPages := 0
@@ -92,7 +101,7 @@ func (h *EntityHandler) ListEntities(c *gin.Context) {
 func (h *EntityHandler) CreateEntity(c *gin.Context) {
 	var req models.CreateEntityRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 
@@ -101,7 +110,7 @@ func (h *EntityHandler) CreateEntity(c *gin.Context) {
 
 	entity, err := h.svc.CreateEntity(&req, tenantID, userID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusCreated, entity)
@@ -120,14 +129,14 @@ func (h *EntityHandler) CreateEntity(c *gin.Context) {
 func (h *EntityHandler) GetEntity(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	entity, err := h.svc.GetEntity(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, modeli18n.MsgEntityNotFound)})
+		c.JSON(http.StatusNotFound, errorResponse(commoni18n.T(c, modeli18n.MsgEntityNotFound)))
 		return
 	}
 	c.JSON(http.StatusOK, entity)
@@ -148,13 +157,13 @@ func (h *EntityHandler) GetEntity(c *gin.Context) {
 func (h *EntityHandler) UpdateEntity(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 
 	var req models.UpdateEntityRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 
@@ -163,7 +172,7 @@ func (h *EntityHandler) UpdateEntity(c *gin.Context) {
 
 	entity, err := h.svc.UpdateEntity(id, tenantID, userID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, entity)
@@ -182,13 +191,13 @@ func (h *EntityHandler) UpdateEntity(c *gin.Context) {
 func (h *EntityHandler) DeleteEntity(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	if err := h.svc.DeleteEntity(id, tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
@@ -207,7 +216,7 @@ func (h *EntityHandler) DeleteEntity(c *gin.Context) {
 func (h *EntityHandler) ApproveEntity(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 
@@ -215,10 +224,33 @@ func (h *EntityHandler) ApproveEntity(c *gin.Context) {
 	userID := getUserID(c)
 
 	if err := h.svc.ApproveEntity(id, tenantID, userID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "approved"})
+}
+
+// ReopenEntity POST /api/model/entities/:id/reopen
+// @Summary 重新打开实体 | Reopen entity
+// @Tags Model
+// @Produce json
+// @Param id path int true "实体ID | Entity ID"
+// @Success 200 {object} models.MessageResponse "重新打开成功 | Reopened successfully"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.entity.update"]
+// @Router /entities/{id}/reopen [post]
+// @Security BearerAuth
+func (h *EntityHandler) ReopenEntity(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
+		return
+	}
+	if err := h.svc.ReopenEntity(id, getTenantID(c), getUserID(c)); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "reopened"})
 }
 
 // GetAttributes GET /api/model/entities/:id/attributes
@@ -234,14 +266,14 @@ func (h *EntityHandler) ApproveEntity(c *gin.Context) {
 func (h *EntityHandler) GetAttributes(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	attrs, err := h.svc.GetAttributes(entityID, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		c.JSON(http.StatusNotFound, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, attrs)
@@ -262,20 +294,20 @@ func (h *EntityHandler) GetAttributes(c *gin.Context) {
 func (h *EntityHandler) CreateAttribute(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 
 	var req models.CreateEntityAttributeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	attr, err := h.svc.CreateAttribute(entityID, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusCreated, attr)
@@ -297,25 +329,25 @@ func (h *EntityHandler) CreateAttribute(c *gin.Context) {
 func (h *EntityHandler) UpdateAttribute(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 	attrID, err := strconv.ParseInt(c.Param("aid"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidAttributeID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidAttributeID)))
 		return
 	}
 
 	var req models.UpdateEntityAttributeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	attr, err := h.svc.UpdateAttribute(attrID, entityID, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, attr)
@@ -335,18 +367,18 @@ func (h *EntityHandler) UpdateAttribute(c *gin.Context) {
 func (h *EntityHandler) DeleteAttribute(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 	attrID, err := strconv.ParseInt(c.Param("aid"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidAttributeID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidAttributeID)))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	if err := h.svc.DeleteAttribute(attrID, entityID, tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
@@ -360,13 +392,13 @@ func (h *EntityHandler) DeleteAttribute(c *gin.Context) {
 // @Param body body models.MermaidImportRequest true "导入请求 | Import request"
 // @Success 200 {object} map[string]interface{} "导入结果 | Import result"
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["model.entity.create","model.entity_relation.create"]
+// @x-addp-required-permissions ["model.entity.create","model.entity.delete","model.entity_relation.create","model.entity_relation.delete"]
 // @Router /entities/import-mermaid [post]
 // @Security BearerAuth
 func (h *EntityHandler) ImportMermaid(c *gin.Context) {
 	var req models.MermaidImportRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 
@@ -375,7 +407,7 @@ func (h *EntityHandler) ImportMermaid(c *gin.Context) {
 
 	result, err := h.svc.ImportFromMermaid(tenantID, userID, &req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
 		return
 	}
 
@@ -396,7 +428,7 @@ func (h *EntityHandler) ExportMermaid(c *gin.Context) {
 
 	mermaidCode, err := h.svc.ExportToMermaid(tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
 		return
 	}
 

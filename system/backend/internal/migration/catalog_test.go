@@ -12,8 +12,115 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 56 {
-		t.Fatalf("LatestVersion = %d, want 56", catalog.LatestVersion)
+	if catalog.LatestVersion != 64 {
+		t.Fatalf("LatestVersion = %d, want 64", catalog.LatestVersion)
+	}
+}
+
+func TestQualityExecutionAuthorizationMigrationPublishesCompleteBoundary(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000064_iam_quality_execution_authorization.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 64: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'addp-quality'",
+		"'tenant.governance_manager'",
+		"'develop.data_read.execute'",
+		"'system.execution_authorization.create'",
+		"'tenant.quality_runtime'",
+		"'system.execution_authorization.execute'",
+		"ON CONFLICT (role_id, permission_id) DO NOTHING",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 64 missing %q", fragment)
+		}
+	}
+}
+
+func TestModelTenantRuntimeMigrationPublishesTenantReferenceReadBoundary(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000063_iam_model_tenant_runtime.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 63: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'tenant.model_runtime'",
+		"'standard.dimension_hierarchy.read'",
+		"'standard.domain.read'",
+		"'standard.element.read'",
+		"'standard.metric.read'",
+		"INSERT INTO system.tenant_memberships",
+		"INSERT INTO system.role_assignments",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 63 missing %q", fragment)
+		}
+	}
+}
+
+func TestDataArchitectStandardReferenceMigration(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000062_iam_data_architect_standard_references.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 62: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'tenant.data_architect'", "'standard.dimension_hierarchy.read'", "'standard.domain.read'",
+		"'standard.element.read'", "'standard.metric.read'", "ON CONFLICT (role_id, permission_id) DO NOTHING",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 62 missing %q", fragment)
+		}
+	}
+	if strings.Contains(sql, "INSERT INTO system.role_assignments") {
+		t.Fatal("migration 62 must not assign roles to principals")
+	}
+}
+
+func TestModelTenantScopeMigrationMovesAuthorizationToDataArchitect(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000061_iam_model_tenant_scope.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 61: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'tenant.data_architect'",
+		"'tenant.governance_manager'",
+		"permission.permission_key LIKE 'model.%'",
+		"DELETE FROM system.role_permissions",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 61 missing %q", fragment)
+		}
+	}
+	if strings.Contains(sql, "INSERT INTO system.role_assignments") {
+		t.Fatal("migration 61 must not assign the Data Architect role to any principal")
+	}
+}
+
+func TestDataArchitectRoleMigrationPublishesDWLayerAuthorization(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000060_iam_data_architect_role.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 60: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'tenant.data_architect'",
+		"ARRAY['tenant']::text[]",
+		"ARRAY['user']::text[]",
+		"'model.dw_layer.create'",
+		"'model.dw_layer.delete'",
+		"'model.dw_layer.read'",
+		"'model.dw_layer.update'",
+		"INSERT INTO system.role_permissions",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 60 missing %q", fragment)
+		}
+	}
+	if strings.Contains(sql, "INSERT INTO system.role_assignments") {
+		t.Fatal("migration 60 must not assign the Data Architect role to any principal")
 	}
 }
 
@@ -111,6 +218,23 @@ func TestRuntimeEngineDescriptorConsumersMigrationPublishesAuthorization(t *test
 	} {
 		if !strings.Contains(sql, fragment) {
 			t.Fatalf("migration 48 missing %q", fragment)
+		}
+	}
+}
+
+func TestInferenceRuntimeDescriptorConsumersMigrationPublishesAuthorization(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000059_iam_inference_runtime_descriptor_consumers.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 59: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'system.engine_descriptor.read'",
+		"'tenant.agent_runtime'",
+		"'tenant.copilot_runtime'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 59 missing %q", fragment)
 		}
 	}
 }

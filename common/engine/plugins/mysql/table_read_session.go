@@ -11,8 +11,8 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/mappers/mysql"
+	commonquery "github.com/addp/common/query"
 	"github.com/addp/common/resume"
-	"github.com/addp/common/sqldialect"
 	"github.com/twpayne/go-geom"
 	"github.com/twpayne/go-geom/encoding/ewkb"
 	"github.com/twpayne/go-geom/encoding/wkb"
@@ -72,7 +72,7 @@ func mysqlReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.CatalogP
 			return "", nil, nil, "", fmt.Errorf("mysql spatial row encoding requires a catalog table read, not custom SQL")
 		}
 		if limit > 0 {
-			query = sqldialect.PaginateQuerySQL(query, limit, int(offset))
+			query = commonquery.PaginateQuerySQL(query, limit, int(offset))
 		}
 		return query, nil, nil, "", nil
 	}
@@ -93,7 +93,7 @@ func mysqlReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.CatalogP
 	if err != nil {
 		return "", nil, nil, "", err
 	}
-	query = sqldialect.ForEngine("mysql").SelectTableSQL(selectExpr, database, table, "", "", limit, int(offset))
+	query = commonquery.ForEngine("mysql").SelectTableSQL(selectExpr, database, table, "", "", limit, int(offset))
 	spatialInfo := mysqlSpatialInfoFromColumns(columns, fields, opts.Hints, encoding)
 	return query, fields, spatialInfo, encoding, nil
 }
@@ -140,7 +140,7 @@ func mysqlFieldSelection(hints map[string]interface{}) *format.FieldSelectionOpt
 }
 
 func mysqlSelectExpr(columns []mysqlColumnInfo, fields []datatype.FieldInfo, hints map[string]interface{}, encoding format.GeometryEncoding) (string, error) {
-	dialect := sqldialect.ForEngine("mysql")
+	dialect := commonquery.ForEngine("mysql")
 	selected := make(map[string]bool, len(fields))
 	for _, field := range fields {
 		selected[field.Name] = true

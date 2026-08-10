@@ -14,13 +14,14 @@ import (
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
 	mysqlmapper "github.com/addp/common/format/mappers/mysql"
+	oraclemapper "github.com/addp/common/format/mappers/oracle"
 	pgmapper "github.com/addp/common/format/mappers/postgresql"
 	spatialitemapper "github.com/addp/common/format/mappers/spatialite"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/common/models"
-	"github.com/addp/common/sqldialect"
+	commonquery "github.com/addp/common/query"
 	servicei18n "github.com/addp/service/i18n"
 	serviceModels "github.com/addp/service/internal/models"
 	serviceInternal "github.com/addp/service/internal/service"
@@ -330,7 +331,7 @@ func (h *ResourceCapabilityHandler) detectSQLOutputContract(
 		}, nil
 	}
 
-	quotedGeometryColumn := sqldialect.ForEngine(engineType).QuoteIdentifier(geometryColumn)
+	quotedGeometryColumn := commonquery.ForEngine(engineType).QuoteIdentifier(geometryColumn)
 	metaSQL := fmt.Sprintf(`
 		SELECT
 			ST_SRID(%s) AS srid,
@@ -418,6 +419,8 @@ func queryOutputFieldType(engineType, nativeType string) datatype.FieldType {
 	switch strings.ToLower(strings.TrimSpace(engineType)) {
 	case "postgresql":
 		return (&pgmapper.TypeMapper{}).ToCommon(nativeType)
+	case "oracle":
+		return (&oraclemapper.TypeMapper{}).ToCommon(nativeType)
 	case "mysql":
 		return (&mysqlmapper.TypeMapper{}).ToCommon(nativeType)
 	case "sqlite", "spatialite":

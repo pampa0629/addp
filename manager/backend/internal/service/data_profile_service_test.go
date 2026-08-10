@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/addp/common/dataprofile"
 	"github.com/addp/common/datatype"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/manager/internal/dataprofile"
 	"github.com/addp/manager/internal/models"
 )
 

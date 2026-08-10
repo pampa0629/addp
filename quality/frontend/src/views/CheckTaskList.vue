@@ -27,15 +27,29 @@
         </template>
       </el-table-column>
     </el-table>
+    <el-pagination
+      v-model:current-page="pagination.page"
+      v-model:page-size="pagination.page_size"
+      :page-sizes="[20, 50, 100]"
+      layout="total, sizes, prev, pager, next"
+      :total="pagination.total"
+      class="pagination"
+      @size-change="fetchTasks"
+      @current-change="fetchTasks"
+    />
 
     <el-dialog v-model="showCreateDialog" :title="dialogTitle" width="500px" @closed="clearTaskDialogRoute">
       <el-form :model="form" label-width="100px">
         <el-form-item :label="t('quality.checkTask.name')"><el-input v-model="form.name" /></el-form-item>
         <el-form-item :label="t('quality.checkTask.description')"><el-input v-model="form.description" type="textarea" /></el-form-item>
-        <el-form-item :label="t('quality.checkTask.engineIdLabel')"><el-input-number v-model="form.engine_id" :min="1" :disabled="isEditing" /></el-form-item>
-        <el-form-item :label="t('quality.checkTask.schemaLabel')"><el-input v-model="form.schema_name" :placeholder="t('quality.checkTask.schemaPlaceholder')" :disabled="isEditing" /></el-form-item>
-        <el-form-item :label="t('quality.checkTask.tableLabel')"><el-input v-model="form.table_name" :placeholder="t('quality.checkTask.tablePlaceholder')" :disabled="isEditing" /></el-form-item>
-        <el-form-item v-if="isEditing" :label="t('quality.checkTask.enabled')">
+        <el-form-item :label="t('quality.checkTask.engineIdLabel')">
+          <el-select v-model="form.engine_id" :placeholder="t('quality.checkTask.enginePlaceholder')" style="width:100%">
+            <el-option v-for="engine in engines" :key="engine.id" :label="`${engine.name}（${engine.engine_type}）`" :value="engine.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('quality.checkTask.schemaLabel')"><el-input v-model="form.schema_name" :placeholder="t('quality.checkTask.schemaPlaceholder')" /></el-form-item>
+        <el-form-item :label="t('quality.checkTask.tableLabel')"><el-input v-model="form.table_name" :placeholder="t('quality.checkTask.tablePlaceholder')" /></el-form-item>
+        <el-form-item :label="t('quality.checkTask.enabled')">
           <el-switch v-model="form.enabled" />
         </el-form-item>
       </el-form>
@@ -52,7 +66,7 @@ import { computed, ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { checkTaskAPI } from '../api/quality'
+import { checkTaskAPI, systemEngineAPI } from '../api/quality'
 import { navigateQualityRoute } from '../utils/moduleNavigation'
 import { resolveCheckTaskRouteState } from '../utils/checkTaskRouteState'
 import { useI18n } from 'vue-i18n'
@@ -67,16 +81,21 @@ const showCreateDialog = ref(false)
 const editingTaskID = ref(null)
 let routeDataReady = false
 let routeRestoreSequence = 0
-const defaultForm = () => ({ name: '', description: '', engine_id: 1, schema_name: '', table_name: '', enabled: true })
+const defaultForm = () => ({ name: '', description: '', engine_id: null, schema_name: '', table_name: '', enabled: true })
 const form = ref(defaultForm())
+const engines = ref([])
+const pagination = ref({ page: 1, page_size: 20, total: 0 })
 const isEditing = computed(() => editingTaskID.value !== null)
 const dialogTitle = computed(() => isEditing.value ? t('quality.checkTask.editTitle') : t('quality.checkTask.createTitle'))
 
 const fetchTasks = async () => {
   loading.value = true
   try {
-    const res = await checkTaskAPI.list()
-    tasks.value = res || []
+    const res = await checkTaskAPI.list({ page: pagination.value.page, page_size: pagination.value.page_size })
+    tasks.value = res?.data || []
+    pagination.value.total = res?.total || 0
+  } catch (e) {
+    ElMessage.error(e.response?.data?.error || t('quality.checkTask.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -93,7 +112,7 @@ const editTask = (task) => {
   form.value = {
     name: task.name || '',
     description: task.description || '',
-    engine_id: task.engine_id || 1,
+    engine_id: task.engine_id || null,
     schema_name: task.schema_name || '',
     table_name: task.table_name || '',
     enabled: task.enabled !== false
@@ -127,11 +146,18 @@ const clearTaskDialogRoute = async () => {
 }
 
 const saveTask = async () => {
+  if (!form.value.name.trim()) return ElMessage.warning(t('quality.checkTask.nameRequired'))
+  if (!form.value.engine_id) return ElMessage.warning(t('quality.checkTask.engineRequired'))
+  if (!form.value.schema_name.trim()) return ElMessage.warning(t('quality.checkTask.schemaRequired'))
+  if (!form.value.table_name.trim()) return ElMessage.warning(t('quality.checkTask.tableRequired'))
   try {
     if (isEditing.value) {
       await checkTaskAPI.update(editingTaskID.value, {
         name: form.value.name,
         description: form.value.description,
+        engine_id: form.value.engine_id,
+        schema_name: form.value.schema_name,
+        table_name: form.value.table_name,
         enabled: form.value.enabled
       })
       ElMessage.success(t('quality.checkTask.updateSuccess'))
@@ -156,10 +182,15 @@ const runTask = async (id) => {
 }
 
 const deleteTask = async (id) => {
-  await ElMessageBox.confirm(t('quality.checkTask.deleteConfirm'), t('quality.checkTask.deleteTitle'), { type: 'warning' })
-  await checkTaskAPI.delete(id)
-  ElMessage.success(t('quality.checkTask.deleteSuccess'))
-  await fetchTasks()
+  try {
+    await ElMessageBox.confirm(t('quality.checkTask.deleteConfirm'), t('quality.checkTask.deleteTitle'), { type: 'warning' })
+    await checkTaskAPI.delete(id)
+    ElMessage.success(t('quality.checkTask.deleteSuccess'))
+    await fetchTasks()
+  } catch (e) {
+    if (e === 'cancel' || e === 'close') return
+    ElMessage.error(e.response?.data?.error || t('quality.checkTask.deleteFailed'))
+  }
 }
 
 async function restoreTaskFromRoute() {
@@ -199,11 +230,21 @@ async function restoreTaskFromRoute() {
 watch(() => route.query, restoreTaskFromRoute)
 
 onMounted(async () => {
+  await fetchEngines()
   await restoreTaskFromRoute()
   await fetchTasks()
   routeDataReady = true
   await restoreTaskFromRoute()
 })
+
+const fetchEngines = async () => {
+  try {
+    const res = await systemEngineAPI.list()
+    engines.value = (res || []).filter(engine => engine.engine_type === 'postgresql' && engine.lifecycle_state === 'active')
+  } catch {
+    engines.value = []
+  }
+}
 </script>
 
 <style scoped>
@@ -212,5 +253,9 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+}
+.pagination {
+  margin-top: 16px;
+  justify-content: flex-end;
 }
 </style>

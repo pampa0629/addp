@@ -12,7 +12,6 @@ import (
 	commonconfiguration "github.com/addp/common/configuration"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/logger"
-	"github.com/addp/common/utils"
 	"github.com/addp/system/internal/api"
 	systemauthorization "github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/config"
@@ -44,7 +43,7 @@ func main() {
 	cfg := config.Load()
 
 	// 检查端口是否可用
-	if err := utils.CheckPortAvailable(cfg.ServerAddr); err != nil {
+	if err := commonConfig.CheckPortAvailable(cfg.ServerAddr); err != nil {
 		logger.L().Error("端口检查失败", "error", err, "addr", cfg.ServerAddr)
 		os.Exit(1)
 	}
@@ -166,9 +165,8 @@ func main() {
 		time.Sleep(3 * time.Second)
 
 		// 构建服务URL
-		serviceHost := utils.GetServiceHost()
-		port := utils.GetModulePort("system")
-		serviceURL := utils.BuildServiceURL(serviceHost, port)
+		serviceHost := commonConfig.GetServiceHost()
+		serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.ServerAddr)
 
 		// 注册自己到模块注册表
 		moduleRegistryRepo := repository.NewModuleRegistryRepository(db)
@@ -222,10 +220,6 @@ func main() {
 
 	// 启动健康检查（在后台goroutine中）
 	go func() {
-		// 等待3秒确保服务完全启动
-		// 工作流引擎会主动触发连接检查，无需等待过长时间
-		time.Sleep(3 * time.Second)
-
 		// 初始化 Redis 客户端（用于 EngineService）
 		var redisClient *redis.Client
 		if cfg.RedisHost != "" {

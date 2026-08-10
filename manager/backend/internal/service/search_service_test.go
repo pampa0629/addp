@@ -2,6 +2,25 @@ package service
 
 import "testing"
 
+func TestBuildSearchFilterRestrictsCurrentEngine(t *testing.T) {
+	t.Parallel()
+
+	tenantID := uint(7)
+	engineID := uint(3)
+	if got := buildSearchFilter(&tenantID, &engineID); got != "tenant_id = 7 AND engine_id = 3" {
+		t.Fatalf("buildSearchFilter() = %q", got)
+	}
+}
+
+func TestBuildSearchFilterAllowsTenantWideSearch(t *testing.T) {
+	t.Parallel()
+
+	tenantID := uint(7)
+	if got := buildSearchFilter(&tenantID, nil); got != "tenant_id = 7" {
+		t.Fatalf("buildSearchFilter() = %q", got)
+	}
+}
+
 func TestMapMeilisearchHitKeepsOnlyIndexedLocator(t *testing.T) {
 	t.Parallel()
 

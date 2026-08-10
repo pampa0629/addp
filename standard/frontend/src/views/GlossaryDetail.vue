@@ -174,7 +174,13 @@ const formatTime = (time) => {
   return new Date(time).toLocaleString()
 }
 
-const goBack = () => navigateStandardRoute(router, '/glossaries', { history: 'replace' })
+const goBack = () => {
+  const query = {}
+  for (const key of ['keyword', 'domain_id', 'status', 'page', 'page_size']) {
+    if (route.query[key] !== undefined) query[key] = route.query[key]
+  }
+  return navigateStandardRoute(router, { path: '/glossaries', query }, { history: 'replace' })
+}
 
 const flattenDomains = (nodes) => {
   const result = []

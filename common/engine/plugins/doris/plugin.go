@@ -7,7 +7,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/shared"
-	"github.com/addp/common/sqleffect"
+	commonquery "github.com/addp/common/query"
 	_ "github.com/go-sql-driver/mysql"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -133,7 +133,7 @@ func (p *DorisPlugin) SupportsParameterizedQueries() bool {
 
 func (p *DorisPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
 	if opts.ReadOnly {
-		if err := sqleffect.RequireReadOnly(sql); err != nil {
+		if err := commonquery.RequireReadOnly(sql); err != nil {
 			return nil, fmt.Errorf("Doris 只读查询校验失败：%w", err)
 		}
 	}

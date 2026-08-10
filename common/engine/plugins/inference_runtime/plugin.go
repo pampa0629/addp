@@ -60,6 +60,13 @@ func (p *Plugin) Chat(ctx context.Context, connInfo plugin.ConnectionInfo, req c
 	}
 	return &response, nil
 }
+func (p *Plugin) ResolveProfile(ctx context.Context, connInfo plugin.ConnectionInfo, req commoninference.ResolveProfileRequest) (*commoninference.ResolveProfileResponse, error) {
+	var response commoninference.ResolveProfileResponse
+	if err := post(ctx, connInfo, "/api/v1/inference/internal/profiles/resolve", req.CallerToken, req, &response); err != nil {
+		return nil, err
+	}
+	return &response, nil
+}
 func (p *Plugin) Embed(ctx context.Context, connInfo plugin.ConnectionInfo, req commoninference.EmbeddingRequest) (*commoninference.EmbeddingResponse, error) {
 	var response commoninference.EmbeddingResponse
 	if err := post(ctx, connInfo, "/api/v1/inference/internal/embeddings", req.CallerToken, req, &response); err != nil {
@@ -103,7 +110,7 @@ func post(ctx context.Context, connInfo plugin.ConnectionInfo, path, token strin
 		return err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("inference runtime returned HTTP %d: %s", resp.StatusCode, string(encoded))
+		return &plugin.RuntimeHTTPError{StatusCode: resp.StatusCode, Body: encoded}
 	}
 	return json.Unmarshal(encoded, target)
 }

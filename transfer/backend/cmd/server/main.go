@@ -17,7 +17,6 @@ import (
 	_ "github.com/addp/common/format/builtin"
 	"github.com/addp/common/logger"
 	commonRepo "github.com/addp/common/repository"
-	"github.com/addp/common/utils"
 	"github.com/addp/transfer/internal/api"
 	transferauthorization "github.com/addp/transfer/internal/authorization"
 	"github.com/addp/transfer/internal/capture"
@@ -83,7 +82,7 @@ func main() {
 	)
 
 	// 检查端口是否可用
-	if err := utils.CheckPortAvailable(cfg.Port); err != nil {
+	if err := commonConfig.CheckPortAvailable(cfg.Port); err != nil {
 		logger.L().Error("端口检查失败", "error", err, "port", cfg.Port)
 		os.Exit(1)
 	}
@@ -216,9 +215,8 @@ func main() {
 	// 设置路由
 	router := api.SetupRouter(taskService, executionService, continuousPolicyService, cfg.SystemServiceURL, cfg.MetaServiceURL, redisClient, systemClient, systemRuntimeClient)
 
-	serviceHost := utils.GetServiceHost()
-	port := utils.GetModulePort("transfer")
-	serviceURL := utils.BuildServiceURL(serviceHost, port)
+	serviceHost := commonConfig.GetServiceHost()
+	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
 
 	// ========== 模块注册（注册到 System service_registry）==========
 	if systemRuntimeClient != nil {

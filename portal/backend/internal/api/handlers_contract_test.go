@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/addp/common/authtest"
+	"github.com/addp/common/authorization/authtest"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/portal/internal/config"
 )

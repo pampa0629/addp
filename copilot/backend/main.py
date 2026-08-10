@@ -2,6 +2,7 @@
 ADDP Copilot - FastAPI 应用入口
 """
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from addp_common.client import (
     ConfigurationManagementDeclaration,
@@ -14,22 +15,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
 from config import settings
-from services.metadata_matcher import metadata_matcher
+
+logger = logging.getLogger("copilot.main")
 
 # 应用生命周期管理
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用启动/关闭时的生命周期管理"""
-    from database import SessionLocal, init_db
-    from models.matching_policy import MatchingPolicy
-    from sqlalchemy import select
+    from database import init_db
     from services.inference_service import CopilotInferenceService
 
-    print("Copilot Backend 启动中...")
+    logger.info("Copilot Backend 启动中")
     await init_db()
-    with SessionLocal() as policy_db:
-        for policy in policy_db.scalars(select(MatchingPolicy)).all():
-            metadata_matcher.update_policy(float(policy.score_threshold), policy.max_candidates, policy.tenant_id)
     CopilotInferenceService.initialize()
 
     public_base_url = f"http://{settings.service_host}:{settings.port}"
@@ -53,12 +50,12 @@ async def lifespan(app: FastAPI):
     )
     registry_task = asyncio.create_task(registry_client.run(registration))
 
-    print("Copilot Backend 启动完成")
+    logger.info("Copilot Backend 启动完成")
 
     yield  # 应用运行中
 
     # 关闭时：停止心跳
-    print("🛑 Copilot Backend 关闭中...")
+    logger.info("Copilot Backend 关闭中")
     registry_task.cancel()
     try:
         await registry_task
@@ -66,7 +63,7 @@ async def lifespan(app: FastAPI):
         pass
     await registry_client.close()
     await CopilotInferenceService.close()
-    print("Copilot Backend 已关闭")
+    logger.info("Copilot Backend 已关闭")
 
 
 # 创建 FastAPI 应用
@@ -89,11 +86,12 @@ app.add_middleware(
 )
 
 # 注册路由
-from api import inference_scenario_binding_router, navigate_router, sql_router, workflow_router  # noqa: E402
-from api.matching_policy_api import router as matching_policy_router  # noqa: E402
+from api import inference_scenario_binding_router, navigate_router, notebook_router, query_router, transfer_router, workflow_router  # noqa: E402
 from api.kg_extract_api import router as kg_extract_router  # noqa: E402
 app.include_router(workflow_router, prefix=_API_PREFIX, tags=["工作流智能体 | Workflow Agent"])
-app.include_router(sql_router, prefix=_API_PREFIX, tags=["SQL 智能体 | SQL Agent"])
+app.include_router(query_router, prefix=_API_PREFIX, tags=["查询智能体 | Query Agent"])
+app.include_router(notebook_router, prefix=_API_PREFIX, tags=["Notebook 智能体 | Notebook Agent"])
+app.include_router(transfer_router, prefix=_API_PREFIX, tags=["Transfer 智能体 | Transfer Agent"])
 app.include_router(kg_extract_router, prefix=_API_PREFIX, tags=["图谱构建 | KG Build"])
 app.include_router(navigate_router, prefix=_API_PREFIX, tags=["导航引导 | Navigation Guide"])
 app.include_router(
@@ -101,7 +99,6 @@ app.include_router(
     prefix=_API_PREFIX,
     tags=["配置管理 | Configuration Management"],
 )
-app.include_router(matching_policy_router, prefix=_API_PREFIX, tags=["配置管理 | Configuration Management"])
 
 
 def custom_openapi():

@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -370,9 +371,19 @@ type ScriptRuntimeProvider interface {
 
 type InferenceRuntimeProvider interface {
 	EnginePlugin
+	ResolveProfile(ctx context.Context, connInfo ConnectionInfo, req commoninference.ResolveProfileRequest) (*commoninference.ResolveProfileResponse, error)
 	Chat(ctx context.Context, connInfo ConnectionInfo, req commoninference.ChatRequest) (*commoninference.ChatResponse, error)
 	Embed(ctx context.Context, connInfo ConnectionInfo, req commoninference.EmbeddingRequest) (*commoninference.EmbeddingResponse, error)
 	Rerank(ctx context.Context, connInfo ConnectionInfo, req commoninference.RerankRequest) (*commoninference.RerankResponse, error)
+}
+
+type RuntimeHTTPError struct {
+	StatusCode int
+	Body       []byte
+}
+
+func (e *RuntimeHTTPError) Error() string {
+	return fmt.Sprintf("runtime returned HTTP %d", e.StatusCode)
 }
 
 type CatalogPath struct {
@@ -697,7 +708,7 @@ type WorkflowExecuteRequest struct {
 }
 
 type WorkflowRuntimeContext struct {
-	TenantID              uint                           `json:"tenant_id"`
+	TenantID               uint                           `json:"tenant_id"`
 	ExecutionAuthorization WorkflowExecutionAuthorization `json:"execution_authorization"`
 }
 

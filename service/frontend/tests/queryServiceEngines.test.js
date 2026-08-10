@@ -14,11 +14,12 @@ const engines = [
   { id: 3, name: 'old-runtime', engine_type: 'duckdb', lifecycle_state: 'deleting', capabilities: { compute: { query: { supported: true, languages: ['sql'], federation: { supported: true } } } } },
   { id: 4, name: 'object-store', engine_type: 'minio', lifecycle_state: 'active', capabilities: { storage: {} } },
   { id: 5, name: 'spark-sql', engine_type: 'spark_sql', lifecycle_state: 'active', capabilities: JSON.stringify({ compute: { query: { supported: true, languages: ['sql'] } } }) },
-  { id: 6, name: 'mongo', engine_type: 'mongodb', lifecycle_state: 'active', capabilities: { compute: { query: { supported: true, languages: ['mql'] } } } }
+  { id: 6, name: 'mongo', engine_type: 'mongodb', lifecycle_state: 'active', capabilities: { compute: { query: { supported: true, languages: ['mql'] } } } },
+  { id: 7, name: 'business-oracle', engine_type: 'oracle', lifecycle_state: 'active', capabilities: { compute: { query: { supported: true, languages: ['sql'] } } } }
 ]
 
 test('uses only real active query engines and runtimes', () => {
-  assert.deepEqual(queryServiceExecutionEngines(engines).map(engine => engine.id), [1, 2, 5])
+  assert.deepEqual(queryServiceExecutionEngines(engines).map(engine => engine.id), [1, 2, 5, 7])
   assert.deepEqual(federatedQueryRuntimes(engines).map(engine => engine.id), [2])
 })
 
@@ -34,4 +35,5 @@ test('maps the selected real engine to exactly one SQL execution field', () => {
 test('requires a runtime only for object table engines', () => {
   assert.equal(tableSelectionUsesRuntime({ display: { engine_type: 'minio' } }), true)
   assert.equal(tableSelectionUsesRuntime({ display: { engine_type: 'postgresql' } }), false)
+  assert.equal(tableSelectionUsesRuntime({ display: { engine_type: 'oracle' } }), false)
 })

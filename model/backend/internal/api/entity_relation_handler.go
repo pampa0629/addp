@@ -33,14 +33,14 @@ func NewEntityRelationHandler(svc *service.EntityRelationService) *EntityRelatio
 func (h *EntityRelationHandler) CreateRelation(c *gin.Context) {
 	var req models.CreateEntityRelationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	relation, err := h.svc.Create(tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 
@@ -67,7 +67,7 @@ func (h *EntityRelationHandler) ListRelations(c *gin.Context) {
 	if entityIDStr != "" {
 		entityID, parseErr := strconv.ParseInt(entityIDStr, 10, 64)
 		if parseErr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidEntityIDQuery)})
+			c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidEntityIDQuery)))
 			return
 		}
 		relations, err = h.svc.GetByEntityID(tenantID, entityID)
@@ -76,7 +76,7 @@ func (h *EntityRelationHandler) ListRelations(c *gin.Context) {
 	}
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
 		return
 	}
 
@@ -96,14 +96,14 @@ func (h *EntityRelationHandler) ListRelations(c *gin.Context) {
 func (h *EntityRelationHandler) GetRelation(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	relation, err := h.svc.GetByID(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, modeli18n.MsgRelationNotFound)})
+		c.JSON(http.StatusNotFound, errorResponse(commoni18n.T(c, modeli18n.MsgRelationNotFound)))
 		return
 	}
 
@@ -125,20 +125,20 @@ func (h *EntityRelationHandler) GetRelation(c *gin.Context) {
 func (h *EntityRelationHandler) UpdateRelation(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 
 	var req models.UpdateEntityRelationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	relation, err := h.svc.Update(id, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 
@@ -158,13 +158,13 @@ func (h *EntityRelationHandler) UpdateRelation(c *gin.Context) {
 func (h *EntityRelationHandler) DeleteRelation(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	if err := h.svc.Delete(id, tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
 		return
 	}
 

@@ -6,6 +6,7 @@
 
 **包含服务**：
 - **PostgreSQL (PostGIS)**：业务数据库，端口 5433
+- **Oracle Free 23ai**：普通表测试源，端口 15210，service name `FREEPDB1`
 - **SuperMap SDX+ for PostgreSQL**：独立原生 PostgreSQL 实例，端口 5434；不安装 PostGIS
 - **MinIO**：业务对象存储，端口 9002-9003
 - **ClickHouse** 🆕：高性能列式存储 OLAP，端口 9000, 8123
@@ -60,6 +61,9 @@ bash scripts/start.sh -mongodb
 # 只启动 MySQL，并幂等初始化专用 CDC 用户
 bash scripts/start.sh -mysql
 
+# 只启动 Oracle，并幂等初始化普通表样例
+bash scripts/start.sh -oracle
+
 # 只启动业务 Redpanda，并幂等初始化只读 Engine 账号
 bash scripts/start.sh -redpanda
 
@@ -96,6 +100,9 @@ business/
 ├── mysql/                          # MySQL 配置与测试数据
 │   ├── init-cdc.sh                 # 专用 CDC 用户幂等初始化
 │   └── test-data.sh                # 普通表与全二维几何族显式测试数据
+├── oracle/                         # Oracle 普通表测试数据
+│   ├── init.sql                     # 幂等初始化 SQL
+│   └── test-data.sh                 # 容器内执行初始化并验证
 │
 ├── doris/                          # Apache Doris 配置
 │   └── init.sh                     # Doris 集群初始化

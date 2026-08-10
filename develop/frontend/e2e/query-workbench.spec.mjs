@@ -136,6 +136,33 @@ test('generates a query template for the selected data item and confirms engine 
   await expect.poll(() => sampleRequests.at(-1)?.searchParams.get('locator')).toContain('addp://engine/11/path/public/customers')
 })
 
+test('generates a natural-language query with current-engine resource confirmation', async ({ page }) => {
+  const copilotRequests = []
+  await installMockBackend(page, { resultKind: 'table', copilotRequests })
+  await page.goto('/sql')
+
+  await page.getByRole('button', { name: 'AI 查询助手', exact: true }).click()
+  await page.getByPlaceholder('描述你要查询的内容，例如：计算铁路两边宽度50米所占用的耕地面积')
+    .fill('计算铁路两边宽度50米所占用的耕地面积')
+  await page.getByRole('button', { name: '生成查询', exact: true }).click()
+
+  const confirmation = page.getByRole('dialog', { name: '确认查询资源', exact: true })
+  await expect(confirmation).toBeVisible()
+  await expect(confirmation.getByText('railway', { exact: true })).toBeVisible()
+  await expect(confirmation.getByText('farmland_b', { exact: true })).toBeVisible()
+  await confirmation.getByText('farmland_b', { exact: true }).click()
+  await confirmation.getByRole('button', { name: '确认并生成', exact: true }).click()
+
+  await expect.poll(() => copilotRequests.length).toBe(2)
+  expect(copilotRequests[0].engine_id).toBe(ENGINE.id)
+  expect(copilotRequests[0].resources).toEqual([])
+  expect(copilotRequests[1].resources).toHaveLength(2)
+  expect(copilotRequests[1].resources.every(resource => resource.engine_id === ENGINE.id)).toBe(true)
+  await expect(page.locator('.monaco-editor .view-lines')).toContainText('ST_Intersection')
+  await expect(page.getByRole('button', { name: '执行', exact: true })).toBeEnabled()
+  expect(copilotRequests.every(request => request.engine_id === ENGINE.id)).toBe(true)
+})
+
 test('defines a query parameter, inserts its reference, and submits an execution override', async ({ page }) => {
   const executionRequests = []
   await installMockBackend(page, { resultKind: 'table', executionRequests })
@@ -182,7 +209,12 @@ test('defines a query parameter, inserts its reference, and submits an execution
   await expect(page.getByText('Ada', { exact: true })).toBeVisible()
 })
 
-async function installMockBackend(page, { resultKind, engines = [ENGINE], executionRequests = [] }) {
+async function installMockBackend(page, {
+  resultKind,
+  engines = [ENGINE],
+  executionRequests = [],
+  copilotRequests = []
+}) {
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   await page.route('**/api/v1/**', async route => {
     const request = route.request()
@@ -196,6 +228,56 @@ async function installMockBackend(page, { resultKind, engines = [ENGINE], execut
     }
     if (path === '/api/v1/develop/engines') {
       return fulfillJSON(route, engines)
+    }
+    if (path === '/api/v1/copilot/query/generate' && request.method() === 'POST') {
+      const body = request.postDataJSON()
+      copilotRequests.push(body)
+      if (!body.resources?.length) {
+        return fulfillJSON(route, {
+          status: 'need_clarification',
+          query_language: 'sql',
+          clarification_reason: 'data_source_confirmation_required',
+          data_source_candidates: [
+            {
+              role: 'railway',
+              name: 'railway',
+              full_name: 'public.railway',
+              locator: 'addp://engine/11/path/public/railway?type=table&item_id=1102',
+              engine_id: 11,
+              asset_type: 'table',
+              data_type: 'table',
+              geometry_column: 'shape',
+              crs: 'EPSG:32650'
+            },
+            {
+              role: 'farmland',
+              name: 'farmland_a',
+              locator: 'addp://engine/11/path/public/farmland_a?type=table&item_id=1103',
+              engine_id: 11,
+              asset_type: 'table',
+              data_type: 'table',
+              geometry_column: 'shape',
+              crs: 'EPSG:32650'
+            },
+            {
+              role: 'farmland',
+              name: 'farmland_b',
+              locator: 'addp://engine/11/path/public/farmland_b?type=table&item_id=1104',
+              engine_id: 11,
+              asset_type: 'table',
+              data_type: 'table',
+              geometry_column: 'shape',
+              crs: 'EPSG:32650'
+            }
+          ]
+        })
+      }
+      return fulfillJSON(route, {
+        status: 'success',
+        query_language: 'sql',
+        query: 'SELECT ST_Intersection(railway.shape, farmland_b.shape) FROM public.railway JOIN public.farmland_b ON true',
+        resources: body.resources
+      })
     }
     if (path.endsWith('/sample-query')) {
       const requestURL = new URL(request.url())
@@ -217,6 +299,19 @@ async function installMockBackend(page, { resultKind, engines = [ENGINE], execut
         return fulfillJSON(route, { children: resourceTree().children[0].children })
       }
       return fulfillJSON(route, { children: resourceTree().children })
+    }
+    if (path === '/api/v1/develop/query-preflight' && request.method() === 'POST') {
+      return fulfillJSON(route, {
+        allowed: true,
+        effect: 'read',
+        statement: 'select',
+        classification_confidence: 'high',
+        target_objects: ['public.customers'],
+        risk_level: 'low',
+        requires_confirmation: false,
+        required_permission: 'develop.data_read.execute',
+        fingerprint: 'query-preflight-e2e'
+      })
     }
     if (path === '/api/v1/develop/executions' && request.method() === 'POST') {
       executionRequests.push(request.postDataJSON())

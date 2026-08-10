@@ -152,22 +152,15 @@ async def navigate_guide(
         ]
         raw = await llm.ainvoke(messages)
 
-        # 解析 JSON
-        # LangChain ChatModel 返回 AIMessage 对象，需要提取 content
         text = raw.content if hasattr(raw, 'content') else str(raw)
-        # 去掉可能的 markdown 代码块
-        text = text.strip()
-        if text.startswith("```"):
-            lines = text.split("\n")
-            text = "\n".join(lines[1:-1])
-
-        data = json.loads(text)
+        data = json.loads(text.strip())
         actions = [NavigateAction(**a) for a in data.get("actions", [])]
         return NavigateResponse(text=data.get("text", ""), actions=actions)
 
-    except Exception as e:
-        print(f"[NavigateAPI] 导航引导失败: {e}")
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="导航请求结果不符合结构化契约") from error
+    except Exception as error:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"导航推理失败: {str(e)}",
-        ) from e
+            detail="导航推理暂不可用",
+        ) from error

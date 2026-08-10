@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/addp/common/datatype"
-	"github.com/addp/common/sqldialect"
+	commonquery "github.com/addp/common/query"
 	"gorm.io/gorm"
 )
 
@@ -107,7 +107,7 @@ func queryPostgresCRSDefinition(ctx context.Context, db *sql.DB, srid int) (*dat
 }
 
 func queryPostgresGeometryType(ctx context.Context, db *sql.DB, schema, table, column string) (string, error) {
-	dialect := sqldialect.ForEngine("postgresql")
+	dialect := commonquery.ForEngine("postgresql")
 	query := fmt.Sprintf(`
 		SELECT DISTINCT ST_GeometryType(%s) AS geometry_type
 		FROM %s
@@ -139,7 +139,7 @@ func queryPostgresSpatialExtent(ctx context.Context, db *sql.DB, schema, table, 
 }
 
 func postgresSpatialExtentQuery(schema, table, column string) string {
-	dialect := sqldialect.ForEngine("postgresql")
+	dialect := commonquery.ForEngine("postgresql")
 	quotedColumn := dialect.QuoteIdentifier(column)
 	return fmt.Sprintf(`
 		SELECT

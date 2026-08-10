@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/addp/common/sqldialect"
+	commonquery "github.com/addp/common/query"
 )
 
 var testFederatedSessionOptions = FederatedSessionOptions{MemoryLimit: "128MB", Threads: 1}
@@ -56,7 +56,7 @@ func TestServicePaginationWithExistingLimitExecutes(t *testing.T) {
 	t.Parallel()
 
 	baseQuery := "SELECT * FROM (VALUES (1), (2)) AS business(id) LIMIT 10"
-	serviceQuery := sqldialect.PaginateQuerySQL(baseQuery, 10, 0)
+	serviceQuery := commonquery.PaginateQuerySQL(baseQuery, 10, 0)
 	session, err := PrepareFederatedQueryWithEngines(context.Background(), serviceQuery, nil, nil, testFederatedSessionOptions)
 	if err != nil {
 		t.Fatalf("PrepareFederatedQueryWithEngines() error = %v", err)

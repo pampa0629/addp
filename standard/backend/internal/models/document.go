@@ -12,7 +12,7 @@ type Document struct {
 	Version     string     `gorm:"size:50" json:"version"`
 	PublishDate *time.Time `json:"publish_date,omitempty"`
 	Description string     `gorm:"type:text" json:"description"`
-	FileKey     string     `gorm:"type:text" json:"file_key"`     // MinIO 存储路径
+	FileKey     string     `gorm:"type:text" json:"file_key"` // MinIO 存储路径
 	FileName    string     `gorm:"size:200" json:"file_name"`
 	FileSize    int64      `json:"file_size"`
 	CreatedBy   int64      `gorm:"not null" json:"created_by"`
@@ -31,6 +31,7 @@ type DocumentElementMapping struct {
 	DocumentID        int64     `gorm:"not null;index" json:"document_id"`
 	ElementID         int64     `gorm:"not null" json:"element_id"`
 	ReferenceLocation string    `gorm:"type:text" json:"reference_location"`
+	Name              string    `gorm:"->" json:"name"`
 	CreatedAt         time.Time `json:"created_at"`
 }
 
@@ -44,6 +45,7 @@ type DocumentGlossaryMapping struct {
 	DocumentID        int64     `gorm:"not null;index" json:"document_id"`
 	GlossaryID        int64     `gorm:"not null" json:"glossary_id"`
 	ReferenceLocation string    `gorm:"type:text" json:"reference_location"`
+	Name              string    `gorm:"->" json:"name"`
 	CreatedAt         time.Time `json:"created_at"`
 }
 
@@ -57,6 +59,7 @@ type DocumentMetricMapping struct {
 	DocumentID        int64     `gorm:"not null;index" json:"document_id"`
 	MetricID          int64     `gorm:"not null" json:"metric_id"`
 	ReferenceLocation string    `gorm:"type:text" json:"reference_location"`
+	Name              string    `gorm:"->" json:"name"`
 	CreatedAt         time.Time `json:"created_at"`
 }
 
@@ -84,8 +87,8 @@ type UpdateDocumentRequest struct {
 
 // SetDocumentMappingsRequest 设置文档关联请求
 type SetDocumentMappingsRequest struct {
-	ElementIDs  []int64                  `json:"element_ids"`
-	GlossaryIDs []int64                  `json:"glossary_ids"`
-	MetricIDs   []int64                  `json:"metric_ids"`
-	Locations   map[string]string        `json:"locations"` // key: "element_1" / "glossary_2" / "metric_3"
+	ElementIDs  []int64           `json:"element_ids"`
+	GlossaryIDs []int64           `json:"glossary_ids"`
+	MetricIDs   []int64           `json:"metric_ids"`
+	Locations   map[string]string `json:"locations"` // key: "element_1" / "glossary_2" / "metric_3"
 }

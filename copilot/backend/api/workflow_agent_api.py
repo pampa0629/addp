@@ -1,23 +1,28 @@
-"""
-工作流生成 API 路由
+"""Workflow Copilot API: confirm inputs, then generate and validate a candidate DAG."""
 
-基于 WorkflowPipeline 的多阶段工作流生成
-"""
+from __future__ import annotations
+
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional, Dict, Any
-
-from pipelines.workflow_pipeline import WorkflowPipeline
-from services.inference_service import CopilotInferenceService
-from addp_common.auth import AuthorizationContext
-from authorization_permissions_generated import COPILOT_WORKFLOW_EXECUTE
-from dependencies.auth import require_tool_user
-from models.workflow_models import WorkflowResourceFact
-from database import get_db
 from sqlalchemy.orm import Session
 
-# TODO: Copilot 暂时不需要保存对话历史，注释掉以避免数据库依赖
-# from services.memory_service import memory_service
+from addp_common.auth import AuthorizationContext
+from addp_common.resources import ResourceFact
+from addp_common.tools import ToolExecutionError
+from authorization_permissions_generated import COPILOT_WORKFLOW_EXECUTE
+from chains.resource_intent_chain import ResourceIntentChain
+from chains.resource_recommendation_chain import ResourceRecommendationChain
+from config import settings
+from database import get_db
+from dependencies.auth import bearer_auth, require_tool_user
+from services.workflow_service import WorkflowService
+from services.inference_service import CopilotInferenceService
+from services.resource_discovery import ResourceDiscovery
+from services.resource_resolution import ResourceResolutionPolicy, ResourceResolutionService
+
 
 router = APIRouter()
 require_workflow_draft_tool = require_tool_user(
@@ -27,54 +32,66 @@ require_workflow_draft_tool = require_tool_user(
 )
 
 
-def get_workflow_pipeline(db: Session, tenant_id: int) -> WorkflowPipeline:
+def get_workflow_service(db: Session, tenant_id: int) -> WorkflowService:
     llm = CopilotInferenceService.chat_model(
         db,
         tenant_id=tenant_id,
-        scenario_code="nl2dag",
+        scenario_code="workflow_generation",
         temperature=0.2,
         max_output_tokens=4000,
     )
-    return WorkflowPipeline(llm=llm)
+    return WorkflowService(llm=llm)
+
 
 class WorkflowGenerationRequest(BaseModel):
-    """工作流生成请求"""
     model_config = ConfigDict(extra="forbid")
 
-    query: str
-    conversation_id: Optional[int] = None
-    workflow_engine_id: int  # 工作流引擎实例 ID；算子发现、详情和验证均以该实例为准
-    resources: list[WorkflowResourceFact] = Field(
-        description="由 owner Tool 验证的全部输入资源事实；不允许 Copilot 自行搜索或拼接 locator"
+    query: str = Field(min_length=1, max_length=4000)
+    workflow_engine_id: int = Field(ge=1)
+    resources: list[ResourceFact] = Field(
+        default_factory=list,
+        max_length=8,
+        description="由 owner Tool 验证的输入资源事实；为空时先返回候选供确认",
     )
 
 
+class WorkflowResourceCandidate(ResourceFact):
+    name: str
+    engine_id: int
+    engine_name: str | None = None
+    asset_type: str
+    full_name: str | None = None
+    path: str | None = None
+    score: float | None = None
+    ancestors: list[dict[str, Any]] = Field(default_factory=list)
+    recommended: bool = False
+    recommendation_reason: str | None = None
+
+
 class WorkflowGenerationResponse(BaseModel):
-    """工作流生成响应"""
-    status: str  # success, need_clarification, validation_failed, error
-    workflow: Optional[Dict] = None
-    explanation: Optional[str] = None
-    conversation_id: Optional[int] = None
-
-    clarification_reason: Optional[str] = None
-    message: Optional[str] = None
-
-    # 验证结果（当 status=validation_failed 时）
-    errors: Optional[list] = None
-    warnings: Optional[list] = None
-    suggestions: Optional[list] = None
-
-    # 额外信息
-    resources: Optional[list[Dict[str, Any]]] = None
-    selected_operators: Optional[list] = None
-    validation_result: Optional[Dict] = None
+    status: str
+    workflow: dict[str, Any] | None = None
+    explanation: str | None = None
+    clarification_reason: str | None = None
+    message: str | None = None
+    data_source_candidates: list[WorkflowResourceCandidate] | None = None
+    errors: list[Any] | None = None
+    warnings: list[Any] | None = None
+    suggestions: list[Any] | None = None
+    resources: list[ResourceFact] | None = None
+    selected_operators: list[Any] | None = None
+    validation_result: dict[str, Any] | None = None
 
 
 @router.post(
     "/workflow/generate",
     response_model=WorkflowGenerationResponse,
     summary="生成工作流 | Generate Workflow",
-    responses={500: {"description": "工作流生成失败 | Workflow generation failed"}},
+    responses={
+        400: {"description": "请求不符合工作流生成约束 | Invalid workflow generation request"},
+        502: {"description": "Owner Tool 调用失败 | Owner Tool call failed"},
+        500: {"description": "工作流生成失败 | Workflow generation failed"},
+    },
     openapi_extra={
         "x-addp-auth-mode": "delegated_tool",
         "x-addp-required-permissions": [COPILOT_WORKFLOW_EXECUTE],
@@ -83,117 +100,94 @@ class WorkflowGenerationResponse(BaseModel):
 async def generate_workflow(
     request: WorkflowGenerationRequest,
     user: AuthorizationContext = Depends(require_workflow_draft_tool),
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_auth),
     db: Session = Depends(get_db),
-):
-    """
-    生成工作流（基于 WorkflowPipeline）
-
-    根据用户的自然语言描述生成 GIS 工作流 DAG
-
-    流程：
-    1. 数据源理解（可选，支持跳过）
-    2. 算子筛选
-    3. 工作流生成
-    4. 工作流验证 + 自动修复
-    """
-    print(f"\n{'='*80}")
-    print(f"[API] 收到工作流生成请求")
-    print(f"[API] 用户查询: {request.query}")
-    print(f"[API] 租户 ID: {user.tenant_id}")
-    print(f"[API] 用户 ID: {user.principal_id}")
-    print(f"[API] 对话 ID: {request.conversation_id}")
-    print(f"[API] 工作流引擎 ID: {request.workflow_engine_id}")
-    print(f"{'='*80}\n")
-
+) -> WorkflowGenerationResponse:
+    """Discover first-party candidates or consume already confirmed ResourceFact values."""
     try:
-        pipeline = get_workflow_pipeline(db, user.tenant_id)
+        if not request.resources and user.token_type in {"first_party_access_token", "oauth_access_token"}:
+            resolution_llm = CopilotInferenceService.chat_model(
+                db,
+                tenant_id=user.tenant_id,
+                scenario_code="resource_resolution",
+                temperature=0,
+                max_output_tokens=1200,
+            )
+            resolver = ResourceResolutionService(
+                discovery=ResourceDiscovery(
+                    settings.get_gateway_url(),
+                    credentials.credentials,
+                    recommender=ResourceRecommendationChain(resolution_llm),
+                ),
+                intent_chain=ResourceIntentChain(resolution_llm),
+            )
+            resolution = await resolver.discover(request.query, ResourceResolutionPolicy.workflow())
+            if not resolution.intents:
+                return WorkflowGenerationResponse(
+                    status="need_clarification",
+                    clarification_reason="data_source_not_found",
+                    message="未能从需求中识别工作流输入资源",
+                    data_source_candidates=[],
+                )
+            if resolution.missing_roles:
+                return WorkflowGenerationResponse(
+                    status="need_clarification",
+                    clarification_reason="data_source_not_found",
+                    message="未找到可确认的工作流输入资源：" + "、".join(resolution.missing_roles),
+                    data_source_candidates=[],
+                )
+            roles = [candidate["role"] for candidate in resolution.candidates]
+            ambiguous = any(roles.count(role) > 1 for role in set(roles))
+            return WorkflowGenerationResponse(
+                status="need_clarification",
+                clarification_reason="data_source_ambiguous" if ambiguous else "data_source_confirmation_required",
+                message="请确认工作流输入资源后再生成",
+                data_source_candidates=[
+                    WorkflowResourceCandidate.model_validate(candidate)
+                    for candidate in resolution.candidates
+                ],
+            )
 
-        # 调用 Pipeline 生成工作流
-        print(f"[API] 调用 WorkflowPipeline...")
-        result = await pipeline.run(
+        result = await get_workflow_service(db, user.tenant_id).run(
             query=request.query,
             tenant_id=user.tenant_id,
             workflow_engine_id=request.workflow_engine_id,
             resources=request.resources,
         )
-        print(f"[API] ✅ WorkflowPipeline 返回结果")
-
-        # 根据不同状态构造响应
         status = result.get("status")
-
         if status == "success":
-            # 成功生成工作流
-            # TODO: Copilot 暂时不需要保存对话历史
-            conversation_id = 0  # 临时固定值
-
-            response = WorkflowGenerationResponse(
+            return WorkflowGenerationResponse(
                 status="success",
                 workflow=result["workflow"],
                 explanation=result.get("explanation", "工作流生成成功"),
-                conversation_id=conversation_id,
                 resources=result.get("resources"),
                 selected_operators=result.get("selected_operators"),
-                validation_result=result.get("validation_result")
+                validation_result=result.get("validation_result"),
             )
-
-            print(f"[API] ✅ 工作流生成成功")
-            print(f"[API] 任务数量: {len(result['workflow']['tasks'])}")
-            print(f"[API] ✅ 请求处理完成\n")
-            return response
-
-        elif status == "need_clarification":
-            response = WorkflowGenerationResponse(
+        if status == "need_clarification":
+            return WorkflowGenerationResponse(
                 status="need_clarification",
                 clarification_reason=result.get("clarification_reason"),
-                message=result.get("message", "请补充已验证的资源事实")
+                message=result.get("message", "请补充已验证的资源事实"),
             )
-
-            print(f"[API] ⚠️  资源事实需要澄清")
-            return response
-
-        elif status == "validation_failed":
-            # 工作流验证失败（自动修复也失败）
-            response = WorkflowGenerationResponse(
+        if status == "validation_failed":
+            return WorkflowGenerationResponse(
                 status="validation_failed",
                 workflow=result.get("workflow"),
                 errors=result.get("errors", []),
                 warnings=result.get("warnings", []),
                 suggestions=result.get("suggestions", []),
-                message=result.get("message", "工作流生成但存在问题"),
+                message=result.get("message", "工作流生成但未通过验证"),
                 resources=result.get("resources"),
                 selected_operators=result.get("selected_operators"),
-                validation_result=result.get("validation_result")
+                validation_result=result.get("validation_result"),
             )
-
-            print(f"[API] ⚠️  工作流验证失败")
-            print(f"[API] 错误数量: {len(result.get('errors', []))}")
-            return response
-
-        else:
-            # 未知状态或错误
-            error_msg = result.get("message", "工作流生成失败")
-            print(f"[API] ❌ 错误: {error_msg}")
-            raise HTTPException(status_code=500, detail=error_msg)
-
+        raise RuntimeError("workflow_generation_failed")
     except HTTPException:
-        # 重新抛出 HTTPException
         raise
-
-    except Exception as e:
-        # 其他异常返回 500
-        print(f"[API] ❌ 工作流生成失败: {type(e).__name__}: {str(e)}")
-        import traceback
-        traceback.print_exc()
-
-        raise HTTPException(status_code=500, detail=f"工作流生成失败: {str(e)}") from e
-
-
-# TODO: Copilot 暂时不需要对话历史功能
-# @router.get("/workflow/conversations/{conversation_id}")
-# async def get_conversation_history(conversation_id: int):
-#     """获取对话历史"""
-#     try:
-#         history = await memory_service.get_conversation_history(conversation_id)
-#         return {"conversation_id": conversation_id, "messages": history}
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"获取对话历史失败: {str(e)}")
+    except ToolExecutionError as error:
+        raise HTTPException(status_code=502, detail=error.message) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=500, detail="工作流生成失败") from error

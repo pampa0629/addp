@@ -13,8 +13,9 @@ import (
 	"github.com/addp/common/dbbridge"
 	engineplugin "github.com/addp/common/engine/plugin"
 	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
+	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/common/events"
-	commonutils "github.com/addp/common/utils"
+	commonsecurity "github.com/addp/common/security"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 	"github.com/redis/go-redis/v9"
@@ -269,8 +270,9 @@ func (s *EngineService) buildRuntimeDescriptor(engine *models.Engine) (*models.E
 		LifecycleState: engine.LifecycleState, IsBuiltin: engine.IsBuiltin,
 		Capabilities: engine.Capabilities, ConnectionStatus: engine.ConnectionStatus,
 	}
-	if !commonutils.SupportsComputeEntrypoint(engine, "workflow") &&
-		!commonutils.SupportsComputeEntrypoint(engine, "script") &&
+	if !engineselection.SupportsComputeEntrypoint(engine, "workflow") &&
+		!engineselection.SupportsComputeEntrypoint(engine, "script") &&
+		!engineselection.SupportsComputeEntrypoint(engine, "inference") &&
 		!supportsFederatedQueryRuntime(engine) {
 		return descriptor, nil
 	}
@@ -858,7 +860,7 @@ func (s *EngineService) ListInternal(engineType string, tenantID uint) ([]models
 }
 
 // ListInternalWithCapability 按能力过滤资源（用于内部服务调用）
-func (s *EngineService) ListInternalWithCapability(tenantID uint, filter commonutils.CapabilityFilter) ([]models.Engine, error) {
+func (s *EngineService) ListInternalWithCapability(tenantID uint, filter engineselection.CapabilityFilter) ([]models.Engine, error) {
 	// 1. 先获取所有资源（可以按租户过滤）
 	allResources, err := s.ListInternal("", tenantID)
 	if err != nil {
@@ -871,7 +873,7 @@ func (s *EngineService) ListInternalWithCapability(tenantID uint, filter commonu
 	}
 
 	// 3. 使用通用过滤器进行能力匹配
-	return commonutils.FilterEnginesByCapability(allResources, filter), nil
+	return engineselection.FilterEnginesByCapability(allResources, filter), nil
 }
 
 // GetByIDInternal 内部服务直接访问资源详情（返回解密信息）
@@ -1129,7 +1131,7 @@ func (s *EngineService) encryptConnectionInfoForStorage(engineType string, connI
 	for field := range s.sensitiveFieldsForEngine(engineType) {
 		if val, exists := connInfo[field]; exists {
 			if strVal, ok := val.(string); ok && strVal != "" {
-				encryptedVal, err := commonutils.Encrypt(strVal, s.encryptionKey)
+				encryptedVal, err := commonsecurity.Encrypt(strVal, s.encryptionKey)
 				if err != nil {
 					return nil, fmt.Errorf("加密字段 %s 失败: %w", field, err)
 				}
@@ -1151,7 +1153,7 @@ func (s *EngineService) decryptStoredConnectionInfo(engineType string, connInfo 
 	for field := range s.sensitiveFieldsForEngine(engineType) {
 		if val, exists := connInfo[field]; exists {
 			if strVal, ok := val.(string); ok && strVal != "" {
-				decryptedVal, err := commonutils.Decrypt(strVal, s.encryptionKey)
+				decryptedVal, err := commonsecurity.Decrypt(strVal, s.encryptionKey)
 				if err != nil {
 					return nil, fmt.Errorf("解密字段 %s 失败: %w", field, err)
 				}

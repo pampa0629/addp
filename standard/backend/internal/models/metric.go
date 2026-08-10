@@ -4,17 +4,17 @@ import "time"
 
 // MetricCategory 指标目录（独立树形结构）
 type MetricCategory struct {
-	ID          int64      `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenantID    int64      `gorm:"not null;index" json:"tenant_id"`
-	Name        string     `gorm:"size:100;not null" json:"name"`
-	Code        string     `gorm:"size:50;not null" json:"code"`
-	Description string     `gorm:"type:text" json:"description"`
-	ParentID    *int64     `gorm:"index" json:"parent_id,omitempty"`
-	SortOrder   int        `gorm:"default:0" json:"sort_order"`
-	CreatedBy   int64      `gorm:"not null" json:"created_by"`
-	UpdatedBy   *int64     `json:"updated_by,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ID          int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	TenantID    int64     `gorm:"not null;index" json:"tenant_id"`
+	Name        string    `gorm:"size:100;not null" json:"name"`
+	Code        string    `gorm:"size:50;not null" json:"code"`
+	Description string    `gorm:"type:text" json:"description"`
+	ParentID    *int64    `gorm:"index" json:"parent_id,omitempty"`
+	SortOrder   int       `gorm:"default:0" json:"sort_order"`
+	CreatedBy   int64     `gorm:"not null" json:"created_by"`
+	UpdatedBy   *int64    `json:"updated_by,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 func (MetricCategory) TableName() string {
@@ -26,12 +26,12 @@ type Metric struct {
 	ID               int64       `gorm:"primaryKey;autoIncrement" json:"id"`
 	TenantID         int64       `gorm:"not null;index" json:"tenant_id"`
 	CategoryID       *int64      `gorm:"index" json:"category_id,omitempty"`
-	DomainID         *int64      `gorm:"index" json:"domain_id,omitempty"`  // 辅助标注，关联的主业务域
+	DomainID         *int64      `gorm:"index" json:"domain_id,omitempty"` // 辅助标注，关联的主业务域
 	Name             string      `gorm:"size:200;not null" json:"name"`
 	Code             string      `gorm:"size:100;not null" json:"code"`
-	Type             string      `gorm:"size:20;not null" json:"type"`      // atomic/derived/composite
-	Definition       string      `gorm:"type:text" json:"definition"`       // 业务口径描述
-	Formula          string      `gorm:"type:text" json:"formula"`          // 复合指标：计算公式描述
+	Type             string      `gorm:"size:20;not null" json:"type"` // atomic/derived/composite
+	Definition       string      `gorm:"type:text" json:"definition"`  // 业务口径描述
+	Formula          string      `gorm:"type:text" json:"formula"`     // 复合指标：计算公式描述
 	UnitID           *int64      `gorm:"index" json:"unit_id,omitempty"`
 	BaseMetricID     *int64      `gorm:"index" json:"base_metric_id,omitempty"` // 派生指标的基准原子指标
 	DerivationConfig JSONB       `gorm:"type:jsonb;serializer:json" json:"derivation_config"`
@@ -63,11 +63,11 @@ func (MetricElementMapping) TableName() string {
 
 // MetricDependency 复合指标依赖关系
 type MetricDependency struct {
-	ID           int64    `gorm:"primaryKey;autoIncrement" json:"id"`
-	FromMetricID int64    `gorm:"not null;index" json:"from_metric_id"`
-	ToMetricID   int64    `gorm:"not null" json:"to_metric_id"`
-	Coefficient  *float64 `json:"coefficient,omitempty"`
-	Note         string   `gorm:"type:text" json:"note"`
+	ID           int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	FromMetricID int64     `gorm:"not null;index" json:"from_metric_id"`
+	ToMetricID   int64     `gorm:"not null" json:"to_metric_id"`
+	Coefficient  *float64  `json:"coefficient,omitempty"`
+	Note         string    `gorm:"type:text" json:"note"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 

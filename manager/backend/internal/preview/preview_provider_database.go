@@ -7,12 +7,12 @@ import (
 	"strings"
 
 	commonClient "github.com/addp/common/client"
-	"github.com/addp/common/dataprofile"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	commonquery "github.com/addp/common/query"
 	"github.com/addp/common/spatial"
-	"github.com/addp/common/sqldialect"
+	"github.com/addp/manager/internal/dataprofile"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/profilefilter"
 	"github.com/addp/manager/internal/repository"
@@ -206,7 +206,7 @@ func (p *DatabaseTablePreviewProvider) queryData(
 		defer session.Close(ctx)
 		return readSessionPage(ctx, session, offset, limit)
 	}
-	dialect := sqldialect.ForEngine(engineType)
+	dialect := commonquery.ForEngine(engineType)
 	whereClause, args, err := profilefilter.SQL(dataScope, dialect, "")
 	if err != nil {
 		return nil, err
@@ -311,7 +311,7 @@ func databasePrimaryKeyColumns(columns []datatype.FieldInfo) []string {
 	return primaryKeys
 }
 
-func databasePreviewSelectExpr(dialect sqldialect.Dialect, columns []datatype.FieldInfo, tableAlias string) string {
+func databasePreviewSelectExpr(dialect commonquery.Dialect, columns []datatype.FieldInfo, tableAlias string) string {
 	if len(columns) == 0 {
 		if tableAlias != "" {
 			return dialect.QuoteIdentifier(tableAlias) + ".*"
@@ -335,7 +335,7 @@ func databasePreviewSelectExpr(dialect sqldialect.Dialect, columns []datatype.Fi
 	return strings.Join(selectColumns, ", ")
 }
 
-func databasePreviewColumnRef(dialect sqldialect.Dialect, tableAlias, column string) string {
+func databasePreviewColumnRef(dialect commonquery.Dialect, tableAlias, column string) string {
 	quotedColumn := dialect.QuoteIdentifier(column)
 	if tableAlias == "" {
 		return quotedColumn
@@ -344,7 +344,7 @@ func databasePreviewColumnRef(dialect sqldialect.Dialect, tableAlias, column str
 }
 
 func databasePreviewPostgreSQLPrimaryKeyPageQuery(
-	dialect sqldialect.Dialect,
+	dialect commonquery.Dialect,
 	selectExpr, schema, table string,
 	primaryKeys []string,
 	whereClause string,
@@ -385,7 +385,7 @@ func databasePreviewPostgreSQLPrimaryKeyPageQuery(
 	)
 }
 
-func databasePreviewKeyColumnList(dialect sqldialect.Dialect, primaryKeys []string) string {
+func databasePreviewKeyColumnList(dialect commonquery.Dialect, primaryKeys []string) string {
 	parts := make([]string, 0, len(primaryKeys))
 	for _, column := range primaryKeys {
 		parts = append(parts, dialect.QuoteIdentifier(column))
@@ -393,7 +393,7 @@ func databasePreviewKeyColumnList(dialect sqldialect.Dialect, primaryKeys []stri
 	return strings.Join(parts, ", ")
 }
 
-func databasePreviewOrderByClause(dialect sqldialect.Dialect, tableAlias string, columns []string) string {
+func databasePreviewOrderByClause(dialect commonquery.Dialect, tableAlias string, columns []string) string {
 	parts := make([]string, 0, len(columns))
 	for _, column := range columns {
 		parts = append(parts, databasePreviewColumnRef(dialect, tableAlias, column))
@@ -401,7 +401,7 @@ func databasePreviewOrderByClause(dialect sqldialect.Dialect, tableAlias string,
 	return strings.Join(parts, ", ")
 }
 
-func databasePreviewPrimaryKeyJoinClause(dialect sqldialect.Dialect, primaryKeys []string) string {
+func databasePreviewPrimaryKeyJoinClause(dialect commonquery.Dialect, primaryKeys []string) string {
 	parts := make([]string, 0, len(primaryKeys))
 	for _, column := range primaryKeys {
 		parts = append(parts, fmt.Sprintf(

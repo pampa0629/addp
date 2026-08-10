@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	commonClient "github.com/addp/common/client"
+	engineselection "github.com/addp/common/engine/selection"
 	commonModels "github.com/addp/common/models"
-	commonUtils "github.com/addp/common/utils"
 	"github.com/addp/manager/internal/preview"
 )
 
@@ -43,7 +43,7 @@ func (s *ExplorerService) GetEngineList(tenantID *uint) ([]*commonModels.Engine,
 
 	var storageEngines []*commonModels.Engine
 	for i := range engines {
-		if commonUtils.HasStorageCapability(&engines[i]) {
+		if engineselection.HasStorageCapability(&engines[i]) {
 			storageEngines = append(storageEngines, &engines[i])
 		}
 	}

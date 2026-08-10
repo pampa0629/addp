@@ -78,6 +78,16 @@ func SetupRouter(
 	router.POST("/api/v1/develop/notebook-kernel-sessions/:session_id/change-streams", notebookHandler.StreamSessionChanges)
 
 	// Notebook 原生交互协议使用单会话、单路径 HttpOnly 能力 Cookie。
+	notebookCopilot := router.Group("/api/v1/develop/notebook-copilot-sessions/:session_id")
+	notebookCopilot.Use(
+		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: cfg.SystemServiceURL}),
+		commonAuth.MustNewContextGuard("tenant"),
+		commonAuth.MustNewPermissionGuard(
+			developauthorization.PermissionDevelopNotebookUpdate,
+			developauthorization.PermissionDevelopTaskRead,
+		),
+	)
+	notebookCopilot.POST("/generate", notebookHandler.GenerateSessionNotebookCell)
 	router.Any("/api/v1/develop/notebook-sessions/:session_id", notebookHandler.ProxySession)
 	router.Any("/api/v1/develop/notebook-sessions/:session_id/*path", notebookHandler.ProxySession)
 

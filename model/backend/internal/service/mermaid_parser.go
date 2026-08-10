@@ -1,8 +1,18 @@
 package service
 
 import (
+	"encoding/json"
+	"fmt"
+	"regexp"
 	"strings"
 )
+
+var mermaidIdentifierPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
+var mermaidDataTypes = map[string]struct{}{
+	"string": {}, "int": {}, "bigint": {}, "float": {}, "decimal": {},
+	"date": {}, "datetime": {}, "bool": {}, "json": {}, "text": {}, "geometry": {},
+}
 
 // MermaidERParser Mermaid ER图解析器
 type MermaidERParser struct {
@@ -12,16 +22,30 @@ type MermaidERParser struct {
 
 // EntityDefinition 实体定义
 type EntityDefinition struct {
-	Name       string
-	Attributes []AttributeDefinition
+	Name        string
+	DisplayName string
+	Attributes  []AttributeDefinition
 }
 
 // AttributeDefinition 属性定义
 type AttributeDefinition struct {
-	Type string
-	Name string
-	IsPK bool
-	IsFK bool
+	Type        string
+	Name        string
+	DisplayName string
+	IsPK        bool
+	IsFK        bool
+	Nullable    bool
+}
+
+type mermaidEntityMetadata struct {
+	Code string `json:"code"`
+	Name string `json:"name"`
+}
+type mermaidAttributeMetadata struct {
+	Entity   string `json:"entity"`
+	Column   string `json:"column"`
+	Name     string `json:"name"`
+	Nullable bool   `json:"nullable"`
 }
 
 // RelationDefinition 关系定义
@@ -41,23 +65,55 @@ func ParseMermaidER(code string) (*MermaidERParser, error) {
 
 	lines := strings.Split(code, "\n")
 	var currentEntity *EntityDefinition
+	entityMetadata := map[string]mermaidEntityMetadata{}
+	attributeMetadata := map[string]mermaidAttributeMetadata{}
 
-	for _, line := range lines {
+	headerSeen := false
+	for lineNumber, line := range lines {
 		line = strings.TrimSpace(line)
 
-		// 跳过空行和注释
+		if strings.HasPrefix(line, "%% addp:entity ") {
+			var metadata mermaidEntityMetadata
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "%% addp:entity ")), &metadata); err != nil || metadata.Code == "" {
+				return nil, fmt.Errorf("第 %d 行 ADDP 实体元数据无效", lineNumber+1)
+			}
+			entityMetadata[metadata.Code] = metadata
+			continue
+		}
+		if strings.HasPrefix(line, "%% addp:attribute ") {
+			var metadata mermaidAttributeMetadata
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "%% addp:attribute ")), &metadata); err != nil || metadata.Entity == "" || metadata.Column == "" {
+				return nil, fmt.Errorf("第 %d 行 ADDP 属性元数据无效", lineNumber+1)
+			}
+			attributeMetadata[metadata.Entity+"."+metadata.Column] = metadata
+			continue
+		}
+		// 跳过空行和普通 Mermaid 注释
 		if line == "" || strings.HasPrefix(line, "%%") {
 			continue
 		}
 
 		// 跳过erDiagram标记
 		if line == "erDiagram" {
+			if headerSeen {
+				return nil, fmt.Errorf("第 %d 行重复声明 erDiagram", lineNumber+1)
+			}
+			headerSeen = true
 			continue
+		}
+		if !headerSeen {
+			return nil, fmt.Errorf("第 %d 行必须位于 erDiagram 声明之后", lineNumber+1)
 		}
 
 		// 解析实体定义开始: CUSTOMER {
 		if strings.HasSuffix(line, "{") && !strings.Contains(line, "||") {
+			if currentEntity != nil {
+				return nil, fmt.Errorf("第 %d 行出现嵌套实体定义", lineNumber+1)
+			}
 			entityName := strings.TrimSpace(strings.TrimSuffix(line, "{"))
+			if !mermaidIdentifierPattern.MatchString(entityName) {
+				return nil, fmt.Errorf("第 %d 行实体标识符无效: %s", lineNumber+1, entityName)
+			}
 			currentEntity = &EntityDefinition{
 				Name:       entityName,
 				Attributes: []AttributeDefinition{},
@@ -75,22 +131,92 @@ func ParseMermaidER(code string) (*MermaidERParser, error) {
 		// 解析属性: string customer_id PK FK
 		if currentEntity != nil {
 			attr := parseAttribute(line)
-			if attr != nil {
-				currentEntity.Attributes = append(currentEntity.Attributes, *attr)
+			if attr == nil {
+				return nil, fmt.Errorf("第 %d 行属性定义无效", lineNumber+1)
 			}
+			if _, ok := mermaidDataTypes[attr.Type]; !ok {
+				return nil, fmt.Errorf("第 %d 行属性类型不受支持: %s", lineNumber+1, attr.Type)
+			}
+			if !mermaidIdentifierPattern.MatchString(attr.Name) {
+				return nil, fmt.Errorf("第 %d 行属性标识符无效: %s", lineNumber+1, attr.Name)
+			}
+			if attr.IsFK {
+				return nil, fmt.Errorf("第 %d 行不支持 FK 标记，请使用显式关系定义", lineNumber+1)
+			}
+			currentEntity.Attributes = append(currentEntity.Attributes, *attr)
 			continue
 		}
 
 		// 解析关系: CUSTOMER ||--o{ ORDER : "places"
-		if strings.Contains(line, "||") || strings.Contains(line, "}o") {
-			relation := parseRelation(line)
-			if relation != nil {
-				parser.Relations = append(parser.Relations, *relation)
+		relation := parseRelation(line)
+		if relation == nil {
+			return nil, fmt.Errorf("第 %d 行关系定义无效", lineNumber+1)
+		}
+		if ConvertRelationType(relation.Symbol) == "" {
+			return nil, fmt.Errorf("第 %d 行关系符号不受支持: %s", lineNumber+1, relation.Symbol)
+		}
+		parser.Relations = append(parser.Relations, *relation)
+	}
+	if !headerSeen {
+		return nil, fmt.Errorf("缺少 erDiagram 声明")
+	}
+	if currentEntity != nil {
+		return nil, fmt.Errorf("实体 %s 缺少结束括号", currentEntity.Name)
+	}
+	if err := validateMermaidER(parser); err != nil {
+		return nil, err
+	}
+	for entityIndex := range parser.Entities {
+		entity := &parser.Entities[entityIndex]
+		entity.DisplayName = entity.Name
+		if metadata, ok := entityMetadata[entity.Name]; ok && metadata.Name != "" {
+			entity.DisplayName = metadata.Name
+		}
+		for attributeIndex := range entity.Attributes {
+			attribute := &entity.Attributes[attributeIndex]
+			attribute.DisplayName = attribute.Name
+			attribute.Nullable = !attribute.IsPK
+			if metadata, ok := attributeMetadata[entity.Name+"."+attribute.Name]; ok {
+				if metadata.Name != "" {
+					attribute.DisplayName = metadata.Name
+				}
+				attribute.Nullable = metadata.Nullable
+			}
+			if attribute.IsPK {
+				attribute.Nullable = false
 			}
 		}
 	}
-
 	return parser, nil
+}
+
+func validateMermaidER(parser *MermaidERParser) error {
+	entities := make(map[string]struct{}, len(parser.Entities))
+	for _, entity := range parser.Entities {
+		if _, exists := entities[entity.Name]; exists {
+			return fmt.Errorf("实体重复: %s", entity.Name)
+		}
+		entities[entity.Name] = struct{}{}
+		attributes := make(map[string]struct{}, len(entity.Attributes))
+		for _, attribute := range entity.Attributes {
+			if _, exists := attributes[attribute.Name]; exists {
+				return fmt.Errorf("实体 %s 的属性重复: %s", entity.Name, attribute.Name)
+			}
+			attributes[attribute.Name] = struct{}{}
+		}
+	}
+	for _, relation := range parser.Relations {
+		if _, exists := entities[relation.Source]; !exists {
+			return fmt.Errorf("关系引用不存在的源实体: %s", relation.Source)
+		}
+		if _, exists := entities[relation.Target]; !exists {
+			return fmt.Errorf("关系引用不存在的目标实体: %s", relation.Target)
+		}
+		if relation.Source == relation.Target {
+			return fmt.Errorf("关系不能连接同一实体: %s", relation.Source)
+		}
+	}
+	return nil
 }
 
 // parseAttribute 解析属性行
@@ -129,7 +255,7 @@ func parseRelation(line string) *RelationDefinition {
 	// 或 CUSTOMER ||--o{ ORDER : places
 
 	// 分割冒号获取标签
-	parts := strings.Split(line, ":")
+	parts := strings.SplitN(line, ":", 2)
 	if len(parts) < 1 {
 		return nil
 	}
@@ -168,7 +294,7 @@ func ConvertRelationType(symbol string) string {
 	case "}o--o{", "}o..o{":
 		return "many_to_many"
 	default:
-		return "one_to_many"
+		return ""
 	}
 }
 

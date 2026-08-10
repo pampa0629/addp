@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/addp/common/dataprofile"
 	"github.com/addp/common/datatype"
-	"github.com/addp/common/sqldialect"
+	commonquery "github.com/addp/common/query"
+	"github.com/addp/manager/internal/dataprofile"
 )
 
 const (
@@ -250,7 +250,7 @@ func deduplicateValues(values []interface{}) []interface{} {
 }
 
 // SQL compiles a normalized condition scope into a parameterized WHERE clause.
-func SQL(scope dataprofile.DataScope, dialect sqldialect.Dialect, tableAlias string) (string, []interface{}, error) {
+func SQL(scope dataprofile.DataScope, dialect commonquery.Dialect, tableAlias string) (string, []interface{}, error) {
 	if scope.Kind == "" || scope.Kind == dataprofile.DataScopeKindAll {
 		return "", nil, nil
 	}

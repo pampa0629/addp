@@ -157,6 +157,12 @@ other = "引擎当前不可用"
 [develop.notebook.catalog_timeout]
 other = "目录读取超时"
 
+[develop.notebook.copilot_invalid_request]
+other = "Notebook AI 助手请求无效"
+
+[develop.notebook.copilot_failed]
+other = "Notebook AI 助手生成失败：{{.Detail}}"
+
 [develop.approval.invalid_request]
 other = "审批请求无效"
 

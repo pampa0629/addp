@@ -829,6 +829,9 @@ const docTemplate = `{
                 "actor_tenant_membership_id": {
                     "type": "integer"
                 },
+                "attempt": {
+                    "type": "integer"
+                },
                 "authorization_effects": {
                     "type": "array",
                     "items": {
@@ -887,6 +890,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "issued_authorization_version": {
+                    "type": "integer"
+                },
+                "max_attempts": {
                     "type": "integer"
                 },
                 "metadata": {

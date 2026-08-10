@@ -1,6 +1,6 @@
 import pytest
 
-from tools import develop_tools
+from services import operator_catalog
 
 
 class FakeDevelopClient:
@@ -25,22 +25,21 @@ class FakeDevelopClient:
 async def test_operator_discovery_uses_copilot_tenant_service_identity(monkeypatch):
     token_source = object()
     FakeDevelopClient.instances.clear()
-    monkeypatch.setattr(develop_tools, "DevelopClient", FakeDevelopClient)
+    monkeypatch.setattr(operator_catalog, "DevelopClient", FakeDevelopClient)
     monkeypatch.setattr(
-        develop_tools.CopilotInferenceService,
+        operator_catalog.CopilotInferenceService,
         "token_source",
         classmethod(lambda _cls: token_source),
     )
 
-    result = await develop_tools.OperatorDiscoveryTool()._arun(
+    result = await operator_catalog.OperatorCatalogService().list_operators(
         workflow_engine_id=12,
         tenant_id=7,
     )
 
     assert result == [{"name": "load", "brief": "Load", "category": "IO"}]
     assert FakeDevelopClient.instances[0].kwargs == {
-        "base_url": develop_tools.settings.get_develop_url(),
+        "base_url": operator_catalog.settings.get_develop_url(),
         "tenant_id": 7,
         "service_token_source": token_source,
     }
-

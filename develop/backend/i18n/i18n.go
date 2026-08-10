@@ -79,6 +79,8 @@ const (
 	MsgNotebookCatalogUnsupported        = "develop.notebook.catalog_unsupported"
 	MsgNotebookCatalogEngineUnavailable  = "develop.notebook.catalog_engine_unavailable"
 	MsgNotebookCatalogTimeout            = "develop.notebook.catalog_timeout"
+	MsgNotebookCopilotInvalidRequest     = "develop.notebook.copilot_invalid_request"
+	MsgNotebookCopilotFailed             = "develop.notebook.copilot_failed"
 	MsgApprovalInvalidRequest            = "develop.approval.invalid_request"
 	MsgApprovalInvalidDecision           = "develop.approval.invalid_decision"
 	MsgApprovalForbidden                 = "develop.approval.forbidden"

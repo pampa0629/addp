@@ -9,7 +9,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/sqldialect"
+	commonquery "github.com/addp/common/query"
 	"gorm.io/gorm"
 )
 
@@ -183,7 +183,7 @@ func (d MySQLCompatibleCatalogFactsDialect) fieldInfo(row mysqlCompatibleColumnR
 
 func (d MySQLCompatibleCatalogFactsDialect) RowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
 	var count int64
-	query := sqldialect.ForEngine("mysql").CountTableSQL(schema, table, "")
+	query := commonquery.ForEngine("mysql").CountTableSQL(schema, table, "")
 	if err := db.WithContext(ctx).Raw(query).Scan(&count).Error; err != nil {
 		return 0, fmt.Errorf("failed to get row count: %w", err)
 	}

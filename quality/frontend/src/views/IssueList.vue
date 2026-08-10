@@ -6,7 +6,7 @@
 
     <el-form :inline="true" style="margin-bottom:16px">
       <el-form-item :label="t('quality.issue.statusFilter')">
-        <el-select v-model="filter.status" clearable :placeholder="t('quality.issue.allStatus')" @change="fetchList" style="width:120px">
+        <el-select v-model="filter.status" clearable :placeholder="t('quality.issue.allStatus')" @change="applyFilters" style="width:120px">
           <el-option :label="t('quality.issue.open')" value="open" />
           <el-option :label="t('quality.issue.resolved')" value="resolved" />
           <el-option :label="t('quality.issue.ignored')" value="ignored" />
@@ -16,7 +16,7 @@
 
     <el-table :data="list" v-loading="loading" border>
       <el-table-column prop="id" :label="t('quality.issue.id')" width="80" />
-      <el-table-column prop="rule_type" :label="t('quality.issue.ruleType')" width="120" />
+      <el-table-column prop="type" :label="t('quality.issue.ruleType')" width="120" />
       <el-table-column prop="table_name" :label="t('quality.issue.tableName')" width="160" />
       <el-table-column prop="column_name" :label="t('quality.issue.column')" width="130" />
       <el-table-column :label="t('quality.issue.passRate')" width="100">
@@ -38,12 +38,22 @@
         </template>
       </el-table-column>
     </el-table>
+    <el-pagination
+      v-model:current-page="pagination.page"
+      v-model:page-size="pagination.page_size"
+      :page-sizes="[20, 50, 100]"
+      layout="total, sizes, prev, pager, next"
+      :total="pagination.total"
+      class="pagination"
+      @size-change="fetchList"
+      @current-change="fetchList"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { issueAPI } from '../api/quality'
 import { useI18n } from 'vue-i18n'
 
@@ -52,6 +62,7 @@ const { t } = useI18n()
 const list = ref([])
 const loading = ref(false)
 const filter = ref({ status: '' })
+const pagination = ref({ page: 1, page_size: 20, total: 0 })
 
 const statusTagType = (s) => ({ open: 'danger', resolved: 'success', ignored: 'info' }[s] || 'info')
 const statusLabel = (s) => ({
@@ -63,22 +74,37 @@ const statusLabel = (s) => ({
 const fetchList = async () => {
   loading.value = true
   try {
-    const params = {}
+    const params = { page: pagination.value.page, page_size: pagination.value.page_size }
     if (filter.value.status) params.status = filter.value.status
     const res = await issueAPI.list(params)
-    list.value = res || []
+    list.value = res?.data || []
+    pagination.value.total = res?.total || 0
+  } catch (e) {
+    ElMessage.error(e.response?.data?.error || t('quality.issue.loadFailed'))
   } finally {
     loading.value = false
   }
 }
 
+const applyFilters = () => {
+  pagination.value.page = 1
+  fetchList()
+}
+
 const changeStatus = async (id, status) => {
   try {
-    await issueAPI.updateStatus(id, status)
+    const { value: note } = await ElMessageBox.prompt(t('quality.issue.notePrompt'), t('quality.issue.noteTitle'), {
+      inputPattern: /\S+/,
+      inputErrorMessage: t('quality.issue.noteRequired'),
+      confirmButtonText: t('quality.issue.confirm'),
+      cancelButtonText: t('quality.issue.cancel')
+    })
+    await issueAPI.updateStatus(id, status, note)
     ElMessage.success(t('quality.issue.updateSuccess'))
     await fetchList()
   } catch (e) {
-    ElMessage.error(t('quality.issue.updateFailed'))
+    if (e === 'cancel' || e === 'close') return
+    ElMessage.error(e.response?.data?.error || t('quality.issue.updateFailed'))
   }
 }
 
@@ -88,5 +114,9 @@ onMounted(fetchList)
 <style scoped>
 .page-header {
   margin-bottom: 16px;
+}
+.pagination {
+  margin-top: 16px;
+  justify-content: flex-end;
 }
 </style>

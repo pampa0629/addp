@@ -5,8 +5,8 @@ import (
 	"log"
 	"os"
 
+	commonConfig "github.com/addp/common/config"
 	commonExecution "github.com/addp/common/execution"
-	commonUtils "github.com/addp/common/utils"
 	"github.com/addp/system/internal/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -23,7 +23,7 @@ func InitDB(dbPath string) (*gorm.DB, error) {
 
 	// 构建 PostgreSQL DSN
 	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable search_path=system TimeZone=%s",
-		host, port, user, password, dbname, commonUtils.GetTimezone())
+		host, port, user, password, dbname, commonConfig.GetTimezone())
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),

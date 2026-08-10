@@ -1072,8 +1072,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.QualityRulesResponse"
                         }
                     }
                 },
@@ -2493,6 +2492,60 @@
                 },
                 "source_reference": {
                     "description": "在源模块中的唯一标识",
+                    "type": "string"
+                }
+            }
+        },
+        "dataquality.Parameters": {
+            "type": "object",
+            "properties": {
+                "max": {
+                    "type": "string"
+                },
+                "min": {
+                    "type": "string"
+                },
+                "pattern": {
+                    "type": "string"
+                },
+                "values": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "dataquality.Rule": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "params": {
+                    "$ref": "#/definitions/dataquality.Parameters"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.QualityRulesResponse": {
+            "type": "object",
+            "properties": {
+                "rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataquality.Rule"
+                    }
+                },
+                "schema_version": {
                     "type": "string"
                 }
             }

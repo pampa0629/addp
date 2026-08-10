@@ -310,7 +310,7 @@ func (s *CleanupService) disableCandidates(ctx context.Context, candidates quali
 		stats.DisabledRuleApps++
 	}
 	for _, item := range candidates.checkTasks {
-		if err := s.db.WithContext(ctx).Model(&models.CheckTask{}).Where("id = ?", item.ID).Updates(map[string]interface{}{"enabled": false, "next_run_at": nil}).Error; err != nil {
+		if err := s.db.WithContext(ctx).Model(&models.CheckTask{}).Where("id = ?", item.ID).Update("enabled", false).Error; err != nil {
 			stats.Errors = append(stats.Errors, fmt.Sprintf("disable check task %d failed: %v", item.ID, err))
 			continue
 		}

@@ -13,23 +13,48 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 346 {
-		t.Fatalf("descriptor count = %d, want 346", len(descriptors))
+	if len(descriptors) != 348 {
+		t.Fatalf("descriptor count = %d, want 348", len(descriptors))
 	}
 	if descriptors[0].Key != "agent.configuration.read" || descriptors[len(descriptors)-1].Key != "transfer.task.update" {
 		t.Fatalf("descriptor boundary keys = %q, %q", descriptors[0].Key, descriptors[len(descriptors)-1].Key)
 	}
 
 	roles := report.Roles
-	if len(roles) != 54 {
-		t.Fatalf("role count = %d, want 54", len(roles))
+	if len(roles) != 56 {
+		t.Fatalf("role count = %d, want 56", len(roles))
 	}
 	if roles[0].Key != "platform.agent_runtime" || roles[len(roles)-1].Key != "tenant.transfer_runtime" {
 		t.Fatalf("role boundary keys = %q, %q", roles[0].Key, roles[len(roles)-1].Key)
 	}
 	assertRepositoryRolePermissions(t, roles, "platform.inference_runtime", []string{"system.runtime_registry.update"})
-	assertRepositoryRolePermissions(t, roles, "tenant.agent_runtime", []string{"inference.runtime.execute"})
-	assertRepositoryRolePermissions(t, roles, "tenant.copilot_runtime", []string{"develop.task.read", "inference.runtime.execute"})
+	assertRepositoryRolePermissions(t, roles, "tenant.agent_runtime", []string{"inference.runtime.execute", "system.engine_descriptor.read"})
+	assertRepositoryRolePermissions(t, roles, "tenant.copilot_runtime", []string{"develop.task.read", "inference.runtime.execute", "system.engine_descriptor.read"})
+	assertRepositoryRolePrincipalTypes(t, roles, "tenant.data_architect", []string{"user"})
+	assertRepositoryRoleScopes(t, roles, "tenant.data_architect", []string{"tenant"})
+	assertRepositoryRolePermissions(t, roles, "tenant.data_architect", []string{
+		"model.dw_layer.create",
+		"model.dw_layer.delete",
+		"model.dw_layer.read",
+		"model.dw_layer.update",
+		"model.entity.approve",
+		"model.entity.create",
+		"model.entity.delete",
+		"model.entity.read",
+		"model.entity.update",
+		"model.entity_relation.create",
+		"model.entity_relation.delete",
+		"model.entity_relation.read",
+		"model.entity_relation.update",
+		"model.logical_model.create",
+		"model.logical_model.delete",
+		"model.logical_model.read",
+		"model.logical_model.update",
+		"standard.dimension_hierarchy.read",
+		"standard.domain.read",
+		"standard.element.read",
+		"standard.metric.read",
+	})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.manager_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "tenant.manager_runtime", []string{
 		"inference.runtime.execute",
@@ -42,6 +67,13 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"audit.tenant_event.create",
 		"system.engine.read",
 		"system.engine_descriptor.read",
+	})
+	assertRepositoryRolePrincipalTypes(t, roles, "tenant.model_runtime", []string{"service_principal"})
+	assertRepositoryRolePermissions(t, roles, "tenant.model_runtime", []string{
+		"standard.dimension_hierarchy.read",
+		"standard.domain.read",
+		"standard.element.read",
+		"standard.metric.read",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.transfer_runtime", []string{
 		"meta.catalog.read",
@@ -68,6 +100,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"meta.catalog.read",
 		"standard.element.read",
 		"system.engine.read",
+		"system.execution_authorization.execute",
 	})
 	assertRepositoryRolePrincipalTypes(t, roles, "platform.manager_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "platform.manager_runtime", []string{
@@ -130,7 +163,9 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"agent.session.create",
 		"agent.session.delete",
 		"agent.session.read",
+		"copilot.notebook.execute",
 		"copilot.sql.execute",
+		"copilot.transfer.execute",
 		"copilot.workflow.execute",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.data_steward", []string{
@@ -247,20 +282,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"asset.rating.update",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.governance_manager", []string{
+		"develop.data_read.execute",
 		"meta.lineage.read",
-		"model.entity.approve",
-		"model.entity.create",
-		"model.entity.delete",
-		"model.entity.read",
-		"model.entity.update",
-		"model.entity_relation.create",
-		"model.entity_relation.delete",
-		"model.entity_relation.read",
-		"model.entity_relation.update",
-		"model.logical_model.create",
-		"model.logical_model.delete",
-		"model.logical_model.read",
-		"model.logical_model.update",
 		"monitor.execution.read",
 		"quality.check_task.create",
 		"quality.check_task.delete",
@@ -314,6 +337,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"standard.unit.delete",
 		"standard.unit.read",
 		"standard.unit.update",
+		"system.execution_authorization.create",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.monitoring_operator", []string{
 		"monitor.alert_incident.read",
@@ -363,6 +387,19 @@ func assertRepositoryRolePrincipalTypes(t *testing.T, roles []BuiltinRoleDescrip
 		if role.Key == key {
 			if !reflect.DeepEqual(role.AllowedPrincipalTypes, want) {
 				t.Fatalf("role %q principal types = %v, want %v", key, role.AllowedPrincipalTypes, want)
+			}
+			return
+		}
+	}
+	t.Fatalf("role %q not found", key)
+}
+
+func assertRepositoryRoleScopes(t *testing.T, roles []BuiltinRoleDescriptor, key string, want []string) {
+	t.Helper()
+	for _, role := range roles {
+		if role.Key == key {
+			if !reflect.DeepEqual(role.AllowedScopeTypes, want) {
+				t.Fatalf("role %q scopes = %v, want %v", key, role.AllowedScopeTypes, want)
 			}
 			return
 		}

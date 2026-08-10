@@ -30,6 +30,7 @@ type Config struct {
 	MetaServiceURL     string
 	TransferServiceURL string
 	ManagerServiceURL  string
+	CopilotServiceURL  string
 
 	// SQL 执行配置
 	DefaultQueryTimeout int // 默认查询超时(秒)
@@ -71,6 +72,7 @@ func Load() *Config {
 		MetaServiceURL:     getEnv("META_URL", "http://localhost:8082"),
 		TransferServiceURL: getEnv("TRANSFER_URL", "http://localhost:8083"),
 		ManagerServiceURL:  getEnv("MANAGER_URL", "http://localhost:8081"),
+		CopilotServiceURL:  getEnv("COPILOT_URL", "http://localhost:8087"),
 
 		// SQL 执行配置
 		DefaultQueryTimeout: 30,

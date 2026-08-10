@@ -11,6 +11,14 @@ from config import settings
 
 
 def _python_type(schema: dict[str, Any]):
+    schema_type = schema.get("type")
+    if isinstance(schema_type, list):
+        schema_type = next((value for value in schema_type if value != "null"), None)
+    if schema_type is None and schema.get("anyOf"):
+        schema_type = next(
+            (item.get("type") for item in schema["anyOf"] if item.get("type") != "null"),
+            None,
+        )
     return {
         "string": str,
         "integer": int,
@@ -18,7 +26,7 @@ def _python_type(schema: dict[str, Any]):
         "boolean": bool,
         "array": list,
         "object": dict,
-    }.get(schema.get("type"), Any)
+    }.get(schema_type, Any)
 
 
 def _arguments_model(tool_name: str, schema: dict[str, Any]) -> type[BaseModel]:

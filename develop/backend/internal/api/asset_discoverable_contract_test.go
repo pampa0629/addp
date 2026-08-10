@@ -3,7 +3,7 @@ package api
 import (
 	"testing"
 
-	"github.com/addp/common/authtest"
+	"github.com/addp/common/authorization/authtest"
 	developauthorization "github.com/addp/develop/backend/internal/authorization"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/repository"

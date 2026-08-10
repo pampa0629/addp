@@ -31,10 +31,12 @@
           <span v-else class="no-file">—</span>
         </template>
       </el-table-column>
-      <el-table-column :label="$t('standard.documentPanel.docActions')" width="120" align="center" fixed="right">
+      <el-table-column :label="$t('standard.documentPanel.docActions')" width="150" align="center" fixed="right">
         <template #default="{ row }">
+          <div class="table-actions">
           <el-button v-if="row.file_name" link size="small" type="primary" @click="downloadDoc(row)">{{ $t('standard.documentPanel.download') }}</el-button>
           <el-button link size="small" type="danger" @click="unlinkDoc(row)">{{ $t('standard.documentPanel.unlink') }}</el-button>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -124,6 +126,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Paperclip } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { elementDocumentAPI, glossaryDocumentAPI, metricDocumentAPI, documentAPI } from '../api/standard'
+import { saveBlob } from '../utils/download'
 
 const { t } = useI18n()
 
@@ -192,9 +195,13 @@ const loadDocs = async () => {
 
 const isAlreadyLinked = (docId) => docs.value.some(d => d.id === docId)
 
-const downloadDoc = (doc) => {
-  const url = api[props.entityType].downloadUrl(doc.id)
-  window.open(url, '_blank')
+const downloadDoc = async (doc) => {
+  try {
+    const blob = await api[props.entityType].download(doc.id)
+    saveBlob(blob, doc.file_name || doc.name)
+  } catch (e) {
+    ElMessage.error(e.response?.data?.error || t('standard.document.downloadFailed'))
+  }
 }
 
 const unlinkDoc = async (doc) => {
@@ -274,13 +281,19 @@ const confirmLink = async () => {
   if (selectedDocIds.value.length === 0) return
   linking.value = true
   try {
-    await Promise.all(
+    const results = await Promise.allSettled(
       selectedDocIds.value.map(docId => api[props.entityType].link(props.entityId, docId))
     )
+    const failed = results.filter(result => result.status === 'rejected').length
+    const succeeded = results.length - failed
+    await loadDocs()
+    if (failed > 0) {
+      ElMessage.warning(t('standard.documentPanel.linkPartial', { succeeded, failed }))
+      return
+    }
     ElMessage.success(t('standard.documentPanel.linkSuccess'))
     showLinkDialog.value = false
     selectedDocIds.value = []
-    await loadDocs()
   } catch (e) {
     ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
   } finally {
@@ -353,4 +366,6 @@ onMounted(() => {
   font-size: 13px;
   color: var(--el-text-color-secondary);
 }
+
+.table-actions { display: flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap; }
 </style>

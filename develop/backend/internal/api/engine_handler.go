@@ -4,9 +4,9 @@ import (
 	"net/http"
 
 	commonClient "github.com/addp/common/client"
+	engineselection "github.com/addp/common/engine/selection"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/common/utils"
 	developi18n "github.com/addp/develop/backend/i18n"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
@@ -70,7 +70,7 @@ func (h *EngineHandler) ListWorkflowEngines(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, filterDevelopEngineDescriptors(engines, func(engine *commonModels.Engine) bool {
-		return utils.SupportsComputeEntrypoint(engine, "workflow")
+		return engineselection.SupportsComputeEntrypoint(engine, "workflow")
 	}))
 }
 

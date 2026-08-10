@@ -24,6 +24,7 @@ export * from './utils/taskOwnerUrl'
 export * from './utils/moduleRouteNavigation'
 export * from './utils/recoverableRouteState'
 export * from './utils/resourceSelection'
+export * from './utils/resourceCandidateSelection.mjs'
 export * from './utils/continuousExecution'
 export * from './utils/focus'
 export * from './utils/latestRequest'
@@ -35,7 +36,7 @@ export * from './types/tree'
 // resourceLocator 已经通过 types/index 导出，无需重复
 
 // Resource capability APIs
-export { detectTableMetadata, getResourceFields } from './api/resourceCapability'
+export { detectTableMetadata, getResourceFields, getResourceItemByCatalogPath } from './api/resourceCapability'
 
 // Resource Tree API
 export {

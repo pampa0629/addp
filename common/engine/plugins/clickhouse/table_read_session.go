@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/addp/common/engine/plugin"
+	commonquery "github.com/addp/common/query"
 	"github.com/addp/common/resume"
-	"github.com/addp/common/sqldialect"
 )
 
 var _ plugin.TableReadSessionProvider = (*ClickHousePlugin)(nil)
@@ -43,7 +43,7 @@ func (p *ClickHousePlugin) OpenTableReadSession(
 	if err != nil {
 		return nil, fmt.Errorf("open ClickHouse read connection: %w", err)
 	}
-	query := sqldialect.ForEngine(p.Type()).SelectTableSQL("*", segments[0].Name, segments[1].Name, "", "", 0, 0)
+	query := commonquery.ForEngine(p.Type()).SelectTableSQL("*", segments[0].Name, segments[1].Name, "", "", 0, 0)
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		_ = db.Close()

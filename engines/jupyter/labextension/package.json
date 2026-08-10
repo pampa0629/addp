@@ -1,0 +1,26 @@
+{
+  "name": "@addp/notebook-bridge",
+  "version": "1.0.0",
+  "description": "ADDP controlled Notebook cell insertion bridge",
+  "private": true,
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib/**/*"
+  ],
+  "scripts": {
+    "build": "tsc && jupyter labextension build ."
+  },
+  "dependencies": {
+    "@jupyterlab/application": "^4.2.0",
+    "@jupyterlab/notebook": "^4.2.0"
+  },
+  "devDependencies": {
+    "@jupyterlab/builder": "^4.2.0",
+    "typescript": "^5.7.0"
+  },
+  "jupyterlab": {
+    "extension": true,
+    "outputDir": "labextension"
+  }
+}

@@ -24,14 +24,14 @@ class WorkflowValidationChain:
     3. 支持警告（非致命错误）
     """
 
-    def __init__(self, operator_detail_tool: Any):
+    def __init__(self, operator_catalog: Any):
         """
         初始化工作流验证 Chain
 
         Args:
-            operator_detail_tool: 算子详情 Tool（用于参数验证）
+            operator_catalog: Develop Public Operator Spec 目录（用于参数验证）
         """
-        self.operator_detail_tool = operator_detail_tool
+        self.operator_catalog = operator_catalog
 
     async def validate(
         self,
@@ -49,8 +49,6 @@ class WorkflowValidationChain:
         Returns:
             ValidationResult: 验证结果（包含错误、警告、建议）
         """
-        print(f"[WorkflowValidationChain] 开始验证工作流（{len(workflow.tasks)} 个任务，工作流引擎 ID: {workflow_engine_id}）")
-
         if not workflow_engine_id:
             return ValidationResult(
                 is_valid=False,
@@ -64,13 +62,11 @@ class WorkflowValidationChain:
         suggestions = []
 
         # 第 1 层：结构验证
-        print(f"[WorkflowValidationChain] 第 1 层：结构验证")
         structure_errors = self._validate_structure(workflow)
         errors.extend(structure_errors)
 
         # 如果结构验证失败，后续验证可能无意义
         if structure_errors:
-            print(f"[WorkflowValidationChain] ❌ 结构验证失败，跳过后续验证")
             return ValidationResult(
                 is_valid=False,
                 errors=errors,
@@ -79,18 +75,15 @@ class WorkflowValidationChain:
             )
 
         # 第 2 层：唯一性验证
-        print(f"[WorkflowValidationChain] 第 2 层：唯一性验证")
         uniqueness_errors = self._validate_uniqueness(workflow)
         errors.extend(uniqueness_errors)
 
         # 第 3 层：依赖验证
-        print(f"[WorkflowValidationChain] 第 3 层：依赖验证")
         dependency_errors, dependency_warnings = self._validate_dependencies(workflow)
         errors.extend(dependency_errors)
         warnings.extend(dependency_warnings)
 
         # 第 4 层：参数验证（异步，按 workflow_engine_id 获取算子定义）
-        print(f"[WorkflowValidationChain] 第 4 层：参数验证")
         param_errors, param_warnings = await self._validate_parameters(
             workflow,
             workflow_engine_id,
@@ -103,11 +96,6 @@ class WorkflowValidationChain:
         suggestions = self._generate_suggestions(errors, warnings)
 
         is_valid = len(errors) == 0
-
-        if is_valid:
-            print(f"[WorkflowValidationChain] ✅ 验证通过（{len(warnings)} 个警告）")
-        else:
-            print(f"[WorkflowValidationChain] ❌ 验证失败（{len(errors)} 个错误，{len(warnings)} 个警告）")
 
         return ValidationResult(
             is_valid=is_valid,
@@ -326,10 +314,10 @@ class WorkflowValidationChain:
                 continue
 
             # 1. 获取算子定义（按工作流引擎实例）
-            operator_def = await self.operator_detail_tool._arun(
-                operator_name=task.operator,
-                workflow_engine_id=workflow_engine_id,
-                tenant_id=tenant_id,
+            operator_def = await self.operator_catalog.get_operator(
+                task.operator,
+                workflow_engine_id,
+                tenant_id,
             )
 
             if not operator_def:
@@ -489,9 +477,3 @@ class WorkflowValidationChain:
         suggestions = list(set(suggestions))
 
         return suggestions
-
-
-# 便捷函数：创建 WorkflowValidationChain 实例
-def create_workflow_validation_chain(operator_detail_tool: Any):
-    """创建工作流验证 Chain 实例"""
-    return WorkflowValidationChain(operator_detail_tool)

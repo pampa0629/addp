@@ -9,7 +9,7 @@ import (
 	"time"
 
 	commonModels "github.com/addp/common/models"
-	commonUtils "github.com/addp/common/utils"
+	commonsecurity "github.com/addp/common/security"
 	monitorModels "github.com/addp/monitor/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -108,7 +108,7 @@ func (s *WebhookService) CreateDestination(ctx context.Context, input CreateWebh
 	if err != nil {
 		return nil, err
 	}
-	ciphertext, err := commonUtils.Encrypt(input.Secret, s.encryptionKey)
+	ciphertext, err := commonsecurity.Encrypt(input.Secret, s.encryptionKey)
 	if err != nil {
 		return nil, fmt.Errorf("encrypt webhook secret: %w", err)
 	}
@@ -183,7 +183,7 @@ func (s *WebhookService) UpdateDestination(ctx context.Context, input UpdateWebh
 		updates["enabled"] = *input.Enabled
 	}
 	if input.Secret != nil {
-		ciphertext, encryptErr := commonUtils.Encrypt(*input.Secret, s.encryptionKey)
+		ciphertext, encryptErr := commonsecurity.Encrypt(*input.Secret, s.encryptionKey)
 		if encryptErr != nil {
 			return nil, fmt.Errorf("encrypt webhook secret: %w", encryptErr)
 		}

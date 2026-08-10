@@ -1,7 +1,7 @@
 # ADDP 数据血缘能力规范
 
-**状态**：正式规范（阶段 1 实现依据）  
-**更新时间**：2026-08-08
+**状态**：正式规范（阶段 1 已实现）
+**更新时间**：2026-08-10
 **适用范围**：Meta、Transfer、Develop、Manager、Service、Asset、Graph、Orchestrator 及 `common` / `common-frontend`
 
 ## 一、定位与边界
@@ -283,6 +283,25 @@ GET /api/v1/meta/lineage/graph
 
 该 API 必须执行 Tenant、Meta lineage read Permission 和 owner 资源可见性校验。不得因为用户能看到某个服务，就自动泄露该服务无权访问的上游数据项名称。
 
+### 7.1 执行事实采集 API
+
+真实读写 owner 在成功 execution 和 `lineage_facts` 持久化后，可通知 Meta 立即采集指定 execution：
+
+```http
+POST /api/v1/meta/lineage/executions/{execution_id}/collect
+```
+
+该接口是模块间内部 API，不是前端查询入口。当前 Develop 使用 `addp-develop` Service Principal，并要求 `meta.lineage.create` Permission。成功响应直接返回：
+
+```json
+{
+  "observed": 1,
+  "skipped": 0
+}
+```
+
+立即采集与周期 collector 必须共同调用 `LineageService.CollectExecution`；通知失败不得改变成功 execution，周期 collector 负责漏采和失败重试。Item refresh 不调用该接口。
+
 本规范不保留旧计划中的 `/upstream`、`/downstream`、`/path`、`/impact` 多套并行入口；这些能力由 `direction`、`depth`、`as_of` 和统一图结构表达。
 
 ## 八、共享前端边界
@@ -300,16 +319,24 @@ GET /api/v1/meta/lineage/graph
 
 组件放在 `common-frontend/graph`，不放入 `basic`；消费模块按需声明 G6 依赖，保持 Vue 单实例和共享前端无自有 `node_modules`。
 
-## 九、实施顺序与验收
+## 九、当前状态与后续边界
 
-1. 先完成本规范、术语表、任务体系、数据项体系和数据服务体系同步。
-2. 定义 `lineage_facts`，完成 Transfer -> Meta 的资源级闭环。
-3. 完成统一图查询 API、租户/权限测试和历史投影测试。
-4. 在 `common-frontend/graph` 实现查看器，先集成 Manager，再集成 Service 和 Asset。
-5. 接入 Develop Workflow、Service SQL 依赖和其他业务产物。
-6. 最后实现字段级血缘及 Model/Quality 等独立关系图层。
+阶段 1 已完成并验证：
 
-验收必须覆盖：幂等、重试、软删除恢复、replace/append/upsert 时态、延迟扫描、失败/取消、执行清理后的证据保留、多租户权限和深度查询性能。
+1. 关系表、关系证据和当前投影位于 Meta schema，PostgreSQL 是唯一事实源。
+2. Transfer / Develop 的资源级 `lineage_facts`、Meta collector、幂等投影和历史证据闭环已落地。
+3. Develop 成功事实落库后立即通知 Meta；周期 collector 负责漏采和失败重试。
+4. Meta 统一图查询 API、租户 / 权限校验和 `common-frontend/graph` 查看器已具备。
+5. Service 发布版本的 `serve` 依赖事实已纳入模型和 API 契约。
+
+后续能力必须先更新本规范和术语表，再单一路线实现：
+
+- 字段级血缘和显式 field mapping。
+- SQL 方言解析及无法可靠解析时的“不完整依赖”表达。
+- UDBX Dataset 等容器内部对象的稳定 data item 身份。
+- Model / Quality 独立关系图层。
+
+验收持续覆盖：幂等、重试、软删除恢复、replace/append/upsert 时态、延迟扫描、失败/取消、执行清理后的证据保留、多租户权限和深度查询性能。
 
 ## 十、相关文档
 
@@ -317,5 +344,3 @@ GET /api/v1/meta/lineage/graph
 - [ADDP 任务体系规范](addp任务体系规范.md)
 - [ADDP 数据服务体系图](../concepts/addp数据服务体系图.md)
 - [ADDP 路径统一和指纹计算](addp路径统一和指纹计算.md)
-- [工作流运行时结果产物与血缘专题](../next/工作流运行时结果产物与血缘专题.md)
-- [Meta 模块血缘扩展设计（历史方案）](../plan/meta模块血缘扩展设计.md)

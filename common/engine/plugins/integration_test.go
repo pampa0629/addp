@@ -26,6 +26,7 @@ func TestAllPluginsRegistered(t *testing.T) {
 		"mysql",
 		"neo4j",
 		"nfs",
+		"oracle",
 		"postgresql",
 		"inference_runtime",
 		"s3",
@@ -53,8 +54,8 @@ func TestAllPluginsRegistered(t *testing.T) {
 func TestGetAllPlugins(t *testing.T) {
 	plugins := plugin.GetAll()
 
-	if len(plugins) != 14 {
-		t.Errorf("Expected 14 plugins, got %d", len(plugins))
+	if len(plugins) != 15 {
+		t.Errorf("Expected 15 plugins, got %d", len(plugins))
 	}
 
 	// 验证每个插件的基本信息
@@ -63,6 +64,7 @@ func TestGetAllPlugins(t *testing.T) {
 		expected string
 	}{
 		{"postgresql", "PostgreSQL"},
+		{"oracle", "Oracle Database"},
 		{"mysql", "MySQL"},
 		{"doris", "Apache Doris"},
 		{"spark", "Apache Spark"},
@@ -98,6 +100,7 @@ func TestPluginCapabilities(t *testing.T) {
 		origin string
 	}{
 		{"postgresql", "general"},
+		{"oracle", "general"},
 		{"mysql", "general"},
 		{"doris", "general"},
 		{"clickhouse", "general"},
@@ -142,6 +145,7 @@ func TestPluginDefaultPorts(t *testing.T) {
 		defaultPort int
 	}{
 		{"postgresql", 5432},
+		{"oracle", 1521},
 		{"mysql", 3306},
 		{"doris", 9030},
 		{"clickhouse", 9000},
@@ -176,6 +180,7 @@ func TestPluginRequiredFields(t *testing.T) {
 		hasField string
 	}{
 		{"postgresql", "host"},
+		{"oracle", "service_name"},
 		{"mysql", "user"},
 		{"doris", "database"},
 		{"clickhouse", "host"},
@@ -258,6 +263,7 @@ func TestBuiltinPluginCapabilityMatrix(t *testing.T) {
 		"mysql":             {origin: "general", family: "tabular", storage: true, query: true},
 		"neo4j":             {origin: "general", family: "graph", storage: true, query: true, graphQuery: true},
 		"postgresql":        {origin: "general", family: "tabular", storage: true, query: true},
+		"oracle":            {origin: "general", family: "tabular", storage: true, query: true},
 		"spark":             {origin: "general", family: "tabular", storage: true, query: true},
 		"minio":             {origin: "general", family: "object", storage: true},
 		"nfs":               {origin: "general", family: "file", storage: true},

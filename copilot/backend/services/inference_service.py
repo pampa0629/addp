@@ -14,9 +14,14 @@ from models.inference_scenario_binding import InferenceScenarioBinding
 from repositories.inference_scenario_binding_repository import InferenceScenarioBindingRepository
 
 
+RESOURCE_RESOLUTION_SCENARIO = "resource_resolution"
+
 SCENARIOS: tuple[str, ...] = (
-    "nl2sql",
-    "nl2dag",
+    RESOURCE_RESOLUTION_SCENARIO,
+    "query_generation",
+    "workflow_generation",
+    "notebook_generation",
+    "transfer_generation",
     "navigation_guide",
     "knowledge_graph_extraction",
 )
@@ -43,7 +48,7 @@ class CopilotInferenceService:
             "addp-copilot",
             settings.copilot_service_client_secret,
         )
-        cls._client = InferenceClient(settings.inference_url, cls._token_source)
+        cls._client = InferenceClient(settings.get_system_url(), cls._token_source)
 
     @classmethod
     async def close(cls) -> None:

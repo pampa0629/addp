@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/addp/common/sqleffect"
+	commonquery "github.com/addp/common/query"
 	"github.com/addp/develop/backend/internal/config"
 )
 
@@ -62,15 +62,15 @@ func AnalyzeQuery(queryType, query string) (*QueryPreflightResult, error) {
 		}, nil
 	}
 
-	analysis, err := sqleffect.Analyze(query)
+	analysis, err := commonquery.Analyze(query)
 	if err != nil {
 		return nil, err
 	}
 	risk := "low"
-	if analysis.Effect == sqleffect.Write {
+	if analysis.Effect == commonquery.Write {
 		risk = "medium"
 	}
-	if analysis.Effect == sqleffect.DDL || analysis.Effect == sqleffect.ExternalEffect {
+	if analysis.Effect == commonquery.DDL || analysis.Effect == commonquery.ExternalEffect {
 		risk = "high"
 	}
 	return &QueryPreflightResult{

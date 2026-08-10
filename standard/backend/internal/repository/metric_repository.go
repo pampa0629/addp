@@ -126,9 +126,12 @@ func (r *MetricRepository) ExistsByCode(code string, tenantID int64, excludeID i
 }
 
 // GetElementMappings 获取指标关联的数据元
-func (r *MetricRepository) GetElementMappings(metricID int64) ([]models.MetricElementMapping, error) {
+func (r *MetricRepository) GetElementMappings(metricID, tenantID int64) ([]models.MetricElementMapping, error) {
 	var mappings []models.MetricElementMapping
-	err := r.db.Where("metric_id = ?", metricID).Find(&mappings).Error
+	err := r.db.Model(&models.MetricElementMapping{}).
+		Joins("JOIN standard.elements e ON e.id = standard.metric_element_mappings.element_id AND e.tenant_id = ?", tenantID).
+		Where("standard.metric_element_mappings.metric_id = ?", metricID).
+		Find(&mappings).Error
 	return mappings, err
 }
 
@@ -149,9 +152,12 @@ func (r *MetricRepository) SetElementMappings(metricID int64, elementIDs []int64
 }
 
 // GetDependencies 获取复合指标依赖的指标列表
-func (r *MetricRepository) GetDependencies(metricID int64) ([]models.MetricDependency, error) {
+func (r *MetricRepository) GetDependencies(metricID, tenantID int64) ([]models.MetricDependency, error) {
 	var deps []models.MetricDependency
-	err := r.db.Where("from_metric_id = ?", metricID).Find(&deps).Error
+	err := r.db.Model(&models.MetricDependency{}).
+		Joins("JOIN standard.metrics m ON m.id = standard.metric_dependencies.to_metric_id AND m.tenant_id = ?", tenantID).
+		Where("standard.metric_dependencies.from_metric_id = ?", metricID).
+		Find(&deps).Error
 	return deps, err
 }
 
@@ -169,4 +175,57 @@ func (r *MetricRepository) SetDependencies(metricID int64, depIDs []int64) error
 		}
 		return nil
 	})
+}
+
+func (r *MetricRepository) CreateWithRelations(metric *models.Metric, elementIDs, dependencyIDs []int64) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(metric).Error; err != nil {
+			return err
+		}
+		if err := replaceMetricElements(tx, metric.ID, elementIDs); err != nil {
+			return err
+		}
+		return replaceMetricDependencies(tx, metric.ID, dependencyIDs)
+	})
+}
+
+func (r *MetricRepository) UpdateWithRelations(metric *models.Metric, elementIDs, dependencyIDs []int64) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(metric).Error; err != nil {
+			return err
+		}
+		if elementIDs != nil {
+			if err := replaceMetricElements(tx, metric.ID, elementIDs); err != nil {
+				return err
+			}
+		}
+		if dependencyIDs != nil {
+			return replaceMetricDependencies(tx, metric.ID, dependencyIDs)
+		}
+		return nil
+	})
+}
+
+func replaceMetricElements(tx *gorm.DB, metricID int64, elementIDs []int64) error {
+	if err := tx.Where("metric_id = ?", metricID).Delete(&models.MetricElementMapping{}).Error; err != nil {
+		return err
+	}
+	for _, elementID := range elementIDs {
+		if err := tx.Create(&models.MetricElementMapping{MetricID: metricID, ElementID: elementID}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func replaceMetricDependencies(tx *gorm.DB, metricID int64, dependencyIDs []int64) error {
+	if err := tx.Where("from_metric_id = ?", metricID).Delete(&models.MetricDependency{}).Error; err != nil {
+		return err
+	}
+	for _, dependencyID := range dependencyIDs {
+		if err := tx.Create(&models.MetricDependency{FromMetricID: metricID, ToMetricID: dependencyID}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }

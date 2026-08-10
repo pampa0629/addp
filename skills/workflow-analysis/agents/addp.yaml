@@ -1,4 +1,6 @@
 schema: addp.skill-runtime/v1
+required_skills:
+  - data-discovery
 required_tools:
   - engine.list
   - data.search

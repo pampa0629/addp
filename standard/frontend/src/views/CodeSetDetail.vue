@@ -101,10 +101,10 @@
     >
       <el-form ref="itemFormRef" :model="itemForm" :rules="itemRules" label-width="100px">
         <el-form-item :label="$t('standard.codeSet.itemCode')" prop="code">
-          <el-input v-model="itemForm.code" placeholder="如：1, M, active" :disabled="!!editingItem" />
+          <el-input v-model="itemForm.code" :placeholder="$t('standard.codeSet.itemCodePlaceholder')" :disabled="!!editingItem" />
         </el-form-item>
         <el-form-item :label="$t('standard.codeSet.itemValue')" prop="value">
-          <el-input v-model="itemForm.value" placeholder="如：男、启用" />
+          <el-input v-model="itemForm.value" :placeholder="$t('standard.codeSet.itemValuePlaceholder')" />
         </el-form-item>
         <el-form-item :label="$t('standard.common.sort')">
           <el-input-number v-model="itemForm.sort_order" :min="0" style="width:100%" />
@@ -127,7 +127,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
@@ -137,9 +137,9 @@ import { navigateStandardRoute } from '@/utils/moduleNavigation'
 
 const route = useRoute()
 const router = useRouter()
-const goBack = () => navigateStandardRoute(router, '/code-sets', { history: 'replace' })
+const goBack = () => navigateStandardRoute(router, { path: '/code-sets', query: route.query }, { history: 'replace' })
 const { t } = useI18n()
-const codeSetId = parseInt(route.params.id)
+const codeSetId = computed(() => Number(route.params.id))
 
 const saving = ref(false)
 const itemLoading = ref(false)
@@ -159,7 +159,7 @@ const itemRules = computed(() => ({
 }))
 
 const loadCodeSet = async () => {
-  const res = await codeSetAPI.get(codeSetId)
+  const res = await codeSetAPI.get(codeSetId.value)
   codeSet.value = res || {}
   Object.assign(form, {
     name: codeSet.value.name,
@@ -171,7 +171,7 @@ const loadCodeSet = async () => {
 const loadItems = async () => {
   itemLoading.value = true
   try {
-    const res = await codeSetAPI.getItems(codeSetId)
+    const res = await codeSetAPI.getItems(codeSetId.value)
     items.value = res || []
   } finally {
     itemLoading.value = false
@@ -181,7 +181,7 @@ const loadItems = async () => {
 const handleSave = async () => {
   saving.value = true
   try {
-    await codeSetAPI.update(codeSetId, form)
+    await codeSetAPI.update(codeSetId.value, form)
     ElMessage.success(t('standard.common.saveSuccess'))
     loadCodeSet()
   } catch (err) {
@@ -212,10 +212,10 @@ const handleItemSubmit = async () => {
   itemSubmitting.value = true
   try {
     if (editingItem.value) {
-      await codeSetAPI.updateItem(codeSetId, editingItem.value.id, itemForm)
+      await codeSetAPI.updateItem(codeSetId.value, editingItem.value.id, itemForm)
       ElMessage.success(t('standard.common.updateSuccess'))
     } else {
-      await codeSetAPI.createItem(codeSetId, itemForm)
+      await codeSetAPI.createItem(codeSetId.value, itemForm)
       ElMessage.success(t('standard.common.createSuccess'))
     }
     itemDialogVisible.value = false
@@ -229,7 +229,7 @@ const handleItemSubmit = async () => {
 
 const deleteItem = async (itemId) => {
   try {
-    await codeSetAPI.deleteItem(codeSetId, itemId)
+    await codeSetAPI.deleteItem(codeSetId.value, itemId)
     ElMessage.success(t('standard.common.deleteSuccess'))
     loadItems()
   } catch {
@@ -237,10 +237,10 @@ const deleteItem = async (itemId) => {
   }
 }
 
-onMounted(async () => {
+watch(() => route.params.id, () => {
   loadCodeSet()
   loadItems()
-})
+}, { immediate: true })
 </script>
 
 <style scoped>

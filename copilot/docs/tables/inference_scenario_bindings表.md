@@ -5,7 +5,7 @@
 | 字段 | 类型 | 约束 | 说明 |
 | --- | --- | --- | --- |
 | `id` | BIGSERIAL | PK | 绑定 ID。 |
-| `scenario_code` | VARCHAR(80) | NOT NULL | `nl2sql`、`nl2dag`、`navigation_guide` 或 `knowledge_graph_extraction`。 |
+| `scenario_code` | VARCHAR(80) | NOT NULL | `resource_resolution`、`query_generation`、`workflow_generation`、`notebook_generation`、`transfer_generation`、`navigation_guide` 或 `knowledge_graph_extraction`。 |
 | `scope_type` | VARCHAR(16) | NOT NULL | `platform` 或 `tenant`。 |
 | `tenant_id` | BIGINT | NULL | Tenant 绑定的租户；平台绑定必须为空。 |
 | `model_profile_id` | UUID | NOT NULL | Inference Model Profile ID。 |

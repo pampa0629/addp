@@ -14,8 +14,8 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
+	engineselection "github.com/addp/common/engine/selection"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/common/utils"
 )
 
 // JupyterService resolves the task-bound Script Engine through System and
@@ -99,7 +99,7 @@ func FilterQueryEngineDescriptors(descriptors []commonModels.EngineRuntimeDescri
 	filtered := make([]commonModels.EngineRuntimeDescriptor, 0, len(descriptors))
 	for index := range descriptors {
 		descriptor := &descriptors[index]
-		if descriptor.LifecycleState == commonModels.EngineLifecycleActive && utils.SupportsComputeEntrypoint(descriptor.AsEngine(), "query") {
+		if descriptor.LifecycleState == commonModels.EngineLifecycleActive && engineselection.SupportsComputeEntrypoint(descriptor.AsEngine(), "query") {
 			filtered = append(filtered, *descriptor)
 		}
 	}
@@ -208,7 +208,7 @@ func (s *JupyterService) OpenInteractiveSession(
 	if err != nil {
 		return nil, "", err
 	}
-	capabilities, err := utils.ParseCapabilities(descriptor.Capabilities)
+	capabilities, err := engineselection.ParseCapabilities(descriptor.Capabilities)
 	if err != nil || capabilities == nil || capabilities.Compute == nil || capabilities.Compute.Script == nil || !capabilities.Compute.Script.Interactive {
 		return nil, "", fmt.Errorf("notebook engine %d does not support interactive sessions", engineID)
 	}
@@ -335,7 +335,7 @@ func validateNotebookEngineDescriptor(descriptor *commonModels.EngineRuntimeDesc
 	if descriptor.LifecycleState != commonModels.EngineLifecycleActive {
 		return fmt.Errorf("notebook engine %d is not active", descriptor.ID)
 	}
-	capabilities, err := utils.ParseCapabilities(descriptor.Capabilities)
+	capabilities, err := engineselection.ParseCapabilities(descriptor.Capabilities)
 	if err != nil {
 		return fmt.Errorf("notebook engine %d capabilities are invalid: %w", descriptor.ID, err)
 	}

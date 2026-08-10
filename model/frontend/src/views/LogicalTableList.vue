@@ -15,21 +15,17 @@
         </el-col>
         <el-col :span="4">
           <el-select v-model="searchForm.layer" :placeholder="t('model.logical_table.layer_placeholder')" clearable @change="handleSearch" style="width:100%">
-            <el-option :label="t('model.logical_table.layer_ods')" value="ods" />
-            <el-option :label="t('model.logical_table.layer_dwd')" value="dwd" />
-            <el-option :label="t('model.logical_table.layer_dws')" value="dws" />
-            <el-option :label="t('model.logical_table.layer_ads')" value="ads" />
+            <el-option v-for="layer in layers" :key="layer.layer_code" :label="layer.layer_name" :value="layer.layer_code" />
           </el-select>
         </el-col>
         <el-col :span="4">
           <el-select v-model="searchForm.status" :placeholder="t('model.logical_table.status_placeholder')" clearable @change="handleSearch" style="width:100%">
             <el-option :label="t('model.common.status_draft')" value="draft" />
             <el-option :label="t('model.common.status_approved')" value="approved" />
-            <el-option :label="t('model.common.status_materialized')" value="materialized" />
           </el-select>
         </el-col>
         <el-col :span="4">
-          <el-button type="primary" @click="openCreateDialog">
+          <el-button v-if="can('model.logical_model.create')" type="primary" @click="openCreateDialog">
             <el-icon><Plus /></el-icon>
             {{ t('model.logical_table.new') }}
           </el-button>
@@ -37,8 +33,19 @@
       </el-row>
     </el-card>
 
+    <el-alert
+      v-if="loadError"
+      class="load-error"
+      type="error"
+      :title="loadError"
+      show-icon
+      :closable="false"
+    >
+      <el-button link type="danger" @click="reload">{{ t('model.common.retry') }}</el-button>
+    </el-alert>
+
     <!-- 逻辑表列表 -->
-    <el-card shadow="never" style="margin-top:12px">
+    <el-card v-else shadow="never" style="margin-top:12px">
       <el-table :data="tables" v-loading="loading" stripe>
         <el-table-column :label="t('model.logical_table.name')" prop="name" min-width="160">
           <template #default="{ row }">
@@ -72,7 +79,7 @@
         <el-table-column :label="t('model.logical_table.actions')" width="150" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="goToDetail(row)">{{ t('model.common.design') }}</el-button>
-            <el-popconfirm :title="t('model.logical_table.delete_confirm')" @confirm="handleDelete(row.id)">
+            <el-popconfirm v-if="can('model.logical_model.delete')" :title="t('model.logical_table.delete_confirm')" @confirm="handleDelete(row.id)">
               <template #reference>
                 <el-button link type="danger">{{ t('model.common.delete') }}</el-button>
               </template>
@@ -115,11 +122,8 @@
           </el-select>
         </el-form-item>
         <el-form-item :label="t('model.logical_table.layer')">
-          <el-select v-model="createForm.layer" :placeholder="t('model.logical_table.domain_select_placeholder')" clearable style="width:100%">
-            <el-option label="ODS" value="ods" />
-            <el-option label="DWD" value="dwd" />
-            <el-option label="DWS" value="dws" />
-            <el-option label="ADS" value="ads" />
+          <el-select v-model="createForm.layer" :placeholder="t('model.logical_table.layer_placeholder')" style="width:100%">
+            <el-option v-for="layer in layers" :key="layer.layer_code" :label="layer.layer_name" :value="layer.layer_code" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('model.entity.description')">
@@ -139,17 +143,23 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
-import { logicalTableAPI, domainAPI } from '../api/model'
+import { logicalTableAPI, domainAPI, dwLayerAPI } from '../api/model'
+import { useAuthStore } from '../store/auth'
 import { navigateModelRoute } from '../utils/moduleNavigation'
 import { useI18n } from 'vue-i18n'
+import { getModelErrorMessage } from '../utils/apiError'
 
 const { t } = useI18n()
 
 const router = useRouter()
+const authStore = useAuthStore()
+const can = permission => authStore.hasPermission(permission)
 const loading = ref(false)
+const loadError = ref('')
 const creating = ref(false)
 const tables = ref([])
 const domains = ref([])
+const layers = ref([])
 const createDialogVisible = ref(false)
 const createFormRef = ref(null)
 
@@ -163,15 +173,15 @@ const createRules = {
 }
 
 const layerTagType = (layer) => ({ ods: '', dwd: 'success', dws: 'warning', ads: 'danger' }[layer] ?? 'info')
-const statusTagType = (s) => ({ draft: 'info', approved: 'success', materialized: 'warning' }[s] ?? 'info')
+const statusTagType = (s) => ({ draft: 'info', approved: 'success' }[s] ?? 'info')
 const statusLabel = (s) => ({
   draft: t('model.common.status_draft'),
   approved: t('model.common.status_approved'),
-  materialized: t('model.common.status_materialized')
 }[s] ?? s)
 
 const loadTables = async () => {
   loading.value = true
+  loadError.value = ''
   try {
     const params = {
       page: pagination.page,
@@ -184,6 +194,10 @@ const loadTables = async () => {
     const res = await logicalTableAPI.list(params)
     tables.value = res.data || []
     pagination.total = res.total || 0
+  } catch (err) {
+    tables.value = []
+    pagination.total = 0
+    loadError.value = getModelErrorMessage(err, t, 'model.common.load_failed')
   } finally {
     loading.value = false
   }
@@ -208,7 +222,7 @@ const handleCreate = async () => {
     createDialogVisible.value = false
     navigateModelRoute(router, `/logical-tables/${res.id}`, { history: 'replace' })
   } catch (err) {
-    ElMessage.error(err.response?.data?.error || t('model.common.create_failed'))
+    ElMessage.error(getModelErrorMessage(err, t, 'model.common.create_failed'))
   } finally {
     creating.value = false
   }
@@ -219,8 +233,8 @@ const handleDelete = async (id) => {
     await logicalTableAPI.delete(id)
     ElMessage.success(t('model.common.delete_success'))
     loadTables()
-  } catch {
-    ElMessage.error(t('model.common.delete_failed'))
+  } catch (err) {
+    ElMessage.error(getModelErrorMessage(err, t, 'model.common.delete_failed'))
   }
 }
 
@@ -228,11 +242,24 @@ const goToDetail = (row) => {
   navigateModelRoute(router, `/logical-tables/${row.id}`)
 }
 
-onMounted(async () => {
-  const res = await domainAPI.list()
-  domains.value = res.data || []
-  loadTables()
-})
+const reload = async () => {
+  loadError.value = ''
+  if (!can('model.logical_model.read')) {
+    loadError.value = t('model.common.permission_denied')
+    return
+  }
+  try {
+    const [domainRes, layerRes] = await Promise.all([domainAPI.list(), dwLayerAPI.list()])
+    domains.value = domainRes || []
+    layers.value = layerRes || []
+  } catch (err) {
+    loadError.value = getModelErrorMessage(err, t, 'model.common.load_failed')
+    return
+  }
+  await loadTables()
+}
+
+onMounted(reload)
 </script>
 
 <style scoped>
@@ -242,6 +269,10 @@ onMounted(async () => {
 
 .search-card {
   margin-bottom: 0;
+}
+
+.load-error {
+  margin-top: 12px;
 }
 
 .pagination-wrapper {

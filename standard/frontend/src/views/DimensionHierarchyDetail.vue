@@ -56,21 +56,23 @@
             <el-table-column :label="$t('standard.dimHierarchy.levelName')" prop="name" min-width="120" />
             <el-table-column :label="$t('standard.dimHierarchy.relatedElement')" width="120">
               <template #default="{ row }">
-                <span v-if="row.element_id" class="text-link">
-                  Element#{{ row.element_id }}
-                </span>
-                <span v-else class="text-muted">—</span>
+                <el-link v-if="row.element_id" type="primary" @click="openElement(row.element_id)">
+                  {{ elementNames[row.element_id] || `#${row.element_id}` }}
+                </el-link>
+                <span v-else class="text-muted">-</span>
               </template>
             </el-table-column>
             <el-table-column :label="$t('standard.common.description')" prop="description" min-width="160" show-overflow-tooltip />
-            <el-table-column :label="$t('standard.common.actions')" width="120" fixed="right">
+            <el-table-column :label="$t('standard.common.actions')" width="150" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" @click="openLevelDialog(row)">{{ $t('standard.common.edit') }}</el-button>
-                <el-popconfirm :title="$t('standard.dimHierarchy.confirmDeleteLevel')" @confirm="handleDeleteLevel(row.id)">
-                  <template #reference>
-                    <el-button link type="danger">{{ $t('standard.common.delete') }}</el-button>
-                  </template>
-                </el-popconfirm>
+                <div class="table-actions">
+                  <el-button link type="primary" @click="openLevelDialog(row)">{{ $t('standard.common.edit') }}</el-button>
+                  <el-popconfirm :title="$t('standard.dimHierarchy.confirmDeleteLevel')" @confirm="handleDeleteLevel(row.id)">
+                    <template #reference>
+                      <el-button link type="danger">{{ $t('standard.common.delete') }}</el-button>
+                    </template>
+                  </el-popconfirm>
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -96,6 +98,11 @@
         <el-form-item :label="$t('standard.dimHierarchy.levelNameLabel')" prop="name">
           <el-input v-model="levelForm.name" :placeholder="$t('standard.dimHierarchy.levelNamePlaceholder')" />
         </el-form-item>
+        <el-form-item :label="$t('standard.dimHierarchy.relatedElement')">
+          <el-select v-model="levelForm.element_id" clearable filterable :placeholder="$t('standard.dimHierarchy.elementPlaceholder')" style="width:100%">
+            <el-option v-for="element in elementOptions" :key="element.id" :label="`${element.name} (${element.code})`" :value="element.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item :label="$t('standard.dimHierarchy.levelDescription')">
           <el-input v-model="levelForm.description" type="textarea" :rows="2" />
         </el-form-item>
@@ -112,31 +119,36 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Plus } from '@element-plus/icons-vue'
-import { dimensionHierarchyAPI } from '../api/standard'
+import { dimensionHierarchyAPI, elementAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
-const goBack = () => navigateStandardRoute(router, '/dimension-hierarchies', { history: 'replace' })
-const hierarchyId = parseInt(route.params.id)
+const hierarchyId = computed(() => Number(route.params.id))
+const goBack = () => navigateStandardRoute(router, {
+  path: '/dimension-hierarchies',
+  query: route.query
+}, { history: 'replace' })
 
 const hierarchy = ref({})
 const form = reactive({ name: '', description: '', domain_id: null })
 const saving = ref(false)
 
 const levels = ref([])
+const elementNames = reactive({})
+const elementOptions = ref([])
 const levelLoading = ref(false)
 const levelVisible = ref(false)
 const levelSaving = ref(false)
 const levelFormRef = ref(null)
 const editingLevel = ref(null)
-const levelForm = reactive({ level_num: 1, name: '', description: '', sort_order: 0 })
+const levelForm = reactive({ level_num: 1, name: '', element_id: null, description: '', sort_order: 0 })
 const levelRules = computed(() => ({
   level_num: [{ required: true, message: t('standard.dimHierarchy.levelNumRequired'), trigger: 'blur' }],
   name: [{ required: true, message: t('standard.dimHierarchy.levelNameRequired'), trigger: 'blur' }]
@@ -145,23 +157,55 @@ const levelRules = computed(() => ({
 const sortedLevels = computed(() => [...levels.value].sort((a, b) => a.level_num - b.level_num))
 
 async function loadHierarchy() {
+  const id = hierarchyId.value
+  if (!Number.isInteger(id) || id <= 0) return
   try {
-    const res = await dimensionHierarchyAPI.get(hierarchyId)
+    const res = await dimensionHierarchyAPI.get(id)
     const data = res
     hierarchy.value = data
     form.name = data.name
     form.description = data.description
     form.domain_id = data.domain_id
     levels.value = data.levels || []
+    await Promise.all([loadElementOptions(), loadElementNames(levels.value)])
   } catch {
     ElMessage.error(t('standard.dimHierarchy.loadFailed'))
   }
 }
 
+async function loadElementOptions() {
+  if (elementOptions.value.length > 0) return
+  try {
+    const result = await elementAPI.list({ page: 1, page_size: 200 })
+    elementOptions.value = result.data || []
+    for (const element of elementOptions.value) {
+      elementNames[element.id] = element.name || element.code || `#${element.id}`
+    }
+  } catch {
+    elementOptions.value = []
+  }
+}
+
+async function loadElementNames(items) {
+  const ids = [...new Set(items.map(item => item.element_id).filter(Boolean))]
+  await Promise.all(ids.map(async id => {
+    try {
+      const element = await elementAPI.get(id)
+      elementNames[id] = element.name || element.code || `#${id}`
+    } catch {
+      elementNames[id] = `#${id}`
+    }
+  }))
+}
+
+function openElement(id) {
+  navigateStandardRoute(router, `/elements/${id}`)
+}
+
 async function handleSave() {
   saving.value = true
   try {
-    await dimensionHierarchyAPI.update(hierarchyId, { name: form.name, description: form.description, domain_id: form.domain_id })
+    await dimensionHierarchyAPI.update(hierarchyId.value, { name: form.name, description: form.description, domain_id: form.domain_id })
     ElMessage.success(t('standard.dimHierarchy.saveSuccess'))
     hierarchy.value.name = form.name
   } catch {
@@ -177,6 +221,7 @@ function openLevelDialog(level = null) {
     Object.assign(levelForm, {
       level_num: level.level_num,
       name: level.name,
+      element_id: level.element_id || null,
       description: level.description || '',
       sort_order: level.sort_order || 0
     })
@@ -184,6 +229,7 @@ function openLevelDialog(level = null) {
     Object.assign(levelForm, {
       level_num: (levels.value.length > 0 ? Math.max(...levels.value.map(l => l.level_num)) + 1 : 1),
       name: '',
+      element_id: null,
       description: '',
       sort_order: levels.value.length
     })
@@ -196,12 +242,13 @@ async function handleSaveLevel() {
   levelSaving.value = true
   try {
     if (editingLevel.value) {
-      const res = await dimensionHierarchyAPI.updateLevel(hierarchyId, editingLevel.value.id, { ...levelForm })
+      const res = await dimensionHierarchyAPI.updateLevel(hierarchyId.value, editingLevel.value.id, { ...levelForm })
       const idx = levels.value.findIndex(l => l.id === editingLevel.value.id)
       if (idx >= 0) levels.value[idx] = res
     } else {
-      const res = await dimensionHierarchyAPI.createLevel(hierarchyId, { ...levelForm })
+      const res = await dimensionHierarchyAPI.createLevel(hierarchyId.value, { ...levelForm })
       levels.value.push(res)
+      await loadElementNames([res])
     }
     levelVisible.value = false
     ElMessage.success(t('standard.dimHierarchy.saveSuccess'))
@@ -214,7 +261,7 @@ async function handleSaveLevel() {
 
 async function handleDeleteLevel(levelId) {
   try {
-    await dimensionHierarchyAPI.deleteLevel(hierarchyId, levelId)
+    await dimensionHierarchyAPI.deleteLevel(hierarchyId.value, levelId)
     levels.value = levels.value.filter(l => l.id !== levelId)
     ElMessage.success(t('standard.dimHierarchy.levelDeleted'))
   } catch {
@@ -222,10 +269,11 @@ async function handleDeleteLevel(levelId) {
   }
 }
 
-onMounted(loadHierarchy)
+watch(() => route.params.id, loadHierarchy, { immediate: true })
 </script>
 
 <style scoped>
+.dim-hierarchy-detail { padding: 20px; }
 .detail-header {
   display: flex;
   align-items: center;
@@ -237,10 +285,10 @@ onMounted(loadHierarchy)
 .title { font-size: 18px; font-weight: 600; }
 .card-header-with-action { display: flex; justify-content: space-between; align-items: center; }
 .card-title { font-weight: 600; }
-.hierarchy-chain { margin-top: 16px; padding: 12px 16px; background: #f5f7fa; border-radius: 6px; }
-.arrow { color: #909399; margin: 0 4px; }
-.form-tip { font-size: 12px; color: #909399; margin-top: 4px; }
-.text-link { color: #409eff; cursor: pointer; }
-.text-muted { color: #c0c4cc; }
+.table-actions { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.hierarchy-chain { margin-top: 16px; padding: 12px 16px; background: var(--el-fill-color-light); border-radius: 6px; }
+.arrow { color: var(--el-text-color-placeholder); margin: 0 4px; }
+.form-tip { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 4px; }
+.text-muted { color: var(--el-text-color-placeholder); }
 .info-card { margin-bottom: 0; }
 </style>

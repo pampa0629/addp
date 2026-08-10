@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
+	commonPMTiles "github.com/addp/common/format/pmtiles"
 	"github.com/addp/common/logger"
-	commonPMTiles "github.com/addp/common/pmtiles"
 	rastercogref "github.com/addp/manager/internal/cog"
 	"github.com/addp/manager/internal/tilecache"
 	"github.com/minio/minio-go/v7"

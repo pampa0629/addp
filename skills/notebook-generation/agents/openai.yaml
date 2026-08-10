@@ -1,0 +1,4 @@
+interface:
+  display_name: "Notebook 代码生成"
+  short_description: "基于当前 Notebook Session 已授权数据生成 Python 单元"
+  default_prompt: "使用 $notebook-generation 根据我的分析需求确认数据源并生成 Notebook Python 代码。"

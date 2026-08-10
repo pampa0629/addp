@@ -6,14 +6,16 @@ from pydantic import ValidationError
 
 from addp_common.auth import AuthorizationContext, RoleAssignment
 from api.navigate_api import NavigateRequest
-from api.sql_agent_api import SQLGenerationRequest
+from api.query_agent_api import QueryGenerationRequest
 from dependencies import auth
 
 
-def test_sql_request_rejects_client_supplied_identity():
+def test_query_request_rejects_client_supplied_identity():
     with pytest.raises(ValidationError):
-        SQLGenerationRequest(
+        QueryGenerationRequest(
             query="查询城市",
+            engine_id=8,
+            query_language="sql",
             tenant_id=99,
             user_id=88,
         )
@@ -116,13 +118,21 @@ def test_copilot_openapi_declares_authorization_contracts():
     specification = app.openapi()
     paths = specification["paths"]
 
-    assert paths["/sql/generate"]["post"]["x-addp-auth-mode"] == "permission"
-    assert paths["/sql/generate"]["post"]["x-addp-required-permissions"] == [
+    assert paths["/query/generate"]["post"]["x-addp-auth-mode"] == "delegated_tool"
+    assert paths["/query/generate"]["post"]["x-addp-required-permissions"] == [
         "copilot.sql.execute"
+    ]
+    assert paths["/notebook/generate"]["post"]["x-addp-auth-mode"] == "delegated_tool"
+    assert paths["/notebook/generate"]["post"]["x-addp-required-permissions"] == [
+        "copilot.notebook.execute"
     ]
     assert paths["/workflow/generate"]["post"]["x-addp-auth-mode"] == "delegated_tool"
     assert paths["/workflow/generate"]["post"]["x-addp-required-permissions"] == [
         "copilot.workflow.execute"
+    ]
+    assert paths["/transfer/generate"]["post"]["x-addp-auth-mode"] == "delegated_tool"
+    assert paths["/transfer/generate"]["post"]["x-addp-required-permissions"] == [
+        "copilot.transfer.execute",
     ]
     assert paths["/kg-build/extract"]["post"]["x-addp-auth-mode"] == "permission"
     assert paths["/kg-build/extract"]["post"]["x-addp-required-permissions"] == [
@@ -138,9 +148,9 @@ def test_copilot_openapi_declares_authorization_contracts():
     assert paths["/health"]["get"]["x-addp-auth-mode"] == "public"
     assert paths["/"]["get"]["x-addp-auth-mode"] == "public"
 
-    sql_schema = specification["components"]["schemas"]["SQLGenerationRequest"]
+    query_schema = specification["components"]["schemas"]["QueryGenerationRequest"]
     navigate_schema = specification["components"]["schemas"]["NavigateRequest"]
-    assert "tenant_id" not in sql_schema.get("properties", {})
-    assert "user_id" not in sql_schema.get("properties", {})
+    assert "tenant_id" not in query_schema.get("properties", {})
+    assert "user_id" not in query_schema.get("properties", {})
     assert "tenant_id" not in navigate_schema.get("properties", {})
     assert "user_id" not in navigate_schema.get("properties", {})

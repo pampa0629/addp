@@ -1,69 +1,6 @@
 {
   "components": {
     "schemas": {
-      "DataSourceCandidate": {
-        "description": "数据源候选",
-        "properties": {
-          "engine_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Engine Id"
-          },
-          "engine_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Engine Name"
-          },
-          "reason": {
-            "title": "Reason",
-            "type": "string"
-          },
-          "schema_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Schema Name"
-          },
-          "score": {
-            "title": "Score",
-            "type": "number"
-          },
-          "table_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Table Name"
-          }
-        },
-        "required": [
-          "score",
-          "reason"
-        ],
-        "title": "DataSourceCandidate",
-        "type": "object"
-      },
       "EntityTypeInfo": {
         "description": "实体类型定义（来自本体模型）",
         "properties": {
@@ -361,79 +298,6 @@
         "title": "KGExtractResponse",
         "type": "object"
       },
-      "MatchingPolicyResponse": {
-        "properties": {
-          "inherited": {
-            "default": false,
-            "title": "Inherited",
-            "type": "boolean"
-          },
-          "max_candidates": {
-            "title": "Max Candidates",
-            "type": "integer"
-          },
-          "scope_type": {
-            "title": "Scope Type",
-            "type": "string"
-          },
-          "score_threshold": {
-            "title": "Score Threshold",
-            "type": "number"
-          },
-          "tenant_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tenant Id"
-          },
-          "version": {
-            "title": "Version",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "scope_type",
-          "score_threshold",
-          "max_candidates",
-          "version"
-        ],
-        "title": "MatchingPolicyResponse",
-        "type": "object"
-      },
-      "MatchingPolicyUpdate": {
-        "additionalProperties": false,
-        "properties": {
-          "max_candidates": {
-            "maximum": 100.0,
-            "minimum": 1.0,
-            "title": "Max Candidates",
-            "type": "integer"
-          },
-          "score_threshold": {
-            "exclusiveMinimum": 0.0,
-            "maximum": 1.0,
-            "title": "Score Threshold",
-            "type": "number"
-          },
-          "version": {
-            "minimum": 0.0,
-            "title": "Version",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "version",
-          "score_threshold",
-          "max_candidates"
-        ],
-        "title": "MatchingPolicyUpdate",
-        "type": "object"
-      },
       "NavigateAction": {
         "properties": {
           "label": {
@@ -485,6 +349,360 @@
           "actions"
         ],
         "title": "NavigateResponse",
+        "type": "object"
+      },
+      "NotebookCatalogCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_id": {
+            "minLength": 1,
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "engine_id": {
+            "minimum": 1.0,
+            "title": "Engine Id",
+            "type": "integer"
+          },
+          "engine_name": {
+            "minLength": 1,
+            "title": "Engine Name",
+            "type": "string"
+          },
+          "engine_type": {
+            "minLength": 1,
+            "title": "Engine Type",
+            "type": "string"
+          },
+          "kind": {
+            "minLength": 1,
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "additionalProperties": true,
+            "title": "Path",
+            "type": "object"
+          },
+          "path_names": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Path Names",
+            "type": "array"
+          },
+          "role": {
+            "minLength": 1,
+            "title": "Role",
+            "type": "string"
+          },
+          "term": {
+            "minLength": 1,
+            "title": "Term",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "role",
+          "engine_id",
+          "engine_name",
+          "engine_type",
+          "name",
+          "term",
+          "kind",
+          "path"
+        ],
+        "title": "NotebookCatalogCandidate",
+        "type": "object"
+      },
+      "NotebookGenerationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/NotebookCatalogCandidate"
+            },
+            "maxItems": 320,
+            "title": "Candidates",
+            "type": "array"
+          },
+          "kernel": {
+            "const": "python3",
+            "default": "python3",
+            "title": "Kernel",
+            "type": "string"
+          },
+          "missing_intents": {
+            "description": "首轮零召回时请求补充尚未尝试的资源检索词",
+            "items": {
+              "$ref": "#/components/schemas/NotebookMissingIntent"
+            },
+            "maxItems": 8,
+            "title": "Missing Intents",
+            "type": "array"
+          },
+          "query": {
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/NotebookResourceFact"
+            },
+            "maxItems": 8,
+            "title": "Resources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "NotebookGenerationRequest",
+        "type": "object"
+      },
+      "NotebookGenerationResponse": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "clarification_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clarification Reason"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "explanation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explanation"
+          },
+          "intents": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Intents",
+            "type": "array"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "status": {
+            "enum": [
+              "intents_ready",
+              "candidates_ready",
+              "success",
+              "need_clarification"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "NotebookGenerationResponse",
+        "type": "object"
+      },
+      "NotebookMissingIntent": {
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "minLength": 1,
+            "title": "Role",
+            "type": "string"
+          },
+          "search_queries": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Search Queries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "role",
+          "search_queries"
+        ],
+        "title": "NotebookMissingIntent",
+        "type": "object"
+      },
+      "NotebookResourceFact": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_id": {
+            "minLength": 1,
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "crs": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crs"
+          },
+          "engine_id": {
+            "minimum": 1.0,
+            "title": "Engine Id",
+            "type": "integer"
+          },
+          "engine_name": {
+            "minLength": 1,
+            "title": "Engine Name",
+            "type": "string"
+          },
+          "engine_type": {
+            "minLength": 1,
+            "title": "Engine Type",
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 200,
+            "title": "Fields",
+            "type": "array"
+          },
+          "geometry_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geometry Column"
+          },
+          "geometry_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geometry Type"
+          },
+          "kind": {
+            "minLength": 1,
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "additionalProperties": true,
+            "title": "Path",
+            "type": "object"
+          },
+          "path_names": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Path Names",
+            "type": "array"
+          },
+          "path_segments": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Path Segments",
+            "type": "array"
+          },
+          "role": {
+            "minLength": 1,
+            "title": "Role",
+            "type": "string"
+          },
+          "term": {
+            "minLength": 1,
+            "title": "Term",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "role",
+          "engine_id",
+          "engine_name",
+          "engine_type",
+          "name",
+          "term",
+          "kind",
+          "path",
+          "path_segments"
+        ],
+        "title": "NotebookResourceFact",
         "type": "object"
       },
       "OntologySchema": {
@@ -559,6 +777,323 @@
         "title": "PropertyInfo",
         "type": "object"
       },
+      "QueryGenerationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "engine_context": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "由 Agent 的 engine.list Tool 提供的已验证引擎事实；Develop 用户入口由 Copilot 自行发现",
+            "title": "Engine Context"
+          },
+          "engine_id": {
+            "minimum": 1.0,
+            "title": "Engine Id",
+            "type": "integer"
+          },
+          "query": {
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "query_language": {
+            "minLength": 1,
+            "title": "Query Language",
+            "type": "string"
+          },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceFact"
+            },
+            "maxItems": 20,
+            "title": "Resources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "query",
+          "engine_id",
+          "query_language"
+        ],
+        "title": "QueryGenerationRequest",
+        "type": "object"
+      },
+      "QueryGenerationResponse": {
+        "properties": {
+          "clarification_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clarification Reason"
+          },
+          "data_source_candidates": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/QueryResourceCandidate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Source Candidates"
+          },
+          "explanation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explanation"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query"
+          },
+          "query_language": {
+            "title": "Query Language",
+            "type": "string"
+          },
+          "resources": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ResourceFact"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resources"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "status",
+          "query_language"
+        ],
+        "title": "QueryGenerationResponse",
+        "type": "object"
+      },
+      "QueryResourceCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "ancestors": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Ancestors",
+            "type": "array"
+          },
+          "asset_type": {
+            "title": "Asset Type",
+            "type": "string"
+          },
+          "crs": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "已验证的 CRS",
+            "title": "Crs"
+          },
+          "data_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "资源数据类型",
+            "title": "Data Type"
+          },
+          "engine_id": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "资源所属引擎实例 ID",
+            "title": "Engine Id"
+          },
+          "engine_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine Name"
+          },
+          "fields": {
+            "description": "受限字段事实",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 200,
+            "title": "Fields",
+            "type": "array"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "geometry_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "已验证的几何列",
+            "title": "Geometry Column"
+          },
+          "geometry_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "已验证的几何类型",
+            "title": "Geometry Type"
+          },
+          "locator": {
+            "description": "已验证的 ADDP ResourceLocator",
+            "minLength": 1,
+            "title": "Locator",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "recommendation_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendation Reason"
+          },
+          "recommended": {
+            "default": false,
+            "title": "Recommended",
+            "type": "boolean"
+          },
+          "role": {
+            "description": "资源在本次任务中的稳定用途",
+            "minLength": 1,
+            "title": "Role",
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          }
+        },
+        "required": [
+          "role",
+          "locator",
+          "name",
+          "asset_type"
+        ],
+        "title": "QueryResourceCandidate",
+        "type": "object"
+      },
       "RelationTypeInfo": {
         "description": "关系类型定义（来自本体模型）",
         "properties": {
@@ -605,78 +1140,425 @@
         "title": "RelationTypeInfo",
         "type": "object"
       },
-      "SQLGenerationRequest": {
+      "ResourceFact": {
         "additionalProperties": false,
-        "description": "SQL 生成请求",
+        "description": "A bounded projection of a resource confirmed by its owner.",
         "properties": {
-          "conversation_id": {
+          "crs": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Conversation Id"
+            "description": "已验证的 CRS",
+            "title": "Crs"
+          },
+          "data_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "资源数据类型",
+            "title": "Data Type"
           },
           "engine_id": {
             "anyOf": [
               {
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "资源所属引擎实例 ID",
             "title": "Engine Id"
           },
+          "fields": {
+            "description": "受限字段事实",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 200,
+            "title": "Fields",
+            "type": "array"
+          },
+          "geometry_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "已验证的几何列",
+            "title": "Geometry Column"
+          },
+          "geometry_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "已验证的几何类型",
+            "title": "Geometry Type"
+          },
+          "locator": {
+            "description": "已验证的 ADDP ResourceLocator",
+            "minLength": 1,
+            "title": "Locator",
+            "type": "string"
+          },
+          "role": {
+            "description": "资源在本次任务中的稳定用途",
+            "minLength": 1,
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "locator"
+        ],
+        "title": "ResourceFact",
+        "type": "object"
+      },
+      "TransferGenerationRequest": {
+        "additionalProperties": false,
+        "properties": {
           "query": {
+            "maxLength": 4000,
+            "minLength": 1,
             "title": "Query",
             "type": "string"
+          },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceFact"
+            },
+            "maxItems": 1,
+            "title": "Resources",
+            "type": "array"
+          },
+          "source_engine_id": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "由 System 已注册引擎解析出的源引擎实例 ID；仅用于限定源资源发现",
+            "title": "Source Engine Id"
+          },
+          "task": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "由 Transfer 向导构造的当前草稿；不接受 endpoint 之外的身份或凭据",
+            "title": "Task"
           }
         },
         "required": [
           "query"
         ],
-        "title": "SQLGenerationRequest",
+        "title": "TransferGenerationRequest",
         "type": "object"
       },
-      "SQLGenerationResponse": {
-        "description": "SQL 生成响应",
+      "TransferGenerationResponse": {
         "properties": {
-          "auto_selected": {
-            "title": "Auto Selected",
-            "type": "boolean"
+          "clarification_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clarification Reason"
           },
-          "candidates": {
+          "data_source_candidates": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TransferResourceCandidate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Source Candidates"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "resources": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ResourceFact"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resources"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "task": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task"
+          },
+          "warnings": {
             "items": {
-              "$ref": "#/components/schemas/DataSourceCandidate"
+              "type": "string"
             },
-            "title": "Candidates",
+            "title": "Warnings",
             "type": "array"
-          },
-          "conversation_id": {
-            "title": "Conversation Id",
-            "type": "integer"
-          },
-          "explanation": {
-            "title": "Explanation",
-            "type": "string"
-          },
-          "sql": {
-            "title": "Sql",
-            "type": "string"
           }
         },
         "required": [
-          "sql",
-          "explanation",
-          "auto_selected",
-          "candidates",
-          "conversation_id"
+          "status"
         ],
-        "title": "SQLGenerationResponse",
+        "title": "TransferGenerationResponse",
+        "type": "object"
+      },
+      "TransferResourceCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "ancestors": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Ancestors",
+            "type": "array"
+          },
+          "asset_type": {
+            "title": "Asset Type",
+            "type": "string"
+          },
+          "crs": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "已验证的 CRS",
+            "title": "Crs"
+          },
+          "data_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "资源数据类型",
+            "title": "Data Type"
+          },
+          "engine_id": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "资源所属引擎实例 ID",
+            "title": "Engine Id"
+          },
+          "engine_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine Name"
+          },
+          "fields": {
+            "description": "受限字段事实",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 200,
+            "title": "Fields",
+            "type": "array"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Format"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "geometry_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "已验证的几何列",
+            "title": "Geometry Column"
+          },
+          "geometry_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "已验证的几何类型",
+            "title": "Geometry Type"
+          },
+          "locator": {
+            "description": "已验证的 ADDP ResourceLocator",
+            "minLength": 1,
+            "title": "Locator",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "recommendation_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendation Reason"
+          },
+          "recommended": {
+            "default": false,
+            "title": "Recommended",
+            "type": "boolean"
+          },
+          "representation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Representation"
+          },
+          "role": {
+            "description": "资源在本次任务中的稳定用途",
+            "minLength": 1,
+            "title": "Role",
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          }
+        },
+        "required": [
+          "role",
+          "locator",
+          "name",
+          "asset_type"
+        ],
+        "title": "TransferResourceCandidate",
         "type": "object"
       },
       "ValidationError": {
@@ -714,46 +1596,36 @@
       },
       "WorkflowGenerationRequest": {
         "additionalProperties": false,
-        "description": "工作流生成请求",
         "properties": {
-          "conversation_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Conversation Id"
-          },
           "query": {
+            "maxLength": 4000,
+            "minLength": 1,
             "title": "Query",
             "type": "string"
           },
           "resources": {
-            "description": "由 owner Tool 验证的全部输入资源事实；不允许 Copilot 自行搜索或拼接 locator",
+            "description": "由 owner Tool 验证的输入资源事实；为空时先返回候选供确认",
             "items": {
-              "$ref": "#/components/schemas/WorkflowResourceFact"
+              "$ref": "#/components/schemas/ResourceFact"
             },
+            "maxItems": 8,
             "title": "Resources",
             "type": "array"
           },
           "workflow_engine_id": {
+            "minimum": 1.0,
             "title": "Workflow Engine Id",
             "type": "integer"
           }
         },
         "required": [
           "query",
-          "workflow_engine_id",
-          "resources"
+          "workflow_engine_id"
         ],
         "title": "WorkflowGenerationRequest",
         "type": "object"
       },
       "WorkflowGenerationResponse": {
-        "description": "工作流生成响应",
         "properties": {
           "clarification_reason": {
             "anyOf": [
@@ -766,16 +1638,19 @@
             ],
             "title": "Clarification Reason"
           },
-          "conversation_id": {
+          "data_source_candidates": {
             "anyOf": [
               {
-                "type": "integer"
+                "items": {
+                  "$ref": "#/components/schemas/WorkflowResourceCandidate"
+                },
+                "type": "array"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Conversation Id"
+            "title": "Data Source Candidates"
           },
           "errors": {
             "anyOf": [
@@ -815,8 +1690,7 @@
             "anyOf": [
               {
                 "items": {
-                  "additionalProperties": true,
-                  "type": "object"
+                  "$ref": "#/components/schemas/ResourceFact"
                 },
                 "type": "array"
               },
@@ -897,10 +1771,21 @@
         "title": "WorkflowGenerationResponse",
         "type": "object"
       },
-      "WorkflowResourceFact": {
+      "WorkflowResourceCandidate": {
         "additionalProperties": false,
-        "description": "由 owner Tool 验证后交给 Copilot 的工作流输入资源事实。",
         "properties": {
+          "ancestors": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Ancestors",
+            "type": "array"
+          },
+          "asset_type": {
+            "title": "Asset Type",
+            "type": "string"
+          },
           "crs": {
             "anyOf": [
               {
@@ -910,7 +1795,7 @@
                 "type": "null"
               }
             ],
-            "description": "已验证的 CRS，例如 EPSG:32650",
+            "description": "已验证的 CRS",
             "title": "Crs"
           },
           "data_type": {
@@ -925,14 +1810,41 @@
             "description": "资源数据类型",
             "title": "Data Type"
           },
+          "engine_id": {
+            "title": "Engine Id",
+            "type": "integer"
+          },
+          "engine_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine Name"
+          },
           "fields": {
-            "description": "受限字段名称和类型事实",
+            "description": "受限字段事实",
             "items": {
               "additionalProperties": true,
               "type": "object"
             },
+            "maxItems": 200,
             "title": "Fields",
             "type": "array"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
           },
           "geometry_column": {
             "anyOf": [
@@ -964,18 +1876,63 @@
             "title": "Locator",
             "type": "string"
           },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "recommendation_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendation Reason"
+          },
+          "recommended": {
+            "default": false,
+            "title": "Recommended",
+            "type": "boolean"
+          },
           "role": {
-            "description": "资源在本次分析中的稳定用途",
+            "description": "资源在本次任务中的稳定用途",
             "minLength": 1,
             "title": "Role",
             "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
           }
         },
         "required": [
           "role",
-          "locator"
+          "locator",
+          "engine_id",
+          "name",
+          "asset_type"
         ],
-        "title": "WorkflowResourceFact",
+        "title": "WorkflowResourceCandidate",
         "type": "object"
       }
     },
@@ -1164,6 +2121,147 @@
         "x-addp-auth-mode": "authenticated"
       }
     },
+    "/notebook/generate": {
+      "post": {
+        "description": "仅处理 Develop 已限定的 Session 候选和资源事实，不自行搜索全租户数据。",
+        "operationId": "generate_notebook_api_v1_copilot_notebook_generate_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Accept-Language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Accept-Language"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotebookGenerationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotebookGenerationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "生成 Notebook Python 单元 | Generate Notebook Python cell",
+        "tags": [
+          "Notebook 智能体 | Notebook Agent"
+        ],
+        "x-addp-auth-mode": "delegated_tool",
+        "x-addp-required-permissions": [
+          "copilot.notebook.execute"
+        ]
+      }
+    },
+    "/query/generate": {
+      "post": {
+        "description": "在当前查询工作台引擎范围内发现资源并生成候选查询文本。",
+        "operationId": "generate_query_api_v1_copilot_query_generate_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Accept-Language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Accept-Language"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QueryGenerationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryGenerationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "查询生成失败 | Query generation failed"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "生成查询语言 | Generate Query Language",
+        "tags": [
+          "查询智能体 | Query Agent"
+        ],
+        "x-addp-auth-mode": "delegated_tool",
+        "x-addp-required-permissions": [
+          "copilot.sql.execute"
+        ]
+      }
+    },
     "/settings/inference-bindings/{scenario_code}": {
       "get": {
         "operationId": "get_inference_scenario_binding_api_v1_copilot_settings_inference_bindings__scenario_code__get",
@@ -1309,134 +2407,10 @@
         ]
       }
     },
-    "/settings/matching-policy": {
-      "get": {
-        "operationId": "get_matching_policy_api_v1_copilot_settings_matching_policy_get",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "Accept-Language",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Accept-Language"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MatchingPolicyResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "summary": "Get Matching Policy",
-        "tags": [
-          "配置管理 | Configuration Management"
-        ],
-        "x-addp-auth-mode": "permission",
-        "x-addp-required-permissions": [
-          "copilot.configuration.read"
-        ]
-      },
-      "put": {
-        "operationId": "update_matching_policy_api_v1_copilot_settings_matching_policy_put",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "Accept-Language",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Accept-Language"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MatchingPolicyUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MatchingPolicyResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "summary": "Update Matching Policy",
-        "tags": [
-          "配置管理 | Configuration Management"
-        ],
-        "x-addp-auth-mode": "permission",
-        "x-addp-required-permissions": [
-          "copilot.configuration.update"
-        ]
-      }
-    },
-    "/sql/generate": {
+    "/transfer/generate": {
       "post": {
-        "description": "生成 SQL 语句\n\n根据用户的自然语言描述生成 SQL 查询",
-        "operationId": "generate_sql_api_v1_copilot_sql_generate_post",
+        "description": "发现并确认单一源资源，之后生成不带副作用的 Transfer 草稿。",
+        "operationId": "generate_transfer_api_v1_copilot_transfer_generate_post",
         "parameters": [
           {
             "in": "header",
@@ -1459,7 +2433,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SQLGenerationRequest"
+                "$ref": "#/components/schemas/TransferGenerationRequest"
               }
             }
           },
@@ -1470,7 +2444,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SQLGenerationResponse"
+                  "$ref": "#/components/schemas/TransferGenerationResponse"
                 }
               }
             },
@@ -1492,19 +2466,19 @@
             "BearerAuth": []
           }
         ],
-        "summary": "生成 SQL | Generate SQL",
+        "summary": "生成 Transfer 任务草稿 | Generate Transfer task draft",
         "tags": [
-          "SQL 智能体 | SQL Agent"
+          "Transfer 智能体 | Transfer Agent"
         ],
-        "x-addp-auth-mode": "permission",
+        "x-addp-auth-mode": "delegated_tool",
         "x-addp-required-permissions": [
-          "copilot.sql.execute"
+          "copilot.transfer.execute"
         ]
       }
     },
     "/workflow/generate": {
       "post": {
-        "description": "生成工作流（基于 WorkflowPipeline）\n\n根据用户的自然语言描述生成 GIS 工作流 DAG\n\n流程：\n1. 数据源理解（可选，支持跳过）\n2. 算子筛选\n3. 工作流生成\n4. 工作流验证 + 自动修复",
+        "description": "Discover first-party candidates or consume already confirmed ResourceFact values.",
         "operationId": "generate_workflow_api_v1_copilot_workflow_generate_post",
         "parameters": [
           {
@@ -1545,6 +2519,9 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "description": "请求不符合工作流生成约束 | Invalid workflow generation request"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1557,6 +2534,9 @@
           },
           "500": {
             "description": "工作流生成失败 | Workflow generation failed"
+          },
+          "502": {
+            "description": "Owner Tool 调用失败 | Owner Tool call failed"
           }
         },
         "security": [

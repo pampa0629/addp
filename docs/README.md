@@ -45,6 +45,7 @@
 - [数据类型和格式体系图](concepts/addp数据类型和格式体系图.md)
 - [元数据扫描机制规范](spec/addp元数据扫描机制规范.md)
 - [任务体系规范](spec/addp任务体系规范.md)
+- [数据质量规范](spec/addp数据质量规范.md)
 - [数据血缘能力规范](spec/addp数据血缘能力规范.md)
 - [资源回收（Cleanup）体系规范](spec/addp-cleanup体系规范.md)
 - [数据类型与文件格式扩展指南](spec/addp数据类型与文件格式扩展指南.md)
@@ -116,8 +117,6 @@ AI 模型接入、在线厂商账号、内网模型服务、模型档案、场�
 3. [ADDP 工作流计算引擎接口规范](spec/addp工作流计算引擎接口规范.md)：确认工作流运行时必须实现的统一 HTTP 协议。
 4. [SuperMap Workflow Engine README](../engines/supermap-workflow/README.md)：查看 C++ Runtime、算子、镜像构建、SDK 母版、裁剪结果和验证方式。
 5. [数据血缘能力规范](spec/addp数据血缘能力规范.md)：确认统一执行事实、关系类型、Meta collector 和服务依赖边界。
-6. [工作流运行时结果产物与血缘专题](next/工作流运行时结果产物与血缘专题.md)：处理 Runtime 节点事件、调用方输入资源事实、`produced_targets` 和实现待办时阅读。
-7. [Meta 模块血缘扩展设计](plan/meta模块血缘扩展设计.md)：仅供历史背景参考，现行路线以正式血缘规范为准。
 
 ## 数据血缘与服务依赖主题
 
@@ -169,6 +168,16 @@ AI 模型接入、在线厂商账号、内网模型服务、模型档案、场�
 4. [元数据扫描机制规范](spec/addp元数据扫描机制规范.md)：处理 Meta ScanTask 与 execution 时阅读。
 5. [Transfer 任务语义与同步模式](../transfer/docs/transfer-任务语义与同步模式.md)：处理 Transfer 全量、增量、持续同步、状态、重试、进度或日志语义时阅读。
 6. [Transfer 后续能力清单](next/transfer后续能力清单.md)：评估尚未实现的同步模式或运行时能力时阅读。
+
+## 数据质量主题
+
+处理数据元质量规则、规则应用、质量检查、评分、问题工单或 Quality 执行链时，建议按以下顺序阅读：
+
+1. [数据质量规范](spec/addp数据质量规范.md)：确认规则契约、模块边界、PostgreSQL 方言、执行授权、评分与问题状态机。
+2. [术语表](concepts/addp术语表.md)：确认质量规则、规则应用、质量检查、质量分和质量问题术语。
+3. [任务体系规范](spec/addp任务体系规范.md)：确认 execution 状态、TaskProvider、父子 execution 和持久执行要求。
+4. [授权上下文规范](spec/addp授权上下文规范.md)：确认 User AuthContext 与 Execution Authorization 边界。
+5. [Standard 模块说明](../standard/CLAUDE.md)与 [Quality 模块说明](../quality/CLAUDE.md)：查看当前 owner 实现。
 
 ## 资源回收与生命周期主题
 

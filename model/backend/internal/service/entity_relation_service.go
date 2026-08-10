@@ -12,6 +12,21 @@ type EntityRelationService struct {
 	entityRepo   *repository.EntityRepository
 }
 
+func (s *EntityRelationService) requireDraftEntities(tenantID, sourceID, targetID int64) (*models.Entity, *models.Entity, error) {
+	sourceEntity, err := s.entityRepo.GetByID(sourceID, tenantID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("源实体不存在")
+	}
+	targetEntity, err := s.entityRepo.GetByID(targetID, tenantID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("目标实体不存在")
+	}
+	if sourceEntity.Status != "draft" || targetEntity.Status != "draft" {
+		return nil, nil, fmt.Errorf("实体关系两端都必须处于草稿状态")
+	}
+	return sourceEntity, targetEntity, nil
+}
+
 func NewEntityRelationService(relationRepo *repository.EntityRelationRepository, entityRepo *repository.EntityRepository) *EntityRelationService {
 	return &EntityRelationService{
 		relationRepo: relationRepo,
@@ -21,16 +36,9 @@ func NewEntityRelationService(relationRepo *repository.EntityRelationRepository,
 
 // Create 创建实体关系
 func (s *EntityRelationService) Create(tenantID int64, req *models.CreateEntityRelationRequest) (*models.EntityRelation, error) {
-	// 验证源实体存在且属于当前租户
-	sourceEntity, err := s.entityRepo.GetByID(req.SourceEntity, tenantID)
+	sourceEntity, targetEntity, err := s.requireDraftEntities(tenantID, req.SourceEntity, req.TargetEntity)
 	if err != nil {
-		return nil, fmt.Errorf("源实体不存在")
-	}
-
-	// 验证目标实体存在且属于当前租户
-	targetEntity, err := s.entityRepo.GetByID(req.TargetEntity, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("目标实体不存在")
+		return nil, err
 	}
 
 	// 不允许自关联
@@ -86,6 +94,9 @@ func (s *EntityRelationService) Update(id, tenantID int64, req *models.UpdateEnt
 	if err != nil {
 		return nil, fmt.Errorf("关系不存在")
 	}
+	if _, _, err := s.requireDraftEntities(tenantID, relation.SourceEntity, relation.TargetEntity); err != nil {
+		return nil, err
+	}
 
 	// 更新字段
 	if req.RelationType != "" {
@@ -106,8 +117,12 @@ func (s *EntityRelationService) Update(id, tenantID int64, req *models.UpdateEnt
 // Delete 删除实体关系
 func (s *EntityRelationService) Delete(id, tenantID int64) error {
 	// 验证关系存在且属于当前租户
-	if _, err := s.relationRepo.GetByID(id, tenantID); err != nil {
+	relation, err := s.relationRepo.GetByID(id, tenantID)
+	if err != nil {
 		return fmt.Errorf("关系不存在")
+	}
+	if _, _, err := s.requireDraftEntities(tenantID, relation.SourceEntity, relation.TargetEntity); err != nil {
+		return err
 	}
 
 	return s.relationRepo.Delete(id, tenantID)

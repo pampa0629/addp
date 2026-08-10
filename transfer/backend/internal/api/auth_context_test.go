@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/addp/common/authtest"
+	"github.com/addp/common/authorization/authtest"
 	commonAuth "github.com/addp/common/middleware/auth"
 	"github.com/gin-gonic/gin"
 )

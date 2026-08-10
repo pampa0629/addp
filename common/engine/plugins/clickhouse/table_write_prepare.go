@@ -8,7 +8,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/sqldialect"
+	commonquery "github.com/addp/common/query"
 )
 
 func (p *ClickHousePlugin) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableWriteOptions) error {
@@ -310,6 +310,6 @@ func clickhouseTablePathParts(path plugin.CatalogPath) (string, string, error) {
 	return database, table, nil
 }
 
-func clickhouseDialect() sqldialect.Dialect {
-	return sqldialect.ForEngine("clickhouse")
+func clickhouseDialect() commonquery.Dialect {
+	return commonquery.ForEngine("clickhouse")
 }

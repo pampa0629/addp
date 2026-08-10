@@ -2,6 +2,8 @@ import copy
 import json
 from typing import Any
 
+from addp_common.tools import preview_resource_fact
+
 
 CHECKPOINT_SCHEMA = "addp.agent-checkpoint/v1"
 CHECKPOINT_MAX_BYTES = 256 * 1024
@@ -77,30 +79,10 @@ def _compact_resource_fact(value: dict[str, Any], locator: str) -> dict[str, Any
 
 
 def _compact_preview_fact(result: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
-    metadata = result.get("metadata") if isinstance(result.get("metadata"), dict) else {}
-    data = result.get("data") if isinstance(result.get("data"), dict) else {}
-    locator = metadata.get("locator")
-    if not isinstance(locator, str) or not locator.startswith("addp://"):
+    fact = preview_resource_fact(result)
+    if fact is None:
         return None
-    fact = _compact_resource_fact(metadata, locator)
-    for key in (
-        "preview_type",
-        "geometry_columns",
-        "geometry_column",
-        "source_srid",
-        "source_crs",
-        "column_metadata",
-        "total",
-        "schema",
-        "table",
-        "engine_type",
-    ):
-        field_value = result.get(key)
-        if field_value is None:
-            field_value = data.get(key)
-        if field_value is not None:
-            fact[key] = copy.deepcopy(field_value)
-    return locator, fact
+    return fact["locator"], fact
 
 
 def _merge_resource_fact(

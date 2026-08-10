@@ -5,8 +5,8 @@ import (
 	"log"
 
 	commonclient "github.com/addp/common/client"
+	commonconfig "github.com/addp/common/config"
 	commonconfiguration "github.com/addp/common/configuration"
-	"github.com/addp/common/utils"
 	_ "github.com/addp/inference/i18n"
 	"github.com/addp/inference/internal/api"
 	inferenceauthorization "github.com/addp/inference/internal/authorization"
@@ -62,8 +62,8 @@ func register(cfg *config.Config) {
 		return
 	}
 	client := commonclient.NewSystemServiceClient(cfg.SystemURL, tokenSource, nil)
-	host := utils.GetServiceHost()
-	url := utils.BuildServiceURL(host, cfg.Port)
+	host := commonconfig.GetServiceHost()
+	url := commonconfig.BuildServiceURL(host, cfg.Port)
 	client.RegisterAndHeartbeat(context.Background(), &commonclient.ModuleRegistrationRequest{ModuleName: "inference", ModuleURL: url, RoutePrefix: "/inference", HealthCheckURL: url + "/health", Metadata: map[string]interface{}{"runtime_api": "addp.inference/v1"}, ConfigurationManagement: &commonconfiguration.ManagementDeclaration{SchemaVersion: commonconfiguration.ManagementSchemaVersion, Entries: []commonconfiguration.ManagementEntry{{ID: "inference.configuration", OwnerModule: "inference", ScopeTypes: []string{commonconfiguration.ScopePlatformDefaultWithTenantOverride}, FrontendRoute: "/inference/settings/models", ReadPermission: inferenceauthorization.PermissionInferenceProviderRead, UpdatePermission: inferenceauthorization.PermissionInferenceProviderUpdate}}}})
 }
 

@@ -60,10 +60,12 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column :label="$t('standard.common.actions')" width="120" fixed="right">
+            <el-table-column :label="$t('standard.common.actions')" width="150" fixed="right">
               <template #default="{ row }">
+                <div class="table-actions">
                 <el-button link size="small" @click="editUnit(row)" :disabled="row.is_system">{{ $t('standard.common.edit') }}</el-button>
                 <el-button link size="small" type="danger" @click="deleteUnit(row)" :disabled="row.is_system">{{ $t('standard.common.delete') }}</el-button>
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -124,11 +126,15 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { measurementCategoryAPI, unitAPI } from '../api/standard'
+import { navigateStandardRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
 const categories = ref([])
 const units = ref([])
 const loadingUnits = ref(false)
@@ -163,6 +169,10 @@ const loadUnits = async (categoryID) => {
 
 const handleCategoryClick = (data) => {
   selectedCategory.value = data
+  navigateStandardRoute(router, {
+    path: '/units',
+    query: { category_id: String(data.id) }
+  }, { history: 'replace' })
   loadUnits(data.id)
 }
 
@@ -198,7 +208,10 @@ const deleteCategory = async (data) => {
     await ElMessageBox.confirm(t('standard.unit.confirmDeleteCategory', { name: data.name }), t('standard.common.hint'), { type: 'warning' })
     await measurementCategoryAPI.delete(data.id)
     ElMessage.success(t('standard.common.deleteSuccess'))
-    if (selectedCategory.value?.id === data.id) selectedCategory.value = null
+    if (selectedCategory.value?.id === data.id) {
+      selectedCategory.value = null
+      navigateStandardRoute(router, '/units', { history: 'replace' })
+    }
     await loadCategories()
     await loadUnits(null)
   } catch (e) {
@@ -244,9 +257,11 @@ const deleteUnit = async (data) => {
   }
 }
 
-onMounted(() => {
-  loadCategories()
-  loadUnits(null)
+onMounted(async () => {
+  await loadCategories()
+  const categoryID = route.query.category_id ? Number(route.query.category_id) : null
+  selectedCategory.value = categories.value.find(category => category.id === categoryID) || null
+  loadUnits(selectedCategory.value?.id || null)
 })
 </script>
 
@@ -258,4 +273,5 @@ onMounted(() => {
 .tree-node { display: flex; align-items: center; gap: 8px; width: 100%; }
 .tree-node-meta { font-size: 12px; color: var(--el-text-color-secondary); }
 .tree-node-actions { margin-left: auto; }
+.table-actions { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 </style>

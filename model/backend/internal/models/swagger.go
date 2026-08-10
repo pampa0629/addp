@@ -2,8 +2,12 @@ package models
 
 // ErrorResponse 错误响应
 type ErrorResponse struct {
-	Code    int    `json:"code" example:"400"`
-	Message string `json:"message" example:"请求参数错误"`
+	Error     string `json:"error" example:"请求参数错误"`
+	ErrorCode string `json:"error_code" example:"model_request_failed"`
+}
+
+type MessageResponse struct {
+	Message string `json:"message" example:"操作成功"`
 }
 
 // SuccessResponse 成功响应

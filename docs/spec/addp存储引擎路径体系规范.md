@@ -8,6 +8,7 @@
 | 引擎类型标识 | 显示名称 | 主要 Provider |
 |------------|---------|---------|
 | `postgresql` | PostgreSQL | CatalogProvider + CatalogFactsProvider + SQLQueryRuntimeProvider |
+| `oracle` | Oracle Database | CatalogProvider + CatalogFactsProvider + SQLQueryRuntimeProvider + TableReadSessionProvider |
 | `mysql` | MySQL | CatalogProvider + CatalogFactsProvider + SQLQueryRuntimeProvider |
 | `doris` | Apache Doris | CatalogProvider + CatalogFactsProvider + SQLQueryRuntimeProvider |
 | `clickhouse` | ClickHouse | CatalogProvider + CatalogFactsProvider + SQLQueryRuntimeProvider |
@@ -33,6 +34,7 @@ Kafka common Engine 插件已实现 `service -> topic` 路径、Catalog、topic 
 | MinIO/S3 | endpoint、access_key | `service`，标题使用引擎实例名称，`full_name=""` | bucket |
 | NFS | server、export_path | `root`，标题使用引擎实例名称，`full_name=""` | directory；根目录下 file 可直接挂到 root |
 | PostgreSQL | host、port、user | `server`，标题使用引擎实例名称，`full_name=""` | schema |
+| Oracle | host、port、service_name、user | `server`，标题使用引擎实例名称，`full_name=""` | schema |
 | MySQL/Doris/ClickHouse | host、port、user | `server`，标题使用引擎实例名称，`full_name=""` | database |
 | MongoDB/Neo4j | host、port | `server`，标题使用引擎实例名称，`full_name=""` | database |
 | Kafka | bootstrap servers、TLS/SASL | `service`，标题使用引擎实例名称，`full_name=""` | 无 branch；topic 直接作为 leaf |
@@ -161,7 +163,7 @@ Meta scan 内部必须把“跨模块输入路径”和“扫描期规范化资�
 4. 文件系统 / NFS 没有 bucket 层，扫描期资源相对路径、完整 content path 与 `full_name` 在字符串上通常相同；实现不得为了对齐对象存储而给 NFS 额外引入 root 前缀或 bucket-like 段。
 5. `physical_path` 只表达已裁决 item 的 primary content 或 whole scope 根范围；扫描实现不得把它当作可自由拼接的 catalog selector，也不得把对象存储的 `bucket/object_key` 再交给只接受 `object_key` 的 mapper。
 
-### 关系型数据库（PostgreSQL / MySQL / Doris / ClickHouse）
+### 关系型数据库（PostgreSQL / Oracle / MySQL / Doris / ClickHouse）
 
 full_name 使用引擎原生术语：
 
@@ -324,6 +326,8 @@ Engine (MySQL)
               ├── item: users      ← full_name="analytics.users"
               └── item: orders     ← full_name="analytics.orders"
 ```
+
+Oracle 使用与 PostgreSQL 相同的结构层级 `server(root) -> schema -> table/view/materialized_view`。`service_name` 是 Engine 连接身份字段，不进入 catalog path；schema 名和对象名保留 Oracle catalog 返回的原始大小写，`full_name` 固定为 `schema.object`。第一阶段不把 synonym、Oracle Spatial `SDO_GEOMETRY`、ArcGIS SDE 内部对象或 CDC capture resource 投影为普通 catalog leaf。
 
 server root 是结构入口，标题使用引擎实例名称。schema/database 节点对用户可见；术语按引擎原生语义展示。
 系统 schema/database（如 `pg_catalog`、`information_schema`、`mysql`）由插件过滤，不进入元数据树。

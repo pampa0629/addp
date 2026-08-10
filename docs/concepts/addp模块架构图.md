@@ -166,7 +166,7 @@ graph TB
   - **Meta Worker**: 基于 Asynq 的扫描任务处理,执行元数据扫描和索引
 - **Manager 快显与瓦片任务**: `vector_tile_cache_generation` 与 `vector_tile_set_generation` 由 Manager Backend 按源能力选择唯一执行路径：PostgreSQL/PostGIS 表使用原生 `ST_AsMVT`，MySQL 空间表通过标准 EWKB 流式物化临时 FlatGeobuf 后调用 GeoPython `vector_to_pmtiles`，文件或对象通过受控访问计划调用同一 operator；三类路径统一输出 PMTiles v3。任务定义、执行记录和缓存结果分别进入 Manager owner 表、`common.task_executions` 与 `manager.vector_tile_cache`。`vector_materialized_view_generation` 仍由 Manager Backend 在手动或编排触发时执行，结果进入 `manager.vector_materialized_view`。这些任务当前不启动模块自身定时调度；若需要多执行器横向扩展或独立 GIS 资源隔离，应将对应任务类型整体切换为唯一的 Manager Worker 或 GIS 执行引擎，不允许 Backend 与 Worker 双轨并存。
 - **共享模块**: common 和 common-frontend 提供可复用的代码和组件
-- **扩展运行时**: engines 目录下的内置工作流 / 脚本运行时，由 Develop 模块通过统一 Provider 调用
+- **扩展运行时**: `engines/` 目录集中放置不拥有业务配置事实的独立计算 / Notebook Runtime 实现，由业务模块通过统一 Provider 调用。Inference 同时拥有 Provider、Deployment、Profile、凭据和配置管理入口，因此保留为根目录业务模块；其数据面端点另以 `inference_runtime` Engine Instance 纳入统一引擎体系，不在 `engines/` 下复制 owner 实现。
 - **基础设施层**: 共享的数据库、缓存、对象存储、搜索引擎，以及 PostgreSQL/MySQL CDC 使用的 Infra Kafka/Kafka Connect。Infra Kafka、Connect 和 Transfer capture supervisor 已开放；Infra Kafka 不注册为 System Engine，也不进入用户任务配置。
 
 ---
@@ -189,7 +189,7 @@ graph TB
 | **Service** | 数据服务:服务发布(空间OGC标准与非空间)、外部服务注册 | 8086 / 8086 | Go, Gin, OGC 标准 |
 | **Monitor** | 执行监控:统一监控所有模块的任务执行记录、统计分析 | 8100 / 8100 | Go, Gin, PostgreSQL |
 | **Inference** | 统一 AI 推理：Provider Connection、Model Deployment、Model Profile、加密凭据和推理数据面 | 8191 / 8191 | Go, Gin, GORM |
-| **Copilot** | AI 辅助助手：SQL 智能生成、工作流智能生成 | 8087 / 8087 | Python, FastAPI, LangChain |
+| **Copilot** | AI 辅助助手：输入资源解析与确认、查询/工作流/Notebook/Transfer 领域生成、导航和图谱抽取 | 8087 / 8087 | Python, FastAPI, LangChain |
 
 
 ---
@@ -208,7 +208,7 @@ graph LR
     Common --> Engine[engine/<br/>引擎插件系统]
     Common --> Models[models/<br/>数据模型]
     Common --> Config[config/<br/>配置加载器]
-    Common --> Utils[utils/<br/>工具函数]
+    Common --> Security[security/<br/>凭据加解密]
 
     Client --> PG[PostgreSQL]
     Client --> MySQL[MySQL]
@@ -217,28 +217,25 @@ graph LR
 
     Engine --> Plugins[plugins/<br/>引擎插件实现]
     Engine --> Interfaces[interfaces.go<br/>插件接口定义]
+    Engine --> Selection[selection/<br/>能力解析与筛选]
 
     Models --> User[用户模型]
     Models --> EngineModel[引擎模型]
     Models --> Task[任务模型]
 
-    Utils --> JWT[JWT工具]
-    Utils --> Crypto[加密工具]
-    Utils --> Logger[日志工具]
-
     classDef mainNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
     classDef subNode fill:#c8e6c9,stroke:#2e7d32
 
     class Common mainNode
-    class Client,Engine,Models,Config,Utils subNode
+    class Client,Engine,Models,Config,Security subNode
 ```
 
 **主要内容**:
 - **client/**: 数据库客户端(PostgreSQL、MySQL、MongoDB、MinIO 等)
 - **engine/**: 引擎插件系统(接口定义、插件实现、自动注册)
 - **models/**: 通用数据模型(用户、引擎、任务等)
-- **config/**: 配置加载器(环境变量、.env 文件)
-- **utils/**: 工具函数(JWT、加密、日志等)
+- **config/**: 根环境部署配置、服务地址、端口检查和时区
+- **security/**: 跨模块敏感凭据加解密
 
 ### common-frontend (前端共享库)
 
@@ -422,7 +419,7 @@ graph TB
 - **灵活字段**: 使用 JSONB 字段存储模块特有数据 (execution_config, result, error_details)
 - **性能优化**: 多层索引 (租户+状态、模块+类型、时间降序、JSONB GIN)
 - **来源审计**: 通过 source 记录触发来源模块，trigger_type 只表达 manual / scheduled
-- **数据血缘**: 通过 module + source_task_id 关联原始任务定义
+- **数据血缘**: 真实读写 owner 在 execution 结果中写入 `lineage_facts`，Meta 解析后保存关系证据和当前投影；`source_task_id` 只作为任务定义软引用
 
 ---
 
@@ -490,8 +487,8 @@ flowchart LR
 | 组件 | 拥有的事实 | 明确不拥有 |
 | --- | --- | --- |
 | System | Runtime Engine Instance、IAM、Permission、模块生命周期 | Provider 列表、模型列表、API Key、场景默认值 |
-| Inference | Provider Connection、Model Deployment、Model Profile、加密凭据、统一推理协议与调用审计 | Agent/Copilot/Manager 的业务 Pipeline 和场景绑定 |
-| Agent / Copilot / Manager | 本模块 Scenario Binding、业务上下文和 Pipeline | 厂商协议适配、上游 API Key |
+| Inference | Provider Connection、Model Deployment、Model Profile、加密凭据、统一推理协议与调用审计 | Agent/Copilot/Manager 的业务 Service、Chain 和场景绑定 |
+| Agent / Copilot / Manager | 本模块 Scenario Binding、业务上下文和 Service/Chain | 厂商协议适配、上游 API Key |
 | Console | Inference 管理页面的统一入口 | 推理资源和密钥事实 |
 
 Runtime Instance 默认是平台级共享计算能力，但不因此获得任意 Tenant 业务权限。Provider Connection 可以是平台级或 Tenant 级；平台 Provider 必须显式授权全部或指定 Tenant，Tenant Provider 只能被所属 Tenant 使用。调用方按“Tenant 显式场景绑定 > 平台默认场景绑定 > 明确未配置错误”解析，不做任意模型自动优先或隐藏 fallback。详细契约见 [ADDP AI 推理接口规范](../spec/addp%20AI推理接口规范.md)。

@@ -1,5 +1,6 @@
 const clarificationKeys = {
   data_source_not_found: 'develop.workflow.dataSourceNotFound',
+  data_source_confirmation_required: 'develop.workflow.dataSourceConfirmationRequired',
   data_source_ambiguous: 'develop.workflow.dataSourceAmbiguous',
   data_source_unverified: 'develop.workflow.dataSourceUnverified',
   resource_facts_required: 'develop.workflow.resourceFactsRequired',
@@ -12,7 +13,11 @@ export function resolveWorkflowGenerationResult(result) {
     return {
       workflow: null,
       clarificationKey: clarificationKeys[result.clarification_reason]
-        || 'develop.workflow.dataSourceClarificationRequired'
+        || 'develop.workflow.dataSourceClarificationRequired',
+      clarificationReason: result.clarification_reason || null,
+      candidates: Array.isArray(result.data_source_candidates)
+        ? result.data_source_candidates
+        : []
     }
   }
 
@@ -22,6 +27,8 @@ export function resolveWorkflowGenerationResult(result) {
 
   return {
     workflow: result.workflow,
-    clarificationKey: null
+    clarificationKey: null,
+    clarificationReason: null,
+    candidates: []
   }
 }

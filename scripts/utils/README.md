@@ -44,11 +44,12 @@ Policy OK. No changes required.
 ---
 
 ### register-business.sh
-**用途**: 将 `business/` 中的业务 PostgreSQL、MinIO 注册到 System 引擎管理
+**用途**: 将 `business/` 中的业务 PostgreSQL、Oracle、MinIO 注册到 System 引擎管理
 
 **注意**:
 - 脚本在宿主机检查 Business 服务，但引擎连接测试由 ADDP 容器内服务发起。
-- 默认注册地址为 `business-postgres:5432` 和 `business-minio:9000`，不要改成 `localhost`。
+- 默认注册地址为 `business-postgres:5432`、`business-oracle:1521/FREEPDB1` 和 `business-minio:9000`，不要改成 `localhost`。
+- 运行前必须先启动 Business PostgreSQL、Oracle 和 MinIO；Oracle 第一期只提供普通表 Catalog/查询/只读快照，不启用 CDC 或 ArcGIS SDE。
 - 如果检测到 `business_business-network`，脚本会把正在运行的 ADDP 容器接入该网络。
 - 同名引擎已存在时，默认会更新连接信息；如需跳过更新，可设置 `REGISTER_BUSINESS_UPDATE_EXISTING=false`。
 - 脚本不接收用户名、密码或环境变量 Token；运行时在隐藏的交互式提示中输入当前 User Access Token。

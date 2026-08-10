@@ -63,6 +63,8 @@ GET http://jupyter-engine:8097/api/kernels
 
 每个会话使用独立临时目录和 JupyterLab process。Runtime 只把 owner endpoint 和对应短期 Capability 注入该 process，供 `addp_common.notebook.engines.list()` 读取脱敏查询 Engine 描述；公开会话响应、Notebook 内容和日志均不保存 Capability。正常关闭与 TTL 清理都会先把 Notebook 保存回原 MinIO 对象，再终止 process；Runtime 退出时统一清理全部会话。共享 Lab、固定 8088 入口、URL Token、用户 Token、服务 Token 和长期 Engine 连接注入均不属于支持路径。
 
+镜像内预装 `@addp/notebook-bridge` JupyterLab 扩展。它只接受同源父页面、当前 Session ID 匹配的 `postMessage`，在当前 Notebook 中插入一个代码单元并保持未执行状态；不提供执行、文件覆盖或跨 Session 操作。
+
 ## 本地开发
 
 ```bash

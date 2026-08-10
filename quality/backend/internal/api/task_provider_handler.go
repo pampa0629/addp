@@ -8,6 +8,7 @@ import (
 	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/taskprovider"
+	qualityi18n "github.com/addp/quality/i18n"
 	"github.com/addp/quality/internal/models"
 	"github.com/addp/quality/internal/service"
 	"github.com/gin-gonic/gin"
@@ -31,7 +32,6 @@ type taskProviderTaskListItem struct {
 	Description         string                         `json:"description,omitempty"`
 	Enabled             bool                           `json:"enabled"`
 	LastRunAt           string                         `json:"last_run_at,omitempty"`
-	NextRunAt           string                         `json:"next_run_at,omitempty"`
 	LastExecutionID     string                         `json:"last_execution_id,omitempty"`
 	LastExecutionStatus string                         `json:"last_execution_status,omitempty"`
 	ExecutionContract   taskprovider.ExecutionContract `json:"execution_contract"`
@@ -63,9 +63,8 @@ type qualityTaskProviderExecuteResponse struct {
 // @Produce json
 // @Param task_type query string false "任务类型，固定为 check | Task type, fixed to check"
 // @Success 200 {object} taskProviderTaskListResponse "任务列表 | Task list"
-// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 409 {object} map[string]interface{} "任务已有活动 execution | Task already has an active execution"
-// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Failure 400 {object} qualityErrorResponse "请求参数错误 | Bad request"
+// @Failure 500 {object} qualityErrorResponse "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["quality.check_task.read"]
 // @Router /tasks [get]
@@ -73,22 +72,18 @@ type qualityTaskProviderExecuteResponse struct {
 func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 	taskType := strings.TrimSpace(c.Query("task_type"))
 	if taskType != "" && taskType != commonExecution.TaskTypeQualityCheck {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported task_type: " + taskType})
+		respondInvalidRequest(c, "")
 		return
 	}
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "100"))
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 {
+	page, pageSize := pageParams(c.Query("page"), c.Query("page_size"))
+	if strings.TrimSpace(c.Query("page_size")) == "" {
 		pageSize = 100
 	}
 
 	tenantID := getTenantID(c)
-	tasks, err := h.checkTaskSvc.List(tenantID)
+	tasks, total, err := h.checkTaskSvc.List(tenantID, page, pageSize)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondQualityServiceError(c, err, "", qualityi18n.MsgInternal)
 		return
 	}
 
@@ -98,7 +93,7 @@ func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, taskProviderTaskListResponse{
 		Items:    items,
-		Total:    len(items),
+		Total:    int(total),
 		Page:     page,
 		PageSize: pageSize,
 	})
@@ -112,8 +107,8 @@ func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 // @Param task_type path string true "任务类型，固定为 check | Task type, fixed to check"
 // @Param id path int true "检查任务ID | Check task ID"
 // @Success 200 {object} taskProviderTaskListItem "任务详情 | Task detail"
-// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @Failure 400 {object} qualityErrorResponse "请求参数错误 | Bad request"
+// @Failure 404 {object} qualityErrorResponse "任务不存在 | Task not found"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["quality.check_task.read"]
 // @Router /tasks/{task_type}/{id} [get]
@@ -121,19 +116,19 @@ func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 	taskType := c.Param("task_type")
 	if taskType != commonExecution.TaskTypeQualityCheck {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported task_type: " + taskType})
+		respondInvalidRequest(c, "")
 		return
 	}
 
 	taskID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		respondInvalidRequest(c, "")
 		return
 	}
 
 	task, err := h.checkTaskSvc.Get(taskID, getTenantID(c))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+		respondQualityServiceError(c, err, qualityi18n.MsgCheckTaskNotFound, qualityi18n.MsgInternal)
 		return
 	}
 	c.JSON(http.StatusOK, qualityTaskListItem(*task))
@@ -149,8 +144,10 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 // @Param id path int true "检查任务ID | Check task ID"
 // @Param request body qualityTaskProviderExecuteRequest false "TaskProvider 执行请求 | TaskProvider execution request"
 // @Success 202 {object} qualityTaskProviderExecuteResponse "执行ID | Execution ID"
-// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Failure 400 {object} qualityErrorResponse "请求参数错误 | Bad request"
+// @Failure 404 {object} qualityErrorResponse "任务不存在 | Task not found"
+// @Failure 409 {object} qualityErrorResponse "任务已有活动 execution | Task already has an active execution"
+// @Failure 500 {object} qualityErrorResponse "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["quality.check_task.execute"]
 // @Router /tasks/{task_type}/{id}/execute [post]
@@ -158,29 +155,29 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 	taskType := c.Param("task_type")
 	if taskType != commonExecution.TaskTypeQualityCheck {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported task_type: " + taskType})
+		respondInvalidRequest(c, "")
 		return
 	}
 
 	taskID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		respondInvalidRequest(c, "")
 		return
 	}
 
 	var req qualityTaskProviderExecuteRequest
 	if err := commonAPI.BindOptionalJSONStrict(c, &req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondInvalidRequest(c, err.Error())
 		return
 	}
 	if len(req.Parameters) > 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Quality task provider does not support execution parameter overrides"})
+		respondInvalidRequest(c, "")
 		return
 	}
 
 	triggerType, err := commonExecution.NormalizeTriggerType(req.TriggerType)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondInvalidRequest(c, "")
 		return
 	}
 	source := strings.TrimSpace(req.Source)
@@ -192,7 +189,7 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 		parentExecutionID = &req.ParentExecutionID
 	}
 
-	executionID, err := h.executor.RunCheckWithContext(c.Request.Context(), taskID, getTenantID(c), getUserID(c), triggerType, source, parentExecutionID)
+	executionID, err := h.executor.RunCheckWithContext(c.Request.Context(), taskID, getTenantID(c), getUserID(c), bearerToken(c), triggerType, source, parentExecutionID)
 	if err != nil {
 		respondCheckRunError(c, err)
 		return
@@ -215,9 +212,6 @@ func qualityTaskListItem(task models.CheckTask) taskProviderTaskListItem {
 	}
 	if task.LastRunAt != nil {
 		item.LastRunAt = task.LastRunAt.Format("2006-01-02T15:04:05Z07:00")
-	}
-	if task.NextRunAt != nil {
-		item.NextRunAt = task.NextRunAt.Format("2006-01-02T15:04:05Z07:00")
 	}
 	item.LastExecutionID = task.LastExecutionID
 	item.LastExecutionStatus = task.LastExecutionStatus

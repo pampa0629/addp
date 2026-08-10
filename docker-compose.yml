@@ -130,7 +130,6 @@ services:
       - SYSTEM_URL=http://system-backend:8180
       - META_URL=http://meta-backend:8082
       - MANAGER_SERVICE_CLIENT_SECRET=${MANAGER_SERVICE_CLIENT_SECRET}
-      - INFERENCE_URL=http://inference-backend:8191
       - TRANSFER_URL=http://transfer-backend:8083
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -743,11 +742,11 @@ services:
     environment:
       - SERVICE_HOST=copilot-backend
       - PORT=8087
+      - GATEWAY_URL=http://gateway:8000
       - SYSTEM_URL=http://system-backend:8180
       - MANAGER_URL=http://manager-backend:8081
       - META_URL=http://meta-backend:8082
       - DEVELOP_URL=http://develop-backend:8185
-      - INFERENCE_URL=http://inference-backend:8191
       - COPILOT_SERVICE_CLIENT_SECRET=${COPILOT_SERVICE_CLIENT_SECRET}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -1087,7 +1086,6 @@ services:
       - DEVELOP_URL=http://develop-backend:8185
       - COPILOT_URL=http://copilot-backend:8087
       - GRAPH_URL=http://graph-backend:8186
-      - INFERENCE_URL=http://inference-backend:8191
       - AGENT_SERVICE_CLIENT_SECRET=${AGENT_SERVICE_CLIENT_SECRET}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432

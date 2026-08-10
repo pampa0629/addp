@@ -8,7 +8,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/sqldialect"
+	commonquery "github.com/addp/common/query"
 )
 
 func (p *PostgreSQLPlugin) ReadSpatialFeature(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.SpatialFeatureReadOptions) (*plugin.SpatialFeatureData, error) {
@@ -34,7 +34,7 @@ func (p *PostgreSQLPlugin) ReadSpatialFeature(ctx context.Context, connInfo plug
 	if err != nil {
 		return nil, err
 	}
-	dialect := sqldialect.ForEngine("postgresql")
+	dialect := commonquery.ForEngine("postgresql")
 	quotedGeometry := dialect.QuoteIdentifier(geometryColumn.Name)
 	geometryExpression := quotedGeometry
 	if strings.EqualFold(strings.TrimSpace(geometryColumn.UDTName), "geography") {

@@ -2,164 +2,106 @@ package service
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
+
+	"github.com/addp/common/dataquality"
+	"github.com/addp/common/query"
 )
 
-// SQLGenerator 根据规则类型生成质量检查 SQL
-type SQLGenerator struct{}
+// SQLGenerator compiles the PostgreSQL-only quality rule contract.
+type SQLGenerator struct {
+	dialect query.Dialect
+}
+
+type CompiledCheck struct {
+	SQL  string
+	Args []interface{}
+}
+
+type CheckCounts struct {
+	TotalCount  int64 `gorm:"column:total_count"`
+	FailedCount int64 `gorm:"column:failed_count"`
+}
 
 func NewSQLGenerator() *SQLGenerator {
-	return &SQLGenerator{}
+	return &SQLGenerator{dialect: query.ForEngine("postgresql")}
 }
 
-// GenerateCheckSQL 为单条规则生成检查 SQL，返回 (checkSQL, countSQL, error)
-// checkSQL: 返回失败行数的 SQL
-// countSQL: 返回总行数的 SQL
-func (g *SQLGenerator) GenerateCheckSQL(schemaName, tableName, columnName string, ruleType string, ruleConfig map[string]interface{}) (string, string, error) {
-	table := tableName
-	if schemaName != "" {
-		table = fmt.Sprintf("%s.%s", schemaName, tableName)
+// GenerateCheckSQL produces one aggregate query for a rule. Identifiers are
+// quoted by the dialect and every user value is returned separately for binding.
+func (g *SQLGenerator) GenerateCheckSQL(schemaName, tableName, columnName string, rule dataquality.Rule) (CompiledCheck, error) {
+	if strings.TrimSpace(schemaName) == "" || strings.TrimSpace(tableName) == "" || strings.TrimSpace(columnName) == "" {
+		return CompiledCheck{}, fmt.Errorf("schema, table and column are required")
+	}
+	if err := rule.Validate(); err != nil {
+		return CompiledCheck{}, err
+	}
+	table := g.dialect.QualifiedTable(schemaName, tableName)
+	column := g.dialect.QuoteIdentifier(columnName)
+
+	if rule.Type == dataquality.RuleTypeUnique {
+		return CompiledCheck{
+			SQL: fmt.Sprintf(`SELECT COUNT(*) AS total_count,
+COALESCE(SUM(CASE WHEN %s IS NOT NULL AND duplicate_count > 1 THEN 1 ELSE 0 END), 0) AS failed_count
+FROM (SELECT %s, COUNT(*) OVER (PARTITION BY %s) AS duplicate_count FROM %s) AS quality_rows`, column, column, column, table),
+		}, nil
 	}
 
-	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM %s", table)
+	condition, args, err := g.failureCondition(column, rule)
+	if err != nil {
+		return CompiledCheck{}, err
+	}
+	return CompiledCheck{
+		SQL:  fmt.Sprintf("SELECT COUNT(*) AS total_count, COUNT(*) FILTER (WHERE %s) AS failed_count FROM %s", condition, table),
+		Args: args,
+	}, nil
+}
 
-	var failSQL string
-	switch ruleType {
-	case "not_null":
-		failSQL = fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s IS NULL", table, columnName)
-
-	case "unique":
-		failSQL = fmt.Sprintf(
-			"SELECT COUNT(*) - COUNT(DISTINCT %s) FROM %s WHERE %s IS NOT NULL",
-			columnName, table, columnName,
-		)
-
-	case "format":
-		pattern, ok := getStringParam(ruleConfig, "pattern")
-		if !ok {
-			return "", "", fmt.Errorf("rule 'format' requires 'pattern' param")
+func (g *SQLGenerator) failureCondition(column string, rule dataquality.Rule) (string, []interface{}, error) {
+	params := rule.Params
+	switch rule.Type {
+	case dataquality.RuleTypeNotNull:
+		return column + " IS NULL", nil, nil
+	case dataquality.RuleTypeFormat:
+		return column + " IS NOT NULL AND " + column + "::text !~ $1", []interface{}{*params.Pattern}, nil
+	case dataquality.RuleTypeLength:
+		conditions := make([]string, 0, 2)
+		args := make([]interface{}, 0, 2)
+		if params.Min != nil {
+			conditions = append(conditions, column+" IS NOT NULL AND char_length("+column+"::text) < $"+strconv.Itoa(len(args)+1))
+			args = append(args, lengthArgument(*params.Min))
 		}
-		failSQL = fmt.Sprintf(
-			"SELECT COUNT(*) FROM %s WHERE %s IS NOT NULL AND %s !~ '%s'",
-			table, columnName, columnName, escapeSQLString(pattern),
-		)
-
-	case "length":
-		minLen, hasMin := getIntParam(ruleConfig, "min_length")
-		maxLen, hasMax := getIntParam(ruleConfig, "max_length")
-		conditions := []string{}
-		if hasMin {
-			conditions = append(conditions, fmt.Sprintf("LENGTH(%s::text) < %d", columnName, minLen))
+		if params.Max != nil {
+			conditions = append(conditions, column+" IS NOT NULL AND char_length("+column+"::text) > $"+strconv.Itoa(len(args)+1))
+			args = append(args, lengthArgument(*params.Max))
 		}
-		if hasMax {
-			conditions = append(conditions, fmt.Sprintf("LENGTH(%s::text) > %d", columnName, maxLen))
+		return "(" + strings.Join(conditions, " OR ") + ")", args, nil
+	case dataquality.RuleTypeValueRange:
+		conditions := make([]string, 0, 2)
+		args := make([]interface{}, 0, 2)
+		if params.Min != nil {
+			conditions = append(conditions, column+" IS NOT NULL AND "+column+"::numeric < $"+strconv.Itoa(len(args)+1))
+			args = append(args, params.Min.String())
 		}
-		if len(conditions) == 0 {
-			return "", "", fmt.Errorf("rule 'length' requires 'min_length' or 'max_length'")
+		if params.Max != nil {
+			conditions = append(conditions, column+" IS NOT NULL AND "+column+"::numeric > $"+strconv.Itoa(len(args)+1))
+			args = append(args, params.Max.String())
 		}
-		failSQL = fmt.Sprintf(
-			"SELECT COUNT(*) FROM %s WHERE %s IS NOT NULL AND (%s)",
-			table, columnName, strings.Join(conditions, " OR "),
-		)
-
-	case "value_range":
-		minVal, hasMin := getFloatParam(ruleConfig, "min_value")
-		maxVal, hasMax := getFloatParam(ruleConfig, "max_value")
-		conditions := []string{}
-		if hasMin {
-			conditions = append(conditions, fmt.Sprintf("%s::numeric < %v", columnName, minVal))
+		return "(" + strings.Join(conditions, " OR ") + ")", args, nil
+	case dataquality.RuleTypeAllowedValues:
+		placeholders := make([]string, len(params.Values))
+		args := make([]interface{}, len(params.Values))
+		for index, value := range params.Values {
+			placeholders[index] = "$" + strconv.Itoa(index+1)
+			args[index] = value
 		}
-		if hasMax {
-			conditions = append(conditions, fmt.Sprintf("%s::numeric > %v", columnName, maxVal))
-		}
-		if len(conditions) == 0 {
-			return "", "", fmt.Errorf("rule 'value_range' requires 'min_value' or 'max_value'")
-		}
-		failSQL = fmt.Sprintf(
-			"SELECT COUNT(*) FROM %s WHERE %s IS NOT NULL AND (%s)",
-			table, columnName, strings.Join(conditions, " OR "),
-		)
-
-	case "allowed_values":
-		vals, ok := getStringSliceParam(ruleConfig, "values")
-		if !ok || len(vals) == 0 {
-			return "", "", fmt.Errorf("rule 'allowed_values' requires non-empty 'values' list")
-		}
-		quoted := make([]string, len(vals))
-		for i, v := range vals {
-			quoted[i] = fmt.Sprintf("'%s'", escapeSQLString(v))
-		}
-		failSQL = fmt.Sprintf(
-			"SELECT COUNT(*) FROM %s WHERE %s IS NOT NULL AND %s NOT IN (%s)",
-			table, columnName, columnName, strings.Join(quoted, ","),
-		)
-
+		return column + " IS NOT NULL AND " + column + "::text NOT IN (" + strings.Join(placeholders, ", ") + ")", args, nil
 	default:
-		return "", "", fmt.Errorf("unsupported rule type: %s", ruleType)
+		return "", nil, fmt.Errorf("unsupported rule type %q", rule.Type)
 	}
-
-	return failSQL, countSQL, nil
 }
 
-func getStringParam(m map[string]interface{}, key string) (string, bool) {
-	v, ok := m[key]
-	if !ok {
-		return "", false
-	}
-	s, ok := v.(string)
-	return s, ok
-}
-
-func getIntParam(m map[string]interface{}, key string) (int64, bool) {
-	v, ok := m[key]
-	if !ok {
-		return 0, false
-	}
-	switch n := v.(type) {
-	case float64:
-		return int64(n), true
-	case int64:
-		return n, true
-	case int:
-		return int64(n), true
-	}
-	return 0, false
-}
-
-func getFloatParam(m map[string]interface{}, key string) (float64, bool) {
-	v, ok := m[key]
-	if !ok {
-		return 0, false
-	}
-	switch n := v.(type) {
-	case float64:
-		return n, true
-	case int64:
-		return float64(n), true
-	case int:
-		return float64(n), true
-	}
-	return 0, false
-}
-
-func getStringSliceParam(m map[string]interface{}, key string) ([]string, bool) {
-	v, ok := m[key]
-	if !ok {
-		return nil, false
-	}
-	raw, ok := v.([]interface{})
-	if !ok {
-		return nil, false
-	}
-	result := make([]string, 0, len(raw))
-	for _, item := range raw {
-		if s, ok := item.(string); ok {
-			result = append(result, s)
-		}
-	}
-	return result, true
-}
-
-func escapeSQLString(s string) string {
-	return strings.ReplaceAll(s, "'", "''")
+func lengthArgument(value interface{ String() string }) interface{} {
+	return value.String()
 }

@@ -37,6 +37,12 @@ type TaskExecution struct {
 	Progress    int     `gorm:"default:0" json:"progress"`                                              // 0-100
 	CurrentStep *string `gorm:"size:255" json:"current_step,omitempty"`                                 // 当前步骤（Orchestrator/Workflow）
 
+	// Lease facts make long-running owner workers recoverable across process restarts.
+	LeaseOwner     *string    `gorm:"size:100;index" json:"-"`
+	LeaseExpiresAt *time.Time `gorm:"index" json:"-"`
+	Attempt        int        `gorm:"not null;default:0" json:"attempt"`
+	MaxAttempts    int        `gorm:"not null;default:3" json:"max_attempts"`
+
 	// 触发信息
 	TriggerType string `gorm:"size:50;not null;index:idx_task_executions_trigger_type" json:"trigger_type"` // 'manual'/'scheduled'/'event'
 	TriggeredBy *int   `json:"triggered_by,omitempty"`                                                      // 触发用户ID

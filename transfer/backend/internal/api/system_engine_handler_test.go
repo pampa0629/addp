@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/addp/common/authtest"
+	"github.com/addp/common/authorization/authtest"
 	commonClient "github.com/addp/common/client"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commonModels "github.com/addp/common/models"

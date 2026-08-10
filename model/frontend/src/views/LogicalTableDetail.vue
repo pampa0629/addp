@@ -13,7 +13,13 @@
         </el-tag>
       </div>
       <div class="header-right">
-        <el-button type="primary" @click="handleSave" :loading="saving">{{ t('model.common.save') }}</el-button>
+        <el-button v-if="canEdit" type="primary" @click="handleSave" :loading="saving">{{ t('model.common.save') }}</el-button>
+        <el-button v-if="table.status === 'draft' && authStore.hasPermission('model.logical_model.update')" type="success" @click="handleApprove">
+          {{ t('model.common.approve') }}
+        </el-button>
+        <el-button v-if="table.status === 'approved' && authStore.hasPermission('model.logical_model.update')" @click="handleReopen">
+          {{ t('model.common.reopen') }}
+        </el-button>
         <el-button type="success" @click="handlePreviewDDL">
           <el-icon><View /></el-icon>
           {{ t('model.logical_table.preview_ddl') }}
@@ -56,11 +62,8 @@
               </el-col>
               <el-col :span="8">
                 <el-form-item :label="t('model.logical_table.layer')">
-                  <el-select v-model="form.layer" clearable style="width:100%">
-                    <el-option label="ODS" value="ods" />
-                    <el-option label="DWD" value="dwd" />
-                    <el-option label="DWS" value="dws" />
-                    <el-option label="ADS" value="ads" />
+                  <el-select v-model="form.layer" style="width:100%">
+                    <el-option v-for="layer in layers" :key="layer.layer_code" :label="layer.layer_name" :value="layer.layer_code" />
                   </el-select>
                 </el-form-item>
               </el-col>
@@ -102,7 +105,7 @@
           <template #header>
             <div class="card-header-with-action">
               <span class="card-title">{{ t('model.field.title') }}</span>
-              <el-button type="primary" size="small" @click="openFieldDialog()">
+              <el-button v-if="canEdit" type="primary" size="small" @click="openFieldDialog()">
                 <el-icon><Plus /></el-icon>
                 {{ t('model.field.add') }}
               </el-button>
@@ -137,8 +140,8 @@
             <el-table-column :label="t('model.field.description')" prop="description" show-overflow-tooltip />
             <el-table-column :label="t('model.field.actions')" width="130" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" @click="openFieldDialog(row)">{{ t('model.common.edit') }}</el-button>
-                <el-popconfirm :title="t('model.field.delete_confirm')" @confirm="deleteField(row.id)">
+                <el-button v-if="canEdit" link type="primary" @click="openFieldDialog(row)">{{ t('model.common.edit') }}</el-button>
+                <el-popconfirm v-if="canEdit" :title="t('model.field.delete_confirm')" @confirm="deleteField(row.id)">
                   <template #reference>
                     <el-button link type="danger">{{ t('model.common.delete') }}</el-button>
                   </template>
@@ -155,7 +158,7 @@
           <template #header>
             <div class="card-header-with-action">
               <span class="card-title">{{ t('model.metric.title') }}</span>
-              <el-button type="primary" size="small" @click="openMetricDialog">
+              <el-button v-if="canEdit" type="primary" size="small" @click="openMetricDialog">
                 <el-icon><Plus /></el-icon>
                 {{ t('model.metric.add') }}
               </el-button>
@@ -177,7 +180,7 @@
             <el-table-column :label="t('model.metric.note')" prop="note" show-overflow-tooltip />
             <el-table-column :label="t('model.metric.actions')" width="80" fixed="right">
               <template #default="{ row }">
-                <el-popconfirm :title="t('model.metric.remove_confirm')" @confirm="removeMetric(row.id)">
+                <el-popconfirm v-if="canEdit" :title="t('model.metric.remove_confirm')" @confirm="removeMetric(row.id)">
                   <template #reference>
                     <el-button link type="danger">{{ t('model.metric.remove') }}</el-button>
                   </template>
@@ -222,11 +225,6 @@
                   </el-select>
                 </el-form-item>
               </el-col>
-              <el-col :span="16">
-                <el-form-item :label="t('model.materialization.extra_options')">
-                  <el-input v-model="materializationForm.extra_options" :placeholder="t('model.materialization.extra_placeholder')" />
-                </el-form-item>
-              </el-col>
             </el-row>
           </el-form>
         </el-card>
@@ -257,7 +255,6 @@
                 <el-option label="decimal" value="decimal" />
                 <el-option label="date" value="date" />
                 <el-option label="datetime" value="datetime" />
-                <el-option label="timestamp" value="timestamp" />
                 <el-option label="bool" value="bool" />
                 <el-option label="json" value="json" />
                 <el-option label="text" value="text" />
@@ -385,15 +382,17 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Plus, View } from '@element-plus/icons-vue'
-import { logicalTableAPI, domainAPI, elementAPI, standardMetricAPI } from '../api/model'
+import { logicalTableAPI, domainAPI, elementAPI, standardMetricAPI, dwLayerAPI } from '../api/model'
 import DDLPreviewDialog from '../components/DDLPreviewDialog.vue'
 import { useI18n } from 'vue-i18n'
 import { navigateModelRoute } from '../utils/moduleNavigation'
+import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 const tableId = parseInt(route.params.id)
 
 const backToList = () => navigateModelRoute(router, '/logical-tables', { history: 'replace' })
@@ -414,15 +413,17 @@ const metrics = ref([])
 const availableMetrics = ref([])
 
 const table = ref({})
+const canEdit = computed(() => table.value.status === 'draft' && authStore.hasPermission('model.logical_model.update'))
 const form = reactive({
   name: '', domain_id: null, table_type: 'entity', layer: '',
   grain_description: '', scd_type: 0, description: ''
 })
 const materializationForm = reactive({
-  schema_name: '', table_name: '', partition_by: '', partition_type: 'range', extra_options: ''
+  schema_name: '', table_name: '', partition_by: '', partition_type: 'range'
 })
 const fields = ref([])
 const domains = ref([])
+const layers = ref([])
 const elements = ref([])
 const ddlContent = ref('')
 
@@ -459,11 +460,10 @@ const fieldRules = {
   data_type: [{ required: true, message: t('model.field.type_required'), trigger: 'change' }]
 }
 
-const statusTagType = (s) => ({ draft: 'info', approved: 'success', materialized: 'warning' }[s] ?? 'info')
+const statusTagType = (s) => ({ draft: 'info', approved: 'success' }[s] ?? 'info')
 const statusLabel = (s) => ({
   draft: t('model.common.status_draft'),
   approved: t('model.common.status_approved'),
-  materialized: t('model.common.status_materialized')
 }[s] ?? s)
 
 const fieldRoleTagType = (role) => {
@@ -509,7 +509,6 @@ const loadTable = async () => {
     table_name: mat.table_name || '',
     partition_by: mat.partition_by || '',
     partition_type: mat.partition_type || 'range',
-    extra_options: mat.extra_options || ''
   })
 }
 
@@ -537,8 +536,8 @@ const loadMetrics = async () => {
 const loadAvailableMetrics = async () => {
   if (availableMetrics.value.length > 0) return
   try {
-    const res = await standardMetricAPI.list({ page_size: 500 })
-    availableMetrics.value = res.data.data || res.data || []
+    const res = await standardMetricAPI.listAll()
+    availableMetrics.value = res
   } catch {
     ElMessage.error(t('model.metric.load_failed'))
   }
@@ -556,6 +555,16 @@ const handleSave = async () => {
   } finally {
     saving.value = false
   }
+}
+
+const handleApprove = async () => {
+  try { await logicalTableAPI.approve(tableId); ElMessage.success(t('model.common.approve_success')); loadTable() }
+  catch (err) { ElMessage.error(err.response?.data?.error || t('model.common.op_failed')) }
+}
+
+const handleReopen = async () => {
+  try { await logicalTableAPI.reopen(tableId); ElMessage.success(t('model.common.reopen_success')); loadTable() }
+  catch (err) { ElMessage.error(err.response?.data?.error || t('model.common.op_failed')) }
 }
 
 const handlePreviewDDL = async () => {
@@ -675,12 +684,14 @@ onMounted(async () => {
   await loadTable()
   loadFields()
   loadMetrics()
-  const [domainsRes, elementsRes] = await Promise.all([
+  const [domainsRes, elementsRes, layersRes] = await Promise.all([
     domainAPI.list(),
-    elementAPI.list({ page_size: 500 })
+    elementAPI.listAll(),
+    dwLayerAPI.list()
   ])
-  domains.value = domainsRes.data?.data || domainsRes.data || []
-  elements.value = elementsRes.data?.data || elementsRes.data || []
+  domains.value = domainsRes || []
+  elements.value = elementsRes
+  layers.value = layersRes || []
 })
 </script>
 

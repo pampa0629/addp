@@ -14,6 +14,10 @@ func NewLogicalTableRepository(db *gorm.DB) *LogicalTableRepository {
 	return &LogicalTableRepository{db: db}
 }
 
+func (r *LogicalTableRepository) DB() *gorm.DB {
+	return r.db
+}
+
 func (r *LogicalTableRepository) Create(table *models.LogicalTable) error {
 	return r.db.Create(table).Error
 }
@@ -35,6 +39,15 @@ type ListLogicalTableOptions struct {
 }
 
 func (r *LogicalTableRepository) List(tenantID int64, opts ListLogicalTableOptions) ([]models.LogicalTable, int64, error) {
+	if opts.Page <= 0 {
+		opts.Page = 1
+	}
+	if opts.PageSize <= 0 {
+		opts.PageSize = 20
+	}
+	if opts.PageSize > 100 {
+		opts.PageSize = 100
+	}
 	query := r.db.Model(&models.LogicalTable{}).Where("tenant_id = ?", tenantID)
 
 	if opts.DomainID != nil {
@@ -59,16 +72,10 @@ func (r *LogicalTableRepository) List(tenantID int64, opts ListLogicalTableOptio
 		return nil, 0, err
 	}
 
-	if opts.Page <= 0 {
-		opts.Page = 1
-	}
-	if opts.PageSize <= 0 {
-		opts.PageSize = 20
-	}
 	offset := (opts.Page - 1) * opts.PageSize
 
 	var tables []models.LogicalTable
-	err := query.Order("created_at DESC").Offset(offset).Limit(opts.PageSize).Find(&tables).Error
+	err := query.Order("created_at DESC, id DESC").Offset(offset).Limit(opts.PageSize).Find(&tables).Error
 	return tables, total, err
 }
 
@@ -77,15 +84,42 @@ func (r *LogicalTableRepository) Update(table *models.LogicalTable) error {
 }
 
 func (r *LogicalTableRepository) Delete(id, tenantID int64) error {
-	// 先删除字段
-	r.db.Where("table_id = ?", id).Delete(&models.LogicalField{})
-	return r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.LogicalTable{}).Error
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var table models.LogicalTable
+		if err := tx.Select("id").Where("id = ? AND tenant_id = ?", id, tenantID).First(&table).Error; err != nil {
+			return commonrepo.WrapDBError(err)
+		}
+		if err := tx.Where("fact_table_id = ? AND tenant_id = ?", id, tenantID).Delete(&models.FactMetricMapping{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("tenant_id = ? AND (source_table = ? OR target_table = ?)", tenantID, id, id).Delete(&models.TableRelation{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("table_id = ?", id).Delete(&models.LogicalField{}).Error; err != nil {
+			return err
+		}
+		result := tx.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.LogicalTable{})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return nil
+	})
 }
 
 func (r *LogicalTableRepository) UpdateStatus(id, tenantID int64, status string, updatedBy int64) error {
-	return r.db.Model(&models.LogicalTable{}).
+	result := r.db.Model(&models.LogicalTable{}).
 		Where("id = ? AND tenant_id = ?", id, tenantID).
-		Updates(map[string]interface{}{"status": status, "updated_by": updatedBy}).Error
+		Updates(map[string]interface{}{"status": status, "updated_by": updatedBy})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (r *LogicalTableRepository) ExistsByCode(code string, tenantID int64, excludeID int64) (bool, error) {
@@ -124,5 +158,12 @@ func (r *LogicalTableRepository) UpdateField(field *models.LogicalField) error {
 
 // DeleteField 删除字段
 func (r *LogicalTableRepository) DeleteField(fieldID, tableID int64) error {
-	return r.db.Where("id = ? AND table_id = ?", fieldID, tableID).Delete(&models.LogicalField{}).Error
+	result := r.db.Where("id = ? AND table_id = ?", fieldID, tableID).Delete(&models.LogicalField{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }

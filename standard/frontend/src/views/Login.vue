@@ -4,7 +4,7 @@
       <template #header>
         <div class="card-header">
           <h2>{{ $t('standard.login.title') }}</h2>
-          <p class="subtitle">Model</p>
+          <p class="subtitle">{{ $t('standard.login.subtitle') }}</p>
         </div>
       </template>
 
@@ -79,21 +79,23 @@ const loading = ref(false)
 const handleLogin = async () => {
   if (!formRef.value) return
 
-  await formRef.value.validate(async valid => {
-    if (!valid) return
+  try {
+    await formRef.value.validate()
+  } catch {
+    return
+  }
 
-    loading.value = true
-    try {
-      await authStore.login(loginForm.username, loginForm.password)
-      ElMessage.success(t('standard.login.loginSuccess'))
-      const redirect = route.query.redirect || '/domains'
-      router.push(redirect)
-    } catch (error) {
-      ElMessage.error(error.message || t('standard.login.loginFailed'))
-    } finally {
-      loading.value = false
-    }
-  })
+  loading.value = true
+  try {
+    await authStore.login(loginForm.username, loginForm.password)
+    ElMessage.success(t('standard.login.loginSuccess'))
+    const redirect = route.query.redirect || '/domains'
+    router.push(redirect)
+  } catch (error) {
+    ElMessage.error(error.message || t('standard.login.loginFailed'))
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 
@@ -103,12 +105,12 @@ const handleLogin = async () => {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, var(--el-color-primary) 0%, var(--el-color-primary-dark-2) 100%);
+  background: var(--el-bg-color-page);
 }
 
 .login-box {
   width: 400px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--el-box-shadow-light);
 }
 
 .card-header {

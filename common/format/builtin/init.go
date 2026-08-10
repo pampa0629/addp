@@ -3,6 +3,7 @@ package builtin
 import (
 	// 导入内置类型映射器，触发 init() 自动注册
 	_ "github.com/addp/common/format/mappers/mysql"
+	_ "github.com/addp/common/format/mappers/oracle"
 	_ "github.com/addp/common/format/mappers/postgresql"
 	_ "github.com/addp/common/format/mappers/spatialite"
 

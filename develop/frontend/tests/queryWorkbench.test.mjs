@@ -8,7 +8,8 @@ import {
   queryParameterReference,
   queryErrorMessage,
   queryResultFromExecution,
-  diagnoseQuery
+  diagnoseQuery,
+  parseSQLSources
 } from '../src/utils/queryWorkbench.mjs'
 
 const capability = queryCapabilityForEngine({
@@ -89,6 +90,44 @@ assert.deepEqual(diagnoseQuery({
   query: 'SELECT * FROM "public"."farmland" LIMIT 10',
   fields: ['id', 'geom'],
   targetLocator: 'addp://engine/1/table?item_id=2'
+}), [])
+
+const multiTableQuery = `WITH railway_buffer AS (
+  SELECT ST_Union(r.geom) AS geom
+  FROM public.railway AS r
+)
+SELECT f.geometry, rb.geom AS clipped_geom
+FROM public.farmland AS f
+CROSS JOIN railway_buffer AS rb
+WHERE f.geometry IS NOT NULL AND rb.geom IS NOT NULL`
+const parsedSources = parseSQLSources(multiTableQuery)
+assert.deepEqual(parsedSources.sources.map(source => ({ name: source.name, alias: source.alias, kind: source.kind, fields: source.fields })), [
+  { name: 'public.railway', alias: 'r', kind: 'table', fields: [] },
+  { name: 'public.farmland', alias: 'f', kind: 'table', fields: [] },
+  { name: 'railway_buffer', alias: 'rb', kind: 'cte', fields: ['geom'] }
+])
+assert.deepEqual(diagnoseQuery({
+  language: 'sql',
+  engineType: 'postgresql',
+  query: multiTableQuery,
+  fieldSources: [
+    { name: 'public.railway', alias: 'r', fields: ['geom'], known: true },
+    { name: 'public.farmland', alias: 'f', fields: ['geometry'], known: true },
+    { name: 'railway_buffer', alias: 'rb', fields: ['geom'], known: true }
+  ]
+}), [])
+assert.deepEqual(diagnoseQuery({
+  language: 'sql',
+  query: 'SELECT f.missing FROM public.farmland AS f JOIN tmp_result AS tmp ON f.geometry = tmp.geometry',
+  fieldSources: [
+    { name: 'public.farmland', alias: 'f', fields: ['geometry'], known: true },
+    { name: 'tmp_result', alias: 'tmp', fields: [], known: false }
+  ]
+}), [{ code: 'field_unknown', severity: 'warning', field: 'missing' }])
+assert.deepEqual(diagnoseQuery({
+  language: 'sql',
+  query: 'SELECT f.geometry FROM public.farmland AS f',
+  fieldSources: []
 }), [])
 const postgresqlQuotedFieldQuery = 'SELECT * FROM "public"."farmland" WHERE SmID > 10'
 const postgresqlQuotedFieldStart = postgresqlQuotedFieldQuery.indexOf('SmID')

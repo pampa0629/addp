@@ -12,7 +12,7 @@ import (
 	"time"
 
 	commonModels "github.com/addp/common/models"
-	commonUtils "github.com/addp/common/utils"
+	commonsecurity "github.com/addp/common/security"
 	monitorModels "github.com/addp/monitor/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
@@ -89,7 +89,7 @@ func TestIntegrationPostgresWebhookDeliveryClaimAndDispatch(t *testing.T) {
 	}); !errors.Is(err, ErrWebhookDestinationConflict) {
 		t.Fatalf("PostgreSQL duplicate destination error = %v", err)
 	}
-	secret, err := commonUtils.Encrypt("0123456789abcdef", key)
+	secret, err := commonsecurity.Encrypt("0123456789abcdef", key)
 	if err != nil {
 		t.Fatal(err)
 	}

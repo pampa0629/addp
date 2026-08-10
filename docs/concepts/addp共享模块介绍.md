@@ -7,11 +7,16 @@
 - [client/system.go](common/client/system.go) - SystemClient 用于与 System 模块通信
 - [models/engine.go](common/models/engine.go) - 共享的 Engine 模型和 `connection_info` 结构
 - [config/loader.go](common/config/loader.go) - 部署环境配置读取；目标实现不得保留 System shared config 或环境变量 fallback 双轨
+- `common/config` - 根环境部署配置、服务地址构造、端口可用性检查和时区读取；模块注册端口直接使用 owner 已加载的部署配置，不维护共享默认端口表
+- `common/security` - System、Inference、Monitor 等模块共享的 AES-256-GCM 敏感凭据加解密；不承载 IAM 或业务字段识别
 - `common/jsonmap` - decoded JSON map 的通用读取工具,不承载 `meta_item.attributes` 业务规范
 - `common/taskprovider` - `task.capabilities/v2`、标准任务列表响应、任务级 `execution_contract` 和执行输入实例校验；校验失败返回包含稳定 rule、path 和约束值的结构化错误。任务类型能力不再保存静态 `execution_schema`，Orchestrator 必须从具体任务详情取得精确输入/输出契约
+- `common/query` - 查询参数绑定、SQL 副作用分析和跨 SQL 引擎的基础方言能力；不承载 catalog facts 或 PostGIS 空间扩展语义
+- `common/engine/selection` - 基于规范化 Engine capabilities 的 Engine Instance 解析和筛选 helper
 - `common/middleware/ratelimit` - Redis 原子固定窗口限流能力，供认证等多实例安全边界复用；Redis 不可用时由调用方定义失败关闭响应，不提供进程内存回退路径
 - `common/contentio` - 基于 Go `io` 的内容定位与读写抽象，负责 `Ref`、`Reader`、`Writer`、`Lister`、`RangeReader` 和 `Stat`
 - `common/format` - 通用文件格式、FormatDescriptor、格式信息、format plugin、info provider、content reader 和 writer/provider
+- `common/format/pmtiles`、`common/format/rastermosaic` - 格式域内的 PMTiles v3 归档和 Raster Mosaic Schema 实现
 - `common/dataitem` - 候选内容集合到 data item 组织结果的通用解析能力，供 Meta 扫描和 Manager 容器动态预览复用；当前已落地 `ResolveItems()`、single / multi / whole 规则派生、related refs 还原 helper 和基础忽略策略
 - `common/resourcetree` - Meta 已落库 catalog / item 事实到跨模块资源树视图的投影层，提供 `TreeNode`、`TreeBuilder`、`ResourceLocator` 和 provider `CatalogPath` 纯转换能力；不持有 System / Meta client，不主动读取远程服务，不处理租户权限、token、降级策略、扫描或内容读取
 - [client/meta.go](common/client/meta.go) - MetaClient 是跨模块调用 Meta API 的唯一共享 Client；只接受 `ServiceTokenProvider`，按 Tenant 获取短期 Service Access Token 并只发送 Bearer，Manager 等模块不得保留私有 Meta Client、代传 User Token 或恢复 Internal API Key / Tenant Header
@@ -22,6 +27,8 @@
 `common-python/addp_common/workflow_runtime` 提供 Python Workflow Runtime 的协议执行核心，包括 workflow definition 校验、DAG 拓扑排序、引用解析、异步 execution 状态和标准错误。它是共享库，不是独立工作流引擎；各运行时仍负责自己的算子注册、内存对象类型和专业执行依赖。
 
 `common-python/addp_common/tools` 提供 `addp.tool-manifest/v1`、Manifest 校验和 ToolExecutor。Python SDK 是唯一 HTTP Client 实现；`addp` CLI、ADDP Agent LangChain Tool Provider 和后续 MCP Adapter 只能调用 ToolExecutor，不得各自维护 HTTP 路径、认证或业务判断。ToolExecutor 在每次 Tool 调用边界向 System 换取绑定 owner audience、稳定 Tool Scope、AgentRun 和 ToolCall 的短期 Delegated Access Token，原始 User Access Token 不进入 owner Client。服务身份访问 owner API 时使用独立 Service Principal 的短期 Service Access Token；调用方只发送 Bearer，不发送 Internal API Key 或客户端自报的 Tenant Header。
+
+`common-python/addp_common/resources` 提供跨 Copilot、Agent 和业务 AI 入口共享的 `ResourceFact`。它只承载 owner 已确认的资源身份及有限事实（locator、引擎、数据类型、字段和空间信息），不负责搜索、租户权限或领域生成。Copilot 的 `ResourceResolutionService` 负责统一意图提取、候选发现、补充检索、排序和重新校验；Query、Workflow、Notebook、Transfer 通过各自 `ResourceResolutionPolicy` 表达差异。
 
 `common-python/addp_common/client.BaseClient` 为 Python owner Client 提供 Tenant Service Access Token 请求主路：调用方显式传入 `OAuthServiceTokenSource + tenant_id`，Client 在每次请求前取得短期 Bearer；若因授权版本变化首次收到 401，只精确失效被拒绝 Token、重新取 Token 并重放一次。非 401 不重试，不得回退到 Internal API Key、User Token 或 Tenant Header。
 

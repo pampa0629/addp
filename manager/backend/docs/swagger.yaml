@@ -1,198 +1,5 @@
 basePath: /api/v1/manager
 definitions:
-  dataprofile.BooleanMetrics:
-    properties:
-      false_count:
-        type: integer
-      true_count:
-        type: integer
-    type: object
-  dataprofile.DataScope:
-    properties:
-      conditions:
-        items:
-          $ref: '#/definitions/dataprofile.DataScopeCondition'
-        type: array
-      kind:
-        type: string
-      logic:
-        type: string
-    type: object
-  dataprofile.DataScopeCondition:
-    properties:
-      field:
-        type: string
-      operator:
-        type: string
-      value: {}
-      values:
-        items: {}
-        type: array
-    type: object
-  dataprofile.DistributionBucket:
-    properties:
-      count:
-        type: integer
-      label:
-        type: string
-      max: {}
-      min: {}
-    type: object
-  dataprofile.FieldProfile:
-    properties:
-      boolean:
-        $ref: '#/definitions/dataprofile.BooleanMetrics'
-      distinct_approximate:
-        type: boolean
-      distinct_count:
-        type: integer
-      distribution:
-        items:
-          $ref: '#/definitions/dataprofile.DistributionBucket'
-        type: array
-      name:
-        type: string
-      native_type:
-        type: string
-      null_count:
-        type: integer
-      null_rate:
-        type: number
-      nullable:
-        type: boolean
-      numeric:
-        $ref: '#/definitions/dataprofile.NumericMetrics'
-      observations:
-        items:
-          $ref: '#/definitions/dataprofile.Observation'
-        type: array
-      primary_key:
-        type: boolean
-      spatial:
-        $ref: '#/definitions/dataprofile.SpatialMetrics'
-      status:
-        type: string
-      temporal:
-        $ref: '#/definitions/dataprofile.TemporalMetrics'
-      text:
-        $ref: '#/definitions/dataprofile.TextMetrics'
-      top_values:
-        items:
-          $ref: '#/definitions/dataprofile.ValueCount'
-        type: array
-      type:
-        $ref: '#/definitions/datatype.FieldType'
-      unique_rate:
-        type: number
-      value_count:
-        type: integer
-    type: object
-  dataprofile.NumericMetrics:
-    properties:
-      max:
-        type: number
-      mean:
-        type: number
-      median:
-        type: number
-      min:
-        type: number
-      negative_count:
-        type: integer
-      p25:
-        type: number
-      p75:
-        type: number
-      p95:
-        type: number
-      stddev:
-        type: number
-      zero_count:
-        type: integer
-    type: object
-  dataprofile.Observation:
-    properties:
-      code:
-        type: string
-      field:
-        type: string
-      severity:
-        type: string
-      value:
-        type: number
-    type: object
-  dataprofile.Profile:
-    properties:
-      data_scope:
-        $ref: '#/definitions/dataprofile.DataScope'
-      field_count:
-        type: integer
-      fields:
-        items:
-          $ref: '#/definitions/dataprofile.FieldProfile'
-        type: array
-      mode:
-        type: string
-      observations:
-        items:
-          $ref: '#/definitions/dataprofile.Observation'
-        type: array
-      partial:
-        type: boolean
-      profiled_at:
-        type: string
-      row_count:
-        type: integer
-      row_count_exact:
-        type: boolean
-      rows_scanned:
-        type: integer
-      sample_method:
-        type: string
-      sample_size:
-        type: integer
-      schema_version:
-        type: string
-      truncated:
-        type: boolean
-    type: object
-  dataprofile.SpatialMetrics:
-    properties:
-      empty_geometry_count:
-        type: integer
-      invalid_geometry_count:
-        type: integer
-      valid_geometry_count:
-        type: integer
-    type: object
-  dataprofile.TemporalMetrics:
-    properties:
-      max:
-        type: string
-      min:
-        type: string
-    type: object
-  dataprofile.TextMetrics:
-    properties:
-      avg_length:
-        type: number
-      blank_count:
-        type: integer
-      empty_count:
-        type: integer
-      max_length:
-        type: integer
-      min_length:
-        type: integer
-    type: object
-  dataprofile.ValueCount:
-    properties:
-      count:
-        type: integer
-      rate:
-        type: number
-      value: {}
-    type: object
   datatype.Bounds3D:
     properties:
       max_x:
@@ -266,6 +73,8 @@ definitions:
         type: integer
       actor_tenant_membership_id:
         type: integer
+      attempt:
+        type: integer
       authorization_effects:
         items:
           type: string
@@ -304,6 +113,8 @@ definitions:
       id:
         type: integer
       issued_authorization_version:
+        type: integer
+      max_attempts:
         type: integer
       metadata:
         allOf:
@@ -358,6 +169,199 @@ definitions:
     type: object
   github_com_addp_common_models.JSONMap:
     additionalProperties: true
+    type: object
+  github_com_addp_manager_internal_dataprofile.BooleanMetrics:
+    properties:
+      false_count:
+        type: integer
+      true_count:
+        type: integer
+    type: object
+  github_com_addp_manager_internal_dataprofile.DataScope:
+    properties:
+      conditions:
+        items:
+          $ref: '#/definitions/github_com_addp_manager_internal_dataprofile.DataScopeCondition'
+        type: array
+      kind:
+        type: string
+      logic:
+        type: string
+    type: object
+  github_com_addp_manager_internal_dataprofile.DataScopeCondition:
+    properties:
+      field:
+        type: string
+      operator:
+        type: string
+      value: {}
+      values:
+        items: {}
+        type: array
+    type: object
+  github_com_addp_manager_internal_dataprofile.DistributionBucket:
+    properties:
+      count:
+        type: integer
+      label:
+        type: string
+      max: {}
+      min: {}
+    type: object
+  github_com_addp_manager_internal_dataprofile.FieldProfile:
+    properties:
+      boolean:
+        $ref: '#/definitions/github_com_addp_manager_internal_dataprofile.BooleanMetrics'
+      distinct_approximate:
+        type: boolean
+      distinct_count:
+        type: integer
+      distribution:
+        items:
+          $ref: '#/definitions/github_com_addp_manager_internal_dataprofile.DistributionBucket'
+        type: array
+      name:
+        type: string
+      native_type:
+        type: string
+      null_count:
+        type: integer
+      null_rate:
+        type: number
+      nullable:
+        type: boolean
+      numeric:
+        $ref: '#/definitions/github_com_addp_manager_internal_dataprofile.NumericMetrics'
+      observations:
+        items:
+          $ref: '#/definitions/github_com_addp_manager_internal_dataprofile.Observation'
+        type: array
+      primary_key:
+        type: boolean
+      spatial:
+        $ref: '#/definitions/github_com_addp_manager_internal_dataprofile.SpatialMetrics'
+      status:
+        type: string
+      temporal:
+        $ref: '#/definitions/github_com_addp_manager_internal_dataprofile.TemporalMetrics'
+      text:
+        $ref: '#/definitions/github_com_addp_manager_internal_dataprofile.TextMetrics'
+      top_values:
+        items:
+          $ref: '#/definitions/github_com_addp_manager_internal_dataprofile.ValueCount'
+        type: array
+      type:
+        $ref: '#/definitions/datatype.FieldType'
+      unique_rate:
+        type: number
+      value_count:
+        type: integer
+    type: object
+  github_com_addp_manager_internal_dataprofile.NumericMetrics:
+    properties:
+      max:
+        type: number
+      mean:
+        type: number
+      median:
+        type: number
+      min:
+        type: number
+      negative_count:
+        type: integer
+      p25:
+        type: number
+      p75:
+        type: number
+      p95:
+        type: number
+      stddev:
+        type: number
+      zero_count:
+        type: integer
+    type: object
+  github_com_addp_manager_internal_dataprofile.Observation:
+    properties:
+      code:
+        type: string
+      field:
+        type: string
+      severity:
+        type: string
+      value:
+        type: number
+    type: object
+  github_com_addp_manager_internal_dataprofile.Profile:
+    properties:
+      data_scope:
+        $ref: '#/definitions/github_com_addp_manager_internal_dataprofile.DataScope'
+      field_count:
+        type: integer
+      fields:
+        items:
+          $ref: '#/definitions/github_com_addp_manager_internal_dataprofile.FieldProfile'
+        type: array
+      mode:
+        type: string
+      observations:
+        items:
+          $ref: '#/definitions/github_com_addp_manager_internal_dataprofile.Observation'
+        type: array
+      partial:
+        type: boolean
+      profiled_at:
+        type: string
+      row_count:
+        type: integer
+      row_count_exact:
+        type: boolean
+      rows_scanned:
+        type: integer
+      sample_method:
+        type: string
+      sample_size:
+        type: integer
+      schema_version:
+        type: string
+      truncated:
+        type: boolean
+    type: object
+  github_com_addp_manager_internal_dataprofile.SpatialMetrics:
+    properties:
+      empty_geometry_count:
+        type: integer
+      invalid_geometry_count:
+        type: integer
+      valid_geometry_count:
+        type: integer
+    type: object
+  github_com_addp_manager_internal_dataprofile.TemporalMetrics:
+    properties:
+      max:
+        type: string
+      min:
+        type: string
+    type: object
+  github_com_addp_manager_internal_dataprofile.TextMetrics:
+    properties:
+      avg_length:
+        type: number
+      blank_count:
+        type: integer
+      empty_count:
+        type: integer
+      max_length:
+        type: integer
+      min_length:
+        type: integer
+    type: object
+  github_com_addp_manager_internal_dataprofile.ValueCount:
+    properties:
+      count:
+        type: integer
+      rate:
+        type: number
+      value: {}
     type: object
   github_com_addp_manager_internal_models.CADPreview:
     properties:
@@ -816,7 +820,7 @@ definitions:
       latest_execution:
         $ref: '#/definitions/github_com_addp_manager_internal_service.DataProfileExecutionView'
       profile:
-        $ref: '#/definitions/dataprofile.Profile'
+        $ref: '#/definitions/github_com_addp_manager_internal_dataprofile.Profile'
       profile_config_hash:
         type: string
       profile_execution:
@@ -839,7 +843,7 @@ definitions:
       child_name:
         type: string
       data_scope:
-        $ref: '#/definitions/dataprofile.DataScope'
+        $ref: '#/definitions/github_com_addp_manager_internal_dataprofile.DataScope'
       locator:
         type: string
       mode:
@@ -852,7 +856,7 @@ definitions:
   github_com_addp_manager_internal_service.DataProfileExecutionResponse:
     properties:
       data_scope:
-        $ref: '#/definitions/dataprofile.DataScope'
+        $ref: '#/definitions/github_com_addp_manager_internal_dataprofile.DataScope'
       execution:
         $ref: '#/definitions/github_com_addp_manager_internal_service.DataProfileExecutionView'
       profile_config_hash:
@@ -5190,7 +5194,7 @@ paths:
       - Manager
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - manager.content.read
+      - manager.data_item.read
   /preview-state/preferred-mode:
     patch:
       consumes:
@@ -6086,6 +6090,10 @@ paths:
         name: q
         required: true
         type: string
+      - description: 限定引擎 ID | Restrict results to an engine ID
+        in: query
+        name: engine_id
+        type: integer
       - description: 页码，默认1 | Page number, default 1
         in: query
         name: page

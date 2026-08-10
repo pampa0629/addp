@@ -12,16 +12,16 @@
           :placeholder="t('quality.ruleApplication.allEngines')"
           clearable
           style="width:160px"
-          @change="fetchList"
+          @change="applyFilters"
         >
           <el-option v-for="eng in engines" :key="eng.id" :label="eng.name" :value="eng.id" />
         </el-select>
       </el-form-item>
       <el-form-item :label="t('quality.ruleApplication.schema')">
-        <el-input v-model="filter.schema_name" :placeholder="t('quality.ruleApplication.all')" style="width:130px" clearable @change="fetchList" />
+        <el-input v-model="filter.schema_name" :placeholder="t('quality.ruleApplication.all')" style="width:130px" clearable @change="applyFilters" />
       </el-form-item>
       <el-form-item :label="t('quality.ruleApplication.tableName')">
-        <el-input v-model="filter.table_name" :placeholder="t('quality.ruleApplication.all')" style="width:130px" clearable @change="fetchList" />
+        <el-input v-model="filter.table_name" :placeholder="t('quality.ruleApplication.all')" style="width:130px" clearable @change="applyFilters" />
       </el-form-item>
     </el-form>
 
@@ -51,6 +51,16 @@
         </template>
       </el-table-column>
     </el-table>
+    <el-pagination
+      v-model:current-page="pagination.page"
+      v-model:page-size="pagination.page_size"
+      :page-sizes="[20, 50, 100]"
+      layout="total, sizes, prev, pager, next"
+      :total="pagination.total"
+      class="pagination"
+      @size-change="fetchList"
+      @current-change="fetchList"
+    />
 
     <el-dialog v-model="showCreateDialog" :title="t('quality.ruleApplication.createTitle')" width="520px">
       <el-form :model="form" label-width="80px">
@@ -83,7 +93,7 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item :label="t('quality.ruleApplication.schema')">
+        <el-form-item :label="t('quality.ruleApplication.schema')" required>
           <el-input v-model="form.schema_name" :placeholder="t('quality.ruleApplication.schemaPlaceholder')" />
         </el-form-item>
         <el-form-item :label="t('quality.ruleApplication.tableName')">
@@ -115,6 +125,7 @@ const loading = ref(false)
 const showCreateDialog = ref(false)
 const filter = ref({ engine_id: null, schema_name: '', table_name: '' })
 const form = ref({ element_id: null, engine_id: null, schema_name: '', table_name: '', column_name: '' })
+const pagination = ref({ page: 1, page_size: 20, total: 0 })
 
 const engines = ref([])
 const elementOptions = ref([])
@@ -124,7 +135,7 @@ const elementCache = ref({})
 const fetchEngines = async () => {
   try {
     const res = await systemEngineAPI.list()
-    engines.value = res
+    engines.value = (res || []).filter(engine => engine.engine_type === 'postgresql' && engine.lifecycle_state === 'active')
   } catch {
     engines.value = []
   }
@@ -156,15 +167,23 @@ const elementName = (id) => {
 const fetchList = async () => {
   loading.value = true
   try {
-    const params = {}
+    const params = { page: pagination.value.page, page_size: pagination.value.page_size }
     if (filter.value.engine_id) params.engine_id = filter.value.engine_id
     if (filter.value.schema_name) params.schema_name = filter.value.schema_name
     if (filter.value.table_name) params.table_name = filter.value.table_name
     const res = await ruleApplicationAPI.list(params)
-    list.value = res || []
+    list.value = res?.data || []
+    pagination.value.total = res?.total || 0
+  } catch (e) {
+    ElMessage.error(e.response?.data?.error || t('quality.ruleApplication.loadFailed'))
   } finally {
     loading.value = false
   }
+}
+
+const applyFilters = () => {
+  pagination.value.page = 1
+  fetchList()
 }
 
 const openCreateDialog = () => {
@@ -176,6 +195,7 @@ const openCreateDialog = () => {
 const createItem = async () => {
   if (!form.value.element_id) return ElMessage.warning(t('quality.ruleApplication.elementRequired'))
   if (!form.value.engine_id) return ElMessage.warning(t('quality.ruleApplication.engineRequired'))
+  if (!form.value.schema_name.trim()) return ElMessage.warning(t('quality.ruleApplication.schemaRequired'))
   if (!form.value.table_name) return ElMessage.warning(t('quality.ruleApplication.tableRequired'))
   if (!form.value.column_name) return ElMessage.warning(t('quality.ruleApplication.columnRequired'))
   try {
@@ -184,15 +204,20 @@ const createItem = async () => {
     showCreateDialog.value = false
     await fetchList()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('quality.ruleApplication.createFailed'))
+    ElMessage.error(e.response?.data?.error || t('quality.ruleApplication.deleteFailed'))
   }
 }
 
 const deleteItem = async (id) => {
-  await ElMessageBox.confirm(t('quality.ruleApplication.deleteConfirm'), t('quality.ruleApplication.deleteTitle'), { type: 'warning' })
-  await ruleApplicationAPI.delete(id)
-  ElMessage.success(t('quality.ruleApplication.deleteSuccess'))
-  await fetchList()
+  try {
+    await ElMessageBox.confirm(t('quality.ruleApplication.deleteConfirm'), t('quality.ruleApplication.deleteTitle'), { type: 'warning' })
+    await ruleApplicationAPI.delete(id)
+    ElMessage.success(t('quality.ruleApplication.deleteSuccess'))
+    await fetchList()
+  } catch (e) {
+    if (e === 'cancel' || e === 'close') return
+    ElMessage.error(e.response?.data?.error || t('quality.ruleApplication.createFailed'))
+  }
 }
 
 onMounted(async () => {
@@ -207,5 +232,9 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+}
+.pagination {
+  margin-top: 16px;
+  justify-content: flex-end;
 }
 </style>

@@ -60,10 +60,19 @@ func (h *LogicalTableHandler) ListLogicalTables(c *gin.Context) {
 			opts.PageSize = ps
 		}
 	}
+	if opts.Page <= 0 {
+		opts.Page = 1
+	}
+	if opts.PageSize <= 0 {
+		opts.PageSize = 20
+	}
+	if opts.PageSize > 100 {
+		opts.PageSize = 100
+	}
 
 	tables, total, err := h.svc.ListLogicalTables(tenantID, opts)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
 		return
 	}
 	totalPages := 0
@@ -96,7 +105,7 @@ func (h *LogicalTableHandler) ListLogicalTables(c *gin.Context) {
 func (h *LogicalTableHandler) CreateLogicalTable(c *gin.Context) {
 	var req models.CreateLogicalTableRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 
@@ -105,7 +114,7 @@ func (h *LogicalTableHandler) CreateLogicalTable(c *gin.Context) {
 
 	table, err := h.svc.CreateLogicalTable(&req, tenantID, userID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusCreated, table)
@@ -124,14 +133,14 @@ func (h *LogicalTableHandler) CreateLogicalTable(c *gin.Context) {
 func (h *LogicalTableHandler) GetLogicalTable(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	table, err := h.svc.GetLogicalTable(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, modeli18n.MsgTableNotFound)})
+		c.JSON(http.StatusNotFound, errorResponse(commoni18n.T(c, modeli18n.MsgTableNotFound)))
 		return
 	}
 	c.JSON(http.StatusOK, table)
@@ -152,13 +161,13 @@ func (h *LogicalTableHandler) GetLogicalTable(c *gin.Context) {
 func (h *LogicalTableHandler) UpdateLogicalTable(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 
 	var req models.UpdateLogicalTableRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 
@@ -167,7 +176,7 @@ func (h *LogicalTableHandler) UpdateLogicalTable(c *gin.Context) {
 
 	table, err := h.svc.UpdateLogicalTable(id, tenantID, userID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, table)
@@ -186,16 +195,62 @@ func (h *LogicalTableHandler) UpdateLogicalTable(c *gin.Context) {
 func (h *LogicalTableHandler) DeleteLogicalTable(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	if err := h.svc.DeleteLogicalTable(id, tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+}
+
+// ApproveLogicalTable POST /api/model/logical-tables/:id/approve
+// @Summary 审批逻辑表 | Approve logical table
+// @Tags Model
+// @Produce json
+// @Param id path int true "逻辑表ID | Logical table ID"
+// @Success 200 {object} models.MessageResponse "审批成功 | Approved successfully"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.logical_model.update"]
+// @Router /logical-tables/{id}/approve [post]
+// @Security BearerAuth
+func (h *LogicalTableHandler) ApproveLogicalTable(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
+		return
+	}
+	if err := h.svc.ApproveLogicalTable(id, getTenantID(c), getUserID(c)); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "approved"})
+}
+
+// ReopenLogicalTable POST /api/model/logical-tables/:id/reopen
+// @Summary 重新打开逻辑表 | Reopen logical table
+// @Tags Model
+// @Produce json
+// @Param id path int true "逻辑表ID | Logical table ID"
+// @Success 200 {object} models.MessageResponse "重新打开成功 | Reopened successfully"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.logical_model.update"]
+// @Router /logical-tables/{id}/reopen [post]
+// @Security BearerAuth
+func (h *LogicalTableHandler) ReopenLogicalTable(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
+		return
+	}
+	if err := h.svc.ReopenLogicalTable(id, getTenantID(c), getUserID(c)); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "reopened"})
 }
 
 // GetFields GET /api/model/logical-tables/:id/fields
@@ -211,14 +266,14 @@ func (h *LogicalTableHandler) DeleteLogicalTable(c *gin.Context) {
 func (h *LogicalTableHandler) GetFields(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	fields, err := h.svc.GetFields(tableID, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		c.JSON(http.StatusNotFound, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, fields)
@@ -239,20 +294,20 @@ func (h *LogicalTableHandler) GetFields(c *gin.Context) {
 func (h *LogicalTableHandler) CreateField(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 
 	var req models.CreateLogicalFieldRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	field, err := h.svc.CreateField(tableID, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusCreated, field)
@@ -274,25 +329,25 @@ func (h *LogicalTableHandler) CreateField(c *gin.Context) {
 func (h *LogicalTableHandler) UpdateField(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 	fieldID, err := strconv.ParseInt(c.Param("fid"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidFieldID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidFieldID)))
 		return
 	}
 
 	var req models.UpdateLogicalFieldRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	field, err := h.svc.UpdateField(fieldID, tableID, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, field)
@@ -312,18 +367,18 @@ func (h *LogicalTableHandler) UpdateField(c *gin.Context) {
 func (h *LogicalTableHandler) DeleteField(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 	fieldID, err := strconv.ParseInt(c.Param("fid"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidFieldID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidFieldID)))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	if err := h.svc.DeleteField(fieldID, tableID, tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
@@ -342,14 +397,14 @@ func (h *LogicalTableHandler) DeleteField(c *gin.Context) {
 func (h *LogicalTableHandler) PreviewDDL(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	ddl, err := h.svc.PreviewDDL(tableID, tenantID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ddl": ddl})

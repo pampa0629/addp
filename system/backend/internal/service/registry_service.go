@@ -12,8 +12,8 @@ import (
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
+	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/common/models"
-	commonutils "github.com/addp/common/utils"
 	localModels "github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 )
@@ -237,7 +237,7 @@ func filterComputeEngines(engines []*localModels.Engine) []*localModels.Engine {
 		if engine == nil {
 			continue
 		}
-		if len(commonutils.GetSupportedComputeEntrypoints((*models.Engine)(engine))) > 0 {
+		if len(engineselection.GetSupportedComputeEntrypoints((*models.Engine)(engine))) > 0 {
 			filtered = append(filtered, engine)
 		}
 	}

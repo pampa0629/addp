@@ -37,6 +37,9 @@ other = "Failed to open file"
 [standard.common.file_read_failed]
 other = "Failed to read file"
 
+[standard.common.operation_failed]
+other = "Operation failed"
+
 [standard.domain.not_found]
 other = "Domain not found"
 

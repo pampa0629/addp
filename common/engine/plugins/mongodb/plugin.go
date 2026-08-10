@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/queryparams"
+	commonquery "github.com/addp/common/query"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -227,7 +227,7 @@ func (p *MongoDBPlugin) generateSampleQuery(ctx context.Context, connInfo plugin
 // query 为 JSON 命令字符串，支持 find/aggregate/count/distinct，其他命令走 RunCommand 通用路径
 // 示例：{"find":"users","filter":{"age":{"$gt":18}},"limit":10}
 func (p *MongoDBPlugin) executeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string, queryOptions plugin.QueryOptions) (*plugin.QueryResult, error) {
-	boundQuery, err := queryparams.BindMQL(query, queryOptions.Parameters)
+	boundQuery, err := commonquery.BindMQL(query, queryOptions.Parameters)
 	if err != nil {
 		return nil, fmt.Errorf("绑定 MQL 查询参数失败：%w", err)
 	}

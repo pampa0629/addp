@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -60,6 +61,12 @@ type serviceTokenResponse struct {
 	TokenType   string `json:"token_type"`
 	ExpiresIn   int64  `json:"expires_in"`
 	Scope       string `json:"scope"`
+}
+
+type serviceTokenErrorResponse struct {
+	Error            string `json:"error"`
+	ErrorCode        string `json:"error_code"`
+	ErrorDescription string `json:"error_description"`
 }
 
 func NewOAuthServiceTokenSource(systemURL, clientID, clientSecret string, httpClient *http.Client) (*OAuthServiceTokenSource, error) {
@@ -147,11 +154,25 @@ func (s *OAuthServiceTokenSource) token(ctx context.Context, cacheKey string, co
 		return "", fmt.Errorf("request service token: %w", err)
 	}
 	defer response.Body.Close()
+	responseBody, readErr := io.ReadAll(io.LimitReader(response.Body, 8192))
+	if readErr != nil {
+		return "", fmt.Errorf("read service token response: %w", readErr)
+	}
 	if response.StatusCode != http.StatusOK {
+		var failure serviceTokenErrorResponse
+		if err := json.Unmarshal(responseBody, &failure); err == nil {
+			code := strings.TrimSpace(failure.ErrorCode)
+			if code == "" {
+				code = strings.TrimSpace(failure.Error)
+			}
+			if code != "" {
+				return "", fmt.Errorf("service token endpoint returned HTTP %d: %s", response.StatusCode, code)
+			}
+		}
 		return "", fmt.Errorf("service token endpoint returned HTTP %d", response.StatusCode)
 	}
 	var payload serviceTokenResponse
-	decoder := json.NewDecoder(response.Body)
+	decoder := json.NewDecoder(strings.NewReader(string(responseBody)))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&payload); err != nil {
 		return "", fmt.Errorf("decode service token response: %w", err)

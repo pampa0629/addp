@@ -1169,7 +1169,7 @@ func assertExecutionAuthorizationConstraints(t *testing.T, db *sql.DB) {
 	if tableName != "system.execution_authorizations" {
 		t.Fatalf("execution_authorizations table = %q", tableName)
 	}
-	var permissionCount, rolePermissionCount, triggerCount int
+	var permissionCount, rolePermissionCount, triggerCount, qualityAudienceConstraintCount int
 	if err := db.QueryRow(`
 		SELECT count(*)
 		FROM system.permissions
@@ -1193,10 +1193,22 @@ func assertExecutionAuthorizationConstraints(t *testing.T, db *sql.DB) {
 			('tenant.data_steward', 'develop.data_read.execute'),
 			('tenant.data_steward', 'develop.data_write.execute'),
 			('tenant.data_viewer', 'develop.data_read.execute'),
-			('tenant.develop_runtime', 'system.execution_authorization.execute')
+			('tenant.develop_runtime', 'system.execution_authorization.execute'),
+			('tenant.governance_manager', 'develop.data_read.execute'),
+			('tenant.governance_manager', 'system.execution_authorization.create'),
+			('tenant.quality_runtime', 'system.execution_authorization.execute')
 		)
 	`).Scan(&rolePermissionCount); err != nil {
 		t.Fatalf("count execution authorization role permissions: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM pg_constraint
+		WHERE conrelid = 'system.execution_authorizations'::regclass
+		  AND conname = 'execution_authorizations_audience_check'
+		  AND pg_get_constraintdef(oid) LIKE '%addp-quality%'
+	`).Scan(&qualityAudienceConstraintCount); err != nil {
+		t.Fatalf("inspect Quality execution authorization audience constraint: %v", err)
 	}
 	if err := db.QueryRow(`
 		SELECT count(*)
@@ -1209,8 +1221,8 @@ func assertExecutionAuthorizationConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&triggerCount); err != nil {
 		t.Fatalf("count execution authorization triggers: %v", err)
 	}
-	if permissionCount != 5 || rolePermissionCount != 6 || triggerCount != 3 {
-		t.Fatalf("execution authorization catalog permissions=%d role_permissions=%d triggers=%d", permissionCount, rolePermissionCount, triggerCount)
+	if permissionCount != 5 || rolePermissionCount != 9 || triggerCount != 3 || qualityAudienceConstraintCount != 1 {
+		t.Fatalf("execution authorization catalog permissions=%d role_permissions=%d triggers=%d quality_audience_constraints=%d", permissionCount, rolePermissionCount, triggerCount, qualityAudienceConstraintCount)
 	}
 }
 
@@ -1284,12 +1296,12 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&platformRoleAssignmentCount); err != nil {
 		t.Fatalf("count platform service runtime assignments: %v", err)
 	}
-	if principalCount != 18 || clientCount != 18 || roleCount != 14 || permissionCount != 41 ||
+	if principalCount != 18 || clientCount != 18 || roleCount != 15 || permissionCount != 46 ||
 		platformRoleCount != 7 || platformRoleAssignmentCount != 7 {
 		t.Fatalf("service runtime catalog principals=%d clients=%d roles=%d permissions=%d platform_roles=%d platform_assignments=%d", principalCount, clientCount, roleCount, permissionCount, platformRoleCount, platformRoleAssignmentCount)
 	}
 	var managerTenantPermissions, metaTenantPermissions, transferTenantPermissions string
-	var developTenantPermissions, copilotTenantPermissions string
+	var developTenantPermissions, copilotTenantPermissions, qualityTenantPermissions string
 	var managerPlatformPermissions, metaPlatformPermissions, developPlatformPermissions string
 	if err := db.QueryRow(`
 		SELECT string_agg(permission.permission_key, ',' ORDER BY permission.permission_key)
@@ -1341,6 +1353,15 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 		FROM system.roles role
 		JOIN system.role_permissions role_permission ON role_permission.role_id = role.id
 		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+		WHERE role.role_key = 'tenant.quality_runtime'
+	`).Scan(&qualityTenantPermissions); err != nil {
+		t.Fatalf("read tenant.quality_runtime permissions: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT string_agg(permission.permission_key, ',' ORDER BY permission.permission_key)
+		FROM system.roles role
+		JOIN system.role_permissions role_permission ON role_permission.role_id = role.id
+		JOIN system.permissions permission ON permission.id = role_permission.permission_id
 		WHERE role.role_key = 'platform.meta_runtime'
 	`).Scan(&metaPlatformPermissions); err != nil {
 		t.Fatalf("read platform.meta_runtime permissions: %v", err)
@@ -1368,11 +1389,12 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 		transferTenantPermissions != "meta.catalog.read,meta.inspect.execute,meta.scan_task.execute,system.engine_descriptor.read" ||
 		developTenantPermissions != "meta.catalog.read,meta.scan_task.execute,system.engine_descriptor.read,system.execution_authorization.execute,system.notebook_session_authorization.execute" ||
 		copilotTenantPermissions != "develop.task.read,inference.runtime.execute" ||
+		qualityTenantPermissions != "meta.catalog.read,standard.element.read,system.engine.read,system.execution_authorization.execute" ||
 		metaPlatformPermissions != "system.runtime_registry.update" ||
 		developPlatformPermissions != "system.runtime_registry.update" ||
 		managerPlatformPermissions != "system.runtime_registry.update" {
-		t.Fatalf("runtime permissions manager_tenant=%q meta_tenant=%q transfer_tenant=%q develop_tenant=%q copilot_tenant=%q meta_platform=%q develop_platform=%q manager_platform=%q",
-			managerTenantPermissions, metaTenantPermissions, transferTenantPermissions, developTenantPermissions, copilotTenantPermissions, metaPlatformPermissions, developPlatformPermissions, managerPlatformPermissions)
+		t.Fatalf("runtime permissions manager_tenant=%q meta_tenant=%q transfer_tenant=%q develop_tenant=%q copilot_tenant=%q quality_tenant=%q meta_platform=%q develop_platform=%q manager_platform=%q",
+			managerTenantPermissions, metaTenantPermissions, transferTenantPermissions, developTenantPermissions, copilotTenantPermissions, qualityTenantPermissions, metaPlatformPermissions, developPlatformPermissions, managerPlatformPermissions)
 	}
 
 	var developPlatformAssignmentCount, managerPlatformAssignmentCount int

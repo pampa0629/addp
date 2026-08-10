@@ -144,6 +144,18 @@
 4. Orchestrator 只通过 `parent_execution_id` 提供父子执行上下文，不重复生成 data item 之间的关系。
 5. `lineage_facts` 不得包含连接凭据、Token、临时挂载路径或完整大对象。
 
+### 血缘采集通知
+
+当 owner 成功完成 execution 结果持久化后，应立即通知 Meta 采集该 execution 的血缘事实：
+
+```http
+POST /api/v1/meta/lineage/executions/{execution_id}/collect
+```
+
+该接口由 Meta 提供，仅接受对应 owner 的 Service Principal；Develop 使用 `addp-develop`，并要求 `meta.lineage.create` Permission。通知必须发生在成功状态和 `lineage_facts` 已写入 `common.task_executions` 之后，不能在事实落库前调用。
+
+立即通知与 Meta 周期 collector 必须共同调用同一个 `LineageService.CollectExecution`，不得复制解析或投影逻辑。通知失败不得把已成功 execution 改为失败，周期 collector 负责漏采和失败重试。Item 元数据 refresh 不触发血缘采集。
+
 约束：
 
 1. `source_task_id` 是字符串软引用。数值型任务 ID 应按十进制字符串写入。

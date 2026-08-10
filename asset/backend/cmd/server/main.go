@@ -14,9 +14,9 @@ import (
 	"github.com/addp/asset/internal/search"
 	"github.com/addp/asset/internal/service"
 	commonClient "github.com/addp/common/client"
+	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
-	"github.com/addp/common/utils"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -160,9 +160,8 @@ func main() {
 	}()
 
 	// 模块注册 + 心跳
-	serviceHost := utils.GetServiceHost()
-	port := utils.GetModulePort("asset")
-	serviceURL := utils.BuildServiceURL(serviceHost, port)
+	serviceHost := commonConfig.GetServiceHost()
+	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
 	systemClient.RegisterAndHeartbeatWithMetadata(context.Background(), "asset", serviceURL, "/asset", map[string]interface{}{
 		"module": "asset",
 		"capabilities": map[string]interface{}{

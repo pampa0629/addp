@@ -32,13 +32,13 @@ func NewTableRelationHandler(svc *service.TableRelationService) *TableRelationHa
 func (h *TableRelationHandler) ListDimensionRelations(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 	tenantID := getTenantID(c)
 	relations, err := h.svc.ListDimensionRelations(tableID, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		c.JSON(http.StatusNotFound, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, relations)
@@ -59,18 +59,18 @@ func (h *TableRelationHandler) ListDimensionRelations(c *gin.Context) {
 func (h *TableRelationHandler) AddDimensionRelation(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 	var req models.CreateTableRelationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 	tenantID := getTenantID(c)
 	rel, err := h.svc.AddDimensionRelation(tableID, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusCreated, rel)
@@ -90,17 +90,17 @@ func (h *TableRelationHandler) AddDimensionRelation(c *gin.Context) {
 func (h *TableRelationHandler) RemoveDimensionRelation(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
 		return
 	}
 	relationID, err := strconv.ParseInt(c.Param("rid"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, modeli18n.MsgInvalidRelationID)})
+		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidRelationID)))
 		return
 	}
 	tenantID := getTenantID(c)
 	if err := h.svc.RemoveDimensionRelation(relationID, tableID, tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "removed"})

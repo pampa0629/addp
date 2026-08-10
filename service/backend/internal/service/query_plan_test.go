@@ -64,6 +64,29 @@ func TestCompileQueryPlanBindsFilterAndBuildsCompositeKeyset(t *testing.T) {
 	}
 }
 
+func TestCompileQueryPlanUsesOracleSubqueryAndFetchSyntax(t *testing.T) {
+	t.Parallel()
+
+	queryService := testPublishedQueryService()
+	plan, err := compileQueryPlan(
+		queryService,
+		&models.QueryExecutionRequest{Select: []string{"id", "name"}, Page: models.QueryPageRequest{Limit: 2}},
+		queryProtocolREST,
+		"oracle",
+		`SELECT "ID" AS "id", "NAME" AS "name", "SCORE" AS "score" FROM "BUSINESS"."ITEMS"`,
+		newQueryTokenCodec([]byte("0123456789abcdef0123456789abcdef")),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(plan.SQL, ") AS addp_source") {
+		t.Fatalf("Oracle query contains unsupported AS table alias: %s", plan.SQL)
+	}
+	if !strings.Contains(plan.SQL, `) addp_source ORDER BY addp_source."id" ASC FETCH FIRST 3 ROWS ONLY`) {
+		t.Fatalf("unexpected Oracle query plan: %s", plan.SQL)
+	}
+}
+
 func TestQueryTokenRejectsTamperingAndBindsCompositeFeatureID(t *testing.T) {
 	t.Parallel()
 

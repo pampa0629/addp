@@ -27,3 +27,33 @@ other = "更新工单状态失败"
 
 [quality.issue.status_invalid]
 other = "无效的工单状态"
+
+[quality.request.invalid]
+other = "请求参数无效"
+
+[quality.request.conflict]
+other = "资源状态冲突，请刷新后重试"
+
+[quality.internal.error]
+other = "质量服务暂时不可用"
+
+[quality.rule_app.update_failed]
+other = "更新规则应用失败"
+
+[quality.check_task.create_failed]
+other = "创建检查任务失败"
+
+[quality.check_task.update_failed]
+other = "更新检查任务失败"
+
+[quality.execution.list_failed]
+other = "读取执行记录失败"
+
+[quality.execution.not_found]
+other = "执行记录不存在"
+
+[quality.operation.deleted]
+other = "删除成功"
+
+[quality.operation.updated]
+other = "更新成功"

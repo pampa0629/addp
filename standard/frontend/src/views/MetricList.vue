@@ -3,7 +3,7 @@
     <div class="page-header">
       <div class="header-left">
         <h2>{{ $t('standard.metric.title') }}</h2>
-        <el-radio-group v-model="filterType" size="small" @change="loadMetrics">
+        <el-radio-group v-model="filterType" size="small" @change="handleFilterChange">
           <el-radio-button value="">{{ $t('standard.metric.all') }}</el-radio-button>
           <el-radio-button value="atomic">{{ $t('standard.metric.atomic') }}</el-radio-button>
           <el-radio-button value="derived">{{ $t('standard.metric.derived') }}</el-radio-button>
@@ -46,8 +46,8 @@
       <el-col :span="19">
         <el-card>
           <div class="toolbar">
-            <el-input v-model="keyword" :placeholder="$t('standard.metric.searchPlaceholder')" clearable @change="loadMetrics" style="width:280px" />
-            <el-select v-model="filterStatus" :placeholder="$t('standard.common.status')" clearable @change="loadMetrics" style="width:120px">
+            <el-input v-model="keyword" :placeholder="$t('standard.metric.searchPlaceholder')" clearable @change="handleFilterChange" style="width:280px" />
+            <el-select v-model="filterStatus" :placeholder="$t('standard.common.status')" clearable @change="handleFilterChange" style="width:120px">
               <el-option :label="$t('standard.common.draft')" value="draft" />
               <el-option :label="$t('standard.common.approved')" value="approved" />
               <el-option :label="$t('standard.common.deprecated')" value="deprecated" />
@@ -68,11 +68,13 @@
                 <el-tag size="small" :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column :label="$t('standard.common.actions')" width="140" fixed="right">
+            <el-table-column :label="$t('standard.common.actions')" width="200" fixed="right">
               <template #default="{ row }">
+                <div class="table-actions">
                 <el-button link size="small" @click.stop="openDetail(row)">{{ $t('standard.common.detail') }}</el-button>
                 <el-button link size="small" type="success" v-if="row.status === 'draft'" @click.stop="approveMetric(row)">{{ $t('standard.common.approve') }}</el-button>
                 <el-button link size="small" type="danger" @click.stop="deleteMetric(row)">{{ $t('standard.common.delete') }}</el-button>
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -84,7 +86,7 @@
               :total="total"
               :page-sizes="[20, 50]"
               layout="total, sizes, prev, pager, next"
-              @change="loadMetrics"
+              @change="handlePageChange"
             />
           </div>
         </el-card>
@@ -93,22 +95,22 @@
 
     <!-- 新增指标对话框 -->
     <el-dialog v-model="showCreateDialog" :title="$t('standard.metric.createTitle')" width="600px">
-      <el-form :model="form" label-width="100px">
+      <el-form ref="formRef" :model="form" :rules="metricRules" label-width="100px">
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item :label="$t('standard.metric.nameLabel')" required>
+            <el-form-item :label="$t('standard.metric.nameLabel')" prop="name">
               <el-input v-model="form.name" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item :label="$t('standard.metric.codeLabel')" required>
+            <el-form-item :label="$t('standard.metric.codeLabel')" prop="code">
               <el-input v-model="form.code" />
             </el-form-item>
           </el-col>
         </el-row>
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item :label="$t('standard.metric.typeLabel')" required>
+            <el-form-item :label="$t('standard.metric.typeLabel')" prop="type">
               <el-select v-model="form.type" style="width:100%">
                 <el-option :label="$t('standard.metric.atomic')" value="atomic" />
                 <el-option :label="$t('standard.metric.derived')" value="derived" />
@@ -199,7 +201,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { metricAPI, metricCategoryAPI } from '../api/standard'
@@ -207,24 +209,31 @@ import { navigateStandardRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 const router = useRouter()
+const route = useRoute()
 const metrics = ref([])
 const categories = ref([])
 const atomicMetrics = ref([])
 const loading = ref(false)
 const saving = ref(false)
-const page = ref(1)
-const pageSize = ref(20)
+const page = ref(Number(route.query.page) > 0 ? Number(route.query.page) : 1)
+const pageSize = ref(Number(route.query.page_size) > 0 ? Number(route.query.page_size) : 20)
 const total = ref(0)
-const keyword = ref('')
-const filterType = ref('')
-const filterStatus = ref('')
-const selectedCategoryID = ref(null)
+const keyword = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
+const filterType = ref(typeof route.query.type === 'string' ? route.query.type : '')
+const filterStatus = ref(typeof route.query.status === 'string' ? route.query.status : '')
+const selectedCategoryID = ref(route.query.category_id ? Number(route.query.category_id) : null)
 
 const showCreateDialog = ref(false)
 const showCategoryDialog = ref(false)
+const formRef = ref(null)
 
 const form = ref({ name: '', code: '', type: 'atomic', definition: '', formula: '', category_id: null, base_metric_id: null })
 const categoryForm = ref({ name: '', code: '', parent_id: null })
+const metricRules = computed(() => ({
+  name: [{ required: true, message: t('standard.metric.nameRequired'), trigger: 'blur' }],
+  code: [{ required: true, message: t('standard.metric.codeRequired'), trigger: 'blur' }],
+  type: [{ required: true, message: t('standard.metric.typeRequired'), trigger: 'change' }]
+}))
 
 const categoryTree = computed(() => buildTree(categories.value))
 function buildTree(list, parentId = null) {
@@ -249,6 +258,28 @@ const loadMetrics = async () => {
   }
 }
 
+const syncQuery = () => {
+  const query = {}
+  if (keyword.value) query.keyword = keyword.value
+  if (filterType.value) query.type = filterType.value
+  if (filterStatus.value) query.status = filterStatus.value
+  if (selectedCategoryID.value) query.category_id = String(selectedCategoryID.value)
+  if (page.value !== 1) query.page = String(page.value)
+  if (pageSize.value !== 20) query.page_size = String(pageSize.value)
+  navigateStandardRoute(router, { path: '/metrics', query }, { history: 'replace' })
+}
+
+const handleFilterChange = () => {
+  page.value = 1
+  syncQuery()
+  loadMetrics()
+}
+
+const handlePageChange = () => {
+  syncQuery()
+  loadMetrics()
+}
+
 const loadCategories = async () => {
   const res = await metricCategoryAPI.list()
   categories.value = res || []
@@ -262,10 +293,17 @@ const loadAtomicMetrics = async () => {
 const selectCategory = (id) => {
   selectedCategoryID.value = id
   page.value = 1
+  syncQuery()
   loadMetrics()
 }
 
 const createMetric = async () => {
+  if (!formRef.value) return
+  try {
+    await formRef.value.validate()
+  } catch {
+    return
+  }
   saving.value = true
   try {
     await metricAPI.create(form.value)
@@ -281,7 +319,7 @@ const createMetric = async () => {
 }
 
 const openDetail = (row) => {
-  navigateStandardRoute(router, `/metrics/${row.id}`)
+  navigateStandardRoute(router, { path: `/metrics/${row.id}`, query: route.query })
 }
 
 const approveMetric = async (row) => {
@@ -354,6 +392,7 @@ onMounted(() => {
 .cat-node { padding: 2px 0; font-size: 13px; }
 .toolbar { display: flex; gap: 10px; margin-bottom: 16px; }
 .pagination { margin-top: 16px; display: flex; justify-content: flex-end; }
+.table-actions { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .tree-node { display: flex; align-items: center; gap: 8px; width: 100%; }
 .tree-code { font-size: 12px; color: var(--el-text-color-secondary); }
 .tree-actions { margin-left: auto; }

@@ -130,7 +130,7 @@ type Engine struct {
 	Capabilities     *JSONString       `gorm:"column:capabilities;type:jsonb" json:"capabilities,omitempty"` // 能力声明（JSONB）
 	CapabilitiesView *CapabilitiesView `gorm:"-" json:"capabilities_view,omitempty"`                         // System 后端生成的能力展示模型
 
-	// 连接状态缓存（优化扫描性能）
+	// 最近连接检测结果缓存（优化扫描性能，不代表持续保持的物理连接）
 	ConnectionStatus string     `gorm:"column:connection_status;size:20;default:'unknown';index" json:"connection_status"` // online/offline/unknown/checking
 	LastCheckAt      *time.Time `gorm:"column:last_check_at" json:"last_check_at,omitempty"`                               // 上次检测时间
 	CheckMessage     string     `gorm:"column:check_message;type:text" json:"check_message,omitempty"`                     // 检测结果消息（错误信息等）

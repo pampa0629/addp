@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	commonutils "github.com/addp/common/utils"
+	commonsecurity "github.com/addp/common/security"
 	"github.com/addp/monitor/internal/config"
 	"github.com/addp/monitor/internal/models"
 	"github.com/addp/monitor/internal/repository"
@@ -46,7 +46,7 @@ func TestSMTPRelayCredentialIsEncryptedAndMasked(t *testing.T) {
 	if stored.CredentialCiphertext == "" || stored.CredentialCiphertext == "smtp-secret" {
 		t.Fatalf("credential stored in plaintext: %q", stored.CredentialCiphertext)
 	}
-	plaintext, err := commonutils.Decrypt(stored.CredentialCiphertext, []byte("0123456789abcdef0123456789abcdef"))
+	plaintext, err := commonsecurity.Decrypt(stored.CredentialCiphertext, []byte("0123456789abcdef0123456789abcdef"))
 	if err != nil || plaintext != "smtp-secret" {
 		t.Fatalf("decrypt credential = %q, %v", plaintext, err)
 	}

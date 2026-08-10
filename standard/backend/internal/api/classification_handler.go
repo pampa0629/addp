@@ -34,7 +34,7 @@ func (h *ClassificationHandler) ListClassifications(c *gin.Context) {
 	tenantID := getTenantID(c)
 	list, err := h.svc.ListClassifications(tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, list)
@@ -51,14 +51,14 @@ func (h *ClassificationHandler) ListClassifications(c *gin.Context) {
 func (h *ClassificationHandler) CreateClassification(c *gin.Context) {
 	var req models.CreateClassificationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	tenantID := getTenantID(c)
 	userID := getUserID(c)
 	item, err := h.svc.CreateClassification(&req, tenantID, userID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusCreated, item)
@@ -80,14 +80,14 @@ func (h *ClassificationHandler) UpdateClassification(c *gin.Context) {
 	}
 	var req models.UpdateClassificationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	tenantID := getTenantID(c)
 	userID := getUserID(c)
 	item, err := h.svc.UpdateClassification(id, tenantID, userID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, item)
@@ -109,7 +109,7 @@ func (h *ClassificationHandler) DeleteClassification(c *gin.Context) {
 	}
 	tenantID := getTenantID(c)
 	if err := h.svc.DeleteClassification(id, tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
@@ -129,7 +129,7 @@ func (h *ClassificationHandler) ListGradingLevels(c *gin.Context) {
 	tenantID := getTenantID(c)
 	levels, err := h.svc.ListGradingLevels(tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, levels)
@@ -151,12 +151,12 @@ func (h *ClassificationHandler) UpdateGradingLevel(c *gin.Context) {
 	}
 	var req models.UpdateGradingLevelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	tenantID := getTenantID(c)
 	if err := h.svc.UpdateGradingLevel(id, tenantID, &req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgUpdateSuccess)})

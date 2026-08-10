@@ -12,9 +12,9 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/format/rastermosaic"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/common/rastermosaic"
 	"github.com/addp/common/resourcetree"
 )
 

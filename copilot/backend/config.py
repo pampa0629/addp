@@ -41,16 +41,21 @@ class Settings(BaseSettings):
 
     # 服务 host 和端口（从 .env 读取）
     service_host: str = "localhost"
+    gateway_port: int = 8000
     system_backend_port: int = 8180
     manager_backend_port: int = 8081
     meta_backend_port: int = 8082
     develop_backend_port: int = 8185
 
     # 外部服务 URL（优先使用环境变量，否则自动构建）
+    gateway_url: Optional[str] = None
     system_url: Optional[str] = None
     manager_url: Optional[str] = None
     meta_url: Optional[str] = None
     develop_url: Optional[str] = None
+
+    def get_gateway_url(self) -> str:
+        return self.gateway_url or f"http://{self.service_host}:{self.gateway_port}"
 
     def get_system_url(self) -> str:
         return self.system_url or f"http://{self.service_host}:{self.system_backend_port}"
@@ -64,8 +69,6 @@ class Settings(BaseSettings):
     def get_develop_url(self) -> str:
         return self.develop_url or f"http://{self.service_host}:{self.develop_backend_port}"
 
-    # Inference Runtime 服务调用
-    inference_url: str = "http://localhost:8191"
     copilot_service_client_secret: str = ""
 
     # Copilot 功能配置

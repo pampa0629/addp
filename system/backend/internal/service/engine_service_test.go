@@ -17,7 +17,7 @@ import (
 	engineplugin "github.com/addp/common/engine/plugin"
 	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
 	"github.com/addp/common/events"
-	commonutils "github.com/addp/common/utils"
+	commonsecurity "github.com/addp/common/security"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 	"gorm.io/driver/sqlite"
@@ -102,7 +102,7 @@ func TestListReturnsCompleteFilteredResult(t *testing.T) {
 	}
 }
 
-func TestRuntimeDescriptorsExposeOnlyWorkflowEndpointAndNoDataConnection(t *testing.T) {
+func TestRuntimeDescriptorsExposeComputeRuntimeEndpointsAndNoDataConnection(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -119,12 +119,27 @@ func TestRuntimeDescriptorsExposeOnlyWorkflowEndpointAndNoDataConnection(t *test
 		t.Fatal(err)
 	}
 	workflowCapabilitiesJSON := models.JSONString(workflowCapabilities)
+	inferenceCapabilities, err := engineplugin.MarshalEngineCapabilities(
+		engineplugin.NewInferenceCapabilities("inference_runtime", []string{"chat", "embedding", "rerank"}, []string{"text", "image"}, false),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inferenceCapabilitiesJSON := models.JSONString(inferenceCapabilities)
 	workflow := &models.Engine{
 		TenantID: &tenantID, Name: "workflow", EngineType: "acme_workflow",
 		EngineOrigin: "extension", LifecycleState: models.EngineLifecycleActive,
 		Capabilities: &workflowCapabilitiesJSON,
 		ConnectionInfo: models.ConnectionInfo{
 			"protocol": "http", "host": "workflow.internal", "port": 8099,
+		},
+	}
+	inference := &models.Engine{
+		Name: "inference", EngineType: "inference_runtime", EngineOrigin: "extension",
+		LifecycleState: models.EngineLifecycleActive, IsBuiltin: true,
+		Capabilities: &inferenceCapabilitiesJSON,
+		ConnectionInfo: models.ConnectionInfo{
+			"protocol": "http", "host": "inference.internal", "port": 8191,
 		},
 	}
 	data := &models.Engine{
@@ -138,6 +153,9 @@ func TestRuntimeDescriptorsExposeOnlyWorkflowEndpointAndNoDataConnection(t *test
 	if err := repo.Create(workflow); err != nil {
 		t.Fatal(err)
 	}
+	if err := repo.Create(inference); err != nil {
+		t.Fatal(err)
+	}
 	if err := repo.Create(data); err != nil {
 		t.Fatal(err)
 	}
@@ -148,14 +166,17 @@ func TestRuntimeDescriptorsExposeOnlyWorkflowEndpointAndNoDataConnection(t *test
 	if err != nil {
 		t.Fatalf("ListRuntimeDescriptors() error = %v", err)
 	}
-	if total != 2 || len(descriptors) != 2 {
+	if total != 3 || len(descriptors) != 3 {
 		t.Fatalf("descriptors total/len = %d/%d", total, len(descriptors))
 	}
 	if descriptors[0].RuntimeEndpoint == nil || descriptors[0].RuntimeEndpoint.Host != "workflow.internal" {
 		t.Fatalf("workflow descriptor = %#v", descriptors[0])
 	}
-	if descriptors[1].RuntimeEndpoint != nil {
-		t.Fatalf("data descriptor exposed runtime endpoint: %#v", descriptors[1])
+	if descriptors[1].RuntimeEndpoint == nil || descriptors[1].RuntimeEndpoint.Host != "inference.internal" {
+		t.Fatalf("inference descriptor = %#v", descriptors[1])
+	}
+	if descriptors[2].RuntimeEndpoint != nil {
+		t.Fatalf("data descriptor exposed runtime endpoint: %#v", descriptors[2])
 	}
 	encoded, err := json.Marshal(descriptors)
 	if err != nil {
@@ -738,7 +759,7 @@ func TestDecryptStoredConnectionInfoRejectsPlainSensitiveValue(t *testing.T) {
 
 func TestDecryptStoredConnectionInfoReturnsPlainConnectionInfo(t *testing.T) {
 	key := []byte("addp-dev-encryption-key-2025!!!!")
-	secret, err := commonutils.Encrypt("plain-password", key)
+	secret, err := commonsecurity.Encrypt("plain-password", key)
 	if err != nil {
 		t.Fatalf("encrypt: %v", err)
 	}

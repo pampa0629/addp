@@ -4,6 +4,8 @@
 
 ## 模块概述
 
+正式边界、聚合、生命周期和数据约束以 [Model 概念与数据约束规范](docs/model概念与数据约束规范.md) 为准。
+
 **Model 模块** 是 ADDP 平台的数据建模和数仓设计服务，负责：
 
 - 业务实体（Entity）设计与属性定义
@@ -105,7 +107,7 @@ model/
 |------|------|------|
 | table_type | string | `entity` / `fact` / `dimension` |
 | layer | string | `ods` / `dwd` / `dws` / `ads` |
-| status | string | `draft` / `approved` / `materialized` |
+| status | string | `draft` / `approved` |
 | grain_description | text | 粒度声明（仅 fact 表） |
 | scd_type | int | 缓慢变化维类型 0=静态/1=覆盖/2=拉链/3=混合（仅 dimension 表） |
 | materialization | JSONB | 物化配置（关联到真实物理表） |
@@ -148,7 +150,7 @@ model/
 | quality_sla | JSONB | 质量 SLA 配置 |
 | sort_order | int | 显示顺序 |
 
-## API 端点（`/api/model`）
+## API 端点（`/api/v1/model`）
 
 ### 业务实体
 
@@ -183,16 +185,6 @@ GET/POST/DELETE .../metrics                               # 事实表关联指�
 GET/POST/DELETE .../dimension-relations                   # 事实表关联维度表（含字段映射）
 ```
 
-### 代理到 Standard 模块
-
-```
-/api/model/domains          → /api/standard/domains
-/api/model/elements         → /api/standard/elements
-/api/model/dw-layers        # 独立
-/api/model/standard-metrics → /api/standard/metrics
-/api/model/dimension-hierarchies → /api/standard/dimension-hierarchies
-```
-
 ## 前端路由
 
 ```
@@ -210,11 +202,11 @@ GET/POST/DELETE .../dimension-relations                   # 事实表关联维�
 **依赖**:
 - **System 模块**: JWT 认证、用户信息（`SYSTEM_URL`）
 - **Standard 模块**:
-  - 验证 element_id、hierarchy_id 是否存在（`STANDARD_URL`）
-  - 代理域名、数据元、指标、维度层级等查询
+  - 验证 domain_id、element_id、hierarchy_id、metric_id 是否存在（`STANDARD_URL`）
+  - Standard 前端直接调用 Standard 唯一 API，Model 不提供代理路径
 
 **被依赖**:
-- 无其他模块调用 Model 的 API（Model 是纯消费端）
+- **Graph 模块**: 使用 `tenant.graph_runtime` 读取 Entity、EntityAttribute 和 EntityRelation，生成本体导入预览。
 
 ## 跨 Schema 关联设计
 
@@ -228,13 +220,13 @@ Model 和 Standard 使用不同的 PostgreSQL Schema，**无数据库外键约�
 | `logical_fields.hierarchy_id` | `standard.dimension_hierarchies.id` |
 | `fact_metric_mappings.metric_id` | `standard.metrics.id` |
 
-创建/更新时，Service 层通过 HTTP 调用 Standard 模块 API 验证 ID 是否存在。
+创建/更新时，Service 层通过 HTTP 调用 Standard 模块 API 验证 ID 是否存在。前端直接调用 Standard 的唯一公开 API，Model 不提供 Standard 代理路径。
 
 ## IAM Permission 所有权
 
 Model 是 `model.logical_model.*` 第一批 Permission 的唯一 owner，机器可读事实源是 [authorization/permissions.yaml](authorization/permissions.yaml)。该 Manifest 由 `common/authorization` 在构建/发布期统一发现、校验和聚合，Model 服务启动时不向 System 动态注册 Permission。
 
-Entity、EntityRelation、DWLayer 和 LogicalModel 分别使用 `model.entity.*`、`model.entity_relation.*`、`model.dw_layer.*`、`model.logical_model.*`。EntityAttribute 是 Entity 聚合内子资源；LogicalField、TableRelation 和 FactMetricMapping 是 LogicalModel 聚合内子资源，不建立平行宽泛 Permission。Mermaid 导入和导出分别按 Entity 与 EntityRelation 的 create/read 执行 all-of 校验。
+Entity、EntityRelation、DWLayer 和 LogicalModel 分别使用 `model.entity.*`、`model.entity_relation.*`、`model.dw_layer.*`、`model.logical_model.*`。EntityAttribute 是 Entity 聚合内子资源；LogicalField、TableRelation 和 FactMetricMapping 是 LogicalModel 聚合内子资源，不建立平行宽泛 Permission。Mermaid 导入是破坏性全量替换，按 Entity 与 EntityRelation 的 create/delete 执行 all-of 校验；导出按两者的 read 执行 all-of 校验。已审批实体必须先全部重新打开，导入不会绕过生命周期约束。
 
 ## 特殊设计
 
@@ -242,13 +234,13 @@ Entity、EntityRelation、DWLayer 和 LogicalModel 分别使用 `model.entity.*`
 
 `backend/internal/service/mermaid_parser.go` 实现了 Mermaid ER 图的解析，支持将 ER 图批量导入为实体和关系。适合从已有文档快速初始化数据模型。
 
-### 逻辑表状态机
+### Entity 与逻辑表状态机
 
 ```
-draft → approved → materialized
+draft ⇄ approved
 ```
 
-当前仅实现了 Entity 的 `draft → approved`，逻辑表的状态转换暂未实现 API，`materialized` 状态预留给未来物化功能。
+只有 `draft` 可修改；审批和重新打开必须使用显式状态转换。`materialized` 不属于当前正式状态，DDL 预览不改变状态。
 
 ### `dimension-relations` 查询返回 JOIN 结果
 
@@ -289,9 +281,7 @@ draft → approved → materialized
 
 3. **跨模块验证**: Service 层通过 `cfg.StandardURL` 和 `addp-model` Tenant Service Access Token 调用 Standard API。如果 Standard 服务未启动，相关创建操作会失败。
 
-4. **代理路由位置**: 代理到 Standard 的路由配置在 `router.go` 末尾，通过 `proxyToStandard()` 函数实现。
-
-5. **前端 API 统一入口**: 所有 API 调用集中在 [frontend/src/api/model.js](frontend/src/api/model.js)，新增接口在此文件追加。
+4. **前端 API 统一入口**: Model API 调用集中在 [frontend/src/api/model.js](frontend/src/api/model.js)；Standard API 使用 Standard 的唯一公开路径。
 
 ## 前端公开路由
 

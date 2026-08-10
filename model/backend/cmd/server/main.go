@@ -6,13 +6,13 @@ import (
 	"log"
 
 	commonClient "github.com/addp/common/client"
+	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
-	"github.com/addp/common/utils"
 	_ "github.com/addp/model/i18n"
 	"github.com/addp/model/internal/api"
 	"github.com/addp/model/internal/config"
-	"github.com/addp/model/internal/models"
+	modelmigration "github.com/addp/model/internal/migration"
 	"github.com/addp/model/internal/repository"
 	"github.com/addp/model/internal/service"
 	"github.com/redis/go-redis/v9"
@@ -41,26 +41,11 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	// 确保 model schema 存在
-	if err := db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", cfg.DBSchema)).Error; err != nil {
-		log.Fatalf("Failed to create schema: %v", err)
-	}
 	if err := commonExecution.EnsureStore(db); err != nil {
 		log.Fatalf("Failed to ensure execution store: %v", err)
 	}
-
-	// 自动迁移 model schema 表（仅 Model 相关）
-	if err := db.AutoMigrate(
-		&models.DWLayer{},
-		&models.Entity{},
-		&models.EntityAttribute{},
-		&models.EntityRelation{},
-		&models.LogicalTable{},
-		&models.LogicalField{},
-		&models.TableRelation{},
-		&models.FactMetricMapping{},
-	); err != nil {
-		log.Fatalf("Failed to migrate database: %v", err)
+	if err := modelmigration.Run(db); err != nil {
+		log.Fatalf("Failed to migrate Model database: %v", err)
 	}
 
 	// 连接 Redis
@@ -81,6 +66,7 @@ func main() {
 		log.Fatalf("Service Token Source 初始化失败: %v", err)
 	}
 	systemClient := commonClient.NewSystemServiceClient(cfg.SystemURL, serviceTokenSource, nil)
+	standardClient := commonClient.NewStandardClient(cfg.StandardURL, serviceTokenSource, nil)
 
 	// 创建 Repositories（仅 Model 相关）
 	entityRepo := repository.NewEntityRepository(db)
@@ -92,10 +78,13 @@ func main() {
 
 	// 创建 Services（仅 Model 相关，传入 standardURL 用于验证 element_id）
 	entitySvc := service.NewEntityService(entityRepo, entityRelationRepo)
+	entitySvc.SetStandardClient(standardClient)
 	entityRelationSvc := service.NewEntityRelationService(entityRelationRepo, entityRepo)
 	logicalTableSvc := service.NewLogicalTableService(logicalTableRepo)
+	logicalTableSvc.SetStandardClient(standardClient)
 	dwLayerSvc := service.NewDWLayerService(dwLayerRepo)
 	factMetricSvc := service.NewFactMetricService(factMetricRepo, logicalTableRepo)
+	factMetricSvc.SetStandardClient(standardClient)
 	tableRelationSvc := service.NewTableRelationService(tableRelationRepo, logicalTableRepo)
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
@@ -113,7 +102,6 @@ func main() {
 		factMetricSvc,
 		tableRelationSvc,
 		cfg.SystemURL,
-		cfg.StandardURL,
 		redisClient,
 	)
 
@@ -129,9 +117,8 @@ func main() {
 	}()
 
 	// 启动模块注册和心跳
-	serviceHost := utils.GetServiceHost()
-	port := utils.GetModulePort("model")
-	serviceURL := utils.BuildServiceURL(serviceHost, port)
+	serviceHost := commonConfig.GetServiceHost()
+	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
 	systemClient.RegisterAndHeartbeatWithMetadata(context.Background(), "model", serviceURL, "/model", map[string]interface{}{
 		"module": "model",
 		"capabilities": map[string]interface{}{

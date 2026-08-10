@@ -112,7 +112,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft } from '@element-plus/icons-vue'
@@ -146,7 +146,7 @@ const formatTime = (time) => {
   return new Date(time).toLocaleString('zh-CN')
 }
 
-const goBack = () => navigateStandardRoute(router, '/metrics', { history: 'replace' })
+const goBack = () => navigateStandardRoute(router, { path: '/metrics', query: route.query }, { history: 'replace' })
 
 const loadMetric = async () => {
   loading.value = true
@@ -215,10 +215,13 @@ const handleDeprecate = async () => {
   }
 }
 
-onMounted(() => {
+watch(() => route.params.id, () => {
   loadMetric()
-  loadCategories()
   loadAtomicMetrics()
+}, { immediate: true })
+
+onMounted(() => {
+  loadCategories()
 })
 </script>
 

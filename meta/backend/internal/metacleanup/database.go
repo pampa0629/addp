@@ -7,8 +7,8 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	engineselection "github.com/addp/common/engine/selection"
 	commonModels "github.com/addp/common/models"
-	commonUtils "github.com/addp/common/utils"
 	"github.com/addp/meta/internal/models"
 	"gorm.io/gorm"
 )
@@ -32,7 +32,7 @@ func metaEngineEligibilityByID(engines []commonModels.Engine) map[uint]metaEngin
 		switch {
 		case !engine.IsUsable():
 			eligibility.invalidReason = "引擎已禁用"
-		case !commonUtils.HasStorageCapability(engine):
+		case !engineselection.HasStorageCapability(engine):
 			eligibility.invalidReason = "引擎不具备存储能力"
 		}
 		eligibilityByID[engine.ID] = eligibility

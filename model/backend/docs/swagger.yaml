@@ -21,6 +21,10 @@ definitions:
     type: object
   github_com_addp_model_internal_models.CreateEntityAttributeRequest:
     properties:
+      column_name:
+        type: string
+      data_type:
+        type: string
       description:
         type: string
       element_id:
@@ -34,6 +38,8 @@ definitions:
       sort_order:
         type: integer
     required:
+    - column_name
+    - data_type
     - name
     type: object
   github_com_addp_model_internal_models.CreateEntityRelationRequest:
@@ -165,10 +171,14 @@ definitions:
     properties:
       mermaid_code:
         type: string
-      mode:
-        type: string
     required:
     - mermaid_code
+    type: object
+  github_com_addp_model_internal_models.MessageResponse:
+    properties:
+      message:
+        example: 操作成功
+        type: string
     type: object
   github_com_addp_model_internal_models.UpdateDWLayerRequest:
     properties:
@@ -186,6 +196,10 @@ definitions:
     type: object
   github_com_addp_model_internal_models.UpdateEntityAttributeRequest:
     properties:
+      column_name:
+        type: string
+      data_type:
+        type: string
       description:
         type: string
       element_id:
@@ -685,6 +699,29 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - model.entity.update
+  /entities/{id}/reopen:
+    post:
+      parameters:
+      - description: 实体ID | Entity ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 重新打开成功 | Reopened successfully
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.MessageResponse'
+      security:
+      - BearerAuth: []
+      summary: 重新打开实体 | Reopen entity
+      tags:
+      - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.entity.update
   /entities/export-mermaid:
     get:
       produces:
@@ -731,7 +768,9 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - model.entity.create
+      - model.entity.delete
       - model.entity_relation.create
+      - model.entity_relation.delete
   /entity-relations:
     get:
       parameters:
@@ -1005,6 +1044,29 @@ paths:
       security:
       - BearerAuth: []
       summary: 更新逻辑表 | Update logical table
+      tags:
+      - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.logical_model.update
+  /logical-tables/{id}/approve:
+    post:
+      parameters:
+      - description: 逻辑表ID | Logical table ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 审批成功 | Approved successfully
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.MessageResponse'
+      security:
+      - BearerAuth: []
+      summary: 审批逻辑表 | Approve logical table
       tags:
       - Model
       x-addp-auth-mode: permission
@@ -1322,6 +1384,29 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - model.logical_model.read
+  /logical-tables/{id}/reopen:
+    post:
+      parameters:
+      - description: 逻辑表ID | Logical table ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 重新打开成功 | Reopened successfully
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.MessageResponse'
+      security:
+      - BearerAuth: []
+      summary: 重新打开逻辑表 | Reopen logical table
+      tags:
+      - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.logical_model.update
 securityDefinitions:
   BearerAuth:
     in: header

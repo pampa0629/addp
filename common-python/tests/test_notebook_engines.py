@@ -113,6 +113,17 @@ def arrow_stream_bytes():
     return sink.getvalue().to_pybytes()
 
 
+def spatial_arrow_stream_bytes():
+    import pyarrow as pa
+
+    sink = pa.BufferOutputStream()
+    schema = pa.schema([("id", pa.int64()), ("shape", pa.binary())])
+    point_wkb = bytes.fromhex("0101000000000000000000F03F0000000000000040")
+    with pa.ipc.new_stream(sink, schema) as writer:
+        writer.write_batch(pa.record_batch([[1], [point_wkb]], schema=schema))
+    return sink.getvalue().to_pybytes()
+
+
 def test_list_uses_only_injected_session_capability(monkeypatch):
     endpoint = "http://develop:8185/api/v1/develop/notebook-kernel-sessions/session-1/engine-descriptors"
     monkeypatch.setenv("ADDP_NOTEBOOK_OWNER_API_ENDPOINT", endpoint)
@@ -495,6 +506,61 @@ def test_table_to_pandas_rejects_catalog_estimate_before_scan(monkeypatch, noteb
     )
     with pytest.raises(engines.NotebookMemoryLimitError):
         table.to_pandas(memory_limit="1KiB")
+
+
+def test_postgresql_table_to_geopandas_uses_verified_geometry_column_and_crs(
+    monkeypatch, notebook_session
+):
+    pytest.importorskip("geopandas")
+    scan_endpoint = os.environ["ADDP_NOTEBOOK_TABLE_SCAN_API_ENDPOINT"]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == scan_endpoint
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "application/vnd.apache.arrow.stream"},
+            content=spatial_arrow_stream_bytes(),
+        )
+
+    monkeypatch.setattr(engines, "_transport", httpx.MockTransport(handler))
+    pg = engines.PostgreSQLEngine(engine_id=21, descriptor=postgresql_descriptor(), timeout=10)
+    table = engines.PostgreSQLTable(
+        name="roads", schema="public", kind="table", _client=pg,
+        _path={"version": "catalog.path/v1", "engine_id": 21, "segments": [{}]},
+    )
+
+    result = table.to_geopandas(
+        memory_limit="1MiB", geometry_column="shape", crs="EPSG:4326"
+    )
+
+    assert result.geometry.name == "shape"
+    assert result.crs.to_string() == "EPSG:4326"
+    assert result.geometry.iloc[0].x == 1.0
+    assert result.geometry.iloc[0].y == 2.0
+
+
+def test_postgresql_table_to_geopandas_rejects_unknown_geometry_column(
+    monkeypatch, notebook_session
+):
+    monkeypatch.setattr(
+        engines,
+        "_transport",
+        httpx.MockTransport(lambda _request: httpx.Response(
+            200,
+            headers={"Content-Type": "application/vnd.apache.arrow.stream"},
+            content=spatial_arrow_stream_bytes(),
+        )),
+    )
+    pg = engines.PostgreSQLEngine(engine_id=21, descriptor=postgresql_descriptor(), timeout=10)
+    table = engines.PostgreSQLTable(
+        name="roads", schema="public", kind="table", _client=pg,
+        _path={"version": "catalog.path/v1", "engine_id": 21, "segments": [{}]},
+    )
+
+    with pytest.raises(engines.NotebookDataRequestError, match="missing_shape"):
+        table.to_geopandas(
+            memory_limit="1MiB", geometry_column="missing_shape", crs="EPSG:4326"
+        )
 
 
 def test_postgresql_sql_uses_bounded_query_endpoint(monkeypatch, notebook_session):

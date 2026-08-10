@@ -21,7 +21,7 @@ export const ruleApplicationAPI = {
 
 // 检查任务
 export const checkTaskAPI = {
-  list: () => client.get('/quality/check-tasks'),
+  list: (params) => client.get('/quality/check-tasks', { params }),
   get: (id) => client.get(`/quality/check-tasks/${id}`),
   create: (data) => client.post('/quality/check-tasks', data),
   update: (id, data) => client.put(`/quality/check-tasks/${id}`, data),
@@ -39,5 +39,5 @@ export const executionAPI = {
 export const issueAPI = {
   list: (params) => client.get('/quality/issues', { params }),
   get: (id) => client.get(`/quality/issues/${id}`),
-  updateStatus: (id, status) => client.put(`/quality/issues/${id}/status`, { status })
+  updateStatus: (id, status, note) => client.put(`/quality/issues/${id}/status`, { status, note })
 }

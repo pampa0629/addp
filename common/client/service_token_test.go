@@ -289,6 +289,29 @@ func TestOAuthServiceTokenSourceRejectsErrorWithoutLeakingSecret(t *testing.T) {
 	}
 }
 
+func TestOAuthServiceTokenSourceReportsSafeOAuthErrorCode(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"invalid_grant","error_description":"tenant membership is missing","error_code":"invalid_grant"}`))
+	}))
+	defer server.Close()
+
+	source, err := NewOAuthServiceTokenSource(server.URL, "addp-model", testServiceClientSecret, server.Client())
+	if err != nil {
+		t.Fatalf("NewOAuthServiceTokenSource() error = %v", err)
+	}
+	_, err = source.Token(context.Background(), 1)
+	if err == nil || !strings.Contains(err.Error(), "HTTP 400: invalid_grant") {
+		t.Fatalf("Token() error = %v", err)
+	}
+	if strings.Contains(err.Error(), "tenant membership is missing") {
+		t.Fatal("Token() error exposed upstream error description")
+	}
+}
+
 func TestOAuthServiceTokenSourceRejectsUnexpectedScope(t *testing.T) {
 	t.Parallel()
 

@@ -16,7 +16,6 @@ import (
 	commonconfiguration "github.com/addp/common/configuration"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/events"
-	"github.com/addp/common/utils"
 	"github.com/addp/develop/backend/internal/api"
 	developauthorization "github.com/addp/develop/backend/internal/authorization"
 	"github.com/addp/develop/backend/internal/config"
@@ -41,7 +40,7 @@ func main() {
 	cfg := config.Load()
 
 	// 检查端口是否可用
-	if err := utils.CheckPortAvailable(cfg.ServerAddr); err != nil {
+	if err := commonConfig.CheckPortAvailable(cfg.ServerAddr); err != nil {
 		log.Fatalf("❌ 端口检查失败: %v", err)
 	}
 
@@ -138,7 +137,7 @@ func main() {
 	operatorHandler := api.NewOperatorHandler(operatorDiscovery)
 	engineHandler := api.NewEngineHandler(systemServiceClient)
 	queryHandler := api.NewQueryHandler(sqlEngine, federatedQueryService)
-	notebookHandler := api.NewNotebookHandler(jupyterService, notebookExecutionService, devTaskService, notebookSessionControlPlane, cfg.DevelopServiceURL)
+	notebookHandler := api.NewNotebookHandler(jupyterService, notebookExecutionService, devTaskService, notebookSessionControlPlane, cfg.DevelopServiceURL, cfg.CopilotServiceURL)
 
 	log.Printf("✅ Handler 层初始化完成")
 
@@ -147,9 +146,8 @@ func main() {
 	router := api.SetupRouter(cfg, db, devTaskHandler, executionHandler, toolApprovalHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, devTaskService, systemServiceClient, queryPolicyHandler)
 	log.Printf("✅ 路由设置完成")
 
-	serviceHost := utils.GetServiceHost()
-	port := utils.GetModulePort("develop")
-	serviceURL := utils.BuildServiceURL(serviceHost, port)
+	serviceHost := commonConfig.GetServiceHost()
+	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.ServerAddr)
 
 	// ========== 模块注册（注册到 System service_registry）==========
 	if cfg.SystemServiceURL != "" {

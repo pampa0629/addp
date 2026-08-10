@@ -8,7 +8,7 @@ import (
 	_ "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/sqldialect"
+	commonquery "github.com/addp/common/query"
 	"gorm.io/driver/clickhouse"
 	"gorm.io/gorm"
 )
@@ -332,7 +332,7 @@ func clickhouseFieldInfo(row clickhouseColumnRow) datatype.FieldInfo {
 // GetTableRowCount 获取表的行数
 func (p *ClickHousePlugin) getTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
 	var count int64
-	query := sqldialect.ForEngine(p.Type()).CountTableSQL(schema, table, "")
+	query := commonquery.ForEngine(p.Type()).CountTableSQL(schema, table, "")
 	err := db.WithContext(ctx).Raw(query).Scan(&count).Error
 	if err != nil {
 		return 0, fmt.Errorf("failed to get row count: %w", err)

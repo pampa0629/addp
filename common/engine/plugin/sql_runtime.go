@@ -8,9 +8,7 @@ import (
 	"time"
 
 	"github.com/addp/common/datatype"
-	"github.com/addp/common/queryparams"
-	"github.com/addp/common/sqldialect"
-	"github.com/addp/common/sqleffect"
+	commonquery "github.com/addp/common/query"
 	"gorm.io/gorm"
 )
 
@@ -30,12 +28,12 @@ func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin ConnectionPool
 		opts.Args = boundArgs
 	}
 	if opts.ReadOnly {
-		if err := sqleffect.RequireReadOnly(sql); err != nil {
+		if err := commonquery.RequireReadOnly(sql); err != nil {
 			return nil, fmt.Errorf("read-only SQL validation failed: %w", err)
 		}
 	}
 	if opts.Limit > 0 {
-		sql = sqldialect.PaginateQuerySQL(sql, opts.Limit, 0)
+		sql = commonquery.ForEngine(poolPlugin.GetDialect()).PaginateQuerySQL(sql, opts.Limit, 0)
 	}
 
 	var db *gorm.DB
@@ -112,19 +110,21 @@ func bindSQLRuntimeParameters(dialect, sql string, opts QueryOptions) (string, [
 	if opts.Parameters == nil {
 		return sql, opts.Args, nil
 	}
-	boundSQL, boundArgs, err := queryparams.BindSQL(sql, opts.Parameters, sqlPlaceholderStyle(dialect))
+	boundSQL, boundArgs, err := commonquery.BindSQL(sql, opts.Parameters, sqlPlaceholderStyle(dialect))
 	if err != nil {
 		return "", nil, fmt.Errorf("bind SQL query parameters: %w", err)
 	}
 	return boundSQL, boundArgs, nil
 }
 
-func sqlPlaceholderStyle(engineType string) queryparams.SQLPlaceholderStyle {
+func sqlPlaceholderStyle(engineType string) commonquery.SQLPlaceholderStyle {
 	switch strings.ToLower(strings.TrimSpace(engineType)) {
 	case "postgres", "postgresql", "postgis":
-		return queryparams.SQLPlaceholderDollar
+		return commonquery.SQLPlaceholderDollar
+	case "oracle":
+		return commonquery.SQLPlaceholderColon
 	default:
-		return queryparams.SQLPlaceholderQuestion
+		return commonquery.SQLPlaceholderQuestion
 	}
 }
 
@@ -146,7 +146,7 @@ func ReadSQLBatch(ctx context.Context, provider SQLQueryRuntimeProvider, connInf
 		item := segments[len(segments)-1].Name
 		query = sampleSQLForEngine(provider.Type(), namespace, item, opts.Limit, opts.Offset)
 	} else if opts.Limit > 0 {
-		query = sqldialect.PaginateQuerySQL(query, opts.Limit, int(opts.Offset))
+		query = commonquery.ForEngine(provider.Type()).PaginateQuerySQL(query, opts.Limit, int(opts.Offset))
 	}
 	result, err := provider.ExecuteSQL(ctx, connInfo, query, QueryOptions{Limit: opts.Limit, Args: opts.Args})
 	if err != nil {
@@ -159,7 +159,7 @@ func sampleSQLForEngine(engineType, namespace, item string, limit int, offset in
 	if limit <= 0 {
 		limit = 1000
 	}
-	return sqldialect.ForEngine(engineType).SelectTableSQL("*", namespace, item, "", "", limit, int(offset))
+	return commonquery.ForEngine(engineType).SelectTableSQL("*", namespace, item, "", "", limit, int(offset))
 }
 
 // SampleSQLForCatalogPath builds a bounded query for one real tabular Catalog leaf.

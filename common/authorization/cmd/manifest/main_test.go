@@ -25,7 +25,7 @@ func TestRunCheckWritesCanonicalCatalogReport(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
 		t.Fatalf("decode report: %v", err)
 	}
-	if len(report.Permissions) != 346 || len(report.Roles) != 54 {
+	if len(report.Permissions) != 348 || len(report.Roles) != 56 {
 		t.Fatalf("report counts = permissions:%d roles:%d", len(report.Permissions), len(report.Roles))
 	}
 	if stderr.Len() != 0 {

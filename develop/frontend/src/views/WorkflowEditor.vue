@@ -110,6 +110,23 @@
               </el-select>
             </template>
           </div>
+          <div class="workflow-output-status" :class="`is-${workflowOutputStatus.state}`">
+            <el-icon>
+              <CircleCheckFilled v-if="workflowOutputStatus.state === 'persisted'" />
+              <WarningFilled v-else-if="workflowOutputStatus.state === 'incomplete'" />
+              <Setting v-else />
+            </el-icon>
+            <span class="workflow-output-label">{{ t('develop.workflow.outputStatusLabel') }}</span>
+            <strong>{{ workflowOutputStatus.label }}</strong>
+            <span
+              v-for="target in workflowOutputStatus.targets"
+              :key="target.key"
+              class="workflow-output-target"
+              :title="target.fullLabel"
+            >
+              {{ target.fullLabel }}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -242,6 +259,7 @@
           :initial-workflow="workflowData"
           :initial-layout="editorLayout"
           :operators="operators"
+          :resource-engines-by-id="resourceEnginesById"
           :validation-issues="validationIssues"
           @update:workflow="handleWorkflowUpdate"
           @update:layout="handleLayoutUpdate"
@@ -282,6 +300,7 @@
             :validation-issues="selectedNodeValidationIssues"
             :input-connections="selectedNode.inputConnections"
             :input-connection-options="selectedNode.inputConnectionOptions"
+            :resource-engines-by-id="resourceEnginesById"
             @update="handleParamsUpdate"
             @update-connection="handleInputConnectionUpdate"
           />
@@ -508,6 +527,71 @@
       </template>
     </el-dialog>
 
+    <el-dialog
+      v-model="resourceConfirmationVisible"
+      class="addp-dialog"
+      :title="t('develop.workflow.confirmInputResources')"
+      width="min(760px, calc(100vw - 24px))"
+      :close-on-click-modal="!generating"
+      :close-on-press-escape="!generating"
+      :show-close="!generating"
+    >
+      <p class="resource-confirmation-hint">{{ t('develop.workflow.confirmInputResourcesHint') }}</p>
+      <div class="resource-candidate-list">
+        <section
+          v-for="group in resourceCandidateGroups"
+          :key="group.role"
+          class="resource-candidate-group"
+        >
+          <h3 class="resource-candidate-role">{{ group.role }}</h3>
+          <el-radio-group
+            v-model="selectedResourceCandidatesByRole[group.role]"
+            class="resource-candidate-options"
+          >
+            <el-radio
+              v-for="candidate in group.candidates"
+              :key="resourceCandidateKey(candidate)"
+              :value="resourceCandidateKey(candidate)"
+              :disabled="generating"
+              class="resource-candidate"
+            >
+              <span class="resource-candidate-content">
+                <span class="resource-candidate-heading">
+                  <span class="resource-candidate-name">{{ resourceCandidateName(candidate) }}</span>
+                  <el-tag v-if="candidate.recommended" size="small" type="success" effect="plain">
+                    {{ t('develop.workflow.recommendedResource') }}
+                  </el-tag>
+                </span>
+                <span class="resource-candidate-path">{{ candidate.locator }}</span>
+                <span v-if="resourceCandidateFacts(candidate)" class="resource-candidate-facts">
+                  {{ resourceCandidateFacts(candidate) }}
+                </span>
+                <span
+                  v-if="candidate.recommended && candidate.recommendation_reason"
+                  class="resource-candidate-reason"
+                >
+                  {{ t('develop.workflow.resourceRecommendationReason', { reason: candidate.recommendation_reason }) }}
+                </span>
+              </span>
+            </el-radio>
+          </el-radio-group>
+        </section>
+      </div>
+      <template #footer>
+        <el-button :disabled="generating" @click="resourceConfirmationVisible = false">
+          {{ t('develop.workflow.cancel') }}
+        </el-button>
+        <el-button
+          type="primary"
+          :loading="generating"
+          :disabled="generating || !resourceSelectionComplete"
+          @click="confirmResourceCandidates"
+        >
+          {{ t('develop.workflow.confirmAndGenerate') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
     <input ref="fileInputRef" type="file" accept=".json" class="hidden-file-input" @change="handleFileChange" />
 
     <div class="ai-fab-wrapper">
@@ -601,8 +685,18 @@ import {
   isStandardWorkflowDefinition
 } from '@/utils/workflowDevTaskPayload'
 import { findInvalidOperatorMetadata } from '@/utils/operatorMetadataContract'
-import { resolveWorkflowGenerationResult } from '@/utils/workflowGenerationResult.mjs'
+import {
+  resolveWorkflowGenerationResult
+} from '@/utils/workflowGenerationResult.mjs'
+import {
+  confirmedResources,
+  defaultResourceCandidatesByRole,
+  groupResourceCandidates,
+  hasSelectedResourceForEveryRole,
+  resourceCandidateKey
+} from '@addp/common-frontend'
 import { getResourceBinding } from '@/utils/workflowResourceBindings'
+import { workflowExternalParameterSummaries } from '@/utils/workflowParameterPresentation'
 import { hasDistinctText } from '@/utils/displayText'
 import { groupValidationIssues, validationIssueParamName } from '@/utils/workflowValidationIssues'
 import {
@@ -610,7 +704,13 @@ import {
   developTaskIDFromRoute
 } from '@/utils/developTaskRoute'
 import { navigateDevelopTaskEditor } from '@/utils/developNavigation'
-import { ExecutionParameterForm, focusElement, openMonitorExecution, StatusAnnouncer } from '@addp/common-frontend'
+import {
+  ExecutionParameterForm,
+  focusElement,
+  listResourceTreeEngines,
+  openMonitorExecution,
+  StatusAnnouncer
+} from '@addp/common-frontend'
 
 const route = useRoute()
 const router = useRouter()
@@ -624,6 +724,10 @@ const sparkRuntimeId = ref(null)
 const operators = ref([])
 const operatorsLoading = ref(false)
 const operatorLoadError = ref('')
+const resourceEngines = ref([])
+const resourceEnginesById = computed(() => Object.fromEntries(
+  resourceEngines.value.map(engine => [String(engine.id), engine])
+))
 
 const canvasRef = ref(null)
 const paramsPanelRef = ref(null)
@@ -685,6 +789,14 @@ const aiDialogOpen = ref(false)
 const aiQuery = ref('')
 const generating = ref(false)
 const aiInputRef = ref(null)
+const resourceConfirmationVisible = ref(false)
+const resourceCandidates = ref([])
+const selectedResourceCandidatesByRole = ref({})
+const resourceCandidateGroups = computed(() => groupResourceCandidates(resourceCandidates.value))
+const resourceSelectionComplete = computed(() => hasSelectedResourceForEveryRole(
+  resourceCandidates.value,
+  selectedResourceCandidatesByRole.value
+))
 
 const hasValidWorkflow = computed(() => isStandardWorkflowDefinition(workflowData.value))
 const isDirty = computed(() => editorStateSignature() !== savedStateSignature.value)
@@ -729,6 +841,47 @@ const validationStatusClass = computed(() => {
   if (validationErrors.value.length) return 'is-error'
   if (validationWarnings.value.length) return 'is-warning'
   return validationRequestError.value ? 'is-warning' : 'is-valid'
+})
+const workflowOutputStatus = computed(() => {
+  const tasks = Array.isArray(workflowData.value?.tasks) ? workflowData.value.tasks : []
+  const writeTasks = tasks
+    .map(task => ({
+      task,
+      operator: operators.value.find(item => item.name === task.operator || item.id === task.operator)
+    }))
+    .filter(({ task, operator }) => task.operator === 'save' || operator?.effects?.includes('write'))
+
+  if (writeTasks.length === 0) {
+    return {
+      state: 'transient',
+      label: t('develop.workflow.outputNotPersisted'),
+      targets: []
+    }
+  }
+
+  const targets = writeTasks.map(({ task, operator }) => {
+    const resource = workflowExternalParameterSummaries(
+      operator?.public_parameters || operator?.publicParameters || [],
+      task.params || {},
+      resourceEnginesById.value,
+      { emptyLabel: t('develop.workflow.notConfigured') }
+    ).find(summary => summary.kind === 'resource' && summary.key === 'target_resource')
+    return {
+      key: task.id,
+      configured: Boolean(resource?.configured),
+      fullLabel: resource?.configured
+        ? resource.fullLabel || resource.value
+        : t('develop.workflow.outputTargetNotConfigured')
+    }
+  })
+  const configuredCount = targets.filter(target => target.configured).length
+  return {
+    state: configuredCount === targets.length ? 'persisted' : 'incomplete',
+    label: configuredCount === targets.length
+      ? t('develop.workflow.outputPersisted')
+      : t('develop.workflow.outputPersistenceIncomplete'),
+    targets
+  }
 })
 const validationSummary = computed(() => {
   if (validating.value) return t('develop.workflow.validating')
@@ -915,6 +1068,14 @@ async function loadWorkflowEngines() {
     if (workflowEngines.value.length === 0) ElMessage.warning(t('develop.workflow.noEngineAvailable'))
   } catch (error) {
     ElMessage.error(t('develop.workflow.loadEngineFailed'))
+  }
+}
+
+async function loadResourceEngines() {
+  try {
+    resourceEngines.value = await listResourceTreeEngines('/api/v1/meta')
+  } catch {
+    resourceEngines.value = []
   }
 }
 
@@ -1640,12 +1801,19 @@ async function generateWorkflow() {
     return
   }
 
+  await submitWorkflowGeneration(collectWorkflowResources())
+}
+
+function collectWorkflowResources() {
+  const currentWorkflow = canvasRef.value?.getWorkflow() || workflowData.value
+  return currentWorkflow.tasks
+    .filter(task => task.operator === 'load' && task.params?.locator)
+    .map(task => ({ role: task.id, locator: task.params.locator }))
+}
+
+async function submitWorkflowGeneration(resources) {
   generating.value = true
   try {
-    const currentWorkflow = canvasRef.value?.getWorkflow() || workflowData.value
-    const resources = currentWorkflow.tasks
-      .filter(task => task.operator === 'load' && task.params?.locator)
-      .map(task => ({ role: task.id, locator: task.params.locator }))
     const result = await generateWorkflowFromNL({
       query: aiQuery.value,
       workflow_engine_id: workflowEngineId.value,
@@ -1653,20 +1821,58 @@ async function generateWorkflow() {
     })
     const resolved = resolveWorkflowGenerationResult(result)
     if (resolved.clarificationKey) {
+      if (resolved.candidates.length) {
+        resourceCandidates.value = resolved.candidates
+        selectedResourceCandidatesByRole.value = defaultResourceCandidatesByRole(resolved.candidates)
+        resourceConfirmationVisible.value = true
+        return false
+      }
       ElMessage.warning(t(resolved.clarificationKey))
-      return
+      return false
     }
     workflowData.value = resolved.workflow
     editorLayout.value = {}
     selectedNode.value = null
     aiDialogOpen.value = false
+    resourceConfirmationVisible.value = false
+    resourceCandidates.value = []
+    selectedResourceCandidatesByRole.value = {}
     resetValidationState()
     ElMessage.success(t('develop.workflow.generateSuccess', { count: resolved.workflow.tasks.length }))
+    return true
   } catch (error) {
     ElMessage.error(error.response?.data?.detail || error.message || t('develop.workflow.generateFailed'))
+    return false
   } finally {
     generating.value = false
   }
+}
+
+async function confirmResourceCandidates() {
+  const resources = confirmedResources(
+    resourceCandidates.value,
+    selectedResourceCandidatesByRole.value
+  )
+  if (!resources.length) return
+  await submitWorkflowGeneration(resources)
+}
+
+function resourceCandidateName(candidate) {
+  return candidate.full_name || candidate.name || candidate.locator
+}
+
+function resourceCandidateFacts(candidate) {
+  const engine = candidate.engine_name && candidate.engine_id
+    ? t('develop.workflow.resourceCandidateEngine', { name: candidate.engine_name, id: candidate.engine_id })
+    : candidate.engine_name || (candidate.engine_id
+        ? t('develop.workflow.resourceCandidateEngineId', { id: candidate.engine_id })
+        : '')
+  return [
+    engine,
+    candidate.asset_type,
+    candidate.geometry_column,
+    candidate.crs
+  ].filter(Boolean).join(' · ')
 }
 
 function handleBeforeUnload(event) {
@@ -1752,7 +1958,7 @@ async function applyWorkflowTaskRoute({ initializeCreate = false } = {}) {
 
 onMounted(async () => {
   window.addEventListener('beforeunload', handleBeforeUnload)
-  await loadWorkflowEngines()
+  await Promise.all([loadWorkflowEngines(), loadResourceEngines()])
   await applyWorkflowTaskRoute({ initializeCreate: true })
   workflowTaskRouteReady.value = true
 })
@@ -1876,6 +2082,47 @@ onBeforeUnmount(() => {
 .execution-summary strong {
   color: var(--addp-text-primary);
   font-size: 16px;
+}
+
+.workflow-output-status {
+  min-width: 0;
+  padding-top: 6px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--addp-text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.workflow-output-status > .el-icon {
+  color: var(--el-color-info);
+}
+
+.workflow-output-status.is-persisted > .el-icon {
+  color: var(--el-color-success);
+}
+
+.workflow-output-status.is-incomplete > .el-icon {
+  color: var(--el-color-warning);
+}
+
+.workflow-output-label {
+  color: var(--addp-text-tertiary);
+}
+
+.workflow-output-status strong {
+  color: var(--addp-text-primary);
+  font-weight: 600;
+}
+
+.workflow-output-target {
+  max-width: min(360px, 42vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--addp-text-secondary);
 }
 
 .storage-engine-select {
@@ -2144,6 +2391,103 @@ onBeforeUnmount(() => {
 
 .hidden-file-input {
   display: none;
+}
+
+.resource-confirmation-hint {
+  margin: 0 0 12px;
+  color: var(--addp-text-secondary);
+  line-height: 1.5;
+}
+
+.resource-candidate-list {
+  max-height: min(480px, 55vh);
+  overflow-y: auto;
+  border-top: 1px solid var(--addp-border-color-light);
+}
+
+.resource-candidate-group {
+  border-bottom: 1px solid var(--addp-border-color-light);
+}
+
+.resource-candidate-role {
+  margin: 0;
+  padding: 12px 4px 4px;
+  color: var(--addp-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.resource-candidate-options {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+}
+
+.resource-candidate {
+  width: 100%;
+  height: auto;
+  margin-right: 0;
+  padding: 12px 4px;
+  align-items: flex-start;
+  border-top: 1px solid var(--addp-border-color-light);
+}
+
+.resource-candidate :deep(.el-radio__label) {
+  min-width: 0;
+  flex: 1;
+  white-space: normal;
+}
+
+.resource-candidate-content,
+.resource-candidate-heading,
+.resource-candidate-name,
+.resource-candidate-path,
+.resource-candidate-facts,
+.resource-candidate-reason {
+  display: block;
+  min-width: 0;
+}
+
+.resource-candidate-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.resource-candidate-name {
+  color: var(--addp-text-primary);
+  font-weight: 600;
+}
+
+.resource-candidate-path,
+.resource-candidate-facts,
+.resource-candidate-reason {
+  margin-top: 4px;
+  color: var(--addp-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.resource-candidate-reason {
+  color: var(--el-color-success);
+}
+
+.resource-candidate-path {
+  margin-top: 4px;
+  color: var(--addp-text-tertiary);
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.resource-candidate-facts {
+  margin-top: 4px;
+  color: var(--addp-text-secondary);
+  font-size: 12px;
 }
 
 .ai-fab-wrapper {

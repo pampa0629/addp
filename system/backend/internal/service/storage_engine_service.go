@@ -5,7 +5,7 @@ import (
 
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
-	commonutils "github.com/addp/common/utils"
+	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/system/internal/models"
 )
 
@@ -28,7 +28,7 @@ func (s *StorageEngineService) ProbeWorkflowRuntimeContract(resource *models.Eng
 }
 
 func (s *StorageEngineService) ShouldProbeWorkflowRuntime(resource *models.Engine) bool {
-	return commonutils.SupportsComputeEntrypoint(resource, "workflow")
+	return engineselection.SupportsComputeEntrypoint(resource, "workflow")
 }
 
 // GetConnectionInfo 获取存储引擎连接信息（用于前端展示，隐藏敏感信息）

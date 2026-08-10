@@ -40,20 +40,23 @@
       "createTitle": "新增规则应用",
       "elementPlaceholder": "输入关键字搜索数据元",
       "enginePlaceholder": "选择引擎",
-      "schemaPlaceholder": "可选，留空表示默认 Schema",
+      "schemaPlaceholder": "请输入 Schema",
       "tableNamePlaceholder": "数据表名称",
       "columnPlaceholder": "字段名称",
       "cancel": "取消",
       "confirm": "确定",
       "elementRequired": "请选择数据元",
       "engineRequired": "请选择引擎",
+      "schemaRequired": "请填写 Schema",
       "tableRequired": "请填写表名",
       "columnRequired": "请填写字段名",
       "createSuccess": "创建成功",
       "createFailed": "创建失败",
+      "loadFailed": "加载规则应用失败",
       "deleteConfirm": "确认删除？",
       "deleteTitle": "提示",
-      "deleteSuccess": "已删除"
+      "deleteSuccess": "已删除",
+      "deleteFailed": "删除失败"
     },
     "checkTask": {
       "title": "检查任务",
@@ -75,22 +78,29 @@
       "editTitle": "编辑检查任务",
       "name": "任务名称",
       "description": "描述",
-      "engineIdLabel": "引擎 ID",
+      "engineIdLabel": "PostgreSQL 引擎",
+      "enginePlaceholder": "选择 PostgreSQL 引擎",
       "schemaLabel": "Schema",
-      "schemaPlaceholder": "可选",
+      "schemaPlaceholder": "请输入 Schema",
       "tableLabel": "数据表",
-      "tablePlaceholder": "可选，留空则检查所有表",
+      "tablePlaceholder": "请输入数据表",
       "cancel": "取消",
       "confirm": "确定",
+      "nameRequired": "请填写任务名称",
+      "engineRequired": "请选择 PostgreSQL 引擎",
+      "schemaRequired": "请填写 Schema",
+      "tableRequired": "请填写数据表",
       "createSuccess": "创建成功",
       "createFailed": "创建失败",
+      "loadFailed": "加载检查任务失败",
       "updateSuccess": "更新成功",
       "updateFailed": "更新失败",
       "runSuccess": "检查已启动，执行 ID: {id}",
       "runFailed": "执行失败",
       "deleteConfirm": "确认删除该任务？",
       "deleteTitle": "提示",
-      "deleteSuccess": "已删除"
+      "deleteSuccess": "已删除",
+      "deleteFailed": "删除失败"
     },
     "execution": {
       "title": "执行记录",
@@ -113,6 +123,7 @@
       "failedRules": "失败规则",
       "ruleDetails": "规则执行明细",
       "ruleType": "规则类型",
+      "severity": "级别",
       "column": "字段",
       "table": "表名",
       "passRate": "通过率",
@@ -120,7 +131,8 @@
       "passed": "通过",
       "failed": "失败",
       "failedCount": "失败行数",
-      "errorMsg": "错误信息"
+      "totalCount": "总行数",
+      "loadFailed": "加载执行记录失败"
     },
     "issue": {
       "title": "问题工单",
@@ -141,7 +153,13 @@
       "markResolved": "标记解决",
       "ignore": "忽略",
       "updateSuccess": "已更新",
-      "updateFailed": "更新失败"
+      "updateFailed": "更新失败",
+      "loadFailed": "加载问题工单失败",
+      "noteTitle": "填写处理说明",
+      "notePrompt": "请输入处理说明",
+      "noteRequired": "处理说明不能为空",
+      "confirm": "确定",
+      "cancel": "取消"
     }
   }
 }

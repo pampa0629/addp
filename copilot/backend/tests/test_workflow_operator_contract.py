@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
+from addp_common.resources import ResourceFact
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -19,11 +20,10 @@ def load_module(name: str, relative_path: str):
 workflow_generation = load_module("workflow_generation_contract_module", "chains/workflow_generation_chain.py")
 operator_selection = load_module("operator_selection_contract_module", "chains/operator_selection_chain.py")
 workflow_api = load_module("workflow_agent_api_contract_module", "api/workflow_agent_api.py")
-workflow_pipeline = load_module("workflow_pipeline_contract_module", "pipelines/workflow_pipeline.py")
 
 WorkflowGenerationChain = workflow_generation.WorkflowGenerationChain
 OperatorSelectionChain = operator_selection.OperatorSelectionChain
-WorkflowPipeline = workflow_pipeline.WorkflowPipeline
+workflow_api.WorkflowGenerationRequest.model_rebuild(_types_namespace={"ResourceFact": ResourceFact})
 
 
 def live_load_descriptor():
@@ -81,38 +81,36 @@ class RaisingLLMChain:
         raise RuntimeError("upstream insufficient_balance")
 
 
-class StaticOperatorTool:
+class StaticOperatorCatalog:
     seen_tenant_id = None
 
-    async def _arun(self, workflow_engine_id: int, tenant_id: int = 0):
+    async def list_operators(self, workflow_engine_id: int, tenant_id: int = 0):
         self.seen_tenant_id = tenant_id
         return [{"name": "load", "brief": "load", "category": "I/O"}]
 
 
 async def _assert_operator_selection_propagates_llm_error():
-    chain = OperatorSelectionChain.__new__(OperatorSelectionChain)
-    tool = StaticOperatorTool()
-    chain.operator_tool = tool
-    chain.chain = RaisingLLMChain()
+    catalog = StaticOperatorCatalog()
+    chain = OperatorSelectionChain(RaisingLLMChain(), catalog)
 
     with pytest.raises(RuntimeError, match="insufficient_balance"):
         await chain.select("load roads", workflow_engine_id=20, tenant_id=3)
-    assert tool.seen_tenant_id == 3
+    assert catalog.seen_tenant_id == 3
 
 
 def test_operator_selection_propagates_llm_error():
     asyncio.run(_assert_operator_selection_propagates_llm_error())
 
 
-class FailingPipeline:
+class FailingService:
     async def run(self, **_kwargs):
         raise RuntimeError("upstream insufficient_balance")
 
 
-async def _assert_workflow_api_returns_non_2xx_with_upstream_reason(monkeypatch):
+async def _assert_workflow_api_returns_stable_error(monkeypatch):
     from addp_common.auth import AuthorizationContext
 
-    monkeypatch.setattr(workflow_api, "get_workflow_pipeline", lambda *_args: FailingPipeline())
+    monkeypatch.setattr(workflow_api, "get_workflow_service", lambda *_args: FailingService())
     request = workflow_api.WorkflowGenerationRequest(
         query="load roads",
         workflow_engine_id=20,
@@ -126,18 +124,19 @@ async def _assert_workflow_api_returns_non_2xx_with_upstream_reason(monkeypatch)
         await workflow_api.generate_workflow(
             request,
             AuthorizationContext(principal_id=7, tenant_id=3, tenant_membership_id=9),
+            workflow_api.HTTPAuthorizationCredentials(scheme="Bearer", credentials="addp_dat_test"),
+            None,
         )
 
     assert exc_info.value.status_code == 500
-    assert "insufficient_balance" in exc_info.value.detail
+    assert exc_info.value.detail == "工作流生成失败"
 
 
-def test_workflow_api_returns_non_2xx_with_upstream_reason(monkeypatch):
-    asyncio.run(_assert_workflow_api_returns_non_2xx_with_upstream_reason(monkeypatch))
+def test_workflow_api_returns_stable_error(monkeypatch):
+    asyncio.run(_assert_workflow_api_returns_stable_error(monkeypatch))
 
 
-def test_empty_invalid_workflow_message_does_not_offer_preview():
-    source = (BACKEND_DIR / "pipelines" / "workflow_pipeline.py").read_text(encoding="utf-8")
-
-    assert "has_previewable_workflow = bool(workflow.tasks)" in source
-    assert "工作流生成失败，未形成可预览的任务" in source
+def test_workflow_service_exposes_validation_failure_without_pipeline_compatibility():
+    source = (BACKEND_DIR / "services" / "workflow_service.py").read_text(encoding="utf-8")
+    assert '"status": "validation_failed"' in source
+    assert not any((BACKEND_DIR / "pipelines").glob("*.py"))

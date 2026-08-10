@@ -71,23 +71,35 @@ func (r *DocumentRepository) Delete(id, tenantID int64) error {
 }
 
 // GetElementMappings 获取文档关联的数据元
-func (r *DocumentRepository) GetElementMappings(docID int64) ([]models.DocumentElementMapping, error) {
+func (r *DocumentRepository) GetElementMappings(docID, tenantID int64) ([]models.DocumentElementMapping, error) {
 	var mappings []models.DocumentElementMapping
-	err := r.db.Where("document_id = ?", docID).Find(&mappings).Error
+	err := r.db.Model(&models.DocumentElementMapping{}).
+		Select("standard.document_element_mappings.*, e.name").
+		Joins("JOIN standard.elements e ON e.id = standard.document_element_mappings.element_id AND e.tenant_id = ?", tenantID).
+		Where("standard.document_element_mappings.document_id = ?", docID).
+		Find(&mappings).Error
 	return mappings, err
 }
 
 // GetGlossaryMappings 获取文档关联的术语
-func (r *DocumentRepository) GetGlossaryMappings(docID int64) ([]models.DocumentGlossaryMapping, error) {
+func (r *DocumentRepository) GetGlossaryMappings(docID, tenantID int64) ([]models.DocumentGlossaryMapping, error) {
 	var mappings []models.DocumentGlossaryMapping
-	err := r.db.Where("document_id = ?", docID).Find(&mappings).Error
+	err := r.db.Model(&models.DocumentGlossaryMapping{}).
+		Select("standard.document_glossary_mappings.*, g.name").
+		Joins("JOIN standard.glossaries g ON g.id = standard.document_glossary_mappings.glossary_id AND g.tenant_id = ?", tenantID).
+		Where("standard.document_glossary_mappings.document_id = ?", docID).
+		Find(&mappings).Error
 	return mappings, err
 }
 
 // GetMetricMappings 获取文档关联的指标
-func (r *DocumentRepository) GetMetricMappings(docID int64) ([]models.DocumentMetricMapping, error) {
+func (r *DocumentRepository) GetMetricMappings(docID, tenantID int64) ([]models.DocumentMetricMapping, error) {
 	var mappings []models.DocumentMetricMapping
-	err := r.db.Where("document_id = ?", docID).Find(&mappings).Error
+	err := r.db.Model(&models.DocumentMetricMapping{}).
+		Select("standard.document_metric_mappings.*, m.name").
+		Joins("JOIN standard.metrics m ON m.id = standard.document_metric_mappings.metric_id AND m.tenant_id = ?", tenantID).
+		Where("standard.document_metric_mappings.document_id = ?", docID).
+		Find(&mappings).Error
 	return mappings, err
 }
 
@@ -151,6 +163,58 @@ func (r *DocumentRepository) SetMetricMappings(docID int64, metricIDs []int64, l
 			}
 		}
 		return nil
+	})
+}
+
+func (r *DocumentRepository) SetMappings(docID int64, elementIDs, glossaryIDs, metricIDs []int64, locations map[string]string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		for _, model := range []interface{}{
+			&models.DocumentElementMapping{},
+			&models.DocumentGlossaryMapping{},
+			&models.DocumentMetricMapping{},
+		} {
+			if err := tx.Where("document_id = ?", docID).Delete(model).Error; err != nil {
+				return err
+			}
+		}
+		for _, elementID := range elementIDs {
+			mapping := models.DocumentElementMapping{DocumentID: docID, ElementID: elementID, ReferenceLocation: locations[fmt.Sprintf("element_%d", elementID)]}
+			if err := tx.Create(&mapping).Error; err != nil {
+				return err
+			}
+		}
+		for _, glossaryID := range glossaryIDs {
+			mapping := models.DocumentGlossaryMapping{DocumentID: docID, GlossaryID: glossaryID, ReferenceLocation: locations[fmt.Sprintf("glossary_%d", glossaryID)]}
+			if err := tx.Create(&mapping).Error; err != nil {
+				return err
+			}
+		}
+		for _, metricID := range metricIDs {
+			mapping := models.DocumentMetricMapping{DocumentID: docID, MetricID: metricID, ReferenceLocation: locations[fmt.Sprintf("metric_%d", metricID)]}
+			if err := tx.Create(&mapping).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (r *DocumentRepository) CreateWithMapping(doc *models.Document, mapping interface{}) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(doc).Error; err != nil {
+			return err
+		}
+		switch value := mapping.(type) {
+		case *models.DocumentElementMapping:
+			value.DocumentID = doc.ID
+		case *models.DocumentGlossaryMapping:
+			value.DocumentID = doc.ID
+		case *models.DocumentMetricMapping:
+			value.DocumentID = doc.ID
+		default:
+			return fmt.Errorf("unsupported document mapping type %T", mapping)
+		}
+		return tx.Create(mapping).Error
 	})
 }
 

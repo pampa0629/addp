@@ -125,16 +125,7 @@ func SetupRouter(
 		}, isManagerDerivedResourceRequest),
 		auth.MustNewMiddleware(auth.MiddlewareConfig{SystemURL: cfg.SystemServiceURL}),
 		auth.MustNewContextGuard("tenant"),
-		auth.MustNewDelegatedPolicyGuard("manager", map[string]auth.DelegatedRoutePolicyEntry{
-			"GET /api/v1/manager/search": {
-				RequiredScopes:      []string{"data.search"},
-				RequiredPermissions: []string{managerauthorization.PermissionManagerSearchExecute},
-			},
-			"GET /api/v1/manager/preview": {
-				RequiredScopes:      []string{"data.preview"},
-				RequiredPermissions: []string{managerauthorization.PermissionManagerContentRead},
-			},
-		}),
+		auth.MustNewDelegatedPolicyGuard("manager", managerDelegatedToolPolicies()),
 	)
 	permission := func(keys ...string) gin.HandlerFunc {
 		return auth.MustNewPermissionGuard(keys...)
@@ -354,7 +345,7 @@ func SetupRouter(
 
 		api.GET("/engines", permission(managerauthorization.PermissionManagerDataItemRead), explorerHandler.ListEngines) // 获取可用引擎列表（只读）
 		api.POST("/engines/:id/items/refresh", permission(managerauthorization.PermissionManagerDataItemUpdate), metadataHandler.RefreshItem)
-		api.GET("/preview", permission(managerauthorization.PermissionManagerContentRead), explorerHandler.Preview)
+		api.GET("/preview", permission(managerauthorization.PermissionManagerDataItemRead), explorerHandler.Preview)
 		api.GET("/downloads/file", permission(managerauthorization.PermissionManagerContentRead), downloadHandler.DownloadFile)
 		api.GET("/storage-stream", permission(managerauthorization.PermissionManagerContentRead), explorerHandler.StorageStream)
 		api.GET("/storage-assets/:engine_id/*storage_ref", permission(managerauthorization.PermissionManagerContentRead), explorerHandler.StorageAsset)
@@ -397,6 +388,19 @@ func SetupRouter(
 	}
 
 	return router
+}
+
+func managerDelegatedToolPolicies() map[string]auth.DelegatedRoutePolicyEntry {
+	return map[string]auth.DelegatedRoutePolicyEntry{
+		"GET /api/v1/manager/search": {
+			RequiredScopes:      []string{"data.search"},
+			RequiredPermissions: []string{managerauthorization.PermissionManagerSearchExecute},
+		},
+		"GET /api/v1/manager/preview": {
+			RequiredScopes:      []string{"data.preview"},
+			RequiredPermissions: []string{managerauthorization.PermissionManagerDataItemRead},
+		},
+	}
 }
 
 func isManagerContentResourceRequest(c *gin.Context) bool {

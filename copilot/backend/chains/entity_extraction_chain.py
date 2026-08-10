@@ -1,15 +1,11 @@
-"""
-实体抽取 Chain
-从单个文本 chunk 中抽取符合本体定义的实体
-"""
+"""Extract ontology-constrained entities from one text chunk."""
 import json
-import time
-import traceback
-from typing import List, Optional
+from pathlib import Path
+from typing import List
 
-from langchain.chains import LLMChain
-from langchain.output_parsers import PydanticOutputParser, OutputFixingParser
-from langchain.prompts import PromptTemplate
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.output_parsers import PydanticOutputParser
+from langchain_core.prompts import PromptTemplate
 
 from models.kg_models import EntityTypeInfo, ExtractedEntity, EntityExtractionOutput
 
@@ -25,25 +21,12 @@ class EntityExtractionChain:
     def __init__(self, llm):
         self.llm = llm
         self.output_parser = PydanticOutputParser(pydantic_object=EntityExtractionOutput)
-        self.fixing_parser = OutputFixingParser.from_llm(
-            parser=self.output_parser,
-            llm=self.llm
-        )
         self.prompt_template = self._load_prompt_template()
-        self.chain = LLMChain(
-            llm=self.llm,
-            prompt=self.prompt_template,
-            verbose=False
-        )
 
     def _load_prompt_template(self) -> PromptTemplate:
-        try:
-            import os
-            prompt_path = os.path.join(os.path.dirname(__file__), "..", "prompts", "entity_extraction.txt")
-            with open(prompt_path, "r", encoding="utf-8") as f:
-                template = f.read()
-        except FileNotFoundError:
-            template = self._get_builtin_template()
+        template = (Path(__file__).parent.parent / "prompts" / "entity_extraction.txt").read_text(
+            encoding="utf-8"
+        )
 
         return PromptTemplate(
             template=template,
@@ -52,21 +35,6 @@ class EntityExtractionChain:
                 "format_instructions": self.output_parser.get_format_instructions()
             }
         )
-
-    def _get_builtin_template(self) -> str:
-        return """从以下文本中抽取符合本体定义的实体。
-
-## 文档上下文
-{doc_context}
-
-## 实体类型定义
-{entity_types_json}
-
-## 文本
-{text}
-
-{format_instructions}
-"""
 
     def _format_entity_types(self, entity_types: List[EntityTypeInfo]) -> str:
         """将实体类型定义格式化为 JSON 字符串传给 LLM"""
@@ -112,25 +80,13 @@ class EntityExtractionChain:
 
         entity_types_json = self._format_entity_types(entity_types)
 
-        try:
-            result = await self.chain.ainvoke({
-                "text": text,
-                "doc_context": doc_context or "（无）",
-                "entity_types_json": entity_types_json,
-            })
-
-            llm_output = result.get("text", "") if isinstance(result, dict) else str(result)
-
-            try:
-                output = await self.fixing_parser.aparse(llm_output)
-            except Exception:
-                output = self.output_parser.parse(llm_output)
-
-            entities = output.entities
-            print(f"[EntityExtractionChain] 抽取到 {len(entities)} 个实体")
-            return entities
-
-        except Exception as e:
-            print(f"[EntityExtractionChain] ❌ 抽取失败: {type(e).__name__}: {e}")
-            traceback.print_exc()
-            raise
+        prompt = self.prompt_template.format(
+            text=text,
+            doc_context=doc_context or "（无）",
+            entity_types_json=entity_types_json,
+        )
+        response = await self.llm.ainvoke([
+            SystemMessage(content="你是 ADDP 知识图谱实体抽取器，只能按给定本体返回结构化结果。"),
+            HumanMessage(content=prompt),
+        ])
+        return self.output_parser.parse(str(getattr(response, "content", response))).entities

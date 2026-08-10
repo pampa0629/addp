@@ -11,7 +11,6 @@ import (
 	commonconfiguration "github.com/addp/common/configuration"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/common/utils"
 	_ "github.com/addp/monitor/i18n"
 	"github.com/addp/monitor/internal/api"
 	monitorauthorization "github.com/addp/monitor/internal/authorization"
@@ -179,9 +178,8 @@ func main() {
 	}()
 
 	// 启动模块注册和心跳
-	serviceHost := utils.GetServiceHost()
-	port := utils.GetModulePort("monitor")
-	serviceURL := utils.BuildServiceURL(serviceHost, port)
+	serviceHost := commonConfig.GetServiceHost()
+	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.ServerPort)
 	systemServiceClient.RegisterAndHeartbeat(context.Background(), &commonClient.ModuleRegistrationRequest{
 		ModuleName: "monitor", ModuleURL: serviceURL, RoutePrefix: "/monitor", HealthCheckURL: serviceURL + "/health",
 		Metadata: map[string]interface{}{"module": "monitor"},

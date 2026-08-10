@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/addp/common/dataprofile"
 	"github.com/addp/common/datatype"
-	"github.com/addp/common/sqldialect"
+	commonquery "github.com/addp/common/query"
+	"github.com/addp/manager/internal/dataprofile"
 )
 
 func TestNormalizeAndCompileConditionScope(t *testing.T) {
@@ -25,7 +25,7 @@ func TestNormalizeAndCompileConditionScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Normalize() error = %v", err)
 	}
-	whereClause, args, err := SQL(scope, sqldialect.ForEngine("postgresql"), "")
+	whereClause, args, err := SQL(scope, commonquery.ForEngine("postgresql"), "")
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}

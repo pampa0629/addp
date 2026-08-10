@@ -16,7 +16,6 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	commonScheduler "github.com/addp/common/scheduler"
-	"github.com/addp/common/utils"
 	"github.com/addp/service/internal/api"
 	serviceauthorization "github.com/addp/service/internal/authorization"
 	"github.com/addp/service/internal/config"
@@ -50,7 +49,7 @@ func main() {
 	})
 
 	// 检查端口是否可用
-	if err := utils.CheckPortAvailable(cfg.Port); err != nil {
+	if err := commonConfig.CheckPortAvailable(cfg.Port); err != nil {
 		logger.L().Error("端口检查失败", "error", err, "port", cfg.Port)
 		os.Exit(1)
 	}
@@ -166,9 +165,8 @@ func main() {
 
 	// ========== 模块注册（注册到 System service_registry）==========
 	if cfg.SystemServiceURL != "" {
-		serviceHost := utils.GetServiceHost()
-		port := utils.GetModulePort("service")
-		serviceURL := utils.BuildServiceURL(serviceHost, port)
+		serviceHost := commonConfig.GetServiceHost()
+		serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
 		systemServiceClient.RegisterAndHeartbeat(context.Background(), &commonClient.ModuleRegistrationRequest{ModuleName: "service", ModuleURL: serviceURL, RoutePrefix: "/service", HealthCheckURL: serviceURL + "/health",
 			ConfigurationManagement: &commonconfiguration.ManagementDeclaration{SchemaVersion: commonconfiguration.ManagementSchemaVersion, Entries: []commonconfiguration.ManagementEntry{{
 				ID: "service.configuration", OwnerModule: "service", ScopeTypes: []string{commonconfiguration.ScopePlatformOnly}, FrontendRoute: "/configuration/service",

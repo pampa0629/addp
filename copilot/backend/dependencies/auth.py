@@ -6,7 +6,7 @@ from addp_common.auth import AuthorizationContext, allows_delegated_tool, allows
 from config import settings
 
 
-_bearer_auth = HTTPBearer(
+bearer_auth = HTTPBearer(
     scheme_name="BearerAuth",
     description="ADDP 用户访问令牌：Authorization: Bearer <token>",
 )
@@ -18,7 +18,7 @@ def _message(accept_language: str | None, zh_cn: str, en: str) -> str:
 
 
 async def _resolve_user(
-    credentials: HTTPAuthorizationCredentials = Depends(_bearer_auth),
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_auth),
     accept_language: str | None = Header(default=None, alias="Accept-Language"),
 ) -> AuthorizationContext:
     try:
@@ -45,7 +45,7 @@ async def _resolve_user(
 
 
 async def require_user(
-    credentials: HTTPAuthorizationCredentials = Depends(_bearer_auth),
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_auth),
     accept_language: str | None = Header(default=None, alias="Accept-Language"),
 ) -> AuthorizationContext:
     context = await _resolve_user(credentials, accept_language)
@@ -62,7 +62,7 @@ async def require_user(
 
 
 async def require_tenant_user(
-    credentials: HTTPAuthorizationCredentials = Depends(_bearer_auth),
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_auth),
     accept_language: str | None = Header(default=None, alias="Accept-Language"),
 ) -> AuthorizationContext:
     context = await require_user(credentials, accept_language)
@@ -80,7 +80,7 @@ async def require_tenant_user(
 
 def require_tenant_permissions(*required_permissions: str):
     async def dependency(
-        credentials: HTTPAuthorizationCredentials = Depends(_bearer_auth),
+        credentials: HTTPAuthorizationCredentials = Depends(bearer_auth),
         accept_language: str | None = Header(default=None, alias="Accept-Language"),
     ) -> AuthorizationContext:
         context = await require_tenant_user(credentials, accept_language)
@@ -96,7 +96,7 @@ def require_tenant_permissions(*required_permissions: str):
 
 def require_permissions(*required_permissions: str):
     async def dependency(
-        credentials: HTTPAuthorizationCredentials = Depends(_bearer_auth),
+        credentials: HTTPAuthorizationCredentials = Depends(bearer_auth),
         accept_language: str | None = Header(default=None, alias="Accept-Language"),
     ) -> AuthorizationContext:
         context = await require_user(credentials, accept_language)
@@ -112,7 +112,7 @@ def require_permissions(*required_permissions: str):
 
 def require_tool_user(audience: str, scope: str, *required_permissions: str):
     async def dependency(
-        credentials: HTTPAuthorizationCredentials = Depends(_bearer_auth),
+        credentials: HTTPAuthorizationCredentials = Depends(bearer_auth),
         accept_language: str | None = Header(default=None, alias="Accept-Language"),
     ) -> AuthorizationContext:
         context = await _resolve_user(credentials, accept_language)
@@ -135,7 +135,7 @@ def require_tool_user(audience: str, scope: str, *required_permissions: str):
 
 def require_tenant_service(client_id: str, *required_permissions: str):
     async def dependency(
-        credentials: HTTPAuthorizationCredentials = Depends(_bearer_auth),
+        credentials: HTTPAuthorizationCredentials = Depends(bearer_auth),
         accept_language: str | None = Header(default=None, alias="Accept-Language"),
     ) -> AuthorizationContext:
         context = await _resolve_user(credentials, accept_language)

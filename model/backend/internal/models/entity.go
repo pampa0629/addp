@@ -27,6 +27,8 @@ type EntityAttribute struct {
 	EntityID    int64     `gorm:"not null;index" json:"entity_id"`
 	ElementID   *int64    `json:"element_id,omitempty"` // 引用数据元（可选）
 	Name        string    `gorm:"size:200;not null" json:"name"`
+	ColumnName  string    `gorm:"size:200;not null" json:"column_name"`
+	DataType    string    `gorm:"size:50;not null" json:"data_type"`
 	IsPK        bool      `gorm:"default:false" json:"is_pk"`
 	Nullable    bool      `gorm:"default:true" json:"nullable"`
 	Description string    `gorm:"type:text" json:"description"`
@@ -75,6 +77,8 @@ type UpdateEntityRequest struct {
 type CreateEntityAttributeRequest struct {
 	ElementID   *int64 `json:"element_id,omitempty"`
 	Name        string `json:"name" binding:"required"`
+	ColumnName  string `json:"column_name" binding:"required"`
+	DataType    string `json:"data_type" binding:"required"`
 	IsPK        bool   `json:"is_pk"`
 	Nullable    bool   `json:"nullable"`
 	Description string `json:"description"`
@@ -85,6 +89,8 @@ type CreateEntityAttributeRequest struct {
 type UpdateEntityAttributeRequest struct {
 	ElementID   *int64 `json:"element_id,omitempty"`
 	Name        string `json:"name"`
+	ColumnName  string `json:"column_name"`
+	DataType    string `json:"data_type"`
 	IsPK        *bool  `json:"is_pk,omitempty"`
 	Nullable    *bool  `json:"nullable,omitempty"`
 	Description string `json:"description"`
@@ -110,13 +116,10 @@ type UpdateEntityRelationRequest struct {
 // MermaidImportRequest Mermaid导入请求
 type MermaidImportRequest struct {
 	MermaidCode string `json:"mermaid_code" binding:"required"`
-	Mode        string `json:"mode"`
 }
 
 // MermaidImportResult Mermaid导入结果
 type MermaidImportResult struct {
-	CreatedEntities   int      `json:"created_entities"`
-	UpdatedEntities   int      `json:"updated_entities"`
-	CreatedRelations  int      `json:"created_relations"`
-	Errors            []string `json:"errors,omitempty"`
+	CreatedEntities  int `json:"created_entities"`
+	CreatedRelations int `json:"created_relations"`
 }

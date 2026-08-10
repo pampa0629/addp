@@ -1,12 +1,13 @@
 package api
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	commonAPI "github.com/addp/common/api"
+	commonExecution "github.com/addp/common/execution"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	qualityi18n "github.com/addp/quality/i18n"
 	"github.com/addp/quality/internal/service"
@@ -25,26 +26,33 @@ func NewCheckTaskHandler(svc *service.CheckTaskService, executor *service.CheckE
 // @Summary 获取检查任务列表 | List check tasks
 // @Tags CheckTask
 // @Produce json
-// @Success 200 {array} map[string]interface{}
+// @Param page query int false "页码 | Page" default(1)
+// @Param page_size query int false "每页数量 | Page size" default(20) maximum(100)
+// @Success 200 {object} qualityCheckTaskListResponse
+// @Failure 500 {object} qualityErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["quality.check_task.read"]
 // @Router /check-tasks [get]
 // @Security BearerAuth
 func (h *CheckTaskHandler) List(c *gin.Context) {
 	tenantID := getTenantID(c)
-	items, err := h.svc.List(tenantID)
+	page, pageSize := pageParams(c.Query("page"), c.Query("page_size"))
+	items, total, err := h.svc.List(tenantID, page, pageSize)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondQualityServiceError(c, err, "", qualityi18n.MsgInternal)
 		return
 	}
-	c.JSON(http.StatusOK, items)
+	c.JSON(http.StatusOK, gin.H{"data": items, "total": total, "page": page, "page_size": pageSize, "total_pages": totalPages(total, pageSize)})
 }
 
 // @Summary 获取检查任务详情 | Get check task detail
 // @Tags CheckTask
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} qualityCheckTaskResponse
+// @Failure 400 {object} qualityErrorResponse
+// @Failure 404 {object} qualityErrorResponse
+// @Failure 500 {object} qualityErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["quality.check_task.read"]
 // @Router /check-tasks/{id} [get]
@@ -53,12 +61,12 @@ func (h *CheckTaskHandler) Get(c *gin.Context) {
 	tenantID := getTenantID(c)
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		respondInvalidRequest(c, "")
 		return
 	}
 	item, err := h.svc.Get(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		respondQualityServiceError(c, err, qualityi18n.MsgCheckTaskNotFound, qualityi18n.MsgInternal)
 		return
 	}
 	c.JSON(http.StatusOK, item)
@@ -68,8 +76,11 @@ func (h *CheckTaskHandler) Get(c *gin.Context) {
 // @Tags CheckTask
 // @Accept json
 // @Produce json
-// @Param body body map[string]interface{} true "任务信息 | Task info"
-// @Success 201 {object} map[string]interface{}
+// @Param body body service.CreateCheckTaskRequest true "任务信息 | Task info"
+// @Success 201 {object} qualityCheckTaskResponse
+// @Failure 400 {object} qualityErrorResponse
+// @Failure 409 {object} qualityErrorResponse
+// @Failure 500 {object} qualityErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["quality.check_task.create"]
 // @Router /check-tasks [post]
@@ -78,13 +89,13 @@ func (h *CheckTaskHandler) Create(c *gin.Context) {
 	tenantID := getTenantID(c)
 	userID := getUserID(c)
 	var req service.CreateCheckTaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := commonAPI.BindOptionalJSONStrict(c, &req); err != nil {
+		respondInvalidRequest(c, err.Error())
 		return
 	}
-	item, err := h.svc.Create(tenantID, userID, &req)
+	item, err := h.svc.Create(c.Request.Context(), tenantID, userID, &req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondQualityServiceError(c, err, qualityi18n.MsgCheckTaskNotFound, qualityi18n.MsgCheckTaskCreateFailed)
 		return
 	}
 	c.JSON(http.StatusCreated, item)
@@ -95,27 +106,32 @@ func (h *CheckTaskHandler) Create(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
-// @Param body body map[string]interface{} true "更新信息 | Update info"
-// @Success 200 {object} map[string]interface{}
+// @Param body body service.UpdateCheckTaskRequest true "更新信息 | Update info"
+// @Success 200 {object} qualityCheckTaskResponse
+// @Failure 400 {object} qualityErrorResponse
+// @Failure 404 {object} qualityErrorResponse
+// @Failure 409 {object} qualityErrorResponse
+// @Failure 500 {object} qualityErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["quality.check_task.update"]
 // @Router /check-tasks/{id} [put]
 // @Security BearerAuth
 func (h *CheckTaskHandler) Update(c *gin.Context) {
 	tenantID := getTenantID(c)
+	userID := getUserID(c)
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		respondInvalidRequest(c, "")
 		return
 	}
 	var req service.UpdateCheckTaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := commonAPI.BindOptionalJSONStrict(c, &req); err != nil {
+		respondInvalidRequest(c, err.Error())
 		return
 	}
-	item, err := h.svc.Update(id, tenantID, &req)
+	item, err := h.svc.Update(c.Request.Context(), id, tenantID, userID, &req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondQualityServiceError(c, err, qualityi18n.MsgCheckTaskNotFound, qualityi18n.MsgCheckTaskUpdateFailed)
 		return
 	}
 	c.JSON(http.StatusOK, item)
@@ -125,7 +141,10 @@ func (h *CheckTaskHandler) Update(c *gin.Context) {
 // @Tags CheckTask
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
-// @Success 200 {object} map[string]string
+// @Success 200 {object} qualityMessageResponse
+// @Failure 404 {object} qualityErrorResponse
+// @Failure 409 {object} qualityErrorResponse
+// @Failure 500 {object} qualityErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["quality.check_task.delete"]
 // @Router /check-tasks/{id} [delete]
@@ -134,22 +153,24 @@ func (h *CheckTaskHandler) Delete(c *gin.Context) {
 	tenantID := getTenantID(c)
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		respondInvalidRequest(c, "")
 		return
 	}
 	if err := h.svc.Delete(id, tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondQualityServiceError(c, err, qualityi18n.MsgCheckTaskNotFound, qualityi18n.MsgCheckTaskDeleteFailed)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+	c.JSON(http.StatusOK, qualityMessageResponse{Message: commoni18n.T(c, qualityi18n.MsgDeleted)})
 }
 
 // @Summary 执行检查任务 | Run check task
 // @Tags CheckTask
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
-// @Success 202 {object} map[string]string
-// @Failure 409 {object} map[string]string "任务已有活动 execution | Task already has an active execution"
+// @Success 202 {object} qualityTaskProviderExecuteResponse
+// @Failure 400 {object} qualityErrorResponse
+// @Failure 409 {object} qualityErrorResponse "任务已有活动 execution | Task already has an active execution"
+// @Failure 500 {object} qualityErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["quality.check_task.execute"]
 // @Router /check-tasks/{id}/run [post]
@@ -159,21 +180,37 @@ func (h *CheckTaskHandler) Run(c *gin.Context) {
 	userID := getUserID(c)
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		respondInvalidRequest(c, "")
 		return
 	}
-	executionID, err := h.executor.RunCheck(context.Background(), id, tenantID, userID)
+	executionID, err := h.executor.RunCheck(c.Request.Context(), id, tenantID, userID, bearerToken(c))
 	if err != nil {
 		respondCheckRunError(c, err)
 		return
 	}
-	c.JSON(http.StatusAccepted, gin.H{"execution_id": executionID, "message": "check started"})
+	c.JSON(http.StatusAccepted, qualityTaskProviderExecuteResponse{ExecutionID: executionID, Status: commonExecution.ExecutionStatusPending})
+}
+
+func bearerToken(c *gin.Context) string {
+	value := strings.TrimSpace(c.GetHeader("Authorization"))
+	if len(value) >= 7 && strings.EqualFold(value[:7], "Bearer ") {
+		return strings.TrimSpace(value[7:])
+	}
+	return ""
 }
 
 func respondCheckRunError(c *gin.Context, err error) {
 	if errors.Is(err, commonAPI.ErrConflict) {
-		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, qualityi18n.MsgCheckTaskActive)})
+		respondQualityError(c, http.StatusConflict, "execution_already_active", commoni18n.T(c, qualityi18n.MsgCheckTaskActive))
 		return
 	}
-	c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, qualityi18n.MsgCheckTaskRunFailed)})
+	if errors.Is(err, commonAPI.ErrBadRequest) {
+		respondInvalidRequest(c, "")
+		return
+	}
+	if errors.Is(err, commonAPI.ErrNotFound) {
+		respondQualityError(c, http.StatusNotFound, "check_task_not_found", commoni18n.T(c, qualityi18n.MsgCheckTaskNotFound))
+		return
+	}
+	respondQualityError(c, http.StatusInternalServerError, "execution_start_failed", commoni18n.T(c, qualityi18n.MsgCheckTaskRunFailed))
 }

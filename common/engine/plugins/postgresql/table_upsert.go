@@ -8,7 +8,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/sqldialect"
+	commonquery "github.com/addp/common/query"
 )
 
 func (p *PostgreSQLPlugin) PrepareTableUpsert(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableUpsertOptions) error {
@@ -168,7 +168,7 @@ func validatePostgresUpsertOptions(opts plugin.TableUpsertOptions) ([]string, er
 }
 
 func postgresOnConflictClause(columns, keys []string) string {
-	dialect := sqldialect.ForEngine("postgresql")
+	dialect := commonquery.ForEngine("postgresql")
 	quotedKeys := make([]string, 0, len(keys))
 	keySet := map[string]bool{}
 	for _, key := range keys {

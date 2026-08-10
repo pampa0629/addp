@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/addp/asset/internal/authorization"
-	"github.com/addp/common/authtest"
+	"github.com/addp/common/authorization/authtest"
 	"github.com/gin-gonic/gin"
 )
 

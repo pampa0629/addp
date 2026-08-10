@@ -118,7 +118,7 @@ func (h *EngineHandler) List(c *gin.Context) {
 
 // ListRuntimeDescriptors godoc
 // @Summary      获取引擎运行时描述列表 | List engine runtime descriptors
-// @Description  返回同 Tenant 可见的脱敏控制面投影；仅工作流/脚本运行时包含 protocol/host/port，数据引擎不返回 connection_info | Return same-tenant masked control-plane projections; only workflow/script runtimes include protocol/host/port and data engines never expose connection_info
+// @Description  返回同 Tenant 可见的脱敏控制面投影；工作流、脚本、联邦查询和 AI 推理运行时包含 protocol/host/port，数据引擎不返回 connection_info | Return same-tenant masked control-plane projections; workflow, script, federated-query, and AI inference runtimes include protocol/host/port while data engines never expose connection_info
 // @Tags         运行时控制面 | Runtime Control Plane
 // @Produce      json
 // @Security     BearerAuth

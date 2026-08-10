@@ -676,7 +676,7 @@ func CatalogRootResourceType(engine *models.Engine) ResourceType {
 		return TypeService
 	case "nfs", "nas":
 		return TypeRoot
-	case "postgresql", "mysql", "doris", "clickhouse", "spark_sql", "mongodb", "neo4j":
+	case "postgresql", "oracle", "mysql", "doris", "clickhouse", "spark_sql", "mongodb", "neo4j":
 		return TypeServer
 	default:
 		return TypeRoot

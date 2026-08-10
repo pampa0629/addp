@@ -13,6 +13,7 @@ Engine Plugin 是 ADDP 对外部数据系统和内部运行时的控制面入口
 - Meta 负责扫描任务和元数据落库。
 - Manager 负责页面树、预览组合和缓存。
 - Develop 负责编辑器、执行历史和交互体验。
+- Inference 负责 Provider Connection、Model Deployment、Model Profile、推理凭据和统一 AI 推理数据面；System 只登记其 Runtime Engine Instance。
 - Transfer 负责任务配置、planner、policy、transform、worker、checkpoint、日志、指标和写后 Meta 扫描触发；具体 engine-native 读写必须消费 `common/engine` provider，不在 Transfer 内恢复私有 Reader / Writer 插件体系。
 
 ---
@@ -118,6 +119,7 @@ type CatalogModelProvider interface {
 | 引擎 | Catalog Model |
 | --- | --- |
 | PostgreSQL | `server(root) -> schema -> table/view` |
+| Oracle | `server(root) -> schema -> table/view/materialized_view` |
 | MySQL / Doris / ClickHouse | `server(root) -> database -> table/view` |
 | MongoDB | `server(root) -> database -> collection` |
 | Neo4j | `server(root) -> database -> graph` |
@@ -181,7 +183,7 @@ Tabular provider 默认不执行高成本真实 row count。只有调用方显�
 SQL catalog facts provider 的实现边界：
 
 - Common Engine 的 provider 是对上层模块的稳定能力契约；SQL catalog facts helper 只是 provider 内部实现复用工具，不作为新的对外抽象层。
-- `common/sqldialect` 当前定位为查询 SQL helper，负责标识符引用、表名限定、分页、count/sample SQL 等；不得混入 catalog facts 探测逻辑。
+- `common/query` 中的 SQL 方言能力负责标识符引用、表名限定、分页、count/sample SQL 等；不得混入 catalog facts 探测逻辑。
 - Catalog facts helper 只在多个引擎共享同一类事实来源时抽取，例如 MySQL/Doris 共享 `information_schema`；PostgreSQL、ClickHouse、Spark SQL 等差异较大的实现应保留在插件内，不做大一统 `SQLCatalogFactsDialect`。
 - GORM 只作为连接池、driver 和 raw SQL 执行工具，不承担 ADDP 的 catalog path、catalog facts、系统库过滤、row count 策略等平台元数据语义。
 
@@ -190,6 +192,7 @@ SQL catalog facts provider 差异矩阵：
 | 引擎 | namespace 术语 | catalog facts 来源 | 表类型映射 | 字段信息来源 | row count 策略 | 系统 namespace / leaf 过滤 | 当前复用边界 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | PostgreSQL | schema | `information_schema.schemata/tables/columns` + `pg_class` + `pg_stat_user_tables` | `BASE TABLE` -> `table`，`VIEW` -> `view`，其他 `table_type` 转小写下划线 | `information_schema.columns`，主键来自约束表，注释来自 `col_description` | 列表使用 `pg_class.reltuples` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count`，不主动 `ANALYZE` | `pg_catalog`、`information_schema`、`pg_toast`、`pg_temp_*`、`pg_toast_*`；当实例检测到 SuperMap `sdx_postgis` 或 `sdx_postgresql` 时过滤 `sm*` 系统 leaf | 暂留插件内；PostgreSQL 原生 catalog 语义较强，不与 MySQL/Doris 合并 |
+| Oracle | schema | `ALL_USERS`、`ALL_OBJECTS`、`ALL_TAB_COLS`、`ALL_CONSTRAINTS`、`ALL_CONS_COLUMNS`、`ALL_TAB_COMMENTS`、`ALL_COL_COMMENTS`、`ALL_TABLES` | `TABLE` -> `table`、`VIEW` -> `view`、`MATERIALIZED VIEW` -> `materialized_view` | `ALL_TAB_COLS` 且只读取 `HIDDEN_COLUMN = 'NO'`，主键来自约束视图，注释来自 comment 视图 | 列表使用 `ALL_TABLES.NUM_ROWS` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)`，不主动收集统计信息 | 过滤 Oracle-maintained 用户以及 `SYS`、`SYSTEM`、`XDB`、`MDSYS` 等系统 schema；第一阶段不枚举 synonym 和 ArcGIS SDE 内部对象 | 暂留 Oracle 插件内；Oracle data dictionary、分页、NUMBER 和 LOB 语义不得并入 PostgreSQL/MySQL helper |
 
 `supermap/sdx_postgresql` 的目录结构仍由 PostgreSQL Provider 枚举，但 `sdx` 业务表的详细 `CatalogFacts` 必须由实例绑定的兼容 Workflow Runtime 通过 SDK 返回。私有 `SmGeometry bytea` 不得作为普通 bytes 字段进入 Meta；领域 Table Session Provider 对外统一返回虚拟 `SmGeometry` geometry 字段、EWKB 行编码、精确记录数和 SDK 空间事实。Meta 必须按实例 capability 中唯一的 `bound_runtime_engine_id` 解析 Runtime Descriptor，并校验所需 direct 算子后注入该 Provider；同一 PostgreSQL Engine 中的普通 PostgreSQL / PostGIS 表必须继续由 PostgreSQL Provider 处理，不能因为 Engine Instance 启用了 SDX+ for PostgreSQL 就整库切换到 Runtime Provider。`supermap/sdx_postgis` 的数据读写可以复用 PostgreSQL/PostGIS Provider，SuperMap 专用的注册、索引、bounds 和刷新操作由 Workspace Controller 负责。
 | MySQL | database | `information_schema.schemata/tables/columns/statistics/st_spatial_reference_systems` | `BASE TABLE` -> `table`，`VIEW` -> `view`，其他 `table_type` 转小写下划线 | `information_schema.columns`，主键来自 `column_key`，注释来自 `column_comment`；geometry 类型、SRID、nullable、CRS 和空间索引由 MySQL 插件自身补充为 `SpatialInfo` | 列表将 `information_schema.tables.table_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count`；空间 extent 不通过全表聚合推断 | `information_schema`、`mysql`、`performance_schema`、`sys` | 普通表事实与 Doris 共享 `MySQLCompatibleCatalogFactsDialect`；MySQL 空间事实和行值编码保留在 MySQL 插件内；可启用表级 `Native.engine` |
@@ -447,11 +450,12 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 
 ### Runtime Provider
 
-工作流和脚本运行时使用独立 provider：
+工作流、脚本和 AI 推理运行时使用独立 provider：
 
 - `WorkflowRuntimeProvider`：工作流端点、算子描述发现、工作流执行。`ListOperators()` 返回 `OperatorDescriptor`，其中参数和输出端口分别使用 `ParameterDescriptor` / `OutputPortDescriptor`；这些结构只描述运行时算子接口，不是 Meta 模块元数据。
 - `ScriptRuntimeProvider`：Notebook/脚本受控运行端点。`ScriptSession.Info` 返回运行描述信息，例如 mode、language；它不是 catalog facts，也不是调用方 hints。
 - `ScriptRuntimeProvider` 在 `compute.script.interactive=true` 时还必须提供标准交互会话控制面。控制面负责创建、关闭有明确 TTL 的隔离会话；它返回的是服务间代理目标，不是浏览器可直接访问的共享 Lab URL。
+- `InferenceRuntimeProvider`：统一 AI 推理数据面，只提供 `chat`、`embedding`、`rerank` 标准操作；Provider Connection、Model Deployment、Model Profile、凭据和厂商协议适配归 Inference owner，不进入 Engine Plugin 或 System。
 
 `ScriptRuntimeProvider` 的上层消费必须先从 System 获取目标 Engine Instance 的 Runtime Descriptor，再以该 Descriptor 构造的非敏感连接信息调用 `OpenSession()`。Develop Notebook 任务使用 `execution_config.engine_id` 保存实例绑定；上传、Kernel 发现和执行都使用同一个绑定实例，不接受执行时临时覆盖。
 
@@ -461,9 +465,19 @@ type ScriptRuntimeProvider interface {
     RuntimeEndpoint(ctx context.Context, connInfo ConnectionInfo) (string, error)
     OpenSession(ctx context.Context, connInfo ConnectionInfo, req ScriptSessionRequest) (*ScriptSession, error)
 }
+
+type InferenceRuntimeProvider interface {
+    EnginePlugin
+    ResolveProfile(ctx context.Context, connInfo ConnectionInfo, req inference.ResolveProfileRequest) (*inference.ResolveProfileResponse, error)
+    Chat(ctx context.Context, connInfo ConnectionInfo, req inference.ChatRequest) (*inference.ChatResponse, error)
+    Embed(ctx context.Context, connInfo ConnectionInfo, req inference.EmbeddingRequest) (*inference.EmbeddingResponse, error)
+    Rerank(ctx context.Context, connInfo ConnectionInfo, req inference.RerankRequest) (*inference.RerankResponse, error)
+}
 ```
 
 `ScriptSession.Endpoint` 是受控运行 API 的服务端调用地址，不是返回给浏览器的共享交互入口。调用方必须使用自身租户 Service Access Token 调用该端点。引擎健康检查由 System 负责；消费模块不得再维护固定运行时 URL 或专用健康代理。
+
+`InferenceRuntimeProvider` 的调用方必须先从 System Runtime Descriptor 精确解析唯一 active 且声明 `compute.inference.supported=true` 的 Runtime，再使用调用方自身 Tenant Service Access Token 调用 `addp.inference/v1`。调用方不得维护 `INFERENCE_URL`、按默认端口拼接地址或在多个候选中自动选择。第一版只允许一个平台内置 Inference Runtime；多实例能力必须在引入显式绑定后整体切换。
 
 交互会话标准控制面为 `POST /api/interactive-sessions` 和 `DELETE /api/interactive-sessions/{session_id}`。请求/响应使用 `InteractiveScriptSessionRequest` 和 `InteractiveScriptSession` 强类型契约。会话必须绑定 `tenant_id`、owner task、发起 User、kernel、外部代理 base path 和到期时间。Runtime 只接受调用模块的 Tenant Service Access Token 创建或关闭会话；会话端点只能由 owner 模块反向代理消费。浏览器不得获得 Runtime host、端口、Jupyter token 或 Service Access Token。Runtime 必须在正常关闭和 TTL 清理时保存 Notebook 并终止 kernel/process；owner 模块重启后，已有浏览器会话必须失效，不能恢复成无主共享会话。
 
@@ -484,6 +498,7 @@ type ScriptRuntimeProvider interface {
 | 任意 `addp.workflow/v1` Runtime | System Engine Instance + Common 通用 `HTTPWorkflowRuntimeProvider`；不按 Runtime `engine_type` 编译独立插件 |
 | DuckDB | `EnginePlugin` + `FederatedQueryRuntimeProvider` |
 | Jupyter | `EnginePlugin` + `ScriptRuntimeProvider`，并声明 `compute.script.interactive=true` |
+| ADDP Inference Runtime | `EnginePlugin` + `InferenceRuntimeProvider`，并声明 `compute.inference.supported=true` |
 
 ---
 
@@ -494,6 +509,7 @@ type ScriptRuntimeProvider interface {
 - Meta 扫描 API 和任务参数中的路径型目标统一命名为 `catalog_paths`。它表示引擎 catalog model 下的路径。
 - Manager：使用 Meta 树构建探查树；预览由 Manager 自身 preview provider / composer 组合完成。结构化数据优先消费 `BatchReadableProvider` 或只读 sample query；graph 预览优先消费 `type_info.graph` / `CatalogFactsProvider` 得到 schema 视图，并通过 `GraphSampleProvider` 或 `GraphQueryProvider` 获取轻量子图样本；对象/文件优先消费 `ContentReadableProvider` 并结合格式解析。
 - Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`；Notebook 引擎实例通过 `execution_config.engine_id` 绑定，并以 System Runtime Descriptor + `ScriptRuntimeProvider.OpenSession()` 解析端点；Notebook Native Engine Facade 只在 `common-python` 把原生方法编译为 `CatalogProvider.ListChildren` / `CatalogFactsProvider.DescribeCatalogFacts`，不得反向新增 PostgreSQL、MongoDB、MinIO 等专用后端接口；图结构展示入口使用 `CatalogFactsProvider` / `GraphQueryProvider`。
+- Agent、Copilot、Manager：通过 System Runtime Descriptor 发现唯一 Inference Runtime，并消费 `InferenceRuntimeProvider`；业务场景绑定仍归各 owner，不能把 Runtime 端点、厂商协议或凭据保存到调用方配置。
 - Service：发布普通查询服务时使用 query runtime 和 Meta item/spatial 元数据；图查询服务使用 `GraphQueryProvider`。图查询服务的易用向导应消费 graph item 的 `type_info.graph.node_shapes`，不得再从 Meta 树读取 Neo4j label item。
 - Transfer：使用 source / target endpoint 生成执行计划。snapshot native table 读写消费 `TableReadSessionProvider`、`BatchReadableProvider`、`TableWritePreparer`、`TableWriteSessionProvider`、`BatchWritableProvider`；watermark bounded incremental 必须消费 `BoundedWatermarkReadProvider` 和幂等 `TableUpsertProvider`；encoded file/object 读写先通过 engine content provider 和 `common/engine/contentadapter` 构造 `common/contentio` 抽象，再交给 `common/format` provider。高吞吐数据搬运优先消费 batch / table session / content stream 能力，而不是 query runtime。
 - Transfer continuous runtime：业务 Kafka source 必须消费 `ChangeStreamReaderProvider`，由 Transfer adapter 生成 ChangeEvent 并通过 ChangeApplyWriter 组合目标 Provider。目标必须声明原子、单调且覆盖所需 operation 的 `PartitionedTableChangeApplyProvider`；当前 PostgreSQL 与 MySQL 实现该 Provider。Infra Kafka 连接来自 ADDP infra 配置，不注册 System Engine，但复用同一 Kafka reader/client 底层实现。

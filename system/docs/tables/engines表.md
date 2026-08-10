@@ -21,7 +21,7 @@
 | `engine_origin` | VARCHAR(50) | NOT NULL, DEFAULT 'general' | 引擎来源：general（通用）/extension（扩展） |
 | `connection_info` | JSON | NOT NULL | 连接信息（敏感字段加密） |
 | `description` | TEXT | | 描述信息 |
-| `lifecycle_state` | VARCHAR(20) | NOT NULL, DEFAULT 'active', INDEX | 生命周期：`active` / `disabled` / `deleting` |
+| `lifecycle_state` | VARCHAR(20) | NOT NULL, DEFAULT 'active', INDEX | 启用状态/生命周期：`active` / `disabled` / `deleting`。它表示平台是否允许正常消费，不表示外部端点当前可达。 |
 | `created_by` | INTEGER | | 创建者ID |
 | `deletion_scan_task_id` | VARCHAR(64) | NULLABLE | 删除工作流最近一次 cleanup scan task ID |
 | `deletion_execute_task_id` | VARCHAR(64) | NULLABLE | 删除工作流最近一次 cleanup execute task ID |
@@ -41,17 +41,17 @@
 
 **注意**：
 - 历史 `unique_identifier`、`extension_api_config` 和 `health_check_config` 字段已废弃，并由 System 启动迁移删除。
-- 工作流和脚本运行时通过 System Engine Instance 保存稳定身份、capabilities 和非敏感 `protocol/host/port`；业务模块只通过 Runtime Descriptor 获取端点投影并调用 `common/engine` Provider。
+- 工作流、脚本、联邦查询和 AI 推理运行时通过 System Engine Instance 保存稳定身份、capabilities 和非敏感 `protocol/host/port`；业务模块只通过 Runtime Descriptor 获取端点投影并调用 `common/engine` Provider。
 - API 响应中的 `capabilities_view` 是 System 后端根据 `capabilities` 派生的展示模型，定义在 `common/models` 供各模块客户端复用；它不是 `system.engines` 表字段，也不写入数据库。
 - `capabilities.compute.query.parameters` 声明查询值参数能力：`supported` 表示是否支持，`languages` 限定可参数化的查询语言，`types` 固定声明可绑定的标量类型；Develop 查询工作台只能按该声明开放参数定义和执行覆盖。
 - `capabilities.extensions.spatial_workspaces` 用于承载数据库实例中可识别的厂商空间工作区事实，例如 SuperMap `sdx_postgis`、`sdx_postgresql` 或 ArcGIS `sde`；System 应自动探测并在详情页展示，高危启用入口和实例级 Provider 选择应基于这一事实自动收口。
 - System 提供显性的高危操作入口 `POST /api/v1/system/engines/{id}/spatial-workspaces/{ecosystem}/{kind}/enable`。`supermap/sdx_postgis` 与 `supermap/sdx_postgresql` 分别按 direct-only 启用算子发现兼容 Workflow Runtime；只有持续通过 SDK 读写私有 Geometry 的 `sdx_postgresql` 持久化 `bound_runtime_engine_id`，`sdx_postgis` 仅在启用动作中临时使用 Runtime，不按固定 `engine_type` 选择；同一 PostgreSQL 实例不得并存或互相回退。
 
-### 2.3 连接状态缓存字段
+### 2.3 最近连接检测字段
 
 | 字段名 | 类型 | 约束 | 说明 |
 |--------|------|------|------|
-| `connection_status` | VARCHAR(20) | DEFAULT 'unknown', INDEX | 连接状态：online/offline/unknown/checking |
+| `connection_status` | VARCHAR(20) | DEFAULT 'unknown', INDEX | 最近一次连接检测结果：online/offline/unknown/checking。它是带 `last_check_at` 和 `check_message` 的观测缓存，不改变 `lifecycle_state`。 |
 | `last_check_at` | TIMESTAMP | | 上次检测时间 |
 | `check_message` | TEXT | | 检测结果消息 |
 
@@ -112,6 +112,8 @@
 **典型类型**：
 - 工作流运行时：`geopython_workflow`、`spark_workflow`、`model3d_workflow`、`pointcloud_workflow`、`supermap_workflow`，以及手动注册的参考实现 `math_workflow`
 - 内置 Notebook 运行时示例：`jupyter`
+- 内置联邦查询运行时：`duckdb`
+- 内置 AI 推理运行时：`inference_runtime`
 - 用户也可以按 ADDP 扩展引擎规范实现自研 `engine_type`，例如 `acme_geo_workflow`
 
 **注册入口**：System 前端“注册扩展引擎”表单用于手动注册 `addp.workflow/v1` 工作流运行时。表单会按 `engine_type` 生成默认 `engine.capabilities/v1`，支持填入 SuperMap Workflow 和 Math Workflow 示例值，并提供“检查服务”只读探测：System 后端会访问 `/health` 和 `/api/operators`，确认运行时服务可达且算子 `engine_type` 与注册值一致。内置插件类型保存时以插件能力声明为准，前端提交的默认 capabilities 不作为最终事实源。Math Workflow 在开发环境中可自动启动服务，但不会自动写入本表；SuperMap Workflow 需要先按 `engines/supermap-workflow/README.md` 构建 iObjects C++ 基础镜像、注入许可并启动运行时。
@@ -218,9 +220,10 @@ type StorageCapabilities struct {
 }
 
 type ComputeCapabilities struct {
-    Query    *QueryCapability    `json:"query,omitempty"`
-    Workflow *WorkflowCapability `json:"workflow,omitempty"`
-    Script   *ScriptCapability   `json:"script,omitempty"`
+    Query     *QueryCapability     `json:"query,omitempty"`
+    Workflow  *WorkflowCapability  `json:"workflow,omitempty"`
+    Script    *ScriptCapability    `json:"script,omitempty"`
+    Inference *InferenceCapability `json:"inference,omitempty"`
 }
 ```
 
@@ -229,10 +232,10 @@ type ComputeCapabilities struct {
 | 字段 | 说明 |
 |---|---|
 | `schema_version` | 固定为 `engine.capabilities/v1` |
-| `engine_type` | 引擎类型，如 `postgresql`、`mysql`、`acme_geo_workflow` |
-| `engine_family` | 粗粒度引擎族，如 `tabular`、`object`、`file`、`dynamic_schema`、`graph`、`event_stream`、`workflow`、`script` |
+| `engine_type` | 引擎类型，如 `postgresql`、`mysql`、`acme_geo_workflow`、`inference_runtime` |
+| `engine_family` | 粗粒度引擎族，如 `tabular`、`object`、`file`、`dynamic_schema`、`graph`、`event_stream`、`workflow`、`script`、`inference` |
 | `storage` | 存储、目录、catalog facts、内容访问能力 |
-| `compute` | 查询、工作流、脚本或 Notebook 运行能力 |
+| `compute` | 查询、工作流、脚本、Notebook 或 AI 推理运行能力 |
 | `limits` | 跨能力限制，有真实调用方时使用 |
 | `extensions` | 引擎特有补充信息，不得替代核心字段 |
 
@@ -592,8 +595,8 @@ System 根据 Service Principal 与 `engine_type` 的固定归属校验注册请
 
 | 状态 | 含义 |
 |------|------|
-| `online` | 连接成功 |
-| `offline` | 连接失败 |
+| `online` | 最近一次检测成功 |
+| `offline` | 最近一次检测失败 |
 | `unknown` | 未检测（新创建） |
 | `checking` | 检测中（预留） |
 
@@ -602,7 +605,8 @@ System 根据 Service Principal 与 `engine_type` 的固定归属校验注册请
 **混合模式**：
 
 1. **启动时检测**
-   - System 服务启动时自动检测所有引擎
+   - System 服务启动后检测所有引擎
+   - 首次检测失败时，在有限启动窗口内按间隔重试，覆盖 Runtime 晚于 System 就绪的启动顺序
    - 更新 `connection_status`、`last_check_at`、`check_message`
 
 2. **用户手动触发**
@@ -610,8 +614,8 @@ System 根据 Service Principal 与 `engine_type` 的固定归属校验注册请
    - 同步返回检测结果并更新状态
 
 3. **不实施后台定时检测**
-   - 原因：节省资源，避免频繁连接
-   - 用户按需检测即可
+   - 连接状态仍是最近一次检测缓存，不做后台持续探测
+   - 原因：节省资源，避免频繁连接；用户按需检测即可
 
 ---
 

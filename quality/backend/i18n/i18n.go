@@ -20,6 +20,16 @@ const (
 	MsgIssueNotFound         = "quality.issue.not_found"
 	MsgIssueUpdateFailed     = "quality.issue.update_failed"
 	MsgIssueStatusInvalid    = "quality.issue.status_invalid"
+	MsgInvalidRequest        = "quality.request.invalid"
+	MsgConflict              = "quality.request.conflict"
+	MsgInternal               = "quality.internal.error"
+	MsgRuleAppUpdateFailed   = "quality.rule_app.update_failed"
+	MsgCheckTaskCreateFailed = "quality.check_task.create_failed"
+	MsgCheckTaskUpdateFailed = "quality.check_task.update_failed"
+	MsgExecutionListFailed   = "quality.execution.list_failed"
+	MsgExecutionNotFound     = "quality.execution.not_found"
+	MsgDeleted               = "quality.operation.deleted"
+	MsgUpdated               = "quality.operation.updated"
 )
 
 func init() {

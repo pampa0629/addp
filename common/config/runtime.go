@@ -1,0 +1,52 @@
+package config
+
+import (
+	"fmt"
+	"net"
+	"os"
+	"strings"
+)
+
+// CheckPortAvailable 检查端口是否可用
+// 参数 port 可以是纯数字（如 "8180"）或带冒号（如 ":8180"）
+func CheckPortAvailable(port string) error {
+	// 标准化端口格式
+	if !strings.HasPrefix(port, ":") {
+		port = ":" + port
+	}
+
+	// 尝试监听端口
+	ln, err := net.Listen("tcp", port)
+	if err != nil {
+		return fmt.Errorf("port %s is already in use or cannot be bound: %w", port, err)
+	}
+	defer ln.Close()
+
+	return nil
+}
+
+// BuildServiceURL 构建服务URL
+// host: localhost、host.docker.internal 或服务名
+// port: 纯数字端口（如 "8180"）
+func BuildServiceURL(host, port string) string {
+	// 去除可能的冒号前缀
+	port = strings.TrimPrefix(port, ":")
+
+	// 如果 host 已经包含端口，直接返回
+	if strings.Contains(host, ":") {
+		return "http://" + host
+	}
+
+	return fmt.Sprintf("http://%s:%s", host, port)
+}
+
+// GetServiceHost 获取服务统一 host
+// 开发环境: localhost
+// Docker环境: host.docker.internal 或容器服务名
+func GetServiceHost() string {
+	host := os.Getenv("SERVICE_HOST")
+	if host == "" {
+		host = "localhost"
+	}
+	return host
+}

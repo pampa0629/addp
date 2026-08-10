@@ -1,6 +1,7 @@
 package repository
 
 import (
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/model/internal/models"
 	"gorm.io/gorm"
 )
@@ -59,6 +60,19 @@ func (r *TableRelationRepository) Create(rel *models.TableRelation) error {
 	return r.db.Create(rel).Error
 }
 
+func (r *TableRelationRepository) GetByID(id, sourceTable, tenantID int64) (*models.TableRelation, error) {
+	var relation models.TableRelation
+	err := r.db.Where("id = ? AND source_table = ? AND tenant_id = ?", id, sourceTable, tenantID).First(&relation).Error
+	return &relation, commonrepo.WrapDBError(err)
+}
+
+func (r *TableRelationRepository) ListByTable(tableID, tenantID int64) ([]models.TableRelation, error) {
+	var relations []models.TableRelation
+	err := r.db.Where("tenant_id = ? AND (source_table = ? OR target_table = ?)", tenantID, tableID, tableID).
+		Find(&relations).Error
+	return relations, err
+}
+
 // Exists 检查同一对字段间关联是否已存在
 func (r *TableRelationRepository) Exists(sourceTable, sourceField, targetTable, targetField, tenantID int64) (bool, error) {
 	var count int64
@@ -71,6 +85,13 @@ func (r *TableRelationRepository) Exists(sourceTable, sourceField, targetTable, 
 
 // Delete 删除关联（按 ID，并验证归属）
 func (r *TableRelationRepository) Delete(id, sourceTable, tenantID int64) error {
-	return r.db.Where("id = ? AND source_table = ? AND tenant_id = ?", id, sourceTable, tenantID).
-		Delete(&models.TableRelation{}).Error
+	result := r.db.Where("id = ? AND source_table = ? AND tenant_id = ?", id, sourceTable, tenantID).
+		Delete(&models.TableRelation{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }

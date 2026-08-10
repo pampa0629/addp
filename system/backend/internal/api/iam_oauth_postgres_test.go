@@ -16,7 +16,7 @@ import (
 
 	commonauth "github.com/addp/common/authorization"
 	sharedauth "github.com/addp/common/middleware/auth"
-	commonutils "github.com/addp/common/utils"
+	commonsecurity "github.com/addp/common/security"
 	"github.com/addp/system/internal/iam"
 	iamoauth "github.com/addp/system/internal/iam/oauth"
 	"github.com/addp/system/internal/middleware"
@@ -237,7 +237,7 @@ func assertMetaServiceEngineDetailAgainstPostgres(
 		t.Fatalf("migrate engine table for contract test: %v", err)
 	}
 	encryptionKey := []byte("0123456789abcdef0123456789abcdef")
-	encryptedPassword, err := commonutils.Encrypt("meta-plain-password", encryptionKey)
+	encryptedPassword, err := commonsecurity.Encrypt("meta-plain-password", encryptionKey)
 	if err != nil {
 		t.Fatalf("encrypt engine password: %v", err)
 	}

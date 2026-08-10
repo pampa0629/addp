@@ -108,7 +108,7 @@ export const documentAPI = {
   getMappings(id) { return client.get(`/standard/documents/${id}/mappings`) },
   setMappings(id, data) { return client.put(`/standard/documents/${id}/mappings`, data) },
   uploadFile(id, formData) { return client.post(`/standard/documents/${id}/upload`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }) },
-  downloadUrl(id) { return client.defaults.baseURL + `/standard/documents/${id}/download` }
+  download(id) { return client.get(`/standard/documents/${id}/download`, { responseType: 'blob' }) }
 }
 
 // ========== 标准项维度的文档关联 API ==========
@@ -118,7 +118,7 @@ export const elementDocumentAPI = {
   link(elementId, docId) { return client.post(`/standard/elements/${elementId}/documents/link`, { doc_id: docId }) },
   unlink(elementId, docId) { return client.delete(`/standard/elements/${elementId}/documents/${docId}`) },
   uploadFile(docId, formData) { return documentAPI.uploadFile(docId, formData) },
-  downloadUrl(docId) { return documentAPI.downloadUrl(docId) }
+  download(docId) { return documentAPI.download(docId) }
 }
 
 export const glossaryDocumentAPI = {
@@ -127,7 +127,7 @@ export const glossaryDocumentAPI = {
   link(glossaryId, docId) { return client.post(`/standard/glossaries/${glossaryId}/documents/link`, { doc_id: docId }) },
   unlink(glossaryId, docId) { return client.delete(`/standard/glossaries/${glossaryId}/documents/${docId}`) },
   uploadFile(docId, formData) { return documentAPI.uploadFile(docId, formData) },
-  downloadUrl(docId) { return documentAPI.downloadUrl(docId) }
+  download(docId) { return documentAPI.download(docId) }
 }
 
 export const metricDocumentAPI = {
@@ -136,7 +136,7 @@ export const metricDocumentAPI = {
   link(metricId, docId) { return client.post(`/standard/metrics/${metricId}/documents/link`, { doc_id: docId }) },
   unlink(metricId, docId) { return client.delete(`/standard/metrics/${metricId}/documents/${docId}`) },
   uploadFile(docId, formData) { return documentAPI.uploadFile(docId, formData) },
-  downloadUrl(docId) { return documentAPI.downloadUrl(docId) }
+  download(docId) { return documentAPI.download(docId) }
 }
 
 // ========== 维度层级 API ==========

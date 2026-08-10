@@ -33,6 +33,15 @@ type ListEntityOptions struct {
 }
 
 func (r *EntityRepository) List(tenantID int64, opts ListEntityOptions) ([]models.Entity, int64, error) {
+	if opts.Page <= 0 {
+		opts.Page = 1
+	}
+	if opts.PageSize <= 0 {
+		opts.PageSize = 20
+	}
+	if opts.PageSize > 100 {
+		opts.PageSize = 100
+	}
 	query := r.db.Model(&models.Entity{}).Where("tenant_id = ?", tenantID)
 
 	if opts.DomainID != nil {
@@ -51,16 +60,10 @@ func (r *EntityRepository) List(tenantID int64, opts ListEntityOptions) ([]model
 		return nil, 0, err
 	}
 
-	if opts.Page <= 0 {
-		opts.Page = 1
-	}
-	if opts.PageSize <= 0 {
-		opts.PageSize = 20
-	}
 	offset := (opts.Page - 1) * opts.PageSize
 
 	var entities []models.Entity
-	err := query.Order("created_at DESC").Offset(offset).Limit(opts.PageSize).Find(&entities).Error
+	err := query.Order("created_at DESC, id DESC").Offset(offset).Limit(opts.PageSize).Find(&entities).Error
 	return entities, total, err
 }
 
@@ -69,13 +72,27 @@ func (r *EntityRepository) Update(entity *models.Entity) error {
 }
 
 func (r *EntityRepository) Delete(id, tenantID int64) error {
-	return r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Entity{}).Error
+	result := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Entity{})
+	if result.Error != nil {
+		return commonrepo.WrapDBError(result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (r *EntityRepository) UpdateStatus(id, tenantID int64, status string, updatedBy int64) error {
-	return r.db.Model(&models.Entity{}).
+	result := r.db.Model(&models.Entity{}).
 		Where("id = ? AND tenant_id = ?", id, tenantID).
-		Updates(map[string]interface{}{"status": status, "updated_by": updatedBy}).Error
+		Updates(map[string]interface{}{"status": status, "updated_by": updatedBy})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (r *EntityRepository) ExistsByCode(code string, tenantID int64, excludeID int64) (bool, error) {
@@ -114,7 +131,14 @@ func (r *EntityRepository) UpdateAttribute(attr *models.EntityAttribute) error {
 
 // DeleteAttribute 删除实体属性
 func (r *EntityRepository) DeleteAttribute(attrID, entityID int64) error {
-	return r.db.Where("id = ? AND entity_id = ?", attrID, entityID).Delete(&models.EntityAttribute{}).Error
+	result := r.db.Where("id = ? AND entity_id = ?", attrID, entityID).Delete(&models.EntityAttribute{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // GetByCode 根据code获取实体
@@ -135,3 +159,5 @@ func (r *EntityRepository) ListByTenantID(tenantID int64) ([]models.Entity, erro
 func (r *EntityRepository) DeleteByEntityID(entityID int64) error {
 	return r.db.Where("entity_id = ?", entityID).Delete(&models.EntityAttribute{}).Error
 }
+
+func (r *EntityRepository) DB() *gorm.DB { return r.db }

@@ -1,9 +1,12 @@
 <template>
   <div class="dim-hierarchy-list">
+    <div class="page-header">
+      <h2>{{ $t('standard.dimHierarchy.title') }}</h2>
+    </div>
     <el-card shadow="never" class="search-card">
       <el-row :gutter="12" align="middle">
         <el-col :span="8">
-          <el-input v-model="keyword" :placeholder="$t('standard.dimHierarchy.searchPlaceholder')" clearable @change="handleSearch">
+          <el-input v-model="keyword" :placeholder="$t('standard.dimHierarchy.searchPlaceholder')" clearable @change="syncSearch" @clear="syncSearch">
             <template #prefix><el-icon><Search /></el-icon></template>
           </el-input>
         </el-col>
@@ -37,16 +40,18 @@
             {{ new Date(row.created_at).toLocaleString('zh-CN') }}
           </template>
         </el-table-column>
-        <el-table-column :label="$t('standard.common.actions')" width="120" fixed="right">
+        <el-table-column :label="$t('standard.common.actions')" width="190" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openDetail(row)">
-              {{ $t('standard.dimHierarchy.manageLevels') }}
-            </el-button>
-            <el-popconfirm :title="$t('standard.dimHierarchy.confirmDelete')" @confirm="handleDelete(row.id)">
-              <template #reference>
-                <el-button link type="danger">{{ $t('standard.common.delete') }}</el-button>
-              </template>
-            </el-popconfirm>
+            <div class="table-actions">
+              <el-button link type="primary" @click="openDetail(row)">
+                {{ $t('standard.dimHierarchy.manageLevels') }}
+              </el-button>
+              <el-popconfirm :title="$t('standard.dimHierarchy.confirmDelete')" @confirm="handleDelete(row.id)">
+                <template #reference>
+                  <el-button link type="danger">{{ $t('standard.common.delete') }}</el-button>
+                </template>
+              </el-popconfirm>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -74,8 +79,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, reactive } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, reactive, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
@@ -83,11 +88,12 @@ import { dimensionHierarchyAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
+const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
 const creating = ref(false)
 const list = ref([])
-const keyword = ref('')
+const keyword = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
 const createVisible = ref(false)
 const createFormRef = ref(null)
 
@@ -115,7 +121,12 @@ async function loadList() {
   }
 }
 
-function handleSearch() {}
+function syncSearch() {
+  navigateStandardRoute(router, {
+    path: '/dimension-hierarchies',
+    query: keyword.value ? { keyword: keyword.value } : {}
+  }, { history: 'replace' })
+}
 
 function openCreateDialog() {
   Object.assign(createForm, { name: '', code: '', description: '' })
@@ -136,7 +147,10 @@ async function handleCreate() {
   }
 }
 
-const openDetail = row => navigateStandardRoute(router, `/dimension-hierarchies/${row.id}`)
+const openDetail = row => navigateStandardRoute(router, {
+  path: `/dimension-hierarchies/${row.id}`,
+  query: keyword.value ? { keyword: keyword.value } : {}
+})
 
 async function handleDelete(id) {
   try {
@@ -148,9 +162,18 @@ async function handleDelete(id) {
   }
 }
 
+watch(() => route.query.keyword, value => {
+  const next = typeof value === 'string' ? value : ''
+  if (next !== keyword.value) keyword.value = next
+})
+
 onMounted(loadList)
 </script>
 
 <style scoped>
+.dim-hierarchy-list { padding: 20px; }
+.page-header { margin-bottom: 16px; }
+.page-header h2 { margin: 0; font-size: 18px; color: var(--el-text-color-primary); }
 .search-card { margin-bottom: 0; }
+.table-actions { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 </style>

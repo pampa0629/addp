@@ -157,6 +157,12 @@ other = "The engine is currently unavailable"
 [develop.notebook.catalog_timeout]
 other = "The catalog request timed out"
 
+[develop.notebook.copilot_invalid_request]
+other = "Invalid Notebook AI assistant request"
+
+[develop.notebook.copilot_failed]
+other = "Notebook AI assistant generation failed: {{.Detail}}"
+
 [develop.approval.invalid_request]
 other = "Invalid approval request"
 

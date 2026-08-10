@@ -20,7 +20,7 @@
           </el-select>
         </el-col>
         <el-col :span="4">
-          <el-button type="primary" @click="openCreateDialog">
+          <el-button v-if="can('model.entity.create')" type="primary" @click="openCreateDialog">
             <el-icon><Plus /></el-icon>
             {{ t('model.entity.new') }}
           </el-button>
@@ -28,8 +28,19 @@
       </el-row>
     </el-card>
 
+    <el-alert
+      v-if="loadError"
+      class="load-error"
+      type="error"
+      :title="loadError"
+      show-icon
+      :closable="false"
+    >
+      <el-button link type="danger" @click="reload">{{ t('model.common.retry') }}</el-button>
+    </el-alert>
+
     <!-- 实体列表 -->
-    <el-card shadow="never" style="margin-top:12px">
+    <el-card v-else shadow="never" style="margin-top:12px">
       <el-table :data="entities" v-loading="loading" stripe>
         <el-table-column :label="t('model.entity.name')" prop="name" min-width="160">
           <template #default="{ row }">
@@ -57,7 +68,7 @@
         <el-table-column :label="t('model.attribute.actions')" width="150" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="goToDetail(row)">{{ t('model.common.design') }}</el-button>
-            <el-popconfirm :title="t('model.entity.delete_confirm')" @confirm="handleDelete(row.id)">
+            <el-popconfirm v-if="can('model.entity.delete')" :title="t('model.entity.delete_confirm')" @confirm="handleDelete(row.id)">
               <template #reference>
                 <el-button link type="danger">{{ t('model.common.delete') }}</el-button>
               </template>
@@ -112,11 +123,16 @@ import { Plus, Search } from '@element-plus/icons-vue'
 import { entityAPI, domainAPI } from '../api/model'
 import { navigateModelRoute } from '../utils/moduleNavigation'
 import { useI18n } from 'vue-i18n'
+import { useAuthStore } from '../store/auth'
+import { getModelErrorMessage } from '../utils/apiError'
 
 const { t } = useI18n()
 
 const router = useRouter()
+const authStore = useAuthStore()
+const can = permission => authStore.hasPermission(permission)
 const loading = ref(false)
+const loadError = ref('')
 const creating = ref(false)
 const entities = ref([])
 const domains = ref([])
@@ -136,6 +152,14 @@ const getDomainName = (id) => domains.value.find(d => d.id === id)?.name
 
 const loadEntities = async () => {
   loading.value = true
+  loadError.value = ''
+  if (!can('model.entity.read')) {
+    entities.value = []
+    pagination.total = 0
+    loadError.value = t('model.common.permission_denied')
+    loading.value = false
+    return
+  }
   try {
     const params = {
       page: pagination.page,
@@ -147,14 +171,26 @@ const loadEntities = async () => {
     const res = await entityAPI.list(params)
     entities.value = res.data || []
     pagination.total = res.total || 0
+  } catch (err) {
+    entities.value = []
+    pagination.total = 0
+    loadError.value = getModelErrorMessage(err, t, 'model.common.load_failed')
   } finally {
     loading.value = false
   }
 }
 
 const loadDomains = async () => {
-  const res = await domainAPI.list()
-  domains.value = res.data || []
+  try {
+    const res = await domainAPI.list()
+    domains.value = res || []
+  } catch (err) {
+    loadError.value = getModelErrorMessage(err, t, 'model.common.load_failed')
+  }
+}
+
+const reload = async () => {
+  await Promise.all([loadDomains(), loadEntities()])
 }
 
 const handleSearch = () => {
@@ -176,7 +212,7 @@ const handleCreate = async () => {
     createDialogVisible.value = false
     navigateModelRoute(router, `/entities/${res.id}`, { history: 'replace' })
   } catch (err) {
-    ElMessage.error(err.response?.data?.error || t('model.common.create_failed'))
+    ElMessage.error(getModelErrorMessage(err, t, 'model.common.create_failed'))
   } finally {
     creating.value = false
   }
@@ -187,8 +223,8 @@ const handleDelete = async (id) => {
     await entityAPI.delete(id)
     ElMessage.success(t('model.common.delete_success'))
     loadEntities()
-  } catch {
-    ElMessage.error(t('model.common.delete_failed'))
+  } catch (err) {
+    ElMessage.error(getModelErrorMessage(err, t, 'model.common.delete_failed'))
   }
 }
 
@@ -197,8 +233,7 @@ const goToDetail = (row) => {
 }
 
 onMounted(() => {
-  loadDomains()
-  loadEntities()
+  reload()
 })
 </script>
 
@@ -209,6 +244,10 @@ onMounted(() => {
 
 .search-card {
   margin-bottom: 0;
+}
+
+.load-error {
+  margin-top: 12px;
 }
 
 .pagination-wrapper {

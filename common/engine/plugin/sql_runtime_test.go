@@ -7,11 +7,17 @@ import (
 )
 
 type fakeSQLRuntimeProvider struct {
+	engineType  string
 	lastSQL     string
 	lastOptions QueryOptions
 }
 
-func (p *fakeSQLRuntimeProvider) Type() string { return "postgresql" }
+func (p *fakeSQLRuntimeProvider) Type() string {
+	if p.engineType != "" {
+		return p.engineType
+	}
+	return "postgresql"
+}
 
 func (p *fakeSQLRuntimeProvider) DisplayName() string { return "Fake SQL" }
 
@@ -75,6 +81,7 @@ func TestBindSQLRuntimeParametersUsesDialectPlaceholderStyle(t *testing.T) {
 		wantSQL string
 	}{
 		{dialect: "postgres", wantSQL: "SELECT * FROM members WHERE status = $1 AND score > $2"},
+		{dialect: "oracle", wantSQL: "SELECT * FROM members WHERE status = :1 AND score > :2"},
 		{dialect: "mysql", wantSQL: "SELECT * FROM members WHERE status = ? AND score > ?"},
 		{dialect: "clickhouse", wantSQL: "SELECT * FROM members WHERE status = ? AND score > ?"},
 	}
@@ -145,6 +152,22 @@ func TestReadSQLBatchPaginatesCustomQuery(t *testing.T) {
 		t.Fatal(err)
 	}
 	if provider.lastSQL != "SELECT * FROM (SELECT * FROM public.yanshi) AS addp_page LIMIT 50 OFFSET 150" {
+		t.Fatalf("generated SQL = %q", provider.lastSQL)
+	}
+}
+
+func TestReadSQLBatchUsesOraclePagination(t *testing.T) {
+	provider := &fakeSQLRuntimeProvider{engineType: "oracle"}
+
+	_, err := ReadSQLBatch(context.Background(), provider, nil, CatalogPath{}, BatchReadOptions{
+		Query:  "SELECT * FROM BUSINESS.ORDERS",
+		Limit:  50,
+		Offset: 150,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.lastSQL != "SELECT * FROM (SELECT * FROM BUSINESS.ORDERS) addp_page OFFSET 150 ROWS FETCH NEXT 50 ROWS ONLY" {
 		t.Fatalf("generated SQL = %q", provider.lastSQL)
 	}
 }

@@ -1,14 +1,65 @@
 package service
 
 import (
+	"context"
 	"fmt"
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/repository"
+	"regexp"
 	"strings"
 )
 
 type LogicalTableService struct {
-	repo *repository.LogicalTableRepository
+	repo     *repository.LogicalTableRepository
+	standard *commonClient.StandardClient
+}
+
+func (s *LogicalTableService) SetStandardClient(client *commonClient.StandardClient) {
+	s.standard = client
+}
+
+func (s *LogicalTableService) validateReferences(tenantID int64, domainID, elementID, hierarchyID *int64) error {
+	if s.standard == nil {
+		return nil
+	}
+	client := s.standard.WithTenantID(uint(tenantID))
+	if domainID != nil && *domainID > 0 {
+		if err := client.ValidateDomain(context.Background(), *domainID); err != nil {
+			return err
+		}
+	}
+	if elementID != nil && *elementID > 0 {
+		if err := client.ValidateElement(context.Background(), *elementID); err != nil {
+			return err
+		}
+	}
+	if hierarchyID != nil && *hierarchyID > 0 {
+		if err := client.ValidateDimensionHierarchy(context.Background(), *hierarchyID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateLogicalTableShape(tableType string, scdType int, grain string) error {
+	if tableType != "entity" && tableType != "fact" && tableType != "dimension" {
+		return fmt.Errorf("不支持的逻辑表类型: %s", tableType)
+	}
+	if tableType == "dimension" {
+		if scdType < 0 || scdType > 3 {
+			return fmt.Errorf("维度表 SCD 类型必须为 0 到 3")
+		}
+	} else if scdType != 0 {
+		return fmt.Errorf("只有维度表可以设置 SCD 类型")
+	}
+	if tableType == "fact" && strings.TrimSpace(grain) == "" {
+		return fmt.Errorf("事实表必须声明粒度")
+	}
+	if tableType != "fact" && strings.TrimSpace(grain) != "" {
+		return fmt.Errorf("只有事实表可以声明粒度")
+	}
+	return nil
 }
 
 func NewLogicalTableService(repo *repository.LogicalTableRepository) *LogicalTableService {
@@ -16,6 +67,18 @@ func NewLogicalTableService(repo *repository.LogicalTableRepository) *LogicalTab
 }
 
 func (s *LogicalTableService) CreateLogicalTable(req *models.CreateLogicalTableRequest, tenantID, userID int64) (*models.LogicalTable, error) {
+	if strings.TrimSpace(req.Layer) == "" {
+		return nil, fmt.Errorf("逻辑表必须引用数仓分层")
+	}
+	if err := validateMaterializationKeys(req.Materialization); err != nil {
+		return nil, err
+	}
+	if err := validateLogicalTableShape(req.TableType, req.SCDType, req.GrainDescription); err != nil {
+		return nil, err
+	}
+	if err := s.validateReferences(tenantID, req.DomainID, nil, nil); err != nil {
+		return nil, err
+	}
 	exists, err := s.repo.ExistsByCode(req.Code, tenantID, 0)
 	if err != nil {
 		return nil, err
@@ -59,11 +122,17 @@ func (s *LogicalTableService) UpdateLogicalTable(id, tenantID, userID int64, req
 	if err != nil {
 		return nil, err
 	}
+	if table.Status != "draft" {
+		return nil, fmt.Errorf("已审批逻辑表必须先重新打开后才能修改")
+	}
 
 	if req.Name != "" {
 		table.Name = req.Name
 	}
 	if req.DomainID != nil {
+		if err := s.validateReferences(tenantID, req.DomainID, nil, nil); err != nil {
+			return nil, err
+		}
 		table.DomainID = req.DomainID
 	}
 	if req.EntityID != nil {
@@ -76,10 +145,19 @@ func (s *LogicalTableService) UpdateLogicalTable(id, tenantID, userID int64, req
 	if req.Layer != "" {
 		table.Layer = req.Layer
 	}
+	if strings.TrimSpace(table.Layer) == "" {
+		return nil, fmt.Errorf("逻辑表必须引用数仓分层")
+	}
 	table.GrainDescription = req.GrainDescription
 	table.SCDType = req.SCDType
 	if req.Materialization != nil {
+		if err := validateMaterializationKeys(req.Materialization); err != nil {
+			return nil, err
+		}
 		table.Materialization = req.Materialization
+	}
+	if err := validateLogicalTableShape(table.TableType, table.SCDType, table.GrainDescription); err != nil {
+		return nil, err
 	}
 	table.UpdatedBy = &userID
 
@@ -90,7 +168,75 @@ func (s *LogicalTableService) UpdateLogicalTable(id, tenantID, userID int64, req
 }
 
 func (s *LogicalTableService) DeleteLogicalTable(id, tenantID int64) error {
+	table, err := s.repo.GetByID(id, tenantID)
+	if err != nil {
+		return err
+	}
+	if table.Status != "draft" {
+		return fmt.Errorf("已审批逻辑表不能删除")
+	}
+	relations, err := repository.NewTableRelationRepository(s.repo.DB()).ListByTable(id, tenantID)
+	if err != nil {
+		return err
+	}
+	for _, relation := range relations {
+		otherTableID := relation.SourceTable
+		if otherTableID == id {
+			otherTableID = relation.TargetTable
+		}
+		otherTable, err := s.repo.GetByID(otherTableID, tenantID)
+		if err != nil {
+			return err
+		}
+		if otherTable.Status != "draft" {
+			return fmt.Errorf("逻辑表关联了已审批模型，必须先重新打开关联模型")
+		}
+	}
 	return s.repo.Delete(id, tenantID)
+}
+
+func (s *LogicalTableService) ApproveLogicalTable(id, tenantID, userID int64) error {
+	table, err := s.repo.GetByID(id, tenantID)
+	if err != nil {
+		return err
+	}
+	if table.Status != "draft" {
+		return fmt.Errorf("逻辑表当前状态不可审批")
+	}
+	if err := validateLogicalTableShape(table.TableType, table.SCDType, table.GrainDescription); err != nil {
+		return err
+	}
+	if strings.TrimSpace(table.Layer) == "" {
+		return fmt.Errorf("逻辑表必须引用数仓分层")
+	}
+	fields, err := s.repo.GetFields(id)
+	if err != nil {
+		return err
+	}
+	if len(fields) == 0 {
+		return fmt.Errorf("逻辑表至少需要一个字段才能审批")
+	}
+	hasPrimaryKey := false
+	for _, field := range fields {
+		if field.IsPK {
+			hasPrimaryKey = true
+		}
+	}
+	if !hasPrimaryKey {
+		return fmt.Errorf("逻辑表至少需要一个主键字段才能审批")
+	}
+	return s.repo.UpdateStatus(id, tenantID, "approved", userID)
+}
+
+func (s *LogicalTableService) ReopenLogicalTable(id, tenantID, userID int64) error {
+	table, err := s.repo.GetByID(id, tenantID)
+	if err != nil {
+		return err
+	}
+	if table.Status != "approved" {
+		return fmt.Errorf("只有已审批逻辑表可以重新打开")
+	}
+	return s.repo.UpdateStatus(id, tenantID, "draft", userID)
 }
 
 // GetFields 获取逻辑表字段列表
@@ -103,8 +249,21 @@ func (s *LogicalTableService) GetFields(tableID, tenantID int64) ([]models.Logic
 
 // CreateField 创建字段
 func (s *LogicalTableService) CreateField(tableID, tenantID int64, req *models.CreateLogicalFieldRequest) (*models.LogicalField, error) {
-	if _, err := s.repo.GetByID(tableID, tenantID); err != nil {
+	table, err := s.repo.GetByID(tableID, tenantID)
+	if err != nil {
 		return nil, fmt.Errorf("逻辑表不存在")
+	}
+	if table.Status != "draft" {
+		return nil, fmt.Errorf("已审批逻辑表不能修改字段")
+	}
+	if err := s.validateReferences(tenantID, nil, req.ElementID, req.HierarchyID); err != nil {
+		return nil, err
+	}
+	if req.IsPK && req.Nullable {
+		return nil, fmt.Errorf("主键字段不能可空")
+	}
+	if table.TableType != "fact" && strings.HasPrefix(req.FieldRole, "measure_") {
+		return nil, fmt.Errorf("只有事实表可以使用度量字段角色")
 	}
 
 	fieldRole := req.FieldRole
@@ -137,10 +296,17 @@ func (s *LogicalTableService) CreateField(tableID, tenantID int64, req *models.C
 
 // UpdateField 更新字段
 func (s *LogicalTableService) UpdateField(fieldID, tableID, tenantID int64, req *models.UpdateLogicalFieldRequest) (*models.LogicalField, error) {
-	if _, err := s.repo.GetByID(tableID, tenantID); err != nil {
+	table, err := s.repo.GetByID(tableID, tenantID)
+	if err != nil {
 		return nil, fmt.Errorf("逻辑表不存在")
 	}
+	if table.Status != "draft" {
+		return nil, fmt.Errorf("已审批逻辑表不能修改字段")
+	}
 
+	if err := s.validateReferences(tenantID, nil, req.ElementID, req.HierarchyID); err != nil {
+		return nil, err
+	}
 	field, err := s.repo.GetFieldByID(fieldID, tableID)
 	if err != nil {
 		return nil, fmt.Errorf("字段不存在")
@@ -176,6 +342,12 @@ func (s *LogicalTableService) UpdateField(fieldID, tableID, tenantID int64, req 
 	}
 	field.HierarchyID = req.HierarchyID
 	field.HierarchyLevel = req.HierarchyLevel
+	if field.IsPK && field.Nullable {
+		return nil, fmt.Errorf("主键字段不能可空")
+	}
+	if table.TableType != "fact" && strings.HasPrefix(field.FieldRole, "measure_") {
+		return nil, fmt.Errorf("只有事实表可以使用度量字段角色")
+	}
 
 	if err := s.repo.UpdateField(field); err != nil {
 		return nil, err
@@ -185,8 +357,12 @@ func (s *LogicalTableService) UpdateField(fieldID, tableID, tenantID int64, req 
 
 // DeleteField 删除字段
 func (s *LogicalTableService) DeleteField(fieldID, tableID, tenantID int64) error {
-	if _, err := s.repo.GetByID(tableID, tenantID); err != nil {
+	table, err := s.repo.GetByID(tableID, tenantID)
+	if err != nil {
 		return fmt.Errorf("逻辑表不存在")
+	}
+	if table.Status != "draft" {
+		return fmt.Errorf("已审批逻辑表不能修改字段")
 	}
 	return s.repo.DeleteField(fieldID, tableID)
 }
@@ -205,6 +381,9 @@ func (s *LogicalTableService) PreviewDDL(tableID, tenantID int64) (string, error
 
 	if len(fields) == 0 {
 		return "", fmt.Errorf("逻辑表还没有定义字段，无法生成 DDL")
+	}
+	if err := validateMaterialization(table, fields); err != nil {
+		return "", err
 	}
 
 	return s.generatePostgreSQLDDL(table, fields), nil
@@ -227,7 +406,7 @@ func (s *LogicalTableService) generatePostgreSQLDDL(table *models.LogicalTable, 
 	}
 
 	// 2. CREATE TABLE 头
-	ddl.WriteString(fmt.Sprintf("CREATE TABLE %s.%s (\n", schemaName, tableName))
+	ddl.WriteString(fmt.Sprintf("CREATE TABLE %s.%s (\n", quoteIdentifier(schemaName), quoteIdentifier(tableName)))
 
 	// 3. 生成字段定义
 	var fieldDefs []string
@@ -247,7 +426,11 @@ func (s *LogicalTableService) generatePostgreSQLDDL(table *models.LogicalTable, 
 	// 4. 添加主键约束
 	if len(pkFields) > 0 {
 		ddl.WriteString(",\n  PRIMARY KEY (")
-		ddl.WriteString(strings.Join(pkFields, ", "))
+		quoted := make([]string, 0, len(pkFields))
+		for _, name := range pkFields {
+			quoted = append(quoted, quoteIdentifier(name))
+		}
+		ddl.WriteString(strings.Join(quoted, ", "))
 		ddl.WriteString(")")
 	}
 
@@ -261,13 +444,7 @@ func (s *LogicalTableService) generatePostgreSQLDDL(table *models.LogicalTable, 
 			if pt, ok := table.Materialization["partition_type"].(string); ok && pt != "" {
 				partitionType = strings.ToUpper(pt)
 			}
-			ddl.WriteString(fmt.Sprintf("\nPARTITION BY %s (%s)", partitionType, partitionBy))
-		}
-
-		// 7. 额外选项（可选）
-		if extraOpts, ok := table.Materialization["extra_options"].(string); ok && extraOpts != "" {
-			ddl.WriteString("\n")
-			ddl.WriteString(extraOpts)
+			ddl.WriteString(fmt.Sprintf("\nPARTITION BY %s (%s)", partitionType, quoteIdentifier(partitionBy)))
 		}
 	}
 
@@ -282,7 +459,7 @@ func (s *LogicalTableService) generateFieldDef(field *models.LogicalField) strin
 	var parts []string
 
 	// 列名
-	parts = append(parts, "  "+field.ColumnName)
+	parts = append(parts, "  "+quoteIdentifier(field.ColumnName))
 
 	// 数据类型映射
 	pgType := s.mapDataTypeToPostgreSQL(field.DataType, field.Length)
@@ -315,23 +492,84 @@ func (s *LogicalTableService) mapDataTypeToPostgreSQL(dataType string, length *i
 		return "BIGINT"
 	case "float":
 		return "DOUBLE PRECISION"
-	case "decimal", "numeric":
+	case "decimal":
 		return "NUMERIC"
 	case "date":
 		return "DATE"
-	case "datetime", "timestamp":
+	case "datetime":
 		return "TIMESTAMP"
-	case "bool", "boolean":
+	case "bool":
 		return "BOOLEAN"
-	case "json", "jsonb":
+	case "json":
 		return "JSONB"
 	case "text":
 		return "TEXT"
 	case "geometry":
 		return "GEOMETRY"
 	default:
-		return "TEXT"
+		return ""
 	}
+}
+
+var identifierPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
+func quoteIdentifier(value string) string { return `"` + strings.ReplaceAll(value, `"`, `""`) + `"` }
+
+func validateMaterializationKeys(config map[string]interface{}) error {
+	allowedKeys := map[string]struct{}{"schema_name": {}, "table_name": {}, "partition_by": {}, "partition_type": {}}
+	for key := range config {
+		if _, ok := allowedKeys[key]; !ok {
+			return fmt.Errorf("不支持的物化配置字段: %s", key)
+		}
+	}
+	return nil
+}
+
+func validateMaterialization(table *models.LogicalTable, fields []models.LogicalField) error {
+	config := table.Materialization
+	for _, value := range []string{table.Code} {
+		if !identifierPattern.MatchString(value) {
+			return fmt.Errorf("标识符无效: %s", value)
+		}
+	}
+	if config == nil {
+		return nil
+	}
+	if err := validateMaterializationKeys(map[string]interface{}(config)); err != nil {
+		return err
+	}
+	for _, key := range []string{"schema_name", "table_name", "partition_by"} {
+		if value, ok := config[key].(string); ok && value != "" && !identifierPattern.MatchString(value) {
+			return fmt.Errorf("物化配置 %s 不是合法标识符", key)
+		}
+	}
+	if value, ok := config["partition_type"].(string); ok && value != "" {
+		value = strings.ToLower(value)
+		if value != "range" && value != "list" && value != "hash" {
+			return fmt.Errorf("不支持的分区类型: %s", value)
+		}
+	}
+	if partition, ok := config["partition_by"].(string); ok && partition != "" {
+		found := false
+		for _, field := range fields {
+			if field.ColumnName == partition {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("分区字段不存在: %s", partition)
+		}
+	}
+	for _, field := range fields {
+		if !identifierPattern.MatchString(field.ColumnName) {
+			return fmt.Errorf("字段标识符无效: %s", field.ColumnName)
+		}
+		if field.DataType == "" || (&LogicalTableService{}).mapDataTypeToPostgreSQL(field.DataType, field.Length) == "" {
+			return fmt.Errorf("不支持的字段类型: %s", field.DataType)
+		}
+	}
+	return nil
 }
 
 // quoteDefault 处理默认值引号

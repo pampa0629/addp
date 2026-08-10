@@ -9,7 +9,7 @@ from authorization_permissions_generated import COPILOT_KNOWLEDGE_GRAPH_EXECUTE
 from database import get_db
 from dependencies.auth import require_tenant_service
 from models.kg_models import KGExtractRequest, KGExtractResponse
-from pipelines.kg_build_pipeline import KGBuildPipeline
+from services.kg_extraction_service import KGExtractionService
 from services.inference_service import CopilotInferenceService
 from sqlalchemy.orm import Session
 
@@ -52,7 +52,9 @@ async def extract_from_chunk(
             temperature=0.1,
             max_output_tokens=4000,
         )
-        pipeline = KGBuildPipeline(llm)
-        return await pipeline.run(request)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"抽取失败: {str(e)}")
+        service = KGExtractionService(llm)
+        return await service.run(request)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=500, detail="知识图谱抽取失败") from error

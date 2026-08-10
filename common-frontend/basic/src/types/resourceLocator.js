@@ -215,7 +215,7 @@ export function catalogRootTypeForEngine(engine) {
   const type = String(engine?.engine_type || '').trim().toLowerCase()
   if (type === 'minio' || type === 's3') return 'service'
   if (type === 'nfs' || type === 'nas') return 'root'
-  if (['postgresql', 'mysql', 'doris', 'clickhouse', 'spark_sql', 'mongodb', 'neo4j'].includes(type)) return 'server'
+  if (['postgresql', 'oracle', 'mysql', 'doris', 'clickhouse', 'spark_sql', 'mongodb', 'neo4j'].includes(type)) return 'server'
   return 'root'
 }
 
@@ -293,7 +293,7 @@ export function formatLocatorDisplayPath(uri, options = {}) {
   const engineType = String(options.engineType || '').trim().toLowerCase()
   const resourceType = String(options.resourceType || locator.type || '').trim().toLowerCase()
   const slashEngines = new Set(['minio', 's3', 'nfs', 'nas'])
-  const dotEngines = new Set(['postgresql', 'mysql', 'doris', 'clickhouse', 'spark_sql', 'mongodb', 'neo4j'])
+  const dotEngines = new Set(['postgresql', 'oracle', 'mysql', 'doris', 'clickhouse', 'spark_sql', 'mongodb', 'neo4j'])
   const separator = slashEngines.has(engineType)
     ? '/'
     : dotEngines.has(engineType) || [ResourceType.TABLE, ResourceType.COLLECTION, ResourceType.GRAPH].includes(resourceType)
