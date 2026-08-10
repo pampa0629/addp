@@ -6,10 +6,10 @@ import "time"
 // 属于语义/治理层，描述业务上的上下钻路径，与物理表无关
 type DimensionHierarchy struct {
 	ID          int64                     `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenantID    int64                     `gorm:"not null;index" json:"tenant_id"`
+	TenantID    int64                     `gorm:"not null;index;uniqueIndex:uq_standard_dimension_hierarchies_tenant_code" json:"tenant_id"`
 	DomainID    *int64                    `gorm:"index" json:"domain_id,omitempty"`
 	Name        string                    `gorm:"size:200;not null" json:"name"`
-	Code        string                    `gorm:"size:100;not null" json:"code"`
+	Code        string                    `gorm:"size:100;not null;uniqueIndex:uq_standard_dimension_hierarchies_tenant_code" json:"code"`
 	Description string                    `gorm:"type:text" json:"description"`
 	CreatedBy   int64                     `gorm:"not null" json:"created_by"`
 	UpdatedBy   *int64                    `json:"updated_by,omitempty"`
@@ -25,10 +25,10 @@ func (DimensionHierarchy) TableName() string {
 // DimensionHierarchyLevel 层级中的每一层（如时间层级的"年"、"季度"、"月"、"日"）
 type DimensionHierarchyLevel struct {
 	ID          int64  `gorm:"primaryKey;autoIncrement" json:"id"`
-	HierarchyID int64  `gorm:"not null;index" json:"hierarchy_id"`
-	LevelNum    int    `gorm:"not null" json:"level_num"`     // 1=最粗粒度，数字越大粒度越细
-	Name        string `gorm:"size:100;not null" json:"name"` // e.g., "年", "季度", "月", "日"
-	ElementID   *int64 `json:"element_id,omitempty"`          // 可选关联 standard.elements（无 DB FK 约束）
+	HierarchyID int64  `gorm:"not null;index;uniqueIndex:uq_standard_dimension_hierarchy_levels_hierarchy_level" json:"hierarchy_id"`
+	LevelNum    int    `gorm:"not null;uniqueIndex:uq_standard_dimension_hierarchy_levels_hierarchy_level" json:"level_num"` // 1=最粗粒度，数字越大粒度越细
+	Name        string `gorm:"size:100;not null" json:"name"`                                                                // e.g., "年", "季度", "月", "日"
+	ElementID   *int64 `json:"element_id,omitempty"`                                                                         // 可选关联 standard.elements（无 DB FK 约束）
 	Description string `gorm:"type:text" json:"description"`
 	SortOrder   int    `gorm:"default:0" json:"sort_order"`
 }

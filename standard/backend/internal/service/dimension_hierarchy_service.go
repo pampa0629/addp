@@ -1,11 +1,14 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 )
+
+var ErrInvalidHierarchyLevelNumber = errors.New("invalid dimension hierarchy level number")
 
 // DimensionHierarchyService 维度层级服务
 type DimensionHierarchyService struct {
@@ -85,6 +88,9 @@ func (s *DimensionHierarchyService) CreateLevel(hierarchyID, tenantID int64, req
 	if _, err := s.repo.GetByID(hierarchyID, tenantID); err != nil {
 		return nil, err
 	}
+	if req.LevelNum <= 0 {
+		return nil, ErrInvalidHierarchyLevelNumber
+	}
 	if req.ElementID != nil {
 		if err := s.refs.RequireElement(tenantID, *req.ElementID); err != nil {
 			return nil, err
@@ -115,6 +121,9 @@ func (s *DimensionHierarchyService) UpdateLevel(levelID, hierarchyID, tenantID i
 	level, err := s.repo.GetLevelByID(levelID, hierarchyID, tenantID)
 	if err != nil {
 		return nil, err
+	}
+	if req.LevelNum <= 0 {
+		return nil, ErrInvalidHierarchyLevelNumber
 	}
 	if req.ElementID != nil {
 		if err := s.refs.RequireElement(tenantID, *req.ElementID); err != nil {

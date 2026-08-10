@@ -52,16 +52,7 @@ func (s *CodeSetService) CreateCodeSet(tenantID int64, req *models.CreateCodeSet
 
 // GetCodeSet 获取码值集
 func (s *CodeSetService) GetCodeSet(id, tenantID int64) (*models.CodeSet, error) {
-	codeSet, err := s.repo.GetByID(id)
-	if err != nil {
-		return nil, err
-	}
-
-	if codeSet.TenantID != tenantID {
-		return nil, errors.New("无权访问该码值集")
-	}
-
-	return codeSet, nil
+	return s.repo.GetByID(id, tenantID)
 }
 
 // ListCodeSets 获取码值集列表
@@ -71,13 +62,9 @@ func (s *CodeSetService) ListCodeSets(tenantID int64, keyword, codeSetType strin
 
 // UpdateCodeSet 更新码值集
 func (s *CodeSetService) UpdateCodeSet(id, tenantID int64, req *models.UpdateCodeSetRequest) (*models.CodeSet, error) {
-	codeSet, err := s.repo.GetByID(id)
+	codeSet, err := s.repo.GetByID(id, tenantID)
 	if err != nil {
 		return nil, err
-	}
-
-	if codeSet.TenantID != tenantID {
-		return nil, errors.New("无权访问该码值集")
 	}
 
 	// 校验 type
@@ -99,13 +86,9 @@ func (s *CodeSetService) UpdateCodeSet(id, tenantID int64, req *models.UpdateCod
 
 // DeleteCodeSet 删除码值集
 func (s *CodeSetService) DeleteCodeSet(id, tenantID int64) error {
-	codeSet, err := s.repo.GetByID(id)
+	codeSet, err := s.repo.GetByID(id, tenantID)
 	if err != nil {
 		return err
-	}
-
-	if codeSet.TenantID != tenantID {
-		return errors.New("无权访问该码值集")
 	}
 
 	// 系统内置码值集禁止删除
@@ -113,18 +96,15 @@ func (s *CodeSetService) DeleteCodeSet(id, tenantID int64) error {
 		return errors.New("系统内置码值集不允许删除")
 	}
 
-	return s.repo.Delete(id)
+	return s.repo.Delete(id, tenantID)
 }
 
 // GetCodeItems 获取码值项列表
 func (s *CodeSetService) GetCodeItems(codeSetID, tenantID int64) ([]models.CodeItem, error) {
 	// 验证码值集是否属于当前租户
-	codeSet, err := s.repo.GetByID(codeSetID)
+	_, err := s.repo.GetByID(codeSetID, tenantID)
 	if err != nil {
 		return nil, err
-	}
-	if codeSet.TenantID != tenantID {
-		return nil, errors.New("无权访问该码值集")
 	}
 
 	return s.repo.GetItems(codeSetID)
@@ -133,12 +113,9 @@ func (s *CodeSetService) GetCodeItems(codeSetID, tenantID int64) ([]models.CodeI
 // CreateCodeItem 创建码值项
 func (s *CodeSetService) CreateCodeItem(codeSetID, tenantID int64, req *models.CreateCodeItemRequest) (*models.CodeItem, error) {
 	// 验证码值集是否属于当前租户
-	codeSet, err := s.repo.GetByID(codeSetID)
+	_, err := s.repo.GetByID(codeSetID, tenantID)
 	if err != nil {
 		return nil, err
-	}
-	if codeSet.TenantID != tenantID {
-		return nil, errors.New("无权访问该码值集")
 	}
 
 	// 校验 code 唯一性
@@ -169,21 +146,14 @@ func (s *CodeSetService) CreateCodeItem(codeSetID, tenantID int64, req *models.C
 // UpdateCodeItem 更新码值项
 func (s *CodeSetService) UpdateCodeItem(codeSetID, itemID, tenantID int64, req *models.UpdateCodeItemRequest) (*models.CodeItem, error) {
 	// 验证码值集是否属于当前租户
-	codeSet, err := s.repo.GetByID(codeSetID)
-	if err != nil {
-		return nil, err
-	}
-	if codeSet.TenantID != tenantID {
-		return nil, errors.New("无权访问该码值集")
-	}
-
-	item, err := s.repo.GetItemByID(itemID)
+	_, err := s.repo.GetByID(codeSetID, tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	if item.CodeSetID != codeSetID {
-		return nil, errors.New("码值项不属于该码值集")
+	item, err := s.repo.GetItemByID(itemID, codeSetID)
+	if err != nil {
+		return nil, err
 	}
 
 	item.Value = req.Value
@@ -200,22 +170,15 @@ func (s *CodeSetService) UpdateCodeItem(codeSetID, itemID, tenantID int64, req *
 // DeleteCodeItem 删除码值项
 func (s *CodeSetService) DeleteCodeItem(codeSetID, itemID, tenantID int64) error {
 	// 验证码值集是否属于当前租户
-	codeSet, err := s.repo.GetByID(codeSetID)
-	if err != nil {
-		return err
-	}
-	if codeSet.TenantID != tenantID {
-		return errors.New("无权访问该码值集")
-	}
-
-	item, err := s.repo.GetItemByID(itemID)
+	_, err := s.repo.GetByID(codeSetID, tenantID)
 	if err != nil {
 		return err
 	}
 
-	if item.CodeSetID != codeSetID {
-		return errors.New("码值项不属于该码值集")
+	_, err = s.repo.GetItemByID(itemID, codeSetID)
+	if err != nil {
+		return err
 	}
 
-	return s.repo.DeleteItem(itemID)
+	return s.repo.DeleteItem(itemID, codeSetID)
 }

@@ -25,6 +25,8 @@ const (
 	MsgFileOpenFailed   = "standard.common.file_open_failed"
 	MsgFileReadFailed   = "standard.common.file_read_failed"
 	MsgOperationFailed  = "standard.common.operation_failed"
+	MsgResourceNotFound = "standard.common.resource_not_found"
+	MsgResourceConflict = "standard.common.resource_conflict"
 )
 
 // Domain
@@ -54,13 +56,15 @@ const (
 
 // Metric
 const (
-	MsgMetricNotFound = "standard.metric.not_found"
+	MsgMetricNotFound        = "standard.metric.not_found"
+	MsgMetricDependencyCycle = "standard.metric.dependency_cycle"
 )
 
 // DimensionHierarchy
 const (
-	MsgDimHierarchyNotFound = "standard.dim_hierarchy.not_found"
-	MsgInvalidLevelID       = "standard.dim_hierarchy.invalid_level_id"
+	MsgDimHierarchyNotFound        = "standard.dim_hierarchy.not_found"
+	MsgInvalidLevelID              = "standard.dim_hierarchy.invalid_level_id"
+	MsgInvalidHierarchyLevelNumber = "standard.dim_hierarchy.invalid_level_number"
 )
 
 func init() {

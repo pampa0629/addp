@@ -5,9 +5,9 @@ import "time"
 // MetricCategory 指标目录（独立树形结构）
 type MetricCategory struct {
 	ID          int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenantID    int64     `gorm:"not null;index" json:"tenant_id"`
+	TenantID    int64     `gorm:"not null;index;uniqueIndex:uq_standard_metric_categories_tenant_code" json:"tenant_id"`
 	Name        string    `gorm:"size:100;not null" json:"name"`
-	Code        string    `gorm:"size:50;not null" json:"code"`
+	Code        string    `gorm:"size:50;not null;uniqueIndex:uq_standard_metric_categories_tenant_code" json:"code"`
 	Description string    `gorm:"type:text" json:"description"`
 	ParentID    *int64    `gorm:"index" json:"parent_id,omitempty"`
 	SortOrder   int       `gorm:"default:0" json:"sort_order"`
@@ -24,11 +24,11 @@ func (MetricCategory) TableName() string {
 // Metric 指标定义
 type Metric struct {
 	ID               int64       `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenantID         int64       `gorm:"not null;index" json:"tenant_id"`
+	TenantID         int64       `gorm:"not null;index;uniqueIndex:uq_standard_metrics_tenant_code" json:"tenant_id"`
 	CategoryID       *int64      `gorm:"index" json:"category_id,omitempty"`
 	DomainID         *int64      `gorm:"index" json:"domain_id,omitempty"` // 辅助标注，关联的主业务域
 	Name             string      `gorm:"size:200;not null" json:"name"`
-	Code             string      `gorm:"size:100;not null" json:"code"`
+	Code             string      `gorm:"size:100;not null;uniqueIndex:uq_standard_metrics_tenant_code" json:"code"`
 	Type             string      `gorm:"size:20;not null" json:"type"` // atomic/derived/composite
 	Definition       string      `gorm:"type:text" json:"definition"`  // 业务口径描述
 	Formula          string      `gorm:"type:text" json:"formula"`     // 复合指标：计算公式描述
@@ -51,8 +51,8 @@ func (Metric) TableName() string {
 // MetricElementMapping 指标与数据元关联（原子指标）
 type MetricElementMapping struct {
 	ID        int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	MetricID  int64     `gorm:"not null;index" json:"metric_id"`
-	ElementID int64     `gorm:"not null" json:"element_id"`
+	MetricID  int64     `gorm:"not null;index;uniqueIndex:uq_standard_metric_element_mappings_metric_element" json:"metric_id"`
+	ElementID int64     `gorm:"not null;uniqueIndex:uq_standard_metric_element_mappings_metric_element" json:"element_id"`
 	Note      string    `gorm:"type:text" json:"note"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -64,8 +64,8 @@ func (MetricElementMapping) TableName() string {
 // MetricDependency 复合指标依赖关系
 type MetricDependency struct {
 	ID           int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	FromMetricID int64     `gorm:"not null;index" json:"from_metric_id"`
-	ToMetricID   int64     `gorm:"not null" json:"to_metric_id"`
+	FromMetricID int64     `gorm:"not null;index;uniqueIndex:uq_standard_metric_dependencies_from_to" json:"from_metric_id"`
+	ToMetricID   int64     `gorm:"not null;uniqueIndex:uq_standard_metric_dependencies_from_to" json:"to_metric_id"`
 	Coefficient  *float64  `json:"coefficient,omitempty"`
 	Note         string    `gorm:"type:text" json:"note"`
 	CreatedAt    time.Time `json:"created_at"`

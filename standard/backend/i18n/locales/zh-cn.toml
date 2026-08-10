@@ -40,6 +40,12 @@ other = "无法读取文件"
 [standard.common.operation_failed]
 other = "操作失败"
 
+[standard.common.resource_not_found]
+other = "资源不存在"
+
+[standard.common.resource_conflict]
+other = "资源编码或关联已存在"
+
 [standard.domain.not_found]
 other = "业务域不存在"
 
@@ -58,8 +64,14 @@ other = "计量单位不存在"
 [standard.metric.not_found]
 other = "指标不存在"
 
+[standard.metric.dependency_cycle]
+other = "指标依赖不能形成环路"
+
 [standard.dim_hierarchy.not_found]
 other = "维度层级不存在"
 
 [standard.dim_hierarchy.invalid_level_id]
 other = "无效的层级ID"
+
+[standard.dim_hierarchy.invalid_level_number]
+other = "层级编号必须大于 0"

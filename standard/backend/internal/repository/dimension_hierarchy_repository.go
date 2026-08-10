@@ -34,16 +34,16 @@ func (r *DimensionHierarchyRepository) GetByID(id, tenantID int64) (*models.Dime
 }
 
 func (r *DimensionHierarchyRepository) Create(h *models.DimensionHierarchy) error {
-	return r.db.Create(h).Error
+	return wrapDBError(r.db.Create(h).Error)
 }
 
 func (r *DimensionHierarchyRepository) Update(h *models.DimensionHierarchy) error {
-	return r.db.Save(h).Error
+	return wrapDBError(r.db.Save(h).Error)
 }
 
 func (r *DimensionHierarchyRepository) Delete(id, tenantID int64) error {
-	return r.db.Where("id = ? AND tenant_id = ?", id, tenantID).
-		Delete(&models.DimensionHierarchy{}).Error
+	return requireAffectedRow(r.db.Where("id = ? AND tenant_id = ?", id, tenantID).
+		Delete(&models.DimensionHierarchy{}))
 }
 
 func (r *DimensionHierarchyRepository) ExistsByCode(code string, tenantID int64, excludeID int64) (bool, error) {
@@ -69,7 +69,7 @@ func (r *DimensionHierarchyRepository) GetLevels(hierarchyID, tenantID int64) ([
 }
 
 func (r *DimensionHierarchyRepository) CreateLevel(level *models.DimensionHierarchyLevel) error {
-	return r.db.Create(level).Error
+	return wrapDBError(r.db.Create(level).Error)
 }
 
 func (r *DimensionHierarchyRepository) GetLevelByID(levelID, hierarchyID, tenantID int64) (*models.DimensionHierarchyLevel, error) {
@@ -82,15 +82,15 @@ func (r *DimensionHierarchyRepository) GetLevelByID(levelID, hierarchyID, tenant
 }
 
 func (r *DimensionHierarchyRepository) UpdateLevel(level *models.DimensionHierarchyLevel) error {
-	return r.db.Save(level).Error
+	return wrapDBError(r.db.Save(level).Error)
 }
 
 func (r *DimensionHierarchyRepository) DeleteLevel(levelID, hierarchyID, tenantID int64) error {
 	if _, err := r.GetLevelByID(levelID, hierarchyID, tenantID); err != nil {
 		return err
 	}
-	return r.db.Where("id = ? AND hierarchy_id = ?", levelID, hierarchyID).
-		Delete(&models.DimensionHierarchyLevel{}).Error
+	return requireAffectedRow(r.db.Where("id = ? AND hierarchy_id = ?", levelID, hierarchyID).
+		Delete(&models.DimensionHierarchyLevel{}))
 }
 
 func (r *DimensionHierarchyRepository) ExistsLevelNum(hierarchyID, tenantID int64, levelNum int, excludeID int64) (bool, error) {

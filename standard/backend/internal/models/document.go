@@ -28,8 +28,8 @@ func (Document) TableName() string {
 // DocumentElementMapping 文档与数据元关联
 type DocumentElementMapping struct {
 	ID                int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	DocumentID        int64     `gorm:"not null;index" json:"document_id"`
-	ElementID         int64     `gorm:"not null" json:"element_id"`
+	DocumentID        int64     `gorm:"not null;index;uniqueIndex:uq_standard_document_element_mappings_document_element" json:"document_id"`
+	ElementID         int64     `gorm:"not null;uniqueIndex:uq_standard_document_element_mappings_document_element" json:"element_id"`
 	ReferenceLocation string    `gorm:"type:text" json:"reference_location"`
 	Name              string    `gorm:"->" json:"name"`
 	CreatedAt         time.Time `json:"created_at"`
@@ -42,8 +42,8 @@ func (DocumentElementMapping) TableName() string {
 // DocumentGlossaryMapping 文档与术语关联
 type DocumentGlossaryMapping struct {
 	ID                int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	DocumentID        int64     `gorm:"not null;index" json:"document_id"`
-	GlossaryID        int64     `gorm:"not null" json:"glossary_id"`
+	DocumentID        int64     `gorm:"not null;index;uniqueIndex:uq_standard_document_glossary_mappings_document_glossary" json:"document_id"`
+	GlossaryID        int64     `gorm:"not null;uniqueIndex:uq_standard_document_glossary_mappings_document_glossary" json:"glossary_id"`
 	ReferenceLocation string    `gorm:"type:text" json:"reference_location"`
 	Name              string    `gorm:"->" json:"name"`
 	CreatedAt         time.Time `json:"created_at"`
@@ -56,8 +56,8 @@ func (DocumentGlossaryMapping) TableName() string {
 // DocumentMetricMapping 文档与指标关联
 type DocumentMetricMapping struct {
 	ID                int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	DocumentID        int64     `gorm:"not null;index" json:"document_id"`
-	MetricID          int64     `gorm:"not null" json:"metric_id"`
+	DocumentID        int64     `gorm:"not null;index;uniqueIndex:uq_standard_document_metric_mappings_document_metric" json:"document_id"`
+	MetricID          int64     `gorm:"not null;uniqueIndex:uq_standard_document_metric_mappings_document_metric" json:"metric_id"`
 	ReferenceLocation string    `gorm:"type:text" json:"reference_location"`
 	Name              string    `gorm:"->" json:"name"`
 	CreatedAt         time.Time `json:"created_at"`

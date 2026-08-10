@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 )
@@ -27,6 +28,13 @@ func (s *MetricService) ListCategories(tenantID int64) ([]models.MetricCategory,
 func (s *MetricService) CreateCategory(req *models.CreateMetricCategoryRequest, tenantID, userID int64) (*models.MetricCategory, error) {
 	if err := s.refs.RequireMetricCategory(tenantID, req.ParentID); err != nil {
 		return nil, err
+	}
+	exists, err := s.catRepo.ExistsByCode(req.Code, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		return nil, commonapi.ErrConflict
 	}
 	c := &models.MetricCategory{
 		TenantID:    tenantID,
@@ -141,12 +149,6 @@ func (s *MetricService) UpdateMetric(id, tenantID, userID int64, req *models.Upd
 	if err := s.validateMetricReferences(tenantID, req.CategoryID, req.DomainID, req.UnitID, req.BaseMetricID, req.ElementIDs, req.DependencyIDs); err != nil {
 		return nil, err
 	}
-	for _, dependencyID := range req.DependencyIDs {
-		if dependencyID == id {
-			return nil, fmt.Errorf("指标不能依赖自身")
-		}
-	}
-
 	if req.Name != "" {
 		metric.Name = req.Name
 	}

@@ -11,7 +11,6 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/standard/internal/api"
 	"github.com/addp/standard/internal/config"
-	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 	"github.com/addp/standard/internal/service"
 	minio "github.com/minio/minio-go/v7"
@@ -35,7 +34,7 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	db, err := gorm.Open(postgres.Open(cfg.GetDatabaseDSN()), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(cfg.GetDatabaseDSN()), &gorm.Config{TranslateError: true})
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -47,29 +46,7 @@ func main() {
 		log.Fatalf("Failed to ensure execution store: %v", err)
 	}
 
-	// 自动迁移所有表
-	if err := db.AutoMigrate(
-		&models.Domain{},
-		&models.Glossary{},
-		&models.GlossaryElementMapping{},
-		&models.Element{},
-		&models.CodeSet{},
-		&models.CodeItem{},
-		&models.MeasurementCategory{},
-		&models.Unit{},
-		&models.Classification{},
-		&models.GradingLevel{},
-		&models.MetricCategory{},
-		&models.Metric{},
-		&models.MetricElementMapping{},
-		&models.MetricDependency{},
-		&models.Document{},
-		&models.DocumentElementMapping{},
-		&models.DocumentGlossaryMapping{},
-		&models.DocumentMetricMapping{},
-		&models.DimensionHierarchy{},
-		&models.DimensionHierarchyLevel{},
-	); err != nil {
+	if err := repository.Migrate(db); err != nil {
 		log.Fatalf("Failed to migrate database: %v", err)
 	}
 

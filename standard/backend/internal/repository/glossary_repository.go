@@ -15,7 +15,7 @@ func NewGlossaryRepository(db *gorm.DB) *GlossaryRepository {
 }
 
 func (r *GlossaryRepository) Create(glossary *models.Glossary) error {
-	return r.db.Create(glossary).Error
+	return wrapDBError(r.db.Create(glossary).Error)
 }
 
 func (r *GlossaryRepository) GetByID(id, tenantID int64) (*models.Glossary, error) {
@@ -64,17 +64,17 @@ func (r *GlossaryRepository) List(tenantID int64, opts ListGlossaryOptions) ([]m
 }
 
 func (r *GlossaryRepository) Update(glossary *models.Glossary) error {
-	return r.db.Save(glossary).Error
+	return wrapDBError(r.db.Save(glossary).Error)
 }
 
 func (r *GlossaryRepository) Delete(id, tenantID int64) error {
-	return r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Glossary{}).Error
+	return requireAffectedRow(r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Glossary{}))
 }
 
 func (r *GlossaryRepository) UpdateStatus(id, tenantID int64, status string, updatedBy int64) error {
-	return r.db.Model(&models.Glossary{}).
+	return requireAffectedRow(r.db.Model(&models.Glossary{}).
 		Where("id = ? AND tenant_id = ?", id, tenantID).
-		Updates(map[string]interface{}{"status": status, "updated_by": updatedBy}).Error
+		Updates(map[string]interface{}{"status": status, "updated_by": updatedBy}))
 }
 
 // GetMappedElements 获取术语关联的完整数据元列表
@@ -90,19 +90,20 @@ func (r *GlossaryRepository) GetMappedElements(glossaryID, tenantID int64) ([]mo
 
 // SetElementMappings 批量替换术语的数据元映射（事务：先删全部，再插入）
 func (r *GlossaryRepository) SetElementMappings(glossaryID, tenantID int64, elementIDs []int64) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
+	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("glossary_id = ?", glossaryID).Delete(&models.GlossaryElementMapping{}).Error; err != nil {
 			return err
 		}
 		if len(elementIDs) == 0 {
 			return nil
 		}
-		mappings := make([]models.GlossaryElementMapping, len(elementIDs))
-		for i, eid := range elementIDs {
+		uniqueIDs := uniqueInt64s(elementIDs)
+		mappings := make([]models.GlossaryElementMapping, len(uniqueIDs))
+		for i, eid := range uniqueIDs {
 			mappings[i] = models.GlossaryElementMapping{GlossaryID: glossaryID, ElementID: eid}
 		}
 		return tx.Create(&mappings).Error
-	})
+	}))
 }
 
 // GetGlossariesByElementID 根据数据元ID反查关联的术语列表

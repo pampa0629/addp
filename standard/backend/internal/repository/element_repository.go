@@ -15,7 +15,7 @@ func NewElementRepository(db *gorm.DB) *ElementRepository {
 }
 
 func (r *ElementRepository) Create(element *models.Element) error {
-	return r.db.Create(element).Error
+	return wrapDBError(r.db.Create(element).Error)
 }
 
 func (r *ElementRepository) GetByID(id, tenantID int64) (*models.Element, error) {
@@ -65,17 +65,17 @@ func (r *ElementRepository) List(tenantID int64, opts ListElementOptions) ([]mod
 }
 
 func (r *ElementRepository) Update(element *models.Element) error {
-	return r.db.Save(element).Error
+	return wrapDBError(r.db.Save(element).Error)
 }
 
 func (r *ElementRepository) Delete(id, tenantID int64) error {
-	return r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Element{}).Error
+	return requireAffectedRow(r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Element{}))
 }
 
 func (r *ElementRepository) UpdateStatus(id, tenantID int64, status string, updatedBy int64) error {
-	return r.db.Model(&models.Element{}).
+	return requireAffectedRow(r.db.Model(&models.Element{}).
 		Where("id = ? AND tenant_id = ?", id, tenantID).
-		Updates(map[string]interface{}{"status": status, "updated_by": updatedBy}).Error
+		Updates(map[string]interface{}{"status": status, "updated_by": updatedBy}))
 }
 
 func (r *ElementRepository) ExistsByCode(code string, tenantID int64, excludeID int64) (bool, error) {

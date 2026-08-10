@@ -40,6 +40,12 @@ other = "Failed to read file"
 [standard.common.operation_failed]
 other = "Operation failed"
 
+[standard.common.resource_not_found]
+other = "Resource not found"
+
+[standard.common.resource_conflict]
+other = "Resource code or relation already exists"
+
 [standard.domain.not_found]
 other = "Domain not found"
 
@@ -58,8 +64,14 @@ other = "Unit not found"
 [standard.metric.not_found]
 other = "Metric not found"
 
+[standard.metric.dependency_cycle]
+other = "Metric dependencies cannot form a cycle"
+
 [standard.dim_hierarchy.not_found]
 other = "Dimension hierarchy not found"
 
 [standard.dim_hierarchy.invalid_level_id]
 other = "Invalid level ID"
+
+[standard.dim_hierarchy.invalid_level_number]
+other = "Level number must be greater than 0"

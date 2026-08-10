@@ -684,6 +684,7 @@ import { StorageEngineForm, requestConsoleBridge } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { paginateEngines } from '../utils/engineList'
+import { switchStorageEngineType } from '../utils/engineForm'
 import { navigateSystemRoute } from '../utils/moduleNavigation'
 import { resolveEngineDetailRouteState } from '../utils/routeState'
 
@@ -1284,10 +1285,7 @@ const selectStorageEngineType = (engineType) => {
   if (isEdit.value) return
   if (form.value.engine_type === engineType) return
 
-	form.value = {
-    ...form.value,
-    engine_type: engineType
-  }
+  form.value = switchStorageEngineType(form.value, engineType)
 }
 
 const showAddStorageDialog = () => {

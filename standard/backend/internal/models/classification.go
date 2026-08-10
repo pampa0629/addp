@@ -5,9 +5,9 @@ import "time"
 // Classification 数据分类（树形，用户自定义）
 type Classification struct {
 	ID          int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenantID    int64     `gorm:"not null;index" json:"tenant_id"`
+	TenantID    int64     `gorm:"not null;index;uniqueIndex:uq_standard_classifications_tenant_code" json:"tenant_id"`
 	Name        string    `gorm:"size:100;not null" json:"name"`
-	Code        string    `gorm:"size:50;not null" json:"code"`
+	Code        string    `gorm:"size:50;not null;uniqueIndex:uq_standard_classifications_tenant_code" json:"code"`
 	Description string    `gorm:"type:text" json:"description"`
 	ParentID    *int64    `gorm:"index" json:"parent_id,omitempty"`
 	SortOrder   int       `gorm:"default:0" json:"sort_order"`
@@ -24,8 +24,8 @@ func (Classification) TableName() string {
 // GradingLevel 数据分级（固定 L1-L4，用户可修改名称/描述/颜色）
 type GradingLevel struct {
 	ID          int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenantID    int64     `gorm:"not null;index" json:"tenant_id"`
-	Level       string    `gorm:"size:10;not null" json:"level"` // L1/L2/L3/L4
+	TenantID    int64     `gorm:"not null;index;uniqueIndex:uq_standard_grading_levels_tenant_level" json:"tenant_id"`
+	Level       string    `gorm:"size:10;not null;uniqueIndex:uq_standard_grading_levels_tenant_level" json:"level"` // L1/L2/L3/L4
 	Name        string    `gorm:"size:50;not null" json:"name"`
 	Description string    `gorm:"type:text" json:"description"`
 	Color       string    `gorm:"size:20" json:"color"` // 十六进制颜色

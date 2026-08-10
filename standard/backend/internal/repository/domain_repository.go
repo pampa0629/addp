@@ -15,7 +15,7 @@ func NewDomainRepository(db *gorm.DB) *DomainRepository {
 }
 
 func (r *DomainRepository) Create(domain *models.Domain) error {
-	return r.db.Create(domain).Error
+	return wrapDBError(r.db.Create(domain).Error)
 }
 
 func (r *DomainRepository) GetByID(id, tenantID int64) (*models.Domain, error) {
@@ -33,11 +33,11 @@ func (r *DomainRepository) List(tenantID int64) ([]models.Domain, error) {
 }
 
 func (r *DomainRepository) Update(domain *models.Domain) error {
-	return r.db.Save(domain).Error
+	return wrapDBError(r.db.Save(domain).Error)
 }
 
 func (r *DomainRepository) Delete(id, tenantID int64) error {
-	return r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Domain{}).Error
+	return requireAffectedRow(r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Domain{}))
 }
 
 func (r *DomainRepository) ExistsByCode(code string, tenantID int64, excludeID int64) (bool, error) {

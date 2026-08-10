@@ -28,15 +28,15 @@ func (r *ClassificationRepository) GetByID(id, tenantID int64) (*models.Classifi
 }
 
 func (r *ClassificationRepository) Create(c *models.Classification) error {
-	return r.db.Create(c).Error
+	return wrapDBError(r.db.Create(c).Error)
 }
 
 func (r *ClassificationRepository) Update(c *models.Classification) error {
-	return r.db.Save(c).Error
+	return wrapDBError(r.db.Save(c).Error)
 }
 
 func (r *ClassificationRepository) Delete(id, tenantID int64) error {
-	return r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Classification{}).Error
+	return requireAffectedRow(r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Classification{}))
 }
 
 // GradingLevelRepository 数据分级仓库
@@ -63,9 +63,9 @@ func (r *GradingLevelRepository) Update(id, tenantID int64, req *models.UpdateGr
 	if req.Color != "" {
 		updates["color"] = req.Color
 	}
-	return r.db.Model(&models.GradingLevel{}).
+	return requireAffectedRow(r.db.Model(&models.GradingLevel{}).
 		Where("id = ? AND tenant_id = ?", id, tenantID).
-		Updates(updates).Error
+		Updates(updates))
 }
 
 // EnsureDefaults 确保租户有默认的 L1-L4 分级数据

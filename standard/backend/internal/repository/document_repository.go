@@ -59,15 +59,15 @@ func (r *DocumentRepository) GetByID(id, tenantID int64) (*models.Document, erro
 }
 
 func (r *DocumentRepository) Create(doc *models.Document) error {
-	return r.db.Create(doc).Error
+	return wrapDBError(r.db.Create(doc).Error)
 }
 
 func (r *DocumentRepository) Update(doc *models.Document) error {
-	return r.db.Save(doc).Error
+	return wrapDBError(r.db.Save(doc).Error)
 }
 
 func (r *DocumentRepository) Delete(id, tenantID int64) error {
-	return r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Document{}).Error
+	return requireAffectedRow(r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Document{}))
 }
 
 // GetElementMappings 获取文档关联的数据元
@@ -105,11 +105,11 @@ func (r *DocumentRepository) GetMetricMappings(docID, tenantID int64) ([]models.
 
 // SetElementMappings 设置文档关联数据元（全量替换）
 func (r *DocumentRepository) SetElementMappings(docID int64, elementIDs []int64, locations map[string]string) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
+	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("document_id = ?", docID).Delete(&models.DocumentElementMapping{}).Error; err != nil {
 			return err
 		}
-		for _, eid := range elementIDs {
+		for _, eid := range uniqueInt64s(elementIDs) {
 			key := fmt.Sprintf("element_%d", eid)
 			m := models.DocumentElementMapping{
 				DocumentID:        docID,
@@ -121,16 +121,16 @@ func (r *DocumentRepository) SetElementMappings(docID int64, elementIDs []int64,
 			}
 		}
 		return nil
-	})
+	}))
 }
 
 // SetGlossaryMappings 设置文档关联术语（全量替换）
 func (r *DocumentRepository) SetGlossaryMappings(docID int64, glossaryIDs []int64, locations map[string]string) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
+	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("document_id = ?", docID).Delete(&models.DocumentGlossaryMapping{}).Error; err != nil {
 			return err
 		}
-		for _, gid := range glossaryIDs {
+		for _, gid := range uniqueInt64s(glossaryIDs) {
 			key := fmt.Sprintf("glossary_%d", gid)
 			m := models.DocumentGlossaryMapping{
 				DocumentID:        docID,
@@ -142,16 +142,16 @@ func (r *DocumentRepository) SetGlossaryMappings(docID int64, glossaryIDs []int6
 			}
 		}
 		return nil
-	})
+	}))
 }
 
 // SetMetricMappings 设置文档关联指标（全量替换）
 func (r *DocumentRepository) SetMetricMappings(docID int64, metricIDs []int64, locations map[string]string) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
+	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("document_id = ?", docID).Delete(&models.DocumentMetricMapping{}).Error; err != nil {
 			return err
 		}
-		for _, mid := range metricIDs {
+		for _, mid := range uniqueInt64s(metricIDs) {
 			key := fmt.Sprintf("metric_%d", mid)
 			m := models.DocumentMetricMapping{
 				DocumentID:        docID,
@@ -163,11 +163,11 @@ func (r *DocumentRepository) SetMetricMappings(docID int64, metricIDs []int64, l
 			}
 		}
 		return nil
-	})
+	}))
 }
 
 func (r *DocumentRepository) SetMappings(docID int64, elementIDs, glossaryIDs, metricIDs []int64, locations map[string]string) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
+	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
 		for _, model := range []interface{}{
 			&models.DocumentElementMapping{},
 			&models.DocumentGlossaryMapping{},
@@ -177,30 +177,30 @@ func (r *DocumentRepository) SetMappings(docID int64, elementIDs, glossaryIDs, m
 				return err
 			}
 		}
-		for _, elementID := range elementIDs {
+		for _, elementID := range uniqueInt64s(elementIDs) {
 			mapping := models.DocumentElementMapping{DocumentID: docID, ElementID: elementID, ReferenceLocation: locations[fmt.Sprintf("element_%d", elementID)]}
 			if err := tx.Create(&mapping).Error; err != nil {
 				return err
 			}
 		}
-		for _, glossaryID := range glossaryIDs {
+		for _, glossaryID := range uniqueInt64s(glossaryIDs) {
 			mapping := models.DocumentGlossaryMapping{DocumentID: docID, GlossaryID: glossaryID, ReferenceLocation: locations[fmt.Sprintf("glossary_%d", glossaryID)]}
 			if err := tx.Create(&mapping).Error; err != nil {
 				return err
 			}
 		}
-		for _, metricID := range metricIDs {
+		for _, metricID := range uniqueInt64s(metricIDs) {
 			mapping := models.DocumentMetricMapping{DocumentID: docID, MetricID: metricID, ReferenceLocation: locations[fmt.Sprintf("metric_%d", metricID)]}
 			if err := tx.Create(&mapping).Error; err != nil {
 				return err
 			}
 		}
 		return nil
-	})
+	}))
 }
 
 func (r *DocumentRepository) CreateWithMapping(doc *models.Document, mapping interface{}) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
+	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(doc).Error; err != nil {
 			return err
 		}
@@ -215,7 +215,7 @@ func (r *DocumentRepository) CreateWithMapping(doc *models.Document, mapping int
 			return fmt.Errorf("unsupported document mapping type %T", mapping)
 		}
 		return tx.Create(mapping).Error
-	})
+	}))
 }
 
 // ===== 反向查询：按标准项 ID 查询关联文档 =====

@@ -28,15 +28,15 @@ func (r *MeasurementCategoryRepository) GetByID(id, tenantID int64) (*models.Mea
 }
 
 func (r *MeasurementCategoryRepository) Create(cat *models.MeasurementCategory) error {
-	return r.db.Create(cat).Error
+	return wrapDBError(r.db.Create(cat).Error)
 }
 
 func (r *MeasurementCategoryRepository) Update(cat *models.MeasurementCategory) error {
-	return r.db.Save(cat).Error
+	return wrapDBError(r.db.Save(cat).Error)
 }
 
 func (r *MeasurementCategoryRepository) Delete(id, tenantID int64) error {
-	return r.db.Where("id = ? AND tenant_id = ? AND is_system = false", id, tenantID).Delete(&models.MeasurementCategory{}).Error
+	return requireAffectedRow(r.db.Where("id = ? AND tenant_id = ? AND is_system = false", id, tenantID).Delete(&models.MeasurementCategory{}))
 }
 
 func (r *MeasurementCategoryRepository) ExistsByCode(code string, tenantID int64, excludeID int64) (bool, error) {
@@ -75,13 +75,13 @@ func (r *UnitRepository) GetByID(id, tenantID int64) (*models.Unit, error) {
 }
 
 func (r *UnitRepository) Create(unit *models.Unit) error {
-	return r.db.Create(unit).Error
+	return wrapDBError(r.db.Create(unit).Error)
 }
 
 func (r *UnitRepository) Update(unit *models.Unit) error {
-	return r.db.Save(unit).Error
+	return wrapDBError(r.db.Save(unit).Error)
 }
 
 func (r *UnitRepository) Delete(id, tenantID int64) error {
-	return r.db.Where("id = ? AND tenant_id = ? AND is_system = false", id, tenantID).Delete(&models.Unit{}).Error
+	return requireAffectedRow(r.db.Where("id = ? AND tenant_id = ? AND is_system = false", id, tenantID).Delete(&models.Unit{}))
 }

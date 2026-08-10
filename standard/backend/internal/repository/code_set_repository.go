@@ -16,13 +16,13 @@ func NewCodeSetRepository(db *gorm.DB) *CodeSetRepository {
 
 // Create 创建码值集
 func (r *CodeSetRepository) Create(codeSet *models.CodeSet) error {
-	return r.db.Create(codeSet).Error
+	return wrapDBError(r.db.Create(codeSet).Error)
 }
 
-// GetByID 根据 ID 获取码值集
-func (r *CodeSetRepository) GetByID(id int64) (*models.CodeSet, error) {
+// GetByID 根据 ID 和租户获取码值集
+func (r *CodeSetRepository) GetByID(id, tenantID int64) (*models.CodeSet, error) {
 	var codeSet models.CodeSet
-	if err := r.db.First(&codeSet, id).Error; err != nil {
+	if err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&codeSet).Error; err != nil {
 		return nil, commonrepo.WrapDBError(err)
 	}
 	return &codeSet, nil
@@ -56,12 +56,12 @@ func (r *CodeSetRepository) List(tenantID int64, keyword, codeSetType string, pa
 
 // Update 更新码值集
 func (r *CodeSetRepository) Update(codeSet *models.CodeSet) error {
-	return r.db.Save(codeSet).Error
+	return wrapDBError(r.db.Save(codeSet).Error)
 }
 
 // Delete 删除码值集
-func (r *CodeSetRepository) Delete(id int64) error {
-	return r.db.Delete(&models.CodeSet{}, id).Error
+func (r *CodeSetRepository) Delete(id, tenantID int64) error {
+	return requireAffectedRow(r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.CodeSet{}))
 }
 
 // ExistsByCode 检查 code 是否存在
@@ -88,13 +88,13 @@ func (r *CodeSetRepository) GetItems(codeSetID int64) ([]models.CodeItem, error)
 
 // CreateItem 创建码值项
 func (r *CodeSetRepository) CreateItem(item *models.CodeItem) error {
-	return r.db.Create(item).Error
+	return wrapDBError(r.db.Create(item).Error)
 }
 
 // GetItemByID 根据 ID 获取码值项
-func (r *CodeSetRepository) GetItemByID(id int64) (*models.CodeItem, error) {
+func (r *CodeSetRepository) GetItemByID(id, codeSetID int64) (*models.CodeItem, error) {
 	var item models.CodeItem
-	if err := r.db.First(&item, id).Error; err != nil {
+	if err := r.db.Where("id = ? AND code_set_id = ?", id, codeSetID).First(&item).Error; err != nil {
 		return nil, commonrepo.WrapDBError(err)
 	}
 	return &item, nil
@@ -102,12 +102,12 @@ func (r *CodeSetRepository) GetItemByID(id int64) (*models.CodeItem, error) {
 
 // UpdateItem 更新码值项
 func (r *CodeSetRepository) UpdateItem(item *models.CodeItem) error {
-	return r.db.Save(item).Error
+	return wrapDBError(r.db.Save(item).Error)
 }
 
 // DeleteItem 删除码值项
-func (r *CodeSetRepository) DeleteItem(id int64) error {
-	return r.db.Delete(&models.CodeItem{}, id).Error
+func (r *CodeSetRepository) DeleteItem(id, codeSetID int64) error {
+	return requireAffectedRow(r.db.Where("id = ? AND code_set_id = ?", id, codeSetID).Delete(&models.CodeItem{}))
 }
 
 // ExistsItemByCode 检查码值项 code 是否存在

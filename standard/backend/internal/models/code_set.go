@@ -5,8 +5,8 @@ import "time"
 // CodeSet 码值集
 type CodeSet struct {
 	ID          int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenantID    int64     `gorm:"not null;index:idx_codeset_tenant" json:"tenant_id"`
-	Code        string    `gorm:"size:100;not null;uniqueIndex:idx_codeset_tenant_code" json:"code"`
+	TenantID    int64     `gorm:"not null;index:idx_codeset_tenant;uniqueIndex:uq_standard_code_sets_tenant_code" json:"tenant_id"`
+	Code        string    `gorm:"size:100;not null;uniqueIndex:uq_standard_code_sets_tenant_code" json:"code"`
 	Name        string    `gorm:"size:200;not null" json:"name"`
 	Type        string    `gorm:"size:50;default:custom" json:"type"` // system/custom
 	Description string    `gorm:"type:text" json:"description"`
@@ -21,8 +21,8 @@ func (CodeSet) TableName() string {
 // CodeItem 码值项
 type CodeItem struct {
 	ID          int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	CodeSetID   int64     `gorm:"not null;index:idx_codeitem_set" json:"code_set_id"`
-	Code        string    `gorm:"size:100;not null;uniqueIndex:idx_codeitem_set_code" json:"code"`
+	CodeSetID   int64     `gorm:"not null;index:idx_codeitem_set;uniqueIndex:uq_standard_code_items_set_code" json:"code_set_id"`
+	Code        string    `gorm:"size:100;not null;uniqueIndex:uq_standard_code_items_set_code" json:"code"`
 	Value       string    `gorm:"size:200;not null" json:"value"`
 	Description string    `gorm:"type:text" json:"description"`
 	SortOrder   int       `gorm:"default:0" json:"sort_order"`

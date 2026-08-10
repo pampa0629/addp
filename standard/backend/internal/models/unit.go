@@ -5,9 +5,9 @@ import "time"
 // MeasurementCategory 度量类别
 type MeasurementCategory struct {
 	ID          int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenantID    int64     `gorm:"not null;index" json:"tenant_id"`
+	TenantID    int64     `gorm:"not null;index;uniqueIndex:uq_standard_measurement_categories_tenant_code" json:"tenant_id"`
 	Name        string    `gorm:"size:100;not null" json:"name"`
-	Code        string    `gorm:"size:50;not null" json:"code"`
+	Code        string    `gorm:"size:50;not null;uniqueIndex:uq_standard_measurement_categories_tenant_code" json:"code"`
 	Description string    `gorm:"type:text" json:"description"`
 	SortOrder   int       `gorm:"default:0" json:"sort_order"`
 	IsSystem    bool      `gorm:"default:false" json:"is_system"`

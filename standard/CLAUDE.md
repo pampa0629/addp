@@ -408,6 +408,12 @@ draft → approved → deprecated
 
 Standard 的 `elements`、`units`、`code_sets` 等被其他 Schema（model、metadata 等）引用时，**没有数据库级外键约束**，通过应用层 HTTP 调用 Standard API 进行 ID 存在性验证。
 
+### 数据库约束与启动收敛
+
+Standard 当前使用单一启动迁移入口 `repository.Migrate`：在同一个 PostgreSQL advisory transaction lock 内，先由 GORM `AutoMigrate` 维护表和字段，再幂等收紧唯一索引与 CHECK 约束。约束冲突必须阻止服务启动并暴露具体失败语句，不允许自动删除、合并或改写存量业务数据。
+
+租户资源的编码唯一性以 `(tenant_id, code)` 为准；聚合子资源和映射表使用完整业务键去重。Standard Schema 内部引用可以使用数据库约束，跨 Schema 引用仍只允许通过事实 owner 的 API 校验。
+
 ## 开发注意事项
 
 1. **新增资源**: `models` → `repository` → `service` → `handler` → `router.go` → `main.go`

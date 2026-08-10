@@ -35,10 +35,10 @@ func (j *JSONB) Scan(value interface{}) error {
 // Element 数据元
 type Element struct {
 	ID               int64       `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenantID         int64       `gorm:"not null;index" json:"tenant_id"`
+	TenantID         int64       `gorm:"not null;index;uniqueIndex:uq_standard_elements_tenant_code" json:"tenant_id"`
 	DomainID         *int64      `gorm:"index" json:"domain_id,omitempty"`
 	Name             string      `gorm:"size:200;not null" json:"name"`
-	Code             string      `gorm:"size:100;not null" json:"code"`
+	Code             string      `gorm:"size:100;not null;uniqueIndex:uq_standard_elements_tenant_code" json:"code"`
 	DataType         string      `gorm:"size:50;not null" json:"data_type"` // string/int/float/date/bool/json
 	Length           *int        `json:"length,omitempty"`
 	PrecisionNum     *int        `json:"precision_num,omitempty"`
