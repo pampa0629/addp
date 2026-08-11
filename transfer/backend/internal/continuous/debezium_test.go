@@ -162,6 +162,79 @@ func TestDecodeOracleDebeziumRecordUsesPDBIdentityAndStringNumbers(t *testing.T)
 	}
 }
 
+func TestDecodeOracleDebeziumRecordAcceptsDebezium36LogMinerDiagnostics(t *testing.T) {
+	plan := oracleCDCAdapterPlan()
+	event, err := decodeOracleDebeziumRecord(plugin.ChangeRecord{
+		Key:   []byte(`{"ID":"2"}`),
+		Value: []byte(oracleDebeziumEnvelope("c", `null`, `{"ID":"2","NAME":"stream","CREATED_AT":1768435200000}`, "FREEPDB1", "BUSINESS", "CUSTOMERS")),
+	}, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.Operation != changeEventOperationUpsert || event.Row["id"] != int64(2) || event.Row["name"] != "stream" {
+		t.Fatalf("Oracle streaming event = %#v", event)
+	}
+}
+
+func TestDecodeOracleSpatialMirrorRecordConvertsWKBAndIgnoresUnavailableBeforeGeometry(t *testing.T) {
+	plan := oracleCDCAdapterPlan()
+	plan.Mappings = []planner.ContinuousFieldPlan{
+		{Source: "ID", Target: "id", Type: datatype.FieldTypeBigInt, Nullable: false},
+		{Source: "NAME", Target: "name", Type: datatype.FieldTypeString, Nullable: false},
+		{Source: "SHAPE", Target: "geometry", Type: datatype.FieldTypeGeometry, Nullable: false},
+	}
+	plan.CDC.Table = "CUSTOMER_LOCATIONS"
+	plan.CDC.CaptureTable = "ADDP_M_2"
+	plan.CDC.SpatialInfo = datatype.NewSingleGeometrySpatialInfo("SHAPE", "Point", 4326, 2)
+
+	before := `{"ID":"1","NAME":"old","SHAPE":"X19kZWJleml1bV91bmF2YWlsYWJsZV92YWx1ZQ=="}`
+	after := `{"ID":"1","NAME":"updated","SHAPE":"AAAAAAFAXRlocrAgxUBD9DlYEGJO"}`
+	event, err := decodeOracleDebeziumRecord(plugin.ChangeRecord{
+		Key:   []byte(`{"ID":"1"}`),
+		Value: []byte(oracleDebeziumEnvelope("u", before, after, "FREEPDB1", "BUSINESS", "ADDP_M_2")),
+	}, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	geometry, err := commonSpatial.ParseGeometryBytes(event.Row["geometry"].([]byte))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.Operation != changeEventOperationUpsert || geometry.SRID() != 4326 || geometryTopology(geometry) != datatype.GeometryTypePoint {
+		t.Fatalf("Oracle Spatial event = %#v geometry=%#v", event, geometry)
+	}
+}
+
+func TestDecodeOracleDebeziumRecordRejectsIncompatibleLogMinerDiagnostics(t *testing.T) {
+	plan := oracleCDCAdapterPlan()
+	tests := []struct {
+		name        string
+		oldFragment string
+		newFragment string
+		field       string
+	}{
+		{name: "commit timestamp string", oldFragment: `"commit_ts_ms":1`, newFragment: `"commit_ts_ms":"1"`, field: "commit_ts_ms"},
+		{name: "negative start timestamp", oldFragment: `"start_ts_ms":1`, newFragment: `"start_ts_ms":-1`, field: "start_ts_ms"},
+		{name: "numeric start SCN", oldFragment: `"start_scn":"2102934"`, newFragment: `"start_scn":2102934`, field: "start_scn"},
+		{name: "transaction sequence string", oldFragment: `"txSeq":1`, newFragment: `"txSeq":"1"`, field: "txSeq"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			value := strings.Replace(
+				oracleDebeziumEnvelope("c", `null`, `{"ID":"2","NAME":"stream","CREATED_AT":1768435200000}`, "FREEPDB1", "BUSINESS", "CUSTOMERS"),
+				test.oldFragment,
+				test.newFragment,
+				1,
+			)
+			_, err := decodeOracleDebeziumRecord(plugin.ChangeRecord{Key: []byte(`{"ID":"2"}`), Value: []byte(value)}, plan)
+			var schemaErr *SchemaChangeError
+			if !errors.As(err, &schemaErr) || !containsTestString(schemaErr.IncompatibleFields, test.field) {
+				t.Fatalf("error = %#v, want incompatible field %q", err, test.field)
+			}
+		})
+	}
+}
+
 func TestDecodePostgreSQLDebeziumRecordReportsSchemaDiff(t *testing.T) {
 	plan := postgresqlCDCAdapterPlan()
 	value := debeziumEnvelope("c", `null`, `{"id":1,"name":"ok","extra":true}`, "business", "public", "orders")
@@ -441,13 +514,17 @@ func mysqlDebeziumEnvelope(op, before, after, database, table string) string {
 
 func oracleDebeziumEnvelope(op, before, after, database, schema, table string) string {
 	snapshot := "false"
+	logMinerDiagnostics := `"txId":"06001c00c5020000","commit_scn":"2102935","lcr_position":null,"rs_id":"0x000014.00005d59.0010","ssn":0,"redo_thread":1,` +
+		`"user_name":"BUSINESS","redo_sql":null,"row_id":"AAAAAAAAYAAAAAPAAA","commit_ts_ms":1,"start_scn":"2102934","start_ts_ms":1,"txSeq":1`
 	if op == "r" {
 		snapshot = "first"
+		logMinerDiagnostics = `"txId":null,"commit_scn":null,"lcr_position":null,"rs_id":null,"ssn":0,"redo_thread":null,` +
+			`"user_name":null,"redo_sql":null,"row_id":null,"commit_ts_ms":null,"start_scn":null,"start_ts_ms":null,"txSeq":null`
 	}
 	return `{"before":` + before + `,"after":` + after + `,"source":{` +
 		`"version":"3.6.0.Final","connector":"oracle","name":"addp",` +
 		`"ts_ms":1,"snapshot":"` + snapshot + `","db":"` + database + `","sequence":null,` +
 		`"ts_us":1000,"ts_ns":1000000,"schema":"` + schema + `","table":"` + table + `",` +
-		`"txId":null,"scn":"2102934","commit_scn":null,"lcr_position":null,"rs_id":null,"ssn":0,"redo_thread":1},` +
+		`"scn":"2102934",` + logMinerDiagnostics + `},` +
 		`"op":"` + op + `","ts_ms":1,"ts_us":1000,"ts_ns":1000000,"transaction":null}`
 }

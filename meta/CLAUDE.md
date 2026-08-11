@@ -154,6 +154,7 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 - 扫描任务：`GET /scan/tasks`、`POST /scan/tasks`、`PUT /scan/tasks/:task_id`、`DELETE /scan/tasks/:task_id`、`POST /scan/tasks/:task_id/trigger`。
 - 引擎数据项：`GET /engines/:engine_id/items`。
 - 树查询：`GET /engines/:engine_id/tree`、`GET /nodes/:node_id`、`GET /nodes/:node_id/children`、`GET /nodes/:node_id/items`、`GET /nodes/by-catalog-path`、`GET /items/by-catalog-path`。
+- `resource.children.list` Tool 复用 `GET /resource-tree/:engine_id/node` 返回父资源及直接子资源，并使用独立 Delegated Tool scope；不新增第二条 Catalog HTTP 路由。
 - 字段与空间信息：`GET /items/:item_id/fields`、`GET /items/:item_id/spatial`、`GET /items/:item_id`。
 - 统计：`GET /stats`。引擎缓存是 Meta 内部实现细节，不提供公开清理或预热 API。
 

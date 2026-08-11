@@ -115,6 +115,9 @@ func decodeDatabaseDebeziumRecord(record engineplugin.ChangeRecord, plan *planne
 				return nil, fmt.Errorf("MySQL Debezium operation %q requires full before object", op)
 			}
 			beforeRow, err := mapCDCSourceRow(before, plan)
+			if plan.CDC.Provider == "oracle" && plan.CDC.SpatialInfo != nil {
+				beforeRow, err = mapCDCSourceKeyRow(before, plan)
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -183,8 +186,12 @@ func validatePostgreSQLDebeziumSource(raw json.RawMessage, expected *planner.Dat
 	if err := json.Unmarshal(source["table"], &table); err != nil {
 		return incompatibleSchemaField("Debezium source", "table")
 	}
-	if database != expected.Database || schema != expected.Schema || table != expected.Table {
-		return fmt.Errorf("Debezium source table identity %s.%s.%s does not match expected %s.%s.%s", database, schema, table, expected.Database, expected.Schema, expected.Table)
+	expectedTable := expected.Table
+	if strings.TrimSpace(expected.CaptureTable) != "" {
+		expectedTable = expected.CaptureTable
+	}
+	if database != expected.Database || schema != expected.Schema || table != expectedTable {
+		return fmt.Errorf("Debezium source table identity %s.%s.%s does not match expected %s.%s.%s", database, schema, table, expected.Database, expected.Schema, expectedTable)
 	}
 	return nil
 }
@@ -245,7 +252,11 @@ func validateOracleDebeziumSource(raw json.RawMessage, expected *planner.Databas
 	if err != nil {
 		return incompatibleSchemaField("Debezium envelope", "source")
 	}
-	allowed := []string{"version", "connector", "name", "ts_ms", "snapshot", "db", "sequence", "ts_us", "ts_ns", "schema", "table", "txId", "scn", "commit_scn", "lcr_position", "rs_id", "ssn", "redo_thread"}
+	allowed := []string{
+		"version", "connector", "name", "ts_ms", "snapshot", "db", "sequence", "ts_us", "ts_ns", "schema", "table",
+		"txId", "scn", "commit_scn", "lcr_position", "rs_id", "ssn", "redo_thread", "user_name", "redo_sql", "row_id",
+		"commit_ts_ms", "start_scn", "start_ts_ms", "txSeq",
+	}
 	if err := validateObjectFields(source, []string{"connector", "snapshot", "db", "schema", "table", "scn"}, allowed, "Debezium source"); err != nil {
 		return err
 	}
@@ -264,6 +275,21 @@ func validateOracleDebeziumSource(raw json.RawMessage, expected *planner.Databas
 	if _, ok := new(big.Int).SetString(scn, 10); !ok || strings.HasPrefix(scn, "-") {
 		return incompatibleSchemaField("Debezium source", "scn")
 	}
+	for _, field := range []string{"commit_scn", "start_scn"} {
+		if err := validateOptionalOracleSCN(source, field); err != nil {
+			return err
+		}
+	}
+	for _, field := range []string{"ts_ms", "ts_us", "ts_ns", "ssn", "redo_thread", "commit_ts_ms", "start_ts_ms", "txSeq"} {
+		if err := validateOptionalNonNegativeInteger(source, field); err != nil {
+			return err
+		}
+	}
+	for _, field := range []string{"txId", "lcr_position", "rs_id", "user_name", "redo_sql", "row_id"} {
+		if err := validateOptionalString(source, field); err != nil {
+			return err
+		}
+	}
 	if op == "r" {
 		if snapshot != "first" && snapshot != "last" && snapshot != "true" {
 			return incompatibleSchemaField("Debezium source", "snapshot")
@@ -271,8 +297,61 @@ func validateOracleDebeziumSource(raw json.RawMessage, expected *planner.Databas
 	} else if snapshot != "false" {
 		return incompatibleSchemaField("Debezium source", "snapshot")
 	}
-	if database != expected.Database || schema != expected.Schema || table != expected.Table {
-		return fmt.Errorf("Debezium source table identity %s.%s.%s does not match expected %s.%s.%s", database, schema, table, expected.Database, expected.Schema, expected.Table)
+	expectedTable := expected.Table
+	if strings.TrimSpace(expected.CaptureTable) != "" {
+		expectedTable = expected.CaptureTable
+	}
+	if database != expected.Database || schema != expected.Schema || table != expectedTable {
+		return fmt.Errorf("Debezium source table identity %s.%s.%s does not match expected %s.%s.%s", database, schema, table, expected.Database, expected.Schema, expectedTable)
+	}
+	return nil
+}
+
+func validateOptionalOracleSCN(source map[string]json.RawMessage, field string) error {
+	raw, ok := source[field]
+	if !ok || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return incompatibleSchemaField("Debezium source", field)
+	}
+	if _, ok := new(big.Int).SetString(value, 10); !ok || strings.HasPrefix(value, "-") {
+		return incompatibleSchemaField("Debezium source", field)
+	}
+	return nil
+}
+
+func validateOptionalNonNegativeInteger(source map[string]json.RawMessage, field string) error {
+	raw, ok := source[field]
+	if !ok || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var decoded interface{}
+	if err := decoder.Decode(&decoded); err != nil {
+		return incompatibleSchemaField("Debezium source", field)
+	}
+	number, ok := decoded.(json.Number)
+	if !ok {
+		return incompatibleSchemaField("Debezium source", field)
+	}
+	value, err := number.Int64()
+	if err != nil || value < 0 {
+		return incompatibleSchemaField("Debezium source", field)
+	}
+	return nil
+}
+
+func validateOptionalString(source map[string]json.RawMessage, field string) error {
+	raw, ok := source[field]
+	if !ok || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return incompatibleSchemaField("Debezium source", field)
 	}
 	return nil
 }
@@ -338,7 +417,7 @@ func mapCDCSourceRow(source map[string]interface{}, plan *planner.ContinuousPlan
 		var converted interface{}
 		var err error
 		if mapping.Type == datatype.FieldTypeGeometry {
-			converted, err = coercePostgreSQLCDCGeometry(value, mapping.Source, plan.CDC.SpatialInfo)
+			converted, err = coerceDatabaseCDCGeometry(value, mapping.Source, plan)
 		} else {
 			converted, err = coerceDatabaseCDCValue(value, mapping, plan)
 		}
@@ -346,6 +425,32 @@ func mapCDCSourceRow(source map[string]interface{}, plan *planner.ContinuousPlan
 			schemaErr := incompatibleSchemaField("Debezium after", mapping.Source)
 			schemaErr.Details = map[string]string{mapping.Source: err.Error()}
 			return nil, schemaErr
+		}
+		row[mapping.Target] = converted
+	}
+	return row, nil
+}
+
+func mapCDCSourceKeyRow(source map[string]interface{}, plan *planner.ContinuousPlan) (map[string]interface{}, error) {
+	expected := make(map[string]bool, len(plan.Mappings))
+	mappings := make(map[string]planner.ContinuousFieldPlan, len(plan.Mappings))
+	for _, mapping := range plan.Mappings {
+		expected[mapping.Source] = true
+		mappings[mapping.Source] = mapping
+	}
+	missing, unexpected := objectFieldDiff(source, expected)
+	if len(missing) > 0 || len(unexpected) > 0 {
+		return nil, &SchemaChangeError{Scope: "Debezium before", MissingFields: missing, UnexpectedFields: unexpected}
+	}
+	row := make(map[string]interface{}, len(plan.SourceKeys))
+	for _, sourceKey := range plan.SourceKeys {
+		mapping, ok := mappings[sourceKey]
+		if !ok || source[sourceKey] == nil {
+			return nil, incompatibleSchemaField("Debezium before", sourceKey)
+		}
+		converted, err := coerceDatabaseCDCValue(source[sourceKey], mapping, plan)
+		if err != nil {
+			return nil, incompatibleSchemaField("Debezium before", sourceKey)
 		}
 		row[mapping.Target] = converted
 	}
@@ -421,7 +526,8 @@ func coercePostgreSQLCDCGeometry(value interface{}, fieldName string, spatialInf
 	if geometry.SRID() > 0 && geometry.SRID() != *column.SRID {
 		return nil, fmt.Errorf("PostgreSQL CDC geometry %q embedded SRID changed from %d to %d", fieldName, *column.SRID, geometry.SRID())
 	}
-	if datatype.ParseGeometryType(column.GeometryType) != geometryTopology(geometry) {
+	expectedTopology := datatype.ParseGeometryType(column.GeometryType)
+	if expectedTopology != datatype.GeometryTypeGeometry && expectedTopology != geometryTopology(geometry) {
 		return nil, fmt.Errorf("PostgreSQL CDC geometry %q topology changed", fieldName)
 	}
 	if !geometryLayoutMatchesDimension(geometry.Layout(), *column.Dimension) {
@@ -430,6 +536,50 @@ func coercePostgreSQLCDCGeometry(value interface{}, fieldName string, spatialInf
 	ewkb, err := commonSpatial.GeomToEWKB(geometry, *column.SRID)
 	if err != nil {
 		return nil, fmt.Errorf("encode PostgreSQL CDC geometry %q as EWKB: %w", fieldName, err)
+	}
+	return ewkb, nil
+}
+
+func coerceDatabaseCDCGeometry(value interface{}, fieldName string, plan *planner.ContinuousPlan) ([]byte, error) {
+	if plan == nil || plan.CDC == nil {
+		return nil, fmt.Errorf("database CDC geometry %q requires a CDC plan", fieldName)
+	}
+	if plan.CDC.Provider == "postgresql" {
+		return coercePostgreSQLCDCGeometry(value, fieldName, plan.CDC.SpatialInfo)
+	}
+	if plan.CDC.Provider != "oracle" {
+		return nil, fmt.Errorf("%s CDC does not support geometry field %q", plan.CDC.Provider, fieldName)
+	}
+	encoded, ok := value.(string)
+	if !ok || strings.TrimSpace(encoded) == "" {
+		return nil, fmt.Errorf("Oracle Spatial CDC geometry %q must be base64 WKB text", fieldName)
+	}
+	wkb, err := base64.StdEncoding.Strict().DecodeString(encoded)
+	if err != nil || len(wkb) == 0 {
+		return nil, fmt.Errorf("Oracle Spatial CDC geometry %q is not valid base64 WKB", fieldName)
+	}
+	geometry, err := commonSpatial.ParseGeometryBytes(wkb)
+	if err != nil {
+		return nil, fmt.Errorf("decode Oracle Spatial CDC geometry %q: %w", fieldName, err)
+	}
+	column := spatialGeometryColumn(plan.CDC.SpatialInfo, fieldName)
+	if column == nil || column.SRID == nil || column.Dimension == nil || *column.SRID <= 0 {
+		return nil, fmt.Errorf("Oracle Spatial CDC geometry %q has no frozen spatial facts", fieldName)
+	}
+	if geometry.SRID() > 0 && geometry.SRID() != *column.SRID {
+		return nil, fmt.Errorf("Oracle Spatial CDC geometry %q embedded SRID changed from %d to %d", fieldName, *column.SRID, geometry.SRID())
+	}
+	expectedTopology := datatype.ParseGeometryType(column.GeometryType)
+	if expectedTopology == datatype.GeometryTypeUnknown ||
+		(expectedTopology != datatype.GeometryTypeGeometry && expectedTopology != geometryTopology(geometry)) {
+		return nil, fmt.Errorf("Oracle Spatial CDC geometry %q topology changed", fieldName)
+	}
+	if !geometryLayoutMatchesDimension(geometry.Layout(), *column.Dimension) {
+		return nil, fmt.Errorf("Oracle Spatial CDC geometry %q dimension changed", fieldName)
+	}
+	ewkb, err := commonSpatial.GeomToEWKB(geometry, *column.SRID)
+	if err != nil {
+		return nil, fmt.Errorf("encode Oracle Spatial CDC geometry %q as EWKB: %w", fieldName, err)
 	}
 	return ewkb, nil
 }

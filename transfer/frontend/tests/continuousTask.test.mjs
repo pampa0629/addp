@@ -145,7 +145,7 @@ test('database CDC mapping types are provider-specific', () => {
 	]
 	assert.equal(databaseCDCMappingsValid(mappings, ['id'], 'postgresql'), true)
 	assert.equal(databaseCDCMappingsValid(mappings, ['id'], 'mysql'), false)
-	assert.equal(databaseCDCMappingsValid(mappings, ['id'], 'oracle'), false)
+	assert.equal(databaseCDCMappingsValid(mappings, ['id'], 'oracle'), true)
 	assert.equal(continuousMappingsValid(mappings, ['id']), false)
 	assert.equal(databaseCDCMappingsValid([
 		{ source_field: 'id', target_field: 'id', target_type: 'bigint', nullable: false },

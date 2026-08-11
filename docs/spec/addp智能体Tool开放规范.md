@@ -90,6 +90,7 @@ Manifest 不保存第二套 HTTP 路径事实。ToolExecutor 通过 Python SDK �
 | --- | --- | --- | --- | --- | --- | ---: |
 | `engine.list` | System | `system.engine.read` | read | none | none | 128 KiB |
 | `data.search` | Manager | `manager.search.execute` | read | none | locator | 128 KiB |
+| `resource.children.list` | Meta | `meta.catalog.read` | read | none | locator | 512 KiB |
 | `resource.ancestors.get` | Meta | `meta.catalog.read` | read | none | locator | 128 KiB |
 | `data.preview` | Manager | `manager.data_item.read` | read | none | locator | 256 KiB |
 | `workflow.operators.list` | Develop | `develop.task.read` | read | none | none | 512 KiB |
@@ -135,13 +136,21 @@ Tool 不同步等待长任务完成。标准路径为 owner 创建 execution，T
 
 审批事实、身份隔离、过期、拒绝、一次性消费及跨 AgentRun 重放规则由 OAuth 规范持有。Manifest 必须声明当前稳定错误码，包括 `approval_forbidden`、`approval_not_found`、`approval_not_approved`、`approval_rejected`、`approval_expired`、`approval_request_mismatch` 和 `approval_already_consumed`。
 
-### 4.4 `query.draft.generate`
+### 4.4 `resource.children.list`
 
-`query.draft.generate` 的 `resources[]` 只承载由 owner Tool 验证过的具体 data item，不承载 database、schema、directory 等执行容器。查询执行范围由 Develop 的任务或 execution 契约持有，不进入 Copilot Tool 输入。
+`resource.children.list` 接收 `engine_id + parent_locator`，由 Meta 按当前 Tenant 和 Catalog 事实校验父资源，并返回父资源及其直接子资源的标准资源树投影。它只表达已限定容器内的候选枚举，不递归展开、不接受客户端拼接路径，也不替代 `data.preview` 的具体数据项事实确认。
 
-调用方可以传入可选 `current_query` 表示编辑器已有候选文本。它不是资源事实，也不产生第二条执行路径；生成结果仍只返回候选查询文本。对于 MQL，Develop 必须从单个 JSON command object 中解析 `find`、`aggregate`、`count`、`distinct` 主 collection，以及 `$lookup.from`、`$graphLookup.from`、`$unionWith` 引用的其他 collection；在当前选中 database 的 Owner Catalog 中逐一解析为具体 data item locator，并通过 `resources[]` 提交。用户只需选择 database，不需要额外点选每个 collection；解析不到、跨出当前 database 或引用不唯一时必须要求澄清。
+该 Tool 用于调用方已有明确 Catalog 范围、但尚未确定具体 data item 的场景。父容器 locator 是 discovery scope，不是输入资源或执行目标；具体子资源必须继续通过 owner preview 校验后，才能进入生成类 Tool 的 `resources[]`。
 
-Copilot 默认保留 `current_query` 已声明的主 collection，除非用户明确要求修改。合法 MQL 已声明 collection 时不得以 `resources=[]` 跳过字段事实确认；`current_query` 不能替代 metadata。MongoDB database locator 仍不得写入 `resources[]`、`current_query` 或生成的 MQL，只有解析后的具体 collection locator 可以进入 `resources[]`。Copilot 生成前先形成结构化 Query Plan，生成后校验只读命令、collection、可查询字段路径和计划覆盖；失败时最多进行一次受限重生成，不保留未校验候选旁路。
+### 4.5 `query.draft.generate`
+
+`query.draft.generate` 的 `resources[]` 只承载由 owner Tool 验证过的具体 data item，不承载 database、schema、directory 等执行容器。查询执行范围由 Develop 的任务或 execution 契约持有，不进入 `resources[]`。可选 `resource_scope_locator` 只表示本次数据源发现的 Catalog 容器范围；它与 `resources[]`、`current_query` 互斥，不是查询执行参数。
+
+调用方可以传入可选 `current_query` 表示编辑器已有候选文本。它不是资源事实，也不产生第二条执行路径。生成成功时返回一份完整查询草稿：`query` 候选文本与 `query_parameters[]` 参数定义。参数定义必须与 SQL `:name`、Cypher `$name` 或 MQL `{"$param":"name"}` 引用完全一致，并提供符合当前 Engine capability 的 `type` 和可执行 `default`；无参数引用时必须返回空数组。Develop 只将草稿原子回填到编辑器和参数面板，最终任务事实、预检与执行仍归 Develop 持有。对于 MQL，Develop 必须从单个 JSON command object 中解析 `find`、`aggregate`、`count`、`distinct` 主 collection，以及 `$lookup.from`、`$graphLookup.from`、`$unionWith` 引用的其他 collection；在当前选中 database 的 Owner Catalog 中逐一解析为具体 data item locator，并通过 `resources[]` 提交。用户只需选择 database，不需要额外点选每个 collection；引用不存在、跨出当前 database 或引用不唯一时必须要求澄清。
+
+当 MongoDB 工作台只选中 database 且编辑器为空时，Develop 以 `resources=[] + resource_scope_locator=<database locator>` 调用同一共享资源确认流程。Copilot 必须通过 `resource.children.list → data.preview` 枚举并验证当前 database 的直接 collection，再按自然语言输入角色排序并返回候选；用户确认后的具体 collection 才能进入 `resources[]`。该流程不依赖全局搜索是否能从业务词命中 collection 名，也不把 database 当作资源事实或执行参数。已有 MQL 时仍优先执行确定性的 collection 引用解析，解析失败不得退回范围枚举或模糊搜索。
+
+Copilot 默认保留 `current_query` 已声明的主 collection，除非用户明确要求修改。合法 MQL 已声明 collection 时不得以 `resources=[]` 跳过字段事实确认；`current_query` 不能替代 metadata。MongoDB database locator 仍不得写入 `resources[]`、`current_query` 或生成的 MQL，只有解析后的具体 collection locator 可以进入 `resources[]`。Copilot 生成前先形成结构化 Query Plan；Plan 的 collection 必须使用已验证资源事实提供的规范查询名，operation 必须使用平台枚举，五类 Plan 字段统一为字符串数组。Plan 解析或校验失败时最多进行一次受限修复；Plan 通过后再生成候选，并校验只读命令、collection、可查询字段路径、参数引用/定义一致性和计划覆盖。MQL 只能通过已验证的字面字段路径取值，不得通过 `$objectToArray` 等记录键枚举绕过字段事实。候选失败时最多进行一次受限重生成，不保留未校验 Plan 或候选旁路。
 
 ## 五、Adapter 边界
 

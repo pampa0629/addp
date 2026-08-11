@@ -75,6 +75,11 @@ def _compact_column(value: Any) -> dict[str, Any] | None:
     field: dict[str, Any] = {"name": name}
     if isinstance(value.get("type"), str) and value["type"]:
         field["type"] = value["type"]
+    path = value.get("path")
+    if isinstance(path, list):
+        segments = [str(item).strip() for item in path if str(item).strip()]
+        if segments:
+            field["path"] = segments
     if isinstance(value.get("nullable"), bool):
         field["nullable"] = value["nullable"]
     if value.get("primary_key") is True:

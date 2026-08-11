@@ -42,7 +42,8 @@ export const ORACLE_CDC_FIELD_TYPES = Object.freeze([
   'float',
   'double',
   'decimal',
-  'timestamp'
+  'timestamp',
+  'geometry'
 ])
 
 const DATABASE_CDC_SOURCE_TYPES = Object.freeze(['postgresql', 'mysql', 'oracle'])

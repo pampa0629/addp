@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/addp/common/datatype"
@@ -194,26 +195,18 @@ func (p *MongoDBPlugin) SampleDynamicSchema(ctx context.Context, connInfo plugin
 
 	fieldStats := make(map[string]*mongoFieldStat)
 	for _, doc := range documents {
-		for key, value := range doc {
-			stat := ensureMongoFieldStat(fieldStats, key)
-			stat.Count++
-			typeStr := detectMongoBSONType(value)
-			if stat.Type == "" {
-				stat.Type = typeStr
-			} else if stat.Type != typeStr && typeStr != "null" {
-				stat.Type = "mixed"
-			}
-		}
+		collectMongoDocumentFields(fieldStats, nil, map[string]interface{}(doc), 0)
 	}
 
 	fields := make([]datatype.FieldInfo, 0, len(fieldStats))
 	for name, stat := range fieldStats {
 		fields = append(fields, datatype.FieldInfo{
 			Name:       name,
+			Path:       append([]string(nil), stat.Path...),
 			Type:       mapMongoBSONType(stat.Type),
 			NativeType: stat.Type,
 			Nullable:   true,
-			PrimaryKey: name == "_id",
+			PrimaryKey: len(stat.Path) == 1 && name == "_id",
 		})
 	}
 	sort.Slice(fields, func(i, j int) bool {
@@ -306,15 +299,129 @@ func (p *MongoDBPlugin) getIndexes(ctx context.Context, coll *mongo.Collection) 
 type mongoFieldStat struct {
 	Count int
 	Type  string
+	Path  []string
 }
 
-func ensureMongoFieldStat(stats map[string]*mongoFieldStat, fieldName string) *mongoFieldStat {
+const (
+	mongoSchemaMaxDepth         = 8
+	mongoSchemaMaxFields        = 200
+	mongoSchemaMaxArrayElements = 20
+)
+
+func ensureMongoFieldStat(stats map[string]*mongoFieldStat, path []string) *mongoFieldStat {
+	fieldName := strings.Join(path, ".")
 	if stat, exists := stats[fieldName]; exists {
 		return stat
 	}
-	stat := &mongoFieldStat{}
+	stat := &mongoFieldStat{Path: append([]string(nil), path...)}
 	stats[fieldName] = stat
 	return stat
+}
+
+func collectMongoFieldStats(stats map[string]*mongoFieldStat, path []string, value interface{}, depth int) {
+	if len(path) == 0 || depth > mongoSchemaMaxDepth || len(stats) >= mongoSchemaMaxFields {
+		return
+	}
+	stat := ensureMongoFieldStat(stats, path)
+	stat.Count++
+	typeStr := detectMongoBSONType(value)
+	if typeStr != "null" {
+		if stat.Type == "" || stat.Type == "null" {
+			stat.Type = typeStr
+		} else if stat.Type != typeStr {
+			stat.Type = "mixed"
+		}
+	}
+	if depth == mongoSchemaMaxDepth {
+		return
+	}
+	collectMongoNestedFields(stats, path, value, depth)
+}
+
+func collectMongoNestedFields(stats map[string]*mongoFieldStat, path []string, value interface{}, depth int) {
+	switch typed := value.(type) {
+	case bson.M:
+		collectMongoDocumentFields(stats, path, map[string]interface{}(typed), depth)
+	case map[string]interface{}:
+		collectMongoDocumentFields(stats, path, typed, depth)
+	case primitive.D:
+		children := append(primitive.D(nil), typed...)
+		sort.SliceStable(children, func(i, j int) bool { return children[i].Key < children[j].Key })
+		for _, child := range children {
+			collectMongoFieldStats(stats, appendMongoPath(path, child.Key), child.Value, depth+1)
+			if len(stats) >= mongoSchemaMaxFields {
+				return
+			}
+		}
+	case primitive.A:
+		collectMongoArrayFields(stats, path, []interface{}(typed), depth)
+	case []interface{}:
+		collectMongoArrayFields(stats, path, typed, depth)
+	}
+}
+
+func collectMongoDocumentFields(
+	stats map[string]*mongoFieldStat,
+	path []string,
+	document map[string]interface{},
+	depth int,
+) {
+	keys := make([]string, 0, len(document))
+	for key := range document {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		// MongoDB documents frequently use generated identifiers as map keys
+		// (for example, participant IDs under members). Those keys are record
+		// data, not stable query fields, and must not enter the schema facts.
+		if looksLikeMongoDynamicKey(key) {
+			continue
+		}
+		collectMongoFieldStats(stats, appendMongoPath(path, key), document[key], depth+1)
+		if len(stats) >= mongoSchemaMaxFields {
+			return
+		}
+	}
+}
+
+func looksLikeMongoDynamicKey(key string) bool {
+	if len(key) < 20 {
+		return false
+	}
+	hasLetter := false
+	hasDigit := false
+	for _, char := range key {
+		switch {
+		case char >= 'a' && char <= 'z', char >= 'A' && char <= 'Z':
+			hasLetter = true
+		case char >= '0' && char <= '9':
+			hasDigit = true
+		case char == '-' || char == '_':
+		default:
+			return false
+		}
+	}
+	return hasLetter && hasDigit
+}
+
+func collectMongoArrayFields(stats map[string]*mongoFieldStat, path []string, values []interface{}, depth int) {
+	limit := len(values)
+	if limit > mongoSchemaMaxArrayElements {
+		limit = mongoSchemaMaxArrayElements
+	}
+	for _, value := range values[:limit] {
+		collectMongoNestedFields(stats, path, value, depth)
+		if len(stats) >= mongoSchemaMaxFields {
+			return
+		}
+	}
+}
+
+func appendMongoPath(path []string, segment string) []string {
+	result := make([]string, len(path), len(path)+1)
+	copy(result, path)
+	return append(result, segment)
 }
 
 func detectMongoBSONType(value interface{}) string {
@@ -336,7 +443,7 @@ func detectMongoBSONType(value interface{}) string {
 		return "datetime"
 	case []interface{}, primitive.A:
 		return "array"
-	case bson.M, map[string]interface{}:
+	case bson.M, map[string]interface{}, primitive.D:
 		return "object"
 	case primitive.Binary:
 		return "binary"

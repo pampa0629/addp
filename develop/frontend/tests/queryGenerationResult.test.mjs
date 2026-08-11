@@ -74,18 +74,30 @@ assert.deepEqual(resolveQueryGenerationResult({
   status: 'success',
   query: 'SELECT 1',
   query_language: 'sql',
+  query_parameters: [],
   resources: []
 }), {
   query: 'SELECT 1',
   queryLanguage: 'sql',
   resources: [],
   warnings: [],
+  queryParameters: [],
   explanation: '',
   clarificationKey: null,
   clarificationReason: null,
   candidates: []
 })
 
+assert.deepEqual(resolveQueryGenerationResult({
+  status: 'success',
+  query: '{"find":"Persons","filter":{"userInfo.nickName":{"$param":"nickname"}}}',
+  query_language: 'mql',
+  query_parameters: [{ name: 'nickname', type: 'string', default: 'PiPi' }]
+}).queryParameters, [
+  { name: 'nickname', type: 'string', default: 'PiPi' }
+])
+
 assert.throws(() => resolveQueryGenerationResult({ status: 'success', query: '' }))
+assert.throws(() => resolveQueryGenerationResult({ status: 'success', query: 'SELECT 1', query_parameters: null }))
 
 console.log('queryGenerationResult tests passed')

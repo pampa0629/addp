@@ -20,6 +20,7 @@ type TableInfo struct {
 // FieldInfo describes a common field or property semantic model.
 type FieldInfo struct {
 	Name                 string    `json:"name,omitempty"`
+	Path                 []string  `json:"path,omitempty"`
 	Type                 FieldType `json:"type,omitempty"`
 	NativeType           string    `json:"native_type,omitempty"`
 	Nullable             bool      `json:"nullable"`
@@ -41,6 +42,9 @@ func (t *TableInfo) Clone() *TableInfo {
 	}
 	cloned := *t
 	cloned.Fields = append([]FieldInfo(nil), t.Fields...)
+	for i := range cloned.Fields {
+		cloned.Fields[i].Path = append([]string(nil), t.Fields[i].Path...)
+	}
 	cloned.PrimaryKey = append([]string(nil), t.PrimaryKey...)
 	cloned.Native = cloneInterfaceMap(t.Native)
 	if t.RowCount != nil {

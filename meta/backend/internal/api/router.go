@@ -56,12 +56,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 	api.Use(
 		auth.MustNewMiddleware(auth.MiddlewareConfig{SystemURL: cfg.SystemServiceURL}),
 		auth.MustNewContextGuard("tenant"),
-		auth.MustNewDelegatedPolicyGuard("meta", map[string]auth.DelegatedRoutePolicyEntry{
-			"GET /api/v1/meta/resource-tree/:engine_id/ancestors": {
-				RequiredScopes:      []string{"resource.ancestors.get"},
-				RequiredPermissions: []string{metaauthorization.PermissionMetaCatalogRead},
-			},
-		}),
+		auth.MustNewDelegatedPolicyGuard("meta", metaDelegatedToolPolicies()),
 	)
 	permission := func(keys ...string) gin.HandlerFunc {
 		return auth.MustNewPermissionGuard(keys...)
@@ -129,6 +124,19 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 	}
 
 	return router
+}
+
+func metaDelegatedToolPolicies() map[string]auth.DelegatedRoutePolicyEntry {
+	return map[string]auth.DelegatedRoutePolicyEntry{
+		"GET /api/v1/meta/resource-tree/:engine_id/node": {
+			RequiredScopes:      []string{"resource.children.list"},
+			RequiredPermissions: []string{metaauthorization.PermissionMetaCatalogRead},
+		},
+		"GET /api/v1/meta/resource-tree/:engine_id/ancestors": {
+			RequiredScopes:      []string{"resource.ancestors.get"},
+			RequiredPermissions: []string{metaauthorization.PermissionMetaCatalogRead},
+		},
+	}
 }
 
 func requestLogger() gin.HandlerFunc {

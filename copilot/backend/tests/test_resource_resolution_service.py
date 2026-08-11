@@ -27,6 +27,7 @@ class Discovery:
     def __init__(self, results):
         self.results = list(results)
         self.discover_calls = []
+        self.discover_scoped_calls = []
         self.verify_calls = []
 
     async def discover(self, intents, **kwargs):
@@ -36,6 +37,10 @@ class Discovery:
     async def verify(self, resources, **kwargs):
         self.verify_calls.append((resources, kwargs))
         return resources
+
+    async def discover_scoped(self, intents, **kwargs):
+        self.discover_scoped_calls.append((intents, kwargs))
+        return self.results.pop(0)
 
 
 def test_query_policy_limits_discovery_to_selected_engine():
@@ -47,6 +52,28 @@ def test_query_policy_limits_discovery_to_selected_engine():
 
     assert result.missing_roles == []
     assert discovery.discover_calls[0][1]["engine_id"] == 8
+
+
+def test_query_policy_uses_catalog_scope_instead_of_global_search():
+    intents = [ResourceIntent(role="活动参与", search_queries=["activities"])]
+    discovery = Discovery([ResourceDiscoveryResult(candidates=[], missing_roles=[])])
+    service = ResourceResolutionService(discovery=discovery, intent_chain=IntentChain(intents))
+    scope = "addp://engine/11/path/Outdoor?type=database&node_id=276"
+
+    asyncio.run(service.discover(
+        "查询用户参加的活动",
+        ResourceResolutionPolicy.query(11),
+        scope_locator=scope,
+    ))
+
+    assert discovery.discover_calls == []
+    assert discovery.discover_scoped_calls[0][1] == {
+        "query": "查询用户参加的活动",
+        "engine_id": 11,
+        "scope_locator": scope,
+        "limit": 20,
+        "allowed_data_types": frozenset({"table", "graph"}),
+    }
 
 
 def test_workflow_policy_preserves_multiple_input_roles():

@@ -13,6 +13,7 @@ export function resolveQueryGenerationResult(result) {
       queryLanguage: result.query_language || '',
       resources: [],
       warnings: [],
+      queryParameters: [],
       explanation: '',
       clarificationKey: clarificationKeys[result.clarification_reason]
         || 'develop.query.dataSourceClarificationRequired',
@@ -26,12 +27,22 @@ export function resolveQueryGenerationResult(result) {
   if (result?.status !== 'success' || !String(result.query || '').trim()) {
     throw new Error('invalid query generation response')
   }
+  if (!Array.isArray(result.query_parameters)) {
+    throw new Error('invalid query generation response')
+  }
 
   return {
     query: String(result.query).trim(),
     queryLanguage: String(result.query_language || '').trim().toLowerCase(),
     resources: Array.isArray(result.resources) ? result.resources : [],
     warnings: Array.isArray(result.warnings) ? result.warnings : [],
+    queryParameters: result.query_parameters.map(parameter => ({
+      name: parameter.name,
+      type: parameter.type,
+      default: parameter.default,
+      ...(parameter.title ? { title: parameter.title } : {}),
+      ...(parameter.description ? { description: parameter.description } : {})
+    })),
     explanation: String(result.explanation || '').trim(),
     clarificationKey: null,
     clarificationReason: null,

@@ -53,6 +53,21 @@ func TestIntegrationPostgresCaptureProviderSchemaCleanBreak(t *testing.T) {
 	if err := migrateCaptureProviderResources(db, schema); err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec(`ALTER TABLE ` + quotedSchema + `.oracle_capture_resources ADD COLUMN spatial_trigger_name VARCHAR(30) NOT NULL DEFAULT ''`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateCaptureProviderResources(db, schema); err != nil {
+		t.Fatal(err)
+	}
+	var legacyOracleColumns int64
+	if err := db.Raw(`SELECT COUNT(*) FROM information_schema.columns
+		WHERE table_schema = ? AND table_name = 'oracle_capture_resources'
+		AND column_name = 'spatial_trigger_name'`, schema).Scan(&legacyOracleColumns).Error; err != nil {
+		t.Fatal(err)
+	}
+	if legacyOracleColumns != 0 {
+		t.Fatalf("legacy Oracle Spatial columns remaining = %d", legacyOracleColumns)
+	}
 
 	var sourceType, slotName, publicationName string
 	if err := db.Raw(`SELECT c.source_type, p.slot_name, p.publication_name

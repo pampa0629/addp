@@ -90,6 +90,15 @@ func hasTableInfoFacts(info TableInfo) bool {
 
 func normalizeFieldInfo(field FieldInfo) FieldInfo {
 	field.Name = strings.TrimSpace(field.Name)
+	if len(field.Path) > 0 {
+		path := make([]string, 0, len(field.Path))
+		for _, segment := range field.Path {
+			if segment = strings.TrimSpace(segment); segment != "" {
+				path = append(path, segment)
+			}
+		}
+		field.Path = path
+	}
 	field.NativeType = strings.TrimSpace(field.NativeType)
 	field.Comment = strings.TrimSpace(field.Comment)
 	field.DefaultExpression = strings.TrimSpace(field.DefaultExpression)

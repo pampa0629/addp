@@ -24,7 +24,7 @@ Business 的 Doris all-in-one 服务是固定单 FE、单 BE 的本地开发拓�
 - ✅ PostGIS 空间数据支持
 - ✅ MySQL 全二维几何族、SRID 与空间索引测试数据
 - ✅ Oracle `MDSYS.SDO_GEOMETRY`、完整二维几何族、SRID、空间索引与 EWKB 读取测试数据
-- ✅ Oracle ARCHIVELOG、LogMiner 专用 common user 与普通非空间表 CDC readiness
+- ✅ Oracle ARCHIVELOG、LogMiner 专用 common user、普通表与 Oracle Spatial CDC readiness
 - ✅ 幂等启动脚本
 - ✅ 模块化启动（按需启动服务）
 - ✅ Business Kafka 与 ADDP Infra Kafka 物理隔离
@@ -186,7 +186,7 @@ cd business && bash scripts/start.sh -oracle
 
 ### Oracle CDC 测试源
 
-`bash scripts/start.sh -oracle` 会在数据库 ready 后执行 `oracle/init-cdc.sh`，幂等启用 `ARCHIVELOG`、force logging、minimal supplemental logging，并创建 `${ORACLE_CDC_USER:-C##ADDP_CDC}` LogMiner 专用 common user。`CUSTOMERS` 表由 `init.sql` 幂等启用 `SUPPLEMENTAL LOG DATA (ALL) COLUMNS`，作为第一期普通非空间单表 CDC 样例。Oracle Engine 仍使用 business 主账号做 Catalog/读取，System 的 `connection_info` 另存 `cdc_database_name`、`cdc_user` 和加密的 `cdc_password`；不要复用业务账号或 SYS。
+`bash scripts/start.sh -oracle` 会在数据库 ready 后执行 `oracle/init-cdc.sh`，幂等启用 `ARCHIVELOG`、force logging、minimal supplemental logging，并创建 `${ORACLE_CDC_USER:-C##ADDP_CDC}` LogMiner 专用 common user。`CUSTOMERS`、`CUSTOMER_LOCATIONS` 和 `SPATIAL_FEATURES` 由 `init.sql` 幂等启用 `SUPPLEMENTAL LOG DATA (ALL) COLUMNS`，分别作为普通字段、单一 Point 和混合二维几何族 CDC 样例。Oracle Engine 使用 schema owner 的 business 主账号做 Catalog/读取，并供 Transfer 创建 generation-owned Spatial WKB 镜像表、行级触发器和 DDL guard；System 的 `connection_info` 另存 `cdc_database_name`、`cdc_user` 和加密的 `cdc_password`，LogMiner 不复用业务账号或 SYS。
 
 启用 Redpanda 时，脚本会创建或轮换 `${BUSINESS_KAFKA_READER_USERNAME:-addp_transfer}` 的 SCRAM-SHA-256 密码，并只授予读取 Topic、消费组和描述集群所需权限。System 中统一注册为 `engine_type=kafka`，连接 `localhost:${BUSINESS_KAFKA_PORT:-29092}`；不要注册 `addp-redpanda` 的 Infra Kafka 地址。
 

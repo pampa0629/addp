@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/addp/transfer/internal/models"
@@ -106,6 +107,12 @@ func (r *CaptureRepository) BeginGeneration(ctx context.Context, identity Captur
 				CaptureResourceID:       resource.ID,
 				SchemaHistoryTopicName:  captureSchemaHistoryTopicName(identity.TenantID, identity.TaskID, generation),
 				SchemaHistoryTopicOwned: true,
+			}
+			if len(identity.SourceSpatialInfo) > 0 {
+				resource.Oracle.SpatialMirrorTableName = oracleSpatialMirrorTableName(resource.ID)
+				resource.Oracle.SpatialRowTriggerName = oracleSpatialRowTriggerName(resource.ID)
+				resource.Oracle.SpatialDDLGuardName = oracleSpatialDDLGuardName(resource.ID)
+				resource.Oracle.SpatialArtifactsOwned = true
 			}
 			return tx.Create(resource.Oracle).Error
 		default:
@@ -209,6 +216,18 @@ func captureSlotName(tenantID, taskID uint, generation uint64) string {
 
 func capturePublicationName(tenantID, taskID uint, generation uint64) string {
 	return fmt.Sprintf("addp_cdc_t%d_task%d_g%d_pub", tenantID, taskID, generation)
+}
+
+func oracleSpatialMirrorTableName(captureResourceID uint) string {
+	return "ADDP_M_" + strconv.FormatUint(uint64(captureResourceID), 36)
+}
+
+func oracleSpatialRowTriggerName(captureResourceID uint) string {
+	return "ADDP_R_" + strconv.FormatUint(uint64(captureResourceID), 36)
+}
+
+func oracleSpatialDDLGuardName(captureResourceID uint) string {
+	return "ADDP_D_" + strconv.FormatUint(uint64(captureResourceID), 36)
 }
 
 func mysqlConnectorServerID(captureResourceID uint) (uint32, error) {

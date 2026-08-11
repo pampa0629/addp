@@ -7,7 +7,7 @@
 ## 包含组件
 
 - PostgreSQL/PostGIS、MySQL：业务关系库与 CDC 测试源。
-- Oracle Free 23ai：普通表、Schema、Oracle Spatial、只读快照与普通非空间表 CDC 测试源；Oracle Spatial CDC 和 ArcGIS SDE 作为后续独立能力路线预留。
+- Oracle Free 23ai：普通表、Schema、Oracle Spatial、只读快照、普通表 CDC 与 Oracle Spatial CDC 测试源；ArcGIS SDE 作为后续独立能力路线预留。
 - Redpanda：独立业务 Kafka API 消息流，不承载 ADDP Infra Kafka topic。
 - MinIO：业务对象存储。
 - ClickHouse、MongoDB、Doris、Spark：可选业务数据源和分析组件。
@@ -37,7 +37,7 @@ business/
 - 修改业务库端口、账号或容器名时，同步检查 `docs/spec/addp配置介绍.md`、`docs/spec/addp端口分配.md` 和依赖该业务源的测试数据说明。
 - 业务库脚本应保持幂等，可重复启动、停止和重启。
 - MySQL CDC 必须使用 `MYSQL_CDC_USER` 专用账号；`scripts/start.sh -mysql` 每次在数据库 ready 后执行 `mysql/init-cdc.sh`，确保已有 volume 也能补齐账号、轮换密码并收敛最小权限。
-- Oracle 必须使用保留 Spatial/Locator 的常规镜像，不得使用会卸载 Spatial 的 `-slim` 镜像；`scripts/start.sh -oracle` 必须幂等收敛 ARCHIVELOG、force/minimal supplemental logging、专用 common CDC 用户和 `CUSTOMERS` 的 `ALL COLUMN LOGGING`。Oracle Spatial CDC 与 ArcGIS SDE 不得伪装成已启用能力。
+- Oracle 必须使用保留 Spatial/Locator 的常规镜像，不得使用会卸载 Spatial 的 `-slim` 镜像；`scripts/start.sh -oracle` 必须幂等收敛 ARCHIVELOG、force/minimal supplemental logging、专用 common CDC 用户，以及 `CUSTOMERS`、`CUSTOMER_LOCATIONS`、`SPATIAL_FEATURES` 的 `ALL COLUMN LOGGING`。Oracle Spatial CDC 通过 Transfer-owned WKB 镜像表验证；ArcGIS SDE 不得伪装成已启用能力。
 - MySQL 普通表和全二维几何族样例只通过 `mysql/test-data.sh` 显式重建；不得挂接到 `scripts/start.sh -mysql`，避免启动时破坏已有业务数据。
 - Business Redpanda 必须与 Infra Kafka 分离；System Engine 使用 `BUSINESS_KAFKA_READER_USERNAME` 只读账号，不能登记 admin 或 Infra principal。
 - 生产部署前必须修改 `.env` 默认密码并限制网络访问。

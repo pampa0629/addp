@@ -34,3 +34,13 @@ class MetaClient(BaseClient):
         if not isinstance(response, dict):
             raise ValueError("meta resource tree ancestors response must be an object")
         return response
+
+    async def get_resource_tree_node(self, engine_id: int, locator: str) -> Dict[str, Any]:
+        """按父 locator 返回标准资源树节点及其直接子资源。"""
+        response = await self.get(
+            f"/api/v1/meta/resource-tree/{engine_id}/node",
+            params={"locator": locator},
+        )
+        if not isinstance(response, dict):
+            raise ValueError("meta resource tree node response must be an object")
+        return response

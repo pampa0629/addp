@@ -42,6 +42,9 @@ class ResourceRecommendationChain:
     async def recommend(
         self,
         candidates: list[dict[str, Any]],
+        *,
+        query: str | None = None,
+        search_queries: list[str] | None = None,
     ) -> dict[str, ResourceRecommendation]:
         grouped: dict[str, list[dict[str, Any]]] = {}
         for candidate in candidates:
@@ -68,13 +71,21 @@ class ResourceRecommendationChain:
         response = await self.llm.ainvoke([
             SystemMessage(content=(
                 "你负责为数据分析或查询的已验证输入数据源候选排序和标记推荐项。"
+                "必须先理解用户需求，再用候选中的名称、路径、引擎和字段事实比较业务相关度；"
+                "role 和 search_queries 只是检索线索，不是资源字段事实。"
                 "你只能排序和推荐候选中已有的 locator，绝对不能改写、拼接或编造 locator，"
                 "也不能删除候选。每个 role 的 ranked_locators 应包含全部候选；"
                 "只有名称、路径、引擎、字段或空间事实足以支持时才设置 recommended_locator，"
+                "应优先推荐已验证字段能同时覆盖角色主体、关联关系和结果值的候选。"
+                "不得仅凭 object 或 array 容器字段推断未列出的嵌套字段，也不得在字段证据不足时推荐；"
                 "否则留空。recommendation_reason 必须简短且只能引用输入中的事实。\n\n"
                 + self.output_parser.get_format_instructions()
             )),
-            HumanMessage(content=json.dumps(grouped, ensure_ascii=False)),
+            HumanMessage(content=json.dumps({
+                "user_query": query,
+                "search_queries": search_queries or [],
+                "candidates": grouped,
+            }, ensure_ascii=False)),
         ])
         content = getattr(response, "content", response)
         parsed = self.output_parser.parse(str(content))

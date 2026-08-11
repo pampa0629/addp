@@ -19,6 +19,7 @@ func TestTableInfoFromPayloadRestoresCommonFacts(t *testing.T) {
 		"fields": []interface{}{
 			map[string]interface{}{
 				"name":                  "id",
+				"path":                  []interface{}{"document", "id"},
 				"type":                  "int",
 				"native_type":           "int4",
 				"nullable":              false,
@@ -47,6 +48,9 @@ func TestTableInfoFromPayloadRestoresCommonFacts(t *testing.T) {
 	field := info.Fields[0]
 	if field.Name != "id" || field.Type != FieldTypeInt || field.NativeType != "int4" || !field.PrimaryKey {
 		t.Fatalf("field = %#v", field)
+	}
+	if len(field.Path) != 2 || field.Path[0] != "document" || field.Path[1] != "id" {
+		t.Fatalf("field path = %#v", field.Path)
 	}
 	if field.OrdinalPosition != 1 || field.DefaultExpression != "0" || !field.Generated || field.GenerationExpression != "identity" {
 		t.Fatalf("field extended facts = %#v", field)
@@ -79,6 +83,7 @@ func TestTableInfoPayloadUsesJSONTagsAndKeepsNativeFacts(t *testing.T) {
 		CreatedAt: &createdAt,
 		Fields: []FieldInfo{{
 			Name:            "id",
+			Path:            []string{"document", "id"},
 			Type:            FieldTypeInt,
 			Nullable:        false,
 			PrimaryKey:      true,
@@ -110,6 +115,10 @@ func TestTableInfoPayloadUsesJSONTagsAndKeepsNativeFacts(t *testing.T) {
 	field := fields[0].(map[string]interface{})
 	if field["nullable"] != false || field["primary_key"] != true {
 		t.Fatalf("field payload = %#v", field)
+	}
+	path := field["path"].([]interface{})
+	if len(path) != 2 || path[0] != "document" || path[1] != "id" {
+		t.Fatalf("field path payload = %#v", path)
 	}
 	if payload["created_at"] != createdAt {
 		t.Fatalf("created_at = %#v, want %#v", payload["created_at"], createdAt)

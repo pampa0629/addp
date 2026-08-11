@@ -79,10 +79,56 @@ export function mqlPrimaryCollection(query) {
   return collections.length === 1 ? collections[0] : ''
 }
 
-export function canUseQueryContainerContext({ language, query, parsedLocator } = {}) {
-  return String(language || '').trim().toLowerCase() === 'mql'
-    && String(parsedLocator?.type || '').trim().toLowerCase() === 'database'
-    && Boolean(mqlPrimaryCollection(query))
+export function mqlCollectionReferences(query) {
+  let command
+  try {
+    command = JSON.parse(String(query || ''))
+  } catch {
+    return []
+  }
+  if (!command || typeof command !== 'object' || Array.isArray(command)) return []
+  const primary = mqlPrimaryCollection(query)
+  if (!primary) return []
+  const references = [primary]
+  const seen = new Set(references)
+  const add = value => {
+    const name = String(value || '').trim()
+    if (name && !seen.has(name)) {
+      seen.add(name)
+      references.push(name)
+    }
+  }
+  const visit = value => {
+    if (Array.isArray(value)) {
+      value.forEach(visit)
+      return
+    }
+    if (!value || typeof value !== 'object') return
+    for (const [key, child] of Object.entries(value)) {
+      if ((key === '$lookup' || key === '$graphLookup') && child && typeof child === 'object') add(child.from)
+      if (key === '$unionWith') {
+        if (typeof child === 'string') add(child)
+        else if (child && typeof child === 'object') add(child.coll)
+      }
+      visit(child)
+    }
+  }
+  visit(command.pipeline)
+  return references
+}
+
+export function matchMQLCollectionReferences(query, collections = []) {
+  const references = mqlCollectionReferences(query)
+  const byName = new Map()
+  collections.forEach(collection => {
+    const name = String(collection?.name || '').trim()
+    if (name && !byName.has(name)) byName.set(name, collection)
+  })
+  return {
+    references,
+    matches: references.flatMap(name => byName.has(name) ? [byName.get(name)] : []),
+    missing: references.filter(name => !byName.has(name))
+  }
 }
 
 function isIdentifierStart(char) {
@@ -134,7 +180,7 @@ function collectTextParameterReferences(query, prefix, { slashLineComments = fal
       index = end < 0 ? text.length : end + 2
       continue
     }
-    if (current === prefix && isIdentifierStart(text[index + 1])) {
+    if (current === prefix && text[index - 1] !== prefix && isIdentifierStart(text[index + 1])) {
       let end = index + 2
       while (end < text.length && isIdentifierPart(text[end])) end += 1
       const name = text.slice(index + 1, end)

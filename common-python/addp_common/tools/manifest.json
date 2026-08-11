@@ -48,6 +48,39 @@
       "output_schema": {"type": "object"}
     },
     {
+      "name": "resource.children.list",
+      "version": "1.0.0",
+      "description": "校验父资源 locator 并返回其直接子资源的标准资源树投影。",
+      "owner": "meta",
+      "risk": "read",
+      "approval": {"mode": "none"},
+      "auth": {"type": "delegated_access_token", "audience": "meta", "required_scopes": ["resource.children.list"], "required_permissions": ["meta.catalog.read"]},
+      "permission_enforced_by": "owner",
+      "audit": {"mode": "owner"},
+      "result_ref": {"mode": "locator"},
+      "limits": {"max_bytes": 524288},
+      "errors": ["invalid_arguments", "delegation_rejected", "delegation_unavailable", "invalid_delegation_response", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "engine_id": {"type": "integer", "minimum": 1},
+          "parent_locator": {"type": "string", "minLength": 1}
+        },
+        "required": ["engine_id", "parent_locator"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "required": ["locator", "children"],
+        "properties": {
+          "locator": {"type": "string", "minLength": 1},
+          "label": {"type": "string"},
+          "type": {"type": "string"},
+          "children": {"type": "array", "items": {"type": "object"}}
+        }
+      }
+    },
+    {
       "name": "resource.ancestors.get",
       "version": "1.0.0",
       "description": "按 Meta 当前事实校验 locator 并返回根到目标的祖先链。",
@@ -165,7 +198,7 @@
     {
       "name": "query.draft.generate",
       "version": "1.0.0",
-      "description": "根据当前查询引擎、查询语言和已验证资源事实生成候选查询文本，不执行查询。",
+      "description": "根据当前查询引擎、查询语言和已验证资源事实生成候选查询文本及参数定义，不执行查询。",
       "owner": "copilot",
       "risk": "propose",
       "approval": {"mode": "none"},
@@ -183,6 +216,7 @@
           "query_language": {"type": "string", "minLength": 1},
           "engine_context": {"type": "object"},
           "current_query": {"type": ["string", "null"], "maxLength": 200000},
+          "resource_scope_locator": {"type": ["string", "null"], "minLength": 1},
           "resources": {
             "type": "array",
             "items": {
@@ -206,7 +240,30 @@
         "required": ["query", "engine_id", "query_language", "engine_context", "resources"],
         "additionalProperties": false
       },
-      "output_schema": {"type": "object", "required": ["status", "query_language"]}
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "status": {"type": "string"},
+          "query": {"type": ["string", "null"]},
+          "query_language": {"type": "string"},
+          "query_parameters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+                "type": {"enum": ["string", "integer", "number", "boolean"]},
+                "default": {},
+                "title": {"type": "string"},
+                "description": {"type": "string"}
+              },
+              "required": ["name", "type", "default"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["status", "query_language", "query_parameters"]
+      }
     },
     {
       "name": "notebook.draft.generate",

@@ -45,3 +45,27 @@ async def _assert_meta_client_reads_resource_ancestors(monkeypatch):
 
 def test_meta_client_reads_resource_ancestors(monkeypatch):
     asyncio.run(_assert_meta_client_reads_resource_ancestors(monkeypatch))
+
+
+async def _assert_meta_client_reads_resource_children(monkeypatch):
+    client = MetaClient(base_url="http://meta")
+
+    async def fake_get(path, params=None):
+        assert path == "/api/v1/meta/resource-tree/11/node"
+        assert params == {"locator": "addp://engine/11/path/Outdoor?type=database&node_id=276"}
+        return {"locator": params["locator"], "children": []}
+
+    monkeypatch.setattr(client, "get", fake_get)
+    try:
+        result = await client.get_resource_tree_node(
+            11,
+            "addp://engine/11/path/Outdoor?type=database&node_id=276",
+        )
+    finally:
+        await client.close()
+
+    assert result["children"] == []
+
+
+def test_meta_client_reads_resource_children(monkeypatch):
+    asyncio.run(_assert_meta_client_reads_resource_children(monkeypatch))

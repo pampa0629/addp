@@ -12,6 +12,7 @@ def test_manifest_has_unique_stage_two_tools():
     assert names == [
         "engine.list",
         "data.search",
+        "resource.children.list",
         "resource.ancestors.get",
         "data.preview",
         "workflow.operators.list",
@@ -31,6 +32,7 @@ def test_manifest_has_unique_stage_two_tools():
     expected_permissions = {
         "engine.list": ["system.engine.read"],
         "data.search": ["manager.search.execute"],
+        "resource.children.list": ["meta.catalog.read"],
         "resource.ancestors.get": ["meta.catalog.read"],
         "data.preview": ["manager.data_item.read"],
         "workflow.operators.list": ["develop.task.read"],
@@ -78,6 +80,37 @@ def test_query_draft_manifest_allows_current_mql_without_resources():
     }))
 
     assert errors == []
+
+
+def test_query_draft_manifest_allows_catalog_discovery_scope_without_resources():
+    definition = get_tool("query.draft.generate")
+    validator = Draft202012Validator(definition.input_schema)
+
+    errors = list(validator.iter_errors({
+        "query": "查询用户参加的活动",
+        "engine_id": 11,
+        "query_language": "mql",
+        "engine_context": {"id": 11},
+        "resources": [],
+        "resource_scope_locator": "addp://engine/11/path/Outdoor?type=database&node_id=276",
+    }))
+
+    assert errors == []
+
+
+def test_query_draft_manifest_requires_query_parameter_definitions_in_output():
+    definition = get_tool("query.draft.generate")
+    validator = Draft202012Validator(definition.output_schema)
+
+    valid = {
+        "status": "success",
+        "query_language": "mql",
+        "query": '{"find":"Persons","filter":{"userInfo.nickName":{"$param":"nickname"}}}',
+        "query_parameters": [{"name": "nickname", "type": "string", "default": "PiPi"}],
+    }
+
+    assert list(validator.iter_errors(valid)) == []
+    assert list(validator.iter_errors({**valid, "query_parameters": None}))
 
 
 def test_executor_returns_validated_tool_result():

@@ -294,7 +294,15 @@ func (f *fakeTopicControl) DeleteSchemaHistoryAccess(context.Context, string) er
 }
 func (f *fakeTopicControl) Close() {}
 
-type fakeSourceResources struct{ calls int }
+type fakeSourceResources struct {
+	ensureCalls int
+	calls       int
+}
+
+func (f *fakeSourceResources) EnsureOwnedResources(context.Context, *CapturePlan, *models.CaptureResource) error {
+	f.ensureCalls++
+	return nil
+}
 
 func (f *fakeSourceResources) DropOwnedResources(context.Context, *CapturePlan, *models.CaptureResource) error {
 	f.calls++

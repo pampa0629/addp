@@ -36,11 +36,12 @@ type ContinuousSourcePlan struct {
 }
 
 type DatabaseCDCSourcePlan struct {
-	Provider    string
-	Database    string
-	Schema      string
-	Table       string
-	SpatialInfo *datatype.SpatialInfo
+	Provider     string
+	Database     string
+	Schema       string
+	Table        string
+	CaptureTable string
+	SpatialInfo  *datatype.SpatialInfo
 }
 
 type DatabaseCDCStreamBinding struct {
@@ -52,6 +53,7 @@ type DatabaseCDCStreamBinding struct {
 	Database       string
 	Schema         string
 	Table          string
+	CaptureTable   string
 	SpatialInfo    *datatype.SpatialInfo
 }
 
@@ -180,20 +182,30 @@ func BuildDatabaseCDCContinuousPlan(spec DatabaseCDCTaskSpec, resolver EngineRes
 	if stream.SourceIdentity != strings.TrimSpace(spec.Source.Locator) || stream.Table != sourceLocator.Path[1] {
 		return nil, fmt.Errorf("database CDC stream binding does not match registered source identity")
 	}
+	captureTable := strings.TrimSpace(stream.CaptureTable)
+	if captureTable == "" {
+		captureTable = stream.Table
+	}
 	switch bindings.SourceType {
 	case "postgresql":
 		sourceDatabase := strings.TrimSpace(engineplugin.GetString(bindings.Source.ConnInfo, "database"))
-		if stream.Database != sourceDatabase || stream.Schema != sourceLocator.Path[0] {
+		if stream.Database != sourceDatabase || stream.Schema != sourceLocator.Path[0] || captureTable != stream.Table {
 			return nil, fmt.Errorf("PostgreSQL CDC stream binding does not match registered source identity")
 		}
 	case "mysql":
-		if stream.Database != sourceLocator.Path[0] || stream.Schema != "" || stream.SpatialInfo != nil {
+		if stream.Database != sourceLocator.Path[0] || stream.Schema != "" || stream.SpatialInfo != nil || captureTable != stream.Table {
 			return nil, fmt.Errorf("MySQL CDC stream binding does not match registered source identity")
 		}
 	case "oracle":
 		sourceDatabase := strings.TrimSpace(engineplugin.GetString(bindings.Source.ConnInfo, "service_name"))
-		if stream.Database != sourceDatabase || stream.Schema != sourceLocator.Path[0] || stream.SpatialInfo != nil {
+		if stream.Database != sourceDatabase || stream.Schema != sourceLocator.Path[0] {
 			return nil, fmt.Errorf("Oracle CDC stream binding does not match registered source identity")
+		}
+		if stream.SpatialInfo == nil && captureTable != stream.Table {
+			return nil, fmt.Errorf("Oracle non-spatial CDC cannot use a capture mirror table")
+		}
+		if stream.SpatialInfo != nil && captureTable == stream.Table {
+			return nil, fmt.Errorf("Oracle Spatial CDC requires a generation-owned capture mirror table")
 		}
 	default:
 		return nil, fmt.Errorf("unsupported database CDC provider %q", bindings.SourceType)
@@ -217,7 +229,7 @@ func BuildDatabaseCDCContinuousPlan(spec DatabaseCDCTaskSpec, resolver EngineRes
 	var targetSpatialInfo *datatype.SpatialInfo
 	envelope := ContinuousEnvelopeMySQLDebezium
 	if bindings.SourceType == "postgresql" {
-		targetSpatialInfo, err = mapPostgreSQLCDCSpatialInfo(stream.SpatialInfo, mappings)
+		targetSpatialInfo, err = mapDatabaseCDCSpatialInfo("PostgreSQL", stream.SpatialInfo, mappings)
 		if err != nil {
 			return nil, err
 		}
@@ -231,9 +243,13 @@ func BuildDatabaseCDCContinuousPlan(spec DatabaseCDCTaskSpec, resolver EngineRes
 	} else {
 		envelope = ContinuousEnvelopeOracleDebezium
 		for _, mapping := range mappings {
-			if mapping.Type == datatype.FieldTypeGeometry || mapping.Type == datatype.FieldTypeBytes {
-				return nil, fmt.Errorf("Oracle CDC v1 does not support geometry or LOB/binary fields")
+			if mapping.Type == datatype.FieldTypeBytes {
+				return nil, fmt.Errorf("Oracle CDC v1 does not support business LOB/binary fields")
 			}
+		}
+		targetSpatialInfo, err = mapDatabaseCDCSpatialInfo("Oracle", stream.SpatialInfo, mappings)
+		if err != nil {
+			return nil, err
 		}
 	}
 	return &ContinuousPlan{
@@ -245,11 +261,11 @@ func BuildDatabaseCDCContinuousPlan(spec DatabaseCDCTaskSpec, resolver EngineRes
 		Target:   ContinuousTargetPlan{EngineID: targetRef.ID, ConnInfo: bindings.Target.ConnInfo, Path: targetPath, Fields: fields, SpatialInfo: targetSpatialInfo, Keys: targetKeys},
 		Mappings: mappings, SourceKeys: sourceKeys, SourceType: "kafka", TargetType: bindings.TargetType,
 		Envelope: envelope, RecordFailureMode: RecordFailureModeBlock,
-		CDC: &DatabaseCDCSourcePlan{Provider: bindings.SourceType, Database: stream.Database, Schema: stream.Schema, Table: stream.Table, SpatialInfo: stream.SpatialInfo.Clone()},
+		CDC: &DatabaseCDCSourcePlan{Provider: bindings.SourceType, Database: stream.Database, Schema: stream.Schema, Table: stream.Table, CaptureTable: captureTable, SpatialInfo: stream.SpatialInfo.Clone()},
 	}, nil
 }
 
-func mapPostgreSQLCDCSpatialInfo(source *datatype.SpatialInfo, mappings []ContinuousFieldPlan) (*datatype.SpatialInfo, error) {
+func mapDatabaseCDCSpatialInfo(provider string, source *datatype.SpatialInfo, mappings []ContinuousFieldPlan) (*datatype.SpatialInfo, error) {
 	geometryMappings := make(map[string]ContinuousFieldPlan)
 	for _, mapping := range mappings {
 		if mapping.Type == datatype.FieldTypeGeometry {
@@ -258,19 +274,19 @@ func mapPostgreSQLCDCSpatialInfo(source *datatype.SpatialInfo, mappings []Contin
 	}
 	if len(geometryMappings) == 0 {
 		if source != nil && len(source.GeometryColumns) > 0 {
-			return nil, fmt.Errorf("PostgreSQL CDC capture contains spatial facts but task has no geometry mapping")
+			return nil, fmt.Errorf("%s CDC capture contains spatial facts but task has no geometry mapping", provider)
 		}
 		return nil, nil
 	}
 	if source == nil || len(source.GeometryColumns) == 0 {
-		return nil, fmt.Errorf("PostgreSQL CDC geometry mappings require frozen capture spatial facts")
+		return nil, fmt.Errorf("%s CDC geometry mappings require frozen capture spatial facts", provider)
 	}
 	columns := make([]datatype.GeometryColumnInfo, 0, len(source.GeometryColumns))
 	seen := make(map[string]bool)
 	for _, sourceColumn := range source.GeometryColumns {
 		mapping, ok := geometryMappings[sourceColumn.Name]
 		if !ok {
-			return nil, fmt.Errorf("PostgreSQL CDC spatial source field %q is not mapped as geometry", sourceColumn.Name)
+			return nil, fmt.Errorf("%s CDC spatial source field %q is not mapped as geometry", provider, sourceColumn.Name)
 		}
 		column := sourceColumn
 		column.Name = mapping.Target
@@ -280,7 +296,7 @@ func mapPostgreSQLCDCSpatialInfo(source *datatype.SpatialInfo, mappings []Contin
 	}
 	for sourceName := range geometryMappings {
 		if !seen[sourceName] {
-			return nil, fmt.Errorf("PostgreSQL CDC geometry field %q has no frozen source spatial fact", sourceName)
+			return nil, fmt.Errorf("%s CDC geometry field %q has no frozen source spatial fact", provider, sourceName)
 		}
 	}
 	result := &datatype.SpatialInfo{GeometryColumns: columns, PrimaryGeometryColumn: columns[0].Name}

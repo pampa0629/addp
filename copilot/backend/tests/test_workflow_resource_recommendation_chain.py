@@ -7,7 +7,11 @@ from chains.resource_recommendation_chain import ResourceRecommendationChain
 
 class FakeLLM:
     async def ainvoke(self, messages):
+        assert "不得仅凭 object 或 array 容器字段推断未列出的嵌套字段" in messages[0].content
         assert "只能排序和推荐" in messages[0].content
+        assert "必须先理解用户需求" in messages[0].content
+        assert '"user_query": "分析耕地候选"' in messages[1].content
+        assert '"search_queries": ["耕地", "farmland"]' in messages[1].content
         assert '"score": 0.95' in messages[1].content
         return AIMessage(content='''{
             "recommendations": [{
@@ -53,7 +57,11 @@ def test_resource_recommendation_ranks_known_candidates_without_dropping_others(
         },
     ]
 
-    recommendations = asyncio.run(ResourceRecommendationChain(FakeLLM()).recommend(candidates))
+    recommendations = asyncio.run(ResourceRecommendationChain(FakeLLM()).recommend(
+        candidates,
+        query="分析耕地候选",
+        search_queries=["耕地", "farmland"],
+    ))
 
     recommendation = recommendations["耕地"]
     assert recommendation.ranked_locators == [

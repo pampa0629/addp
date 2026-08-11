@@ -1069,3 +1069,39 @@ curl http://localhost:8102/health
 ```
 
 System 中 `pointcloud_workflow` 应为 `online`，且连接信息应指向宿主机可访问的 `localhost:8102`。如果 Manager 与 infra MinIO 运行在宿主机开发态，点云容器会将 `localhost:19000` 这类对象存储 endpoint 改写为 `host.docker.internal:19000`，生产或 Compose 网络中的非 localhost endpoint 不受影响。点云 COPC 写入不是纯流式写；当前 PDAL 2.10.2 实测 `writers.copc` 不能可靠直接写 `/vsis3/` 目标，因此运行时会先写 `POINTCLOUD_WORK_DIR` 下的受控工作文件，再上传到 Manager infra MinIO。大点云转换必须给 `POINTCLOUD_WORK_HOST_PATH` / `POINTCLOUD_WORK_DIR` / `CPL_TMPDIR` 配置容量足够的工作目录。
+
+---
+
+## Python 镜像首次构建耗时过长
+
+### 现象
+
+重启或构建时，日志长时间停留在某个 Python 引擎镜像，即使该引擎的业务源码没有变化。常见表现是 Debian 软件包或 Python wheel 持续下载，最终耗时主要取决于外网镜像速度。
+
+### 根因
+
+Docker 是否重建由镜像输入层和构建脚本决定，不由“本次是否修改了该引擎业务代码”单独决定。公共 `common-python` 负载、Python requirements、JupyterLab 扩展源码或 Dockerfile 变化，都可能使对应依赖层失效并触发冷构建。
+
+Jupyter 镜像还需要构建 `@addp/notebook-bridge` 扩展。Node/npm 只属于扩展编译阶段，不应安装到 Python 运行镜像；如果把 Debian `nodejs npm` 放在最终 Python 阶段，会额外引入庞大的系统依赖树。
+
+### 正确排查
+
+使用明细日志确认真正失效的层：
+
+```bash
+docker build --progress=plain -f engines/jupyter/Dockerfile .
+```
+
+- 看到大量 `apt` 包下载：检查 Dockerfile 的系统依赖和 `--no-install-recommends`。
+- 看到 Python wheel 下载：确认 requirements 或基础镜像层是否变化，并区分网络慢与构建错误。
+- 看到 Node/npm 下载：应只发生在 Jupyter 扩展构建阶段；最终 Python 镜像不应包含 `node` 或 `npm`。
+- 依赖层完成后再次构建应命中 `CACHED`；不要仅因为日志暂时没有输出就终止构建。
+
+Jupyter 扩展的 Node 构建阶段和 Python 运行阶段已在 `engines/jupyter/Dockerfile` 中分离。验证最终镜像：
+
+```bash
+docker run --rm --entrypoint jupyter addp-jupyter-engine \
+  labextension list
+docker run --rm --entrypoint sh addp-jupyter-engine \
+  -lc '! command -v node && ! command -v npm'
+```

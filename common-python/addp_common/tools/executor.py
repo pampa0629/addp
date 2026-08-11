@@ -35,6 +35,7 @@ class ToolExecutor:
         self._handlers: dict[str, Callable[[dict[str, Any], str], Awaitable[Any]]] = {
             "engine.list": self._engine_list,
             "data.search": self._data_search,
+            "resource.children.list": self._resource_children_list,
             "resource.ancestors.get": self._resource_ancestors_get,
             "data.preview": self._data_preview,
             "workflow.operators.list": self._workflow_operators_list,
@@ -175,6 +176,13 @@ class ToolExecutor:
         async with self._client(MetaClient, delegated_token) as client:
             return await client.get_resource_tree_ancestors(arguments["engine_id"], arguments["locator"])
 
+    async def _resource_children_list(self, arguments: dict[str, Any], delegated_token: str) -> Any:
+        async with self._client(MetaClient, delegated_token) as client:
+            return await client.get_resource_tree_node(
+                arguments["engine_id"],
+                arguments["parent_locator"],
+            )
+
     async def _data_preview(self, arguments: dict[str, Any], delegated_token: str) -> Any:
         async with self._client(ManagerClient, delegated_token) as client:
             return await client.preview_by_locator(
@@ -209,6 +217,7 @@ class ToolExecutor:
                 resources=arguments["resources"],
                 engine_context=arguments["engine_context"],
                 current_query=arguments.get("current_query"),
+                resource_scope_locator=arguments.get("resource_scope_locator"),
             )
 
     async def _notebook_draft_generate(self, arguments: dict[str, Any], delegated_token: str) -> Any:

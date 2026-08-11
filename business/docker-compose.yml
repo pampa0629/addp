@@ -56,7 +56,7 @@ services:
       - business-network
     restart: unless-stopped
 
-  # Oracle Free 23ai 常规镜像保留 Oracle Spatial；CDC 与 ArcGIS SDE 不在当前业务容器中启用。
+  # Oracle Free 23ai 常规镜像保留 Oracle Spatial 与 CDC 测试能力；ArcGIS SDE 不在当前业务容器中启用。
   oracle:
     image: ${ORACLE_IMAGE:-gvenzl/oracle-free:23}
     container_name: business-oracle

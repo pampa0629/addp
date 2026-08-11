@@ -19,14 +19,42 @@ func TestOracleCDCNativeTypeAndStrictTypeMatrix(t *testing.T) {
 	if err := validateOracleCDCSourceFieldType("CREATED_AT", "DATE", "DATE", sql.NullInt64{}, datatype.FieldTypeTimestamp); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateOracleCDCSourceFieldType("SHAPE", "MDSYS.SDO_GEOMETRY", "MDSYS.SDO_GEOMETRY", sql.NullInt64{}, datatype.FieldTypeGeometry); err == nil {
-		t.Fatal("Oracle Spatial CDC must be rejected in v1")
+	if err := validateOracleCDCSourceFieldType("SHAPE", "MDSYS.SDO_GEOMETRY", "MDSYS.SDO_GEOMETRY", sql.NullInt64{}, datatype.FieldTypeGeometry); err != nil {
+		t.Fatalf("Oracle Spatial CDC geometry rejected: %v", err)
 	}
 	if err := validateOracleCDCSourceFieldType("PAYLOAD", "CLOB", "CLOB", sql.NullInt64{}, datatype.FieldTypeString); err == nil {
 		t.Fatal("Oracle LOB CDC must be rejected in v1")
 	}
 	if err := validateOracleCDCSourceFieldType("UPDATED_AT", "TIMESTAMP(6)", "TIMESTAMP(6)", sql.NullInt64{Int64: 6, Valid: true}, datatype.FieldTypeTimestamp); err == nil {
 		t.Fatal("Oracle sub-millisecond timestamp precision must be rejected")
+	}
+}
+
+func TestBuildOracleConnectorConfigCapturesSpatialMirrorAsBase64LOB(t *testing.T) {
+	plan := &CapturePlan{
+		SourceType: models.CaptureSourceOracle,
+		CDCConnInfo: engineplugin.ConnectionInfo{
+			"host": "oracle", "port": 1521, "service_name": "FREEPDB1", "user": "C##ADDP_CDC", "password": "cdc-secret",
+		},
+		SourceCDBName: "FREE", SourceDatabase: "FREEPDB1", SourceSchema: "BUSINESS", SourceTable: "CUSTOMER_LOCATIONS",
+		SourceSpatialInfo: datatype.NewSingleGeometrySpatialInfo("SHAPE", "Point", 4326, 2),
+	}
+	resource := &models.CaptureResource{
+		ConnectorName: "addp-cdc-t1-task2-g1", TopicName: "__addp_cdc.1.2.1", SourceType: models.CaptureSourceOracle,
+		Oracle: &models.OracleCaptureResource{
+			SchemaHistoryTopicName: "__addp_cdc_schema.1.2.1", SchemaHistoryTopicOwned: true,
+			SpatialMirrorTableName: "ADDP_M_2", SpatialRowTriggerName: "ADDP_R_2", SpatialDDLGuardName: "ADDP_D_2", SpatialArtifactsOwned: true,
+		},
+	}
+	config, err := buildOracleConnectorConfig(plan, resource, SupervisorConfig{
+		ConnectBootstrapServers: "redpanda:29092", ConnectKafkaUsername: "connect", ConnectKafkaPassword: "secret",
+		ConnectKafkaSecurityProtocol: "SASL_PLAINTEXT", ConnectKafkaSASLMechanism: "SCRAM-SHA-256",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config["table.include.list"] != `BUSINESS\.ADDP_M_2` || config["lob.enabled"] != "true" || config["binary.handling.mode"] != "base64" {
+		t.Fatalf("Oracle Spatial connector config = %#v", config)
 	}
 }
 

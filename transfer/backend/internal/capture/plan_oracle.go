@@ -105,6 +105,7 @@ func validateOracleSourceFields(ctx context.Context, plan *CapturePlan) error {
 	}
 	defer rows.Close()
 	actual := make([]string, 0)
+	geometryFields := make([]string, 0)
 	for rows.Next() {
 		var name, dataType, nullableText string
 		var precision, scale sql.NullInt64
@@ -115,6 +116,9 @@ func validateOracleSourceFields(ctx context.Context, plan *CapturePlan) error {
 		nativeType := oracleCDCNativeType(dataType, precision, scale)
 		if err := validateOracleCDCSourceFieldType(name, nativeType, dataType, oracleCDCTemporalPrecision(dataType, scale), plan.SourceFieldTypes[name]); err != nil {
 			return err
+		}
+		if plan.SourceFieldTypes[name] == datatype.FieldTypeGeometry {
+			geometryFields = append(geometryFields, name)
 		}
 		actualNullable := strings.EqualFold(nullableText, "Y")
 		if actualNullable != plan.SourceFieldNullables[name] {
@@ -130,7 +134,62 @@ func validateOracleSourceFields(ctx context.Context, plan *CapturePlan) error {
 	if !reflect.DeepEqual(actual, configured) {
 		return fmt.Errorf("Oracle CDC field mapping must cover the complete source schema: actual=%v configured=%v", actual, configured)
 	}
+	if len(geometryFields) > 0 {
+		spatialInfo, err := loadOracleCDCSpatialInfo(ctx, plan, geometryFields)
+		if err != nil {
+			return err
+		}
+		plan.SourceSpatialInfo = spatialInfo
+	}
 	return nil
+}
+
+func loadOracleCDCSpatialInfo(ctx context.Context, plan *CapturePlan, geometryFields []string) (*datatype.SpatialInfo, error) {
+	path := engineplugin.TabularItemPath(plan.SourceEngineID, engineplugin.CatalogTermSchema, plan.SourceSchema, plan.SourceTable)
+	facts, err := engineplugin.DescribeCatalogFacts(ctx, &engineplugin.Engine{
+		ID: plan.SourceEngineID, EngineType: "oracle", ConnectionInfo: plan.SourceConnInfo,
+	}, path, engineplugin.CatalogFactsOptions{IncludeSpatialFacts: true})
+	if err != nil {
+		return nil, fmt.Errorf("describe Oracle CDC spatial facts: %w", err)
+	}
+	spatialInfo := engineplugin.CatalogFactsSpatialInfo(facts)
+	if spatialInfo == nil || len(spatialInfo.GeometryColumns) != len(geometryFields) {
+		return nil, fmt.Errorf("Oracle Spatial CDC requires complete spatial metadata for fields %v", geometryFields)
+	}
+	expected := make(map[string]bool, len(geometryFields))
+	for _, field := range geometryFields {
+		expected[field] = true
+	}
+	for i := range spatialInfo.GeometryColumns {
+		column := &spatialInfo.GeometryColumns[i]
+		if !expected[column.Name] {
+			return nil, fmt.Errorf("Oracle Spatial CDC returned unexpected geometry field %q", column.Name)
+		}
+		if column.SRID == nil || *column.SRID <= 0 || column.Dimension == nil || (*column.Dimension != 2 && *column.Dimension != 3) {
+			return nil, fmt.Errorf("Oracle Spatial CDC field %q requires a positive SRID and XY/XYZ dimension", column.Name)
+		}
+		geometryType := datatype.ParseGeometryType(column.GeometryType)
+		if geometryType == datatype.GeometryTypeUnknown {
+			return nil, fmt.Errorf("Oracle Spatial CDC field %q has unsupported geometry type %q", column.Name, column.GeometryType)
+		}
+		column.Nullable = boolPointer(plan.SourceFieldNullables[column.Name])
+		delete(expected, column.Name)
+	}
+	if len(expected) != 0 {
+		return nil, fmt.Errorf("Oracle Spatial CDC is missing spatial facts for fields %v", sortedStringKeys(expected))
+	}
+	return spatialInfo, nil
+}
+
+func boolPointer(value bool) *bool { return &value }
+
+func sortedStringKeys(values map[string]bool) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func oracleCDCTemporalPrecision(dataType string, dataScale sql.NullInt64) sql.NullInt64 {
@@ -155,11 +214,12 @@ func oracleCDCNativeType(dataType string, precision, scale sql.NullInt64) string
 
 func validateOracleCDCSourceFieldType(name, nativeType, dataType string, temporalPrecision sql.NullInt64, configuredType datatype.FieldType) error {
 	base := strings.ToUpper(strings.Join(strings.Fields(strings.TrimSpace(dataType)), " "))
-	if strings.Contains(base, "LOB") || base == "LONG" || strings.Contains(base, "RAW") || base == "XMLTYPE" || base == "JSON" || base == "MDSYS.SDO_GEOMETRY" || base == "SDO_GEOMETRY" {
+	if strings.Contains(base, "LOB") || base == "LONG" || strings.Contains(base, "RAW") || base == "XMLTYPE" || base == "JSON" {
 		return fmt.Errorf("Oracle CDC source field %q uses unsupported Oracle type %q", name, nativeType)
 	}
 	actualType := (&oracletypes.TypeMapper{}).ToCommon(nativeType)
-	if actualType == datatype.FieldTypeGeometry || actualType == datatype.FieldTypeBytes || actualType == datatype.FieldTypeUnknown || !planner.ContinuousFieldTypeSupported(actualType) {
+	if actualType == datatype.FieldTypeBytes || actualType == datatype.FieldTypeUnknown ||
+		(!planner.ContinuousFieldTypeSupported(actualType) && actualType != datatype.FieldTypeGeometry) {
 		return fmt.Errorf("Oracle CDC source field %q uses unsupported Oracle type %q", name, nativeType)
 	}
 	if actualType != configuredType {
@@ -202,6 +262,11 @@ func validateOracleSourcePrimaryKey(ctx context.Context, plan *CapturePlan) erro
 	if len(actual) == 0 {
 		return fmt.Errorf("Oracle CDC source table requires a primary key")
 	}
+	for _, key := range actual {
+		if plan.SourceFieldTypes[key] == datatype.FieldTypeGeometry {
+			return fmt.Errorf("Oracle CDC source primary key field %q cannot use geometry", key)
+		}
+	}
 	if !reflect.DeepEqual(actual, plan.SourceKeys) {
 		return fmt.Errorf("Oracle CDC source primary key %v must map one-to-one to configured target keys via source fields %v", actual, plan.SourceKeys)
 	}
@@ -224,6 +289,18 @@ func buildOracleConnectorConfig(plan *CapturePlan, resource *models.CaptureResou
 	if bootstrapServers == "" {
 		return nil, fmt.Errorf("Oracle connector requires Kafka Connect-visible bootstrap servers")
 	}
+	captureTable := plan.SourceTable
+	spatial := plan.SourceSpatialInfo != nil && len(plan.SourceSpatialInfo.GeometryColumns) > 0
+	if spatial {
+		if !resource.Oracle.SpatialArtifactsOwned || strings.TrimSpace(resource.Oracle.SpatialMirrorTableName) == "" ||
+			strings.TrimSpace(resource.Oracle.SpatialRowTriggerName) == "" || strings.TrimSpace(resource.Oracle.SpatialDDLGuardName) == "" {
+			return nil, fmt.Errorf("Oracle Spatial connector requires generation-owned mirror resources")
+		}
+		captureTable = resource.Oracle.SpatialMirrorTableName
+	} else if resource.Oracle.SpatialArtifactsOwned || strings.TrimSpace(resource.Oracle.SpatialMirrorTableName) != "" ||
+		strings.TrimSpace(resource.Oracle.SpatialRowTriggerName) != "" || strings.TrimSpace(resource.Oracle.SpatialDDLGuardName) != "" {
+		return nil, fmt.Errorf("Oracle non-spatial connector cannot own Spatial mirror resources")
+	}
 	connectorConfig := map[string]string{
 		"connector.class":             "io.debezium.connector.oracle.OracleConnector",
 		"tasks.max":                   "1",
@@ -235,7 +312,7 @@ func buildOracleConnectorConfig(plan *CapturePlan, resource *models.CaptureResou
 		"database.pdb.name":           plan.SourceDatabase,
 		"database.connection.adapter": "LogMiner",
 		"topic.prefix":                resource.ConnectorName,
-		"table.include.list":          regexp.QuoteMeta(plan.SourceSchema + "." + plan.SourceTable),
+		"table.include.list":          regexp.QuoteMeta(plan.SourceSchema + "." + captureTable),
 		"snapshot.mode":               "initial",
 		"log.mining.strategy":         "online_catalog",
 		"decimal.handling.mode":       "string",
@@ -255,6 +332,10 @@ func buildOracleConnectorConfig(plan *CapturePlan, resource *models.CaptureResou
 		"transforms.route.type":          "org.apache.kafka.connect.transforms.RegexRouter",
 		"transforms.route.regex":         ".*",
 		"transforms.route.replacement":   resource.TopicName,
+	}
+	if spatial {
+		connectorConfig["lob.enabled"] = "true"
+		connectorConfig["binary.handling.mode"] = "base64"
 	}
 	if err := applySchemaHistoryKafkaConfig(connectorConfig, config, "Oracle"); err != nil {
 		return nil, err

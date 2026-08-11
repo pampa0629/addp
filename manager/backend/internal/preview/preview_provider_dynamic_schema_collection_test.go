@@ -14,6 +14,10 @@ func TestDynamicSchemaCollectionPreviewUsesMetaRowCountForPagination(t *testing.
 	const engineType = "dynamic_preview_test"
 	enginePlugin := &recordingDynamicSchemaPreviewPlugin{
 		engineType: engineType,
+		fields: []datatype.FieldInfo{
+			{Name: "_id", Path: []string{"_id"}, Type: datatype.FieldTypeString, NativeType: "string"},
+			{Name: "members.userInfo.nickName", Path: []string{"members", "userInfo", "nickName"}, Type: datatype.FieldTypeString, NativeType: "string"},
+		},
 		queryResult: &plugin.QueryResult{
 			Columns: []string{"_id"},
 			Rows: []map[string]interface{}{
@@ -55,6 +59,12 @@ func TestDynamicSchemaCollectionPreviewUsesMetaRowCountForPagination(t *testing.
 	if len(enginePlugin.queryRequests) != 1 {
 		t.Fatalf("query request count = %d, want 1", len(enginePlugin.queryRequests))
 	}
+	if len(enginePlugin.factsOptions) != 1 {
+		t.Fatalf("catalog facts request count = %d, want 1", len(enginePlugin.factsOptions))
+	}
+	if got := enginePlugin.factsOptions[0]; got.SampleSize != 100 || got.IncludeStatistics {
+		t.Fatalf("catalog facts options = %#v, want sample_size=100 without statistics", got)
+	}
 
 	var command map[string]interface{}
 	if err := json.Unmarshal([]byte(enginePlugin.queryRequests[0].Query), &command); err != nil {
@@ -63,12 +73,20 @@ func TestDynamicSchemaCollectionPreviewUsesMetaRowCountForPagination(t *testing.
 	if command["skip"] != float64(20) || command["limit"] != float64(20) {
 		t.Fatalf("query command = %#v, want skip=20 limit=20", command)
 	}
+	if len(result.ColumnMetadata) != 2 || result.ColumnMetadata[1].ColumnName != "members.userInfo.nickName" {
+		t.Fatalf("column metadata = %#v", result.ColumnMetadata)
+	}
+	if got := result.ColumnMetadata[1].Path; len(got) != 3 || got[0] != "members" || got[2] != "nickName" {
+		t.Fatalf("nested field path = %#v", got)
+	}
 }
 
 type recordingDynamicSchemaPreviewPlugin struct {
 	engineType    string
+	fields        []datatype.FieldInfo
 	queryResult   *plugin.QueryResult
 	queryRequests []plugin.QueryRequest
+	factsOptions  []plugin.CatalogFactsOptions
 }
 
 func (p *recordingDynamicSchemaPreviewPlugin) Type() string         { return p.engineType }
@@ -100,10 +118,11 @@ func (p *recordingDynamicSchemaPreviewPlugin) ExecuteRuntimeQuery(_ context.Cont
 	p.queryRequests = append(p.queryRequests, req)
 	return p.queryResult, nil
 }
-func (p *recordingDynamicSchemaPreviewPlugin) DescribeCatalogFacts(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+func (p *recordingDynamicSchemaPreviewPlugin) DescribeCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, _ plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+	p.factsOptions = append(p.factsOptions, opts)
 	estimatedRowCount := int64(2383)
 	return &plugin.CatalogFacts{
-		Table: &datatype.TableInfo{EstimatedRowCount: &estimatedRowCount},
+		Table: &datatype.TableInfo{Fields: p.fields, EstimatedRowCount: &estimatedRowCount},
 	}, nil
 }
 

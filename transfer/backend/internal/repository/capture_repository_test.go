@@ -124,7 +124,10 @@ func createCaptureRepositoryTestTables(t *testing.T, db *gorm.DB) {
 	}
 	if err := db.Exec(`CREATE TABLE transfer.oracle_capture_resources (
 		capture_resource_id INTEGER PRIMARY KEY,
-		schema_history_topic_name TEXT NOT NULL UNIQUE, schema_history_topic_owned BOOLEAN NOT NULL DEFAULT TRUE
+		schema_history_topic_name TEXT NOT NULL UNIQUE, schema_history_topic_owned BOOLEAN NOT NULL DEFAULT TRUE,
+		spatial_mirror_table_name TEXT NOT NULL DEFAULT '', spatial_row_trigger_name TEXT NOT NULL DEFAULT '',
+		spatial_ddl_guard_name TEXT NOT NULL DEFAULT '',
+		spatial_artifacts_owned BOOLEAN NOT NULL DEFAULT FALSE
 	)`).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -163,6 +166,26 @@ func TestCaptureRepositoryCreatesOracleProviderFacts(t *testing.T) {
 	if resource.Oracle == nil || resource.PostgreSQL != nil || resource.MySQL != nil ||
 		resource.Oracle.SchemaHistoryTopicName != "__addp_cdc_schema.7.1.1" || !resource.Oracle.SchemaHistoryTopicOwned {
 		t.Fatalf("Oracle provider facts = %#v", resource.Oracle)
+	}
+}
+
+func TestCaptureRepositoryCreatesOracleSpatialProviderFacts(t *testing.T) {
+	db := newTaskRepositoryTestDB(t)
+	createCaptureRepositoryTestTables(t, db)
+	task := createTaskRepositoryTestTask(t, db, 7, "oracle-spatial-cdc")
+	resource, err := NewCaptureRepository(db).BeginGeneration(context.Background(), CaptureIdentity{
+		TaskID: task.ID, TenantID: task.TenantID, SourceType: models.CaptureSourceOracle,
+		SourceIdentity: "addp://engine/22/path/BUSINESS/CUSTOMER_LOCATIONS?type=table", SourceConnectionFingerprint: "fingerprint",
+		SourceEngineID: 22, SourceDatabase: "FREEPDB1", SourceSchema: "BUSINESS", SourceTable: "CUSTOMER_LOCATIONS",
+		SourceSpatialInfo: models.JSONMap(datatype.SpatialInfoPayload(datatype.NewSingleGeometrySpatialInfo("SHAPE", "Point", 4326, 2))),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resource.Oracle == nil || !resource.Oracle.SpatialArtifactsOwned || resource.Oracle.SpatialMirrorTableName == "" ||
+		resource.Oracle.SpatialRowTriggerName == "" || resource.Oracle.SpatialDDLGuardName == "" ||
+		len(resource.Oracle.SpatialMirrorTableName) > 30 || len(resource.Oracle.SpatialRowTriggerName) > 30 || len(resource.Oracle.SpatialDDLGuardName) > 30 {
+		t.Fatalf("Oracle Spatial provider facts = %#v", resource.Oracle)
 	}
 }
 

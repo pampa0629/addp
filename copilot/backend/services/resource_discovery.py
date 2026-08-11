@@ -40,6 +40,7 @@ class ResourceDiscovery:
         self,
         intents: list[ResourceIntent],
         *,
+        query: str | None = None,
         engine_id: int | None = None,
         limit: int = 20,
         allowed_data_types: set[str] | frozenset[str] | None = None,
@@ -146,29 +147,130 @@ class ResourceDiscovery:
                 if eligible_hits and verification_errors:
                     raise verification_errors[-1]
                 missing_roles.append(intent.role)
-            recommendation = None
-            if role_candidates and self.recommender is not None:
-                recommendations = await self.recommender.recommend(role_candidates)
-                recommendation = recommendations.get(intent.role) if isinstance(recommendations, dict) else None
-            if recommendation is not None:
-                rank = {
-                    locator: index
-                    for index, locator in enumerate(recommendation.ranked_locators)
-                }
-                role_candidates.sort(key=lambda candidate: rank.get(candidate["locator"], len(rank)))
-            for candidate in role_candidates:
-                is_recommended = bool(
-                    recommendation is not None
-                    and candidate["locator"] == recommendation.recommended_locator
-                )
-                candidate["recommended"] = is_recommended
-                candidate["recommendation_reason"] = (
-                    recommendation.recommendation_reason if is_recommended else None
-                )
+            await self._rank_role_candidates(
+                intent.role,
+                role_candidates,
+                query=query,
+                search_queries=intent.search_queries,
+            )
 
             candidates.extend(role_candidates)
 
         return ResourceDiscoveryResult(candidates=candidates, missing_roles=missing_roles)
+
+    async def discover_scoped(
+        self,
+        intents: list[ResourceIntent],
+        *,
+        query: str | None = None,
+        engine_id: int,
+        scope_locator: str,
+        limit: int = 20,
+        allowed_data_types: set[str] | frozenset[str] | None = None,
+    ) -> ResourceDiscoveryResult:
+        """枚举 Owner 已确认 scope 的直接子资源，并用 preview 收敛候选事实。"""
+        scope = await self.executor.call(
+            "resource.children.list",
+            {"engine_id": engine_id, "parent_locator": scope_locator},
+            agent_run_id=self.agent_run_id,
+            tool_call_id=f"resource-children-{uuid4()}",
+        )
+        if not isinstance(scope, dict) or scope.get("locator") != scope_locator:
+            raise ToolExecutionError("invalid_owner_response", "Meta 未确认资源发现范围 locator")
+        children = scope.get("children")
+        if not isinstance(children, list):
+            raise ToolExecutionError("invalid_owner_response", "Meta 未返回直接子资源列表")
+
+        parent = {
+            key: scope[key]
+            for key in ("label", "type", "locator")
+            if isinstance(scope.get(key), str) and scope[key]
+        }
+        verified_children: list[dict[str, Any]] = []
+        verification_errors: list[ToolExecutionError] = []
+        for child in children[:limit]:
+            if not isinstance(child, dict):
+                continue
+            locator = str(child.get("locator") or "").strip()
+            if not locator:
+                continue
+            try:
+                preview = await self.executor.call(
+                    "data.preview",
+                    {"locator": locator, "limit": 5},
+                    agent_run_id=self.agent_run_id,
+                    tool_call_id=f"data-preview-{uuid4()}",
+                )
+            except ToolExecutionError as error:
+                verification_errors.append(error)
+                continue
+            fact = _resource_fact(preview, locator)
+            if not fact:
+                continue
+            if allowed_data_types and fact["data_type"] not in allowed_data_types:
+                continue
+            verified_children.append({
+                "name": child.get("label") or locator,
+                "locator": locator,
+                "engine_id": engine_id,
+                "engine_name": None,
+                "asset_type": str(child.get("type") or "").lower(),
+                "full_name": child.get("label"),
+                "path": None,
+                "score": None,
+                "ancestors": [parent] if parent else [],
+                **fact,
+            })
+
+        if not verified_children and verification_errors:
+            raise verification_errors[-1]
+
+        candidates: list[dict[str, Any]] = []
+        missing_roles: list[str] = []
+        for intent in intents:
+            role_candidates = [dict(candidate, role=intent.role) for candidate in verified_children]
+            if not role_candidates:
+                missing_roles.append(intent.role)
+            await self._rank_role_candidates(
+                intent.role,
+                role_candidates,
+                query=query,
+                search_queries=intent.search_queries,
+            )
+            candidates.extend(role_candidates)
+        return ResourceDiscoveryResult(candidates=candidates, missing_roles=missing_roles)
+
+    async def _rank_role_candidates(
+        self,
+        role: str,
+        candidates: list[dict[str, Any]],
+        *,
+        query: str | None = None,
+        search_queries: list[str] | None = None,
+    ) -> None:
+        recommendation = None
+        if candidates and self.recommender is not None:
+            recommendations = await self.recommender.recommend(
+                candidates,
+                query=query,
+                search_queries=search_queries,
+            )
+            recommendation = recommendations.get(role) if isinstance(recommendations, dict) else None
+        if recommendation is not None:
+            rank = {
+                locator: index
+                for index, locator in enumerate(recommendation.ranked_locators)
+            }
+            candidates.sort(key=lambda candidate: rank.get(candidate["locator"], len(rank)))
+        for candidate in candidates:
+            is_recommended = bool(
+                recommendation is not None
+                and candidate["locator"] == recommendation.recommended_locator
+            )
+            candidate["recommended"] = is_recommended
+            candidate["recommendation_reason"] = (
+                recommendation.recommendation_reason if is_recommended else None
+            )
 
     async def verify(
         self,

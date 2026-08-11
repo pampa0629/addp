@@ -210,11 +210,12 @@ type MetaAttribute struct {
 
 // ColumnMetadata 列元数据
 type ColumnMetadata struct {
-	ColumnName   string `json:"column_name"` // 列名
-	Type         string `json:"type"`        // 字段类型
-	IsNullable   bool   `json:"nullable"`    // 是否可为空
-	IsPrimaryKey bool   `json:"primary_key"` // 是否主键
-	Comment      string `json:"comment"`     // 列注释
+	ColumnName   string   `json:"column_name"` // 列名
+	Path         []string `json:"path,omitempty"`
+	Type         string   `json:"type"`        // 字段类型
+	IsNullable   bool     `json:"nullable"`    // 是否可为空
+	IsPrimaryKey bool     `json:"primary_key"` // 是否主键
+	Comment      string   `json:"comment"`     // 列注释
 }
 
 type ObjectPreview struct {

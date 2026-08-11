@@ -123,6 +123,11 @@ def test_copilot_openapi_declares_authorization_contracts():
         "copilot.sql.execute"
     ]
     assert {"400", "500", "502"}.issubset(paths["/query/generate"]["post"]["responses"])
+    query_response = specification["components"]["schemas"]["QueryGenerationResponse"]
+    assert "query_parameters" in query_response["properties"]
+    assert query_response["properties"]["query_parameters"]["items"]["$ref"].endswith(
+        "/QueryParameterDefinition"
+    )
     assert paths["/notebook/generate"]["post"]["x-addp-auth-mode"] == "delegated_tool"
     assert paths["/notebook/generate"]["post"]["x-addp-required-permissions"] == [
         "copilot.notebook.execute"
@@ -154,5 +159,6 @@ def test_copilot_openapi_declares_authorization_contracts():
     assert "tenant_id" not in query_schema.get("properties", {})
     assert "user_id" not in query_schema.get("properties", {})
     assert query_schema["properties"]["current_query"]["anyOf"][0]["type"] == "string"
+    assert query_schema["properties"]["resource_scope_locator"]["anyOf"][0]["type"] == "string"
     assert "tenant_id" not in navigate_schema.get("properties", {})
     assert "user_id" not in navigate_schema.get("properties", {})

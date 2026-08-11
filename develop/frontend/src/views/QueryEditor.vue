@@ -458,7 +458,6 @@
                     {{ t('develop.query.recommendedResource') }}
                   </el-tag>
                 </span>
-                <span class="query-resource-candidate-path">{{ candidate.locator }}</span>
                 <span v-if="queryResourceCandidateFacts(candidate)" class="query-resource-candidate-facts">
                   {{ queryResourceCandidateFacts(candidate) }}
                 </span>
@@ -616,6 +615,7 @@ import {
   getResourceFields,
   getResourceItemByCatalogPath,
   getResourceTreeNode,
+  getResourceTreeAncestors,
   formatLocatorDisplayPath,
   listResourceTreeEngines,
   parseLocator,
@@ -647,8 +647,9 @@ import {
   extractQueryParameterReferences,
   parameterizeSelection,
   diagnoseQuery,
-  canUseQueryContainerContext,
   isQueryInputResource,
+  mqlCollectionReferences,
+  matchMQLCollectionReferences,
   parseSQLSources
 } from '@/utils/queryWorkbench.mjs'
 import { resolveQueryGenerationResult } from '@/utils/queryGenerationResult.mjs'
@@ -1059,6 +1060,15 @@ const queryParameterPayload = parameter => ({
   default: parameter?.default,
   ...(String(parameter?.title || '').trim() ? { title: String(parameter.title).trim() } : {}),
   ...(String(parameter?.description || '').trim() ? { description: String(parameter.description).trim() } : {})
+})
+
+const queryParameterEditorItem = (parameter, id) => ({
+  id,
+  name: parameter?.name || '',
+  type: parameter?.type || 'string',
+  default: parameter?.default,
+  title: parameter?.title || '',
+  description: parameter?.description || ''
 })
 
 const queryParameterNameError = (parameter, index) => {
@@ -1668,6 +1678,62 @@ const collectSelectedQueryResources = () => {
   })]
 }
 
+const resolveMQLQueryResources = async selectedLocator => {
+  const references = mqlCollectionReferences(queryContent.value)
+  if (!selectedLocator || references.length === 0) return []
+  let selected
+  try {
+    selected = parseLocator(selectedLocator)
+  } catch {
+    return []
+  }
+  if (String(selectedTarget.value?.engine?.engine_type || '').toLowerCase() !== 'mongodb') return []
+
+  if (selected.itemId && references.length === 1 && selected.path?.at(-1) === references[0]) {
+    return collectSelectedQueryResources()
+  }
+
+  let databaseLocator = selected.type === 'database' ? selectedLocator : ''
+  if (!databaseLocator) {
+    const ancestors = await getResourceTreeAncestors('/api/v1/meta', selected.engineId, selectedLocator)
+    databaseLocator = (ancestors?.ancestors || []).find(node => node?.type === 'database')?.locator || ''
+  }
+  if (!databaseLocator) return []
+
+  const databaseNode = await getResourceTreeNode('/api/v1/meta', selected.engineId, databaseLocator)
+  const collections = []
+  for (const child of databaseNode?.children || []) {
+    try {
+      const parsed = parseLocator(child?.locator || '')
+      if (parsed.itemId && child?.type === 'collection') {
+        collections.push({ name: parsed.path?.at(-1), child })
+      }
+    } catch {
+      // 非规范子节点不能成为查询资源。
+    }
+  }
+  const resolution = matchMQLCollectionReferences(queryContent.value, collections)
+  if (resolution.missing.length > 0) return []
+  return resolution.matches.map(({ name, child }) => {
+    const parsed = parseLocator(child.locator)
+    return resourceFact({
+      role: name,
+      name,
+      engine_id: parsed.engineId,
+      locator: child.locator
+    })
+  })
+}
+
+const isSelectedMongoDBDatabase = selectedLocator => {
+  if (String(selectedTarget.value?.engine?.engine_type || '').toLowerCase() !== 'mongodb') return false
+  try {
+    return parseLocator(selectedLocator).type === 'database'
+  } catch {
+    return false
+  }
+}
+
 const generateQueryWithCopilot = async () => {
   if (queryCopilotBusy.value) return
   if (!queryAiPrompt.value.trim()) {
@@ -1678,28 +1744,27 @@ const generateQueryWithCopilot = async () => {
     ElMessage.warning(t('develop.query.selectDataSourceFirst'))
     return
   }
-  const resources = collectSelectedQueryResources()
   const selectedLocator = catalogSelection.value?.identity?.locator || targetLocator.value || ''
+  let resources = collectSelectedQueryResources()
+  if (currentQueryLanguage.value === 'mql' && selectedLocator) {
+    resources = await resolveMQLQueryResources(selectedLocator)
+  }
   if (selectedLocator && resources.length === 0) {
-    let parsedLocator = null
-    try {
-      parsedLocator = parseLocator(selectedLocator)
-    } catch {
-      parsedLocator = null
-    }
-    if (!canUseQueryContainerContext({
-      language: currentQueryLanguage.value,
-      query: queryContent.value,
-      parsedLocator
-    })) {
-      ElMessage.warning(t('develop.query.selectQueryResourceOrDeclareCollection'))
+    if (
+      currentQueryLanguage.value === 'mql'
+      && !queryContent.value.trim()
+      && isSelectedMongoDBDatabase(selectedLocator)
+    ) {
+      await submitQueryGeneration([], { resourceScopeLocator: selectedLocator })
       return
     }
+    ElMessage.warning(t('develop.query.selectQueryResourceOrDeclareCollection'))
+    return
   }
   await submitQueryGeneration(resources)
 }
 
-const submitQueryGeneration = async resources => {
+const submitQueryGeneration = async (resources, { resourceScopeLocator = '' } = {}) => {
   generatingQuery.value = true
   try {
     const result = await generateQueryFromNL({
@@ -1707,6 +1772,7 @@ const submitQueryGeneration = async resources => {
       engine_id: selectedEngineId.value,
       query_language: currentQueryLanguage.value,
       resources,
+      resource_scope_locator: resourceScopeLocator || undefined,
       current_query: queryContent.value.trim() || undefined
     })
     const resolved = resolveQueryGenerationResult(result)
@@ -1738,7 +1804,10 @@ const submitQueryGeneration = async resources => {
     }
     queryContent.value = resolved.query
     currentQueryLanguage.value = resolved.queryLanguage || currentQueryLanguage.value
-    queryParameters.value = []
+    const generatedAt = Date.now()
+    queryParameters.value = resolved.queryParameters.map((parameter, index) => (
+      queryParameterEditorItem(parameter, `generated-${generatedAt}-${index}`)
+    ))
     executionParameterOverrides.value = {}
     clearResult()
     queryAiOpen.value = false
@@ -1768,13 +1837,36 @@ const confirmQueryResourceCandidates = async () => {
 }
 
 const queryResourceCandidateName = candidate => (
-  candidate.full_name || candidate.name || candidate.locator
+  candidate.name || candidate.full_name || t('develop.query.unnamedResource')
 )
 
+const queryResourceCandidateType = candidate => {
+  const type = String(candidate.asset_type || candidate.data_type || '').trim().toLowerCase()
+  const typeKey = {
+    collection: 'mongodbCollection',
+    table: 'table',
+    view: 'view',
+    graph: 'graph',
+    document: 'document',
+    raster: 'raster',
+    vector: 'vector'
+  }[type] || 'generic'
+  return t(`develop.query.resourceTypes.${typeKey}`)
+}
+
+const queryResourceCandidateDatabase = candidate => {
+  const ancestors = Array.isArray(candidate.ancestors) ? candidate.ancestors : []
+  const database = [...ancestors].reverse().find(item => item?.type === 'database' && item.label)
+  return database ? t('develop.query.resourceDatabase', { name: database.label }) : ''
+}
+
 const queryResourceCandidateFacts = candidate => [
-  candidate.asset_type || candidate.data_type,
-  candidate.geometry_column,
-  candidate.crs
+  queryResourceCandidateDatabase(candidate),
+  t('develop.query.resourceType', { type: queryResourceCandidateType(candidate) }),
+  candidate.geometry_column
+    ? t('develop.query.geometryColumnValue', { name: candidate.geometry_column })
+    : '',
+  candidate.crs ? t('develop.query.coordinateSystemValue', { name: candidate.crs }) : ''
 ].filter(Boolean).join(' · ')
 
 const handleSaveTask = async (taskData) => {
@@ -1868,14 +1960,9 @@ const loadTask = async (taskId) => {
   currentTaskName.value = task.name
   currentTask.value = task
   queryContent.value = task.content?.query || ''
-  queryParameters.value = (Array.isArray(task.content?.query_parameters) ? task.content.query_parameters : []).map((parameter, index) => ({
-    id: `saved-${index}-${parameter.name}`,
-    name: parameter.name || '',
-    type: parameter.type || 'string',
-    default: parameter.default,
-    title: parameter.title || '',
-    description: parameter.description || ''
-  }))
+  queryParameters.value = (Array.isArray(task.content?.query_parameters) ? task.content.query_parameters : []).map((parameter, index) => (
+    queryParameterEditorItem(parameter, `saved-${index}-${parameter.name}`)
+  ))
   executionParameterOverrides.value = {}
   currentQueryLanguage.value = String(task.content?.query_type || '').toLowerCase()
   const engineID = task.execution_config?.engine_id
@@ -2322,7 +2409,6 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
-.query-resource-candidate-path,
 .query-resource-candidate-facts,
 .query-resource-candidate-reason {
   color: var(--addp-text-secondary);

@@ -98,6 +98,8 @@ class ResourceResolutionService:
         self,
         query: str,
         policy: ResourceResolutionPolicy,
+        *,
+        scope_locator: str | None = None,
     ) -> ResourceResolutionResult:
         if self.discovery is None or policy.session_catalog:
             raise ValueError(f"{policy.name} 场景不支持 Tool 资源搜索")
@@ -107,12 +109,29 @@ class ResourceResolutionService:
         if policy.name == "transfer" and len(intents) != 1:
             return ResourceResolutionResult(intents=intents, candidates=[], missing_roles=[])
 
-        result = await self._discover_once(intents, policy)
+        if scope_locator:
+            if policy.engine_id is None:
+                raise ValueError(f"{policy.name} 范围发现缺少 engine_id")
+            result = await self.discovery.discover_scoped(
+                intents,
+                query=query,
+                engine_id=policy.engine_id,
+                scope_locator=scope_locator,
+                limit=policy.max_candidates,
+                allowed_data_types=policy.allowed_data_types,
+            )
+            return ResourceResolutionResult(
+                intents=intents,
+                candidates=result.candidates,
+                missing_roles=result.missing_roles,
+            )
+
+        result = await self._discover_once(intents, policy, query=query)
         if result.missing_roles:
             missing = [item for item in intents if item.role in set(result.missing_roles)]
             expanded = await self.expand_missing(query, missing)
             if expanded:
-                retry = await self._discover_once(expanded, policy)
+                retry = await self._discover_once(expanded, policy, query=query)
                 result = ResourceDiscoveryResult(
                     candidates=[*result.candidates, *retry.candidates],
                     missing_roles=[role for role in result.missing_roles if role in retry.missing_roles],
@@ -156,9 +175,12 @@ class ResourceResolutionService:
         self,
         intents: list[ResourceIntent],
         policy: ResourceResolutionPolicy,
+        *,
+        query: str,
     ) -> ResourceDiscoveryResult:
         return await self.discovery.discover(
             intents,
+            query=query,
             engine_id=policy.engine_id,
             limit=policy.max_candidates,
             allowed_data_types=policy.allowed_data_types,

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Optional
+import logging
+from typing import Any, Literal, Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -26,6 +27,7 @@ from services.resource_discovery import ResourceDiscovery
 from services.resource_resolution import ResourceResolutionPolicy, ResourceResolutionService
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 require_query_draft_tool = require_tool_user(
     "copilot",
     "query.draft.generate",
@@ -45,6 +47,12 @@ class QueryGenerationRequest(BaseModel):
         max_length=200_000,
         description="编辑器中已有的查询文本，只作为生成上下文，不作为资源事实或执行范围",
     )
+    resource_scope_locator: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=4096,
+        description="仅用于资源发现的 Owner Catalog 容器 locator，不是输入资源或查询执行范围",
+    )
     engine_context: Optional[dict[str, Any]] = Field(
         default=None,
         description="由 Agent 的 engine.list Tool 提供的已验证引擎事实；Develop 用户入口由 Copilot 自行发现",
@@ -63,12 +71,23 @@ class QueryResourceCandidate(ResourceFact):
     recommendation_reason: Optional[str] = None
 
 
+class QueryParameterDefinition(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
+    type: Literal["string", "integer", "number", "boolean"]
+    default: Any
+    title: Optional[str] = None
+    description: Optional[str] = None
+
+
 class QueryGenerationResponse(BaseModel):
     status: str
     query: Optional[str] = None
     query_language: str
     explanation: Optional[str] = None
     warnings: list[str] = Field(default_factory=list)
+    query_parameters: list[QueryParameterDefinition]
     resources: Optional[list[ResourceFact]] = None
     data_source_candidates: Optional[list[QueryResourceCandidate]] = None
     clarification_reason: Optional[str] = None
@@ -105,36 +124,37 @@ async def generate_query(
             return QueryGenerationResponse(
                 status="need_clarification",
                 query_language=language,
+                query_parameters=[],
                 clarification_reason="query_language_unsupported",
                 message=f"当前引擎不支持查询语言 {language}",
             )
+        if request.resource_scope_locator and (request.resources or request.current_query):
+            raise ToolExecutionError(
+                "invalid_arguments",
+                "resource_scope_locator 只能用于编辑器为空且尚未确认具体资源的首次发现",
+            )
 
-        resources: list[ResourceFact] = []
-        use_current_mql = bool(
-            language == "mql" and _mql_primary_collection(request.current_query)
+        resolution_llm = CopilotInferenceService.chat_model(
+            db,
+            tenant_id=user.tenant_id,
+            scenario_code="resource_resolution",
+            temperature=0,
+            max_output_tokens=1200,
         )
-        if request.resources or not use_current_mql:
-            resolution_llm = CopilotInferenceService.chat_model(
-                db,
-                tenant_id=user.tenant_id,
-                scenario_code="resource_resolution",
-                temperature=0,
-                max_output_tokens=1200,
-            )
-            discovery = ResourceDiscovery(
-                settings.get_gateway_url(),
-                credentials.credentials,
-                executor=executor,
-                recommender=ResourceRecommendationChain(resolution_llm),
-            )
-            resolver = ResourceResolutionService(
-                discovery=discovery,
-                intent_chain=ResourceIntentChain(resolution_llm),
-            )
-            policy = ResourceResolutionPolicy.query(request.engine_id)
-            if not request.resources:
-                return await _discover_query_resources(request, resolver, policy, language)
-            resources = await resolver.verify(request.resources, policy)
+        discovery = ResourceDiscovery(
+            settings.get_gateway_url(),
+            credentials.credentials,
+            executor=executor,
+            recommender=ResourceRecommendationChain(resolution_llm),
+        )
+        resolver = ResourceResolutionService(
+            discovery=discovery,
+            intent_chain=ResourceIntentChain(resolution_llm),
+        )
+        policy = ResourceResolutionPolicy.query(request.engine_id)
+        if not request.resources:
+            return await _discover_query_resources(request, resolver, policy, language)
+        resources = await resolver.verify(request.resources, policy)
         generated = await query_service.generate(
             query=request.query,
             engine=engine,
@@ -150,33 +170,19 @@ async def generate_query(
             query_language=language,
             explanation=generated.get("explanation"),
             warnings=generated.get("warnings", []),
+            query_parameters=generated.get("query_parameters", []),
             resources=resources,
         )
     except ToolExecutionError as error:
+        logger.warning("query generation tool call failed: code=%s message=%s", error.code, error.message)
         status_code = 400 if error.code == "invalid_arguments" else 502
         raise HTTPException(status_code=status_code, detail=error.message) from error
     except ValueError as error:
+        logger.warning("query generation validation rejected candidate: %s", error)
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
+        logger.exception("query generation failed")
         raise HTTPException(status_code=500, detail="查询生成失败") from error
-
-
-def _mql_primary_collection(current_query: str | None) -> str | None:
-    """返回单一 MQL command object 的主 collection，其他文本一律视为未声明。"""
-    if not isinstance(current_query, str) or not current_query.strip():
-        return None
-    try:
-        command = json.loads(current_query)
-    except (TypeError, json.JSONDecodeError):
-        return None
-    if not isinstance(command, dict):
-        return None
-    collections = [
-        str(command[key]).strip()
-        for key in ("find", "aggregate", "count", "distinct")
-        if isinstance(command.get(key), str) and str(command[key]).strip()
-    ]
-    return collections[0] if len(collections) == 1 else None
 
 
 async def _discover_query_resources(
@@ -185,11 +191,16 @@ async def _discover_query_resources(
     policy: ResourceResolutionPolicy,
     language: str,
 ) -> QueryGenerationResponse:
-    result = await resolver.discover(request.query, policy)
+    result = await resolver.discover(
+        request.query,
+        policy,
+        scope_locator=request.resource_scope_locator,
+    )
     if not result.intents:
         return QueryGenerationResponse(
             status="need_clarification",
             query_language=language,
+            query_parameters=[],
             clarification_reason="data_source_not_found",
             message="未能从需求中识别查询输入数据源",
             data_source_candidates=[],
@@ -198,6 +209,7 @@ async def _discover_query_resources(
         return QueryGenerationResponse(
             status="need_clarification",
             query_language=language,
+            query_parameters=[],
             clarification_reason="data_source_not_found",
             message="未找到当前查询引擎内的资源：" + "、".join(result.missing_roles),
             data_source_candidates=[],
@@ -205,6 +217,7 @@ async def _discover_query_resources(
     return QueryGenerationResponse(
         status="need_clarification",
         query_language=language,
+        query_parameters=[],
         clarification_reason="data_source_confirmation_required",
         message="请确认当前查询引擎内的查询输入资源后再生成",
         data_source_candidates=[QueryResourceCandidate.model_validate(item) for item in result.candidates],

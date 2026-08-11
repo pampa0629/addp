@@ -821,6 +821,20 @@
             "title": "Query Language",
             "type": "string"
           },
+          "resource_scope_locator": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "仅用于资源发现的 Owner Catalog 容器 locator，不是输入资源或查询执行范围",
+            "title": "Resource Scope Locator"
+          },
           "resources": {
             "items": {
               "$ref": "#/components/schemas/ResourceFact"
@@ -902,6 +916,13 @@
             "title": "Query Language",
             "type": "string"
           },
+          "query_parameters": {
+            "items": {
+              "$ref": "#/components/schemas/QueryParameterDefinition"
+            },
+            "title": "Query Parameters",
+            "type": "array"
+          },
           "resources": {
             "anyOf": [
               {
@@ -930,9 +951,62 @@
         },
         "required": [
           "status",
-          "query_language"
+          "query_language",
+          "query_parameters"
         ],
         "title": "QueryGenerationResponse",
+        "type": "object"
+      },
+      "QueryParameterDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "default": {
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "type": {
+            "enum": [
+              "string",
+              "integer",
+              "number",
+              "boolean"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "default"
+        ],
+        "title": "QueryParameterDefinition",
         "type": "object"
       },
       "QueryResourceCandidate": {

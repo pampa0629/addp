@@ -113,6 +113,26 @@ END;
 /
 
 DECLARE
+  all_column_logging_count NUMBER;
+BEGIN
+  FOR source_table IN (
+    SELECT table_name
+      FROM user_tables
+     WHERE table_name IN ('CUSTOMER_LOCATIONS', 'SPATIAL_FEATURES')
+     ORDER BY table_name
+  ) LOOP
+    SELECT COUNT(*) INTO all_column_logging_count
+      FROM user_log_groups
+     WHERE table_name = source_table.table_name
+       AND log_group_type = 'ALL COLUMN LOGGING';
+    IF all_column_logging_count = 0 THEN
+      EXECUTE IMMEDIATE 'ALTER TABLE ' || source_table.table_name || ' ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS';
+    END IF;
+  END LOOP;
+END;
+/
+
+DECLARE
   index_count NUMBER;
 BEGIN
   SELECT COUNT(*) INTO index_count

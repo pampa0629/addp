@@ -29,6 +29,7 @@ class CopilotClient(BaseClient):
         resources: list[dict[str, Any]],
         engine_context: dict[str, Any],
         current_query: str | None = None,
+        resource_scope_locator: str | None = None,
     ) -> Dict[str, Any]:
         payload: dict[str, Any] = {
             "query": query,
@@ -39,6 +40,8 @@ class CopilotClient(BaseClient):
         }
         if current_query is not None:
             payload["current_query"] = current_query
+        if resource_scope_locator is not None:
+            payload["resource_scope_locator"] = resource_scope_locator
         return await self.post(
             "/api/v1/copilot/query/generate",
             json=payload,

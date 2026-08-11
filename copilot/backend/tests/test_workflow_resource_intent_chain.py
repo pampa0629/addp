@@ -8,6 +8,7 @@ from chains.resource_intent_chain import ResourceIntent, ResourceIntentChain, Re
 class FakeLLM:
     async def ainvoke(self, messages):
         assert "距离、单位、算子" in messages[0].content
+        assert "查询条件中的实体值或属性值也不是独立数据项" in messages[0].content
         assert "最常见的英文单词形式" in messages[0].content
         assert messages[1].content == "计算铁路两边宽度50米所占用的耕地面积"
         return AIMessage(content='''{

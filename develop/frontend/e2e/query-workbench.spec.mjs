@@ -192,12 +192,18 @@ test('generates a natural-language query with current-engine resource confirmati
 
   const confirmation = page.getByRole('dialog', { name: '确认查询资源', exact: true })
   await expect(confirmation).toBeVisible()
-  await expect(confirmation.getByText('railway', { exact: true })).toBeVisible()
-  await expect(confirmation.getByText('farmland_b', { exact: true })).toBeVisible()
+  await expect(confirmation.getByText('railway', { exact: true }).first()).toBeVisible()
+  await expect(confirmation.getByText('farmland_b', { exact: true }).first()).toBeVisible()
+  await expect(confirmation.getByText(
+    '所在数据库：analytics · 资源类型：数据表 · 空间字段：shape · 坐标系：EPSG:32650',
+    { exact: true }
+  ).first()).toBeVisible()
+  await expect(confirmation).not.toContainText('addp://')
   await confirmation.getByText('farmland_b', { exact: true }).click()
   await confirmation.getByRole('button', { name: '确认并生成', exact: true }).click()
 
   await expect.poll(() => copilotRequests.length).toBe(2)
+  await expect(confirmation).toBeHidden()
   expect(copilotRequests[0].engine_id).toBe(ENGINE.id)
   expect(copilotRequests[0].resources).toEqual([])
   expect(copilotRequests[1].resources).toHaveLength(2)
@@ -295,6 +301,7 @@ async function installMockBackend(page, {
               engine_id: 11,
               asset_type: 'table',
               data_type: 'table',
+              ancestors: [{ label: 'analytics', type: 'database' }],
               geometry_column: 'shape',
               crs: 'EPSG:32650'
             },
@@ -305,6 +312,7 @@ async function installMockBackend(page, {
               engine_id: 11,
               asset_type: 'table',
               data_type: 'table',
+              ancestors: [{ label: 'analytics', type: 'database' }],
               geometry_column: 'shape',
               crs: 'EPSG:32650'
             },
@@ -315,6 +323,7 @@ async function installMockBackend(page, {
               engine_id: 11,
               asset_type: 'table',
               data_type: 'table',
+              ancestors: [{ label: 'analytics', type: 'database' }],
               geometry_column: 'shape',
               crs: 'EPSG:32650'
             }
@@ -325,6 +334,7 @@ async function installMockBackend(page, {
         status: 'success',
         query_language: 'sql',
         query: 'SELECT ST_Intersection(railway.shape, farmland_b.shape) FROM public.railway JOIN public.farmland_b ON true',
+        query_parameters: [],
         resources: body.resources
       })
     }

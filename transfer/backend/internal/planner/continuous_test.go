@@ -206,6 +206,36 @@ func TestBuildDatabaseCDCContinuousPlanRoutesOracleEnvelope(t *testing.T) {
 	}
 }
 
+func TestBuildDatabaseCDCContinuousPlanMapsOracleSpatialMirrorFacts(t *testing.T) {
+	config := validPostgreSQLCDCConfig()
+	config["source"].(map[string]interface{})["locator"] = "addp://engine/12/path/BUSINESS/CUSTOMER_LOCATIONS?type=table"
+	fields := config["transforms"].([]interface{})[0].(map[string]interface{})["fields"].([]interface{})
+	config["transforms"].([]interface{})[0].(map[string]interface{})["fields"] = append(fields, map[string]interface{}{
+		"source": "SHAPE", "target": "geometry", "target_type": "geometry", "nullable": false,
+	})
+	spec, err := ParseDatabaseCDCTaskSpec(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetCaps := (&postgresql.PostgreSQLPlugin{}).Capabilities()
+	plan, err := BuildDatabaseCDCContinuousPlan(spec, StaticEngineResolver{
+		12: {Type: "oracle", ConnInfo: engineplugin.ConnectionInfo{"service_name": "FREEPDB1"}},
+		20: {Type: "postgresql", Capabilities: &targetCaps},
+	}, DatabaseCDCStreamBinding{
+		Provider: "oracle", ConnInfo: engineplugin.ConnectionInfo{"bootstrap_servers": "infra"},
+		ConsumerGroup: "group", SourceIdentity: "addp://engine/12/path/BUSINESS/CUSTOMER_LOCATIONS?type=table",
+		Database: "FREEPDB1", Schema: "BUSINESS", Table: "CUSTOMER_LOCATIONS", CaptureTable: "ADDP_M_2",
+		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("SHAPE", "Point", 4326, 2),
+	}, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.CDC.Table != "CUSTOMER_LOCATIONS" || plan.CDC.CaptureTable != "ADDP_M_2" ||
+		plan.Target.SpatialInfo.PrimaryGeometryName() != "geometry" || plan.Target.SpatialInfo.PrimarySRIDValue() != 4326 {
+		t.Fatalf("Oracle Spatial CDC plan = %#v", plan)
+	}
+}
+
 func TestBuildDatabaseCDCContinuousPlanRejectsOracleStreamIdentityMismatch(t *testing.T) {
 	config := validPostgreSQLCDCConfig()
 	config["source"].(map[string]interface{})["locator"] = "addp://engine/12/path/BUSINESS/CUSTOMERS?type=table"

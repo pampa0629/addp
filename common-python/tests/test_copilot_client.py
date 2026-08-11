@@ -146,6 +146,49 @@ class CopilotClientTests(unittest.IsolatedAsyncioTestCase):
             await client.close()
         self.assertEqual(result["query_language"], "mql")
 
+    async def test_generate_query_forwards_optional_resource_scope(self):
+        engine_context = {
+            "id": 11,
+            "engine_type": "mongodb",
+            "capabilities": {"compute": {"query": {"supported": True, "languages": ["mql"]}}},
+        }
+        scope_locator = "addp://engine/11/path/Outdoor?type=database&node_id=276"
+
+        async def handler(request):
+            self.assertEqual(json.loads(request.content), {
+                "query": "查询用户参加的活动",
+                "engine_id": 11,
+                "query_language": "mql",
+                "resources": [],
+                "engine_context": engine_context,
+                "resource_scope_locator": scope_locator,
+            })
+            return httpx.Response(200, json={
+                "status": "need_clarification",
+                "query_language": "mql",
+                "data_source_candidates": [],
+            })
+
+        client = CopilotClient("http://copilot", user_token="user-token")
+        await client._client.aclose()
+        client._client = httpx.AsyncClient(
+            base_url="http://copilot",
+            headers={"Authorization": "Bearer user-token"},
+            transport=httpx.MockTransport(handler),
+        )
+        try:
+            result = await client.generate_query(
+                "查询用户参加的活动",
+                engine_id=11,
+                query_language="mql",
+                resources=[],
+                engine_context=engine_context,
+                resource_scope_locator=scope_locator,
+            )
+        finally:
+            await client.close()
+        self.assertEqual(result["status"], "need_clarification")
+
     async def test_generate_workflow_uses_canonical_request(self):
         async def handler(request):
             self.assertEqual(request.url.path, "/api/v1/copilot/workflow/generate")

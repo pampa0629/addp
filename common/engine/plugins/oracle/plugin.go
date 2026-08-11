@@ -19,6 +19,10 @@ import (
 
 type OraclePlugin struct{}
 
+// InternalCaptureTableCommentPrefix marks ADDP-owned source-side capture tables.
+// Catalog listing filters this exact ownership marker instead of relying on object names.
+const InternalCaptureTableCommentPrefix = "ADDP CDC spatial capture "
+
 var (
 	_ plugin.ConnectionIdentityProvider           = (*OraclePlugin)(nil)
 	_ plugin.DSNProvider                          = (*OraclePlugin)(nil)
@@ -225,11 +229,17 @@ func (p *OraclePlugin) listNamespaces(ctx context.Context, db *gorm.DB, root plu
 		          WHERE so.secondary_object_owner = o.owner
 		            AND so.secondary_object_name = o.object_name
 		       )
+		   AND NOT EXISTS (
+		         SELECT 1 FROM all_tab_comments internal_comment
+		          WHERE internal_comment.owner = o.owner
+		            AND internal_comment.table_name = o.object_name
+		            AND internal_comment.comments LIKE ?
+		       )
 		 WHERE u.oracle_maintained = 'N'
 		 GROUP BY u.username
 		HAVING u.username = USER OR COUNT(o.object_name) > 0
 		 ORDER BY u.username
-	`).Scan(&rows).Error
+	`, InternalCaptureTableCommentPrefix+"%").Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Oracle schemas: %w", err)
 	}
@@ -286,8 +296,14 @@ func (p *OraclePlugin) listTables(ctx context.Context, db *gorm.DB, schema strin
 		          WHERE so.secondary_object_owner = o.owner
 		            AND so.secondary_object_name = o.object_name
 		       )
+		   AND NOT EXISTS (
+		         SELECT 1 FROM all_tab_comments internal_comment
+		          WHERE internal_comment.owner = o.owner
+		            AND internal_comment.table_name = o.object_name
+		            AND internal_comment.comments LIKE ?
+		       )
 		 ORDER BY o.object_name
-	`, schema).Scan(&rows).Error
+	`, schema, InternalCaptureTableCommentPrefix+"%").Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Oracle tables: %w", err)
 	}

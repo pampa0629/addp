@@ -9,7 +9,9 @@ import {
   queryErrorMessage,
   queryResultFromExecution,
   diagnoseQuery,
-  canUseQueryContainerContext,
+  extractQueryParameterReferences,
+  mqlCollectionReferences,
+  matchMQLCollectionReferences,
   isQueryInputResource,
   mqlPrimaryCollection,
   parseSQLSources
@@ -68,6 +70,10 @@ assert.deepEqual(federatedCapability.federation, {
 assert.equal(queryParameterReference('sql', 'status'), ':status')
 assert.equal(queryParameterReference('cypher', 'status'), '$status')
 assert.equal(queryParameterReference('mql', 'status'), '{"$param":"status"}')
+assert.deepEqual(
+  extractQueryParameterReferences('sql', 'SELECT created_at::date FROM events WHERE status = :status'),
+  ['status']
+)
 const parameterContract = buildQueryExecutionContract([
   { name: 'status', type: 'string', default: 'active', title: 'Status' },
   { name: 'limit', type: 'integer', default: 10 }
@@ -201,21 +207,42 @@ assert.equal(mqlPrimaryCollection('{"count":"Persons","query":{}}'), 'Persons')
 assert.equal(mqlPrimaryCollection('{"distinct":"Persons","key":"name"}'), 'Persons')
 assert.equal(mqlPrimaryCollection('db.Persons.find({})'), '')
 assert.equal(mqlPrimaryCollection('{"find":"Persons","count":"Persons"}'), '')
-assert.equal(canUseQueryContainerContext({
-  language: 'mql',
-  query: '{"find":"Persons","filter":{}}',
-  parsedLocator: { type: 'database' }
-}), true)
-assert.equal(canUseQueryContainerContext({
-  language: 'mql',
-  query: '{"filter":{}}',
-  parsedLocator: { type: 'database' }
-}), false)
-assert.equal(canUseQueryContainerContext({
-  language: 'sql',
-  query: 'SELECT 1',
-  parsedLocator: { type: 'schema' }
-}), false)
+assert.deepEqual(mqlCollectionReferences(JSON.stringify({
+  aggregate: 'Outdoors',
+  pipeline: [
+    { $lookup: { from: 'Persons', localField: 'members.userInfo.nickName', foreignField: 'userInfo.nickName', as: 'persons' } },
+    { $facet: { joined: [{ $unionWith: { coll: 'ArchivedOutdoors', pipeline: [] } }] } },
+    { $graphLookup: { from: 'Groups', startWith: '$group', connectFromField: 'parent', connectToField: '_id', as: 'groups' } }
+  ]
+})), ['Outdoors', 'Persons', 'ArchivedOutdoors', 'Groups'])
+const availableCollections = [
+  { name: 'Outdoors', locator: 'outdoors-locator' },
+  { name: 'Persons', locator: 'persons-locator' }
+]
+assert.deepEqual(matchMQLCollectionReferences(
+  '{"aggregate":"Outdoors","pipeline":[{"$lookup":{"from":"Persons"}}]}',
+  availableCollections
+), {
+  references: ['Outdoors', 'Persons'],
+  matches: availableCollections,
+  missing: []
+})
+assert.deepEqual(matchMQLCollectionReferences(
+  '{"find":"outdoors","filter":{}}',
+  availableCollections
+), {
+  references: ['outdoors'],
+  matches: [],
+  missing: ['outdoors']
+})
+assert.deepEqual(matchMQLCollectionReferences(
+  '{"aggregate":"Outdoors","pipeline":[{"$unionWith":"ArchivedOutdoors"}]}',
+  availableCollections
+), {
+  references: ['Outdoors', 'ArchivedOutdoors'],
+  matches: [availableCollections[0]],
+  missing: ['ArchivedOutdoors']
+})
 assert.deepEqual(diagnoseQuery({
   language: 'mql',
   query: '{"find":"Persons","filter":{"_id":"W71wut2AWotkbETX"},"limit":10}',

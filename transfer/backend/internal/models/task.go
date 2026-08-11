@@ -241,12 +241,17 @@ type MySQLCaptureResource struct {
 
 func (MySQLCaptureResource) TableName() string { return "transfer.mysql_capture_resources" }
 
-// OracleCaptureResource 保存 Oracle capture generation 独有的 schema history topic。
-// 表级 ALL COLUMN LOGGING 是共享 source readiness，不属于 task generation，Stop 时不得删除。
+// OracleCaptureResource 保存 Oracle capture generation 独有的 schema history topic 与 Spatial 捕获对象。
+// 表级 ALL COLUMN LOGGING 是共享 source readiness，不属于 task generation，Stop 时不得删除；
+// Spatial mirror、row trigger 和 DDL guard 是 generation-owned 资源，Stop 时必须核对身份后删除。
 type OracleCaptureResource struct {
 	CaptureResourceID       uint   `gorm:"primaryKey" json:"capture_resource_id"`
 	SchemaHistoryTopicName  string `gorm:"type:varchar(255);not null;uniqueIndex:uq_transfer_oracle_capture_schema_history_topic" json:"schema_history_topic_name"`
 	SchemaHistoryTopicOwned bool   `gorm:"not null;default:true" json:"schema_history_topic_owned"`
+	SpatialMirrorTableName  string `gorm:"type:varchar(30);not null;default:''" json:"spatial_mirror_table_name,omitempty"`
+	SpatialRowTriggerName   string `gorm:"type:varchar(30);not null;default:''" json:"spatial_row_trigger_name,omitempty"`
+	SpatialDDLGuardName     string `gorm:"type:varchar(30);not null;default:''" json:"spatial_ddl_guard_name,omitempty"`
+	SpatialArtifactsOwned   bool   `gorm:"not null;default:false" json:"spatial_artifacts_owned"`
 }
 
 func (OracleCaptureResource) TableName() string { return "transfer.oracle_capture_resources" }

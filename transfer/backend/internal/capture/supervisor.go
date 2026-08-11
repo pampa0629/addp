@@ -94,6 +94,10 @@ func (s *Supervisor) Start(ctx context.Context, task *models.TransferTask) (*mod
 			return resource, nil
 		}
 	}
+	if err := s.source.EnsureOwnedResources(ctx, plan, resource); err != nil {
+		s.fail(ctx, resource, err)
+		return nil, err
+	}
 	if err := s.topics.EnsureTopic(ctx, TopicSpec{
 		Name: resource.TopicName, Partitions: 1, ReplicationFactor: s.config.TopicReplication,
 		RetentionMillis: s.config.TopicRetention.Milliseconds(), RetentionBytes: s.config.TopicRetentionBytes,

@@ -13,10 +13,24 @@ import (
 var ErrSourceCaptureResourceActive = errors.New("source capture resource is still active")
 
 type SourceResourceControl interface {
+	EnsureOwnedResources(ctx context.Context, plan *CapturePlan, resource *models.CaptureResource) error
 	DropOwnedResources(ctx context.Context, plan *CapturePlan, resource *models.CaptureResource) error
 }
 
 type DatabaseSourceResources struct{}
+
+func (DatabaseSourceResources) EnsureOwnedResources(ctx context.Context, plan *CapturePlan, resource *models.CaptureResource) error {
+	if plan == nil || resource == nil || plan.SourceType != resource.SourceType {
+		return fmt.Errorf("database capture provisioning requires matching plan and resource")
+	}
+	if plan.SourceConnectionFingerprint == "" || plan.SourceConnectionFingerprint != resource.SourceConnectionFingerprint {
+		return fmt.Errorf("refuse to provision database capture resources because the source connection identity changed")
+	}
+	if plan.SourceType == models.CaptureSourceOracle {
+		return ensureOracleSpatialOwnedResources(ctx, plan, resource)
+	}
+	return nil
+}
 
 func (DatabaseSourceResources) DropOwnedResources(ctx context.Context, plan *CapturePlan, resource *models.CaptureResource) error {
 	if plan == nil || resource == nil || plan.SourceType != resource.SourceType {
@@ -37,7 +51,7 @@ func (DatabaseSourceResources) DropOwnedResources(ctx context.Context, plan *Cap
 		if resource.Oracle == nil {
 			return fmt.Errorf("Oracle capture cleanup requires provider resources")
 		}
-		return nil
+		return dropOracleSpatialOwnedResources(ctx, plan, resource)
 	default:
 		return fmt.Errorf("unsupported database capture source type %q", plan.SourceType)
 	}

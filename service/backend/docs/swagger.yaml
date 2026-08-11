@@ -93,6 +93,10 @@ definitions:
         type: boolean
       ordinal_position:
         type: integer
+      path:
+        items:
+          type: string
+        type: array
       precision:
         type: integer
       primary_key:

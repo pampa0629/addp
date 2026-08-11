@@ -343,11 +343,15 @@ func (r *DataSessionRunner) buildPlan(ctx context.Context, claim repository.Runt
 		if err != nil {
 			return nil, fmt.Errorf("parse database CDC task: %w", err)
 		}
+		captureTable := resource.SourceTable
+		if resource.SourceType == models.CaptureSourceOracle && resource.Oracle != nil && resource.Oracle.SpatialArtifactsOwned {
+			captureTable = resource.Oracle.SpatialMirrorTableName
+		}
 		return planner.BuildDatabaseCDCContinuousPlan(spec, resolver, planner.DatabaseCDCStreamBinding{
 			Provider: string(resource.SourceType),
 			ConnInfo: r.InfraKafkaConnection, Path: internalKafkaTopicPath(resource.TopicName),
 			ConsumerGroup: resource.ConsumerGroup, SourceIdentity: resource.SourceIdentity,
-			Database: resource.SourceDatabase, Schema: resource.SourceSchema, Table: resource.SourceTable,
+			Database: resource.SourceDatabase, Schema: resource.SourceSchema, Table: resource.SourceTable, CaptureTable: captureTable,
 			SpatialInfo: datatype.SpatialInfoFromPayload(map[string]interface{}(resource.SourceSpatialInfo)),
 		}, claim.Task.BatchSize)
 	}

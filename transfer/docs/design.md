@@ -265,10 +265,10 @@ MySQL 8.0 单表
   -> per-partition kafka_offset/v1 next_offset CAS
 ```
 
-Oracle CDC 第一期复用同一主路径，只开放普通非空间、非 LOB 单表：
+Oracle CDC 复用同一主路径；普通表直接捕获，Spatial 表先由 capture Provider 建立 generation-owned WKB 镜像：
 
 ```text
-Oracle 单表
+Oracle 普通单表
   -> Debezium Oracle Connector + generation-owned schema-history topic
   -> Infra Kafka 单分区 CDC data topic
   -> 同一个 Transfer Continuous Worker
@@ -276,6 +276,10 @@ Oracle 单表
   -> PostgreSQL/MySQL PartitionedTableChangeApplyProvider
   -> business target apply ledger + table upsert/delete (one transaction)
   -> per-partition kafka_offset/v1 next_offset CAS
+
+Oracle Spatial 单表
+  -> source schema 内 generation-owned trigger + WKB mirror table
+  -> 同一个 Debezium Oracle Connector / Infra Kafka / Continuous Worker / target apply 主路径
 ```
 
-continuous worker 是 Transfer 独立长驻进程角色，一个进程承载多个 runtime session；它通过 `transfer.runtime_leases` claim owner/lease/heartbeat/fencing，不使用 Asynq 承载无限循环。业务 Kafka 与 PostgreSQL/MySQL/Oracle CDC 复用同一个 consumer/apply/CAS 主循环，不建立第二套 CDC consumer。业务 Kafka 已支持显式 `block|dead_letter`；bounded replay 通过独立 Asynq execution 从原业务 Kafka 读取显式 offset ranges，并只写不存在的新 PostgreSQL 隔离表。当前仍不支持无 key append、Kafka target、Schema Registry、Avro、Protobuf、数据库 CDC replay、Oracle Spatial CDC 或自动 DDL。
+continuous worker 是 Transfer 独立长驻进程角色，一个进程承载多个 runtime session；它通过 `transfer.runtime_leases` claim owner/lease/heartbeat/fencing，不使用 Asynq 承载无限循环。业务 Kafka 与 PostgreSQL/MySQL/Oracle CDC 复用同一个 consumer/apply/CAS 主循环，不建立第二套 CDC consumer。Oracle Spatial 由 capture Provider 在源 schema 内维护 generation-owned WKB 镜像表，再进入相同 Debezium 主路径。业务 Kafka 已支持显式 `block|dead_letter`；bounded replay 通过独立 Asynq execution 从原业务 Kafka 读取显式 offset ranges，并只写不存在的新 PostgreSQL 隔离表。当前仍不支持无 key append、Kafka target、Schema Registry、Avro、Protobuf、数据库 CDC replay、普通 Oracle LOB/RAC、ArcGIS SDE 或自动 schema evolution。

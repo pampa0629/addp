@@ -3125,6 +3125,12 @@ const docTemplate = `{
                 "ordinal_position": {
                     "type": "integer"
                 },
+                "path": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "precision": {
                     "type": "integer"
                 },

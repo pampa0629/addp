@@ -61,11 +61,23 @@ def test_preview_resource_fact_keeps_native_item_type_separate_from_data_type():
                     {"key": "item", "value": {"data_type": "table"}},
                 ],
             },
-            "column_metadata": [{"column_name": "_id", "type": "string"}],
+            "column_metadata": [
+                {"column_name": "_id", "path": ["_id"], "type": "string"},
+                {
+                    "column_name": "members.userInfo.nickName",
+                    "path": ["members", "userInfo", "nickName"],
+                    "type": "string",
+                },
+            ],
         },
     })
 
     assert fact["data_type"] == "table"
+    assert fact["fields"][1] == {
+        "name": "members.userInfo.nickName",
+        "path": ["members", "userInfo", "nickName"],
+        "type": "string",
+    }
     assert "item_type" not in fact
 
 

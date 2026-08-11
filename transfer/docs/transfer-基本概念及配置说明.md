@@ -272,7 +272,7 @@ Kafka Provider 通过 `ChangeStreamReaderProvider` 返回原始 ChangeRecord 和
 
 每个 partition 的主状态继续存储在 `transfer.sync_states`，position 固定为 `type=kafka_offset`、`version=v1`、`next_offset`。consumer auto commit 禁用；目标提交后才允许以 runtime fencing token + state version 做 CAS。首次无状态 partition 必须显式选择 `earliest|latest`。
 
-continuous worker 是 Transfer 独立进程角色，不使用 Asynq。`desired_state`、原子 start/pause/resume/stop、session owner/lease/heartbeat/fencing、supervisor、业务 Kafka JSON upsert + DLQ 和 PostgreSQL/MySQL/Oracle CDC snapshot/upsert/delete 已实现。业务 Kafka与数据库 CDC 共用同一个 consumer/apply/CAS 主循环；consumer group 只负责 partition assignment，Kafka auto commit 禁用。交付保证是 at-least-once + 目标 monotonic 幂等应用，不宣称分布式 exactly-once。Console Wizard 已支持业务 Kafka 以及 PostgreSQL/MySQL/Oracle CDC 配置，业务 Kafka 默认显式发送 `block`；公开 API 可显式选择 `dead_letter`。execution 详情展示 owner、heartbeat、lease、fencing token、每个 partition 的 committed next offset 与最近提交时间。当前仍不支持无 key append、Schema Registry、Avro、Protobuf、Kafka target、数据库 CDC replay/DLQ、Oracle Spatial CDC 或自动 DDL。
+continuous worker 是 Transfer 独立进程角色，不使用 Asynq。`desired_state`、原子 start/pause/resume/stop、session owner/lease/heartbeat/fencing、supervisor、业务 Kafka JSON upsert + DLQ 和 PostgreSQL/MySQL/Oracle CDC snapshot/upsert/delete 已实现。业务 Kafka与数据库 CDC 共用同一个 consumer/apply/CAS 主循环；Oracle Spatial 由 capture Provider 维护 generation-owned WKB 镜像表后进入相同 Debezium 数据面。consumer group 只负责 partition assignment，Kafka auto commit 禁用。交付保证是 at-least-once + 目标 monotonic 幂等应用，不宣称分布式 exactly-once。Console Wizard 已支持业务 Kafka 以及 PostgreSQL/MySQL/Oracle CDC 配置，业务 Kafka 默认显式发送 `block`；公开 API 可显式选择 `dead_letter`。execution 详情展示 owner、heartbeat、lease、fencing token、每个 partition 的 committed next offset 与最近提交时间。当前仍不支持无 key append、Schema Registry、Avro、Protobuf、Kafka target、数据库 CDC replay/DLQ、普通 Oracle LOB/RAC、ArcGIS SDE 或自动 schema evolution。
 
 `dead_letter` 只处理业务 Kafka JSON 解码、字段/key 校验和类型转换阶段的确定性记录错误。处理顺序固定为 DLQ payload -> `transfer.dead_letters` 控制索引 -> 目标 `skip` ledger -> `transfer.sync_states` CAS；source/poll、目标、fencing、retention 和 Infra 故障仍严格阻塞。DLQ topic 不是 replay source。
 
@@ -308,7 +308,7 @@ Debezium 的 geometry 属性名是 `wkb`，真实 PostGIS connector 可能在该
 
 MySQL CDC 固定支持 MySQL 8.0、有稳定非空主键的单表、`log_bin=ON`、`binlog_format=ROW`、`binlog_row_image=FULL` 和非零 server id。v1 接受有符号整数、字符/文本、Decimal、浮点、毫秒精度日期时间、JSON 和 binary/BLOB；拒绝 unsigned、`TINYINT(1)`/BOOL、BIT、ENUM/SET、YEAR、空间类型、超过毫秒的时间精度和 zero date。每个 generation 拥有唯一 connector server id、data topic 和 `cleanup.policy=delete + retention.ms=-1` 的 schema-history topic，Stop 时统一清理。
 
-Oracle CDC 第一期固定支持有稳定非空主键的普通单表，并要求独立 `cdc_database_name`、`cdc_user`、`cdc_password`、ARCHIVELOG、FORCE LOGGING、minimal supplemental logging 以及源表 `SUPPLEMENTAL LOG DATA (ALL) COLUMNS`。v1 接受字符、布尔、整数、浮点、Decimal 和毫秒精度时间戳；`NUMBER` 按十进制字符串严格转换，`DATE/TIMESTAMP(0..3)` 按 Connect 毫秒时间解码。LOB/binary、JSON/XML、Oracle Spatial、超过毫秒精度的 timestamp 及其他不稳定类型在创建 capture 前拒绝。每个 generation 拥有 data topic 和独立 schema-history topic；表级 ALL COLUMN LOGGING 是共享 source readiness，Stop 不删除。
+Oracle CDC 固定支持有稳定非空主键的普通单表，并要求独立 `cdc_database_name`、`cdc_user`、`cdc_password`、ARCHIVELOG、FORCE LOGGING、minimal supplemental logging 以及源表 `SUPPLEMENTAL LOG DATA (ALL) COLUMNS`。接受字符、布尔、整数、浮点、Decimal、毫秒精度时间戳和 `MDSYS.SDO_GEOMETRY`；`NUMBER` 按十进制字符串严格转换，`DATE/TIMESTAMP(0..3)` 按 Connect 毫秒时间解码。由于 LogMiner 不能直接稳定交付 `SDO_GEOMETRY`，Transfer 使用源 schema owner 账号创建 generation-owned 镜像表、行级同步触发器和 DDL guard，把空间值转换为内部 WKB BLOB，再由同一 connector/consumer 主路径捕获；运行期间对逻辑源表的 ALTER/DROP/RENAME 会被明确拒绝，Stop 后才允许 DDL。空间事实从 Oracle Catalog Facts 冻结，adapter 把 base64 WKB 校验并转成标准 EWKB；内部 BLOB 不等于开放用户 LOB CDC。普通 LOB/binary、JSON/XML、超过毫秒精度的 timestamp 及其他不稳定类型在创建 capture 前拒绝。每个 generation 拥有 data topic 和独立 schema-history topic；表级 ALL COLUMN LOGGING 是共享 source readiness，Stop 不删除，Spatial 镜像表、行级触发器和 DDL guard 则在 Stop 核对身份后删除。
 
 类型不兼容与字段增删、envelope/source 结构变化一样进入 `schema_change_blocked`，execution metadata 会记录 missing/unexpected/incompatible 字段，当前 Kafka 消息不会被跳过。任务同时进入 `status=blocked`，禁止直接启动、恢复或重试；connector 仍会继续采集，因此 backlog、Kafka retention 和磁盘风险继续存在。
 
@@ -322,7 +322,7 @@ PostgreSQL/MySQL 原 capture generation 的唯一恢复路线是人工确认 add
 
 continuous task 初始同样保存 `desired_state=stopped`，所以该字段只表达用户期望状态，不能证明数据库 CDC 已被永久停止。CDC 的不可逆终态以 `transfer.capture_resources.status=stopped` 为事实；尚无 capture generation 的新任务可以首次启动。`cleanup_failed` 表示 Stop 清理尚未完成，只允许重试清理，不允许重新启动或恢复。
 
-完整配置、envelope、schema drift、目标原子应用和资源 owner 约束以 [ADDP 任务体系规范](../../docs/spec/addp任务体系规范.md) 的“Transfer 数据库 CDC v1 契约”为准。Oracle Spatial CDC、Oracle LOB/RAC、ArcGIS SDE、多表、无主键、数据库 CDC replay/DLQ、Schema Registry、Avro、Protobuf、自动 DDL 和 truncate 事件均未进入当前实现；业务 Kafka 的 DLQ 与 bounded replay 已公开。
+完整配置、envelope、schema drift、目标原子应用和资源 owner 约束以 [ADDP 任务体系规范](../../docs/spec/addp任务体系规范.md) 的“Transfer 数据库 CDC v1 契约”为准。普通 Oracle LOB/RAC、ArcGIS SDE、多表、无主键、数据库 CDC replay/DLQ、Schema Registry、Avro、Protobuf、自动 schema evolution 和 truncate 事件均未进入当前实现；Oracle Spatial 已通过 generation-owned WKB 镜像进入现有 CDC 主路径，业务 Kafka 的 DLQ 与 bounded replay已公开。
 
 capture supervisor 已通过 Kafka Connect REST 和 Infra Kafka admin API 管理任务级 generation，状态登记在 `transfer.capture_resources`。continuous worker 从登记的内部 topic/group 消费 Debezium 3.6 schemaless JSON，严格处理 `r/c/u/d`，并在协议或 schema 变化时以 `schema_change_blocked` 阻塞而不推进 offset。人工 additive request 和 revision 审计保存在 `transfer.schema_change_requests`；公开任务配置仍不出现这些内部名称或 schema evolution 开关。
 

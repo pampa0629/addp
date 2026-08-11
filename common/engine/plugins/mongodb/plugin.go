@@ -87,6 +87,9 @@ func (p *MongoDBPlugin) ResolvePath(ctx context.Context, connInfo plugin.Connect
 }
 
 func (p *MongoDBPlugin) DescribeCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+	if _, _, ok := mongoCollectionFromCatalogPath(path); ok {
+		return p.SampleDynamicSchema(ctx, connInfo, path, opts)
+	}
 	return plugin.DescribeDynamicSchemaCatalogFacts(ctx, p.dynamicSchemaCatalogCallbacks(), path.EngineID, connInfo, path, opts)
 }
 

@@ -32,7 +32,10 @@ func (p *dynamicSchemaCollectionPreviewProvider) Preview(ctx context.Context, re
 	if !ok {
 		return nil, fmt.Errorf("engine %s does not implement QueryRuntimeProvider", req.Engine.EngineType)
 	}
-	factsProvider, _ := p_.(plugin.CatalogFactsProvider)
+	factsProvider, ok := p_.(plugin.CatalogFactsProvider)
+	if !ok {
+		return nil, fmt.Errorf("engine %s does not implement CatalogFactsProvider", req.Engine.EngineType)
+	}
 
 	// 2. 解析 Schema 和 Table
 	// req.Schema 是数据库名，req.Table 可能是 "database.collection" 或只是 "collection"
@@ -101,27 +104,37 @@ func (p *dynamicSchemaCollectionPreviewProvider) Preview(ctx context.Context, re
 		rows = append(rows, row)
 	}
 
-	// 6. 优先使用 Meta 已扫描的精确行数；缺失时再查询实时集合统计。
-	total := int64(len(rows))
-	if req.ItemRowCount != nil && *req.ItemRowCount > 0 {
-		total = *req.ItemRowCount
-	} else if factsProvider != nil {
-		if item, err := factsProvider.DescribeCatalogFacts(ctx, connInfo, req.ProviderPath, plugin.CatalogFactsOptions{IncludeStatistics: true}); err == nil {
-			if tableInfo := plugin.CatalogFactsTableInfo(item); tableInfo != nil && tableInfo.RowCount != nil && *tableInfo.RowCount > 0 {
-				total = *tableInfo.RowCount
-			}
-		}
+	// 6. 字段结构统一来自 Provider 动态 schema 采样，预览行只负责展示。
+	catalogFacts, err := factsProvider.DescribeCatalogFacts(ctx, connInfo, req.ProviderPath, plugin.CatalogFactsOptions{
+		SampleSize:        100,
+		IncludeStatistics: req.ItemRowCount == nil,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to describe dynamic schema: %w", err)
+	}
+	tableInfo := plugin.CatalogFactsTableInfo(catalogFacts)
+	if tableInfo == nil {
+		return nil, fmt.Errorf("dynamic schema provider returned no table facts")
 	}
 
-	fields := buildDynamicSchemaFields(columns, rows)
-	columnMetadata := buildDynamicSchemaColumnMetadata(fields)
+	// 7. 优先使用 Meta 已扫描的精确行数；缺失时使用本次 Provider 事实。
+	total := int64(len(rows))
+	if req.ItemRowCount != nil && *req.ItemRowCount >= 0 {
+		total = *req.ItemRowCount
+	} else if tableInfo.RowCount != nil && *tableInfo.RowCount >= 0 {
+		total = *tableInfo.RowCount
+	} else if tableInfo.EstimatedRowCount != nil && *tableInfo.EstimatedRowCount >= 0 {
+		total = *tableInfo.EstimatedRowCount
+	}
 
-	// 7. 构建预览结果
+	columnMetadata := buildDynamicSchemaColumnMetadata(tableInfo.Fields)
+
+	// 8. 构建预览结果
 	preview := &models.TablePreview{
 		Mode:           PreviewModeTable,
 		PreviewKind:    "dynamic_schema_record_set",
 		Columns:        columns,
-		Fields:         fields,
+		Fields:         tableInfo.Fields,
 		ColumnMetadata: columnMetadata,
 		Rows:           rows,
 		Total:          int(total),
@@ -163,53 +176,11 @@ func buildDynamicSchemaColumnMetadata(fields []datatype.FieldInfo) []models.Colu
 	for _, field := range fields {
 		metadata = append(metadata, models.ColumnMetadata{
 			ColumnName:   field.Name,
+			Path:         append([]string(nil), field.Path...),
 			Type:         field.NativeType,
 			IsNullable:   field.Nullable,
 			IsPrimaryKey: field.PrimaryKey,
 		})
 	}
 	return metadata
-}
-
-func buildDynamicSchemaFields(columns []string, rows []map[string]interface{}) []datatype.FieldInfo {
-	fields := make([]datatype.FieldInfo, 0, len(columns))
-	for _, column := range columns {
-		fieldType, nativeType := inferDynamicSchemaFieldType(column, rows)
-		fields = append(fields, datatype.FieldInfo{
-			Name:       column,
-			Type:       fieldType,
-			NativeType: nativeType,
-			Nullable:   true,
-			PrimaryKey: column == "_id",
-		})
-	}
-	return fields
-}
-
-func inferDynamicSchemaFieldType(column string, rows []map[string]interface{}) (datatype.FieldType, string) {
-	for _, row := range rows {
-		value, ok := row[column]
-		if !ok || value == nil {
-			continue
-		}
-		switch value.(type) {
-		case string:
-			return datatype.FieldTypeString, "string"
-		case bool:
-			return datatype.FieldTypeBool, "bool"
-		case int, int8, int16, int32, int64:
-			return datatype.FieldTypeBigInt, "integer"
-		case uint, uint8, uint16, uint32, uint64:
-			return datatype.FieldTypeBigInt, "integer"
-		case float32, float64:
-			return datatype.FieldTypeDouble, "number"
-		case []interface{}:
-			return datatype.FieldTypeArray, "array"
-		case map[string]interface{}:
-			return datatype.FieldTypeJSON, "object"
-		default:
-			return datatype.FieldTypeUnknown, fmt.Sprintf("%T", value)
-		}
-	}
-	return datatype.FieldTypeMixed, "mixed"
 }

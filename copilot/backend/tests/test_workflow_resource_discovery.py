@@ -241,6 +241,58 @@ def test_discovery_accepts_native_collection_and_filters_by_owner_data_type():
     assert result.candidates[0]["data_type"] == "table"
 
 
+class ScopedMongoDiscoveryExecutor:
+    def __init__(self):
+        self.calls = []
+
+    async def call(self, name, arguments, **_audit):
+        self.calls.append((name, arguments))
+        scope = "addp://engine/11/path/Outdoor?type=database&node_id=276"
+        locator = "addp://engine/11/path/Outdoor/Outdoors?type=collection&item_id=51658"
+        if name == "resource.children.list":
+            return {
+                "locator": scope,
+                "label": "Outdoor",
+                "type": "database",
+                "children": [{"locator": locator, "label": "Outdoors", "type": "collection"}],
+            }
+        if name == "data.preview":
+            return {
+                "metadata": {"locator": locator},
+                "data": {
+                    "item_meta": {
+                        "item_type": "collection",
+                        "attributes": [{"key": "item", "value": {"data_type": "table"}}],
+                    },
+                    "column_metadata": [{"column_name": "members.userInfo.nickName", "type": "string"}],
+                },
+            }
+        raise AssertionError(f"unexpected tool {name}")
+
+
+def test_scoped_discovery_lists_direct_children_and_previews_data_items():
+    executor = ScopedMongoDiscoveryExecutor()
+    discovery = ResourceDiscovery("http://gateway", "addp_at_user", executor=executor)
+    scope = "addp://engine/11/path/Outdoor?type=database&node_id=276"
+
+    result = asyncio.run(discovery.discover_scoped(
+        [ResourceIntent(role="活动参与", search_queries=["activities"])],
+        engine_id=11,
+        scope_locator=scope,
+        allowed_data_types=QUERY_DATA_TYPES,
+    ))
+
+    assert result.missing_roles == []
+    assert result.candidates[0]["name"] == "Outdoors"
+    assert result.candidates[0]["ancestors"] == [{
+        "label": "Outdoor",
+        "type": "database",
+        "locator": scope,
+    }]
+    assert result.candidates[0]["fields"][0]["name"] == "members.userInfo.nickName"
+    assert [name for name, _ in executor.calls] == ["resource.children.list", "data.preview"]
+
+
 def test_discovery_propagates_owner_error_when_no_candidate_can_be_verified():
     locator = "addp://engine/8/path/public/railway?type=table&item_id=60"
     executor = FakeToolExecutor(reject_preview_locator=locator)
@@ -336,7 +388,7 @@ class SameNameAcrossEnginesExecutor:
 
 
 class PreferSecondEngine:
-    async def recommend(self, candidates):
+    async def recommend(self, candidates, **_context):
         assert len(candidates) == 2
         return {
             "耕地": ResourceRecommendation(
