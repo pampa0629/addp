@@ -32,11 +32,11 @@ Copilot 是一个**纯后端 API 服务**（Python FastAPI，端口 8087），�
 
 ## 查询工作台生成主流程
 
-1. Develop 前端提交自然语言、当前 `engine_id`、当前 `query_language`、可选的具体 data item locator 和可选 `current_query`。执行范围 locator 不提交给 Copilot。
+1. Develop 前端提交自然语言、当前 `engine_id`、当前 `query_language`、具体 data item locator 和可选 `current_query`。MongoDB 用户可以只选择 database；Develop 从 MQL 提取全部 collection 引用并在当前 database 的 Owner Catalog 中解析为具体 locator，执行范围 locator 本身不提交给 Copilot。
 2. Copilot 通过 `engine.list` 验证当前用户可访问该 Query Engine，并校验查询语言属于 `capabilities.compute.query.languages`。
-3. 已提交具体 data item locator 时执行 `resource.ancestors.get` 与 `data.preview`；`resources=[]` 且 MQL `current_query` 已通过 `find/aggregate/count/distinct` 明确主 collection 时，直接使用编辑器上下文；其他未提交资源的情况提取独立输入角色，调用带当前 `engine_id` 的 `data.search` 粗筛，再校验 locator 和预览事实。
+3. 已提交具体 data item locator 时执行 `resource.ancestors.get` 与 `data.preview`；MQL 已声明 collection 时必须提交 Develop 自动解析得到的全部 collection 资源，不能用 `resources=[]` 绕过字段事实；其他未提交资源的情况提取独立输入角色，调用带当前 `engine_id` 的 `data.search` 粗筛，再校验 locator 和预览事实。
 4. 同一角色多候选时返回全部候选给用户单选；候选不得来自其他 Engine。
-5. 用户确认后，Copilot 仅根据当前引擎类型、查询语言、已验证路径、字段、几何列、CRS、受限样本和允许的编辑器已有查询生成候选查询文本。MongoDB database 只作为 Develop 执行范围，MQL 主 collection 来自命令对象；不得硬编码 PostgreSQL、schema、geometry 字段或空间函数。
+5. 用户确认后，Copilot 先形成结构化 Query Plan，再仅根据当前引擎类型、查询语言、已验证 collection、可查询字段路径、几何列、CRS 和允许的编辑器已有查询生成候选查询文本；生成后校验只读命令、collection、字段路径和计划覆盖，最多受限重生成一次。MongoDB database 只作为 Develop 执行范围；不得硬编码 PostgreSQL、schema、geometry 字段或空间函数。
 6. 前端把候选文本写入 Monaco Editor，不自动执行。用户执行时继续进入 Develop preflight、效果授权、高风险确认与统一 execution API。
 
 Agent 使用根 `skills/query-generation` 和 `query.draft.generate` Tool 复用同一流程；ToolExecutor、SDK、资源事实解析和 Copilot WorkflowService 均来自 `common-python`/Copilot，不在 Agent 复制。

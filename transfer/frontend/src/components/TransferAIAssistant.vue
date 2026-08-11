@@ -66,6 +66,7 @@
             <el-form-item :label="t('transfer.taskAssistant.targetParentLabel')" required>
               <ResourceTreePicker
                 v-model="targetParentSelection"
+                class="full-width"
                 api-base-url="/api/v1/meta"
                 :engine-id="targetEngineId"
                 mode="node"

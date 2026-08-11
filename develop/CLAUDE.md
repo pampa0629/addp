@@ -70,7 +70,7 @@ Develop 任务编辑器遵守 `docs/spec/addp前端路由与可恢复状态规�
 
 查询工作台 Copilot 只在当前选中的 Query Runtime 范围内生成候选查询语言。前端必须提交当前 Runtime `engine_id` 和 capability 声明的 `query_language`；已有 Catalog 选择时直接提交其 locator（联邦 Runtime 下 locator 保留 Source Engine ID），未选择时 Copilot 只能通过带该 Runtime `engine_id` 的共享 `data.search` 粗筛，再通过 `resource.ancestors.get` 与 `data.preview` 校验候选。同一输入角色存在多个候选时由用户确认一个。Copilot 不得扫描其他工作台 Runtime、拼接 locator、假定字段名或直接执行生成结果；候选文本回填编辑器后仍走同一 preflight 和 execution 主路径。
 
-Copilot `resources[]` 只允许提交具有 `item_id`、可由 Owner preview 返回平台 `data_type` 和字段事实的具体数据项。MongoDB `database` 等容器节点可以作为查询执行范围，但不是 AI 输入资源，不能提交到 `resources[]`，也不能把 Owner 对容器的正常 preview 响应误报为上游故障。MongoDB 查询选中 database 后，只要当前合法 MQL command object 已通过 `find/aggregate/count/distinct` 明确主 collection，前端就提交 `resources=[]` 和 `current_query` 继续生成；数据库范围仍只保存在 Develop 的 `target_locator` 中。当前 MQL 未明确 collection 时，才要求用户选择具体 collection 或先在命令中明确 collection。
+Copilot `resources[]` 只允许提交具有 `item_id`、可由 Owner preview 返回平台 `data_type` 和字段事实的具体数据项。MongoDB `database` 等容器节点可以作为查询执行范围，但不是 AI 输入资源，不能提交到 `resources[]`，也不能把 Owner 对容器的正常 preview 响应误报为上游故障。MongoDB 查询选中 database 后，前端从当前合法 MQL command object 提取 `find/aggregate/count/distinct` 主 collection 和 `$lookup.from`、`$graphLookup.from`、`$unionWith` 引用，在该 database 资源树节点下逐一匹配具体 collection locator，并以这些 collection 的 `ResourceFact` 调用 Copilot；数据库范围仍只保存在 Develop 的 `target_locator` 中。未明确 collection、引用不存在或跨出当前 database 时要求用户澄清，不保留 `resources=[] + current_query` 的无字段事实旁路。
 
 执行列表 `/develop/executions` 的稳定筛选和分页状态使用 `dev_type`、`status`、`trigger_type`、`source_task_id`、`start_date`、`end_date`、`page`、`page_size` query；默认页码和默认每页数量从 URL 省略，未知或无效参数必须通过 `replace` 清理。
 

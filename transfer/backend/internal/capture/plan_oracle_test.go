@@ -30,6 +30,16 @@ func TestOracleCDCNativeTypeAndStrictTypeMatrix(t *testing.T) {
 	}
 }
 
+func TestOracleCDCTemporalPrecisionUsesTimestampDataScale(t *testing.T) {
+	precision := oracleCDCTemporalPrecision("TIMESTAMP(3)", sql.NullInt64{Int64: 3, Valid: true})
+	if !precision.Valid || precision.Int64 != 3 {
+		t.Fatalf("TIMESTAMP temporal precision = %#v", precision)
+	}
+	if precision := oracleCDCTemporalPrecision("DATE", sql.NullInt64{}); precision.Valid {
+		t.Fatalf("DATE temporal precision = %#v, want invalid", precision)
+	}
+}
+
 func TestBuildOracleConnectorConfigUsesDedicatedCDCConnection(t *testing.T) {
 	plan := &CapturePlan{
 		SourceType: models.CaptureSourceOracle,

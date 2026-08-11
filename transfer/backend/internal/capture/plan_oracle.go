@@ -96,7 +96,7 @@ func validateOracleSourceFields(ctx context.Context, plan *CapturePlan) error {
 	}
 	defer db.Close()
 	rows, err := db.QueryContext(ctx, `
-		SELECT COLUMN_NAME, DATA_TYPE, DATA_PRECISION, DATA_SCALE, DATETIME_PRECISION, NULLABLE
+		SELECT COLUMN_NAME, DATA_TYPE, DATA_PRECISION, DATA_SCALE, NULLABLE
 		FROM ALL_TAB_COLUMNS
 		WHERE OWNER = :1 AND TABLE_NAME = :2
 		ORDER BY COLUMN_ID`, plan.SourceSchema, plan.SourceTable)
@@ -107,13 +107,13 @@ func validateOracleSourceFields(ctx context.Context, plan *CapturePlan) error {
 	actual := make([]string, 0)
 	for rows.Next() {
 		var name, dataType, nullableText string
-		var precision, scale, temporalPrecision sql.NullInt64
-		if err := rows.Scan(&name, &dataType, &precision, &scale, &temporalPrecision, &nullableText); err != nil {
+		var precision, scale sql.NullInt64
+		if err := rows.Scan(&name, &dataType, &precision, &scale, &nullableText); err != nil {
 			return err
 		}
 		actual = append(actual, name)
 		nativeType := oracleCDCNativeType(dataType, precision, scale)
-		if err := validateOracleCDCSourceFieldType(name, nativeType, dataType, temporalPrecision, plan.SourceFieldTypes[name]); err != nil {
+		if err := validateOracleCDCSourceFieldType(name, nativeType, dataType, oracleCDCTemporalPrecision(dataType, scale), plan.SourceFieldTypes[name]); err != nil {
 			return err
 		}
 		actualNullable := strings.EqualFold(nullableText, "Y")
@@ -131,6 +131,14 @@ func validateOracleSourceFields(ctx context.Context, plan *CapturePlan) error {
 		return fmt.Errorf("Oracle CDC field mapping must cover the complete source schema: actual=%v configured=%v", actual, configured)
 	}
 	return nil
+}
+
+func oracleCDCTemporalPrecision(dataType string, dataScale sql.NullInt64) sql.NullInt64 {
+	normalized := strings.ToUpper(strings.TrimSpace(dataType))
+	if strings.HasPrefix(normalized, "TIMESTAMP") {
+		return dataScale
+	}
+	return sql.NullInt64{}
 }
 
 func oracleCDCNativeType(dataType string, precision, scale sql.NullInt64) string {

@@ -37,6 +37,10 @@ test('目标和字段在助手内独立确认后才创建任务', () => {
   assert.match(assistant, /taskAPI\.create\(task\)/)
 })
 
+test('目标数据库位置选择器占满助手表单宽度', () => {
+  assert.match(assistant, /<ResourceTreePicker\s+[\s\S]*?v-model="targetParentSelection"\s+class="full-width"/)
+})
+
 test('同步方式意图会进入 Transfer 向导状态而不是只进入标题', () => {
   assert.equal(inferTransferSyncMode('从 pg 到 mysql，实时同步 farmland'), 'cdc')
   assert.equal(inferTransferSyncMode('从 pg 到 mysql，增量同步 farmland'), 'incremental')

@@ -72,6 +72,7 @@
 | published service | 已发布服务版本 | Service 一次通过验证并对外生效的不可变服务发布主体。 | 身份为 `service_id + published_revision`；不是 data item，但可作为血缘图主体。 |
 | service dependency | 服务依赖 | 已发布服务读取、发布或暴露某个 data item 的来源事实。 | 在血缘中表现为 `data item --serve--> published service`；`dependency_hash` 只是快照版本摘要，不是具体血缘边。 |
 | field ref | 字段引用 | 绑定到 data item 及其 schema snapshot 的字段级引用。 | 作为字段级血缘预留主体；字段默认不是独立 data item。 |
+| queryable field path | 可查询字段路径 | 从记录根到具体值字段的结构化路径事实，用于动态 schema 记录集合的字段发现、查询生成和校验。 | MongoDB 示例为 `path=["members","userInfo","nickName"]`，MQL 投影为 `members.userInfo.nickName`；路径各层的 object / array 类型由同一组字段事实表达，不传递原始样本值。 |
 | output contract snapshot | 输出契约快照 | 对没有单一 Meta item 身份的查询或计算结果，保存其已检测输出字段、主键、空间信息等契约事实。 | SQL 查询服务使用该快照；查询结果未物化并经 Meta 扫描前，不创建或伪造 Meta item。 |
 | query service | 查询服务 | Service 将一个受治理的数据源或固定查询发布为稳定数据 API 的业务定义。 | 表、固定 SQL 和联邦 SQL 是来源表达；REST Query、OGC API Features、WFS 是协议投影，不是不同的查询执行路径。 |
 | query service revision | 查询服务发布版本 | 查询服务一次通过验证并发布的不可变执行与输出契约。 | 包含来源绑定、输出契约、稳定排序键、查询策略、资源限制、执行绑定和依赖快照；修改定义必须产生新版本并原子切换，不原地改变已发布契约。 |

@@ -139,9 +139,9 @@ Tool 不同步等待长任务完成。标准路径为 owner 创建 execution，T
 
 `query.draft.generate` 的 `resources[]` 只承载由 owner Tool 验证过的具体 data item，不承载 database、schema、directory 等执行容器。查询执行范围由 Develop 的任务或 execution 契约持有，不进入 Copilot Tool 输入。
 
-调用方可以传入可选 `current_query` 表示编辑器已有候选文本。它不是资源事实，也不产生第二条执行路径；生成结果仍只返回候选查询文本。对于 MQL，当 `resources=[]` 且 `current_query` 是单个 JSON command object，并且恰好通过 `find`、`aggregate`、`count` 或 `distinct` 之一声明主 collection 时，Copilot 可以跳过资源发现并基于现有命令继续生成。其他无资源情况继续进入当前 Query Engine 范围内的数据发现和确认流程。
+调用方可以传入可选 `current_query` 表示编辑器已有候选文本。它不是资源事实，也不产生第二条执行路径；生成结果仍只返回候选查询文本。对于 MQL，Develop 必须从单个 JSON command object 中解析 `find`、`aggregate`、`count`、`distinct` 主 collection，以及 `$lookup.from`、`$graphLookup.from`、`$unionWith` 引用的其他 collection；在当前选中 database 的 Owner Catalog 中逐一解析为具体 data item locator，并通过 `resources[]` 提交。用户只需选择 database，不需要额外点选每个 collection；解析不到、跨出当前 database 或引用不唯一时必须要求澄清。
 
-Copilot 默认保留 `current_query` 已声明的主 collection，除非用户明确要求修改；没有 `resources[]` 字段事实时只能复用编辑器中已经出现的字段，不得把 `current_query` 当作已验证 metadata 或据此编造新字段。MongoDB database locator 不得写入 `resources[]`、`current_query` 或生成的 MQL。
+Copilot 默认保留 `current_query` 已声明的主 collection，除非用户明确要求修改。合法 MQL 已声明 collection 时不得以 `resources=[]` 跳过字段事实确认；`current_query` 不能替代 metadata。MongoDB database locator 仍不得写入 `resources[]`、`current_query` 或生成的 MQL，只有解析后的具体 collection locator 可以进入 `resources[]`。Copilot 生成前先形成结构化 Query Plan，生成后校验只读命令、collection、可查询字段路径和计划覆盖；失败时最多进行一次受限重生成，不保留未校验候选旁路。
 
 ## 五、Adapter 边界
 

@@ -180,6 +180,53 @@ func TestBuildDatabaseCDCContinuousPlanRoutesMySQLEnvelope(t *testing.T) {
 	}
 }
 
+func TestBuildDatabaseCDCContinuousPlanRoutesOracleEnvelope(t *testing.T) {
+	config := validPostgreSQLCDCConfig()
+	config["source"].(map[string]interface{})["locator"] = "addp://engine/12/path/BUSINESS/CUSTOMERS?type=table"
+	spec, err := ParseDatabaseCDCTaskSpec(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetCaps := (&postgresql.PostgreSQLPlugin{}).Capabilities()
+	plan, err := BuildDatabaseCDCContinuousPlan(spec, StaticEngineResolver{
+		12: {Type: "oracle", ConnInfo: engineplugin.ConnectionInfo{"service_name": "FREEPDB1"}},
+		20: {Type: "postgresql", Capabilities: &targetCaps},
+	}, DatabaseCDCStreamBinding{
+		Provider: "oracle", ConnInfo: engineplugin.ConnectionInfo{"bootstrap_servers": "infra"},
+		ConsumerGroup: "group", SourceIdentity: "addp://engine/12/path/BUSINESS/CUSTOMERS?type=table",
+		Database: "FREEPDB1", Schema: "BUSINESS", Table: "CUSTOMERS",
+	}, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Envelope != ContinuousEnvelopeOracleDebezium || plan.SourceType != "kafka" ||
+		plan.CDC.Provider != "oracle" || plan.CDC.Database != "FREEPDB1" || plan.CDC.Schema != "BUSINESS" ||
+		plan.CDC.Table != "CUSTOMERS" || plan.CDC.SpatialInfo != nil {
+		t.Fatalf("Oracle CDC plan = %#v", plan)
+	}
+}
+
+func TestBuildDatabaseCDCContinuousPlanRejectsOracleStreamIdentityMismatch(t *testing.T) {
+	config := validPostgreSQLCDCConfig()
+	config["source"].(map[string]interface{})["locator"] = "addp://engine/12/path/BUSINESS/CUSTOMERS?type=table"
+	spec, err := ParseDatabaseCDCTaskSpec(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetCaps := (&postgresql.PostgreSQLPlugin{}).Capabilities()
+	_, err = BuildDatabaseCDCContinuousPlan(spec, StaticEngineResolver{
+		12: {Type: "oracle", ConnInfo: engineplugin.ConnectionInfo{"service_name": "FREEPDB1"}},
+		20: {Type: "postgresql", Capabilities: &targetCaps},
+	}, DatabaseCDCStreamBinding{
+		Provider: "oracle", ConnInfo: engineplugin.ConnectionInfo{"bootstrap_servers": "infra"},
+		ConsumerGroup: "group", SourceIdentity: "addp://engine/12/path/BUSINESS/CUSTOMERS?type=table",
+		Database: "WRONGPDB", Schema: "BUSINESS", Table: "CUSTOMERS",
+	}, 100)
+	if err == nil {
+		t.Fatal("Oracle CDC stream binding with mismatched PDB was accepted")
+	}
+}
+
 func TestBuildDatabaseCDCContinuousPlanAcceptsMySQLTarget(t *testing.T) {
 	config := validPostgreSQLCDCConfig()
 	config["target"].(map[string]interface{})["parent_locator"] = "addp://engine/20/path/business?type=database"
