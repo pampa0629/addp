@@ -585,6 +585,20 @@ func mapPartitionRecords(records []engineplugin.ChangeRecord, start engineplugin
 					err = fmt.Errorf("unsupported normalized change event operation %q", event.Operation)
 				}
 			}
+		case planner.ContinuousEnvelopeOracleDebezium:
+			var event *ChangeEvent
+			event, err = decodeOracleDebeziumRecord(record, plan)
+			if err == nil {
+				row = event.Row
+				switch event.Operation {
+				case changeEventOperationSnapshot, changeEventOperationUpsert:
+					operation = engineplugin.TableChangeOperationUpsert
+				case changeEventOperationDelete:
+					operation = engineplugin.TableChangeOperationDelete
+				default:
+					err = fmt.Errorf("unsupported normalized change event operation %q", event.Operation)
+				}
+			}
 		default:
 			err = fmt.Errorf("unsupported continuous envelope %q", plan.Envelope)
 		}

@@ -16,6 +16,7 @@ const (
 
 	CRSDefinitionSourcePostGISSpatialRefSys = "postgis_spatial_ref_sys"
 	CRSDefinitionSourceMySQLSpatialRefSys   = "mysql_st_spatial_reference_systems"
+	CRSDefinitionSourceOracleCSRS           = "oracle_mdsys_cs_srs"
 	CRSDefinitionSourceSidecarPRJ           = "sidecar_prj"
 	CRSDefinitionSourceGeoPackageSRS        = "geopackage_srs"
 	CRSDefinitionSourceGeoTIFFTags          = "geotiff_tags"

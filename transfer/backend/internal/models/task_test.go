@@ -38,6 +38,9 @@ func TestCaptureResourceKeepsProviderFieldsOutOfGenericGeneration(t *testing.T) 
 	if _, ok := reflect.TypeOf(MySQLCaptureResource{}).FieldByName("ConnectorServerID"); !ok {
 		t.Fatal("MySQL provider facts do not own ConnectorServerID")
 	}
+	if _, ok := reflect.TypeOf(OracleCaptureResource{}).FieldByName("SchemaHistoryTopicName"); !ok {
+		t.Fatal("Oracle provider facts do not own SchemaHistoryTopicName")
+	}
 }
 
 func TestTransferTaskCreateKeepsExplicitAutoScanFalse(t *testing.T) {

@@ -206,7 +206,10 @@ DuckDB 是 `engines/duckdb` 提供的平台共享联邦查询 Runtime。System �
 执行边界：
 
 - DuckDB Runtime 通过 `FederatedQueryRuntimeProvider` 和 `addp.query-runtime/v1` 协议调用，不进入工作流算子发现。
+- DuckDB 是平台共享能力引擎，不是 Tenant 注册的 Storage Engine，不声明 `storage` 能力，也不拥有可供 Meta 扫描或查询工作台导航的 Catalog。
+- 查询工作台选择 DuckDB 后，Catalog 必须从当前 Tenant 的 Meta Engine 列表中按 `compute.query.federation.source_engine_types` 过滤 Source Engine，并加载这些 Source Engine 的 resource-tree；不得向 Meta 请求 DuckDB Runtime 的 resource-tree。
 - Develop 查询任务使用 `execution_config.engine_id` 绑定 DuckDB Runtime；不再存在 `query_mode=duckdb`、虚拟 `engine_id=0` 或 Develop 私有查询模式。
+- Catalog selection 的 ResourceLocator 始终保留真实 Source Engine ID，联邦 SQL 的首段使用 Source Engine 名称的规范标识符；Runtime ID 只表达执行目标，不能覆盖 Source Engine 身份。
 - Service 查询服务使用 `runtime_engine_id` 绑定查询 Runtime；表和 SQL 引用的数据源继续通过 ResourceLocator、Source Engine ID 和依赖快照表达，不复用 Runtime Engine ID。
 - Develop 和 Service 先解析本次 SQL 或已发布服务快照涉及的 Source Engine，为唯一 execution 签发 audience 为 `duckdb` 的只读 Execution Authorization，再调用 Runtime。
 - DuckDB Runtime 使用 `addp-duckdb` Tenant Service Access Token 消费授权，逐个从 System 获取本次允许的明文连接；调用方不得把 User Token、长期凭据或 Source Engine 明文连接发送给 Runtime。

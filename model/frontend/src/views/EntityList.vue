@@ -243,7 +243,10 @@ const handleCreate = async () => {
     const res = await entityAPI.create(createForm)
     ElMessage.success(t('model.common.create_success'))
     createDialogVisible.value = false
-    navigateModelRoute(router, `/entities/${res.id}`, { history: 'replace' })
+    await navigateModelRoute(router, {
+      path: `/entities/${res.id}`,
+      query: resolveEntityListRouteState(route.query).query
+    }, { history: 'replace' })
   } catch (err) {
     ElMessage.error(getModelErrorMessage(err, t, 'model.common.create_failed'))
   } finally {
@@ -262,7 +265,10 @@ const handleDelete = async (id) => {
 }
 
 const goToDetail = (row) => {
-  navigateModelRoute(router, `/entities/${row.id}`)
+  navigateModelRoute(router, {
+    path: `/entities/${row.id}`,
+    query: resolveEntityListRouteState(route.query).query
+  })
 }
 
 const restoreListFromRoute = async query => {

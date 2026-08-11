@@ -151,7 +151,7 @@ func TestBuildRawCopyFormatCapabilitiesExposeNonTableSingleFormats(t *testing.T)
 
 func TestBuildContinuousCapabilitiesPublishesDeadLetterAndBoundedReplay(t *testing.T) {
 	continuous := buildContinuousCapabilities()
-	if len(continuous.DatabaseCDC.Sources) != 2 || continuous.DatabaseCDC.Sources[0] != "postgresql" || continuous.DatabaseCDC.Sources[1] != "mysql" ||
+	if len(continuous.DatabaseCDC.Sources) != 3 || continuous.DatabaseCDC.Sources[0] != "postgresql" || continuous.DatabaseCDC.Sources[1] != "mysql" || continuous.DatabaseCDC.Sources[2] != "oracle" ||
 		len(continuous.DatabaseCDC.Targets) != 2 || continuous.DatabaseCDC.Targets[0] != "postgresql" || continuous.DatabaseCDC.Targets[1] != "mysql" ||
 		len(continuous.DatabaseCDC.Bootstrap) != 1 || continuous.DatabaseCDC.Bootstrap[0] != "initial_snapshot" ||
 		continuous.DatabaseCDC.ApplyMode != "upsert_delete" {

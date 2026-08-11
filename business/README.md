@@ -6,7 +6,7 @@
 
 **包含服务**：
 - **PostgreSQL (PostGIS)**：业务数据库，端口 5433
-- **Oracle Free 23ai**：普通表测试源，端口 15210，service name `FREEPDB1`
+- **Oracle Free 23ai**：普通表与 Oracle Spatial 测试源，端口 15210，service name `FREEPDB1`；固定使用保留 Spatial/Locator 的常规镜像 `gvenzl/oracle-free:23`，不得使用 `-slim` 镜像。
 - **SuperMap SDX+ for PostgreSQL**：独立原生 PostgreSQL 实例，端口 5434；不安装 PostGIS
 - **MinIO**：业务对象存储，端口 9002-9003
 - **ClickHouse** 🆕：高性能列式存储 OLAP，端口 9000, 8123
@@ -23,6 +23,8 @@ Business 的 Doris all-in-one 服务是固定单 FE、单 BE 的本地开发拓�
 - ✅ CPU 架构自适应（ARM64/AMD64）
 - ✅ PostGIS 空间数据支持
 - ✅ MySQL 全二维几何族、SRID 与空间索引测试数据
+- ✅ Oracle `MDSYS.SDO_GEOMETRY`、完整二维几何族、SRID、空间索引与 EWKB 读取测试数据
+- ✅ Oracle ARCHIVELOG、LogMiner 专用 common user 与普通非空间表 CDC readiness
 - ✅ 幂等启动脚本
 - ✅ 模块化启动（按需启动服务）
 - ✅ Business Kafka 与 ADDP Infra Kafka 物理隔离
@@ -61,7 +63,7 @@ bash scripts/start.sh -mongodb
 # 只启动 MySQL，并幂等初始化专用 CDC 用户
 bash scripts/start.sh -mysql
 
-# 只启动 Oracle，并幂等初始化普通表样例
+# 只启动 Oracle，并幂等初始化普通表与 Spatial 样例
 bash scripts/start.sh -oracle
 
 # 只启动业务 Redpanda，并幂等初始化只读 Engine 账号
@@ -100,8 +102,9 @@ business/
 ├── mysql/                          # MySQL 配置与测试数据
 │   ├── init-cdc.sh                 # 专用 CDC 用户幂等初始化
 │   └── test-data.sh                # 普通表与全二维几何族显式测试数据
-├── oracle/                         # Oracle 普通表测试数据
+├── oracle/                         # Oracle 普通表与 Spatial 测试数据
 │   ├── init.sql                     # 幂等初始化 SQL
+│   ├── init-cdc.sh                  # ARCHIVELOG、LogMiner 账号与权限幂等初始化
 │   └── test-data.sh                 # 容器内执行初始化并验证
 │
 ├── doris/                          # Apache Doris 配置
@@ -160,6 +163,30 @@ bash mysql/test-data.sh
 ```
 
 该脚本幂等重建普通业务表，以及 `POINT`、`LINESTRING`、`POLYGON`、`MULTIPOINT`、`MULTILINESTRING`、`MULTIPOLYGON`、`GEOMETRYCOLLECTION`、通用 `GEOMETRY`、多几何列和 3857 样例，并校验几何有效性与空间索引。测试数据只允许显式执行，不挂接 `scripts/start.sh -mysql`，避免启动业务数据库时破坏已有数据。
+
+### Oracle Spatial 测试源
+
+Oracle 必须使用常规镜像 `gvenzl/oracle-free:23`。官方 `-slim` 镜像会卸载 Oracle Spatial 和 Oracle Locator，不能通过用户授权或普通初始化 SQL 恢复。
+
+`bash scripts/start.sh -oracle` 会幂等初始化普通表、`CUSTOMER_LOCATIONS` 点要素表和 `SPATIAL_FEATURES` 综合空间表，并验证：
+
+- `MDSYS.SDO_GEOMETRY` 可用；
+- `Point`、`LineString`、`Polygon`、`MultiPoint`、`MultiLineString`、`MultiPolygon` 和 `GeometryCollection` 均可转换为标准 WKB；
+- `USER_SDO_GEOM_METADATA` 中存在 SRID 4326 元数据；
+- 两张空间表均具有 Oracle Domain Spatial Index。
+
+已有 `business_oracle_data` 如果由 `-slim` 镜像创建，推荐重建该 Business Oracle volume，避免在已裁剪的数据库字典上手工补装组件。该操作会删除现有 Business Oracle 数据，执行前必须确认其中没有需保留的数据：
+
+```bash
+docker compose -f business/docker-compose.yml stop oracle
+docker compose -f business/docker-compose.yml rm -f oracle
+docker volume rm business_oracle_data
+cd business && bash scripts/start.sh -oracle
+```
+
+### Oracle CDC 测试源
+
+`bash scripts/start.sh -oracle` 会在数据库 ready 后执行 `oracle/init-cdc.sh`，幂等启用 `ARCHIVELOG`、force logging、minimal supplemental logging，并创建 `${ORACLE_CDC_USER:-C##ADDP_CDC}` LogMiner 专用 common user。`CUSTOMERS` 表由 `init.sql` 幂等启用 `SUPPLEMENTAL LOG DATA (ALL) COLUMNS`，作为第一期普通非空间单表 CDC 样例。Oracle Engine 仍使用 business 主账号做 Catalog/读取，System 的 `connection_info` 另存 `cdc_database_name`、`cdc_user` 和加密的 `cdc_password`；不要复用业务账号或 SYS。
 
 启用 Redpanda 时，脚本会创建或轮换 `${BUSINESS_KAFKA_READER_USERNAME:-addp_transfer}` 的 SCRAM-SHA-256 密码，并只授予读取 Topic、消费组和描述集群所需权限。System 中统一注册为 `engine_type=kafka`，连接 `localhost:${BUSINESS_KAFKA_PORT:-29092}`；不要注册 `addp-redpanda` 的 Infra Kafka 地址。
 

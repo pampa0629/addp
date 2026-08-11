@@ -28,16 +28,20 @@ class CopilotClient(BaseClient):
         query_language: str,
         resources: list[dict[str, Any]],
         engine_context: dict[str, Any],
+        current_query: str | None = None,
     ) -> Dict[str, Any]:
+        payload: dict[str, Any] = {
+            "query": query,
+            "engine_id": engine_id,
+            "query_language": query_language,
+            "resources": resources,
+            "engine_context": engine_context,
+        }
+        if current_query is not None:
+            payload["current_query"] = current_query
         return await self.post(
             "/api/v1/copilot/query/generate",
-            json={
-                "query": query,
-                "engine_id": engine_id,
-                "query_language": query_language,
-                "resources": resources,
-                "engine_context": engine_context,
-            },
+            json=payload,
         )
 
     async def generate_notebook(

@@ -334,7 +334,9 @@ const handleStartContinuous = async (task) => {
     ElMessage.success(task.desired_state === 'paused' ? t('transfer.taskList.resumed') : t('transfer.taskList.executeSubmitted'))
     await loadPageData()
   } catch (error) {
-    console.error('启动持续同步任务失败:', error)
+    const message = error.response?.data?.error || error.response?.data?.message || error.message
+    ElMessage.error(message)
+    console.error('启动持续同步任务失败:', message)
   }
 }
 

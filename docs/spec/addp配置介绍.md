@@ -426,8 +426,9 @@ MINIO_ROOT_PASSWORD=minioadmin
 MINIO_API_PORT=19000
 MINIO_BUCKET=system
 
-# Oracle Free - Business 普通表测试源（业务容器内使用 business-oracle:1521）
-ORACLE_IMAGE=gvenzl/oracle-free:23-slim
+# Oracle Free - Business 普通表与 Oracle Spatial 测试源（业务容器内使用 business-oracle:1521）
+# 常规镜像保留 Oracle Spatial；-slim 镜像会卸载 Spatial/Locator，不得使用。
+ORACLE_IMAGE=gvenzl/oracle-free:23
 ORACLE_SYS_PASSWORD=oracle_sys_password
 ORACLE_APP_USER=business
 ORACLE_APP_PASSWORD=business_oracle_password

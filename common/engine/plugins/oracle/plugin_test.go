@@ -2,6 +2,8 @@ package oracle
 
 import (
 	"database/sql"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -20,8 +22,9 @@ func TestOraclePluginCapabilitiesAndInterfaces(t *testing.T) {
 	if p.Capabilities().Storage.Store == nil || !p.Capabilities().Storage.Store.BatchRead || !p.Capabilities().Storage.Store.TableReadSession {
 		t.Fatalf("storage capabilities = %#v", p.Capabilities().Storage)
 	}
-	if p.Capabilities().Storage.Store.TableSpatialEncoding != nil || p.Capabilities().Storage.Facts.SpatialFacts {
-		t.Fatalf("Oracle first phase must not declare spatial capabilities")
+	spatialEncoding := p.Capabilities().Storage.Store.TableSpatialEncoding
+	if !p.Capabilities().Storage.Facts.SpatialFacts || spatialEncoding == nil || len(spatialEncoding.GeometryReadEncodings) != 1 || spatialEncoding.GeometryReadEncodings[0] != "ewkb" || !spatialEncoding.NativeSpatialFunctions {
+		t.Fatalf("Oracle spatial capabilities = %#v", p.Capabilities().Storage)
 	}
 	if p.Capabilities().Storage.Store.ChangeStreamRead != nil || p.Capabilities().Storage.Store.BoundedWatermarkRead {
 		t.Fatalf("Oracle first phase must not declare CDC or watermark capabilities")
@@ -77,6 +80,19 @@ func TestOracleBuildDSNUsesServiceNameAndDefaultPort(t *testing.T) {
 	}
 }
 
+func TestOracleCDCPasswordIsSensitiveButNotRequiredOrIdentity(t *testing.T) {
+	p := &OraclePlugin{}
+	if !reflect.DeepEqual(p.SensitiveFields(), []string{"password", "cdc_password"}) {
+		t.Fatalf("SensitiveFields() = %v", p.SensitiveFields())
+	}
+	if slices.Contains(p.RequiredFields(), "cdc_password") {
+		t.Fatalf("CDC credentials must remain optional for ordinary Oracle engines")
+	}
+	if slices.Contains(p.ConnectionIdentityFields(), "cdc_password") || slices.Contains(p.ConnectionIdentityFields(), "cdc_user") || slices.Contains(p.ConnectionIdentityFields(), "cdc_database_name") {
+		t.Fatalf("CDC credentials must not change the Oracle Engine Instance identity")
+	}
+}
+
 func TestOracleCatalogTypeAndSystemSchemaPolicy(t *testing.T) {
 	p := &OraclePlugin{}
 	if !p.isSystemSchema("sde") || !p.isSystemSchema("MDSYS") || p.isSystemSchema("BUSINESS") {
@@ -89,8 +105,8 @@ func TestOracleCatalogTypeAndSystemSchemaPolicy(t *testing.T) {
 	if got := oracleColumnNativeType(rows[0]); got != "NUMBER(10,0)" {
 		t.Fatalf("native type = %q", got)
 	}
-	if got := (&oraclemapping.TypeMapper{}).ToCommon("SDO_GEOMETRY"); got != "unknown" {
-		t.Fatalf("SDO_GEOMETRY type = %q, want unknown", got)
+	if got := (&oraclemapping.TypeMapper{}).ToCommon("SDO_GEOMETRY"); got != "geometry" {
+		t.Fatalf("SDO_GEOMETRY type = %q, want geometry", got)
 	}
 }
 

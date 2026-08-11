@@ -81,7 +81,87 @@
             <el-form-item :label="t('transfer.taskAssistant.targetTableLabel')" required>
               <el-input v-model="targetTable" class="full-width" :disabled="!targetParentLocator || busy" :placeholder="t('transfer.taskAssistant.targetTablePlaceholder')" />
             </el-form-item>
-            <el-form-item :label="t('transfer.taskAssistant.writeModeLabel')">
+            <el-divider content-position="left">{{ t('transfer.taskWizard.loadSettings') }}</el-divider>
+            <el-form-item :label="t('transfer.taskWizard.loadModeLabel')" required>
+              <el-radio-group v-model="syncMode" class="transfer-ai-sync-modes" :disabled="busy" @change="applySyncMode">
+                <template v-if="isKafkaSource">
+                  <el-radio value="kafka">{{ t('transfer.taskWizard.continuousIncrementalLoad') }}</el-radio>
+                </template>
+                <template v-else>
+                  <el-radio value="snapshot">{{ t('transfer.taskWizard.snapshotLoad') }}</el-radio>
+                  <el-radio value="incremental" :disabled="!wizardState.supportsWatermarkIncremental.value">{{ t('transfer.taskWizard.watermarkIncrementalLoad') }}</el-radio>
+                  <el-radio value="cdc" :disabled="!wizardState.supportsDatabaseCDC.value">{{ t('transfer.taskWizard.databaseCDCLoad') }}</el-radio>
+                </template>
+              </el-radio-group>
+            </el-form-item>
+            <el-alert
+              v-if="syncMode === 'incremental'"
+              :title="t('transfer.taskWizard.watermarkIncrementalNoticeTitle')"
+              :description="wizardState.supportsWatermarkIncremental.value ? t('transfer.taskWizard.watermarkIncrementalNotice') : t('transfer.taskWizard.watermarkIncrementalUnsupported')"
+              :type="wizardState.supportsWatermarkIncremental.value ? 'warning' : 'error'"
+              :closable="false"
+              show-icon
+              class="transfer-ai-mode-alert"
+            />
+            <el-alert
+              v-if="syncMode === 'cdc'"
+              :title="wizardState.supportsDatabaseCDC.value ? t('transfer.taskWizard.cdcSyncTitle') : t('transfer.taskWizard.databaseCDCUnavailableTitle')"
+              :description="wizardState.supportsDatabaseCDC.value ? t('transfer.taskWizard.cdcSyncDesc') : databaseCDCUnavailableText"
+              :type="wizardState.supportsDatabaseCDC.value ? 'warning' : 'error'"
+              :closable="false"
+              show-icon
+              class="transfer-ai-mode-alert"
+            />
+            <el-alert
+              v-if="syncMode === 'kafka'"
+              :title="t('transfer.taskWizard.continuousSyncTitle')"
+              :description="t('transfer.taskWizard.continuousSyncDesc')"
+              type="info"
+              :closable="false"
+              show-icon
+              class="transfer-ai-mode-alert"
+            />
+            <template v-if="syncMode === 'incremental' && wizardState.supportsWatermarkIncremental.value">
+              <el-form-item :label="t('transfer.taskWizard.watermarkFieldLabel')" required>
+                <el-select v-model="wizardState.watermarkField.value" filterable class="full-width" :placeholder="t('transfer.taskWizard.watermarkFieldPlaceholder')" :disabled="busy" @change="handleWatermarkFieldChange">
+                  <el-option v-for="field in sourceFieldOptions" :key="field.value" :label="field.label" :value="field.value" />
+                </el-select>
+                <div class="transfer-ai-form-hint">{{ t('transfer.taskWizard.watermarkFieldHint') }}</div>
+              </el-form-item>
+              <el-form-item :label="t('transfer.taskWizard.tieBreakerLabel')" required>
+                <el-select v-model="wizardState.watermarkTieBreakers.value" multiple filterable class="full-width" :placeholder="t('transfer.taskWizard.tieBreakerPlaceholder')" :disabled="busy">
+                  <el-option v-for="field in sourceFieldOptions" :key="field.value" :label="field.label" :value="field.value" :disabled="field.value === wizardState.watermarkField.value" />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="t('transfer.taskWizard.targetKeysLabel')" required>
+                <el-select v-model="wizardState.targetKeys.value" multiple filterable class="full-width" :placeholder="t('transfer.taskWizard.targetKeysPlaceholder')" :disabled="busy">
+                  <el-option v-for="field in targetFieldOptions" :key="field.value" :label="field.label" :value="field.value" />
+                </el-select>
+              </el-form-item>
+            </template>
+            <template v-if="syncMode === 'kafka'">
+              <el-form-item :label="t('transfer.taskWizard.continuousKeyFieldsLabel')" required>
+                <el-select v-model="wizardState.continuousKeyFields.value" multiple filterable allow-create default-first-option class="full-width" :placeholder="t('transfer.taskWizard.continuousKeyFieldsPlaceholder')" :disabled="busy" @change="wizardState.updateContinuousKeyFields">
+                  <el-option v-for="field in sourceFieldOptions" :key="field.value" :label="field.label" :value="field.value" />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="t('transfer.taskWizard.continuousInitialPositionLabel')" required>
+                <el-radio-group v-model="wizardState.continuousInitialPosition.value" :disabled="busy">
+                  <el-radio value="earliest">{{ t('transfer.taskWizard.continuousInitialEarliest') }}</el-radio>
+                  <el-radio value="latest">{{ t('transfer.taskWizard.continuousInitialLatest') }}</el-radio>
+                </el-radio-group>
+              </el-form-item>
+            </template>
+            <el-alert
+              v-if="syncMode === 'cdc' && wizardState.supportsDatabaseCDC.value"
+              :title="t('transfer.taskWizard.cdcLifecycleWarningTitle')"
+              :description="t('transfer.taskWizard.cdcLifecycleWarning')"
+              type="warning"
+              :closable="false"
+              show-icon
+              class="transfer-ai-mode-alert"
+            />
+            <el-form-item v-if="syncMode === 'snapshot'" :label="t('transfer.taskAssistant.writeModeLabel')">
               <el-select v-model="writeMode" class="full-width" :disabled="busy">
                 <el-option :label="t('transfer.taskAssistant.overwrite')" value="overwrite" />
                 <el-option :label="t('transfer.taskAssistant.append')" value="append" />
@@ -106,6 +186,14 @@
             </el-table-column>
           </el-table>
           <el-alert v-if="decimalIssues.length" class="transfer-ai-decimal-alert" type="warning" :closable="false" :title="t('transfer.taskAssistant.decimalRequired', { fields: decimalIssueNames })" />
+          <el-alert
+            v-if="(syncMode === 'cdc' || syncMode === 'kafka') && wizardState.continuousConfigIssues.value.length"
+            class="transfer-ai-decimal-alert"
+            type="error"
+            :closable="false"
+            :title="t('transfer.taskWizard.continuousConfigInvalidTitle')"
+            :description="continuousConfigIssueText"
+          />
           <div v-if="decimalScanRows !== null" class="transfer-ai-fact-note">{{ t('transfer.taskAssistant.decimalScanned', { rows: decimalScanRows }) }}</div>
         </div>
 
@@ -118,8 +206,11 @@
           <el-descriptions :column="1" border size="small">
             <el-descriptions-item :label="t('transfer.taskAssistant.sourceSummary')">{{ sourceSummary }}</el-descriptions-item>
             <el-descriptions-item :label="t('transfer.taskAssistant.targetSummary')">{{ targetSummary }}</el-descriptions-item>
+            <el-descriptions-item :label="t('transfer.taskAssistant.syncModeSummary')">{{ syncModeLabel }}</el-descriptions-item>
+            <el-descriptions-item :label="t('transfer.taskAssistant.fieldsSummary')">
+              {{ t('transfer.taskAssistant.fieldsConfirmed', { count: wizardState.fieldMappings.value.length }) }}
+            </el-descriptions-item>
           </el-descriptions>
-          <pre class="transfer-ai-json">{{ JSON.stringify(wizardState.taskConfig.value, null, 2) }}</pre>
         </div>
 
         <el-alert v-if="message" class="transfer-ai-message" :type="status === 'success' ? 'success' : 'warning'" :title="message" :closable="false" />
@@ -143,16 +234,20 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Close, MagicStick } from '@element-plus/icons-vue'
-import { defaultResourceCandidatesByRole, ResourceTreePicker } from '@addp/common-frontend'
+import { defaultResourceCandidatesByRole, normalizeFieldType, ResourceTreePicker } from '@addp/common-frontend'
 import { transferCopilotAPI } from '@/api/copilot'
 import { taskAPI, fieldDefinitionRecommendationAPI } from '@/api/tasks'
 import { systemEnginesAPI } from '@/api/systemEngines'
+import { capabilitiesAPI } from '@/api/capabilities'
 import { getItemFieldsByID } from '@/api/meta'
+import { getManagerPreview } from '@/api/managerPreview'
 import { parseTransferLocator } from '@/utils/resourceLocator'
 import { useTaskWizardState } from '../views/TaskWizard/useTaskWizardState.js'
 import { hasStorageCapability, isNativeTableEngine } from '@/utils/transferDisplay'
-import { groupResourceCandidates, inferSourceEngineFromPrompt, inferSourceEnginesFromPrompt, inferTargetEngineFromPrompt, resourceCandidateKey as candidateKey, resourceFact } from '../utils/transferCopilot.mjs'
+import { groupResourceCandidates, inferSourceEngineFromPrompt, inferSourceEnginesFromPrompt, inferTargetEngineFromPrompt, inferTransferSyncMode, resolveAuthoritativeSourceFields, resourceCandidateKey as candidateKey, resourceFact } from '../utils/transferCopilot.mjs'
 import { mysqlDecimalMappingIssues } from '../views/TaskWizard/decimalMapping.mjs'
+import { CONTINUOUS_FIELD_TYPES, databaseCDCFieldTypes, isKafkaTopicSource } from '../views/TaskWizard/continuousTask.mjs'
+import { inferTopicFieldRecommendations } from '../views/TaskWizard/topicFieldRecommendations.mjs'
 
 const emit = defineEmits(['task-created'])
 const { t } = useI18n()
@@ -171,6 +266,7 @@ const targetParentSelection = ref(null)
 const targetParentLocator = ref('')
 const targetTable = ref('')
 const writeMode = ref('overwrite')
+const syncMode = ref('snapshot')
 const decimalScanRows = ref(null)
 
 const candidateGroups = computed(() => groupResourceCandidates(candidates.value))
@@ -179,17 +275,58 @@ const stageIndex = computed(() => ({ request: 0, source: 1, target: 2, fields: 3
 const targetEngines = computed(() => engines.value.filter(engine => engine?.id && hasStorageCapability(engine) && isNativeTableEngine(engine)))
 const selectedTargetEngine = computed(() => engines.value.find(engine => Number(engine.id) === Number(targetEngineId.value)) || null)
 const isMysqlTarget = computed(() => String(selectedTargetEngine.value?.engine_type || '').toLowerCase().includes('mysql'))
+const isKafkaSource = computed(() => isKafkaTopicSource(wizardState.sourceEngineType.value, wizardState.sourceLocator.value))
 const decimalIssues = computed(() => mysqlDecimalMappingIssues(wizardState.fieldMappings.value, wizardState.sourceFields.value, [], selectedTargetEngine.value?.engine_type, wizardState.targetRepresentation.value))
 const decimalIssueNames = computed(() => decimalIssues.value.map(item => item.targetField || item.sourceField).filter(Boolean).join(', '))
-const fieldTypes = ['string', 'bool', 'int', 'bigint', 'float', 'double', 'decimal', 'date', 'time', 'timestamp', 'json', 'uuid', 'geometry']
+const fieldTypes = computed(() => syncMode.value === 'cdc'
+  ? databaseCDCFieldTypes(wizardState.sourceEngineType.value)
+  : syncMode.value === 'kafka'
+    ? CONTINUOUS_FIELD_TYPES
+    : ['string', 'bool', 'int', 'bigint', 'float', 'double', 'decimal', 'date', 'time', 'timestamp', 'json', 'uuid', 'geometry'])
+const sourceFieldOptions = computed(() => fieldOptions(wizardState.sourceFields.value.map(field => ({
+  name: field?.name,
+  type: normalizeFieldType(field),
+  primaryKey: isPrimaryKeyField(field)
+}))))
+const targetFieldOptions = computed(() => fieldOptions(wizardState.fieldMappings.value.map(mapping => ({
+  name: mapping?.target_field,
+  type: mapping?.target_type
+}))))
 const sourceSummary = computed(() => selectedSource.value ? `${selectedSource.value.engine_name || ''} / ${candidateDisplayPath(selectedSource.value)}` : '')
 const targetSummary = computed(() => `${selectedTargetEngine.value?.name || selectedTargetEngine.value?.engine_type || ''} / ${targetParentSelection.value?.display?.path || ''} / ${targetTable.value}`)
+const syncModeLabel = computed(() => ({
+  snapshot: t('transfer.taskWizard.snapshotLoad'),
+  incremental: t('transfer.taskWizard.watermarkIncrementalLoad'),
+  cdc: t('transfer.taskWizard.databaseCDCLoad'),
+  kafka: t('transfer.taskWizard.continuousIncrementalLoad')
+})[syncMode.value] || '-')
+const databaseCDCUnavailableText = computed(() => wizardState.databaseCDCUnavailableReasons.value
+  .map(reason => t(`transfer.taskWizard.databaseCDCUnavailableReasons.${reason?.code || 'unknown'}`, {
+    fields: Array.isArray(reason?.fields) ? reason.fields.join(', ') : ''
+  }))
+  .join('；'))
+const continuousConfigIssueText = computed(() => wizardState.continuousConfigIssues.value
+  .map(issue => t(`transfer.taskWizard.continuousConfigIssues.${issue?.code || 'mappingsInvalid'}`, {
+    fields: Array.isArray(issue?.fields) ? issue.fields.join(', ') : ''
+  }))
+  .join('；'))
+const syncModeAvailable = computed(() => {
+  if (syncMode.value === 'incremental') return wizardState.supportsWatermarkIncremental.value
+  if (syncMode.value === 'cdc') return wizardState.supportsDatabaseCDC.value
+  if (syncMode.value === 'kafka') return isKafkaSource.value && wizardState.supportsContinuousTarget.value
+  return true
+})
+const selectedModeConfigValid = computed(() => {
+  if (syncMode.value === 'incremental') return wizardState.watermarkIncrementalValid.value
+  if (syncMode.value === 'cdc' || syncMode.value === 'kafka') return wizardState.continuousConfigValid.value
+  return true
+})
 const canAdvance = computed(() => {
   if (stage.value === 'request') return !!prompt.value.trim()
   if (stage.value === 'source') return !!selectedSource.value
-  if (stage.value === 'target') return !!targetEngineId.value && !!targetParentLocator.value && !!targetTable.value.trim()
-  if (stage.value === 'fields') return wizardState.fieldMappings.value.length === 0 || decimalIssues.value.length === 0
-  return !!wizardState.taskName.value.trim() && decimalIssues.value.length === 0
+  if (stage.value === 'target') return !!targetEngineId.value && !!targetParentLocator.value && !!targetTable.value.trim() && syncModeAvailable.value && (syncMode.value !== 'incremental' || wizardState.watermarkIncrementalValid.value)
+  if (stage.value === 'fields') return (wizardState.fieldMappings.value.length > 0 || wizardState.sourceFields.value.length === 0) && decimalIssues.value.length === 0 && selectedModeConfigValid.value
+  return !!wizardState.taskName.value.trim() && decimalIssues.value.length === 0 && selectedModeConfigValid.value
 })
 
 function open() { visible.value = true }
@@ -200,7 +337,7 @@ function close() {
 }
 function reset() {
   prompt.value = ''; stage.value = 'request'; status.value = ''; message.value = ''; candidates.value = []; selectedByRole.value = {}
-  engines.value = []; targetEngineId.value = null; targetParentSelection.value = null; targetParentLocator.value = ''; targetTable.value = ''; writeMode.value = 'overwrite'; decimalScanRows.value = null
+  engines.value = []; targetEngineId.value = null; targetParentSelection.value = null; targetParentLocator.value = ''; targetTable.value = ''; writeMode.value = 'overwrite'; syncMode.value = 'snapshot'; decimalScanRows.value = null
   wizardState.reset()
 }
 watch(visible, value => { if (!value && !busy.value) reset() })
@@ -211,11 +348,19 @@ async function loadEngines() {
   return engines.value
 }
 
+async function loadTransferCapabilities() {
+  const response = await capabilitiesAPI.get()
+  const data = response?.data || response || {}
+  wizardState.updateFormatCapabilities({
+    databaseCDC: data?.continuous?.database_cdc || data?.continuous?.databaseCDC || null
+  })
+}
+
 async function discoverSource() {
   if (busy.value || !prompt.value.trim()) return
   busy.value = true; message.value = ''
   try {
-    const list = await loadEngines()
+    const [list] = await Promise.all([loadEngines(), loadTransferCapabilities()])
     const sourceEngine = inferSourceEngineFromPrompt(prompt.value, list)
     const result = await transferCopilotAPI.generate({ query: prompt.value.trim(), ...(sourceEngine ? { source_engine_id: Number(sourceEngine.id) } : {}) })
     if (result?.status !== 'need_clarification' || !Array.isArray(result.data_source_candidates) || !result.data_source_candidates.length) throw new Error(result?.message || t('transfer.taskAssistant.sourceNotFound'))
@@ -238,17 +383,27 @@ async function confirmSource() {
     const source = selectedSource.value
     const engine = engines.value.find(item => Number(item.id) === Number(source.engine_id))
     wizardState.applyAssistantSource(source, engine)
-    let fields = Array.isArray(source.fields) ? source.fields : []
     const itemID = parseTransferLocator(source.locator).itemID
-    if (!fields.length && itemID) {
+    let metadataFields = []
+    if (itemID) {
       const response = await getItemFieldsByID(itemID)
-      fields = Array.isArray(response?.data) ? response.data : (response || [])
+      metadataFields = Array.isArray(response?.data) ? response.data : (response || [])
     }
+    const fields = resolveAuthoritativeSourceFields(source.fields, metadataFields, itemID)
     wizardState.loadSourceFields(fields)
+    if (isKafkaSource.value && wizardState.sourceFields.value.length === 0) {
+      await recommendTopicFields()
+    }
     await loadEngines()
     const inferredTarget = inferTargetEngineFromPrompt(prompt.value, engines.value)
     targetEngineId.value = inferredTarget ? Number(inferredTarget.id) : null
     targetTable.value = source.name || parseTransferLocator(source.locator).path.at(-1) || ''
+    syncMode.value = inferTransferSyncMode(prompt.value, {
+      sourceEngineType: wizardState.sourceEngineType.value,
+      sourceLocator: wizardState.sourceLocator.value
+    })
+    applyTargetDraft()
+    applySyncMode()
     stage.value = 'target'
   } catch (error) { showError(error) } finally { busy.value = false }
 }
@@ -256,6 +411,8 @@ async function confirmSource() {
 function handleTargetEngineChange() {
   targetParentSelection.value = null; targetParentLocator.value = ''
   wizardState.clearTarget(); wizardState.resetTargetFields()
+  applyTargetDraft()
+  applySyncMode()
 }
 function isTargetParentSelectable(node, context = {}) {
   const type = String(node?.type || '').toLowerCase()
@@ -264,16 +421,90 @@ function isTargetParentSelectable(node, context = {}) {
 function handleTargetParentSelect(selection) {
   targetParentSelection.value = selection
   targetParentLocator.value = selection?.identity?.locator || ''
+  applyTargetDraft()
+  applySyncMode()
 }
 function engineLabel(engine) { return `${engine.name || engine.display_name || engine.engine_type} (${engine.engine_type || '-'})` }
 function candidateDisplayPath(candidate) { return candidate?.full_name || (Array.isArray(candidate?.ancestors) ? [...candidate.ancestors.map(item => item?.label), candidate?.name].filter(Boolean).join(' / ') : candidate?.name || '') }
 function candidateFacts(candidate) { return [candidate?.data_type, candidate?.geometry_type, candidate?.crs].filter(Boolean).join(' · ') }
 function decimalScaleMax(row) { const p = Number(row?.precision); return Number.isInteger(p) && p > 0 ? Math.min(30, p) : 30 }
 
-async function confirmTarget() {
+function fieldOptions(fields) {
+  const seen = new Set()
+  return fields
+    .map(field => ({
+      value: String(field?.name || '').trim(),
+      label: [String(field?.name || '').trim(), String(field?.type || '').trim() ? `(${field.type})` : '', field?.primaryKey ? `· ${t('transfer.taskWizard.primaryKeyField')}` : ''].filter(Boolean).join(' ')
+    }))
+    .filter(field => {
+      const key = field.value.toLowerCase()
+      if (!key || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+}
+
+function isPrimaryKeyField(field) {
+  return field?.primary_key === true ||
+    field?.primaryKey === true ||
+    field?.is_primary_key === true ||
+    field?.isPrimaryKey === true ||
+    String(field?.key || '').trim().toLowerCase() === 'pri'
+}
+
+function applyTargetDraft() {
   const engine = selectedTargetEngine.value
-  wizardState.updateTarget({ engineID: Number(targetEngineId.value), engineType: engine.engine_type, capabilities: engine.capabilities, targetType: engine.engine_type, representation: 'native', extra: { schema: '', table: targetTable.value.trim(), parentLocator: targetParentLocator.value, writeMode: writeMode.value } })
+  if (!engine) return
+  wizardState.updateTarget({
+    engineID: Number(engine.id),
+    engineType: engine.engine_type,
+    capabilities: engine.capabilities,
+    targetType: engine.engine_type,
+    representation: 'native',
+    extra: {
+      schema: '',
+      table: targetTable.value.trim(),
+      parentLocator: targetParentLocator.value,
+      writeMode: writeMode.value
+    }
+  })
   wizardState.targetTable.value = targetTable.value.trim()
+}
+
+function applySyncMode() {
+  if (isKafkaSource.value) {
+    syncMode.value = 'kafka'
+    wizardState.setLoadMode('incremental')
+    return
+  }
+  wizardState.setLoadMode('snapshot')
+  if (syncMode.value === 'incremental') {
+    wizardState.setLoadMode('incremental')
+    wizardState.initializeIncrementalDefaults()
+  } else if (syncMode.value === 'cdc') {
+    wizardState.setLoadMode('cdc')
+  }
+}
+
+function handleWatermarkFieldChange() {
+  wizardState.watermarkTieBreakers.value = wizardState.watermarkTieBreakers.value.filter(field => field !== wizardState.watermarkField.value)
+  wizardState.initializeIncrementalDefaults()
+}
+
+async function recommendTopicFields() {
+  const response = await getManagerPreview(wizardState.sourceLocator.value, 50)
+  const preview = response?.preview_type && response?.data ? response.data : (response?.data || response)
+  const recommendations = inferTopicFieldRecommendations(preview?.rows)
+  if (!recommendations.length) return
+  wizardState.applyTopicFieldRecommendations(recommendations.map(recommendation => ({
+    ...recommendation,
+    target_name: recommendation.name
+  })))
+}
+
+async function confirmTarget() {
+  applyTargetDraft()
+  if (!syncModeAvailable.value) return
   if (!wizardState.taskName.value.trim()) {
     wizardState.taskName.value = t('transfer.taskAssistant.defaultTaskName', {
       source: selectedSource.value?.name || parseTransferLocator(selectedSource.value?.locator || '').path.at(-1) || '',
@@ -282,10 +513,12 @@ async function confirmTarget() {
   }
   wizardState.autoGenerateFieldMappings()
   if (isMysqlTarget.value) await recommendDecimals()
+  applySyncMode()
+  if (syncMode.value === 'incremental' && !wizardState.watermarkIncrementalValid.value) return
   stage.value = 'fields'
 }
 async function recommendDecimals() {
-  const decimalFields = wizardState.sourceFields.value.filter(field => String(field?.type || '').toLowerCase() === 'decimal').map(field => field.name).filter(Boolean)
+  const decimalFields = wizardState.sourceFields.value.filter(field => normalizeFieldType(field) === 'decimal').map(field => field.name).filter(Boolean)
   if (!decimalFields.length) return
   const response = await fieldDefinitionRecommendationAPI.create({ source_locator: wizardState.sourceLocator.value, source_fields: decimalFields, target_engine_type: 'mysql' })
   const result = response?.data || response
@@ -350,10 +583,13 @@ function showError(error) {
 .transfer-ai-candidate-reason { color: var(--el-color-success); }
 .transfer-ai-target-form, .transfer-ai-review-form { margin-top: 12px; }
 .full-width { width: 100%; }
+.transfer-ai-sync-modes { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.transfer-ai-sync-modes :deep(.el-radio) { margin-right: 0; white-space: normal; }
+.transfer-ai-mode-alert { margin: 0 0 12px; }
+.transfer-ai-form-hint { margin-top: 5px; color: var(--addp-text-tertiary); font-size: 12px; line-height: 1.5; }
 .transfer-ai-field-table { margin-top: 12px; }
 .transfer-ai-decimal-alert { margin-top: 10px; }
 .transfer-ai-fact-note { margin-top: 8px; color: var(--addp-text-secondary); font-size: 12px; }
-.transfer-ai-json { max-height: 220px; overflow: auto; margin: 12px 0 0; padding: 10px; background: var(--addp-bg-secondary); color: var(--addp-text-primary); font-size: 11px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .transfer-ai-panel-footer { justify-content: flex-end; flex-wrap: wrap; }
 .transfer-ai-slide-enter-active, .transfer-ai-slide-leave-active { transition: opacity .16s ease, transform .16s ease; }
 .transfer-ai-slide-enter-from, .transfer-ai-slide-leave-to { opacity: 0; transform: translateY(8px); }

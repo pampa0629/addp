@@ -180,6 +180,7 @@ const (
 
 	CaptureSourcePostgreSQL CaptureSourceType = "postgresql"
 	CaptureSourceMySQL      CaptureSourceType = "mysql"
+	CaptureSourceOracle     CaptureSourceType = "oracle"
 )
 
 // CaptureResource 是数据库 CDC task generation 的 engine-neutral 资源登记事实。
@@ -191,7 +192,7 @@ type CaptureResource struct {
 	ConnectorName               string                     `gorm:"type:varchar(255);not null;uniqueIndex:uq_transfer_capture_connector" json:"connector_name"`
 	TopicName                   string                     `gorm:"type:varchar(255);not null;uniqueIndex:uq_transfer_capture_topic" json:"topic_name"`
 	ConsumerGroup               string                     `gorm:"type:varchar(255);not null;uniqueIndex:uq_transfer_capture_group" json:"consumer_group"`
-	SourceType                  CaptureSourceType          `gorm:"type:varchar(32);not null;index:idx_transfer_capture_resources_source_type;check:chk_transfer_capture_source_type,source_type IN ('postgresql','mysql')" json:"source_type"`
+	SourceType                  CaptureSourceType          `gorm:"type:varchar(32);not null;index:idx_transfer_capture_resources_source_type;check:chk_transfer_capture_source_type,source_type IN ('postgresql','mysql','oracle')" json:"source_type"`
 	SourceIdentity              string                     `gorm:"type:text;not null" json:"source_identity"`
 	SourceConnectionFingerprint string                     `gorm:"type:varchar(64);not null" json:"source_connection_fingerprint"`
 	SourceEngineID              uint                       `gorm:"not null" json:"source_engine_id"`
@@ -212,6 +213,7 @@ type CaptureResource struct {
 	UpdatedAt                   time.Time                  `gorm:"autoUpdateTime" json:"updated_at"`
 	PostgreSQL                  *PostgreSQLCaptureResource `gorm:"foreignKey:CaptureResourceID;constraint:OnDelete:CASCADE" json:"-"`
 	MySQL                       *MySQLCaptureResource      `gorm:"foreignKey:CaptureResourceID;constraint:OnDelete:CASCADE" json:"-"`
+	Oracle                      *OracleCaptureResource     `gorm:"foreignKey:CaptureResourceID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
 func (CaptureResource) TableName() string { return "transfer.capture_resources" }
@@ -238,6 +240,16 @@ type MySQLCaptureResource struct {
 }
 
 func (MySQLCaptureResource) TableName() string { return "transfer.mysql_capture_resources" }
+
+// OracleCaptureResource 保存 Oracle capture generation 独有的 schema history topic。
+// 表级 ALL COLUMN LOGGING 是共享 source readiness，不属于 task generation，Stop 时不得删除。
+type OracleCaptureResource struct {
+	CaptureResourceID       uint   `gorm:"primaryKey" json:"capture_resource_id"`
+	SchemaHistoryTopicName  string `gorm:"type:varchar(255);not null;uniqueIndex:uq_transfer_oracle_capture_schema_history_topic" json:"schema_history_topic_name"`
+	SchemaHistoryTopicOwned bool   `gorm:"not null;default:true" json:"schema_history_topic_owned"`
+}
+
+func (OracleCaptureResource) TableName() string { return "transfer.oracle_capture_resources" }
 
 type SchemaChangeRequestStatus string
 

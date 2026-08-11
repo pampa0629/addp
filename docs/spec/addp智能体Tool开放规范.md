@@ -1,6 +1,6 @@
 # ADDP 智能体 Tool 开放规范
 
-更新日期：2026-07-18
+更新日期：2026-08-11
 
 状态：正式规范。ADDP Tool Manifest、ToolExecutor、Python SDK、CLI 与 Agent Tool Provider 的能力开放边界以本文为准。
 
@@ -134,6 +134,14 @@ Tool 不同步等待长任务完成。标准路径为 owner 创建 execution，T
 - 恢复请求只包含 `approval_id + request_fingerprint`，不得再次携带 workflow payload。
 
 审批事实、身份隔离、过期、拒绝、一次性消费及跨 AgentRun 重放规则由 OAuth 规范持有。Manifest 必须声明当前稳定错误码，包括 `approval_forbidden`、`approval_not_found`、`approval_not_approved`、`approval_rejected`、`approval_expired`、`approval_request_mismatch` 和 `approval_already_consumed`。
+
+### 4.4 `query.draft.generate`
+
+`query.draft.generate` 的 `resources[]` 只承载由 owner Tool 验证过的具体 data item，不承载 database、schema、directory 等执行容器。查询执行范围由 Develop 的任务或 execution 契约持有，不进入 Copilot Tool 输入。
+
+调用方可以传入可选 `current_query` 表示编辑器已有候选文本。它不是资源事实，也不产生第二条执行路径；生成结果仍只返回候选查询文本。对于 MQL，当 `resources=[]` 且 `current_query` 是单个 JSON command object，并且恰好通过 `find`、`aggregate`、`count` 或 `distinct` 之一声明主 collection 时，Copilot 可以跳过资源发现并基于现有命令继续生成。其他无资源情况继续进入当前 Query Engine 范围内的数据发现和确认流程。
+
+Copilot 默认保留 `current_query` 已声明的主 collection，除非用户明确要求修改；没有 `resources[]` 字段事实时只能复用编辑器中已经出现的字段，不得把 `current_query` 当作已验证 metadata 或据此编造新字段。MongoDB database locator 不得写入 `resources[]`、`current_query` 或生成的 MQL。
 
 ## 五、Adapter 边界
 

@@ -21,6 +21,30 @@ export function inferSourceEnginesFromPrompt(query, engines) {
   return bestEngines(sourceText, engines)
 }
 
+export function inferTransferSyncMode(query, { sourceEngineType = '', sourceLocator = '' } = {}) {
+  if (isKafkaTopic(sourceEngineType, sourceLocator)) return 'kafka'
+
+  const text = String(query || '')
+    .trim()
+    .toLowerCase()
+    .replace(/非实时|not\s+real[- ]?time/g, '')
+
+  if (/(?:实时|持续|不间断|\bcdc\b|change\s+data\s+capture|\bcontinuous\b|real[- ]?time)/i.test(text)) {
+    return 'cdc'
+  }
+  if (/(?:增量|水位|\bwatermark\b|\bincremental\b)/i.test(text)) {
+    return 'incremental'
+  }
+  return 'snapshot'
+}
+
+export function resolveAuthoritativeSourceFields(candidateFields, metadataFields, itemID) {
+  if (Number(itemID) > 0) {
+    return Array.isArray(metadataFields) ? metadataFields : []
+  }
+  return Array.isArray(candidateFields) ? candidateFields : []
+}
+
 function uniqueBestEngine(text, engines) {
   const matches = bestEngines(text, engines)
   return matches.length === 1 ? matches[0] : null
@@ -102,4 +126,13 @@ function normalizeEngineText(value) {
     .toLowerCase()
     .replace(/[^a-z0-9\u4e00-\u9fff]+/g, ' ')
     .replace(/\s+/g, ' ')
+}
+
+function isKafkaTopic(engineType, locator) {
+  if (normalizeEngineText(engineType) !== 'kafka') return false
+  try {
+    return String(new URL(String(locator || '')).searchParams.get('type') || '').trim().toLowerCase() === 'topic'
+  } catch {
+    return false
+  }
 }

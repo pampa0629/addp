@@ -167,7 +167,7 @@ func newSchemaChangeRepositoryTestDB(t *testing.T) *gorm.DB {
 		)`).Error; err != nil {
 		t.Fatal(err)
 	}
-	addTaskExecutionAuthorizationColumns(t, db)
+	addTaskExecutionModelColumns(t, db)
 	return db
 }
 

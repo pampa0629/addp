@@ -110,6 +110,39 @@ func TestCaptureSupervisorOwnsMySQLSchemaHistoryTopic(t *testing.T) {
 	}
 }
 
+func TestCaptureSupervisorOwnsOracleSchemaHistoryTopic(t *testing.T) {
+	store := &fakeCaptureStore{}
+	topics := &fakeTopicControl{}
+	plan := &CapturePlan{
+		SourceType:     models.CaptureSourceOracle,
+		CDCConnInfo:    engineplugin.ConnectionInfo{"host": "localhost", "port": 15210, "service_name": "FREEPDB1", "user": "C##ADDP_CDC", "password": "secret"},
+		SourceEngineID: 22, SourceCDBName: "FREE", SourceDatabase: "FREEPDB1", SourceSchema: "BUSINESS", SourceTable: "CUSTOMERS",
+		SourceIdentity: "addp://engine/22/path/BUSINESS/CUSTOMERS?type=table", SourceConnectionFingerprint: "fingerprint",
+	}
+	supervisor, err := NewSupervisor(store, fakePlanResolver{plan: plan}, &fakeConnectControl{state: "RUNNING"}, topics, &fakeSourceResources{}, SupervisorConfig{
+		TopicRetention: time.Hour, TopicReplication: 1, ConnectLoopbackHost: "host.docker.internal",
+		ConnectBootstrapServers: "redpanda:29092", ConnectKafkaUsername: "connect", ConnectKafkaPassword: "secret",
+		ConnectKafkaSecurityProtocol: "sasl_plaintext", ProvisioningTimeout: time.Second,
+		StatusPollInterval: time.Millisecond, MonitorInterval: time.Second,
+	}, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := &models.TransferTask{ID: 3, TenantID: 2}
+	if _, err := supervisor.Start(context.Background(), task); err != nil {
+		t.Fatal(err)
+	}
+	if len(topics.specs) != 2 || topics.specs[1].Name != "__addp_cdc_schema.2.3.1" || !topics.schemaAccessCreated {
+		t.Fatalf("Oracle topic provisioning = %#v", topics.specs)
+	}
+	if err := supervisor.Stop(context.Background(), task); err != nil {
+		t.Fatal(err)
+	}
+	if topics.deletedTopics != 2 || !topics.schemaAccessDeleted {
+		t.Fatalf("Oracle topic cleanup = %+v", topics)
+	}
+}
+
 type fakeCaptureStore struct {
 	resource *models.CaptureResource
 	terminal bool
@@ -133,6 +166,8 @@ func (f *fakeCaptureStore) BeginGeneration(_ context.Context, identity repositor
 			f.resource.PostgreSQL = &models.PostgreSQLCaptureResource{CaptureResourceID: 1, SlotName: "slot", PublicationName: "publication", SlotOwned: true, PublicationOwned: true}
 		case models.CaptureSourceMySQL:
 			f.resource.MySQL = &models.MySQLCaptureResource{CaptureResourceID: 1, ConnectorServerID: 1, SchemaHistoryTopicName: "__addp_cdc_schema.2.3.1", SchemaHistoryTopicOwned: true}
+		case models.CaptureSourceOracle:
+			f.resource.Oracle = &models.OracleCaptureResource{CaptureResourceID: 1, SchemaHistoryTopicName: "__addp_cdc_schema.2.3.1", SchemaHistoryTopicOwned: true}
 		}
 	}
 	return f.resource, nil

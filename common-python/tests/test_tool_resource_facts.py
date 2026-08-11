@@ -12,6 +12,12 @@ def test_preview_resource_fact_normalizes_manager_table_preview():
             "full_name": "public.railway",
         },
         "data": {
+            "item_meta": {
+                "item_type": "table",
+                "attributes": [
+                    {"key": "item", "value": {"data_type": "table", "layout": "single"}},
+                ],
+            },
             "column_metadata": [
                 {"column_name": "id", "type": "bigint", "nullable": False},
                 {"column_name": "shape", "type": "geometry(LineString,32650)", "nullable": True},
@@ -27,6 +33,7 @@ def test_preview_resource_fact_normalizes_manager_table_preview():
     assert fact == {
         "locator": locator,
         "preview_type": "table",
+        "data_type": "table",
         "engine_name": "spatial",
         "full_name": "public.railway",
         "geometry_columns": ["shape"],
@@ -39,6 +46,27 @@ def test_preview_resource_fact_normalizes_manager_table_preview():
             {"name": "shape", "type": "geometry(LineString,32650)", "nullable": True},
         ],
     }
+
+
+def test_preview_resource_fact_keeps_native_item_type_separate_from_data_type():
+    locator = "addp://engine/11/path/Outdoor/Persons?type=collection&item_id=51657"
+
+    fact = preview_resource_fact({
+        "preview_type": "table",
+        "metadata": {"locator": locator},
+        "data": {
+            "item_meta": {
+                "item_type": "collection",
+                "attributes": [
+                    {"key": "item", "value": {"data_type": "table"}},
+                ],
+            },
+            "column_metadata": [{"column_name": "_id", "type": "string"}],
+        },
+    })
+
+    assert fact["data_type"] == "table"
+    assert "item_type" not in fact
 
 
 def test_preview_resource_fact_requires_canonical_locator():

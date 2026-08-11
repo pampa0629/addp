@@ -32,8 +32,9 @@ func migrateCaptureProviderResources(db *gorm.DB, schema string) error {
 	captures := qualified("capture_resources")
 	postgresqlResources := qualified("postgresql_capture_resources")
 	mysqlResources := qualified("mysql_capture_resources")
+	oracleResources := qualified("oracle_capture_resources")
 	if legacyColumns == 0 {
-		return normalizeCaptureProviderIndexes(db, schema, captures, postgresqlResources, mysqlResources)
+		return normalizeCaptureProviderIndexes(db, schema, captures, postgresqlResources, mysqlResources, oracleResources)
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
 		statements := []string{
@@ -41,7 +42,7 @@ func migrateCaptureProviderResources(db *gorm.DB, schema string) error {
 			fmt.Sprintf(`UPDATE %s SET source_type = 'postgresql' WHERE source_type IS NULL`, captures),
 			fmt.Sprintf(`ALTER TABLE %s ALTER COLUMN source_type SET NOT NULL`, captures),
 			fmt.Sprintf(`ALTER TABLE %s DROP CONSTRAINT IF EXISTS chk_transfer_capture_source_type`, captures),
-			fmt.Sprintf(`ALTER TABLE %s ADD CONSTRAINT chk_transfer_capture_source_type CHECK (source_type IN ('postgresql', 'mysql'))`, captures),
+			fmt.Sprintf(`ALTER TABLE %s ADD CONSTRAINT chk_transfer_capture_source_type CHECK (source_type IN ('postgresql', 'mysql', 'oracle'))`, captures),
 			fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_transfer_capture_resources_source_type ON %s (source_type)`, captures),
 			fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 				capture_resource_id BIGINT PRIMARY KEY,
@@ -83,6 +84,13 @@ func migrateCaptureProviderResources(db *gorm.DB, schema string) error {
 			fmt.Sprintf(`ALTER TABLE %s DROP CONSTRAINT IF EXISTS fk_transfer_capture_resources_my_sql`, mysqlResources),
 			fmt.Sprintf(`ALTER TABLE %s ADD CONSTRAINT fk_transfer_capture_resources_my_sql FOREIGN KEY (capture_resource_id) REFERENCES %s(id) ON DELETE CASCADE`, mysqlResources, captures),
 			fmt.Sprintf(`ALTER TABLE %s DROP CONSTRAINT IF EXISTS mysql_capture_resources_capture_resource_id_fkey`, mysqlResources),
+			fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+				capture_resource_id BIGINT PRIMARY KEY,
+				schema_history_topic_name VARCHAR(255) NOT NULL,
+				schema_history_topic_owned BOOLEAN NOT NULL DEFAULT TRUE,
+				CONSTRAINT fk_transfer_capture_resources_oracle FOREIGN KEY (capture_resource_id) REFERENCES %s(id) ON DELETE CASCADE
+			)`, oracleResources, captures),
+			fmt.Sprintf(`CREATE UNIQUE INDEX IF NOT EXISTS uq_transfer_oracle_capture_schema_history_topic ON %s (schema_history_topic_name)`, oracleResources),
 			fmt.Sprintf(`ALTER TABLE %s DROP CONSTRAINT IF EXISTS uq_transfer_capture_slot`, captures),
 			fmt.Sprintf(`ALTER TABLE %s DROP CONSTRAINT IF EXISTS uq_transfer_capture_publication`, captures),
 			fmt.Sprintf(`ALTER TABLE %s DROP COLUMN slot_name`, captures),
@@ -99,7 +107,7 @@ func migrateCaptureProviderResources(db *gorm.DB, schema string) error {
 	})
 }
 
-func normalizeCaptureProviderIndexes(db *gorm.DB, schema, captures, postgresqlResources, mysqlResources string) error {
+func normalizeCaptureProviderIndexes(db *gorm.DB, schema, captures, postgresqlResources, mysqlResources, oracleResources string) error {
 	var tables int64
 	if err := db.Raw(`
 		SELECT COUNT(*) FROM information_schema.tables
@@ -112,6 +120,8 @@ func normalizeCaptureProviderIndexes(db *gorm.DB, schema, captures, postgresqlRe
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
 		statements := []string{
+			fmt.Sprintf(`ALTER TABLE %s DROP CONSTRAINT IF EXISTS chk_transfer_capture_source_type`, captures),
+			fmt.Sprintf(`ALTER TABLE %s ADD CONSTRAINT chk_transfer_capture_source_type CHECK (source_type IN ('postgresql', 'mysql', 'oracle'))`, captures),
 			fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS schema_history_topic_name VARCHAR(255)`, mysqlResources),
 			fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS schema_history_topic_owned BOOLEAN NOT NULL DEFAULT TRUE`, mysqlResources),
 			fmt.Sprintf(`UPDATE %s m SET schema_history_topic_name = '__addp_cdc_schema.' || c.tenant_id || '.' || c.task_id || '.' || c.generation FROM %s c WHERE c.id = m.capture_resource_id AND (m.schema_history_topic_name IS NULL OR m.schema_history_topic_name = '')`, mysqlResources, captures),
@@ -129,6 +139,16 @@ func normalizeCaptureProviderIndexes(db *gorm.DB, schema, captures, postgresqlRe
 			fmt.Sprintf(`ALTER TABLE %s DROP CONSTRAINT IF EXISTS fk_transfer_capture_resources_my_sql`, mysqlResources),
 			fmt.Sprintf(`ALTER TABLE %s ADD CONSTRAINT fk_transfer_capture_resources_my_sql FOREIGN KEY (capture_resource_id) REFERENCES %s.%s(id) ON DELETE CASCADE`, mysqlResources, quoteCaptureIdentifier(schema), quoteCaptureIdentifier("capture_resources")),
 			fmt.Sprintf(`ALTER TABLE %s DROP CONSTRAINT IF EXISTS mysql_capture_resources_capture_resource_id_fkey`, mysqlResources),
+			fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+				capture_resource_id BIGINT PRIMARY KEY,
+				schema_history_topic_name VARCHAR(255) NOT NULL,
+				schema_history_topic_owned BOOLEAN NOT NULL DEFAULT TRUE,
+				CONSTRAINT fk_transfer_capture_resources_oracle FOREIGN KEY (capture_resource_id) REFERENCES %s.%s(id) ON DELETE CASCADE
+			)`, oracleResources, quoteCaptureIdentifier(schema), quoteCaptureIdentifier("capture_resources")),
+			fmt.Sprintf(`CREATE UNIQUE INDEX IF NOT EXISTS uq_transfer_oracle_capture_schema_history_topic ON %s (schema_history_topic_name)`, oracleResources),
+			fmt.Sprintf(`ALTER TABLE %s DROP CONSTRAINT IF EXISTS fk_transfer_capture_resources_oracle`, oracleResources),
+			fmt.Sprintf(`ALTER TABLE %s ADD CONSTRAINT fk_transfer_capture_resources_oracle FOREIGN KEY (capture_resource_id) REFERENCES %s.%s(id) ON DELETE CASCADE`, oracleResources, quoteCaptureIdentifier(schema), quoteCaptureIdentifier("capture_resources")),
+			fmt.Sprintf(`ALTER TABLE %s DROP CONSTRAINT IF EXISTS oracle_capture_resources_capture_resource_id_fkey`, oracleResources),
 		}
 		for _, statement := range statements {
 			if err := tx.Exec(statement).Error; err != nil {

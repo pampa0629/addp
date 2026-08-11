@@ -64,6 +64,22 @@ def test_executor_validates_arguments_before_dispatch():
     asyncio.run(run())
 
 
+def test_query_draft_manifest_allows_current_mql_without_resources():
+    definition = get_tool("query.draft.generate")
+    validator = Draft202012Validator(definition.input_schema)
+
+    errors = list(validator.iter_errors({
+        "query": "只保留成年人",
+        "engine_id": 11,
+        "query_language": "mql",
+        "engine_context": {"id": 11},
+        "resources": [],
+        "current_query": '{"find":"Persons","filter":{},"limit":10}',
+    }))
+
+    assert errors == []
+
+
 def test_executor_returns_validated_tool_result():
     async def run():
         executor = ToolExecutor("http://gateway", "token")

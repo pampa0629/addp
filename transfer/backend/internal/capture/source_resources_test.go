@@ -32,3 +32,15 @@ func TestDatabaseSourceResourcesAcceptsMySQLWithoutSourceOwnedObjects(t *testing
 		t.Fatalf("MySQL cleanup error = %v", err)
 	}
 }
+
+func TestDatabaseSourceResourcesAcceptsOracleWithoutGenerationOwnedDatabaseObjects(t *testing.T) {
+	err := (DatabaseSourceResources{}).DropOwnedResources(context.Background(),
+		&CapturePlan{SourceType: models.CaptureSourceOracle, SourceConnectionFingerprint: "same"},
+		&models.CaptureResource{
+			SourceType: models.CaptureSourceOracle, SourceConnectionFingerprint: "same",
+			Oracle: &models.OracleCaptureResource{SchemaHistoryTopicName: "history", SchemaHistoryTopicOwned: true},
+		})
+	if err != nil {
+		t.Fatalf("Oracle cleanup error = %v", err)
+	}
+}

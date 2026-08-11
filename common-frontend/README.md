@@ -554,6 +554,7 @@ treeLoader.clearCache()
 ### 类型工具
 
 - `getFieldTypeLabel(fieldType)` - 获取字段类型的中文名称
+- `normalizeFieldType(fieldOrType)` - 将数据库方言类型（包括参数化 decimal、geometry/geography）转换为平台规范字段类型；精度、空间子类型和 SRID 仍由字段事实单独保存
 
 ### 通用工具
 

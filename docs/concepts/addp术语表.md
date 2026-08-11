@@ -7,7 +7,7 @@
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | engine | 引擎 | ADDP 连接和访问外部数据系统的能力入口。 | 例如 PostgreSQL、MinIO、NFS、Neo4j。 |
-| Oracle Engine | Oracle 引擎 | 通过 `engine_type=oracle` 登记的 Oracle 数据库 Engine Instance；普通表 Catalog/查询/读取能力以 `service_name` 所指服务为连接边界，以 schema/table 为业务路径。 | 第一阶段只声明普通表只读能力；未来 Oracle CDC 和 ArcGIS SDE 逻辑变化源分别扩展，不因共用 Oracle 连接而合并为同一能力。 |
+| Oracle Engine | Oracle 引擎 | 通过 `engine_type=oracle` 登记的 Oracle 数据库 Engine Instance；普通表 Catalog/查询/读取与基础 Oracle Spatial（`MDSYS.SDO_GEOMETRY`、SpatialInfo、EWKB）能力以 `service_name` 所指服务为连接边界，以 schema/table 为业务路径。 | Oracle CDC 和 ArcGIS SDE 逻辑变化源分别扩展，不因共用 Oracle 连接而合并为同一能力。 |
 | Engine Instance | 引擎实例 | System 中一条绑定到确定物理端点的引擎登记事实。 | `engine_id` 只标识该实例；物理端点身份不可原地改变，端点变化必须创建新的 Engine Instance。 |
 | Engine Runtime Descriptor | 引擎运行时描述 | System 面向受信 Runtime Service Principal 提供的脱敏 Engine Instance 控制面投影。 | 只包含实例身份、生命周期、能力声明和工作流/脚本运行时的 `protocol/host/port`；不包含数据引擎凭据、数据库连接参数或可直接读取业务数据的明文连接。 |
 | engine lifecycle state | 引擎生命周期状态 | Engine Instance 当前能否被正常消费或正在退出平台的状态。 | 统一使用 `active`、`disabled`、`deleting`；`deleting` 保留连接只用于删除前 cleanup，不进入正常业务选择。 |
@@ -149,7 +149,7 @@
 | load mode | 装载方式 | Transfer 从源端读取完整范围还是已提交位置之后的变化。 | 只允许 `snapshot` / `incremental`；它与触发方式和目标应用方式正交。 |
 | watermark | 水位游标 | 以源表中可稳定排序的业务字段识别 insert/update 变化的批增量位置。 | 必须使用 `(watermark_field, tie_breaker...)` 复合游标并冻结每次 bounded execution 的上界；普通 watermark 不发现物理删除，不等同于 CDC。 |
 | CDC | 数据库变更捕获 | 从数据库事务日志持续捕获已提交的 insert、update 和 delete，并按确定的初始化与恢复协议交给下游应用。 | CDC 不等于按 `updated_at` 轮询；PostgreSQL 第一版由 Debezium 读取 logical replication slot，经 Infra Kafka 交给 Transfer。 |
-| Oracle CDC | Oracle 数据库变更捕获 | 从 Oracle redo 中捕获普通关系表已提交变化，并按 Oracle capture generation 交给 Transfer 的 CDC 能力。 | 后续能力；必须单独定义版本、许可、LogMiner/捕获实现、RAC/CDB/PDB、LOB、长事务和恢复契约，不能由 Oracle 普通表读取能力自动推断。 |
+| Oracle CDC | Oracle 数据库变更捕获 | Transfer 通过独立 Oracle common user 和 Debezium LogMiner 从 redo 捕获普通关系表已提交变化，并按 Oracle capture generation 交给统一 continuous worker。 | 第一期支持 CDB/PDB 下有稳定主键、已启用表级 `ALL COLUMN LOGGING` 的非空间、非 LOB 单表，固定 `initial_snapshot` 和严格 schema drift 阻塞；RAC、LOB、长事务专项策略和 Oracle Spatial CDC 后续扩展。不能由 Oracle Engine 普通读取能力自动推断。 |
 | ArcGIS SDE logical change source | ArcGIS SDE 逻辑变化源 | 按 ArcGIS enterprise geodatabase 的版本模型、业务事务和 delta table 语义识别的要素变化源。 | 后续能力；即使底层使用 Oracle，也不等同 Oracle redo 中的普通表 CDC，必须由独立 Provider/adapter 契约表达。 |
 | CDC bootstrap | CDC 初始化 | 在一个无空洞的日志衔接点上建立一致性初始快照，并继续消费快照期间和之后产生的日志变化。 | PostgreSQL 第一版固定使用 Debezium `initial` snapshot；Transfer 不自行拼接“先全量、后开 CDC”两条路径。 |
 | apply mode | 目标应用方式 | Transfer 将本次读取结果应用到目标的策略。 | 稳定取值为 `replace`、`append`、`upsert`、`upsert_delete`；目标 Provider 必须声明并真实实现对应能力。 |
@@ -176,7 +176,7 @@
 | email test delivery | 邮件测试投递 | 用户主动验证邮件目标和平台 SMTP Relay 的一次同步测试发送。 | 使用独立测试内容，不创建告警生命周期事件或正式 delivery outbox；操作本身进入 System 审计日志。 |
 | email manual retry | 邮件手动重投 | 用户把已经进入 `dead` 终态的邮件 delivery 重新放回投递队列。 | 复用原 `delivery_id`、主题和正文，使用目标当前收件地址，并以新的最大尝试周期继续投递；不得生成新 delivery 身份。 |
 | ChangeRecord | 变化原始记录 | Change stream Provider 从外部消息系统读取的原生记录。 | Kafka record 包含 topic、partition、offset、timestamp、headers、key/value 原始字节；不等于归一化 ChangeEvent。 |
-| ChangeEvent | 统一变化事件 | Transfer source adapter 将 Kafka record 或 CDC envelope 归一化后的内部变化对象。 | 业务 Kafka record v1 归一化为 `operation=upsert`；PostgreSQL CDC v1 契约归一化 snapshot/upsert/delete。Kafka、Debezium 和数据库日志协议细节不得进入目标 writer。 |
+| ChangeEvent | 统一变化事件 | Transfer source adapter 将 Kafka record 或 CDC envelope 归一化后的内部变化对象。 | 业务 Kafka record v1 归一化为 `operation=upsert`；PostgreSQL、MySQL、Oracle CDC 归一化 snapshot/upsert/delete。Kafka、Debezium 和数据库日志协议细节不得进入目标 writer。 |
 | business Kafka Engine | 业务 Kafka 引擎 | 用户在 System 注册、按租户授权并显式选择 topic 的外部 Kafka。 | 进入 System engines、Catalog 和 ResourceLocator；ADDP 不默认创建或删除用户 topic。 |
 | Infra Kafka | 基础设施 Kafka | ADDP 内部为 Debezium CDC 中转、缓冲和 replay 使用的基础设施。 | 不进入 System engines、资源树或用户任务 endpoint；与业务 Kafka 即使物理共用也必须使用独立凭据、ACL 和 topic namespace。 |
 | resume | 恢复执行 | 新 execution 从任务同步主状态的 committed position 继续处理。 | 第一版 watermark 增量仅支持 resume；已结束 execution 不复用。 |

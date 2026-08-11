@@ -6,6 +6,8 @@ from chains.resource_recommendation_chain import ResourceRecommendation
 from addp_common.resources import ResourceFact
 from services.resource_discovery import ResourceDiscovery
 
+QUERY_DATA_TYPES = frozenset({"table", "graph"})
+
 
 class FakeToolExecutor:
     def __init__(self, *, reject_preview_locator: str = "", mismatched_ancestor_locator: str = ""):
@@ -44,10 +46,20 @@ class FakeToolExecutor:
         if name == "data.preview":
             if arguments["locator"] == self.reject_preview_locator:
                 raise ToolExecutionError("owner_api_error", "preview unavailable")
+            is_document = arguments["locator"].endswith("railway.pdf?type=file&item_id=61")
             return {
-                "preview_type": "table",
+                "preview_type": "object" if is_document else "table",
                 "metadata": {"locator": arguments["locator"]},
                 "data": {
+                    "item_meta": {
+                        "item_type": "file" if is_document else "table",
+                        "attributes": [
+                            {
+                                "key": "item",
+                                "value": {"data_type": "document" if is_document else "table"},
+                            },
+                        ],
+                    },
                     "column_metadata": [{"column_name": "shape", "type": "geometry(LineString,32650)", "nullable": True}],
                     "geometry_column": "shape",
                     "source_crs": "EPSG:32650",
@@ -63,7 +75,7 @@ def test_discovery_reuses_owner_tools_and_returns_verified_resource_facts():
     result = asyncio.run(discovery.discover([
         ResourceIntent(role="铁路", search_queries=["铁路"]),
         ResourceIntent(role="耕地", search_queries=["耕地"]),
-    ]))
+    ], allowed_data_types=QUERY_DATA_TYPES))
 
     assert result.missing_roles == []
     assert result.candidates[0] == {
@@ -91,6 +103,8 @@ def test_discovery_reuses_owner_tools_and_returns_verified_resource_facts():
         "data.search",
         "resource.ancestors.get",
         "data.preview",
+        "resource.ancestors.get",
+        "data.preview",
         "data.search",
         "resource.ancestors.get",
         "data.preview",
@@ -103,7 +117,7 @@ def test_discovery_passes_current_engine_to_owner_search():
 
     asyncio.run(discovery.discover([
         ResourceIntent(role="铁路", search_queries=["railway"]),
-    ], engine_id=8))
+    ], engine_id=8, allowed_data_types=QUERY_DATA_TYPES))
 
     assert executor.calls[0][0] == "data.search"
     assert executor.calls[0][1]["engine_id"] == 8
@@ -129,6 +143,104 @@ def test_verify_rejects_resource_from_other_query_engine():
     assert executor.calls == []
 
 
+def test_verify_uses_owner_data_type_for_mongodb_collection():
+    executor = FakeToolExecutor()
+    discovery = ResourceDiscovery("http://gateway", "addp_at_user", executor=executor)
+
+    resources = asyncio.run(discovery.verify([
+        ResourceFact(
+            role="人员",
+            locator="addp://engine/11/path/Outdoor/Persons?type=collection&item_id=51657",
+            engine_id=11,
+        )
+    ], engine_id=11, allowed_data_types=QUERY_DATA_TYPES))
+
+    assert resources[0].data_type == "table"
+
+
+class ContainerPreviewExecutor:
+    async def call(self, name, arguments, **_audit):
+        if name == "resource.ancestors.get":
+            return {"target_locator": arguments["locator"], "ancestors": []}
+        if name == "data.preview":
+            return {
+                "metadata": {"locator": arguments["locator"]},
+                "data": {"item_meta": {"item_type": "database", "attributes": []}},
+            }
+        raise AssertionError(f"unexpected tool {name}")
+
+
+def test_verify_reports_container_selection_as_invalid_arguments():
+    discovery = ResourceDiscovery(
+        "http://gateway",
+        "addp_at_user",
+        executor=ContainerPreviewExecutor(),
+    )
+
+    try:
+        asyncio.run(discovery.verify([
+            ResourceFact(
+                role="Outdoor",
+                locator="addp://engine/11/path/Outdoor?type=database&node_id=276",
+                engine_id=11,
+            )
+        ], engine_id=11, allowed_data_types=QUERY_DATA_TYPES))
+    except ToolExecutionError as error:
+        assert error.code == "invalid_arguments"
+    else:
+        raise AssertionError("container resource must be reported as invalid arguments")
+
+
+class MongoDiscoveryExecutor:
+    async def call(self, name, arguments, **_audit):
+        locator = "addp://engine/11/path/Outdoor/Persons?type=collection&item_id=51657"
+        if name == "data.search":
+            return {
+                "results": [{
+                    "name": "Persons",
+                    "locator": locator,
+                    "engine_id": 11,
+                    "engine_name": "MongoDB",
+                    "asset_type": "collection",
+                }]
+            }
+        if name == "resource.ancestors.get":
+            return {"target_locator": locator, "ancestors": []}
+        if name == "data.preview":
+            return {
+                "preview_type": "table",
+                "metadata": {"locator": locator},
+                "data": {
+                    "item_meta": {
+                        "item_type": "collection",
+                        "attributes": [
+                            {"key": "item", "value": {"data_type": "table"}},
+                        ],
+                    },
+                    "column_metadata": [{"column_name": "_id", "type": "string"}],
+                },
+            }
+        raise AssertionError(f"unexpected tool {name}")
+
+
+def test_discovery_accepts_native_collection_and_filters_by_owner_data_type():
+    discovery = ResourceDiscovery(
+        "http://gateway",
+        "addp_at_user",
+        executor=MongoDiscoveryExecutor(),
+    )
+
+    result = asyncio.run(discovery.discover(
+        [ResourceIntent(role="人员", search_queries=["Persons"])],
+        engine_id=11,
+        allowed_data_types=QUERY_DATA_TYPES,
+    ))
+
+    assert result.missing_roles == []
+    assert result.candidates[0]["asset_type"] == "collection"
+    assert result.candidates[0]["data_type"] == "table"
+
+
 def test_discovery_propagates_owner_error_when_no_candidate_can_be_verified():
     locator = "addp://engine/8/path/public/railway?type=table&item_id=60"
     executor = FakeToolExecutor(reject_preview_locator=locator)
@@ -137,7 +249,7 @@ def test_discovery_propagates_owner_error_when_no_candidate_can_be_verified():
     try:
         asyncio.run(discovery.discover([
             ResourceIntent(role="铁路", search_queries=["铁路"]),
-        ]))
+        ], allowed_data_types=QUERY_DATA_TYPES))
     except ToolExecutionError as error:
         assert error.code == "owner_api_error"
     else:
@@ -150,7 +262,7 @@ def test_discovery_drops_candidate_when_ancestors_do_not_confirm_search_locator(
 
     result = asyncio.run(discovery.discover([
         ResourceIntent(role="铁路", search_queries=["铁路"]),
-    ]))
+    ], allowed_data_types=QUERY_DATA_TYPES))
 
     assert result.candidates == []
     assert result.missing_roles == ["铁路"]
@@ -162,11 +274,13 @@ def test_discovery_merges_synonym_searches_by_role_and_locator():
 
     result = asyncio.run(discovery.discover([
         ResourceIntent(role="铁路", search_queries=["铁路", "railway"]),
-    ]))
+    ], allowed_data_types=QUERY_DATA_TYPES))
 
     assert len(result.candidates) == 1
     assert [name for name, _, _ in executor.calls] == [
         "data.search",
+        "resource.ancestors.get",
+        "data.preview",
         "resource.ancestors.get",
         "data.preview",
         "data.search",
@@ -205,6 +319,12 @@ class SameNameAcrossEnginesExecutor:
                 "preview_type": "table",
                 "metadata": {"locator": arguments["locator"]},
                 "data": {
+                    "item_meta": {
+                        "item_type": "table",
+                        "attributes": [
+                            {"key": "item", "value": {"data_type": "table"}},
+                        ],
+                    },
                     "column_metadata": [
                         {"column_name": "shape", "type": "geometry(Polygon,32650)", "nullable": True}
                     ],

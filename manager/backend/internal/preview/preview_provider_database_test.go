@@ -55,6 +55,16 @@ func TestDatabasePreviewPostgreSQLPrimaryKeyPageQueryOrdersFirstPage(t *testing.
 	}
 }
 
+func TestDatabasePreviewOracleSpatialSelectUsesWKT(t *testing.T) {
+	query := databasePreviewSelectExpr(commonquery.ForEngine("oracle"), []datatype.FieldInfo{
+		{Name: "ID", NativeType: "NUMBER(10,0)"},
+		{Name: "SHAPE", Type: datatype.FieldTypeGeometry, NativeType: "MDSYS.SDO_GEOMETRY"},
+	}, "")
+	if !strings.Contains(query, `SDO_UTIL.TO_WKTGEOMETRY("SHAPE") AS "SHAPE"`) {
+		t.Fatalf("Oracle spatial select = %s", query)
+	}
+}
+
 func TestDatabaseGeometryColumnsUsesCommonSpatialFactsForMySQL(t *testing.T) {
 	srid := 4326
 	columns := databaseGeometryColumns(&datatype.SpatialInfo{
@@ -85,6 +95,35 @@ func TestDatabasePreviewMySQLUsesCatalogReadWithGeoJSONHint(t *testing.T) {
 	}
 	if call.Hints[plugin.TableReadHintGeometryEncoding] != "geojson" {
 		t.Fatalf("MySQL geometry hint = %#v", call.Hints)
+	}
+}
+
+func TestDatabasePreviewOracleUsesTableReadSessionForSpatialRows(t *testing.T) {
+	reader := &recordingDatabasePreviewPlugin{
+		engineType:  "oracle",
+		sessionData: &plugin.BatchData{Rows: []map[string]interface{}{{"ID": int64(1), "SHAPE": []byte{1, 2, 3}}}},
+	}
+	provider := &DatabaseTablePreviewProvider{}
+	rows, err := provider.queryData(
+		context.Background(), reader, reader, plugin.ConnectionInfo{},
+		plugin.TabularItemPath(22, plugin.CatalogTermSchema, "BUSINESS", "CUSTOMER_LOCATIONS"),
+		"oracle", "BUSINESS", "CUSTOMER_LOCATIONS", 0, 20,
+		[]datatype.FieldInfo{
+			{Name: "ID", Type: datatype.FieldTypeBigInt},
+			{Name: "SHAPE", Type: datatype.FieldTypeGeometry, NativeType: "MDSYS.SDO_GEOMETRY"},
+		}, dataprofile.DataScope{},
+	)
+	if err != nil {
+		t.Fatalf("queryData() error = %v", err)
+	}
+	if len(rows) != 1 || len(reader.openSessionCalls) != 1 {
+		t.Fatalf("rows=%#v open_session_calls=%d", rows, len(reader.openSessionCalls))
+	}
+	if len(reader.readBatchCalls) != 0 {
+		t.Fatalf("Oracle spatial preview must not use raw ReadBatch: %#v", reader.readBatchCalls)
+	}
+	if got := reader.openSessionCalls[0].Hints[plugin.TableReadHintGeometryEncoding]; got != "ewkb" {
+		t.Fatalf("Oracle table session geometry hint = %#v, want ewkb", got)
 	}
 }
 
@@ -371,12 +410,14 @@ func TestDatabaseTablePreviewProviderAllowsQuickViewPageSize(t *testing.T) {
 }
 
 type recordingDatabasePreviewPlugin struct {
-	engineType     string
-	catalogFacts   *plugin.CatalogFacts
-	batchData      *plugin.BatchData
-	describePaths  []plugin.CatalogPath
-	readBatchPaths []plugin.CatalogPath
-	readBatchCalls []plugin.BatchReadOptions
+	engineType       string
+	catalogFacts     *plugin.CatalogFacts
+	batchData        *plugin.BatchData
+	sessionData      *plugin.BatchData
+	describePaths    []plugin.CatalogPath
+	readBatchPaths   []plugin.CatalogPath
+	readBatchCalls   []plugin.BatchReadOptions
+	openSessionCalls []plugin.TableReadSessionOptions
 }
 
 func (p *recordingDatabasePreviewPlugin) Type() string         { return p.engineType }
@@ -420,7 +461,28 @@ func (p *recordingDatabasePreviewPlugin) ReadBatch(_ context.Context, _ plugin.C
 	return p.batchData, nil
 }
 
+func (p *recordingDatabasePreviewPlugin) OpenTableReadSession(_ context.Context, _ plugin.ConnectionInfo, _ plugin.CatalogPath, opts plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
+	p.openSessionCalls = append(p.openSessionCalls, opts)
+	return &recordingTableReadSession{data: p.sessionData}, nil
+}
+
+type recordingTableReadSession struct {
+	data *plugin.BatchData
+	used bool
+}
+
+func (s *recordingTableReadSession) ReadBatch(context.Context, int) (*plugin.BatchData, error) {
+	if s.data == nil || s.used {
+		return &plugin.BatchData{}, nil
+	}
+	s.used = true
+	return s.data, nil
+}
+
+func (*recordingTableReadSession) Close(context.Context) error { return nil }
+
 var _ plugin.EnginePlugin = (*recordingDatabasePreviewPlugin)(nil)
 var _ plugin.CatalogModelProvider = (*recordingDatabasePreviewPlugin)(nil)
 var _ plugin.CatalogFactsProvider = (*recordingDatabasePreviewPlugin)(nil)
 var _ plugin.BatchReadableProvider = (*recordingDatabasePreviewPlugin)(nil)
+var _ plugin.TableReadSessionProvider = (*recordingDatabasePreviewPlugin)(nil)

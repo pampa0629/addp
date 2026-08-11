@@ -327,7 +327,7 @@ Engine (MySQL)
               └── item: orders     ← full_name="analytics.orders"
 ```
 
-Oracle 使用与 PostgreSQL 相同的结构层级 `server(root) -> schema -> table/view/materialized_view`。`service_name` 是 Engine 连接身份字段，不进入 catalog path；schema 名和对象名保留 Oracle catalog 返回的原始大小写，`full_name` 固定为 `schema.object`。第一阶段不把 synonym、Oracle Spatial `SDO_GEOMETRY`、ArcGIS SDE 内部对象或 CDC capture resource 投影为普通 catalog leaf。
+Oracle 使用与 PostgreSQL 相同的结构层级 `server(root) -> schema -> table/view/materialized_view`。`service_name` 是 Engine 连接身份字段，不进入 catalog path；schema 名和对象名保留 Oracle catalog 返回的原始大小写，`full_name` 固定为 `schema.object`。`MDSYS.SDO_GEOMETRY` 是表字段类型事实，随表的 SpatialInfo 与标准 EWKB 行值读取能力暴露，不改变 catalog leaf 层级；synonym、ArcGIS SDE 内部对象和 CDC capture resource 仍不投影为普通 catalog leaf。
 
 server root 是结构入口，标题使用引擎实例名称。schema/database 节点对用户可见；术语按引擎原生语义展示。
 系统 schema/database（如 `pg_catalog`、`information_schema`、`mysql`）由插件过滤，不进入元数据树。

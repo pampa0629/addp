@@ -19,6 +19,9 @@ def preview_resource_fact(result: Any) -> dict[str, Any] | None:
     preview_type = result.get("preview_type")
     if isinstance(preview_type, str) and preview_type:
         fact["preview_type"] = preview_type
+    data_type = _item_data_type(data)
+    if data_type:
+        fact["data_type"] = data_type
     for key in ("engine_name", "resource_type", "full_name", "item_id", "item_fingerprint"):
         value = metadata.get(key)
         if value is not None:
@@ -44,6 +47,23 @@ def preview_resource_fact(result: Any) -> dict[str, Any] | None:
     if geometry_type:
         fact["geometry_type"] = geometry_type
     return fact
+
+
+def _item_data_type(data: dict[str, Any]) -> str | None:
+    item_meta = data.get("item_meta")
+    if not isinstance(item_meta, dict):
+        return None
+    attributes = item_meta.get("attributes")
+    if not isinstance(attributes, list):
+        return None
+    for attribute in attributes:
+        if not isinstance(attribute, dict) or attribute.get("key") != "item":
+            continue
+        item = attribute.get("value")
+        value = item.get("data_type") if isinstance(item, dict) else None
+        if isinstance(value, str) and value.strip():
+            return value.strip().lower()
+    return None
 
 
 def _compact_column(value: Any) -> dict[str, Any] | None:

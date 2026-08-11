@@ -2,9 +2,39 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  buildAutomaticFieldMappings,
   applyExistingTargetFields,
-  applyFieldMappingEdit
+  applyFieldMappingEdit,
+  applySourceFieldNullability
 } from '../src/views/TaskWizard/fieldMapping.mjs'
+
+test('automatic mappings preserve source nullability for every field', () => {
+  assert.deepEqual(buildAutomaticFieldMappings([
+    { name: 'id', type: 'bigint', nullable: false, primary_key: true },
+    { name: 'geometry', type: 'geometry', nullable: false },
+    { name: 'name', type: 'text', nullable: true }
+  ]), [
+    { source_field: 'id', target_field: 'id', target_type: 'bigint', format: '', default_value: '', nullable: false },
+    { source_field: 'geometry', target_field: 'geometry', target_type: 'geometry', format: '', default_value: '', nullable: false },
+    { source_field: 'name', target_field: 'name', target_type: 'string', format: '', default_value: '', nullable: true }
+  ])
+})
+
+test('existing CDC mappings restore source nullability for every field', () => {
+  assert.deepEqual(applySourceFieldNullability([
+    { source_field: 'id', nullable: true },
+    { source_field: 'geometry', nullable: true },
+    { source_field: 'name', nullable: false }
+  ], [
+    { name: 'id', nullable: false },
+    { name: 'geometry', nullable: false },
+    { name: 'name', nullable: true }
+  ]), [
+    { source_field: 'id', nullable: false },
+    { source_field: 'geometry', nullable: false },
+    { source_field: 'name', nullable: true }
+  ])
+})
 
 test('existing target fields define target types and decimal facts', () => {
   const mappings = [

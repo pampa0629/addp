@@ -82,7 +82,7 @@ Transfer API / Frontend
 - `data_type` 稳定支持 `table`；`document`、`media`、`cad`、`unknown` 已支持 encoded single raw copy。
 - `representation` 支持 `native` 和 `encoded`。
 - `format` 只用于 encoded endpoint。
-- `target.policy.apply_mode` 在 snapshot table Transfer 支持 `replace` 和 `append`；raw copy 只支持 `replace`；PostgreSQL/MySQL watermark 和业务 Kafka continuous 使用幂等 `upsert`；PostgreSQL/MySQL CDC 使用 `upsert_delete`。
+- `target.policy.apply_mode` 在 snapshot table Transfer 支持 `replace` 和 `append`；raw copy 只支持 `replace`；PostgreSQL/MySQL watermark 和业务 Kafka continuous 使用幂等 `upsert`；PostgreSQL/MySQL/Oracle CDC 使用 `upsert_delete`。
 - 旧 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段出现即拒绝。
 
 ## 四、table Transfer 主路径
@@ -265,4 +265,17 @@ MySQL 8.0 单表
   -> per-partition kafka_offset/v1 next_offset CAS
 ```
 
-continuous worker 是 Transfer 独立长驻进程角色，一个进程承载多个 runtime session；它通过 `transfer.runtime_leases` claim owner/lease/heartbeat/fencing，不使用 Asynq 承载无限循环。业务 Kafka 与 PostgreSQL/MySQL CDC 复用同一个 consumer/apply/CAS 主循环，不建立第二套 CDC consumer。业务 Kafka 已支持显式 `block|dead_letter`；bounded replay 通过独立 Asynq execution 从原业务 Kafka 读取显式 offset ranges，并只写不存在的新 PostgreSQL 隔离表。当前仍不支持无 key append、Kafka target、Schema Registry、Avro、Protobuf、数据库 CDC replay、Oracle CDC 或自动 DDL。
+Oracle CDC 第一期复用同一主路径，只开放普通非空间、非 LOB 单表：
+
+```text
+Oracle 单表
+  -> Debezium Oracle Connector + generation-owned schema-history topic
+  -> Infra Kafka 单分区 CDC data topic
+  -> 同一个 Transfer Continuous Worker
+  -> snapshot/upsert/delete ChangeEvent
+  -> PostgreSQL/MySQL PartitionedTableChangeApplyProvider
+  -> business target apply ledger + table upsert/delete (one transaction)
+  -> per-partition kafka_offset/v1 next_offset CAS
+```
+
+continuous worker 是 Transfer 独立长驻进程角色，一个进程承载多个 runtime session；它通过 `transfer.runtime_leases` claim owner/lease/heartbeat/fencing，不使用 Asynq 承载无限循环。业务 Kafka 与 PostgreSQL/MySQL/Oracle CDC 复用同一个 consumer/apply/CAS 主循环，不建立第二套 CDC consumer。业务 Kafka 已支持显式 `block|dead_letter`；bounded replay 通过独立 Asynq execution 从原业务 Kafka 读取显式 offset ranges，并只写不存在的新 PostgreSQL 隔离表。当前仍不支持无 key append、Kafka target、Schema Registry、Avro、Protobuf、数据库 CDC replay、Oracle Spatial CDC 或自动 DDL。

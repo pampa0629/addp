@@ -42,6 +42,27 @@ const MONGO_ENGINE = {
   }
 }
 
+const DUCKDB_RUNTIME = {
+  id: 18,
+  name: 'DuckDB Federation',
+  engine_type: 'duckdb',
+  capabilities: {
+    compute: {
+      query: {
+        supported: true,
+        languages: ['sql'],
+        default_language: 'sql',
+        result_kinds: ['table'],
+        federation: {
+          supported: true,
+          source_engine_types: ['postgresql', 'mysql', 'minio', 's3'],
+          object_formats: ['parquet']
+        }
+      }
+    }
+  }
+}
+
 const EXECUTION_ID = '11111111-1111-4111-8111-111111111111'
 
 test('renders the desktop workbench and a bounded table result without overlap', async ({ page }) => {
@@ -136,6 +157,29 @@ test('generates a query template for the selected data item and confirms engine 
   await expect.poll(() => sampleRequests.at(-1)?.searchParams.get('locator')).toContain('addp://engine/11/path/public/customers')
 })
 
+test('uses tenant source-engine catalogs for the DuckDB federated runtime', async ({ page }) => {
+  const resourceTreeRequests = []
+  await installMockBackend(page, {
+    resultKind: 'table',
+    engines: [DUCKDB_RUNTIME, ENGINE],
+    metaEngines: [ENGINE],
+    resourceTreeRequests
+  })
+  await page.goto('/sql')
+
+  await expect(page.locator('.engine-select')).toContainText(DUCKDB_RUNTIME.name)
+  const resourceTree = page.locator('.catalog-panel')
+  await expect(resourceTree.getByRole('treeitem', { name: ENGINE.name, exact: true })).toBeVisible()
+  await expect.poll(() => resourceTreeRequests).toContain(`/api/v1/meta/resource-tree/${ENGINE.id}`)
+  expect(resourceTreeRequests).not.toContain(`/api/v1/meta/resource-tree/${DUCKDB_RUNTIME.id}`)
+
+  await resourceTree.getByRole('treeitem', { name: ENGINE.name, exact: true }).click()
+  await resourceTree.getByRole('treeitem', { name: 'public', exact: true }).locator('.el-tree-node__expand-icon').click()
+  await resourceTree.getByRole('treeitem', { name: 'customers', exact: true }).dblclick()
+  await expect(page.locator('.monaco-editor .view-lines')).toContainText('PostgreSQL_Demo.public.customers')
+  expect(resourceTreeRequests).not.toContain(`/api/v1/meta/resource-tree/${DUCKDB_RUNTIME.id}`)
+})
+
 test('generates a natural-language query with current-engine resource confirmation', async ({ page }) => {
   const copilotRequests = []
   await installMockBackend(page, { resultKind: 'table', copilotRequests })
@@ -212,8 +256,10 @@ test('defines a query parameter, inserts its reference, and submits an execution
 async function installMockBackend(page, {
   resultKind,
   engines = [ENGINE],
+  metaEngines = [ENGINE],
   executionRequests = [],
-  copilotRequests = []
+  copilotRequests = [],
+  resourceTreeRequests = []
 }) {
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   await page.route('**/api/v1/**', async route => {
@@ -228,6 +274,9 @@ async function installMockBackend(page, {
     }
     if (path === '/api/v1/develop/engines') {
       return fulfillJSON(route, engines)
+    }
+    if (path === '/api/v1/meta/engines') {
+      return fulfillJSON(route, metaEngines)
     }
     if (path === '/api/v1/copilot/query/generate' && request.method() === 'POST') {
       const body = request.postDataJSON()
@@ -289,6 +338,9 @@ async function installMockBackend(page, {
       return fulfillJSON(route, engine.id === MONGO_ENGINE.id
         ? { query: '{"find":"orders","filter":{},"limit":10}', language: 'mql' }
         : { query: 'SELECT id, name FROM public.customers', language: 'sql' })
+    }
+    if (path.startsWith('/api/v1/meta/resource-tree/')) {
+      resourceTreeRequests.push(path)
     }
     if (path === `/api/v1/meta/resource-tree/${ENGINE.id}`) {
       return fulfillJSON(route, resourceTree())

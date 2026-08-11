@@ -780,6 +780,19 @@
       "QueryGenerationRequest": {
         "additionalProperties": false,
         "properties": {
+          "current_query": {
+            "anyOf": [
+              {
+                "maxLength": 200000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "编辑器中已有的查询文本，只作为生成上下文，不作为资源事实或执行范围",
+            "title": "Current Query"
+          },
           "engine_context": {
             "anyOf": [
               {
@@ -2233,6 +2246,9 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "description": "请求不符合查询生成约束 | Invalid query generation request"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -2245,6 +2261,9 @@
           },
           "500": {
             "description": "查询生成失败 | Query generation failed"
+          },
+          "502": {
+            "description": "Owner Tool 调用失败 | Owner Tool call failed"
           }
         },
         "security": [

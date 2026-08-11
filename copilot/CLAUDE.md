@@ -152,13 +152,15 @@ Copilot Permission 只授予“生成候选结果”，不授予候选查询、W
 
 ### Query Agent 工作流程
 
-1. **接收工作台上下文**：自然语言、当前 `engine_id`、当前 `query_language` 和可选资源事实；不接收客户端身份字段
+1. **接收工作台上下文**：自然语言、当前 `engine_id`、当前 `query_language`、可选资源事实和可选 `current_query`；`current_query` 只表示编辑器已有候选文本，不表示资源身份，也不接收客户端身份字段
 2. **验证当前引擎**：通过共享 `engine.list` Tool 确认当前用户可访问该引擎，查询语言必须属于其 `compute.query` capability
-3. **限定资源发现**：已有 locator 时直接校验；没有时只调用带当前 `engine_id` 的 `data.search`，再执行 `resource.ancestors.get → data.preview`
+3. **限定资源发现**：已有具体 data item locator 时直接校验；没有资源且 MQL `current_query` 已通过 `find/aggregate/count/distinct` 明确主 collection 时，直接使用该编辑器上下文生成；其他情况只调用带当前 `engine_id` 的 `data.search`，再执行 `resource.ancestors.get → data.preview`
 4. **确认歧义**：同一输入角色多个候选时返回全部候选，用户每个角色选择一个
 5. **调用 Inference Runtime**：使用 `query_generation` 场景绑定的 Model Profile；资源解析统一使用 `resource_resolution`
-6. **生成与校验候选**：只使用已验证路径、字段、几何列、CRS 和引擎 capability；拒绝其他引擎 locator、未知字段和硬编码方言假设
+6. **生成与校验候选**：只使用已验证路径、字段、几何列、CRS、引擎 capability 和允许的 `current_query` 既有内容；默认保留 MQL 已声明的主 collection，拒绝其他引擎 locator、未知字段和硬编码方言假设
 7. **返回候选文本**：前端回填编辑器但不自动执行，后续仍由 Develop preflight 和 execution API 负责
+
+`resources[]` 只表示具体、可预览的数据项，不表示执行容器。MongoDB `database`、关系库 `schema`、对象存储目录等容器节点不能作为查询生成输入资源；Owner 已正常确认 locator、但 preview 没有平台 `data_type` 时，应按调用参数无效处理，而不是返回 502 上游响应错误。MongoDB 数据库范围只由 Develop 的 `target_locator` 和执行链路负责，Copilot 不接收 database locator；当 `resources=[]` 且 `current_query` 是声明了主 collection 的合法 MQL command object 时，Copilot 可以把该编辑器文本作为生成上下文，但不得把它伪装成已验证资源事实，也不得据此编造新字段。
 
 ### Workflow Agent 工作流程
 

@@ -651,6 +651,25 @@ if [ "$ENABLE_MYSQL" = true ]; then
     bash mysql/init-cdc.sh
 fi
 
+if [ "$ENABLE_ORACLE" = true ]; then
+    ORACLE_READY=false
+    for i in {1..120}; do
+        if docker exec business-oracle healthcheck.sh >/dev/null 2>&1; then
+            echo -e "${GREEN}✓ Oracle 就绪${NC}"
+            ORACLE_READY=true
+            break
+        fi
+        sleep 2
+    done
+    if [ "$ORACLE_READY" != true ]; then
+        echo -e "${RED}✗ Oracle 未在 240 秒内就绪${NC}"
+        exit 1
+    fi
+
+    bash oracle/init-cdc.sh
+    bash oracle/test-data.sh
+fi
+
 if [ "$ENABLE_REDPANDA" = true ]; then
     REDPANDA_READY=false
     for i in {1..60}; do
@@ -726,7 +745,7 @@ if [ "$ENABLE_PG" = true ]; then
     echo -e "PostgreSQL: localhost:${PG_PORT}"
 fi
 if [ "$ENABLE_ORACLE" = true ]; then
-    echo -e "Oracle: localhost:${ORACLE_PORT_VAL} (service: ${ORACLE_SERVICE_NAME:-FREEPDB1})"
+    echo -e "Oracle: localhost:${ORACLE_PORT_VAL} (service: ${ORACLE_SERVICE_NAME:-FREEPDB1}, CDC 用户: ${ORACLE_CDC_USER:-C##ADDP_CDC})"
 fi
 if [ "$ENABLE_SUPERMAP_PG" = true ]; then
     echo -e "SuperMap SDX+ for PostgreSQL: localhost:${SUPERMAP_PG_PORT}"

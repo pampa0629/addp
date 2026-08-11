@@ -208,6 +208,7 @@ class ToolExecutor:
                 query_language=arguments["query_language"],
                 resources=arguments["resources"],
                 engine_context=arguments["engine_context"],
+                current_query=arguments.get("current_query"),
             )
 
     async def _notebook_draft_generate(self, arguments: dict[str, Any], delegated_token: str) -> Any:

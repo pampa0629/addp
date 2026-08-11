@@ -138,7 +138,7 @@ make ports-validate
 | Infra Kafka           | 19092    | 9092        | 内部 CDC 总线；不注册为 System Engine |
 | Kafka Connect REST    | 18083    | 8083        | Transfer capture supervisor 内部控制面，不经 Gateway 暴露 |
 | Business Kafka        | 29092    | 9092        | 业务 Topic；以 `engine_type=kafka` 注册为 System Engine |
-| Business Oracle       | 15210    | 1521        | Oracle Free 普通表测试源；以 `engine_type=oracle` 注册为 System Engine |
+| Business Oracle       | 15210    | 1521        | Oracle Free 普通表与 Oracle Spatial 测试源；以 `engine_type=oracle` 注册为 System Engine |
 
 ## 端口分配规则
 

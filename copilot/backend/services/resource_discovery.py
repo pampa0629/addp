@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
 from addp_common.tools import ToolExecutionError, ToolExecutor, preview_resource_fact
@@ -43,7 +42,7 @@ class ResourceDiscovery:
         *,
         engine_id: int | None = None,
         limit: int = 20,
-        allowed_asset_types: set[str] | frozenset[str] | None = None,
+        allowed_data_types: set[str] | frozenset[str] | None = None,
     ) -> ResourceDiscoveryResult:
         candidates: list[dict[str, Any]] = []
         missing_roles: list[str] = []
@@ -79,8 +78,6 @@ class ResourceDiscovery:
                     if search_arguments.get("engine_id") is not None and hit_engine_id != search_arguments["engine_id"]:
                         continue
                     asset_type = str(hit.get("asset_type") or hit.get("document_type") or "").lower()
-                    if asset_type not in (allowed_asset_types or {"table", "view", "file", "object", "raster", "vector"}):
-                        continue
                     eligible_hits += 1
 
                     if locator not in verified:
@@ -109,8 +106,14 @@ class ResourceDiscovery:
                     ancestors, preview = verification
                     if not _ancestors_confirm_locator(ancestors, locator):
                         continue
-                    fact = _resource_fact(hit, preview, locator)
+                    fact = _resource_fact(preview, locator)
                     if not fact:
+                        verification_errors.append(ToolExecutionError(
+                            "invalid_owner_response",
+                            "数据预览未返回规范化资源事实",
+                        ))
+                        continue
+                    if allowed_data_types and fact["data_type"] not in allowed_data_types:
                         continue
                     seen_for_role.add(locator)
                     candidate = {
@@ -172,7 +175,7 @@ class ResourceDiscovery:
         resources: list[ResourceFact],
         *,
         engine_id: int | None = None,
-        allowed_asset_types: set[str] | frozenset[str] | None = None,
+        allowed_data_types: set[str] | frozenset[str] | None = None,
     ) -> list[ResourceFact]:
         """重新通过 owner Tool 校验用户确认的资源，并收敛最新字段事实。"""
         verified: list[ResourceFact] = []
@@ -199,12 +202,18 @@ class ResourceDiscovery:
             )
             if not _ancestors_confirm_locator(ancestors, resource.locator):
                 raise ToolExecutionError("invalid_owner_response", "Meta 未确认资源 locator")
-            declared_type = resource.data_type or _locator_resource_type(resource.locator)
-            fact = _resource_fact({"asset_type": declared_type}, preview, resource.locator)
+            preview_fact = preview_resource_fact(preview)
+            if (
+                preview_fact is not None
+                and preview_fact.get("locator") == resource.locator
+                and not preview_fact.get("data_type")
+            ):
+                raise ToolExecutionError("invalid_arguments", "请选择具体可查询的数据项，不能使用数据库或目录容器")
+            fact = _resource_fact(preview, resource.locator)
             if not fact:
                 raise ToolExecutionError("invalid_owner_response", "数据预览未返回可用资源事实")
-            verified_type = fact.get("data_type") or resource.data_type
-            if allowed_asset_types and verified_type not in allowed_asset_types:
+            verified_type = fact["data_type"]
+            if allowed_data_types and verified_type not in allowed_data_types:
                 raise ToolExecutionError("invalid_arguments", "资源类型不符合当前场景约束")
             verified.append(ResourceFact(
                 role=resource.role,
@@ -219,12 +228,12 @@ class ResourceDiscovery:
         return verified
 
 
-def _resource_fact(hit: dict[str, Any], preview: dict[str, Any], locator: str) -> dict[str, Any] | None:
+def _resource_fact(preview: dict[str, Any], locator: str) -> dict[str, Any] | None:
     preview_fact = preview_resource_fact(preview)
-    if preview_fact is None or preview_fact["locator"] != locator:
+    if preview_fact is None or preview_fact["locator"] != locator or not preview_fact.get("data_type"):
         return None
     return {
-        "data_type": hit.get("asset_type") or hit.get("document_type"),
+        "data_type": preview_fact["data_type"],
         "geometry_column": preview_fact.get("geometry_column"),
         "geometry_type": preview_fact.get("geometry_type"),
         "crs": preview_fact.get("source_crs"),
@@ -245,12 +254,6 @@ def _hit_attribute(hit: dict[str, Any], key: str) -> str | None:
         if isinstance(value, dict) and isinstance(value.get(key), str) and value[key].strip():
             return value[key].strip()
     return None
-
-
-def _locator_resource_type(locator: str) -> str | None:
-    values = parse_qs(urlparse(locator).query).get("type", [])
-    value = values[0].strip().lower() if values else ""
-    return value or None
 
 
 def _ancestors_confirm_locator(ancestors: dict[str, Any], locator: str) -> bool:

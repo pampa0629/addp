@@ -35,8 +35,8 @@
         type="error"
         :title="loadError"
         show-icon
-      :closable="false"
-    >
+        :closable="false"
+      >
         <el-button link type="danger" @click="reload">{{ t('model.common.retry') }}</el-button>
       </el-alert>
 

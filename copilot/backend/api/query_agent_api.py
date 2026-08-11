@@ -40,6 +40,11 @@ class QueryGenerationRequest(BaseModel):
     engine_id: int = Field(ge=1)
     query_language: str = Field(min_length=1)
     resources: list[ResourceFact] = Field(default_factory=list, max_length=20)
+    current_query: Optional[str] = Field(
+        default=None,
+        max_length=200_000,
+        description="编辑器中已有的查询文本，只作为生成上下文，不作为资源事实或执行范围",
+    )
     engine_context: Optional[dict[str, Any]] = Field(
         default=None,
         description="由 Agent 的 engine.list Tool 提供的已验证引擎事实；Develop 用户入口由 Copilot 自行发现",
@@ -74,7 +79,11 @@ class QueryGenerationResponse(BaseModel):
     "/query/generate",
     response_model=QueryGenerationResponse,
     summary="生成查询语言 | Generate Query Language",
-    responses={500: {"description": "查询生成失败 | Query generation failed"}},
+    responses={
+        400: {"description": "请求不符合查询生成约束 | Invalid query generation request"},
+        502: {"description": "Owner Tool 调用失败 | Owner Tool call failed"},
+        500: {"description": "查询生成失败 | Query generation failed"},
+    },
     openapi_extra={
         "x-addp-auth-mode": "delegated_tool",
         "x-addp-required-permissions": [COPILOT_SQL_EXECUTE],
@@ -100,34 +109,38 @@ async def generate_query(
                 message=f"当前引擎不支持查询语言 {language}",
             )
 
-        resolution_llm = CopilotInferenceService.chat_model(
-            db,
-            tenant_id=user.tenant_id,
-            scenario_code="resource_resolution",
-            temperature=0,
-            max_output_tokens=1200,
+        resources: list[ResourceFact] = []
+        use_current_mql = bool(
+            language == "mql" and _mql_primary_collection(request.current_query)
         )
-        discovery = ResourceDiscovery(
-            settings.get_gateway_url(),
-            credentials.credentials,
-            executor=executor,
-            recommender=ResourceRecommendationChain(resolution_llm),
-        )
-        resolver = ResourceResolutionService(
-            discovery=discovery,
-            intent_chain=ResourceIntentChain(resolution_llm),
-        )
-        policy = ResourceResolutionPolicy.query(request.engine_id)
-
-        if not request.resources:
-            return await _discover_query_resources(request, resolver, policy, language)
-
-        resources = await resolver.verify(request.resources, policy)
+        if request.resources or not use_current_mql:
+            resolution_llm = CopilotInferenceService.chat_model(
+                db,
+                tenant_id=user.tenant_id,
+                scenario_code="resource_resolution",
+                temperature=0,
+                max_output_tokens=1200,
+            )
+            discovery = ResourceDiscovery(
+                settings.get_gateway_url(),
+                credentials.credentials,
+                executor=executor,
+                recommender=ResourceRecommendationChain(resolution_llm),
+            )
+            resolver = ResourceResolutionService(
+                discovery=discovery,
+                intent_chain=ResourceIntentChain(resolution_llm),
+            )
+            policy = ResourceResolutionPolicy.query(request.engine_id)
+            if not request.resources:
+                return await _discover_query_resources(request, resolver, policy, language)
+            resources = await resolver.verify(request.resources, policy)
         generated = await query_service.generate(
             query=request.query,
             engine=engine,
             query_language=language,
             resources=[item.model_dump(exclude_none=True) for item in resources],
+            current_query=request.current_query,
             tenant_id=user.tenant_id,
             db=db,
         )
@@ -140,11 +153,30 @@ async def generate_query(
             resources=resources,
         )
     except ToolExecutionError as error:
-        raise HTTPException(status_code=502, detail=error.message) from error
+        status_code = 400 if error.code == "invalid_arguments" else 502
+        raise HTTPException(status_code=status_code, detail=error.message) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
         raise HTTPException(status_code=500, detail="查询生成失败") from error
+
+
+def _mql_primary_collection(current_query: str | None) -> str | None:
+    """返回单一 MQL command object 的主 collection，其他文本一律视为未声明。"""
+    if not isinstance(current_query, str) or not current_query.strip():
+        return None
+    try:
+        command = json.loads(current_query)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(command, dict):
+        return None
+    collections = [
+        str(command[key]).strip()
+        for key in ("find", "aggregate", "count", "distinct")
+        if isinstance(command.get(key), str) and str(command[key]).strip()
+    ]
+    return collections[0] if len(collections) == 1 else None
 
 
 async def _discover_query_resources(

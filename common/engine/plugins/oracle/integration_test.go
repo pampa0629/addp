@@ -10,6 +10,9 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
+	"github.com/twpayne/go-geom"
+	"github.com/twpayne/go-geom/encoding/ewkb"
 )
 
 func TestIntegrationOracleCatalogAndRead(t *testing.T) {
@@ -105,6 +108,184 @@ func TestIntegrationOracleCatalogAndRead(t *testing.T) {
 	}
 	if len(result.Rows) != 1 || result.Rows[0]["ORDER_NO"] != "ORD-1001" {
 		t.Fatalf("ExecuteSQL() rows = %#v", result.Rows)
+	}
+}
+
+func TestIntegrationOracleSpatialFactsAndRead(t *testing.T) {
+	if os.Getenv("ADDP_ORACLE_SPATIAL_INTEGRATION") != "1" {
+		t.Skip("set ADDP_ORACLE_SPATIAL_INTEGRATION=1 to run Oracle Spatial integration test")
+	}
+
+	connInfo := oracleIntegrationConnInfo(t)
+	p := &OraclePlugin{}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	root := plugin.CatalogRootPath(p.CatalogModel(), 92001)
+	schemas, err := p.ListChildren(ctx, connInfo, root, plugin.ListOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	businessSchema := findOracleCatalogEntry(schemas, strings.ToUpper(oracleIntegrationEnv("ADDP_TEST_ORACLE_USER", "ORACLE_APP_USER", "business")))
+	if businessSchema == nil {
+		t.Fatalf("business schema not found in %#v", oracleCatalogEntryNames(schemas))
+	}
+	items, err := p.ListChildren(ctx, connInfo, businessSchema.Path, plugin.ListOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, internalTableName := range oracleSpatialSecondaryTableNames(t, connInfo) {
+		if internalTable := findOracleCatalogEntry(items, internalTableName); internalTable != nil {
+			t.Fatalf("Oracle domain-index secondary table %q must be filtered: %#v", internalTableName, oracleCatalogEntryNames(items))
+		}
+	}
+	locations := findOracleCatalogEntry(items, "CUSTOMER_LOCATIONS")
+	if locations == nil {
+		t.Fatalf("CUSTOMER_LOCATIONS not found in %#v", oracleCatalogEntryNames(items))
+	}
+	facts, err := p.DescribeCatalogFacts(ctx, connInfo, locations.Path, plugin.CatalogFactsOptions{
+		IncludeSpatialFacts: true,
+		IncludeIndexes:      true,
+	})
+	if err != nil {
+		t.Fatalf("DescribeCatalogFacts(CUSTOMER_LOCATIONS) error = %v", err)
+	}
+	assertOracleIntegrationField(t, facts.Table.Fields, "SHAPE", datatype.FieldTypeGeometry, false)
+	if facts.Spatial == nil || facts.Spatial.PrimaryGeometryName() != "SHAPE" || facts.Spatial.PrimaryGeometryType() != "Point" || facts.Spatial.PrimarySRIDValue() != 4326 {
+		t.Fatalf("Oracle spatial facts = %#v", facts.Spatial)
+	}
+	if facts.Spatial.HasSpatialIndex == nil || !*facts.Spatial.HasSpatialIndex || !strings.EqualFold(facts.Spatial.IndexName, "CUSTOMER_LOCATIONS_SHAPE_SIDX") {
+		t.Fatalf("Oracle spatial index facts = %#v", facts.Spatial)
+	}
+
+	batch, err := p.ReadBatch(ctx, connInfo, locations.Path, plugin.BatchReadOptions{
+		Limit: 10,
+		Hints: map[string]interface{}{plugin.TableReadHintGeometryEncoding: string(format.GeometryEncodingEWKB)},
+	})
+	if err != nil {
+		t.Fatalf("ReadBatch(CUSTOMER_LOCATIONS) error = %v", err)
+	}
+	if len(batch.Rows) != 2 || batch.Spatial == nil || batch.Spatial.PrimarySRIDValue() != 4326 {
+		t.Fatalf("Oracle spatial batch = %#v", batch)
+	}
+	geometryEWKB, ok := batch.Rows[0]["SHAPE"].([]byte)
+	if !ok {
+		t.Fatalf("Oracle spatial row geometry = %#v, want []byte EWKB", batch.Rows[0]["SHAPE"])
+	}
+	geometry, err := ewkb.Unmarshal(geometryEWKB)
+	if err != nil || geometry.SRID() != 4326 {
+		t.Fatalf("Oracle spatial row geometry = %#v, error = %v", geometry, err)
+	}
+
+	feature, err := p.ReadSpatialFeature(ctx, connInfo, locations.Path, plugin.SpatialFeatureReadOptions{
+		GeometryField: "SHAPE",
+		IdentityField: "ID",
+		IdentityValue: 1,
+	})
+	if err != nil {
+		t.Fatalf("ReadSpatialFeature() error = %v", err)
+	}
+	if feature == nil || feature.SRID != 4326 || len(feature.GeometryEWKB) == 0 || len(feature.CentroidEWKB) == 0 {
+		t.Fatalf("Oracle spatial feature = %#v", feature)
+	}
+
+	spatialFeatures := findOracleCatalogEntry(items, "SPATIAL_FEATURES")
+	if spatialFeatures == nil {
+		t.Fatalf("SPATIAL_FEATURES not found in %#v", oracleCatalogEntryNames(items))
+	}
+	spatialFeatureFacts, err := p.DescribeCatalogFacts(ctx, connInfo, spatialFeatures.Path, plugin.CatalogFactsOptions{IncludeSpatialFacts: true})
+	if err != nil {
+		t.Fatalf("DescribeCatalogFacts(SPATIAL_FEATURES) error = %v", err)
+	}
+	if spatialFeatureFacts.Spatial == nil || spatialFeatureFacts.Spatial.PrimaryGeometryType() != string(datatype.GeometryTypeGeometry) || spatialFeatureFacts.Spatial.PrimarySRIDValue() != 4326 {
+		t.Fatalf("SPATIAL_FEATURES spatial facts = %#v", spatialFeatureFacts.Spatial)
+	}
+	spatialFeatureBatch, err := p.ReadBatch(ctx, connInfo, spatialFeatures.Path, plugin.BatchReadOptions{
+		Limit: 10,
+		Hints: map[string]interface{}{plugin.TableReadHintGeometryEncoding: string(format.GeometryEncodingEWKB)},
+	})
+	if err != nil {
+		t.Fatalf("ReadBatch(SPATIAL_FEATURES) error = %v", err)
+	}
+	wantGeometryTypes := map[int64]string{
+		1: "LineString",
+		2: "Polygon",
+		3: "MultiPoint",
+		4: "MultiLineString",
+		5: "MultiPolygon",
+		6: "GeometryCollection",
+	}
+	if len(spatialFeatureBatch.Rows) != len(wantGeometryTypes) {
+		t.Fatalf("SPATIAL_FEATURES row count = %d, want %d", len(spatialFeatureBatch.Rows), len(wantGeometryTypes))
+	}
+	for _, row := range spatialFeatureBatch.Rows {
+		id, ok := row["ID"].(int64)
+		if !ok {
+			t.Fatalf("SPATIAL_FEATURES ID = %#v, want int64", row["ID"])
+		}
+		encoded, ok := row["SHAPE"].([]byte)
+		if !ok {
+			t.Fatalf("SPATIAL_FEATURES SHAPE = %#v, want []byte EWKB", row["SHAPE"])
+		}
+		geometry, err := ewkb.Unmarshal(encoded)
+		if err != nil {
+			t.Fatalf("decode SPATIAL_FEATURES row %d EWKB: %v", id, err)
+		}
+		if geometry.SRID() != 4326 || oracleGeometryTypeName(geometry) != wantGeometryTypes[id] {
+			t.Fatalf("SPATIAL_FEATURES row %d geometry = %T SRID=%d, want %s SRID=4326", id, geometry, geometry.SRID(), wantGeometryTypes[id])
+		}
+	}
+}
+
+func oracleSpatialSecondaryTableNames(t *testing.T, connInfo plugin.ConnectionInfo) []string {
+	t.Helper()
+	p := &OraclePlugin{}
+	db, err := p.CreateConnectionPool(connInfo, nil)
+	if err != nil {
+		t.Fatalf("CreateConnectionPool() error = %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("db.DB() error = %v", err)
+	}
+	defer sqlDB.Close()
+
+	var names []string
+	err = db.Raw(`
+		SELECT secondary_object_name
+		  FROM all_secondary_objects
+		 WHERE index_owner = USER
+		   AND index_name IN ('CUSTOMER_LOCATIONS_SHAPE_SIDX', 'SPATIAL_FEATURES_SHAPE_SIDX')
+		   AND secondary_object_owner = USER
+		 ORDER BY secondary_object_name
+	`).Scan(&names).Error
+	if err != nil {
+		t.Fatalf("query Oracle spatial secondary objects error = %v", err)
+	}
+	if len(names) != 2 {
+		t.Fatalf("Oracle spatial secondary object count = %d, want 2: %#v", len(names), names)
+	}
+	return names
+}
+
+func oracleGeometryTypeName(geometry geom.T) string {
+	switch geometry.(type) {
+	case *geom.Point:
+		return "Point"
+	case *geom.LineString:
+		return "LineString"
+	case *geom.Polygon:
+		return "Polygon"
+	case *geom.MultiPoint:
+		return "MultiPoint"
+	case *geom.MultiLineString:
+		return "MultiLineString"
+	case *geom.MultiPolygon:
+		return "MultiPolygon"
+	case *geom.GeometryCollection:
+		return "GeometryCollection"
+	default:
+		return ""
 	}
 }
 

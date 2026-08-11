@@ -110,6 +110,7 @@ def test_verify_enforces_engine_and_input_count():
 
     asyncio.run(service.verify([resource], ResourceResolutionPolicy.query(8)))
     assert discovery.verify_calls[0][1]["engine_id"] == 8
+    assert discovery.verify_calls[0][1]["allowed_data_types"] == frozenset({"table", "graph"})
 
     with pytest.raises(ValueError, match="输入资源数量"):
         asyncio.run(service.verify([], ResourceResolutionPolicy.query(8)))

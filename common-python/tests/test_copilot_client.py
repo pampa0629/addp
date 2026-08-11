@@ -104,6 +104,48 @@ class CopilotClientTests(unittest.IsolatedAsyncioTestCase):
             await client.close()
         self.assertEqual(result["query"], "SELECT 1")
 
+    async def test_generate_query_forwards_optional_current_query(self):
+        engine_context = {
+            "id": 11,
+            "engine_type": "mongodb",
+            "capabilities": {"compute": {"query": {"supported": True, "languages": ["mql"]}}},
+        }
+
+        async def handler(request):
+            self.assertEqual(json.loads(request.content), {
+                "query": "只保留成年人",
+                "engine_id": 11,
+                "query_language": "mql",
+                "resources": [],
+                "engine_context": engine_context,
+                "current_query": '{"find":"Persons","filter":{},"limit":10}',
+            })
+            return httpx.Response(200, json={
+                "status": "success",
+                "query_language": "mql",
+                "query": '{"find":"Persons","filter":{"age":{"$gte":18}},"limit":10}',
+            })
+
+        client = CopilotClient("http://copilot", user_token="user-token")
+        await client._client.aclose()
+        client._client = httpx.AsyncClient(
+            base_url="http://copilot",
+            headers={"Authorization": "Bearer user-token"},
+            transport=httpx.MockTransport(handler),
+        )
+        try:
+            result = await client.generate_query(
+                "只保留成年人",
+                engine_id=11,
+                query_language="mql",
+                resources=[],
+                engine_context=engine_context,
+                current_query='{"find":"Persons","filter":{},"limit":10}',
+            )
+        finally:
+            await client.close()
+        self.assertEqual(result["query_language"], "mql")
+
     async def test_generate_workflow_uses_canonical_request(self):
         async def handler(request):
             self.assertEqual(request.url.path, "/api/v1/copilot/workflow/generate")

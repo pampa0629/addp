@@ -182,6 +182,7 @@
           "engine_id": {"type": "integer", "minimum": 1},
           "query_language": {"type": "string", "minLength": 1},
           "engine_context": {"type": "object"},
+          "current_query": {"type": ["string", "null"], "maxLength": 200000},
           "resources": {
             "type": "array",
             "items": {
@@ -199,7 +200,6 @@
               "required": ["role", "locator", "engine_id"],
               "additionalProperties": false
             },
-            "minItems": 1,
             "maxItems": 20
           }
         },

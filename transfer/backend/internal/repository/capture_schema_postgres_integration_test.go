@@ -83,6 +83,15 @@ func TestIntegrationPostgresCaptureProviderSchemaCleanBreak(t *testing.T) {
 		SELECT id, 12345, '__addp_cdc_schema.test', TRUE FROM ` + quotedSchema + `.capture_resources WHERE source_type = 'mysql'`).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec(`INSERT INTO ` + quotedSchema + `.capture_resources (task_id, tenant_id, generation, source_type) VALUES (11, 7, 1, 'oracle')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO ` + quotedSchema + `.oracle_capture_resources (
+		capture_resource_id, schema_history_topic_name, schema_history_topic_owned
+	)
+		SELECT id, '__addp_cdc_schema.oracle_test', TRUE FROM ` + quotedSchema + `.capture_resources WHERE source_type = 'oracle'`).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Exec(`DELETE FROM ` + quotedSchema + `.capture_resources`).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -98,5 +107,11 @@ func TestIntegrationPostgresCaptureProviderSchemaCleanBreak(t *testing.T) {
 	}
 	if childCount != 0 {
 		t.Fatalf("MySQL provider facts remaining after generation delete = %d", childCount)
+	}
+	if err := db.Raw(`SELECT COUNT(*) FROM ` + quotedSchema + `.oracle_capture_resources`).Scan(&childCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if childCount != 0 {
+		t.Fatalf("Oracle provider facts remaining after generation delete = %d", childCount)
 	}
 }

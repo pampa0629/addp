@@ -108,11 +108,13 @@
             </el-button>
           </el-tooltip>
         </div>
+        <el-empty v-if="catalogEnginesLoading" :description="t('develop.query.loadingFederatedCatalog')" :image-size="64" />
         <ResourceTreePicker
-          v-if="selectedEngineId"
+          v-else-if="catalogTreeEngineIds.length"
           v-model="catalogSelection"
           class="catalog-tree"
-          :engine-id="selectedEngineId"
+          :engine-id="catalogTreeEngineValue"
+          :engine-multiple="catalogTreeEngineMultiple"
           :initial-locator="initialCatalogLocator"
           :show-engine-selector="false"
           :show-selection-summary="false"
@@ -126,7 +128,7 @@
           @select="rememberCatalogSelection"
           @node-dblclick="insertCatalogItemAtCursor"
         />
-        <el-empty v-else :description="t('develop.query.selectDataSourceFirst')" :image-size="64" />
+        <el-empty v-else :description="catalogEmptyDescription" :image-size="64" />
       </aside>
 
       <div
@@ -374,10 +376,12 @@
           {{ t('develop.query.generateQueryTemplate') }}
         </el-button>
       </div>
+      <el-empty v-if="catalogEnginesLoading" :description="t('develop.query.loadingFederatedCatalog')" :image-size="64" />
       <ResourceTreePicker
-        v-if="selectedEngineId"
+        v-else-if="catalogTreeEngineIds.length"
         v-model="catalogSelection"
-        :engine-id="selectedEngineId"
+        :engine-id="catalogTreeEngineValue"
+        :engine-multiple="catalogTreeEngineMultiple"
         :initial-locator="initialCatalogLocator"
         :show-engine-selector="false"
         :show-selection-summary="false"
@@ -391,6 +395,7 @@
         @select="rememberCatalogSelection"
         @node-dblclick="insertCatalogItemAtCursor"
       />
+      <el-empty v-else :description="catalogEmptyDescription" :image-size="64" />
     </el-drawer>
 
     <el-dialog
@@ -549,9 +554,9 @@
             @keydown.ctrl.enter="generateQueryWithCopilot"
             @keydown.meta.enter="generateQueryWithCopilot"
           />
-          <div v-if="selectedQueryResourceLabel" class="query-ai-selected-resource">
-            <span>{{ t('develop.query.selectedResource') }}</span>
-            <strong>{{ selectedQueryResourceLabel }}</strong>
+          <div v-if="selectedQueryContext" class="query-ai-selected-resource">
+            <span>{{ t('develop.query.selectedQueryContext') }}</span>
+            <strong>{{ selectedQueryContext }}</strong>
           </div>
           <div class="query-ai-panel-footer">
             <el-button
@@ -612,6 +617,7 @@ import {
   getResourceItemByCatalogPath,
   getResourceTreeNode,
   formatLocatorDisplayPath,
+  listResourceTreeEngines,
   parseLocator,
   useResizable
 } from '@common-ui'
@@ -641,6 +647,8 @@ import {
   extractQueryParameterReferences,
   parameterizeSelection,
   diagnoseQuery,
+  canUseQueryContainerContext,
+  isQueryInputResource,
   parseSQLSources
 } from '@/utils/queryWorkbench.mjs'
 import { resolveQueryGenerationResult } from '@/utils/queryGenerationResult.mjs'
@@ -679,6 +687,9 @@ const savingForEngineSwitch = ref(false)
 const saveForEngineSwitch = ref(false)
 const resultViewMode = ref('table')
 const catalogSelection = ref(null)
+const catalogSourceEngines = ref([])
+const catalogEngineIds = ref([])
+const catalogEnginesLoading = ref(false)
 const targetLocator = ref('')
 const initialCatalogLocator = ref('')
 const catalogCompletions = ref([])
@@ -710,6 +721,7 @@ let fieldRequestSequence = 0
 let fieldSourcesRequestSequence = 0
 let fieldSourcesDebounce = null
 let catalogRequestSequence = 0
+let catalogEngineRequestSequence = 0
 let mediaQuery = null
 let compactMediaListener = null
 let applyingQueryTaskRoute = false
@@ -759,18 +771,31 @@ const queryResourceSelectionComplete = computed(() => hasSelectedResourceForEver
   queryResourceCandidates.value,
   selectedQueryResourceCandidatesByRole.value
 ))
-const selectedQueryResourceLabel = computed(() => {
+const selectedQueryContext = computed(() => {
   const selection = catalogSelection.value
-  if (selection?.display?.path) return selection.display.path
   const locator = selection?.identity?.locator || targetLocator.value
   if (!locator) return ''
   try {
-    return parseLocator(locator).path?.join('.') || locator
+    const parsed = parseLocator(locator)
+    return selection?.display?.path || parsed.path?.join('.') || locator
   } catch {
-    return locator
+    return ''
   }
 })
 const selectedCapability = computed(() => queryCapabilityForEngine(selectedTarget.value?.engine))
+const federatedQuery = computed(() => Boolean(selectedCapability.value.federation?.supported))
+const catalogTreeEngineIds = computed(() => federatedQuery.value
+  ? catalogEngineIds.value
+  : (selectedEngineId.value ? [selectedEngineId.value] : []))
+const catalogTreeEngineValue = computed(() => federatedQuery.value
+  ? catalogTreeEngineIds.value
+  : (selectedEngineId.value || null))
+const catalogTreeEngineMultiple = computed(() => federatedQuery.value)
+const catalogEmptyDescription = computed(() => {
+  if (!selectedEngineId.value) return t('develop.query.selectDataSourceFirst')
+  if (federatedQuery.value) return t('develop.query.noFederatedSourceEngines')
+  return t('develop.query.selectDataSourceFirst')
+})
 const queryParametersSupported = computed(() => Boolean(
   selectedCapability.value.parameters?.supported &&
   selectedCapability.value.parameters.languages.includes(currentQueryLanguage.value)
@@ -844,6 +869,43 @@ const loadEngines = async () => {
   } catch (error) {
     engines.value = []
     ElMessage.error(t('develop.query.loadEnginesFailed') + (error.response?.data?.error || error.message))
+  }
+}
+
+const refreshCatalogEngines = async () => {
+  const requestSequence = ++catalogEngineRequestSequence
+  const engineID = selectedEngineId.value
+  if (!engineID) {
+    catalogSourceEngines.value = []
+    catalogEngineIds.value = []
+    catalogEnginesLoading.value = false
+    return
+  }
+  if (!federatedQuery.value) {
+    catalogSourceEngines.value = []
+    catalogEngineIds.value = [engineID]
+    catalogEnginesLoading.value = false
+    return
+  }
+  catalogSourceEngines.value = []
+  catalogEngineIds.value = []
+  catalogEnginesLoading.value = true
+  try {
+    const capability = selectedCapability.value.federation
+    const supportedTypes = new Set(capability.sourceEngineTypes)
+    const sources = await listResourceTreeEngines('/api/v1/meta')
+    if (requestSequence !== catalogEngineRequestSequence || engineID !== selectedEngineId.value) return
+    catalogSourceEngines.value = sources
+      .filter(source => Number(source.id) !== engineID && supportedTypes.has(String(source.engine_type || '').toLowerCase()))
+    catalogEngineIds.value = catalogSourceEngines.value.map(source => Number(source.id)).filter(id => Number.isFinite(id) && id > 0)
+  } catch (error) {
+    if (requestSequence === catalogEngineRequestSequence) {
+      catalogSourceEngines.value = []
+      catalogEngineIds.value = []
+      ElMessage.error(t('develop.query.loadFederatedCatalogFailed') + (error.response?.data?.error || error.message))
+    }
+  } finally {
+    if (requestSequence === catalogEngineRequestSequence) catalogEnginesLoading.value = false
   }
 }
 
@@ -1342,6 +1404,30 @@ const fieldNamesFromMetadata = fields => fields
   .filter(Boolean)
 
 const fieldSourceFieldCache = new Map()
+const catalogSourceEngineForId = engineID => catalogSourceEngines.value.find(engine => Number(engine.id) === Number(engineID)) || null
+const federatedIdentifier = value => {
+  let result = ''
+  for (const char of String(value || '')) {
+    if ((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+      (char >= '0' && char <= '9') || char === '_') {
+      result += char
+    } else {
+      result += '_'
+    }
+  }
+  if (!result) return 'engine'
+  return /^[0-9]/.test(result) ? `_${result}` : result
+}
+
+const sourceEngineForSQLSource = source => {
+  if (!federatedQuery.value) return selectedEngineId.value
+  const sourceName = source?.path?.[0] || ''
+  const sourceEngine = catalogSourceEngines.value.find(engine => (
+    String(engine.name || '') === sourceName || federatedIdentifier(engine.name) === sourceName
+  ))
+  return sourceEngine ? Number(sourceEngine.id) : null
+}
+
 const loadFieldsForItem = async itemId => {
   const key = String(itemId || '')
   if (!key) return []
@@ -1358,8 +1444,13 @@ const selectedItemIdForSource = source => {
   if (!locator) return null
   try {
     const parsed = parseLocator(locator)
+    const sourceEngineID = sourceEngineForSQLSource(source)
+    const sourcePath = federatedQuery.value ? source.path.slice(1) : source.path
     const selectedName = parsed.path.join('.').toLocaleLowerCase()
-    if (selectedName === source.name.toLocaleLowerCase()) return selection?.identity?.item_id || parsed.itemId || null
+    if (Number(parsed.engineId) === Number(sourceEngineID) &&
+      selectedName === sourcePath.join('.').toLocaleLowerCase()) {
+      return selection?.identity?.item_id || parsed.itemId || null
+    }
   } catch {
     return null
   }
@@ -1382,11 +1473,13 @@ const loadSQLFieldSources = async () => {
       return { name: source.name, alias: source.alias, fields: source.fields, known: source.fields.length > 0 }
     }
     try {
+      const sourceEngineID = sourceEngineForSQLSource(source)
+      if (!sourceEngineID) return { name: source.name, alias: source.alias, fields: [], known: false }
       let itemId = selectedItemIdForSource(source)
       if (!itemId) {
         const item = await getResourceItemByCatalogPath('/api/v1/meta', {
-          engine_id: selectedEngineId.value,
-          catalog_path: source.path.join('/')
+          engine_id: sourceEngineID,
+          catalog_path: (federatedQuery.value ? source.path.slice(1) : source.path).join('/')
         })
         itemId = item?.id || item?.item_id
       }
@@ -1429,6 +1522,7 @@ const queryTextForCatalogSegment = (selection) => {
   } catch {
     return ''
   }
+  if (federatedQuery.value) return queryTextForCatalogSelection(selection)
   const segment = parsed.path?.at(-1)
   if (!segment) return ''
   const engineType = String(selection.display?.engine_type || selectedTarget.value?.engine?.engine_type || '').toLowerCase()
@@ -1451,7 +1545,7 @@ const rememberCatalogNode = async node => {
   try {
     const result = await getResourceTreeNode('/api/v1/meta', parsed.engineId, locator)
     if (requestSequence !== catalogRequestSequence) return
-    const engine = selectedTarget.value?.engine
+    const engine = catalogSourceEngineForId(parsed.engineId) || selectedTarget.value?.engine
     const engineType = String(engine?.engine_type || '').toLowerCase()
     const children = (result?.children || [])
       .map(child => {
@@ -1463,12 +1557,13 @@ const rememberCatalogNode = async node => {
           return null
         }
         if (!isQueryCatalogSelectionAllowed(child, { engine, locator: childParsed })) return null
+        const childEngine = catalogSourceEngineForId(childParsed.engineId) || engine
         return {
           label: child.label || childParsed.path?.at(-1) || childLocator,
-          insertText: formatLocatorDisplayPath(childLocator, { engineType }),
+          insertText: formatLocatorDisplayPath(childLocator, { engineType: String(childEngine?.engine_type || engineType).toLowerCase() }),
           contextInsertText: queryTextForCatalogSegment({
             identity: { locator: childLocator },
-            display: { engine_type: engineType },
+            display: { engine_type: childEngine?.engine_type, engine_name: childEngine?.name },
             resource: { type: child.type }
           }),
           detail: child.type || '',
@@ -1511,6 +1606,12 @@ const queryTextForCatalogSelection = (selection) => {
   }
   const segments = Array.isArray(parsed.path) ? parsed.path.filter(Boolean) : []
   if (segments.length === 0) return ''
+  if (federatedQuery.value) {
+    const sourceEngine = catalogSourceEngineForId(parsed.engineId) || selection.raw?.engine
+    const sourceName = sourceEngine?.name || selection.display?.engine_name
+    if (!sourceName) return ''
+    return [federatedIdentifier(sourceName), ...segments.map(federatedIdentifier)].join('.')
+  }
   const engineType = String(selectedTarget.value?.engine?.engine_type || '').toLowerCase()
   if (engineType === 'mongodb' || selection.resource?.type === 'collection') {
     return JSON.stringify(segments.at(-1))
@@ -1531,7 +1632,7 @@ const insertCatalogItemAtCursor = (selection) => {
 
 const generateQueryTemplate = async () => {
   const locator = catalogSelection.value?.identity?.locator || ''
-  if (!locator) {
+  if (!locator && !federatedQuery.value) {
     ElMessage.warning(t('develop.query.selectResourceForQueryTemplate'))
     return
   }
@@ -1557,12 +1658,12 @@ const collectSelectedQueryResources = () => {
   } catch {
     return []
   }
-  if (parsed.engineId !== selectedEngineId.value) return []
+  if (!isQueryInputResource(parsed)) return []
   const name = catalogSelection.value?.display?.label || parsed.path?.at(-1) || locator
   return [resourceFact({
     role: name,
     name,
-    engine_id: selectedEngineId.value,
+    engine_id: parsed.engineId,
     locator
   })]
 }
@@ -1577,7 +1678,25 @@ const generateQueryWithCopilot = async () => {
     ElMessage.warning(t('develop.query.selectDataSourceFirst'))
     return
   }
-  await submitQueryGeneration(collectSelectedQueryResources())
+  const resources = collectSelectedQueryResources()
+  const selectedLocator = catalogSelection.value?.identity?.locator || targetLocator.value || ''
+  if (selectedLocator && resources.length === 0) {
+    let parsedLocator = null
+    try {
+      parsedLocator = parseLocator(selectedLocator)
+    } catch {
+      parsedLocator = null
+    }
+    if (!canUseQueryContainerContext({
+      language: currentQueryLanguage.value,
+      query: queryContent.value,
+      parsedLocator
+    })) {
+      ElMessage.warning(t('develop.query.selectQueryResourceOrDeclareCollection'))
+      return
+    }
+  }
+  await submitQueryGeneration(resources)
 }
 
 const submitQueryGeneration = async resources => {
@@ -1587,7 +1706,8 @@ const submitQueryGeneration = async resources => {
       query: queryAiPrompt.value.trim(),
       engine_id: selectedEngineId.value,
       query_language: currentQueryLanguage.value,
-      resources
+      resources,
+      current_query: queryContent.value.trim() || undefined
     })
     const resolved = resolveQueryGenerationResult(result)
     if (resolved.clarificationKey) {
@@ -1880,9 +2000,14 @@ watch([selectedEngineId, sqlSourceSignature, targetLocator], () => {
   }, 250)
 })
 
+watch([selectedEngineId, federatedQuery], () => {
+  refreshCatalogEngines()
+})
+
 onBeforeUnmount(() => {
   executionRequestSequence += 1
   sampleRequests.invalidate()
+  catalogEngineRequestSequence += 1
   fieldSourcesRequestSequence += 1
   if (fieldSourcesDebounce) window.clearTimeout(fieldSourcesDebounce)
   window.removeEventListener('beforeunload', handleBeforeUnload)

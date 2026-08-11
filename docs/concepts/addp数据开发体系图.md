@@ -70,7 +70,7 @@ graph TB
 
 ```mermaid
 graph LR
-    User[用户] --> Catalog[Meta 资源树<br/>当前 Engine Catalog]
+    User[用户] --> Catalog[Meta 资源树<br/>Native Engine 或联邦 Source Engines]
     Catalog --> Editor[查询工作台<br/>Monaco Editor]
     Editor --> CreateExecution[POST /develop/executions<br/>task_type=query]
     CreateExecution --> Unified[common.task_executions<br/>source_task_id 为空]
@@ -93,7 +93,7 @@ graph LR
 
 ### 查询开发特性
 
-- **Catalog 浏览**：左侧直接消费 Meta resource-tree，展示当前 Engine 的原生路径，不新增 Develop 私有 Catalog API。
+- **Catalog 浏览**：左侧直接消费 Meta resource-tree，不新增 Develop 私有 Catalog API。native query engine 展示自身原生路径；federated query runtime 不拥有 Catalog，工作台按 `federation.source_engine_types` 展示当前租户可参与查询的 Source Engine。
 - **能力驱动编辑**：语言、高亮、格式化可用性和图结果入口来自 Engine query capability。
 - **选区执行**：优先执行 Monaco 当前选区，没有选区时执行全文。
 - **统一执行**：即时查询和已保存任务都创建 `common.task_executions`；即时查询使用 `task_type=query`、`source_task_id=null`。
@@ -169,7 +169,8 @@ graph TB
 Develop 的 `query` 任务只有一条引擎绑定路径：`content.query_type` 保存真实查询语言，`execution_config.engine_id` 指向 System 中具备 `compute.query.supported=true` 的 Runtime Engine Instance。
 
 - PostgreSQL、MySQL 等 native query engine 同时是 Runtime Engine 和唯一 Source Engine。
-- DuckDB 是 System 中注册的共享联邦查询 Runtime Engine。SQL 引用的 PostgreSQL、MySQL、MinIO/S3 等保持独立 Source Engine 身份，并逐个进入本次只读 Execution Authorization。
+- DuckDB 是 System 中注册的共享联邦查询 Runtime Engine，不属于租户注册存储引擎，也不进入 Meta resource-tree。工作台选择 DuckDB 后，执行目标仍绑定 DuckDB Runtime，左侧 Catalog 则从当前租户 Meta Engine 列表中按 `federation.source_engine_types` 过滤 PostgreSQL、MySQL、MinIO/S3 等 Source Engine。
+- Catalog selection 的 ResourceLocator 保留真实 Source Engine ID；插入联邦 SQL 时以 Source Engine 名称的规范标识符作为首段。SQL 引用的 Source Engine 逐个进入本次只读 Execution Authorization，不能用 DuckDB Runtime ID 替换。
 - `/develop/engines` 按 capability 返回包括 DuckDB 在内的全部真实 Query Runtime；Develop 不再提供 `/develop/query-modes`、`query_mode=duckdb` 或 DuckDB 专用执行路由。
 - DuckDB 样例由 Develop 从当前租户真实 Catalog/Meta 构造候选，逐个签发只读授权并调用 DuckDB Runtime 验证；没有返回数据的候选不能作为样例，也不允许退回 `SELECT 1`。
 

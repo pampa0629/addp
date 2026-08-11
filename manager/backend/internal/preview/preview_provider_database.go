@@ -191,7 +191,7 @@ func (p *DatabaseTablePreviewProvider) queryData(
 	columns []datatype.FieldInfo,
 	dataScope dataprofile.DataScope,
 ) ([]map[string]interface{}, error) {
-	if batchReader == nil {
+	if sessionReader != nil && (batchReader == nil || strings.EqualFold(engineType, "oracle")) {
 		if req := strings.TrimSpace(string(dataScope.Kind)); req != "" && req != "all" {
 			return nil, fmt.Errorf("table preview conditions are not supported by the resolved table provider")
 		}
@@ -205,6 +205,9 @@ func (p *DatabaseTablePreviewProvider) queryData(
 		}
 		defer session.Close(ctx)
 		return readSessionPage(ctx, session, offset, limit)
+	}
+	if batchReader == nil {
+		return nil, fmt.Errorf("table batch reader is required when table read session is unavailable")
 	}
 	dialect := commonquery.ForEngine(engineType)
 	whereClause, args, err := profilefilter.SQL(dataScope, dialect, "")
@@ -323,7 +326,7 @@ func databasePreviewSelectExpr(dialect commonquery.Dialect, columns []datatype.F
 	for _, col := range columns {
 		nativeType := databaseFieldNativeType(col)
 		columnRef := databasePreviewColumnRef(dialect, tableAlias, col.Name)
-		if spatial.IsPostGISSpatialType(nativeType) {
+		if spatial.IsPostGISSpatialType(nativeType) || isOracleSpatialType(nativeType) {
 			selectColumns = append(selectColumns, fmt.Sprintf("%s AS %s",
 				databasePreviewWKTExpr(columnRef, nativeType),
 				dialect.QuoteIdentifier(col.Name),
@@ -430,7 +433,15 @@ func databasePreviewWKTExpr(columnRef, dataType string) string {
 	if spatial.IsPostGISGeographyType(dataType) {
 		return fmt.Sprintf("ST_AsText(%s::geometry)", columnRef)
 	}
+	if isOracleSpatialType(dataType) {
+		return fmt.Sprintf("SDO_UTIL.TO_WKTGEOMETRY(%s)", columnRef)
+	}
 	return fmt.Sprintf("ST_AsText(%s)", columnRef)
+}
+
+func isOracleSpatialType(dataType string) bool {
+	normalized := strings.ToUpper(strings.TrimSpace(dataType))
+	return normalized == "MDSYS.SDO_GEOMETRY" || normalized == "SDO_GEOMETRY"
 }
 
 func databaseGeometryColumns(spatialInfo *datatype.SpatialInfo, columns []datatype.FieldInfo) []string {

@@ -66,9 +66,11 @@ Develop 作为一个 TaskProvider 注册到 System，声明 `query`、`workflow`
 
 Develop 任务编辑器遵守 `docs/spec/addp前端路由与可恢复状态规范.md`。Console URL 必须能够恢复当前 `dev_tasks.id`，canonical 路由固定为 `/develop/{sql|workflow|notebook}?action={create|edit}&id={id}`：创建动作不带 `id`，编辑动作只使用 `id`。`/develop/tasks` 只表示任务列表，`taskId` 旧参数不得保留。
 
-查询工作台固定使用左侧 Meta Catalog、右侧编辑器与结果上下分栏。Catalog 直接消费 Meta resource-tree，只展示当前查询 Engine 的原生路径；查询语言、默认语言和结果类型从 `capabilities.compute.query` 读取。即时查询只调用 `POST /api/v1/develop/executions` 创建 `task_type=query`、`source_task_id=null` 的 execution，再按 execution ID 回查结果；不保留 `/develop/execute`。查询任务统一在 `/develop/tasks` 管理，不保留 `/develop/sql-tasks`。
+查询工作台固定使用左侧 Meta Catalog、右侧编辑器与结果上下分栏。Catalog 直接消费 Meta resource-tree，不新增 Develop 私有 Catalog API；native query engine 同时是 Runtime Engine 与 Source Engine，因此只展示当前 Engine 的原生路径；声明 `compute.query.federation.supported=true` 的共享 Runtime 不拥有 Catalog，工作台必须按 `federation.source_engine_types` 过滤并展示当前 Tenant 的 Source Engine 资源树。查询语言、默认语言和结果类型从 `capabilities.compute.query` 读取。即时查询只调用 `POST /api/v1/develop/executions` 创建 `task_type=query`、`source_task_id=null` 的 execution，再按 execution ID 回查结果；不保留 `/develop/execute`。查询任务统一在 `/develop/tasks` 管理，不保留 `/develop/sql-tasks`。
 
-查询工作台 Copilot 只在当前选中的 Query Engine 范围内生成候选查询语言。前端必须提交当前 `engine_id` 和 capability 声明的 `query_language`；已有 Catalog 选择时直接提交其 locator，未选择时 Copilot 只能通过带该 `engine_id` 的共享 `data.search` 粗筛，再通过 `resource.ancestors.get` 与 `data.preview` 校验候选。同一输入角色存在多个候选时由用户确认一个。Copilot 不得扫描其他工作台引擎、拼接 locator、假定字段名或直接执行生成结果；候选文本回填编辑器后仍走同一 preflight 和 execution 主路径。
+查询工作台 Copilot 只在当前选中的 Query Runtime 范围内生成候选查询语言。前端必须提交当前 Runtime `engine_id` 和 capability 声明的 `query_language`；已有 Catalog 选择时直接提交其 locator（联邦 Runtime 下 locator 保留 Source Engine ID），未选择时 Copilot 只能通过带该 Runtime `engine_id` 的共享 `data.search` 粗筛，再通过 `resource.ancestors.get` 与 `data.preview` 校验候选。同一输入角色存在多个候选时由用户确认一个。Copilot 不得扫描其他工作台 Runtime、拼接 locator、假定字段名或直接执行生成结果；候选文本回填编辑器后仍走同一 preflight 和 execution 主路径。
+
+Copilot `resources[]` 只允许提交具有 `item_id`、可由 Owner preview 返回平台 `data_type` 和字段事实的具体数据项。MongoDB `database` 等容器节点可以作为查询执行范围，但不是 AI 输入资源，不能提交到 `resources[]`，也不能把 Owner 对容器的正常 preview 响应误报为上游故障。MongoDB 查询选中 database 后，只要当前合法 MQL command object 已通过 `find/aggregate/count/distinct` 明确主 collection，前端就提交 `resources=[]` 和 `current_query` 继续生成；数据库范围仍只保存在 Develop 的 `target_locator` 中。当前 MQL 未明确 collection 时，才要求用户选择具体 collection 或先在命令中明确 collection。
 
 执行列表 `/develop/executions` 的稳定筛选和分页状态使用 `dev_type`、`status`、`trigger_type`、`source_task_id`、`start_date`、`end_date`、`page`、`page_size` query；默认页码和默认每页数量从 URL 省略，未知或无效参数必须通过 `replace` 清理。
 
@@ -92,6 +94,7 @@ TaskProvider、执行状态回查和 Asset 发现属于服务间接口，统一�
 - Notebook Copilot 生成结果只允许通过同源 JupyterLab bridge 插入当前 Session 的新代码单元。Bridge 必须校验父窗口来源和 Session ID，不得执行单元、覆盖 `.ipynb` 文件或操作其他 Session。
 - 算子工作流的存储 Engine 绑定来自 `content` 中的标准 ResourceLocator（主要位于 `workflow_definition`），不是 `execution_config.engine_id` 的工作流运行时绑定。Engine 删除后任务定义和旧 Locator 保留；用户在 Develop 显式选择新存储 Engine 后，Develop 原子改写该旧 Engine 的全部 Locator，保留 path/type 并清除旧 Meta `node_id/item_id`。System 不跨模块回写任务，也不按名称自动匹配新旧 Engine。
 - DuckDB 联邦查询先从 SQL 中解析已注册的 Source Engine 引用，为本次 execution 一次性签发只读 Execution Authorization，再由独立 DuckDB Runtime 按 Engine 逐个消费执行期连接；当前联邦查询必须至少引用一个 Source Engine。普通引擎的可执行样例查询也必须先签发并消费单 Engine 的只读 Execution Authorization，再实时发现真实表。两条路径都不得用 `tenant.develop_runtime` 的通用 Engine 明文读取权限替代。
+- DuckDB 查询工作台的 `execution_config.engine_id` 始终保存平台共享 Runtime ID，Catalog selection 的 ResourceLocator 与 Copilot resource fact 始终保存真实 Source Engine ID。联邦 SQL 使用 Source Engine 名称的规范标识符作为首段；不得向 Meta 请求 DuckDB Runtime 的 resource-tree，也不得把 Source Engine ID 改写为 Runtime ID。
 - 查询样例只允许来自当前 Engine Instance 的实时 Catalog 且必须指向确认有数据的 leaf；DuckDB 对象表还必须通过只读 Execution Authorization 取得执行期连接并真实读取成功，不能仅凭 Meta 条目存在就返回。Catalog 失败、对象已失效、无数据或无法构造查询时返回明确错误，前后端都不得回退到 `SELECT 1`、版本查询或占位集合名。
 - 查询任务必须在 `content.target_locator` 保存所选资源的标准 ResourceLocator；模板生成、即时执行、异步任务重载都必须将其解析为同一 `CatalogPath`。MongoDB Engine Instance 只绑定服务端点与认证主体，`connection_info.database` 仅作为工作台初始选择，数据库和集合授权以 MongoDB 用户 roles 为准。
 - 查询编辑器必须把样例返回的真实语言（如 `sql`、`mql`、`cypher`）原样带入执行和任务定义。非 SQL 查询不得进入 SQL 效果分类器；各 Query Runtime 必须在 `QueryOptions.ReadOnly=true` 时建立等价只读边界。

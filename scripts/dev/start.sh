@@ -1866,9 +1866,12 @@ pointcloud_workflow_source_fingerprint() {
           engines/pointcloud-workflow/api_server.py \
           engines/pointcloud-workflow/operators.py \
           common-python/pyproject.toml
-        find common-python/addp_common -type f \
-          ! -path '*/__pycache__/*' \
-          ! -name '*.pyc'
+        printf '%s\n' \
+          common-python/README.md \
+          common-python/addp_common/__init__.py \
+          common-python/addp_common/workflow_access.py
+        find common-python/addp_common/client common-python/addp_common/workflow_runtime \
+          -type f ! -path '*/__pycache__/*' ! -name '*.pyc'
       } | LC_ALL=C sort
     )
   } | git hash-object --stdin

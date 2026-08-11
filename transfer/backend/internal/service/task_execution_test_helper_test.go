@@ -7,9 +7,13 @@ import (
 	"gorm.io/gorm"
 )
 
-func addTaskExecutionAuthorizationColumns(t *testing.T, db *gorm.DB) {
+func addTaskExecutionModelColumns(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	for _, field := range []string{
+		"LeaseOwner",
+		"LeaseExpiresAt",
+		"Attempt",
+		"MaxAttempts",
 		"ActorPrincipalID",
 		"ActorTenantMembershipID",
 		"IssuedAuthorizationVersion",

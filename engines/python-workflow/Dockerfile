@@ -17,11 +17,28 @@ WORKDIR /app
 
 # Copy requirements and install Python dependencies
 COPY engines/python-workflow/requirements.txt .
-COPY common-python/ /tmp/common-python/
+COPY common-python/pyproject.toml /tmp/addp-common-pyproject.toml
+RUN python - <<'PY'
+import tomllib
+from pathlib import Path
+
+project = tomllib.loads(Path("/tmp/addp-common-pyproject.toml").read_text())
+Path("/tmp/addp-common-requirements.txt").write_text(
+    "\n".join(project["project"]["dependencies"]) + "\n"
+)
+PY
 RUN GDAL_VERSION="$(gdal-config --version)" \
+    && pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir "GDAL==${GDAL_VERSION}" \
-    && pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir /tmp/common-python
+    && pip install --no-cache-dir \
+        -r requirements.txt \
+        -r /tmp/addp-common-requirements.txt
+
+COPY common-python/README.md /tmp/common-python/README.md
+COPY common-python/pyproject.toml /tmp/common-python/pyproject.toml
+COPY common-python/addp_common/ /tmp/common-python/addp_common/
+RUN pip install --no-cache-dir --no-build-isolation --no-deps /tmp/common-python \
+    && rm -rf /tmp/common-python
 
 # Copy application code
 COPY engines/python-workflow/operators/ ./operators/

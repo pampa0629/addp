@@ -12,6 +12,9 @@ import (
 	oraclemapping "github.com/addp/common/format/mappers/oracle"
 	commonquery "github.com/addp/common/query"
 	"github.com/addp/common/resume"
+	"github.com/twpayne/go-geom"
+	"github.com/twpayne/go-geom/encoding/ewkb"
+	"github.com/twpayne/go-geom/encoding/wkb"
 )
 
 func (p *OraclePlugin) OpenTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
@@ -46,7 +49,7 @@ func (p *OraclePlugin) openTableReadSession(ctx context.Context, connInfo plugin
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 
-	query, fields, err := p.oracleReadQuery(ctx, db, path, opts, limit, offset)
+	query, fields, spatialInfo, encoding, err := p.oracleReadQuery(ctx, db, path, opts, limit, offset)
 	if err != nil {
 		_ = db.Close()
 		return nil, err
@@ -76,48 +79,74 @@ func (p *OraclePlugin) openTableReadSession(ctx context.Context, connInfo plugin
 			return nil, err
 		}
 	}
-	return &oracleTableReadSession{db: db, tx: tx, rows: rows, fields: fields, offset: offset}, nil
+	return &oracleTableReadSession{db: db, tx: tx, rows: rows, fields: fields, spatialInfo: spatialInfo, geometryEncoding: encoding, offset: offset}, nil
 }
 
-func (p *OraclePlugin) oracleReadQuery(ctx context.Context, db *sql.DB, path plugin.CatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64) (string, []datatype.FieldInfo, error) {
+func (p *OraclePlugin) oracleReadQuery(ctx context.Context, db *sql.DB, path plugin.CatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64) (string, []datatype.FieldInfo, *datatype.SpatialInfo, format.GeometryEncoding, error) {
+	encoding := oracleGeometryEncodingHint(opts.Hints)
+	encodingHint := ""
+	if opts.Hints != nil && opts.Hints[plugin.TableReadHintGeometryEncoding] != nil {
+		encodingHint = strings.ToLower(strings.TrimSpace(fmt.Sprint(opts.Hints[plugin.TableReadHintGeometryEncoding])))
+	}
+	if encodingHint != "" && encoding == "" {
+		return "", nil, nil, "", fmt.Errorf("unsupported Oracle geometry read encoding %q", encodingHint)
+	}
 	query := strings.TrimSpace(opts.Query)
 	if query != "" {
+		if encoding != "" {
+			return "", nil, nil, "", fmt.Errorf("Oracle spatial row encoding requires a catalog table read, not custom SQL")
+		}
 		if limit > 0 {
 			query = commonquery.ForEngine(p.Type()).PaginateQuerySQL(query, limit, int(offset))
 		}
-		return query, nil, nil
+		return query, nil, nil, "", nil
 	}
 	segments := plugin.CatalogPathWithoutRoot(path).Segments
 	if len(segments) < 2 {
-		return "", nil, fmt.Errorf("Oracle table read requires a schema/table path or query")
+		return "", nil, nil, "", fmt.Errorf("Oracle table read requires a schema/table path or query")
 	}
 	schema := segments[len(segments)-2].Name
 	table := segments[len(segments)-1].Name
 	if p.isSystemSchema(schema) {
-		return "", nil, plugin.WrapCatalogError(plugin.CatalogErrorUnsupported, fmt.Errorf("Oracle system schema %q is not exposed", schema))
+		return "", nil, nil, "", plugin.WrapCatalogError(plugin.CatalogErrorUnsupported, fmt.Errorf("Oracle system schema %q is not exposed", schema))
 	}
 	fields, err := p.listColumnsWithSQL(ctx, db, schema, table)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, "", err
 	}
 	fields, err = oracleSelectedFields(fields, opts.Hints)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, "", err
 	}
 	for _, field := range fields {
 		if field.Type == datatype.FieldTypeUnknown {
-			return "", nil, fmt.Errorf("Oracle table %s.%s contains unsupported column %q (%s)", schema, table, field.Name, field.NativeType)
+			return "", nil, nil, "", fmt.Errorf("Oracle table %s.%s contains unsupported column %q (%s)", schema, table, field.Name, field.NativeType)
 		}
 	}
 	if len(fields) == 0 {
-		return "", nil, fmt.Errorf("Oracle table read requires at least one selected field")
+		return "", nil, nil, "", fmt.Errorf("Oracle table read requires at least one selected field")
 	}
 	identifiers := make([]string, 0, len(fields))
 	dialect := commonquery.ForEngine(p.Type())
-	for _, field := range fields {
-		identifiers = append(identifiers, dialect.QuoteIdentifier(field.Name))
+	spatialInfo := oracleSpatialInfoFromFields(fields)
+	if spatialInfo != nil && encoding != "" {
+		spatialInfo, err = enrichOracleSpatialInfo(ctx, db, schema, table, spatialInfo)
+		if err != nil {
+			return "", nil, nil, "", err
+		}
 	}
-	return dialect.SelectTableSQL(strings.Join(identifiers, ", "), schema, table, "", "", limit, int(offset)), fields, nil
+	for _, field := range fields {
+		quoted := dialect.QuoteIdentifier(field.Name)
+		if datatype.IsSpatialFieldType(field.Type) && encoding == format.GeometryEncodingEWKB {
+			identifiers = append(identifiers, fmt.Sprintf("SDO_UTIL.TO_WKBGEOMETRY(%s) AS %s", quoted, quoted))
+			continue
+		}
+		if datatype.IsSpatialFieldType(field.Type) && encoding != "" {
+			return "", nil, nil, "", fmt.Errorf("unsupported Oracle geometry read encoding %q", encoding)
+		}
+		identifiers = append(identifiers, quoted)
+	}
+	return dialect.SelectTableSQL(strings.Join(identifiers, ", "), schema, table, "", "", limit, int(offset)), fields, spatialInfo, encoding, nil
 }
 
 func (p *OraclePlugin) listColumnsWithSQL(ctx context.Context, db *sql.DB, schema, table string) ([]datatype.FieldInfo, error) {
@@ -218,15 +247,29 @@ func oracleSelectedFields(fields []datatype.FieldInfo, hints map[string]interfac
 	return selected.Fields, nil
 }
 
+func oracleGeometryEncodingHint(hints map[string]interface{}) format.GeometryEncoding {
+	if hints == nil {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(fmt.Sprint(hints[plugin.TableReadHintGeometryEncoding]))) {
+	case string(format.GeometryEncodingEWKB):
+		return format.GeometryEncodingEWKB
+	default:
+		return ""
+	}
+}
+
 type oracleTableReadSession struct {
-	db        *sql.DB
-	tx        *sql.Tx
-	rows      *sql.Rows
-	fields    []datatype.FieldInfo
-	offset    int64
-	columns   []string
-	exhausted bool
-	closed    bool
+	db               *sql.DB
+	tx               *sql.Tx
+	rows             *sql.Rows
+	fields           []datatype.FieldInfo
+	spatialInfo      *datatype.SpatialInfo
+	geometryEncoding format.GeometryEncoding
+	offset           int64
+	columns          []string
+	exhausted        bool
+	closed           bool
 }
 
 func (s *oracleTableReadSession) ReadBatch(ctx context.Context, limit int) (*plugin.BatchData, error) {
@@ -240,7 +283,11 @@ func (s *oracleTableReadSession) ReadBatch(ctx context.Context, limit int) (*plu
 		limit = 1000
 	}
 	if s.exhausted {
-		return &plugin.BatchData{Fields: append([]datatype.FieldInfo(nil), s.fields...), Offset: s.offset}, nil
+		batch := &plugin.BatchData{Fields: append([]datatype.FieldInfo(nil), s.fields...), Offset: s.offset}
+		if s.spatialInfo != nil {
+			batch.Spatial = s.spatialInfo.Clone()
+		}
+		return batch, nil
 	}
 	if s.columns == nil {
 		var err error
@@ -257,7 +304,11 @@ func (s *oracleTableReadSession) ReadBatch(ctx context.Context, limit int) (*plu
 		}
 		row := make(map[string]interface{}, len(s.columns))
 		for i, column := range s.columns {
-			row[column] = values[i]()
+			value, err := oracleReadValue(column, values[i](), s.fields, s.spatialInfo, s.geometryEncoding)
+			if err != nil {
+				return nil, err
+			}
+			row[column] = value
 		}
 		rows = append(rows, row)
 	}
@@ -268,6 +319,9 @@ func (s *oracleTableReadSession) ReadBatch(ctx context.Context, limit int) (*plu
 		s.exhausted = true
 	}
 	batch := &plugin.BatchData{Rows: rows, Fields: append([]datatype.FieldInfo(nil), s.fields...), Offset: s.offset}
+	if s.spatialInfo != nil {
+		batch.Spatial = s.spatialInfo.Clone()
+	}
 	s.offset += int64(len(rows))
 	return batch, nil
 }
@@ -386,6 +440,54 @@ func oracleScanValues(fields []datatype.FieldInfo, columns []string) ([]func() i
 		}
 	}
 	return values, destinations
+}
+
+func oracleReadValue(column string, value interface{}, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo, encoding format.GeometryEncoding) (interface{}, error) {
+	field := oracleFieldForColumn(fields, column)
+	if field.Type != datatype.FieldTypeGeometry || encoding == "" || value == nil {
+		return value, nil
+	}
+	bytes, ok := value.([]byte)
+	if !ok {
+		return nil, fmt.Errorf("Oracle geometry column %q returned %T, want []byte", column, value)
+	}
+	if encoding != format.GeometryEncodingEWKB {
+		return nil, fmt.Errorf("unsupported Oracle geometry read encoding %q", encoding)
+	}
+	return oracleWKBToEWKB(bytes, oracleSpatialSRID(spatialInfo, column))
+}
+
+func oracleSpatialSRID(spatialInfo *datatype.SpatialInfo, column string) int {
+	if spatialInfo == nil {
+		return 0
+	}
+	for _, geometry := range spatialInfo.GeometryColumns {
+		if strings.EqualFold(geometry.Name, column) && geometry.SRID != nil {
+			return *geometry.SRID
+		}
+	}
+	return 0
+}
+
+func oracleWKBToEWKB(encoded []byte, srid int) ([]byte, error) {
+	if len(encoded) == 0 {
+		return nil, nil
+	}
+	geometry, err := wkb.Unmarshal(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("decode Oracle WKB geometry: %w", err)
+	}
+	if srid > 0 {
+		geometry, err = geom.SetSRID(geometry, srid)
+		if err != nil {
+			return nil, fmt.Errorf("set Oracle geometry SRID: %w", err)
+		}
+	}
+	result, err := ewkb.Marshal(geometry, ewkb.NDR)
+	if err != nil {
+		return nil, fmt.Errorf("encode Oracle geometry as EWKB: %w", err)
+	}
+	return result, nil
 }
 
 func oracleFieldForColumn(fields []datatype.FieldInfo, column string) datatype.FieldInfo {

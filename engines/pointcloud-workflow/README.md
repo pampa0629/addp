@@ -34,7 +34,7 @@ bash scripts/dev/restart.sh -pointcloud-workflow
 
 开发脚本会启动 `pointcloud-workflow-engine` 容器，并将 `${POINTCLOUD_DATA_HOST_PATH:-business/nfs/data}` 挂载到容器内同一路径，使 Manager 传入的 NFS 本地文件路径可被容器直接读取。`${POINTCLOUD_WORK_HOST_PATH:-data/pointcloud-work}` 会挂载为 `/work/pointcloud`，供 PDAL/GDAL 临时随机写使用。容器通过 `host.docker.internal` 访问宿主机上的 System 和 infra MinIO，并自注册为 `localhost:8102`，供宿主机上的 Manager 后端调用。
 
-开发启动和重启脚本会根据 Dockerfile、Python 依赖、运行时代码和 `common-python/addp_common` 计算构建指纹。指纹与现有开发镜像一致时直接复用；构建输入变化或镜像不存在时才重新构建 PointCloud Workflow Engine 镜像。
+开发启动和重启脚本会根据 Dockerfile、Python 依赖、运行时代码以及 PointCloud 实际使用的 `common-python` 子包计算构建指纹。镜像先按 `common-python/pyproject.toml` 和 PointCloud 依赖安装第三方包，再安装公共源码；公共源码变化不会使第三方依赖层失效。指纹与现有开发镜像一致时直接复用；构建输入变化或镜像不存在时才重新构建 PointCloud Workflow Engine 镜像。
 
 ```bash
 docker compose up -d pointcloud-workflow-engine

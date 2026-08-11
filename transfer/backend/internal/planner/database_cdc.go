@@ -163,7 +163,7 @@ func ResolveDatabaseCDCBindings(spec DatabaseCDCTaskSpec, resolver EngineResolve
 	}
 	sourceType := strings.ToLower(strings.TrimSpace(effectiveEngineType(source, sourceRef)))
 	targetType := strings.ToLower(strings.TrimSpace(effectiveEngineType(target, targetRef)))
-	if sourceType != "postgresql" && sourceType != "mysql" {
+	if sourceType != "postgresql" && sourceType != "mysql" && sourceType != "oracle" {
 		return DatabaseCDCBindings{}, fmt.Errorf("database CDC v1 does not support source engine type %q", sourceType)
 	}
 	if !declaresPartitionedMonotonicApply(target, engineplugin.TableChangeOperationUpsert, engineplugin.TableChangeOperationDelete) {

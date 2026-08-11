@@ -1,3 +1,5 @@
+import { normalizeFieldType } from '../../../../../common-frontend/basic/src/utils/fieldTypes.js'
+
 export const CONTINUOUS_FIELD_TYPES = Object.freeze([
   'string',
   'bool',
@@ -32,12 +34,46 @@ export const MYSQL_CDC_FIELD_TYPES = Object.freeze([
   'bytes'
 ])
 
+export const ORACLE_CDC_FIELD_TYPES = Object.freeze([
+  'string',
+  'bool',
+  'int',
+  'bigint',
+  'float',
+  'double',
+  'decimal',
+  'timestamp'
+])
+
+const DATABASE_CDC_SOURCE_TYPES = Object.freeze(['postgresql', 'mysql', 'oracle'])
+
 export function isKafkaTopicSource(engineType, locator) {
   return String(engineType || '').trim().toLowerCase() === 'kafka' && locatorType(locator) === 'topic'
 }
 
 export function isDatabaseTableCDCSource(engineType, locator) {
-  return ['postgresql', 'mysql'].includes(normalizedEngineType(engineType)) && locatorType(locator) === 'table'
+  return DATABASE_CDC_SOURCE_TYPES.includes(normalizedEngineType(engineType)) && locatorType(locator) === 'table'
+}
+
+export function resolveSourceLoadState({
+	currentLoadMode,
+	oldSourceEmpty,
+	sourceChanged,
+	kafkaTopic
+} = {}) {
+	if (kafkaTopic) {
+		return { loadMode: 'incremental', runtimeBoundary: 'continuous' }
+	}
+	if (oldSourceEmpty || sourceChanged) {
+		return { loadMode: 'snapshot', runtimeBoundary: 'bounded' }
+	}
+	if (currentLoadMode === 'cdc') {
+		return { loadMode: 'cdc', runtimeBoundary: 'continuous' }
+	}
+	return {
+		loadMode: currentLoadMode === 'incremental' ? 'incremental' : 'snapshot',
+		runtimeBoundary: 'bounded'
+	}
 }
 
 export function databaseCDCUnavailableReasonCodes({
@@ -52,11 +88,11 @@ export function databaseCDCUnavailableReasonCodes({
 } = {}) {
 	const reasons = []
 	const provider = normalizedEngineType(sourceEngineType)
-	if (['postgresql', 'mysql'].includes(provider) &&
+	if (DATABASE_CDC_SOURCE_TYPES.includes(provider) &&
 			!databaseCDCCapabilitySupports(databaseCDCCapability, provider, targetEngineType)) {
 		reasons.push({ code: 'capabilityUnavailable' })
 	}
-	if (!['postgresql', 'mysql'].includes(provider)) {
+	if (!DATABASE_CDC_SOURCE_TYPES.includes(provider)) {
 		reasons.push({ code: 'sourceDatabaseRequired' })
 	} else if (locatorType(sourceLocator) !== 'table' || String(sourceDataType || '').trim().toLowerCase() !== 'table') {
 		reasons.push({ code: 'sourceTableRequired' })
@@ -80,7 +116,7 @@ export function databaseCDCUnavailableReasonCodes({
 	}
 	const supportedTypes = databaseCDCFieldTypes(provider)
 	const unsupportedFields = fields
-		.filter(field => !supportedTypes.includes(String(field?.type || '').trim().toLowerCase()))
+		.filter(field => !supportedTypes.includes(normalizeFieldType(field)))
 		.map(field => String(field?.name || '').trim())
 		.filter(Boolean)
 	if (unsupportedFields.length > 0) {
@@ -122,23 +158,44 @@ export function normalizeContinuousKeyFields(sourceKeys, fieldMappings) {
 }
 
 export function continuousMappingsValid(fieldMappings, sourceKeys) {
-	return mappingsValidForTypes(fieldMappings, sourceKeys, CONTINUOUS_FIELD_TYPES)
+	return mappingIssueCodes(fieldMappings, sourceKeys, CONTINUOUS_FIELD_TYPES).length === 0
 }
 
-export function databaseCDCMappingsValid(fieldMappings, sourceKeys, engineType) {
-	return mappingsValidForTypes(fieldMappings, sourceKeys, databaseCDCFieldTypes(engineType))
+export function databaseCDCMappingsValid(fieldMappings, sourceKeys, engineType, sourceFields = []) {
+	return databaseCDCMappingIssues(fieldMappings, sourceKeys, engineType, sourceFields).length === 0
+}
+
+export function databaseCDCMappingIssues(fieldMappings, sourceKeys, engineType, sourceFields = []) {
+	const issues = mappingIssueCodes(fieldMappings, sourceKeys, databaseCDCFieldTypes(engineType))
+	const mappings = Array.isArray(fieldMappings) ? fieldMappings : []
+	const nullableMismatches = (Array.isArray(sourceFields) ? sourceFields : [])
+		.filter(field => typeof field?.nullable === 'boolean')
+		.filter(field => {
+			const mapping = mappings.find(item => sameName(item?.source_field, field?.name))
+			return mapping && (mapping.nullable !== false) !== field.nullable
+		})
+		.map(field => String(field?.name || '').trim())
+		.filter(Boolean)
+	if (nullableMismatches.length > 0) {
+		issues.push({ code: 'mappingNullableMismatch', fields: nullableMismatches })
+	}
+	return issues
 }
 
 export function databaseCDCFieldTypes(engineType) {
-	return normalizedEngineType(engineType) === 'mysql'
-		? MYSQL_CDC_FIELD_TYPES
-		: POSTGRESQL_CDC_FIELD_TYPES
+	const provider = normalizedEngineType(engineType)
+	if (provider === 'mysql') return MYSQL_CDC_FIELD_TYPES
+	if (provider === 'oracle') return ORACLE_CDC_FIELD_TYPES
+	return POSTGRESQL_CDC_FIELD_TYPES
 }
 
-function mappingsValidForTypes(fieldMappings, sourceKeys, supportedTypes) {
+function mappingIssueCodes(fieldMappings, sourceKeys, supportedTypes) {
   const mappings = Array.isArray(fieldMappings) ? fieldMappings : []
   const keys = normalizedNames(sourceKeys)
-  if (mappings.length === 0 || keys.length === 0) return false
+  const issues = []
+  if (mappings.length === 0) issues.push({ code: 'mappingEmpty' })
+  if (keys.length === 0) issues.push({ code: 'keyEmpty' })
+  if (issues.length > 0) return issues
 
   const sourceNames = new Set()
   const targetNames = new Set()
@@ -146,18 +203,27 @@ function mappingsValidForTypes(fieldMappings, sourceKeys, supportedTypes) {
     const source = normalizedName(mapping?.source_field)
     const target = normalizedName(mapping?.target_field)
     const targetType = String(mapping?.target_type || '').trim().toLowerCase()
-		if (!source || !target || !supportedTypes.includes(targetType)) return false
-    if (sourceNames.has(source) || targetNames.has(target)) return false
+		if (!source || !target) {
+			issues.push({ code: 'mappingFieldMissing' })
+			continue
+		}
+		if (!supportedTypes.includes(targetType)) {
+			issues.push({ code: 'mappingTypeUnsupported', fields: [String(mapping?.target_field || mapping?.source_field || '').trim()].filter(Boolean) })
+		}
+		if (sourceNames.has(source)) issues.push({ code: 'mappingSourceDuplicate', fields: [String(mapping?.source_field || '').trim()].filter(Boolean) })
+		if (targetNames.has(target)) issues.push({ code: 'mappingTargetDuplicate', fields: [String(mapping?.target_field || '').trim()].filter(Boolean) })
     sourceNames.add(source)
     targetNames.add(target)
   }
 
   const mappedKeys = continuousMappedTargetKeys(mappings, keys)
-  if (mappedKeys.length !== keys.length) return false
-  return keys.every(sourceKey => {
+  if (mappedKeys.length !== keys.length) issues.push({ code: 'keyMappingMissing' })
+	const nullableKeys = keys.filter(sourceKey => {
     const mapping = mappings.find(item => sameName(item?.source_field, sourceKey))
-    return mapping?.nullable === false
+		return mapping && mapping.nullable !== false
   })
+	if (nullableKeys.length > 0) issues.push({ code: 'keyNullable', fields: nullableKeys })
+	return issues
 }
 
 export function cdcMappingsCoverSourceFields(fieldMappings, sourceFields) {

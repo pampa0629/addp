@@ -255,7 +255,10 @@ const handleCreate = async () => {
     const res = await logicalTableAPI.create(createForm)
     ElMessage.success(t('model.common.create_success'))
     createDialogVisible.value = false
-    navigateModelRoute(router, `/logical-tables/${res.id}`, { history: 'replace' })
+    await navigateModelRoute(router, {
+      path: `/logical-tables/${res.id}`,
+      query: resolveLogicalTableListRouteState(route.query).query
+    }, { history: 'replace' })
   } catch (err) {
     ElMessage.error(getModelErrorMessage(err, t, 'model.common.create_failed'))
   } finally {
@@ -274,7 +277,10 @@ const handleDelete = async (id) => {
 }
 
 const goToDetail = (row) => {
-  navigateModelRoute(router, `/logical-tables/${row.id}`)
+  navigateModelRoute(router, {
+    path: `/logical-tables/${row.id}`,
+    query: resolveLogicalTableListRouteState(route.query).query
+  })
 }
 
 const reload = async () => {

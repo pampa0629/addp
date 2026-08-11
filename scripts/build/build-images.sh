@@ -330,6 +330,29 @@ check_registry() {
     echo -e "${GREEN}✓ Registry is accessible${NC}"
 }
 
+# Return the newest modification time in the common-python package payload.
+common_python_latest_time() {
+    {
+        printf '%s\n' common-python/README.md common-python/pyproject.toml
+        find common-python/addp_common -type f \
+            -not -path "*/__pycache__/*" \
+            -not -name "*.pyc"
+    } | xargs stat -f "%m" 2>/dev/null | sort -rn | head -1
+}
+
+# PointCloud packages only the runtime subset listed here in its Dockerfile.
+pointcloud_common_python_latest_time() {
+    {
+        printf '%s\n' \
+            common-python/README.md \
+            common-python/pyproject.toml \
+            common-python/addp_common/__init__.py \
+            common-python/addp_common/workflow_access.py
+        find common-python/addp_common/client common-python/addp_common/workflow_runtime \
+            -type f ! -path '*/__pycache__/*' ! -name '*.pyc'
+    } | xargs stat -f "%m" 2>/dev/null | sort -rn | head -1
+}
+
 # Function to check if service needs rebuild
 check_service_changed() {
     local service=$1
@@ -366,9 +389,7 @@ check_service_changed() {
                 -not -path "*/venv/*" -not -path "*/__pycache__/*" 2>/dev/null | \
                 xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
             local common_time
-            common_time=$(find "common-python" -type f '(' -name "*.py" -o -name "pyproject.toml" ')' \
-                -not -path "*/__pycache__/*" 2>/dev/null | \
-                xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
+            common_time=$(common_python_latest_time)
             comparison_time=$(( python_backend_time > common_time ? python_backend_time : common_time ))
 
             if [ -z "$comparison_time" ] || [ "$comparison_time" = "0" ]; then
@@ -384,8 +405,7 @@ check_service_changed() {
                 -not -path "*/venv/*" -not -path "*/__pycache__/*" 2>/dev/null | \
                 xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
             local common_time
-            common_time=$(find "common-python" -type f '(' -name "*.py" -o -name "pyproject.toml" ')' \
-                -not -path "*/__pycache__/*" 2>/dev/null | xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
+            common_time=$(common_python_latest_time)
             comparison_time=$(( model3d_time > common_time ? model3d_time : common_time ))
 
             if [ -z "$comparison_time" ] || [ "$comparison_time" = "0" ]; then
@@ -399,13 +419,27 @@ check_service_changed() {
             pointcloud_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" ')' \
                 -not -path "*/venv/*" -not -path "*/__pycache__/*" 2>/dev/null | xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
             local common_time
-            common_time=$(find "common-python" -type f '(' -name "*.py" -o -name "pyproject.toml" ')' \
-                -not -path "*/__pycache__/*" 2>/dev/null | xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
+            common_time=$(pointcloud_common_python_latest_time)
             comparison_time=$(( pointcloud_time > common_time ? pointcloud_time : common_time ))
             ;;
 
-        python-workflow-engine|spark-workflow-engine|jupyter-engine|raster-mosaic-runtime)
-            # Python service: compare source file time (Dockerfile + Python source files)
+        python-workflow-engine|jupyter-engine)
+            # These Dockerfiles package common-python; compare both source trees.
+            comparison_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" ')' \
+                -not -path "*/venv/*" -not -path "*/__pycache__/*" 2>/dev/null | \
+                xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
+            local common_time
+            common_time=$(common_python_latest_time)
+            comparison_time=$(( comparison_time > common_time ? comparison_time : common_time ))
+
+            if [ -z "$comparison_time" ] || [ "$comparison_time" = "0" ]; then
+                echo -e "${YELLOW}Cannot determine source modification time, rebuilding...${NC}"
+                return 1
+            fi
+            ;;
+
+        spark-workflow-engine|raster-mosaic-runtime)
+            # These Dockerfiles do not package common-python.
             comparison_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" ')' \
                 -not -path "*/venv/*" -not -path "*/__pycache__/*" 2>/dev/null | \
                 xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
@@ -651,9 +685,20 @@ build_service() {
             dockerfile_path="${service_dir}/Dockerfile"
             ;;
 
-        spark-workflow-engine|jupyter-engine)
+        spark-workflow-engine)
             # Python Engine: Python service built from source
             build_context="${service_dir}"
+            dockerfile_path="${service_dir}/Dockerfile"
+
+            if [ ! -f "${service_dir}/Dockerfile" ]; then
+                echo -e "${RED}Error: Dockerfile not found in ${service_dir}${NC}"
+                return 1
+            fi
+            ;;
+
+        jupyter-engine)
+            # Jupyter Dockerfile references common-python and engines/jupyter from the repository root.
+            build_context="."
             dockerfile_path="${service_dir}/Dockerfile"
 
             if [ ! -f "${service_dir}/Dockerfile" ]; then

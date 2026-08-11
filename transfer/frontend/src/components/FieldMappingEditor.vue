@@ -127,6 +127,7 @@ import { ref, watch, defineProps, defineEmits } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { MagicStick, Plus, Delete, Refresh, Right, Check } from '@element-plus/icons-vue'
+import { normalizeFieldType } from '@addp/common-frontend'
 
 const { t } = useI18n()
 
@@ -248,12 +249,7 @@ const handleAutoMatch = () => {
 }
 
 function fieldMappingType(field) {
-  if (!field) return 'string'
-  if (field.is_geometry === true || field.is_spatial === true || field.isSpatial === true) return 'geometry'
-  const type = String(field.type || '').trim()
-  const lowerType = type.toLowerCase()
-  if (lowerType.includes('geometry') || lowerType.includes('geography')) return 'geometry'
-  return type || 'string'
+  return normalizeFieldType(field)
 }
 
 // 添加映射

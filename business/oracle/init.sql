@@ -1,5 +1,18 @@
--- Oracle 普通表样例数据。该脚本由 test-data.sh 以 APP_USER 执行，保持幂等。
+-- Oracle 普通表与 Spatial 样例数据。该脚本由 test-data.sh 以 APP_USER 执行，保持幂等。
 WHENEVER SQLERROR EXIT SQL.SQLCODE
+
+DECLARE
+  spatial_type_count NUMBER;
+BEGIN
+  SELECT COUNT(*) INTO spatial_type_count
+    FROM all_types
+   WHERE owner = 'MDSYS'
+     AND type_name = 'SDO_GEOMETRY';
+  IF spatial_type_count <> 1 THEN
+    RAISE_APPLICATION_ERROR(-20001, 'Oracle Spatial is unavailable; use gvenzl/oracle-free:23 instead of a -slim image and recreate the Oracle data volume');
+  END IF;
+END;
+/
 
 BEGIN
   EXECUTE IMMEDIATE 'CREATE TABLE customers (
@@ -12,6 +25,19 @@ BEGIN
 EXCEPTION
   WHEN OTHERS THEN
     IF SQLCODE != -955 THEN RAISE; END IF;
+END;
+/
+
+DECLARE
+  all_column_logging_count NUMBER;
+BEGIN
+  SELECT COUNT(*) INTO all_column_logging_count
+    FROM user_log_groups
+   WHERE table_name = 'CUSTOMERS'
+     AND log_group_type = 'ALL COLUMN LOGGING';
+  IF all_column_logging_count = 0 THEN
+    EXECUTE IMMEDIATE 'ALTER TABLE customers ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS';
+  END IF;
 END;
 /
 
@@ -62,6 +88,30 @@ EXCEPTION
 END;
 /
 
+BEGIN
+  EXECUTE IMMEDIATE 'CREATE TABLE customer_locations (
+    id NUMBER(10,0) CONSTRAINT customer_locations_pk PRIMARY KEY,
+    name VARCHAR2(120 CHAR) NOT NULL,
+    shape MDSYS.SDO_GEOMETRY NOT NULL
+  )';
+EXCEPTION
+  WHEN OTHERS THEN
+    IF SQLCODE != -955 THEN RAISE; END IF;
+END;
+/
+
+BEGIN
+  EXECUTE IMMEDIATE 'CREATE TABLE spatial_features (
+    id NUMBER(10,0) CONSTRAINT spatial_features_pk PRIMARY KEY,
+    geometry_type VARCHAR2(40 CHAR) NOT NULL,
+    shape MDSYS.SDO_GEOMETRY NOT NULL
+  )';
+EXCEPTION
+  WHEN OTHERS THEN
+    IF SQLCODE != -955 THEN RAISE; END IF;
+END;
+/
+
 DECLARE
   index_count NUMBER;
 BEGIN
@@ -102,6 +152,107 @@ WHEN MATCHED THEN UPDATE SET target.order_no = source.order_no, target.customer_
 WHEN NOT MATCHED THEN INSERT (id, order_no, customer_id, amount, ordered_at, notes)
 VALUES (source.id, source.order_no, source.customer_id, source.amount, source.ordered_at, source.notes);
 
+MERGE INTO customer_locations target
+USING (
+  SELECT 1 id,
+         'ADDP Demo Campus' name,
+         MDSYS.SDO_GEOMETRY(2001, 4326, MDSYS.SDO_POINT_TYPE(116.397, 39.908, NULL), NULL, NULL) shape
+    FROM dual
+) source
+ON (target.id = source.id)
+WHEN MATCHED THEN UPDATE SET target.name = source.name, target.shape = source.shape
+WHEN NOT MATCHED THEN INSERT (id, name, shape)
+VALUES (source.id, source.name, source.shape);
+
+DECLARE
+  PROCEDURE upsert_spatial_feature(feature_id NUMBER, feature_type VARCHAR2, feature_wkt VARCHAR2) IS
+    geometry MDSYS.SDO_GEOMETRY;
+  BEGIN
+    geometry := SDO_UTIL.FROM_WKTGEOMETRY(feature_wkt);
+    geometry.sdo_srid := 4326;
+    MERGE INTO spatial_features target
+    USING (SELECT feature_id id, feature_type geometry_type, geometry shape FROM dual) source
+       ON (target.id = source.id)
+     WHEN MATCHED THEN UPDATE SET target.geometry_type = source.geometry_type, target.shape = source.shape
+     WHEN NOT MATCHED THEN INSERT (id, geometry_type, shape)
+          VALUES (source.id, source.geometry_type, source.shape);
+  END;
+BEGIN
+  upsert_spatial_feature(1, 'LineString', 'LINESTRING (116.35 39.90, 116.45 39.95)');
+  upsert_spatial_feature(2, 'Polygon', 'POLYGON ((116.30 39.85, 116.30 39.95, 116.40 39.95, 116.40 39.85, 116.30 39.85))');
+  upsert_spatial_feature(3, 'MultiPoint', 'MULTIPOINT ((116.30 39.80), (116.50 40.00))');
+  upsert_spatial_feature(4, 'MultiLineString', 'MULTILINESTRING ((116.20 39.80, 116.30 39.90), (116.40 39.90, 116.50 40.00))');
+  upsert_spatial_feature(5, 'MultiPolygon', 'MULTIPOLYGON (((116.10 39.70, 116.10 39.75, 116.15 39.75, 116.15 39.70, 116.10 39.70)), ((116.50 40.00, 116.50 40.05, 116.55 40.05, 116.55 40.00, 116.50 40.00)))');
+  upsert_spatial_feature(6, 'GeometryCollection', 'GEOMETRYCOLLECTION (POINT (116.397 39.908), LINESTRING (116.35 39.90, 116.45 39.95))');
+END;
+/
+
+MERGE INTO customer_locations target
+USING (
+  SELECT 2 id,
+         'Oracle Spatial Lab' name,
+         MDSYS.SDO_GEOMETRY(2001, 4326, MDSYS.SDO_POINT_TYPE(121.474, 31.230, NULL), NULL, NULL) shape
+    FROM dual
+) source
+ON (target.id = source.id)
+WHEN MATCHED THEN UPDATE SET target.name = source.name, target.shape = source.shape
+WHEN NOT MATCHED THEN INSERT (id, name, shape)
+VALUES (source.id, source.name, source.shape);
+
+DELETE FROM user_sdo_geom_metadata
+ WHERE table_name = 'CUSTOMER_LOCATIONS'
+   AND column_name = 'SHAPE';
+
+INSERT INTO user_sdo_geom_metadata (table_name, column_name, diminfo, srid)
+VALUES (
+  'CUSTOMER_LOCATIONS',
+  'SHAPE',
+  MDSYS.SDO_DIM_ARRAY(
+    MDSYS.SDO_DIM_ELEMENT('LONGITUDE', -180, 180, 0.005),
+    MDSYS.SDO_DIM_ELEMENT('LATITUDE', -90, 90, 0.005)
+  ),
+  4326
+);
+
+DELETE FROM user_sdo_geom_metadata
+ WHERE table_name = 'SPATIAL_FEATURES'
+   AND column_name = 'SHAPE';
+
+INSERT INTO user_sdo_geom_metadata (table_name, column_name, diminfo, srid)
+VALUES (
+  'SPATIAL_FEATURES',
+  'SHAPE',
+  MDSYS.SDO_DIM_ARRAY(
+    MDSYS.SDO_DIM_ELEMENT('LONGITUDE', -180, 180, 0.005),
+    MDSYS.SDO_DIM_ELEMENT('LATITUDE', -90, 90, 0.005)
+  ),
+  4326
+);
+
+DECLARE
+  index_count NUMBER;
+BEGIN
+  SELECT COUNT(*) INTO index_count
+    FROM user_indexes
+   WHERE index_name = 'CUSTOMER_LOCATIONS_SHAPE_SIDX';
+  IF index_count = 0 THEN
+    EXECUTE IMMEDIATE 'CREATE INDEX customer_locations_shape_sidx ON customer_locations(shape) INDEXTYPE IS MDSYS.SPATIAL_INDEX_V2';
+  END IF;
+END;
+/
+
+DECLARE
+  index_count NUMBER;
+BEGIN
+  SELECT COUNT(*) INTO index_count
+    FROM user_indexes
+   WHERE index_name = 'SPATIAL_FEATURES_SHAPE_SIDX';
+  IF index_count = 0 THEN
+    EXECUTE IMMEDIATE 'CREATE INDEX spatial_features_shape_sidx ON spatial_features(shape) INDEXTYPE IS MDSYS.SPATIAL_INDEX_V2';
+  END IF;
+END;
+/
+
 MERGE INTO order_events target
 USING (SELECT 1 id, DATE '2026-03-01' event_time, 'created' event_type, '{"order_no":"ORD-1001"}' payload FROM dual) source
 ON (target.id = source.id AND target.event_time = source.event_time)
@@ -120,3 +271,20 @@ COMMIT;
 SELECT COUNT(*) AS customer_count FROM customers;
 SELECT COUNT(*) AS order_count FROM orders;
 SELECT COUNT(*) AS order_event_count FROM order_events;
+SELECT COUNT(*) AS customer_location_count FROM customer_locations;
+SELECT COUNT(*) AS spatial_feature_count FROM spatial_features;
+SELECT COUNT(*) AS spatial_metadata_count
+  FROM user_sdo_geom_metadata
+ WHERE table_name IN ('CUSTOMER_LOCATIONS', 'SPATIAL_FEATURES')
+   AND column_name = 'SHAPE';
+SELECT COUNT(*) AS spatial_index_count
+  FROM user_indexes
+ WHERE index_name IN ('CUSTOMER_LOCATIONS_SHAPE_SIDX', 'SPATIAL_FEATURES_SHAPE_SIDX')
+   AND index_type = 'DOMAIN';
+SELECT COUNT(*) AS spatial_wkb_count
+  FROM (
+    SELECT shape FROM customer_locations
+    UNION ALL
+    SELECT shape FROM spatial_features
+  )
+ WHERE DBMS_LOB.GETLENGTH(SDO_UTIL.TO_WKBGEOMETRY(shape)) > 0;

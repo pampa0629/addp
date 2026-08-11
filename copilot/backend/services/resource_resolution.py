@@ -17,7 +17,7 @@ from chains.resource_recommendation_chain import ResourceRecommendationChain
 from services.resource_discovery import ResourceDiscovery, ResourceDiscoveryResult
 
 
-ALL_RESOURCE_TYPES = frozenset({"table", "view", "file", "object", "raster", "vector"})
+QUERY_DATA_TYPES = frozenset({"table", "graph"})
 
 
 @dataclass(frozen=True)
@@ -29,12 +29,17 @@ class ResourceResolutionPolicy:
     engine_id: int | None = None
     max_inputs: int = 8
     max_candidates: int = 20
-    allowed_asset_types: frozenset[str] = ALL_RESOURCE_TYPES
+    allowed_data_types: frozenset[str] | None = None
     session_catalog: bool = False
 
     @classmethod
     def query(cls, engine_id: int) -> "ResourceResolutionPolicy":
-        return cls(name="query", engine_id=engine_id, max_inputs=8)
+        return cls(
+            name="query",
+            engine_id=engine_id,
+            max_inputs=8,
+            allowed_data_types=QUERY_DATA_TYPES,
+        )
 
     @classmethod
     def workflow(cls) -> "ResourceResolutionPolicy":
@@ -144,7 +149,7 @@ class ResourceResolutionService:
         return await self.discovery.verify(
             resources,
             engine_id=policy.engine_id,
-            allowed_asset_types=policy.allowed_asset_types,
+            allowed_data_types=policy.allowed_data_types,
         )
 
     async def _discover_once(
@@ -156,7 +161,7 @@ class ResourceResolutionService:
             intents,
             engine_id=policy.engine_id,
             limit=policy.max_candidates,
-            allowed_asset_types=policy.allowed_asset_types,
+            allowed_data_types=policy.allowed_data_types,
         )
 
     @staticmethod

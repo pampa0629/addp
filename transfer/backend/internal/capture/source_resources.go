@@ -33,6 +33,11 @@ func (DatabaseSourceResources) DropOwnedResources(ctx context.Context, plan *Cap
 			return fmt.Errorf("MySQL capture cleanup requires provider resources")
 		}
 		return nil
+	case models.CaptureSourceOracle:
+		if resource.Oracle == nil {
+			return fmt.Errorf("Oracle capture cleanup requires provider resources")
+		}
+		return nil
 	default:
 		return fmt.Errorf("unsupported database capture source type %q", plan.SourceType)
 	}

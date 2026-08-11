@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"reflect"
 	"sort"
 	"strings"
@@ -61,6 +62,13 @@ func decodeMySQLDebeziumRecord(record engineplugin.ChangeRecord, plan *planner.C
 	return decodeDatabaseDebeziumRecord(record, plan, validateMySQLDebeziumSource)
 }
 
+func decodeOracleDebeziumRecord(record engineplugin.ChangeRecord, plan *planner.ContinuousPlan) (*ChangeEvent, error) {
+	if plan == nil || plan.CDC == nil || plan.CDC.Provider != "oracle" || plan.Envelope != planner.ContinuousEnvelopeOracleDebezium {
+		return nil, fmt.Errorf("Oracle Debezium adapter requires a CDC continuous plan")
+	}
+	return decodeDatabaseDebeziumRecord(record, plan, validateOracleDebeziumSource)
+}
+
 func decodeDatabaseDebeziumRecord(record engineplugin.ChangeRecord, plan *planner.ContinuousPlan, validateSource func(json.RawMessage, *planner.DatabaseCDCSourcePlan, string) error) (*ChangeEvent, error) {
 	value := bytes.TrimSpace(record.Value)
 	if len(value) == 0 || bytes.Equal(value, []byte("null")) {
@@ -93,7 +101,7 @@ func decodeDatabaseDebeziumRecord(record engineplugin.ChangeRecord, plan *planne
 	if err != nil {
 		return nil, err
 	}
-	if plan.CDC.Provider == "mysql" {
+	if plan.CDC.Provider == "mysql" || plan.CDC.Provider == "oracle" {
 		before, err := decodeNullableJSONObject(envelope["before"], "Debezium before")
 		if err != nil {
 			return nil, err
@@ -232,6 +240,43 @@ func validateMySQLDebeziumSource(raw json.RawMessage, expected *planner.Database
 	return nil
 }
 
+func validateOracleDebeziumSource(raw json.RawMessage, expected *planner.DatabaseCDCSourcePlan, op string) error {
+	source, err := decodeRawJSONObject(raw, "Debezium source")
+	if err != nil {
+		return incompatibleSchemaField("Debezium envelope", "source")
+	}
+	allowed := []string{"version", "connector", "name", "ts_ms", "snapshot", "db", "sequence", "ts_us", "ts_ns", "schema", "table", "txId", "scn", "commit_scn", "lcr_position", "rs_id", "ssn", "redo_thread"}
+	if err := validateObjectFields(source, []string{"connector", "snapshot", "db", "schema", "table", "scn"}, allowed, "Debezium source"); err != nil {
+		return err
+	}
+	var connector, snapshot, database, schema, table, scn string
+	for field, target := range map[string]*string{
+		"connector": &connector, "snapshot": &snapshot, "db": &database,
+		"schema": &schema, "table": &table, "scn": &scn,
+	} {
+		if err := json.Unmarshal(source[field], target); err != nil {
+			return incompatibleSchemaField("Debezium source", field)
+		}
+	}
+	if connector != "oracle" {
+		return incompatibleSchemaField("Debezium source", "connector")
+	}
+	if _, ok := new(big.Int).SetString(scn, 10); !ok || strings.HasPrefix(scn, "-") {
+		return incompatibleSchemaField("Debezium source", "scn")
+	}
+	if op == "r" {
+		if snapshot != "first" && snapshot != "last" && snapshot != "true" {
+			return incompatibleSchemaField("Debezium source", "snapshot")
+		}
+	} else if snapshot != "false" {
+		return incompatibleSchemaField("Debezium source", "snapshot")
+	}
+	if database != expected.Database || schema != expected.Schema || table != expected.Table {
+		return fmt.Errorf("Debezium source table identity %s.%s.%s does not match expected %s.%s.%s", database, schema, table, expected.Database, expected.Schema, expected.Table)
+	}
+	return nil
+}
+
 func decodeAndMapDebeziumKey(raw []byte, plan *planner.ContinuousPlan) (map[string]interface{}, error) {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return nil, fmt.Errorf("Debezium record key is required")
@@ -321,6 +366,17 @@ func coerceDatabaseCDCValue(value interface{}, mapping planner.ContinuousFieldPl
 			return nil, fmt.Errorf("MySQL CDC binary field %q is not valid base64", mapping.Source)
 		}
 		return decoded, nil
+	}
+	if plan != nil && plan.CDC != nil && plan.CDC.Provider == "oracle" {
+		if text, ok := value.(string); ok {
+			switch mapping.Type {
+			case datatype.FieldTypeInt, datatype.FieldTypeBigInt, datatype.FieldTypeFloat, datatype.FieldTypeDouble:
+				if strings.TrimSpace(text) == "" {
+					return nil, fmt.Errorf("Oracle CDC numeric field %q is empty", mapping.Source)
+				}
+				return coerceContinuousValue(json.Number(text), mapping.Type)
+			}
+		}
 	}
 	return coerceContinuousValue(value, mapping.Type)
 }

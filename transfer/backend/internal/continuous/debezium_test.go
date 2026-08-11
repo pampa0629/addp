@@ -136,6 +136,32 @@ func TestDecodeMySQLDebeziumBinaryUsesStrictBase64(t *testing.T) {
 	}
 }
 
+func TestDecodeOracleDebeziumRecordUsesPDBIdentityAndStringNumbers(t *testing.T) {
+	plan := oracleCDCAdapterPlan()
+	event, err := decodeOracleDebeziumRecord(plugin.ChangeRecord{
+		Key:   []byte(`{"ID":"1"}`),
+		Value: []byte(oracleDebeziumEnvelope("r", `null`, `{"ID":"1","NAME":"snapshot","CREATED_AT":1768435200000}`, "FREEPDB1", "BUSINESS", "CUSTOMERS")),
+	}, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.Operation != changeEventOperationSnapshot || event.Row["id"] != int64(1) || event.Row["name"] != "snapshot" {
+		t.Fatalf("Oracle snapshot event = %#v", event)
+	}
+	wantTime := time.UnixMilli(1768435200000).UTC()
+	if got, ok := event.Row["created_at"].(time.Time); !ok || !got.Equal(wantTime) {
+		t.Fatalf("Oracle DATE = %#v, want %s", event.Row["created_at"], wantTime)
+	}
+
+	_, err = decodeOracleDebeziumRecord(plugin.ChangeRecord{
+		Key:   []byte(`{"ID":"1"}`),
+		Value: []byte(oracleDebeziumEnvelope("c", `null`, `{"ID":"1","NAME":"bad","CREATED_AT":1768435200000}`, "OTHERPDB", "BUSINESS", "CUSTOMERS")),
+	}, plan)
+	if err == nil || !strings.Contains(err.Error(), "source table identity") {
+		t.Fatalf("Oracle source mismatch error = %v", err)
+	}
+}
+
 func TestDecodePostgreSQLDebeziumRecordReportsSchemaDiff(t *testing.T) {
 	plan := postgresqlCDCAdapterPlan()
 	value := debeziumEnvelope("c", `null`, `{"id":1,"name":"ok","extra":true}`, "business", "public", "orders")
@@ -377,6 +403,19 @@ func mysqlCDCAdapterPlan() *planner.ContinuousPlan {
 	}
 }
 
+func oracleCDCAdapterPlan() *planner.ContinuousPlan {
+	return &planner.ContinuousPlan{
+		Envelope: planner.ContinuousEnvelopeOracleDebezium,
+		Mappings: []planner.ContinuousFieldPlan{
+			{Source: "ID", Target: "id", Type: datatype.FieldTypeBigInt, Nullable: false},
+			{Source: "NAME", Target: "name", Type: datatype.FieldTypeString, Nullable: true},
+			{Source: "CREATED_AT", Target: "created_at", Type: datatype.FieldTypeTimestamp, Nullable: false},
+		},
+		SourceKeys: []string{"ID"}, Target: planner.ContinuousTargetPlan{Keys: []string{"id"}},
+		CDC: &planner.DatabaseCDCSourcePlan{Provider: "oracle", Database: "FREEPDB1", Schema: "BUSINESS", Table: "CUSTOMERS"},
+	}
+}
+
 func debeziumEnvelope(op, before, after, database, schema, table string) string {
 	return `{"before":` + before + `,"after":` + after + `,"source":{` +
 		`"version":"3.6.0.Final","connector":"postgresql","name":"addp",` +
@@ -397,5 +436,18 @@ func mysqlDebeziumEnvelope(op, before, after, database, table string) string {
 		`"ts_ms":1,"snapshot":"` + snapshot + `","db":"` + database + `","sequence":null,` +
 		`"ts_us":1000,"ts_ns":1000000,"table":"` + table + `","server_id":` + serverID + `,` +
 		`"gtid":null,"file":"binlog.000001","pos":4,"row":0,"thread":1,"query":null},` +
+		`"op":"` + op + `","ts_ms":1,"ts_us":1000,"ts_ns":1000000,"transaction":null}`
+}
+
+func oracleDebeziumEnvelope(op, before, after, database, schema, table string) string {
+	snapshot := "false"
+	if op == "r" {
+		snapshot = "first"
+	}
+	return `{"before":` + before + `,"after":` + after + `,"source":{` +
+		`"version":"3.6.0.Final","connector":"oracle","name":"addp",` +
+		`"ts_ms":1,"snapshot":"` + snapshot + `","db":"` + database + `","sequence":null,` +
+		`"ts_us":1000,"ts_ns":1000000,"schema":"` + schema + `","table":"` + table + `",` +
+		`"txId":null,"scn":"2102934","commit_scn":null,"lcr_position":null,"rs_id":null,"ssn":0,"redo_thread":1},` +
 		`"op":"` + op + `","ts_ms":1,"ts_us":1000,"ts_ns":1000000,"transaction":null}`
 }

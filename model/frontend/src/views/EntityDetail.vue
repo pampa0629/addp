@@ -311,6 +311,7 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
 import { resolveCanonicalTabRouteState } from '@common-ui'
 import { navigateModelRoute } from '../utils/moduleNavigation'
+import { resolveEntityListRouteState } from '../utils/routeState'
 import { initializeMermaidTheme, observeThemeChange } from '../utils/mermaidTheme'
 
 const { t } = useI18n()
@@ -322,11 +323,15 @@ const router = useRouter()
 const entityId = computed(() => Number(route.params.id))
 
 const ENTITY_TABS = ['basic', 'attributes', 'relations']
-const resolveRouteState = routeQuery => resolveCanonicalTabRouteState({
-  allowedTabs: ENTITY_TABS,
-  defaultTab: 'basic',
-  routeQuery
-})
+const resolveRouteState = routeQuery => {
+  const listRouteState = resolveEntityListRouteState(routeQuery)
+  return resolveCanonicalTabRouteState({
+    allowedTabs: ENTITY_TABS,
+    defaultTab: 'basic',
+    routeQuery,
+    preservedQuery: listRouteState.query
+  })
+}
 const activeTab = ref(resolveRouteState(route.query).tab)
 let routeDataReady = false
 const saving = ref(false)
@@ -411,13 +416,19 @@ const getTargetEntityName = (relation) => {
 }
 
 const navigateToEntity = (id) => {
-  navigateModelRoute(router, `/entities/${id}`)
+  navigateModelRoute(router, {
+    path: `/entities/${id}`,
+    query: resolveRouteState(route.query).query
+  })
 }
 
-const backToList = () => navigateModelRoute(router, '/entities', { history: 'replace' })
+const backToList = () => navigateModelRoute(router, {
+  path: '/entities',
+  query: resolveEntityListRouteState(route.query).query
+}, { history: 'replace' })
 
 const handleTabChange = async (tab) => {
-  const routeState = resolveRouteState({ tab })
+  const routeState = resolveRouteState({ ...route.query, tab })
   const location = { path: route.path, query: routeState.query }
   if (router.resolve(location).fullPath !== route.fullPath) {
     await navigateModelRoute(router, location, { history: 'replace' })

@@ -147,7 +147,7 @@ func newTaskResourceRepositoryTestDB(t *testing.T) *gorm.DB {
 			t.Fatal(err)
 		}
 	}
-	addTaskExecutionAuthorizationColumns(t, db)
+	addTaskExecutionModelColumns(t, db)
 	return db
 }
 

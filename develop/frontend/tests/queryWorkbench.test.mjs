@@ -9,6 +9,9 @@ import {
   queryErrorMessage,
   queryResultFromExecution,
   diagnoseQuery,
+  canUseQueryContainerContext,
+  isQueryInputResource,
+  mqlPrimaryCollection,
   parseSQLSources
 } from '../src/utils/queryWorkbench.mjs'
 
@@ -37,7 +40,30 @@ assert.deepEqual(capability, {
     supported: true,
     languages: ['cypher'],
     types: ['string', 'integer', 'number', 'boolean']
+  },
+  federation: { supported: false, sourceEngineTypes: [], objectFormats: [] }
+})
+const federatedCapability = queryCapabilityForEngine({
+  capabilities: {
+    compute: {
+      query: {
+        supported: true,
+        languages: ['SQL'],
+        default_language: 'sql',
+        result_kinds: ['table'],
+        federation: {
+          supported: true,
+          source_engine_types: ['PostgreSQL', 'mysql', 'postgresql'],
+          object_formats: ['Parquet']
+        }
+      }
+    }
   }
+})
+assert.deepEqual(federatedCapability.federation, {
+  supported: true,
+  sourceEngineTypes: ['postgresql', 'mysql'],
+  objectFormats: ['parquet']
 })
 assert.equal(queryParameterReference('sql', 'status'), ':status')
 assert.equal(queryParameterReference('cypher', 'status'), '$status')
@@ -167,12 +193,41 @@ assert.deepEqual(diagnoseQuery({
     replacement: '`user`'
   }
 ])
+assert.equal(isQueryInputResource({ itemId: 51657 }), true)
+assert.equal(isQueryInputResource({ type: 'database', nodeId: 276 }), false)
+assert.equal(mqlPrimaryCollection('{"find":"Persons","filter":{}}'), 'Persons')
+assert.equal(mqlPrimaryCollection('{"aggregate":"Orders","pipeline":[]}'), 'Orders')
+assert.equal(mqlPrimaryCollection('{"count":"Persons","query":{}}'), 'Persons')
+assert.equal(mqlPrimaryCollection('{"distinct":"Persons","key":"name"}'), 'Persons')
+assert.equal(mqlPrimaryCollection('db.Persons.find({})'), '')
+assert.equal(mqlPrimaryCollection('{"find":"Persons","count":"Persons"}'), '')
+assert.equal(canUseQueryContainerContext({
+  language: 'mql',
+  query: '{"find":"Persons","filter":{}}',
+  parsedLocator: { type: 'database' }
+}), true)
+assert.equal(canUseQueryContainerContext({
+  language: 'mql',
+  query: '{"filter":{}}',
+  parsedLocator: { type: 'database' }
+}), false)
+assert.equal(canUseQueryContainerContext({
+  language: 'sql',
+  query: 'SELECT 1',
+  parsedLocator: { type: 'schema' }
+}), false)
 assert.deepEqual(diagnoseQuery({
   language: 'mql',
-  query: '{"Members":{"status":"lead"}}',
-  fields: ['Members'],
+  query: '{"find":"Persons","filter":{"_id":"W71wut2AWotkbETX"},"limit":10}',
+  fields: ['_id', 'name'],
   targetLocator: 'addp://engine/1/collection?item_id=3'
 }), [])
+assert.deepEqual(diagnoseQuery({
+  language: 'mql',
+  query: '{"find":"Persons","filter":{"missing":true},"limit":10}',
+  fields: ['_id', 'name'],
+  targetLocator: 'addp://engine/1/collection?item_id=3'
+}), [{ code: 'field_unknown', severity: 'warning', field: 'missing' }])
 
 const result = queryResultFromExecution({
   execution_id: 'execution-1',

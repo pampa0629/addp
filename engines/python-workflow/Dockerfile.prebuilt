@@ -23,8 +23,11 @@ WORKDIR /app
 # Copy locally installed packages from venv
 # Usage: Before building, ensure venv exists with all dependencies
 COPY engines/python-workflow/venv/lib/python3.11/site-packages/ /usr/local/lib/python3.11/site-packages/
-COPY common-python/ /tmp/common-python/
-RUN pip install --no-cache-dir /tmp/common-python
+COPY common-python/README.md /tmp/common-python/README.md
+COPY common-python/pyproject.toml /tmp/common-python/pyproject.toml
+COPY common-python/addp_common/ /tmp/common-python/addp_common/
+RUN pip install --no-cache-dir --no-build-isolation --no-deps /tmp/common-python \
+    && rm -rf /tmp/common-python
 
 # Copy application code
 COPY engines/python-workflow/operators/ ./operators/

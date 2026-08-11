@@ -105,20 +105,21 @@ func (s *Supervisor) Start(ctx context.Context, task *models.TransferTask) (*mod
 		s.fail(ctx, resource, err)
 		return nil, err
 	}
-	if resource.SourceType == models.CaptureSourceMySQL {
-		if resource.MySQL == nil || strings.TrimSpace(resource.MySQL.SchemaHistoryTopicName) == "" || !resource.MySQL.SchemaHistoryTopicOwned {
-			err := fmt.Errorf("MySQL capture generation is missing owned schema history topic")
+	if resource.SourceType == models.CaptureSourceMySQL || resource.SourceType == models.CaptureSourceOracle {
+		historyTopic, owned := captureSchemaHistoryTopic(resource)
+		if strings.TrimSpace(historyTopic) == "" || !owned {
+			err := fmt.Errorf("database capture generation is missing owned schema history topic")
 			s.fail(ctx, resource, err)
 			return nil, err
 		}
 		if err := s.topics.EnsureTopic(ctx, TopicSpec{
-			Name: resource.MySQL.SchemaHistoryTopicName, Partitions: 1,
+			Name: historyTopic, Partitions: 1,
 			ReplicationFactor: s.config.TopicReplication, CleanupPolicy: "delete", RetentionMillis: -1,
 		}); err != nil {
 			s.fail(ctx, resource, err)
 			return nil, err
 		}
-		if err := s.topics.EnsureSchemaHistoryAccess(ctx, resource.MySQL.SchemaHistoryTopicName); err != nil {
+		if err := s.topics.EnsureSchemaHistoryAccess(ctx, historyTopic); err != nil {
 			s.fail(ctx, resource, err)
 			return nil, err
 		}
@@ -233,9 +234,9 @@ func (s *Supervisor) Stop(ctx context.Context, task *models.TransferTask) error 
 	topicErr := s.topics.DeleteTopic(ctx, resource.TopicName)
 	aclErr := s.topics.DeleteAccess(ctx, resource.TopicName, resource.ConsumerGroup)
 	var historyTopicErr, historyACLErr error
-	if resource.SourceType == models.CaptureSourceMySQL && resource.MySQL != nil && resource.MySQL.SchemaHistoryTopicOwned {
-		historyTopicErr = s.topics.DeleteTopic(ctx, resource.MySQL.SchemaHistoryTopicName)
-		historyACLErr = s.topics.DeleteSchemaHistoryAccess(ctx, resource.MySQL.SchemaHistoryTopicName)
+	if historyTopic, owned := captureSchemaHistoryTopic(resource); owned && strings.TrimSpace(historyTopic) != "" {
+		historyTopicErr = s.topics.DeleteTopic(ctx, historyTopic)
+		historyACLErr = s.topics.DeleteSchemaHistoryAccess(ctx, historyTopic)
 	}
 	cleanupErr := errors.Join(connectorErr, sourceErr, groupErr, topicErr, aclErr, historyTopicErr, historyACLErr)
 	if cleanupErr != nil {
@@ -247,6 +248,23 @@ func (s *Supervisor) Stop(ctx context.Context, task *models.TransferTask) error 
 		"status": models.CaptureStatusStopped, "connector_status": "DELETED", "connector_error": "",
 		"connector_created": false, "topic_created": false, "last_observed_at": now, "stopped_at": now,
 	})
+}
+
+func captureSchemaHistoryTopic(resource *models.CaptureResource) (string, bool) {
+	if resource == nil {
+		return "", false
+	}
+	switch resource.SourceType {
+	case models.CaptureSourceMySQL:
+		if resource.MySQL != nil {
+			return resource.MySQL.SchemaHistoryTopicName, resource.MySQL.SchemaHistoryTopicOwned
+		}
+	case models.CaptureSourceOracle:
+		if resource.Oracle != nil {
+			return resource.Oracle.SchemaHistoryTopicName, resource.Oracle.SchemaHistoryTopicOwned
+		}
+	}
+	return "", false
 }
 
 func (s *Supervisor) dropSourceResources(ctx context.Context, plan *CapturePlan, resource *models.CaptureResource) error {

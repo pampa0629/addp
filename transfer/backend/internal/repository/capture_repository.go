@@ -49,7 +49,7 @@ func (r *CaptureRepository) BeginGeneration(ctx context.Context, identity Captur
 			Where("id = ? AND tenant_id = ?", identity.TaskID, identity.TenantID).First(&task).Error; err != nil {
 			return err
 		}
-		err := tx.Preload("PostgreSQL").Preload("MySQL").Where("task_id = ?", identity.TaskID).Order("generation DESC").First(&resource).Error
+		err := tx.Preload("PostgreSQL").Preload("MySQL").Preload("Oracle").Where("task_id = ?", identity.TaskID).Order("generation DESC").First(&resource).Error
 		if err == nil {
 			if captureStopInitiated(resource.Status) {
 				return ErrCaptureTerminal
@@ -64,7 +64,7 @@ func (r *CaptureRepository) BeginGeneration(ctx context.Context, identity Captur
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		if identity.SourceType != models.CaptureSourcePostgreSQL && identity.SourceType != models.CaptureSourceMySQL {
+		if identity.SourceType != models.CaptureSourcePostgreSQL && identity.SourceType != models.CaptureSourceMySQL && identity.SourceType != models.CaptureSourceOracle {
 			return fmt.Errorf("unsupported capture source type %q", identity.SourceType)
 		}
 		generation := uint64(1)
@@ -101,6 +101,13 @@ func (r *CaptureRepository) BeginGeneration(ctx context.Context, identity Captur
 				SchemaHistoryTopicOwned: true,
 			}
 			return tx.Create(resource.MySQL).Error
+		case models.CaptureSourceOracle:
+			resource.Oracle = &models.OracleCaptureResource{
+				CaptureResourceID:       resource.ID,
+				SchemaHistoryTopicName:  captureSchemaHistoryTopicName(identity.TenantID, identity.TaskID, generation),
+				SchemaHistoryTopicOwned: true,
+			}
+			return tx.Create(resource.Oracle).Error
 		default:
 			return fmt.Errorf("unsupported capture source type %q", identity.SourceType)
 		}
@@ -119,7 +126,7 @@ func captureSpatialInfoEqual(left, right models.JSONMap) bool {
 
 func (r *CaptureRepository) GetLatest(ctx context.Context, taskID, tenantID uint) (*models.CaptureResource, error) {
 	var resource models.CaptureResource
-	err := r.db.WithContext(ctx).Preload("PostgreSQL").Preload("MySQL").
+	err := r.db.WithContext(ctx).Preload("PostgreSQL").Preload("MySQL").Preload("Oracle").
 		Where("task_id = ? AND tenant_id = ?", taskID, tenantID).Order("generation DESC").First(&resource).Error
 	if err != nil {
 		return nil, err
@@ -133,7 +140,7 @@ func (r *CaptureRepository) ListObservable(ctx context.Context, limit int) ([]mo
 	}
 	var resources []models.CaptureResource
 	err := r.db.WithContext(ctx).
-		Preload("PostgreSQL").Preload("MySQL").
+		Preload("PostgreSQL").Preload("MySQL").Preload("Oracle").
 		Where("connector_created = ? AND status IN ?", true, []models.CaptureStatus{models.CaptureStatusRunning, models.CaptureStatusFailed}).
 		Order("updated_at ASC").Limit(limit).Find(&resources).Error
 	return resources, err

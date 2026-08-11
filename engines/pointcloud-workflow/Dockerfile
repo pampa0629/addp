@@ -24,10 +24,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
   && micromamba install -y -n base -c conda-forge python=3.12 pdal \
   && micromamba clean -a -y
 
-COPY common-python /common-python
 COPY engines/pointcloud-workflow/requirements.txt /app/requirements.txt
+COPY common-python/pyproject.toml /tmp/addp-common-pyproject.toml
+RUN python - <<'PY'
+import tomllib
+from pathlib import Path
+
+project = tomllib.loads(Path("/tmp/addp-common-pyproject.toml").read_text())
+dependencies = project["project"]["dependencies"]
+Path("/tmp/addp-common-requirements.txt").write_text("\n".join(dependencies) + "\n")
+PY
 RUN python -m pip install --no-cache-dir --upgrade pip \
-	&& python -m pip install --no-cache-dir /common-python -r /app/requirements.txt
+  && python -m pip install --no-cache-dir \
+    -r /tmp/addp-common-requirements.txt \
+    -r /app/requirements.txt
+
+# PointCloud 只打包其运行时实际使用的 common-python 子包，避免无关公共能力变化触发镜像重建。
+COPY common-python/README.md /common-python/README.md
+COPY common-python/addp_common/__init__.py /common-python/addp_common/__init__.py
+COPY common-python/addp_common/client /common-python/addp_common/client
+COPY common-python/addp_common/workflow_access.py /common-python/addp_common/workflow_access.py
+COPY common-python/addp_common/workflow_runtime /common-python/addp_common/workflow_runtime
+COPY common-python/pyproject.toml /common-python/pyproject.toml
+RUN python -m pip install --no-cache-dir --no-build-isolation --no-deps /common-python \
+  && rm -rf /common-python
 
 COPY engines/pointcloud-workflow/api_server.py engines/pointcloud-workflow/operators.py /app/
 

@@ -1,5 +1,7 @@
 import { decimalFactsFromField, withSourceDecimalFacts } from './decimalMapping.mjs'
 
+import { normalizeFieldType } from '../../../../../common-frontend/basic/src/utils/fieldTypes.js'
+
 function normalizedFieldName(value) {
   return String(value || '').trim().toLowerCase()
 }
@@ -7,7 +9,7 @@ function normalizedFieldName(value) {
 export function applyTargetFieldDefinition(mapping, targetField) {
   if (!targetField?.name) return mapping
 
-  const targetType = normalizedFieldName(targetField.type) || mapping.target_type || 'string'
+  const targetType = normalizeFieldType(targetField) || mapping.target_type || 'string'
   const next = {
     ...mapping,
     target_field: targetField.name,
@@ -27,6 +29,29 @@ export function applyExistingTargetFields(mappings, targetFields) {
     const targetName = normalizedFieldName(mapping?.target_field)
     const targetField = fields.find(field => normalizedFieldName(field?.name) === targetName)
     return targetField ? applyTargetFieldDefinition(mapping, targetField) : mapping
+  })
+}
+
+export function buildAutomaticFieldMappings(sourceFields, targetFields = []) {
+  const mappings = (Array.isArray(sourceFields) ? sourceFields : []).map(field => ({
+    source_field: field?.name,
+    target_field: field?.name,
+    target_type: normalizeFieldType(field),
+    ...decimalFactsFromField(field),
+    format: '',
+    default_value: '',
+    nullable: field?.nullable !== false
+  }))
+  return applyExistingTargetFields(mappings, targetFields)
+}
+
+export function applySourceFieldNullability(mappings, sourceFields) {
+  const fields = Array.isArray(sourceFields) ? sourceFields : []
+  return (Array.isArray(mappings) ? mappings : []).map(mapping => {
+    const sourceField = fields.find(field => normalizedFieldName(field?.name) === normalizedFieldName(mapping?.source_field))
+    return sourceField && typeof sourceField.nullable === 'boolean'
+      ? { ...mapping, nullable: sourceField.nullable }
+      : mapping
   })
 }
 

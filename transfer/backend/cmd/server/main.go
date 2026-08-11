@@ -309,6 +309,7 @@ func transferSchemaModels() []interface{} {
 		&models.CaptureResource{},
 		&models.PostgreSQLCaptureResource{},
 		&models.MySQLCaptureResource{},
+		&models.OracleCaptureResource{},
 		&models.SchemaChangeRequest{},
 		&models.DeadLetter{},
 		&models.ContinuousPolicy{},

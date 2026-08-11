@@ -9,6 +9,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	oraclemapping "github.com/addp/common/format/mappers/oracle"
 	commonquery "github.com/addp/common/query"
 	gormoracle "github.com/godoes/gorm-oracle"
@@ -29,6 +30,7 @@ var (
 	_ plugin.ParameterizedSQLQueryRuntimeProvider = (*OraclePlugin)(nil)
 	_ plugin.BatchReadableProvider                = (*OraclePlugin)(nil)
 	_ plugin.TableReadSessionProvider             = (*OraclePlugin)(nil)
+	_ plugin.SpatialFeatureReadProvider           = (*OraclePlugin)(nil)
 )
 
 var oracleSystemSchemas = map[string]struct{}{
@@ -68,7 +70,7 @@ func (p *OraclePlugin) RequiredFields() []string {
 }
 
 func (p *OraclePlugin) SensitiveFields() []string {
-	return []string{"password"}
+	return []string{"password", "cdc_password"}
 }
 
 func (p *OraclePlugin) ConnectionIdentityFields() []string {
@@ -82,6 +84,11 @@ func (p *OraclePlugin) Capabilities() plugin.EngineCapabilities {
 		Indexes:            true,
 		Constraints:        true,
 		Partitioning:       true,
+		SpatialFacts:       true,
+		TableSpatialEncoding: &plugin.NativeTableSpatialEncodingCapability{
+			GeometryReadEncodings:  []string{string(format.GeometryEncodingEWKB)},
+			NativeSpatialFunctions: true,
+		},
 	})
 	return caps
 }
@@ -174,6 +181,7 @@ func (p *OraclePlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallbacks 
 		ListIndexes:           p.listIndexes,
 		ListConstraints:       p.listConstraints,
 		DescribePartitioning:  p.describePartitioning,
+		DescribeSpatial:       p.describeSpatialFacts,
 		RowCount:              p.getTableRowCount,
 		IsSystemNamespaceFunc: p.isSystemSchema,
 	}
@@ -212,6 +220,11 @@ func (p *OraclePlugin) listNamespaces(ctx context.Context, db *gorm.DB, root plu
 		         SELECT 1 FROM all_mviews mv
 		          WHERE mv.owner = o.owner AND mv.mview_name = o.object_name
 		       ))
+		   AND NOT EXISTS (
+		         SELECT 1 FROM all_secondary_objects so
+		          WHERE so.secondary_object_owner = o.owner
+		            AND so.secondary_object_name = o.object_name
+		       )
 		 WHERE u.oracle_maintained = 'N'
 		 GROUP BY u.username
 		HAVING u.username = USER OR COUNT(o.object_name) > 0
@@ -268,6 +281,11 @@ func (p *OraclePlugin) listTables(ctx context.Context, db *gorm.DB, schema strin
 		         SELECT 1 FROM all_mviews mv
 		          WHERE mv.owner = o.owner AND mv.mview_name = o.object_name
 		       ))
+		   AND NOT EXISTS (
+		         SELECT 1 FROM all_secondary_objects so
+		          WHERE so.secondary_object_owner = o.owner
+		            AND so.secondary_object_name = o.object_name
+		       )
 		 ORDER BY o.object_name
 	`, schema).Scan(&rows).Error
 	if err != nil {

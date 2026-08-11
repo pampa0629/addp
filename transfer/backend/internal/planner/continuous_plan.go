@@ -23,6 +23,7 @@ const (
 	ContinuousEnvelopeRecord             = "record"
 	ContinuousEnvelopePostgreSQLDebezium = "postgresql_debezium"
 	ContinuousEnvelopeMySQLDebezium      = "mysql_debezium"
+	ContinuousEnvelopeOracleDebezium     = "oracle_debezium"
 )
 
 type ContinuousSourcePlan struct {
@@ -189,6 +190,11 @@ func BuildDatabaseCDCContinuousPlan(spec DatabaseCDCTaskSpec, resolver EngineRes
 		if stream.Database != sourceLocator.Path[0] || stream.Schema != "" || stream.SpatialInfo != nil {
 			return nil, fmt.Errorf("MySQL CDC stream binding does not match registered source identity")
 		}
+	case "oracle":
+		sourceDatabase := strings.TrimSpace(engineplugin.GetString(bindings.Source.ConnInfo, "service_name"))
+		if stream.Database != sourceDatabase || stream.Schema != sourceLocator.Path[0] || stream.SpatialInfo != nil {
+			return nil, fmt.Errorf("Oracle CDC stream binding does not match registered source identity")
+		}
 	default:
 		return nil, fmt.Errorf("unsupported database CDC provider %q", bindings.SourceType)
 	}
@@ -216,10 +222,17 @@ func BuildDatabaseCDCContinuousPlan(spec DatabaseCDCTaskSpec, resolver EngineRes
 			return nil, err
 		}
 		envelope = ContinuousEnvelopePostgreSQLDebezium
-	} else {
+	} else if bindings.SourceType == "mysql" {
 		for _, mapping := range mappings {
 			if mapping.Type == datatype.FieldTypeGeometry {
 				return nil, fmt.Errorf("MySQL CDC v1 does not support geometry fields")
+			}
+		}
+	} else {
+		envelope = ContinuousEnvelopeOracleDebezium
+		for _, mapping := range mappings {
+			if mapping.Type == datatype.FieldTypeGeometry || mapping.Type == datatype.FieldTypeBytes {
+				return nil, fmt.Errorf("Oracle CDC v1 does not support geometry or LOB/binary fields")
 			}
 		}
 	}

@@ -46,7 +46,7 @@ func TestIntegrationPostgreSQLCaptureControlLifecycle(t *testing.T) {
 	if err := repository.MigrateCaptureProviderResources(infraDB); err != nil {
 		t.Fatalf("migrate legacy capture resources: %v", err)
 	}
-	if err := infraDB.AutoMigrate(&models.TransferTask{}, &models.CaptureResource{}, &models.PostgreSQLCaptureResource{}, &models.MySQLCaptureResource{}); err != nil {
+	if err := infraDB.AutoMigrate(&models.TransferTask{}, &models.CaptureResource{}, &models.PostgreSQLCaptureResource{}, &models.MySQLCaptureResource{}, &models.OracleCaptureResource{}); err != nil {
 		t.Fatalf("migrate capture control models: %v", err)
 	}
 

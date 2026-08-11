@@ -1,9 +1,11 @@
+import { normalizeFieldType } from '../../../../../common-frontend/basic/src/utils/fieldTypes.js'
+
 function isInteger(value) {
   return Number.isInteger(value)
 }
 
 function isDecimalType(value) {
-  return String(value || '').trim().toLowerCase() === 'decimal'
+  return normalizeFieldType(value) === 'decimal'
 }
 
 export function decimalFactsFromField(field) {

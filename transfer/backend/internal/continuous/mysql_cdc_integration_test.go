@@ -67,7 +67,7 @@ func runIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T, targ
 	}
 	if err := infraDB.AutoMigrate(
 		&models.TransferTask{}, &models.SyncState{}, &models.RuntimeLease{}, &models.CaptureResource{},
-		&models.PostgreSQLCaptureResource{}, &models.MySQLCaptureResource{}, &models.SchemaChangeRequest{},
+		&models.PostgreSQLCaptureResource{}, &models.MySQLCaptureResource{}, &models.OracleCaptureResource{}, &models.SchemaChangeRequest{},
 	); err != nil {
 		t.Fatal(err)
 	}

@@ -204,6 +204,7 @@
         <template #default="{ row, $index }">
           <el-switch
             v-model="row.nullable"
+            :disabled="wizardState.isDatabaseCDCTask.value"
             @change="handleMappingChange($index)"
           />
         </template>
@@ -289,6 +290,7 @@ import { fieldDefinitionRecommendationAPI } from '@/api/tasks'
 import { CONTINUOUS_FIELD_TYPES, databaseCDCFieldTypes } from './continuousTask.mjs'
 import { mysqlDecimalMappingIssues } from './decimalMapping.mjs'
 import { inferTopicFieldRecommendations } from './topicFieldRecommendations.mjs'
+import { normalizeFieldType } from '@addp/common-frontend'
 
 const { t } = useI18n()
 
@@ -357,7 +359,7 @@ const invalidDecimalFieldNames = computed(() => mysqlDecimalIssues.value
 const recommendableDecimalSourceFields = computed(() => {
   const sourceTypes = new Map(props.wizardState.sourceFields.value.map(field => [
     String(field?.name || '').trim().toLowerCase(),
-    String(field?.type || '').trim().toLowerCase()
+    normalizeFieldType(field)
   ]))
   const names = mysqlDecimalIssues.value
     .map(issue => props.wizardState.fieldMappings.value[issue.index]?.source_field)

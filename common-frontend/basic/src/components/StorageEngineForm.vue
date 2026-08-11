@@ -91,6 +91,24 @@
       <div v-if="hasStoredPassword" class="field-hint">
         {{ t('storageEngine.passwordHint') }}
       </div>
+      <el-divider content-position="left">{{ t('storageEngine.oracleCDC') }}</el-divider>
+      <el-form-item :label="t('storageEngine.oracleCDBName')">
+        <el-input v-model="formState.connection_info.cdc_database_name" placeholder="FREE" />
+      </el-form-item>
+      <el-form-item :label="t('storageEngine.oracleCDCUser')">
+        <el-input v-model="formState.connection_info.cdc_user" placeholder="C##ADDP_CDC" />
+      </el-form-item>
+      <el-form-item :label="t('storageEngine.oracleCDCPassword')">
+        <el-input
+          v-model="formState.connection_info.cdc_password"
+          type="password"
+          :placeholder="t('storageEngine.oracleCDCPasswordPlaceholder')"
+          show-password
+        />
+      </el-form-item>
+      <div v-if="hasStoredCDCPassword" class="field-hint">
+        {{ t('storageEngine.oracleCDCPasswordHint') }}
+      </div>
     </template>
 
     <!-- Apache Doris -->
@@ -569,6 +587,7 @@ const effectiveTypeOptions = computed(() =>
 
 const formRef = ref(null)
 const hasStoredPassword = ref(false)
+const hasStoredCDCPassword = ref(false)
 const hasStoredSecretKey = ref(false)
 const hasStoredTlsClientKey = ref(false)
 const immediateScanEnabled = ref(true)  // 默认启用立即扫描
@@ -631,6 +650,7 @@ const ensureConnectionDefaults = (form) => {
 
   const original = { ...(form.connection_info || {}) }
   const hadPassword = original._has_password === true
+  const hadCDCPassword = original._has_cdc_password === true
   const hadSecret = original._has_secret_key === true
 
   if (form.engine_type === 'postgresql') {
@@ -648,7 +668,10 @@ const ensureConnectionDefaults = (form) => {
       port: original.port ?? 1521,
       service_name: original.service_name ?? 'FREEPDB1',
       user: original.user ?? '',
-      password: original.password ?? ''
+      password: original.password ?? '',
+      cdc_database_name: original.cdc_database_name ?? '',
+      cdc_user: original.cdc_user ?? '',
+      cdc_password: original.cdc_password ?? ''
     }
   } else if (form.engine_type === 'mysql') {
     form.connection_info = {
@@ -747,6 +770,12 @@ const ensureConnectionDefaults = (form) => {
     delete form.connection_info._has_password
   }
 
+  if (hadCDCPassword) {
+    form.connection_info._has_cdc_password = true
+  } else {
+    delete form.connection_info._has_cdc_password
+  }
+
   if (hadSecret) {
     form.connection_info._has_secret_key = true
   } else {
@@ -765,6 +794,12 @@ const applySensitiveHints = () => {
   if (hasStoredPassword.value) {
     formState.connection_info._has_password = true
     formState.connection_info.password = SENSITIVE_PLACEHOLDER
+  }
+
+  hasStoredCDCPassword.value = formState.connection_info?._has_cdc_password === true || isMaskedSensitiveValue(formState.connection_info?.cdc_password)
+  if (hasStoredCDCPassword.value) {
+    formState.connection_info._has_cdc_password = true
+    formState.connection_info.cdc_password = SENSITIVE_PLACEHOLDER
   }
 
   hasStoredSecretKey.value = formState.connection_info?._has_secret_key === true || isMaskedSensitiveValue(formState.connection_info?.secret_key)
@@ -1129,6 +1164,28 @@ watch(
     if (!hasValue) {
       delete formState.connection_info._has_password
     }
+  }
+)
+
+watch(
+  () => formState.connection_info.cdc_password,
+  (value) => {
+    if (syncingFromProps) return
+
+    const metaFlag = formState.connection_info?._has_cdc_password === true
+    if (!metaFlag && value === SENSITIVE_PLACEHOLDER) {
+      formState.connection_info.cdc_password = ''
+      return
+    }
+    if (value === SENSITIVE_PLACEHOLDER) {
+      hasStoredCDCPassword.value = true
+      return
+    }
+
+    const hasValue = !!value
+    formState.connection_info._has_cdc_password = hasValue
+    hasStoredCDCPassword.value = hasValue
+    if (!hasValue) delete formState.connection_info._has_cdc_password
   }
 )
 

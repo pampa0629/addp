@@ -23,7 +23,7 @@ func TestTypeMapperToCommon(t *testing.T) {
 		{native: "BINARY_FLOAT", want: datatype.FieldTypeFloat},
 		{native: "BLOB", want: datatype.FieldTypeBytes},
 		{native: "JSON", want: datatype.FieldTypeJSON},
-		{native: "MDSYS.SDO_GEOMETRY", want: datatype.FieldTypeUnknown},
+		{native: "MDSYS.SDO_GEOMETRY", want: datatype.FieldTypeGeometry},
 		{native: "XMLTYPE", want: datatype.FieldTypeUnknown},
 		{native: "INTERVAL DAY TO SECOND", want: datatype.FieldTypeUnknown},
 	}

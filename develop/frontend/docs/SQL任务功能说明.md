@@ -13,6 +13,7 @@
 工作台固定采用左侧数据资源、右侧编辑器与结果上下分栏，小屏将数据资源收入抽屉：
 
 - 数据资源直接消费 Meta resource-tree，并固定到当前选择的查询 Engine。
+- MongoDB 查询可只选择 database 作为执行范围，实际 collection 由 MQL command object 的 `find`、`aggregate`、`count` 或 `distinct` 声明；AI 助手沿用同一语义，不要求重复选中 collection。
 - 查询语言和结果形态来自 Engine capability，不按引擎类型硬编码。
 - 执行时优先使用 Monaco 当前选区，没有选区时执行全文。
 - 即时查询创建统一 execution，并在当前页面轮询结果和提供统一监控入口。

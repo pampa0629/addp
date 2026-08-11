@@ -8,9 +8,18 @@ import {
   inferSourceEngineFromPrompt,
   inferSourceEnginesFromPrompt,
   needsTargetConfiguration,
+  resolveAuthoritativeSourceFields,
   resourceCandidateKey,
   resourceFact
 } from '../src/utils/transferCopilot.mjs'
+
+test('Transfer Copilot source confirmation prefers authoritative Meta field facts', () => {
+  const candidateFields = [{ name: 'geometry', type: 'geometry' }]
+  const metadataFields = [{ name: 'geometry', type: 'geometry', nullable: false }]
+  assert.deepEqual(resolveAuthoritativeSourceFields(candidateFields, metadataFields, 51572), metadataFields)
+  assert.deepEqual(resolveAuthoritativeSourceFields(candidateFields, [], 51572), [])
+  assert.deepEqual(resolveAuthoritativeSourceFields(candidateFields, [], 0), candidateFields)
+})
 
 test('Transfer Copilot groups every verified source candidate without dropping ambiguity', () => {
   const candidates = [

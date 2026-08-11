@@ -47,6 +47,8 @@ func (m *TypeMapper) ToCommon(nativeType string) datatype.FieldType {
 		return datatype.FieldTypeBytes
 	case "JSON":
 		return datatype.FieldTypeJSON
+	case "MDSYS.SDO_GEOMETRY", "SDO_GEOMETRY":
+		return datatype.FieldTypeGeometry
 	default:
 		return datatype.FieldTypeUnknown
 	}

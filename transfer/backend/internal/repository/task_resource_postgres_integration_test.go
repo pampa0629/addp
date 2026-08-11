@@ -43,7 +43,7 @@ func TestIntegrationPostgresTaskPrivateStateDeletionTransaction(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&models.TransferTask{}, &models.DeadLetter{}, &models.SyncState{}, &models.RuntimeLease{}, &models.CaptureResource{},
-		&models.PostgreSQLCaptureResource{}, &models.MySQLCaptureResource{}, &models.SchemaChangeRequest{},
+		&models.PostgreSQLCaptureResource{}, &models.MySQLCaptureResource{}, &models.OracleCaptureResource{}, &models.SchemaChangeRequest{},
 	); err != nil {
 		t.Fatal(err)
 	}

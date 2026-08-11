@@ -24,7 +24,7 @@ engine.capabilities/v1
 - `extensions` 只承载引擎特有补充信息，不得替代核心字段。
 - `extensions.spatial_workspaces` 只承载数据库实例中可识别的厂商空间工作区事实，如 SuperMap `sdx_postgis`、`sdx_postgresql` 或 ArcGIS `sde`；这一层用于 System 自动探测、高危启用和实例级 Provider 选择，不得把两个实现不同的 SuperMap 产品合并为 `sdx+`。
 - `extensions.spatial_workspaces[].can_enable` 只表示实例在当前条件下具备被显性启用的可能性；是否真的执行启用动作，由 System 的高危操作入口统一触发，不由前端或业务模块直接改写能力 JSON。
-- Oracle 第一阶段只声明普通 tabular 的 Catalog、Facts、SQL 参数查询、BatchRead 和 TableReadSession；不得因为底层数据库可产生 redo 或存在 ArcGIS SDE 表就声明 `change_stream_read`、空间 Provider 或 SDE 逻辑变化源。Oracle CDC 与 ArcGIS SDE 必须在未来分别定义独立 Provider、位置语义和能力声明。
+- Oracle Engine 当前声明普通 tabular 的 Catalog、Facts、SQL 参数查询、BatchRead、TableReadSession 和基础 Spatial Facts/空间行读取；不得因为底层数据库可产生 redo、Transfer 已支持 Oracle CDC 或存在 ArcGIS SDE 表就声明 `change_stream_read` 或 SDE 逻辑变化源。Oracle CDC 是 Transfer-owned capture Provider，ArcGIS SDE 仍是后续独立逻辑变化源，两者不得并入 Oracle Engine 的普通 Store 能力。
 
 SuperMap workspace kind 固定如下：
 
@@ -276,7 +276,7 @@ type NativeTableSpatialEncodingCapability struct {
 
 `read` / `write` 总开关无独立调用价值，不进入 Store 能力声明。`delete` 只表达引擎能删除对应 catalog 资源，不表达上层业务删除策略、回收流程或级联清理。`atomic_rename`、`transactions`、`formats` 不作为 Store 顶层字段；如有真实调用方，应在对应 Provider 或更具体能力中声明。
 
-`table_spatial_encoding` 只表达跨出 native table provider 后的 row value 编码，不表达数据库内部类型。PostGIS、MySQL `geometry` 这类 engine-internal type 不应作为 encoding 暴露。PostgreSQL / PostGIS 与 MySQL 均声明 `geometry_read_encodings=["ewkb","geojson"]`、`geometry_write_encodings=["ewkb"]`、`read_transform=true`、`native_spatial_functions=true`。MySQL Provider 读取时必须把内部 geometry binary 转换为标准 EWKB 或 GeoJSON，并对 geographic SRS 显式使用 `axis-order=long-lat`；写入时必须把 EWKB 转换为标准 WKB，再通过 MySQL 空间构造函数连同 SRID 写入。不得把数据库内部 geometry 二进制、普通 `batch_read` / `batch_write` 或建表能力误报为空间行值编码能力。MySQL 8 的 ADDP 空间行值能力只支持二维 geometry；Z/M 输入必须明确拒绝，不得静默降维。
+`table_spatial_encoding` 只表达跨出 native table provider 后的 row value 编码，不表达数据库内部类型。PostGIS、MySQL `geometry`、Oracle `MDSYS.SDO_GEOMETRY` 这类 engine-internal type 不应作为 encoding 暴露。PostgreSQL / PostGIS 与 MySQL 声明 `geometry_read_encodings=["ewkb","geojson"]`、`geometry_write_encodings=["ewkb"]`、`read_transform=true`、`native_spatial_functions=true`；Oracle 当前声明 `geometry_read_encodings=["ewkb"]` 与 `native_spatial_functions=true`，不声明写入或 transform。各 Provider 读取时必须把内部 geometry binary/对象转换为标准 EWKB 或 GeoJSON，不得把数据库内部 geometry 二进制、普通 `batch_read` / `batch_write` 或建表能力误报为空间行值编码能力。MySQL 8 的 ADDP 空间行值能力只支持二维 geometry；Z/M 输入必须明确拒绝，不得静默降维。
 
 数据库插件声明 `native_spatial_functions=true` 时必须实现 `SpatialFeatureReadProvider`，实现该 Provider 时也必须声明该能力，capability validator 对二者做双向一致性校验。该 Provider 的跨模块返回值固定为 EWKB、centroid EWKB、SRID 与 `SpatialInfo`，数据库原生函数和 axis order 处理留在插件内部；当前 PostgreSQL/PostGIS 与 MySQL 都实现该接口。该接口不是第二套表读取路线，只服务按稳定 identity field 精确读取一个空间要素的交互操作。
 

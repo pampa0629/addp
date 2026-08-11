@@ -189,7 +189,7 @@ source/poll、目标数据库、fencing、retention 和 Infra 故障不能进入
 当前数据库 CDC 主路径固定为：
 
 ```text
-PostgreSQL/MySQL 单表
+PostgreSQL/MySQL/Oracle 单表
   -> 对应 Debezium Connector
   -> Infra Kafka
   -> Transfer Continuous Worker
@@ -206,13 +206,13 @@ CDC 固定使用 initial snapshot。有稳定非空主键的单表事件按以�
 | `c`、`u` | upsert |
 | `d` | delete |
 
-tombstone、truncate、message、来源身份不匹配和协议未知字段严格阻塞，不推进 committed position。完整 PostgreSQL/MySQL 类型矩阵见基本概念及配置说明。
+tombstone、truncate、message、来源身份不匹配和协议未知字段严格阻塞，不推进 committed position。完整 PostgreSQL/MySQL/Oracle 类型矩阵见基本概念及配置说明。Oracle 第一期只开放普通非空间、非 LOB 单表，Oracle Spatial CDC 与 ArcGIS SDE 保留为独立后续 Provider 能力。
 
 ### 6.4 生命周期
 
 Pause 停止目标应用并结束当前 session；Resume 在 committed position 仍处于 Kafka retention 范围时创建新 execution 并恢复。
 
-数据库 CDC 的 Pause 不暂停 connector。捕获仍会写入 Infra Kafka，主要风险是 backlog、磁盘和 retention；connector 或 Kafka 故障时还要分别观测 PostgreSQL WAL 或 MySQL binlog 保留。
+数据库 CDC 的 Pause 不暂停 connector。捕获仍会写入 Infra Kafka，主要风险是 backlog、磁盘和 retention；connector 或 Kafka 故障时还要分别观测 PostgreSQL WAL、MySQL binlog 或 Oracle redo/archive log 容量风险。
 
 数据库 CDC 的 Stop 是不可逆终态。它清理 ADDP-owned connector、Provider 专属捕获资源、data/schema-history topic、consumer group 和 ACL；已停止任务不能再次 Start/Resume。重新同步必须创建新任务和新目标表。Stop 保留目标业务数据、目标 ledger、任务定义、execution 和审计记录。
 
@@ -242,7 +242,7 @@ Schema 变化决定目标能否继续应用；Meta scan 只重新识别目标事
   -> task 进入 blocked
 ```
 
-原 capture generation 唯一可恢复的变化是用户人工确认的 additive migration，且仅限当前阻塞消息实际包含的新增 nullable、非主键、非 geometry 字段。服务端重新验证源事实，复用目标 Provider 幂等加列，追加 mapping revision，并将任务置为 paused；用户随后 Resume，从原 committed position 重放当前消息。
+PostgreSQL/MySQL 原 capture generation 唯一可恢复的变化是用户人工确认的 additive migration，且仅限当前阻塞消息实际包含的新增 nullable、非主键、非 geometry 字段。服务端重新验证源事实，复用目标 Provider 幂等加列，追加 mapping revision，并将任务置为 paused；用户随后 Resume，从原 committed position 重放当前消息。Oracle 第一期的任何 schema drift 均不允许在原 generation 审批恢复。
 
 字段删除、类型或主键变化、非 nullable/geometry 新增和协议变化不能在原 generation 恢复，只能 Stop 后创建新任务和新目标表。当前不提供自动 DDL。
 

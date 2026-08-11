@@ -10,61 +10,42 @@ import (
 	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
-	"gorm.io/gorm"
 )
 
 func (d *CatalogDispatcher) dispatchTabularScan(ctx context.Context, enginePlugin plugin.EnginePlugin, plan scanflow.CatalogScanPlan, req scanflow.DispatchRequest) (scanflow.DispatchResult, error) {
 	if d.namespaceScan == nil {
 		return scanflow.DispatchResult{}, fmt.Errorf("namespace scanner is nil")
 	}
-	if req.Mode == scanflow.DispatchManual {
-		namespaces, items, fields, err := d.scanResourceNamespaces(ctx, enginePlugin, req.Resource, req.TenantID, scanflow.TopCatalogTargets(req.CatalogPaths), req.ScanLogID, req.ScanDepth, req.Force, req.Mode, req.Reporter)
-		return scanflow.DispatchResult{CatalogNodes: namespaces, Items: items, Fields: fields}, err
-	}
 
-	rootBranchEntries, err := metacatalog.RootBranchEntries(ctx, req.Resource, enginePlugin)
-	if err != nil {
-		return scanflow.DispatchResult{}, fmt.Errorf("failed to list root branch entries: %w", err)
-	}
-
-	namespaceTerm := plan.BranchTerm
-	d.log.Info("数据库资源扫描开始", "namespace_total", len(rootBranchEntries), "namespace_term", namespaceTerm)
-	scannedNamespaces := make(map[string]bool)
-	result := scanflow.DispatchResult{}
-
-	for _, rootBranchEntry := range rootBranchEntries {
-		scannedNamespaces[rootBranchEntry.Name] = true
-
-		var node models.MetaNode
-		err := d.db.Where("tenant_id = ? AND engine_id = ? AND node_type = ? AND name = ?",
-			req.TenantID, req.Resource.ID, namespaceTerm, rootBranchEntry.Name).First(&node).Error
-		if err != gorm.ErrRecordNotFound && err != nil {
-			d.log.Warn("查询 namespace 节点失败",
-				"engine_id", req.Resource.ID,
-				"tenant_id", req.TenantID,
-				"namespace", rootBranchEntry.Name,
-				"error", err,
-			)
-			continue
+	namespaces := scanflow.TopCatalogTargets(req.CatalogPaths)
+	fullEngineScan := len(namespaces) == 0
+	visibleNamespaces := make(map[string]bool)
+	if fullEngineScan {
+		if req.Reporter != nil {
+			req.Reporter.Message("未指定命名空间，正在获取完整列表")
 		}
-
-		namespaces, items, fields, err := d.namespaceScan.ScanNamespace(ctx, enginePlugin, req.Resource, req.TenantID, req.Resource.ID, rootBranchEntry.Name, req.ScanDepth, req.Force)
+		rootBranchEntries, err := metacatalog.RootBranchEntries(ctx, req.Resource, enginePlugin)
 		if err != nil {
-			d.log.Warn("namespace 扫描失败",
-				"engine_id", req.Resource.ID,
-				"tenant_id", req.TenantID,
-				"namespace", rootBranchEntry.Name,
-				"error", err,
-			)
-			continue
+			return scanflow.DispatchResult{}, fmt.Errorf("failed to list root branch entries: %w", err)
 		}
-		result.CatalogNodes += namespaces
-		result.Items += items
-		result.Fields += fields
+		for _, entry := range rootBranchEntries {
+			namespaces = append(namespaces, entry.Name)
+			visibleNamespaces[entry.Name] = true
+		}
+		if req.Reporter != nil {
+			req.Reporter.Message(fmt.Sprintf("已过滤系统命名空间，待扫描 %d 个用户命名空间", len(namespaces)))
+		}
 	}
 
-	d.softDeleteMissingTabularNamespaces(req.Resource, req.TenantID, namespaceTerm, scannedNamespaces)
-	d.finalizeCatalogRootAfterScan(req.Resource, req.TenantID, result.Items, req.ScanDepth)
+	catalogNodes, items, fields, err := d.scanResourceNamespaces(ctx, enginePlugin, req.Resource, req.TenantID, namespaces, req.ScanLogID, req.ScanDepth, req.Force, req.Mode, req.Reporter)
+	result := scanflow.DispatchResult{CatalogNodes: catalogNodes, Items: items, Fields: fields}
+	if err != nil {
+		return result, err
+	}
+	if fullEngineScan {
+		d.softDeleteMissingTabularNamespaces(req.Resource, req.TenantID, plan.BranchTerm, visibleNamespaces)
+		d.finalizeCatalogRootAfterScan(req.Resource, req.TenantID, result.Items, req.ScanDepth)
+	}
 	return result, nil
 }
 
@@ -80,9 +61,6 @@ func (d *CatalogDispatcher) scanResourceNamespaces(
 	mode scanflow.DispatchMode,
 	reporter scanflow.ProgressReporter,
 ) (int, int, int, error) {
-	if d.branchScan == nil {
-		return 0, 0, 0, fmt.Errorf("branch scanner is nil")
-	}
 	resourceID := resource.ID
 
 	startFields := []any{
@@ -97,25 +75,6 @@ func (d *CatalogDispatcher) scanResourceNamespaces(
 		startFields = append(startFields, "target_namespaces", namespaces)
 	}
 	d.log.Info("开始扫描指定命名空间列表", startFields...)
-
-	if len(namespaces) == 0 {
-		if reporter != nil {
-			reporter.Message("未指定命名空间，正在获取完整列表")
-		}
-
-		rootBranchEntries, err := metacatalog.RootBranchEntries(ctx, resource, enginePlugin)
-		if err != nil {
-			return 0, 0, 0, err
-		}
-
-		for _, entry := range rootBranchEntries {
-			namespaces = append(namespaces, entry.Name)
-		}
-
-		if reporter != nil {
-			reporter.Message(fmt.Sprintf("已过滤系统命名空间，待扫描 %d 个用户命名空间", len(namespaces)))
-		}
-	}
 
 	totalNamespaces := 0
 	totalTables := 0

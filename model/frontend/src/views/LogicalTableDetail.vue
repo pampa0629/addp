@@ -387,6 +387,7 @@ import DDLPreviewDialog from '../components/DDLPreviewDialog.vue'
 import { useI18n } from 'vue-i18n'
 import { navigateModelRoute } from '../utils/moduleNavigation'
 import { useAuthStore } from '../store/auth'
+import { resolveLogicalTableListRouteState } from '../utils/routeState'
 
 const { t } = useI18n()
 
@@ -395,7 +396,10 @@ const router = useRouter()
 const authStore = useAuthStore()
 const tableId = parseInt(route.params.id)
 
-const backToList = () => navigateModelRoute(router, '/logical-tables', { history: 'replace' })
+const backToList = () => navigateModelRoute(router, {
+  path: '/logical-tables',
+  query: resolveLogicalTableListRouteState(route.query).query
+}, { history: 'replace' })
 
 const saving = ref(false)
 const fieldLoading = ref(false)

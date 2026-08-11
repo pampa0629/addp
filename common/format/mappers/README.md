@@ -7,7 +7,7 @@
 | 目录 | 映射器名称 | 说明 |
 | --- | --- | --- |
 | `mysql/` | `mysql` | MySQL 原生类型映射 |
-| `oracle/` | `oracle` | Oracle 原生类型映射；未实现的 UDT、`SDO_GEOMETRY`、XML 和 INTERVAL 映射为 `unknown` |
+| `oracle/` | `oracle` | Oracle 原生类型映射；`MDSYS.SDO_GEOMETRY` 映射为 geometry，其他未实现的 UDT、XML 和 INTERVAL 映射为 `unknown` |
 | `postgresql/` | `postgresql` | PostgreSQL 原生类型映射 |
 | `spatialite/` | `spatialite` | SQLite / SpatiaLite 原生类型映射 |
 

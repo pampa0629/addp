@@ -122,6 +122,12 @@ func createCaptureRepositoryTestTables(t *testing.T, db *gorm.DB) {
 	)`).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec(`CREATE TABLE transfer.oracle_capture_resources (
+		capture_resource_id INTEGER PRIMARY KEY,
+		schema_history_topic_name TEXT NOT NULL UNIQUE, schema_history_topic_owned BOOLEAN NOT NULL DEFAULT TRUE
+	)`).Error; err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestCaptureRepositoryCreatesMySQLProviderFacts(t *testing.T) {
@@ -139,6 +145,24 @@ func TestCaptureRepositoryCreatesMySQLProviderFacts(t *testing.T) {
 	if resource.MySQL == nil || resource.PostgreSQL != nil || resource.MySQL.ConnectorServerID != uint32(resource.ID) ||
 		resource.MySQL.SchemaHistoryTopicName != "__addp_cdc_schema.7.1.1" || !resource.MySQL.SchemaHistoryTopicOwned {
 		t.Fatalf("MySQL provider facts = %#v/%#v", resource.MySQL, resource.PostgreSQL)
+	}
+}
+
+func TestCaptureRepositoryCreatesOracleProviderFacts(t *testing.T) {
+	db := newTaskRepositoryTestDB(t)
+	createCaptureRepositoryTestTables(t, db)
+	task := createTaskRepositoryTestTask(t, db, 7, "oracle-cdc")
+	resource, err := NewCaptureRepository(db).BeginGeneration(context.Background(), CaptureIdentity{
+		TaskID: task.ID, TenantID: task.TenantID, SourceType: models.CaptureSourceOracle,
+		SourceIdentity: "addp://engine/22/path/BUSINESS/CUSTOMERS?type=table", SourceConnectionFingerprint: "fingerprint",
+		SourceEngineID: 22, SourceDatabase: "FREEPDB1", SourceSchema: "BUSINESS", SourceTable: "CUSTOMERS",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resource.Oracle == nil || resource.PostgreSQL != nil || resource.MySQL != nil ||
+		resource.Oracle.SchemaHistoryTopicName != "__addp_cdc_schema.7.1.1" || !resource.Oracle.SchemaHistoryTopicOwned {
+		t.Fatalf("Oracle provider facts = %#v", resource.Oracle)
 	}
 }
 

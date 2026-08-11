@@ -26,11 +26,13 @@ import (
 type CapturePlan struct {
 	SourceType                  models.CaptureSourceType
 	SourceConnInfo              engineplugin.ConnectionInfo
+	CDCConnInfo                 engineplugin.ConnectionInfo
 	TargetConnInfo              engineplugin.ConnectionInfo
 	SourceEngineID              uint
 	TargetEngineID              uint
 	TargetType                  string
 	SourceDatabase              string
+	SourceCDBName               string
 	SourceSchema                string
 	SourceTable                 string
 	TargetNamespace             string
@@ -81,6 +83,16 @@ func (r *DatabasePlanResolver) Resolve(ctx context.Context, task *models.Transfe
 		if err := validateMySQLSourcePrimaryKey(ctx, plan); err != nil {
 			return nil, err
 		}
+	case models.CaptureSourceOracle:
+		if err := validateOracleCaptureSettings(ctx, plan); err != nil {
+			return nil, err
+		}
+		if err := validateOracleSourceFields(ctx, plan); err != nil {
+			return nil, err
+		}
+		if err := validateOracleSourcePrimaryKey(ctx, plan); err != nil {
+			return nil, err
+		}
 	default:
 		return nil, fmt.Errorf("unsupported database CDC source type %q", plan.SourceType)
 	}
@@ -108,7 +120,7 @@ func (r *DatabasePlanResolver) ResolveForCleanup(_ context.Context, task *models
 		return nil, fmt.Errorf("resolve database CDC source engine for cleanup: %w", err)
 	}
 	sourceType := strings.ToLower(strings.TrimSpace(source.Type))
-	if sourceType != "postgresql" && sourceType != "mysql" {
+	if sourceType != "postgresql" && sourceType != "mysql" && sourceType != "oracle" {
 		return nil, fmt.Errorf("unsupported database CDC source engine %q", sourceType)
 	}
 	sourceLocator, _ := spec.Source.ResourceLocator()
@@ -126,6 +138,12 @@ func (r *DatabasePlanResolver) ResolveForCleanup(_ context.Context, task *models
 		plan.SourceType = models.CaptureSourceMySQL
 		plan.SourceDatabase = sourceLocator.Path[0]
 		plan.SourceConnectionFingerprint = mysqlConnectionFingerprint(source.ConnInfo, plan.SourceDatabase)
+	case "oracle":
+		plan.SourceType = models.CaptureSourceOracle
+		plan.SourceDatabase = strings.TrimSpace(engineplugin.GetString(source.ConnInfo, "service_name"))
+		plan.SourceSchema = sourceLocator.Path[0]
+		plan.SourceCDBName = strings.TrimSpace(engineplugin.GetString(source.ConnInfo, "cdc_database_name"))
+		plan.SourceConnectionFingerprint = oracleConnectionFingerprint(source.ConnInfo)
 	}
 	if plan.SourceDatabase == "" {
 		return nil, fmt.Errorf("database CDC source database is required")
@@ -172,6 +190,15 @@ func (r *DatabasePlanResolver) resolveBindings(task *models.TransferTask) (*Capt
 		plan.SourceType = models.CaptureSourceMySQL
 		plan.SourceDatabase = sourceLocator.Path[0]
 		plan.SourceConnectionFingerprint = mysqlConnectionFingerprint(bindings.Source.ConnInfo, plan.SourceDatabase)
+	case "oracle":
+		plan.SourceType = models.CaptureSourceOracle
+		plan.SourceDatabase = strings.TrimSpace(engineplugin.GetString(bindings.Source.ConnInfo, "service_name"))
+		plan.SourceSchema = sourceLocator.Path[0]
+		plan.SourceCDBName = strings.TrimSpace(engineplugin.GetString(bindings.Source.ConnInfo, "cdc_database_name"))
+		plan.SourceConnectionFingerprint = oracleConnectionFingerprint(bindings.Source.ConnInfo)
+		plan.CDCConnInfo = oracleCDCConnectionInfo(bindings.Source.ConnInfo)
+	default:
+		return nil, fmt.Errorf("unsupported database CDC source type %q", bindings.SourceType)
 	}
 	for _, field := range spec.Transforms[0].Fields {
 		sourceField := strings.TrimSpace(field.Source)
@@ -600,6 +627,8 @@ func buildConnectorConfig(plan *CapturePlan, resource *models.CaptureResource, c
 		return buildPostgreSQLConnectorConfig(plan, resource, config.ConnectLoopbackHost)
 	case models.CaptureSourceMySQL:
 		return buildMySQLConnectorConfig(plan, resource, config)
+	case models.CaptureSourceOracle:
+		return buildOracleConnectorConfig(plan, resource, config)
 	default:
 		return nil, fmt.Errorf("unsupported database connector source type %q", plan.SourceType)
 	}
@@ -698,12 +727,19 @@ func buildMySQLConnectorConfig(plan *CapturePlan, resource *models.CaptureResour
 		"transforms.route.regex":         ".*",
 		"transforms.route.replacement":   resource.TopicName,
 	}
+	if err := applySchemaHistoryKafkaConfig(connectorConfig, config, "MySQL"); err != nil {
+		return nil, err
+	}
+	return connectorConfig, nil
+}
+
+func applySchemaHistoryKafkaConfig(connectorConfig map[string]string, config SupervisorConfig, provider string) error {
 	protocol := strings.ToLower(strings.TrimSpace(config.ConnectKafkaSecurityProtocol))
 	if protocol == "" {
 		protocol = "sasl_plaintext"
 	}
 	if protocol != "plaintext" && protocol != "ssl" && protocol != "sasl_plaintext" && protocol != "sasl_ssl" {
-		return nil, fmt.Errorf("unsupported MySQL connector Kafka security protocol %q", protocol)
+		return fmt.Errorf("unsupported %s connector Kafka security protocol %q", provider, protocol)
 	}
 	securityProtocol := strings.ToUpper(protocol)
 	for _, role := range []string{"producer", "consumer"} {
@@ -711,11 +747,11 @@ func buildMySQLConnectorConfig(plan *CapturePlan, resource *models.CaptureResour
 	}
 	if protocol == "sasl_plaintext" || protocol == "sasl_ssl" {
 		if strings.TrimSpace(config.ConnectKafkaUsername) == "" || config.ConnectKafkaPassword == "" {
-			return nil, fmt.Errorf("MySQL connector schema history requires Kafka Connect SASL credentials")
+			return fmt.Errorf("%s connector schema history requires Kafka Connect SASL credentials", provider)
 		}
 		mechanism, loginModule, err := kafkaConnectSASL(config.ConnectKafkaSASLMechanism)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		jaas := loginModule + ` required username="` + escapeJAASValue(config.ConnectKafkaUsername) + `" password="` + escapeJAASValue(config.ConnectKafkaPassword) + `";`
 		for _, role := range []string{"producer", "consumer"} {
@@ -729,10 +765,10 @@ func buildMySQLConnectorConfig(plan *CapturePlan, resource *models.CaptureResour
 		if caFile != "" {
 			pem, err := os.ReadFile(caFile)
 			if err != nil {
-				return nil, fmt.Errorf("read Kafka Connect schema history CA certificate: %w", err)
+				return fmt.Errorf("read Kafka Connect schema history CA certificate: %w", err)
 			}
 			if len(strings.TrimSpace(string(pem))) == 0 {
-				return nil, fmt.Errorf("Kafka Connect schema history CA certificate is empty")
+				return fmt.Errorf("Kafka Connect schema history CA certificate is empty")
 			}
 			for _, role := range []string{"producer", "consumer"} {
 				prefix := "schema.history.internal." + role + "."
@@ -741,7 +777,7 @@ func buildMySQLConnectorConfig(plan *CapturePlan, resource *models.CaptureResour
 			}
 		}
 	}
-	return connectorConfig, nil
+	return nil
 }
 
 func kafkaConnectSASL(value string) (string, string, error) {

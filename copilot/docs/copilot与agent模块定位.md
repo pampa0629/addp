@@ -69,4 +69,4 @@ Agent 提供独立的自然语言入口，用户无需进入任何具体模块�
 
 Agent 调用 Copilot 时按 `data-discovery` 对每个输入做跨语言粗筛召回，再执行 `resource.ancestors.get` 和 `data.preview`，必要时基于已验证事实做语义排序，收集并确认资源事实后传入 `resources[]`。Develop、Workflow 和 Transfer 的普通用户入口可以由 Copilot 的 `ResourceResolutionService` 完成同一流程；Notebook 只消费当前 Session 候选，不获得租户级 `data.search`。两条入口共享 Tool Manifest、ToolExecutor、Python SDK、`ResourceFact` 和资源解析规则，不复制 HTTP Client 或 owner 业务逻辑。
 
-查询生成还必须携带当前查询工作台的 `engine_id` 和 `query_language`。Agent 与 Develop 前端都只能调用带 `engine_id` 过滤的 `data.search`，候选 locator 必须属于该引擎；工作流生成的全租户多引擎发现不能复用于查询工作台。确认资源后统一调用 `query.draft.generate`，生成结果只是候选文本，执行仍归 Develop。
+查询生成还必须携带当前查询工作台的 `engine_id` 和 `query_language`，并可携带编辑器已有的 `current_query`。Agent 与 Develop 前端都只能调用带 `engine_id` 过滤的 `data.search`，候选 locator 必须属于该引擎；工作流生成的全租户多引擎发现不能复用于查询工作台。MongoDB database 是 Develop 的执行范围，不进入 `resources[]`；当合法 MQL `current_query` 已声明主 collection 时，`query.draft.generate` 可以在无资源事实的情况下基于现有命令生成。生成结果只是候选文本，执行仍归 Develop。

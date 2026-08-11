@@ -20,21 +20,23 @@ import {
 	cdcMappingsCoverSourceFields,
   continuousMappedTargetKeys,
 	continuousMappingsValid,
-	databaseCDCMappingsValid,
+	databaseCDCMappingIssues,
 	databaseCDCUnavailableReasonCodes,
   isKafkaTopicSource,
-	normalizeContinuousKeyFields
+	normalizeContinuousKeyFields,
+	resolveSourceLoadState
 } from './continuousTask.mjs'
 import {
   applyDecimalRecommendations,
-  decimalFactsFromField,
   mysqlDecimalMappingsValid,
   withSourceDecimalFacts
 } from './decimalMapping.mjs'
 import {
   applyFieldMappingEdit,
   applyExistingTargetFields,
-  applyTargetFieldDefinition
+  applySourceFieldNullability,
+  applyTargetFieldDefinition,
+  buildAutomaticFieldMappings
 } from './fieldMapping.mjs'
 import { mergeTopicFieldRecommendations } from './topicFieldRecommendations.mjs'
 
@@ -146,21 +148,31 @@ export function useTaskWizardState() {
     return continuousMappedTargetKeys(fieldMappings.value, continuousKeyFields.value)
   })
 
-  const continuousConfigValid = computed(() => {
+  const continuousConfigIssues = computed(() => {
+		const issues = []
 		const sourceValid = isDatabaseCDCTask.value
 			? supportsDatabaseCDC.value
 			: isKafkaTopicSource(sourceEngineType.value, sourceLocator.value)
-		const mappingsValid = isDatabaseCDCTask.value
-			? databaseCDCMappingsValid(fieldMappings.value, continuousKeyFields.value, sourceEngineType.value)
-			: continuousMappingsValid(fieldMappings.value, continuousKeyFields.value)
-		return sourceValid &&
-      supportsContinuousTarget.value &&
-			mappingsValid &&
-			(!isDatabaseCDCTask.value || cdcMappingsCoverSourceFields(fieldMappings.value, sourceFields.value)) &&
-      transforms.value.length === 0 &&
-      continuousPollBatchSize.value > 0 &&
-			(isDatabaseCDCTask.value || ['earliest', 'latest'].includes(continuousInitialPosition.value))
+		if (!sourceValid) issues.push({ code: 'sourceUnsupported' })
+		if (!supportsContinuousTarget.value) issues.push({ code: 'targetUnsupported' })
+
+		if (isDatabaseCDCTask.value) {
+			issues.push(...databaseCDCMappingIssues(fieldMappings.value, continuousKeyFields.value, sourceEngineType.value, sourceFields.value))
+		} else if (!continuousMappingsValid(fieldMappings.value, continuousKeyFields.value)) {
+			issues.push({ code: 'mappingsInvalid' })
+		}
+		if (isDatabaseCDCTask.value && !cdcMappingsCoverSourceFields(fieldMappings.value, sourceFields.value)) {
+			issues.push({ code: 'sourceFieldsNotCovered' })
+		}
+		if (transforms.value.length > 0) issues.push({ code: 'transformsUnsupported' })
+		if (!(continuousPollBatchSize.value > 0)) issues.push({ code: 'batchInvalid' })
+		if (!isDatabaseCDCTask.value && !['earliest', 'latest'].includes(continuousInitialPosition.value)) {
+			issues.push({ code: 'initialPositionInvalid' })
+		}
+		return issues
   })
+
+  const continuousConfigValid = computed(() => continuousConfigIssues.value.length === 0)
 
   const watermarkIncrementalValid = computed(() => {
     const field = String(watermarkField.value || '').trim()
@@ -563,14 +575,18 @@ export function useTaskWizardState() {
     sourceConfig.value = extra
 
     const nextContinuous = isKafkaTopicSource(sourceEngineType.value, sourceLocator.value)
-    runtimeBoundary.value = nextContinuous ? 'continuous' : 'bounded'
+    const nextLoadState = resolveSourceLoadState({
+      currentLoadMode: loadMode.value,
+      oldSourceEmpty,
+      sourceChanged,
+      kafkaTopic: nextContinuous
+    })
+    runtimeBoundary.value = nextLoadState.runtimeBoundary
+    loadMode.value = nextLoadState.loadMode
     if (nextContinuous) {
-      loadMode.value = 'incremental'
       schedule.value = ''
       enabled.value = false
       targetRepresentation.value = 'native'
-    } else if (oldSourceEmpty || sourceChanged) {
-      loadMode.value = 'snapshot'
     }
 
     if (sourceChanged) {
@@ -672,6 +688,9 @@ export function useTaskWizardState() {
         mapping,
         sourceFields.value.find(field => sameFieldName(field?.name, mapping?.source_field))
       ))
+      if (isDatabaseCDCTask.value) {
+        fieldMappings.value = applySourceFieldNullability(fieldMappings.value, sourceFields.value)
+      }
     }
   }
 
@@ -767,15 +786,7 @@ export function useTaskWizardState() {
   function autoGenerateFieldMappings() {
     if (sourceFields.value.length === 0) return
 
-		fieldMappings.value = applyExistingTargetFields(sourceFields.value.map(field => ({
-      source_field: field.name,
-      target_field: field.name, // 默认同名映射
-      target_type: field.type || 'string',
-		...decimalFactsFromField(field),
-      format: '',
-      default_value: '',
-		  nullable: field.nullable !== false
-		})), targetFields.value)
+    fieldMappings.value = buildAutomaticFieldMappings(sourceFields.value, targetFields.value)
   }
 
   function applyTopicFieldRecommendations(recommendations) {
@@ -1333,6 +1344,7 @@ export function useTaskWizardState() {
 		databaseCDCUnavailableReasons,
     supportsContinuousTarget,
     continuousTargetKeys,
+    continuousConfigIssues,
     continuousConfigValid,
 
     // 计算属性

@@ -101,9 +101,11 @@ func (p *dynamicSchemaCollectionPreviewProvider) Preview(ctx context.Context, re
 		rows = append(rows, row)
 	}
 
-	// 6. 获取集合统计信息。失败不阻断预览。
+	// 6. 优先使用 Meta 已扫描的精确行数；缺失时再查询实时集合统计。
 	total := int64(len(rows))
-	if factsProvider != nil {
+	if req.ItemRowCount != nil && *req.ItemRowCount > 0 {
+		total = *req.ItemRowCount
+	} else if factsProvider != nil {
 		if item, err := factsProvider.DescribeCatalogFacts(ctx, connInfo, req.ProviderPath, plugin.CatalogFactsOptions{IncludeStatistics: true}); err == nil {
 			if tableInfo := plugin.CatalogFactsTableInfo(item); tableInfo != nil && tableInfo.RowCount != nil && *tableInfo.RowCount > 0 {
 				total = *tableInfo.RowCount

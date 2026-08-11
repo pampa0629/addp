@@ -14,7 +14,13 @@ function parseCapabilities(value) {
 export function queryCapabilityForEngine(engine) {
   const query = parseCapabilities(engine?.capabilities)?.compute?.query
   if (!query?.supported) {
-    return { languages: [], defaultLanguage: '', resultKinds: [], parameters: null }
+    return {
+      languages: [],
+      defaultLanguage: '',
+      resultKinds: [],
+      parameters: null,
+      federation: { supported: false, sourceEngineTypes: [], objectFormats: [] }
+    }
   }
   const languages = Array.from(new Set((query.languages || []).map(value => String(value).trim().toLowerCase()).filter(Boolean)))
   const declaredDefault = String(query.default_language || '').trim().toLowerCase()
@@ -22,7 +28,14 @@ export function queryCapabilityForEngine(engine) {
     languages,
     defaultLanguage: languages.includes(declaredDefault) ? declaredDefault : (languages[0] || ''),
     resultKinds: Array.from(new Set((query.result_kinds || []).map(value => String(value).trim().toLowerCase()).filter(Boolean))),
-    parameters: normalizeQueryParameterCapability(query.parameters, languages)
+    parameters: normalizeQueryParameterCapability(query.parameters, languages),
+    federation: {
+      supported: query.federation?.supported === true,
+      sourceEngineTypes: Array.from(new Set((query.federation?.source_engine_types || [])
+        .map(value => String(value).trim().toLowerCase()).filter(Boolean))),
+      objectFormats: Array.from(new Set((query.federation?.object_formats || [])
+        .map(value => String(value).trim().toLowerCase()).filter(Boolean)))
+    }
   }
 }
 
@@ -42,6 +55,34 @@ export function queryParameterReference(language, name) {
   if (normalizedLanguage === 'cypher') return `$${normalizedName}`
   if (normalizedLanguage === 'mql') return JSON.stringify({ $param: normalizedName })
   return ''
+}
+
+export function isQueryInputResource(parsedLocator) {
+  const itemId = Number(parsedLocator?.itemId)
+  return Number.isInteger(itemId) && itemId > 0
+}
+
+const MQL_PRIMARY_COMMANDS = ['find', 'aggregate', 'count', 'distinct']
+
+export function mqlPrimaryCollection(query) {
+  let command
+  try {
+    command = JSON.parse(String(query || ''))
+  } catch {
+    return ''
+  }
+  if (!command || typeof command !== 'object' || Array.isArray(command)) return ''
+  const collections = MQL_PRIMARY_COMMANDS
+    .map(key => command[key])
+    .filter(value => typeof value === 'string' && value.trim())
+    .map(value => value.trim())
+  return collections.length === 1 ? collections[0] : ''
+}
+
+export function canUseQueryContainerContext({ language, query, parsedLocator } = {}) {
+  return String(language || '').trim().toLowerCase() === 'mql'
+    && String(parsedLocator?.type || '').trim().toLowerCase() === 'database'
+    && Boolean(mqlPrimaryCollection(query))
 }
 
 function isIdentifierStart(char) {
@@ -482,23 +523,78 @@ function collectMQLFieldCandidates(query) {
   try {
     const root = JSON.parse(String(query || ''))
     const candidates = []
-    const visit = (value, path = []) => {
+    const addCandidate = name => {
+      const normalized = String(name || '').replace(/^\$+/, '').trim()
+      if (normalized) candidates.push(normalized)
+    }
+    const visitExpression = value => {
       if (Array.isArray(value)) {
-        value.forEach(item => visit(item, path))
+        value.forEach(visitExpression)
+        return
+      }
+      if (typeof value === 'string') {
+        if (value.startsWith('$') && !value.startsWith('$$')) addCandidate(value)
+        return
+      }
+      if (!value || typeof value !== 'object') return
+      Object.values(value).forEach(visitExpression)
+    }
+    const visitDocument = (value, path = []) => {
+      if (Array.isArray(value)) {
+        value.forEach(item => visitDocument(item, path))
         return
       }
       if (!value || typeof value !== 'object') return
       Object.entries(value).forEach(([key, child]) => {
         if (key.startsWith('$')) {
-          visit(child, path)
+          visitDocument(child, path)
+          visitExpression(child)
           return
         }
         const nextPath = [...path, ...fieldNameParts(key)]
-        candidates.push(nextPath.join('.'))
-        visit(child, nextPath)
+        addCandidate(nextPath.join('.'))
+        visitDocument(child, nextPath)
       })
     }
-    visit(root)
+    const visitProjection = value => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return
+      Object.entries(value).forEach(([key, child]) => {
+        if (child === 1 || child === true || child === 0 || child === false) addCandidate(key)
+        else visitExpression(child)
+      })
+    }
+    const visitPipeline = pipeline => {
+      if (!Array.isArray(pipeline)) return
+      pipeline.forEach(stage => {
+        if (!stage || typeof stage !== 'object' || Array.isArray(stage)) return
+        Object.entries(stage).forEach(([operator, value]) => {
+          if (operator === '$match' || operator === '$sort') visitDocument(value)
+          else if (operator === '$project') visitProjection(value)
+          else if (operator === '$unwind') visitExpression(value)
+          else if (operator === '$lookup' && value && typeof value === 'object') {
+            addCandidate(value.localField)
+            visitPipeline(value.pipeline)
+          } else {
+            visitExpression(value)
+          }
+        })
+      })
+    }
+
+    if (root && typeof root === 'object' && !Array.isArray(root)) {
+      if (typeof root.find === 'string') {
+        visitDocument(root.filter)
+        visitDocument(root.sort)
+        visitProjection(root.projection)
+      } else if (typeof root.count === 'string') {
+        visitDocument(root.query)
+      } else if (typeof root.distinct === 'string') {
+        addCandidate(root.key)
+        visitDocument(root.query)
+      } else if (typeof root.aggregate === 'string') {
+        visitPipeline(root.pipeline)
+      }
+    }
     return { candidates, parseError: false }
   } catch {
     return { candidates: [], parseError: true }
