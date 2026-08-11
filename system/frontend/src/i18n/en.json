@@ -593,6 +593,7 @@
           "statistics": "Statistics",
           "indexes": "Indexes",
           "constraints": "Constraints",
+          "partitioning": "Partitioning facts",
           "spatialMetadata": "Spatial metadata",
           "spatialFacts": "Spatial facts",
           "sampling": "Sampling",

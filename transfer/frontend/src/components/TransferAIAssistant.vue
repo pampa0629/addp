@@ -151,7 +151,7 @@ import { getItemFieldsByID } from '@/api/meta'
 import { parseTransferLocator } from '@/utils/resourceLocator'
 import { useTaskWizardState } from '../views/TaskWizard/useTaskWizardState.js'
 import { hasStorageCapability, isNativeTableEngine } from '@/utils/transferDisplay'
-import { groupResourceCandidates, inferSourceEngineFromPrompt, inferTargetEngineFromPrompt, resourceCandidateKey as candidateKey, resourceFact } from '../utils/transferCopilot.mjs'
+import { groupResourceCandidates, inferSourceEngineFromPrompt, inferSourceEnginesFromPrompt, inferTargetEngineFromPrompt, resourceCandidateKey as candidateKey, resourceFact } from '../utils/transferCopilot.mjs'
 import { mysqlDecimalMappingIssues } from '../views/TaskWizard/decimalMapping.mjs'
 
 const emit = defineEmits(['task-created'])
@@ -219,7 +219,12 @@ async function discoverSource() {
     const sourceEngine = inferSourceEngineFromPrompt(prompt.value, list)
     const result = await transferCopilotAPI.generate({ query: prompt.value.trim(), ...(sourceEngine ? { source_engine_id: Number(sourceEngine.id) } : {}) })
     if (result?.status !== 'need_clarification' || !Array.isArray(result.data_source_candidates) || !result.data_source_candidates.length) throw new Error(result?.message || t('transfer.taskAssistant.sourceNotFound'))
-    candidates.value = result.data_source_candidates
+    const sourceEngines = inferSourceEnginesFromPrompt(prompt.value, list)
+    const sourceEngineIDs = new Set(sourceEngines.map(engine => Number(engine.id)))
+    candidates.value = sourceEngineIDs.size
+      ? result.data_source_candidates.filter(candidate => sourceEngineIDs.has(Number(candidate.engine_id)))
+      : result.data_source_candidates
+    if (!candidates.value.length) throw new Error(t('transfer.taskAssistant.sourceNotFound'))
     selectedByRole.value = defaultResourceCandidatesByRole(candidates.value)
     message.value = result.message || t('transfer.taskAssistant.sourceConfirmDescription')
     stage.value = 'source'
@@ -296,7 +301,7 @@ async function confirmFields() {
 async function createTask() {
   busy.value = true; message.value = ''
   try {
-    const generated = await transferCopilotAPI.generate({ query: prompt.value.trim(), resources: [resourceFact(selectedSource.value)], task: wizardState.taskConfig.value })
+    const generated = await transferCopilotAPI.generate({ query: prompt.value.trim(), source_engine_id: Number(selectedSource.value.engine_id), resources: [resourceFact(selectedSource.value)], task: wizardState.taskConfig.value })
     if (generated?.status !== 'success' || !generated.task) throw new Error(generated?.message || t('transfer.taskAssistant.invalidDraft'))
     const task = generated.task
     const created = await taskAPI.create(task)
@@ -310,7 +315,18 @@ async function createTask() {
 }
 function advance() { if (stage.value === 'request') return discoverSource(); if (stage.value === 'source') return confirmSource(); if (stage.value === 'target') return confirmTarget(); if (stage.value === 'fields') return confirmFields(); return createTask() }
 function previousStage() { const previous = { source: 'request', target: 'source', fields: 'target', review: 'fields' }[stage.value]; if (previous) stage.value = previous }
-function showError(error) { const detail = error.response?.data?.detail || error.response?.data?.error || error.message; ElMessage.error(detail || t('transfer.taskAssistant.failed')) }
+function showError(error) {
+  const detail = error.response?.data?.detail || error.response?.data?.error || error.message
+  if (detail === 'transfer_inference_scenario_not_configured') {
+    ElMessage.error(t('transfer.taskAssistant.inferenceNotConfigured'))
+    return
+  }
+  if (detail === 'copilot_inference_runtime_not_initialized') {
+    ElMessage.error(t('transfer.taskAssistant.inferenceUnavailable'))
+    return
+  }
+  ElMessage.error(detail || t('transfer.taskAssistant.failed'))
+}
 </script>
 
 <style scoped>

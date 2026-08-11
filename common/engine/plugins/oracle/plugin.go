@@ -79,8 +79,10 @@ func (p *OraclePlugin) Capabilities() plugin.EngineCapabilities {
 	caps := plugin.NewTabularCapabilities(p.Type(), plugin.CatalogTermSchema, plugin.TabularCapabilityOptions{
 		TableReadSession:   true,
 		SupportsParameters: true,
+		Indexes:            true,
+		Constraints:        true,
+		Partitioning:       true,
 	})
-	caps.Storage.Facts.Indexes = false
 	return caps
 }
 
@@ -169,6 +171,9 @@ func (p *OraclePlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallbacks 
 		ListNamespaces:        p.listNamespaces,
 		ListTables:            p.listTables,
 		ListColumns:           p.listColumns,
+		ListIndexes:           p.listIndexes,
+		ListConstraints:       p.listConstraints,
+		DescribePartitioning:  p.describePartitioning,
 		RowCount:              p.getTableRowCount,
 		IsSystemNamespaceFunc: p.isSystemSchema,
 	}
@@ -198,16 +203,18 @@ func (p *OraclePlugin) listNamespaces(ctx context.Context, db *gorm.DB, root plu
 	var rows []oracleNamespaceRow
 	err := db.WithContext(ctx).Raw(`
 		SELECT u.username AS name,
-		       (SELECT COUNT(*)
-		          FROM all_objects o
-		         WHERE o.owner = u.username
-		           AND o.object_type IN ('TABLE', 'VIEW', 'MATERIALIZED VIEW')
-		           AND (o.object_type <> 'TABLE' OR NOT EXISTS (
-		                 SELECT 1 FROM all_mviews mv
-		                  WHERE mv.owner = o.owner AND mv.mview_name = o.object_name
-		               ))) AS leaf_count
+		       COUNT(o.object_name) AS leaf_count
 		  FROM all_users u
+		  LEFT JOIN all_objects o
+		    ON o.owner = u.username
+		   AND o.object_type IN ('TABLE', 'VIEW', 'MATERIALIZED VIEW')
+		   AND (o.object_type <> 'TABLE' OR NOT EXISTS (
+		         SELECT 1 FROM all_mviews mv
+		          WHERE mv.owner = o.owner AND mv.mview_name = o.object_name
+		       ))
 		 WHERE u.oracle_maintained = 'N'
+		 GROUP BY u.username
+		HAVING u.username = USER OR COUNT(o.object_name) > 0
 		 ORDER BY u.username
 	`).Scan(&rows).Error
 	if err != nil {
@@ -397,6 +404,240 @@ func oracleColumnNativeType(row oracleColumnRow) string {
 		}
 	}
 	return dataType
+}
+
+type oracleIndexRow struct {
+	Name           string
+	IndexType      string
+	Uniqueness     string
+	ColumnName     string
+	ColumnPosition int
+}
+
+func (p *OraclePlugin) listIndexes(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.IndexFacts, error) {
+	if p.isSystemSchema(schema) {
+		return nil, plugin.WrapCatalogError(plugin.CatalogErrorUnsupported, fmt.Errorf("Oracle system schema %q is not exposed", schema))
+	}
+	var rows []oracleIndexRow
+	err := db.WithContext(ctx).Raw(`
+		SELECT i.index_name AS name,
+		       i.index_type,
+		       i.uniqueness,
+		       ic.column_name,
+		       ic.column_position
+		  FROM all_indexes i
+		  JOIN all_ind_columns ic
+		    ON ic.index_owner = i.owner
+		   AND ic.index_name = i.index_name
+		   AND ic.table_owner = i.table_owner
+		   AND ic.table_name = i.table_name
+		  JOIN all_tab_cols c
+		    ON c.owner = ic.table_owner
+		   AND c.table_name = ic.table_name
+		   AND c.column_name = ic.column_name
+		   AND c.hidden_column = 'NO'
+		 WHERE i.table_owner = ?
+		   AND i.table_name = ?
+		 ORDER BY i.index_name, ic.column_position
+	`, schema, table).Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to list Oracle indexes: %w", err)
+	}
+	return buildOracleIndexFacts(rows), nil
+}
+
+func buildOracleIndexFacts(rows []oracleIndexRow) []plugin.IndexFacts {
+	result := make([]plugin.IndexFacts, 0)
+	byName := make(map[string]int)
+	for _, row := range rows {
+		name := strings.TrimSpace(row.Name)
+		field := strings.TrimSpace(row.ColumnName)
+		if name == "" || field == "" {
+			continue
+		}
+		index, found := byName[name]
+		if !found {
+			index = len(result)
+			byName[name] = index
+			result = append(result, plugin.IndexFacts{
+				Name:      name,
+				IsUnique:  strings.EqualFold(strings.TrimSpace(row.Uniqueness), "UNIQUE"),
+				IndexType: strings.ToLower(strings.TrimSpace(row.IndexType)),
+			})
+		}
+		result[index].Fields = append(result[index].Fields, field)
+	}
+	return result
+}
+
+type oracleConstraintRow struct {
+	Name                string
+	ConstraintType      string
+	ColumnName          string
+	Position            int
+	ReferencedNamespace sql.NullString
+	ReferencedTable     sql.NullString
+	ReferencedColumn    sql.NullString
+}
+
+func (p *OraclePlugin) listConstraints(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.ConstraintFacts, error) {
+	if p.isSystemSchema(schema) {
+		return nil, plugin.WrapCatalogError(plugin.CatalogErrorUnsupported, fmt.Errorf("Oracle system schema %q is not exposed", schema))
+	}
+	var rows []oracleConstraintRow
+	err := db.WithContext(ctx).Raw(`
+		SELECT c.constraint_name AS name,
+		       c.constraint_type,
+		       cc.column_name,
+		       cc.position,
+		       rc.owner AS referenced_namespace,
+		       rc.table_name AS referenced_table,
+		       rcc.column_name AS referenced_column
+		  FROM all_constraints c
+		  JOIN all_cons_columns cc
+		    ON cc.owner = c.owner
+		   AND cc.constraint_name = c.constraint_name
+		   AND cc.table_name = c.table_name
+		  LEFT JOIN all_constraints rc
+		    ON rc.owner = c.r_owner
+		   AND rc.constraint_name = c.r_constraint_name
+		  LEFT JOIN all_cons_columns rcc
+		    ON rcc.owner = rc.owner
+		   AND rcc.constraint_name = rc.constraint_name
+		   AND rcc.position = cc.position
+		 WHERE c.owner = ?
+		   AND c.table_name = ?
+		   AND c.constraint_type IN ('P', 'U', 'R')
+		 ORDER BY c.constraint_name, cc.position
+	`, schema, table).Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to list Oracle constraints: %w", err)
+	}
+	return buildOracleConstraintFacts(rows), nil
+}
+
+func buildOracleConstraintFacts(rows []oracleConstraintRow) []plugin.ConstraintFacts {
+	result := make([]plugin.ConstraintFacts, 0)
+	byName := make(map[string]int)
+	for _, row := range rows {
+		name := strings.TrimSpace(row.Name)
+		field := strings.TrimSpace(row.ColumnName)
+		constraintType := oracleConstraintType(row.ConstraintType)
+		if name == "" || field == "" || constraintType == "" {
+			continue
+		}
+		index, found := byName[name]
+		if !found {
+			index = len(result)
+			byName[name] = index
+			result = append(result, plugin.ConstraintFacts{
+				Name:                name,
+				ConstraintType:      constraintType,
+				ReferencedNamespace: strings.TrimSpace(row.ReferencedNamespace.String),
+				ReferencedTable:     strings.TrimSpace(row.ReferencedTable.String),
+			})
+		}
+		result[index].Fields = append(result[index].Fields, field)
+		if referencedField := strings.TrimSpace(row.ReferencedColumn.String); referencedField != "" {
+			result[index].ReferencedFields = append(result[index].ReferencedFields, referencedField)
+		}
+	}
+	return result
+}
+
+func oracleConstraintType(value string) string {
+	switch strings.ToUpper(strings.TrimSpace(value)) {
+	case "P":
+		return plugin.ConstraintTypePrimaryKey
+	case "U":
+		return plugin.ConstraintTypeUnique
+	case "R":
+		return plugin.ConstraintTypeForeignKey
+	default:
+		return ""
+	}
+}
+
+type oraclePartitioningRow struct {
+	Strategy             string
+	SubpartitionStrategy string
+	PartitionCount       int
+}
+
+type oraclePartitionKeyRow struct {
+	ColumnName     string
+	ColumnPosition int
+}
+
+func (p *OraclePlugin) describePartitioning(ctx context.Context, db *gorm.DB, schema, table string) (*plugin.TablePartitioningFacts, error) {
+	if p.isSystemSchema(schema) {
+		return nil, plugin.WrapCatalogError(plugin.CatalogErrorUnsupported, fmt.Errorf("Oracle system schema %q is not exposed", schema))
+	}
+	var rows []oraclePartitioningRow
+	err := db.WithContext(ctx).Raw(`
+		SELECT partitioning_type AS strategy,
+		       subpartitioning_type AS subpartition_strategy,
+		       partition_count
+		  FROM all_part_tables
+		 WHERE owner = ?
+		   AND table_name = ?
+	`, schema, table).Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to describe Oracle partitioning: %w", err)
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	partitionKeys, err := p.listPartitionKeys(ctx, db, "all_part_key_columns", schema, table)
+	if err != nil {
+		return nil, err
+	}
+	subpartitionKeys, err := p.listPartitionKeys(ctx, db, "all_subpart_key_columns", schema, table)
+	if err != nil {
+		return nil, err
+	}
+	return &plugin.TablePartitioningFacts{
+		Strategy:              normalizeOraclePartitionStrategy(rows[0].Strategy),
+		KeyFields:             partitionKeys,
+		SubpartitionStrategy:  normalizeOraclePartitionStrategy(rows[0].SubpartitionStrategy),
+		SubpartitionKeyFields: subpartitionKeys,
+		PartitionCount:        rows[0].PartitionCount,
+	}, nil
+}
+
+func (p *OraclePlugin) listPartitionKeys(ctx context.Context, db *gorm.DB, dictionaryView, schema, table string) ([]string, error) {
+	switch dictionaryView {
+	case "all_part_key_columns", "all_subpart_key_columns":
+	default:
+		return nil, fmt.Errorf("unsupported Oracle partition dictionary view %q", dictionaryView)
+	}
+	var rows []oraclePartitionKeyRow
+	query := fmt.Sprintf(`
+		SELECT column_name, column_position
+		  FROM %s
+		 WHERE owner = ?
+		   AND name = ?
+		   AND object_type = 'TABLE'
+		 ORDER BY column_position
+	`, dictionaryView)
+	if err := db.WithContext(ctx).Raw(query, schema, table).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("failed to list Oracle partition keys: %w", err)
+	}
+	fields := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if field := strings.TrimSpace(row.ColumnName); field != "" {
+			fields = append(fields, field)
+		}
+	}
+	return fields, nil
+}
+
+func normalizeOraclePartitionStrategy(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "none" {
+		return ""
+	}
+	return value
 }
 
 func (p *OraclePlugin) getTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {

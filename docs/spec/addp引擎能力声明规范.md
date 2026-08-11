@@ -180,6 +180,7 @@ type CatalogFactsCapability struct {
     Statistics      bool `json:"statistics,omitempty"`
     Indexes         bool `json:"indexes,omitempty"`
     Constraints     bool `json:"constraints,omitempty"`
+    Partitioning    bool `json:"partitioning,omitempty"`
     SpatialFacts    bool `json:"spatial_facts,omitempty"`
     Sampling        bool `json:"sampling,omitempty"`
     NativeFacts     bool `json:"native_facts,omitempty"`
@@ -193,9 +194,12 @@ type CatalogFactsCapability struct {
 | `statistics` | 是否能获取行数、大小、采样统计等统计信息。 |
 | `indexes` | 是否能获取索引信息。 |
 | `constraints` | 是否能获取主键、唯一约束、外键等约束信息。 |
+| `partitioning` | 是否能获取表分区策略、分区键和分区数量等正式分区事实。 |
 | `spatial_facts` | 是否能获取空间字段、SRID、范围等空间事实。 |
 | `sampling` | 是否需要或支持通过采样推断结构。 |
 | `native_facts` | 是否能获取引擎原生事实，如对象大小、ETag、修改时间、存储类别等。 |
+
+字段、约束、统计、索引、分区、空间、采样和原生详情能力必须分别声明；不能因为实现了 `CatalogFactsProvider` 就默认拥有全部子能力。`constraints=true` 表示 Provider 能返回主键、唯一约束或外键中的至少一类正式约束事实；`partitioning=true` 表示 Provider 能返回正式 `TablePartitioningFacts`，不得仅凭供应商私有 `native` 字段声明。
 
 ### 3.4 StoreCapability
 

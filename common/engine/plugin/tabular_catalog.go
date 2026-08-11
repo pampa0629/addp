@@ -38,6 +38,9 @@ type TabularCatalogCallbacks struct {
 	ListNamespaces        func(ctx context.Context, db *gorm.DB, root CatalogPath) ([]CatalogEntry, error)
 	ListTables            func(ctx context.Context, db *gorm.DB, namespace string) ([]datatype.TableInfo, error)
 	ListColumns           func(ctx context.Context, db *gorm.DB, namespace, table string) ([]datatype.FieldInfo, error)
+	ListIndexes           func(ctx context.Context, db *gorm.DB, namespace, table string) ([]IndexFacts, error)
+	ListConstraints       func(ctx context.Context, db *gorm.DB, namespace, table string) ([]ConstraintFacts, error)
+	DescribePartitioning  func(ctx context.Context, db *gorm.DB, namespace, table string) (*TablePartitioningFacts, error)
 	RowCount              func(ctx context.Context, db *gorm.DB, namespace, table string) (int64, error)
 	DescribeSpatial       func(ctx context.Context, db *gorm.DB, namespace, table string, fields []datatype.FieldInfo) (*datatype.SpatialInfo, error)
 	IsSystemNamespaceFunc func(namespace string) bool
@@ -188,7 +191,26 @@ func DescribeTabularCatalogFacts(ctx context.Context, callbacks TabularCatalogCa
 			return nil, err
 		}
 	}
-	return buildTabularCatalogFacts(path, namespace, table, fields, tableInfo, hasTableInfo, kind, updatedAt, spatialInfo), nil
+	facts := buildTabularCatalogFacts(path, namespace, table, fields, tableInfo, hasTableInfo, kind, updatedAt, spatialInfo)
+	if opts.IncludeIndexes && callbacks.ListIndexes != nil {
+		facts.Indexes, err = callbacks.ListIndexes(ctx, db, namespace, table)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if opts.IncludeConstraints && callbacks.ListConstraints != nil {
+		facts.Constraints, err = callbacks.ListConstraints(ctx, db, namespace, table)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if opts.IncludePartitioning && callbacks.DescribePartitioning != nil {
+		facts.Partitioning, err = callbacks.DescribePartitioning(ctx, db, namespace, table)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return facts, nil
 }
 
 func primaryKeyFields(fields []datatype.FieldInfo) []string {

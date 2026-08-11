@@ -26,6 +26,38 @@ func TestOraclePluginCapabilitiesAndInterfaces(t *testing.T) {
 	if p.Capabilities().Storage.Store.ChangeStreamRead != nil || p.Capabilities().Storage.Store.BoundedWatermarkRead {
 		t.Fatalf("Oracle first phase must not declare CDC or watermark capabilities")
 	}
+	if !p.Capabilities().Storage.Facts.Indexes || !p.Capabilities().Storage.Facts.Constraints || !p.Capabilities().Storage.Facts.Partitioning {
+		t.Fatalf("Oracle catalog detail capabilities = %#v", p.Capabilities().Storage.Facts)
+	}
+}
+
+func TestOracleDetailedCatalogFacts(t *testing.T) {
+	indexes := buildOracleIndexFacts([]oracleIndexRow{
+		{Name: "ORDERS_CUSTOMER_IDX", IndexType: "NORMAL", ColumnName: "CUSTOMER_ID", ColumnPosition: 1},
+		{Name: "ORDERS_CUSTOMER_IDX", IndexType: "NORMAL", ColumnName: "ORDERED_AT", ColumnPosition: 2},
+		{Name: "ORDERS_PK", IndexType: "NORMAL", Uniqueness: "UNIQUE", ColumnName: "ID", ColumnPosition: 1},
+	})
+	if len(indexes) != 2 || strings.Join(indexes[0].Fields, ",") != "CUSTOMER_ID,ORDERED_AT" || indexes[0].IndexType != "normal" || !indexes[1].IsUnique {
+		t.Fatalf("indexes = %#v", indexes)
+	}
+
+	constraints := buildOracleConstraintFacts([]oracleConstraintRow{
+		{Name: "ORDERS_CUSTOMER_FK", ConstraintType: "R", ColumnName: "CUSTOMER_ID", Position: 1, ReferencedNamespace: sqlNullString("BUSINESS"), ReferencedTable: sqlNullString("CUSTOMERS"), ReferencedColumn: sqlNullString("ID")},
+		{Name: "ORDERS_PK", ConstraintType: "P", ColumnName: "ID", Position: 1},
+	})
+	if len(constraints) != 2 || constraints[0].ConstraintType != plugin.ConstraintTypeForeignKey || constraints[0].ReferencedTable != "CUSTOMERS" || strings.Join(constraints[0].ReferencedFields, ",") != "ID" {
+		t.Fatalf("constraints = %#v", constraints)
+	}
+	if constraints[1].ConstraintType != plugin.ConstraintTypePrimaryKey {
+		t.Fatalf("primary key constraint = %#v", constraints[1])
+	}
+
+	if got := normalizeOraclePartitionStrategy(" RANGE "); got != "range" {
+		t.Fatalf("partition strategy = %q", got)
+	}
+	if got := normalizeOraclePartitionStrategy("NONE"); got != "" {
+		t.Fatalf("NONE strategy = %q", got)
+	}
 }
 
 func TestOracleBuildDSNUsesServiceNameAndDefaultPort(t *testing.T) {
@@ -64,4 +96,8 @@ func TestOracleCatalogTypeAndSystemSchemaPolicy(t *testing.T) {
 
 func sqlNullInt64(value int64) sql.NullInt64 {
 	return sql.NullInt64{Int64: value, Valid: true}
+}
+
+func sqlNullString(value string) sql.NullString {
+	return sql.NullString{String: value, Valid: true}
 }

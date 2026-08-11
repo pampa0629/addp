@@ -171,7 +171,7 @@
               :value="dim.id"
             >
               <span>{{ dim.name }}</span>
-              <span style="color:var(--el-text-color-secondary);font-size:12px;margin-left:8px">{{ dim.code }}</span>
+              <span style="color:var(--addp-text-secondary);font-size:12px;margin-left:8px">{{ dim.code }}</span>
             </el-option>
           </el-select>
         </el-form-item>
@@ -184,7 +184,7 @@
               :value="f.id"
             >
               <span>{{ f.name }}</span>
-              <span style="color:var(--el-text-color-secondary);font-size:12px;margin-left:8px">{{ f.column_name }}</span>
+              <span style="color:var(--addp-text-secondary);font-size:12px;margin-left:8px">{{ f.column_name }}</span>
             </el-option>
           </el-select>
         </el-form-item>
@@ -203,7 +203,7 @@
               :value="f.id"
             >
               <span>{{ f.name }}</span>
-              <span style="color:var(--el-text-color-secondary);font-size:12px;margin-left:8px">{{ f.column_name }}</span>
+              <span style="color:var(--addp-text-secondary);font-size:12px;margin-left:8px">{{ f.column_name }}</span>
             </el-option>
           </el-select>
         </el-form-item>
@@ -223,7 +223,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import mermaid from 'mermaid'
@@ -232,6 +232,7 @@ import { useI18n } from 'vue-i18n'
 import { navigateModelRoute } from '../utils/moduleNavigation'
 import { useAuthStore } from '../store/auth'
 import { getModelErrorMessage } from '../utils/apiError'
+import { initializeMermaidTheme, observeThemeChange, readMermaidTheme } from '../utils/mermaidTheme'
 
 const { t } = useI18n()
 
@@ -260,6 +261,8 @@ const allDimensionTables = ref([])
 const dimTableFields = ref([])
 const addDimFormRef = ref(null)
 const mermaidContainer = ref(null)
+const mermaidThemeVersion = ref(0)
+let stopThemeObserver = null
 const addDimForm = ref({
   target_table: null,
   source_field: null,
@@ -295,16 +298,18 @@ const measureFields = computed(() =>
 )
 
 const mermaidCode = computed(() => {
+  mermaidThemeVersion.value
   if (!selectedTable.value) return ''
+  const theme = readMermaidTheme()
   const lines = ['flowchart LR']
   const factId = `F${selectedTable.value.id}`
   lines.push(`  ${factId}["${selectedTable.value.name}\\n${t('model.star_schema.fact_table_label')}"]`)
-  lines.push(`  style ${factId} fill:#fef3c7,stroke:#f59e0b`)
+  lines.push(`  style ${factId} fill:${theme.categories[2]},stroke:${theme.nodeStroke},color:${theme.labelLight}`)
 
   dimensionRelations.value.forEach(rel => {
     const dimId = `D${rel.target_table}`
     lines.push(`  ${dimId}["${rel.target_table_name}\\n${t('model.star_schema.dim_label')}"]`)
-    lines.push(`  style ${dimId} fill:#dbeafe,stroke:#3b82f6`)
+    lines.push(`  style ${dimId} fill:${theme.categories[0]},stroke:${theme.nodeStroke},color:${theme.labelLight}`)
     lines.push(`  ${dimId} --> ${factId}`)
   })
 
@@ -312,7 +317,7 @@ const mermaidCode = computed(() => {
     const mId = `M${m.id}`
     const mName = metricNameMap.value[m.metric_id] || `指标#${m.metric_id}`
     lines.push(`  ${mId}["${mName}\\n${t('model.star_schema.metric_label')}"]`)
-    lines.push(`  style ${mId} fill:#dcfce7,stroke:#22c55e`)
+    lines.push(`  style ${mId} fill:${theme.categories[1]},stroke:${theme.nodeStroke},color:${theme.labelLight}`)
     lines.push(`  ${factId} --> ${mId}`)
   })
 
@@ -557,9 +562,15 @@ const reload = async () => {
 }
 
 onMounted(async () => {
-  mermaid.initialize({ startOnLoad: false, theme: 'default' })
+  initializeMermaidTheme(mermaid)
+  stopThemeObserver = observeThemeChange(async () => {
+    initializeMermaidTheme(mermaid)
+    mermaidThemeVersion.value += 1
+  })
   await reload()
 })
+
+onBeforeUnmount(() => stopThemeObserver?.())
 </script>
 
 <style scoped>
@@ -586,18 +597,18 @@ onMounted(async () => {
   border-radius: 6px;
   cursor: pointer;
   margin-bottom: 6px;
-  border: 1px solid var(--el-border-color-lighter);
+  border: 1px solid var(--addp-border-color-light);
   transition: all 0.2s;
 }
 
 .fact-item:hover {
-  border-color: var(--el-color-primary-light-5);
-  background: var(--el-color-primary-light-9);
+  border-color: var(--el-color-primary);
+  background: var(--addp-bg-secondary);
 }
 
 .fact-item.active {
   border-color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
+  background: var(--addp-bg-secondary);
 }
 
 .fact-item-name {
@@ -606,7 +617,7 @@ onMounted(async () => {
 }
 
 .fact-item-code {
-  color: var(--el-text-color-secondary);
+  color: var(--addp-text-secondary);
   font-size: 12px;
   margin: 2px 0 4px;
 }
@@ -630,13 +641,13 @@ onMounted(async () => {
 }
 
 .grain-desc {
-  color: var(--el-text-color-secondary);
+  color: var(--addp-text-secondary);
   font-size: 13px;
   margin-bottom: 8px;
 }
 
 .grain-label {
-  color: var(--el-text-color-primary);
+  color: var(--addp-text-primary);
   font-weight: 500;
 }
 
@@ -673,7 +684,7 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   padding: 8px 0;
-  border-bottom: 1px solid var(--el-border-color-lighter);
+  border-bottom: 1px solid var(--addp-border-color-light);
 }
 
 .dim-item:last-child {
@@ -699,7 +710,7 @@ onMounted(async () => {
 }
 
 .join-hint {
-  color: var(--el-text-color-secondary);
+  color: var(--addp-text-secondary);
   font-size: 12px;
 }
 
@@ -708,7 +719,7 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   padding: 8px 0;
-  border-bottom: 1px solid var(--el-border-color-lighter);
+  border-bottom: 1px solid var(--addp-border-color-light);
 }
 
 .metric-item:last-child {
@@ -721,10 +732,16 @@ onMounted(async () => {
 
 .mermaid-container {
   overflow-x: auto;
+  min-height: 240px;
+  padding: 16px;
+  border: 1px solid var(--addp-border-color);
+  border-radius: 4px;
+  background: var(--addp-bg-primary);
+  color: var(--addp-text-primary);
 }
 
 .empty-hint {
-  color: var(--el-text-color-placeholder);
+  color: var(--addp-text-tertiary);
   font-size: 13px;
   text-align: center;
   padding: 20px 0;

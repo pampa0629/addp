@@ -277,6 +277,71 @@ func TestDescribeTabularItemCarriesSpatialFactsWhenRequested(t *testing.T) {
 	}
 }
 
+func TestDescribeTabularItemOnlyReadsRequestedRelationalFacts(t *testing.T) {
+	indexCalls := 0
+	constraintCalls := 0
+	partitioningCalls := 0
+	callbacks := TabularCatalogCallbacks{
+		ListNamespaces: func(context.Context, *gorm.DB, CatalogPath) ([]CatalogEntry, error) {
+			return nil, nil
+		},
+		ListTables: func(context.Context, *gorm.DB, string) ([]datatype.TableInfo, error) {
+			return []datatype.TableInfo{{Name: "orders", Kind: CatalogKindTable}}, nil
+		},
+		ListColumns: func(context.Context, *gorm.DB, string, string) ([]datatype.FieldInfo, error) {
+			return []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeInt}}, nil
+		},
+		ListIndexes: func(context.Context, *gorm.DB, string, string) ([]IndexFacts, error) {
+			indexCalls++
+			return []IndexFacts{{Name: "orders_pk", Fields: []string{"id"}, IsUnique: true}}, nil
+		},
+		ListConstraints: func(context.Context, *gorm.DB, string, string) ([]ConstraintFacts, error) {
+			constraintCalls++
+			return []ConstraintFacts{{Name: "orders_pk", ConstraintType: ConstraintTypePrimaryKey, Fields: []string{"id"}}}, nil
+		},
+		DescribePartitioning: func(context.Context, *gorm.DB, string, string) (*TablePartitioningFacts, error) {
+			partitioningCalls++
+			return &TablePartitioningFacts{Strategy: "range", KeyFields: []string{"id"}, PartitionCount: 2}, nil
+		},
+	}
+	engine := &Engine{ID: 7003, EngineType: "tabular_catalog_test"}
+	path := CatalogPath{
+		Version:  CatalogPathVersion,
+		EngineID: engine.ID,
+		Segments: []CatalogSegment{
+			{Term: CatalogTermServer, Kind: CatalogTermServer},
+			{Term: CatalogTermDatabase, Kind: CatalogKindNamespace, Name: "analytics"},
+			{Term: CatalogTermTable, Kind: CatalogKindTable, Name: "orders"},
+		},
+	}
+
+	Register(&tabularCatalogTestPlugin{})
+	t.Cleanup(func() {
+		Unregister("tabular_catalog_test")
+		ClosePool(engine.ID)
+	})
+
+	facts, err := DescribeTabularCatalogFacts(context.Background(), callbacks, engine, path, CatalogFactsOptions{})
+	if err != nil {
+		t.Fatalf("DescribeTabularCatalogFacts() error = %v", err)
+	}
+	if indexCalls != 0 || constraintCalls != 0 || partitioningCalls != 0 || len(facts.Indexes) != 0 || len(facts.Constraints) != 0 || facts.Partitioning != nil {
+		t.Fatalf("unrequested facts were read: calls=%d/%d/%d facts=%#v", indexCalls, constraintCalls, partitioningCalls, facts)
+	}
+
+	facts, err = DescribeTabularCatalogFacts(context.Background(), callbacks, engine, path, CatalogFactsOptions{
+		IncludeIndexes:      true,
+		IncludeConstraints:  true,
+		IncludePartitioning: true,
+	})
+	if err != nil {
+		t.Fatalf("DescribeTabularCatalogFacts(relational facts) error = %v", err)
+	}
+	if indexCalls != 1 || constraintCalls != 1 || partitioningCalls != 1 || len(facts.Indexes) != 1 || len(facts.Constraints) != 1 || facts.Partitioning == nil {
+		t.Fatalf("requested facts = calls=%d/%d/%d facts=%#v", indexCalls, constraintCalls, partitioningCalls, facts)
+	}
+}
+
 type tabularCatalogTestPlugin struct{}
 
 func (*tabularCatalogTestPlugin) Type() string                                         { return "tabular_catalog_test" }

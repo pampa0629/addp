@@ -84,7 +84,7 @@
           :total="pagination.total"
           :page-sizes="[20, 50, 100]"
           layout="total, sizes, prev, pager, next"
-          @change="loadEntities"
+          @change="handlePageChange"
         />
       </div>
     </el-card>
@@ -116,8 +116,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
 import { entityAPI, domainAPI } from '../api/model'
@@ -125,10 +125,12 @@ import { navigateModelRoute } from '../utils/moduleNavigation'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
 import { getModelErrorMessage } from '../utils/apiError'
+import { buildEntityListRouteQuery, resolveEntityListRouteState } from '../utils/routeState'
 
 const { t } = useI18n()
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const can = permission => authStore.hasPermission(permission)
 const loading = ref(false)
@@ -149,6 +151,31 @@ const createRules = {
 }
 
 const getDomainName = (id) => domains.value.find(d => d.id === id)?.name
+
+const applyRouteState = query => {
+  const routeState = resolveEntityListRouteState(query)
+  Object.assign(searchForm, {
+    keyword: routeState.keyword,
+    domain_id: routeState.domainId,
+    status: routeState.status
+  })
+  pagination.page = routeState.page
+  pagination.pageSize = routeState.pageSize
+  return routeState
+}
+
+const buildRouteQuery = () => buildEntityListRouteQuery({
+  keyword: searchForm.keyword,
+  domainId: searchForm.domain_id,
+  status: searchForm.status,
+  page: pagination.page,
+  pageSize: pagination.pageSize
+})
+
+const syncRoute = () => navigateModelRoute(router, {
+  path: '/entities',
+  query: buildRouteQuery()
+}, { history: 'replace' })
 
 const loadEntities = async () => {
   loading.value = true
@@ -193,9 +220,15 @@ const reload = async () => {
   await Promise.all([loadDomains(), loadEntities()])
 }
 
-const handleSearch = () => {
+const handleSearch = async () => {
   pagination.page = 1
-  loadEntities()
+  await syncRoute()
+  await loadEntities()
+}
+
+const handlePageChange = async () => {
+  await syncRoute()
+  await loadEntities()
 }
 
 const openCreateDialog = () => {
@@ -232,8 +265,23 @@ const goToDetail = (row) => {
   navigateModelRoute(router, `/entities/${row.id}`)
 }
 
-onMounted(() => {
-  reload()
+const restoreListFromRoute = async query => {
+  const previousQuery = JSON.stringify(buildRouteQuery())
+  const routeState = applyRouteState(query)
+  if (routeState.changed) {
+    await navigateModelRoute(router, { path: '/entities', query: routeState.query }, { history: 'replace' })
+  }
+  if (JSON.stringify(buildRouteQuery()) !== previousQuery) await loadEntities()
+}
+
+watch(() => route.query, restoreListFromRoute, { deep: true })
+
+onMounted(async () => {
+  const routeState = applyRouteState(route.query)
+  if (routeState.changed) {
+    await navigateModelRoute(router, { path: '/entities', query: routeState.query }, { history: 'replace' })
+  }
+  await reload()
 })
 </script>
 

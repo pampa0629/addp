@@ -738,6 +738,6 @@ onMounted(async () => {
 }
 
 .text-muted {
-  color: var(--el-text-color-placeholder);
+  color: var(--addp-text-tertiary);
 }
 </style>

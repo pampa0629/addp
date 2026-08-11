@@ -77,6 +77,9 @@ Develop TaskProvider 的 canonical 前端路由为：
 | Orchestrator | 编排创建与编辑 | path `/orchestrations/new`、`/orchestrations/:id/edit` |
 | Graph | 本体/审核稳定 Tab、知识服务当前图谱 | `tab`、`graph_id` |
 | Service | 服务目录类型 Tab | `tab`，默认 `all` 省略 |
+| Modeling | 实体列表筛选与分页 | `keyword`、`domain_id`、`status`、`page`、`page_size` |
+| Modeling | 逻辑表列表筛选与分页 | `keyword`、`domain_id`、`layer`、`status`、`page`、`page_size` |
+| Modeling | ER 图业务域筛选 | `domain_id` |
 | Modeling | 实体详情 Tab、星型模型事实表 | `tab`、`table_id` |
 | Quality | 执行详情 | path parameter `execution_id` |
 | Quality | 检查任务创建与编辑 | `create=1`、`task_id`；默认列表省略 |

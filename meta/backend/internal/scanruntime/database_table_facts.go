@@ -16,7 +16,12 @@ func (s *DatabaseRuntime) describeTableFacts(
 	tableName string,
 ) (*plugin.CatalogFacts, error) {
 	path := plugin.TabularItemPath(resource.ID, scanCatalog.namespaceTerm, schemaName, tableName)
-	item, err := scanCatalog.factsProvider.DescribeCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), path, plugin.CatalogFactsOptions{IncludeSpatialFacts: true})
+	item, err := scanCatalog.factsProvider.DescribeCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), path, plugin.CatalogFactsOptions{
+		IncludeIndexes:      true,
+		IncludeConstraints:  true,
+		IncludePartitioning: true,
+		IncludeSpatialFacts: true,
+	})
 	if err != nil {
 		return nil, err
 	}

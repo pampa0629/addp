@@ -435,6 +435,8 @@
       "confirmAndContinue": "确认并继续",
       "createTask": "创建任务",
       "invalidDraft": "助手返回的任务配置无效",
+      "inferenceNotConfigured": "Transfer AI 推理场景尚未配置，请在配置管理中为资源解析和传输任务生成绑定模型。",
+      "inferenceUnavailable": "Copilot 推理服务尚未就绪，请稍后重试。",
       "created": "传输任务“{name}”已创建",
       "failed": "传输任务创建失败"
     },

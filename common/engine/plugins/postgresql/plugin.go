@@ -101,6 +101,7 @@ func (p *PostgreSQLPlugin) ConnectionIdentityFields() []string {
 
 func (p *PostgreSQLPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), "schema", plugin.TabularCapabilityOptions{
+		Constraints:               true,
 		Write:                     true,
 		BulkWrite:                 true,
 		TableReadSession:          true,

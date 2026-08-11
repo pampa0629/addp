@@ -131,6 +131,7 @@ func buildStorageSection(caps *engineplugin.EngineCapabilities) *models.Capabili
 			"statistics":    caps.Storage.Facts.Statistics,
 			"indexes":       caps.Storage.Facts.Indexes,
 			"constraints":   caps.Storage.Facts.Constraints,
+			"partitioning":  caps.Storage.Facts.Partitioning,
 			"spatial_facts": caps.Storage.Facts.SpatialFacts,
 			"sampling":      caps.Storage.Facts.Sampling,
 			"native_facts":  caps.Storage.Facts.NativeFacts,

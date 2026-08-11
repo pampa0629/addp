@@ -74,6 +74,7 @@ func (p *MySQLPlugin) ConnectionIdentityFields() []string {
 
 func (p *MySQLPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), "database", plugin.TabularCapabilityOptions{
+		Constraints:               true,
 		Write:                     true,
 		BulkWrite:                 true,
 		BatchWrite:                true,

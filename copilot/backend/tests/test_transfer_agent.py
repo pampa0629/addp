@@ -1,4 +1,8 @@
+import asyncio
+
 import pytest
+from fastapi import HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import ValidationError
 
 from api.transfer_agent_api import (
@@ -6,9 +10,12 @@ from api.transfer_agent_api import (
     _build_task_draft,
     _locator_engine_id,
     _validate_task_context,
+    generate_transfer,
 )
 from chains.transfer_generation_chain import TransferFieldMappingIntent, TransferGenerationOutput
 from addp_common.resources import ResourceFact
+from addp_common.auth import AuthorizationContext, RoleAssignment
+from services.inference_service import InferenceScenarioNotConfigured
 
 
 def _source():
@@ -50,6 +57,37 @@ def test_transfer_request_forbids_identity_fields():
 def test_transfer_request_accepts_registered_source_engine_scope():
     request = TransferGenerationRequest(query="从 pg 到 mysql，同步 farmland", source_engine_id=8)
     assert request.source_engine_id == 8
+
+
+def test_transfer_reports_missing_inference_binding_as_service_unavailable(monkeypatch):
+    def missing_binding(*_args, **_kwargs):
+        raise InferenceScenarioNotConfigured("inference_scenario_not_configured")
+
+    monkeypatch.setattr(
+        "api.transfer_agent_api.CopilotInferenceService.chat_model",
+        missing_binding,
+    )
+    context = AuthorizationContext(
+        principal_id=11,
+        principal_type="user",
+        token_type="delegated_access_token",
+        client_id="addp-web",
+        context_type="tenant",
+        tenant_id=7,
+        tenant_membership_id=9,
+        role_assignments=(
+            RoleAssignment(4, "tenant.transfer_user", "tenant", ("copilot.transfer.execute",)),
+        ),
+    )
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(generate_transfer(
+            TransferGenerationRequest(query="从 pg 到 mysql，同步 farmland"),
+            context,
+            HTTPAuthorizationCredentials(scheme="Bearer", credentials="delegated-token"),
+            object(),
+        ))
+    assert error.value.status_code == 503
+    assert error.value.detail == "transfer_inference_scenario_not_configured"
 
 
 def test_transfer_locator_uses_engine_segment_from_resource_locator():

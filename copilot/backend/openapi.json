@@ -2459,6 +2459,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "推理场景未配置或推理运行时未就绪 | Inference scenario is not configured or runtime is not ready"
           }
         },
         "security": [

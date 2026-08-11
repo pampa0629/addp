@@ -301,7 +301,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, nextTick, computed, watch } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, nextTick, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Plus, Refresh, DocumentCopy } from '@element-plus/icons-vue'
@@ -311,6 +311,7 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
 import { resolveCanonicalTabRouteState } from '@common-ui'
 import { navigateModelRoute } from '../utils/moduleNavigation'
+import { initializeMermaidTheme, observeThemeChange } from '../utils/mermaidTheme'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -353,6 +354,7 @@ const domains = ref([])
 const elements = ref([])
 const allEntities = ref([])
 const localMermaidCode = ref('erDiagram\n  ENTITY {\n  }\n')
+let stopThemeObserver = null
 
 const attributeDataTypes = ['string', 'int', 'bigint', 'float', 'decimal', 'date', 'datetime', 'bool', 'json', 'text', 'geometry']
 const attrForm = reactive({ name: '', column_name: '', data_type: 'string', element_id: null, is_pk: false, nullable: true, description: '' })
@@ -751,10 +753,10 @@ watch(() => route.params.id, async () => {
 onMounted(async () => {
   await restoreTabFromRoute()
 
-  // 初始化Mermaid
-  mermaid.initialize({
-    startOnLoad: false,
-    theme: 'default'
+  initializeMermaidTheme(mermaid)
+  stopThemeObserver = observeThemeChange(async () => {
+    initializeMermaidTheme(mermaid)
+    if (activeTab.value === 'relations') await renderMermaid()
   })
 
   // 加载数据
@@ -776,6 +778,8 @@ onMounted(async () => {
     loadRelations()
   }
 })
+
+onBeforeUnmount(() => stopThemeObserver?.())
 </script>
 
 <style scoped>
@@ -839,10 +843,11 @@ onMounted(async () => {
 }
 
 .mermaid-viewer {
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--addp-border-color);
   border-radius: 4px;
   padding: 20px;
-  background: #fafafa;
+  background: var(--addp-bg-primary);
+  color: var(--addp-text-primary);
   min-height: 400px;
   overflow: auto;
 }

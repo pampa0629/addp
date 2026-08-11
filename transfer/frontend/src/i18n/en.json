@@ -518,6 +518,8 @@
       "confirmAndContinue": "Confirm and continue",
       "createTask": "Create task",
       "invalidDraft": "The assistant returned an invalid task configuration",
+      "inferenceNotConfigured": "Transfer AI inference is not configured. Bind models for resource resolution and transfer task generation in Configuration Management.",
+      "inferenceUnavailable": "Copilot inference is not ready. Try again shortly.",
       "created": "Transfer task \"{name}\" was created",
       "failed": "Transfer task creation failed"
     },

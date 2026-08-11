@@ -2,6 +2,7 @@ package metaattr
 
 import (
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/meta/internal/models"
 )
 
@@ -138,6 +139,64 @@ func IndexAttributes(indexes []IndexAttributesInput) []map[string]interface{} {
 		})
 	}
 	return result
+}
+
+func ApplyCatalogFactsCapabilities(attrs models.JSONMap, facts *plugin.CatalogFacts) {
+	if attrs == nil || facts == nil {
+		return
+	}
+	indexes := make([]map[string]interface{}, 0, len(facts.Indexes))
+	for _, index := range facts.Indexes {
+		indexes = append(indexes, map[string]interface{}{
+			"name":       index.Name,
+			"fields":     append([]string(nil), index.Fields...),
+			"is_unique":  index.IsUnique,
+			"index_type": index.IndexType,
+		})
+	}
+	indexing := map[string]interface{}{}
+	if len(indexes) > 0 {
+		indexing["indexes"] = indexes
+	}
+	ReplaceCapabilityNamespace(attrs, "indexing", indexing)
+
+	constraints := make([]map[string]interface{}, 0, len(facts.Constraints))
+	for _, constraint := range facts.Constraints {
+		item := map[string]interface{}{
+			"name":            constraint.Name,
+			"constraint_type": constraint.ConstraintType,
+			"fields":          append([]string(nil), constraint.Fields...),
+		}
+		if constraint.ReferencedNamespace != "" {
+			item["referenced_namespace"] = constraint.ReferencedNamespace
+		}
+		if constraint.ReferencedTable != "" {
+			item["referenced_table"] = constraint.ReferencedTable
+		}
+		if len(constraint.ReferencedFields) > 0 {
+			item["referenced_fields"] = append([]string(nil), constraint.ReferencedFields...)
+		}
+		constraints = append(constraints, item)
+	}
+	constraintAttrs := map[string]interface{}{}
+	if len(constraints) > 0 {
+		constraintAttrs["constraints"] = constraints
+	}
+	ReplaceCapabilityNamespace(attrs, "constraints", constraintAttrs)
+
+	partitioning := map[string]interface{}{}
+	if facts.Partitioning != nil {
+		partitioning["strategy"] = facts.Partitioning.Strategy
+		if len(facts.Partitioning.KeyFields) > 0 {
+			partitioning["key_fields"] = append([]string(nil), facts.Partitioning.KeyFields...)
+		}
+		partitioning["subpartition_strategy"] = facts.Partitioning.SubpartitionStrategy
+		if len(facts.Partitioning.SubpartitionKeyFields) > 0 {
+			partitioning["subpartition_key_fields"] = append([]string(nil), facts.Partitioning.SubpartitionKeyFields...)
+		}
+		partitioning["partition_count"] = facts.Partitioning.PartitionCount
+	}
+	ReplaceCapabilityNamespace(attrs, "partitioning", partitioning)
 }
 
 func stringSliceAttribute(raw interface{}) []string {

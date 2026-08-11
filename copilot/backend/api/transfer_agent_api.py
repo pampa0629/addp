@@ -25,7 +25,11 @@ from config import settings
 from database import get_db
 from dependencies.auth import bearer_auth, require_tool_user
 from addp_common.resources import ResourceFact
-from services.inference_service import CopilotInferenceService
+from services.inference_service import (
+    CopilotInferenceService,
+    InferenceClientNotInitialized,
+    InferenceScenarioNotConfigured,
+)
 from services.resource_discovery import ResourceDiscovery
 from services.resource_resolution import ResourceResolutionPolicy, ResourceResolutionService
 
@@ -81,6 +85,7 @@ class TransferGenerationResponse(BaseModel):
     "/transfer/generate",
     response_model=TransferGenerationResponse,
     summary="生成 Transfer 任务草稿 | Generate Transfer task draft",
+    responses={503: {"description": "推理场景未配置或推理运行时未就绪 | Inference scenario is not configured or runtime is not ready"}},
     openapi_extra={
         "x-addp-auth-mode": "delegated_tool",
         "x-addp-required-permissions": [COPILOT_TRANSFER_EXECUTE],
@@ -158,6 +163,16 @@ async def generate_transfer(
         )
     except ToolExecutionError as error:
         raise HTTPException(status_code=502, detail=error.message) from error
+    except InferenceScenarioNotConfigured as error:
+        raise HTTPException(
+            status_code=503,
+            detail="transfer_inference_scenario_not_configured",
+        ) from error
+    except InferenceClientNotInitialized as error:
+        raise HTTPException(
+            status_code=503,
+            detail="copilot_inference_runtime_not_initialized",
+        ) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:

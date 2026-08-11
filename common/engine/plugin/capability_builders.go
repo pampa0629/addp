@@ -27,8 +27,9 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 				Supported:    true,
 				FieldInfo:    true,
 				Statistics:   true,
-				Indexes:      true,
-				Constraints:  true,
+				Indexes:      opts.Indexes,
+				Constraints:  opts.Constraints,
+				Partitioning: opts.Partitioning,
 				SpatialFacts: opts.SpatialFacts,
 				NativeFacts:  true,
 			},
@@ -97,6 +98,9 @@ type TabularCapabilityOptions struct {
 	TableUpsert                           bool
 	PartitionedTableChangeApplyOperations []string
 	Delete                                bool
+	Indexes                               bool
+	Constraints                           bool
+	Partitioning                          bool
 	SpatialFacts                          bool
 	SupportsExplain                       bool
 	SupportsCancel                        bool

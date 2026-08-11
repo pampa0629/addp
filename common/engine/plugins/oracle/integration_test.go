@@ -35,6 +35,9 @@ func TestIntegrationOracleCatalogAndRead(t *testing.T) {
 	if businessSchema == nil {
 		t.Fatalf("business schema not found in %#v", oracleCatalogEntryNames(schemas))
 	}
+	if pdbAdmin := findOracleCatalogEntry(schemas, "PDBADMIN"); pdbAdmin != nil {
+		t.Fatalf("PDBADMIN management schema must be filtered: %#v", oracleCatalogEntryNames(schemas))
+	}
 
 	items, err := p.ListChildren(ctx, connInfo, businessSchema.Path, plugin.ListOptions{})
 	if err != nil {
@@ -48,7 +51,11 @@ func TestIntegrationOracleCatalogAndRead(t *testing.T) {
 		t.Fatalf("ORDER_SUMMARY view not found in %#v", oracleCatalogEntryNames(items))
 	}
 
-	facts, err := p.DescribeCatalogFacts(ctx, connInfo, orders.Path, plugin.CatalogFactsOptions{IncludeStatistics: true})
+	facts, err := p.DescribeCatalogFacts(ctx, connInfo, orders.Path, plugin.CatalogFactsOptions{
+		IncludeStatistics:  true,
+		IncludeIndexes:     true,
+		IncludeConstraints: true,
+	})
 	if err != nil {
 		t.Fatalf("DescribeCatalogFacts() error = %v", err)
 	}
@@ -58,6 +65,25 @@ func TestIntegrationOracleCatalogAndRead(t *testing.T) {
 	assertOracleIntegrationField(t, facts.Table.Fields, "ID", datatype.FieldTypeBigInt, true)
 	assertOracleIntegrationField(t, facts.Table.Fields, "AMOUNT", datatype.FieldTypeDecimal, false)
 	assertOracleIntegrationField(t, facts.Table.Fields, "PAYLOAD", datatype.FieldTypeBytes, false)
+	if findOracleIndexFacts(facts.Indexes, "ORDERS_ORDERED_AT_IDX") == nil {
+		t.Fatalf("ORDERS indexes = %#v, want ORDERS_ORDERED_AT_IDX", facts.Indexes)
+	}
+	foreignKey := findOracleConstraintFacts(facts.Constraints, "ORDERS_CUSTOMER_FK")
+	if foreignKey == nil || foreignKey.ConstraintType != plugin.ConstraintTypeForeignKey || foreignKey.ReferencedTable != "CUSTOMERS" {
+		t.Fatalf("ORDERS constraints = %#v", facts.Constraints)
+	}
+
+	orderEvents := findOracleCatalogEntry(items, "ORDER_EVENTS")
+	if orderEvents == nil {
+		t.Fatalf("ORDER_EVENTS partitioned table not found in %#v", oracleCatalogEntryNames(items))
+	}
+	partitionFacts, err := p.DescribeCatalogFacts(ctx, connInfo, orderEvents.Path, plugin.CatalogFactsOptions{IncludePartitioning: true})
+	if err != nil {
+		t.Fatalf("DescribeCatalogFacts(ORDER_EVENTS) error = %v", err)
+	}
+	if partitionFacts.Partitioning == nil || partitionFacts.Partitioning.Strategy != "range" || strings.Join(partitionFacts.Partitioning.KeyFields, ",") != "EVENT_TIME" || partitionFacts.Partitioning.PartitionCount != 2 {
+		t.Fatalf("ORDER_EVENTS partitioning = %#v", partitionFacts.Partitioning)
+	}
 
 	batch, err := p.ReadBatch(ctx, connInfo, orders.Path, plugin.BatchReadOptions{Limit: 10})
 	if err != nil {
@@ -80,6 +106,24 @@ func TestIntegrationOracleCatalogAndRead(t *testing.T) {
 	if len(result.Rows) != 1 || result.Rows[0]["ORDER_NO"] != "ORD-1001" {
 		t.Fatalf("ExecuteSQL() rows = %#v", result.Rows)
 	}
+}
+
+func findOracleIndexFacts(indexes []plugin.IndexFacts, name string) *plugin.IndexFacts {
+	for index := range indexes {
+		if strings.EqualFold(indexes[index].Name, name) {
+			return &indexes[index]
+		}
+	}
+	return nil
+}
+
+func findOracleConstraintFacts(constraints []plugin.ConstraintFacts, name string) *plugin.ConstraintFacts {
+	for index := range constraints {
+		if strings.EqualFold(constraints[index].Name, name) {
+			return &constraints[index]
+		}
+	}
+	return nil
 }
 
 func oracleIntegrationConnInfo(t *testing.T) plugin.ConnectionInfo {

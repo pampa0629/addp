@@ -60,7 +60,8 @@ const handleCopy = async () => {
 
 <style scoped>
 .ddl-wrapper {
-  background: var(--el-fill-color-darker, #1a1a2e);
+  background: var(--addp-bg-secondary);
+  border: 1px solid var(--addp-border-color);
   border-radius: 6px;
   padding: 16px;
   max-height: 400px;
@@ -72,7 +73,7 @@ const handleCopy = async () => {
   font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
   font-size: 13px;
   line-height: 1.6;
-  color: var(--el-color-primary-light-3, #79c0ff);
+  color: var(--addp-text-primary);
   white-space: pre-wrap;
   word-break: break-all;
 }

@@ -440,6 +440,8 @@ type ListOptions struct {
 type CatalogFactsOptions struct {
 	IncludeStatistics   bool
 	IncludeIndexes      bool
+	IncludeConstraints  bool
+	IncludePartitioning bool
 	IncludeSpatialFacts bool
 	IncludeSamples      bool
 	SampleSize          int
@@ -483,15 +485,17 @@ type GraphSampleOptions struct {
 }
 
 type CatalogFacts struct {
-	Path      CatalogPath           `json:"path"`
-	Kind      string                `json:"kind"`
-	Table     *datatype.TableInfo   `json:"table,omitempty"`
-	Graph     *datatype.GraphInfo   `json:"graph,omitempty"`
-	Topic     *TopicFacts           `json:"topic,omitempty"`
-	Spatial   *datatype.SpatialInfo `json:"spatial,omitempty"`
-	Storage   *CatalogStorageFacts  `json:"storage,omitempty"`
-	Indexes   []IndexFacts          `json:"indexes,omitempty"`
-	UpdatedAt *time.Time            `json:"updated_at,omitempty"`
+	Path         CatalogPath             `json:"path"`
+	Kind         string                  `json:"kind"`
+	Table        *datatype.TableInfo     `json:"table,omitempty"`
+	Graph        *datatype.GraphInfo     `json:"graph,omitempty"`
+	Topic        *TopicFacts             `json:"topic,omitempty"`
+	Spatial      *datatype.SpatialInfo   `json:"spatial,omitempty"`
+	Storage      *CatalogStorageFacts    `json:"storage,omitempty"`
+	Indexes      []IndexFacts            `json:"indexes,omitempty"`
+	Constraints  []ConstraintFacts       `json:"constraints,omitempty"`
+	Partitioning *TablePartitioningFacts `json:"partitioning,omitempty"`
+	UpdatedAt    *time.Time              `json:"updated_at,omitempty"`
 }
 
 type TopicFacts struct {

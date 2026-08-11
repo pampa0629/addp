@@ -67,6 +67,7 @@ func (p *DorisPlugin) ConnectionIdentityFields() []string {
 
 func (p *DorisPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), "database", plugin.TabularCapabilityOptions{
+		Constraints:        true,
 		Write:              true,
 		BulkWrite:          true,
 		BatchWrite:         true,

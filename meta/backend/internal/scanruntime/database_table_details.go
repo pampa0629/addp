@@ -51,6 +51,7 @@ func (s *DatabaseRuntime) scanTableDetails(
 		tableInfo.Fields = fields
 		tableInfo.PrimaryKey = primaryKeyColumns
 		attrs = tableItemAttributes(schemaName, tableInfo)
+		metaattr.ApplyCatalogFactsCapabilities(attrs, describedFacts)
 
 		if spatialInfo := plugin.CatalogFactsSpatialInfo(describedFacts); spatialInfo != nil {
 			metaattr.MergeStandardAttributes(attrs, metaattr.TableDescribeAttributes(metaattr.TableDescribeAttributesInput{

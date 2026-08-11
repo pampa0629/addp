@@ -74,7 +74,7 @@ attributes 分区统一采用以下概念：
 | `type_info` | 对应数据类型的通用元数据是什么 | table fields、media width/height、document page_count、container children、cad layer_count、model_3d mesh_count、point_cloud point_count、gaussian_splat splat_count |
 | `format_info` | 对应文件、容器或格式解析层面的私有信息是什么 | csv encoding、shapefile refs、sqlite version |
 | `access_index` | 面向内容读取的通用访问索引是什么 | table sparse_row_index |
-| `capabilities` | 这个 item 有哪些横切能力 | spatial、temporal、statistics、extraction、semantic、partitioning、indexing |
+| `capabilities` | 这个 item 有哪些横切能力 | spatial、temporal、statistics、extraction、semantic、constraints、partitioning、indexing |
 
 `schema` 不作为通用分区名。表格型数据的字段、主键、行数应进入 `type_info.table`；索引摘要进入 `capabilities.indexing`。
 
@@ -111,7 +111,7 @@ Kafka topic 第一版 basic scan 只保存 item identity，`attributes.item.data
 | `type_info` | 数据库 metadata、format info provider、采样器、Meta item normalizer | table fields、primary_key、精确 row_count、estimated_row_count；media kind/width/height/duration_ms；document title/page_count；container children；graph shapes；cad 图纸结构摘要；model_3d 结构摘要；point_cloud 点云摘要；gaussian_splat 高斯基元摘要 |
 | `format_info` | format plugin / provider、Meta item normalizer | CSV 分隔符、Shapefile related refs、JSON 结构类型、SQLite 版本等具体格式信息 |
 | `access_index` | format plugin / reader、Meta item normalizer | 用于按内容窗口读取的访问索引，例如 table 稀疏行号到字节偏移索引 |
-| `capabilities` | engine / format provider、扫描采样事实提供方、Meta item normalizer | spatial、temporal、statistics、extraction、semantic、partitioning、indexing 等横切能力 |
+| `capabilities` | engine / format provider、扫描采样事实提供方、Meta item normalizer | spatial、temporal、statistics、extraction、semantic、constraints、partitioning、indexing 等横切能力 |
 
 `common/datatype` 是 type info、field type、空间横切事实和访问索引结构的代码事实源；attributes 是这些事实的落库模型。Meta normalizer 负责将 provider 返回的 `datatype.*` 结构写入对应 attributes 分区。
 
@@ -400,10 +400,13 @@ WGS84 bounds、SRID 和 CRS 属于 `capabilities.spatial`，不重复写入 `for
 | `statistics` | 扫描统计与采样事实 | sample_size、is_sampled、schema_type、index_count、avg_record_size |
 | `extraction` | 内容提取 | extractor_available、text_extracted、status、reason、extractor、plain_text_preview、text_truncated、summary、index_ref |
 | `semantic` | 语义能力 | embedding_model、vector_index_ref、semantic_tags |
-| `partitioning` | 分区事实 | partition_count、partition_sample、partition_range |
+| `constraints` | 关系表命名约束事实 | constraints（primary_key、unique、foreign_key） |
+| `partitioning` | 分区事实 | strategy、key_fields、subpartition_strategy、subpartition_key_fields、partition_count |
 | `indexing` | 索引能力 | indexes、spatial_indexes、fulltext_indexes、vector_indexes |
 
 横切能力不应变成顶层数据类型，也不应被塞进具体格式信息。
+
+`capabilities.indexing.indexes[]` 使用 `name`、`fields`、`is_unique`、`index_type`；字段顺序必须保持来源索引列顺序。`capabilities.constraints.constraints[]` 使用 `name`、`constraint_type`、`fields`，外键额外使用 `referenced_namespace`、`referenced_table`、`referenced_fields`；`constraint_type` 只允许 `primary_key`、`unique`、`foreign_key`。`capabilities.partitioning` 使用受控的 `strategy`、`key_fields`、`subpartition_strategy`、`subpartition_key_fields`、`partition_count`。这些结构直接来自 `CatalogFacts` 的强类型事实，Meta 不解析供应商原生表达式进行补推。
 
 `capabilities.statistics` 只保存 Meta scan、catalog、system table、格式头或结构推断过程获得的紧凑统计与采样事实。它不保存 Manager data profile，也不得新增字段级 `fields`、`null_count`、`distinct_count`、`min`、`max`、`quantiles`、`histogram`、`top_values`、`profiled_at` 或 `profile_ref` 来旁路承载剖析结果。Manager 数据剖析的当前结果、字段分布和执行历史分别归 Manager 私有结果表与 `common.task_executions`。
 

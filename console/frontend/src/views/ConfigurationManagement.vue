@@ -15,7 +15,7 @@
 
     <el-table v-else v-loading="loading" :data="moduleEntries" class="entries-table" :row-class-name="entryRowClass" @row-click="openEntry">
       <el-table-column :label="t('console.configuration.owner')" min-width="150">
-        <template #default="{ row }"><div class="entry-owner"><span>{{ t(`console.configuration.modules.${row.owner_module}.name`) }}</span><code>{{ row.owner_module }}</code></div></template>
+        <template #default="{ row }"><div class="entry-owner"><span>{{ ownerLabel(row.owner_module) }}</span><code>{{ row.owner_module }}</code></div></template>
       </el-table-column>
       <el-table-column :label="t('console.configuration.entry')" min-width="240">
         <template #default="{ row }">
@@ -58,6 +58,7 @@ import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../store/auth'
 import { listConfigurationManagementEntries } from '../api/configurationManagement'
 import ModuleConfiguration from '../components/configuration/ModuleConfiguration.vue'
+import { translateDynamicKey } from '../utils/configurationI18n'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -112,6 +113,14 @@ const contextLabel = computed(() => authStore.authContext?.context?.type === 'te
 
 function scopeLabel(scope) {
   return t(`console.configuration.scopes.${scope}`)
+}
+
+function ownerLabel(ownerModule) {
+  return translateDynamicKey(
+    t,
+    'console.configuration.modules',
+    ownerModule ? `${ownerModule}.name` : ownerModule
+  )
 }
 
 function entryLabel(entry) {

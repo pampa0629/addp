@@ -129,10 +129,35 @@ type DynamicCollectionFacts struct {
 
 // IndexFacts describes engine-native index facts.
 type IndexFacts struct {
-	Name      string
-	Fields    []string
-	IsUnique  bool
-	IndexType string
+	Name      string   `json:"name"`
+	Fields    []string `json:"fields"`
+	IsUnique  bool     `json:"is_unique"`
+	IndexType string   `json:"index_type,omitempty"`
+}
+
+const (
+	ConstraintTypePrimaryKey = "primary_key"
+	ConstraintTypeUnique     = "unique"
+	ConstraintTypeForeignKey = "foreign_key"
+)
+
+// ConstraintFacts describes a named relational table constraint.
+type ConstraintFacts struct {
+	Name                string   `json:"name"`
+	ConstraintType      string   `json:"constraint_type"`
+	Fields              []string `json:"fields"`
+	ReferencedNamespace string   `json:"referenced_namespace,omitempty"`
+	ReferencedTable     string   `json:"referenced_table,omitempty"`
+	ReferencedFields    []string `json:"referenced_fields,omitempty"`
+}
+
+// TablePartitioningFacts describes portable table partition layout facts.
+type TablePartitioningFacts struct {
+	Strategy              string   `json:"strategy"`
+	KeyFields             []string `json:"key_fields,omitempty"`
+	SubpartitionStrategy  string   `json:"subpartition_strategy,omitempty"`
+	SubpartitionKeyFields []string `json:"subpartition_key_fields,omitempty"`
+	PartitionCount        int      `json:"partition_count"`
 }
 
 // QueryResult 通用查询结果（SQL/MQL/Cypher 统一格式）

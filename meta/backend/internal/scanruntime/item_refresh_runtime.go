@@ -303,6 +303,9 @@ func (r *ItemRefreshRuntime) refreshKnownCatalogFactsItem(
 	facts, err := factsProvider.DescribeCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), path, plugin.CatalogFactsOptions{
 		IncludeSpatialFacts: true,
 		IncludeStatistics:   true,
+		IncludeIndexes:      true,
+		IncludeConstraints:  true,
+		IncludePartitioning: true,
 	})
 	if err != nil {
 		return scanprocessor.Result{}, true, fmt.Errorf("字段扫描失败: %w", err)
@@ -331,6 +334,7 @@ func (r *ItemRefreshRuntime) refreshKnownCatalogFactsItem(
 	}
 	metaattr.SetStorage(attrs, "schema_name", schemaName)
 	metaattr.ApplyTableItemAttributes(attrs, &tableInfo)
+	metaattr.ApplyCatalogFactsCapabilities(attrs, facts)
 	if spatialInfo := plugin.CatalogFactsSpatialInfo(facts); spatialInfo != nil {
 		metaattr.MergeStandardAttributes(attrs, metaattr.TableDescribeAttributes(metaattr.TableDescribeAttributesInput{
 			Spatial: spatialInfo,

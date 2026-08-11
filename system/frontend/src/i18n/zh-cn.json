@@ -593,6 +593,7 @@
           "statistics": "统计信息",
           "indexes": "索引",
           "constraints": "约束",
+          "partitioning": "分区事实",
           "spatialMetadata": "空间元数据",
           "spatialFacts": "空间事实",
           "sampling": "采样推断",

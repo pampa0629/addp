@@ -11,7 +11,7 @@
     <el-table v-loading="loading" :data="rows" row-key="scenarioCode" class="binding-table">
       <el-table-column :label="t('console.configuration.ai.scenario')" min-width="220">
         <template #default="{ row }">
-          <div class="scenario-name">{{ t(`console.configuration.ai.scenarios.${row.scenarioCode}`) }}</div>
+          <div class="scenario-name">{{ scenarioLabel(row.scenarioCode) }}</div>
           <code>{{ row.scenarioCode }}</code>
         </template>
       </el-table-column>
@@ -65,6 +65,7 @@ import { Check, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../../store/auth'
 import { getInferenceBinding, listInferenceProfiles, updateInferenceBinding } from '../../api/inferenceConfiguration'
+import { translateDynamicKey } from '../../utils/configurationI18n'
 
 const props = defineProps({
   owner: { type: String, required: true, validator: (value) => ['agent', 'copilot'].includes(value) }
@@ -93,6 +94,11 @@ const contextLabel = computed(() => contextType.value === 'tenant'
   ? t('console.configuration.tenantContext')
   : t('console.configuration.platformContext'))
 const canUpdate = computed(() => authStore.hasPermission(`${props.owner}.configuration.update`))
+const scenarioLabel = scenarioCode => translateDynamicKey(
+  t,
+  'console.configuration.ai.scenarios',
+  scenarioCode
+)
 
 async function load() {
   loading.value = true

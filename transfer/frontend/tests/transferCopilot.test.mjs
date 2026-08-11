@@ -6,6 +6,7 @@ import {
   inferTargetEngineForClarification,
   inferTargetEngineFromPrompt,
   inferSourceEngineFromPrompt,
+  inferSourceEnginesFromPrompt,
   needsTargetConfiguration,
   resourceCandidateKey,
   resourceFact
@@ -51,6 +52,11 @@ test('Transfer Copilot infers a registered target engine from the target phrase'
     { id: 4, name: 'Another PostgreSQL', engine_type: 'postgresql' },
     mysql
   ]), null)
+  assert.deepEqual(inferSourceEnginesFromPrompt('从 pg 到 mysql，同步 farmland', [
+    postgresql,
+    { id: 4, name: 'Another PostgreSQL', engine_type: 'postgresql' },
+    mysql
+  ]).map(engine => engine.id), [2, 4])
 })
 
 test('Transfer Copilot resolves the target engine whenever target configuration is requested', () => {

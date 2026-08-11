@@ -165,6 +165,7 @@ type CatalogFactsCapability struct {
 	Statistics   bool `json:"statistics,omitempty"`
 	Indexes      bool `json:"indexes,omitempty"`
 	Constraints  bool `json:"constraints,omitempty"`
+	Partitioning bool `json:"partitioning,omitempty"`
 	SpatialFacts bool `json:"spatial_facts,omitempty"`
 	Sampling     bool `json:"sampling,omitempty"`
 	NativeFacts  bool `json:"native_facts,omitempty"`

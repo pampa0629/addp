@@ -11,18 +11,28 @@ export function inferTargetEngineFromPrompt(query, engines) {
 }
 
 export function inferSourceEngineFromPrompt(query, engines) {
+  const matches = inferSourceEnginesFromPrompt(query, engines)
+  return matches.length === 1 ? matches[0] : null
+}
+
+export function inferSourceEnginesFromPrompt(query, engines) {
   const sourceText = sourceClause(query)
-  if (!sourceText) return null
-  return uniqueBestEngine(sourceText, engines)
+  if (!sourceText) return []
+  return bestEngines(sourceText, engines)
 }
 
 function uniqueBestEngine(text, engines) {
+  const matches = bestEngines(text, engines)
+  return matches.length === 1 ? matches[0] : null
+}
+
+function bestEngines(text, engines) {
   const ranked = (Array.isArray(engines) ? engines : [])
     .map(engine => ({ engine, score: targetEngineScore(text, engine) }))
     .filter(item => item.score > 0)
     .sort((left, right) => right.score - left.score)
-  if (ranked.length > 1 && ranked[0].score === ranked[1].score) return null
-  return ranked[0]?.engine || null
+  if (!ranked.length) return []
+  return ranked.filter(item => item.score === ranked[0].score).map(item => item.engine)
 }
 
 export function needsTargetConfiguration(result) {

@@ -81,10 +81,27 @@ func SetExtension(attrs models.JSONMap, namespace string, key string, value inte
 	switch namespace {
 	case "media", "document":
 		UpsertNested(attrs, "type_info", namespace, map[string]interface{}{key: value})
-	case "spatial", "statistics", "extraction", "semantic", "temporal", "partitioning", "indexing":
+	case "spatial", "statistics", "extraction", "semantic", "temporal", "constraints", "partitioning", "indexing":
 		UpsertNested(attrs, "capabilities", namespace, map[string]interface{}{key: value})
 	default:
 		UpsertNested(attrs, "format_info", "unqualified", map[string]interface{}{key: value})
+	}
+}
+
+// ReplaceCapabilityNamespace replaces one authoritative capability facts section.
+func ReplaceCapabilityNamespace(attrs models.JSONMap, namespace string, values map[string]interface{}) {
+	if attrs == nil || namespace == "" {
+		return
+	}
+	capabilities := Section(attrs, "capabilities")
+	delete(capabilities, namespace)
+	if cleaned := cleanAttributeMap(values); len(cleaned) > 0 {
+		capabilities[namespace] = cleaned
+	}
+	if capabilities = cleanAttributeMap(capabilities); len(capabilities) > 0 {
+		attrs["capabilities"] = capabilities
+	} else {
+		delete(attrs, "capabilities")
 	}
 }
 

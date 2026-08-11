@@ -44,7 +44,7 @@ type FieldDefinitionRecommendationResult struct {
 }
 
 type fieldRecommendationEngineGetter interface {
-	GetEngine(engineID uint) (*commonmodels.Engine, error)
+	GetEngineForTenant(ctx context.Context, tenantID, engineID uint) (*commonmodels.Engine, error)
 }
 
 type FieldDefinitionRecommendationService struct {
@@ -74,7 +74,7 @@ func (s *FieldDefinitionRecommendationService) Recommend(
 	if err != nil || locator.EngineID == 0 || locator.Type != resourcetree.TypeTable || locator.ItemID == nil {
 		return nil, fmt.Errorf("%w: source_locator must identify a scanned table item", ErrFieldRecommendationInvalid)
 	}
-	engine, err := s.engines.GetEngine(locator.EngineID)
+	engine, err := s.engines.GetEngineForTenant(ctx, tenantID, locator.EngineID)
 	if err != nil || engine == nil || !engine.IsUsable() {
 		return nil, fmt.Errorf("%w: source engine is unavailable", ErrFieldRecommendationUnavailable)
 	}

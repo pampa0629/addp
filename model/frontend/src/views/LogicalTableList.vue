@@ -95,7 +95,7 @@
           :total="pagination.total"
           :page-sizes="[20, 50, 100]"
           layout="total, sizes, prev, pager, next"
-          @change="loadTables"
+          @change="handlePageChange"
         />
       </div>
     </el-card>
@@ -139,8 +139,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
 import { logicalTableAPI, domainAPI, dwLayerAPI } from '../api/model'
@@ -148,10 +148,12 @@ import { useAuthStore } from '../store/auth'
 import { navigateModelRoute } from '../utils/moduleNavigation'
 import { useI18n } from 'vue-i18n'
 import { getModelErrorMessage } from '../utils/apiError'
+import { buildLogicalTableListRouteQuery, resolveLogicalTableListRouteState } from '../utils/routeState'
 
 const { t } = useI18n()
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const can = permission => authStore.hasPermission(permission)
 const loading = ref(false)
@@ -179,6 +181,33 @@ const statusLabel = (s) => ({
   approved: t('model.common.status_approved'),
 }[s] ?? s)
 
+const applyRouteState = query => {
+  const routeState = resolveLogicalTableListRouteState(query)
+  Object.assign(searchForm, {
+    keyword: routeState.keyword,
+    domain_id: routeState.domainId,
+    layer: routeState.layer,
+    status: routeState.status
+  })
+  pagination.page = routeState.page
+  pagination.pageSize = routeState.pageSize
+  return routeState
+}
+
+const buildRouteQuery = () => buildLogicalTableListRouteQuery({
+  keyword: searchForm.keyword,
+  domainId: searchForm.domain_id,
+  layer: searchForm.layer,
+  status: searchForm.status,
+  page: pagination.page,
+  pageSize: pagination.pageSize
+})
+
+const syncRoute = () => navigateModelRoute(router, {
+  path: '/logical-tables',
+  query: buildRouteQuery()
+}, { history: 'replace' })
+
 const loadTables = async () => {
   loading.value = true
   loadError.value = ''
@@ -203,9 +232,15 @@ const loadTables = async () => {
   }
 }
 
-const handleSearch = () => {
+const handleSearch = async () => {
   pagination.page = 1
-  loadTables()
+  await syncRoute()
+  await loadTables()
+}
+
+const handlePageChange = async () => {
+  await syncRoute()
+  await loadTables()
 }
 
 const openCreateDialog = () => {
@@ -259,7 +294,24 @@ const reload = async () => {
   await loadTables()
 }
 
-onMounted(reload)
+const restoreListFromRoute = async query => {
+  const previousQuery = JSON.stringify(buildRouteQuery())
+  const routeState = applyRouteState(query)
+  if (routeState.changed) {
+    await navigateModelRoute(router, { path: '/logical-tables', query: routeState.query }, { history: 'replace' })
+  }
+  if (JSON.stringify(buildRouteQuery()) !== previousQuery) await loadTables()
+}
+
+watch(() => route.query, restoreListFromRoute, { deep: true })
+
+onMounted(async () => {
+  const routeState = applyRouteState(route.query)
+  if (routeState.changed) {
+    await navigateModelRoute(router, { path: '/logical-tables', query: routeState.query }, { history: 'replace' })
+  }
+  await reload()
+})
 </script>
 
 <style scoped>

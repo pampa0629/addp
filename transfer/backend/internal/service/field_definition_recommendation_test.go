@@ -1,11 +1,26 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"reflect"
 	"testing"
 
 	"github.com/addp/common/datatype"
+	commonmodels "github.com/addp/common/models"
 )
+
+type fieldRecommendationEngineGetterStub struct {
+	tenantID uint
+	engineID uint
+	err      error
+}
+
+func (s *fieldRecommendationEngineGetterStub) GetEngineForTenant(_ context.Context, tenantID, engineID uint) (*commonmodels.Engine, error) {
+	s.tenantID = tenantID
+	s.engineID = engineID
+	return nil, s.err
+}
 
 func TestDecimalValueShapePreservesExactRequiredDigits(t *testing.T) {
 	tests := []struct {
@@ -62,5 +77,18 @@ func TestRecommendationFieldsPreserveQuotedIdentifierCase(t *testing.T) {
 	}
 	if err := validateDecimalRecommendationFields(actual, []string{"amount"}); err == nil {
 		t.Fatal("case-distinct non-decimal field should be rejected")
+	}
+}
+
+func TestFieldRecommendationReadsSourceEngineInCurrentTenant(t *testing.T) {
+	getter := &fieldRecommendationEngineGetterStub{err: errors.New("stop after tenant binding")}
+	service := NewFieldDefinitionRecommendationService(getter)
+	_, err := service.Recommend(context.Background(), 7, FieldDefinitionRecommendationRequest{
+		SourceLocator:    "addp://engine/8/path/public/amounts?type=table&item_id=60",
+		SourceFields:     []string{"amount"},
+		TargetEngineType: "mysql",
+	})
+	if err == nil || getter.tenantID != 7 || getter.engineID != 8 {
+		t.Fatalf("tenant/engine binding = (%d,%d), err=%v", getter.tenantID, getter.engineID, err)
 	}
 }

@@ -3,7 +3,18 @@
     <el-card>
       <template #header>
         <div class="card-header">
-          <h2>{{ t('model.er_diagram.title') }}</h2>
+          <div class="header-left">
+            <h2>{{ t('model.er_diagram.title') }}</h2>
+            <el-select
+              v-model="selectedDomainId"
+              class="domain-filter"
+              :placeholder="t('model.er_diagram.domain_filter')"
+              clearable
+              @change="handleDomainChange"
+            >
+              <el-option v-for="domain in domains" :key="domain.id" :label="domain.name" :value="domain.id" />
+            </el-select>
+          </div>
           <div class="toolbar">
             <el-button v-if="canImport" type="primary" @click="showImportDialog">
               <el-icon><Upload /></el-icon> {{ t('model.er_diagram.import_mermaid') }}
@@ -24,9 +35,9 @@
         type="error"
         :title="loadError"
         show-icon
-        :closable="false"
-      >
-        <el-button link type="danger" @click="refreshDiagram">{{ t('model.common.retry') }}</el-button>
+      :closable="false"
+    >
+        <el-button link type="danger" @click="reload">{{ t('model.common.retry') }}</el-button>
       </el-alert>
 
       <div v-else class="diagram-info">
@@ -37,7 +48,11 @@
 
       <!-- ER图渲染区域 -->
       <div v-if="!loadError" ref="diagramContainer" class="diagram-container" v-loading="diagramLoading">
-        <pre class="mermaid">{{ globalMermaidCode }}</pre>
+        <el-empty
+          v-if="!diagramLoading && entities.length === 0"
+          :description="t('model.er_diagram.no_entities')"
+        />
+        <pre v-else class="mermaid">{{ globalMermaidCode }}</pre>
       </div>
     </el-card>
 
@@ -107,16 +122,22 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, Download, Refresh, UploadFilled } from '@element-plus/icons-vue'
 import mermaid from 'mermaid'
-import { entityAPI, entityRelationAPI } from '../api/model'
+import { entityAPI, entityRelationAPI, domainAPI } from '../api/model'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
 import { getModelErrorMessage } from '../utils/apiError'
+import { initializeMermaidTheme, observeThemeChange } from '../utils/mermaidTheme'
+import { buildERDiagramRouteQuery, resolveERDiagramRouteState } from '../utils/routeState'
+import { navigateModelRoute } from '../utils/moduleNavigation'
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 const hasPermissions = permissions => permissions.every(permission => authStore.hasPermission(permission))
 const canImport = computed(() => hasPermissions([
@@ -132,6 +153,8 @@ const canExport = computed(() => hasPermissions([
 
 const entities = ref([])
 const relations = ref([])
+const domains = ref([])
+const selectedDomainId = ref(null)
 const globalMermaidCode = ref('')
 const diagramContainer = ref(null)
 const diagramLoading = ref(false)
@@ -141,6 +164,32 @@ const importDialogVisible = ref(false)
 const importTab = ref('paste')
 const importMermaidCode = ref('')
 const importing = ref(false)
+let stopThemeObserver = null
+
+const applyRouteState = query => {
+  const routeState = resolveERDiagramRouteState(query)
+  selectedDomainId.value = routeState.domainId
+  return routeState
+}
+
+const syncRoute = () => navigateModelRoute(router, {
+  path: '/er-diagram',
+  query: buildERDiagramRouteQuery({ domainId: selectedDomainId.value })
+}, { history: 'replace' })
+
+const loadDomains = async () => {
+  try {
+    domains.value = await domainAPI.list() || []
+  } catch (err) {
+    loadError.value = getModelErrorMessage(err, t, 'model.common.load_failed')
+  }
+}
+
+const reload = async () => {
+  loadError.value = ''
+  await loadDomains()
+  if (!loadError.value) await refreshDiagram()
+}
 
 // 加载数据并生成ER图
 const refreshDiagram = async () => {
@@ -159,15 +208,21 @@ const refreshDiagram = async () => {
       entityAPI.listAll(),
       entityRelationAPI.list()
     ])
-    entities.value = entitiesRes
-    relations.value = relationsRes || []
+    const allEntities = entitiesRes || []
+    entities.value = selectedDomainId.value
+      ? allEntities.filter(entity => entity.domain_id === selectedDomainId.value)
+      : allEntities
+    const visibleEntityIds = new Set(entities.value.map(entity => entity.id))
+    relations.value = (relationsRes || []).filter(relation =>
+      visibleEntityIds.has(relation.source_entity) && visibleEntityIds.has(relation.target_entity)
+    )
 
     // 生成Mermaid代码
     await generateGlobalMermaidCode()
 
     // 渲染
     await nextTick()
-    await renderMermaid()
+    if (entities.value.length > 0) await renderMermaid()
   } catch (err) {
     console.error('加载ER图失败:', err)
     loadError.value = getModelErrorMessage(err, t, 'model.er_diagram.load_failed')
@@ -224,6 +279,11 @@ const convertToMermaidSymbol = (relationType) => {
     many_to_many: '}o--o{'
   }
   return map[relationType] || '||--o{'
+}
+
+const handleDomainChange = async () => {
+  await syncRoute()
+  await refreshDiagram()
 }
 
 // 渲染Mermaid图
@@ -319,18 +379,36 @@ const executeImport = async () => {
   }
 }
 
-onMounted(() => {
-  // 初始化Mermaid
-  mermaid.initialize({
-    startOnLoad: false,
-    theme: 'default',
+const restoreDiagramFromRoute = async query => {
+  const previousDomainId = selectedDomainId.value
+  const routeState = applyRouteState(query)
+  if (routeState.changed) {
+    await navigateModelRoute(router, { path: '/er-diagram', query: routeState.query }, { history: 'replace' })
+  }
+  if (selectedDomainId.value !== previousDomainId) await refreshDiagram()
+}
+
+watch(() => route.query, restoreDiagramFromRoute, { deep: true })
+
+onMounted(async () => {
+  initializeMermaidTheme(mermaid, {
     er: {
       useMaxWidth: true
     }
   })
+  stopThemeObserver = observeThemeChange(async () => {
+    initializeMermaidTheme(mermaid, { er: { useMaxWidth: true } })
+    if (entities.value.length > 0) await renderMermaid()
+  })
 
-  refreshDiagram()
+  const routeState = applyRouteState(route.query)
+  if (routeState.changed) {
+    await navigateModelRoute(router, { path: '/er-diagram', query: routeState.query }, { history: 'replace' })
+  }
+  await reload()
 })
+
+onBeforeUnmount(() => stopThemeObserver?.())
 </script>
 
 <style scoped>
@@ -342,6 +420,8 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
 }
 
 .card-header h2 {
@@ -350,9 +430,24 @@ onMounted(() => {
   font-weight: 600;
 }
 
+.header-left {
+  display: flex;
+  align-items: center;
+  flex: 1 1 360px;
+  flex-wrap: wrap;
+  gap: 24px;
+  min-width: 0;
+}
+
+.domain-filter {
+  width: 220px;
+}
+
 .toolbar {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
+  margin-left: auto;
 }
 
 .load-error {
@@ -364,10 +459,11 @@ onMounted(() => {
 }
 
 .diagram-container {
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--addp-border-color);
   border-radius: 4px;
   padding: 30px;
-  background: #fafafa;
+  background: var(--addp-bg-primary);
+  color: var(--addp-text-primary);
   min-height: 500px;
   overflow: auto;
 }
@@ -382,7 +478,7 @@ onMounted(() => {
 
 .el-icon--upload {
   font-size: 67px;
-  color: #409eff;
+  color: var(--el-color-primary);
   margin-bottom: 16px;
 }
 </style>

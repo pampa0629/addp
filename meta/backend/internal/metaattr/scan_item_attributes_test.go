@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/meta/internal/models"
 )
 
@@ -107,6 +108,47 @@ func TestBuildDynamicSchemaAttributesWritesTypeInfoTableSection(t *testing.T) {
 	}
 	if attrs["fields"] != nil || attrs["indexes"] != nil || attrs["schema"] != nil || attrs["database"] != nil || attrs["collection"] != nil {
 		t.Fatalf("legacy flat/schema fields should not be written: %#v", attrs)
+	}
+}
+
+func TestApplyCatalogFactsCapabilitiesWritesRelationalFacts(t *testing.T) {
+	t.Parallel()
+
+	attrs := models.JSONMap{}
+	ApplyCatalogFactsCapabilities(attrs, &plugin.CatalogFacts{
+		Indexes: []plugin.IndexFacts{{
+			Name: "orders_customer_idx", Fields: []string{"customer_id", "ordered_at"}, IndexType: "normal",
+		}},
+		Constraints: []plugin.ConstraintFacts{{
+			Name:                "orders_customer_fk",
+			ConstraintType:      plugin.ConstraintTypeForeignKey,
+			Fields:              []string{"customer_id"},
+			ReferencedNamespace: "business",
+			ReferencedTable:     "customers",
+			ReferencedFields:    []string{"id"},
+		}},
+		Partitioning: &plugin.TablePartitioningFacts{
+			Strategy: "range", KeyFields: []string{"ordered_at"}, PartitionCount: 2,
+		},
+	})
+
+	capabilities := attrs["capabilities"].(map[string]interface{})
+	indexes := capabilities["indexing"].(map[string]interface{})["indexes"].([]map[string]interface{})
+	if len(indexes) != 1 || indexes[0]["name"] != "orders_customer_idx" || indexes[0]["is_unique"] != false {
+		t.Fatalf("indexing = %#v", indexes)
+	}
+	constraints := capabilities["constraints"].(map[string]interface{})["constraints"].([]map[string]interface{})
+	if len(constraints) != 1 || constraints[0]["constraint_type"] != plugin.ConstraintTypeForeignKey || constraints[0]["referenced_table"] != "customers" {
+		t.Fatalf("constraints = %#v", constraints)
+	}
+	partitioning := capabilities["partitioning"].(map[string]interface{})
+	if partitioning["strategy"] != "range" || partitioning["partition_count"] != 2 {
+		t.Fatalf("partitioning = %#v", partitioning)
+	}
+
+	ApplyCatalogFactsCapabilities(attrs, &plugin.CatalogFacts{})
+	if attrs["capabilities"] != nil {
+		t.Fatalf("stale relational facts survived authoritative refresh: %#v", attrs["capabilities"])
 	}
 }
 
