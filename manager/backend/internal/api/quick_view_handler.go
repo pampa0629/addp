@@ -428,7 +428,7 @@ func (h *QuickViewHandler) GetQuickViewFlatGeobufByLocator(c *gin.Context) {
 
 // GetQuickViewTileByLocator 获取统一 MVT 快显瓦片
 // @Summary 获取统一 MVT 快显瓦片 | Get unified quick-view MVT tile
-// @Description 以 Resource Locator 为身份返回 MVT 瓦片。实时 MVT 由 PostGIS 空间 item 提供，其他空间 item 通过瓦片缓存结果提供快显。 | Return an MVT tile by Resource Locator. Realtime MVT is provided by PostGIS spatial items; other spatial items use tile cache results for quick view.
+// @Description 以 Resource Locator 为身份返回 MVT 瓦片。Business PMTiles 对象通过源引擎 range-read 读取，PostGIS 空间表支持实时 MVT，其他空间 item 使用 Manager 瓦片缓存。 | Return an MVT tile by Resource Locator. Business PMTiles objects are read through the source engine range provider, PostGIS spatial items support realtime MVT, and other spatial items use Manager tile-cache results.
 // @Tags Manager
 // @Produce application/vnd.mapbox-vector-tile
 // @Param locator query string true "资源定位符URI | Resource locator URI"
@@ -479,6 +479,25 @@ func (h *QuickViewHandler) GetQuickViewTileByLocator(c *gin.Context) {
 	if tenantID == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "tenant_id is required for MVT tile access"})
 		return
+	}
+	if h.previewResolver != nil {
+		if data, handled, err := h.previewResolver.ReadPMTilesTileFromURI(c.Request.Context(), locator, z, x, y, tenantID); handled {
+			if err != nil {
+				quickViewLocatorError(c, err)
+				return
+			}
+			c.Header("X-ADDP-Render-Source", "business_pmtiles")
+			if len(data) == 0 {
+				c.Header("X-ADDP-Tile-Status", "empty")
+			} else {
+				c.Header("Content-Encoding", "gzip")
+				c.Header("X-ADDP-Tile-Status", "ok")
+			}
+			c.Header("X-ADDP-Tile-Cache", "MISS")
+			c.Header("Cache-Control", "public, max-age=86400")
+			c.Data(http.StatusOK, "application/vnd.mapbox-vector-tile", data)
+			return
+		}
 	}
 	readyTileCache, err := h.service.GetDefaultTileCacheByIdentity(c.Request.Context(), source.Identity)
 	if err != nil {

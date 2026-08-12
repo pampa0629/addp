@@ -84,6 +84,86 @@ func TestQualityCleanupLogicalDisablesEngineBoundState(t *testing.T) {
 	}
 }
 
+func TestQualityEngineDeletionImpactKeepsCheckTaskRebindable(t *testing.T) {
+	t.Parallel()
+
+	candidates := qualityCleanupCandidates{
+		ruleApplications: []models.RuleApplication{{ID: 1}},
+		checkTasks:       []models.CheckTask{{ID: 2}},
+		issues:           []models.Issue{{ID: 3}},
+	}
+	impact, err := qualityEngineDeletionImpact(candidates)
+	if err != nil {
+		t.Fatalf("qualityEngineDeletionImpact() error = %v", err)
+	}
+	if impact.Summary.Rebindable != 1 || impact.Summary.WillDisable != 2 || impact.Summary.WillDelete != 0 {
+		t.Fatalf("impact summary = %#v, want one rebindable task and two state records to disable", impact.Summary)
+	}
+	if impact.ManagementPath != "/quality/check-tasks" {
+		t.Fatalf("management path = %q", impact.ManagementPath)
+	}
+}
+
+func TestQualityCleanupLogicalRollsBackWhenIssueUpdateFails(t *testing.T) {
+	db := newQualityCleanupTestDB(t)
+	svc := NewCleanupService(db, nil, nil)
+	rule := createQualityCleanupRuleApplication(t, db, 7, 12, "rule-match")
+	issue := createQualityCleanupIssue(t, db, 7, 12, "issue-match", "open")
+	if err := db.Exec(`CREATE TRIGGER quality.fail_quality_issue_ignore
+		BEFORE UPDATE OF status ON quality.issues
+		WHEN NEW.status = 'ignored'
+		BEGIN SELECT RAISE(ABORT, 'forced issue update failure'); END`).Error; err != nil {
+		t.Fatalf("create failure trigger: %v", err)
+	}
+
+	stats, err := svc.ExecuteCleanup(context.Background(), 7, events.CleanupModeLogical, map[string]interface{}{"engine_id": int64(12)})
+	if err != nil {
+		t.Fatalf("ExecuteCleanup() error = %v", err)
+	}
+	if len(stats.Errors) != 1 || stats.DisabledRuleApps != 0 || stats.IgnoredIssues != 0 {
+		t.Fatalf("stats = %#v, want one error and no committed updates", stats)
+	}
+	var storedRule models.RuleApplication
+	if err := db.First(&storedRule, rule.ID).Error; err != nil {
+		t.Fatalf("load rule application: %v", err)
+	}
+	if !storedRule.Enabled {
+		t.Fatal("rule application was disabled despite transaction rollback")
+	}
+	var storedIssue models.Issue
+	if err := db.First(&storedIssue, issue.ID).Error; err != nil {
+		t.Fatalf("load issue: %v", err)
+	}
+	if storedIssue.Status != "open" {
+		t.Fatalf("issue status = %q, want open after rollback", storedIssue.Status)
+	}
+}
+
+func TestQualityCleanupLogicalRejectsTaskThatBecameRunning(t *testing.T) {
+	db := newQualityCleanupTestDB(t)
+	svc := NewCleanupService(db, nil, nil)
+	rule := createQualityCleanupRuleApplication(t, db, 7, 12, "rule-match")
+	task := createQualityCleanupCheckTask(t, db, 7, 12, "task-match")
+	if err := db.Model(&models.CheckTask{}).Where("id = ?", task.ID).Update("last_execution_status", "running").Error; err != nil {
+		t.Fatalf("mark task running: %v", err)
+	}
+
+	stats, err := svc.ExecuteCleanup(context.Background(), 7, events.CleanupModeLogical, map[string]interface{}{"tenant_id": uint(7)})
+	if err != nil {
+		t.Fatalf("ExecuteCleanup() error = %v", err)
+	}
+	if len(stats.Errors) != 1 || stats.DisabledRuleApps != 0 {
+		t.Fatalf("stats = %#v, want running task error and no committed updates", stats)
+	}
+	var storedRule models.RuleApplication
+	if err := db.First(&storedRule, rule.ID).Error; err != nil {
+		t.Fatalf("load rule application: %v", err)
+	}
+	if !storedRule.Enabled {
+		t.Fatal("rule application was disabled while task was running")
+	}
+}
+
 func TestQualityCleanupPhysicalDeletesTenantOwnedState(t *testing.T) {
 	t.Parallel()
 
@@ -125,6 +205,45 @@ func TestQualityCleanupPhysicalDeletesTenantOwnedState(t *testing.T) {
 	}
 	if err := db.First(&models.RuleApplication{}, otherTenantRule.ID).Error; err != nil {
 		t.Fatalf("other tenant rule application should remain: %v", err)
+	}
+}
+
+func TestQualityCleanupPhysicalRollsBackWhenTaskDeleteFails(t *testing.T) {
+	db := newQualityCleanupTestDB(t)
+	svc := NewCleanupService(db, nil, nil)
+	rule := createQualityCleanupRuleApplication(t, db, 7, 12, "tenant-rule")
+	task := createQualityCleanupCheckTask(t, db, 7, 12, "tenant-task")
+	issue := createQualityCleanupIssue(t, db, 7, 12, "tenant-issue", "open")
+	if err := db.Exec(`CREATE TRIGGER quality.fail_quality_task_delete
+		BEFORE DELETE ON quality.check_tasks
+		BEGIN SELECT RAISE(ABORT, 'forced task delete failure'); END`).Error; err != nil {
+		t.Fatalf("create failure trigger: %v", err)
+	}
+
+	stats, err := svc.ExecuteCleanup(context.Background(), 7, events.CleanupModePhysical, map[string]interface{}{"tenant_id": uint(7)})
+	if err != nil {
+		t.Fatalf("ExecuteCleanup() error = %v", err)
+	}
+	if len(stats.Errors) != 1 || stats.DeletedIssues != 0 || stats.DeletedCheckTasks != 0 || stats.DeletedRuleApplications != 0 {
+		t.Fatalf("stats = %#v, want one error and no committed deletes", stats)
+	}
+	for name, id := range map[string]int64{"rule": rule.ID, "task": task.ID, "issue": issue.ID} {
+		var count int64
+		var model interface{}
+		switch name {
+		case "rule":
+			model = &models.RuleApplication{}
+		case "task":
+			model = &models.CheckTask{}
+		case "issue":
+			model = &models.Issue{}
+		}
+		if err := db.Model(model).Where("id = ?", id).Count(&count).Error; err != nil {
+			t.Fatalf("count %s: %v", name, err)
+		}
+		if count != 1 {
+			t.Fatalf("%s count = %d, want 1 after rollback", name, count)
+		}
 	}
 }
 

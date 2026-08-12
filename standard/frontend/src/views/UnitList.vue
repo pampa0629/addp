@@ -23,7 +23,7 @@
           >
             <template #default="{ node, data }">
               <div class="tree-node">
-                <span>{{ data.name }}</span>
+                <span class="tree-node-name">{{ data.name }}</span>
                 <span class="tree-node-meta">{{ data.code }}</span>
                 <div class="tree-node-actions">
                   <el-button link size="small" @click.stop="editCategory(data)">{{ $t('standard.common.edit') }}</el-button>
@@ -286,8 +286,10 @@ onMounted(async () => {
 .page-header h2 { margin: 0; font-size: 18px; color: var(--addp-text-primary); }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .unit-list :deep(.el-card) { background: var(--addp-bg-primary); border-color: var(--addp-border-color); box-shadow: var(--addp-shadow-card); }
-.tree-node { display: flex; align-items: center; gap: 8px; width: 100%; }
-.tree-node-meta { font-size: 12px; color: var(--addp-text-secondary); }
+.tree-node { display: flex; align-items: center; gap: 8px; min-width: 0; width: 100%; }
+.tree-node-name, .tree-node-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-node-name { flex: 1 1 auto; }
+.tree-node-meta { flex: 0 1 auto; font-size: 12px; color: var(--addp-text-secondary); }
 .tree-node-actions { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; min-width: max-content; white-space: nowrap; }
 .tree-node-actions :deep(.el-button) { white-space: nowrap; }
 .table-actions { display: inline-flex; align-items: center; gap: 8px; min-width: max-content; white-space: nowrap; }
@@ -298,7 +300,5 @@ onMounted(async () => {
   .unit-list :deep(.el-row) { margin-left: 0 !important; margin-right: 0 !important; }
   .unit-list :deep(.el-col) { max-width: 100%; flex: 0 0 100%; }
   .unit-list :deep(.el-col + .el-col) { margin-top: 12px; }
-  .tree-node { flex-wrap: wrap; }
-  .tree-node-actions { margin-left: auto; }
 }
 </style>

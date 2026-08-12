@@ -158,7 +158,7 @@
         >
           <template #default="{ data }">
             <div class="tree-node">
-              <span>{{ data.name }}</span>
+              <span class="tree-name">{{ data.name }}</span>
               <span class="tree-code">{{ data.code }}</span>
               <div class="tree-actions">
                 <el-button link size="small" @click.stop="addSubCategory(data.id)">{{ $t('standard.metric.addSubCategory') }}</el-button>
@@ -417,8 +417,10 @@ onMounted(async () => {
 .pagination { margin-top: 16px; display: flex; justify-content: flex-end; }
 .table-actions { display: inline-flex; align-items: center; gap: 8px; min-width: max-content; white-space: nowrap; }
 .table-actions :deep(.el-button) { white-space: nowrap; }
-.tree-node { display: flex; align-items: center; gap: 8px; width: 100%; }
-.tree-code { font-size: 12px; color: var(--addp-text-secondary); }
+.tree-node { display: flex; align-items: center; gap: 8px; min-width: 0; width: 100%; }
+.tree-name, .tree-code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-name { flex: 1 1 auto; }
+.tree-code { flex: 0 1 auto; font-size: 12px; color: var(--addp-text-secondary); }
 .tree-actions { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; min-width: max-content; white-space: nowrap; }
 .category-manage { max-height: 400px; overflow-y: auto; }
 

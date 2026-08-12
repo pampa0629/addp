@@ -810,6 +810,11 @@ func TestLoadObjectContentPluginsRegistersBuiltinDefaultsWithoutFiles(t *testing
 			want: "builtin:content-audio",
 		},
 		{
+			name: "business pmtiles",
+			req:  ObjectContentRequest{Format: "pmtiles", PreviewURL: "/api/v1/manager/quick-view/tiles/{z}/{x}/{y}.mvt?locator=item"},
+			want: "builtin:content-vector-tile",
+		},
+		{
 			name: "model_3d_ply",
 			req: ObjectContentRequest{
 				Format: string(format.FormatPLY),
@@ -874,6 +879,31 @@ func TestLoadObjectContentPluginsRegistersBuiltinDefaultsWithoutFiles(t *testing
 				t.Fatalf("handler = %q, want %q", handler.Name(), tt.want)
 			}
 		})
+	}
+}
+
+func TestPMTilesContentHandlerReturnsControlledVectorTilePreview(t *testing.T) {
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "pmtiles", Builtin: models.ObjectPreviewKindVectorTile})
+	if err != nil {
+		t.Fatal(err)
+	}
+	locator := "addp://engine/12/path/manager/roads.pmtiles?type=object&item_id=1"
+	url := "/api/v1/manager/quick-view/tiles/{z}/{x}/{y}.mvt?locator=item"
+	content, truncated, err := handler.Handle(context.Background(), &ObjectContentRequest{
+		Locator: locator, Format: "pmtiles", PreviewURL: url,
+		Attributes: map[string]interface{}{
+			"format_info":  map[string]interface{}{"pmtiles": map[string]interface{}{"min_zoom": 3, "max_zoom": 12, "tile_entries_count": 18}},
+			"capabilities": map[string]interface{}{"spatial": map[string]interface{}{"extent": []float64{116.397, 31.23, 121.474, 39.908}, "extent_srid": 4326}},
+		},
+	}, nil)
+	if err != nil || truncated {
+		t.Fatalf("Handle() error=%v truncated=%v", err, truncated)
+	}
+	if content.Kind != models.ObjectPreviewKindVectorTile || content.PreviewMaterial != models.PreviewMaterialURL || content.FrontendRenderer != models.ObjectPreviewKindVectorTile || content.URL != url {
+		t.Fatalf("content = %#v", content)
+	}
+	if content.Metadata["locator"] != locator || content.Metadata["render_source"] != "business_pmtiles" || content.Metadata["max_zoom"] != 12 {
+		t.Fatalf("metadata = %#v", content.Metadata)
 	}
 }
 

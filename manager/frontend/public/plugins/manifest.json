@@ -5,6 +5,7 @@
     "/plugins/object-catalog-preview.js",
     "/plugins/unsupported-preview.js",
     "/plugins/map-preview.js",
+    "/plugins/vector-tile-preview.js",
     "/plugins/tiles-3d-preview.js",
     "/plugins/s3m-preview.js",
     "/plugins/cad-preview.js",

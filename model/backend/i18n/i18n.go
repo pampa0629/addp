@@ -12,11 +12,13 @@ var localeFS embed.FS
 // Model 模块消息 key 常量
 const (
 	// 通用
-	MsgInvalidID        = "model.common.invalid_id"
-	MsgOperationFailed  = "model.common.operation_failed"
-	MsgValidationFailed = "model.common.validation_failed"
-	MsgResourceNotFound = "model.common.resource_not_found"
-	MsgResourceConflict = "model.common.resource_conflict"
+	MsgInvalidID           = "model.common.invalid_id"
+	MsgOperationFailed     = "model.common.operation_failed"
+	MsgValidationFailed    = "model.common.validation_failed"
+	MsgResourceNotFound    = "model.common.resource_not_found"
+	MsgResourceConflict    = "model.common.resource_conflict"
+	MsgReferenceNotFound   = "model.common.reference_not_found"
+	MsgStandardUnavailable = "model.common.standard_unavailable"
 
 	// 实体
 	MsgEntityNotFound         = "model.entity.not_found"

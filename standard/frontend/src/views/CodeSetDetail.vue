@@ -82,11 +82,7 @@
               <template #default="{ row }">
                 <div class="table-actions">
                   <el-button link type="primary" @click="openItemDialog(row)">{{ $t('standard.common.edit') }}</el-button>
-                  <el-popconfirm :title="$t('standard.codeSet.confirmDeleteItem')" @confirm="deleteItem(row.id)">
-                    <template #reference>
-                      <el-button link type="danger">{{ $t('standard.common.delete') }}</el-button>
-                    </template>
-                  </el-popconfirm>
+                  <el-button link type="danger" @click="deleteItem(row)">{{ $t('standard.common.delete') }}</el-button>
                 </div>
               </template>
             </el-table-column>
@@ -132,11 +128,11 @@
 import { ref, reactive, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Plus } from '@element-plus/icons-vue'
 import { codeSetAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
-import { getStandardErrorMessage } from '../utils/apiError'
+import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 
 const route = useRoute()
 const router = useRouter()
@@ -238,13 +234,14 @@ const handleItemSubmit = async () => {
   }
 }
 
-const deleteItem = async (itemId) => {
+const deleteItem = async (item) => {
   try {
-    await codeSetAPI.deleteItem(codeSetId.value, itemId)
+    await ElMessageBox.confirm(t('standard.codeSet.confirmDeleteItem', { name: item.value }), t('standard.common.hint'), { type: 'warning' })
+    await codeSetAPI.deleteItem(codeSetId.value, item.id)
     ElMessage.success(t('standard.common.deleteSuccess'))
     loadItems()
   } catch (err) {
-    ElMessage.error(getStandardErrorMessage(err, t, 'standard.common.deleteFailed'))
+    if (!isCanceledInteraction(err)) ElMessage.error(getStandardErrorMessage(err, t, 'standard.common.deleteFailed'))
   }
 }
 

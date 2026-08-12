@@ -98,7 +98,7 @@ func (r *TaskExecutionRepository) List(ctx context.Context, filter TaskExecution
 	// 分页查询
 	var executions []*TaskExecution
 	err := query.
-		Order("created_at DESC").
+		Order("created_at DESC, id DESC").
 		Offset((filter.Page - 1) * filter.PageSize).
 		Limit(filter.PageSize).
 		Find(&executions).Error

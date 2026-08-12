@@ -28,12 +28,12 @@ func (s *EntityService) validateReferences(tenantID int64, domainID, elementID *
 	client := s.standard.WithTenantID(uint(tenantID))
 	if domainID != nil && *domainID > 0 {
 		if err := client.ValidateDomain(context.Background(), *domainID); err != nil {
-			return err
+			return standardReferenceError(err, "domain_not_found")
 		}
 	}
 	if elementID != nil && *elementID > 0 {
 		if err := client.ValidateElement(context.Background(), *elementID); err != nil {
-			return err
+			return standardReferenceError(err, "element_not_found")
 		}
 	}
 	return nil

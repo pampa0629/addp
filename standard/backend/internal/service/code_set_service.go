@@ -94,7 +94,7 @@ func (s *CodeSetService) DeleteCodeSet(id, tenantID int64) error {
 		return ErrSystemCodeSetImmutable
 	}
 
-	return s.repo.Delete(id, tenantID)
+	return mapDeleteConflict(s.repo.Delete(id, tenantID), ErrCodeSetReferenced)
 }
 
 // GetCodeItems 获取码值项列表
@@ -178,5 +178,5 @@ func (s *CodeSetService) DeleteCodeItem(codeSetID, itemID, tenantID int64) error
 		return err
 	}
 
-	return s.repo.DeleteItem(itemID, codeSetID)
+	return mapDeleteConflict(s.repo.DeleteItem(itemID, codeSetID), ErrCodeItemReferenced)
 }

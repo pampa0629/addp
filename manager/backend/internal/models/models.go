@@ -298,6 +298,7 @@ const (
 	ObjectPreviewKindPointCloud    = "point_cloud"
 	ObjectPreviewKindGaussianSplat = "gaussian_splat"
 	ObjectPreviewKindCAD           = "cad"
+	ObjectPreviewKindVectorTile    = "vector_tile"
 	ObjectPreviewKindUnsupported   = "unsupported"
 )
 

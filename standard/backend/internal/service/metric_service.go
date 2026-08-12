@@ -88,7 +88,7 @@ func (s *MetricService) validateCategoryParent(id, tenantID int64, parentID *int
 }
 
 func (s *MetricService) DeleteCategory(id, tenantID int64) error {
-	return s.catRepo.Delete(id, tenantID)
+	return mapDeleteConflict(s.catRepo.Delete(id, tenantID), ErrMetricCategoryReferenced)
 }
 
 // --- 指标定义 ---
@@ -176,7 +176,7 @@ func (s *MetricService) UpdateMetric(id, tenantID, userID int64, req *models.Upd
 }
 
 func (s *MetricService) DeleteMetric(id, tenantID int64) error {
-	return s.metricRepo.Delete(id, tenantID)
+	return mapDeleteConflict(s.metricRepo.Delete(id, tenantID), ErrMetricReferenced)
 }
 
 func (s *MetricService) ApproveMetric(id, tenantID, userID int64) error {

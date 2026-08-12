@@ -46,6 +46,8 @@ func serviceErrorResponse(c *gin.Context, err error) (int, gin.H) {
 			status = http.StatusNotFound
 		case apperrors.KindConflict:
 			status = http.StatusConflict
+		case apperrors.KindUnavailable:
+			status = http.StatusServiceUnavailable
 		}
 		return status, localizedErrorResponse(c, messageID, domainErr.Code)
 	}

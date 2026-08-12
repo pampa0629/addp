@@ -13,6 +13,12 @@ other = "请求的资源不存在"
 [model.common.resource_conflict]
 other = "当前资源状态或数据与操作冲突"
 
+[model.common.reference_not_found]
+other = "引用的标准资源不存在或不属于当前租户"
+
+[model.common.standard_unavailable]
+other = "数据标准服务暂时不可用，请稍后重试"
+
 [model.entity.not_found]
 other = "实体不存在"
 

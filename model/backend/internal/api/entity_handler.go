@@ -95,7 +95,9 @@ func (h *EntityHandler) ListEntities(c *gin.Context) {
 // @Param body body models.CreateEntityRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{} "已创建的实体 | Created entity"
 // @Failure 400 {object} models.ErrorResponse "请求无效 | Invalid request"
+// @Failure 404 {object} models.ErrorResponse "引用的业务域不存在 | Referenced business domain not found"
 // @Failure 409 {object} models.ErrorResponse "实体编码冲突 | Entity code conflict"
+// @Failure 503 {object} models.ErrorResponse "数据标准服务不可用 | Data Standard service unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.entity.create"]
 // @Router /entities [post]

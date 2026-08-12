@@ -175,7 +175,11 @@ const openDialog = (layer = null) => {
 }
 
 const handleSubmit = async () => {
-  await formRef.value.validate()
+  try {
+    await formRef.value.validate()
+  } catch {
+    return
+  }
   submitting.value = true
   try {
     if (editingLayer.value) {

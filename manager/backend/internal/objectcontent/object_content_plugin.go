@@ -25,6 +25,7 @@ import (
 
 // ObjectContentRequest 描述对象内容的上下文信息。
 type ObjectContentRequest struct {
+	Locator     string
 	Bucket      string
 	Path        string // 目录路径（以 / 结尾），不含文件名
 	Name        string // 文件名
@@ -34,6 +35,31 @@ type ObjectContentRequest struct {
 	Size        int64
 	Attributes  map[string]interface{}
 	PreviewURL  string
+}
+
+type vectorTileContentHandler struct{ baseContentHandler }
+
+func (h *vectorTileContentHandler) Handle(_ context.Context, req *ObjectContentRequest, _ ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
+	metadata := buildPreviewMetadata(req, 0)
+	metadata["render_source"] = "business_pmtiles"
+	metadata["tile_url_template"] = strings.TrimSpace(req.PreviewURL)
+	metadata["locator"] = strings.TrimSpace(req.Locator)
+	if info := commonJSON.Section(req.Attributes, "format_info.pmtiles"); len(info) > 0 {
+		for _, key := range []string{"min_zoom", "max_zoom", "tile_entries_count", "tile_contents_count"} {
+			if value, ok := info[key]; ok {
+				metadata[key] = value
+			}
+		}
+	}
+	if spatial := commonJSON.Section(req.Attributes, "capabilities.spatial"); len(spatial) > 0 {
+		for _, key := range []string{"extent", "extent_srid", "srid", "crs_ref"} {
+			if value, ok := spatial[key]; ok {
+				metadata[key] = value
+			}
+		}
+	}
+	content := &models.ObjectPreviewContent{Kind: models.ObjectPreviewKindVectorTile, PreviewMaterial: models.PreviewMaterialURL, FrontendRenderer: models.ObjectPreviewKindVectorTile, URL: strings.TrimSpace(req.PreviewURL), Metadata: metadata}
+	return decoratePreviewContent(content), false, nil
 }
 
 // ObjectContentProvider 用于按需读取对象数据，limit <= 0 表示使用默认限制。

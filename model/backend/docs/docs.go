@@ -326,8 +326,20 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     },
+                    "404": {
+                        "description": "引用的业务域不存在 | Referenced business domain not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
                     "409": {
                         "description": "实体编码冲突 | Entity code conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "数据标准服务不可用 | Data Standard service unavailable",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -1213,8 +1225,20 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     },
+                    "404": {
+                        "description": "引用的业务域不存在 | Referenced business domain not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
                     "409": {
                         "description": "逻辑表编码冲突 | Logical table code conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "数据标准服务不可用 | Data Standard service unavailable",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -1873,6 +1897,12 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "逻辑表状态或指标关联冲突 | Logical table state or metric mapping conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "数据标准服务不可用 | Data Standard service unavailable",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }

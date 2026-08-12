@@ -45,7 +45,8 @@ const (
 
 // Domain
 const (
-	MsgDomainNotFound = "standard.domain.not_found"
+	MsgDomainNotFound   = "standard.domain.not_found"
+	MsgDomainReferenced = "standard.domain.referenced"
 )
 
 // Glossary
@@ -55,7 +56,8 @@ const (
 
 // Element
 const (
-	MsgElementNotFound = "standard.element.not_found"
+	MsgElementNotFound          = "standard.element.not_found"
+	MsgClassificationReferenced = "standard.classification.referenced"
 )
 
 // Document
@@ -65,13 +67,19 @@ const (
 
 // Unit
 const (
-	MsgUnitNotFound = "standard.unit.not_found"
+	MsgUnitNotFound                  = "standard.unit.not_found"
+	MsgMeasurementCategoryReferenced = "standard.measurement_category.referenced"
+	MsgUnitReferenced                = "standard.unit.referenced"
+	MsgCodeSetReferenced             = "standard.code_set.referenced"
+	MsgCodeItemReferenced            = "standard.code_item.referenced"
 )
 
 // Metric
 const (
-	MsgMetricNotFound        = "standard.metric.not_found"
-	MsgMetricDependencyCycle = "standard.metric.dependency_cycle"
+	MsgMetricNotFound           = "standard.metric.not_found"
+	MsgMetricDependencyCycle    = "standard.metric.dependency_cycle"
+	MsgMetricCategoryReferenced = "standard.metric_category.referenced"
+	MsgMetricReferenced         = "standard.metric.referenced"
 )
 
 // DimensionHierarchy

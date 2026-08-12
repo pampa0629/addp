@@ -34,6 +34,7 @@ func TestServiceErrorResponseMapsDomainErrors(t *testing.T) {
 		{name: "validation", err: apperrors.Validation("logical_field_invalid", i18n.MsgValidationFailed), status: http.StatusBadRequest, code: "logical_field_invalid"},
 		{name: "not found", err: apperrors.NotFound("entity_not_found", i18n.MsgEntityNotFound), status: http.StatusNotFound, code: "entity_not_found"},
 		{name: "conflict", err: apperrors.Conflict("entity_code_conflict", i18n.MsgEntityCodeConflict), status: http.StatusConflict, code: "entity_code_conflict"},
+		{name: "unavailable", err: apperrors.Unavailable("standard_service_unavailable", i18n.MsgStandardUnavailable), status: http.StatusServiceUnavailable, code: "standard_service_unavailable"},
 		{name: "internal", err: errors.New("database unavailable"), status: http.StatusInternalServerError, code: "model_operation_failed"},
 	}
 	for _, tt := range tests {

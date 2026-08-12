@@ -67,11 +67,7 @@
               <template #default="{ row }">
                 <div class="table-actions">
                   <el-button link type="primary" @click="openLevelDialog(row)">{{ $t('standard.common.edit') }}</el-button>
-                  <el-popconfirm :title="$t('standard.dimHierarchy.confirmDeleteLevel')" @confirm="handleDeleteLevel(row.id)">
-                    <template #reference>
-                      <el-button link type="danger">{{ $t('standard.common.delete') }}</el-button>
-                    </template>
-                  </el-popconfirm>
+                  <el-button link type="danger" @click="handleDeleteLevel(row)">{{ $t('standard.common.delete') }}</el-button>
                 </div>
               </template>
             </el-table-column>
@@ -122,11 +118,11 @@
 import { ref, reactive, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Plus } from '@element-plus/icons-vue'
 import { dimensionHierarchyAPI, elementAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
-import { getStandardErrorMessage } from '../utils/apiError'
+import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -260,13 +256,14 @@ async function handleSaveLevel() {
   }
 }
 
-async function handleDeleteLevel(levelId) {
+async function handleDeleteLevel(level) {
   try {
-    await dimensionHierarchyAPI.deleteLevel(hierarchyId.value, levelId)
-    levels.value = levels.value.filter(l => l.id !== levelId)
+    await ElMessageBox.confirm(t('standard.dimHierarchy.confirmDeleteLevel', { name: level.name }), t('standard.common.hint'), { type: 'warning' })
+    await dimensionHierarchyAPI.deleteLevel(hierarchyId.value, level.id)
+    levels.value = levels.value.filter(l => l.id !== level.id)
     ElMessage.success(t('standard.dimHierarchy.levelDeleted'))
   } catch (e) {
-    ElMessage.error(getStandardErrorMessage(e, t, 'standard.dimHierarchy.levelDeleteFailed'))
+    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.dimHierarchy.levelDeleteFailed'))
   }
 }
 

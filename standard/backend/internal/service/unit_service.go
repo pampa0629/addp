@@ -67,7 +67,7 @@ func (s *UnitService) DeleteCategory(id, tenantID int64) error {
 	if cat.IsSystem {
 		return ErrSystemCategoryImmutable
 	}
-	return s.catRepo.Delete(id, tenantID)
+	return mapDeleteConflict(s.catRepo.Delete(id, tenantID), ErrMeasurementCategoryReferenced)
 }
 
 // --- 计量单位 ---
@@ -126,5 +126,5 @@ func (s *UnitService) DeleteUnit(id, tenantID int64) error {
 	if unit.IsSystem {
 		return ErrSystemUnitImmutable
 	}
-	return s.unitRepo.Delete(id, tenantID)
+	return mapDeleteConflict(s.unitRepo.Delete(id, tenantID), ErrUnitReferenced)
 }

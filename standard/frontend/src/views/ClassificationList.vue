@@ -15,6 +15,7 @@
             </div>
           </template>
           <el-tree
+            v-if="loadingClassifications || classificationTree.length > 0"
             v-loading="loadingClassifications"
             :data="classificationTree"
             :props="{ label: 'name', children: 'children' }"
@@ -23,7 +24,7 @@
           >
             <template #default="{ data }">
               <div class="tree-node">
-                <span>{{ data.name }}</span>
+                <span class="tree-name">{{ data.name }}</span>
                 <span class="tree-code">{{ data.code }}</span>
                 <div class="tree-actions">
                   <el-button link size="small" @click.stop="openAddClassification(data.id)">{{ $t('standard.classification.addChild') }}</el-button>
@@ -255,8 +256,10 @@ onMounted(() => {
 .page-header h2 { margin: 0; font-size: 18px; color: var(--addp-text-primary); }
 .card-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .classification-list :deep(.el-card) { background: var(--addp-bg-primary); border-color: var(--addp-border-color); box-shadow: var(--addp-shadow-card); }
-.tree-node { display: flex; align-items: center; gap: 8px; width: 100%; }
-.tree-code { font-size: 12px; color: var(--addp-text-secondary); }
+.tree-node { display: flex; align-items: center; gap: 8px; min-width: 0; width: 100%; }
+.tree-name, .tree-code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-name { flex: 1 1 auto; }
+.tree-code { flex: 0 1 auto; font-size: 12px; color: var(--addp-text-secondary); }
 .tree-actions { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; min-width: max-content; white-space: nowrap; }
 .tree-actions :deep(.el-button) { white-space: nowrap; }
 .grading-list { display: flex; flex-direction: column; gap: 12px; }
@@ -271,7 +274,5 @@ onMounted(() => {
   .classification-list :deep(.el-row) { margin-left: 0 !important; margin-right: 0 !important; }
   .classification-list :deep(.el-col) { max-width: 100%; flex: 0 0 100%; }
   .classification-list :deep(.el-col + .el-col) { margin-top: 12px; }
-  .tree-node { flex-wrap: wrap; }
-  .tree-actions { margin-left: auto; }
 }
 </style>

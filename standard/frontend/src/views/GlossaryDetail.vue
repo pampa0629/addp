@@ -153,8 +153,9 @@ import { domainAPI, glossaryAPI, elementAPI } from '../api/standard'
 import DocumentPanel from '../components/DocumentPanel.vue'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
+import { formatStandardDateTime } from '../utils/dateTime'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const loading = ref(false)
@@ -171,8 +172,7 @@ const statusType = (s) => ({ draft: 'info', approved: 'success', deprecated: 'wa
 const statusLabel = (s) => ({ draft: t('standard.common.draft'), approved: t('standard.common.approved'), deprecated: t('standard.common.deprecated') }[s] || s)
 
 const formatTime = (time) => {
-  if (!time) return '-'
-  return new Date(time).toLocaleString()
+  return formatStandardDateTime(time, locale.value)
 }
 
 const goBack = () => {

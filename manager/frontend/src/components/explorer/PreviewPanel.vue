@@ -535,6 +535,7 @@ import {
 } from '@/utils/rasterQuickViewTarget'
 import { isCADPreviewSource } from '@/utils/cadPreviewSource'
 import { isVectorTilePreviewTarget } from '@/utils/vectorTileSetResource'
+import { vectorTileObjectPreviewProps } from '@/utils/vectorTileObjectPreview'
 import {
   combinedMultiRefValue,
   multiRefPreviewOptions
@@ -637,6 +638,9 @@ const previewComponentProps = computed(() => {
       selectedChildKey: store.selectedChildKey,
       selectedRefPath: store.selectedRefPath
     }
+  }
+  if (previewPluginName.value === 'vector-tile') {
+	return vectorTileObjectPreviewProps(props.previewData, props.selectedNode?.locator)
   }
   return {}
 })

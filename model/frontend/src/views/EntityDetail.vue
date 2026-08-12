@@ -537,7 +537,11 @@ const openAttrDialog = (attr = null) => {
 }
 
 const handleAttrSubmit = async () => {
-  await attrFormRef.value.validate()
+  try {
+    await attrFormRef.value.validate()
+  } catch {
+    return
+  }
   attrSubmitting.value = true
   try {
     if (editingAttr.value) {
@@ -589,7 +593,11 @@ const openRelationDialog = (relation = null) => {
 }
 
 const handleRelationSubmit = async () => {
-  await relationFormRef.value.validate()
+  try {
+    await relationFormRef.value.validate()
+  } catch {
+    return
+  }
   relationSubmitting.value = true
   try {
     const payload = {

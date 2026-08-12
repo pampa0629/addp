@@ -56,6 +56,7 @@ func (h *FactMetricHandler) ListMetrics(c *gin.Context) {
 // @Failure 400 {object} models.ErrorResponse "请求的表类型无效 | Invalid table type"
 // @Failure 404 {object} models.ErrorResponse "逻辑表或字段不存在 | Logical table or field not found"
 // @Failure 409 {object} models.ErrorResponse "逻辑表状态或指标关联冲突 | Logical table state or metric mapping conflict"
+// @Failure 503 {object} models.ErrorResponse "数据标准服务不可用 | Data Standard service unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.logical_model.update"]
 // @Router /logical-tables/{id}/metrics [post]

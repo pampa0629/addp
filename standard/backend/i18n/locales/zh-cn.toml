@@ -55,20 +55,41 @@ other = "码值集类型必须是 system 或 custom"
 [standard.domain.parent_cycle]
 other = "业务域父级不能是自身或其子级"
 
+[standard.domain.referenced]
+other = "业务域仍被子业务域、业务术语、数据元、指标或维度层级引用，无法删除"
+
 [standard.classification.parent_cycle]
 other = "数据分类父级不能是自身或其子级"
+
+[standard.classification.referenced]
+other = "数据分类仍被子分类或数据元引用，无法删除"
 
 [standard.metric_category.parent_cycle]
 other = "指标分类父级不能是自身或其子级"
 
+[standard.metric_category.referenced]
+other = "指标分类仍被子分类或指标引用，无法删除"
+
 [standard.measurement_category.system_immutable]
 other = "系统内置度量类别不允许删除"
+
+[standard.measurement_category.referenced]
+other = "度量类别仍被计量单位引用，无法删除"
 
 [standard.unit.system_immutable]
 other = "系统内置单位不允许修改或删除"
 
+[standard.unit.referenced]
+other = "计量单位仍被数据元或指标引用，无法删除"
+
 [standard.code_set.system_immutable]
 other = "系统内置码值集不允许删除"
+
+[standard.code_set.referenced]
+other = "码值集仍被数据元引用，无法删除"
+
+[standard.code_item.referenced]
+other = "码值项仍被子码值项引用，无法删除"
 
 [standard.document.storage_unavailable]
 other = "文件存储服务不可用"
@@ -108,6 +129,9 @@ other = "指标不存在"
 
 [standard.metric.dependency_cycle]
 other = "指标依赖不能形成环路"
+
+[standard.metric.referenced]
+other = "指标仍被派生指标或指标依赖引用，无法删除"
 
 [standard.dim_hierarchy.not_found]
 other = "维度层级不存在"

@@ -6,9 +6,10 @@ import "errors"
 type Kind string
 
 const (
-	KindValidation Kind = "validation"
-	KindConflict   Kind = "conflict"
-	KindNotFound   Kind = "not_found"
+	KindValidation  Kind = "validation"
+	KindConflict    Kind = "conflict"
+	KindNotFound    Kind = "not_found"
+	KindUnavailable Kind = "unavailable"
 )
 
 // DomainError is the stable error contract between Model services and API handlers.
@@ -40,9 +41,10 @@ func Wrap(kind Kind, code, messageID string, cause error) error {
 	return &DomainError{Kind: kind, Code: code, MessageID: messageID, Cause: cause}
 }
 
-func Validation(code, messageID string) error { return New(KindValidation, code, messageID) }
-func Conflict(code, messageID string) error   { return New(KindConflict, code, messageID) }
-func NotFound(code, messageID string) error   { return New(KindNotFound, code, messageID) }
+func Validation(code, messageID string) error  { return New(KindValidation, code, messageID) }
+func Conflict(code, messageID string) error    { return New(KindConflict, code, messageID) }
+func NotFound(code, messageID string) error    { return New(KindNotFound, code, messageID) }
+func Unavailable(code, messageID string) error { return New(KindUnavailable, code, messageID) }
 
 func As(err error) (*DomainError, bool) {
 	var target *DomainError

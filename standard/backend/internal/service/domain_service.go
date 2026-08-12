@@ -126,5 +126,5 @@ func (s *DomainService) validateParent(id, tenantID int64, parentID *int64) erro
 }
 
 func (s *DomainService) DeleteDomain(id, tenantID int64) error {
-	return s.repo.Delete(id, tenantID)
+	return mapDeleteConflict(s.repo.Delete(id, tenantID), ErrDomainReferenced)
 }

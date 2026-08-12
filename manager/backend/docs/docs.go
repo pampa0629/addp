@@ -4176,7 +4176,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "以 Resource Locator 为身份返回 MVT 瓦片。实时 MVT 由 PostGIS 空间 item 提供，其他空间 item 通过瓦片缓存结果提供快显。 | Return an MVT tile by Resource Locator. Realtime MVT is provided by PostGIS spatial items; other spatial items use tile cache results for quick view.",
+                "description": "以 Resource Locator 为身份返回 MVT 瓦片。Business PMTiles 对象通过源引擎 range-read 读取，PostGIS 空间表支持实时 MVT，其他空间 item 使用 Manager 瓦片缓存。 | Return an MVT tile by Resource Locator. Business PMTiles objects are read through the source engine range provider, PostGIS spatial items support realtime MVT, and other spatial items use Manager tile-cache results.",
                 "produces": [
                     "application/vnd.mapbox-vector-tile"
                 ],

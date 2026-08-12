@@ -37,7 +37,7 @@
         <el-table-column :label="$t('standard.common.description')" prop="description" min-width="200" show-overflow-tooltip />
         <el-table-column :label="$t('standard.common.createdAt')" width="160">
           <template #default="{ row }">
-            {{ new Date(row.created_at).toLocaleString('zh-CN') }}
+            {{ formatStandardDateTime(row.created_at, locale) }}
           </template>
         </el-table-column>
         <el-table-column :label="$t('standard.common.actions')" width="220" fixed="right">
@@ -46,11 +46,7 @@
               <el-button link type="primary" @click="openDetail(row)">
                 {{ $t('standard.dimHierarchy.manageLevels') }}
               </el-button>
-              <el-popconfirm :title="$t('standard.dimHierarchy.confirmDelete')" @confirm="handleDelete(row.id)">
-                <template #reference>
-                  <el-button link type="danger">{{ $t('standard.common.delete') }}</el-button>
-                </template>
-              </el-popconfirm>
+              <el-button link type="danger" @click="handleDelete(row)">{{ $t('standard.common.delete') }}</el-button>
             </div>
           </template>
         </el-table-column>
@@ -82,13 +78,14 @@
 import { ref, computed, onMounted, reactive, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
 import { dimensionHierarchyAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
-import { getStandardErrorMessage } from '../utils/apiError'
+import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
+import { formatStandardDateTime } from '../utils/dateTime'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
@@ -153,13 +150,14 @@ const openDetail = row => navigateStandardRoute(router, {
   query: keyword.value ? { keyword: keyword.value } : {}
 })
 
-async function handleDelete(id) {
+async function handleDelete(row) {
   try {
-    await dimensionHierarchyAPI.delete(id)
+    await ElMessageBox.confirm(t('standard.dimHierarchy.confirmDelete', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
+    await dimensionHierarchyAPI.delete(row.id)
     ElMessage.success(t('standard.dimHierarchy.deleted'))
     loadList()
   } catch (err) {
-    ElMessage.error(getStandardErrorMessage(err, t, 'standard.dimHierarchy.deleteFailed'))
+    if (!isCanceledInteraction(err)) ElMessage.error(getStandardErrorMessage(err, t, 'standard.dimHierarchy.deleteFailed'))
   }
 }
 

@@ -61,6 +61,25 @@ func TestGetStatisticsFiltersBySourceTaskID(t *testing.T) {
 	}
 }
 
+func TestListUsesStableCreatedAtAndIDOrder(t *testing.T) {
+	db := newTaskExecutionRepositoryTestDB(t)
+	repo := NewTaskExecutionRepository(db)
+	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 1, 7, "older", ModuleQuality, TaskTypeQualityCheck, nil, ExecutionStatusSuccess, 10, "2026-01-01 10:00:00")
+	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 2, 7, "same-time-low", ModuleQuality, TaskTypeQualityCheck, nil, ExecutionStatusSuccess, 20, "2026-01-01 10:01:00")
+	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 3, 7, "same-time-high", ModuleQuality, TaskTypeQualityCheck, nil, ExecutionStatusFailed, 30, "2026-01-01 10:01:00")
+
+	items, total, err := repo.List(context.Background(), TaskExecutionFilter{TenantID: 7, Module: ModuleQuality, TaskType: TaskTypeQualityCheck, Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatalf("list executions: %v", err)
+	}
+	if total != 3 || len(items) != 3 {
+		t.Fatalf("total/items = %d/%d, want 3/3", total, len(items))
+	}
+	if items[0].ExecutionID != "same-time-high" || items[1].ExecutionID != "same-time-low" || items[2].ExecutionID != "older" {
+		t.Fatalf("execution order = [%s, %s, %s], want stable id tie-break", items[0].ExecutionID, items[1].ExecutionID, items[2].ExecutionID)
+	}
+}
+
 func TestUpdateFieldsReturnsNotFoundWhenExecutionDoesNotMatchTenant(t *testing.T) {
 	db := newTaskExecutionRepositoryTestDB(t)
 	repo := NewTaskExecutionRepository(db)

@@ -259,6 +259,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 			}
 		}
 		contentReq := &objectcontent.ObjectContentRequest{
+			Locator:     req.Locator,
 			Bucket:      bucket,
 			Path:        dir,
 			Name:        name,
@@ -369,10 +370,11 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 		// 按照路径统一规范拆分：path（目录，以/结尾）、name（文件名）
 		dir, name := commonModels.SplitObjectPath(objectPath)
 		contentReq := &objectcontent.ObjectContentRequest{
+			Locator:     req.Locator,
 			Bucket:      bucket,
 			Path:        dir,  // 目录路径（以 / 结尾）
 			Name:        name, // 文件名
-			Format:      normalizeObjectContentRequestFormat(catalogutil.StringAttribute(metaItemLiteAttributes(item), "format")),
+			Format:      normalizeObjectContentRequestFormat(catalogutil.StringAttribute(combinedAttributes, "format")),
 			Extension:   defaultExtension(objectPath),
 			ContentType: canonicalContentType,
 			Size:        stat.Size,
@@ -385,6 +387,9 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 			}
 			contentReq.PreviewURL = url
 			preview.Object.URL = url
+		} else if formatTypeFromMetaAttributes(combinedAttributes) == format.FormatPMTiles {
+			contentReq.PreviewURL = buildPMTilesTileURL(req.Locator)
+			preview.Object.URL = contentReq.PreviewURL
 		} else if url := buildStorageStreamURL(resource.ID, preview.Object.StorageRef); url != "" {
 			contentReq.PreviewURL = url
 			preview.Object.URL = url
@@ -539,6 +544,16 @@ func buildStorageStreamURL(engineID uint, storageRef string) string {
 	values.Set("engine_id", strconv.FormatUint(uint64(engineID), 10))
 	values.Set("storage_ref", storageRef)
 	return "/api/v1/manager/storage-stream?" + values.Encode()
+}
+
+func buildPMTilesTileURL(locator string) string {
+	locator = strings.TrimSpace(locator)
+	if locator == "" {
+		return ""
+	}
+	values := url.Values{}
+	values.Set("locator", locator)
+	return "/api/v1/manager/quick-view/tiles/{z}/{x}/{y}.mvt?" + values.Encode()
 }
 
 func readObjectWithLimit(reader io.Reader, limit int64) ([]byte, bool, error) {

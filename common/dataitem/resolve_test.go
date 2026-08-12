@@ -1,8 +1,9 @@
-package dataitem
+package dataitem_test
 
 import (
 	"testing"
 
+	. "github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	commonExecution "github.com/addp/common/execution"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	qualityi18n "github.com/addp/quality/i18n"
@@ -23,6 +24,17 @@ func qualityExecutionFilter(tenantID, page, pageSize int) commonExecution.TaskEx
 	}
 }
 
+func qualityExecutionStatus(value string) (string, error) {
+	switch value {
+	case "", commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning,
+		commonExecution.ExecutionStatusSuccess, commonExecution.ExecutionStatusFailed,
+		commonExecution.ExecutionStatusTimeout, commonExecution.ExecutionStatusCancelled:
+		return value, nil
+	default:
+		return "", fmt.Errorf("unsupported execution status %q", value)
+	}
+}
+
 func isQualityCheckExecution(item *commonExecution.TaskExecution) bool {
 	return item != nil && item.Module == commonExecution.ModuleQuality && item.TaskType == commonExecution.TaskTypeQualityCheck
 }
@@ -36,6 +48,7 @@ func NewExecutionHandler(executionRepo *commonExecution.TaskExecutionRepository)
 // @Produce json
 // @Param page query int false "页码 | Page" default(1)
 // @Param page_size query int false "每页数量 | Page size" default(20) maximum(100)
+// @Param status query string false "执行状态：pending|running|success|failed|timeout|cancelled | Execution status"
 // @Success 200 {object} qualityExecutionListResponse
 // @Failure 500 {object} qualityErrorResponse
 // @x-addp-auth-mode "permission"
@@ -47,8 +60,15 @@ func (h *ExecutionHandler) List(c *gin.Context) {
 	page := 1
 	pageSize := 20
 	page, pageSize = pageParams(c.Query("page"), c.Query("page_size"))
+	status, err := qualityExecutionStatus(c.Query("status"))
+	if err != nil {
+		respondInvalidRequest(c, err.Error())
+		return
+	}
 
-	items, total, err := h.executionRepo.List(c.Request.Context(), qualityExecutionFilter(int(tenantID), page, pageSize))
+	filter := qualityExecutionFilter(int(tenantID), page, pageSize)
+	filter.Status = status
+	items, total, err := h.executionRepo.List(c.Request.Context(), filter)
 	if err != nil {
 		respondQualityError(c, http.StatusInternalServerError, "execution_list_failed", commoni18n.T(c, qualityi18n.MsgExecutionListFailed))
 		return

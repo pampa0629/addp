@@ -100,7 +100,9 @@ func (h *LogicalTableHandler) ListLogicalTables(c *gin.Context) {
 // @Param body body models.CreateLogicalTableRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{} "已创建的逻辑表 | Created logical table"
 // @Failure 400 {object} models.ErrorResponse "请求无效 | Invalid request"
+// @Failure 404 {object} models.ErrorResponse "引用的业务域不存在 | Referenced business domain not found"
 // @Failure 409 {object} models.ErrorResponse "逻辑表编码冲突 | Logical table code conflict"
+// @Failure 503 {object} models.ErrorResponse "数据标准服务不可用 | Data Standard service unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.logical_model.create"]
 // @Router /logical-tables [post]

@@ -387,6 +387,12 @@ const docTemplate = `{
                         "description": "每页数量 | Page size",
                         "name": "page_size",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "执行状态：pending|running|success|failed|timeout|cancelled | Execution status",
+                        "name": "status",
+                        "in": "query"
                     }
                 ],
                 "responses": {

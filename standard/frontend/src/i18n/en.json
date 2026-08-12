@@ -189,7 +189,7 @@
       "codeRequired": "Please enter code",
       "nameRequired": "Please enter name",
       "typeRequired": "Please select type",
-      "confirmDelete": "Confirm delete this code set?",
+      "confirmDelete": "Confirm delete code set \"{name}\"?",
       "searchPlaceholder": "Search code/name",
       "items": "Code Items",
       "addItem": "Add Item",
@@ -200,7 +200,7 @@
       "itemDescription": "Description",
       "itemSortOrder": "Sort",
       "itemActive": "Active",
-      "confirmDeleteItem": "Confirm delete this item?",
+      "confirmDeleteItem": "Confirm delete code item \"{name}\"?",
       "basicInfo": "Basic Info"
     },
     "unit": {
@@ -239,7 +239,7 @@
       "levelLabel": "Level",
       "colorLabel": "Color",
       "empty": "No classifications",
-      "confirmDelete": "Confirm delete \"{name}\"? Child classifications will also be deleted."
+      "confirmDelete": "Confirm delete classification \"{name}\"?"
     },
     "metric": {
       "title": "Metric Management",
@@ -371,7 +371,7 @@
       "codePlaceholder": "e.g. time_hierarchy",
       "nameRequired": "Please enter hierarchy name",
       "codeRequired": "Please enter code",
-      "confirmDelete": "Confirm delete this hierarchy?",
+      "confirmDelete": "Confirm delete hierarchy \"{name}\"?",
       "manageLevels": "Manage Levels",
       "basicInfo": "Basic Info",
       "levelDefinition": "Level Definition (coarse to fine)",
@@ -399,7 +399,7 @@
       "saveSuccess": "Saved",
       "levelDeleted": "Deleted",
       "levelDeleteFailed": "Delete failed",
-      "confirmDeleteLevel": "Confirm delete this level?",
+      "confirmDeleteLevel": "Confirm delete level \"{name}\"?",
       "levelDescription": "Description",
       "levelSort": "Sort"
     },

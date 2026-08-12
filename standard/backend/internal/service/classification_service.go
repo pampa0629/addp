@@ -82,7 +82,7 @@ func (s *ClassificationService) validateParent(id, tenantID int64, parentID *int
 }
 
 func (s *ClassificationService) DeleteClassification(id, tenantID int64) error {
-	return s.repo.Delete(id, tenantID)
+	return mapDeleteConflict(s.repo.Delete(id, tenantID), ErrClassificationReferenced)
 }
 
 // --- 数据分级 ---

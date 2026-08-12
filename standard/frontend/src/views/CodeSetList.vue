@@ -42,22 +42,14 @@
         <el-table-column :label="$t('standard.common.description')" prop="description" show-overflow-tooltip />
         <el-table-column :label="$t('standard.common.createdAt')" width="160">
           <template #default="{ row }">
-            {{ new Date(row.created_at).toLocaleString('zh-CN') }}
+            {{ formatStandardDateTime(row.created_at, locale) }}
           </template>
         </el-table-column>
         <el-table-column :label="$t('standard.common.actions')" width="160" fixed="right">
           <template #default="{ row }">
             <div class="table-actions">
               <el-button link type="primary" @click="goToDetail(row)">{{ $t('standard.common.edit') }}</el-button>
-              <el-popconfirm
-                :title="$t('standard.codeSet.confirmDelete')"
-                @confirm="handleDelete(row.id)"
-                :disabled="row.type === 'system'"
-              >
-                <template #reference>
-                  <el-button link type="danger" :disabled="row.type === 'system'">{{ $t('standard.common.delete') }}</el-button>
-                </template>
-              </el-popconfirm>
+              <el-button link type="danger" :disabled="row.type === 'system'" @click="handleDelete(row)">{{ $t('standard.common.delete') }}</el-button>
             </div>
           </template>
         </el-table-column>
@@ -106,15 +98,16 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
 import { codeSetAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
-import { getStandardErrorMessage } from '../utils/apiError'
+import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
+import { formatStandardDateTime } from '../utils/dateTime'
 
 const router = useRouter()
 const route = useRoute()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const loading = ref(false)
 const creating = ref(false)
 const codeSets = ref([])
@@ -198,13 +191,14 @@ const handleCreate = async () => {
   }
 }
 
-const handleDelete = async (id) => {
+const handleDelete = async (row) => {
   try {
-    await codeSetAPI.delete(id)
+    await ElMessageBox.confirm(t('standard.codeSet.confirmDelete', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
+    await codeSetAPI.delete(row.id)
     ElMessage.success(t('standard.common.deleteSuccess'))
     loadCodeSets()
   } catch (err) {
-    ElMessage.error(getStandardErrorMessage(err, t, 'standard.common.deleteFailed'))
+    if (!isCanceledInteraction(err)) ElMessage.error(getStandardErrorMessage(err, t, 'standard.common.deleteFailed'))
   }
 }
 

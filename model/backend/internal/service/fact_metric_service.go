@@ -56,7 +56,7 @@ func (s *FactMetricService) AddMetric(factTableID, tenantID, userID int64, req *
 	}
 	if s.standard != nil {
 		if err := s.standard.WithTenantID(uint(tenantID)).ValidateMetric(context.Background(), req.MetricID); err != nil {
-			return nil, err
+			return nil, standardReferenceError(err, "metric_not_found")
 		}
 	}
 	if req.FieldID != nil {

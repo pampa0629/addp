@@ -249,7 +249,11 @@ const openCreateDialog = () => {
 }
 
 const handleCreate = async () => {
-  await createFormRef.value.validate()
+  try {
+    await createFormRef.value.validate()
+  } catch {
+    return
+  }
   creating.value = true
   try {
     const res = await logicalTableAPI.create(createForm)

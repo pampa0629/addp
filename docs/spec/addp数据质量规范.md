@@ -171,6 +171,9 @@ Quality 使用数据库任务队列作为唯一执行路线，不使用请求内
 
 Quality 当前不提供取消，因为目标 SQL 的可靠中断、连接回收和终态确认尚未形成闭环。
 
+System lifecycle cleanup 与任务触发必须使用相同的 CheckTask 行锁顺序串行化。logical cleanup 只有在命中任务均无 `pending|running` execution 时，才可在同一事务中禁用 RuleApplication 并将 open Issue 置为 ignored；任一更新失败必须整体回滚。
+tenant physical cleanup 同样必须在锁定命中 CheckTask 后，以单一事务删除 Issue、CheckTask 和 RuleApplication；任一删除失败必须整体回滚，execution 历史不受影响。
+
 ## 8. 结果与评分契约
 
 成功 execution 的 `metadata` 使用以下唯一结构：
@@ -253,6 +256,7 @@ ignored -> open    （后续检查再次失败）
 - 创建使用 `POST`，完整替换使用 `PUT`；Quality v1 的更新接口使用完整请求模型，不保留“指针字段即局部更新”的伪 PUT。
 - 列表响应遵循 ADDP 统一分页结构，参数使用 `page`、`page_size`；必须返回真实 `total`，并应用稳定排序。
 - Quality 当前数据量和 Console 跳页需求使用 offset 分页；索引必须覆盖常用 Tenant、状态、目标范围和稳定排序字段。未来切换游标分页时必须更新 API 规范并删除 offset 路线。
+- 执行记录列表可按 `status` 筛选；只接受 `pending`、`running`、`success`、`failed`、`timeout`、`cancelled`，未传表示全部。结果必须按 `created_at DESC, id DESC` 稳定排序。
 - 错误使用统一错误 envelope、稳定错误码和国际化消息；数据库、SQL 和外部服务原始错误不得直接返回给前端。
 - Swagger 注解、生成文件、前端调用和后端行为必须在同一变更中同步。
 

@@ -2,6 +2,14 @@
   <div>
     <div class="page-header">
       <h2>{{ t('quality.execution.title') }}</h2>
+      <el-select v-model="statusFilter" :placeholder="t('quality.execution.statusFilter')" clearable style="width:160px" @change="changeStatusFilter">
+        <el-option :label="t('quality.execution.pending')" value="pending" />
+        <el-option :label="t('quality.execution.running')" value="running" />
+        <el-option :label="t('quality.execution.success')" value="success" />
+        <el-option :label="t('quality.execution.failed')" value="failed" />
+        <el-option :label="t('quality.execution.timeout')" value="timeout" />
+        <el-option :label="t('quality.execution.cancelled')" value="cancelled" />
+      </el-select>
     </div>
 
     <el-table :data="list" v-loading="loading" border>
@@ -55,6 +63,7 @@ const router = useRouter()
 const list = ref([])
 const loading = ref(false)
 const pagination = ref({ page: 1, page_size: 20, total: 0 })
+const statusFilter = ref('')
 
 const statusType = (status) => {
   const map = { success: 'success', failed: 'danger', running: 'warning', pending: 'info' }
@@ -68,7 +77,7 @@ const openExecution = (executionId) => {
 const fetchList = async () => {
   loading.value = true
   try {
-    const res = await executionAPI.list({ page: pagination.value.page, page_size: pagination.value.page_size })
+    const res = await executionAPI.list({ page: pagination.value.page, page_size: pagination.value.page_size, ...(statusFilter.value ? { status: statusFilter.value } : {}) })
     list.value = res.data || []
     pagination.value.total = res.total || 0
   } catch (e) {
@@ -76,6 +85,11 @@ const fetchList = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const changeStatusFilter = () => {
+  pagination.value.page = 1
+  fetchList()
 }
 
 onMounted(fetchList)

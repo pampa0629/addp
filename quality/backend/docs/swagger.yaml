@@ -905,6 +905,11 @@ paths:
         maximum: 100
         name: page_size
         type: integer
+      - description: 执行状态：pending|running|success|failed|timeout|cancelled | Execution
+          status
+        in: query
+        name: status
+        type: string
       produces:
       - application/json
       responses:

@@ -13,6 +13,12 @@ other = "The requested resource was not found"
 [model.common.resource_conflict]
 other = "The resource state or data conflicts with this operation"
 
+[model.common.reference_not_found]
+other = "The referenced Standard resource was not found or does not belong to the current tenant"
+
+[model.common.standard_unavailable]
+other = "The Data Standard service is temporarily unavailable. Try again later"
+
 [model.entity.not_found]
 other = "Entity not found"
 

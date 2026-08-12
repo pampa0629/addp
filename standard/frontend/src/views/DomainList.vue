@@ -7,6 +7,7 @@
 
     <el-card class="main-card">
       <el-tree
+        v-if="loading || domainTree.length > 0"
         :data="domainTree"
         :props="{ label: 'name', children: 'children' }"
         default-expand-all
@@ -223,6 +224,7 @@ onMounted(loadDomains)
   align-items: center;
   gap: 8px;
   min-width: 0;
+  overflow: hidden;
 }
 
 .node-icon {
@@ -232,10 +234,17 @@ onMounted(loadDomains)
 .node-name {
   font-size: 14px;
   color: var(--addp-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .node-code {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
   font-size: 12px;
+  text-overflow: ellipsis;
 }
 
 .node-actions {
@@ -245,14 +254,4 @@ onMounted(loadDomains)
   white-space: nowrap;
 }
 
-@media (max-width: 640px) {
-  .tree-node {
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .node-actions {
-    margin-left: auto;
-  }
-}
 </style>

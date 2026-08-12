@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type CleanupService struct {
@@ -206,14 +208,29 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 		if len(stats.Errors) > 0 {
 			return stats, nil
 		}
-		s.disableCandidates(ctx, candidates, stats)
+		applied, err := s.disableCandidates(ctx, candidates)
+		if err != nil {
+			stats.Errors = append(stats.Errors, err.Error())
+			return stats, nil
+		}
+		mergeQualityCleanupStats(stats, &applied)
 		return stats, nil
 	}
 	switch cleanupMode {
 	case events.CleanupModeLogical:
-		s.disableCandidates(ctx, candidates, stats)
+		applied, err := s.disableCandidates(ctx, candidates)
+		if err != nil {
+			stats.Errors = append(stats.Errors, err.Error())
+			return stats, nil
+		}
+		mergeQualityCleanupStats(stats, &applied)
 	case events.CleanupModePhysical:
-		s.deleteCandidates(ctx, candidates, stats)
+		applied, err := s.deleteCandidates(ctx, candidates)
+		if err != nil {
+			stats.Errors = append(stats.Errors, err.Error())
+			return stats, nil
+		}
+		mergeQualityCleanupStats(stats, &applied)
 	}
 	return stats, nil
 }
@@ -300,49 +317,107 @@ func (s *CleanupService) listEngineCandidates(ctx context.Context, tenantID int6
 	return candidates, nil
 }
 
-func (s *CleanupService) disableCandidates(ctx context.Context, candidates qualityCleanupCandidates, stats *QualityCleanupStats) {
-	for _, item := range candidates.ruleApplications {
-		if err := s.db.WithContext(ctx).Model(&models.RuleApplication{}).Where("id = ?", item.ID).Update("enabled", false).Error; err != nil {
-			stats.Errors = append(stats.Errors, fmt.Sprintf("disable rule application %d failed: %v", item.ID, err))
-			continue
+func (s *CleanupService) disableCandidates(ctx context.Context, candidates qualityCleanupCandidates) (QualityCleanupStats, error) {
+	var applied QualityCleanupStats
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockQualityCleanupTasks(tx, candidates.checkTasks); err != nil {
+			return err
 		}
-		stats.DisabledRuleApps++
+		for _, item := range candidates.ruleApplications {
+			result := tx.Model(&models.RuleApplication{}).
+				Where("id = ? AND tenant_id = ?", item.ID, item.TenantID).
+				Update("enabled", false)
+			if result.Error != nil {
+				return fmt.Errorf("disable rule application %d failed: %w", item.ID, result.Error)
+			}
+			if result.RowsAffected != 1 {
+				return fmt.Errorf("disable rule application %d failed: resource changed during cleanup", item.ID)
+			}
+			applied.DisabledRuleApps++
+		}
+		for _, item := range candidates.issues {
+			if item.Status != "open" {
+				applied.SkippedIssues++
+				continue
+			}
+			result := tx.Model(&models.Issue{}).
+				Where("id = ? AND tenant_id = ? AND status = ?", item.ID, item.TenantID, "open").
+				Update("status", "ignored")
+			if result.Error != nil {
+				return fmt.Errorf("ignore issue %d failed: %w", item.ID, result.Error)
+			}
+			if result.RowsAffected != 1 {
+				return fmt.Errorf("ignore issue %d failed: resource changed during cleanup", item.ID)
+			}
+			applied.IgnoredIssues++
+		}
+		return nil
+	})
+	if err != nil {
+		return QualityCleanupStats{}, err
 	}
-	for _, item := range candidates.issues {
-		if item.Status != "open" {
-			stats.SkippedIssues++
-			continue
-		}
-		if err := s.db.WithContext(ctx).Model(&models.Issue{}).Where("id = ?", item.ID).Update("status", "ignored").Error; err != nil {
-			stats.Errors = append(stats.Errors, fmt.Sprintf("ignore issue %d failed: %v", item.ID, err))
-			continue
-		}
-		stats.IgnoredIssues++
-	}
+	return applied, nil
 }
 
-func (s *CleanupService) deleteCandidates(ctx context.Context, candidates qualityCleanupCandidates, stats *QualityCleanupStats) {
-	for _, item := range candidates.issues {
-		if err := s.db.WithContext(ctx).Unscoped().Delete(&models.Issue{}, item.ID).Error; err != nil {
-			stats.Errors = append(stats.Errors, fmt.Sprintf("delete issue %d failed: %v", item.ID, err))
-			continue
+func lockQualityCleanupTasks(tx *gorm.DB, tasks []models.CheckTask) error {
+	ordered := append([]models.CheckTask(nil), tasks...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].ID < ordered[j].ID })
+	for _, item := range ordered {
+		var current models.CheckTask
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND tenant_id = ?", item.ID, item.TenantID).First(&current).Error; err != nil {
+			return fmt.Errorf("lock check task %d failed: %w", item.ID, err)
 		}
-		stats.DeletedIssues++
-	}
-	for _, item := range candidates.checkTasks {
-		if err := s.db.WithContext(ctx).Unscoped().Delete(&models.CheckTask{}, item.ID).Error; err != nil {
-			stats.Errors = append(stats.Errors, fmt.Sprintf("delete check task %d failed: %v", item.ID, err))
-			continue
+		switch strings.ToLower(strings.TrimSpace(current.LastExecutionStatus)) {
+		case commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning:
+			return fmt.Errorf("quality check task %d is running", item.ID)
 		}
-		stats.DeletedCheckTasks++
 	}
-	for _, item := range candidates.ruleApplications {
-		if err := s.db.WithContext(ctx).Unscoped().Delete(&models.RuleApplication{}, item.ID).Error; err != nil {
-			stats.Errors = append(stats.Errors, fmt.Sprintf("delete rule application %d failed: %v", item.ID, err))
-			continue
+	return nil
+}
+
+func mergeQualityCleanupStats(target, applied *QualityCleanupStats) {
+	if target == nil || applied == nil {
+		return
+	}
+	target.DisabledRuleApps += applied.DisabledRuleApps
+	target.IgnoredIssues += applied.IgnoredIssues
+	target.SkippedIssues += applied.SkippedIssues
+	target.DeletedRuleApplications += applied.DeletedRuleApplications
+	target.DeletedCheckTasks += applied.DeletedCheckTasks
+	target.DeletedIssues += applied.DeletedIssues
+}
+
+func (s *CleanupService) deleteCandidates(ctx context.Context, candidates qualityCleanupCandidates) (QualityCleanupStats, error) {
+	var applied QualityCleanupStats
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockQualityCleanupTasks(tx, candidates.checkTasks); err != nil {
+			return err
 		}
-		stats.DeletedRuleApplications++
+		for _, item := range candidates.issues {
+			if err := tx.Unscoped().Delete(&models.Issue{}, item.ID).Error; err != nil {
+				return fmt.Errorf("delete issue %d failed: %w", item.ID, err)
+			}
+			applied.DeletedIssues++
+		}
+		for _, item := range candidates.checkTasks {
+			if err := tx.Unscoped().Delete(&models.CheckTask{}, item.ID).Error; err != nil {
+				return fmt.Errorf("delete check task %d failed: %w", item.ID, err)
+			}
+			applied.DeletedCheckTasks++
+		}
+		for _, item := range candidates.ruleApplications {
+			if err := tx.Unscoped().Delete(&models.RuleApplication{}, item.ID).Error; err != nil {
+				return fmt.Errorf("delete rule application %d failed: %w", item.ID, err)
+			}
+			applied.DeletedRuleApplications++
+		}
+		return nil
+	})
+	if err != nil {
+		return QualityCleanupStats{}, err
 	}
+	return applied, nil
 }
 
 func qualityCleanupContextInt64(cleanupContext map[string]interface{}, key string) (int64, bool) {

@@ -189,7 +189,7 @@
       "codeRequired": "请输入编码",
       "nameRequired": "请输入名称",
       "typeRequired": "请选择类型",
-      "confirmDelete": "确定删除该码值集吗？",
+      "confirmDelete": "确认删除码值集「{name}」？",
       "searchPlaceholder": "搜索编码/名称",
       "items": "码值项",
       "addItem": "新增码值项",
@@ -200,7 +200,7 @@
       "itemDescription": "描述",
       "itemSortOrder": "排序",
       "itemActive": "启用",
-      "confirmDeleteItem": "确定删除该码值项吗？",
+      "confirmDeleteItem": "确认删除码值项「{name}」？",
       "basicInfo": "基本信息"
     },
     "unit": {
@@ -239,7 +239,7 @@
       "levelLabel": "级别",
       "colorLabel": "颜色标签",
       "empty": "暂无数据分类",
-      "confirmDelete": "确认删除\"{name}\"？子级分类也将删除"
+      "confirmDelete": "确认删除数据分类「{name}」？"
     },
     "metric": {
       "title": "指标管理",
@@ -371,7 +371,7 @@
       "codePlaceholder": "如：time_hierarchy",
       "nameRequired": "请填写层级名称",
       "codeRequired": "请填写编码",
-      "confirmDelete": "确定删除该维度层级吗？",
+      "confirmDelete": "确认删除维度层级「{name}」？",
       "manageLevels": "管理层级",
       "basicInfo": "基本信息",
       "levelDefinition": "层级定义（从粗到细排序）",
@@ -399,7 +399,7 @@
       "saveSuccess": "已保存",
       "levelDeleted": "已删除",
       "levelDeleteFailed": "删除失败",
-      "confirmDeleteLevel": "确定删除该层级吗？",
+      "confirmDeleteLevel": "确认删除层级「{name}」？",
       "levelDescription": "描述",
       "levelSort": "排序"
     },

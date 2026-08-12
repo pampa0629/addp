@@ -24,6 +24,7 @@ import PointCloudPreview from '@/components/explorer/PointCloudPreview.vue'
 import ThreeDTilesPreview from '@/components/explorer/ThreeDTilesPreview.vue'
 import S3MPreview from '@/components/explorer/S3MPreview.vue'
 import CadPreview from '@/components/explorer/CadPreview.vue'
+import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
 import { loadRuntimePlugins } from '@/plugins/previews/manifestLoader'
 import {
   ObjectCatalogPreview, ImagePreview, JsonPreview, PdfPreview, ContainerPreview,
@@ -104,7 +105,8 @@ if (typeof window !== 'undefined') {
     PointCloudPreview,
     ThreeDTilesPreview,
     S3MPreview,
-    CadPreview
+    CadPreview,
+    VectorTilePreview
   }
 }
 

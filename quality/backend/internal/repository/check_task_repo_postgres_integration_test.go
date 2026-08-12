@@ -49,11 +49,11 @@ func TestIntegrationPostgresQualityConcurrentPendingClaim(t *testing.T) {
 		}
 	}
 	var legacyColumnCount int64
-	if err := db.Raw(`SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'quality' AND table_name = 'check_tasks' AND column_name = 'next_run_at'`).Scan(&legacyColumnCount).Error; err != nil {
-		t.Fatalf("inspect removed next_run_at column: %v", err)
+	if err := db.Raw(`SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'quality' AND table_name = 'check_tasks' AND column_name IN ('enabled', 'next_run_at')`).Scan(&legacyColumnCount).Error; err != nil {
+		t.Fatalf("inspect removed check task scheduling columns: %v", err)
 	}
 	if legacyColumnCount != 0 {
-		t.Fatalf("legacy next_run_at column still exists")
+		t.Fatalf("legacy check task scheduling columns still exist")
 	}
 
 	tenantID := time.Now().UnixNano()%100000000 + 910000000

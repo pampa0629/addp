@@ -190,8 +190,9 @@ import { documentAPI } from '../api/standard'
 import { saveBlob } from '../utils/download'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
+import { formatStandardDate } from '../utils/dateTime'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
 const route = useRoute()
 
@@ -220,7 +221,7 @@ const docTypeLabel = (type) => ({
   reference: t('standard.document.reference')
 }[type] || type)
 const docTypeTagType = (type) => ({ national: 'danger', industry: 'warning', internal: 'primary', reference: 'info' }[type] || 'info')
-const formatTime = (time) => time ? new Date(time).toLocaleDateString('zh-CN') : '-'
+const formatTime = time => formatStandardDate(time, locale.value)
 const formatFileSize = (bytes) => {
   if (!bytes) return '0 B'
   if (bytes < 1024) return bytes + ' B'

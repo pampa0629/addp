@@ -86,6 +86,8 @@ func buildBuiltinContentHandler(cfg ObjectContentPluginConfig) (ObjectContentHan
 		return buildGaussianSplatContentHandler(cfg), nil
 	case models.ObjectPreviewKindCAD:
 		return buildCADContentHandler(cfg), nil
+	case models.ObjectPreviewKindVectorTile:
+		return buildVectorTileContentHandler(cfg), nil
 	case models.ObjectPreviewKindText:
 		return buildTextContentHandler(cfg, commonformat.FormatText, models.ObjectPreviewKindText), nil
 	case models.ObjectPreviewKindMarkdown:
@@ -148,6 +150,7 @@ func fallbackBuiltinContentPlugins() []ObjectContentPluginConfig {
 		ObjectContentPluginConfig{Name: "builtin:content-point-cloud", Type: "builtin", Builtin: models.ObjectPreviewKindPointCloud},
 		ObjectContentPluginConfig{Name: "builtin:content-gaussian-splat", Type: "builtin", Builtin: models.ObjectPreviewKindGaussianSplat},
 		ObjectContentPluginConfig{Name: "builtin:content-cad", Type: "builtin", Builtin: models.ObjectPreviewKindCAD},
+		ObjectContentPluginConfig{Name: "builtin:content-vector-tile", Type: "builtin", Builtin: models.ObjectPreviewKindVectorTile},
 		ObjectContentPluginConfig{Name: "builtin:content-json", Type: "builtin", Builtin: models.ObjectPreviewKindJSON},
 		ObjectContentPluginConfig{Name: "builtin:content-container", Type: "builtin", Builtin: models.ObjectPreviewKindContainer},
 		ObjectContentPluginConfig{Name: "builtin:content-markdown", Type: "builtin", Builtin: models.ObjectPreviewKindMarkdown},
@@ -385,6 +388,13 @@ func buildCADContentHandler(cfg ObjectContentPluginConfig) ObjectContentHandler 
 			matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatDWG, []commonformat.FormatType{commonformat.FormatDXF}, nil),
 		},
 	}
+}
+
+func buildVectorTileContentHandler(cfg ObjectContentPluginConfig) ObjectContentHandler {
+	return &vectorTileContentHandler{baseContentHandler: baseContentHandler{
+		name: cfg.Name, priority: cfg.priorityOr(64),
+		matcher: descriptorObjectContentMatcher(cfg.Match, commonformat.FormatPMTiles, nil, nil),
+	}}
 }
 
 func buildGaussianSplatContentHandler(cfg ObjectContentPluginConfig) ObjectContentHandler {

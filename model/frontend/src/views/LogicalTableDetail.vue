@@ -641,7 +641,11 @@ const handleElementChange = (elementId) => {
 }
 
 const handleFieldSubmit = async () => {
-  await fieldFormRef.value.validate()
+  try {
+    await fieldFormRef.value.validate()
+  } catch {
+    return
+  }
   fieldSubmitting.value = true
   try {
     if (editingField.value) {

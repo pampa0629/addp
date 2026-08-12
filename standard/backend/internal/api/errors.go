@@ -27,6 +27,22 @@ func respondError(c *gin.Context, status int, err error) {
 		message = commoni18n.T(c, sysi18n.MsgInvalidCodeSetType)
 	case errors.Is(err, service.ErrDomainParentCycle):
 		message = commoni18n.T(c, sysi18n.MsgDomainParentCycle)
+	case errors.Is(err, service.ErrDomainReferenced):
+		message = commoni18n.T(c, sysi18n.MsgDomainReferenced)
+	case errors.Is(err, service.ErrClassificationReferenced):
+		message = commoni18n.T(c, sysi18n.MsgClassificationReferenced)
+	case errors.Is(err, service.ErrMetricCategoryReferenced):
+		message = commoni18n.T(c, sysi18n.MsgMetricCategoryReferenced)
+	case errors.Is(err, service.ErrMeasurementCategoryReferenced):
+		message = commoni18n.T(c, sysi18n.MsgMeasurementCategoryReferenced)
+	case errors.Is(err, service.ErrUnitReferenced):
+		message = commoni18n.T(c, sysi18n.MsgUnitReferenced)
+	case errors.Is(err, service.ErrCodeSetReferenced):
+		message = commoni18n.T(c, sysi18n.MsgCodeSetReferenced)
+	case errors.Is(err, service.ErrCodeItemReferenced):
+		message = commoni18n.T(c, sysi18n.MsgCodeItemReferenced)
+	case errors.Is(err, service.ErrMetricReferenced):
+		message = commoni18n.T(c, sysi18n.MsgMetricReferenced)
 	case errors.Is(err, service.ErrClassificationParentCycle):
 		message = commoni18n.T(c, sysi18n.MsgClassificationParentCycle)
 	case errors.Is(err, service.ErrMetricCategoryParentCycle):

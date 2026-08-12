@@ -546,6 +546,7 @@ func (r *PreviewResolver) buildProviderRequest(ctx context.Context, req *Preview
 	}
 
 	return &PreviewRequest{
+		Locator:         req.Locator.ToURI(),
 		Engine:          managerEngine,
 		EnginePlugin:    plug,
 		Schema:          schema,

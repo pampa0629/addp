@@ -254,10 +254,11 @@ import { elementAPI, codeSetAPI, glossaryAPI, unitAPI, classificationAPI, gradin
 import DocumentPanel from '../components/DocumentPanel.vue'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
+import { formatStandardDateTime } from '../utils/dateTime'
 
 const router = useRouter()
 const route = useRoute()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const loading = ref(false)
 const saving = ref(false)
 const element = ref({})
@@ -313,8 +314,7 @@ const goToGlossary = (id) => {
 }
 
 const formatTime = (time) => {
-  if (!time) return '-'
-  return new Date(time).toLocaleString()
+  return formatStandardDateTime(time, locale.value)
 }
 
 const goBack = () => navigateStandardRoute(router, { path: '/elements', query: route.query }, { history: 'replace' })

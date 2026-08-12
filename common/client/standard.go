@@ -2,11 +2,16 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/addp/common/dataquality"
 )
+
+// ErrTenantReferenceNotFound deliberately conflates a missing resource with a
+// cross-tenant resource so callers cannot use validation APIs for tenant probing.
+var ErrTenantReferenceNotFound = errors.New("tenant reference not found")
 
 // StandardClient is the Bearer-only client for tenant-owned Standard APIs.
 type StandardClient struct{ tenantHTTPClient }
@@ -37,13 +42,13 @@ type tenantReferenceResponse struct {
 	TenantID int64 `json:"tenant_id"`
 }
 
-func (c *StandardClient) validateTenantReference(ctx context.Context, path string, resourceID int64, resourceName string) error {
+func (c *StandardClient) validateTenantReference(ctx context.Context, path, resourceName string) error {
 	var resource tenantReferenceResponse
 	if err := c.doJSON(ctx, http.MethodGet, path, nil, &resource); err != nil {
 		return fmt.Errorf("standard validate %s: %w", resourceName, err)
 	}
 	if c.tenantID == nil || resource.TenantID != int64(*c.tenantID) {
-		return fmt.Errorf("%s_id %d belongs to tenant %d, not current tenant", resourceName, resourceID, resource.TenantID)
+		return fmt.Errorf("standard validate %s: %w", resourceName, ErrTenantReferenceNotFound)
 	}
 	return nil
 }
@@ -54,7 +59,7 @@ func (c *StandardClient) ValidateElement(ctx context.Context, elementID int64) e
 		return fmt.Errorf("standard validate element: %w", err)
 	}
 	if c.tenantID == nil || element.TenantID != int64(*c.tenantID) {
-		return fmt.Errorf("element_id %d belongs to tenant %d, not current tenant", elementID, element.TenantID)
+		return fmt.Errorf("standard validate element: %w", ErrTenantReferenceNotFound)
 	}
 	return nil
 }
@@ -79,13 +84,13 @@ func (c *StandardClient) GetElementQualityRules(ctx context.Context, elementID i
 }
 
 func (c *StandardClient) ValidateDomain(ctx context.Context, domainID int64) error {
-	return c.validateTenantReference(ctx, fmt.Sprintf("/api/v1/standard/domains/%d", domainID), domainID, "domain")
+	return c.validateTenantReference(ctx, fmt.Sprintf("/api/v1/standard/domains/%d", domainID), "domain")
 }
 
 func (c *StandardClient) ValidateDimensionHierarchy(ctx context.Context, hierarchyID int64) error {
-	return c.validateTenantReference(ctx, fmt.Sprintf("/api/v1/standard/dimension-hierarchies/%d", hierarchyID), hierarchyID, "hierarchy")
+	return c.validateTenantReference(ctx, fmt.Sprintf("/api/v1/standard/dimension-hierarchies/%d", hierarchyID), "hierarchy")
 }
 
 func (c *StandardClient) ValidateMetric(ctx context.Context, metricID int64) error {
-	return c.validateTenantReference(ctx, fmt.Sprintf("/api/v1/standard/metrics/%d", metricID), metricID, "metric")
+	return c.validateTenantReference(ctx, fmt.Sprintf("/api/v1/standard/metrics/%d", metricID), "metric")
 }

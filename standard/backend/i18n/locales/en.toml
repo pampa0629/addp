@@ -55,20 +55,41 @@ other = "Code set type must be system or custom"
 [standard.domain.parent_cycle]
 other = "A domain parent cannot be itself or its descendant"
 
+[standard.domain.referenced]
+other = "The domain is still referenced by a child domain, glossary, element, metric, or dimension hierarchy and cannot be deleted"
+
 [standard.classification.parent_cycle]
 other = "A classification parent cannot be itself or its descendant"
+
+[standard.classification.referenced]
+other = "The classification is still referenced by a child classification or element and cannot be deleted"
 
 [standard.metric_category.parent_cycle]
 other = "A metric category parent cannot be itself or its descendant"
 
+[standard.metric_category.referenced]
+other = "The metric category is still referenced by a child category or metric and cannot be deleted"
+
 [standard.measurement_category.system_immutable]
 other = "System measurement categories cannot be deleted"
+
+[standard.measurement_category.referenced]
+other = "The measurement category is still referenced by a unit and cannot be deleted"
 
 [standard.unit.system_immutable]
 other = "System units cannot be updated or deleted"
 
+[standard.unit.referenced]
+other = "The unit is still referenced by an element or metric and cannot be deleted"
+
 [standard.code_set.system_immutable]
 other = "System code sets cannot be deleted"
+
+[standard.code_set.referenced]
+other = "The code set is still referenced by an element and cannot be deleted"
+
+[standard.code_item.referenced]
+other = "The code item is still referenced by a child code item and cannot be deleted"
 
 [standard.document.storage_unavailable]
 other = "File storage service is unavailable"
@@ -108,6 +129,9 @@ other = "Metric not found"
 
 [standard.metric.dependency_cycle]
 other = "Metric dependencies cannot form a cycle"
+
+[standard.metric.referenced]
+other = "The metric is still referenced by a derived metric or dependency and cannot be deleted"
 
 [standard.dim_hierarchy.not_found]
 other = "Dimension hierarchy not found"
