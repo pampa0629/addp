@@ -550,17 +550,39 @@ func coerceDatabaseCDCGeometry(value interface{}, fieldName string, plan *planne
 	if plan.CDC.Provider != "oracle" {
 		return nil, fmt.Errorf("%s CDC does not support geometry field %q", plan.CDC.Provider, fieldName)
 	}
-	encoded, ok := value.(string)
-	if !ok || strings.TrimSpace(encoded) == "" {
-		return nil, fmt.Errorf("Oracle Spatial CDC geometry %q must be base64 WKB text", fieldName)
+	var geometry geom.T
+	var err error
+	switch encoded := value.(type) {
+	case string:
+		encoded = strings.TrimSpace(encoded)
+		if encoded == "" {
+			return nil, fmt.Errorf("Oracle Spatial CDC geometry %q is empty", fieldName)
+		}
+		if strings.HasPrefix(encoded, "{") {
+			geometry, err = commonSpatial.DecodeGeometryValue(encoded, string(commonSpatial.GeometryEncodingGeoJSON), 0)
+		} else {
+			var wkb []byte
+			wkb, err = base64.StdEncoding.Strict().DecodeString(encoded)
+			if err == nil && len(wkb) > 0 {
+				geometry, err = commonSpatial.ParseGeometryBytes(wkb)
+			}
+		}
+	case []byte:
+		if len(strings.TrimSpace(string(encoded))) > 0 && strings.HasPrefix(strings.TrimSpace(string(encoded)), "{") {
+			geometry, err = commonSpatial.DecodeGeometryValue(encoded, string(commonSpatial.GeometryEncodingGeoJSON), 0)
+		} else {
+			geometry, err = commonSpatial.ParseGeometryBytes(encoded)
+		}
+	case map[string]interface{}:
+		geometry, err = commonSpatial.DecodeGeometryValue(encoded, string(commonSpatial.GeometryEncodingGeoJSON), 0)
+	default:
+		err = fmt.Errorf("unsupported Oracle Spatial CDC geometry value type %T", value)
 	}
-	wkb, err := base64.StdEncoding.Strict().DecodeString(encoded)
-	if err != nil || len(wkb) == 0 {
-		return nil, fmt.Errorf("Oracle Spatial CDC geometry %q is not valid base64 WKB", fieldName)
-	}
-	geometry, err := commonSpatial.ParseGeometryBytes(wkb)
 	if err != nil {
 		return nil, fmt.Errorf("decode Oracle Spatial CDC geometry %q: %w", fieldName, err)
+	}
+	if geometry == nil {
+		return nil, fmt.Errorf("decode Oracle Spatial CDC geometry %q: empty geometry", fieldName)
 	}
 	column := spatialGeometryColumn(plan.CDC.SpatialInfo, fieldName)
 	if column == nil || column.SRID == nil || column.Dimension == nil || *column.SRID <= 0 {

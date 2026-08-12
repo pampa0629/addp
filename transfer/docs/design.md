@@ -177,7 +177,7 @@ replace / append / upsert / upsert_delete 是 Transfer apply policy；upsert 和
 | `replace` | 写入前由 Transfer 规划删除目标资源或重建目标，再执行写入。 |
 | `append` | 追加写入；失败 retry 当前拒绝 append，避免重复写。 |
 | `upsert` | 按稳定键幂等新增或更新；第一版仅 PostgreSQL native table。 |
-| `upsert_delete` | 按稳定键新增、更新和物理删除；数据库 CDC 支持 PostgreSQL/MySQL 源到 PostgreSQL/MySQL 新目标表。 |
+| `upsert_delete` | 按稳定键新增、更新和物理删除；数据库 CDC 支持 PostgreSQL/MySQL/Oracle 源到 PostgreSQL/MySQL 新目标表。 |
 
 `TableWritePreparer` 只做 ensure / create table / schema evolution，不承载 replace / append 策略。DeleteResource 是 common engine 提供的原子删除能力；watermark upsert 使用独立强类型 Provider。
 
@@ -265,7 +265,7 @@ MySQL 8.0 单表
   -> per-partition kafka_offset/v1 next_offset CAS
 ```
 
-Oracle CDC 复用同一主路径；普通表直接捕获，Spatial 表先由 capture Provider 建立 generation-owned WKB 镜像：
+Oracle CDC 复用同一主路径；普通表直接捕获，Spatial 表先由 capture Provider 建立 generation-owned 镜像。二维值使用 WKB BLOB；Oracle Free 对三维 `SDO_GEOMETRY` 的 `TO_WKBGEOMETRY` 会丢弃 Z，因此 XYZ 使用 `TO_GEOJSON` CLOB，adapter 在同一入口归一化为 EWKB：
 
 ```text
 Oracle 普通单表
@@ -278,7 +278,7 @@ Oracle 普通单表
   -> per-partition kafka_offset/v1 next_offset CAS
 
 Oracle Spatial 单表
-  -> source schema 内 generation-owned trigger + WKB mirror table
+  -> source schema 内 generation-owned trigger + WKB/GeoJSON mirror table
   -> 同一个 Debezium Oracle Connector / Infra Kafka / Continuous Worker / target apply 主路径
 ```
 

@@ -205,6 +205,36 @@ func TestDecodeOracleSpatialMirrorRecordConvertsWKBAndIgnoresUnavailableBeforeGe
 	}
 }
 
+func TestDecodeOracleSpatialMirrorRecordConvertsGeoJSONXYZ(t *testing.T) {
+	plan := oracleCDCAdapterPlan()
+	plan.Mappings = []planner.ContinuousFieldPlan{
+		{Source: "ID", Target: "id", Type: datatype.FieldTypeBigInt, Nullable: false},
+		{Source: "NAME", Target: "name", Type: datatype.FieldTypeString, Nullable: false},
+		{Source: "SHAPE", Target: "geometry", Type: datatype.FieldTypeGeometry, Nullable: false},
+	}
+	plan.CDC.Table = "ADDP_M_Z"
+	plan.CDC.CaptureTable = "ADDP_M_Z"
+	plan.CDC.SpatialInfo = datatype.NewSingleGeometrySpatialInfo("SHAPE", "Point", 4326, 3)
+	after := `{"ID":"1","NAME":"xyz","SHAPE":"{\"type\":\"Point\",\"coordinates\":[1,2,3]}"}`
+	event, err := decodeOracleDebeziumRecord(plugin.ChangeRecord{
+		Key:   []byte(`{"ID":"1"}`),
+		Value: []byte(oracleDebeziumEnvelope("c", `null`, after, "FREEPDB1", "BUSINESS", "ADDP_M_Z")),
+	}, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	geometry, err := commonSpatial.ParseGeometryBytes(event.Row["geometry"].([]byte))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if geometry.Layout() != geom.XYZ || geometry.SRID() != 4326 || geometryTopology(geometry) != datatype.GeometryTypePoint {
+		t.Fatalf("Oracle Spatial XYZ event geometry=%#v layout=%v", geometry, geometry.Layout())
+	}
+	if got := geometry.FlatCoords(); len(got) != 3 || got[0] != 1 || got[1] != 2 || got[2] != 3 {
+		t.Fatalf("Oracle Spatial XYZ flat coords=%v", got)
+	}
+}
+
 func TestDecodeOracleDebeziumRecordRejectsIncompatibleLogMinerDiagnostics(t *testing.T) {
 	plan := oracleCDCAdapterPlan()
 	tests := []struct {

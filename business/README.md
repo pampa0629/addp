@@ -171,7 +171,7 @@ Oracle 必须使用常规镜像 `gvenzl/oracle-free:23`。官方 `-slim` 镜像�
 `bash scripts/start.sh -oracle` 会幂等初始化普通表、`CUSTOMER_LOCATIONS` 点要素表和 `SPATIAL_FEATURES` 综合空间表，并验证：
 
 - `MDSYS.SDO_GEOMETRY` 可用；
-- `Point`、`LineString`、`Polygon`、`MultiPoint`、`MultiLineString`、`MultiPolygon` 和 `GeometryCollection` 均可转换为标准 WKB；
+- `Point`、`LineString`、`Polygon`、`MultiPoint`、`MultiLineString`、`MultiPolygon` 和 `GeometryCollection` 均可转换为标准 WKB；三维 `SDO_GEOMETRY` 由 Oracle `TO_GEOJSON` 保留 Z 后再由 Transfer 归一化为 EWKB；
 - `USER_SDO_GEOM_METADATA` 中存在 SRID 4326 元数据；
 - 两张空间表均具有 Oracle Domain Spatial Index。
 
@@ -186,7 +186,7 @@ cd business && bash scripts/start.sh -oracle
 
 ### Oracle CDC 测试源
 
-`bash scripts/start.sh -oracle` 会在数据库 ready 后执行 `oracle/init-cdc.sh`，幂等启用 `ARCHIVELOG`、force logging、minimal supplemental logging，并创建 `${ORACLE_CDC_USER:-C##ADDP_CDC}` LogMiner 专用 common user。`CUSTOMERS`、`CUSTOMER_LOCATIONS` 和 `SPATIAL_FEATURES` 由 `init.sql` 幂等启用 `SUPPLEMENTAL LOG DATA (ALL) COLUMNS`，分别作为普通字段、单一 Point 和混合二维几何族 CDC 样例。Oracle Engine 使用 schema owner 的 business 主账号做 Catalog/读取，并供 Transfer 创建 generation-owned Spatial WKB 镜像表、行级触发器和 DDL guard；System 的 `connection_info` 另存 `cdc_database_name`、`cdc_user` 和加密的 `cdc_password`，LogMiner 不复用业务账号或 SYS。
+`bash scripts/start.sh -oracle` 会在数据库 ready 后执行 `oracle/init-cdc.sh`，幂等启用 `ARCHIVELOG`、force logging、minimal supplemental logging，并创建 `${ORACLE_CDC_USER:-C##ADDP_CDC}` LogMiner 专用 common user。`CUSTOMERS`、`CUSTOMER_LOCATIONS` 和 `SPATIAL_FEATURES` 由 `init.sql` 幂等启用 `SUPPLEMENTAL LOG DATA (ALL) COLUMNS`，分别作为普通字段、单一 Point 和混合二维几何族 CDC 样例。Oracle Engine 使用 schema owner 的 business 主账号做 Catalog/读取，并供 Transfer 创建 generation-owned Spatial WKB/GeoJSON 镜像表、行级触发器和 DDL guard；XYZ 场景使用 GeoJSON CLOB 保留 Z，Transfer 最终仍输出 EWKB。System 的 `connection_info` 另存 `cdc_database_name`、`cdc_user` 和加密的 `cdc_password`，LogMiner 不复用业务账号或 SYS。
 
 启用 Redpanda 时，脚本会创建或轮换 `${BUSINESS_KAFKA_READER_USERNAME:-addp_transfer}` 的 SCRAM-SHA-256 密码，并只授予读取 Topic、消费组和描述集群所需权限。System 中统一注册为 `engine_type=kafka`，连接 `localhost:${BUSINESS_KAFKA_PORT:-29092}`；不要注册 `addp-redpanda` 的 Infra Kafka 地址。
 

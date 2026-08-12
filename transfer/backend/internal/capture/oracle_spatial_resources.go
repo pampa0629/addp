@@ -184,7 +184,7 @@ func oracleSpatialMirrorTableDDL(plan *CapturePlan, resource *models.CaptureReso
 		quoted := oracleQuoteIdentifier(field)
 		expression := "source_row." + quoted
 		if plan.SourceFieldTypes[field] == datatype.FieldTypeGeometry {
-			expression = "SDO_UTIL.TO_WKBGEOMETRY(" + expression + ")"
+			expression = oracleSpatialCaptureExpression(plan, field, expression)
 		}
 		columns = append(columns, expression+" AS "+quoted)
 	}
@@ -231,7 +231,7 @@ func oracleSpatialMirrorTriggerDDL(plan *CapturePlan, resource *models.CaptureRe
 		quoted := oracleQuoteIdentifier(field)
 		value := ":NEW." + quoted
 		if plan.SourceFieldTypes[field] == datatype.FieldTypeGeometry {
-			value = "SDO_UTIL.TO_WKBGEOMETRY(" + value + ")"
+			value = oracleSpatialCaptureExpression(plan, field, value)
 		}
 		newValues = append(newValues, value)
 		if !keySet[field] {
@@ -332,7 +332,7 @@ func oracleSpatialMirrorSynchronizationSQL(plan *CapturePlan, resource *models.C
 		quoted := oracleQuoteIdentifier(field)
 		expression := "source_base." + quoted
 		if plan.SourceFieldTypes[field] == datatype.FieldTypeGeometry {
-			expression = "SDO_UTIL.TO_WKBGEOMETRY(" + expression + ")"
+			expression = oracleSpatialCaptureExpression(plan, field, expression)
 		}
 		selectFields = append(selectFields, expression+" AS "+quoted)
 		insertValues = append(insertValues, "source_row."+quoted)
@@ -375,8 +375,12 @@ func validateOracleSpatialMirrorTable(ctx context.Context, db *sql.DB, plan *Cap
 		return fmt.Errorf("Oracle Spatial mirror fields do not match the frozen source schema: actual=%v expected=%v", actualFields, expectedFields)
 	}
 	for _, column := range plan.SourceSpatialInfo.GeometryColumns {
-		if actualTypes[column.Name] != "BLOB" {
-			return fmt.Errorf("Oracle Spatial mirror field %q must be BLOB", column.Name)
+		expectedType := "BLOB"
+		if column.Dimension != nil && *column.Dimension == 3 {
+			expectedType = "CLOB"
+		}
+		if actualTypes[column.Name] != expectedType {
+			return fmt.Errorf("Oracle Spatial mirror field %q must be %s", column.Name, expectedType)
 		}
 	}
 	rows, err = db.QueryContext(ctx, `
@@ -416,6 +420,21 @@ func validateOracleSpatialMirrorTable(ctx context.Context, db *sql.DB, plan *Cap
 	return nil
 }
 
+// Oracle's TO_WKBGEOMETRY is strictly two-dimensional on supported Oracle Free
+// images. Keep the established BLOB/WKB transport for XY and use Oracle's
+// GeoJSON serializer for XYZ so the third ordinate is not silently discarded.
+// The Transfer adapter normalizes both encodings to EWKB before applying them.
+func oracleSpatialCaptureExpression(plan *CapturePlan, field, value string) string {
+	if plan != nil && plan.SourceSpatialInfo != nil {
+		for _, column := range plan.SourceSpatialInfo.GeometryColumns {
+			if column.Name == field && column.Dimension != nil && *column.Dimension == 3 {
+				return "SDO_UTIL.TO_GEOJSON(" + value + ")"
+			}
+		}
+	}
+	return "SDO_UTIL.TO_WKBGEOMETRY(" + value + ")"
+}
+
 func validateExistingOracleSpatialTrigger(ctx context.Context, db *sql.DB, plan *CapturePlan, resource *models.CaptureResource) (bool, error) {
 	var tableOwner, tableName, status, triggerBody string
 	err := db.QueryRowContext(ctx, `
@@ -428,9 +447,22 @@ func validateExistingOracleSpatialTrigger(ctx context.Context, db *sql.DB, plan 
 	if err != nil {
 		return false, fmt.Errorf("inspect Oracle Spatial mirror trigger: %w", err)
 	}
+	triggerBodyUpper := strings.ToUpper(triggerBody)
+	geometryExpressionMatches := strings.Contains(triggerBodyUpper, "SDO_UTIL.TO_WKBGEOMETRY") ||
+		strings.Contains(triggerBodyUpper, "SDO_UTIL.TO_GEOJSON")
+	if plan.SourceSpatialInfo != nil {
+		expectedExpression := "SDO_UTIL.TO_WKBGEOMETRY"
+		for _, column := range plan.SourceSpatialInfo.GeometryColumns {
+			if column.Dimension != nil && *column.Dimension == 3 {
+				expectedExpression = "SDO_UTIL.TO_GEOJSON"
+				break
+			}
+		}
+		geometryExpressionMatches = strings.Contains(triggerBodyUpper, expectedExpression)
+	}
 	if !strings.EqualFold(tableOwner, plan.SourceSchema) || !strings.EqualFold(tableName, plan.SourceTable) || !strings.EqualFold(status, "ENABLED") ||
 		!strings.Contains(strings.ToUpper(triggerBody), strings.ToUpper(resource.Oracle.SpatialMirrorTableName)) ||
-		!strings.Contains(strings.ToUpper(triggerBody), "SDO_UTIL.TO_WKBGEOMETRY") {
+		!geometryExpressionMatches {
 		return false, fmt.Errorf("Oracle Spatial row trigger name %q is occupied by an incompatible object", resource.Oracle.SpatialRowTriggerName)
 	}
 	return true, nil

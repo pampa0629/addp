@@ -93,7 +93,7 @@ Kafka poll 会分批读取，但不因此成为 bounded；数据库 CDC 的 init
 | bounded | incremental | watermark | PostgreSQL/MySQL native table | PostgreSQL/MySQL native table `upsert` |
 | continuous | incremental | kafka | 业务 Kafka keyed JSON object | PostgreSQL/MySQL native table `upsert` |
 | bounded | incremental | kafka offset range（replay execution） | 已有业务 Kafka continuous task 的原 topic | 不存在的新 PostgreSQL 隔离表 `upsert` |
-| continuous | incremental | cdc | PostgreSQL/MySQL 有稳定主键的单表 | 不存在的新 PostgreSQL/MySQL 表 `upsert_delete` |
+| continuous | incremental | cdc | PostgreSQL/MySQL/Oracle 有稳定主键的单表 | 不存在的新 PostgreSQL/MySQL 表 `upsert_delete` |
 
 矩阵之外的组合必须由 planner 明确拒绝，不能通过字段省略、兼容分支或运行时猜测放行。
 
