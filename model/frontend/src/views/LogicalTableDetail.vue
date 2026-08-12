@@ -120,7 +120,7 @@
           <template #header>
             <div class="card-header-with-action">
               <span class="card-title">{{ t('model.field.title') }}</span>
-              <el-button v-if="canEdit" type="primary" size="small" @click="openFieldDialog()">
+              <el-button v-if="canEdit && authStore.hasPermission('model.logical_model.create')" type="primary" size="small" @click="openFieldDialog()">
                 <el-icon><Plus /></el-icon>
                 {{ t('model.field.add') }}
               </el-button>
@@ -155,8 +155,8 @@
             <el-table-column :label="t('model.field.description')" prop="description" show-overflow-tooltip />
             <el-table-column :label="t('model.field.actions')" width="130" fixed="right">
               <template #default="{ row }">
-                <el-button v-if="canEdit" link type="primary" @click="openFieldDialog(row)">{{ t('model.common.edit') }}</el-button>
-                <el-popconfirm v-if="canEdit" :title="t('model.field.delete_confirm')" @confirm="deleteField(row.id)">
+                <el-button v-if="canEdit && authStore.hasPermission('model.logical_model.update')" link type="primary" @click="openFieldDialog(row)">{{ t('model.common.edit') }}</el-button>
+                <el-popconfirm v-if="canEdit && authStore.hasPermission('model.logical_model.delete')" :title="t('model.field.delete_confirm')" @confirm="deleteField(row.id)">
                   <template #reference>
                     <el-button link type="danger">{{ t('model.common.delete') }}</el-button>
                   </template>
@@ -173,7 +173,7 @@
           <template #header>
             <div class="card-header-with-action">
               <span class="card-title">{{ t('model.metric.title') }}</span>
-              <el-button v-if="canEdit" type="primary" size="small" @click="openMetricDialog">
+              <el-button v-if="canEdit && authStore.hasPermission('model.logical_model.update')" type="primary" size="small" @click="openMetricDialog">
                 <el-icon><Plus /></el-icon>
                 {{ t('model.metric.add') }}
               </el-button>
@@ -195,7 +195,7 @@
             <el-table-column :label="t('model.metric.note')" prop="note" show-overflow-tooltip />
             <el-table-column :label="t('model.metric.actions')" width="80" fixed="right">
               <template #default="{ row }">
-                <el-popconfirm v-if="canEdit" :title="t('model.metric.remove_confirm')" @confirm="removeMetric(row.id)">
+                <el-popconfirm v-if="canEdit && authStore.hasPermission('model.logical_model.update')" :title="t('model.metric.remove_confirm')" @confirm="removeMetric(row.id)">
                   <template #reference>
                     <el-button link type="danger">{{ t('model.metric.remove') }}</el-button>
                   </template>
@@ -562,8 +562,8 @@ const loadAvailableMetrics = async () => {
   try {
     const res = await standardMetricAPI.listAll()
     availableMetrics.value = res
-  } catch {
-    ElMessage.error(t('model.metric.load_failed'))
+  } catch (err) {
+    ElMessage.error(getModelErrorMessage(err, t, 'model.metric.load_failed'))
   }
 }
 
@@ -669,8 +669,8 @@ const deleteField = async (fieldId) => {
     await logicalTableAPI.deleteField(tableId.value, fieldId)
     ElMessage.success(t('model.common.delete_success'))
     loadFields()
-  } catch {
-    ElMessage.error(t('model.common.delete_failed'))
+  } catch (err) {
+    ElMessage.error(getModelErrorMessage(err, t, 'model.common.delete_failed'))
   }
 }
 
@@ -703,8 +703,8 @@ const removeMetric = async (mappingId) => {
     await logicalTableAPI.removeMetric(tableId.value, mappingId)
     ElMessage.success(t('model.metric.remove_success'))
     loadMetrics()
-  } catch {
-    ElMessage.error(t('model.common.op_failed'))
+  } catch (err) {
+    ElMessage.error(getModelErrorMessage(err, t, 'model.common.op_failed'))
   }
 }
 

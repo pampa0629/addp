@@ -40,6 +40,9 @@ func TestBuildConnectorConfigUsesOwnedNamesAndRoutesSingleTopic(t *testing.T) {
 	if config["decimal.handling.mode"] != "string" || config["time.precision.mode"] != "connect" {
 		t.Fatalf("Debezium schemaless type encoding is not frozen: %#v", config)
 	}
+	if config["notification.enabled.channels"] != "sink" || config["notification.sink.topic.name"] != resource.TopicName {
+		t.Fatalf("snapshot notification config = %#v", config)
+	}
 }
 
 func TestBuildMySQLConnectorConfigFreezesServerIDHistoryAndEncoding(t *testing.T) {
@@ -65,6 +68,9 @@ func TestBuildMySQLConnectorConfigFreezesServerIDHistoryAndEncoding(t *testing.T
 		config["schema.history.internal.kafka.topic"] != resource.MySQL.SchemaHistoryTopicName ||
 		config["binary.handling.mode"] != "base64" || config["transforms.route.replacement"] != resource.TopicName {
 		t.Fatalf("MySQL connector config = %#v", config)
+	}
+	if config["notification.enabled.channels"] != "sink" || config["notification.sink.topic.name"] != resource.TopicName {
+		t.Fatalf("MySQL snapshot notification config = %#v", config)
 	}
 	if !strings.Contains(config["schema.history.internal.producer.sasl.jaas.config"], `password="p\\\"ass"`) {
 		t.Fatalf("MySQL schema history JAAS is not escaped: %q", config["schema.history.internal.producer.sasl.jaas.config"])

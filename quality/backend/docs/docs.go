@@ -480,6 +480,11 @@ const docTemplate = `{
                 "summary": "获取问题工单列表 | List quality issues",
                 "parameters": [
                     {
+                        "enum": [
+                            "open",
+                            "resolved",
+                            "ignored"
+                        ],
                         "type": "string",
                         "description": "状态 | Status",
                         "name": "status",

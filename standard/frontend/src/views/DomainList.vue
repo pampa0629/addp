@@ -40,10 +40,11 @@
       v-model="dialogVisible"
       :title="editMode ? $t('standard.domain.editTitle') : (parentDomain ? $t('standard.domain.createChildTitle', { name: parentDomain.name }) : $t('standard.domain.create'))"
       width="500px"
+      @opened="focusNameInput"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
         <el-form-item :label="$t('standard.domain.nameLabel')" prop="name">
-          <el-input v-model="form.name" :placeholder="$t('standard.domain.namePlaceholder')" />
+          <el-input ref="nameInputRef" v-model="form.name" :placeholder="$t('standard.domain.namePlaceholder')" />
         </el-form-item>
         <el-form-item :label="$t('standard.domain.codeLabel')" prop="code" v-if="!editMode">
           <el-input v-model="form.code" :placeholder="$t('standard.domain.codePlaceholder')" />
@@ -84,6 +85,7 @@ const domainTree = ref([])
 const parentDomain = ref(null)
 const editingId = ref(null)
 const formRef = ref(null)
+const nameInputRef = ref(null)
 
 const form = ref({
   name: '',
@@ -140,6 +142,10 @@ const openEditDialog = (domain) => {
     parent_id: domain.parent_id || null
   }
   dialogVisible.value = true
+}
+
+const focusNameInput = () => {
+  nameInputRef.value?.focus()
 }
 
 const handleSubmit = async () => {

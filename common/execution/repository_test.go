@@ -61,6 +61,23 @@ func TestGetStatisticsFiltersBySourceTaskID(t *testing.T) {
 	}
 }
 
+func TestGetByExecutionIDScopesTenant(t *testing.T) {
+	db := newTaskExecutionRepositoryTestDB(t)
+	repo := NewTaskExecutionRepository(db)
+	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 1, 7, "tenant-7-execution", ModuleQuality, TaskTypeQualityCheck, nil, ExecutionStatusSuccess, 10, "2026-01-01 10:00:00")
+
+	if _, err := repo.GetByExecutionID(context.Background(), "tenant-7-execution", 8); !errors.Is(err, commonapi.ErrNotFound) {
+		t.Fatalf("cross-tenant execution lookup error = %v, want ErrNotFound", err)
+	}
+	item, err := repo.GetByExecutionID(context.Background(), "tenant-7-execution", 7)
+	if err != nil {
+		t.Fatalf("same-tenant execution lookup: %v", err)
+	}
+	if item.Module != ModuleQuality || item.TaskType != TaskTypeQualityCheck {
+		t.Fatalf("execution identity = module %q task_type %q", item.Module, item.TaskType)
+	}
+}
+
 func TestListUsesStableCreatedAtAndIDOrder(t *testing.T) {
 	db := newTaskExecutionRepositoryTestDB(t)
 	repo := NewTaskExecutionRepository(db)

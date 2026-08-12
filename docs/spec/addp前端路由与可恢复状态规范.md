@@ -82,6 +82,8 @@ Develop TaskProvider 的 canonical 前端路由为：
 | Modeling | ER 图业务域筛选 | `domain_id` |
 | Modeling | 实体详情 Tab、星型模型事实表 | `tab`、`table_id` |
 | Quality | 执行详情 | path parameter `execution_id` |
+| Quality | 问题工单详情 | path `/issues/:id` |
+| Quality | 问题工单列表筛选与分页 | `status`、`engine_id`、`page`、`page_size` |
 | Quality | 检查任务创建与编辑 | `create=1`、`task_id`；默认列表省略 |
 | Asset | 资产目录、申请与反馈 Tab | `catalog_id`、`tab` |
 | Meta | 扫描引擎与扫描任务入口 | `engine_id`、`task_id`；二者并存时任务所属引擎为事实源 |

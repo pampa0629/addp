@@ -46,6 +46,12 @@ const routes = [
         name: 'IssueList',
         component: () => import('../views/IssueList.vue'),
         meta: { requiresAuth: true, title: '问题工单' }
+      },
+      {
+        path: 'issues/:id',
+        name: 'IssueDetail',
+        component: () => import('../views/IssueDetail.vue'),
+        meta: { requiresAuth: true, title: '问题工单详情' }
       }
     ]
   }

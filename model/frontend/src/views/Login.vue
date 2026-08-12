@@ -79,21 +79,23 @@ const loading = ref(false)
 const handleLogin = async () => {
   if (!formRef.value) return
 
-  await formRef.value.validate(async valid => {
-    if (!valid) return
+  try {
+    await formRef.value.validate()
+  } catch {
+    return
+  }
 
-    loading.value = true
-    try {
-      await authStore.login(loginForm.username, loginForm.password)
-      ElMessage.success(t('model.login.login_success'))
-      const redirect = route.query.redirect || '/dw-layers'
-      router.push(redirect)
-    } catch (error) {
-      ElMessage.error(error.message || t('model.login.login_failed'))
-    } finally {
-      loading.value = false
-    }
-  })
+  loading.value = true
+  try {
+    await authStore.login(loginForm.username, loginForm.password)
+    ElMessage.success(t('model.login.login_success'))
+    const redirect = route.query.redirect || '/dw-layers'
+    await router.push(redirect)
+  } catch (error) {
+    ElMessage.error(error.message || t('model.login.login_failed'))
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 

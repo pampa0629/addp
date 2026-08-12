@@ -36,16 +36,18 @@ type ContinuousSourcePlan struct {
 }
 
 type DatabaseCDCSourcePlan struct {
-	Provider     string
-	Database     string
-	Schema       string
-	Table        string
-	CaptureTable string
-	SpatialInfo  *datatype.SpatialInfo
+	Provider      string
+	ConnectorName string
+	Database      string
+	Schema        string
+	Table         string
+	CaptureTable  string
+	SpatialInfo   *datatype.SpatialInfo
 }
 
 type DatabaseCDCStreamBinding struct {
 	Provider       string
+	ConnectorName  string
 	ConnInfo       engineplugin.ConnectionInfo
 	Path           engineplugin.CatalogPath
 	ConsumerGroup  string
@@ -162,7 +164,7 @@ func BuildDatabaseCDCContinuousPlan(spec DatabaseCDCTaskSpec, resolver EngineRes
 		return nil, err
 	}
 	if strings.TrimSpace(stream.SourceIdentity) == "" || strings.TrimSpace(stream.ConsumerGroup) == "" ||
-		strings.TrimSpace(stream.Provider) == "" || strings.TrimSpace(stream.Database) == "" || strings.TrimSpace(stream.Table) == "" {
+		strings.TrimSpace(stream.ConnectorName) == "" || strings.TrimSpace(stream.Provider) == "" || strings.TrimSpace(stream.Database) == "" || strings.TrimSpace(stream.Table) == "" {
 		return nil, fmt.Errorf("database CDC stream binding is incomplete")
 	}
 	if pollBatchSize <= 0 {
@@ -175,8 +177,8 @@ func BuildDatabaseCDCContinuousPlan(spec DatabaseCDCTaskSpec, resolver EngineRes
 	if bindings.SourceType != strings.ToLower(strings.TrimSpace(stream.Provider)) {
 		return nil, fmt.Errorf("database CDC stream provider does not match source engine")
 	}
-	if !declaresPartitionedMonotonicApply(bindings.Target, engineplugin.TableChangeOperationUpsert, engineplugin.TableChangeOperationDelete) {
-		return nil, fmt.Errorf("target engine %q does not declare atomic monotonic upsert/delete partitioned_table_change_apply", bindings.TargetType)
+	if !declaresPartitionedMonotonicApply(bindings.Target, engineplugin.TableChangeOperationUpsert, engineplugin.TableChangeOperationDelete, engineplugin.TableChangeOperationSkip) {
+		return nil, fmt.Errorf("target engine %q does not declare atomic monotonic upsert/delete/skip partitioned_table_change_apply", bindings.TargetType)
 	}
 	sourceLocator, _ := spec.Source.ResourceLocator()
 	if stream.SourceIdentity != strings.TrimSpace(spec.Source.Locator) || stream.Table != sourceLocator.Path[1] {
@@ -261,7 +263,7 @@ func BuildDatabaseCDCContinuousPlan(spec DatabaseCDCTaskSpec, resolver EngineRes
 		Target:   ContinuousTargetPlan{EngineID: targetRef.ID, ConnInfo: bindings.Target.ConnInfo, Path: targetPath, Fields: fields, SpatialInfo: targetSpatialInfo, Keys: targetKeys},
 		Mappings: mappings, SourceKeys: sourceKeys, SourceType: "kafka", TargetType: bindings.TargetType,
 		Envelope: envelope, RecordFailureMode: RecordFailureModeBlock,
-		CDC: &DatabaseCDCSourcePlan{Provider: bindings.SourceType, Database: stream.Database, Schema: stream.Schema, Table: stream.Table, CaptureTable: captureTable, SpatialInfo: stream.SpatialInfo.Clone()},
+		CDC: &DatabaseCDCSourcePlan{Provider: bindings.SourceType, ConnectorName: strings.TrimSpace(stream.ConnectorName), Database: stream.Database, Schema: stream.Schema, Table: stream.Table, CaptureTable: captureTable, SpatialInfo: stream.SpatialInfo.Clone()},
 	}, nil
 }
 

@@ -92,7 +92,7 @@ Transfer 是 `transfer.task.*` 的 Permission owner；定义只存在于 `author
 - continuous source 必须消费 common `ChangeStreamReaderProvider`；原始 ChangeRecord 到 ChangeEvent 的解码以及 ChangeApplyWriter 归 Transfer runtime。目标必须消费声明原子、单调及所需 operations 的 `PartitionedTableChangeApplyProvider`。PostgreSQL 把业务行与业务库 `addp_transfer.apply_positions` 原子提交；MySQL 把业务行与同一目标数据库的 `_addp_transfer_apply_positions` InnoDB 私有表原子提交。普通 `TableUpsertProvider` 不足以阻止失效 worker 写回旧状态。
 - continuous session 不进入 Asynq；使用 `transfer.runtime_leases` 做 owner lease、heartbeat 和 fencing，并使用 `transfer.sync_states` 按 partition 保存 `kafka_offset/v1.next_offset`。
 - bounded watermark source 必须消费声明 `bounded_watermark_read` 的 common engine Provider；PostgreSQL/MySQL 都在源数据库一致性快照内冻结复合上界，Transfer 不按源引擎类型建立专用执行分支。
-- `auto_scan_metadata=true` 的 continuous task 在目标 Provider 首次成功建立目标结构后触发一次目标父 catalog Meta deep scan，不等待 execution 结束；首次扫描使用 task 私有持久化 claim 防重复，Meta 提交失败不阻断数据面。普通事件/batch 不扫描，schema 正式变化后另行扫描。
+- `auto_scan_metadata=true` 的普通业务 Kafka continuous task 在目标结构建立后触发一次目标父 catalog Meta deep scan。数据库 CDC connector 必须把 Debezium `Initial Snapshot` 通知写入当前 generation-owned 单分区 data topic；合法通知统一作为 target `skip` 推进，只有严格匹配当前 connector 的 `COMPLETED` offset 在目标 ledger 和 Transfer position 提交后才触发首次扫描，空表同样适用，不使用 `source.snapshot=last` 或时间猜测。首次扫描使用 task 私有持久化 claim 防重复，Meta 提交失败不阻断数据面，失败或过期 claim 由后续 runtime session 重试。普通事件/batch 不扫描，schema 正式变化后另行扫描。
 - 修改 API 后同步 Swagger：`bash scripts/swagger/gen-swagger.sh transfer` 和 `bash scripts/swagger/check-route-coverage.sh transfer`。
 
 ## 前端公开路由

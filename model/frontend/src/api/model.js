@@ -1,9 +1,11 @@
 // Model 模块 API（仅包含 Model 模块自己的功能）
-import client from './client'
+import client, { refreshAuthorizationOnForbidden } from './client'
 import { createAPIClient } from '@common-ui'
 import { useAuthStore } from '../store/auth'
 
-const standardClient = createAPIClient(() => useAuthStore(), { moduleName: 'Standard' })
+const standardClient = refreshAuthorizationOnForbidden(
+  createAPIClient(() => useAuthStore(), { moduleName: 'Standard' })
+)
 
 const PAGE_SIZE = 100
 

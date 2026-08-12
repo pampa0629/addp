@@ -1,12 +1,10 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 // 导入 Element Plus 深色模式 CSS
 import 'element-plus/theme-chalk/dark/css-vars.css'
 // 导入统一主题 CSS
 import '@common-ui/styles/theme.css'
-import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import App from './App.vue'
 import router from './router'
 // 导入主题管理
@@ -17,11 +15,6 @@ import enMessages from './i18n/en.json'
 
 const app = createApp(App)
 
-// 注册所有图标
-for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
-  app.component(key, component)
-}
-
 const { i18n, init: initI18n } = createAddpI18n({
   moduleMessages: { 'zh-cn': zhCnMessages, 'en': enMessages },
   listenToConsole: true,
@@ -30,7 +23,6 @@ const { i18n, init: initI18n } = createAddpI18n({
 app.use(createPinia())
 app.use(router)
 app.use(i18n)
-app.use(ElementPlus)
 
 // 初始化主题系统
 const { init: initTheme } = useTheme({

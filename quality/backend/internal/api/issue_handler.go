@@ -22,7 +22,7 @@ func NewIssueHandler(svc *service.IssueService) *IssueHandler {
 // @Summary 获取问题工单列表 | List quality issues
 // @Tags Issue
 // @Produce json
-// @Param status query string false "状态 | Status"
+// @Param status query string false "状态 | Status" Enums(open,resolved,ignored)
 // @Param engine_id query int false "引擎ID | Engine ID"
 // @Param page query int false "页码 | Page" default(1)
 // @Param page_size query int false "每页数量 | Page size" default(20) maximum(100)

@@ -113,6 +113,7 @@
                       {{ t('model.star_schema.detail') }}
                     </el-button>
                     <el-button
+                      v-if="canModifyDimensionRelation(rel)"
                       link
                       type="danger"
                       size="small"
@@ -476,32 +477,35 @@ const onDimTableChange = async (dimTableId) => {
   try {
     const res = await logicalTableAPI.getFields(dimTableId)
     dimTableFields.value = res || []
-  } catch {}
+  } catch (err) {
+    ElMessage.error(getModelErrorMessage(err, t, 'model.star_schema.load_failed'))
+  }
 }
 
 const handleAddDimRelation = async () => {
   if (!addDimFormRef.value) return
-  await addDimFormRef.value.validate(async (valid) => {
-    if (!valid) return
-    addingDim.value = true
-    try {
-      await logicalTableAPI.addDimensionRelation(selectedTable.value.id, {
-        target_table: addDimForm.value.target_table,
-        source_field: addDimForm.value.source_field,
-        target_field: addDimForm.value.target_field,
-        relation_type: addDimForm.value.relation_type,
-      })
-      ElMessage.success(t('model.star_schema.add_success'))
-      addDimDialogVisible.value = false
-      // 刷新关联列表
-      const res = await logicalTableAPI.listDimensionRelations(selectedTable.value.id)
-      dimensionRelations.value = res || []
-    } catch (e) {
-      ElMessage.error(e?.response?.data?.error || t('model.star_schema.add_failed'))
-    } finally {
-      addingDim.value = false
-    }
-  })
+  try {
+    await addDimFormRef.value.validate()
+  } catch {
+    return
+  }
+  addingDim.value = true
+  try {
+    await logicalTableAPI.addDimensionRelation(selectedTable.value.id, {
+      target_table: addDimForm.value.target_table,
+      source_field: addDimForm.value.source_field,
+      target_field: addDimForm.value.target_field,
+      relation_type: addDimForm.value.relation_type,
+    })
+    ElMessage.success(t('model.star_schema.add_success'))
+    addDimDialogVisible.value = false
+    const res = await logicalTableAPI.listDimensionRelations(selectedTable.value.id)
+    dimensionRelations.value = res || []
+  } catch (e) {
+    ElMessage.error(getModelErrorMessage(e, t, 'model.star_schema.add_failed'))
+  } finally {
+    addingDim.value = false
+  }
 }
 
 const handleRemoveDimRelation = async (rel) => {
@@ -519,7 +523,7 @@ const handleRemoveDimRelation = async (rel) => {
     ElMessage.success(t('model.star_schema.remove_success'))
     dimensionRelations.value = dimensionRelations.value.filter(r => r.id !== rel.id)
   } catch (e) {
-    ElMessage.error(e?.response?.data?.error || t('model.star_schema.remove_failed'))
+    ElMessage.error(getModelErrorMessage(e, t, 'model.star_schema.remove_failed'))
   }
 }
 

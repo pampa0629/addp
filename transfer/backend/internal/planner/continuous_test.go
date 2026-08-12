@@ -142,7 +142,7 @@ func TestBuildDatabaseCDCContinuousPlanMapsFrozenPostgreSQLSpatialFactsToTarget(
 		12: {Type: "postgresql", ConnInfo: engineplugin.ConnectionInfo{"database": "business"}},
 		20: {Type: "postgresql", Capabilities: &targetCaps},
 	}, DatabaseCDCStreamBinding{
-		Provider:      "postgresql",
+		Provider: "postgresql", ConnectorName: "connector",
 		ConnInfo:      engineplugin.ConnectionInfo{"bootstrap_servers": "infra"},
 		ConsumerGroup: "group", SourceIdentity: "addp://engine/12/path/public/orders?type=table",
 		Database: "business", Schema: "public", Table: "orders",
@@ -168,7 +168,7 @@ func TestBuildDatabaseCDCContinuousPlanRoutesMySQLEnvelope(t *testing.T) {
 	plan, err := BuildDatabaseCDCContinuousPlan(spec, StaticEngineResolver{
 		12: {Type: "mysql"}, 20: {Type: "postgresql", Capabilities: &targetCaps},
 	}, DatabaseCDCStreamBinding{
-		Provider: "mysql", ConnInfo: engineplugin.ConnectionInfo{"bootstrap_servers": "infra"},
+		Provider: "mysql", ConnectorName: "connector", ConnInfo: engineplugin.ConnectionInfo{"bootstrap_servers": "infra"},
 		ConsumerGroup: "group", SourceIdentity: "addp://engine/12/path/business/orders?type=table",
 		Database: "business", Table: "orders",
 	}, 100)
@@ -192,7 +192,7 @@ func TestBuildDatabaseCDCContinuousPlanRoutesOracleEnvelope(t *testing.T) {
 		12: {Type: "oracle", ConnInfo: engineplugin.ConnectionInfo{"service_name": "FREEPDB1"}},
 		20: {Type: "postgresql", Capabilities: &targetCaps},
 	}, DatabaseCDCStreamBinding{
-		Provider: "oracle", ConnInfo: engineplugin.ConnectionInfo{"bootstrap_servers": "infra"},
+		Provider: "oracle", ConnectorName: "connector", ConnInfo: engineplugin.ConnectionInfo{"bootstrap_servers": "infra"},
 		ConsumerGroup: "group", SourceIdentity: "addp://engine/12/path/BUSINESS/CUSTOMERS?type=table",
 		Database: "FREEPDB1", Schema: "BUSINESS", Table: "CUSTOMERS",
 	}, 100)
@@ -222,7 +222,7 @@ func TestBuildDatabaseCDCContinuousPlanMapsOracleSpatialMirrorFacts(t *testing.T
 		12: {Type: "oracle", ConnInfo: engineplugin.ConnectionInfo{"service_name": "FREEPDB1"}},
 		20: {Type: "postgresql", Capabilities: &targetCaps},
 	}, DatabaseCDCStreamBinding{
-		Provider: "oracle", ConnInfo: engineplugin.ConnectionInfo{"bootstrap_servers": "infra"},
+		Provider: "oracle", ConnectorName: "connector", ConnInfo: engineplugin.ConnectionInfo{"bootstrap_servers": "infra"},
 		ConsumerGroup: "group", SourceIdentity: "addp://engine/12/path/BUSINESS/CUSTOMER_LOCATIONS?type=table",
 		Database: "FREEPDB1", Schema: "BUSINESS", Table: "CUSTOMER_LOCATIONS", CaptureTable: "ADDP_M_2",
 		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("SHAPE", "Point", 4326, 2),
@@ -248,7 +248,7 @@ func TestBuildDatabaseCDCContinuousPlanRejectsOracleStreamIdentityMismatch(t *te
 		12: {Type: "oracle", ConnInfo: engineplugin.ConnectionInfo{"service_name": "FREEPDB1"}},
 		20: {Type: "postgresql", Capabilities: &targetCaps},
 	}, DatabaseCDCStreamBinding{
-		Provider: "oracle", ConnInfo: engineplugin.ConnectionInfo{"bootstrap_servers": "infra"},
+		Provider: "oracle", ConnectorName: "connector", ConnInfo: engineplugin.ConnectionInfo{"bootstrap_servers": "infra"},
 		ConsumerGroup: "group", SourceIdentity: "addp://engine/12/path/BUSINESS/CUSTOMERS?type=table",
 		Database: "WRONGPDB", Schema: "BUSINESS", Table: "CUSTOMERS",
 	}, 100)
@@ -269,7 +269,7 @@ func TestBuildDatabaseCDCContinuousPlanAcceptsMySQLTarget(t *testing.T) {
 		12: {Type: "postgresql", ConnInfo: engineplugin.ConnectionInfo{"database": "business"}},
 		20: {Type: "mysql", Capabilities: &targetCaps},
 	}, DatabaseCDCStreamBinding{
-		Provider: "postgresql", ConnInfo: engineplugin.ConnectionInfo{"bootstrap_servers": "infra"},
+		Provider: "postgresql", ConnectorName: "connector", ConnInfo: engineplugin.ConnectionInfo{"bootstrap_servers": "infra"},
 		ConsumerGroup: "group", SourceIdentity: "addp://engine/12/path/public/orders?type=table",
 		Database: "business", Schema: "public", Table: "orders",
 	}, 100)

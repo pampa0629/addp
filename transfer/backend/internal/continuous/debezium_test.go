@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -111,6 +112,77 @@ func TestDecodeMySQLDebeziumRecordNormalizesAndValidatesExactSource(t *testing.T
 	_, err = decodeMySQLDebeziumRecord(plugin.ChangeRecord{Key: []byte(`{"id":1}`), Value: []byte(badDeleteBefore)}, plan)
 	if !errors.As(err, &schemaErr) || !containsTestString(schemaErr.UnexpectedFields, "extra") {
 		t.Fatalf("MySQL delete before schema drift error = %#v", err)
+	}
+}
+
+func TestDecodeDebeziumSnapshotNotifications(t *testing.T) {
+	plan := mysqlCDCAdapterPlan()
+	plan.CDC.ConnectorName = "addp-cdc-task42-g1"
+	for _, notificationType := range []string{"STARTED", "IN_PROGRESS", "TABLE_SCAN_COMPLETED", "COMPLETED"} {
+		t.Run(notificationType, func(t *testing.T) {
+			value := fmt.Sprintf(`{"id":"notification-1","type":%q,"aggregate_type":"Initial Snapshot","additional_data":{"connector_name":"addp-cdc-task42-g1"},"timestamp":1786528984676}`, notificationType)
+			event, err := decodeMySQLDebeziumRecord(plugin.ChangeRecord{Value: []byte(value)}, plan)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if event.Operation != changeEventOperationSkip {
+				t.Fatalf("operation = %q, want skip", event.Operation)
+			}
+			if event.SnapshotComplete != (notificationType == "COMPLETED") {
+				t.Fatalf("SnapshotComplete = %v for %s", event.SnapshotComplete, notificationType)
+			}
+		})
+	}
+}
+
+func TestDecodeDebeziumSnapshotNotificationRejectsWrongConnectorAndUnknownType(t *testing.T) {
+	plan := mysqlCDCAdapterPlan()
+	plan.CDC.ConnectorName = "expected"
+	for _, value := range []string{
+		`{"id":"1","type":"COMPLETED","aggregate_type":"Initial Snapshot","additional_data":{"connector_name":"other"},"timestamp":1}`,
+		`{"id":"1","type":"PAUSED","aggregate_type":"Initial Snapshot","additional_data":{"connector_name":"expected"},"timestamp":1}`,
+		`{"id":"1","type":"COMPLETED","aggregate_type":"Initial Snapshot","additional_data":{},"timestamp":1}`,
+	} {
+		if _, err := decodeMySQLDebeziumRecord(plugin.ChangeRecord{Value: []byte(value)}, plan); err == nil {
+			t.Fatalf("notification %s was accepted", value)
+		}
+	}
+}
+
+func TestMapPartitionRecordsSnapshotCompletedNotificationUsesSkipAndTriggersScan(t *testing.T) {
+	plan := mysqlCDCAdapterPlan()
+	plan.CDC.ConnectorName = "expected"
+	record := plugin.ChangeRecord{
+		Partition: "0", Offset: 2, Position: kafkaOffsetPosition("0", 3),
+		Value: []byte(`{"id":"1","type":"COMPLETED","aggregate_type":"Initial Snapshot","additional_data":{"connector_name":"expected"},"timestamp":1}`),
+	}
+	changes, err := mapPartitionRecords([]plugin.ChangeRecord{record}, kafkaOffsetPosition("0", 0), plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changes) != 1 || changes[0].Operation != plugin.TableChangeOperationSkip || changes[0].Row != nil {
+		t.Fatalf("mapped notification = %#v", changes)
+	}
+	if !shouldScanContinuousTargetAfterBatch(plan, []plugin.ChangeRecord{record}) {
+		t.Fatal("COMPLETED notification did not mark snapshot complete")
+	}
+}
+
+func TestDatabaseCDCInitialSnapshotCompletionMarkerSurvivesPositionRoundTrip(t *testing.T) {
+	position := withDatabaseCDCInitialSnapshotCommitted(kafkaOffsetPosition("0", 9))
+	if !databaseCDCInitialSnapshotCommitted(map[string]plugin.ChangeStreamPosition{"0": position}) {
+		t.Fatal("completion marker was not detected")
+	}
+	encoded, err := json.Marshal(position)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded plugin.ChangeStreamPosition
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if !databaseCDCInitialSnapshotCommitted(map[string]plugin.ChangeStreamPosition{"0": decoded}) {
+		t.Fatal("completion marker did not survive JSON position round trip")
 	}
 }
 
@@ -502,7 +574,7 @@ func mysqlCDCAdapterPlan() *planner.ContinuousPlan {
 			{Source: "name", Target: "name", Type: datatype.FieldTypeString, Nullable: true},
 		},
 		SourceKeys: []string{"id"}, Target: planner.ContinuousTargetPlan{Keys: []string{"id"}},
-		CDC: &planner.DatabaseCDCSourcePlan{Provider: "mysql", Database: "business", Table: "orders"},
+		CDC: &planner.DatabaseCDCSourcePlan{Provider: "mysql", ConnectorName: "test-connector", Database: "business", Table: "orders"},
 	}
 }
 
@@ -515,7 +587,7 @@ func oracleCDCAdapterPlan() *planner.ContinuousPlan {
 			{Source: "CREATED_AT", Target: "created_at", Type: datatype.FieldTypeTimestamp, Nullable: false},
 		},
 		SourceKeys: []string{"ID"}, Target: planner.ContinuousTargetPlan{Keys: []string{"id"}},
-		CDC: &planner.DatabaseCDCSourcePlan{Provider: "oracle", Database: "FREEPDB1", Schema: "BUSINESS", Table: "CUSTOMERS"},
+		CDC: &planner.DatabaseCDCSourcePlan{Provider: "oracle", ConnectorName: "test-connector", Database: "FREEPDB1", Schema: "BUSINESS", Table: "CUSTOMERS"},
 	}
 }
 

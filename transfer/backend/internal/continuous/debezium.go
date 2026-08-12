@@ -23,11 +23,19 @@ const (
 	changeEventOperationSnapshot = "snapshot"
 	changeEventOperationUpsert   = "upsert"
 	changeEventOperationDelete   = "delete"
+	changeEventOperationSkip     = "skip"
 )
 
 type ChangeEvent struct {
-	Operation string
-	Row       map[string]interface{}
+	Operation        string
+	Row              map[string]interface{}
+	SnapshotComplete bool
+}
+
+type debeziumSnapshotNotification struct {
+	Type      string
+	Connector string
+	Completed bool
 }
 
 type SchemaChangeError struct {
@@ -73,6 +81,12 @@ func decodeDatabaseDebeziumRecord(record engineplugin.ChangeRecord, plan *planne
 	value := bytes.TrimSpace(record.Value)
 	if len(value) == 0 || bytes.Equal(value, []byte("null")) {
 		return nil, fmt.Errorf("Debezium tombstone records are not supported")
+	}
+	if notification, ok, err := decodeDebeziumSnapshotNotification(value, plan); ok || err != nil {
+		if err != nil {
+			return nil, err
+		}
+		return &ChangeEvent{Operation: changeEventOperationSkip, SnapshotComplete: notification.Completed}, nil
 	}
 	envelope, err := decodeRawJSONObject(value, "Debezium value")
 	if err != nil {
@@ -158,7 +172,69 @@ func decodeDatabaseDebeziumRecord(record engineplugin.ChangeRecord, plan *planne
 	if op == "r" {
 		operation = changeEventOperationSnapshot
 	}
-	return &ChangeEvent{Operation: operation, Row: row}, nil
+	return &ChangeEvent{
+		Operation: operation,
+		Row:       row,
+	}, nil
+}
+
+func decodeDebeziumSnapshotNotification(value []byte, plan *planner.ContinuousPlan) (*debeziumSnapshotNotification, bool, error) {
+	object, err := decodeRawJSONObject(value, "Debezium value")
+	if err != nil {
+		return nil, false, nil
+	}
+	markers := []string{"id", "type", "aggregate_type", "additional_data", "timestamp"}
+	looksLikeNotification := false
+	for _, field := range markers {
+		if _, ok := object[field]; ok {
+			looksLikeNotification = true
+			break
+		}
+	}
+	if !looksLikeNotification {
+		return nil, false, nil
+	}
+	if err := validateObjectFields(object, markers, markers, "Debezium snapshot notification"); err != nil {
+		return nil, true, err
+	}
+	var id, notificationType, aggregateType string
+	if err := json.Unmarshal(object["id"], &id); err != nil || strings.TrimSpace(id) == "" {
+		return nil, true, incompatibleSchemaField("Debezium snapshot notification", "id")
+	}
+	if err := json.Unmarshal(object["type"], &notificationType); err != nil {
+		return nil, true, incompatibleSchemaField("Debezium snapshot notification", "type")
+	}
+	if notificationType != "STARTED" && notificationType != "IN_PROGRESS" && notificationType != "TABLE_SCAN_COMPLETED" && notificationType != "COMPLETED" {
+		return nil, true, fmt.Errorf("unsupported Debezium snapshot notification type %q", notificationType)
+	}
+	if err := json.Unmarshal(object["aggregate_type"], &aggregateType); err != nil || aggregateType != "Initial Snapshot" {
+		return nil, true, incompatibleSchemaField("Debezium snapshot notification", "aggregate_type")
+	}
+	var timestamp json.Number
+	if err := json.Unmarshal(object["timestamp"], &timestamp); err != nil {
+		return nil, true, incompatibleSchemaField("Debezium snapshot notification", "timestamp")
+	}
+	if _, err := timestamp.Int64(); err != nil || strings.HasPrefix(timestamp.String(), "-") {
+		return nil, true, incompatibleSchemaField("Debezium snapshot notification", "timestamp")
+	}
+	additional, err := decodeRawJSONObject(object["additional_data"], "Debezium snapshot notification additional_data")
+	if err != nil {
+		return nil, true, err
+	}
+	if err := validateObjectFields(additional, []string{"connector_name"}, []string{"connector_name"}, "Debezium snapshot notification additional_data"); err != nil {
+		return nil, true, err
+	}
+	var connectorName string
+	if err := json.Unmarshal(additional["connector_name"], &connectorName); err != nil || strings.TrimSpace(connectorName) == "" {
+		return nil, true, incompatibleSchemaField("Debezium snapshot notification additional_data", "connector_name")
+	}
+	if plan == nil || plan.CDC == nil || strings.TrimSpace(plan.CDC.ConnectorName) == "" {
+		return nil, true, fmt.Errorf("Debezium snapshot notification requires expected connector name")
+	}
+	if connectorName != plan.CDC.ConnectorName {
+		return nil, true, fmt.Errorf("Debezium snapshot notification connector %q does not match expected %q", connectorName, plan.CDC.ConnectorName)
+	}
+	return &debeziumSnapshotNotification{Type: notificationType, Connector: connectorName, Completed: notificationType == "COMPLETED"}, true, nil
 }
 
 func validatePostgreSQLDebeziumSource(raw json.RawMessage, expected *planner.DatabaseCDCSourcePlan, _ string) error {

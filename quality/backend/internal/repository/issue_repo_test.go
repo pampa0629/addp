@@ -64,7 +64,7 @@ func TestIssueReconcileIsIdempotentAndReopensResolvedIssues(t *testing.T) {
 	if err := db.First(&issue, issueID).Error; err != nil {
 		t.Fatalf("reload resolved issue: %v", err)
 	}
-	if issue.Status != "resolved" || issue.LastExecutionID != "execution-3" || issue.ResolvedAt == nil {
+	if issue.Status != "resolved" || issue.LastExecutionID != "execution-3" || issue.ResolvedAt == nil || issue.ResolvedBy != nil || issue.ResolutionNote != "" {
 		t.Fatalf("resolved issue = %#v", issue)
 	}
 
@@ -92,6 +92,13 @@ func TestIssueUpdateStatusRequiresNoteAndOpenState(t *testing.T) {
 	}
 	if err := repo.UpdateStatus(context.Background(), issue.ID, issue.TenantID, 99, "resolved", "fixed source data"); err != nil {
 		t.Fatalf("resolve issue: %v", err)
+	}
+	issue = models.Issue{}
+	if err := db.First(&issue, 1).Error; err != nil {
+		t.Fatalf("reload manually resolved issue: %v", err)
+	}
+	if issue.ResolvedAt == nil || issue.ResolvedBy == nil || *issue.ResolvedBy != 99 || issue.ResolutionNote != "fixed source data" {
+		t.Fatalf("manual resolution audit = %#v", issue)
 	}
 	if err := repo.UpdateStatus(context.Background(), issue.ID, issue.TenantID, 99, "ignored", "second transition"); !errors.Is(err, commonAPI.ErrConflict) {
 		t.Fatalf("second transition error = %v, want conflict", err)

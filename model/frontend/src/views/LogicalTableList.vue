@@ -121,7 +121,7 @@
             <el-option :label="t('model.logical_table.type_dimension')" value="dimension" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="t('model.logical_table.layer')">
+        <el-form-item :label="t('model.logical_table.layer')" prop="layer">
           <el-select v-model="createForm.layer" :placeholder="t('model.logical_table.layer_placeholder')" style="width:100%">
             <el-option v-for="layer in layers" :key="layer.layer_code" :label="layer.layer_name" :value="layer.layer_code" />
           </el-select>
@@ -171,7 +171,8 @@ const createForm = reactive({ name: '', code: '', domain_id: null, table_type: '
 const createRules = {
   name: [{ required: true, message: t('model.logical_table.name_required'), trigger: 'blur' }],
   code: [{ required: true, message: t('model.logical_table.code_required'), trigger: 'blur' }],
-  table_type: [{ required: true, message: t('model.logical_table.type_required'), trigger: 'change' }]
+  table_type: [{ required: true, message: t('model.logical_table.type_required'), trigger: 'change' }],
+  layer: [{ required: true, message: t('model.logical_table.layer_required'), trigger: 'change' }]
 }
 
 const layerTagType = (layer) => ({ ods: '', dwd: 'success', dws: 'warning', ads: 'danger' }[layer] ?? 'info')

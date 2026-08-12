@@ -117,17 +117,29 @@ func (r *DataSessionRunner) Run(ctx context.Context, claim repository.RuntimeLea
 	if err := target.PreparePartitionedTableChangeApply(ctx, plan.Target.ConnInfo, plan.Target.Path, applyOptions); err != nil {
 		return fmt.Errorf("prepare continuous target: %w", err)
 	}
+	metadataScanPending := claim.Task.AutoScanMetadata && plan.CDC != nil
 	if claim.Task.AutoScanMetadata {
 		if r.MetadataScanner == nil {
 			return fmt.Errorf("continuous target metadata scanner is required when auto_scan_metadata is enabled")
-		}
-		if err := r.MetadataScanner.ScanPreparedTarget(ctx, claim, plan); err != nil {
-			return fmt.Errorf("scan prepared continuous target metadata: %w", err)
 		}
 	}
 	committed, committedAtByPartition, err := r.committedPositions(ctx, claim.Task.ID, plan.Source.SourceIdentity)
 	if err != nil {
 		return err
+	}
+	if claim.Task.AutoScanMetadata {
+		if plan.CDC == nil {
+			if err := r.MetadataScanner.ScanPreparedTarget(ctx, claim, plan); err != nil {
+				return fmt.Errorf("scan prepared continuous target metadata: %w", err)
+			}
+		} else if claim.Task.InitialMetadataScanStatus != models.InitialMetadataScanSuccess && databaseCDCInitialSnapshotCommitted(committed) {
+			// The completion fact is stored with the committed sync position, so a
+			// session can retry Meta after a crash or a prior Meta submission failure.
+			if err := r.MetadataScanner.ScanPreparedTarget(ctx, claim, plan); err != nil {
+				return fmt.Errorf("retry continuous target metadata scan: %w", err)
+			}
+			metadataScanPending = false
+		}
 	}
 	pollTimeout := r.PollTimeout
 	if pollTimeout <= 0 {
@@ -263,6 +275,10 @@ func (r *DataSessionRunner) Run(ctx context.Context, claim repository.RuntimeLea
 			if result == nil {
 				return fmt.Errorf("apply continuous partition %q returned nil result", group.partition)
 			}
+			snapshotComplete := metadataScanPending && shouldScanContinuousTargetAfterBatch(plan, group.records)
+			if snapshotComplete {
+				result.Position = withDatabaseCDCInitialSnapshotCommitted(result.Position)
+			}
 			if err := r.States.CommitContinuousPosition(
 				ctx, state.ID, claim.Task.ID, state.StateVersion, claim.Lease.FencingToken,
 				claim.Lease.OwnerInstanceID, positionJSON(result.Position), claim.Execution.ExecutionID,
@@ -281,8 +297,60 @@ func (r *DataSessionRunner) Run(ctx context.Context, claim repository.RuntimeLea
 			}); err != nil {
 				return fmt.Errorf("record continuous progress: %w", err)
 			}
+			if snapshotComplete {
+				if err := r.MetadataScanner.ScanPreparedTarget(ctx, claim, plan); err != nil {
+					return fmt.Errorf("scan applied continuous target metadata: %w", err)
+				}
+				metadataScanPending = false
+			}
 		}
 	}
+}
+
+const databaseCDCInitialSnapshotCommittedKey = "initial_snapshot_completed"
+
+func withDatabaseCDCInitialSnapshotCommitted(position engineplugin.ChangeStreamPosition) engineplugin.ChangeStreamPosition {
+	if position.Values == nil {
+		position.Values = map[string]string{}
+	}
+	position.Values[databaseCDCInitialSnapshotCommittedKey] = "true"
+	return position
+}
+
+func databaseCDCInitialSnapshotCommitted(positions map[string]engineplugin.ChangeStreamPosition) bool {
+	for _, position := range positions {
+		if position.Values[databaseCDCInitialSnapshotCommittedKey] == "true" {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldScanContinuousTargetAfterBatch(plan *planner.ContinuousPlan, records []engineplugin.ChangeRecord) bool {
+	if plan == nil || len(records) == 0 {
+		return false
+	}
+	if plan.CDC == nil {
+		return true
+	}
+	for _, record := range records {
+		var event *ChangeEvent
+		var err error
+		switch plan.Envelope {
+		case planner.ContinuousEnvelopePostgreSQLDebezium:
+			event, err = decodePostgreSQLDebeziumRecord(record, plan)
+		case planner.ContinuousEnvelopeMySQLDebezium:
+			event, err = decodeMySQLDebeziumRecord(record, plan)
+		case planner.ContinuousEnvelopeOracleDebezium:
+			event, err = decodeOracleDebeziumRecord(record, plan)
+		default:
+			return false
+		}
+		if err == nil && event != nil && event.SnapshotComplete {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *DataSessionRunner) mapPartitionRecords(
@@ -348,7 +416,7 @@ func (r *DataSessionRunner) buildPlan(ctx context.Context, claim repository.Runt
 			captureTable = resource.Oracle.SpatialMirrorTableName
 		}
 		return planner.BuildDatabaseCDCContinuousPlan(spec, resolver, planner.DatabaseCDCStreamBinding{
-			Provider: string(resource.SourceType),
+			Provider: string(resource.SourceType), ConnectorName: resource.ConnectorName,
 			ConnInfo: r.InfraKafkaConnection, Path: internalKafkaTopicPath(resource.TopicName),
 			ConsumerGroup: resource.ConsumerGroup, SourceIdentity: resource.SourceIdentity,
 			Database: resource.SourceDatabase, Schema: resource.SourceSchema, Table: resource.SourceTable, CaptureTable: captureTable,
@@ -571,6 +639,8 @@ func mapPartitionRecords(records []engineplugin.ChangeRecord, start engineplugin
 					operation = engineplugin.TableChangeOperationUpsert
 				case changeEventOperationDelete:
 					operation = engineplugin.TableChangeOperationDelete
+				case changeEventOperationSkip:
+					operation = engineplugin.TableChangeOperationSkip
 				default:
 					err = fmt.Errorf("unsupported normalized change event operation %q", event.Operation)
 				}
@@ -585,6 +655,8 @@ func mapPartitionRecords(records []engineplugin.ChangeRecord, start engineplugin
 					operation = engineplugin.TableChangeOperationUpsert
 				case changeEventOperationDelete:
 					operation = engineplugin.TableChangeOperationDelete
+				case changeEventOperationSkip:
+					operation = engineplugin.TableChangeOperationSkip
 				default:
 					err = fmt.Errorf("unsupported normalized change event operation %q", event.Operation)
 				}
@@ -599,6 +671,8 @@ func mapPartitionRecords(records []engineplugin.ChangeRecord, start engineplugin
 					operation = engineplugin.TableChangeOperationUpsert
 				case changeEventOperationDelete:
 					operation = engineplugin.TableChangeOperationDelete
+				case changeEventOperationSkip:
+					operation = engineplugin.TableChangeOperationSkip
 				default:
 					err = fmt.Errorf("unsupported normalized change event operation %q", event.Operation)
 				}

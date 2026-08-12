@@ -964,6 +964,10 @@ paths:
     get:
       parameters:
       - description: 状态 | Status
+        enum:
+        - open
+        - resolved
+        - ignored
         in: query
         name: status
         type: string

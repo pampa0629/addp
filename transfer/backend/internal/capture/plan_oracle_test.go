@@ -56,6 +56,9 @@ func TestBuildOracleConnectorConfigCapturesSpatialMirrorAsBase64LOB(t *testing.T
 	if config["table.include.list"] != `BUSINESS\.ADDP_M_2` || config["lob.enabled"] != "true" || config["binary.handling.mode"] != "base64" {
 		t.Fatalf("Oracle Spatial connector config = %#v", config)
 	}
+	if config["notification.enabled.channels"] != "sink" || config["notification.sink.topic.name"] != resource.TopicName {
+		t.Fatalf("Oracle snapshot notification config = %#v", config)
+	}
 }
 
 func TestOracleCDCTemporalPrecisionUsesTimestampDataScale(t *testing.T) {

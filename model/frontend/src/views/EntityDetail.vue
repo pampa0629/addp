@@ -503,8 +503,8 @@ const handleApprove = async () => {
     await entityAPI.approve(entityId.value)
     ElMessage.success(t('model.entity.approve_success'))
     loadEntity()
-  } catch {
-    ElMessage.error(t('model.entity.approve_failed'))
+  } catch (err) {
+    ElMessage.error(getModelErrorMessage(err, t, 'model.entity.approve_failed'))
   }
 }
 
@@ -565,8 +565,8 @@ const deleteAttr = async (attrId) => {
     await entityAPI.deleteAttribute(entityId.value, attrId)
     ElMessage.success(t('model.common.delete_success'))
     loadAttributes()
-  } catch {
-    ElMessage.error(t('model.common.delete_failed'))
+  } catch (err) {
+    ElMessage.error(getModelErrorMessage(err, t, 'model.common.delete_failed'))
   }
 }
 
@@ -630,8 +630,8 @@ const deleteRelation = async (relationId) => {
     await entityRelationAPI.delete(relationId)
     ElMessage.success(t('model.common.delete_success'))
     loadRelations()
-  } catch {
-    ElMessage.error(t('model.common.delete_failed'))
+  } catch (err) {
+    ElMessage.error(getModelErrorMessage(err, t, 'model.common.delete_failed'))
   }
 }
 

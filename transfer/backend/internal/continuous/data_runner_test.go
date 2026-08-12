@@ -130,7 +130,7 @@ func TestDataSessionRunnerConsumesRegisteredPostgreSQLCDCGeneration(t *testing.T
 	runner := &DataSessionRunner{
 		Resolver: resolver, States: states, Progress: progress,
 		Captures: &fakeCaptureStore{resource: &models.CaptureResource{
-			TaskID: 42, TenantID: 7, SourceType: models.CaptureSourcePostgreSQL, Status: models.CaptureStatusRunning,
+			TaskID: 42, TenantID: 7, ConnectorName: "addp-cdc.7.42.1", SourceType: models.CaptureSourcePostgreSQL, Status: models.CaptureStatusRunning,
 			TopicName: "__addp_cdc.7.42.1", ConsumerGroup: "__addp_cdc_consumer.7.42.1",
 			SourceIdentity: "addp://engine/12/path/public/orders?type=table",
 			SourceDatabase: "business", SourceSchema: "public", SourceTable: "orders",
@@ -194,7 +194,7 @@ func TestDataSessionRunnerConsumesRegisteredMySQLCDCGeneration(t *testing.T) {
 	runner := &DataSessionRunner{
 		Resolver: resolver, States: &fakeContinuousStateStore{target: target}, Progress: progress,
 		Captures: &fakeCaptureStore{resource: &models.CaptureResource{
-			TaskID: 42, TenantID: 7, SourceType: models.CaptureSourceMySQL, Status: models.CaptureStatusRunning,
+			TaskID: 42, TenantID: 7, ConnectorName: "addp-cdc.7.42.1", SourceType: models.CaptureSourceMySQL, Status: models.CaptureStatusRunning,
 			TopicName: "__addp_cdc.7.42.1", ConsumerGroup: "__addp_cdc_consumer.7.42.1",
 			SourceIdentity: "addp://engine/12/path/business/orders?type=table",
 			SourceDatabase: "business", SourceTable: "orders", TopicCreated: true, ConnectorCreated: true,
@@ -248,7 +248,7 @@ func TestDataSessionRunnerRecordsIncompatiblePostgreSQLCDCSchemaField(t *testing
 	runner := &DataSessionRunner{
 		Resolver: resolver, States: &fakeContinuousStateStore{target: target}, Progress: progress,
 		Captures: &fakeCaptureStore{resource: &models.CaptureResource{
-			TaskID: 42, TenantID: 7, SourceType: models.CaptureSourcePostgreSQL, Status: models.CaptureStatusRunning,
+			TaskID: 42, TenantID: 7, ConnectorName: "addp-cdc.7.42.1", SourceType: models.CaptureSourcePostgreSQL, Status: models.CaptureStatusRunning,
 			TopicName: "__addp_cdc.7.42.1", ConsumerGroup: "__addp_cdc_consumer.7.42.1",
 			SourceIdentity: "addp://engine/12/path/public/orders?type=table",
 			SourceDatabase: "business", SourceSchema: "public", SourceTable: "orders",

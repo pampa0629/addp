@@ -139,6 +139,11 @@ import { useI18n } from 'vue-i18n'
 import { domainAPI, glossaryAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
+import {
+  buildGlossaryFilterQuery,
+  createGlossaryForm,
+  resolveGlossaryFilters
+} from '../utils/glossaryRouteState'
 
 const { t } = useI18n()
 
@@ -163,42 +168,15 @@ const filters = reactive({
   page_size: 20
 })
 
-const validStatuses = new Set(['draft', 'approved', 'deprecated'])
-
-const parsePositiveInteger = (value, fallback) => {
-  const parsed = Number(value)
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
-}
-
 const applyRouteFilters = (query) => {
-  filters.keyword = typeof query.keyword === 'string' ? query.keyword : ''
-  filters.domain_id = parsePositiveInteger(query.domain_id, null)
-  filters.status = typeof query.status === 'string' && validStatuses.has(query.status) ? query.status : ''
-  filters.page = parsePositiveInteger(query.page, 1)
-  filters.page_size = parsePositiveInteger(query.page_size, 20)
+  Object.assign(filters, resolveGlossaryFilters(query))
 }
 
-const buildFilterQuery = () => {
-  const query = {}
-  if (filters.keyword) query.keyword = filters.keyword
-  if (filters.domain_id) query.domain_id = String(filters.domain_id)
-  if (filters.status) query.status = filters.status
-  if (filters.page > 1) query.page = String(filters.page)
-  if (filters.page_size !== 20) query.page_size = String(filters.page_size)
-  return query
-}
+const buildFilterQuery = () => buildGlossaryFilterQuery(filters)
 
 const syncFilterRoute = () => navigateStandardRoute(router, { path: '/glossaries', query: buildFilterQuery() }, { history: 'replace' })
 
-const form = ref({
-  name: '',
-  alias: [],
-  domain_id: null,
-  definition: '',
-  example: '',
-  note: '',
-  tags: []
-})
+const form = ref(createGlossaryForm(null))
 
 const rules = computed(() => ({
   name: [{ required: true, message: t('standard.glossary.nameRequired'), trigger: 'blur' }],
@@ -267,7 +245,7 @@ const handleFilterChange = () => {
 const openCreateDialog = () => {
   editMode.value = false
   editingId.value = null
-  form.value = { name: '', alias: [], domain_id: filters.domain_id, definition: '', example: '', note: '', tags: [] }
+  form.value = createGlossaryForm(filters.domain_id)
   dialogVisible.value = true
 }
 

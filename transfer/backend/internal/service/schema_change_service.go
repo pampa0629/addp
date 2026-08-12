@@ -152,7 +152,7 @@ func (s *TaskService) ApproveSchemaChange(ctx context.Context, taskID, tenantID,
 		}
 		resolver := planner.BindEngineResolver(s.engineResolver, tenantID)
 		continuousPlan, err := planner.BuildDatabaseCDCContinuousPlan(updatedSpec, resolver, planner.DatabaseCDCStreamBinding{
-			Provider: string(resource.SourceType), ConsumerGroup: resource.ConsumerGroup,
+			Provider: string(resource.SourceType), ConnectorName: resource.ConnectorName, ConsumerGroup: resource.ConsumerGroup,
 			SourceIdentity: resource.SourceIdentity, Database: resource.SourceDatabase,
 			Schema: resource.SourceSchema, Table: resource.SourceTable,
 			SpatialInfo: datatype.SpatialInfoFromPayload(map[string]interface{}(resource.SourceSpatialInfo)),

@@ -219,10 +219,18 @@ const handleInitDefault = async () => {
   initializing.value = true
   try {
     for (const d of defaults) {
-      await dwLayerAPI.create(d).catch(() => {})
+      try {
+        await dwLayerAPI.create(d)
+      } catch (err) {
+        const errorCode = err?.response?.data?.error_code
+        if (err?.response?.status === 409 || errorCode === 'dw_layer_code_conflict') continue
+        throw err
+      }
     }
     ElMessage.success(t('model.dw_layer.init_success'))
     loadLayers()
+  } catch (err) {
+    ElMessage.error(getModelErrorMessage(err, t, 'model.dw_layer.init_failed'))
   } finally {
     initializing.value = false
   }
