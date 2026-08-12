@@ -32,7 +32,7 @@ type Unit struct {
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 
-	Category *MeasurementCategory `gorm:"foreignKey:CategoryID" json:"category,omitempty"`
+	Category *MeasurementCategory `gorm:"foreignKey:CategoryID;-:migration" json:"category,omitempty"`
 }
 
 func (Unit) TableName() string {

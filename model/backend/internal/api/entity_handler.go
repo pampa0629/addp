@@ -68,7 +68,7 @@ func (h *EntityHandler) ListEntities(c *gin.Context) {
 
 	entities, total, err := h.svc.ListEntities(tenantID, opts)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
+		c.JSON(http.StatusInternalServerError, operationFailedResponse(c))
 		return
 	}
 	totalPages := 0
@@ -94,6 +94,8 @@ func (h *EntityHandler) ListEntities(c *gin.Context) {
 // @Produce json
 // @Param body body models.CreateEntityRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{} "已创建的实体 | Created entity"
+// @Failure 400 {object} models.ErrorResponse "请求无效 | Invalid request"
+// @Failure 409 {object} models.ErrorResponse "实体编码冲突 | Entity code conflict"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.entity.create"]
 // @Router /entities [post]
@@ -101,7 +103,7 @@ func (h *EntityHandler) ListEntities(c *gin.Context) {
 func (h *EntityHandler) CreateEntity(c *gin.Context) {
 	var req models.CreateEntityRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
 		return
 	}
 
@@ -110,7 +112,7 @@ func (h *EntityHandler) CreateEntity(c *gin.Context) {
 
 	entity, err := h.svc.CreateEntity(&req, tenantID, userID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
+		writeServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, entity)
@@ -128,15 +130,15 @@ func (h *EntityHandler) CreateEntity(c *gin.Context) {
 // @Security BearerAuth
 func (h *EntityHandler) GetEntity(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidID), "invalid_id"))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	entity, err := h.svc.GetEntity(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, errorResponse(commoni18n.T(c, modeli18n.MsgEntityNotFound)))
+		writeServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, entity)
@@ -150,20 +152,22 @@ func (h *EntityHandler) GetEntity(c *gin.Context) {
 // @Param id path int true "实体ID | Entity ID"
 // @Param body body models.UpdateEntityRequest true "更新请求 | Update request"
 // @Success 200 {object} map[string]interface{} "已更新的实体 | Updated entity"
+// @Failure 404 {object} models.ErrorResponse "实体不存在 | Entity not found"
+// @Failure 409 {object} models.ErrorResponse "实体状态冲突 | Entity state conflict"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.entity.update"]
 // @Router /entities/{id} [put]
 // @Security BearerAuth
 func (h *EntityHandler) UpdateEntity(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidID), "invalid_id"))
 		return
 	}
 
 	var req models.UpdateEntityRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
 		return
 	}
 
@@ -172,7 +176,7 @@ func (h *EntityHandler) UpdateEntity(c *gin.Context) {
 
 	entity, err := h.svc.UpdateEntity(id, tenantID, userID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
+		writeServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, entity)
@@ -184,20 +188,22 @@ func (h *EntityHandler) UpdateEntity(c *gin.Context) {
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Failure 404 {object} models.ErrorResponse "实体不存在 | Entity not found"
+// @Failure 409 {object} models.ErrorResponse "实体状态冲突 | Entity state conflict"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.entity.delete"]
 // @Router /entities/{id} [delete]
 // @Security BearerAuth
 func (h *EntityHandler) DeleteEntity(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidID), "invalid_id"))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	if err := h.svc.DeleteEntity(id, tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
+		writeServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
@@ -209,14 +215,17 @@ func (h *EntityHandler) DeleteEntity(c *gin.Context) {
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
 // @Success 200 {object} map[string]interface{} "审批成功 | Approved successfully"
+// @Failure 400 {object} models.ErrorResponse "实体不满足审批条件 | Entity is not ready for approval"
+// @Failure 404 {object} models.ErrorResponse "实体不存在 | Entity not found"
+// @Failure 409 {object} models.ErrorResponse "实体状态冲突 | Entity state conflict"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.entity.approve"]
 // @Router /entities/{id}/approve [post]
 // @Security BearerAuth
 func (h *EntityHandler) ApproveEntity(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidID), "invalid_id"))
 		return
 	}
 
@@ -224,7 +233,7 @@ func (h *EntityHandler) ApproveEntity(c *gin.Context) {
 	userID := getUserID(c)
 
 	if err := h.svc.ApproveEntity(id, tenantID, userID); err != nil {
-		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
+		writeServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "approved"})
@@ -236,18 +245,20 @@ func (h *EntityHandler) ApproveEntity(c *gin.Context) {
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
 // @Success 200 {object} models.MessageResponse "重新打开成功 | Reopened successfully"
+// @Failure 404 {object} models.ErrorResponse "实体不存在 | Entity not found"
+// @Failure 409 {object} models.ErrorResponse "实体状态冲突 | Entity state conflict"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.entity.update"]
 // @Router /entities/{id}/reopen [post]
 // @Security BearerAuth
 func (h *EntityHandler) ReopenEntity(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidID), "invalid_id"))
 		return
 	}
 	if err := h.svc.ReopenEntity(id, getTenantID(c), getUserID(c)); err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
+		writeServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "reopened"})
@@ -265,15 +276,15 @@ func (h *EntityHandler) ReopenEntity(c *gin.Context) {
 // @Security BearerAuth
 func (h *EntityHandler) GetAttributes(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
+	if err != nil || entityID <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidID), "invalid_id"))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	attrs, err := h.svc.GetAttributes(entityID, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, errorResponse(err.Error()))
+		writeServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, attrs)
@@ -287,27 +298,29 @@ func (h *EntityHandler) GetAttributes(c *gin.Context) {
 // @Param id path int true "实体ID | Entity ID"
 // @Param body body models.CreateEntityAttributeRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{} "已创建的属性 | Created attribute"
+// @Failure 404 {object} models.ErrorResponse "实体或引用资源不存在 | Entity or referenced resource not found"
+// @Failure 409 {object} models.ErrorResponse "实体状态冲突 | Entity state conflict"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.entity.create"]
 // @Router /entities/{id}/attributes [post]
 // @Security BearerAuth
 func (h *EntityHandler) CreateAttribute(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
+	if err != nil || entityID <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidID), "invalid_id"))
 		return
 	}
 
 	var req models.CreateEntityAttributeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	attr, err := h.svc.CreateAttribute(entityID, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
+		writeServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, attr)
@@ -328,26 +341,26 @@ func (h *EntityHandler) CreateAttribute(c *gin.Context) {
 // @Security BearerAuth
 func (h *EntityHandler) UpdateAttribute(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
+	if err != nil || entityID <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidID), "invalid_id"))
 		return
 	}
 	attrID, err := strconv.ParseInt(c.Param("aid"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidAttributeID)))
+	if err != nil || attrID <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidAttributeID), "invalid_attribute_id"))
 		return
 	}
 
 	var req models.UpdateEntityAttributeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	attr, err := h.svc.UpdateAttribute(attrID, entityID, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
+		writeServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, attr)
@@ -366,19 +379,19 @@ func (h *EntityHandler) UpdateAttribute(c *gin.Context) {
 // @Security BearerAuth
 func (h *EntityHandler) DeleteAttribute(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
+	if err != nil || entityID <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidID), "invalid_id"))
 		return
 	}
 	attrID, err := strconv.ParseInt(c.Param("aid"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidAttributeID)))
+	if err != nil || attrID <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidAttributeID), "invalid_attribute_id"))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	if err := h.svc.DeleteAttribute(attrID, entityID, tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
+		writeServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
@@ -391,6 +404,8 @@ func (h *EntityHandler) DeleteAttribute(c *gin.Context) {
 // @Produce json
 // @Param body body models.MermaidImportRequest true "导入请求 | Import request"
 // @Success 200 {object} map[string]interface{} "导入结果 | Import result"
+// @Failure 400 {object} models.ErrorResponse "Mermaid 内容无效 | Invalid Mermaid content"
+// @Failure 409 {object} models.ErrorResponse "存在已审批实体 | Approved entities exist"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.entity.create","model.entity.delete","model.entity_relation.create","model.entity_relation.delete"]
 // @Router /entities/import-mermaid [post]
@@ -398,7 +413,7 @@ func (h *EntityHandler) DeleteAttribute(c *gin.Context) {
 func (h *EntityHandler) ImportMermaid(c *gin.Context) {
 	var req models.MermaidImportRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
 		return
 	}
 
@@ -407,7 +422,7 @@ func (h *EntityHandler) ImportMermaid(c *gin.Context) {
 
 	result, err := h.svc.ImportFromMermaid(tenantID, userID, &req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
+		writeServiceError(c, err)
 		return
 	}
 
@@ -428,7 +443,7 @@ func (h *EntityHandler) ExportMermaid(c *gin.Context) {
 
 	mermaidCode, err := h.svc.ExportToMermaid(tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
+		c.JSON(http.StatusInternalServerError, operationFailedResponse(c))
 		return
 	}
 

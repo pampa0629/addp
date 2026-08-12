@@ -129,6 +129,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { classificationAPI, gradingLevelAPI } from '../api/standard'
+import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 
 const { t } = useI18n()
 const classifications = ref([])
@@ -159,6 +160,9 @@ const loadClassifications = async () => {
   try {
     const res = await classificationAPI.list()
     classifications.value = res || []
+  } catch (e) {
+    classifications.value = []
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
   } finally {
     loadingClassifications.value = false
   }
@@ -169,6 +173,9 @@ const loadGradingLevels = async () => {
   try {
     const res = await gradingLevelAPI.list()
     gradingLevels.value = res || []
+  } catch (e) {
+    gradingLevels.value = []
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
   } finally {
     loadingGrading.value = false
   }
@@ -199,7 +206,7 @@ const saveClassification = async () => {
     showClassificationDialog.value = false
     await loadClassifications()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t))
   } finally {
     saving.value = false
   }
@@ -212,7 +219,7 @@ const deleteClassification = async (data) => {
     ElMessage.success(t('standard.common.deleteSuccess'))
     await loadClassifications()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(e.response?.data?.error || t('standard.common.deleteFailed'))
+    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
   }
 }
 
@@ -230,7 +237,7 @@ const saveGradingLevel = async () => {
     showGradingDialog.value = false
     await loadGradingLevels()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t))
   } finally {
     saving.value = false
   }
@@ -243,17 +250,28 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.classification-list { padding: 20px; }
+.classification-list { min-height: 100%; padding: 20px; color: var(--addp-text-primary); background: var(--addp-bg-secondary); }
 .page-header { margin-bottom: 20px; }
-.page-header h2 { margin: 0; font-size: 18px; color: var(--el-text-color-primary); }
+.page-header h2 { margin: 0; font-size: 18px; color: var(--addp-text-primary); }
 .card-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.classification-list :deep(.el-card) { background: var(--addp-bg-primary); border-color: var(--addp-border-color); box-shadow: var(--addp-shadow-card); }
 .tree-node { display: flex; align-items: center; gap: 8px; width: 100%; }
-.tree-code { font-size: 12px; color: var(--el-text-color-secondary); }
-.tree-actions { margin-left: auto; }
+.tree-code { font-size: 12px; color: var(--addp-text-secondary); }
+.tree-actions { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; min-width: max-content; white-space: nowrap; }
+.tree-actions :deep(.el-button) { white-space: nowrap; }
 .grading-list { display: flex; flex-direction: column; gap: 12px; }
-.grading-item { display: flex; align-items: center; justify-content: space-between; padding: 12px; border: 1px solid var(--el-border-color); border-radius: 6px; }
+.grading-item { display: flex; align-items: center; justify-content: space-between; padding: 12px; border: 1px solid var(--addp-border-color); border-radius: 6px; background: var(--addp-bg-primary); }
 .grading-left { display: flex; align-items: center; gap: 12px; }
 .grading-name { font-weight: 500; font-size: 14px; }
-.grading-desc { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 2px; }
-.color-hint { margin-left: 8px; font-size: 12px; color: var(--el-text-color-secondary); }
+.grading-desc { font-size: 12px; color: var(--addp-text-secondary); margin-top: 2px; }
+.color-hint { margin-left: 8px; font-size: 12px; color: var(--addp-text-secondary); }
+
+@media (max-width: 768px) {
+  .classification-list { padding: 12px; }
+  .classification-list :deep(.el-row) { margin-left: 0 !important; margin-right: 0 !important; }
+  .classification-list :deep(.el-col) { max-width: 100%; flex: 0 0 100%; }
+  .classification-list :deep(.el-col + .el-col) { margin-top: 12px; }
+  .tree-node { flex-wrap: wrap; }
+  .tree-actions { margin-left: auto; }
+}
 </style>

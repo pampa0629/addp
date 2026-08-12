@@ -104,8 +104,8 @@ func (s *RuleEngineService) UpdateRuleApplication(id, tenantID, userID int64, re
 }
 
 // DeleteRuleApplication 删除规则应用
-func (s *RuleEngineService) DeleteRuleApplication(id, tenantID int64) error {
-	return s.ruleAppRepo.Delete(id, tenantID)
+func (s *RuleEngineService) DeleteRuleApplication(ctx context.Context, id, tenantID int64) error {
+	return s.ruleAppRepo.Delete(ctx, id, tenantID)
 }
 
 // Request types

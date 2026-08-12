@@ -67,6 +67,7 @@ const router = useRouter()
 const execution = ref(null)
 const loading = ref(false)
 let pollTimer = null
+let pollStopped = false
 const result = computed(() => {
   const metadata = execution.value?.metadata
   return metadata?.schema_version === 'addp.quality.execution-result/v1' ? metadata : null
@@ -84,7 +85,7 @@ const loadExecution = async () => {
   try {
     const res = await executionAPI.get(route.params.execution_id)
     execution.value = res
-    if (res?.status === 'pending' || res?.status === 'running') {
+    if (!pollStopped && (res?.status === 'pending' || res?.status === 'running')) {
       pollTimer = window.setTimeout(loadExecution, 2000)
     }
   } catch (error) {
@@ -94,8 +95,12 @@ const loadExecution = async () => {
   }
 }
 
-onMounted(loadExecution)
+onMounted(() => {
+  pollStopped = false
+  loadExecution()
+})
 onBeforeUnmount(() => {
   if (pollTimer) window.clearTimeout(pollTimer)
+  pollStopped = true
 })
 </script>

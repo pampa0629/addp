@@ -531,7 +531,7 @@ Infra Kafka/Kafka Connect 部署基线（工作包 3A 已冻结，3B 实现）�
 8. Kafka Connect 禁止依赖 broker auto-create 创建 CDC topic。capture supervisor 在创建 connector 前按规范显式创建 topic/ACL，在删除 connector 并确认停止后删除任务级 topic。shared internal topics 和 broker 数据目录由 Infra 部署 owner 管理，不随单个 task cleanup 删除。
 9. PostgreSQL connector 固定使用 `plugin.name=pgoutput`、`publication.autocreate.mode=filtered`、单表 `table.include.list`、服务端生成的 slot/publication 名称和 `slot.drop.on.stop=false`。stop/cleanup 由 capture supervisor 在 connector 停止后显式删除 ADDP-owned slot/publication，不依赖 connector 退出副作用。
 
-Manager 的快显和业务派生任务细节由 Manager 专题确认。本文只要求 Manager 用同一个 provider 声明多个任务类型，并按 `module + task_type + source_task_id` 关联执行记录。快显缓存生成任务类型为 `vector_tile_cache_generation`，任务定义表为 `manager.vector_tile_cache_tasks`，结果表为 `manager.vector_tile_cache`，结果是 Manager infra PMTiles artifact；业务矢量瓦片集生成任务类型为 `vector_tile_set_generation`，任务定义表为 `manager.vector_tile_set_tasks`，结果是 Business 存储中 `data_type=media + format=pmtiles + layout=single` 的 Meta item，不设 Manager 结果表。两者统一调用 GeoPython Workflow `vector_to_pmtiles`，PostGIS、NFS、MinIO/S3 只在 Manager 访问计划中区分；MVT 是 PMTiles 内部 tile encoding，不是任务类型。矢量物化视图、栅格、三维、点云与 embedding 的既有任务边界保持不变。
+Manager 的快显和业务派生任务细节由 Manager 专题确认。本文只要求 Manager 用同一个 provider 声明多个任务类型，并按 `module + task_type + source_task_id` 关联执行记录。快显缓存生成任务类型为 `vector_tile_cache_generation`，任务定义表为 `manager.vector_tile_cache_tasks`，结果表为 `manager.vector_tile_cache`，结果是 Manager infra PMTiles artifact；业务矢量瓦片集生成任务类型为 `vector_tile_set_generation`，任务定义表为 `manager.vector_tile_set_tasks`，结果是 Business 存储中 `data_type=media + format=pmtiles + layout=single` 的 Meta item，不设 Manager 结果表。两者按源能力选择唯一生成路径：PostgreSQL/PostGIS 表由 Manager 原生 `ST_AsMVT` 生成，MySQL、Oracle 等标准 EWKB 可读数据库表由 Manager 物化临时 FlatGeobuf 后调用 GeoPython Workflow `vector_to_pmtiles`，NFS、MinIO/S3 文件或对象由受控访问计划调用同一 operator；MVT 是 PMTiles 内部 tile encoding，不是任务类型。矢量物化视图、栅格、三维、点云与 embedding 的既有任务边界保持不变。
 
 Manager 已有结果动作统一适用于 `vector_tile_cache_generation`、`vector_materialized_view_generation`、`raster_cog_generation`、`model_3d_glb_generation`、`model3d_tiles_generation`、`gaussian_splat_ksplat_generation`、`point_cloud_copc_generation` 和 `cad_preview_generation`。这些任务的标准执行参数只允许 `existing_result_action:string`，当前枚举只有 `overwrite`；结果表中存在与任务语义身份对应的未删除结果时，服务端必须要求 `parameters.existing_result_action=overwrite` 才能刷新。该动作只作用于本次 execution，不改写 owner 任务定义。
 
@@ -612,7 +612,7 @@ TaskProvider 任务列表是跨模块编排专用契约，不适用通用业务�
 
 `GET /tasks/{task_type}/{id}` 直接返回 owner 模块的任务定义摘要对象。对象必须包含 `id`、`task_type`、`name`、`status` 和该具体任务的 `execution_contract`；多任务类型 provider 可以按 `task_type` 返回不同任务定义 DTO，但不得再包一层 `data`。`enabled`、`schedule`、`next_run_at` 只允许在该 task type 明确声明并实现 `supports_schedule=true` 的 owner 调度闭环时出现；不支持调度的 TaskProvider 不得暴露这些调度活状态字段。
 
-`execution_contract` 是具体任务可执行输入和稳定输出的唯一事实源：
+Quality `check` 是纯手动/Orchestrator 显式执行类型，当前不保存或返回 `enabled`、`schedule`、`next_run_at` 等调度活状态字段。`execution_contract` 是具体任务可执行输入和稳定输出的唯一事实源：
 
 ```json
 {

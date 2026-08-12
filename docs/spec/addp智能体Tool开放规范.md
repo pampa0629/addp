@@ -221,6 +221,12 @@ make test-agent-eval
 
 ## 九、相关文档
 
+### 查询资源事实与校验边界
+
+Native SQL/MQL/Cypher 分别消费 `query_names.sql/mql/cypher`；联邦 SQL 消费 Runtime 规范定义的 `query_names.federated_sql`。Copilot 只能逐字使用 Owner 事实，不得从 locator、engine name 或 full name 拼接查询名称。
+
+Owner preview 必须提供 `source_engine_type`、`full_name`、按语言声明的 `query_names` 和 `schema_coverage`（`complete|sampled|unknown`）；Copilot 不得从 locator 推导查询名称。Query Runtime 与 Source Engine 的 `engine_id` 是两个身份：native runtime 要求一致，联邦 runtime 只能接受 capability 声明的 `federation.source_engine_types`。当前只允许 `sql`、`mql`、`cypher` 三种已注册 validator 的语言；其他语言返回 `query_language_unsupported`，不得使用泛化 prompt。SQL 必须通过 AST 单语句、只读、已验证表和字段校验；Cypher 必须拒绝写操作并校验已验证属性；动态 schema 为 `sampled/unknown` 时不能断言字段不存在。
+
 - `docs/concepts/addp术语表.md`
 - `docs/skills/addp-Skill规范.md`
 - `docs/spec/addp智能体交互协议规范.md`

@@ -105,8 +105,8 @@ func (e *ManagerVectorTileSetExecutor) GenerateVectorTileSet(ctx context.Context
 		switch {
 		case spatial.IsPostGISEngine(sourceEngine.EngineType):
 			return e.generatePostGISVectorTileSet(ctx, req, targetEngine, targetURI)
-		case strings.EqualFold(strings.TrimSpace(sourceEngine.EngineType), "mysql"):
-			return e.generateMySQLWorkflowVectorTileSet(ctx, req, targetURI, targetEnv, targetFacts)
+		case strings.EqualFold(strings.TrimSpace(sourceEngine.EngineType), "mysql"), strings.EqualFold(strings.TrimSpace(sourceEngine.EngineType), "oracle"):
+			return e.generateDatabaseWorkflowVectorTileSet(ctx, req, targetURI, targetEnv, targetFacts)
 		default:
 			return nil, fmt.Errorf("database table engine %s does not support vector tile set generation", sourceEngine.EngineType)
 		}
@@ -122,27 +122,60 @@ func (e *ManagerVectorTileSetExecutor) GenerateVectorTileSet(ctx context.Context
 	return e.invokeWorkflowVectorTileSet(ctx, req, sourceURI, sourceEnv, sourceFacts, targetURI, targetEnv, targetFacts)
 }
 
-func (e *ManagerVectorTileSetExecutor) generateMySQLWorkflowVectorTileSet(ctx context.Context, req VectorTileSetExecutionRequest, targetURI string, targetEnv, targetFacts commonModels.JSONMap) (*VectorTileSetExecutionResult, error) {
+func (e *ManagerVectorTileSetExecutor) generateDatabaseWorkflowVectorTileSet(ctx context.Context, req VectorTileSetExecutionRequest, targetURI string, targetEnv, targetFacts commonModels.JSONMap) (*VectorTileSetExecutionResult, error) {
 	if e.workflowEngines == nil || e.infraObjectStore == nil {
-		return nil, errors.New("workflow runtime and infra object store are required for MySQL vector tile set generation")
+		return nil, errors.New("workflow runtime and infra object store are required for database vector tile set generation")
 	}
 	sourceMaterializer := &ManagerVectorTileCacheWorkflowExecutor{
 		systemClient: e.systemClient, objectStore: e.infraObjectStore,
 		minioEndpoint: e.infraEndpoint, minioAccessKey: e.infraAccessKey, minioSecretKey: e.infraSecretKey,
 		minioUseSSL: e.infraUseSSL, defaultBucket: e.infraBucket,
 	}
-	sourceURI, sourceEnv, sourceFacts, cleanup, err := sourceMaterializer.prepareMySQLTableFlatGeobufSource(
+	sourceURI, sourceEnv, sourceFacts, cleanup, err := sourceMaterializer.prepareDatabaseTableFlatGeobufSource(
 		ctx, req.Task.TenantID, req.ExecutionID, req.Config.Source, req.Config.Options,
 	)
 	if err != nil {
 		return nil, err
 	}
+	tile := req.Config.Tile.Clone()
+	if err := applyDatabaseFlatGeobufExtent(tile, sourceFacts); err != nil {
+		cleanupErr := cleanup(context.Background())
+		return nil, errors.Join(err, cleanupErr)
+	}
+	req.Config.Tile = tile
 	result, invokeErr := e.invokeWorkflowVectorTileSet(ctx, req, sourceURI, sourceEnv, sourceFacts, targetURI, targetEnv, targetFacts)
 	cleanupErr := cleanup(context.Background())
 	if invokeErr != nil || cleanupErr != nil {
 		return nil, errors.Join(invokeErr, cleanupErr)
 	}
 	return result, nil
+}
+
+func applyDatabaseFlatGeobufExtent(tile, sourceFacts commonModels.JSONMap) error {
+	if tile == nil {
+		return errors.New("database vector tile config.tile is required")
+	}
+	if extent, ok := floatSliceFromConfig(tile["extent"]); ok {
+		tile["extent"] = extent
+		if intFromTileCacheConfig(tile["extent_srid"], 0) <= 0 {
+			tile["extent_srid"] = intFromTileCacheConfig(sourceFacts["extent_srid"], intFromTileCacheConfig(sourceFacts["source_srid"], 0))
+		}
+		if intFromTileCacheConfig(tile["extent_srid"], 0) <= 0 {
+			return errors.New("database vector tile extent_srid is required")
+		}
+		return nil
+	}
+	extent, ok := floatSliceFromConfig(sourceFacts["extent"])
+	if !ok {
+		return errors.New("database FlatGeobuf source extent is unavailable")
+	}
+	extentSRID := intFromTileCacheConfig(sourceFacts["extent_srid"], intFromTileCacheConfig(sourceFacts["source_srid"], 0))
+	if extentSRID <= 0 {
+		return errors.New("database FlatGeobuf source extent_srid is unavailable")
+	}
+	tile["extent"] = extent
+	tile["extent_srid"] = extentSRID
+	return nil
 }
 
 func (e *ManagerVectorTileSetExecutor) invokeWorkflowVectorTileSet(ctx context.Context, req VectorTileSetExecutionRequest, sourceURI string, sourceEnv, sourceFacts commonModels.JSONMap, targetURI string, targetEnv, targetFacts commonModels.JSONMap) (*VectorTileSetExecutionResult, error) {

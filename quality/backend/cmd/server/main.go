@@ -13,7 +13,7 @@ import (
 	_ "github.com/addp/quality/i18n"
 	"github.com/addp/quality/internal/api"
 	"github.com/addp/quality/internal/config"
-	"github.com/addp/quality/internal/models"
+	"github.com/addp/quality/internal/migration"
 	"github.com/addp/quality/internal/repository"
 	"github.com/addp/quality/internal/service"
 	"github.com/redis/go-redis/v9"
@@ -40,23 +40,14 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	if err := db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", cfg.DBSchema)).Error; err != nil {
-		log.Fatalf("Failed to create schema: %v", err)
-	}
-
 	if err := commonExecution.EnsureStore(db); err != nil {
 		log.Fatalf("Failed to ensure execution store: %v", err)
 	}
 
-	if err := db.AutoMigrate(
-		&models.RuleApplication{},
-		&models.CheckTask{},
-		&models.Issue{},
-	); err != nil {
-		log.Fatalf("Failed to migrate database: %v", err)
-	}
-	if err := repository.EnsureSchema(db); err != nil {
-		log.Fatalf("Failed to enforce Quality database constraint: %v", err)
+	migrationContext, cancelMigration := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancelMigration()
+	if err := migration.NewRunner(db).Run(migrationContext); err != nil {
+		log.Fatalf("Failed to migrate Quality database: %v", err)
 	}
 
 	var redisClient *redis.Client

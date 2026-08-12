@@ -40,6 +40,8 @@
       "add_success": "Added successfully",
       "op_failed": "Operation failed",
       "load_failed": "Failed to load",
+      "invalid_detail_id": "The detail URL contains an invalid ID. Return to the list and select an item again.",
+      "optional": "Optional",
       "permission_denied": "This account does not have access. Ask the tenant administrator to assign the required role or permission, then try again.",
       "retry": "Retry",
       "copy_success": "Copied to clipboard",
@@ -47,6 +49,7 @@
     },
     "entity": {
       "title": "Business Entity",
+      "detail": "Entity Details",
       "new": "New Entity",
       "name": "Entity Name",
       "code": "Code",
@@ -143,6 +146,7 @@
     },
     "logical_table": {
       "title": "Logical Table",
+      "detail": "Logical Table Details",
       "new": "New Logical Table",
       "name": "Logical Table Name",
       "code": "Physical Table Name",

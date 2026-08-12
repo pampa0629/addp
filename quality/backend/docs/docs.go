@@ -954,6 +954,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.qualityErrorResponse"
                         }
                     },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -1315,9 +1321,6 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
-                "enabled": {
-                    "type": "boolean"
-                },
                 "engine_id": {
                     "description": "目标引擎",
                     "type": "integer"
@@ -1494,9 +1497,6 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
-                "enabled": {
-                    "type": "boolean"
-                },
                 "engine_id": {
                     "type": "integer"
                 },
@@ -1549,9 +1549,6 @@ const docTemplate = `{
             "properties": {
                 "description": {
                     "type": "string"
-                },
-                "enabled": {
-                    "type": "boolean"
                 },
                 "engine_id": {
                     "type": "integer"
@@ -1630,9 +1627,6 @@ const docTemplate = `{
                 },
                 "description": {
                     "type": "string"
-                },
-                "enabled": {
-                    "type": "boolean"
                 },
                 "engine_id": {
                     "description": "目标引擎",
@@ -2073,9 +2067,6 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
-                "enabled": {
-                    "type": "boolean"
-                },
                 "execution_contract": {
                     "$ref": "#/definitions/taskprovider.ExecutionContract"
                 },
@@ -2092,6 +2083,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "name": {
+                    "type": "string"
+                },
+                "status": {
                     "type": "string"
                 },
                 "task_type": {

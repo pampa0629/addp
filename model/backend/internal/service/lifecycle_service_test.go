@@ -1,14 +1,22 @@
 package service
 
 import (
-	"strings"
 	"testing"
 
+	"github.com/addp/model/internal/apperrors"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/repository"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+func requireDomainErrorCode(t *testing.T, err error, code string) {
+	t.Helper()
+	domainErr, ok := apperrors.As(err)
+	if !ok || domainErr.Code != code {
+		t.Fatalf("error = %v, want domain code %q", err, code)
+	}
+}
 
 func setupLifecycleServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -96,17 +104,13 @@ func TestEntityLifecycleRejectsApprovedAggregateWrites(t *testing.T) {
 	_, err := entityService.ImportFromMermaid(1, 1, &models.MermaidImportRequest{
 		MermaidCode: "erDiagram\n  product {\n    bigint id PK\n  }",
 	})
-	if err == nil || !strings.Contains(err.Error(), "已审批实体") {
-		t.Fatalf("import error = %v, want approved entity rejection", err)
-	}
+	requireDomainErrorCode(t, err, "entity_state_conflict")
 
 	relationService := NewEntityRelationService(relationRepo, entityRepo)
 	_, err = relationService.Create(1, &models.CreateEntityRelationRequest{
 		SourceEntity: approved.ID, TargetEntity: draft.ID, RelationType: "one_to_many",
 	})
-	if err == nil || !strings.Contains(err.Error(), "草稿状态") {
-		t.Fatalf("create relation error = %v, want draft status rejection", err)
-	}
+	requireDomainErrorCode(t, err, "entity_relation_state_conflict")
 }
 
 func TestLogicalModelLifecycleRejectsApprovedIndirectWrites(t *testing.T) {
@@ -125,15 +129,11 @@ func TestLogicalModelLifecycleRejectsApprovedIndirectWrites(t *testing.T) {
 
 	metricService := NewFactMetricService(metricRepo, tableRepo)
 	_, err := metricService.AddMetric(fact.ID, 1, 1, &models.CreateFactMetricMappingRequest{MetricID: 9})
-	if err == nil || !strings.Contains(err.Error(), "已审批事实表") {
-		t.Fatalf("add metric error = %v, want approved fact rejection", err)
-	}
+	requireDomainErrorCode(t, err, "fact_metric_state_conflict")
 
 	tableRelationService := NewTableRelationService(relationRepo, tableRepo)
 	_, err = tableRelationService.AddDimensionRelation(fact.ID, 1, &models.CreateTableRelationRequest{TargetTable: dimension.ID})
-	if err == nil || !strings.Contains(err.Error(), "草稿状态") {
-		t.Fatalf("add dimension relation error = %v, want draft status rejection", err)
-	}
+	requireDomainErrorCode(t, err, "table_relation_state_conflict")
 }
 
 func TestLogicalTableDeleteRejectsRelationToApprovedTable(t *testing.T) {
@@ -156,7 +156,5 @@ func TestLogicalTableDeleteRejectsRelationToApprovedTable(t *testing.T) {
 	}
 
 	err := NewLogicalTableService(tableRepo).DeleteLogicalTable(dimension.ID, 1)
-	if err == nil || !strings.Contains(err.Error(), "已审批模型") {
-		t.Fatalf("delete dimension error = %v, want approved relation rejection", err)
-	}
+	requireDomainErrorCode(t, err, "logical_table_relation_state_conflict")
 }

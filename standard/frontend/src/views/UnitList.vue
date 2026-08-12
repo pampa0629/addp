@@ -41,7 +41,7 @@
           <template #header>
             <div class="card-header">
               <span>{{ selectedCategory ? $t('standard.unit.unitsOfCategory', { name: selectedCategory.name }) : $t('standard.unit.allUnits') }}</span>
-              <el-button size="small" type="primary" @click="showAddUnit = true">{{ $t('standard.unit.addUnit') }}</el-button>
+              <el-button size="small" type="primary" @click="openAddUnit">{{ $t('standard.unit.addUnit') }}</el-button>
             </div>
           </template>
           <el-table :data="units" v-loading="loadingUnits" size="small">
@@ -131,6 +131,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { measurementCategoryAPI, unitAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
+import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -152,8 +153,13 @@ const unitForm = ref({ category_id: null, name: '', symbol: '', description: '',
 const categoryTree = computed(() => categories.value)
 
 const loadCategories = async () => {
-  const res = await measurementCategoryAPI.list()
-  categories.value = res || []
+  try {
+    const res = await measurementCategoryAPI.list()
+    categories.value = res || []
+  } catch (e) {
+    categories.value = []
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
+  }
 }
 
 const loadUnits = async (categoryID) => {
@@ -162,6 +168,9 @@ const loadUnits = async (categoryID) => {
     const params = categoryID ? { category_id: categoryID } : {}
     const res = await unitAPI.list(params)
     units.value = res || []
+  } catch (e) {
+    units.value = []
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
   } finally {
     loadingUnits.value = false
   }
@@ -197,7 +206,7 @@ const saveCategory = async () => {
     categoryForm.value = { name: '', code: '', description: '', sort_order: 0 }
     await loadCategories()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t))
   } finally {
     saving.value = false
   }
@@ -215,13 +224,19 @@ const deleteCategory = async (data) => {
     await loadCategories()
     await loadUnits(null)
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(e.response?.data?.error || t('standard.common.deleteFailed'))
+    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
   }
 }
 
 const editUnit = (data) => {
   editingUnit.value = data
   unitForm.value = { category_id: data.category_id, name: data.name, symbol: data.symbol, description: data.description, sort_order: data.sort_order }
+  showAddUnit.value = true
+}
+
+const openAddUnit = () => {
+  editingUnit.value = null
+  unitForm.value = { category_id: selectedCategory.value?.id || null, name: '', symbol: '', description: '', sort_order: 0 }
   showAddUnit.value = true
 }
 
@@ -240,7 +255,7 @@ const saveUnit = async () => {
     unitForm.value = { category_id: selectedCategory.value?.id || null, name: '', symbol: '', description: '', sort_order: 0 }
     await loadUnits(selectedCategory.value?.id || null)
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t))
   } finally {
     saving.value = false
   }
@@ -253,7 +268,7 @@ const deleteUnit = async (data) => {
     ElMessage.success(t('standard.common.deleteSuccess'))
     await loadUnits(selectedCategory.value?.id || null)
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(e.response?.data?.error || t('standard.common.deleteFailed'))
+    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
   }
 }
 
@@ -266,12 +281,24 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.unit-list { padding: 20px; }
+.unit-list { min-height: 100%; padding: 20px; color: var(--addp-text-primary); background: var(--addp-bg-secondary); }
 .page-header { margin-bottom: 20px; }
-.page-header h2 { margin: 0; font-size: 18px; color: var(--el-text-color-primary); }
+.page-header h2 { margin: 0; font-size: 18px; color: var(--addp-text-primary); }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
+.unit-list :deep(.el-card) { background: var(--addp-bg-primary); border-color: var(--addp-border-color); box-shadow: var(--addp-shadow-card); }
 .tree-node { display: flex; align-items: center; gap: 8px; width: 100%; }
-.tree-node-meta { font-size: 12px; color: var(--el-text-color-secondary); }
-.tree-node-actions { margin-left: auto; }
-.table-actions { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.tree-node-meta { font-size: 12px; color: var(--addp-text-secondary); }
+.tree-node-actions { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; min-width: max-content; white-space: nowrap; }
+.tree-node-actions :deep(.el-button) { white-space: nowrap; }
+.table-actions { display: inline-flex; align-items: center; gap: 8px; min-width: max-content; white-space: nowrap; }
+.table-actions :deep(.el-button) { white-space: nowrap; }
+
+@media (max-width: 768px) {
+  .unit-list { padding: 12px; }
+  .unit-list :deep(.el-row) { margin-left: 0 !important; margin-right: 0 !important; }
+  .unit-list :deep(.el-col) { max-width: 100%; flex: 0 0 100%; }
+  .unit-list :deep(.el-col + .el-col) { margin-top: 12px; }
+  .tree-node { flex-wrap: wrap; }
+  .tree-node-actions { margin-left: auto; }
+}
 </style>

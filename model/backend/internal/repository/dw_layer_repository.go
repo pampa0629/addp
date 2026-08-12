@@ -15,7 +15,7 @@ func NewDWLayerRepository(db *gorm.DB) *DWLayerRepository {
 }
 
 func (r *DWLayerRepository) Create(layer *models.DWLayer) error {
-	return r.db.Create(layer).Error
+	return commonrepo.WrapDBError(r.db.Create(layer).Error)
 }
 
 func (r *DWLayerRepository) GetByID(id, tenantID int64) (*models.DWLayer, error) {
@@ -31,16 +31,16 @@ func (r *DWLayerRepository) List(tenantID int64) ([]models.DWLayer, error) {
 }
 
 func (r *DWLayerRepository) Update(layer *models.DWLayer) error {
-	return r.db.Save(layer).Error
+	return commonrepo.WrapDBError(r.db.Save(layer).Error)
 }
 
 func (r *DWLayerRepository) Delete(id, tenantID int64) error {
 	result := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.DWLayer{})
 	if result.Error != nil {
-		return result.Error
+		return commonrepo.WrapDBError(result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+		return commonrepo.WrapDBError(gorm.ErrRecordNotFound)
 	}
 	return nil
 }

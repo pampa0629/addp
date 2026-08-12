@@ -1,8 +1,8 @@
 package service
 
 import (
-	"fmt"
-
+	"github.com/addp/model/i18n"
+	"github.com/addp/model/internal/apperrors"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/repository"
 )
@@ -15,14 +15,14 @@ type TableRelationService struct {
 func (s *TableRelationService) requireDraftTables(tenantID, factTableID, dimensionTableID int64) (*models.LogicalTable, *models.LogicalTable, error) {
 	factTable, err := s.tableRepo.GetByID(factTableID, tenantID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("事实表不存在")
+		return nil, nil, apperrors.NotFound("fact_table_not_found", i18n.MsgTableRelationTargetNotFound)
 	}
 	dimensionTable, err := s.tableRepo.GetByID(dimensionTableID, tenantID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("维度表不存在")
+		return nil, nil, apperrors.NotFound("dimension_table_not_found", i18n.MsgTableRelationTargetNotFound)
 	}
 	if factTable.Status != "draft" || dimensionTable.Status != "draft" {
-		return nil, nil, fmt.Errorf("表关系两端都必须处于草稿状态")
+		return nil, nil, apperrors.Conflict("table_relation_state_conflict", i18n.MsgTableRelationStateConflict)
 	}
 	return factTable, dimensionTable, nil
 }
@@ -35,10 +35,10 @@ func NewTableRelationService(repo *repository.TableRelationRepository, tableRepo
 func (s *TableRelationService) ListDimensionRelations(factTableID, tenantID int64) ([]repository.TableRelationDetail, error) {
 	table, err := s.tableRepo.GetByID(factTableID, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("逻辑表不存在")
+		return nil, apperrors.NotFound("logical_table_not_found", i18n.MsgTableNotFound)
 	}
 	if table.TableType != "fact" {
-		return nil, fmt.Errorf("源表必须是事实表")
+		return nil, apperrors.Validation("fact_table_required", i18n.MsgValidationFailed)
 	}
 	return s.repo.ListByFactTable(factTableID, tenantID)
 }
@@ -50,28 +50,28 @@ func (s *TableRelationService) AddDimensionRelation(factTableID, tenantID int64,
 		return nil, err
 	}
 	if factTable.TableType != "fact" {
-		return nil, fmt.Errorf("源表必须是事实表")
+		return nil, apperrors.Validation("fact_table_required", i18n.MsgValidationFailed)
 	}
 	if dimensionTable.TableType != "dimension" {
-		return nil, fmt.Errorf("目标表必须是维度表")
+		return nil, apperrors.Validation("dimension_table_required", i18n.MsgValidationFailed)
 	}
 	sourceField, err := s.tableRepo.GetFieldByID(req.SourceField, factTableID)
 	if err != nil {
-		return nil, fmt.Errorf("事实表字段不存在")
+		return nil, apperrors.NotFound("source_field_not_found", i18n.MsgTableRelationTargetNotFound)
 	}
 	targetField, err := s.tableRepo.GetFieldByID(req.TargetField, req.TargetTable)
 	if err != nil {
-		return nil, fmt.Errorf("维度表字段不存在")
+		return nil, apperrors.NotFound("target_field_not_found", i18n.MsgTableRelationTargetNotFound)
 	}
 	relationType := req.RelationType
 	if relationType == "" {
 		relationType = "fk"
 	}
 	if relationType == "fk" && !targetField.IsPK {
-		return nil, fmt.Errorf("外键关系的目标字段必须是主键")
+		return nil, apperrors.Validation("table_relation_invalid", i18n.MsgValidationFailed)
 	}
 	if sourceField.DataType != targetField.DataType {
-		return nil, fmt.Errorf("关联字段数据类型必须一致")
+		return nil, apperrors.Validation("table_relation_invalid", i18n.MsgValidationFailed)
 	}
 
 	exists, err := s.repo.Exists(factTableID, req.SourceField, req.TargetTable, req.TargetField, tenantID)
@@ -79,7 +79,7 @@ func (s *TableRelationService) AddDimensionRelation(factTableID, tenantID int64,
 		return nil, err
 	}
 	if exists {
-		return nil, fmt.Errorf("该字段关联已存在")
+		return nil, apperrors.Conflict("table_relation_conflict", i18n.MsgTableRelationConflict)
 	}
 
 	rel := &models.TableRelation{
@@ -91,7 +91,7 @@ func (s *TableRelationService) AddDimensionRelation(factTableID, tenantID int64,
 		RelationType: relationType,
 	}
 	if err := s.repo.Create(rel); err != nil {
-		return nil, err
+		return nil, modelResourceError(err, "table_relation", i18n.MsgTableRelationConflict)
 	}
 	return rel, nil
 }
@@ -100,10 +100,13 @@ func (s *TableRelationService) AddDimensionRelation(factTableID, tenantID int64,
 func (s *TableRelationService) RemoveDimensionRelation(relationID, factTableID, tenantID int64) error {
 	relation, err := s.repo.GetByID(relationID, factTableID, tenantID)
 	if err != nil {
-		return fmt.Errorf("表关系不存在")
+		return apperrors.NotFound("table_relation_not_found", i18n.MsgInvalidRelationID)
 	}
 	if _, _, err := s.requireDraftTables(tenantID, factTableID, relation.TargetTable); err != nil {
 		return err
 	}
-	return s.repo.Delete(relationID, factTableID, tenantID)
+	if err := s.repo.Delete(relationID, factTableID, tenantID); err != nil {
+		return modelResourceError(err, "table_relation_not_found", i18n.MsgInvalidRelationID)
+	}
+	return nil
 }

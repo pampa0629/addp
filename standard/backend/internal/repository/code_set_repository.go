@@ -61,7 +61,7 @@ func (r *CodeSetRepository) Update(codeSet *models.CodeSet) error {
 
 // Delete 删除码值集
 func (r *CodeSetRepository) Delete(id, tenantID int64) error {
-	return requireAffectedRow(r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.CodeSet{}))
+	return deleteInTransaction(r.db, &models.CodeSet{}, "id = ? AND tenant_id = ?", id, tenantID)
 }
 
 // ExistsByCode 检查 code 是否存在
@@ -107,7 +107,7 @@ func (r *CodeSetRepository) UpdateItem(item *models.CodeItem) error {
 
 // DeleteItem 删除码值项
 func (r *CodeSetRepository) DeleteItem(id, codeSetID int64) error {
-	return requireAffectedRow(r.db.Where("id = ? AND code_set_id = ?", id, codeSetID).Delete(&models.CodeItem{}))
+	return deleteInTransaction(r.db, &models.CodeItem{}, "id = ? AND code_set_id = ?", id, codeSetID)
 }
 
 // ExistsItemByCode 检查码值项 code 是否存在

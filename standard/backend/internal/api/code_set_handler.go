@@ -137,6 +137,7 @@ func (h *CodeSetHandler) UpdateCodeSet(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 409 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.code_set.delete"]
 // @Router /code-sets/{id} [delete]
@@ -237,6 +238,7 @@ func (h *CodeSetHandler) UpdateCodeItem(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 409 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.code_set.update"]
 // @Router /code-sets/{id}/items/{iid} [delete]

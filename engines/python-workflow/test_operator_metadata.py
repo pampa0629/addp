@@ -23,6 +23,7 @@ from operators.vector_tile_operators import (
     _extent_to_wgs84,
     _extract_gdal_progress_values,
     _index_generated_tiles,
+    _normalize_extent,
     _run_command_with_gdal_progress,
     vector_to_pmtiles,
 )
@@ -186,6 +187,17 @@ def test_vector_to_pmtiles_transforms_source_extent_to_wgs84():
     assert transformed[1] == pytest.approx(30.76, abs=0.02)
     assert transformed[2] == pytest.approx(121.02, abs=0.02)
     assert transformed[3] == pytest.approx(31.03, abs=0.02)
+
+
+def test_vector_to_pmtiles_accepts_single_point_extent():
+    assert _normalize_extent([116.397, 39.908, 116.397, 39.908]) == [116.397, 39.908, 116.397, 39.908]
+
+
+def test_vector_to_pmtiles_rejects_reversed_or_non_finite_extent():
+    with pytest.raises(ValueError, match="tile.extent is invalid"):
+        _normalize_extent([121.0, 30.0, 120.0, 31.0])
+    with pytest.raises(ValueError, match="tile.extent is invalid"):
+        _normalize_extent([120.0, float("nan"), 121.0, 31.0])
 
 
 def test_vector_to_pmtiles_parses_gdal_progress_stream():

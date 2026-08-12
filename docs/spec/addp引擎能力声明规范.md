@@ -374,6 +374,8 @@ type QueryFederationCapability struct {
 
 DuckDB Runtime 第一阶段声明 `runtime_api="addp.query-runtime/v1"`、`source_engine_types=["postgresql","mysql","minio","s3"]`、`object_formats=["parquet"]`。能力只声明当前真正实现并验证过的连接器；Doris、ClickHouse、Spark SQL、MongoDB、Neo4j、Kafka 等不能仅因 ADDP 已支持该 Engine 类型就自动列入。
 
+联邦 Runtime 的资源引用名由 Source Owner preview 作为 `ResourceFact.query_names.federated_sql` 提供，并与 Runtime 解析规则使用同一共享标识符规范。DuckDB 当前形式为 `<sanitized_source_engine_name>.<schema>.<table>` 或对象表的 `<sanitized_source_engine_name>.<table>`。Copilot 和前端不得各自实现 engine name 清洗或从 locator/full_name 拼接联邦引用。
+
 查询语言差异只通过 `languages` / `default_language` 和 `QueryRequest.Language` 表达，不新增按数据库类别拆分的 query provider。`result_kinds=document` 只表示原生查询结果可能是 JSON document / record 形态，不表示 data item 的 `data_type=document`。图结构查询如果需要节点 / 关系结构结果，仍使用 `GraphQueryProvider`。
 
 查询工作台的默认样例不属于静态 capability。样例必须在用户切换具体 Engine Instance 时，通过执行授权消费该实例连接、实时发现有数据的 Catalog leaf，再由 Query Runtime 按 `default_language` 生成。Catalog 发现失败或当前实例没有有数据的 leaf 时返回明确错误，不允许用固定诊断查询伪装成实例样例。

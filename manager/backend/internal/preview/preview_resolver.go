@@ -11,6 +11,7 @@ import (
 	"github.com/addp/common/engine/instanceprovider"
 	"github.com/addp/common/engine/plugin"
 	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
+	"github.com/addp/common/federatedquery"
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
@@ -85,6 +86,7 @@ type PreviewResolverRequest struct {
 	Pagination       *Pagination                   // 分页参数
 	TenantID         *uint                         // 租户 ID
 	MetaItemID       *uint                         // MetaItem ID，只有数据项预览存在
+	ItemName         string                        // MetaItem name，只有数据项预览存在
 	ItemFullName     string                        // MetaItem full_name，只有数据项预览存在
 	ItemFingerprint  string                        // 标准数据项指纹，GenerateItemFingerprint(engine_id, full_name)
 	ItemType         string                        // 数据项类型（如 "table"），来自 MetaItem
@@ -116,16 +118,19 @@ type PreviewResult struct {
 
 // PreviewMetadata 预览上下文元数据
 type PreviewMetadata struct {
-	Locator         string `json:"locator"`                    // ResourceLocator URI
-	EngineName      string `json:"engine_name"`                // 引擎名称
-	ResourceType    string `json:"resource_type"`              // 引擎类型（postgresql/minio）
-	MetaScanned     bool   `json:"meta_scanned"`               // 是否已被 Meta 扫描
-	ScannedDepth    string `json:"scanned_depth,omitempty"`    // Meta 扫描深度
-	ItemID          *uint  `json:"item_id,omitempty"`          // MetaItem ID
-	FullName        string `json:"full_name,omitempty"`        // MetaItem full_name
-	ItemFingerprint string `json:"item_fingerprint,omitempty"` // 标准数据项指纹
-	ItemCount       *int64 `json:"item_count"`                 // 项目数（来自 Meta）
-	SizeBytes       *int64 `json:"size_bytes"`                 // 大小（来自 Meta）
+	Locator         string            `json:"locator"`                    // ResourceLocator URI
+	EngineName      string            `json:"engine_name"`                // 引擎名称
+	ResourceType    string            `json:"resource_type"`              // 引擎类型（postgresql/minio）
+	MetaScanned     bool              `json:"meta_scanned"`               // 是否已被 Meta 扫描
+	ScannedDepth    string            `json:"scanned_depth,omitempty"`    // Meta 扫描深度
+	ItemID          *uint             `json:"item_id,omitempty"`          // MetaItem ID
+	FullName        string            `json:"full_name,omitempty"`        // MetaItem full_name
+	ItemFingerprint string            `json:"item_fingerprint,omitempty"` // 标准数据项指纹
+	EngineType      string            `json:"engine_type,omitempty"`      // Source Engine 类型
+	SchemaCoverage  string            `json:"schema_coverage,omitempty"`  // complete/sampled/unknown
+	QueryNames      map[string]string `json:"query_names,omitempty"`      // 按查询语言声明的原生资源名称
+	ItemCount       *int64            `json:"item_count"`                 // 项目数（来自 Meta）
+	SizeBytes       *int64            `json:"size_bytes"`                 // 大小（来自 Meta）
 }
 
 // Preview 执行预览。预览必须基于已经由 Meta 扫描入库的节点或 item。
@@ -361,6 +366,7 @@ func (r *PreviewResolver) ResolveRequestFromURIWithSelection(ctx context.Context
 		}
 		attrs := cloneMetaAttributes(metaItem.Attributes)
 		req.MetaItemID = &itemID
+		req.ItemName = metaItem.Name
 		req.ItemFullName = metaItem.FullName
 		req.ItemFingerprint = commonModels.GenerateItemFingerprint(metaItem.EngineID, metaItem.FullName)
 		req.ItemRowCount = metaItem.RowCount
@@ -722,6 +728,9 @@ func (r *PreviewResolver) buildMetadata(req *PreviewResolverRequest) *PreviewMet
 		ItemID:          req.MetaItemID,
 		FullName:        strings.TrimSpace(req.ItemFullName),
 		ItemFingerprint: strings.TrimSpace(req.ItemFingerprint),
+		EngineType:      strings.ToLower(strings.TrimSpace(req.Engine.EngineType)),
+		SchemaCoverage:  schemaCoverage(req),
+		QueryNames:      queryNames(req),
 	}
 
 	if req.Metadata != nil {
@@ -735,6 +744,49 @@ func (r *PreviewResolver) buildMetadata(req *PreviewResolverRequest) *PreviewMet
 	}
 
 	return metadata
+}
+
+func schemaCoverage(req *PreviewResolverRequest) string {
+	if req == nil || req.MetaItemID == nil {
+		return "unknown"
+	}
+	if strings.EqualFold(strings.TrimSpace(req.Engine.EngineType), "mongodb") {
+		return "sampled"
+	}
+	if strings.TrimSpace(req.scannedDepth()) == "" || strings.EqualFold(req.scannedDepth(), "none") {
+		return "unknown"
+	}
+	return "complete"
+}
+
+func queryNames(req *PreviewResolverRequest) map[string]string {
+	if req == nil || req.MetaItemID == nil || strings.TrimSpace(req.ItemFullName) == "" {
+		return nil
+	}
+	fullName := strings.TrimSpace(req.ItemFullName)
+	switch strings.ToLower(strings.TrimSpace(req.Engine.EngineType)) {
+	case "mongodb":
+		if name := strings.TrimSpace(req.ItemName); name != "" {
+			return map[string]string{"mql": name}
+		}
+		return nil
+	case "neo4j":
+		return map[string]string{"cypher": fullName}
+	case "postgresql", "postgres", "postgis", "mysql", "oracle", "doris", "clickhouse", "duckdb":
+		return map[string]string{
+			"sql":           fullName,
+			"federated_sql": federatedquery.SanitizeIdentifier(req.Engine.Name) + "." + fullName,
+		}
+	case "minio", "s3":
+		if name := strings.TrimSpace(req.ItemName); name != "" {
+			return map[string]string{
+				"federated_sql": federatedquery.SanitizeIdentifier(req.Engine.Name) + "." + federatedquery.SanitizeIdentifier(name),
+			}
+		}
+		return nil
+	default:
+		return nil
+	}
 }
 
 // attachItemMeta 将 Meta 元数据附加到预览响应

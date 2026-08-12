@@ -11,18 +11,19 @@
       <el-table-column prop="engine_id" :label="t('quality.checkTask.engineId')" width="100" />
       <el-table-column prop="schema_name" :label="t('quality.checkTask.schema')" width="120" />
       <el-table-column prop="table_name" :label="t('quality.checkTask.table')" width="150" />
-      <el-table-column prop="enabled" :label="t('quality.checkTask.enabled')" width="80">
-        <template #default="{ row }">
-          <el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? t('quality.checkTask.yes') : t('quality.checkTask.no') }}</el-tag>
-        </template>
-      </el-table-column>
       <el-table-column prop="last_run_at" :label="t('quality.checkTask.lastRun')" width="180">
         <template #default="{ row }">{{ row.last_run_at ? new Date(row.last_run_at).toLocaleString() : '-' }}</template>
       </el-table-column>
       <el-table-column :label="t('quality.checkTask.actions')" width="260">
         <template #default="{ row }">
           <el-button size="small" @click="requestEditTask(row)">{{ t('quality.checkTask.edit') }}</el-button>
-          <el-button size="small" type="primary" @click="runTask(row.id)">{{ t('quality.checkTask.run') }}</el-button>
+          <el-button
+            size="small"
+            type="primary"
+            :loading="runningTaskIds.has(row.id)"
+            :disabled="runningTaskIds.has(row.id)"
+            @click="runTask(row.id)"
+          >{{ t('quality.checkTask.run') }}</el-button>
           <el-button size="small" @click="deleteTask(row.id)" type="danger">{{ t('quality.checkTask.delete') }}</el-button>
         </template>
       </el-table-column>
@@ -49,9 +50,6 @@
         </el-form-item>
         <el-form-item :label="t('quality.checkTask.schemaLabel')"><el-input v-model="form.schema_name" :placeholder="t('quality.checkTask.schemaPlaceholder')" /></el-form-item>
         <el-form-item :label="t('quality.checkTask.tableLabel')"><el-input v-model="form.table_name" :placeholder="t('quality.checkTask.tablePlaceholder')" /></el-form-item>
-        <el-form-item :label="t('quality.checkTask.enabled')">
-          <el-switch v-model="form.enabled" />
-        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="closeDialog">{{ t('quality.checkTask.cancel') }}</el-button>
@@ -81,9 +79,10 @@ const showCreateDialog = ref(false)
 const editingTaskID = ref(null)
 let routeDataReady = false
 let routeRestoreSequence = 0
-const defaultForm = () => ({ name: '', description: '', engine_id: null, schema_name: '', table_name: '', enabled: true })
+const defaultForm = () => ({ name: '', description: '', engine_id: null, schema_name: '', table_name: '' })
 const form = ref(defaultForm())
 const engines = ref([])
+const runningTaskIds = ref(new Set())
 const pagination = ref({ page: 1, page_size: 20, total: 0 })
 const isEditing = computed(() => editingTaskID.value !== null)
 const dialogTitle = computed(() => isEditing.value ? t('quality.checkTask.editTitle') : t('quality.checkTask.createTitle'))
@@ -115,7 +114,6 @@ const editTask = (task) => {
     engine_id: task.engine_id || null,
     schema_name: task.schema_name || '',
     table_name: task.table_name || '',
-    enabled: task.enabled !== false
   }
   showCreateDialog.value = true
 }
@@ -157,8 +155,7 @@ const saveTask = async () => {
         description: form.value.description,
         engine_id: form.value.engine_id,
         schema_name: form.value.schema_name,
-        table_name: form.value.table_name,
-        enabled: form.value.enabled
+        table_name: form.value.table_name
       })
       ElMessage.success(t('quality.checkTask.updateSuccess'))
     } else {
@@ -173,11 +170,16 @@ const saveTask = async () => {
 }
 
 const runTask = async (id) => {
+  if (runningTaskIds.value.has(id)) return
+  runningTaskIds.value.add(id)
   try {
     const res = await checkTaskAPI.run(id)
     ElMessage.success(t('quality.checkTask.runSuccess', { id: res.execution_id }))
+    await fetchTasks()
   } catch (e) {
     ElMessage.error(e.response?.data?.error || t('quality.checkTask.runFailed'))
+  } finally {
+    runningTaskIds.value.delete(id)
   }
 }
 

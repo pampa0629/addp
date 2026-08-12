@@ -203,8 +203,8 @@ export const logicalTableAPI = {
     return client.delete(`/model/logical-tables/${tableId}/fields/${fieldId}`)
   },
   // 预览 DDL
-  previewDDL(id) {
-    return client.post(`/model/logical-tables/${id}/preview-ddl`)
+  previewDDL(id, data) {
+    return client.post(`/model/logical-tables/${id}/preview-ddl`, data)
   },
   // 获取事实表关联的指标列表
   listMetrics(tableId) {

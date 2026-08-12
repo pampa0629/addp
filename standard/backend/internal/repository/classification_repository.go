@@ -36,7 +36,7 @@ func (r *ClassificationRepository) Update(c *models.Classification) error {
 }
 
 func (r *ClassificationRepository) Delete(id, tenantID int64) error {
-	return requireAffectedRow(r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Classification{}))
+	return deleteInTransaction(r.db, &models.Classification{}, "id = ? AND tenant_id = ?", id, tenantID)
 }
 
 // GradingLevelRepository 数据分级仓库

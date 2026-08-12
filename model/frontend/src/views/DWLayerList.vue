@@ -188,7 +188,7 @@ const handleSubmit = async () => {
     dialogVisible.value = false
     loadLayers()
   } catch (err) {
-    ElMessage.error(err.response?.data?.error || t('model.common.op_failed'))
+    ElMessage.error(getModelErrorMessage(err, t, 'model.common.op_failed'))
   } finally {
     submitting.value = false
   }

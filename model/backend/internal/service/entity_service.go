@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/model/i18n"
+	"github.com/addp/model/internal/apperrors"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/repository"
 	"gorm.io/gorm"
@@ -52,7 +54,7 @@ func (s *EntityService) CreateEntity(req *models.CreateEntityRequest, tenantID, 
 		return nil, err
 	}
 	if exists {
-		return nil, fmt.Errorf("实体编码 '%s' 已存在", req.Code)
+		return nil, apperrors.Conflict("entity_code_conflict", i18n.MsgEntityCodeConflict)
 	}
 
 	entity := &models.Entity{
@@ -66,13 +68,17 @@ func (s *EntityService) CreateEntity(req *models.CreateEntityRequest, tenantID, 
 	}
 
 	if err := s.repo.Create(entity); err != nil {
-		return nil, err
+		return nil, modelResourceError(err, "entity_code", i18n.MsgEntityCodeConflict)
 	}
 	return entity, nil
 }
 
 func (s *EntityService) GetEntity(id, tenantID int64) (*models.Entity, error) {
-	return s.repo.GetByID(id, tenantID)
+	entity, err := s.repo.GetByID(id, tenantID)
+	if err != nil {
+		return nil, modelResourceError(err, "entity_not_found", i18n.MsgEntityNotFound)
+	}
+	return entity, nil
 }
 
 func (s *EntityService) ListEntities(tenantID int64, opts repository.ListEntityOptions) ([]models.Entity, int64, error) {
@@ -82,10 +88,10 @@ func (s *EntityService) ListEntities(tenantID int64, opts repository.ListEntityO
 func (s *EntityService) UpdateEntity(id, tenantID, userID int64, req *models.UpdateEntityRequest) (*models.Entity, error) {
 	entity, err := s.repo.GetByID(id, tenantID)
 	if err != nil {
-		return nil, err
+		return nil, modelResourceError(err, "entity_not_found", i18n.MsgEntityNotFound)
 	}
 	if entity.Status != "draft" {
-		return nil, fmt.Errorf("已审批实体必须先重新打开后才能修改")
+		return nil, apperrors.Conflict("entity_state_conflict", i18n.MsgEntityStateConflict)
 	}
 
 	if req.Name != "" {
@@ -109,10 +115,10 @@ func (s *EntityService) UpdateEntity(id, tenantID, userID int64, req *models.Upd
 func (s *EntityService) DeleteEntity(id, tenantID int64) error {
 	entity, err := s.repo.GetByID(id, tenantID)
 	if err != nil {
-		return err
+		return modelResourceError(err, "entity_not_found", i18n.MsgEntityNotFound)
 	}
 	if entity.Status != "draft" {
-		return fmt.Errorf("已审批实体必须先重新打开后才能删除")
+		return apperrors.Conflict("entity_state_conflict", i18n.MsgEntityStateConflict)
 	}
 	relations, err := s.relationRepo.GetByEntityID(tenantID, id)
 	if err != nil {
@@ -128,7 +134,7 @@ func (s *EntityService) DeleteEntity(id, tenantID int64) error {
 			return err
 		}
 		if otherEntity.Status != "draft" {
-			return fmt.Errorf("实体关联了已审批实体，必须先重新打开关联实体")
+			return apperrors.Conflict("entity_relation_state_conflict", i18n.MsgRelationStateConflict)
 		}
 	}
 	return s.repo.Delete(id, tenantID)
@@ -137,17 +143,17 @@ func (s *EntityService) DeleteEntity(id, tenantID int64) error {
 func (s *EntityService) ApproveEntity(id, tenantID, userID int64) error {
 	entity, err := s.repo.GetByID(id, tenantID)
 	if err != nil {
-		return err
+		return modelResourceError(err, "entity_not_found", i18n.MsgEntityNotFound)
 	}
 	if entity.Status != "draft" {
-		return fmt.Errorf("实体当前状态不可审批")
+		return apperrors.Conflict("entity_state_conflict", i18n.MsgEntityStateConflict)
 	}
 	attributes, err := s.repo.GetAttributes(id)
 	if err != nil {
 		return err
 	}
 	if len(attributes) == 0 {
-		return fmt.Errorf("实体至少需要一个属性才能审批")
+		return apperrors.Validation("entity_approval_invalid", i18n.MsgValidationFailed)
 	}
 	hasPrimaryKey := false
 	for _, attribute := range attributes {
@@ -155,11 +161,11 @@ func (s *EntityService) ApproveEntity(id, tenantID, userID int64) error {
 			hasPrimaryKey = true
 		}
 		if attribute.ColumnName == "" || attribute.DataType == "" {
-			return fmt.Errorf("实体属性缺少字段编码或数据类型")
+			return apperrors.Validation("entity_approval_invalid", i18n.MsgValidationFailed)
 		}
 	}
 	if !hasPrimaryKey {
-		return fmt.Errorf("实体至少需要一个主键属性才能审批")
+		return apperrors.Validation("entity_approval_invalid", i18n.MsgValidationFailed)
 	}
 	return s.repo.UpdateStatus(id, tenantID, "approved", userID)
 }
@@ -167,10 +173,10 @@ func (s *EntityService) ApproveEntity(id, tenantID, userID int64) error {
 func (s *EntityService) ReopenEntity(id, tenantID, userID int64) error {
 	entity, err := s.repo.GetByID(id, tenantID)
 	if err != nil {
-		return err
+		return modelResourceError(err, "entity_not_found", i18n.MsgEntityNotFound)
 	}
 	if entity.Status != "approved" {
-		return fmt.Errorf("只有已审批实体可以重新打开")
+		return apperrors.Conflict("entity_state_conflict", i18n.MsgEntityStateConflict)
 	}
 	return s.repo.UpdateStatus(id, tenantID, "draft", userID)
 }
@@ -180,7 +186,7 @@ func (s *EntityService) GetAttributes(entityID, tenantID int64) ([]models.Entity
 	// 验证实体属于当前租户
 	_, err := s.repo.GetByID(entityID, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("实体不存在")
+		return nil, apperrors.NotFound("entity_not_found", i18n.MsgEntityNotFound)
 	}
 	return s.repo.GetAttributes(entityID)
 }
@@ -189,10 +195,10 @@ func (s *EntityService) GetAttributes(entityID, tenantID int64) ([]models.Entity
 func (s *EntityService) CreateAttribute(entityID, tenantID int64, req *models.CreateEntityAttributeRequest) (*models.EntityAttribute, error) {
 	entity, err := s.repo.GetByID(entityID, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("实体不存在")
+		return nil, apperrors.NotFound("entity_not_found", i18n.MsgEntityNotFound)
 	}
 	if entity.Status != "draft" {
-		return nil, fmt.Errorf("已审批实体不能修改属性")
+		return nil, apperrors.Conflict("entity_state_conflict", i18n.MsgEntityStateConflict)
 	}
 	if err := s.validateReferences(tenantID, nil, req.ElementID); err != nil {
 		return nil, err
@@ -220,10 +226,10 @@ func (s *EntityService) CreateAttribute(entityID, tenantID int64, req *models.Cr
 func (s *EntityService) UpdateAttribute(attrID, entityID, tenantID int64, req *models.UpdateEntityAttributeRequest) (*models.EntityAttribute, error) {
 	entity, err := s.repo.GetByID(entityID, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("实体不存在")
+		return nil, apperrors.NotFound("entity_not_found", i18n.MsgEntityNotFound)
 	}
 	if entity.Status != "draft" {
-		return nil, fmt.Errorf("已审批实体不能修改属性")
+		return nil, apperrors.Conflict("entity_state_conflict", i18n.MsgEntityStateConflict)
 	}
 	if err := s.validateReferences(tenantID, nil, req.ElementID); err != nil {
 		return nil, err
@@ -231,7 +237,7 @@ func (s *EntityService) UpdateAttribute(attrID, entityID, tenantID int64, req *m
 
 	attr, err := s.repo.GetAttributeByID(attrID, entityID)
 	if err != nil {
-		return nil, fmt.Errorf("属性不存在")
+		return nil, apperrors.NotFound("attribute_not_found", i18n.MsgAttributeNotFound)
 	}
 
 	if req.Name != "" {
@@ -265,12 +271,15 @@ func (s *EntityService) UpdateAttribute(attrID, entityID, tenantID int64, req *m
 func (s *EntityService) DeleteAttribute(attrID, entityID, tenantID int64) error {
 	entity, err := s.repo.GetByID(entityID, tenantID)
 	if err != nil {
-		return fmt.Errorf("实体不存在")
+		return apperrors.NotFound("entity_not_found", i18n.MsgEntityNotFound)
 	}
 	if entity.Status != "draft" {
-		return fmt.Errorf("已审批实体不能修改属性")
+		return apperrors.Conflict("entity_state_conflict", i18n.MsgEntityStateConflict)
 	}
-	return s.repo.DeleteAttribute(attrID, entityID)
+	if err := s.repo.DeleteAttribute(attrID, entityID); err != nil {
+		return modelResourceError(err, "attribute_not_found", i18n.MsgAttributeNotFound)
+	}
+	return nil
 }
 
 // ImportFromMermaid 从 Mermaid ER 图全量替换当前租户的实体模型。
@@ -278,7 +287,7 @@ func (s *EntityService) ImportFromMermaid(tenantID, userID int64, req *models.Me
 	result := &models.MermaidImportResult{}
 	parsed, err := ParseMermaidER(req.MermaidCode)
 	if err != nil {
-		return nil, fmt.Errorf("解析Mermaid代码失败: %v", err)
+		return nil, apperrors.Wrap(apperrors.KindValidation, "mermaid_invalid", i18n.MsgValidationFailed, err)
 	}
 	err = s.repo.DB().Transaction(func(tx *gorm.DB) error {
 		var existingEntities []models.Entity
@@ -288,7 +297,7 @@ func (s *EntityService) ImportFromMermaid(tenantID, userID int64, req *models.Me
 		}
 		for _, entity := range existingEntities {
 			if entity.Status != "draft" {
-				return fmt.Errorf("租户存在已审批实体，必须全部重新打开后才能全量替换")
+				return apperrors.Conflict("entity_state_conflict", i18n.MsgEntityStateConflict)
 			}
 		}
 		entityRepo := repository.NewEntityRepository(tx)

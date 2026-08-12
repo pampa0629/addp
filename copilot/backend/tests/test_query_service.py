@@ -96,6 +96,7 @@ def test_generate_includes_current_query_as_non_resource_context(monkeypatch):
             "role": "Persons",
             "engine_id": 11,
             "locator": "addp://engine/11/path/Outdoor/Persons?type=collection&item_id=51657",
+            "query_names": {"mql": "Persons"},
             "data_type": "table",
             "fields": [{"name": "age", "path": ["age"], "type": "integer"}],
         }],
@@ -143,6 +144,7 @@ def test_generate_repairs_mql_that_does_not_cover_overlap_plan(monkeypatch):
         "role": "Outdoors",
         "engine_id": 11,
         "locator": "addp://engine/11/path/Outdoor/Outdoors?type=collection&item_id=51659",
+        "query_names": {"mql": "Outdoors"},
         "data_type": "table",
         "fields": [
             {"name": "members.userInfo.nickName", "path": ["members", "userInfo", "nickName"], "type": "string"},
@@ -192,6 +194,7 @@ def test_generate_repairs_invalid_plan_with_canonical_query_name(monkeypatch):
         "role": "活动",
         "engine_id": 11,
         "locator": "addp://engine/11/path/Outdoor/Outdoors?type=collection&item_id=51659",
+        "query_names": {"mql": "Outdoors"},
         "data_type": "table",
         "fields": [{"name": "title.whole", "path": ["title", "whole"], "type": "string"}],
     }]
@@ -207,9 +210,46 @@ def test_generate_repairs_invalid_plan_with_canonical_query_name(monkeypatch):
     ))
 
     assert result["plan"]["collections"] == ["Outdoors"]
-    assert '"query_name": "Outdoors"' in captured[0][1].content
+    assert '"query_names": {"mql": "Outdoors"}' in captured[0][1].content
     assert "Plan 校验错误" in captured[1][1].content
     assert len(captured) == 3
+
+
+def test_generate_uses_federated_sql_query_name(monkeypatch):
+    captured = []
+
+    class FakeLLM:
+        responses = [
+            '{"collections":["source_pg.analytics.users"],"field_paths":["id"],'
+            '"operations":["list"],"result_keys":[],"assumptions":[]}',
+            '{"query":"SELECT id FROM source_pg.analytics.users","query_parameters":[],"explanation":"","warnings":[]}',
+        ]
+
+        async def ainvoke(self, messages, **_kwargs):
+            captured.append(messages)
+            return type("Response", (), {"content": self.responses.pop(0)})()
+
+    monkeypatch.setattr(
+        "services.query_service.CopilotInferenceService.chat_model",
+        lambda *_args, **_kwargs: FakeLLM(),
+    )
+    engine = {
+        "id": 99,
+        "engine_type": "duckdb",
+        "capabilities": {"compute": {"query": {"federation": {"supported": True}}}},
+    }
+    resources = [{
+        "query_names": {"sql": "analytics.users", "federated_sql": "source_pg.analytics.users"},
+        "fields": [{"name": "id"}],
+    }]
+
+    result = asyncio.run(QueryService().generate(
+        query="查询用户", engine=engine, query_language="sql", resources=resources,
+        current_query=None, tenant_id=1, db=None,
+    ))
+
+    assert result["query"] == "SELECT id FROM source_pg.analytics.users"
+    assert '"query_name": "source_pg.analytics.users"' in captured[0][1].content
 
 
 def test_generate_repairs_candidate_that_cannot_be_parsed(monkeypatch):
@@ -240,6 +280,7 @@ def test_generate_repairs_candidate_that_cannot_be_parsed(monkeypatch):
             "role": "人员",
             "engine_id": 11,
             "locator": "addp://engine/11/path/Outdoor/Persons?type=collection&item_id=51657",
+            "query_names": {"mql": "Persons"},
             "data_type": "table",
             "fields": [{"name": "age", "path": ["age"], "type": "integer"}],
         }],
@@ -282,6 +323,7 @@ def test_generate_repairs_malformed_mql_json_envelope(monkeypatch):
             "role": "人员",
             "engine_id": 11,
             "locator": "addp://engine/11/path/Outdoor/Persons?type=collection&item_id=51657",
+            "query_names": {"mql": "Persons"},
             "data_type": "table",
             "fields": [{"name": "age", "path": ["age"], "type": "integer"}],
         }],
@@ -338,6 +380,7 @@ def test_generate_repairs_missing_mql_parameter_definition(monkeypatch):
             "role": "人员",
             "engine_id": 11,
             "locator": "addp://engine/11/path/Outdoor/Persons?type=collection&item_id=51657",
+            "query_names": {"mql": "Persons"},
             "data_type": "table",
             "fields": [{"name": "userInfo.nickName", "path": ["userInfo", "nickName"], "type": "string"}],
         }],
@@ -370,11 +413,70 @@ def test_validate_candidate_rejects_unverified_mql_collection():
     }
     errors = QueryService._validate_candidate(candidate, "mql", [{
         "locator": "addp://engine/11/path/Outdoor/Outdoors?type=collection&item_id=51659",
+        "query_names": {"mql": "Outdoors"},
         "fields": [],
     }], plan)
 
     assert "MQL collection is not verified: Other" in errors
     assert "MQL does not cover planned collection: Outdoors" in errors
+
+
+def test_validate_candidate_rejects_sql_write_and_unverified_table():
+    candidate = {"query": "DROP TABLE analytics.users", "query_parameters": []}
+    resources = [{
+        "query_names": {"sql": "public.users"},
+        "fields": [{"name": "id"}],
+    }]
+    plan = {"collections": ["public.users"], "field_paths": [], "operations": ["list"], "result_keys": [], "assumptions": []}
+
+    errors = QueryService._validate_candidate(candidate, "sql", resources, plan)
+
+    assert "SQL must be a read-only query" in errors
+    assert "SQL table is not verified: analytics.users" in errors
+
+
+def test_validate_candidate_accepts_schema_qualified_sql_fact():
+    candidate = {"query": "SELECT id FROM analytics.users", "query_parameters": []}
+    resources = [{
+        "query_names": {"sql": "analytics.users"},
+        "fields": [{"name": "id"}],
+    }]
+    plan = {"collections": ["analytics.users"], "field_paths": ["id"], "operations": ["list"], "result_keys": [], "assumptions": []}
+
+    assert QueryService._validate_candidate(candidate, "sql", resources, plan) == []
+
+
+def test_validate_candidate_normalizes_quoted_sql_table_and_cte():
+    candidate = {
+        "query": 'WITH selected AS (SELECT id FROM "analytics"."users") SELECT id FROM selected',
+        "query_parameters": [],
+    }
+    resources = [{"query_names": {"sql": "analytics.users"}, "fields": [{"name": "id"}]}]
+    plan = {"collections": ["analytics.users"], "field_paths": ["id"], "operations": ["list"], "result_keys": [], "assumptions": []}
+
+    assert QueryService._validate_candidate(candidate, "sql", resources, plan) == []
+
+
+def test_validate_candidate_rejects_cypher_write_and_unverified_property():
+    candidate = {"query": "MATCH (n:Person) SET n.password = 'x' RETURN n.password", "query_parameters": []}
+    resources = [{"query_names": {"cypher": "Person"}, "fields": [{"name": "nickname"}]}]
+    plan = {"collections": ["Person"], "field_paths": [], "operations": ["list"], "result_keys": [], "assumptions": []}
+
+    errors = QueryService._validate_candidate(candidate, "cypher", resources, plan)
+
+    assert "Cypher contains a write operation" in errors
+    assert "Cypher field is not verified: password" in errors
+
+
+def test_validate_candidate_rejects_unregistered_query_language():
+    errors = QueryService._validate_candidate(
+        {"query": "anything", "query_parameters": []},
+        "promql",
+        [{"query_names": {"promql": "metric"}, "fields": []}],
+        {"collections": ["metric"], "field_paths": [], "operations": ["list"], "result_keys": [], "assumptions": []},
+    )
+
+    assert errors == ["query language is unsupported: promql"]
 
 
 def test_validate_plan_rejects_unsupported_operation():
@@ -387,6 +489,7 @@ def test_validate_plan_rejects_unsupported_operation():
     }
     resources = [{
         "locator": "addp://engine/11/path/Outdoor/Outdoors?type=collection&item_id=51659",
+        "query_names": {"mql": "Outdoors"},
         "fields": [{"name": "title.whole", "path": ["title", "whole"]}],
     }]
 
@@ -423,6 +526,7 @@ def test_validate_plan_requires_fields_for_set_ratio_operations():
     }
     resources = [{
         "locator": "addp://engine/11/path/Outdoor/Outdoors?type=collection&item_id=51659",
+        "query_names": {"mql": "Outdoors"},
         "fields": [
             {"name": "members.userInfo.nickName"},
             {"name": "title.whole"},
@@ -450,6 +554,7 @@ def test_validate_candidate_rejects_unverified_mql_field():
     }
     resources = [{
         "locator": "addp://engine/11/path/Outdoor/Outdoors?type=collection&item_id=51659",
+        "query_names": {"mql": "Outdoors"},
         "fields": [
             {"name": "members.userInfo.nickName", "path": ["members", "userInfo", "nickName"]},
             {"name": "title.whole", "path": ["title", "whole"]},
@@ -477,6 +582,7 @@ def test_validate_candidate_recognizes_nested_mql_field_as_plan_coverage():
     }
     resources = [{
         "locator": "addp://engine/11/path/Outdoor/Outdoors?type=collection&item_id=51659",
+        "query_names": {"mql": "Outdoors"},
         "fields": [
             {"name": "members", "path": ["members"]},
             {"name": "members.userInfo.nickName", "path": ["members", "userInfo", "nickName"]},
@@ -508,6 +614,7 @@ def test_validate_candidate_accepts_derived_mql_fields_between_stages():
     }
     resources = [{
         "locator": "addp://engine/11/path/Outdoor/Outdoors?type=collection&item_id=51659",
+        "query_names": {"mql": "Outdoors"},
         "fields": [
             {"name": "members.userInfo.nickName", "path": ["members", "userInfo", "nickName"]},
             {"name": "title.whole", "path": ["title", "whole"]},

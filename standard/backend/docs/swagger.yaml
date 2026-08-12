@@ -123,6 +123,12 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 删除数据分类 | Delete data classification
@@ -192,6 +198,12 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -279,6 +291,12 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -559,6 +577,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: Bad Gateway
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 下载文档文件 | Download document file
@@ -612,6 +642,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "413":
+          description: Request Entity Too Large
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: Bad Gateway
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 上传文档文件 | Upload document file
@@ -664,6 +706,12 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1220,6 +1268,12 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 删除度量类别 | Delete measurement category
@@ -1290,6 +1344,12 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 删除指标分类 | Delete metric category
@@ -1359,6 +1419,12 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []
@@ -1557,6 +1623,12 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []

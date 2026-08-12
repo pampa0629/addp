@@ -57,7 +57,7 @@ func (r *TableRelationRepository) ListByFactTable(factTableID, tenantID int64) (
 
 // Create 创建关联
 func (r *TableRelationRepository) Create(rel *models.TableRelation) error {
-	return r.db.Create(rel).Error
+	return commonrepo.WrapDBError(r.db.Create(rel).Error)
 }
 
 func (r *TableRelationRepository) GetByID(id, sourceTable, tenantID int64) (*models.TableRelation, error) {
@@ -88,10 +88,10 @@ func (r *TableRelationRepository) Delete(id, sourceTable, tenantID int64) error 
 	result := r.db.Where("id = ? AND source_table = ? AND tenant_id = ?", id, sourceTable, tenantID).
 		Delete(&models.TableRelation{})
 	if result.Error != nil {
-		return result.Error
+		return commonrepo.WrapDBError(result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+		return commonrepo.WrapDBError(gorm.ErrRecordNotFound)
 	}
 	return nil
 }

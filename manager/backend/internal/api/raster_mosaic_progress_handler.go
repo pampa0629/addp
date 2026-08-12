@@ -87,6 +87,8 @@ func (h *TaskProviderHandler) RecordManagerExecutionProgressEvent(c *gin.Context
 	switch exec.TaskType {
 	case commonExecution.TaskTypeVectorTileCacheGeneration:
 		h.recordTileCacheProgressEvent(c, tenantID, executionID, req)
+	case commonExecution.TaskTypeVectorTileSetGeneration:
+		h.recordTileSetProgressEvent(c, tenantID, executionID, req)
 	case commonExecution.TaskTypeRasterMosaicGeneration:
 		h.recordRasterMosaicProgressEvent(c, tenantID, executionID, req)
 	case commonExecution.TaskTypePointCloudCOPCGeneration:
@@ -94,6 +96,34 @@ func (h *TaskProviderHandler) RecordManagerExecutionProgressEvent(c *gin.Context
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "execution task_type does not accept progress events"})
 	}
+}
+
+func (h *TaskProviderHandler) recordTileSetProgressEvent(c *gin.Context, tenantID uint, executionID string, req RasterMosaicProgressEventRequest) {
+	if h.vectorTileSetTaskSvc == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "vector tile set generation task service is unavailable"})
+		return
+	}
+	event := service.TileCacheProgressEvent{
+		Phase: req.Phase, Event: req.Event, Message: req.Message,
+		CurrentZoom: req.CurrentZoom, MaxZoom: req.MaxZoom,
+		TilesProcessed: req.TilesProcessed, TilesTotalEstimate: req.TilesTotal,
+		ProgressPercent: req.ProgressPercent, OverallProgress: req.OverallProgress,
+		ElapsedSeconds: req.ElapsedSeconds, RemainingSeconds: req.RemainingSec, Metadata: req.Metadata,
+	}
+	if err := h.vectorTileSetTaskSvc.RecordProgressEvent(c.Request.Context(), tenantID, executionID, event); err != nil {
+		switch {
+		case errors.Is(err, commonapi.ErrNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "执行记录不存在"})
+		case errors.Is(err, service.ErrVectorTileSetProgressTargetMismatch):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		case errors.Is(err, service.ErrVectorTileSetExecutionCompleted):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+	c.JSON(http.StatusAccepted, RasterMosaicProgressEventResponse{ExecutionID: executionID, Status: "accepted"})
 }
 
 func (h *TaskProviderHandler) recordRasterMosaicProgressEvent(c *gin.Context, tenantID uint, executionID string, req RasterMosaicProgressEventRequest) {

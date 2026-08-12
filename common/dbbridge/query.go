@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -254,6 +255,32 @@ func SupportsReadOnlySQLExecution(engineType string) bool {
 	}
 }
 
+func readOnlyTxOptions(engineType string) *sql.TxOptions {
+	if strings.EqualFold(strings.TrimSpace(engineType), "oracle") {
+		// The Oracle driver rejects ReadOnly=true in database/sql BeginTx.
+		return nil
+	}
+	return &sql.TxOptions{ReadOnly: true}
+}
+
+func requiresSQLReadOnlyStatement(engineType string) bool {
+	return strings.EqualFold(strings.TrimSpace(engineType), "oracle")
+}
+
+func beginReadOnlyTransaction(ctx context.Context, db *sql.DB, engineType string) (*sql.Tx, error) {
+	tx, err := db.BeginTx(ctx, readOnlyTxOptions(engineType))
+	if err != nil {
+		return nil, err
+	}
+	if requiresSQLReadOnlyStatement(engineType) {
+		if _, err := tx.ExecContext(ctx, "SET TRANSACTION READ ONLY"); err != nil {
+			_ = tx.Rollback()
+			return nil, err
+		}
+	}
+	return tx, nil
+}
+
 // ExecuteReadOnlyQuery executes one SQL query in a database-enforced read-only
 // transaction. It is the only dbbridge path for User executions classified as
 // read.
@@ -284,9 +311,6 @@ func ExecuteReadOnlyQuery(ctx context.Context, engine *models.Engine, query stri
 		return nil, err
 	}
 	query = boundQuery
-	if limit > 0 {
-		query = commonquery.ForEngine(engine.EngineType).PaginateQuerySQL(query, limit, 0)
-	}
 	db, err := GetOrCreatePool(engine, DefaultPoolConfig())
 	if err != nil {
 		return nil, fmt.Errorf("获取连接池失败：%w", err)
@@ -295,7 +319,7 @@ func ExecuteReadOnlyQuery(ctx context.Context, engine *models.Engine, query stri
 	if err != nil {
 		return nil, fmt.Errorf("获取数据库连接失败：%w", err)
 	}
-	tx, err := sqlDB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	tx, err := beginReadOnlyTransaction(ctx, sqlDB, engine.EngineType)
 	if err != nil {
 		return nil, fmt.Errorf("开启只读事务失败：%w", err)
 	}
@@ -305,12 +329,15 @@ func ExecuteReadOnlyQuery(ctx context.Context, engine *models.Engine, query stri
 			_ = tx.Rollback()
 		}
 	}()
-	if strings.EqualFold(engine.EngineType, "oracle") {
-		if _, err := tx.ExecContext(ctx, "SET TRANSACTION READ ONLY"); err != nil {
-			return nil, fmt.Errorf("设置 Oracle 只读事务失败：%w", err)
+	if strings.EqualFold(strings.TrimSpace(engine.EngineType), "oracle") {
+		query, err = rewriteOracleSpatialSelect(ctx, tx, query)
+		if err != nil {
+			return nil, fmt.Errorf("准备 Oracle Spatial 查询失败：%w", err)
 		}
 	}
-
+	if limit > 0 {
+		query = commonquery.ForEngine(engine.EngineType).PaginateQuerySQL(query, limit, 0)
+	}
 	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -324,6 +351,72 @@ func ExecuteReadOnlyQuery(ctx context.Context, engine *models.Engine, query stri
 	}
 	committed = true
 	return result, nil
+}
+
+var oracleSelectAllPattern = regexp.MustCompile(`(?is)^\s*SELECT\s+\*\s+FROM\s+((?:"[^"]+"|[A-Za-z0-9_$#]+)\s*\.\s*(?:"[^"]+"|[A-Za-z0-9_$#]+))(.*)$`)
+
+// rewriteOracleSpatialSelect expands the one unambiguous table-sample form used
+// by the query workbench. Oracle's UDT decoder can block on a bare SDO_GEOMETRY;
+// projecting that column to GeoJSON keeps the result tabular and inspectable.
+func rewriteOracleSpatialSelect(ctx context.Context, tx *sql.Tx, query string) (string, error) {
+	matches := oracleSelectAllPattern.FindStringSubmatch(query)
+	if len(matches) != 3 {
+		return query, nil
+	}
+	suffix := matches[2]
+	trimmedSuffix := strings.TrimSpace(suffix)
+	if trimmedSuffix != "" && !strings.HasPrefix(strings.ToUpper(trimmedSuffix), "FETCH") &&
+		!strings.HasPrefix(strings.ToUpper(trimmedSuffix), "WHERE") &&
+		!strings.HasPrefix(strings.ToUpper(trimmedSuffix), "ORDER") &&
+		!strings.HasPrefix(strings.ToUpper(trimmedSuffix), "GROUP") &&
+		!strings.HasPrefix(strings.ToUpper(trimmedSuffix), "OFFSET") &&
+		!strings.HasPrefix(strings.ToUpper(trimmedSuffix), "FOR") {
+		return query, nil
+	}
+	parts := strings.Split(matches[1], ".")
+	if len(parts) != 2 {
+		return query, nil
+	}
+	owner := strings.Trim(strings.TrimSpace(parts[0]), `"`)
+	table := strings.Trim(strings.TrimSpace(parts[1]), `"`)
+	rows, err := tx.QueryContext(ctx, `
+		SELECT column_name, data_type
+		  FROM all_tab_columns
+		 WHERE owner = :1 AND table_name = :2
+		 ORDER BY column_id`, owner, table)
+	if err != nil {
+		return query, err
+	}
+	defer rows.Close()
+	type column struct{ name, dataType string }
+	columns := make([]column, 0)
+	hasSpatial := false
+	for rows.Next() {
+		var c column
+		if err := rows.Scan(&c.name, &c.dataType); err != nil {
+			return query, err
+		}
+		columns = append(columns, c)
+		if strings.EqualFold(strings.TrimSpace(c.dataType), "SDO_GEOMETRY") {
+			hasSpatial = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return query, err
+	}
+	if !hasSpatial || len(columns) == 0 {
+		return query, nil
+	}
+	projection := make([]string, 0, len(columns))
+	for _, c := range columns {
+		quoted := `"` + strings.ReplaceAll(c.name, `"`, `""`) + `"`
+		if strings.EqualFold(strings.TrimSpace(c.dataType), "SDO_GEOMETRY") {
+			projection = append(projection, `SDO_UTIL.TO_GEOJSON(`+quoted+`) AS `+quoted)
+		} else {
+			projection = append(projection, quoted)
+		}
+	}
+	return "SELECT " + strings.Join(projection, ", ") + " FROM " + matches[1] + suffix, nil
 }
 
 // ExecuteReadOnlyRuntimeQuery executes a non-SQL query through the engine's

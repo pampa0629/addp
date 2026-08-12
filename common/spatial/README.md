@@ -21,6 +21,7 @@ PostGIS 相关工具包括：
 - WKT / GeoJSON 源坐标表达式
 - `geom.T` 与 WKT、WKB、EWKB、hex WKB / EWKB 之间的通用转换
 - `DecodeGeometryValue(value, encoding, srid)` / `EncodeGeometryValue(geom, encoding, srid)` 标准 geometry row encoding 门面；`srid` 只写入或标注编码元数据，不执行 CRS transform
+- `FlatGeobufBatchFeatureReader` 在流式解码标准 geometry row encoding 时累计源坐标二维范围，供拥有本次物化 execution 的调用方读取；它不持久化范围，也不改变 CRS
 - MVT、GeoJSON 分页、范围、SRID、物化视图和 GIST 索引 SQL 构造
 
 跨引擎 SQL 方言差异属于 `common/query`；PostGIS 这类空间扩展能力属于本包。

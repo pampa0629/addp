@@ -28,6 +28,23 @@ func TestSupportsReadOnlySQLExecution(t *testing.T) {
 	}
 }
 
+func TestReadOnlyTransactionStrategyUsesOracleStatement(t *testing.T) {
+	if options := readOnlyTxOptions("oracle"); options != nil {
+		t.Fatalf("Oracle transaction options = %#v, want nil so the driver can begin a normal transaction", options)
+	}
+	if !requiresSQLReadOnlyStatement("oracle") {
+		t.Fatal("Oracle must apply read-only mode with SET TRANSACTION READ ONLY")
+	}
+
+	options := readOnlyTxOptions("postgresql")
+	if options == nil || !options.ReadOnly {
+		t.Fatalf("PostgreSQL transaction options = %#v, want ReadOnly=true", options)
+	}
+	if requiresSQLReadOnlyStatement("postgresql") {
+		t.Fatal("PostgreSQL must not use the Oracle-specific read-only statement")
+	}
+}
+
 func TestBindSQLExecutionParametersUsesNativeDriverPlaceholders(t *testing.T) {
 	tests := []struct {
 		engineType string

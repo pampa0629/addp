@@ -19,7 +19,7 @@ func (r *LogicalTableRepository) DB() *gorm.DB {
 }
 
 func (r *LogicalTableRepository) Create(table *models.LogicalTable) error {
-	return r.db.Create(table).Error
+	return commonrepo.WrapDBError(r.db.Create(table).Error)
 }
 
 func (r *LogicalTableRepository) GetByID(id, tenantID int64) (*models.LogicalTable, error) {
@@ -80,7 +80,7 @@ func (r *LogicalTableRepository) List(tenantID int64, opts ListLogicalTableOptio
 }
 
 func (r *LogicalTableRepository) Update(table *models.LogicalTable) error {
-	return r.db.Save(table).Error
+	return commonrepo.WrapDBError(r.db.Save(table).Error)
 }
 
 func (r *LogicalTableRepository) Delete(id, tenantID int64) error {
@@ -103,7 +103,7 @@ func (r *LogicalTableRepository) Delete(id, tenantID int64) error {
 			return result.Error
 		}
 		if result.RowsAffected == 0 {
-			return gorm.ErrRecordNotFound
+			return commonrepo.WrapDBError(gorm.ErrRecordNotFound)
 		}
 		return nil
 	})
@@ -114,10 +114,10 @@ func (r *LogicalTableRepository) UpdateStatus(id, tenantID int64, status string,
 		Where("id = ? AND tenant_id = ?", id, tenantID).
 		Updates(map[string]interface{}{"status": status, "updated_by": updatedBy})
 	if result.Error != nil {
-		return result.Error
+		return commonrepo.WrapDBError(result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+		return commonrepo.WrapDBError(gorm.ErrRecordNotFound)
 	}
 	return nil
 }
@@ -141,7 +141,7 @@ func (r *LogicalTableRepository) GetFields(tableID int64) ([]models.LogicalField
 
 // CreateField 创建字段
 func (r *LogicalTableRepository) CreateField(field *models.LogicalField) error {
-	return r.db.Create(field).Error
+	return commonrepo.WrapDBError(r.db.Create(field).Error)
 }
 
 // GetFieldByID 按 ID 获取字段
@@ -153,17 +153,17 @@ func (r *LogicalTableRepository) GetFieldByID(fieldID, tableID int64) (*models.L
 
 // UpdateField 更新字段
 func (r *LogicalTableRepository) UpdateField(field *models.LogicalField) error {
-	return r.db.Save(field).Error
+	return commonrepo.WrapDBError(r.db.Save(field).Error)
 }
 
 // DeleteField 删除字段
 func (r *LogicalTableRepository) DeleteField(fieldID, tableID int64) error {
 	result := r.db.Where("id = ? AND table_id = ?", fieldID, tableID).Delete(&models.LogicalField{})
 	if result.Error != nil {
-		return result.Error
+		return commonrepo.WrapDBError(result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+		return commonrepo.WrapDBError(gorm.ErrRecordNotFound)
 	}
 	return nil
 }

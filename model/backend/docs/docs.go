@@ -77,6 +77,12 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "409": {
+                        "description": "分层编码冲突 | DW layer code conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -199,6 +205,18 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "404": {
+                        "description": "数仓分层不存在 | DW layer not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "数仓分层仍被引用 | DW layer is still referenced",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -301,6 +319,18 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "实体编码冲突 | Entity code conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -373,6 +403,18 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Mermaid 内容无效 | Invalid Mermaid content",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "存在已审批实体 | Approved entities exist",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     }
                 },
@@ -463,6 +505,18 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "404": {
+                        "description": "实体不存在 | Entity not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "实体状态冲突 | Entity state conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -498,6 +552,18 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "实体不存在 | Entity not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "实体状态冲突 | Entity state conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     }
                 },
@@ -536,6 +602,24 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "实体不满足审批条件 | Entity is not ready for approval",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "实体不存在 | Entity not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "实体状态冲突 | Entity state conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     }
                 },
@@ -622,6 +706,18 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "实体或引用资源不存在 | Entity or referenced resource not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "实体状态冲突 | Entity state conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     }
                 },
@@ -760,6 +856,18 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.MessageResponse"
                         }
+                    },
+                    "404": {
+                        "description": "实体不存在 | Entity not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "实体状态冲突 | Entity state conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -837,6 +945,18 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "关系实体不存在 | Referenced entity not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "关系状态或自关联冲突 | Relation state or self-reference conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     }
                 },
@@ -923,6 +1043,18 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "实体关系或关系实体不存在 | Entity relation or referenced entity not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "关系状态冲突 | Relation state conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     }
                 },
@@ -1074,6 +1206,18 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "逻辑表编码冲突 | Logical table code conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -1160,6 +1304,18 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "404": {
+                        "description": "逻辑表不存在 | Logical table not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "逻辑表状态冲突 | Logical table state conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -1195,6 +1351,18 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表不存在 | Logical table not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "逻辑表状态或关联冲突 | Logical table state or relation conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     }
                 },
@@ -1232,6 +1400,24 @@ const docTemplate = `{
                         "description": "审批成功 | Approved successfully",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "逻辑表不满足审批条件 | Logical table is not ready for approval",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表不存在 | Logical table not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "逻辑表状态冲突 | Logical table state conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     }
                 },
@@ -1318,6 +1504,24 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "表或字段类型无效 | Invalid table or field type",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表或字段不存在 | Logical table or field not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "表状态或关联冲突 | Table state or relation conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     }
                 },
@@ -1449,6 +1653,24 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "字段定义无效 | Invalid field definition",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表或引用资源不存在 | Logical table or referenced resource not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "逻辑表状态冲突 | Logical table state conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     }
                 },
@@ -1636,6 +1858,24 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "400": {
+                        "description": "请求的表类型无效 | Invalid table type",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表或字段不存在 | Logical table or field not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "逻辑表状态或指标关联冲突 | Logical table state or metric mapping conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -1696,6 +1936,9 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -1710,6 +1953,15 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "当前物化配置 | Current materialization configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.PreviewLogicalTableDDLRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -1718,6 +1970,18 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求或物化配置无效 | Invalid request or materialization configuration",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表不存在 | Logical table not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     }
                 },
@@ -1755,6 +2019,18 @@ const docTemplate = `{
                         "description": "重新打开成功 | Reopened successfully",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.MessageResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表不存在 | Logical table not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "逻辑表状态冲突 | Logical table state conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     }
                 },
@@ -2012,6 +2288,19 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_model_internal_models.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "请求参数错误"
+                },
+                "error_code": {
+                    "type": "string",
+                    "example": "model_operation_failed"
+                }
+            }
+        },
         "github_com_addp_model_internal_models.MermaidImportRequest": {
             "type": "object",
             "required": [
@@ -2029,6 +2318,18 @@ const docTemplate = `{
                 "message": {
                     "type": "string",
                     "example": "操作成功"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.PreviewLogicalTableDDLRequest": {
+            "type": "object",
+            "required": [
+                "materialization"
+            ],
+            "properties": {
+                "materialization": {
+                    "type": "object",
+                    "additionalProperties": true
                 }
             }
         },

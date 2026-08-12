@@ -1,8 +1,6 @@
 package service
 
 import (
-	"fmt"
-
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
@@ -78,7 +76,7 @@ func (s *MetricService) validateCategoryParent(id, tenantID int64, parentID *int
 	}
 	for current := parentID; current != nil; {
 		if *current == id {
-			return fmt.Errorf("指标分类父级不能是自身或其子级")
+			return ErrMetricCategoryParentCycle
 		}
 		parent, err := s.catRepo.GetByID(*current, tenantID)
 		if err != nil {
@@ -113,7 +111,7 @@ func (s *MetricService) CreateMetric(req *models.CreateMetricRequest, tenantID, 
 		return nil, err
 	}
 	if exists {
-		return nil, fmt.Errorf("指标编码 '%s' 已存在", req.Code)
+		return nil, commonapi.ErrConflict
 	}
 
 	metric := &models.Metric{

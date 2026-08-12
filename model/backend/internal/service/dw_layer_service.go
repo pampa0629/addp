@@ -1,8 +1,8 @@
 package service
 
 import (
-	"fmt"
-
+	"github.com/addp/model/i18n"
+	"github.com/addp/model/internal/apperrors"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/repository"
 )
@@ -21,7 +21,7 @@ func (s *DWLayerService) CreateDWLayer(req *models.CreateDWLayerRequest, tenantI
 		return nil, err
 	}
 	if exists {
-		return nil, fmt.Errorf("分层编码 '%s' 已存在", req.LayerCode)
+		return nil, apperrors.Conflict("dw_layer_code_conflict", i18n.MsgLayerCodeConflict)
 	}
 
 	layer := &models.DWLayer{
@@ -35,13 +35,17 @@ func (s *DWLayerService) CreateDWLayer(req *models.CreateDWLayerRequest, tenantI
 	}
 
 	if err := s.repo.Create(layer); err != nil {
-		return nil, err
+		return nil, modelResourceError(err, "dw_layer_code", i18n.MsgLayerCodeConflict)
 	}
 	return layer, nil
 }
 
 func (s *DWLayerService) GetDWLayer(id, tenantID int64) (*models.DWLayer, error) {
-	return s.repo.GetByID(id, tenantID)
+	layer, err := s.repo.GetByID(id, tenantID)
+	if err != nil {
+		return nil, modelResourceError(err, "dw_layer_not_found", i18n.MsgLayerNotFound)
+	}
+	return layer, nil
 }
 
 func (s *DWLayerService) ListDWLayers(tenantID int64) ([]models.DWLayer, error) {
@@ -51,7 +55,7 @@ func (s *DWLayerService) ListDWLayers(tenantID int64) ([]models.DWLayer, error) 
 func (s *DWLayerService) UpdateDWLayer(id, tenantID int64, req *models.UpdateDWLayerRequest) (*models.DWLayer, error) {
 	layer, err := s.repo.GetByID(id, tenantID)
 	if err != nil {
-		return nil, err
+		return nil, modelResourceError(err, "dw_layer_not_found", i18n.MsgLayerNotFound)
 	}
 
 	if req.LayerName != "" {
@@ -75,14 +79,14 @@ func (s *DWLayerService) UpdateDWLayer(id, tenantID int64, req *models.UpdateDWL
 func (s *DWLayerService) DeleteDWLayer(id, tenantID int64) error {
 	layer, err := s.repo.GetByID(id, tenantID)
 	if err != nil {
-		return err
+		return modelResourceError(err, "dw_layer_not_found", i18n.MsgLayerNotFound)
 	}
 	count, err := s.repo.CountLogicalTableReferences(layer.LayerCode, tenantID)
 	if err != nil {
 		return err
 	}
 	if count > 0 {
-		return fmt.Errorf("该分层仍被 %d 个逻辑表引用，不能删除", count)
+		return apperrors.Conflict("dw_layer_in_use", i18n.MsgLayerInUse)
 	}
 	return s.repo.Delete(id, tenantID)
 }

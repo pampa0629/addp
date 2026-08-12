@@ -10,7 +10,7 @@
           <el-radio-button value="composite">{{ $t('standard.metric.composite') }}</el-radio-button>
         </el-radio-group>
       </div>
-      <el-button type="primary" @click="showCreateDialog = true">{{ $t('standard.metric.create') }}</el-button>
+      <el-button type="primary" @click="openCreateDialog">{{ $t('standard.metric.create') }}</el-button>
     </div>
 
     <el-row :gutter="16">
@@ -206,6 +206,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { metricAPI, metricCategoryAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
+import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -253,6 +254,10 @@ const loadMetrics = async () => {
     const res = await metricAPI.list(params)
     metrics.value = res.data || []
     total.value = res.total || 0
+  } catch (e) {
+    metrics.value = []
+    total.value = 0
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -281,13 +286,22 @@ const handlePageChange = () => {
 }
 
 const loadCategories = async () => {
-  const res = await metricCategoryAPI.list()
-  categories.value = res || []
+  try {
+    const res = await metricCategoryAPI.list()
+    categories.value = res || []
+  } catch (e) {
+    categories.value = []
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
+  }
 }
 
 const loadAtomicMetrics = async () => {
-  const res = await metricAPI.list({ type: 'atomic', page_size: 500 })
-  atomicMetrics.value = res.data || []
+  try {
+    const res = await metricAPI.list({ type: 'atomic', page_size: 500 })
+    atomicMetrics.value = res.data || []
+  } catch (e) {
+    atomicMetrics.value = []
+  }
 }
 
 const selectCategory = (id) => {
@@ -312,10 +326,15 @@ const createMetric = async () => {
     form.value = { name: '', code: '', type: 'atomic', definition: '', formula: '', category_id: null, base_metric_id: null }
     loadMetrics()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t))
   } finally {
     saving.value = false
   }
+}
+
+const openCreateDialog = () => {
+  form.value = { name: '', code: '', type: filterType.value || 'atomic', definition: '', formula: '', category_id: selectedCategoryID.value, base_metric_id: null }
+  showCreateDialog.value = true
 }
 
 const openDetail = (row) => {
@@ -329,7 +348,7 @@ const approveMetric = async (row) => {
     ElMessage.success(t('standard.common.approveSuccess'))
     loadMetrics()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(t('standard.common.approveFailed'))
+    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.approveFailed'))
   }
 }
 
@@ -340,7 +359,7 @@ const deleteMetric = async (row) => {
     ElMessage.success(t('standard.common.deleteSuccess'))
     loadMetrics()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(t('standard.common.deleteFailed'))
+    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
   }
 }
 
@@ -352,7 +371,7 @@ const createCategory = async () => {
     categoryForm.value = { name: '', code: '', parent_id: null }
     await loadCategories()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t))
   } finally {
     saving.value = false
   }
@@ -369,32 +388,47 @@ const deleteCategory = async (data) => {
     ElMessage.success(t('standard.common.deleteSuccess'))
     await loadCategories()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(t('standard.common.deleteFailed'))
+    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
   }
 }
 
-onMounted(() => {
-  loadCategories()
-  loadMetrics()
-  loadAtomicMetrics()
+onMounted(async () => {
+  await loadCategories()
+  if (selectedCategoryID.value && !categories.value.some(category => category.id === selectedCategoryID.value)) {
+    selectedCategoryID.value = null
+    syncQuery()
+  }
+  await Promise.all([loadMetrics(), loadAtomicMetrics()])
 })
 </script>
 
 <style scoped>
-.metric-list { padding: 20px; }
+.metric-list { min-height: 100%; padding: 20px; color: var(--addp-text-primary); background: var(--addp-bg-secondary); }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .header-left { display: flex; align-items: center; gap: 16px; }
-.header-left h2 { margin: 0; font-size: 18px; color: var(--el-text-color-primary); }
+.header-left h2 { margin: 0; font-size: 18px; color: var(--addp-text-primary); }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
-.category-item { padding: 8px 12px; cursor: pointer; border-radius: 4px; font-size: 13px; color: var(--el-text-color-primary); }
+.metric-list :deep(.el-card) { background: var(--addp-bg-primary); border-color: var(--addp-border-color); box-shadow: var(--addp-shadow-card); }
+.category-item { padding: 8px 12px; cursor: pointer; border-radius: 4px; font-size: 13px; color: var(--addp-text-primary); }
 .category-item.active, .cat-node.active { color: var(--el-color-primary); font-weight: 500; }
-.category-item:hover { background: var(--el-fill-color-light); }
+.category-item:hover { background: var(--addp-bg-secondary); }
 .cat-node { padding: 2px 0; font-size: 13px; }
 .toolbar { display: flex; gap: 10px; margin-bottom: 16px; }
 .pagination { margin-top: 16px; display: flex; justify-content: flex-end; }
-.table-actions { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.table-actions { display: inline-flex; align-items: center; gap: 8px; min-width: max-content; white-space: nowrap; }
+.table-actions :deep(.el-button) { white-space: nowrap; }
 .tree-node { display: flex; align-items: center; gap: 8px; width: 100%; }
-.tree-code { font-size: 12px; color: var(--el-text-color-secondary); }
-.tree-actions { margin-left: auto; }
+.tree-code { font-size: 12px; color: var(--addp-text-secondary); }
+.tree-actions { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; min-width: max-content; white-space: nowrap; }
 .category-manage { max-height: 400px; overflow-y: auto; }
+
+@media (max-width: 768px) {
+  .metric-list { padding: 12px; }
+  .page-header, .header-left { align-items: flex-start; flex-wrap: wrap; }
+  .metric-list :deep(.el-row) { margin-left: 0 !important; margin-right: 0 !important; }
+  .metric-list :deep(.el-col) { max-width: 100%; flex: 0 0 100%; }
+  .metric-list :deep(.el-col + .el-col) { margin-top: 12px; }
+  .toolbar { flex-wrap: wrap; }
+  .toolbar :deep(.el-input) { width: 100% !important; }
+}
 </style>

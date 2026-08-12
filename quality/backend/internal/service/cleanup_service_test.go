@@ -53,8 +53,8 @@ func TestQualityCleanupLogicalDisablesEngineBoundState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteCleanup() error = %v", err)
 	}
-	if stats.DisabledRuleApps != 1 || stats.DisabledCheckTasks != 1 || stats.IgnoredIssues != 1 {
-		t.Fatalf("stats = %#v, want disabled rule/task and one ignored issue", stats)
+	if stats.DisabledRuleApps != 1 || stats.IgnoredIssues != 1 {
+		t.Fatalf("stats = %#v, want disabled rule and one ignored issue", stats)
 	}
 
 	var updatedRule models.RuleApplication
@@ -67,9 +67,6 @@ func TestQualityCleanupLogicalDisablesEngineBoundState(t *testing.T) {
 	var updatedTask models.CheckTask
 	if err := db.First(&updatedTask, task.ID).Error; err != nil {
 		t.Fatalf("load check task: %v", err)
-	}
-	if updatedTask.Enabled {
-		t.Fatalf("check task enabled=%v, want disabled", updatedTask.Enabled)
 	}
 	var updatedIssue models.Issue
 	if err := db.First(&updatedIssue, issue.ID).Error; err != nil {
@@ -164,7 +161,6 @@ func newQualityCleanupTestDB(t *testing.T) *gorm.DB {
 			engine_id INTEGER NOT NULL,
 			schema_name TEXT,
 			table_name TEXT,
-			enabled BOOLEAN,
 			created_by INTEGER NOT NULL,
 			updated_by INTEGER,
 			created_at DATETIME,
@@ -234,7 +230,6 @@ func createQualityCleanupCheckTask(t *testing.T, db *gorm.DB, tenantID int64, en
 		EngineID:   engineID,
 		SchemaName: "public",
 		Table:      name,
-		Enabled:    true,
 		CreatedBy:  1,
 	}
 	if err := db.Create(&item).Error; err != nil {

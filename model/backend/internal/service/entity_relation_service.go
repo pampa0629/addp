@@ -3,6 +3,8 @@ package service
 import (
 	"fmt"
 
+	"github.com/addp/model/i18n"
+	"github.com/addp/model/internal/apperrors"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/repository"
 )
@@ -15,14 +17,14 @@ type EntityRelationService struct {
 func (s *EntityRelationService) requireDraftEntities(tenantID, sourceID, targetID int64) (*models.Entity, *models.Entity, error) {
 	sourceEntity, err := s.entityRepo.GetByID(sourceID, tenantID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("源实体不存在")
+		return nil, nil, apperrors.NotFound("source_entity_not_found", i18n.MsgRelationTargetNotFound)
 	}
 	targetEntity, err := s.entityRepo.GetByID(targetID, tenantID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("目标实体不存在")
+		return nil, nil, apperrors.NotFound("target_entity_not_found", i18n.MsgRelationTargetNotFound)
 	}
 	if sourceEntity.Status != "draft" || targetEntity.Status != "draft" {
-		return nil, nil, fmt.Errorf("实体关系两端都必须处于草稿状态")
+		return nil, nil, apperrors.Conflict("entity_relation_state_conflict", i18n.MsgRelationStateConflict)
 	}
 	return sourceEntity, targetEntity, nil
 }
@@ -43,7 +45,7 @@ func (s *EntityRelationService) Create(tenantID int64, req *models.CreateEntityR
 
 	// 不允许自关联
 	if req.SourceEntity == req.TargetEntity {
-		return nil, fmt.Errorf("不允许创建自关联关系")
+		return nil, apperrors.Conflict("entity_relation_self_conflict", i18n.MsgRelationSelfConflict)
 	}
 
 	relation := &models.EntityRelation{
@@ -69,14 +71,18 @@ func (s *EntityRelationService) Create(tenantID int64, req *models.CreateEntityR
 
 // GetByID 根据ID获取实体关系
 func (s *EntityRelationService) GetByID(id, tenantID int64) (*models.EntityRelation, error) {
-	return s.relationRepo.GetByID(id, tenantID)
+	relation, err := s.relationRepo.GetByID(id, tenantID)
+	if err != nil {
+		return nil, modelResourceError(err, "entity_relation_not_found", i18n.MsgRelationNotFound)
+	}
+	return relation, nil
 }
 
 // GetByEntityID 获取某个实体的所有关系
 func (s *EntityRelationService) GetByEntityID(tenantID, entityID int64) ([]models.EntityRelation, error) {
 	// 验证实体存在且属于当前租户
 	if _, err := s.entityRepo.GetByID(entityID, tenantID); err != nil {
-		return nil, fmt.Errorf("实体不存在")
+		return nil, apperrors.NotFound("entity_not_found", i18n.MsgEntityNotFound)
 	}
 
 	return s.relationRepo.GetByEntityID(tenantID, entityID)
@@ -92,7 +98,7 @@ func (s *EntityRelationService) Update(id, tenantID int64, req *models.UpdateEnt
 	// 获取现有关系
 	relation, err := s.relationRepo.GetByID(id, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("关系不存在")
+		return nil, apperrors.NotFound("entity_relation_not_found", i18n.MsgRelationNotFound)
 	}
 	if _, _, err := s.requireDraftEntities(tenantID, relation.SourceEntity, relation.TargetEntity); err != nil {
 		return nil, err
@@ -119,11 +125,14 @@ func (s *EntityRelationService) Delete(id, tenantID int64) error {
 	// 验证关系存在且属于当前租户
 	relation, err := s.relationRepo.GetByID(id, tenantID)
 	if err != nil {
-		return fmt.Errorf("关系不存在")
+		return apperrors.NotFound("entity_relation_not_found", i18n.MsgRelationNotFound)
 	}
 	if _, _, err := s.requireDraftEntities(tenantID, relation.SourceEntity, relation.TargetEntity); err != nil {
 		return err
 	}
 
-	return s.relationRepo.Delete(id, tenantID)
+	if err := s.relationRepo.Delete(id, tenantID); err != nil {
+		return modelResourceError(err, "entity_relation_not_found", i18n.MsgRelationNotFound)
+	}
+	return nil
 }

@@ -40,6 +40,8 @@
       "add_success": "添加成功",
       "op_failed": "操作失败",
       "load_failed": "加载失败",
+      "invalid_detail_id": "详情地址中的 ID 无效，请返回列表重新选择。",
+      "optional": "可选",
       "permission_denied": "当前账号没有访问权限，请联系租户管理员分配对应角色或权限后重试。",
       "retry": "重试",
       "copy_success": "已复制到剪贴板",
@@ -47,6 +49,7 @@
     },
     "entity": {
       "title": "业务实体",
+      "detail": "实体详情",
       "new": "新建实体",
       "name": "实体名称",
       "code": "英文编码",
@@ -143,6 +146,7 @@
     },
     "logical_table": {
       "title": "逻辑表",
+      "detail": "逻辑表详情",
       "new": "新建逻辑表",
       "name": "逻辑表名",
       "code": "物理表名",

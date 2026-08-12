@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -57,6 +58,11 @@ type VectorTileSetTaskService struct {
 	metaClient        *commonClient.MetaClient
 	tileCacheRepo     *repository.TileCacheRepository
 }
+
+var (
+	ErrVectorTileSetProgressTargetMismatch = errors.New("vector tile set progress event target mismatch")
+	ErrVectorTileSetExecutionCompleted     = errors.New("vector tile set execution is already completed")
+)
 
 func NewVectorTileSetTaskService(repo *repository.VectorTileSetRepository, taskExecRepo *commonExecution.TaskExecutionRepository) *VectorTileSetTaskService {
 	return &VectorTileSetTaskService{repo: repo, taskExecRepo: taskExecRepo}
@@ -135,6 +141,56 @@ func (s *VectorTileSetTaskService) GetByID(ctx context.Context, id, tenantID uin
 }
 func (s *VectorTileSetTaskService) List(ctx context.Context, tenantID uint, page, pageSize int) ([]*models.VectorTileSetTask, int64, error) {
 	return s.repo.ListTasks(ctx, tenantID, page, pageSize)
+}
+
+func (s *VectorTileSetTaskService) RecordProgressEvent(ctx context.Context, tenantID uint, executionID string, event TileCacheProgressEvent) error {
+	if s.taskExecRepo == nil {
+		return errors.New("task execution repository is required")
+	}
+	executionID = strings.TrimSpace(executionID)
+	event.Phase = strings.TrimSpace(event.Phase)
+	event.Event = strings.TrimSpace(event.Event)
+	event.Message = strings.TrimSpace(event.Message)
+	if executionID == "" || tenantID == 0 {
+		return errors.New("execution_id and tenant_id are required")
+	}
+	if event.Phase == "" || event.Event == "" {
+		return errors.New("phase and event are required")
+	}
+	if event.TilesProcessed < 0 || event.TilesTotalEstimate < 0 ||
+		(event.TilesTotalEstimate > 0 && event.TilesProcessed > event.TilesTotalEstimate) {
+		return errors.New("invalid tile progress counters")
+	}
+	exec, err := s.taskExecRepo.GetByExecutionID(ctx, executionID, int(tenantID))
+	if err != nil {
+		return err
+	}
+	if exec.Module != commonExecution.ModuleManager || exec.TaskType != commonExecution.TaskTypeVectorTileSetGeneration {
+		return ErrVectorTileSetProgressTargetMismatch
+	}
+	if exec.IsCompleted() {
+		return ErrVectorTileSetExecutionCompleted
+	}
+	nextProgress := tileCacheEventProgressPercent(event, exec.Progress)
+	currentStep := event.Message
+	if currentStep == "" || currentStep == "生成矢量瓦片缓存" {
+		currentStep = "生成业务矢量瓦片集"
+		if event.MaxZoom > 0 {
+			currentStep = fmt.Sprintf("生成业务矢量瓦片集 z%d/%d", event.CurrentZoom, event.MaxZoom)
+		}
+		if event.TilesTotalEstimate > 0 {
+			currentStep = fmt.Sprintf("生成业务矢量瓦片集 z%d/%d：%d/%d", event.CurrentZoom, event.MaxZoom, event.TilesProcessed, event.TilesTotalEstimate)
+		}
+	}
+	now := time.Now()
+	fields := map[string]interface{}{
+		"progress": nextProgress, "current_step": currentStep,
+		"metadata": tileCacheProgressEventMetadata(exec.Metadata, event, nextProgress), "updated_at": now,
+	}
+	if exec.StartedAt != nil {
+		fields["execution_time_ms"] = int64(math.Max(0, float64(now.Sub(*exec.StartedAt).Milliseconds())))
+	}
+	return s.taskExecRepo.UpdateFields(ctx, executionID, int(tenantID), fields)
 }
 
 func (s *VectorTileSetTaskService) Execute(ctx context.Context, taskID, tenantID uint, triggerType, source string, parentExecutionID *string) (string, error) {

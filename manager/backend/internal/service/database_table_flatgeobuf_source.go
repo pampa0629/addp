@@ -15,7 +15,7 @@ import (
 	"github.com/minio/minio-go/v7"
 )
 
-func (e *ManagerVectorTileCacheWorkflowExecutor) prepareMySQLTableFlatGeobufSource(
+func (e *ManagerVectorTileCacheWorkflowExecutor) prepareDatabaseTableFlatGeobufSource(
 	ctx context.Context,
 	tenantID uint,
 	executionID string,
@@ -25,7 +25,7 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) prepareMySQLTableFlatGeobufSour
 	noopCleanup := func(context.Context) error { return nil }
 	engine, err := e.systemClient.GetEngineForTenant(ctx, tenantID, identity.EngineID)
 	if err != nil {
-		return "", nil, nil, noopCleanup, fmt.Errorf("get MySQL source engine: %w", err)
+		return "", nil, nil, noopCleanup, fmt.Errorf("get database table source engine: %w", err)
 	}
 	if !engine.IsUsable() {
 		return "", nil, nil, noopCleanup, errors.New("source engine is not active")
@@ -33,8 +33,9 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) prepareMySQLTableFlatGeobufSour
 	if engine.TenantID != nil && *engine.TenantID != tenantID {
 		return "", nil, nil, noopCleanup, ErrEngineAccessDenied
 	}
-	if !strings.EqualFold(strings.TrimSpace(engine.EngineType), "mysql") {
-		return "", nil, nil, noopCleanup, fmt.Errorf("database table engine %s does not use the MySQL FlatGeobuf workflow path", engine.EngineType)
+	engineType := strings.ToLower(strings.TrimSpace(engine.EngineType))
+	if engineType != "mysql" && engineType != "oracle" {
+		return "", nil, nil, noopCleanup, fmt.Errorf("database table engine %s does not support the FlatGeobuf workflow path", engine.EngineType)
 	}
 	plug, err := plugin.Get(engine.EngineType)
 	if err != nil {
@@ -46,13 +47,21 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) prepareMySQLTableFlatGeobufSour
 	}
 	geometryColumn := strings.TrimSpace(stringFromConfig(options["geometry_column"]))
 	if geometryColumn == "" {
-		return "", nil, nil, noopCleanup, errors.New("MySQL FlatGeobuf source requires geometry_column")
+		return "", nil, nil, noopCleanup, errors.New("database table FlatGeobuf source requires geometry_column")
 	}
 	if strings.TrimSpace(executionID) == "" {
-		return "", nil, nil, noopCleanup, errors.New("MySQL FlatGeobuf source requires execution_id")
+		return "", nil, nil, noopCleanup, errors.New("database table FlatGeobuf source requires execution_id")
 	}
 	if strings.TrimSpace(e.defaultBucket) == "" {
 		return "", nil, nil, noopCleanup, errors.New("Manager temporary source bucket is required")
+	}
+	catalogProvider, ok := plug.(plugin.CatalogModelProvider)
+	if !ok {
+		return "", nil, nil, noopCleanup, fmt.Errorf("engine %s does not declare a catalog model", engine.EngineType)
+	}
+	namespaceLevel, ok := plugin.CatalogFirstBusinessBranch(catalogProvider.CatalogModel())
+	if !ok || strings.TrimSpace(namespaceLevel.Term) == "" {
+		return "", nil, nil, noopCleanup, fmt.Errorf("engine %s does not declare a tabular namespace", engine.EngineType)
 	}
 	hints := map[string]interface{}{
 		plugin.TableReadHintGeometryEncoding: string(format.GeometryEncodingEWKB),
@@ -66,24 +75,24 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) prepareMySQLTableFlatGeobufSour
 		selected := append([]string{geometryColumn}, attributes...)
 		hints[format.FieldSelectionOptionKey] = &format.FieldSelectionOptions{Include: selected}
 	}
-	path := plugin.TabularItemPath(engine.ID, "database", identity.Schema, identity.Table)
+	path := plugin.TabularItemPath(engine.ID, namespaceLevel.Term, identity.Schema, identity.Table)
 	session, err := sessionProvider.OpenTableReadSession(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), path, plugin.TableReadSessionOptions{Hints: hints})
 	if err != nil {
-		return "", nil, nil, noopCleanup, fmt.Errorf("open MySQL FlatGeobuf source session: %w", err)
+		return "", nil, nil, noopCleanup, fmt.Errorf("open %s FlatGeobuf source session: %w", engine.EngineType, err)
 	}
 	defer session.Close(context.Background())
 
 	prefetchLimit := 512
 	firstBatch, err := session.ReadBatch(ctx, prefetchLimit)
 	if err != nil {
-		return "", nil, nil, noopCleanup, fmt.Errorf("prefetch MySQL FlatGeobuf source: %w", err)
+		return "", nil, nil, noopCleanup, fmt.Errorf("prefetch %s FlatGeobuf source: %w", engine.EngineType, err)
 	}
 	if firstBatch == nil || firstBatch.Spatial == nil {
-		return "", nil, nil, noopCleanup, errors.New("MySQL FlatGeobuf source has no spatial facts")
+		return "", nil, nil, noopCleanup, fmt.Errorf("%s FlatGeobuf source has no spatial facts", engine.EngineType)
 	}
 	geometryColumn = commonSpatial.ResolveFlatGeobufGeometryColumn(geometryColumn, firstBatch.Spatial, firstBatch.Fields)
 	if geometryColumn == "" {
-		return "", nil, nil, noopCleanup, errors.New("MySQL FlatGeobuf source geometry column is unavailable")
+		return "", nil, nil, noopCleanup, fmt.Errorf("%s FlatGeobuf source geometry column is unavailable", engine.EngineType)
 	}
 	reader, flatOptions := commonSpatial.NewFlatGeobufBatchFeatureReader(
 		func(readCtx context.Context, limit int) ([]map[string]interface{}, error) {
@@ -100,9 +109,9 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) prepareMySQLTableFlatGeobufSour
 		0,
 	)
 	flatOptions.Name = defaultVectorTileLayerName(identity)
-	tempFile, err := os.CreateTemp("", "addp-manager-mysql-*.fgb")
+	tempFile, err := os.CreateTemp("", "addp-manager-database-*.fgb")
 	if err != nil {
-		return "", nil, nil, noopCleanup, fmt.Errorf("create temporary MySQL FlatGeobuf: %w", err)
+		return "", nil, nil, noopCleanup, fmt.Errorf("create temporary %s FlatGeobuf: %w", engine.EngineType, err)
 	}
 	tempPath := tempFile.Name()
 	defer os.Remove(tempPath)
@@ -113,12 +122,16 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) prepareMySQLTableFlatGeobufSour
 	}
 	if writeErr != nil || closeTempErr != nil {
 		if writeErr != nil {
-			writeErr = fmt.Errorf("materialize MySQL FlatGeobuf: %w", writeErr)
+			writeErr = fmt.Errorf("materialize %s FlatGeobuf: %w", engine.EngineType, writeErr)
 		}
 		if closeTempErr != nil {
-			closeTempErr = fmt.Errorf("close temporary MySQL FlatGeobuf: %w", closeTempErr)
+			closeTempErr = fmt.Errorf("close temporary %s FlatGeobuf: %w", engine.EngineType, closeTempErr)
 		}
 		return "", nil, nil, noopCleanup, errors.Join(writeErr, closeTempErr)
+	}
+	extent, hasExtent := reader.Extent()
+	if !hasExtent {
+		return "", nil, nil, noopCleanup, fmt.Errorf("%s FlatGeobuf source has no non-empty geometry extent", engine.EngineType)
 	}
 	file, err := os.Open(tempPath)
 	if err != nil {
@@ -140,13 +153,13 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) prepareMySQLTableFlatGeobufSour
 	if putErr != nil || closeErr != nil {
 		cleanupErr := e.objectStore.RemoveObject(context.Background(), bucket, objectName, minio.RemoveObjectOptions{})
 		if putErr != nil {
-			putErr = fmt.Errorf("upload temporary MySQL FlatGeobuf: %w", putErr)
+			putErr = fmt.Errorf("upload temporary %s FlatGeobuf: %w", engine.EngineType, putErr)
 		}
 		if closeErr != nil {
-			closeErr = fmt.Errorf("close temporary MySQL FlatGeobuf upload: %w", closeErr)
+			closeErr = fmt.Errorf("close temporary %s FlatGeobuf upload: %w", engine.EngineType, closeErr)
 		}
 		if cleanupErr != nil {
-			cleanupErr = fmt.Errorf("clean failed MySQL FlatGeobuf upload: %w", cleanupErr)
+			cleanupErr = fmt.Errorf("clean failed %s FlatGeobuf upload: %w", engine.EngineType, cleanupErr)
 		}
 		return "", nil, nil, noopCleanup, errors.Join(putErr, closeErr, cleanupErr)
 	}
@@ -157,7 +170,7 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) prepareMySQLTableFlatGeobufSour
 	if err != nil {
 		cleanupErr := cleanup(context.Background())
 		if cleanupErr != nil {
-			cleanupErr = fmt.Errorf("clean unusable MySQL FlatGeobuf source: %w", cleanupErr)
+			cleanupErr = fmt.Errorf("clean unusable %s FlatGeobuf source: %w", engine.EngineType, cleanupErr)
 		}
 		return "", nil, nil, noopCleanup, errors.Join(err, cleanupErr)
 	}
@@ -167,6 +180,8 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) prepareMySQLTableFlatGeobufSour
 		"temporary":        true,
 		"geometry_column":  geometryColumn,
 		"source_srid":      flatOptions.SRID,
+		"extent":           []float64{extent[0], extent[1], extent[2], extent[3]},
+		"extent_srid":      flatOptions.SRID,
 		"layer_name":       flatOptions.Name,
 		"size_bytes":       info.Size(),
 		"execution_scoped": true,

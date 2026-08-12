@@ -128,6 +128,7 @@ func (h *DomainHandler) UpdateDomain(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 409 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.domain.delete"]
 // @Router /domains/{id} [delete]

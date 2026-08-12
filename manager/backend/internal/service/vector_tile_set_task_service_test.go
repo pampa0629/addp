@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
@@ -10,6 +11,38 @@ import (
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 )
+
+func TestVectorTileSetRecordProgressEventUpdatesExecution(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	startedAt := time.Now().Add(-time.Second)
+	if err := taskExecRepo.Create(context.Background(), &commonExecution.TaskExecution{
+		TenantID: 7, ExecutionID: "vector-tile-set-progress-1", Module: commonExecution.ModuleManager,
+		TaskType: commonExecution.TaskTypeVectorTileSetGeneration, Source: commonExecution.ModuleManager,
+		Status: commonExecution.ExecutionStatusRunning, TriggerType: commonExecution.TriggerTypeManual,
+		Progress: 5, StartedAt: &startedAt,
+	}); err != nil {
+		t.Fatalf("create execution: %v", err)
+	}
+	svc := NewVectorTileSetTaskService(repository.NewVectorTileSetRepository(db), taskExecRepo)
+	overallProgress := 42.4
+	if err := svc.RecordProgressEvent(context.Background(), 7, "vector-tile-set-progress-1", TileCacheProgressEvent{
+		Phase: "publish", Event: "progress", Message: "生成矢量瓦片缓存", CurrentZoom: 10, MaxZoom: 12,
+		TilesProcessed: 18, TilesTotalEstimate: 40, OverallProgress: &overallProgress,
+	}); err != nil {
+		t.Fatalf("record progress event: %v", err)
+	}
+	exec, err := taskExecRepo.GetByExecutionID(context.Background(), "vector-tile-set-progress-1", 7)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if exec.Progress != 42 {
+		t.Fatalf("progress = %d, want 42", exec.Progress)
+	}
+	if exec.CurrentStep == nil || *exec.CurrentStep != "生成业务矢量瓦片集 z10/12：18/40" {
+		t.Fatalf("current_step = %#v", exec.CurrentStep)
+	}
+}
 
 func TestVectorTileSetMetaScanOptionsUsesDeepScan(t *testing.T) {
 	opts := vectorTileSetMetaScanOptions(VectorTileSetExecutionConfig{TargetEngineID: 9}, "addp/vector-tiles/roads.pmtiles")
@@ -44,6 +77,24 @@ func TestVectorTileSetTaskNormalizesBusinessPMTilesConfig(t *testing.T) {
 	source, _ := asJSONMap(task.Config["source"])
 	if stringFromConfig(source["item_fingerprint"]) == "" {
 		t.Fatalf("source = %#v", source)
+	}
+}
+
+func TestVectorTileSetTaskAllowsExecutionTimeExtentForDatabaseSource(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewVectorTileSetTaskService(repository.NewVectorTileSetRepository(db), commonExecution.NewTaskExecutionRepository(db))
+	task := &models.VectorTileSetTask{TenantID: 7, Name: "Oracle locations", Enabled: true, Config: commonModels.JSONMap{
+		"source":  commonModels.JSONMap{"source_engine_id": 22, "locator": "addp://engine/22/path/BUSINESS/CUSTOMER_LOCATIONS?type=table&item_id=52408", "item_id": 52408},
+		"target":  commonModels.JSONMap{"engine_id": 26, "storage_locator": "addp://engine/26/path/vector-tiles?type=directory&node_id=4", "name": "oracle-locations.pmtiles"},
+		"tile":    commonModels.JSONMap{"archive_format": "pmtiles", "tile_type": "mvt", "min_zoom": 0, "max_zoom": 12, "source_srid": 4326, "target_srid": 3857},
+		"options": commonModels.JSONMap{"geometry_column": "SHAPE", "layer_name": "oracle_locations"},
+	}}
+	if err := svc.Create(context.Background(), task); err != nil {
+		t.Fatalf("create vector tile set task without metadata extent: %v", err)
+	}
+	tile, _ := asJSONMap(task.Config["tile"])
+	if _, exists := tile["extent"]; exists {
+		t.Fatalf("task normalization fabricated extent: %#v", tile)
 	}
 }
 

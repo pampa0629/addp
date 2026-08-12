@@ -120,6 +120,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { metricAPI, metricCategoryAPI } from '../api/standard'
 import DocumentPanel from '../components/DocumentPanel.vue'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
+import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -155,7 +156,7 @@ const loadMetric = async () => {
     metric.value = res || {}
     if (!metric.value.tags) metric.value.tags = []
   } catch (e) {
-    ElMessage.error(t('standard.common.loadFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
     goBack()
   } finally {
     loading.value = false
@@ -167,7 +168,7 @@ const loadCategories = async () => {
     const res = await metricCategoryAPI.list()
     categories.value = res || []
   } catch (e) {
-    console.error('加载目录失败:', e)
+    categories.value = []
   }
 }
 
@@ -176,7 +177,7 @@ const loadAtomicMetrics = async () => {
     const res = await metricAPI.list({ type: 'atomic', page_size: 500 })
     atomicMetrics.value = (res.data || []).filter(m => m.id !== Number(route.params.id))
   } catch (e) {
-    console.error('加载原子指标失败:', e)
+    atomicMetrics.value = []
   }
 }
 
@@ -187,7 +188,7 @@ const saveChanges = async () => {
     ElMessage.success(t('standard.common.saveSuccess'))
     await loadMetric()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('standard.common.saveFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.saveFailed'))
   } finally {
     saving.value = false
   }
@@ -200,7 +201,7 @@ const handleApprove = async () => {
     ElMessage.success(t('standard.common.approveSuccess'))
     await loadMetric()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(t('standard.common.approveFailed'))
+    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.approveFailed'))
   }
 }
 
@@ -211,7 +212,7 @@ const handleDeprecate = async () => {
     ElMessage.success(t('standard.common.deprecated'))
     await loadMetric()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(t('standard.common.operationFailed'))
+    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t))
   }
 }
 
@@ -279,5 +280,14 @@ onMounted(() => {
 .element-code {
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+@media (max-width: 768px) {
+  .metric-detail { padding: 12px; }
+  .page-header { align-items: flex-start; flex-wrap: wrap; gap: 10px; }
+  .header-left, .header-right { flex-wrap: wrap; }
+  .metric-detail :deep(.el-row) { margin-left: 0 !important; margin-right: 0 !important; }
+  .metric-detail :deep(.el-col) { max-width: 100%; flex: 0 0 100%; }
+  .metric-detail :deep(.el-col + .el-col) { margin-top: 12px; }
 }
 </style>

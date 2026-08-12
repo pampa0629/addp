@@ -87,7 +87,7 @@ def _normalize_extent(value: Any) -> list[float]:
     if not isinstance(value, list) or len(value) != 4:
         raise ValueError("tile.extent must be [minLon, minLat, maxLon, maxLat]")
     extent = [float(v) for v in value]
-    if extent[0] >= extent[2] or extent[1] >= extent[3]:
+    if not all(math.isfinite(v) for v in extent) or extent[0] > extent[2] or extent[1] > extent[3]:
         raise ValueError("tile.extent is invalid")
     return extent
 

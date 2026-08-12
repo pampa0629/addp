@@ -26,6 +26,8 @@ func NewEntityRelationHandler(svc *service.EntityRelationService) *EntityRelatio
 // @Produce json
 // @Param body body models.CreateEntityRelationRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{} "已创建的关系 | Created relation"
+// @Failure 404 {object} models.ErrorResponse "关系实体不存在 | Referenced entity not found"
+// @Failure 409 {object} models.ErrorResponse "关系状态或自关联冲突 | Relation state or self-reference conflict"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.entity_relation.create"]
 // @Router /entity-relations [post]
@@ -33,14 +35,14 @@ func NewEntityRelationHandler(svc *service.EntityRelationService) *EntityRelatio
 func (h *EntityRelationHandler) CreateRelation(c *gin.Context) {
 	var req models.CreateEntityRelationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	relation, err := h.svc.Create(tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
+		writeServiceError(c, err)
 		return
 	}
 
@@ -66,8 +68,8 @@ func (h *EntityRelationHandler) ListRelations(c *gin.Context) {
 
 	if entityIDStr != "" {
 		entityID, parseErr := strconv.ParseInt(entityIDStr, 10, 64)
-		if parseErr != nil {
-			c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidEntityIDQuery)))
+		if parseErr != nil || entityID <= 0 {
+			c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidEntityIDQuery), "invalid_entity_id"))
 			return
 		}
 		relations, err = h.svc.GetByEntityID(tenantID, entityID)
@@ -76,7 +78,7 @@ func (h *EntityRelationHandler) ListRelations(c *gin.Context) {
 	}
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
+		writeServiceError(c, err)
 		return
 	}
 
@@ -95,15 +97,15 @@ func (h *EntityRelationHandler) ListRelations(c *gin.Context) {
 // @Security BearerAuth
 func (h *EntityRelationHandler) GetRelation(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidID), "invalid_id"))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	relation, err := h.svc.GetByID(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, errorResponse(commoni18n.T(c, modeli18n.MsgRelationNotFound)))
+		writeServiceError(c, err)
 		return
 	}
 
@@ -118,27 +120,29 @@ func (h *EntityRelationHandler) GetRelation(c *gin.Context) {
 // @Param id path int true "关系ID | Relation ID"
 // @Param body body models.UpdateEntityRelationRequest true "更新请求 | Update request"
 // @Success 200 {object} map[string]interface{} "已更新的关系 | Updated relation"
+// @Failure 404 {object} models.ErrorResponse "实体关系或关系实体不存在 | Entity relation or referenced entity not found"
+// @Failure 409 {object} models.ErrorResponse "关系状态冲突 | Relation state conflict"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.entity_relation.update"]
 // @Router /entity-relations/{id} [put]
 // @Security BearerAuth
 func (h *EntityRelationHandler) UpdateRelation(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidID), "invalid_id"))
 		return
 	}
 
 	var req models.UpdateEntityRelationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	relation, err := h.svc.Update(id, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
+		writeServiceError(c, err)
 		return
 	}
 
@@ -157,14 +161,14 @@ func (h *EntityRelationHandler) UpdateRelation(c *gin.Context) {
 // @Security BearerAuth
 func (h *EntityRelationHandler) DeleteRelation(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidID), "invalid_id"))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	if err := h.svc.Delete(id, tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
+		writeServiceError(c, err)
 		return
 	}
 

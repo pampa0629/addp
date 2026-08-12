@@ -947,6 +947,12 @@
                             "$ref": "#/definitions/internal_api.qualityErrorResponse"
                         }
                     },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -1308,9 +1314,6 @@
                 "description": {
                     "type": "string"
                 },
-                "enabled": {
-                    "type": "boolean"
-                },
                 "engine_id": {
                     "description": "目标引擎",
                     "type": "integer"
@@ -1487,9 +1490,6 @@
                 "description": {
                     "type": "string"
                 },
-                "enabled": {
-                    "type": "boolean"
-                },
                 "engine_id": {
                     "type": "integer"
                 },
@@ -1542,9 +1542,6 @@
             "properties": {
                 "description": {
                     "type": "string"
-                },
-                "enabled": {
-                    "type": "boolean"
                 },
                 "engine_id": {
                     "type": "integer"
@@ -1623,9 +1620,6 @@
                 },
                 "description": {
                     "type": "string"
-                },
-                "enabled": {
-                    "type": "boolean"
                 },
                 "engine_id": {
                     "description": "目标引擎",
@@ -2066,9 +2060,6 @@
                 "description": {
                     "type": "string"
                 },
-                "enabled": {
-                    "type": "boolean"
-                },
                 "execution_contract": {
                     "$ref": "#/definitions/taskprovider.ExecutionContract"
                 },
@@ -2085,6 +2076,9 @@
                     "type": "string"
                 },
                 "name": {
+                    "type": "string"
+                },
+                "status": {
                     "type": "string"
                 },
                 "task_type": {

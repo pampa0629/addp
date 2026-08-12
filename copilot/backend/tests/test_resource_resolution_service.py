@@ -54,6 +54,35 @@ def test_query_policy_limits_discovery_to_selected_engine():
     assert discovery.discover_calls[0][1]["engine_id"] == 8
 
 
+def test_federated_query_policy_searches_source_engines_not_runtime():
+    intents = [ResourceIntent(role="users", search_queries=["users"])]
+    discovery = Discovery([ResourceDiscoveryResult(candidates=[], missing_roles=[])])
+    service = ResourceResolutionService(discovery=discovery, intent_chain=IntentChain(intents))
+
+    asyncio.run(service.discover(
+        "users",
+        ResourceResolutionPolicy.query(99, allowed_source_engine_types=frozenset({"postgresql", "mysql"})),
+    ))
+
+    assert discovery.discover_calls[0][1]["engine_id"] is None
+    assert discovery.discover_calls[0][1]["source_engine_types"] == frozenset({"postgresql", "mysql"})
+
+
+def test_federated_scope_uses_source_engine_id_from_locator():
+    intents = [ResourceIntent(role="users", search_queries=["users"])]
+    discovery = Discovery([ResourceDiscoveryResult(candidates=[], missing_roles=[])])
+    service = ResourceResolutionService(discovery=discovery, intent_chain=IntentChain(intents))
+    scope = "addp://engine/8/path/analytics?type=schema"
+
+    asyncio.run(service.discover(
+        "users",
+        ResourceResolutionPolicy.query(99, allowed_source_engine_types=frozenset({"postgresql"})),
+        scope_locator=scope,
+    ))
+
+    assert discovery.discover_scoped_calls[0][1]["engine_id"] == 8
+
+
 def test_query_policy_uses_catalog_scope_instead_of_global_search():
     intents = [ResourceIntent(role="活动参与", search_queries=["activities"])]
     discovery = Discovery([ResourceDiscoveryResult(candidates=[], missing_roles=[])])

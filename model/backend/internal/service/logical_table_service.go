@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/model/i18n"
+	"github.com/addp/model/internal/apperrors"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/repository"
 	"regexp"
@@ -44,20 +46,20 @@ func (s *LogicalTableService) validateReferences(tenantID int64, domainID, eleme
 
 func validateLogicalTableShape(tableType string, scdType int, grain string) error {
 	if tableType != "entity" && tableType != "fact" && tableType != "dimension" {
-		return fmt.Errorf("不支持的逻辑表类型: %s", tableType)
+		return apperrors.Validation("logical_table_shape_invalid", i18n.MsgValidationFailed)
 	}
 	if tableType == "dimension" {
 		if scdType < 0 || scdType > 3 {
-			return fmt.Errorf("维度表 SCD 类型必须为 0 到 3")
+			return apperrors.Validation("logical_table_shape_invalid", i18n.MsgValidationFailed)
 		}
 	} else if scdType != 0 {
-		return fmt.Errorf("只有维度表可以设置 SCD 类型")
+		return apperrors.Validation("logical_table_shape_invalid", i18n.MsgValidationFailed)
 	}
 	if tableType == "fact" && strings.TrimSpace(grain) == "" {
-		return fmt.Errorf("事实表必须声明粒度")
+		return apperrors.Validation("logical_table_shape_invalid", i18n.MsgValidationFailed)
 	}
 	if tableType != "fact" && strings.TrimSpace(grain) != "" {
-		return fmt.Errorf("只有事实表可以声明粒度")
+		return apperrors.Validation("logical_table_shape_invalid", i18n.MsgValidationFailed)
 	}
 	return nil
 }
@@ -68,10 +70,10 @@ func NewLogicalTableService(repo *repository.LogicalTableRepository) *LogicalTab
 
 func (s *LogicalTableService) CreateLogicalTable(req *models.CreateLogicalTableRequest, tenantID, userID int64) (*models.LogicalTable, error) {
 	if strings.TrimSpace(req.Layer) == "" {
-		return nil, fmt.Errorf("逻辑表必须引用数仓分层")
+		return nil, apperrors.Validation("logical_table_layer_required", i18n.MsgValidationFailed)
 	}
 	if err := validateMaterializationKeys(req.Materialization); err != nil {
-		return nil, err
+		return nil, apperrors.Wrap(apperrors.KindValidation, "materialization_invalid", i18n.MsgValidationFailed, err)
 	}
 	if err := validateLogicalTableShape(req.TableType, req.SCDType, req.GrainDescription); err != nil {
 		return nil, err
@@ -84,7 +86,7 @@ func (s *LogicalTableService) CreateLogicalTable(req *models.CreateLogicalTableR
 		return nil, err
 	}
 	if exists {
-		return nil, fmt.Errorf("逻辑表编码 '%s' 已存在", req.Code)
+		return nil, apperrors.Conflict("logical_table_code_conflict", i18n.MsgTableCodeConflict)
 	}
 
 	table := &models.LogicalTable{
@@ -104,13 +106,17 @@ func (s *LogicalTableService) CreateLogicalTable(req *models.CreateLogicalTableR
 	}
 
 	if err := s.repo.Create(table); err != nil {
-		return nil, err
+		return nil, modelResourceError(err, "logical_table_code", i18n.MsgTableCodeConflict)
 	}
 	return table, nil
 }
 
 func (s *LogicalTableService) GetLogicalTable(id, tenantID int64) (*models.LogicalTable, error) {
-	return s.repo.GetByID(id, tenantID)
+	table, err := s.repo.GetByID(id, tenantID)
+	if err != nil {
+		return nil, modelResourceError(err, "logical_table_not_found", i18n.MsgTableNotFound)
+	}
+	return table, nil
 }
 
 func (s *LogicalTableService) ListLogicalTables(tenantID int64, opts repository.ListLogicalTableOptions) ([]models.LogicalTable, int64, error) {
@@ -120,10 +126,10 @@ func (s *LogicalTableService) ListLogicalTables(tenantID int64, opts repository.
 func (s *LogicalTableService) UpdateLogicalTable(id, tenantID, userID int64, req *models.UpdateLogicalTableRequest) (*models.LogicalTable, error) {
 	table, err := s.repo.GetByID(id, tenantID)
 	if err != nil {
-		return nil, err
+		return nil, modelResourceError(err, "logical_table_not_found", i18n.MsgTableNotFound)
 	}
 	if table.Status != "draft" {
-		return nil, fmt.Errorf("已审批逻辑表必须先重新打开后才能修改")
+		return nil, apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
 	}
 
 	if req.Name != "" {
@@ -146,13 +152,13 @@ func (s *LogicalTableService) UpdateLogicalTable(id, tenantID, userID int64, req
 		table.Layer = req.Layer
 	}
 	if strings.TrimSpace(table.Layer) == "" {
-		return nil, fmt.Errorf("逻辑表必须引用数仓分层")
+		return nil, apperrors.Validation("logical_table_layer_required", i18n.MsgValidationFailed)
 	}
 	table.GrainDescription = req.GrainDescription
 	table.SCDType = req.SCDType
 	if req.Materialization != nil {
 		if err := validateMaterializationKeys(req.Materialization); err != nil {
-			return nil, err
+			return nil, apperrors.Wrap(apperrors.KindValidation, "materialization_invalid", i18n.MsgValidationFailed, err)
 		}
 		table.Materialization = req.Materialization
 	}
@@ -170,10 +176,10 @@ func (s *LogicalTableService) UpdateLogicalTable(id, tenantID, userID int64, req
 func (s *LogicalTableService) DeleteLogicalTable(id, tenantID int64) error {
 	table, err := s.repo.GetByID(id, tenantID)
 	if err != nil {
-		return err
+		return modelResourceError(err, "logical_table_not_found", i18n.MsgTableNotFound)
 	}
 	if table.Status != "draft" {
-		return fmt.Errorf("已审批逻辑表不能删除")
+		return apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
 	}
 	relations, err := repository.NewTableRelationRepository(s.repo.DB()).ListByTable(id, tenantID)
 	if err != nil {
@@ -189,7 +195,7 @@ func (s *LogicalTableService) DeleteLogicalTable(id, tenantID int64) error {
 			return err
 		}
 		if otherTable.Status != "draft" {
-			return fmt.Errorf("逻辑表关联了已审批模型，必须先重新打开关联模型")
+			return apperrors.Conflict("logical_table_relation_state_conflict", i18n.MsgTableRelationStateConflict)
 		}
 	}
 	return s.repo.Delete(id, tenantID)
@@ -198,23 +204,23 @@ func (s *LogicalTableService) DeleteLogicalTable(id, tenantID int64) error {
 func (s *LogicalTableService) ApproveLogicalTable(id, tenantID, userID int64) error {
 	table, err := s.repo.GetByID(id, tenantID)
 	if err != nil {
-		return err
+		return modelResourceError(err, "logical_table_not_found", i18n.MsgTableNotFound)
 	}
 	if table.Status != "draft" {
-		return fmt.Errorf("逻辑表当前状态不可审批")
+		return apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
 	}
 	if err := validateLogicalTableShape(table.TableType, table.SCDType, table.GrainDescription); err != nil {
 		return err
 	}
 	if strings.TrimSpace(table.Layer) == "" {
-		return fmt.Errorf("逻辑表必须引用数仓分层")
+		return apperrors.Validation("logical_table_layer_required", i18n.MsgValidationFailed)
 	}
 	fields, err := s.repo.GetFields(id)
 	if err != nil {
 		return err
 	}
 	if len(fields) == 0 {
-		return fmt.Errorf("逻辑表至少需要一个字段才能审批")
+		return apperrors.Validation("logical_table_approval_invalid", i18n.MsgValidationFailed)
 	}
 	hasPrimaryKey := false
 	for _, field := range fields {
@@ -223,7 +229,7 @@ func (s *LogicalTableService) ApproveLogicalTable(id, tenantID, userID int64) er
 		}
 	}
 	if !hasPrimaryKey {
-		return fmt.Errorf("逻辑表至少需要一个主键字段才能审批")
+		return apperrors.Validation("logical_table_approval_invalid", i18n.MsgValidationFailed)
 	}
 	return s.repo.UpdateStatus(id, tenantID, "approved", userID)
 }
@@ -231,10 +237,10 @@ func (s *LogicalTableService) ApproveLogicalTable(id, tenantID, userID int64) er
 func (s *LogicalTableService) ReopenLogicalTable(id, tenantID, userID int64) error {
 	table, err := s.repo.GetByID(id, tenantID)
 	if err != nil {
-		return err
+		return modelResourceError(err, "logical_table_not_found", i18n.MsgTableNotFound)
 	}
 	if table.Status != "approved" {
-		return fmt.Errorf("只有已审批逻辑表可以重新打开")
+		return apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
 	}
 	return s.repo.UpdateStatus(id, tenantID, "draft", userID)
 }
@@ -242,7 +248,7 @@ func (s *LogicalTableService) ReopenLogicalTable(id, tenantID, userID int64) err
 // GetFields 获取逻辑表字段列表
 func (s *LogicalTableService) GetFields(tableID, tenantID int64) ([]models.LogicalField, error) {
 	if _, err := s.repo.GetByID(tableID, tenantID); err != nil {
-		return nil, fmt.Errorf("逻辑表不存在")
+		return nil, apperrors.NotFound("logical_table_not_found", i18n.MsgTableNotFound)
 	}
 	return s.repo.GetFields(tableID)
 }
@@ -251,19 +257,19 @@ func (s *LogicalTableService) GetFields(tableID, tenantID int64) ([]models.Logic
 func (s *LogicalTableService) CreateField(tableID, tenantID int64, req *models.CreateLogicalFieldRequest) (*models.LogicalField, error) {
 	table, err := s.repo.GetByID(tableID, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("逻辑表不存在")
+		return nil, apperrors.NotFound("logical_table_not_found", i18n.MsgTableNotFound)
 	}
 	if table.Status != "draft" {
-		return nil, fmt.Errorf("已审批逻辑表不能修改字段")
+		return nil, apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
 	}
 	if err := s.validateReferences(tenantID, nil, req.ElementID, req.HierarchyID); err != nil {
 		return nil, err
 	}
 	if req.IsPK && req.Nullable {
-		return nil, fmt.Errorf("主键字段不能可空")
+		return nil, apperrors.Validation("logical_field_invalid", i18n.MsgValidationFailed)
 	}
 	if table.TableType != "fact" && strings.HasPrefix(req.FieldRole, "measure_") {
-		return nil, fmt.Errorf("只有事实表可以使用度量字段角色")
+		return nil, apperrors.Validation("logical_field_invalid", i18n.MsgValidationFailed)
 	}
 
 	fieldRole := req.FieldRole
@@ -298,10 +304,10 @@ func (s *LogicalTableService) CreateField(tableID, tenantID int64, req *models.C
 func (s *LogicalTableService) UpdateField(fieldID, tableID, tenantID int64, req *models.UpdateLogicalFieldRequest) (*models.LogicalField, error) {
 	table, err := s.repo.GetByID(tableID, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("逻辑表不存在")
+		return nil, apperrors.NotFound("logical_table_not_found", i18n.MsgTableNotFound)
 	}
 	if table.Status != "draft" {
-		return nil, fmt.Errorf("已审批逻辑表不能修改字段")
+		return nil, apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
 	}
 
 	if err := s.validateReferences(tenantID, nil, req.ElementID, req.HierarchyID); err != nil {
@@ -309,7 +315,7 @@ func (s *LogicalTableService) UpdateField(fieldID, tableID, tenantID int64, req 
 	}
 	field, err := s.repo.GetFieldByID(fieldID, tableID)
 	if err != nil {
-		return nil, fmt.Errorf("字段不存在")
+		return nil, apperrors.NotFound("logical_field_not_found", i18n.MsgFieldNotFound)
 	}
 
 	if req.Name != "" {
@@ -343,10 +349,10 @@ func (s *LogicalTableService) UpdateField(fieldID, tableID, tenantID int64, req 
 	field.HierarchyID = req.HierarchyID
 	field.HierarchyLevel = req.HierarchyLevel
 	if field.IsPK && field.Nullable {
-		return nil, fmt.Errorf("主键字段不能可空")
+		return nil, apperrors.Validation("logical_field_invalid", i18n.MsgValidationFailed)
 	}
 	if table.TableType != "fact" && strings.HasPrefix(field.FieldRole, "measure_") {
-		return nil, fmt.Errorf("只有事实表可以使用度量字段角色")
+		return nil, apperrors.Validation("logical_field_invalid", i18n.MsgValidationFailed)
 	}
 
 	if err := s.repo.UpdateField(field); err != nil {
@@ -359,19 +365,22 @@ func (s *LogicalTableService) UpdateField(fieldID, tableID, tenantID int64, req 
 func (s *LogicalTableService) DeleteField(fieldID, tableID, tenantID int64) error {
 	table, err := s.repo.GetByID(tableID, tenantID)
 	if err != nil {
-		return fmt.Errorf("逻辑表不存在")
+		return apperrors.NotFound("logical_table_not_found", i18n.MsgTableNotFound)
 	}
 	if table.Status != "draft" {
-		return fmt.Errorf("已审批逻辑表不能修改字段")
+		return apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
 	}
-	return s.repo.DeleteField(fieldID, tableID)
+	if err := s.repo.DeleteField(fieldID, tableID); err != nil {
+		return modelResourceError(err, "logical_field_not_found", i18n.MsgFieldNotFound)
+	}
+	return nil
 }
 
 // PreviewDDL 预览生成的 DDL（仅支持 PostgreSQL）
-func (s *LogicalTableService) PreviewDDL(tableID, tenantID int64) (string, error) {
+func (s *LogicalTableService) PreviewDDL(tableID, tenantID int64, materialization map[string]interface{}) (string, error) {
 	table, err := s.repo.GetByID(tableID, tenantID)
 	if err != nil {
-		return "", fmt.Errorf("逻辑表不存在")
+		return "", modelResourceError(err, "logical_table_not_found", i18n.MsgTableNotFound)
 	}
 
 	fields, err := s.repo.GetFields(tableID)
@@ -380,13 +389,20 @@ func (s *LogicalTableService) PreviewDDL(tableID, tenantID int64) (string, error
 	}
 
 	if len(fields) == 0 {
-		return "", fmt.Errorf("逻辑表还没有定义字段，无法生成 DDL")
+		return "", apperrors.Validation("ddl_preview_invalid", i18n.MsgDDLPreviewInvalid)
 	}
-	if err := validateMaterialization(table, fields); err != nil {
-		return "", err
+	previewTable := previewLogicalTableWithMaterialization(table, materialization)
+	if err := validateMaterialization(previewTable, fields); err != nil {
+		return "", apperrors.Wrap(apperrors.KindValidation, "ddl_preview_invalid", i18n.MsgDDLPreviewInvalid, err)
 	}
 
-	return s.generatePostgreSQLDDL(table, fields), nil
+	return s.generatePostgreSQLDDL(previewTable, fields), nil
+}
+
+func previewLogicalTableWithMaterialization(table *models.LogicalTable, materialization map[string]interface{}) *models.LogicalTable {
+	previewTable := *table
+	previewTable.Materialization = models.JSONB(materialization)
+	return &previewTable
 }
 
 // generatePostgreSQLDDL 生成 PostgreSQL CREATE TABLE DDL

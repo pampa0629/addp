@@ -155,8 +155,8 @@ Quality 第一阶段资源回收执行方只治理 Quality-owned 质量配置和
 
 - `engine.deleted` 时，扫描绑定该 engine 的 `quality.rule_applications`、`quality.check_tasks` 和 `quality.issues`。
 - `tenant.deleted` 时，扫描该租户下 Quality-owned 规则应用、检查任务和问题工单。
-- `logical_cleanup` 禁用规则应用和检查任务，清空检查任务下一次调度，并将命中的 open 问题工单置为 ignored。
-- engine 生命周期 cleanup 无论使用何种 cleanup mode，都只禁用规则应用和检查任务、清空下一次调度，并将命中的 open 问题工单置为 ignored；配置必须保留供用户后续重绑定或显式删除。
+- `logical_cleanup` 禁用规则应用；检查任务定义保留，但不再具有调度开关，目标 Engine 生命周期校验会使其退出可执行路径；命中的 open 问题工单置为 ignored。
+- engine 生命周期 cleanup 无论使用何种 cleanup mode，都只禁用规则应用，保留检查任务定义供用户后续重绑定或显式删除，并将命中的 open 问题工单置为 ignored。Quality 不通过写入伪调度状态来阻止检查任务执行。
 - tenant 生命周期 `physical_cleanup` 才允许删除 Quality-owned 规则应用、检查任务和问题工单状态记录。
 - 没有明确 lifecycle context 的普通 scan 不应把全部 Quality 配置和问题工单视作待回收对象。
 - Quality cleanup 不删除源业务表、源数据、Standard 数据元或规则定义，也不删除 `common.task_executions` 历史执行记录。

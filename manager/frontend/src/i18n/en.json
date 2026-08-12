@@ -844,7 +844,6 @@
       "switchQuickViewSuccess": "Quick view preference updated",
       "switchQuickViewFailed": "Failed to switch quick view",
       "backToBasicPreview": "Back to Basic Preview",
-      "directGeoJSONQuickView": "Direct GeoJSON Quick View",
       "directFlatGeobufQuickView": "Direct FlatGeobuf Quick View",
       "mvtGrid": "MVT Grid",
       "mvtGridStatus": {

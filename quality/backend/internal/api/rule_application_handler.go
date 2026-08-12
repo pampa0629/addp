@@ -153,6 +153,7 @@ func (h *RuleApplicationHandler) Update(c *gin.Context) {
 // @Param id path int true "规则应用ID | Rule application ID"
 // @Success 200 {object} qualityMessageResponse
 // @Failure 404 {object} qualityErrorResponse
+// @Failure 409 {object} qualityErrorResponse
 // @Failure 500 {object} qualityErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["quality.rule_application.delete"]
@@ -165,7 +166,7 @@ func (h *RuleApplicationHandler) Delete(c *gin.Context) {
 		respondInvalidRequest(c, "")
 		return
 	}
-	if err := h.svc.DeleteRuleApplication(id, tenantID); err != nil {
+	if err := h.svc.DeleteRuleApplication(c.Request.Context(), id, tenantID); err != nil {
 		respondQualityServiceError(c, err, qualityi18n.MsgRuleAppNotFound, qualityi18n.MsgRuleAppDeleteFailed)
 		return
 	}

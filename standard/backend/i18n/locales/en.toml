@@ -46,6 +46,48 @@ other = "Resource not found"
 [standard.common.resource_conflict]
 other = "Resource code or relation already exists"
 
+[standard.common.invalid_resource_reference]
+other = "A referenced resource does not exist or belongs to another tenant"
+
+[standard.code_set.invalid_type]
+other = "Code set type must be system or custom"
+
+[standard.domain.parent_cycle]
+other = "A domain parent cannot be itself or its descendant"
+
+[standard.classification.parent_cycle]
+other = "A classification parent cannot be itself or its descendant"
+
+[standard.metric_category.parent_cycle]
+other = "A metric category parent cannot be itself or its descendant"
+
+[standard.measurement_category.system_immutable]
+other = "System measurement categories cannot be deleted"
+
+[standard.unit.system_immutable]
+other = "System units cannot be updated or deleted"
+
+[standard.code_set.system_immutable]
+other = "System code sets cannot be deleted"
+
+[standard.document.storage_unavailable]
+other = "File storage service is unavailable"
+
+[standard.document.file_too_large]
+other = "The file exceeds the size limit"
+
+[standard.document.file_upload_failed]
+other = "File upload failed"
+
+[standard.document.file_download_failed]
+other = "File download failed"
+
+[standard.document.file_cleanup_failed]
+other = "File cleanup failed"
+
+[standard.document.file_name_invalid]
+other = "Invalid file name"
+
 [standard.domain.not_found]
 other = "Domain not found"
 

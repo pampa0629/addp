@@ -36,7 +36,7 @@ func (r *MeasurementCategoryRepository) Update(cat *models.MeasurementCategory) 
 }
 
 func (r *MeasurementCategoryRepository) Delete(id, tenantID int64) error {
-	return requireAffectedRow(r.db.Where("id = ? AND tenant_id = ? AND is_system = false", id, tenantID).Delete(&models.MeasurementCategory{}))
+	return deleteInTransaction(r.db, &models.MeasurementCategory{}, "id = ? AND tenant_id = ? AND is_system = false", id, tenantID)
 }
 
 func (r *MeasurementCategoryRepository) ExistsByCode(code string, tenantID int64, excludeID int64) (bool, error) {
@@ -83,5 +83,5 @@ func (r *UnitRepository) Update(unit *models.Unit) error {
 }
 
 func (r *UnitRepository) Delete(id, tenantID int64) error {
-	return requireAffectedRow(r.db.Where("id = ? AND tenant_id = ? AND is_system = false", id, tenantID).Delete(&models.Unit{}))
+	return deleteInTransaction(r.db, &models.Unit{}, "id = ? AND tenant_id = ? AND is_system = false", id, tenantID)
 }

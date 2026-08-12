@@ -140,6 +140,20 @@ System IAM 安全策略是 `platform_only` 的 System-owned 平台安全配置�
 
 模块通过 System 获取 AuthContext、Engine Instance 和其他 System-owned 业务事实，不通过 System 获取本模块进程数据库密码、加密密钥或普通运行配置。业务数据源连接信息继续以 System `engines` 强类型资源为事实源；这不等于 System 是所有配置的事实源。
 
+### Standard 文档文件部署配置
+
+Standard 文档文件由 Standard owner 写入 ADDP infra MinIO 的 `standard` bucket。以下参数在服务启动前生效，属于部署级资源保护配置：
+
+```bash
+# 单个文档文件最大字节数，默认 100 MiB。
+STANDARD_DOCUMENT_MAX_FILE_SIZE=104857600
+
+# 单次 MinIO 上传、预检、下载或删除操作的超时。
+STANDARD_DOCUMENT_STORAGE_TIMEOUT=30s
+```
+
+上传采用唯一对象 Key；数据库成功切换 `documents.file_key` 后，旧对象进入 `standard.document_file_cleanups` 持久化补偿队列。该队列只记录已经失效且等待物理删除的对象，不是文件引用的第二事实源。
+
 ### Manager 导入中转对象存储
 
 Manager 的 Shapefile 导入不是由 Manager 自己解析写库。Manager 只负责接收 ZIP 包、上传到中转对象存储，然后创建并触发 Transfer `sync`：

@@ -1138,6 +1138,14 @@
             ],
             "title": "Path"
           },
+          "query_names": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "按查询语言声明的原生资源名称，例如 sql=public.users、mql=users",
+            "title": "Query Names",
+            "type": "object"
+          },
           "recommendation_reason": {
             "anyOf": [
               {
@@ -1160,6 +1168,23 @@
             "title": "Role",
             "type": "string"
           },
+          "schema_coverage": {
+            "anyOf": [
+              {
+                "enum": [
+                  "complete",
+                  "sampled",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "字段事实覆盖范围：complete、sampled 或 unknown",
+            "title": "Schema Coverage"
+          },
           "score": {
             "anyOf": [
               {
@@ -1170,6 +1195,18 @@
               }
             ],
             "title": "Score"
+          },
+          "source_engine_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "资源来源引擎类型，由 Owner 校验",
+            "title": "Source Engine Type"
           }
         },
         "required": [
@@ -1278,6 +1315,18 @@
             "title": "Fields",
             "type": "array"
           },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "资源在来源引擎内的规范名称",
+            "title": "Full Name"
+          },
           "geometry_column": {
             "anyOf": [
               {
@@ -1308,11 +1357,48 @@
             "title": "Locator",
             "type": "string"
           },
+          "query_names": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "按查询语言声明的原生资源名称，例如 sql=public.users、mql=users",
+            "title": "Query Names",
+            "type": "object"
+          },
           "role": {
             "description": "资源在本次任务中的稳定用途",
             "minLength": 1,
             "title": "Role",
             "type": "string"
+          },
+          "schema_coverage": {
+            "anyOf": [
+              {
+                "enum": [
+                  "complete",
+                  "sampled",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "字段事实覆盖范围：complete、sampled 或 unknown",
+            "title": "Schema Coverage"
+          },
+          "source_engine_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "资源来源引擎类型，由 Owner 校验",
+            "title": "Source Engine Type"
           }
         },
         "required": [
@@ -1594,6 +1680,14 @@
             ],
             "title": "Path"
           },
+          "query_names": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "按查询语言声明的原生资源名称，例如 sql=public.users、mql=users",
+            "title": "Query Names",
+            "type": "object"
+          },
           "recommendation_reason": {
             "anyOf": [
               {
@@ -1627,6 +1721,23 @@
             "title": "Role",
             "type": "string"
           },
+          "schema_coverage": {
+            "anyOf": [
+              {
+                "enum": [
+                  "complete",
+                  "sampled",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "字段事实覆盖范围：complete、sampled 或 unknown",
+            "title": "Schema Coverage"
+          },
           "score": {
             "anyOf": [
               {
@@ -1637,6 +1748,18 @@
               }
             ],
             "title": "Score"
+          },
+          "source_engine_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "资源来源引擎类型，由 Owner 校验",
+            "title": "Source Engine Type"
           }
         },
         "required": [
@@ -1978,6 +2101,14 @@
             ],
             "title": "Path"
           },
+          "query_names": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "按查询语言声明的原生资源名称，例如 sql=public.users、mql=users",
+            "title": "Query Names",
+            "type": "object"
+          },
           "recommendation_reason": {
             "anyOf": [
               {
@@ -2000,6 +2131,23 @@
             "title": "Role",
             "type": "string"
           },
+          "schema_coverage": {
+            "anyOf": [
+              {
+                "enum": [
+                  "complete",
+                  "sampled",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "字段事实覆盖范围：complete、sampled 或 unknown",
+            "title": "Schema Coverage"
+          },
           "score": {
             "anyOf": [
               {
@@ -2010,6 +2158,18 @@
               }
             ],
             "title": "Score"
+          },
+          "source_engine_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "资源来源引擎类型，由 Owner 校验",
+            "title": "Source Engine Type"
           }
         },
         "required": [

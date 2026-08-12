@@ -1,11 +1,13 @@
 package repository
 
 import (
-	"fmt"
+	"errors"
 
 	"github.com/addp/standard/internal/models"
 	"gorm.io/gorm"
 )
+
+var ErrInvalidTenantReference = errors.New("invalid tenant resource reference")
 
 // TenantReferenceRepository validates that referenced Standard resources belong
 // to the same tenant before a cross-table relation is persisted.
@@ -18,50 +20,50 @@ func NewTenantReferenceRepository(db *gorm.DB) *TenantReferenceRepository {
 }
 
 func (r *TenantReferenceRepository) RequireDomain(tenantID int64, id *int64) error {
-	return r.requireOne(&models.Domain{}, tenantID, id, "业务域")
+	return r.requireOne(&models.Domain{}, tenantID, id)
 }
 
 func (r *TenantReferenceRepository) RequireUnit(tenantID int64, id *int64) error {
-	return r.requireOne(&models.Unit{}, tenantID, id, "计量单位")
+	return r.requireOne(&models.Unit{}, tenantID, id)
 }
 
 func (r *TenantReferenceRepository) RequireClassification(tenantID int64, id *int64) error {
-	return r.requireOne(&models.Classification{}, tenantID, id, "数据分类")
+	return r.requireOne(&models.Classification{}, tenantID, id)
 }
 
 func (r *TenantReferenceRepository) RequireCodeSet(tenantID int64, id *int64) error {
-	return r.requireOne(&models.CodeSet{}, tenantID, id, "码值集")
+	return r.requireOne(&models.CodeSet{}, tenantID, id)
 }
 
 func (r *TenantReferenceRepository) RequireMetricCategory(tenantID int64, id *int64) error {
-	return r.requireOne(&models.MetricCategory{}, tenantID, id, "指标分类")
+	return r.requireOne(&models.MetricCategory{}, tenantID, id)
 }
 
 func (r *TenantReferenceRepository) RequireMetric(tenantID int64, id *int64) error {
-	return r.requireOne(&models.Metric{}, tenantID, id, "指标")
+	return r.requireOne(&models.Metric{}, tenantID, id)
 }
 
 func (r *TenantReferenceRepository) RequireElement(tenantID, id int64) error {
-	return r.requireOne(&models.Element{}, tenantID, &id, "数据元")
+	return r.requireOne(&models.Element{}, tenantID, &id)
 }
 
 func (r *TenantReferenceRepository) RequireGlossary(tenantID, id int64) error {
-	return r.requireOne(&models.Glossary{}, tenantID, &id, "业务术语")
+	return r.requireOne(&models.Glossary{}, tenantID, &id)
 }
 
 func (r *TenantReferenceRepository) RequireElements(tenantID int64, ids []int64) error {
-	return r.requireMany(&models.Element{}, tenantID, ids, "数据元")
+	return r.requireMany(&models.Element{}, tenantID, ids)
 }
 
 func (r *TenantReferenceRepository) RequireGlossaries(tenantID int64, ids []int64) error {
-	return r.requireMany(&models.Glossary{}, tenantID, ids, "业务术语")
+	return r.requireMany(&models.Glossary{}, tenantID, ids)
 }
 
 func (r *TenantReferenceRepository) RequireMetrics(tenantID int64, ids []int64) error {
-	return r.requireMany(&models.Metric{}, tenantID, ids, "指标")
+	return r.requireMany(&models.Metric{}, tenantID, ids)
 }
 
-func (r *TenantReferenceRepository) requireOne(model interface{}, tenantID int64, id *int64, label string) error {
+func (r *TenantReferenceRepository) requireOne(model interface{}, tenantID int64, id *int64) error {
 	if id == nil {
 		return nil
 	}
@@ -70,12 +72,12 @@ func (r *TenantReferenceRepository) requireOne(model interface{}, tenantID int64
 		return err
 	}
 	if count != 1 {
-		return fmt.Errorf("%s不存在或不属于当前租户", label)
+		return ErrInvalidTenantReference
 	}
 	return nil
 }
 
-func (r *TenantReferenceRepository) requireMany(model interface{}, tenantID int64, ids []int64, label string) error {
+func (r *TenantReferenceRepository) requireMany(model interface{}, tenantID int64, ids []int64) error {
 	uniqueIDs := uniqueInt64s(ids)
 	if len(uniqueIDs) == 0 {
 		return nil
@@ -88,7 +90,7 @@ func (r *TenantReferenceRepository) requireMany(model interface{}, tenantID int6
 		return err
 	}
 	if count != int64(len(uniqueIDs)) {
-		return fmt.Errorf("存在不存在或不属于当前租户的%s", label)
+		return ErrInvalidTenantReference
 	}
 	return nil
 }

@@ -2,10 +2,13 @@ package spatial
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"math"
 	"strings"
 
 	"github.com/addp/common/datatype"
+	"github.com/twpayne/go-geom"
 )
 
 type FlatGeobufBatchReadFunc func(ctx context.Context, limit int) ([]map[string]interface{}, error)
@@ -18,6 +21,7 @@ type FlatGeobufBatchFeatureReader struct {
 	srid           int
 	rowLimit       int
 	readRows       int
+	extent         *datatype.BoundingBox
 }
 
 func NewFlatGeobufBatchFeatureReader(
@@ -70,8 +74,55 @@ func (r *FlatGeobufBatchFeatureReader) NextFlatGeobufFeature(ctx context.Context
 		row := r.bufferedRows[0]
 		r.bufferedRows = r.bufferedRows[1:]
 		if feature := FlatGeobufFeatureFromRow(row, r.geometryColumn, r.columns, r.srid); feature != nil {
+			geometry, err := DecodeGeometryValue(feature.Geometry, feature.GeometryEncoding, feature.GeometrySRID)
+			if err != nil {
+				return nil, fmt.Errorf("decode FlatGeobuf batch geometry: %w", err)
+			}
+			feature.decodedGeometry = geometry
+			r.extendExtent(geometry.Bounds())
 			return feature, nil
 		}
+	}
+}
+
+// Extent returns the two-dimensional source-coordinate bounds accumulated from
+// features already read. The result is a copy and is safe for the caller to keep.
+func (r *FlatGeobufBatchFeatureReader) Extent() (datatype.BoundingBox, bool) {
+	if r == nil || r.extent == nil {
+		return datatype.BoundingBox{}, false
+	}
+	return *r.extent, true
+}
+
+func (r *FlatGeobufBatchFeatureReader) extendExtent(bounds *geom.Bounds) {
+	if bounds == nil || bounds.Layout().Stride() < 2 {
+		return
+	}
+	minX, minY, maxX, maxY := bounds.Min(0), bounds.Min(1), bounds.Max(0), bounds.Max(1)
+	for _, value := range []float64{minX, minY, maxX, maxY} {
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return
+		}
+	}
+	if minX > maxX || minY > maxY {
+		return
+	}
+	if r.extent == nil {
+		extent := datatype.NewBoundingBox(minX, minY, maxX, maxY)
+		r.extent = &extent
+		return
+	}
+	if minX < r.extent[0] {
+		r.extent[0] = minX
+	}
+	if minY < r.extent[1] {
+		r.extent[1] = minY
+	}
+	if maxX > r.extent[2] {
+		r.extent[2] = maxX
+	}
+	if maxY > r.extent[3] {
+		r.extent[3] = maxY
 	}
 }
 

@@ -844,7 +844,6 @@
       "switchQuickViewSuccess": "已切换为快显优先",
       "switchQuickViewFailed": "切换快显失败",
       "backToBasicPreview": "返回基础预览",
-      "directGeoJSONQuickView": "直接 GeoJSON 快显",
       "directFlatGeobufQuickView": "直接 FlatGeobuf 快显",
       "mvtGrid": "MVT 网格",
       "mvtGridStatus": {

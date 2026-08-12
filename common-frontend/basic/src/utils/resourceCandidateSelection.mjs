@@ -53,6 +53,11 @@ export function resourceFact(candidate) {
     role: candidate?.role || candidate?.name || candidate?.locator,
     ...(Number(candidate?.engine_id) > 0 ? { engine_id: Number(candidate.engine_id) } : {}),
     locator: candidate?.locator || '',
+    ...(candidate?.source_engine_type ? { source_engine_type: candidate.source_engine_type } : {}),
+    ...(candidate?.full_name ? { full_name: candidate.full_name } : {}),
+    ...(candidate?.query_names && typeof candidate.query_names === 'object'
+      ? { query_names: candidate.query_names } : {}),
+    ...(candidate?.schema_coverage ? { schema_coverage: candidate.schema_coverage } : {}),
     ...(candidate?.data_type ? { data_type: candidate.data_type } : {}),
     ...(candidate?.geometry_column ? { geometry_column: candidate.geometry_column } : {}),
     ...(candidate?.geometry_type ? { geometry_type: candidate.geometry_type } : {}),

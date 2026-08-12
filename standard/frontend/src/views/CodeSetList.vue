@@ -24,7 +24,7 @@
     </el-card>
 
     <!-- 码值集列表 -->
-    <el-card shadow="never" style="margin-top:12px">
+    <el-card shadow="never" class="list-card">
       <el-table :data="codeSets" v-loading="loading" stripe>
         <el-table-column :label="$t('standard.codeSet.codeLabel')" prop="code" width="180" />
         <el-table-column :label="$t('standard.codeSet.nameLabel')" prop="name" min-width="160">
@@ -45,18 +45,20 @@
             {{ new Date(row.created_at).toLocaleString('zh-CN') }}
           </template>
         </el-table-column>
-        <el-table-column :label="$t('standard.common.actions')" width="150" fixed="right">
+        <el-table-column :label="$t('standard.common.actions')" width="160" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="goToDetail(row)">{{ $t('standard.common.edit') }}</el-button>
-            <el-popconfirm
-              :title="$t('standard.codeSet.confirmDelete')"
-              @confirm="handleDelete(row.id)"
-              :disabled="row.type === 'system'"
-            >
-              <template #reference>
-                <el-button link type="danger" :disabled="row.type === 'system'">{{ $t('standard.common.delete') }}</el-button>
-              </template>
-            </el-popconfirm>
+            <div class="table-actions">
+              <el-button link type="primary" @click="goToDetail(row)">{{ $t('standard.common.edit') }}</el-button>
+              <el-popconfirm
+                :title="$t('standard.codeSet.confirmDelete')"
+                @confirm="handleDelete(row.id)"
+                :disabled="row.type === 'system'"
+              >
+                <template #reference>
+                  <el-button link type="danger" :disabled="row.type === 'system'">{{ $t('standard.common.delete') }}</el-button>
+                </template>
+              </el-popconfirm>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -108,6 +110,7 @@ import { ElMessage } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
 import { codeSetAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
+import { getStandardErrorMessage } from '../utils/apiError'
 
 const router = useRouter()
 const route = useRoute()
@@ -146,6 +149,10 @@ const loadCodeSets = async () => {
     const res = await codeSetAPI.list(params)
     codeSets.value = res.data || []
     pagination.total = res.total || 0
+  } catch (err) {
+    codeSets.value = []
+    pagination.total = 0
+    ElMessage.error(getStandardErrorMessage(err, t, 'standard.common.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -185,7 +192,7 @@ const handleCreate = async () => {
     createDialogVisible.value = false
     await navigateStandardRoute(router, `/code-sets/${res.id}`, { history: 'replace' })
   } catch (err) {
-    ElMessage.error(err.response?.data?.error || t('standard.common.operationFailed'))
+    ElMessage.error(getStandardErrorMessage(err, t))
   } finally {
     creating.value = false
   }
@@ -196,8 +203,8 @@ const handleDelete = async (id) => {
     await codeSetAPI.delete(id)
     ElMessage.success(t('standard.common.deleteSuccess'))
     loadCodeSets()
-  } catch {
-    ElMessage.error(t('standard.common.deleteFailed'))
+  } catch (err) {
+    ElMessage.error(getStandardErrorMessage(err, t, 'standard.common.deleteFailed'))
   }
 }
 
@@ -212,12 +219,26 @@ onMounted(() => {
 
 <style scoped>
 .code-set-list {
+  min-height: 100%;
   padding: 20px;
+  color: var(--addp-text-primary);
+  background: var(--addp-bg-secondary);
 }
 
 .search-card {
   margin-bottom: 0;
 }
+
+.list-card { margin-top: 12px; }
+
+.code-set-list :deep(.el-card) {
+  background: var(--addp-bg-primary);
+  border-color: var(--addp-border-color);
+  box-shadow: var(--addp-shadow-card);
+}
+
+.table-actions { display: inline-flex; align-items: center; gap: 8px; min-width: max-content; white-space: nowrap; }
+.table-actions :deep(.el-button) { white-space: nowrap; }
 
 .pagination-wrapper {
   display: flex;

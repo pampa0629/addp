@@ -46,6 +46,48 @@ other = "资源不存在"
 [standard.common.resource_conflict]
 other = "资源编码或关联已存在"
 
+[standard.common.invalid_resource_reference]
+other = "引用的资源不存在或不属于当前租户"
+
+[standard.code_set.invalid_type]
+other = "码值集类型必须是 system 或 custom"
+
+[standard.domain.parent_cycle]
+other = "业务域父级不能是自身或其子级"
+
+[standard.classification.parent_cycle]
+other = "数据分类父级不能是自身或其子级"
+
+[standard.metric_category.parent_cycle]
+other = "指标分类父级不能是自身或其子级"
+
+[standard.measurement_category.system_immutable]
+other = "系统内置度量类别不允许删除"
+
+[standard.unit.system_immutable]
+other = "系统内置单位不允许修改或删除"
+
+[standard.code_set.system_immutable]
+other = "系统内置码值集不允许删除"
+
+[standard.document.storage_unavailable]
+other = "文件存储服务不可用"
+
+[standard.document.file_too_large]
+other = "文件大小超过限制"
+
+[standard.document.file_upload_failed]
+other = "文件上传失败"
+
+[standard.document.file_download_failed]
+other = "文件获取失败"
+
+[standard.document.file_cleanup_failed]
+other = "文件清理失败"
+
+[standard.document.file_name_invalid]
+other = "文件名无效"
+
 [standard.domain.not_found]
 other = "业务域不存在"
 

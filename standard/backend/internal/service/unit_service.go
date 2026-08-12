@@ -1,8 +1,7 @@
 package service
 
 import (
-	"fmt"
-
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 )
@@ -29,7 +28,7 @@ func (s *UnitService) CreateCategory(req *models.CreateMeasurementCategoryReques
 		return nil, err
 	}
 	if exists {
-		return nil, fmt.Errorf("度量类别编码 '%s' 已存在", req.Code)
+		return nil, commonapi.ErrConflict
 	}
 	cat := &models.MeasurementCategory{
 		TenantID:    tenantID,
@@ -66,7 +65,7 @@ func (s *UnitService) DeleteCategory(id, tenantID int64) error {
 		return err
 	}
 	if cat.IsSystem {
-		return fmt.Errorf("系统内置度量类别不允许删除")
+		return ErrSystemCategoryImmutable
 	}
 	return s.catRepo.Delete(id, tenantID)
 }
@@ -82,9 +81,8 @@ func (s *UnitService) GetUnit(id, tenantID int64) (*models.Unit, error) {
 }
 
 func (s *UnitService) CreateUnit(req *models.CreateUnitRequest, tenantID int64) (*models.Unit, error) {
-	// 验证度量类别存在
 	if _, err := s.catRepo.GetByID(req.CategoryID, tenantID); err != nil {
-		return nil, fmt.Errorf("度量类别不存在")
+		return nil, err
 	}
 	unit := &models.Unit{
 		TenantID:    tenantID,
@@ -106,7 +104,7 @@ func (s *UnitService) UpdateUnit(id, tenantID int64, req *models.UpdateUnitReque
 		return nil, err
 	}
 	if unit.IsSystem {
-		return nil, fmt.Errorf("系统内置单位不允许修改")
+		return nil, ErrSystemUnitImmutable
 	}
 	if req.Name != "" {
 		unit.Name = req.Name
@@ -126,7 +124,7 @@ func (s *UnitService) DeleteUnit(id, tenantID int64) error {
 		return err
 	}
 	if unit.IsSystem {
-		return fmt.Errorf("系统内置单位不允许删除")
+		return ErrSystemUnitImmutable
 	}
 	return s.unitRepo.Delete(id, tenantID)
 }

@@ -1,8 +1,7 @@
 package service
 
 import (
-	"fmt"
-
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 )
@@ -26,7 +25,7 @@ func (s *DomainService) CreateDomain(req *models.CreateDomainRequest, tenantID, 
 		return nil, err
 	}
 	if exists {
-		return nil, fmt.Errorf("业务域编码 '%s' 已存在", req.Code)
+		return nil, commonapi.ErrConflict
 	}
 
 	domain := &models.Domain{
@@ -115,7 +114,7 @@ func (s *DomainService) validateParent(id, tenantID int64, parentID *int64) erro
 	}
 	for current := parentID; current != nil; {
 		if *current == id {
-			return fmt.Errorf("业务域父级不能是自身或其子级")
+			return ErrDomainParentCycle
 		}
 		parent, err := s.repo.GetByID(*current, tenantID)
 		if err != nil {

@@ -628,7 +628,7 @@ func newPointCloudCOPCTaskServiceTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create task_executions table: %v", err)
 	}
-	addTaskExecutionAuthorizationColumns(t, db)
+	addTaskExecutionRuntimeColumns(t, db)
 	if err := db.Exec(`CREATE TABLE manager.point_cloud_copc_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,

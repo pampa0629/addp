@@ -106,6 +106,22 @@ func TestTenantScopedDeleteDoesNotReportFalseSuccess(t *testing.T) {
 	}
 }
 
+func TestPostgresSchemaStatementsDefineDeletePolicies(t *testing.T) {
+	joined := strings.Join(postgresStandardSchemaStatements(), "\n")
+	for _, expected := range []string{
+		"CONSTRAINT fk_standard_domains_parent FOREIGN KEY (parent_id) REFERENCES standard.domains(id) ON DELETE RESTRICT",
+		"CONSTRAINT fk_standard_elements_domain FOREIGN KEY (domain_id) REFERENCES standard.domains(id) ON DELETE RESTRICT",
+		"CONSTRAINT fk_standard_glossary_element_mappings_element FOREIGN KEY (element_id) REFERENCES standard.elements(id) ON DELETE CASCADE",
+		"CONSTRAINT fk_standard_metric_dependencies_to FOREIGN KEY (to_metric_id) REFERENCES standard.metrics(id) ON DELETE RESTRICT",
+		"CONSTRAINT fk_standard_document_metric_mappings_metric FOREIGN KEY (metric_id) REFERENCES standard.metrics(id) ON DELETE CASCADE",
+		"CONSTRAINT fk_standard_dimension_hierarchy_levels_element FOREIGN KEY (element_id) REFERENCES standard.elements(id) ON DELETE SET NULL",
+	} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("postgres schema statements missing %q", expected)
+		}
+	}
+}
+
 func openStandardSchemaTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -130,6 +146,7 @@ func openStandardSchemaTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE standard.document_element_mappings (id INTEGER PRIMARY KEY, document_id INTEGER NOT NULL, element_id INTEGER NOT NULL)`,
 		`CREATE TABLE standard.document_glossary_mappings (id INTEGER PRIMARY KEY, document_id INTEGER NOT NULL, glossary_id INTEGER NOT NULL)`,
 		`CREATE TABLE standard.document_metric_mappings (id INTEGER PRIMARY KEY, document_id INTEGER NOT NULL, metric_id INTEGER NOT NULL)`,
+		`CREATE TABLE standard.document_file_cleanups (id INTEGER PRIMARY KEY, object_key TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at DATETIME NOT NULL, last_error TEXT)`,
 		`CREATE TABLE standard.dimension_hierarchies (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL)`,
 		`CREATE TABLE standard.dimension_hierarchy_levels (id INTEGER PRIMARY KEY, hierarchy_id INTEGER NOT NULL, level_num INTEGER NOT NULL, element_id INTEGER)`,
 		`CREATE TABLE standard.glossary_element_mappings (glossary_id INTEGER NOT NULL, element_id INTEGER NOT NULL, PRIMARY KEY (glossary_id, element_id))`,

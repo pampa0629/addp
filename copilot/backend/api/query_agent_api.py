@@ -128,6 +128,14 @@ async def generate_query(
                 clarification_reason="query_language_unsupported",
                 message=f"当前引擎不支持查询语言 {language}",
             )
+        if language not in {"sql", "mql", "cypher"}:
+            return QueryGenerationResponse(
+                status="need_clarification",
+                query_language=language,
+                query_parameters=[],
+                clarification_reason="query_language_unsupported",
+                message=f"AI 助手暂不支持生成 {language} 查询",
+            )
         if request.resource_scope_locator and (request.resources or request.current_query):
             raise ToolExecutionError(
                 "invalid_arguments",
@@ -151,7 +159,15 @@ async def generate_query(
             discovery=discovery,
             intent_chain=ResourceIntentChain(resolution_llm),
         )
-        policy = ResourceResolutionPolicy.query(request.engine_id)
+        query_capability = _query_capability(engine)
+        federation = query_capability.get("federation") or {}
+        policy = ResourceResolutionPolicy.query(
+            request.engine_id,
+            allowed_source_engine_types=(
+                frozenset(str(item).strip().lower() for item in federation.get("source_engine_types", []) if str(item).strip())
+                if federation.get("supported") else None
+            ),
+        )
         if not request.resources:
             return await _discover_query_resources(request, resolver, policy, language)
         resources = await resolver.verify(request.resources, policy)
@@ -255,7 +271,18 @@ def _query_languages(engine: dict[str, Any]) -> list[str]:
             capabilities = json.loads(capabilities)
         except json.JSONDecodeError:
             capabilities = {}
-    query_capability = (capabilities or {}).get("compute", {}).get("query", {})
+    query_capability = _query_capability(engine)
     if not query_capability.get("supported"):
         return []
     return [str(item).strip().lower() for item in query_capability.get("languages", []) if str(item).strip()]
+
+
+def _query_capability(engine: dict[str, Any]) -> dict[str, Any]:
+    capabilities = engine.get("capabilities")
+    if isinstance(capabilities, str):
+        try:
+            capabilities = json.loads(capabilities)
+        except json.JSONDecodeError:
+            capabilities = {}
+    value = (capabilities or {}).get("compute", {}).get("query", {})
+    return value if isinstance(value, dict) else {}

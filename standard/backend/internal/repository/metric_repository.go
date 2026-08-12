@@ -42,7 +42,7 @@ func (r *MetricCategoryRepository) Update(c *models.MetricCategory) error {
 }
 
 func (r *MetricCategoryRepository) Delete(id, tenantID int64) error {
-	return requireAffectedRow(r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.MetricCategory{}))
+	return deleteInTransaction(r.db, &models.MetricCategory{}, "id = ? AND tenant_id = ?", id, tenantID)
 }
 
 func (r *MetricCategoryRepository) ExistsByCode(code string, tenantID int64) (bool, error) {
@@ -120,7 +120,7 @@ func (r *MetricRepository) Update(m *models.Metric) error {
 }
 
 func (r *MetricRepository) Delete(id, tenantID int64) error {
-	return requireAffectedRow(r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Metric{}))
+	return deleteInTransaction(r.db, &models.Metric{}, "id = ? AND tenant_id = ?", id, tenantID)
 }
 
 func (r *MetricRepository) UpdateStatus(id, tenantID int64, status string, updatedBy int64) error {

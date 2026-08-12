@@ -15,7 +15,7 @@ func NewEntityRepository(db *gorm.DB) *EntityRepository {
 }
 
 func (r *EntityRepository) Create(entity *models.Entity) error {
-	return r.db.Create(entity).Error
+	return commonrepo.WrapDBError(r.db.Create(entity).Error)
 }
 
 func (r *EntityRepository) GetByID(id, tenantID int64) (*models.Entity, error) {
@@ -68,7 +68,7 @@ func (r *EntityRepository) List(tenantID int64, opts ListEntityOptions) ([]model
 }
 
 func (r *EntityRepository) Update(entity *models.Entity) error {
-	return r.db.Save(entity).Error
+	return commonrepo.WrapDBError(r.db.Save(entity).Error)
 }
 
 func (r *EntityRepository) Delete(id, tenantID int64) error {
@@ -77,7 +77,7 @@ func (r *EntityRepository) Delete(id, tenantID int64) error {
 		return commonrepo.WrapDBError(result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+		return commonrepo.WrapDBError(gorm.ErrRecordNotFound)
 	}
 	return nil
 }
@@ -87,10 +87,10 @@ func (r *EntityRepository) UpdateStatus(id, tenantID int64, status string, updat
 		Where("id = ? AND tenant_id = ?", id, tenantID).
 		Updates(map[string]interface{}{"status": status, "updated_by": updatedBy})
 	if result.Error != nil {
-		return result.Error
+		return commonrepo.WrapDBError(result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+		return commonrepo.WrapDBError(gorm.ErrRecordNotFound)
 	}
 	return nil
 }
@@ -114,7 +114,7 @@ func (r *EntityRepository) GetAttributes(entityID int64) ([]models.EntityAttribu
 
 // CreateAttribute 创建实体属性
 func (r *EntityRepository) CreateAttribute(attr *models.EntityAttribute) error {
-	return r.db.Create(attr).Error
+	return commonrepo.WrapDBError(r.db.Create(attr).Error)
 }
 
 // GetAttributeByID 按 ID 获取属性
@@ -126,17 +126,17 @@ func (r *EntityRepository) GetAttributeByID(attrID, entityID int64) (*models.Ent
 
 // UpdateAttribute 更新实体属性
 func (r *EntityRepository) UpdateAttribute(attr *models.EntityAttribute) error {
-	return r.db.Save(attr).Error
+	return commonrepo.WrapDBError(r.db.Save(attr).Error)
 }
 
 // DeleteAttribute 删除实体属性
 func (r *EntityRepository) DeleteAttribute(attrID, entityID int64) error {
 	result := r.db.Where("id = ? AND entity_id = ?", attrID, entityID).Delete(&models.EntityAttribute{})
 	if result.Error != nil {
-		return result.Error
+		return commonrepo.WrapDBError(result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+		return commonrepo.WrapDBError(gorm.ErrRecordNotFound)
 	}
 	return nil
 }

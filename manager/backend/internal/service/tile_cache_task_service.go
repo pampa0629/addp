@@ -795,7 +795,7 @@ func (s *TileCacheTaskService) prepareExecutionTileCache(ctx context.Context, ta
 		}
 		engineType := sourceEngine.EngineType
 		switch {
-		case strings.EqualFold(strings.TrimSpace(engineType), "mysql"):
+		case strings.EqualFold(strings.TrimSpace(engineType), "mysql"), strings.EqualFold(strings.TrimSpace(engineType), "oracle"):
 			workflowTableSource = true
 		case spatial.IsPostGISEngine(engineType):
 		default:
@@ -961,7 +961,7 @@ func (s *TileCacheTaskService) prepareExecutionTileCache(ctx context.Context, ta
 	if tableSource && !workflowTableSource {
 		targetKind = "postgis_pmtiles_archive"
 	} else if workflowTableSource {
-		targetKind = "mysql_flatgeobuf_workflow_pmtiles_archive"
+		targetKind = "database_flatgeobuf_workflow_pmtiles_archive"
 	}
 	execCfg["tile_generation_target"] = commonModels.JSONMap{
 		"source_kind":              identity.SourceKind,

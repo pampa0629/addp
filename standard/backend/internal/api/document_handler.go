@@ -1,8 +1,9 @@
 package api
 
 import (
-	"fmt"
+	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"strconv"
 
@@ -170,6 +171,8 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 413 {object} map[string]string
+// @Failure 502 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.document.update"]
 // @Router /documents/{id}/upload [post]
@@ -181,9 +184,16 @@ func (h *DocumentHandler) UploadFile(c *gin.Context) {
 		return
 	}
 	tenantID := getTenantID(c)
+	// 为 multipart 边界预留少量头部空间，文件本体仍由 Service 按精确大小校验。
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, h.svc.MaxFileSize()+1024*1024)
 
 	file, err := c.FormFile("file")
 	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			respondDocumentFileError(c, service.ErrDocumentFileTooLarge)
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgFileRequired)})
 		return
 	}
@@ -195,21 +205,20 @@ func (h *DocumentHandler) UploadFile(c *gin.Context) {
 	}
 	defer f.Close()
 
-	content, err := io.ReadAll(f)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, sysi18n.MsgFileReadFailed)})
+	contentType := file.Header.Get("Content-Type")
+	if err := h.svc.UploadFile(id, tenantID, file.Filename, f, file.Size, contentType); err != nil {
+		respondDocumentFileError(c, err)
 		return
 	}
-
-	contentType := file.Header.Get("Content-Type")
-	if err := h.svc.UploadFile(id, tenantID, file.Filename, content, contentType); err != nil {
+	doc, err := h.svc.GetDocument(id, tenantID)
+	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"message":   commoni18n.T(c, sysi18n.MsgUploadSuccess),
-		"file_name": file.Filename,
-		"file_size": len(content),
+		"file_name": doc.FileName,
+		"file_size": doc.FileSize,
 	})
 }
 
@@ -218,6 +227,8 @@ func (h *DocumentHandler) UploadFile(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 404 {object} map[string]string
+// @Failure 502 {object} map[string]string
 // @x-addp-auth-mode "resource_ticket"
 // @x-addp-required-permissions ["standard.document.read"]
 // @Router /documents/{id}/download [get]
@@ -232,18 +243,20 @@ func (h *DocumentHandler) DownloadFile(c *gin.Context) {
 
 	reader, fileName, fileSize, err := h.svc.DownloadFile(id, tenantID)
 	if err != nil {
-		respondError(c, http.StatusNotFound, err)
+		respondDocumentFileError(c, err)
 		return
 	}
 	defer reader.Close()
 
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", fileName))
+	c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": fileName}))
 	c.Header("Content-Type", "application/octet-stream")
 	if fileSize > 0 {
 		c.Header("Content-Length", strconv.FormatInt(fileSize, 10))
 	}
 	c.Status(http.StatusOK)
-	io.Copy(c.Writer, reader)
+	if _, err := io.Copy(c.Writer, reader); err != nil {
+		c.Error(err)
+	}
 }
 
 // @Summary 获取文档关联映射 | Get document mappings

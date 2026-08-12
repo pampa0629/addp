@@ -53,7 +53,7 @@
 
 ## 四、执行与复用
 
-执行器默认调用 GeoPython Workflow `vector_to_pmtiles`。如果存在同源、同 `source_version`、同 `profile_hash` 的 ready `manager.vector_tile_cache`，可将其作为执行复用候选；复用不改变任务身份，也不能让业务 item 或 Service 依赖 infra。目标写入采用临时对象、PMTiles 校验、原子提交、Meta scan 的固定顺序。
+执行器按源能力选择唯一路径：PostgreSQL/PostGIS 表由 Manager 原生 `ST_AsMVT` 生成 PMTiles；MySQL、Oracle 等标准 EWKB 可读但无原生 MVT 输出的数据库表先物化临时 FlatGeobuf，再调用 GeoPython Workflow `vector_to_pmtiles`；NFS、MinIO/S3 文件或对象直接使用受控 GDAL 访问计划调用同一算子。如果存在同源、同 `source_version`、同 `profile_hash` 的 ready `manager.vector_tile_cache`，可将其作为执行复用候选；复用不改变任务身份，也不能让业务 item 或 Service 依赖 infra。目标写入采用临时对象、PMTiles 校验、原子提交、Meta scan 的固定顺序。
 
 标准入口：
 

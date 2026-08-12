@@ -32,7 +32,6 @@ type QualityCleanupStats struct {
 	CheckTasks              int      `json:"check_tasks"`
 	Issues                  int      `json:"issues"`
 	DisabledRuleApps        int      `json:"disabled_rule_applications,omitempty"`
-	DisabledCheckTasks      int      `json:"disabled_check_tasks,omitempty"`
 	IgnoredIssues           int      `json:"ignored_issues,omitempty"`
 	SkippedIssues           int      `json:"skipped_issues,omitempty"`
 	DeletedRuleApplications int      `json:"deleted_rule_applications,omitempty"`
@@ -226,7 +225,7 @@ func qualityEngineDeletionImpact(candidates qualityCleanupCandidates) (events.Cl
 	}
 	for _, item := range candidates.checkTasks {
 		stableRef := fmt.Sprintf("quality_check_task:%d", item.ID)
-		items = append(items, events.CleanupImpactItem{StableRef: stableRef, Disposition: events.CleanupImpactWillDisable})
+		items = append(items, events.CleanupImpactItem{StableRef: stableRef, Disposition: events.CleanupImpactRebindable})
 		switch strings.ToLower(strings.TrimSpace(item.LastExecutionStatus)) {
 		case commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning:
 			items = append(items, events.CleanupImpactItem{StableRef: stableRef, Disposition: events.CleanupImpactRunning})
@@ -308,13 +307,6 @@ func (s *CleanupService) disableCandidates(ctx context.Context, candidates quali
 			continue
 		}
 		stats.DisabledRuleApps++
-	}
-	for _, item := range candidates.checkTasks {
-		if err := s.db.WithContext(ctx).Model(&models.CheckTask{}).Where("id = ?", item.ID).Update("enabled", false).Error; err != nil {
-			stats.Errors = append(stats.Errors, fmt.Sprintf("disable check task %d failed: %v", item.ID, err))
-			continue
-		}
-		stats.DisabledCheckTasks++
 	}
 	for _, item := range candidates.issues {
 		if item.Status != "open" {
@@ -492,10 +484,10 @@ func qualityExecuteSummary(stats *QualityCleanupStats) events.CleanupResultSumma
 	if stats == nil {
 		return events.CleanupResultSummary{RiskLevel: "low"}
 	}
-	affected := stats.DisabledRuleApps + stats.DisabledCheckTasks + stats.IgnoredIssues + stats.DeletedRuleApplications + stats.DeletedCheckTasks + stats.DeletedIssues
+	affected := stats.DisabledRuleApps + stats.IgnoredIssues + stats.DeletedRuleApplications + stats.DeletedCheckTasks + stats.DeletedIssues
 	return events.CleanupResultSummary{
 		AffectedRecords:         affected,
-		DisabledTaskDefinitions: stats.DisabledCheckTasks,
+		DisabledTaskDefinitions: 0,
 		SkippedItems:            stats.SkippedIssues,
 		ErrorCount:              len(stats.Errors),
 		RiskLevel:               "low",

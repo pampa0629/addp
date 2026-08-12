@@ -35,6 +35,7 @@ func Migrate(db *gorm.DB) error {
 			&models.MetricElementMapping{},
 			&models.MetricDependency{},
 			&models.Document{},
+			&models.DocumentFileCleanup{},
 			&models.DocumentElementMapping{},
 			&models.DocumentGlossaryMapping{},
 			&models.DocumentMetricMapping{},
@@ -96,7 +97,7 @@ func standardSchemaStatements(dialect string) ([]string, error) {
 }
 
 func postgresStandardSchemaStatements() []string {
-	return []string{
+	statements := []string{
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_domains_tenant_code ON standard.domains (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_elements_tenant_code ON standard.elements (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_code_sets_tenant_code ON standard.code_sets (tenant_id, code)",
@@ -111,6 +112,7 @@ func postgresStandardSchemaStatements() []string {
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_document_element_mappings_document_element ON standard.document_element_mappings (document_id, element_id)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_document_glossary_mappings_document_glossary ON standard.document_glossary_mappings (document_id, glossary_id)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_document_metric_mappings_document_metric ON standard.document_metric_mappings (document_id, metric_id)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_document_file_cleanups_object_key ON standard.document_file_cleanups (object_key)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_dimension_hierarchies_tenant_code ON standard.dimension_hierarchies (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_dimension_hierarchy_levels_hierarchy_level ON standard.dimension_hierarchy_levels (hierarchy_id, level_num)",
 
@@ -136,6 +138,80 @@ func postgresStandardSchemaStatements() []string {
 		"CREATE INDEX IF NOT EXISTS idx_standard_document_metric_mappings_metric ON standard.document_metric_mappings (metric_id)",
 		"CREATE INDEX IF NOT EXISTS idx_standard_dimension_hierarchy_levels_element ON standard.dimension_hierarchy_levels (element_id)",
 	}
+
+	// 清理早期 AutoMigrate/手工迁移生成的非统一约束名，后续仅保留下方单一路线。
+	for _, legacyConstraint := range []struct {
+		table string
+		name  string
+	}{
+		{"standard.classifications", "classifications_parent_id_fkey"},
+		{"standard.document_element_mappings", "document_element_mappings_document_id_fkey"},
+		{"standard.document_glossary_mappings", "document_glossary_mappings_document_id_fkey"},
+		{"standard.document_metric_mappings", "document_metric_mappings_document_id_fkey"},
+		{"standard.dimension_hierarchy_levels", "fk_standard_dimension_hierarchies_levels"},
+		{"standard.elements", "elements_classification_id_fkey"},
+		{"standard.elements", "elements_unit_id_fkey"},
+		{"standard.metric_categories", "metric_categories_parent_id_fkey"},
+		{"standard.metric_dependencies", "metric_dependencies_from_metric_id_fkey"},
+		{"standard.metric_dependencies", "metric_dependencies_to_metric_id_fkey"},
+		{"standard.metric_element_mappings", "metric_element_mappings_metric_id_fkey"},
+		{"standard.metrics", "metrics_base_metric_id_fkey"},
+		{"standard.metrics", "metrics_category_id_fkey"},
+		{"standard.metrics", "metrics_unit_id_fkey"},
+		{"standard.units", "fk_standard_units_category"},
+		{"standard.units", "units_category_id_fkey"},
+	} {
+		statements = append(statements, fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s", legacyConstraint.table, legacyConstraint.name))
+	}
+
+	for _, foreignKey := range []struct {
+		table      string
+		name       string
+		columns    string
+		references string
+		onDelete   string
+	}{
+		{"standard.domains", "fk_standard_domains_parent", "parent_id", "standard.domains(id)", "RESTRICT"},
+		{"standard.glossaries", "fk_standard_glossaries_domain", "domain_id", "standard.domains(id)", "RESTRICT"},
+		{"standard.elements", "fk_standard_elements_domain", "domain_id", "standard.domains(id)", "RESTRICT"},
+		{"standard.elements", "fk_standard_elements_unit", "unit_id", "standard.units(id)", "RESTRICT"},
+		{"standard.elements", "fk_standard_elements_classification", "classification_id", "standard.classifications(id)", "RESTRICT"},
+		{"standard.elements", "fk_standard_elements_code_set", "code_set_id", "standard.code_sets(id)", "RESTRICT"},
+		{"standard.code_items", "fk_standard_code_items_code_set", "code_set_id", "standard.code_sets(id)", "CASCADE"},
+		{"standard.code_items", "fk_standard_code_items_parent", "parent_id", "standard.code_items(id)", "RESTRICT"},
+		{"standard.units", "fk_standard_units_measurement_category", "category_id", "standard.measurement_categories(id)", "RESTRICT"},
+		{"standard.classifications", "fk_standard_classifications_parent", "parent_id", "standard.classifications(id)", "RESTRICT"},
+		{"standard.metric_categories", "fk_standard_metric_categories_parent", "parent_id", "standard.metric_categories(id)", "RESTRICT"},
+		{"standard.metrics", "fk_standard_metrics_category", "category_id", "standard.metric_categories(id)", "RESTRICT"},
+		{"standard.metrics", "fk_standard_metrics_domain", "domain_id", "standard.domains(id)", "RESTRICT"},
+		{"standard.metrics", "fk_standard_metrics_unit", "unit_id", "standard.units(id)", "RESTRICT"},
+		{"standard.metrics", "fk_standard_metrics_base_metric", "base_metric_id", "standard.metrics(id)", "RESTRICT"},
+		{"standard.glossary_element_mappings", "fk_standard_glossary_element_mappings_glossary", "glossary_id", "standard.glossaries(id)", "CASCADE"},
+		{"standard.glossary_element_mappings", "fk_standard_glossary_element_mappings_element", "element_id", "standard.elements(id)", "CASCADE"},
+		{"standard.metric_element_mappings", "fk_standard_metric_element_mappings_metric", "metric_id", "standard.metrics(id)", "CASCADE"},
+		{"standard.metric_element_mappings", "fk_standard_metric_element_mappings_element", "element_id", "standard.elements(id)", "CASCADE"},
+		{"standard.metric_dependencies", "fk_standard_metric_dependencies_from", "from_metric_id", "standard.metrics(id)", "CASCADE"},
+		{"standard.metric_dependencies", "fk_standard_metric_dependencies_to", "to_metric_id", "standard.metrics(id)", "RESTRICT"},
+		{"standard.document_element_mappings", "fk_standard_document_element_mappings_document", "document_id", "standard.documents(id)", "CASCADE"},
+		{"standard.document_element_mappings", "fk_standard_document_element_mappings_element", "element_id", "standard.elements(id)", "CASCADE"},
+		{"standard.document_glossary_mappings", "fk_standard_document_glossary_mappings_document", "document_id", "standard.documents(id)", "CASCADE"},
+		{"standard.document_glossary_mappings", "fk_standard_document_glossary_mappings_glossary", "glossary_id", "standard.glossaries(id)", "CASCADE"},
+		{"standard.document_metric_mappings", "fk_standard_document_metric_mappings_document", "document_id", "standard.documents(id)", "CASCADE"},
+		{"standard.document_metric_mappings", "fk_standard_document_metric_mappings_metric", "metric_id", "standard.metrics(id)", "CASCADE"},
+		{"standard.dimension_hierarchies", "fk_standard_dimension_hierarchies_domain", "domain_id", "standard.domains(id)", "RESTRICT"},
+		{"standard.dimension_hierarchy_levels", "fk_standard_dimension_hierarchy_levels_hierarchy", "hierarchy_id", "standard.dimension_hierarchies(id)", "CASCADE"},
+		{"standard.dimension_hierarchy_levels", "fk_standard_dimension_hierarchy_levels_element", "element_id", "standard.elements(id)", "SET NULL"},
+	} {
+		statements = append(statements, postgresForeignKeyStatement(foreignKey.table, foreignKey.name, foreignKey.columns, foreignKey.references, foreignKey.onDelete))
+	}
+	return statements
+}
+
+func postgresForeignKeyStatement(table, name, columns, references, onDelete string) string {
+	return fmt.Sprintf(
+		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '%s'::regclass AND conname = '%s') THEN ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s ON DELETE %s; END IF; END $do$",
+		table, name, table, name, columns, references, onDelete,
+	)
 }
 
 func sqliteStandardSchemaStatements() []string {
@@ -154,6 +230,7 @@ func sqliteStandardSchemaStatements() []string {
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_document_element_mappings_document_element ON document_element_mappings (document_id, element_id)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_document_glossary_mappings_document_glossary ON document_glossary_mappings (document_id, glossary_id)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_document_metric_mappings_document_metric ON document_metric_mappings (document_id, metric_id)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_document_file_cleanups_object_key ON document_file_cleanups (object_key)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_dimension_hierarchies_tenant_code ON dimension_hierarchies (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_dimension_hierarchy_levels_hierarchy_level ON dimension_hierarchy_levels (hierarchy_id, level_num)",
 

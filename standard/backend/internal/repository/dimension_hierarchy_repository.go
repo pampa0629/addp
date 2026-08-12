@@ -42,8 +42,7 @@ func (r *DimensionHierarchyRepository) Update(h *models.DimensionHierarchy) erro
 }
 
 func (r *DimensionHierarchyRepository) Delete(id, tenantID int64) error {
-	return requireAffectedRow(r.db.Where("id = ? AND tenant_id = ?", id, tenantID).
-		Delete(&models.DimensionHierarchy{}))
+	return deleteInTransaction(r.db, &models.DimensionHierarchy{}, "id = ? AND tenant_id = ?", id, tenantID)
 }
 
 func (r *DimensionHierarchyRepository) ExistsByCode(code string, tenantID int64, excludeID int64) (bool, error) {
@@ -89,8 +88,7 @@ func (r *DimensionHierarchyRepository) DeleteLevel(levelID, hierarchyID, tenantI
 	if _, err := r.GetLevelByID(levelID, hierarchyID, tenantID); err != nil {
 		return err
 	}
-	return requireAffectedRow(r.db.Where("id = ? AND hierarchy_id = ?", levelID, hierarchyID).
-		Delete(&models.DimensionHierarchyLevel{}))
+	return deleteInTransaction(r.db, &models.DimensionHierarchyLevel{}, "id = ? AND hierarchy_id = ?", levelID, hierarchyID)
 }
 
 func (r *DimensionHierarchyRepository) ExistsLevelNum(hierarchyID, tenantID int64, levelNum int, excludeID int64) (bool, error) {

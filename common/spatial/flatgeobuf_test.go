@@ -26,8 +26,20 @@ type testFlatGeobufFeatureReader struct {
 	index    int
 }
 
+func flatGeobufTestEWKB(t *testing.T, geometry geom.T, srid int) []byte {
+	t.Helper()
+	data, err := spatial.GeomToEWKB(geometry, srid)
+	if err != nil {
+		t.Fatalf("marshal FlatGeobuf test EWKB: %v", err)
+	}
+	return data
+}
+
 func TestFlatGeobufBatchFeatureReaderAppliesRowBudgetAcrossBufferedAndFetchedRows(t *testing.T) {
 	t.Parallel()
+	point := func(x, y float64) []byte {
+		return flatGeobufTestEWKB(t, geom.NewPointFlat(geom.XY, []float64{x, y}), 4326)
+	}
 
 	fields := []datatype.FieldInfo{
 		{Name: "shape", Type: datatype.FieldTypeGeometry},
@@ -40,7 +52,7 @@ func TestFlatGeobufBatchFeatureReaderAppliesRowBudgetAcrossBufferedAndFetchedRow
 	}
 	spatialInfo := datatype.NewSingleGeometrySpatialInfo("shape", "Point", 4326, 2)
 	bufferedRows := []map[string]interface{}{
-		{"SHAPE": []byte{1}, "name": "buffered", "active": true, "count": int64(1)},
+		{"SHAPE": point(121.5, 31.2), "name": "buffered", "active": true, "count": int64(1)},
 		{"shape": nil, "name": "null geometry"},
 	}
 	var requestedLimits []int
@@ -48,9 +60,9 @@ func TestFlatGeobufBatchFeatureReaderAppliesRowBudgetAcrossBufferedAndFetchedRow
 		func(_ context.Context, limit int) ([]map[string]interface{}, error) {
 			requestedLimits = append(requestedLimits, limit)
 			return []map[string]interface{}{
-				{"shape": []byte{2}, "name": "fetched", "ratio": 1.5, "metadata": map[string]interface{}{"kind": "test"}},
-				{"shape": []byte{3}, "name": "last", "payload": []byte("value")},
-				{"shape": []byte{4}, "name": "over budget"},
+				{"shape": point(116.4, 39.9), "name": "fetched", "ratio": 1.5, "metadata": map[string]interface{}{"kind": "test"}},
+				{"shape": point(110.0, 20.0), "name": "last", "payload": []byte("value")},
+				{"shape": point(130.0, 45.0), "name": "over budget"},
 			}, nil
 		},
 		bufferedRows,
@@ -103,10 +115,15 @@ func TestFlatGeobufBatchFeatureReaderAppliesRowBudgetAcrossBufferedAndFetchedRow
 	if len(requestedLimits) != 1 || requestedLimits[0] != 2 {
 		t.Fatalf("requested batch limits = %v, want [2]", requestedLimits)
 	}
+	if extent, ok := reader.Extent(); !ok || extent != (datatype.BoundingBox{110.0, 20.0, 121.5, 39.9}) {
+		t.Fatalf("accumulated extent = %v, ok=%v", extent, ok)
+	}
 }
 
 func TestFlatGeobufBatchFeatureReaderCapsInitialBufferAtRowLimit(t *testing.T) {
 	t.Parallel()
+	firstGeometry := flatGeobufTestEWKB(t, geom.NewPointFlat(geom.XY, []float64{1, 2}), 4326)
+	overBudgetGeometry := flatGeobufTestEWKB(t, geom.NewPointFlat(geom.XY, []float64{3, 4}), 4326)
 
 	readCalls := 0
 	reader, _ := spatial.NewFlatGeobufBatchFeatureReader(
@@ -115,8 +132,8 @@ func TestFlatGeobufBatchFeatureReaderCapsInitialBufferAtRowLimit(t *testing.T) {
 			return nil, nil
 		},
 		[]map[string]interface{}{
-			{"shape": []byte{1}, "name": "first"},
-			{"shape": []byte{2}, "name": "over budget"},
+			{"shape": firstGeometry, "name": "first"},
+			{"shape": overBudgetGeometry, "name": "over budget"},
 		},
 		"shape",
 		[]datatype.FieldInfo{
@@ -136,6 +153,9 @@ func TestFlatGeobufBatchFeatureReaderCapsInitialBufferAtRowLimit(t *testing.T) {
 	}
 	if readCalls != 0 {
 		t.Fatalf("readBatch calls = %d, want 0", readCalls)
+	}
+	if extent, ok := reader.Extent(); !ok || extent != (datatype.BoundingBox{1, 2, 1, 2}) {
+		t.Fatalf("row-limited extent = %v, ok=%v", extent, ok)
 	}
 }
 
@@ -160,7 +180,7 @@ func TestWriteFlatGeobufWritesEWKBFeatures(t *testing.T) {
 		{
 			Geometry: ewkbValue,
 			Properties: map[string]interface{}{
-				"name":   "Beijing",
+				"name": "Beijing",
 				// JSON-backed workflow batches decode integer JSON numbers as float64.
 				"rank":   float64(1),
 				"area":   "43854.25",

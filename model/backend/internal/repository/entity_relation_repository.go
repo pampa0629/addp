@@ -16,7 +16,7 @@ func NewEntityRelationRepository(db *gorm.DB) *EntityRelationRepository {
 
 // Create 创建实体关系
 func (r *EntityRelationRepository) Create(relation *models.EntityRelation) error {
-	return r.db.Create(relation).Error
+	return commonrepo.WrapDBError(r.db.Create(relation).Error)
 }
 
 // GetByID 根据ID获取实体关系
@@ -47,17 +47,17 @@ func (r *EntityRelationRepository) ListByTenantID(tenantID int64) ([]models.Enti
 
 // Update 更新实体关系
 func (r *EntityRelationRepository) Update(relation *models.EntityRelation) error {
-	return r.db.Save(relation).Error
+	return commonrepo.WrapDBError(r.db.Save(relation).Error)
 }
 
 // Delete 删除实体关系
 func (r *EntityRelationRepository) Delete(id, tenantID int64) error {
 	result := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.EntityRelation{})
 	if result.Error != nil {
-		return result.Error
+		return commonrepo.WrapDBError(result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+		return commonrepo.WrapDBError(gorm.ErrRecordNotFound)
 	}
 	return nil
 }

@@ -127,6 +127,7 @@ import { Document, Paperclip } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { elementDocumentAPI, glossaryDocumentAPI, metricDocumentAPI, documentAPI } from '../api/standard'
 import { saveBlob } from '../utils/download'
+import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 
 const { t } = useI18n()
 
@@ -187,7 +188,7 @@ const loadDocs = async () => {
     const res = await api[props.entityType].list(props.entityId)
     docs.value = res || []
   } catch (e) {
-    console.error('loadDocs error:', e)
+    docs.value = []
   } finally {
     loading.value = false
   }
@@ -200,7 +201,7 @@ const downloadDoc = async (doc) => {
     const blob = await api[props.entityType].download(doc.id)
     saveBlob(blob, doc.file_name || doc.name)
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('standard.document.downloadFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.document.downloadFailed'))
   }
 }
 
@@ -211,7 +212,7 @@ const unlinkDoc = async (doc) => {
     ElMessage.success(t('standard.documentPanel.unlinkSuccess'))
     await loadDocs()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(t('standard.common.operationFailed'))
+    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t))
   }
 }
 
@@ -250,7 +251,7 @@ const submitUpload = async () => {
     showUploadDialog.value = false
     await loadDocs()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t))
   } finally {
     uploading.value = false
   }
@@ -295,7 +296,7 @@ const confirmLink = async () => {
     showLinkDialog.value = false
     selectedDocIds.value = []
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t))
   } finally {
     linking.value = false
   }

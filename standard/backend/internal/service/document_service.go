@@ -1,35 +1,103 @@
 package service
 
 import (
-	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"log"
+	"path/filepath"
+	"strings"
+	"time"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
+	"github.com/google/uuid"
 	minio "github.com/minio/minio-go/v7"
 )
 
 const minioBucket = "standard"
 
+const (
+	defaultDocumentMaxFileSize    = 100 * 1024 * 1024
+	defaultDocumentStorageTimeout = 30 * time.Second
+)
+
+var (
+	ErrDocumentStorageUnavailable = errors.New("document storage unavailable")
+	ErrDocumentFileTooLarge       = errors.New("document file too large")
+	ErrDocumentFileUpload         = errors.New("document file upload failed")
+	ErrDocumentFileDownload       = errors.New("document file download failed")
+	ErrDocumentFileCleanup        = errors.New("document file cleanup failed")
+	ErrDocumentFileNameInvalid    = errors.New("document file name invalid")
+)
+
+type DocumentStorageOptions struct {
+	MaxFileSize int64
+	Timeout     time.Duration
+}
+
+type documentContextReadCloser struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (r *documentContextReadCloser) Close() error {
+	r.cancel()
+	return r.ReadCloser.Close()
+}
+
 // DocumentService 标准文档服务
 type DocumentService struct {
 	repo        *repository.DocumentRepository
 	refs        *repository.TenantReferenceRepository
-	minioClient *minio.Client
+	objectStore documentObjectStore
+	maxFileSize int64
+	timeout     time.Duration
+	stopCh      chan struct{}
 }
 
-func NewDocumentService(repo *repository.DocumentRepository, refs *repository.TenantReferenceRepository, minioClient *minio.Client) *DocumentService {
-	svc := &DocumentService{repo: repo, refs: refs, minioClient: minioClient}
-	if minioClient != nil {
-		ctx := context.Background()
-		exists, _ := minioClient.BucketExists(ctx, minioBucket)
-		if !exists {
-			_ = minioClient.MakeBucket(ctx, minioBucket, minio.MakeBucketOptions{})
+func NewDocumentService(repo *repository.DocumentRepository, refs *repository.TenantReferenceRepository, minioClient *minio.Client, options DocumentStorageOptions) *DocumentService {
+	if options.MaxFileSize <= 0 {
+		options.MaxFileSize = defaultDocumentMaxFileSize
+	}
+	if options.Timeout <= 0 {
+		options.Timeout = defaultDocumentStorageTimeout
+	}
+	svc := &DocumentService{
+		repo:        repo,
+		refs:        refs,
+		objectStore: newMinioDocumentObjectStore(minioClient),
+		maxFileSize: options.MaxFileSize,
+		timeout:     options.Timeout,
+		stopCh:      make(chan struct{}),
+	}
+	if svc.objectStore != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), svc.timeout)
+		defer cancel()
+		exists, err := svc.objectStore.BucketExists(ctx, minioBucket)
+		if err != nil {
+			log.Printf("standard document bucket check failed: %v", err)
+		} else if !exists {
+			if err := svc.objectStore.MakeBucket(ctx, minioBucket, minio.MakeBucketOptions{}); err != nil {
+				log.Printf("standard document bucket creation failed: %v", err)
+			}
 		}
 	}
+	go svc.runFileCleanupWorker()
 	return svc
+}
+
+func (s *DocumentService) Stop() {
+	if s == nil || s.stopCh == nil {
+		return
+	}
+	close(s.stopCh)
+}
+
+func (s *DocumentService) MaxFileSize() int64 {
+	return s.maxFileSize
 }
 
 func (s *DocumentService) ListDocuments(tenantID int64, opts repository.ListDocumentOptions) ([]models.Document, int64, error) {
@@ -86,68 +154,152 @@ func (s *DocumentService) UpdateDocument(id, tenantID, userID int64, req *models
 }
 
 func (s *DocumentService) DeleteDocument(id, tenantID int64) error {
-	// 删除时同步清理 MinIO 文件
-	if s.minioClient != nil {
-		doc, err := s.repo.GetByID(id, tenantID)
-		if err == nil && doc.FileKey != "" {
-			_ = s.minioClient.RemoveObject(context.Background(), minioBucket, doc.FileKey, minio.RemoveObjectOptions{})
-		}
+	// 先提交数据库删除，数据库失败时保留物理文件；物理清理失败由日志记录并可由回收任务重试。
+	cleanup, err := s.repo.Delete(id, tenantID)
+	if err != nil {
+		return err
 	}
-	return s.repo.Delete(id, tenantID)
+	if cleanup != nil {
+		s.tryFileCleanup(*cleanup)
+	}
+	return nil
 }
 
 // UploadFile 上传文件到 MinIO 并更新文档记录
-func (s *DocumentService) UploadFile(docID, tenantID int64, fileName string, content []byte, contentType string) error {
-	if s.minioClient == nil {
-		return fmt.Errorf("文件存储服务不可用")
+func (s *DocumentService) UploadFile(docID, tenantID int64, fileName string, content io.Reader, size int64, contentType string) error {
+	if s.objectStore == nil {
+		return ErrDocumentStorageUnavailable
+	}
+	if size < 0 || size > s.maxFileSize {
+		return ErrDocumentFileTooLarge
 	}
 	doc, err := s.repo.GetByID(docID, tenantID)
 	if err != nil {
-		return fmt.Errorf("文档不存在")
+		return commonapi.ErrNotFound
 	}
-
-	// 清理旧文件
-	if doc.FileKey != "" {
-		_ = s.minioClient.RemoveObject(context.Background(), minioBucket, doc.FileKey, minio.RemoveObjectOptions{})
+	fileName, err = sanitizeDocumentFileName(fileName)
+	if err != nil {
+		return err
 	}
-
-	fileKey := fmt.Sprintf("tenant_%d/documents/%d/%s", tenantID, docID, fileName)
+	extension := strings.ToLower(filepath.Ext(fileName))
+	fileKey := fmt.Sprintf("tenant_%d/documents/%d/%s%s", tenantID, docID, uuid.NewString(), extension)
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
 
-	ctx := context.Background()
-	_, err = s.minioClient.PutObject(ctx, minioBucket, fileKey, bytes.NewReader(content), int64(len(content)),
+	ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
+	_, err = s.objectStore.PutObject(ctx, minioBucket, fileKey, content, size,
 		minio.PutObjectOptions{ContentType: contentType})
+	cancel()
 	if err != nil {
-		return fmt.Errorf("文件上传失败: %w", err)
+		return fmt.Errorf("%w: %v", ErrDocumentFileUpload, err)
 	}
 
-	doc.FileKey = fileKey
-	doc.FileName = fileName
-	doc.FileSize = int64(len(content))
-	return s.repo.Update(doc)
+	cleanup, err := s.repo.ReplaceFile(doc.ID, tenantID, fileKey, fileName, size)
+	if err != nil {
+		if cleanupErr := s.removeObject(fileKey); cleanupErr != nil {
+			if _, queueErr := s.repo.EnqueueFileCleanup(fileKey); queueErr != nil {
+				log.Printf("standard document new file cleanup failed and enqueue failed, key=%q: cleanup=%v enqueue=%v", fileKey, cleanupErr, queueErr)
+			}
+		}
+		return err
+	}
+	if cleanup != nil {
+		s.tryFileCleanup(*cleanup)
+	}
+	return nil
 }
 
 // DownloadFile 从 MinIO 获取文件内容，返回 ReadCloser 和内容类型
 func (s *DocumentService) DownloadFile(docID, tenantID int64) (io.ReadCloser, string, int64, error) {
-	if s.minioClient == nil {
-		return nil, "", 0, fmt.Errorf("文件存储服务不可用")
+	if s.objectStore == nil {
+		return nil, "", 0, ErrDocumentStorageUnavailable
 	}
 	doc, err := s.repo.GetByID(docID, tenantID)
 	if err != nil {
-		return nil, "", 0, fmt.Errorf("文档不存在")
+		return nil, "", 0, commonapi.ErrNotFound
 	}
 	if doc.FileKey == "" {
-		return nil, "", 0, fmt.Errorf("该文档尚未上传文件")
+		return nil, "", 0, commonapi.ErrNotFound
 	}
 
-	ctx := context.Background()
-	obj, err := s.minioClient.GetObject(ctx, minioBucket, doc.FileKey, minio.GetObjectOptions{})
-	if err != nil {
-		return nil, "", 0, fmt.Errorf("获取文件失败: %w", err)
+	ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
+	if _, err := s.objectStore.StatObject(ctx, minioBucket, doc.FileKey, minio.StatObjectOptions{}); err != nil {
+		cancel()
+		return nil, "", 0, fmt.Errorf("%w: %v", ErrDocumentFileDownload, err)
 	}
-	return obj, doc.FileName, doc.FileSize, nil
+	obj, err := s.objectStore.GetObject(ctx, minioBucket, doc.FileKey, minio.GetObjectOptions{})
+	if err != nil {
+		cancel()
+		return nil, "", 0, fmt.Errorf("%w: %v", ErrDocumentFileDownload, err)
+	}
+	return &documentContextReadCloser{ReadCloser: obj, cancel: cancel}, doc.FileName, doc.FileSize, nil
+}
+
+func (s *DocumentService) removeObject(key string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
+	defer cancel()
+	return s.objectStore.RemoveObject(ctx, minioBucket, key, minio.RemoveObjectOptions{})
+}
+
+func (s *DocumentService) runFileCleanupWorker() {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			s.processDueFileCleanups()
+		case <-s.stopCh:
+			return
+		}
+	}
+}
+
+func (s *DocumentService) processDueFileCleanups() {
+	if s.objectStore == nil {
+		return
+	}
+	cleanups, err := s.repo.ListDueFileCleanups(time.Now(), 100)
+	if err != nil {
+		log.Printf("standard document file cleanup list failed: %v", err)
+		return
+	}
+	for _, cleanup := range cleanups {
+		s.tryFileCleanup(cleanup)
+	}
+}
+
+func (s *DocumentService) tryFileCleanup(cleanup models.DocumentFileCleanup) {
+	if s.objectStore == nil || cleanup.ObjectKey == "" {
+		return
+	}
+	if err := s.removeObject(cleanup.ObjectKey); err != nil {
+		attempts := cleanup.Attempts + 1
+		backoff := time.Duration(1<<min(attempts, 10)) * time.Minute
+		if updateErr := s.repo.FailFileCleanup(cleanup.ID, attempts, time.Now().Add(backoff), err.Error()); updateErr != nil {
+			log.Printf("standard document file cleanup retry update failed, key=%q: %v", cleanup.ObjectKey, updateErr)
+		}
+		return
+	}
+	if err := s.repo.CompleteFileCleanup(cleanup.ID); err != nil {
+		log.Printf("standard document file cleanup completion failed, key=%q: %v", cleanup.ObjectKey, err)
+	}
+}
+
+func min(left, right int) int {
+	if left < right {
+		return left
+	}
+	return right
+}
+
+func sanitizeDocumentFileName(fileName string) (string, error) {
+	fileName = strings.TrimSpace(strings.ReplaceAll(fileName, "\\", "/"))
+	fileName = filepath.Base(fileName)
+	if fileName == "." || fileName == ".." || fileName == "" || strings.ContainsAny(fileName, "\r\n\x00") {
+		return "", ErrDocumentFileNameInvalid
+	}
+	return fileName, nil
 }
 
 func (s *DocumentService) GetMappings(docID, tenantID int64) (map[string]interface{}, error) {
@@ -259,7 +411,7 @@ func (s *DocumentService) CreateAndLinkMetric(req *models.CreateDocumentRequest,
 func (s *DocumentService) LinkDocToElement(docID, tenantID, elementID int64) error {
 	// 验证文档存在且属于该租户
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
-		return fmt.Errorf("文档不存在")
+		return commonapi.ErrNotFound
 	}
 	if err := s.refs.RequireElement(tenantID, elementID); err != nil {
 		return err
@@ -269,7 +421,7 @@ func (s *DocumentService) LinkDocToElement(docID, tenantID, elementID int64) err
 
 func (s *DocumentService) LinkDocToGlossary(docID, tenantID, glossaryID int64) error {
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
-		return fmt.Errorf("文档不存在")
+		return commonapi.ErrNotFound
 	}
 	if err := s.refs.RequireGlossary(tenantID, glossaryID); err != nil {
 		return err
@@ -279,7 +431,7 @@ func (s *DocumentService) LinkDocToGlossary(docID, tenantID, glossaryID int64) e
 
 func (s *DocumentService) LinkDocToMetric(docID, tenantID, metricID int64) error {
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
-		return fmt.Errorf("文档不存在")
+		return commonapi.ErrNotFound
 	}
 	if err := s.refs.RequireMetric(tenantID, &metricID); err != nil {
 		return err
@@ -291,7 +443,7 @@ func (s *DocumentService) LinkDocToMetric(docID, tenantID, metricID int64) error
 
 func (s *DocumentService) UnlinkDocFromElement(docID, tenantID, elementID int64) error {
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
-		return fmt.Errorf("文档不存在")
+		return commonapi.ErrNotFound
 	}
 	if err := s.refs.RequireElement(tenantID, elementID); err != nil {
 		return err
@@ -301,7 +453,7 @@ func (s *DocumentService) UnlinkDocFromElement(docID, tenantID, elementID int64)
 
 func (s *DocumentService) UnlinkDocFromGlossary(docID, tenantID, glossaryID int64) error {
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
-		return fmt.Errorf("文档不存在")
+		return commonapi.ErrNotFound
 	}
 	if err := s.refs.RequireGlossary(tenantID, glossaryID); err != nil {
 		return err
@@ -311,7 +463,7 @@ func (s *DocumentService) UnlinkDocFromGlossary(docID, tenantID, glossaryID int6
 
 func (s *DocumentService) UnlinkDocFromMetric(docID, tenantID, metricID int64) error {
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
-		return fmt.Errorf("文档不存在")
+		return commonapi.ErrNotFound
 	}
 	if err := s.refs.RequireMetric(tenantID, &metricID); err != nil {
 		return err

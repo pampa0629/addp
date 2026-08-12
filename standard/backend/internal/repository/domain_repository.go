@@ -37,7 +37,7 @@ func (r *DomainRepository) Update(domain *models.Domain) error {
 }
 
 func (r *DomainRepository) Delete(id, tenantID int64) error {
-	return requireAffectedRow(r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Domain{}))
+	return deleteInTransaction(r.db, &models.Domain{}, "id = ? AND tenant_id = ?", id, tenantID)
 }
 
 func (r *DomainRepository) ExistsByCode(code string, tenantID int64, excludeID int64) (bool, error) {

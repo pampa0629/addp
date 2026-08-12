@@ -76,6 +76,8 @@ Copilot `resources[]` 只允许提交具有 `item_id`、可由 Owner preview 返
 
 TaskProvider、执行状态回查和 Asset 发现属于服务间接口，统一只接受 Bearer Service Access Token 和 canonical AuthContext。TaskProvider 固定由 `addp-orchestrator` 调用，Asset 发现固定由 `addp-asset` 调用；两者还要校验各自精确 Permission。代表用户创建或继续执行任务时必须引用由原 User AuthContext 派生、绑定唯一 execution 的 Execution Authorization；内部调用不能凭 Service Principal 自身权限伪造 User、Tenant、`triggered_by` 或数据访问能力。旧 `/api/v1/develop/internal`、`X-Internal-API-Key` 和 `X-Tenant-ID` 已删除，不保留双轨。
 
+Copilot ResourceFact 必须保留 Owner 提供的 `source_engine_type`、`full_name`、`query_names` 和 `schema_coverage`；查询名称不得由前端或 Copilot 从 locator 猜测。Query Runtime 与 Source Engine 分开传递，联邦 Runtime 按 `federation.source_engine_types` 校验来源。未注册 validator 的查询语言直接澄清，不生成候选。
+
 ### 执行授权与效果
 
 - SQL、Workflow、Notebook 执行效果固定为 `read | write | ddl | external_effect`。

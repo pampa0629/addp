@@ -152,6 +152,7 @@ import { useI18n } from 'vue-i18n'
 import { domainAPI, glossaryAPI, elementAPI } from '../api/standard'
 import DocumentPanel from '../components/DocumentPanel.vue'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
+import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -202,7 +203,7 @@ const loadGlossary = async () => {
     if (!glossary.value.alias) glossary.value.alias = []
     if (!glossary.value.tags) glossary.value.tags = []
   } catch (e) {
-    ElMessage.error(t('standard.common.loadFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
     goBack()
   } finally {
     loading.value = false
@@ -214,7 +215,7 @@ const loadMappedElements = async () => {
     const res = await glossaryAPI.getElements(route.params.id)
     mappedElements.value = res || []
   } catch (e) {
-    console.error('loadMappedElements error:', e)
+    mappedElements.value = []
   }
 }
 
@@ -223,7 +224,7 @@ const loadDomains = async () => {
     const res = await domainAPI.list()
     domains.value = flattenDomains(res || [])
   } catch (e) {
-    console.error('loadDomains error:', e)
+    domains.value = []
   }
 }
 
@@ -239,7 +240,7 @@ const saveChanges = async () => {
     await loadGlossary()
     await loadMappedElements()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('standard.common.saveFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.saveFailed'))
   } finally {
     saving.value = false
   }
@@ -252,7 +253,7 @@ const handleApprove = async () => {
     ElMessage.success(t('standard.common.approveSuccess'))
     await loadGlossary()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(t('standard.common.approveFailed'))
+    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.approveFailed'))
   }
 }
 
@@ -263,7 +264,7 @@ const handleDeprecate = async () => {
     ElMessage.success(t('standard.common.deprecated'))
     await loadGlossary()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(t('standard.common.operationFailed'))
+    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t))
   }
 }
 
@@ -358,5 +359,14 @@ onMounted(async () => {
 .add-element-tip {
   font-size: 13px;
   color: var(--el-text-color-secondary);
+}
+
+@media (max-width: 768px) {
+  .glossary-detail { padding: 12px; }
+  .page-header { align-items: flex-start; flex-wrap: wrap; gap: 10px; }
+  .header-left, .header-right { flex-wrap: wrap; }
+  .glossary-detail :deep(.el-row) { margin-left: 0 !important; margin-right: 0 !important; }
+  .glossary-detail :deep(.el-col) { max-width: 100%; flex: 0 0 100%; }
+  .glossary-detail :deep(.el-col + .el-col) { margin-top: 12px; }
 }
 </style>

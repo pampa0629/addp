@@ -26,6 +26,10 @@
 
 **外部存储**: MinIO（存储标准文档文件，bucket 名为 `standard`）
 
+文档文件采用“新对象上传、数据库切换引用、旧对象补偿清理”的顺序。失效对象记录在 `standard.document_file_cleanups`，该表仅用于物理清理重试，不作为文档当前文件引用。
+
+文档上传大小和 MinIO 操作超时由部署配置 `STANDARD_DOCUMENT_MAX_FILE_SIZE`、`STANDARD_DOCUMENT_STORAGE_TIMEOUT` 控制。
+
 ## 目录结构
 
 ```

@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/federatedquery"
 )
 
 const RuntimeAPI = "addp.query-runtime/v1"
@@ -67,7 +67,7 @@ func (p *Plugin) ResolveSourceEngineIDs(query string, candidates []plugin.Federa
 			continue
 		}
 		_, byName := referenced[candidate.Name]
-		_, byAlias := referenced[sanitizeIdentifier(candidate.Name)]
+		_, byAlias := referenced[federatedquery.SanitizeIdentifier(candidate.Name)]
 		if !byName && !byAlias {
 			continue
 		}
@@ -93,7 +93,7 @@ func (p *Plugin) ResolveObjectTableReferences(
 			continue
 		}
 		sourceNames[candidate.Name] = struct{}{}
-		sourceNames[sanitizeIdentifier(candidate.Name)] = struct{}{}
+		sourceNames[federatedquery.SanitizeIdentifier(candidate.Name)] = struct{}{}
 	}
 	for _, match := range qualifiedSourcePattern.FindAllStringSubmatch(query, -1) {
 		if len(match) != 4 {
@@ -117,25 +117,6 @@ func (p *Plugin) ResolveObjectTableReferences(
 		})
 	}
 	return references
-}
-
-func sanitizeIdentifier(value string) string {
-	var result strings.Builder
-	for _, char := range value {
-		if char == '_' || char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' {
-			result.WriteRune(char)
-		} else {
-			result.WriteByte('_')
-		}
-	}
-	value = result.String()
-	if value == "" {
-		return "engine"
-	}
-	if value[0] >= '0' && value[0] <= '9' {
-		return "_" + value
-	}
-	return value
 }
 
 func (p *Plugin) ExecuteFederatedQuery(

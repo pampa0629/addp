@@ -2,10 +2,12 @@ package repository
 
 import (
 	"fmt"
+	"time"
 
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/standard/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // DocumentRepository 标准文档仓库
@@ -63,11 +65,90 @@ func (r *DocumentRepository) Create(doc *models.Document) error {
 }
 
 func (r *DocumentRepository) Update(doc *models.Document) error {
-	return wrapDBError(r.db.Save(doc).Error)
+	return requireAffectedRow(r.db.Model(&models.Document{}).
+		Where("id = ? AND tenant_id = ?", doc.ID, doc.TenantID).
+		Updates(map[string]interface{}{
+			"name": doc.Name, "doc_type": doc.DocType, "source_org": doc.SourceOrg,
+			"version": doc.Version, "description": doc.Description, "updated_by": doc.UpdatedBy,
+		}))
 }
 
-func (r *DocumentRepository) Delete(id, tenantID int64) error {
-	return requireAffectedRow(r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Document{}))
+func (r *DocumentRepository) Delete(id, tenantID int64) (*models.DocumentFileCleanup, error) {
+	var cleanup *models.DocumentFileCleanup
+	err := wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
+		var doc models.Document
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND tenant_id = ?", id, tenantID).First(&doc).Error; err != nil {
+			return err
+		}
+		var err error
+		cleanup, err = enqueueDocumentFileCleanup(tx, doc.FileKey)
+		if err != nil {
+			return err
+		}
+		return requireAffectedRow(tx.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Document{}))
+	}))
+	return cleanup, err
+}
+
+func (r *DocumentRepository) ReplaceFile(id, tenantID int64, fileKey, fileName string, fileSize int64) (*models.DocumentFileCleanup, error) {
+	var cleanup *models.DocumentFileCleanup
+	err := wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
+		var doc models.Document
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND tenant_id = ?", id, tenantID).First(&doc).Error; err != nil {
+			return err
+		}
+		var err error
+		cleanup, err = enqueueDocumentFileCleanup(tx, doc.FileKey)
+		if err != nil {
+			return err
+		}
+		return requireAffectedRow(tx.Model(&models.Document{}).
+			Where("id = ? AND tenant_id = ?", id, tenantID).
+			Updates(map[string]interface{}{"file_key": fileKey, "file_name": fileName, "file_size": fileSize}))
+	}))
+	return cleanup, err
+}
+
+func (r *DocumentRepository) EnqueueFileCleanup(objectKey string) (*models.DocumentFileCleanup, error) {
+	var cleanup *models.DocumentFileCleanup
+	err := wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
+		var err error
+		cleanup, err = enqueueDocumentFileCleanup(tx, objectKey)
+		return err
+	}))
+	return cleanup, err
+}
+
+func enqueueDocumentFileCleanup(tx *gorm.DB, objectKey string) (*models.DocumentFileCleanup, error) {
+	if objectKey == "" {
+		return nil, nil
+	}
+	cleanup := &models.DocumentFileCleanup{ObjectKey: objectKey, NextAttemptAt: time.Now()}
+	if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "object_key"}}, DoNothing: true}).Create(cleanup).Error; err != nil {
+		return nil, err
+	}
+	if cleanup.ID == 0 {
+		if err := tx.Where("object_key = ?", objectKey).First(cleanup).Error; err != nil {
+			return nil, err
+		}
+	}
+	return cleanup, nil
+}
+
+func (r *DocumentRepository) ListDueFileCleanups(now time.Time, limit int) ([]models.DocumentFileCleanup, error) {
+	var cleanups []models.DocumentFileCleanup
+	err := r.db.Where("next_attempt_at <= ?", now).Order("next_attempt_at ASC, id ASC").Limit(limit).Find(&cleanups).Error
+	return cleanups, wrapDBError(err)
+}
+
+func (r *DocumentRepository) CompleteFileCleanup(id int64) error {
+	return requireAffectedRow(r.db.Delete(&models.DocumentFileCleanup{}, id))
+}
+
+func (r *DocumentRepository) FailFileCleanup(id int64, attempts int, nextAttemptAt time.Time, lastError string) error {
+	return requireAffectedRow(r.db.Model(&models.DocumentFileCleanup{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"attempts": attempts, "next_attempt_at": nextAttemptAt, "last_error": lastError,
+	}))
 }
 
 // GetElementMappings 获取文档关联的数据元

@@ -189,6 +189,7 @@ import { Document } from '@element-plus/icons-vue'
 import { documentAPI } from '../api/standard'
 import { saveBlob } from '../utils/download'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
+import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -249,6 +250,10 @@ const loadDocuments = async () => {
     const res = await documentAPI.list(params)
     documents.value = res.data || []
     total.value = res.total || 0
+  } catch (e) {
+    documents.value = []
+    total.value = 0
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -292,7 +297,7 @@ const createDocument = async () => {
     showCreateDialog.value = false
     loadDocuments()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t))
   } finally {
     saving.value = false
   }
@@ -314,7 +319,7 @@ const downloadFile = async (row) => {
     const blob = await documentAPI.download(row.id)
     saveBlob(blob, row.file_name || row.name)
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('standard.document.downloadFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.document.downloadFailed'))
   }
 }
 
@@ -331,7 +336,7 @@ const uploadToExisting = async (doc, file) => {
     const idx = documents.value.findIndex(d => d.id === doc.id)
     if (idx !== -1) documents.value[idx] = res
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t))
   }
 }
 
@@ -342,7 +347,7 @@ const deleteDocument = async (row) => {
     ElMessage.success(t('standard.common.deleteSuccess'))
     loadDocuments()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(t('standard.common.deleteFailed'))
+    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
   }
 }
 
@@ -350,19 +355,28 @@ onMounted(loadDocuments)
 </script>
 
 <style scoped>
-.document-list { padding: 20px; }
+.document-list { min-height: 100%; padding: 20px; color: var(--addp-text-primary); background: var(--addp-bg-secondary); }
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-.page-header h2 { margin: 0 0 4px; font-size: 18px; color: var(--el-text-color-primary); }
-.page-subtitle { margin: 0; font-size: 13px; color: var(--el-text-color-secondary); }
+.page-header h2 { margin: 0 0 4px; font-size: 18px; color: var(--addp-text-primary); }
+.page-subtitle { margin: 0; font-size: 13px; color: var(--addp-text-secondary); }
+.document-list :deep(.el-card) { background: var(--addp-bg-primary); border-color: var(--addp-border-color); box-shadow: var(--addp-shadow-card); }
 .toolbar { display: flex; gap: 10px; margin-bottom: 16px; }
 .pagination { margin-top: 16px; display: flex; justify-content: flex-end; }
 .doc-detail { padding: 0 4px; }
-.upload-tip { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 4px; }
+.upload-tip { font-size: 12px; color: var(--addp-text-secondary); margin-top: 4px; }
 .file-name { font-size: 12px; color: var(--el-text-color-regular); max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle; }
 .no-file { color: var(--el-text-color-placeholder); }
 .file-section { display: flex; align-items: center; gap: 8px; padding: 8px 0; font-size: 13px; }
 .file-info { color: var(--el-text-color-regular); }
 .no-file-section { padding: 8px 0; }
 .mapping-tag { margin: 4px; cursor: pointer; }
-.table-actions { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.table-actions { display: inline-flex; align-items: center; gap: 8px; min-width: max-content; white-space: nowrap; }
+.table-actions :deep(.el-button) { white-space: nowrap; }
+
+@media (max-width: 768px) {
+  .document-list { padding: 12px; }
+  .page-header { flex-wrap: wrap; gap: 10px; }
+  .toolbar { flex-wrap: wrap; }
+  .toolbar :deep(.el-input), .toolbar :deep(.el-select) { width: 100% !important; }
+}
 </style>

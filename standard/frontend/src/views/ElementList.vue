@@ -146,6 +146,7 @@ import { Plus, Search, Checked } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { domainAPI, elementAPI, unitAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
+import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 
 const router = useRouter()
 const route = useRoute()
@@ -221,8 +222,12 @@ const getDomainName = (id) => {
 }
 
 const loadDomains = async () => {
-  const res = await domainAPI.list()
-  domainList.value = flattenDomains(res || [])
+  try {
+    const res = await domainAPI.list()
+    domainList.value = flattenDomains(res || [])
+  } catch (e) {
+    domainList.value = []
+  }
 }
 
 const loadUnits = async () => {
@@ -230,7 +235,7 @@ const loadUnits = async () => {
     const res = await unitAPI.list({ page_size: 500 })
     units.value = res || []
   } catch (e) {
-    console.error('加载单位失败:', e)
+    units.value = []
   }
 }
 
@@ -246,7 +251,7 @@ const loadElements = async () => {
     elements.value = res.data || []
     total.value = res.total || 0
   } catch (e) {
-    ElMessage.error(t('standard.common.loadFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -282,7 +287,7 @@ const goToDetail = (row) => {
 }
 
 const openCreateDialog = () => {
-  form.value = { name: '', code: '', data_type: 'string', length: null, nullable: true, domain_id: null, unit_id: null, definition: '' }
+  form.value = { name: '', code: '', data_type: 'string', length: null, nullable: true, domain_id: filters.domain_id, unit_id: null, definition: '' }
   dialogVisible.value = true
 }
 
@@ -300,7 +305,7 @@ const handleSubmit = async () => {
     dialogVisible.value = false
     await loadElements()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t))
   } finally {
     submitting.value = false
   }
@@ -312,7 +317,7 @@ const handleApprove = async (row) => {
     ElMessage.success(t('standard.common.approveSuccess'))
     await loadElements()
   } catch (e) {
-    ElMessage.error(t('standard.common.approveFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.approveFailed'))
   }
 }
 
@@ -323,7 +328,7 @@ const handleDelete = async (row) => {
     ElMessage.success(t('standard.common.deleteSuccess'))
     await loadElements()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(t('standard.common.deleteFailed'))
+    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
   }
 }
 

@@ -5,8 +5,11 @@ import {
   isZoomAboveRecommendation
 } from '../../src/utils/vectorTileEstimate'
 import {
+  hasRequiredVectorTileSpatialFacts,
+  isDeferredExtentDatabaseSource,
   isVectorTilePreviewTarget,
-  isVectorTileSourceItem
+  isVectorTileSourceItem,
+  resolveVectorTileZoomRecommendation
 } from '../../src/utils/vectorTileSetResource'
 
 const vectorTileSetView = readFileSync(
@@ -89,6 +92,21 @@ describe('vectorTileEstimate', () => {
       locatorType: 'table',
       geometryColumns: []
     })).toBe(false)
+  })
+
+  it('defers extent only for database sources materialized through FlatGeobuf', () => {
+    const oracleSelection = { display: { engine_type: 'oracle' } }
+    const postgisSelection = { display: { engine_type: 'postgresql' } }
+    const factsWithoutExtent = { geometryColumn: 'SHAPE', sourceSRID: 4326, extent: [], extentSRID: 0 }
+    expect(isDeferredExtentDatabaseSource(oracleSelection)).toBe(true)
+    expect(hasRequiredVectorTileSpatialFacts(factsWithoutExtent, oracleSelection)).toBe(true)
+    expect(hasRequiredVectorTileSpatialFacts(factsWithoutExtent, postgisSelection)).toBe(false)
+    expect(vectorTileSetView).toContain("if (form.extent.length === 4 && form.extentSRID > 0)")
+  })
+
+  it('uses a bounded default zoom when execution-time extent cannot be estimated yet', () => {
+    expect(resolveVectorTileZoomRecommendation({ min_zoom: 3, max_zoom: 18 }, {}, false)).toEqual({ minZoom: 3, maxZoom: 12 })
+    expect(resolveVectorTileZoomRecommendation({ min_zoom: 3, max_zoom: 18 }, {}, true)).toEqual({ minZoom: 3, maxZoom: 18 })
   })
 
   it('opens the same create form from the data preview action with its locator', () => {

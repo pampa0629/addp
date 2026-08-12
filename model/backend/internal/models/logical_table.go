@@ -98,6 +98,11 @@ type UpdateLogicalTableRequest struct {
 	Materialization  map[string]interface{} `json:"materialization"`
 }
 
+// PreviewLogicalTableDDLRequest 使用当前页面中的物化配置生成 DDL，不持久化配置。
+type PreviewLogicalTableDDLRequest struct {
+	Materialization map[string]interface{} `json:"materialization" binding:"required"`
+}
+
 // CreateTableRelationRequest 创建逻辑表关联请求
 type CreateTableRelationRequest struct {
 	TargetTable  int64  `json:"target_table" binding:"required"`

@@ -39,6 +39,7 @@ type FlatGeobufFeature struct {
 	GeometryEncoding string
 	GeometrySRID     int
 	Properties       map[string]interface{}
+	decodedGeometry  geom.T
 }
 
 type FlatGeobufOptions struct {
@@ -240,9 +241,13 @@ func buildFlatGeobufColumns(builder *flatbuffers.Builder, columns []FlatGeobufCo
 }
 
 func buildFlatGeobufFeature(feature FlatGeobufFeature, columns []FlatGeobufColumn, headerGeometryType flat.GeometryType) (*flat.Feature, error) {
-	geometry, err := DecodeGeometryValue(feature.Geometry, feature.GeometryEncoding, feature.GeometrySRID)
-	if err != nil {
-		return nil, fmt.Errorf("decode FlatGeobuf feature geometry: %w", err)
+	geometry := feature.decodedGeometry
+	if geometry == nil {
+		var err error
+		geometry, err = DecodeGeometryValue(feature.Geometry, feature.GeometryEncoding, feature.GeometrySRID)
+		if err != nil {
+			return nil, fmt.Errorf("decode FlatGeobuf feature geometry: %w", err)
+		}
 	}
 	flatGeometry, err := flatGeobufGeometryFromGeom(geometry)
 	if err != nil {

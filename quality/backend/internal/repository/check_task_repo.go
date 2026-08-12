@@ -68,7 +68,7 @@ func (r *CheckTaskRepository) Replace(ctx context.Context, item *models.CheckTas
 		}
 		return tx.Model(&current).Updates(map[string]interface{}{
 			"name": item.Name, "description": item.Description, "engine_id": item.EngineID,
-			"schema_name": item.SchemaName, "table_name": item.Table, "enabled": item.Enabled, "updated_by": item.UpdatedBy,
+			"schema_name": item.SchemaName, "table_name": item.Table, "updated_by": item.UpdatedBy,
 		}).Error
 	}))
 }
@@ -126,7 +126,7 @@ func (r *CheckTaskRepository) ClaimExecution(ctx context.Context, taskID, tenant
 			"engine_id": task.EngineID, "schema_name": task.SchemaName, "table_name": task.Table,
 		}
 		var ruleApps []models.RuleApplication
-		if err := tx.Where("tenant_id = ? AND engine_id = ? AND schema_name = ? AND table_name = ? AND enabled = ?", tenantID, task.EngineID, task.SchemaName, task.Table, true).
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("tenant_id = ? AND engine_id = ? AND schema_name = ? AND table_name = ?", tenantID, task.EngineID, task.SchemaName, task.Table).
 			Order("id ASC").Find(&ruleApps).Error; err != nil {
 			return err
 		}

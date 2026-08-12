@@ -7,12 +7,12 @@
           <el-icon><ArrowLeft /></el-icon>
           {{ t('model.common.back') }}
         </el-button>
-        <span class="table-name">{{ table.name || t('model.common.loading') }}</span>
-        <el-tag :type="statusTagType(table.status)" size="small">
+        <span class="table-name">{{ table.name || t('model.logical_table.detail') }}</span>
+        <el-tag v-if="table.status" :type="statusTagType(table.status)" size="small">
           {{ statusLabel(table.status) }}
         </el-tag>
       </div>
-      <div class="header-right">
+      <div v-if="!pageLoading && !pageError" class="header-right">
         <el-button v-if="canEdit" type="primary" @click="handleSave" :loading="saving">{{ t('model.common.save') }}</el-button>
         <el-button v-if="table.status === 'draft' && authStore.hasPermission('model.logical_model.update')" type="success" @click="handleApprove">
           {{ t('model.common.approve') }}
@@ -27,6 +27,20 @@
       </div>
     </div>
 
+    <el-skeleton v-if="pageLoading" :rows="8" animated />
+    <el-result
+      v-else-if="pageError"
+      icon="error"
+      :title="t('model.common.load_failed')"
+      :sub-title="pageError"
+    >
+      <template #extra>
+        <el-button type="primary" @click="loadPage">{{ t('model.common.retry') }}</el-button>
+      </template>
+    </el-result>
+
+    <template v-else>
+
     <el-row :gutter="16">
       <!-- 基本信息 -->
       <el-col :span="24">
@@ -36,7 +50,7 @@
             <el-row :gutter="16">
               <el-col :span="12">
                 <el-form-item :label="t('model.logical_table.name')">
-                  <el-input v-model="form.name" />
+                  <el-input v-model="form.name" :disabled="!canEdit" />
                 </el-form-item>
               </el-col>
               <el-col :span="12">
@@ -46,14 +60,14 @@
               </el-col>
               <el-col :span="8">
                 <el-form-item :label="t('model.entity.domain')">
-                  <el-select v-model="form.domain_id" clearable style="width:100%">
+                  <el-select v-model="form.domain_id" :disabled="!canEdit" clearable style="width:100%">
                     <el-option v-for="d in domains" :key="d.id" :label="d.name" :value="d.id" />
                   </el-select>
                 </el-form-item>
               </el-col>
               <el-col :span="8">
                 <el-form-item :label="t('model.logical_table.table_type')">
-                  <el-select v-model="form.table_type" style="width:100%">
+                  <el-select v-model="form.table_type" :disabled="!canEdit" style="width:100%">
                     <el-option :label="t('model.logical_table.type_entity')" value="entity" />
                     <el-option :label="t('model.logical_table.type_fact')" value="fact" />
                     <el-option :label="t('model.logical_table.type_dimension')" value="dimension" />
@@ -62,7 +76,7 @@
               </el-col>
               <el-col :span="8">
                 <el-form-item :label="t('model.logical_table.layer')">
-                  <el-select v-model="form.layer" style="width:100%">
+                  <el-select v-model="form.layer" :disabled="!canEdit" style="width:100%">
                     <el-option v-for="layer in layers" :key="layer.layer_code" :label="layer.layer_name" :value="layer.layer_code" />
                   </el-select>
                 </el-form-item>
@@ -74,6 +88,7 @@
                     v-model="form.grain_description"
                     type="textarea"
                     :rows="2"
+                    :disabled="!canEdit"
                     :placeholder="t('model.logical_table.grain_placeholder')"
                   />
                 </el-form-item>
@@ -81,7 +96,7 @@
               <!-- 维度表专属：SCD 类型 -->
               <el-col v-if="form.table_type === 'dimension'" :span="8">
                 <el-form-item :label="t('model.logical_table.scd_type')">
-                  <el-select v-model="form.scd_type" style="width:100%">
+                  <el-select v-model="form.scd_type" :disabled="!canEdit" style="width:100%">
                     <el-option :label="t('model.logical_table.scd_0')" :value="0" />
                     <el-option :label="t('model.logical_table.scd_1')" :value="1" />
                     <el-option :label="t('model.logical_table.scd_2')" :value="2" />
@@ -91,7 +106,7 @@
               </el-col>
               <el-col :span="24">
                 <el-form-item :label="t('model.entity.description')">
-                  <el-input v-model="form.description" type="textarea" :rows="2" />
+                  <el-input v-model="form.description" type="textarea" :rows="2" :disabled="!canEdit" />
                 </el-form-item>
               </el-col>
             </el-row>
@@ -201,24 +216,24 @@
             <el-row :gutter="16">
               <el-col :span="8">
                 <el-form-item :label="t('model.materialization.schema_name')">
-                  <el-input v-model="materializationForm.schema_name" :placeholder="t('model.materialization.schema_placeholder')" />
+                  <el-input v-model="materializationForm.schema_name" :disabled="!canEdit" :placeholder="t('model.materialization.schema_placeholder')" />
                 </el-form-item>
               </el-col>
               <el-col :span="8">
                 <el-form-item :label="t('model.materialization.table_name')">
-                  <el-input v-model="materializationForm.table_name" :placeholder="t('model.materialization.table_placeholder')" />
+                  <el-input v-model="materializationForm.table_name" :disabled="!canEdit" :placeholder="t('model.materialization.table_placeholder')" />
                 </el-form-item>
               </el-col>
               <el-col :span="8">
                 <el-form-item :label="t('model.materialization.partition_by')">
-                  <el-select v-model="materializationForm.partition_by" placeholder="可选" clearable style="width:100%">
+                  <el-select v-model="materializationForm.partition_by" :disabled="!canEdit" :placeholder="t('model.common.optional')" clearable style="width:100%">
                     <el-option v-for="f in fields" :key="f.id" :label="f.column_name" :value="f.column_name" />
                   </el-select>
                 </el-form-item>
               </el-col>
               <el-col :span="8">
                 <el-form-item :label="t('model.materialization.partition_type')">
-                  <el-select v-model="materializationForm.partition_type" placeholder="RANGE" style="width:100%">
+                  <el-select v-model="materializationForm.partition_type" :disabled="!canEdit" placeholder="RANGE" style="width:100%">
                     <el-option label="RANGE" value="range" />
                     <el-option label="LIST" value="list" />
                     <el-option label="HASH" value="hash" />
@@ -374,11 +389,12 @@
 
     <!-- DDL 预览对话框 -->
     <DDLPreviewDialog v-model="ddlDialogVisible" :ddl="ddlContent" />
+    </template>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Plus, View } from '@element-plus/icons-vue'
@@ -388,13 +404,15 @@ import { useI18n } from 'vue-i18n'
 import { navigateModelRoute } from '../utils/moduleNavigation'
 import { useAuthStore } from '../store/auth'
 import { resolveLogicalTableListRouteState } from '../utils/routeState'
+import { getModelErrorMessage } from '../utils/apiError'
+import { buildDDLPreviewRequest, isEditableDraft, resolvePositiveRouteId } from '../utils/modelDetailState'
 
 const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
-const tableId = parseInt(route.params.id)
+const tableId = computed(() => resolvePositiveRouteId(route.params.id))
 
 const backToList = () => navigateModelRoute(router, {
   path: '/logical-tables',
@@ -402,6 +420,8 @@ const backToList = () => navigateModelRoute(router, {
 }, { history: 'replace' })
 
 const saving = ref(false)
+const pageLoading = ref(false)
+const pageError = ref('')
 const fieldLoading = ref(false)
 const fieldSubmitting = ref(false)
 const fieldDialogVisible = ref(false)
@@ -417,7 +437,7 @@ const metrics = ref([])
 const availableMetrics = ref([])
 
 const table = ref({})
-const canEdit = computed(() => table.value.status === 'draft' && authStore.hasPermission('model.logical_model.update'))
+const canEdit = computed(() => isEditableDraft(table.value.status, authStore.hasPermission('model.logical_model.update')))
 const form = reactive({
   name: '', domain_id: null, table_type: 'entity', layer: '',
   grain_description: '', scd_type: 0, description: ''
@@ -495,7 +515,7 @@ const fieldRoleLabel = (role) => {
 }
 
 const loadTable = async () => {
-  const res = await logicalTableAPI.get(tableId)
+  const res = await logicalTableAPI.get(tableId.value)
   table.value = res || {}
   Object.assign(form, {
     name: table.value.name,
@@ -519,7 +539,7 @@ const loadTable = async () => {
 const loadFields = async () => {
   fieldLoading.value = true
   try {
-    const res = await logicalTableAPI.getFields(tableId)
+    const res = await logicalTableAPI.getFields(tableId.value)
     fields.value = res || []
   } finally {
     fieldLoading.value = false
@@ -530,7 +550,7 @@ const loadMetrics = async () => {
   if (form.table_type !== 'fact') return
   metricLoading.value = true
   try {
-    const res = await logicalTableAPI.listMetrics(tableId)
+    const res = await logicalTableAPI.listMetrics(tableId.value)
     metrics.value = res || []
   } finally {
     metricLoading.value = false
@@ -551,33 +571,33 @@ const handleSave = async () => {
   saving.value = true
   try {
     const updateData = { ...form, materialization: materializationForm }
-    await logicalTableAPI.update(tableId, updateData)
+    await logicalTableAPI.update(tableId.value, updateData)
     ElMessage.success(t('model.common.save_success'))
     loadTable()
   } catch (err) {
-    ElMessage.error(err.response?.data?.error || t('model.common.save_failed'))
+    ElMessage.error(getModelErrorMessage(err, t, 'model.common.save_failed'))
   } finally {
     saving.value = false
   }
 }
 
 const handleApprove = async () => {
-  try { await logicalTableAPI.approve(tableId); ElMessage.success(t('model.common.approve_success')); loadTable() }
-  catch (err) { ElMessage.error(err.response?.data?.error || t('model.common.op_failed')) }
+  try { await logicalTableAPI.approve(tableId.value); ElMessage.success(t('model.common.approve_success')); loadTable() }
+  catch (err) { ElMessage.error(getModelErrorMessage(err, t, 'model.common.op_failed')) }
 }
 
 const handleReopen = async () => {
-  try { await logicalTableAPI.reopen(tableId); ElMessage.success(t('model.common.reopen_success')); loadTable() }
-  catch (err) { ElMessage.error(err.response?.data?.error || t('model.common.op_failed')) }
+  try { await logicalTableAPI.reopen(tableId.value); ElMessage.success(t('model.common.reopen_success')); loadTable() }
+  catch (err) { ElMessage.error(getModelErrorMessage(err, t, 'model.common.op_failed')) }
 }
 
 const handlePreviewDDL = async () => {
   try {
-    const res = await logicalTableAPI.previewDDL(tableId)
+    const res = await logicalTableAPI.previewDDL(tableId.value, buildDDLPreviewRequest(materializationForm))
     ddlContent.value = res.ddl || ''
     ddlDialogVisible.value = true
   } catch (err) {
-    ElMessage.error(err.response?.data?.error || t('model.logical_table.ddl_failed'))
+    ElMessage.error(getModelErrorMessage(err, t, 'model.logical_table.ddl_failed'))
   }
 }
 
@@ -625,16 +645,16 @@ const handleFieldSubmit = async () => {
   fieldSubmitting.value = true
   try {
     if (editingField.value) {
-      await logicalTableAPI.updateField(tableId, editingField.value.id, fieldForm)
+      await logicalTableAPI.updateField(tableId.value, editingField.value.id, fieldForm)
       ElMessage.success(t('model.common.update_success'))
     } else {
-      await logicalTableAPI.createField(tableId, fieldForm)
+      await logicalTableAPI.createField(tableId.value, fieldForm)
       ElMessage.success(t('model.common.add_success'))
     }
     fieldDialogVisible.value = false
     loadFields()
   } catch (err) {
-    ElMessage.error(err.response?.data?.error || t('model.common.op_failed'))
+    ElMessage.error(getModelErrorMessage(err, t, 'model.common.op_failed'))
   } finally {
     fieldSubmitting.value = false
   }
@@ -642,7 +662,7 @@ const handleFieldSubmit = async () => {
 
 const deleteField = async (fieldId) => {
   try {
-    await logicalTableAPI.deleteField(tableId, fieldId)
+    await logicalTableAPI.deleteField(tableId.value, fieldId)
     ElMessage.success(t('model.common.delete_success'))
     loadFields()
   } catch {
@@ -663,12 +683,12 @@ const handleAddMetric = async () => {
   }
   metricSubmitting.value = true
   try {
-    await logicalTableAPI.addMetric(tableId, metricForm)
+    await logicalTableAPI.addMetric(tableId.value, metricForm)
     ElMessage.success(t('model.metric.associate_success'))
     metricDialogVisible.value = false
     loadMetrics()
   } catch (err) {
-    ElMessage.error(err.response?.data?.error || t('model.metric.associate_failed'))
+    ElMessage.error(getModelErrorMessage(err, t, 'model.metric.associate_failed'))
   } finally {
     metricSubmitting.value = false
   }
@@ -676,7 +696,7 @@ const handleAddMetric = async () => {
 
 const removeMetric = async (mappingId) => {
   try {
-    await logicalTableAPI.removeMetric(tableId, mappingId)
+    await logicalTableAPI.removeMetric(tableId.value, mappingId)
     ElMessage.success(t('model.metric.remove_success'))
     loadMetrics()
   } catch {
@@ -684,19 +704,38 @@ const removeMetric = async (mappingId) => {
   }
 }
 
-onMounted(async () => {
-  await loadTable()
-  loadFields()
-  loadMetrics()
-  const [domainsRes, elementsRes, layersRes] = await Promise.all([
-    domainAPI.list(),
-    elementAPI.listAll(),
-    dwLayerAPI.list()
-  ])
-  domains.value = domainsRes || []
-  elements.value = elementsRes
-  layers.value = layersRes || []
-})
+let loadVersion = 0
+const loadPage = async () => {
+  const version = ++loadVersion
+  pageLoading.value = true
+  pageError.value = ''
+  table.value = {}
+  fields.value = []
+  metrics.value = []
+  if (!tableId.value) {
+    pageLoading.value = false
+    pageError.value = t('model.common.invalid_detail_id')
+    return
+  }
+  try {
+    await loadTable()
+    if (version !== loadVersion) return
+    await Promise.all([loadFields(), loadMetrics()])
+    const [domainsRes, elementsRes, layersRes] = await Promise.all([
+      domainAPI.list(), elementAPI.listAll(), dwLayerAPI.list()
+    ])
+    if (version !== loadVersion) return
+    domains.value = domainsRes || []
+    elements.value = elementsRes || []
+    layers.value = layersRes || []
+  } catch (error) {
+    if (version === loadVersion) pageError.value = getModelErrorMessage(error, t, 'model.common.load_failed')
+  } finally {
+    if (version === loadVersion) pageLoading.value = false
+  }
+}
+
+watch(() => route.params.id, loadPage, { immediate: true })
 </script>
 
 <style scoped>

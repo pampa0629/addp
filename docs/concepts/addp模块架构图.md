@@ -164,7 +164,7 @@ graph TB
   - **Transfer Bounded Worker**: 基于 Asynq 的异步任务队列，处理 snapshot 和 watermark bounded execution。
   - **Transfer Continuous Worker**: 已实现的独立长驻进程角色，通过 supervisor、DB lease、heartbeat 和 fencing 承载多个 continuous runtime session；不使用 Asynq 承载无限消费循环。当前数据面开放业务 Kafka keyed JSON -> PostgreSQL/MySQL，以及 PostgreSQL/MySQL/Oracle 单表 Debezium CDC -> PostgreSQL/MySQL；Oracle Spatial 由 Oracle capture Provider 在源 schema 内维护 WKB 镜像表后进入同一 Debezium/consumer/apply 主路径。两类 source 共用同一 continuous runtime、position、lease 和 fencing；ArcGIS SDE 仍保留为后续独立 Provider。
   - **Meta Worker**: 基于 Asynq 的扫描任务处理,执行元数据扫描和索引
-- **Manager 快显与瓦片任务**: `vector_tile_cache_generation` 与 `vector_tile_set_generation` 由 Manager Backend 按源能力选择唯一执行路径：PostgreSQL/PostGIS 表使用原生 `ST_AsMVT`，MySQL 空间表通过标准 EWKB 流式物化临时 FlatGeobuf 后调用 GeoPython `vector_to_pmtiles`，文件或对象通过受控访问计划调用同一 operator；三类路径统一输出 PMTiles v3。任务定义、执行记录和缓存结果分别进入 Manager owner 表、`common.task_executions` 与 `manager.vector_tile_cache`。`vector_materialized_view_generation` 仍由 Manager Backend 在手动或编排触发时执行，结果进入 `manager.vector_materialized_view`。这些任务当前不启动模块自身定时调度；若需要多执行器横向扩展或独立 GIS 资源隔离，应将对应任务类型整体切换为唯一的 Manager Worker 或 GIS 执行引擎，不允许 Backend 与 Worker 双轨并存。
+- **Manager 快显与瓦片任务**: `vector_tile_cache_generation` 与 `vector_tile_set_generation` 由 Manager Backend 按源能力选择唯一执行路径：PostgreSQL/PostGIS 表使用原生 `ST_AsMVT`，MySQL、Oracle 等标准 EWKB 可读的空间表流式物化临时 FlatGeobuf 后调用 GeoPython `vector_to_pmtiles`，文件或对象通过受控访问计划调用同一 operator；三类路径统一输出 PMTiles v3。任务定义、执行记录和缓存结果分别进入 Manager owner 表、`common.task_executions` 与 `manager.vector_tile_cache`。`vector_materialized_view_generation` 仍由 Manager Backend 在手动或编排触发时执行，结果进入 `manager.vector_materialized_view`。这些任务当前不启动模块自身定时调度；若需要多执行器横向扩展或独立 GIS 资源隔离，应将对应任务类型整体切换为唯一的 Manager Worker 或 GIS 执行引擎，不允许 Backend 与 Worker 双轨并存。
 - **共享模块**: common 和 common-frontend 提供可复用的代码和组件
 - **扩展运行时**: `engines/` 目录集中放置不拥有业务配置事实的独立计算 / Notebook Runtime 实现，由业务模块通过统一 Provider 调用。Inference 同时拥有 Provider、Deployment、Profile、凭据和配置管理入口，因此保留为根目录业务模块；其数据面端点另以 `inference_runtime` Engine Instance 纳入统一引擎体系，不在 `engines/` 下复制 owner 实现。
 - **基础设施层**: 共享的数据库、缓存、对象存储、搜索引擎，以及 PostgreSQL/MySQL/Oracle CDC 使用的 Infra Kafka/Kafka Connect。Infra Kafka、Connect 和 Transfer capture supervisor 已开放；Infra Kafka 不注册为 System Engine，也不进入用户任务配置。
@@ -284,7 +284,7 @@ graph LR
 
 ## Worker 运行时
 
-ADDP 平台的部分模块拥有独立的 Worker 运行时进程,用于处理异步任务和后台作业。Manager 当前没有独立 Worker；PostgreSQL/PostGIS 原生 MVT、MySQL 临时 FlatGeobuf 到 GeoPython PMTiles、文件或对象到 GeoPython PMTiles，以及矢量物化视图均由 Manager Backend 在手动或 Orchestrator 编排触发时执行。Manager 受管当前结果任务不启动 owner scheduler；Embedding 的逐 item 调度器独立保留。若后续格式实现需要多执行器并发或独立资源隔离，应先把文档和任务运行时统一切换到 Manager Worker 或 GIS 执行引擎，再实现代码，不保留 Backend 与 Worker 双轨。
+ADDP 平台的部分模块拥有独立的 Worker 运行时进程,用于处理异步任务和后台作业。Manager 当前没有独立 Worker；PostgreSQL/PostGIS 原生 MVT、MySQL/Oracle 临时 FlatGeobuf 到 GeoPython PMTiles、文件或对象到 GeoPython PMTiles，以及矢量物化视图均由 Manager Backend 在手动或 Orchestrator 编排触发时执行。Manager 受管当前结果任务不启动 owner scheduler；Embedding 的逐 item 调度器独立保留。若后续格式实现需要多执行器并发或独立资源隔离，应先把文档和任务运行时统一切换到 Manager Worker 或 GIS 执行引擎，再实现代码，不保留 Backend 与 Worker 双轨。
 
 ```mermaid
 graph TB

@@ -19,7 +19,6 @@ func TestQualityTaskListResponseUsesStandardItemsShape(t *testing.T) {
 			TenantID: 7,
 			TaskType: commonExecution.TaskTypeQualityCheck,
 			Name:     "quality check",
-			Enabled:  true,
 		}},
 		Total:    1,
 		Page:     1,
@@ -37,7 +36,6 @@ func TestQualityTaskDetailResponseUsesStandardTaskShape(t *testing.T) {
 		ID:       1,
 		TenantID: 7,
 		Name:     "quality check",
-		Enabled:  true,
 	}))
 	if err != nil {
 		t.Fatalf("marshal quality task detail: %v", err)
@@ -90,10 +88,13 @@ func assertStandardTaskProviderDetailShape(t *testing.T, body []byte) {
 	if err := json.Unmarshal(body, &resp); err != nil {
 		t.Fatalf("decode response: %v; body=%s", err, body)
 	}
-	for _, field := range []string{"id", "task_type", "name", "enabled"} {
+	for _, field := range []string{"id", "task_type", "name", "status", "execution_contract"} {
 		if _, ok := resp[field]; !ok {
 			t.Fatalf("response missing %q: %s", field, body)
 		}
+	}
+	if _, ok := resp["enabled"]; ok {
+		t.Fatalf("response contains unsupported scheduling field enabled: %s", body)
 	}
 	for _, legacyField := range []string{"data", "message"} {
 		if _, ok := resp[legacyField]; ok {

@@ -1,6 +1,18 @@
 [model.common.invalid_id]
 other = "无效的ID"
 
+[model.common.operation_failed]
+other = "操作失败，请稍后重试"
+
+[model.common.validation_failed]
+other = "请求数据未通过校验，请检查后重试"
+
+[model.common.resource_not_found]
+other = "请求的资源不存在"
+
+[model.common.resource_conflict]
+other = "当前资源状态或数据与操作冲突"
+
 [model.entity.not_found]
 other = "实体不存在"
 
@@ -13,8 +25,26 @@ other = "无效的属性ID"
 [model.entity.invalid_entity_id_query]
 other = "无效的 entity_id 参数"
 
+[model.entity.code_conflict]
+other = "实体编码已存在"
+
+[model.entity.state_conflict]
+other = "实体当前状态不允许此操作"
+
+[model.entity.attribute_not_found]
+other = "实体属性不存在"
+
 [model.entity_relation.not_found]
 other = "实体关系不存在"
+
+[model.entity_relation.target_not_found]
+other = "关系引用的实体不存在"
+
+[model.entity_relation.state_conflict]
+other = "实体关系两端必须处于草稿状态"
+
+[model.entity_relation.self_conflict]
+other = "不允许创建自关联关系"
 
 [model.logical_table.not_found]
 other = "逻辑表不存在"
@@ -22,11 +52,41 @@ other = "逻辑表不存在"
 [model.logical_table.invalid_field_id]
 other = "无效的字段ID"
 
+[model.logical_table.ddl_preview_invalid]
+other = "当前配置无法生成 DDL，请检查物化配置和字段定义"
+
+[model.logical_table.code_conflict]
+other = "逻辑表编码已存在"
+
+[model.logical_table.state_conflict]
+other = "逻辑表当前状态不允许此操作"
+
+[model.logical_table.field_not_found]
+other = "逻辑表字段不存在"
+
 [model.dw_layer.not_found]
 other = "数仓分层不存在"
+
+[model.dw_layer.code_conflict]
+other = "数仓分层编码已存在"
+
+[model.dw_layer.in_use]
+other = "数仓分层仍被逻辑表引用，不能删除"
 
 [model.fact_metric.invalid_mapping_id]
 other = "无效的指标映射ID"
 
+[model.fact_metric.conflict]
+other = "该指标已关联到此事实表"
+
 [model.table_relation.invalid_relation_id]
 other = "无效的关联关系ID"
+
+[model.table_relation.target_not_found]
+other = "表关系引用的逻辑表或字段不存在"
+
+[model.table_relation.state_conflict]
+other = "表关系两端必须处于草稿状态"
+
+[model.table_relation.conflict]
+other = "该字段关联已存在"

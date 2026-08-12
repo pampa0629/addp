@@ -1,8 +1,7 @@
 package service
 
 import (
-	"fmt"
-
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/dataquality"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
@@ -30,7 +29,7 @@ func (s *ElementService) CreateElement(req *models.CreateElementRequest, tenantI
 		return nil, err
 	}
 	if exists {
-		return nil, fmt.Errorf("数据元编码 '%s' 已存在", req.Code)
+		return nil, commonapi.ErrConflict
 	}
 
 	element := &models.Element{

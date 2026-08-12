@@ -45,11 +45,7 @@ func (s *CheckTaskService) Create(ctx context.Context, tenantID, userID int64, r
 		EngineID:    req.EngineID,
 		SchemaName:  req.SchemaName,
 		Table:       req.TableName,
-		Enabled:     true,
 		CreatedBy:   userID,
-	}
-	if req.Enabled != nil {
-		task.Enabled = *req.Enabled
 	}
 	if err := s.repo.Create(task); err != nil {
 		return nil, err
@@ -70,7 +66,6 @@ func (s *CheckTaskService) Update(ctx context.Context, id, tenantID, userID int6
 	task.EngineID = req.EngineID
 	task.SchemaName = strings.TrimSpace(req.SchemaName)
 	task.Table = strings.TrimSpace(req.TableName)
-	task.Enabled = req.Enabled
 	task.UpdatedBy = &userID
 	if task.Name == "" || task.SchemaName == "" || task.Table == "" {
 		return nil, fmt.Errorf("%w: name, schema_name and table_name are required", commonAPI.ErrBadRequest)
@@ -91,7 +86,6 @@ type CreateCheckTaskRequest struct {
 	EngineID    int64  `json:"engine_id" binding:"required"`
 	SchemaName  string `json:"schema_name" binding:"required"`
 	TableName   string `json:"table_name" binding:"required"`
-	Enabled     *bool  `json:"enabled"`
 }
 
 type UpdateCheckTaskRequest struct {
@@ -100,5 +94,4 @@ type UpdateCheckTaskRequest struct {
 	EngineID    int64  `json:"engine_id" binding:"required"`
 	SchemaName  string `json:"schema_name" binding:"required"`
 	TableName   string `json:"table_name" binding:"required"`
-	Enabled     bool   `json:"enabled"`
 }

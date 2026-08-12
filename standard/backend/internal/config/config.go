@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"time"
 
 	commonConfig "github.com/addp/common/config"
 )
@@ -29,6 +30,10 @@ type Config struct {
 	MinioAccessKey string
 	MinioSecretKey string
 	MinioUseSSL    bool
+
+	// 文档文件策略
+	DocumentMaxFileSize    int64
+	DocumentStorageTimeout time.Duration
 }
 
 // LoadConfig 加载配置
@@ -45,8 +50,10 @@ func LoadConfig() (*Config, error) {
 		RedisPassword: os.Getenv("REDIS_PASSWORD"),
 		RedisDB:       commonConfig.GetEnvInt("REDIS_DB", 0),
 
-		SystemURL:           commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
-		ServiceClientSecret: os.Getenv("STANDARD_SERVICE_CLIENT_SECRET"),
+		SystemURL:              commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
+		ServiceClientSecret:    os.Getenv("STANDARD_SERVICE_CLIENT_SECRET"),
+		DocumentMaxFileSize:    int64(commonConfig.GetEnvInt("STANDARD_DOCUMENT_MAX_FILE_SIZE", 100*1024*1024)),
+		DocumentStorageTimeout: commonConfig.GetEnvDuration("STANDARD_DOCUMENT_STORAGE_TIMEOUT", "30s"),
 	}
 	minioCfg := commonConfig.LoadBuiltinMinIOConfig()
 	cfg.MinioEndpoint = minioCfg.Endpoint

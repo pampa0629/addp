@@ -68,7 +68,7 @@ func (r *GlossaryRepository) Update(glossary *models.Glossary) error {
 }
 
 func (r *GlossaryRepository) Delete(id, tenantID int64) error {
-	return requireAffectedRow(r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Glossary{}))
+	return deleteInTransaction(r.db, &models.Glossary{}, "id = ? AND tenant_id = ?", id, tenantID)
 }
 
 func (r *GlossaryRepository) UpdateStatus(id, tenantID int64, status string, updatedBy int64) error {

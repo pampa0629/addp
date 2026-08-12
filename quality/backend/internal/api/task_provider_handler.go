@@ -30,7 +30,7 @@ type taskProviderTaskListItem struct {
 	TaskType            string                         `json:"task_type"`
 	Name                string                         `json:"name"`
 	Description         string                         `json:"description,omitempty"`
-	Enabled             bool                           `json:"enabled"`
+	Status              string                         `json:"status"`
 	LastRunAt           string                         `json:"last_run_at,omitempty"`
 	LastExecutionID     string                         `json:"last_execution_id,omitempty"`
 	LastExecutionStatus string                         `json:"last_execution_status,omitempty"`
@@ -207,7 +207,7 @@ func qualityTaskListItem(task models.CheckTask) taskProviderTaskListItem {
 		TaskType:          commonExecution.TaskTypeQualityCheck,
 		Name:              task.Name,
 		Description:       task.Description,
-		Enabled:           task.Enabled,
+		Status:            qualityTaskStatus(task),
 		ExecutionContract: taskprovider.EmptyExecutionContract(),
 	}
 	if task.LastRunAt != nil {
@@ -216,4 +216,13 @@ func qualityTaskListItem(task models.CheckTask) taskProviderTaskListItem {
 	item.LastExecutionID = task.LastExecutionID
 	item.LastExecutionStatus = task.LastExecutionStatus
 	return item
+}
+
+func qualityTaskStatus(task models.CheckTask) string {
+	switch task.LastExecutionStatus {
+	case commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning:
+		return task.LastExecutionStatus
+	default:
+		return "idle"
+	}
 }

@@ -197,7 +197,10 @@ func TestRecoverExpiredExecutionRetriesThenFailsAtAttemptLimit(t *testing.T) {
 	if claimed, _, err := repo.ClaimPendingExecution(context.Background(), "worker-a", firstStart, time.Minute); err != nil || claimed == nil {
 		t.Fatalf("first ClaimPendingExecution = %#v, %v", claimed, err)
 	}
-	if err := repo.RecoverExpiredExecutions(context.Background(), firstStart.Add(2*time.Minute)); err != nil {
+	// A restarted process owns a new repository instance and must recover the
+	// expired database lease without any in-memory state from worker-a.
+	restartedRepo := NewCheckTaskRepository(db)
+	if err := restartedRepo.RecoverExpiredExecutions(context.Background(), firstStart.Add(2*time.Minute)); err != nil {
 		t.Fatalf("first RecoverExpiredExecutions: %v", err)
 	}
 	var stored commonExecution.TaskExecution
@@ -209,11 +212,11 @@ func TestRecoverExpiredExecutionRetriesThenFailsAtAttemptLimit(t *testing.T) {
 	}
 
 	secondStart := firstStart.Add(3 * time.Minute)
-	if claimed, _, err := repo.ClaimPendingExecution(context.Background(), "worker-b", secondStart, time.Minute); err != nil || claimed == nil || claimed.Attempt != 2 {
+	if claimed, _, err := restartedRepo.ClaimPendingExecution(context.Background(), "worker-b", secondStart, time.Minute); err != nil || claimed == nil || claimed.Attempt != 2 {
 		t.Fatalf("second ClaimPendingExecution = %#v, %v", claimed, err)
 	}
 	failedAt := secondStart.Add(2 * time.Minute)
-	if err := repo.RecoverExpiredExecutions(context.Background(), failedAt); err != nil {
+	if err := restartedRepo.RecoverExpiredExecutions(context.Background(), failedAt); err != nil {
 		t.Fatalf("second RecoverExpiredExecutions: %v", err)
 	}
 	if err := db.Where("execution_id = ?", exec.ExecutionID).First(&stored).Error; err != nil {
@@ -258,7 +261,6 @@ func newCheckTaskRepositoryTestDB(t *testing.T) *gorm.DB {
 		engine_id INTEGER NOT NULL,
 		schema_name TEXT,
 		table_name TEXT,
-		enabled BOOLEAN,
 		created_by INTEGER NOT NULL,
 		updated_by INTEGER,
 		created_at DATETIME,
@@ -333,7 +335,7 @@ func createCheckTaskRepositoryTestTask(t *testing.T, db *gorm.DB, tenantID int64
 	t.Helper()
 	task := models.CheckTask{
 		TenantID: tenantID, Name: "quality-check", EngineID: 12, SchemaName: "public", Table: "orders",
-		Enabled: true, CreatedBy: 1,
+		CreatedBy: 1,
 	}
 	if err := db.Create(&task).Error; err != nil {
 		t.Fatalf("create check task: %v", err)

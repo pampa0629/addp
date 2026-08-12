@@ -253,6 +253,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { elementAPI, codeSetAPI, glossaryAPI, unitAPI, classificationAPI, gradingLevelAPI } from '../api/standard'
 import DocumentPanel from '../components/DocumentPanel.vue'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
+import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 
 const router = useRouter()
 const route = useRoute()
@@ -332,7 +333,7 @@ const loadElement = async () => {
       loadCodeItems(element.value.code_set_id)
     }
   } catch (e) {
-    ElMessage.error(t('standard.common.loadFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
     goBack()
   } finally {
     loading.value = false
@@ -344,7 +345,7 @@ const loadCodeSets = async () => {
     const res = await codeSetAPI.list({ page_size: 500 })
     codeSets.value = res.data || []
   } catch (e) {
-    console.error('加载码值集失败:', e)
+    codeSets.value = []
   }
 }
 
@@ -353,7 +354,7 @@ const loadRelatedGlossaries = async () => {
     const res = await glossaryAPI.list({ element_id: route.params.id })
     relatedGlossaries.value = res || []
   } catch (e) {
-    console.error('加载关联术语失败:', e)
+    relatedGlossaries.value = []
   }
 }
 
@@ -362,7 +363,7 @@ const loadUnits = async () => {
     const res = await unitAPI.list({ page_size: 500 })
     units.value = res || []
   } catch (e) {
-    console.error('加载单位失败:', e)
+    units.value = []
   }
 }
 
@@ -371,7 +372,7 @@ const loadGradingLevels = async () => {
     const res = await gradingLevelAPI.list()
     gradingLevels.value = res || []
   } catch (e) {
-    console.error('加载分级失败:', e)
+    gradingLevels.value = []
   }
 }
 
@@ -380,7 +381,7 @@ const loadClassifications = async () => {
     const res = await classificationAPI.list()
     classifications.value = res || []
   } catch (e) {
-    console.error('加载分类失败:', e)
+    classifications.value = []
   }
 }
 
@@ -394,7 +395,6 @@ const loadCodeItems = async (codeSetId) => {
     const res = await codeSetAPI.getItems(codeSetId)
     codeItems.value = res || []
   } catch (e) {
-    console.error('加载码值项失败:', e)
     codeItems.value = []
   } finally {
     codeItemsLoading.value = false
@@ -431,7 +431,7 @@ const saveChanges = async () => {
     ElMessage.success(t('standard.common.saveSuccess'))
     await loadElement()
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('standard.common.saveFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.saveFailed'))
   } finally {
     saving.value = false
   }
@@ -444,7 +444,7 @@ const handleApprove = async () => {
     ElMessage.success(t('standard.common.approveSuccess'))
     await loadElement()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(t('standard.common.approveFailed'))
+    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.approveFailed'))
   }
 }
 
@@ -571,5 +571,14 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .element-detail { padding: 12px; }
+  .page-header { align-items: flex-start; flex-wrap: wrap; gap: 10px; }
+  .header-left, .header-right { flex-wrap: wrap; }
+  .element-detail :deep(.el-row) { margin-left: 0 !important; margin-right: 0 !important; }
+  .element-detail :deep(.el-col) { max-width: 100%; flex: 0 0 100%; }
+  .element-detail :deep(.el-col + .el-col) { margin-top: 12px; }
 }
 </style>

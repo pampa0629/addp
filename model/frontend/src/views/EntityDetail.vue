@@ -7,12 +7,12 @@
           <el-icon><ArrowLeft /></el-icon>
           {{ t('model.common.back') }}
         </el-button>
-        <span class="entity-name">{{ entity.name || t('model.common.loading') }}</span>
-        <el-tag :type="entity.status === 'approved' ? 'success' : 'info'" size="small">
+        <span class="entity-name">{{ entity.name || t('model.entity.detail') }}</span>
+        <el-tag v-if="entity.status" :type="entity.status === 'approved' ? 'success' : 'info'" size="small">
           {{ entity.status === 'approved' ? t('model.common.status_approved') : t('model.common.status_draft') }}
         </el-tag>
       </div>
-      <div class="header-right">
+      <div v-if="!pageLoading && !pageError" class="header-right">
         <el-button v-if="canEditEntity" type="primary" @click="handleSave" :loading="saving">{{ t('model.common.save') }}</el-button>
         <el-button
           v-if="entity.status === 'draft' && can('model.entity.approve')"
@@ -25,6 +25,20 @@
       </div>
     </div>
 
+    <el-skeleton v-if="pageLoading" :rows="8" animated />
+    <el-result
+      v-else-if="pageError"
+      icon="error"
+      :title="t('model.common.load_failed')"
+      :sub-title="pageError"
+    >
+      <template #extra>
+        <el-button type="primary" @click="loadPage">{{ t('model.common.retry') }}</el-button>
+      </template>
+    </el-result>
+
+    <template v-else>
+
     <!-- Tab 标签页 -->
     <el-tabs v-model="activeTab" type="border-card" @tab-change="handleTabChange">
       <!-- 基本信息标签页 -->
@@ -33,7 +47,7 @@
           <el-row :gutter="16">
             <el-col :span="12">
               <el-form-item :label="t('model.entity.name')">
-                <el-input v-model="form.name" />
+                <el-input v-model="form.name" :disabled="!canEditEntity" />
               </el-form-item>
             </el-col>
             <el-col :span="12">
@@ -43,14 +57,14 @@
             </el-col>
             <el-col :span="12">
               <el-form-item :label="t('model.entity.domain')">
-                <el-select v-model="form.domain_id" clearable style="width:100%">
+                <el-select v-model="form.domain_id" :disabled="!canEditEntity" clearable style="width:100%">
                   <el-option v-for="d in domains" :key="d.id" :label="d.name" :value="d.id" />
                 </el-select>
               </el-form-item>
             </el-col>
             <el-col :span="24">
               <el-form-item :label="t('model.entity.description')">
-                <el-input v-model="form.description" type="textarea" :rows="2" />
+                <el-input v-model="form.description" type="textarea" :rows="2" :disabled="!canEditEntity" />
               </el-form-item>
             </el-col>
           </el-row>
@@ -297,6 +311,7 @@
         </el-button>
       </template>
     </el-dialog>
+    </template>
   </div>
 </template>
 
@@ -313,6 +328,8 @@ import { resolveCanonicalTabRouteState } from '@common-ui'
 import { navigateModelRoute } from '../utils/moduleNavigation'
 import { resolveEntityListRouteState } from '../utils/routeState'
 import { initializeMermaidTheme, observeThemeChange } from '../utils/mermaidTheme'
+import { getModelErrorMessage } from '../utils/apiError'
+import { isEditableDraft, resolvePositiveRouteId } from '../utils/modelDetailState'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -320,7 +337,7 @@ const can = permission => authStore.hasPermission(permission)
 
 const route = useRoute()
 const router = useRouter()
-const entityId = computed(() => Number(route.params.id))
+const entityId = computed(() => resolvePositiveRouteId(route.params.id))
 
 const ENTITY_TABS = ['basic', 'attributes', 'relations']
 const resolveRouteState = routeQuery => {
@@ -335,6 +352,8 @@ const resolveRouteState = routeQuery => {
 const activeTab = ref(resolveRouteState(route.query).tab)
 let routeDataReady = false
 const saving = ref(false)
+const pageLoading = ref(false)
+const pageError = ref('')
 const attrLoading = ref(false)
 const relationLoading = ref(false)
 const mermaidLoading = ref(false)
@@ -350,7 +369,7 @@ const mermaidContainer = ref(null)
 
 const entity = ref({})
 const entityIsDraft = computed(() => entity.value.status === 'draft')
-const canEditEntity = computed(() => entity.value.status === 'draft' && can('model.entity.update'))
+const canEditEntity = computed(() => isEditableDraft(entity.value.status, can('model.entity.update')))
 const canCreateRelation = computed(() => entityIsDraft.value && can('model.entity_relation.create'))
 const form = reactive({ name: '', domain_id: null, description: '' })
 const attributes = ref([])
@@ -473,7 +492,7 @@ const handleSave = async () => {
     ElMessage.success(t('model.common.save_success'))
     loadEntity()
   } catch (err) {
-    ElMessage.error(err.response?.data?.error || t('model.common.save_failed'))
+    ElMessage.error(getModelErrorMessage(err, t, 'model.common.save_failed'))
   } finally {
     saving.value = false
   }
@@ -495,7 +514,7 @@ const handleReopen = async () => {
 	ElMessage.success(t('model.common.reopen_success'))
 	loadEntity()
   } catch (err) {
-	ElMessage.error(err.response?.data?.error || t('model.common.op_failed'))
+	ElMessage.error(getModelErrorMessage(err, t, 'model.common.op_failed'))
   }
 }
 
@@ -531,7 +550,7 @@ const handleAttrSubmit = async () => {
     attrDialogVisible.value = false
     loadAttributes()
   } catch (err) {
-    ElMessage.error(err.response?.data?.error || t('model.common.op_failed'))
+    ElMessage.error(getModelErrorMessage(err, t, 'model.common.op_failed'))
   } finally {
     attrSubmitting.value = false
   }
@@ -592,7 +611,7 @@ const handleRelationSubmit = async () => {
     relationDialogVisible.value = false
     loadRelations()
   } catch (err) {
-    ElMessage.error(err.response?.data?.error || t('model.common.op_failed'))
+    ElMessage.error(getModelErrorMessage(err, t, 'model.common.op_failed'))
   } finally {
     relationSubmitting.value = false
   }
@@ -752,14 +771,44 @@ async function restoreTabFromRoute() {
 
 watch(() => route.query, restoreTabFromRoute)
 
-watch(() => route.params.id, async () => {
+let loadVersion = 0
+const loadPage = async () => {
+  const version = ++loadVersion
+  pageLoading.value = true
+  pageError.value = ''
+  routeDataReady = false
   entity.value = {}
   attributes.value = []
   relations.value = []
-  await loadEntity()
-  loadAttributes()
-  if (activeTab.value === 'relations') loadRelations()
-})
+  if (!entityId.value) {
+    pageLoading.value = false
+    pageError.value = t('model.common.invalid_detail_id')
+    return
+  }
+  try {
+    await loadEntity()
+    if (version !== loadVersion) return
+    const [domainsRes, elementsRes, entitiesRes] = await Promise.all([
+      domainAPI.list(), elementAPI.listAll(), entityAPI.listAll(), loadAttributes()
+    ])
+    if (version !== loadVersion) return
+    domains.value = domainsRes || []
+    elements.value = elementsRes || []
+    allEntities.value = entitiesRes || []
+    routeDataReady = true
+  } catch (error) {
+    if (version === loadVersion) pageError.value = getModelErrorMessage(error, t, 'model.common.load_failed')
+  } finally {
+    if (version === loadVersion) {
+      pageLoading.value = false
+      if (!pageError.value && activeTab.value === 'relations') {
+        nextTick(() => loadRelations())
+      }
+    }
+  }
+}
+
+watch(() => route.params.id, loadPage)
 
 onMounted(async () => {
   await restoreTabFromRoute()
@@ -770,24 +819,8 @@ onMounted(async () => {
     if (activeTab.value === 'relations') await renderMermaid()
   })
 
-  // 加载数据
-  await loadEntity()
-  loadAttributes()
+  await loadPage()
 
-  const [domainsRes, elementsRes, entitiesRes] = await Promise.all([
-    domainAPI.list(),
-    elementAPI.listAll(),
-    entityAPI.listAll()
-  ])
-  domains.value = domainsRes || []
-  elements.value = elementsRes
-  allEntities.value = entitiesRes
-  routeDataReady = true
-
-  // 加载关系（如果tab是relations）
-  if (activeTab.value === 'relations') {
-    loadRelations()
-  }
 })
 
 onBeforeUnmount(() => stopThemeObserver?.())

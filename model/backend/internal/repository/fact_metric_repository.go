@@ -1,6 +1,7 @@
 package repository
 
 import (
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/model/internal/models"
 	"gorm.io/gorm"
 )
@@ -24,7 +25,7 @@ func (r *FactMetricRepository) ListByFactTable(factTableID, tenantID int64) ([]m
 
 // Create 创建关联
 func (r *FactMetricRepository) Create(m *models.FactMetricMapping) error {
-	return r.db.Create(m).Error
+	return commonrepo.WrapDBError(r.db.Create(m).Error)
 }
 
 // Exists 判断关联是否已存在
@@ -41,10 +42,10 @@ func (r *FactMetricRepository) Delete(id, factTableID, tenantID int64) error {
 	result := r.db.Where("id = ? AND fact_table_id = ? AND tenant_id = ?", id, factTableID, tenantID).
 		Delete(&models.FactMetricMapping{})
 	if result.Error != nil {
-		return result.Error
+		return commonrepo.WrapDBError(result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+		return commonrepo.WrapDBError(gorm.ErrRecordNotFound)
 	}
 	return nil
 }

@@ -2,8 +2,8 @@ package service
 
 import (
 	"errors"
-	"fmt"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 )
@@ -37,7 +37,7 @@ func (s *DimensionHierarchyService) Create(req *models.CreateDimensionHierarchyR
 		return nil, err
 	}
 	if exists {
-		return nil, fmt.Errorf("层级编码 '%s' 已存在", req.Code)
+		return nil, commonapi.ErrConflict
 	}
 
 	h := &models.DimensionHierarchy{
@@ -101,7 +101,7 @@ func (s *DimensionHierarchyService) CreateLevel(hierarchyID, tenantID int64, req
 		return nil, err
 	}
 	if exists {
-		return nil, fmt.Errorf("层级编号 %d 已存在", req.LevelNum)
+		return nil, commonapi.ErrConflict
 	}
 	level := &models.DimensionHierarchyLevel{
 		HierarchyID: hierarchyID,
@@ -135,7 +135,7 @@ func (s *DimensionHierarchyService) UpdateLevel(levelID, hierarchyID, tenantID i
 		return nil, err
 	}
 	if exists {
-		return nil, fmt.Errorf("层级编号 %d 已存在", req.LevelNum)
+		return nil, commonapi.ErrConflict
 	}
 	if req.Name != "" {
 		level.Name = req.Name

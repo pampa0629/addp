@@ -82,7 +82,7 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) GenerateVectorTileCache(ctx con
 	var err error
 	cleanupSource := func(context.Context) error { return nil }
 	if req.Identity.SourceKind == "table" {
-		sourceURI, sourceEnv, sourceFacts, cleanupSource, err = e.prepareMySQLTableFlatGeobufSource(ctx, req.Task.TenantID, req.ExecutionID, req.Identity, req.Options)
+		sourceURI, sourceEnv, sourceFacts, cleanupSource, err = e.prepareDatabaseTableFlatGeobufSource(ctx, req.Task.TenantID, req.ExecutionID, req.Identity, req.Options)
 	} else {
 		sourceURI, sourceEnv, sourceFacts, err = e.prepareSourceURI(ctx, req.Task.TenantID, req.Identity)
 	}
@@ -113,6 +113,11 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) GenerateVectorTileCache(ctx con
 	}
 
 	tile := req.Tile.Clone()
+	if req.Identity.SourceKind == "table" {
+		if err := applyDatabaseFlatGeobufExtent(tile, sourceFacts); err != nil {
+			return nil, nil, err
+		}
+	}
 	sourceSRID := intFromTileCacheConfig(tile["source_srid"], 0)
 	if sourceSRID > 0 {
 		tile["source_srs"] = fmt.Sprintf("EPSG:%d", sourceSRID)

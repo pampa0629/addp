@@ -95,6 +95,7 @@ func (h *UnitHandler) UpdateCategory(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 409 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.unit.delete"]
 // @Router /measurement-categories/{id} [delete]
@@ -217,6 +218,7 @@ func (h *UnitHandler) UpdateUnit(c *gin.Context) {
 // @Tags Standard
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 409 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.unit.delete"]
 // @Router /units/{id} [delete]

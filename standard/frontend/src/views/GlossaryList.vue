@@ -138,6 +138,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { domainAPI, glossaryAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
+import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 
 const { t } = useI18n()
 
@@ -225,8 +226,12 @@ const getDomainName = (id) => {
 }
 
 const loadDomains = async () => {
-  const res = await domainAPI.list()
-  domainList.value = flattenDomains(res || [])
+  try {
+    const res = await domainAPI.list()
+    domainList.value = flattenDomains(res || [])
+  } catch (e) {
+    domainList.value = []
+  }
 }
 
 const loadGlossaries = async () => {
@@ -241,7 +246,7 @@ const loadGlossaries = async () => {
     glossaries.value = res.data || []
     total.value = res.total || 0
   } catch (e) {
-    ElMessage.error(t('standard.common.loadFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -301,7 +306,7 @@ const handleSubmit = async () => {
       dialogVisible.value = false
       await loadGlossaries()
     } catch (e) {
-      ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
+      ElMessage.error(getStandardErrorMessage(e, t))
     } finally {
       submitting.value = false
     }
@@ -314,7 +319,7 @@ const handleApprove = async (row) => {
     ElMessage.success(t('standard.common.approveSuccess'))
     await loadGlossaries()
   } catch (e) {
-    ElMessage.error(t('standard.common.approveFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.approveFailed'))
   }
 }
 
@@ -325,7 +330,7 @@ const handleDeprecate = async (row) => {
     ElMessage.success(t('standard.common.deprecated'))
     await loadGlossaries()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(t('standard.common.operationFailed'))
+    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t))
   }
 }
 
@@ -336,7 +341,7 @@ const handleDelete = async (row) => {
     ElMessage.success(t('standard.common.deleteSuccess'))
     await loadGlossaries()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(t('standard.common.deleteFailed'))
+    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
   }
 }
 

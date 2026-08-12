@@ -126,6 +126,7 @@ import { ElMessage } from 'element-plus'
 import { ArrowLeft, Plus } from '@element-plus/icons-vue'
 import { dimensionHierarchyAPI, elementAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
+import { getStandardErrorMessage } from '../utils/apiError'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -168,8 +169,8 @@ async function loadHierarchy() {
     form.domain_id = data.domain_id
     levels.value = data.levels || []
     await Promise.all([loadElementOptions(), loadElementNames(levels.value)])
-  } catch {
-    ElMessage.error(t('standard.dimHierarchy.loadFailed'))
+  } catch (e) {
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.dimHierarchy.loadFailed'))
   }
 }
 
@@ -208,8 +209,8 @@ async function handleSave() {
     await dimensionHierarchyAPI.update(hierarchyId.value, { name: form.name, description: form.description, domain_id: form.domain_id })
     ElMessage.success(t('standard.dimHierarchy.saveSuccess'))
     hierarchy.value.name = form.name
-  } catch {
-    ElMessage.error(t('standard.dimHierarchy.saveFailed'))
+  } catch (e) {
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.dimHierarchy.saveFailed'))
   } finally {
     saving.value = false
   }
@@ -253,7 +254,7 @@ async function handleSaveLevel() {
     levelVisible.value = false
     ElMessage.success(t('standard.dimHierarchy.saveSuccess'))
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('standard.dimHierarchy.saveFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.dimHierarchy.saveFailed'))
   } finally {
     levelSaving.value = false
   }
@@ -264,8 +265,8 @@ async function handleDeleteLevel(levelId) {
     await dimensionHierarchyAPI.deleteLevel(hierarchyId.value, levelId)
     levels.value = levels.value.filter(l => l.id !== levelId)
     ElMessage.success(t('standard.dimHierarchy.levelDeleted'))
-  } catch {
-    ElMessage.error(t('standard.dimHierarchy.levelDeleteFailed'))
+  } catch (e) {
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.dimHierarchy.levelDeleteFailed'))
   }
 }
 
@@ -273,7 +274,7 @@ watch(() => route.params.id, loadHierarchy, { immediate: true })
 </script>
 
 <style scoped>
-.dim-hierarchy-detail { padding: 20px; }
+.dim-hierarchy-detail { min-height: 100%; padding: 20px; color: var(--addp-text-primary); background: var(--addp-bg-secondary); }
 .detail-header {
   display: flex;
   align-items: center;
@@ -282,13 +283,33 @@ watch(() => route.params.id, loadHierarchy, { immediate: true })
 }
 .header-left { display: flex; align-items: center; gap: 10px; }
 .header-right { display: flex; gap: 8px; }
-.title { font-size: 18px; font-weight: 600; }
-.card-header-with-action { display: flex; justify-content: space-between; align-items: center; }
-.card-title { font-weight: 600; }
-.table-actions { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
-.hierarchy-chain { margin-top: 16px; padding: 12px 16px; background: var(--el-fill-color-light); border-radius: 6px; }
-.arrow { color: var(--el-text-color-placeholder); margin: 0 4px; }
-.form-tip { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 4px; }
-.text-muted { color: var(--el-text-color-placeholder); }
+.title { font-size: 18px; font-weight: 600; color: var(--addp-text-primary); }
+.dim-hierarchy-detail :deep(.el-card) { color: var(--addp-text-primary); background: var(--addp-bg-primary); border-color: var(--addp-border-color); box-shadow: var(--addp-shadow-card); }
+.dim-hierarchy-detail :deep(.el-table) {
+  --el-table-bg-color: var(--addp-bg-primary);
+  --el-table-tr-bg-color: var(--addp-bg-primary);
+  --el-table-header-bg-color: var(--addp-bg-secondary);
+  --el-table-border-color: var(--addp-border-color-light);
+  --el-table-text-color: var(--addp-text-primary);
+  --el-table-header-text-color: var(--addp-text-secondary);
+}
+.card-header-with-action { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.card-title { font-weight: 600; color: var(--addp-text-primary); }
+.table-actions { display: inline-flex; align-items: center; justify-content: flex-start; gap: 8px; min-width: max-content; white-space: nowrap; }
+.table-actions :deep(.el-button) { white-space: nowrap; }
+.hierarchy-chain { margin-top: 16px; padding: 12px 16px; background: var(--addp-bg-secondary); border: 1px solid var(--addp-border-color-light); border-radius: 6px; }
+.arrow { color: var(--addp-text-tertiary); margin: 0 4px; }
+.form-tip { font-size: 12px; color: var(--addp-text-secondary); margin-top: 4px; }
+.text-muted { color: var(--addp-text-tertiary); }
 .info-card { margin-bottom: 0; }
+
+@media (max-width: 768px) {
+  .dim-hierarchy-detail { padding: 12px; }
+  .detail-header { align-items: flex-start; flex-wrap: wrap; gap: 10px; }
+  .header-left, .header-right { flex-wrap: wrap; }
+  .dim-hierarchy-detail :deep(.el-row) { margin-left: 0 !important; margin-right: 0 !important; }
+  .dim-hierarchy-detail :deep(.el-col) { max-width: 100%; flex: 0 0 100%; }
+  .dim-hierarchy-detail :deep(.el-col + .el-col) { margin-top: 12px; }
+  .dim-hierarchy-detail :deep(.info-card .el-row) { row-gap: 0; }
+}
 </style>

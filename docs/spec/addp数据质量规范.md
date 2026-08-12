@@ -96,9 +96,16 @@ tenant_id + element_id + engine_id + schema_name + table_name + column_name
 
 数据库必须对该身份建立唯一约束。重复创建应返回冲突，不得产生两条同时生效的同义应用。`schema_name`、`table_name` 和 `column_name` 都必须明确提供；Quality 不隐式补充 PostgreSQL 默认 schema，避免请求含义与持久化身份不一致。
 
+RuleApplication 是当前生效的规则快照，不是执行历史。删除时必须遵循：
+
+1. 若 `pending|running` execution 已冻结该 RuleApplication，删除返回冲突；不得让执行结束后重新产生已失去 owner 的 Issue。
+2. 任务触发冻结规则快照与删除必须通过数据库行锁串行化，不能依赖请求时序规避竞态。
+3. 无活动 execution 引用时，在同一事务中删除 `tenant_id + rule_application_id` 对应的当前 Issue，再删除 RuleApplication。
+4. 已完成 execution 的 `execution_config` 和 `metadata.rule_details` 继续作为不可变历史保留，不因 RuleApplication 删除而改写或清理。
+
 ### 4.2 检查任务
 
-一条 CheckTask 表示对确定 PostgreSQL Engine Instance 上一个确定表执行其全部已启用规则应用。v1 任务范围固定为：
+一条 CheckTask 表示对确定 PostgreSQL Engine Instance 上一个确定表执行其全部已启用规则应用。CheckTask 是纯手动/Orchestrator 显式执行的任务定义，不拥有调度开关；任务是否可执行由目标 Engine Instance 生命周期和执行授权共同决定。v1 任务范围固定为：
 
 ```text
 tenant_id + engine_id + schema_name + table_name
@@ -110,6 +117,7 @@ tenant_id + engine_id + schema_name + table_name
 - TaskProvider `supports_cancel=false`
 - `trigger_type` 只接受 `manual`
 - `source` 只记录真实调用来源，不扩展触发类型
+- CheckTask API、TaskProvider 任务摘要和前端不得暴露 `enabled`、`schedule` 或 `next_run_at` 等调度活状态字段。
 
 创建和更新任务不保存 schedule、`next_run_at` 或任务授权主体。未来开放 owner 调度前，必须先更新本规范和任务体系规范。
 
@@ -258,8 +266,11 @@ ignored -> open    （后续检查再次失败）
 - Issue 列表的 `(tenant_id, status, updated_at DESC, id DESC)` 组合索引。
 - CheckTask 列表的 `(tenant_id, updated_at DESC, id DESC)` 组合索引。
 - pending execution 领取与 lease 恢复使用匹配过滤条件的部分索引；不为全部终态记录维护无用队列索引。
+- Issue 必须以同租户 RuleApplication 为 owner 并使用级联删除外键兜底；业务删除仍显式执行当前投影清理，不能把生命周期语义隐藏在数据库级联中。
 
 所有 ID 使用平台现有 bigint 语义，时间使用带时区时间事实。禁止仅依赖 GORM 应用层校验代替数据库唯一约束、check constraint 或并发控制。
+
+Quality 私有表只通过模块内连续、带校验和、持有数据库迁移锁的 SQL migration 演进。服务启动不得同时运行 GORM `AutoMigrate`、启动期临时 DDL 或第二套迁移路线；已应用 migration 内容变化、版本缺失、版本越界或约束不满足时必须拒绝启动。
 
 ## 12. 当前明确不支持
 
@@ -268,6 +279,7 @@ ignored -> open    （后续检查再次失败）
 - MySQL、ClickHouse 或其他非 PostgreSQL 方言
 - 自定义 SQL、跨字段、跨表或聚合业务规则
 - schedule、owner scheduler 和 Meta 扫描事件自动触发
+- CheckTask 调度状态字段 `enabled`、`schedule` 和 `next_run_at`
 - 伪取消、仅修改状态的取消
 - 自动按字段名匹配数据元的 AutoMap
 - 无规则成功、规则错误跳过、旧规则结构兼容解析
@@ -283,6 +295,6 @@ ignored -> open    （后续检查再次失败）
 3. 空表、无规则、部分失败、非法规则和目标 SQL 错误。
 4. 手动 User 授权、Orchestrator 父 execution 派生、授权过期和 Engine 越权。
 5. pending claim、并发 worker、lease 过期恢复、最大尝试失败和服务重启恢复。
-6. Issue 去重、自动 reopen/resolve、人工状态机和并发更新。
+6. Issue 去重、自动 reopen/resolve、人工状态机、并发更新和 RuleApplication 删除级联。
 7. 列表分页、Tenant 隔离、HTTP 状态码、错误 envelope 和 Swagger 路由覆盖。
 8. 前端 Engine 选择、任务执行轮询、metadata 结果展示、错误反馈和路由恢复。

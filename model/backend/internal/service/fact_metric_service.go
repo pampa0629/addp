@@ -2,10 +2,11 @@ package service
 
 import (
 	"context"
-	"fmt"
 
 	commonClient "github.com/addp/common/client"
 
+	"github.com/addp/model/i18n"
+	"github.com/addp/model/internal/apperrors"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/repository"
 )
@@ -32,10 +33,10 @@ func (s *FactMetricService) ListMetrics(factTableID, tenantID int64) ([]models.F
 	// 验证事实表存在且属于该租户
 	table, err := s.tableRepo.GetByID(factTableID, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("逻辑表不存在")
+		return nil, apperrors.NotFound("logical_table_not_found", i18n.MsgTableNotFound)
 	}
 	if table.TableType != "fact" {
-		return nil, fmt.Errorf("只有事实表可以关联指标")
+		return nil, apperrors.Validation("fact_table_required", i18n.MsgValidationFailed)
 	}
 	return s.factMetricRepo.ListByFactTable(factTableID, tenantID)
 }
@@ -45,13 +46,13 @@ func (s *FactMetricService) AddMetric(factTableID, tenantID, userID int64, req *
 	// 验证事实表存在且属于该租户
 	table, err := s.tableRepo.GetByID(factTableID, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("逻辑表不存在")
+		return nil, apperrors.NotFound("logical_table_not_found", i18n.MsgTableNotFound)
 	}
 	if table.TableType != "fact" {
-		return nil, fmt.Errorf("只有事实表可以关联指标")
+		return nil, apperrors.Validation("fact_table_required", i18n.MsgValidationFailed)
 	}
 	if table.Status != "draft" {
-		return nil, fmt.Errorf("已审批事实表不能修改指标关联")
+		return nil, apperrors.Conflict("fact_metric_state_conflict", i18n.MsgTableStateConflict)
 	}
 	if s.standard != nil {
 		if err := s.standard.WithTenantID(uint(tenantID)).ValidateMetric(context.Background(), req.MetricID); err != nil {
@@ -60,7 +61,7 @@ func (s *FactMetricService) AddMetric(factTableID, tenantID, userID int64, req *
 	}
 	if req.FieldID != nil {
 		if _, err := s.tableRepo.GetFieldByID(*req.FieldID, factTableID); err != nil {
-			return nil, fmt.Errorf("指标基础字段不存在")
+			return nil, apperrors.NotFound("logical_field_not_found", i18n.MsgFieldNotFound)
 		}
 	}
 
@@ -70,7 +71,7 @@ func (s *FactMetricService) AddMetric(factTableID, tenantID, userID int64, req *
 		return nil, err
 	}
 	if exists {
-		return nil, fmt.Errorf("该指标已关联到此事实表")
+		return nil, apperrors.Conflict("fact_metric_conflict", i18n.MsgMetricConflict)
 	}
 
 	m := &models.FactMetricMapping{
@@ -82,7 +83,7 @@ func (s *FactMetricService) AddMetric(factTableID, tenantID, userID int64, req *
 		CreatedBy:   userID,
 	}
 	if err := s.factMetricRepo.Create(m); err != nil {
-		return nil, err
+		return nil, modelResourceError(err, "fact_metric", i18n.MsgMetricConflict)
 	}
 	return m, nil
 }
@@ -91,13 +92,16 @@ func (s *FactMetricService) AddMetric(factTableID, tenantID, userID int64, req *
 func (s *FactMetricService) RemoveMetric(mappingID, factTableID, tenantID int64) error {
 	table, err := s.tableRepo.GetByID(factTableID, tenantID)
 	if err != nil {
-		return fmt.Errorf("逻辑表不存在")
+		return apperrors.NotFound("logical_table_not_found", i18n.MsgTableNotFound)
 	}
 	if table.TableType != "fact" {
-		return fmt.Errorf("只有事实表可以关联指标")
+		return apperrors.Validation("fact_table_required", i18n.MsgValidationFailed)
 	}
 	if table.Status != "draft" {
-		return fmt.Errorf("已审批事实表不能修改指标关联")
+		return apperrors.Conflict("fact_metric_state_conflict", i18n.MsgTableStateConflict)
 	}
-	return s.factMetricRepo.Delete(mappingID, factTableID, tenantID)
+	if err := s.factMetricRepo.Delete(mappingID, factTableID, tenantID); err != nil {
+		return modelResourceError(err, "fact_metric_mapping_not_found", i18n.MsgInvalidMappingID)
+	}
+	return nil
 }

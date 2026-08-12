@@ -111,8 +111,6 @@ definitions:
         type: integer
       description:
         type: string
-      enabled:
-        type: boolean
       engine_id:
         description: 目标引擎
         type: integer
@@ -227,8 +225,6 @@ definitions:
     properties:
       description:
         type: string
-      enabled:
-        type: boolean
       engine_id:
         type: integer
       name:
@@ -266,8 +262,6 @@ definitions:
     properties:
       description:
         type: string
-      enabled:
-        type: boolean
       engine_id:
         type: integer
       name:
@@ -325,8 +319,6 @@ definitions:
         type: integer
       description:
         type: string
-      enabled:
-        type: boolean
       engine_id:
         description: 目标引擎
         type: integer
@@ -623,8 +615,6 @@ definitions:
     properties:
       description:
         type: string
-      enabled:
-        type: boolean
       execution_contract:
         $ref: '#/definitions/taskprovider.ExecutionContract'
       id:
@@ -636,6 +626,8 @@ definitions:
       last_run_at:
         type: string
       name:
+        type: string
+      status:
         type: string
       task_type:
         type: string
@@ -1197,6 +1189,10 @@ paths:
             $ref: '#/definitions/internal_api.qualityMessageResponse'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "409":
+          description: Conflict
           schema:
             $ref: '#/definitions/internal_api.qualityErrorResponse'
         "500":

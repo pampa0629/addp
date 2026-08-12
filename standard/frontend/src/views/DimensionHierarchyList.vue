@@ -40,7 +40,7 @@
             {{ new Date(row.created_at).toLocaleString('zh-CN') }}
           </template>
         </el-table-column>
-        <el-table-column :label="$t('standard.common.actions')" width="190" fixed="right">
+        <el-table-column :label="$t('standard.common.actions')" width="220" fixed="right">
           <template #default="{ row }">
             <div class="table-actions">
               <el-button link type="primary" @click="openDetail(row)">
@@ -86,6 +86,7 @@ import { ElMessage } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
 import { dimensionHierarchyAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
+import { getStandardErrorMessage } from '../utils/apiError'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -114,8 +115,8 @@ async function loadList() {
   try {
     const res = await dimensionHierarchyAPI.list()
     list.value = res || []
-  } catch {
-    ElMessage.error(t('standard.dimHierarchy.loadFailed'))
+  } catch (err) {
+    ElMessage.error(getStandardErrorMessage(err, t, 'standard.dimHierarchy.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -141,7 +142,7 @@ async function handleCreate() {
     createVisible.value = false
     await navigateStandardRoute(router, `/dimension-hierarchies/${res.id}`, { history: 'replace' })
   } catch (e) {
-    ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t))
   } finally {
     creating.value = false
   }
@@ -157,8 +158,8 @@ async function handleDelete(id) {
     await dimensionHierarchyAPI.delete(id)
     ElMessage.success(t('standard.dimHierarchy.deleted'))
     loadList()
-  } catch {
-    ElMessage.error(t('standard.dimHierarchy.deleteFailed'))
+  } catch (err) {
+    ElMessage.error(getStandardErrorMessage(err, t, 'standard.dimHierarchy.deleteFailed'))
   }
 }
 
@@ -171,9 +172,19 @@ onMounted(loadList)
 </script>
 
 <style scoped>
-.dim-hierarchy-list { padding: 20px; }
+.dim-hierarchy-list { min-height: 100%; padding: 20px; color: var(--addp-text-primary); background: var(--addp-bg-secondary); }
 .page-header { margin-bottom: 16px; }
-.page-header h2 { margin: 0; font-size: 18px; color: var(--el-text-color-primary); }
+.page-header h2 { margin: 0; font-size: 18px; color: var(--addp-text-primary); }
 .search-card { margin-bottom: 0; }
-.table-actions { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.dim-hierarchy-list :deep(.el-card) { color: var(--addp-text-primary); background: var(--addp-bg-primary); border-color: var(--addp-border-color); box-shadow: var(--addp-shadow-card); }
+.dim-hierarchy-list :deep(.el-table) {
+  --el-table-bg-color: var(--addp-bg-primary);
+  --el-table-tr-bg-color: var(--addp-bg-primary);
+  --el-table-header-bg-color: var(--addp-bg-secondary);
+  --el-table-border-color: var(--addp-border-color-light);
+  --el-table-text-color: var(--addp-text-primary);
+  --el-table-header-text-color: var(--addp-text-secondary);
+}
+.table-actions { display: inline-flex; align-items: center; justify-content: flex-start; gap: 8px; min-width: max-content; white-space: nowrap; }
+.table-actions :deep(.el-button) { white-space: nowrap; }
 </style>

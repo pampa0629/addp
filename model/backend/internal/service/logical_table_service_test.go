@@ -40,3 +40,20 @@ func TestValidateMaterializationRejectsUnknownPartitionField(t *testing.T) {
 		t.Fatal("expected unknown partition field error")
 	}
 }
+
+func TestPreviewMaterializationDoesNotMutateStoredTable(t *testing.T) {
+	stored := &models.LogicalTable{
+		Code:            "fact_order",
+		Materialization: models.JSONB{"schema_name": "public", "table_name": "stored_order"},
+	}
+	preview := previewLogicalTableWithMaterialization(stored, map[string]interface{}{
+		"schema_name": "analytics", "table_name": "preview_order",
+	})
+
+	if preview.Materialization["table_name"] != "preview_order" {
+		t.Fatalf("preview materialization = %#v", preview.Materialization)
+	}
+	if stored.Materialization["table_name"] != "stored_order" {
+		t.Fatalf("stored materialization mutated: %#v", stored.Materialization)
+	}
+}

@@ -44,6 +44,7 @@ class ResourceDiscovery:
         engine_id: int | None = None,
         limit: int = 20,
         allowed_data_types: set[str] | frozenset[str] | None = None,
+        source_engine_types: set[str] | frozenset[str] | None = None,
     ) -> ResourceDiscoveryResult:
         candidates: list[dict[str, Any]] = []
         missing_roles: list[str] = []
@@ -116,6 +117,8 @@ class ResourceDiscovery:
                         continue
                     if allowed_data_types and fact["data_type"] not in allowed_data_types:
                         continue
+                    if source_engine_types and str(fact.get("source_engine_type") or "").lower() not in {item.lower() for item in source_engine_types}:
+                        continue
                     seen_for_role.add(locator)
                     candidate = {
                         "role": intent.role,
@@ -167,6 +170,7 @@ class ResourceDiscovery:
         scope_locator: str,
         limit: int = 20,
         allowed_data_types: set[str] | frozenset[str] | None = None,
+        source_engine_types: set[str] | frozenset[str] | None = None,
     ) -> ResourceDiscoveryResult:
         """枚举 Owner 已确认 scope 的直接子资源，并用 preview 收敛候选事实。"""
         scope = await self.executor.call(
@@ -208,6 +212,8 @@ class ResourceDiscovery:
             if not fact:
                 continue
             if allowed_data_types and fact["data_type"] not in allowed_data_types:
+                continue
+            if source_engine_types and str(fact.get("source_engine_type") or "").lower() not in {item.lower() for item in source_engine_types}:
                 continue
             verified_children.append({
                 "name": child.get("label") or locator,
@@ -278,6 +284,7 @@ class ResourceDiscovery:
         *,
         engine_id: int | None = None,
         allowed_data_types: set[str] | frozenset[str] | None = None,
+        source_engine_types: set[str] | frozenset[str] | None = None,
     ) -> list[ResourceFact]:
         """重新通过 owner Tool 校验用户确认的资源，并收敛最新字段事实。"""
         verified: list[ResourceFact] = []
@@ -317,10 +324,16 @@ class ResourceDiscovery:
             verified_type = fact["data_type"]
             if allowed_data_types and verified_type not in allowed_data_types:
                 raise ToolExecutionError("invalid_arguments", "资源类型不符合当前场景约束")
+            if source_engine_types and str(fact.get("source_engine_type") or "").lower() not in {item.lower() for item in source_engine_types}:
+                raise ToolExecutionError("invalid_arguments", "资源来源引擎类型不符合当前运行时约束")
             verified.append(ResourceFact(
                 role=resource.role,
                 engine_id=resolved_engine_id,
                 locator=resource.locator,
+                source_engine_type=fact.get("source_engine_type") or resource.source_engine_type,
+                full_name=fact.get("full_name") or resource.full_name,
+                query_names=fact.get("query_names") or resource.query_names,
+                schema_coverage=fact.get("schema_coverage") or resource.schema_coverage,
                 data_type=verified_type,
                 geometry_column=fact.get("geometry_column") or resource.geometry_column,
                 geometry_type=fact.get("geometry_type") or resource.geometry_type,
@@ -336,6 +349,10 @@ def _resource_fact(preview: dict[str, Any], locator: str) -> dict[str, Any] | No
         return None
     return {
         "data_type": preview_fact["data_type"],
+        "source_engine_type": preview_fact.get("engine_type") or preview_fact.get("source_engine_type"),
+        "full_name": preview_fact.get("full_name"),
+        "query_names": preview_fact.get("query_names") or {},
+        "schema_coverage": preview_fact.get("schema_coverage") or "unknown",
         "geometry_column": preview_fact.get("geometry_column"),
         "geometry_type": preview_fact.get("geometry_type"),
         "crs": preview_fact.get("source_crs"),

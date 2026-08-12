@@ -7,7 +7,9 @@ import logging
 import math
 import re
 from typing import Any
-from urllib.parse import unquote, urlparse
+
+import sqlglot
+from sqlglot import exp
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from sqlalchemy.orm import Session
@@ -102,6 +104,7 @@ class QueryService:
         db: Session,
     ) -> dict[str, Any]:
         language = query_language.strip().lower()
+        query_name_key = "federated_sql" if language == "sql" and self._is_federated_query_engine(engine) else language
         llm = CopilotInferenceService.chat_model(
             db,
             tenant_id=tenant_id,
@@ -117,7 +120,7 @@ class QueryService:
                 "capabilities": engine.get("capabilities"),
             },
             "query_language": language,
-            "resources": self._resources_for_context(resources),
+            "resources": self._resources_for_context(resources, query_name_key),
         }
         if current_query and current_query.strip():
             context_payload["current_query"] = current_query.strip()
@@ -129,7 +132,8 @@ class QueryService:
             HumanMessage(content=f"当前查询上下文:\n{context}\n\n用户需求:\n{query}"),
         ], response_schema=self._plan_response_schema())
         plan_output = str(getattr(plan_response, "content", plan_response))
-        plan, plan_errors = self._parse_and_validate_plan(plan_output, resources)
+        plan_resources = self._resources_with_active_query_name(resources, language, query_name_key)
+        plan, plan_errors = self._parse_and_validate_plan(plan_output, plan_resources)
         if plan_errors:
             logger.warning(
                 "query plan rejected: errors=%s verified_fields=%s plan_output=%s",
@@ -148,7 +152,7 @@ class QueryService:
                 )),
             ], response_schema=self._plan_response_schema())
             plan_output = str(getattr(repair_response, "content", repair_response))
-            plan, plan_errors = self._parse_and_validate_plan(plan_output, resources)
+            plan, plan_errors = self._parse_and_validate_plan(plan_output, plan_resources)
             if plan_errors:
                 logger.warning(
                     "query plan repair rejected: errors=%s verified_fields=%s plan_output=%s",
@@ -164,7 +168,7 @@ class QueryService:
         candidate, errors = self._parse_and_validate_candidate(
             candidate_output,
             language,
-            resources,
+            plan_resources,
             plan,
             allowed_parameter_types=allowed_parameter_types,
         )
@@ -181,7 +185,7 @@ class QueryService:
             candidate, errors = self._parse_and_validate_candidate(
                 candidate_output,
                 language,
-                resources,
+                plan_resources,
                 plan,
                 allowed_parameter_types=allowed_parameter_types,
             )
@@ -322,15 +326,38 @@ class QueryService:
         return plan, cls._validate_plan(plan, resources)
 
     @classmethod
-    def _resources_for_context(cls, resources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _resources_for_context(cls, resources: list[dict[str, Any]], query_name_key: str) -> list[dict[str, Any]]:
         contextual: list[dict[str, Any]] = []
         for resource in resources:
             item = dict(resource)
-            query_names = cls._resource_collection_names([resource])
-            if len(query_names) == 1:
-                item["query_name"] = next(iter(query_names))
+            query_names = resource.get("query_names")
+            if isinstance(query_names, dict) and isinstance(query_names.get(query_name_key), str):
+                item["query_name"] = query_names[query_name_key]
             contextual.append(item)
         return contextual
+
+    @staticmethod
+    def _resources_with_active_query_name(resources: list[dict[str, Any]], language: str, query_name_key: str) -> list[dict[str, Any]]:
+        active: list[dict[str, Any]] = []
+        for resource in resources:
+            item = dict(resource)
+            names = dict(resource.get("query_names") or {})
+            if query_name_key in names:
+                names[language] = names[query_name_key]
+            item["query_names"] = names
+            active.append(item)
+        return active
+
+    @staticmethod
+    def _is_federated_query_engine(engine: dict[str, Any]) -> bool:
+        capabilities = engine.get("capabilities")
+        if isinstance(capabilities, str):
+            try:
+                capabilities = json.loads(capabilities)
+            except json.JSONDecodeError:
+                return False
+        federation = (((capabilities or {}).get("compute") or {}).get("query") or {}).get("federation") or {}
+        return federation.get("supported") is True
 
     @classmethod
     def _parse_and_validate_candidate(
@@ -502,6 +529,13 @@ class QueryService:
             language,
             allowed_parameter_types=allowed_parameter_types,
         )
+        if language not in {"sql", "mql", "cypher"}:
+            errors.append(f"query language is unsupported: {language}")
+            return errors
+        if language == "sql":
+            return errors + cls._validate_sql(candidate["query"], resources, plan)
+        if language == "cypher":
+            return errors + cls._validate_cypher(candidate["query"], resources, plan)
         if language != "mql":
             return errors
         command = cls._parse_mql(candidate["query"])
@@ -518,7 +552,7 @@ class QueryService:
         if cls._contains_non_positive_mql_limit(command):
             errors.append("MQL contains a non-positive limit")
 
-        verified_collections = cls._resource_collection_names(resources)
+        verified_collections = cls._resource_query_names(resources, "mql")
         referenced_collections = cls._mql_collection_references(command)
         for collection in referenced_collections:
             if collection not in verified_collections:
@@ -560,6 +594,74 @@ class QueryService:
             if tokens and not any(token in query_text for token in tokens):
                 errors.append(f"MQL does not implement planned operation: {operation}")
         return errors
+
+    @classmethod
+    def _validate_sql(cls, query: str, resources: list[dict[str, Any]], plan: dict[str, Any]) -> list[str]:
+        try:
+            statements = sqlglot.parse(query)
+        except Exception as error:
+            return [f"SQL syntax is invalid: {error}"]
+        if len(statements) != 1:
+            return ["SQL must contain exactly one statement"]
+        statement = statements[0]
+        errors: list[str] = []
+        if any(statement.find(node) for node in (exp.Insert, exp.Update, exp.Delete, exp.Create, exp.Drop, exp.Alter, exp.Merge, exp.Command)):
+            errors.append("SQL must be a read-only query")
+        names = cls._resource_query_names(resources, "sql")
+        cte_names = {cte.alias_or_name for cte in statement.find_all(exp.CTE) if cte.alias_or_name}
+        tables = {
+            cls._sql_table_name(table)
+            for table in statement.find_all(exp.Table)
+            if table.name not in cte_names
+        }
+        if not names:
+            errors.append("SQL resource query_names.sql is not verified")
+        errors.extend(f"SQL table is not verified: {table}" for table in tables - names)
+        allowed_fields = cls._resource_field_names(resources)
+        if not allowed_fields:
+            errors.append("SQL fields are not verified")
+        derived_fields = {alias.alias for alias in statement.find_all(exp.Alias) if alias.alias}
+        for column in statement.find_all(exp.Column):
+            if column.name != "*" and column.name not in derived_fields and not cls._field_is_allowed(column.name, allowed_fields):
+                errors.append(f"SQL field is not verified: {column.name}")
+        query_upper = query.upper()
+        for operation in plan["operations"]:
+            token = {"filter": "WHERE", "sort": "ORDER BY", "limit": "LIMIT", "join": "JOIN", "group": "GROUP BY", "aggregate": "SELECT", "count": "COUNT", "distinct": "DISTINCT"}.get(operation)
+            if token and token not in query_upper:
+                errors.append(f"SQL does not implement planned operation: {operation}")
+        for collection in plan["collections"]:
+            if collection not in tables:
+                errors.append(f"SQL does not cover planned collection: {collection}")
+        for field in plan["field_paths"]:
+            if not cls._field_is_allowed(field, allowed_fields) or field not in query:
+                errors.append(f"SQL does not cover planned field: {field}")
+        for result_key in plan["result_keys"]:
+            if result_key not in query:
+                errors.append(f"SQL does not expose planned result: {result_key}")
+        return sorted(set(errors))
+
+    @staticmethod
+    def _sql_table_name(table: exp.Table) -> str:
+        return ".".join(part for part in (table.catalog, table.db, table.name) if part)
+
+    @classmethod
+    def _validate_cypher(cls, query: str, resources: list[dict[str, Any]], plan: dict[str, Any]) -> list[str]:
+        errors: list[str] = []
+        if re.search(r"\b(CREATE|MERGE|DELETE|DETACH|SET|REMOVE|DROP|FOREACH|LOAD\s+CSV)\b", query, re.I):
+            errors.append("Cypher contains a write operation")
+        if not cls._resource_query_names(resources, "cypher"):
+            errors.append("Cypher resource query_names.cypher is not verified")
+        allowed_fields = cls._resource_field_names(resources)
+        for field in re.findall(r"\b[a-zA-Z_][a-zA-Z0-9_]*\.([a-zA-Z_][a-zA-Z0-9_]*)", query):
+            if not cls._field_is_allowed(field, allowed_fields):
+                errors.append(f"Cypher field is not verified: {field}")
+        for field in plan["field_paths"]:
+            if not cls._field_is_allowed(field, allowed_fields) or field not in query:
+                errors.append(f"Cypher does not cover planned field: {field}")
+        for result_key in plan["result_keys"]:
+            if result_key not in query:
+                errors.append(f"Cypher does not expose planned result: {result_key}")
+        return sorted(set(errors))
 
     @classmethod
     def _validate_query_parameters(
@@ -678,14 +780,20 @@ class QueryService:
     def _resource_collection_names(resources: list[dict[str, Any]]) -> set[str]:
         names: set[str] = set()
         for resource in resources:
-            locator = str(resource.get("locator") or "")
-            parsed = urlparse(locator)
-            marker = "/path/"
-            if marker not in parsed.path:
-                continue
-            path = unquote(parsed.path.split(marker, 1)[1]).strip("/")
-            if path:
-                names.add(path.split("/")[-1])
+            query_names = resource.get("query_names")
+            if isinstance(query_names, dict):
+                names.update(str(value).strip() for value in query_names.values() if str(value).strip())
+        return names
+
+    @staticmethod
+    def _resource_query_names(resources: list[dict[str, Any]], language: str) -> set[str]:
+        names: set[str] = set()
+        for resource in resources:
+            query_names = resource.get("query_names")
+            if isinstance(query_names, dict):
+                value = query_names.get(language)
+                if isinstance(value, str) and value.strip():
+                    names.add(value.strip())
         return names
 
     @staticmethod

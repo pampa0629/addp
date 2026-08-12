@@ -21,6 +21,21 @@ type Document struct {
 	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
+// DocumentFileCleanup records obsolete objects that still require physical deletion.
+type DocumentFileCleanup struct {
+	ID            int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	ObjectKey     string    `gorm:"type:text;not null;uniqueIndex:uq_standard_document_file_cleanups_object_key" json:"object_key"`
+	Attempts      int       `gorm:"not null;default:0" json:"attempts"`
+	NextAttemptAt time.Time `gorm:"not null;index" json:"next_attempt_at"`
+	LastError     string    `gorm:"type:text" json:"last_error"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+func (DocumentFileCleanup) TableName() string {
+	return "standard.document_file_cleanups"
+}
+
 func (Document) TableName() string {
 	return "standard.documents"
 }

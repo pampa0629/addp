@@ -111,11 +111,11 @@ func Candidates(sources []Source, limit int) []Candidate {
 	candidates := make([]Candidate, 0)
 	for _, source := range sources {
 		for _, table := range source.Tables {
-			parts := []string{sanitizeIdentifier(source.EngineName)}
+			parts := []string{SanitizeIdentifier(source.EngineName)}
 			if table.Schema != "" {
-				parts = append(parts, sanitizeIdentifier(table.Schema))
+				parts = append(parts, SanitizeIdentifier(table.Schema))
 			}
-			parts = append(parts, sanitizeIdentifier(table.Table))
+			parts = append(parts, SanitizeIdentifier(table.Table))
 			query := fmt.Sprintf("SELECT *\nFROM %s", strings.Join(parts, "."))
 			if limit > 0 {
 				query += fmt.Sprintf("\nLIMIT %d", limit)
@@ -175,7 +175,7 @@ func relationalTables(engineName string, tree *models.MetadataTree) []TableRef {
 	return tables
 }
 
-func sanitizeIdentifier(value string) string {
+func SanitizeIdentifier(value string) string {
 	var result strings.Builder
 	for _, char := range value {
 		if char == '_' || char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' {

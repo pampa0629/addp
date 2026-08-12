@@ -12,26 +12,46 @@ var localeFS embed.FS
 // Model 模块消息 key 常量
 const (
 	// 通用
-	MsgInvalidID = "model.common.invalid_id"
+	MsgInvalidID        = "model.common.invalid_id"
+	MsgOperationFailed  = "model.common.operation_failed"
+	MsgValidationFailed = "model.common.validation_failed"
+	MsgResourceNotFound = "model.common.resource_not_found"
+	MsgResourceConflict = "model.common.resource_conflict"
 
 	// 实体
-	MsgEntityNotFound       = "model.entity.not_found"
-	MsgInvalidEntityID      = "model.entity.invalid_id"
-	MsgInvalidAttributeID   = "model.entity.invalid_attribute_id"
-	MsgInvalidEntityIDQuery = "model.entity.invalid_entity_id_query"
+	MsgEntityNotFound         = "model.entity.not_found"
+	MsgInvalidEntityID        = "model.entity.invalid_id"
+	MsgInvalidAttributeID     = "model.entity.invalid_attribute_id"
+	MsgInvalidEntityIDQuery   = "model.entity.invalid_entity_id_query"
+	MsgEntityCodeConflict     = "model.entity.code_conflict"
+	MsgEntityStateConflict    = "model.entity.state_conflict"
+	MsgAttributeNotFound      = "model.entity.attribute_not_found"
+	MsgRelationTargetNotFound = "model.entity_relation.target_not_found"
+	MsgRelationStateConflict  = "model.entity_relation.state_conflict"
+	MsgRelationSelfConflict   = "model.entity_relation.self_conflict"
 
 	// 实体关系
 	MsgRelationNotFound = "model.entity_relation.not_found"
 
 	// 逻辑表
-	MsgTableNotFound  = "model.logical_table.not_found"
-	MsgInvalidFieldID = "model.logical_table.invalid_field_id"
+	MsgTableNotFound               = "model.logical_table.not_found"
+	MsgInvalidFieldID              = "model.logical_table.invalid_field_id"
+	MsgDDLPreviewInvalid           = "model.logical_table.ddl_preview_invalid"
+	MsgTableCodeConflict           = "model.logical_table.code_conflict"
+	MsgTableStateConflict          = "model.logical_table.state_conflict"
+	MsgFieldNotFound               = "model.logical_table.field_not_found"
+	MsgTableRelationTargetNotFound = "model.table_relation.target_not_found"
+	MsgTableRelationStateConflict  = "model.table_relation.state_conflict"
+	MsgTableRelationConflict       = "model.table_relation.conflict"
 
 	// 数仓分层
-	MsgLayerNotFound = "model.dw_layer.not_found"
+	MsgLayerNotFound     = "model.dw_layer.not_found"
+	MsgLayerCodeConflict = "model.dw_layer.code_conflict"
+	MsgLayerInUse        = "model.dw_layer.in_use"
 
 	// 指标映射
 	MsgInvalidMappingID = "model.fact_metric.invalid_mapping_id"
+	MsgMetricConflict   = "model.fact_metric.conflict"
 
 	// 维度关联
 	MsgInvalidRelationID = "model.table_relation.invalid_relation_id"

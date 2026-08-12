@@ -1,6 +1,18 @@
 [model.common.invalid_id]
 other = "Invalid ID"
 
+[model.common.operation_failed]
+other = "Operation failed. Please try again later"
+
+[model.common.validation_failed]
+other = "The request data failed validation. Check it and try again"
+
+[model.common.resource_not_found]
+other = "The requested resource was not found"
+
+[model.common.resource_conflict]
+other = "The resource state or data conflicts with this operation"
+
 [model.entity.not_found]
 other = "Entity not found"
 
@@ -13,8 +25,26 @@ other = "Invalid attribute ID"
 [model.entity.invalid_entity_id_query]
 other = "Invalid entity_id parameter"
 
+[model.entity.code_conflict]
+other = "Entity code already exists"
+
+[model.entity.state_conflict]
+other = "The entity state does not allow this operation"
+
+[model.entity.attribute_not_found]
+other = "Entity attribute not found"
+
 [model.entity_relation.not_found]
 other = "Entity relation not found"
+
+[model.entity_relation.target_not_found]
+other = "A referenced entity does not exist"
+
+[model.entity_relation.state_conflict]
+other = "Both ends of the entity relation must be drafts"
+
+[model.entity_relation.self_conflict]
+other = "Self-referencing entity relations are not allowed"
 
 [model.logical_table.not_found]
 other = "Logical table not found"
@@ -22,11 +52,41 @@ other = "Logical table not found"
 [model.logical_table.invalid_field_id]
 other = "Invalid field ID"
 
+[model.logical_table.ddl_preview_invalid]
+other = "DDL cannot be generated from the current configuration. Check the materialization settings and field definitions"
+
+[model.logical_table.code_conflict]
+other = "Logical table code already exists"
+
+[model.logical_table.state_conflict]
+other = "The logical table state does not allow this operation"
+
+[model.logical_table.field_not_found]
+other = "Logical table field not found"
+
 [model.dw_layer.not_found]
 other = "DW layer not found"
+
+[model.dw_layer.code_conflict]
+other = "DW layer code already exists"
+
+[model.dw_layer.in_use]
+other = "The DW layer is still referenced by logical tables and cannot be deleted"
 
 [model.fact_metric.invalid_mapping_id]
 other = "Invalid metric mapping ID"
 
+[model.fact_metric.conflict]
+other = "The metric is already associated with this fact table"
+
 [model.table_relation.invalid_relation_id]
 other = "Invalid relation ID"
+
+[model.table_relation.target_not_found]
+other = "A referenced logical table or field does not exist"
+
+[model.table_relation.state_conflict]
+other = "Both ends of the table relation must be drafts"
+
+[model.table_relation.conflict]
+other = "This field relation already exists"

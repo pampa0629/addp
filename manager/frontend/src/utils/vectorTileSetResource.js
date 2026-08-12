@@ -28,3 +28,23 @@ export const isVectorTilePreviewTarget = (target) => {
     normalized(target?.locatorType) === 'table' &&
     hasGeometryColumn
 }
+
+export const isDeferredExtentDatabaseSource = (selection) => {
+  const engineType = normalized(selection?.display?.engine_type || selection?.raw?.engine?.engine_type)
+  return engineType === 'mysql' || engineType === 'oracle'
+}
+
+export const hasRequiredVectorTileSpatialFacts = (facts, selection) => {
+  if (!String(facts?.geometryColumn || '').trim() || Number(facts?.sourceSRID || 0) <= 0) return false
+  if (isDeferredExtentDatabaseSource(selection)) return true
+  return Number(facts?.extentSRID || 0) > 0 && Array.isArray(facts?.extent) && facts.extent.length === 4
+}
+
+export const resolveVectorTileZoomRecommendation = (zoom = {}, quickView = {}, hasExtent = false) => {
+  const minZoom = Number(zoom.min_zoom ?? quickView.min_zoom ?? 0)
+  const declaredMaxZoom = Number(zoom.max_zoom ?? quickView.max_zoom ?? 12)
+  return {
+    minZoom,
+    maxZoom: hasExtent ? declaredMaxZoom : Math.max(minZoom, Math.min(declaredMaxZoom, 12))
+  }
+}

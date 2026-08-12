@@ -33,7 +33,7 @@ func (h *DWLayerHandler) ListDWLayers(c *gin.Context) {
 
 	layers, err := h.svc.ListDWLayers(tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
+		c.JSON(http.StatusInternalServerError, operationFailedResponse(c))
 		return
 	}
 	c.JSON(http.StatusOK, layers)
@@ -46,6 +46,7 @@ func (h *DWLayerHandler) ListDWLayers(c *gin.Context) {
 // @Produce json
 // @Param body body models.CreateDWLayerRequest true "创建请求 | Create request"
 // @Success 201 {object} map[string]interface{} "已创建的分层 | Created DW layer"
+// @Failure 409 {object} models.ErrorResponse "分层编码冲突 | DW layer code conflict"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.dw_layer.create"]
 // @Router /dw-layers [post]
@@ -53,14 +54,14 @@ func (h *DWLayerHandler) ListDWLayers(c *gin.Context) {
 func (h *DWLayerHandler) CreateDWLayer(c *gin.Context) {
 	var req models.CreateDWLayerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	layer, err := h.svc.CreateDWLayer(&req, tenantID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
+		writeServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, layer)
@@ -78,15 +79,15 @@ func (h *DWLayerHandler) CreateDWLayer(c *gin.Context) {
 // @Security BearerAuth
 func (h *DWLayerHandler) GetDWLayer(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidID), "invalid_id"))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	layer, err := h.svc.GetDWLayer(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, errorResponse(commoni18n.T(c, modeli18n.MsgLayerNotFound)))
+		writeServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, layer)
@@ -106,21 +107,21 @@ func (h *DWLayerHandler) GetDWLayer(c *gin.Context) {
 // @Security BearerAuth
 func (h *DWLayerHandler) UpdateDWLayer(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidID), "invalid_id"))
 		return
 	}
 
 	var req models.UpdateDWLayerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	layer, err := h.svc.UpdateDWLayer(id, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(err.Error()))
+		writeServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, layer)
@@ -132,20 +133,22 @@ func (h *DWLayerHandler) UpdateDWLayer(c *gin.Context) {
 // @Produce json
 // @Param id path int true "分层ID | DW layer ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Failure 404 {object} models.ErrorResponse "数仓分层不存在 | DW layer not found"
+// @Failure 409 {object} models.ErrorResponse "数仓分层仍被引用 | DW layer is still referenced"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.dw_layer.delete"]
 // @Router /dw-layers/{id} [delete]
 // @Security BearerAuth
 func (h *DWLayerHandler) DeleteDWLayer(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(commoni18n.T(c, modeli18n.MsgInvalidID)))
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidID), "invalid_id"))
 		return
 	}
 
 	tenantID := getTenantID(c)
 	if err := h.svc.DeleteDWLayer(id, tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, errorResponse(err.Error()))
+		writeServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})

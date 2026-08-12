@@ -92,20 +92,14 @@ func (r *IssueRepository) BatchCreate(items []models.Issue) error {
 func (r *IssueRepository) Reconcile(ctx context.Context, tenantID int64, executionID string, observations []models.IssueObservation, observedAt time.Time) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, observation := range observations {
-			var issue models.Issue
-			findErr := tx.Where("tenant_id = ? AND rule_application_id = ?", tenantID, observation.RuleApplicationID).First(&issue).Error
-			if findErr != nil && findErr != gorm.ErrRecordNotFound {
-				return findErr
-			}
 			if observation.Passed {
-				if findErr == gorm.ErrRecordNotFound || issue.Status != "open" {
-					continue
-				}
-				if err := tx.Model(&issue).Updates(map[string]interface{}{
-					"status": "resolved", "resolved_at": observedAt, "last_execution_id": executionID,
-					"last_observed_at": observedAt, "failed_count": observation.FailedCount, "total_count": observation.TotalCount,
-					"pass_rate": observation.PassRate,
-				}).Error; err != nil {
+				if err := tx.Model(&models.Issue{}).
+					Where("tenant_id = ? AND rule_application_id = ? AND status = ?", tenantID, observation.RuleApplicationID, "open").
+					Updates(map[string]interface{}{
+						"status": "resolved", "resolved_at": observedAt, "last_execution_id": executionID,
+						"last_observed_at": observedAt, "failed_count": observation.FailedCount, "total_count": observation.TotalCount,
+						"pass_rate": observation.PassRate,
+					}).Error; err != nil {
 					return err
 				}
 				continue
@@ -115,19 +109,18 @@ func (r *IssueRepository) Reconcile(ctx context.Context, tenantID int64, executi
 			if err != nil {
 				return err
 			}
-			fields := map[string]interface{}{
-				"last_execution_id": executionID, "rule_type": observation.RuleType,
-				"severity": observation.Severity, "message": observation.Message, "column_name": observation.ColumnName,
-				"table_name": observation.Table, "schema_name": observation.SchemaName, "engine_id": observation.EngineID,
-				"failed_count": observation.FailedCount, "total_count": observation.TotalCount, "pass_rate": observation.PassRate,
-				"detail": detail, "status": "open", "resolved_at": nil, "resolved_by": nil, "resolution_note": "",
-				"last_observed_at": observedAt,
-			}
-			if findErr == gorm.ErrRecordNotFound {
-				if err := tx.Create(&models.Issue{TenantID: tenantID, ExecutionID: executionID, LastExecutionID: executionID, RuleApplicationID: observation.RuleApplicationID, RuleType: observation.RuleType, Severity: observation.Severity, Message: observation.Message, ColumnName: observation.ColumnName, Table: observation.Table, SchemaName: observation.SchemaName, EngineID: observation.EngineID, FailedCount: observation.FailedCount, TotalCount: observation.TotalCount, PassRate: observation.PassRate, Detail: detail, Status: "open", LastObservedAt: &observedAt}).Error; err != nil {
-					return err
-				}
-			} else if err := tx.Model(&issue).UpdateColumns(fields).Error; err != nil {
+			issue := models.Issue{TenantID: tenantID, ExecutionID: executionID, LastExecutionID: executionID, RuleApplicationID: observation.RuleApplicationID, RuleType: observation.RuleType, Severity: observation.Severity, Message: observation.Message, ColumnName: observation.ColumnName, Table: observation.Table, SchemaName: observation.SchemaName, EngineID: observation.EngineID, FailedCount: observation.FailedCount, TotalCount: observation.TotalCount, PassRate: observation.PassRate, Detail: detail, Status: "open", LastObservedAt: &observedAt}
+			if err := tx.Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "tenant_id"}, {Name: "rule_application_id"}},
+				DoUpdates: clause.Assignments(map[string]interface{}{
+					"last_execution_id": executionID, "rule_type": observation.RuleType,
+					"severity": observation.Severity, "message": observation.Message, "column_name": observation.ColumnName,
+					"table_name": observation.Table, "schema_name": observation.SchemaName, "engine_id": observation.EngineID,
+					"failed_count": observation.FailedCount, "total_count": observation.TotalCount, "pass_rate": observation.PassRate,
+					"detail": detail, "status": "open", "resolved_at": nil, "resolved_by": nil, "resolution_note": "",
+					"last_observed_at": observedAt, "updated_at": observedAt,
+				}),
+			}).Create(&issue).Error; err != nil {
 				return err
 			}
 		}

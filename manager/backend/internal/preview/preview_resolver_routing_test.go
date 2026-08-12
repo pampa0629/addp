@@ -656,3 +656,31 @@ func TestResolveProviderByMetaRejectsUnmappedMeta(t *testing.T) {
 		t.Fatal("expected error for unmapped meta")
 	}
 }
+
+func TestBuildMetadataDeclaresOwnerVerifiedQueryFacts(t *testing.T) {
+	itemID := uint(7)
+	resolver := NewPreviewResolver(nil, nil, nil)
+	relational := resolver.buildMetadata(&PreviewResolverRequest{
+		Locator: &resourcetree.ResourceLocator{}, Engine: &commonModels.Engine{Name: "pg", EngineType: "postgresql"},
+		Metadata: &commonModels.MetaNode{}, MetaItemID: &itemID, ItemFullName: "analytics.users", ItemScannedDepth: "deep",
+	})
+	if relational.QueryNames["sql"] != "analytics.users" || relational.QueryNames["federated_sql"] != "pg.analytics.users" || relational.SchemaCoverage != "complete" || relational.EngineType != "postgresql" {
+		t.Fatalf("unexpected relational query facts: %#v", relational)
+	}
+
+	dynamic := resolver.buildMetadata(&PreviewResolverRequest{
+		Locator: &resourcetree.ResourceLocator{}, Engine: &commonModels.Engine{Name: "mongo", EngineType: "mongodb"},
+		Metadata: &commonModels.MetaNode{}, MetaItemID: &itemID, ItemName: "Persons.v2", ItemFullName: "Outdoor.Persons.v2", ItemScannedDepth: "deep",
+	})
+	if dynamic.QueryNames["mql"] != "Persons.v2" || dynamic.SchemaCoverage != "sampled" {
+		t.Fatalf("unexpected dynamic query facts: %#v", dynamic)
+	}
+
+	object := resolver.buildMetadata(&PreviewResolverRequest{
+		Locator: &resourcetree.ResourceLocator{}, Engine: &commonModels.Engine{Name: "lake source", EngineType: "minio"},
+		Metadata: &commonModels.MetaNode{}, MetaItemID: &itemID, ItemName: "events parquet", ItemFullName: "bucket/events.parquet", ItemScannedDepth: "deep",
+	})
+	if object.QueryNames["federated_sql"] != "lake_source.events_parquet" {
+		t.Fatalf("unexpected object query facts: %#v", object)
+	}
+}

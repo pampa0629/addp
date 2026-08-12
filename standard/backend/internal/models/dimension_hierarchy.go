@@ -15,7 +15,7 @@ type DimensionHierarchy struct {
 	UpdatedBy   *int64                    `json:"updated_by,omitempty"`
 	CreatedAt   time.Time                 `json:"created_at"`
 	UpdatedAt   time.Time                 `json:"updated_at"`
-	Levels      []DimensionHierarchyLevel `gorm:"foreignKey:HierarchyID;constraint:OnDelete:CASCADE" json:"levels,omitempty"`
+	Levels      []DimensionHierarchyLevel `gorm:"foreignKey:HierarchyID;-:migration" json:"levels,omitempty"`
 }
 
 func (DimensionHierarchy) TableName() string {
@@ -28,7 +28,7 @@ type DimensionHierarchyLevel struct {
 	HierarchyID int64  `gorm:"not null;index;uniqueIndex:uq_standard_dimension_hierarchy_levels_hierarchy_level" json:"hierarchy_id"`
 	LevelNum    int    `gorm:"not null;uniqueIndex:uq_standard_dimension_hierarchy_levels_hierarchy_level" json:"level_num"` // 1=最粗粒度，数字越大粒度越细
 	Name        string `gorm:"size:100;not null" json:"name"`                                                                // e.g., "年", "季度", "月", "日"
-	ElementID   *int64 `json:"element_id,omitempty"`                                                                         // 可选关联 standard.elements（无 DB FK 约束）
+	ElementID   *int64 `json:"element_id,omitempty"`                                                                         // 可选关联 standard.elements，目标删除时置空
 	Description string `gorm:"type:text" json:"description"`
 	SortOrder   int    `gorm:"default:0" json:"sort_order"`
 }

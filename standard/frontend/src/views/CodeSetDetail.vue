@@ -53,7 +53,7 @@
       </el-col>
 
       <!-- 码值项列表 -->
-      <el-col :span="24" style="margin-top:16px">
+      <el-col :span="24" class="items-column">
         <el-card shadow="never">
           <template #header>
             <div class="card-header-with-action">
@@ -78,14 +78,16 @@
               </template>
             </el-table-column>
             <el-table-column :label="$t('standard.common.description')" prop="description" show-overflow-tooltip />
-            <el-table-column :label="$t('standard.common.actions')" width="130" fixed="right">
+            <el-table-column :label="$t('standard.common.actions')" width="150" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" @click="openItemDialog(row)">{{ $t('standard.common.edit') }}</el-button>
-                <el-popconfirm :title="$t('standard.codeSet.confirmDeleteItem')" @confirm="deleteItem(row.id)">
-                  <template #reference>
-                    <el-button link type="danger">{{ $t('standard.common.delete') }}</el-button>
-                  </template>
-                </el-popconfirm>
+                <div class="table-actions">
+                  <el-button link type="primary" @click="openItemDialog(row)">{{ $t('standard.common.edit') }}</el-button>
+                  <el-popconfirm :title="$t('standard.codeSet.confirmDeleteItem')" @confirm="deleteItem(row.id)">
+                    <template #reference>
+                      <el-button link type="danger">{{ $t('standard.common.delete') }}</el-button>
+                    </template>
+                  </el-popconfirm>
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -134,6 +136,7 @@ import { ElMessage } from 'element-plus'
 import { ArrowLeft, Plus } from '@element-plus/icons-vue'
 import { codeSetAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
+import { getStandardErrorMessage } from '../utils/apiError'
 
 const route = useRoute()
 const router = useRouter()
@@ -159,13 +162,18 @@ const itemRules = computed(() => ({
 }))
 
 const loadCodeSet = async () => {
-  const res = await codeSetAPI.get(codeSetId.value)
-  codeSet.value = res || {}
-  Object.assign(form, {
-    name: codeSet.value.name,
-    type: codeSet.value.type || 'custom',
-    description: codeSet.value.description || ''
-  })
+  try {
+    const res = await codeSetAPI.get(codeSetId.value)
+    codeSet.value = res || {}
+    Object.assign(form, {
+      name: codeSet.value.name,
+      type: codeSet.value.type || 'custom',
+      description: codeSet.value.description || ''
+    })
+  } catch (err) {
+    ElMessage.error(getStandardErrorMessage(err, t, 'standard.common.loadFailed'))
+    goBack()
+  }
 }
 
 const loadItems = async () => {
@@ -173,6 +181,9 @@ const loadItems = async () => {
   try {
     const res = await codeSetAPI.getItems(codeSetId.value)
     items.value = res || []
+  } catch (err) {
+    items.value = []
+    ElMessage.error(getStandardErrorMessage(err, t, 'standard.common.loadFailed'))
   } finally {
     itemLoading.value = false
   }
@@ -185,7 +196,7 @@ const handleSave = async () => {
     ElMessage.success(t('standard.common.saveSuccess'))
     loadCodeSet()
   } catch (err) {
-    ElMessage.error(err.response?.data?.error || t('standard.common.saveFailed'))
+    ElMessage.error(getStandardErrorMessage(err, t, 'standard.common.saveFailed'))
   } finally {
     saving.value = false
   }
@@ -221,7 +232,7 @@ const handleItemSubmit = async () => {
     itemDialogVisible.value = false
     loadItems()
   } catch (err) {
-    ElMessage.error(err.response?.data?.error || t('standard.common.operationFailed'))
+    ElMessage.error(getStandardErrorMessage(err, t))
   } finally {
     itemSubmitting.value = false
   }
@@ -232,8 +243,8 @@ const deleteItem = async (itemId) => {
     await codeSetAPI.deleteItem(codeSetId.value, itemId)
     ElMessage.success(t('standard.common.deleteSuccess'))
     loadItems()
-  } catch {
-    ElMessage.error(t('standard.common.deleteFailed'))
+  } catch (err) {
+    ElMessage.error(getStandardErrorMessage(err, t, 'standard.common.deleteFailed'))
   }
 }
 
@@ -245,7 +256,10 @@ watch(() => route.params.id, () => {
 
 <style scoped>
 .code-set-detail {
+  min-height: 100%;
   padding: 20px;
+  color: var(--addp-text-primary);
+  background: var(--addp-bg-secondary);
 }
 
 .detail-header {
@@ -269,7 +283,10 @@ watch(() => route.params.id, () => {
 .code-set-name {
   font-size: 18px;
   font-weight: 600;
+  color: var(--addp-text-primary);
 }
+
+.code-set-detail :deep(.el-card) { background: var(--addp-bg-primary); border-color: var(--addp-border-color); box-shadow: var(--addp-shadow-card); }
 
 .info-card {
   margin-bottom: 0;
@@ -277,11 +294,25 @@ watch(() => route.params.id, () => {
 
 .card-title {
   font-weight: 600;
+  color: var(--addp-text-primary);
 }
 
 .card-header-with-action {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.items-column { margin-top: 16px; }
+.table-actions { display: inline-flex; align-items: center; gap: 8px; min-width: max-content; white-space: nowrap; }
+.table-actions :deep(.el-button) { white-space: nowrap; }
+
+@media (max-width: 768px) {
+  .code-set-detail { padding: 12px; }
+  .detail-header { align-items: flex-start; flex-wrap: wrap; gap: 10px; }
+  .header-left, .header-right { flex-wrap: wrap; }
+  .code-set-detail :deep(.el-row) { margin-left: 0 !important; margin-right: 0 !important; }
+  .code-set-detail :deep(.el-col) { max-width: 100%; flex: 0 0 100%; }
+  .items-column { margin-top: 12px; }
 }
 </style>

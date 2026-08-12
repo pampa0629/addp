@@ -71,6 +71,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { domainAPI } from '../api/standard'
+import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 
 const { t } = useI18n()
 
@@ -103,7 +104,7 @@ const loadDomains = async () => {
     const res = await domainAPI.list()
     domainTree.value = res || []
   } catch (e) {
-    ElMessage.error(t('standard.domain.loadFailed'))
+    ElMessage.error(getStandardErrorMessage(e, t, 'standard.domain.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -156,7 +157,7 @@ const handleSubmit = async () => {
       dialogVisible.value = false
       await loadDomains()
     } catch (e) {
-      ElMessage.error(e.response?.data?.error || t('standard.common.operationFailed'))
+      ElMessage.error(getStandardErrorMessage(e, t))
     } finally {
       submitting.value = false
     }
@@ -172,7 +173,7 @@ const handleDelete = async (domain) => {
     ElMessage.success(t('standard.common.deleteSuccess'))
     await loadDomains()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(t('standard.common.deleteFailed'))
+    if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
   }
 }
 
@@ -181,7 +182,10 @@ onMounted(loadDomains)
 
 <style scoped>
 .domain-list {
+  min-height: 100%;
   padding: 20px;
+  color: var(--addp-text-primary);
+  background: var(--addp-bg-secondary);
 }
 
 .page-header {
@@ -194,11 +198,14 @@ onMounted(loadDomains)
 .page-header h2 {
   margin: 0;
   font-size: 18px;
-  color: var(--el-text-color-primary);
+  color: var(--addp-text-primary);
 }
 
 .main-card {
   min-height: 400px;
+  background: var(--addp-bg-primary);
+  border-color: var(--addp-border-color);
+  box-shadow: var(--addp-shadow-card);
 }
 
 .tree-node {
@@ -224,7 +231,7 @@ onMounted(loadDomains)
 
 .node-name {
   font-size: 14px;
-  color: var(--el-text-color-primary);
+  color: var(--addp-text-primary);
 }
 
 .node-code {

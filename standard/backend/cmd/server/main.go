@@ -103,7 +103,11 @@ func main() {
 	unitSvc := service.NewUnitService(mCatRepo, unitRepo)
 	classificationSvc := service.NewClassificationService(classificationRepo, gradingRepo, tenantReferenceRepo)
 	metricSvc := service.NewMetricService(metricCatRepo, metricRepo, tenantReferenceRepo)
-	documentSvc := service.NewDocumentService(documentRepo, tenantReferenceRepo, minioClient)
+	documentSvc := service.NewDocumentService(documentRepo, tenantReferenceRepo, minioClient, service.DocumentStorageOptions{
+		MaxFileSize: cfg.DocumentMaxFileSize,
+		Timeout:     cfg.DocumentStorageTimeout,
+	})
+	defer documentSvc.Stop()
 	dimHierarchySvc := service.NewDimensionHierarchyService(dimHierarchyRepo, tenantReferenceRepo)
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo, minioClient)

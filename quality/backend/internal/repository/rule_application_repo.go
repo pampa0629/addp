@@ -1,10 +1,16 @@
 package repository
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+
 	commonAPI "github.com/addp/common/api"
+	commonExecution "github.com/addp/common/execution"
 	commonRepository "github.com/addp/common/repository"
 	"github.com/addp/quality/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type RuleApplicationRepository struct {
@@ -75,13 +81,76 @@ func (r *RuleApplicationRepository) Update(item *models.RuleApplication) error {
 	return commonRepository.WrapDBError(r.db.Save(item).Error)
 }
 
-func (r *RuleApplicationRepository) Delete(id, tenantID int64) error {
-	result := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.RuleApplication{})
-	if result.Error != nil {
-		return commonRepository.WrapDBError(result.Error)
+func (r *RuleApplicationRepository) Delete(ctx context.Context, id, tenantID int64) error {
+	return commonRepository.WrapDBError(r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var application models.RuleApplication
+		if err := tx.Where("id = ? AND tenant_id = ?", id, tenantID).First(&application).Error; err != nil {
+			return err
+		}
+		// ClaimExecution locks the task before reading its rule snapshots. Keep
+		// the same order here so deletion and trigger cannot cross each other.
+		var tasks []models.CheckTask
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("tenant_id = ? AND engine_id = ? AND schema_name = ? AND table_name = ?", tenantID, application.EngineID, application.SchemaName, application.Table).
+			Find(&tasks).Error; err != nil {
+			return err
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND tenant_id = ?", id, tenantID).First(&application).Error; err != nil {
+			return err
+		}
+
+		taskIDs := make([]int64, 0, len(tasks))
+		for _, task := range tasks {
+			taskIDs = append(taskIDs, task.ID)
+		}
+		var activeExecutions []commonExecution.TaskExecution
+		if len(taskIDs) > 0 {
+			sourceTaskIDs := make([]string, 0, len(taskIDs))
+			for _, taskID := range taskIDs {
+				sourceTaskIDs = append(sourceTaskIDs, fmt.Sprint(taskID))
+			}
+			if err := tx.Select("execution_id", "execution_config").
+				Where("tenant_id = ? AND module = ? AND task_type = ? AND source_task_id IN ? AND status IN ?", tenantID, commonExecution.ModuleQuality, commonExecution.TaskTypeQualityCheck, sourceTaskIDs, []string{commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning}).
+				Find(&activeExecutions).Error; err != nil {
+				return err
+			}
+		}
+		for _, execution := range activeExecutions {
+			references, err := executionReferencesRuleApplication(execution.ExecutionConfig, id)
+			if err != nil {
+				return fmt.Errorf("inspect quality execution %s rule snapshot: %w", execution.ExecutionID, err)
+			}
+			if references {
+				return fmt.Errorf("%w: rule application %d has an active execution", commonAPI.ErrConflict, id)
+			}
+		}
+
+		if err := tx.Where("tenant_id = ? AND rule_application_id = ?", tenantID, id).Delete(&models.Issue{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&application).Error
+	}))
+}
+
+func executionReferencesRuleApplication(config map[string]interface{}, ruleApplicationID int64) (bool, error) {
+	raw, ok := config["rule_applications"]
+	if !ok {
+		return false, nil
 	}
-	if result.RowsAffected != 1 {
-		return commonAPI.ErrNotFound
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return false, err
 	}
-	return nil
+	var snapshots []struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal(data, &snapshots); err != nil {
+		return false, err
+	}
+	for _, snapshot := range snapshots {
+		if snapshot.ID == ruleApplicationID {
+			return true, nil
+		}
+	}
+	return false, nil
 }

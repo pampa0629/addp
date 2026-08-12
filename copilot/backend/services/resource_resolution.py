@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any
 
 from addp_common.resources import ResourceFact
@@ -27,18 +28,22 @@ class ResourceResolutionPolicy:
     name: str
     intent_scope: ResourceIntentScope = ResourceIntentScope.INPUTS
     engine_id: int | None = None
+    runtime_engine_id: int | None = None
+    allowed_source_engine_types: frozenset[str] | None = None
     max_inputs: int = 8
     max_candidates: int = 20
     allowed_data_types: frozenset[str] | None = None
     session_catalog: bool = False
 
     @classmethod
-    def query(cls, engine_id: int) -> "ResourceResolutionPolicy":
+    def query(cls, engine_id: int, *, allowed_source_engine_types: frozenset[str] | None = None) -> "ResourceResolutionPolicy":
         return cls(
             name="query",
             engine_id=engine_id,
+            runtime_engine_id=engine_id,
             max_inputs=8,
             allowed_data_types=QUERY_DATA_TYPES,
+            allowed_source_engine_types=allowed_source_engine_types,
         )
 
     @classmethod
@@ -110,12 +115,16 @@ class ResourceResolutionService:
             return ResourceResolutionResult(intents=intents, candidates=[], missing_roles=[])
 
         if scope_locator:
-            if policy.engine_id is None:
-                raise ValueError(f"{policy.name} 范围发现缺少 engine_id")
+            scope_engine_id = _locator_engine_id(scope_locator)
+            if scope_engine_id is None:
+                raise ValueError(f"{policy.name} 范围 locator 缺少 Source Engine ID")
+            if not policy.allowed_source_engine_types and policy.engine_id is not None and scope_engine_id != policy.engine_id:
+                raise ValueError(f"{policy.name} 范围 Source Engine 与 Runtime 不一致")
             result = await self.discovery.discover_scoped(
                 intents,
                 query=query,
-                engine_id=policy.engine_id,
+                engine_id=scope_engine_id,
+                **({"source_engine_types": policy.allowed_source_engine_types} if policy.allowed_source_engine_types else {}),
                 scope_locator=scope_locator,
                 limit=policy.max_candidates,
                 allowed_data_types=policy.allowed_data_types,
@@ -167,7 +176,8 @@ class ResourceResolutionService:
             raise ValueError("Transfer 只允许一个源资源")
         return await self.discovery.verify(
             resources,
-            engine_id=policy.engine_id,
+            engine_id=None if policy.allowed_source_engine_types else policy.engine_id,
+            **({"source_engine_types": policy.allowed_source_engine_types} if policy.allowed_source_engine_types else {}),
             allowed_data_types=policy.allowed_data_types,
         )
 
@@ -178,10 +188,12 @@ class ResourceResolutionService:
         *,
         query: str,
     ) -> ResourceDiscoveryResult:
+        search_engine_id = None if policy.allowed_source_engine_types else policy.engine_id
         return await self.discovery.discover(
             intents,
             query=query,
-            engine_id=policy.engine_id,
+            engine_id=search_engine_id,
+            **({"source_engine_types": policy.allowed_source_engine_types} if policy.allowed_source_engine_types else {}),
             limit=policy.max_candidates,
             allowed_data_types=policy.allowed_data_types,
         )
@@ -192,3 +204,9 @@ class ResourceResolutionService:
             return
         if len(intents) > policy.max_inputs:
             raise ValueError(f"{policy.name} 输入数据项超过上限")
+
+
+def _locator_engine_id(locator: str) -> int | None:
+    match = re.match(r"^addp://engine/(\d+)(?:/|$)", str(locator).strip())
+    value = int(match.group(1)) if match else 0
+    return value if value > 0 else None

@@ -90,7 +90,7 @@ import { Delete, Edit, Plus, Refresh, VideoPlay } from '@element-plus/icons-vue'
 import { ResourceTreePicker, openMonitorExecution } from '@addp/common-frontend'
 import { quickViewAPI } from '../api/quickView'
 import { calculateTileRangeEstimate, isZoomAboveRecommendation } from '../utils/vectorTileEstimate'
-import { isVectorTileSourceItem } from '../utils/vectorTileSetResource'
+import { hasRequiredVectorTileSpatialFacts, isVectorTileSourceItem, resolveVectorTileZoomRecommendation } from '../utils/vectorTileSetResource'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -152,15 +152,17 @@ const applyCapability = (capability, selection) => {
   const extent = Array.isArray(renderFacts.render_extent) ? renderFacts.render_extent : quickView.extent
   const sourceSRID = Number(renderFacts.source_srid || quickView.source_srid || 0)
   const extentSRID = Number(renderFacts.render_extent_srid || quickView.extent_srid || 0)
-  if (!geometryColumn || !sourceSRID || !extentSRID || !Array.isArray(extent) || extent.length !== 4) {
+  const spatialFacts = { geometryColumn, sourceSRID, extent, extentSRID }
+  if (!hasRequiredVectorTileSpatialFacts(spatialFacts, selection)) {
     throw new Error('incomplete spatial capability')
   }
   form.geometryColumn = geometryColumn
   form.sourceSRID = sourceSRID
   form.extentSRID = extentSRID
-  form.extent = extent.map(Number)
-  sourceFacts.recommendedMinZoom = Number(zoom.min_zoom ?? quickView.min_zoom ?? 0)
-  sourceFacts.recommendedMaxZoom = Number(zoom.max_zoom ?? quickView.max_zoom ?? 12)
+  form.extent = Array.isArray(extent) && extent.length === 4 ? extent.map(Number) : []
+  const recommendation = resolveVectorTileZoomRecommendation(zoom, quickView, form.extent.length === 4)
+  sourceFacts.recommendedMinZoom = recommendation.minZoom
+  sourceFacts.recommendedMaxZoom = recommendation.maxZoom
   form.minZoom = sourceFacts.recommendedMinZoom
   form.maxZoom = sourceFacts.recommendedMaxZoom
   sourceFacts.format = String(selection?.resource?.format || selection?.resource?.data_type || selection?.display?.type || '-').toUpperCase()
@@ -227,15 +229,23 @@ const requestEditTask = async (task) => {
   const routeState = resolveRouteState({ task_id: task.id })
   await navigateManagerRoute(router, { path: route.path, query: routeState.query }, { history: 'push' })
 }
-const payload = () => ({ name: form.name.trim(), enabled: true, config: {
-  source: { source_engine_id: engineID(sourceSelection.value, form.sourceEngineID), locator: locator(sourceSelection.value, form.sourceLocator), item_id: itemID(sourceSelection.value, form.sourceItemID) },
-  target: { engine_id: engineID(targetSelection.value, form.targetEngineID), storage_locator: locator(targetSelection.value, form.targetLocator), name: `${form.fileName.trim()}.pmtiles` },
-  tile: { archive_format: 'pmtiles', tile_type: 'mvt', tile_matrix_set: 'WebMercatorQuad', min_zoom: form.minZoom, max_zoom: form.maxZoom, source_srid: form.sourceSRID, target_srid: 3857, extent: form.extent, extent_srid: form.extentSRID },
-  options: { geometry_column: form.geometryColumn, layer_name: form.layerName.trim() }
-} })
+const payload = () => {
+  const tile = { archive_format: 'pmtiles', tile_type: 'mvt', tile_matrix_set: 'WebMercatorQuad', min_zoom: form.minZoom, max_zoom: form.maxZoom, source_srid: form.sourceSRID, target_srid: 3857 }
+  if (form.extent.length === 4 && form.extentSRID > 0) {
+    tile.extent = form.extent
+    tile.extent_srid = form.extentSRID
+  }
+  return { name: form.name.trim(), enabled: true, config: {
+    source: { source_engine_id: engineID(sourceSelection.value, form.sourceEngineID), locator: locator(sourceSelection.value, form.sourceLocator), item_id: itemID(sourceSelection.value, form.sourceItemID) },
+    target: { engine_id: engineID(targetSelection.value, form.targetEngineID), storage_locator: locator(targetSelection.value, form.targetLocator), name: `${form.fileName.trim()}.pmtiles` },
+    tile,
+    options: { geometry_column: form.geometryColumn, layer_name: form.layerName.trim() }
+  } }
+}
 const save = async () => {
   const body = payload()
-  if (!body.name || !body.config.source.locator || !body.config.source.item_id || !body.config.target.storage_locator || !form.fileName.trim() || !form.layerName.trim() || !form.geometryColumn || !form.sourceSRID || !form.extentSRID || form.extent.length !== 4) { ElMessage.warning(t('manager.vectorTileSet.required')); return }
+  const spatialFacts = { geometryColumn: form.geometryColumn, sourceSRID: form.sourceSRID, extent: form.extent, extentSRID: form.extentSRID }
+  if (!body.name || !body.config.source.locator || !body.config.source.item_id || !body.config.target.storage_locator || !form.fileName.trim() || !form.layerName.trim() || !hasRequiredVectorTileSpatialFacts(spatialFacts, sourceSelection.value)) { ElMessage.warning(t('manager.vectorTileSet.required')); return }
   saving.value = true
   try { editing.value ? await quickViewAPI.updateVectorTileSetTask(editing.value.id, body) : await quickViewAPI.createVectorTileSetTask(body); dialog.value = false; ElMessage.success(t('manager.vectorTileSet.saved')); await loadTasks() }
   catch (error) { ElMessage.error(error?.response?.data?.error || t('manager.vectorTileSet.saveFailed')) }

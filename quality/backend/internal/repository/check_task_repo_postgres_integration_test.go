@@ -9,6 +9,7 @@ import (
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
+	qualityMigration "github.com/addp/quality/internal/migration"
 	"github.com/addp/quality/internal/models"
 	"github.com/lib/pq"
 	"gorm.io/driver/postgres"
@@ -23,17 +24,11 @@ func TestIntegrationPostgresQualityConcurrentPendingClaim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open PostgreSQL: %v", err)
 	}
-	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS quality").Error; err != nil {
-		t.Fatalf("create quality schema: %v", err)
-	}
 	if err := commonExecution.EnsureStore(db); err != nil {
 		t.Fatalf("ensure common execution store: %v", err)
 	}
-	if err := db.AutoMigrate(&models.CheckTask{}, &models.RuleApplication{}, &models.Issue{}); err != nil {
-		t.Fatalf("migrate quality check task: %v", err)
-	}
-	if err := EnsureSchema(db); err != nil {
-		t.Fatalf("enforce quality schema: %v", err)
+	if err := qualityMigration.NewRunner(db).Run(context.Background()); err != nil {
+		t.Fatalf("run quality migrations: %v", err)
 	}
 	for _, column := range []struct {
 		table  string
@@ -128,6 +123,62 @@ func TestIntegrationPostgresQualityConcurrentPendingClaim(t *testing.T) {
 	}
 	if storedTask.LastExecutionID != executions[0].ExecutionID || storedTask.LastExecutionStatus != commonExecution.ExecutionStatusRunning {
 		t.Fatalf("started task summary = %s/%s", storedTask.LastExecutionID, storedTask.LastExecutionStatus)
+	}
+}
+
+func TestIntegrationPostgresIssueConcurrentFirstObservation(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
+	}
+	db, err := gorm.Open(postgres.Open(qualityRepositoryIntegrationDSN()), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("open PostgreSQL: %v", err)
+	}
+	if err := qualityMigration.NewRunner(db).Run(context.Background()); err != nil {
+		t.Fatalf("run quality migrations: %v", err)
+	}
+
+	tenantID := time.Now().UnixNano()%100000000 + 920000000
+	application := models.RuleApplication{
+		TenantID: tenantID, ElementID: 11, EngineID: 12, SchemaName: "public", Table: "orders", ColumnName: "amount",
+		RuleConfig: []byte(`{"schema_version":"addp.quality.rules/v1","rules":[{"type":"not_null","enabled":true,"severity":"error","message":"","params":{}}]}`),
+		CreatedBy:  1,
+	}
+	if err := db.Create(&application).Error; err != nil {
+		t.Fatalf("create rule application: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.Issue{}).Error
+		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.RuleApplication{}).Error
+	})
+
+	observation := models.IssueObservation{
+		RuleApplicationID: application.ID, RuleType: "not_null", Severity: "error", Message: "required",
+		ColumnName: application.ColumnName, Table: application.Table, SchemaName: application.SchemaName,
+		EngineID: application.EngineID, FailedCount: 1, TotalCount: 10, PassRate: 90,
+	}
+	start := make(chan struct{})
+	errors := make(chan error, 2)
+	for _, executionID := range []string{"concurrent-execution-a", "concurrent-execution-b"} {
+		executionID := executionID
+		go func() {
+			<-start
+			errors <- NewIssueRepository(db).Reconcile(context.Background(), tenantID, executionID, []models.IssueObservation{observation}, time.Now().UTC())
+		}()
+	}
+	close(start)
+	for range 2 {
+		if err := <-errors; err != nil {
+			t.Fatalf("concurrent Reconcile: %v", err)
+		}
+	}
+
+	var issues []models.Issue
+	if err := db.Where("tenant_id = ? AND rule_application_id = ?", tenantID, application.ID).Find(&issues).Error; err != nil {
+		t.Fatalf("load reconciled issues: %v", err)
+	}
+	if len(issues) != 1 || issues[0].Status != "open" || issues[0].FailedCount != 1 {
+		t.Fatalf("reconciled issues = %#v, want one open issue", issues)
 	}
 }
 

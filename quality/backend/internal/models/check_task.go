@@ -13,7 +13,6 @@ type CheckTask struct {
 	EngineID            int64      `gorm:"not null;uniqueIndex:uq_quality_check_task_scope" json:"engine_id"` // 目标引擎
 	SchemaName          string     `gorm:"size:200;not null;uniqueIndex:uq_quality_check_task_scope" json:"schema_name"`
 	Table               string     `gorm:"size:200;not null;column:table_name;uniqueIndex:uq_quality_check_task_scope" json:"table_name"`
-	Enabled             bool       `gorm:"default:true" json:"enabled"`
 	CreatedBy           int64      `gorm:"not null" json:"created_by"`
 	UpdatedBy           *int64     `json:"updated_by,omitempty"`
 	CreatedAt           time.Time  `json:"created_at"`

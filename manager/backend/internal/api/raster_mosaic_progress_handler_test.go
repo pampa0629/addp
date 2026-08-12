@@ -149,6 +149,45 @@ func TestManagerProgressEndpointRecordsVectorTileCacheEvent(t *testing.T) {
 	}
 }
 
+func TestManagerProgressEndpointRecordsVectorTileSetEvent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newTaskProviderHandlerTestDB(t)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	if err := db.Exec(`INSERT INTO common.task_executions
+		(tenant_id, execution_id, module, task_type, source, status, progress, trigger_type, error_details, metadata, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, '{}', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		7, "tile-set-progress-http-1", commonExecution.ModuleManager, commonExecution.TaskTypeVectorTileSetGeneration,
+		commonExecution.ModuleManager, commonExecution.ExecutionStatusRunning, 5, commonExecution.TriggerTypeManual).Error; err != nil {
+		t.Fatalf("create execution: %v", err)
+	}
+	handler := NewTaskProviderHandler(nil, nil, nil, nil, taskExecRepo)
+	handler.SetVectorTileSetTaskService(service.NewVectorTileSetTaskService(repository.NewVectorTileSetRepository(db), taskExecRepo))
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		setTenantAuthContextForTest(c, 7, 1)
+		c.Next()
+	})
+	router.POST("/executions/:execution_id/events", handler.RecordManagerExecutionProgressEvent)
+
+	body := `{"phase":"publish","event":"progress","message":"生成矢量瓦片缓存","current_zoom":12,"max_zoom":12,"tiles_processed":18,"tiles_total_estimate":18,"overall_progress":95}`
+	req := httptest.NewRequest(http.MethodPost, "/executions/tile-set-progress-http-1/events", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusAccepted, w.Body.String())
+	}
+	got, err := taskExecRepo.GetByExecutionID(context.Background(), "tile-set-progress-http-1", 7)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if got.Progress != 95 {
+		t.Fatalf("progress = %d, want 95", got.Progress)
+	}
+}
+
 func TestRasterMosaicProgressEndpointUsesAuthContextTenant(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newTaskProviderHandlerTestDB(t)

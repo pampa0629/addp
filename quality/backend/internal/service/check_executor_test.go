@@ -1,8 +1,15 @@
 package service
 
 import (
+	"context"
+	"encoding/json"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
+
+	commonClient "github.com/addp/common/client"
 )
 
 func TestEvaluateCheckCounts(t *testing.T) {
@@ -67,5 +74,104 @@ func TestAggregateExecutionResult(t *testing.T) {
 func TestAggregateExecutionResultRejectsNoRules(t *testing.T) {
 	if _, err := aggregateExecutionResult(nil); err == nil {
 		t.Fatal("aggregateExecutionResult() error = nil, want no-rules error")
+	}
+}
+
+func TestIssueExecutionAuthorizationFromParentUsesQualityBoundary(t *testing.T) {
+	parentExecutionID := "74d980cf-3ced-41ef-81fc-271f89249110"
+	childExecutionID := "2aaeb79d-2bbd-47a2-a8d4-a607ce6d51a5"
+	expiresAt := time.Now().UTC().Add(10 * time.Minute)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/system/oauth/token":
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			if r.Form.Get("tenant_id") != "7" {
+				t.Fatalf("service token tenant_id = %q", r.Form.Get("tenant_id"))
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"access_token": "addp_at_quality_service", "token_type": "Bearer", "expires_in": 300, "scope": "addp.api",
+			})
+		case "/api/v1/system/runtime/execution-authorizations":
+			if r.Header.Get("Authorization") != "Bearer addp_at_quality_service" {
+				t.Fatalf("Authorization = %q", r.Header.Get("Authorization"))
+			}
+			var request commonClient.IssueExecutionAuthorizationFromExecutionRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Fatal(err)
+			}
+			if request.ParentExecutionID != parentExecutionID || request.ExecutionID != childExecutionID ||
+				request.Audience != "addp-quality" || request.ExpiresIn != 3600 ||
+				len(request.EngineIDs) != 1 || request.EngineIDs[0] != "12" ||
+				len(request.Effects) != 1 || request.Effects[0] != "read" {
+				t.Fatalf("authorization request = %#v", request)
+			}
+			_ = json.NewEncoder(w).Encode(commonClient.IssuedExecutionAuthorization{
+				ID: "91", ExecutionID: childExecutionID, Audience: "addp-quality", EngineIDs: []string{"12"},
+				Effects: []string{"read"}, ExpiresAt: expiresAt, ActorPrincipalID: "21", TenantID: "7",
+				TenantMembershipID: "22", IssuedAuthorizationVersion: "3", SourceType: "user",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	tokenSource, err := commonClient.NewOAuthServiceTokenSource(server.URL, "addp-quality", "0123456789abcdef0123456789abcdef", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor := NewCheckExecutor(commonClient.NewSystemServiceClient(server.URL, tokenSource, server.Client()), nil, nil, nil)
+	facts, err := executor.issueExecutionAuthorization(context.Background(), 7, childExecutionID, 12, "", &parentExecutionID)
+	if err != nil {
+		t.Fatalf("issueExecutionAuthorization: %v", err)
+	}
+	if facts.authorizationID == nil || *facts.authorizationID != 91 || facts.actorPrincipalID == nil || *facts.actorPrincipalID != 21 ||
+		facts.tenantMembershipID == nil || *facts.tenantMembershipID != 22 || facts.authorizationVersion == nil || *facts.authorizationVersion != 3 ||
+		facts.expiresAt == nil || !facts.expiresAt.Equal(expiresAt) || len(facts.effects) != 1 || facts.effects[0] != "read" {
+		t.Fatalf("authorization facts = %#v", facts)
+	}
+}
+
+func TestIssueExecutionAuthorizationRejectsInvalidSystemResponse(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*commonClient.IssuedExecutionAuthorization)
+	}{
+		{name: "expired", mutate: func(response *commonClient.IssuedExecutionAuthorization) {
+			response.ExpiresAt = time.Now().UTC().Add(-time.Minute)
+		}},
+		{name: "audience mismatch", mutate: func(response *commonClient.IssuedExecutionAuthorization) { response.Audience = "addp-develop" }},
+		{name: "engine expansion", mutate: func(response *commonClient.IssuedExecutionAuthorization) { response.EngineIDs = []string{"12", "13"} }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			childExecutionID := "2aaeb79d-2bbd-47a2-a8d4-a607ce6d51a5"
+			parentExecutionID := "74d980cf-3ced-41ef-81fc-271f89249110"
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/api/v1/system/oauth/token":
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{"access_token": "addp_at_quality_service", "token_type": "Bearer", "expires_in": 300, "scope": "addp.api"})
+				case "/api/v1/system/runtime/execution-authorizations":
+					response := commonClient.IssuedExecutionAuthorization{
+						ID: "91", ExecutionID: childExecutionID, Audience: "addp-quality", EngineIDs: []string{"12"}, Effects: []string{"read"},
+						ExpiresAt: time.Now().UTC().Add(time.Hour), ActorPrincipalID: "21", TenantID: "7", TenantMembershipID: "22", IssuedAuthorizationVersion: "3",
+					}
+					test.mutate(&response)
+					_ = json.NewEncoder(w).Encode(response)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+			tokenSource, err := commonClient.NewOAuthServiceTokenSource(server.URL, "addp-quality", "0123456789abcdef0123456789abcdef", server.Client())
+			if err != nil {
+				t.Fatal(err)
+			}
+			executor := NewCheckExecutor(commonClient.NewSystemServiceClient(server.URL, tokenSource, server.Client()), nil, nil, nil)
+			if _, err := executor.issueExecutionAuthorization(context.Background(), 7, childExecutionID, 12, "", &parentExecutionID); err == nil {
+				t.Fatal("issueExecutionAuthorization unexpectedly accepted invalid response")
+			}
+		})
 	}
 }

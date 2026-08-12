@@ -1,8 +1,6 @@
 package service
 
 import (
-	"fmt"
-
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 )
@@ -72,7 +70,7 @@ func (s *ClassificationService) validateParent(id, tenantID int64, parentID *int
 	}
 	for current := parentID; current != nil; {
 		if *current == id {
-			return fmt.Errorf("数据分类父级不能是自身或其子级")
+			return ErrClassificationParentCycle
 		}
 		parent, err := s.repo.GetByID(*current, tenantID)
 		if err != nil {

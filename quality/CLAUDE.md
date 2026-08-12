@@ -105,7 +105,6 @@ quality/
 | engine_id | int64 | 目标引擎 ID |
 | schema_name | string | 必填：目标 Schema |
 | table_name | string | 必填：目标表 |
-| enabled | bool | 是否启用 |
 | last_run_at | timestamp? | 最近执行时间 |
 | last_execution_id | string | 最近一次 `common.task_executions.execution_id` |
 | last_execution_status | string | 最近一次执行状态 |
@@ -308,6 +307,8 @@ open（待处理）
 ```
 
 同一租户、同一 RuleApplication 始终只有一个当前问题。规则失败时创建或重开为 `open`，后续检查通过时自动变为 `resolved`。人工只能将 `open` 更新为 `resolved` 或 `ignored`，且必须提交处理说明；终态之间不可互转。
+
+RuleApplication 是当前配置，execution metadata 才是历史事实。存在已冻结该规则应用的 `pending|running` execution 时禁止删除；其余删除必须在同一事务中清理对应 Issue，并保留已完成 execution 历史。
 
 ### 异步检查，立即返回
 

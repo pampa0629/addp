@@ -1,9 +1,7 @@
 package service
 
 import (
-	"errors"
-	"fmt"
-
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 )
@@ -24,7 +22,7 @@ func (s *CodeSetService) CreateCodeSet(tenantID int64, req *models.CreateCodeSet
 		return nil, err
 	}
 	if exists {
-		return nil, fmt.Errorf("码值集编码 '%s' 已存在", req.Code)
+		return nil, commonapi.ErrConflict
 	}
 
 	// 校验 type
@@ -32,7 +30,7 @@ func (s *CodeSetService) CreateCodeSet(tenantID int64, req *models.CreateCodeSet
 		req.Type = "custom"
 	}
 	if req.Type != "system" && req.Type != "custom" {
-		return nil, errors.New("type 必须是 system 或 custom")
+		return nil, ErrInvalidCodeSetType
 	}
 
 	codeSet := &models.CodeSet{
@@ -69,7 +67,7 @@ func (s *CodeSetService) UpdateCodeSet(id, tenantID int64, req *models.UpdateCod
 
 	// 校验 type
 	if req.Type != "" && req.Type != "system" && req.Type != "custom" {
-		return nil, errors.New("type 必须是 system 或 custom")
+		return nil, ErrInvalidCodeSetType
 	}
 
 	codeSet.Name = req.Name
@@ -93,7 +91,7 @@ func (s *CodeSetService) DeleteCodeSet(id, tenantID int64) error {
 
 	// 系统内置码值集禁止删除
 	if codeSet.Type == "system" {
-		return errors.New("系统内置码值集不允许删除")
+		return ErrSystemCodeSetImmutable
 	}
 
 	return s.repo.Delete(id, tenantID)
@@ -124,7 +122,7 @@ func (s *CodeSetService) CreateCodeItem(codeSetID, tenantID int64, req *models.C
 		return nil, err
 	}
 	if exists {
-		return nil, fmt.Errorf("码值项编码 '%s' 已存在", req.Code)
+		return nil, commonapi.ErrConflict
 	}
 
 	item := &models.CodeItem{

@@ -69,7 +69,7 @@ func (r *ElementRepository) Update(element *models.Element) error {
 }
 
 func (r *ElementRepository) Delete(id, tenantID int64) error {
-	return requireAffectedRow(r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Element{}))
+	return deleteInTransaction(r.db, &models.Element{}, "id = ? AND tenant_id = ?", id, tenantID)
 }
 
 func (r *ElementRepository) UpdateStatus(id, tenantID int64, status string, updatedBy int64) error {

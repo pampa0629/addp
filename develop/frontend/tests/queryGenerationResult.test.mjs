@@ -15,6 +15,10 @@ const candidates = [
     engine_id: 11,
     name: 'railway',
     locator: 'addp://engine/11/path/public/railway?type=table&item_id=60',
+    source_engine_type: 'postgresql',
+    full_name: 'public.railway',
+    query_names: { sql: 'public.railway', federated_sql: 'source_pg.public.railway' },
+    schema_coverage: 'complete',
     data_type: 'table',
     geometry_column: 'shape',
     crs: 'EPSG:32650'
@@ -59,6 +63,10 @@ assert.deepEqual(confirmedResources(candidates, {
     role: 'railway',
     engine_id: 11,
     locator: candidates[0].locator,
+    source_engine_type: 'postgresql',
+    full_name: 'public.railway',
+    query_names: { sql: 'public.railway', federated_sql: 'source_pg.public.railway' },
+    schema_coverage: 'complete',
     data_type: 'table',
     geometry_column: 'shape',
     crs: 'EPSG:32650'

@@ -86,11 +86,11 @@
 }
 ```
 
-`target` 的主身份是 `source_engine_id + locator + item_fingerprint`。`schema/table` 只表达数据库表型 item 的 PG 执行事实；文件、对象等非表型空间 item 不应为了生成瓦片缓存伪造 `schema/table`。`source_kind` 来自 ResourceLocator 的 `type`，`full_name` 来自 ResourceLocator 解析后的稳定路径，并用于统一计算 `item_fingerprint`。
+`target` 的主身份是 `source_engine_id + locator + item_fingerprint`。`schema/table` 只表达数据库表型 item 的执行事实；文件、对象等非表型空间 item 不应为了生成瓦片缓存伪造 `schema/table`。`source_kind` 来自 ResourceLocator 的 `type`，`full_name` 来自 ResourceLocator 解析后的稳定路径，并用于统一计算 `item_fingerprint`。
 
 任务语义身份固定为 `tenant_id + target.item_fingerprint + profile_hash`。同一语义身份的重复创建必须复用原任务 ID，并更新名称、描述、启用状态和规范化配置；不得返回“任务已存在”，也不得新建重复任务。PostgreSQL 使用仅覆盖未软删除任务的部分唯一索引作为并发防线；先查后插命中该索引时必须回查并复用原任务。
 
-所有空间 item 的 PMTiles 生成统一由 GeoPython Workflow 的 `vector_to_pmtiles` 算子执行。Manager 把 PostGIS 表、NFS 文件或 MinIO/S3 对象分别转换为受控 GDAL 访问计划；算子先用 GDAL MVT driver 生成临时瓦片，再按 tile id 写入一个 PMTiles v3 文件并原子发布。`options` 中的 MVT 质量参数直接控制 GDAL MVT 创建参数。
+空间 item 的 PMTiles 生成按源能力选择唯一执行路径：PostgreSQL/PostGIS 表由 Manager 复用 `common/spatial` 的 `ST_AsMVT` 原生 SQL 生成；MySQL、Oracle 等标准 EWKB 可读但无原生 MVT 输出的数据库表先由 Manager 流式物化临时 FlatGeobuf，再调用 GeoPython Workflow 的 `vector_to_pmtiles` 算子；NFS、MinIO/S3 文件或对象直接转换成受控 GDAL 访问计划后调用同一算子。所有路径最终生成 PMTiles v3，`options` 中的 MVT 质量参数只控制 Workflow 路径的 GDAL MVT 创建参数。
 
 以上是语义示例，不是最终 API schema。
 
