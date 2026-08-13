@@ -664,7 +664,14 @@
           "postgisReady": "PostGIS ready",
           "supermapSystemTableCount": "SuperMap system table count",
           "sdeSchemaCount": "SDE schema count",
-          "sdeTableCount": "SDE table count"
+          "sdeTableCount": "SDE table count",
+          "repositoryOwner": "Repository owner",
+          "requiredRegistryTables": "Required registry tables",
+          "requiredRegistryCount": "Required registry tables detected",
+          "versioningTableCount": "Versioning table count",
+          "featureRegistryCount": "Feature registry table count",
+          "versionedRepositoryDetected": "Versioned repository detected",
+          "probePermissionDenied": "Probe permission denied"
         },
         "extensions": {
           "postgresqlServer": "PostgreSQL instance",

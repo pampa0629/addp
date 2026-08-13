@@ -208,6 +208,8 @@ CDC 固定使用 initial snapshot。有稳定非空主键的单表事件按以�
 
 tombstone、truncate、message、来源身份不匹配和协议未知字段严格阻塞，不推进 committed position。完整 PostgreSQL/MySQL/Oracle 类型矩阵见基本概念及配置说明。Oracle 普通字段直接由 LogMiner 捕获；`MDSYS.SDO_GEOMETRY` 由同一 Oracle capture Provider 通过 generation-owned WKB 镜像表捕获，不建立第二套 consumer。普通 Oracle LOB/RAC 仍未开放，ArcGIS SDE 保持后续独立 Provider。
 
+ArcGIS SDE 后续数据面不进入上述 Oracle Debezium/LogMiner 分支。唯一规划路线是 workspace-scoped `SDELogicalChangeSourceProvider` 读取 enterprise geodatabase traditional versioning 的 registry、state lineage 和 adds/deletes 语义，由 Transfer capture adapter 将规范化变化及 SDE 原生位置写入 generation-owned Infra Kafka topic，再复用现有 continuous worker。SDE Provider 必须承担无空洞 initial bootstrap 和原生位置恢复；Transfer 的 `sync_states` 仍只提交 Kafka offset。branch versioning、真实数据面和公开任务选项在真实 ArcGIS Enterprise Geodatabase E2E 完成前保持关闭。
+
 ### 6.4 生命周期
 
 Pause 停止目标应用并结束当前 session；Resume 在 committed position 仍处于 Kafka retention 范围时创建新 execution 并恢复。

@@ -87,8 +87,10 @@ func IsSuperMapSDXPostgreSQLTable(engine *models.Engine, schema, table string) b
 	return supermapworkflow.IsSDXPostgreSQLTablePath(path)
 }
 
-func superMapSDXPostgreSQLWorkspace(engine *models.Engine) (plugin.SpatialWorkspaceFact, bool, error) {
-	if engine == nil || !strings.EqualFold(strings.TrimSpace(engine.EngineType), "postgresql") || engine.Capabilities == nil || *engine.Capabilities == "" {
+// SpatialWorkspace resolves one workspace fact from a concrete Engine
+// Instance. Only detected/enabled facts are selectable for a domain provider.
+func SpatialWorkspace(engine *models.Engine, ecosystem, kind string) (plugin.SpatialWorkspaceFact, bool, error) {
+	if engine == nil || engine.Capabilities == nil || *engine.Capabilities == "" {
 		return plugin.SpatialWorkspaceFact{}, false, nil
 	}
 	capabilities, err := plugin.ParseEngineCapabilities(string(*engine.Capabilities))
@@ -100,14 +102,26 @@ func superMapSDXPostgreSQLWorkspace(engine *models.Engine) (plugin.SpatialWorksp
 		return plugin.SpatialWorkspaceFact{}, false, err
 	}
 	for _, workspace := range workspaces {
-		if !strings.EqualFold(strings.TrimSpace(workspace.Ecosystem), "supermap") ||
-			!strings.EqualFold(strings.TrimSpace(workspace.Kind), plugin.SpatialWorkspaceSuperMapSDXPostgreSQL) {
+		if !strings.EqualFold(strings.TrimSpace(workspace.Ecosystem), strings.TrimSpace(ecosystem)) ||
+			!strings.EqualFold(strings.TrimSpace(workspace.Kind), strings.TrimSpace(kind)) {
 			continue
 		}
 		state := strings.ToLower(strings.TrimSpace(workspace.State))
-		if state == plugin.SpatialWorkspaceStateDetected || state == plugin.SpatialWorkspaceStateEnabled {
-			return workspace, true, nil
-		}
+		return workspace, state == plugin.SpatialWorkspaceStateDetected || state == plugin.SpatialWorkspaceStateEnabled, nil
 	}
 	return plugin.SpatialWorkspaceFact{}, false, nil
+}
+
+// ArcGISSDEWorkspace returns the detected ArcGIS SDE fact. It does not resolve
+// the Oracle plugin as an SDE provider; a workspace-scoped adapter must be
+// registered before a data-plane caller can proceed.
+func ArcGISSDEWorkspace(engine *models.Engine) (plugin.SpatialWorkspaceFact, bool, error) {
+	return SpatialWorkspace(engine, "arcgis", plugin.SpatialWorkspaceArcGISSDE)
+}
+
+func superMapSDXPostgreSQLWorkspace(engine *models.Engine) (plugin.SpatialWorkspaceFact, bool, error) {
+	if engine == nil || !strings.EqualFold(strings.TrimSpace(engine.EngineType), "postgresql") {
+		return plugin.SpatialWorkspaceFact{}, false, nil
+	}
+	return SpatialWorkspace(engine, "supermap", plugin.SpatialWorkspaceSuperMapSDXPostgreSQL)
 }

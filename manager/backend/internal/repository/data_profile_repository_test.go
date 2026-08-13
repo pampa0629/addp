@@ -7,6 +7,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/dataprofile"
 	"github.com/addp/manager/internal/models"
@@ -135,7 +136,6 @@ func newDataProfileRepositoryTestDB(t *testing.T) *gorm.DB {
 	}
 	for _, statement := range []string{
 		"ATTACH DATABASE ':memory:' AS manager",
-		"ATTACH DATABASE ':memory:' AS common",
 		`CREATE TABLE manager.data_profiles (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL,
 			item_id INTEGER, engine_id INTEGER NOT NULL, locator TEXT NOT NULL, source_version TEXT NOT NULL,
@@ -153,21 +153,14 @@ func newDataProfileRepositoryTestDB(t *testing.T) *gorm.DB {
 			name TEXT NOT NULL, type TEXT NOT NULL, status TEXT NOT NULL, profile JSON NOT NULL,
 			created_at DATETIME, updated_at DATETIME, UNIQUE (profile_id, name)
 		)`,
-		`CREATE TABLE common.task_executions (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, execution_id TEXT NOT NULL UNIQUE,
-			module TEXT NOT NULL, task_type TEXT NOT NULL, source TEXT NOT NULL DEFAULT '', source_task_id TEXT,
-			source_task_name TEXT, parent_execution_id TEXT, status TEXT NOT NULL, progress INTEGER,
-			current_step TEXT, trigger_type TEXT NOT NULL, triggered_by INTEGER, execution_config JSON,
-			error_details JSON, metadata JSON, execution_time_ms INTEGER, rows_affected INTEGER,
-			records_read INTEGER, records_written INTEGER, bytes_read INTEGER, bytes_written INTEGER,
-			started_at DATETIME, completed_at DATETIME, created_at DATETIME, updated_at DATETIME
-		)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatalf("execute test schema statement: %v", err)
 		}
 	}
-	addTaskExecutionAuthorizationColumns(t, db)
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatalf("ensure SQLite execution store: %v", err)
+	}
 	t.Cleanup(func() {
 		sqlDB, sqlErr := db.DB()
 		if sqlErr == nil {

@@ -96,3 +96,46 @@ func TestIsSuperMapSDXPostgreSQLTableScopesWorkspaceToSDXSchema(t *testing.T) {
 		t.Fatal("sdx table should use the SuperMap SDX+ for PostgreSQL provider")
 	}
 }
+
+func TestArcGISSDEWorkspaceRequiresDetectedState(t *testing.T) {
+	engine := engineWithSpatialWorkspace(t, 11, "oracle", plugin.SpatialWorkspaceFact{
+		Ecosystem: "arcgis", Kind: plugin.SpatialWorkspaceArcGISSDE,
+		State: plugin.SpatialWorkspaceStateNotDetected, BackendEngineType: "oracle",
+	})
+	if _, ready, err := ArcGISSDEWorkspace(engine); err != nil || ready {
+		t.Fatalf("not-detected ArcGIS SDE workspace ready=%v error=%v", ready, err)
+	}
+
+	engine = engineWithSpatialWorkspace(t, 12, "oracle", plugin.SpatialWorkspaceFact{
+		Ecosystem: "arcgis", Kind: plugin.SpatialWorkspaceArcGISSDE,
+		State: plugin.SpatialWorkspaceStateDetected, BackendEngineType: "oracle",
+	})
+	workspace, ready, err := ArcGISSDEWorkspace(engine)
+	if err != nil || !ready || workspace.BackendEngineType != "oracle" {
+		t.Fatalf("detected ArcGIS SDE workspace=%#v ready=%v error=%v", workspace, ready, err)
+	}
+}
+
+func TestSpatialWorkspaceRejectsInvalidCapabilities(t *testing.T) {
+	invalid := models.JSONString(`{"extensions":`)
+	_, _, err := SpatialWorkspace(&models.Engine{ID: 13, EngineType: "oracle", Capabilities: &invalid}, "arcgis", plugin.SpatialWorkspaceArcGISSDE)
+	if err == nil {
+		t.Fatal("SpatialWorkspace() error = nil, want invalid capability error")
+	}
+}
+
+func engineWithSpatialWorkspace(t *testing.T, id uint, engineType string, workspace plugin.SpatialWorkspaceFact) *models.Engine {
+	t.Helper()
+	capabilities := plugin.EngineCapabilities{
+		SchemaVersion: plugin.CapabilitiesSchemaVersion,
+		EngineType:    engineType,
+		Storage:       &plugin.StorageCapabilities{Store: &plugin.StoreCapability{}},
+	}
+	plugin.SetSpatialWorkspacesExtension(&capabilities, []plugin.SpatialWorkspaceFact{workspace})
+	payload, err := plugin.MarshalEngineCapabilities(capabilities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := models.JSONString(payload)
+	return &models.Engine{ID: id, EngineType: engineType, Capabilities: &value}
+}

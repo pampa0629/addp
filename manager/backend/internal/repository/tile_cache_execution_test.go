@@ -9,6 +9,7 @@ import (
 
 	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"gorm.io/driver/sqlite"
@@ -843,15 +844,12 @@ func newTileCacheExecutionRepositoryTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("get sql db: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	for _, schema := range []string{"common", "manager"} {
-		if err := db.Exec("ATTACH DATABASE ':memory:' AS " + schema).Error; err != nil {
-			t.Fatalf("attach %s schema: %v", schema, err)
-		}
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS manager").Error; err != nil {
+		t.Fatalf("attach manager schema: %v", err)
 	}
-	if err := db.Exec(tileCacheRepositoryExecutionTableSQL).Error; err != nil {
-		t.Fatalf("create common execution test table: %v", err)
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
-	addTaskExecutionAuthorizationColumns(t, db)
 	if err := db.Exec(`CREATE TABLE manager.vector_tile_cache_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL,
 		description TEXT, enabled BOOLEAN, schedule TEXT, next_run_at DATETIME, last_run_at DATETIME,
@@ -1002,16 +1000,6 @@ func newTileCacheExecutionRepositoryTestDB(t *testing.T) *gorm.DB {
 	}
 	return db
 }
-
-const tileCacheRepositoryExecutionTableSQL = `CREATE TABLE common.task_executions (
-	id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, execution_id TEXT NOT NULL UNIQUE,
-	module TEXT NOT NULL, task_type TEXT NOT NULL, source TEXT NOT NULL DEFAULT '', source_task_id TEXT,
-	source_task_name TEXT, parent_execution_id TEXT, status TEXT NOT NULL, progress INTEGER,
-	current_step TEXT, trigger_type TEXT NOT NULL, triggered_by INTEGER, execution_config JSON,
-	error_details JSON, metadata JSON, execution_time_ms INTEGER, rows_affected INTEGER,
-	records_read INTEGER, records_written INTEGER, bytes_read INTEGER, bytes_written INTEGER,
-	started_at DATETIME, completed_at DATETIME, created_at DATETIME, updated_at DATETIME
-)`
 
 func createTileCacheExecutionRepositoryTestTask(t *testing.T, db *gorm.DB, tenantID uint) models.TileCacheTask {
 	t.Helper()

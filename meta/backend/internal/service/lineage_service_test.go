@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metatest"
 	"github.com/addp/meta/internal/models"
@@ -130,22 +131,8 @@ func TestRecordServicePublicationIsIdempotentAndReturnsEvidence(t *testing.T) {
 func openLineageTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := metatest.OpenMetadataDB(t)
-	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
-		t.Fatalf("attach common schema: %v", err)
-	}
-	if err := db.Exec(`CREATE TABLE common.task_executions (
-		id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, execution_id TEXT NOT NULL,
-		module TEXT NOT NULL, task_type TEXT NOT NULL, source TEXT NOT NULL DEFAULT '',
-		source_task_id TEXT, source_task_name TEXT, parent_execution_id TEXT,
-		status TEXT NOT NULL, progress INTEGER, current_step TEXT, trigger_type TEXT NOT NULL,
-		triggered_by INTEGER, actor_principal_id INTEGER, actor_tenant_membership_id INTEGER,
-		issued_authorization_version INTEGER, execution_authorization_id INTEGER,
-		authorization_effects TEXT, authorization_expires_at DATETIME, execution_config JSON,
-		error_details JSON, metadata JSON, execution_time_ms INTEGER, rows_affected INTEGER,
-		records_read INTEGER, records_written INTEGER, bytes_read INTEGER, bytes_written INTEGER,
-		started_at DATETIME, completed_at DATETIME, created_at DATETIME, updated_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create task_executions: %v", err)
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
 	statements := []string{
 		`CREATE TABLE meta.lineage_item_relations (

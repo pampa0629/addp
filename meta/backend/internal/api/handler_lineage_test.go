@@ -9,6 +9,7 @@ import (
 
 	"github.com/addp/common/authorization/authtest"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
 	metaauthorization "github.com/addp/meta/internal/authorization"
 	"github.com/addp/meta/internal/config"
@@ -101,15 +102,10 @@ func performLineageCollectionRequest(handler http.Handler, executionID, token st
 func openLineageRouteTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := metatest.OpenMetadataDB(t)
-	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
-		t.Fatalf("attach common schema: %v", err)
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
 	statements := []string{
-		`CREATE TABLE common.task_executions (
-			id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, execution_id TEXT NOT NULL,
-			module TEXT NOT NULL, task_type TEXT NOT NULL, source TEXT NOT NULL DEFAULT '',
-			status TEXT NOT NULL, progress INTEGER, trigger_type TEXT NOT NULL, metadata JSON,
-			created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE meta.lineage_item_relations (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, source_item_id INTEGER NOT NULL,
 			target_item_id INTEGER NOT NULL, relation_kind TEXT NOT NULL, granularity TEXT NOT NULL,

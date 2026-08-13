@@ -664,7 +664,14 @@
           "postgisReady": "PostGIS 已就绪",
           "supermapSystemTableCount": "SuperMap 系统表数量",
           "sdeSchemaCount": "SDE Schema 数量",
-          "sdeTableCount": "SDE 表数量"
+          "sdeTableCount": "SDE 表数量",
+          "repositoryOwner": "Repository Owner",
+          "requiredRegistryTables": "必需注册表",
+          "requiredRegistryCount": "已发现必需注册表数量",
+          "versioningTableCount": "版本管理表数量",
+          "featureRegistryCount": "要素注册表数量",
+          "versionedRepositoryDetected": "已检测版本化 Repository",
+          "probePermissionDenied": "探测权限不足"
         },
         "extensions": {
           "postgresqlServer": "PostgreSQL 实例",
